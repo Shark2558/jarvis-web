@@ -11,8 +11,11 @@ Phase 0 ships two things:
 
 from __future__ import annotations
 
+import asyncio
 import re
 import secrets
+from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
@@ -65,38 +68,99 @@ class ConfirmationRequired(PermissionError):
         self.action = action
 
 
-class ConfirmationGate:
-    """In-memory registry of actions awaiting owner approval. Redis-backed in Phase 2."""
+ActionMatcher = Callable[[PendingAction], bool]
+
+
+class ApprovalStore(ABC):
+    """Where actions awaiting owner approval live (Layer 7). Must survive restarts in prod."""
+
+    @abstractmethod
+    async def put(self, action: PendingAction) -> None: ...
+
+    @abstractmethod
+    async def get(self, approval_id: str) -> PendingAction | None: ...
+
+    @abstractmethod
+    async def consume(self, approval_id: str, matches: ActionMatcher) -> PendingAction | None:
+        """Atomically remove and return the action iff it exists, is unexpired and `matches`.
+        Otherwise leave it untouched and return None (a wrong token never consumes it)."""
+
+    @abstractmethod
+    async def cancel(self, approval_id: str) -> PendingAction | None:
+        """Remove and return the action, or None if it was already gone."""
+
+    @abstractmethod
+    async def list_pending(self) -> list[PendingAction]:
+        """Unexpired actions, oldest first."""
+
+
+class InMemoryApprovalStore(ApprovalStore):
+    """Process-local. Dev, tests, and the redis/memory session backends."""
 
     def __init__(self) -> None:
         self._pending: dict[str, PendingAction] = {}
+        self._lock = asyncio.Lock()
 
-    def check(self, action: PendingAction, *, confirmation_id: str | None = None) -> None:
+    async def put(self, action: PendingAction) -> None:
+        async with self._lock:
+            self._pending[action.id] = action.model_copy(deep=True)
+
+    async def get(self, approval_id: str) -> PendingAction | None:
+        a = self._pending.get(approval_id)
+        return a.model_copy(deep=True) if a else None
+
+    async def consume(self, approval_id: str, matches: ActionMatcher) -> PendingAction | None:
+        async with self._lock:
+            a = self._pending.get(approval_id)
+            if a is None or a.expired or not matches(a):
+                return None
+            return self._pending.pop(approval_id)
+
+    async def cancel(self, approval_id: str) -> PendingAction | None:
+        async with self._lock:
+            return self._pending.pop(approval_id, None)
+
+    async def list_pending(self) -> list[PendingAction]:
+        async with self._lock:
+            self._pending = {k: v for k, v in self._pending.items() if not v.expired}
+            live = sorted(self._pending.values(), key=lambda a: a.created_at)
+            return [a.model_copy(deep=True) for a in live]
+
+
+class ConfirmationGate:
+    """Confirm-before-commit for IRREVERSIBLE actions; storage is pluggable."""
+
+    def __init__(self, store: ApprovalStore | None = None) -> None:
+        self.store: ApprovalStore = store or InMemoryApprovalStore()
+
+    async def check(self, action: PendingAction, *, confirmation_id: str | None = None) -> None:
         """Raise ConfirmationRequired unless the action is safe or explicitly confirmed.
 
         A wrong, expired, or mismatched token never consumes another action's token and
-        always leaves `action` approvable (re-stored under its own id)."""
+        always leaves `action` approvable (stored under its own id). Tokens are single use,
+        enforced atomically by the store."""
         if action.risk is not ActionRisk.IRREVERSIBLE:
             return
-        if confirmation_id is None:
-            self._pending[action.id] = action
-            raise ConfirmationRequired(action)
-        pending = self._pending.get(confirmation_id)
-        ok = (
-            pending is not None
-            and not pending.expired
-            and pending.tool == action.tool
-            and pending.arguments == action.arguments  # argument drift → re-confirm
-            and pending.scope == action.scope
-        )
-        if not ok:
-            self._pending[action.id] = action
-            raise ConfirmationRequired(action)
-        del self._pending[confirmation_id]  # single use
+        if confirmation_id is not None:
 
-    def cancel(self, confirmation_id: str) -> bool:
-        return self._pending.pop(confirmation_id, None) is not None
+            def same(p: PendingAction) -> bool:
+                return (
+                    p.tool == action.tool
+                    and p.arguments == action.arguments  # argument drift → re-confirm
+                    and p.scope == action.scope
+                )
 
-    def pending(self) -> list[PendingAction]:
-        self._pending = {k: v for k, v in self._pending.items() if not v.expired}
-        return list(self._pending.values())
+            if await self.store.consume(confirmation_id, same) is not None:
+                return
+        await self.store.put(action)
+        raise ConfirmationRequired(action)
+
+    async def get(self, confirmation_id: str) -> PendingAction | None:
+        a = await self.store.get(confirmation_id)
+        return None if a is None or a.expired else a
+
+    async def cancel(self, confirmation_id: str) -> bool:
+        return await self.store.cancel(confirmation_id) is not None
+
+    async def pending(self) -> list[PendingAction]:
+        return await self.store.list_pending()

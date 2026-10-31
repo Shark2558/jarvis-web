@@ -262,16 +262,7 @@ class Brain:
             for call in completion.tool_calls:
                 gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
                 if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending:
-                    pending.append(
-                        PendingApproval(
-                            id=gr.pending.id,
-                            tool=gr.pending.tool,
-                            summary=gr.pending.summary,
-                            arguments=gr.pending.arguments,
-                            risk=gr.pending.risk.value,
-                            expires_at=gr.pending.expires_at,
-                        )
-                    )
+                    pending.append(PendingApproval.from_action(gr.pending))
                 results.append(
                     ToolResultBlock(
                         tool_use_id=call.id,
@@ -328,10 +319,8 @@ class Brain:
         if self.gateway is None:
             raise SessionNotFound(session_id)
         scope = f"{user_id}:{session_id}"
-        action = next(
-            (a for a in self.gateway.pending() if a.id == approval_id and a.scope == scope), None
-        )
-        if action is None:
+        action = await self.gateway.gate.get(approval_id)
+        if action is None or action.scope != scope:
             raise LookupError(f"no pending approval {approval_id} in this session")
         session = await self._load_or_create(
             ChatRequest(message="-", session_id=session_id, user_id=user_id)
@@ -349,9 +338,11 @@ class Brain:
             )
             instruction = "Owner approved this action; report the outcome in one sentence."
         else:
-            self.gateway.gate.cancel(approval_id)
+            if not await self.gateway.gate.cancel(approval_id):
+                # approved (or declined) concurrently: never record a decline that didn't happen
+                raise LookupError(f"no pending approval {approval_id} in this session")
             tool = self.gateway.registry.get(action.tool)
-            self.gateway.audit.append(
+            await self.gateway.audit.append(
                 agent=tool.agent if tool else "gateway",
                 tool=action.tool,
                 risk=action.risk,

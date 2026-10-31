@@ -21,7 +21,33 @@ jobs:
       - run: pytest -q
       - run: python evals/phase0/run.py --mock   # plumbing only; real gate runs on demand
 
-  # Real-model eval gate. Runs on main only, needs the secret.
+  # Persistence contract tests against the official Firestore emulator (slice 5).
+  firestore:
+    runs-on: ubuntu-latest
+    env:
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8085
+      JARVIS_REQUIRE_EMULATOR: "1"   # fail, never skip, if the emulator is unreachable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21" }
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: cloud-firestore-emulator
+      - run: pip install -e ".[dev]"
+      - name: Start Firestore emulator
+        run: |
+          gcloud emulators firestore start --host-port="$FIRESTORE_EMULATOR_HOST" > emulator.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -s "http://$FIRESTORE_EMULATOR_HOST" >/dev/null && exit 0
+            sleep 1
+          done
+          cat emulator.log; exit 1
+      - run: pytest -q -m firestore_emulator -rs
+
+  # Real-model eval gate. Runs on main only; skipped (not failed) when no Anthropic key is set.
   eval-gate:
     if: github.ref == 'refs/heads/main'
     needs: test
@@ -29,10 +55,17 @@ jobs:
     env:
       JARVIS_ANTHROPIC_API_KEY: ${{ secrets.JARVIS_ANTHROPIC_API_KEY }}
     steps:
+      - if: env.JARVIS_ANTHROPIC_API_KEY == ''
+        run: echo "::notice::No JARVIS_ANTHROPIC_API_KEY secret; real-model eval skipped."
       - uses: actions/checkout@v4
+        if: env.JARVIS_ANTHROPIC_API_KEY != ''
       - uses: actions/setup-python@v5
+        if: env.JARVIS_ANTHROPIC_API_KEY != ''
         with: { python-version: "3.12" }
-      - run: pip install -e ".[dev]"
-      - run: python evals/phase0/run.py
+      - if: env.JARVIS_ANTHROPIC_API_KEY != ''
+        run: pip install -e ".[dev]"
+      - if: env.JARVIS_ANTHROPIC_API_KEY != ''
+        run: python evals/phase0/run.py
       - uses: actions/upload-artifact@v4
+        if: env.JARVIS_ANTHROPIC_API_KEY != ''
         with: { name: phase0-eval-report, path: evals/phase0/report.json }

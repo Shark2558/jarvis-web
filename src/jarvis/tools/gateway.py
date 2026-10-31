@@ -22,7 +22,7 @@ from jarvis.core.guardrails import (
 )
 from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
-from jarvis.tools.audit import AuditLog
+from jarvis.tools.audit import AuditTrail
 from jarvis.tools.policy import Effect, Policy
 from jarvis.tools.registry import ToolRegistry
 
@@ -72,19 +72,19 @@ class GatewayResult:
 
 class Gateway:
     def __init__(
-        self, *, registry: ToolRegistry, policy: Policy, gate: ConfirmationGate, audit: AuditLog
+        self, *, registry: ToolRegistry, policy: Policy, gate: ConfirmationGate, audit: AuditTrail
     ) -> None:
         self.registry, self.policy, self.gate, self.audit = registry, policy, gate, audit
 
-    def pending(self) -> list[PendingAction]:
-        return self.gate.pending()
+    async def pending(self) -> list[PendingAction]:
+        return await self.gate.pending()
 
     async def execute(
         self, call: ToolCall, *, confirmation_id: str | None = None, scope: str | None = None
     ) -> GatewayResult:
         tool = self.registry.get(call.name)
         if tool is None:
-            self.audit.append(
+            await self.audit.append(
                 agent="gateway",
                 tool=call.name,
                 risk=ActionRisk.READ_ONLY,
@@ -96,7 +96,7 @@ class Gateway:
         try:
             tool.validate(call.arguments)
         except ValueError as exc:
-            self.audit.append(
+            await self.audit.append(
                 agent=tool.agent,
                 tool=tool.name,
                 risk=tool.risk,
@@ -108,7 +108,7 @@ class Gateway:
 
         effect = self.policy.decide(tool.name, tool.risk, call.arguments)
         if effect is Effect.DENY:
-            self.audit.append(
+            await self.audit.append(
                 agent=tool.agent,
                 tool=tool.name,
                 risk=tool.risk,
@@ -128,9 +128,9 @@ class Gateway:
                 scope=scope,
             )
             try:
-                self.gate.check(action, confirmation_id=confirmation_id)
+                await self.gate.check(action, confirmation_id=confirmation_id)
             except ConfirmationRequired as exc:
-                self.audit.append(
+                await self.audit.append(
                     agent=tool.agent,
                     tool=tool.name,
                     risk=tool.risk,
@@ -146,7 +146,7 @@ class Gateway:
                 out = await out
         except Exception as exc:  # noqa: BLE001 — tool failures are reported, not raised
             log.exception("tool failed", extra={"tool": tool.name})
-            self.audit.append(
+            await self.audit.append(
                 agent=tool.agent,
                 tool=tool.name,
                 risk=tool.risk,
@@ -155,7 +155,7 @@ class Gateway:
                 detail=_safe_detail(exc),
             )
             return GatewayResult(GatewayOutcome.ERROR, error=f"tool failed: {exc}")
-        self.audit.append(
+        await self.audit.append(
             agent=tool.agent,
             tool=tool.name,
             risk=tool.risk,

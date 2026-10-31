@@ -21,7 +21,7 @@ async def test_tool_round_trip(brain: Brain, provider: MockProvider, world) -> N
     blocks = second.messages[-1].content
     assert any(getattr(b, "type", "") == "tool_result" and b.tool_use_id == "t1" for b in blocks)
     assert resp.tool_calls == 1
-    assert brain.gateway.audit.entries()[-1].tool == "get_calendar"
+    assert (await brain.gateway.audit.tail(1)).entries[-1].tool == "get_calendar"
 
 
 async def test_tool_loop_round_cap(brain: Brain, provider: MockProvider) -> None:
@@ -56,9 +56,9 @@ async def test_irreversible_pauses_for_approval_then_resumes(
     assert world.sent == [{"to": "priya@example.com", "body": "Moving to 3."}]
     assert resp2.reply == "Sent, Sir."
     # the approval and execution are both on the audit chain
-    outcomes = [e.outcome for e in brain.gateway.audit.entries()]
+    outcomes = [e.outcome for e in (await brain.gateway.audit.tail(50)).entries]
     assert "awaiting_confirmation" in outcomes and "executed" in outcomes
-    assert brain.gateway.audit.verify()
+    assert await brain.gateway.audit.verify_all()
 
 
 async def test_decline_executes_nothing(brain: Brain, provider: MockProvider, world) -> None:
@@ -75,7 +75,7 @@ async def test_decline_executes_nothing(brain: Brain, provider: MockProvider, wo
     provider.script("Understood, nothing sent.")
     resp2 = await brain.decline(pid, session_id=resp.session_id)
     assert world.sent == [] and "nothing" in resp2.reply.lower()
-    assert brain.gateway.audit.entries()[-1].outcome == "declined"
+    assert (await brain.gateway.audit.tail(1)).entries[-1].outcome == "declined"
 
 
 async def test_api_approval_endpoints(client: AsyncClient, provider: MockProvider, world) -> None:

@@ -76,15 +76,17 @@ def test_policy_refuses_standing_allow_for_irreversible() -> None:
 
 
 # ---------------------------------------------------------------- audit
-def test_audit_chain_verifies_and_detects_tampering() -> None:
+async def test_audit_chain_verifies_and_detects_tampering() -> None:
     log = AuditLog()
-    log.append(agent="t", tool="a", risk=ActionRisk.READ_ONLY, outcome="done", args={"x": 1})
-    log.append(agent="t", tool="b", risk=ActionRisk.REVERSIBLE, outcome="done", args={})
-    assert log.verify() is True
-    assert len(log.entries()) == 2
-    assert log.entries()[1].prev_hash == log.entries()[0].hash
+    await log.append(agent="t", tool="a", risk=ActionRisk.READ_ONLY, outcome="done", args={"x": 1})
+    await log.append(agent="t", tool="b", risk=ActionRisk.REVERSIBLE, outcome="done", args={})
+    assert await log.verify_all() is True
+    tail = await log.tail(10)
+    assert tail.verified and len(tail.entries) == 2
+    assert tail.entries[1].prev_hash == tail.entries[0].hash
     log._entries[0] = log._entries[0].model_copy(update={"outcome": "denied"})  # tamper
-    assert log.verify() is False
+    assert await log.verify_all() is False
+    assert (await log.tail(10)).verified is False
 
 
 # ---------------------------------------------------------------- gateway
@@ -95,7 +97,7 @@ async def test_gateway_allow_runs_tool_and_audits(gateway: Gateway, world: InMem
     assert out.outcome is GatewayOutcome.EXECUTED
     assert out.result["created"] is True
     assert world.reminders[0]["text"] == "call bank"
-    e = gateway.audit.entries()[-1]
+    e = (await gateway.audit.tail(1)).entries[-1]
     assert (e.tool, e.outcome) == ("create_reminder", "executed")
 
 
@@ -108,7 +110,7 @@ async def test_gateway_asks_for_irreversible_and_runs_only_with_token(
     out = await gateway.execute(call)
     assert out.outcome is GatewayOutcome.AWAITING_CONFIRMATION
     assert out.pending is not None and world.sent == []
-    assert gateway.audit.entries()[-1].outcome == "awaiting_confirmation"
+    assert (await gateway.audit.tail(1)).entries[-1].outcome == "awaiting_confirmation"
 
     out2 = await gateway.execute(call, confirmation_id=out.pending.id)
     assert out2.outcome is GatewayOutcome.EXECUTED
@@ -139,7 +141,7 @@ async def test_gateway_deny_never_runs_tool(registry: ToolRegistry, world: InMem
         ToolCall(id="c4", name="send_message", arguments={"to": "a@b", "body": "x"})
     )
     assert out.outcome is GatewayOutcome.DENIED and world.sent == []
-    assert gw.audit.entries()[-1].outcome == "denied"
+    assert (await gw.audit.tail(1)).entries[-1].outcome == "denied"
 
 
 async def test_gateway_unknown_tool_and_bad_args(gateway: Gateway) -> None:

@@ -226,3 +226,40 @@ async def test_console_script_is_external_and_csp_has_no_unsafe_inline_script(
     assert 'src="/static/console.js"' in r.text
     js = await client.get("/static/console.js")
     assert js.status_code == 200 and "javascript" in js.headers["content-type"]
+
+
+def test_owner_emails_parse_from_real_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: pydantic-settings JSON-decodes list fields read from env vars, so a plain
+    'me@gmail.com' (what Cloud Run / Render pass) crashed startup. Must accept CSV."""
+    monkeypatch.setenv("JARVIS_OWNER_EMAILS", "Me@Gmail.com")
+    assert Settings(_env_file=None).owner_emails == ["me@gmail.com"]  # type: ignore[call-arg]
+    monkeypatch.setenv("JARVIS_OWNER_EMAILS", " a@b.com , C@d.org ")
+    assert Settings(_env_file=None).owner_emails == ["a@b.com", "c@d.org"]  # type: ignore[call-arg]
+    monkeypatch.setenv("JARVIS_OWNER_EMAILS", '["j@k.com"]')  # JSON form still works
+    assert Settings(_env_file=None).owner_emails == ["j@k.com"]  # type: ignore[call-arg]
+
+
+async def test_prod_app_boots_with_cloud_run_style_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Whole-app smoke test with exactly the env the deploy script sets (no provider injected)."""
+    env = {
+        "JARVIS_ENV": "prod",
+        "JARVIS_AUTH_MODE": "google",
+        "JARVIS_PUBLIC_BASE_URL": "https://jarvis-1.asia-south1.run.app",
+        "JARVIS_OWNER_EMAILS": "me@gmail.com",
+        "JARVIS_GOOGLE_CLIENT_ID": "cid.apps.googleusercontent.com",
+        "JARVIS_GOOGLE_CLIENT_SECRET": "GOCSPX-x",
+        "JARVIS_SESSION_SECRET": "z" * 40,
+        "JARVIS_API_TOKEN": "t" * 30,
+        "JARVIS_ANTHROPIC_API_KEY": "sk-ant-x",
+        "JARVIS_SESSION_BACKEND": "memory",
+        "JARVIS_LOG_JSON": "true",
+    }
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    app = create_app(Settings(_env_file=None))  # type: ignore[call-arg]
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="https://t") as c:
+            assert (await c.get("/health")).status_code == 200
+            r = await c.get("/auth/login", follow_redirects=False)
+            assert r.status_code in (302, 307) and "accounts.google.com" in r.headers["location"]
+            assert (await c.get("/")).status_code == 200

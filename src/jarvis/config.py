@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class LLMBackend(StrEnum):
@@ -58,7 +59,7 @@ class Settings(BaseSettings):
     auth_mode: AuthMode = AuthMode.TOKEN
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
-    owner_emails: list[str] = Field(
+    owner_emails: Annotated[list[str], NoDecode] = Field(
         default_factory=list,
         description="Comma-separated. Only these Google accounts may sign in. Authorization "
         "boundary — Google merely authenticates.",
@@ -75,7 +76,13 @@ class Settings(BaseSettings):
     @classmethod
     def _split_emails(cls, v: object) -> list[str]:
         if isinstance(v, str):
-            items = v.split(",")
+            stripped = v.strip()
+            if stripped.startswith("["):  # tolerate the JSON form too
+                import json
+
+                items = [str(x) for x in json.loads(stripped)]
+            else:
+                items = stripped.split(",")
         elif isinstance(v, list):
             items = [str(x) for x in v]
         else:

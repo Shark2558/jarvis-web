@@ -59,13 +59,17 @@ done
 
 say "5/5  Building and deploying (3-6 minutes the first time)"
 cd "$(dirname "$0")/.."
+show_logs() {
+  printf '\nDeploy failed. Last log lines from the service (copy these to Claude):\n'
+  gcloud run services logs read "$SERVICE" --region "$REGION" --limit 40 2>/dev/null || true
+}
 gcloud run deploy "$SERVICE" --source . --region "$REGION" \
   --allow-unauthenticated \
   --min-instances 0 --max-instances 1 \
   --memory 512Mi --cpu 1 --timeout 300 \
   --set-env-vars "JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},JARVIS_SESSION_BACKEND=memory,JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low" \
   --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_ANTHROPIC_API_KEY=jarvis-anthropic-key:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest" \
-  --quiet
+  --quiet || { show_logs; exit 1; }
 
 say "DONE. Open JARVIS at:  $BASE_URL"
 cat <<MSG

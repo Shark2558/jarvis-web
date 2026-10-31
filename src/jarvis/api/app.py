@@ -98,6 +98,9 @@ def create_app(
         set_trace_id(tid)
         response = await call_next(request)
         response.headers["x-trace-id"] = tid
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        if s.cookie_secure:  # i.e. not dev: we are behind TLS
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
     # ---- error mapping: never leak stack traces, always carry the trace id ----------------

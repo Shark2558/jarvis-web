@@ -1,6 +1,6 @@
 # Phase 2 · Slice 2 — Web console + owner-only Google sign-in + hosting
 
-Status: DONE (pending owner go-live) · 2026-11-01 · 61 tests · follows ECC loop
+Status: DONE (pending owner go-live) · 2026-11-01 · 65 tests · security-reviewed (0 critical/high; 2 medium + 2 low fixed) · follows ECC loop
 
 ## Owner decision that drove this slice
 "It has to be a web app, I should be able to access it from anywhere." → JARVIS is served

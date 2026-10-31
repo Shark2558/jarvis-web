@@ -28,13 +28,20 @@ class RateLimiter:
         self._now = now
         self._buckets: dict[str, _Bucket] = {}
 
+    def _evict_stalest(self) -> None:
+        """Drop the least-recently-seen quarter of buckets; a flood must not OOM us, and
+        clearing everything would reset legitimate clients' budgets."""
+        victims = sorted(self._buckets.items(), key=lambda kv: kv[1].updated)
+        for key, _ in victims[: max(1, len(victims) // 4)]:
+            del self._buckets[key]
+
     def allow(self, key: str) -> tuple[bool, float]:
         """Returns (allowed, seconds_until_next_token)."""
         now = self._now()
         b = self._buckets.get(key)
         if b is None:
             if len(self._buckets) >= MAX_TRACKED_CLIENTS:
-                self._buckets.clear()  # crude but bounded; a flood should not OOM us
+                self._evict_stalest()
             b = _Bucket(tokens=self.capacity, updated=now)
             self._buckets[key] = b
         b.tokens = min(self.capacity, b.tokens + (now - b.updated) * self.refill_per_s)
@@ -46,10 +53,11 @@ class RateLimiter:
 
 
 def client_key(request: Request) -> str:
-    # Render/most PaaS terminate TLS and set X-Forwarded-For; first hop is the client.
+    # Behind Render (and most PaaS) the proxy *appends* the real client IP as the LAST hop of
+    # X-Forwarded-For; earlier entries are attacker-controlled. Never key on the first entry.
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
-        return fwd.split(",")[0].strip()
+        return fwd.rsplit(",", 1)[-1].strip()
     return request.client.host if request.client else "unknown"
 
 

@@ -181,3 +181,48 @@ async def test_rate_limit_returns_429(settings: Settings) -> None:
             assert last.status_code == 429 and "retry-after" in last.headers
             # health is never rate limited (platform probes)
             assert (await c.get("/health")).status_code == 200
+
+
+# ---- review fixes (regressions) ------------------------------------------------------------
+
+
+async def test_rate_limit_key_cannot_be_spoofed_via_forwarded_for(settings: Settings) -> None:
+    """Render appends the real client IP as the *last* X-Forwarded-For hop; the first entries are
+    attacker-controlled. Cycling them must not mint fresh buckets."""
+    s = settings.model_copy(update={"rate_limit_per_minute": 2})
+    app = create_app(s, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            codes = []
+            for i in range(4):
+                hdr = {"X-Forwarded-For": f"10.0.0.{i}, 203.0.113.9"}
+                codes.append((await c.get("/v1/sessions", headers=hdr)).status_code)
+            assert codes == [200, 200, 429, 429]
+
+
+async def test_session_has_absolute_lifetime(gclient: AsyncClient, monkeypatch: Any) -> None:
+    import jarvis.api.auth as auth_mod
+
+    base = 1_700_000_000.0
+    monkeypatch.setattr(auth_mod, "_now", lambda: base)
+    await _login(gclient, OWNER)
+    assert (await gclient.get("/auth/me")).status_code == 200
+    # sliding refresh must NOT extend past the absolute cap
+    monkeypatch.setattr(auth_mod, "_now", lambda: base + auth_mod.SESSION_ABSOLUTE_MAX_S + 1)
+    assert (await gclient.get("/auth/me")).status_code == 401
+
+
+async def test_hardening_headers_on_json_responses(gclient: AsyncClient) -> None:
+    r = await gclient.get("/health")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert "max-age=" in r.headers.get("strict-transport-security", "max-age=")
+
+
+async def test_console_script_is_external_and_csp_has_no_unsafe_inline_script(
+    client: AsyncClient,
+) -> None:
+    r = await client.get("/")
+    assert "'unsafe-inline'" not in r.headers["content-security-policy"].split("style-src")[0]
+    assert 'src="/static/console.js"' in r.text
+    js = await client.get("/static/console.js")
+    assert js.status_code == 200 and "javascript" in js.headers["content-type"]

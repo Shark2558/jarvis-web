@@ -13,6 +13,7 @@ cross-site form cannot set custom headers, and we serve no CORS headers).
 from __future__ import annotations
 
 import secrets
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -28,6 +29,14 @@ CSRF_HEADER = "x-requested-with"
 CSRF_VALUE = "JARVIS"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 SESSION_EMAIL_KEY = "email"
+SESSION_ISSUED_KEY = "iat"
+SESSION_ABSOLUTE_MAX_S = 24 * 60 * 60  # the cookie's max_age slides; this one does not
+
+
+def _now() -> float:
+    return time.time()
+
+
 # Pinned endpoints (no discovery fetch at startup → boots offline, fails only at sign-in time).
 GOOGLE_ENDPOINTS = {
     "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
@@ -60,7 +69,13 @@ def session_email(request: Request, s: Settings) -> str | None:
     if s.auth_mode is not AuthMode.GOOGLE or "session" not in request.scope:
         return None
     email = request.session.get(SESSION_EMAIL_KEY)
-    if isinstance(email, str) and email.lower() in s.owner_emails:
+    issued = request.session.get(SESSION_ISSUED_KEY)
+    if not isinstance(email, str) or not isinstance(issued, int | float):
+        return None
+    if _now() - issued > SESSION_ABSOLUTE_MAX_S:
+        request.session.clear()  # absolute lifetime reached; replaying a stolen cookie ends here
+        return None
+    if email.lower() in s.owner_emails:
         return email
     return None
 
@@ -143,6 +158,7 @@ async def callback(request: Request, s: Settings = Depends(_settings)) -> Any:
             content={"error": "not_owner", "detail": "This JARVIS belongs to someone else."},
         )
     request.session[SESSION_EMAIL_KEY] = email
+    request.session[SESSION_ISSUED_KEY] = _now()
     log.info("owner signed in")
     return RedirectResponse(url="/", status_code=302)
 

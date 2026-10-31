@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from jarvis.api.auth import session_email
 from jarvis.config import Settings
@@ -32,11 +32,20 @@ async def console() -> HTMLResponse:
             "X-Frame-Options": "DENY",
             "Referrer-Policy": "no-referrer",
             "Content-Security-Policy": (
-                "default-src 'none'; script-src 'self' 'unsafe-inline'; "
+                "default-src 'none'; script-src 'self'; "
                 "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
                 "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
             ),
         },
+    )
+
+
+@router.get("/static/console.js", include_in_schema=False)
+async def console_js() -> FileResponse:
+    return FileResponse(
+        _STATIC / "console.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store"},
     )
 
 

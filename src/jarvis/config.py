@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,14 @@ class LLMBackend(StrEnum):
 class SessionBackend(StrEnum):
     MEMORY = "memory"
     REDIS = "redis"
+
+
+class AuthMode(StrEnum):
+    TOKEN = "token"  # bearer token only (CLI, evals, dev)
+    GOOGLE = "google"  # owner signs in with Google; bearer token still accepted for CLI
+
+
+MIN_SESSION_SECRET_LEN = 32
 
 
 class Settings(BaseSettings):
@@ -42,6 +50,37 @@ class Settings(BaseSettings):
         description="Bearer token required on every /v1 request. Mandatory when env != dev.",
     )
     max_input_chars: int = Field(default=16_000, description="Hard cap on a single user turn")
+    rate_limit_per_minute: int = Field(
+        default=120, description="Per-client-IP request budget for /v1 and /auth (0 = off)"
+    )
+
+    # --- web sign-in (owner only) ---
+    auth_mode: AuthMode = AuthMode.TOKEN
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    owner_emails: list[str] = Field(
+        default_factory=list,
+        description="Comma-separated. Only these Google accounts may sign in. Authorization "
+        "boundary — Google merely authenticates.",
+    )
+    session_secret: SecretStr | None = Field(
+        default=None, description="Signs the browser session cookie. ≥32 random chars."
+    )
+    public_base_url: str | None = Field(
+        default=None, description="Where the app is reachable, e.g. https://jarvis.onrender.com"
+    )
+    session_cookie_max_age_s: int = 12 * 60 * 60
+
+    @field_validator("owner_emails", mode="before")
+    @classmethod
+    def _split_emails(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            items = v.split(",")
+        elif isinstance(v, list):
+            items = [str(x) for x in v]
+        else:
+            return []
+        return [e.strip().lower() for e in items if e.strip()]
 
     # --- LLM ---
     llm_backend: LLMBackend = LLMBackend.ANTHROPIC
@@ -86,6 +125,28 @@ class Settings(BaseSettings):
             raise RuntimeError("JARVIS_API_TOKEN must be set when JARVIS_ENV != dev")
         if self.llm_backend is LLMBackend.ANTHROPIC and self.anthropic_api_key is None:
             raise RuntimeError("JARVIS_ANTHROPIC_API_KEY is required for the anthropic backend")
+        if self.auth_mode is AuthMode.GOOGLE:
+            self._require_google_auth_config()
+
+    def _require_google_auth_config(self) -> None:
+        if not self.google_client_id or self.google_client_secret is None:
+            raise RuntimeError(
+                "JARVIS_GOOGLE_CLIENT_ID and JARVIS_GOOGLE_CLIENT_SECRET are required "
+                "when JARVIS_AUTH_MODE=google"
+            )
+        if not self.public_base_url:
+            raise RuntimeError("JARVIS_PUBLIC_BASE_URL is required when JARVIS_AUTH_MODE=google")
+        if not self.owner_emails:
+            raise RuntimeError("JARVIS_OWNER_EMAILS must list at least one owner account")
+        secret = self.session_secret.get_secret_value() if self.session_secret else ""
+        if len(secret) < MIN_SESSION_SECRET_LEN:
+            raise RuntimeError(
+                f"JARVIS_SESSION_SECRET must be at least {MIN_SESSION_SECRET_LEN} characters"
+            )
+
+    @property
+    def cookie_secure(self) -> bool:
+        return self.env != "dev"
 
 
 @lru_cache(maxsize=1)

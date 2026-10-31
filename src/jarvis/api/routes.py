@@ -11,20 +11,17 @@ GET  /health                  liveness + dependency check (unauthenticated)
 
 from __future__ import annotations
 
-import secrets
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
+from jarvis.api.auth import require_auth
 from jarvis.config import Settings
 from jarvis.core.brain import Brain
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, SessionSummary
 from jarvis.memory.base import SessionStore
 
 router = APIRouter()
-_bearer = HTTPBearer(auto_error=False)
 
 
 # ---- dependencies --------------------------------------------------------------------------
@@ -40,21 +37,6 @@ def _brain(request: Request) -> Brain:
 
 def _store(request: Request) -> SessionStore:
     return request.app.state.store  # type: ignore[no-any-return]
-
-
-async def require_auth(
-    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    s: Settings = Depends(_settings),
-) -> None:
-    """Bearer-token auth. In dev with no token configured, requests pass through.
-    Phase 6 replaces this with OAuth2 / device tokens per the architecture."""
-    if s.api_token is None:
-        if s.env == "dev":
-            return
-        raise HTTPException(500, "server misconfigured: no API token")
-    expected = s.api_token.get_secret_value()
-    if creds is None or not secrets.compare_digest(creds.credentials, expected):
-        raise HTTPException(401, "invalid or missing bearer token")
 
 
 # ---- routes --------------------------------------------------------------------------------

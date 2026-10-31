@@ -1,0 +1,37 @@
+# render.yaml — Render Blueprint. In the Render dashboard: New + → Blueprint → pick this repo.
+# Secrets are sync:false → Render asks for them once in the dashboard; they never live in git.
+services:
+  - type: web
+    name: jarvis-shark2558          # → https://jarvis-shark2558.onrender.com (must be globally unique)
+    runtime: docker
+    plan: starter                   # $7/mo always-on. "free" also works but sleeps after 15 min idle.
+    region: singapore               # closest Render region to India
+    healthCheckPath: /health
+    autoDeploy: true                # every push to main redeploys
+    envVars:
+      - key: JARVIS_ENV
+        value: prod
+      - key: JARVIS_LOG_JSON
+        value: "true"
+      - key: JARVIS_AUTH_MODE
+        value: google
+      - key: JARVIS_PUBLIC_BASE_URL
+        value: https://jarvis-shark2558.onrender.com
+      - key: JARVIS_OWNER_EMAILS
+        sync: false                 # your Gmail address (the one added as Google test user)
+      - key: JARVIS_GOOGLE_CLIENT_ID
+        sync: false
+      - key: JARVIS_GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: JARVIS_ANTHROPIC_API_KEY
+        sync: false
+      - key: JARVIS_API_TOKEN
+        generateValue: true         # random; only needed for CLI/evals, not for the browser
+      - key: JARVIS_SESSION_SECRET
+        generateValue: true
+      - key: JARVIS_SESSION_BACKEND
+        value: memory               # Postgres slice replaces this
+      - key: JARVIS_DEFAULT_TIER
+        value: balanced
+      - key: JARVIS_EFFORT
+        value: low

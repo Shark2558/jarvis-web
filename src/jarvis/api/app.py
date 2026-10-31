@@ -12,9 +12,13 @@ from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
 
+from jarvis.api.auth import CSRFRejected, auth_router, build_oauth
+from jarvis.api.console import router as console_router
+from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import router as v1_router
-from jarvis.config import Settings, get_settings
+from jarvis.config import AuthMode, Settings, get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import InputRejected
 from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider
@@ -65,7 +69,25 @@ def create_app(
         finally:
             await app.state.store.close()
 
-    app = FastAPI(title="JARVIS", version="0.0.1", lifespan=lifespan)
+    app = FastAPI(title="JARVIS", version="0.0.1", lifespan=lifespan, docs_url=None, redoc_url=None)
+
+    if s.rate_limit_per_minute > 0:
+        app.middleware("http")(make_middleware(RateLimiter(s.rate_limit_per_minute)))
+
+    if s.auth_mode is AuthMode.GOOGLE:
+        s._require_google_auth_config()
+        assert s.session_secret is not None
+        # Added after the http middlewares so it runs *before* them (Starlette wraps outward).
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=s.session_secret.get_secret_value(),
+            session_cookie="jarvis_session",
+            max_age=s.session_cookie_max_age_s,
+            same_site="lax",
+            https_only=s.cookie_secure,
+        )
+        app.state.oauth = build_oauth(s)
+        app.include_router(auth_router)
 
     @app.middleware("http")
     async def trace_middleware(
@@ -101,5 +123,10 @@ def create_app(
     async def _llm(_: Request, exc: LLMError) -> JSONResponse:
         return _err(503, {"error": "llm_unavailable", "detail": str(exc)[:200]})
 
+    @app.exception_handler(CSRFRejected)
+    async def _csrf(_: Request, exc: CSRFRejected) -> JSONResponse:
+        return _err(403, {"error": "csrf", "detail": "missing X-Requested-With header"})
+
     app.include_router(v1_router)
+    app.include_router(console_router)
     return app

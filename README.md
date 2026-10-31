@@ -42,6 +42,29 @@ POST /v1/approvals/{id}/approve  ─► Gateway.execute(call, confirmation_id) �
 - Built following the ECC loop (plan → test → implement → fresh-context review → verify);
   see `CLAUDE.md`, `.claude/`, and `docs/plans/phase2-slice1-tool-spine.md`.
 
+## Phase 2 · slice 2 — web console, owner-only sign-in, hosting
+
+JARVIS is a **web app**: open `/` in any browser. One FastAPI service serves both the API and
+the console (`src/jarvis/api/static/console.html`) — chat, Approve/Decline for pending actions,
+and the hash-chained activity log.
+
+```
+JARVIS_AUTH_MODE=token   bearer JARVIS_API_TOKEN only (CLI, evals, local dev)
+JARVIS_AUTH_MODE=google  owner signs in with Google (OIDC + PKCE via Authlib)
+                         → verified email must be in JARVIS_OWNER_EMAILS (the authorization boundary)
+                         → signed HttpOnly SameSite=Lax cookie (Secure outside dev, 12 h)
+                         → cookie-authenticated writes need header X-Requested-With: JARVIS (CSRF)
+                         bearer token still accepted for scripts
+```
+
+- `/auth/login`, `/auth/callback`, `/auth/logout` (google mode); `/auth/me`; `/console/config`.
+- Per-IP token-bucket rate limit on `/v1` and `/auth` (`JARVIS_RATE_LIMIT_PER_MINUTE`); `/health` exempt.
+- Outside `dev`, startup fails unless the Google config is complete (`require_prod_invariants`).
+- Hosting: `render.yaml` is a Render Blueprint — Docker web service, secrets entered once in the
+  dashboard, auto-deploy on push. See `docs/plans/phase2-slice2-web-console-auth.md`.
+- Known limitation until the Postgres slice: sessions, pending approvals and the audit chain are
+  in-memory and reset on redeploy.
+
 ## Quick start
 
 ```bash

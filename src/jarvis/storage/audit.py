@@ -10,6 +10,7 @@ long the history grows. `verify_all()` walks the whole chain (for audits, not pa
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
@@ -25,6 +26,10 @@ class DocAuditLog:
         self._d = docs
         self._col = f"{prefix}audit"
         self._head = f"{prefix}meta/audit_head"
+        # In-process appends queue here instead of fighting over the head document's lock
+        # (a burst of concurrent transactions can exhaust Firestore's retries). The
+        # transaction still protects the chain across processes.
+        self._append_lock = asyncio.Lock()
 
     def _path(self, seq: int) -> str:
         return f"{self._col}/{seq:012d}"
@@ -56,7 +61,8 @@ class DocAuditLog:
             tx.set(self._head, {"seq": e.seq, "hash": e.hash})
             return e
 
-        return await self._d.transaction(link)
+        async with self._append_lock:
+            return await self._d.transaction(link)
 
     async def _read_head(self) -> tuple[int, str] | None:
         head = await self._d.get(self._head)

@@ -16,7 +16,7 @@ from jarvis.core.models import Session, Turn
 from jarvis.llm.base import Role, TextBlock, ToolCall, ToolResultBlock
 from jarvis.storage.approvals import DocApprovalStore
 from jarvis.storage.audit import DocAuditLog
-from jarvis.storage.docs import Delete, Docs, MemoryDocs, Query, Set
+from jarvis.storage.docs import Delete, DocExists, Docs, MemoryDocs, Query, Set
 from jarvis.storage.sessions import DocSessionStore
 from jarvis.tools.audit import AuditLog
 
@@ -409,3 +409,69 @@ async def test_doc_audit_detects_tampering_and_deletion(docs: Docs, prefix: str)
     assert (await log.tail(10)).verified is True
     await docs.write([Delete(f"{prefix}audit/{3:012d}")])
     assert (await log.tail(10)).verified is False
+
+
+def test_safe_id_rejects_newlines_and_paths() -> None:
+    from jarvis.storage.sessions import safe_id
+
+    assert safe_id("sess_abc-123")
+    for bad in ("abc\n", "a/b", "..", "__x__", "", "a" * 129, "sp ace"):
+        assert not safe_id(bad), bad
+
+
+async def test_doc_audit_detects_deleted_head_and_never_overwrites(docs: Docs, prefix: str) -> None:
+    log = DocAuditLog(docs, prefix=prefix)
+    for t in ("a", "b"):
+        await _append(log, t)
+    first = await docs.get(f"{prefix}audit/{1:012d}")
+    await docs.write([Delete(f"{prefix}meta/audit_head")])
+    assert (await log.tail(10)).verified is False
+    assert await log.verify_all() is False
+    with pytest.raises(DocExists):
+        await _append(log, "c")  # would restart at seq 1: refused, entry 1 untouched
+    assert await docs.get(f"{prefix}audit/{1:012d}") == first
+
+
+async def test_session_with_missing_turn_docs_is_never_cached_as_complete(prefix: str) -> None:
+    docs = MemoryDocs()
+    store = DocSessionStore(docs, prefix=prefix)
+    s = _session(5)
+    await store.save(s)
+    await docs.write([Delete(f"{prefix}sessions/{s.id}/turns/000003")])  # a gap
+    fresh = DocSessionStore(docs, prefix=prefix)
+    got = await fresh.get(s.id)
+    assert got is not None
+    got.append(Turn(role=Role.USER, content="next"))
+    await fresh.save(got)  # must rewrite every turn, not trust positions read across a gap
+    again = await DocSessionStore(docs, prefix=prefix).get(s.id)
+    assert again is not None
+    assert [t.content for t in again.turns] == [t.content for t in got.turns]
+
+
+async def test_session_delete_removes_turns_before_header(prefix: str) -> None:
+    docs = MemoryDocs()
+    store = DocSessionStore(docs, prefix=prefix)
+    s = _session(3)
+    await store.save(s)
+    docs.log.clear()
+    await store.delete(s.id)
+    assert docs.log[-1].path == f"{prefix}sessions/{s.id}"  # retryable if interrupted
+
+
+async def test_doc_audit_tail_ignores_entries_newer_than_the_head_it_read(prefix: str) -> None:
+    docs = MemoryDocs()
+    log = DocAuditLog(docs, prefix=prefix)
+    for t in ("a", "b"):
+        await _append(log, t)
+    real_get = docs.get
+
+    async def get_then_race(path: str):  # type: ignore[no-untyped-def]
+        out = await real_get(path)
+        if path.endswith("meta/audit_head"):
+            docs.get = real_get  # type: ignore[method-assign]
+            await _append(DocAuditLog(docs, prefix=prefix), "c")  # lands between the reads
+        return out
+
+    docs.get = get_then_race  # type: ignore[method-assign]
+    tail = await log.tail(10)
+    assert tail.verified and [e.tool for e in tail.entries] == ["a", "b"]

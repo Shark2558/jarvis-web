@@ -19,7 +19,7 @@ from jarvis.api.auth import require_auth
 from jarvis.config import Settings
 from jarvis.core.brain import Brain
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, SessionSummary
-from jarvis.memory.base import SessionStore
+from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.tools.audit import AuditEntry
 
 router = APIRouter()
@@ -108,19 +108,27 @@ async def chat_stream(req: ChatRequest, brain: Brain = Depends(_brain)) -> Strea
 async def list_sessions(
     user_id: str = "owner", limit: int = 50, store: SessionStore = Depends(_store)
 ) -> list[SessionSummary]:
-    return await store.list_for_user(user_id, limit=min(limit, 200))
+    return await store.list_for_user(user_id, limit=max(1, min(limit, 200)))
 
 
 @router.get(
     "/v1/sessions/{session_id}", response_model=Session, dependencies=[Depends(require_auth)]
 )
-async def get_session(session_id: str, store: SessionStore = Depends(_store)) -> Session:
-    return await store.get_or_raise(session_id)
+async def get_session(
+    session_id: str, user_id: str = "owner", store: SessionStore = Depends(_store)
+) -> Session:
+    s = await store.get_or_raise(session_id)
+    if s.user_id != user_id:
+        raise SessionNotFound(session_id)
+    return s
 
 
 @router.delete("/v1/sessions/{session_id}", status_code=204, dependencies=[Depends(require_auth)])
-async def delete_session(session_id: str, store: SessionStore = Depends(_store)) -> None:
-    if not await store.delete(session_id):
+async def delete_session(
+    session_id: str, user_id: str = "owner", brain: Brain = Depends(_brain)
+) -> None:
+    """Deletes the conversation and its waiting approvals. Permanent (the console confirms)."""
+    if not await brain.forget(session_id, user_id=user_id):
         raise HTTPException(404, "session not found")
 
 

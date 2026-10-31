@@ -11,11 +11,23 @@ import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
-from google.api_core.exceptions import FailedPrecondition
+from google.api_core.exceptions import AlreadyExists, Conflict, FailedPrecondition
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
-from jarvis.storage.docs import Delete, Doc, Docs, DocTx, IndexNotReady, Op, Query, T, chunks
+from jarvis.storage.docs import (
+    Create,
+    Delete,
+    Doc,
+    DocExists,
+    Docs,
+    DocTx,
+    IndexNotReady,
+    Op,
+    Query,
+    T,
+    chunks,
+)
 
 TX_ATTEMPTS = 10  # contention is rare for one owner; retries are cheap
 
@@ -30,6 +42,9 @@ class _FirestoreTx:
 
     def set(self, path: str, data: Doc) -> None:
         self._t.set(self._c.document(path), data)
+
+    def create(self, path: str, data: Doc) -> None:
+        self._t.create(self._c.document(path), data)
 
     def delete(self, path: str) -> None:
         self._t.delete(self._c.document(path))
@@ -68,9 +83,14 @@ class FirestoreDocs(Docs):
                 ref = self._c.document(op.path)
                 if isinstance(op, Delete):
                     batch.delete(ref)
+                elif isinstance(op, Create):
+                    batch.create(ref, op.data)
                 else:
                     batch.set(ref, op.data)
-            await batch.commit()
+            try:
+                await batch.commit()
+            except (AlreadyExists, Conflict) as exc:
+                raise DocExists(str(exc)[:200]) from exc
 
     async def transaction(self, fn: Callable[[DocTx], Awaitable[T]]) -> T:
         @firestore.async_transactional
@@ -78,8 +98,17 @@ class FirestoreDocs(Docs):
             return await fn(_FirestoreTx(self._c, tx))
 
         async with self._tx_lock:
-            result: T = await run(self._c.transaction(max_attempts=TX_ATTEMPTS))
+            try:
+                result: T = await run(self._c.transaction(max_attempts=TX_ATTEMPTS))
+            except (AlreadyExists, Conflict) as exc:
+                raise DocExists(str(exc)[:200]) from exc
         return result
 
     async def close(self) -> None:
-        self._c.close()  # type: ignore[no-untyped-call]
+        self._c.close()  # type: ignore[no-untyped-call]  # HTTP side only
+        api = getattr(self._c, "_firestore_api_internal", None)  # private; SDK pinned <3
+        if api is not None:
+            try:
+                await api.transport.close()
+            except Exception:  # noqa: BLE001 — best effort at shutdown
+                pass

@@ -1,6 +1,6 @@
 # Phase 2 · Slice 5 — Persistence: conversations, approvals and the audit chain survive scale-to-zero
 
-Status: IN PROGRESS · 2026-11-01
+Status: DONE · 2026-11-01 · 165 tests (+27 on the Firestore emulator in CI) · ECC loop · two fresh-context reviews: 2 HIGH + 5 MEDIUM found and fixed (see end)
 
 ## Problem
 Cloud Run scales JARVIS to zero when idle. Sessions, pending approvals and the hash-chained
@@ -96,3 +96,22 @@ is permanent); create the composite index (idempotent, async); grant the service
    >500-turn chunking, header-last ordering.
 4. API: approval survives app restart; transcript survives restart; `session_id` on approvals.
 5. Contract suite parametrized over MemoryDocs / FirestoreDocs(emulator).
+
+## Fresh-context review (security + correctness, independent) — outcome
+| Sev | Finding | Fix |
+|---|---|---|
+| HIGH | Two approves racing (or approve vs decline): the loser re-stored the action as a NEW pending approval → approving that card sent twice; loser also overwrote the transcript's "executed" record | `ConfirmationInvalid`: a spent/expired/mismatched token never stores anything; gateway outcome `CONFIRMATION_INVALID` → 404 before the session is touched; per-conversation async lock serialises chat / approve / decline / delete |
+| HIGH | Audit append failing AFTER a tool ran raised → no record of a sent message, retry possible | `_audit_after_run`: post-execution audit failures are logged loudly, the result is still returned and recorded |
+| MED | Deleting the audit head made `tail`/`verify_all` report verified; next append overwrote entry 1 | missing head + existing entries = not verified; entries written create-only (`DocTx.create` → `DocExists`) |
+| MED | Whole-chain rewrite by anyone with datastore.user is undetectable in-database | each append also logs `(audit_seq, audit_hash)` to Cloud Logging as an external anchor |
+| MED | datastore.user + secretAccessor on the default compute SA, which is also the build identity | dedicated runtime SA `jarvis-run`; build SA loses secretAccessor (after a successful deploy) and never gets Firestore |
+| MED | save() after delete resurrected a conversation; concurrent saves lost turns | per-conversation lock (in-process); cross-process rev precondition deferred — **do not raise max-instances before adding it** |
+| MED | `get()` cached turn digests positionally across a gap → later save skipped a needed write | cache only when turn ids are exactly 000001..count |
+| LOW | `tail` head/window race showed "Log tampered" | ignore entries newer than the head read (+4 row slack) |
+| LOW | delete left waiting approvals behind; header-first delete not retryable | `Brain.forget` cancels the conversation's approvals; turns deleted first, header last |
+| LOW | `SAFE_ID` `$` accepted a trailing newline | `fullmatch` / `\Z` |
+| LOW | rejected first message left an empty conversation | validate input before creating the session |
+| LOW | console: approve during a reply; cleared saved conversation on any error | busy guard; clear only on 404 |
+| LOW | `limit<=0` → Firestore 500; gRPC channel not closed | clamp ≥1; close transport |
+
+Accepted / deferred: `user_id` is still a request parameter, not derived from the signed-in email (safe with one owner email; fix before adding a second owner). Approve executes the stored arguments; a client-side hash of the displayed arguments is a later hardening.

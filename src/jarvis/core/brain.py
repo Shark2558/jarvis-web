@@ -10,7 +10,10 @@ Everything here is vendor-neutral. Phase 2 inserts the tool-calling loop between
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import time
+import weakref
 from collections.abc import AsyncIterator
 
 from jarvis.config import Settings
@@ -71,6 +74,23 @@ class Brain:
         self.s = settings
         self.gateway = gateway
         self._system = build_system_prompt(honorific=settings.user_honorific)
+        # One owner action at a time per conversation (chat, approve, decline, delete): no
+        # lost turns, no double execution, no resurrected deletes. Locks vanish when unused.
+        self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
+
+    @contextlib.asynccontextmanager
+    async def _serialised(self, session_id: str | None) -> AsyncIterator[None]:
+        if not session_id:
+            yield
+            return
+        lock = self._locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[session_id] = lock
+        async with lock:
+            yield
 
     def _tools_on(self, spec: BrainSpec) -> bool:
         """Tools exist AND this brain may see them. A training brain never gets tool specs —
@@ -135,14 +155,19 @@ class Brain:
     # ---- the loop ------------------------------------------------------------------------
 
     async def chat(self, req: ChatRequest) -> ChatResponse:
+        async with self._serialised(req.session_id):
+            return await self._chat(req)
+
+    async def _chat(self, req: ChatRequest) -> ChatResponse:
         t0 = time.perf_counter()
         trace_id = get_trace_id()
         if req.brain:
             self.brains.get(req.brain)  # fail before creating an orphan session
+        # validate first: a rejected first message must not leave an empty conversation
+        text = guard_input(req.message, max_chars=self.s.max_input_chars)
         session = await self._load_or_create(req)
         spec = self._resolve_brain(session, req)
 
-        text = guard_input(req.message, max_chars=self.s.max_input_chars)
         user_turn = Turn(role=Role.USER, content=text, trace_id=trace_id)
         session.append(user_turn)
         # persist the user turn before the LLM call so a crash never loses owner input
@@ -292,6 +317,19 @@ class Brain:
         session.metadata["_rounds"] = rounds
         return completion, pending
 
+    # ---- forgetting -----------------------------------------------------------------------
+
+    async def forget(self, session_id: str, *, user_id: str = "owner") -> bool:
+        """Owner's delete right: the conversation and its waiting approvals, permanently.
+        Waits for any reply still being written, so a delete is never undone by it."""
+        async with self._serialised(session_id):
+            session = await self.store.get(session_id)
+            if session is None or session.user_id != user_id:
+                return False
+            if self.gateway is not None:
+                await self.gateway.gate.cancel_scope(f"{user_id}:{session_id}")
+            return await self.store.delete(session_id)
+
     # ---- approvals ----------------------------------------------------------------------
 
     async def approve(
@@ -309,6 +347,14 @@ class Brain:
         )
 
     async def _decide(
+        self, approval_id: str, *, approved: bool, session_id: str, user_id: str
+    ) -> ChatResponse:
+        async with self._serialised(session_id):
+            return await self._decide_locked(
+                approval_id, approved=approved, session_id=session_id, user_id=user_id
+            )
+
+    async def _decide_locked(
         self, approval_id: str, *, approved: bool, session_id: str, user_id: str
     ) -> ChatResponse:
         """Owner decision on a pending R3 action.
@@ -330,6 +376,9 @@ class Brain:
         call = ToolCall(id=f"approve_{approval_id}", name=action.tool, arguments=action.arguments)
         if approved:
             gr = await self.gateway.execute(call, confirmation_id=approval_id, scope=scope)
+            if gr.outcome is GatewayOutcome.CONFIRMATION_INVALID:
+                # lost a race with another approve/decline: nothing ran, touch nothing
+                raise LookupError(f"no pending approval {approval_id} in this session")
             done = gr.outcome is GatewayOutcome.EXECUTED
             fallback = (
                 f"Done, Sir: {action.summary}."
@@ -426,13 +475,19 @@ class Brain:
 
     async def chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
         """Streaming variant for the CLI (and Phase 1 TTS). Persists the full reply at the end."""
+        async with self._serialised(req.session_id):
+            async for delta in self._chat_stream(req):
+                yield delta
+
+    async def _chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
         trace_id = get_trace_id()
         if req.brain:
             self.brains.get(req.brain)
+        # validate first: a rejected first message must not leave an empty conversation
+        text = guard_input(req.message, max_chars=self.s.max_input_chars)
         session = await self._load_or_create(req)
         spec = self._resolve_brain(session, req)
         router = self.brains.router_for(spec.id)
-        text = guard_input(req.message, max_chars=self.s.max_input_chars)
         session.append(Turn(role=Role.USER, content=text, trace_id=trace_id))
         await self.store.save(session)
 

@@ -27,14 +27,14 @@ from jarvis.storage.docs import Delete, Docs, IndexNotReady, Op, Query, Set
 
 log = get_logger(__name__)
 
-SAFE_ID = re.compile(r"^(?!__.*__$)[A-Za-z0-9_-]{1,128}$")  # also a valid Firestore doc id
+SAFE_ID = re.compile(r"(?!__.*__\Z)[A-Za-z0-9_-]{1,128}")  # also a valid Firestore doc id
 CACHE_SESSIONS = 64
 PING_TTL_S = 60.0
 LIST_FALLBACK_SCAN = 500
 
 
 def safe_id(value: str) -> bool:
-    return bool(SAFE_ID.match(value))
+    return SAFE_ID.fullmatch(value) is not None
 
 
 def _digest(text: str) -> str:
@@ -91,14 +91,18 @@ class DocSessionStore(SessionStore):
                 extra={"session_id": session_id, "error": type(exc).__name__},
             )
             return None
-        if len(turn_jsons) < count:
+        if len(turn_jsons) != count:
             log.error(
                 "session is missing turns",
                 extra={"session_id": session_id, "expected": count, "found": len(turn_jsons)},
             )
-        self._remember(
-            _Known(str(header.get("rev", "")), session, tuple(_digest(j) for j in turn_jsons))
-        )
+        contiguous = [tid for tid, _ in rows] == [f"{i + 1:06d}" for i in range(count)]
+        if contiguous:
+            self._remember(
+                _Known(str(header.get("rev", "")), session, tuple(_digest(j) for j in turn_jsons))
+            )
+        else:  # never trust positions read across a gap: the next save rewrites every turn
+            self._known.pop(session_id, None)
         return session.model_copy(deep=True)
 
     async def save(self, session: Session) -> None:
@@ -140,9 +144,11 @@ class DocSessionStore(SessionStore):
         if not safe_id(session_id) or await self._d.get(self._header(session_id)) is None:
             return False
         turns = await self._d.query(Query(f"{self._col}/{session_id}/turns"))
-        # header first: a half-finished delete leaves invisible turn docs, never a broken chat
-        ops: list[Op] = [Delete(self._header(session_id))]
-        ops += [Delete(f"{self._col}/{session_id}/turns/{tid}") for tid, _ in turns]
+        # header LAST: if a long delete is interrupted the conversation is still listed (with
+        # fewer turns) and the owner can simply delete it again; no private text is orphaned
+        ops: list[Op] = [Delete(f"{self._col}/{session_id}/turns/{tid}") for tid, _ in turns]
+        ops.append(Delete(self._header(session_id)))
+        self._known.pop(session_id, None)
         await self._d.write(ops)
         self._known.pop(session_id, None)
         return True

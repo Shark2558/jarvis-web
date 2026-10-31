@@ -8,6 +8,7 @@ import pytest
 from jarvis.core.guardrails import (
     ActionRisk,
     ConfirmationGate,
+    ConfirmationInvalid,
     ConfirmationRequired,
     PendingAction,
 )
@@ -39,9 +40,10 @@ async def test_irreversible_requires_then_accepts_confirmation() -> None:
 
     await gate.check(action, confirmation_id=action.id)  # confirmed → no raise
     assert (await gate.pending()) == []
-    # a confirmation token is single-use
-    with pytest.raises(ConfirmationRequired):
+    # a confirmation token is single-use, and a spent token never re-creates the approval
+    with pytest.raises(ConfirmationInvalid):
         await gate.check(action, confirmation_id=action.id)
+    assert (await gate.pending()) == []
 
 
 async def test_argument_drift_invalidates_confirmation() -> None:
@@ -55,8 +57,9 @@ async def test_argument_drift_invalidates_confirmation() -> None:
         risk=ActionRisk.IRREVERSIBLE,
         summary=proposed.summary,
     )
-    with pytest.raises(ConfirmationRequired):
+    with pytest.raises(ConfirmationInvalid):
         await gate.check(executed, confirmation_id=proposed.id)
+    assert [p.id for p in await gate.pending()] == [proposed.id]  # drift stored nothing new
 
 
 async def test_expired_confirmation_rejected() -> None:
@@ -66,7 +69,7 @@ async def test_expired_confirmation_rejected() -> None:
         await gate.check(action)
     action.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     await gate.store.put(action)
-    with pytest.raises(ConfirmationRequired):
+    with pytest.raises(ConfirmationInvalid):
         await gate.check(action, confirmation_id=action.id)
 
 
@@ -80,10 +83,21 @@ async def test_bogus_confirmation_keeps_action_pending_and_valid_tokens_intact()
     for x in (a, b):
         with pytest.raises(ConfirmationRequired):
             await gate.check(x)
-    with pytest.raises(ConfirmationRequired) as ei:
+    with pytest.raises(ConfirmationInvalid):
         await gate.check(a, confirmation_id="bogus")
-    assert ei.value.action.id in {p.id for p in (await gate.pending())}  # still approvable
-    with pytest.raises(ConfirmationRequired):
+    assert a.id in {p.id for p in (await gate.pending())}  # still approvable
+    with pytest.raises(ConfirmationInvalid):
         await gate.check(a, confirmation_id=b.id)  # token for another tool
     assert {p.id for p in (await gate.pending())} == {a.id, b.id}  # b's token not consumed
     await gate.check(b, confirmation_id=b.id)  # and still works
+
+
+async def test_cancel_scope_removes_only_that_conversations_approvals() -> None:
+    gate = ConfirmationGate()
+    mine, other = _send_email(), _send_email(body="x")
+    mine.scope, other.scope = "owner:sess_a", "owner:sess_b"
+    for x in (mine, other):
+        with pytest.raises(ConfirmationRequired):
+            await gate.check(x)
+    assert await gate.cancel_scope("owner:sess_a") == 1
+    assert [p.id for p in await gate.pending()] == [other.id]

@@ -31,7 +31,7 @@
     if (!r.ok) {
       let detail = r.statusText;
       try { const j = await r.json(); detail = j.detail || j.error || detail; } catch (_) {}
-      throw new Error(detail);
+      const err = new Error(detail); err.status = r.status; throw err;
     }
     return r.status === 204 ? null : r.json();
   }
@@ -238,8 +238,10 @@
     try {
       const sess = await api(`/v1/sessions/${encodeURIComponent(id)}`);
       setSession(sess.id); renderTranscript(sess); return true;
-    } catch (_) {
-      if (id === state.sessionId || id === lsGet('jarvis_session')) setSession(null);
+    } catch (e) {
+      // forget the remembered conversation only if it is really gone (not on a cold-start 503)
+      if (e.status === 404 && (id === state.sessionId || id === lsGet('jarvis_session'))) setSession(null);
+      else if (e.status !== 404 && e.status !== 401) addMsg('error', 'Couldn\'t open that conversation. ' + e.message);
       return false;
     }
   }
@@ -300,10 +302,13 @@
     finally { busy(false); $('input').focus(); }
   }
   async function decide(id, action, card, sid) {
+    if (state.busy) return; // one action at a time: a reply may still be arriving
     const target = sid || state.sessionId;
     if (!target) { addMsg('error', 'This approval belongs to a conversation that no longer exists.'); return; }
     card.querySelectorAll('button').forEach(b => { b.disabled = true; });
-    if (target !== state.sessionId) await loadConversation(target); // show it where it belongs
+    if (target !== state.sessionId && !(await loadConversation(target))) { // show it where it belongs
+      card.querySelectorAll('button').forEach(b => { b.disabled = false; }); refreshSide(); return;
+    }
     busy(true);
     try { handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } }), { decided: true })); }
     catch (e) { addMsg('error', `Couldn't ${action}. ` + e.message); refreshSide(); }

@@ -5,7 +5,10 @@
 # URL (the app does its own Google sign-in, owner-only) capped at ONE instance and scale-to-zero.
 # Memory: conversations, pending approvals and the audit chain live in Firestore (Native mode)
 # in THIS project, region asia-south1, inside the free tier. No key: the service account is used.
-# Why still one instance: rate limiting is per process, and one owner never needs more.
+# Runs as its own service account (jarvis-run): only it can read the secrets and the database;
+# the build robot (default compute account) can do neither.
+# Why still one instance: rate limiting and the per-conversation write queue are per process.
+# Raise --max-instances only after sessions gain a cross-process concurrency check.
 set -euo pipefail
 
 SERVICE="${SERVICE:-jarvis}"
@@ -27,7 +30,7 @@ say "1/6  Project: $PROJECT   Region: $REGION   Address will be: $BASE_URL"
 
 say "2/6  Switching on the Google services JARVIS needs (takes ~1 minute)"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
-  secretmanager.googleapis.com firestore.googleapis.com --quiet
+  secretmanager.googleapis.com firestore.googleapis.com iam.googleapis.com --quiet
 
 say "3/6  Your details (typing is hidden for secrets; Enter keeps the saved value on a re-run)"
 secret_exists() { gcloud secrets describe "$1" >/dev/null 2>&1; }
@@ -133,13 +136,27 @@ IDX_OUT="$(gcloud firestore indexes composite create --database='(default)' --co
        printf '  %s\n' "$IDX_OUT" | tail -2 ;;
   esac
 
-say "5/6  Giving the service permission to read the secrets, use its memory, and build the app"
-SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-for role in roles/secretmanager.secretAccessor roles/cloudbuild.builds.builder \
-            roles/artifactregistry.writer roles/logging.logWriter roles/storage.objectViewer \
-            roles/datastore.user; do
-  gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:${SA}" --role="$role" \
-    --condition=None --quiet >/dev/null
+say "5/6  Permissions: JARVIS's own account reads secrets + memory; the build account only builds"
+bind() { # member role  (a brand-new service account can take a few seconds to be visible)
+  local n
+  for n in 1 2 3 4 5 6; do
+    gcloud projects add-iam-policy-binding "$PROJECT" --member="$1" --role="$2" \
+      --condition=None --quiet >/dev/null 2>&1 && return 0
+    sleep 5
+  done
+  die "Could not grant $2 to $1."
+}
+RUN_SA="jarvis-run@${PROJECT}.iam.gserviceaccount.com"
+gcloud iam service-accounts describe "$RUN_SA" >/dev/null 2>&1 || \
+  gcloud iam service-accounts create jarvis-run --display-name="JARVIS (runtime)" --quiet >/dev/null \
+  || die "Could not create the jarvis-run service account."
+for role in roles/secretmanager.secretAccessor roles/datastore.user roles/logging.logWriter; do
+  bind "serviceAccount:${RUN_SA}" "$role"
+done
+SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"  # builds the container
+for role in roles/cloudbuild.builds.builder roles/artifactregistry.writer roles/logging.logWriter \
+            roles/storage.objectViewer; do
+  bind "serviceAccount:${SA}" "$role"
 done
 
 say "6/6  Building and deploying (3-6 minutes the first time)"
@@ -149,12 +166,19 @@ show_logs() {
   gcloud run services logs read "$SERVICE" --region "$REGION" --limit 40 2>/dev/null || true
 }
 gcloud run deploy "$SERVICE" --source . --region "$REGION" \
+  --service-account "$RUN_SA" \
   --allow-unauthenticated \
   --min-instances 0 --max-instances 1 \
   --memory 512Mi --cpu 1 --timeout 300 \
   --set-env-vars "JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20" \
   --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest" \
   --quiet || { show_logs; exit 1; }
+
+# Only now that JARVIS runs as jarvis-run: earlier versions ran as (and let) the build account
+# read the secrets; it no longer needs to. Done after the deploy so a failed deploy never
+# leaves the previous version unable to start. (Already absent = fine.)
+gcloud projects remove-iam-policy-binding "$PROJECT" --member="serviceAccount:${SA}" \
+  --role=roles/secretmanager.secretAccessor --condition=None --quiet >/dev/null 2>&1 || true
 
 say "DONE. Open JARVIS at:  $BASE_URL"
 cat <<MSG

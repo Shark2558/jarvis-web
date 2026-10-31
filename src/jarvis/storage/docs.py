@@ -23,8 +23,20 @@ class IndexNotReady(RuntimeError):
     """The query needs a composite index that does not exist (yet). Callers may fall back."""
 
 
+class DocExists(RuntimeError):
+    """A create-only write hit an existing document (append-only data must never be replaced)."""
+
+
 @dataclass(frozen=True)
 class Set:
+    path: str
+    data: Doc
+
+
+@dataclass(frozen=True)
+class Create:
+    """Create-only: the whole transaction fails with DocExists if the document exists."""
+
     path: str
     data: Doc
 
@@ -34,7 +46,7 @@ class Delete:
     path: str
 
 
-Op = Set | Delete
+Op = Set | Create | Delete
 
 
 @dataclass(frozen=True)
@@ -52,6 +64,8 @@ class DocTx(Protocol):
     async def get(self, path: str) -> Doc | None: ...
 
     def set(self, path: str, data: Doc) -> None: ...
+
+    def create(self, path: str, data: Doc) -> None: ...
 
     def delete(self, path: str) -> None: ...
 
@@ -94,6 +108,9 @@ class _MemoryTx:
 
     def set(self, path: str, data: Doc) -> None:
         self.ops.append(Set(path, copy.deepcopy(data)))
+
+    def create(self, path: str, data: Doc) -> None:
+        self.ops.append(Create(path, copy.deepcopy(data)))
 
     def delete(self, path: str) -> None:
         self.ops.append(Delete(path))
@@ -141,8 +158,11 @@ class MemoryDocs(Docs):
         return [(i, copy.deepcopy(d)) for i, d in rows]
 
     def _apply(self, ops: Sequence[Op]) -> None:
+        clash = next((o.path for o in ops if isinstance(o, Create) and o.path in self._data), None)
+        if clash is not None:  # all-or-nothing, like a Firestore commit
+            raise DocExists(clash)
         for op in ops:
-            if isinstance(op, Set):
+            if isinstance(op, Set | Create):
                 self._data[op.path] = copy.deepcopy(op.data)
                 self.sets += 1
             else:

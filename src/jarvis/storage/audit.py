@@ -18,6 +18,7 @@ from jarvis.storage.docs import Docs, DocTx, Query
 from jarvis.tools.audit import GENESIS, AuditEntry, AuditTail, make_entry, verify_window
 
 log = get_logger(__name__)
+RACE_SLACK = 4  # extra rows so appends racing this read don't shrink the window
 
 
 class DocAuditLog:
@@ -52,11 +53,16 @@ class DocAuditLog:
                 args=args,
                 detail=detail,
             )
-            tx.set(self._path(e.seq), {"seq": e.seq, "json": e.model_dump_json()})
+            # create-only: an entry is never replaced, even if the head was tampered with
+            tx.create(self._path(e.seq), {"seq": e.seq, "json": e.model_dump_json()})
             tx.set(self._head, {"seq": e.seq, "hash": e.hash})
             return e
 
-        return await self._d.transaction(link)  # Docs queues in-process transactions
+        e = await self._d.transaction(link)  # Docs queues in-process transactions
+        # External anchor: Cloud Logging keeps (seq, hash) outside the database, so a rewrite
+        # of the whole chain + head in Firestore can still be detected by comparing the two.
+        log.info("audit appended", extra={"audit_seq": e.seq, "audit_hash": e.hash})
+        return e
 
     async def _read_head(self) -> tuple[int, str] | None:
         head = await self._d.get(self._head)
@@ -71,24 +77,32 @@ class DocAuditLog:
 
     async def tail(self, limit: int) -> AuditTail:
         head = await self._read_head()
-        if head is None or limit <= 0:
-            return AuditTail(entries=[], verified=head is None or limit <= 0)
+        if head is None:  # empty chain — or a deleted head, which must not pass as "verified"
+            return AuditTail(entries=[], verified=not await self._any_entry())
+        if limit <= 0:
+            return AuditTail(entries=[], verified=True)
         rows = await self._d.query(
-            Query(self._col, order_by="seq", descending=True, limit=limit + 1)
+            Query(self._col, order_by="seq", descending=True, limit=limit + 1 + RACE_SLACK)
         )
         decoded = self._decode(rows)
         if decoded is None:
             log.error("audit chain has an unreadable entry")
             return AuditTail(entries=[], verified=False)
-        newest_first = decoded
+        # entries appended after we read the head are not part of this snapshot
+        newest_first = [e for e in decoded if e.seq <= head[0]]
         has_pred = len(newest_first) > limit
         window = list(reversed(newest_first[:limit]))
         pred = newest_first[limit] if has_pred else None
         ok = verify_window(window, predecessor=pred, head=head)
         return AuditTail(entries=window, verified=ok)
 
+    async def _any_entry(self) -> bool:
+        return bool(await self._d.query(Query(self._col, limit=1)))
+
     async def verify_all(self) -> bool:
         head = await self._read_head()
+        if head is None:
+            return not await self._any_entry()
         rows = await self._d.query(Query(self._col, order_by="seq"))
         entries = self._decode(rows)
         if entries is None:

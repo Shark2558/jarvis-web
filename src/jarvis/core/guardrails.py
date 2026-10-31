@@ -68,6 +68,16 @@ class ConfirmationRequired(PermissionError):
         self.action = action
 
 
+class ConfirmationInvalid(PermissionError):
+    """A confirmation token was spent, expired, unknown, or for different arguments/scope.
+    Nothing runs and nothing new is stored: a stale token must never re-create an approval
+    (that is how a double click could otherwise send twice)."""
+
+    def __init__(self, action: PendingAction) -> None:
+        super().__init__(f"confirmation no longer valid: {action.summary}")
+        self.action = action
+
+
 ActionMatcher = Callable[[PendingAction], bool]
 
 
@@ -136,24 +146,25 @@ class ConfirmationGate:
     async def check(self, action: PendingAction, *, confirmation_id: str | None = None) -> None:
         """Raise ConfirmationRequired unless the action is safe or explicitly confirmed.
 
-        A wrong, expired, or mismatched token never consumes another action's token and
-        always leaves `action` approvable (stored under its own id). Tokens are single use,
-        enforced atomically by the store."""
+        Without a token the action is stored and ConfirmationRequired raised. With a token it
+        runs only if the store atomically consumes a matching, unexpired approval; otherwise
+        ConfirmationInvalid — a wrong token never consumes another action's token and never
+        stores anything."""
         if action.risk is not ActionRisk.IRREVERSIBLE:
             return
-        if confirmation_id is not None:
+        if confirmation_id is None:
+            await self.store.put(action)
+            raise ConfirmationRequired(action)
 
-            def same(p: PendingAction) -> bool:
-                return (
-                    p.tool == action.tool
-                    and p.arguments == action.arguments  # argument drift → re-confirm
-                    and p.scope == action.scope
-                )
+        def same(p: PendingAction) -> bool:
+            return (
+                p.tool == action.tool
+                and p.arguments == action.arguments  # argument drift → re-confirm
+                and p.scope == action.scope
+            )
 
-            if await self.store.consume(confirmation_id, same) is not None:
-                return
-        await self.store.put(action)
-        raise ConfirmationRequired(action)
+        if await self.store.consume(confirmation_id, same) is None:
+            raise ConfirmationInvalid(action)
 
     async def get(self, confirmation_id: str) -> PendingAction | None:
         a = await self.store.get(confirmation_id)
@@ -164,3 +175,11 @@ class ConfirmationGate:
 
     async def pending(self) -> list[PendingAction]:
         return await self.store.list_pending()
+
+    async def cancel_scope(self, scope: str) -> int:
+        """Drop every waiting approval of one conversation (used when it is deleted)."""
+        n = 0
+        for a in await self.store.list_pending():
+            if a.scope == scope and await self.store.cancel(a.id) is not None:
+                n += 1
+        return n

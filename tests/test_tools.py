@@ -126,8 +126,10 @@ async def test_gateway_rejects_argument_drift(gateway: Gateway, world: InMemoryW
         id="c3", name="send_message", arguments={"to": "priya@example.com", "body": "v2"}
     )
     out2 = await gateway.execute(drifted, confirmation_id=out.pending.id)
-    assert out2.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    assert out2.outcome is GatewayOutcome.CONFIRMATION_INVALID  # never a fresh approval
     assert world.sent == []
+    assert [a.id for a in await gateway.pending()] == [out.pending.id]  # original intact
+    assert (await gateway.audit.tail(1)).entries[-1].outcome == "confirmation_invalid"
 
 
 async def test_gateway_deny_never_runs_tool(registry: ToolRegistry, world: InMemoryWorld) -> None:

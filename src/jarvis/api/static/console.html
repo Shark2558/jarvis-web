@@ -219,6 +219,20 @@ button,select,textarea,input{font:inherit;color:inherit;letter-spacing:inherit}
 .event .what{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .event .what small{display:block;color:var(--text-3);font-size:11.5px}
 .event time{color:var(--text-3);font-variant-numeric:tabular-nums}
+.convo{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px;padding:6px 0;border-top:1px solid var(--stroke-2);animation:rise .35s var(--ease) both}
+.convo:first-child{border-top:0;padding-top:0}
+.convo .open{appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0;padding:4px 6px;margin:-4px -6px;border-radius:10px;transition:background .2s var(--ease)}
+.convo .open:hover{background:rgba(255,255,255,.08)}
+.convo .open b{display:block;font-size:13px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.convo .open small{display:block;font-size:11.5px;color:var(--text-3)}
+.convo.current .open b::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#fff;margin-right:7px;vertical-align:2px;box-shadow:0 0 8px rgba(255,255,255,.7)}
+.convo .del{width:30px;height:30px}
+.convo .del svg{width:15px;height:15px}
+.confirm{grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-2);padding:2px 0 4px}
+.confirm span{flex:1}
+.confirm .btn{flex:none;height:28px;padding:0 12px;font-size:12.5px}
+.btn.danger{background:rgba(255,138,138,.2);border-color:rgba(255,138,138,.6);color:#FFE1E1}
+.btn.danger:hover{background:rgba(255,138,138,.32)}
 .verified{font-size:12px;font-weight:600}
 .verified.ok{color:var(--green)} .verified.bad{color:var(--red)}
 
@@ -342,6 +356,10 @@ button,select,textarea,input{font:inherit;color:inherit;letter-spacing:inherit}
         <div class="kv"><span>Cost</span><b id="sCost">$0.00</b></div>
         <div class="kv"><span>Last reply</span><b id="sLat">—</b></div>
       </div>
+    </section>
+    <section class="section">
+      <h2>Conversations <span class="count" id="convoCount"></span></h2>
+      <div id="convos"><div class="empty">No saved conversations yet.</div></div>
     </section>
     <section class="section">
       <h2>Activity <span class="verified" id="auditOk"></span></h2>

@@ -120,16 +120,16 @@
     $('panelBtn').classList.toggle('badge', list.length > 0);
     if (!list.length) { el.innerHTML = '<div class="empty">Nothing waiting.</div>'; return; }
     el.innerHTML = list.map(a => `
-      <div class="approval" data-id="${esc(a.id)}">
+      <div class="approval" data-id="${esc(a.id)}" data-sid="${esc(a.session_id || '')}">
         <div class="title">${esc(a.tool.replace(/_/g, ' '))} <span class="tag">${esc(a.risk)}</span></div>
         <p>${esc(a.summary)}</p>
         <pre>${esc(JSON.stringify(a.arguments, null, 2))}</pre>
         <div class="actions"><button class="btn primary approve">Approve</button><button class="btn decline">Decline</button></div>
       </div>`).join('');
     el.querySelectorAll('.approval').forEach(card => {
-      const id = card.dataset.id;
-      card.querySelector('.approve').addEventListener('click', () => decide(id, 'approve', card));
-      card.querySelector('.decline').addEventListener('click', () => decide(id, 'decline', card));
+      const id = card.dataset.id; const sid = card.dataset.sid || null;
+      card.querySelector('.approve').addEventListener('click', () => decide(id, 'approve', card, sid));
+      card.querySelector('.decline').addEventListener('click', () => decide(id, 'decline', card, sid));
     });
     if (!compact() && !panelOpen()) setPanel(true); // something needs the owner: bring it forward
   }
@@ -159,8 +159,86 @@
     $('sLat').textContent = r.latency_ms != null ? (r.latency_ms / 1000).toFixed(1) + ' s' : '—';
   }
   async function refreshSide() {
-    try { renderApprovals(await api('/v1/approvals')); renderAudit(await api('/v1/audit?limit=100')); } catch (_) {}
+    try { renderApprovals(await api('/v1/approvals')); renderAudit(await api('/v1/audit?limit=40')); } catch (_) {}
+    refreshConvos();
   }
+
+  // ---- saved conversations (slice 5: they survive JARVIS going to sleep) --------------------
+  const TRASH = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 10h6.6L14 6"/></svg>';
+  function setSession(id) {
+    state.sessionId = id || null;
+    if (id) lsSet('jarvis_session', id); else { try { localStorage.removeItem('jarvis_session'); } catch (_) {} }
+    document.querySelectorAll('.convo').forEach(r => r.classList.toggle('current', r.dataset.id === state.sessionId));
+  }
+  function when(iso) {
+    const d = new Date(iso || ''); if (isNaN(d)) return '';
+    const today = new Date().toDateString() === d.toDateString();
+    return today ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+  }
+  async function refreshConvos() {
+    let list = [];
+    try { list = await api('/v1/sessions?limit=30'); } catch (_) { return; }
+    const el = $('convos');
+    $('convoCount').textContent = list.length ? String(list.length) : '';
+    if (!list.length) { el.innerHTML = '<div class="empty">No saved conversations yet.</div>'; return; }
+    el.innerHTML = '';
+    list.forEach(c => {
+      const row = document.createElement('div'); row.className = 'convo'; row.dataset.id = c.id;
+      row.classList.toggle('current', c.id === state.sessionId);
+      const open = document.createElement('button'); open.type = 'button'; open.className = 'open';
+      const b = document.createElement('b'); b.textContent = c.title || 'Untitled conversation';
+      const sm = document.createElement('small'); sm.textContent = `${when(c.updated_at)} · ${c.turn_count} ${c.turn_count === 1 ? 'message' : 'messages'}`;
+      open.append(b, sm); open.addEventListener('click', () => { if (!state.busy) loadConversation(c.id); });
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'icon-btn del';
+      del.innerHTML = TRASH; del.setAttribute('aria-label', 'Delete conversation: ' + (c.title || 'Untitled'));
+      del.addEventListener('click', () => askDelete(row, c.id));
+      row.append(open, del); el.appendChild(row);
+    });
+  }
+  function askDelete(row, id) {
+    if (row.querySelector('.confirm')) return;
+    const box = document.createElement('div'); box.className = 'confirm'; box.setAttribute('role', 'alert');
+    const t = document.createElement('span'); t.textContent = 'Delete for good? This cannot be undone.';
+    const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'btn danger'; yes.textContent = 'Delete';
+    const no = document.createElement('button'); no.type = 'button'; no.className = 'btn'; no.textContent = 'Keep';
+    no.addEventListener('click', () => box.remove());
+    yes.addEventListener('click', async () => {
+      yes.disabled = no.disabled = true;
+      try {
+        await api(`/v1/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (id === state.sessionId) newConversation();
+        refreshConvos();
+      } catch (e) { box.remove(); addMsg('error', 'Couldn\'t delete that conversation. ' + e.message); }
+    });
+    box.append(t, no, yes); row.appendChild(box); no.focus();
+  }
+  function renderTranscript(sess) {
+    renderWelcome();
+    let shown = 0; let last = null;
+    sess.turns.forEach(t => {
+      if (!t.content || !t.content.trim()) return; // tool exchanges have no text of their own
+      if (t.role === 'user') addMsg('user', t.content);
+      else { addMsg('jarvis', t.content, [t.model]); last = t; }
+      shown++;
+    });
+    if (shown) addMsg('sys', 'Earlier conversation restored.');
+    else renderWelcome();
+    renderStats({ brain: (sess.metadata || {}).brain, model: last ? last.model : null,
+      turn_count: sess.turns.length, cost_usd: sess.total_cost_usd, latency_ms: null });
+    const b = (sess.metadata || {}).brain;
+    if (b && state.brains.some(x => x.id === b) && b !== state.brain) { state.brain = b; renderBrains(); }
+  }
+  async function loadConversation(id) {
+    try {
+      const sess = await api(`/v1/sessions/${encodeURIComponent(id)}`);
+      setSession(sess.id); renderTranscript(sess); return true;
+    } catch (_) {
+      if (id === state.sessionId || id === lsGet('jarvis_session')) setSession(null);
+      return false;
+    }
+  }
+  function newConversation() { setSession(null); renderWelcome(); renderStats({}); input.focus(); }
 
   // ---- brain selector -----------------------------------------------------------------------
   function currentBrain() { return state.brains.find(b => b.id === state.brain) || state.brains.find(b => b.default) || null; }
@@ -199,12 +277,14 @@
   }
   function syncSend() { $('send').disabled = state.busy || !$('input').value.trim(); }
   function handleResponse(r) {
-    state.sessionId = r.session_id;
+    const fresh = r.session_id !== state.sessionId;
+    setSession(r.session_id);
     if (r.brain && r.brain !== state.brain && state.brains.some(b => b.id === r.brain)) { state.brain = r.brain; renderBrains(); }
     const meta = [r.brain ? brainLabel(r.brain) : null, r.model, (r.latency_ms / 1000).toFixed(1) + ' s',
       r.cost_usd > 0 ? '$' + r.cost_usd.toFixed(4) : null, r.tool_calls ? `${r.tool_calls} tool ${r.tool_calls === 1 ? 'call' : 'calls'}` : null];
     addMsg('jarvis', r.reply, meta);
     renderStats(r); refreshSide();
+    if (fresh) refreshConvos();
   }
   async function send(text) {
     if (state.busy) return;
@@ -213,11 +293,13 @@
     catch (e) { showTyping(false); addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); }
     finally { busy(false); $('input').focus(); }
   }
-  async function decide(id, action, card) {
-    if (!state.sessionId) { addMsg('error', 'This approval belongs to an earlier conversation that has ended.'); return; }
+  async function decide(id, action, card, sid) {
+    const target = sid || state.sessionId;
+    if (!target) { addMsg('error', 'This approval belongs to a conversation that no longer exists.'); return; }
     card.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    if (target !== state.sessionId) await loadConversation(target); // show it where it belongs
     busy(true);
-    try { handleResponse(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: state.sessionId } })); }
+    try { handleResponse(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } })); }
     catch (e) { addMsg('error', `Couldn't ${action}. ` + e.message); refreshSide(); }
     finally { busy(false); }
   }
@@ -235,7 +317,7 @@
   });
 
   // toolbar
-  $('newBtn').addEventListener('click', () => { state.sessionId = null; renderWelcome(); renderStats({}); input.focus(); });
+  $('newBtn').addEventListener('click', () => { if (!state.busy) newConversation(); });
   $('panelBtn').addEventListener('click', () => setPanel(!panelOpen()));
   $('scrim').addEventListener('click', () => setPanel(false));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && compact() && panelOpen()) setPanel(false); });
@@ -245,6 +327,8 @@
   async function boot() {
     renderWelcome();
     await loadBrains();
+    const saved = lsGet('jarvis_session');
+    if (saved) await loadConversation(saved);
     refreshSide();
     input.focus();
   }

@@ -16,7 +16,6 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 
 from jarvis.storage.docs import Delete, Doc, Docs, DocTx, IndexNotReady, Op, Query, T, chunks
 
-
 TX_ATTEMPTS = 10  # contention is rare for one owner; retries are cheap
 
 

@@ -4,7 +4,7 @@ services:
   - type: web
     name: jarvis-shark2558          # → https://jarvis-shark2558.onrender.com (must be globally unique)
     runtime: docker
-    plan: starter                   # $7/mo always-on. "free" also works but sleeps after 15 min idle.
+    plan: free                      # $0. Sleeps after 15 min idle (~1 min to wake). Change to "starter" ($7/mo) for always-on.
     region: singapore               # closest Render region to India
     healthCheckPath: /health
     autoDeploy: true                # every push to main redeploys

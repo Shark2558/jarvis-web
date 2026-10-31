@@ -1,0 +1,25 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      JARVIS_SESSION_BACKEND: redis
+      JARVIS_REDIS_URL: redis://redis:6379/0
+      JARVIS_LOG_JSON: "true"
+    ports: ["8000:8000"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis-data:

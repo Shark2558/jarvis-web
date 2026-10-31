@@ -1,0 +1,76 @@
+# tests/test_api.py
+from __future__ import annotations
+
+from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
+
+from jarvis.api import create_app
+from jarvis.config import Settings
+from jarvis.llm.mock_provider import MockProvider
+from jarvis.memory.inmemory import InMemorySessionStore
+
+
+async def test_health(client: AsyncClient) -> None:
+    r = await client.get("/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok" and body["llm"] == "mock"
+    assert "x-trace-id" in r.headers
+
+
+async def test_chat_roundtrip_and_session_endpoints(
+    client: AsyncClient, provider: MockProvider
+) -> None:
+    provider.script("At your service, Sir.")
+    r = await client.post("/v1/chat", json={"message": "Hello"}, headers={"x-trace-id": "abc123"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["reply"] == "At your service, Sir."
+    assert body["trace_id"] == "abc123"
+    sid = body["session_id"]
+
+    r2 = await client.post("/v1/chat", json={"message": "Again", "session_id": sid})
+    assert r2.json()["turn_count"] == 4
+
+    lst = await client.get("/v1/sessions")
+    assert [s["id"] for s in lst.json()] == [sid]
+
+    full = await client.get(f"/v1/sessions/{sid}")
+    assert len(full.json()["turns"]) == 4
+
+    assert (await client.delete(f"/v1/sessions/{sid}")).status_code == 204
+    assert (await client.get(f"/v1/sessions/{sid}")).status_code == 404
+
+
+async def test_chat_stream(client: AsyncClient, provider: MockProvider) -> None:
+    provider.script("Streamed reply, Sir.")
+    async with client.stream("POST", "/v1/chat/stream", json={"message": "go"}) as r:
+        assert r.status_code == 200
+        text = "".join([chunk async for chunk in r.aiter_text()])
+    assert text.strip() == "Streamed reply, Sir."
+
+
+async def test_error_mapping(client: AsyncClient, provider: MockProvider) -> None:
+    r = await client.post("/v1/chat", json={"message": "hi", "session_id": "sess_missing"})
+    assert r.status_code == 404 and r.json()["error"] == "session_not_found"
+
+    r = await client.post("/v1/chat", json={"message": "x" * 600})
+    assert r.status_code == 422 and r.json()["error"] == "input_rejected"
+
+    provider.fail_next = 5  # exhaust every tier
+    r = await client.post("/v1/chat", json={"message": "hi"})
+    assert r.status_code == 503 and r.json()["error"] == "llm_unavailable"
+
+
+async def test_bearer_auth_enforced_when_configured(settings: Settings) -> None:
+    s = settings.model_copy(update={"api_token": SecretStr("s3cret")})
+    app = create_app(s, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            assert (await c.get("/health")).status_code == 200  # health stays open
+            assert (await c.post("/v1/chat", json={"message": "hi"})).status_code == 401
+            body = {"message": "hi"}
+            bad = {"Authorization": "Bearer nope"}
+            assert (await c.post("/v1/chat", json=body, headers=bad)).status_code == 401
+            good = {"Authorization": "Bearer s3cret"}
+            assert (await c.post("/v1/chat", json=body, headers=good)).status_code == 200

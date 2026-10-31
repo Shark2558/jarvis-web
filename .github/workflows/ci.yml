@@ -1,0 +1,38 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests evals
+      - run: pytest -q
+      - run: python evals/phase0/run.py --mock   # plumbing only; real gate runs on demand
+
+  # Real-model eval gate. Runs on main only, needs the secret.
+  eval-gate:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      JARVIS_ANTHROPIC_API_KEY: ${{ secrets.JARVIS_ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ".[dev]"
+      - run: python evals/phase0/run.py
+      - uses: actions/upload-artifact@v4
+        with: { name: phase0-eval-report, path: evals/phase0/report.json }

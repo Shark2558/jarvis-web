@@ -1,0 +1,105 @@
+# src/jarvis/api/app.py
+"""FastAPI application factory (Layer 1 surface: web/desktop clients hit this).
+
+Build with `create_app()` so tests can inject a mock provider and an in-memory store.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from typing import Any
+
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
+
+from jarvis.api.routes import router as v1_router
+from jarvis.config import Settings, get_settings
+from jarvis.core.brain import Brain
+from jarvis.core.guardrails import InputRejected
+from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider
+from jarvis.llm.router import ModelRouter
+from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
+from jarvis.memory import SessionNotFound, SessionStore, build_session_store
+from jarvis.tools.gateway import Gateway
+from jarvis.tools.setup import build_gateway
+
+log = get_logger(__name__)
+
+
+def _err(status: int, body: dict[str, Any]) -> JSONResponse:
+    return JSONResponse(status_code=status, content=body)
+
+
+def create_app(
+    settings: Settings | None = None,
+    *,
+    provider: LLMProvider | None = None,
+    store: SessionStore | None = None,
+    gateway: Gateway | None = None,
+) -> FastAPI:
+    s = settings or get_settings()
+    configure_logging(s.log_level, s.log_json)
+    if provider is None:
+        s.require_prod_invariants()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        app.state.settings = s
+        app.state.store = store or build_session_store(s)
+        app.state.router = ModelRouter.from_settings(s, provider)
+        app.state.gateway = gateway or (build_gateway(s) if s.tools_enabled else None)
+        app.state.brain = Brain(
+            router=app.state.router, store=app.state.store, settings=s, gateway=app.state.gateway
+        )
+        log.info(
+            "jarvis up",
+            extra={
+                "env": s.env,
+                "llm": app.state.router.provider.name,
+                "session_backend": s.session_backend.value,
+            },
+        )
+        try:
+            yield
+        finally:
+            await app.state.store.close()
+
+    app = FastAPI(title="JARVIS", version="0.0.1", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def trace_middleware(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        incoming = request.headers.get("x-trace-id")
+        tid = incoming if incoming and len(incoming) <= 64 else new_trace_id()
+        set_trace_id(tid)
+        response = await call_next(request)
+        response.headers["x-trace-id"] = tid
+        return response
+
+    # ---- error mapping: never leak stack traces, always carry the trace id ----------------
+
+    @app.exception_handler(SessionNotFound)
+    async def _nf(_: Request, exc: SessionNotFound) -> JSONResponse:
+        return _err(404, {"error": "session_not_found", "session_id": str(exc)})
+
+    @app.exception_handler(LookupError)
+    async def _lookup(_: Request, exc: LookupError) -> JSONResponse:
+        return _err(404, {"error": "not_found", "detail": str(exc)})
+
+    @app.exception_handler(InputRejected)
+    async def _bad(_: Request, exc: InputRejected) -> JSONResponse:
+        return _err(422, {"error": "input_rejected", "detail": str(exc)})
+
+    @app.exception_handler(LLMAuthError)
+    async def _auth(_: Request, exc: LLMAuthError) -> JSONResponse:
+        log.error("llm auth error", extra={"detail": str(exc)[:200]})
+        return _err(502, {"error": "llm_auth", "detail": "LLM credentials rejected"})
+
+    @app.exception_handler(LLMError)
+    async def _llm(_: Request, exc: LLMError) -> JSONResponse:
+        return _err(503, {"error": "llm_unavailable", "detail": str(exc)[:200]})
+
+    app.include_router(v1_router)
+    return app

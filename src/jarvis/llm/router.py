@@ -49,19 +49,7 @@ class ModelRouter:
     def from_settings(cls, s: Settings, provider: LLMProvider | None = None) -> ModelRouter:
         if provider is None:
             provider = build_provider(s)
-        if s.llm_backend is LLMBackend.GEMINI:
-            tiers = {
-                ModelTier.FAST: s.gemini_model_fast,
-                ModelTier.BALANCED: s.gemini_model_balanced,
-                ModelTier.STRONG: s.gemini_model_strong,
-            }
-        else:
-            tiers = {
-                ModelTier.FAST: s.model_fast,
-                ModelTier.BALANCED: s.model_balanced,
-                ModelTier.STRONG: s.model_strong,
-            }
-        return cls(provider, tiers)
+        return cls(provider, tiers_for(s, s.llm_backend))
 
     def resolve(self, tier: ModelTier) -> str:
         return self._tiers[tier]
@@ -138,4 +126,37 @@ def build_provider(s: Settings) -> LLMProvider:
         if s.gemini_api_key is None:
             raise RuntimeError("JARVIS_GEMINI_API_KEY is not set")
         return GeminiProvider(s.gemini_api_key.get_secret_value(), timeout_s=s.llm_timeout_s)
+    if s.llm_backend is LLMBackend.OPENAI_COMPAT:
+        from jarvis.llm.openai_compat_provider import OpenAICompatProvider
+
+        if not s.openai_compat_configured:
+            raise RuntimeError("JARVIS_OPENAI_COMPAT_BASE_URL / _MODEL_BALANCED are not set")
+        assert s.openai_compat_base_url is not None
+        return OpenAICompatProvider(
+            s.openai_compat_base_url,
+            api_key=s.openai_compat_api_key.get_secret_value() if s.openai_compat_api_key else None,
+            timeout_s=s.llm_timeout_s,
+        )
     raise ValueError(f"unknown llm backend: {s.llm_backend}")
+
+
+def tiers_for(s: Settings, backend: LLMBackend) -> dict[ModelTier, str]:
+    """Tier → model id map for one backend. Skills ask for tiers, never model ids."""
+    if backend is LLMBackend.GEMINI:
+        return {
+            ModelTier.FAST: s.gemini_model_fast,
+            ModelTier.BALANCED: s.gemini_model_balanced,
+            ModelTier.STRONG: s.gemini_model_strong,
+        }
+    if backend is LLMBackend.OPENAI_COMPAT:
+        balanced = s.openai_compat_model_balanced or "default"
+        return {
+            ModelTier.FAST: s.openai_compat_model_fast or balanced,
+            ModelTier.BALANCED: balanced,
+            ModelTier.STRONG: s.openai_compat_model_strong or balanced,
+        }
+    return {
+        ModelTier.FAST: s.model_fast,
+        ModelTier.BALANCED: s.model_balanced,
+        ModelTier.STRONG: s.model_strong,
+    }

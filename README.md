@@ -70,6 +70,27 @@ JARVIS_AUTH_MODE=google  owner signs in with Google (OIDC + PKCE via Authlib)
 - Known limitation until the Postgres slice: sessions, pending approvals and the audit chain are
   in-memory and reset on redeploy.
 
+## Phase 2 · slice 4 — brain selector
+
+Several brains can be configured at once and switched **from the console header**, per session:
+
+```
+GET /v1/brains            → [{id,label,default,trains_on_content,tools_allowed,warning,models}]
+POST /v1/chat {brain:..}  → the choice is remembered on the session (session.metadata.brain)
+```
+
+| id | provider | needs | tools |
+|---|---|---|---|
+| `anthropic` | Claude Messages API | `JARVIS_ANTHROPIC_API_KEY` (prepaid credit) | yes |
+| `gemini` | Gemini REST | `JARVIS_GEMINI_API_KEY` (free tier trains on content) | **no** |
+| `custom` | any OpenAI-compatible server (Groq, OpenRouter, Ollama, LM Studio, vLLM) | `JARVIS_OPENAI_COMPAT_BASE_URL` + `_MODEL_BALANCED` (+ optional `_API_KEY`) | only if `JARVIS_OPENAI_COMPAT_TRAINS_ON_CONTENT=false` |
+
+`tools_allowed` is **derived** from `trains_on_content` and cannot be configured: a brain whose
+vendor may train on prompts never receives tool specs or tool output (`Brain._tools_on`), and an
+approval narration is skipped (deterministic reply) if the session was switched to such a brain.
+The console banner follows the selected brain. `JARVIS_LLM_BACKEND` names the default brain.
+`JARVIS_LLM_TIMEOUT_S` now defaults to 20 s so a stuck model degrades to the next tier quickly.
+
 ## Quick start
 
 ```bash

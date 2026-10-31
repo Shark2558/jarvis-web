@@ -73,6 +73,12 @@ class ChatRequest(BaseModel):
     tier: str | None = Field(
         default=None, description="fast | balanced | strong (default from config)"
     )
+    brain: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Brain id from GET /v1/brains. Omit to keep the session's brain (or the "
+        "default). The choice is remembered on the session.",
+    )
 
 
 class PendingApproval(BaseModel):
@@ -91,6 +97,7 @@ class ChatResponse(BaseModel):
     pending_approvals: list[PendingApproval] = Field(default_factory=list)
     trace_id: str
     model: str
+    brain: str = Field(default="", description="Which brain answered")
     usage: Usage
     cost_usd: float
     latency_ms: int

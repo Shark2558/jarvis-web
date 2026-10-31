@@ -63,6 +63,34 @@ async def health(request: Request) -> Health:
     )
 
 
+class BrainInfo(BaseModel):
+    id: str
+    label: str
+    default: bool
+    trains_on_content: bool
+    tools_allowed: bool
+    warning: str
+    models: dict[str, str]
+
+
+@router.get("/v1/brains", response_model=list[BrainInfo], dependencies=[Depends(require_auth)])
+async def list_brains(brain: Brain = Depends(_brain)) -> list[BrainInfo]:
+    """Every configured brain; the console builds its dropdown from this."""
+    reg = brain.brains
+    return [
+        BrainInfo(
+            id=b.id,
+            label=b.label,
+            default=b.id == reg.default.id,
+            trains_on_content=b.trains_on_content,
+            tools_allowed=b.tools_allowed,
+            warning=b.warning,
+            models={t.value: m for t, m in b.tiers.items()},
+        )
+        for b in reg.list()
+    ]
+
+
 @router.post("/v1/chat", response_model=ChatResponse, dependencies=[Depends(require_auth)])
 async def chat(req: ChatRequest, brain: Brain = Depends(_brain)) -> ChatResponse:
     return await brain.chat(req)

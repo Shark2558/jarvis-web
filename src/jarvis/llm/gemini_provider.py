@@ -67,10 +67,10 @@ class GeminiProvider:
         for b in m.content:
             if isinstance(b, TextBlock):
                 parts.append(b.text)
-            elif isinstance(b, ToolCall):
-                parts.append(f"[tool call: {b.name}]")
-            elif isinstance(b, ToolResultBlock):
-                parts.append(f"[tool result: {b.content}]")
+            elif isinstance(b, ToolCall | ToolResultBlock):
+                # Brain already withholds such turns from training brains; if one slips
+                # through, neither tool names nor tool output may reach this vendor.
+                parts.append("[tool exchange withheld]")
         return "\n".join(p for p in parts if p)
 
     @classmethod

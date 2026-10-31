@@ -26,6 +26,9 @@
   button.approve{background:#174d38;border-color:#1f6b4c}
   button.decline{background:#4d1a1a;border-color:#6b2222}
   button:disabled{opacity:.5;cursor:default}
+  select{font:inherit;font-size:13px;border-radius:8px;border:1px solid var(--line);background:#16202b;color:var(--text);padding:6px 10px;max-width:180px}
+  select:focus{outline:none;border-color:var(--accent-2)}
+  select.training{border-color:var(--warn)}
   main{display:grid;grid-template-columns:1fr 340px;height:calc(100% - 53px);}
   @media (max-width:860px){main{grid-template-columns:1fr}aside{display:none}}
   #chat{display:flex;flex-direction:column;min-width:0}
@@ -60,6 +63,8 @@
   <div class="orb" id="orb"></div>
   <h1>J.A.R.V.I.S.</h1>
   <div class="spacer"></div>
+  <label class="who" for="brainSel" title="Which AI model answers. Remembered per conversation.">Brain</label>
+  <select id="brainSel" title="Switch the AI brain for this conversation"></select>
   <span class="who" id="who"></span>
   <button id="newBtn" title="Start a fresh conversation">New session</button>
   <button id="logoutBtn" style="display:none">Sign out</button>

@@ -27,6 +27,7 @@ from jarvis.llm.base import (
     TextBlock,
     ToolResultBlock,
 )
+from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.logging import get_logger, get_trace_id
 from jarvis.memory.base import SessionNotFound, SessionStore
@@ -34,25 +35,80 @@ from jarvis.tools.gateway import Gateway, GatewayOutcome
 
 log = get_logger(__name__)
 
+BRAIN_KEY = "brain"  # session.metadata key remembering the owner's brain choice
+CUTOFF_KEY = "brain_cutoff"  # turn index before which history is withheld from training brains
+
 
 class Brain:
     def __init__(
         self,
         *,
-        router: ModelRouter,
         store: SessionStore,
         settings: Settings,
+        router: ModelRouter | None = None,
+        brains: BrainRegistry | None = None,
         gateway: Gateway | None = None,
     ) -> None:
-        self.router = router
+        if brains is None:
+            if router is None:
+                raise ValueError("Brain needs either `brains` or a legacy `router`")
+            default_id = settings.llm_backend.value
+            brains = BrainRegistry(
+                [
+                    BrainSpec(
+                        id=default_id,
+                        label=default_id,
+                        provider=router.provider,
+                        tiers={t: router.resolve(t) for t in ModelTier},
+                        trains_on_content=settings.llm_trains_on_content,
+                    )
+                ],
+                default_id=default_id,
+            )
+        self.brains = brains
+        self.router = brains.router_for(brains.default.id)  # default brain (health, CLI)
         self.store = store
         self.s = settings
         self.gateway = gateway
         self._system = build_system_prompt(honorific=settings.user_honorific)
 
-    @property
-    def _tools_on(self) -> bool:
-        return bool(self.gateway and self.s.tools_enabled and len(self.gateway.registry))
+    def _tools_on(self, spec: BrainSpec) -> bool:
+        """Tools exist AND this brain may see them. A training brain never gets tool specs —
+        that is the private-data boundary, enforced here rather than by a banner."""
+        return bool(
+            self.gateway
+            and self.s.tools_enabled
+            and len(self.gateway.registry)
+            and spec.tools_allowed
+        )
+
+    def _resolve_brain(self, session: Session, req: ChatRequest) -> BrainSpec:
+        """request → session memory → default. Persists the choice on the session.
+
+        Switching INTO a training brain records a history cutoff: everything said before the
+        switch (which may include tool output — email, calendar, files) stays with the earlier
+        brain and is never replayed to a vendor that may train on it."""
+        previous_id = session.metadata.get(BRAIN_KEY)
+        brain_id = req.brain or previous_id or self.brains.default.id
+        spec = self.brains.get(brain_id)  # LookupError → 404 at the API
+        if previous_id != spec.id:
+            session.metadata[BRAIN_KEY] = spec.id
+            if not spec.tools_allowed and session.turns:
+                session.metadata[CUTOFF_KEY] = len(session.turns)
+            log.info("brain selected", extra={"session_id": session.id, "brain": spec.id})
+        return spec
+
+    def _window_for(self, session: Session, spec: BrainSpec) -> list[ChatMessage]:
+        """The context sent to `spec`. A training brain sees only turns after its cutoff, and
+        never a turn that carries tool blocks (defence in depth for sessions created before
+        the cutoff existed or edited by hand)."""
+        turns = session.turns
+        if not spec.tools_allowed:
+            turns = turns[int(session.metadata.get(CUTOFF_KEY, 0)) :]
+            turns = [t for t in turns if not t.blocks]
+        return build_window(
+            turns, max_turns=self.s.session_max_turns, max_chars=self.s.session_max_chars
+        )
 
     # ---- session helpers -----------------------------------------------------------------
 
@@ -81,7 +137,10 @@ class Brain:
     async def chat(self, req: ChatRequest) -> ChatResponse:
         t0 = time.perf_counter()
         trace_id = get_trace_id()
+        if req.brain:
+            self.brains.get(req.brain)  # fail before creating an orphan session
         session = await self._load_or_create(req)
+        spec = self._resolve_brain(session, req)
 
         text = guard_input(req.message, max_chars=self.s.max_input_chars)
         user_turn = Turn(role=Role.USER, content=text, trace_id=trace_id)
@@ -89,15 +148,13 @@ class Brain:
         # persist the user turn before the LLM call so a crash never loses owner input
         await self.store.save(session)
 
-        messages = build_window(
-            session.turns, max_turns=self.s.session_max_turns, max_chars=self.s.session_max_chars
-        )
+        messages = self._window_for(session, spec)
         trailer = build_trailer(
             tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
         )
 
         try:
-            completion, pending = await self._run_loop(session, messages, trailer, req)
+            completion, pending = await self._run_loop(session, messages, trailer, req, spec)
         except LLMError:
             log.exception("brain: llm failure", extra={"session_id": session.id})
             raise
@@ -124,6 +181,7 @@ class Brain:
                 "session_id": session.id,
                 "turns": len(session.turns),
                 "window": len(messages),
+                "brain": spec.id,
                 "model": completion.model,
                 "cost_usd": completion.cost_usd,
                 "llm_ms": completion.latency_ms,
@@ -135,6 +193,7 @@ class Brain:
             reply=reply,
             trace_id=trace_id,
             model=completion.model,
+            brain=spec.id,
             usage=completion.usage,
             cost_usd=completion.cost_usd,
             latency_ms=total_ms,
@@ -146,30 +205,42 @@ class Brain:
     # ---- tool loop ----------------------------------------------------------------------
 
     async def _complete(
-        self, messages: list[ChatMessage], trailer: str, req: ChatRequest, *, with_tools: bool
+        self,
+        messages: list[ChatMessage],
+        trailer: str,
+        req: ChatRequest,
+        spec: BrainSpec,
+        *,
+        with_tools: bool,
     ) -> Completion:
-        return await self.router.complete(
+        give_tools = with_tools and self.gateway is not None and spec.tools_allowed
+        return await self.brains.router_for(spec.id).complete(
             tier=self._tier(req),
             system=self._system,
             system_dynamic=trailer,
             messages=messages,
             max_tokens=self.s.max_output_tokens,
             effort=self._effort(),
-            tools=self.gateway.registry.specs() if (with_tools and self.gateway) else None,
+            tools=self.gateway.registry.specs() if (give_tools and self.gateway) else None,
         )
 
     async def _run_loop(
-        self, session: Session, messages: list[ChatMessage], trailer: str, req: ChatRequest
+        self,
+        session: Session,
+        messages: list[ChatMessage],
+        trailer: str,
+        req: ChatRequest,
+        spec: BrainSpec,
     ) -> tuple[Completion, list[PendingApproval]]:
         """model → tool calls → gateway → results → model, until text or the round cap."""
         pending: list[PendingApproval] = []
-        if not self._tools_on:
-            return await self._complete(messages, trailer, req, with_tools=False), pending
+        if not self._tools_on(spec):
+            return await self._complete(messages, trailer, req, spec, with_tools=False), pending
         assert self.gateway is not None
         rounds = 0
         msgs = list(messages)
         while True:
-            completion = await self._complete(msgs, trailer, req, with_tools=True)
+            completion = await self._complete(msgs, trailer, req, spec, with_tools=True)
             if not completion.tool_calls:
                 break
             rounds += 1
@@ -225,7 +296,7 @@ class Brain:
                         ),
                     )
                 ]
-                completion = await self._complete(msgs, trailer, req, with_tools=False)
+                completion = await self._complete(msgs, trailer, req, spec, with_tools=False)
                 break
         session.metadata["_rounds"] = rounds
         return completion, pending
@@ -316,14 +387,17 @@ class Brain:
         await self.store.save(session)
 
         req = ChatRequest(message="-", session_id=session_id, user_id=user_id)
-        messages = build_window(
-            session.turns, max_turns=self.s.session_max_turns, max_chars=self.s.session_max_chars
-        )
+        spec = self._resolve_brain(session, req)
+        messages = self._window_for(session, spec)
         trailer = build_trailer(
             tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
         )
         try:
-            completion = await self._complete(messages, trailer, req, with_tools=False)
+            if not spec.tools_allowed:
+                # The owner switched to a training brain after this action was proposed. The
+                # tool result is private data: narrate deterministically, never send it there.
+                raise LLMError("narration skipped: current brain may train on content")
+            completion = await self._complete(messages, trailer, req, spec, with_tools=False)
             reply = completion.text.strip() or fallback
             usage, cost, model = completion.usage, completion.cost_usd, completion.model
         except LLMError as exc:
@@ -350,6 +424,7 @@ class Brain:
             reply=reply,
             trace_id=trace_id,
             model=model,
+            brain=spec.id,
             usage=usage or Usage(),
             cost_usd=cost,
             latency_ms=0,
@@ -361,19 +436,21 @@ class Brain:
     async def chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
         """Streaming variant for the CLI (and Phase 1 TTS). Persists the full reply at the end."""
         trace_id = get_trace_id()
+        if req.brain:
+            self.brains.get(req.brain)
         session = await self._load_or_create(req)
+        spec = self._resolve_brain(session, req)
+        router = self.brains.router_for(spec.id)
         text = guard_input(req.message, max_chars=self.s.max_input_chars)
         session.append(Turn(role=Role.USER, content=text, trace_id=trace_id))
         await self.store.save(session)
 
-        messages = build_window(
-            session.turns, max_turns=self.s.session_max_turns, max_chars=self.s.session_max_chars
-        )
+        messages = self._window_for(session, spec)
         trailer = build_trailer(
             tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
         )
         chunks: list[str] = []
-        async for delta in self.router.stream(
+        async for delta in router.stream(
             tier=self._tier(req),
             system=self._system,
             system_dynamic=trailer,
@@ -390,7 +467,7 @@ class Brain:
                 role=Role.ASSISTANT,
                 content=reply,
                 trace_id=trace_id,
-                model=self.router.resolve(self._tier(req)),
+                model=router.resolve(self._tier(req)),
             )
         )
         await self.store.save(session)

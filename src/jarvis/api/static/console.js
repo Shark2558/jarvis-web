@@ -2,7 +2,10 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const state = { sessionId: null, authMode: 'token', token: sessionStorage.getItem('jarvis_token') || '', honorific: 'Sir' };
+  const state = { sessionId: null, authMode: 'token', token: sessionStorage.getItem('jarvis_token') || '', honorific: 'Sir',
+    brains: [], brain: null };
+  const lsGet = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
 
   // ---- transport: cookie + anti-CSRF header, or bearer token for token mode ---------------
   async function api(path, opts = {}) {
@@ -30,7 +33,7 @@
     } else {
       box.innerHTML = '<h2 style="margin:0 0 6px">Access token</h2><p style="color:var(--muted)">Paste the JARVIS_API_TOKEN for this server.</p>' +
         '<input id="tokIn" type="password" placeholder="token"><button class="primary" id="tokBtn">Continue</button>';
-      $('tokBtn').onclick = () => { state.token = $('tokIn').value.trim(); sessionStorage.setItem('jarvis_token', state.token); hideGate(); refreshSide(); };
+      $('tokBtn').onclick = () => { state.token = $('tokIn').value.trim(); sessionStorage.setItem('jarvis_token', state.token); hideGate(); loadBrains(); refreshSide(); };
     }
     $('gate').style.display = 'flex';
   }
@@ -75,16 +78,45 @@
     try { renderApprovals(await api('/v1/approvals')); renderAudit(await api('/v1/audit?limit=100')); } catch (_) {}
   }
 
+  // ---- brain selector --------------------------------------------------------------------
+  function currentBrain() { return state.brains.find(b => b.id === state.brain) || state.brains.find(b => b.default) || null; }
+  function renderBanner() {
+    const b = currentBrain(); const el = $('banner');
+    const text = b && b.warning ? b.warning : '';
+    el.textContent = text; el.style.display = text ? 'block' : 'none';
+    $('brainSel').classList.toggle('training', !!(b && b.trains_on_content));
+  }
+  function renderBrains() {
+    const sel = $('brainSel');
+    sel.innerHTML = state.brains.map(b => `<option value="${esc(b.id)}">${esc(b.label)}${b.trains_on_content ? ' ⚠' : ''}</option>`).join('');
+    const b = currentBrain(); if (b) { sel.value = b.id; state.brain = b.id; }
+    sel.disabled = state.brains.length < 2;
+    renderBanner();
+  }
+  async function loadBrains() {
+    try {
+      state.brains = await api('/v1/brains');
+      const saved = lsGet('jarvis_brain');
+      state.brain = state.brains.some(b => b.id === saved) ? saved : null;
+      renderBrains();
+    } catch (_) {}
+  }
+  $('brainSel').addEventListener('change', () => {
+    state.brain = $('brainSel').value; lsSet('jarvis_brain', state.brain); renderBanner();
+    const b = currentBrain(); if (b) addMsg('sys', `Brain switched to ${b.label}${b.tools_allowed ? '' : ' (chat only — tools are off, and earlier messages in this conversation are not shared with it)'}.`);
+  });
+
   // ---- actions ---------------------------------------------------------------------------
   function busy(on) { $('orb').classList.toggle('busy', on); $('send').disabled = on; }
   function handleResponse(r) {
     state.sessionId = r.session_id;
-    addMsg('jarvis', r.reply, `${r.model} · ${r.latency_ms} ms · $${r.cost_usd.toFixed(4)}` + (r.tool_calls ? ` · ${r.tool_calls} tool call(s)` : ''));
+    if (r.brain && r.brain !== state.brain) { state.brain = r.brain; renderBrains(); }
+    addMsg('jarvis', r.reply, `${r.brain ? r.brain + ' · ' : ''}${r.model} · ${r.latency_ms} ms · $${r.cost_usd.toFixed(4)}` + (r.tool_calls ? ` · ${r.tool_calls} tool call(s)` : ''));
     renderStats(r); refreshSide();
   }
   async function send(text) {
     addMsg('user', text); busy(true);
-    try { handleResponse(await api('/v1/chat', { body: { message: text, session_id: state.sessionId } })); }
+    try { handleResponse(await api('/v1/chat', { body: { message: text, session_id: state.sessionId, brain: state.brain } })); }
     catch (e) { addMsg('sys', 'JARVIS could not answer: ' + e.message); }
     finally { busy(false); }
   }
@@ -112,6 +144,7 @@
       const me = await r.json(); $('who').textContent = me.email; $('logoutBtn').style.display = '';
     }
     addMsg('sys', `Online. Good ${new Date().getHours() < 12 ? 'morning' : (new Date().getHours() < 18 ? 'afternoon' : 'evening')}, ${state.honorific}.`);
+    await loadBrains();
     refreshSide();
   })();
 })();

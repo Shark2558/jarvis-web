@@ -17,6 +17,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 class LLMBackend(StrEnum):
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"  # free-tier-capable alternative brain (chat only; see docs/plans slice 3)
+    OPENAI_COMPAT = "custom"  # one OpenAI-compatible slot: Groq / OpenRouter / Ollama / LM Studio
     MOCK = "mock"  # deterministic provider for tests and offline dev
 
 
@@ -31,6 +32,20 @@ class AuthMode(StrEnum):
 
 
 MIN_SESSION_SECRET_LEN = 32
+
+
+def _is_private_host(host: str) -> bool:
+    """Loopback, RFC1918/ULA, link-local, or a bare/local name — plain http is tolerable there."""
+    import ipaddress
+
+    h = host.lower()
+    if h in ("localhost", "host.docker.internal") or h.endswith((".local", ".internal", ".ts.net")):
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return "." not in h  # single-label hostname on a LAN / compose network
+    return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
 class Settings(BaseSettings):
@@ -111,13 +126,36 @@ class Settings(BaseSettings):
         default=False,
         description="True only if the key's project has billing (Google then does NOT train on it)",
     )
+    # --- OpenAI-compatible slot (optional): Groq, OpenRouter, Ollama, LM Studio, vLLM, …
+    # One slot; it appears in the console as its own brain ("custom") next to Claude/Gemini.
+    openai_compat_base_url: str | None = Field(
+        default=None, description="e.g. https://api.groq.com/openai/v1 or http://host:11434/v1"
+    )
+    openai_compat_api_key: SecretStr | None = Field(
+        default=None, description="Optional — local servers (Ollama, LM Studio) have none"
+    )
+    openai_compat_label: str = Field(default="Custom", description="Name shown in the console")
+    openai_compat_model_balanced: str | None = Field(
+        default=None, description="Model id for everyday chat (required when the slot is used)"
+    )
+    openai_compat_model_fast: str | None = None  # default: balanced
+    openai_compat_model_strong: str | None = None  # default: balanced
+    openai_compat_trains_on_content: bool = Field(
+        default=True,
+        description="Private by default: assume the vendor may train on prompts unless the owner "
+        "knows otherwise. A training brain never receives tools / private data.",
+    )
     effort: str | None = Field(
         default="low",
         description="Reasoning effort for chat turns: low | medium | high | None (model default). "
         "Low keeps latency and cost down for conversational turns; the planner (Phase 2) "
         "raises it per task.",
     )
-    llm_timeout_s: float = 60.0
+    llm_timeout_s: float = Field(
+        default=20.0,
+        description="Per-request LLM timeout. Short on purpose: a stuck model should cost seconds "
+        "before degrading to the next tier, not a minute (live incident 2026-11-01).",
+    )
     llm_max_retries: int = 2
 
     # --- session memory (short-term, rolling window) ---
@@ -146,6 +184,11 @@ class Settings(BaseSettings):
             raise RuntimeError("JARVIS_ANTHROPIC_API_KEY is required for the anthropic backend")
         if self.llm_backend is LLMBackend.GEMINI and self.gemini_api_key is None:
             raise RuntimeError("JARVIS_GEMINI_API_KEY is required for the gemini backend")
+        if self.llm_backend is LLMBackend.OPENAI_COMPAT and not self.openai_compat_configured:
+            raise RuntimeError(
+                "JARVIS_OPENAI_COMPAT_BASE_URL and JARVIS_OPENAI_COMPAT_MODEL_BALANCED are "
+                "required for the openai_compat backend"
+            )
         if self.auth_mode is AuthMode.GOOGLE:
             self._require_google_auth_config()
 
@@ -165,10 +208,37 @@ class Settings(BaseSettings):
                 f"JARVIS_SESSION_SECRET must be at least {MIN_SESSION_SECRET_LEN} characters"
             )
 
+    @field_validator("openai_compat_base_url")
+    @classmethod
+    def _check_base_url(cls, v: str | None) -> str | None:
+        """https required except for loopback / private hosts: a bearer key must never travel
+        in cleartext to a remote server."""
+        if v is None or not v.strip():
+            return None
+        from urllib.parse import urlsplit
+
+        u = urlsplit(v.strip())
+        if u.scheme not in ("http", "https") or not u.hostname:
+            raise ValueError("JARVIS_OPENAI_COMPAT_BASE_URL must be an http(s) URL with a host")
+        if u.scheme == "http" and not _is_private_host(u.hostname):
+            raise ValueError(
+                "JARVIS_OPENAI_COMPAT_BASE_URL uses http:// to a non-local host; use https:// "
+                "(an API key would be sent in cleartext)"
+            )
+        return v.strip().rstrip("/")
+
+    @property
+    def openai_compat_configured(self) -> bool:
+        return bool(self.openai_compat_base_url and self.openai_compat_model_balanced)
+
     @property
     def llm_trains_on_content(self) -> bool:
-        """True when the active brain's vendor may use prompts to improve its products."""
-        return self.llm_backend is LLMBackend.GEMINI and not self.gemini_paid_tier
+        """True when the DEFAULT brain's vendor may use prompts to improve its products."""
+        if self.llm_backend is LLMBackend.GEMINI:
+            return not self.gemini_paid_tier
+        if self.llm_backend is LLMBackend.OPENAI_COMPAT:
+            return self.openai_compat_trains_on_content
+        return False
 
     @property
     def cookie_secure(self) -> bool:

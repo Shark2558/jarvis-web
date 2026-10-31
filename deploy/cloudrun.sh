@@ -46,20 +46,70 @@ read -r -p "Google OAuth Client ID (ends with .apps.googleusercontent.com): " CL
 [ -n "$CLIENT_ID" ] || die "Client ID is required."
 ask_secret jarvis-google-client-secret "Google OAuth Client secret"
 echo
-echo "Which AI brain should JARVIS use?"
-echo "  1) Claude  (needs prepaid Anthropic credit)"
-echo "  2) Gemini  (free; Google may use what you type to improve its products - chat only, no tools)"
-read -r -p "Type 1 or 2 [1]: " BRAIN
-BRAIN="${BRAIN:-1}"
-if [ "$BRAIN" = "2" ]; then
-  ask_secret jarvis-gemini-key "Gemini API key (from aistudio.google.com/apikey, created in a NEW project)"
-  BRAIN_ENV="JARVIS_LLM_BACKEND=gemini"
-  BRAIN_SECRET="JARVIS_GEMINI_API_KEY=jarvis-gemini-key:latest"
-else
-  ask_secret jarvis-anthropic-key "Anthropic API key (sk-ant-...)"
-  BRAIN_ENV="JARVIS_LLM_BACKEND=anthropic"
-  BRAIN_SECRET="JARVIS_ANTHROPIC_API_KEY=jarvis-anthropic-key:latest"
+echo "AI brains. You can set up several and switch between them from the dropdown in JARVIS."
+echo "For each one: paste the key, or press Enter to keep a saved key, or type 'skip' to leave it out."
+# optional_secret secret-name prompt  -> sets HAVE_SECRET=yes|no (no subshell: a gcloud failure must stop the script)
+optional_secret() {
+  local v=""; read -r -s -p "$2: " v; echo
+  case "$v" in
+    skip|SKIP|Skip|none|NONE|None) HAVE_SECRET=no; SECRET_SOURCE=none ;;
+    "") if secret_exists "$1"; then echo "  (keeping the saved key in secret $1)"; HAVE_SECRET=yes; SECRET_SOURCE=saved
+        else HAVE_SECRET=no; SECRET_SOURCE=none; fi ;;
+    *) put_secret "$1" "$v" || die "Could not store the key in Secret Manager ($1)."; HAVE_SECRET=yes; SECRET_SOURCE=new ;;
+  esac
+}
+BRAIN_ENV=""; BRAIN_SECRET=""; HAVE=""
+optional_secret jarvis-anthropic-key "Claude - Anthropic API key (sk-ant-..., needs prepaid credit)"
+if [ "$HAVE_SECRET" = yes ]; then
+  BRAIN_SECRET="${BRAIN_SECRET}JARVIS_ANTHROPIC_API_KEY=jarvis-anthropic-key:latest,"; HAVE="${HAVE}anthropic "
 fi
+optional_secret jarvis-gemini-key "Gemini - API key from aistudio.google.com/apikey (free; made in a NEW project)"
+if [ "$HAVE_SECRET" = yes ]; then
+  BRAIN_SECRET="${BRAIN_SECRET}JARVIS_GEMINI_API_KEY=jarvis-gemini-key:latest,"; HAVE="${HAVE}gemini "
+fi
+echo
+read -r -p "Add an OpenAI-compatible brain (Groq, OpenRouter, Ollama via tunnel)? Type y or press Enter for no: " ADD_CUSTOM
+if [ "${ADD_CUSTOM:-n}" = "y" ] || [ "${ADD_CUSTOM:-n}" = "Y" ]; then
+  read -r -p "  Base URL (e.g. https://api.groq.com/openai/v1): " C_URL
+  read -r -p "  Model id for everyday chat (e.g. llama-3.3-70b-versatile): " C_MODEL
+  read -r -p "  Name to show in the dropdown [Custom]: " C_LABEL; C_LABEL="${C_LABEL:-Custom}"
+  read -r -p "  May this vendor use your messages to improve its products? y = yes/unsure (tools stay off), n = no [y]: " C_TRAIN
+  C_TRAIN_BOOL=true
+  case "${C_TRAIN:-y}" in n|N) C_TRAIN_BOOL=false ;; esac
+  [ -n "$C_URL" ] && [ -n "$C_MODEL" ] || die "Base URL and model id are required for the custom brain."
+  case "$C_URL" in
+    https://*) ;;
+    http://localhost*|http://127.0.0.1*|http://*.internal*|http://*.ts.net*) ;;
+    *) die "Base URL must start with https:// (plain http is only allowed for local addresses)." ;;
+  esac
+  # The saved key belongs to ONE vendor. If the URL changed, do not reuse it against the new host.
+  LAST_URL="$(gcloud secrets describe jarvis-openai-compat-key --format='value(labels.host)' 2>/dev/null || true)"
+  HOST="$(printf '%s' "$C_URL" | sed -E 's#^https?://([^/:]+).*#\1#' | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_\n-' '_' | cut -c1-63)"
+  if [ -n "$LAST_URL" ] && [ "$LAST_URL" != "$HOST" ]; then
+    echo "  The saved API key was for ${LAST_URL}, not ${HOST}: paste the key for this server, or type none."
+  fi
+  optional_secret jarvis-openai-compat-key "  API key for ${HOST} (type none if the server has no key)"
+  if [ "$HAVE_SECRET" = yes ]; then
+    if [ -n "$LAST_URL" ] && [ "$LAST_URL" != "$HOST" ] && [ "$SECRET_SOURCE" = saved ]; then
+      die "Refusing to send the key saved for ${LAST_URL} to ${HOST}. Re-run and paste the right key (or type none)."
+    fi
+    gcloud secrets update jarvis-openai-compat-key --update-labels="host=${HOST}" --quiet >/dev/null 2>&1 || true
+    BRAIN_SECRET="${BRAIN_SECRET}JARVIS_OPENAI_COMPAT_API_KEY=jarvis-openai-compat-key:latest,"
+  fi
+  # commas are the env-var separator for gcloud; labels/URLs must not contain one
+  case "${C_URL}${C_MODEL}${C_LABEL}" in *,*) die "Please avoid commas in the URL, model id and name." ;; esac
+  BRAIN_ENV="${BRAIN_ENV}JARVIS_OPENAI_COMPAT_BASE_URL=${C_URL},JARVIS_OPENAI_COMPAT_MODEL_BALANCED=${C_MODEL},JARVIS_OPENAI_COMPAT_LABEL=${C_LABEL},JARVIS_OPENAI_COMPAT_TRAINS_ON_CONTENT=${C_TRAIN_BOOL},"
+  HAVE="${HAVE}custom "
+fi
+[ -n "$HAVE" ] || die "At least one brain is needed. Re-run and paste a key."
+echo
+echo "Configured brains: $HAVE"
+FIRST="${HAVE%% *}"
+read -r -p "Which one should be the default? (claude / gemini / custom) [$FIRST]: " DEFAULT_BRAIN
+DEFAULT_BRAIN="${DEFAULT_BRAIN:-$FIRST}"
+case "$DEFAULT_BRAIN" in claude|Claude|CLAUDE) DEFAULT_BRAIN=anthropic ;; Gemini|GEMINI) DEFAULT_BRAIN=gemini ;; Custom|CUSTOM) DEFAULT_BRAIN=custom ;; esac
+case " $HAVE" in *" $DEFAULT_BRAIN "*) ;; *) die "Default must be one of: $HAVE" ;; esac
+BRAIN_ENV="${BRAIN_ENV}JARVIS_LLM_BACKEND=${DEFAULT_BRAIN}"
 secret_exists jarvis-session-secret || put_secret jarvis-session-secret "$(rand)"
 secret_exists jarvis-api-token || put_secret jarvis-api-token "$(rand)"
 
@@ -81,8 +131,8 @@ gcloud run deploy "$SERVICE" --source . --region "$REGION" \
   --allow-unauthenticated \
   --min-instances 0 --max-instances 1 \
   --memory 512Mi --cpu 1 --timeout 300 \
-  --set-env-vars "JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV},JARVIS_SESSION_BACKEND=memory,JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low" \
-  --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET},JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest" \
+  --set-env-vars "JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV},JARVIS_SESSION_BACKEND=memory,JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20" \
+  --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest" \
   --quiet || { show_logs; exit 1; }
 
 say "DONE. Open JARVIS at:  $BASE_URL"

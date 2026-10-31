@@ -134,7 +134,8 @@ async def test_tools_are_dropped_and_tool_blocks_flattened_to_text() -> None:
     assert "tools" not in seen
     flat = json.dumps(seen["contents"])
     assert "functionCall" not in flat and "functionResponse" not in flat
-    assert "get_calendar" in flat  # history stays readable as plain text
+    assert "get_calendar" not in flat and "[]" not in flat  # neither tool names nor output
+    assert "withheld" in flat
 
 
 @pytest.mark.parametrize(

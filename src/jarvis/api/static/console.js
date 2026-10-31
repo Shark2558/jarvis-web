@@ -158,9 +158,14 @@
     $('sCost').textContent = '$' + (r.cost_usd ?? 0).toFixed(r.cost_usd && r.cost_usd < 0.01 ? 4 : 2);
     $('sLat').textContent = r.latency_ms != null ? (r.latency_ms / 1000).toFixed(1) + ' s' : '—';
   }
+  // Each refresh costs database reads (free quota: 50k/day), so the panel refreshes only when
+  // something in it can have changed: at start, after tool use, approvals, or a decision.
   async function refreshSide() {
     try { renderApprovals(await api('/v1/approvals')); renderAudit(await api('/v1/audit?limit=40')); } catch (_) {}
-    refreshConvos();
+  }
+  function bumpCurrentConvo(turns) {
+    const row = document.querySelector(`.convo[data-id="${CSS.escape(state.sessionId || '')}"] .open small`);
+    if (row) row.textContent = `${when(new Date().toISOString())} · ${turns} ${turns === 1 ? 'message' : 'messages'}`;
   }
 
   // ---- saved conversations (slice 5: they survive JARVIS going to sleep) --------------------
@@ -283,8 +288,9 @@
     const meta = [r.brain ? brainLabel(r.brain) : null, r.model, (r.latency_ms / 1000).toFixed(1) + ' s',
       r.cost_usd > 0 ? '$' + r.cost_usd.toFixed(4) : null, r.tool_calls ? `${r.tool_calls} tool ${r.tool_calls === 1 ? 'call' : 'calls'}` : null];
     addMsg('jarvis', r.reply, meta);
-    renderStats(r); refreshSide();
-    if (fresh) refreshConvos();
+    renderStats(r);
+    if (r.tool_calls || (r.pending_approvals || []).length || r.decided) refreshSide();
+    if (fresh) refreshConvos(); else bumpCurrentConvo(r.turn_count);
   }
   async function send(text) {
     if (state.busy) return;
@@ -299,7 +305,7 @@
     card.querySelectorAll('button').forEach(b => { b.disabled = true; });
     if (target !== state.sessionId) await loadConversation(target); // show it where it belongs
     busy(true);
-    try { handleResponse(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } })); }
+    try { handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } }), { decided: true })); }
     catch (e) { addMsg('error', `Couldn't ${action}. ` + e.message); refreshSide(); }
     finally { busy(false); }
   }
@@ -329,7 +335,7 @@
     await loadBrains();
     const saved = lsGet('jarvis_session');
     if (saved) await loadConversation(saved);
-    refreshSide();
+    refreshSide(); refreshConvos();
     input.focus();
   }
   (async () => {

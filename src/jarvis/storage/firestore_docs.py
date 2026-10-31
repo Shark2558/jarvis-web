@@ -7,6 +7,7 @@ or secret exists anywhere. With FIRESTORE_EMULATOR_HOST set, the SDK talks to th
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
@@ -37,6 +38,10 @@ class _FirestoreTx:
 class FirestoreDocs(Docs):
     def __init__(self, *, project: str | None, database: str = "(default)") -> None:
         self._c = firestore.AsyncClient(project=project, database=database)
+        # Transactions are few (approvals, audit appends) and short. Queueing them in-process
+        # stops our own requests fighting over Firestore's row locks (bursts hit "Transaction
+        # lock timeout" and exhaust retries); Firestore still arbitrates across processes.
+        self._tx_lock = asyncio.Lock()
 
     async def get(self, path: str) -> Doc | None:
         snap = await self._c.document(path).get()
@@ -72,7 +77,8 @@ class FirestoreDocs(Docs):
         async def run(tx: Any) -> T:
             return await fn(_FirestoreTx(self._c, tx))
 
-        result: T = await run(self._c.transaction(max_attempts=TX_ATTEMPTS))
+        async with self._tx_lock:
+            result: T = await run(self._c.transaction(max_attempts=TX_ATTEMPTS))
         return result
 
     async def close(self) -> None:

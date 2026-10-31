@@ -29,6 +29,12 @@ PRICES: dict[str, Price] = {
     "claude-opus-5-5": Price(4.00, 20.00, 0.20, 5.00),
     "claude-sonnet-5-5": Price(2.00, 10.00, 0.10, 2.50),
     "claude-haiku-5-5": Price(0.10, 0.50, 0.01, 0.125),
+    # Gemini free tier is $0 ("free of charge" per ai.google.dev/gemini-api/docs/pricing, Oct 2026).
+    # If gemini_paid_tier is enabled, add real prices here before relying on cost metering.
+    "gemini-3.8-flash": Price(0.0, 0.0, 0.0, 0.0),
+    "gemini-3.6-flash": Price(0.0, 0.0, 0.0, 0.0),
+    "gemini-3.5-flash-lite": Price(0.0, 0.0, 0.0, 0.0),
+    "gemini-3.1-flash-lite": Price(0.0, 0.0, 0.0, 0.0),
     "mock": Price(0.0, 0.0, 0.0, 0.0),
 }
 

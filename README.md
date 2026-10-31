@@ -64,6 +64,9 @@ JARVIS_AUTH_MODE=google  owner signs in with Google (OIDC + PKCE via Authlib)
   sign-in, `--max-instances 1` (in-memory state), scale-to-zero, secrets in Secret Manager.
 - Hosting (alternative): `render.yaml` is a Render Blueprint — Docker web service, secrets entered once in the
   dashboard, auto-deploy on push. See `docs/plans/phase2-slice2-web-console-auth.md`.
+- Brain choice: `JARVIS_LLM_BACKEND=anthropic|gemini|mock`. `gemini` is a free, chat-only brain (no tools):
+  on Google's free plan prompts may be used to improve its products, so the console shows a warning and
+  private data must not go through it. Create its key in a *new* AI Studio project without billing.
 - Known limitation until the Postgres slice: sessions, pending approvals and the audit chain are
   in-memory and reset on redeploy.
 

@@ -45,7 +45,21 @@ read -r -p "Your Gmail address (the only account allowed to sign in): " OWNER_EM
 read -r -p "Google OAuth Client ID (ends with .apps.googleusercontent.com): " CLIENT_ID
 [ -n "$CLIENT_ID" ] || die "Client ID is required."
 ask_secret jarvis-google-client-secret "Google OAuth Client secret"
-ask_secret jarvis-anthropic-key "Anthropic API key (sk-ant-...)"
+echo
+echo "Which AI brain should JARVIS use?"
+echo "  1) Claude  (needs prepaid Anthropic credit)"
+echo "  2) Gemini  (free; Google may use what you type to improve its products - chat only, no tools)"
+read -r -p "Type 1 or 2 [1]: " BRAIN
+BRAIN="${BRAIN:-1}"
+if [ "$BRAIN" = "2" ]; then
+  ask_secret jarvis-gemini-key "Gemini API key (from aistudio.google.com/apikey, created in a NEW project)"
+  BRAIN_ENV="JARVIS_LLM_BACKEND=gemini"
+  BRAIN_SECRET="JARVIS_GEMINI_API_KEY=jarvis-gemini-key:latest"
+else
+  ask_secret jarvis-anthropic-key "Anthropic API key (sk-ant-...)"
+  BRAIN_ENV="JARVIS_LLM_BACKEND=anthropic"
+  BRAIN_SECRET="JARVIS_ANTHROPIC_API_KEY=jarvis-anthropic-key:latest"
+fi
 secret_exists jarvis-session-secret || put_secret jarvis-session-secret "$(rand)"
 secret_exists jarvis-api-token || put_secret jarvis-api-token "$(rand)"
 
@@ -67,8 +81,8 @@ gcloud run deploy "$SERVICE" --source . --region "$REGION" \
   --allow-unauthenticated \
   --min-instances 0 --max-instances 1 \
   --memory 512Mi --cpu 1 --timeout 300 \
-  --set-env-vars "JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},JARVIS_SESSION_BACKEND=memory,JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low" \
-  --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_ANTHROPIC_API_KEY=jarvis-anthropic-key:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest" \
+  --set-env-vars "JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV},JARVIS_SESSION_BACKEND=memory,JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low" \
+  --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET},JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest" \
   --quiet || { show_logs; exit 1; }
 
 say "DONE. Open JARVIS at:  $BASE_URL"

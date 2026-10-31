@@ -16,6 +16,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 class LLMBackend(StrEnum):
     ANTHROPIC = "anthropic"
+    GEMINI = "gemini"  # free-tier-capable alternative brain (chat only; see docs/plans slice 3)
     MOCK = "mock"  # deterministic provider for tests and offline dev
 
 
@@ -99,6 +100,17 @@ class Settings(BaseSettings):
     model_strong: str = Field(default="claude-opus-5-5", description="Planning, hard reasoning")
     default_tier: str = Field(default="balanced", description="fast | balanced | strong")
     max_output_tokens: int = 1024
+
+    # --- Gemini (optional free brain). Free-tier prompts are used by Google to improve its
+    # products, so this backend is chat-only (no tools) and the console shows a warning.
+    gemini_api_key: SecretStr | None = None
+    gemini_model_fast: str = "gemini-3.5-flash-lite"
+    gemini_model_balanced: str = "gemini-3.8-flash"
+    gemini_model_strong: str = "gemini-3.8-flash"  # no free "strong" model exists
+    gemini_paid_tier: bool = Field(
+        default=False,
+        description="True only if the key's project has billing (Google then does NOT train on it)",
+    )
     effort: str | None = Field(
         default="low",
         description="Reasoning effort for chat turns: low | medium | high | None (model default). "
@@ -132,6 +144,8 @@ class Settings(BaseSettings):
             raise RuntimeError("JARVIS_API_TOKEN must be set when JARVIS_ENV != dev")
         if self.llm_backend is LLMBackend.ANTHROPIC and self.anthropic_api_key is None:
             raise RuntimeError("JARVIS_ANTHROPIC_API_KEY is required for the anthropic backend")
+        if self.llm_backend is LLMBackend.GEMINI and self.gemini_api_key is None:
+            raise RuntimeError("JARVIS_GEMINI_API_KEY is required for the gemini backend")
         if self.auth_mode is AuthMode.GOOGLE:
             self._require_google_auth_config()
 
@@ -150,6 +164,11 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 f"JARVIS_SESSION_SECRET must be at least {MIN_SESSION_SECRET_LEN} characters"
             )
+
+    @property
+    def llm_trains_on_content(self) -> bool:
+        """True when the active brain's vendor may use prompts to improve its products."""
+        return self.llm_backend is LLMBackend.GEMINI and not self.gemini_paid_tier
 
     @property
     def cookie_secure(self) -> bool:

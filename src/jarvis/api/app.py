@@ -21,7 +21,7 @@ from jarvis.api.routes import router as v1_router
 from jarvis.config import AuthMode, Settings, get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import InputRejected
-from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider
+from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
 from jarvis.llm.router import ModelRouter
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
 from jarvis.memory import SessionNotFound, SessionStore, build_session_store
@@ -33,6 +33,18 @@ log = get_logger(__name__)
 
 def _err(status: int, body: dict[str, Any]) -> JSONResponse:
     return JSONResponse(status_code=status, content=body)
+
+
+def friendly_llm_error(exc: LLMError) -> str:
+    """Owner-facing wording. Raw vendor error bodies never reach the browser."""
+    low = str(exc).lower()
+    if "credit balance" in low or "billing" in low or "quota" in low:
+        return "The AI provider account has no credit or quota left. Add credit, or switch brain."
+    if isinstance(exc, LLMTransientError):
+        return "The AI service is busy or rate-limited right now. Please try again in a minute."
+    if "blocked" in low:
+        return "The AI provider declined to answer that message."
+    return "The AI service could not answer. Please try again."
 
 
 def create_app(
@@ -124,7 +136,8 @@ def create_app(
 
     @app.exception_handler(LLMError)
     async def _llm(_: Request, exc: LLMError) -> JSONResponse:
-        return _err(503, {"error": "llm_unavailable", "detail": str(exc)[:200]})
+        log.error("llm error", extra={"detail": str(exc)[:500]})  # vendor text stays in logs
+        return _err(503, {"error": "llm_unavailable", "detail": friendly_llm_error(exc)})
 
     @app.exception_handler(CSRFRejected)
     async def _csrf(_: Request, exc: CSRFRejected) -> JSONResponse:

@@ -52,7 +52,18 @@ async def console_js() -> FileResponse:
 @router.get("/console/config", include_in_schema=False)
 async def console_config(s: Settings = Depends(_settings)) -> dict[str, str]:
     """Non-sensitive: tells the page which sign-in flow to show."""
-    return {"auth_mode": s.auth_mode.value, "honorific": s.user_honorific}
+    warning = (
+        "Free Gemini brain: Google may use what you type here to improve its products. "
+        "Do not share private or confidential information."
+        if s.llm_trains_on_content
+        else ""
+    )
+    return {
+        "auth_mode": s.auth_mode.value,
+        "honorific": s.user_honorific,
+        "brain": s.llm_backend.value,
+        "privacy_warning": warning,
+    }
 
 
 @router.get("/auth/me")

@@ -20,6 +20,7 @@ from jarvis.llm.base import (
     LLMTransientError,
     ToolSpec,
 )
+from jarvis.llm.gemini_provider import GeminiProvider
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.logging import get_logger
 
@@ -48,14 +49,19 @@ class ModelRouter:
     def from_settings(cls, s: Settings, provider: LLMProvider | None = None) -> ModelRouter:
         if provider is None:
             provider = build_provider(s)
-        return cls(
-            provider,
-            {
+        if s.llm_backend is LLMBackend.GEMINI:
+            tiers = {
+                ModelTier.FAST: s.gemini_model_fast,
+                ModelTier.BALANCED: s.gemini_model_balanced,
+                ModelTier.STRONG: s.gemini_model_strong,
+            }
+        else:
+            tiers = {
                 ModelTier.FAST: s.model_fast,
                 ModelTier.BALANCED: s.model_balanced,
                 ModelTier.STRONG: s.model_strong,
-            },
-        )
+            }
+        return cls(provider, tiers)
 
     def resolve(self, tier: ModelTier) -> str:
         return self._tiers[tier]
@@ -128,4 +134,8 @@ def build_provider(s: Settings) -> LLMProvider:
             timeout_s=s.llm_timeout_s,
             max_retries=s.llm_max_retries,
         )
+    if s.llm_backend is LLMBackend.GEMINI:
+        if s.gemini_api_key is None:
+            raise RuntimeError("JARVIS_GEMINI_API_KEY is not set")
+        return GeminiProvider(s.gemini_api_key.get_secret_value(), timeout_s=s.llm_timeout_s)
     raise ValueError(f"unknown llm backend: {s.llm_backend}")

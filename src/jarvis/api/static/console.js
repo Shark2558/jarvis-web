@@ -105,7 +105,7 @@
 
   // ---- boot ------------------------------------------------------------------------------
   (async () => {
-    try { const c = await (await fetch('/console/config')).json(); state.authMode = c.auth_mode; state.honorific = c.honorific || 'Sir'; } catch (_) {}
+    try { const c = await (await fetch('/console/config')).json(); state.authMode = c.auth_mode; state.honorific = c.honorific || 'Sir'; if (c.privacy_warning) { const b = $('banner'); b.textContent = c.privacy_warning; b.style.display = 'block'; } } catch (_) {}
     if (state.authMode === 'google') {
       const r = await fetch('/auth/me', { credentials: 'same-origin' });
       if (r.status !== 200) { showGate(); return; }

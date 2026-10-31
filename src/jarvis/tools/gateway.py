@@ -9,6 +9,7 @@ policy.decide → DENY  → audit, error result
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -27,6 +28,12 @@ from jarvis.tools.registry import ToolRegistry
 
 log = get_logger(__name__)
 MAX_RESULT_CHARS = 12_000
+_SECRETISH = re.compile(r"(?i)(bearer\s+\S+|sk-[A-Za-z0-9_-]{8,}|[\w.+-]+@[\w-]+\.[\w.]+)")
+
+
+def _safe_detail(exc: BaseException) -> str:
+    """Exception class + redacted message: connector errors may echo recipients or tokens."""
+    return f"{type(exc).__name__}: {_SECRETISH.sub('[redacted]', str(exc))[:160]}"
 
 
 class GatewayOutcome(StrEnum):
@@ -72,7 +79,9 @@ class Gateway:
     def pending(self) -> list[PendingAction]:
         return self.gate.pending()
 
-    async def execute(self, call: ToolCall, *, confirmation_id: str | None = None) -> GatewayResult:
+    async def execute(
+        self, call: ToolCall, *, confirmation_id: str | None = None, scope: str | None = None
+    ) -> GatewayResult:
         tool = self.registry.get(call.name)
         if tool is None:
             self.audit.append(
@@ -93,7 +102,7 @@ class Gateway:
                 risk=tool.risk,
                 outcome="error",
                 args=call.arguments,
-                detail=str(exc),
+                detail=_safe_detail(exc),
             )
             return GatewayResult(GatewayOutcome.ERROR, error=str(exc))
 
@@ -116,6 +125,7 @@ class Gateway:
                 arguments=call.arguments,
                 risk=ActionRisk.IRREVERSIBLE,
                 summary=tool.summary(call.arguments),
+                scope=scope,
             )
             try:
                 self.gate.check(action, confirmation_id=confirmation_id)
@@ -142,7 +152,7 @@ class Gateway:
                 risk=tool.risk,
                 outcome="error",
                 args=call.arguments,
-                detail=str(exc),
+                detail=_safe_detail(exc),
             )
             return GatewayResult(GatewayOutcome.ERROR, error=f"tool failed: {exc}")
         self.audit.append(

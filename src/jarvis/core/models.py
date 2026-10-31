@@ -73,9 +73,6 @@ class ChatRequest(BaseModel):
     tier: str | None = Field(
         default=None, description="fast | balanced | strong (default from config)"
     )
-    confirmation_id: str | None = Field(
-        default=None, description="Internal: set when resuming an approved action"
-    )
 
 
 class PendingApproval(BaseModel):

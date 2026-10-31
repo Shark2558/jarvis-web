@@ -1,5 +1,7 @@
 # src/jarvis/core/__init__.py
-from jarvis.core.brain import Brain
+"""Core package. Import `jarvis.core.brain.Brain` directly; re-exporting it here created an
+import cycle with `jarvis.tools`."""
+
 from jarvis.core.models import ChatRequest, ChatResponse, Session, SessionSummary, Turn
 
-__all__ = ["Brain", "ChatRequest", "ChatResponse", "Session", "SessionSummary", "Turn"]
+__all__ = ["ChatRequest", "ChatResponse", "Session", "SessionSummary", "Turn"]

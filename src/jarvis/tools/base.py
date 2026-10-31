@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -44,7 +45,8 @@ class Tool:
         try:
             return self.summary_template.format(name=self.name, **args)
         except (KeyError, IndexError):
-            return self.name
+            # never show the owner a bare verb for something irreversible
+            return f"{self.name} {json.dumps(args, default=str)[:200]}"
 
 
 __all__ = ["Tool", "ToolCall", "ToolFn"]

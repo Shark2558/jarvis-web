@@ -50,6 +50,7 @@ class PendingAction(BaseModel):
     arguments: dict[str, Any]
     risk: ActionRisk
     summary: str = Field(description="Plain-language 'this will…' shown to the owner")
+    scope: str | None = Field(default=None, description="session/user the action belongs to")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC) + timedelta(minutes=10))
 
@@ -71,19 +72,27 @@ class ConfirmationGate:
         self._pending: dict[str, PendingAction] = {}
 
     def check(self, action: PendingAction, *, confirmation_id: str | None = None) -> None:
-        """Raise ConfirmationRequired unless the action is safe or explicitly confirmed."""
+        """Raise ConfirmationRequired unless the action is safe or explicitly confirmed.
+
+        A wrong, expired, or mismatched token never consumes another action's token and
+        always leaves `action` approvable (re-stored under its own id)."""
         if action.risk is not ActionRisk.IRREVERSIBLE:
             return
         if confirmation_id is None:
             self._pending[action.id] = action
             raise ConfirmationRequired(action)
-        pending = self._pending.pop(confirmation_id, None)
-        if pending is None or pending.expired or pending.tool != action.tool:
-            raise ConfirmationRequired(action)
-        # confirmed: argument drift between prompt and execution is a classic agentic bug
-        if pending.arguments != action.arguments:
+        pending = self._pending.get(confirmation_id)
+        ok = (
+            pending is not None
+            and not pending.expired
+            and pending.tool == action.tool
+            and pending.arguments == action.arguments  # argument drift → re-confirm
+            and pending.scope == action.scope
+        )
+        if not ok:
             self._pending[action.id] = action
             raise ConfirmationRequired(action)
+        del self._pending[confirmation_id]  # single use
 
     def cancel(self, confirmation_id: str) -> bool:
         return self._pending.pop(confirmation_id, None) is not None

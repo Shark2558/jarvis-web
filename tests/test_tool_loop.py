@@ -113,3 +113,57 @@ async def test_tool_result_is_data_not_instruction(brain: Brain, provider: MockP
     )
     assert "untrusted" in tr.content.lower()
     assert provider.calls[0].messages[-1].role is Role.USER
+
+
+async def test_approval_is_bound_to_its_session(
+    brain: Brain, provider: MockProvider, world
+) -> None:
+    provider.script_tool_calls(
+        [
+            ToolCall(
+                id="s4", name="send_message", arguments={"to": "priya@example.com", "body": "x"}
+            )
+        ],
+        "Waiting.",
+    )
+    resp = await brain.chat(ChatRequest(message="send"))
+    other = await brain.chat(ChatRequest(message="hello"))
+    import pytest
+
+    with pytest.raises(LookupError):
+        await brain.approve(resp.pending_approvals[0].id, session_id=other.session_id)
+    assert world.sent == []
+
+
+async def test_approved_action_is_recorded_even_if_llm_fails(
+    brain: Brain, provider: MockProvider, world, store
+) -> None:
+    provider.script_tool_calls(
+        [
+            ToolCall(
+                id="s5", name="send_message", arguments={"to": "priya@example.com", "body": "y"}
+            )
+        ],
+        "Waiting.",
+    )
+    resp = await brain.chat(ChatRequest(message="send"))
+    provider.fail_next = 5  # every tier fails after the action executes
+    resp2 = await brain.approve(resp.pending_approvals[0].id, session_id=resp.session_id)
+    assert world.sent[0]["body"] == "y"
+    assert "done" in resp2.reply.lower()
+    session = await store.get(resp.session_id)
+    # the tool exchange is persisted as blocks, not as an owner-typed instruction
+    assert any(
+        any(getattr(b, "type", "") == "tool_result" for b in t.blocks) for t in session.turns
+    )
+    assert not any("[Owner approved" in t.content for t in session.turns if t.role is Role.USER)
+
+
+def test_tools_package_imports_cold() -> None:
+    import subprocess
+    import sys
+
+    r = subprocess.run(
+        [sys.executable, "-c", "import jarvis.tools"], capture_output=True, text=True
+    )
+    assert r.returncode == 0, r.stderr

@@ -68,3 +68,22 @@ def test_expired_confirmation_rejected() -> None:
     gate._pending[action.id] = action
     with pytest.raises(ConfirmationRequired):
         gate.check(action, confirmation_id=action.id)
+
+
+def test_bogus_confirmation_keeps_action_pending_and_valid_tokens_intact() -> None:
+    # HIGH-1 regression: a wrong token must not orphan the action nor consume another token
+    gate = ConfirmationGate()
+    a = _send_email(body="a")
+    b = PendingAction(
+        tool="pay_bill", arguments={"amount": 1}, risk=ActionRisk.IRREVERSIBLE, summary="pay"
+    )
+    for x in (a, b):
+        with pytest.raises(ConfirmationRequired):
+            gate.check(x)
+    with pytest.raises(ConfirmationRequired) as ei:
+        gate.check(a, confirmation_id="bogus")
+    assert ei.value.action.id in {p.id for p in gate.pending()}  # still approvable
+    with pytest.raises(ConfirmationRequired):
+        gate.check(a, confirmation_id=b.id)  # token for another tool
+    assert {p.id for p in gate.pending()} == {a.id, b.id}  # b's token not consumed
+    gate.check(b, confirmation_id=b.id)  # and still works

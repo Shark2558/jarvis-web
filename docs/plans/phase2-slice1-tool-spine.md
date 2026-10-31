@@ -1,6 +1,6 @@
 # Phase 2 · Slice 1 — Tool spine: registry, policy gateway, tool-calling loop
 
-Status: in progress · 2026-11-01 · follows ECC loop (plan → test → implement → review → verify)
+Status: DONE · 2026-11-01 · 49 tests · reviewed (8 findings fixed) · follows ECC loop (plan → test → implement → review → verify)
 
 ## Goal
 Give the Brain the ability to call tools, with every call passing a deterministic

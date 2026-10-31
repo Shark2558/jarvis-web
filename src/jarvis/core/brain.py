@@ -189,7 +189,7 @@ class Brain:
             )
             results: list = []
             for call in completion.tool_calls:
-                gr = await self.gateway.execute(call, confirmation_id=req.confirmation_id)
+                gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
                 if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending:
                     pending.append(
                         PendingApproval(
@@ -220,7 +220,8 @@ class Brain:
                     ChatMessage(
                         role=Role.USER,
                         content=(
-                            "Tool round limit reached. Summarise what you found so far and what remains."
+                            "Tool round limit reached. Summarise what you found so far "
+                            "and what remains."
                         ),
                     )
                 ]
@@ -248,22 +249,34 @@ class Brain:
     async def _decide(
         self, approval_id: str, *, approved: bool, session_id: str, user_id: str
     ) -> ChatResponse:
+        """Owner decision on a pending R3 action.
+
+        The irreversible step is executed and persisted as a tool exchange BEFORE any model
+        call, so a provider outage can never lose the record of what was done; and the
+        result reaches the model as a tool_result block, never as an owner instruction."""
         if self.gateway is None:
             raise SessionNotFound(session_id)
-        action = next((a for a in self.gateway.pending() if a.id == approval_id), None)
+        scope = f"{user_id}:{session_id}"
+        action = next(
+            (a for a in self.gateway.pending() if a.id == approval_id and a.scope == scope), None
+        )
         if action is None:
-            raise LookupError(f"no pending approval {approval_id}")
-        if approved:
-            from jarvis.llm.base import ToolCall  # local import keeps module graph simple
+            raise LookupError(f"no pending approval {approval_id} in this session")
+        session = await self._load_or_create(
+            ChatRequest(message="-", session_id=session_id, user_id=user_id)
+        )
+        from jarvis.llm.base import ToolCall
 
-            gr = await self.gateway.execute(
-                ToolCall(id=f"approve_{approval_id}", name=action.tool, arguments=action.arguments),
-                confirmation_id=approval_id,
+        call = ToolCall(id=f"approve_{approval_id}", name=action.tool, arguments=action.arguments)
+        if approved:
+            gr = await self.gateway.execute(call, confirmation_id=approval_id, scope=scope)
+            done = gr.outcome is GatewayOutcome.EXECUTED
+            fallback = (
+                f"Done, Sir: {action.summary}."
+                if done
+                else f"That did not go through: {gr.error or gr.outcome.value}."
             )
-            note = (
-                f"[Owner approved {approval_id}: {action.summary}. Result: {gr.for_model()}]"
-                " Tell the owner what happened in one sentence."
-            )
+            instruction = "Owner approved this action; report the outcome in one sentence."
         else:
             self.gateway.gate.cancel(approval_id)
             tool = self.gateway.registry.get(action.tool)
@@ -274,11 +287,76 @@ class Brain:
                 outcome="declined",
                 args=action.arguments,
             )
-            note = (
-                f"[Owner declined {approval_id}: {action.summary}. Nothing was done.]"
-                " Acknowledge in one sentence; say nothing was sent or changed."
+            from jarvis.tools.gateway import GatewayResult
+
+            gr = GatewayResult(GatewayOutcome.DENIED, error="declined by owner")
+            fallback = "Understood, Sir. Nothing was sent or changed."
+            instruction = (
+                "Owner declined this action; acknowledge in one sentence, nothing was done."
             )
-        return await self.chat(ChatRequest(message=note, session_id=session_id, user_id=user_id))
+
+        # persist the exchange first (tool_use → tool_result), then ask the model to narrate
+        trace_id = get_trace_id()
+        session.append(Turn(role=Role.ASSISTANT, content="", blocks=[call], trace_id=trace_id))
+        session.append(
+            Turn(
+                role=Role.USER,
+                content="",
+                blocks=[
+                    ToolResultBlock(
+                        tool_use_id=call.id,
+                        content=gr.for_model(),
+                        is_error=gr.outcome is not GatewayOutcome.EXECUTED,
+                    ),
+                    TextBlock(text=instruction),
+                ],
+                trace_id=trace_id,
+            )
+        )
+        await self.store.save(session)
+
+        req = ChatRequest(message="-", session_id=session_id, user_id=user_id)
+        messages = build_window(
+            session.turns, max_turns=self.s.session_max_turns, max_chars=self.s.session_max_chars
+        )
+        trailer = build_trailer(
+            tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
+        )
+        try:
+            completion = await self._complete(messages, trailer, req, with_tools=False)
+            reply = completion.text.strip() or fallback
+            usage, cost, model = completion.usage, completion.cost_usd, completion.model
+        except LLMError as exc:
+            log.warning(
+                "approval narration failed; using deterministic reply",
+                extra={"session_id": session.id, "error": str(exc)[:120]},
+            )
+            reply, usage, cost, model = fallback, None, 0.0, "none"
+        session.append(
+            Turn(
+                role=Role.ASSISTANT,
+                content=reply,
+                trace_id=trace_id,
+                model=model,
+                usage=usage,
+                cost_usd=cost,
+            )
+        )
+        await self.store.save(session)
+        from jarvis.llm.base import Usage
+
+        return ChatResponse(
+            session_id=session.id,
+            reply=reply,
+            trace_id=trace_id,
+            model=model,
+            usage=usage or Usage(),
+            cost_usd=cost,
+            latency_ms=0,
+            turn_count=len(session.turns),
+            tool_calls=1 if approved else 0,
+            pending_approvals=[],
+        )
 
     async def chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
         """Streaming variant for the CLI (and Phase 1 TTS). Persists the full reply at the end."""

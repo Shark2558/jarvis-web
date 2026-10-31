@@ -66,7 +66,9 @@ class AuditLog:
             detail=detail[:500],
             prev_hash=prev,
         )
-        e = e.model_copy(update={"hash": _digest(e.model_dump(exclude={"hash"}), prev)})
+        e = e.model_copy(
+            update={"hash": _digest(e.model_dump(mode="json", exclude={"hash"}), prev)}
+        )
         self._entries.append(e)
         return e
 
@@ -76,7 +78,10 @@ class AuditLog:
     def verify(self) -> bool:
         prev = self.GENESIS
         for e in self._entries:
-            if e.prev_hash != prev or _digest(e.model_dump(exclude={"hash"}), prev) != e.hash:
+            if (
+                e.prev_hash != prev
+                or _digest(e.model_dump(mode="json", exclude={"hash"}), prev) != e.hash
+            ):
                 return False
             prev = e.hash
         return True

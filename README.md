@@ -60,7 +60,9 @@ JARVIS_AUTH_MODE=google  owner signs in with Google (OIDC + PKCE via Authlib)
 - `/auth/login`, `/auth/callback`, `/auth/logout` (google mode); `/auth/me`; `/console/config`.
 - Per-IP token-bucket rate limit on `/v1` and `/auth` (`JARVIS_RATE_LIMIT_PER_MINUTE`); `/health` exempt.
 - Outside `dev`, startup fails unless the Google config is complete (`require_prod_invariants`).
-- Hosting: `render.yaml` is a Render Blueprint — Docker web service, secrets entered once in the
+- Hosting (preferred): `deploy/cloudrun.sh` deploys to Google Cloud Run from Cloud Shell — public URL, owner-only
+  sign-in, `--max-instances 1` (in-memory state), scale-to-zero, secrets in Secret Manager.
+- Hosting (alternative): `render.yaml` is a Render Blueprint — Docker web service, secrets entered once in the
   dashboard, auto-deploy on push. See `docs/plans/phase2-slice2-web-console-auth.md`.
 - Known limitation until the Postgres slice: sessions, pending approvals and the audit chain are
   in-memory and reset on redeploy.

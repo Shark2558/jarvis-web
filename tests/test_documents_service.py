@@ -212,6 +212,19 @@ async def test_attach_refusals_are_plain(svc: DocumentService) -> None:
         await svc.attach(owner_turn(), "u1", "s2", [mine.id], PRIVATE)
 
 
+async def test_forget_session_also_sweeps_my_stale_unsent_uploads(
+    svc: DocumentService, clock: Clock
+) -> None:
+    stale = await svc.upload("u1", "old.txt", b"never sent")
+    clock.at += timedelta(hours=25)
+    fresh = await svc.upload("u1", "new.txt", b"just now")  # this upload swept `stale` already
+    other = await svc.upload("u2", "theirs.txt", b"x")
+    assert await svc.store.get(stale.id) is None
+    clock.at += timedelta(hours=25)
+    await svc.forget_session("u1", "no-such-session")
+    assert await svc.store.get(fresh.id) is None and await svc.store.get(other.id) is not None
+
+
 async def test_forget_session_deletes_its_attachments_only(svc: DocumentService) -> None:
     a = await svc.upload("u1", "a.txt", b"one")
     b = await svc.upload("u1", "b.txt", b"two")

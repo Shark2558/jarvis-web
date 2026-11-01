@@ -118,8 +118,8 @@ class DocumentService:
         )
         return att.ref()
 
-    async def _room_for(self, owner: str) -> None:
-        """Sweep the owner's stale waiting uploads, then refuse past the waiting cap."""
+    async def _sweep(self, owner: str) -> int:
+        """Delete the owner's uploads never sent within a day; the number still waiting."""
         fresh = 0
         for a in await self.store.waiting():
             if a.owner != owner:
@@ -128,7 +128,11 @@ class DocumentService:
                 await self.store.delete(a.id)
             else:
                 fresh += 1
-        if fresh >= MAX_WAITING:
+        return fresh
+
+    async def _room_for(self, owner: str) -> None:
+        """Sweep the owner's stale waiting uploads, then refuse past the waiting cap."""
+        if await self._sweep(owner) >= MAX_WAITING:
             raise DocumentRejected(
                 "too_many",
                 f"{MAX_WAITING} files are already waiting to be sent. Send or remove some first.",
@@ -202,11 +206,13 @@ class DocumentService:
         return turn.model_copy(update={"attachments": [a.ref() for a in bound], "blocks": blocks})
 
     async def forget_session(self, owner: str, session_id: str) -> int:
+        """The conversation's files (and the owner's stale never-sent uploads, while at it)."""
         gone = 0
         for a in await self.store.in_session(session_id):
             if a.owner == owner:
                 await self.store.delete(a.id)
                 gone += 1
+        await self._sweep(owner)
         return gone
 
     # ---- reading (the tools) ----------------------------------------------------------------

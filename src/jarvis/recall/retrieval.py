@@ -90,15 +90,14 @@ def scores(facts: Sequence[Fact], query: str, now: datetime) -> dict[str, float]
         return {}
     docs = [(f, Counter(_doc(f))) for f in facts]
     avgdl = sum(sum(c.values()) for _, c in docs) / len(docs) or 1.0
-    df = {t: sum(1 for _, c in docs if t in c) for t in q}
+    df = Counter(t for _, c in docs for t in c if t in q)  # each fact's words, not each query's
     n = len(docs)
     out: dict[str, float] = {}
     for f, counts in docs:
         dl = sum(counts.values())
         s = 0.0
-        for t in q:
-            tf = counts.get(t, 0)
-            if tf:
+        for t, tf in counts.items():
+            if t in q:
                 idf = math.log(1 + (n - df[t] + 0.5) / (df[t] + 0.5))
                 s += idf * tf * (K1 + 1) / (tf + K1 * (1 - B + B * dl / avgdl))
         if s > 0:

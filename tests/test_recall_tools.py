@@ -147,6 +147,22 @@ async def test_search_returns_matching_notes() -> None:
     assert [n["text"] for n in gr.result["notes"]] == ["Daughter is named Anaya"]
 
 
+async def test_keywords_are_filtered_and_shown_on_the_card() -> None:
+    """MEDIUM 7: a card number in the keywords was stored; the card never showed keywords."""
+    r = rig()
+    gw = _gateway(r.svc)
+    with context_trust(untrusted=False):
+        gr = await gw.execute(
+            _save("Has a credit card", keywords=["4111111111111111"]), scope=SCOPE
+        )
+    assert gr.outcome is GatewayOutcome.ERROR and "won't store" in (gr.error or "")
+    with context_trust(untrusted=True):
+        gr = await gw.execute(_save("Likes jazz", keywords=["music", "saxophone"]), scope=SCOPE)
+    assert gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending is not None
+    assert "keywords: music, saxophone" in gr.pending.summary
+    assert (await r.store.load(UID)).all_facts() == []
+
+
 async def test_search_for_everything_lists_pinned_then_recent_notes() -> None:
     """LOW 12: memory_search("everything") over > 40 notes found nothing."""
     r = rig()

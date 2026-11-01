@@ -55,6 +55,7 @@ from jarvis.memory import SessionNotFound, SessionStore
 from jarvis.recall.errors import (
     ConsentRequired,
     ImportTooLarge,
+    InvalidMemoryInput,
     MemoryFull,
     MemoryUnavailable,
     SensitiveRejected,
@@ -350,6 +351,10 @@ def create_app(
     @app.exception_handler(SensitiveRejected)
     async def _sensitive(_: Request, exc: SensitiveRejected) -> JSONResponse:
         return _err(422, {"error": "sensitive", "detail": str(exc)})
+
+    @app.exception_handler(InvalidMemoryInput)
+    async def _memory_input(_: Request, exc: InvalidMemoryInput) -> JSONResponse:
+        return _err(422, {"error": "input_rejected", "detail": str(exc)})
 
     @app.exception_handler(MemoryFull)
     async def _memory_full(_: Request, exc: MemoryFull) -> JSONResponse:

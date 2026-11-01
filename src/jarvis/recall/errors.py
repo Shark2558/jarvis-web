@@ -10,6 +10,7 @@ MSG_SENSITIVE = (
 )
 MSG_UNAVAILABLE = "Memory can't be read just now. Try again in a minute."
 MSG_TOO_LARGE = "That file is larger than 512 KB, so it was not imported."
+MSG_TOO_MANY = "An import holds at most 1,000 facts, so this file was not imported."
 
 
 class ConsentRequired(RuntimeError):
@@ -38,6 +39,18 @@ class MemoryUnavailable(RuntimeError):
         super().__init__(detail)
 
 
+class InvalidMemoryInput(ValueError):
+    """Text or a value the owner can fix (blank, too long, unknown category) → 422
+    input_rejected with this plain message."""
+
+
+class ImportRejected(InvalidMemoryInput):
+    """An import the store won't take as a whole (more than 1,000 facts) → 422."""
+
+    def __init__(self, detail: str = MSG_TOO_MANY) -> None:
+        super().__init__(detail)
+
+
 class ImportTooLarge(ValueError):
     """An import body over 512 KB (→ 413 too_large)."""
 
@@ -48,8 +61,11 @@ class ImportTooLarge(ValueError):
 __all__ = [
     "MSG_FULL",
     "MSG_SENSITIVE",
+    "MSG_TOO_MANY",
     "ConsentRequired",
+    "ImportRejected",
     "ImportTooLarge",
+    "InvalidMemoryInput",
     "MemoryFull",
     "MemoryUnavailable",
     "SensitiveRejected",

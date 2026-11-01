@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ---- limits (§2) -------------------------------------------------------------------------------
 
@@ -28,6 +28,7 @@ FACTS_BLOCK_CAP = 1_600
 MAX_FACTS_PER_TURN = 12
 SEND_ALL_UNDER = 40
 IMPORT_MAX_BYTES = 512 * 1024
+IMPORT_MAX_FACTS = 1_000  # an export holds ≤ 700 (500 active + history)
 HISTORY_DAYS = 30
 SHARD_SIZE = 100
 MAX_SHARDS = 7  # header + 7 shards = a cold reload of ≤ 8 reads
@@ -39,6 +40,21 @@ ProfileLabel = Literal["about", "preferences", "people", "work"]
 CATEGORIES: tuple[str, ...] = get_args(Category)
 PROFILE_LABELS: tuple[str, ...] = get_args(ProfileLabel)
 CONFIDENCE: dict[str, float] = {"learned": 0.7, "told": 0.9, "added": 0.9, "imported": 0.9}
+
+
+EARLIEST = datetime(2000, 1, 1, tzinfo=UTC)
+LATEST = datetime(2100, 1, 1, tzinfo=UTC)
+
+
+def aware(at: datetime) -> datetime:
+    """Every stored date is timezone-aware UTC within 2000 … 2100: a naive date (an edited or
+    foreign import) is read as UTC, and an absurd one (year 1, year 9999) is clamped, so
+    comparing, sorting and showing dates can never raise."""
+    try:
+        at = at.replace(tzinfo=UTC) if at.tzinfo is None else at.astimezone(UTC)
+    except OverflowError:  # year 1 east of UTC / year 9999 west of it
+        return EARLIEST if at.year < EARLIEST.year else LATEST
+    return min(max(at, EARLIEST), LATEST)
 
 
 # ---- stored ------------------------------------------------------------------------------------
@@ -68,6 +84,11 @@ class Fact(BaseModel):
     use_count: int = 0
     replaced_by: str | None = None
     replaced_at: datetime | None = None
+
+    @field_validator("created_at", "updated_at", "last_used_at", "replaced_at", mode="after")
+    @classmethod
+    def _aware(cls, v: datetime | None) -> datetime | None:
+        return None if v is None else aware(v)
 
     @property
     def active(self) -> bool:
@@ -252,8 +273,10 @@ __all__ = [
     "CATEGORIES",
     "CONFIDENCE",
     "FACTS_BLOCK_CAP",
+    "EARLIEST",
     "HISTORY_DAYS",
     "IMPORT_MAX_BYTES",
+    "IMPORT_MAX_FACTS",
     "MAX_ACTIVE",
     "MAX_FACTS_PER_TURN",
     "MAX_KEYWORDS",
@@ -288,4 +311,5 @@ __all__ = [
     "SettingsPatch",
     "Shards",
     "UseStat",
+    "aware",
 ]

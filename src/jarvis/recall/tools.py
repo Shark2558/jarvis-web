@@ -18,8 +18,9 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.recall.models import CATEGORIES, MAX_TEXT, Fact, FactSource
-from jarvis.recall.ops import FACT_ID, category_of, fact_text
+from jarvis.recall.ops import FACT_ID, category_of, check_sensitive, fact_text
 from jarvis.recall.service import MemoryService
+from jarvis.recall.text import clean_keywords
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import one_line, quoted
 from jarvis.tools.context import require_tool_context
@@ -49,11 +50,12 @@ def _note(f: Fact) -> dict[str, Any]:
 
 
 def _check_save(a: dict[str, Any]) -> None:
-    fact_text(a.get("text"))  # ValueError / SensitiveRejected with a plain message
+    text = fact_text(a.get("text"))  # ValueError / SensitiveRejected with a plain message
     category_of(a.get("category"))
     kws = a.get("keywords")
     if kws is not None and (not isinstance(kws, list) or not all(isinstance(k, str) for k in kws)):
         raise ValueError("keywords must be a list of words")
+    check_sensitive(text, clean_keywords(kws))  # refused before any card is shown
 
 
 def _check_query(a: dict[str, Any]) -> None:
@@ -95,9 +97,12 @@ def _forget_risk(a: dict[str, Any]) -> ActionRisk:
 
 
 def _save_card(a: dict[str, Any]) -> str:
+    kws = a.get("keywords")
+    words = ", ".join(clean_keywords(kws if isinstance(kws, list) else ()))
+    tail = f"; keywords: {words}" if words else ""
     return (
         f"Remember this about you: {quoted(a.get('text'), CARD_FACT_LIMIT)} "
-        f"({one_line(a.get('category'), 20)}). Text from other people was in this "
+        f"({one_line(a.get('category'), 20)}{tail}). Text from other people was in this "
         "conversation: check it is really yours."
     )
 

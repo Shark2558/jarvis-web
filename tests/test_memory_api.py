@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -279,6 +280,83 @@ async def test_import_limits(gc: AsyncClient) -> None:
         headers=BEARER,
     )
     assert r.json() == {"added": 0, "skipped": 1}
+
+
+async def test_an_oversized_import_is_refused_from_its_content_length(gc: AsyncClient) -> None:
+    """HIGH 2: the whole body was read before the size check."""
+    r = await gc.post(
+        "/v1/memory/import",
+        content=b'{"data": {}}',
+        headers={**BEARER, "Content-Length": str(IMPORT_MAX_BYTES + 1)},
+    )
+    assert r.status_code == 413 and r.json()["error"] == "too_large"
+
+    async def chunks() -> AsyncIterator[bytes]:  # no Content-Length: counted while reading
+        yield b'{"data": {"facts": ['
+        for _ in range(IMPORT_MAX_BYTES // 1000 + 2):
+            yield b'{"text": "' + b"y" * 970 + b'", "category": "other"},'
+        yield b"{}]}}"
+
+    r = await gc.post("/v1/memory/import", content=chunks(), headers=BEARER)
+    assert r.status_code == 413 and r.json()["error"] == "too_large"
+
+
+async def test_a_500_fact_round_trip_is_fast_and_identical(gc: AsyncClient) -> None:
+    """HIGH 2: a 500-fact import held the event loop for ~14 s."""
+    svc = gc.app.state.memory  # type: ignore[attr-defined]
+    for i in range(MAX_ACTIVE):
+        await svc.add_fact(
+            UID, f"note {i} about topic t{i} and q{i * 7}", "other", keywords=[f"k{i}"]
+        )
+    exported = (await gc.get("/v1/memory/export", headers=BEARER)).json()
+    r = await gc.request("DELETE", "/v1/memory", json={"confirm": "FORGET"}, headers=BEARER)
+    assert r.status_code == 204
+    t0 = time.perf_counter()
+    r = await gc.post("/v1/memory/import", json={"data": exported}, headers=BEARER)
+    assert time.perf_counter() - t0 < 1.0
+    assert r.status_code == 200 and r.json() == {"added": MAX_ACTIVE, "skipped": 0}
+    after = (await gc.get("/v1/memory", headers=BEARER)).json()
+    key = lambda v: sorted((f["text"], tuple(f["keywords"])) for f in v["facts"])  # noqa: E731
+    assert key(after) == key(exported)
+
+
+async def test_an_import_over_1000_facts_is_422(gc: AsyncClient) -> None:
+    facts = [{"text": f"n{i}", "category": "other"} for i in range(1_001)]
+    r = await gc.post("/v1/memory/import", json={"data": {"facts": facts}}, headers=BEARER)
+    assert r.status_code == 422 and r.json()["error"] == "input_rejected"
+    assert "1,000" in r.json()["detail"]
+
+
+async def test_blank_or_invisible_text_is_422_input_rejected(gc: AsyncClient) -> None:
+    """LOW 13: these were 500s."""
+    r = await gc.post(
+        "/v1/memory/facts", json={"text": "\u200b\u200b", "category": "other"}, headers=BEARER
+    )
+    assert r.status_code == 422 and r.json()["error"] == "input_rejected"
+    assert r.json()["detail"] == "A fact needs some text."
+    f = await _add(gc, "Prefers tea")
+    r = await gc.patch(f"/v1/memory/facts/{f['id']}", json={"text": "   \u200b "}, headers=BEARER)
+    assert r.status_code == 422 and r.json()["error"] == "input_rejected"
+
+
+async def test_patch_on_a_replaced_fact_is_404(gc: AsyncClient) -> None:
+    svc = gc.app.state.memory  # type: ignore[attr-defined]
+    old = await svc.add_fact(UID, "Lives in Kochi", "places")
+    state = await svc.store.load(UID)
+    from jarvis.recall.ops import new_fact, replace_fact
+
+    await svc.store.mutate(
+        UID,
+        lambda cur: replace_fact(
+            cur,
+            old.id,
+            new_fact(cur, "Lives in Delhi", "places", origin="told", now=old.created_at),
+            old.created_at,
+        ),
+    )
+    assert state is not None
+    r = await gc.patch(f"/v1/memory/facts/{old.id}", json={"pinned": False}, headers=BEARER)
+    assert r.status_code == 404
 
 
 async def test_import_never_switches_learning_on(gc: AsyncClient) -> None:

@@ -3,14 +3,19 @@
 //   window.JarvisSpeechChunker  create({honorific}) → {push(delta) → [chunks], end() → [chunks]}.
 //     Pure. Feed the reply text (whole, or streamed deltas) and get speakable chunks in order: the
 //     first sentence as soon as it ends, later ones packed up to ~400 characters. Fenced code
-//     blocks and tables are never spoken; the first one is replaced, once, by "The details are on
-//     screen, {honorific}." The server's speakable() stays the authority on what is said.
+//     blocks, 4-space / tab indented code and tables are never spoken; the first one is replaced,
+//     once, by "The details are on screen, {honorific}." List items ("1. ", "- ", "* ", "• ")
+//     lose their marker and become sentences of their own (like the server's speakable(), which
+//     stays the authority on what is said).
 //   window.JarvisSpeaker  create({synth, fallback, finish}) → a playback queue. synth(text, signal)
 //     → Promise<ArrayBuffer> (POST /v1/voice/speak); chunks are fetched one ahead, decoded and
 //     played in order through Web Audio: "comms" (high-pass ~120 Hz, low-pass ~9 kHz, a gentle
 //     compressor and a short generated room) or "clean". An AnalyserNode gives level() for the Core
 //     and the mic ring (real output only). stop() is barge-in: sources stop, fetches abort. When
-//     synth fails with err.fallback (503 / 402 / network), the rest is spoken by the browser voice.
+//     synth fails with err.fallback (503 / 402 / network), the rest is spoken by the browser voice,
+//     and so is a reply whose AudioContext the browser keeps suspended (no tap yet: 'blocked').
+//     The browser voice gets pieces of at most ~180 characters (Chrome's network voices stop after
+//     ~15 s without saying so) and a watchdog per piece that moves on if no end event comes.
 // Nothing here stores audio; spoken text goes only to the console's own /v1/voice/speak.
 (() => {
   'use strict';
@@ -24,6 +29,10 @@
     'approx', 'dept', 'est', 'fig', 'inc', 'ltd', 'co', 'corp', 'rs', 'am', 'pm', 'jan', 'feb', 'mar', 'apr', 'jun',
     'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', 'govt', 'ref']);
   const FENCE = /^(\x60{3}|~{3})/; // a fenced code block opens or closes (\x60 is a backtick)
+  const ITEM = /^(\d{1,3}[.)]|[-*+•])[ \t]/;     // a list item's marker, then a space
+  const MAYBE_ITEM = /^(\d{1,3}[.)]?|[-*+•])$/;  // what could still become one
+  const ENDED = /[.!?…:;,]["')\]}’”]*$/;          // a line that already ends like a sentence
+  const CODE_INDENT = 4;                          // columns: markdown's indented code block
   const CLOSERS = '"\')]}’”';
 
   function words(s) { return /[\p{L}\p{N}]/u.test(s); }
@@ -61,15 +70,31 @@
     if (/^\d+$/.test(token) && /(^|\n)[ \t]*$/.test(s.slice(0, k + 1))) return true; // "2. Do this" (a list)
     return false;
   }
-  function splitLong(s) {
+  function splitLong(s, max = MAX) {
     const out = [];
     let rest = s;
-    while (rest.length > MAX) {
-      const cut = Math.max(rest.lastIndexOf(', ', MAX), rest.lastIndexOf('; ', MAX), rest.lastIndexOf(' — ', MAX));
-      const at = cut > MAX / 3 ? cut + 1 : (rest.lastIndexOf(' ', MAX) > 0 ? rest.lastIndexOf(' ', MAX) : MAX);
+    while (rest.length > max) {
+      const cut = Math.max(rest.lastIndexOf(', ', max), rest.lastIndexOf('; ', max), rest.lastIndexOf(' — ', max));
+      const at = cut > max / 3 ? cut + 1 : (rest.lastIndexOf(' ', max) > 0 ? rest.lastIndexOf(' ', max) : max);
       out.push(rest.slice(0, at).trim()); rest = rest.slice(at).trim();
     }
     if (rest) out.push(rest);
+    return out;
+  }
+  /** Text cut into pieces of at most `max` characters, at sentence ends where it can. */
+  function pieces(text, max) {
+    const t = tidy(text);
+    if (t.length <= max) return t ? [t] : [];
+    const sents = [];
+    let from = 0;
+    boundaries(t, true).forEach(at => { const x = tidy(t.slice(from, at)); if (x) sents.push(x); from = at; });
+    if (from < t.length && tidy(t.slice(from))) sents.push(tidy(t.slice(from)));
+    const out = [];
+    let cur = '';
+    sents.forEach(x => splitLong(x, max).forEach(part => {
+      if (cur && cur.length + 1 + part.length > max) { out.push(cur); cur = part; } else cur = cur ? cur + ' ' + part : part;
+    }));
+    if (cur) out.push(cur);
     return out;
   }
 
@@ -80,6 +105,8 @@
     let line = '', mode = null; // the current line and what it is: null (undecided), prose, table, fence, code
     let lineFrom = 0;          // where the current prose line starts in prose (a "a | b" row is a table too)
     let inFence = false, noticed = false, firstOut = false;
+    let item = false;          // the current prose line is a list item (its marker already dropped)
+    let inList = false;        // since the last list item: indented lines continue it, they aren't code
     const ready = [];          // whole sentences waiting to be packed
     const out = [];            // chunks for the caller
 
@@ -108,6 +135,7 @@
       sentences(true); pack(true);  // what came before the block is said first
       out.push(NOTICE); firstOut = true;
     }
+    function indentOf(lead) { let n = 0; for (const ch of lead) n += ch === '\t' ? CODE_INDENT : 1; return n; }
     function decide() {
       const s = line.replace(/^[ \t]+/, '');
       if (!s) return;
@@ -115,7 +143,14 @@
       if (s[0] === '|') { mode = 'table'; return; }
       if (FENCE.test(s)) { mode = 'fence'; return; }
       if (/^[\x60~]{1,2}$/.test(s)) return; // might still become a fence
-      mode = 'prose'; lineFrom = prose.length; prose += line; line = '';
+      if (MAYBE_ITEM.test(s)) return;        // "1", "1.", "-": might still become a list item
+      const deep = indentOf(line.slice(0, line.length - s.length)) >= CODE_INDENT;
+      const marker = ITEM.exec(s);
+      if (!marker && deep && !inList) { mode = 'code'; return; } // indented code: never spoken
+      if (!marker && !deep) inList = false;
+      item = !!marker;
+      if (item) inList = true;
+      mode = 'prose'; lineFrom = prose.length; prose += item ? s.slice(marker[0].length) : line; line = '';
     }
     function endLine() {
       if (mode === null) {
@@ -126,8 +161,12 @@
       } else if (mode === 'fence') { inFence = !inFence; if (inFence) skipped(); }
       else if (mode === 'code' || mode === 'table') skipped();
       else if (prose.slice(lineFrom).includes('|')) { prose = prose.slice(0, lineFrom); skipped(); } // "a | b": a table row
-      else prose += '\n';
-      line = ''; mode = null;
+      else {
+        const said = prose.slice(lineFrom).trimEnd();
+        if (item && words(said) && !ENDED.test(said)) prose = prose.trimEnd() + '.'; // "Buy milk" → "Buy milk."
+        prose += '\n';
+      }
+      line = ''; mode = null; item = false;
     }
     function feed(delta) {
       for (const ch of String(delta)) {
@@ -176,6 +215,12 @@
     }
     return ir;
   }
+
+  const BROWSER_MAX = 180;       // characters per utterance for the browser voice
+  const BROWSER_CPS = 13;        // characters a second at rate 1 (slow on purpose: the watchdog never cuts speech)
+  const WATCHDOG_SLACK_MS = 2500;
+  const RESUME_WAIT_MS = 1500;   // an AudioContext the browser won't start (no tap yet) is given up on
+  const settle = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise(r => setTimeout(r, ms))]);
 
   function createSpeaker(opts) {
     const o = opts || {};
@@ -239,18 +284,16 @@
         if (my !== seq) return;
         if (err && err.name === 'AbortError') return;
         if (err && err.skip) { queue.shift(); playing = null; pump(); return; }
-        if (err && err.fallback) {
-          useBrowser = true;
-          queue.forEach(it => { if (it.ctrl) { try { it.ctrl.abort(); } catch (_) {} } }); // no paid call for chunks the browser says
-          fire('fallback', { reason: err.reason || err.message || 'error' });
-          await speakBrowser(item, my); return;
-        }
+        if (err && err.fallback) { await toBrowser(item, my, err.reason || err.message || 'error'); return; }
         queue.shift(); playing = null; pump(); return; // undecodable audio: skip this chunk
       }
       if (my !== seq) return;
       const c = context();
-      try { if (c.state === 'suspended') await c.resume(); } catch (_) {}
-      if (my !== seq) return;
+      if (c.state === 'suspended') {
+        try { await settle(c.resume(), RESUME_WAIT_MS); } catch (_) {}
+        if (my !== seq) return;
+        if (c.state === 'suspended') { await toBrowser(item, my, 'blocked'); return; } // no tap yet: the browser says it
+      }
       const src = c.createBufferSource();
       src.buffer = buffer;
       src.connect(finish === 'comms' ? comms : master);
@@ -260,21 +303,45 @@
       fire('chunk', { text: item.text, engine: 'cloud' });
       src.start();
     }
+    /** The rest of this reply goes to the browser voice (cloud refused, or audio held back). */
+    function toBrowser(item, my, reason) {
+      useBrowser = true;
+      queue.forEach(it => { if (it.ctrl) { try { it.ctrl.abort(); } catch (_) {} } }); // no paid call for chunks the browser says
+      fire('fallback', { reason });
+      return speakBrowser(item, my);
+    }
+    /** How long an utterance may take before the watchdog moves on (it never cuts real speech). */
+    const patience = (text) => Math.max(3000, (text.length / (BROWSER_CPS * rate)) * 1000 + WATCHDOG_SLACK_MS);
     function speakBrowser(item, my) {
       const ss = window.speechSynthesis, U = window.SpeechSynthesisUtterance;
       return new Promise(resolve => {
-        const next = () => { if (my === seq && playing === item) { queue.shift(); playing = null; pump(); } resolve(); };
+        let done = false, timer = 0, k = 0;
+        const finish = () => {
+          if (done) return;
+          done = true; clearTimeout(timer);
+          if (my === seq && playing === item) { queue.shift(); playing = null; pump(); }
+          resolve();
+        };
         if (item.ctrl) { try { item.ctrl.abort(); } catch (_) {} }
-        if (!ss || typeof U !== 'function') { next(); return; }
-        const u = new U(item.text);
-        const v = browserVoice();
-        if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-GB';
-        u.rate = rate; u.pitch = 0.95;
-        u.onend = next; u.onerror = next;
-        item.utterance = u;
+        if (!ss || typeof U !== 'function') { finish(); return; }
+        const parts = pieces(item.text, BROWSER_MAX), v = browserVoice();
+        const next = () => {
+          clearTimeout(timer);
+          if (my !== seq || playing !== item || k >= parts.length) { finish(); return; }
+          const u = new U(parts[k++]);
+          if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-GB';
+          u.rate = rate; u.pitch = 0.95;
+          let over = false;
+          const step = () => { if (!over) { over = true; next(); } };
+          u.onend = step; u.onerror = step;
+          // Chrome can stop a long utterance without onend: cancel it and go on with the next piece
+          timer = setTimeout(() => { if (!over) { try { ss.cancel(); } catch (_) {} step(); } }, patience(u.text));
+          item.utterance = u;
+          try { ss.speak(u); } catch (_) { step(); }
+        };
         setActive(true);
         fire('chunk', { text: item.text, engine: 'browser' });
-        try { ss.speak(u); } catch (_) { next(); }
+        next();
       });
     }
 

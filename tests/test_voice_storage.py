@@ -62,7 +62,8 @@ async def test_allowance_counters_round_trip(docs: Docs, prefix: str) -> None:
             now=NOW,
         )
     await meter.add("u_owner", brain_id="anthropic", cost_usd=0.01, cost_inr=0.95, now=NOW)
+    a = await meter.allowance(meter.allowance_month_of(NOW))
+    assert a.units == {"tts_chirp3-hd": 120, "tts_studio": 30, "stt_seconds": 2.5}
     m = await meter.get("u_owner", "2026-11")
-    assert m.units == {"tts_chirp3-hd": 120, "tts_studio": 30, "stt_seconds": 2.5}
     assert m.by_brain_inr["voice"] == pytest.approx(20 * 0.001 * 95.24)
     assert m.calls == 2  # one priced voice call + one chat

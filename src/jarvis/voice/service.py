@@ -2,11 +2,21 @@
 """Voice, tied together (slice 9; Layers 2, 4 and 8): settings, availability, the spending gate,
 the engines and the meter.
 
-    speak       text (1–1,200) → speakable() (≤ 600) → gate (only if priced) → TTS → meter
-    transcribe  WAV → strict parse → gate (only if priced) → STT → meter (Google's billed time)
+    speak       text (1–1,200) → speakable() (≤ 600) → [gate (only if priced) → TTS → meter]
+    transcribe  WAV → strict parse → [gate (only if priced) → STT → meter (Google's billed time)]
     view        settings, cloud status, voices (validated against Google's list), wit levels,
-                this month's allowance use and voice rupees
+                the deployment's allowance use this Pacific month and the owner's voice rupees
     wit_for     the Brain's persona variant (never raises; any failure → "film")
+
+[…] runs under a per-owner lock per kind (speak, transcribe), so concurrent calls at the
+allowance edge or the limit are gated one after another (one instance runs in production).
+STT is gated on ceil(duration) and billed on Google's `totalBilledTime` when it is returned.
+A call that fails after the request may have reached Google (sent, then a timeout or a broken
+connection; or cancelled while in flight) is metered on its estimate (characters sent / ceil of
+the audio seconds); a clean error answer (4xx / 5xx) is not.
+
+Settings reads (speak, the view, the persona) are bounded to 1 s; a failure gives the defaults
+and is remembered 30 s (no read meanwhile) until a PUT clears it.
 
 Availability (D10): Google answering 403 or no credentials marks that API unavailable for 10
 minutes (no calls meanwhile); timeouts and 5xx are reported but not remembered. Privacy (D13): no
@@ -18,14 +28,16 @@ from __future__ import annotations
 import asyncio
 import math
 import time
-from collections.abc import Callable
+import weakref
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeVar
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.billing import Billing
+from jarvis.billing.meter import UnitCharge
 from jarvis.config import Settings
 from jarvis.core.prompts import DEFAULT_WIT, WIT_LEVELS
 from jarvis.logging import get_logger
@@ -36,6 +48,7 @@ from jarvis.voice.catalogue import (
     TYPES,
     VOICE_LANGUAGE,
     VOICES,
+    Price,
     PriceList,
     Voice,
     find_voice,
@@ -64,10 +77,12 @@ log = get_logger(__name__)
 
 MAX_TEXT_IN = 1_200
 DOWN_TTL_S = 600.0
-WIT_READ_S = 1.0  # inside the Brain's own bound, so a hung read is remembered as a failure
+# Inside the Brain's own bound (1.5 s), so a hung read is remembered as a failure.
+SETTINGS_READ_S = 1.0
 STICKY: frozenset[str] = frozenset({"api_disabled", "not_configured"})
 Api = Literal["tts", "stt"]
 State = Literal["ready", "off", "unavailable"]
+T = TypeVar("T")
 
 
 # ---- views -----------------------------------------------------------------------------------
@@ -111,8 +126,14 @@ class SttAllowance(BaseModel):
 
 
 class Allowance(BaseModel):
+    """The free allowance JARVIS may use (90 % of Google's by default; 0 if the billing account
+    is shared), counted once for the whole deployment on Pacific-time months like Google's."""
+
     tts: TtsAllowance
     stt: SttAllowance
+    month: str  # "2026-11", the Pacific-time month the counters are for
+    resets_at: str  # ISO 8601: the next 1st, 00:00 America/Los_Angeles
+    scope: Literal["deployment"] = "deployment"
 
 
 class VoiceMonth(BaseModel):
@@ -191,7 +212,11 @@ class VoiceService:
         self.honorific = honorific
         self._clock = clock
         self._down: dict[Api, tuple[float, Reason]] = {}
-        self._wit_fail_until: dict[str, float] = {}
+        self._settings_fail_until: dict[str, float] = {}
+        # gate → engine → meter, one at a time per owner and kind; locks vanish when unused
+        self._locks: weakref.WeakValueDictionary[tuple[str, Api], asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
         self.phrases = tuple(dict.fromkeys(("JARVIS", "Jarvis", honorific)))
 
     # ---- availability ----------------------------------------------------------------------
@@ -223,26 +248,29 @@ class VoiceService:
     # ---- settings ----------------------------------------------------------------------------
 
     async def settings_of(self, uid: str) -> VoiceSettings:
-        """The owner's settings; the defaults (logged) when storage can't be read."""
+        """The owner's settings, read within SETTINGS_READ_S. Never raises: a failed or slow
+        read gives the defaults (logged) and is not retried for 30 s, unless a PUT succeeds."""
+        if self._clock() < self._settings_fail_until.get(uid, 0.0):
+            return VoiceSettings()
         try:
-            return await self.store.get(uid)
+            return await asyncio.wait_for(self.store.get(uid), SETTINGS_READ_S)
         except Exception as exc:  # noqa: BLE001 — speaking with defaults beats not speaking
-            log.warning("voice settings unreadable", extra={"reason": type(exc).__name__})
+            self._settings_fail_until[uid] = self._clock() + CACHE_S
+            log.warning(
+                "voice settings unreadable; using the defaults",
+                extra={"reason": type(exc).__name__},
+            )
             return VoiceSettings()
 
     async def update_settings(self, uid: str, patch: VoiceSettingsPatch) -> VoiceSettings:
-        return await self.store.update(uid, patch)
+        new = await self.store.update(uid, patch)
+        self._settings_fail_until.pop(uid, None)  # the new values apply at once
+        return new
 
     async def wit_for(self, uid: str) -> str:
-        """The persona's wit level. Never raises; a failed read is not retried for 30 s."""
-        if self._clock() < self._wit_fail_until.get(uid, 0.0):
-            return DEFAULT_WIT
-        try:
-            return (await asyncio.wait_for(self.store.get(uid), WIT_READ_S)).wit
-        except Exception as exc:  # noqa: BLE001 — a persona nicety never fails a reply
-            self._wit_fail_until[uid] = self._clock() + CACHE_S
-            log.warning("wit level unreadable", extra={"reason": type(exc).__name__})
-            return DEFAULT_WIT
+        """The persona's wit level. Never raises (any failure → the default)."""
+        wit = (await self.settings_of(uid)).wit
+        return wit if wit else DEFAULT_WIT
 
     # ---- the owner's view --------------------------------------------------------------------
 
@@ -263,11 +291,14 @@ class VoiceService:
         known = await self._known_voices()
         tts, tts_why = self.state("tts")
         stt, stt_why = self.state("stt")
-        m = await self.billing.month(uid)  # BudgetUnavailable → 503: never a made-up "₹0"
+        # BudgetUnavailable → 503: never a made-up "₹0" or "0 used"
+        m = await self.billing.month(uid)
+        stt_key = self.prices.stt.key
+        a = await self.billing.allowance([*(self.prices.tts(t).key for t in TYPES), stt_key])
         current = find_voice(settings.voice) or VOICES[0]
         by_type: dict[str, TypeUse] = {
             t: TypeUse(
-                used=round(m.units.get(self.prices.tts(t).key, 0.0)),
+                used=round(a.used(self.prices.tts(t).key)),
                 free=round(self.prices.tts(t).free_units),
             )
             for t in TYPES
@@ -296,9 +327,11 @@ class VoiceService:
                     by_type=by_type,
                 ),
                 stt=SttAllowance(
-                    used_seconds=round(m.units.get(self.prices.stt.key, 0.0), 1),
+                    used_seconds=round(a.used(stt_key), 1),
                     free_seconds=round(self.prices.stt.free_units),
                 ),
+                month=a.month,
+                resets_at=self.billing.allowance_resets_at().isoformat(),
             ),
             month=VoiceMonth(
                 month=m.month, voice_inr=round(m.by_brain_inr.get(METER_LABEL, 0.0), 2)
@@ -323,6 +356,39 @@ class VoiceService:
             raise VoiceRejected(f"At most {MAX_TEXT_IN:,} characters per request.")
         return voice, rate, req.text
 
+    def _lock(self, uid: str, api: Api) -> asyncio.Lock:
+        lock = self._locks.get((uid, api))
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[(uid, api)] = lock
+        return lock
+
+    async def _meter(self, uid: str, price: Price, units: float) -> UnitCharge:
+        return await self.billing.record_units(
+            uid,
+            key=price.key,
+            units=units,
+            free_units=price.free_units,
+            usd_per_unit=price.usd_per_unit,
+            label=METER_LABEL,
+        )
+
+    async def _engine(
+        self, api: Api, uid: str, price: Price, estimate: float, call: Callable[[], Awaitable[T]]
+    ) -> T:
+        """One engine call. If it fails after the request may have reached Google, its estimate
+        is metered (Google may bill it); a clean error answer is not."""
+        try:
+            return await call()
+        except VoiceUnavailable as exc:
+            self._note(api, exc)
+            if exc.maybe_billed:
+                await self._meter(uid, price, estimate)
+            raise
+        except asyncio.CancelledError:  # the owner went away mid-call: Google may have it
+            await self._meter(uid, price, estimate)  # shielded: completes despite the cancel
+            raise
+
     async def speak(self, uid: str, req: SpeakRequest) -> Speech:
         voice, rate, text = self._speech_input(req, await self.settings_of(uid))
         spoken = speakable(text)
@@ -331,24 +397,20 @@ class VoiceService:
         engines = self._require("tts")
         price = self.prices.tts(voice.type)
         chars = len(spoken)
-        await self.billing.ensure_units_allowed(
-            uid, key=price.key, units=chars, free_units=price.free_units
-        )
-        try:
-            audio = await engines.tts.synthesize(
-                spoken, voice=voice.id, language=voice.language, rate=rate
+        async with self._lock(uid, "tts"):
+            await self.billing.ensure_units_allowed(
+                uid, key=price.key, units=chars, free_units=price.free_units
             )
-        except VoiceUnavailable as exc:
-            self._note("tts", exc)
-            raise
-        charge = await self.billing.record_units(
-            uid,
-            key=price.key,
-            units=chars,
-            free_units=price.free_units,
-            usd_per_unit=price.usd_per_unit,
-            label=METER_LABEL,
-        )
+            audio = await self._engine(
+                "tts",
+                uid,
+                price,
+                chars,
+                lambda: engines.tts.synthesize(
+                    spoken, voice=voice.id, language=voice.language, rate=rate
+                ),
+            )
+            charge = await self._meter(uid, price, chars)
         log.info(
             "voice: spoke",
             extra={"chars": chars, "voice": voice.id, "cost_inr": round(charge.inr, 4)},
@@ -359,29 +421,26 @@ class VoiceService:
         audio = parse_wav(blob)
         engines = self._require("stt")
         price = self.prices.stt
-        estimate = float(math.ceil(audio.seconds))
-        await self.billing.ensure_units_allowed(
-            uid, key=price.key, units=estimate, free_units=price.free_units
-        )
-        try:
-            t = await engines.stt.recognize(
-                audio.pcm,
-                sample_rate=audio.sample_rate,
-                language=self.language,
-                phrases=self.phrases,
+        estimate = float(math.ceil(audio.seconds))  # gated on this …
+        async with self._lock(uid, "stt"):
+            await self.billing.ensure_units_allowed(
+                uid, key=price.key, units=estimate, free_units=price.free_units
             )
-        except VoiceUnavailable as exc:
-            self._note("stt", exc)
-            raise
-        billed = t.billed_seconds if t.billed_seconds is not None else estimate
-        charge = await self.billing.record_units(
-            uid,
-            key=price.key,
-            units=billed,
-            free_units=price.free_units,
-            usd_per_unit=price.usd_per_unit,
-            label=METER_LABEL,
-        )
+            t = await self._engine(
+                "stt",
+                uid,
+                price,
+                estimate,
+                lambda: engines.stt.recognize(
+                    audio.pcm,
+                    sample_rate=audio.sample_rate,
+                    language=self.language,
+                    phrases=self.phrases,
+                ),
+            )
+            # … billed on what Google says it billed (totalBilledTime), when it says
+            billed = t.billed_seconds if t.billed_seconds is not None else estimate
+            charge = await self._meter(uid, price, billed)
         text = t.text.strip()
         log.info(
             "voice: transcribed",

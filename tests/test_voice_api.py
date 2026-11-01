@@ -6,9 +6,11 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator, Iterator
+from datetime import datetime
 from typing import Any
 
 import pytest
+from billing_fakes import put_raw
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 from voice_fakes import FakeSTT, FakeTokens, FakeTTS, wav
@@ -29,6 +31,9 @@ UID = "owner"  # dev / token mode: no owners configured
 WAV = {"Content-Type": "audio/wav"}
 VIEW_KEYS = {"cloud", "settings", "voices", "wit_levels", "allowance", "month", "language"}
 PATH = f"jarvis_usage/{UID}_"
+# JARVIS's share of Google's free tier by default: 90 % (Google: 1 M chars / 60 min a month)
+FREE_CHARS = 900_000
+FREE_SECONDS = 3_240
 
 
 class Rig:
@@ -68,16 +73,23 @@ async def _limit(c: AsyncClient, inr: int) -> None:
 
 
 async def _use_allowance(c: AsyncClient, key: str, amount: float, inr: float = 0.0) -> None:
-    """Pretend this month already used `amount` of `key` (and spent `inr`)."""
+    """Pretend the deployment already used `amount` of `key` this Pacific month (and the owner
+    spent `inr` this IST month)."""
     billing = c.app.state.billing  # type: ignore[attr-defined]
-    month = billing.meter.month_of(billing.clock())
-    from billing_fakes import put_raw
-
+    now = billing.clock()
     await put_raw(
         billing.meter._d,
-        f"jarvis_usage/{UID}_{month}",
-        {"inr_total": inr, "units": {key: amount}},
+        f"jarvis_allowance/{billing.meter.allowance_month_of(now)}",
+        {"units": {key: amount}},
     )
+    await put_raw(
+        billing.meter._d, f"jarvis_usage/{UID}_{billing.meter.month_of(now)}", {"inr_total": inr}
+    )
+
+
+async def _allowance_used(c: AsyncClient, key: str) -> float:
+    billing = c.app.state.billing  # type: ignore[attr-defined]
+    return float((await billing.allowance((key,))).used(key))
 
 
 # ---- GET /v1/voice ---------------------------------------------------------------------------
@@ -95,13 +107,19 @@ async def test_view_shape_and_defaults(vc: AsyncClient) -> None:
     assert all(v["available"] for v in j["voices"])
     assert [w["id"] for w in j["wit_levels"]] == ["measured", "film", "extra"]
     assert set(j["wit_levels"][0]) == {"id", "label", "description"}
-    tts = j["allowance"]["tts"]
-    assert tts["type"] == "chirp3-hd" and tts["used_chars"] == 0 and tts["free_chars"] == 1_000_000
+    allowance = j["allowance"]
+    assert set(allowance) == {"tts", "stt", "month", "resets_at", "scope"}
+    tts = allowance["tts"]
+    assert tts["type"] == "chirp3-hd" and tts["used_chars"] == 0
+    assert tts["free_chars"] == FREE_CHARS  # the effective allowance: 90 % of Google's
     assert tts["by_type"] == {
-        "chirp3-hd": {"used": 0, "free": 1_000_000},
-        "studio": {"used": 0, "free": 1_000_000},
+        "chirp3-hd": {"used": 0, "free": FREE_CHARS},
+        "studio": {"used": 0, "free": FREE_CHARS},
     }
-    assert j["allowance"]["stt"] == {"used_seconds": 0, "free_seconds": 3_600}
+    assert allowance["stt"] == {"used_seconds": 0, "free_seconds": FREE_SECONDS}
+    assert allowance["scope"] == "deployment" and len(allowance["month"]) == 7
+    resets = datetime.fromisoformat(allowance["resets_at"])
+    assert resets.tzinfo is not None and resets.day == 1 and resets.hour == 0  # Pacific midnight
     assert j["month"]["voice_inr"] == 0 and len(j["month"]["month"]) == 7
     assert j["language"] == "en-IN"
     assert "$" not in r.text
@@ -258,6 +276,46 @@ async def test_speak_engine_errors(
     assert (await vc.post("/v1/voice/speak", json={"text": "Hello."})).status_code == 200
 
 
+@pytest.mark.parametrize(
+    ("exc", "metered"),
+    [
+        (VoiceUnavailable("timeout", maybe_billed=True), True),  # sent, no answer in time
+        (VoiceUnavailable("upstream_error", maybe_billed=True), True),  # cut off mid-answer
+        (VoiceUnavailable("timeout"), False),  # never left JARVIS (credentials, connect)
+        (VoiceUnavailable("upstream_error"), False),  # a clean 5xx answer
+        (VoiceUnavailable("api_disabled"), False),  # a clean 403
+        (VoiceBusy(), False),  # a clean 429
+        (VoiceRejected("Google rejected that voice or text."), False),  # a clean 400
+    ],
+)
+async def test_a_failed_call_that_may_have_reached_google_is_still_metered(
+    vc: AsyncClient, rig: Rig, exc: Exception, metered: bool
+) -> None:
+    """Review item 1: Google may bill a request whose answer never arrived; JARVIS counts the
+    estimate (characters sent / audio seconds) so its allowance never under-counts."""
+    rig.tts.fail = exc
+    r = await vc.post("/v1/voice/speak", json={"text": "Hello."})
+    assert r.status_code >= 400
+    assert await _allowance_used(vc, "tts_chirp3-hd") == (len("Hello.") if metered else 0)
+    rig.stt.fail = exc
+    r = await vc.post("/v1/voice/transcribe", content=wav(1.2), headers=WAV)
+    assert r.status_code >= 400
+    assert await _allowance_used(vc, "stt_seconds") == (2 if metered else 0)  # ceil(1.2 s)
+
+
+async def test_a_corrupt_allowance_counter_fails_closed_for_priced_calls(
+    vc: AsyncClient, rig: Rig
+) -> None:
+    await _use_allowance(vc, "tts_chirp3-hd", float("nan"))
+    r = await vc.get("/v1/voice")  # never shown as "0 used"
+    assert r.status_code == 503 and r.json()["error"] == "budget_unavailable"
+    assert (await vc.post("/v1/voice/speak", json={"text": "No limit set."})).status_code == 200
+    await _limit(vc, 500)
+    r = await vc.post("/v1/voice/speak", json={"text": "Under a limit."})
+    assert r.status_code == 503 and r.json()["error"] == "budget_unavailable"
+    assert len(rig.tts.calls) == 1
+
+
 async def test_speak_is_limited_to_60_a_minute(vc: AsyncClient) -> None:
     for _ in range(60):
         assert (await vc.post("/v1/voice/speak", json={"text": "Hi."})).status_code == 200
@@ -270,14 +328,14 @@ async def test_speak_is_limited_to_60_a_minute(vc: AsyncClient) -> None:
 
 
 async def test_free_speech_still_works_at_the_limit(vc: AsyncClient, rig: Rig) -> None:
-    await _use_allowance(vc, "tts_chirp3-hd", 1_000_000 - 100, inr=600)
+    await _use_allowance(vc, "tts_chirp3-hd", FREE_CHARS - 100, inr=600)
     await _limit(vc, 500)
     r = await vc.post("/v1/voice/speak", json={"text": "Within the allowance."})
     assert r.status_code == 200 and r.headers["x-jarvis-cost-inr"] == "0.0000"
 
 
 async def test_priced_speech_is_refused_at_the_limit(vc: AsyncClient, rig: Rig) -> None:
-    await _use_allowance(vc, "tts_chirp3-hd", 1_000_000, inr=600)
+    await _use_allowance(vc, "tts_chirp3-hd", FREE_CHARS, inr=600)
     await _limit(vc, 500)
     r = await vc.post("/v1/voice/speak", json={"text": "Over the allowance."})
     assert r.status_code == 402 and r.json()["error"] == "budget_reached"
@@ -286,7 +344,7 @@ async def test_priced_speech_is_refused_at_the_limit(vc: AsyncClient, rig: Rig) 
 
 
 async def test_priced_speech_is_metered_in_rupees_and_shows_in_usage(vc: AsyncClient) -> None:
-    await _use_allowance(vc, "tts_studio", 1_000_000)
+    await _use_allowance(vc, "tts_studio", FREE_CHARS)
     text = "Priced sentence. " * 30
     r = await vc.post("/v1/voice/speak", json={"text": text, "voice": "en-GB-Studio-B"})
     chars = int(r.headers["x-jarvis-chars"])
@@ -298,7 +356,7 @@ async def test_priced_speech_is_metered_in_rupees_and_shows_in_usage(vc: AsyncCl
     assert entry["label"] == "Voice"
     j = (await vc.get("/v1/voice")).json()
     assert j["month"]["voice_inr"] == pytest.approx(cost, abs=0.01)
-    assert j["allowance"]["tts"]["by_type"]["studio"]["used"] == 1_000_000 + chars
+    assert j["allowance"]["tts"]["by_type"]["studio"]["used"] == FREE_CHARS + chars
 
 
 # ---- POST /v1/voice/transcribe ---------------------------------------------------------------
@@ -368,7 +426,7 @@ async def test_transcribe_refuses_an_oversize_chunked_upload(vc: AsyncClient, ri
 
 
 async def test_transcribe_spending_gate(vc: AsyncClient, rig: Rig) -> None:
-    await _use_allowance(vc, "stt_seconds", 3_600 - 2, inr=600)
+    await _use_allowance(vc, "stt_seconds", FREE_SECONDS - 2, inr=600)
     await _limit(vc, 500)
     ok = await vc.post("/v1/voice/transcribe", content=wav(1.5), headers=WAV)  # 2 s: still free
     assert ok.status_code == 200

@@ -36,8 +36,14 @@ class VoiceError(RuntimeError):
 
 
 class VoiceUnavailable(VoiceError):
-    def __init__(self, reason: Reason) -> None:
+    """The engine is off, down or too slow. `maybe_billed`: the request may have reached the
+    vendor (sent, then a timeout or a broken connection, or an unreadable 2xx answer), so it may
+    have been billed and the caller meters its estimate; False for a clean error answer or a
+    request that never left (credentials, connect)."""
+
+    def __init__(self, reason: Reason, *, maybe_billed: bool = False) -> None:
         self.reason: Reason = reason
+        self.maybe_billed = maybe_billed
         super().__init__(_MESSAGES[reason])
 
 

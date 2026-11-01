@@ -63,10 +63,17 @@ def test_prices_and_allowances_come_from_settings() -> None:
     s = Settings(_env_file=None)
     p = PriceList.from_settings(s)
     chirp, studio, stt = p.tts("chirp3-hd"), p.tts("studio"), p.stt
-    assert chirp.key == "tts_chirp3-hd" and chirp.free_units == 1_000_000
+    # 90 % of Google's free tier (1 M characters per voice type, 60 min STT a month): a margin
+    # for what JARVIS can't see (rounding, calls Google billed that never answered)
+    assert chirp.key == "tts_chirp3-hd" and chirp.free_units == 900_000
+    assert studio.free_units == 900_000
     assert chirp.usd_per_unit == pytest.approx(30 / 1_000_000)
     assert studio.key == "tts_studio" and studio.usd_per_unit == pytest.approx(160 / 1_000_000)
-    assert stt.key == STT_KEY and stt.free_units == 3_600
+    assert stt.key == STT_KEY and stt.free_units == 3_240
+    shared = PriceList.from_settings(
+        Settings(_env_file=None, voice_tts_free_chars=0, voice_stt_free_seconds=0)
+    )
+    assert shared.chirp3_hd.free_units == shared.stt.free_units == 0  # a shared billing account
     assert stt.usd_per_unit == pytest.approx(0.024 / 60)
 
 

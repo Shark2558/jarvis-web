@@ -8,7 +8,10 @@ GET  /v1/voice             VoiceView {cloud {tts, stt, reason}, settings {voice,
                            voices [{id, label, style, type, available}], wit_levels [{id, label,
                            description}], allowance {tts {type, used_chars, free_chars, by_type
                            {chirp3-hd {used, free}, studio {used, free}}}, stt {used_seconds,
-                           free_seconds}}, month {month, voice_inr}, language}
+                           free_seconds}, month, resets_at, scope: "deployment"}, month {month,
+                           voice_inr}, language}. The allowance is JARVIS's share of Google's
+                           free tier (90 % by default) for the whole deployment, Pacific-time
+                           months; 503 budget_unavailable when its counter can't be read.
 PUT  /v1/voice/settings    {voice?, rate?, wit?} → settings; 422 input_rejected
 POST /v1/voice/speak       {text, voice?, rate?} | {preview: true, voice?} → 200 audio/mpeg with
                            X-Jarvis-Chars, X-Jarvis-Cost-Inr; 422 nothing_to_say / input_rejected,

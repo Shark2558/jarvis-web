@@ -186,9 +186,14 @@ async def suite_persona() -> dict[str, Any]:
 
 # ---- billing ---------------------------------------------------------------------------------
 
-M = 1_000_000
+# The effective allowance (90 % of Google's by default), from the same settings the app uses.
+# "used" is the deployment's counter this Pacific month (every owner's use together).
+M = float(settings().voice_tts_free_chars)
+S = float(settings().voice_stt_free_seconds)
 # (id, why, api, voice, used, month ₹, limit, units, expect, priced units)
-BILL_CASES: list[tuple[str, str, str, str, float, float, int | str | None, int, str, float]] = [
+BILL_CASES: list[
+    tuple[str, str, str, str, float | str, float, int | str | None, int, str, float]
+] = [
     ("v01", "TTS within allowance, no limit", "tts", "chirp", 0, 0, None, 300, "made", 0),
     ("v02", "TTS within allowance, at the limit", "tts", "chirp", 5000, 600, 500, 300, "made", 0),
     (
@@ -290,20 +295,35 @@ BILL_CASES: list[tuple[str, str, str, str, float, float, int | str | None, int, 
     ),
     ("v12", "unreadable limit, free → made", "tts", "chirp", 0, 0, "corrupt", 100, "made", 0),
     ("v13", "STT within allowance at the limit", "stt", "", 100, 600, 500, 5, "made", 0),
-    ("v14", "STT above allowance under the limit", "stt", "", 3600, 1, 500, 7, "made", 7),
-    ("v15", "STT above allowance at the limit", "stt", "", 3600, 500, 500, 7, "refused", 0),
-    ("v16", "STT crossing the allowance at the limit", "stt", "", 3598, 700, 500, 5, "refused", 0),
+    ("v14", "STT above allowance under the limit", "stt", "", S, 1, 500, 7, "made", 7),
+    ("v15", "STT above allowance at the limit", "stt", "", S, 500, 500, 7, "refused", 0),
+    ("v16", "STT crossing the allowance at the limit", "stt", "", S - 2, 700, 500, 5, "refused", 0),
+    (
+        "v17",
+        "corrupt allowance counter under a limit → refused (fail closed)",
+        "tts",
+        "chirp",
+        "corrupt",
+        0,
+        500,
+        100,
+        "refused",
+        0,
+    ),
+    ("v18", "corrupt STT counter under a limit", "stt", "", "corrupt", 0, 500, 3, "refused", 0),
 ]
 VOICE_IDS = {"chirp": "en-GB-Chirp3-HD-Algieba", "studio": "en-GB-Studio-B"}
 
 
 async def _seed(
-    docs: MemoryDocs, billing: Billing, key: str, used: float, inr: float, limit: Any
+    docs: MemoryDocs, billing: Billing, key: str, used: float | str, inr: float, limit: Any
 ) -> None:
-    month = billing.meter.month_of(billing.clock())
+    now = billing.clock()
+    month, allowance_month = billing.meter.month_of(now), billing.meter.allowance_month_of(now)
 
     async def fn(tx: DocTx) -> None:
-        tx.set(f"jarvis_usage/{UID}_{month}", {"inr_total": inr, "units": {key: used}})
+        tx.set(f"jarvis_allowance/{allowance_month}", {"units": {key: used}})  # the deployment's
+        tx.set(f"jarvis_usage/{UID}_{month}", {"inr_total": inr})  # the owner's rupees
         if limit is not None:
             value = limit if isinstance(limit, int) else "lots"
             tx.set(f"jarvis_budget/{UID}", {"monthly_limit_inr": value})

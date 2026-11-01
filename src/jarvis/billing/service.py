@@ -11,9 +11,11 @@
                                  the provider still bills what it wrote).
     usage(uid) / set_limit()   ─ GET /v1/usage, PUT /v1/usage/budget.
     ensure_units_allowed /     ─ slice 9 voice: usage free up to a monthly allowance, priced
-    record_units                 above it. The gate refuses only a call that would be priced
-                                 (free calls still work at the limit); the recorder counts and
-                                 prices in one transaction and never raises.
+    record_units                 above it. The allowance is the deployment's (one counter,
+                                 Pacific-time months, like Google's per-billing-account free
+                                 tier); rupees are the owner's. The gate refuses only a call that
+                                 would be priced (free calls still work at the limit); the
+                                 recorder counts and prices in one transaction, never raises.
 
 A brain is "paid" when any of its models is in the price table above zero; free (Gemini free
 tier) and unpriced (custom) brains are never blocked. The check reads two documents (limit,
@@ -25,7 +27,7 @@ limit / month total — no paid call is made (fail closed), and the usage view s
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -35,7 +37,13 @@ from pydantic import BaseModel
 
 from jarvis.billing.budget import BudgetPatch, BudgetStore, LimitUnreadable
 from jarvis.billing.fx import FETCH_TIMEOUT_S, FxRates
-from jarvis.billing.meter import MonthUsage, UnitCharge, UsageMeter, UsageUnreadable
+from jarvis.billing.meter import (
+    AllowanceUse,
+    MonthUsage,
+    UnitCharge,
+    UsageMeter,
+    UsageUnreadable,
+)
 from jarvis.config import Settings
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.pricing import is_paid, is_priced
@@ -116,6 +124,10 @@ MSG_USAGE_UNREADABLE = (
     "fixed or the month turns. Free brains still answer."
 )
 MSG_USAGE_DOWN = "Couldn't read this month's spending just now. Try again in a minute."
+MSG_ALLOWANCE_UNREADABLE = (
+    "The free cloud-voice allowance record can't be read, so JARVIS won't make a priced voice "
+    "call under your limit until it is fixed or the month turns. The browser's own voice works."
+)
 
 
 class BudgetUnavailable(BudgetError):
@@ -227,15 +239,19 @@ class Billing:
     async def ensure_units_allowed(
         self, uid: str, *, key: str, units: float, free_units: float
     ) -> None:
-        """The spending gate for allowance-metered usage (voice). A call the free allowance
-        still covers always goes ahead; one that would be priced is gated like a paid brain
-        (BudgetReached / BudgetUnavailable). Fails closed only when it can't tell."""
-        month = self.meter.month_of(self.clock())
+        """The spending gate for allowance-metered usage (voice). A call the deployment's free
+        allowance (this Pacific month) still covers always goes ahead; one that would be priced
+        is gated like a paid brain against `uid`'s limit and IST month (BudgetReached /
+        BudgetUnavailable). An allowance counter that can't be read counts as "priced": it
+        fails closed only under a limit."""
+        now = self.clock()
         try:
-            m: MonthUsage | None = await self.meter.get(uid, month)
-        except Exception:  # noqa: BLE001 — unreadable month: decided below, with the limit
-            m = None
-        if m is not None and m.units.get(key, 0.0) + units <= free_units:
+            used: float | None = (
+                await self.meter.allowance(self.meter.allowance_month_of(now))
+            ).used(key)
+        except Exception:  # noqa: BLE001 — can't tell: decided below, with the limit
+            used = None
+        if used is not None and used + units <= free_units:
             return
         try:
             limit = await self.budgets.get(uid)
@@ -246,7 +262,13 @@ class Billing:
             raise BudgetUnavailable() from None
         if limit is None:
             return
-        if m is None:
+        if used is None:
+            log.error("ALLOWANCE UNREADABLE; no priced voice call", extra={"key": key})
+            raise BudgetUnavailable()
+        month = self.meter.month_of(now)
+        try:
+            m = await self.meter.get(uid, month)
+        except Exception:  # noqa: BLE001 — fail closed
             log.error("MONTH UNREADABLE; no priced voice call", extra={"month": month})
             raise BudgetUnavailable() from None
         if m.inr_total >= limit:
@@ -334,6 +356,25 @@ class Billing:
         """This month's record (voice view). BudgetUnavailable when it can't be read."""
         _, _, m = await self._read(uid, self.meter.month_of(self.clock()))
         return m
+
+    async def allowance(self, keys: Sequence[str]) -> AllowanceUse:
+        """The deployment's allowance use this Pacific month (voice view); every key in `keys`
+        is readable. BudgetUnavailable (plain words) when it can't be read — never "0 used"."""
+        month = self.meter.allowance_month_of(self.clock())
+        try:
+            a = await self.meter.allowance(month)
+            for key in keys:
+                a.used(key)
+        except UsageUnreadable:
+            log.error("ALLOWANCE COUNTER UNREADABLE; priced voice stays off", extra={"m": month})
+            raise BudgetUnavailable(MSG_ALLOWANCE_UNREADABLE) from None
+        except Exception as exc:  # noqa: BLE001 — storage down: say so
+            log.error("allowance unreadable", extra={"reason": type(exc).__name__})
+            raise BudgetUnavailable(MSG_USAGE_DOWN) from None
+        return a
+
+    def allowance_resets_at(self) -> datetime:
+        return self.meter.allowance_resets_at(self.clock())
 
     async def inr(self, usd: float) -> float:
         """Display conversion at the current rate (never waits on the network)."""

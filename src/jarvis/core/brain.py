@@ -10,7 +10,10 @@ Everything here is vendor-neutral. Phase 2 inserts the tool-calling loop between
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import time
+import weakref
 from collections.abc import AsyncIterator
 
 from jarvis.config import Settings
@@ -71,6 +74,21 @@ class Brain:
         self.s = settings
         self.gateway = gateway
         self._system = build_system_prompt(honorific=settings.user_honorific)
+        # One owner action at a time per conversation (chat, approve, decline, delete): no
+        # lost turns, no double execution, no resurrected deletes. Locks vanish when unused.
+        self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+
+    @contextlib.asynccontextmanager
+    async def _serialised(self, session_id: str | None) -> AsyncIterator[None]:
+        if not session_id:
+            yield
+            return
+        lock = self._locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[session_id] = lock
+        async with lock:
+            yield
 
     def _tools_on(self, spec: BrainSpec) -> bool:
         """Tools exist AND this brain may see them. A training brain never gets tool specs —
@@ -134,15 +152,32 @@ class Brain:
 
     # ---- the loop ------------------------------------------------------------------------
 
+    async def _start(self, req: ChatRequest) -> ChatRequest:
+        """A brand-new conversation gets its id (and its lock) before any work happens, so an
+        approval proposed in the first reply can't be decided while that reply is written."""
+        if req.session_id:
+            return req
+        if req.brain:
+            self.brains.get(req.brain)  # fail before creating an orphan session
+        guard_input(req.message, max_chars=self.s.max_input_chars)
+        session = await self._load_or_create(req)
+        return req.model_copy(update={"session_id": session.id})
+
     async def chat(self, req: ChatRequest) -> ChatResponse:
+        req = await self._start(req)
+        async with self._serialised(req.session_id):
+            return await self._chat(req)
+
+    async def _chat(self, req: ChatRequest) -> ChatResponse:
         t0 = time.perf_counter()
         trace_id = get_trace_id()
         if req.brain:
             self.brains.get(req.brain)  # fail before creating an orphan session
+        # validate first: a rejected first message must not leave an empty conversation
+        text = guard_input(req.message, max_chars=self.s.max_input_chars)
         session = await self._load_or_create(req)
         spec = self._resolve_brain(session, req)
 
-        text = guard_input(req.message, max_chars=self.s.max_input_chars)
         user_turn = Turn(role=Role.USER, content=text, trace_id=trace_id)
         session.append(user_turn)
         # persist the user turn before the LLM call so a crash never loses owner input
@@ -262,16 +297,7 @@ class Brain:
             for call in completion.tool_calls:
                 gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
                 if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending:
-                    pending.append(
-                        PendingApproval(
-                            id=gr.pending.id,
-                            tool=gr.pending.tool,
-                            summary=gr.pending.summary,
-                            arguments=gr.pending.arguments,
-                            risk=gr.pending.risk.value,
-                            expires_at=gr.pending.expires_at,
-                        )
-                    )
+                    pending.append(PendingApproval.from_action(gr.pending))
                 results.append(
                     ToolResultBlock(
                         tool_use_id=call.id,
@@ -301,6 +327,30 @@ class Brain:
         session.metadata["_rounds"] = rounds
         return completion, pending
 
+    async def _save_after_action(self, session: Session) -> None:
+        """The owner's decision has already taken effect. A storage hiccup must not turn that
+        into an error (the owner would ask again and e.g. send twice): log, still answer."""
+        try:
+            await self.store.save(session)
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "SAVE FAILED after an approved action; reply still sent",
+                extra={"session_id": session.id, "error": type(exc).__name__},
+            )
+
+    # ---- forgetting -----------------------------------------------------------------------
+
+    async def forget(self, session_id: str, *, user_id: str = "owner") -> bool:
+        """Owner's delete right: the conversation and its waiting approvals, permanently.
+        Waits for any reply still being written, so a delete is never undone by it."""
+        async with self._serialised(session_id):
+            session = await self.store.get(session_id)
+            if session is None or session.user_id != user_id:
+                return False
+            if self.gateway is not None:
+                await self.gateway.gate.cancel_scope(f"{user_id}:{session_id}")
+            return await self.store.delete(session_id)
+
     # ---- approvals ----------------------------------------------------------------------
 
     async def approve(
@@ -320,6 +370,14 @@ class Brain:
     async def _decide(
         self, approval_id: str, *, approved: bool, session_id: str, user_id: str
     ) -> ChatResponse:
+        async with self._serialised(session_id):
+            return await self._decide_locked(
+                approval_id, approved=approved, session_id=session_id, user_id=user_id
+            )
+
+    async def _decide_locked(
+        self, approval_id: str, *, approved: bool, session_id: str, user_id: str
+    ) -> ChatResponse:
         """Owner decision on a pending R3 action.
 
         The irreversible step is executed and persisted as a tool exchange BEFORE any model
@@ -328,10 +386,8 @@ class Brain:
         if self.gateway is None:
             raise SessionNotFound(session_id)
         scope = f"{user_id}:{session_id}"
-        action = next(
-            (a for a in self.gateway.pending() if a.id == approval_id and a.scope == scope), None
-        )
-        if action is None:
+        action = await self.gateway.gate.get(approval_id)
+        if action is None or action.scope != scope:
             raise LookupError(f"no pending approval {approval_id} in this session")
         session = await self._load_or_create(
             ChatRequest(message="-", session_id=session_id, user_id=user_id)
@@ -341,6 +397,9 @@ class Brain:
         call = ToolCall(id=f"approve_{approval_id}", name=action.tool, arguments=action.arguments)
         if approved:
             gr = await self.gateway.execute(call, confirmation_id=approval_id, scope=scope)
+            if gr.outcome is GatewayOutcome.CONFIRMATION_INVALID:
+                # lost a race with another approve/decline: nothing ran, touch nothing
+                raise LookupError(f"no pending approval {approval_id} in this session")
             done = gr.outcome is GatewayOutcome.EXECUTED
             fallback = (
                 f"Done, Sir: {action.summary}."
@@ -349,9 +408,11 @@ class Brain:
             )
             instruction = "Owner approved this action; report the outcome in one sentence."
         else:
-            self.gateway.gate.cancel(approval_id)
+            if not await self.gateway.gate.cancel(approval_id):
+                # approved (or declined) concurrently: never record a decline that didn't happen
+                raise LookupError(f"no pending approval {approval_id} in this session")
             tool = self.gateway.registry.get(action.tool)
-            self.gateway.audit.append(
+            await self.gateway.audit.append(
                 agent=tool.agent if tool else "gateway",
                 tool=action.tool,
                 risk=action.risk,
@@ -384,7 +445,7 @@ class Brain:
                 trace_id=trace_id,
             )
         )
-        await self.store.save(session)
+        await self._save_after_action(session)
 
         req = ChatRequest(message="-", session_id=session_id, user_id=user_id)
         spec = self._resolve_brain(session, req)
@@ -416,7 +477,7 @@ class Brain:
                 cost_usd=cost,
             )
         )
-        await self.store.save(session)
+        await self._save_after_action(session)
         from jarvis.llm.base import Usage
 
         return ChatResponse(
@@ -435,13 +496,20 @@ class Brain:
 
     async def chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
         """Streaming variant for the CLI (and Phase 1 TTS). Persists the full reply at the end."""
+        req = await self._start(req)
+        async with self._serialised(req.session_id):
+            async for delta in self._chat_stream(req):
+                yield delta
+
+    async def _chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
         trace_id = get_trace_id()
         if req.brain:
             self.brains.get(req.brain)
+        # validate first: a rejected first message must not leave an empty conversation
+        text = guard_input(req.message, max_chars=self.s.max_input_chars)
         session = await self._load_or_create(req)
         spec = self._resolve_brain(session, req)
         router = self.brains.router_for(spec.id)
-        text = guard_input(req.message, max_chars=self.s.max_input_chars)
         session.append(Turn(role=Role.USER, content=text, trace_id=trace_id))
         await self.store.save(session)
 

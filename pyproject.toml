@@ -18,6 +18,7 @@ dependencies = [
     "authlib>=1.3",
     "itsdangerous>=2.1",
     "httpx>=0.27",
+    "google-cloud-firestore>=2.19,<3",
 ]
 
 [project.optional-dependencies]
@@ -36,11 +37,15 @@ jarvis = "jarvis.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"jarvis.api" = ["static/*.html", "static/*.js"]
+"jarvis.api" = ["static/*.html", "static/*.js", "static/fonts/*.woff2", "static/fonts/*.txt"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+markers = [
+    "firestore_emulator: runs against the Firestore emulator (needs FIRESTORE_EMULATOR_HOST)",
+]
 pythonpath = ["src"]
 
 [tool.ruff]

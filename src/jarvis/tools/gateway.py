@@ -17,12 +17,14 @@ from typing import Any
 from jarvis.core.guardrails import (
     ActionRisk,
     ConfirmationGate,
+    ConfirmationInvalid,
     ConfirmationRequired,
     PendingAction,
 )
 from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
-from jarvis.tools.audit import AuditLog
+from jarvis.tools.audit import AuditTrail, args_hash
+from jarvis.tools.base import Tool
 from jarvis.tools.policy import Effect, Policy
 from jarvis.tools.registry import ToolRegistry
 
@@ -40,6 +42,7 @@ class GatewayOutcome(StrEnum):
     EXECUTED = "executed"
     AWAITING_CONFIRMATION = "awaiting_confirmation"
     DENIED = "denied"
+    CONFIRMATION_INVALID = "confirmation_invalid"  # spent / expired / mismatched token
     ERROR = "error"
 
 
@@ -72,19 +75,19 @@ class GatewayResult:
 
 class Gateway:
     def __init__(
-        self, *, registry: ToolRegistry, policy: Policy, gate: ConfirmationGate, audit: AuditLog
+        self, *, registry: ToolRegistry, policy: Policy, gate: ConfirmationGate, audit: AuditTrail
     ) -> None:
         self.registry, self.policy, self.gate, self.audit = registry, policy, gate, audit
 
-    def pending(self) -> list[PendingAction]:
-        return self.gate.pending()
+    async def pending(self) -> list[PendingAction]:
+        return await self.gate.pending()
 
     async def execute(
         self, call: ToolCall, *, confirmation_id: str | None = None, scope: str | None = None
     ) -> GatewayResult:
         tool = self.registry.get(call.name)
         if tool is None:
-            self.audit.append(
+            await self.audit.append(
                 agent="gateway",
                 tool=call.name,
                 risk=ActionRisk.READ_ONLY,
@@ -96,7 +99,7 @@ class Gateway:
         try:
             tool.validate(call.arguments)
         except ValueError as exc:
-            self.audit.append(
+            await self.audit.append(
                 agent=tool.agent,
                 tool=tool.name,
                 risk=tool.risk,
@@ -108,7 +111,7 @@ class Gateway:
 
         effect = self.policy.decide(tool.name, tool.risk, call.arguments)
         if effect is Effect.DENY:
-            self.audit.append(
+            await self.audit.append(
                 agent=tool.agent,
                 tool=tool.name,
                 risk=tool.risk,
@@ -128,39 +131,88 @@ class Gateway:
                 scope=scope,
             )
             try:
-                self.gate.check(action, confirmation_id=confirmation_id)
+                await self.gate.check(action, confirmation_id=confirmation_id)
             except ConfirmationRequired as exc:
-                self.audit.append(
+                try:
+                    await self.audit.append(
+                        agent=tool.agent,
+                        tool=tool.name,
+                        risk=tool.risk,
+                        outcome="awaiting_confirmation",
+                        args=call.arguments,
+                        detail=exc.action.id,
+                    )
+                except Exception:
+                    if exc.action.id == action.id:  # never leave an unaudited approval behind
+                        await self.gate.cancel(action.id)
+                    raise
+                return GatewayResult(GatewayOutcome.AWAITING_CONFIRMATION, pending=exc.action)
+            except ConfirmationInvalid:
+                await self.audit.append(
                     agent=tool.agent,
                     tool=tool.name,
                     risk=tool.risk,
-                    outcome="awaiting_confirmation",
+                    outcome="confirmation_invalid",
                     args=call.arguments,
-                    detail=exc.action.id,
+                    detail="approval spent, expired or changed",
                 )
-                return GatewayResult(GatewayOutcome.AWAITING_CONFIRMATION, pending=exc.action)
+                log.warning("stale or mismatched approval token", extra={"tool": tool.name})
+                return GatewayResult(
+                    GatewayOutcome.CONFIRMATION_INVALID, error="approval is no longer valid"
+                )
 
+        if effect is Effect.ASK:
+            # Approved and consumed. Record intent BEFORE acting: an irreversible action never
+            # runs without an audit entry. If the record can't be written, fail closed (the
+            # approval is spent, nothing happens, the owner is told).
+            try:
+                await self.audit.append(
+                    agent=tool.agent,
+                    tool=tool.name,
+                    risk=tool.risk,
+                    outcome="executing",
+                    args=call.arguments,
+                    detail="confirmed",
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.error(
+                    "audit unavailable; irreversible action NOT run",
+                    extra={"tool": tool.name, "error": type(exc).__name__},
+                )
+                return GatewayResult(
+                    GatewayOutcome.ERROR, error="could not record the action, so nothing was done"
+                )
         try:
             out = tool.run(call.arguments)
             if hasattr(out, "__await__"):
                 out = await out
         except Exception as exc:  # noqa: BLE001 — tool failures are reported, not raised
             log.exception("tool failed", extra={"tool": tool.name})
-            self.audit.append(
+            await self._audit_after_run(tool, call, "error", _safe_detail(exc))
+            return GatewayResult(GatewayOutcome.ERROR, error=f"tool failed: {exc}")
+        await self._audit_after_run(tool, call, "executed", "confirmed" if confirmation_id else "")
+        return GatewayResult(GatewayOutcome.EXECUTED, result=out)
+
+    async def _audit_after_run(self, tool: Tool, call: ToolCall, outcome: str, detail: str) -> None:
+        """The tool has ALREADY run: an audit outage must not turn that into an exception,
+        or the caller would lose the record that e.g. a message was sent (and the owner might
+        ask again). Log loudly instead; the trace id ties the log line to the request."""
+        try:
+            await self.audit.append(
                 agent=tool.agent,
                 tool=tool.name,
                 risk=tool.risk,
-                outcome="error",
+                outcome=outcome,
                 args=call.arguments,
-                detail=_safe_detail(exc),
+                detail=detail,
             )
-            return GatewayResult(GatewayOutcome.ERROR, error=f"tool failed: {exc}")
-        self.audit.append(
-            agent=tool.agent,
-            tool=tool.name,
-            risk=tool.risk,
-            outcome="executed",
-            args=call.arguments,
-            detail="confirmed" if confirmation_id else "",
-        )
-        return GatewayResult(GatewayOutcome.EXECUTED, result=out)
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "AUDIT WRITE FAILED after tool ran",
+                extra={
+                    "tool": tool.name,
+                    "outcome": outcome,
+                    "args_hash": args_hash(call.arguments),
+                    "error": type(exc).__name__,
+                },
+            )

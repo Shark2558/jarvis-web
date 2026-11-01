@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from jarvis.core.models import Session, SessionSummary
+from jarvis.core.models import Session, SessionSummary, session_title
 
 
 class SessionNotFound(LookupError):
@@ -50,4 +50,5 @@ def summarize(s: Session) -> SessionSummary:
         updated_at=s.updated_at,
         turn_count=len(s.turns),
         total_cost_usd=s.total_cost_usd,
+        title=session_title(s),
     )

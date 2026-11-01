@@ -14,6 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from jarvis.core.guardrails import PendingAction
 from jarvis.llm.base import ContentBlock, Role, Usage
 
 
@@ -88,6 +89,22 @@ class PendingApproval(BaseModel):
     arguments: dict[str, Any]
     risk: str
     expires_at: datetime
+    session_id: str | None = Field(
+        default=None, description="Conversation the action belongs to (approve from there)"
+    )
+
+    @classmethod
+    def from_action(cls, a: PendingAction) -> PendingApproval:
+        sid = a.scope.rsplit(":", 1)[1] if a.scope and ":" in a.scope else None
+        return cls(
+            id=a.id,
+            tool=a.tool,
+            summary=a.summary,
+            arguments=a.arguments,
+            risk=a.risk.value,
+            expires_at=a.expires_at,
+            session_id=sid,
+        )
 
 
 class ChatResponse(BaseModel):
@@ -111,3 +128,13 @@ class SessionSummary(BaseModel):
     updated_at: datetime
     turn_count: int
     total_cost_usd: float
+    title: str = Field(default="", description="First words of the owner's first message")
+
+
+TITLE_MAX_CHARS = 80
+
+
+def session_title(s: Session) -> str:
+    first = next((t.content for t in s.turns if t.role is Role.USER and t.content.strip()), "")
+    text = " ".join(first.split())
+    return text if len(text) <= TITLE_MAX_CHARS else text[: TITLE_MAX_CHARS - 1].rstrip() + "…"

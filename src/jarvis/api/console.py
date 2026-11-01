@@ -15,6 +15,19 @@ from jarvis.config import Settings
 
 router = APIRouter()
 _STATIC = Path(__file__).parent / "static"
+_FONTS = _STATIC / "fonts"
+# Self-hosted OFL fonts (licences beside them). Only these exact names are ever served: the
+# route never builds a path from user input that is not in this set, so traversal is impossible.
+FONT_FILES = frozenset(
+    {
+        "orbitron-latin-600-normal.woff2",
+        "orbitron-latin-700-normal.woff2",
+        "rajdhani-latin-500-normal.woff2",
+        "rajdhani-latin-600-normal.woff2",
+        "rajdhani-latin-700-normal.woff2",
+    }
+)
+_FONT_CACHE = "public, max-age=31536000, immutable"
 
 
 def _settings(request: Request) -> Settings:
@@ -40,12 +53,33 @@ async def console() -> HTMLResponse:
     )
 
 
-@router.get("/static/console.js", include_in_schema=False)
-async def console_js() -> FileResponse:
+def _script(name: str) -> FileResponse:
     return FileResponse(
-        _STATIC / "console.js",
+        _STATIC / name,
         media_type="application/javascript",
         headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/static/console.js", include_in_schema=False)
+async def console_js() -> FileResponse:
+    return _script("console.js")
+
+
+@router.get("/static/console-fx.js", include_in_schema=False)
+async def console_fx_js() -> FileResponse:
+    """Theme engine, background field and the Core emblem (split out to keep console.js lean)."""
+    return _script("console-fx.js")
+
+
+@router.get("/static/fonts/{name}", include_in_schema=False)
+async def console_font(name: str) -> FileResponse:
+    if name not in FONT_FILES:
+        raise HTTPException(404, "not found")
+    return FileResponse(
+        _FONTS / name,
+        media_type="font/woff2",
+        headers={"Cache-Control": _FONT_CACHE, "X-Content-Type-Options": "nosniff"},
     )
 
 

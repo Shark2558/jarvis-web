@@ -22,8 +22,9 @@ class LLMBackend(StrEnum):
 
 
 class SessionBackend(StrEnum):
-    MEMORY = "memory"
-    REDIS = "redis"
+    MEMORY = "memory"  # dev/tests: everything in-process
+    REDIS = "redis"  # docker-compose: sessions in Redis, approvals/audit in-process
+    FIRESTORE = "firestore"  # Cloud Run: sessions, approvals and audit persist (slice 5)
 
 
 class AuthMode(StrEnum):
@@ -161,7 +162,16 @@ class Settings(BaseSettings):
     # --- session memory (short-term, rolling window) ---
     session_backend: SessionBackend = SessionBackend.MEMORY
     redis_url: str = "redis://localhost:6379/0"
-    session_ttl_s: int = Field(default=60 * 60 * 24, description="Idle TTL for a session")
+    session_ttl_s: int = Field(
+        default=60 * 60 * 24, description="Idle TTL for a session (memory/redis backends only)"
+    )
+    firestore_project: str | None = Field(
+        default=None, description="GCP project; default: the one the credentials belong to"
+    )
+    firestore_database: str = Field(default="(default)", description="Firestore database id")
+    firestore_prefix: str = Field(
+        default="jarvis_", pattern=r"^[a-z][a-z0-9_]{0,30}$", description="Collection prefix"
+    )
     session_max_turns: int = Field(default=40, description="Rolling window: max turns kept")
     session_max_chars: int = Field(
         default=48_000,

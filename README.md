@@ -91,6 +91,32 @@ approval narration is skipped (deterministic reply) if the session was switched 
 The console banner follows the selected brain. `JARVIS_LLM_BACKEND` names the default brain.
 `JARVIS_LLM_TIMEOUT_S` now defaults to 20 s so a stuck model degrades to the next tier quickly.
 
+## Phase 2 · slice 5 — persistence (state survives scale-to-zero)
+
+`JARVIS_SESSION_BACKEND=firestore` keeps sessions, pending approvals and the audit chain in
+Firestore (Native mode) in the deployment's own GCP project — free tier, no key (ADC / service
+account). Plan and the Firestore-vs-Neon decision: `docs/plans/phase2-slice5-persistence.md`.
+
+```
+jarvis/storage/docs.py            Docs port (get/query/write/transaction) + MemoryDocs twin
+jarvis/storage/firestore_docs.py  the only module importing the Firestore SDK
+jarvis/storage/sessions.py        header + one doc per turn; header last; rev cache; diff writes
+jarvis/storage/approvals.py       transactional single-use consume
+jarvis/storage/audit.py           transactional chain head; tail(n) verifies in O(n)
+```
+
+| backend | sessions | approvals + audit |
+|---|---|---|
+| `memory` (dev/tests) | process | process |
+| `redis` (docker-compose) | Redis, idle TTL | process |
+| `firestore` (Cloud Run) | Firestore, kept until deleted | Firestore |
+
+`ConfirmationGate` and `AuditTrail` are async over pluggable stores. `GET /v1/audit?limit=n`
+returns the newest n entries and whether that window verifies; `PendingApproval.session_id`
+and `SessionSummary.title` feed the console's **Conversations** panel (reopen, delete with a
+two-step confirm). The same storage tests run on `MemoryDocs` locally and on the official
+Firestore emulator in CI (`pytest -m firestore_emulator` with `FIRESTORE_EMULATOR_HOST`).
+
 ## Quick start
 
 ```bash

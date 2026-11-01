@@ -24,7 +24,8 @@ from jarvis.core.guardrails import InputRejected
 from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
 from jarvis.llm.brains import BrainRegistry
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
-from jarvis.memory import SessionNotFound, SessionStore, build_session_store
+from jarvis.memory import SessionNotFound, SessionStore
+from jarvis.storage import build_storage
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.setup import build_gateway
 
@@ -63,10 +64,18 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = s
-        app.state.store = store or build_session_store(s)
+        built = build_storage(s) if store is None else None
+        app.state.store = store or (built.sessions if built else None)
         app.state.brains = brains or BrainRegistry.from_settings(s, provider)
         app.state.router = app.state.brains.router_for(app.state.brains.default.id)
-        app.state.gateway = gateway or (build_gateway(s) if s.tools_enabled else None)
+        gw: Gateway | None = gateway
+        if gw is None and s.tools_enabled:
+            gw = build_gateway(
+                s,
+                approvals=built.approvals if built else None,
+                audit=built.audit if built else None,
+            )
+        app.state.gateway = gw
         app.state.brain = Brain(
             brains=app.state.brains, store=app.state.store, settings=s, gateway=app.state.gateway
         )

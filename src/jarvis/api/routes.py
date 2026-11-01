@@ -19,7 +19,8 @@ from jarvis.api.auth import require_auth
 from jarvis.config import Settings
 from jarvis.core.brain import Brain
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, SessionSummary
-from jarvis.memory.base import SessionStore
+from jarvis.memory.base import SessionNotFound, SessionStore
+from jarvis.tools.audit import AuditEntry
 
 router = APIRouter()
 
@@ -107,19 +108,27 @@ async def chat_stream(req: ChatRequest, brain: Brain = Depends(_brain)) -> Strea
 async def list_sessions(
     user_id: str = "owner", limit: int = 50, store: SessionStore = Depends(_store)
 ) -> list[SessionSummary]:
-    return await store.list_for_user(user_id, limit=min(limit, 200))
+    return await store.list_for_user(user_id, limit=max(1, min(limit, 200)))
 
 
 @router.get(
     "/v1/sessions/{session_id}", response_model=Session, dependencies=[Depends(require_auth)]
 )
-async def get_session(session_id: str, store: SessionStore = Depends(_store)) -> Session:
-    return await store.get_or_raise(session_id)
+async def get_session(
+    session_id: str, user_id: str = "owner", store: SessionStore = Depends(_store)
+) -> Session:
+    s = await store.get_or_raise(session_id)
+    if s.user_id != user_id:
+        raise SessionNotFound(session_id)
+    return s
 
 
 @router.delete("/v1/sessions/{session_id}", status_code=204, dependencies=[Depends(require_auth)])
-async def delete_session(session_id: str, store: SessionStore = Depends(_store)) -> None:
-    if not await store.delete(session_id):
+async def delete_session(
+    session_id: str, user_id: str = "owner", brain: Brain = Depends(_brain)
+) -> None:
+    """Deletes the conversation and its waiting approvals. Permanent (the console confirms)."""
+    if not await brain.forget(session_id, user_id=user_id):
         raise HTTPException(404, "session not found")
 
 
@@ -131,27 +140,17 @@ class Decision(BaseModel):
     user_id: str = "owner"
 
 
-def _pending_models(brain: Brain) -> list[PendingApproval]:
+async def _pending_models(brain: Brain) -> list[PendingApproval]:
     if brain.gateway is None:
         return []
-    return [
-        PendingApproval(
-            id=a.id,
-            tool=a.tool,
-            summary=a.summary,
-            arguments=a.arguments,
-            risk=a.risk.value,
-            expires_at=a.expires_at,
-        )
-        for a in brain.gateway.pending()
-    ]
+    return [PendingApproval.from_action(a) for a in await brain.gateway.pending()]
 
 
 @router.get(
     "/v1/approvals", response_model=list[PendingApproval], dependencies=[Depends(require_auth)]
 )
 async def list_approvals(brain: Brain = Depends(_brain)) -> list[PendingApproval]:
-    return _pending_models(brain)
+    return await _pending_models(brain)
 
 
 @router.post(
@@ -172,12 +171,18 @@ async def decline(approval_id: str, d: Decision, brain: Brain = Depends(_brain))
     return await brain.decline(approval_id, session_id=d.session_id, user_id=d.user_id)
 
 
-@router.get("/v1/audit", dependencies=[Depends(require_auth)])
-async def audit(brain: Brain = Depends(_brain), limit: int = 200) -> dict:
+AUDIT_MAX_LIMIT = 200
+
+
+class AuditView(BaseModel):
+    verified: bool
+    entries: list[AuditEntry]
+
+
+@router.get("/v1/audit", response_model=AuditView, dependencies=[Depends(require_auth)])
+async def audit(brain: Brain = Depends(_brain), limit: int = 50) -> AuditView:
+    """The newest `limit` entries and whether that window verifies (O(limit) reads)."""
     if brain.gateway is None:
-        return {"verified": True, "entries": []}
-    entries = brain.gateway.audit.entries()[-min(limit, 1000) :]
-    return {
-        "verified": brain.gateway.audit.verify(),
-        "entries": [e.model_dump(mode="json") for e in entries],
-    }
+        return AuditView(verified=True, entries=[])
+    tail = await brain.gateway.audit.tail(max(1, min(limit, AUDIT_MAX_LIMIT)))
+    return AuditView(verified=tail.verified, entries=tail.entries)

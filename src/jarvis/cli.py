@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import sys
 
+from jarvis.api.identity import primary_user_id
 from jarvis.config import get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.models import ChatRequest
@@ -40,7 +41,7 @@ async def _repl(stream: bool) -> None:
                 print("(new session)")
                 continue
             new_trace_id()
-            req = ChatRequest(message=line, session_id=session_id)
+            req = ChatRequest(message=line, session_id=session_id, user_id=primary_user_id(s))
             try:
                 if stream:
                     print("jarvis> ", end="", flush=True)

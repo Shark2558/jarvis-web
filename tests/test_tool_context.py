@@ -311,3 +311,12 @@ def test_template_summaries_are_flattened_to_one_safe_line() -> None:
         summary_template="Do {item}",
     )
     assert t.summary({"item": "a\r\nb\u202ec"}) == "Do a bc"
+
+
+def test_a_failing_summarize_falls_back_to_name_and_arguments_not_a_bare_verb() -> None:
+    def broken(_: dict[str, Any]) -> str:
+        raise ValueError("bad")
+
+    t = Tool("send_x", "d", ITEM_SCHEMA, ActionRisk.IRREVERSIBLE, lambda a: None, summarize=broken)
+    card = t.summary({"item": "to\nboss"})
+    assert card.startswith("send_x ") and "boss" in card and "\n" not in card

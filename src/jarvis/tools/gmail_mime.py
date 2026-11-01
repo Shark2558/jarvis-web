@@ -145,6 +145,24 @@ def check_header_value(value: Any, *, name: str, limit: int = 998) -> str:
     return text
 
 
+# a msg-id as it may appear in our own headers: <…> of printable ASCII, no spaces, no '<' '>'
+_MESSAGE_ID = re.compile(r"<[!-;=?-~]{1,250}>")
+MAX_REFERENCES = 20
+
+
+def safe_message_id(value: Any) -> str | None:
+    """The original's Message-ID, if well-formed. It is someone else's header: anything else
+    (separators, controls, extra text) is dropped rather than copied into our In-Reply-To."""
+    text = str(value or "").strip(" ")
+    return text if _MESSAGE_ID.fullmatch(text) else None
+
+
+def safe_references(value: Any) -> str | None:
+    """The original's References, keeping only well-formed ids (the last MAX_REFERENCES)."""
+    ids = [t for t in str(value or "").split() if _MESSAGE_ID.fullmatch(t)]
+    return " ".join(ids[-MAX_REFERENCES:]) or None
+
+
 def reply_subject(subject: str, original_subject: str) -> str:
     """Keep the owner's subject; ensure a reply carries a single 'Re:' prefix."""
     base = subject.strip() or original_subject.strip()
@@ -182,4 +200,6 @@ __all__ = [
     "parse_body",
     "parse_recipients",
     "reply_subject",
+    "safe_message_id",
+    "safe_references",
 ]

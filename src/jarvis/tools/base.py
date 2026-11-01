@@ -79,16 +79,18 @@ class Tool:
             self.check(args)
 
     def summary(self, args: dict[str, Any]) -> str:
+        # never show the owner a bare verb for something irreversible: the fallback is the
+        # tool name with its (sanitised) arguments
+        generic = f"{self.name} {json.dumps(args, default=str, ensure_ascii=False)}"
         if self.summarize is not None:
             try:
                 return self.summarize(args)
             except (KeyError, TypeError, ValueError):
-                pass  # fall through to the generic, still sanitised, wording
+                return one_line(generic, SUMMARY_FALLBACK_LIMIT)
         try:
             text = self.summary_template.format(name=self.name, **args)
         except (KeyError, IndexError, ValueError):
-            # never show the owner a bare verb for something irreversible
-            text = f"{self.name} {json.dumps(args, default=str, ensure_ascii=False)}"
+            text = generic
         return one_line(text, SUMMARY_FALLBACK_LIMIT)
 
 

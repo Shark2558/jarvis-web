@@ -31,6 +31,8 @@ from jarvis.tools.gmail_mime import (
     parse_body,
     parse_recipients,
     reply_subject,
+    safe_message_id,
+    safe_references,
 )
 
 BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
@@ -211,8 +213,8 @@ class GmailAPI:
         if a.get("reply_to_message_id"):
             original = await self._metadata(uid, _validate_message_id(a["reply_to_message_id"]))
             h = headers_of(original.get("payload") or {})
-            in_reply_to = h.get("message-id") or None
-            references = h.get("references") or None
+            in_reply_to = safe_message_id(h.get("message-id"))
+            references = safe_references(h.get("references"))
             thread_id = original.get("threadId")
             # the original subject is someone else's text: one clean line before it is reused
             subject = reply_subject(subject, one_line(h.get("subject", ""), SUBJECT_LIMIT))

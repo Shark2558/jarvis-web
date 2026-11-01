@@ -512,3 +512,33 @@ async def test_read_cleans_cc_date_and_attachment_metadata(
     assert "truncated" in hostile["name"] and len(hostile["name"]) < 400
     assert hostile["mime_type"] == "application/octet-stream"
     assert "att2" not in json.dumps(r)
+
+
+async def test_threading_headers_from_the_original_are_validated(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    """Security review M4: In-Reply-To/References are copied from someone else's message, so
+    only well-formed message ids (no separators, no controls) make it into our headers."""
+    original = _msg_meta("m1", "Q4", "s")
+    for h in original["payload"]["headers"]:
+        if h["name"] == "Message-ID":
+            h["value"] = "<m1@mail.example.com>\u2028Bcc: attacker@evil.example"
+    original["payload"]["headers"].append(
+        {"name": "References", "value": "<ok1@x.example> junk\u0085 <ok2@x.example> <bad\u2028@x>"}
+    )
+    fake_google.on("GET", f"{GM}/messages/m1", httpx.Response(200, json=original))
+    fake_google.on(
+        "POST", f"{GM}/drafts", httpx.Response(200, json={"id": "d3", "message": {"id": "x"}})
+    )
+    out = await _run(
+        gw,
+        "gmail_create_draft",
+        {"to": "priya@example.com", "subject": "", "body": "ok", "reply_to_message_id": "m1"},
+    )
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    msg, body = _raw_message(fake_google.sent("POST", "/drafts")[0])
+    assert msg["In-Reply-To"] is None  # malformed: dropped, the threadId still threads it
+    assert msg["References"] is None
+    assert msg["Bcc"] is None and body["message"]["threadId"] == "t_m1"
+    raw = json.dumps(body)
+    assert "attacker" not in str(msg) and "attacker" not in raw

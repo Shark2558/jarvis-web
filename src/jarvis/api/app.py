@@ -17,11 +17,14 @@ from starlette.middleware.sessions import SessionMiddleware
 from jarvis.api.auth import CSRFRejected, auth_router, build_oauth
 from jarvis.api.console import router as console_router
 from jarvis.api.identity import adopt_legacy_sessions
+from jarvis.api.integrations import router as integrations_router
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import router as v1_router
 from jarvis.config import AuthMode, Settings, get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import InputRejected
+from jarvis.integrations.google import build_google_connector, register_tools_oauth
+from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
 from jarvis.llm.brains import BrainRegistry
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
@@ -69,12 +72,15 @@ def create_app(
         app.state.store = store or (built.sessions if built else None)
         app.state.brains = brains or BrainRegistry.from_settings(s, provider)
         app.state.router = app.state.brains.router_for(app.state.brains.default.id)
+        tokens = built.tokens if built else MemoryTokenStore()
+        app.state.google = build_google_connector(s, tokens)
         gw: Gateway | None = gateway
         if gw is None and s.tools_enabled:
             gw = build_gateway(
                 s,
                 approvals=built.approvals if built else None,
                 audit=built.audit if built else None,
+                google=app.state.google,
             )
         app.state.gateway = gw
         app.state.brain = Brain(
@@ -88,11 +94,14 @@ def create_app(
                 "llm": app.state.router.provider.name,
                 "brains": [b.id for b in app.state.brains.list()],
                 "session_backend": s.session_backend.value,
+                "google_tools": app.state.google is not None,
             },
         )
         try:
             yield
         finally:
+            if app.state.google is not None:
+                await app.state.google.http.aclose()
             await app.state.store.close()
 
     app = FastAPI(title="JARVIS", version="0.0.1", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -114,6 +123,9 @@ def create_app(
         )
         app.state.oauth = build_oauth(s)
         app.include_router(auth_router)
+        if s.google_tools_enabled:
+            register_tools_oauth(app.state.oauth, s)
+            app.include_router(integrations_router)
 
     @app.middleware("http")
     async def trace_middleware(

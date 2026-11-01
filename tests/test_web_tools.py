@@ -111,6 +111,23 @@ async def test_search_numbers_fences_and_caps_results() -> None:
     assert await r.outcomes() == ["executed"]
 
 
+async def test_non_ascii_results_are_shrunk_so_every_fence_closes() -> None:
+    r = Rig()
+    long_url = "https://example.com/" + "p" * 1500
+    r.fake.results = [
+        hit(i, title="शीर्षक " * 60, content="समाचार " * 300, url=f"{long_url}{i}")
+        for i in range(1, 6)
+    ]
+    gr = await r.call("web_search", query="समाचार", max_results=5)
+    text = gr.for_model()
+    assert len(text) <= MAX_RESULT_CHARS + 100 and "[truncated]" not in text
+    view = _model_view(gr)
+    assert len(view["results"]) >= 3
+    for item in view["results"]:
+        for field in ("title", "snippet"):
+            assert item[field].startswith("<<EXTERNAL CONTENT") and item[field].endswith("<<END>>")
+
+
 async def test_search_asks_tavily_for_at_most_five() -> None:
     r = Rig()
     gr = await r.call("web_search", query="x", max_results=50, topic="news", days=2)

@@ -124,8 +124,8 @@ Memory (standing rule)
 WEB_RULES = """
 Web search (standing rule)
 - For current or uncertain facts, use web_search; use web_read only for a link from those
-  results or one the owner typed. If no web_search tool is offered, web search is not set up:
-  say so plainly rather than guess.
+  results or one the owner typed. If no web_search tool is offered, web search is not available
+  here (not set up, or this brain is chat-only): say so plainly rather than guess.
 - Cite every claim taken from the web with its result number in square brackets right after
   it, e.g. [1] or [2][3]. Never invent a number, a source or a link.
 - Never put private details into a search (names with contact details, addresses, numbers,

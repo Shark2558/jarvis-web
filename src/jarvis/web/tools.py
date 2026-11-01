@@ -18,6 +18,7 @@ web_read(url)
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
@@ -35,6 +36,8 @@ MAX_RESULTS = 5
 MAX_DAYS = 365
 TITLE_LIMIT = 200
 SNIPPET_LIMIT = 700
+MIN_TITLE = 40  # how far a title / snippet may shrink so that the whole result fits
+MIN_SNIPPET = 80
 PAGE_TEXT_LIMIT = 12_000
 RESULT_BUDGET = MAX_RESULT_CHARS - 500  # the serialised result must fit, closing fence included
 TOPICS = ("general", "news")
@@ -121,34 +124,16 @@ class _Web:
             raise
         await self._account(r, 1 if page.credits is None else page.credits)
         conv = current_conversation()
-        results: list[dict[str, Any]] = []
-        seen: set[str] = set()
+        kept: list[_Hit] = []
         for hit in page.hits:
             url = normalize_url(hit.url)
-            if url is None or url in seen:
+            if url is None or any(k.url == url for k in kept):
                 continue  # not https (or malformed), or a duplicate
-            seen.add(url)
-            domain = domain_of(url)
-            item: dict[str, Any] = {
-                "n": conv.add(hit.title, url) if conv is not None else len(results) + 1,
-                "url": url,
-                "domain": domain,
-                "title": wrap_external(hit.title or "(no title)", source=domain, limit=TITLE_LIMIT),
-                "snippet": wrap_external(
-                    hit.content or "(no snippet)", source=domain, limit=SNIPPET_LIMIT
-                ),
-            }
-            if hit.published:
-                item["published"] = hit.published
-            results.append(item)
-            if len(results) >= wanted:
+            n = conv.add(hit.title, url) if conv is not None else len(kept) + 1
+            kept.append(_Hit(n, url, domain_of(url), hit.title, hit.content, hit.published))
+            if len(kept) >= wanted:
                 break
-        return {
-            "query": query,
-            "results": results,
-            "note": SEARCH_NOTE if results else "No results.",
-            "web_credits_left_this_month": r.left,
-        }
+        return _search_view(query, kept, r.left)
 
     async def read(self, a: dict[str, Any]) -> dict[str, Any]:
         url = normalize_url(a.get("url"))
@@ -168,6 +153,56 @@ class _Web:
         n = conv.add(conv.title_of(url) or domain, url)
         out: dict[str, Any] = {"n": n, "url": url, "domain": domain}
         return _fitted(out, clean_text(page.text), domain, r.left)
+
+
+@dataclass(frozen=True)
+class _Hit:
+    n: int
+    url: str
+    domain: str
+    title: str
+    content: str
+    published: str | None
+
+
+def _item(h: _Hit, title_limit: int, snippet_limit: int) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "n": h.n,
+        "url": h.url,
+        "domain": h.domain,
+        "title": wrap_external(h.title or "(no title)", source=h.domain, limit=title_limit),
+        "snippet": wrap_external(h.content or "(no snippet)", source=h.domain, limit=snippet_limit),
+    }
+    if h.published:
+        item["published"] = h.published
+    return item
+
+
+def _search_view(query: str, hits: list[_Hit], left: int) -> dict[str, Any]:
+    """The results for the model, shrunk (snippets, then titles, then the last results) until the
+    serialised whole fits the gateway's limit: escaped non-ASCII text takes up to 6 characters a
+    letter, and a cut by the gateway would break a fence."""
+    titles, snippets, keep = TITLE_LIMIT, SNIPPET_LIMIT, len(hits)
+    for _ in range(24):
+        out = {
+            "query": query,
+            "results": [_item(h, titles, snippets) for h in hits[:keep]],
+            "note": SEARCH_NOTE if hits else "No results.",
+            "web_credits_left_this_month": left,
+        }
+        size = len(json.dumps(out, default=str))
+        if size <= RESULT_BUDGET:
+            break
+        shrink = RESULT_BUDGET / size * 0.9
+        if snippets > MIN_SNIPPET:
+            snippets = max(MIN_SNIPPET, int(snippets * shrink))
+        elif titles > MIN_TITLE:
+            titles = max(MIN_TITLE, int(titles * shrink))
+        elif keep > 1:
+            keep -= 1
+        else:
+            break
+    return out
 
 
 def _fitted(head: dict[str, Any], text: str, domain: str, left: int) -> dict[str, Any]:

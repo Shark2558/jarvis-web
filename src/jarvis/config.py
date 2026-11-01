@@ -192,9 +192,28 @@ class Settings(BaseSettings):
         "(Secret Manager `jarvis-token-key`). Outside dev the Google tools stay off without it.",
     )
 
+    # --- morning brief (slice 7) ---
+    brief_scheduler_sa: str | None = Field(
+        default=None,
+        description="Service-account email Cloud Scheduler signs its OIDC token as. Unset = no "
+        "/internal/brief/tick route (the brief is still made when the console opens).",
+    )
+    brief_ai_daily_cap: int = Field(
+        default=6, ge=0, le=24, description="AI summary calls per owner per day (cost cap)"
+    )
+    brief_retention_days: int = Field(
+        default=7, ge=1, le=90, description="Days of briefs kept per owner"
+    )
+
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")
     user_timezone: str = "Asia/Kolkata"
+
+    @field_validator("brief_scheduler_sa", mode="before")
+    @classmethod
+    def _norm_sa(cls, v: object) -> str | None:
+        text = str(v or "").strip().lower()
+        return text or None
 
     def require_prod_invariants(self) -> None:
         """Fail fast on misconfiguration that is acceptable in dev but not beyond it."""

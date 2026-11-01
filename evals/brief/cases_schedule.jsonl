@@ -1,0 +1,20 @@
+{"id": "s01", "desc": "one minute before the time", "now": "2027-01-15T06:59:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "07:00"}, "existing": null, "expect": false}
+{"id": "s02", "desc": "exactly at the time", "now": "2027-01-15T07:00:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "07:00"}, "existing": null, "expect": true}
+{"id": "s03", "desc": "catch-up two hours after a missed tick", "now": "2027-01-15T09:00:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "07:00"}, "existing": null, "expect": true}
+{"id": "s04", "desc": "last minute of the catch-up window", "now": "2027-01-15T10:59:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "07:00"}, "existing": null, "expect": true}
+{"id": "s05", "desc": "after the window (time + 4 h)", "now": "2027-01-15T11:00:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "07:00"}, "existing": null, "expect": false}
+{"id": "s06", "desc": "latest allowed time, inside catch-up", "now": "2027-01-15T15:29:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "11:30"}, "existing": null, "expect": true}
+{"id": "s07", "desc": "latest allowed time, window closed", "now": "2027-01-15T15:30:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "11:30"}, "existing": null, "expect": false}
+{"id": "s08", "desc": "brief switched off", "now": "2027-01-15T07:30:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "07:00", "enabled": false}, "existing": null, "expect": false}
+{"id": "s09", "desc": "already ready today", "now": "2027-01-15T07:30:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "07:00"}, "existing": {"status": "ready", "claimed_minutes_ago": 30}, "expect": false}
+{"id": "s10", "desc": "stale claim (11 min) is retaken", "now": "2027-01-15T07:30:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "07:00"}, "existing": {"status": "generating", "claimed_minutes_ago": 11}, "expect": true}
+{"id": "s11", "desc": "fresh claim (9 min) is skipped", "now": "2027-01-15T07:30:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "07:00"}, "existing": {"status": "generating", "claimed_minutes_ago": 9}, "expect": false}
+{"id": "s12", "desc": "failed brief is retried inside the window", "now": "2027-01-15T07:30:00+05:30", "tz": "Asia/Kolkata", "settings": {"time": "07:00"}, "existing": {"status": "failed", "claimed_minutes_ago": 30}, "expect": true}
+{"id": "s13", "desc": "New York owner at 07:00 EST", "now": "2027-01-15T12:00:00+00:00", "tz": "America/New_York", "settings": {"time": "07:00"}, "existing": null, "expect": true}
+{"id": "s14", "desc": "DST spring-forward day, 06:59 EDT", "now": "2027-03-14T10:59:00+00:00", "tz": "America/New_York", "settings": {"time": "07:00"}, "existing": null, "expect": false}
+{"id": "s15", "desc": "DST spring-forward day, 07:00 EDT", "now": "2027-03-14T11:00:00+00:00", "tz": "America/New_York", "settings": {"time": "07:00"}, "existing": null, "expect": true}
+{"id": "s16", "desc": "DST fall-back day, 06:30 EST (would be 07:30 EDT)", "now": "2027-11-07T11:30:00+00:00", "tz": "America/New_York", "settings": {"time": "07:00"}, "existing": null, "expect": false}
+{"id": "s17", "desc": "day boundary: 22:30 UTC is 04:00 next day in India", "now": "2027-01-14T22:30:00+00:00", "tz": "Asia/Kolkata", "settings": {"time": "04:00"}, "existing": null, "expect": true}
+{"id": "s18", "desc": "day boundary: Auckland (UTC+13) 04:30 on the 15th", "now": "2027-01-14T15:30:00+00:00", "tz": "Pacific/Auckland", "settings": {"time": "04:30"}, "existing": null, "expect": true}
+{"id": "s19", "desc": "45-minute zone (Kathmandu) one minute early", "now": "2027-01-15T00:44:00+00:00", "tz": "Asia/Kathmandu", "settings": {"time": "06:30"}, "existing": null, "expect": false}
+{"id": "s20", "desc": "45-minute zone (Kathmandu) on time", "now": "2027-01-15T00:45:00+00:00", "tz": "Asia/Kathmandu", "settings": {"time": "06:30"}, "existing": null, "expect": true}

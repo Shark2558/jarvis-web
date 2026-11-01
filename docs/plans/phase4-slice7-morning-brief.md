@@ -166,3 +166,66 @@ ask nothing. Deploy-on-merge keeps env vars, so the scheduler appears after one 
 ## Not in this slice
 Weather/news (no real data source wired), Web Push, voice read-out (Phase 1), evening wrap-up,
 per-section preferences, more than one owner.
+
+## Deviations (backend build, 2026-11-01)
+Where the build differs from or adds to the design above, and why.
+
+1. **API details the design left open.** `POST /v1/brief/generate` returns the same shape as
+   `GET /v1/brief/today` (the console renders it directly); its body also accepts an optional
+   `trigger: "manual" | "open"` — default `manual` when `force`, else `open`; `scheduled` cannot
+   be sent by a client. An empty body is allowed. `trigger=open` while the brief is switched off
+   makes nothing (the explicit Refresh still works). `POST /v1/brief/seen` →
+   `{ok, date, seen_at}`, 404 when that day has no brief, 422 for a malformed date.
+   `PUT /v1/brief/settings` returns the settings (same shape as GET). Errors use the app's
+   envelope: 422 `{error: "invalid_settings", detail}`, 429 `{error: "brief_limit", detail}`.
+   Request bodies are strict: a confirm flag must be the JSON literal `true`.
+2. **Two daily caps.** 6 generations per owner per day (constant `MAX_GENERATIONS`, counted on
+   the record as `generations`, all triggers) → 429; and `JARVIS_BRIEF_AI_DAILY_CAP` (6) AI
+   calls (`ai_calls_today`). A forced refresh keeps today's counters, inbox state and `seen_at`.
+3. **Record fields added.** `claim_id` (only the current claim holder may store the result — a
+   retaken stale claim can never be overwritten by the slow original), `generations`, `error`
+   (friendly reason). `created_at` = when the content was made. Briefs are stored as
+   `{user_id, date, json}` (the approvals/audit pattern), so Firestore and MemoryDocs behave the
+   same. The view adds `generations_left` and an AI `label`; `claim_id`/`claimed_at`/`user_id`
+   are not exposed.
+4. **Time zone cache.** The calendar's zone is cached in `brief_settings.tz` after each
+   successful generation, so a quiet tick needs no Google call (the "2 reads" budget holds).
+   Generation itself always reads the zone fresh from the calendar.
+5. **Inbox delivery runs on any tick in the window, not only after a scheduled generation.** A
+   brief made when the console opened at 06:50 is still put in the inbox at 07:00. If a tick
+   loses the generation race to a manual Refresh it does not wait; the next tick (≤ 30 min)
+   delivers. At most once per day is enforced by the transactional `sending` mark (never reset
+   to `off`; a failed or missing-permission attempt is recorded as `failed` and not retried).
+   A link without an insert-capable scope is marked `failed` without calling Google. An audit
+   entry `executing` is written before the insert (no record → no insert) and
+   `executed`/`error` after.
+6. **Failures.** A failed brief is retried by later ticks inside the catch-up window (bounded
+   by the generation cap). A failed forced refresh keeps the earlier brief (status `ready`,
+   `error` explains). A claim nobody finished within 10 min is shown as `failed` (or the earlier
+   brief) rather than "generating" forever.
+7. **AI skipped when there is nothing to read** (calendar and inbox both unavailable): no call,
+   a note instead. Every AI outcome other than success leaves a one-line `ai_note`.
+8. **Sanitiser is broader than "http(s) and www".** NFKC first (fullwidth URLs), then any
+   `scheme://`, `mailto:`/`javascript:`/`data:`/…, `www.`, bare domains with common TLDs
+   (incl. punycode) → `[link removed]`; email addresses → `[address removed]`; all angle
+   brackets dropped (no fence marker or tag can survive); bullets stripped; ≤ 5 × 200.
+9. **Hardening beyond the plan: links in other people's words are also defanged in the
+   plain-text brief** (titles, places, sender names, subjects). That text is mailed *from
+   "JARVIS"* and mail clients linkify URLs, so a hostile subject could otherwise borrow
+   JARVIS's name for a phishing link. `data` keeps the one-line original (the console shows it
+   with textContent). Eval case c16 covers it.
+10. **OIDC library.** `joserfc` (already hash-locked: it is authlib's required dependency) is
+    imported directly for RS256 verification; no new dependency was added and `pyproject.toml`
+    / `requirements.lock` are unchanged. The header is checked for `alg == RS256` and a `kid`
+    before any key is used; JWKS is cached per `Cache-Control` (5 min … 24 h) and re-fetched
+    for an unknown `kid` at most once a minute; a JWKS outage fails closed. `aud` must be a
+    string equal to `{public_base_url}/internal/brief/tick`. With
+    `JARVIS_BRIEF_SCHEDULER_SA` set but no `JARVIS_PUBLIC_BASE_URL`, the route stays off (one
+    warning) rather than accepting an unknown audience.
+11. **Wiring.** `Storage` gained an optional `docs` field so the brief store shares the
+    Firestore client; memory/redis backends and injected test stores use `MemoryDocs`. The
+    brief shares the gateway's approval store and audit chain. Owners for the tick are
+    `JARVIS_OWNER_EMAILS` (or the legacy `owner` id when none are configured).
+12. **Left for the console/deploy builder** (not in this branch): `console.js` `SCOPE_WORDS`
+    has no entry for `gmail.insert`; the consent-screen scope list printed by
+    `deploy/cloudrun.sh` should add `gmail.insert` (optional).

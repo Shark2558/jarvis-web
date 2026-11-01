@@ -322,6 +322,38 @@ def test_required_scopes_drop_the_redundant_gmail_send() -> None:
     assert set(REQUIRED_SCOPES) <= set(TOOL_SCOPES)
 
 
+def test_gmail_insert_is_requested_but_never_required() -> None:
+    from jarvis.integrations.google import INSERT_SCOPE, OPTIONAL_SCOPES, TOOL_SCOPES, can_insert
+
+    assert INSERT_SCOPE == "https://www.googleapis.com/auth/gmail.insert"
+    assert OPTIONAL_SCOPES == (INSERT_SCOPE,) and INSERT_SCOPE in TOOL_SCOPES
+    assert INSERT_SCOPE not in REQUIRED_SCOPES
+    assert set(TOOL_SCOPES) == {"openid", "email", *REQUIRED_SCOPES, INSERT_SCOPE}
+    assert can_insert([INSERT_SCOPE]) and can_insert(["https://mail.google.com/"])
+    assert can_insert(["https://www.googleapis.com/auth/gmail.modify"])
+    assert not can_insert(REQUIRED_SCOPES) and not can_insert([])
+
+
+async def test_a_link_without_gmail_insert_stays_connected(
+    conn: GoogleConnector, store: MemoryTokenStore
+) -> None:
+    """Slice 7 added an optional scope: links made before it (or with it unticked) keep every
+    slice 6 tool."""
+    await conn.save(
+        UID,
+        email="akash@example.com",
+        token={
+            "access_token": "a1",
+            "refresh_token": "r1",
+            "expires_in": 3600,
+            "scope": "openid email " + " ".join(REQUIRED_SCOPES),
+        },
+    )
+    st = await conn.status(UID)
+    assert st["connected"] is True and st["needs_reconnect"] is False
+    assert "https://www.googleapis.com/auth/gmail.insert" not in st["scopes"]
+
+
 async def test_save_refuses_a_partial_grant(conn: GoogleConnector, store: MemoryTokenStore) -> None:
     partial = [s for s in REQUIRED_SCOPES if "gmail.compose" not in s]
     with pytest.raises(GoogleScopesMissing) as ei:

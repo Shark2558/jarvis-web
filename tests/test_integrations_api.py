@@ -151,6 +151,7 @@ async def test_connect_redirects_to_google_with_offline_consent_and_login_hint(
     assert {
         "https://www.googleapis.com/auth/calendar.events",
         "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.insert",  # optional (slice 7 inbox delivery)
         "openid",
         "email",
     } <= scopes
@@ -312,6 +313,21 @@ async def test_callback_refuses_a_grant_with_unticked_scopes(gc: AsyncClient) ->
     r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"] == "/?connect_error=missing_scopes"
     assert await gc.app.state.google.store.get(user_id_for_email(OWNER)) is None  # type: ignore[attr-defined]
+
+
+async def test_callback_links_without_the_optional_insert_scope(gc: AsyncClient) -> None:
+    """Slice 7: gmail.insert is asked for but optional; unticking it still links Google."""
+    await _login(gc, OWNER)
+    await gc.get("/connect/google", follow_redirects=False)
+    without = tuple(s for s in TOOL_SCOPES if not s.endswith("gmail.insert"))
+    _fake_consent(gc, OWNER, scopes=without)
+    r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/?connected=google"
+    st = (await gc.get("/v1/integrations")).json()["google"]
+    assert st["connected"] is True
+    assert "https://www.googleapis.com/auth/gmail.insert" not in st["scopes"]
+    today = (await gc.get("/v1/brief/today")).json()
+    assert today["google_connected"] is True and today["inbox_available"] is False
 
 
 async def test_wrong_account_grant_is_revoked_at_google(gc: AsyncClient) -> None:

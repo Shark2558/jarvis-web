@@ -3,9 +3,10 @@
 
     python evals/run_all_mock.py
 
-Equivalent to `make eval-mock` once the Makefile points here: phase0 (core loop plumbing) and
-slice6 (calendar correctness over a fixture + the injection suite, whose gates are hard).
-The exit status is the slice6 gate: phase0 --mock is a smoke run and never fails CI.
+Equivalent to `make eval-mock` once the Makefile points here: phase0 (core loop plumbing),
+slice6 (calendar correctness over a fixture + the injection suite, whose gates are hard) and the
+slice 7 morning brief (due-logic, composed facts, AI-line injection containment + its negative
+control). The exit status is the gated suites: phase0 --mock is a smoke run and never fails CI.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ HERE = Path(__file__).parent
 SUITES = [
     ("phase0 (smoke)", [sys.executable, str(HERE / "phase0" / "run.py"), "--mock"], False),
     ("slice6 (gated)", [sys.executable, str(HERE / "slice6" / "run.py"), "--mock"], True),
+    ("brief (gated)", [sys.executable, str(HERE / "brief" / "run.py"), "--mock"], True),
 ]
 
 

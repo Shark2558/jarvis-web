@@ -28,8 +28,11 @@ def test_brief_mock_evals_pass_their_gates() -> None:
         "training_brain_calls",
         "deterministic_changed",
         "unfenced_input",
+        "text_links",  # no link anywhere in the plain-text brief (security review F1)
     ):
         assert inj[gate] == 0, gate
+    assert s["compose"]["pass_rate"] == 1 and len(s["compose"]["results"]) >= 17
+    assert inj["cases"] >= 34  # incl. the p_links.py cases i21-i34 (TLD-agnostic detector)
     # the scripted model really echoed the links: the sanitiser is what removed them …
     assert inj["raw_outputs_with_links"] >= 15
     # … and without it the suite fails (it is not blind)

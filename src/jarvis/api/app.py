@@ -25,7 +25,7 @@ from jarvis.api.routes import router as v1_router
 from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier, SchedulerUnauthorized
 from jarvis.brief.service import BriefLimitReached, BriefService, SettingsRejected
 from jarvis.brief.store import BriefStore
-from jarvis.config import AuthMode, Settings, get_settings
+from jarvis.config import AuthMode, SessionBackend, Settings, get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ApprovalStore, InputRejected
 from jarvis.integrations.google import (
@@ -77,8 +77,14 @@ def build_brief_service(app: FastAPI, s: Settings, built: Storage | None) -> Bri
     )
 
 
+SERVICE_ACCOUNT_SUFFIX = ".iam.gserviceaccount.com"
+
+
 def _mount_scheduler(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | None) -> None:
-    """POST /internal/brief/tick exists only when a scheduler service account is configured."""
+    """POST /internal/brief/tick exists only when a scheduler service account is configured,
+    the public URL (the token's audience) is known, and the brief store is persistent: the
+    at-most-once generation claim and inbox mark live there, so with in-process storage two
+    instances (or a restart) could each put a brief in the inbox."""
     if not s.brief_scheduler_sa:
         return
     if not s.public_base_url:
@@ -86,6 +92,17 @@ def _mount_scheduler(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
             "JARVIS_BRIEF_SCHEDULER_SA is set without JARVIS_PUBLIC_BASE_URL: no tick route"
         )
         return
+    if s.session_backend is not SessionBackend.FIRESTORE:
+        log.error(
+            "JARVIS_BRIEF_SCHEDULER_SA is set but storage is not persistent "
+            "(JARVIS_SESSION_BACKEND=firestore is required): no tick route"
+        )
+        return
+    if not s.brief_scheduler_sa.endswith(SERVICE_ACCOUNT_SUFFIX):
+        log.warning(
+            "JARVIS_BRIEF_SCHEDULER_SA does not end with .iam.gserviceaccount.com: Cloud "
+            "Scheduler signs as a service account; check the value"
+        )
     app.state.scheduler_verifier = verifier or GoogleOIDCVerifier(
         audience=s.public_base_url.rstrip("/") + TICK_PATH, email=s.brief_scheduler_sa
     )

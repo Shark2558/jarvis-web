@@ -41,6 +41,12 @@ PRICES: dict[str, Price] = {
 _warned: set[str] = set()
 
 
+def is_priced(model: str) -> bool:
+    """True when `model` has a price-table entry (possibly $0). False means `cost_usd` would
+    meter it at $0 without knowing: say "cost unknown", never "free"."""
+    return model in PRICES
+
+
 def cost_usd(model: str, usage: Usage) -> float:
     price = PRICES.get(model)
     if price is None:

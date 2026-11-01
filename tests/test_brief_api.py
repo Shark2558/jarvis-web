@@ -178,6 +178,7 @@ async def test_settings_confirmations_time_and_scope_are_422(gc: AsyncClient) ->
         ({"inbox_delivery": True}, "confirmation"),
         ({"time": "12:00"}, "04:00"),
         ({"time": "07:15"}, "04:00"),
+        ({"time": "٠٧:٠٠"}, "04:00"),  # Arabic-Indic digits (F9)
         ({"inbox_delivery": True, "confirm_inbox": True}, "Reconnect Google"),
     ):
         r = await put("/v1/brief/settings", json=body, headers=CSRF)

@@ -7,15 +7,25 @@ from zoneinfo import ZoneInfo
 import pytest
 from pydantic import ValidationError
 
-from jarvis.brief.models import BriefRecord, BriefSettings, InboxState, parse_brief_time
+from jarvis.brief.models import (
+    BriefData,
+    BriefRecord,
+    BriefSettings,
+    InboxState,
+    SectionsStatus,
+    parse_brief_time,
+)
 from jarvis.brief.schedule import (
     CATCH_UP,
+    MAX_SECTION_RETRIES,
     STALE_CLAIM,
     claim_is_stale,
     due_at,
     in_delivery_window,
     is_due,
+    is_last_tick,
     local_date,
+    retryable,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -54,6 +64,23 @@ def test_valid_brief_times(value: str) -> None:
 def test_invalid_brief_times_are_refused(value: object) -> None:
     with pytest.raises(ValueError, match="04:00"):
         parse_brief_time(value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "\u0660\u0667:\u0660\u0660",  # Arabic-Indic ٠٧:٠٠
+        "\u06f0\u06f7:\u06f0\u06f0",  # Extended Arabic-Indic
+        "\u0966\u096d:\u0966\u0966",  # Devanagari ०७:००
+        "\uff10\uff17:\uff10\uff10",  # fullwidth ０７:００
+    ],
+)
+def test_only_ascii_digits_make_a_brief_time(value: str) -> None:
+    """Security review F9: `\\d` would accept these and int() would parse them."""
+    with pytest.raises(ValueError, match="04:00"):
+        parse_brief_time(value)
+    with pytest.raises(ValueError):
+        BriefSettings(time=value)
 
 
 def test_settings_defaults_and_frozen() -> None:
@@ -120,6 +147,46 @@ def test_failed_brief_is_retried_inside_the_window() -> None:
     now = _utc("2027-01-15T08:00:00+05:30")
     rec = _record("failed", now - timedelta(minutes=30))
     assert is_due(now=now, settings=BriefSettings(), tz=IST, existing=rec)
+
+
+def _partial(state: str = "unavailable", **over: object) -> BriefRecord:
+    data = BriefData(
+        date="2027-01-15",
+        tz="Asia/Kolkata",
+        sections_status=SectionsStatus(inbox=state),  # type: ignore[arg-type]
+    )
+    return _record("ready", _utc("2027-01-15T07:00:00+05:30"), data=data, **over)
+
+
+def test_a_partial_brief_is_due_again_until_its_retries_are_used() -> None:
+    """Security review F3: a Google 503 at the first tick is retried by later ticks."""
+    now, s = _utc("2027-01-15T07:30:00+05:30"), BriefSettings()
+    assert MAX_SECTION_RETRIES == 2
+    assert retryable(_partial()) and is_due(now=now, settings=s, tz=IST, existing=_partial())
+    used = _partial(retries=2)
+    assert not retryable(used) and not is_due(now=now, settings=s, tz=IST, existing=used)
+    for state in ("ok", "not_connected"):
+        assert not is_due(now=now, settings=s, tz=IST, existing=_partial(state))
+    late = _utc("2027-01-15T11:00:00+05:30")  # outside the window: never
+    assert not is_due(now=late, settings=s, tz=IST, existing=_partial())
+
+
+@pytest.mark.parametrize(
+    "time, now, last",
+    [
+        ("07:00", "10:00", False),
+        ("07:00", "10:30", True),  # 30 min before the 4-hour window closes
+        ("07:00", "10:27", True),  # a tick that fires a little early still counts
+        ("07:00", "07:00", False),
+        ("04:00", "07:30", True),
+        ("11:00", "11:00", False),
+        ("11:00", "11:30", True),  # the scheduler's last wake-up of the day (11:30)
+        ("11:30", "11:30", True),
+    ],
+)
+def test_last_tick_of_the_window(time: str, now: str, last: bool) -> None:
+    s = BriefSettings(time=time)
+    assert is_last_tick(_utc(f"2027-01-15T{now}:00+05:30"), s, IST) is last
 
 
 def test_delivery_window_matches_the_catch_up_window() -> None:

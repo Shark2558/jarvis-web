@@ -124,6 +124,21 @@ async def test_delivery_marks_sends_once_and_audits() -> None:
     assert OWNER_EMAIL not in str([e.model_dump() for e in tail])  # no content in the audit
 
 
+async def test_the_inbox_gets_the_stored_text_not_the_callers_copy() -> None:
+    """Security review F2: a caller holding an older copy (a worker that lost its claim) must
+    not put that copy in the inbox — the message is built from the record the mark was taken
+    on."""
+    fake = BriefGoogle()
+    store = await _ready_store()
+    d = InboxDelivery(await connector(fake), store, AuditLog())
+    stored = await store.get_brief(OWNER_UID, DAY)
+    assert stored is not None
+    old = stored.model_copy(update={"text": "OLD TEXT FROM A WORKER THAT LOST ITS CLAIM\n"})
+    assert await d.deliver(OWNER_UID, old, now=NOW) is True
+    _, msg = _parse(json.loads(fake.inserts[0].content)["raw"])
+    assert msg.get_content().replace("\r\n", "\n") == BODY  # type: ignore[attr-defined]
+
+
 async def test_failure_is_recorded_and_never_retried() -> None:
     fake = BriefGoogle(fail={"insert": 500})
     store = await _ready_store()

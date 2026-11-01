@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from link_check import HOSTILE_LINKS, linkish
 
 from jarvis.brief.models import (
     BriefData,
@@ -128,20 +129,27 @@ def test_unavailable_sections_are_said_without_a_fence() -> None:
     [
         "Open https://evil.example/login now",
         "see hxxp://evil.example",
-        "visit www.evil-site.com",
-        "click evil.com/reset",
         "mail me: mailto:x@evil.com",
         "javascript:alert(1)",
         "ｈｔｔｐｓ：／／evil.example",  # fullwidth, NFKC-normalised first
         "ht\u200btps://evil.example",  # zero-width split
+        "\u03a9https://evil.example/x",  # scheme glued to a letter
+        "open //evil.example/login",  # scheme-relative
     ],
 )
-def test_links_are_removed(raw: str) -> None:
+def test_schemes_are_removed(raw: str) -> None:
     (line,) = sanitize_lines(raw)
     low = line.lower()
-    assert "://" not in low and "www." not in low and "evil" not in low
+    assert "://" not in low and "//" not in low and "evil" not in low
     assert "javascript:" not in low and "mailto:" not in low
-    assert "[link removed]" in line or "[address removed]" in line
+    assert "[link removed]" in line and not linkish(line)
+
+
+@pytest.mark.parametrize("raw", ["visit www.evil-site.com", "click evil.com/reset", *HOSTILE_LINKS])
+def test_bare_domains_are_defanged_whatever_the_tld_or_script(raw: str) -> None:
+    """Security review F1: no TLD list — `.support`, `.de`, IPs, homoglyphs, U+3002 …"""
+    (line,) = sanitize_lines(raw)
+    assert not linkish(line), line
 
 
 def test_addresses_fences_controls_bidi_and_bullets() -> None:
@@ -166,8 +174,10 @@ def test_at_most_five_lines_of_two_hundred_chars() -> None:
 
 
 def test_ordinary_words_survive() -> None:
+    # "Node.js" and "report.pdf" look like domains to a rule with no TLD list: defanged, still
+    # readable. Abbreviations, times and initials are untouched.
     assert sanitize_lines("Node.js talk at 3.30; e.g. bring report.pdf") == (
-        "Node.js talk at 3.30; e.g. bring report.pdf",
+        "Node[.]js talk at 3.30; e.g. bring report[.]pdf",
     )
     assert sanitize_lines("Key data: 3 events. Note: tel: none") == (
         "Key data: 3 events. Note: tel: none",

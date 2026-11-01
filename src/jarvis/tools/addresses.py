@@ -114,6 +114,29 @@ def loose_address(value: Any) -> str:
     return a if _LOOSE.fullmatch(a) else ""
 
 
+# Printing a sender in plain text that a mail client may linkify: much stricter than RFC 5322's
+# atext (which allows / ? = # ' and more), so the address slot cannot carry a URL.
+_PLAIN_LOCAL = re.compile(r"[A-Za-z0-9_+-]+(?:\.[A-Za-z0-9_+-]+)*")
+_PLAIN_LABEL = re.compile(r"(?!-)[A-Za-z0-9-]{1,63}(?<!-)")
+_PLAIN_TLD = re.compile(r"[A-Za-z]{2,63}|xn--[A-Za-z0-9-]{1,59}(?<!-)")
+
+
+def plain_address(value: Any) -> str:
+    """`value` unchanged if it is a strict ASCII addr-spec — a dot-atom local part of letters,
+    digits and `_ + -`, then LDH labels ending in an alphabetic (or punycode) top-level
+    domain — else ''. For showing a sender in text a mail client will auto-link."""
+    text = "" if value is None else str(value)
+    if not text.isascii() or len(text) > MAX_ADDRESS_LEN or text.count("@") != 1:
+        return ""
+    local, domain = text.split("@")
+    labels = domain.split(".")
+    if len(local) > MAX_LOCAL_LEN or not _PLAIN_LOCAL.fullmatch(local) or len(labels) < 2:
+        return ""
+    if not all(_PLAIN_LABEL.fullmatch(lb) for lb in labels[:-1]):
+        return ""
+    return text if _PLAIN_TLD.fullmatch(labels[-1]) else ""
+
+
 def display_address(addr: str) -> str:
     """An address for the owner's eyes: IDN domains as 'Unicode (punycode)'."""
     local, _, domain = addr.rpartition("@")
@@ -138,4 +161,5 @@ __all__ = [
     "loose_address",
     "parse_address",
     "parse_recipients",
+    "plain_address",
 ]

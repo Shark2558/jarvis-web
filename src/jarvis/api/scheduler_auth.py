@@ -4,12 +4,14 @@ token (cross-cutting security, Layer 1 surface).
 
 Checks: RS256 only (the header is checked before any key is touched; `none`/HS256 never reach
 the signature step), signature against Google's JWKS (fetched over HTTPS, cached per its
-Cache-Control, refetched for an unknown key id at most once a minute), `iss` ∈ Google's two
-spellings, `aud` == {public_base_url}/internal/brief/tick exactly, `email` == the configured
-scheduler service account and `email_verified` is true, `exp`/`iat` within 60 s of skew.
+Cache-Control; fetched at most once a minute whatever the reason — unknown key id, expired or
+empty cache), `iss` ∈ Google's two spellings, `aud` == {public_base_url}/internal/brief/tick
+exactly, `email` == the configured scheduler service account and `email_verified` is true,
+`exp`/`iat` within 60 s of skew.
 
 The owner's API token and browser cookie are NOT accepted here, and every failure is the same
-bare 401: a caller learns nothing about which check failed. The token is never logged.
+bare 401: a caller learns nothing about which check failed. The log names the failed check (a
+claim's name only); the token and claim values are never logged.
 """
 
 from __future__ import annotations
@@ -104,34 +106,40 @@ class GoogleOIDCVerifier:
             claims = jwt.decode(token, keys, algorithms=[ALGORITHM]).claims
         except (JoseError, ValueError, TypeError, KeyError):
             return self._refuse("signature")
-        return self._claims_ok(claims) or self._refuse("claims")
+        bad = self._failed_claim(claims)
+        return True if bad is None else self._refuse("claims", claim=bad)
 
     @staticmethod
-    def _refuse(reason: str) -> bool:
-        log.warning("scheduler token refused", extra={"reason": reason})
+    def _refuse(reason: str, *, claim: str | None = None) -> bool:
+        """Log WHICH check failed (a claim's name, never its value or the token); the caller
+        still gets the same bare 401."""
+        extra = {"reason": reason} if claim is None else {"reason": reason, "claim": claim}
+        log.warning("scheduler token refused", extra=extra)
         return False
 
-    def _claims_ok(self, c: dict[str, Any]) -> bool:
+    def _failed_claim(self, c: dict[str, Any]) -> str | None:
+        """The name of the first claim that fails, or None when all pass."""
         now, exp, iat = self._now(), _number(c.get("exp")), _number(c.get("iat"))
-        if exp is None or iat is None:
-            return False
-        return (
-            c.get("iss") in GOOGLE_ISSUERS
-            and isinstance(c.get("aud"), str)
-            and c.get("aud") == self._audience
-            and isinstance(c.get("email"), str)
-            and str(c["email"]).lower() == self._email
-            and c.get("email_verified") is True
-            and now < exp + SKEW_S
-            and iat <= now + SKEW_S
+        checks = (
+            ("iss", c.get("iss") in GOOGLE_ISSUERS),
+            ("aud", isinstance(c.get("aud"), str) and c.get("aud") == self._audience),
+            ("email", isinstance(c.get("email"), str) and str(c["email"]).lower() == self._email),
+            ("email_verified", c.get("email_verified") is True),
+            ("exp", exp is not None and now < exp + SKEW_S),
+            ("iat", iat is not None and iat <= now + SKEW_S),
         )
+        return next((name for name, ok in checks if not ok), None)
 
     async def _key_set(self, kid: str) -> KeySet | None:
+        """Keys for `kid`. Google's JWKS is fetched when the cache is empty or expired, or for
+        an unknown key id — but never more than once per MIN_REFETCH_S, whatever the reason:
+        while Google is down (or the cache is empty after a failed fetch), unauthenticated junk
+        must not turn every request into a call to Google."""
         async with self._lock:
             now = self._now()
             stale = self._keys is None or now >= self._expires
-            unknown = kid not in self._kids and now - self._fetched >= MIN_REFETCH_S
-            if stale or unknown:
+            unknown = kid not in self._kids
+            if (stale or unknown) and now - self._fetched >= MIN_REFETCH_S:
                 await self._fetch(now)
             return self._keys if kid in self._kids else None
 

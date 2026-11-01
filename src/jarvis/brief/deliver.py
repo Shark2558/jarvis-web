@@ -4,8 +4,10 @@
 insert has no recipient: it adds one message to the authenticated mailbox and nothing leaves
 the account, so it needs no R3 approval (R2, reversible: the owner can delete it). At most once
 per day: the `sending` mark is taken in a transaction BEFORE the call, and the call is never
-retried (a 5xx may come after Gmail stored it). An audit entry is written before the call
-(fail closed: no record, no insert) and after it (best effort).
+retried (a 5xx may come after Gmail stored it). The message is built from the record that
+mark was taken on — the stored brief — never from the caller's copy, which may be older (a
+worker that lost its claim). An audit entry is written before the call (fail closed: no
+record, no insert) and after it (best effort).
 """
 
 from __future__ import annotations
@@ -88,8 +90,12 @@ class InboxDelivery:
             )
             log.warning("brief inbox delivery skipped: link lacks insert permission")
             return False
-        if await self._store.begin_inbox(uid, rec.date, now) is None:
+        taken = await self._store.begin_inbox(uid, rec.date, now)
+        if taken is None:
             return False  # someone else holds (or held) today's mark
+        if taken.data is None:  # a ready record always has data; never send an empty brief
+            await self._settle(uid, rec.date, InboxState(status="failed", at=now))
+            return False
         args = {"date": rec.date}
         try:
             await self._audit.append(
@@ -103,7 +109,7 @@ class InboxDelivery:
             return False
         try:
             raw = build_brief_message(
-                owner=owner, subject=subject_line(rec.data), body=rec.text, now=now
+                owner=owner, subject=subject_line(taken.data), body=taken.text, now=now
             )
             mid = await insert_message(self._google, uid, raw)
         except Exception as exc:  # noqa: BLE001 — recorded, never retried

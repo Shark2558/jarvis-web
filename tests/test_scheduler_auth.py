@@ -1,10 +1,12 @@
 # tests/test_scheduler_auth.py — slice 7: Google OIDC for POST /internal/brief/tick
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -15,9 +17,10 @@ from joserfc import jwt
 from joserfc.jwk import RSAKey
 from pydantic import SecretStr
 
+from jarvis.api import app as app_module
 from jarvis.api import create_app
 from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier
-from jarvis.config import AuthMode, Settings
+from jarvis.config import AuthMode, SessionBackend, Settings
 from jarvis.integrations.google import JWKS_URL
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
@@ -176,16 +179,87 @@ async def test_jwks_outage_fails_closed() -> None:
     assert await verifier(jwks).verify(token()) is False
 
 
+def junk(kid: str = "anything") -> str:
+    """A well-formed RS256 header with a garbage payload and signature (p_auth.py)."""
+    head = _b64(json.dumps({"alg": "RS256", "kid": kid}).encode())
+    return f"{head}.{_b64(b'{}')}.{_b64(b'x')}"
+
+
+async def test_a_jwks_outage_is_not_refetched_for_every_request() -> None:
+    """Security review F5: an empty cache after a failed fetch obeys the 1/min refetch limit,
+    so unauthenticated junk cannot make every request a call to Google."""
+    jwks, clock = FakeJWKS(KEY), Clock()
+    jwks.down = True
+    v = verifier(jwks, clock)
+    for _ in range(20):
+        assert await v.verify(junk()) is False
+    assert jwks.fetches == 1
+    clock.t += 61
+    jwks.down = False
+    assert await v.verify(token(iat=int(clock.t))) is True  # recovers after the interval
+    assert jwks.fetches == 2
+
+
+async def test_an_expired_cache_during_an_outage_is_not_hammered() -> None:
+    jwks, clock = FakeJWKS(KEY), Clock()
+    v = verifier(jwks, clock)
+    assert await v.verify(token()) is True
+    clock.t += 20_001  # past the cache's max-age
+    jwks.down = True
+    for _ in range(20):
+        await v.verify(junk("k1"))
+    assert jwks.fetches == 2
+
+
+async def test_concurrent_junk_during_an_outage_fetches_once() -> None:
+    jwks = FakeJWKS(KEY)
+    jwks.down = True
+    v = verifier(jwks)
+    await asyncio.gather(*(v.verify(junk()) for _ in range(10)))
+    assert jwks.fetches == 1
+
+
+@pytest.mark.parametrize(
+    "over, claim",
+    [
+        ({"iss": "https://evil.example"}, "iss"),
+        ({"aud": "http://test/other"}, "aud"),
+        ({"email": "intruder@proj.iam.gserviceaccount.com"}, "email"),
+        ({"email_verified": False}, "email_verified"),
+        ({"exp": NOW - 61}, "exp"),
+        ({"iat": NOW + 61}, "iat"),
+    ],
+)
+async def test_a_refusal_logs_which_claim_failed_but_never_the_token_or_values(
+    caplog: pytest.LogCaptureFixture, over: dict[str, Any], claim: str
+) -> None:
+    """Security review F10: the claim NAME is logged for the operator; the response stays a
+    bare 401 and neither the token nor any claim value reaches the log."""
+    tok = token(**over)
+    with caplog.at_level(logging.WARNING, logger="jarvis.api.scheduler_auth"):
+        assert await verifier(FakeJWKS(KEY)).verify(tok) is False
+    (rec,) = [r for r in caplog.records if r.getMessage() == "scheduler token refused"]
+    assert rec.__dict__.get("reason") == "claims" and rec.__dict__.get("claim") == claim
+    dumped = json.dumps([r.__dict__ for r in caplog.records], default=str)
+    assert tok not in dumped and tok.split(".")[1] not in dumped
+    for value in over.values():
+        if isinstance(value, str):
+            assert value not in dumped
+
+
 # ---- the route ------------------------------------------------------------------------------
 
 
 @pytest.fixture
 def ssettings(settings: Settings) -> Settings:
+    # The tick route needs persistent storage (F6): Firestore is what Cloud Run runs with.
+    # The tests inject an in-memory session store, so no real Firestore client is built.
     return settings.model_copy(
         update={
             "brief_scheduler_sa": SA,
             "public_base_url": "http://test",
             "api_token": SecretStr("cli-token"),
+            "session_backend": SessionBackend.FIRESTORE,
         }
     )
 
@@ -234,6 +308,54 @@ async def test_tick_route_is_absent_without_a_scheduler_account(settings: Settin
         assert (
             await c.post(TICK_PATH, headers={"Authorization": f"Bearer {token()}"})
         ).status_code == 404
+
+
+@pytest.mark.parametrize("backend", [SessionBackend.MEMORY, SessionBackend.REDIS])
+async def test_tick_route_is_absent_without_persistent_storage(
+    ssettings: Settings,
+    backend: SessionBackend,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Security review F6: the at-most-once claim and inbox mark live in the brief store. With
+    in-process storage two instances (or a restart) would each deliver, so no tick route."""
+    monkeypatch.setattr(app_module, "configure_logging", lambda *a, **k: None)  # keep caplog
+    caplog.set_level(logging.WARNING)
+    s = ssettings.model_copy(update={"session_backend": backend})
+    async for c in _app_client(s, FakeJWKS(KEY)):
+        r = await c.post(TICK_PATH, headers={"Authorization": f"Bearer {token()}"})
+        assert r.status_code == 404
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR and "tick" in r.getMessage()]
+    assert len(errors) == 1 and "firestore" in errors[0].getMessage().lower()
+
+
+@pytest.mark.parametrize(
+    "sa, warned",
+    [
+        ("jarvis-scheduler@proj.iam.gserviceaccount.com", False),
+        ("owner@gmail.com", True),
+        ("jarvis-scheduler@proj.iam.gserviceaccount.com.evil.example", True),
+    ],
+)
+async def test_a_scheduler_account_that_is_not_a_service_account_is_warned_about(
+    ssettings: Settings,
+    sa: str,
+    warned: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """F10: a typo'd or personal address is accepted (it is still checked exactly), but the
+    operator hears about it once at start-up."""
+    monkeypatch.setattr(app_module, "configure_logging", lambda *a, **k: None)
+    caplog.set_level(logging.WARNING)
+    create_app(
+        ssettings.model_copy(update={"brief_scheduler_sa": sa}),
+        provider=MockProvider(),
+        store=InMemorySessionStore(),
+    )
+    hits = [r for r in caplog.records if ".iam.gserviceaccount.com" in r.getMessage()]
+    assert len(hits) == int(warned)
+    assert all(sa not in r.getMessage() for r in hits)
 
 
 async def test_a_signed_in_browser_cookie_cannot_tick(ssettings: Settings) -> None:

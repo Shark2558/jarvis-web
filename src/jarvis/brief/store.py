@@ -5,8 +5,10 @@ Layout:  {prefix}brief_settings/{uid}        enabled, time, ai_summary, inbox_de
          {prefix}briefs/{uid}_{YYYY-MM-DD}   user_id, date, json(BriefRecord)
 
 Every state change that two callers could race on is a transaction: the generation claim
-(create if absent; retake only a failed record, a stale claim, or a forced ready one), the
-finish (only by the current claim holder), and the inbox `sending` mark (taken once, before the
+(create if absent; retake only a failed record, a stale claim, a forced ready one, or — for a
+scheduled retry — a ready one with an unavailable section), the finish (only by the current
+claim holder), the AI-call counter (added to, never overwritten, so a worker that lost its
+claim still counts the call it paid for), and the inbox `sending` mark (taken once, before the
 Gmail call, never reset to "off": at most one inbox message per day). Retention uses an
 equality query on `user_id` only, so no composite index is needed.
 """
@@ -23,7 +25,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from jarvis.brief.models import BriefRecord, BriefSettings, InboxState, InboxStatus, Trigger
-from jarvis.brief.schedule import claim_is_stale
+from jarvis.brief.schedule import claim_is_stale, retryable
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Delete, Docs, DocTx, Query
 from jarvis.storage.sessions import safe_id
@@ -42,6 +44,27 @@ class ClaimOutcome(StrEnum):
 class Claim:
     outcome: ClaimOutcome
     record: BriefRecord
+
+
+def claim_decision(
+    cur: BriefRecord | None,
+    *,
+    force: bool,
+    retry: bool,
+    now: datetime,
+    max_generations: int,
+) -> ClaimOutcome:
+    """What a claim on `cur` would do (pure; the store applies it inside its transaction, the
+    service uses it to skip a Google call when nothing would be made)."""
+    if cur is None:
+        return ClaimOutcome.CLAIMED
+    if cur.status == "generating" and not claim_is_stale(cur, now):
+        return ClaimOutcome.BUSY
+    if cur.status == "ready" and not force and not (retry and retryable(cur)):
+        return ClaimOutcome.EXISTS
+    if cur.generations >= max_generations:
+        return ClaimOutcome.CAPPED
+    return ClaimOutcome.CLAIMED
 
 
 def _check(uid: str, day: str) -> None:
@@ -126,39 +149,57 @@ class BriefStore:
         force: bool,
         now: datetime,
         max_generations: int,
+        retry: bool = False,
     ) -> Claim:
+        """`retry` (scheduled ticks only) may retake a ready brief with an unavailable section
+        while it has retries left; that claim counts one more retry (and, like every claim, one
+        more generation against `max_generations`)."""
         path = self._brief_path(uid, day)
 
         async def fn(tx: DocTx) -> Claim:
             cur = _decode(await tx.get(path))
-            if cur is not None:
-                if cur.status == "generating" and not claim_is_stale(cur, now):
-                    return Claim(ClaimOutcome.BUSY, cur)
-                if cur.status == "ready" and not force:
-                    return Claim(ClaimOutcome.EXISTS, cur)
-                if cur.generations >= max_generations:
-                    return Claim(ClaimOutcome.CAPPED, cur)
+            outcome = claim_decision(
+                cur, force=force, retry=retry, now=now, max_generations=max_generations
+            )
+            if outcome is not ClaimOutcome.CLAIMED:
+                assert cur is not None
+                return Claim(outcome, cur)
             new = _claimed(cur, uid=uid, day=day, tz=tz, trigger=trigger, now=now)
+            if cur is not None and cur.status == "ready" and not force:  # a section retry
+                new = new.model_copy(update={"retries": cur.retries + 1})
             tx.set(path, _encode(new))
             return Claim(ClaimOutcome.CLAIMED, new)
 
         return await self._d.transaction(fn)
 
-    async def finish(self, rec: BriefRecord) -> bool:
+    async def finish(self, rec: BriefRecord, *, ai_calls_added: int = 0) -> bool:
         """Store the finished record iff its claim is still the current one. Fields others
-        may have changed meanwhile (seen_at, inbox) are taken from the stored copy."""
+        may have changed meanwhile (seen_at, inbox) are taken from the stored copy, and the AI
+        calls this generation made are ADDED to the stored count."""
         path = self._brief_path(rec.user_id, rec.date)
 
         async def fn(tx: DocTx) -> bool:
             cur = _decode(await tx.get(path))
             if cur is None or cur.claim_id != rec.claim_id:
                 return False
-            tx.set(
-                path, _encode(rec.model_copy(update={"seen_at": cur.seen_at, "inbox": cur.inbox}))
-            )
+            keep = {
+                "seen_at": cur.seen_at,
+                "inbox": cur.inbox,
+                "ai_calls_today": cur.ai_calls_today + max(0, ai_calls_added),
+            }
+            tx.set(path, _encode(rec.model_copy(update=keep)))
             return True
 
         return await self._d.transaction(fn)
+
+    async def add_ai_calls(self, uid: str, day: str, n: int) -> None:
+        """Count AI calls whose result was thrown away (the caller lost its claim)."""
+        if n > 0:
+            await self._swap(
+                uid,
+                day,
+                lambda cur: cur.model_copy(update={"ai_calls_today": cur.ai_calls_today + n}),
+            )
 
     async def _swap(
         self, uid: str, day: str, fn: Callable[[BriefRecord], BriefRecord | None]
@@ -237,9 +278,10 @@ def _claimed(
             "seen_at",
             "inbox",
             "ai_calls_today",
+            "retries",
         )
     }
     return base.model_copy(update={**keep, "generations": cur.generations + 1})
 
 
-__all__ = ["BriefStore", "Claim", "ClaimOutcome"]
+__all__ = ["BriefStore", "Claim", "ClaimOutcome", "claim_decision"]

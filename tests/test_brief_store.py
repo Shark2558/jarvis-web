@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from jarvis.brief.models import BriefData, BriefSettings, InboxState
+from jarvis.brief.models import BriefData, BriefSettings, InboxState, SectionsStatus
 from jarvis.brief.store import BriefStore, ClaimOutcome
 from jarvis.storage.docs import MemoryDocs, Set
 
@@ -33,6 +33,7 @@ async def _claim(
     cap: int = 6,
     trigger: str = "scheduled",
     day: str = DAY,
+    retry: bool = False,
 ) -> object:
     return await store.claim(
         UID,
@@ -42,6 +43,7 @@ async def _claim(
         force=force,
         now=now,
         max_generations=cap,
+        retry=retry,
     )
 
 
@@ -123,6 +125,45 @@ async def test_failed_is_retaken_and_the_cap_holds(store: BriefStore) -> None:
     await store.finish(again.record.model_copy(update={"status": "ready"}))  # type: ignore[attr-defined]
     capped = await _claim(store, cap=2, force=True)
     assert capped.outcome is ClaimOutcome.CAPPED  # type: ignore[attr-defined]
+
+
+def _partial(state: str = "unavailable") -> BriefData:
+    return BriefData(
+        date=DAY,
+        tz="Asia/Kolkata",
+        sections_status=SectionsStatus(calendar=state),  # type: ignore[arg-type]
+    )
+
+
+async def _finish_ready(store: BriefStore, claim: object, data: BriefData) -> None:
+    rec = claim.record.model_copy(update={"status": "ready", "data": data, "text": "t"})  # type: ignore[attr-defined]
+    assert await store.finish(rec)
+
+
+async def test_a_partial_brief_is_retaken_by_a_retry_at_most_twice(store: BriefStore) -> None:
+    """Security review F3: a ready brief with an unavailable section may be retried twice by
+    the scheduler; each retry is a counted generation and is recorded on the record."""
+    await _finish_ready(store, await _claim(store), _partial())
+    assert (await _claim(store)).outcome is ClaimOutcome.EXISTS  # type: ignore[attr-defined]
+    for n in (1, 2):
+        c = await _claim(store, retry=True)
+        assert c.outcome is ClaimOutcome.CLAIMED  # type: ignore[attr-defined]
+        assert (c.record.retries, c.record.generations) == (n, n + 1)  # type: ignore[attr-defined]
+        await _finish_ready(store, c, _partial())
+    assert (await _claim(store, retry=True)).outcome is ClaimOutcome.EXISTS  # type: ignore[attr-defined]
+    forced = await _claim(store, trigger="manual", force=True)
+    assert forced.record.retries == 2  # type: ignore[attr-defined]  # a refresh keeps the count
+
+
+@pytest.mark.parametrize("state", ["ok", "not_connected"])
+async def test_complete_or_unlinked_briefs_are_not_retried(store: BriefStore, state: str) -> None:
+    await _finish_ready(store, await _claim(store), _partial(state))
+    assert (await _claim(store, retry=True)).outcome is ClaimOutcome.EXISTS  # type: ignore[attr-defined]
+
+
+async def test_retries_count_against_the_generation_cap(store: BriefStore) -> None:
+    await _finish_ready(store, await _claim(store, cap=1), _partial())
+    assert (await _claim(store, retry=True, cap=1)).outcome is ClaimOutcome.CAPPED  # type: ignore[attr-defined]
 
 
 async def test_concurrent_claims_have_exactly_one_winner(store: BriefStore) -> None:

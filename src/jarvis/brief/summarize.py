@@ -6,8 +6,10 @@ Containment, because the input carries other people's words (subjects, snippets,
   never sees calendar or mail content;
 - no tools are passed, max_tokens 400, input ≤ 12k chars, other people's text fenced with
   `wrap_external`;
-- the output is sanitised: links and addresses removed, angle brackets (so no fence markers)
-  and control/bidi characters dropped, ≤ 5 lines × 200 chars. The console renders it with
+- the output is sanitised: URLs with a scheme and email addresses removed, every other
+  domain-looking token defanged (`evil[.]support`: no list of top-level domains, any script),
+  angle brackets (so no fence markers) and control/bidi/invisible characters dropped, ≤ 5 lines
+  × 200 chars. The console renders it with
   textContent under an "AI summary … may be wrong" label. Worst case: wrong words in the
   owner's own brief — no action, no recipient, no link.
 """
@@ -15,11 +17,11 @@ Containment, because the input carries other people's words (subjects, snippets,
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from jarvis.brief.models import AIBlock, BriefData, BriefEvent, InboxItem
-from jarvis.brief.render import LINK, SCHEME_PATTERNS, long_date, strip_links, when
+from jarvis.brief.render import LINK, SCHEME_PATTERNS, defang, long_date, normalise, when
 from jarvis.llm.base import ChatMessage, Role
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.pricing import cost_usd
@@ -50,8 +52,8 @@ Rules
 
 TASK = "Write the lines now."
 
-# Addresses go first (before their domain part could be taken for a bare domain); links next
-# (render.strip_links: schemes, www., bare domains with common TLDs).
+# Schemes go first (mailto:x@y.com is one link), addresses next (x@evil.com is an address, not
+# a domain), then render.defang disarms whatever still looks like a domain or an IP.
 _EMAIL = re.compile(r"[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+")
 _ANGLE = re.compile("[<>＜＞‹›«»]")  # incl. fullwidth / guillemets
 _BULLET = re.compile(r"^(?:[-*•·–]+|\d{1,2}[.)])\s+")
@@ -128,10 +130,10 @@ def build_input(data: BriefData, snippets: tuple[str, ...]) -> str:
 
 
 def _clean(raw: str) -> str:
-    text = one_line(unicodedata.normalize("NFKC", raw), RAW_LINE_SCAN)
+    text = one_line(normalise(raw), RAW_LINE_SCAN)
     for rx in SCHEME_PATTERNS:  # mailto:x@y.com → one placeholder, not two
         text = rx.sub(LINK, text)
-    text = strip_links(_EMAIL.sub(ADDRESS, text))  # x@evil.com is an address, not a domain
+    text = defang(_EMAIL.sub(ADDRESS, text))  # x@evil.com is an address, not a domain
     text = " ".join(_ANGLE.sub(" ", text).split())
     while (m := _BULLET.match(text)) is not None:
         text = text[m.end() :]
@@ -152,6 +154,16 @@ def sanitize_lines(text: str) -> tuple[str, ...]:
 # ---- the call ---------------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Prepared:
+    """One call, ready to send: which brain and model, and the exact user message. The service
+    audits `model` and `len(prompt)` (never the prompt) before `Summarizer.run`."""
+
+    brain: BrainSpec
+    model: str
+    prompt: str
+
+
 class Summarizer:
     def __init__(self, brains: BrainRegistry, *, sanitizer: Sanitizer = sanitize_lines) -> None:
         self._brains = brains
@@ -165,14 +177,19 @@ class Summarizer:
     def brain(self) -> BrainSpec | None:
         return choose_brain(self._brains)
 
-    async def summarize(self, data: BriefData, snippets: tuple[str, ...]) -> AIBlock:
+    def prepare(self, data: BriefData, snippets: tuple[str, ...]) -> Prepared:
         spec = choose_brain(self._brains)
         if spec is None or not spec.tools_allowed:
             raise NoPrivateBrain("no brain that keeps content private is configured")
-        c = await self._brains.router_for(spec.id).complete(
+        return Prepared(spec, spec.tiers[ModelTier.FAST], build_input(data, snippets))
+
+    async def run(self, p: Prepared) -> AIBlock:
+        if not p.brain.tools_allowed:  # belt and braces: a training brain never sees content
+            raise NoPrivateBrain("no brain that keeps content private is configured")
+        c = await self._brains.router_for(p.brain.id).complete(
             tier=ModelTier.FAST,
             system=SYSTEM,
-            messages=[ChatMessage(role=Role.USER, content=build_input(data, snippets))],
+            messages=[ChatMessage(role=Role.USER, content=p.prompt)],
             max_tokens=MAX_TOKENS,
             tools=None,
             allow_degrade=False,
@@ -180,12 +197,16 @@ class Summarizer:
         cost = c.cost_usd or cost_usd(c.model, c.usage)
         return AIBlock(lines=self._sanitize(c.text), model=c.model, cost_usd=cost)
 
+    async def summarize(self, data: BriefData, snippets: tuple[str, ...]) -> AIBlock:
+        return await self.run(self.prepare(data, snippets))
+
 
 __all__ = [
     "INPUT_CAP",
     "MAX_TOKENS",
     "SYSTEM",
     "NoPrivateBrain",
+    "Prepared",
     "Sanitizer",
     "Summarizer",
     "build_input",

@@ -5,38 +5,75 @@ lines come last under their label, so the facts above them are identical with or
 
 This text is also the body of the message put in the owner's inbox *from "JARVIS"*, and mail
 clients make URLs in plain text clickable. Other people's words (titles, places, names,
-subjects) therefore have links replaced here, so a hostile subject cannot borrow JARVIS's name
-for a phishing link. `BriefData` keeps the one-line original (the console shows it as text)."""
+subjects) are therefore shown in “ ” under a line saying who wrote them, and every link in them
+is disarmed (`defang`): schemes and `//host` are removed, and every other domain-looking token
+— any `label.letters`, in any script, no list of top-level domains — has its dots shown as
+`[.]`, so a hostile subject cannot borrow JARVIS's name for a phishing link. The sender's
+address is printed only when it is a strict ASCII addr-spec. `BriefData` keeps the one-line
+original (the console shows it as text, never as a link)."""
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import date
 
-from jarvis.brief.models import AI_LABEL, AIBlock, BriefData, BriefEvent, SectionState
+from jarvis.brief.models import (
+    AI_LABEL,
+    AIBlock,
+    BriefData,
+    BriefEvent,
+    InboxItem,
+    SectionState,
+)
+from jarvis.tools.addresses import plain_address
+from jarvis.tools.card import quoted, strip_invisible
 
 NOT_CONNECTED = "Google is not connected: connect it in the console (Integrations) to see your {}."
 UNAVAILABLE = "Your {} could not be read just now."
+OTHERS_NOTE = "Titles and subjects below were written by other people."
 LINK = "[link removed]"
+DOT = "[.]"
+QUOTE_LIMIT = 400  # the data is already capped (≤ 120); defanging only lengthens it a little
 
-# Order matters: schemes before bare domains.
-_SCHEME_URL = re.compile(r"(?i)\b[a-z][a-z0-9+.\-]{0,15}://\S*")
-_SCHEME_ONLY = re.compile(r"(?i)\b(?:mailto|javascript|vbscript|data|tel|sms|file|blob):\S+")
-_WWW = re.compile(r"(?i)\bwww\.\S*")
-_TLDS = (
-    "com|net|org|io|co|ai|app|dev|me|info|biz|xyz|top|site|online|link|click|live|ly|gl|to|"
-    "in|uk|us|ru|cn|tk|ml|ga|cf|gq|zip|mov|gov|edu|xn--[a-z0-9-]+"
+# U+3002 IDEOGRAPHIC, U+FF0E FULLWIDTH and U+FF61 HALFWIDTH IDEOGRAPHIC FULL STOP separate
+# domain labels like "." does (IDNA / UTS 46). NFKC already maps U+FF0E; the table covers all.
+_DOTS = str.maketrans({"\u3002": ".", "\uff0e": ".", "\uff61": "."})
+# Order matters: whole URLs first, then the scheme-less leftovers, then dots.
+_SCHEME_URL = re.compile(r"(?i)[a-z][a-z0-9+.\-]{0,15}://\S*")  # no \b: "Ωhttps://" too
+_SCHEME_RELATIVE = re.compile(r"//[^\s/]\S*")  # "//evil.example/x", "://x" leftovers
+_SCHEME_ONLY = re.compile(
+    r"(?i)(?<![a-z])(?:mailto|javascript|vbscript|data|tel|sms|file|blob):\S+"
 )
-_BARE_DOMAIN = re.compile(rf"(?i)\b(?:[a-z0-9-]+\.)+(?:{_TLDS})\b(?:[/?#:]\S*)?")
-SCHEME_PATTERNS = (_SCHEME_URL, _SCHEME_ONLY, _WWW)
-LINK_PATTERNS = (*SCHEME_PATTERNS, _BARE_DOMAIN)
+SCHEME_PATTERNS = (_SCHEME_URL, _SCHEME_RELATIVE, _SCHEME_ONLY)
+_IPV4 = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}")
+# A dot between a non-space character and two more that are neither space nor sentence
+# punctuation, the first not a digit: "evil.support", "пример.рф", "x.c̲om" — but not "e.g.",
+# "Mr. Smith", "09.30", "a.m.", "U.S." or "v2.0".
+_PUNCT = r"\s.,;:!?'\"()\[\]{}<>“”‘’«»…"
+_DOMAIN_DOT = re.compile(rf"(?<=[^\s.])\.(?=[^{_PUNCT}\d][^{_PUNCT}])")
 
 
-def strip_links(text: str) -> str:
-    """Replace anything a mail client would turn into a link with '[link removed]'."""
-    for rx in LINK_PATTERNS:
+def normalise(text: str) -> str:
+    """What a lenient mail client would see: NFKC (fullwidth → ASCII), the ideographic full
+    stops as dots, and no invisible characters (soft hyphen, zero-width, tags, …)."""
+    return strip_invisible(unicodedata.normalize("NFKC", text)).translate(_DOTS)
+
+
+def defang(text: str) -> str:
+    """Other people's words with nothing a mail client would turn into a link: URLs with a
+    scheme (or `//`) become '[link removed]', IPv4 and domain dots become '[.]'."""
+    text = normalise(text)
+    for rx in SCHEME_PATTERNS:
         text = rx.sub(LINK, text)
-    return text
+    text = _IPV4.sub(lambda m: m.group().replace(".", DOT), text)
+    return _DOMAIN_DOT.sub(DOT, text)
+
+
+def theirs(text: str) -> str:
+    """Someone else's words, defanged, in “ ”. Their own typographic quotes become plain ones,
+    so a title cannot close our quote and write a line of its own."""
+    return quoted(defang(text).replace("“", '"').replace("”", '"'), QUOTE_LIMIT)
 
 
 def long_date(day: str) -> str:
@@ -68,15 +105,15 @@ def when(e: BriefEvent) -> str:
 
 
 def event_line(e: BriefEvent) -> str:
-    parts = [strip_links(e.title)]
+    parts = [theirs(e.title)]
     if e.attendees > 1:
         parts.append(f"{e.attendees} people")
     if e.has_video:
         parts.append("video")
     if e.location:
-        parts.append(strip_links(e.location))
+        parts.append(theirs(e.location))
     if e.overlaps_with:
-        parts.append("⚠ clashes with " + ", ".join(strip_links(t) for t in e.overlaps_with))
+        parts.append("⚠ clashes with " + ", ".join(theirs(t) for t in e.overlaps_with))
     return f"{when(e)}  " + " · ".join(parts)
 
 
@@ -114,14 +151,17 @@ def _inbox(data: BriefData) -> list[str]:
         return [head, note]
     lines = [head]
     for m in box.items:
-        name = strip_links(m.from_name)
-        who = (
-            f"{name} <{m.from_address}>"
-            if name and m.from_address
-            else (m.from_address or name or "unknown sender")
-        )
-        lines.append(f"  {m.when + '  ' if m.when else ''}{who} — {strip_links(m.subject)}")
+        lines.append(f"  {m.when + '  ' if m.when else ''}{sender(m)} — {theirs(m.subject)}")
     return lines if box.items else [head, "  No unread mail in the last day."]
+
+
+def sender(m: InboxItem) -> str:
+    """“Name” <address>; the address only when it is a strict ASCII addr-spec."""
+    name = theirs(m.from_name) if m.from_name.strip() else ""
+    addr = plain_address(m.from_address)
+    if name and addr:
+        return f"{name} <{addr}>"
+    return name or addr or "unknown sender"
 
 
 def _jarvis(data: BriefData) -> list[str]:
@@ -143,18 +183,24 @@ def _ai(ai: AIBlock | None, note: str | None) -> list[str]:
 
 def render_text(data: BriefData, ai: AIBlock | None = None, ai_note: str | None = None) -> str:
     header = [f"JARVIS morning brief — {long_date(data.date)} ({data.tz})"]
+    if "ok" in (data.sections_status.calendar, data.sections_status.inbox):
+        header.append(OTHERS_NOTE)
     blocks = [header, _today(data), _tomorrow(data), _inbox(data), _jarvis(data), _ai(ai, ai_note)]
     return "\n\n".join("\n".join(b) for b in blocks if b) + "\n"
 
 
 __all__ = [
+    "DOT",
     "LINK",
-    "LINK_PATTERNS",
+    "OTHERS_NOTE",
     "SCHEME_PATTERNS",
+    "defang",
     "event_line",
     "long_date",
+    "normalise",
     "render_text",
-    "strip_links",
+    "sender",
     "subject_line",
+    "theirs",
     "when",
 ]

@@ -23,7 +23,7 @@ SectionState = Literal["ok", "not_connected", "unavailable"]
 EARLIEST = dt.time(4, 0)
 LATEST = dt.time(11, 30)
 DEFAULT_TIME = "07:00"
-_HHMM = re.compile(r"(\d{2}):(\d{2})")
+_HHMM = re.compile(r"([0-9]{2}):([0-9]{2})")  # ASCII only: `\d` takes ٠٧ and int() parses it
 TIME_RULE = "Pick a time between 04:00 and 11:30, on the hour or the half hour."
 AI_LABEL = "AI summary — written from your calendar and other people's emails; may be wrong"
 
@@ -164,6 +164,9 @@ class BriefRecord(Frozen):
     inbox: InboxState = InboxState()
     ai_calls_today: int = 0
     generations: int = 0
+    retries: int = Field(
+        default=0, description="Scheduled retries of a brief with an unavailable section"
+    )
 
 
 # ---- API views (the console codes against these exact shapes) -----------------------------

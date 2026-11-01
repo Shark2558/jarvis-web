@@ -7,8 +7,11 @@ Layout:  {prefix}memory/{uid}              user_id, rev, shard_count, json(Heade
 
 `rev` names the shard contents only. The header is read on every load (one read: settings,
 profile and counters are always fresh); the shards come from an in-process copy while `rev`
-matches, else ≤ 7 more reads. Every change is one transaction that reads the header (and the
-shards only when the copy is stale), then writes the shards that differ and the header — a
+matches, else ≤ 7 more reads. Outside a transaction the header and the shards are separate
+reads, so a writer can land between them: shards are kept (cached under `rev`) only when they
+hash to `rev`; otherwise the read is retried (bounded) and, if it stays torn, used uncached.
+Every change is one transaction that reads the header (and the shards only when the copy is
+stale), then writes the shards that differ and the header — a
 writer elsewhere changes the header too, so Firestore retries us on any conflict. A document
 that cannot be read fails closed (MemoryUnavailable) and is never overwritten.
 """
@@ -32,6 +35,7 @@ from jarvis.storage.sessions import safe_id
 log = get_logger(__name__)
 
 CACHE_OWNERS = 16
+TORN_RETRIES = 3
 _SHARD = TypeAdapter(tuple[Fact, ...])
 Change = Callable[[MemoryState], MemoryState | None]
 Reader = Callable[[str], Awaitable[Doc | None]]
@@ -45,16 +49,36 @@ class _ChangeFailed(Exception):
         self.inner = inner
 
 
+class _Torn(Exception):
+    """The shards read do not belong to the header's revision (a writer landed in between)."""
+
+    def __init__(self, state: MemoryState | None) -> None:
+        super().__init__("torn read")
+        self.state = state
+
+
 def _shard_json(shard: tuple[Fact, ...]) -> str:
     return _SHARD.dump_json(shard).decode()
 
 
-def shards_rev(shards: Shards) -> str:
+def _rev_of(texts: list[str]) -> str:
     h = hashlib.sha256()
-    for shard in shards:
-        h.update(_shard_json(shard).encode())
+    for text in texts:
+        h.update(text.encode())
         h.update(b"\x1e")
     return h.hexdigest()[:16]
+
+
+def shards_rev(shards: Shards) -> str:
+    return _rev_of([_shard_json(shard) for shard in shards])
+
+
+def _consistent(rev: str, shards: Shards, docs: list[Doc]) -> bool:
+    """Do these shards carry revision `rev`? By the stored JSON, or by the facts re-serialised
+    (the writer hashed its own serialisation), so a later field added to Fact can't wedge it."""
+    if not shards:
+        return rev in ("", shards_rev(()))
+    return _rev_of([str(d["json"]) for d in docs]) == rev or shards_rev(shards) == rev
 
 
 def _decode_header(doc: Doc) -> tuple[Header, str, int]:
@@ -98,19 +122,25 @@ class MemoryStore:
         while len(self._known) > CACHE_OWNERS:
             self._known.popitem(last=False)
 
-    async def _state(self, uid: str, head: Doc | None, read: Reader) -> MemoryState:
+    async def _state(
+        self, uid: str, head: Doc | None, read: Reader, *, verify: bool
+    ) -> MemoryState:
         if head is None:
             return MemoryState.empty()
         header, rev, count = _decode_header(head)
         known = self._known.get(uid)
+        torn = False
         if known is not None and known[0] == rev:
             shards = known[1]
         else:
-            shards = tuple(
-                [_decode_shard(await read(self._spath(uid, n)), n) for n in range(count)]
-            )
-            self._remember(uid, rev, shards)
-        return MemoryState(
+            docs = [await read(self._spath(uid, n)) for n in range(count)]
+            if verify and any(d is None for d in docs):
+                raise _Torn(None)  # a shard went away under us: read again
+            shards = tuple(_decode_shard(d, n) for n, d in enumerate(docs))
+            torn = verify and not _consistent(rev, shards, [d for d in docs if d is not None])
+            if not torn:
+                self._remember(uid, rev, shards)
+        state = MemoryState(
             rev=rev,
             settings=header.settings,
             profile=header.profile,
@@ -118,13 +148,27 @@ class MemoryStore:
             usage=header.usage,
             learn=header.learn,
         )
+        if torn:
+            raise _Torn(state)
+        return state
+
+    async def _load_verified(self, uid: str, path: str) -> MemoryState:
+        last: _Torn | None = None
+        for _ in range(TORN_RETRIES):
+            try:
+                return await self._state(uid, await self._d.get(path), self._d.get, verify=True)
+            except _Torn as torn:
+                last = torn
+        log.warning("memory read kept racing a writer; used uncached")
+        if last is None or last.state is None:
+            raise MemoryUnavailable()
+        return last.state
 
     async def load(self, uid: str) -> MemoryState:
         """One read when the shard copy is current; ≤ 8 on a cold start."""
         path = self._hpath(uid)
         try:
-            head = await self._d.get(path)
-            return await self._state(uid, head, self._d.get)
+            return await self._load_verified(uid, path)
         except MemoryUnavailable:
             raise
         except Exception as exc:  # noqa: BLE001 — storage down: say so in plain words
@@ -137,8 +181,8 @@ class MemoryStore:
         hpath = self._hpath(uid)
 
         async def fn(tx: DocTx) -> tuple[MemoryState, MemoryState | None]:
-            head = await tx.get(hpath)
-            cur = await self._state(uid, head, tx.get)
+            head = await tx.get(hpath)  # one consistent snapshot: nothing to verify
+            cur = await self._state(uid, head, tx.get, verify=False)
             try:
                 new = change(cur)
             except Exception as exc:  # noqa: BLE001 — re-raised outside the transaction

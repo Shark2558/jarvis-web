@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 
 import pytest
@@ -15,9 +15,9 @@ from brief_fakes import SlowDocs
 
 from jarvis.recall.errors import MemoryFull, MemoryUnavailable
 from jarvis.recall.models import MAX_ACTIVE, MemoryState, UseStat
-from jarvis.recall.ops import add_fact, new_fact, replace_fact, set_profile
-from jarvis.recall.store import MemoryStore
-from jarvis.storage.docs import Docs, MemoryDocs
+from jarvis.recall.ops import add_fact, delete_facts, new_fact, replace_fact, set_profile
+from jarvis.recall.store import MemoryStore, shards_rev
+from jarvis.storage.docs import Doc, Docs, MemoryDocs
 
 EMULATOR = bool(os.environ.get("FIRESTORE_EMULATOR_HOST"))
 BACKENDS = ["memory", pytest.param("emulator", marks=pytest.mark.firestore_emulator)]
@@ -233,3 +233,51 @@ async def test_stale_cache_is_refreshed_when_another_writer_changed_the_rev() ->
     await a.load(UID)
     await b.mutate(UID, _adder("Owns a Nexon EV"))
     assert len((await a.load(UID)).active()) == 2
+
+
+class _WriterBetweenReads(MemoryDocs):
+    """Another instance writes after this one read the header and before it read the shards."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.between: Callable[[], Awaitable[None]] | None = None
+
+    async def get(self, path: str) -> Doc | None:
+        doc = await super().get(path)
+        if self.between is not None and path.endswith(f"memory/{UID}"):
+            hook, self.between = self.between, None
+            await hook()
+        return doc
+
+
+async def test_a_torn_read_is_never_cached_under_the_old_rev() -> None:
+    """MEDIUM 8: header (rev X) then newer shards (Y) were cached as X; when the other writer
+    later returned the shards to X (a delete), the cached Y shards resurrected the fact."""
+    docs = _WriterBetweenReads()
+    a, b = MemoryStore(docs), MemoryStore(docs)
+    await a.mutate(UID, _adder("Works at Amnex"))
+    ghost: list[str] = []
+
+    async def other_instance() -> None:
+        new = await b.mutate(UID, _adder("Secret ghost fact"))
+        ghost.extend(f.id for f in new.active() if "ghost" in f.text)
+
+    a._known.clear()  # a cold instance
+    docs.between = other_instance
+    seen = await a.load(UID)
+    assert seen.rev == shards_rev(seen.shards)  # what it returns is one consistent revision
+    await b.mutate(UID, lambda cur: delete_facts(cur, ghost)[0])
+    assert [f.text for f in (await a.load(UID)).active()] == ["Works at Amnex"]
+
+
+async def test_a_read_that_stays_torn_is_returned_but_not_cached() -> None:
+    docs = MemoryDocs()
+    a = MemoryStore(docs)
+    await a.mutate(UID, _adder("Works at Amnex"))
+    head = await docs.get(f"jarvis_memory/{UID}")
+    assert head is not None
+    await put_raw(docs, f"jarvis_memory/{UID}", {**head, "rev": "0000000000000000"})
+    a._known.clear()
+    s = await a.load(UID)
+    assert [f.text for f in s.active()] == ["Works at Amnex"]
+    assert UID not in a._known

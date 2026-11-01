@@ -481,7 +481,7 @@ async def test_reply_meta_lists_the_memories_used_as_text(client: AsyncClient) -
     assert "emit('jarvis:brain'" in js
 
 
-# ---- slice 9: voice -------------------------------------------------------------------------------
+# ---- slice 9: voice ------------------------------------------------------------------------------
 @pytest.mark.parametrize("name", VOICE_SCRIPTS)
 async def test_voice_scripts_never_parse_text_as_html_and_use_the_console_transport(
     client: AsyncClient, name: str
@@ -530,7 +530,10 @@ async def test_voice_contract_paths_headers_and_channel(client: AsyncClient) -> 
         assert "/approve" not in js and "/v1/approvals" not in js, name
     console_js = (await client.get("/static/console.js")).text
     assert "if (channel === 'voice') body.channel = 'voice';" in console_js
-    assert "headers = Object.assign({}, opts.headers || {}, { 'X-Requested-With': 'JARVIS' })" in console_js
+    assert (
+        "headers = Object.assign({}, opts.headers || {}, { 'X-Requested-With': 'JARVIS' })"
+        in console_js
+    )
     assert "window.JarvisChat = Object.freeze({" in console_js
 
 
@@ -566,3 +569,20 @@ async def test_voice_panel_dock_tab_and_more_sheet_are_wired(client: AsyncClient
     assert re.search(r"try \{ localStorage\.setItem\(k, v\); \} catch", voice)
     assert "wake: false" in voice  # "Hey Jarvis" is off by default on every device
     assert "openWakeWord (CC BY-NC-SA 4.0), personal use" in voice
+
+
+# Bidi overrides, zero-width and line-separator characters belong in the source only as \u escapes:
+# typed literally they make code read differently than it runs ("Trojan Source"), and a literal
+# U+2028 inside a regular expression ends it early (a syntax error that stops the whole script).
+_HIDDEN = re.compile(
+    "[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]"
+)
+
+
+@pytest.mark.parametrize("name", sorted(n for n in APP_ASSETS if n.endswith((".js", ".css"))))
+def test_console_sources_hold_no_invisible_characters(name: str) -> None:
+    text = (ROOT / "src/jarvis/api/static" / name).read_text(encoding="utf-8")
+    found = [
+        (text.count("\n", 0, m.start()) + 1, hex(ord(m.group()))) for m in _HIDDEN.finditer(text)
+    ]
+    assert found == [], (name, found[:5])

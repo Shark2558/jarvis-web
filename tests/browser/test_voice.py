@@ -35,43 +35,59 @@ pytestmark = pytest.mark.browser
 VOICE_URL = re.compile(r".*/v1/voice(?:/[^?]*)?(?:\?.*)?$")
 APPROVAL_LINE = "That one needs your approval on screen, Sir."
 ALLOWANCE = "This month: 12,340 of 1,000,000 free characters · 3 of 60 free minutes · ≈ ₹0.00"
-VOICES = [
-    {"id": "en-GB-Chirp3-HD-Algieba", "label": "Algieba", "style": "smooth", "type": "chirp3-hd", "available": True},
-    {"id": "en-GB-Chirp3-HD-Sadaltager", "label": "Sadaltager", "style": "knowledgeable", "type": "chirp3-hd", "available": True},
-    {"id": "en-GB-Chirp3-HD-Charon", "label": "Charon", "style": "informative, deeper", "type": "chirp3-hd", "available": True},
-    {"id": "en-GB-Chirp3-HD-Iapetus", "label": "Iapetus", "style": "clear", "type": "chirp3-hd", "available": False},
-    {"id": "en-GB-Studio-B", "label": "Studio-B", "style": "formal, crisp", "type": "studio", "available": True},
-]  # fmt: skip
-WIT = [
-    {"id": "measured", "label": "Measured", "description": "Light: the odd dry remark, only where it fits."},
-    {"id": "film", "label": "Film", "description": "Dry, understated British wit; at most one light quip."},
-    {"id": "extra", "label": "Extra", "description": "Drier and more often; gentle teasing of you allowed."},
-]  # fmt: skip
 
-# Collected before any script runs: chunks as they start playing, and the browser voice (faked so
-# headless Chromium's silent speechSynthesis can be observed).
+
+def _voice(
+    name: str, style: str, kind: str = "chirp3-hd", available: bool = True
+) -> dict[str, Any]:
+    vid = "en-GB-Studio-B" if kind == "studio" else f"en-GB-Chirp3-HD-{name}"
+    return {"id": vid, "label": name, "style": style, "type": kind, "available": available}
+
+
+VOICES = [
+    _voice("Algieba", "smooth"),
+    _voice("Sadaltager", "knowledgeable"),
+    _voice("Charon", "informative, deeper"),
+    _voice("Iapetus", "clear", available=False),
+    _voice("Studio-B", "formal, crisp", kind="studio"),
+]
+WIT = [
+    {"id": "measured", "label": "Measured", "description": "Light: the odd dry remark."},
+    {"id": "film", "label": "Film", "description": "Dry British wit; at most one light quip."},
+    {"id": "extra", "label": "Extra", "description": "Drier, more often; gentle teasing allowed."},
+]
+
+# Collected before any script runs: chunks as they start playing, the voice states, and the bytes
+# the page uploads (Chromium leaves large bodies out of intercepted requests).
 RECORDER = """
 window.__voice = { speech: [], states: [] };
 document.addEventListener('jarvis:speech', (e) => window.__voice.speech.push(e.detail));
-document.addEventListener('jarvis:state', (e) => window.__voice.states.push(e.detail.voice || null));
+document.addEventListener('jarvis:state', (e) => {
+  window.__voice.states.push(e.detail.voice || null);
+});
 window.__sent = [];
 (() => {
   const real = window.fetch;
   window.fetch = function (path, opts) {
     const b = opts && opts.body;
-    if (b instanceof ArrayBuffer) window.__sent.push({ path: String(path), size: b.byteLength, head: Array.from(new Uint8Array(b.slice(0, 44))) });
+    if (b instanceof ArrayBuffer) {
+      const head = Array.from(new Uint8Array(b.slice(0, 44)));
+      window.__sent.push({ path: String(path), size: b.byteLength, head });
+    }
     return real.apply(this, arguments);
   };
 })();
 """
+# The browser voice, faked so headless Chromium's silent speechSynthesis can be observed.
 FAKE_SYNTH = """
 (() => {
   window.__synth = [];
   class U { constructor(t) { this.text = t; this.onend = null; this.onerror = null; } }
+  const voices = [{ name: 'Google UK English Female', lang: 'en-GB' },
+    { name: 'Daniel', lang: 'en-GB' }];
   const fake = {
     speak(u) { window.__synth.push(u.text); setTimeout(() => { if (u.onend) u.onend({}); }, 40); },
-    cancel() {}, getVoices() { return [{ name: 'Google UK English Female', lang: 'en-GB' }, { name: 'Daniel', lang: 'en-GB' }]; },
-    speaking: false, pending: false,
+    cancel() {}, getVoices() { return voices; }, speaking: false, pending: false,
   };
   Object.defineProperty(window, 'speechSynthesis', { value: fake, configurable: true });
   window.SpeechSynthesisUtterance = U;
@@ -82,19 +98,26 @@ FAKE_RECOGNITION = """
 (() => {
   window.__rec = [];
   window.__said = 'Remind me about the review.';
+  const result = (transcript, isFinal) => ({ resultIndex: 0,
+    results: [Object.assign([{ transcript }], { isFinal })] });
   class R {
     constructor() { window.__rec.push(this); this.aborted = false; }
     start() {
       const said = window.__said;
-      this.t1 = setTimeout(() => this.onresult && this.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: said.split(' ')[0] }], { isFinal: false })] }), 60);
+      const first = said.split(' ')[0];
+      this.t1 = setTimeout(() => this.onresult && this.onresult(result(first, false)), 60);
       this.t2 = setTimeout(() => {
         if (this.aborted) return;
-        if (this.onresult) this.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: said }], { isFinal: true })] });
+        if (this.onresult) this.onresult(result(said, true));
         if (this.onend) this.onend();
       }, 1200);
     }
     stop() {}
-    abort() { this.aborted = true; clearTimeout(this.t1); clearTimeout(this.t2); if (this.onerror) this.onerror({ error: 'aborted' }); if (this.onend) this.onend(); }
+    abort() {
+      this.aborted = true; clearTimeout(this.t1); clearTimeout(this.t2);
+      if (this.onerror) this.onerror({ error: 'aborted' });
+      if (this.onend) this.onend();
+    }
   }
   window.SpeechRecognition = R; window.webkitSpeechRecognition = R;
 })();
@@ -107,7 +130,9 @@ window.JarvisWake = {
   load() { window.__wake.loaded++; return Promise.resolve(); },
   start(opts, onWake) {
     const w = window.__wake; w.started++; w.rate = opts.sampleRate; w.fire = onWake;
-    const off = opts.subscribe((f) => { w.frames++; w.len = f.length; w.int16 = f instanceof Int16Array; });
+    const off = opts.subscribe((f) => {
+      w.frames++; w.len = f.length; w.int16 = f instanceof Int16Array;
+    });
     return { stop() { w.stopped++; off(); } };
   },
 };
@@ -164,6 +189,9 @@ class FakeVoice:
         self.view = copy.deepcopy(view if view is not None else voice_view())
         self.calls: list[dict[str, Any]] = []
         self.speak_status = 200
+        self.speak_code = "voice_unavailable"
+        self.transcribe_status = 200
+        self.transcribe_code = "voice_unavailable"
         self.speak_audio = SPEECH_WAV
         self.transcript: dict[str, Any] = {
             "text": "Turn on the lights. Then dim them to half.",
@@ -190,7 +218,13 @@ class FakeVoice:
         body: Any = None
         if path != "/v1/voice/transcribe" and raw:
             body = json.loads(raw)
-        call = {"method": req.method, "path": path, "body": body, "raw": raw, "headers": dict(req.headers)}
+        call = {
+            "method": req.method,
+            "path": path,
+            "body": body,
+            "raw": raw,
+            "headers": dict(req.headers),
+        }
         self.calls.append(call)
         if path == "/v1/voice" and req.method == "GET":
             return _json(route, 200, self.view)
@@ -201,27 +235,48 @@ class FakeVoice:
             return self._put(route, body)
         if path == "/v1/voice/speak" and req.method == "POST":
             if self.speak_status != 200:
-                code = {402: "budget_reached", 503: "voice_unavailable"}.get(self.speak_status, "error")
-                detail = {"code": code, "message": "Cloud voice unavailable.", "reason": "api_disabled"}
-                return _json(route, self.speak_status, {"detail": detail})
+                return self._refuse(route, self.speak_status, self.speak_code)
             return route.fulfill(
                 status=200,
                 content_type="audio/mpeg",
                 body=self.speak_audio,
-                headers={"X-Jarvis-Chars": str(len((body or {}).get("text", ""))), "X-Jarvis-Cost-Inr": "0"},
+                headers={
+                    "X-Jarvis-Chars": str(len((body or {}).get("text", ""))),
+                    "X-Jarvis-Cost-Inr": "0",
+                },
             )
         if path == "/v1/voice/transcribe" and req.method == "POST":
+            if self.transcribe_status != 200:
+                return self._refuse(route, self.transcribe_status, self.transcribe_code)
             return _json(route, 200, self.transcript)
-        return _json(route, 404, {"detail": {"code": "not_found", "message": "Not found."}})
+        return _json(route, 404, {"error": "not_found", "detail": "Not found."})
+
+    def _refuse(self, route: Any, status: int, code: str) -> None:
+        """The app's error shape: {error, detail}; a 503 adds reason, a 429 adds Retry-After."""
+        body: dict[str, Any] = {"error": code, "detail": "Cloud voice is not available right now."}
+        headers = {}
+        if status == 503:
+            body["reason"] = "api_disabled"
+        if status == 429:
+            headers["Retry-After"] = "10"
+        route.fulfill(
+            status=status, content_type="application/json", body=json.dumps(body), headers=headers
+        )
 
     def _put(self, route: Any, body: dict[str, Any]) -> None:
         s = self.view["settings"]
         ids = {v["id"] for v in self.view["voices"] if v["available"]}
         wits = {w["id"] for w in self.view["wit_levels"]}
-        if ("voice" in body and body["voice"] not in ids) or ("wit" in body and body["wit"] not in wits) or (
-            "rate" in body and not 0.8 <= body["rate"] <= 1.25
+        if (
+            ("voice" in body and body["voice"] not in ids)
+            or ("wit" in body and body["wit"] not in wits)
+            or ("rate" in body and not 0.8 <= body["rate"] <= 1.25)
         ):
-            return _json(route, 422, {"detail": {"code": "input_rejected", "message": "That setting isn't one JARVIS knows."}})
+            return _json(
+                route,
+                422,
+                {"error": "input_rejected", "detail": "That setting isn't one JARVIS knows."},
+            )
         s.update({k: body[k] for k in ("voice", "rate", "wit") if k in body})
         return _json(route, 200, s)
 
@@ -236,7 +291,7 @@ def speechlike_wav(path: Path, rate: int = 48000) -> None:
     silence. Chromium loops it as the fake microphone."""
     rnd = random.Random(7)
     samples: list[int] = []
-    for i in range(int(0.6 * rate)):
+    for _ in range(int(0.6 * rate)):
         samples.append(int(rnd.uniform(-30, 30)))
     phase = 0.0
     for i in range(int(1.6 * rate)):
@@ -246,7 +301,7 @@ def speechlike_wav(path: Path, rate: int = 48000) -> None:
         env = 0.5 - 0.5 * math.cos(2 * math.pi * 4 * t)
         s = sum(math.sin(h * phase) / h for h in range(1, 9))
         samples.append(int(9000 * env * s))
-    for i in range(int(3.0 * rate)):
+    for _ in range(int(3.0 * rate)):
         samples.append(int(rnd.uniform(-30, 30)))
     with wave.open(str(path), "wb") as w:
         w.setnchannels(1)
@@ -323,7 +378,8 @@ def _voice_panel(c: Console) -> Any:
 CHUNK_JS = """([text, deltas]) => {
   const c = window.JarvisSpeechChunker.create({ honorific: 'Sir' });
   let out = [];
-  if (deltas) { for (const ch of text) out = out.concat(c.push(ch)); } else out = out.concat(c.push(text));
+  if (deltas) { for (const ch of text) out = out.concat(c.push(ch)); }
+  else out = out.concat(c.push(text));
   return out.concat(c.end());
 }"""
 
@@ -353,10 +409,14 @@ CHUNK_JS = """([text, deltas]) => {
             ["Here is the script:", "The details are on screen, Sir.", "Run it once."],
         ),
         (
-            "Your week:\n| Day | Meetings |\n|---|---|\n| Mon | 3 |\nA calm week. Two code blocks:\n```\na\n```\n```\nb\n```",
+            "Your week:\n| Day | Meetings |\n|---|---|\n| Mon | 3 |\n"
+            "A calm week. Two code blocks:\n```\na\n```\n```\nb\n```",
             ["Your week:", "The details are on screen, Sir.", "A calm week. Two code blocks:"],
         ),
-        ("Name | Role\n--- | ---\nPriya | Manager\nDone.", ["The details are on screen, Sir.", "Done."]),
+        (
+            "Name | Role\n--- | ---\nPriya | Manager\nDone.",
+            ["The details are on screen, Sir.", "Done."],
+        ),
         ("1. Buy milk\n2. Call Priya", ["1. Buy milk", "2. Call Priya"]),
         ("Well... then. Wait… really? Yes!", ["Well... then.", "Wait… really? Yes!"]),
         ("```\nonly code\n```", ["The details are on screen, Sir."]),
@@ -381,10 +441,12 @@ def test_chunker_gives_the_first_sentence_at_once_and_packs_the_rest(
         """() => {
       const c = window.JarvisSpeechChunker.create({ honorific: 'Ma\\'am' });
       const first = c.push('Good evening. S');
-      const long = Array.from({ length: 30 }, (_, i) => `Sentence number ${i + 1} is here.`).join(' ');
+      const long = Array.from({ length: 30 }, (_, i) => `Sentence number ${i + 1} is here.`)
+        .join(' ');
       const mid = c.push(long.slice(1) + ' ');
       const end = c.end();
-      return { first, mid, end, notice: window.JarvisSpeechChunker.create({ honorific: 'Ma\\'am' }).push('```\\nx\\n```\\n') };
+      const other = window.JarvisSpeechChunker.create({ honorific: 'Ma\\'am' });
+      return { first, mid, end, notice: other.push('```\\nx\\n```\\n') };
     }"""
     )
     assert got["first"] == ["Good evening."]  # spoken while the rest is still arriving
@@ -406,11 +468,11 @@ def test_wav_header_is_pcm16_mono_16k(make: Callable[..., Console]) -> None:
     )
     raw = bytes(data)
     assert raw[:4] == b"RIFF" and raw[8:16] == b"WAVEfmt "
-    size, = struct.unpack("<I", raw[4:8])
+    (size,) = struct.unpack("<I", raw[4:8])
     fmt = struct.unpack("<IHHIIHH", raw[16:36])
     assert fmt == (16, 1, 1, 16000, 32000, 2, 16)  # PCM, mono, 16 kHz, byte rate, align, bits
     assert raw[36:40] == b"data"
-    n, = struct.unpack("<I", raw[40:44])
+    (n,) = struct.unpack("<I", raw[40:44])
     assert n == 2560 * 2 and size == 36 + n and len(raw) == 44 + n
     samples = struct.unpack("<2560h", raw[44:])
     assert samples[0] == -640 and samples[1279] == 639 and samples[1280] == -32768
@@ -418,7 +480,7 @@ def test_wav_header_is_pcm16_mono_16k(make: Callable[..., Console]) -> None:
 
 VAD_JS = """([pattern]) => {
   const vad = window.JarvisVad.create();
-  const loud = () => Int16Array.from({ length: 1280 }, (_, i) => Math.round(8000 * Math.sin(i / 3)));
+  const loud = () => Int16Array.from({ length: 1280 }, (_, i) => 8000 * Math.sin(i / 3));
   const quiet = () => Int16Array.from({ length: 1280 }, (_, i) => (i % 7) - 3);
   const out = [];
   let i = 0;
@@ -451,7 +513,8 @@ def test_vad_start_end_timeout_and_max(make: Callable[..., Console]) -> None:
 WORKLET_JS = """async ([freq, rate]) => {
   const ctx = new OfflineAudioContext(1, rate * 2, rate);
   await ctx.audioWorklet.addModule('/static/voice-capture-worklet.js');
-  const node = new AudioWorkletNode(ctx, 'jarvis-capture', { channelCount: 1, channelCountMode: 'explicit' });
+  const node = new AudioWorkletNode(ctx, 'jarvis-capture',
+    { channelCount: 1, channelCountMode: 'explicit' });
   const frames = [];
   node.port.onmessage = (e) => frames.push(e.data);
   const osc = ctx.createOscillator(); osc.frequency.value = freq;
@@ -462,8 +525,12 @@ WORKLET_JS = """async ([freq, rate]) => {
   const all = frames.flatMap(f => Array.from(f));
   const body = all.slice(1600);  // skip the filter's warm-up
   let sum = 0, crossings = 0;
-  for (let i = 0; i < body.length; i++) { sum += (body[i] / 32768) ** 2; if (i && (body[i - 1] < 0) !== (body[i] < 0)) crossings++; }
-  return { n: frames.length, lens: [...new Set(frames.map(f => f.length))], int16: frames.every(f => f instanceof Int16Array),
+  for (let i = 0; i < body.length; i++) {
+    sum += (body[i] / 32768) ** 2;
+    if (i && (body[i - 1] < 0) !== (body[i] < 0)) crossings++;
+  }
+  return { n: frames.length, lens: [...new Set(frames.map(f => f.length))],
+    int16: frames.every(f => f instanceof Int16Array),
     rms: Math.sqrt(sum / body.length), hz: crossings / 2 / (body.length / 16000) };
 }"""
 
@@ -492,14 +559,15 @@ def test_live_capture_frames_are_1280_sample_int16_at_16k(make: Callable[..., Co
       await A.open();
       const seen = [];
       const off = A.subscribe((f) => seen.push({ len: f.length, int16: f instanceof Int16Array }));
-      await new Promise(r => setTimeout(r, 1000));  // warm-up: the first audio callbacks come in bursts
+      await new Promise(r => setTimeout(r, 1000));  // warm-up: the first callbacks come in bursts
       const n0 = seen.length, t0 = performance.now();
       await new Promise(r => setTimeout(r, 3000));
       const perSecond = (seen.length - n0) / ((performance.now() - t0) / 1000);
       off();
       const level = A.level(), open = A.isOpen();
       A.close();
-      return { seen, perSecond, level, open, closed: !A.isOpen(), rate: A.SAMPLE_RATE, frame: A.FRAME };
+      return { seen, perSecond, level, open, closed: !A.isOpen(), rate: A.SAMPLE_RATE,
+        frame: A.FRAME };
     }"""
     )
     seen = got["seen"]
@@ -544,14 +612,21 @@ def test_mic_to_transcribe_to_voice_message_to_reply_spoken_in_order(
     seconds = (sent["size"] - 44) / 32000
     assert 1.0 < seconds < 6.0, seconds  # speech + pre-roll + a short tail, never the silence
     # the transcript went to the chat as a spoken message
-    assert chats and chats[-1]["message"] == fake.transcript["text"] and chats[-1]["channel"] == "voice"
+    assert (
+        chats
+        and chats[-1]["message"] == fake.transcript["text"]
+        and chats[-1]["channel"] == "voice"
+    )
     assert "Spoken" in str(c.page.locator(".row.user .meta").text_content())
     # the reply is spoken chunk by chunk, in order
     _wait(c, "() => window.__voice.speech.length >= 2")
     spoken = _speech(c)
     assert spoken == ["Certainly, Sir.", "You said: Turn on the lights. Then dim them to half."]
     assert fake.spoken() == spoken  # fetched in the same order
-    assert all(b["body"].get("voice") == "en-GB-Chirp3-HD-Algieba" for b in fake.to("POST", "/v1/voice/speak"))
+    assert all(
+        b["body"].get("voice") == "en-GB-Chirp3-HD-Algieba"
+        for b in fake.to("POST", "/v1/voice/speak")
+    )
     assert "speaking" in c.page.evaluate("window.__voice.states")
     # conversation mode: JARVIS listens again after a spoken reply; Esc cancels it
     _wait(c, "() => document.getElementById('micBtn').dataset.state === 'listening'", 8000)
@@ -579,17 +654,24 @@ def test_browser_engine_shows_interim_words_and_sends_with_channel_voice(
 
 
 def test_send_straight_away_off_leaves_the_words_to_check(make: Callable[..., Console]) -> None:
-    c = make(device={"engine": "browser", "autoSend": False, "keepListening": False}, scripts=(FAKE_RECOGNITION,))
+    c = make(
+        device={"engine": "browser", "autoSend": False, "keepListening": False},
+        scripts=(FAKE_RECOGNITION,),
+    )
     FakeVoice(c.page)
     chats: list[dict[str, Any]] = []
-    c.page.route("**/v1/chat", lambda r: (chats.append(json.loads(r.request.post_data)), r.continue_()))
+    c.page.route(
+        "**/v1/chat", lambda r: (chats.append(json.loads(r.request.post_data)), r.continue_())
+    )
     c.open()
     c.page.locator("#micBtn").click()
-    c.page.wait_for_function("() => document.getElementById('input').value === 'Remind me about the review.'")
-    assert _mic_state(c) == "idle" and chats == []
-    assert "Press Enter" in str(c.page.locator("#voiceLine").text_content()) or "press Enter" in str(
-        c.page.locator("#voiceLine").text_content()
+    c.page.wait_for_function(
+        "() => document.getElementById('input').value === 'Remind me about the review.'"
     )
+    assert _mic_state(c) == "idle" and chats == []
+    assert "Press Enter" in str(
+        c.page.locator("#voiceLine").text_content()
+    ) or "press Enter" in str(c.page.locator("#voiceLine").text_content())
     c.page.locator("#input").press("End")
     c.page.keyboard.type(" Tomorrow.")
     c.page.keyboard.press("Enter")
@@ -623,7 +705,9 @@ def test_barge_in_stops_speech_and_listens(make: Callable[..., Console]) -> None
     assert c.errors == []
 
 
-def test_escape_stops_speech_and_a_new_conversation_silences_it(make: Callable[..., Console]) -> None:
+def test_escape_stops_speech_and_a_new_conversation_silences_it(
+    make: Callable[..., Console],
+) -> None:
     c = make(device={"speak": "always"})
     fake = FakeVoice(c.page)
     fake.speak_audio = wav_bytes(seconds=4.0)
@@ -633,23 +717,36 @@ def test_escape_stops_speech_and_a_new_conversation_silences_it(make: Callable[.
     assert _mic_state(c) == "speaking"
     c.page.locator("#scroll").click()
     c.page.keyboard.press("Escape")
-    assert c.page.evaluate("window.JarvisVoice.speaker.speaking()") is False and _mic_state(c) == "idle"
+    assert (
+        c.page.evaluate("window.JarvisVoice.speaker.speaking()") is False
+        and _mic_state(c) == "idle"
+    )
     c.send("Again, please.")
     _wait(c, "() => window.JarvisVoice.speaker.speaking()")
     c.page.locator("#newBtn").click()  # another conversation: all audio stops
-    assert c.page.evaluate("window.JarvisVoice.speaker.speaking()") is False and _mic_state(c) == "idle"
+    assert (
+        c.page.evaluate("window.JarvisVoice.speaker.speaking()") is False
+        and _mic_state(c) == "idle"
+    )
     assert fake.to("GET", "/v1/voice")  # loaded once "Always" was set on this device
     assert c.errors == []
 
 
-def test_speak_503_falls_back_to_the_browser_voice_with_one_note(make: Callable[..., Console]) -> None:
-    c = make(device={"engine": "browser", "keepListening": False}, scripts=(FAKE_RECOGNITION, FAKE_SYNTH))
+def test_speak_503_falls_back_to_the_browser_voice_with_one_note(
+    make: Callable[..., Console],
+) -> None:
+    c = make(
+        device={"engine": "browser", "keepListening": False}, scripts=(FAKE_RECOGNITION, FAKE_SYNTH)
+    )
     fake = FakeVoice(c.page)
     fake.speak_status = 503
     c.open()
     c.page.locator("#micBtn").click()
     _wait(c, "() => window.__synth.length >= 2")
-    assert c.page.evaluate("window.__synth") == ["Certainly, Sir.", "You said: Remind me about the review."]
+    assert c.page.evaluate("window.__synth") == [
+        "Certainly, Sir.",
+        "You said: Remind me about the review.",
+    ]
     assert len(fake.to("POST", "/v1/voice/speak")) <= 2  # the rest never went to the cloud
     note = c.page.locator("#voiceLine")
     assert "browser's voice" in str(note.text_content())
@@ -661,6 +758,62 @@ def test_speak_503_falls_back_to_the_browser_voice_with_one_note(make: Callable[
     calls = len(fake.to("POST", "/v1/voice/speak"))
     assert calls <= 2 and note.text_content() == ""
     assert _quiet(c) == []
+
+
+def test_speak_voice_busy_429_falls_back_and_402_says_the_limit(
+    make: Callable[..., Console],
+) -> None:
+    c = make(
+        device={"engine": "browser", "keepListening": False}, scripts=(FAKE_RECOGNITION, FAKE_SYNTH)
+    )
+    fake = FakeVoice(c.page)
+    fake.speak_status, fake.speak_code = 402, "budget_reached"
+    c.open()
+    c.page.locator("#micBtn").click()
+    _wait(c, "() => window.__synth.length >= 2")
+    assert "voice limit is reached" in str(c.page.locator("#voiceLine").text_content())
+    # voice_busy: Google throttled us; the browser speaks this reply, the cloud is asked again soon
+    fake2 = make(
+        device={"engine": "browser", "keepListening": False}, scripts=(FAKE_RECOGNITION, FAKE_SYNTH)
+    )
+    busy = FakeVoice(fake2.page)
+    busy.speak_status, busy.speak_code = 429, "voice_busy"
+    fake2.open()
+    fake2.page.locator("#micBtn").click()
+    _wait(fake2, "() => window.__synth.length >= 2")
+    assert fake2.page.evaluate("window.JarvisVoice.outputEngine()") == "browser"  # for Retry-After
+    assert _quiet(c) == [] and _quiet(fake2) == []
+
+
+def test_transcribe_503_hands_listening_to_the_browser_recognition(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"keepListening": False}, scripts=(FAKE_RECOGNITION,))
+    fake = FakeVoice(c.page)
+    fake.transcribe_status = 503
+    c.open()
+    c.page.locator("#micBtn").click()  # Automatic: the cloud listens first (the fake microphone)
+    _wait(c, "() => window.__rec.length === 1", 20000)  # refused → this browser listens instead
+    assert len(fake.to("POST", "/v1/voice/transcribe")) == 1
+    assert "Say that again" in str(c.page.locator("#voiceLine").text_content())
+    c.page.locator(".row.user .bubble", has_text="Remind me about the review.").wait_for()
+    assert c.page.evaluate("window.JarvisVoice.inputEngine()") == "browser"
+    assert _quiet(c) == []
+
+
+def test_chosen_cloud_engine_is_never_swapped_for_the_browser(make: Callable[..., Console]) -> None:
+    c = make(device={"engine": "cloud"}, scripts=(FAKE_RECOGNITION,))
+    FakeVoice(
+        c.page, voice_view(cloud={"tts": "ready", "stt": "unavailable", "reason": "api_disabled"})
+    )
+    c.open()
+    c.page.locator("#micBtn").click()
+    help_ = c.page.locator("#micHelp")
+    help_.wait_for(state="visible")
+    assert "Speech engine to Automatic" in str(help_.text_content())
+    assert c.page.evaluate("window.__rec.length") == 0  # no audio went to the browser's maker
+    assert _mic_state(c) == "idle" and c.page.evaluate("window.JarvisAudio.isOpen()") is False
+    assert c.errors == []
 
 
 def test_an_approval_after_a_spoken_turn_is_said_with_the_fixed_line(
@@ -696,7 +849,9 @@ def test_an_approval_after_a_spoken_turn_is_said_with_the_fixed_line(
         "memory_used": [],
     }
     c.page.route("**/v1/chat", lambda r: _json(r, 200, reply))
-    c.page.route("**/v1/approvals/**", lambda r: (approvals.append(r.request.url), _json(r, 500, {})))
+    c.page.route(
+        "**/v1/approvals/**", lambda r: (approvals.append(r.request.url), _json(r, 500, {}))
+    )
     c.open()
     c.page.locator("#micBtn").click()
     _wait(c, "() => window.__voice.speech.length >= 1")
@@ -712,7 +867,8 @@ def test_an_approval_after_a_spoken_turn_is_said_with_the_fixed_line(
 
 def test_mic_blocked_shows_help(make: Callable[..., Console]) -> None:
     blocked = """
-    navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('denied', 'NotAllowedError'));
+    navigator.mediaDevices.getUserMedia = () =>
+      Promise.reject(new DOMException('denied', 'NotAllowedError'));
     """
     c = make(scripts=(blocked,))
     FakeVoice(c.page)
@@ -720,7 +876,9 @@ def test_mic_blocked_shows_help(make: Callable[..., Console]) -> None:
     c.page.locator("#micBtn").click()
     help_ = c.page.locator("#micHelp")
     help_.wait_for(state="visible")
-    assert "blocked" in str(help_.text_content()) and "tap the mic again" in str(help_.text_content())
+    assert "blocked" in str(help_.text_content()) and "tap the mic again" in str(
+        help_.text_content()
+    )
     assert _mic_state(c) == "idle"
     assert c.errors == []
 
@@ -736,21 +894,28 @@ def test_ctrl_space_toggles_listening_and_escape_cancels_without_sending(
     _wait(c, "() => document.getElementById('micBtn').dataset.state === 'listening'")
     c.page.keyboard.press("Escape")
     assert _mic_state(c) == "idle"
-    assert c.page.locator("#p-chat").is_visible()  # Esc cancelled listening, it did not close the panel
+    assert c.page.locator(
+        "#p-chat"
+    ).is_visible()  # Esc cancelled listening, it did not close the panel
     c.page.wait_for_timeout(3500)
     assert fake.to("POST", "/v1/voice/transcribe") == []
     assert c.errors == []
 
 
 # ================================================================== the Voice panel
-def test_voice_panel_lists_available_voices_and_saves_settings(make: Callable[..., Console]) -> None:
+def test_voice_panel_lists_available_voices_and_saves_settings(
+    make: Callable[..., Console],
+) -> None:
     c = make()
     fake = FakeVoice(c.page)
     c.open()
     panel = _voice_panel(c)
     labels = panel.locator("#vVoiceT ~ .vlist .vlab b").all_text_contents()
     assert labels == ["Algieba", "Sadaltager", "Charon", "Studio-B"]  # Iapetus is not available
-    assert panel.locator("input[name='vVoice']:checked").get_attribute("value") == "en-GB-Chirp3-HD-Algieba"
+    assert (
+        panel.locator("input[name='vVoice']:checked").get_attribute("value")
+        == "en-GB-Chirp3-HD-Algieba"
+    )
     assert panel.locator("#vAllow").text_content() == ALLOWANCE
     assert "Cloud voice ready" in str(panel.locator("#voiceStatus").text_content())
     assert c.page.locator("#voiceMeta").text_content() == "Cloud voice"
@@ -761,7 +926,10 @@ def test_voice_panel_lists_available_voices_and_saves_settings(make: Callable[..
     for _ in range(3):
         c.page.keyboard.press("ArrowRight")
     assert c.page.locator("#vRateOut").text_content() == "1.15×"
-    c.page.evaluate("() => { document.querySelector('label[for=\"vVoice-2\"]').click(); document.querySelector('label[for=\"vWit-2\"]').click(); }")
+    c.page.evaluate(
+        "() => ['vVoice-2', 'vWit-2']"
+        ".forEach(id => document.querySelector(`label[for=${id}]`).click())"
+    )
     c.page.locator("#voiceNote.ok").wait_for()
     puts = fake.to("PUT", "/v1/voice/settings")
     assert len(puts) == 1
@@ -788,7 +956,7 @@ def test_voice_panel_lists_available_voices_and_saves_settings(make: Callable[..
     panel.locator("#vPrev-1").click()
     _wait(c, "() => window.__voice.speech.length >= 1")
     prev = fake.to("POST", "/v1/voice/speak")[-1]["body"]
-    assert prev["preview"] is True and prev["voice"] == "en-GB-Chirp3-HD-Sadaltager"
+    assert prev == {"preview": True, "voice": "en-GB-Chirp3-HD-Sadaltager"}  # exactly this
     assert c.errors == [] and c.csp_violations() == []
 
 
@@ -798,7 +966,10 @@ def test_voice_panel_device_settings_are_kept_on_this_device(make: Callable[...,
     c.open()
     panel = _voice_panel(c)
     auto, keep = panel.locator("#vAuto"), panel.locator("#vKeep")
-    assert auto.get_attribute("aria-pressed") == "true" and keep.get_attribute("aria-pressed") == "true"
+    assert (
+        auto.get_attribute("aria-pressed") == "true"
+        and keep.get_attribute("aria-pressed") == "true"
+    )
     auto.click()
     c.page.locator("#vSpeak").select_option("always")
     c.page.locator("#vEngine").select_option("browser")
@@ -823,14 +994,21 @@ def test_voice_panel_device_settings_are_kept_on_this_device(make: Callable[...,
 def test_voice_panel_rejected_setting_explains_and_reloads(make: Callable[..., Console]) -> None:
     c = make()
     fake = FakeVoice(c.page)
-    fake.view["voices"] = [*VOICES, {**VOICES[3], "id": "en-GB-Gone", "label": "Gone", "available": True}]
+    fake.view["voices"] = [
+        *VOICES,
+        {**VOICES[3], "id": "en-GB-Gone", "label": "Gone", "available": True},
+    ]
     c.open()
     panel = _voice_panel(c)
     fake.view["voices"] = VOICES  # the server dropped it meanwhile: 422 input_rejected
     panel.locator("label", has_text="Gone").click()
     c.page.locator("#voiceNote.bad").wait_for()
     assert "isn't one JARVIS knows" in str(c.page.locator("#voiceNote").text_content())
-    _wait(c, "() => ![...document.querySelectorAll('#p-voice .vlab b')].some(b => b.textContent === 'Gone')")
+    _wait(
+        c,
+        "() => ![...document.querySelectorAll('#p-voice .vlab b')]"
+        ".some(b => b.textContent === 'Gone')",
+    )
     assert len(fake.to("GET", "/v1/voice")) >= 2
     assert _quiet(c) == []
 
@@ -838,8 +1016,14 @@ def test_voice_panel_rejected_setting_explains_and_reloads(make: Callable[..., C
 @pytest.mark.parametrize(
     "cloud, words",
     [
-        ({"tts": "unavailable", "stt": "unavailable", "reason": "api_disabled"}, "gcloud services enable texttospeech.googleapis.com speech.googleapis.com"),
-        ({"tts": "unavailable", "stt": "unavailable", "reason": "not_configured"}, "no Google Cloud credentials"),
+        (
+            {"tts": "unavailable", "stt": "unavailable", "reason": "api_disabled"},
+            "gcloud services enable texttospeech.googleapis.com speech.googleapis.com",
+        ),
+        (
+            {"tts": "unavailable", "stt": "unavailable", "reason": "not_configured"},
+            "no Google Cloud credentials",
+        ),
         ({"tts": "off", "stt": "off", "reason": None}, "switched off on this server"),
         ({"tts": "unavailable", "stt": "ready", "reason": "timeout"}, "isn't answering right now"),
     ],
@@ -878,7 +1062,9 @@ def test_wake_switch_is_hidden_without_the_wake_word_module(make: Callable[..., 
     assert c.errors == []
 
 
-def test_wake_switch_feeds_the_wake_word_module_and_wakes_the_mic(make: Callable[..., Console]) -> None:
+def test_wake_switch_feeds_the_wake_word_module_and_wakes_the_mic(
+    make: Callable[..., Console],
+) -> None:
     c = make(device={"keepListening": False}, scripts=(FAKE_WAKE,))
     FakeVoice(c.page)
     c.open()
@@ -894,7 +1080,10 @@ def test_wake_switch_feeds_the_wake_word_module_and_wakes_the_mic(make: Callable
     assert w["loaded"] == 1 and w["started"] == 1 and w["rate"] == 16000
     assert w["len"] == 1280 and w["int16"] is True
     assert panel.locator("#vWakeChip").text_content() == "Listening for ‘Hey Jarvis’"
-    assert json.loads(c.page.evaluate("localStorage.getItem('jarvis_voice_device_v1')"))["wake"] is True
+    assert (
+        json.loads(c.page.evaluate("localStorage.getItem('jarvis_voice_device_v1')"))["wake"]
+        is True
+    )
     # the wake word fires: JARVIS listens; the wake detector gets no frames meanwhile
     c.page.evaluate("window.__wake.fire()")
     assert _mic_state(c) == "listening"
@@ -927,7 +1116,9 @@ def test_phone_layout_mic_in_composer_voice_behind_more(make: Callable[..., Cons
     c.page.locator("#vVoiceT").wait_for(state="visible")
     c.page.wait_for_timeout(300)
     widths = c.page.evaluate(
-        "[document.documentElement.scrollWidth, document.body.scrollWidth, window.innerWidth, document.getElementById('p-voice').scrollWidth, document.getElementById('p-voice').clientWidth]"
+        "[document.documentElement.scrollWidth, document.body.scrollWidth, window.innerWidth,"
+        " document.getElementById('p-voice').scrollWidth,"
+        " document.getElementById('p-voice').clientWidth]"
     )
     assert widths[0] <= widths[2] and widths[1] <= widths[2], widths
     assert widths[3] <= widths[4] + 1, widths  # nothing in the panel scrolls sideways
@@ -937,7 +1128,9 @@ def test_phone_layout_mic_in_composer_voice_behind_more(make: Callable[..., Cons
 @pytest.mark.parametrize("surface", ["night", "day"])
 def test_voice_panel_and_mic_contrast(make: Callable[..., Console], surface: str) -> None:
     c = make(scripts=(FAKE_WAKE, f"localStorage.setItem('jarvis_surface', '{surface}');"))
-    FakeVoice(c.page, voice_view(cloud={"tts": "unavailable", "stt": "ready", "reason": "api_disabled"}))
+    FakeVoice(
+        c.page, voice_view(cloud={"tts": "unavailable", "stt": "ready", "reason": "api_disabled"})
+    )
     c.open()
     _voice_panel(c)
     c.page.evaluate(SETTLE_JS, "#p-voice")
@@ -945,13 +1138,18 @@ def test_voice_panel_and_mic_contrast(make: Callable[..., Console], surface: str
     assert len(found) > 25
     low = [f for f in found if f["ratio"] < 4.5]
     assert low == [], low
-    c.page.evaluate("document.getElementById('voiceLine').textContent = 'The cloud voice isn\\'t available: speaking with this browser\\'s voice.'")
+    c.page.evaluate(
+        "document.getElementById('voiceLine').textContent ="
+        " 'The cloud voice is not available: speaking with this browser voice.'"
+    )
     found = c.page.evaluate(CONTRAST_JS, ".composer-wrap")
     low = [f for f in found if f["ratio"] < 4.5]
     assert low == [], low
 
 
-def test_page_has_no_dollar_sign_zero_errors_and_zero_csp_reports(make: Callable[..., Console]) -> None:
+def test_page_has_no_dollar_sign_zero_errors_and_zero_csp_reports(
+    make: Callable[..., Console],
+) -> None:
     c = make(scripts=(FAKE_WAKE,))
     FakeVoice(c.page, voice_view(month={"voice_inr": 12.5}))
     c.open()

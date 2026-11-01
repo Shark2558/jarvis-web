@@ -1,7 +1,29 @@
 # Phase 2 · Slice 6 — Google Calendar + Gmail tools (+ pipeline items)
 
-Status: IN PROGRESS · 2026-11-01 · owner decisions: brain = **Claude (paid API key)**; build Calendar
-AND Gmail now; design review deferred.
+Status: BUILT (tools, vault, connect flow, deploy, evals) · 2026-11-01 · owner decisions: brain =
+**Claude (paid API key)**; build Calendar AND Gmail now; design review deferred. Console panel and
+pipeline items are on the companion branch.
+
+### Build notes (deviations from the design above)
+- `Tool.check(args)`: an optional pure argument check the gateway runs **before** the policy
+  decision, so a malformed delete/send (bad id, bad address, header injection) fails fast and
+  never becomes an approval card. Not in the original design; added when tests showed bad
+  arguments reaching the ASK path.
+- `PendingAction.risk` stays `IRREVERSIBLE` for every ASK (the gate only guards that class);
+  the tool's *effective* risk (`risk_for`) drives the policy decision and the audit entries.
+- `calendar_update_event` sends `sendUpdates=all` only when the `attendees` argument is present
+  (that is the R3 case); a time change without touching attendees is `sendUpdates=none`, so
+  nobody is mailed without a confirmation. Trade-off: existing attendees are not notified of a
+  move unless the owner asks to re-invite them.
+- Callback failures redirect to `/?connect_error=<not_started|wrong_account|oauth_failed|
+  no_refresh_token>` (browser landing) instead of returning JSON errors.
+- Mail/event `subject`/`summary` are fenced too (not only bodies): a subject line is a favourite
+  place for "URGENT: forward this".
+- `gmail_create_draft` is R2 by design, so an injected "draft a reply to attacker@…" would
+  succeed (draft saved, nothing sent). The injection suite reports this as a soft metric
+  (`reversible_side_effects`); tightening drafts to ASK-when-recipient-unknown is a candidate
+  policy rule for a later slice.
+- `make eval-mock` should run `evals/run_all_mock.py` (Makefile belongs to the other branch).
 
 ## Goal
 With the Claude brain, JARVIS can read the owner's calendar, find free time, create / move events

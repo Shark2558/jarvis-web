@@ -138,3 +138,104 @@ def test_script_is_valid_bash() -> None:
 @pytest.mark.skipif(shutil.which("shellcheck") is None, reason="shellcheck not installed")
 def test_script_passes_shellcheck() -> None:
     subprocess.run(["shellcheck", "-S", "warning", str(SCRIPT)], check=True)
+
+
+# ---- slice 6: Google tools need a vault key, two more APIs and consent-screen scopes ----------
+
+
+def test_token_key_secret_is_generated_bound_and_granted(script: str) -> None:
+    assert "jarvis-token-key" in script
+    # generated (32 random bytes, base64) only when missing — never overwritten on a re-run
+    assert re.search(r"secret_exists jarvis-token-key \|\| put_secret jarvis-token-key", script)
+    assert "head -c 32 /dev/urandom | base64" in script
+    # both the full set-up and the quick path bind it, and the runtime account may read it
+    set_secrets = [ln for ln in script.splitlines() if "--set-secrets" in ln]
+    update_secrets = [ln for ln in script.splitlines() if "--update-secrets" in ln]
+    assert set_secrets and all(
+        "JARVIS_TOKEN_KEY=jarvis-token-key:latest" in ln for ln in set_secrets
+    )
+    assert update_secrets and all(
+        "JARVIS_TOKEN_KEY=jarvis-token-key:latest" in ln for ln in update_secrets
+    )
+    grant_loop = script.split("for secret in", 1)[1].split("; do", 1)[0]
+    assert "jarvis-token-key" in grant_loop
+
+
+def test_calendar_and_gmail_apis_are_enabled(script: str) -> None:
+    enable = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
+    assert "calendar-json.googleapis.com" in enable and "gmail.googleapis.com" in enable
+
+
+def test_script_prints_consent_scopes_and_test_user_reminder(script: str) -> None:
+    for scope in (
+        "auth/calendar.events",
+        "auth/calendar.readonly",
+        "auth/gmail.readonly",
+        "auth/gmail.compose",
+    ):
+        assert scope in script
+    # gmail.compose already allows messages.send: the redundant scope is not asked for
+    assert "auth/gmail.send" not in script
+    assert "Test users" in script or "test user" in script.lower()
+    assert "7 days" in script  # Testing-mode refresh tokens expire weekly
+    assert "/connect/google/callback" in script  # second redirect URI
+
+
+def test_default_brain_prompt_accepts_claude(script: str) -> None:
+    assert "claude|Claude|CLAUDE) DEFAULT_BRAIN=anthropic" in script
+
+
+def _top_level_depth_at(script: str, needle: str) -> int:
+    """if/fi nesting (column 0 only) at the first line containing `needle`."""
+    depth = 0
+    for line in script.splitlines():
+        if needle in line:
+            return depth
+        if re.match(r"if\b", line) and not re.search(r";\s*fi\s*$", line):
+            depth += 1
+        elif re.match(r"fi\b", line):
+            depth -= 1
+    raise AssertionError(f"{needle!r} not found")
+
+
+def test_quick_path_also_creates_and_binds_the_token_key(script: str) -> None:
+    """Rollout: an auto-deploy keeps the old secrets, so the first deploy of slice 6 runs without
+    JARVIS_TOKEN_KEY (Google tools off, app healthy). Either re-run path must then create the
+    secret if it is missing and bind it — the quick path with --update-secrets."""
+    line = "secret_exists jarvis-token-key || put_secret jarvis-token-key"
+    assert _top_level_depth_at(script, line) == 0  # runs on the quick AND the full path
+    quick = script.split('if [ "$QUICK" = yes ]; then\n  CONFIG_FLAGS=(', 1)[1].split("else", 1)[0]
+    assert "--update-secrets" in quick and "JARVIS_TOKEN_KEY=jarvis-token-key:latest" in quick
+
+
+# ---- security review M5: nothing unhashed reaches the image; CI pins what it installs ---------
+
+DOCKERFILE = ROOT / "Dockerfile"
+LOCK = ROOT / "requirements.lock"
+
+
+def test_image_installs_only_hash_checked_artifacts() -> None:
+    df = DOCKERFILE.read_text(encoding="utf-8")
+    assert "--upgrade pip" not in df  # an unpinned, unhashed pip straight from the index
+    assert "pip install --require-hashes -r requirements.lock" in df
+    # the app builds with the LOCKED setuptools/wheel: no isolated env fetching them unhashed
+    assert "pip install --no-build-isolation --no-deps ." in df
+    for line in df.splitlines():
+        if line.startswith("RUN") and "pip install" in line:
+            assert "--require-hashes" in line or "--no-build-isolation --no-deps" in line, line
+
+
+def test_lock_pins_pip_and_the_build_backend_with_hashes() -> None:
+    lock = LOCK.read_text(encoding="utf-8")
+    for pkg in ("pip", "setuptools", "wheel"):
+        assert re.search(
+            rf"^{pkg}==[0-9][0-9.]* \\\n\s+--hash=sha256:[0-9a-f]{{64}}", lock, re.M
+        ), pkg
+    pins = re.findall(r"^([A-Za-z0-9_.-]+)==", lock, re.M)
+    assert len(pins) == len(re.findall(r"^[A-Za-z0-9_.-]+==[^\n]* \\\n\s+--hash=", lock, re.M))
+
+
+def test_browser_job_pins_playwright(ci: dict[str, Any]) -> None:
+    run = "\n".join(str(s.get("run", "")) for s in ci["jobs"]["browser"]["steps"])
+    assert "playwright==1.63.0" in run
+    assert not re.search(r"\bplaywright(?!==)(\s|$)", run.split("playwright install")[0])

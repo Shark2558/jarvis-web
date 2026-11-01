@@ -305,7 +305,7 @@ html[data-surface="night"] .welcome h1{font:400 clamp(21px,2.2vw,26px)/1.2 var(-
 .approval .title{display:flex;align-items:center;gap:8px;font-weight:650;font-size:14px;color:var(--ink)}
 .approval .title::first-letter{text-transform:uppercase}
 .tag{display:inline-block;font:700 11.5px/1 var(--hud);letter-spacing:.12em;text-transform:uppercase;padding:4px 8px 3px;border-radius:4px;background:rgba(245,158,11,.18);color:var(--amber-ink)}
-.approval p{margin:7px 0 0;font-size:13.5px;color:var(--ink)}
+.approval p{margin:7px 0 0;font-size:13.5px;color:var(--ink);white-space:pre-line;overflow-wrap:anywhere}
 .approval pre{margin:9px 0 0;padding:9px 10px;border-radius:var(--r-sm);background:var(--well);border:1px solid color-mix(in srgb,#F59E0B 30%,var(--line-2));font:12px/1.5 var(--mono);color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere;max-height:140px;overflow:auto}
 .actions{display:flex;gap:8px;margin-top:12px}
 .btn{position:relative;flex:1;height:36px;border-radius:var(--r-sm);border:1px solid var(--line);background-color:var(--well);color:var(--ink-2);cursor:pointer;
@@ -341,6 +341,25 @@ html[data-surface="night"] .welcome h1{font:400 clamp(21px,2.2vw,26px)/1.2 var(-
 .confirm .btn{flex:none;height:30px;padding:0 12px;font-size:12px}
 .verified{font:400 11.5px/1 var(--tech);letter-spacing:.14em;text-transform:uppercase}
 .verified.ok{color:var(--ok-ink)} .verified.bad{color:var(--bad-ink)}
+
+/* ---- integrations (slice 6): one row per linked account; amber only for "needs reconnecting" -- */
+.integ{position:relative;border-radius:var(--r-md);padding:12px 12px 12px 14px;background:var(--well-2);border:1px solid var(--line);animation:rise .4s var(--ease) both}
+.integ[data-state="linked"]{box-shadow:inset 3px 0 0 var(--ok)}
+.integ[data-state="reconnect"]{background:var(--amber-tint);border-color:var(--amber-line);box-shadow:inset 3px 0 0 var(--amber)}
+.ihead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ihead b{font:700 15px/1.1 var(--hud);letter-spacing:.06em;color:var(--ink)}
+.istate{font:400 11px/1 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap}
+.integ[data-state="linked"] .istate{color:var(--ok-ink)}
+.integ[data-state="reconnect"] .istate,.integ[data-state="error"] .istate{color:var(--amber-ink)}
+.ibody p{margin:8px 0 0;font-size:13.5px;line-height:1.45;color:var(--ink-2)}
+.ibody .who{color:var(--ink)} .ibody .who b{font-weight:600;overflow-wrap:anywhere}
+.ibody .scopes{font:400 12px/1.5 var(--tech);letter-spacing:.04em;color:var(--ink-2)}
+.ibody .warn{color:var(--amber-ink)}
+.ibody .fine{font-size:12.5px;color:var(--ink-3)}
+.inote{margin-top:10px;padding:8px 10px;border-radius:var(--r-sm);font-size:13px;line-height:1.4;color:var(--ok-ink);background:color-mix(in srgb,var(--ok) 12%,transparent);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent)}
+.inote.bad{color:var(--bad-ink);background:var(--bad-tint);border-color:var(--bad-line)}
+.integ .confirm{margin-top:10px;flex-wrap:wrap}
+.integ .confirm span{flex:1 1 100%}
 
 /* ---- appearance menu ------------------------------------------------------------------------ */
 .menu{position:fixed;z-index:80;width:400px;max-height:calc(100dvh - 90px);overflow:auto;padding:16px 16px 14px;border-radius:var(--r-lg);box-shadow:var(--sh-2);animation:menuIn .26s var(--ease) both}

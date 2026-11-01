@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'approvals', 'activity', 'history', 'vitals', 'construct'];
+  const ORDER = ['chat', 'approvals', 'activity', 'history', 'integrations', 'vitals', 'construct'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;
@@ -69,6 +69,7 @@
       activity: { x: sL, y: Math.max(b.top, bottom - 250), w: 300, h: 250, open: false },
       approvals: { x: col2, y: b.top, w: 340, h: null, open: false },
       history: { x: col2, y: b.top + 36, w: 320, h: Math.min(440, availH), open: false },
+      integrations: { x: col2, y: b.top + 72, w: 340, h: null, open: false },
       construct: { x: Math.max(sL, sR - chatW - 14 - 330), y: b.top, w: 330, h: Math.min(380, availH), open: false },
     };
   }
@@ -366,6 +367,12 @@
     const d = e.detail || {}; V.audit = typeof d.verified === 'boolean' ? d.verified : null; V.auditCount = d.count || 0; renderVitals();
   });
   document.addEventListener('jarvis:event', (e) => addEvent(e.detail || {}));
+  // Integrations (slice 6): console.js reports the Google link state; the rail shows it in one word
+  const GOOGLE_WORDS = { linked: ['Linked', 'ok'], unlinked: ['Not linked', ''], reconnect: ['Reconnect', 'warn'] };
+  document.addEventListener('jarvis:integrations', (e) => {
+    const d = e.detail || {}, w = GOOGLE_WORDS[d.google];
+    setText('rGoogle', w ? w[0] : '—'); setCls('rGoogle', 'v up', w ? w[1] : '');
+  });
   document.addEventListener('jarvis:state', (e) => { const d = e.detail || {}; V.busy = !!d.busy; V.alert = !!d.alert; renderState(); radar.kick(); });
   window.addEventListener('online', () => { renderNet(); renderState(); addEvent({ kind: 'info', text: 'Connection restored' }); });
   window.addEventListener('offline', () => { renderNet(); renderState(); addEvent({ kind: 'error', text: 'Connection lost' }); });

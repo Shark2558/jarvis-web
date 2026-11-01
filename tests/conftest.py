@@ -5,11 +5,14 @@ from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 
 from jarvis.api import create_app
 from jarvis.config import LLMBackend, SessionBackend, Settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ConfirmationGate
+from jarvis.integrations.google import GoogleConnector
+from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.memory.inmemory import InMemorySessionStore
@@ -80,3 +83,35 @@ async def client(
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             yield c
+
+
+# ---- Google (slice 6): scriptable fake transport + a connected connector --------------------
+
+from google_fakes import GOOGLE_EMAIL, GOOGLE_NOW, GOOGLE_UID, FakeGoogle, google_tokens  # noqa: E402,F401
+
+
+@pytest.fixture
+def fake_google() -> FakeGoogle:
+    return FakeGoogle()
+
+
+@pytest.fixture
+def token_store() -> MemoryTokenStore:
+    return MemoryTokenStore()
+
+
+@pytest.fixture
+def google_conn(fake_google: FakeGoogle, token_store: MemoryTokenStore) -> GoogleConnector:
+    return GoogleConnector(
+        token_store,
+        client_id="cid",
+        client_secret=SecretStr("csecret"),
+        http=fake_google.client(),
+        now=lambda: GOOGLE_NOW,
+    )
+
+
+@pytest.fixture
+async def connected(google_conn: GoogleConnector, token_store: MemoryTokenStore) -> GoogleConnector:
+    await token_store.put(GOOGLE_UID, google_tokens())
+    return google_conn

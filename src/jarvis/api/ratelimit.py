@@ -1,6 +1,6 @@
 # src/jarvis/api/ratelimit.py
-"""Per-client token bucket for /v1 and /auth. In-memory: correct for a single instance, which
-is all we run until the Postgres/Redis slice (then move the bucket to Redis)."""
+"""Per-client token bucket for /v1, /auth and /connect. In-memory: correct for a single
+instance, which is all we run until the Postgres/Redis slice (then move the bucket to Redis)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
-LIMITED_PREFIXES = ("/v1", "/auth")
+LIMITED_PREFIXES = ("/v1", "/auth", "/connect")
 MAX_TRACKED_CLIENTS = 10_000
 
 

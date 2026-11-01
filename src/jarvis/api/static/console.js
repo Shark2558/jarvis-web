@@ -8,6 +8,12 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // An approval card must read exactly as it is: bidi overrides, zero-width and control
+  // characters (which can turn "exe.gpj" into "jpg.exe" on screen) are shown as visible
+  // [U+202E] markers. The server already strips them from summaries; this also covers the
+  // raw arguments.
+  const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+  const visible = (s) => String(s).replace(INVISIBLE, (c) => `[U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}]`);
   const lsGet = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
   const ssGet = (k) => { try { return sessionStorage.getItem(k) || ''; } catch (_) { return ''; } };
@@ -130,8 +136,8 @@
     el.innerHTML = list.map(a => `
       <div class="approval" data-id="${esc(a.id)}" data-sid="${esc(a.session_id || '')}">
         <div class="title">${esc(a.tool.replace(/_/g, ' '))} <span class="tag">${esc(a.risk)}</span></div>
-        <p>${esc(a.summary)}</p>
-        <pre>${esc(JSON.stringify(a.arguments, null, 2))}</pre>
+        <p>${esc(visible(a.summary))}</p>
+        <pre>${esc(visible(JSON.stringify(a.arguments, null, 2)))}</pre>
         <div class="actions"><button class="btn primary approve lift">Approve</button><button class="btn decline lift">Decline</button></div>
       </div>`).join('');
     el.querySelectorAll('.approval').forEach(card => {
@@ -300,6 +306,148 @@
   function newConversation() { setSession(null); renderWelcome(); renderStats({}); input.focus(); }
   function startNew() { if (state.busy) return; newConversation(); Deck.open('chat', { focus: true }); note('info', 'New conversation'); }
 
+  // ---- integrations (slice 6): the Google link that unlocks Calendar + Gmail tools --------------
+  // GET /v1/integrations → {google: {connected, email, scopes, expires_at, needs_reconnect}}.
+  // A 404 means this server has no connect flow (token-auth setup / older backend): say so, no error.
+  // gmail.compose covers drafts AND sending; gmail.send only appears on links made before it was dropped.
+  const SCOPE_WORDS = { 'calendar.readonly': ['Calendar', 'read'], 'calendar.events': ['Calendar', 'edit'],
+    'gmail.readonly': ['Gmail', 'read'], 'gmail.compose': ['Gmail', 'draft', 'send'], 'gmail.send': ['Gmail', 'send'] };
+  /** "Calendar: read & edit · Gmail: read, draft, send" from the raw scope list (URLs or short names). */
+  function scopeSummary(scopes) {
+    const by = {}; let other = 0;
+    (Array.isArray(scopes) ? scopes : []).forEach(s => {
+      const key = String(s).split('/').pop(), w = SCOPE_WORDS[key];
+      if (!w) { other++; return; }
+      const words = (by[w[0]] = by[w[0]] || []);
+      w.slice(1).forEach(x => { if (!words.includes(x)) words.push(x); });
+    });
+    const parts = Object.keys(by).map(k => `${k}: ${by[k].length === 2 && k === 'Calendar' ? by[k].join(' & ') : by[k].join(', ')}`);
+    if (other) parts.push(`${other} other ${other === 1 ? 'permission' : 'permissions'}`);
+    return parts.join(' · ');
+  }
+  function googleState(g) {
+    if (!g || !g.connected) return 'unlinked';
+    return g.needs_reconnect ? 'reconnect' : 'linked';
+  }
+  const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+  // data: undefined = still loading, null = route missing (404) → "Not available in this setup"
+  const integ = { data: undefined, loaded: false, at: 0, error: null, note: null };
+  const INTEG_FRESH_MS = 5000; // reopening the panel re-checks the link unless it was just checked
+  const STATE_WORDS = { linked: 'Connected', reconnect: 'Needs reconnecting', unlinked: 'Not connected',
+    unavailable: 'Not available', loading: 'Checking…', error: 'Unknown' };
+  function integState() {
+    if (integ.error) return 'error';
+    if (integ.data === undefined) return 'loading';
+    return integ.data === null ? 'unavailable' : googleState(integ.data.google);
+  }
+  function integBody(st, g) {
+    const body = mk('div', 'ibody');
+    if (st === 'loading') body.appendChild(mk('p', '', 'Checking linked accounts…'));
+    else if (st === 'error') body.appendChild(mk('p', 'warn', 'Couldn\'t check the Google link. ' + integ.error));
+    else if (st === 'unavailable') body.appendChild(mk('p', '', 'Not available in this setup. Linking a Google account needs Google sign-in on this server.'));
+    else if (st === 'unlinked') body.appendChild(mk('p', '', 'Link your Google account so JARVIS can read your calendar, find free time, and search, draft and send mail. Anything that sends or deletes still waits for your approval.'));
+    else {
+      const who = mk('p', 'who'); who.append(mk('span', '', st === 'linked' ? 'Connected as ' : 'Was connected as '), mk('b', '', g.email || 'unknown account'));
+      body.appendChild(who);
+      const sc = scopeSummary(g.scopes); if (sc) body.appendChild(mk('p', 'scopes', sc));
+      if (st === 'reconnect') body.appendChild(mk('p', 'warn', 'Google stopped accepting the saved link (test-mode links expire after 7 days). Calendar and Gmail tools are paused until you reconnect.'));
+      else body.appendChild(mk('p', 'fine', 'Unlocks: calendar list, free slots, create / move / delete events, mail search, read, draft and send.'));
+    }
+    return body;
+  }
+  function integActions(st, row) {
+    const acts = mk('div', 'actions');
+    if (st === 'unlinked' || st === 'reconnect') {
+      const b = mk('button', 'btn primary lift', st === 'unlinked' ? 'Connect Google' : 'Reconnect'); b.type = 'button'; b.id = 'googleConnect';
+      b.addEventListener('click', () => { note('info', 'Connecting Google…'); window.location.assign('/connect/google'); });
+      acts.appendChild(b);
+    }
+    if (st === 'linked' || st === 'reconnect') {
+      const d = mk('button', 'btn lift', 'Disconnect'); d.type = 'button'; d.id = 'googleDisconnect';
+      d.addEventListener('click', () => askDisconnect(row, d)); acts.appendChild(d);
+    }
+    if (st === 'error') {
+      const r = mk('button', 'btn lift', 'Retry'); r.type = 'button';
+      r.addEventListener('click', () => { r.disabled = true; refreshIntegrations(); }); acts.appendChild(r);
+    }
+    return acts;
+  }
+  function renderIntegrations() {
+    const box = $('integrations'); box.innerHTML = '';
+    const st = integState(), g = integ.data ? integ.data.google : null;
+    emit('jarvis:integrations', { google: integ.data ? st : null });
+    const meta = $('integMeta');
+    meta.textContent = st === 'linked' ? 'Google linked' : st === 'reconnect' ? 'Attention' : '';
+    meta.className = 'pmeta' + (st === 'linked' ? ' ok' : st === 'reconnect' ? ' warn' : '');
+    const row = mk('div', 'integ'); row.dataset.state = st;
+    const head = mk('div', 'ihead'); head.append(mk('b', '', 'Google'), mk('span', 'istate', STATE_WORDS[st]));
+    row.append(head, integBody(st, g));
+    if (integ.note) { const n = mk('div', 'inote ' + integ.note.kind, integ.note.text); n.setAttribute('role', 'status'); row.appendChild(n); integ.note = null; }
+    const acts = integActions(st, row); if (acts.childElementCount) row.appendChild(acts);
+    box.appendChild(row);
+  }
+  function askDisconnect(row, trigger) {
+    if (row.querySelector('.confirm')) return;
+    const box = mk('div', 'confirm'); box.setAttribute('role', 'alert');
+    const t = mk('span', '', 'Disconnect Google? JARVIS forgets the link and the Calendar and Gmail tools stop working until you connect again.');
+    const yes = mk('button', 'btn danger lift', 'Disconnect'); yes.type = 'button';
+    const no = mk('button', 'btn lift', 'Keep'); no.type = 'button';
+    const keep = () => { box.remove(); trigger.focus(); };
+    no.addEventListener('click', keep);
+    box.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || e.isComposing) return; e.preventDefault(); e.stopPropagation(); keep(); });
+    yes.addEventListener('click', async () => {
+      yes.disabled = no.disabled = true;
+      try {
+        await api('/v1/integrations/google/disconnect', { body: {} });
+        integ.note = { kind: 'ok', text: 'Google disconnected.' }; note('info', 'Google disconnected');
+      } catch (e) { integ.note = { kind: 'bad', text: 'Couldn\'t disconnect. ' + e.message }; }
+      await refreshIntegrations();
+    });
+    box.append(t, no, yes); row.appendChild(box); no.focus();
+  }
+  async function refreshIntegrations() {
+    integ.error = null;
+    try { integ.data = await api('/v1/integrations'); }
+    catch (e) {
+      if (e.status === 404) integ.data = null;
+      else if (e.status !== 401) { integ.data = undefined; integ.error = e.message || 'error'; }
+    }
+    integ.loaded = true; integ.at = performance.now();
+    renderIntegrations();
+  }
+  // /?connect_error=<code> from the callback: a fixed plain-English line per known code; the raw
+  // query text is never shown.
+  const CONNECT_ERRORS = {
+    not_started: 'The Google link wasn\'t started from this browser session (or the signed-in account changed). Press Connect Google to try again.',
+    wrong_account: 'Google was linked with a different Google account. Connect again and choose the account you sign in to JARVIS with.',
+    oauth_failed: 'Google didn\'t finish linking (cancelled or timed out). Press Connect Google to try again.',
+    no_refresh_token: 'Google didn\'t grant lasting access. Try again; if it repeats, remove JARVIS under myaccount.google.com → Security → Third-party connections, then connect.',
+    missing_scopes: 'Some permissions were left unticked. Connect again and keep every Calendar and Gmail box ticked: JARVIS needs all of them.',
+  };
+  const CONNECT_ERROR_FALLBACK = 'Google linking didn\'t complete. Press Connect Google to try again.';
+  /** Back from Google's consent screen (success or failure): queue the note for the panel and
+   *  clean the address bar. Returns true when boot should open the Integrations panel instead of
+   *  focusing the composer. */
+  function afterConnectRedirect() {
+    let q; try { q = new URLSearchParams(window.location.search); } catch (_) { return false; }
+    const ok = q.get('connected') === 'google', code = q.get('connect_error');
+    if (!ok && code === null) return false;
+    if (ok) {
+      integ.note = { kind: 'ok', text: 'Google connected. Calendar and Gmail tools are ready.' };
+      note('info', 'Google connected');
+    } else {
+      const known = Object.prototype.hasOwnProperty.call(CONNECT_ERRORS, code);
+      integ.note = { kind: 'bad', text: known ? CONNECT_ERRORS[code] : CONNECT_ERROR_FALLBACK };
+      note('error', 'Google not connected');
+    }
+    try { history.replaceState(null, '', window.location.pathname); } catch (_) {}
+    return true;
+  }
+  document.addEventListener('jarvis:panel', (e) => {
+    const d = e.detail || {};
+    if (d.id === 'integrations' && d.open && integ.loaded && performance.now() - integ.at > INTEG_FRESH_MS) refreshIntegrations();
+  });
+
   // ---- brain selector -----------------------------------------------------------------------
   function currentBrain() { return state.brains.find(b => b.id === state.brain) || state.brains.find(b => b.default) || null; }
   function renderBanner(fallback) {
@@ -409,11 +557,13 @@
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {
     renderWelcome();
+    const backFromGoogle = afterConnectRedirect();
     await loadBrains();
     const saved = lsGet('jarvis_session');
     if (saved) { busy(true, false); try { await loadConversation(saved); } finally { busy(false); } }
     refreshSide(); refreshConvos();
-    input.focus();
+    const linkCheck = refreshIntegrations();
+    if (backFromGoogle) linkCheck.then(() => Deck.open('integrations', { focus: true })); else input.focus();
   }
   (async () => {
     let fallbackWarning = '';

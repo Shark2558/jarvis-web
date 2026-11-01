@@ -16,6 +16,7 @@
 .v{font:400 14px/1.2 var(--tech);letter-spacing:.06em;color:var(--ink);font-variant-numeric:tabular-nums}
 .v.ok{color:var(--ok-ink)} .v.bad{color:var(--bad-ink)} .v.warn{color:var(--amber-ink)} .v.acc{color:var(--accent-ink)}
 .v .u{font-size:11px;color:var(--ink-2);margin-left:3px;letter-spacing:.1em}
+.v.up{font-size:12px;letter-spacing:.16em;text-transform:uppercase}
 .blink{display:inline-block;width:6px;height:6px;margin-right:7px;border-radius:50%;background:currentColor;vertical-align:1px;box-shadow:0 0 8px currentColor;animation:blink 1.6s steps(2,jump-none) infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
 
@@ -170,6 +171,8 @@ html[data-surface="night"] .panel.front{border-color:color-mix(in srgb,var(--acc
 .dk:hover{color:var(--ink);background:var(--tint)}
 .dk[aria-pressed="true"]{color:var(--accent-ink);background:var(--tint);border-color:var(--line);box-shadow:inset 0 -2px 0 var(--accent-2),0 6px 16px -10px var(--accent)}
 html[data-surface="night"] .dk[aria-pressed="true"] svg{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--accent-2) 80%,transparent))}
+.dk.wide{width:102px}
+.dk .short{display:none}
 .dk .badge{position:absolute;top:4px;right:12px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--amber);color:#1C1300;font:700 11px/17px var(--font);text-align:center;box-shadow:0 0 10px rgba(245,158,11,.7)}
 
 /* ---- the privacy notice: an in-flow strip under the ruler (collapses to nothing when hidden), so it
@@ -188,6 +191,7 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
 @media (max-width: 1180px) and (min-width: 900px){
   :root{--rail:156px}
   .dk{width:66px}
+  .dk.wide{width:88px}
   .timebox .date{display:none}
   .wordmark{letter-spacing:.3em}
   .core-read{display:none}
@@ -221,6 +225,8 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
   .dock{left:0;right:0;bottom:0;transform:none;border-radius:0;gap:0;padding:4px 4px calc(4px + env(safe-area-inset-bottom));justify-content:space-between;border-left:0;border-right:0;border-bottom:0}
   .dock .sep{display:none}
   .dk{flex:1 1 0;width:auto;min-width:0;height:56px;letter-spacing:.06em;font-size:9.5px}
+  .dk.wide{width:auto}
+  .dk .full{display:none} .dk .short{display:inline}
   .dk .badge{right:calc(50% - 22px)}
   .deck > .notice{padding:6px 12px;font-size:12px;justify-content:flex-start;align-items:flex-start}
   .deck > .notice svg{margin-top:1px}

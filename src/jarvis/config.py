@@ -181,6 +181,16 @@ class Settings(BaseSettings):
     # --- tools ---
     tools_enabled: bool = True
     tool_max_rounds: int = Field(default=6, description="Max model↔tool rounds per turn")
+    # --- Google Calendar + Gmail tools (slice 6). Need auth_mode=google (same OAuth client as
+    # sign-in, more scopes, linked per owner from the console's Integrations panel).
+    google_tools_enabled: bool = Field(
+        default=True, description="Register the Google tools when auth_mode=google"
+    )
+    token_key: SecretStr | None = Field(
+        default=None,
+        description="Base64 of 32 random bytes: AES-256-GCM key for the Google token vault "
+        "(Secret Manager `jarvis-token-key`). Outside dev the Google tools stay off without it.",
+    )
 
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")
@@ -201,6 +211,22 @@ class Settings(BaseSettings):
             )
         if self.auth_mode is AuthMode.GOOGLE:
             self._require_google_auth_config()
+        # A MISSING token key is not fatal: outside dev the Google tools simply stay off (one
+        # start-up warning; see integrations.google.google_tools_configured), so an auto-deploy
+        # that still has the old secrets passes its health check. A PRESENT key that is
+        # malformed or weak is a start-up error, never a surprise at the first connect.
+        if self.token_key is not None:
+            self.token_key_bytes()
+
+    def token_key_bytes(self) -> bytes | None:
+        if self.token_key is None:
+            return None
+        from jarvis.integrations.vault import VaultError, decode_key
+
+        try:
+            return decode_key(self.token_key.get_secret_value())
+        except VaultError as exc:
+            raise RuntimeError(f"JARVIS_TOKEN_KEY is invalid: {exc}") from exc
 
     def _require_google_auth_config(self) -> None:
         if not self.google_client_id or self.google_client_secret is None:

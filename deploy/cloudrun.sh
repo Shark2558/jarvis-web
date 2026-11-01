@@ -3,6 +3,8 @@
 #
 # Does: enable APIs → store secrets in Secret Manager → build from this repo → deploy a PUBLIC
 # URL (the app does its own Google sign-in, owner-only) capped at ONE instance and scale-to-zero.
+# Google tools (slice 6): the owner links Calendar + Gmail from the console. Their tokens are
+# stored encrypted (AES-256-GCM) under the key in secret jarvis-token-key, generated here once.
 # Memory: conversations, pending approvals and the audit chain live in Firestore (Native mode)
 # in THIS project, region asia-south1, inside the free tier. No key: the service account is used.
 # Runs as its own service account (jarvis-run), which may read only JARVIS's own secrets (granted
@@ -55,7 +57,8 @@ say "1/7  Project: $PROJECT   Region: $REGION   Address will be: $BASE_URL"
 say "2/7  Switching on the Google services JARVIS needs (takes ~1 minute)"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
   secretmanager.googleapis.com firestore.googleapis.com iam.googleapis.com \
-  iamcredentials.googleapis.com sts.googleapis.com --quiet
+  iamcredentials.googleapis.com sts.googleapis.com \
+  calendar-json.googleapis.com gmail.googleapis.com --quiet
 
 # Quick (prompt-free) only for a service this script fully set up before: it has the owner set.
 QUICK=no
@@ -75,6 +78,7 @@ ask_secret() { # secret-name prompt
   if [ -z "$v" ]; then secret_exists "$1" || die "$2 is required."; else put_secret "$1" "$v"; fi
 }
 rand() { head -c 48 /dev/urandom | base64 | tr -d '\n=+/' | head -c 48; }
+rand_key() { head -c 32 /dev/urandom | base64 | tr -d '\n'; }   # exactly 32 bytes: AES-256 key
 
 if [ "$QUICK" = yes ]; then
 say "3/7  Using your saved answers - nothing to type (to change them: bash deploy/cloudrun.sh --reconfigure)"
@@ -153,6 +157,8 @@ BRAIN_ENV="${BRAIN_ENV}JARVIS_LLM_BACKEND=${DEFAULT_BRAIN}"
 fi
 secret_exists jarvis-session-secret || put_secret jarvis-session-secret "$(rand)"
 secret_exists jarvis-api-token || put_secret jarvis-api-token "$(rand)"
+# Encrypts the owner's Google tokens at rest. Generated once; rotating it unlinks Google.
+secret_exists jarvis-token-key || put_secret jarvis-token-key "$(rand_key)"
 
 say "4/7  Setting up JARVIS's memory (a Firestore database in your project)"
 if DBTYPE="$(gcloud firestore databases describe --database='(default)' --format='value(type)' 2>/dev/null)"; then
@@ -190,7 +196,7 @@ for role in roles/datastore.user roles/logging.logWriter; do
   bind "serviceAccount:${RUN_SA}" "$role"
 done
 for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key \
-              jarvis-openai-compat-key jarvis-session-secret jarvis-api-token; do
+              jarvis-openai-compat-key jarvis-session-secret jarvis-api-token jarvis-token-key; do
   secret_exists "$secret" || continue
   ok=no
   for _ in 1 2 3 4 5 6; do
@@ -218,12 +224,12 @@ INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_P
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
     --update-env-vars "$INFRA_ENV"
-    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest"
+    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 else
   CONFIG_FLAGS=(
     --set-env-vars "${INFRA_ENV},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV}"
-    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest"
+    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 fi
 gcloud run deploy "$SERVICE" --source . --region "$REGION" \
@@ -321,6 +327,21 @@ FIRST INSTALL ONLY: tell Google this address. Google Cloud Console -> APIs & Ser
 Credentials -> jarvis-web, then add:
    Authorised JavaScript origin :  $BASE_URL
    Authorised redirect URI      :  $BASE_URL/auth/callback
+   Authorised redirect URI      :  $BASE_URL/connect/google/callback
 and press Save (can take up to 5 minutes). Already done? Nothing to do.
 MSG
 fi
+cat <<'MSG'
+
+GOOGLE CALENDAR + GMAIL (once): APIs & Services -> OAuth consent screen (Google Auth Platform)
+  1. Data Access -> Add or remove scopes -> add these four and Save:
+       https://www.googleapis.com/auth/calendar.events
+       https://www.googleapis.com/auth/calendar.readonly
+       https://www.googleapis.com/auth/gmail.readonly
+       https://www.googleapis.com/auth/gmail.compose   (drafts AND sending)
+     When you connect, leave every box ticked: JARVIS refuses a partial link.
+  2. Audience -> Test users -> add your own Gmail address (the one JARVIS signs in with).
+  3. In JARVIS: panel -> Integrations -> Connect Google.
+  While the app stays in "Testing", Google expires the link every 7 days: JARVIS will show
+  "Needs reconnecting" - press Connect Google again. Publishing the app removes that limit.
+MSG

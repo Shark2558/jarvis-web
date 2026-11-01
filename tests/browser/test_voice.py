@@ -34,7 +34,7 @@ pytestmark = pytest.mark.browser
 
 VOICE_URL = re.compile(r".*/v1/voice(?:/[^?]*)?(?:\?.*)?$")
 APPROVAL_LINE = "That one needs your approval on screen, Sir."
-ALLOWANCE = "This month: 12,340 of 1,000,000 free characters · 3 of 60 free minutes · ≈ ₹0.00"
+ALLOWANCE = "This month: 12,340 of 900,000 free characters · 3 of 54 free minutes · ≈ ₹0.00"
 
 
 def _voice(
@@ -93,28 +93,39 @@ FAKE_SYNTH = """
   window.SpeechSynthesisUtterance = U;
 })();
 """
-# The browser's own recognition, faked: interim words, then a final result, then end.
+# The browser's own recognition, faked: interim words, then a final result, then end. stop() is
+# what a browser does on "tap again": the words heard so far as a final result, then end.
+# window.__recEndMs: when the browser ends by itself (a pause in speech); window.__recSilent: nobody
+# speaks (no result until stop() / abort()).
 FAKE_RECOGNITION = """
 (() => {
   window.__rec = [];
   window.__said = 'Remind me about the review.';
+  window.__recEndMs = 1200;
+  window.__recSilent = false;
   const result = (transcript, isFinal) => ({ resultIndex: 0,
     results: [Object.assign([{ transcript }], { isFinal })] });
   class R {
-    constructor() { window.__rec.push(this); this.aborted = false; }
-    start() {
-      const said = window.__said;
-      const first = said.split(' ')[0];
-      this.t1 = setTimeout(() => this.onresult && this.onresult(result(first, false)), 60);
-      this.t2 = setTimeout(() => {
-        if (this.aborted) return;
-        if (this.onresult) this.onresult(result(said, true));
-        if (this.onend) this.onend();
-      }, 1200);
+    constructor() {
+      window.__rec.push(this); this.aborted = false; this.stopped = false; this.done = false;
     }
-    stop() {}
+    start() {
+      this.silent = window.__recSilent;
+      if (this.silent) return;
+      const first = window.__said.split(' ')[0];
+      this.t1 = setTimeout(() => this.onresult && this.onresult(result(first, false)), 60);
+      this.t2 = setTimeout(() => this.finish(), window.__recEndMs);
+    }
+    finish() {
+      if (this.done) return;
+      this.done = true; clearTimeout(this.t1); clearTimeout(this.t2);
+      if (!this.silent && this.onresult) this.onresult(result(window.__said, true));
+      if (this.onend) this.onend();
+    }
+    stop() { this.stopped = true; setTimeout(() => this.finish(), 30); }
     abort() {
-      this.aborted = true; clearTimeout(this.t1); clearTimeout(this.t2);
+      if (this.done) return;
+      this.done = true; this.aborted = true; clearTimeout(this.t1); clearTimeout(this.t2);
       if (this.onerror) this.onerror({ error: 'aborted' });
       if (this.onend) this.onend();
     }
@@ -122,19 +133,34 @@ FAKE_RECOGNITION = """
   window.SpeechRecognition = R; window.webkitSpeechRecognition = R;
 })();
 """
-# A stand-in for console-wakeword.js (window.JarvisWake), recording what the console gives it.
+# A stand-in for console-wakeword.js (window.JarvisWake), recording what the console gives it. Like
+# the real module it has a `state` and pause() / resume(); frames count only while it listens.
 FAKE_WAKE = """
-window.__wake = { started: 0, stopped: 0, loaded: 0, frames: 0, len: 0, rate: 0 };
+window.__wake = { started: 0, stopped: 0, loaded: 0, frames: 0, len: 0, rate: 0, paused: 0,
+  resumed: 0, pausedAt: 0, resumedAt: 0 };
 window.JarvisWake = {
+  state: 'idle',
   supported: () => true,
   load() { window.__wake.loaded++; return Promise.resolve(); },
   start(opts, onWake) {
-    const w = window.__wake; w.started++; w.rate = opts.sampleRate; w.fire = onWake;
+    const w = window.__wake, W = window.JarvisWake;
+    w.started++; w.rate = opts.sampleRate; w.fire = onWake;
+    W.state = 'listening';
     const off = opts.subscribe((f) => {
+      if (W.state !== 'listening') return;
       w.frames++; w.len = f.length; w.int16 = f instanceof Int16Array;
     });
-    return { stop() { w.stopped++; off(); } };
+    return { stop() { w.stopped++; W.state = 'idle'; off(); } };
   },
+  pause() {
+    if (this.state !== 'listening') return;
+    this.state = 'paused'; window.__wake.paused++; window.__wake.pausedAt = performance.now();
+  },
+  resume() {
+    if (this.state !== 'paused') return;
+    this.state = 'listening'; window.__wake.resumed++; window.__wake.resumedAt = performance.now();
+  },
+  stop() { window.__wake.stopped++; this.state = 'idle'; },
 };
 """
 
@@ -148,16 +174,20 @@ def voice_view(**over: Any) -> dict[str, Any]:
         "wit_levels": WIT,
         "allowance": {
             "tts": {
+                "type": "chirp3-hd",
                 "used_chars": 12340,
-                "free_chars": 1000000,
+                "free_chars": 900000,
                 "by_type": {
-                    "chirp3-hd": {"used": 12340, "free": 1000000},
-                    "studio": {"used": 0, "free": 1000000},
+                    "chirp3-hd": {"used": 12340, "free": 900000},
+                    "studio": {"used": 0, "free": 900000},
                 },
             },
-            "stt": {"used_seconds": 150, "free_seconds": 3600},
+            "stt": {"used_seconds": 150, "free_seconds": 3240},
+            "month": "2026-11",
+            "resets_at": "2026-12-01T00:00:00-08:00",
+            "scope": "deployment",
         },
-        "month": {"voice_inr": 0.0},
+        "month": {"month": "2026-11", "voice_inr": 0.0},
         "language": "en-IN",
     }
     view.update(over)
@@ -203,6 +233,10 @@ class FakeVoice:
         }
         self.hold_puts = False
         self.held: list[Any] = []
+        self.get_status, self.get_code = 200, "rate_limited"
+        self.put_status, self.put_code = 200, "rate_limited"
+        self.hold_transcribe = False
+        self.held_transcribe: list[Any] = []
         page.route(VOICE_URL, self._handle)
 
     def to(self, method: str, path: str) -> list[dict[str, Any]]:
@@ -227,8 +261,13 @@ class FakeVoice:
         }
         self.calls.append(call)
         if path == "/v1/voice" and req.method == "GET":
+            if self.get_status != 200:
+                return self._refuse(route, self.get_status, self.get_code)
             return _json(route, 200, self.view)
         if path == "/v1/voice/settings" and req.method == "PUT":
+            if self.put_status != 200:
+                status, self.put_status = self.put_status, 200  # once
+                return self._refuse(route, status, self.put_code)
             if self.hold_puts:
                 self.held.append((route, body))
                 return None
@@ -246,6 +285,9 @@ class FakeVoice:
                 },
             )
         if path == "/v1/voice/transcribe" and req.method == "POST":
+            if self.hold_transcribe:
+                self.held_transcribe.append(route)
+                return None
             if self.transcribe_status != 200:
                 return self._refuse(route, self.transcribe_status, self.transcribe_code)
             return _json(route, 200, self.transcript)
@@ -284,6 +326,11 @@ class FakeVoice:
         held, self.held = self.held, []
         for route, body in held:
             self._put(route, body)
+
+    def release_transcribe(self) -> None:
+        held, self.held_transcribe = self.held_transcribe, []
+        for route in held:
+            _json(route, 200, self.transcript)
 
 
 def speechlike_wav(path: Path, rate: int = 48000) -> None:
@@ -423,7 +470,22 @@ CHUNK_JS = """([text, deltas]) => {
             "Name | Role\n--- | ---\nPriya | Manager\nDone.",
             ["The details are on screen, Sir.", "Done."],
         ),
-        ("1. Buy milk\n2. Call Priya", ["1. Buy milk", "2. Call Priya"]),
+        # list items: one sentence each, without the markers (as the server's speakable() does)
+        ("1. Buy milk\n2. Call Priya", ["Buy milk.", "Call Priya."]),
+        ("1. Yes\n2. No", ["Yes.", "No."]),
+        ("Options:\n1. Yes\n2. No\nPick one.", ["Options:", "Yes. No. Pick one."]),
+        ("- Eggs\n- Bread\n* Milk!\n+ Tea\n• Jam", ["Eggs.", "Bread. Milk! Tea. Jam."]),
+        ("1) Plan\n    - pick a date\n2) Book", ["Plan.", "pick a date. Book."]),
+        ("1.5 million came. 2023 was busy.", ["1.5 million came.", "2023 was busy."]),
+        # 4-space / tab indented code is never spoken
+        (
+            "Run this:\n    rm -rf build\n    make\nThen rebuild.",
+            ["Run this:", "The details are on screen, Sir.", "Then rebuild."],
+        ),
+        (
+            "Steps:\n\n\tmake build\n\tmake test\n\nDone.",
+            ["Steps:", "The details are on screen, Sir.", "Done."],
+        ),
         ("Well... then. Wait… really? Yes!", ["Well... then.", "Wait… really? Yes!"]),
         ("```\nonly code\n```", ["The details are on screen, Sir."]),
         ("**Bold** move, J. K. Rowling said.", ["**Bold** move, J. K. Rowling said."]),
@@ -1111,7 +1173,7 @@ def test_wake_switch_feeds_the_wake_word_module_and_wakes_the_mic(
     assert c.page.evaluate("window.__wake.frames") == before  # gated while JARVIS listens
     assert panel.locator("#vWakeChip").text_content() == "Paused while JARVIS speaks or listens"
     c.page.keyboard.press("Escape")
-    c.page.wait_for_timeout(400)
+    c.page.wait_for_timeout(1000)  # resumed ~0.4 s after the mic went idle
     assert c.page.evaluate("window.__wake.frames") > before  # listening for the wake word again
     sw.click()  # off: the module is stopped and the microphone closed
     assert c.page.evaluate("window.__wake.stopped") == 1

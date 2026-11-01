@@ -50,6 +50,9 @@ class RedisSessionStore(SessionStore):
         pipe.expire(self._k_user(session.user_id), self._ttl)
         await pipe.execute()
 
+    async def _unindex(self, user_id: str, session_id: str) -> None:
+        await self._r.zrem(self._k_user(user_id), session_id)
+
     async def delete(self, session_id: str) -> bool:
         s = await self.get(session_id)
         if s is None:

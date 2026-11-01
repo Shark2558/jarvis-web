@@ -9,6 +9,9 @@
   const ssGet = (k) => { try { return sessionStorage.getItem(k) || ''; } catch (_) { return ''; } };
   const ssSet = (k, v) => { try { sessionStorage.setItem(k, v); } catch (_) {} };
   const compact = () => window.matchMedia('(max-width: 960px)').matches;
+  // visual engine (console-fx.js); the console still works if it failed to load
+  const FX = window.JarvisFX || { core: (s) => `<span class="core ${s}" aria-hidden="true"></span>`,
+    setBusy() {}, setAlert() {}, ripple() {}, refresh() {} };
 
   const state = { sessionId: null, authMode: 'token', token: ssGet('jarvis_token'), honorific: 'Sir',
     brains: [], brain: null, busy: false };
@@ -40,24 +43,24 @@
   const LOCK = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="9" width="12" height="8" rx="2.2"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/></svg>';
   function showGate() {
     const box = $('gateBox');
-    const head = '<div class="orb lg" aria-hidden="true"></div><h2 id="gateTitle">JARVIS</h2>';
+    const head = FX.core('lg') + '<h2 id="gateTitle">JARVIS</h2>';
     if (state.authMode === 'google') {
       box.innerHTML = head + '<p>Your private assistant. Sign in with the Google account registered as the owner.</p>' +
-        `<button class="cta" id="gBtn">${LOCK}Sign in with Google</button>` +
+        `<button class="cta lift" id="gBtn">${LOCK}Sign in with Google</button>` +
         '<div class="fine">Any other account is refused.</div>';
       $('gBtn').addEventListener('click', () => { location.href = '/auth/login'; });
     } else {
       box.innerHTML = head + '<p>Enter the access token for this server.</p>' +
         '<input id="tokIn" type="password" placeholder="Access token" autocomplete="current-password" aria-label="Access token">' +
-        `<button class="cta" id="tokBtn">${LOCK}Continue</button>`;
+        `<button class="cta lift" id="tokBtn">${LOCK}Continue</button>`;
       const go = () => { state.token = $('tokIn').value.trim(); if (!state.token) return; ssSet('jarvis_token', state.token); hideGate(); boot(); };
       $('tokBtn').addEventListener('click', go);
       $('tokIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
       setTimeout(() => $('tokIn').focus(), 50);
     }
-    $('gate').classList.add('show');
+    $('gate').classList.add('show'); FX.refresh();
   }
-  function hideGate() { $('gate').classList.remove('show'); }
+  function hideGate() { $('gate').classList.remove('show'); FX.refresh(); }
 
   // ---- conversation -------------------------------------------------------------------------
   function greeting() {
@@ -67,16 +70,16 @@
   function renderWelcome() {
     const log = $('log'); log.innerHTML = '';
     const w = document.createElement('div'); w.className = 'welcome'; w.id = 'welcome';
-    w.innerHTML = '<div class="orb lg" aria-hidden="true"></div><h1></h1><p>How can I help?</p><div class="chips"></div>';
+    w.innerHTML = FX.core('lg') + '<h1></h1><p>How can I help?</p><div class="chips"></div>';
     w.querySelector('h1').textContent = greeting();
     const chips = w.querySelector('.chips');
     SUGGESTIONS.forEach(s => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = s;
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'chip lift'; b.textContent = s;
       b.addEventListener('click', () => send(s)); chips.appendChild(b);
     });
-    log.appendChild(w);
+    log.appendChild(w); FX.refresh();
   }
-  function clearWelcome() { const w = $('welcome'); if (w) w.remove(); }
+  function clearWelcome() { const w = $('welcome'); if (w) { w.remove(); FX.refresh(); } }
   function scrollDown() { const s = $('scroll'); s.scrollTop = s.scrollHeight; }
 
   function addMsg(role, text, metaParts) {
@@ -87,7 +90,7 @@
       $('log').appendChild(d); scrollDown(); return;
     }
     const row = document.createElement('div'); row.className = 'row ' + role;
-    const b = document.createElement('div'); b.className = 'bubble' + (role === 'jarvis' ? ' glass' : '');
+    const b = document.createElement('div'); b.className = 'bubble';
     b.textContent = text; row.appendChild(b);
     if (metaParts && metaParts.length) {
       const m = document.createElement('div'); m.className = 'meta';
@@ -100,7 +103,8 @@
     const t = $('typing');
     if (on && !t) {
       const row = document.createElement('div'); row.className = 'row jarvis'; row.id = 'typing';
-      row.innerHTML = '<div class="bubble glass typing" aria-label="JARVIS is thinking"><i></i><i></i><i></i></div>';
+      row.innerHTML = '<div class="bubble typing" role="status" aria-label="JARVIS is thinking">' +
+        '<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span class="lbl" aria-hidden="true">Processing</span></div>';
       $('log').appendChild(row); scrollDown();
     } else if (!on && t) { t.remove(); }
   }
@@ -117,14 +121,14 @@
   function renderApprovals(list) {
     const el = $('approvals');
     $('approvalCount').textContent = list.length ? String(list.length) : '';
-    $('panelBtn').classList.toggle('badge', list.length > 0);
+    $('panelBtn').classList.toggle('badge', list.length > 0); FX.setAlert(list.length > 0);
     if (!list.length) { el.innerHTML = '<div class="empty">Nothing waiting.</div>'; return; }
     el.innerHTML = list.map(a => `
       <div class="approval" data-id="${esc(a.id)}" data-sid="${esc(a.session_id || '')}">
         <div class="title">${esc(a.tool.replace(/_/g, ' '))} <span class="tag">${esc(a.risk)}</span></div>
         <p>${esc(a.summary)}</p>
         <pre>${esc(JSON.stringify(a.arguments, null, 2))}</pre>
-        <div class="actions"><button class="btn primary approve">Approve</button><button class="btn decline">Decline</button></div>
+        <div class="actions"><button class="btn primary approve lift">Approve</button><button class="btn decline lift">Decline</button></div>
       </div>`).join('');
     el.querySelectorAll('.approval').forEach(card => {
       const id = card.dataset.id; const sid = card.dataset.sid || null;
@@ -205,8 +209,8 @@
     if (row.querySelector('.confirm')) return;
     const box = document.createElement('div'); box.className = 'confirm'; box.setAttribute('role', 'alert');
     const t = document.createElement('span'); t.textContent = 'Delete for good? This cannot be undone.';
-    const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'btn danger'; yes.textContent = 'Delete';
-    const no = document.createElement('button'); no.type = 'button'; no.className = 'btn'; no.textContent = 'Keep';
+    const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'btn danger lift'; yes.textContent = 'Delete';
+    const no = document.createElement('button'); no.type = 'button'; no.className = 'btn lift'; no.textContent = 'Keep';
     no.addEventListener('click', () => box.remove());
     yes.addEventListener('click', async () => {
       yes.disabled = no.disabled = true;
@@ -280,7 +284,7 @@
 
   // ---- actions ------------------------------------------------------------------------------
   function busy(on) {
-    state.busy = on; $('orb').classList.toggle('busy', on); showTyping(on); syncSend();
+    state.busy = on; FX.setBusy(on); showTyping(on); syncSend();
   }
   function syncSend() { $('send').disabled = state.busy || !$('input').value.trim(); }
   function handleResponse(r) {
@@ -324,7 +328,7 @@
   });
   $('form').addEventListener('submit', (ev) => {
     ev.preventDefault(); const t = input.value.trim(); if (!t || state.busy) return;
-    input.value = ''; autosize(); syncSend(); send(t);
+    FX.ripple($('send')); input.value = ''; autosize(); syncSend(); send(t);
   });
 
   // toolbar

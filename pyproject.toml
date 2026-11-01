@@ -37,7 +37,7 @@ jarvis = "jarvis.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"jarvis.api" = ["static/*.html", "static/*.js"]
+"jarvis.api" = ["static/*.html", "static/*.js", "static/fonts/*.woff2", "static/fonts/*.txt"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

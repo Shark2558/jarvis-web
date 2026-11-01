@@ -4,8 +4,12 @@
 // on-page <canvas>, so panels can stack above or below any scene. If anything fails, the page keeps
 // the 2D Core / globe / construct (html lacks the `gl-on` class) and every feature still works.
 //
+// Nothing loads until a 3D canvas is actually on screen: on phones (rails and stage hidden) three.js
+// is never fetched and no GL context is created unless the owner opens the Construct tab.
 // Budget: <= 30 fps, devicePixelRatio <= 1.5. A scene renders only while its canvas is on screen
 // (IntersectionObserver) and the tab is visible; Motion Calm/Off renders still frames on change.
+// Teardown releases everything at once: one AbortController owns every listener, and the GL
+// context is force-released instead of waiting for garbage collection.
 // Governor: content always wins over decoration. If the whole page sustains under ~22 fps while the
 // scenes animate (a weak or software GPU), step down to 20 fps at DPR 1, then 12 fps, then retire the
 // 3D layer and let the cheap CSS-animated 2D emblems take over. It never steps back up during a page
@@ -39,8 +43,13 @@ function setText(id, text) {
   if (el && el.textContent !== text) el.textContent = text;
 }
 
-function createEngine(THREE, S) {
+/** `made` receives the renderer and the teardown as soon as they exist, so boot() can release a
+ *  half-built engine if construction throws. */
+function createEngine(THREE, S, made) {
+  const ac = new AbortController();
+  const on = { signal: ac.signal };
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
+  made.renderer = renderer;
   renderer.setPixelRatio(1); // we size in device pixels ourselves
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -51,6 +60,7 @@ function createEngine(THREE, S) {
   let fpsFrames = 0, fpsSince = 0;
   let tier = 0; // governor state
   const cadence = { prev: 0, sum: 0, n: 0, since: 0, slow: 0, warm: true };
+  made.teardown = dispose;
 
   function addView(canvasId, build) {
     const canvas = document.getElementById(canvasId);
@@ -143,21 +153,25 @@ function createEngine(THREE, S) {
   function dispose() {
     if (disposed) return;
     disposed = true; running = false;
+    ac.abort(); // removes every document / window / canvas listener this engine added
     try { renderer.setAnimationLoop(null); } catch (_) { /* already gone */ }
     observers.forEach(o => o.disconnect());
     views.forEach(v => { try { v.s.dispose(); } catch (_) { /* best effort */ } });
     try { renderer.dispose(); } catch (_) { /* best effort */ }
+    try { renderer.forceContextLoss(); } catch (_) { /* best effort */ }
   }
 
   gl.addEventListener('webglcontextlost', (e) => {
+    if (disposed) return; // our own forceContextLoss() on teardown is not an outage
     e.preventDefault(); // allow the browser to restore it
     lost = true; running = false; renderer.setAnimationLoop(null);
     root.classList.remove('gl-on'); root.classList.add('gl-lost');
-  }, false);
+  }, on);
   gl.addEventListener('webglcontextrestored', () => {
+    if (disposed) return;
     lost = false; shown = false; root.classList.remove('gl-lost');
     views.forEach(sizeView); sync();
-  }, false);
+  }, on);
 
   const tzOffset = -new Date().getTimezoneOffset();
   const core = addView('coreGL', () => S.createCore(THREE));
@@ -185,11 +199,11 @@ function createEngine(THREE, S) {
   views.forEach(v => { sizeView(v); io.observe(v.canvas); });
   observers.push(io);
 
-  document.addEventListener('jarvis:theme', () => { const p = palette(); views.forEach(v => v.s.palette(p)); if (!running) still(); });
-  document.addEventListener('jarvis:state', (e) => { views.forEach(v => v.s.state(e.detail || {})); if (!running) still(); });
-  document.addEventListener('jarvis:motion', sync);
-  document.addEventListener('visibilitychange', sync);
-  window.addEventListener('pagehide', (e) => { if (!e.persisted) dispose(); });
+  document.addEventListener('jarvis:theme', () => { const p = palette(); views.forEach(v => v.s.palette(p)); if (!running) still(); }, on);
+  document.addEventListener('jarvis:state', (e) => { views.forEach(v => v.s.state(e.detail || {})); if (!running) still(); }, on);
+  document.addEventListener('jarvis:motion', sync, on);
+  document.addEventListener('visibilitychange', sync, on);
+  window.addEventListener('pagehide', (e) => { if (!e.persisted) dispose(); }, on);
   return { core, sync };
 }
 
@@ -206,12 +220,28 @@ async function boot() {
     root.classList.add('gl-off');
     return;
   }
+  const made = {};
   try {
-    createEngine(THREE, S).sync();
+    createEngine(THREE, S, made).sync();
   } catch (err) {
+    if (made.teardown) made.teardown();
+    else if (made.renderer) { try { made.renderer.dispose(); made.renderer.forceContextLoss(); } catch (_) { /* best effort */ } }
     root.classList.remove('gl-on');
     root.classList.add('gl-off');
   }
 }
 
-boot();
+/** Run `start` once, when the first of these canvases is actually on screen. */
+function whenAnyVisible(canvasIds, start) {
+  const els = canvasIds.map(id => document.getElementById(id)).filter(Boolean);
+  if (!els.length) return;
+  if (!window.IntersectionObserver) { start(); return; }
+  const io = new IntersectionObserver(entries => {
+    if (!entries.some(en => en.isIntersecting && en.boundingClientRect.width > 0)) return;
+    io.disconnect();
+    start();
+  });
+  els.forEach(el => io.observe(el));
+}
+
+whenAnyVisible(['coreGL', 'globeGL', 'constructGL'], boot);

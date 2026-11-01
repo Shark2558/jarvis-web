@@ -199,3 +199,13 @@ def test_every_served_asset_is_covered_by_package_data() -> None:
     for rel in served:
         assert (base / rel).is_file(), rel
         assert any(fnmatch.fnmatch(rel, g) for g in globs), f"{rel} not in package-data"
+
+
+async def test_privacy_banner_sits_in_the_deck_flow_not_over_panels(client: AsyncClient) -> None:
+    """Review HIGH 1: a fixed banner covered panel title bars; it must be an in-flow grid strip."""
+    css = (await client.get("/static/console-deck.css")).text
+    rules = re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+    notice = [body for sel, body in rules if ".deck > .notice" in sel]
+    assert notice, "the deck must style its privacy banner"
+    assert all("position:fixed" not in body.replace(" ", "") for body in notice)
+    assert any("grid-area:notice" in body.replace(" ", "") for body in notice)

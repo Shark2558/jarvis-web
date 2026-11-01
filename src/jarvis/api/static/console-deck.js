@@ -39,18 +39,28 @@
   let phoneTab = ids.includes(store.get(TAB_KEY)) ? store.get(TAB_KEY) : 'chat';
   let lastApply = 0; // geometry we wrote ourselves must not be remembered as a user resize
 
+  /** Where floating panels may live: below the ruler and the privacy banner, above the dock. */
   function deckBounds() {
-    const ruler = $('ruler'), top = ruler && ruler.offsetHeight ? ruler.getBoundingClientRect().bottom : 84;
-    return { left: 8, right: window.innerWidth - 8, top: Math.round(top + 6), bottom: window.innerHeight - 8 };
+    const ruler = $('ruler'), banner = $('banner'), dock = $('dock');
+    let top = ruler && ruler.offsetHeight ? ruler.getBoundingClientRect().bottom : 84;
+    if (banner && banner.offsetHeight) top = Math.max(top, banner.getBoundingClientRect().bottom);
+    const bottom = dock && dock.offsetHeight && !isPhone() ? dock.getBoundingClientRect().top - 8 : window.innerHeight - 8;
+    return { left: 8, right: window.innerWidth - 8, top: Math.round(top + 6), bottom: Math.round(bottom) };
+  }
+  /** CSS needs two measured lengths: the banner (phone panels start below it) and the room a
+   *  panel may take (its max-height, so a corner-resize can never reach under the dock). */
+  function syncMetrics() {
+    const b = deckBounds(), banner = $('banner');
+    root.style.setProperty('--notice-h', (banner && banner.offsetHeight ? Math.round(banner.getBoundingClientRect().height) : 0) + 'px');
+    root.style.setProperty('--panel-max-h', Math.max(160, b.bottom - b.top) + 'px');
   }
   function railWidth() { const r = document.querySelector('.rail-l'); return r && r.offsetWidth ? r.offsetWidth : 190; }
-  function dockHeight() { const d = $('dock'); return d && d.offsetHeight ? d.offsetHeight + 12 : 80; }
   /** Default places, derived from the viewport. Only the Conversation is open at first; the rest
    *  open from the dock (Approvals opens itself when something waits). */
   function defaults() {
     const b = deckBounds(), rail = railWidth();
     const sL = rail + 12, sR = window.innerWidth - rail - 12;
-    const bottom = window.innerHeight - dockHeight() - 8, availH = Math.max(240, bottom - b.top);
+    const bottom = b.bottom, availH = Math.max(240, bottom - b.top);
     const chatW = clamp(Math.round(window.innerWidth * 0.28), 360, 440);
     const col2 = sL + 300 + 14;
     return {
@@ -62,18 +72,26 @@
       construct: { x: Math.max(sL, sR - chatW - 14 - 330), y: b.top, w: 330, h: Math.min(380, availH), open: false },
     };
   }
+  /** Stored layout, validated field by field. Anything malformed falls back to the defaults, and a
+   *  layout with every panel closed reopens the Conversation, so the deck can never come up empty. */
   function loadLayout() {
     const d = defaults();
-    let saved = null;
-    try { saved = JSON.parse(store.get(LAYOUT_KEY) || 'null'); } catch (_) { saved = null; }
-    if (!saved || saved.v !== 1 || typeof saved.p !== 'object') return { v: 1, p: d };
-    const num = (n, fb) => (Number.isFinite(n) ? n : fb);
-    const p = {};
-    ids.forEach(id => {
-      const s = saved.p[id] || {}, def = d[id];
-      p[id] = { x: num(s.x, def.x), y: num(s.y, def.y), w: num(s.w, def.w), h: s.h === null ? null : num(s.h, def.h), open: typeof s.open === 'boolean' ? s.open : def.open };
-    });
-    return { v: 1, p };
+    try {
+      const saved = JSON.parse(store.get(LAYOUT_KEY) || 'null');
+      const obj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
+      if (!obj(saved) || saved.v !== 1 || !obj(saved.p)) return { v: 1, p: d };
+      const num = (n, fb, lo, hi) => (Number.isFinite(n) && n >= lo && n <= hi ? n : fb);
+      const p = {};
+      ids.forEach(id => {
+        const s = obj(saved.p[id]) ? saved.p[id] : {}, def = d[id];
+        p[id] = { x: num(s.x, def.x, -1e4, 1e5), y: num(s.y, def.y, -1e4, 1e5), w: num(s.w, def.w, 200, 1e4),
+          h: s.h === null ? null : num(s.h, def.h, 120, 1e4), open: typeof s.open === 'boolean' ? s.open : def.open };
+      });
+      if (!ids.some(id => p[id].open) && p.chat) p.chat.open = true;
+      return { v: 1, p };
+    } catch (_) {
+      return { v: 1, p: d };
+    }
   }
   function saveLayout() { store.set(LAYOUT_KEY, JSON.stringify(layout)); }
 
@@ -86,10 +104,11 @@
     const pos = clampPos(p.el, g.x, g.y);
     p.el.style.left = pos.x + 'px'; p.el.style.top = pos.y + 'px';
   }
-  function clampPos(el, x, y) {
-    const b = deckBounds(), w = el.offsetWidth || 300, h = el.offsetHeight || 200;
+  function clampTo(x, y, w, h, b) {
     return { x: Math.round(clamp(x, b.left, Math.max(b.left, b.right - w))), y: Math.round(clamp(y, b.top, Math.max(b.top, b.bottom - h))) };
   }
+  function clampPos(el, x, y) { return clampTo(x, y, el.offsetWidth || 300, el.offsetHeight || 200, deckBounds()); }
+  function place(el, pos) { el.style.left = pos.x + 'px'; el.style.top = pos.y + 'px'; }
   function clearGeom(p) { ['left', 'top', 'width', 'height', 'zIndex'].forEach(k => { p.el.style[k] = ''; }); }
   function setVisible(p, on) { p.el.hidden = !on; }
   const isOpen = (id) => !!panels[id] && !panels[id].el.hidden;
@@ -180,16 +199,15 @@
     if (!bar) return;
     bar.addEventListener('pointerdown', (e) => {
       if (isPhone() || e.button !== 0 || (e.target.closest('button,a,input,select,textarea') && !e.target.closest('[data-grip]'))) return;
-      const r = p.el.getBoundingClientRect();
-      drag = { p, pid: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, bar };
+      const r = p.el.getBoundingClientRect(); // size and bounds are read once, not on every move
+      drag = { p, pid: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height, b: deckBounds() };
       p.el.classList.add('dragging');
       try { bar.setPointerCapture(e.pointerId); } catch (_) {}
       e.preventDefault();
     });
     bar.addEventListener('pointermove', (e) => {
       if (!drag || drag.p !== p || e.pointerId !== drag.pid) return;
-      const pos = clampPos(p.el, e.clientX - drag.dx, e.clientY - drag.dy);
-      p.el.style.left = pos.x + 'px'; p.el.style.top = pos.y + 'px';
+      place(p.el, clampTo(e.clientX - drag.dx, e.clientY - drag.dy, drag.w, drag.h, drag.b));
     });
     const end = (e) => {
       if (!drag || drag.p !== p || e.pointerId !== drag.pid) return;
@@ -213,8 +231,7 @@
     if (!d || isPhone()) return;
     e.preventDefault();
     const k = e.shiftKey ? STEP * 4 : STEP;
-    const pos = clampPos(p.el, p.el.offsetLeft + d[0] * k, p.el.offsetTop + d[1] * k);
-    p.el.style.left = pos.x + 'px'; p.el.style.top = pos.y + 'px';
+    place(p.el, clampPos(p.el, p.el.offsetLeft + d[0] * k, p.el.offsetTop + d[1] * k));
     remember(p); layoutCore();
   }
   // a resize by the corner grip is remembered too (debounced; ignores our own geometry writes)
@@ -223,14 +240,19 @@
     const ro = new ResizeObserver(entries => entries.forEach(en => {
       const p = panels[en.target.dataset.panel];
       if (!p || performance.now() - lastApply < 400 || isPhone() || p.el.hidden || !p.resizable || !en.contentRect.width) return;
-      clearTimeout(timers[p.id]); timers[p.id] = setTimeout(() => { remember(p); if (p.id === 'chat') layoutCore(); }, 250);
+      clearTimeout(timers[p.id]);
+      timers[p.id] = setTimeout(() => { // a grown panel is pushed back inside the deck (never under the dock)
+        place(p.el, clampPos(p.el, p.el.offsetLeft, p.el.offsetTop)); remember(p); if (p.id === 'chat') layoutCore();
+      }, 250);
     }));
     ids.forEach(id => ro.observe(panels[id].el));
   }
 
   ids.forEach(id => { const b = panels[id].btn; if (b) b.addEventListener('click', () => toggle(id)); });
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
+    const t = e.target;
+    if (t && t.closest && (t.closest('input,textarea,select') || t.isContentEditable)) return; // Esc while typing is not "close"
     const el = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.panel[data-panel]') : null;
     if (!el) return;
     e.preventDefault();
@@ -240,12 +262,16 @@
   let resizeRaf = 0;
   window.addEventListener('resize', () => {
     cancelAnimationFrame(resizeRaf);
-    resizeRaf = requestAnimationFrame(() => { if (!isPhone()) ids.filter(isOpen).forEach(id => applyGeom(panels[id])); layoutCore(); drawRuler(); });
+    resizeRaf = requestAnimationFrame(reflow);
   });
-  if (phoneQ.addEventListener) phoneQ.addEventListener('change', applyMode);
+  function reflow() { syncMetrics(); if (!isPhone()) ids.filter(isOpen).forEach(id => applyGeom(panels[id])); layoutCore(); drawRuler(); }
+  // the privacy banner appears / disappears with the brain: panels move to stay clear of it
+  if (window.ResizeObserver && $('banner')) new ResizeObserver(() => reflow()).observe($('banner'));
+  if (phoneQ.addEventListener) phoneQ.addEventListener('change', () => { syncMetrics(); applyMode(); });
 
   // ================================================================================== vitals
-  const V = { lat: [], turns: 0, brain: '—', model: '—', cost: 0, wait: 0, audit: null, auditCount: 0, events: [], busy: false, alert: false };
+  // wait: undefined = not loaded yet, null = could not load ("—", never a fake 0); audit likewise
+  const V = { lat: [], turns: 0, brain: '—', model: '—', cost: 0, wait: undefined, audit: null, auditCount: 0, events: [], busy: false, alert: false };
   const started = Date.now();
   const setText = (id, text) => { const el = $(id); if (el && el.textContent !== text) el.textContent = text; };
   const setCls = (id, base, extra) => { const el = $(id); if (el) el.className = base + (extra ? ' ' + extra : ''); };
@@ -278,17 +304,17 @@
     setText('rBrain', V.brain); setText('sBrain', V.brain);
     setText('rModel', V.model); setText('sModel', V.model);
     setText('sCost', '$' + V.cost.toFixed(V.cost && V.cost < 0.01 ? 4 : 2));
-    const wait = String(V.wait);
-    setText('rApprovals', V.wait + ' waiting'); setCls('rApprovals', 'v', V.wait ? 'warn' : '');
+    const known = Number.isFinite(V.wait), wait = known ? String(V.wait) : '—';
+    setText('rApprovals', known ? V.wait + ' waiting' : '—'); setCls('rApprovals', 'v', V.wait ? 'warn' : '');
     setText('cWait', wait); setCls('cWait', 'v', V.wait ? 'warn' : '');
     setText('sWait', wait);
     const auditWord = V.audit == null ? '—' : V.audit ? 'Verified' : 'Tampered';
     setText('rAudit', auditWord); setCls('rAudit', 'v', V.audit == null ? '' : V.audit ? 'ok' : 'bad');
     setText('cAudit', auditWord); setCls('cAudit', 'v', V.audit == null ? '' : V.audit ? 'ok' : 'bad');
     setText('sAudit', V.audit == null ? '—' : `${auditWord} · ${V.auditCount} ${V.auditCount === 1 ? 'entry' : 'entries'}`);
-    const badge = $('dockBadge'); if (badge) { badge.hidden = !V.wait; badge.textContent = wait; }
+    const badge = $('dockBadge'); if (badge) { badge.hidden = V.wait === 0 || V.wait === undefined; badge.textContent = wait; }
     const ab = panels.approvals && panels.approvals.btn;
-    if (ab) ab.setAttribute('aria-label', V.wait ? `Approvals, ${V.wait} waiting` : 'Approvals');
+    if (ab) ab.setAttribute('aria-label', V.wait === null ? 'Approvals, could not load' : V.wait ? `Approvals, ${V.wait} waiting` : 'Approvals');
     if (panels.approvals) panels.approvals.el.classList.toggle('attention', V.wait > 0);
     setText('chatMeta', V.turns ? `${V.turns} ${V.turns === 1 ? 'turn' : 'turns'}` : '');
   }
@@ -333,10 +359,12 @@
     renderVitals();
   });
   document.addEventListener('jarvis:approvals', (e) => {
-    const d = e.detail || {}; V.wait = d.count || 0; renderVitals();
+    const d = e.detail || {}; V.wait = Number.isFinite(d.count) ? d.count : null; renderVitals();
     if (d.fresh && !isPhone()) open('approvals', { focus: false }); // something new needs the owner
   });
-  document.addEventListener('jarvis:audit', (e) => { const d = e.detail || {}; V.audit = !!d.verified; V.auditCount = d.count || 0; renderVitals(); });
+  document.addEventListener('jarvis:audit', (e) => {
+    const d = e.detail || {}; V.audit = typeof d.verified === 'boolean' ? d.verified : null; V.auditCount = d.count || 0; renderVitals();
+  });
   document.addEventListener('jarvis:event', (e) => addEvent(e.detail || {}));
   document.addEventListener('jarvis:state', (e) => { const d = e.detail || {}; V.busy = !!d.busy; V.alert = !!d.alert; renderState(); radar.kick(); });
   window.addEventListener('online', () => { renderNet(); renderState(); addEvent({ kind: 'info', text: 'Connection restored' }); });
@@ -480,6 +508,7 @@
   document.addEventListener('jarvis:motion', () => { radar.sync(); restartClock(); });
   document.addEventListener('jarvis:theme', () => radar.kick());
   buildRuler();
+  syncMetrics();
   applyMode();
   renderVitals(); renderNet(); renderState(); restartClock(); drawRuler(); radar.sync();
   setText('kVerts', '13'); setText('kEdges', '13'); setText('kFps', 'CSS'); // the flat 2D preview's real counts

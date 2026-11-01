@@ -177,8 +177,26 @@
   }
   // Each refresh costs database reads (free quota: 50k/day), so the panel refreshes only when
   // something in it can have changed: at start, after tool use, approvals, or a decision.
+  // Approvals and the audit log load independently; a failure shows "—" (never a fake 0), says so
+  // on the deck's log line, and offers Retry. A 401 is the sign-in gate's job, not an error here.
   async function refreshSide() {
-    try { renderApprovals(await api('/v1/approvals')); renderAudit(await api('/v1/audit?limit=40')); } catch (_) {}
+    try { renderApprovals(await api('/v1/approvals')); }
+    catch (e) { if (e.status !== 401) sideFailed('approvals', e); }
+    try { renderAudit(await api('/v1/audit?limit=40')); }
+    catch (e) { if (e.status !== 401) sideFailed('audit', e); }
+  }
+  function sideFailed(which, err) {
+    const approvals = which === 'approvals';
+    const el = $(approvals ? 'approvals' : 'audit');
+    el.innerHTML = '';
+    const msg = document.createElement('div'); msg.className = 'empty';
+    msg.textContent = approvals ? 'Couldn\'t load approvals.' : 'Couldn\'t load the activity log.';
+    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'btn lift retry'; retry.textContent = 'Retry';
+    retry.addEventListener('click', () => { retry.disabled = true; refreshSide(); });
+    el.append(msg, retry);
+    if (approvals) { $('approvalCount').textContent = ''; emit('jarvis:approvals', { count: null, fresh: false }); }
+    else { const ok = $('auditOk'); ok.textContent = 'Log unavailable'; ok.className = 'verified'; $('auditMeta').textContent = ''; emit('jarvis:audit', { verified: null, count: 0 }); }
+    note('error', `${approvals ? 'Approvals' : 'Activity log'} unavailable · ${err && err.message ? err.message : 'error'}`);
   }
   function bumpCurrentConvo(turns) {
     const row = document.querySelector(`.convo[data-id="${CSS.escape(state.sessionId || '')}"] .open small`);
@@ -211,7 +229,7 @@
       const open = document.createElement('button'); open.type = 'button'; open.className = 'open';
       const b = document.createElement('b'); b.textContent = c.title || 'Untitled conversation';
       const sm = document.createElement('small'); sm.textContent = `${when(c.updated_at)} · ${c.turn_count} ${c.turn_count === 1 ? 'message' : 'messages'}`;
-      open.append(b, sm); open.addEventListener('click', () => { if (!state.busy) loadConversation(c.id); });
+      open.append(b, sm); open.addEventListener('click', () => openConversation(c.id));
       const del = document.createElement('button'); del.type = 'button'; del.className = 'icon-btn del';
       del.innerHTML = TRASH; del.setAttribute('aria-label', 'Delete conversation: ' + (c.title || 'Untitled'));
       del.addEventListener('click', () => askDelete(row, c.id));
@@ -224,15 +242,25 @@
     const t = document.createElement('span'); t.textContent = 'Delete for good? This cannot be undone.';
     const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'btn danger lift'; yes.textContent = 'Delete';
     const no = document.createElement('button'); no.type = 'button'; no.className = 'btn lift'; no.textContent = 'Keep';
-    no.addEventListener('click', () => box.remove());
+    const del = row.querySelector('.del');
+    const keep = () => { box.remove(); if (del) del.focus(); };
+    no.addEventListener('click', keep);
+    box.addEventListener('keydown', (e) => { // Esc here means Keep; it must not close the History panel
+      if (e.key !== 'Escape' || e.isComposing) return;
+      e.preventDefault(); e.stopPropagation(); keep();
+    });
     yes.addEventListener('click', async () => {
+      const active = id === state.sessionId;
+      if (active && state.busy) { t.textContent = 'JARVIS is still answering here. Delete once the reply has arrived.'; return; }
       yes.disabled = no.disabled = true;
+      if (active) busy(true, false); // nothing may write to the conversation while it is being deleted
       try {
         await api(`/v1/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        if (id === state.sessionId) newConversation();
+        if (active) { busy(false); newConversation(); }
         note('info', 'Conversation deleted');
         refreshConvos();
       } catch (e) { box.remove(); addMsg('error', 'Couldn\'t delete that conversation. ' + e.message); }
+      finally { if (active && state.busy) busy(false); }
     });
     box.append(t, no, yes); row.appendChild(box); no.focus();
   }
@@ -262,6 +290,12 @@
       else if (e.status !== 404 && e.status !== 401) addMsg('error', 'Couldn\'t open that conversation. ' + e.message);
       return false;
     }
+  }
+  /** Open a saved conversation while holding the console, so a send cannot interleave. */
+  async function openConversation(id) {
+    if (state.busy) return;
+    busy(true, false);
+    try { await loadConversation(id); } finally { busy(false); }
   }
   function newConversation() { setSession(null); renderWelcome(); renderStats({}); input.focus(); }
   function startNew() { if (state.busy) return; newConversation(); Deck.open('chat', { focus: true }); note('info', 'New conversation'); }
@@ -301,8 +335,17 @@
   });
 
   // ---- actions ------------------------------------------------------------------------------
-  function busy(on) {
-    state.busy = on; FX.setBusy(on); showTyping(on); syncSend();
+  /** One action at a time. `thinking` shows the typing indicator and the Thinking state; loading
+   *  or deleting a conversation only holds the console. */
+  function busy(on, thinking = true) {
+    state.busy = on;
+    const show = on && thinking;
+    FX.setBusy(show); showTyping(show); syncSend();
+  }
+  /** After a reply, return focus to the composer only if the owner was there (or nowhere). */
+  function refocus() {
+    const a = document.activeElement, chat = $('p-chat');
+    if (!a || a === document.body || (chat && chat.contains(a))) input.focus();
   }
   function syncSend() { $('send').disabled = state.busy || !$('input').value.trim(); }
   function handleResponse(r, rttMs) {
@@ -325,19 +368,25 @@
       const r = await api('/v1/chat', { body: { message: text, session_id: state.sessionId, brain: state.brain } });
       handleResponse(r, performance.now() - t0);
     } catch (e) { showTyping(false); addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); note('error', 'Reply failed'); }
-    finally { busy(false); $('input').focus(); }
+    finally { busy(false); refocus(); }
   }
   async function decide(id, action, card, sid, tool) {
     if (state.busy) return; // one action at a time: a reply may still be arriving
     const target = sid || state.sessionId;
     if (!target) { addMsg('error', 'This approval belongs to a conversation that no longer exists.'); return; }
+    busy(true); // claimed before any await: a second click, a send or History cannot interleave
     card.querySelectorAll('button').forEach(b => { b.disabled = true; });
-    if (target !== state.sessionId && !(await loadConversation(target))) { // show it where it belongs
-      card.querySelectorAll('button').forEach(b => { b.disabled = false; }); refreshSide(); return;
-    }
-    busy(true); note('approval', `${action === 'approve' ? 'Approved' : 'Declined'} · ${tool || 'action'}`);
-    try { handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } }), { decided: true })); }
-    catch (e) { addMsg('error', `Couldn't ${action}. ` + e.message); refreshSide(); }
+    try {
+      if (!Deck.isOpen('chat')) Deck.open('chat', { focus: false }); // the outcome is a reply: show it (phones: switch tab)
+      if (target !== state.sessionId) { // show it in the conversation it belongs to
+        if (!(await loadConversation(target))) {
+          card.querySelectorAll('button').forEach(b => { b.disabled = false; }); refreshSide(); return;
+        }
+        showTyping(true); // loading the transcript cleared the indicator
+      }
+      note('approval', `${action === 'approve' ? 'Approved' : 'Declined'} · ${tool || 'action'}`);
+      handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } }), { decided: true }));
+    } catch (e) { showTyping(false); addMsg('error', `Couldn't ${action}. ` + e.message); refreshSide(); }
     finally { busy(false); }
   }
 
@@ -362,7 +411,7 @@
     renderWelcome();
     await loadBrains();
     const saved = lsGet('jarvis_session');
-    if (saved) await loadConversation(saved);
+    if (saved) { busy(true, false); try { await loadConversation(saved); } finally { busy(false); } }
     refreshSide(); refreshConvos();
     input.focus();
   }

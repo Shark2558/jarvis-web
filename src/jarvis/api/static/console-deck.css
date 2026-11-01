@@ -8,8 +8,8 @@
 
 .deck{position:relative;z-index:2;height:100%;height:100dvh;display:grid;
   grid-template-columns:var(--rail) minmax(0,1fr) var(--rail);
-  grid-template-rows:var(--top-h) var(--ruler-h) minmax(0,1fr);
-  grid-template-areas:"top top top" "ruler ruler ruler" "railL stage railR"}
+  grid-template-rows:var(--top-h) var(--ruler-h) auto minmax(0,1fr);
+  grid-template-areas:"top top top" "ruler ruler ruler" "notice notice notice" "railL stage railR"}
 
 /* tiny uppercase instrument labels (Share Tech Mono, wide tracking) */
 .k{font:400 10.5px/1.2 var(--tech);letter-spacing:.22em;text-transform:uppercase;color:var(--k)}
@@ -104,8 +104,9 @@ html.gl-on #coreGL{opacity:1}
 .core-bottom .ri{align-items:center}
 
 /* ---- floating panels -------------------------------------------------------------------------- */
+/* --panel-max-h is measured by console-deck.js: viewport minus top bar, ruler, banner and dock */
 .panel{position:fixed;z-index:20;left:0;top:0;width:360px;display:flex;flex-direction:column;min-width:260px;min-height:120px;
-  max-width:calc(100vw - 16px);max-height:calc(100dvh - var(--top-h) - var(--ruler-h) - 16px);
+  max-width:calc(100vw - 16px);max-height:var(--panel-max-h,calc(100dvh - var(--top-h) - var(--ruler-h) - var(--dock-h) - 24px));
   border-radius:var(--r-md);resize:both;overflow:hidden;contain:layout paint;
   transform-origin:50% 0;animation:panelIn .22s var(--ease) both}
 .panel.fixed-size{resize:none}
@@ -171,8 +172,11 @@ html[data-surface="night"] .panel.front{border-color:color-mix(in srgb,var(--acc
 html[data-surface="night"] .dk[aria-pressed="true"] svg{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--accent-2) 80%,transparent))}
 .dk .badge{position:absolute;top:4px;right:12px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--amber);color:#1C1300;font:700 11px/17px var(--font);text-align:center;box-shadow:0 0 10px rgba(245,158,11,.7)}
 
-/* ---- the privacy notice floats under the ruler -------------------------------------------------- */
-.deck > .notice{position:fixed;left:50%;top:calc(var(--top-h) + var(--ruler-h) + 8px);transform:translateX(-50%);margin:0;z-index:58;width:max-content;max-width:min(680px,calc(100vw - 32px))}
+/* ---- the privacy notice: an in-flow strip under the ruler (collapses to nothing when hidden), so it
+   can never cover a panel's title bar; console-deck.js measures it into --notice-h for phones -------- */
+.deck > .notice{grid-area:notice;position:relative;z-index:54;margin:0;max-width:none;width:auto;justify-content:center;align-items:center;
+  padding:7px 16px;border-radius:0;border-width:0 0 1px;box-shadow:none;font-size:13px;line-height:1.4}
+.deck > .notice svg{margin-top:0}
 .deck > .notice.show{animation:fadeIn .5s var(--ease) both}
 
 /* ---- motion ----------------------------------------------------------------------------------- */
@@ -198,7 +202,7 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
 /* ---- phones: one panel at a time, dock = tab bar, compact Core in the header ------------------ */
 @media (max-width: 899px){
   :root{--top-h:56px;--tab-h:64px}
-  .deck{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:"top" "main"}
+  .deck{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) auto minmax(0,1fr);grid-template-areas:"top" "notice" "main"}
   .ruler,.rail,.stage{display:none}
   .topbar{grid-template-columns:1fr auto;padding:0 8px 0 10px;gap:6px}
   .timebox,.wordmark{display:none}
@@ -208,7 +212,7 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
   .topbar .picker svg{right:9px}
   .icon-btn{width:40px;height:40px}
   #who{display:none}
-  .panel{left:8px;right:8px;top:calc(var(--top-h) + 8px);bottom:calc(var(--tab-h) + 8px + env(safe-area-inset-bottom));width:auto;height:auto;
+  .panel{left:8px;right:8px;top:calc(var(--top-h) + var(--notice-h,0px) + 8px);bottom:calc(var(--tab-h) + 8px + env(safe-area-inset-bottom));width:auto;height:auto;
     min-width:0;max-width:none;max-height:none;resize:none;animation-name:fadeIn}
   .ptitle{cursor:default;height:46px}
   .pbtn{width:42px;height:42px}
@@ -218,7 +222,8 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
   .dock .sep{display:none}
   .dk{flex:1 1 0;width:auto;min-width:0;height:56px;letter-spacing:.06em;font-size:9.5px}
   .dk .badge{right:calc(50% - 22px)}
-  .deck > .notice{top:calc(var(--top-h) + 6px);font-size:12.5px}
+  .deck > .notice{padding:6px 12px;font-size:12px;justify-content:flex-start;align-items:flex-start}
+  .deck > .notice svg{margin-top:1px}
   .menu{left:8px!important;right:8px!important;top:auto!important;bottom:8px;width:auto;max-height:82dvh;border-radius:18px}
   .sw-row{grid-template-columns:repeat(5,40px);justify-content:space-between;gap:10px}
   .gate-card{padding:34px 22px 26px}

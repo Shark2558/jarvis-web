@@ -10,7 +10,7 @@
   const ssSet = (k, v) => { try { sessionStorage.setItem(k, v); } catch (_) {} };
   const compact = () => window.matchMedia('(max-width: 960px)').matches;
   // visual engine (console-fx.js); the console still works if it failed to load
-  const FX = window.JarvisFX || { core: (s) => `<span class="core ${s}" aria-hidden="true"></span>`,
+  const FX = window.JarvisFX || { core: (s) => `<span class="core ${s === 'lg' || s === 'sm' ? s : ''}" aria-hidden="true"></span>`,
     setBusy() {}, setAlert() {}, ripple() {}, refresh() {} };
 
   const state = { sessionId: null, authMode: 'token', token: ssGet('jarvis_token'), honorific: 'Sir',

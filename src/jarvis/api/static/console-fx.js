@@ -130,7 +130,8 @@
       `<circle cx="60" cy="60" r="${lg ? 3.2 : 4.5}" fill="var(--accent)"/></g></svg>`;
   }
   function core(size) {
-    const cls = 'core ' + (size || '') + (state.busy ? ' busy' : '') + (state.alert ? ' alert' : '');
+    const sz = size === 'lg' || size === 'sm' ? size : '';
+    const cls = 'core ' + sz + (state.busy ? ' busy' : '') + (state.alert ? ' alert' : '');
     return `<span class="${cls.trim()}" aria-hidden="true">${coreSVG(size)}</span>`;
   }
   const ringAnims = () => {
@@ -216,7 +217,9 @@
     function cachedBlueprint() {
       if (grid && grid.w === W && grid.h === H && grid.c === A.join()) return grid.cv;
       const off = document.createElement('canvas'); off.width = Math.round(W * dpr); off.height = Math.round(H * dpr);
-      const o = off.getContext('2d'); o.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const o = off.getContext('2d');
+      if (!o) return null; // no 2D context: skip the grid rather than throw every frame
+      o.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx = o; // the drawing helpers use `ctx`; point them at the offscreen grid for one pass
       try {
         drawGrid(28, 4, 0.04, 0.075, 0, 0);
@@ -246,7 +249,7 @@
         seed() { ps = Array.from({ length: count() }, () => { const a = rnd(0, 6.283), s = rnd(6, 16); return { x: rnd(0, W), y: rnd(0, H), vx: Math.cos(a) * s, vy: Math.sin(a) * s, r: rnd(1.2, 2.2), plus: Math.random() < 0.18 }; }); },
         step(dt) { ps.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; if (p.x < -20) p.x = W + 20; if (p.x > W + 20) p.x = -20; if (p.y < -20) p.y = H + 20; if (p.y > H + 20) p.y = -20; }); },
         draw() {
-          ctx.drawImage(cachedBlueprint(), 0, 0, W, H);
+          const bp = cachedBlueprint(); if (bp) ctx.drawImage(bp, 0, 0, W, H);
           const L = phone() ? 110 : 140, L2 = L * L; ctx.lineWidth = 1;
           for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
             const dx = ps[i].x - ps[j].x, dy = ps[i].y - ps[j].y, d2 = dx * dx + dy * dy;
@@ -257,7 +260,7 @@
             ctx.fillStyle = rgba(A, 0.1); ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
           });
         },
-        still() { ctx.drawImage(cachedBlueprint(), 0, 0, W, H); },
+        still() { const bp = cachedBlueprint(); if (bp) ctx.drawImage(bp, 0, 0, W, H); },
       },
       sparks: {
         spawn(p, fresh) { p.x = rnd(-40, W); p.y = fresh ? rnd(0, H) : rnd(H * 0.55, H + 20); p.vx = rnd(14, 48); p.vy = -rnd(26, 80); p.max = rnd(1.8, 4.2); p.life = fresh ? rnd(0, p.max) : p.max; p.gold = Math.random() < 0.6; },
@@ -367,7 +370,8 @@
       raf = requestAnimationFrame(frame);
       if (now - last < FRAME_MS - 1) return;
       const dt = Math.min(0.1, (now - last) / 1000); last = now; t += dt;
-      ctx.clearRect(0, 0, W, H); F[kind].step(dt); F[kind].draw();
+      try { ctx.clearRect(0, 0, W, H); F[kind].step(dt); F[kind].draw(); }
+      catch (_) { stop(); } // decoration must never spam errors; the page keeps working
     }
     function stop() { running = false; cancelAnimationFrame(raf); }
     function paintStill() { stop(); if (!ctx) return; ctx.clearRect(0, 0, W, H); origin.at = -1; F[kind].still(); }
@@ -386,9 +390,10 @@
     }
     let fadeTimer = 0;
     function setKind(next) {
-      if (!ctx || next === kind) return;
+      if (!ctx) return;
+      clearTimeout(fadeTimer); // a pending swap from a quick A->B->A switch must not land
+      if (next === kind) { cv.style.opacity = ''; return; }
       const swap = () => { kind = next; origin.at = -1; F[kind].seed(); if (state.motion !== 'full') paintStill(); cv.style.opacity = ''; };
-      clearTimeout(fadeTimer);
       if (state.motion === 'off' || !W) { swap(); return; }
       cv.style.opacity = '0'; fadeTimer = setTimeout(swap, 200);
     }

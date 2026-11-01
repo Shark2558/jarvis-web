@@ -334,8 +334,14 @@ def make(browser: Any, server_url: str, token: str) -> Iterator[Callable[..., Co
         viewport: dict[str, int] = DESKTOP,
         device: dict[str, Any] | None = None,
         scripts: tuple[str, ...] = (),
+        real_wake: bool = False,
     ) -> Console:
         c = Console(browser, server_url, token, viewport)
+        if not real_wake:  # the real module is tested on its own; these tests use FAKE_WAKE or none
+            c.page.route(
+                "**/static/console-wakeword.js",
+                lambda r: r.fulfill(status=200, content_type="text/javascript", body=""),
+            )
         c.page.add_init_script(RECORDER)
         if device is not None:  # this device's voice settings, set before any script runs
             c.page.add_init_script(
@@ -1059,6 +1065,19 @@ def test_wake_switch_is_hidden_without_the_wake_word_module(make: Callable[..., 
     _voice_panel(c)
     assert c.page.evaluate("typeof window.JarvisWake") == "undefined"
     assert c.page.locator("#vWakeRow").is_hidden()
+    assert c.errors == []
+
+
+def test_wake_switch_is_offered_with_the_real_wake_word_module(
+    make: Callable[..., Console],
+) -> None:
+    c = make(real_wake=True)
+    FakeVoice(c.page)
+    c.open()
+    panel = _voice_panel(c)
+    assert c.page.evaluate("typeof window.JarvisWake.supported") == "function"
+    assert panel.locator("#vWakeRow").is_visible()
+    assert panel.locator("#vWake").get_attribute("aria-pressed") == "false"  # off by default
     assert c.errors == []
 
 

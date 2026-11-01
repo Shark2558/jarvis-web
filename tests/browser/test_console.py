@@ -63,8 +63,10 @@ class Console:
     def _on_console(self, msg: Any) -> None:
         if msg.type != "error":
             return
-        # The one 404 the console handles by design: a backend without the connect flow.
-        if "404" in msg.text and str(msg.location.get("url", "")).endswith("/v1/integrations"):
+        # The 404s the console handles by design: a backend without the connect flow, or without
+        # the morning brief (the Brief panel then says "Not available in this setup").
+        url = str(msg.location.get("url", ""))
+        if "404" in msg.text and url.endswith(("/v1/integrations", "/v1/brief/today")):
             return
         self.errors.append(f"console.error: {msg.text} @ {msg.location.get('url', '')}")
 

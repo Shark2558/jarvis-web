@@ -32,6 +32,7 @@ class Storage:
     audit: AuditTrail
     persistent: bool
     tokens: TokenStore = field(default_factory=_memory_tokens)
+    docs: Docs | None = None  # the port itself, for repositories built elsewhere (brief store)
 
 
 def doc_storage(docs: Docs, *, prefix: str = "jarvis_", token_key: bytes | None = None) -> Storage:
@@ -55,6 +56,7 @@ def doc_storage(docs: Docs, *, prefix: str = "jarvis_", token_key: bytes | None 
         audit=DocAuditLog(docs, prefix=prefix),
         persistent=True,
         tokens=tokens,
+        docs=docs,
     )
 
 

@@ -30,7 +30,7 @@ ALLOWED_FONTS = (
     "share-tech-mono-latin-400-normal.woff2",
 )
 THREE_URL = f"/static/vendor/{THREE_RELEASE}/three.module.min.js"
-DECK_SCRIPTS = ("console-fx.js", "console-deck.js", "console.js")
+DECK_SCRIPTS = ("console-fx.js", "console-deck.js", "console.js", "console-brief.js")
 MODULE_SCRIPTS = ("console-3d.js",)
 MODULE_DEPS = ("console-3d-scenes.js",)  # imported by console-3d.js, not by the page
 STYLES = ("console.css", "console-deck.css")
@@ -199,6 +199,109 @@ def test_every_served_asset_is_covered_by_package_data() -> None:
     for rel in served:
         assert (base / rel).is_file(), rel
         assert any(fnmatch.fnmatch(rel, g) for g in globs), f"{rel} not in package-data"
+
+
+# ---- slice 7: the Brief panel -------------------------------------------------------------------
+async def test_brief_script_finds_the_console_ready_however_late_it_arrives(
+    client: AsyncClient,
+) -> None:
+    """Review M1: jarvis:ready fires once. console-brief.js (deferred, after console.js) can arrive
+    after it on a slow network, so it also asks window.JarvisConsole.ready() when it starts."""
+    html = (await client.get("/")).text
+    # console-brief.js reads window.JarvisDeck when it starts; JarvisConsole only when it calls
+    names = ("console-deck.js", "console.js", "console-brief.js")
+    order = [html.index(f'src="/static/{n}"') for n in names]
+    assert order == sorted(order)
+    console_js = (await client.get("/static/console.js")).text
+    assert "window.JarvisConsole = Object.freeze({ api, ready: () => readyDetail })" in console_js
+    assert "readyDetail = Object.freeze({ returning: backFromGoogle })" in console_js
+    assert console_js.index("readyDetail = Object.freeze(") < console_js.index(
+        "emit('jarvis:ready', readyDetail)"
+    )
+    brief_js = (await client.get("/static/console-brief.js")).text
+    assert "document.addEventListener('jarvis:ready'" in brief_js
+    assert re.search(r"typeof \w+\.ready === 'function' \? \w+\.ready\(\) : null", brief_js)
+
+
+HTML_SINKS = (
+    "innerHTML",
+    "outerHTML",
+    "insertAdjacentHTML",
+    "document.write",
+    "writeln",
+    "createContextualFragment",
+    "DOMParser",
+    "setHTMLUnsafe",
+    "parseHTMLUnsafe",
+    "srcdoc",
+    ".href =",
+    "eval(",
+    "new Function",
+)
+# the same, however it is spaced or quoted: URL and handler attributes, string timers
+_URLISH = r"(?:on|href|src|srcdoc|action|formaction|xlink:href)"
+SINK_PATTERNS = (
+    r"\.(?:href|src|action|formAction)\s*=(?!=)",
+    rf"setAttribute\(\s*['\"`]{_URLISH}",
+    rf"setAttributeNS\([^,]*,\s*['\"`]{_URLISH}",
+    r"set(?:Timeout|Interval)\(\s*['\"`]",
+)
+
+
+def _sinks(js: str) -> list[str]:
+    """Every sink named in `js`. The whole text is scanned, comments included: stripping "//..."
+    would also hide code that follows a "//" inside a string ('https://x'; el.innerHTML = s)."""
+    found = [s for s in HTML_SINKS if s in js]
+    return found + [p for p in SINK_PATTERNS if re.search(p, js)]
+
+
+@pytest.mark.parametrize(
+    "js",
+    [
+        "const u = 'https://x.example/'; el.innerHTML = s;",
+        "el.insertAdjacentHTML('beforeend', s)",
+        "document.writeln(s)",
+        "document.createRange().createContextualFragment(s)",
+        "new DOMParser().parseFromString(s, 'text/html')",
+        "el.setHTMLUnsafe(s)",
+        "frame.srcdoc = s",
+        "a.href = s",
+        "a.href=s",
+        "img.src = s",
+        "el.setAttribute('onclick', s)",
+        'el.setAttribute( "href", s)',
+        "el.setAttributeNS(null, 'onload', s)",
+        "setTimeout('run()', 10)",
+    ],
+)
+def test_the_sink_scan_finds_each_sink(js: str) -> None:
+    assert _sinks(js), js
+
+
+def test_the_sink_scan_passes_safe_dom_code() -> None:
+    safe = "el.textContent = s; el.setAttribute('aria-label', s); l.htmlFor = 'x'; a === b;"
+    assert _sinks(safe) == []
+
+
+async def test_brief_script_never_parses_server_text_as_html(client: AsyncClient) -> None:
+    js = (await client.get("/static/console-brief.js")).text
+    assert _sinks(js) == []
+    assert "textContent" in js
+    # every write goes through the console's api() (cookie + X-Requested-With, or bearer token)
+    assert "fetch(" not in js
+    assert "/v1/brief/today" in js and "/v1/brief/generate" in js and "/v1/brief/seen" in js
+    assert "confirm_spend: true" in js and "confirm_inbox: true" in js
+
+
+async def test_brief_panel_and_dock_button_are_wired(client: AsyncClient) -> None:
+    html = (await client.get("/")).text
+    assert 'id="p-brief" data-panel="brief" aria-labelledby="t-brief"' in html
+    assert 'data-open="brief" aria-controls="p-brief" aria-pressed="false"' in html
+    assert '<dialog class="bdialog" id="briefDialog" role="alertdialog"' in html
+    assert 'id="briefNote" role="status"' in html
+    deck = (await client.get("/static/console-deck.js")).text
+    assert "'chat', 'brief', 'approvals'" in deck  # in the deck's order and default layout
+    assert re.search(r"\bbrief: \{ x:", deck)
 
 
 async def test_privacy_banner_sits_in_the_deck_flow_not_over_panels(client: AsyncClient) -> None:

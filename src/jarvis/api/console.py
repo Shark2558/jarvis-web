@@ -30,6 +30,7 @@ APP_ASSETS: dict[str, str] = {
     "console.js": _JS,
     "console-fx.js": _JS,  # theme engine, surfaces, background field, 2D Core, appearance menu
     "console-deck.js": _JS,  # Command Deck: panels, dock, rails, radar, vitals
+    "console-brief.js": _JS,  # morning Brief panel: today's brief, its settings and confirms
     "console-3d.js": _JS,  # three.js scenes (ES module; loads three lazily, 2D fallback)
     "console-3d-scenes.js": _JS,  # Core / Globe / Construct scene builders (ES module)
     "console.css": "text/css",

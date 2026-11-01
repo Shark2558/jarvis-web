@@ -10,7 +10,7 @@ and the UI see short friendly messages. Tokens are never logged.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 import httpx
@@ -36,8 +36,23 @@ REQUIRED_SCOPES: tuple[str, ...] = (
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.compose",
 )
+# Requested on connect but NOT required: a link without them keeps every slice 6 tool. gmail.insert
+# lets the morning brief (slice 7) add one message to the owner's own inbox — it has no
+# recipient, so it cannot send anything to anyone.
+INSERT_SCOPE = "https://www.googleapis.com/auth/gmail.insert"
+OPTIONAL_SCOPES: tuple[str, ...] = (INSERT_SCOPE,)
+# Google accepts users.messages.insert with any of these.
+INSERT_CAPABLE_SCOPES = frozenset(
+    {INSERT_SCOPE, "https://www.googleapis.com/auth/gmail.modify", "https://mail.google.com/"}
+)
 # openid+email so the callback can prove WHICH Google account consented (must equal the owner).
-TOOL_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES)
+TOOL_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES, *OPTIONAL_SCOPES)
+
+
+def can_insert(scopes: Iterable[str]) -> bool:
+    """True when the granted scopes allow messages.insert (inbox delivery of the brief)."""
+    return not INSERT_CAPABLE_SCOPES.isdisjoint(scopes)
+
 
 HTTP_TIMEOUT_S = 15.0
 REFRESH_SKEW_S = 60.0  # refresh when the access token has less than this left
@@ -362,6 +377,9 @@ def register_tools_oauth(oauth: Any, s: Settings) -> None:
 
 __all__ = [
     "AUTHORIZE_URL",
+    "INSERT_CAPABLE_SCOPES",
+    "INSERT_SCOPE",
+    "OPTIONAL_SCOPES",
     "REQUIRED_SCOPES",
     "REVOKE_URL",
     "TOKEN_URL",
@@ -371,6 +389,7 @@ __all__ = [
     "GoogleNotConnected",
     "GoogleScopesMissing",
     "build_google_connector",
+    "can_insert",
     "google_tools_configured",
     "google_tools_startup_note",
     "register_tools_oauth",

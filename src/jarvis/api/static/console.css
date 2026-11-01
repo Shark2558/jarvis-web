@@ -361,6 +361,86 @@ html[data-surface="night"] .welcome h1{font:400 clamp(21px,2.2vw,26px)/1.2 var(-
 .integ .confirm{margin-top:10px;flex-wrap:wrap}
 .integ .confirm span{flex:1 1 100%}
 
+/* ---- morning brief (slice 7): facts first, AI lines labelled, settings last. Text tokens only:
+   --ink/-2/-3, --accent-ink (AA on panel + tint), status inks; amber marks clashes ------------- */
+.bview.enter{animation:fadeIn .35s var(--ease) both}
+.bhead{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 12px}
+.bdate{font:700 18px/1.15 var(--hud);letter-spacing:.04em;color:var(--ink)}
+html[data-surface="night"] .bdate{font:400 16px/1.15 var(--tech);letter-spacing:.14em;text-transform:uppercase}
+.bmade{font:400 11px/1.3 var(--tech);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.bsec{margin-top:12px;padding-top:10px;border-top:1px solid var(--line-2)}
+.bsec h3,.bset h3{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;margin:0 0 8px;font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink)}
+.bsec h3 .bcount{letter-spacing:.12em;color:var(--ink-3)}
+.bevents,.binbox,.blines,.bchips{list-style:none;margin:0;padding:0}
+.bev{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px;padding:7px 0;border-top:1px dashed var(--line-2)}
+.bev:first-child{border-top:0;padding-top:2px}
+.bev.clash .btime{box-shadow:inset 2px 0 0 var(--amber);padding-left:7px}
+.btime{font:400 12.5px/1.45 var(--tech);letter-spacing:.03em;color:var(--accent-ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bwhat{min-width:0}
+.bwhat b{display:block;font-size:13.5px;font-weight:600;line-height:1.4;color:var(--ink);overflow-wrap:anywhere}
+.bwhat small{display:block;margin-top:2px;font-size:12px;line-height:1.4;color:var(--ink-2);overflow-wrap:anywhere}
+.bclash{display:flex;align-items:flex-start;gap:6px;margin-top:5px;font-size:12.5px;font-weight:600;line-height:1.4;color:var(--amber-ink);overflow-wrap:anywhere}
+.bclash svg{flex:none;width:14px;height:14px;margin-top:2px}
+.bfree{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-top:10px}
+.bk2{font:400 10.5px/1.2 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
+.bchips{display:flex;flex-wrap:wrap;gap:6px}
+.bchip{padding:4px 8px 3px;border-radius:4px;border:1px solid var(--line);background:var(--tint);font:400 12px/1.25 var(--tech);letter-spacing:.03em;color:var(--accent-ink);white-space:nowrap}
+.binbox li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:1px 10px;padding:7px 0;border-top:1px dashed var(--line-2)}
+.binbox li:first-child{border-top:0;padding-top:2px}
+.binbox b{font-size:13.5px;font-weight:600;line-height:1.4;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.binbox time{font:400 11.5px/1.4 var(--tech);color:var(--ink-3);white-space:nowrap}
+.binbox span{grid-column:1/-1;font-size:12.5px;line-height:1.4;color:var(--ink-2);overflow-wrap:anywhere}
+.bempty,.bmiss,.bwait{margin:0;font-size:13px;line-height:1.45;color:var(--ink-2)}
+.bwait{color:var(--ink);font-weight:600}
+.bmiss.warn{color:var(--amber-ink)}
+.bfine{margin:8px 0 0;font-size:12px;line-height:1.4;color:var(--ink-3);overflow-wrap:anywhere}
+.bstate{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.btn.bact{flex:none;height:32px;margin-top:8px;padding:0 12px;font-size:12px}
+.bai .blabel{margin:0 0 8px;padding:6px 9px;border-radius:var(--r-sm);background:var(--tint);border:1px solid var(--line-2);font-size:12px;line-height:1.4;color:var(--ink-2)}
+.blines li{position:relative;padding:3px 0 3px 16px;font-size:13.5px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.blines li::before{content:"";position:absolute;left:3px;top:.78em;width:5px;height:5px;transform:rotate(45deg);background:var(--accent)}
+.bdeliv{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;margin-top:12px;padding:8px 10px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--well-2);font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+.bdeliv b{font:400 11.5px/1.3 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ink)}
+.bdeliv.ok b{color:var(--ok-ink)} .bdeliv.bad b{color:var(--bad-ink)} .bdeliv.warn b{color:var(--amber-ink)}
+.bprep{display:flex;align-items:center;gap:12px;padding:6px 0;font:400 12.5px/1.3 var(--tech);letter-spacing:.12em;text-transform:uppercase;color:var(--accent-ink)}
+.bnote{margin-top:10px;padding:8px 10px;border-radius:var(--r-sm);font-size:13px;line-height:1.4;color:var(--ink-2);background:var(--well-2);border:1px solid var(--line-2)}
+.bnote:empty{display:none}
+.bnote.ok{color:var(--ok-ink);background:color-mix(in srgb,var(--ok) 12%,transparent);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+.bnote.bad{color:var(--bad-ink);background:var(--bad-tint);border-color:var(--bad-line)}
+.bset{margin-top:14px;padding:10px 12px 4px;border-radius:var(--r-md);background:var(--well-2);border:1px solid var(--line)}
+.bopt{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line-2)}
+.bset h3 + .bopt{border-top:0;padding-top:2px}
+.btxt{min-width:0;display:flex;flex-direction:column;align-items:flex-start}
+.bl{display:block;font:700 14px/1.2 var(--hud);letter-spacing:.05em;color:var(--ink)}
+html[data-surface="night"] .bl{font:400 12.5px/1.25 var(--tech);letter-spacing:.12em;text-transform:uppercase}
+.btxt small{display:block;margin-top:3px;font-size:12px;line-height:1.4;color:var(--ink-2)}
+/* toggle = a button with aria-pressed; the On/Off word means the state never rests on colour alone */
+.bsw{flex:none;display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 6px 0 4px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--ink-2);cursor:pointer}
+.bsw:hover{background:var(--tint);border-color:var(--line-2)}
+.bsw .track{position:relative;width:38px;height:22px;border-radius:11px;border:1px solid var(--line);background:var(--well);transition:background-color .2s var(--ease),border-color .2s var(--ease)}
+.bsw .track i{position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--ink-3);transition:transform .2s var(--ease),background-color .2s var(--ease)}
+.bsw[aria-pressed="true"] .track{background:var(--accent);border-color:var(--accent)}
+.bsw[aria-pressed="true"] .track i{transform:translateX(16px);background:var(--on-accent)}
+.bsw .st{min-width:26px;font:400 11.5px/1 var(--tech);letter-spacing:.14em;text-transform:uppercase;text-align:left;color:var(--ink-2)}
+.bsw[aria-pressed="true"] .st{color:var(--accent-ink)}
+.bsw[aria-disabled="true"]{cursor:not-allowed}
+.bsw[aria-disabled="true"]:hover{background:transparent;border-color:transparent}
+.bsw[aria-disabled="true"] .track{border-style:dashed;background:transparent}
+.bsel{flex:none;height:36px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--well);color:var(--ink);font:400 13.5px/1 var(--tech);letter-spacing:.06em;cursor:pointer}
+.bsel:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.bsel option{background:var(--well);color:var(--ink)}
+/* confirm dialog (native modal): solid panel colour so every line keeps its contrast */
+.bdialog{width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:22px 22px 18px;border-radius:var(--r-lg);border:1px solid var(--line);color:var(--ink);
+  background:linear-gradient(90deg,transparent 6%,color-mix(in srgb,var(--accent) 55%,transparent) 50%,transparent 94%) top/100% 1px no-repeat,var(--panel-solid);box-shadow:var(--sh-2)}
+.bdialog[open]{animation:pop .3s var(--ease) both}
+.bdialog::backdrop{background:var(--scrim,rgba(4,8,16,.55))}
+.bdialog h2{margin:0 0 6px;font:700 19px/1.2 var(--hud);letter-spacing:.03em;color:var(--ink)}
+html[data-surface="night"] .bdialog h2{font:400 15px/1.35 var(--tech);letter-spacing:.14em;text-transform:uppercase}
+.bdialog p{margin:10px 0 0;font-size:14px;line-height:1.5;color:var(--ink-2)}
+.bdialog p.strong{font-weight:650;color:var(--ink)}
+.bdialog p b{font-weight:650;color:var(--ink);overflow-wrap:anywhere}
+.bdialog .actions{margin-top:20px}
+
 /* ---- appearance menu ------------------------------------------------------------------------ */
 .menu{position:fixed;z-index:80;width:400px;max-height:calc(100dvh - 90px);overflow:auto;padding:16px 16px 14px;border-radius:var(--r-lg);box-shadow:var(--sh-2);animation:menuIn .26s var(--ease) both}
 .menu.card{background:linear-gradient(90deg,transparent 6%,color-mix(in srgb,var(--accent) 55%,transparent) 50%,transparent 94%) top/100% 1px no-repeat,var(--panel-solid)}
@@ -457,7 +537,9 @@ html[data-motion="calm"] .core *,html[data-motion="calm"] .core::after,html[data
 html[data-motion="calm"] .composer:focus-within::before,html[data-motion="calm"] .approval::after{animation:none!important}
 html[data-motion="calm"] .approval::after,html[data-motion="calm"] .core.alert::after{opacity:.75}
 html[data-motion="calm"] .welcome > *,html[data-motion="calm"] .row.user,html[data-motion="calm"] .row.jarvis .bubble,
-html[data-motion="calm"] .approval,html[data-motion="calm"] .convo,html[data-motion="calm"] .menu,html[data-motion="calm"] .gate-card,html[data-motion="calm"] .notice.show{animation-name:fadeIn!important}
+html[data-motion="calm"] .approval,html[data-motion="calm"] .convo,html[data-motion="calm"] .menu,html[data-motion="calm"] .gate-card,html[data-motion="calm"] .notice.show,
+html[data-motion="calm"] .bdialog[open]{animation-name:fadeIn!important}
+html[data-motion="calm"] .bsw .track,html[data-motion="calm"] .bsw .track i{transition-duration:.01s}
 html[data-motion="calm"] .row.jarvis .bubble::after,html[data-motion="calm"] .send.ripple::after{animation:none}
 html[data-motion="calm"] .lift:hover,html[data-motion="calm"] .lift:active,html[data-motion="calm"] .sw:hover{transform:none!important}
 html[data-motion="calm"] .lift{background-image:none}

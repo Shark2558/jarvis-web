@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import pytest
 
-from jarvis.tools.addresses import display_address, parse_address, parse_recipients
-from jarvis.tools.card import one_line
+from jarvis.tools.addresses import (
+    display_address,
+    parse_address,
+    parse_recipients,
+    plain_address,
+)
+from jarvis.tools.card import has_invisible_chars, has_line_breaking_chars, one_line
 from jarvis.tools.gmail_mime import check_header_value
 
 # ---- recipients -----------------------------------------------------------------------------
@@ -67,6 +72,53 @@ def test_parse_recipients_splits_lists_and_rejects_quote_spanning_input() -> Non
         parse_recipients(["ok@x.co", "evil@x..co"])
 
 
+@pytest.mark.parametrize(
+    "good",
+    [
+        "priya@example.com",
+        "P.Shah+work@Mail.Example.co.uk",
+        "a_b-c@x-y.example",
+        "user@xn--bcher-kva.example",
+        "user@site.xn--p1ai",
+    ],
+)
+def test_plain_address_keeps_strict_ascii_addr_specs(good: str) -> None:
+    assert plain_address(good) == good
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "www.evil-login.support/reset@z.co",  # security review F1 (a)
+        "a?b=c@x.com",
+        "a:b@x.com",
+        "a#b@x.com",
+        "o'brien@example.com",  # legal atext, but not needed to show a sender
+        "a..b@x.com",
+        ".a@x.com",
+        "a.@x.com",
+        "a@x",
+        "a@x..com",
+        "a@-x.com",
+        "a@x-.com",
+        "a@x.c0m",
+        "a@x.123",
+        "a@x.c",
+        "a@[203.0.113.9]",
+        "pаypal@x.com",  # Cyrillic а
+        "a@pаypal.com",
+        "a@bücher.example",
+        "a b@x.com",
+        "a@b.com\n",
+        "a@b@c.com",
+        "",
+        "x" * 65 + "@x.com",
+    ],
+)
+def test_plain_address_refuses_anything_else(bad: str) -> None:
+    assert plain_address(bad) == ""
+
+
 def test_display_address_shows_unicode_and_punycode_side_by_side() -> None:
     assert display_address("priya@example.com") == "priya@example.com"
     shown = display_address(parse_address("billing@p\u0430ypal.com"))  # Cyrillic \u0430
@@ -98,6 +150,46 @@ def test_one_line_strips_controls_bidi_and_collapses_whitespace() -> None:
     assert out == "Invoicegpj.exe Bcc: x yz end"  # invisible chars go, breaks become spaces
     for ch in ("\u202e", "\r", "\n", "\t", "\u2028", "\u200b", "\u2066", "\x07"):
         assert ch not in out
+
+
+@pytest.mark.parametrize(
+    "ch",
+    [
+        "­",  # soft hyphen (Cf)
+        "\U000e0041",  # tag LATIN CAPITAL A (Cf, tag block)
+        "\U000e0001",  # LANGUAGE TAG
+        "\U000e007f",  # CANCEL TAG
+        "͏",  # combining grapheme joiner
+        "ᅟ",  # Hangul choseong filler
+        "ᅠ",  # Hangul jungseong filler
+        "ㅤ",  # Hangul filler
+        "ﾠ",  # halfwidth Hangul filler
+        "᠎",  # Mongolian vowel separator
+        "️",  # variation selector 16
+        "\U000e0100",  # variation selector 17
+        "",  # private use (Co)
+        "\U000f0000",  # supplementary private use
+        "؀",  # Arabic number sign (Cf)
+        "⁪",  # inhibit symmetric swapping (Cf)
+    ],
+)
+def test_one_line_drops_every_format_filler_and_private_use_character(ch: str) -> None:
+    """Security review F7: by Unicode category, not a hand-picked list."""
+    assert one_line(f"a{ch}b", 10) == "ab"
+    assert has_invisible_chars(f"a{ch}b")
+    with pytest.raises(ValueError):
+        parse_address(f"a{ch}b@example.com")
+
+
+def test_one_line_tag_characters_and_soft_hyphen_together() -> None:
+    assert one_line("a\U000e0041­b", 10) == "ab"
+
+
+def test_newlines_and_tabs_are_breaks_not_invisible() -> None:
+    """Bodies keep their line breaks: a newline is never 'invisible'."""
+    assert not has_invisible_chars("line one\nline two\ttab\r\n")
+    assert has_line_breaking_chars("a\nb")
+    assert one_line("a\nb c", 10) == "a b c"
 
 
 def test_one_line_truncates_with_an_ellipsis() -> None:

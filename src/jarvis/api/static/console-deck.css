@@ -144,6 +144,10 @@ html[data-surface="night"] .panel.front{border-color:color-mix(in srgb,var(--acc
 #p-chat .thread{padding:14px 12px 10px}
 #p-chat .welcome .core{display:none}
 
+/* Brief panel: a reading panel that opens over the stage, so it is fully opaque (the Core's log line
+   and label never show through the text) */
+#p-brief.card{background:linear-gradient(90deg,transparent 6%,color-mix(in srgb,var(--accent) 55%,transparent) 50%,transparent 94%) top/100% 1px no-repeat,var(--panel-solid)}
+
 /* Vitals panel */
 .vit-spark{margin:4px 0 10px;padding:8px 10px 6px;border-radius:var(--r-sm);background:var(--tint);border:1px solid var(--line-2)}
 .vit-spark .rhead{margin:0}
@@ -174,6 +178,8 @@ html[data-surface="night"] .dk[aria-pressed="true"] svg{filter:drop-shadow(0 0 5
 .dk.wide{width:102px}
 .dk .short{display:none}
 .dk .badge{position:absolute;top:4px;right:12px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--amber);color:#1C1300;font:700 11px/17px var(--font);text-align:center;box-shadow:0 0 10px rgba(245,158,11,.7)}
+/* Brief: "a new brief is ready" dot (the button's accessible name says it too). Accent ink = AA on the card. */
+.dk .bdot{position:absolute;top:7px;left:calc(50% + 7px);width:9px;height:9px;border-radius:50%;background:var(--accent-ink);box-shadow:0 0 0 2px var(--panel-solid),0 0 8px var(--accent-2)}
 
 /* ---- the privacy notice: an in-flow strip under the ruler (collapses to nothing when hidden), so it
    can never cover a panel's title bar; console-deck.js measures it into --notice-h for phones -------- */
@@ -224,7 +230,8 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
   #p-chat .welcome .core{display:inline-block;--s:110px}
   .dock{left:0;right:0;bottom:0;transform:none;border-radius:0;gap:0;padding:4px 4px calc(4px + env(safe-area-inset-bottom));justify-content:space-between;border-left:0;border-right:0;border-bottom:0}
   .dock .sep{display:none}
-  .dk{flex:1 1 0;width:auto;min-width:0;height:56px;letter-spacing:.06em;font-size:9.5px}
+  /* eight tabs: ~48 px each at 390 px (touch target >= 44 px), labels kept, tracking tightened */
+  .dk{flex:1 1 0;width:auto;min-width:0;height:56px;gap:5px;letter-spacing:0;font-size:9px}
   .dk.wide{width:auto}
   .dk .full{display:none} .dk .short{display:inline}
   .dk .badge{right:calc(50% - 22px)}
@@ -238,4 +245,10 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
 @media (max-width: 380px){
   .status{padding:0 8px;letter-spacing:.08em}
   .topbar .picker select{max-width:108px}
+}
+/* very narrow phones: icons only; each tab keeps its name for screen readers (visually hidden text) */
+@media (max-width: 359px){
+  .dk > span:not(.short){position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .dk .short{display:none}
+  .dk svg{width:22px;height:22px}
 }

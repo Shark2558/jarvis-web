@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from billing_fakes import PricedMock, registry
+from billing_fakes import PricedMock, put_raw, registry
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
@@ -31,6 +31,7 @@ USAGE_KEYS = {
     "calls",
     "by_brain",
     "rate",
+    "limit_unreadable",
 }
 
 
@@ -81,7 +82,7 @@ async def test_usage_shape_with_nothing_spent(api: AsyncClient) -> None:
     assert re.fullmatch(r"\d{4}-\d{2}", j["month"])
     assert j["used_inr"] == 0 and j["calls"] == 0 and j["by_brain"] == []
     assert j["limit_inr"] is None and j["remaining_inr"] is None and j["percent"] is None
-    assert j["warn"] is False and j["reached"] is False
+    assert j["warn"] is False and j["reached"] is False and j["limit_unreadable"] is False
     assert j["rate"] == {"inr_per_usd": 95.24, "as_of": "2026-11-01", "source": "default"}
 
 
@@ -283,3 +284,71 @@ async def test_brief_cost_note_is_rupees_only(api: AsyncClient) -> None:
     j = (await api.get("/v1/brief/today", headers=BEARER)).json()
     note = j["ai_cost_note"]
     assert "₹" in note and "$" not in note
+
+
+# ---- fail closed: a limit or a month total that can't be read ------------------------------------
+
+
+async def test_an_unreadable_limit_is_shown_and_any_change_needs_the_confirm(
+    api: AsyncClient, paid: PricedMock
+) -> None:
+    b = api.app.state.billing  # type: ignore[attr-defined]
+    await put_raw(b.budgets._d, f"jarvis_budget/{UID}", {"monthly_limit_inr": "lots"})
+    await _spend(api, 12.0)
+    j = (await api.get("/v1/usage", headers=BEARER)).json()
+    assert set(j) == USAGE_KEYS and j["limit_unreadable"] is True
+    assert j["limit_inr"] is None and j["remaining_inr"] is None and j["percent"] is None
+    assert j["reached"] is False and j["warn"] is False and j["used_inr"] == 12.0
+    r = await api.post("/v1/chat", json={"message": "hi"}, headers=BEARER)
+    assert r.status_code == 503 and r.json()["error"] == "budget_unavailable"
+    assert paid.calls == []
+    r = await _put(api, {"monthly_limit_inr": 300})  # a "lower"? nobody knows what it was
+    assert r.status_code == 422 and r.json()["error"] == "invalid_budget"
+    assert "can't be read" in r.json()["detail"] and "$" not in r.json()["detail"]
+    r = await _put(api, {"monthly_limit_inr": 300, "confirm_raise": True})
+    assert r.status_code == 200
+    assert r.json()["limit_inr"] == 300 and r.json()["limit_unreadable"] is False
+    assert (await api.post("/v1/chat", json={"message": "hi"}, headers=BEARER)).status_code == 200
+
+
+async def test_an_unreadable_month_total_is_a_plain_503(api: AsyncClient) -> None:
+    b = api.app.state.billing  # type: ignore[attr-defined]
+    month = b.meter.month_of(b.clock())
+    await put_raw(b.meter._d, f"jarvis_usage/{UID}_{month}", {"inr_total": "lots"})
+    r = await api.get("/v1/usage", headers=BEARER)
+    assert r.status_code == 503 and r.json()["error"] == "budget_unavailable"
+    detail = r.json()["detail"]
+    assert "spending" in detail and "$" not in detail and "lots" not in detail
+
+
+async def test_a_storage_outage_on_the_usage_view_is_a_503_not_a_500(api: AsyncClient) -> None:
+    b = api.app.state.billing  # type: ignore[attr-defined]
+
+    async def broken(uid: str) -> int | None:
+        raise RuntimeError("firestore down")
+
+    b.budgets.get = broken
+    r = await api.get("/v1/usage", headers=BEARER)
+    assert r.status_code == 503 and r.json()["error"] == "budget_unavailable"
+    assert "firestore" not in r.json()["detail"].lower()
+
+
+@pytest.mark.parametrize(
+    ("path", "raw"),
+    [
+        ("/v1/usage/budget", '{"monthly_limit_inr": NaN}'),
+        ("/v1/usage/budget", '{"monthly_limit_inr": Infinity, "confirm_raise": true}'),
+        ("/v1/chat", '{"message": NaN}'),
+    ],
+)
+async def test_nan_in_a_json_body_is_a_422_not_a_crash(
+    api: AsyncClient, path: str, raw: str
+) -> None:
+    """Python's JSON reader accepts NaN; the default 422 echoed it back and failed to render."""
+    method = "PUT" if path.endswith("budget") else "POST"
+    r = await api.request(
+        method, path, content=raw, headers={**BEARER, "Content-Type": "application/json"}
+    )
+    assert r.status_code == 422
+    errs = r.json()["detail"]
+    assert errs and all(set(e) <= {"type", "loc", "msg"} for e in errs)  # the input isn't echoed

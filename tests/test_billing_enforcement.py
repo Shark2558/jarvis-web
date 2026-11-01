@@ -5,16 +5,19 @@ from __future__ import annotations
 
 import logging
 
+import anyio
 import pytest
 from billing_fakes import (
     NOW,
     UID,
     BrokenDocs,
+    DripStream,
     PricedMock,
     billing,
+    put_raw,
     registry,
 )
-from brief_fakes import OWNER_UID, BriefGoogle, connector, mail, ms, timed
+from brief_fakes import OWNER_UID, BriefGoogle, SlowDocs, connector, mail, ms, timed
 
 from jarvis.billing import Billing, BudgetPatch, BudgetReached, BudgetUnavailable
 from jarvis.brief.models import SettingsPatch
@@ -169,6 +172,41 @@ async def test_a_limit_check_that_cannot_read_fails_closed(
     assert r.reply and len(free.calls) == 1
 
 
+@pytest.mark.parametrize("value", ["500", float("nan"), True, 10**12, {"x": 1}, "missing"])
+async def test_a_corrupted_stored_limit_fails_closed_not_open(
+    settings: Settings, gateway: Gateway, value: object
+) -> None:
+    """A limit JARVIS can't read is not "no limit": no paid call until the owner sets it again."""
+    docs = MemoryDocs()
+    brain, _, paid, free, store = _brain(settings, gateway, docs=docs)
+    await put_raw(
+        docs,
+        f"jarvis_budget/{UID}",
+        {"user_id": UID} if value == "missing" else {"monthly_limit_inr": value},
+    )
+    with pytest.raises(BudgetUnavailable):
+        await brain.chat(_req())
+    with pytest.raises(BudgetUnavailable):
+        await brain.check_budget(_req())  # the stream route's 402/503 before it says 200
+    assert paid.calls == [] and await store.list_for_user(UID) == []
+    r = await brain.chat(_req(brain="gemini"))  # the free brain still answers
+    assert r.reply and len(free.calls) == 1
+
+
+@pytest.mark.parametrize("bad", ["900", float("nan"), -1.0, None])
+async def test_a_corrupted_month_total_fails_closed_not_open(
+    settings: Settings, gateway: Gateway, bad: object
+) -> None:
+    """A month total JARVIS can't read is not ₹0 spent."""
+    docs = MemoryDocs()
+    brain, bill, paid, _, _ = _brain(settings, gateway, docs=docs)
+    await _limit(bill, 10)
+    await put_raw(docs, f"jarvis_usage/{UID}_2026-11", {"inr_total": bad, "calls": 40})
+    with pytest.raises(BudgetUnavailable):
+        await brain.chat(_req())
+    assert paid.calls == []
+
+
 async def test_a_failed_meter_write_never_fails_the_reply(
     settings: Settings, gateway: Gateway, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -218,6 +256,35 @@ async def test_a_stream_cut_short_is_still_metered(settings: Settings, gateway: 
     first = await gen.__anext__()  # the owner reads one chunk, then goes away
     assert first
     await gen.aclose()
+    u = await bill.meter.get(UID, "2026-11")
+    assert u.calls == 1 and u.inr_total > 0
+
+
+async def test_a_stream_cut_off_while_the_model_is_still_writing_is_metered(
+    settings: Settings, gateway: Gateway
+) -> None:
+    """How a real disconnect looks: uvicorn speaks ASGI 2.3, so Starlette cancels the response
+    task through an anyio cancel scope while it waits for the model's next chunk. The meter write
+    in the stream's cleanup must not be cancelled with it (the provider bills what it wrote)."""
+    docs = SlowDocs()  # database calls really wait, like Firestore
+    brain, bill, paid, _, _ = _brain(settings, gateway, paid=DripStream(), docs=docs)
+    got: list[str] = []
+    first = anyio.Event()
+    async with anyio.create_task_group() as tg:
+
+        async def read() -> None:
+            async for d in brain.chat_stream(_req("a long answer please " * 10)):
+                got.append(d)
+                first.set()
+
+        async def client_goes_away() -> None:
+            await first.wait()
+            await anyio.sleep(0.005)  # the reader is now waiting for the next chunk
+            tg.cancel_scope.cancel()
+
+        tg.start_soon(read)
+        tg.start_soon(client_goes_away)
+    assert len(got) == 1 and len(paid.calls) == 1
     u = await bill.meter.get(UID, "2026-11")
     assert u.calls == 1 and u.inr_total > 0
 

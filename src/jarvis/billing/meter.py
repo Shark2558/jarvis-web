@@ -9,6 +9,10 @@ The month is the owner's (JARVIS_USER_TIMEZONE): spend made at 00:10 IST on 1 De
 December. Every increment is a read-modify-write transaction (Firestore retries it on a
 conflict), so concurrent replies never lose a call. Rupees are added at the rate of the moment
 by the caller, so past spend does not change when the rate moves.
+
+Fail closed: `inr_total` is what the owner's limit is compared with, so an existing month whose
+`inr_total` is not a finite number ≥ 0 is UNREADABLE (UsageUnreadable) — never "₹0 spent", and
+never silently reset by the next increment. The other fields are only shown and read leniently.
 """
 
 from __future__ import annotations
@@ -39,6 +43,16 @@ def _amount(v: object) -> float:
     """A stored money amount, or 0 when it is not a finite number ≥ 0."""
     if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v) or v < 0:
         return 0.0
+    return float(v)
+
+
+class UsageUnreadable(RuntimeError):
+    """This month's rupee total can't be read: the limit can't be checked (fail closed)."""
+
+
+def _total(v: object) -> float:
+    if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v) or v < 0:
+        raise UsageUnreadable("month total is not a finite number of rupees")
     return float(v)
 
 
@@ -74,13 +88,16 @@ class MonthUsage:
 
 
 def decode(doc: dict[str, Any] | None, month: str) -> MonthUsage:
-    if not isinstance(doc, dict):
+    """A stored month (None = nothing spent yet). Raises UsageUnreadable for a bad rupee total."""
+    if doc is None:
         return MonthUsage(month)
+    if not isinstance(doc, dict):
+        raise UsageUnreadable("month document is not a map")
     calls = doc.get("calls")
     return MonthUsage(
         month=month,
         usd_total=_amount(doc.get("usd_total")),
-        inr_total=_amount(doc.get("inr_total")),
+        inr_total=_total(doc.get("inr_total")),
         calls=calls if isinstance(calls, int) and not isinstance(calls, bool) and calls > 0 else 0,
         by_brain=_amounts(doc.get("by_brain")),
         by_brain_inr=_amounts(doc.get("by_brain_inr")),
@@ -109,7 +126,8 @@ class UsageMeter:
     async def add(
         self, uid: str, *, brain_id: str, cost_usd: float, cost_inr: float, now: datetime
     ) -> MonthUsage:
-        """One completion's cost, added in a transaction to the owner's month at `now`."""
+        """One completion's cost, added in a transaction to the owner's month at `now`. Raises
+        UsageUnreadable (writing nothing) when the stored month can't be read."""
         month = self.month_of(now)
         path = self._path(uid, month)
 
@@ -133,4 +151,4 @@ class UsageMeter:
         return await self._d.transaction(fn)
 
 
-__all__ = ["MonthUsage", "UsageMeter"]
+__all__ = ["MonthUsage", "UsageMeter", "UsageUnreadable"]

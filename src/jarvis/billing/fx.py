@@ -3,11 +3,11 @@
 
 Anthropic bills in US dollars and the owner's card is charged in rupees at the bank's rate, so
 every rupee figure JARVIS shows is an estimate ("≈"). The rate comes from Frankfurter (free, no
-key): ONE fixed URL, fetched at most once a day, 5 s timeout, no retries. An answer is used only
-if it carries a finite number between 50 and 200 at `rate` (or, defensively, `rates.INR` or
-`rates[0].rate`). The value is cached in memory and in Firestore (`{prefix}fx/usd_inr`), so a
-cold start reads one document instead of calling out. On any failure: the last cached value,
-else `JARVIS_USD_INR_RATE`.
+key): ONE fixed URL, fetched at most once a day, 5 s overall deadline, no retries. An answer is
+used only if it carries a finite number between 50 and 200 at `rate` (or, defensively,
+`rates.INR` or `rates[0].rate`). The value is cached in memory and in Firestore
+(`{prefix}fx/usd_inr`), so a cold start reads one document instead of calling out. On any
+failure: the last cached value, else `JARVIS_USD_INR_RATE`.
 
 Never blocks a reply: `rate()` answers with what is known at once and, when the day's check is
 due, starts it in the background. `refresh()` (the usage view) waits for that check.
@@ -180,7 +180,10 @@ class FxRates:
                 return
             if not isinstance(doc, dict):
                 return
-            self._checked_at = self._checked_at or _when(doc.get("checked_at"))
+            checked = _when(doc.get("checked_at"))
+            if checked is not None and checked > self._clock():
+                checked = None  # in the future (clock skew, a bad write): don't skip the fetch
+            self._checked_at = self._checked_at or checked
             if self._best is None and _rate_ok(doc.get("rate")):
                 self._best = Rate(float(doc["rate"]), _iso_day(doc.get("as_of")), "cached")
 
@@ -190,7 +193,10 @@ class FxRates:
         fresh: Rate | None = None
         try:
             assert self._http is not None
-            resp = await self._http.get(self._url, timeout=self._timeout)
+            # httpx timeouts are per step (connect, each read): one overall deadline as well, so
+            # a slow-dripping answer can't hold the usage view (which waits for this) open.
+            async with asyncio.timeout(self._timeout):
+                resp = await self._http.get(self._url, timeout=self._timeout)
             body = resp.json() if resp.status_code == 200 else None
             value = parse_rate(body)
             if value is not None:

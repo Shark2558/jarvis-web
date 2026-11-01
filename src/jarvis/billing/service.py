@@ -6,13 +6,16 @@
                                  rupees ≥ the owner's limit → BudgetReached, no call.
     record(uid, brain, usd)    ─ after every completion with a cost: transactional increment at
                                  the rate of the moment. Never raises: a failed write is logged
-                                 and the reply still goes out.
+                                 and the reply still goes out. Shielded from cancellation (a
+                                 client that disconnects mid-stream cancels the response task;
+                                 the provider still bills what it wrote).
     usage(uid) / set_limit()   ─ GET /v1/usage, PUT /v1/usage/budget.
 
 A brain is "paid" when any of its models is in the price table above zero; free (Gemini free
 tier) and unpriced (custom) brains are never blocked. The check reads two documents (limit,
 then this month) and only when a limit is set; it happens BEFORE the call, so one reply can go
-over by its own cost. If those documents cannot be read, no paid call is made (fail closed).
+over by its own cost. If those documents cannot be read — or hold a value that isn't a valid
+limit / month total — no paid call is made (fail closed), and the usage view says so.
 """
 
 from __future__ import annotations
@@ -22,12 +25,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Literal
 
+import anyio
 import httpx
 from pydantic import BaseModel
 
-from jarvis.billing.budget import BudgetPatch, BudgetStore
+from jarvis.billing.budget import BudgetPatch, BudgetStore, LimitUnreadable
 from jarvis.billing.fx import FETCH_TIMEOUT_S, FxRates
-from jarvis.billing.meter import UsageMeter
+from jarvis.billing.meter import MonthUsage, UsageMeter, UsageUnreadable
 from jarvis.config import Settings
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.pricing import is_paid, is_priced
@@ -37,6 +41,7 @@ from jarvis.storage.docs import Docs, MemoryDocs
 log = get_logger(__name__)
 
 WARN_AT = 0.8  # the console turns amber at 80 % of the limit
+METER_GRACE_S = 10.0  # how long a cancelled request still waits for its meter write
 
 
 def utcnow() -> datetime:
@@ -97,13 +102,18 @@ NOTE_UNAVAILABLE = (
     "No AI summary: JARVIS couldn't check this month's spending limit. The facts above are "
     "complete."
 )
+MSG_USAGE_UNREADABLE = (
+    "This month's spending record can't be read, so JARVIS won't call the paid AI until it is "
+    "fixed or the month turns. Free brains still answer."
+)
+MSG_USAGE_DOWN = "Couldn't read this month's spending just now. Try again in a minute."
 
 
 class BudgetUnavailable(BudgetError):
     """The limit or this month's spend could not be read (→ 503): fail closed, no paid call."""
 
-    def __init__(self) -> None:
-        super().__init__(MSG_UNAVAILABLE)
+    def __init__(self, detail: str = MSG_UNAVAILABLE) -> None:
+        super().__init__(detail)
 
     @property
     def brief_note(self) -> str:
@@ -136,6 +146,9 @@ class UsageView(BaseModel):
     calls: int
     by_brain: list[BrainUsage]
     rate: RateView
+    # The stored limit can't be read: paid brains are paused (fail closed) and any new limit
+    # needs confirm_raise. limit_inr is None, but this is NOT "no limit".
+    limit_unreadable: bool = False
 
 
 def paid_brain(spec: BrainSpec) -> bool:
@@ -205,18 +218,26 @@ class Billing:
     # ---- metering ------------------------------------------------------------------------------
 
     async def record(self, uid: str, brain_id: str, cost_usd: float) -> float:
-        """Add one completion to this month. Returns its rupee estimate. Never raises."""
+        """Add one completion to this month. Returns its rupee estimate. Never raises, and is
+        not cut short by the caller's cancellation (bounded by METER_GRACE_S)."""
         if not isinstance(cost_usd, int | float) or not math.isfinite(cost_usd) or cost_usd <= 0:
             return 0.0
-        inr = await self.inr(cost_usd)
-        try:
-            await self.meter.add(
-                uid, brain_id=brain_id, cost_usd=cost_usd, cost_inr=inr, now=self.clock()
-            )
-        except Exception as exc:  # noqa: BLE001 — the reply matters more than the counter
+        inr = 0.0
+        with anyio.move_on_after(METER_GRACE_S, shield=True) as scope:
+            inr = await self.inr(cost_usd)
+            try:
+                await self.meter.add(
+                    uid, brain_id=brain_id, cost_usd=cost_usd, cost_inr=inr, now=self.clock()
+                )
+            except Exception as exc:  # noqa: BLE001 — the reply matters more than the counter
+                log.error(
+                    "USAGE METER WRITE FAILED; reply still sent",
+                    extra={"brain": brain_id, "cost_usd": cost_usd, "reason": type(exc).__name__},
+                )
+        if scope.cancelled_caught:
             log.error(
-                "USAGE METER WRITE FAILED; reply still sent",
-                extra={"brain": brain_id, "cost_usd": cost_usd, "reason": type(exc).__name__},
+                "USAGE METER WRITE TIMED OUT; reply still sent",
+                extra={"brain": brain_id, "cost_usd": cost_usd},
             )
         return inr
 
@@ -232,11 +253,26 @@ class Billing:
 
     # ---- the owner's view ----------------------------------------------------------------------
 
+    async def _read(self, uid: str, month: str) -> tuple[int | None, bool, MonthUsage]:
+        """(limit, limit unreadable?, month) for the view; BudgetUnavailable (plain words) when
+        the month can't be read or storage is down."""
+        try:
+            try:
+                limit, unreadable = await self.budgets.get(uid), False
+            except LimitUnreadable:
+                limit, unreadable = None, True
+            return limit, unreadable, await self.meter.get(uid, month)
+        except UsageUnreadable:
+            log.error("MONTH TOTAL UNREADABLE; paid calls stay off", extra={"month": month})
+            raise BudgetUnavailable(MSG_USAGE_UNREADABLE) from None
+        except Exception as exc:  # noqa: BLE001 — storage down: say so, never a 500 with its text
+            log.error("usage view unreadable", extra={"reason": type(exc).__name__})
+            raise BudgetUnavailable(MSG_USAGE_DOWN) from None
+
     async def usage(self, uid: str) -> UsageView:
         rate = await self.fx.refresh()
         month = self.meter.month_of(self.clock())
-        limit = await self.budgets.get(uid)
-        m = await self.meter.get(uid, month)
+        limit, unreadable, m = await self._read(uid, month)
         used = round(m.inr_total, 2)
         labels = {b.id: b.label for b in self.brains.list()}
         by_brain = sorted(
@@ -257,6 +293,7 @@ class Billing:
             calls=m.calls,
             by_brain=by_brain,
             rate=RateView(inr_per_usd=rate.inr_per_usd, as_of=rate.as_of, source=rate.source),
+            limit_unreadable=unreadable,
         )
 
     async def set_limit(self, uid: str, patch: BudgetPatch) -> UsageView:

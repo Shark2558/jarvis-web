@@ -159,10 +159,10 @@ html[data-surface="night"] .panel.front{border-color:color-mix(in srgb,var(--acc
 .spend .rhead{margin:0 0 6px}
 .spend h3{margin:0}
 .spend[data-state="warn"]{background:var(--amber-tint);border-color:var(--amber-line)}
-.spend[data-state="reached"]{background:var(--bad-tint);border-color:var(--bad-line)}
+.spend[data-state="reached"],.spend[data-state="unreadable"]{background:var(--bad-tint);border-color:var(--bad-line)}
 /* Night tints are translucent: mix them into the panel colour so nothing behind shows through */
 html[data-surface="night"] .spend[data-state="warn"]{background:color-mix(in srgb,#F59E0B 11%,var(--panel-solid))}
-html[data-surface="night"] .spend[data-state="reached"]{background:color-mix(in srgb,#E5484D 12%,var(--panel-solid))}
+html[data-surface="night"] .spend[data-state="reached"],html[data-surface="night"] .spend[data-state="unreadable"]{background:color-mix(in srgb,#E5484D 12%,var(--panel-solid))}
 .sstate.warn{color:var(--amber-ink)} .sstate.bad{color:var(--bad-ink)}
 .sfig{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px}
 .sfig b{font:400 21px/1.15 var(--tech);letter-spacing:.02em;color:var(--ink);font-variant-numeric:tabular-nums}
@@ -175,7 +175,7 @@ html[data-surface="night"] .spend[data-state="reached"]{background:color-mix(in 
 .snote{margin:8px 0 0;font-size:13px;line-height:1.4;color:var(--ink-2)}
 .snote.ok{color:var(--ok-ink)}
 .spend[data-state="warn"] #spendNote{color:var(--amber-ink);font-weight:600}
-.spend[data-state="reached"] #spendNote{color:var(--bad-ink);font-weight:600}
+.spend[data-state="reached"] #spendNote,.spend[data-state="unreadable"] #spendNote{color:var(--bad-ink);font-weight:600}
 .sfine{margin:6px 0 0;font-size:12px;line-height:1.4;color:var(--ink-3);overflow-wrap:anywhere}
 .snote:empty,.sfine:empty,.lerr:empty{display:none}
 .sacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}

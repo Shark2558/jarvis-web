@@ -7,7 +7,9 @@
 // Listens: jarvis:ready (signed in; JarvisConsole.ready() covers arriving after it), jarvis:panel
 // (Vitals shown), jarvis:reply (a reply, or a refusal at the limit: spend may have changed).
 // API (src/jarvis/api/usage.py): GET /v1/usage → UsageView; PUT /v1/usage/budget
-// {monthly_limit_inr, confirm_raise?} → UsageView (422 carries a plain `detail`).
+// {monthly_limit_inr, confirm_raise?} → UsageView (422 carries a plain `detail`; after one the
+// month is reloaded, so a page that was stale asks before its next save). `limit_unreadable`:
+// the server can't read the stored limit (paid replies paused), so ANY new limit asks first.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -67,6 +69,7 @@
       percent: limit === null ? null : Math.max(0, num(o.percent) ?? 0),
       warn: o.warn === true,
       reached: o.reached === true,
+      unreadable: o.limit_unreadable === true && limit === null,
       brains: arr(o.by_brain).map(obj).filter(Boolean)
         .map(b => ({ label: txt(b.label, 40) || txt(b.brain, 40), used: num(b.used_inr) }))
         .filter(b => b.label && b.used !== null && b.used > 0),
@@ -105,6 +108,7 @@
       log('info', 'Monthly limit saved');
     } catch (e) {
       if (e.status !== 401) setErr(detailOf(e) || 'Couldn\'t save. Please try again.');
+      if (e.status === 422) load(); // the stored limit may differ from this page's: re-read it
     } finally { S.saving = false; render(); }
     return ok;
   }
@@ -112,11 +116,12 @@
   // ---- rendering -----------------------------------------------------------------------------------
   function stateOf(d) {
     if (!d) return S.error ? 'error' : 'loading';
+    if (d.unreadable) return 'unreadable';
     if (d.reached) return 'reached';
     if (d.warn) return 'warn';
     return d.limit === null ? 'none' : 'ok';
   }
-  const STATE_WORDS = { loading: ['', 'Checking…'], error: ['', 'Unavailable'], none: ['', 'No limit set'], reached: ['bad', 'Limit reached'] };
+  const STATE_WORDS = { loading: ['', 'Checking…'], error: ['', 'Unavailable'], none: ['', 'No limit set'], reached: ['bad', 'Limit reached'], unreadable: ['bad', 'Limit unreadable'] };
   function render() {
     const d = S.data || null, st = stateOf(d);
     box.dataset.state = st;
@@ -144,6 +149,7 @@
   }
   function noteFor(st, d) {
     if (st === 'error') return 'Couldn\'t load this month\'s spending. ' + S.error;
+    if (st === 'unreadable') return 'JARVIS can\'t read your monthly limit, so it won\'t call the paid AI. Set the limit again to fix it. Free brains still answer.';
     if (st === 'reached') {
       const when = nextMonthStart(d.month);
       return `This month's limit is used up: JARVIS won't call the paid AI${when ? ' until ' + when : ''} unless you raise it. Free brains still answer.`;
@@ -190,13 +196,20 @@
     const want = parseLimit(input.value), cur = S.data.limit;
     if (want === null) { setErr('Enter a whole number of rupees from ₹1 to ₹1,00,000.'); input.focus(); return; }
     if (want === cur) { closeForm(true); flashOk(`The limit stays at ${whole(cur)}.`); return; }
-    const raise = cur !== null && want > cur; // more spending allowed: confirm-before-commit
+    const unknown = S.data.unreadable; // nobody knows the old limit: any value may be a raise
+    const raise = unknown || (cur !== null && want > cur); // more spending allowed: confirm-before-commit
     if (raise) {
-      const ok = await asking(() => askConfirm($('limitSave'), `Raise the monthly limit to ${whole(want)}?`, [
-        { cls: 'strong', text: `JARVIS may then spend up to ${whole(want)} this month on the paid AI, ${whole(want - cur)} more than now.` },
-        { text: `Spent so far this month: ${rupees(S.data.used)}.` },
-        { text: 'Rupee figures are estimates. The spend limit in your Anthropic account still applies.' },
-      ], `Raise to ${whole(want)}`));
+      const ok = await asking(() => (unknown
+        ? askConfirm($('limitSave'), `Set the monthly limit to ${whole(want)}?`, [
+          { cls: 'strong', text: `JARVIS can't read the limit it had, so this may let it spend more than before: up to ${whole(want)} this month on the paid AI.` },
+          { text: `Spent so far this month: ${rupees(S.data.used)}.` },
+          { text: 'Rupee figures are estimates. The spend limit in your Anthropic account still applies.' },
+        ], `Set to ${whole(want)}`)
+        : askConfirm($('limitSave'), `Raise the monthly limit to ${whole(want)}?`, [
+          { cls: 'strong', text: `JARVIS may then spend up to ${whole(want)} this month on the paid AI, ${whole(want - cur)} more than now.` },
+          { text: `Spent so far this month: ${rupees(S.data.used)}.` },
+          { text: 'Rupee figures are estimates. The spend limit in your Anthropic account still applies.' },
+        ], `Raise to ${whole(want)}`)));
       if (!ok) return;
     }
     const body = raise ? { monthly_limit_inr: want, confirm_raise: true } : { monthly_limit_inr: want };

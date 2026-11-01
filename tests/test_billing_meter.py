@@ -4,13 +4,14 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+import anyio
 import httpx
 import pytest
-from billing_fakes import NOW, RATE, UID, BrokenDocs, Clock, billing, registry
+from billing_fakes import NOW, RATE, UID, BrokenDocs, Clock, billing, put_raw, registry
 from brief_fakes import SlowDocs
 
 from jarvis.billing.fx import FxRates
-from jarvis.billing.meter import UsageMeter
+from jarvis.billing.meter import UsageMeter, UsageUnreadable
 from jarvis.storage.docs import MemoryDocs
 
 
@@ -82,29 +83,51 @@ async def test_concurrent_increments_are_never_lost(docs: MemoryDocs) -> None:
     assert u.by_brain == pytest.approx({"anthropic": 0.02, "custom": 0.02})
 
 
-async def test_unreadable_fields_count_as_zero() -> None:
+async def test_unreadable_display_fields_count_as_zero() -> None:
+    """Fields only shown (never used by the limit) are read leniently; the month's rupee total,
+    which the limit compares against, is not (next test)."""
     docs = MemoryDocs()
     path = f"jarvis_usage/{UID}_2026-11"
-
-    async def put(tx: object) -> None:
-        tx.set(
-            path,
-            {
-                "usd_total": "lots",
-                "inr_total": -5,
-                "calls": "x",  # type: ignore[attr-defined]
-                "by_brain": {"anthropic": float("nan"), "ok": 0.5},
-                "by_brain_inr": [1],
-            },
-        )
-
-    await docs.transaction(put)
+    await put_raw(
+        docs,
+        path,
+        {
+            "usd_total": "lots",
+            "inr_total": 2.5,
+            "calls": "x",
+            "by_brain": {"anthropic": float("nan"), "ok": 0.5},
+            "by_brain_inr": [1],
+        },
+    )
     m = UsageMeter(docs)
     u = await m.get(UID, "2026-11")
-    assert (u.usd_total, u.inr_total, u.calls) == (0.0, 0.0, 0)
+    assert (u.usd_total, u.inr_total, u.calls) == (0.0, 2.5, 0)
     assert u.by_brain == {"ok": 0.5} and u.by_brain_inr == {}
     await m.add(UID, brain_id="anthropic", cost_usd=0.01, cost_inr=0.95, now=NOW)
-    assert (await m.get(UID, "2026-11")).inr_total == pytest.approx(0.95)
+    assert (await m.get(UID, "2026-11")).inr_total == pytest.approx(3.45)
+
+
+@pytest.mark.parametrize("bad", ["500", float("nan"), float("inf"), -5, True, None, [1], "missing"])
+async def test_an_unreadable_month_total_is_never_read_as_zero_nor_overwritten(
+    bad: object,
+) -> None:
+    """₹0 would open the limit; resetting it on the next reply would lose the month's spend."""
+    docs = MemoryDocs()
+    path = f"jarvis_usage/{UID}_2026-11"
+    doc: dict[str, object] = {"usd_total": 3.0, "calls": 9}
+    if bad != "missing":
+        doc["inr_total"] = bad
+    await put_raw(docs, path, doc)
+    m = UsageMeter(docs)
+    with pytest.raises(UsageUnreadable):
+        await m.get(UID, "2026-11")
+    with pytest.raises(UsageUnreadable):
+        await m.add(UID, brain_id="anthropic", cost_usd=0.01, cost_inr=0.95, now=NOW)
+    assert await docs.get(path) == doc  # left as it was, for the owner to see and fix
+    # Billing.record still never raises (the reply goes out); it logs and writes nothing
+    b = billing(registry(), docs=docs)
+    assert await b.record(UID, "anthropic", 0.01) == pytest.approx(0.9524)
+    assert await docs.get(path) == doc
 
 
 @pytest.mark.parametrize("uid", ["", "../x", "a/b", "x" * 200])
@@ -139,6 +162,18 @@ async def test_record_writes_nothing_for_a_free_or_broken_cost(cost: float) -> N
     b = billing(registry(), docs=docs)
     assert await b.record(UID, "anthropic", cost) == 0.0
     assert docs.tx_calls == 0
+
+
+async def test_record_finishes_even_when_its_caller_is_being_cancelled() -> None:
+    """Starlette cancels a streaming response when the client goes away (an anyio cancel scope,
+    re-delivered at every await). The spend already happened: the meter write must still land."""
+    docs = SlowDocs()  # every database call really waits, like Firestore
+    b = billing(registry(), docs=docs)
+    with anyio.CancelScope() as scope:
+        scope.cancel()
+        assert await b.record(UID, "anthropic", 0.01) == pytest.approx(0.9524)
+    u = await b.meter.get(UID, "2026-11")
+    assert u.calls == 1 and u.inr_total == pytest.approx(0.9524)
 
 
 async def test_record_never_raises_when_the_write_fails() -> None:

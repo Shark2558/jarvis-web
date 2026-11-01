@@ -2,7 +2,8 @@
 # registry, and Docs that fail on purpose. A plain module (not conftest) so test files import it.
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -42,6 +43,28 @@ class PricedMock(MockProvider):
         c = await super().complete(**kw)  # type: ignore[arg-type]
         cost = self.per_call if self.per_call is not None else cost_usd(c.model, c.usage)
         return c.model_copy(update={"cost_usd": cost})
+
+
+@dataclass
+class DripStream(PricedMock):
+    """A paid brain whose stream is still being written: a pause between chunks, so a reader
+    that goes away is cut off while it waits for the next one (as on a real disconnect)."""
+
+    gap_s: float = 0.02
+
+    async def stream(self, **kw: object) -> AsyncIterator[str]:  # type: ignore[override]
+        async for chunk in super().stream(**kw):  # type: ignore[arg-type]
+            yield chunk
+            await asyncio.sleep(self.gap_s)
+
+
+async def put_raw(docs: Docs, path: str, data: Doc) -> None:
+    """Store a document exactly as given (a corrupted or hand-edited one)."""
+
+    async def fn(tx: DocTx) -> None:
+        tx.set(path, data)
+
+    await docs.transaction(fn)
 
 
 class Clock:

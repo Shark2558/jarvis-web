@@ -278,6 +278,33 @@ async def test_rate_never_waits_for_the_network() -> None:
     assert fx.peek().inr_per_usd == 95.61
 
 
+async def test_a_fetch_that_never_finishes_is_cut_off_at_the_timeout() -> None:
+    """httpx timeouts are per step (a slow-dripping answer can last forever); the usage view
+    waits for the day's fetch, so the fetch itself has one overall deadline."""
+    fake = FakeFx()
+    fake.gate = asyncio.Event()  # never released: the answer never completes
+    fx = FxRates(
+        docs=None, default_rate=DEFAULT_RATE, http=fake.client(), clock=Clock(), timeout_s=0.05
+    )
+    r = await asyncio.wait_for(fx.refresh(), timeout=1.0)
+    assert r.source == "default" and len(fake.requests) == 1
+    await fx.refresh()
+    assert len(fake.requests) == 1  # the cut-off attempt counts as today's attempt
+
+
+async def test_a_check_time_in_the_future_does_not_stop_the_daily_fetch() -> None:
+    """A clock-skewed (or bad) `checked_at` far ahead must not freeze the rate for months."""
+    docs = MemoryDocs()
+    ahead = (NOW + timedelta(days=60)).isoformat()
+    await docs.transaction(
+        _put({"rate": 94.1, "as_of": "2026-11-11", "source": "frankfurter", "checked_at": ahead})
+    )
+    fake = FakeFx()
+    fx = _fx(fake, docs=docs)
+    r = await fx.refresh()
+    assert len(fake.requests) == 1 and (r.inr_per_usd, r.source) == (95.61, "frankfurter")
+
+
 async def test_an_owner_set_default_has_no_made_up_date() -> None:
     fx = FxRates(docs=None, default_rate=90.0, http=None, clock=Clock())
     r = await fx.refresh()

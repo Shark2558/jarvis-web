@@ -575,6 +575,7 @@ class Brain:
         sent = len(self._system) + len(trailer) + sum(len(m.text()) for m in messages)
         await self._admit(req.user_id, spec)  # call-level, like every other model call
         finished = False
+        cost = 0.0
         try:
             async for delta in router.stream(
                 tier=self._tier(req),
@@ -588,14 +589,15 @@ class Brain:
                 yield delta
             finished = True
         finally:
-            if not finished and chunks:  # cut short (client gone, provider error): still paid
-                partial = priced_cost(model, estimate_usage(sent, len("".join(chunks))))
-                await self.billing.record(req.user_id, spec.id, partial)
+            # Metered here, once, for a finished stream AND one cut short (client gone, provider
+            # error): either way the provider bills what it wrote. `record` is shielded, so the
+            # cancellation of a disconnected response can't skip it.
+            if finished or chunks:
+                cost = priced_cost(model, estimate_usage(sent, len("".join(chunks))))
+                await self.billing.record(req.user_id, spec.id, cost)
 
         reply = "".join(chunks).strip()
-        cost = priced_cost(model, estimate_usage(sent, len(reply)))
         session.append(
             Turn(role=Role.ASSISTANT, content=reply, trace_id=trace_id, model=model, cost_usd=cost)
         )
         await self.store.save(session)
-        await self.billing.record(req.user_id, spec.id, cost)

@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from billing_fakes import UID
+from billing_fakes import UID, put_raw
 from brief_fakes import SlowDocs
 from pydantic import ValidationError
 
@@ -14,6 +14,7 @@ from jarvis.billing.budget import (
     BudgetPatch,
     BudgetRejected,
     BudgetStore,
+    LimitUnreadable,
     apply_limit,
     needs_confirm,
 )
@@ -119,14 +120,73 @@ async def test_the_rule_is_checked_against_the_stored_limit_inside_the_transacti
         assert raised == 400 and final == 100  # the 400 ran first (a lower), then the 100
 
 
-async def test_an_unreadable_stored_limit_reads_as_none() -> None:
+# A stored limit JARVIS can't trust (hand-edited, corrupted, or out of range) must never read as
+# "no limit": that would let every paid call through and any raise skip the confirmation.
+UNREADABLE: list[object] = [
+    "lots",
+    "500",
+    float("nan"),
+    float("inf"),
+    True,
+    12.5,
+    0,
+    -5,
+    LIMIT_MAX + 1,
+    10**12,
+    {"x": 1},
+    [500],
+]
+BUDGET_DOC = f"jarvis_budget/{UID}"
+
+
+@pytest.mark.parametrize("value", UNREADABLE)
+async def test_an_unreadable_stored_limit_fails_closed(value: object) -> None:
     docs = MemoryDocs()
+    await put_raw(docs, BUDGET_DOC, {"monthly_limit_inr": value})
+    with pytest.raises(LimitUnreadable):
+        await BudgetStore(docs).get(UID)
 
-    async def put(tx: object) -> None:
-        tx.set(f"jarvis_budget/{UID}", {"monthly_limit_inr": "lots"})  # type: ignore[attr-defined]
 
-    await docs.transaction(put)
-    assert await BudgetStore(docs).get(UID) is None
+async def test_a_budget_document_without_the_field_is_unreadable_too() -> None:
+    docs = MemoryDocs()
+    await put_raw(docs, BUDGET_DOC, {"user_id": UID})  # every write stores the field, even null
+    with pytest.raises(LimitUnreadable):
+        await BudgetStore(docs).get(UID)
+
+
+async def test_a_whole_number_stored_as_a_float_still_reads() -> None:
+    docs = MemoryDocs()
+    await put_raw(docs, BUDGET_DOC, {"monthly_limit_inr": 500.0})
+    assert await BudgetStore(docs).get(UID) == 500
+    await put_raw(docs, BUDGET_DOC, {"monthly_limit_inr": None})
+    assert await BudgetStore(docs).get(UID) is None  # an explicit null is "no limit"
+
+
+@pytest.mark.parametrize("value", UNREADABLE)
+async def test_any_change_to_an_unreadable_limit_needs_the_confirmation(value: object) -> None:
+    """JARVIS doesn't know what the limit was, so it can't tell a lower from a raise."""
+    docs = MemoryDocs()
+    await put_raw(docs, BUDGET_DOC, {"monthly_limit_inr": value})
+    s = BudgetStore(docs)
+    sets = docs.sets
+    for patch in (
+        BudgetPatch(monthly_limit_inr=LIMIT_MIN),
+        BudgetPatch(monthly_limit_inr=LIMIT_MAX),
+        BudgetPatch(monthly_limit_inr=None),
+    ):
+        with pytest.raises(BudgetRejected, match="can't be read"):
+            await s.update(UID, patch)
+    assert docs.sets == sets  # nothing written
+    assert await s.update(UID, BudgetPatch(monthly_limit_inr=300, confirm_raise=True)) == 300
+    assert await s.get(UID) == 300
+
+
+def test_apply_with_an_unreadable_old_limit_always_needs_the_confirm() -> None:
+    with pytest.raises(BudgetRejected, match="can't be read"):
+        apply_limit(None, BudgetPatch(monthly_limit_inr=5), readable=False)
+    assert apply_limit(None, BudgetPatch(monthly_limit_inr=5, confirm_raise=True), readable=False)
+    with pytest.raises(BudgetRejected, match="₹1 to ₹1,00,000"):  # range first, as before
+        apply_limit(None, BudgetPatch(monthly_limit_inr=0, confirm_raise=True), readable=False)
 
 
 async def test_a_bad_user_id_is_refused() -> None:

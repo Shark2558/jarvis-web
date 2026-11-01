@@ -74,7 +74,9 @@ class FakeUsage:
         body = json.loads(req.post_data or "{}")
         self.puts.append({"body": body, "headers": dict(req.headers), "method": req.method})
         old, new = self.view["limit_inr"], body.get("monthly_limit_inr")
-        if old is not None and (new is None or new > old) and body.get("confirm_raise") is not True:
+        unknown = self.view.get("limit_unreadable") is True  # any change needs the confirm
+        raise_ = unknown or (old is not None and (new is None or new > old))
+        if raise_ and body.get("confirm_raise") is not True:
             _json(route, 422, {"error": "invalid_budget", "detail": "confirm to raise it"})
             return
         self.view = usage(self.view["used_inr"], new)
@@ -331,6 +333,77 @@ def test_remove_asks_first_and_sends_null_with_confirm_raise(make: Callable[...,
     assert c.errors == []
 
 
+def test_an_unreadable_limit_says_so_and_any_new_limit_asks_first(
+    make: Callable[..., Console],
+) -> None:
+    """The server couldn't read the stored limit (fail closed): paid replies are paused, and as
+    nobody knows what the limit was, even a small new one goes through the confirmation."""
+    c = make()
+    view = usage(38.12, None)
+    view["limit_unreadable"] = True
+    fake = FakeUsage(c.page, view)
+    c.open()
+    _vitals(c)
+    page = c.page
+    page.locator('#spend[data-state="unreadable"]').wait_for()
+    assert page.locator("#spendState").text_content() == "Limit unreadable"
+    note = str(page.locator("#spendNote").text_content())
+    assert "can't read" in note and "paid AI" in note and "$" not in note
+    assert page.locator("#sBar").is_hidden() and page.locator("#sMonthOf").text_content() == ""
+    page.locator("#limitBtn").click()
+    page.locator("#limitForm").wait_for(state="visible")
+    assert page.locator("#limitIn").input_value() == ""
+    assert page.locator("#limitRemove").is_hidden()
+    page.locator("#limitIn").fill("300")
+    page.keyboard.press("Enter")
+    dialog = page.locator("#limitDialog")
+    dialog.wait_for(state="visible")
+    words = str(dialog.text_content())
+    assert "Set the monthly limit to ₹300?" in words and "can't read" in words
+    assert "$" not in words
+    page.locator("#limitDialogNo").click()
+    assert fake.puts == []
+    page.locator("#limitSave").click()
+    dialog.wait_for(state="visible")
+    page.locator("#limitDialogYes").click()
+    page.locator('#spend[data-state="ok"]').wait_for()
+    assert fake.puts == [
+        {
+            "body": {"monthly_limit_inr": 300, "confirm_raise": True},
+            "headers": fake.puts[0]["headers"],
+            "method": "PUT",
+        }
+    ]
+    assert c.errors == []
+
+
+def test_a_stale_page_reloads_after_a_refused_lower_so_the_next_save_asks(
+    make: Callable[..., Console],
+) -> None:
+    """The limit was lowered on another device: this page's "lower" is really a raise. The
+    server refuses it; the page reloads the month, so saving again asks first."""
+    c = make()
+    fake = FakeUsage(c.page, usage(38.12, 500))
+    c.open()
+    _vitals(c)
+    page = c.page
+    page.locator('#spend[data-state="ok"]').wait_for()
+    fake.view = usage(38.12, 200)  # changed elsewhere; this page still shows ₹500
+    page.locator("#limitBtn").click()
+    page.locator("#limitIn").fill("400")
+    page.keyboard.press("Enter")
+    page.locator("#limitErr", has_text="confirm").wait_for()
+    assert [p["body"] for p in fake.puts] == [{"monthly_limit_inr": 400}]
+    page.locator("#sMonthOf", has_text="of ₹200").wait_for()  # reloaded after the refusal
+    assert page.locator("#limitForm").is_visible()
+    page.locator("#limitSave").click()
+    page.locator("#limitDialog").wait_for(state="visible")
+    page.locator("#limitDialogYes").click()
+    page.locator("#sMonthOf", has_text="of ₹400").wait_for()
+    assert fake.puts[-1]["body"] == {"monthly_limit_inr": 400, "confirm_raise": True}
+    assert _quiet(c, "422") == []
+
+
 @pytest.mark.parametrize("bad", ["0", "abc", "100001", "12.5", "-4"])
 def test_bad_limits_are_refused_before_any_request(make: Callable[..., Console], bad: str) -> None:
     c = make()
@@ -446,7 +519,15 @@ def test_a_reply_shows_its_cost_in_rupees(make: Callable[..., Console]) -> None:
 
 # ---- design: contrast on both surfaces, phone width ----------------------------------------------
 @pytest.mark.parametrize("surface", ["night", "day"])
-@pytest.mark.parametrize("view", [usage(38.12, 500), usage(412.0, 500), usage(512.4, 500)])
+@pytest.mark.parametrize(
+    "view",
+    [
+        usage(38.12, 500),
+        usage(412.0, 500),
+        usage(512.4, 500),
+        {**usage(38.12, None), "limit_unreadable": True},
+    ],
+)
 def test_spend_block_meets_aa_contrast(
     make: Callable[..., Console], surface: str, view: dict[str, Any]
 ) -> None:

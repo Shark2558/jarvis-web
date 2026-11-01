@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -249,6 +250,14 @@ def create_app(
         return response
 
     # ---- error mapping: never leak stack traces, always carry the trace id ----------------
+
+    @app.exception_handler(RequestValidationError)
+    async def _invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # FastAPI's default echoes each bad `input` back: a NaN / Infinity in the JSON body
+        # (Python's reader accepts them) then can't be rendered and became a 500. Same shape,
+        # without echoing what was sent.
+        errors = [{k: e[k] for k in ("type", "loc", "msg") if k in e} for e in exc.errors()]
+        return _err(422, {"detail": errors})
 
     @app.exception_handler(SessionNotFound)
     async def _nf(_: Request, exc: SessionNotFound) -> JSONResponse:

@@ -6,9 +6,9 @@ gate) and Layer 7 storage (Firestore counters). Vendor-neutral: it sees brain id
 USD costs, never an SDK.
 """
 
-from jarvis.billing.budget import BudgetPatch, BudgetRejected, BudgetStore
+from jarvis.billing.budget import BudgetPatch, BudgetRejected, BudgetStore, LimitUnreadable
 from jarvis.billing.fx import FxRates, Rate
-from jarvis.billing.meter import MonthUsage, UsageMeter
+from jarvis.billing.meter import MonthUsage, UsageMeter, UsageUnreadable
 from jarvis.billing.service import (
     Billing,
     BudgetError,
@@ -29,9 +29,11 @@ __all__ = [
     "BudgetStore",
     "BudgetUnavailable",
     "FxRates",
+    "LimitUnreadable",
     "MonthUsage",
     "Rate",
     "UsageMeter",
+    "UsageUnreadable",
     "UsageView",
     "build_billing",
     "fx_client",

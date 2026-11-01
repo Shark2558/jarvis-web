@@ -9,7 +9,9 @@ Usage:
 One suite, cases.jsonl: under / at / over the limit, no limit, the free and unpriced brains,
 rollover at IST midnight, the stream, tool rounds that cross the limit mid-turn, approval
 narration, the brief's AI lines, an unreadable limit (fail closed), one reply's overshoot, a
-failing meter write, per-owner limits, and the confirm rule for raising / removing the limit.
+failing meter write, per-owner limits, the confirm rule for raising / removing the limit, and a
+stored limit or month total that is corrupted (fail closed, never "no limit" / "₹0 spent"; any
+change to an unreadable limit needs the confirm).
 Gate (hard): 100 % of cases, 0 paid calls made at or over the limit, and 0 "$" in anything the
 owner reads (the 402 detail, the brief's note, its cost note). Negative control: the same cases
 with the spending gate switched off (Billing.ensure_allowed a no-op) MUST fail — the suite is not
@@ -37,6 +39,7 @@ from jarvis.billing import (
     BudgetUnavailable,
     FxRates,
     UsageMeter,
+    UsageUnreadable,
 )
 from jarvis.brief.models import SettingsPatch
 from jarvis.brief.service import BriefService
@@ -54,7 +57,7 @@ from jarvis.llm.pricing import cost_usd
 from jarvis.llm.router import ModelTier
 from jarvis.logging import configure_logging
 from jarvis.memory.inmemory import InMemorySessionStore
-from jarvis.storage.docs import Doc, MemoryDocs
+from jarvis.storage.docs import Doc, MemoryDocs, Set
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.tools.builtin import InMemoryWorld, builtin_tools
 
@@ -176,16 +179,27 @@ class Rig:
             await self.billing.meter.add(
                 uid, brain_id="anthropic", cost_usd=spent / RATE, cost_inr=spent, now=at
             )
+        if "raw_limit" in self.c:  # a corrupted / hand-edited budget document
+            v = self.c["raw_limit"]
+            doc = {"user_id": uid} if v == "__missing__" else {"monthly_limit_inr": v}
+            await self.docs.write([Set(f"jarvis_budget/{uid}", doc)])
+        if "raw_month_total" in self.c:  # a corrupted month document
+            month = self.billing.meter.month_of(self.clock())
+            raw = {"inr_total": self.c["raw_month_total"], "calls": 3}
+            await self.docs.write([Set(f"jarvis_usage/{uid}_{month}", raw)])
         self.docs.fail_reads = bool(self.c.get("broken_reads"))
         self.docs.fail_writes = bool(self.c.get("broken_writes"))
 
     def req(self, text: str = "hello", **kw: Any) -> ChatRequest:
         return ChatRequest(message=text, user_id=UID, brain=self.c.get("brain"), **kw)
 
-    async def month(self) -> tuple[str, int, float]:
+    async def month(self) -> tuple[str, int | None, float | None]:
         self.docs.fail_reads = False
         month = self.billing.meter.month_of(self.clock())
-        m = await self.billing.meter.get(UID, month)
+        try:
+            m = await self.billing.meter.get(UID, month)
+        except UsageUnreadable:  # the case corrupted it on purpose
+            return month, None, None
         return month, m.calls, m.inr_total
 
 
@@ -409,7 +423,8 @@ async def main() -> int:
     rate = sum(r["passed"] for r in results) / len(results) if results else 0.0
     dollars = sum(r["dollars"] for r in results)
     past = sum(r["paid_calls_past_limit"] for r in results)
-    blind = not args.only and control["failed_cases"] < 8  # b02 b03 b08 b09 b11 b13 b15 b16
+    # b02 b03 b08 b09 b11 b13 b15 b16 b21 b22 b24 b25 must fail with the gate off
+    blind = not args.only and control["failed_cases"] < 12
     gate = rate == 1 and dollars == 0 and past == 0 and not blind
     gate = gate and len(results) >= (12 if not args.only else 1)
     print(

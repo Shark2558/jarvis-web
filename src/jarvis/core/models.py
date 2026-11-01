@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -83,6 +83,11 @@ class ChatRequest(BaseModel):
         max_length=64,
         description="Brain id from GET /v1/brains. Omit to keep the session's brain (or the "
         "default). The choice is remembered on the session.",
+    )
+    channel: Literal["text", "voice"] = Field(
+        default="text",
+        description="voice: the owner spoke this message and the reply will be read aloud "
+        "(short, plain spoken answer; slice 9 D7)",
     )
 
 

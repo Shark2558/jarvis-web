@@ -36,15 +36,26 @@ from jarvis.core.models import (
     SessionSummary,
     SessionView,
 )
-from jarvis.memory.base import SessionConflict, SessionNotFound, SessionStore
+from jarvis.memory.base import MessageNotSaved, SessionConflict, SessionNotFound, SessionStore
 from jarvis.tools.audit import AuditEntry
 
 router = APIRouter()
 STREAM_FINAL = "\x1e"  # ASCII record separator: the reply text ends, the final event follows
-CONFLICT_DETAIL = (
-    "This conversation changed in another window, so this message was not saved. "
-    "Reload the conversation and send it again."
+REPLY_LOST = (
+    "Your message was kept, but JARVIS's reply could not be saved because this conversation "
+    "changed in another window. The conversation has been reloaded."
 )
+MESSAGE_LOST = (
+    "Your message was not saved because this conversation changed in another window. The "
+    "conversation has been reloaded: send it again if it is still needed."
+)
+
+
+def conflict_body(exc: SessionConflict) -> dict[str, str]:
+    """The 409 body (and the stream's final event): says truthfully whether the owner's
+    message was stored, so resending never duplicates it."""
+    detail = MESSAGE_LOST if isinstance(exc, MessageNotSaved) else REPLY_LOST
+    return {"error": "session_conflict", "detail": detail}
 
 
 # ---- dependencies --------------------------------------------------------------------------
@@ -138,9 +149,8 @@ async def _with_final_event(brain: Brain, req: ChatRequest) -> AsyncIterator[str
             text = delta.replace(STREAM_FINAL, "")  # model text can never forge the final event
             if text:
                 yield text
-    except SessionConflict:  # the 200 is already sent: the final event says what happened
-        conflict = {"error": "session_conflict", "detail": CONFLICT_DETAIL}
-        yield STREAM_FINAL + json.dumps(conflict, ensure_ascii=False)
+    except SessionConflict as exc:  # the 200 is already sent: the final event says what happened
+        yield STREAM_FINAL + json.dumps(conflict_body(exc), ensure_ascii=False)
         return
     used = [m.model_dump() for m in meta.memory_used]
     yield STREAM_FINAL + json.dumps({"memory_used": used}, ensure_ascii=False)

@@ -42,6 +42,7 @@ from jarvis.core.guardrails import PendingAction, guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
+from jarvis.core.saving import not_recorded_note, record_after_action, save_owner_message
 from jarvis.core.window import build_window
 from jarvis.llm.base import (
     ChatMessage,
@@ -83,22 +84,23 @@ class _Decision:
     instruction: str
 
 
-def _record_exchange(session: Session, d: _Decision, trace_id: str | None) -> None:
+def _record_exchange(session: Session, d: _Decision, trace_id: str | None) -> list[Turn]:
     """The decided action as a tool exchange (tool_use → tool_result + instruction)."""
-    session.append(Turn(role=Role.ASSISTANT, content="", blocks=[d.call], trace_id=trace_id))
     result = ToolResultBlock(
         tool_use_id=d.call.id,
         content=d.result.for_model(),
         is_error=d.result.outcome is not GatewayOutcome.EXECUTED,
     )
-    session.append(
+    turns = [
+        Turn(role=Role.ASSISTANT, content="", blocks=[d.call], trace_id=trace_id),
         Turn(
-            role=Role.USER,
-            content="",
-            blocks=[result, TextBlock(text=d.instruction)],
+            role=Role.USER, content="", blocks=[result, TextBlock(text=d.instruction)],
             trace_id=trace_id,
-        )
-    )
+        ),
+    ]  # fmt: skip
+    for t in turns:
+        session.append(t)
+    return turns
 
 
 def _owner_turn(text: str, req: ChatRequest, trace_id: str | None) -> Turn:
@@ -364,7 +366,7 @@ class Brain:
 
         session.append(_owner_turn(text, req, trace_id))
         # persist the user turn before the LLM call so a crash never loses owner input
-        await self.store.save(session)
+        await save_owner_message(self.store, session)
 
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)
@@ -551,17 +553,6 @@ class Brain:
         session.metadata["_rounds"] = rounds
         return completion, pending
 
-    async def _save_after_action(self, session: Session) -> None:
-        """The owner's decision has already taken effect. A storage hiccup must not turn that
-        into an error (the owner would ask again and e.g. send twice): log, still answer."""
-        try:
-            await self.store.save(session)
-        except Exception as exc:  # noqa: BLE001
-            log.error(
-                "SAVE FAILED after an approved action; reply still sent",
-                extra={"session_id": session.id, "error": type(exc).__name__},
-            )
-
     # ---- forgetting -----------------------------------------------------------------------
 
     async def forget(self, session_id: str, *, user_id: str = "owner") -> bool:
@@ -622,22 +613,26 @@ class Brain:
         else:
             d = await self._declined(call, action, approval_id)
         trace_id = get_trace_id()
-        _record_exchange(session, d, trace_id)
-        await self._save_after_action(session)
+        # the decision already took effect: storing its record never raises (jarvis.core.saving);
+        # if another window changed the conversation, it is re-recorded on the newer one
+        exchange = _record_exchange(session, d, trace_id)
+        session, recorded = await record_after_action(self.store, session, exchange)
         spec = self._resolve_brain(session, req)
         reply, completion = await self._narrate(session, req, spec, d.fallback)
-        session.append(
-            Turn(
-                role=Role.ASSISTANT,
-                content=reply,
-                trace_id=trace_id,
-                model=completion.model if completion else "none",
-                usage=completion.usage if completion else None,
-                cost_usd=completion.cost_usd if completion else 0.0,
-                tool_derived=True,
-            )
+        narration = Turn(
+            role=Role.ASSISTANT,
+            content=reply,
+            trace_id=trace_id,
+            model=completion.model if completion else "none",
+            usage=completion.usage if completion else None,
+            cost_usd=completion.cost_usd if completion else 0.0,
+            tool_derived=True,
         )
-        await self._save_after_action(session)
+        session.append(narration)
+        unsaved = [narration] if recorded else [*exchange, narration]
+        session, saved = await record_after_action(self.store, session, unsaved)
+        if not (recorded or saved):  # the next turn will not know: tell the owner now
+            reply = f"{reply} {not_recorded_note(approved)}"
         return await self._decision_response(session, spec, reply, completion, trace_id, approved)
 
     async def _approved(
@@ -754,7 +749,7 @@ class Brain:
         router = self.brains.router_for(spec.id)
         await self._admit(req.user_id, spec)  # turn-level: refused → nothing stored
         session.append(_owner_turn(text, req, trace_id))
-        await self.store.save(session)
+        await save_owner_message(self.store, session)
 
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)

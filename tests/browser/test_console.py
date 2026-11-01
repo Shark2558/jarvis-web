@@ -142,34 +142,45 @@ def test_history_restores_an_earlier_conversation(console: Console) -> None:
     assert console.errors == []
 
 
-def test_session_conflict_reloads_the_conversation_and_says_so(console: Console) -> None:
-    """Slice 10 A3: another window saved this conversation first (409 session_conflict). The
-    console shows what the server holds (reload) and one plain line — not an error."""
+@pytest.mark.parametrize("which", ["reply_lost", "message_lost", "code_only"])
+def test_session_conflict_reloads_the_conversation_and_says_so(
+    console: Console, which: str
+) -> None:
+    """Slice 10 A3 + review L5: another window saved this conversation first (409
+    session_conflict). The console reloads what the server holds, shows the server's own line
+    (it says whether the owner's message was kept) — not an error — and never resends."""
+    from jarvis.api.routes import MESSAGE_LOST, REPLY_LOST
+
+    detail = {"reply_lost": REPLY_LOST, "message_lost": MESSAGE_LOST, "code_only": "conflict"}
     console.open()
     console.send("first message")
     reloads: list[str] = []
+    posts: list[str] = []
     console.page.on(
         "request",
         lambda r: reloads.append(r.url) if "/v1/sessions/sess_" in r.url else None,
     )
-    conflict = {"error": "session_conflict", "detail": "changed in another window"}
-    console.page.route(
-        "**/v1/chat",
-        lambda r: r.fulfill(status=409, content_type="application/json", body=json.dumps(conflict)),
-    )
+    conflict = {"error": "session_conflict", "detail": detail[which]}
+
+    def refuse(route: Any) -> None:
+        posts.append(route.request.method)
+        route.fulfill(status=409, content_type="application/json", body=json.dumps(conflict))
+
+    console.page.route("**/v1/chat", refuse)
     console.page.locator("#input").fill("second message")
     console.page.locator("#send").click()
-    line = console.page.locator("#log .sys", has_text="changed in another window")
+    line = console.page.locator("#log .sys", has_text="another window")
     line.wait_for()
-    assert str(line.text_content()).startswith(
-        "This conversation changed in another window — reloaded."
-    )
+    want = detail[which] if which != "code_only" else "This conversation changed in another window"
+    assert str(line.text_content()).startswith(want)
     assert line.get_attribute("role") == "status"  # a note, not an alert
     assert reloads, "the conversation was not reloaded from the server"
     users = console.page.locator(".row.user .bubble")
     assert users.count() == 1 and users.text_content() == "first message"  # what the server holds
     assert console.page.locator("#log .sys.error").count() == 0
     assert console.page.locator("#send").is_disabled() is True  # idle again, composer empty
+    console.page.wait_for_timeout(300)
+    assert posts == ["POST"]  # never resent behind the owner's back
     assert [e for e in console.errors if "409" not in e] == []
 
 

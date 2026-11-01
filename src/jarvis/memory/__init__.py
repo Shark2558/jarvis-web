@@ -1,6 +1,6 @@
 # src/jarvis/memory/__init__.py
 from jarvis.config import SessionBackend, Settings
-from jarvis.memory.base import SessionConflict, SessionNotFound, SessionStore
+from jarvis.memory.base import MessageNotSaved, SessionConflict, SessionNotFound, SessionStore
 from jarvis.memory.inmemory import InMemorySessionStore
 
 
@@ -20,6 +20,7 @@ def build_session_store(s: Settings) -> SessionStore:
 
 __all__ = [
     "InMemorySessionStore",
+    "MessageNotSaved",
     "SessionConflict",
     "SessionNotFound",
     "SessionStore",

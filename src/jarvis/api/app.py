@@ -26,7 +26,7 @@ from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_f
 from jarvis.api.integrations import router as integrations_router
 from jarvis.api.memory import router as memory_router
 from jarvis.api.ratelimit import RateLimiter, make_middleware
-from jarvis.api.routes import CONFLICT_DETAIL
+from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
 from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier, SchedulerUnauthorized
 from jarvis.api.usage import router as usage_router
@@ -319,8 +319,9 @@ def create_app(
 
     @app.exception_handler(SessionConflict)
     async def _conflict(_: Request, exc: SessionConflict) -> JSONResponse:
-        # another window (on another instance) changed this conversation first: nothing was saved
-        return _err(409, {"error": "session_conflict", "detail": CONFLICT_DETAIL})
+        # another window (on another instance) changed this conversation first; the body says
+        # whether the owner's message was stored (MessageNotSaved) or only the reply was lost
+        return _err(409, conflict_body(exc))
 
     @app.exception_handler(LookupError)
     async def _lookup(_: Request, exc: LookupError) -> JSONResponse:

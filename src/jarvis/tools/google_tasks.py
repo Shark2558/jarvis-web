@@ -162,14 +162,7 @@ class TasksAPI:
         return parse_due(a["due"], await self._tz(uid))
 
     async def _resolve(self, uid: str, name: str) -> TaskList:
-        lists = await self.client.lists(uid)
-        found = next((tl for tl in lists if tl.id == name), None) or next(
-            (tl for tl in lists if tl.title.casefold() == name.casefold()), None
-        )
-        if found is None:
-            names = ", ".join(f"“{tl.title}”" for tl in lists) or "none"
-            raise ValueError(f"No to-do list called “{one_line(name, 60)}”. Your lists: {names}.")
-        return found
+        return _match(await self.client.lists(uid), name)
 
     # ---- read ------------------------------------------------------------------------------
 
@@ -229,7 +222,7 @@ class TasksAPI:
         through = parse_due(a["due_before"], tz)[0] if a.get("due_before") else None
         completed = a.get("include_completed") is True
         lists = await self.client.lists(uid)
-        chosen = [await self._resolve(uid, _list_arg(a["list"]))] if "list" in a else lists
+        chosen = [_match(lists, _list_arg(a["list"]))] if "list" in a else lists
         pages = await asyncio.gather(
             *(
                 self.client.page(uid, tl.id, due_through=through, completed=completed)
@@ -362,6 +355,17 @@ class TasksAPI:
         except Exception:  # noqa: BLE001 — the task itself was found; the name is a nicety
             return None
         return next((tl.title for tl in lists if tl.id == ref.list_id), None)
+
+
+def _match(lists: list[TaskList], name: str) -> TaskList:
+    """A list by its id, else by its name (any case); the error names the real lists."""
+    found = next((tl for tl in lists if tl.id == name), None) or next(
+        (tl for tl in lists if tl.title.casefold() == name.casefold()), None
+    )
+    if found is None:
+        names = ", ".join(f"“{tl.title}”" for tl in lists) or "none"
+        raise ValueError(f"No to-do list called “{one_line(name, 60)}”. Your lists: {names}.")
+    return found
 
 
 def _order(row: tuple[TaskList, dict[str, Any]]) -> tuple[bool, bool, date]:

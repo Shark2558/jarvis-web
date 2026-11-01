@@ -206,6 +206,8 @@ async def test_one_list_by_name_or_id_and_an_unknown_name_lists_the_real_ones() 
     assert [t["id"] for t in by_name["tasks"]] == ["L2:t_later", "L2:t_nodue"]
     by_id = (await _run(gw, "tasks_list", {"list": "L1"})).result
     assert {t["list"] for t in by_id["tasks"]} == {"My Tasks"}
+    lists_read = [r for r in fake.requests if r.url.path.endswith("/users/@me/lists")]
+    assert len(lists_read) == 2  # one per call: the name is matched against the same read
     out = await _run(gw, "tasks_list", {"list": "Groceries"})
     assert out.outcome is GatewayOutcome.ERROR
     assert "My Tasks" in str(out.error) and "Work" in str(out.error)

@@ -170,6 +170,38 @@ screen → Data Access → Add or remove scopes → add `https://www.googleapis.
 ticked. **Not verified live**: Google's behaviour when the scope is requested before step (2) in
 Testing mode (expected: still grantable for test users, with the unverified-app screen).
 
+**Built (branch `s10-tasks`)** — `integrations/google.py` (`TASKS_SCOPE` in `OPTIONAL_SCOPES`,
+`can_use_tasks`); `tools/tasks_api.py` (ids, due-date rules, `TasksClient` shared with the
+brief); `tools/google_tasks.py` (5 tools, previews, result fitting); `tools/tasks_cards.py`;
+`tools/setup.py` (registered with the Google tools, `default_tz = JARVIS_USER_TIMEZONE`);
+`api/integrations.py` (`google.tasks_granted`); `brief/{models,collect,render,summarize,service}.py`
+(To-do section); `core/prompts.py` (`_TODO_RULES` paragraph); console `console.js` (Grant row),
+`console-brief.js` (To-do section), `console.css` (2 rules); `deploy/cloudrun.sh` (enables
+`tasks.googleapis.com`, prints the optional scope). Evals `evals/tasks/` (19 correctness + 10
+injection cases + negative control; in `run_all_mock.py`), brief eval compose c18–c20 and
+injection i35–i37 (hostile to-do titles).
+
+**Deviations / details the plan left open**
+- The brief's AI input budgets: mail 6,000 → 5,500 chars so calendar + mail + to-do + markers fit
+  under the 12,000 cap; the backstop now keeps the closing task line (it can no longer cut inside
+  a fence). The AI is skipped only when calendar, inbox AND to-do were all unreadable.
+- `due_before` is inclusive ("on or before"); `dueMax` is sent as the next midnight and the result
+  is filtered again locally (whatever Google's bound semantics are).
+- Brief to-do reads: 1 list read + 1 per list (≤ 10), each via `GoogleConnector.request` (which
+  also reads the stored link once per call — ≤ 12 extra Firestore reads per generation, ≤ 6
+  generations a day). No Google call and no extra read beyond the link status when not granted.
+- The tz look-up for tools is cached 5 minutes per owner (one calendar GET).
+
+**Unverified against live Google (fake transport only)**: clearing a due date with
+`PATCH {"due": null}`; `@default` accepted by insert/patch/delete (documented only by Google's
+Ads-scripts sample); whether `dueMax` is inclusive (handled either way); Testing-mode consent
+before the scope is added to Data Access.
+
+**Reviews**: fresh-context `code-reviewer` / `security-reviewer` agents were not available to this
+builder session; a self-review against the gateway / fence / id / R3 rules was done (found and
+fixed: a double list read on `tasks_list(list=…)`). The integrator should run the fresh-context
+reviews on this branch.
+
 ## D — Owner permission rules + passkey for irreversible actions
 - **D-D1 Permission rules**: per-owner `permissions/{uid}` mapping tool groups → `allow | ask | deny`.
   Groups (builder finalises from the registry): Calendar changes, Calendar deletes / invites, Email

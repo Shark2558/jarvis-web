@@ -378,3 +378,33 @@ def test_browser_job_pins_playwright(ci: dict[str, Any]) -> None:
     run = "\n".join(str(s.get("run", "")) for s in ci["jobs"]["browser"]["steps"])
     assert "playwright==1.63.0" in run
     assert not re.search(r"\bplaywright(?!==)(\s|$)", run.split("playwright install")[0])
+
+
+# ---- slice 9: voice needs the two speech APIs and lets jarvis-run use them --------------------
+
+
+def _runtime_roles(script: str) -> str:
+    return script.split("for role in roles/datastore.user", 1)[1].split("; do", 1)[0]
+
+
+def test_speech_apis_are_enabled_with_the_others(script: str) -> None:
+    enable = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
+    assert "texttospeech.googleapis.com" in enable and "speech.googleapis.com" in enable
+    # step 2 runs on every path (quick re-runs too): the first enable is at the top level
+    assert _top_level_depth_at(script, "gcloud services enable run.googleapis.com") == 0
+
+
+def test_runtime_account_may_consume_the_projects_services(script: str) -> None:
+    assert "roles/serviceusage.serviceUsageConsumer" in _runtime_roles(script)
+    loop = script.split("for role in roles/datastore.user", 1)[1].split("done", 1)[0]
+    assert 'bind "serviceAccount:${RUN_SA}" "$role"' in loop
+    # granted with the idempotent binding helper, never removed again
+    removed = script.split("remove-iam-policy-binding", 1)[0].rsplit("for role in", 1)[1]
+    assert "serviceUsageConsumer" not in removed
+    assert _top_level_depth_at(script, "for role in roles/datastore.user") == 0
+
+
+def test_voice_needs_no_new_secret_or_env(script: str) -> None:
+    # ADC as jarvis-run: no key, no secret; JARVIS_VOICE_CLOUD defaults on in the app
+    assert "jarvis-voice" not in script and "JARVIS_VOICE_" not in script
+    assert "texttospeech" in script.split('say "DONE', 1)[1]  # the one-time fix is printed

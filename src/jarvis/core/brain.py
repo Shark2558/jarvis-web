@@ -76,9 +76,7 @@ class Brain:
         self._system = build_system_prompt(honorific=settings.user_honorific)
         # One owner action at a time per conversation (chat, approve, decline, delete): no
         # lost turns, no double execution, no resurrected deletes. Locks vanish when unused.
-        self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
-            weakref.WeakValueDictionary()
-        )
+        self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
 
     @contextlib.asynccontextmanager
     async def _serialised(self, session_id: str | None) -> AsyncIterator[None]:
@@ -154,7 +152,19 @@ class Brain:
 
     # ---- the loop ------------------------------------------------------------------------
 
+    async def _start(self, req: ChatRequest) -> ChatRequest:
+        """A brand-new conversation gets its id (and its lock) before any work happens, so an
+        approval proposed in the first reply can't be decided while that reply is written."""
+        if req.session_id:
+            return req
+        if req.brain:
+            self.brains.get(req.brain)  # fail before creating an orphan session
+        guard_input(req.message, max_chars=self.s.max_input_chars)
+        session = await self._load_or_create(req)
+        return req.model_copy(update={"session_id": session.id})
+
     async def chat(self, req: ChatRequest) -> ChatResponse:
+        req = await self._start(req)
         async with self._serialised(req.session_id):
             return await self._chat(req)
 
@@ -317,6 +327,17 @@ class Brain:
         session.metadata["_rounds"] = rounds
         return completion, pending
 
+    async def _save_after_action(self, session: Session) -> None:
+        """The owner's decision has already taken effect. A storage hiccup must not turn that
+        into an error (the owner would ask again and e.g. send twice): log, still answer."""
+        try:
+            await self.store.save(session)
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "SAVE FAILED after an approved action; reply still sent",
+                extra={"session_id": session.id, "error": type(exc).__name__},
+            )
+
     # ---- forgetting -----------------------------------------------------------------------
 
     async def forget(self, session_id: str, *, user_id: str = "owner") -> bool:
@@ -424,7 +445,7 @@ class Brain:
                 trace_id=trace_id,
             )
         )
-        await self.store.save(session)
+        await self._save_after_action(session)
 
         req = ChatRequest(message="-", session_id=session_id, user_id=user_id)
         spec = self._resolve_brain(session, req)
@@ -456,7 +477,7 @@ class Brain:
                 cost_usd=cost,
             )
         )
-        await self.store.save(session)
+        await self._save_after_action(session)
         from jarvis.llm.base import Usage
 
         return ChatResponse(
@@ -475,6 +496,7 @@ class Brain:
 
     async def chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
         """Streaming variant for the CLI (and Phase 1 TTS). Persists the full reply at the end."""
+        req = await self._start(req)
         async with self._serialised(req.session_id):
             async for delta in self._chat_stream(req):
                 yield delta

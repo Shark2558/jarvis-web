@@ -96,7 +96,11 @@ async def test_pending_approval_survives_cold_start(  # type: ignore[no-untyped-
         assert again.status_code == 404 and len(world.sent) == 1
         audit = (await c2.get("/v1/audit?limit=10")).json()
         assert audit["verified"] is True
-        assert [e["outcome"] for e in audit["entries"]] == ["awaiting_confirmation", "executed"]
+        assert [e["outcome"] for e in audit["entries"]] == [
+            "awaiting_confirmation",
+            "executing",
+            "executed",
+        ]
 
 
 async def test_decline_after_approve_is_rejected(  # type: ignore[no-untyped-def]

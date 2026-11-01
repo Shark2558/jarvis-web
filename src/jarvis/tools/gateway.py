@@ -133,14 +133,19 @@ class Gateway:
             try:
                 await self.gate.check(action, confirmation_id=confirmation_id)
             except ConfirmationRequired as exc:
-                await self.audit.append(
-                    agent=tool.agent,
-                    tool=tool.name,
-                    risk=tool.risk,
-                    outcome="awaiting_confirmation",
-                    args=call.arguments,
-                    detail=exc.action.id,
-                )
+                try:
+                    await self.audit.append(
+                        agent=tool.agent,
+                        tool=tool.name,
+                        risk=tool.risk,
+                        outcome="awaiting_confirmation",
+                        args=call.arguments,
+                        detail=exc.action.id,
+                    )
+                except Exception:
+                    if exc.action.id == action.id:  # never leave an unaudited approval behind
+                        await self.gate.cancel(action.id)
+                    raise
                 return GatewayResult(GatewayOutcome.AWAITING_CONFIRMATION, pending=exc.action)
             except ConfirmationInvalid:
                 await self.audit.append(
@@ -156,6 +161,27 @@ class Gateway:
                     GatewayOutcome.CONFIRMATION_INVALID, error="approval is no longer valid"
                 )
 
+        if effect is Effect.ASK:
+            # Approved and consumed. Record intent BEFORE acting: an irreversible action never
+            # runs without an audit entry. If the record can't be written, fail closed (the
+            # approval is spent, nothing happens, the owner is told).
+            try:
+                await self.audit.append(
+                    agent=tool.agent,
+                    tool=tool.name,
+                    risk=tool.risk,
+                    outcome="executing",
+                    args=call.arguments,
+                    detail="confirmed",
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.error(
+                    "audit unavailable; irreversible action NOT run",
+                    extra={"tool": tool.name, "error": type(exc).__name__},
+                )
+                return GatewayResult(
+                    GatewayOutcome.ERROR, error="could not record the action, so nothing was done"
+                )
         try:
             out = tool.run(call.arguments)
             if hasattr(out, "__await__"):

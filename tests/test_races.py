@@ -186,3 +186,97 @@ async def test_rejected_first_message_leaves_no_empty_conversation(slow_brain: B
     with pytest.raises(InputRejected):
         await slow_brain.chat(ChatRequest(message="\x00\x01  "))
     assert await slow_brain.store.list_for_user("owner") == []
+
+
+class FailingSaveOnce:
+    """Wraps a SessionStore; the next save after `arm()` raises (a Firestore hiccup)."""
+
+    def __init__(self, inner: Any) -> None:
+        self.inner, self.armed = inner, False
+
+    def arm(self) -> None:
+        self.armed = True
+
+    async def save(self, session: Any) -> None:
+        if self.armed:
+            self.armed = False
+            raise RuntimeError("firestore unavailable")
+        await self.inner.save(session)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.inner, name)
+
+
+async def test_save_failure_after_send_still_reports_done(
+    slow_brain: Brain, provider: MockProvider, world: InMemoryWorld
+) -> None:
+    pid, sid = await _propose(slow_brain, provider)
+    store = FailingSaveOnce(slow_brain.store)
+    slow_brain.store = store  # type: ignore[assignment]
+    store.arm()
+    provider.script("Sent, Sir.")
+    r = await slow_brain.approve(pid, session_id=sid)  # must not raise: it was sent
+    assert len(world.sent) == 1 and r.reply
+
+
+async def test_irreversible_action_never_runs_unaudited(
+    slow_brain: Brain, provider: MockProvider, world: InMemoryWorld
+) -> None:
+    pid, sid = await _propose(slow_brain, provider)
+    assert slow_brain.gateway is not None
+    flaky = FlakyAudit(slow_brain.gateway.audit)
+    flaky.fail_outcomes = {"executing"}
+    slow_brain.gateway.audit = flaky
+    provider.script("It did not go through.")
+    await slow_brain.approve(pid, session_id=sid)
+    assert world.sent == []  # fail closed: no audit record, no send
+
+
+async def test_identical_proposals_share_one_approval(
+    slow_brain: Brain, provider: MockProvider
+) -> None:
+    same = ToolCall(id="d1", name="send_message", arguments={"to": "a@x.com", "body": "hi"})
+    provider.script_tool_calls([same, same.model_copy(update={"id": "d2"})], "Waiting.")
+    r = await slow_brain.chat(ChatRequest(message="send hi twice"))
+    assert len({p.id for p in r.pending_approvals}) == 1
+    assert len(await slow_brain.gateway.pending()) == 1  # type: ignore[union-attr]
+
+
+async def test_slow_reply_racing_delete_never_resurrects(
+    slow_brain: Brain, provider: MockProvider
+) -> None:
+    provider.script("first")
+    sid = (await slow_brain.chat(ChatRequest(message="hello"))).session_id
+    provider.latency_ms = 60
+    provider.script("slow reply")
+    task = asyncio.create_task(slow_brain.chat(ChatRequest(message="more", session_id=sid)))
+    await asyncio.sleep(0.02)  # the reply is in flight
+    assert await slow_brain.forget(sid) is True
+    await asyncio.gather(task, return_exceptions=True)
+    assert await slow_brain.store.get(sid) is None
+
+
+async def test_approve_during_first_reply_waits_for_it(
+    slow_brain: Brain, provider: MockProvider, world: InMemoryWorld
+) -> None:
+    provider.latency_ms = 40
+    provider.script_tool_calls(
+        [ToolCall(id="f1", name="send_message", arguments={"to": "b@x.com", "body": "x"})],
+        "Awaiting your approval, Sir.",
+    )
+    chat = asyncio.create_task(slow_brain.chat(ChatRequest(message="send b x")))
+    pid = sid = None
+    for _ in range(200):  # approve as soon as the card exists, while chat is still running
+        pend = await slow_brain.gateway.pending()  # type: ignore[union-attr]
+        if pend:
+            pid, sid = pend[0].id, pend[0].scope.rsplit(":", 1)[1]  # type: ignore[union-attr]
+            break
+        await asyncio.sleep(0.002)
+    assert pid and sid
+    provider.script("Sent.")
+    await slow_brain.approve(pid, session_id=sid)
+    await chat
+    session = await slow_brain.store.get(sid)
+    assert session is not None and len(world.sent) == 1
+    ids = [getattr(b, "tool_use_id", "") for t in session.turns for b in t.blocks]
+    assert "f1" in ids and f"approve_{pid}" in ids  # neither exchange was overwritten

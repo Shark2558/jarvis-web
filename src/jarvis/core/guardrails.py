@@ -152,9 +152,6 @@ class ConfirmationGate:
         stores anything."""
         if action.risk is not ActionRisk.IRREVERSIBLE:
             return
-        if confirmation_id is None:
-            await self.store.put(action)
-            raise ConfirmationRequired(action)
 
         def same(p: PendingAction) -> bool:
             return (
@@ -163,6 +160,13 @@ class ConfirmationGate:
                 and p.scope == action.scope
             )
 
+        if confirmation_id is None:
+            # the same proposal twice must not become two approvals (= two sends)
+            existing = next((p for p in await self.store.list_pending() if same(p)), None)
+            if existing is not None:
+                raise ConfirmationRequired(existing)
+            await self.store.put(action)
+            raise ConfirmationRequired(action)
         if await self.store.consume(confirmation_id, same) is None:
             raise ConfirmationInvalid(action)
 

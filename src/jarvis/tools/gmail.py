@@ -2,8 +2,10 @@
 """Gmail tools (Layer 5/6, Communication) over the REST connector.
 
 search/read are R1 and return only the fields asked for — search never returns bodies, read
-truncates the body and lists attachments without fetching them. create_draft is R2. send is R3:
-the approval card reads "Send an email to {to}: {subject}" and there is no "don't ask again".
+truncates the body and lists attachments without fetching them. create_draft is R2 (its result
+says "draft saved, not sent"). send is R3 and there is no "don't ask again": the approval card
+shows every recipient (IDN domains also in punycode), the subject, the first 200 characters of
+the body and whether it replies in a thread, each field flattened by `tools.card.one_line`.
 Mail content reaches the model fenced as EXTERNAL CONTENT (see tools/external.py).
 """
 
@@ -15,7 +17,9 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleConnector
-from jarvis.tools.base import Tool
+from jarvis.tools.addresses import display_addresses
+from jarvis.tools.base import SummaryFn, Tool
+from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import sender_address, wrap_external
 from jarvis.tools.gmail_mime import (
@@ -38,6 +42,9 @@ MAX_RESULTS = 25
 DEFAULT_RESULTS = 10
 QUERY_LIMIT = 500
 BODY_ARG_LIMIT = 20_000
+CARD_SUBJECT_LIMIT = 200
+CARD_BODY_LIMIT = 200
+DRAFT_STATUS = "draft saved, not sent"
 META_HEADERS = ("From", "To", "Cc", "Date", "Subject", "Message-ID", "References")
 
 _MESSAGE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
@@ -141,7 +148,8 @@ class GmailAPI:
             in_reply_to = h.get("message-id") or None
             references = h.get("references") or None
             thread_id = original.get("threadId")
-            subject = reply_subject(subject, h.get("subject", ""))
+            # the original subject is someone else's text: one clean line before it is reused
+            subject = reply_subject(subject, one_line(h.get("subject", ""), SUBJECT_LIMIT))
         raw = build_raw_message(
             to=to, subject=subject, body=body, in_reply_to=in_reply_to, references=references
         )
@@ -155,6 +163,7 @@ class GmailAPI:
             message["threadId"] = thread_id
         d = await self.conn.request(uid, "POST", DRAFTS_URL, json={"message": message})
         return {
+            "status": DRAFT_STATUS,
             "draft_id": d.get("id"),
             "message_id": (d.get("message") or {}).get("id"),
             "to": ", ".join(to),
@@ -193,6 +202,28 @@ def _check_compose(a: dict[str, Any]) -> None:
     check_header_value(a.get("subject"), name="subject", limit=SUBJECT_LIMIT)
     if a.get("reply_to_message_id"):
         _validate_message_id(a["reply_to_message_id"])
+
+
+def _compose_card(verb: str) -> SummaryFn:
+    """Card text for a draft/send: recipients, subject, body preview, threading."""
+
+    def summarize(a: dict[str, Any]) -> str:
+        replying = bool(a.get("reply_to_message_id"))
+        subject = one_line(a.get("subject"), CARD_SUBJECT_LIMIT) or (
+            "(empty: the reply keeps the original subject)" if replying else "(no subject)"
+        )
+        lines = [
+            verb,
+            f"To: {display_addresses(parse_recipients(a.get('to')))}",
+            f"Subject: {subject}",
+            f"Body: {one_line(a.get('body'), CARD_BODY_LIMIT) or '(empty)'}",
+        ]
+        if replying:
+            mid = one_line(a.get("reply_to_message_id"), 128)
+            lines.append(f"Sent as a reply in thread (to message {mid})")
+        return "\n".join(lines)
+
+    return summarize
 
 
 _COMPOSE_SCHEMA = {
@@ -249,7 +280,7 @@ def gmail_tools(conn: GoogleConnector) -> list[Tool]:
             ActionRisk.REVERSIBLE,
             api.create_draft,
             agent="google",
-            summary_template="Draft an email to {to}: {subject}",
+            summarize=_compose_card("Save a draft in Gmail (nothing is sent)"),
             check=_check_compose,
         ),
         Tool(
@@ -260,7 +291,7 @@ def gmail_tools(conn: GoogleConnector) -> list[Tool]:
             ActionRisk.IRREVERSIBLE,
             api.send,
             agent="google",
-            summary_template="Send an email to {to}: {subject}",
+            summarize=_compose_card("Send an email (cannot be unsent)"),
             check=_check_compose,
         ),
     ]

@@ -72,6 +72,76 @@
       "hangoutLink": "https://meet.google.com/standup"
     },
     {
+      "id": "standup_18",
+      "summary": "Daily stand-up",
+      "start": {
+        "dateTime": "2027-01-18T09:30:00+05:30"
+      },
+      "end": {
+        "dateTime": "2027-01-18T10:00:00+05:30"
+      },
+      "organizer": {
+        "email": "owner@example.com"
+      },
+      "hangoutLink": "https://meet.google.com/standup"
+    },
+    {
+      "id": "standup_19",
+      "summary": "Daily stand-up",
+      "start": {
+        "dateTime": "2027-01-19T09:30:00+05:30"
+      },
+      "end": {
+        "dateTime": "2027-01-19T10:00:00+05:30"
+      },
+      "organizer": {
+        "email": "owner@example.com"
+      },
+      "hangoutLink": "https://meet.google.com/standup"
+    },
+    {
+      "id": "standup_20",
+      "summary": "Daily stand-up",
+      "start": {
+        "dateTime": "2027-01-20T09:30:00+05:30"
+      },
+      "end": {
+        "dateTime": "2027-01-20T10:00:00+05:30"
+      },
+      "organizer": {
+        "email": "owner@example.com"
+      },
+      "hangoutLink": "https://meet.google.com/standup"
+    },
+    {
+      "id": "standup_21",
+      "summary": "Daily stand-up",
+      "start": {
+        "dateTime": "2027-01-21T09:30:00+05:30"
+      },
+      "end": {
+        "dateTime": "2027-01-21T10:00:00+05:30"
+      },
+      "organizer": {
+        "email": "owner@example.com"
+      },
+      "hangoutLink": "https://meet.google.com/standup"
+    },
+    {
+      "id": "standup_22",
+      "summary": "Daily stand-up",
+      "start": {
+        "dateTime": "2027-01-22T09:30:00+05:30"
+      },
+      "end": {
+        "dateTime": "2027-01-22T10:00:00+05:30"
+      },
+      "organizer": {
+        "email": "owner@example.com"
+      },
+      "hangoutLink": "https://meet.google.com/standup"
+    },
+    {
       "id": "e_steer",
       "summary": "Steering committee review",
       "start": {

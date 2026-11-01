@@ -8,6 +8,12 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // An approval card must read exactly as it is: bidi overrides, zero-width and control
+  // characters (which can turn "exe.gpj" into "jpg.exe" on screen) are shown as visible
+  // [U+202E] markers. The server already strips them from summaries; this also covers the
+  // raw arguments.
+  const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+  const visible = (s) => String(s).replace(INVISIBLE, (c) => `[U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}]`);
   const lsGet = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
   const ssGet = (k) => { try { return sessionStorage.getItem(k) || ''; } catch (_) { return ''; } };
@@ -130,8 +136,8 @@
     el.innerHTML = list.map(a => `
       <div class="approval" data-id="${esc(a.id)}" data-sid="${esc(a.session_id || '')}">
         <div class="title">${esc(a.tool.replace(/_/g, ' '))} <span class="tag">${esc(a.risk)}</span></div>
-        <p>${esc(a.summary)}</p>
-        <pre>${esc(JSON.stringify(a.arguments, null, 2))}</pre>
+        <p>${esc(visible(a.summary))}</p>
+        <pre>${esc(visible(JSON.stringify(a.arguments, null, 2)))}</pre>
         <div class="actions"><button class="btn primary approve lift">Approve</button><button class="btn decline lift">Decline</button></div>
       </div>`).join('');
     el.querySelectorAll('.approval').forEach(card => {

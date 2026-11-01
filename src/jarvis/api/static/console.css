@@ -305,7 +305,7 @@ html[data-surface="night"] .welcome h1{font:400 clamp(21px,2.2vw,26px)/1.2 var(-
 .approval .title{display:flex;align-items:center;gap:8px;font-weight:650;font-size:14px;color:var(--ink)}
 .approval .title::first-letter{text-transform:uppercase}
 .tag{display:inline-block;font:700 11.5px/1 var(--hud);letter-spacing:.12em;text-transform:uppercase;padding:4px 8px 3px;border-radius:4px;background:rgba(245,158,11,.18);color:var(--amber-ink)}
-.approval p{margin:7px 0 0;font-size:13.5px;color:var(--ink)}
+.approval p{margin:7px 0 0;font-size:13.5px;color:var(--ink);white-space:pre-line;overflow-wrap:anywhere}
 .approval pre{margin:9px 0 0;padding:9px 10px;border-radius:var(--r-sm);background:var(--well);border:1px solid color-mix(in srgb,#F59E0B 30%,var(--line-2));font:12px/1.5 var(--mono);color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere;max-height:140px;overflow:auto}
 .actions{display:flex;gap:8px;margin-top:12px}
 .btn{position:relative;flex:1;height:36px;border-radius:var(--r-sm);border:1px solid var(--line);background-color:var(--well);color:var(--ink-2);cursor:pointer;

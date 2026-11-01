@@ -10,10 +10,26 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.llm.base import ToolCall, ToolSpec
+from jarvis.tools.card import one_line
 
 ToolFn = Callable[[dict[str, Any]], Awaitable[Any] | Any]
 RiskFn = Callable[[dict[str, Any]], ActionRisk]
 CheckFn = Callable[[dict[str, Any]], None]
+SummaryFn = Callable[[dict[str, Any]], str]
+SUMMARY_FALLBACK_LIMIT = 300
+
+
+@dataclass(frozen=True)
+class Preview:
+    """What a read-only look-up made before the decision found: the text of the owner's
+    approval card, and — when the item turns out to involve other people — a raised risk.
+    A preview can only raise the risk the arguments imply, never lower it."""
+
+    summary: str
+    risk: ActionRisk | None = None
+
+
+PreviewFn = Callable[[dict[str, Any]], Awaitable[Preview]]
 
 
 @dataclass(frozen=True)
@@ -24,7 +40,7 @@ class Tool:
     risk: ActionRisk
     run: ToolFn
     agent: str = "core"
-    # how the owner sees a pending action: "Send a message to {to}"
+    # how the owner sees a pending action: "Send a message to {to}" (flattened to one line)
     summary_template: str = "{name}"
     required: tuple[str, ...] = field(default=())
     # Optional per-call risk: e.g. creating a calendar event is reversible alone but sends mail
@@ -33,6 +49,14 @@ class Tool:
     # Optional pure argument check (no I/O), run by the gateway BEFORE the policy decision, so a
     # malformed request fails fast instead of reaching an approval card or a URL.
     check: CheckFn | None = None
+    # Optional card text built from the arguments (the tool sanitises every field); wins over
+    # summary_template. Pure, no I/O.
+    summarize: SummaryFn | None = None
+    # Optional async READ-ONLY look-up the gateway awaits inside the tool context after the
+    # argument check and before the policy decision (e.g. fetch the event about to be deleted):
+    # the card shows the real item and the risk can rise. A failure is fail-closed: no card,
+    # nothing runs. The stored PendingAction arguments stay exactly the call's arguments.
+    preview: PreviewFn | None = None
 
     def effective_risk(self, args: dict[str, Any]) -> ActionRisk:
         return self.risk_for(args) if self.risk_for is not None else self.risk
@@ -55,11 +79,26 @@ class Tool:
             self.check(args)
 
     def summary(self, args: dict[str, Any]) -> str:
+        if self.summarize is not None:
+            try:
+                return self.summarize(args)
+            except (KeyError, TypeError, ValueError):
+                pass  # fall through to the generic, still sanitised, wording
         try:
-            return self.summary_template.format(name=self.name, **args)
-        except (KeyError, IndexError):
+            text = self.summary_template.format(name=self.name, **args)
+        except (KeyError, IndexError, ValueError):
             # never show the owner a bare verb for something irreversible
-            return f"{self.name} {json.dumps(args, default=str)[:200]}"
+            text = f"{self.name} {json.dumps(args, default=str, ensure_ascii=False)}"
+        return one_line(text, SUMMARY_FALLBACK_LIMIT)
 
 
-__all__ = ["CheckFn", "RiskFn", "Tool", "ToolCall", "ToolFn"]
+__all__ = [
+    "CheckFn",
+    "Preview",
+    "PreviewFn",
+    "RiskFn",
+    "SummaryFn",
+    "Tool",
+    "ToolCall",
+    "ToolFn",
+]

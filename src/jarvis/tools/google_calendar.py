@@ -1,9 +1,13 @@
 # src/jarvis/tools/google_calendar.py
 """Google Calendar tools (Layer 5/6, Task & Productivity) over the REST connector.
 
-Risk classes: list/free-slots R1; create/update R2 alone but R3 once attendees are involved
-(an invite is mail to other people — `Tool.risk_for`); delete R3. Times are ISO 8601; a naive
-time is read in the owner's calendar time zone, and every time returned carries an offset.
+Risk classes: list/free-slots R1; create R2 alone but R3 once attendees are invited (an invite
+is mail to other people — `Tool.risk_for`); update R2 for an event only the owner is on, R3 when
+the event already has other attendees or the attendees change (decided by the `preview` look-up,
+which also fills the approval card with the event's real title, time and every change); delete
+R3, with the event looked up first for the card. A look-up that fails is fail-closed: no card,
+no change. Times are ISO 8601; a naive time is read in the owner's calendar time zone, and every
+time returned carries an offset.
 """
 
 from __future__ import annotations
@@ -18,7 +22,8 @@ from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector
 from jarvis.logging import get_logger
 from jarvis.tools.addresses import MAX_RECIPIENTS, parse_address
-from jarvis.tools.base import Tool
+from jarvis.tools.base import Preview, Tool
+from jarvis.tools.calendar_cards import create_card, delete_card, others_on, update_card
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
@@ -250,9 +255,10 @@ class CalendarAPI:
             raise ValueError("nothing to update: give at least one field to change")
         tz = await self.owner_tz(uid)
         body = self._body(changes, tz, create=False)
-        updates = "all" if "attendees" in a else "none"
+        # "all": an event only the owner is on has nobody to notify, and one with other
+        # attendees only gets here after the owner approved a card that says they'll be told.
         e = await self.conn.request(
-            uid, "PATCH", f"{EVENTS_URL}/{eid}", params={"sendUpdates": updates}, json=body
+            uid, "PATCH", f"{EVENTS_URL}/{eid}", params={"sendUpdates": "all"}, json=body
         )
         return self._written(e, tz)
 
@@ -261,6 +267,26 @@ class CalendarAPI:
         eid = _validate_event_id(a.get("event_id"))
         await self.conn.request(uid, "DELETE", f"{EVENTS_URL}/{eid}", params={"sendUpdates": "all"})
         return {"deleted": True, "id": eid}
+
+    # ---- look-ups before the decision (Tool.preview) ----------------------------------------
+
+    async def _event(self, a: dict[str, Any]) -> dict[str, Any]:
+        uid = require_tool_context().user_id
+        eid = _validate_event_id(a.get("event_id"))
+        e = await self.conn.request(uid, "GET", f"{EVENTS_URL}/{eid}")
+        if not isinstance(e, dict) or not e:
+            raise GoogleAPIError("Google returned no details for that event.")
+        return e
+
+    async def preview_delete(self, a: dict[str, Any]) -> Preview:
+        return Preview(delete_card(await self._event(a)), ActionRisk.IRREVERSIBLE)
+
+    async def preview_update(self, a: dict[str, Any]) -> Preview:
+        e = await self._event(a)
+        guests = _validate_attendees(a["attendees"]) if "attendees" in a else None
+        affects_others = bool(others_on(e)) or guests is not None
+        risk = ActionRisk.IRREVERSIBLE if affects_others else None
+        return Preview(update_card(e, a, guests), risk)
 
     def _written(self, e: dict[str, Any], tz: ZoneInfo) -> dict[str, Any]:
         start, _ = _event_time(e.get("start"), tz)
@@ -341,6 +367,10 @@ def _check_event_id(a: dict[str, Any]) -> None:
 # ---- tools --------------------------------------------------------------------------------
 
 
+def _summarize_create(a: dict[str, Any]) -> str:
+    return create_card(a, _validate_attendees(a.get("attendees")))
+
+
 def _invite_risk(a: dict[str, Any]) -> ActionRisk:
     return ActionRisk.IRREVERSIBLE if a.get("attendees") else ActionRisk.REVERSIBLE
 
@@ -404,14 +434,14 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
             ActionRisk.REVERSIBLE,
             api.create_event,
             agent="google",
-            summary_template="Create event '{summary}' {start} → {end}, inviting {attendees}",
+            summarize=_summarize_create,
             risk_for=_invite_risk,
             check=_check_create,
         ),
         Tool(
             "calendar_update_event",
-            "Change an existing event (only the given fields). Changing attendees notifies "
-            "people, so the owner must confirm.",
+            "Change an existing event (only the given fields). If other people are on the event, "
+            "or the attendees change, they are notified, so the owner must confirm.",
             {
                 "type": "object",
                 "properties": {
@@ -428,9 +458,9 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
             ActionRisk.REVERSIBLE,
             api.update_event,
             agent="google",
-            summary_template="Update event {event_id}, attendees → {attendees}",
             risk_for=_attendee_change_risk,
             check=_check_update,
+            preview=api.preview_update,
         ),
         Tool(
             "calendar_delete_event",
@@ -444,8 +474,8 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
             ActionRisk.IRREVERSIBLE,
             api.delete_event,
             agent="google",
-            summary_template="Delete calendar event {event_id}",
             check=_check_event_id,
+            preview=api.preview_delete,
         ),
     ]
 

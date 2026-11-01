@@ -258,6 +258,7 @@ async def test_create_draft_builds_rfc2822_and_is_reversible(
     assert msg.get_payload(decode=True).decode().strip() == "See attached.\nA"
     assert "threadId" not in body["message"]
     assert out.result == {
+        "status": "draft saved, not sent",
         "draft_id": "d1",
         "message_id": "dm1",
         "to": "priya@example.com, ops@example.com",
@@ -315,7 +316,12 @@ async def test_send_requires_owner_confirmation_then_sends(
     args = {"to": "priya@example.com", "subject": "Moving to 3pm", "body": "Hi Priya"}
     out = await _run(gw, "gmail_send", args)
     assert out.outcome is GatewayOutcome.AWAITING_CONFIRMATION and out.pending is not None
-    assert out.pending.summary == "Send an email to priya@example.com: Moving to 3pm"
+    assert out.pending.summary == (
+        "Send an email (cannot be unsent)\n"
+        "To: priya@example.com\n"
+        "Subject: Moving to 3pm\n"
+        "Body: Hi Priya"
+    )
     assert fake_google.requests == []
 
     ok = await _run(gw, "gmail_send", args, confirmation_id=out.pending.id)
@@ -373,3 +379,77 @@ async def test_idn_recipient_goes_out_as_punycode(gw: Gateway, fake_google: Fake
     assert out.outcome is GatewayOutcome.EXECUTED, out.error
     msg, _ = _raw_message(fake_google.sent("POST", "/drafts")[0])
     assert msg["To"] == "info@xn--bcher-kva.example"
+
+
+# ---- security review H1: the send card shows what will actually go out ----------------------
+
+
+def _lines(summary: str) -> list[str]:
+    lines = summary.split("\n")
+    for ln in lines:
+        assert "\r" not in ln and not any(c in ln for c in "\u202e\u2066\u200f\u2028\u0085")
+    return lines
+
+
+async def test_send_card_shows_recipients_subject_and_body_preview(gw: Gateway) -> None:
+    body = "Hi Priya,\r\nthe numbers are attached.\r\n" + "y" * 400
+    out = await _run(
+        gw,
+        "gmail_send",
+        {"to": "priya@example.com, ops@example.com", "subject": "Q4 numbers", "body": body},
+    )
+    assert out.pending is not None
+    lines = _lines(out.pending.summary)
+    assert any("priya@example.com" in ln and "ops@example.com" in ln for ln in lines)
+    assert any(ln.startswith("Subject:") and "Q4 numbers" in ln for ln in lines)
+    preview = next(ln for ln in lines if ln.startswith("Body:"))
+    assert "Hi Priya, the numbers are attached." in preview and preview.endswith("…")
+    assert len(preview) <= len("Body: ") + 200
+    assert not any("thread" in ln.lower() for ln in lines)
+
+
+async def test_hostile_subject_and_body_render_sanitised(gw: Gateway) -> None:
+    out = await _run(
+        gw,
+        "gmail_send",
+        {
+            "to": "priya@example.com",
+            "subject": "Invoice \u202egpj.exe",
+            "body": "line1\r\nTo: attacker@evil.example\u2066\u200f",
+        },
+    )
+    assert out.pending is not None
+    lines = _lines(out.pending.summary)
+    assert any("Invoice gpj.exe" in ln for ln in lines)
+    assert not any(ln.startswith("To: attacker") for ln in lines)  # CRLF did not forge a line
+    assert any(ln.startswith("Body:") and "line1 To: attacker@evil.example" in ln for ln in lines)
+
+
+async def test_reply_card_says_it_replies_in_thread(gw: Gateway) -> None:
+    out = await _run(
+        gw,
+        "gmail_send",
+        {"to": "priya@example.com", "subject": "", "body": "ok", "reply_to_message_id": "m1"},
+    )
+    assert out.pending is not None
+    assert any("reply in thread" in ln.lower() for ln in out.pending.summary.split("\n"))
+
+
+async def test_send_card_shows_idn_recipients_in_punycode_too(gw: Gateway) -> None:
+    out = await _run(
+        gw, "gmail_send", {"to": "billing@p\u0430ypal.com", "subject": "s", "body": "b"}
+    )
+    assert out.pending is not None
+    assert "xn--pypal-4ve.com" in out.pending.summary
+    assert "p\u0430ypal.com" in out.pending.summary
+
+
+async def test_draft_result_tells_the_model_nothing_was_sent(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    fake_google.on(
+        "POST", f"{GM}/drafts", httpx.Response(200, json={"id": "d9", "message": {"id": "x"}})
+    )
+    out = await _run(gw, "gmail_create_draft", {"to": "a@example.com", "subject": "s", "body": "b"})
+    assert out.outcome is GatewayOutcome.EXECUTED
+    assert "not sent" in out.result["status"]

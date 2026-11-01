@@ -8,7 +8,7 @@ import pytest
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.llm.base import ToolCall
 from jarvis.tools.audit import AuditLog
-from jarvis.tools.base import Tool
+from jarvis.tools.base import Preview, Tool
 from jarvis.tools.context import ToolContext, current_tool_context, tool_context
 from jarvis.tools.gateway import Gateway, GatewayOutcome
 from jarvis.tools.policy import Effect, Policy
@@ -189,3 +189,125 @@ async def test_check_hook_rejects_before_policy_so_nothing_is_proposed() -> None
     assert await gateway.pending() == []
     ok = await gateway.execute(ToolCall(id="k2", name="send_thing", arguments={"to": "fine"}))
     assert ok.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+
+
+# ---- Tool.preview (security review H1/M2): look the item up before deciding ------------------
+
+ITEM_SCHEMA = {
+    "type": "object",
+    "properties": {"item": {"type": "string"}, "title": {"type": "string"}},
+    "required": ["item"],
+}
+
+
+def _preview_tool(
+    looked: list[Any],
+    ran: list[Any],
+    *,
+    risk: ActionRisk = ActionRisk.REVERSIBLE,
+    fail: bool = False,
+) -> Tool:
+    async def preview(a: dict[str, Any]) -> Preview:
+        looked.append((dict(a), current_tool_context()))
+        if fail:
+            raise LookupError("Google could not find that item (not found).")
+        shared = a["item"].startswith("shared")
+        return Preview(
+            summary=f"Change the item called {a['item'].upper()}",
+            risk=ActionRisk.IRREVERSIBLE if shared else None,
+        )
+
+    def run(a: dict[str, Any]) -> dict[str, Any]:
+        ran.append(dict(a))
+        return {"ok": True}
+
+    return Tool(
+        "change_item",
+        "d",
+        ITEM_SCHEMA,
+        risk,
+        run,
+        summary_template="template {item}",
+        preview=preview,
+    )
+
+
+def _gateway_with(tool: Tool, policy: Policy | None = None) -> Gateway:
+    reg = ToolRegistry()
+    reg.register(tool)
+    return Gateway(
+        registry=reg, policy=policy or Policy(), gate=ConfirmationGate(), audit=AuditLog()
+    )
+
+
+async def test_preview_runs_in_the_tool_context_and_its_text_is_the_card() -> None:
+    looked: list[Any] = []
+    ran: list[Any] = []
+    gateway = _gateway_with(_preview_tool(looked, ran, risk=ActionRisk.IRREVERSIBLE))
+    args = {"item": "board"}
+    out = await gateway.execute(ToolCall(id="p1", name="change_item", arguments=args), scope="u:s")
+    assert out.outcome is GatewayOutcome.AWAITING_CONFIRMATION and out.pending is not None
+    assert out.pending.summary == "Change the item called BOARD"
+    assert out.pending.arguments == args  # stored arguments are exactly the call's
+    assert looked[0][1] is not None and looked[0][1].user_id == "u" and ran == []
+    ok = await gateway.execute(
+        ToolCall(id="p1", name="change_item", arguments=args),
+        confirmation_id=out.pending.id,
+        scope="u:s",
+    )
+    assert ok.outcome is GatewayOutcome.EXECUTED and ran == [args]
+
+
+async def test_preview_can_raise_a_reversible_call_to_ask() -> None:
+    looked: list[Any] = []
+    ran: list[Any] = []
+    gateway = _gateway_with(_preview_tool(looked, ran))
+    solo = await gateway.execute(
+        ToolCall(id="p2", name="change_item", arguments={"item": "mine"}), scope="u:s"
+    )
+    assert solo.outcome is GatewayOutcome.EXECUTED and len(ran) == 1
+    shared = await gateway.execute(
+        ToolCall(id="p3", name="change_item", arguments={"item": "shared-doc"}), scope="u:s"
+    )
+    assert shared.outcome is GatewayOutcome.AWAITING_CONFIRMATION and len(ran) == 1
+    entry = (await gateway.audit.tail(1)).entries[-1]
+    assert entry.outcome == "awaiting_confirmation" and entry.risk is ActionRisk.IRREVERSIBLE
+
+
+async def test_failed_preview_fails_closed_with_no_card_and_no_run() -> None:
+    looked: list[Any] = []
+    ran: list[Any] = []
+    gateway = _gateway_with(_preview_tool(looked, ran, risk=ActionRisk.IRREVERSIBLE, fail=True))
+    out = await gateway.execute(
+        ToolCall(id="p4", name="change_item", arguments={"item": "gone"}), scope="u:s"
+    )
+    assert out.outcome is GatewayOutcome.ERROR and "not found" in (out.error or "")
+    assert await gateway.pending() == [] and ran == []
+    entry = (await gateway.audit.tail(1)).entries[-1]
+    assert entry.outcome == "error" and "preview" in entry.detail
+
+
+async def test_denied_tool_is_never_looked_up() -> None:
+    from jarvis.tools.policy import PolicyRule
+
+    looked: list[Any] = []
+    gateway = _gateway_with(
+        _preview_tool(looked, []),
+        Policy([PolicyRule(tool_pattern="change_*", effect=Effect.DENY)]),
+    )
+    out = await gateway.execute(
+        ToolCall(id="p5", name="change_item", arguments={"item": "x"}), scope="u:s"
+    )
+    assert out.outcome is GatewayOutcome.DENIED and looked == []
+
+
+def test_template_summaries_are_flattened_to_one_safe_line() -> None:
+    t = Tool(
+        "x",
+        "d",
+        ITEM_SCHEMA,
+        ActionRisk.IRREVERSIBLE,
+        lambda a: None,
+        summary_template="Do {item}",
+    )
+    assert t.summary({"item": "a\r\nb\u202ec"}) == "Do a bc"

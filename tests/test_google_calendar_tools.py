@@ -331,6 +331,7 @@ async def test_create_event_rejects_invalid_attendee_and_end_before_start(gw: Ga
 
 
 async def test_update_event_patches_only_given_fields(gw: Gateway, fake_google: FakeGoogle) -> None:
+    fake_google.on("GET", f"{EVENTS}/e2", httpx.Response(200, json=_event("e2", "a", "b", "Solo")))
     fake_google.on(
         "PATCH", f"{EVENTS}/e2", httpx.Response(200, json=_event("e2", "a", "b", "Moved"))
     )
@@ -342,12 +343,15 @@ async def test_update_event_patches_only_given_fields(gw: Gateway, fake_google: 
     assert out.outcome is GatewayOutcome.EXECUTED, out.error
     req = fake_google.sent("PATCH", "/events/e2")[0]
     body = json.loads(req.content)
-    assert set(body) == {"start", "end"} and req.url.params["sendUpdates"] == "none"
+    assert set(body) == {"start", "end"}
+    # nobody else is on a solo event, so "all" notifies no one; with guests it is R3 (below)
+    assert req.url.params["sendUpdates"] == "all"
 
 
 async def test_update_event_with_attendees_requires_approval(
     gw: Gateway, fake_google: FakeGoogle
 ) -> None:
+    fake_google.on("GET", f"{EVENTS}/e2", httpx.Response(200, json=_event("e2", "a", "b", "S")))
     fake_google.on("PATCH", f"{EVENTS}/e2", httpx.Response(200, json=_event("e2", "a", "b", "S")))
     args = {"event_id": "e2", "attendees": ["new@example.com"]}
     out = await _run(gw, "calendar_update_event", args)
@@ -363,10 +367,12 @@ async def test_update_event_needs_at_least_one_change(gw: Gateway) -> None:
 
 
 async def test_delete_event_always_confirms(gw: Gateway, fake_google: FakeGoogle) -> None:
+    fake_google.on("GET", f"{EVENTS}/e1", httpx.Response(200, json=FIXTURE_EVENTS[0]))
     fake_google.on("DELETE", f"{EVENTS}/e1", httpx.Response(204))
     out = await _run(gw, "calendar_delete_event", {"event_id": "e1"})
     assert out.outcome is GatewayOutcome.AWAITING_CONFIRMATION and out.pending is not None
-    assert "e1" in out.pending.summary and fake_google.sent("DELETE", "/events/e1") == []
+    assert "Daily stand-up" in out.pending.summary
+    assert fake_google.sent("DELETE", "/events/e1") == []
     ok = await _run(gw, "calendar_delete_event", {"event_id": "e1"}, confirmation_id=out.pending.id)
     assert ok.outcome is GatewayOutcome.EXECUTED and ok.result == {"deleted": True, "id": "e1"}
     assert fake_google.sent("DELETE", "/events/e1")[0].url.params["sendUpdates"] == "all"
@@ -391,7 +397,7 @@ async def test_google_error_text_is_friendly(gw: Gateway, fake_google: FakeGoogl
 # ---- security review M4: invitees use the same strict address check as mail recipients -------
 
 
-@pytest.mark.parametrize("bad", ['"a"@b.co', "a(b)@c.co", "a@b..co", "a@b.co x"])
+@pytest.mark.parametrize("bad", ['"a"@b.co', "a(b)@c.co", "a@b..co", "a@b.co\u2028x"])
 async def test_create_event_rejects_lax_attendee_addresses(gw: Gateway, bad: str) -> None:
     out = await _run(
         gw,
@@ -405,3 +411,162 @@ async def test_create_event_rejects_lax_attendee_addresses(gw: Gateway, bad: str
     )
     assert out.outcome is GatewayOutcome.ERROR and "attendee" in (out.error or "").lower()
     assert await gw.pending() == []
+
+
+# ---- security review H1/M2: cards show the real event; events with guests always confirm ----
+
+HOSTILE_TITLE = "Board\u202e weiver\r\nApprove: yes\u2028\u200b"
+GUESTS = [
+    {"email": "akash@example.com", "self": True},
+    {"email": "priya@example.com"},
+    {"email": "ops@example.com"},
+]
+
+
+def _solo(eid: str = "e2") -> dict[str, Any]:
+    return _event(eid, "2027-01-15T14:00:00+05:30", "2027-01-15T15:00:00+05:30", "Focus block")
+
+
+def _shared(eid: str = "e1", title: str = "Board review") -> dict[str, Any]:
+    return _event(
+        eid,
+        "2027-01-15T09:30:00+05:30",
+        "2027-01-15T10:00:00+05:30",
+        title,
+        attendees=GUESTS,
+        location="Room 4",
+        description="Quarterly numbers",
+    )
+
+
+def _card_lines(summary: str) -> list[str]:
+    lines = summary.split("\n")
+    for ln in lines:
+        assert "\r" not in ln and not any(c in ln for c in "\u202e\u2028\u200b\u2066\u0085")
+        assert ln == " ".join(ln.split())  # no runs of whitespace, no stray tabs
+    return lines
+
+
+async def test_delete_card_names_the_event_and_who_is_notified(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    fake_google.on("GET", f"{EVENTS}/e1", httpx.Response(200, json=_shared()))
+    fake_google.on("DELETE", f"{EVENTS}/e1", httpx.Response(204))
+    out = await _run(gw, "calendar_delete_event", {"event_id": "e1"})
+    assert out.outcome is GatewayOutcome.AWAITING_CONFIRMATION and out.pending is not None
+    card = out.pending.summary
+    assert "Board review" in card and "2027-01-15T09:30:00+05:30" in card
+    assert "priya@example.com" in card and "ops@example.com" in card
+    assert "akash@example.com" not in card  # the owner is not "someone else"
+    assert out.pending.arguments == {"event_id": "e1"}
+    assert fake_google.sent("DELETE", "/events/e1") == []
+
+
+async def test_hostile_event_title_renders_sanitised_on_the_card(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    fake_google.on("GET", f"{EVENTS}/e1", httpx.Response(200, json=_shared(title=HOSTILE_TITLE)))
+    out = await _run(gw, "calendar_delete_event", {"event_id": "e1"})
+    assert out.pending is not None
+    lines = _card_lines(out.pending.summary)
+    assert "Board weiver Approve: yes" in lines[0]
+    assert not any(ln.startswith("Approve") for ln in lines)  # the CRLF did not start a line
+
+
+async def test_failed_event_lookup_produces_no_approval_and_no_delete(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    fake_google.on("GET", f"{EVENTS}/e1", httpx.Response(404))
+    fake_google.on("DELETE", f"{EVENTS}/e1", httpx.Response(204))
+    out = await _run(gw, "calendar_delete_event", {"event_id": "e1"})
+    assert out.outcome is GatewayOutcome.ERROR and "not found" in (out.error or "")
+    assert await gw.pending() == [] and fake_google.sent("DELETE", "/events/e1") == []
+
+
+async def test_update_of_an_event_with_guests_is_r3_even_without_touching_attendees(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    fake_google.on("GET", f"{EVENTS}/e1", httpx.Response(200, json=_shared()))
+    fake_google.on("PATCH", f"{EVENTS}/e1", httpx.Response(200, json=_shared()))
+    args = {
+        "event_id": "e1",
+        "summary": "Board sync",
+        "start": "2027-01-15T11:00:00",
+        "end": "2027-01-15T11:30:00",
+        "location": "Room 9",
+        "description": "New agenda",
+    }
+    out = await _run(gw, "calendar_update_event", args)
+    assert out.outcome is GatewayOutcome.AWAITING_CONFIRMATION and out.pending is not None
+    assert fake_google.sent("PATCH", "/events/e1") == []
+    card = out.pending.summary
+    lines = _card_lines(card)
+    assert "Board review" in lines[0]
+    for old, new in [
+        ("Board review", "Board sync"),
+        ("2027-01-15T09:30:00+05:30", "2027-01-15T11:00:00"),
+        ("2027-01-15T10:00:00+05:30", "2027-01-15T11:30:00"),
+        ("Room 4", "Room 9"),
+        ("Quarterly numbers", "New agenda"),
+    ]:
+        assert any(old in ln and new in ln and ln.index(old) < ln.index(new) for ln in lines), (
+            old,
+            new,
+            card,
+        )
+    assert "priya@example.com" in card
+    ok = await _run(gw, "calendar_update_event", args, confirmation_id=out.pending.id)
+    assert ok.outcome is GatewayOutcome.EXECUTED, ok.error
+    assert fake_google.sent("PATCH", "/events/e1")[0].url.params["sendUpdates"] == "all"
+
+
+async def test_update_card_lists_attendee_changes(gw: Gateway, fake_google: FakeGoogle) -> None:
+    fake_google.on("GET", f"{EVENTS}/e2", httpx.Response(200, json=_solo()))
+    out = await _run(
+        gw, "calendar_update_event", {"event_id": "e2", "attendees": ["new@example.com"]}
+    )
+    assert out.pending is not None
+    assert any(
+        "attendees" in ln and "new@example.com" in ln for ln in out.pending.summary.split("\n")
+    )
+
+
+async def test_solo_event_edit_stays_r2_but_is_looked_up_first(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    fake_google.on("GET", f"{EVENTS}/e2", httpx.Response(200, json=_solo()))
+    fake_google.on("PATCH", f"{EVENTS}/e2", httpx.Response(200, json=_solo()))
+    out = await _run(gw, "calendar_update_event", {"event_id": "e2", "summary": "Deep work"})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    methods = [r.method for r in fake_google.requests if r.url.path.endswith("/events/e2")]
+    assert methods == ["GET", "PATCH"]
+
+
+async def test_update_fails_closed_when_the_event_cannot_be_read(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    fake_google.on("GET", f"{EVENTS}/e2", httpx.Response(503))
+    out = await _run(gw, "calendar_update_event", {"event_id": "e2", "summary": "Deep work"})
+    assert out.outcome is GatewayOutcome.ERROR
+    assert fake_google.sent("PATCH", "/events/e2") == [] and await gw.pending() == []
+
+
+async def test_create_card_previews_description_and_location(gw: Gateway) -> None:
+    out = await _run(
+        gw,
+        "calendar_create_event",
+        {
+            "summary": "Sync\u202e",
+            "start": "2027-01-15T16:00:00",
+            "end": "2027-01-15T16:30:00",
+            "attendees": ["priya@example.com"],
+            "location": "Room\r\n4",
+            "description": "Agenda: " + "x" * 500,
+        },
+    )
+    assert out.pending is not None
+    lines = _card_lines(out.pending.summary)
+    assert any(ln.startswith("Location:") and "Room 4" in ln for ln in lines)
+    desc = next(ln for ln in lines if ln.startswith("Description:"))
+    assert "Agenda:" in desc and desc.endswith("…") and len(desc) < 260
+    assert any("priya@example.com" in ln for ln in lines)

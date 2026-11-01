@@ -51,3 +51,44 @@ Owner's future update = click **Merge** on GitHub. Ever.
   AUTODEPLOY gate.
 - Playwright: Night + Day × desktop 1440 / phone 390, every theme, panels drag + persist,
   Motion Off, no WebGL fallback, zero JS errors; contrast of text tokens ≥ 4.5 : 1 on both surfaces.
+
+## Status notes — Command Deck UI (branch `slice5c-ui`, 2026-11-01)
+**Built.** Surface switch (Night default / Day) in Appearance; Command Deck on ≥ 900 px (top bar with
+status pill + clock + date, 24-hour ruler with a live "now" mark and today's events, left/right rails,
+centre 3D Core, six floating panels, dock); phones get one panel at a time and a tab bar.
+Files: `console.html` (markup only), `console.css` (tokens + components, both surfaces),
+`console-deck.css` (layout), `console-fx.js` (surfaces, per-surface contrast engine, events),
+`console-deck.js` (panels, dock, rails, radar, vitals), `console.js` (API flows, unchanged behaviour),
+`console-3d.js` + `console-3d-scenes.js` (ES modules), `vendor/three.module.min.js` + licence,
+Share Tech Mono woff2 + OFL. All source files < 600 lines.
+
+**Decisions made while building.**
+- three r187 on npm ships no `.min.js`. Vendored file = esbuild 0.25.0 `--bundle --minify --format=esm`
+  of the official `build/three.module.js` (core inlined; same 443 exports; no eval). Banner records it.
+- The release is part of the URL (`/static/vendor/three-0.187.0/…`), so the year-long immutable cache
+  can never serve a stale library after an upgrade. Static assets use one literal route each (no
+  `/static/{name}` catch-all, which would turn `/static/fonts/` into a slash redirect).
+- One WebGL renderer for all three scenes; each renders into a corner of the offscreen renderer and is
+  copied into its own canvas, so panels stack above or below any scene. three is fetched only when
+  WebGL2 works (no-WebGL devices never download it).
+- Frame-budget governor: if the page sustains < ~22 fps while the scenes animate, step down (20 fps at
+  DPR 1, then 12 fps), then retire 3D and let the CSS-animated 2D emblems take over. Found because
+  software GL (SwiftShader) delayed reply animations by > 1 s. Never steps back up within a page load.
+- Only the Conversation is open by default; the Core centres itself in the free span beside it.
+  Approvals auto-open on desktop; on phones they badge the tab and turn the pill amber instead of
+  pulling the owner away from the reply they are reading.
+- Night labels/readouts use Share Tech Mono; Day keeps Rajdhani for component labels (the 5b look).
+- Contrast engine: Night lightens accent-ink until AA on the panel, its tint, the page and a 90 % card
+  with a white glow behind it; Day darkens it until AA on the page edge, a 12 % accent glow and a 90 %
+  white card over a dark stroke. Day `--ink-3` darkened #5A687B → #536176 to pass over dark-accent glows.
+
+**Verified.** pytest 217 passed / 27 skipped (31 new asset tests). Playwright (mock brain, Chromium):
+53/53 flow checks (approve + decline, history restore/delete with confirm, drag + reload persistence,
+clamping, keyboard dock/Esc/arrow-move, Reset layout, surface + theme via menu, brain banner, token gate,
+Core animates, Motion Off still, WebGL context loss → 2D → restore, no-WebGL fallback), phone checks
+(no horizontal scroll at 390, one panel at a time), reduced-motion → Calm; 0 JS errors, 0 CSP violations.
+Contrast: 22 surface × theme/colour combinations (incl. #FFFF00, #FFFFFF, #000080, black, grey, lime),
+every text token ≥ 4.5 : 1, minimum 4.56.
+
+**Not verified here.** Real-GPU frame rate (CI has software GL only: ~5 fps before the governor
+retires 3D); Google sign-in mode (`/auth/me` path is unchanged code); Safari / Firefox rendering.

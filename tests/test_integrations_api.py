@@ -272,3 +272,15 @@ async def test_second_owner_does_not_see_the_first_owners_link(gc: AsyncClient) 
     await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
     await _login(gc, OTHER)
     assert (await gc.get("/v1/integrations")).json()["google"]["connected"] is False
+
+
+async def test_connect_routes_are_rate_limited(gsettings: Settings) -> None:
+    s = gsettings.model_copy(update={"rate_limit_per_minute": 2})
+    app = create_app(s, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            codes = [
+                (await c.get("/connect/google", follow_redirects=False)).status_code
+                for _ in range(4)
+            ]
+            assert codes[:2] == [401, 401] and codes[2:] == [429, 429]

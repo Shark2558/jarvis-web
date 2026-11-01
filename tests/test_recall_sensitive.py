@@ -87,3 +87,18 @@ def test_special_categories_are_flagged(text: str) -> None:
 @pytest.mark.parametrize("text", ["Prefers tea to coffee", "Works at Amnex", "Visits Goa often"])
 def test_special_categories_leave_ordinary_facts(text: str) -> None:
     assert not special_category(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Salary a/c no\n50100123456789",  # a line break is a separator, not nothing
+        "My card\t4111 1111 1111 1111",
+        "card 4111.1111.1111.1111",
+        "card 4111​1111​1111​1111",  # zero-width spaces
+        "card ４１１１ １１１１ １１１１ １１１１",  # fullwidth digits
+        "Aadhaar 2345.6789.0123",
+    ],
+)
+def test_separators_and_disguises_do_not_hide_a_number(text: str) -> None:
+    assert is_sensitive(text), text

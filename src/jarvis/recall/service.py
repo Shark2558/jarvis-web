@@ -184,8 +184,10 @@ class MemoryService:
             if state is None or not learning_on(state):
                 return
             snap = snapshot(session)
-            if not is_due(pending(state, snap), now) or (uid, snap.session_id) in self._running:
+            key = (uid, snap.session_id)
+            if not is_due(pending(state, snap), now) or key in self._running:
                 return
+            self._running.add(key)  # taken now: a second reply can't schedule a twin run
             self._spawn(self._learn_bg(uid, snap, spec, state))
         except Exception as exc:  # noqa: BLE001
             log.warning("memory follow-up not scheduled", extra={"reason": type(exc).__name__})
@@ -204,7 +206,6 @@ class MemoryService:
         self, uid: str, snap: Snapshot, spec: BrainSpec, state: MemoryState
     ) -> None:
         key = (uid, snap.session_id)
-        self._running.add(key)
         try:
             res = await self.learner.run(uid, snap, spec, state)
             log.info("background learning", extra={"status": res.status.value})

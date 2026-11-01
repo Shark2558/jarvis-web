@@ -19,8 +19,8 @@ import re
 import unicodedata
 from collections.abc import Callable
 
-_CARD_RUN = re.compile(r"(?<![\w+])(?:\d[ -]?){12,18}\d(?!\w)")
-_AADHAAR = re.compile(r"(?<![\w+])[2-9]\d{3}([ -]?)\d{4}\1\d{4}(?!\w)")
+_CARD_RUN = re.compile(r"(?<![\w+])(?:\d[ .-]?){12,18}\d(?!\w)")
+_AADHAAR = re.compile(r"(?<![\w+])[2-9]\d{3}([ .-]?)\d{4}\1\d{4}(?!\w)")
 _AADHAAR_WORD = re.compile(r"(?i)\baadh?aa?r\b.*\d{4}")
 _PAN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{5}\d{4}[A-Za-z](?![A-Za-z0-9])")
 _IFSC = re.compile(r"(?<![A-Za-z0-9])[A-Z]{4}0[A-Z0-9]{6}(?![A-Za-z0-9])")
@@ -28,7 +28,7 @@ _IFSC_WORD = re.compile(r"(?i)\bifsc\b.*(?<![A-Za-z0-9])[A-Za-z]{4}0[A-Za-z0-9]{
 _IBAN = re.compile(r"(?<![A-Za-z0-9])[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}(?![A-Za-z0-9])")
 _IBAN_WORD = re.compile(r"(?i)\biban\b")
 _ACCOUNT_WORD = re.compile(r"(?i)(?:\baccount\b|\bacct\b|\ba/c\b|\bbank\b)")
-_LONG_NUMBER = re.compile(r"(?<![\w+])\d(?:[ -]?\d){8,17}(?!\w)")
+_LONG_NUMBER = re.compile(r"(?<![\w+])\d(?:[ .-]?\d){8,17}(?!\w)")
 _ID_WORD = re.compile(
     r"(?i)\b(?:passport|voter\s*id|epic\s*(?:no|number)|driving\s*licen[cs]e|dl\s*(?:no|number)"
     r"|licen[cs]e\s*(?:no|number))\b"
@@ -83,9 +83,18 @@ def _has_account(text: str) -> bool:
 
 
 def _normal(text: str) -> str:
-    """NFKC (fullwidth digits → ASCII) and invisible characters gone, so "4111​1111…" is seen."""
+    """NFKC (fullwidth digits → ASCII); invisible format characters dropped (so "4111<ZWSP>1111"
+    reads as one number); line breaks, tabs and other controls become spaces (a separator, so
+    "a/c no<newline>5010…" still reads as an account word next to a number)."""
     folded = unicodedata.normalize("NFKC", str(text or ""))
-    return "".join(ch for ch in folded if unicodedata.category(ch) not in ("Cf", "Cc") or ch == " ")
+    out = []
+    for ch in folded:
+        cat = unicodedata.category(ch)
+        if cat in ("Cc", "Zl", "Zp"):
+            out.append(" ")
+        elif cat != "Cf":
+            out.append(ch)
+    return " ".join("".join(out).split())
 
 
 _CHECKS: tuple[tuple[str, Callable[[str], bool]], ...] = (

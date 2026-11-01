@@ -288,3 +288,22 @@ async def test_after_turn_runs_in_the_background_and_swallows_errors() -> None:
     r.svc.after_turn(UID, session_with(*THREE), r.spec, rec)  # returns immediately
     await r.svc.drain()
     assert (await r.svc.view(UID)).runs_today == 1  # it ran, failed quietly
+
+
+async def test_two_replies_in_a_row_schedule_one_learning_run() -> None:
+    r = rig()
+    await _consent(r)
+    r.private.script(extraction())
+    rec = await r.svc.recall(UID, r.spec, "hello")
+    s = session_with(*THREE)
+    r.svc.after_turn(UID, s, r.spec, rec)
+    r.svc.after_turn(UID, s, r.spec, rec)  # before the first task has even started
+    await r.svc.drain()
+    assert len(r.private.calls) == 1 and (await r.svc.view(UID)).runs_today == 1
+
+
+def test_cost_note_is_in_rupees_and_names_what_is_sent() -> None:
+    note = rig(paid=True).svc.learn_cost_note()
+    assert note.startswith("About ₹") and "a month" in note and "at most ₹" in note
+    assert "$" not in note and len(note) <= 300
+    assert "your messages" in note and "Claude" in note

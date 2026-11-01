@@ -553,3 +553,19 @@ async def test_owner_only_and_csrf_on_cookie_writes(gc: AsyncClient, rig: Rig) -
     store = gc.app.state.voice.store  # type: ignore[attr-defined]
     assert (await store.get(user_id_for_email(OWNER))).wit == "extra"
     assert (await store.get("owner")).wit == "film"
+
+
+async def test_the_view_is_limited_to_60_a_minute_per_owner(vc: AsyncClient) -> None:
+    """Review item 5: GET /v1/voice reads storage (and maybe Google) on every call."""
+    for _ in range(60):
+        assert (await vc.get("/v1/voice")).status_code == 200
+    r = await vc.get("/v1/voice")
+    assert r.status_code == 429 and r.json()["error"] == "rate_limited"
+    assert int(r.headers["retry-after"]) >= 1
+
+
+async def test_settings_writes_are_limited_to_60_a_minute_per_owner(vc: AsyncClient) -> None:
+    for _ in range(60):
+        assert (await vc.put("/v1/voice/settings", json={"rate": 1.0})).status_code == 200
+    r = await vc.put("/v1/voice/settings", json={"rate": 1.0})
+    assert r.status_code == 429 and r.json()["error"] == "rate_limited"

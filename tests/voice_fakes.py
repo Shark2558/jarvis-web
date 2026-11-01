@@ -50,19 +50,26 @@ def wav(
 
 
 class FakeTokens:
-    def __init__(self, *, missing: bool = False) -> None:
+    def __init__(self, *, missing: bool = False, delay: float = 0.0) -> None:
         self.missing = missing
+        self.delay = delay
         self.calls = 0
         self.invalidated = 0
+        self.closed = 0
 
     async def headers(self) -> dict[str, str]:
         self.calls += 1
+        if self.delay:
+            await asyncio.sleep(self.delay)
         if self.missing:
             raise VoiceUnavailable("not_configured")
         return {"Authorization": "Bearer test-token"}
 
     def invalidate(self) -> None:
         self.invalidated += 1
+
+    def close(self) -> None:
+        self.closed += 1
 
     @property
     def not_configured(self) -> bool:

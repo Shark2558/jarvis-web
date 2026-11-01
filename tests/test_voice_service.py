@@ -6,14 +6,16 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx
 import pytest
 from billing_fakes import NOW, UID, Clock, billing, put_raw, registry
-from voice_fakes import FakeSTT, FakeTokens, FakeTTS, wav
+from voice_fakes import FakeSTT, FakeTokens, FakeTTS, GoogleScript, wav
 
 from jarvis.billing import BudgetReached
 from jarvis.config import Settings
 from jarvis.storage.docs import MemoryDocs
 from jarvis.voice.catalogue import DEFAULT_VOICE, PriceList
+from jarvis.voice.google_cloud import GoogleTTS
 from jarvis.voice.service import SpeakRequest, VoiceEngines, VoiceService
 from jarvis.voice.settings import VoiceSettings, VoiceSettingsPatch, VoiceSettingsStore
 
@@ -136,6 +138,17 @@ def _with_store(r: Rig, store: VoiceSettingsStore) -> VoiceService:
     )
 
 
+def _with_engines(r: Rig, engines: VoiceEngines) -> VoiceService:
+    return VoiceService(
+        store=r.svc.store,
+        billing=r.billing,
+        prices=PRICES,
+        engines=engines,
+        language="en-IN",
+        honorific="Sir",
+    )
+
+
 async def test_speak_and_the_view_never_hang_on_a_slow_settings_read() -> None:
     r = Rig()
     store = SlowStore(r.docs)
@@ -157,3 +170,48 @@ async def test_a_put_clears_the_failure_memo_so_the_new_wit_applies_at_once() ->
     await svc.update_settings(UID, VoiceSettingsPatch(wit="extra"))
     assert await svc.wit_for(UID) == "extra"
     assert (await svc.view(UID)).settings.wit == "extra"
+
+
+# ---- review item 5: the view never waits long for Google's voice list --------------------------
+
+
+async def test_the_view_waits_at_most_briefly_for_googles_voice_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import jarvis.voice.service as service_module
+
+    assert service_module.VOICE_LIST_WAIT_S <= 2.0
+    monkeypatch.setattr(service_module, "VOICE_LIST_WAIT_S", 0.05)
+    g = GoogleScript()
+    answer = g.routes["/v1/voices"]
+
+    async def slow_list(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.3)
+        return answer(request)
+
+    g.routes["/v1/voices"] = slow_list  # type: ignore[assignment]
+    r = Rig()
+    r.svc = _with_engines(r, VoiceEngines(tts=GoogleTTS(g.client(), FakeTokens()), stt=r.stt))
+    view = await asyncio.wait_for(r.svc.view(UID), 0.25)
+    # availability unknown: the catalogue is listed, nothing hidden
+    assert len(view.voices) == 6 and all(v.available for v in view.voices)
+    await asyncio.sleep(0.35)  # the one list request finished in the background …
+    view = await asyncio.wait_for(r.svc.view(UID), 0.25)
+    avail = {v.id: v.available for v in view.voices}
+    # … and the adapter's 24 h cache now answers at once: Google lists Algieba and Studio-B
+    assert avail[DEFAULT_VOICE] is True and avail["en-GB-Chirp3-HD-Charon"] is False
+    assert len(g.requests) == 1
+
+
+async def test_concurrent_views_share_one_voice_list_request() -> None:
+    r = Rig()
+    r.tts.voices_delay = 0.05
+    await asyncio.gather(*(r.svc.view(UID) for _ in range(4)))
+    assert r.tts.voice_lists == 1
+
+
+async def test_closing_the_service_closes_the_credentials_transport() -> None:
+    r = Rig()
+    tokens = r.svc.engines.tokens  # type: ignore[union-attr]
+    await r.svc.aclose()
+    assert tokens.closed == 1  # type: ignore[union-attr]

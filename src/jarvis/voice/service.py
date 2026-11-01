@@ -79,6 +79,7 @@ MAX_TEXT_IN = 1_200
 DOWN_TTL_S = 600.0
 # Inside the Brain's own bound (1.5 s), so a hung read is remembered as a failure.
 SETTINGS_READ_S = 1.0
+VOICE_LIST_WAIT_S = 2.0  # GET /v1/voice waits this long for Google's list, then lists all
 STICKY: frozenset[str] = frozenset({"api_disabled", "not_configured"})
 Api = Literal["tts", "stt"]
 State = Literal["ready", "off", "unavailable"]
@@ -213,6 +214,7 @@ class VoiceService:
         self._clock = clock
         self._down: dict[Api, tuple[float, Reason]] = {}
         self._settings_fail_until: dict[str, float] = {}
+        self._voice_list: asyncio.Future[frozenset[str] | None] | None = None
         # gate → engine → meter, one at a time per owner and kind; locks vanish when unused
         self._locks: weakref.WeakValueDictionary[tuple[str, Api], asyncio.Lock] = (
             weakref.WeakValueDictionary()
@@ -274,17 +276,31 @@ class VoiceService:
 
     # ---- the owner's view --------------------------------------------------------------------
 
-    async def _known_voices(self) -> frozenset[str] | None:
-        """Google's voice ids (cached 24 h by the adapter); None when they can't be read."""
-        if self.engines is None or self.state("tts")[0] != "ready":
-            return None
+    async def _fetch_voices(self, engines: VoiceEngines) -> frozenset[str] | None:
         try:
-            return await self.engines.tts.voices(VOICE_LANGUAGE)
+            return await engines.tts.voices(VOICE_LANGUAGE)
         except VoiceUnavailable as exc:
             self._note("tts", exc)
         except VoiceError as exc:
             log.warning("voice list unreadable", extra={"reason": type(exc).__name__})
         return None
+
+    async def _known_voices(self) -> frozenset[str] | None:
+        """Google's voice ids (cached 24 h by the adapter); None when they can't be read or
+        don't arrive within VOICE_LIST_WAIT_S. One fetch at a time: it keeps going in the
+        background when the view stops waiting, so the next view finds the list."""
+        engines = self.engines
+        if engines is None or self.state("tts")[0] != "ready":
+            return None
+        task = self._voice_list
+        if task is None or task.done():
+            task = asyncio.ensure_future(self._fetch_voices(engines))
+            self._voice_list = task
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), VOICE_LIST_WAIT_S)
+        except TimeoutError:
+            log.info("voice list still loading; availability unknown for now")
+            return None
 
     async def view(self, uid: str) -> VoiceView:
         settings = await self.settings_of(uid)
@@ -461,17 +477,25 @@ class VoiceService:
         )
 
     async def aclose(self) -> None:
-        if self.engines is not None and self.engines.http is not None:
+        """App shutdown: the voice-list fetch, the HTTP client and the credentials transport."""
+        task = self._voice_list
+        if task is not None and not task.done():
+            task.cancel()
+        if self.engines is None:
+            return
+        if self.engines.http is not None:
             await self.engines.http.aclose()
+        if self.engines.tokens is not None:
+            self.engines.tokens.close()
 
 
 def google_engines() -> VoiceEngines:
     """Google Cloud TTS + STT as the runtime service account (ADC). Imported lazily: nothing
     touches google-auth until cloud voice is switched on."""
     from jarvis.voice.adc import AdcTokens
-    from jarvis.voice.google_cloud import TIMEOUT_S, GoogleSTT, GoogleTTS
+    from jarvis.voice.google_cloud import HTTP_TIMEOUT, GoogleSTT, GoogleTTS
 
-    http = httpx.AsyncClient(timeout=TIMEOUT_S, follow_redirects=False)
+    http = httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=False)
     tokens = AdcTokens()
     return VoiceEngines(
         tts=GoogleTTS(http, tokens), stt=GoogleSTT(http, tokens), tokens=tokens, http=http

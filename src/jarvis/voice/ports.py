@@ -88,6 +88,10 @@ class TokenSource(Protocol):
 
     def invalidate(self) -> None: ...
 
+    def close(self) -> None:
+        """Release any connection the source keeps (called once at shutdown)."""
+        ...
+
     @property
     def not_configured(self) -> bool:
         """True once credentials are known to be missing (cached)."""

@@ -1,8 +1,9 @@
 # src/jarvis/api/voice.py
 """Voice HTTP surface (slice 9 §3; Layer 1 → 2 / 8). Owner-only: `require_auth` + `current_user`
 (no client user id is read); cookie writes need `X-Requested-With: JARVIS` (enforced by
-`require_auth`); speak ≤ 60 and transcribe ≤ 30 calls a minute per owner, on top of the /v1
-per-client limit. Text, transcripts and audio are never logged (lengths only).
+`require_auth`); speak ≤ 60, transcribe ≤ 30, GET /v1/voice ≤ 60 and PUT settings ≤ 60 calls a
+minute per owner, on top of the /v1 per-client limit. Text, transcripts and audio are never
+logged (lengths only).
 
 GET  /v1/voice             VoiceView {cloud {tts, stt, reason}, settings {voice, rate, wit},
                            voices [{id, label, style, type, available}], wit_levels [{id, label,
@@ -50,6 +51,8 @@ router = APIRouter(prefix="/v1/voice", dependencies=[Depends(require_auth)])
 
 SPEAK_PER_MINUTE = 60
 TRANSCRIBE_PER_MINUTE = 30
+VIEW_PER_MINUTE = 60
+SETTINGS_PER_MINUTE = 60
 MAX_AUDIO_BYTES = 2_000_000
 WAV_TYPES = frozenset({"audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"})
 
@@ -76,15 +79,20 @@ def _limit(request: Request, name: str, uid: str) -> None:
 
 @router.get("", response_model=VoiceView)
 async def get_voice(
-    svc: VoiceService = Depends(_svc), uid: str = Depends(current_user)
+    request: Request, svc: VoiceService = Depends(_svc), uid: str = Depends(current_user)
 ) -> VoiceView:
+    _limit(request, "view", uid)
     return await svc.view(uid)
 
 
 @router.put("/settings", response_model=VoiceSettings)
 async def put_settings(
-    patch: VoiceSettingsPatch, svc: VoiceService = Depends(_svc), uid: str = Depends(current_user)
+    patch: VoiceSettingsPatch,
+    request: Request,
+    svc: VoiceService = Depends(_svc),
+    uid: str = Depends(current_user),
 ) -> VoiceSettings:
+    _limit(request, "settings", uid)
     return await svc.update_settings(uid, patch)
 
 
@@ -145,6 +153,8 @@ def install_voice(app: FastAPI) -> None:
     app.state.voice_limits = {
         "speak": RateLimiter(SPEAK_PER_MINUTE),
         "transcribe": RateLimiter(TRANSCRIBE_PER_MINUTE),
+        "view": RateLimiter(VIEW_PER_MINUTE),
+        "settings": RateLimiter(SETTINGS_PER_MINUTE),
     }
 
     @app.exception_handler(VoiceUnavailable)

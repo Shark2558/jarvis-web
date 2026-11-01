@@ -15,9 +15,12 @@ from voice_fakes import FakeTokens, GoogleScript, google_error, pcm
 
 from jarvis.voice.adc import NOT_CONFIGURED_TTL_S, SCOPE, AdcTokens
 from jarvis.voice.google_cloud import (
+    DEADLINE_S,
+    HTTP_TIMEOUT,
+    SHORT_CLIP_S,
     STT_URL,
-    TIMEOUT_S,
     TTS_URL,
+    VOICES_FAIL_TTL_S,
     VOICES_TTL_S,
     VOICES_URL,
     GoogleSTT,
@@ -52,7 +55,7 @@ async def test_synthesize_sends_the_documented_request() -> None:
         "voice": {"languageCode": "en-GB", "name": "en-GB-Studio-B"},
         "audioConfig": {"audioEncoding": "MP3", "speakingRate": 1.1},
     }
-    assert TIMEOUT_S == 10.0
+    assert HTTP_TIMEOUT == httpx.Timeout(10.0, connect=3.0)
 
 
 async def test_voice_list_is_cached_for_a_day() -> None:
@@ -69,14 +72,29 @@ async def test_voice_list_is_cached_for_a_day() -> None:
     assert len(g.requests) == 2
 
 
-async def test_a_failed_voice_list_is_not_cached() -> None:
-    g = GoogleScript()
-    g.routes["/v1/voices"] = lambda r: httpx.Response(503)
-    tts = GoogleTTS(g.client(), FakeTokens())
-    with pytest.raises(VoiceUnavailable):
+@pytest.mark.parametrize(
+    ("answer", "kind"),
+    [
+        (lambda r: httpx.Response(503), VoiceUnavailable),
+        (lambda r: google_error(429, "RATE_LIMIT_EXCEEDED", "RESOURCE_EXHAUSTED"), VoiceBusy),
+        (lambda r: (_ for _ in ()).throw(httpx.ReadTimeout("slow")), VoiceUnavailable),
+    ],
+)
+async def test_a_failed_voice_list_is_remembered_for_a_minute(answer: Any, kind: type) -> None:
+    """Review item 5: every GET /v1/voice used to ask Google again while it was failing."""
+    g, tick = GoogleScript(), Tick()
+    g.routes["/v1/voices"] = answer
+    tts = GoogleTTS(g.client(), FakeTokens(), clock=tick)
+    with pytest.raises(kind):
         await tts.voices("en-GB")
+    tick.t += VOICES_FAIL_TTL_S - 1
+    with pytest.raises(kind):
+        await tts.voices("en-GB")
+    assert len(g.requests) == 1  # remembered: Google not asked again
     g.routes["/v1/voices"] = GoogleScript().routes["/v1/voices"]
+    tick.t += 2
     assert await tts.voices("en-GB")
+    assert len(g.requests) == 2 and VOICES_FAIL_TTL_S == 60.0
 
 
 @pytest.mark.parametrize(
@@ -127,25 +145,95 @@ async def test_401_drops_the_cached_token() -> None:
     assert e.value.reason == "upstream_error" and tokens.invalidated == 1
 
 
-async def test_timeouts_and_network_errors() -> None:
-    def boom(exc: Exception) -> Any:
-        def handler(r: httpx.Request) -> httpx.Response:
-            raise exc
+@pytest.mark.parametrize(
+    ("exc", "reason", "maybe_billed"),
+    [
+        (httpx.ReadTimeout("slow"), "timeout", True),  # sent; no answer in time
+        (httpx.WriteTimeout("slow"), "timeout", True),  # partly sent
+        (httpx.ConnectTimeout("slow"), "timeout", False),  # never connected
+        (httpx.PoolTimeout("busy"), "timeout", False),  # never left the pool
+        (httpx.ConnectError("down"), "upstream_error", False),
+        (httpx.ReadError("reset"), "upstream_error", True),  # cut off mid-answer
+        (httpx.RemoteProtocolError("closed"), "upstream_error", True),
+    ],
+)
+async def test_timeouts_and_network_errors(exc: Exception, reason: str, maybe_billed: bool) -> None:
+    def handler(r: httpx.Request) -> httpx.Response:
+        raise exc
 
-        return handler
+    g = GoogleScript()
+    g.routes["/v1/text:synthesize"] = handler
+    with pytest.raises(VoiceUnavailable) as e:
+        await GoogleTTS(g.client(), FakeTokens()).synthesize(
+            "hi", voice="v", language="en-GB", rate=1
+        )
+    assert (e.value.reason, e.value.maybe_billed) == (reason, maybe_billed)
 
-    for exc, reason in (
-        (httpx.ReadTimeout("slow"), "timeout"),
-        (httpx.ConnectTimeout("slow"), "timeout"),
-        (httpx.ConnectError("down"), "upstream_error"),
-    ):
-        g = GoogleScript()
-        g.routes["/v1/text:synthesize"] = boom(exc)
-        with pytest.raises(VoiceUnavailable) as e:
-            await GoogleTTS(g.client(), FakeTokens()).synthesize(
+
+@pytest.mark.parametrize(
+    ("resp", "maybe_billed"),
+    [
+        (google_error(500, "", "INTERNAL"), False),  # a clean error answer: not billed
+        (google_error(403, "SERVICE_DISABLED"), False),
+        (httpx.Response(200, json={"nope": 1}), True),  # Google answered 200: it may bill
+        (httpx.Response(200, text="not json"), True),
+        (httpx.Response(200, json={"audioContent": "!!not base64!!"}), True),
+    ],
+)
+async def test_only_answered_or_cut_off_calls_may_be_billed(
+    resp: httpx.Response, maybe_billed: bool
+) -> None:
+    g = GoogleScript()
+    g.routes["/v1/text:synthesize"] = lambda r: resp
+    with pytest.raises(VoiceUnavailable) as e:
+        await GoogleTTS(g.client(), FakeTokens()).synthesize(
+            "hi", voice="v", language="en-GB", rate=1
+        )
+    assert e.value.maybe_billed is maybe_billed
+
+
+async def test_one_total_deadline_covers_credentials_and_the_request() -> None:
+    """Review item 7: the 10 s httpx timeout was per phase, and the credential lookup sat
+    outside it. Now one deadline (≤ ~12 s) covers both."""
+    assert DEADLINE_S <= 12.0
+    assert HTTP_TIMEOUT.connect == 3.0 and HTTP_TIMEOUT.read == 10.0
+    g = GoogleScript()
+    slow_tokens = FakeTokens(delay=5.0)
+    with pytest.raises(VoiceUnavailable) as e:
+        await asyncio.wait_for(
+            GoogleTTS(g.client(), slow_tokens, deadline_s=0.05).synthesize(
                 "hi", voice="v", language="en-GB", rate=1
-            )
-        assert e.value.reason == reason
+            ),
+            2.0,
+        )
+    assert (e.value.reason, e.value.maybe_billed) == ("timeout", False) and g.requests == []
+
+    async def slow_answer(r: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(5.0)
+        return httpx.Response(200, json={"audioContent": ""})
+
+    g.routes["/v1/text:synthesize"] = slow_answer  # type: ignore[assignment]
+    with pytest.raises(VoiceUnavailable) as e:
+        await asyncio.wait_for(
+            GoogleTTS(g.client(), FakeTokens(), deadline_s=0.05).synthesize(
+                "hi", voice="v", language="en-GB", rate=1
+            ),
+            2.0,
+        )
+    assert (e.value.reason, e.value.maybe_billed) == ("timeout", True)
+
+
+async def test_the_runtime_client_uses_the_connect_and_read_timeouts() -> None:
+    from jarvis.voice.service import google_engines
+
+    engines = google_engines()
+    try:
+        assert engines.http is not None and engines.http.timeout == HTTP_TIMEOUT
+    finally:
+        assert engines.http is not None
+        await engines.http.aclose()
+        assert engines.tokens is not None
+        engines.tokens.close()  # type: ignore[attr-defined]
 
 
 async def test_missing_credentials_never_reach_the_network() -> None:
@@ -184,6 +272,20 @@ async def test_recognize_sends_the_documented_request() -> None:
         "maxAlternatives": 1,
         "speechContexts": [{"phrases": ["JARVIS", "Sir"]}],
     }
+
+
+@pytest.mark.parametrize(
+    ("seconds", "model"), [(0.5, "latest_short"), (15.0, "latest_short"), (15.5, "latest_long")]
+)
+async def test_recognize_picks_the_model_by_clip_length(seconds: float, model: str) -> None:
+    """Review item 14: latest_short is meant for short utterances; up to 60 s → latest_long
+    (both support en-IN with automatic punctuation)."""
+    g = GoogleScript()
+    audio = b"\x00\x00" * int(16_000 * seconds)
+    await GoogleSTT(g.client(), FakeTokens()).recognize(
+        audio, sample_rate=16_000, language="en-IN", phrases=()
+    )
+    assert g.body()["config"]["model"] == model and SHORT_CLIP_S == 15.0
 
 
 async def test_recognize_joins_results_and_reads_no_speech() -> None:
@@ -227,9 +329,11 @@ class Creds:
         self.fail = fail
         self.refreshes = 0
         self.threads: list[str] = []
+        self.requests: list[Any] = []
 
     def refresh(self, request: Any) -> None:
         self.threads.append(threading.current_thread().name)
+        self.requests.append(request)
         self.refreshes += 1
         if self.fail is not None:
             raise self.fail
@@ -319,3 +423,62 @@ async def test_adc_concurrent_callers_share_one_refresh() -> None:
     tokens = AdcTokens(discover=lambda s: creds)
     hs = await asyncio.gather(*(tokens.headers() for _ in range(5)))
     assert creds.refreshes == 1 and {h["Authorization"] for h in hs} == {"Bearer tok1"}
+
+
+# ---- review item 6: one reused transport, one refresh in flight --------------------------------
+
+
+class Session_:
+    def __init__(self) -> None:
+        self.closed = 0
+
+    def close(self) -> None:
+        self.closed += 1
+
+
+class Transport:
+    """Stands in for google.auth's Request (which owns a requests.Session)."""
+
+    made = 0
+
+    def __init__(self) -> None:
+        Transport.made += 1
+        self.session = Session_()
+
+
+async def test_adc_reuses_one_transport_and_closes_it() -> None:
+    Transport.made = 0
+    creds = Creds()
+    tokens = AdcTokens(discover=lambda s: creds, transport=Transport)
+    await tokens.headers()
+    tokens.invalidate()
+    await tokens.headers()
+    assert creds.refreshes == 2 and Transport.made == 1
+    assert creds.requests[0] is creds.requests[1]
+    tokens.close()
+    assert creds.requests[0].session.closed == 1
+    tokens.close()  # idempotent
+
+
+async def test_adc_a_timed_out_refresh_is_awaited_by_the_next_caller_not_restarted() -> None:
+    gate = threading.Event()
+
+    class SlowCreds(Creds):
+        def refresh(self, request: Any) -> None:
+            gate.wait(2)
+            super().refresh(request)
+
+    creds = SlowCreds()
+    tokens = AdcTokens(discover=lambda s: creds, timeout_s=0.05)
+    for _ in range(3):
+        with pytest.raises(VoiceUnavailable) as e:
+            await tokens.headers()
+        assert e.value.reason == "timeout"
+    gate.set()
+    for _ in range(100):  # the one refresh thread finishes on its own
+        if creds.refreshes:
+            break
+        await asyncio.sleep(0.01)
+    h = await tokens.headers()
+    assert h["Authorization"] == "Bearer tok1"
+    assert creds.refreshes == 1 and len(creds.threads) == 1  # never two refreshes at once

@@ -642,9 +642,40 @@ async def _cloud_off() -> dict[str, Any]:
     }
 
 
+async def _metered_when_google_may_have_billed() -> dict[str, Any]:
+    """Review item 1: a request Google may have billed (sent, then no answer) is metered on its
+    estimate; a clean error answer, or a request that never left, is not."""
+    fails: list[str] = []
+    for api, handler, metered, label in (
+        ("tts", _raise(httpx.ReadTimeout("slow")), True, "TTS read timeout"),
+        ("tts", _raise(httpx.ConnectError("down")), False, "TTS never connected"),
+        ("tts", _google_error(500, "", "INTERNAL"), False, "TTS clean 500"),
+        ("stt", _raise(httpx.ReadError("reset")), True, "STT cut off"),
+        ("stt", _google_error(503, "", "UNAVAILABLE"), False, "STT clean 503"),
+    ):
+        g = GoogleShaped()
+        g.routes[_PATHS[api]] = handler
+        async with app_client(_engines(g, Tokens())) as c:
+            await _call(c, api)
+            allowance = (await c.get("/v1/voice")).json()["allowance"]
+        used = allowance["tts"]["used_chars"] if api == "tts" else allowance["stt"]["used_seconds"]
+        if (used > 0) != metered:
+            fails.append(f"{label}: counted {used}")
+    return {
+        "id": "e18",
+        "why": "a call Google may have billed is metered; a clean error is not",
+        "passed": not fails,
+        "failures": fails,
+    }
+
+
 async def suite_errors() -> dict[str, Any]:
     results = [await _error_case(c) for c in ERROR_CASES]
-    results += [await _no_credentials(), await _cloud_off()]
+    results += [
+        await _no_credentials(),
+        await _cloud_off(),
+        await _metered_when_google_may_have_billed(),
+    ]
     return _verdict(results)
 
 

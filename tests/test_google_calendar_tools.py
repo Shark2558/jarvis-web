@@ -386,3 +386,22 @@ async def test_google_error_text_is_friendly(gw: Gateway, fake_google: FakeGoogl
     )
     assert out.outcome is GatewayOutcome.ERROR
     assert "secret-vendor-detail" not in (out.error or "") and "permission" in (out.error or "")
+
+
+# ---- security review M4: invitees use the same strict address check as mail recipients -------
+
+
+@pytest.mark.parametrize("bad", ['"a"@b.co', "a(b)@c.co", "a@b..co", "a@b.co x"])
+async def test_create_event_rejects_lax_attendee_addresses(gw: Gateway, bad: str) -> None:
+    out = await _run(
+        gw,
+        "calendar_create_event",
+        {
+            "summary": "x",
+            "start": "2027-01-15T16:00:00",
+            "end": "2027-01-15T16:30:00",
+            "attendees": [bad],
+        },
+    )
+    assert out.outcome is GatewayOutcome.ERROR and "attendee" in (out.error or "").lower()
+    assert await gw.pending() == []

@@ -17,7 +17,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector
 from jarvis.logging import get_logger
+from jarvis.tools.addresses import MAX_RECIPIENTS, parse_address
 from jarvis.tools.base import Tool
+from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
 
@@ -33,7 +35,6 @@ DESCRIPTION_LIMIT = 2_000
 DEFAULT_WORKING_HOURS = "09:00-18:00"
 
 _EVENT_ID = re.compile(r"^[A-Za-z0-9_@.\-]{1,1024}$")
-_EMAIL = re.compile(r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$")
 _HOURS = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
 
 _ISO = {"type": "string", "description": "ISO 8601 date-time, e.g. 2027-01-15T09:00:00+05:30"}
@@ -80,12 +81,24 @@ def parse_working_hours(value: Any) -> tuple[time, time]:
 
 
 def _validate_attendees(raw: Any) -> list[str]:
+    """Invitees get mail from Google, so they pass the same strict addr-spec check as mail
+    recipients (normalised, IDN domains as punycode, duplicates dropped)."""
     if raw is None:
         return []
     if not isinstance(raw, list):
         raise ValueError("attendees must be a list of email addresses")
-    emails = [str(a).strip().lower() for a in raw]
-    bad = [a for a in emails if not _EMAIL.match(a)]
+    if len(raw) > MAX_RECIPIENTS:
+        raise ValueError(f"too many attendees (at most {MAX_RECIPIENTS})")
+    emails: list[str] = []
+    bad: list[str] = []
+    for a in raw:
+        try:
+            addr = parse_address(a)
+        except ValueError:
+            bad.append(one_line(a, 80))
+            continue
+        if addr not in emails:
+            emails.append(addr)
     if bad:
         raise ValueError(f"invalid attendee address: {', '.join(bad)}")
     return emails

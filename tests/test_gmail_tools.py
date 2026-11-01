@@ -352,3 +352,24 @@ async def test_send_reply_threads_like_a_draft(gw: Gateway, fake_google: FakeGoo
 async def test_send_with_bad_recipient_never_becomes_an_approval(gw: Gateway) -> None:
     out = await _run(gw, "gmail_send", {"to": "evil", "subject": "s", "body": "b"})
     assert out.outcome is GatewayOutcome.ERROR and await gw.pending() == []
+
+
+# ---- security review M4 ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", ['a@b.c"x', '"a"@b.co', "a(b)@c.co", "a@b..co", '"a@x.co, b"@y.co'])
+async def test_send_rejects_lax_recipients_before_any_approval(gw: Gateway, bad: str) -> None:
+    out = await _run(gw, "gmail_send", {"to": bad, "subject": "s", "body": "b"})
+    assert out.outcome is GatewayOutcome.ERROR and await gw.pending() == []
+
+
+async def test_idn_recipient_goes_out_as_punycode(gw: Gateway, fake_google: FakeGoogle) -> None:
+    fake_google.on(
+        "POST", f"{GM}/drafts", httpx.Response(200, json={"id": "d1", "message": {"id": "x"}})
+    )
+    out = await _run(
+        gw, "gmail_create_draft", {"to": "info@bücher.example", "subject": "s", "body": "b"}
+    )
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    msg, _ = _raw_message(fake_google.sent("POST", "/drafts")[0])
+    assert msg["To"] == "info@xn--bcher-kva.example"

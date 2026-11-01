@@ -12,8 +12,9 @@ from html import unescape
 from html.parser import HTMLParser
 from typing import Any
 
-_ADDRESS = re.compile(r"^[^@\s<>,;]+@[^@\s<>,;]+\.[^@\s<>,;]+$")
-_HEADER_UNSAFE = re.compile(r"[\r\n\x00]")
+from jarvis.tools.addresses import parse_recipients
+from jarvis.tools.card import has_line_breaking_chars
+
 _BLOCK_TAGS = frozenset(
     {"p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "hr"}
 )
@@ -133,22 +134,12 @@ def parse_body(payload: dict[str, Any]) -> ParsedBody:
 # ---- writing --------------------------------------------------------------------------------
 
 
-def parse_recipients(raw: Any) -> list[str]:
-    """'a@x.y, b@x.y' or a list → validated lower-case addresses (at least one)."""
-    items = raw if isinstance(raw, list) else str(raw or "").split(",")
-    addrs = [str(a).strip().lower() for a in items if str(a).strip()]
-    bad = [a for a in addrs if not _ADDRESS.match(a)]
-    if not addrs:
-        raise ValueError("at least one recipient is required")
-    if bad:
-        raise ValueError(f"invalid recipient address: {', '.join(bad)}")
-    return addrs
-
-
 def check_header_value(value: Any, *, name: str, limit: int = 998) -> str:
+    """A header value the owner's request supplies: one line, no C0/C1 control characters and
+    no Unicode line/paragraph separators (U+2028, U+2029, U+0085) — header injection otherwise."""
     text = str(value or "")
-    if _HEADER_UNSAFE.search(text):
-        raise ValueError(f"{name} must be a single line")
+    if has_line_breaking_chars(text):
+        raise ValueError(f"{name} must be a single line of text (no control characters)")
     if len(text) > limit:
         raise ValueError(f"{name} is too long")
     return text

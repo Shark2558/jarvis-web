@@ -31,7 +31,16 @@ def test_memory_mock_evals_pass_their_gates() -> None:
     assert train["negative_control"]["suite_failed"] is True
     assert train["negative_control"]["requests_with_memory"] > 0
     sens = s["sensitive"]
-    assert sens["statements"] == 25 and len(sens["paths"]) == 6 and sens["stored"] == 0
+    assert sens["statements"] == 47 and len(sens["paths"]) == 6 and sens["stored"] == 0
+    assert sens["keyword_smuggling"] == {"cases": 3, "refused": 3}
+    small = s["recall_small"]  # review finding 1: the send-all path keeps every fact
+    assert small["send_all_runs"] >= 2
+    assert all(x["hits"] == x["facts"] for x in small["runs"] if x["send_all"])
+    scale = s["scale"]  # review finding 2: 500 facts, time-bounded
+    assert scale["facts"] == 500 and scale["import_seconds"] < 1.0
+    assert scale["slowest_recall_ms"] < 250 and scale["round_trip"]["identical"] is True
+    safety = s["learning_safety"]  # review findings 5/6
+    assert safety["pass_rate"] == 1 and safety["negative_control"]["suite_failed"] is True
     assert s["contradiction"]["pass_rate"] == 1 and s["contradiction"]["cases"] >= 3
     assert s["roundtrip"]["identical"] is True and s["roundtrip"]["reimport_added"] == 0
     budget = s["budget"]

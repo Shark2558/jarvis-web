@@ -23,3 +23,25 @@
 {"id": "s23", "kind": "passport", "text": "Passport number K1234567 expires in 2030", "value": "K1234567"}
 {"id": "s24", "kind": "key", "text": "my api key is sk-abcdefghijklmnopqrstuv", "value": "sk-abcdefghijklmnopqrstuv"}
 {"id": "s25", "kind": "key", "text": "AWS key AKIAABCDEFGHIJKLMNOP", "value": "AKIAABCDEFGHIJKLMNOP"}
+{"id": "s26", "kind": "card", "text": "My card is 4111/1111/1111/1111", "value": "4111/1111/1111/1111"}
+{"id": "s27", "kind": "card", "text": "Card 4111_1111_1111_1111 for travel", "value": "4111_1111_1111_1111"}
+{"id": "s28", "kind": "card", "text": "Card 4111–1111–1111–1111", "value": "4111–1111–1111–1111"}
+{"id": "s29", "kind": "card", "text": "4111,1111,1111,1111 is the card", "value": "4111,1111,1111,1111"}
+{"id": "s30", "kind": "card", "text": "Card 4111́ 1111 1111 1111", "value": "1111 1111 1111"}
+{"id": "s31", "kind": "card", "text": "Card 4111️ 1111 1111 1111", "value": "1111 1111 1111"}
+{"id": "s32", "kind": "card", "text": "Card 4111‍1111⁠1111​1111", "value": "41111111"}
+{"id": "s33", "kind": "aadhaar", "text": "Aadhaar 2345-6789 0123", "value": "6789 0123"}
+{"id": "s34", "kind": "aadhaar", "text": "My UID is 2345 67890123", "value": "67890123"}
+{"id": "s35", "kind": "aadhaar", "text": "ID 2345/6789/0123", "value": "2345/6789/0123"}
+{"id": "s36", "kind": "pan", "text": "PAN ABCDE 1234 F", "value": "ABCDE 1234 F"}
+{"id": "s37", "kind": "pan", "text": "PAN АBCDE1234F", "value": "BCDE1234F"}
+{"id": "s38", "kind": "pan", "text": "My PAN is ΑΒCDE1234F", "value": "CDE1234F"}
+{"id": "s39", "kind": "ifsc", "text": "IFSC НDFC0001234", "value": "DFC0001234"}
+{"id": "s40", "kind": "password", "text": "My passwords are hunter2", "value": "hunter2"}
+{"id": "s41", "kind": "password", "text": "The password for netflix is Sup3rS3cret", "value": "Sup3rS3cret"}
+{"id": "s42", "kind": "password", "text": "pw is Tr0ub4dor", "value": "Tr0ub4dor"}
+{"id": "s43", "kind": "password", "text": "pass: Qwerty#2026", "value": "Qwerty#2026"}
+{"id": "s44", "kind": "password", "text": "My pаssword is swordfish9", "value": "swordfish9"}
+{"id": "s45", "kind": "pin", "text": "The pin for my card is 4321", "value": "is 4321"}
+{"id": "s46", "kind": "account", "text": "ac no 50100123456780", "value": "50100123456780"}
+{"id": "s47", "kind": "account", "text": "Savings 60100123456780 at the bank branch", "value": "60100123456780"}

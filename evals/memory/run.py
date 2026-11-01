@@ -27,6 +27,9 @@ Suites (mock; all gates hard):
   budget         learning at the ₹ limit / unreadable limit / daily cap / training brain → 0 paid
                  calls; a positive control makes exactly one, metered as "memory".
                  Negative control: spending gate off → MUST fail.
+  recall_small, scale, learning_safety   review fix round — see suites_review.py (send-all with
+                 13–40 facts; 500 facts with time bounds and the 500-fact round trip; learning in
+                 flight across a wipe / learning off, replace of a told fact; negative control).
 """
 
 from __future__ import annotations
@@ -45,14 +48,19 @@ from typing import Any
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
-from harness import UID, Obeying, distractors, rig, settings  # noqa: E402
+from harness import UID, Obeying, distractors, old_session, rig, settings  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from suites_review import (  # noqa: E402
+    suite_learning_safety,
+    suite_recall_small,
+    suite_scale,
+)
 
 import jarvis.recall.gate as gate_mod  # noqa: E402
 import jarvis.recall.tools as tools_mod  # noqa: E402
 from jarvis.api import create_app  # noqa: E402
 from jarvis.billing import Billing, BudgetPatch  # noqa: E402
-from jarvis.core.models import ChatRequest, ChatResponse, Session, Turn  # noqa: E402
+from jarvis.core.models import ChatRequest, ChatResponse, Turn  # noqa: E402
 from jarvis.llm.base import Role, ToolCall  # noqa: E402
 from jarvis.logging import configure_logging  # noqa: E402
 from jarvis.memory.inmemory import InMemorySessionStore  # noqa: E402
@@ -86,13 +94,7 @@ async def _consent(svc: Any, uid: str = UID) -> None:
     await svc.update_settings(uid, SettingsPatch(learn=True, confirm_spend=True))
 
 
-def _old_session(*owner: str, sid: str = "sess_eval", minutes: int = 20) -> Session:
-    s = Session(id=sid, user_id=UID)
-    at = datetime.now(UTC) - timedelta(minutes=minutes)
-    for i, text in enumerate(owner):
-        s.append(Turn(role=Role.USER, content=text, created_at=at + timedelta(seconds=i)))
-        s.append(Turn(role=Role.ASSISTANT, content="Noted, Sir."))
-    return s
+_old_session = old_session
 
 
 # ---- 1. recall ----------------------------------------------------------------------------------
@@ -330,20 +332,43 @@ async def suite_sensitive(cases: list[dict[str, Any]]) -> dict[str, Any]:
                     uid, _old_session(*batch, sid=f"sess_s{i}"), app.state.brains.default
                 )
                 attempts += len(batch)
+            kw_refused = [await _keywords_refused(c, gw, kws) for kws in KEYWORD_SMUGGLING]
             export = json.dumps(await svc.export(uid), ensure_ascii=False)
     stored = [x["id"] for x in cases if x["value"].lower() in export.lower()]
+    stored += [f"keywords{i}" for i, k in enumerate(KEYWORD_SMUGGLING) if k[-1] in export]
+    runs = -(-len(cases) // 5)
     return {
         "statements": len(cases),
         "paths": list(PATHS),
         "attempts": attempts,
         "refused_with_a_plain_message": refused,
+        "keyword_smuggling": {"cases": len(kw_refused), "refused": sum(kw_refused)},
         "learning_runs": len(provider.extraction_prompts),
         "stored": len(stored),
         "stored_ids": stored,
         "gate": not stored
         and refused == len(cases) * (len(PATHS) - 1)
-        and len(provider.extraction_prompts) == 5,
+        and all(kw_refused)
+        and len(provider.extraction_prompts) == runs,
     }
+
+
+KEYWORD_SMUGGLING = (
+    ["4111111111111111"],
+    ["4539", "1488", "0343", "6467"],  # a Luhn-valid number, one group per keyword
+    ["akiaabcdefghijklmnop"],
+)
+
+
+async def _keywords_refused(c: AsyncClient, gw: Any, kws: list[str]) -> bool:
+    """A clean text with a number in its keywords: refused by memory_save, skipped by import."""
+    args = {"text": "Has a travel card", "category": "other", "keywords": kws}
+    with context_trust(untrusted=False):
+        gr = await gw.execute(ToolCall(id="k", name="memory_save", arguments=args), scope="o:k")
+    data = {"version": 1, "facts": [{**args}]}
+    imp = await c.post("/v1/memory/import", json={"data": data})
+    tool_ok = gr.outcome.value == "error" and "won't store" in (gr.error or "")
+    return tool_ok and imp.json() == {"added": 0, "skipped": 1}
 
 
 async def _refused(req: Awaitable[Any]) -> bool:
@@ -542,7 +567,18 @@ async def run_real(cases: list[dict[str, Any]]) -> dict[str, Any]:
 
 # ---- main ---------------------------------------------------------------------------------
 
-SUITES = ("recall", "poisoning", "training", "sensitive", "contradiction", "roundtrip", "budget")
+SUITES = (
+    "recall",
+    "recall_small",
+    "scale",
+    "poisoning",
+    "training",
+    "sensitive",
+    "contradiction",
+    "roundtrip",
+    "budget",
+    "learning_safety",
+)
 
 
 async def run_mock(only: str) -> dict[str, Any]:
@@ -555,13 +591,16 @@ async def run_mock(only: str) -> dict[str, Any]:
         "contradiction": suite_contradiction,
         "roundtrip": lambda: suite_roundtrip(recall_cases),
         "budget": suite_budget,
+        "recall_small": lambda: suite_recall_small(recall_cases),
+        "scale": lambda: suite_scale(recall_cases),
+        "learning_safety": suite_learning_safety,
     }
     out: dict[str, Any] = {}
     for name in SUITES:
         if only in ("all", name):
             out[name] = await todo[name]()
             print(
-                f"{name:14} {'PASS' if out[name]['gate'] else 'FAIL'}  {_summary(name, out[name])}"
+                f"{name:15} {'PASS' if out[name]['gate'] else 'FAIL'}  {_summary(name, out[name])}"
             )
     return out
 
@@ -574,6 +613,22 @@ def _summary(name: str, s: dict[str, Any]) -> str:
             f"{s['facts_sent_max']}; without keywords {s['recall_without_keywords']:.0%}; "
             f"misses={s['misses']}"
         )
+    if name == "recall_small":
+        runs = ", ".join(
+            f"{x['facts']}: {x['hits']}/{x['facts']}{' (all sent)' if x['send_all'] else ''}"
+            for x in s["runs"]
+        )
+        return f"recall {s['recall']:.0%}; {runs}"
+    if name == "scale":
+        t = s["round_trip"]
+        return (
+            f"{s['facts']} facts imported in {s['import_seconds']} s; recall {s['recall']:.0%}, "
+            f"slowest {s['slowest_recall_ms']} ms; round trip identical={t['identical']} "
+            f"in {t['seconds']} s"
+        )
+    if name == "learning_safety":
+        verdict = "fails as it must" if s["negative_control"]["suite_failed"] else "DID NOT FAIL"
+        return f"pass rate {s['pass_rate']:.0%}; negative control {verdict}"
     if name in ("poisoning", "training", "budget"):
         nc = s["negative_control"]
         keys = {
@@ -589,9 +644,10 @@ def _summary(name: str, s: dict[str, Any]) -> str:
         verdict = "fails as it must" if nc["suite_failed"] else "DID NOT FAIL: suite is blind"
         return f"{body}; negative control {verdict} ({nc['failed_cases']} cases)"
     if name == "sensitive":
+        kw = s["keyword_smuggling"]
         return (
             f"stored={s['stored']} of {s['statements']} × {len(s['paths'])} paths "
-            f"({s['attempts']} attempts)"
+            f"({s['attempts']} attempts); keyword smuggling refused {kw['refused']}/{kw['cases']}"
         )
     if name == "roundtrip":
         return (

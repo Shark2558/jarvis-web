@@ -8,14 +8,15 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from jarvis.billing import Billing, BudgetStore, FxRates, UsageMeter
 from jarvis.config import LLMBackend, SessionBackend, Settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
-from jarvis.llm.base import Completion
+from jarvis.core.models import Session, Turn
+from jarvis.llm.base import Completion, Role
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelTier
@@ -62,7 +63,18 @@ def settings() -> Settings:
         usd_inr_live=False,
         default_tier="fast",
         log_level="ERROR",
+        rate_limit_per_minute=0,  # the suites make hundreds of calls; they test memory, not this
     )
+
+
+def old_session(*owner: str, sid: str = "sess_eval", minutes: int = 20) -> Session:
+    """A conversation whose owner messages are `minutes` old (so a learning batch is due)."""
+    s = Session(id=sid, user_id=UID)
+    at = datetime.now(UTC) - timedelta(minutes=minutes)
+    for i, text in enumerate(owner):
+        s.append(Turn(role=Role.USER, content=text, created_at=at + timedelta(seconds=i)))
+        s.append(Turn(role=Role.ASSISTANT, content="Noted, Sir."))
+    return s
 
 
 # ---- the scripted model ---------------------------------------------------------------------
@@ -259,6 +271,7 @@ __all__ = [
     "Rig",
     "distractors",
     "obeying_extraction",
+    "old_session",
     "rig",
     "settings",
 ]

@@ -30,7 +30,7 @@ ALLOWED_FONTS = (
     "share-tech-mono-latin-400-normal.woff2",
 )
 THREE_URL = f"/static/vendor/{THREE_RELEASE}/three.module.min.js"
-DECK_SCRIPTS = ("console-fx.js", "console-deck.js", "console.js")
+DECK_SCRIPTS = ("console-fx.js", "console-deck.js", "console.js", "console-brief.js")
 MODULE_SCRIPTS = ("console-3d.js",)
 MODULE_DEPS = ("console-3d-scenes.js",)  # imported by console-3d.js, not by the page
 STYLES = ("console.css", "console-deck.css")
@@ -199,6 +199,50 @@ def test_every_served_asset_is_covered_by_package_data() -> None:
     for rel in served:
         assert (base / rel).is_file(), rel
         assert any(fnmatch.fnmatch(rel, g) for g in globs), f"{rel} not in package-data"
+
+
+# ---- slice 7: the Brief panel -------------------------------------------------------------------
+async def test_brief_script_loads_after_the_console_transport_it_uses(client: AsyncClient) -> None:
+    html = (await client.get("/")).text
+    # console-brief.js calls window.JarvisConsole.api and window.JarvisDeck: both must exist first
+    names = ("console-deck.js", "console.js", "console-brief.js")
+    order = [html.index(f'src="/static/{n}"') for n in names]
+    assert order == sorted(order)
+    console_js = (await client.get("/static/console.js")).text
+    assert "window.JarvisConsole = Object.freeze({ api })" in console_js
+
+
+HTML_SINKS = (
+    "innerHTML",
+    "outerHTML",
+    "insertAdjacentHTML",
+    "document.write",
+    "eval(",
+    "new Function",
+)
+
+
+async def test_brief_script_never_parses_server_text_as_html(client: AsyncClient) -> None:
+    js = (await client.get("/static/console-brief.js")).text
+    code = re.sub(r"//[^\n]*", "", js)  # the header comment may name what is never used
+    for sink in HTML_SINKS:
+        assert sink not in code, sink
+    assert "textContent" in js
+    # every write goes through the console's api() (cookie + X-Requested-With, or bearer token)
+    assert "fetch(" not in js
+    assert "/v1/brief/today" in js and "/v1/brief/generate" in js and "/v1/brief/seen" in js
+    assert "confirm_spend: true" in js and "confirm_inbox: true" in js
+
+
+async def test_brief_panel_and_dock_button_are_wired(client: AsyncClient) -> None:
+    html = (await client.get("/")).text
+    assert 'id="p-brief" data-panel="brief" aria-labelledby="t-brief"' in html
+    assert 'data-open="brief" aria-controls="p-brief" aria-pressed="false"' in html
+    assert '<dialog class="bdialog" id="briefDialog" role="alertdialog"' in html
+    assert 'id="briefNote" role="status"' in html
+    deck = (await client.get("/static/console-deck.js")).text
+    assert "'chat', 'brief', 'approvals'" in deck  # in the deck's order and default layout
+    assert re.search(r"\bbrief: \{ x:", deck)
 
 
 async def test_privacy_banner_sits_in_the_deck_flow_not_over_panels(client: AsyncClient) -> None:

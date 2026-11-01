@@ -150,6 +150,23 @@
     </div>
   </section>
 
+  <section class="panel card" id="p-brief" data-panel="brief" aria-labelledby="t-brief" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 14.5h15M5.5 17.2h9"/><path d="M6 14.5a4 4 0 0 1 8 0"/><path d="M10 2.8v4.4M7.9 4.9 10 2.8l2.1 2.1"/><path d="m3.6 11.2 1.6.9M16.4 11.2l-1.6.9"/></svg>
+      <h2 id="t-brief">Brief</h2><span class="pmeta" id="briefMeta"></span>
+      <div class="pacts">
+        <button class="pbtn" id="briefRefresh" type="button" title="Make today's brief again" aria-label="Refresh brief"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.2 9.2A6.3 6.3 0 0 0 4.6 6.6M3.8 10.8a6.3 6.3 0 0 0 11.6 2.6"/><path d="M4.2 3.4v3.4h3.4M15.8 16.6v-3.4h-3.4"/></svg></button>
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Brief panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Brief panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody">
+      <div id="brief" aria-busy="true"><div class="empty">Checking today's brief…</div></div>
+      <div class="bnote" id="briefNote" role="status" aria-live="polite"></div>
+      <div id="briefSettings"></div>
+    </div>
+  </section>
+
   <section class="panel card fixed-size" id="p-approvals" data-panel="approvals" aria-labelledby="t-approvals" hidden>
     <header class="ptitle">
       <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5 4 5v4.6c0 3.6 2.5 6.6 6 7.9 3.5-1.3 6-4.3 6-7.9V5z"/><path d="m7.3 10 1.9 1.9 3.6-3.8"/></svg>
@@ -254,6 +271,7 @@
   <!-- ===== dock (desktop) / tab bar (phone) ===== -->
   <nav class="dock card" id="dock" aria-label="Panels">
     <button class="dk" type="button" data-open="chat" aria-controls="p-chat" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-3.5 3v-3h0a2 2 0 0 1-2-2z"/><path d="M7 8.5h6"/></svg><span>Chat</span></button>
+    <button class="dk" type="button" data-open="brief" aria-controls="p-brief" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 14.5h15M5.5 17.2h9"/><path d="M6 14.5a4 4 0 0 1 8 0"/><path d="M10 2.8v4.4M7.9 4.9 10 2.8l2.1 2.1"/><path d="m3.6 11.2 1.6.9M16.4 11.2l-1.6.9"/></svg><span>Brief</span><i class="bdot" id="briefBadge" aria-hidden="true" hidden></i></button>
     <button class="dk" type="button" data-open="approvals" aria-controls="p-approvals" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5 4 5v4.6c0 3.6 2.5 6.6 6 7.9 3.5-1.3 6-4.3 6-7.9V5z"/><path d="m7.3 10 1.9 1.9 3.6-3.8"/></svg><span>Approvals</span><b class="badge" id="dockBadge" hidden></b></button>
     <button class="dk" type="button" data-open="activity" aria-controls="p-activity" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 3.5 4L4 14M9.5 14.5H16"/></svg><span>Activity</span></button>
     <button class="dk" type="button" data-open="history" aria-controls="p-history" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 10a6.4 6.4 0 1 0 1.9-4.5L3.5 7.5"/><path d="M3.5 3.8v3.7h3.7M10 6.5V10l2.5 1.6"/></svg><span>History</span></button>
@@ -269,9 +287,17 @@
 
 <div class="gate" id="gate"><div class="gate-card card hud" id="gateBox" role="dialog" aria-modal="true" aria-labelledby="gateTitle"></div></div>
 
+<!-- Brief: switching on something that spends money or writes to Gmail asks here first -->
+<dialog class="bdialog" id="briefDialog" role="alertdialog" aria-labelledby="briefDialogTitle" aria-describedby="briefDialogText">
+  <h2 id="briefDialogTitle"></h2>
+  <div id="briefDialogText"></div>
+  <div class="actions"><button class="btn lift" id="briefDialogNo" type="button">Not now</button><button class="btn primary lift" id="briefDialogYes" type="button">Switch on</button></div>
+</dialog>
+
 <script src="/static/console-fx.js" defer></script>
 <script src="/static/console-deck.js" defer></script>
 <script src="/static/console.js" defer></script>
+<script src="/static/console-brief.js" defer></script>
 <script type="module" src="/static/console-3d.js"></script>
 </body>
 </html>

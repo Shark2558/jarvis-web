@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'approvals', 'activity', 'history', 'integrations', 'vitals', 'construct'];
+  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'integrations', 'vitals', 'construct'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;
@@ -56,7 +56,8 @@
   }
   function railWidth() { const r = document.querySelector('.rail-l'); return r && r.offsetWidth ? r.offsetWidth : 190; }
   /** Default places, derived from the viewport. Only the Conversation is open at first; the rest
-   *  open from the dock (Approvals opens itself when something waits). */
+   *  open from the dock (Approvals opens itself when something waits; the Brief when today's
+   *  brief is ready and not yet seen — console-brief.js). */
   function defaults() {
     const b = deckBounds(), rail = railWidth();
     const sL = rail + 12, sR = window.innerWidth - rail - 12;
@@ -65,6 +66,7 @@
     const col2 = sL + 300 + 14;
     return {
       chat: { x: sR - chatW, y: b.top, w: chatW, h: Math.min(availH, 680), open: true },
+      brief: { x: sL, y: b.top, w: 380, h: Math.min(availH, 760), open: false },
       vitals: { x: sL, y: b.top, w: 300, h: null, open: false },
       activity: { x: sL, y: Math.max(b.top, bottom - 250), w: 300, h: 250, open: false },
       approvals: { x: col2, y: b.top, w: 340, h: null, open: false },

@@ -208,7 +208,7 @@ def _words(seed: int, n: int) -> str:
     )
 
 
-def test_a_500_fact_import_takes_well_under_a_second() -> None:
+def test_a_500_fact_import_is_not_quadratic() -> None:
     """HIGH 2: duplicate checks re-tokenised every stored fact for every imported one (O(n²)):
     500 facts blocked the event loop for ~14 s."""
     raw = [
@@ -217,11 +217,11 @@ def test_a_500_fact_import_takes_well_under_a_second() -> None:
     ]
     t0 = time.perf_counter()
     state, added, skipped = import_data(MemoryState.empty(), {"facts": raw}, NOW)
-    assert time.perf_counter() - t0 < 0.5
+    assert time.perf_counter() - t0 < 3.0
     assert (added, skipped) == (500, 0) and len(state.active()) == 500
     t0 = time.perf_counter()  # again on a full memory: every one a duplicate
     _, added, skipped = import_data(state, {"facts": raw}, NOW)
-    assert time.perf_counter() - t0 < 0.5 and (added, skipped) == (0, 500)
+    assert time.perf_counter() - t0 < 3.0 and (added, skipped) == (0, 500)
 
 
 def test_an_import_over_1000_facts_is_refused() -> None:

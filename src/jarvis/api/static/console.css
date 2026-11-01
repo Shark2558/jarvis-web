@@ -373,7 +373,7 @@ html[data-surface="night"] .welcome h1{font:400 clamp(21px,2.2vw,26px)/1.2 var(-
 html[data-surface="night"] .bdate{font:400 16px/1.15 var(--tech);letter-spacing:.14em;text-transform:uppercase}
 .bmade{font:400 11px/1.3 var(--tech);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
 .bsec{margin-top:12px;padding-top:10px;border-top:1px solid var(--line-2)}
-.bsec h3,.bset h3{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;margin:0 0 8px;font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink)}
+.bsec h3{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;margin:0 0 8px;font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink)}
 .bsec h3 .bcount{letter-spacing:.12em;color:var(--ink-3)}
 .bevents,.binbox,.blines,.bchips{list-style:none;margin:0;padding:0}
 .bev{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px;padding:7px 0;border-top:1px dashed var(--line-2)}
@@ -411,9 +411,25 @@ html[data-surface="night"] .bdate{font:400 16px/1.15 var(--tech);letter-spacing:
 .bnote:empty{display:none}
 .bnote.ok{color:var(--ok-ink);background:color-mix(in srgb,var(--ok) 12%,transparent);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
 .bnote.bad{color:var(--bad-ink);background:var(--bad-tint);border-color:var(--bad-line)}
-.bset{margin-top:14px;padding:10px 12px 4px;border-radius:var(--r-md);background:var(--well-2);border:1px solid var(--line)}
+.bset{margin-top:14px;border-radius:var(--r-md);background:var(--well-2);border:1px solid var(--line)}
+/* settings disclosure (slice 8 D12, Brief + Memory): one row, collapsed by default. Label line with
+   gear and chevron; while closed a summary line says what the settings hold. */
+.dhead{margin:0}
+.dsc{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"icon label chev" "sum sum sum";align-items:center;column-gap:8px;
+  width:100%;min-height:44px;padding:10px 12px;border:0;border-radius:var(--r-md);background:transparent;color:var(--accent-ink);cursor:pointer;text-align:left;
+  font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;transition:background-color .2s var(--ease)}
+.dsc:hover{background:var(--tint)}
+.dsc svg{width:15px;height:15px}
+.dsc .dgear{grid-area:icon}
+.dsc .dl{grid-area:label}
+.dsc .dchev{grid-area:chev;transition:transform .2s var(--ease)}
+.dsc[aria-expanded="true"] .dchev{transform:rotate(180deg)}
+.dsc .dsum{grid-area:sum;margin-top:5px;font:400 12px/1.4 var(--font);letter-spacing:0;text-transform:none;color:var(--ink-2);overflow-wrap:anywhere}
+.dsc .dsum:empty{display:none}
+.dsc[aria-expanded="true"]{border-radius:var(--r-md) var(--r-md) 0 0}
+.dbody{padding:0 12px 4px;border-top:1px solid var(--line-2)}
 .bopt{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line-2)}
-.bset h3 + .bopt{border-top:0;padding-top:2px}
+.dbody > .bopt:first-child{border-top:0}
 .btxt{min-width:0;display:flex;flex-direction:column;align-items:flex-start}
 .bl{display:block;font:700 14px/1.2 var(--hud);letter-spacing:.05em;color:var(--ink)}
 html[data-surface="night"] .bl{font:400 12.5px/1.25 var(--tech);letter-spacing:.12em;text-transform:uppercase}
@@ -543,7 +559,7 @@ html[data-motion="calm"] .approval::after,html[data-motion="calm"] .core.alert::
 html[data-motion="calm"] .welcome > *,html[data-motion="calm"] .row.user,html[data-motion="calm"] .row.jarvis .bubble,
 html[data-motion="calm"] .approval,html[data-motion="calm"] .convo,html[data-motion="calm"] .menu,html[data-motion="calm"] .gate-card,html[data-motion="calm"] .notice.show,
 html[data-motion="calm"] .bdialog[open]{animation-name:fadeIn!important}
-html[data-motion="calm"] .bsw .track,html[data-motion="calm"] .bsw .track i{transition-duration:.01s}
+html[data-motion="calm"] .bsw .track,html[data-motion="calm"] .bsw .track i,html[data-motion="calm"] .dsc .dchev{transition-duration:.01s}
 html[data-motion="calm"] .row.jarvis .bubble::after,html[data-motion="calm"] .send.ripple::after{animation:none}
 html[data-motion="calm"] .lift:hover,html[data-motion="calm"] .lift:active,html[data-motion="calm"] .sw:hover{transform:none!important}
 html[data-motion="calm"] .lift{background-image:none}

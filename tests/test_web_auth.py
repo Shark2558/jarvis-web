@@ -1,6 +1,8 @@
 # tests/test_web_auth.py — web console shell, Google sign-in, allowlist, CSRF, rate limit
 from __future__ import annotations
 
+import base64
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -180,7 +182,9 @@ def test_google_tools_need_a_token_key_outside_dev(settings: Settings) -> None:
     base.model_copy(update={"google_tools_enabled": False}).require_prod_invariants()
     with pytest.raises(RuntimeError, match="TOKEN_KEY is invalid"):
         base.model_copy(update={"token_key": SecretStr("too-short")}).require_prod_invariants()
-    ok = base.model_copy(update={"token_key": SecretStr("A" * 43 + "=")})
+    with pytest.raises(RuntimeError, match="weak"):  # 32 zero bytes: valid base64, no entropy
+        base.model_copy(update={"token_key": SecretStr("A" * 43 + "=")}).require_prod_invariants()
+    ok = base.model_copy(update={"token_key": SecretStr(base64.b64encode(os.urandom(32)).decode())})
     ok.require_prod_invariants()
     assert len(ok.token_key_bytes() or b"") == 32
 

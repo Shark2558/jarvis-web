@@ -24,6 +24,9 @@ from jarvis.storage.sessions import safe_id
 
 KEY_BYTES = 32
 NONCE_BYTES = 12
+# 32 random bytes have ~30 distinct values; fewer than 16 means a typed or placeholder key.
+MIN_DISTINCT_KEY_BYTES = 16
+KEY_HINT = "generate one with: head -c 32 /dev/urandom | base64"
 
 
 class VaultError(RuntimeError):
@@ -63,6 +66,8 @@ def decode_key(value: str) -> bytes:
         raise VaultError("token key is not valid base64") from exc
     if len(raw) != KEY_BYTES:
         raise VaultError(f"token key must decode to {KEY_BYTES} bytes, got {len(raw)}")
+    if not any(raw) or len(set(raw)) < MIN_DISTINCT_KEY_BYTES:
+        raise VaultError(f"token key is weak (all zero or not random); {KEY_HINT}")
     return raw
 
 
@@ -134,13 +139,27 @@ class DocTokenStore(TokenStore):
         doc = await self._d.get(self._path(user_id))
         if doc is None:
             return None
-        secret = json.loads(self._cipher.decrypt(str(doc["blob"]), aad=user_id))
+        try:
+            return self._decode(doc, user_id)
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            # missing field, wrong type, non-JSON plaintext (JSONDecodeError and pydantic's
+            # ValidationError are ValueErrors): unusable, so the owner reconnects — never a 500
+            raise VaultError(f"token document is malformed ({type(exc).__name__})") from exc
+
+    def _decode(self, doc: dict[str, object], user_id: str) -> GoogleTokens:
+        blob = doc["blob"]
+        if not isinstance(blob, str):
+            raise TypeError("blob is not a string")
+        secret = json.loads(self._cipher.decrypt(blob, aad=user_id))
+        scopes = doc.get("scopes", [])
+        if not isinstance(scopes, list):
+            raise TypeError("scopes is not a list")
         return GoogleTokens(
             email=str(doc["email"]),
-            access_token=SecretStr(secret["access_token"]),
-            refresh_token=SecretStr(secret["refresh_token"]),
-            expires_at=float(doc["expires_at"]),
-            scopes=[str(s) for s in doc.get("scopes", [])],
+            access_token=SecretStr(str(secret["access_token"])),
+            refresh_token=SecretStr(str(secret["refresh_token"])),
+            expires_at=float(doc["expires_at"]),  # type: ignore[arg-type]
+            scopes=[str(s) for s in scopes],
             needs_reconnect=bool(doc.get("needs_reconnect", False)),
         )
 

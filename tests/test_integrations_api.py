@@ -338,3 +338,20 @@ async def test_wrong_account_still_redirects_when_revoke_fails(gc: AsyncClient) 
     )
     r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"] == "/?connect_error=wrong_account"
+
+
+async def test_malformed_vault_document_reads_as_needs_reconnect(gc: AsyncClient) -> None:
+    """Security review L4: a damaged token document is a reconnect prompt, not a 500."""
+    from jarvis.integrations.vault import DocTokenStore, decode_key
+    from jarvis.storage.docs import MemoryDocs, Set
+
+    docs = MemoryDocs()
+    uid = user_id_for_email(OWNER)
+    await docs.write([Set(f"jarvis_tokens/{uid}", {"email": OWNER, "blob": "AAAA"})])
+    gc.app.state.google.store = DocTokenStore(docs, key=decode_key(KEY_B64))  # type: ignore[attr-defined]
+    await _login(gc, OWNER)
+    r = await gc.get("/v1/integrations")
+    assert r.status_code == 200
+    assert (
+        r.json()["google"]["connected"] is False and r.json()["google"]["needs_reconnect"] is True
+    )

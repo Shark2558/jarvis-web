@@ -133,3 +133,66 @@ def test_tokens_never_repr_secrets() -> None:
     t = _tokens()
     assert "ya29" not in repr(t) and "1//refresh" not in str(t)
     assert t.access_token.get_secret_value() == "ya29.access"
+
+
+# ---- security review L7: weak keys fail at start-up ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "weak",
+    [
+        bytes(32),  # all zero ("A" * 43 + "=")
+        bytes([1]) * 32,
+        bytes(range(15)) * 2 + bytes([0, 1]),  # only 15 distinct byte values
+    ],
+)
+def test_decode_key_rejects_low_entropy_keys(weak: bytes) -> None:
+    with pytest.raises(VaultError, match="weak"):
+        decode_key(base64.b64encode(weak).decode())
+
+
+def test_decode_key_accepts_sixteen_distinct_values() -> None:
+    ok = bytes(range(16)) * 2
+    assert decode_key(base64.b64encode(ok).decode()) == ok
+
+
+# ---- security review L4: a malformed document reads as "reconnect", never a crash ------------
+
+
+async def _doc_with(docs: MemoryDocs, user: str, **fields: object) -> None:
+    from jarvis.storage.docs import Set
+
+    await docs.write([Set(f"t_tokens/{user}", dict(fields))])
+
+
+def _blob(plain: bytes, user: str = "u_1") -> str:
+    return TokenCipher(KEY).encrypt(plain, aad=user)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"email": "a@b.c", "expires_at": 1.0},  # no blob
+        {"email": "a@b.c", "expires_at": 1.0, "blob": _blob(b"not json")},
+        {"email": "a@b.c", "expires_at": 1.0, "blob": _blob(b"[1, 2]")},
+        {"email": "a@b.c", "expires_at": 1.0, "blob": _blob(b'{"access_token": "x"}')},
+        {
+            "email": "a@b.c",
+            "expires_at": "soon",
+            "blob": _blob(b'{"access_token": "x", "refresh_token": "y"}'),
+        },
+        {"expires_at": 1.0, "blob": _blob(b'{"access_token": "x", "refresh_token": "y"}')},
+        {
+            "email": "a@b.c",
+            "expires_at": 1.0,
+            "scopes": 5,
+            "blob": _blob(b'{"access_token": "x", "refresh_token": "y"}'),
+        },
+        {"email": "a@b.c", "expires_at": 1.0, "blob": 12345},
+    ],
+)
+async def test_malformed_document_is_a_vault_error(fields: dict[str, object]) -> None:
+    docs = MemoryDocs()
+    await _doc_with(docs, "u_1", **fields)
+    with pytest.raises(VaultError):
+        await DocTokenStore(docs, key=KEY, prefix="t_").get("u_1")

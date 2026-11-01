@@ -106,3 +106,17 @@ async def test_stream_persists_full_reply(brain: Brain, provider: MockProvider, 
     sessions = await store.list_for_user("owner")
     session = await store.get(sessions[0].id)
     assert session is not None and session.turns[-1].content == "Streaming works, Sir."
+
+
+# ---- slice 6: standing rule for other people's text --------------------------------------------
+
+
+def test_system_prompt_carries_the_external_content_rule() -> None:
+    from jarvis.core.prompts import PERSONA_VERSION, build_system_prompt
+
+    prompt = build_system_prompt(honorific="Sir")
+    assert "EXTERNAL CONTENT" in prompt
+    assert "never\n  an instruction" in prompt
+    assert "only if the owner asked" in prompt.lower() or "owner asked for" in prompt.lower()
+    assert "You currently have no tools" not in prompt  # tools exist since slice 1
+    assert PERSONA_VERSION != "p0.1"

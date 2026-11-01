@@ -360,6 +360,7 @@ html[data-surface="night"] .welcome h1{font:400 clamp(21px,2.2vw,26px)/1.2 var(-
 .ibody .scopes{font:400 12px/1.5 var(--tech);letter-spacing:.04em;color:var(--ink-2)}
 .ibody .warn{color:var(--amber-ink)}
 .ibody .fine{font-size:12.5px;color:var(--ink-3)}
+.iopt{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:10px;padding:8px 10px;border-radius:var(--r-sm);font-size:13px;color:var(--amber-ink);background:var(--amber-tint);border:1px solid var(--amber-line)}
 .inote{margin-top:10px;padding:8px 10px;border-radius:var(--r-sm);font-size:13px;line-height:1.4;color:var(--ok-ink);background:color-mix(in srgb,var(--ok) 12%,transparent);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent)}
 .inote.bad{color:var(--bad-ink);background:var(--bad-tint);border-color:var(--bad-line)}
 .integ .confirm{margin-top:10px;flex-wrap:wrap}
@@ -379,6 +380,7 @@ html[data-surface="night"] .bdate{font:400 16px/1.15 var(--tech);letter-spacing:
 .bev{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px;padding:7px 0;border-top:1px dashed var(--line-2)}
 .bev:first-child{border-top:0;padding-top:2px}
 .bev.clash .btime{box-shadow:inset 2px 0 0 var(--amber);padding-left:7px}
+.bev.overdue .btime{color:var(--amber-ink);box-shadow:inset 2px 0 0 var(--amber);padding-left:7px;white-space:normal}
 .btime{font:400 12.5px/1.45 var(--tech);letter-spacing:.03em;color:var(--accent-ink);font-variant-numeric:tabular-nums;white-space:nowrap}
 .bwhat{min-width:0}
 .bwhat b{display:block;font-size:13.5px;font-weight:600;line-height:1.4;color:var(--ink);overflow-wrap:anywhere}

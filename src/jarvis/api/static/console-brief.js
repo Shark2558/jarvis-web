@@ -380,6 +380,7 @@
     view.append(todaySection(cal, calState));
     const tomorrow = tomorrowSection(cal, calState); if (tomorrow) view.append(tomorrow);
     view.append(inboxSection(obj(data.inbox), txt(ss.inbox, 20), tz));
+    const todo = todoSection(obj(data.todo), txt(ss.todo, 20)); if (todo) view.append(todo);
     const jarvis = jarvisSection(obj(data.jarvis), txt(ss.jarvis, 20)); if (jarvis) view.append(jarvis);
     const ai = aiSection(b); if (ai) view.append(ai);
     const deliv = deliverySection(b, tz); if (deliv) view.append(deliv);
@@ -452,6 +453,34 @@
     });
     s.append(ul);
     if (total !== null && total > msgs.length) s.append(mk('p', 'bfine', `Showing ${msgs.length} of about ${total}.`));
+    return s;
+  }
+  /** Slice 10 C: Google Tasks due today or overdue (dates, never times). No `todo` and no state = a brief
+   *  made before the section existed: nothing shown. not_granted = the optional permission is missing. */
+  function todoSection(t, state) {
+    if (!t && (!state || state === 'ok')) return null;
+    const total = t ? num(t.total) : null, over = t ? num(t.overdue) : null;
+    const s = section('todo', 'To-do', total ? `${total} due` + (over ? ` · ${over} overdue` : '') : '');
+    if (state === 'not_granted') {
+      const wrap = mk('div', 'bstate');
+      wrap.append(mk('p', 'bempty', 'Grant JARVIS access to your to-do list (Integrations) to see it here.'),
+        button('briefIntegTodo', 'bact', 'Open Integrations', () => Deck.open('integrations', { focus: true })));
+      s.append(wrap); return s;
+    }
+    if ((state && state !== 'ok') || !t) { s.append(missing(state || 'unavailable', 'to-do list', 'briefIntegTodo')); return s; }
+    const items = arr(t.items).map(obj).filter(Boolean);
+    if (!items.length) { s.append(mk('p', 'bempty', 'Nothing due today or overdue.')); return s; }
+    const ul = mk('ul', 'bevents');
+    items.forEach(i => {
+      const late = i.overdue === true, due = fmtDate(txt(i.due, 10));
+      const li = mk('li', 'bev' + (late ? ' overdue' : ''));
+      li.append(mk('span', 'btime', late ? (due ? 'Overdue · ' + due : 'Overdue') : 'Today'));
+      const what = mk('div', 'bwhat'); what.append(mk('b', '', txt(i.title, 120) || '(No title)'));
+      const list = txt(i.list, 60); if (list) what.append(mk('small', '', list));
+      li.append(what); ul.append(li);
+    });
+    s.append(ul);
+    if (total !== null && total > items.length) s.append(mk('p', 'bfine', `Showing ${items.length} of ${total}.`));
     return s;
   }
   function jarvisSection(j, state) {

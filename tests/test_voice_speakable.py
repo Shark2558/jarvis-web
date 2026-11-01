@@ -87,6 +87,36 @@ def test_custom_cap() -> None:
     assert speakable("One. Two. Three.", max_chars=9) == "One. Two."
 
 
+@pytest.mark.parametrize(
+    ("raw", "want"),
+    [
+        # digit * digit is multiplication, not emphasis or a stray mark
+        ("3*4 is 12.", "3 times 4 is 12."),
+        ("2 * 3 = 6", "2 times 3 = 6"),
+        ("Use `2*8` cores.", "Use 2 times 8 cores."),
+        ("**5** items", "5 items"),
+        # ~ before a number is "about"; strikethrough still works
+        ("It takes ~5 minutes.", "It takes about 5 minutes."),
+        ("Roughly ~ 20 people.", "Roughly about 20 people."),
+        ("~~5~~ 6 seats", "5 6 seats"),
+        # only real HTML tag names are stripped
+        ("x <y and z> w", "x <y and z> w"),
+        ("<em>really</em> good<br/>", "really good"),
+        ('<span class="x">ok</span>', "ok"),
+        # one level of parentheses inside a markdown link target
+        ("See [Foo](https://en.wikipedia.org/wiki/Foo_(bar)) now.", "See Foo now."),
+        ("![chart](https://x.io/a_(b).png) here", "chart here"),
+    ],
+)
+def test_review_fixes_keep_meaning(raw: str, want: str) -> None:
+    assert speakable(raw) == want
+
+
+@pytest.mark.parametrize("raw", ["__", "_", "_ _", "___ __"])
+def test_underscores_alone_are_nothing_to_say(raw: str) -> None:
+    assert speakable(raw) == ""
+
+
 def test_single_huge_word_is_hard_cut() -> None:
     out = speakable("a" * 1000)
     assert len(out) <= MAX_SPEAK_CHARS and out.startswith("aaa")

@@ -5,12 +5,15 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 from billing_fakes import FREE_TIERS
 
+import jarvis.core.brain as brain_module
 from jarvis.config import LLMBackend, SessionBackend, Settings
 from jarvis.core.brain import Brain
+from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.core.models import ChatRequest
 from jarvis.core.prompts import (
     DEFAULT_WIT,
@@ -21,10 +24,14 @@ from jarvis.core.prompts import (
     build_system_prompt,
     build_trailer,
 )
+from jarvis.llm.base import ToolCall
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelTier
 from jarvis.memory.inmemory import InMemorySessionStore
+from jarvis.tools import Gateway, Policy, ToolRegistry
+from jarvis.tools.audit import AuditLog
+from jarvis.tools.base import Tool
 
 MOCK_TIERS = {t: f"mock-{t.value}" for t in ModelTier}
 
@@ -120,6 +127,21 @@ def test_honorific_is_configurable() -> None:
     assert '"Ma\'am"' in p and "Sir" not in p
 
 
+@pytest.mark.parametrize(
+    ("wit", "line"),
+    [
+        ("film", "Your four o'clock overlaps your four o'clock, Ma'am."),
+        ("extra", "Three meetings back to back, Ma'am."),
+    ],
+)
+def test_the_film_and_extra_example_lines_use_the_configured_honorific(wit: str, line: str) -> None:
+    """Review: the new example lines must substitute the honorific, never hard-code "Sir"."""
+    rule = next(w.rule for w in WIT_LEVELS if w.id == wit)
+    assert "Sir" not in rule and "{honorific}" in rule
+    p = " ".join(build_system_prompt(honorific="Ma'am", wit=wit).split())
+    assert line in p and "Sir" not in p and "{honorific}" not in p
+
+
 def test_unknown_wit_is_refused() -> None:
     with pytest.raises(ValueError):
         build_system_prompt(honorific="Sir", wit="slapstick")
@@ -198,3 +220,64 @@ async def test_new_sessions_record_the_persona_version() -> None:
     res = await brain.chat(ChatRequest(message="hi", user_id="u1"))
     s = await brain.store.get(res.session_id)
     assert s is not None and s.metadata["persona"] == "p4.0"
+
+
+# ---- review fixes (slice 9 backend review) -----------------------------------------------------
+
+
+def _tool_brain(wit: Wit) -> tuple[Brain, MockProvider]:
+    """A brain with one read-only tool, so a turn makes more than one model call."""
+    reg = ToolRegistry()
+    reg.register(
+        Tool(
+            "clock",
+            "What time is it?",
+            {"type": "object", "properties": {}},
+            ActionRisk.READ_ONLY,
+            lambda a: {"time": "10:00"},
+            trusted_output=True,
+        )
+    )
+    gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
+    p = MockProvider()
+    spec = BrainSpec(id="b", label="B", provider=p, tiers=MOCK_TIERS)
+    brain = Brain(
+        brains=BrainRegistry([spec], default_id="b"),
+        store=InMemorySessionStore(),
+        settings=_settings(),
+        gateway=gw,
+        wit=wit,
+    )
+    return brain, p
+
+
+async def test_the_wit_level_is_read_once_per_turn_not_per_model_call() -> None:
+    wit = Wit("extra")
+    brain, p = _tool_brain(wit)
+    p.script_tool_calls([ToolCall(id="t1", name="clock", arguments={})])
+    p.script_tool_calls([ToolCall(id="t2", name="clock", arguments={})], "Ten o'clock, Sir.")
+    res = await brain.chat(ChatRequest(message="time?", user_id="u1"))
+    assert res.reply == "Ten o'clock, Sir." and len(p.calls) == 3
+    assert wit.calls == 1
+    extra = build_system_prompt(honorific="Sir", wit="extra")
+    assert all(c.system.startswith(extra) for c in p.calls)
+
+
+def test_persona_selection_lives_in_its_own_module_and_brain_stays_small() -> None:
+    from jarvis.core.persona import WIT_READ_TIMEOUT_S, Persona, WitSource
+
+    assert WIT_READ_TIMEOUT_S <= 1.5 and Persona and WitSource
+    lines = Path(brain_module.__file__).read_text(encoding="utf-8").count("\n")
+    assert lines <= 800, lines
+
+
+async def test_persona_falls_back_to_film_on_failure_unknown_or_slow() -> None:
+    from jarvis.core.persona import Persona
+
+    film = build_system_prompt(honorific="Sir", wit="film")
+    assert await Persona(honorific="Sir", wit=None).system_for("u1") == film
+    for wit in (Wit("x", fail=True), Wit("nonsense"), Wit("extra", delay=5.0)):
+        got = await asyncio.wait_for(Persona(honorific="Sir", wit=wit).system_for("u1"), 3.0)
+        assert got == film
+    measured = await Persona(honorific="Ma'am", wit=Wit("measured")).system_for("u1")
+    assert measured == build_system_prompt(honorific="Ma'am", wit="measured")

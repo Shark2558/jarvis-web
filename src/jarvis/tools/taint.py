@@ -9,6 +9,12 @@ become a stored "fact about the owner" without the owner seeing it.
 
 Outside a Brain turn (an approval being executed, a script) the answer is "untrusted": the safe
 default, which also makes an approved card consume its token.
+
+Spoken turns (slice 9 review): the owner's message came through the microphone, so anyone in the
+room (a TV, a guest, the keep-listening window) may have said it. The Brain marks such a turn
+`spoken` as well as untrusted, and the gateway then turns EVERY write tool into an approval card
+— not only the memory tools. Outside a turn the answer is "not spoken" (an approval being
+executed was decided on screen).
 """
 
 from __future__ import annotations
@@ -23,6 +29,9 @@ from jarvis.tools.registry import ToolRegistry
 _untrusted: contextvars.ContextVar[bool | None] = contextvars.ContextVar(
     "jarvis_untrusted_in_context", default=None
 )
+_spoken: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "jarvis_spoken_in_context", default=False
+)
 
 
 def untrusted_in_context() -> bool:
@@ -30,12 +39,19 @@ def untrusted_in_context() -> bool:
     return True if flag is None else flag
 
 
+def spoken_in_context() -> bool:
+    """True while a tool call made on a spoken (`channel: voice`) turn is being decided."""
+    return _spoken.get()
+
+
 @contextmanager
-def context_trust(*, untrusted: bool) -> Iterator[None]:
-    token = _untrusted.set(untrusted)
+def context_trust(*, untrusted: bool, spoken: bool = False) -> Iterator[None]:
+    token = _untrusted.set(untrusted or spoken)
+    spoken_token = _spoken.set(spoken)
     try:
         yield
     finally:
+        _spoken.reset(spoken_token)
         _untrusted.reset(token)
 
 
@@ -55,4 +71,4 @@ def untrusted_seen(messages: Sequence[ChatMessage], registry: ToolRegistry) -> b
     return False
 
 
-__all__ = ["context_trust", "untrusted_in_context", "untrusted_seen"]
+__all__ = ["context_trust", "spoken_in_context", "untrusted_in_context", "untrusted_seen"]

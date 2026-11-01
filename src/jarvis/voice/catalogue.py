@@ -3,7 +3,8 @@
 
 No voice is a clone of anyone (D1): these are stock Google voices the owner picks from, with a
 preview. The default comes first. Prices and free allowances are settings (Google's list prices,
-verified 2026-11-01); usage is metered under the keys below in the monthly usage record.
+verified 2026-11-01; allowances default to 90 % of Google's); usage is metered under the keys
+below in the deployment's allowance counter (Pacific-time months), rupees in the owner's month.
 """
 
 from __future__ import annotations
@@ -55,7 +56,7 @@ def find_voice(voice_id: str) -> Voice | None:
 class Price:
     key: str  # the monthly usage counter
     usd_per_unit: float  # one character (TTS) / one second (STT)
-    free_units: float  # per month
+    free_units: float  # per Pacific-time month, for the whole deployment (JARVIS's share)
 
 
 @dataclass(frozen=True)

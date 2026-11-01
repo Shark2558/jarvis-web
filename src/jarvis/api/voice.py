@@ -1,14 +1,18 @@
 # src/jarvis/api/voice.py
 """Voice HTTP surface (slice 9 §3; Layer 1 → 2 / 8). Owner-only: `require_auth` + `current_user`
 (no client user id is read); cookie writes need `X-Requested-With: JARVIS` (enforced by
-`require_auth`); speak ≤ 60 and transcribe ≤ 30 calls a minute per owner, on top of the /v1
-per-client limit. Text, transcripts and audio are never logged (lengths only).
+`require_auth`); speak ≤ 60, transcribe ≤ 30, GET /v1/voice ≤ 60 and PUT settings ≤ 60 calls a
+minute per owner, on top of the /v1 per-client limit. Text, transcripts and audio are never
+logged (lengths only).
 
 GET  /v1/voice             VoiceView {cloud {tts, stt, reason}, settings {voice, rate, wit},
                            voices [{id, label, style, type, available}], wit_levels [{id, label,
                            description}], allowance {tts {type, used_chars, free_chars, by_type
                            {chirp3-hd {used, free}, studio {used, free}}}, stt {used_seconds,
-                           free_seconds}}, month {month, voice_inr}, language}
+                           free_seconds}, month, resets_at, scope: "deployment"}, month {month,
+                           voice_inr}, language}. The allowance is JARVIS's share of Google's
+                           free tier (90 % by default) for the whole deployment, Pacific-time
+                           months; 503 budget_unavailable when its counter can't be read.
 PUT  /v1/voice/settings    {voice?, rate?, wit?} → settings; 422 input_rejected
 POST /v1/voice/speak       {text, voice?, rate?} | {preview: true, voice?} → 200 audio/mpeg with
                            X-Jarvis-Chars, X-Jarvis-Cost-Inr; 422 nothing_to_say / input_rejected,
@@ -30,6 +34,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from jarvis.api.auth import require_auth
+from jarvis.api.body import read_capped
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.voice.ports import (
@@ -47,6 +52,8 @@ router = APIRouter(prefix="/v1/voice", dependencies=[Depends(require_auth)])
 
 SPEAK_PER_MINUTE = 60
 TRANSCRIBE_PER_MINUTE = 30
+VIEW_PER_MINUTE = 60
+SETTINGS_PER_MINUTE = 60
 MAX_AUDIO_BYTES = 2_000_000
 WAV_TYPES = frozenset({"audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"})
 
@@ -73,15 +80,20 @@ def _limit(request: Request, name: str, uid: str) -> None:
 
 @router.get("", response_model=VoiceView)
 async def get_voice(
-    svc: VoiceService = Depends(_svc), uid: str = Depends(current_user)
+    request: Request, svc: VoiceService = Depends(_svc), uid: str = Depends(current_user)
 ) -> VoiceView:
+    _limit(request, "view", uid)
     return await svc.view(uid)
 
 
 @router.put("/settings", response_model=VoiceSettings)
 async def put_settings(
-    patch: VoiceSettingsPatch, svc: VoiceService = Depends(_svc), uid: str = Depends(current_user)
+    patch: VoiceSettingsPatch,
+    request: Request,
+    svc: VoiceService = Depends(_svc),
+    uid: str = Depends(current_user),
 ) -> VoiceSettings:
+    _limit(request, "settings", uid)
     return await svc.update_settings(uid, patch)
 
 
@@ -105,22 +117,6 @@ async def speak(
     )
 
 
-async def read_capped(request: Request, limit: int) -> bytes:
-    """The body, refused as soon as it is known to exceed `limit`: from Content-Length before
-    anything is read, else while it streams in (a chunked upload has no length)."""
-    declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > limit:
-        raise AudioTooLarge(limit)
-    parts: list[bytes] = []
-    size = 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if size > limit:
-            raise AudioTooLarge(limit)
-        parts.append(chunk)
-    return b"".join(parts)
-
-
 @router.post("/transcribe", response_model=TranscriptView)
 async def transcribe(
     request: Request, svc: VoiceService = Depends(_svc), uid: str = Depends(current_user)
@@ -129,7 +125,9 @@ async def transcribe(
     ctype = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if ctype not in WAV_TYPES:
         raise BadAudio("Send the recording as audio/wav (16-bit PCM, mono, 16,000 Hz).")
-    blob = await read_capped(request, MAX_AUDIO_BYTES)
+    blob = await read_capped(
+        request, MAX_AUDIO_BYTES, too_large=lambda: AudioTooLarge(MAX_AUDIO_BYTES)
+    )
     return await svc.transcribe(uid, blob)
 
 
@@ -142,6 +140,8 @@ def install_voice(app: FastAPI) -> None:
     app.state.voice_limits = {
         "speak": RateLimiter(SPEAK_PER_MINUTE),
         "transcribe": RateLimiter(TRANSCRIBE_PER_MINUTE),
+        "view": RateLimiter(VIEW_PER_MINUTE),
+        "settings": RateLimiter(SETTINGS_PER_MINUTE),
     }
 
     @app.exception_handler(VoiceUnavailable)

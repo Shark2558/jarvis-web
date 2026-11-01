@@ -43,6 +43,9 @@ class Turn(BaseModel):
     # produced from a tool or approval outcome (an approval's narration, a reply written after
     # tool rounds): private data, never sent to a brain that may train on content
     tool_derived: bool = False
+    # how an owner message arrived (slice 9): "voice" was heard through the microphone, so it
+    # may be someone else's words — never used for memory learning (jarvis.recall.learning)
+    channel: Literal["text", "voice"] = "text"
 
 
 class Session(BaseModel):

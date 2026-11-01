@@ -3,6 +3,7 @@
 # voice evals import it.
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import math
@@ -49,19 +50,26 @@ def wav(
 
 
 class FakeTokens:
-    def __init__(self, *, missing: bool = False) -> None:
+    def __init__(self, *, missing: bool = False, delay: float = 0.0) -> None:
         self.missing = missing
+        self.delay = delay
         self.calls = 0
         self.invalidated = 0
+        self.closed = 0
 
     async def headers(self) -> dict[str, str]:
         self.calls += 1
+        if self.delay:
+            await asyncio.sleep(self.delay)
         if self.missing:
             raise VoiceUnavailable("not_configured")
         return {"Authorization": "Bearer test-token"}
 
     def invalidate(self) -> None:
         self.invalidated += 1
+
+    def close(self) -> None:
+        self.closed += 1
 
     @property
     def not_configured(self) -> bool:
@@ -77,15 +85,21 @@ class FakeTTS:
     voices_fail: Exception | None = None
     calls: list[dict[str, Any]] = field(default_factory=list)
     voice_lists: int = 0
+    delay: float = 0.0  # seconds each synthesis takes (lets calls overlap)
+    voices_delay: float = 0.0
 
     async def synthesize(self, text: str, *, voice: str, language: str, rate: float) -> bytes:
         self.calls.append({"text": text, "voice": voice, "language": language, "rate": rate})
+        if self.delay:
+            await asyncio.sleep(self.delay)
         if self.fail is not None:
             raise self.fail
         return b"ID3" + text.encode("utf-8")[:16]
 
     async def voices(self, language: str) -> frozenset[str]:
         self.voice_lists += 1
+        if self.voices_delay:
+            await asyncio.sleep(self.voices_delay)
         if self.voices_fail is not None:
             raise self.voices_fail
         if self.known is not None:
@@ -102,6 +116,7 @@ class FakeSTT:
     billed: float | None = None
     fail: Exception | None = None
     calls: list[dict[str, Any]] = field(default_factory=list)
+    delay: float = 0.0
 
     async def recognize(
         self, pcm: bytes, *, sample_rate: int, language: str, phrases: tuple[str, ...]
@@ -109,6 +124,8 @@ class FakeSTT:
         self.calls.append(
             {"bytes": len(pcm), "rate": sample_rate, "language": language, "phrases": phrases}
         )
+        if self.delay:
+            await asyncio.sleep(self.delay)
         if self.fail is not None:
             raise self.fail
         billed = self.billed if self.billed is not None else math.ceil(len(pcm) / (2 * sample_rate))

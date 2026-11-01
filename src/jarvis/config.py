@@ -239,10 +239,16 @@ class Settings(BaseSettings):
         pattern=r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
         description="Speech-to-Text language (BCP-47); the voices themselves are en-GB",
     )
-    # Google's list prices (verified 2026-11-01) and monthly free allowances. Allowances are
-    # per billing account at Google; JARVIS counts only its own use against them.
+    # Google's list prices (verified 2026-11-01) and monthly free allowances. Google's free tier
+    # is per BILLING ACCOUNT and resets on Pacific-time months; JARVIS counts its own use once for
+    # the whole deployment on those months, and by default claims only 90 % of it (1 M chars per
+    # voice type, 60 min STT) as a safety margin. If the billing account is shared with other
+    # projects or apps, set both to 0: every call is then priced against the monthly limit.
     voice_tts_free_chars: int = Field(
-        default=1_000_000, ge=0, description="Free TTS characters per voice type per month"
+        default=900_000,
+        ge=0,
+        description="Free TTS characters per voice type per Pacific month that JARVIS may use "
+        "(90 % of Google's 1,000,000; 0 if the billing account is shared)",
     )
     voice_price_chirp3_hd_usd_per_m: float = Field(
         default=30.0, ge=0, le=10_000, description="US$ per 1 M characters, Chirp 3: HD"
@@ -251,7 +257,10 @@ class Settings(BaseSettings):
         default=160.0, ge=0, le=10_000, description="US$ per 1 M characters, Studio"
     )
     voice_stt_free_seconds: int = Field(
-        default=3_600, ge=0, description="Free Speech-to-Text v1 seconds per month"
+        default=3_240,
+        ge=0,
+        description="Free Speech-to-Text v1 seconds per Pacific month that JARVIS may use "
+        "(90 % of Google's 3,600; 0 if the billing account is shared)",
     )
     voice_price_stt_usd_per_min: float = Field(
         default=0.024, ge=0, le=100, description="US$ per minute, STT v1 without data logging"

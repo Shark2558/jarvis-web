@@ -28,10 +28,11 @@
 # "I am your clock". JARVIS decides whether the owner's brief is due. If this step fails, JARVIS
 # still works and makes the brief when the Brief panel is opened.
 # Voice (slice 9): JARVIS speaks with Google Cloud Text-to-Speech and listens with Speech-to-Text
-# v1, as jarvis-run (no key). Step 2 switches both APIs on; step 5 lets jarvis-run use the
-# project's services (serviceusage.serviceUsageConsumer). Free up to Google's monthly allowance;
-# above it the cost counts toward the owner's monthly limit in rupees. Without them the console
-# falls back to the browser's own voice.
+# v1, as jarvis-run (no key). Step 2 switches both APIs on and step 5 lets jarvis-run use the
+# project's services (serviceusage.serviceUsageConsumer) — each in its own command that may fail
+# (an organisation policy can block them) without stopping the deploy. Free up to 90 % of Google's
+# monthly allowance; above it the cost counts toward the owner's monthly limit in rupees. Without
+# them the console falls back to the browser's own voice.
 # --reconfigure rewrites ALL settings and secret bindings from your answers (it does not merge).
 set -euo pipefail
 
@@ -70,8 +71,10 @@ say "2/8  Switching on the Google services JARVIS needs (takes ~1 minute)"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
   secretmanager.googleapis.com firestore.googleapis.com iam.googleapis.com \
   iamcredentials.googleapis.com sts.googleapis.com \
-  calendar-json.googleapis.com gmail.googleapis.com \
-  texttospeech.googleapis.com speech.googleapis.com --quiet
+  calendar-json.googleapis.com gmail.googleapis.com --quiet
+# Voice (slice 9) on its own: an organisation policy may block these, and JARVIS works without them.
+gcloud services enable texttospeech.googleapis.com speech.googleapis.com --quiet \
+  || say "Note: the Google speech APIs could not be switched on; the browser voice will be used."
 
 # Quick (prompt-free) only for a service this script fully set up before: it has the owner set.
 QUICK=no
@@ -201,14 +204,25 @@ bind() { # member role  (a brand-new service account can take a few seconds to b
   done
   die "Could not grant $2 to $1."
 }
+try_bind() { # member role: like bind, but a failure is reported to the caller, not fatal
+  for _ in 1 2 3; do
+    gcloud projects add-iam-policy-binding "$PROJECT" --member="$1" --role="$2" \
+      --condition=None --quiet >/dev/null 2>&1 && return 0
+    sleep 5
+  done
+  return 1
+}
 RUN_SA="jarvis-run@${PROJECT}.iam.gserviceaccount.com"
 gcloud iam service-accounts describe "$RUN_SA" >/dev/null 2>&1 || \
   gcloud iam service-accounts create jarvis-run --display-name="JARVIS (runtime)" --quiet >/dev/null \
   || die "Could not create the jarvis-run service account."
-# serviceUsageConsumer: lets JARVIS call the speech APIs as itself (harmless if not needed).
-for role in roles/datastore.user roles/logging.logWriter roles/serviceusage.serviceUsageConsumer; do
+for role in roles/datastore.user roles/logging.logWriter; do
   bind "serviceAccount:${RUN_SA}" "$role"
 done
+# serviceUsageConsumer: lets JARVIS call the (already enabled) speech APIs as itself; harmless if
+# not needed, and voice falls back to the browser if it can't be granted.
+try_bind "serviceAccount:${RUN_SA}" roles/serviceusage.serviceUsageConsumer \
+  || echo "  Note: could not let JARVIS use the speech APIs; the browser voice will be used."
 for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key \
               jarvis-openai-compat-key jarvis-session-secret jarvis-api-token jarvis-token-key; do
   secret_exists "$secret" || continue

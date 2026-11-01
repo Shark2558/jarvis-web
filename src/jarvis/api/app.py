@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from jarvis.api.auth import CSRFRejected, auth_router, build_oauth
+from jarvis.api.body import MAX_BODY_BYTES, BodySizeLimit, BodyTooLarge, too_large_body
 from jarvis.api.brief import internal_router as brief_internal_router
 from jarvis.api.brief import router as brief_router
 from jarvis.api.console import router as console_router
@@ -262,6 +263,10 @@ def create_app(
 
     app = FastAPI(title="JARVIS", version="0.0.1", lifespan=lifespan, docs_url=None, redoc_url=None)
 
+    # Every body is size-capped before it is parsed or authenticated (innermost of the http
+    # middlewares, so the trace id still goes on a 413). Tighter per-route caps apply first.
+    app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
+
     if s.rate_limit_per_minute > 0:
         app.middleware("http")(make_middleware(RateLimiter(s.rate_limit_per_minute)))
 
@@ -376,6 +381,10 @@ def create_app(
     @app.exception_handler(ImportTooLarge)
     async def _too_large(_: Request, exc: ImportTooLarge) -> JSONResponse:
         return _err(413, {"error": "too_large", "detail": str(exc)})
+
+    @app.exception_handler(BodyTooLarge)
+    async def _body_too_large(_: Request, exc: BodyTooLarge) -> JSONResponse:
+        return _err(413, too_large_body(str(exc.detail)))
 
     @app.exception_handler(SchedulerUnauthorized)
     async def _scheduler(_: Request, exc: SchedulerUnauthorized) -> Response:

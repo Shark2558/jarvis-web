@@ -69,6 +69,9 @@ class Tokens:
     def invalidate(self) -> None:
         self.invalidated += 1
 
+    def close(self) -> None:
+        return None
+
     @property
     def not_configured(self) -> bool:
         return self.missing

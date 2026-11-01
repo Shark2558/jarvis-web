@@ -2,11 +2,14 @@
 """What may be read aloud (slice 9 D6; Layer 8, Response & Output). The server's authority: the
 console splits a reply into chunks, but every chunk passes through here before a voice reads it.
 
-Strips markdown (headings, emphasis, quotes, list markers, rules, HTML tags), fenced code (never
-spoken; an unclosed fence hides the rest), tables, long inline code, URLs ("the link on screen"),
-emoji and control / bidi / zero-width characters; collapses whitespace; caps the result at
-`MAX_SPEAK_CHARS` at a sentence end, else at a word (with "…"). Nothing left with a letter or a
-digit → "" (the caller answers `nothing_to_say`). Pure and deterministic: no I/O, no logging.
+Strips markdown (headings, emphasis, quotes, list markers, rules, real HTML tags — not any text
+in angle brackets), fenced code (never spoken; an unclosed fence hides the rest), tables, long
+inline code, URLs ("the link on screen"; a markdown link target may hold one level of
+parentheses), emoji and control / bidi / zero-width characters; keeps meaning where a symbol
+carries it (digit * digit → "times", ~ before a number → "about"); collapses whitespace; caps
+the result at `MAX_SPEAK_CHARS` at a sentence end, else at a word (with "…"). Nothing left with
+a letter or a digit (underscores don't count) → "" (the caller answers `nothing_to_say`). Pure
+and deterministic: no I/O, no logging.
 """
 
 from __future__ import annotations
@@ -29,12 +32,23 @@ _QUOTE = re.compile(r"^\s*(>\s?)+")
 _ITEM = re.compile(r"^\s*(?:[-*+•]|\d{1,3}[.)])\s+")
 
 _INLINE_CODE = re.compile(r"`+([^`\n]*)`+")
-_IMAGE = re.compile(r"!\[([^\]\n]*)\]\([^)\n]*\)")
-_LINK = re.compile(r"\[([^\]\n]+)\]\([^)\n]*\)")
+_TARGET = r"\((?:[^()\n]|\([^()\n]*\))*\)"  # a link target, with one level of parentheses
+_IMAGE = re.compile(r"!\[([^\]\n]*)\]" + _TARGET)
+_LINK = re.compile(r"\[([^\]\n]+)\]" + _TARGET)
 _AUTOLINK = re.compile(r"<(?:https?://|www\.)[^>\s]+>", re.I)
 _URL = re.compile(r"\b(?:https?://|www\.)[^\s<>()\[\]{}\"']+", re.I)
 _URL_TAIL = ".,;:!?'\""
-_TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
+_TAG = re.compile(r"</?([A-Za-z][A-Za-z0-9-]*)(?:\s[^<>]*)?/?>")
+# Tag names a model might actually write; anything else in <…> is ordinary text.
+_HTML_TAGS = frozenset(
+    "a abbr article aside audio b big blockquote body br button caption center cite code col "
+    "colgroup dd del details dfn div dl dt em figcaption figure font footer form h1 h2 h3 h4 "
+    "h5 h6 head header hr html i iframe img input ins kbd label li link main mark meta nav ol "
+    "p picture pre q s samp script section select small source span strike strong style sub "
+    "summary sup table tbody td textarea tfoot th thead title tr tt u ul var video wbr".split()
+)
+_TIMES = re.compile(r"(?<=\d)[ \t]*\*[ \t]*(?=\d)")  # 3*4, 2 * 3 → "times"
+_ABOUT = re.compile(r"(?<![~\w])~[ \t]?(?=\d)")  # ~5 → "about 5" (not ~~5~~)
 _BOLD = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1")
 _ITALIC_STAR = re.compile(r"(?<![\w*])\*(?=\S)(.+?)(?<=\S)\*(?![\w*])")
 _ITALIC_UNDER = re.compile(r"(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)")
@@ -43,7 +57,7 @@ _STRAY = re.compile(r"[*`|~]+|(?<!\w)#+(?=\s|$)")
 _SPACE_BEFORE_PUNCT = re.compile(r"\s+([.,!?;:…])")
 _REPEAT_PUNCT = re.compile(r"([.!?])(?:\s+[.!?,;:])+")
 _SPACES = re.compile(r"\s+")
-_HAS_WORD = re.compile(r"\w")
+_HAS_WORD = re.compile(r"[^\W_]")  # a letter or a digit; "__" alone is nothing to say
 
 _ENDS = ".!?:;,…"
 _SENTENCE_END = re.compile(r"[.!?…](?=\s)")
@@ -85,13 +99,19 @@ def _url(m: re.Match[str]) -> str:
     return LINK_WORDS + (raw[-tail:] if tail else "")
 
 
+def _tag(m: re.Match[str]) -> str:
+    return " " if m.group(1).lower() in _HTML_TAGS else m.group(0)
+
+
 def _inline(text: str) -> str:
     text = _INLINE_CODE.sub(_inline_code, text)
     text = _IMAGE.sub(lambda m: m.group(1), text)
     text = _LINK.sub(lambda m: m.group(1), text)
     text = _AUTOLINK.sub(LINK_WORDS, text)
     text = _URL.sub(_url, text)
-    text = _TAG.sub(" ", text)
+    text = _TAG.sub(_tag, text)
+    text = _TIMES.sub(" times ", text)  # before emphasis and stray marks remove the "*"
+    text = _ABOUT.sub("about ", text)
     for rx in (_BOLD, _STRIKE):
         text = rx.sub(lambda m: m.group(2) if m.lastindex == 2 else m.group(1), text)
     text = _ITALIC_STAR.sub(lambda m: m.group(1), text)

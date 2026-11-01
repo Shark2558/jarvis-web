@@ -186,9 +186,14 @@ async def suite_persona() -> dict[str, Any]:
 
 # ---- billing ---------------------------------------------------------------------------------
 
-M = 1_000_000
+# The effective allowance (90 % of Google's by default), from the same settings the app uses.
+# "used" is the deployment's counter this Pacific month (every owner's use together).
+M = float(settings().voice_tts_free_chars)
+S = float(settings().voice_stt_free_seconds)
 # (id, why, api, voice, used, month ₹, limit, units, expect, priced units)
-BILL_CASES: list[tuple[str, str, str, str, float, float, int | str | None, int, str, float]] = [
+BILL_CASES: list[
+    tuple[str, str, str, str, float | str, float, int | str | None, int, str, float]
+] = [
     ("v01", "TTS within allowance, no limit", "tts", "chirp", 0, 0, None, 300, "made", 0),
     ("v02", "TTS within allowance, at the limit", "tts", "chirp", 5000, 600, 500, 300, "made", 0),
     (
@@ -290,20 +295,35 @@ BILL_CASES: list[tuple[str, str, str, str, float, float, int | str | None, int, 
     ),
     ("v12", "unreadable limit, free → made", "tts", "chirp", 0, 0, "corrupt", 100, "made", 0),
     ("v13", "STT within allowance at the limit", "stt", "", 100, 600, 500, 5, "made", 0),
-    ("v14", "STT above allowance under the limit", "stt", "", 3600, 1, 500, 7, "made", 7),
-    ("v15", "STT above allowance at the limit", "stt", "", 3600, 500, 500, 7, "refused", 0),
-    ("v16", "STT crossing the allowance at the limit", "stt", "", 3598, 700, 500, 5, "refused", 0),
+    ("v14", "STT above allowance under the limit", "stt", "", S, 1, 500, 7, "made", 7),
+    ("v15", "STT above allowance at the limit", "stt", "", S, 500, 500, 7, "refused", 0),
+    ("v16", "STT crossing the allowance at the limit", "stt", "", S - 2, 700, 500, 5, "refused", 0),
+    (
+        "v17",
+        "corrupt allowance counter under a limit → refused (fail closed)",
+        "tts",
+        "chirp",
+        "corrupt",
+        0,
+        500,
+        100,
+        "refused",
+        0,
+    ),
+    ("v18", "corrupt STT counter under a limit", "stt", "", "corrupt", 0, 500, 3, "refused", 0),
 ]
 VOICE_IDS = {"chirp": "en-GB-Chirp3-HD-Algieba", "studio": "en-GB-Studio-B"}
 
 
 async def _seed(
-    docs: MemoryDocs, billing: Billing, key: str, used: float, inr: float, limit: Any
+    docs: MemoryDocs, billing: Billing, key: str, used: float | str, inr: float, limit: Any
 ) -> None:
-    month = billing.meter.month_of(billing.clock())
+    now = billing.clock()
+    month, allowance_month = billing.meter.month_of(now), billing.meter.allowance_month_of(now)
 
     async def fn(tx: DocTx) -> None:
-        tx.set(f"jarvis_usage/{UID}_{month}", {"inr_total": inr, "units": {key: used}})
+        tx.set(f"jarvis_allowance/{allowance_month}", {"units": {key: used}})  # the deployment's
+        tx.set(f"jarvis_usage/{UID}_{month}", {"inr_total": inr})  # the owner's rupees
         if limit is not None:
             value = limit if isinstance(limit, int) else "lots"
             tx.set(f"jarvis_budget/{UID}", {"monthly_limit_inr": value})
@@ -622,9 +642,40 @@ async def _cloud_off() -> dict[str, Any]:
     }
 
 
+async def _metered_when_google_may_have_billed() -> dict[str, Any]:
+    """Review item 1: a request Google may have billed (sent, then no answer) is metered on its
+    estimate; a clean error answer, or a request that never left, is not."""
+    fails: list[str] = []
+    for api, handler, metered, label in (
+        ("tts", _raise(httpx.ReadTimeout("slow")), True, "TTS read timeout"),
+        ("tts", _raise(httpx.ConnectError("down")), False, "TTS never connected"),
+        ("tts", _google_error(500, "", "INTERNAL"), False, "TTS clean 500"),
+        ("stt", _raise(httpx.ReadError("reset")), True, "STT cut off"),
+        ("stt", _google_error(503, "", "UNAVAILABLE"), False, "STT clean 503"),
+    ):
+        g = GoogleShaped()
+        g.routes[_PATHS[api]] = handler
+        async with app_client(_engines(g, Tokens())) as c:
+            await _call(c, api)
+            allowance = (await c.get("/v1/voice")).json()["allowance"]
+        used = allowance["tts"]["used_chars"] if api == "tts" else allowance["stt"]["used_seconds"]
+        if (used > 0) != metered:
+            fails.append(f"{label}: counted {used}")
+    return {
+        "id": "e18",
+        "why": "a call Google may have billed is metered; a clean error is not",
+        "passed": not fails,
+        "failures": fails,
+    }
+
+
 async def suite_errors() -> dict[str, Any]:
     results = [await _error_case(c) for c in ERROR_CASES]
-    results += [await _no_credentials(), await _cloud_off()]
+    results += [
+        await _no_credentials(),
+        await _cloud_off(),
+        await _metered_when_google_may_have_billed(),
+    ]
     return _verdict(results)
 
 

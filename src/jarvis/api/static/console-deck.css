@@ -220,6 +220,29 @@ html[data-surface="night"] .dk[aria-pressed="true"] svg{filter:drop-shadow(0 0 5
 .dk .badge{position:absolute;top:4px;right:12px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--amber);color:#1C1300;font:700 11px/17px var(--font);text-align:center;box-shadow:0 0 10px rgba(245,158,11,.7)}
 /* Brief: "a new brief is ready" dot (the button's accessible name says it too). Accent ink = AA on the card. */
 .dk .bdot{position:absolute;top:7px;left:calc(50% + 7px);width:9px;height:9px;border-radius:50%;background:var(--accent-ink);box-shadow:0 0 0 2px var(--panel-solid),0 0 8px var(--accent-2)}
+/* More (phones only): opens the sheet of panels that don't fit the tab bar. Lit while one of them is
+   shown; its accessible name says which. */
+.dk.more{display:none}
+.dk.more.on,.dk.more[aria-expanded="true"]{color:var(--accent-ink);background:var(--tint);border-color:var(--line);box-shadow:inset 0 -2px 0 var(--accent-2),0 6px 16px -10px var(--accent)}
+
+/* ---- the More sheet: a native modal <dialog> pinned to the bottom edge ------------------------ */
+.sheet{position:fixed;inset:auto 0 0 0;margin:0;width:100%;max-width:none;max-height:80dvh;padding:0;overflow:auto;
+  border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0;color:var(--ink);
+  background:linear-gradient(90deg,transparent 6%,color-mix(in srgb,var(--accent) 55%,transparent) 50%,transparent 94%) top/100% 1px no-repeat,var(--panel-solid);box-shadow:var(--sh-2)}
+.sheet[open]{animation:sheetUp .26s var(--ease) both}
+.sheet::backdrop{background:var(--scrim)}
+.sheet-in{display:flex;flex-direction:column;gap:8px;padding:16px 12px calc(12px + env(safe-area-inset-bottom))}
+.sheet h2{margin:0 4px 4px;font:400 12px/1.3 var(--tech);letter-spacing:.24em;text-transform:uppercase;color:var(--accent-ink)}
+.sheet-item{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px 12px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--well);color:var(--ink);cursor:pointer;text-align:left;font:inherit}
+.sheet-item:hover{border-color:var(--line);background:var(--tint)}
+.sheet-item[aria-current="true"]{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent-2)}
+.sheet-item svg{flex:none;width:22px;height:22px;color:var(--accent-ink)}
+.sheet-item b{display:block;font:700 14px/1.2 var(--hud);letter-spacing:.06em;color:var(--ink)}
+html[data-surface="night"] .sheet-item b{font:400 12.5px/1.25 var(--tech);letter-spacing:.14em;text-transform:uppercase}
+.sheet-item small{display:block;margin-top:3px;font-size:12.5px;line-height:1.35;color:var(--ink-2)}
+.sheet .sheet-close{flex:none;height:44px;margin-top:4px}
+@keyframes sheetUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+html[data-motion="calm"] .sheet[open]{animation-name:fadeIn}
 
 /* ---- the privacy notice: an in-flow strip under the ruler (collapses to nothing when hidden), so it
    can never cover a panel's title bar; console-deck.js measures it into --notice-h for phones -------- */
@@ -270,8 +293,13 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
   #p-chat .welcome .core{display:inline-block;--s:110px}
   .dock{left:0;right:0;bottom:0;transform:none;border-radius:0;gap:0;padding:4px 4px calc(4px + env(safe-area-inset-bottom));justify-content:space-between;border-left:0;border-right:0;border-bottom:0}
   .dock .sep{display:none}
-  /* eight tabs: ~48 px each at 390 px (touch target >= 44 px), labels kept, tracking tightened */
+  /* at most eight tabs: ~48 px each at 390 px (touch target >= 44 px), labels kept, tracking
+     tightened. Nine panels: the "ovf" tabs move into the More sheet. */
   .dk{flex:1 1 0;width:auto;min-width:0;height:56px;gap:5px;letter-spacing:0;font-size:9px}
+  .dk.ovf{display:none}
+  .dk.more{display:flex}
+  .no-sheet .dk.ovf{display:flex}
+  .no-sheet .dk.more{display:none}
   .dk.wide{width:auto}
   .dk .full{display:none} .dk .short{display:inline}
   .dk .badge{right:calc(50% - 22px)}

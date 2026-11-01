@@ -1,0 +1,116 @@
+/* =============================================================================================
+   src/jarvis/api/static/console-memory.css — the Memory panel and the "Used N memories" reply chip
+   (slice 8, docs/plans/phase3-slice8-long-term-memory.md §6). Same visual language as the Brief:
+   it reuses .bsec / .bset / .bopt / .bsw / .bnote / .bdialog from console.css and adds only what is
+   new. Text uses the ink tokens (AA on the panel, its tints and the amber/red tints on both
+   surfaces); state is always said in words, never colour alone.
+============================================================================================= */
+
+/* a reading panel that opens over the stage: fully opaque, like the Brief */
+#p-memory.card{background:linear-gradient(90deg,transparent 6%,color-mix(in srgb,var(--accent) 55%,transparent) 50%,transparent 94%) top/100% 1px no-repeat,var(--panel-solid)}
+
+/* the live note sticks to the top of the scrolling body, so a result is seen wherever it came from.
+   Night tints are translucent: mixed into the panel colour so nothing scrolls through behind it. */
+.bnote.mlive{position:sticky;top:-12px;z-index:4;margin:0 0 10px}
+.bnote.mlive.ok{background:color-mix(in srgb,var(--ok) 12%,var(--panel-solid))}
+.bnote.mlive.bad{background:color-mix(in srgb,var(--bad) 12%,var(--panel-solid))}
+#memState:empty{display:none}
+#memState .btn.bact{margin-top:8px}
+
+/* amber note: memory is kept away from this brain */
+.mwarn{margin:0 0 10px;padding:8px 10px;border-radius:var(--r-sm);font-size:13px;line-height:1.45;color:var(--amber-ink);background:var(--amber-tint);border:1px solid var(--amber-line)}
+html[data-surface="night"] .mwarn{background:color-mix(in srgb,#F59E0B 11%,var(--panel-solid))}
+.mwarn b{font-weight:650}
+#p-memory .bset{margin:0}
+.mlead{margin:0 0 8px}
+
+/* About you: four labelled boxes, a counter and a Save each */
+.mprof{padding:9px 0;border-top:1px dashed var(--line-2)}
+.mprof:first-of-type{border-top:0;padding-top:2px}
+.mhelp{display:block;margin:3px 0 6px;font-size:12px;line-height:1.4;color:var(--ink-2)}
+.mta,.minput{display:block;width:100%;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--well);color:var(--ink);font:400 13.5px/1.45 var(--font);
+  transition:border-color .2s var(--ease),box-shadow .2s var(--ease)}
+.mta{min-height:52px;padding:7px 9px;resize:vertical}
+.minput{height:36px;padding:0 10px}
+.mta::placeholder,.minput::placeholder{color:var(--ink-3)}
+.mta:hover,.minput:hover{border-color:color-mix(in srgb,var(--accent) 50%,var(--line))}
+.mta:focus,.minput:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent);outline:0}
+.mrow{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-top:6px}
+.mrow .btn.bact{margin-top:0}
+.mrow .btn.bact:last-child{margin-left:auto}
+.mcount{font:400 11.5px/1.2 var(--tech);letter-spacing:.06em;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.mcount.over{color:var(--bad-ink)}
+.mstat{flex:1;min-width:0;font-size:12.5px;line-height:1.35;color:var(--ink-2)}
+.mstat.ok{color:var(--ok-ink)} .mstat.bad{color:var(--bad-ink)}
+.btn.bact[aria-disabled="true"]{opacity:.5;cursor:default}
+.btn.bact[aria-disabled="true"]:hover{transform:none;box-shadow:none}
+
+/* Facts: filter, groups by category, one row per fact */
+.mfilter{margin-bottom:6px}
+#memFilterInfo:empty{display:none}
+.mgrp + .mgrp{margin-top:12px}
+.mgh{display:flex;align-items:baseline;gap:6px;margin:4px 0 4px;font:400 10.5px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2)}
+.mgh .bcount{letter-spacing:.12em;color:var(--ink-3)}
+.mfacts{list-style:none;margin:0;padding:0}
+.mfact{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"text acts" "meta acts" "more more";column-gap:8px;padding:7px 0 7px 9px;border-top:1px dashed var(--line-2)}
+.mfact:first-child{border-top:0}
+.mfact.pinned{box-shadow:inset 2px 0 0 var(--accent-2)}
+.mft{grid-area:text;margin:0;font-size:13.5px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere;white-space:pre-line}
+.mfm{grid-area:meta;display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin-top:4px;font-size:12px;line-height:1.3;color:var(--ink-2)}
+.mbadge{padding:2px 6px 1px;border-radius:4px;border:1px solid var(--line);font:400 10.5px/1.3 var(--tech);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.mbadge.learned{color:var(--accent-ink);border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.mwhen{font:400 11.5px/1.3 var(--tech);letter-spacing:.04em;color:var(--ink-2);white-space:nowrap}
+.mpinned{font:400 10.5px/1.3 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--accent-ink)}
+.mfa{grid-area:acts;display:flex;align-items:flex-start;gap:2px}
+.mib{width:32px;height:32px;display:grid;place-items:center;border-radius:var(--r-sm);border:1px solid transparent;background:transparent;color:var(--ink-2);cursor:pointer;
+  transition:color .2s var(--ease),background-color .2s var(--ease),border-color .2s var(--ease)}
+.mib svg{width:16px;height:16px}
+.mib:hover{color:var(--accent-ink);background:var(--tint);border-color:var(--line-2)}
+.mib[aria-pressed="true"]{color:var(--accent-ink);background:var(--tint);border-color:var(--line)}
+.mib.del:hover{color:var(--bad-ink);background:var(--bad-tint);border-color:var(--bad-line)}
+.mib[aria-disabled="true"]{opacity:.45;cursor:default}
+.mib[aria-disabled="true"]:hover{color:var(--ink-2);background:transparent;border-color:transparent}
+.mfact .confirm,.mfact .medit{grid-area:more}
+.mfact .confirm{flex-wrap:wrap;margin-top:6px}
+.mfact .confirm span{flex:1 1 140px}
+.medit{grid-column:1/-1;padding-right:2px}
+.medit .lerr{margin-top:6px}
+.lerr:empty{display:none}
+
+/* Add a fact + footer */
+.madd .bl{margin-bottom:6px}
+.madd .mta{min-height:48px}
+.madd .bsel,.medit .bsel{height:32px;font-size:12.5px}
+.macts{display:flex;flex-wrap:wrap;gap:8px}
+.macts .btn.bact{margin-top:0}
+.btn.mdanger{color:var(--bad-ink);border-color:var(--bad-line)}
+.btn.mdanger:hover,.btn.mdanger[aria-expanded="true"]{color:var(--bad-ink);background-color:var(--bad-tint);border-color:var(--bad-line)}
+.mbox{margin-top:10px;padding:10px 12px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--well-2)}
+.mbox.bad{background:var(--bad-tint);border-color:var(--bad-line)}
+html[data-surface="night"] .mbox.bad{background:color-mix(in srgb,#E5484D 12%,var(--panel-solid))}
+.mbox p{margin:0 0 6px;font-size:13px;line-height:1.45;color:var(--ink-2);overflow-wrap:anywhere}
+.mbox p.strong{font-weight:650;color:var(--ink)}
+.mbox .bl{margin:4px 0 6px}
+.mbox .mrow{margin-top:8px}
+
+/* ---- "Used N memories" in a reply's meta: a small HUD chip; the list opens under it --------------- */
+.meta .mchip{position:relative;display:inline-flex;align-items:center;gap:5px;min-height:24px;padding:3px 8px 2px;border-radius:4px;border:1px solid var(--line);
+  background:var(--tint);color:var(--accent-ink);font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer;transition:border-color .2s var(--ease)}
+.meta .mchip::after{content:"";position:absolute;inset:-8px -4px} /* a larger hit area than it looks */
+.meta .mchip svg{width:13px;height:13px}
+.meta .mchip:hover,.meta .mchip[aria-expanded="true"]{border-color:var(--accent)}
+.mused{margin:6px 4px 0;padding:8px 10px;max-width:100%;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--well-2)}
+.mused ul{list-style:none;margin:0;padding:0}
+.mused li{position:relative;padding:3px 0 3px 14px;font-size:13px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.mused li::before{content:"";position:absolute;left:2px;top:.72em;width:5px;height:5px;transform:rotate(45deg);background:var(--accent)}
+.mused .mopen{margin-top:6px;padding:4px 0;border:0;background:none;color:var(--accent-ink);font:400 11.5px/1.3 var(--tech);letter-spacing:.14em;text-transform:uppercase;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+
+/* ---- phones: bigger touch targets ------------------------------------------------------------- */
+@media (max-width: 899px){
+  .mib{width:44px;height:44px}
+  .mfa{gap:0}
+  .mrow .btn.bact,.macts .btn.bact,.mfact .confirm .btn{height:44px}
+  .madd .bsel,.medit .bsel{height:44px}
+  .minput{height:44px}
+}
+html[data-motion="calm"] .mta,html[data-motion="calm"] .minput,html[data-motion="calm"] .mib{transition-duration:.01s}

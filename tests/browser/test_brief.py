@@ -307,6 +307,14 @@ def _pressed(c: Console, sel: str) -> str | None:
     return c.page.locator(sel).get_attribute("aria-pressed")
 
 
+def _settings(c: Console) -> None:
+    """Open the Brief's Settings disclosure (collapsed by default since slice 8, D12)."""
+    btn = c.page.locator("#briefSetBtn")
+    if btn.get_attribute("aria-expanded") != "true":
+        btn.click()
+    c.page.locator("#briefSetBody").wait_for(state="visible")
+
+
 def _local_date(c: Console) -> str:
     return str(
         c.page.evaluate(
@@ -431,6 +439,7 @@ def test_without_google_the_brief_says_how_to_connect(
     settings = str(c.page.locator("#briefSettings").text_content())
     assert words in settings
     assert "needs the Claude brain" in settings
+    _settings(c)
     for toggle in ("#briefAi", "#briefInbox"):
         assert c.page.locator(toggle).get_attribute("aria-disabled") == "true"
         assert _pressed(c, toggle) == "false"
@@ -454,6 +463,7 @@ def test_ai_summary_asks_first_and_sends_confirm_spend(make: Callable[..., Conso
     c.open()
     c.open_panel("brief")
     _view(c)
+    _settings(c)
     page = c.page
     # keyboard: the toggle opens the dialog; focus lands on the safe choice and stays inside
     page.locator("#briefAi").focus()
@@ -505,6 +515,7 @@ def test_inbox_delivery_confirm_names_the_address_and_sends_confirm_inbox(
     c.open()
     c.open_panel("brief")
     _view(c)
+    _settings(c)
     c.page.locator("#briefInbox").click()
     dialog = c.page.locator("#briefDialog")
     dialog.wait_for(state="visible")
@@ -575,6 +586,7 @@ def test_a_refused_setting_shows_the_servers_reason(make: Callable[..., Console]
     c.open()
     c.open_panel("brief")
     _view(c)
+    _settings(c)
     c.page.locator("#briefTime").select_option("08:00")
     c.page.locator("#briefNote", has_text=reason).wait_for()
     assert [p["body"] for p in fake.to("/v1/brief/settings")] == [{"time": "08:00"}]
@@ -654,16 +666,17 @@ def test_phone_badges_the_brief_tab_then_shows_one_panel(make: Callable[..., Con
     assert tab.get_attribute("aria-label") == "Brief, new brief ready"
     assert page.locator("#p-chat").is_visible() and page.locator("#p-brief").is_hidden()
     assert fake.to("/v1/brief/seen") == []  # a badge is not "seen"
-    # eight tabs, all on screen, each a usable touch target with its label inside it
+    # eight tabs (seven panels + More), all on screen, each a usable touch target with its label
     tabs = page.evaluate(
-        """[...document.querySelectorAll('#dock .dk')].map(b => {
+        """[...document.querySelectorAll('#dock .dk')].filter(b => b.getClientRects().length)
+           .map(b => {
              const r = b.getBoundingClientRect();
              const label = [...b.querySelectorAll('span')].find(s => s.offsetWidth);
-             return {name: b.dataset.open, w: r.width, h: r.height, left: r.left, right: r.right,
-                     fits: !label || label.scrollWidth <= b.clientWidth};
+             return {name: b.dataset.open || b.id, w: r.width, h: r.height, left: r.left,
+                     right: r.right, fits: !label || label.scrollWidth <= b.clientWidth};
            })"""
     )
-    assert len(tabs) == 8
+    assert len(tabs) == 8 and tabs[-1]["name"] == "dockMore", tabs
     width = page.evaluate("window.innerWidth")
     for t in tabs:
         assert t["w"] >= 44 and t["h"] >= 44, t
@@ -694,7 +707,8 @@ def test_very_narrow_phone_keeps_every_tab_named(make: Callable[..., Console]) -
     FakeBrief(c.page, today_state())
     c.open()
     names = c.page.evaluate(
-        """[...document.querySelectorAll('#dock .dk')].map(b => {
+        """[...document.querySelectorAll('#dock .dk')].filter(b => b.getClientRects().length)
+           .map(b => {
              const r = b.getBoundingClientRect();
              return {w: r.width, name: (b.getAttribute('aria-label') || b.textContent).trim()};
            })"""
@@ -840,6 +854,12 @@ def test_brief_text_meets_aa_contrast(
     _view(c)
     c.page.locator("#brief", has_text="Nothing waiting for your approval.").wait_for()
     c.page.evaluate(SETTLE_JS, "#p-brief")
+    found = c.page.evaluate(CONTRAST_JS, "#p-brief")  # settings closed: their summary line
+    assert any("AI summary off" in f["text"] for f in found)
+    low = [f for f in found if f["ratio"] < 4.5]
+    assert low == [], low
+    _settings(c)  # and every settings row once opened
+    c.page.evaluate(SETTLE_JS, "#p-brief")
     found = c.page.evaluate(CONTRAST_JS, "#p-brief")
     assert len(found) > 40  # every section was measured
     low = [f for f in found if f["ratio"] < 4.5]
@@ -950,6 +970,7 @@ def test_arrow_keys_on_the_time_picker_save_the_time_they_stop_on(
     c.open()
     c.open_panel("brief")
     _view(c)
+    _settings(c)
     sel = c.page.locator("#briefTime")
     sel.focus()
     for _ in range(3):
@@ -968,6 +989,7 @@ def test_a_time_change_during_a_slow_save_is_sent_after_it(make: Callable[..., C
     c.open()
     c.open_panel("brief")
     _view(c)
+    _settings(c)
     fake.holding.add("/v1/brief/settings")
     sel = c.page.locator("#briefTime")
     sel.focus()
@@ -996,6 +1018,7 @@ def test_switch_on_confirmed_during_a_save_is_sent_after_it(make: Callable[..., 
     c.open()
     c.open_panel("brief")
     _view(c)
+    _settings(c)
     fake.holding.add("/v1/brief/settings")
     c.page.locator("#briefTime").focus()
     c.page.keyboard.press("ArrowDown")  # 07:30, saved after a short pause
@@ -1053,6 +1076,7 @@ def test_a_double_click_on_the_inbox_switch_keeps_one_dialog_open(
     c.open()
     c.open_panel("brief")
     _view(c)
+    _settings(c)
     hold["on"] = True
     c.page.locator("#briefInbox").dblclick()
     c.page.wait_for_timeout(300)
@@ -1115,6 +1139,7 @@ def test_inbox_dialog_esc_and_not_now_send_nothing(make: Callable[..., Console])
     c.open()
     c.open_panel("brief")
     _view(c)
+    _settings(c)
     dialog = c.page.locator("#briefDialog")
     c.page.locator("#briefInbox").click()
     dialog.wait_for(state="visible")
@@ -1138,6 +1163,7 @@ def test_enter_in_a_confirm_dialog_means_not_now(make: Callable[..., Console]) -
     c.open()
     c.open_panel("brief")
     _view(c)
+    _settings(c)
     c.page.locator("#briefAi").click()
     dialog = c.page.locator("#briefDialog")
     dialog.wait_for(state="visible")
@@ -1165,6 +1191,7 @@ def test_a_refused_switch_on_leaves_the_switch_off(
     c.open()
     c.open_panel("brief")
     _view(c)
+    _settings(c)
     c.page.locator(toggle).click()
     c.page.locator("#briefDialogYes").click()
     c.page.locator("#briefNote", has_text=detail).wait_for()
@@ -1307,6 +1334,7 @@ def test_markup_in_every_server_string_stays_text(make: Callable[..., Console], 
     assert c.page.locator("#brief .bdeliv").count() == 0
     assert h in str(c.page.locator("#briefSettings").text_content())  # the time zone line
     _inert(c)
+    _settings(c)
     # the two confirm dialogs: the cost note, then the Google address
     dialog = c.page.locator("#briefDialog")
     c.page.locator("#briefAi").click()
@@ -1336,3 +1364,96 @@ def test_markup_in_every_server_string_stays_text(make: Callable[..., Console], 
     assert fake.to("/v1/brief/settings")[0]["body"] == {"time": "08:00"}
     assert c.csp_violations() == []
     assert _quiet_errors(c) == []
+
+
+# ---- slice 8 (D12): the settings sit behind a remembered "Settings" disclosure -------------------
+STORAGE_THROWS = """
+Object.defineProperty(window, 'localStorage', { configurable: true,
+  get() { throw new DOMException('blocked', 'SecurityError'); } });
+"""
+
+
+def test_brief_settings_start_collapsed_with_a_summary_and_are_remembered(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    state = today_state(settings=settings_view(time="06:30", ai_summary=True, inbox_delivery=False))
+    fake = FakeBrief(c.page, state)
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    page = c.page
+    btn, body = page.locator("#briefSetBtn"), page.locator("#briefSetBody")
+    assert btn.get_attribute("aria-expanded") == "false"
+    assert btn.get_attribute("aria-controls") == "briefSetBody"
+    assert body.is_hidden() and page.locator("#briefAi").is_hidden()
+    expect(page.locator("#briefSetSum")).to_have_text("06:30 · AI summary on · Inbox copy off")
+    assert btn.evaluate("b => b.closest('h3') !== null")  # a heading, for heading navigation
+    # keyboard: Enter opens it, the rows show, the summary steps aside
+    btn.focus()
+    page.keyboard.press("Enter")
+    body.wait_for(state="visible")
+    assert btn.get_attribute("aria-expanded") == "true"
+    assert page.locator("#briefSetSum").is_hidden()
+    assert page.evaluate("localStorage.getItem('jarvis_brief_settings_open')") == "1"
+    # a change made inside shows in the summary once closed again
+    page.locator("#briefInbox").click()
+    page.locator("#briefDialogYes").click()
+    page.locator('#briefInbox[aria-pressed="true"]').wait_for()
+    # remembered on this device: open after a reload
+    page.reload()
+    page.locator("#welcome").wait_for()
+    c.open_panel("brief")
+    _view(c)
+    assert page.locator("#briefSetBtn").get_attribute("aria-expanded") == "true"
+    assert page.locator("#briefTime").is_visible()
+    page.locator("#briefSetBtn").click()
+    page.locator("#briefSetBody").wait_for(state="hidden")
+    expect(page.locator("#briefSetSum")).to_have_text("06:30 · AI summary on · Inbox copy on")
+    assert page.evaluate("localStorage.getItem('jarvis_brief_settings_open')") == "0"
+    page.reload()
+    page.locator("#welcome").wait_for()
+    c.open_panel("brief")
+    _view(c)
+    assert page.locator("#briefSetBtn").get_attribute("aria-expanded") == "false"
+    assert [p["body"] for p in fake.to("/v1/brief/settings")] == [
+        {"inbox_delivery": True, "confirm_inbox": True}
+    ]
+    assert c.csp_violations() == []
+    assert c.errors == []
+
+
+def test_brief_summary_says_when_the_brief_is_off(make: Callable[..., Console]) -> None:
+    c = make()
+    off = settings_view(enabled=False, ai_summary=False, inbox_delivery=False)
+    FakeBrief(c.page, today_state(status="none", brief=None, settings=off))
+    c.open()
+    c.open_panel("brief")
+    c.page.locator("#brief", has_text="Switch it on in Settings below").wait_for()
+    expect(c.page.locator("#briefSetSum")).to_have_text(
+        "Brief off · AI summary off · Inbox copy off"
+    )
+    assert c.errors == []
+
+
+def test_brief_settings_work_when_storage_throws(make: Callable[..., Console]) -> None:
+    """Private mode / blocked site data: the disclosure still opens and closes, nothing breaks."""
+    c = make()
+    c.page.add_init_script(STORAGE_THROWS)
+    fake = FakeBrief(c.page, today_state(settings=settings_view(ai_summary=False)))
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    btn = c.page.locator("#briefSetBtn")
+    assert btn.get_attribute("aria-expanded") == "false"
+    btn.click()
+    c.page.locator("#briefSetBody").wait_for(state="visible")
+    c.page.locator("#briefAi").click()
+    c.page.locator("#briefDialogYes").click()
+    c.page.locator('#briefAi[aria-pressed="true"]').wait_for()
+    btn.click()
+    c.page.locator("#briefSetBody").wait_for(state="hidden")
+    assert [p["body"] for p in fake.to("/v1/brief/settings")] == [
+        {"ai_summary": True, "confirm_spend": True}
+    ]
+    assert c.errors == []

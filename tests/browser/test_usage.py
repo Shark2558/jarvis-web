@@ -139,6 +139,7 @@ def test_no_dollar_sign_anywhere_on_the_page_or_in_the_brief_dialog(
         "approvals",
         "activity",
         "history",
+        "memory",
         "integrations",
         "vitals",
         "construct",
@@ -151,7 +152,10 @@ def test_no_dollar_sign_anywhere_on_the_page_or_in_the_brief_dialog(
     assert "per US dollar" in str(c.page.locator("#sRate").text_content())
     inner, everything = c.page.evaluate(NO_DOLLAR_JS)
     assert "$" not in inner and "$" not in everything
-    # the Brief's AI summary confirm shows the server's own cost note
+    # the Brief's AI summary confirm shows the server's own cost note (focus raises the Brief over
+    # the panels opened after it; its settings start collapsed since slice 8)
+    c.page.locator("#briefSetBtn").focus()
+    c.page.keyboard.press("Enter")
     c.page.locator("#briefAi").wait_for()
     c.page.locator("#briefAi").click()
     dialog = c.page.locator("#briefDialog")

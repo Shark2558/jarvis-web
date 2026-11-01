@@ -162,6 +162,29 @@ def test_google_mode_invariants(settings: Settings) -> None:
         s3.require_prod_invariants()
 
 
+def test_google_tools_need_a_token_key_outside_dev(settings: Settings) -> None:
+    base = settings.model_copy(
+        update={
+            "env": "prod",
+            "api_token": SecretStr("t"),
+            "auth_mode": AuthMode.GOOGLE,
+            "google_client_id": "cid",
+            "google_client_secret": SecretStr("s"),
+            "session_secret": SecretStr("y" * 32),
+            "public_base_url": "https://j.example",
+            "owner_emails": ["a@b.c"],
+        }
+    )
+    with pytest.raises(RuntimeError, match="TOKEN_KEY"):
+        base.require_prod_invariants()
+    base.model_copy(update={"google_tools_enabled": False}).require_prod_invariants()
+    with pytest.raises(RuntimeError, match="TOKEN_KEY is invalid"):
+        base.model_copy(update={"token_key": SecretStr("too-short")}).require_prod_invariants()
+    ok = base.model_copy(update={"token_key": SecretStr("A" * 43 + "=")})
+    ok.require_prod_invariants()
+    assert len(ok.token_key_bytes() or b"") == 32
+
+
 def test_owner_emails_parse_from_csv_and_normalise() -> None:
     s = Settings(_env_file=None, owner_emails="  A@B.com, c@d.org ")  # type: ignore[arg-type]
     assert s.owner_emails == ["a@b.com", "c@d.org"]
@@ -253,6 +276,7 @@ async def test_prod_app_boots_with_cloud_run_style_env(monkeypatch: pytest.Monke
         "JARVIS_ANTHROPIC_API_KEY": "sk-ant-x",
         "JARVIS_SESSION_BACKEND": "memory",
         "JARVIS_LOG_JSON": "true",
+        "JARVIS_TOKEN_KEY": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",  # slice 6 vault key
     }
     for k, v in env.items():
         monkeypatch.setenv(k, v)

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -12,6 +14,7 @@ import pytest
 from httpx import AsyncClient
 
 from jarvis.api.console import (
+    APP_ASSETS,
     ORT_FILES,
     ORT_RELEASE,
     WAKEWORD_FILES,
@@ -201,6 +204,7 @@ def test_every_vendored_file_is_covered_by_package_data() -> None:
     for path in files:
         rel = path.relative_to(base).as_posix()
         assert any(fnmatch.fnmatch(rel, g) for g in globs), f"{rel} not in package-data"
+    assert (base / "static/console-wakeword.js").is_file()
 
 
 def test_docker_context_keeps_the_vendored_files() -> None:
@@ -211,3 +215,99 @@ def test_docker_context_keeps_the_vendored_files() -> None:
         for pat in patterns:  # fnmatch's * also crosses "/": stricter than Docker's own matching
             assert not fnmatch.fnmatch(rel, pat), (pat, rel)
             assert not rel.startswith(pat.rstrip("/") + "/"), (pat, rel)
+
+
+# ---- the module ---------------------------------------------------------------------------------
+async def test_wake_module_is_an_allow_listed_no_store_app_asset(client: AsyncClient) -> None:
+    assert APP_ASSETS["console-wakeword.js"] == "application/javascript"
+    r = await client.get("/static/console-wakeword.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
+    assert r.headers["cache-control"] == "no-store"
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def _module() -> str:
+    return (STATIC / "console-wakeword.js").read_text(encoding="utf-8")
+
+
+def test_wake_module_loads_only_the_allow_listed_ort_build_and_models() -> None:
+    js = _module()
+    imports = set(re.findall(r"import\(\s*([^)]+?)\s*\)", js))
+    assert imports == {"ORT_BASE + 'ort.wasm.min.mjs'"}
+    assert f"const ORT_BASE = '{ORT_BASE}';" in js
+    assert f"const MODEL_BASE = '{WAKE_BASE}';" in js
+    for name in EXPECTED_MODELS:
+        assert f"'{name}'" in js
+    fetches = re.findall(r"\bfetch\(\s*([^,)]+)", js)
+    assert fetches == ["MODEL_BASE + name"]
+    # single-threaded WASM on the main thread: no worker, no proxy, files only from our path
+    assert "env.wasm.numThreads = 1;" in js
+    assert "env.wasm.proxy = false;" in js
+    assert "env.wasm.wasmPaths = ORT_BASE;" in js
+
+
+def test_wake_module_never_sends_audio_anywhere_or_evaluates_code() -> None:
+    js = _module()
+    for banned in (
+        "XMLHttpRequest",
+        "WebSocket",
+        "sendBeacon",
+        "EventSource",
+        "RTCPeerConnection",
+        "postMessage",
+        "new Worker",
+        "SharedWorker",
+        "serviceWorker",
+        "localStorage",
+        "indexedDB",
+        "/v1/",
+        "eval(",
+        "new Function",
+        "innerHTML",
+        "createObjectURL",
+        "http://",
+        "https://",
+    ):
+        assert banned not in js, banned
+
+
+def test_wake_module_exposes_the_contracted_api() -> None:
+    js = _module()
+    assert "window.JarvisWake = Object.freeze(" in js
+    for member in ("supported", "load", "start", "pause", "resume", "stop"):
+        assert re.search(rf"\b{member}\s*[(:]", js), member
+    assert re.search(r"get state\(\)", js) and re.search(r"get threshold\(\)", js)
+    assert "'load_failed'" in js and "'unsupported'" in js
+    assert "COOLDOWN_MS = 2000" in js and "PATIENCE_FRAMES = 2" in js
+
+
+# ---- the parity reference that tests/browser/test_wakeword.py checks the port against ----------
+FIXTURES = ROOT / "tests/fixtures/wakeword"
+
+
+def _longest_run(scores: list[float], threshold: float = 0.5) -> int:
+    best = run = 0
+    for s in scores:
+        run = run + 1 if s >= threshold else 0
+        best = max(best, run)
+    return best
+
+
+def test_parity_reference_matches_the_vendored_models_clips_and_seed() -> None:
+    ref = json.loads((FIXTURES / "reference_scores.json").read_text(encoding="utf-8"))
+    pinned = _manifest(WAKE_DIR)
+    assert ref["models"] == {name: pinned[name][0] for name in EXPECTED_MODELS}
+    assert ref["onnxruntime"] == ORT_RELEASE.removeprefix("ort-")
+    seed = re.search(r"const INIT_NOISE_SEED = (0x[0-9a-f]+);", _module())
+    assert seed and ref["init_noise"]["seed"] == int(seed.group(1), 16)
+    for name, clip in ref["clips"].items():
+        assert _sha256(FIXTURES / clip["file"]) == clip["sha256"], name
+        assert len(clip["scores"]) == clip["frames"], name
+        if clip["kind"] == "positive":  # Python openWakeWord itself wakes on every positive
+            assert _longest_run(clip["scores"]) >= 2, name
+        else:
+            assert _longest_run(clip["scores"]) < 2, name
+    kinds = [c["kind"] for c in ref["clips"].values()]
+    assert kinds.count("positive") >= 5 and kinds.count("negative") >= 5
+    assert sum(p.stat().st_size for p in FIXTURES.iterdir() if p.is_file()) < 1_000_000

@@ -38,7 +38,7 @@ def _fmt_ok(body: bytes) -> bool:
     if len(body) < 16:
         return False
     fmt, channels, rate, byte_rate, align, bits = struct.unpack_from("<HHIIHH", body)
-    return (
+    return bool(
         fmt == PCM_FORMAT
         and channels == CHANNELS
         and rate == SAMPLE_RATE

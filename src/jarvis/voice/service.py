@@ -263,7 +263,7 @@ class VoiceService:
         stt, stt_why = self.state("stt")
         m = await self.billing.month(uid)  # BudgetUnavailable → 503: never a made-up "₹0"
         current = find_voice(settings.voice) or VOICES[0]
-        by_type = {
+        by_type: dict[str, TypeUse] = {
             t: TypeUse(
                 used=round(m.units.get(self.prices.tts(t).key, 0.0)),
                 free=round(self.prices.tts(t).free_units),
@@ -291,7 +291,7 @@ class VoiceService:
                     type=current.type,
                     used_chars=by_type[current.type].used,
                     free_chars=by_type[current.type].free,
-                    by_type=dict(by_type),
+                    by_type=by_type,
                 ),
                 stt=SttAllowance(
                     used_seconds=round(m.units.get(self.prices.stt.key, 0.0), 1),

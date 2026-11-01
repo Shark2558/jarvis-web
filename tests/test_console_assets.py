@@ -14,9 +14,10 @@ from jarvis.api.console import APP_ASSETS, FONT_FILES, THREE_RELEASE, VENDOR_FIL
 
 ROOT = Path(__file__).resolve().parents[1]
 IMMUTABLE = "public, max-age=31536000, immutable"
-# The console CSP is a security contract: any change here must be deliberate.
+# The console CSP is a security contract: any change here must be deliberate. Slice 9 (D12) added
+# exactly 'wasm-unsafe-eval' for the on-device wake word's WebAssembly (tests/test_wakeword_assets).
 EXPECTED_CSP = (
-    "default-src 'none'; script-src 'self'; "
+    "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
     "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
     "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )

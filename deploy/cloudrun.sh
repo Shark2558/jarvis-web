@@ -27,6 +27,11 @@
 # its own account jarvis-scheduler, which has NO project roles: all it can do is prove to JARVIS
 # "I am your clock". JARVIS decides whether the owner's brief is due. If this step fails, JARVIS
 # still works and makes the brief when the Brief panel is opened.
+# Voice (slice 9): JARVIS speaks with Google Cloud Text-to-Speech and listens with Speech-to-Text
+# v1, as jarvis-run (no key). Step 2 switches both APIs on; step 5 lets jarvis-run use the
+# project's services (serviceusage.serviceUsageConsumer). Free up to Google's monthly allowance;
+# above it the cost counts toward the owner's monthly limit in rupees. Without them the console
+# falls back to the browser's own voice.
 # --reconfigure rewrites ALL settings and secret bindings from your answers (it does not merge).
 set -euo pipefail
 
@@ -65,7 +70,8 @@ say "2/8  Switching on the Google services JARVIS needs (takes ~1 minute)"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
   secretmanager.googleapis.com firestore.googleapis.com iam.googleapis.com \
   iamcredentials.googleapis.com sts.googleapis.com \
-  calendar-json.googleapis.com gmail.googleapis.com --quiet
+  calendar-json.googleapis.com gmail.googleapis.com \
+  texttospeech.googleapis.com speech.googleapis.com --quiet
 
 # Quick (prompt-free) only for a service this script fully set up before: it has the owner set.
 QUICK=no
@@ -199,7 +205,8 @@ RUN_SA="jarvis-run@${PROJECT}.iam.gserviceaccount.com"
 gcloud iam service-accounts describe "$RUN_SA" >/dev/null 2>&1 || \
   gcloud iam service-accounts create jarvis-run --display-name="JARVIS (runtime)" --quiet >/dev/null \
   || die "Could not create the jarvis-run service account."
-for role in roles/datastore.user roles/logging.logWriter; do
+# serviceUsageConsumer: lets JARVIS call the speech APIs as itself (harmless if not needed).
+for role in roles/datastore.user roles/logging.logWriter roles/serviceusage.serviceUsageConsumer; do
   bind "serviceAccount:${RUN_SA}" "$role"
 done
 for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key \
@@ -392,6 +399,11 @@ and press Save (can take up to 5 minutes). Already done? Nothing to do.
 MSG
 fi
 cat <<'MSG'
+
+VOICE: switched on above (Text-to-Speech + Speech-to-Text). If the Voice panel says cloud voice
+is off ("api_disabled"), run once in Cloud Shell:
+   gcloud services enable texttospeech.googleapis.com speech.googleapis.com
+JARVIS uses the browser's own voice until then (it checks again within 10 minutes).
 
 GOOGLE CALENDAR + GMAIL (once): APIs & Services -> OAuth consent screen (Google Auth Platform)
   1. Data Access -> Add or remove scopes -> add these five and Save:

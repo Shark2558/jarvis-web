@@ -54,3 +54,82 @@ Voice approvals / speaker verification; cloud streaming STT; Gemini-TTS style-pr
 
 ## 9. Review log
 (build notes, deviations, findings and fixes appended below)
+
+### Build notes (backend)
+
+Built test-first on the backend branch (`jarvis.voice`, `api/voice.py`, billing units, persona,
+deploy, `evals/voice`). The worktree started from `main` (df6b8b5, without this plan or slice 8);
+it was fast-forwarded to `slice9-voice` (821abda) before any work.
+
+**API contract as built — the console must use these exact names.**
+- **Error shape: the app's real one, `{"error": code, "detail": "plain words"}`** — not
+  `{detail:{code,message}}` as §3 says. Every existing endpoint and the console's `api()` helper
+  use `{error, detail}`; §3's wording was a slip. `503 voice_unavailable` adds a top-level
+  `"reason"` (`api_disabled | not_configured | upstream_error | timeout`); 429s carry `Retry-After`.
+- Codes: `402 budget_reached` · `503 voice_unavailable` · `503 budget_unavailable` (limit or month
+  record unreadable and the call would be priced; also `GET /v1/voice` when the month can't be
+  read) · `429 rate_limited` (speak > 60/min, transcribe > 30/min, per owner) · `429 voice_busy`
+  (Google throttled us; `Retry-After: 10`) · `422 input_rejected` (unknown voice / wit, rate
+  outside 0.8–1.25, text missing / empty / > 1,200 chars, Google refused the voice or text) ·
+  `422 nothing_to_say` (nothing speakable after `speakable()`) · `422 bad_audio` (not
+  `audio/wav`|`audio/x-wav`|`audio/wave`|`audio/vnd.wave`, or not 16 kHz mono PCM16 0.3–60 s) ·
+  `413 too_large` · `403 csrf` · `401`. Pydantic type errors keep FastAPI's `{"detail": [...]}`.
+- Preview: `POST /v1/voice/speak {"preview": true, "voice": "<id>"}` (no text; any text is
+  ignored) reads the server-fixed sample line with the honorific. It is metered like any speak.
+- Speak response headers: `X-Jarvis-Chars` (speakable characters sent and billed),
+  `X-Jarvis-Cost-Inr` (4 decimals, e.g. `"0.0000"` inside the allowance), `Cache-Control: no-store`.
+  `voice` / `rate` in the body override the saved settings for that call only.
+- `GET /v1/voice` additions (additive to §3): `allowance.tts.type` — the owner's current voice
+  type, which `used_chars` / `free_chars` describe (`by_type` has both types); `month.month`
+  (`YYYY-MM`, IST). `voices[]` always lists the whole catalogue; `available` is false when cloud
+  TTS isn't ready or Google's list (cached 24 h) lacks the id — the console hides those.
+  `cloud.reason` is the TTS reason, else the STT one; `off` (JARVIS_VOICE_CLOUD=false) has reason
+  `null`, and speak/transcribe then answer `503 voice_unavailable` / `not_configured`.
+- `transcribe` response: `language` is the configured `JARVIS_VOICE_LANGUAGE`; `seconds` is the
+  audio length; `cost_inr` is this call's rupees; `no_speech` is true when the text is empty.
+
+**Decisions.**
+- Billing (D9): the usage month record gains `units {"tts_chirp3-hd", "tts_studio",
+  "stt_seconds"}`; `UsageMeter.add_units` counts and prices in ONE transaction (only the part above
+  the allowance, at list price × the day's rate), so two calls can't both use the last free units.
+  Priced voice spend is the `voice` entry of `by_brain` (label "Voice") and counts in `calls`; a
+  free call counts units only. Every meter write goes through one encoder, so chat spend never
+  drops the voice counters. Gate (`Billing.ensure_units_allowed`): a call the allowance still
+  covers always goes ahead (also at the limit); a priced one is refused at the limit (402, voice
+  wording, no "$"); unreadable limit/month → 503 only when the call would be priced. STT is priced
+  on Google's `totalBilledTime` when returned, else `ceil(duration)` (the gate uses the latter).
+- Availability (D10): any Google 403 → `api_disabled` (covers SERVICE_DISABLED, PERMISSION_DENIED,
+  billing off); it and `not_configured` are remembered 10 min per API (no calls meanwhile); 401
+  drops the token (refresh next call) → `upstream_error`; 400/404 → `input_rejected`; 5xx /
+  unreadable bodies → `upstream_error`; timeouts → `timeout`; nothing is retried (a late voice is
+  worse than the browser voice now).
+- Credentials: `jarvis.voice.adc` is the only google-auth import (loaded only when cloud voice is
+  on); discovery and refresh run in a worker thread under a lock. Discovery has its own 5 s bound,
+  and a timeout there counts as `not_configured` (off Google Cloud google-auth probes the metadata
+  server for ~10 s; on Cloud Run it answers in ms); refresh timeouts stay transient. User ADC
+  (local dev) sends `x-goog-user-project`. No network call at start-up.
+- Persona (D7, D8): three variants built once per Brain; the Brain asks `VoiceService.wit_for`
+  (settings cache 30 s, own 1 s bound, a failure remembered 30 s; the Brain's outer bound 1.5 s) →
+  any failure is `film`. The wit level applies to every model call of the turn, including approval
+  narration (its hard limits forbid jokes there) and training brains, which keep every restriction.
+- Settings live at `{prefix}voice_settings/{uid}` like every other collection. Stored nonsense
+  reads as the default field by field.
+- Privacy (D13): logs carry lengths, voice id, seconds and rupees only; Google's error text never
+  leaves the adapter (only its machine reason, e.g. `SERVICE_DISABLED`, is logged). A test plants
+  marker words in speech and transcripts and checks no log line contains them.
+- Deploy (§7): no new secret or env var (ADC; cloud voice defaults on). The summary prints the
+  one-time `gcloud services enable …` line.
+
+**Not verified.**
+- No live Google call was made: request/response shapes, `speakingRate` on Chirp 3 HD, the
+  `latest_short` model for `en-IN`, the `totalBilledTime` format and the 403 error bodies follow the
+  public docs and are exercised against mocks only. First real check: `GET /v1/voice` then a
+  preview on the deployed service after the Cloud Shell step.
+- Whether `roles/serviceusage.serviceUsageConsumer` is all `jarvis-run` needs on the owner's
+  project (expected: the speech APIs need no other role), and Cloud Run ADC end to end.
+- Google's STT billing increment (the v1 page has used 15 s and 1 s rounding at different times):
+  JARVIS meters Google's own `totalBilledTime` when present.
+- The Firestore-emulator round trip of the voice documents (`tests/test_voice_storage.py`) runs
+  only in CI's emulator job; `evals/voice/run.py --real` was not run (needs the key; spends money).
+- The fresh-context code / Python / security reviews from CLAUDE.md were not run in this build
+  session.

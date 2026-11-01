@@ -3,7 +3,12 @@
 
     {prefix}usage/{uid}_{YYYY-MM}   user_id, month, usd_total, inr_total, calls,
                                     by_brain {brain id: usd}, by_brain_inr {brain id: inr},
-                                    updated_at
+                                    units {key: amount}, updated_at
+
+`units` (slice 9) counts usage that is free up to a monthly allowance and priced above it —
+voice: "tts_chirp3-hd" / "tts_studio" characters, "stt_seconds". `add_units` prices only the part
+of a call above the allowance, in the same transaction that counts it (concurrent calls can't
+both use the last free units), and adds that cost to the totals under `label` ("voice").
 
 The month is the owner's (JARVIS_USER_TIMEZONE): spend made at 00:10 IST on 1 December counts in
 December. Every increment is a read-modify-write transaction (Firestore retries it on a
@@ -19,7 +24,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -29,6 +34,7 @@ from jarvis.storage.sessions import safe_id
 
 _MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 _BRAIN = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_UNIT_KEY = re.compile(r"[a-z0-9_-]{1,64}")
 OTHER_BRAIN = "other"
 
 
@@ -71,6 +77,7 @@ class MonthUsage:
     calls: int = 0
     by_brain: dict[str, float] = field(default_factory=dict)  # USD per brain id
     by_brain_inr: dict[str, float] = field(default_factory=dict)  # rupees per brain id
+    units: dict[str, float] = field(default_factory=dict)  # allowance-metered usage (voice)
 
     def plus(self, brain_id: str, cost_usd: float, cost_inr: float) -> MonthUsage:
         key = brain_id if _BRAIN.fullmatch(brain_id) else OTHER_BRAIN
@@ -84,7 +91,26 @@ class MonthUsage:
                 **self.by_brain_inr,
                 key: round(self.by_brain_inr.get(key, 0.0) + cost_inr, 6),
             },
+            units=self.units,
         )
+
+    def with_units(self, key: str, amount: float) -> MonthUsage:
+        return replace(self, units={**self.units, key: round(self.units.get(key, 0.0) + amount, 3)})
+
+
+def priced_units(used: float, units: float, free: float) -> float:
+    """The part of `units` above the free allowance, given `used` so far this month."""
+    return max(0.0, units - max(0.0, free - used))
+
+
+@dataclass(frozen=True)
+class UnitCharge:
+    """One allowance-metered call: how much of it was priced and what that cost."""
+
+    units: float
+    priced_units: float = 0.0
+    usd: float = 0.0
+    inr: float = 0.0
 
 
 def decode(doc: dict[str, Any] | None, month: str) -> MonthUsage:
@@ -101,7 +127,23 @@ def decode(doc: dict[str, Any] | None, month: str) -> MonthUsage:
         calls=calls if isinstance(calls, int) and not isinstance(calls, bool) and calls > 0 else 0,
         by_brain=_amounts(doc.get("by_brain")),
         by_brain_inr=_amounts(doc.get("by_brain_inr")),
+        units=_amounts(doc.get("units")),
     )
+
+
+def encode(uid: str, m: MonthUsage, now: datetime) -> dict[str, Any]:
+    """The stored month: every write goes through here, so no write drops another's field."""
+    return {
+        "user_id": uid,
+        "month": m.month,
+        "usd_total": m.usd_total,
+        "inr_total": m.inr_total,
+        "calls": m.calls,
+        "by_brain": m.by_brain,
+        "by_brain_inr": m.by_brain_inr,
+        "units": m.units,
+        "updated_at": now.isoformat(),
+    }
 
 
 class UsageMeter:
@@ -133,22 +175,41 @@ class UsageMeter:
 
         async def fn(tx: DocTx) -> MonthUsage:
             new = decode(await tx.get(path), month).plus(brain_id, cost_usd, cost_inr)
-            tx.set(
-                path,
-                {
-                    "user_id": uid,
-                    "month": month,
-                    "usd_total": new.usd_total,
-                    "inr_total": new.inr_total,
-                    "calls": new.calls,
-                    "by_brain": new.by_brain,
-                    "by_brain_inr": new.by_brain_inr,
-                    "updated_at": now.isoformat(),
-                },
-            )
+            tx.set(path, encode(uid, new, now))
             return new
 
         return await self._d.transaction(fn)
 
+    async def add_units(
+        self,
+        uid: str,
+        *,
+        key: str,
+        units: float,
+        free_units: float,
+        usd_per_unit: float,
+        inr_per_usd: float,
+        label: str,
+        now: datetime,
+    ) -> UnitCharge:
+        """Count `units` under `key` and price the part above `free_units` (this month's use
+        read in the same transaction) at `usd_per_unit` × `inr_per_usd`; a priced call adds its
+        cost to the totals as `label`. Raises UsageUnreadable (writing nothing) like `add`."""
+        if not _UNIT_KEY.fullmatch(key):
+            raise ValueError("invalid unit key")
+        month = self.month_of(now)
+        path = self._path(uid, month)
 
-__all__ = ["MonthUsage", "UsageMeter", "UsageUnreadable"]
+        async def fn(tx: DocTx) -> UnitCharge:
+            cur = decode(await tx.get(path), month)
+            priced = priced_units(cur.units.get(key, 0.0), units, free_units)
+            usd = round(priced * usd_per_unit, 8)
+            inr = round(usd * inr_per_usd, 6)
+            new = (cur.plus(label, usd, inr) if usd > 0 else cur).with_units(key, units)
+            tx.set(path, encode(uid, new, now))
+            return UnitCharge(units=units, priced_units=priced, usd=usd, inr=inr)
+
+        return await self._d.transaction(fn)
+
+
+__all__ = ["MonthUsage", "UnitCharge", "UsageMeter", "UsageUnreadable", "priced_units"]

@@ -1,0 +1,57 @@
+{"id": "s01", "why": "plain", "in": "Good evening, Sir.", "out": "Good evening, Sir."}
+{"id": "s02", "why": "bold", "in": "**Done**, Sir.", "out": "Done, Sir."}
+{"id": "s03", "why": "italic star", "in": "That is *quite* remarkable.", "out": "That is quite remarkable."}
+{"id": "s04", "why": "italic underscore", "in": "That is _rather_ good.", "out": "That is rather good."}
+{"id": "s05", "why": "strikethrough", "in": "~~Tuesday~~ Wednesday works.", "out": "Tuesday Wednesday works."}
+{"id": "s06", "why": "heading", "in": "# Summary\nAll systems nominal.", "out": "Summary. All systems nominal."}
+{"id": "s07", "why": "closed heading", "in": "### Plan ###\nStart at nine.", "out": "Plan. Start at nine."}
+{"id": "s08", "why": "dash list", "in": "- milk\n- eggs\n- bread", "out": "milk. eggs. bread."}
+{"id": "s09", "why": "star list", "in": "* call Ravi\n* book cab", "out": "call Ravi. book cab."}
+{"id": "s10", "why": "numbered list", "in": "1. First\n2. Second\n3) Third", "out": "First. Second. Third."}
+{"id": "s11", "why": "bullet char", "in": "\u2022 one\n\u2022 two", "out": "one. two."}
+{"id": "s12", "why": "quote", "in": "> The meeting moved to four.", "out": "The meeting moved to four."}
+{"id": "s13", "why": "short inline code", "in": "Run `make test` now.", "out": "Run make test now."}
+{"id": "s14", "why": "long inline code", "in": "Use `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` here.", "out": "Use the code on screen here."}
+{"id": "s15", "why": "markdown link", "in": "See [the agenda](https://ex.com/a) first.", "out": "See the agenda first."}
+{"id": "s16", "why": "image", "in": "![chart of spend](https://ex.com/c.png)", "out": "chart of spend"}
+{"id": "s17", "why": "bare url", "in": "Read https://example.com/x?y=1.", "out": "Read the link on screen."}
+{"id": "s18", "why": "www url", "in": "Visit www.example.org today", "out": "Visit the link on screen today"}
+{"id": "s19", "why": "autolink", "in": "<https://a.example/path>", "out": "the link on screen"}
+{"id": "s20", "why": "url in parens", "in": "(see https://a.example/b)", "out": "(see the link on screen)"}
+{"id": "s21", "why": "emoji", "in": "Lovely \ud83d\ude00 day \ud83c\udf89!", "out": "Lovely day!"}
+{"id": "s22", "why": "zwj family + skin tone", "in": "Hi \ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67 \ud83d\udc4b\ud83c\udffd there", "out": "Hi there"}
+{"id": "s23", "why": "flag", "in": "Made in \ud83c\uddee\ud83c\uddf3 India", "out": "Made in India"}
+{"id": "s24", "why": "keycap", "in": "1\ufe0f\u20e3 first", "out": "1 first"}
+{"id": "s25", "why": "dingbats", "in": "\u2705 Done \u2b50 \u26a0 careful", "out": "Done careful"}
+{"id": "s26", "why": "bidi override", "in": "Hi\u202e there\u2066", "out": "Hi there"}
+{"id": "s27", "why": "zero width", "in": "pass\u200bword", "out": "password"}
+{"id": "s28", "why": "control chars", "in": "a\u0000b\u0007c", "out": "a b c"}
+{"id": "s29", "why": "nbsp", "in": "a\u00a0b", "out": "a b"}
+{"id": "s30", "why": "soft hyphen", "in": "co\u00adoperate", "out": "cooperate"}
+{"id": "s31", "why": "degree and rupee", "in": "25\u00b0C and \u20b9500", "out": "25\u00b0C and \u20b9500"}
+{"id": "s32", "why": "html tags", "in": "<b>bold</b> and <i>it</i>", "out": "bold and it"}
+{"id": "s33", "why": "comparisons", "in": "3 < 5 and 7 > 2", "out": "3 < 5 and 7 > 2"}
+{"id": "s34", "why": "snake case", "in": "file_name_here stays", "out": "file_name_here stays"}
+{"id": "s35", "why": "ellipsis kept", "in": "Wait... what?", "out": "Wait... what?"}
+{"id": "s36", "why": "removed emoji leaves no double stop", "in": "Done. \ud83c\udf89 . Next", "out": "Done. Next"}
+{"id": "s37", "why": "rule between paragraphs", "in": "Part one\n\n---\n\nPart two", "out": "Part one. Part two."}
+{"id": "s38", "why": "paragraph stops", "in": "para one\n\npara two", "out": "para one. para two."}
+{"id": "s39", "why": "soft wrap", "in": "line one\nline two", "out": "line one line two"}
+{"id": "s40", "why": "fenced code", "in": "Here:\n```python\nprint('x')\n```\nThat's all.", "out": "Here: That's all."}
+{"id": "s41", "why": "tilde fence", "in": "Before\n~~~\nsecret()\n~~~\nAfter", "out": "Before. After."}
+{"id": "s42", "why": "unclosed fence", "in": "Before.\n```\ncode without end", "out": "Before."}
+{"id": "s43", "why": "table between text", "in": "Totals:\n| a | b |\n|---|---|\n| 1 | 2 |\nDone.", "out": "Totals: Done."}
+{"id": "s44", "why": "devanagari kept", "in": "\u0928\u092e\u0938\u094d\u0924\u0947 Sir", "out": "\u0928\u092e\u0938\u094d\u0924\u0947 Sir"}
+{"id": "s45", "why": "numbers kept", "in": "Pi is 3.14 and 1,000 is more.", "out": "Pi is 3.14 and 1,000 is more."}
+{"id": "s46", "why": "email kept", "in": "Mail a@b.com today.", "out": "Mail a@b.com today."}
+{"id": "s47", "why": "mixed", "in": "**Note:** Run `ls` \u2014 see [docs](http://x.y).", "out": "Note: Run ls \u2014 see docs."}
+{"id": "s48", "why": "only code", "in": "```\nonly code\n```", "empty": true}
+{"id": "s49", "why": "only table", "in": "| a | b |\n|---|---|", "empty": true}
+{"id": "s50", "why": "only emoji", "in": "\ud83d\ude00\ud83c\udf89", "empty": true}
+{"id": "s51", "why": "only punctuation", "in": "...", "empty": true}
+{"id": "s52", "why": "only whitespace", "in": "   \n\t ", "empty": true}
+{"id": "s53", "why": "only invisible", "in": "\u200b\u200e\u2066", "empty": true}
+{"id": "s54", "why": "cap at a sentence", "in": "This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. This sentence is here to fill the reply. ", "max": 600, "ends": "reply.", "min": 520}
+{"id": "s55", "why": "cap at a word", "in": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ", "max": 600, "ends": "\u2026", "not": ["wor\u2026"]}
+{"id": "s56", "why": "no secrets in fences", "in": "Key:\n```\nsk-ant-SECRET\n```", "not": ["SECRET", "sk-ant"]}
+{"id": "s57", "why": "no raw url ever", "in": "go to https://evil.example/login?token=abc now", "not": ["evil", "token", "http"]}

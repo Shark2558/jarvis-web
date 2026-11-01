@@ -225,12 +225,15 @@ All settings are `JARVIS_*` env vars (see `.env.example`). Notable ones:
 - `JARVIS_EFFORT=low|medium|high` — reasoning effort for chat turns (the planner raises it per task in P2).
 - `JARVIS_SESSION_BACKEND=memory|redis`, `JARVIS_SESSION_TTL_S`, `JARVIS_SESSION_MAX_TURNS`.
 - `JARVIS_API_TOKEN` — required when `JARVIS_ENV != dev`.
+- `JARVIS_VOICE_CLOUD=true|false`, `JARVIS_VOICE_LANGUAGE=en-IN` — Google Cloud speech (slice 9)
+  with Application Default Credentials; without them the console uses the browser's voice.
 
 ## API
 
 ```
 GET  /health                      liveness + dependency check
-POST /v1/chat                     {"message": "...", "session_id": null, "tier": null}
+POST /v1/chat                     {"message": "...", "session_id": null, "tier": null,
+                                  "channel": "text" | "voice"}  (voice: short spoken reply)
 POST /v1/chat/stream              same body, text/plain streamed deltas, then one final event:
                                   "\x1e" + {"memory_used": [{id, text}]} (only when the reply
                                   finished). The reply never contains "\x1e"; parse the JSON
@@ -238,6 +241,10 @@ POST /v1/chat/stream              same body, text/plain streamed deltas, then on
 GET  /v1/sessions                 list (the signed-in owner's)
 GET  /v1/sessions/{id}            full transcript (audit / replay)
 DELETE /v1/sessions/{id}          forget
+GET  /v1/voice                    voice settings, cloud status, voices, wit levels, allowance, ₹
+PUT  /v1/voice/settings           {voice?, rate?, wit?}
+POST /v1/voice/speak              {text} or {preview: true, voice} → audio/mpeg
+POST /v1/voice/transcribe         audio/wav (16 kHz mono PCM16, ≤ 60 s) → {text, …}
 ```
 
 Every response carries `x-trace-id`; pass your own in to correlate client logs.

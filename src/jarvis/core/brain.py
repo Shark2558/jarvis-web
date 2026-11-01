@@ -15,6 +15,10 @@ gives CPU only while a request runs); the scheduler tick sweeps too (`sweep_memo
 round runs with the "untrusted content seen" flag, so memory_save after other people's text
 becomes a card.
 
+Persona (slice 9): the owner's wit level (voice settings, cached; any failure or a slow read →
+"film", never a failed reply) picks one of three stable, cacheable system prompts; a spoken
+message (`channel: voice`) adds the spoken-reply rule to the per-request trailer only.
+
 Spending (slice 7b): every model call — chat, each tool round, the round-limit summary, approval
 narration, the stream — goes through `_admit` (the owner's monthly limit, `Billing.ensure_allowed`)
 BEFORE it is made, and its cost is added to the month after it (`Billing.record`, never fails the
@@ -30,12 +34,19 @@ import time
 import weakref
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
 from jarvis.core.guardrails import PendingAction, guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
-from jarvis.core.prompts import PERSONA_VERSION, build_system_prompt, build_trailer
+from jarvis.core.prompts import (
+    DEFAULT_WIT,
+    PERSONA_VERSION,
+    WIT_IDS,
+    build_system_prompt,
+    build_trailer,
+)
 from jarvis.core.window import build_window
 from jarvis.llm.base import (
     ChatMessage,
@@ -64,6 +75,13 @@ log = get_logger(__name__)
 BRAIN_KEY = "brain"  # session.metadata key remembering the owner's brain choice
 CUTOFF_KEY = "brain_cutoff"  # turn index before which history is withheld from training brains
 SWEEP_TICK_S = 20.0  # the scheduler tick's memory sweep is awaited, at most this long
+WIT_READ_TIMEOUT_S = 1.5  # the owner's wit level is a nicety: never hold a reply for it
+
+
+class WitSource(Protocol):
+    """The owner's wit level (slice 9 D8): the voice settings, cached by the implementation."""
+
+    async def wit_for(self, user_id: str) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -121,6 +139,7 @@ class Brain:
         gateway: Gateway | None = None,
         billing: Billing | None = None,
         memory: MemoryService | None = None,
+        wit: WitSource | None = None,
     ) -> None:
         if brains is None:
             if router is None:
@@ -146,7 +165,11 @@ class Brain:
         # the app passes its own (Firestore, daily rate); without one: in-memory, default rate
         self.billing = billing or Billing.in_memory(brains, settings)
         self.memory = memory  # long-term notes about the owner (None: off)
-        self._system = build_system_prompt(honorific=settings.user_honorific)
+        self.wit = wit  # the owner's wit level (None: always the default)
+        self._systems = {
+            w: build_system_prompt(honorific=settings.user_honorific, wit=w) for w in WIT_IDS
+        }
+        self._system = self._systems[DEFAULT_WIT]
         # One owner action at a time per conversation (chat, approve, decline, delete): no
         # lost turns, no double execution, no resurrected deletes. Locks vanish when unused.
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
@@ -201,6 +224,19 @@ class Brain:
         return build_window(
             turns, max_turns=self.s.session_max_turns, max_chars=self.s.session_max_chars
         )
+
+    async def _persona(self, user_id: str) -> str:
+        """The system prompt for the owner's wit level; the default on any failure."""
+        if self.wit is None:
+            return self._system
+        try:
+            wit = await asyncio.wait_for(self.wit.wit_for(user_id), WIT_READ_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001 — a persona nicety never fails a reply
+            log.warning(
+                "wit level unreadable; using the default", extra={"reason": type(exc).__name__}
+            )
+            return self._system
+        return self._systems.get(wit, self._system)
 
     # ---- spending ---------------------------------------------------------------------------
 
@@ -347,7 +383,7 @@ class Brain:
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)
         self._sweep(req.user_id, rec, session.id)
-        trailer = self._trailer(session) + rec.block
+        trailer = self._trailer(session, req) + rec.block
         try:
             completion, pending = await self._run_loop(session, messages, trailer, req, spec)
         except LLMError:
@@ -375,9 +411,12 @@ class Brain:
         reply_meta = _ReplyMeta(trace_id, total_ms, rounds, pending, list(rec.used))
         return await self._chat_response(session, spec, reply, completion, reply_meta)
 
-    def _trailer(self, session: Session) -> str:
+    def _trailer(self, session: Session, req: ChatRequest) -> str:
         return build_trailer(
-            tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
+            tz=self.s.user_timezone,
+            session_id=session.id,
+            turn_index=len(session.turns),
+            channel=req.channel,
         )
 
     @staticmethod
@@ -441,7 +480,7 @@ class Brain:
         await self._admit(req.user_id, spec)
         completion = await self.brains.router_for(spec.id).complete(
             tier=self._tier(req),
-            system=self._system,
+            system=await self._persona(req.user_id),
             system_dynamic=trailer,
             messages=messages,
             max_tokens=self.s.max_output_tokens,
@@ -730,19 +769,20 @@ class Brain:
         rec = await self._recall(req.user_id, spec, text)
         self._sweep(req.user_id, rec, session.id)
         meta.memory_used = list(rec.used)
-        trailer = self._trailer(session) + rec.block
+        trailer = self._trailer(session, req) + rec.block
+        system = await self._persona(req.user_id)
         chunks: list[str] = []
         model = router.resolve(self._tier(req))
         # Streams report no usage: estimate tokens from characters so a paid streamed reply is
         # metered (and counts toward the limit) instead of costing "₹0".
-        sent = len(self._system) + len(trailer) + sum(len(m.text()) for m in messages)
+        sent = len(system) + len(trailer) + sum(len(m.text()) for m in messages)
         await self._admit(req.user_id, spec)  # call-level, like every other model call
         finished = False
         cost = 0.0
         try:
             async for delta in router.stream(
                 tier=self._tier(req),
-                system=self._system,
+                system=system,
                 system_dynamic=trailer,
                 messages=messages,
                 max_tokens=self.s.max_output_tokens,

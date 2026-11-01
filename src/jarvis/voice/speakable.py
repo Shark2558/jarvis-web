@@ -41,7 +41,7 @@ _ITALIC_UNDER = re.compile(r"(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)")
 _STRIKE = re.compile(r"~~(?=\S)(.+?)(?<=\S)~~")
 _STRAY = re.compile(r"[*`|~]+|(?<!\w)#+(?=\s|$)")
 _SPACE_BEFORE_PUNCT = re.compile(r"\s+([.,!?;:…])")
-_REPEAT_PUNCT = re.compile(r"([.!?])(?:\s*[.!?])+")
+_REPEAT_PUNCT = re.compile(r"([.!?])(?:\s+[.!?,;:])+")
 _SPACES = re.compile(r"\s+")
 _HAS_WORD = re.compile(r"\w")
 
@@ -98,8 +98,8 @@ def _inline(text: str) -> str:
     text = _ITALIC_UNDER.sub(lambda m: m.group(1), text)
     text = _STRAY.sub(" ", text)
     text = _SPACES.sub(" ", text).strip()
-    text = _SPACE_BEFORE_PUNCT.sub(r"\1", text)
-    return _REPEAT_PUNCT.sub(r"\1", text)
+    text = _REPEAT_PUNCT.sub(r"\1", text)  # "Done. ." left by a removed emoji; "..." stays
+    return _SPACE_BEFORE_PUNCT.sub(r"\1", text)
 
 
 def _segments(text: str) -> list[str]:

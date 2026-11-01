@@ -32,6 +32,8 @@ from jarvis.voice.speakable import LINK_WORDS, MAX_SPEAK_CHARS, speakable
         ("para one\n\npara two", "para one. para two."),
         ("<b>bold</b> text", "bold text"),
         ("3 < 5 and 7 > 2", "3 < 5 and 7 > 2"),
+        ("Wait... what? Wow!!", "Wait... what? Wow!!"),
+        ("Done. \U0001f389 . Next", "Done. Next"),
     ],
 )
 def test_shapes_markdown_into_plain_speech(raw: str, want: str) -> None:

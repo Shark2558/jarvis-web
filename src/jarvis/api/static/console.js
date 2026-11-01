@@ -415,14 +415,32 @@
     integ.loaded = true; integ.at = performance.now();
     renderIntegrations();
   }
-  /** Back from Google's consent screen: queue the success note and clean the address bar.
-   *  Returns true when boot should open the Integrations panel instead of focusing the composer. */
+  // /?connect_error=<code> from the callback: a fixed plain-English line per known code; the raw
+  // query text is never shown.
+  const CONNECT_ERRORS = {
+    not_started: 'The Google link wasn\'t started from this browser session (or the signed-in account changed). Press Connect Google to try again.',
+    wrong_account: 'Google was linked with a different Google account. Connect again and choose the account you sign in to JARVIS with.',
+    oauth_failed: 'Google didn\'t finish linking (cancelled or timed out). Press Connect Google to try again.',
+    no_refresh_token: 'Google didn\'t grant lasting access. Try again; if it repeats, remove JARVIS under myaccount.google.com → Security → Third-party connections, then connect.',
+    missing_scopes: 'Some permissions were left unticked. Connect again and keep every Calendar and Gmail box ticked: JARVIS needs all of them.',
+  };
+  const CONNECT_ERROR_FALLBACK = 'Google linking didn\'t complete. Press Connect Google to try again.';
+  /** Back from Google's consent screen (success or failure): queue the note for the panel and
+   *  clean the address bar. Returns true when boot should open the Integrations panel instead of
+   *  focusing the composer. */
   function afterConnectRedirect() {
     let q; try { q = new URLSearchParams(window.location.search); } catch (_) { return false; }
-    if (q.get('connected') !== 'google') return false;
-    integ.note = { kind: 'ok', text: 'Google connected. Calendar and Gmail tools are ready.' };
+    const ok = q.get('connected') === 'google', code = q.get('connect_error');
+    if (!ok && code === null) return false;
+    if (ok) {
+      integ.note = { kind: 'ok', text: 'Google connected. Calendar and Gmail tools are ready.' };
+      note('info', 'Google connected');
+    } else {
+      const known = Object.prototype.hasOwnProperty.call(CONNECT_ERRORS, code);
+      integ.note = { kind: 'bad', text: known ? CONNECT_ERRORS[code] : CONNECT_ERROR_FALLBACK };
+      note('error', 'Google not connected');
+    }
     try { history.replaceState(null, '', window.location.pathname); } catch (_) {}
-    note('info', 'Google connected');
     return true;
   }
   document.addEventListener('jarvis:panel', (e) => {
@@ -539,13 +557,13 @@
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {
     renderWelcome();
-    const justConnected = afterConnectRedirect();
+    const backFromGoogle = afterConnectRedirect();
     await loadBrains();
     const saved = lsGet('jarvis_session');
     if (saved) { busy(true, false); try { await loadConversation(saved); } finally { busy(false); } }
     refreshSide(); refreshConvos();
     const linkCheck = refreshIntegrations();
-    if (justConnected) linkCheck.then(() => Deck.open('integrations', { focus: true })); else input.focus();
+    if (backFromGoogle) linkCheck.then(() => Deck.open('integrations', { focus: true })); else input.focus();
   }
   (async () => {
     let fallbackWarning = '';

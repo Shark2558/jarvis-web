@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from typing import Any
+from urllib.parse import quote
 
 import pytest
 
@@ -254,6 +255,37 @@ def test_return_from_google_opens_the_panel_and_cleans_the_url(console: Console)
     console.page.locator("#p-integrations").wait_for(state="visible")
     console.page.locator("#integrations .inote", has_text="Google connected").wait_for()
     assert console.page.evaluate("location.search") == ""
+    assert console.errors == []
+
+
+@pytest.mark.parametrize(
+    "code, words",
+    [
+        ("missing_scopes", "left unticked"),
+        ("wrong_account", "different Google account"),
+        ("not_started", "wasn't started"),
+        ("oauth_failed", "didn't finish"),
+        ("no_refresh_token", "lasting access"),
+        ("<img src=x onerror=alert(1)>", "didn't complete"),  # unknown code: generic line
+    ],
+)
+def test_connect_error_explains_itself_opens_the_panel_and_cleans_the_url(
+    console: Console, code: str, words: str
+) -> None:
+    """Security review L6: /?connect_error=<code> → a plain-English line, never the raw code."""
+    body = {"google": {**LINKED["google"], "connected": False, "email": None, "scopes": []}}
+    console.page.route(
+        "**/v1/integrations",
+        lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps(body)),
+    )
+    console.open("/?connect_error=" + quote(code))
+    console.page.locator("#p-integrations").wait_for(state="visible")
+    line = console.page.locator("#integrations .inote.bad")
+    line.wait_for()
+    assert words in str(line.text_content())
+    assert code not in str(console.page.locator("#integrations").inner_html())
+    assert console.page.evaluate("location.search") == ""
+    assert console.page.locator("#googleConnect").is_visible()  # the way forward is right there
     assert console.errors == []
 
 

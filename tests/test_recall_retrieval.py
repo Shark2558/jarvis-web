@@ -120,3 +120,90 @@ def test_conflicting_facts_are_both_shown_with_dates() -> None:
     block = render_block(Profile(), [a, b], [a, b], tz="Asia/Kolkata", now=NOW)
     assert "[m1]" in block and "[m2]" in block
     assert "differs from [m1]" in block or "differs from [m2]" in block
+
+
+# ---- review findings (slice 8 fix round) -------------------------------------------------------
+
+_CATS = ("about_you", "preferences", "people", "work", "places", "plans")
+_WORDS = (
+    "apple banana cherry dragon eagle falcon garden harbor island jungle kettle lantern meadow "
+    "nectar orchid pepper quartz river saddle tunnel umbrella violin walnut yacht zebra anchor "
+    "basket candle donkey engine feather goblet hammer igloo jacket kitten ladder magnet napkin"
+).split()
+
+
+def test_send_all_with_13_to_40_facts_keeps_every_fact_in_the_block() -> None:
+    """HIGH 1: "send all if ≤ 40" was cut to 12 by render_block in category order, so the one
+    relevant fact (in the last category) never reached the model."""
+    for n in (13, 21, 30, 40):  # 40 short facts no longer fit 1,600 chars: ranked instead
+        facts = [fact(f"m{i:03d}", f"Owns a {_WORDS[i]}", _CATS[i % 6]) for i in range(n - 1)]
+        target = fact("mzorbla", "Daughter is Zorbla", "other", keywords=["daughter"])
+        active = [*facts, target]
+        chosen = select_facts(active, "what is my daughter's name?", NOW, tz="Asia/Kolkata")
+        block = render_block(Profile(), chosen, active, tz="Asia/Kolkata", now=NOW)
+        assert "[mzorbla]" in block, n
+        assert block.count("\n- [m") == len(chosen), n
+        if n <= 30:
+            assert len(chosen) == n, n
+
+
+def test_send_all_that_would_overflow_the_budget_falls_back_to_ranked() -> None:
+    """The send-all check uses the real line length (conflict notes, dates), so a set that only
+    looks small enough is ranked instead of being cut at render time."""
+    pairs = []
+    short = "fig kiwi lime pear plum date nut yam pea oat rye soy taro okra".split()
+    for i, w in enumerate(short):  # 28 facts in conflicting pairs: each line gets a "differs" note
+        pairs.append(fact(f"ma{i:02d}", f"Likes red {w}", _CATS[i % 6]))
+        pairs.append(fact(f"mb{i:02d}", f"Likes blue {w}", _CATS[i % 6]))
+    target = fact("mzorbla", "Daughter is Zorbla", "other", keywords=["daughter"])
+    active = [*pairs, target]
+    assert sum(len(f.text) + 40 for f in active) <= FACTS_BLOCK_CAP  # the old estimate fits
+    chosen = select_facts(active, "what is my daughter's name?", NOW, tz="Asia/Kolkata")
+    block = render_block(Profile(), chosen, active, tz="Asia/Kolkata", now=NOW)
+    assert chosen[0].id == "mzorbla" and len(chosen) <= MAX_FACTS_PER_TURN
+    assert "[mzorbla]" in block
+
+
+def test_render_block_keeps_order_and_only_enforces_the_char_budget() -> None:
+    facts = [fact(f"m{i:03d}", f"Short note {i}") for i in range(20)]
+    block = render_block(Profile(), facts, facts, tz="Asia/Kolkata", now=NOW)
+    assert block.count("\n- [m") == 20
+    long = [fact(f"m{i:03d}", "y" * 290) for i in range(20)]
+    facts_part = render_block(Profile(), long, long, tz="Asia/Kolkata", now=NOW).split("Facts:")[1]
+    assert len(facts_part) <= FACTS_BLOCK_CAP + 1
+
+
+def test_a_broad_question_falls_back_to_pinned_and_recent_facts() -> None:
+    """LOW 12: a stop-word-only question ("what do you know about me?") or "everything" with
+    more than 40 facts used to return nothing at all."""
+    old = [
+        fact(f"m{i:03d}", f"Note {i} on the {_WORDS[i % len(_WORDS)]} project", pinned=False)
+        for i in range(60)
+    ]
+    recent = fact("mrecent", "Started learning the violin", pinned=False, updated_at=NOW)
+    pinned = fact("mpinned", "Daughter is Anaya", "people", pinned=True)
+    active = [*old, recent, pinned]
+    broad = (
+        "what do you know about me?",
+        "everything",
+        "tell me everything",
+        "What do you remember?",
+        "Summarise what you know about me",
+    )
+    for q in broad:
+        chosen = select_facts(active, q, NOW, tz="Asia/Kolkata")
+        ids = [f.id for f in chosen]
+        assert ids and ids[0] == "mpinned" and "mrecent" in ids, q
+        assert len(chosen) <= MAX_FACTS_PER_TURN
+        block = render_block(Profile(), chosen, active, tz="Asia/Kolkata", now=NOW)
+        assert block.split("Facts:")[1].count("\n- [m") == len(chosen)
+    for q in ("and again", "ok", "", "the a an"):  # small talk: no notes, as before
+        assert select_facts(active, q, NOW, tz="Asia/Kolkata") == [], q
+
+
+def test_tokens_keep_indic_combining_marks_inside_words() -> None:
+    """LOW 15: Malayalam / Odia / Hindi words were split at every vowel sign."""
+    assert tokens("തിരുവനന്തപുരം") == ["തിരുവനന്തപുരം"]
+    assert tokens("ଭୁବନେଶ୍ୱର") == ["ଭୁବନେଶ୍ୱର"]
+    assert tokens("मुंबई में रहता हूँ") == ["मुंबई", "में", "रहता", "हूँ"]
+    assert overlap("Lives in തിരുവനന്തപുരം", "തിരുവനന്തപുരം home") > 0

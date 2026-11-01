@@ -1,17 +1,39 @@
 # src/jarvis/recall/text.py
 """Text helpers for memory: one-line cleaning, keyword cleaning, and the lexical tokens that
-retrieval and duplicate detection share (lower-case, stop words out, light stemming)."""
+retrieval and duplicate detection share (lower-case, stop words out, light stemming).
+
+A word keeps its combining marks (Malayalam, Odia, Devanagari vowel signs and viramas), so
+"തിരുവനന്തപുരം" is one token, not five. Tokens, token sets and duplicate keys are memoised: an
+import compares hundreds of facts with each other and must not re-tokenise them every time.
+"""
 
 from __future__ import annotations
 
 import re
 import unicodedata
 from collections.abc import Iterable
+from functools import lru_cache
 
 from jarvis.recall.models import MAX_KEYWORD_CHARS, MAX_KEYWORDS
 from jarvis.tools.card import one_line, strip_invisible
 
-_WORD = re.compile(r"[^\W_]+(?:'[^\W_]+)?")
+
+def _mark_class() -> str:
+    """A regex class body of every combining mark (Mn, Mc, Me) — `re` has no \\p{M}."""
+    spans: list[tuple[int, int]] = []
+    for cp in [*range(0x300, 0x20000), *range(0xE0100, 0xE01F0)]:
+        if unicodedata.category(chr(cp))[0] != "M":
+            continue
+        if spans and spans[-1][1] == cp - 1:
+            spans[-1] = (spans[-1][0], cp)
+        else:
+            spans.append((cp, cp))
+    return "".join(f"\\U{a:08x}" if a == b else f"\\U{a:08x}-\\U{b:08x}" for a, b in spans)
+
+
+_LETTER = rf"(?:[^\W_]|[{_mark_class()}])"
+_WORD = re.compile(rf"[^\W_]{_LETTER}*(?:'[^\W_]{_LETTER}*)?")
+TOKEN_CACHE = 8_192
 _CONTROL_KEEP_NL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f]")
 STOP = frozenset(
     """a an and are as at be been being but by can could did do does doing for from had has have
@@ -73,9 +95,9 @@ def _stem(word: str) -> str:
     return w
 
 
-def tokens(text: str) -> list[str]:
-    """Content words of `text`, lower-cased and stemmed, in order (duplicates kept)."""
-    folded = unicodedata.normalize("NFKC", str(text or "")).lower().replace("’", "'")
+@lru_cache(maxsize=TOKEN_CACHE)
+def _tokens(text: str) -> tuple[str, ...]:
+    folded = unicodedata.normalize("NFKC", text).lower().replace("’", "'")
     out: list[str] = []
     for m in _WORD.finditer(folded):
         w = m.group(0)
@@ -84,21 +106,47 @@ def tokens(text: str) -> list[str]:
         s = _stem(w)
         if s and s not in STOP:
             out.append(s)
-    return out
+    return tuple(out)
 
 
+def tokens(text: str) -> list[str]:
+    """Content words of `text`, lower-cased and stemmed, in order (duplicates kept)."""
+    return list(_tokens(str(text or "")))
+
+
+@lru_cache(maxsize=TOKEN_CACHE)
+def token_set(text: str) -> frozenset[str]:
+    """The distinct content words of `text` (memoised; what overlap and duplicates compare)."""
+    return frozenset(_tokens(str(text or "")))
+
+
+@lru_cache(maxsize=TOKEN_CACHE)
 def norm_key(text: str) -> str:
     """Equality key for duplicates: case, punctuation and spacing ignored."""
     folded = unicodedata.normalize("NFKC", str(text or "")).lower()
     return " ".join(m.group(0) for m in _WORD.finditer(folded))
 
 
-def overlap(a: str, b: str) -> float:
-    """Jaccard overlap of content-word sets (0 … 1)."""
-    ta, tb = set(tokens(a)), set(tokens(b))
+def jaccard(ta: frozenset[str], tb: frozenset[str]) -> float:
     if not ta or not tb:
         return 0.0
-    return len(ta & tb) / len(ta | tb)
+    shared = len(ta & tb)
+    return shared / (len(ta) + len(tb) - shared)
 
 
-__all__ = ["STOP", "clean_block", "clean_keywords", "clean_text", "norm_key", "overlap", "tokens"]
+def overlap(a: str, b: str) -> float:
+    """Jaccard overlap of content-word sets (0 … 1)."""
+    return jaccard(token_set(a), token_set(b))
+
+
+__all__ = [
+    "STOP",
+    "clean_block",
+    "clean_keywords",
+    "clean_text",
+    "jaccard",
+    "norm_key",
+    "overlap",
+    "token_set",
+    "tokens",
+]

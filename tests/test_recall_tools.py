@@ -147,6 +147,17 @@ async def test_search_returns_matching_notes() -> None:
     assert [n["text"] for n in gr.result["notes"]] == ["Daughter is named Anaya"]
 
 
+async def test_search_for_everything_lists_pinned_then_recent_notes() -> None:
+    """LOW 12: memory_search("everything") over > 40 notes found nothing."""
+    r = rig()
+    for i in range(45):
+        await r.svc.add_fact(UID, f"Note {i} on topic t{i}", "other")
+    gr = await _gateway(r.svc).execute(
+        ToolCall(id="q", name="memory_search", arguments={"query": "everything"}), scope=SCOPE
+    )
+    assert gr.outcome is GatewayOutcome.EXECUTED and len(gr.result["notes"]) == 8
+
+
 async def test_forget_by_ids_is_a_card_with_the_exact_texts_then_a_real_delete() -> None:
     r = rig()
     a = await r.svc.add_fact(UID, "Lives in Kochi", "places")

@@ -4,14 +4,17 @@
 Selection is lexical: BM25 over each fact's text plus its stored keywords (keywords count
 twice — they carry the synonyms and question words extraction adds, "fact-augmented keys"),
 with small boosts for pinned, recently updated and often used facts. A small memory (≤ 40
-active facts that fit) is sent whole. Otherwise ≤ 12 matching facts within 1,600 characters.
-Two active facts in one category that largely overlap are a live conflict: both are sent, each
-dated, and marked — never silently merged.
+active facts whose rendered lines fit 1,600 characters) is sent whole; otherwise ≤ 12 matching
+facts within 1,600 characters. A broad question with no content words of its own ("what do you
+know about me?", "everything") gets the pinned, then the most recently updated facts. Two active
+facts in one category that largely overlap are a live conflict: both are sent, each dated, and
+marked — never silently merged. The block itself only enforces the character budget.
 """
 
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from collections.abc import Sequence
 from datetime import datetime, timedelta
@@ -52,6 +55,14 @@ ORIGIN_WORDS = {
     "learned": "learned",
     "imported": "imported",
 }
+BROAD = frozenset(
+    tokens(
+        "everything anything something all stuff thing things info information detail details "
+        "remember remembered recall memory memories note notes fact facts summarise summarize "
+        "summary list show learned saved kept"
+    )
+)
+_ASKS_MEMORY = re.compile(r"(?i)\b(?:know|knows|knew)\b")
 
 
 # ---- scoring -----------------------------------------------------------------------------------
@@ -64,9 +75,17 @@ def _doc(f: Fact) -> list[str]:
     return toks
 
 
+def is_broad(query: str) -> bool:
+    """A question about the notes as a whole: no content words of its own, and it asks what
+    JARVIS knows / remembers / has ("what do you know about me?", "everything"). Small talk
+    made of stop words only ("and again", "ok") is not one: it gets no notes, as before."""
+    words = set(tokens(query))
+    return not words - BROAD and bool(words & BROAD or _ASKS_MEMORY.search(query or ""))
+
+
 def scores(facts: Sequence[Fact], query: str, now: datetime) -> dict[str, float]:
     """BM25 score of each fact for `query` (only facts with a lexical match appear)."""
-    q = set(tokens(query))
+    q = set(tokens(query)) - BROAD
     if not q or not facts:
         return {}
     docs = [(f, Counter(_doc(f))) for f in facts]
@@ -115,14 +134,43 @@ def _ordered(facts: Sequence[Fact]) -> list[Fact]:
     return sorted(facts, key=lambda f: (CATEGORIES.index(f.category), f.created_at))
 
 
-def select_facts(facts: Sequence[Fact], query: str, now: datetime) -> list[Fact]:
+def pinned_then_recent(facts: Sequence[Fact]) -> list[Fact]:
+    return sorted(facts, key=lambda f: (not f.pinned, -f.updated_at.timestamp(), f.id))
+
+
+def rank(facts: Sequence[Fact], query: str, now: datetime) -> list[Fact]:
+    """Matching facts, best first; for a broad question, pinned then most recent."""
+    sc = scores(facts, query, now)
+    if not sc and is_broad(query):
+        return pinned_then_recent(facts)
+    return sorted((f for f in facts if f.id in sc), key=lambda f: -sc[f.id])
+
+
+def _fits_whole(active: Sequence[Fact], tz: str, now: datetime) -> bool:
+    """Every line as it will be rendered (dates, conflict notes) fits the facts budget."""
+    if len(active) > SEND_ALL_UNDER:
+        return False
+    used = 0
+    for f in active:
+        used += len(_fact_line(f, active, tz, now)) + 1
+        if used > FACTS_BLOCK_CAP:
+            return False
+    return True
+
+
+def select_facts(
+    facts: Sequence[Fact], query: str, now: datetime, *, tz: str = "UTC"
+) -> list[Fact]:
     active = [f for f in facts if f.active]
     if not active:
         return []
-    if len(active) <= SEND_ALL_UNDER and sum(_cost(f) for f in active) <= FACTS_BLOCK_CAP:
+    if _fits_whole(active, tz, now):
         return _ordered(active)
-    sc = scores(active, query, now)
-    ranked = sorted((f for f in active if f.id in sc), key=lambda f: -sc[f.id])
+    return _within_caps(rank(active, query, now), active)
+
+
+def _within_caps(ranked: Sequence[Fact], active: Sequence[Fact]) -> list[Fact]:
+    """≤ 12 facts within 1,600 characters, in rank order; conflict partners travel along."""
     chosen: list[Fact] = []
     used = 0
     for f in ranked:
@@ -179,7 +227,7 @@ def render_block(
     plines = _profile_lines(profile)
     flines: list[str] = []
     used = 0
-    for f in facts[:MAX_FACTS_PER_TURN]:
+    for f in facts:  # the caller chose how many; only the character budget applies here
         line = _fact_line(f, peers, tz, now)
         if used + len(line) + 1 > FACTS_BLOCK_CAP:
             continue
@@ -199,9 +247,13 @@ def used_facts(facts: Sequence[Fact], block: str) -> list[Fact]:
 
 
 __all__ = [
+    "BROAD",
     "HEADING",
     "PREAMBLE",
     "conflict_of",
+    "is_broad",
+    "pinned_then_recent",
+    "rank",
     "render_block",
     "scores",
     "select_facts",

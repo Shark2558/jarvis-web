@@ -69,7 +69,7 @@ from jarvis.recall.ops import (
     set_profile,
     wipe,
 )
-from jarvis.recall.retrieval import render_block, scores, select_facts, used_facts
+from jarvis.recall.retrieval import rank, render_block, select_facts, used_facts
 from jarvis.recall.store import MemoryStore
 from jarvis.storage.docs import Docs
 from jarvis.tools.audit import AuditTrail
@@ -148,16 +148,18 @@ class MemoryService:
         if not gate.memory_allowed(spec):
             return Recall()
         try:
-            state = await self.store.load(uid)
-            if not state.settings.use:
-                return Recall(state=state)
-            now = self._clock()
-            active = state.active()
-            chosen = select_facts(active, query, now)
-            block = render_block(state.profile, chosen, active, tz=self._tz, now=now)
+            return self._recalled(uid, await self.store.load(uid), query)
         except Exception as exc:  # noqa: BLE001 — a reply without notes, never a failed reply
             log.warning("memory not recalled this turn", extra={"reason": type(exc).__name__})
             return Recall()
+
+    def _recalled(self, uid: str, state: MemoryState, query: str) -> Recall:
+        if not state.settings.use:
+            return Recall(state=state)
+        now = self._clock()
+        active = state.active()
+        chosen = select_facts(active, query, now, tz=self._tz)
+        block = render_block(state.profile, chosen, active, tz=self._tz, now=now)
         used = used_facts(chosen, block)
         self._note_use(uid, [f.id for f in used])
         refs = tuple(MemoryRef(id=f.id, text=f.text) for f in used)
@@ -415,9 +417,7 @@ class MemoryService:
 
     async def search(self, uid: str, query: str, limit: int = SEARCH_LIMIT) -> list[Fact]:
         state = await self.store.load(uid)
-        active = state.active()
-        sc = scores(active, query, self._clock())
-        return sorted((f for f in active if f.id in sc), key=lambda f: -sc[f.id])[:limit]
+        return rank(state.active(), query, self._clock())[:limit]
 
     async def facts_by_ids(self, uid: str, ids: Iterable[str]) -> list[Fact]:
         wanted = list(dict.fromkeys(ids))

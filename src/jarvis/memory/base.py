@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 
 from jarvis.core.models import Session, SessionSummary, session_title
 
+REASSIGN_BATCH = 200
+
 
 class SessionNotFound(LookupError):
     pass
@@ -34,6 +36,29 @@ class SessionStore(ABC):
         if s is None:
             raise SessionNotFound(session_id)
         return s
+
+    async def reassign_user(self, old_user_id: str, new_user_id: str) -> int:
+        """Move every session of `old_user_id` to `new_user_id`; returns how many moved.
+        Each session is re-saved under the new owner (nothing is deleted first, so an
+        interruption never loses a conversation). Idempotent: a second call moves 0."""
+        moved = 0
+        while True:
+            batch = await self.list_for_user(old_user_id, limit=REASSIGN_BATCH)
+            moved_now = 0
+            for summary in batch:
+                s = await self.get(summary.id)
+                if s is None or s.user_id != old_user_id:
+                    continue
+                await self.save(s.model_copy(update={"user_id": new_user_id}))
+                await self._unindex(old_user_id, s.id)
+                moved_now += 1
+            moved += moved_now
+            if moved_now == 0 or len(batch) < REASSIGN_BATCH:
+                return moved
+
+    async def _unindex(self, user_id: str, session_id: str) -> None:
+        """Hook for stores that keep a separate per-user index (Redis)."""
+        return None
 
     async def ping(self) -> bool:
         return True

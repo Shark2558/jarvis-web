@@ -16,6 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from jarvis.api.auth import CSRFRejected, auth_router, build_oauth
 from jarvis.api.console import router as console_router
+from jarvis.api.identity import adopt_legacy_sessions
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import router as v1_router
 from jarvis.config import AuthMode, Settings, get_settings
@@ -79,6 +80,7 @@ def create_app(
         app.state.brain = Brain(
             brains=app.state.brains, store=app.state.store, settings=s, gateway=app.state.gateway
         )
+        await adopt_legacy_sessions(app.state.store, s)
         log.info(
             "jarvis up",
             extra={

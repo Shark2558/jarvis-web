@@ -1,7 +1,9 @@
 // src/jarvis/api/static/console-fx.js — JARVIS console visual engine (no build step; CSP 'self').
-// Themes + owner colour (WCAG-checked tokens), motion levels, the Core emblem, the background
-// field canvas, toolbar clock/status and the theme menu. Loaded before console.js, which uses
-// window.JarvisFX. Never touches server data: every string it renders is a constant below.
+// Surfaces (Night / Day), themes + owner colour (WCAG-checked tokens per surface), motion levels,
+// the 2D Core emblem, the background field canvas, top-bar clock/status and the appearance menu.
+// Loaded first; console-deck.js, console.js and console-3d.js use window.JarvisFX and listen for
+// its document events (jarvis:theme, jarvis:motion, jarvis:state). Never touches server data:
+// every string it renders is a constant below.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -23,12 +25,16 @@
   const PRESETS = [['Holo blue', '#0071E3'], ['Cyan', '#00A3C4'], ['Emerald', '#0E9F6E'], ['Lime', '#65A30D'], ['Gold', '#D4A017'],
     ['Ember', '#F05A1A'], ['Crimson', '#C8102E'], ['Magenta', '#D6246E'], ['Violet', '#7B2CFF'], ['Indigo', '#4F46E5']];
   const MOTIONS = ['full', 'calm', 'off'];
+  const SURFACES = ['night', 'day'];
+  const emit = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
   const HEX = /^#[0-9a-f]{6}$/i;
 
   // ---- colour maths (WCAG 2.x relative luminance) -------------------------------------------
   const WHITE = [255, 255, 255];
   const INK = [10, 18, 32];          // near-black used for text on light accents
-  const PAGE_EDGE = [244, 247, 251]; // darkest page surface text can sit on (--bg-2)
+  const PAGE_EDGE = [244, 247, 251]; // darkest Day surface text can sit on (--bg-2)
+  const NIGHT_BG = [4, 7, 13];       // Night --bg
+  const NIGHT_PANEL = [10, 17, 27];  // Night --panel-solid (cards are 90 % of this)
   const AA = 4.5;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const hexToRgb = (h) => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
@@ -51,25 +57,39 @@
     return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
   }
   const mix = (a, b, w) => a.map((v, i) => v * w + b[i] * (1 - w));
-  /** Lower HSL lightness (hue and saturation kept) until `rgb` reaches `target` against every
-   *  background in `bgs`. */
-  function darkenUntil(rgb, bgs, target) {
+  /** Move HSL lightness (hue and saturation kept) in `dir` (-1 darker, +1 lighter) until `rgb`
+   *  reaches `target` contrast against every background in `bgs`. */
+  function shiftUntil(rgb, bgs, target, dir) {
     const hsl = rgbToHsl(rgb); let out = rgb.map(Math.round);
     const worst = () => Math.min(...bgs.map(bg => contrast(out, bg)));
-    while (worst() < target && hsl[2] > 0) { hsl[2] = Math.max(0, hsl[2] - 0.01); out = hslToRgb(hsl).map(Math.round); }
+    while (worst() < target && (dir < 0 ? hsl[2] > 0 : hsl[2] < 1)) {
+      hsl[2] = clamp(hsl[2] + dir * 0.01, 0, 1); out = hslToRgb(hsl).map(Math.round);
+    }
     return out;
   }
-  /** Theme tokens from one accent. accent-ink: accent text/icons on white, AA even on the page
-   *  edge and on the 8 % accent tint (--tint); on-accent: white or ink, whichever contrasts more
-   *  with the accent fill. */
-  function derive(accentHex, accent2Hex) {
+  /** Theme tokens from one accent, for one surface.
+   *  Day:   fills stay visible on white; accent-ink is darkened until text reaches AA on the page
+   *         edge, the accent glow (12 %), and a 90 % white card with a dark stroke behind it.
+   *  Night: fills are lightened until they read on the near-black page (3:1); accent-ink is
+   *         lightened until text reaches AA on the panel, its tint, the page, and a panel with a
+   *         bright glow behind it (the cards are 90 % opaque).
+   *  Both:  on-accent is white or ink, whichever contrasts more; if neither reaches AA the fill
+   *         itself is nudged until one does. */
+  function derive(accentHex, accent2Hex, surface) {
+    const night = surface === 'night';
     let accent = hexToRgb(accentHex);
-    if (contrast(accent, WHITE) < 1.4) accent = darkenUntil(accent, [WHITE], 1.4); // keep fills visible on white
-    const ink = darkenUntil(accent, [PAGE_EDGE, mix(accent, WHITE, 0.08)], AA);
+    if (night) { if (contrast(accent, NIGHT_BG) < 3) accent = shiftUntil(accent, [NIGHT_BG], 3, +1); }
+    else if (contrast(accent, WHITE) < 1.4) accent = shiftUntil(accent, [WHITE], 1.4, -1);
+    const cw = contrast(WHITE, accent), ci = contrast(INK, accent);
+    if (Math.max(cw, ci) < AA) accent = cw >= ci ? shiftUntil(accent, [WHITE], AA, -1) : shiftUntil(accent, [INK], AA, +1);
     const onAccent = contrast(WHITE, accent) >= contrast(INK, accent) ? WHITE : INK;
+    const ink = night
+      ? shiftUntil(accent, [NIGHT_PANEL, mix(accent, NIGHT_PANEL, 0.12), NIGHT_BG, mix(NIGHT_PANEL, WHITE, 0.9)], AA, +1)
+      : shiftUntil(accent, [PAGE_EDGE, mix(accent, WHITE, 0.12), mix(INK, WHITE, 0.1)], AA, -1);
     let accent2;
     if (accent2Hex) accent2 = hexToRgb(accent2Hex);
     else { const [h, s, l] = rgbToHsl(accent); accent2 = hslToRgb([(h + 32 / 360) % 1, clamp(s * 1.05 + 0.05, 0, 1), clamp(l + 0.1, 0.45, 0.64)]); }
+    if (night && contrast(accent2, NIGHT_BG) < 3) accent2 = shiftUntil(accent2, [NIGHT_BG], 3, +1);
     return { accent: rgbToHex(accent), accent2: rgbToHex(accent2), ink: rgbToHex(ink), onAccent: rgbToHex(onAccent) };
   }
 
@@ -79,24 +99,30 @@
     theme: THEMES.some(t => t.id === store.get('jarvis_theme')) ? store.get('jarvis_theme') : 'workshop',
     custom: HEX.test(store.get('jarvis_accent') || '') ? store.get('jarvis_accent').toUpperCase() : null,
     motion: MOTIONS.includes(store.get('jarvis_motion')) ? store.get('jarvis_motion') : (reduceQ.matches ? 'calm' : 'full'),
-    busy: false, alert: false, tokens: null,
+    surface: SURFACES.includes(store.get('jarvis_surface')) ? store.get('jarvis_surface') : 'night',
+    busy: false, alert: false, offline: !navigator.onLine, tokens: null,
   };
   const themeOf = (id) => THEMES.find(t => t.id === id) || THEMES[0];
 
   function applyTokens() {
     const t = themeOf(state.theme);
-    const tok = derive(state.custom || t.accent, state.custom ? null : t.accent2);
+    const tok = derive(state.custom || t.accent, state.custom ? null : t.accent2, state.surface);
     state.tokens = tok;
     root.dataset.theme = t.id;
+    root.dataset.surface = state.surface;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', state.surface === 'night' ? '#04070D' : '#FFFFFF');
     root.style.setProperty('--accent', tok.accent);
     root.style.setProperty('--accent-2', tok.accent2);
     root.style.setProperty('--accent-ink', tok.ink);
     root.style.setProperty('--on-accent', tok.onAccent);
     field.colours(hexToRgb(tok.accent), hexToRgb(tok.accent2));
+    emit('jarvis:theme', { surface: state.surface, theme: t.id, tokens: Object.assign({}, tok) });
   }
   function applyMotion() {
     root.dataset.motion = state.motion;
     field.sync(); clock.restart(); setBusy(state.busy);
+    emit('jarvis:motion', { motion: state.motion });
   }
 
   // ---- the Core (original emblem: three tick rings + breathing nucleus) -----------------------
@@ -111,7 +137,7 @@
     return `<rect class="mark" x="${f2(x - size / 2)}" y="${f2(y - size / 2)}" width="${size}" height="${size}" transform="rotate(${deg + 45} ${x} ${y})"/>`;
   }
   function coreSVG(size) {
-    const lg = size === 'lg', k = lg ? 1 : 2.3; // stroke scale: the toolbar Core is ~30 px wide
+    const lg = size === 'lg' || size === 'xl', k = size === 'xl' ? 0.55 : lg ? 1 : 2.3; // stroke scale: the top-bar Core is ~30 px wide
     const n = lg ? 72 : 24, every = lg ? 6 : 3, gid = 'jxg' + (++coreSeq);
     let outer = `<circle class="faint" cx="60" cy="60" r="57.5" stroke-width="${0.8 * k}"/>`;
     for (let i = 0; i < n; i++) {
@@ -130,7 +156,7 @@
       `<circle cx="60" cy="60" r="${lg ? 3.2 : 4.5}" fill="var(--accent)"/></g></svg>`;
   }
   function core(size) {
-    const sz = size === 'lg' || size === 'sm' ? size : '';
+    const sz = size === 'lg' || size === 'sm' || size === 'xl' ? size : '';
     const cls = 'core ' + sz + (state.busy ? ' busy' : '') + (state.alert ? ' alert' : '');
     return `<span class="${cls.trim()}" aria-hidden="true">${coreSVG(size)}</span>`;
   }
@@ -143,24 +169,27 @@
   };
 
   // ---- status ticker + clock -------------------------------------------------------------------
+  const STATUS_WORDS = { ok: 'Online', busy: 'Thinking', alert: 'Needs you', offline: 'Offline' };
   function renderStatus() {
     const el = $('status'); if (!el) return;
-    const mode = state.busy ? 'busy' : (state.alert ? 'alert' : 'ok');
-    el.classList.toggle('busy', mode === 'busy'); el.classList.toggle('alert', mode === 'alert');
-    $('statusText').textContent = mode === 'busy' ? 'Processing' : (mode === 'alert' ? 'Needs you' : 'Online');
+    const mode = state.offline ? 'offline' : state.busy ? 'busy' : (state.alert ? 'alert' : 'ok');
+    ['busy', 'alert', 'offline'].forEach(m => el.classList.toggle(m, mode === m));
+    $('statusText').textContent = STATUS_WORDS[mode];
   }
+  const publishState = () => emit('jarvis:state', { busy: state.busy, alert: state.alert, offline: state.offline });
   function setBusy(on) {
     state.busy = !!on;
     document.querySelectorAll('.core').forEach(c => c.classList.toggle('busy', state.busy));
     const rate = state.busy && state.motion === 'full' ? 3.2 : 1;
     ringAnims().forEach(a => { try { a.updatePlaybackRate ? a.updatePlaybackRate(rate) : (a.playbackRate = rate); } catch (_) {} });
-    renderStatus();
+    renderStatus(); publishState();
   }
   function setAlert(on) {
     state.alert = !!on;
     document.querySelectorAll('.core').forEach(c => c.classList.toggle('alert', state.alert));
-    renderStatus();
+    renderStatus(); publishState();
   }
+  function setOffline() { state.offline = !navigator.onLine; renderStatus(); publishState(); }
   function ripple(el) {
     if (!el || state.motion !== 'full') return;
     el.classList.remove('ripple'); void el.offsetWidth; el.classList.add('ripple');
@@ -168,8 +197,13 @@
   const clock = (() => {
     let timer = 0;
     const fmt = (sec) => { try { return new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit', second: sec ? '2-digit' : undefined, hour12: false }); } catch (_) { return null; } };
+    const dateFmt = (() => { try { return new Intl.DateTimeFormat([], { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }); } catch (_) { return null; } })();
     let f = null;
-    const tickNow = () => { const el = $('clock'); if (el && f) el.textContent = f.format(new Date()); };
+    const tickNow = () => {
+      const now = new Date(), el = $('clock'), d = $('clockDate');
+      if (el && f) el.textContent = f.format(now);
+      if (d && dateFmt) d.textContent = dateFmt.format(now).replace(/,/g, '');
+    };
     return {
       restart() {
         clearInterval(timer);
@@ -196,8 +230,8 @@
 
     function coreCentre() {
       if (t - origin.at < 0.4) return origin;
-      const el = document.querySelector('.gate.show .core') || document.querySelector('#welcome .core') || $('orb');
-      const r = el ? el.getBoundingClientRect() : null;
+      const cands = [document.querySelector('.gate.show .core'), $('coreWrap'), document.querySelector('#welcome .core'), $('orb')];
+      const r = cands.map(el => (el ? el.getBoundingClientRect() : null)).find(b => b && b.width) || null;
       origin = r && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2, at: t } : { x: W / 2, y: H / 3, at: t };
       return origin;
     }
@@ -413,6 +447,8 @@
 
   // ---- theme menu (popover on desktop, bottom sheet on phones) ---------------------------------
   const menu = $('themeMenu'), btn = $('themeBtn'), scrim = $('menuScrim');
+  const MOON = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.5 12.6A6.3 6.3 0 0 1 7.4 4.5a6.3 6.3 0 1 0 8.1 8.1z"/></svg>';
+  const SUN = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="3.4"/><path d="M10 2.5v1.8M10 15.7v1.8M2.5 10h1.8M15.7 10h1.8M4.7 4.7l1.3 1.3M14 14l1.3 1.3M4.7 15.3 6 14M14 6l1.3-1.3"/></svg>';
   function buildMenu() {
     const themes = THEMES.map(t => `
       <input class="opt-in" type="radio" name="jx-theme" id="jx-t-${t.id}" value="${t.id}">
@@ -423,21 +459,28 @@
       <label class="sw" for="jx-c-${i}" title="${name}" style="--c:${hex}"></label></span>`).join('');
     const motions = [['full', 'Full'], ['calm', 'Calm'], ['off', 'Off']].map(([v, l]) => `
       <span class="seg-wrap"><input class="opt-in" type="radio" name="jx-motion" id="jx-m-${v}" value="${v}"><label class="seg-opt" for="jx-m-${v}">${l}</label></span>`).join('');
+    const surfaces = [['night', 'Night', MOON], ['day', 'Day', SUN]].map(([v, l, icon]) => `
+      <span class="seg-wrap"><input class="opt-in" type="radio" name="jx-surface" id="jx-s-${v}" value="${v}"><label class="seg-opt" for="jx-s-${v}">${icon}${l}</label></span>`).join('');
     menu.innerHTML = '<h3 id="themeMenuTitle">Appearance</h3>' +
+      `<fieldset><legend>Surface</legend><div class="seg two">${surfaces}</div></fieldset>` +
       `<fieldset><legend>Theme</legend><div class="themes">${themes}</div></fieldset>` +
       `<fieldset><legend>Accent colour</legend><div class="sw-row">${swatches}</div>` +
       '<div class="custom-row"><label class="yours" id="jxYours"><input type="color" id="jxColor" value="#7b2cff"><span>Your colour</span></label>' +
       '<button type="button" class="btn lift" id="jxReset">Reset to theme colour</button></div></fieldset>' +
       `<fieldset><legend>Motion</legend><div class="seg">${motions}</div>` +
-      '<p class="fine">Calm stops the moving background, scan line and rotations. Off stops all animation. Saved on this device.</p></fieldset>';
+      '<p class="fine">Calm stops the moving background, scan line and rotations, and holds the 3D scenes still. Off stops all animation. Saved on this device.</p></fieldset>' +
+      '<fieldset><legend>Layout</legend><button type="button" class="btn lift row-btn" id="jxLayout">Reset layout</button>' +
+      '<p class="fine">Puts every panel back in its default place and size.</p></fieldset>';
     menu.addEventListener('change', onMenuChange);
     $('jxColor').addEventListener('input', (e) => setCustom(e.target.value, false));
     $('jxReset').addEventListener('click', () => setCustom(null, true));
+    $('jxLayout').addEventListener('click', () => { emit('jarvis:reset-layout', {}); closeMenu(true); });
   }
   function syncMenu() {
     menu.querySelectorAll('input[name="jx-theme"]').forEach(i => { i.checked = i.value === state.theme; });
     menu.querySelectorAll('input[name="jx-accent"]').forEach(i => { i.checked = !!state.custom && i.value.toUpperCase() === state.custom; });
     menu.querySelectorAll('input[name="jx-motion"]').forEach(i => { i.checked = i.value === state.motion; });
+    menu.querySelectorAll('input[name="jx-surface"]').forEach(i => { i.checked = i.value === state.surface; });
     const preset = PRESETS.some(([, h]) => h === state.custom);
     $('jxYours').classList.toggle('on', !!state.custom && !preset);
     if (state.custom) $('jxColor').value = state.custom.toLowerCase();
@@ -453,11 +496,13 @@
     applyTokens(); syncMenu();
   }
   function setMotion(m) { state.motion = MOTIONS.includes(m) ? m : 'full'; store.set('jarvis_motion', state.motion); applyMotion(); syncMenu(); }
+  function setSurface(v) { state.surface = SURFACES.includes(v) ? v : 'night'; store.set('jarvis_surface', state.surface); applyTokens(); syncMenu(); }
   function onMenuChange(e) {
     const el = e.target;
     if (el.name === 'jx-theme') setTheme(el.value);
     else if (el.name === 'jx-accent') setCustom(el.value, true);
     else if (el.name === 'jx-motion') setMotion(el.value);
+    else if (el.name === 'jx-surface') setSurface(el.value);
     else if (el.id === 'jxColor') setCustom(el.value, true);
   }
   const isOpen = () => !menu.hidden;
@@ -468,7 +513,7 @@
   }
   function openMenu() {
     syncMenu(); menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); placeMenu();
-    scrim.hidden = window.innerWidth > 600;
+    scrim.hidden = window.innerWidth >= 900;
     const first = menu.querySelector('input[name="jx-theme"]:checked') || menu.querySelector('input');
     if (first) first.focus();
   }
@@ -492,6 +537,8 @@
     if (!MOTIONS.includes(store.get('jarvis_motion'))) { state.motion = reduceQ.matches ? 'calm' : 'full'; applyMotion(); if (menu) syncMenu(); }
   });
   const orb = $('orb'); if (orb) orb.innerHTML = coreSVG('sm');
+  const big = $('coreFallback'); if (big) big.innerHTML = core('xl');
+  window.addEventListener('online', setOffline); window.addEventListener('offline', setOffline);
   root.classList.add('instant');
   applyTokens();
   void getComputedStyle(root).getPropertyValue('--accent'); // commit before re-enabling transitions
@@ -499,10 +546,16 @@
   field.init(themeOf(state.theme).field);
   applyMotion();
 
+  renderStatus();
+
   window.JarvisFX = Object.freeze({
     core, setBusy, setAlert, ripple,
     refresh: () => field.refresh(),
     tokens: () => Object.assign({}, state.tokens),
+    surface: () => state.surface,
+    motion: () => state.motion,
+    state: () => ({ busy: state.busy, alert: state.alert, offline: state.offline }),
     contrast: (a, b) => contrast(hexToRgb(a), hexToRgb(b)),
+    derive: (accent, accent2, surface) => derive(accent, accent2 || null, SURFACES.includes(surface) ? surface : 'night'),
   });
 })();

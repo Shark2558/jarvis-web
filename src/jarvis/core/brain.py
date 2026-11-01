@@ -96,7 +96,7 @@ def _record_exchange(session: Session, d: _Decision, trace_id: str | None) -> No
 
 @dataclass(frozen=True)
 class _ReplyMeta:
-    trace_id: str | None
+    trace_id: str
     total_ms: int
     rounds: int
     pending: list[PendingApproval]
@@ -677,7 +677,7 @@ class Brain:
         spec: BrainSpec,
         reply: str,
         completion: Completion | None,
-        trace_id: str | None,
+        trace_id: str,
         approved: bool,
     ) -> ChatResponse:
         cost = completion.cost_usd if completion else 0.0

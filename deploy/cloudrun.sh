@@ -11,10 +11,29 @@
 # build account, so rolling back to one would fail to start; roll forward instead.
 # Why still one instance: rate limiting and the per-conversation write queue are per process.
 # Raise --max-instances only after sessions gain a cross-process concurrency check.
+#
+# Re-runs ask nothing: answers are kept in the live service and Secret Manager. To change them:
+#   bash deploy/cloudrun.sh --reconfigure
+# Step 7 sets up deploy-on-merge: GitHub Actions proves who it is with a short-lived token
+# (Workload Identity Federation) that Google accepts only from this repository's main branch.
+# No key exists. The deployer account may only roll out new revisions of this service, push
+# images to the build repository, and run them as jarvis-run.
 set -euo pipefail
 
 SERVICE="${SERVICE:-jarvis}"
 REGION="${REGION:-asia-south1}"   # Mumbai; Tier-1 region, covered by the monthly free allowance
+GH_REPO="Shark2558/jarvis-web"
+GH_REPO_ID="1441253681"           # numeric id: survives renames, can't be re-registered by others
+POOL="github"; PROVIDER="jarvis-web"; AR_REPO="cloud-run-source-deploy"
+
+RECONFIGURE=no
+for arg in "$@"; do
+  case "$arg" in
+    --reconfigure) RECONFIGURE=yes ;;
+    -h|--help) echo "Usage: bash deploy/cloudrun.sh [--reconfigure]"; exit 0 ;;
+    *) printf 'Unknown option: %s (try --help)\n' "$arg" >&2; exit 2 ;;
+  esac
+done
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -28,13 +47,19 @@ BASE_URL="https://${SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
 BILLING="$(gcloud billing projects describe "$PROJECT" --format='value(billingEnabled)' 2>/dev/null || true)"
 [ "$BILLING" = "True" ] || die "Billing is not enabled on project $PROJECT. Cloud Run needs a billing account (you stay inside the free allowance). Enable it in Billing, then re-run."
 
-say "1/6  Project: $PROJECT   Region: $REGION   Address will be: $BASE_URL"
+say "1/7  Project: $PROJECT   Region: $REGION   Address will be: $BASE_URL"
 
-say "2/6  Switching on the Google services JARVIS needs (takes ~1 minute)"
+say "2/7  Switching on the Google services JARVIS needs (takes ~1 minute)"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
-  secretmanager.googleapis.com firestore.googleapis.com iam.googleapis.com --quiet
+  secretmanager.googleapis.com firestore.googleapis.com iam.googleapis.com \
+  iamcredentials.googleapis.com sts.googleapis.com --quiet
 
-say "3/6  Your details (typing is hidden for secrets; Enter keeps the saved value on a re-run)"
+QUICK=no
+if [ "$RECONFIGURE" = no ] && \
+   gcloud run services describe "$SERVICE" --region "$REGION" --format='value(metadata.name)' >/dev/null 2>&1; then
+  QUICK=yes
+fi
+
 secret_exists() { gcloud secrets describe "$1" >/dev/null 2>&1; }
 put_secret() { # name value
   if secret_exists "$1"; then printf '%s' "$2" | gcloud secrets versions add "$1" --data-file=- --quiet >/dev/null
@@ -46,6 +71,10 @@ ask_secret() { # secret-name prompt
 }
 rand() { head -c 48 /dev/urandom | base64 | tr -d '\n=+/' | head -c 48; }
 
+if [ "$QUICK" = yes ]; then
+say "3/7  Using your saved answers - nothing to type (to change them: bash deploy/cloudrun.sh --reconfigure)"
+else
+say "3/7  Your details (typing is hidden for secrets; Enter keeps the saved value on a re-run)"
 read -r -p "Your Gmail address (the only account allowed to sign in): " OWNER_EMAIL
 [ -n "$OWNER_EMAIL" ] || die "Gmail address is required."
 read -r -p "Google OAuth Client ID (ends with .apps.googleusercontent.com): " CLIENT_ID
@@ -116,10 +145,11 @@ DEFAULT_BRAIN="${DEFAULT_BRAIN:-$FIRST}"
 case "$DEFAULT_BRAIN" in claude|Claude|CLAUDE) DEFAULT_BRAIN=anthropic ;; Gemini|GEMINI) DEFAULT_BRAIN=gemini ;; Custom|CUSTOM) DEFAULT_BRAIN=custom ;; esac
 case " $HAVE" in *" $DEFAULT_BRAIN "*) ;; *) die "Default must be one of: $HAVE" ;; esac
 BRAIN_ENV="${BRAIN_ENV}JARVIS_LLM_BACKEND=${DEFAULT_BRAIN}"
+fi
 secret_exists jarvis-session-secret || put_secret jarvis-session-secret "$(rand)"
 secret_exists jarvis-api-token || put_secret jarvis-api-token "$(rand)"
 
-say "4/6  Setting up JARVIS's memory (a Firestore database in your project)"
+say "4/7  Setting up JARVIS's memory (a Firestore database in your project)"
 if DBTYPE="$(gcloud firestore databases describe --database='(default)' --format='value(type)' 2>/dev/null)"; then
   [ "$DBTYPE" = "FIRESTORE_NATIVE" ] || die "This project already has a database in '$DBTYPE' mode; JARVIS needs Firestore Native mode. Send this message to Claude."
   echo "  (memory database already exists - keeping it and everything in it)"
@@ -138,10 +168,9 @@ IDX_OUT="$(gcloud firestore indexes composite create --database='(default)' --co
        printf '  %s\n' "$IDX_OUT" | tail -2 ;;
   esac
 
-say "5/6  Permissions: JARVIS's own account reads secrets + memory; the build account only builds"
+say "5/7  Permissions: JARVIS's own account reads secrets + memory; the build account only builds"
 bind() { # member role  (a brand-new service account can take a few seconds to be visible)
-  local n
-  for n in 1 2 3 4 5 6; do
+  for _ in 1 2 3 4 5 6; do
     gcloud projects add-iam-policy-binding "$PROJECT" --member="$1" --role="$2" \
       --condition=None --quiet >/dev/null 2>&1 && return 0
     sleep 5
@@ -159,7 +188,7 @@ for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key
               jarvis-openai-compat-key jarvis-session-secret jarvis-api-token; do
   secret_exists "$secret" || continue
   ok=no
-  for n in 1 2 3 4 5 6; do
+  for _ in 1 2 3 4 5 6; do
     gcloud secrets add-iam-policy-binding "$secret" --member="serviceAccount:${RUN_SA}" \
       --role=roles/secretmanager.secretAccessor --quiet >/dev/null 2>&1 && { ok=yes; break; }
     sleep 5
@@ -172,19 +201,29 @@ for role in roles/cloudbuild.builds.builder roles/artifactregistry.writer roles/
   bind "serviceAccount:${SA}" "$role"
 done
 
-say "6/6  Building and deploying (3-6 minutes the first time)"
+say "6/7  Building and deploying (3-6 minutes the first time)"
 cd "$(dirname "$0")/.."
 show_logs() {
   printf '\nDeploy failed. Last log lines from the service (copy these to Claude):\n'
   gcloud run services logs read "$SERVICE" --region "$REGION" --limit 40 2>/dev/null || true
 }
+# Settings this script owns (safe to refresh on every run). The owner's answers (email, client
+# id, brains) and the secret bindings are only (re)written when questions were asked.
+INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20"
+if [ "$QUICK" = yes ]; then
+  CONFIG_FLAGS=(--update-env-vars "$INFRA_ENV")
+else
+  CONFIG_FLAGS=(
+    --set-env-vars "${INFRA_ENV},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV}"
+    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest"
+  )
+fi
 gcloud run deploy "$SERVICE" --source . --region "$REGION" \
   --service-account "$RUN_SA" \
   --allow-unauthenticated \
   --min-instances 0 --max-instances 1 \
   --memory 512Mi --cpu 1 --timeout 300 \
-  --set-env-vars "JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20" \
-  --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest" \
+  "${CONFIG_FLAGS[@]}" \
   --quiet || { show_logs; exit 1; }
 
 # Only now that JARVIS runs as jarvis-run: earlier versions ran as (and let) the build account
@@ -200,12 +239,78 @@ for role in roles/secretmanager.secretAccessor roles/datastore.user; do
   fi
 done
 
+say "7/7  Automatic updates: let GitHub deploy JARVIS when you merge (no keys involved)"
+DEPLOY_SA="jarvis-deployer@${PROJECT}.iam.gserviceaccount.com"
+retry() { # command...  (new accounts/pools take a few seconds to become visible)
+  for _ in 1 2 3 4 5 6; do "$@" >/dev/null 2>&1 && return 0; sleep 5; done
+  "$@" >/dev/null   # last try shows the error
+}
+setup_autodeploy() {
+  local cond="assertion.repository_id=='${GH_REPO_ID}' && assertion.ref=='refs/heads/main'"
+  local map="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.repository_id=assertion.repository_id,attribute.ref=assertion.ref"
+  gcloud iam workload-identity-pools describe "$POOL" --location=global >/dev/null 2>&1 || \
+    gcloud iam workload-identity-pools create "$POOL" --location=global \
+      --display-name="GitHub Actions" --quiet >/dev/null || return 1
+  if gcloud iam workload-identity-pools providers describe "$PROVIDER" --location=global \
+       --workload-identity-pool="$POOL" >/dev/null 2>&1; then
+    gcloud iam workload-identity-pools providers update-oidc "$PROVIDER" --location=global \
+      --workload-identity-pool="$POOL" --attribute-mapping="$map" --attribute-condition="$cond" \
+      --quiet >/dev/null || return 1
+  else
+    gcloud iam workload-identity-pools providers create-oidc "$PROVIDER" --location=global \
+      --workload-identity-pool="$POOL" --display-name="${GH_REPO} (main only)" \
+      --issuer-uri="https://token.actions.githubusercontent.com" \
+      --attribute-mapping="$map" --attribute-condition="$cond" --quiet >/dev/null || return 1
+  fi
+  gcloud iam service-accounts describe "$DEPLOY_SA" >/dev/null 2>&1 || \
+    gcloud iam service-accounts create jarvis-deployer --display-name="JARVIS (deploy from GitHub)" \
+      --quiet >/dev/null || return 1
+  retry gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" \
+    --role=roles/iam.workloadIdentityUser \
+    --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.repository_id/${GH_REPO_ID}" \
+    --quiet || return 1
+  retry gcloud iam service-accounts add-iam-policy-binding "$RUN_SA" \
+    --member="serviceAccount:${DEPLOY_SA}" --role=roles/iam.serviceAccountUser --quiet || return 1
+  retry gcloud run services add-iam-policy-binding "$SERVICE" --region "$REGION" \
+    --member="serviceAccount:${DEPLOY_SA}" --role=roles/run.developer --quiet || return 1
+  retry gcloud artifacts repositories add-iam-policy-binding "$AR_REPO" --location "$REGION" \
+    --member="serviceAccount:${DEPLOY_SA}" --role=roles/artifactregistry.writer --quiet || return 1
+  # lets gcloud check that the Cloud Run API is on (read-only; grants no resource access)
+  retry gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:${DEPLOY_SA}" \
+    --role=roles/serviceusage.serviceUsageConsumer --condition=None --quiet || return 1
+  # Keep the 5 newest images and delete older ones after a week: stays inside the free 0.5 GB.
+  local policy; policy="$(mktemp)"
+  cat > "$policy" <<'JSON'
+[{"name":"keep-newest-5","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":5}},
+ {"name":"delete-older","action":{"type":"Delete"},"condition":{"olderThan":"7d"}}]
+JSON
+  gcloud artifacts repositories set-cleanup-policies "$AR_REPO" --location "$REGION" \
+    --policy="$policy" --no-dry-run --quiet >/dev/null 2>&1 || \
+    echo "  Note: could not set the image clean-up rule (harmless; old images just stay)."
+  rm -f "$policy"
+}
+AUTODEPLOY_OK=no
+if setup_autodeploy; then AUTODEPLOY_OK=yes
+else echo "  Note: automatic updates could not be set up (JARVIS itself is deployed and fine)."
+fi
+
 say "DONE. Open JARVIS at:  $BASE_URL"
+if [ "$AUTODEPLOY_OK" = yes ]; then
 cat <<MSG
 
-LAST STEP (once): tell Google this address. Google Cloud Console -> APIs & Services -> Credentials
--> jarvis-web, then add:
+Automatic updates are ready on Google's side. Last switch (once): tell Claude
+"auto-deploy is ready", or in GitHub open ${GH_REPO} -> Settings -> Secrets and variables
+-> Actions -> Variables and add  AUTODEPLOY = on,  GCP_PROJECT_ID = ${PROJECT},
+GCP_PROJECT_NUMBER = ${PROJECT_NUMBER}. After that, merging on GitHub is the whole update.
+MSG
+fi
+if [ "$QUICK" = no ]; then
+cat <<MSG
+
+FIRST INSTALL ONLY: tell Google this address. Google Cloud Console -> APIs & Services ->
+Credentials -> jarvis-web, then add:
    Authorised JavaScript origin :  $BASE_URL
    Authorised redirect URI      :  $BASE_URL/auth/callback
-and press Save (can take up to 5 minutes).
+and press Save (can take up to 5 minutes). Already done? Nothing to do.
 MSG
+fi

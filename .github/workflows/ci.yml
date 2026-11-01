@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:   # Actions tab -> ci -> Run workflow: re-test and re-deploy main by hand
 
 jobs:
   test:
@@ -69,3 +70,53 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: env.JARVIS_ANTHROPIC_API_KEY != ''
         with: { name: phase0-eval-report, path: evals/phase0/report.json }
+
+  # Deploy on merge (slice 5c). Runs only for main after the tests pass, and only once the
+  # owner has run deploy/cloudrun.sh (which sets up the keyless sign-in) and AUTODEPLOY=on is set
+  # under Settings -> Secrets and variables -> Actions -> Variables. GitHub proves who it is to
+  # Google with a short-lived token (Workload Identity Federation): no key is stored anywhere.
+  # The service keeps the settings and secrets the owner chose; only the code (image) changes.
+  deploy:
+    needs: [test, firestore]
+    if: >-
+      vars.AUTODEPLOY == 'on' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      PROJECT_NUMBER: ${{ vars.GCP_PROJECT_NUMBER }}
+      REGION: asia-south1
+      SERVICE: jarvis
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/jarvis-web
+          service_account: jarvis-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build and push the image
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${SERVICE}:${GITHUB_SHA}"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Roll out a new revision (settings and secrets unchanged)
+        run: gcloud run deploy "$SERVICE" --image "$IMAGE" --region "$REGION" --quiet
+      - name: Check JARVIS is healthy
+        run: |
+          URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')"
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS "$URL/health" | grep -q '"status":"ok"'; then
+              echo "::notice::JARVIS ${GITHUB_SHA::7} is live at $URL"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::The new version started but /health is not ok. Previous revisions are kept in Cloud Run."
+          exit 1

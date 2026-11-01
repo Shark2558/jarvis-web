@@ -48,6 +48,11 @@ where = ["src"]
     "static/fonts/*.txt",
     "static/vendor/*.js",
     "static/vendor/*.txt",
+    "static/vendor/ort/*.mjs",
+    "static/vendor/ort/*.wasm",
+    "static/vendor/ort/*.txt",
+    "static/wakeword/*.onnx",
+    "static/wakeword/*.txt",
 ]
 
 [tool.pytest.ini_options]

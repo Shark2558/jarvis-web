@@ -1,0 +1,24 @@
+Vendored onnxruntime-web for the on-device "Hey Jarvis" wake word (slice 9, decision D12).
+Served by src/jarvis/api/console.py under /static/vendor/ort-1.30.0/ (allow-listed, immutable).
+Verified by tests/test_wakeword_assets.py: every "sha256" line must match the file byte for byte.
+
+package:   onnxruntime-web 1.30.0 (MIT, Copyright (c) Microsoft Corporation)
+published: 2026-09-14 (npm registry)
+tarball:   https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.30.0.tgz
+integrity: sha512-q0y+JrrtukXSzsBWEMccVfqX25LRmosXHF+CaRJmg8pZClzcV7svNc4rKY3jL02Vb7QmRMDs1SigqR4CXAfKYQ==
+           (npm dist.integrity; the downloaded tarball matched it and dist.shasum
+           b88b09117992e6f486321e931a826fd2f7775377)
+licences:  LICENSE-onnxruntime.txt and ThirdPartyNotices-onnxruntime.txt from the v1.30.0 tag of
+           github.com/microsoft/onnxruntime (the npm package ships neither)
+fetched:   2026-11-01
+changes:   none (files are byte-identical to the upstream files named in brackets)
+
+Only the single-threaded WASM CPU build is vendored: the ES module, its Emscripten loader and the
+SIMD binary it instantiates (1.30.0 ships one binary for single- and multi-threaded use; the wake
+word sets env.wasm.numThreads = 1 and env.wasm.proxy = false, so no worker is ever started).
+
+sha256 219e6a1fc8a9938268d18efca3c91d310bd2f4a59bbd13744df5b2b7fc6cee3b 50126 ort.wasm.min.mjs [package/dist/ort.wasm.min.mjs]
+sha256 e13f7f94fc51b4ca72b12faeb1ee95f4ace6dfbc8939bc718aabdc0a27c4299b 24381 ort-wasm-simd-threaded.mjs [package/dist/ort-wasm-simd-threaded.mjs]
+sha256 3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2 14239897 ort-wasm-simd-threaded.wasm [package/dist/ort-wasm-simd-threaded.wasm]
+sha256 2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c 1073 LICENSE-onnxruntime.txt [onnxruntime v1.30.0 LICENSE]
+sha256 143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3 338088 ThirdPartyNotices-onnxruntime.txt [onnxruntime v1.30.0 ThirdPartyNotices.txt]

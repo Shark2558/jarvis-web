@@ -57,6 +57,31 @@ FONT_FILES = frozenset(
 THREE_RELEASE = "three-0.187.0"
 VENDOR_FILES = frozenset({"three.module.min.js"})
 
+# Vendored onnxruntime-web (MIT; LICENSE-onnxruntime.txt, ThirdPartyNotices and MANIFEST.txt with
+# the pinned sha256s beside it) for the on-device wake word: only the single-threaded WASM CPU
+# build — the ES module, its Emscripten loader and the binary it instantiates.
+ORT_RELEASE = "ort-1.30.0"
+ORT_FILES: dict[str, str] = {
+    "ort.wasm.min.mjs": _JS,
+    "ort-wasm-simd-threaded.mjs": _JS,
+    "ort-wasm-simd-threaded.wasm": "application/wasm",  # instantiateStreaming insists on it
+}
+_ORT = _VENDOR / "ort"
+
+# openWakeWord v0.5.1 release models (CC BY-NC-SA 4.0: personal, non-commercial use only —
+# wakeword/LICENSE.txt). Loaded by console-wakeword.js only when the owner switches it on.
+WAKEWORD_RELEASE = "oww-0.5.1"
+WAKEWORD_FILES = frozenset({"melspectrogram.onnx", "embedding_model.onnx", "hey_jarvis_v0.1.onnx"})
+_WAKEWORD = _STATIC / "wakeword"
+
+# The console CSP. 'wasm-unsafe-eval' lets the wake word compile onnxruntime's WebAssembly (and
+# nothing else: it does not allow eval or new Function); no worker, blob: or other host is needed.
+CONSOLE_CSP = (
+    "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
+    "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
+    "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
+
 
 def _settings(request: Request) -> Settings:
     return request.app.state.settings  # type: ignore[no-any-return]
@@ -72,11 +97,7 @@ async def console() -> HTMLResponse:
             "X-Content-Type-Options": "nosniff",
             "X-Frame-Options": "DENY",
             "Referrer-Policy": "no-referrer",
-            "Content-Security-Policy": (
-                "default-src 'none'; script-src 'self'; "
-                "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
-                "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
-            ),
+            "Content-Security-Policy": CONSOLE_CSP,
         },
     )
 
@@ -115,15 +136,29 @@ async def console_font(name: str) -> FileResponse:
     )
 
 
-@router.get("/static/vendor/{release}/{name}", include_in_schema=False)
-async def console_vendor(release: str, name: str) -> FileResponse:
-    if release != THREE_RELEASE or name not in VENDOR_FILES:
-        raise HTTPException(404, "not found")
+def _immutable(path: Path, media_type: str) -> FileResponse:
+    """A versioned vendored file: its release is in the URL, so it may be cached for a year."""
     return FileResponse(
-        _VENDOR / name,
-        media_type=_JS,
+        path,
+        media_type=media_type,
         headers={"Cache-Control": _IMMUTABLE, "X-Content-Type-Options": "nosniff"},
     )
+
+
+@router.get("/static/vendor/{release}/{name}", include_in_schema=False)
+async def console_vendor(release: str, name: str) -> FileResponse:
+    if release == THREE_RELEASE and name in VENDOR_FILES:
+        return _immutable(_VENDOR / name, _JS)
+    if release == ORT_RELEASE and name in ORT_FILES:
+        return _immutable(_ORT / name, ORT_FILES[name])
+    raise HTTPException(404, "not found")
+
+
+@router.get("/static/wakeword/{release}/{name}", include_in_schema=False)
+async def console_wakeword_model(release: str, name: str) -> FileResponse:
+    if release != WAKEWORD_RELEASE or name not in WAKEWORD_FILES:
+        raise HTTPException(404, "not found")
+    return _immutable(_WAKEWORD / name, "application/octet-stream")
 
 
 @router.get("/console/config", include_in_schema=False)

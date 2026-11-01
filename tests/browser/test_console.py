@@ -66,7 +66,7 @@ class Console:
         # The 404s the console handles by design: a backend without the connect flow, the morning
         # brief or long-term memory (those panels then say "Not available in this setup").
         url = str(msg.location.get("url", ""))
-        by_design = ("/v1/integrations", "/v1/brief/today", "/v1/memory")
+        by_design = ("/v1/integrations", "/v1/brief/today", "/v1/memory", "/v1/voice")
         if "404" in msg.text and url.endswith(by_design):
             return
         self.errors.append(f"console.error: {msg.text} @ {msg.location.get('url', '')}")

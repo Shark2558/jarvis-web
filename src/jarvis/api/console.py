@@ -33,12 +33,18 @@ APP_ASSETS: dict[str, str] = {
     "console-brief.js": _JS,  # morning Brief panel: today's brief, its settings and confirms
     "console-usage.js": _JS,  # Vitals: this month's AI spend in rupees and the owner's limit
     "console-memory.js": _JS,  # Memory panel: About you, facts, learning consent (slice 8)
+    "console-voice-capture.js": _JS,  # slice 9: microphone → 16 kHz frames, energy VAD, WAV
+    "console-voice-speech.js": _JS,  # slice 9: reply → speakable chunks, Web Audio playback queue
+    "console-voice.js": _JS,  # slice 9: Voice panel, voice settings, engines
+    "console-voice-mic.js": _JS,  # slice 9: composer mic, spoken turns, "Hey Jarvis" wiring
+    "voice-capture-worklet.js": _JS,  # slice 9: AudioWorkletProcessor (downsample to 16 kHz)
     "console-3d.js": _JS,  # three.js scenes (ES module; loads three lazily, 2D fallback)
     "console-3d-scenes.js": _JS,  # Core / Globe / Construct scene builders (ES module)
     "console-wakeword.js": _JS,  # on-device "Hey Jarvis" (openWakeWord port, slice 9 D12)
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",
+    "console-voice.css": "text/css",
 }
 
 # Self-hosted OFL fonts (licences beside them).

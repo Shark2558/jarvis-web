@@ -6,6 +6,11 @@ validate args → policy.decide → DENY  → audit, error result
                                 fails closed) → decide again
                              → ASK   → ConfirmationGate (existing contract) → awaiting | execute
                              → ALLOW → run → audit
+
+An ALLOW for a write (any risk above read-only) is tightened to ASK when the call comes from a
+spoken turn (`taint.spoken_in_context`: someone else in the room may have said it), and when the
+caller presents an approval token: a decided card always spends its token, so it can never run
+twice (a card made on a spoken turn is approved on screen, outside that turn).
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ from jarvis.tools.base import Preview, Tool
 from jarvis.tools.context import tool_context
 from jarvis.tools.policy import Effect, Policy
 from jarvis.tools.registry import ToolRegistry
+from jarvis.tools.taint import spoken_in_context
 
 log = get_logger(__name__)
 MAX_RESULT_CHARS = 12_000
@@ -78,6 +84,15 @@ class GatewayResult:
         return json.dumps({"status": self.outcome.value, "error": self.error})
 
 
+def _tightened(effect: Effect, risk: ActionRisk, confirmation_id: str | None) -> Effect:
+    """ALLOW → ASK for a write on a spoken turn, or when an approval token is presented."""
+    if effect is not Effect.ALLOW or risk is ActionRisk.READ_ONLY:
+        return effect
+    if confirmation_id is not None or spoken_in_context():
+        return Effect.ASK
+    return effect
+
+
 class Gateway:
     def __init__(
         self, *, registry: ToolRegistry, policy: Policy, gate: ConfirmationGate, audit: AuditTrail
@@ -115,7 +130,9 @@ class Gateway:
             return GatewayResult(GatewayOutcome.ERROR, error=str(exc))
 
         risk = tool.effective_risk(call.arguments)
-        effect = self.policy.decide(tool.name, risk, call.arguments)
+        effect = _tightened(
+            self.policy.decide(tool.name, risk, call.arguments), risk, confirmation_id
+        )
         card: str | None = None
         if effect is not Effect.DENY and tool.preview is not None:
             looked = await self._look_up(tool, call, risk, scope)
@@ -124,7 +141,9 @@ class Gateway:
             if looked.risk is not None and _RISK_RANK[looked.risk] > _RISK_RANK[risk]:
                 risk = looked.risk
             card = looked.summary
-            effect = self.policy.decide(tool.name, risk, call.arguments)
+            effect = _tightened(
+                self.policy.decide(tool.name, risk, call.arguments), risk, confirmation_id
+            )
         if effect is Effect.DENY:
             await self.audit.append(
                 agent=tool.agent,

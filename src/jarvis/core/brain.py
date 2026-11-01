@@ -100,6 +100,11 @@ def _record_exchange(session: Session, d: _Decision, trace_id: str | None) -> No
     )
 
 
+def _owner_turn(text: str, req: ChatRequest, trace_id: str | None) -> Turn:
+    """The owner's message, marked with how it arrived (a spoken one is never learned from)."""
+    return Turn(role=Role.USER, content=text, trace_id=trace_id, channel=req.channel)
+
+
 @dataclass(frozen=True)
 class _Prompt:
     """One turn's prompt: the persona (read once per turn) and the per-request trailer."""
@@ -356,7 +361,7 @@ class Brain:
         spec = self._resolve_brain(session, req)
         await self._admit(req.user_id, spec)  # refused → nothing stored, nothing called
 
-        session.append(Turn(role=Role.USER, content=text, trace_id=trace_id))
+        session.append(_owner_turn(text, req, trace_id))
         # persist the user turn before the LLM call so a crash never loses owner input
         await self.store.save(session)
 
@@ -507,10 +512,12 @@ class Brain:
                 )
             )
             results: list = []
-            # what the model had seen when it asked for these calls: other people's text?
+            # what the model had seen when it asked for these calls: other people's text? A
+            # spoken message may be: every write it leads to becomes an approval card.
             untrusted = untrusted_seen(msgs, self.gateway.registry)
+            spoken = req.channel == "voice"
             for call in completion.tool_calls:
-                with context_trust(untrusted=untrusted):
+                with context_trust(untrusted=untrusted, spoken=spoken):
                     gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
                 if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending:
                     pending.append(PendingApproval.from_action(gr.pending))
@@ -745,7 +752,7 @@ class Brain:
         spec = self._resolve_brain(session, req)
         router = self.brains.router_for(spec.id)
         await self._admit(req.user_id, spec)  # turn-level: refused → nothing stored
-        session.append(Turn(role=Role.USER, content=text, trace_id=trace_id))
+        session.append(_owner_turn(text, req, trace_id))
         await self.store.save(session)
 
         messages = self._window_for(session, spec)

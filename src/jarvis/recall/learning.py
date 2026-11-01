@@ -11,8 +11,9 @@
     (error, cancel on shutdown): meter as "memory" (an estimate if no usage came back), mark
     the lease failed if nothing was applied, audit the result. See `jarvis.recall.lease`.
 
-The input is the owner's own messages only: user turns without blocks (never tool results,
-approval narration, or replies), minus pasted third-party text (`pasted.looks_pasted`). Errors
+The input is the owner's own typed messages only: user turns without blocks (never tool results,
+approval narration, or replies), minus pasted third-party text (`pasted.looks_pasted`) and minus
+spoken messages (`Turn.channel == "voice"`: a TV or a guest may have said them). Errors
 never reach the owner. Audit and logs carry ids and counts, never fact text.
 """
 
@@ -120,11 +121,13 @@ class LearnResult:
 
 
 def snapshot(session: Session) -> Snapshot:
-    """Owner messages only: user turns with text and no blocks, and not pasted text."""
+    """Owner messages only: typed user turns with text and no blocks, and not pasted text. A
+    spoken message (`channel: voice`) may be anyone in the room: never learned from."""
     owner = tuple(
         OwnerLine(i, t.content, t.created_at)
         for i, t in enumerate(session.turns)
         if t.role is Role.USER
+        and t.channel != "voice"
         and not t.blocks
         and t.content.strip()
         and not looks_pasted(t.content)

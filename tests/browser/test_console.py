@@ -142,6 +142,37 @@ def test_history_restores_an_earlier_conversation(console: Console) -> None:
     assert console.errors == []
 
 
+def test_session_conflict_reloads_the_conversation_and_says_so(console: Console) -> None:
+    """Slice 10 A3: another window saved this conversation first (409 session_conflict). The
+    console shows what the server holds (reload) and one plain line — not an error."""
+    console.open()
+    console.send("first message")
+    reloads: list[str] = []
+    console.page.on(
+        "request",
+        lambda r: reloads.append(r.url) if "/v1/sessions/sess_" in r.url else None,
+    )
+    conflict = {"error": "session_conflict", "detail": "changed in another window"}
+    console.page.route(
+        "**/v1/chat",
+        lambda r: r.fulfill(status=409, content_type="application/json", body=json.dumps(conflict)),
+    )
+    console.page.locator("#input").fill("second message")
+    console.page.locator("#send").click()
+    line = console.page.locator("#log .sys", has_text="changed in another window")
+    line.wait_for()
+    assert str(line.text_content()).startswith(
+        "This conversation changed in another window — reloaded."
+    )
+    assert line.get_attribute("role") == "status"  # a note, not an alert
+    assert reloads, "the conversation was not reloaded from the server"
+    users = console.page.locator(".row.user .bubble")
+    assert users.count() == 1 and users.text_content() == "first message"  # what the server holds
+    assert console.page.locator("#log .sys.error").count() == 0
+    assert console.page.locator("#send").is_disabled() is True  # idle again, composer empty
+    assert [e for e in console.errors if "409" not in e] == []
+
+
 def test_switching_night_to_day_changes_the_surface(console: Console) -> None:
     console.open()
     html = console.page.locator("html")

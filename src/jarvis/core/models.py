@@ -12,7 +12,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from jarvis.core.guardrails import PendingAction
 from jarvis.llm.base import ContentBlock, Role, Usage
@@ -59,6 +59,9 @@ class Session(BaseModel):
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cost_usd: float = 0.0
+    # Storage bookkeeping, never serialised: the stored revision this copy was read at or last
+    # saved as (the session store's compare-and-set, slice 10). Opaque outside the store.
+    _store_mark: Any = PrivateAttr(default=None)
 
     def append(self, turn: Turn) -> None:
         self.turns.append(turn)

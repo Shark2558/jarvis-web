@@ -18,6 +18,12 @@ class SessionNotFound(LookupError):
     pass
 
 
+class SessionConflict(RuntimeError):
+    """The conversation changed in another process (another window on another instance) since
+    this copy was read, in a way this save cannot be merged with. Nothing was saved; the caller
+    reloads (API: 409 session_conflict)."""
+
+
 class SessionStore(ABC):
     @abstractmethod
     async def get(self, session_id: str) -> Session | None: ...

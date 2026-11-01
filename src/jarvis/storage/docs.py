@@ -127,6 +127,7 @@ class MemoryDocs(Docs):
         self.sets = 0
         self.deletes = 0
         self.batch_sizes: list[int] = []
+        self.tx_sizes: list[int] = []  # writes per committed transaction (Firestore: ≤ MAX_BATCH)
         self.log: list[Op] = []
 
     async def get(self, path: str) -> Doc | None:
@@ -180,4 +181,5 @@ class MemoryDocs(Docs):
             tx = _MemoryTx(self)
             result = await fn(tx)
             self._apply(tx.ops)
+            self.tx_sizes.append(len(tx.ops))
             return result

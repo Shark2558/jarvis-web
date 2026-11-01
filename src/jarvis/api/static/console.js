@@ -621,10 +621,19 @@
     } catch (e) {
       showTyping(false);
       if (e.status === 402) limitReached(e);
+      else if (isConflict(e)) await conflictReload();
       else { addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); note('error', 'Reply failed'); }
     }
     finally { busy(false); refocus(); emit('jarvis:turn-end', { channel, ok }); }
     return ok;
+  }
+  /** 409 session_conflict (slice 10): another window saved this conversation first, so nothing
+   *  was saved here. Show what the server holds now, then say so in one plain line. */
+  function isConflict(e) { return !!e && e.status === 409 && e.code === 'session_conflict'; }
+  async function conflictReload() {
+    if (state.sessionId) await loadConversation(state.sessionId);
+    addMsg('sys', 'This conversation changed in another window — reloaded. Send your message again if it is still needed.');
+    note('info', 'Conversation reloaded');
   }
   /** 402 budget_reached: not a crash, a JARVIS note in the conversation with the server's own
    *  words (rupees); Vitals reloads the month so its bar shows the limit reached. */
@@ -652,7 +661,9 @@
       handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } }), { decided: true }));
     } catch (e) {
       showTyping(false);
-      if (e.status === 402) limitReached(e); else addMsg('error', `Couldn't ${action}. ` + e.message);
+      if (e.status === 402) limitReached(e);
+      else if (isConflict(e)) await conflictReload();
+      else addMsg('error', `Couldn't ${action}. ` + e.message);
       refreshSide();
     }
     finally { busy(false); }

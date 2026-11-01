@@ -7,6 +7,9 @@ POST /v1/chat/stream          one turn, text/plain streamed deltas (402 first if
                               final event: "\x1e" + {"memory_used": [{id, text}]} (slice 8).
                               The reply text never contains "\x1e" (stripped from the model's
                               deltas); clients parse the JSON after the LAST separator.
+                              If the conversation changed in another window meanwhile
+                              (slice 10), the final event is {"error": "session_conflict",
+                              "detail": ...} and the reply was not saved.
 GET  /v1/sessions             list the caller's sessions (+ total_cost_inr)
 GET  /v1/sessions/{id}        full transcript (audit / replay) (+ total_cost_inr)
 DELETE /v1/sessions/{id}      forget a session (owner's delete right)
@@ -33,11 +36,15 @@ from jarvis.core.models import (
     SessionSummary,
     SessionView,
 )
-from jarvis.memory.base import SessionNotFound, SessionStore
+from jarvis.memory.base import SessionConflict, SessionNotFound, SessionStore
 from jarvis.tools.audit import AuditEntry
 
 router = APIRouter()
 STREAM_FINAL = "\x1e"  # ASCII record separator: the reply text ends, the final event follows
+CONFLICT_DETAIL = (
+    "This conversation changed in another window, so this message was not saved. "
+    "Reload the conversation and send it again."
+)
 
 
 # ---- dependencies --------------------------------------------------------------------------
@@ -126,10 +133,15 @@ async def chat_stream(
 async def _with_final_event(brain: Brain, req: ChatRequest) -> AsyncIterator[str]:
     """The reply's deltas, then one final event (only when the reply finished)."""
     meta = StreamMeta()
-    async for delta in brain.chat_stream(req, meta=meta):
-        text = delta.replace(STREAM_FINAL, "")  # model text can never forge the final event
-        if text:
-            yield text
+    try:
+        async for delta in brain.chat_stream(req, meta=meta):
+            text = delta.replace(STREAM_FINAL, "")  # model text can never forge the final event
+            if text:
+                yield text
+    except SessionConflict:  # the 200 is already sent: the final event says what happened
+        conflict = {"error": "session_conflict", "detail": CONFLICT_DETAIL}
+        yield STREAM_FINAL + json.dumps(conflict, ensure_ascii=False)
+        return
     used = [m.model_dump() for m in meta.memory_used]
     yield STREAM_FINAL + json.dumps({"memory_used": used}, ensure_ascii=False)
 

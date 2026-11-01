@@ -428,6 +428,19 @@ def _voice_panel(c: Console) -> Any:
 
 
 # ================================================================== pure pieces (in the page)
+@pytest.fixture(scope="module")
+def pure(browser: Any, server_url: str) -> Iterator[Any]:
+    """One console page, never signed in, for the pure helpers (chunker, WAV, VAD): no /v1 calls,
+    so these many quick cases don't spend the app's per-IP rate limit the other tests need."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    page.route(re.compile(r".*/(v1|auth|connect|internal)/.*"), lambda r: r.abort())
+    page.goto(server_url + "/")
+    page.wait_for_function("() => !!(window.JarvisSpeechChunker && window.JarvisVad)")
+    yield page
+    ctx.close()
+
+
 CHUNK_JS = """([text, deltas]) => {
   const c = window.JarvisSpeechChunker.create({ honorific: 'Sir' });
   let out = [];
@@ -491,21 +504,13 @@ CHUNK_JS = """([text, deltas]) => {
         ("**Bold** move, J. K. Rowling said.", ["**Bold** move, J. K. Rowling said."]),
     ],
 )
-def test_chunker_splits_speakable_sentences(
-    make: Callable[..., Console], text: str, expected: list[str]
-) -> None:
-    c = make()
-    c.open()
-    assert c.page.evaluate(CHUNK_JS, [text, False]) == expected
-    assert c.page.evaluate(CHUNK_JS, [text, True]) == expected  # streamed char by char: the same
+def test_chunker_splits_speakable_sentences(pure: Any, text: str, expected: list[str]) -> None:
+    assert pure.evaluate(CHUNK_JS, [text, False]) == expected
+    assert pure.evaluate(CHUNK_JS, [text, True]) == expected  # streamed char by char: the same
 
 
-def test_chunker_gives_the_first_sentence_at_once_and_packs_the_rest(
-    make: Callable[..., Console],
-) -> None:
-    c = make()
-    c.open()
-    got = c.page.evaluate(
+def test_chunker_gives_the_first_sentence_at_once_and_packs_the_rest(pure: Any) -> None:
+    got = pure.evaluate(
         """() => {
       const c = window.JarvisSpeechChunker.create({ honorific: 'Ma\\'am' });
       const first = c.push('Good evening. S');
@@ -525,10 +530,8 @@ def test_chunker_gives_the_first_sentence_at_once_and_packs_the_rest(
     assert got["notice"] == ["The details are on screen, Ma'am."]
 
 
-def test_wav_header_is_pcm16_mono_16k(make: Callable[..., Console]) -> None:
-    c = make()
-    c.open()
-    data = c.page.evaluate(
+def test_wav_header_is_pcm16_mono_16k(pure: Any) -> None:
+    data = pure.evaluate(
         """() => {
       const a = new Int16Array(1280).map((_, i) => i - 640), b = new Int16Array(1280).fill(-32768);
       return Array.from(new Uint8Array(window.JarvisWav.encode([a, b])));
@@ -562,19 +565,17 @@ VAD_JS = """([pattern]) => {
 }"""
 
 
-def test_vad_start_end_timeout_and_max(make: Callable[..., Console]) -> None:
-    c = make()
-    c.open()
+def test_vad_start_end_timeout_and_max(pure: Any) -> None:
     # speech after 1 s: starts on its 2nd loud frame, ends after 1.2 s (15 frames) of silence
-    got = c.page.evaluate(VAD_JS, [[["quiet", 12], ["loud", 20], ["quiet", 30]]])
+    got = pure.evaluate(VAD_JS, [[["quiet", 12], ["loud", 20], ["quiet", 30]]])
     assert [e["type"] for e in got] == ["start", "end"]
     assert got[0]["at"] == 13 and got[1]["at"] == 12 + 20 + 15 - 1
     assert 20 + 4 <= got[1]["frames"] <= 20 + 4 + 2 + 5 + 1  # pre-roll + speech + a short tail
     # nobody speaks: 6 s → timeout (75 frames of 80 ms)
-    got = c.page.evaluate(VAD_JS, [[["quiet", 100]]])
+    got = pure.evaluate(VAD_JS, [[["quiet", 100]]])
     assert got == [{"at": 74, "type": "timeout", "frames": None}]
     # someone never stops: 30 s cap (375 frames)
-    got = c.page.evaluate(VAD_JS, [[["loud", 400]]])
+    got = pure.evaluate(VAD_JS, [[["loud", 400]]])
     assert [e["type"] for e in got] == ["start", "max"] and got[1]["at"] == 374
 
 

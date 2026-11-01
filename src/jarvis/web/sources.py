@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 MAX_URL_CHARS = 2048
 TITLE_LIMIT = 200
@@ -27,11 +27,13 @@ _TRAILING = ".,;:!?'\"*>]}"
 
 
 class Source(BaseModel):
-    """One numbered web source a reply cited (`n` is the [n] in the text)."""
+    """One numbered web source a reply cited (`n` is the [n] in the text). Built only by the
+    ledger from normalised, capped values; no length constraints here on purpose, so a stored
+    turn can never make its whole conversation unreadable. The console re-checks every field."""
 
-    n: int = Field(ge=1)
-    title: str = Field(max_length=TITLE_LIMIT)
-    url: str = Field(max_length=MAX_URL_CHARS)
+    n: int
+    title: str
+    url: str
     domain: str
 
 

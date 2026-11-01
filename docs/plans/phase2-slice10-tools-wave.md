@@ -139,6 +139,16 @@ privacy policy <https://www.tavily.com/privacy> (last updated 24 Nov 2025).
 - **http results are dropped** (only https is ever numbered, read or shown).
 - **Spoken replies** name the source in words instead of `[n]` (the voice chunker would read the
   numbers aloud), so they carry no chips.
+- **Results are fitted to the gateway's 12,000-character cut** (snippets, then titles, then the
+  last results shrink; page text shrinks) so a fence is never cut open. The gateway serialises with
+  `ensure_ascii`, so Indic text costs ~6 characters a letter: a Malayalam page yields ~1,900
+  characters. Open question for integration: `ensure_ascii=False` in `GatewayResult.for_model`.
+- **Brain footprint**: one `web_conversation(session)` around each gateway call (and the approve
+  path), `sources` on the reply turn / response / stream meta. `brain.py` is now exactly at the
+  800-line test ceiling (`tests/test_voice_persona.py`).
+- **Console**: `console-web.js` loads before `console.js` (a restored conversation always finds
+  it); two one-line hooks in `console.js`; Vitals row "Web search"; CSS block at the end of
+  `console.css`; CSP unchanged.
 
 ## C — To-do list on Google Tasks
 - **D-C1 Google Tasks** over Todoist: no new account, already-linked Google, shows in Gmail/Calendar

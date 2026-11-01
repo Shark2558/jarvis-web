@@ -187,6 +187,12 @@ def test_only_cited_sources_from_the_ledger_are_returned() -> None:
     assert cited_sources("A [1]", {}) == []
 
 
+def test_an_odd_stored_source_never_makes_a_turn_unreadable() -> None:
+    odd = {"n": 0, "title": "t" * 5000, "url": "https://x.example/" + "a" * 3000, "domain": ""}
+    turn = Turn.model_validate({"role": "assistant", "content": "x", "sources": [odd]})
+    assert turn.sources[0].n == 0  # kept as stored; the console re-checks before showing it
+
+
 # ---- the private-query guard --------------------------------------------------------------------
 
 

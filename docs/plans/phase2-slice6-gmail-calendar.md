@@ -99,11 +99,28 @@ Integrations panel in the dock (icon: link): Google — Connected as <email> / N
   re-binds the new secret. Default brain prompt accepts `claude`.
 - Settings: `token_key`, `google_tools_enabled` (default true when auth_mode=google).
 
-## Pipeline items (same PR)
+## Pipeline items (same PR) — DONE 2026-11-01 (branch `slice6-pipeline`)
 - Playwright smoke job in CI (`browser` job: starts the app with the mock brain, runs
   `tests/browser/test_console.py`: load, send, approve, Integrations panel renders, zero JS errors).
-- `jarvis chat --brain <id>`.
+  Status: `tests/browser/` (10 tests, `@pytest.mark.browser`, opt-in with `JARVIS_BROWSER_TESTS=1`,
+  `make browser-test`); CI job `browser` (SHA-pinned, Chromium via `playwright install --with-deps`),
+  `deploy` now needs it. Covers: zero console errors + zero CSP violations, send → reply, History
+  restore, Night → Day (remembered), Integrations in all four states (404 "Not available", not
+  connected, connected + two-step Disconnect with the CSRF header, needs reconnecting),
+  `?connected=google` return, 390 px no horizontal scroll. "Approve" is not covered yet (the mock
+  brain has no scripted tool call over HTTP) — add once a `/v1` test hook exists.
+- `jarvis chat --brain <id>`. Status: done; unknown id exits 2 listing the configured brains.
+  The CLI now builds the full `BrainRegistry` (was: default brain only).
 - Docker image installs from a hash-locked `requirements.lock` (pip-compile --generate-hashes).
+  Status: done (`requirements.lock`, Python 3.12, `--strip-extras --allow-unsafe`); Dockerfile:
+  `pip install --require-hashes -r requirements.lock` then `pip install --no-deps .`; `make lock`
+  regenerates it — **re-run after any change to `[project].dependencies`** (e.g. adding
+  `cryptography` for the vault; it is already in the lock transitively via authlib).
+- Console Integrations panel. Status: done (`console.html/js/css`, `console-deck.js/css`): dock
+  entry INTEGRATIONS (phones: "Links" tab), states Not connected / Connected as `<email>` + plain-word
+  scopes / amber Needs reconnecting / Not available (404), two-step Disconnect via `api()` (CSRF
+  header), `?connected=google` opens the panel with a success note and strips the query, rail
+  readout GOOGLE · LINKED / NOT LINKED / RECONNECT (`jarvis:integrations` event).
 
 ## Evals (criteria proposed; owner to confirm)
 - `evals/slice6/`: 20 calendar questions vs a fixture calendar → ≥ 95 % correct; **0** writes

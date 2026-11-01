@@ -11,6 +11,13 @@ An ALLOW for a write (any risk above read-only) is tightened to ASK when the cal
 spoken turn (`taint.spoken_in_context`: someone else in the room may have said it), and when the
 caller presents an approval token: a decided card always spends its token, so it can never run
 twice (a card made on a spoken turn is approved on screen, outside that turn).
+
+Slice 10 D: the policy is built per call — the configured rules plus the owner's own (Approvals →
+Permissions) for the user in the call's scope. The owner's rules are appended, so DENY still
+wins, an R3 call still asks, and the tightening above still applies after them: an owner's
+"Allow" never relaxes a spoken turn or a tainted round. A refusal by an owner rule tells the model
+in plain words ("switched off by the owner in Permissions …"); the audit records the rule's
+source. When the owner's rules can't be read, nothing runs (fail closed).
 """
 
 from __future__ import annotations
@@ -32,8 +39,8 @@ from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
 from jarvis.tools.audit import AuditTrail, args_hash
 from jarvis.tools.base import Preview, Tool
-from jarvis.tools.context import tool_context
-from jarvis.tools.policy import Effect, Policy
+from jarvis.tools.context import ToolContext, tool_context
+from jarvis.tools.policy import Effect, OwnerRules, Policy
 from jarvis.tools.registry import ToolRegistry
 from jarvis.tools.taint import spoken_in_context
 
@@ -95,9 +102,16 @@ def _tightened(effect: Effect, risk: ActionRisk, confirmation_id: str | None) ->
 
 class Gateway:
     def __init__(
-        self, *, registry: ToolRegistry, policy: Policy, gate: ConfirmationGate, audit: AuditTrail
+        self,
+        *,
+        registry: ToolRegistry,
+        policy: Policy,
+        gate: ConfirmationGate,
+        audit: AuditTrail,
+        rules: OwnerRules | None = None,
     ) -> None:
         self.registry, self.policy, self.gate, self.audit = registry, policy, gate, audit
+        self.rules = rules  # the owner's own rules (slice 10 D); None: configured rules only
 
     async def pending(self) -> list[PendingAction]:
         return await self.gate.pending()
@@ -130,9 +144,10 @@ class Gateway:
             return GatewayResult(GatewayOutcome.ERROR, error=str(exc))
 
         risk = tool.effective_risk(call.arguments)
-        effect = _tightened(
-            self.policy.decide(tool.name, risk, call.arguments), risk, confirmation_id
-        )
+        policy = await self._policy_for(tool, call, risk, scope)
+        if isinstance(policy, GatewayResult):
+            return policy
+        effect = _tightened(policy.decide(tool.name, risk, call.arguments), risk, confirmation_id)
         card: str | None = None
         if effect is not Effect.DENY and tool.preview is not None:
             looked = await self._look_up(tool, call, risk, scope)
@@ -142,19 +157,10 @@ class Gateway:
                 risk = looked.risk
             card = looked.summary
             effect = _tightened(
-                self.policy.decide(tool.name, risk, call.arguments), risk, confirmation_id
+                policy.decide(tool.name, risk, call.arguments), risk, confirmation_id
             )
         if effect is Effect.DENY:
-            await self.audit.append(
-                agent=tool.agent,
-                tool=tool.name,
-                risk=risk,
-                outcome="denied",
-                args=call.arguments,
-                detail="policy",
-            )
-            log.warning("tool denied by policy", extra={"tool": tool.name})
-            return GatewayResult(GatewayOutcome.DENIED, error="blocked by policy")
+            return await self._denied(tool, call, risk, policy)
 
         if effect is Effect.ASK:
             # An ASK is confirm-before-commit whatever the declared class (a policy rule may
@@ -165,6 +171,7 @@ class Gateway:
                 risk=ActionRisk.IRREVERSIBLE,
                 summary=card if card is not None else tool.summary(call.arguments),
                 scope=scope,
+                tool_risk=risk,  # what the call itself can do: R3 may need a passkey
             )
             try:
                 await self.gate.check(action, confirmation_id=confirmation_id)
@@ -231,6 +238,51 @@ class Gateway:
             tool, call, risk, "executed", "confirmed" if confirmation_id else ""
         )
         return GatewayResult(GatewayOutcome.EXECUTED, result=out)
+
+    async def _policy_for(
+        self, tool: Tool, call: ToolCall, risk: ActionRisk, scope: str | None
+    ) -> Policy | GatewayResult:
+        """The configured rules plus the owner's own for the user in `scope`. Fail closed: when
+        the owner's rules can't be read, nothing is proposed and nothing runs."""
+        if self.rules is None or not scope:
+            return self.policy
+        try:
+            owner = await self.rules.rules_for(ToolContext.from_scope(scope).user_id)
+            return self.policy.with_rules(owner)
+        except Exception as exc:  # noqa: BLE001 — reported, never raised
+            log.error(
+                "owner permissions unreadable; nothing run",
+                extra={"tool": tool.name, "error": type(exc).__name__},
+            )
+            await self.audit.append(
+                agent=tool.agent,
+                tool=tool.name,
+                risk=risk,
+                outcome="error",
+                args=call.arguments,
+                detail="permissions unavailable: " + type(exc).__name__,
+            )
+            return GatewayResult(
+                GatewayOutcome.ERROR,
+                error="could not check the owner's permission settings, so nothing was done",
+            )
+
+    async def _denied(
+        self, tool: Tool, call: ToolCall, risk: ActionRisk, policy: Policy
+    ) -> GatewayResult:
+        rule = policy.denied_by(tool.name, risk, call.arguments)
+        source = rule.source if rule is not None else "config"
+        await self.audit.append(
+            agent=tool.agent,
+            tool=tool.name,
+            risk=risk,
+            outcome="denied",
+            args=call.arguments,
+            detail=f"policy:{source}",
+        )
+        log.warning("tool denied by policy", extra={"tool": tool.name, "source": source})
+        reason = rule.reason if rule is not None and rule.reason else "blocked by policy"
+        return GatewayResult(GatewayOutcome.DENIED, error=reason)
 
     async def _look_up(
         self, tool: Tool, call: ToolCall, risk: ActionRisk, scope: str | None

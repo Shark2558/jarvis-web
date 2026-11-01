@@ -8,6 +8,12 @@ Two credentials are accepted:
 
 Cookie-authenticated writes must also carry `X-Requested-With: JARVIS` (CSRF defence: a
 cross-site form cannot set custom headers, and we serve no CORS headers).
+
+Slice 10 D: the cookie also records WHEN the owner last authenticated with Google (`auth_at`: the
+ID token's `auth_time` when Google sends one, else the moment the sign-in completed). For 5
+minutes after that, a sign-in stands in for a passkey to lower protection (remove a passkey,
+switch the requirement off) — the recovery path when a passkey is lost. `/auth/login?reauth=1`
+asks Google to authenticate again (`max_age=0`) and returns to `/?reauth=done`.
 """
 
 from __future__ import annotations
@@ -31,6 +37,12 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 SESSION_EMAIL_KEY = "email"
 SESSION_ISSUED_KEY = "iat"
 SESSION_ABSOLUTE_MAX_S = 24 * 60 * 60  # the cookie's max_age slides; this one does not
+SESSION_AUTH_AT_KEY = "auth_at"  # when Google last authenticated the owner (epoch seconds)
+SESSION_REAUTH_KEY = "reauth"  # a re-authentication is under way (set by /auth/login?reauth=1)
+FRESH_SIGN_IN_S = 5 * 60
+REAUTH_MAX_AGE_S = 0  # OIDC max_age: Google must authenticate the owner again now
+AUTH_TIME_OLDEST_S = 30 * 24 * 60 * 60
+AUTH_TIME_SKEW_S = 60
 
 
 def _now() -> float:
@@ -132,9 +144,33 @@ def _callback_url(s: Settings) -> str:
     return s.public_base_url.rstrip("/") + "/auth/callback"
 
 
+def fresh_sign_in_left(request: Request, s: Settings) -> int | None:
+    """Seconds left in which the owner's last Google sign-in counts as proof (0 when it is too
+    old or unknown); None when the caller is not a signed-in browser (bearer token)."""
+    if session_email(request, s) is None:
+        return None
+    at = request.session.get(SESSION_AUTH_AT_KEY)
+    if not isinstance(at, int | float) or isinstance(at, bool):
+        return 0
+    return max(0, int(FRESH_SIGN_IN_S - (_now() - at)))
+
+
+def _auth_at(info: Any, now: float) -> float:
+    """Google's `auth_time` when it is sane, else now (the sign-in just completed)."""
+    at = info.get("auth_time") if hasattr(info, "get") else None
+    if isinstance(at, int | float) and not isinstance(at, bool):
+        if now - AUTH_TIME_OLDEST_S < at <= now + AUTH_TIME_SKEW_S:
+            return float(min(at, now))
+    return now
+
+
 @auth_router.get("/login")
-async def login(request: Request, s: Settings = Depends(_settings)) -> Any:
-    return await _oauth(request).google.authorize_redirect(request, _callback_url(s))
+async def login(request: Request, s: Settings = Depends(_settings), reauth: int = 0) -> Any:
+    extra: dict[str, Any] = {}
+    if reauth:
+        request.session[SESSION_REAUTH_KEY] = True
+        extra["max_age"] = REAUTH_MAX_AGE_S
+    return await _oauth(request).google.authorize_redirect(request, _callback_url(s), **extra)
 
 
 @auth_router.get("/callback")
@@ -148,6 +184,7 @@ async def callback(request: Request, s: Settings = Depends(_settings)) -> Any:
     info = token.get("userinfo") or {}
     email = str(info.get("email") or "").lower()
     verified = bool(info.get("email_verified"))
+    was_reauth = request.session.get(SESSION_REAUTH_KEY) is True
     request.session.clear()
     if not email or not verified or email not in s.owner_emails:
         log.warning(
@@ -157,10 +194,12 @@ async def callback(request: Request, s: Settings = Depends(_settings)) -> Any:
             status_code=403,
             content={"error": "not_owner", "detail": "This JARVIS belongs to someone else."},
         )
+    now = _now()
     request.session[SESSION_EMAIL_KEY] = email
-    request.session[SESSION_ISSUED_KEY] = _now()
-    log.info("owner signed in")
-    return RedirectResponse(url="/", status_code=302)
+    request.session[SESSION_ISSUED_KEY] = now
+    request.session[SESSION_AUTH_AT_KEY] = _auth_at(info, now)
+    log.info("owner signed in", extra={"reauth": was_reauth})
+    return RedirectResponse(url="/?reauth=done" if was_reauth else "/", status_code=302)
 
 
 @auth_router.post("/logout")

@@ -20,6 +20,7 @@ dependencies = [
     "httpx>=0.27",
     "google-cloud-firestore>=2.19,<3",
     "cryptography>=42",
+    "webauthn>=3.0.1,<4",  # py_webauthn (Duo Labs, BSD-3-Clause): passkeys for R3 approvals
 ]
 
 [project.optional-dependencies]

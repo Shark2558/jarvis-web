@@ -54,12 +54,21 @@ class PendingAction(BaseModel):
     risk: ActionRisk
     summary: str = Field(description="Plain-language 'this will…' shown to the owner")
     scope: str | None = Field(default=None, description="session/user the action belongs to")
+    # Slice 10 D: `risk` is the gate's view (every card is confirm-before-commit, so it reads
+    # IRREVERSIBLE); `tool_risk` is what the call itself can do. A passkey is asked for only when
+    # it is IRREVERSIBLE — or unknown (a card stored before this field existed): fail safe.
+    tool_risk: ActionRisk | None = Field(default=None, description="Risk of the call itself")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC) + timedelta(minutes=10))
 
     @property
     def expired(self) -> bool:
         return datetime.now(UTC) > self.expires_at
+
+    @property
+    def irreversible(self) -> bool:
+        """True when the call itself can't be undone (or its risk is unknown: fail safe)."""
+        return self.tool_risk is None or self.tool_risk is ActionRisk.IRREVERSIBLE
 
 
 class ConfirmationRequired(PermissionError):

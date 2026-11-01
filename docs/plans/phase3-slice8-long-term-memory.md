@@ -27,6 +27,61 @@ F-184, F-185). In scope now: Phase 2's gateway, audit and billing gate exist.
 
 Name: package `jarvis.recall` (`jarvis.memory` is the Phase 0 session store; do not rename it).
 
+### Deviations (backend build, 2026-11-01)
+Where the build differs from or adds to the design above, and why. The §5 paths, bodies, error
+codes and field names are as written; these are the details §5 left open.
+
+1. **Stream final event.** `/v1/chat/stream` was plain text with no events. It now ends with an
+   ASCII record separator and one JSON object: `"\x1e" + {"memory_used": [{id, text}]}` (always
+   sent when the reply finished; absent when the stream broke). `Brain.chat_stream(req,
+   meta=StreamMeta())` fills `meta.memory_used` for the route; the CLI keeps plain deltas.
+   `tests/test_api.py::test_chat_stream` was updated for the final event.
+2. **Response shapes §5 left open.** `PUT /v1/memory/settings` → `{use, learn,
+   learn_consented_at}`; `PUT /v1/memory/profile/{label}` → the whole profile `{about,
+   preferences, people, work}`; `POST`/`PATCH /v1/memory/facts` → 200 + the fact (all §3
+   fields); a duplicate POST returns the existing fact. `DELETE` routes → 204. Other errors use
+   the app envelope: unknown label / fact id → 404 `not_found`; import over 512 KB → 413
+   `too_large`; not an export, or `confirm` ≠ `FORGET` → 422 `input_rejected`; storage down or
+   a document unreadable → 503 `memory_unavailable` (fail closed, never overwritten). Bodies
+   are strict (`confirm_spend` must be the JSON literal `true`). `learn_cost_note_inr` is a
+   sentence (≤ 300 chars, rupees only), like the brief's `ai_cost_note`.
+3. **`memory_save` escalation is stricter than "entered this turn".** The card appears whenever
+   untrusted tool output is in the context the model saw when it asked (this turn's rounds or
+   earlier turns still in the window; `jarvis.tools.taint`, computed per round from the exact
+   messages sent). Outside a Brain turn (approval execution, scripts) the flag defaults to
+   untrusted, which also makes an approved card consume its token. Only the memory tools are
+   `trusted_output`.
+4. **`memory_forget(query)` only looks things up.** With `ids` it is R3 with a card listing each
+   fact's exact text (looked up first; unknown ids → nothing proposed). With only `query` it
+   returns candidates (read-only) and the model must call again with ids — so what the owner
+   approves is exactly what is deleted (a query re-run at approval time could match more).
+5. **Storage ceiling 700 facts** (500 active + history) = 7 shards of 100, so a cold reload stays
+   ≤ 8 reads. At the ceiling the oldest history is purged before its 30 days; active facts are
+   never touched. Use counters (`last_used_at`, `use_count`) live in the header, buffered in
+   process and flushed at most every 15 minutes in the background (1 read + 1 write), so they
+   never invalidate the shard cache. Learning cursors (per conversation, newest 50) and the
+   day's run count also live in the header.
+6. **Sensitive filter.** As D9, plus passport / voter-ID / licence numbers stated with their word
+   and access keys (`sk-…`, `AKIA…`, `ghp_…`); NFKC, invisible characters dropped, line breaks
+   read as separators. Postal PIN codes pass. Learned facts additionally drop on a
+   special-category keyword check (health, religion, caste, politics, sexuality); facts the
+   owner tells or adds do not (their choice), the numeric/secret filter applies to every path.
+7. **Learning details.** The extraction call uses the conversation's own brain (always one with
+   `tools_allowed`), FAST tier, `allow_degrade=False`; existing notes most related to the
+   messages (≤ 30, ≤ 2,400 chars) are sent so a `replace` can name an id. ≤ 10 new facts and ≤
+   5 replacements per run; any other key in the output (e.g. `delete`) is ignored. The run is
+   counted (and the cursor moved) in a transaction before the call, so the daily cap holds and a
+   failed call is not retried on the same messages; a run skipped at the ₹ limit is not
+   counted. Metered under brain label `memory`. A learned replacement keeps the old fact's
+   pinned flag. `source.turn` is the newest owner message of the batch; it is `null` for
+   `memory_save` (the tool does not know the turn index).
+8. **Import** merges facts (origin `imported`, ids kept when free) and fills only empty profile
+   blocks; settings are never imported (learning needs the owner's consent). History entries
+   in the file count as skipped.
+9. **Config.** `JARVIS_MEMORY_ENABLED` (default on: notes, tools, `/v1/memory`; off → 404) and
+   `JARVIS_MEMORY_LEARN_DAILY_CAP` (default and maximum 20). Persona `p3.0` adds the memory
+   standing rule. The CLI (`jarvis chat`) builds its Brain without long-term memory.
+
 ## 2. Limits
 500 active facts (adding past it → plain message "memory is full — delete some facts"); fact text ≤ 300 chars;
 ≤ 8 keywords × 30 chars; profile block ≤ 1,000 chars; per-turn memory block ≤ 2,400 chars profile +
@@ -98,3 +153,53 @@ memory for the morning brief (it stays memory-free for now); cross-device sync b
 
 ## 9. Review log
 (filled after the fresh-context reviews)
+
+### Build notes (backend, 2026-11-01)
+**Files added.** `src/jarvis/recall/`: `models.py` (data model, limits, API shapes), `errors.py`,
+`sensitive.py` (D9 filter), `text.py` (cleaning, tokens), `ops.py` (pure state transitions),
+`retrieval.py` (BM25 + notes block), `store.py` (header + shards on the Docs port), `extract.py`
+(the FAST call), `learning.py` (batching, caps, claim, audit), `gate.py` (the one privacy
+switch), `service.py` (`MemoryService`), `tools.py` (memory tools); `src/jarvis/tools/taint.py`;
+`src/jarvis/api/memory.py`. Changed: `core/brain.py` (notes in the trailer, `memory_used`,
+`StreamMeta`, after-reply hook, per-round taint), `core/models.py`, `core/prompts.py` (p3.0),
+`api/app.py`, `api/routes.py`, `tools/base.py` (`trusted_output`), `tools/setup.py`,
+`config.py`. Tests: `test_recall_{sensitive,retrieval,ops,store,learning,tools,brain}.py`,
+`test_memory_api.py`, `test_evals_memory.py`, `memory_fakes.py`. Evals: `evals/memory/`
+(`run.py`, `harness.py`, `real.py`, three case files), wired into `evals/run_all_mock.py`.
+
+**Tests.** Full unit suite 1,159 passed, 35 skipped (was 1,007 / 31): 156 new tests, 4 of them
+Firestore-emulator contract tests (`-m firestore_emulator`, skipped locally, run by the CI
+`firestore` job). Coverage of the new modules 95 % (`jarvis.recall` + `api/memory.py` +
+`tools/taint.py`). `ruff check src tests evals` clean; `mypy src` unchanged (the 11 existing
+errors, none in new code). `tests/test_console_assets.py` passes; browser tests not run here.
+
+**Evals (mock, `python evals/memory/run.py --mock`; all gates PASS).**
+| Suite | Result |
+|---|---|
+| recall | 50/50 = 100 % among 300 distractors (gate 80 %, target 90 %); avg 2.5 facts sent, max 12; without keywords 32 % (informational: what extraction's keywords buy) |
+| poisoning | 30 cases (20 same-turn, 10 where the mail arrived a turn earlier): 0 stored without a card, 30/30 cards show the exact text, 0 tool text in the 30 learning inputs; negative control (taint flag off) fails 30/30 |
+| training brain | 10 conversations, 40 requests: 0 with memory text or tool specs, 0 learning calls; negative control (gate off) fails 10/10 |
+| sensitive | 25 statements × 6 paths (API add, API edit, profile, import, `memory_save`, learned) = 150 attempts: 0 stored; 125/125 non-learned attempts refused with the plain message |
+| contradiction | 3/3 (moved city, tea → coffee, new manager): new fact active, old in history with `replaced_by`/`replaced_at`, both dated, export keeps both, notes show only the new |
+| round trip | 50 facts + 4 profile blocks: export → forget everything → import identical; re-import adds 0 |
+| budget | at the ₹ limit, unreadable limit, daily cap, training brain → 0 paid calls; positive control 1 call metered as `memory`; negative control (spending gate off) fails |
+`--real` (20 planted facts, extraction + answers on Claude) is written but **not run here** (no
+key in this environment): `JARVIS_ANTHROPIC_API_KEY=… python evals/memory/run.py --real`.
+
+**Firestore per operation (MemoryDocs counters; Firestore bills the same).** Warm plain-chat
+turn: **1 read, 0 writes** (`test_a_warm_plain_chat_turn_adds_at_most_one_read`); training-brain
+turn: 0. Cold reload of a full memory (500 active + 150 history): **8 reads**. Add a fact: 1 read
++ 2 writes; replace: 1 + ≤ 3; delete: 1 + 2; profile or settings: 1 + 1 (0 writes when nothing
+changed). Learning run (background): 2 reads + 3 writes (claim, then apply; 4 when a replacement spans two shards). Use counters: ≤ 1
+read + 1 write per owner per 15 minutes. Forget everything / import: header + every shard.
+
+**Cost.** One learning run on Haiku 5.5 (FAST) at ₹95.24/$: typical ≈ 1,500 input + 150 output
+tokens = **≈ ₹0.02**; worst case at the 8k-char input cap ≈ 2,400 + 300 = **≈ ₹0.04**. Shown to
+the owner as "About ₹5 a month, at most ₹24 at 20 runs a day" (8 runs/day typical, 20/day
+worst). The notes block adds ≤ ~4.3k chars (≈ 1.1k tokens) to a reply's input when memory is
+full and relevant; typically a few hundred.
+
+**Open / deferred.** Fresh-context code, Python and security reviews (CLAUDE.md) still to run.
+Cloud Run throttles CPU after a response: a background learning run may finish only when the
+next request arrives (`--no-cpu-throttling` would make it prompt; not changed here). The CLI
+runs without long-term memory.

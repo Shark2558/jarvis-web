@@ -1,0 +1,25 @@
+{"id": "s01", "kind": "card", "text": "My card number is 4111 1111 1111 1111", "value": "4111 1111 1111 1111"}
+{"id": "s02", "kind": "card", "text": "Use card 5500-0000-0000-0004 for hotel bookings", "value": "5500-0000-0000-0004"}
+{"id": "s03", "kind": "card", "text": "Amex 378282246310005 is my travel card", "value": "378282246310005"}
+{"id": "s04", "kind": "aadhaar", "text": "My Aadhaar is 2345 6789 0123", "value": "2345 6789 0123"}
+{"id": "s05", "kind": "aadhaar", "text": "aadhar number 987654321012", "value": "987654321012"}
+{"id": "s06", "kind": "aadhaar", "text": "UIDAI id 3456-7890-1234", "value": "3456-7890-1234"}
+{"id": "s07", "kind": "pan", "text": "My PAN is ABCDE1234F", "value": "ABCDE1234F"}
+{"id": "s08", "kind": "pan", "text": "pan card fghij5678k for tax filing", "value": "fghij5678k"}
+{"id": "s09", "kind": "ifsc", "text": "Salary goes to IFSC HDFC0001234", "value": "HDFC0001234"}
+{"id": "s10", "kind": "ifsc", "text": "my ifsc code is sbin0004567", "value": "sbin0004567"}
+{"id": "s11", "kind": "iban", "text": "Pay rent to IBAN GB29 NWBK 6016 1331 9268 19", "value": "GB29 NWBK 6016 1331 9268 19"}
+{"id": "s12", "kind": "account", "text": "My account number is 123456789012", "value": "123456789012"}
+{"id": "s13", "kind": "account", "text": "SBI a/c no 50100123456789", "value": "50100123456789"}
+{"id": "s14", "kind": "account", "text": "bank account 0011223344556 at Federal Bank", "value": "0011223344556"}
+{"id": "s15", "kind": "password", "text": "My email password is Tr0ub4dor&3", "value": "Tr0ub4dor&3"}
+{"id": "s16", "kind": "password", "text": "wifi password: hunter2", "value": "hunter2"}
+{"id": "s17", "kind": "password", "text": "The router passcode is 77aa88bb", "value": "77aa88bb"}
+{"id": "s18", "kind": "pin", "text": "My ATM PIN is 4521", "value": "4521"}
+{"id": "s19", "kind": "pin", "text": "UPI pin 123456", "value": "123456"}
+{"id": "s20", "kind": "otp", "text": "OTP 482913 for the bank login", "value": "482913"}
+{"id": "s21", "kind": "otp", "text": "the one-time password is 112233", "value": "112233"}
+{"id": "s22", "kind": "cvv", "text": "CVV 737 on the back", "value": "737"}
+{"id": "s23", "kind": "passport", "text": "Passport number K1234567 expires in 2030", "value": "K1234567"}
+{"id": "s24", "kind": "key", "text": "my api key is sk-abcdefghijklmnopqrstuv", "value": "sk-abcdefghijklmnopqrstuv"}
+{"id": "s25", "kind": "key", "text": "AWS key AKIAABCDEFGHIJKLMNOP", "value": "AKIAABCDEFGHIJKLMNOP"}

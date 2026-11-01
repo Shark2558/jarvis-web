@@ -13,6 +13,10 @@
 //   setDevice(patch), settings(), inputEngine() / outputEngine() ('cloud' | 'browser' | 'none'),
 //   markDown(kind, ms), refusal() / refused(response) (the {error, detail, reason} contract),
 //   language(), speaker (JarvisSpeaker), visual() / setVisual(fn) for the Core.
+// GET /v1/voice is asked at most once a minute when fresh, and backs off after a refusal (429
+// rate_limited: 10 s, doubling to a minute; other errors: 5 s); a 429 on PUT keeps the change and
+// saves it again later. 503 budget_unavailable (the allowance can't be read) keeps the panel usable
+// with this browser's voice.
 // Fires: jarvis:voice-config, jarvis:voice-device, jarvis:voice-note {text}, jarvis:speech {text, engine}.
 // Listens: jarvis:ready, jarvis:panel (Voice shown), jarvis:wake {state} (console-voice-mic.js).
 (() => {
@@ -34,6 +38,9 @@
   const DEVICE_DEFAULTS = Object.freeze({ engine: 'auto', finish: 'comms', speak: 'voice', autoSend: true, keepListening: true, wake: false });
   const RATE_MIN = 0.8, RATE_MAX = 1.25, RATE_STEP = 0.05;
   const SAVE_DEBOUNCE_MS = 500, FRESH_MS = 60 * 1000, DOWN_MS = 10 * 60 * 1000, NOTE_MS = 5000;
+  const BACKOFF_MIN_MS = 10 * 1000, BACKOFF_MAX_MS = 60 * 1000, ERROR_PAUSE_MS = 5000, PUT_RETRY_MS = 8000;
+  const TOO_MANY = 'Too many requests just now. JARVIS will ask again in a few seconds.';
+  const NO_ALLOWANCE = 'JARVIS can\'t read this month\'s voice allowance right now, so it uses this browser\'s voice. Please try again later.';
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
   const GCLOUD_FIX = 'gcloud services enable texttospeech.googleapis.com speech.googleapis.com';
   const WAKE_LICENCE = 'Wake word model: openWakeWord (CC BY-NC-SA 4.0), personal use';
@@ -46,6 +53,7 @@
   const txt = (v, max = 200) => (typeof v === 'string' ? v.replace(INVISIBLE, '').trim().slice(0, max) : '');
   const own = (map, key) => typeof key === 'string' && Object.prototype.hasOwnProperty.call(map, key);
   const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+  const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/;
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
   const count = (n) => { try { return Math.round(n).toLocaleString('en-US'); } catch (_) { return String(Math.round(n)); } };
   const clampRate = (r) => Math.min(RATE_MAX, Math.max(RATE_MIN, Math.round(r / RATE_STEP) * 5 / 100)); // 1.15, never 1.1500000000000001
@@ -111,6 +119,7 @@
       allowance: {
         chars: num(tts.used_chars), freeChars: num(tts.free_chars),
         seconds: num(stt.used_seconds), freeSeconds: num(stt.free_seconds),
+        resetsAt: typeof al.resets_at === 'string' && ISO.test(al.resets_at) ? al.resets_at : null,
       },
       inr: num(month.voice_inr),
       language: /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(lang) ? lang : 'en-IN',
@@ -122,22 +131,29 @@
     cfg: undefined, error: '', seq: 0, at: 0, loading: null,
     local: null, sending: null, saving: false, timer: 0,
     down: { tts: 0, stt: 0 }, noteTimer: 0, wake: { state: 'off', note: '' }, built: false,
+    retryAt: 0, backoff: 0, retryTimer: 0, wakeSaid: 'off',
   };
   const hasApi = () => !!(window.JarvisConsole && window.JarvisConsole.api);
   const api = (path, opts) => window.JarvisConsole.api(path, opts);
 
+  const current = () => (S.cfg === undefined ? null : S.cfg);
   function load(force) {
-    if (!hasApi()) return Promise.resolve(S.cfg === undefined ? null : S.cfg);
+    if (!hasApi()) return Promise.resolve(current());
     if (S.loading) return S.loading;
+    if (Date.now() < S.retryAt) return Promise.resolve(current()); // backing off: not even a Retry
     if (!force && S.cfg !== undefined && Date.now() - S.at < FRESH_MS) return Promise.resolve(S.cfg);
     const seq = ++S.seq;
     S.loading = (async () => {
       try {
         const d = normal(await api('/v1/voice'));
         if (seq === S.seq) { if (d) { S.cfg = d; S.error = ''; } else S.error = 'The server sent something unexpected.'; }
+        S.backoff = 0;
       } catch (e) {
         if (seq === S.seq && e.status !== 401) {
-          if (e.status === 404) { S.cfg = null; S.error = ''; } else S.error = detailOf(e) || 'Please try again.';
+          if (e.status === 404) { S.cfg = null; S.error = ''; }
+          else if (e.status === 429) { S.error = TOO_MANY; pause(S.backoff = Math.min(BACKOFF_MAX_MS, Math.max(BACKOFF_MIN_MS, S.backoff * 2))); }
+          else if (e.status === 503 && e.code === 'budget_unavailable') { S.error = NO_ALLOWANCE; pause(ERROR_PAUSE_MS); }
+          else { S.error = detailOf(e) || 'Please try again.'; pause(ERROR_PAUSE_MS); }
         }
       } finally { S.loading = null; S.at = Date.now(); }
       emit('jarvis:voice-config', { ready: !!S.cfg });
@@ -146,6 +162,13 @@
     })();
     render();
     return S.loading;
+  }
+
+  /** No GET until `ms` from now (the Retry button waits too); then the panel can try again. */
+  function pause(ms) {
+    S.retryAt = Date.now() + ms;
+    clearTimeout(S.retryTimer);
+    S.retryTimer = setTimeout(render, ms + 50);
   }
 
   /** The owner's settings as this page wants them: saved, then in flight, then not yet sent. */
@@ -164,6 +187,7 @@
     if (S.saving || !S.local || !hasApi()) return;
     const body = S.local;
     S.local = null; S.sending = body; S.saving = true;
+    let later = false;
     try {
       const r = obj(await api('/v1/voice/settings', { method: 'PUT', body }));
       ++S.seq; // an older GET still on its way must not overwrite what was just saved
@@ -174,12 +198,20 @@
       flash('ok', 'Saved.');
       log('info', 'Voice settings saved');
     } catch (e) {
-      if (e.status !== 401) flash('bad', 'Couldn\'t save. ' + (detailOf(e) || 'Please try again.'));
-      if (e.status === 422) load(true); // what the server holds may differ: show it again
+      if (e.status === 429) { // rate_limited: keep the change (newer edits win) and try again later
+        later = true;
+        S.local = Object.assign({}, body, S.local || {});
+        flash('bad', 'Too many changes just now: saving again in a few seconds.');
+      } else {
+        if (e.status !== 401) flash('bad', 'Couldn\'t save. ' + (detailOf(e) || 'Please try again.'));
+        if (e.status === 422) load(true); // what the server holds may differ: show it again
+      }
     } finally {
       S.sending = null; S.saving = false;
       renderValues();
-      if (S.local) save();
+      clearTimeout(S.timer);
+      if (later) S.timer = setTimeout(save, PUT_RETRY_MS);
+      else if (S.local) save();
     }
   }
   function flash(kind, text) {
@@ -331,20 +363,23 @@
     const sp = select('vSpeak', 'Speak replies', '', SPEAKS, (v) => setDevice({ speak: v }));
     UI.speak = sp.select; UI.speakHelp = sp.help;
     const auto = toggle('vAuto', 'Send what I say straight away', 'Off: your words wait in the message box so you can check them first.', (on) => setDevice({ autoSend: on }));
-    const keep = toggle('vKeep', 'Keep listening after replies', 'After a spoken reply JARVIS listens for 6 seconds, so you can carry on talking.', (on) => setDevice({ keepListening: on }));
+    const keep = toggle('vKeep', 'Keep listening after replies', 'After a spoken reply JARVIS listens again if you start speaking within 3 seconds. After 3 replies in a row, tap the mic to carry on.', (on) => setDevice({ keepListening: on }));
     UI.auto = auto.button; UI.keep = keep.button;
     UI.devSec.append(eng.row, sp.row, auto.row, keep.row, fin.row);
     // "Hey Jarvis": only when the wake-word module is here and works in this browser
     const wake = toggle('vWake', 'Say "Hey Jarvis"', 'This device only, off by default. Listens on this device; no audio leaves it until you say "Hey Jarvis".', (on) => setDevice({ wake: on }));
     UI.wake = wake.button;
     UI.wakeRow = mk('div', 'vwake'); UI.wakeRow.id = 'vWakeRow';
-    UI.wakeChip = mk('p', 'vchip'); UI.wakeChip.id = 'vWakeChip'; UI.wakeChip.setAttribute('role', 'status');
-    UI.wakeRow.append(wake.row, UI.wakeChip, mk('p', 'bfine', WAKE_LICENCE));
+    UI.wakeChip = mk('p', 'vchip'); UI.wakeChip.id = 'vWakeChip'; // flips on every turn: not a live region
+    UI.wakeLive = mk('span', 'sr-only'); UI.wakeLive.id = 'vWakeLive';
+    UI.wakeLive.setAttribute('role', 'status'); UI.wakeLive.setAttribute('aria-live', 'polite'); UI.wakeLive.setAttribute('aria-atomic', 'true');
+    UI.wakeRow.append(wake.row, UI.wakeChip, UI.wakeLive, mk('p', 'bfine', WAKE_LICENCE));
     UI.devSec.append(UI.wakeRow);
     // this month
     UI.useSec = section('This month', 'vUseT');
     UI.allow = mk('p', 'vallow'); UI.allow.id = 'vAllow';
-    UI.useSec.append(UI.allow, mk('p', 'bfine', 'Google\'s free allowance is per billing account; these are JARVIS\'s own use. Rupee figures are estimates.'));
+    UI.allowFine = mk('p', 'bfine'); UI.allowFine.id = 'vAllowFine';
+    UI.useSec.append(UI.allow, UI.allowFine);
     box.append(UI.state, UI.status, UI.voiceSec, UI.rateSec, UI.witSec, UI.devSec, UI.useSec);
     S.built = true;
   }
@@ -406,15 +441,33 @@
     if (c.reason === 'not_configured') return [['warn', 'This server has no Google Cloud credentials for speech, so JARVIS uses this browser\'s voice. Deploying on Cloud Run with the jarvis-run account switches it on.']];
     return [['warn', 'Google\'s speech service isn\'t answering right now, so JARVIS uses this browser\'s voice. It tries again in about 10 minutes.']];
   }
+  /** A free allowance of 0 (a shared billing account) means every character and minute is priced. */
   function allowanceText(a, inr) {
     const parts = [];
-    if (a.chars !== null && a.freeChars !== null) parts.push(`${count(a.chars)} of ${count(a.freeChars)} free characters`);
-    if (a.seconds !== null && a.freeSeconds !== null) parts.push(`${count(Math.ceil(a.seconds / 60))} of ${count(Math.floor(a.freeSeconds / 60))} free minutes`);
+    if (a.chars !== null && a.freeChars !== null) {
+      parts.push(a.freeChars > 0 ? `${count(a.chars)} of ${count(a.freeChars)} free characters` : `${count(a.chars)} characters, priced`);
+    }
+    if (a.seconds !== null && a.freeSeconds !== null) {
+      const used = count(Math.ceil(a.seconds / 60));
+      parts.push(a.freeSeconds > 0 ? `${used} of ${count(Math.floor(a.freeSeconds / 60))} free minutes` : `${used} minutes, priced`);
+    }
     if (inr !== null) {
       const r = typeof Deck.rupees === 'function' ? Deck.rupees(inr) : '';
       if (r) parts.push(/^[≈<]/.test(r) ? r : '≈ ' + r);
     }
     return parts.length ? 'This month: ' + parts.join(' · ') : '';
+  }
+  function allowanceFine(a) {
+    const est = 'Rupee figures are estimates.';
+    if (a.freeChars === 0 || a.freeSeconds === 0) {
+      return 'No free allowance is counted here (the Google billing account is shared), so voice use is priced. ' + est;
+    }
+    let when = '';
+    if (a.resetsAt) {
+      try { when = new Date(a.resetsAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'America/Los_Angeles' }); } catch (_) { when = ''; }
+    }
+    return 'The free allowance is this JARVIS\'s share of Google\'s, for the whole deployment' +
+      (when && !/invalid/i.test(when) ? `; it resets on ${when} (Pacific time). ` : '. ') + est;
   }
   const WORDS = { cloud: 'Google Cloud', browser: 'this browser', none: 'not available here' };
   const WAKE_WORDS = { loading: 'Loading the wake word…', on: 'Listening for ‘Hey Jarvis’', paused: 'Paused while JARVIS speaks or listens',
@@ -431,6 +484,7 @@
       radio(UI.witList, 'vWit', cfg.wit, s.wit, (id) => change({ wit: id }));
       const allow = allowanceText(cfg.allowance, cfg.inr);
       UI.allow.textContent = allow; UI.useSec.hidden = !allow;
+      UI.allowFine.textContent = allowanceFine(cfg.allowance);
     }
     UI.engine.value = device.engine; UI.finish.value = device.finish; UI.speak.value = device.speak;
     UI.engineHelp.textContent = `Now: ${WORDS[inputEngine()]}. Google Cloud keeps your audio in your own project (60 free minutes a month); this browser's recognition is free and shows your words as you speak, but your audio goes to the browser's maker.`;
@@ -453,7 +507,8 @@
     if (S.cfg === undefined && !S.error) UI.state.append(mk('div', 'empty', S.loading ? 'Loading voice settings…' : 'Voice settings load when this panel opens.'));
     if (S.error) {
       const retry = mk('button', 'btn lift bact', 'Retry'); retry.type = 'button'; retry.id = 'voiceRetry';
-      retry.addEventListener('click', () => { S.error = ''; load(true); });
+      retry.disabled = Date.now() < S.retryAt;
+      retry.addEventListener('click', () => { if (Date.now() < S.retryAt) return; S.error = ''; load(true); });
       UI.state.append(mk('p', 'bmiss warn', (S.cfg ? 'Couldn\'t refresh: showing what was loaded earlier. ' : 'Couldn\'t load voice settings. ') + S.error), retry);
     }
     UI.status.textContent = '';
@@ -465,17 +520,27 @@
     box.setAttribute('aria-busy', String(!!S.loading));
     if (metaEl) {
       const out = outputEngine();
-      metaEl.textContent = S.cfg === null ? 'Not available' : S.cfg === undefined ? '' : out === 'cloud' ? 'Cloud voice' : out === 'browser' ? 'Browser voice' : 'Typing only';
+      metaEl.textContent = S.cfg === null ? 'Not available' : S.cfg === undefined && !S.error ? '' : out === 'cloud' ? 'Cloud voice' : out === 'browser' ? 'Browser voice' : 'Typing only';
     }
     renderValues();
   }
 
   // ---- wiring ------------------------------------------------------------------------------------
   document.addEventListener('jarvis:panel', (e) => { const d = e.detail || {}; if (d.id === 'voice' && d.open) { render(); load(false); } });
+  /** The polite announcement for a wake-word state; 'paused' ↔ 'on' flips on every turn and is
+   *  shown on the chip but not announced. */
+  function announceWake() {
+    const st = S.wake.state === 'paused' ? 'on' : S.wake.state;
+    if (st === S.wakeSaid) return;
+    S.wakeSaid = st;
+    if (!UI.wakeLive) return;
+    UI.wakeLive.textContent = st === 'error' ? S.wake.note || 'Couldn\'t start ‘Hey Jarvis’.' : st === 'off' ? '' : WAKE_WORDS[st] || '';
+  }
   document.addEventListener('jarvis:wake', (e) => {
     const d = e.detail || {};
     S.wake = { state: typeof d.state === 'string' ? d.state : 'off', note: typeof d.note === 'string' ? d.note.slice(0, 200) : '' };
     if (d.state === 'error' && device.wake) setDevice({ wake: false }); else renderValues();
+    announceWake();
   });
   function onReady() { if (device.speak === 'always' || device.wake) load(false); }
   document.addEventListener('jarvis:ready', onReady);

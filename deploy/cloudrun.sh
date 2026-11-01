@@ -22,6 +22,11 @@
 # images to the build repository, and run them as jarvis-run. Inherent to any deploy-on-merge:
 # whoever can change main can ship code that runs as jarvis-run (secrets, memory, audit), so
 # protect main (pull requests only, no force-push) and keep your GitHub account on 2-step sign-in.
+# Step 8 sets up the morning brief's clock (slice 7): one Cloud Scheduler job (3 jobs are free per
+# billing account) calls JARVIS every 30 minutes from 04:00 to 11:30, signed with a Google token for
+# its own account jarvis-scheduler, which has NO project roles: all it can do is prove to JARVIS
+# "I am your clock". JARVIS decides whether the owner's brief is due. If this step fails, JARVIS
+# still works and makes the brief when the Brief panel is opened.
 # --reconfigure rewrites ALL settings and secret bindings from your answers (it does not merge).
 set -euo pipefail
 
@@ -30,6 +35,8 @@ REGION="${REGION:-asia-south1}"   # Mumbai; Tier-1 region, covered by the monthl
 GH_REPO="Shark2558/jarvis-web"
 GH_REPO_ID="1441253681"           # numeric id: survives renames, can't be re-registered by others
 POOL="github"; PROVIDER="jarvis-web"; AR_REPO="cloud-run-source-deploy"
+BRIEF_JOB="jarvis-morning-brief"
+BRIEF_TZ="${BRIEF_TZ:-Asia/Kolkata}"   # the clock's window (04:00-11:30) is read in this time zone
 
 RECONFIGURE=no
 for arg in "$@"; do
@@ -52,9 +59,9 @@ BASE_URL="https://${SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
 BILLING="$(gcloud billing projects describe "$PROJECT" --format='value(billingEnabled)' 2>/dev/null || true)"
 [ "$BILLING" = "True" ] || die "Billing is not enabled on project $PROJECT. Cloud Run needs a billing account (you stay inside the free allowance). Enable it in Billing, then re-run."
 
-say "1/7  Project: $PROJECT   Region: $REGION   Address will be: $BASE_URL"
+say "1/8  Project: $PROJECT   Region: $REGION   Address will be: $BASE_URL"
 
-say "2/7  Switching on the Google services JARVIS needs (takes ~1 minute)"
+say "2/8  Switching on the Google services JARVIS needs (takes ~1 minute)"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
   secretmanager.googleapis.com firestore.googleapis.com iam.googleapis.com \
   iamcredentials.googleapis.com sts.googleapis.com \
@@ -81,9 +88,9 @@ rand() { head -c 48 /dev/urandom | base64 | tr -d '\n=+/' | head -c 48; }
 rand_key() { head -c 32 /dev/urandom | base64 | tr -d '\n'; }   # exactly 32 bytes: AES-256 key
 
 if [ "$QUICK" = yes ]; then
-say "3/7  Using your saved answers - nothing to type (to change them: bash deploy/cloudrun.sh --reconfigure)"
+say "3/8  Using your saved answers - nothing to type (to change them: bash deploy/cloudrun.sh --reconfigure)"
 else
-say "3/7  Your details (typing is hidden for secrets; Enter keeps the saved value on a re-run)"
+say "3/8  Your details (typing is hidden for secrets; Enter keeps the saved value on a re-run)"
 read -r -p "Your Gmail address (the only account allowed to sign in): " OWNER_EMAIL
 [ -n "$OWNER_EMAIL" ] || die "Gmail address is required."
 read -r -p "Google OAuth Client ID (ends with .apps.googleusercontent.com): " CLIENT_ID
@@ -160,7 +167,7 @@ secret_exists jarvis-api-token || put_secret jarvis-api-token "$(rand)"
 # Encrypts the owner's Google tokens at rest. Generated once; rotating it unlinks Google.
 secret_exists jarvis-token-key || put_secret jarvis-token-key "$(rand_key)"
 
-say "4/7  Setting up JARVIS's memory (a Firestore database in your project)"
+say "4/8  Setting up JARVIS's memory (a Firestore database in your project)"
 if DBTYPE="$(gcloud firestore databases describe --database='(default)' --format='value(type)' 2>/dev/null)"; then
   [ "$DBTYPE" = "FIRESTORE_NATIVE" ] || die "This project already has a database in '$DBTYPE' mode; JARVIS needs Firestore Native mode. Send this message to Claude."
   echo "  (memory database already exists - keeping it and everything in it)"
@@ -179,7 +186,7 @@ IDX_OUT="$(gcloud firestore indexes composite create --database='(default)' --co
        printf '  %s\n' "$IDX_OUT" | tail -2 ;;
   esac
 
-say "5/7  Permissions: JARVIS's own account reads secrets + memory; the build account only builds"
+say "5/8  Permissions: JARVIS's own account reads secrets + memory; the build account only builds"
 bind() { # member role  (a brand-new service account can take a few seconds to be visible)
   for _ in 1 2 3 4 5 6; do
     gcloud projects add-iam-policy-binding "$PROJECT" --member="$1" --role="$2" \
@@ -212,7 +219,7 @@ for role in roles/cloudbuild.builds.builder roles/artifactregistry.writer roles/
   bind "serviceAccount:${SA}" "$role"
 done
 
-say "6/7  Building and deploying (3-6 minutes the first time)"
+say "6/8  Building and deploying (3-6 minutes the first time)"
 cd "$(dirname "$0")/.."
 show_logs() {
   printf '\nDeploy failed. Last log lines from the service (copy these to Claude):\n'
@@ -220,7 +227,11 @@ show_logs() {
 }
 # Settings this script owns (safe to refresh on every run). The owner's answers (email, client
 # id, brains) and the secret bindings are only (re)written when questions were asked.
-INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20"
+# JARVIS_BRIEF_SCHEDULER_SA is only the clock account's address: JARVIS accepts a wake-up call
+# signed for exactly this account. It is just text here, so the account itself can be created in
+# step 8 (after this deploy) without anything failing on a first run.
+SCHED_SA="jarvis-scheduler@${PROJECT}.iam.gserviceaccount.com"
+INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA}"
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
     --update-env-vars "$INFRA_ENV"
@@ -253,7 +264,7 @@ for role in roles/secretmanager.secretAccessor roles/datastore.user; do
   fi
 done
 
-say "7/7  Automatic updates: let GitHub deploy JARVIS when you merge (no keys involved)"
+say "7/8  Automatic updates: let GitHub deploy JARVIS when you merge (no keys involved)"
 DEPLOY_SA="jarvis-deployer@${PROJECT}.iam.gserviceaccount.com"
 retry() { # command...  (new accounts/pools take a few seconds to become visible)
   for _ in 1 2 3 4 5 6; do "$@" >/dev/null 2>&1 && return 0; sleep 5; done
@@ -310,7 +321,39 @@ if setup_autodeploy; then AUTODEPLOY_OK=yes
 else echo "  Note: automatic updates could not be set up (JARVIS itself is deployed and fine)."
 fi
 
+say "8/8  Morning brief schedule: a clock that wakes JARVIS every 30 minutes, 04:00-11:30 (free)"
+TICK_URL="${BASE_URL}/internal/brief/tick"
+setup_brief_clock() {
+  gcloud services enable cloudscheduler.googleapis.com --quiet >/dev/null || return 1
+  # Its own account with no project roles: it can only prove "I am JARVIS's clock" to JARVIS.
+  gcloud iam service-accounts describe "$SCHED_SA" >/dev/null 2>&1 || \
+    gcloud iam service-accounts create jarvis-scheduler --display-name="JARVIS (morning brief clock)" \
+      --quiet >/dev/null || return 1
+  # The token's audience is the exact address it is sent to, so it is useless anywhere else.
+  local flags=(--location "$REGION" --schedule "0,30 4-11 * * *" --time-zone "$BRIEF_TZ"
+    --uri "$TICK_URL" --http-method POST
+    --oidc-service-account-email "$SCHED_SA" --oidc-token-audience "$TICK_URL"
+    --attempt-deadline 180s --quiet)
+  if gcloud scheduler jobs describe "$BRIEF_JOB" --location "$REGION" >/dev/null 2>&1; then
+    retry gcloud scheduler jobs update http "$BRIEF_JOB" "${flags[@]}" || return 1
+  else   # a brand-new account can take a few seconds to be usable: retry waits for it
+    retry gcloud scheduler jobs create http "$BRIEF_JOB" --description="JARVIS morning brief: checks if a brief is due" \
+      "${flags[@]}" || return 1
+  fi
+}
+BRIEF_CLOCK_OK=no
+if setup_brief_clock; then BRIEF_CLOCK_OK=yes
+else echo "  Note: the morning-brief clock could not be set up. JARVIS works; the brief is made when you open the Brief panel. Re-run this script later to try again."
+fi
+
 say "DONE. Open JARVIS at:  $BASE_URL"
+if [ "$BRIEF_CLOCK_OK" = yes ]; then
+cat <<MSG
+
+Morning brief: ready. JARVIS prepares it every morning at the time you pick in the Brief panel
+(07:00 to start; clock time zone ${BRIEF_TZ}). Paid extras stay off until you switch them on there.
+MSG
+fi
 if [ "$AUTODEPLOY_OK" = yes ]; then
 cat <<MSG
 
@@ -334,12 +377,15 @@ fi
 cat <<'MSG'
 
 GOOGLE CALENDAR + GMAIL (once): APIs & Services -> OAuth consent screen (Google Auth Platform)
-  1. Data Access -> Add or remove scopes -> add these four and Save:
+  1. Data Access -> Add or remove scopes -> add these five and Save:
        https://www.googleapis.com/auth/calendar.events
        https://www.googleapis.com/auth/calendar.readonly
        https://www.googleapis.com/auth/gmail.readonly
        https://www.googleapis.com/auth/gmail.compose   (drafts AND sending)
-     When you connect, leave every box ticked: JARVIS refuses a partial link.
+       https://www.googleapis.com/auth/gmail.insert    (optional: only needed for the brief in your inbox)
+     When you connect, leave every box ticked: JARVIS refuses a partial link. The fifth one
+     (gmail.insert) is the exception: leave it out and the morning brief simply stays in JARVIS.
+     Already linked before the morning brief? Reconnect once in Integrations to add it.
   2. Audience -> Test users -> add your own Gmail address (the one JARVIS signs in with).
   3. In JARVIS: panel -> Integrations -> Connect Google.
   While the app stays in "Testing", Google expires the link every 7 days: JARVIS will show

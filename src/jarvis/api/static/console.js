@@ -4,6 +4,8 @@
 // The Command Deck (console-deck.js) shows vitals from the events this file fires:
 //   jarvis:vitals {turns, brain, model, cost, rttMs?}  jarvis:approvals {count, fresh}
 //   jarvis:audit {verified, count}                     jarvis:event {kind, text, at, live?}
+//   jarvis:integrations {google, email}                jarvis:ready {returning} (signed in, booting)
+// console-brief.js uses the same transport through window.JarvisConsole.api.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -310,8 +312,10 @@
   // GET /v1/integrations → {google: {connected, email, scopes, expires_at, needs_reconnect}}.
   // A 404 means this server has no connect flow (token-auth setup / older backend): say so, no error.
   // gmail.compose covers drafts AND sending; gmail.send only appears on links made before it was dropped.
+  // gmail.insert (slice 7) is optional: it only lets the morning brief be put in the owner's own inbox.
   const SCOPE_WORDS = { 'calendar.readonly': ['Calendar', 'read'], 'calendar.events': ['Calendar', 'edit'],
-    'gmail.readonly': ['Gmail', 'read'], 'gmail.compose': ['Gmail', 'draft', 'send'], 'gmail.send': ['Gmail', 'send'] };
+    'gmail.readonly': ['Gmail', 'read'], 'gmail.compose': ['Gmail', 'draft', 'send'], 'gmail.send': ['Gmail', 'send'],
+    'gmail.insert': ['Gmail', 'put the morning brief in your inbox (optional)'] };
   /** "Calendar: read & edit · Gmail: read, draft, send" from the raw scope list (URLs or short names). */
   function scopeSummary(scopes) {
     const by = {}; let other = 0;
@@ -375,7 +379,7 @@
   function renderIntegrations() {
     const box = $('integrations'); box.innerHTML = '';
     const st = integState(), g = integ.data ? integ.data.google : null;
-    emit('jarvis:integrations', { google: integ.data ? st : null });
+    emit('jarvis:integrations', { google: integ.data ? st : null, email: g && g.connected && g.email ? String(g.email) : null });
     const meta = $('integMeta');
     meta.textContent = st === 'linked' ? 'Google linked' : st === 'reconnect' ? 'Attention' : '';
     meta.className = 'pmeta' + (st === 'linked' ? ' ok' : st === 'reconnect' ? ' warn' : '');
@@ -553,11 +557,13 @@
   // top bar + panel actions
   $('newBtn').addEventListener('click', startNew);
   $('logoutBtn').addEventListener('click', async () => { try { await api('/auth/logout', { body: {} }); } catch (_) {} location.reload(); });
+  window.JarvisConsole = Object.freeze({ api }); // one transport (auth, CSRF header, 401 → gate) for every panel
 
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {
     renderWelcome();
     const backFromGoogle = afterConnectRedirect();
+    emit('jarvis:ready', { returning: backFromGoogle });
     await loadBrains();
     const saved = lsGet('jarvis_session');
     if (saved) { busy(true, false); try { await loadConversation(saved); } finally { busy(false); } }

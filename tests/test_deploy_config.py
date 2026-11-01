@@ -176,6 +176,9 @@ def test_script_prints_consent_scopes_and_test_user_reminder(script: str) -> Non
         assert scope in script
     # gmail.compose already allows messages.send: the redundant scope is not asked for
     assert "auth/gmail.send" not in script
+    # slice 7: the morning brief's inbox delivery is the one optional scope
+    insert = next(ln for ln in script.splitlines() if "auth/gmail.insert" in ln)
+    assert "optional" in insert and "brief in your inbox" in insert
     assert "Test users" in script or "test user" in script.lower()
     assert "7 days" in script  # Testing-mode refresh tokens expire weekly
     assert "/connect/google/callback" in script  # second redirect URI
@@ -206,6 +209,74 @@ def test_quick_path_also_creates_and_binds_the_token_key(script: str) -> None:
     assert _top_level_depth_at(script, line) == 0  # runs on the quick AND the full path
     quick = script.split('if [ "$QUICK" = yes ]; then\n  CONFIG_FLAGS=(', 1)[1].split("else", 1)[0]
     assert "--update-secrets" in quick and "JARVIS_TOKEN_KEY=jarvis-token-key:latest" in quick
+
+
+# ---- slice 7: the morning brief's clock (step 8/8) ---------------------------------------------
+
+
+def _step8(script: str) -> str:
+    return script.split('say "8/8', 1)[1].split('say "DONE', 1)[0]
+
+
+def test_steps_are_numbered_one_to_eight_in_order(script: str) -> None:
+    steps = re.findall(r'^say "(\d+)/(\d+) ', script, re.M)
+    numbers = [int(n) for n, _ in steps]
+    assert {total for _, total in steps} == {"8"}
+    assert sorted(set(numbers)) == list(range(1, 9))
+    assert numbers == sorted(numbers)  # 3/8 twice: quick path and full set-up
+
+
+def test_brief_clock_is_created_or_updated_without_questions(script: str) -> None:
+    s = _step8(script)
+    assert "gcloud services enable cloudscheduler.googleapis.com" in s
+    assert 'BRIEF_JOB="jarvis-morning-brief"' in script
+    assert 'gcloud scheduler jobs describe "$BRIEF_JOB" --location "$REGION"' in s
+    assert 'gcloud scheduler jobs update http "$BRIEF_JOB"' in s
+    assert 'gcloud scheduler jobs create http "$BRIEF_JOB"' in s
+    assert '--location "$REGION"' in s
+    assert '--schedule "0,30 4-11 * * *"' in s
+    assert 'BRIEF_TZ="${BRIEF_TZ:-Asia/Kolkata}"' in script and '--time-zone "$BRIEF_TZ"' in s
+    assert 'TICK_URL="${BASE_URL}/internal/brief/tick"' in s
+    assert "--http-method POST" in s and "--attempt-deadline 180s" in s
+    # signed for the clock account, for exactly this address (useless anywhere else)
+    assert '--oidc-service-account-email "$SCHED_SA"' in s
+    assert '--uri "$TICK_URL"' in s and '--oidc-token-audience "$TICK_URL"' in s
+    assert "read " not in s  # re-runs ask nothing
+
+
+def test_brief_clock_account_has_no_project_roles(script: str) -> None:
+    assert 'SCHED_SA="jarvis-scheduler@${PROJECT}.iam.gserviceaccount.com"' in script
+    s = _step8(script)
+    assert "gcloud iam service-accounts create jarvis-scheduler" in s
+    assert 'gcloud iam service-accounts describe "$SCHED_SA"' in s  # only when missing
+    assert "add-iam-policy-binding" not in s
+    for line in script.splitlines():
+        if "add-iam-policy-binding" in line or "--member" in line or line.startswith("  bind "):
+            assert "SCHED_SA" not in line and "jarvis-scheduler" not in line, line
+
+
+def test_brief_clock_failure_is_never_fatal(script: str) -> None:
+    s = _step8(script)
+    body = s.split("setup_brief_clock() {", 1)[1].split("\n}\n", 1)[0]
+    assert "die " not in body and "exit" not in body  # every failure returns 1 instead
+    assert "if setup_brief_clock; then" in s
+    assert "Note: the morning-brief clock could not be set up" in s
+    assert "open the Brief panel" in s  # says what still works
+    # the scheduler API is not in step 2's must-succeed list
+    first_enable = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
+    assert "cloudscheduler" not in first_enable
+
+
+def test_scheduler_account_reaches_the_app_on_both_deploy_paths(script: str) -> None:
+    infra = next(ln for ln in script.splitlines() if ln.startswith("INFRA_ENV="))
+    assert "JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA}" in infra
+    assert '--update-env-vars "$INFRA_ENV"' in script  # quick re-run
+    assert '--set-env-vars "${INFRA_ENV},' in script  # full set-up
+    # the address exists before the deploy uses it; the account and the job come after the deploy
+    deploy = script.index("gcloud run deploy")
+    assert script.index('SCHED_SA="') < deploy
+    assert deploy < script.index("gcloud iam service-accounts create jarvis-scheduler")
+    assert deploy < script.index("gcloud scheduler jobs create http")
 
 
 # ---- security review M5: nothing unhashed reaches the image; CI pins what it installs ---------

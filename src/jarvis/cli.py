@@ -13,19 +13,33 @@ from jarvis.config import get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.models import ChatRequest
 from jarvis.llm.base import LLMError
-from jarvis.llm.router import ModelRouter
+from jarvis.llm.brains import BrainRegistry
 from jarvis.logging import configure_logging, new_trace_id
 from jarvis.memory import build_session_store
 
 
-async def _repl(stream: bool) -> None:
+def _resolve_brain(brain: Brain, brain_id: str | None) -> str | None:
+    """Validate `--brain` against the configured registry; exit 2 with the list on a miss."""
+    if brain_id is None:
+        return None
+    try:
+        spec = brain.brains.get(brain_id)
+    except LookupError:
+        known = ", ".join(b.id for b in brain.brains.list())
+        sys.exit(f"jarvis chat: unknown brain {brain_id!r}. Configured brains: {known}")
+    return spec.id
+
+
+async def _repl(stream: bool, brain_id: str | None = None) -> None:
     s = get_settings()
     s.require_prod_invariants()
     configure_logging(s.log_level, s.log_json)
     store = build_session_store(s)
-    brain = Brain(router=ModelRouter.from_settings(s), store=store, settings=s)
+    brain = Brain(brains=BrainRegistry.from_settings(s), store=store, settings=s)
+    chosen = _resolve_brain(brain, brain_id)
     session_id: str | None = None
-    print("JARVIS online. Ctrl-D or /quit to exit, /new for a fresh session.\n")
+    label = brain.brains.get(chosen).label if chosen else brain.brains.default.label
+    print(f"JARVIS online ({label}). Ctrl-D or /quit to exit, /new for a fresh session.\n")
     try:
         while True:
             try:
@@ -41,7 +55,9 @@ async def _repl(stream: bool) -> None:
                 print("(new session)")
                 continue
             new_trace_id()
-            req = ChatRequest(message=line, session_id=session_id, user_id=primary_user_id(s))
+            req = ChatRequest(
+                message=line, session_id=session_id, user_id=primary_user_id(s), brain=chosen
+            )
             try:
                 if stream:
                     print("jarvis> ", end="", flush=True)
@@ -71,6 +87,11 @@ def main(argv: list[str] | None = None) -> None:
     sub = p.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("chat", help="interactive terminal session")
     c.add_argument("--stream", action="store_true", help="stream tokens as they arrive")
+    c.add_argument(
+        "--brain",
+        metavar="ID",
+        help="which configured brain answers (ids as in GET /v1/brains, e.g. anthropic, gemini)",
+    )
     sv = sub.add_parser("serve", help="run the HTTP API")
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)
@@ -78,7 +99,7 @@ def main(argv: list[str] | None = None) -> None:
     args = p.parse_args(argv)
 
     if args.cmd == "chat":
-        asyncio.run(_repl(stream=args.stream))
+        asyncio.run(_repl(stream=args.stream, brain_id=args.brain))
     elif args.cmd == "serve":
         import uvicorn
 

@@ -102,3 +102,57 @@ def test_special_categories_leave_ordinary_facts(text: str) -> None:
 )
 def test_separators_and_disguises_do_not_hide_a_number(text: str) -> None:
     assert is_sensitive(text), text
+
+
+# ---- review findings: bypasses (finding 7) ---------------------------------------------------
+
+BYPASSES = [
+    "card 4111/1111/1111/1111",
+    "card 4111,1111,1111,1111",
+    "card 4111_1111_1111_1111",
+    "card 4111–1111–1111–1111",  # en dash
+    "card 4111 - 1111 - 1111 - 1111",
+    "card 4111́ 1111 1111 1111",  # a combining mark
+    "card 4111️ 1111 1111 1111",  # variation selector 16
+    "card 4111‍1111⁠1111​1111",  # ZWJ, word joiner, ZWSP
+    "Aadhaar 2345-6789 0123",
+    "my uid 2345 67890123",
+    "2345/6789/0123",
+    "PAN ABCDE 1234 F",
+    "PAN АBCDE1234F",  # Cyrillic А
+    "PAN ΑΒCDE1234F",  # Greek Α Β
+    "pan is abcde 1234 f",
+    "IFSC НDFC0001234",  # Cyrillic Н
+    "my passwords are hunter2",
+    "the password for netflix is hunter2",
+    "password for the bank site is Sup3rS3cret",
+    "pw is hunter2",
+    "pass: Sup3rS3cret",
+    "my pаssword is hunter2",  # Cyrillic а
+    "my pássword is hunter2",  # a combining accent
+    "pin for my card is 4321",
+    "ac no 50100123456780",
+    "acc no. 50100123456780",
+    "savings 50100123456780",
+]
+
+STILL_FINE = [
+    "Boarding pass is in the blue bag",
+    "Pin the report to the top of the channel",
+    "Visited Paris 2019 a lot",
+    "Meeting on 2026-11-15 at 10:30",
+    "Passwords are kept in Bitwarden",
+    "The wifi password is on the fridge",
+    "Lives in തിരുവനന്തപുരം",
+    "The AC in the bedroom is noisy",
+]
+
+
+@pytest.mark.parametrize("text", BYPASSES)
+def test_disguised_numbers_and_phrasings_are_caught(text: str) -> None:
+    assert is_sensitive(text), text
+
+
+@pytest.mark.parametrize("text", STILL_FINE)
+def test_the_wider_filter_still_lets_ordinary_facts_through(text: str) -> None:
+    assert not is_sensitive(text), (text, sensitive_reason(text))

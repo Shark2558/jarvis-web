@@ -28,16 +28,16 @@ AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
 ISSUER = "https://accounts.google.com"
 
-# openid+email so the callback can prove WHICH Google account consented (must equal the owner).
-TOOL_SCOPES: tuple[str, ...] = (
-    "openid",
-    "email",
+# Every API scope the tools need. gmail.compose already permits messages.send (Google lists it
+# among users.messages.send's scopes), so the separate gmail.send scope is not requested.
+REQUIRED_SCOPES: tuple[str, ...] = (
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.compose",
-    "https://www.googleapis.com/auth/gmail.send",
 )
+# openid+email so the callback can prove WHICH Google account consented (must equal the owner).
+TOOL_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES)
 
 HTTP_TIMEOUT_S = 15.0
 REFRESH_SKEW_S = 60.0  # refresh when the access token has less than this left
@@ -51,6 +51,10 @@ RECONNECT_MSG = "Google needs reconnecting (panel → Integrations)."
 
 class GoogleNotConnected(RuntimeError):
     """No usable token for this owner: never linked, disconnected, or refresh was refused."""
+
+
+class GoogleScopesMissing(ValueError):
+    """Granular consent: the owner left some permissions unticked. Nothing is stored."""
 
 
 class GoogleAPIError(RuntimeError):
@@ -131,6 +135,11 @@ class GoogleConnector:
         access = token.get("access_token")
         if not refresh or not access:
             raise ValueError("Google did not return a refresh token; reconnect with consent")
+        granted = set(str(token.get("scope", "")).split())
+        missing = [s for s in REQUIRED_SCOPES if s not in granted]
+        if missing:
+            short = ", ".join(s.rsplit("/", 1)[-1] for s in missing)
+            raise GoogleScopesMissing(f"Google did not grant: {short}")
         expires_at = token.get("expires_at")
         if expires_at is None:
             expires_at = self._now() + float(token.get("expires_in", 0))
@@ -155,16 +164,18 @@ class GoogleConnector:
         if isinstance(t, VaultError):
             await self.store.delete(user_id)  # nothing usable to revoke; forget it
             return
-        try:
-            await self.http.post(
-                REVOKE_URL,
-                data={"token": t.refresh_token.get_secret_value()},
-                timeout=HTTP_TIMEOUT_S,
-            )
-        except httpx.HTTPError as exc:
-            log.warning("google revoke failed", extra={"reason": type(exc).__name__})
+        await self.revoke(t.refresh_token.get_secret_value())
         await self.store.delete(user_id)
         log.info("google unlinked")
+
+    async def revoke(self, token: str) -> None:
+        """Best effort: ask Google to revoke a token (and with it the grant). Never raises."""
+        if not token:
+            return
+        try:
+            await self.http.post(REVOKE_URL, data={"token": token}, timeout=HTTP_TIMEOUT_S)
+        except httpx.HTTPError as exc:
+            log.warning("google revoke failed", extra={"reason": type(exc).__name__})
 
     # ---- tokens --------------------------------------------------------------------------
 
@@ -321,12 +332,14 @@ def register_tools_oauth(oauth: Any, s: Settings) -> None:
 
 __all__ = [
     "AUTHORIZE_URL",
+    "REQUIRED_SCOPES",
     "REVOKE_URL",
     "TOKEN_URL",
     "TOOL_SCOPES",
     "GoogleAPIError",
     "GoogleConnector",
     "GoogleNotConnected",
+    "GoogleScopesMissing",
     "build_google_connector",
     "google_tools_configured",
     "register_tools_oauth",

@@ -172,9 +172,10 @@ def test_script_prints_consent_scopes_and_test_user_reminder(script: str) -> Non
         "auth/calendar.readonly",
         "auth/gmail.readonly",
         "auth/gmail.compose",
-        "auth/gmail.send",
     ):
         assert scope in script
+    # gmail.compose already allows messages.send: the redundant scope is not asked for
+    assert "auth/gmail.send" not in script
     assert "Test users" in script or "test user" in script.lower()
     assert "7 days" in script  # Testing-mode refresh tokens expire weekly
     assert "/connect/google/callback" in script  # second redirect URI

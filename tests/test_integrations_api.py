@@ -56,14 +56,16 @@ async def _login(c: AsyncClient, email: str) -> None:
     assert r.status_code in (302, 307)
 
 
-def _fake_consent(c: AsyncClient, email: str, *, refresh: bool = True) -> None:
+def _fake_consent(
+    c: AsyncClient, email: str, *, refresh: bool = True, scopes: tuple[str, ...] = TOOL_SCOPES
+) -> None:
     """Google's half of the tools consent: who consented, which tokens came back."""
 
     async def fake(request: Any) -> dict[str, Any]:
         tok: dict[str, Any] = {
             "access_token": "ya29.new",
             "expires_at": 1_900_000_000,
-            "scope": " ".join(TOOL_SCOPES),
+            "scope": " ".join(scopes),
             "userinfo": {"email": email, "email_verified": True, "sub": "1"},
         }
         if refresh:
@@ -148,7 +150,7 @@ async def test_connect_redirects_to_google_with_offline_consent_and_login_hint(
     scopes = set(q["scope"].split())
     assert {
         "https://www.googleapis.com/auth/calendar.events",
-        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.compose",
         "openid",
         "email",
     } <= scopes
@@ -162,7 +164,7 @@ async def test_callback_links_the_owner_and_redirects_to_console(gc: AsyncClient
     assert r.status_code in (302, 307) and r.headers["location"] == "/?connected=google"
     st = (await gc.get("/v1/integrations")).json()["google"]
     assert st["connected"] is True and st["email"] == OWNER and st["needs_reconnect"] is False
-    assert "https://www.googleapis.com/auth/gmail.send" in st["scopes"]
+    assert "https://www.googleapis.com/auth/gmail.compose" in st["scopes"]
     assert st["expires_at"] == 1_900_000_000
     assert "ya29" not in r.text and "refresh" not in str(st)
     saved = await gc.app.state.google.store.get(user_id_for_email(OWNER))  # type: ignore[attr-defined]
@@ -284,3 +286,55 @@ async def test_connect_routes_are_rate_limited(gsettings: Settings) -> None:
                 for _ in range(4)
             ]
             assert codes[:2] == [401, 401] and codes[2:] == [429, 429]
+
+
+# ---- security review M3 / L3 ----------------------------------------------------------------
+
+
+def _mock_google_http(gc: AsyncClient) -> list[httpx.Request]:
+    seen: list[httpx.Request] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return httpx.Response(200)
+
+    gc.app.state.google.http = httpx.AsyncClient(  # type: ignore[attr-defined]
+        transport=httpx.MockTransport(handler)
+    )
+    return seen
+
+
+async def test_callback_refuses_a_grant_with_unticked_scopes(gc: AsyncClient) -> None:
+    await _login(gc, OWNER)
+    await gc.get("/connect/google", follow_redirects=False)
+    partial = tuple(s for s in TOOL_SCOPES if not s.endswith("gmail.compose"))
+    _fake_consent(gc, OWNER, scopes=partial)
+    r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/?connect_error=missing_scopes"
+    assert await gc.app.state.google.store.get(user_id_for_email(OWNER)) is None  # type: ignore[attr-defined]
+
+
+async def test_wrong_account_grant_is_revoked_at_google(gc: AsyncClient) -> None:
+    await _login(gc, OWNER)
+    await gc.get("/connect/google", follow_redirects=False)
+    _fake_consent(gc, "someone.else@example.com")
+    revoked = _mock_google_http(gc)
+    r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/?connect_error=wrong_account"
+    assert len(revoked) == 1 and str(revoked[0].url) == REVOKE_URL
+    assert dict(httpx.QueryParams(revoked[0].content.decode()))["token"] == "1//refresh"
+
+
+async def test_wrong_account_still_redirects_when_revoke_fails(gc: AsyncClient) -> None:
+    await _login(gc, OWNER)
+    await gc.get("/connect/google", follow_redirects=False)
+    _fake_consent(gc, "someone.else@example.com")
+
+    def down(_: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("unreachable")
+
+    gc.app.state.google.http = httpx.AsyncClient(  # type: ignore[attr-defined]
+        transport=httpx.MockTransport(down)
+    )
+    r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/?connect_error=wrong_account"

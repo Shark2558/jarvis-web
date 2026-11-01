@@ -24,7 +24,6 @@ LINKED = {
             "https://www.googleapis.com/auth/calendar.events",
             "https://www.googleapis.com/auth/gmail.readonly",
             "https://www.googleapis.com/auth/gmail.compose",
-            "https://www.googleapis.com/auth/gmail.send",
         ],
         "expires_at": "2026-11-01T12:00:00Z",
         "needs_reconnect": False,

@@ -334,12 +334,12 @@ fi
 cat <<'MSG'
 
 GOOGLE CALENDAR + GMAIL (once): APIs & Services -> OAuth consent screen (Google Auth Platform)
-  1. Data Access -> Add or remove scopes -> add these five and Save:
+  1. Data Access -> Add or remove scopes -> add these four and Save:
        https://www.googleapis.com/auth/calendar.events
        https://www.googleapis.com/auth/calendar.readonly
        https://www.googleapis.com/auth/gmail.readonly
-       https://www.googleapis.com/auth/gmail.compose
-       https://www.googleapis.com/auth/gmail.send
+       https://www.googleapis.com/auth/gmail.compose   (drafts AND sending)
+     When you connect, leave every box ticked: JARVIS refuses a partial link.
   2. Audience -> Test users -> add your own Gmail address (the one JARVIS signs in with).
   3. In JARVIS: panel -> Integrations -> Connect Google.
   While the app stays in "Testing", Google expires the link every 7 days: JARVIS will show

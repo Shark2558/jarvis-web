@@ -309,15 +309,17 @@
   // ---- integrations (slice 6): the Google link that unlocks Calendar + Gmail tools --------------
   // GET /v1/integrations → {google: {connected, email, scopes, expires_at, needs_reconnect}}.
   // A 404 means this server has no connect flow (token-auth setup / older backend): say so, no error.
+  // gmail.compose covers drafts AND sending; gmail.send only appears on links made before it was dropped.
   const SCOPE_WORDS = { 'calendar.readonly': ['Calendar', 'read'], 'calendar.events': ['Calendar', 'edit'],
-    'gmail.readonly': ['Gmail', 'read'], 'gmail.compose': ['Gmail', 'draft'], 'gmail.send': ['Gmail', 'send'] };
+    'gmail.readonly': ['Gmail', 'read'], 'gmail.compose': ['Gmail', 'draft', 'send'], 'gmail.send': ['Gmail', 'send'] };
   /** "Calendar: read & edit · Gmail: read, draft, send" from the raw scope list (URLs or short names). */
   function scopeSummary(scopes) {
     const by = {}; let other = 0;
     (Array.isArray(scopes) ? scopes : []).forEach(s => {
       const key = String(s).split('/').pop(), w = SCOPE_WORDS[key];
       if (!w) { other++; return; }
-      (by[w[0]] = by[w[0]] || []).push(w[1]);
+      const words = (by[w[0]] = by[w[0]] || []);
+      w.slice(1).forEach(x => { if (!words.includes(x)) words.push(x); });
     });
     const parts = Object.keys(by).map(k => `${k}: ${by[k].length === 2 && k === 'Calendar' ? by[k].join(' & ') : by[k].join(', ')}`);
     if (other) parts.push(`${other} other ${other === 1 ? 'permission' : 'permissions'}`);

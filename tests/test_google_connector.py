@@ -7,11 +7,13 @@ import httpx
 import pytest
 
 from jarvis.integrations.google import (
+    REQUIRED_SCOPES,
     REVOKE_URL,
     TOKEN_URL,
     GoogleAPIError,
     GoogleConnector,
     GoogleNotConnected,
+    GoogleScopesMissing,
 )
 from jarvis.integrations.vault import MemoryTokenStore
 from tests.conftest import FakeGoogle
@@ -211,7 +213,7 @@ async def test_save_from_oauth_token_response(
             "access_token": "a1",
             "refresh_token": "r1",
             "expires_at": int(NOW + 3000),
-            "scope": "openid email https://www.googleapis.com/auth/gmail.readonly",
+            "scope": "openid " + " ".join(REQUIRED_SCOPES),
         },
     )
     saved = await store.get(UID)
@@ -262,3 +264,50 @@ async def test_unreadable_vault_entry_reads_as_not_connected(fake: FakeGoogle) -
         await conn.access_token(UID)
     await conn.disconnect(UID)  # clears the unreadable entry
     assert await docs.get("jarvis_tokens/" + UID) is None
+
+
+# ---- security review M3: the link needs every tool scope ------------------------------------
+
+
+def test_required_scopes_drop_the_redundant_gmail_send() -> None:
+    from jarvis.integrations.google import TOOL_SCOPES
+
+    # gmail.compose already permits messages.send (Google's users.messages.send scope list)
+    assert "https://www.googleapis.com/auth/gmail.send" not in TOOL_SCOPES
+    assert set(REQUIRED_SCOPES) == {
+        "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.compose",
+    }
+    assert set(REQUIRED_SCOPES) <= set(TOOL_SCOPES)
+
+
+async def test_save_refuses_a_partial_grant(conn: GoogleConnector, store: MemoryTokenStore) -> None:
+    partial = [s for s in REQUIRED_SCOPES if "gmail.compose" not in s]
+    with pytest.raises(GoogleScopesMissing) as ei:
+        await conn.save(
+            UID,
+            email="akash@example.com",
+            token={
+                "access_token": "a1",
+                "refresh_token": "r1",
+                "expires_in": 3600,
+                "scope": "openid email " + " ".join(partial),
+            },
+        )
+    assert "gmail.compose" in str(ei.value)
+    assert await store.get(UID) is None
+
+
+async def test_revoke_is_best_effort(conn: GoogleConnector, fake: FakeGoogle) -> None:
+    fake.on("POST", REVOKE_URL, httpx.Response(200))
+    await conn.revoke("tok-1")
+    assert dict(httpx.QueryParams(fake.requests[0].content.decode()))["token"] == "tok-1"
+
+    def boom(_: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down")
+
+    conn.http = httpx.AsyncClient(transport=httpx.MockTransport(boom))
+    await conn.revoke("tok-2")  # never raises
+    await conn.revoke("")  # nothing to revoke: no request

@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector
 from jarvis.logging import get_logger
-from jarvis.tools.addresses import MAX_RECIPIENTS, parse_address
+from jarvis.tools.addresses import MAX_RECIPIENTS, loose_address, parse_address
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.calendar_cards import create_card, delete_card, others_on, update_card
 from jarvis.tools.card import one_line
@@ -37,6 +37,8 @@ TZ_URL = f"{BASE}/users/me/calendarList/primary"
 MAX_EVENTS = 50
 MAX_SLOTS = 20
 DESCRIPTION_LIMIT = 2_000
+MAX_LISTED_ATTENDEES = 50
+LINK_LIMIT = 500
 DEFAULT_WORKING_HOURS = "09:00-18:00"
 
 _EVENT_ID = re.compile(r"^[A-Za-z0-9_@.\-]{1,1024}$")
@@ -116,18 +118,28 @@ def _validate_event_id(raw: Any) -> str:
     return eid
 
 
+def _organizer(e: dict[str, Any]) -> str:
+    org = e.get("organizer")
+    return (loose_address(org.get("email")) if isinstance(org, dict) else "") or "calendar"
+
+
+def _link(value: Any) -> str | None:
+    link = one_line(value, LINK_LIMIT)
+    return link if link.startswith("https://") else None
+
+
 def _event_time(part: dict[str, Any] | None, tz: ZoneInfo) -> tuple[str, bool]:
     if not part:
         return "", False
     if "date" in part:
-        return str(part["date"]), True
+        return one_line(part["date"], 32), True
     dt = part.get("dateTime", "")
     try:
         return datetime.fromisoformat(str(dt).replace("Z", "+00:00")).astimezone(
             tz
         ).isoformat(), False
     except ValueError:
-        return str(dt), False
+        return one_line(dt, 64), False
 
 
 # ---- the API ------------------------------------------------------------------------------
@@ -147,18 +159,21 @@ class CalendarAPI:
             return ZoneInfo("UTC")
 
     def shape(self, e: dict[str, Any], tz: ZoneInfo) -> dict[str, Any]:
-        organizer = str((e.get("organizer") or {}).get("email") or "calendar")
+        """Only requested fields; addresses as clean bare lines (capped), other people's words
+        (title, location, description) fenced as EXTERNAL CONTENT."""
+        organizer = _organizer(e)
         start, all_day = _event_time(e.get("start"), tz)
         end, _ = _event_time(e.get("end"), tz)
-        attendees = [str(a.get("email", "")) for a in e.get("attendees") or [] if a.get("email")]
+        listed = [a for a in e.get("attendees") or [] if isinstance(a, dict) and a.get("email")]
+        emails = [b for a in listed if (b := loose_address(a.get("email")))]
         out: dict[str, Any] = {
-            "id": e.get("id"),
+            "id": one_line(e.get("id"), 1024),
             "summary": wrap_external(str(e.get("summary") or "(no title)"), source=organizer),
             "start": start,
             "end": end,
             "all_day": all_day,
-            "attendees": {"count": len(attendees), "emails": attendees},
-            "hangout_link": e.get("hangoutLink"),
+            "attendees": {"count": len(listed), "emails": emails[:MAX_LISTED_ATTENDEES]},
+            "hangout_link": _link(e.get("hangoutLink")),
             "organizer": organizer,
         }
         if e.get("location"):
@@ -292,12 +307,13 @@ class CalendarAPI:
         start, _ = _event_time(e.get("start"), tz)
         end, _ = _event_time(e.get("end"), tz)
         return {
-            "id": e.get("id"),
-            "summary": e.get("summary"),
+            "id": one_line(e.get("id"), 1024),
+            # an updated event may carry a title an outside organiser wrote
+            "summary": wrap_external(str(e.get("summary") or "(no title)"), source=_organizer(e)),
             "start": start,
             "end": end,
             "attendees": len(e.get("attendees") or []),
-            "link": e.get("htmlLink"),
+            "link": _link(e.get("htmlLink")),
         }
 
 

@@ -13,16 +13,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from email.utils import getaddresses, parseaddr, parsedate_to_datetime
 from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleConnector
-from jarvis.tools.addresses import display_addresses
+from jarvis.tools.addresses import display_addresses, loose_address
 from jarvis.tools.base import SummaryFn, Tool
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
-from jarvis.tools.external import sender_address, wrap_external
+from jarvis.tools.external import wrap_external
 from jarvis.tools.gmail_mime import (
+    Attachment,
     build_raw_message,
     check_header_value,
     headers_of,
@@ -45,6 +47,15 @@ BODY_ARG_LIMIT = 20_000
 CARD_SUBJECT_LIMIT = 200
 CARD_BODY_LIMIT = 200
 DRAFT_STATUS = "draft saved, not sent"
+# What the model sees of headers other people wrote: bare addresses, capped lists, an ISO date;
+# display names and attachment names are fenced as EXTERNAL CONTENT.
+NAME_LIMIT = 120
+DATE_LIMIT = 64
+HEADER_SCAN_LIMIT = 10_000
+MAX_LISTED_ADDRESSES = 20
+MAX_ATTACHMENTS = 25
+ATTACHMENT_NAME_LIMIT = 200
+_MIME = re.compile(r"[a-z0-9][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}")
 META_HEADERS = ("From", "To", "Cc", "Date", "Subject", "Message-ID", "References")
 
 _MESSAGE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
@@ -54,6 +65,65 @@ _REPLY = {
     "type": "string",
     "description": "Gmail message id to reply to (threads the mail; subject gets Re:)",
 }
+
+
+def _sender(header: str) -> tuple[str, str]:
+    """From header → (bare address or '', display name or ''), both one clean line. When the
+    header does not parse, the whole of it is treated as a (fenced) name."""
+    flat = one_line(header, HEADER_SCAN_LIMIT)
+    name, addr = parseaddr(flat)
+    bare = loose_address(addr)
+    if not bare:
+        return "", one_line(flat, NAME_LIMIT)
+    return bare, one_line(name, NAME_LIMIT)
+
+
+def _addresses(header: str) -> list[str]:
+    """To/Cc header → bare addresses, at most MAX_LISTED_ADDRESSES (+ an '… and N more')."""
+    pairs = getaddresses([one_line(header, HEADER_SCAN_LIMIT)])
+    found = [b for _, a in pairs if (b := loose_address(a))]
+    if len(found) <= MAX_LISTED_ADDRESSES:
+        return found
+    return [*found[:MAX_LISTED_ADDRESSES], f"… and {len(found) - MAX_LISTED_ADDRESSES} more"]
+
+
+def _date(header: str) -> str:
+    flat = one_line(header, 200)
+    try:
+        return parsedate_to_datetime(flat).isoformat()
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return one_line(flat, DATE_LIMIT)
+
+
+def _mime(value: str) -> str:
+    m = one_line(value, 200).lower()
+    return m if _MIME.fullmatch(m) else "application/octet-stream"
+
+
+def _attachments(found: list[Attachment], source: str) -> list[dict[str, Any]]:
+    """Names are someone else's words (a favourite place for "SYSTEM: …"): fenced and capped."""
+    return [
+        {
+            "name": wrap_external(
+                one_line(x.name, HEADER_SCAN_LIMIT), source=source, limit=ATTACHMENT_NAME_LIMIT
+            ),
+            "size": x.size,
+            "mime_type": _mime(x.mime_type),
+        }
+        for x in found[:MAX_ATTACHMENTS]
+    ]
+
+
+def _people(h: dict[str, str]) -> tuple[str, dict[str, Any]]:
+    """→ (fence source, the from/from_name/to/date fields of a message)."""
+    addr, name = _sender(h.get("from", ""))
+    source = addr or "unknown sender"
+    fields: dict[str, Any] = {"from": addr}
+    if name:
+        fields["from_name"] = wrap_external(name, source=source, limit=NAME_LIMIT)
+    fields["to"] = _addresses(h.get("to", ""))
+    fields["date"] = _date(h.get("date", ""))
+    return source, fields
 
 
 def _validate_message_id(raw: Any) -> str:
@@ -93,13 +163,11 @@ class GmailAPI:
 
     def _summary(self, m: dict[str, Any]) -> dict[str, Any]:
         h = headers_of(m.get("payload") or {})
-        sender = sender_address(h.get("from", "")) or "unknown sender"
+        sender, people = _people(h)
         return {
             "id": m.get("id"),
             "thread_id": m.get("threadId"),
-            "from": h.get("from", ""),
-            "to": h.get("to", ""),
-            "date": h.get("date", ""),
+            **people,
             "subject": wrap_external(
                 h.get("subject", "(no subject)"), source=sender, limit=SUBJECT_LIMIT
             ),
@@ -114,24 +182,22 @@ class GmailAPI:
         m = await self.conn.request(uid, "GET", f"{MESSAGES_URL}/{mid}", params={"format": "full"})
         payload = m.get("payload") or {}
         h = headers_of(payload)
-        sender = sender_address(h.get("from", "")) or "unknown sender"
+        sender, people = _people(h)
         parsed = parse_body(payload)
-        return {
+        out: dict[str, Any] = {
             "id": m.get("id"),
             "thread_id": m.get("threadId"),
-            "from": h.get("from", ""),
-            "to": h.get("to", ""),
-            "cc": h.get("cc", ""),
-            "date": h.get("date", ""),
+            **people,
+            "cc": _addresses(h.get("cc", "")),
             "subject": wrap_external(
                 h.get("subject", "(no subject)"), source=sender, limit=SUBJECT_LIMIT
             ),
             "body": wrap_external(parsed.text or "(empty body)", source=sender, limit=BODY_LIMIT),
-            "attachments": [
-                {"name": x.name, "size": x.size, "mime_type": x.mime_type}
-                for x in parsed.attachments
-            ],
+            "attachments": _attachments(parsed.attachments, sender),
         }
+        if len(parsed.attachments) > MAX_ATTACHMENTS:
+            out["attachments_not_listed"] = len(parsed.attachments) - MAX_ATTACHMENTS
+        return out
 
     # ---- write side -----------------------------------------------------------------------
 

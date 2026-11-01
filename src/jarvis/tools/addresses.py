@@ -104,6 +104,16 @@ def parse_recipients(raw: Any) -> list[str]:
     return out
 
 
+_LOOSE = re.compile(r'[^@\s<>"]+@[^@\s<>"]+')
+
+
+def loose_address(value: Any) -> str:
+    """An address read from Google data (a header, an attendee): one clean lower-case line if
+    it looks like local@domain, else ''. For returning to the model, not for sending."""
+    a = one_line(value, MAX_ADDRESS_LEN).lower()
+    return a if _LOOSE.fullmatch(a) else ""
+
+
 def display_address(addr: str) -> str:
     """An address for the owner's eyes: IDN domains as 'Unicode (punycode)'."""
     local, _, domain = addr.rpartition("@")
@@ -125,6 +135,7 @@ __all__ = [
     "ascii_domain",
     "display_address",
     "display_addresses",
+    "loose_address",
     "parse_address",
     "parse_recipients",
 ]

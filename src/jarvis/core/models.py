@@ -15,6 +15,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from jarvis.core.guardrails import PendingAction
+from jarvis.documents.models import AttachmentRef
 from jarvis.llm.base import ContentBlock, Role, Usage
 from jarvis.recall.models import MemoryRef
 
@@ -46,6 +47,9 @@ class Turn(BaseModel):
     # how an owner message arrived (slice 9): "voice" was heard through the microphone, so it
     # may be someone else's words — never used for memory learning (jarvis.recall.learning)
     channel: Literal["text", "voice"] = "text"
+    # files sent with an owner message (slice 10 E): names and counts only. Their start travels
+    # as a second, fenced text block; a turn with blocks never reaches a training brain.
+    attachments: list[AttachmentRef] = Field(default_factory=list)
 
 
 class Session(BaseModel):
@@ -91,6 +95,11 @@ class ChatRequest(BaseModel):
         default="text",
         description="voice: the owner spoke this message and the reply will be read aloud "
         "(short, plain spoken answer; slice 9 D7)",
+    )
+    attachments: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Ids from POST /v1/attachments sent with this message (at most 3; slice 10)",
     )
 
 

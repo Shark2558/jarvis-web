@@ -24,7 +24,7 @@ Spending (slice 7b): every model call — chat, each tool round, the round-limit
 narration, the stream — goes through `_admit` (the owner's monthly limit, `Billing.ensure_allowed`)
 BEFORE it is made, and its cost is added to the month after it (`Billing.record`, never fails the
 reply). A turn is also admitted before the owner's message is stored, so a refused turn leaves
-no unanswered message behind.
+no unanswered message behind. Attached files (slice 10): `jarvis.documents.service` hooks.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Sessi
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
 from jarvis.core.window import build_window
+from jarvis.documents.service import DocumentService, forget_files, precheck, with_files
 from jarvis.llm.base import (
     ChatMessage,
     Completion,
@@ -141,6 +142,7 @@ class Brain:
         billing: Billing | None = None,
         memory: MemoryService | None = None,
         wit: WitSource | None = None,
+        documents: DocumentService | None = None,
     ) -> None:
         if brains is None:
             if router is None:
@@ -166,6 +168,7 @@ class Brain:
         # the app passes its own (Firestore, daily rate); without one: in-memory, default rate
         self.billing = billing or Billing.in_memory(brains, settings)
         self.memory = memory  # long-term notes about the owner (None: off)
+        self.documents = documents  # attached files (None: refused with a plain message)
         # the owner's wit level picks the system prompt (None: always the default)
         self.persona = Persona(honorific=settings.user_honorific, wit=wit)
         # One owner action at a time per conversation (chat, approve, decline, delete): no
@@ -342,6 +345,7 @@ class Brain:
             self.brains.get(req.brain)  # fail before creating an orphan session
         guard_input(req.message, max_chars=self.s.max_input_chars)
         await self.check_budget(req)  # a refused first message leaves no empty conversation
+        await precheck(self.documents, req, self.brains.get(req.brain or self.brains.default.id))
         session = await self._load_or_create(req)
         return req.model_copy(update={"session_id": session.id})
 
@@ -361,7 +365,8 @@ class Brain:
         spec = self._resolve_brain(session, req)
         await self._admit(req.user_id, spec)  # refused → nothing stored, nothing called
 
-        session.append(_owner_turn(text, req, trace_id))
+        turn = _owner_turn(text, req, trace_id)
+        session.append(await with_files(self.documents, turn, req, spec, session.id))
         # persist the user turn before the LLM call so a crash never loses owner input
         await self.store.save(session)
 
@@ -572,6 +577,7 @@ class Brain:
                 return False
             if self.gateway is not None:
                 await self.gateway.gate.cancel_scope(f"{user_id}:{session_id}")
+            await forget_files(self.documents, user_id, session_id)  # none outlives the chat
             return await self.store.delete(session_id)
 
     # ---- approvals ----------------------------------------------------------------------
@@ -752,7 +758,8 @@ class Brain:
         spec = self._resolve_brain(session, req)
         router = self.brains.router_for(spec.id)
         await self._admit(req.user_id, spec)  # turn-level: refused → nothing stored
-        session.append(_owner_turn(text, req, trace_id))
+        turn = _owner_turn(text, req, trace_id)
+        session.append(await with_files(self.documents, turn, req, spec, session.id))
         await self.store.save(session)
 
         messages = self._window_for(session, spec)

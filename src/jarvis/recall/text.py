@@ -95,8 +95,7 @@ def _stem(word: str) -> str:
     return w
 
 
-@lru_cache(maxsize=TOKEN_CACHE)
-def _tokens(text: str) -> tuple[str, ...]:
+def _scan(text: str) -> tuple[str, ...]:
     folded = unicodedata.normalize("NFKC", text).lower().replace("’", "'")
     out: list[str] = []
     for m in _WORD.finditer(folded):
@@ -109,9 +108,18 @@ def _tokens(text: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+_tokens = lru_cache(maxsize=TOKEN_CACHE)(_scan)
+
+
 def tokens(text: str) -> list[str]:
     """Content words of `text`, lower-cased and stemmed, in order (duplicates kept)."""
     return list(_tokens(str(text or "")))
+
+
+def tokenize(text: str) -> list[str]:
+    """`tokens` without the memo: for long one-off texts (chunks of an attached document) that
+    would only crowd out the short facts and questions the memo is for."""
+    return list(_scan(str(text or "")))
 
 
 @lru_cache(maxsize=TOKEN_CACHE)
@@ -148,5 +156,6 @@ __all__ = [
     "norm_key",
     "overlap",
     "token_set",
+    "tokenize",
     "tokens",
 ]

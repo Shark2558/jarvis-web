@@ -1,6 +1,6 @@
 """Default gateway wiring: builtin dev tools, plus the Google tools when an account link is
 configured (then the fake calendar/message builtins step aside so the model sees no twins), plus
-the memory tools when long-term memory is on."""
+the memory tools when long-term memory is on, plus the document tools (slice 10 E)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from jarvis.tools.policy import Policy
 from jarvis.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
+    from jarvis.documents.service import DocumentService
     from jarvis.recall.service import MemoryService
 
 # builtins that stand in for real connectors; dropped once the real ones are registered
@@ -29,6 +30,7 @@ def build_gateway(
     audit: AuditTrail | None = None,
     google: GoogleConnector | None = None,
     memory: MemoryService | None = None,
+    documents: DocumentService | None = None,
 ) -> Gateway:
     reg = ToolRegistry()
     for t in builtin_tools(InMemoryWorld()):
@@ -45,6 +47,11 @@ def build_gateway(
         from jarvis.recall.tools import memory_tools
 
         for t in memory_tools(memory):
+            reg.register(t)
+    if documents is not None:
+        from jarvis.documents.tools import document_tools
+
+        for t in document_tools(documents):
             reg.register(t)
     return Gateway(
         registry=reg,

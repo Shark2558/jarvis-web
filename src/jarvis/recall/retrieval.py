@@ -83,26 +83,33 @@ def is_broad(query: str) -> bool:
     return not words - BROAD and bool(words & BROAD or _ASKS_MEMORY.search(query or ""))
 
 
+def bm25(docs: Sequence[Counter[str]], query: set[str]) -> list[float]:
+    """BM25 of each bag of words for the query words (0.0: no match). Shared with document
+    search (`jarvis.documents`), which ranks chunks of an attached file the same way."""
+    if not docs or not query:
+        return [0.0] * len(docs)
+    avgdl = sum(sum(c.values()) for c in docs) / len(docs) or 1.0
+    df = Counter(t for c in docs for t in c if t in query)  # each bag's words, not the query's
+    n = len(docs)
+    out: list[float] = []
+    for counts in docs:
+        dl = sum(counts.values())
+        s = 0.0
+        for t, tf in counts.items():
+            if t in query:
+                idf = math.log(1 + (n - df[t] + 0.5) / (df[t] + 0.5))
+                s += idf * tf * (K1 + 1) / (tf + K1 * (1 - B + B * dl / avgdl))
+        out.append(s)
+    return out
+
+
 def scores(facts: Sequence[Fact], query: str, now: datetime) -> dict[str, float]:
     """BM25 score of each fact for `query` (only facts with a lexical match appear)."""
     q = set(tokens(query)) - BROAD
     if not q or not facts:
         return {}
-    docs = [(f, Counter(_doc(f))) for f in facts]
-    avgdl = sum(sum(c.values()) for _, c in docs) / len(docs) or 1.0
-    df = Counter(t for _, c in docs for t in c if t in q)  # each fact's words, not each query's
-    n = len(docs)
-    out: dict[str, float] = {}
-    for f, counts in docs:
-        dl = sum(counts.values())
-        s = 0.0
-        for t, tf in counts.items():
-            if t in q:
-                idf = math.log(1 + (n - df[t] + 0.5) / (df[t] + 0.5))
-                s += idf * tf * (K1 + 1) / (tf + K1 * (1 - B + B * dl / avgdl))
-        if s > 0:
-            out[f.id] = s * _boost(f, now)
-    return out
+    ranked = bm25([Counter(_doc(f)) for f in facts], q)
+    return {f.id: s * _boost(f, now) for f, s in zip(facts, ranked, strict=True) if s > 0}
 
 
 def _boost(f: Fact, now: datetime) -> float:
@@ -249,6 +256,7 @@ __all__ = [
     "BROAD",
     "HEADING",
     "PREAMBLE",
+    "bm25",
     "conflict_of",
     "is_broad",
     "pinned_then_recent",

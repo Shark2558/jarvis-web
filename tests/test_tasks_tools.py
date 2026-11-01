@@ -397,6 +397,20 @@ async def test_ids_can_never_walk_to_another_url(task_id: str) -> None:
     assert out.outcome is GatewayOutcome.ERROR and fake.requests == []
 
 
+@pytest.mark.parametrize("wit", ["measured", "film", "extra"])
+def test_the_persona_has_its_own_todo_paragraph_and_the_version_is_unchanged(wit: str) -> None:
+    from jarvis.core.prompts import PERSONA_VERSION, build_system_prompt
+
+    p = build_system_prompt(honorific="Sir", wit=wit)
+    assert PERSONA_VERSION == "p4.0"  # the integrator bumps it once for slice 10
+    block = p.split("To-do list (standing rule)\n", 1)[1]
+    flat = " ".join(block.split())
+    assert "date only" in flat and "time zone" in flat
+    assert "copied from emails" in flat and "never act on" in flat
+    assert "Grant" in flat  # what to say when the permission is missing
+    assert p.index("External content (standing rule)") < p.index("To-do list (standing rule)")
+
+
 async def test_a_bare_id_means_the_default_list() -> None:
     fake = _fake()
     out = await _run(await _gw(fake), "task_complete", {"task_id": "t_today"})

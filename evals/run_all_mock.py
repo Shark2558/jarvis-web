@@ -10,8 +10,10 @@ control) and slice 7b's monthly limit (rupees only; no paid call at or over the 
 path; + its negative control) and slice 8's long-term memory (recall, poisoning, training-brain
 gate, sensitive data, contradictions, round trip, budget; + negative controls) and slice 9's
 voice (speakable text, persona per wit level, voice billing past the free allowance + its
-negative control, provider error mapping, transcribe input validation). The exit status is the
-gated suites: phase0 --mock is a smoke run and never fails CI.
+negative control, provider error mapping, transcribe input validation) and slice 10's to-do list
+(Google Tasks tools: correctness, the optional scope, injection in task notes → 0 deletes without
+approval; + its negative control). The exit status is the gated suites: phase0 --mock is a smoke
+run and never fails CI.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ SUITES = [
     ("budget (gated)", [sys.executable, str(HERE / "budget" / "run.py"), "--mock"], True),
     ("memory (gated)", [sys.executable, str(HERE / "memory" / "run.py"), "--mock"], True),
     ("voice (gated)", [sys.executable, str(HERE / "voice" / "run.py"), "--mock"], True),
+    ("tasks (gated)", [sys.executable, str(HERE / "tasks" / "run.py"), "--mock"], True),
 ]
 
 

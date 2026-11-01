@@ -40,6 +40,9 @@ class Turn(BaseModel):
     usage: Usage | None = None
     cost_usd: float = 0.0
     latency_ms: int | None = None
+    # produced from a tool or approval outcome (an approval's narration, a reply written after
+    # tool rounds): private data, never sent to a brain that may train on content
+    tool_derived: bool = False
 
 
 class Session(BaseModel):

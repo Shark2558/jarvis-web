@@ -239,3 +239,52 @@ async def test_the_scheduler_sweep_is_awaited_bounded_and_never_raises() -> None
 
     r.svc.sweep = stuck  # type: ignore[method-assign]
     assert await brain.sweep_memory([UID], within_s=0.05) == 0
+
+
+def _send_mail_tool() -> Tool:
+    return Tool(
+        "gmail_send",
+        "Send a mail.",
+        {"type": "object", "properties": {"to": {"type": "string"}, "body": {"type": "string"}}},
+        ActionRisk.IRREVERSIBLE,
+        lambda a: {"sent": True},
+        summarize=lambda a: f"Send mail to {a.get('to')}: {a.get('body')}",
+    )
+
+
+async def _approve_on_a_training_brain(r, call: ToolCall, ask: str) -> list[str]:  # type: ignore[no-untyped-def]
+    """Propose on the private brain, switch to the training brain, approve, chat once more:
+    every message the training brain was sent afterwards."""
+    brain = _brain(r)
+    brain.gateway.registry.register(_send_mail_tool())  # type: ignore[union-attr]
+    r.private.script_tool_calls([call], "A card is waiting, Sir.")
+    res = await brain.chat(_req(ask))
+    (card,) = res.pending_approvals
+    await brain.chat(_req("what is 2+2?", session_id=res.session_id, brain="training"))
+    approved = await brain.approve(card.id, session_id=res.session_id, user_id=UID)
+    assert approved.reply.startswith("Done, Sir")  # the owner still sees what was done
+    before = len(r.training.calls)
+    await brain.chat(_req("and 3+3?", session_id=res.session_id))
+    return [str(m.content) for c in r.training.calls[before:] for m in c.messages]
+
+
+async def test_a_forget_approved_on_a_training_brain_never_reaches_it() -> None:
+    """HIGH 4: the deterministic narration ("Done, Sir: Forget 1 note … <fact text>") was
+    stored as a plain assistant turn after the cutoff and sent to the training brain."""
+    r = rig()
+    f = await r.svc.add_fact(UID, "Daughter Anaya studies at St Mary School", "people")
+    forget = ToolCall(id="t1", name="memory_forget", arguments={"ids": [f.id]})
+    sent = await _approve_on_a_training_brain(r, forget, "Forget my daughter's school")
+    assert sent and not any("St Mary" in m or "Anaya" in m for m in sent)
+    assert any("3+3" in m for m in sent)
+
+
+async def test_a_mail_approved_on_a_training_brain_never_reaches_it() -> None:
+    r = rig()
+    mail = ToolCall(
+        id="t1",
+        name="gmail_send",
+        arguments={"to": "bob@example.com", "body": "the merger closes Friday"},
+    )
+    sent = await _approve_on_a_training_brain(r, mail, "Mail Bob about the merger")
+    assert sent and not any("merger" in m or "bob@example.com" in m for m in sent)

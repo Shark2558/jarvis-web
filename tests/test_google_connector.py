@@ -236,3 +236,29 @@ async def test_disconnect_revokes_best_effort_and_deletes(
     assert body["token"] == "the-refresh"
     await conn.disconnect(UID)  # nothing connected: no request, no error
     assert len(fake.requests) == 1
+
+
+async def test_unreadable_vault_entry_reads_as_not_connected(fake: FakeGoogle) -> None:
+    """Key rotated or document tampered: the owner is told to reconnect, nothing crashes."""
+    import os
+
+    from pydantic import SecretStr
+
+    from jarvis.integrations.vault import DocTokenStore
+    from jarvis.storage.docs import MemoryDocs
+
+    docs = MemoryDocs()
+    await DocTokenStore(docs, key=os.urandom(32)).put(UID, _tokens())
+    conn = GoogleConnector(
+        DocTokenStore(docs, key=os.urandom(32)),  # a different key
+        client_id="cid",
+        client_secret=SecretStr("s"),
+        http=fake.client(),
+        now=lambda: NOW,
+    )
+    st = await conn.status(UID)
+    assert st["connected"] is False and st["needs_reconnect"] is True
+    with pytest.raises(GoogleNotConnected):
+        await conn.access_token(UID)
+    await conn.disconnect(UID)  # clears the unreadable entry
+    assert await docs.get("jarvis_tokens/" + UID) is None

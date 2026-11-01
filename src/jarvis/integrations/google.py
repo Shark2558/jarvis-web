@@ -17,7 +17,7 @@ import httpx
 from pydantic import SecretStr
 
 from jarvis.config import AuthMode, Settings
-from jarvis.integrations.vault import GoogleTokens, TokenStore
+from jarvis.integrations.vault import GoogleTokens, TokenStore, VaultError
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -97,15 +97,24 @@ class GoogleConnector:
 
     # ---- status / lifecycle --------------------------------------------------------------
 
+    async def _load(self, user_id: str) -> GoogleTokens | None | VaultError:
+        """Stored tokens, None when there are none, or the VaultError when the entry cannot be
+        decrypted (key rotated, document tampered): unusable, so the owner must reconnect."""
+        try:
+            return await self.store.get(user_id)
+        except VaultError as exc:
+            log.error("google token vault entry unreadable; owner must reconnect")
+            return exc
+
     async def status(self, user_id: str) -> dict[str, Any]:
-        t = await self.store.get(user_id)
-        if t is None:
+        t = await self._load(user_id)
+        if t is None or isinstance(t, VaultError):
             return {
                 "connected": False,
                 "email": None,
                 "scopes": [],
                 "expires_at": None,
-                "needs_reconnect": False,
+                "needs_reconnect": isinstance(t, VaultError),
             }
         return {
             "connected": True,
@@ -140,8 +149,11 @@ class GoogleConnector:
 
     async def disconnect(self, user_id: str) -> None:
         """Revoke at Google (best effort) and forget the tokens (always)."""
-        t = await self.store.get(user_id)
+        t = await self._load(user_id)
         if t is None:
+            return
+        if isinstance(t, VaultError):
+            await self.store.delete(user_id)  # nothing usable to revoke; forget it
             return
         try:
             await self.http.post(
@@ -157,10 +169,10 @@ class GoogleConnector:
     # ---- tokens --------------------------------------------------------------------------
 
     async def access_token(self, user_id: str) -> str:
-        t = await self.store.get(user_id)
+        t = await self._load(user_id)
         if t is None:
             raise GoogleNotConnected(NOT_CONNECTED_MSG)
-        if t.needs_reconnect:
+        if isinstance(t, VaultError) or t.needs_reconnect:
             raise GoogleNotConnected(RECONNECT_MSG)
         if t.expires_at - self._now() > REFRESH_SKEW_S:
             return t.access_token.get_secret_value()
@@ -220,9 +232,9 @@ class GoogleConnector:
         token = await self.access_token(user_id)
         r = await self._send(method, url, token, params, json)
         if r.status_code == 401:
-            t = await self.store.get(user_id)
-            if t is None:
-                raise GoogleNotConnected(NOT_CONNECTED_MSG)
+            t = await self._load(user_id)
+            if t is None or isinstance(t, VaultError):
+                raise GoogleNotConnected(RECONNECT_MSG)
             token = await self._refresh(user_id, t)
             r = await self._send(method, url, token, params, json)
         elif r.status_code in RETRY_STATUSES:

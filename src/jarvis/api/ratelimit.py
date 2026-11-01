@@ -1,6 +1,6 @@
 # src/jarvis/api/ratelimit.py
-"""Per-client token bucket for /v1, /auth and /connect. In-memory: correct for a single instance, which
-is all we run until the Postgres/Redis slice (then move the bucket to Redis)."""
+"""Per-client token bucket for /v1, /auth and /connect. In-memory: correct for a single
+instance, which is all we run until the Postgres/Redis slice (then move the bucket to Redis)."""
 
 from __future__ import annotations
 

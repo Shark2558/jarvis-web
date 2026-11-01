@@ -174,7 +174,7 @@ async def test_callback_refuses_a_different_google_account(gc: AsyncClient) -> N
     await gc.get("/connect/google", follow_redirects=False)
     _fake_consent(gc, "someone.else@example.com")
     r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
-    assert r.status_code == 403
+    assert r.status_code == 302 and r.headers["location"] == "/?connect_error=wrong_account"
     assert (await gc.get("/v1/integrations")).json()["google"]["connected"] is False
 
 
@@ -182,13 +182,13 @@ async def test_callback_refuses_when_not_started_by_this_owner(gc: AsyncClient) 
     await _login(gc, OWNER)
     _fake_consent(gc, OWNER)
     r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
-    assert r.status_code == 403  # no connect was started in this browser session
+    assert r.headers["location"] == "/?connect_error=not_started"  # no connect started here
     # started as OWNER, but the browser is now signed in as OTHER
     await gc.get("/connect/google", follow_redirects=False)
     await _login(gc, OTHER)
     _fake_consent(gc, OTHER)
     r2 = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
-    assert r2.status_code == 403
+    assert r2.status_code == 302 and r2.headers["location"] == "/?connect_error=not_started"
     for who in (OWNER, OTHER):
         assert await gc.app.state.google.store.get(user_id_for_email(who)) is None  # type: ignore[attr-defined]
 
@@ -204,7 +204,7 @@ async def test_callback_without_refresh_token_is_refused(gc: AsyncClient) -> Non
     await gc.get("/connect/google", follow_redirects=False)
     _fake_consent(gc, OWNER, refresh=False)
     r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
-    assert r.status_code == 400 and "consent" in r.text.lower()
+    assert r.status_code == 302 and r.headers["location"] == "/?connect_error=no_refresh_token"
     assert (await gc.get("/v1/integrations")).json()["google"]["connected"] is False
 
 
@@ -217,7 +217,8 @@ async def test_callback_hides_authlib_errors(gc: AsyncClient) -> None:
 
     gc.app.state.oauth.google_tools.authorize_access_token = boom  # type: ignore[attr-defined]
     r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
-    assert r.status_code == 400 and "secret-detail" not in r.text
+    assert r.status_code == 302 and r.headers["location"] == "/?connect_error=oauth_failed"
+    assert "secret-detail" not in r.text
 
 
 # ---- status + disconnect --------------------------------------------------------------------
@@ -254,8 +255,8 @@ async def test_disconnect_needs_csrf_header_then_revokes_and_forgets(gc: AsyncCl
     gc.app.state.google.http = httpx.AsyncClient(  # type: ignore[attr-defined]
         transport=httpx.MockTransport(handler)
     )
-    assert (await gc.post("/v1/integrations/google/disconnect")).status_code == 403  # no CSRF
-    r = await gc.post("/v1/integrations/google/disconnect", headers=CSRF)
+    assert (await gc.post("/v1/integrations/google/disconnect", json={})).status_code == 403
+    r = await gc.post("/v1/integrations/google/disconnect", json={}, headers=CSRF)  # console body
     assert r.status_code == 200 and r.json() == {"ok": True, "google": {"connected": False}}
     assert len(revoked) == 1 and str(revoked[0].url) == REVOKE_URL
     assert (await gc.get("/v1/integrations")).json()["google"]["connected"] is False

@@ -2,7 +2,8 @@
 """Linking the owner's Google account for the Calendar + Gmail tools (Layer 1 → 6).
 
 GET  /connect/google                 signed-in owner → Google consent (offline, PKCE, login_hint)
-GET  /connect/google/callback        store tokens iff the consenting account IS the signed-in owner
+GET  /connect/google/callback        store tokens iff the consenting account IS the signed-in owner;
+                                     failures redirect to /?connect_error=<code> (browser landing)
 GET  /v1/integrations          {google: {connected, email, scopes, expires_at, needs_reconnect}}
 POST /v1/integrations/google/disconnect   revoke at Google (best effort) + forget (CSRF header)
 
@@ -14,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from jarvis.api.auth import require_auth, session_email
@@ -45,8 +46,10 @@ def _callback_url(s: Settings) -> str:
     return s.public_base_url.rstrip("/") + "/connect/google/callback"
 
 
-def _refused(detail: str) -> JSONResponse:
-    return JSONResponse(status_code=403, content={"error": "not_owner", "detail": detail})
+def _failed(code: str) -> RedirectResponse:
+    """The browser arrives here from Google: land it back on the console with a reason code
+    (not_started | wrong_account | oauth_failed | no_refresh_token), never a JSON page."""
+    return RedirectResponse(url=f"/?connect_error={code}", status_code=302)
 
 
 # ---- connect flow ---------------------------------------------------------------------------
@@ -81,24 +84,23 @@ async def connect_callback(
         # The flow was started by another account in this browser (or not at all): a state
         # minted for one owner must never link tokens to a different one.
         log.warning("google connect refused: owner changed mid-flow")
-        return _refused("This connection was not started by the signed-in owner.")
+        return _failed("not_started")
     try:
         token = await request.app.state.oauth.google_tools.authorize_access_token(request)
-    except Exception as exc:  # authlib raises many types; none may leak detail
+    except Exception as exc:  # noqa: BLE001 — authlib raises many types; none may leak detail
         log.warning("google connect failed", extra={"reason": type(exc).__name__})
-        raise HTTPException(400, "Google connection could not be completed; try again.") from exc
+        return _failed("oauth_failed")
 
     info = token.get("userinfo") or {}
     consented = str(info.get("email") or "").lower()
     if not consented or not info.get("email_verified") or consented != email.lower():
         log.warning("google connect refused: consenting account is not the signed-in owner")
-        return _refused("Please consent with the same Google account you signed in with.")
+        return _failed("wrong_account")
     try:
         await google.save(user_id_for_email(email), email=email, token=token)
-    except ValueError as exc:
-        raise HTTPException(
-            400, "Google did not grant offline access; connect again and accept the consent."
-        ) from exc
+    except ValueError:
+        log.warning("google connect: no refresh token in the response")
+        return _failed("no_refresh_token")
     return RedirectResponse(url="/?connected=google", status_code=302)
 
 

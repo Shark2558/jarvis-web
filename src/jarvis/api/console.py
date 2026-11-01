@@ -41,6 +41,8 @@ APP_ASSETS: dict[str, str] = {
     "console-3d.js": _JS,  # three.js scenes (ES module; loads three lazily, 2D fallback)
     "console-3d-scenes.js": _JS,  # Core / Globe / Construct scene builders (ES module)
     "console-wakeword.js": _JS,  # on-device "Hey Jarvis" (openWakeWord port, slice 9 D12)
+    "console-attach.js": _JS,  # slice 10 E: paperclip, drag-and-drop, file chips
+    "console-attach.css": "text/css",
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",

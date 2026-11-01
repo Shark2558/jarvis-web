@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="/static/console-deck.css">
 <link rel="stylesheet" href="/static/console-memory.css">
 <link rel="stylesheet" href="/static/console-voice.css">
+<link rel="stylesheet" href="/static/console-attach.css">
 </head>
 <body>
 <div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
@@ -140,7 +141,14 @@
     <div class="pbody flush">
       <main class="scroll" id="scroll"><div class="thread" id="log" aria-live="polite"></div></main>
       <div class="composer-wrap">
+        <!-- slice 10 E (console-attach.js): files waiting to go with the next message, and why one was refused -->
+        <div class="achips" id="attachChips" role="list" aria-label="Files to send with the next message" hidden></div>
+        <p class="aerr" id="attachErr" role="alert" hidden></p>
         <form class="composer" id="form" autocomplete="off">
+          <button class="clip lift" id="attachBtn" type="button" aria-label="Attach files" title="Attach PDF, Word, text, Markdown or CSV (up to 3 files, 10 MB each), or drop them here">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 9.5 9 15a3 3 0 0 1-4.2-4.2l6.4-6.4a2 2 0 0 1 2.8 2.8l-6.3 6.3a1 1 0 0 1-1.4-1.4l5.6-5.6"/></svg>
+          </button>
+          <input type="file" id="attachInput" accept=".pdf,.docx,.txt,.md,.markdown,.csv" multiple hidden tabindex="-1">
           <label for="input" class="sr-only">Message JARVIS</label>
           <textarea id="input" rows="1" placeholder="Message JARVIS"></textarea>
           <!-- slice 9 (console-voice-mic.js): shown when this browser can record or recognise speech -->
@@ -494,6 +502,7 @@
 <script src="/static/console-fx.js" defer></script>
 <script src="/static/console-deck.js" defer></script>
 <script src="/static/console.js" defer></script>
+<script src="/static/console-attach.js" defer></script>
 <script src="/static/console-brief.js" defer></script>
 <script src="/static/console-usage.js" defer></script>
 <script src="/static/console-memory.js" defer></script>

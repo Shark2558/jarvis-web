@@ -5,6 +5,8 @@ import json
 
 import httpx
 import pytest
+from google_fakes import FakeGoogle
+from google_fakes import google_tokens as _tokens
 
 from jarvis.integrations.google import (
     REQUIRED_SCOPES,
@@ -16,8 +18,6 @@ from jarvis.integrations.google import (
     GoogleScopesMissing,
 )
 from jarvis.integrations.vault import MemoryTokenStore
-from tests.conftest import FakeGoogle
-from tests.conftest import google_tokens as _tokens
 
 NOW = 1_800_000_000.0
 UID = "u_owner"

@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 import pytest
+from google_fakes import GOOGLE_UID, FakeGoogle
 
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.integrations.google import GoogleConnector
@@ -15,7 +16,6 @@ from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.google_calendar import calendar_tools
 from jarvis.tools.policy import Policy
 from jarvis.tools.registry import ToolRegistry
-from tests.conftest import GOOGLE_UID, FakeGoogle
 
 CAL = "https://www.googleapis.com/calendar/v3"
 EVENTS = f"{CAL}/calendars/primary/events"

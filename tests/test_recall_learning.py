@@ -311,3 +311,12 @@ def test_cost_note_is_in_rupees_and_names_what_is_sent() -> None:
     assert note.startswith("About ₹") and "a month" in note and "at most ₹" in note
     assert "$" not in note and len(note) <= 300
     assert "your messages" in note and "Claude" in note
+
+
+def test_with_a_daily_cap_of_zero_the_note_says_learning_is_off() -> None:
+    """LOW 15: the note said "no charge (₹0)" when the server allows no runs at all."""
+    for paid in (True, False):
+        svc = rig(paid=paid, max_runs=0).svc
+        note = svc.learn_cost_note()
+        assert "switched off" in note.lower() and "₹0" not in note and len(note) <= 300
+        assert "switched off" in svc._consent_message().lower()

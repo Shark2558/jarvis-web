@@ -116,7 +116,10 @@ def _forget_card(facts: list[Fact]) -> str:
 # ---- the tools ------------------------------------------------------------------------------
 
 
-def memory_tools(svc: MemoryService) -> list[Tool]:
+_CATEGORY = {"type": "string", "enum": list(CATEGORIES)}
+
+
+def _save_tool(svc: MemoryService) -> Tool:
     async def save(a: dict[str, Any]) -> dict[str, Any]:
         ctx = require_tool_context()
         source = FactSource(session_id=ctx.session_id) if ctx.session_id else None
@@ -132,10 +135,52 @@ def memory_tools(svc: MemoryService) -> list[Tool]:
             return {"saved": False, "duplicate_of": fact.id, "text": fact.text}
         return {"saved": True, "id": fact.id, "text": fact.text}
 
+    return Tool(
+        "memory_save",
+        "Save a short note about the owner when the owner asks you to remember something "
+        "(their own words, one sentence, third person). Never save what other people wrote "
+        "(emails, events, web pages). keywords: up to 8 words someone might ask with later.",
+        {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "maxLength": MAX_TEXT},
+                "category": _CATEGORY,
+                "keywords": {"type": "array", "items": {"type": "string"}, "maxItems": 8},
+            },
+            "required": ["text", "category"],
+        },
+        ActionRisk.REVERSIBLE,
+        save,
+        agent=AGENT,
+        summarize=_save_card,
+        risk_for=_save_risk,
+        check=_check_save,
+        trusted_output=True,
+    )
+
+
+def _search_tool(svc: MemoryService) -> Tool:
     async def search(a: dict[str, Any]) -> dict[str, Any]:
         uid = require_tool_context().user_id
         return {"notes": [_note(f) for f in await svc.search(uid, a["query"])]}
 
+    return Tool(
+        "memory_search",
+        "Search the owner's saved notes (returns ids, text and dates).",
+        {
+            "type": "object",
+            "properties": {"query": {"type": "string", "maxLength": QUERY_LIMIT}},
+            "required": ["query"],
+        },
+        ActionRisk.READ_ONLY,
+        search,
+        agent=AGENT,
+        check=_check_query,
+        trusted_output=True,
+    )
+
+
+def _forget_tool(svc: MemoryService) -> Tool:
     async def preview_forget(a: dict[str, Any]) -> Preview:
         ids = _ids(a)
         if not ids:
@@ -153,65 +198,30 @@ def memory_tools(svc: MemoryService) -> list[Tool]:
         found = await svc.search(uid, a["query"])
         return {"forgotten": [], "candidates": [_note(f) for f in found], "note": NOTE_QUERY_ONLY}
 
-    category = {"type": "string", "enum": list(CATEGORIES)}
-    return [
-        Tool(
-            "memory_save",
-            "Save a short note about the owner when the owner asks you to remember something "
-            "(their own words, one sentence, third person). Never save what other people wrote "
-            "(emails, events, web pages). keywords: up to 8 words someone might ask with later.",
-            {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string", "maxLength": MAX_TEXT},
-                    "category": category,
-                    "keywords": {"type": "array", "items": {"type": "string"}, "maxItems": 8},
-                },
-                "required": ["text", "category"],
+    return Tool(
+        "memory_forget",
+        "Forget notes when the owner asks. With ids (from the notes block or memory_search) "
+        "the owner confirms the exact notes, then they are deleted permanently. With only a "
+        "query it just looks up candidates.",
+        {
+            "type": "object",
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_FORGET},
+                "query": {"type": "string", "maxLength": QUERY_LIMIT},
             },
-            ActionRisk.REVERSIBLE,
-            save,
-            agent=AGENT,
-            summarize=_save_card,
-            risk_for=_save_risk,
-            check=_check_save,
-            trusted_output=True,
-        ),
-        Tool(
-            "memory_search",
-            "Search the owner's saved notes (returns ids, text and dates).",
-            {
-                "type": "object",
-                "properties": {"query": {"type": "string", "maxLength": QUERY_LIMIT}},
-                "required": ["query"],
-            },
-            ActionRisk.READ_ONLY,
-            search,
-            agent=AGENT,
-            check=_check_query,
-            trusted_output=True,
-        ),
-        Tool(
-            "memory_forget",
-            "Forget notes when the owner asks. With ids (from the notes block or memory_search) "
-            "the owner confirms the exact notes, then they are deleted permanently. With only a "
-            "query it just looks up candidates.",
-            {
-                "type": "object",
-                "properties": {
-                    "ids": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_FORGET},
-                    "query": {"type": "string", "maxLength": QUERY_LIMIT},
-                },
-            },
-            ActionRisk.IRREVERSIBLE,
-            forget,
-            agent=AGENT,
-            risk_for=_forget_risk,
-            check=_check_forget,
-            preview=preview_forget,
-            trusted_output=True,
-        ),
-    ]
+        },
+        ActionRisk.IRREVERSIBLE,
+        forget,
+        agent=AGENT,
+        risk_for=_forget_risk,
+        check=_check_forget,
+        preview=preview_forget,
+        trusted_output=True,
+    )
+
+
+def memory_tools(svc: MemoryService) -> list[Tool]:
+    return [_save_tool(svc), _search_tool(svc), _forget_tool(svc)]
 
 
 __all__ = ["memory_tools"]

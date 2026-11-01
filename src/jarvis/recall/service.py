@@ -94,6 +94,10 @@ TYPICAL_RUN = Usage(input_tokens=1_500, output_tokens=150)
 TYPICAL_RUNS_PER_DAY = 8
 WORST_RUN = Usage(input_tokens=2_500, output_tokens=300)
 DATA_SENT = "To learn, JARVIS sends {ai} your messages in the conversation and related notes."
+MSG_LEARNING_OFF = (
+    "Learning is switched off on this server (no learning runs are allowed), so nothing is "
+    "sent and it costs nothing."
+)
 MSG_CONSENT = (
     "Learning from your messages has a small cost ({cost}) and sends {ai} your messages in the "
     "conversation; confirm to switch it on."
@@ -383,6 +387,8 @@ class MemoryService:
 
     def learn_cost_note(self) -> str:
         """Shown before the owner agrees (≤ 300 characters): the cost and what goes where."""
+        if self.learner.max_runs <= 0:
+            return MSG_LEARNING_OFF
         spec = self.private_brain()
         if spec is None:
             return "No private AI brain is configured, so learning can't run (₹0)."
@@ -436,6 +442,8 @@ class MemoryService:
         return new.settings
 
     def _consent_message(self) -> str:
+        if self.learner.max_runs <= 0:
+            return MSG_LEARNING_OFF
         spec = self.private_brain()
         words = self._cost_words(spec) if spec is not None else None
         return MSG_CONSENT.format(cost=words or "₹ cost unknown", ai=ai_name(spec))

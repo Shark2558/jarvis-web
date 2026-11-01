@@ -25,6 +25,7 @@ from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
 from jarvis.tools.audit import AuditTrail, args_hash
 from jarvis.tools.base import Tool
+from jarvis.tools.context import tool_context
 from jarvis.tools.policy import Effect, Policy
 from jarvis.tools.registry import ToolRegistry
 
@@ -102,19 +103,20 @@ class Gateway:
             await self.audit.append(
                 agent=tool.agent,
                 tool=tool.name,
-                risk=tool.risk,
+                risk=tool.effective_risk(call.arguments),
                 outcome="error",
                 args=call.arguments,
                 detail=_safe_detail(exc),
             )
             return GatewayResult(GatewayOutcome.ERROR, error=str(exc))
 
-        effect = self.policy.decide(tool.name, tool.risk, call.arguments)
+        risk = tool.effective_risk(call.arguments)
+        effect = self.policy.decide(tool.name, risk, call.arguments)
         if effect is Effect.DENY:
             await self.audit.append(
                 agent=tool.agent,
                 tool=tool.name,
-                risk=tool.risk,
+                risk=risk,
                 outcome="denied",
                 args=call.arguments,
                 detail="policy",
@@ -123,6 +125,8 @@ class Gateway:
             return GatewayResult(GatewayOutcome.DENIED, error="blocked by policy")
 
         if effect is Effect.ASK:
+            # An ASK is confirm-before-commit whatever the declared class (a policy rule may
+            # tighten a reversible tool), so the gate sees it as irreversible.
             action = PendingAction(
                 tool=tool.name,
                 arguments=call.arguments,
@@ -137,7 +141,7 @@ class Gateway:
                     await self.audit.append(
                         agent=tool.agent,
                         tool=tool.name,
-                        risk=tool.risk,
+                        risk=risk,
                         outcome="awaiting_confirmation",
                         args=call.arguments,
                         detail=exc.action.id,
@@ -151,7 +155,7 @@ class Gateway:
                 await self.audit.append(
                     agent=tool.agent,
                     tool=tool.name,
-                    risk=tool.risk,
+                    risk=risk,
                     outcome="confirmation_invalid",
                     args=call.arguments,
                     detail="approval spent, expired or changed",
@@ -169,7 +173,7 @@ class Gateway:
                 await self.audit.append(
                     agent=tool.agent,
                     tool=tool.name,
-                    risk=tool.risk,
+                    risk=risk,
                     outcome="executing",
                     args=call.arguments,
                     detail="confirmed",
@@ -183,17 +187,22 @@ class Gateway:
                     GatewayOutcome.ERROR, error="could not record the action, so nothing was done"
                 )
         try:
-            out = tool.run(call.arguments)
-            if hasattr(out, "__await__"):
-                out = await out
+            with tool_context(scope):  # the tool learns who it runs for; reset in finally
+                out = tool.run(call.arguments)
+                if hasattr(out, "__await__"):
+                    out = await out
         except Exception as exc:  # noqa: BLE001 — tool failures are reported, not raised
             log.exception("tool failed", extra={"tool": tool.name})
-            await self._audit_after_run(tool, call, "error", _safe_detail(exc))
+            await self._audit_after_run(tool, call, risk, "error", _safe_detail(exc))
             return GatewayResult(GatewayOutcome.ERROR, error=f"tool failed: {exc}")
-        await self._audit_after_run(tool, call, "executed", "confirmed" if confirmation_id else "")
+        await self._audit_after_run(
+            tool, call, risk, "executed", "confirmed" if confirmation_id else ""
+        )
         return GatewayResult(GatewayOutcome.EXECUTED, result=out)
 
-    async def _audit_after_run(self, tool: Tool, call: ToolCall, outcome: str, detail: str) -> None:
+    async def _audit_after_run(
+        self, tool: Tool, call: ToolCall, risk: ActionRisk, outcome: str, detail: str
+    ) -> None:
         """The tool has ALREADY run: an audit outage must not turn that into an exception,
         or the caller would lose the record that e.g. a message was sent (and the owner might
         ask again). Log loudly instead; the trace id ties the log line to the request."""
@@ -201,7 +210,7 @@ class Gateway:
             await self.audit.append(
                 agent=tool.agent,
                 tool=tool.name,
-                risk=tool.risk,
+                risk=risk,
                 outcome=outcome,
                 args=call.arguments,
                 detail=detail,

@@ -12,6 +12,7 @@ from jarvis.core.guardrails import ActionRisk
 from jarvis.llm.base import ToolCall, ToolSpec
 
 ToolFn = Callable[[dict[str, Any]], Awaitable[Any] | Any]
+RiskFn = Callable[[dict[str, Any]], ActionRisk]
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,12 @@ class Tool:
     # how the owner sees a pending action: "Send a message to {to}"
     summary_template: str = "{name}"
     required: tuple[str, ...] = field(default=())
+    # Optional per-call risk: e.g. creating a calendar event is reversible alone but sends mail
+    # (irreversible) once attendees are invited. Default: the declared `risk`.
+    risk_for: RiskFn | None = None
+
+    def effective_risk(self, args: dict[str, Any]) -> ActionRisk:
+        return self.risk_for(args) if self.risk_for is not None else self.risk
 
     def spec(self) -> ToolSpec:
         return ToolSpec(
@@ -49,4 +56,4 @@ class Tool:
             return f"{self.name} {json.dumps(args, default=str)[:200]}"
 
 
-__all__ = ["Tool", "ToolCall", "ToolFn"]
+__all__ = ["RiskFn", "Tool", "ToolCall", "ToolFn"]

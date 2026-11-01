@@ -561,7 +561,7 @@ async def test_voice_panel_dock_tab_and_more_sheet_are_wired(client: AsyncClient
     assert 'aria-keyshortcuts="Control+Space"' in html
     assert 'id="voiceLive" role="status" aria-live="polite"' in html
     deck = (await client.get("/static/console-deck.js")).text
-    assert "'integrations', 'voice', 'vitals'" in deck
+    assert "'integrations', 'vitals', 'voice', 'construct'" in deck
     assert re.search(r"\bvoice: \{ x:", deck)
     # device settings: storage may throw (private mode, blocked site data)
     voice = (await client.get("/static/console-voice.js")).text

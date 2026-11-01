@@ -1,0 +1,31 @@
+# Slice 7b: Costs in rupees + monthly spend and limit
+
+Owner (2026-11-01, screenshot of Vitals): "the cost this conversation shows in $, Remember to keep all the costs in INR. Also, mention the total cost this month utilized and limit."
+Standing preference (memory): every cost JARVIS shows the owner is in INR, never USD.
+
+## Phase / layer
+Cross-cutting cost metering (architecture: observability, "token & cost metering"; Phase 7 cost work pulled forward because the owner asked and the paid Claude brain is now live). Layers 8 (UI), 4 (guardrail: spend cap), 7 (Firestore counters).
+
+## Facts (checked 2026-11-01)
+- USD→INR mid-market ≈ 95.24 (wise.com converter, 1 Nov 2026).
+- Frankfurter (frankfurter.dev): free, no API key, "no quotas", rates update daily; v2 single pair `GET https://api.frankfurter.dev/v2/rate/usd/inr` (the docs' example reads `d.rate`; full response shape not documented, and the sandbox can't reach it).
+- Anthropic bills in USD; the owner's card is charged in INR at the bank's rate (+ forex mark-up), so every rupee figure is an estimate and is shown with "≈".
+- JARVIS can't read the spend limit set in the Anthropic console (the Messages API doesn't expose it; the Admin usage/cost API needs an admin key, which we won't add). So JARVIS keeps its own monthly limit, set by the owner in the console. The Anthropic limit stays the hard backstop.
+
+## Decisions
+1. **Rupees everywhere in the UI:** Vitals "this conversation", per-reply meta, the Brief AI cost note (drop the "≈ $" part), the Brief AI confirm dialog, and the new monthly figures. Internally keep `cost_usd` (the provider's unit); convert only for display/limits. API keeps `cost_usd` fields (CLI/evals) and adds `*_inr`.
+2. **Rate:** `jarvis/billing/fx.py`. Fetch the Frankfurter v2 single-pair URL at most once a day (fixed URL, httpx, 5 s timeout, no retries). Accept only a finite number in 50–200 found at `rate` (or `rates.INR` / `rates[0].rate` defensively). Cache in memory and in Firestore `fx/usd_inr` {rate, as_of, source}. On any failure use the last cached value, else `JARVIS_USD_INR_RATE` (default 95.24, "set 1 Nov 2026"). Expose `{inr_per_usd, as_of, source: "frankfurter"|"cached"|"default"}`. Never block a reply on it.
+3. **Monthly meter:** `jarvis/billing/meter.py`. Doc `usage/{uid}_{YYYY-MM}` (month in the owner's time zone, `JARVIS_USER_TIMEZONE`) {usd_total, inr_total, calls, by_brain{id: usd}, updated_at}. Transactional increment after every model completion with cost > 0: chat, stream, tool rounds, approval narration, brief AI. Rupees are added at the rate of the moment (so past spend doesn't change when the rate moves). One hook point: find where `Turn.cost_usd` is set in `core/brain.py` and where the brief records `ai.cost_usd`; don't touch providers.
+4. **Monthly limit (owner-set, rupees):** doc `budget/{uid}` {monthly_limit_inr: int|null}. Unset = no JARVIS limit (UI says "No limit set"). `PUT /v1/usage/budget {monthly_limit_inr: int|null, confirm_raise?: true}`: raising or removing the limit needs `confirm_raise: true` (it lets JARVIS spend more → confirm-before-commit); lowering doesn't. Range 1–100000.
+5. **Enforcement:** before a model call on a brain whose model is priced > 0, if this month's `inr_total` ≥ limit → no call; chat gets a friendly 402-style error `{"error":"budget_reached","detail":"This month's limit of ₹X is used up (₹Y spent). Raise it in Vitals, or switch to the free brain."}`; the brief skips its AI lines with that note; free/unpriced brains are not blocked. At ≥ 80 % the console shows an amber note. A single reply can overshoot by its own cost (pre-check); say so in the UI help text.
+6. **API:** `GET /v1/usage` → `{month:"2026-11", used_inr, limit_inr|null, remaining_inr|null, percent|null, warn:bool, reached:bool, calls, by_brain:[{brain, label, used_inr}], rate:{inr_per_usd, as_of, source}}` (owner-only, server-side user id). Chat/stream responses and session views add `cost_inr`/`total_cost_inr` beside the USD fields.
+7. **Console (Vitals panel + rails):** "This conversation ≈ ₹0.42" (2 decimals; "< ₹0.01" for tiny), "This month ≈ ₹38 of ₹500" with a thin bar (text + bar, never colour alone; amber ≥ 80 %, red when reached), "Set limit" control with a confirm dialog when raising/removing, the rate line "₹95.24 per $1 · 1 Nov" in small print. Per-reply meta in rupees. Rename the Vitals "MODEL" label to "LAST REPLY BY" (the owner saw Brain = Claude while Model = a Gemini model from the restored conversation's last reply). Refresh `/v1/usage` after each reply (1 read) and when Vitals opens. Same design system (Night HUD / Day), contrast ≥ 4.5:1, textContent only.
+
+## Tests and evals
+- Unit: fx parsing (good, missing, string, 0, negative, NaN, 1e9, nested shapes), cache/fallback order, once-a-day fetch, never raises; meter month rollover at IST midnight on the last day; transactional increments under concurrency (MemoryDocs + SlowDocs); budget validation and confirm_raise rules; enforcement on priced vs free brains; brief AI skipped at limit.
+- API: shapes, auth, CSRF, 402 detail text in rupees.
+- Browser: Vitals shows ₹ (no "$" anywhere in the console text — scan the whole page text), month bar states, raise-limit confirm sends confirm_raise, lower doesn't, budget_reached message in chat.
+- Eval `evals/budget/` (mock): ≥ 12 cases (under / at / over limit, rollover, free brain, brief), gate 100 %; wired into `make eval-mock`.
+
+## Not in this slice
+Reading Anthropic's own usage (admin key), per-day limits, GST/forex mark-up modelling.

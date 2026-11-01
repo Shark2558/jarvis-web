@@ -10,7 +10,14 @@ import httpx2 as httpx
 import pytest
 
 from jarvis.llm.anthropic_provider import AnthropicProvider
-from jarvis.llm.base import ChatMessage, Effort, LLMAuthError, LLMTransientError, Role
+from jarvis.llm.base import (
+    ChatMessage,
+    Effort,
+    LLMAuthError,
+    LLMTransientError,
+    Role,
+    StreamUsage,
+)
 
 
 def _message_json(text: str = "At your service, Sir.") -> dict:
@@ -136,3 +143,83 @@ async def test_tools_and_tool_results_on_the_wire() -> None:
     }
     assert c.tool_calls == [ToolCall(id="tu_1", name="get_calendar", arguments={"day": "today"})]
     assert c.stop_reason == "tool_use"
+
+
+# ---- streaming (slice 10 A2): text deltas out, the vendor's usage into the caller's sink ---------
+def _sse(*events: dict) -> bytes:
+    return b"".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n".encode() for e in events)
+
+
+_START = {
+    "type": "message_start",
+    "message": {
+        "id": "msg_01",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-sonnet-5-5",
+        "content": [],
+        "stop_reason": None,
+        "stop_sequence": None,
+        "usage": {
+            "input_tokens": 120,
+            "output_tokens": 1,
+            "cache_read_input_tokens": 900,
+            "cache_creation_input_tokens": 30,
+        },
+    },
+}
+_BLOCK = {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
+_END = (
+    {"type": "content_block_stop", "index": 0},
+    {
+        "type": "message_delta",
+        "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+        "usage": {"output_tokens": 9},
+    },
+    {"type": "message_stop"},
+)
+MSGS = [ChatMessage(role=Role.USER, content="hello")]
+
+
+def _delta(text: str) -> dict:
+    delta = {"type": "text_delta", "text": text}
+    return {"type": "content_block_delta", "index": 0, "delta": delta}
+
+
+def _streaming(body: bytes) -> AnthropicProvider:
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert json.loads(req.content)["stream"] is True
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
+
+    return _provider(handler)
+
+
+async def test_stream_yields_text_and_reports_exact_usage() -> None:
+    sink = StreamUsage()
+    p = _streaming(_sse(_START, _BLOCK, _delta("At your "), _delta("service, Sir."), *_END))
+    got = [
+        d
+        async for d in p.stream(
+            system="s", messages=MSGS, model="claude-sonnet-5-5", max_tokens=5, usage=sink
+        )
+    ]
+    assert "".join(got) == "At your service, Sir."
+    assert (sink.input_tokens, sink.output_tokens) == (120, 9)
+    assert (sink.cache_read_tokens, sink.cache_write_tokens) == (900, 30)
+    assert sink.final is True
+
+
+async def test_stream_cut_short_keeps_the_opening_usage() -> None:
+    sink = StreamUsage()
+    p = _streaming(_sse(_START, _BLOCK, _delta("At your "), _delta("service"), *_END))
+    gen = p.stream(system="s", messages=MSGS, model="claude-sonnet-5-5", max_tokens=5, usage=sink)
+    assert await gen.__anext__() == "At your "
+    await gen.aclose()  # the owner went away: the closing count never arrives
+    assert sink.input_tokens == 120 and sink.cache_read_tokens == 900
+    assert sink.final is False
+
+
+async def test_stream_without_a_sink_still_streams() -> None:
+    p = _streaming(_sse(_START, _BLOCK, _delta("ok"), *_END))
+    got = [d async for d in p.stream(system="s", messages=MSGS, model="m", max_tokens=5)]
+    assert got == ["ok"]

@@ -49,6 +49,7 @@ from jarvis.llm.base import (
     Effort,
     LLMError,
     Role,
+    StreamUsage,
     TextBlock,
     ToolCall,
     ToolResultBlock,
@@ -56,7 +57,7 @@ from jarvis.llm.base import (
 )
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.pricing import cost_usd as priced_cost
-from jarvis.llm.pricing import estimate_usage
+from jarvis.llm.pricing import stream_usage
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.logging import get_logger, get_trace_id
 from jarvis.memory.base import SessionNotFound, SessionStore
@@ -763,12 +764,13 @@ class Brain:
         system = await self.persona.system_for(req.user_id)
         chunks: list[str] = []
         model = router.resolve(self._tier(req))
-        # Streams report no usage: estimate tokens from characters so a paid streamed reply is
-        # metered (and counts toward the limit) instead of costing "₹0".
+        # The vendor's own counts as they arrive (slice 10 A2); characters/4 only for what it
+        # did not report, flagged `estimated` — a paid streamed reply never meters "₹0".
+        reported = StreamUsage()
         sent = len(system) + len(trailer) + sum(len(m.text()) for m in messages)
         await self._admit(req.user_id, spec)  # call-level, like every other model call
         finished = False
-        cost = 0.0
+        cost, usage = 0.0, None
         try:
             async for delta in router.stream(
                 tier=self._tier(req),
@@ -777,17 +779,21 @@ class Brain:
                 messages=messages,
                 max_tokens=self.s.max_output_tokens,
                 effort=self._effort(),
+                usage=reported,
             ):
                 chunks.append(delta)
                 yield delta
             finished = True
         finally:
             # Metered here, once, for a finished stream AND one cut short (client gone, provider
-            # error): either way the provider bills what it wrote. `record` is shielded, so the
-            # cancellation of a disconnected response can't skip it.
-            if finished or chunks:
-                cost = priced_cost(model, estimate_usage(sent, len("".join(chunks))))
+            # error after the vendor read the prompt): the provider bills what it read and wrote.
+            # `record` is shielded, so a disconnected response's cancellation can't skip it.
+            if finished or chunks or reported.reported:
+                usage = stream_usage(reported, input_chars=sent, output_chars=sum(map(len, chunks)))
+                cost = priced_cost(model, usage)
                 await self.billing.record(req.user_id, spec.id, cost)
 
-        reply = Turn(role=Role.ASSISTANT, content="".join(chunks).strip(), trace_id=trace_id)
+        reply = Turn(
+            role=Role.ASSISTANT, content="".join(chunks).strip(), trace_id=trace_id, usage=usage
+        )
         await self._finish_turn(req.user_id, session, spec, rec, reply, model=model, cost=cost)

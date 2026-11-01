@@ -8,6 +8,7 @@ Skills and the Brain talk to `LLMProvider` + `ModelRouter`, never to Anthropic/O
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -78,10 +79,68 @@ class Usage(BaseModel):
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    # True when (part of) these counts were estimated from characters because the provider did
+    # not report them (a stream from a vendor without usage events, or one cut short before the
+    # closing count). Exact counts leave it False.
+    estimated: bool = False
 
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
+
+
+def _count(v: int | None) -> int:
+    return max(0, int(v)) if v is not None else 0
+
+
+@dataclass
+class StreamUsage:
+    """Token counts a provider reports WHILE it streams, filled in as its events arrive: input and
+    cache counts at the start, the final output count at the end (`final`). A stream cut short
+    keeps what had arrived. A deliberately mutable out-parameter: a stream yields text, so the
+    counts travel beside it. Providers that report nothing leave it empty and the caller falls back
+    to an estimate (`jarvis.llm.pricing.stream_usage`)."""
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    final: bool = False
+
+    @property
+    def reported(self) -> bool:
+        return self.input_tokens is not None or self.output_tokens is not None
+
+    def started(
+        self,
+        *,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        cache_read_tokens: int | None,
+        cache_write_tokens: int | None,
+    ) -> None:
+        self.input_tokens = _count(input_tokens)
+        self.output_tokens = _count(output_tokens)
+        self.cache_read_tokens = _count(cache_read_tokens)
+        self.cache_write_tokens = _count(cache_write_tokens)
+
+    def finished(
+        self,
+        *,
+        output_tokens: int,
+        input_tokens: int | None = None,
+        cache_read_tokens: int | None = None,
+        cache_write_tokens: int | None = None,
+    ) -> None:
+        """The closing counts (cumulative). Input/cache only replace the opening ones when sent."""
+        self.output_tokens = _count(output_tokens)
+        if input_tokens is not None:
+            self.input_tokens = _count(input_tokens)
+        if cache_read_tokens is not None:
+            self.cache_read_tokens = _count(cache_read_tokens)
+        if cache_write_tokens is not None:
+            self.cache_write_tokens = _count(cache_write_tokens)
+        self.final = True
 
 
 class Completion(BaseModel):
@@ -134,6 +193,8 @@ class LLMProvider(Protocol):
         model: str,
         max_tokens: int,
         effort: Effort | None = None,
+        usage: StreamUsage | None = None,
     ) -> AsyncIterator[str]:
-        """Yield text deltas. Phase 1 (voice) consumes this to start TTS early."""
+        """Yield text deltas. Phase 1 (voice) consumes this to start TTS early. When `usage` is
+        given, the provider fills in the token counts its vendor reports (if any)."""
         ...

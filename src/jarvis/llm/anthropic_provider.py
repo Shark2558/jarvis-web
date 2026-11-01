@@ -7,7 +7,16 @@ import time
 from collections.abc import AsyncIterator
 
 import anthropic
-from anthropic.types import MessageParam, TextBlockParam, ToolParam, ToolUseBlock
+from anthropic.types import (
+    MessageParam,
+    RawContentBlockDeltaEvent,
+    RawMessageDeltaEvent,
+    RawMessageStartEvent,
+    TextBlockParam,
+    TextDelta,
+    ToolParam,
+    ToolUseBlock,
+)
 from anthropic.types import TextBlock as AnthropicTextBlock
 
 from jarvis.llm.base import (
@@ -17,6 +26,7 @@ from jarvis.llm.base import (
     LLMAuthError,
     LLMError,
     LLMTransientError,
+    StreamUsage,
     TextBlock,
     ToolCall,
     ToolResultBlock,
@@ -213,7 +223,11 @@ class AnthropicProvider:
         model: str,
         max_tokens: int,
         effort: Effort | None = None,
+        usage: StreamUsage | None = None,
     ) -> AsyncIterator[str]:
+        """Text deltas; the exact usage goes into `usage` as it arrives: input + cache counts on
+        `message_start`, the cumulative output (and any revised input) on `message_delta`. A
+        reader that leaves early keeps the opening counts (the caller estimates the rest)."""
         try:
             async with self._client.messages.stream(
                 **self._kwargs(
@@ -225,7 +239,30 @@ class AnthropicProvider:
                     effort=effort,
                 )
             ) as stream:
-                async for delta in stream.text_stream:
-                    yield delta
+                async for event in stream:
+                    if isinstance(event, RawContentBlockDeltaEvent):
+                        if isinstance(event.delta, TextDelta) and event.delta.text:
+                            yield event.delta.text
+                    elif usage is not None:
+                        self._note_usage(event, usage)
         except Exception as exc:  # noqa: BLE001
             raise self._translate(exc) from exc
+
+    @staticmethod
+    def _note_usage(event: object, sink: StreamUsage) -> None:
+        if isinstance(event, RawMessageStartEvent):
+            u = event.message.usage
+            sink.started(
+                input_tokens=u.input_tokens,
+                output_tokens=u.output_tokens,
+                cache_read_tokens=u.cache_read_input_tokens,
+                cache_write_tokens=u.cache_creation_input_tokens,
+            )
+        elif isinstance(event, RawMessageDeltaEvent):
+            d = event.usage
+            sink.finished(
+                output_tokens=d.output_tokens,
+                input_tokens=d.input_tokens,
+                cache_read_tokens=d.cache_read_input_tokens,
+                cache_write_tokens=d.cache_creation_input_tokens,
+            )

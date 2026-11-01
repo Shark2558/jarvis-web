@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from jarvis.llm.base import Usage
+from jarvis.llm.base import StreamUsage, Usage
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -63,11 +63,31 @@ CHARS_PER_TOKEN = 4  # rough English average; used only when a provider reports 
 
 
 def estimate_usage(input_chars: int, output_chars: int) -> Usage:
-    """Token counts for a call whose provider reported none (the streaming path). An estimate,
-    shown with "≈" like every rupee figure; it keeps a streamed paid reply from metering at 0."""
+    """Token counts for a call whose provider reported none (a stream without usage events, a
+    learning run cut short). An estimate, shown with "≈" like every rupee figure; it keeps a paid
+    call from metering at 0. Streams use `stream_usage`, which prefers the vendor's counts."""
     per = CHARS_PER_TOKEN
     return Usage(
         input_tokens=-(-max(0, input_chars) // per), output_tokens=-(-max(0, output_chars) // per)
+    )
+
+
+def stream_usage(reported: StreamUsage, *, input_chars: int, output_chars: int) -> Usage:
+    """What a streamed call is metered at: the vendor's own counts where they arrived (input and
+    cache from the start event, output from the closing one); characters/4 for any part that did
+    not, flagged `estimated`. A stream cut short bills at least the text that reached us."""
+    guess = estimate_usage(input_chars, output_chars)
+    if not reported.reported:
+        return guess.model_copy(update={"estimated": True})
+    output = reported.output_tokens or 0
+    if not reported.final:  # the closing count never came: what we received is a floor
+        output = max(output, guess.output_tokens)
+    return Usage(
+        input_tokens=reported.input_tokens or 0,
+        output_tokens=output,
+        cache_read_tokens=reported.cache_read_tokens,
+        cache_write_tokens=reported.cache_write_tokens,
+        estimated=not reported.final,
     )
 
 

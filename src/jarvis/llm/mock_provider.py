@@ -17,6 +17,7 @@ from jarvis.llm.base import (
     Completion,
     Effort,
     LLMTransientError,
+    StreamUsage,
     ToolCall,
     ToolSpec,
     Usage,
@@ -101,6 +102,7 @@ class MockProvider:
         model: str,
         max_tokens: int,
         effort: Effort | None = None,
+        usage: StreamUsage | None = None,  # reports nothing: the caller's estimate is exercised
     ) -> AsyncIterator[str]:
         completion = await self.complete(
             system=system,

@@ -46,7 +46,7 @@ class VoiceSettingsPatch(BaseModel):
     wit: str | None = Field(default=None, max_length=16)
 
 
-def _rate_ok(v: object) -> bool:
+def rate_ok(v: object) -> bool:
     return (
         isinstance(v, int | float)
         and not isinstance(v, bool)
@@ -61,7 +61,7 @@ def apply(cur: VoiceSettings, patch: VoiceSettingsPatch) -> VoiceSettings:
         raise VoiceRejected("Unknown voice: choose one from the list.")
     if patch.wit is not None and patch.wit not in WIT_IDS:
         raise VoiceRejected("Wit must be one of: " + ", ".join(WIT_IDS) + ".")
-    if patch.rate is not None and not _rate_ok(patch.rate):
+    if patch.rate is not None and not rate_ok(patch.rate):
         raise VoiceRejected(f"Speed must be between {RATE_MIN} and {RATE_MAX}.")
     return VoiceSettings(
         voice=patch.voice if patch.voice is not None else cur.voice,
@@ -76,7 +76,7 @@ def decode(doc: Any) -> VoiceSettings:
     voice, rate, wit = doc.get("voice"), doc.get("rate"), doc.get("wit")
     return VoiceSettings(
         voice=voice if isinstance(voice, str) and find_voice(voice) else DEFAULT_VOICE,
-        rate=float(rate) if _rate_ok(rate) else RATE_DEFAULT,  # type: ignore[arg-type]
+        rate=float(rate) if rate_ok(rate) else RATE_DEFAULT,  # type: ignore[arg-type]
         wit=wit if isinstance(wit, str) and wit in WIT_IDS else DEFAULT_WIT,
     )
 
@@ -131,4 +131,5 @@ __all__ = [
     "VoiceSettingsStore",
     "apply",
     "decode",
+    "rate_ok",
 ]

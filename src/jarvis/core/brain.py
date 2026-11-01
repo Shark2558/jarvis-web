@@ -7,6 +7,11 @@
 Everything here is vendor-neutral. Phase 2 inserts the tool-calling loop between
 `router.complete` and `append assistant turn`; the data model already carries what it needs.
 
+Long-term memory (slice 8): the owner's notes go into the dynamic trailer (never the cached
+system prompt) for brains that keep content private; the reply reports which were sent; learning
+is scheduled after the reply is stored and never delays or breaks it. Each tool round runs with
+the "untrusted content seen" flag, so memory_save after other people's text becomes a card.
+
 Spending (slice 7b): every model call — chat, each tool round, the round-limit summary, approval
 narration, the stream — goes through `_admit` (the owner's monthly limit, `Billing.ensure_allowed`)
 BEFORE it is made, and its cost is added to the month after it (`Billing.record`, never fails the
@@ -21,6 +26,7 @@ import contextlib
 import time
 import weakref
 from collections.abc import AsyncGenerator, AsyncIterator
+from dataclasses import dataclass, field
 
 from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
@@ -43,12 +49,22 @@ from jarvis.llm.pricing import estimate_usage
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.logging import get_logger, get_trace_id
 from jarvis.memory.base import SessionNotFound, SessionStore
+from jarvis.recall.models import MemoryRef
+from jarvis.recall.service import MemoryService, Recall
 from jarvis.tools.gateway import Gateway, GatewayOutcome
+from jarvis.tools.taint import context_trust, untrusted_seen
 
 log = get_logger(__name__)
 
 BRAIN_KEY = "brain"  # session.metadata key remembering the owner's brain choice
 CUTOFF_KEY = "brain_cutoff"  # turn index before which history is withheld from training brains
+
+
+@dataclass
+class StreamMeta:
+    """Filled in by `chat_stream` for its caller (the HTTP route's final event)."""
+
+    memory_used: list[MemoryRef] = field(default_factory=list)
 
 
 class Brain:
@@ -61,6 +77,7 @@ class Brain:
         brains: BrainRegistry | None = None,
         gateway: Gateway | None = None,
         billing: Billing | None = None,
+        memory: MemoryService | None = None,
     ) -> None:
         if brains is None:
             if router is None:
@@ -85,6 +102,7 @@ class Brain:
         self.gateway = gateway
         # the app passes its own (Firestore, daily rate); without one: in-memory, default rate
         self.billing = billing or Billing.in_memory(brains, settings)
+        self.memory = memory  # long-term notes about the owner (None: off)
         self._system = build_system_prompt(honorific=settings.user_honorific)
         # One owner action at a time per conversation (chat, approve, decline, delete): no
         # lost turns, no double execution, no resurrected deletes. Locks vanish when unused.
@@ -160,6 +178,19 @@ class Brain:
     async def _rupees(self, *usd: float) -> tuple[float, ...]:
         return tuple([round(await self.billing.inr(u), 4) for u in usd])
 
+    # ---- long-term memory ------------------------------------------------------------------
+
+    async def _recall(self, user_id: str, spec: BrainSpec, text: str) -> Recall:
+        """The notes block for this turn (empty for training brains; never raises)."""
+        if self.memory is None:
+            return Recall()
+        return await self.memory.recall(user_id, spec, text)
+
+    def _after_turn(self, user_id: str, session: Session, spec: BrainSpec, rec: Recall) -> None:
+        """Background follow-up (learning, use counters) once the reply is stored."""
+        if self.memory is not None:
+            self.memory.after_turn(user_id, session, spec, rec)
+
     # ---- session helpers -----------------------------------------------------------------
 
     async def _load_or_create(self, req: ChatRequest) -> Session:
@@ -218,8 +249,12 @@ class Brain:
         await self.store.save(session)
 
         messages = self._window_for(session, spec)
-        trailer = build_trailer(
-            tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
+        rec = await self._recall(req.user_id, spec, text)
+        trailer = (
+            build_trailer(
+                tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
+            )
+            + rec.block
         )
 
         try:
@@ -241,6 +276,7 @@ class Brain:
             )
         )
         await self.store.save(session)
+        self._after_turn(req.user_id, session, spec, rec)
         rounds = session.metadata.pop("_rounds", 0)
         cost_inr, total_inr = await self._rupees(completion.cost_usd, session.total_cost_usd)
 
@@ -273,6 +309,7 @@ class Brain:
             turn_count=len(session.turns),
             tool_calls=rounds,
             pending_approvals=pending,
+            memory_used=list(rec.used),
         )
 
     # ---- tool loop ----------------------------------------------------------------------
@@ -336,8 +373,11 @@ class Brain:
                 )
             )
             results: list = []
+            # what the model had seen when it asked for these calls: other people's text?
+            untrusted = untrusted_seen(msgs, self.gateway.registry)
             for call in completion.tool_calls:
-                gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
+                with context_trust(untrusted=untrusted):
+                    gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
                 if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending:
                     pending.append(PendingApproval.from_action(gr.pending))
                 results.append(
@@ -540,18 +580,21 @@ class Brain:
             pending_approvals=[],
         )
 
-    async def chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
-        """Streaming variant for the CLI (and Phase 1 TTS). Persists the full reply at the end."""
+    async def chat_stream(
+        self, req: ChatRequest, *, meta: StreamMeta | None = None
+    ) -> AsyncIterator[str]:
+        """Streaming variant for the CLI (and Phase 1 TTS). Persists the full reply at the end.
+        `meta` (optional) receives the notes sent with the reply before the first delta."""
         req = await self._start(req)
         async with self._serialised(req.session_id):
-            inner = self._chat_stream(req)
+            inner = self._chat_stream(req, meta or StreamMeta())
             try:
                 async for delta in inner:
                     yield delta
             finally:  # a reader that leaves early closes the inner stream now (and its meter)
                 await inner.aclose()
 
-    async def _chat_stream(self, req: ChatRequest) -> AsyncGenerator[str, None]:
+    async def _chat_stream(self, req: ChatRequest, meta: StreamMeta) -> AsyncGenerator[str, None]:
         trace_id = get_trace_id()
         if req.brain:
             self.brains.get(req.brain)
@@ -565,8 +608,13 @@ class Brain:
         await self.store.save(session)
 
         messages = self._window_for(session, spec)
-        trailer = build_trailer(
-            tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
+        rec = await self._recall(req.user_id, spec, text)
+        meta.memory_used = list(rec.used)
+        trailer = (
+            build_trailer(
+                tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
+            )
+            + rec.block
         )
         chunks: list[str] = []
         model = router.resolve(self._tier(req))
@@ -601,3 +649,4 @@ class Brain:
             Turn(role=Role.ASSISTANT, content=reply, trace_id=trace_id, model=model, cost_usd=cost)
         )
         await self.store.save(session)
+        self._after_turn(req.user_id, session, spec, rec)

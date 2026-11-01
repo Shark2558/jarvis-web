@@ -46,8 +46,11 @@ async def test_chat_stream(client: AsyncClient, provider: MockProvider) -> None:
     provider.script("Streamed reply, Sir.")
     async with client.stream("POST", "/v1/chat/stream", json={"message": "go"}) as r:
         assert r.status_code == 200
-        text = "".join([chunk async for chunk in r.aiter_text()])
+        body = "".join([chunk async for chunk in r.aiter_text()])
+    # slice 8: the reply text, then one final event after an ASCII record separator
+    text, final = body.split("\x1e")
     assert text.strip() == "Streamed reply, Sir."
+    assert final == '{"memory_used": []}'
 
 
 async def test_error_mapping(client: AsyncClient, provider: MockProvider) -> None:

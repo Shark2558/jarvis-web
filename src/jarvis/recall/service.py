@@ -270,6 +270,10 @@ class MemoryService:
             return f"The cost in ₹ is unknown (no price for this model). {sent}"
         return f"{words[0].upper()}{words[1:]} on the fast model. {sent}"
 
+    def today(self) -> str:
+        """The owner's local date (YYYY-MM-DD)."""
+        return self.learner.day(self._clock())
+
     async def view(self, uid: str) -> MemoryView:
         s = await self.store.load(uid)
         facts = s.all_facts()

@@ -15,6 +15,11 @@ gives CPU only while a request runs); the scheduler tick sweeps too (`sweep_memo
 round runs with the "untrusted content seen" flag, so memory_save after other people's text
 becomes a card.
 
+Persona (slice 9, `jarvis.core.persona`): the owner's wit level (voice settings, cached; any
+failure or a slow read → "film", never a failed reply) picks one of three stable, cacheable
+system prompts, read once per turn and sent with every model call of it; a spoken message
+(`channel: voice`) adds the spoken-reply rule to the per-request trailer only.
+
 Spending (slice 7b): every model call — chat, each tool round, the round-limit summary, approval
 narration, the stream — goes through `_admit` (the owner's monthly limit, `Billing.ensure_allowed`)
 BEFORE it is made, and its cost is added to the month after it (`Billing.record`, never fails the
@@ -35,7 +40,8 @@ from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
 from jarvis.core.guardrails import PendingAction, guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
-from jarvis.core.prompts import PERSONA_VERSION, build_system_prompt, build_trailer
+from jarvis.core.persona import Persona, WitSource
+from jarvis.core.prompts import PERSONA_VERSION, build_trailer
 from jarvis.core.window import build_window
 from jarvis.llm.base import (
     ChatMessage,
@@ -94,6 +100,19 @@ def _record_exchange(session: Session, d: _Decision, trace_id: str | None) -> No
     )
 
 
+def _owner_turn(text: str, req: ChatRequest, trace_id: str | None) -> Turn:
+    """The owner's message, marked with how it arrived (a spoken one is never learned from)."""
+    return Turn(role=Role.USER, content=text, trace_id=trace_id, channel=req.channel)
+
+
+@dataclass(frozen=True)
+class _Prompt:
+    """One turn's prompt: the persona (read once per turn) and the per-request trailer."""
+
+    system: str
+    trailer: str
+
+
 @dataclass(frozen=True)
 class _ReplyMeta:
     trace_id: str
@@ -121,6 +140,7 @@ class Brain:
         gateway: Gateway | None = None,
         billing: Billing | None = None,
         memory: MemoryService | None = None,
+        wit: WitSource | None = None,
     ) -> None:
         if brains is None:
             if router is None:
@@ -146,7 +166,8 @@ class Brain:
         # the app passes its own (Firestore, daily rate); without one: in-memory, default rate
         self.billing = billing or Billing.in_memory(brains, settings)
         self.memory = memory  # long-term notes about the owner (None: off)
-        self._system = build_system_prompt(honorific=settings.user_honorific)
+        # the owner's wit level picks the system prompt (None: always the default)
+        self.persona = Persona(honorific=settings.user_honorific, wit=wit)
         # One owner action at a time per conversation (chat, approve, decline, delete): no
         # lost turns, no double execution, no resurrected deletes. Locks vanish when unused.
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
@@ -340,16 +361,18 @@ class Brain:
         spec = self._resolve_brain(session, req)
         await self._admit(req.user_id, spec)  # refused → nothing stored, nothing called
 
-        session.append(Turn(role=Role.USER, content=text, trace_id=trace_id))
+        session.append(_owner_turn(text, req, trace_id))
         # persist the user turn before the LLM call so a crash never loses owner input
         await self.store.save(session)
 
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)
         self._sweep(req.user_id, rec, session.id)
-        trailer = self._trailer(session) + rec.block
+        prompt = _Prompt(
+            await self.persona.system_for(req.user_id), self._trailer(session, req) + rec.block
+        )
         try:
-            completion, pending = await self._run_loop(session, messages, trailer, req, spec)
+            completion, pending = await self._run_loop(session, messages, prompt, req, spec)
         except LLMError:
             log.exception("brain: llm failure", extra={"session_id": session.id})
             raise
@@ -375,9 +398,12 @@ class Brain:
         reply_meta = _ReplyMeta(trace_id, total_ms, rounds, pending, list(rec.used))
         return await self._chat_response(session, spec, reply, completion, reply_meta)
 
-    def _trailer(self, session: Session) -> str:
+    def _trailer(self, session: Session, req: ChatRequest) -> str:
         return build_trailer(
-            tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
+            tz=self.s.user_timezone,
+            session_id=session.id,
+            turn_index=len(session.turns),
+            channel=req.channel,
         )
 
     @staticmethod
@@ -430,7 +456,7 @@ class Brain:
     async def _complete(
         self,
         messages: list[ChatMessage],
-        trailer: str,
+        prompt: _Prompt,
         req: ChatRequest,
         spec: BrainSpec,
         *,
@@ -441,8 +467,8 @@ class Brain:
         await self._admit(req.user_id, spec)
         completion = await self.brains.router_for(spec.id).complete(
             tier=self._tier(req),
-            system=self._system,
-            system_dynamic=trailer,
+            system=prompt.system,
+            system_dynamic=prompt.trailer,
             messages=messages,
             max_tokens=self.s.max_output_tokens,
             effort=self._effort(),
@@ -455,19 +481,19 @@ class Brain:
         self,
         session: Session,
         messages: list[ChatMessage],
-        trailer: str,
+        prompt: _Prompt,
         req: ChatRequest,
         spec: BrainSpec,
     ) -> tuple[Completion, list[PendingApproval]]:
         """model → tool calls → gateway → results → model, until text or the round cap."""
         pending: list[PendingApproval] = []
         if not self._tools_on(spec):
-            return await self._complete(messages, trailer, req, spec, with_tools=False), pending
+            return await self._complete(messages, prompt, req, spec, with_tools=False), pending
         assert self.gateway is not None
         rounds = 0
         msgs = list(messages)
         while True:
-            completion = await self._complete(msgs, trailer, req, spec, with_tools=True)
+            completion = await self._complete(msgs, prompt, req, spec, with_tools=True)
             if not completion.tool_calls:
                 break
             rounds += 1
@@ -486,10 +512,12 @@ class Brain:
                 )
             )
             results: list = []
-            # what the model had seen when it asked for these calls: other people's text?
+            # what the model had seen when it asked for these calls: other people's text? A
+            # spoken message may be: every write it leads to becomes an approval card.
             untrusted = untrusted_seen(msgs, self.gateway.registry)
+            spoken = req.channel == "voice"
             for call in completion.tool_calls:
-                with context_trust(untrusted=untrusted):
+                with context_trust(untrusted=untrusted, spoken=spoken):
                     gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
                 if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending:
                     pending.append(PendingApproval.from_action(gr.pending))
@@ -517,7 +545,7 @@ class Brain:
                         ),
                     )
                 ]
-                completion = await self._complete(msgs, trailer, req, spec, with_tools=False)
+                completion = await self._complete(msgs, prompt, req, spec, with_tools=False)
                 break
         session.metadata["_rounds"] = rounds
         return completion, pending
@@ -662,7 +690,8 @@ class Brain:
                 # The owner switched to a training brain after this action was proposed. The
                 # tool result is private data: narrate deterministically, never send it there.
                 raise LLMError("narration skipped: current brain may train on content")
-            completion = await self._complete(messages, trailer, req, spec, with_tools=False)
+            prompt = _Prompt(await self.persona.system_for(req.user_id), trailer)
+            completion = await self._complete(messages, prompt, req, spec, with_tools=False)
         except (LLMError, BudgetError) as exc:  # the action stands: narrate it plainly
             log.warning(
                 "approval narration failed; using deterministic reply",
@@ -723,26 +752,27 @@ class Brain:
         spec = self._resolve_brain(session, req)
         router = self.brains.router_for(spec.id)
         await self._admit(req.user_id, spec)  # turn-level: refused → nothing stored
-        session.append(Turn(role=Role.USER, content=text, trace_id=trace_id))
+        session.append(_owner_turn(text, req, trace_id))
         await self.store.save(session)
 
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)
         self._sweep(req.user_id, rec, session.id)
         meta.memory_used = list(rec.used)
-        trailer = self._trailer(session) + rec.block
+        trailer = self._trailer(session, req) + rec.block
+        system = await self.persona.system_for(req.user_id)
         chunks: list[str] = []
         model = router.resolve(self._tier(req))
         # Streams report no usage: estimate tokens from characters so a paid streamed reply is
         # metered (and counts toward the limit) instead of costing "₹0".
-        sent = len(self._system) + len(trailer) + sum(len(m.text()) for m in messages)
+        sent = len(system) + len(trailer) + sum(len(m.text()) for m in messages)
         await self._admit(req.user_id, spec)  # call-level, like every other model call
         finished = False
         cost = 0.0
         try:
             async for delta in router.stream(
                 tier=self._tier(req),
-                system=self._system,
+                system=system,
                 system_dynamic=trailer,
                 messages=messages,
                 max_tokens=self.s.max_output_tokens,

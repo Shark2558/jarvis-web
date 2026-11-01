@@ -1,0 +1,16 @@
+Vendored openWakeWord models for the on-device "Hey Jarvis" wake word (slice 9, decision D12).
+Served by src/jarvis/api/console.py under /static/wakeword/oww-0.5.1/ (allow-listed, immutable).
+Verified by tests/test_wakeword_assets.py: every "sha256" line must match the file byte for byte.
+
+release:   openWakeWord v0.5.1 release assets (github.com/dscripka/openWakeWord), the release the
+           openwakeword 0.6.0 Python package downloads its models from
+models:    CC BY-NC-SA 4.0 — personal, non-commercial use only; see LICENSE.txt
+code:      openWakeWord is Apache-2.0 (LICENSE-openwakeword-code.txt, from the v0.6.0 tag); the
+           streaming pipeline in static/console-wakeword.js is a JavaScript port of it
+fetched:   2026-11-01
+changes:   none (files are byte-identical to the release assets)
+
+sha256 ba2b0e0f8b7b875369a2c89cb13360ff53bac436f2895cced9f479fa65eb176f 1087958 melspectrogram.onnx [https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/melspectrogram.onnx]
+sha256 70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f 1326578 embedding_model.onnx [https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/embedding_model.onnx]
+sha256 94a13cfe60075b132f6a472e7e462e8123ee70861bc3fb58434a73712ee0d2cb 1271370 hey_jarvis_v0.1.onnx [https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/hey_jarvis_v0.1.onnx]
+sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 11357 LICENSE-openwakeword-code.txt [openWakeWord v0.6.0 LICENSE (Apache-2.0)]

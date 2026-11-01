@@ -14,9 +14,10 @@ from jarvis.api.console import APP_ASSETS, FONT_FILES, THREE_RELEASE, VENDOR_FIL
 
 ROOT = Path(__file__).resolve().parents[1]
 IMMUTABLE = "public, max-age=31536000, immutable"
-# The console CSP is a security contract: any change here must be deliberate.
+# The console CSP is a security contract: any change here must be deliberate. Slice 9 (D12) added
+# exactly 'wasm-unsafe-eval' for the on-device wake word's WebAssembly (tests/test_wakeword_assets).
 EXPECTED_CSP = (
-    "default-src 'none'; script-src 'self'; "
+    "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
     "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
     "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
@@ -37,10 +38,24 @@ DECK_SCRIPTS = (
     "console-brief.js",
     "console-usage.js",
     "console-memory.js",
+    "console-voice-capture.js",
+    "console-voice-speech.js",
+    "console-voice.js",
+    "console-voice-mic.js",
 )
 MODULE_SCRIPTS = ("console-3d.js",)
-MODULE_DEPS = ("console-3d-scenes.js",)  # imported by console-3d.js, not by the page
-STYLES = ("console.css", "console-deck.css", "console-memory.css")
+MODULE_DEPS = (
+    "console-3d-scenes.js",  # imported by console-3d.js, not by the page
+    "voice-capture-worklet.js",  # loaded by audioWorklet.addModule (slice 9), not by the page
+)
+STYLES = ("console.css", "console-deck.css", "console-memory.css", "console-voice.css")
+VOICE_SCRIPTS = (
+    "console-voice-capture.js",
+    "console-voice-speech.js",
+    "console-voice.js",
+    "console-voice-mic.js",
+    "voice-capture-worklet.js",
+)
 
 
 # ---- fonts ------------------------------------------------------------------------------------
@@ -351,7 +366,14 @@ def _visible_strings(js: str) -> list[str]:
 
 @pytest.mark.parametrize(
     "name",
-    ["console.js", "console-deck.js", "console-usage.js", "console-brief.js", "console-memory.js"],
+    [
+        "console.js",
+        "console-deck.js",
+        "console-usage.js",
+        "console-brief.js",
+        "console-memory.js",
+        *VOICE_SCRIPTS,
+    ],
 )
 def test_no_dollar_sign_in_any_console_string(name: str) -> None:
     """Every cost the owner sees is in rupees. A template's ${…} is code, not text."""
@@ -428,11 +450,12 @@ async def test_memory_panel_dock_button_and_dialog_are_wired(client: AsyncClient
 
 
 async def test_phone_dock_has_a_more_sheet_for_the_overflow_tabs(client: AsyncClient) -> None:
-    """Nine panels: a phone shows at most eight tabs; the rest sit behind "More"."""
+    """Ten panels (Voice joined in slice 9): a phone shows at most eight tabs; the rest sit behind
+    "More"."""
     html = (await client.get("/")).text
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     tabs = re.findall(r'<button class="dk([^"]*)" type="button" data-open="(\w+)"', dock)
-    assert len(tabs) == 9
+    assert len(tabs) == 10
     on_phone = [name for cls, name in tabs if "ovf" not in cls.split()]
     overflow = [name for cls, name in tabs if "ovf" in cls.split()]
     assert len(on_phone) + 1 <= 8 and overflow  # + the More tab itself
@@ -457,3 +480,110 @@ async def test_reply_meta_lists_the_memories_used_as_text(client: AsyncClient) -
     js = (await client.get("/static/console.js")).text
     assert "memory_used" in js and "Used " in js
     assert "emit('jarvis:brain'" in js
+
+
+# ---- slice 9: voice ------------------------------------------------------------------------------
+@pytest.mark.parametrize("name", VOICE_SCRIPTS)
+async def test_voice_scripts_never_parse_text_as_html_and_use_the_console_transport(
+    client: AsyncClient, name: str
+) -> None:
+    js = (await client.get(f"/static/{name}")).text
+    assert _sinks(js) == [], name
+    # bytes and JSON both go through console.js (cookie + X-Requested-With, or the bearer token)
+    assert "fetch(" not in js and "XMLHttpRequest" not in js and "WebSocket" not in js, name
+    assert "https://" not in js and "http://" not in js, name
+
+
+async def test_voice_scripts_load_after_the_console_in_order(client: AsyncClient) -> None:
+    html = (await client.get("/")).text
+    names = (
+        "console-deck.js",
+        "console.js",
+        "console-voice-capture.js",
+        "console-voice-speech.js",
+        "console-voice.js",
+        "console-voice-mic.js",
+    )
+    order = [html.index(f'src="/static/{n}"') for n in names]
+    assert order == sorted(order)
+    voice = (await client.get("/static/console-voice.js")).text
+    assert "document.addEventListener('jarvis:ready'" in voice
+    assert re.search(r"typeof \w+\.ready === 'function' \? \w+\.ready\(\) : null", voice)
+    mic = (await client.get("/static/console-voice-mic.js")).text
+    assert "document.addEventListener('jarvis:ready'" in mic
+    assert re.search(r"typeof \w+\.ready === 'function' && \w+\.ready\(\)", mic)
+
+
+async def test_voice_contract_paths_headers_and_channel(client: AsyncClient) -> None:
+    """§3 of docs/plans/phase1-slice9-voice.md, as the console uses it."""
+    voice = (await client.get("/static/console-voice.js")).text
+    for path in ("'/v1/voice'", "'/v1/voice/settings'", "'/v1/voice/speak'"):
+        assert path in voice, path
+    assert "{ preview: true, voice: meta.preview" in voice
+    mic = (await client.get("/static/console-voice-mic.js")).text
+    assert "'/v1/voice/transcribe'" in mic
+    assert "'Content-Type': 'audio/wav'" in mic
+    assert "Chat.send(text, { channel: 'voice' })" in mic
+    # D11: the fixed, wit-free approval line, and nothing in the voice code ever approves
+    assert "That one needs your approval on screen, ${honorific()}." in mic
+    for name in VOICE_SCRIPTS:
+        js = (await client.get(f"/static/{name}")).text
+        assert "/approve" not in js and "/v1/approvals" not in js, name
+    console_js = (await client.get("/static/console.js")).text
+    assert "if (channel === 'voice') body.channel = 'voice';" in console_js
+    assert (
+        "headers = Object.assign({}, opts.headers || {}, { 'X-Requested-With': 'JARVIS' })"
+        in console_js
+    )
+    assert "window.JarvisChat = Object.freeze({" in console_js
+
+
+async def test_capture_worklet_is_served_and_loaded_from_this_server_only(
+    client: AsyncClient,
+) -> None:
+    capture = (await client.get("/static/console-voice-capture.js")).text
+    assert "const WORKLET_URL = '/static/voice-capture-worklet.js';" in capture
+    assert "addModule(WORKLET_URL)" in capture
+    worklet = (await client.get("/static/voice-capture-worklet.js")).text
+    assert "registerProcessor('jarvis-capture'" in worklet
+    assert "const FRAME = 1280;" in worklet and "const OUT_RATE = 16000;" in worklet
+    # the microphone is asked for with the browser's own clean-up switched on (D4)
+    for flag in ("echoCancellation: true", "noiseSuppression: true", "autoGainControl: true"):
+        assert flag in capture, flag
+
+
+async def test_voice_panel_dock_tab_and_more_sheet_are_wired(client: AsyncClient) -> None:
+    html = (await client.get("/")).text
+    assert 'id="p-voice" data-panel="voice" aria-labelledby="t-voice"' in html
+    assert 'data-open="voice" aria-controls="p-voice" aria-pressed="false"' in html
+    assert 'data-sheet-open="voice"' in html
+    assert 'id="voiceNote" role="status" aria-live="polite"' in html
+    assert 'id="micBtn" type="button" aria-pressed="false"' in html
+    assert 'aria-keyshortcuts="Control+Space"' in html
+    assert 'id="voiceLive" role="status" aria-live="polite"' in html
+    deck = (await client.get("/static/console-deck.js")).text
+    assert "'integrations', 'vitals', 'voice', 'construct'" in deck
+    assert re.search(r"\bvoice: \{ x:", deck)
+    # device settings: storage may throw (private mode, blocked site data)
+    voice = (await client.get("/static/console-voice.js")).text
+    assert re.search(r"try \{ return localStorage\.getItem\(k\); \} catch", voice)
+    assert re.search(r"try \{ localStorage\.setItem\(k, v\); \} catch", voice)
+    assert "wake: false" in voice  # "Hey Jarvis" is off by default on every device
+    assert "openWakeWord (CC BY-NC-SA 4.0), personal use" in voice
+
+
+# Bidi overrides, zero-width and line-separator characters belong in the source only as \u escapes:
+# typed literally they make code read differently than it runs ("Trojan Source"), and a literal
+# U+2028 inside a regular expression ends it early (a syntax error that stops the whole script).
+_HIDDEN = re.compile(
+    "[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]"
+)
+
+
+@pytest.mark.parametrize("name", sorted(n for n in APP_ASSETS if n.endswith((".js", ".css"))))
+def test_console_sources_hold_no_invisible_characters(name: str) -> None:
+    text = (ROOT / "src/jarvis/api/static" / name).read_text(encoding="utf-8")
+    found = [
+        (text.count("\n", 0, m.start()) + 1, hex(ord(m.group()))) for m in _HIDDEN.finditer(text)
+    ]
+    assert found == [], (name, found[:5])

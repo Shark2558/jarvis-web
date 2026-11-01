@@ -1,0 +1,34 @@
+"Hey Jarvis" wake-word models: licence and attribution
+=====================================================
+
+Files
+  melspectrogram.onnx, embedding_model.onnx, hey_jarvis_v0.1.onnx
+
+Source
+  openWakeWord v0.5.1 release assets by David Scripka
+  https://github.com/dscripka/openWakeWord (releases/tag/v0.5.1)
+  The embedding model is openWakeWord's re-implementation of Google's speech_embedding model
+  (TFHub, Apache-2.0); the "hey jarvis" model is described in openWakeWord's
+  docs/models/hey_jarvis.md.
+
+Licence
+  Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)
+  https://creativecommons.org/licenses/by-nc-sa/4.0/
+  openWakeWord's README: "All of the included pre-trained models are licensed under the Creative
+  Commons Attribution-NonCommercial-ShareAlike 4.0 International license due to the inclusion of
+  datasets with unknown or restrictive licensing as part of the training data."
+
+Changes
+  None. The files are byte-identical to the release assets (sha256 in MANIFEST.txt). JARVIS runs
+  them in the browser with onnxruntime-web through a JavaScript port of openWakeWord's
+  Apache-2.0 streaming code (static/console-wakeword.js; LICENSE-openwakeword-code.txt).
+
+Disclaimer
+  The licensor offers the models as-is and makes no representations or warranties of any kind
+  (CC BY-NC-SA 4.0, Section 5).
+
+WARNING: personal, non-commercial use only
+  JARVIS uses these models solely for its owner's own personal assistant. They must not be used
+  commercially or shipped in a product. Replace them with a self-trained model before any public
+  launch (Phase 7) — for example one trained with openWakeWord's Apache-2.0 training code on data
+  you hold the rights to. Any adaptation of these models must be shared under CC BY-NC-SA 4.0.

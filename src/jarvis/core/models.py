@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -43,6 +43,9 @@ class Turn(BaseModel):
     # produced from a tool or approval outcome (an approval's narration, a reply written after
     # tool rounds): private data, never sent to a brain that may train on content
     tool_derived: bool = False
+    # how an owner message arrived (slice 9): "voice" was heard through the microphone, so it
+    # may be someone else's words — never used for memory learning (jarvis.recall.learning)
+    channel: Literal["text", "voice"] = "text"
 
 
 class Session(BaseModel):
@@ -83,6 +86,11 @@ class ChatRequest(BaseModel):
         max_length=64,
         description="Brain id from GET /v1/brains. Omit to keep the session's brain (or the "
         "default). The choice is remembered on the session.",
+    )
+    channel: Literal["text", "voice"] = Field(
+        default="text",
+        description="voice: the owner spoke this message and the reply will be read aloud "
+        "(short, plain spoken answer; slice 9 D7)",
     )
 
 

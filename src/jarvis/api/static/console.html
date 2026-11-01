@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="/static/console.css">
 <link rel="stylesheet" href="/static/console-deck.css">
 <link rel="stylesheet" href="/static/console-memory.css">
+<link rel="stylesheet" href="/static/console-voice.css">
 </head>
 <body>
 <div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
@@ -142,10 +143,18 @@
         <form class="composer" id="form" autocomplete="off">
           <label for="input" class="sr-only">Message JARVIS</label>
           <textarea id="input" rows="1" placeholder="Message JARVIS"></textarea>
+          <!-- slice 9 (console-voice-mic.js): shown when this browser can record or recognise speech -->
+          <button class="mic lift" id="micBtn" type="button" aria-pressed="false" aria-label="Voice input" aria-keyshortcuts="Control+Space" title="Speak (Ctrl + Space)" data-state="idle" hidden>
+            <span class="mring" aria-hidden="true"></span>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg>
+          </button>
           <button class="send lift" id="send" type="submit" aria-label="Send" disabled>
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 16V4M4.5 9.5 10 4l5.5 5.5"/></svg>
           </button>
         </form>
+        <p class="vmic-help" id="micHelp" role="status" hidden></p>
+        <p class="vline" id="voiceLine" role="status" aria-live="polite"></p>
+        <span class="sr-only" id="voiceLive" role="status" aria-live="polite"></span>
         <div class="hint">Enter to send, Shift + Enter for a new line. Anything that sends, pays or deletes waits for your approval.</div>
       </div>
     </div>
@@ -322,6 +331,23 @@
     </div>
   </section>
 
+  <!-- Voice (slice 9, console-voice.js): the owner's voice, speed and wit (saved on the server) and this
+       device's speech settings. Every value the server sends is filled in with textContent. -->
+  <section class="panel card" id="p-voice" data-panel="voice" aria-labelledby="t-voice" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg>
+      <h2 id="t-voice">Voice</h2><span class="pmeta" id="voiceMeta"></span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Voice panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Voice panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody">
+      <div class="bnote vlive" id="voiceNote" role="status" aria-live="polite"></div>
+      <div id="voice" aria-busy="false"><div class="empty">Voice settings load when this panel opens.</div></div>
+    </div>
+  </section>
+
   <section class="panel card fixed-size" id="p-integrations" data-panel="integrations" aria-labelledby="t-integrations" hidden>
     <header class="ptitle">
       <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.2 11.8 11.8 8.2"/><path d="M7 13 5.6 14.4a2.7 2.7 0 0 1-3.8-3.8L5 7.4a2.7 2.7 0 0 1 3.8 0"/><path d="M13 7l1.4-1.4a2.7 2.7 0 0 1 3.8 3.8L15 12.6a2.7 2.7 0 0 1-3.8 0"/></svg>
@@ -422,6 +448,7 @@
     <span class="sep" aria-hidden="true"></span>
     <!-- phones (< 900 px) show at most eight tabs: the "ovf" ones move behind More (console-deck.js) -->
     <button class="dk ovf" type="button" data-open="vitals" aria-controls="p-vitals" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span>Vitals</span></button>
+    <button class="dk ovf" type="button" data-open="voice" aria-controls="p-voice" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span>Voice</span></button>
     <button class="dk ovf" type="button" data-open="construct" aria-controls="p-construct" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg><span>Construct</span></button>
     <button class="dk more" id="dockMore" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="moreSheet" aria-label="More panels"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="5" height="5" rx="1"/><rect x="11.5" y="3.5" width="5" height="5" rx="1"/><rect x="3.5" y="11.5" width="5" height="5" rx="1"/><rect x="11.5" y="11.5" width="5" height="5" rx="1"/></svg><span>More</span></button>
   </nav>
@@ -458,6 +485,7 @@
   <div class="sheet-in">
     <h2 id="moreTitle">More panels</h2>
     <button class="sheet-item" type="button" data-sheet-open="vitals"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span><b>Vitals</b><small>Reply speed, this month's spend and your limit</small></span></button>
+    <button class="sheet-item" type="button" data-sheet-open="voice"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span><b>Voice</b><small>JARVIS's voice, speed and wit; how this device listens</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="construct"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg><span><b>Construct</b><small>The rotating hologram</small></span></button>
     <button class="btn lift sheet-close" id="moreClose" type="button">Close</button>
   </div>
@@ -469,6 +497,11 @@
 <script src="/static/console-brief.js" defer></script>
 <script src="/static/console-usage.js" defer></script>
 <script src="/static/console-memory.js" defer></script>
+<script src="/static/console-voice-capture.js" defer></script>
+<script src="/static/console-voice-speech.js" defer></script>
+<script src="/static/console-wakeword.js" defer></script>
+<script src="/static/console-voice.js" defer></script>
+<script src="/static/console-voice-mic.js" defer></script>
 <script type="module" src="/static/console-3d.js"></script>
 </body>
 </html>

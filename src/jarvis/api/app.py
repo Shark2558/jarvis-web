@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from jarvis.api.auth import CSRFRejected, auth_router, build_oauth
+from jarvis.api.body import MAX_BODY_BYTES, BodySizeLimit, BodyTooLarge, too_large_body
 from jarvis.api.brief import internal_router as brief_internal_router
 from jarvis.api.brief import router as brief_router
 from jarvis.api.console import router as console_router
@@ -28,6 +29,7 @@ from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import router as v1_router
 from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier, SchedulerUnauthorized
 from jarvis.api.usage import router as usage_router
+from jarvis.api.voice import install_voice
 from jarvis.billing import (
     Billing,
     BudgetReached,
@@ -66,6 +68,7 @@ from jarvis.storage.docs import Docs, MemoryDocs
 from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.setup import build_gateway
+from jarvis.voice.service import VoiceEngines, build_voice_service
 
 log = get_logger(__name__)
 
@@ -179,6 +182,7 @@ def create_app(
     brains: BrainRegistry | None = None,
     scheduler_verifier: GoogleOIDCVerifier | None = None,
     billing: Billing | None = None,
+    voice_engines: VoiceEngines | None = None,
 ) -> FastAPI:
     s = settings or get_settings()
     configure_logging(s.log_level, s.log_json)
@@ -205,6 +209,9 @@ def create_app(
             gateway.audit if gateway is not None else built.audit if built else AuditLog()
         )
         app.state.memory = build_app_memory(s, docs, app.state.brains, app.state.billing, audit)
+        # Voice (slice 9): settings + wit level always; Google speech only when switched on.
+        # No network at start-up: credentials are looked up on first use.
+        app.state.voice = build_voice_service(s, docs, app.state.billing, engines=voice_engines)
         gw: Gateway | None = gateway
         if gw is None and s.tools_enabled:
             gw = build_gateway(
@@ -222,6 +229,7 @@ def create_app(
             gateway=app.state.gateway,
             billing=app.state.billing,
             memory=app.state.memory,
+            wit=app.state.voice,
         )
         app.state.brief = build_brief_service(app, s, built, docs=docs)
         await adopt_legacy_sessions(app.state.store, s)
@@ -234,6 +242,7 @@ def create_app(
                 "session_backend": s.session_backend.value,
                 "google_tools": app.state.google is not None,
                 "brief_scheduler": getattr(app.state, "scheduler_verifier", None) is not None,
+                "voice_cloud": app.state.voice.engines is not None,
             },
         )
         try:
@@ -246,12 +255,17 @@ def create_app(
                 await app.state.google.http.aclose()
             if app.state.fx_http is not None:
                 await app.state.fx_http.aclose()
+            await app.state.voice.aclose()
             verifier = getattr(app.state, "scheduler_verifier", None)
             if verifier is not None:
                 await verifier.aclose()
             await app.state.store.close()
 
     app = FastAPI(title="JARVIS", version="0.0.1", lifespan=lifespan, docs_url=None, redoc_url=None)
+
+    # Every body is size-capped before it is parsed or authenticated (innermost of the http
+    # middlewares, so the trace id still goes on a 413). Tighter per-route caps apply first.
+    app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
 
     if s.rate_limit_per_minute > 0:
         app.middleware("http")(make_middleware(RateLimiter(s.rate_limit_per_minute)))
@@ -368,6 +382,10 @@ def create_app(
     async def _too_large(_: Request, exc: ImportTooLarge) -> JSONResponse:
         return _err(413, {"error": "too_large", "detail": str(exc)})
 
+    @app.exception_handler(BodyTooLarge)
+    async def _body_too_large(_: Request, exc: BodyTooLarge) -> JSONResponse:
+        return _err(413, too_large_body(str(exc.detail)))
+
     @app.exception_handler(SchedulerUnauthorized)
     async def _scheduler(_: Request, exc: SchedulerUnauthorized) -> Response:
         return Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})
@@ -376,6 +394,7 @@ def create_app(
     app.include_router(brief_router)
     app.include_router(usage_router)
     app.include_router(memory_router)
+    install_voice(app)
     _mount_scheduler(app, s, scheduler_verifier)
     app.include_router(console_router)
     return app

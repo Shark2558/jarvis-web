@@ -63,7 +63,7 @@ def _indian(n: int) -> str:
 
 def rupees(v: float) -> str:
     """ "₹500", "₹1,00,000", "₹25.50" — whole rupees without decimals, else two."""
-    v = max(0.0, round(v, 2))
+    v = max(0.0, round(float(v), 2))  # float(): int.is_integer() exists only on Python 3.12+
     if v.is_integer():
         return "₹" + _indian(int(v))
     whole, frac = f"{v:.2f}".split(".")

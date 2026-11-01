@@ -45,7 +45,7 @@ def test_deploy_runs_only_after_tests_pass_on_main_pushes_when_switched_on(
 
 def test_only_the_deploy_job_can_mint_a_google_token(ci: dict[str, Any]) -> None:
     assert _deploy(ci)["permissions"] == {"contents": "read", "id-token": "write"}
-    assert "id-token" not in str(ci.get("permissions", {}))
+    assert "id-token" not in str(ci["permissions"])
     for name, job in ci["jobs"].items():
         if name != "deploy":
             assert "id-token" not in str(job.get("permissions", {})), name
@@ -61,16 +61,27 @@ def test_deploy_is_keyless_and_never_runs_two_at_once(ci: dict[str, Any]) -> Non
     )
     assert "workload_identity_provider" in auth["with"]
     assert job["concurrency"]["cancel-in-progress"] is False
-    # every third-party action is pinned to a major version at least
-    for s in job["steps"]:
-        if "uses" in s:
-            assert re.search(r"@v\d+", s["uses"]), s["uses"]
+
+
+def test_every_action_is_pinned_to_a_full_commit_sha(ci: dict[str, Any]) -> None:
+    # a moved tag must never run inside a job that can mint a Google token or holds a key
+    for name, job in ci["jobs"].items():
+        for s in job.get("steps", []):
+            if "uses" in s:
+                assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", s["uses"]), (name, s["uses"])
+
+
+def test_workflow_default_token_is_read_only(ci: dict[str, Any]) -> None:
+    assert ci["permissions"] == {"contents": "read"}
 
 
 def test_deploy_ships_the_tested_commit_and_checks_health(ci: dict[str, Any]) -> None:
     run = "\n".join(str(s.get("run", "")) for s in _deploy(ci)["steps"])
     assert "github.sha" in run or "GITHUB_SHA" in run
     assert "gcloud run deploy" in run and "--image" in run
+    # new code gets no traffic until it is healthy; a re-run of an old job can't roll back main
+    assert "--no-traffic" in run and "--tag" in run and "--to-latest" in run
+    assert "git ls-remote" in run
     # settings and secrets stay as the owner configured them: never re-set from CI
     assert "--set-env-vars" not in run and "--set-secrets" not in run
     assert "--allow-unauthenticated" not in run
@@ -81,6 +92,15 @@ def test_script_trusts_only_this_repo_on_main(script: str) -> None:
     assert re.search(r"GH_REPO_ID=\"\d+\"", script)
     assert "assertion.repository_id==" in script
     assert "assertion.ref=='refs/heads/main'" in script
+    assert (
+        "assertion.event_name in ['push','workflow_dispatch']" in script
+    )  # no pull_request_target
+    assert 'GH_REPO="Shark2558/jarvis-web"' in script
+    assert (
+        "assertion.job_workflow_ref=='${GH_REPO}/.github/workflows/ci.yml@refs/heads/main'"
+        in script
+    )
+    assert "assertion.runner_environment=='github-hosted'" in script
     assert "principalSet://" in script and "attribute.repository_id/" in script
 
 
@@ -103,6 +123,12 @@ def test_deployer_gets_narrow_roles_only(script: str) -> None:
 def test_rerun_reuses_saved_answers_and_can_reconfigure(script: str) -> None:
     assert "--reconfigure" in script
     assert "--update-env-vars" in script  # quick update keeps owner-specific settings + secrets
+    assert "--update-secrets" in script
+    assert "JARVIS_OWNER_EMAILS" in script.split("QUICK=yes")[0]  # only a fully set-up service
+
+
+def test_image_cleanup_never_ages_out_recent_images(script: str) -> None:
+    assert '"keepCount":10' in script
 
 
 def test_script_is_valid_bash() -> None:

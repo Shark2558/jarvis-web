@@ -17,7 +17,10 @@
 # Step 7 sets up deploy-on-merge: GitHub Actions proves who it is with a short-lived token
 # (Workload Identity Federation) that Google accepts only from this repository's main branch.
 # No key exists. The deployer account may only roll out new revisions of this service, push
-# images to the build repository, and run them as jarvis-run.
+# images to the build repository, and run them as jarvis-run. Inherent to any deploy-on-merge:
+# whoever can change main can ship code that runs as jarvis-run (secrets, memory, audit), so
+# protect main (pull requests only, no force-push) and keep your GitHub account on 2-step sign-in.
+# --reconfigure rewrites ALL settings and secret bindings from your answers (it does not merge).
 set -euo pipefail
 
 SERVICE="${SERVICE:-jarvis}"
@@ -54,9 +57,11 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
   secretmanager.googleapis.com firestore.googleapis.com iam.googleapis.com \
   iamcredentials.googleapis.com sts.googleapis.com --quiet
 
+# Quick (prompt-free) only for a service this script fully set up before: it has the owner set.
 QUICK=no
 if [ "$RECONFIGURE" = no ] && \
-   gcloud run services describe "$SERVICE" --region "$REGION" --format='value(metadata.name)' >/dev/null 2>&1; then
+   SVC_JSON="$(gcloud run services describe "$SERVICE" --region "$REGION" --format=json 2>/dev/null)" && \
+   printf '%s' "$SVC_JSON" | grep -q '"JARVIS_OWNER_EMAILS"'; then
   QUICK=yes
 fi
 
@@ -211,7 +216,10 @@ show_logs() {
 # id, brains) and the secret bindings are only (re)written when questions were asked.
 INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20"
 if [ "$QUICK" = yes ]; then
-  CONFIG_FLAGS=(--update-env-vars "$INFRA_ENV")
+  CONFIG_FLAGS=(
+    --update-env-vars "$INFRA_ENV"
+    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest"
+  )
 else
   CONFIG_FLAGS=(
     --set-env-vars "${INFRA_ENV},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV}"
@@ -246,7 +254,9 @@ retry() { # command...  (new accounts/pools take a few seconds to become visible
   "$@" >/dev/null   # last try shows the error
 }
 setup_autodeploy() {
-  local cond="assertion.repository_id=='${GH_REPO_ID}' && assertion.ref=='refs/heads/main'"
+  # Only this repository (by numeric id), only main, only a push or a manual run of ci.yml on
+  # GitHub's own runners. pull_request(_target), forks, other branches and workflows: refused.
+  local cond="assertion.repository_id=='${GH_REPO_ID}' && assertion.ref=='refs/heads/main' && assertion.event_name in ['push','workflow_dispatch'] && assertion.job_workflow_ref=='${GH_REPO}/.github/workflows/ci.yml@refs/heads/main' && assertion.runner_environment=='github-hosted'"
   local map="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.repository_id=assertion.repository_id,attribute.ref=assertion.ref"
   gcloud iam workload-identity-pools describe "$POOL" --location=global >/dev/null 2>&1 || \
     gcloud iam workload-identity-pools create "$POOL" --location=global \
@@ -278,11 +288,11 @@ setup_autodeploy() {
   # lets gcloud check that the Cloud Run API is on (read-only; grants no resource access)
   retry gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:${DEPLOY_SA}" \
     --role=roles/serviceusage.serviceUsageConsumer --condition=None --quiet || return 1
-  # Keep the 5 newest images and delete older ones after a week: stays inside the free 0.5 GB.
+  # Keep the 10 newest images always; delete older ones after 30 days (stays near the free 0.5 GB).
   local policy; policy="$(mktemp)"
   cat > "$policy" <<'JSON'
-[{"name":"keep-newest-5","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":5}},
- {"name":"delete-older","action":{"type":"Delete"},"condition":{"olderThan":"7d"}}]
+[{"name":"keep-newest-10","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":10}},
+ {"name":"delete-older","action":{"type":"Delete"},"condition":{"olderThan":"30d"}}]
 JSON
   gcloud artifacts repositories set-cleanup-policies "$AR_REPO" --location "$REGION" \
     --policy="$policy" --no-dry-run --quiet >/dev/null 2>&1 || \

@@ -9,6 +9,7 @@ never accepted from the client: a body or query `user_id` is ignored everywhere.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 
 from fastapi import Request
@@ -21,6 +22,7 @@ from jarvis.memory.base import SessionStore
 log = get_logger(__name__)
 
 LEGACY_USER_ID = "owner"
+ADOPT_TIMEOUT_S = 20.0  # start-up must stay well inside Cloud Run's start-up probe
 _ID_HEX = 16
 
 
@@ -42,12 +44,15 @@ def current_user(request: Request) -> str:
 
 async def adopt_legacy_sessions(store: SessionStore, s: Settings) -> None:
     """Conversations saved before ids existed belong to the first owner. Idempotent and
-    best-effort: a failure is logged and start-up continues (they are retried next start)."""
+    best-effort and time-boxed: a failure or timeout is logged and start-up continues (the
+    rest are adopted at the next start; each moved session is complete on its own)."""
     new = primary_user_id(s)
     if new == LEGACY_USER_ID:
         return
     try:
-        moved = await store.reassign_user(LEGACY_USER_ID, new)
+        moved = await asyncio.wait_for(
+            store.reassign_user(LEGACY_USER_ID, new), timeout=ADOPT_TIMEOUT_S
+        )
     except Exception as exc:  # noqa: BLE001 — never block start-up on a one-off migration
         log.warning("legacy conversations not adopted yet", extra={"reason": type(exc).__name__})
         return

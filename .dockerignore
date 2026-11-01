@@ -12,3 +12,6 @@ deploy
 .env
 *.md
 !README.md
+
+# google-github-actions/auth writes short-lived credentials here; never bake them in
+gha-creds-*.json

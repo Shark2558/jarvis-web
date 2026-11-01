@@ -206,3 +206,23 @@ async def test_startup_survives_a_failing_adoption(
         c = await _client(app)
         assert (await c.get("/health")).status_code == 200
         await c.aclose()
+
+
+async def test_startup_does_not_wait_forever_for_adoption(
+    two_owner_settings: Settings, provider: MockProvider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    import jarvis.api.identity as identity
+
+    class Slow(InMemorySessionStore):
+        async def reassign_user(self, old: str, new: str) -> int:
+            await asyncio.sleep(30)
+            return 0
+
+    monkeypatch.setattr(identity, "ADOPT_TIMEOUT_S", 0.05)
+    app = create_app(two_owner_settings, provider=provider, store=Slow())
+    async with app.router.lifespan_context(app):
+        c = await _client(app)
+        assert (await c.get("/health")).status_code == 200
+        await c.aclose()

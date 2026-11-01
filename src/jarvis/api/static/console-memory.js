@@ -47,7 +47,8 @@
   const SENSITIVE = 'JARVIS doesn\'t keep that: it looks like private data (an ID, card or account number, a password, or a health detail).';
   const FULL = 'Memory is full. Delete some facts to make room.';
   // bidi overrides, zero-width and control characters can make text read differently than it is
-  const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+  // U+200C/U+200D (ZWNJ/ZWJ) are kept: Malayalam, Hindi, Persian and emoji sequences need them.
+  const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 
   // ---- small, type-checking helpers ---------------------------------------------------------------
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
@@ -71,6 +72,8 @@
     return m && m.length <= 300 && !m.startsWith('[object') && !/^[a-z0-9_.-]+$/i.test(m) ? m : '';
   }
   const errText = (e) => detailOf(e) || 'Please try again.';
+  /** The privacy sentence only when the server's code is `sensitive` — never for other 422s. */
+  const isSensitive = (e) => !!e && e.status === 422 && (e.message === 'sensitive' || e.code === 'sensitive');
   const busyAttr = (el, on) => { if (on) el.setAttribute('aria-disabled', 'true'); else el.removeAttribute('aria-disabled'); };
   function icon(paths) {
     const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
@@ -374,7 +377,7 @@
     try {
       const ok = await askConfirm(trigger, 'Let JARVIS learn from your messages?', [
         { cls: 'strong', text: 'Uses Claude, the paid AI; never the free brain.' },
-        S.data.costNote ? { text: S.data.costNote } : null,
+        { text: S.data.costNote || 'A few rupees a month at most; the exact amount shows in Vitals and counts towards your monthly limit.' },
         { text: 'Your messages in a conversation are sent to Claude so it can pick out facts about you. Only your own words: never emails, calendar text or JARVIS\'s replies.' },
         { text: 'Health details, ID and card numbers, passwords and the like are never kept. Every fact shows up here, where you can edit or delete it.' },
         { text: 'You can switch it off here at any time.' },
@@ -398,7 +401,7 @@
       changed({ profile: { ...S.data.profile, [label]: saved } });
       setStat(label, 'ok', 'Saved.'); log('info', 'About you saved');
     } catch (e) {
-      if (e.status !== 401) setStat(label, 'bad', detailOf(e) || (e.status === 422 ? SENSITIVE : 'Couldn\'t save. ' + errText(e)));
+      if (e.status !== 401) setStat(label, 'bad', detailOf(e) || (isSensitive(e) ? SENSITIVE : 'Couldn\'t save. ' + errText(e)));
       else setStat(label, '', '');
     } finally { S.profileBusy.delete(label); syncProfile(label); }
   }
@@ -423,7 +426,7 @@
     } catch (e) {
       if (e.status === 404) { setFacts(S.data.facts.filter(x => x.id !== f.id), -1); flash('bad', 'That fact was already gone.'); }
       else if (e.status !== 401) {
-        const m = detailOf(e) || (e.status === 422 ? SENSITIVE : 'Couldn\'t save. Please try again.');
+        const m = detailOf(e) || (isSensitive(e) ? SENSITIVE : 'Couldn\'t save. Please try again.');
         if (S.edit && S.edit.id === f.id) S.edit = { ...S.edit, error: m }; else flash('bad', m);
       }
     } finally { S.busy.delete(f.id); render(); }
@@ -471,7 +474,7 @@
       addText.value = ''; syncAdd();
       flash('ok', 'Fact added.'); log('info', 'Memory fact added');
     } catch (e) {
-      if (e.status !== 401) addErr.textContent = detailOf(e) || (e.status === 409 ? FULL : e.status === 422 ? SENSITIVE : 'Couldn\'t add it. ' + errText(e));
+      if (e.status !== 401) addErr.textContent = detailOf(e) || (e.status === 409 ? FULL : isSensitive(e) ? SENSITIVE : 'Couldn\'t add it. ' + errText(e));
     } finally { S.adding = false; busyAttr(addBtn, false); render(); }
   }
   function syncAdd() { addCount.textContent = `${addText.value.length} / ${FACT_MAX}`; }

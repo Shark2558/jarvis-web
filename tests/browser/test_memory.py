@@ -990,3 +990,32 @@ def test_motion_off_keeps_the_memory_panel_still(make: Callable[..., Console]) -
     )
     assert running == 0
     assert c.errors == []
+
+
+def test_joiners_survive_and_only_a_sensitive_refusal_blames_private_data(
+    make: Callable[..., Console],
+) -> None:
+    """Review fix: ZWNJ/ZWJ (Malayalam chillus, emoji) are kept in the list and the edit box, and a
+    422 that is not `sensitive` (e.g. FastAPI's own validation list) never says "private data"."""
+    c = make()
+    text = "Grew up in കൊച്ചി‍ and loves 👨‍👩‍👧 movie nights"
+    FakeMemory(c.page, memory_view(facts=[fact("m1", text, "places", origin="told")]))
+    c.open()
+    _main(c)
+    page = c.page
+    row = _row(c, "Grew up in")
+    assert "‍" in str(row.text_content())
+    row.get_by_role("button", name="Edit").click()
+    assert page.locator("#memList textarea").first.input_value() == text
+    page.route(
+        re.compile(r".*/v1/memory/facts$"),
+        lambda route: _json(
+            route, 422, {"detail": [{"type": "missing", "loc": ["body", "text"], "msg": "x"}]}
+        ),
+    )
+    page.locator("#memAddText").fill("Something harmless.")
+    page.locator("#memAddBtn").click()
+    err = page.locator("#memAddErr")
+    expect(err).not_to_have_text("")
+    assert "private data" not in str(err.text_content())
+    assert _quiet_errors(c) == []

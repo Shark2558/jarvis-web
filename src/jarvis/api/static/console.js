@@ -21,6 +21,8 @@
   // [U+202E] markers. The server already strips them from summaries; this also covers the
   // raw arguments.
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+  // Memory text keeps ZWNJ/ZWJ (U+200C/U+200D), which Indic scripts and emoji need.
+  const INVISIBLE_KEEP_JOINERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const visible = (s) => String(s).replace(INVISIBLE, (c) => `[U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}]`);
   const lsGet = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
@@ -137,7 +139,7 @@
   let usedSeq = 0;
   function memoriesUsed(list) {
     return (Array.isArray(list) ? list : []).slice(0, 50)
-      .map(m => (m && typeof m === 'object' && typeof m.text === 'string' ? m.text.replace(INVISIBLE, '').trim().slice(0, 400) : ''))
+      .map(m => (m && typeof m === 'object' && typeof m.text === 'string' ? m.text.replace(INVISIBLE_KEEP_JOINERS, '').trim().slice(0, 400) : ''))
       .filter(Boolean);
   }
   function svgIcon(paths) {

@@ -387,21 +387,53 @@ def _runtime_roles(script: str) -> str:
     return script.split("for role in roles/datastore.user", 1)[1].split("; do", 1)[0]
 
 
-def test_speech_apis_are_enabled_with_the_others(script: str) -> None:
-    enable = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
-    assert "texttospeech.googleapis.com" in enable and "speech.googleapis.com" in enable
+def _command(script: str, needle: str) -> str:
+    """The whole (backslash-continued) command line that contains `needle`."""
+    lines = script.splitlines()
+    i = next(n for n, ln in enumerate(lines) if needle in ln)
+    while i > 0 and lines[i - 1].endswith("\\"):
+        i -= 1
+    out = [lines[i]]
+    while out[-1].endswith("\\"):
+        i += 1
+        out.append(lines[i])
+    return "\n".join(out)
+
+
+def test_speech_apis_are_enabled_on_their_own_and_never_stop_the_deploy(script: str) -> None:
+    """Review item 8: under `set -euo pipefail`, an org policy that blocks the speech APIs used
+    to stop the whole deploy. They are enabled in their own command that may fail."""
+    required = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
+    assert "texttospeech" not in required and "speech.googleapis.com" not in required
     # step 2 runs on every path (quick re-runs too): the first enable is at the top level
     assert _top_level_depth_at(script, "gcloud services enable run.googleapis.com") == 0
+    voice = _command(script, "gcloud services enable texttospeech.googleapis.com")
+    assert "speech.googleapis.com" in voice and "--quiet" in voice
+    assert "||" in voice and "browser voice will be used" in voice
+    assert _top_level_depth_at(script, "gcloud services enable texttospeech") == 0
 
 
-def test_runtime_account_may_consume_the_projects_services(script: str) -> None:
-    assert "roles/serviceusage.serviceUsageConsumer" in _runtime_roles(script)
-    loop = script.split("for role in roles/datastore.user", 1)[1].split("done", 1)[0]
-    assert 'bind "serviceAccount:${RUN_SA}" "$role"' in loop
+def test_runtime_account_may_consume_the_projects_services_without_stopping_the_deploy(
+    script: str,
+) -> None:
+    """Kept (decision in the plan §9): it only lets jarvis-run use APIs that are already on, and
+    saves the owner a second step if Google requires it. A failure is a note, not a stop."""
+    assert "serviceUsageConsumer" not in _runtime_roles(script)  # not in the must-succeed loop
+    grant = _command(script, "roles/serviceusage.serviceUsageConsumer")
+    assert grant.startswith("try_bind") and '"serviceAccount:${RUN_SA}"' in grant
+    assert "||" in grant
+    helper = script.split("try_bind() {", 1)[1].split("\n}", 1)[0]
+    assert "die" not in helper and "return 1" in helper and "add-iam-policy-binding" in helper
     # granted with the idempotent binding helper, never removed again
     removed = script.split("remove-iam-policy-binding", 1)[0].rsplit("for role in", 1)[1]
     assert "serviceUsageConsumer" not in removed
-    assert _top_level_depth_at(script, "for role in roles/datastore.user") == 0
+    assert _top_level_depth_at(script, "try_bind \"serviceAccount:${RUN_SA}\"") == 0
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not installed")
+def test_deploy_script_still_parses(script: str) -> None:
+    r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True, check=False)
+    assert r.returncode == 0, r.stderr
 
 
 def test_voice_needs_no_new_secret_or_env(script: str) -> None:

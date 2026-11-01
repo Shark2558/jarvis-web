@@ -189,7 +189,7 @@ class Settings(BaseSettings):
     token_key: SecretStr | None = Field(
         default=None,
         description="Base64 of 32 random bytes: AES-256-GCM key for the Google token vault "
-        "(Secret Manager `jarvis-token-key`). Required outside dev when Google tools are on.",
+        "(Secret Manager `jarvis-token-key`). Outside dev the Google tools stay off without it.",
     )
 
     # --- persona ---
@@ -211,13 +211,12 @@ class Settings(BaseSettings):
             )
         if self.auth_mode is AuthMode.GOOGLE:
             self._require_google_auth_config()
-            if self.google_tools_enabled and self.token_key is None:
-                raise RuntimeError(
-                    "JARVIS_TOKEN_KEY is required when Google tools are enabled "
-                    "(set JARVIS_GOOGLE_TOOLS_ENABLED=false to run without them)"
-                )
+        # A MISSING token key is not fatal: outside dev the Google tools simply stay off (one
+        # start-up warning; see integrations.google.google_tools_configured), so an auto-deploy
+        # that still has the old secrets passes its health check. A PRESENT key that is
+        # malformed or weak is a start-up error, never a surprise at the first connect.
         if self.token_key is not None:
-            self.token_key_bytes()  # malformed key fails at start-up, not at first connect
+            self.token_key_bytes()
 
     def token_key_bytes(self) -> bytes | None:
         if self.token_key is None:

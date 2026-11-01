@@ -23,7 +23,12 @@ from jarvis.api.routes import router as v1_router
 from jarvis.config import AuthMode, Settings, get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import InputRejected
-from jarvis.integrations.google import build_google_connector, register_tools_oauth
+from jarvis.integrations.google import (
+    build_google_connector,
+    google_tools_configured,
+    google_tools_startup_note,
+    register_tools_oauth,
+)
 from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
 from jarvis.llm.brains import BrainRegistry
@@ -64,6 +69,8 @@ def create_app(
     configure_logging(s.log_level, s.log_json)
     if provider is None and brains is None:
         s.require_prod_invariants()
+    if note := google_tools_startup_note(s):
+        log.warning(note)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -123,7 +130,7 @@ def create_app(
         )
         app.state.oauth = build_oauth(s)
         app.include_router(auth_router)
-        if s.google_tools_enabled:
+        if google_tools_configured(s):  # off (404 → "Not available") without a vault key
             register_tools_oauth(app.state.oauth, s)
             app.include_router(integrations_router)
 

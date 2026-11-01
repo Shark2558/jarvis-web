@@ -151,7 +151,12 @@ jarvis/api/integrations.py       /connect/google, /connect/google/callback, /v1/
 - **Tokens**: refresh + access token encrypted at rest with `JARVIS_TOKEN_KEY` (Secret Manager
   `jarvis-token-key`, generated once by `deploy/cloudrun.sh`). Only ciphertext in Firestore; the
   user id is the AEAD associated data, so a blob moved to another user fails to decrypt. Outside
-  `dev` the key is mandatory unless `JARVIS_GOOGLE_TOOLS_ENABLED=false`.
+  `dev`, **without** the key the app still starts but the Google tools, `/connect/google` and
+  `/v1/integrations` are off (one start-up warning; the panel shows *Not available*) — that is
+  what the first auto-deploy of this slice looks like, because CI keeps the old secrets. Either
+  `bash deploy/cloudrun.sh` or `--reconfigure` then creates `jarvis-token-key` if missing and
+  binds it. A key that is present but malformed or weak (all zero, < 16 distinct bytes) stops
+  start-up.
 - **Testing-mode caveat (7 days)**: while the OAuth app is in *Testing* on the consent screen,
   Google expires refresh tokens after 7 days. JARVIS then shows *Needs reconnecting* and the tools
   answer "Google needs reconnecting (panel → Integrations)" — press *Connect Google* again.

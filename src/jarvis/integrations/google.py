@@ -302,13 +302,36 @@ def _json_error(r: httpx.Response) -> str:
 # ---- wiring ------------------------------------------------------------------------------
 
 
-def google_tools_configured(s: Settings) -> bool:
+TOKEN_KEY_MISSING_MSG = (
+    "JARVIS_TOKEN_KEY is not set: the Google Calendar/Gmail tools are OFF and the Integrations "
+    "panel shows 'Not available'. Re-run deploy/cloudrun.sh (it creates and binds the "
+    "jarvis-token-key secret) to switch them on."
+)
+DEV_MEMORY_TOKENS_MSG = (
+    "dev: no JARVIS_TOKEN_KEY, so Google links are kept in memory and end with the process."
+)
+
+
+def _google_tools_requested(s: Settings) -> bool:
     return bool(
         s.google_tools_enabled
         and s.auth_mode is AuthMode.GOOGLE
         and s.google_client_id
         and s.google_client_secret is not None
     )
+
+
+def google_tools_configured(s: Settings) -> bool:
+    """Tools, /connect and /v1/integrations are on. Outside dev they also need the vault key:
+    without it there is nowhere safe to keep the tokens, so they stay off (never a crash)."""
+    return _google_tools_requested(s) and (s.token_key is not None or s.env == "dev")
+
+
+def google_tools_startup_note(s: Settings) -> str | None:
+    """The one start-up warning about the token key, or None when there is nothing to say."""
+    if not _google_tools_requested(s) or s.token_key is not None:
+        return None
+    return DEV_MEMORY_TOKENS_MSG if s.env == "dev" else TOKEN_KEY_MISSING_MSG
 
 
 def build_google_connector(s: Settings, store: TokenStore) -> GoogleConnector | None:
@@ -349,5 +372,6 @@ __all__ = [
     "GoogleScopesMissing",
     "build_google_connector",
     "google_tools_configured",
+    "google_tools_startup_note",
     "register_tools_oauth",
 ]

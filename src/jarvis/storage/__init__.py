@@ -36,7 +36,8 @@ class Storage:
 
 def doc_storage(docs: Docs, *, prefix: str = "jarvis_", token_key: bytes | None = None) -> Storage:
     """Everything on the Docs port. Google tokens persist only when an encryption key is given;
-    without one they live in-process (dev) — prod enforces the key via require_prod_invariants."""
+    without one they live in-process (dev). Outside dev, no key means no Google tools at all
+    (`integrations.google.google_tools_configured`), warned about once at start-up."""
     from jarvis.storage.approvals import DocApprovalStore
     from jarvis.storage.audit import DocAuditLog
     from jarvis.storage.sessions import DocSessionStore
@@ -46,8 +47,7 @@ def doc_storage(docs: Docs, *, prefix: str = "jarvis_", token_key: bytes | None 
         from jarvis.integrations.vault import DocTokenStore
 
         tokens = DocTokenStore(docs, key=token_key, prefix=prefix)
-    else:
-        log.warning("no JARVIS_TOKEN_KEY: Google links will not survive a restart")
+    else:  # dev only in practice: without a key the Google tools are off outside dev
         tokens = _memory_tokens()
     return Storage(
         sessions=DocSessionStore(docs, prefix=prefix),

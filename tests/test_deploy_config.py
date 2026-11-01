@@ -183,3 +183,26 @@ def test_script_prints_consent_scopes_and_test_user_reminder(script: str) -> Non
 
 def test_default_brain_prompt_accepts_claude(script: str) -> None:
     assert "claude|Claude|CLAUDE) DEFAULT_BRAIN=anthropic" in script
+
+
+def _top_level_depth_at(script: str, needle: str) -> int:
+    """if/fi nesting (column 0 only) at the first line containing `needle`."""
+    depth = 0
+    for line in script.splitlines():
+        if needle in line:
+            return depth
+        if re.match(r"if\b", line) and not re.search(r";\s*fi\s*$", line):
+            depth += 1
+        elif re.match(r"fi\b", line):
+            depth -= 1
+    raise AssertionError(f"{needle!r} not found")
+
+
+def test_quick_path_also_creates_and_binds_the_token_key(script: str) -> None:
+    """Rollout: an auto-deploy keeps the old secrets, so the first deploy of slice 6 runs without
+    JARVIS_TOKEN_KEY (Google tools off, app healthy). Either re-run path must then create the
+    secret if it is missing and bind it — the quick path with --update-secrets."""
+    line = "secret_exists jarvis-token-key || put_secret jarvis-token-key"
+    assert _top_level_depth_at(script, line) == 0  # runs on the quick AND the full path
+    quick = script.split('if [ "$QUICK" = yes ]; then\n  CONFIG_FLAGS=(', 1)[1].split("else", 1)[0]
+    assert "--update-secrets" in quick and "JARVIS_TOKEN_KEY=jarvis-token-key:latest" in quick

@@ -164,8 +164,8 @@ def test_google_mode_invariants(settings: Settings) -> None:
         s3.require_prod_invariants()
 
 
-def test_google_tools_need_a_token_key_outside_dev(settings: Settings) -> None:
-    base = settings.model_copy(
+def _prod_google(settings: Settings) -> Settings:
+    return settings.model_copy(
         update={
             "env": "prod",
             "api_token": SecretStr("t"),
@@ -177,16 +177,29 @@ def test_google_tools_need_a_token_key_outside_dev(settings: Settings) -> None:
             "owner_emails": ["a@b.c"],
         }
     )
-    with pytest.raises(RuntimeError, match="TOKEN_KEY"):
-        base.require_prod_invariants()
-    base.model_copy(update={"google_tools_enabled": False}).require_prod_invariants()
-    with pytest.raises(RuntimeError, match="TOKEN_KEY is invalid"):
+
+
+def test_missing_token_key_outside_dev_turns_google_tools_off_not_the_app(
+    settings: Settings,
+) -> None:
+    """Rollout: an auto-deploy keeps the old secrets, so the first slice-6 revision has no
+    JARVIS_TOKEN_KEY. It must start (health check) with the Google tools off."""
+    from jarvis.integrations.google import google_tools_configured
+
+    base = _prod_google(settings)
+    base.require_prod_invariants()  # no longer a start-up error
+    assert google_tools_configured(base) is False
+    with pytest.raises(RuntimeError, match="TOKEN_KEY is invalid"):  # present but bad: still fatal
         base.model_copy(update={"token_key": SecretStr("too-short")}).require_prod_invariants()
     with pytest.raises(RuntimeError, match="weak"):  # 32 zero bytes: valid base64, no entropy
         base.model_copy(update={"token_key": SecretStr("A" * 43 + "=")}).require_prod_invariants()
-    ok = base.model_copy(update={"token_key": SecretStr(base64.b64encode(os.urandom(32)).decode())})
+    key = SecretStr(base64.b64encode(os.urandom(32)).decode())
+    ok = base.model_copy(update={"token_key": key})
     ok.require_prod_invariants()
-    assert len(ok.token_key_bytes() or b"") == 32
+    assert len(ok.token_key_bytes() or b"") == 32 and google_tools_configured(ok) is True
+    # dev keeps working without a key (tokens in memory)
+    dev = base.model_copy(update={"env": "dev"})
+    assert google_tools_configured(dev) is True
 
 
 def test_owner_emails_parse_from_csv_and_normalise() -> None:
@@ -291,3 +304,51 @@ async def test_prod_app_boots_with_cloud_run_style_env(monkeypatch: pytest.Monke
             r = await c.get("/auth/login", follow_redirects=False)
             assert r.status_code in (302, 307) and "accounts.google.com" in r.headers["location"]
             assert (await c.get("/")).status_code == 200
+
+
+CLOUD_RUN_ENV = {
+    "JARVIS_ENV": "prod",
+    "JARVIS_AUTH_MODE": "google",
+    "JARVIS_PUBLIC_BASE_URL": "https://jarvis-1.asia-south1.run.app",
+    "JARVIS_OWNER_EMAILS": "me@gmail.com",
+    "JARVIS_GOOGLE_CLIENT_ID": "cid.apps.googleusercontent.com",
+    "JARVIS_GOOGLE_CLIENT_SECRET": "GOCSPX-x",
+    "JARVIS_SESSION_SECRET": "z" * 40,
+    "JARVIS_API_TOKEN": "t" * 30,
+    "JARVIS_ANTHROPIC_API_KEY": "sk-ant-x",
+    "JARVIS_SESSION_BACKEND": "memory",
+}
+
+
+@pytest.mark.parametrize("with_key", [False, True])
+async def test_prod_boots_without_a_token_key_with_google_tools_off(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, with_key: bool
+) -> None:
+    """Rollout: the first auto-deployed slice-6 revision has the OLD secrets (no token key). It
+    must pass the health check with the Google tools and routes off (the console then shows
+    "Not available"), warn once, and turn them on as soon as the key is bound."""
+    import jarvis.api.app as app_module
+
+    monkeypatch.setattr(app_module, "configure_logging", lambda *a, **k: None)  # keep caplog
+    for k, v in CLOUD_RUN_ENV.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("JARVIS_TOKEN_KEY", raising=False)
+    if with_key:
+        monkeypatch.setenv("JARVIS_TOKEN_KEY", base64.b64encode(os.urandom(32)).decode())
+    caplog.set_level("WARNING")
+    app = create_app(Settings(_env_file=None))  # type: ignore[call-arg]
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="https://t") as c:
+            assert (await c.get("/health")).status_code == 200
+            names = {t.name for t in app.state.gateway.registry.specs()}
+            integrations = (await c.get("/v1/integrations")).status_code
+            connect = (await c.get("/connect/google", follow_redirects=False)).status_code
+    key_warnings = [r for r in caplog.records if "JARVIS_TOKEN_KEY" in r.getMessage()]
+    if with_key:
+        assert {"gmail_send", "calendar_list_events"} <= names
+        assert integrations == 401 and connect == 401  # mounted, sign-in required
+        assert key_warnings == []
+    else:
+        assert not any(n.startswith(("gmail_", "calendar_")) for n in names)
+        assert integrations == 404 and connect == 404  # the console renders "Not available"
+        assert len(key_warnings) == 1 and key_warnings[0].levelname == "WARNING"

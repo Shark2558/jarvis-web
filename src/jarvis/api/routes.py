@@ -4,7 +4,9 @@
 POST /v1/chat                 one turn (JSON)
 POST /v1/chat/stream          one turn, text/plain streamed deltas (402 first if the monthly
                               limit refuses it: a stream that already said 200 can't), then a
-                              final event: "\x1e" + {"memory_used": [{id, text}]} (slice 8).
+                              final event: "\x1e" + {"memory_used": [{id, text}]} (slice 8),
+                              plus "sources": [{n, title, url, domain}] when the reply cited
+                              web results (slice 10 B).
                               The reply text never contains "\x1e" (stripped from the model's
                               deltas); clients parse the JSON after the LAST separator.
 GET  /v1/sessions             list the caller's sessions (+ total_cost_inr)
@@ -130,8 +132,10 @@ async def _with_final_event(brain: Brain, req: ChatRequest) -> AsyncIterator[str
         text = delta.replace(STREAM_FINAL, "")  # model text can never forge the final event
         if text:
             yield text
-    used = [m.model_dump() for m in meta.memory_used]
-    yield STREAM_FINAL + json.dumps({"memory_used": used}, ensure_ascii=False)
+    final: dict[str, object] = {"memory_used": [m.model_dump() for m in meta.memory_used]}
+    if meta.sources:  # slice 10 B: the web sources the reply cited (stored results only)
+        final["sources"] = [s.model_dump() for s in meta.sources]
+    yield STREAM_FINAL + json.dumps(final, ensure_ascii=False)
 
 
 @router.get(

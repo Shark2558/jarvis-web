@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from jarvis.core.guardrails import PendingAction
 from jarvis.llm.base import ContentBlock, Role, Usage
 from jarvis.recall.models import MemoryRef
+from jarvis.web.sources import Source as Source  # re-exported: replies and turns carry it
 
 
 def _now() -> datetime:
@@ -46,6 +47,8 @@ class Turn(BaseModel):
     # how an owner message arrived (slice 9): "voice" was heard through the microphone, so it
     # may be someone else's words — never used for memory learning (jarvis.recall.learning)
     channel: Literal["text", "voice"] = "text"
+    # web sources this reply cited as [n] (slice 10 B), from the conversation's stored results
+    sources: list[Source] = Field(default_factory=list)
 
 
 class Session(BaseModel):
@@ -136,6 +139,10 @@ class ChatResponse(BaseModel):
     turn_count: int
     memory_used: list[MemoryRef] = Field(
         default_factory=list, description="Notes about the owner sent with this reply"
+    )
+    sources: list[Source] = Field(
+        default_factory=list,
+        description="Web sources the reply cited as [n] (only stored search results)",
     )
 
 

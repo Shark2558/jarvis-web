@@ -16,6 +16,9 @@
 #
 # Re-runs ask nothing: answers are kept in the live service and Secret Manager. To change them:
 #   bash deploy/cloudrun.sh --reconfigure
+# The one exception is a NEW optional feature that has no saved answer yet: web search (slice 10)
+# asks once for a Tavily key (Enter = skip; the skip is remembered). To be asked again:
+#   bash deploy/cloudrun.sh --web-search
 # Step 7 sets up deploy-on-merge: GitHub Actions proves who it is with a short-lived token
 # (Workload Identity Federation) that Google accepts only from this repository's main branch.
 # No key exists. The deployer account may only roll out new revisions of this service, push
@@ -44,11 +47,12 @@ POOL="github"; PROVIDER="jarvis-web"; AR_REPO="cloud-run-source-deploy"
 BRIEF_JOB="jarvis-morning-brief"
 BRIEF_TZ="${BRIEF_TZ:-Asia/Kolkata}"   # the clock's window (04:00-11:30) is read in this time zone
 
-RECONFIGURE=no
+RECONFIGURE=no; ASK_WEB=no
 for arg in "$@"; do
   case "$arg" in
     --reconfigure) RECONFIGURE=yes ;;
-    -h|--help) echo "Usage: bash deploy/cloudrun.sh [--reconfigure]"; exit 0 ;;
+    --web-search) ASK_WEB=yes ;;
+    -h|--help) echo "Usage: bash deploy/cloudrun.sh [--reconfigure] [--web-search]"; exit 0 ;;
     *) printf 'Unknown option: %s (try --help)\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -176,6 +180,37 @@ secret_exists jarvis-api-token || put_secret jarvis-api-token "$(rand)"
 # Encrypts the owner's Google tokens at rest. Generated once; rotating it unlinks Google.
 secret_exists jarvis-token-key || put_secret jarvis-token-key "$(rand_key)"
 
+# Web search (slice 10): the one question a quick re-run may ask, and only while there is no saved
+# answer. Saved answer = the jarvis-tavily-key secret, or a remembered skip (the live service has
+# JARVIS_WEB_SEARCH_ENABLED). The key goes straight to Secret Manager, never to a file or the log.
+WEB_SECRET=""; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=false"
+web_search_answer() {
+  local v=""
+  if [ "$QUICK" = yes ] && [ "${ASK_WEB:-no}" = no ]; then
+    if secret_exists jarvis-tavily-key; then
+      WEB_SECRET="JARVIS_TAVILY_API_KEY=jarvis-tavily-key:latest,"; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=true"
+      return 0
+    fi
+    case "${SVC_JSON:-}" in *'"JARVIS_WEB_SEARCH_ENABLED"'*) return 0 ;; esac   # skipped before
+  fi
+  echo
+  echo "NEW: web search with numbered sources needs a Tavily API key (free: 1,000 searches a month,"
+  echo "no card). Sign up at https://app.tavily.com and copy the key that starts with tvly-"
+  if secret_exists jarvis-tavily-key; then
+    read -r -s -p "Tavily API key (Enter keeps the saved key; type skip to switch web search off): " v || true; echo
+  else
+    read -r -s -p "Tavily API key (Enter = skip, web search stays off): " v || true; echo
+  fi
+  case "$v" in
+    skip|SKIP|Skip|none|NONE|None) echo "  (web search off)"; return 0 ;;
+    "") if secret_exists jarvis-tavily-key; then echo "  (keeping the saved key in secret jarvis-tavily-key)"
+        else echo "  (skipped: web search stays off; JARVIS will say it is not set up)"; return 0; fi ;;
+    *) put_secret jarvis-tavily-key "$v" || die "Could not store the Tavily key in Secret Manager (jarvis-tavily-key)." ;;
+  esac
+  WEB_SECRET="JARVIS_TAVILY_API_KEY=jarvis-tavily-key:latest,"; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=true"
+}
+web_search_answer
+
 say "4/8  Setting up JARVIS's memory (a Firestore database in your project)"
 if DBTYPE="$(gcloud firestore databases describe --database='(default)' --format='value(type)' 2>/dev/null)"; then
   [ "$DBTYPE" = "FIRESTORE_NATIVE" ] || die "This project already has a database in '$DBTYPE' mode; JARVIS needs Firestore Native mode. Send this message to Claude."
@@ -224,7 +259,8 @@ done
 try_bind "serviceAccount:${RUN_SA}" roles/serviceusage.serviceUsageConsumer \
   || echo "  Note: could not let JARVIS use the speech APIs; the browser voice will be used."
 for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key \
-              jarvis-openai-compat-key jarvis-session-secret jarvis-api-token jarvis-token-key; do
+              jarvis-openai-compat-key jarvis-session-secret jarvis-api-token jarvis-token-key \
+              jarvis-tavily-key; do
   secret_exists "$secret" || continue
   ok=no
   for _ in 1 2 3 4 5 6; do
@@ -253,15 +289,16 @@ show_logs() {
 # step 8 (after this deploy) without anything failing on a first run.
 SCHED_SA="jarvis-scheduler@${PROJECT}.iam.gserviceaccount.com"
 INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA}"
+INFRA_ENV="${INFRA_ENV},${WEB_ENV}"   # the web-search answer (on / remembered skip), both paths
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
     --update-env-vars "$INFRA_ENV"
-    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 else
   CONFIG_FLAGS=(
     --set-env-vars "${INFRA_ENV},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV}"
-    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 fi
 gcloud run deploy "$SERVICE" --source . --region "$REGION" \
@@ -410,6 +447,20 @@ Credentials -> jarvis-web, then add:
    Authorised redirect URI      :  $BASE_URL/auth/callback
    Authorised redirect URI      :  $BASE_URL/connect/google/callback
 and press Save (can take up to 5 minutes). Already done? Nothing to do.
+MSG
+fi
+if [ "$WEB_ENV" = "JARVIS_WEB_SEARCH_ENABLED=true" ]; then
+cat <<'MSG'
+
+WEB SEARCH: on (Tavily key in secret jarvis-tavily-key). JARVIS stops at 900 searches a month
+(90 % of the free 1,000) and never uses pay-as-you-go: it costs nothing. Vitals shows the count.
+MSG
+else
+cat <<'MSG'
+
+WEB SEARCH: off (no Tavily key). To switch it on later: sign up free at https://app.tavily.com,
+copy the key (tvly-...), then run:  bash deploy/cloudrun.sh --web-search
+(the key is kept in secret jarvis-tavily-key).
 MSG
 fi
 cat <<'MSG'

@@ -341,17 +341,34 @@ setup_brief_clock() {
       "${flags[@]}" || return 1
   fi
 }
-BRIEF_CLOCK_OK=no
-if setup_brief_clock; then BRIEF_CLOCK_OK=yes
+BRIEF_CLOCK_OK=no; BRIEF_CLOCK_TEST=no
+if setup_brief_clock; then
+  BRIEF_CLOCK_OK=yes
+  # One test call now. Harmless: JARVIS decides whether a brief is due (nothing is made twice,
+  # nothing outside the morning window), so this only proves the clock can reach JARVIS's door.
+  if gcloud scheduler jobs run "$BRIEF_JOB" --location "$REGION" --quiet >/dev/null 2>&1; then BRIEF_CLOCK_TEST=yes; fi
 else echo "  Note: the morning-brief clock could not be set up. JARVIS works; the brief is made when you open the Brief panel. Re-run this script later to try again."
 fi
 
 say "DONE. Open JARVIS at:  $BASE_URL"
 if [ "$BRIEF_CLOCK_OK" = yes ]; then
+  if [ "$BRIEF_CLOCK_TEST" = yes ]; then
+    BRIEF_CHECK="Test call just now: the schedule answered."
+  else
+    BRIEF_CHECK="The test run didn't go through just now (a new schedule can take a minute). Nothing to do: it runs by itself every 30 minutes from 04:00."
+  fi
 cat <<MSG
 
 Morning brief: ready. JARVIS prepares it every morning at the time you pick in the Brief panel
 (07:00 to start; clock time zone ${BRIEF_TZ}). Paid extras stay off until you switch them on there.
+${BRIEF_CHECK}
+MSG
+else
+cat <<'MSG'
+
+Morning brief: NOT scheduled. Step 8 could not set up the clock that makes it each morning.
+JARVIS works, and the brief is still made whenever you open the Brief panel.
+Re-run this script later to add the schedule (nothing else changes).
 MSG
 fi
 if [ "$AUTODEPLOY_OK" = yes ]; then

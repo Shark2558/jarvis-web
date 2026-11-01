@@ -1,10 +1,12 @@
 // src/jarvis/api/static/console-brief.js — the morning Brief panel (slice 7,
 // docs/plans/phase4-slice7-morning-brief.md). No build step; CSP script-src 'self'.
-// Every string from the server reaches the DOM through textContent (never innerHTML); a field that is
-// missing or of the wrong type hides its line instead of showing a guess. Transport is the console's
-// own api() (window.JarvisConsole: cookie + X-Requested-With: JARVIS, or the bearer token; 401 → gate).
-// Listens: jarvis:ready (signed in), jarvis:panel (Brief shown / tab switched), jarvis:integrations
-// (Google state + address), jarvis:approvals (live count). Fires: jarvis:event (deck log + radar).
+// Every string from the server reaches the DOM through textContent, never parsed as markup; a field
+// that is missing or of the wrong type hides its line instead of showing a guess. Transport is the
+// console's own api() (window.JarvisConsole: cookie + X-Requested-With: JARVIS, or the bearer token;
+// 401 → gate). Listens: jarvis:ready (signed in; JarvisConsole.ready() covers arriving after it),
+// jarvis:panel (Brief shown / tab switched), jarvis:integrations (Google state + address),
+// jarvis:approvals (live count), visibilitychange (a hidden tab is not "looked at").
+// Fires: jarvis:event (deck log + radar).
 // API (src/jarvis/api/brief.py): GET /v1/brief/today and POST /v1/brief/generate {force?|trigger?}
 // both answer TodayView; PUT /v1/brief/settings answers SettingsView (422/429 carry a plain `detail`);
 // POST /v1/brief/seen {date}.
@@ -25,8 +27,16 @@
   const POLL_MAX = 15;               // ~1 minute, then the owner presses Refresh
   const STALE_MS = 30 * 60 * 1000;   // coming back to a tab left open overnight re-checks today
   const NOTE_MS = 5000;              // a success line clears itself; errors stay until the next action
+  const TIME_SETTLE_MS = 400;        // arrow keys step through the times: save the one the owner stops on
   const AI_LABEL = 'AI summary — written from your calendar and other people\'s emails; may be wrong';
+  const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
   const TRIGGER_WORDS = { scheduled: 'Scheduled', manual: 'Made by you', open: 'Made on opening' };
+  const DELIVERY_WORDS = {
+    delivered: ['ok', 'Delivered'],
+    sending: ['', 'Delivering', 'Putting it in your inbox now.'],
+    failed: ['bad', 'Not delivered', 'Gmail refused the message. The brief is still here.'],
+    unknown: ['warn', 'Not confirmed', 'Gmail didn\'t confirm. Check your inbox before refreshing.'],
+  };
   // bidi overrides, zero-width and control characters can make text read differently than it is
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 
@@ -36,10 +46,16 @@
   const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
   const txt = (v, max = 200) => (typeof v === 'string' ? v : num(v) !== null ? String(v) : '').replace(INVISIBLE, '').trim().slice(0, max);
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  /** map[key] only for the map's own words: a server word such as "__proto__" or "constructor"
+   *  must not reach Object.prototype. */
+  const own = (map, key) => (Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined);
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
   /** The server's plain-English `detail` (the api() helper puts it in .message), or "". A bare
-   *  code such as "brief_limit" (api() falls back to `error` when there is no detail) is not shown. */
+   *  code such as "brief_limit" (api() falls back to `error` when there is no detail) is not shown.
+   *  The request itself failing (offline, server unreachable) is a TypeError: "Failed to fetch" means
+   *  nothing to the owner, so it is said plainly. */
   function detailOf(e) {
+    if (e && e.name === 'TypeError') return OFFLINE;
     const m = e && typeof e.message === 'string' ? e.message.replace(INVISIBLE, '').trim() : '';
     return m && m.length <= 300 && !m.startsWith('[object') && !/^[a-z0-9_.-]+$/i.test(m) ? m : '';
   }
@@ -70,7 +86,7 @@
     const d = new Date(txt(iso, 64) || NaN);
     if (isNaN(d)) return '';
     const opts = { hour: '2-digit', minute: '2-digit', hour12: false };
-    try { return new Intl.DateTimeFormat([], tz ? Object.assign({ timeZone: tz }, opts) : opts).format(d); }
+    try { return new Intl.DateTimeFormat([], tz ? { ...opts, timeZone: tz } : opts).format(d); }
     catch (_) { return d.toLocaleTimeString([], opts); }
   }
   function mailTime(raw, tz) {
@@ -84,13 +100,15 @@
     today: undefined,   // undefined = not loaded yet, null = this server has no brief (404), else GET /v1/brief/today
     loadError: null,
     generating: false,  // our own POST /v1/brief/generate is in flight
-    saving: false,
+    saving: false, saves: 0, // settings PUTs in flight or waiting their turn
+    timeWant: null, timeTimer: 0, timeQueued: false, // the time picked but not saved yet
+    asking: false,      // a confirm (or the address lookup before it) is open: one at a time
     autoGenerated: false, autoOpened: false, returning: false,
     seenSent: new Set(), fetchedAt: 0, pollTimer: 0, polls: 0, noteTimer: 0, viewKey: '',
     google: undefined, email: null, approvals: null,
   };
   const api = (path, opts) => window.JarvisConsole.api(path, opts);
-  const ready = () => !!(window.JarvisConsole && window.JarvisConsole.api);
+  const hasApi = () => !!(window.JarvisConsole && window.JarvisConsole.api);
   const settings = () => obj(S.today && S.today.settings) || {};
   const brief = () => obj(S.today && S.today.brief);
   const status = () => (S.today ? txt(S.today.status, 20) : '');
@@ -101,7 +119,7 @@
 
   // ---- talking to the server ---------------------------------------------------------------------
   async function load() {
-    if (!ready()) return;
+    if (!hasApi()) return;
     clearTimeout(S.pollTimer);
     try {
       S.today = obj(await api('/v1/brief/today')) || {};
@@ -116,6 +134,7 @@
   }
   function afterData() {
     render();
+    clearTimeout(S.pollTimer); // one poll chain, however many loads overlapped (Retry, Google change)
     if (status() === 'generating' && S.polls < POLL_MAX) {
       S.pollTimer = setTimeout(() => { S.polls++; load(); }, POLL_MS);
     } else if (status() !== 'generating') S.polls = 0;
@@ -125,13 +144,14 @@
   /** force: make today's brief again (Refresh, Try again). Otherwise trigger "open" (the panel was
    *  opened; the server makes nothing while the brief is off) or "manual" ("Make it now"). */
   async function generate(force, trigger) {
-    if (!ready() || S.generating || S.today === null) return;
+    if (!hasApi() || S.generating || S.today === null) return;
     S.generating = true; clearTimeout(S.pollTimer); flash(null); render();
     let reload = true;
     try {
       const r = obj(await api('/v1/brief/generate', { body: force ? { force: true } : { trigger: trigger || 'manual' } }));
       if (r && typeof r.status === 'string' && 'brief' in r) { // the server answered with today's whole state
-        S.today = Object.assign({}, S.today, r); S.fetchedAt = Date.now(); reload = false;
+        // spread, not Object.assign: a "__proto__" key in the JSON stays a key, never a prototype
+        S.today = { ...S.today, ...r }; S.fetchedAt = Date.now(); reload = false;
       }
       log('info', force ? 'Brief refreshed' : 'Brief made');
     } catch (e) {
@@ -144,31 +164,65 @@
   }
   async function markSeen() {
     const b = brief();
-    if (!unseenReady() || !b) return;
+    if (document.hidden || !unseenReady() || !b) return; // a background tab is not "looked at"
     const date = txt(b.date, 10) || txt(S.today.date, 10);
     if (!date || S.seenSent.has(date)) return;
     S.seenSent.add(date);
-    // seen here and now (the badge goes at once); if the call fails the next load offers it again
-    S.today = Object.assign({}, S.today, { brief: Object.assign({}, b, { seen_at: new Date().toISOString() }) });
+    // Seen here and now (the badge goes at once). Sent once per page load: if the call fails the
+    // server still has it unseen, and the next page load offers it again.
+    S.today = { ...S.today, brief: { ...b, seen_at: new Date().toISOString() } };
     syncBadge();
     try { await api('/v1/brief/seen', { body: { date } }); } catch (_) {}
   }
-  async function saveSettings(patch, okText) {
-    if (!ready() || S.saving) return;
-    S.saving = true; flash(null); render();
+
+  // Settings are saved one PUT at a time, in order: a change made while another is on its way (a
+  // "Switch on" confirmed during a time save) waits its turn instead of being dropped. `patch` may
+  // be a function, read when its turn comes: the time picker sends the latest time, not every step.
+  let saveChain = Promise.resolve();
+  function saveSettings(patch, okText) {
+    if (!hasApi()) { flash('bad', 'Couldn\'t save: JARVIS isn\'t ready yet. Please try again.'); return saveChain; }
+    S.saves++; S.saving = true; flash(null); render();
+    saveChain = saveChain
+      .then(() => putSettings(typeof patch === 'function' ? patch() : patch, okText))
+      .catch(() => {}) // putSettings says what went wrong; the next save still runs
+      .then(() => {
+        S.saves--; S.saving = S.saves > 0;
+        render();
+        if (Deck.isOpen('brief')) shown(); // switching the brief on with none made today makes one now
+      });
+    return saveChain;
+  }
+  async function putSettings(patch, okText) {
+    if (!patch) return; // nothing left to save by the time its turn came
     try {
       const r = obj(await api('/v1/brief/settings', { method: 'PUT', body: patch }));
       const src = (r && obj(r.settings)) || (r && FIELDS.some(f => f in r) ? r : patch);
-      const next = Object.assign({}, settings());
+      const next = { ...settings() };
       FIELDS.forEach(f => { if (f in src) next[f] = src[f]; });
-      S.today = Object.assign({}, S.today, { settings: next });
-      flash('ok', okText);
+      S.today = { ...S.today, settings: next };
+      flash('ok', typeof okText === 'function' ? okText(next) : okText);
       log('info', 'Brief settings saved');
     } catch (e) { // a refusal (422) explains itself in plain English: show it as it is
       if (e.status !== 401) flash('bad', detailOf(e) || (e.status === 429 ? 'Too many changes just now. Try again in a minute.' : 'Couldn\'t save. Please try again.'));
-    } finally { S.saving = false; }
-    render();
-    if (Deck.isOpen('brief')) shown(); // switching the brief on with none made today makes one now
+    } finally { // saved or refused: the picker shows what is really saved, unless a newer pick waits
+      if ('time' in patch && S.timeWant === patch.time) S.timeWant = null;
+    }
+  }
+  /** The time picker changed: remember the pick, and save it once the owner stops stepping. */
+  function timePicked(value) {
+    S.timeWant = value;
+    clearTimeout(S.timeTimer);
+    S.timeTimer = setTimeout(queueTime, TIME_SETTLE_MS);
+  }
+  function queueTime() {
+    if (S.timeQueued) return; // the save already waiting reads the latest pick when its turn comes
+    S.timeQueued = true;
+    saveSettings(() => {
+      S.timeQueued = false;
+      const want = S.timeWant;
+      if (!want || want === txt(settings().time, 5)) { S.timeWant = null; return null; } // back where it was
+      return { time: want };
+    }, (next) => `Brief time set to ${txt(next.time, 5)}.`);
   }
   async function googleEmail() {
     if (S.email) return S.email;
@@ -182,7 +236,9 @@
   // ---- when the panel is on screen, and the morning auto-open ------------------------------------
   function shown() {
     syncBadge();
-    if (!S.today) return;
+    // A hidden tab is not "looked at": nothing is made or marked seen until it is shown again
+    // (visibilitychange below calls this once the tab is visible with the panel open).
+    if (!S.today || document.hidden) return;
     if (status() === 'none' && settings().enabled === true && !S.autoGenerated && !S.generating) {
       S.autoGenerated = true; // once per page load: opening the panel makes today's brief (trigger=open)
       generate(false, 'open');
@@ -308,7 +364,7 @@
     const head = mk('div', 'bhead');
     head.append(mk('b', 'bdate', fmtDate(txt(b.date, 10) || txt(S.today.date, 10))));
     const made = clock(b.created_at, tz);
-    const how = TRIGGER_WORDS[txt(b.trigger, 20)] || '';
+    const how = own(TRIGGER_WORDS, txt(b.trigger, 20)) || '';
     if (made || how) head.append(mk('span', 'bmade', [made ? 'Made ' + made : '', how].filter(Boolean).join(' · ')));
     view.append(head);
     const cal = obj(data.calendar), calState = txt(ss.calendar, 20);
@@ -416,16 +472,12 @@
   }
   function deliverySection(b, tz) {
     const d = obj(b.inbox), st = d ? txt(d.status, 20) : '';
-    const at = d ? clock(d.at, tz) : '';
-    const words = {
-      delivered: ['ok', 'Delivered', at ? `In your inbox since ${at}.` : 'In your inbox.'],
-      sending: ['', 'Delivering', 'Putting it in your inbox now.'],
-      failed: ['bad', 'Not delivered', 'Gmail refused the message. The brief is still here.'],
-      unknown: ['warn', 'Not confirmed', 'Gmail didn\'t confirm. Check your inbox before refreshing.'],
-    }[st];
+    const words = own(DELIVERY_WORDS, st);
     if (!words) return null;
+    const at = st === 'delivered' ? clock(d.at, tz) : '';
+    const line = st === 'delivered' ? (at ? `In your inbox since ${at}.` : 'In your inbox.') : words[2];
     const row = mk('div', 'bdeliv' + (words[0] ? ' ' + words[0] : ''));
-    row.append(mk('span', 'bk2', 'Gmail'), mk('b', '', words[1]), mk('span', '', words[2]));
+    row.append(mk('span', 'bk2', 'Gmail'), mk('b', '', words[1]), mk('span', '', line));
     return row;
   }
 
@@ -445,63 +497,95 @@
     row.append(t, b);
     return row;
   }
-  function timeRow(value, tz) {
+  // The time picker is built once and updated in place, never rebuilt: rebuilding it under the
+  // owner's arrow keys reset it to the saved time and dropped their next steps. It is never
+  // disabled while saving either: that would drop keyboard focus.
+  let setSec = null, timeSel = null, timeDesc = null;
+  function settingsShell() {
+    if (setSec) return setSec;
+    setSec = mk('section', 'bset');
+    const h = mk('h3', '', 'Settings'); h.id = 'briefSetT'; setSec.setAttribute('aria-labelledby', h.id);
     const row = mk('div', 'bopt'), t = mk('div', 'btxt');
     const l = mk('label', 'bl', 'Time'); l.htmlFor = 'briefTime';
-    const d = mk('small', '', tz ? `Every morning, ${tz} time.` : 'Every morning, your time.'); d.id = 'briefTimeD';
-    t.append(l, d);
-    const sel = mk('select', 'bsel'); sel.id = 'briefTime'; sel.setAttribute('aria-describedby', d.id);
-    const opts = TIMES.includes(value) || !value ? TIMES : TIMES.concat(value); // show the truth even if off-grid
-    opts.forEach(v => { const o = mk('option', '', v); o.value = v; sel.append(o); });
-    sel.value = value || '07:00'; // never disabled while saving: that would drop keyboard focus
-    sel.addEventListener('change', () => saveSettings({ time: sel.value }, `Brief time set to ${sel.value}.`));
-    row.append(t, sel);
-    return row;
+    timeDesc = mk('small', ''); timeDesc.id = 'briefTimeD'; t.append(l, timeDesc);
+    timeSel = mk('select', 'bsel'); timeSel.id = 'briefTime'; timeSel.setAttribute('aria-describedby', timeDesc.id);
+    timeSel.addEventListener('change', () => timePicked(timeSel.value));
+    row.append(t, timeSel);
+    setSec.append(h, row);
+    return setSec;
   }
+  function syncTime(saved, tz) {
+    timeDesc.textContent = tz ? `Every morning, ${tz} time.` : 'Every morning, your time.';
+    const opts = !saved || TIMES.includes(saved) ? TIMES : TIMES.concat(saved); // show the truth even if off-grid
+    const have = [...timeSel.options].map(o => o.value);
+    if (have.length !== opts.length || have.some((v, i) => v !== opts[i])) {
+      timeSel.replaceChildren(...opts.map(v => { const o = mk('option', '', v); o.value = v; return o; }));
+    }
+    const value = S.timeWant || saved || '07:00'; // a pick on its way stays on screen
+    if (timeSel.value !== value) timeSel.value = value;
+  }
+  let switchesKey = '';
   function renderSettings() {
-    setBox.textContent = '';
-    if (!S.today) return; // nothing to set until the server has answered
-    const st = settings(), t = S.today;
-    const sec = mk('section', 'bset'), h = mk('h3', '', 'Settings'); h.id = 'briefSetT';
-    sec.setAttribute('aria-labelledby', h.id); sec.append(h);
+    if (!S.today) { setBox.textContent = ''; switchesKey = ''; return; } // nothing to set until the server has answered
+    const st = settings(), t = S.today, sec = settingsShell(), timeRowEl = timeSel.parentNode;
+    syncTime(txt(st.time, 5), txt(t.tz, 64));
+    // the switches are rebuilt only when something they show changed: an unrelated update (the
+    // live approvals count, a poll) must not swap a switch out from under a press
+    const key = JSON.stringify([st.enabled, st.ai_summary, st.inbox_delivery, t.ai_available, t.inbox_available,
+      t.google_connected, S.saving]);
+    if (key === switchesKey && sec.parentNode === setBox) return;
+    switchesKey = key;
     const enabled = st.enabled === true;
-    sec.append(toggleRow('briefOn', 'Morning brief', enabled, 'Made every morning at the time below.', false,
-      () => saveSettings({ enabled: !enabled }, enabled ? 'Morning brief off.' : 'Morning brief on.')));
-    sec.append(timeRow(txt(st.time, 5), txt(t.tz, 64)));
+    const onRow = toggleRow('briefOn', 'Morning brief', enabled, 'Made every morning at the time below.', false,
+      () => saveSettings({ enabled: !enabled }, enabled ? 'Morning brief off.' : 'Morning brief on.'));
     const aiOn = st.ai_summary === true, aiOk = t.ai_available !== false;
-    sec.append(toggleRow('briefAi', 'AI summary', aiOn,
+    const aiRow = toggleRow('briefAi', 'AI summary', aiOn,
       aiOk ? 'Up to five short lines on what matters today, written by Claude.' : 'Not available: needs the Claude brain.',
-      !aiOk && !aiOn, askAi));
+      !aiOk && !aiOn, askAi);
     const inOn = st.inbox_delivery === true, inOk = t.inbox_available !== false;
     const why = t.google_connected === false ? 'Connect Google to allow this.' : 'Reconnect Google to allow this.';
-    const row = toggleRow('briefInbox', 'Put it in my Gmail inbox', inOn,
+    const inRow = toggleRow('briefInbox', 'Put it in my Gmail inbox', inOn,
       inOk ? 'Adds the brief to your own inbox each morning, so it reaches your phone. Nothing is sent to anyone.' : why,
       !inOk && !inOn, askInbox);
-    if (!inOk) row.querySelector('.btxt').append(button('briefReconnect', 'bact', 'Open Integrations', () => Deck.open('integrations', { focus: true })));
-    sec.append(row);
-    setBox.append(sec);
+    if (!inOk) inRow.querySelector('.btxt').append(button('briefReconnect', 'bact', 'Open Integrations', () => Deck.open('integrations', { focus: true })));
+    // the switches are rebuilt around the time row, which stays where it is (moving it drops focus)
+    [...sec.children].forEach(n => { if (n !== timeRowEl && n.tagName !== 'H3') n.remove(); });
+    timeRowEl.before(onRow);
+    timeRowEl.after(aiRow, inRow);
+    if (sec.parentNode !== setBox) setBox.replaceChildren(sec);
   }
-  async function askAi(trigger) {
+  /** One confirm at a time: a second press while the address is looked up (or a dialog is open)
+   *  would open a second dialog whose late "close" cancelled the first. */
+  async function asking(fn) {
+    if (S.asking) return;
+    S.asking = true;
+    try { await fn(); } finally { S.asking = false; }
+  }
+  function askAi(trigger) {
     if (settings().ai_summary === true) { saveSettings({ ai_summary: false }, 'AI summary off.'); return; }
-    const cost = txt(S.today.ai_cost_note, 300);
-    const ok = await askConfirm(trigger, 'Switch on the AI summary?', [
-      { cls: 'strong', parts: ['Uses Claude; never the free brain.'] },
-      cost ? { parts: [cost] } : null,
-      { parts: ['Each morning Claude reads today\'s calendar and the previews of your unread mail, then writes up to five short lines. It cannot act on anything, and it may be wrong.'] },
-      { parts: ['You can switch it off here at any time.'] },
-    ], 'Switch on');
-    if (ok) saveSettings({ ai_summary: true, confirm_spend: true }, 'AI summary on.');
+    asking(async () => {
+      const cost = txt(S.today.ai_cost_note, 300);
+      const ok = await askConfirm(trigger, 'Switch on the AI summary?', [
+        { cls: 'strong', parts: ['Uses Claude; never the free brain.'] },
+        cost ? { parts: [cost] } : null,
+        { parts: ['Each morning Claude reads today\'s calendar and the previews of your unread mail, then writes up to five short lines. It cannot act on anything, and it may be wrong.'] },
+        { parts: ['You can switch it off here at any time.'] },
+      ], 'Switch on');
+      if (ok) saveSettings({ ai_summary: true, confirm_spend: true }, 'AI summary on.');
+    });
   }
-  async function askInbox(trigger) {
+  function askInbox(trigger) {
     if (settings().inbox_delivery === true) { saveSettings({ inbox_delivery: false }, 'Inbox delivery off.'); return; }
-    const email = await googleEmail();
-    const ok = await askConfirm(trigger, 'Put the brief in your Gmail inbox?', [
-      { parts: email ? ['Each morning JARVIS adds the brief as one message to the inbox of ', ['b', email], '.']
-        : ['Each morning JARVIS adds the brief as one message to your own Gmail inbox.'] },
-      { cls: 'strong', parts: ['Nothing is sent to anyone.'] },
-      { parts: ['The message only goes into your own mailbox, and you can delete it like any other mail. You can switch this off here at any time.'] },
-    ], 'Put it in my inbox');
-    if (ok) saveSettings({ inbox_delivery: true, confirm_inbox: true }, 'Inbox delivery on.');
+    asking(async () => {
+      const email = await googleEmail();
+      const ok = await askConfirm(trigger, 'Put the brief in your Gmail inbox?', [
+        { parts: email ? ['Each morning JARVIS adds the brief as one message to the inbox of ', ['b', email], '.']
+          : ['Each morning JARVIS adds the brief as one message to your own Gmail inbox.'] },
+        { cls: 'strong', parts: ['Nothing is sent to anyone.'] },
+        { parts: ['The message only goes into your own mailbox, and you can delete it like any other mail. You can switch this off here at any time.'] },
+      ], 'Put it in my inbox');
+      if (ok) saveSettings({ inbox_delivery: true, confirm_inbox: true }, 'Inbox delivery on.');
+    });
   }
 
   // ---- confirm dialog: native modal (the rest of the page is inert), Tab stays inside, Esc = Not now
@@ -533,7 +617,8 @@
     $('briefDialogYes').addEventListener('click', () => { if (settle) settle(true); });
     $('briefDialogNo').addEventListener('click', () => { if (settle) settle(false); });
     dlg.addEventListener('cancel', (e) => { e.preventDefault(); if (settle) settle(false); });
-    dlg.addEventListener('close', () => { if (settle) settle(false); });
+    // a close event arrives after the fact: once a newer dialog is open, it is not about that one
+    dlg.addEventListener('close', () => { if (settle && !dlg.open) settle(false); });
     dlg.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (settle) settle(false); return; }
       if (e.key !== 'Tab') return;
@@ -553,7 +638,13 @@
       generate(true);
     });
   }
-  document.addEventListener('jarvis:ready', (e) => { S.returning = !!(e.detail && e.detail.returning); load(); });
+  function signedIn(detail) { S.returning = !!(detail && detail.returning); load(); }
+  document.addEventListener('jarvis:ready', (e) => signedIn(e.detail));
+  // jarvis:ready fires once per sign-in, and this script can arrive after it (deferred, after
+  // console.js; a slow network can hold it back past the config + sign-in round trips): ask too.
+  const JC = window.JarvisConsole;
+  const signedInAlready = JC && typeof JC.ready === 'function' ? JC.ready() : null;
+  if (signedInAlready) signedIn(signedInAlready);
   document.addEventListener('jarvis:panel', (e) => {
     const d = e.detail || {};
     if (d.id === 'brief' && d.open) shown(); else syncBadge(); // phones: another tab hides the Brief
@@ -572,6 +663,9 @@
     if (status() === 'ready') render();
   });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && S.today !== undefined && !S.generating && Date.now() - S.fetchedAt > STALE_MS) load();
+    if (document.hidden) return;
+    // left open overnight: look again (load → shown); otherwise the open panel is now really seen
+    if (S.today !== undefined && !S.generating && Date.now() - S.fetchedAt > STALE_MS) load();
+    else if (Deck.isOpen('brief')) shown();
   });
 })();

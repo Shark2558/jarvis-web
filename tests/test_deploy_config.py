@@ -279,6 +279,74 @@ def test_scheduler_account_reaches_the_app_on_both_deploy_paths(script: str) -> 
     assert deploy < script.index("gcloud scheduler jobs create http")
 
 
+def _brief_outcome(script: str) -> str:
+    """Step 8's outcome through the morning-brief part of the closing summary."""
+    start = script.index("BRIEF_CLOCK_OK=no")
+    return script[start : script.index('if [ "$AUTODEPLOY_OK" = yes ]', start)]
+
+
+def _run_brief_outcome(script: str, tmp: Path, setup_rc: int, run_rc: int) -> tuple[str, str]:
+    """Run that part in bash with step 8 and gcloud stubbed; returns (output, gcloud calls)."""
+    log = tmp / "gcloud.log"
+    log.touch()
+    prelude = (
+        "set -euo pipefail\n"
+        "say() { printf '\\n%s\\n' \"$*\"; }\n"
+        f"setup_brief_clock() {{ return {setup_rc}; }}\n"
+        f"gcloud() {{ printf '%s\\n' \"$*\" >> '{log}'; return {run_rc}; }}\n"
+        "BRIEF_JOB=jarvis-morning-brief REGION=asia-south1 BRIEF_TZ=Asia/Kolkata\n"
+        "BASE_URL=https://jarvis.example\n"
+    )
+    done = subprocess.run(
+        ["bash", "-c", prelude + _brief_outcome(script)],
+        capture_output=True,
+        text=True,
+        check=True,  # a failed test run must never stop the script (set -e)
+    )
+    return done.stdout, log.read_text(encoding="utf-8")
+
+
+def test_summary_says_plainly_when_the_brief_schedule_was_not_set_up(
+    script: str, tmp_path: Path
+) -> None:
+    """Review L6: a failed step 8 is named in the closing summary, with what still works."""
+    out, calls = _run_brief_outcome(script, tmp_path, setup_rc=1, run_rc=0)
+    assert "Morning brief: NOT scheduled" in out
+    assert "open the Brief panel" in out  # what still works
+    assert "Re-run this script" in out
+    assert "Morning brief: ready" not in out and "the schedule answered" not in out
+    assert "scheduler jobs run" not in calls  # nothing to test
+
+
+def test_a_working_schedule_is_test_run_once_and_said_to_answer(
+    script: str, tmp_path: Path
+) -> None:
+    out, calls = _run_brief_outcome(script, tmp_path, setup_rc=0, run_rc=0)
+    [call] = calls.splitlines()  # exactly once
+    assert call.startswith("scheduler jobs run jarvis-morning-brief --location asia-south1")
+    assert "Morning brief: ready" in out
+    assert "the schedule answered" in out
+    assert "NOT scheduled" not in out
+
+
+def test_a_failed_test_run_is_not_fatal_and_not_called_an_answer(
+    script: str, tmp_path: Path
+) -> None:
+    out, calls = _run_brief_outcome(script, tmp_path, setup_rc=0, run_rc=1)
+    assert len(calls.splitlines()) == 1  # tried once, never retried in a loop
+    assert "Morning brief: ready" in out
+    assert "the schedule answered" not in out
+    assert "test run" in out  # says the check didn't go through, in plain words
+
+
+def test_the_test_run_is_harmless_because_the_app_decides_what_is_due(script: str) -> None:
+    s = _step8(script)
+    run = next(ln for ln in s.splitlines() if "gcloud scheduler jobs run" in ln)
+    assert 'gcloud scheduler jobs run "$BRIEF_JOB" --location "$REGION"' in run
+    assert run.lstrip().startswith("if ")  # its failure is a branch, never an exit
+    assert "JARVIS decides" in s  # the comment says why a test run makes nothing twice
+
+
 # ---- security review M5: nothing unhashed reaches the image; CI pins what it installs ---------
 
 DOCKERFILE = ROOT / "Dockerfile"

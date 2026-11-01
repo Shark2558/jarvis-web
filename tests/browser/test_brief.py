@@ -3,11 +3,13 @@
 # docs/plans/phase4-slice7-morning-brief.md), so these tests pin the console's side of the
 # contract on their own: rendering (text only), the confirm dialogs and the flags they send, the
 # 429 message, the morning auto-open + seen call, the
-# phone tab bar, Motion Off, and text contrast on Night and Day.
+# phone tab bar, Motion Off, and text contrast on Night and Day. The last section pins the
+# console/deploy review fixes (late script, hidden tab, time picker, 401, offline, hostile text).
 from __future__ import annotations
 
 import copy
 import json
+import time
 from collections.abc import Callable, Iterator
 from typing import Any
 from urllib.parse import urlsplit
@@ -163,8 +165,13 @@ def _json(route: Any, status: int, body: Any) -> None:
     route.fulfill(status=status, content_type="application/json", body=json.dumps(body))
 
 
+Answer = Callable[[Any, dict[str, Any]], None]
+
+
 class FakeBrief:
-    """Answers /v1/brief/* (and /v1/integrations) for one page; records every request."""
+    """Answers /v1/brief/* (and /v1/integrations) for one page; records every request.
+
+    A path in `holding` is recorded but not answered (a slow server) until `release()`."""
 
     def __init__(
         self,
@@ -177,12 +184,14 @@ class FakeBrief:
     ) -> None:
         self.today = copy.deepcopy(today)
         self.calls: list[dict[str, Any]] = []
+        self.holding: set[str] = set()
+        self.held: list[tuple[Any, dict[str, Any], Answer]] = []
         self._generate = generate
         self._settings = settings
-        page.route("**/v1/brief/today", self._on_today)
-        page.route("**/v1/brief/generate", self._on_generate)
-        page.route("**/v1/brief/seen", self._on_seen)
-        page.route("**/v1/brief/settings", self._on_settings)
+        page.route("**/v1/brief/today", self._handler(self._answer_today))
+        page.route("**/v1/brief/generate", self._handler(self._answer_generate))
+        page.route("**/v1/brief/seen", self._handler(self._answer_seen))
+        page.route("**/v1/brief/settings", self._handler(self._answer_settings))
         if integrations is not None:
             page.route("**/v1/integrations", lambda r: _json(r, 200, integrations))
 
@@ -197,15 +206,30 @@ class FakeBrief:
         self.calls.append(call)
         return call
 
+    def _handler(self, answer: Answer) -> Callable[[Any], None]:
+        def handle(route: Any) -> None:
+            call = self._record(route)
+            if call["path"] in self.holding:
+                self.held.append((route, call, answer))
+                return
+            answer(route, call)
+
+        return handle
+
+    def release(self) -> None:
+        """Stop holding and answer every held request, oldest first."""
+        self.holding.clear()
+        held, self.held = self.held, []
+        for route, call, answer in held:
+            answer(route, call)
+
     def to(self, path: str) -> list[dict[str, Any]]:
         return [c for c in self.calls if c["path"] == path]
 
-    def _on_today(self, route: Any) -> None:
-        self._record(route)
+    def _answer_today(self, route: Any, call: dict[str, Any]) -> None:
         _json(route, 200, self.today)
 
-    def _on_generate(self, route: Any) -> None:
-        call = self._record(route)
+    def _answer_generate(self, route: Any, call: dict[str, Any]) -> None:
         body = call["body"] or {}
         if self._generate is not None:
             _json(route, *self._generate(body))
@@ -220,13 +244,11 @@ class FakeBrief:
             }
         _json(route, 200, self.today)  # TodayView, like GET /v1/brief/today
 
-    def _on_seen(self, route: Any) -> None:
-        call = self._record(route)
+    def _answer_seen(self, route: Any, call: dict[str, Any]) -> None:
         date = (call["body"] or {}).get("date")
         _json(route, 200, {"ok": True, "date": date, "seen_at": "2026-11-01T03:00:00Z"})
 
-    def _on_settings(self, route: Any) -> None:
-        call = self._record(route)
+    def _answer_settings(self, route: Any, call: dict[str, Any]) -> None:
         body = call["body"] or {}
         if self._settings is not None:
             _json(route, *self._settings(body))
@@ -831,3 +853,486 @@ def test_brief_text_meets_aa_contrast(
     low = [f for f in found if f["ratio"] < 4.5]
     assert low == [], low
     assert c.errors == []
+
+
+# ---- review findings: console (fresh-context review, 2026-11-01) --------------------------------
+SIGNED_IN = "sessionStorage.setItem('jarvis_token', {})"  # boot() runs at once, no gate to fill
+
+
+def _wait_calls(c: Console, fake: FakeBrief, path: str, n: int, timeout_ms: int = 5000) -> None:
+    for _ in range(timeout_ms // 50):
+        if len(fake.to(path)) >= n:
+            return
+        c.page.wait_for_timeout(50)
+    raise AssertionError(f"{path}: {len(fake.to(path))} calls, expected {n}")
+
+
+def _quiet_errors(c: Console) -> list[str]:
+    """Page errors other than the refused/failed requests a test provokes on purpose."""
+    return [e for e in c.errors if "status of" not in e and "ERR_FAILED" not in e]
+
+
+@pytest.mark.parametrize("delay_ms", [0, 800])
+def test_a_late_brief_script_still_loads_todays_brief_once(
+    make: Callable[..., Console], delay_ms: int
+) -> None:
+    """M1: console-brief.js arriving after jarvis:ready (one-shot) must still load the brief."""
+    c = make()
+    fake = FakeBrief(c.page, today_state())
+    if delay_ms:
+
+        def late(route: Any) -> None:
+            time.sleep(delay_ms / 1000)  # the page keeps running: console.js signs in meanwhile
+            route.continue_()
+
+        c.page.route("**/static/console-brief.js", late)
+    c.page.add_init_script(SIGNED_IN.format(json.dumps(c.token)))
+    c.page.goto(c.url)
+    c.page.locator("#welcome").wait_for()
+    expect(c.page.locator("#briefMeta")).to_have_text("4 refreshes left today")
+    c.page.wait_for_timeout(300)
+    assert len(fake.to("/v1/brief/today")) == 1  # on time: the event alone, never twice
+    assert c.errors == []
+
+
+HIDDEN_TAB = """
+window.__hidden = true;
+Object.defineProperty(Document.prototype, 'hidden', { configurable: true,
+  get: () => window.__hidden });
+Object.defineProperty(Document.prototype, 'visibilityState', { configurable: true,
+  get: () => (window.__hidden ? 'hidden' : 'visible') });
+"""
+SHOW_TAB = "window.__hidden = false; document.dispatchEvent(new Event('visibilitychange'))"
+
+
+def test_a_hidden_tab_marks_the_brief_seen_only_once_it_is_shown(
+    make: Callable[..., Console],
+) -> None:
+    """M2: a background tab is not "looked at": no /seen until the tab is visible."""
+    c = make()
+    c.page.add_init_script(HIDDEN_TAB)
+    fake = FakeBrief(c.page, today_state(brief=brief_record(seen_at=None)))
+    c.open()
+    c.page.locator("#p-brief").wait_for(state="visible")  # it waits there for the owner
+    _view(c)
+    c.page.wait_for_timeout(500)
+    assert fake.to("/v1/brief/seen") == []
+    c.page.evaluate(SHOW_TAB)
+    _wait_calls(c, fake, "/v1/brief/seen", 1)
+    c.page.wait_for_timeout(200)
+    assert [s["body"] for s in fake.to("/v1/brief/seen")] == [{"date": TODAY}]
+    assert c.page.locator("#briefBadge").is_hidden()
+    assert c.errors == []
+
+
+def test_a_hidden_tab_does_not_make_todays_brief_until_it_is_shown(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    c.page.add_init_script(HIDDEN_TAB)
+    fake = FakeBrief(c.page, today_state(status="none", brief=None))
+    c.open()
+    c.open_panel("brief")
+    c.page.wait_for_timeout(400)
+    assert fake.to("/v1/brief/generate") == []
+    c.page.evaluate(SHOW_TAB)
+    _view(c)
+    assert [g["body"] for g in fake.to("/v1/brief/generate")] == [{"trigger": "open"}]
+    assert c.errors == []
+
+
+def test_arrow_keys_on_the_time_picker_save_the_time_they_stop_on(
+    make: Callable[..., Console],
+) -> None:
+    """M3: three ArrowDowns from 07:00 → one PUT of 08:30, and the picker keeps showing it."""
+    c = make()
+    fake = FakeBrief(c.page, today_state())
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    sel = c.page.locator("#briefTime")
+    sel.focus()
+    for _ in range(3):
+        c.page.keyboard.press("ArrowDown")
+    c.page.locator("#briefNote", has_text="Brief time set to 08:30.").wait_for()
+    assert [p["body"] for p in fake.to("/v1/brief/settings")] == [{"time": "08:30"}]
+    assert sel.input_value() == "08:30"
+    assert fake.today["settings"]["time"] == "08:30"
+    assert c.page.evaluate("document.activeElement.id") == "briefTime"
+    assert c.errors == []
+
+
+def test_a_time_change_during_a_slow_save_is_sent_after_it(make: Callable[..., Console]) -> None:
+    c = make()
+    fake = FakeBrief(c.page, today_state())
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    fake.holding.add("/v1/brief/settings")
+    sel = c.page.locator("#briefTime")
+    sel.focus()
+    c.page.keyboard.press("ArrowDown")
+    _wait_calls(c, fake, "/v1/brief/settings", 1)  # 07:30 is on its way (held by the server)
+    c.page.keyboard.press("ArrowDown")
+    c.page.keyboard.press("ArrowDown")
+    c.page.wait_for_timeout(600)
+    assert sel.input_value() == "08:30"  # never snapped back to the saved 07:00 meanwhile
+    assert len(fake.to("/v1/brief/settings")) == 1  # one PUT at a time
+    fake.release()
+    c.page.locator("#briefNote", has_text="Brief time set to 08:30.").wait_for()
+    assert [p["body"] for p in fake.to("/v1/brief/settings")] == [
+        {"time": "07:30"},
+        {"time": "08:30"},
+    ]
+    assert sel.input_value() == "08:30" and fake.today["settings"]["time"] == "08:30"
+    assert c.errors == []
+
+
+def test_switch_on_confirmed_during_a_save_is_sent_after_it(make: Callable[..., Console]) -> None:
+    """M3: "Switch on" while a time save is out used to be dropped without a word."""
+    c = make()
+    state = today_state(settings=settings_view(ai_summary=False, inbox_delivery=False))
+    fake = FakeBrief(c.page, state)
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    fake.holding.add("/v1/brief/settings")
+    c.page.locator("#briefTime").focus()
+    c.page.keyboard.press("ArrowDown")  # 07:30, saved after a short pause
+    c.page.keyboard.press("Tab")  # the AI summary switch is next
+    c.page.keyboard.press("Enter")  # its dialog opens before that save starts
+    c.page.locator("#briefDialog").wait_for(state="visible")
+    _wait_calls(c, fake, "/v1/brief/settings", 1)
+    c.page.locator("#briefDialogYes").click()
+    c.page.wait_for_timeout(200)
+    fake.release()
+    c.page.locator('#briefAi[aria-pressed="true"]').wait_for()
+    assert [p["body"] for p in fake.to("/v1/brief/settings")] == [
+        {"time": "07:30"},
+        {"ai_summary": True, "confirm_spend": True},
+    ]
+    assert c.errors == []
+
+
+def test_a_401_hands_over_to_the_sign_in_gate_without_an_error_line(
+    make: Callable[..., Console],
+) -> None:
+    """L1: api() gives a 401 its status, so the panel leaves it to the gate."""
+    c = make()
+    fake = FakeBrief(c.page, today_state())
+    fake.holding.add("/v1/brief/today")  # recorded, then answered with a 401 below
+    c.open()
+    _wait_calls(c, fake, "/v1/brief/today", 1)
+    route = fake.held.pop()[0]
+    _json(route, 401, {"error": "unauthorized", "detail": "Sign in required."})
+    c.page.locator("#gate.show").wait_for()
+    c.page.wait_for_timeout(300)
+    text = str(c.page.locator("#brief").text_content())
+    assert "Couldn't" not in text and "Sign in required" not in text, text
+    assert _quiet_errors(c) == []
+
+
+def test_a_double_click_on_the_inbox_switch_keeps_one_dialog_open(
+    make: Callable[..., Console],
+) -> None:
+    """L2: the second click (address lookup still out) used to close the first dialog."""
+    c = make()
+    state = today_state(settings=settings_view(ai_summary=False, inbox_delivery=False))
+    fake = FakeBrief(c.page, state, integrations=None)
+    no_address = {"google": {**LINKED["google"], "email": None}}  # every switch looks it up
+    lookups: list[Any] = []
+    hold = {"on": False}
+
+    def integrations(route: Any) -> None:
+        if hold["on"]:
+            lookups.append(route)
+        else:
+            _json(route, 200, no_address)
+
+    c.page.route("**/v1/integrations", integrations)
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    hold["on"] = True
+    c.page.locator("#briefInbox").dblclick()
+    c.page.wait_for_timeout(300)
+    assert len(lookups) == 1  # one question at a time
+    hold["on"] = False
+    for r in lookups:
+        _json(r, 200, no_address)
+    dialog = c.page.locator("#briefDialog")
+    dialog.wait_for(state="visible")
+    c.page.wait_for_timeout(500)
+    assert dialog.is_visible()
+    c.page.keyboard.press("Escape")
+    dialog.wait_for(state="hidden")
+    assert fake.to("/v1/brief/settings") == []
+    assert c.errors == []
+
+
+def test_a_network_failure_says_jarvis_cannot_be_reached(make: Callable[..., Console]) -> None:
+    """L3: not the browser's "Failed to fetch"."""
+    c = make()
+    FakeBrief(c.page, today_state())
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    c.page.unroute("**/v1/brief/generate")
+    c.page.route("**/v1/brief/generate", lambda r: r.abort())
+    c.page.locator("#briefRefresh").click()
+    note = c.page.locator("#briefNote")
+    expect(note).to_have_text("Couldn't make the brief. Can't reach JARVIS. Check your connection.")
+    assert "Failed to fetch" not in str(c.page.locator("#p-brief").text_content())
+    assert _quiet_errors(c) == []
+
+
+def test_the_console_transport_calls_only_its_own_paths(make: Callable[..., Console]) -> None:
+    """L4: api() refuses anything but a single leading "/" (no other host, no relative path)."""
+    c = make()
+    FakeBrief(c.page, today_state())
+    c.open()
+    out = c.page.evaluate(
+        """async () => {
+          const res = {};
+          for (const p of ['https://evil.example/x', '//evil.example/x', '/\\\\evil.example/x',
+                           'v1/brains', '', null, '/v1/brains']) {
+            try { await window.JarvisConsole.api(p); res[String(p)] = 'called'; }
+            catch (e) { res[String(p)] = 'refused'; }
+          }
+          return res;
+        }"""
+    )
+    assert out.pop("/v1/brains") == "called"
+    assert set(out.values()) == {"refused"}, out
+    assert c.csp_violations() == []  # refused before any request: nothing for the CSP to block
+    assert c.errors == []
+
+
+def test_inbox_dialog_esc_and_not_now_send_nothing(make: Callable[..., Console]) -> None:
+    c = make()
+    state = today_state(settings=settings_view(ai_summary=False, inbox_delivery=False))
+    fake = FakeBrief(c.page, state)
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    dialog = c.page.locator("#briefDialog")
+    c.page.locator("#briefInbox").click()
+    dialog.wait_for(state="visible")
+    c.page.keyboard.press("Escape")
+    dialog.wait_for(state="hidden")
+    assert c.page.evaluate("document.activeElement.id") == "briefInbox"
+    c.page.locator("#briefInbox").click()
+    dialog.wait_for(state="visible")
+    c.page.locator("#briefDialogNo").click()
+    dialog.wait_for(state="hidden")
+    c.page.wait_for_timeout(200)
+    assert fake.to("/v1/brief/settings") == []
+    assert _pressed(c, "#briefInbox") == "false"
+    assert c.errors == []
+
+
+def test_enter_in_a_confirm_dialog_means_not_now(make: Callable[..., Console]) -> None:
+    c = make()
+    state = today_state(settings=settings_view(ai_summary=False, inbox_delivery=False))
+    fake = FakeBrief(c.page, state)
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    c.page.locator("#briefAi").click()
+    dialog = c.page.locator("#briefDialog")
+    dialog.wait_for(state="visible")
+    c.page.keyboard.press("Enter")  # focus is on "Not now"
+    dialog.wait_for(state="hidden")
+    c.page.wait_for_timeout(200)
+    assert fake.to("/v1/brief/settings") == []
+    assert _pressed(c, "#briefAi") == "false"
+    assert c.errors == []
+
+
+@pytest.mark.parametrize(
+    "toggle, status, detail",
+    [
+        ("#briefAi", 429, "Too many changes just now, Sir. Try again in a minute."),
+        ("#briefInbox", 422, "Reconnect Google to allow this."),
+    ],
+)
+def test_a_refused_switch_on_leaves_the_switch_off(
+    make: Callable[..., Console], toggle: str, status: int, detail: str
+) -> None:
+    c = make()
+    state = today_state(settings=settings_view(ai_summary=False, inbox_delivery=False))
+    fake = FakeBrief(c.page, state, settings=lambda b: (status, {"error": "x", "detail": detail}))
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    c.page.locator(toggle).click()
+    c.page.locator("#briefDialogYes").click()
+    c.page.locator("#briefNote", has_text=detail).wait_for()
+    assert len(fake.to("/v1/brief/settings")) == 1
+    assert _pressed(c, toggle) == "false"
+    assert _quiet_errors(c) == []
+
+
+def test_refresh_double_click_makes_one_brief(make: Callable[..., Console]) -> None:
+    c = make()
+    fake = FakeBrief(c.page, today_state())
+    c.open()
+    c.open_panel("brief")
+    _view(c)
+    fake.holding.add("/v1/brief/generate")
+    c.page.locator("#briefRefresh").dblclick()
+    c.page.wait_for_timeout(300)
+    assert len(fake.to("/v1/brief/generate")) == 1
+    assert c.page.locator("#briefRefresh").get_attribute("aria-disabled") == "true"
+    fake.release()
+    expect(c.page.locator("#briefMeta")).to_have_text("5 refreshes left today")
+    assert len(fake.to("/v1/brief/generate")) == 1
+    assert c.errors == []
+
+
+FAST_POLL = (  # the 4 s poll runs every 40 ms; nothing else changes speed
+    "const __st = window.setTimeout.bind(window);"
+    "window.setTimeout = (f, d, ...a) => __st(f, d === 4000 ? 40 : d, ...a);"
+)
+STILL = "Still preparing. Press Refresh to check again."
+
+
+def test_polling_while_someone_else_makes_the_brief_stops_at_the_cap(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    c.page.add_init_script(FAST_POLL)
+    fake = FakeBrief(c.page, today_state(status="generating", brief=None))
+    c.open()
+    c.open_panel("brief")
+    c.page.locator("#brief", has_text=STILL).wait_for()
+    assert len(fake.to("/v1/brief/today")) == 1 + 15  # the first look + POLL_MAX
+    c.page.wait_for_timeout(600)
+    assert len(fake.to("/v1/brief/today")) == 16  # stopped
+    refresh = c.page.locator("#briefRefresh")
+    assert refresh.get_attribute("aria-disabled") == "false"
+    refresh.click()  # someone else is making it: look again (and poll again), never make one
+    _wait_calls(c, fake, "/v1/brief/today", 32)
+    c.page.wait_for_timeout(600)
+    assert len(fake.to("/v1/brief/today")) == 32
+    assert fake.to("/v1/brief/generate") == []
+    assert c.errors == []
+
+
+# Every string the server sends, with markup in it: none of it may become an element, an
+# attribute, a script, or a change to Object.prototype.
+HOSTILE_TEXTS = [
+    "<img src=x onerror=window.__pwned=1>",
+    "<a href=javascript:window.__pwned=2>open</a>",
+    "<script>window.__pwned=3</script>",
+]
+INERT_JS = """() => {
+  const bad = [];
+  for (const id of ['p-brief', 'briefDialog']) {
+    document.getElementById(id).querySelectorAll('*').forEach(e => {
+      for (const a of e.attributes) if (/^on/i.test(a.name)) bad.push(e.tagName + ':' + a.name);
+      const tag = e.tagName.toUpperCase();
+      if (['IMG', 'A', 'SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'STYLE', 'LINK', 'META',
+           'BASE', 'TEMPLATE'].includes(tag)) bad.push(tag);
+    });
+  }
+  return { bad, pwned: window.__pwned ?? null, polluted: ({}).polluted ?? null };
+}"""
+
+
+def _hostile_today(h: str) -> dict[str, Any]:
+    rec = brief_record(seen_at=None, trigger="__proto__", ai_note=h, error=h)
+    data = rec["data"]
+    cal = data["calendar"]
+    for e in cal["today"]:
+        e.update(title=h + e["title"], location=h, overlaps_with=[h])
+    cal["free_blocks"] = [{"start": h, "end": h, "minutes": h}, *cal["free_blocks"]]
+    cal["tomorrow_first"] = {**cal["tomorrow_first"], "title": h, "location": h, "start": h}
+    for m in data["inbox"]["items"]:
+        m.update(from_name=h, from_address=h, subject=h, when=h, date=h)
+    rec["ai"] = {"lines": [h, "Second " + h], "label": h, "model": h, "cost_usd": 0}
+    rec["inbox"] = {"status": "constructor", "at": h, "message_id": h}  # not a status we know
+    rec["__proto__"] = {"polluted": "brief"}  # a JSON key, never a prototype
+    data["__proto__"] = {"polluted": "data"}
+    off = settings_view(ai_summary=False, inbox_delivery=False, time=h)
+    state = today_state(brief=rec, tz=h, ai_cost_note=h, settings=off)
+    state["__proto__"] = {"polluted": "today"}
+    return state
+
+
+def _inert(c: Console) -> None:
+    found = c.page.evaluate(INERT_JS)
+    assert found == {"bad": [], "pwned": None, "polluted": None}, found
+
+
+@pytest.mark.parametrize("h", HOSTILE_TEXTS)
+def test_markup_in_every_server_string_stays_text(make: Callable[..., Console], h: str) -> None:
+    c = make()
+    today = _hostile_today(h)
+    failed = today_state(
+        status="failed",
+        brief=brief_record(status="failed", data=None, ai=None, error=h, seen_at=None),
+        tz=h,
+    )
+    failed["__proto__"] = {"polluted": "generate"}
+    made = {"n": 0}
+
+    def generate(body: dict[str, Any]) -> tuple[int, Any]:
+        made["n"] += 1
+        return (429, {"error": "brief_limit", "detail": h}) if made["n"] == 1 else (200, failed)
+
+    google = {"google": {**LINKED["google"], "email": h}}
+    fake = FakeBrief(
+        c.page,
+        today,
+        generate=generate,
+        settings=lambda b: (422, {"error": "invalid_settings", "detail": h}),
+        integrations=google,
+    )
+    fake.holding.add("/v1/brief/today")
+    c.open()
+    _wait_calls(c, fake, "/v1/brief/today", 1)
+    _json(fake.held.pop()[0], 500, {"error": "server_error", "detail": h})  # first look fails
+    fake.release()
+    c.open_panel("brief")
+    box = c.page.locator("#brief")
+    box.locator("#briefRetry").wait_for()
+    assert h in str(box.text_content())
+    _inert(c)
+    # the whole brief, every field hostile
+    box.locator("#briefRetry").click()
+    text = str(_view(c).text_content())
+    assert h in text and "Second " + h in text
+    assert "[object" not in text and "function" not in text  # server words map to ours or nothing
+    assert c.page.locator("#brief .bdeliv").count() == 0
+    assert h in str(c.page.locator("#briefSettings").text_content())  # the time zone line
+    _inert(c)
+    # the two confirm dialogs: the cost note, then the Google address
+    dialog = c.page.locator("#briefDialog")
+    c.page.locator("#briefAi").click()
+    dialog.wait_for(state="visible")
+    assert h in str(dialog.text_content())
+    _inert(c)
+    c.page.locator("#briefDialogNo").click()
+    dialog.wait_for(state="hidden")
+    c.page.locator("#briefInbox").click()
+    dialog.wait_for(state="visible")
+    assert h in str(dialog.text_content())
+    _inert(c)
+    c.page.keyboard.press("Escape")
+    dialog.wait_for(state="hidden")
+    # a 429 detail, a 422 detail, then a failed brief's error
+    c.page.locator("#briefRefresh").click()
+    c.page.locator("#briefNote", has_text=h).wait_for()
+    _inert(c)
+    c.page.locator("#briefTime").select_option("08:00")
+    _wait_calls(c, fake, "/v1/brief/settings", 1)
+    c.page.locator("#briefNote", has_text=h).wait_for()
+    _inert(c)
+    c.page.locator("#briefRefresh").click()
+    box.locator("text=Today's brief didn't finish.").wait_for()
+    assert h in str(box.text_content())
+    _inert(c)
+    assert fake.to("/v1/brief/settings")[0]["body"] == {"time": "08:00"}
+    assert c.csp_violations() == []
+    assert _quiet_errors(c) == []

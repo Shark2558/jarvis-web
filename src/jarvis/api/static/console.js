@@ -5,7 +5,8 @@
 //   jarvis:vitals {turns, brain, model, cost, rttMs?}  jarvis:approvals {count, fresh}
 //   jarvis:audit {verified, count}                     jarvis:event {kind, text, at, live?}
 //   jarvis:integrations {google, email}                jarvis:ready {returning} (signed in, booting)
-// console-brief.js uses the same transport through window.JarvisConsole.api.
+// console-brief.js uses the same transport through window.JarvisConsole.api, and asks
+// window.JarvisConsole.ready() when it starts in case it arrived after jarvis:ready.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -29,6 +30,7 @@
 
   const state = { sessionId: null, authMode: 'token', token: ssGet('jarvis_token'), honorific: 'Sir',
     brains: [], brain: null, busy: false, seenApprovals: null, seenAudit: new Set() };
+  let readyDetail = null; // the last jarvis:ready detail (frozen); null while signed out
 
   const SUGGESTIONS = [
     'What can you help me with?',
@@ -38,13 +40,19 @@
   ];
 
   // ---- transport: cookie + anti-CSRF header, or bearer token in token mode ------------------
+  // Only this server's own paths: one leading "/". "//host" and "/\host" are read by browsers as
+  // another host, and a relative path depends on the page address; none of them ever gets the token.
+  const OWN_PATH = /^\/(?![/\\])/;
   async function api(path, opts = {}) {
+    if (typeof path !== 'string' || !OWN_PATH.test(path)) throw new Error('Not a JARVIS API path.');
     const headers = Object.assign({ 'X-Requested-With': 'JARVIS' }, opts.headers || {});
     if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
     if (state.authMode === 'token' && state.token) headers['Authorization'] = 'Bearer ' + state.token;
     const r = await fetch(path, { method: opts.method || (opts.body !== undefined ? 'POST' : 'GET'),
       headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined, credentials: 'same-origin' });
-    if (r.status === 401) { showGate(); throw new Error('Sign in required.'); }
+    if (r.status === 401) { // every non-2xx error carries .status: callers leave a 401 to the gate
+      showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err;
+    }
     if (!r.ok) {
       let detail = r.statusText;
       try { const j = await r.json(); detail = j.detail || j.error || detail; } catch (_) {}
@@ -56,6 +64,7 @@
   // ---- sign-in gate -------------------------------------------------------------------------
   const LOCK = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="9" width="12" height="8" rx="2.2"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/></svg>';
   function showGate() {
+    readyDetail = null; // signed out: a panel script arriving now waits for the next jarvis:ready
     const box = $('gateBox');
     const head = FX.core('lg') + '<h2 id="gateTitle">JARVIS</h2>';
     if (state.authMode === 'google') {
@@ -557,13 +566,17 @@
   // top bar + panel actions
   $('newBtn').addEventListener('click', startNew);
   $('logoutBtn').addEventListener('click', async () => { try { await api('/auth/logout', { body: {} }); } catch (_) {} location.reload(); });
-  window.JarvisConsole = Object.freeze({ api }); // one transport (auth, CSRF header, 401 → gate) for every panel
+  // One transport (auth, CSRF header, 401 → gate) for every panel. jarvis:ready fires once per
+  // sign-in; a panel script that arrives after it (deferred scripts can be held back by a slow
+  // network) asks ready() when it starts: the last jarvis:ready detail, or null until signed in.
+  window.JarvisConsole = Object.freeze({ api, ready: () => readyDetail });
 
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {
     renderWelcome();
     const backFromGoogle = afterConnectRedirect();
-    emit('jarvis:ready', { returning: backFromGoogle });
+    readyDetail = Object.freeze({ returning: backFromGoogle });
+    emit('jarvis:ready', readyDetail);
     await loadBrains();
     const saved = lsGet('jarvis_session');
     if (saved) { busy(true, false); try { await loadConversation(saved); } finally { busy(false); } }

@@ -6,7 +6,8 @@ GET  /connect/google/callback        store tokens iff the consenting account IS 
                                      AND every tool scope was granted; failures redirect to
                                      /?connect_error=<code> (browser landing); a grant from the
                                      wrong account is revoked at Google (best effort)
-GET  /v1/integrations          {google: {connected, email, scopes, expires_at, needs_reconnect}}
+GET  /v1/integrations          {google: {connected, email, scopes, expires_at, needs_reconnect,
+                                         tasks_granted}}  (the to-do list scope is optional)
 POST /v1/integrations/google/disconnect   revoke at Google (best effort) + forget (CSRF header)
 
 Mounted only when auth_mode=google. Separate from sign-in: `/auth/*` keeps `openid email`.
@@ -23,7 +24,7 @@ from pydantic import BaseModel
 from jarvis.api.auth import require_auth, session_email
 from jarvis.api.identity import current_user, user_id_for_email
 from jarvis.config import Settings
-from jarvis.integrations.google import GoogleConnector, GoogleScopesMissing
+from jarvis.integrations.google import GoogleConnector, GoogleScopesMissing, can_use_tasks
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -121,6 +122,8 @@ class GoogleStatus(BaseModel):
     scopes: list[str]
     expires_at: float | None
     needs_reconnect: bool
+    # slice 10 C: the optional to-do list scope; false → the console offers "Grant"
+    tasks_granted: bool = False
 
 
 class Integrations(BaseModel):
@@ -131,7 +134,9 @@ class Integrations(BaseModel):
 async def integrations(
     google: GoogleConnector = Depends(_google), uid: str = Depends(current_user)
 ) -> Integrations:
-    return Integrations(google=GoogleStatus(**await google.status(uid)))
+    st = await google.status(uid)
+    granted = bool(st["connected"]) and can_use_tasks(st["scopes"])
+    return Integrations(google=GoogleStatus(**st, tasks_granted=granted))
 
 
 @router.post("/v1/integrations/google/disconnect", dependencies=[Depends(require_auth)])

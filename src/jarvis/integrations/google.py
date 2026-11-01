@@ -40,7 +40,10 @@ REQUIRED_SCOPES: tuple[str, ...] = (
 # lets the morning brief (slice 7) add one message to the owner's own inbox — it has no
 # recipient, so it cannot send anything to anyone.
 INSERT_SCOPE = "https://www.googleapis.com/auth/gmail.insert"
-OPTIONAL_SCOPES: tuple[str, ...] = (INSERT_SCOPE,)
+# The to-do list (slice 10 C): Google Tasks read + write. Optional like gmail.insert: a link
+# without it keeps every other tool; the to-do tools then answer "grant access".
+TASKS_SCOPE = "https://www.googleapis.com/auth/tasks"
+OPTIONAL_SCOPES: tuple[str, ...] = (INSERT_SCOPE, TASKS_SCOPE)
 # Google accepts users.messages.insert with any of these.
 INSERT_CAPABLE_SCOPES = frozenset(
     {INSERT_SCOPE, "https://www.googleapis.com/auth/gmail.modify", "https://mail.google.com/"}
@@ -52,6 +55,12 @@ TOOL_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES, *OPTIONAL_S
 def can_insert(scopes: Iterable[str]) -> bool:
     """True when the granted scopes allow messages.insert (inbox delivery of the brief)."""
     return not INSERT_CAPABLE_SCOPES.isdisjoint(scopes)
+
+
+def can_use_tasks(scopes: Iterable[str]) -> bool:
+    """True when the granted scopes allow reading AND changing the owner's Google Tasks
+    (tasks.readonly alone would not do: the to-do tools write)."""
+    return TASKS_SCOPE in set(scopes)
 
 
 HTTP_TIMEOUT_S = 15.0
@@ -382,6 +391,7 @@ __all__ = [
     "OPTIONAL_SCOPES",
     "REQUIRED_SCOPES",
     "REVOKE_URL",
+    "TASKS_SCOPE",
     "TOKEN_URL",
     "TOOL_SCOPES",
     "GoogleAPIError",
@@ -390,6 +400,7 @@ __all__ = [
     "GoogleScopesMissing",
     "build_google_connector",
     "can_insert",
+    "can_use_tasks",
     "google_tools_configured",
     "google_tools_startup_note",
     "register_tools_oauth",

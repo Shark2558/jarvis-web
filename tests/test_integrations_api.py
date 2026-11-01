@@ -237,6 +237,7 @@ async def test_status_requires_auth_and_is_per_user(gc: AsyncClient) -> None:
             "scopes": [],
             "expires_at": None,
             "needs_reconnect": False,
+            "tasks_granted": False,
         }
     }
     # bearer token = primary owner (OWNER is first in the list)
@@ -313,6 +314,39 @@ async def test_callback_refuses_a_grant_with_unticked_scopes(gc: AsyncClient) ->
     r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"] == "/?connect_error=missing_scopes"
     assert await gc.app.state.google.store.get(user_id_for_email(OWNER)) is None  # type: ignore[attr-defined]
+
+
+TASKS = "https://www.googleapis.com/auth/tasks"
+
+
+async def test_google_mode_registers_the_todo_tools(gc: AsyncClient) -> None:
+    names = {s.name for s in gc.app.state.gateway.registry.specs()}  # type: ignore[attr-defined]
+    assert {"tasks_list", "task_add", "task_update", "task_complete", "task_delete"} <= names
+
+
+async def test_connect_asks_for_the_tasks_scope_incrementally(gc: AsyncClient) -> None:
+    await _login(gc, OWNER)
+    r = await gc.get("/connect/google", follow_redirects=False)
+    q = parse_qs(urlsplit(r.headers["location"]).query)
+    assert TASKS in q["scope"][0].split()
+    assert q["include_granted_scopes"] == ["true"]  # Grant keeps everything already granted
+
+
+async def test_integrations_say_whether_the_todo_list_is_granted(gc: AsyncClient) -> None:
+    """Slice 10 C: a link made before the to-do list (or with its box unticked) stays connected
+    and says `tasks_granted: false`; Grant re-runs connect and flips it."""
+    await _login(gc, OWNER)
+    await gc.get("/connect/google", follow_redirects=False)
+    _fake_consent(gc, OWNER, scopes=tuple(s for s in TOOL_SCOPES if s != TASKS))
+    r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/?connected=google"
+    st = (await gc.get("/v1/integrations")).json()["google"]
+    assert st["connected"] is True and st["tasks_granted"] is False
+    await gc.get("/connect/google", follow_redirects=False)  # "Grant"
+    _fake_consent(gc, OWNER)
+    await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
+    st = (await gc.get("/v1/integrations")).json()["google"]
+    assert st["connected"] is True and st["tasks_granted"] is True and TASKS in st["scopes"]
 
 
 async def test_callback_links_without_the_optional_insert_scope(gc: AsyncClient) -> None:

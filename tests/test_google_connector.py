@@ -326,12 +326,51 @@ def test_gmail_insert_is_requested_but_never_required() -> None:
     from jarvis.integrations.google import INSERT_SCOPE, OPTIONAL_SCOPES, TOOL_SCOPES, can_insert
 
     assert INSERT_SCOPE == "https://www.googleapis.com/auth/gmail.insert"
-    assert OPTIONAL_SCOPES == (INSERT_SCOPE,) and INSERT_SCOPE in TOOL_SCOPES
+    assert INSERT_SCOPE in OPTIONAL_SCOPES and INSERT_SCOPE in TOOL_SCOPES
     assert INSERT_SCOPE not in REQUIRED_SCOPES
-    assert set(TOOL_SCOPES) == {"openid", "email", *REQUIRED_SCOPES, INSERT_SCOPE}
+    assert set(TOOL_SCOPES) == {"openid", "email", *REQUIRED_SCOPES, *OPTIONAL_SCOPES}
     assert can_insert([INSERT_SCOPE]) and can_insert(["https://mail.google.com/"])
     assert can_insert(["https://www.googleapis.com/auth/gmail.modify"])
     assert not can_insert(REQUIRED_SCOPES) and not can_insert([])
+
+
+def test_the_tasks_scope_is_requested_but_never_required() -> None:
+    """Slice 10 C: the to-do list is optional like gmail.insert; read-only Tasks is not enough
+    (the to-do tools write)."""
+    from jarvis.integrations.google import (
+        OPTIONAL_SCOPES,
+        TASKS_SCOPE,
+        TOOL_SCOPES,
+        can_use_tasks,
+    )
+
+    assert TASKS_SCOPE == "https://www.googleapis.com/auth/tasks"
+    assert OPTIONAL_SCOPES == (
+        "https://www.googleapis.com/auth/gmail.insert",
+        TASKS_SCOPE,
+    )
+    assert TASKS_SCOPE in TOOL_SCOPES and TASKS_SCOPE not in REQUIRED_SCOPES
+    assert can_use_tasks([*REQUIRED_SCOPES, TASKS_SCOPE])
+    assert not can_use_tasks(REQUIRED_SCOPES)
+    assert not can_use_tasks(["https://www.googleapis.com/auth/tasks.readonly"])
+
+
+async def test_a_link_without_the_tasks_scope_stays_connected(
+    conn: GoogleConnector, store: MemoryTokenStore
+) -> None:
+    await conn.save(
+        UID,
+        email="akash@example.com",
+        token={
+            "access_token": "a1",
+            "refresh_token": "r1",
+            "expires_in": 3600,
+            "scope": "openid email https://www.googleapis.com/auth/gmail.insert "
+            + " ".join(REQUIRED_SCOPES),
+        },
+    )
+    st = await conn.status(UID)
+    assert st["connected"] is True and st["needs_reconnect"] is False
 
 
 async def test_a_link_without_gmail_insert_stays_connected(

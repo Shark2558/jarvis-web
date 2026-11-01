@@ -4,7 +4,12 @@
 //                       auto gain; call it from a user gesture or the owner's "Hey Jarvis" switch),
 //                       subscribe(fn) → unsubscribe; fn gets Int16Array(1280) frames at 16 kHz (80 ms,
 //                       read-only: every subscriber sees the same array), level() → 0..1 RMS now,
-//                       close(), resume(), isOpen(), suspended(), SAMPLE_RATE, FRAME.
+//                       close(), resume(), isOpen(), suspended(), SAMPLE_RATE, FRAME,
+//                       onEnd(fn) → unsubscribe: fn({reason: 'ended'}) when the microphone stops by
+//                       itself (unplugged, switched off, permission taken back), after it closed.
+//                       Overlapping open() / close() calls are safe: each open() builds its own
+//                       stream and context, and one that close() (or a newer open) made stale stops
+//                       its own tracks and rejects with .code 'closed'; only the newest is shared.
 //                       The wake-word module consumes the same frames:
 //                       JarvisWake.start({subscribe: JarvisAudio.subscribe, sampleRate: 16000}, onWake).
 //   window.JarvisWav    encode(frames | Int16Array, rate = 16000) → ArrayBuffer (RIFF/WAVE PCM16 mono).
@@ -21,9 +26,14 @@
   const FRAME_MS = (FRAME / SAMPLE_RATE) * 1000; // 80
   const WORKLET_URL = '/static/voice-capture-worklet.js';
 
+  const RESUME_WAIT_MS = 2000; // a resume() the browser never settles must not hang its caller
+
   // ================================================================================== capture
-  let ctx = null, stream = null, source = null, node = null, analyser = null, opening = null, probe = null;
-  const subs = new Set();
+  // `live` is the one open microphone: {ctx, stream, source, node, analyser, probe}. A build in
+  // progress keeps its pieces in its own object and only becomes `live` if no close() came while it
+  // awaited (`gen` counts closes). `primed` is an AudioContext made inside a tap, for the next build.
+  let live = null, primed = null, pending = null, gen = 0;
+  const subs = new Set(), endSubs = new Set();
 
   function fail(code, cause) {
     const e = new Error(code); e.code = code; e.cause = cause; return e;
@@ -46,57 +56,99 @@
     if (!(frame instanceof Int16Array) || frame.length !== FRAME) return;
     subs.forEach(fn => { try { fn(frame); } catch (_) { /* one listener must not silence the rest */ } });
   }
-  function teardown() {
-    if (node) { try { node.port.onmessage = null; node.disconnect(); } catch (_) {} }
-    if (source) { try { source.disconnect(); } catch (_) {} }
-    if (stream) stream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
-    if (ctx) { try { ctx.close(); } catch (_) {} }
-    ctx = stream = source = node = analyser = null; probe = null;
+  const quietly = (p) => { if (p && typeof p.catch === 'function') p.catch(() => {}); };
+  function closeContext(c) { if (c && c.state !== 'closed') { try { quietly(c.close()); } catch (_) {} } }
+  /** Undo one build: only what that build made (its node, source, tracks and context). */
+  function release(own) {
+    if (own.node) { try { own.node.port.onmessage = null; own.node.disconnect(); } catch (_) {} }
+    if (own.source) { try { own.source.disconnect(); } catch (_) {} }
+    if (own.stream) own.stream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+    closeContext(own.ctx);
   }
 
-  async function build(c) {
-    let s;
+  async function build(c, my) {
+    const own = { ctx: c, stream: null, source: null, node: null, analyser: null, probe: null };
+    const stale = () => my !== gen;
     try {
-      s = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      try {
+        own.stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+        });
+      } catch (err) { throw fail(reason(err), err); }
+      if (stale()) throw fail('closed');
+      try { await c.audioWorklet.addModule(WORKLET_URL); } catch (err) { throw fail('failed', err); }
+      if (stale()) throw fail('closed');
+      const tracks = own.stream.getAudioTracks();
+      if (!tracks.length || tracks.some(t => t.readyState === 'ended')) throw fail('no_mic');
+      own.source = c.createMediaStreamSource(own.stream);
+      own.node = new window.AudioWorkletNode(c, 'jarvis-capture', {
+        numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers',
       });
-    } catch (err) { throw fail(reason(err), err); }
-    stream = s;
-    try { await c.audioWorklet.addModule(WORKLET_URL); } catch (err) { throw fail('failed', err); }
-    source = c.createMediaStreamSource(s);
-    node = new window.AudioWorkletNode(c, 'jarvis-capture', {
-      numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers',
-    });
-    node.port.onmessage = (e) => deliver(e.data);
-    analyser = c.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.2;
-    probe = new Float32Array(analyser.fftSize);
-    source.connect(node); source.connect(analyser);
-    s.getAudioTracks().forEach(t => t.addEventListener('ended', () => { if (stream === s) close(); }));
+      own.node.port.onmessage = (e) => { if (live === own) deliver(e.data); };
+      own.analyser = c.createAnalyser(); own.analyser.fftSize = 1024; own.analyser.smoothingTimeConstant = 0.2;
+      own.probe = new Float32Array(own.analyser.fftSize);
+      own.source.connect(own.node); own.source.connect(own.analyser);
+      tracks.forEach(t => t.addEventListener('ended', () => ended(own)));
+      live = own;
+    } catch (err) {
+      release(own);
+      throw err;
+    }
+  }
+  /** The microphone stopped by itself (unplugged, switched off, permission revoked). */
+  function ended(own) {
+    if (live !== own) return;
+    close();
+    endSubs.forEach(fn => { try { fn({ reason: 'ended' }); } catch (_) {} });
   }
 
+  /** Make the AudioContext now (inside a tap) without asking for the microphone yet; a context
+   *  already made (open, or on its way) is resumed instead, while the tap still counts. */
+  function prime() {
+    if (!supported()) return;
+    const have = live ? live.ctx : pending && pending.gen === gen ? pending.ctx : primed;
+    if (have) { if (have.state === 'suspended') { try { quietly(have.resume()); } catch (_) {} } return; }
+    try { primed = new (AC())(); } catch (_) { primed = null; return; }
+    try { quietly(primed.resume()); } catch (_) {}
+  }
   /** Opens the microphone (once; later calls share it). The AudioContext is made before the first
    *  await, so a tap's user activation still counts when the browser asks to start audio. */
-  /** Make the AudioContext now (inside a tap) without asking for the microphone yet. */
-  function prime() {
-    if (ctx || !supported()) return;
-    try { ctx = new (AC())(); } catch (_) { ctx = null; return; }
-    try { const r = ctx.resume(); if (r && r.catch) r.catch(() => {}); } catch (_) {}
-  }
   function open() {
-    if (node && ctx) return Promise.resolve();
-    if (opening) return opening;
+    if (live) return Promise.resolve();
+    if (pending && pending.gen === gen) return pending.promise;
     if (!supported()) return Promise.reject(fail('unsupported'));
     prime();
-    const c = ctx;
+    const c = primed;
+    primed = null;
     if (!c) return Promise.reject(fail('unsupported'));
-    opening = build(c)
-      .catch((err) => { teardown(); throw err; })
-      .finally(() => { opening = null; });
-    return opening;
+    const my = gen;
+    const p = build(c, my).finally(() => { if (pending && pending.promise === p) pending = null; });
+    pending = { gen: my, promise: p, ctx: c };
+    return p;
   }
-  function close() { opening = null; teardown(); }
-  /** After a page load without a gesture the context may start suspended (autoplay rules). */
-  function resume() { if (ctx && ctx.state === 'suspended') { try { return ctx.resume(); } catch (_) {} } return Promise.resolve(); }
+  /** Closes the microphone. A build still on its way notices (gen) and undoes itself. */
+  function close() {
+    gen++;
+    pending = null;
+    const own = live;
+    live = null;
+    if (own) release(own);
+    if (primed) { closeContext(primed); primed = null; }
+  }
+  /** After a page load without a gesture the context may start suspended (autoplay rules). Settles
+   *  within RESUME_WAIT_MS even if the browser keeps the promise pending. */
+  function resume() {
+    const c = live ? live.ctx : primed;
+    if (!c || c.state !== 'suspended') return Promise.resolve();
+    let p;
+    try { p = Promise.resolve(c.resume()).catch(() => {}); } catch (_) { return Promise.resolve(); }
+    return Promise.race([p, new Promise(r => setTimeout(r, RESUME_WAIT_MS))]);
+  }
+  function onEnd(fn) {
+    if (typeof fn !== 'function') return () => {};
+    endSubs.add(fn);
+    return () => { endSubs.delete(fn); };
+  }
   function subscribe(fn) {
     if (typeof fn !== 'function') return () => {};
     subs.add(fn);
@@ -105,20 +157,21 @@
   }
   /** RMS of the last ~20 ms of microphone audio, 0..1 (0 while closed). Real data only. */
   function level() {
-    if (!analyser || !probe) return 0;
+    if (!live) return 0;
+    const { analyser, probe } = live;
     analyser.getFloatTimeDomainData(probe);
     let sum = 0;
     for (let i = 0; i < probe.length; i++) sum += probe[i] * probe[i];
     return Math.min(1, Math.sqrt(sum / probe.length));
   }
   /** A new listening turn starts on a clean frame boundary. */
-  function flush() { if (node) { try { node.port.postMessage('flush'); } catch (_) {} } }
+  function flush() { if (live) { try { live.node.port.postMessage('flush'); } catch (_) {} } }
 
   window.JarvisAudio = Object.freeze({
     SAMPLE_RATE, FRAME,
-    supported, prime, open, close, resume, subscribe, level, flush,
-    isOpen: () => !!(node && ctx),
-    suspended: () => !!(ctx && ctx.state === 'suspended'),
+    supported, prime, open, close, resume, subscribe, level, flush, onEnd,
+    isOpen: () => !!live,
+    suspended: () => !!(live && live.ctx.state === 'suspended'),
   });
 
   // ================================================================================== WAV

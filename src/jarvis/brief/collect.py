@@ -263,7 +263,9 @@ def shape_todo(
         )
         for d, tl, t in dated[:MAX_TODO]
     )
-    return TodoSection(total=len(dated), overdue=sum(1 for d, _, _ in dated if d < day), items=items)
+    return TodoSection(
+        total=len(dated), overdue=sum(1 for d, _, _ in dated if d < day), items=items
+    )
 
 
 # ---- the collector ---------------------------------------------------------------------------
@@ -294,13 +296,16 @@ class Collector:
         return zone or fb
 
     async def collect(self, uid: str, tz: ZoneInfo, day: date) -> Collected:
-        (cal_state, cal), (in_state, inbox), (j_state, waiting), (t_state, todo) = (
-            await asyncio.gather(
-                self._section(lambda: self._calendar(uid, tz, day)),
-                self._section(lambda: self._inbox(uid, tz, day)),
-                self._jarvis(uid),
-                self._todo(uid, day),
-            )
+        (
+            (cal_state, cal),
+            (in_state, inbox),
+            (j_state, waiting),
+            (t_state, todo),
+        ) = await asyncio.gather(
+            self._section(lambda: self._calendar(uid, tz, day)),
+            self._section(lambda: self._inbox(uid, tz, day)),
+            self._jarvis(uid),
+            self._todo(uid, day),
         )
         items, snippets = inbox if inbox is not None else (InboxSection(), ())
         data = BriefData(

@@ -41,9 +41,7 @@ def _value(value: Any) -> str:
     return quoted(value, CHANGE_LIMIT) if one_line(value, CHANGE_LIMIT) else "(none)"
 
 
-def add_card(
-    a: dict[str, Any], *, due: date | None, dropped: bool, list_title: str | None
-) -> str:
+def add_card(a: dict[str, Any], *, due: date | None, dropped: bool, list_title: str | None) -> str:
     lines = [f"Add to-do {quoted(a.get('title'), TITLE_LIMIT)}", _list_line(list_title)]
     lines.append(_due(due, dropped))
     if one_line(a.get("notes"), NOTES_LIMIT):
@@ -51,9 +49,7 @@ def add_card(
     return "\n".join(lines)
 
 
-def update_card(
-    task: dict[str, Any], a: dict[str, Any], *, due: date | None, dropped: bool
-) -> str:
+def update_card(task: dict[str, Any], a: dict[str, Any], *, due: date | None, dropped: bool) -> str:
     """`due` is the parsed new date (None = cleared) — used only when 'due' is in `a`."""
     old_due = date_of(task.get("due"))
     lines = [f"Change to-do {_title(task)} (due {show_date(old_due)})", "Changes:"]

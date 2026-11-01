@@ -139,7 +139,8 @@ def test_the_brief_lists_overdue_then_today_as_text_with_a_more_line(console: Co
     assert console.page.evaluate("window.__pwned === undefined")
     # it sits between the inbox and the JARVIS section
     order = console.page.evaluate(
-        "[...document.querySelectorAll('#brief section.bsec')].map(s => s.getAttribute('aria-labelledby'))"
+        "[...document.querySelectorAll('#brief section.bsec')]"
+        ".map(s => s.getAttribute('aria-labelledby'))"
     )
     assert order.index("bsec-inbox") < order.index("bsec-todo") < order.index("bsec-jarvis")
     assert console.errors == [] and console.csp_violations() == []

@@ -202,9 +202,7 @@ class TasksClient:
         return zone or fb
 
     async def lists(self, uid: str) -> list[TaskList]:
-        data = await self.conn.request(
-            uid, "GET", LISTS_URL, params={"maxResults": MAX_LISTS}
-        )
+        data = await self.conn.request(uid, "GET", LISTS_URL, params={"maxResults": MAX_LISTS})
         out: list[TaskList] = []
         for item in _dicts(data.get("items") if isinstance(data, dict) else None):
             lid = str(item.get("id") or "")
@@ -230,7 +228,9 @@ class TasksClient:
         items = [t for t in _dicts(data.get("items")) if _ID.fullmatch(str(t.get("id") or ""))]
         return Page(items, bool(data.get("nextPageToken")))
 
-    async def due_by(self, uid: str, day: date) -> tuple[list[tuple[TaskList, dict[str, Any]]], int]:
+    async def due_by(
+        self, uid: str, day: date
+    ) -> tuple[list[tuple[TaskList, dict[str, Any]]], int]:
         """Open tasks due on or before `day` in every list (≤ MAX_LISTS) → ((list, task), …),
         number of lists. One failing list fails the call (the brief marks the section)."""
         lists = await self.lists(uid)

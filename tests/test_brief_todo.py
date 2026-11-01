@@ -74,7 +74,9 @@ async def test_overdue_and_due_today_across_lists_oldest_first() -> None:
 
 
 async def test_one_list_shows_no_list_names_and_at_most_ten() -> None:
-    fake = BriefGoogle(todo={"L1": [todo(f"t{i:02d}", f"Task {i}", "2027-01-14") for i in range(14)]})
+    fake = BriefGoogle(
+        todo={"L1": [todo(f"t{i:02d}", f"Task {i}", "2027-01-14") for i in range(14)]}
+    )
     t = (await _collect(fake, tasks=True)).todo
     assert t.total == 14 and t.overdue == 14 and len(t.items) == 10
     assert {i.list for i in t.items} == {""}
@@ -98,7 +100,9 @@ async def test_not_linked_is_not_connected() -> None:
 
 
 async def test_a_tasks_failure_fails_only_the_todo_section_and_is_not_retried() -> None:
-    fake = _fake(fail={"tasks": 503}, events=[timed("e1", "Standup", "2027-01-15T09:30", "2027-01-15T10:00")])
+    fake = _fake(
+        fail={"tasks": 503}, events=[timed("e1", "Standup", "2027-01-15T09:30", "2027-01-15T10:00")]
+    )
     data = await _collect(fake, tasks=True)
     assert data.sections_status.todo == "unavailable" and data.todo is None
     assert data.sections_status.calendar == "ok" and len(data.calendar.today) == 1
@@ -174,8 +178,12 @@ def test_the_input_cap_keeps_the_task_line_last() -> None:
     from jarvis.brief.models import BriefEvent, CalendarSection, InboxItem, InboxSection
 
     ev = BriefEvent(title="e" * 120, start="09:00", end="10:00", location="l" * 80)
-    mail = InboxItem(from_name="n" * 80, from_address="a@x.com", subject="s" * 120, date="", when="")
-    long = TodoSection(total=10, items=tuple(TodoItem(title="t" * 120, due="2027-01-15") for _ in range(10)))
+    mail = InboxItem(
+        from_name="n" * 80, from_address="a@x.com", subject="s" * 120, date="", when=""
+    )
+    long = TodoSection(
+        total=10, items=tuple(TodoItem(title="t" * 120, due="2027-01-15") for _ in range(10))
+    )
     big = _data(long).model_copy(
         update={
             "calendar": CalendarSection(today=(ev,) * 50),

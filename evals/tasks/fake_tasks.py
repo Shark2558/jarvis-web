@@ -38,9 +38,7 @@ class Mutation:
 @dataclass
 class FakeTasks:
     tz: str = "Asia/Kolkata"
-    lists: list[dict[str, Any]] = field(
-        default_factory=lambda: [{"id": "L1", "title": "My Tasks"}]
-    )
+    lists: list[dict[str, Any]] = field(default_factory=lambda: [{"id": "L1", "title": "My Tasks"}])
     tasks: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # route key → HTTP status to answer with: tz | lists | tasks | get | insert | patch | delete
     fail: dict[str, int] = field(default_factory=dict)

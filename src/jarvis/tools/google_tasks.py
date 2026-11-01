@@ -428,7 +428,7 @@ def tasks_tools(
         ),
         Tool(
             "task_update",
-            "Change a to-do's title, notes or due date (only the fields given; due \"\" removes "
+            'Change a to-do\'s title, notes or due date (only the fields given; due "" removes '
             "the date).",
             {
                 "type": "object",

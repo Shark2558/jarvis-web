@@ -19,11 +19,15 @@ from pydantic import SecretStr
 
 from jarvis.api import app as app_module
 from jarvis.api import create_app
+from jarvis.api.identity import LEGACY_USER_ID
 from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier
 from jarvis.config import AuthMode, SessionBackend, Settings
+from jarvis.core.models import Session, Turn
 from jarvis.integrations.google import JWKS_URL
+from jarvis.llm.base import Role
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
+from jarvis.recall.models import SettingsPatch as MemorySettingsPatch
 
 NOW = 1_800_000_000
 SA = "jarvis-scheduler@proj.iam.gserviceaccount.com"
@@ -284,6 +288,24 @@ async def test_tick_with_a_scheduler_token_runs(sc: AsyncClient) -> None:
     assert r.status_code == 200
     assert r.json() == {"checked": 1, "generated": r.json()["generated"], "delivered": 0}
     assert set(r.json()) == {"checked", "generated", "delivered"}
+
+
+async def test_tick_also_learns_conversations_left_unlearned(sc: AsyncClient) -> None:
+    """Slice 8 review finding 3: the scheduler tick runs a bounded learning sweep, so a
+    batch whose instance was throttled or scaled to zero is learned without a new message."""
+    app = sc.app  # type: ignore[attr-defined]
+    await app.state.memory.update_settings(
+        LEGACY_USER_ID, MemorySettingsPatch(learn=True, confirm_spend=True)
+    )
+    s = Session(id="sess_tick", user_id=LEGACY_USER_ID)
+    for text in ("I live in Kochi", "I like tea", "I have a cat"):
+        s.append(Turn(role=Role.USER, content=text))
+        s.append(Turn(role=Role.ASSISTANT, content="Noted, Sir."))
+    await app.state.store.save(s)
+    r = await sc.post(TICK_PATH, headers={"Authorization": f"Bearer {token()}"})
+    assert r.status_code == 200 and set(r.json()) == {"checked", "generated", "delivered"}
+    state = await app.state.memory.store.load(LEGACY_USER_ID)
+    assert state.learn.cursors.get("sess_tick") == len(s.turns)
 
 
 @pytest.mark.parametrize(

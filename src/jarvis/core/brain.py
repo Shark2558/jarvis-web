@@ -9,8 +9,11 @@ Everything here is vendor-neutral. Phase 2 inserts the tool-calling loop between
 
 Long-term memory (slice 8): the owner's notes go into the dynamic trailer (never the cached
 system prompt) for brains that keep content private; the reply reports which were sent; learning
-is scheduled after the reply is stored and never delays or breaks it. Each tool round runs with
-the "untrusted content seen" flag, so memory_save after other people's text becomes a card.
+is scheduled after the reply is stored and never delays or breaks it. At the start of a request
+the owner's other conversations with unlearned messages are swept in the background (Cloud Run
+gives CPU only while a request runs); the scheduler tick sweeps too (`sweep_memory`). Each tool
+round runs with the "untrusted content seen" flag, so memory_save after other people's text
+becomes a card.
 
 Spending (slice 7b): every model call — chat, each tool round, the round-limit summary, approval
 narration, the stream — goes through `_admit` (the owner's monthly limit, `Billing.ensure_allowed`)
@@ -25,7 +28,7 @@ import asyncio
 import contextlib
 import time
 import weakref
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from dataclasses import dataclass, field
 
 from jarvis.billing import Billing, BudgetError
@@ -58,6 +61,7 @@ log = get_logger(__name__)
 
 BRAIN_KEY = "brain"  # session.metadata key remembering the owner's brain choice
 CUTOFF_KEY = "brain_cutoff"  # turn index before which history is withheld from training brains
+SWEEP_TICK_S = 20.0  # the scheduler tick's memory sweep is awaited, at most this long
 
 
 @dataclass
@@ -191,6 +195,43 @@ class Brain:
         if self.memory is not None:
             self.memory.after_turn(user_id, session, spec, rec)
 
+    def _sweep(self, user_id: str, rec: Recall, session_id: str) -> None:
+        """At the start of a request: learn the owner's other conversations in the background
+        while this request holds the CPU (≤ once per 5 minutes; never raises)."""
+        if self.memory is not None:
+            self.memory.schedule_sweep(
+                user_id, self.store, self.brain_of, rec.state, exclude=session_id
+            )
+
+    def brain_of(self, session: Session) -> BrainSpec | None:
+        """The brain a stored conversation uses now (None when it no longer exists)."""
+        try:
+            return self.brains.get(session.metadata.get(BRAIN_KEY) or self.brains.default.id)
+        except LookupError:
+            return None
+
+    async def sweep_memory(self, user_ids: Sequence[str], *, within_s: float = SWEEP_TICK_S) -> int:
+        """The scheduler tick's learning sweep: awaited, ≤ `within_s` in all, never raises.
+        Returns the number of learning runs attempted."""
+        memory = self.memory
+        if memory is None:
+            return 0
+        done = 0
+
+        async def every_owner() -> None:
+            nonlocal done
+            for uid in user_ids:
+                try:
+                    done += await memory.sweep(uid, self.store, self.brain_of)
+                except Exception as exc:  # noqa: BLE001 — one owner never blocks another
+                    log.warning("memory sweep failed", extra={"reason": type(exc).__name__})
+
+        try:
+            await asyncio.wait_for(every_owner(), within_s)
+        except TimeoutError:
+            log.warning("memory sweep stopped at its time bound", extra={"seconds": within_s})
+        return done
+
     # ---- session helpers -----------------------------------------------------------------
 
     async def _load_or_create(self, req: ChatRequest) -> Session:
@@ -250,6 +291,7 @@ class Brain:
 
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)
+        self._sweep(req.user_id, rec, session.id)
         trailer = (
             build_trailer(
                 tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
@@ -609,6 +651,7 @@ class Brain:
 
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)
+        self._sweep(req.user_id, rec, session.id)
         meta.memory_used = list(rec.used)
         trailer = (
             build_trailer(

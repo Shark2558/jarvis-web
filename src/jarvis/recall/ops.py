@@ -309,9 +309,16 @@ def set_profile(state: MemoryState, label: str, text: object) -> MemoryState:
     return state.with_profile(state.profile.model_copy(update={label: clean}))
 
 
+def next_generation(state: MemoryState) -> MemoryState:
+    """A learning run claimed before this point applies nothing (and is not retried)."""
+    return state.with_learn(state.learn.model_copy(update={"gen": state.learn.gen + 1}))
+
+
 def wipe(state: MemoryState) -> MemoryState:
-    """Forget everything: facts (with history) and profile. Settings stay."""
-    return MemoryState(rev=state.rev, settings=state.settings, learn=state.learn)
+    """Forget everything: facts (with history) and profile. Settings and the learning cursors
+    stay (what was read is not read again); a run in flight applies nothing."""
+    gone = MemoryState(rev=state.rev, settings=state.settings, learn=state.learn)
+    return next_generation(gone)
 
 
 # ---- export / import ------------------------------------------------------------------------
@@ -445,6 +452,7 @@ __all__ = [
     "find_duplicate",
     "import_data",
     "new_fact",
+    "next_generation",
     "purge",
     "replace_fact",
     "set_profile",

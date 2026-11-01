@@ -20,9 +20,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from jarvis.llm.base import ChatMessage, Role
+from jarvis.llm.base import ChatMessage, Completion, Role
 from jarvis.llm.brains import BrainRegistry, BrainSpec
-from jarvis.llm.pricing import cost_usd
+from jarvis.llm.pricing import CHARS_PER_TOKEN, cost_usd, estimate_usage, is_paid
 from jarvis.llm.router import ModelTier
 from jarvis.recall.models import MAX_TEXT, Category, Fact
 from jarvis.tools.card import one_line
@@ -154,6 +154,20 @@ class Outcome:
     cost_usd: float
 
 
+def estimate_cost(model: str, prompt: str) -> float:
+    """A conservative cost for a call whose usage never came back (cancelled, cut off, or a
+    provider that reported none): the whole input at ~4 chars a token, and the full 300
+    output tokens."""
+    return cost_usd(model, estimate_usage(len(SYSTEM) + len(prompt), MAX_TOKENS * CHARS_PER_TOKEN))
+
+
+def _cost(c: Completion, prompt: str) -> float:
+    cost = c.cost_usd or cost_usd(c.model, c.usage)
+    if cost <= 0 and is_paid(c.model) and not (c.usage.input_tokens or c.usage.output_tokens):
+        return estimate_cost(c.model, prompt)  # billed, but nothing reported
+    return cost
+
+
 class Extractor:
     def __init__(self, brains: BrainRegistry) -> None:
         self._brains = brains
@@ -176,7 +190,7 @@ class Extractor:
             tools=None,
             allow_degrade=False,
         )
-        return Outcome(parse_output(c.text), c.model, c.cost_usd or cost_usd(c.model, c.usage))
+        return Outcome(parse_output(c.text), c.model, _cost(c, p.prompt))
 
 
 __all__ = [
@@ -190,5 +204,6 @@ __all__ = [
     "Prepared",
     "Replacement",
     "build_input",
+    "estimate_cost",
     "parse_output",
 ]

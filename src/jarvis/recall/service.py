@@ -8,6 +8,12 @@ recall      gate (private brain) → header read (1 Firestore read when warm) �
 after_turn  a cheap in-memory check on the state recall already read (no extra read); when a
             batch is due, learning runs as a background task (never during the reply). Use
             counters are buffered and written at most every 15 minutes, in the background.
+sweep       Cloud Run throttles CPU between requests and scales to zero, so a background run
+            may never finish where it started. At the START of a chat request (≤ once per 5
+            minutes per owner and instance, so always on a fresh instance) the owner's other
+            recently updated conversations with unlearned messages (≤ 3) are learned in the
+            background while the request holds the CPU; the scheduler tick runs the same sweep
+            awaited and bounded. Same gates as always: consent, cap, ₹ limit, private brain.
 API         every write runs the sensitive filter and the limits (`ops`), in one transaction.
 """
 
@@ -29,6 +35,7 @@ from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.pricing import cost_usd, is_priced
 from jarvis.llm.router import ModelTier
 from jarvis.logging import get_logger
+from jarvis.memory.base import SessionStore
 from jarvis.recall import gate
 from jarvis.recall.errors import ConsentRequired
 from jarvis.recall.extract import Extractor
@@ -65,6 +72,7 @@ from jarvis.recall.ops import (
     find_duplicate,
     import_data,
     new_fact,
+    next_generation,
     purge,
     set_profile,
     wipe,
@@ -78,6 +86,10 @@ log = get_logger(__name__)
 
 FLUSH_EVERY = timedelta(minutes=15)
 SEARCH_LIMIT = 8
+SWEEP_EVERY = timedelta(minutes=5)
+SWEEP_LIMIT = 3  # conversations learned per sweep
+SWEEP_SCAN = 10  # most recently updated conversations looked at
+BrainOf = Callable[[Session], BrainSpec | None]
 TYPICAL_RUN = Usage(input_tokens=1_500, output_tokens=150)
 TYPICAL_RUNS_PER_DAY = 8
 WORST_RUN = Usage(input_tokens=2_500, output_tokens=300)
@@ -141,6 +153,7 @@ class MemoryService:
         self._running: set[tuple[str, str]] = set()
         self._uses: dict[str, dict[str, int]] = {}
         self._flushed: dict[str, datetime] = {}
+        self._swept: dict[str, datetime] = {}
 
     # ---- recall ------------------------------------------------------------------------------
 
@@ -236,6 +249,112 @@ class MemoryService:
         except Exception as exc:  # noqa: BLE001 — counters only
             log.warning("memory use counters not saved", extra={"reason": type(exc).__name__})
 
+    # ---- the sweep (other conversations) ---------------------------------------------------
+
+    def schedule_sweep(
+        self,
+        uid: str,
+        sessions: SessionStore,
+        brain_of: BrainOf,
+        state: MemoryState | None,
+        *,
+        exclude: str | None,
+    ) -> None:
+        """At the start of a request: sweep in the background (≤ once per 5 minutes). Uses the
+        state recall already read; returns at once and never raises."""
+        try:
+            if state is None or not learning_on(state):
+                return
+            now = self._clock()
+            last = self._swept.get(uid)
+            if last is not None and now - last < SWEEP_EVERY:
+                return
+            self._swept[uid] = now
+            self._spawn(self._sweep_bg(uid, sessions, brain_of, state, exclude))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("memory sweep not scheduled", extra={"reason": type(exc).__name__})
+
+    async def _sweep_bg(
+        self,
+        uid: str,
+        sessions: SessionStore,
+        brain_of: BrainOf,
+        state: MemoryState,
+        exclude: str | None,
+    ) -> None:
+        try:
+            await self.sweep(uid, sessions, brain_of, state=state, exclude=exclude)
+        except Exception as exc:  # noqa: BLE001 — errors never reach the owner
+            log.warning("memory sweep failed", extra={"reason": type(exc).__name__})
+
+    async def sweep(
+        self,
+        uid: str,
+        sessions: SessionStore,
+        brain_of: BrainOf,
+        *,
+        state: MemoryState | None = None,
+        exclude: str | None = None,
+        limit: int = SWEEP_LIMIT,
+    ) -> int:
+        """Learn the owner's most recently updated conversations that have unlearned owner
+        messages (≤ `limit` runs). Returns how many runs were attempted."""
+        cur = state if state is not None else await self.store.load(uid)
+        if not learning_on(cur):
+            return 0
+        runs = 0
+        for sid in await self._sweep_candidates(uid, sessions, cur, exclude):
+            runs += await self._sweep_one(uid, sessions, brain_of, cur, sid)
+            if runs >= limit:
+                break
+        if runs:
+            log.info("memory sweep", extra={"runs": runs})
+        return runs
+
+    @staticmethod
+    async def _sweep_candidates(
+        uid: str, sessions: SessionStore, cur: MemoryState, exclude: str | None
+    ) -> list[str]:
+        """Conversations updated since the consent with turns past their cursor (no reads of
+        the conversations themselves yet)."""
+        since = cur.settings.learn_consented_at
+        rows = await sessions.list_for_user(uid, limit=SWEEP_SCAN)
+        return [
+            row.id
+            for row in rows
+            if row.id != exclude
+            and (since is None or row.updated_at >= since)
+            and cur.learn.cursors.get(row.id, 0) < row.turn_count
+        ]
+
+    async def _sweep_one(
+        self,
+        uid: str,
+        sessions: SessionStore,
+        brain_of: BrainOf,
+        cur: MemoryState,
+        sid: str,
+    ) -> int:
+        key = (uid, sid)
+        if key in self._running:
+            return 0
+        session = await sessions.get(sid)
+        if session is None or session.user_id != uid:
+            return 0
+        spec = brain_of(session)
+        snap = snapshot(session)
+        if spec is None or not gate.memory_allowed(spec):
+            return 0  # learning uses the conversation's own brain, never a training one
+        if not is_due(pending(cur, snap), self._clock()):
+            return 0
+        self._running.add(key)
+        try:
+            res = await self.learner.run(uid, snap, spec, None)
+        finally:
+            self._running.discard(key)
+        log.info("swept conversation", extra={"status": res.status.value})
+        return 1
+
     async def learn(self, uid: str, session: Session, spec: BrainSpec) -> LearnResult:
         """Run learning for `session` now (if due), reading the state fresh."""
         return await self.learner.run(uid, snapshot(session), spec, None)
@@ -306,6 +425,7 @@ class MemoryService:
                 upd.update(learn=True, learn_consented_at=now)
             elif patch.learn is False:
                 upd.update(learn=False, learn_consented_at=None)
+                cur = next_generation(cur)  # a run in flight now applies nothing
             return cur.with_settings(s.model_copy(update=upd))
 
         new = await self.store.mutate(uid, change)
@@ -445,4 +565,4 @@ def build_memory_service(
     )
 
 
-__all__ = ["MemoryService", "Recall", "ai_name", "build_memory_service"]
+__all__ = ["BrainOf", "MemoryService", "Recall", "ai_name", "build_memory_service"]

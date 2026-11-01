@@ -119,15 +119,34 @@ class UseStat(BaseModel):
     n: int = 0
 
 
+class Lease(BaseModel):
+    """A learning run in flight on one conversation's batch: turns `start` … `end - 1`. The
+    cursor moves to `end` only when the result is applied (same transaction); a lease that
+    failed, or is older than 5 minutes (the instance was frozen or killed), is retried."""
+
+    model_config = ConfigDict(frozen=True)
+
+    lease_id: str
+    started_at: datetime
+    start: int
+    end: int
+    attempts: int = 1
+    gen: int = 0  # LearnState.gen when claimed: a wipe or "learning off" since makes it stale
+    failed: bool = False
+
+
 class LearnState(BaseModel):
-    """Learning bookkeeping: runs on the owner's local `day`, and per conversation how many
-    turns have been considered already (newest conversations only)."""
+    """Learning bookkeeping: runs on the owner's local `day`, per conversation how many turns
+    have been considered already (newest conversations only), the runs in flight, and a
+    generation bumped by "Forget everything" and by switching learning off."""
 
     model_config = ConfigDict(frozen=True)
 
     day: str = ""
     runs: int = 0
     cursors: dict[str, int] = Field(default_factory=dict)
+    leases: dict[str, Lease] = Field(default_factory=dict)
+    gen: int = 0
 
 
 class Header(BaseModel):
@@ -299,6 +318,7 @@ __all__ = [
     "ImportRequest",
     "ImportResult",
     "LearnState",
+    "Lease",
     "MemoryRef",
     "MemorySettings",
     "MemoryState",

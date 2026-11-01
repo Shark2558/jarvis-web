@@ -3,10 +3,11 @@
 # background learning that never delays or breaks a reply, and the Firestore budget (D11).
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import asyncio
+from datetime import UTC, datetime, timedelta
 
 from billing_fakes import BrokenDocs
-from memory_fakes import UID, extraction, rig
+from memory_fakes import UID, extraction, rig, session_with
 
 from jarvis.config import LLMBackend, SessionBackend, Settings
 from jarvis.core.brain import Brain, StreamMeta
@@ -15,6 +16,7 @@ from jarvis.core.models import ChatRequest
 from jarvis.core.prompts import build_system_prompt
 from jarvis.llm.base import ToolCall
 from jarvis.memory.inmemory import InMemorySessionStore
+from jarvis.recall import extract
 from jarvis.recall.models import SettingsPatch
 from jarvis.recall.store import MemoryStore
 from jarvis.recall.tools import memory_tools
@@ -199,3 +201,41 @@ async def test_store_is_shared_and_cold_start_still_recalls() -> None:
     f = await r.svc.add_fact(UID, "Prefers window seats", "preferences")
     cold = MemoryStore(r.docs)
     assert [x.id for x in (await cold.load(UID)).active()] == [f.id]
+
+
+async def test_a_chat_request_sweeps_other_conversations_at_its_start() -> None:
+    """HIGH 3: learning for a conversation the owner left (instance throttled or gone) only
+    ran at the end of a later reply in that same conversation."""
+    r = rig()
+    r.clock.at = datetime.now(UTC)
+    await r.svc.update_settings(UID, SettingsPatch(learn=True, confirm_spend=True))
+    brain = _brain(r, tools=False)
+    other = session_with("I live in Kochi", "I like tea", "I have a cat", sid="sess_other")
+    other.metadata["brain"] = "private"
+    other.updated_at = r.clock.at + timedelta(seconds=1)
+    await brain.store.save(other)
+    res = await brain.chat(_req("hello"))
+    await r.svc.drain()
+    state = await r.store.load(UID)
+    assert state.learn.cursors.get("sess_other") == len(other.turns)
+    assert res.session_id not in state.learn.cursors  # its own batch is not due yet
+    assert any(c.system == extract.SYSTEM for c in r.private.calls)
+
+
+async def test_the_scheduler_sweep_is_awaited_bounded_and_never_raises() -> None:
+    r = rig()
+    r.clock.at = datetime.now(UTC)
+    await r.svc.update_settings(UID, SettingsPatch(learn=True, confirm_spend=True))
+    brain = _brain(r, tools=False)
+    other = session_with("I live in Kochi", "I like tea", "I have a cat", sid="sess_other")
+    other.updated_at = r.clock.at + timedelta(seconds=1)
+    await brain.store.save(other)
+    assert await brain.sweep_memory([UID, "u_nobody"]) == 1
+    assert (await r.store.load(UID)).learn.cursors.get("sess_other") == len(other.turns)
+
+    async def stuck(*a: object, **k: object) -> int:
+        await asyncio.sleep(3600)
+        return 0
+
+    r.svc.sweep = stuck  # type: ignore[method-assign]
+    assert await brain.sweep_memory([UID], within_s=0.05) == 0

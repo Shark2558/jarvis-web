@@ -88,7 +88,7 @@ async def test_input_is_capped_at_8k_chars() -> None:
     r = rig()
     await _consent(r)
     r.private.script(extraction())
-    long = ["x " * 1500, "y " * 1500, "z " * 1500]
+    long = [f"{c} " * 700 for c in "uvwxyz"]  # 6 × 1,400 chars: none looks pasted, 8.4k total
     await r.svc.learn(UID, session_with(*long), r.spec)
     assert len(r.private.calls[0].messages[0].text()) <= INPUT_CAP == 8_000
 
@@ -238,10 +238,14 @@ async def test_sensitive_special_and_duplicate_facts_are_dropped() -> None:
     ]
 
 
+async def _learned(r, text: str, category: str):  # type: ignore[no-untyped-def]
+    return (await r.svc.remember(UID, text, category, origin="learned"))[0]
+
+
 async def test_contradictions_replace_and_extraction_never_deletes() -> None:
     r = rig()
     await _consent(r)
-    old = await r.svc.add_fact(UID, "Lives in Kochi", "places")
+    old = await _learned(r, "Lives in Kochi", "places")
     keep = await r.svc.add_fact(UID, "Prefers tea", "preferences")
     doc = {
         "facts": [],
@@ -263,7 +267,7 @@ async def test_contradictions_replace_and_extraction_never_deletes() -> None:
 async def test_replace_of_an_unknown_or_sensitive_text_is_dropped() -> None:
     r = rig()
     await _consent(r)
-    old = await r.svc.add_fact(UID, "Lives in Kochi", "places")
+    old = await _learned(r, "Lives in Kochi", "places")
     r.private.script(
         extraction(
             replace=[

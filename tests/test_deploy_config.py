@@ -138,3 +138,47 @@ def test_script_is_valid_bash() -> None:
 @pytest.mark.skipif(shutil.which("shellcheck") is None, reason="shellcheck not installed")
 def test_script_passes_shellcheck() -> None:
     subprocess.run(["shellcheck", "-S", "warning", str(SCRIPT)], check=True)
+
+
+# ---- slice 6: Google tools need a vault key, two more APIs and consent-screen scopes ----------
+
+
+def test_token_key_secret_is_generated_bound_and_granted(script: str) -> None:
+    assert "jarvis-token-key" in script
+    # generated (32 random bytes, base64) only when missing — never overwritten on a re-run
+    assert re.search(r"secret_exists jarvis-token-key \|\| put_secret jarvis-token-key", script)
+    assert "head -c 32 /dev/urandom | base64" in script
+    # both the full set-up and the quick path bind it, and the runtime account may read it
+    set_secrets = [ln for ln in script.splitlines() if "--set-secrets" in ln]
+    update_secrets = [ln for ln in script.splitlines() if "--update-secrets" in ln]
+    assert set_secrets and all(
+        "JARVIS_TOKEN_KEY=jarvis-token-key:latest" in ln for ln in set_secrets
+    )
+    assert update_secrets and all(
+        "JARVIS_TOKEN_KEY=jarvis-token-key:latest" in ln for ln in update_secrets
+    )
+    grant_loop = script.split("for secret in", 1)[1].split("; do", 1)[0]
+    assert "jarvis-token-key" in grant_loop
+
+
+def test_calendar_and_gmail_apis_are_enabled(script: str) -> None:
+    enable = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
+    assert "calendar-json.googleapis.com" in enable and "gmail.googleapis.com" in enable
+
+
+def test_script_prints_consent_scopes_and_test_user_reminder(script: str) -> None:
+    for scope in (
+        "auth/calendar.events",
+        "auth/calendar.readonly",
+        "auth/gmail.readonly",
+        "auth/gmail.compose",
+        "auth/gmail.send",
+    ):
+        assert scope in script
+    assert "Test users" in script or "test user" in script.lower()
+    assert "7 days" in script  # Testing-mode refresh tokens expire weekly
+    assert "/connect/google/callback" in script  # second redirect URI
+
+
+def test_default_brain_prompt_accepts_claude(script: str) -> None:
+    assert "claude|Claude|CLAUDE) DEFAULT_BRAIN=anthropic" in script

@@ -2,9 +2,10 @@
 """HTTP surface for Phase 0.
 
 POST /v1/chat                 one turn (JSON)
-POST /v1/chat/stream          one turn, text/plain streamed deltas
-GET  /v1/sessions             list the caller's sessions
-GET  /v1/sessions/{id}        full transcript (audit / replay)
+POST /v1/chat/stream          one turn, text/plain streamed deltas (402 first if the monthly
+                              limit refuses it: a stream that already said 200 can't)
+GET  /v1/sessions             list the caller's sessions (+ total_cost_inr)
+GET  /v1/sessions/{id}        full transcript (audit / replay) (+ total_cost_inr)
 DELETE /v1/sessions/{id}      forget a session (owner's delete right)
 GET  /health                  liveness + dependency check (unauthenticated)
 """
@@ -19,7 +20,13 @@ from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
 from jarvis.config import Settings
 from jarvis.core.brain import Brain
-from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, SessionSummary
+from jarvis.core.models import (
+    ChatRequest,
+    ChatResponse,
+    PendingApproval,
+    SessionSummary,
+    SessionView,
+)
 from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.tools.audit import AuditEntry
 
@@ -104,31 +111,41 @@ async def chat(
 async def chat_stream(
     req: ChatRequest, brain: Brain = Depends(_brain), uid: str = Depends(current_user)
 ) -> StreamingResponse:
-    return StreamingResponse(
-        brain.chat_stream(req.model_copy(update={"user_id": uid})),
-        media_type="text/plain; charset=utf-8",
-    )
+    req = req.model_copy(update={"user_id": uid})
+    await brain.check_budget(req)  # 402 now; the stream checks again before its model call
+    return StreamingResponse(brain.chat_stream(req), media_type="text/plain; charset=utf-8")
 
 
 @router.get(
     "/v1/sessions", response_model=list[SessionSummary], dependencies=[Depends(require_auth)]
 )
 async def list_sessions(
-    limit: int = 50, store: SessionStore = Depends(_store), uid: str = Depends(current_user)
+    limit: int = 50,
+    store: SessionStore = Depends(_store),
+    brain: Brain = Depends(_brain),
+    uid: str = Depends(current_user),
 ) -> list[SessionSummary]:
-    return await store.list_for_user(uid, limit=max(1, min(limit, 200)))
+    rows = await store.list_for_user(uid, limit=max(1, min(limit, 200)))
+    return [
+        r.model_copy(update={"total_cost_inr": round(await brain.billing.inr(r.total_cost_usd), 4)})
+        for r in rows
+    ]
 
 
 @router.get(
-    "/v1/sessions/{session_id}", response_model=Session, dependencies=[Depends(require_auth)]
+    "/v1/sessions/{session_id}", response_model=SessionView, dependencies=[Depends(require_auth)]
 )
 async def get_session(
-    session_id: str, store: SessionStore = Depends(_store), uid: str = Depends(current_user)
-) -> Session:
+    session_id: str,
+    store: SessionStore = Depends(_store),
+    brain: Brain = Depends(_brain),
+    uid: str = Depends(current_user),
+) -> SessionView:
     s = await store.get_or_raise(session_id)
     if s.user_id != uid:
         raise SessionNotFound(session_id)
-    return s
+    inr = round(await brain.billing.inr(s.total_cost_usd), 4)
+    return SessionView.model_validate({**dict(s), "total_cost_inr": inr})
 
 
 @router.delete("/v1/sessions/{session_id}", status_code=204, dependencies=[Depends(require_auth)])

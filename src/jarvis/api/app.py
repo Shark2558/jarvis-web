@@ -23,6 +23,15 @@ from jarvis.api.integrations import router as integrations_router
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import router as v1_router
 from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier, SchedulerUnauthorized
+from jarvis.api.usage import router as usage_router
+from jarvis.billing import (
+    Billing,
+    BudgetReached,
+    BudgetRejected,
+    BudgetUnavailable,
+    build_billing,
+    fx_client,
+)
 from jarvis.brief.service import BriefLimitReached, BriefService, SettingsRejected
 from jarvis.brief.store import BriefStore
 from jarvis.config import AuthMode, SessionBackend, Settings, get_settings
@@ -40,7 +49,7 @@ from jarvis.llm.brains import BrainRegistry
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
 from jarvis.memory import SessionNotFound, SessionStore
 from jarvis.storage import Storage, build_storage
-from jarvis.storage.docs import MemoryDocs
+from jarvis.storage.docs import Docs, MemoryDocs
 from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.setup import build_gateway
@@ -52,11 +61,19 @@ def _err(status: int, body: dict[str, Any]) -> JSONResponse:
     return JSONResponse(status_code=status, content=body)
 
 
-def build_brief_service(app: FastAPI, s: Settings, built: Storage | None) -> BriefService:
-    """Same storage, Google link, brains, approvals and audit chain as the rest of the app;
-    in-process documents when nothing persistent is configured (dev, tests)."""
+def app_docs(built: Storage | None) -> Docs:
+    """The document store the brief and billing share: Firestore when configured, else
+    in-process documents (dev, tests)."""
+    return built.docs if built is not None and built.docs is not None else MemoryDocs()
+
+
+def build_brief_service(
+    app: FastAPI, s: Settings, built: Storage | None, *, docs: Docs | None = None
+) -> BriefService:
+    """Same storage, Google link, brains, approvals, audit chain and billing (the monthly limit
+    and meter) as the rest of the app."""
     gw: Gateway | None = app.state.gateway
-    docs = built.docs if built is not None and built.docs is not None else MemoryDocs()
+    docs = docs if docs is not None else app_docs(built)
     approvals: ApprovalStore | None
     audit: AuditTrail
     if gw is not None:
@@ -74,6 +91,7 @@ def build_brief_service(app: FastAPI, s: Settings, built: Storage | None) -> Bri
         default_tz=s.user_timezone,
         ai_daily_cap=s.brief_ai_daily_cap,
         retention_days=s.brief_retention_days,
+        billing=getattr(app.state, "billing", None),
     )
 
 
@@ -129,6 +147,7 @@ def create_app(
     gateway: Gateway | None = None,
     brains: BrainRegistry | None = None,
     scheduler_verifier: GoogleOIDCVerifier | None = None,
+    billing: Billing | None = None,
 ) -> FastAPI:
     s = settings or get_settings()
     configure_logging(s.log_level, s.log_json)
@@ -155,10 +174,19 @@ def create_app(
                 google=app.state.google,
             )
         app.state.gateway = gw
-        app.state.brain = Brain(
-            brains=app.state.brains, store=app.state.store, settings=s, gateway=app.state.gateway
+        docs = app_docs(built)
+        app.state.fx_http = fx_client(s)
+        app.state.billing = billing or build_billing(
+            s, docs, app.state.brains, http=app.state.fx_http
         )
-        app.state.brief = build_brief_service(app, s, built)
+        app.state.brain = Brain(
+            brains=app.state.brains,
+            store=app.state.store,
+            settings=s,
+            gateway=app.state.gateway,
+            billing=app.state.billing,
+        )
+        app.state.brief = build_brief_service(app, s, built, docs=docs)
         await adopt_legacy_sessions(app.state.store, s)
         log.info(
             "jarvis up",
@@ -176,6 +204,8 @@ def create_app(
         finally:
             if app.state.google is not None:
                 await app.state.google.http.aclose()
+            if app.state.fx_http is not None:
+                await app.state.fx_http.aclose()
             verifier = getattr(app.state, "scheduler_verifier", None)
             if verifier is not None:
                 await verifier.aclose()
@@ -246,6 +276,18 @@ def create_app(
     async def _csrf(_: Request, exc: CSRFRejected) -> JSONResponse:
         return _err(403, {"error": "csrf", "detail": "missing X-Requested-With header"})
 
+    @app.exception_handler(BudgetReached)
+    async def _budget(_: Request, exc: BudgetReached) -> JSONResponse:
+        return _err(402, {"error": "budget_reached", "detail": str(exc)})
+
+    @app.exception_handler(BudgetUnavailable)
+    async def _budget_unknown(_: Request, exc: BudgetUnavailable) -> JSONResponse:
+        return _err(503, {"error": "budget_unavailable", "detail": str(exc)})
+
+    @app.exception_handler(BudgetRejected)
+    async def _budget_bad(_: Request, exc: BudgetRejected) -> JSONResponse:
+        return _err(422, {"error": "invalid_budget", "detail": str(exc)})
+
     @app.exception_handler(BriefLimitReached)
     async def _brief_limit(_: Request, exc: BriefLimitReached) -> JSONResponse:
         return _err(429, {"error": "brief_limit", "detail": str(exc)})
@@ -260,6 +302,7 @@ def create_app(
 
     app.include_router(v1_router)
     app.include_router(brief_router)
+    app.include_router(usage_router)
     _mount_scheduler(app, s, scheduler_verifier)
     app.include_router(console_router)
     return app

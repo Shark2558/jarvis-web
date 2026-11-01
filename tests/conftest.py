@@ -39,6 +39,7 @@ def settings() -> Settings:
         session_max_turns=6,
         session_max_chars=2_000,
         max_input_chars=500,
+        usd_inr_live=False,  # never call frankfurter.dev from tests (the default rate, 95.24)
     )
 
 

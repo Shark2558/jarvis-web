@@ -6,6 +6,12 @@
 
 Everything here is vendor-neutral. Phase 2 inserts the tool-calling loop between
 `router.complete` and `append assistant turn`; the data model already carries what it needs.
+
+Spending (slice 7b): every model call — chat, each tool round, the round-limit summary, approval
+narration, the stream — goes through `_admit` (the owner's monthly limit, `Billing.ensure_allowed`)
+BEFORE it is made, and its cost is added to the month after it (`Billing.record`, never fails the
+reply). A turn is also admitted before the owner's message is stored, so a refused turn leaves
+no unanswered message behind.
 """
 
 from __future__ import annotations
@@ -14,8 +20,9 @@ import asyncio
 import contextlib
 import time
 import weakref
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 
+from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
 from jarvis.core.guardrails import guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
@@ -31,6 +38,8 @@ from jarvis.llm.base import (
     ToolResultBlock,
 )
 from jarvis.llm.brains import BrainRegistry, BrainSpec
+from jarvis.llm.pricing import cost_usd as priced_cost
+from jarvis.llm.pricing import estimate_usage
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.logging import get_logger, get_trace_id
 from jarvis.memory.base import SessionNotFound, SessionStore
@@ -51,6 +60,7 @@ class Brain:
         router: ModelRouter | None = None,
         brains: BrainRegistry | None = None,
         gateway: Gateway | None = None,
+        billing: Billing | None = None,
     ) -> None:
         if brains is None:
             if router is None:
@@ -73,6 +83,8 @@ class Brain:
         self.store = store
         self.s = settings
         self.gateway = gateway
+        # the app passes its own (Firestore, daily rate); without one: in-memory, default rate
+        self.billing = billing or Billing.in_memory(brains, settings)
         self._system = build_system_prompt(honorific=settings.user_honorific)
         # One owner action at a time per conversation (chat, approve, decline, delete): no
         # lost turns, no double execution, no resurrected deletes. Locks vanish when unused.
@@ -128,6 +140,26 @@ class Brain:
             turns, max_turns=self.s.session_max_turns, max_chars=self.s.session_max_chars
         )
 
+    # ---- spending ---------------------------------------------------------------------------
+
+    async def _admit(self, user_id: str, spec: BrainSpec) -> None:
+        """The spending gate: raises BudgetReached / BudgetUnavailable before a paid call."""
+        await self.billing.ensure_allowed(user_id, spec)
+
+    async def check_budget(self, req: ChatRequest) -> None:
+        """Would this request be refused by the monthly limit? Read-only: the stream route asks
+        first so it can answer 402 instead of breaking a stream that already said 200."""
+        brain_id = req.brain
+        if brain_id is None and req.session_id:
+            session = await self.store.get(req.session_id)
+            if session is not None and session.user_id == req.user_id:
+                brain_id = session.metadata.get(BRAIN_KEY)
+        spec = self.brains.get(brain_id) if brain_id else self.brains.default
+        await self._admit(req.user_id, spec)
+
+    async def _rupees(self, *usd: float) -> tuple[float, ...]:
+        return tuple([round(await self.billing.inr(u), 4) for u in usd])
+
     # ---- session helpers -----------------------------------------------------------------
 
     async def _load_or_create(self, req: ChatRequest) -> Session:
@@ -160,6 +192,7 @@ class Brain:
         if req.brain:
             self.brains.get(req.brain)  # fail before creating an orphan session
         guard_input(req.message, max_chars=self.s.max_input_chars)
+        await self.check_budget(req)  # a refused first message leaves no empty conversation
         session = await self._load_or_create(req)
         return req.model_copy(update={"session_id": session.id})
 
@@ -177,6 +210,7 @@ class Brain:
         text = guard_input(req.message, max_chars=self.s.max_input_chars)
         session = await self._load_or_create(req)
         spec = self._resolve_brain(session, req)
+        await self._admit(req.user_id, spec)  # refused → nothing stored, nothing called
 
         user_turn = Turn(role=Role.USER, content=text, trace_id=trace_id)
         session.append(user_turn)
@@ -208,6 +242,7 @@ class Brain:
         )
         await self.store.save(session)
         rounds = session.metadata.pop("_rounds", 0)
+        cost_inr, total_inr = await self._rupees(completion.cost_usd, session.total_cost_usd)
 
         total_ms = int((time.perf_counter() - t0) * 1000)
         log.info(
@@ -231,6 +266,9 @@ class Brain:
             brain=spec.id,
             usage=completion.usage,
             cost_usd=completion.cost_usd,
+            cost_inr=cost_inr,
+            total_cost_usd=session.total_cost_usd,
+            total_cost_inr=total_inr,
             latency_ms=total_ms,
             turn_count=len(session.turns),
             tool_calls=rounds,
@@ -248,8 +286,10 @@ class Brain:
         *,
         with_tools: bool,
     ) -> Completion:
+        """One model call: admitted by the monthly limit first, metered after."""
         give_tools = with_tools and self.gateway is not None and spec.tools_allowed
-        return await self.brains.router_for(spec.id).complete(
+        await self._admit(req.user_id, spec)
+        completion = await self.brains.router_for(spec.id).complete(
             tier=self._tier(req),
             system=self._system,
             system_dynamic=trailer,
@@ -258,6 +298,8 @@ class Brain:
             effort=self._effort(),
             tools=self.gateway.registry.specs() if (give_tools and self.gateway) else None,
         )
+        await self.billing.record(req.user_id, spec.id, completion.cost_usd)
+        return completion
 
     async def _run_loop(
         self,
@@ -461,7 +503,7 @@ class Brain:
             completion = await self._complete(messages, trailer, req, spec, with_tools=False)
             reply = completion.text.strip() or fallback
             usage, cost, model = completion.usage, completion.cost_usd, completion.model
-        except LLMError as exc:
+        except (LLMError, BudgetError) as exc:  # the action stands: narrate it plainly
             log.warning(
                 "approval narration failed; using deterministic reply",
                 extra={"session_id": session.id, "error": str(exc)[:120]},
@@ -480,6 +522,7 @@ class Brain:
         await self._save_after_action(session)
         from jarvis.llm.base import Usage
 
+        cost_inr, total_inr = await self._rupees(cost, session.total_cost_usd)
         return ChatResponse(
             session_id=session.id,
             reply=reply,
@@ -488,6 +531,9 @@ class Brain:
             brain=spec.id,
             usage=usage or Usage(),
             cost_usd=cost,
+            cost_inr=cost_inr,
+            total_cost_usd=session.total_cost_usd,
+            total_cost_inr=total_inr,
             latency_ms=0,
             turn_count=len(session.turns),
             tool_calls=1 if approved else 0,
@@ -498,10 +544,14 @@ class Brain:
         """Streaming variant for the CLI (and Phase 1 TTS). Persists the full reply at the end."""
         req = await self._start(req)
         async with self._serialised(req.session_id):
-            async for delta in self._chat_stream(req):
-                yield delta
+            inner = self._chat_stream(req)
+            try:
+                async for delta in inner:
+                    yield delta
+            finally:  # a reader that leaves early closes the inner stream now (and its meter)
+                await inner.aclose()
 
-    async def _chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
+    async def _chat_stream(self, req: ChatRequest) -> AsyncGenerator[str, None]:
         trace_id = get_trace_id()
         if req.brain:
             self.brains.get(req.brain)
@@ -510,6 +560,7 @@ class Brain:
         session = await self._load_or_create(req)
         spec = self._resolve_brain(session, req)
         router = self.brains.router_for(spec.id)
+        await self._admit(req.user_id, spec)  # turn-level: refused → nothing stored
         session.append(Turn(role=Role.USER, content=text, trace_id=trace_id))
         await self.store.save(session)
 
@@ -518,24 +569,33 @@ class Brain:
             tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
         )
         chunks: list[str] = []
-        async for delta in router.stream(
-            tier=self._tier(req),
-            system=self._system,
-            system_dynamic=trailer,
-            messages=messages,
-            max_tokens=self.s.max_output_tokens,
-            effort=self._effort(),
-        ):
-            chunks.append(delta)
-            yield delta
+        model = router.resolve(self._tier(req))
+        # Streams report no usage: estimate tokens from characters so a paid streamed reply is
+        # metered (and counts toward the limit) instead of costing "₹0".
+        sent = len(self._system) + len(trailer) + sum(len(m.text()) for m in messages)
+        await self._admit(req.user_id, spec)  # call-level, like every other model call
+        finished = False
+        try:
+            async for delta in router.stream(
+                tier=self._tier(req),
+                system=self._system,
+                system_dynamic=trailer,
+                messages=messages,
+                max_tokens=self.s.max_output_tokens,
+                effort=self._effort(),
+            ):
+                chunks.append(delta)
+                yield delta
+            finished = True
+        finally:
+            if not finished and chunks:  # cut short (client gone, provider error): still paid
+                partial = priced_cost(model, estimate_usage(sent, len("".join(chunks))))
+                await self.billing.record(req.user_id, spec.id, partial)
 
         reply = "".join(chunks).strip()
+        cost = priced_cost(model, estimate_usage(sent, len(reply)))
         session.append(
-            Turn(
-                role=Role.ASSISTANT,
-                content=reply,
-                trace_id=trace_id,
-                model=router.resolve(self._tier(req)),
-            )
+            Turn(role=Role.ASSISTANT, content=reply, trace_id=trace_id, model=model, cost_usd=cost)
         )
         await self.store.save(session)
+        await self.billing.record(req.user_id, spec.id, cost)

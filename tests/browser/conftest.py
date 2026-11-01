@@ -75,6 +75,7 @@ def server_url() -> Iterator[str]:
         "JARVIS_AUTH_MODE": "token",
         "JARVIS_API_TOKEN": TOKEN,
         "JARVIS_LOG_LEVEL": "WARNING",
+        "JARVIS_USD_INR_LIVE": "0",  # the default rate (₹95.24): no call to frankfurter.dev
     }
     env.pop("JARVIS_ANTHROPIC_API_KEY", None)
     proc = subprocess.Popen(

@@ -47,6 +47,30 @@ def is_priced(model: str) -> bool:
     return model in PRICES
 
 
+def is_paid(model: str) -> bool:
+    """True when `model` is in the price table with a price above zero: the only models the
+    owner's monthly limit applies to (free and unpriced models are never blocked)."""
+    p = PRICES.get(model)
+    return p is not None and (
+        p.input_per_mtok > 0
+        or p.output_per_mtok > 0
+        or p.cache_read_per_mtok > 0
+        or p.cache_write_per_mtok > 0
+    )
+
+
+CHARS_PER_TOKEN = 4  # rough English average; used only when a provider reports no usage
+
+
+def estimate_usage(input_chars: int, output_chars: int) -> Usage:
+    """Token counts for a call whose provider reported none (the streaming path). An estimate,
+    shown with "≈" like every rupee figure; it keeps a streamed paid reply from metering at 0."""
+    per = CHARS_PER_TOKEN
+    return Usage(
+        input_tokens=-(-max(0, input_chars) // per), output_tokens=-(-max(0, output_chars) // per)
+    )
+
+
 def cost_usd(model: str, usage: Usage) -> float:
     price = PRICES.get(model)
     if price is None:

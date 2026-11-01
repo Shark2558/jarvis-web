@@ -2,9 +2,12 @@
 // Talks to the API (chat, brains, approvals, audit, conversations) and renders the panels' content.
 // All server text reaches the DOM via textContent or esc(); never raw innerHTML.
 // The Command Deck (console-deck.js) shows vitals from the events this file fires:
-//   jarvis:vitals {turns, brain, model, cost, rttMs?}  jarvis:approvals {count, fresh}
-//   jarvis:audit {verified, count}                     jarvis:event {kind, text, at, live?}
-//   jarvis:integrations {google, email}                jarvis:ready {returning} (signed in, booting)
+//   jarvis:vitals {turns, brain, model, cost (₹, this conversation), rttMs?}
+//   jarvis:approvals {count, fresh}                    jarvis:audit {verified, count}
+//   jarvis:event {kind, text, at, live?}               jarvis:integrations {google, email}
+//   jarvis:ready {returning} (signed in, booting)      jarvis:reply {refused?} (spend may have
+//                                                      changed: console-usage.js reloads it)
+// Costs are shown in rupees only ("≈ ₹", JarvisDeck.rupees): the API sends *_inr beside *_usd.
 // console-brief.js uses the same transport through window.JarvisConsole.api, and asks
 // window.JarvisConsole.ready() when it starts in case it arrived after jarvis:ready.
 (() => {
@@ -27,6 +30,8 @@
   const FX = window.JarvisFX || { core: (s) => `<span class="core ${s === 'lg' || s === 'sm' ? s : ''}" aria-hidden="true"></span>`,
     setBusy() {}, setAlert() {}, ripple() {}, refresh() {} };
   const Deck = window.JarvisDeck || { open() {}, close() {}, isOpen: () => true, isPhone: () => false };
+  const rupees = (v) => (typeof Deck.rupees === 'function' ? Deck.rupees(v) : ''); // never a dollar sign
+  const LIMIT_FALLBACK = 'This month\'s AI spending limit is used up. Raise it in Vitals, or switch to the free brain.';
 
   const state = { sessionId: null, authMode: 'token', token: ssGet('jarvis_token'), honorific: 'Sir',
     brains: [], brain: null, busy: false, seenApprovals: null, seenAudit: new Set() };
@@ -107,8 +112,8 @@
 
   function addMsg(role, text, metaParts) {
     clearWelcome();
-    if (role === 'sys' || role === 'error') {
-      const d = document.createElement('div'); d.className = 'sys' + (role === 'error' ? ' error' : '');
+    if (role === 'sys' || role === 'error' || role === 'limit') { // limit: the monthly spending limit said no
+      const d = document.createElement('div'); d.className = 'sys' + (role === 'error' ? ' error' : role === 'limit' ? ' limit' : '');
       d.setAttribute('role', role === 'error' ? 'alert' : 'status'); d.textContent = text;
       $('log').appendChild(d); scrollDown(); return;
     }
@@ -188,7 +193,7 @@
   function brainLabel(id) { const b = state.brains.find(x => x.id === id); return b ? b.label : id; }
   function renderStats(r, rttMs) {
     const d = { brain: r.brain ? brainLabel(r.brain) : (currentBrain() ? currentBrain().label : null), model: r.model || null,
-      turns: Number.isFinite(r.turn_count) ? r.turn_count : 0, cost: Number.isFinite(r.cost_usd) ? r.cost_usd : 0 };
+      turns: Number.isFinite(r.turn_count) ? r.turn_count : 0, cost: Number.isFinite(r.total_cost_inr) ? r.total_cost_inr : 0 };
     if (Number.isFinite(rttMs)) d.rttMs = rttMs;
     emit('jarvis:vitals', d);
   }
@@ -293,7 +298,7 @@
     if (shown) { addMsg('sys', 'Earlier conversation restored.'); note('info', 'Conversation restored'); }
     else renderWelcome();
     renderStats({ brain: (sess.metadata || {}).brain, model: last ? last.model : null,
-      turn_count: sess.turns.length, cost_usd: sess.total_cost_usd, latency_ms: null });
+      turn_count: sess.turns.length, total_cost_inr: sess.total_cost_inr, latency_ms: null });
     const b = (sess.metadata || {}).brain;
     if (b && state.brains.some(x => x.id === b) && b !== state.brain) { state.brain = b; renderBrains(); }
   }
@@ -514,9 +519,10 @@
     setSession(r.session_id);
     if (r.brain && r.brain !== state.brain && state.brains.some(b => b.id === r.brain)) { state.brain = r.brain; renderBrains(); }
     const meta = [r.brain ? brainLabel(r.brain) : null, r.model, (r.latency_ms / 1000).toFixed(1) + ' s',
-      r.cost_usd > 0 ? '$' + r.cost_usd.toFixed(4) : null, r.tool_calls ? `${r.tool_calls} tool ${r.tool_calls === 1 ? 'call' : 'calls'}` : null];
+      r.cost_inr > 0 ? rupees(r.cost_inr) : null, r.tool_calls ? `${r.tool_calls} tool ${r.tool_calls === 1 ? 'call' : 'calls'}` : null];
     addMsg('jarvis', r.reply, meta);
     renderStats(r, rttMs);
+    emit('jarvis:reply', { refused: false });
     note('reply', Number.isFinite(rttMs) ? `Reply · ${Math.round(rttMs)} ms` : 'Reply');
     if (r.tool_calls || (r.pending_approvals || []).length || r.decided) refreshSide();
     if (fresh) refreshConvos(); else bumpCurrentConvo(r.turn_count);
@@ -528,8 +534,20 @@
       const t0 = performance.now(); // reply latency as the owner feels it: the whole round trip
       const r = await api('/v1/chat', { body: { message: text, session_id: state.sessionId, brain: state.brain } });
       handleResponse(r, performance.now() - t0);
-    } catch (e) { showTyping(false); addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); note('error', 'Reply failed'); }
+    } catch (e) {
+      showTyping(false);
+      if (e.status === 402) limitReached(e);
+      else { addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); note('error', 'Reply failed'); }
+    }
     finally { busy(false); refocus(); }
+  }
+  /** 402 budget_reached: not a crash, a JARVIS note in the conversation with the server's own
+   *  words (rupees); Vitals reloads the month so its bar shows the limit reached. */
+  function limitReached(e) {
+    const m = e && typeof e.message === 'string' ? e.message.trim() : '';
+    addMsg('limit', m && m.length <= 300 && !/^[a-z0-9_.-]+$/i.test(m) ? m : LIMIT_FALLBACK);
+    note('info', 'Monthly limit reached');
+    emit('jarvis:reply', { refused: true });
   }
   async function decide(id, action, card, sid, tool) {
     if (state.busy) return; // one action at a time: a reply may still be arriving
@@ -547,7 +565,11 @@
       }
       note('approval', `${action === 'approve' ? 'Approved' : 'Declined'} · ${tool || 'action'}`);
       handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } }), { decided: true }));
-    } catch (e) { showTyping(false); addMsg('error', `Couldn't ${action}. ` + e.message); refreshSide(); }
+    } catch (e) {
+      showTyping(false);
+      if (e.status === 402) limitReached(e); else addMsg('error', `Couldn't ${action}. ` + e.message);
+      refreshSide();
+    }
     finally { busy(false); }
   }
 

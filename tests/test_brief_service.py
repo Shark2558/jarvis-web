@@ -393,7 +393,9 @@ def test_cost_note_uses_the_fast_model_price() -> None:
         default_tz="Asia/Kolkata",
     )
     note = svc.cost_note()
-    assert "₹3 a month" in note and "$0.034" in note and "at most 6 a day" in note
+    # rupees only (slice 7b): ≈ $0.034 a month × 95.24 = ₹3; no dollar figure anywhere
+    assert note.startswith("About ₹3 a month for one short summary a day on the fast model")
+    assert "at most 6 a day" in note and "$" not in note
     trains = BrainSpec(
         id="g", label="G", provider=MockProvider(), tiers=tiers, trains_on_content=True
     )
@@ -663,6 +665,7 @@ async def test_consent_texts_say_what_is_sent_and_an_unpriced_brain_is_not_free(
         assert "calendar titles" in text and "senders, subjects and previews" in text
     assert "cost" in str(ei.value)
     assert "No charge" not in note and "unknown" in note and len(note) <= 300
+    assert "$" not in note and "$" not in str(ei.value)
 
 
 def _svc_with(fast_model: str, *, brain_id: str = "anthropic") -> BriefService:
@@ -683,6 +686,7 @@ async def test_consent_texts_name_anthropics_claude_and_a_free_model_says_so() -
     svc = _svc_with("claude-haiku-5-5")
     note = svc.cost_note()
     assert "Anthropic's Claude" in note and "calendar titles" in note and len(note) <= 300
+    assert "₹" in note and "$" not in note
     with pytest.raises(SettingsRejected, match="Anthropic's Claude"):
         await svc.update_settings(OWNER_UID, SettingsPatch(ai_summary=True))
     assert _svc_with("mock").cost_note().startswith("No charge")  # priced at $0 in the table

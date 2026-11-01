@@ -33,8 +33,10 @@ codes and field names are as written; these are the details §5 left open.
 
 1. **Stream final event.** `/v1/chat/stream` was plain text with no events. It now ends with an
    ASCII record separator and one JSON object: `"\x1e" + {"memory_used": [{id, text}]}` (always
-   sent when the reply finished; absent when the stream broke). `Brain.chat_stream(req,
-   meta=StreamMeta())` fills `meta.memory_used` for the route; the CLI keeps plain deltas.
+   sent when the reply finished; absent when the stream broke). `"\x1e"` is stripped from the
+   model's deltas, so it appears once; clients parse the JSON after the LAST separator.
+   `Brain.chat_stream(req, meta=StreamMeta())` fills `meta.memory_used` for the route; the CLI
+   keeps plain deltas.
    `tests/test_api.py::test_chat_stream` was updated for the final event.
 2. **Response shapes §5 left open.** `PUT /v1/memory/settings` → `{use, learn,
    learn_consented_at}`; `PUT /v1/memory/profile/{label}` → the whole profile `{about,
@@ -42,7 +44,9 @@ codes and field names are as written; these are the details §5 left open.
    fields); a duplicate POST returns the existing fact. `DELETE` routes → 204. Other errors use
    the app envelope: unknown label / fact id → 404 `not_found`; import over 512 KB → 413
    `too_large`; not an export, or `confirm` ≠ `FORGET` → 422 `input_rejected`; storage down or
-   a document unreadable → 503 `memory_unavailable` (fail closed, never overwritten). Bodies
+   a document unreadable → 503 `memory_unavailable` (fail closed, never overwritten); blank or
+   invisible-only text, an import over 1,000 facts → 422 `input_rejected` (review fix round);
+   PATCH on a replaced (history) fact → 404; new text drops the old keywords. Bodies
    are strict (`confirm_spend` must be the JSON literal `true`). `learn_cost_note_inr` is a
    sentence (≤ 300 chars, rupees only), like the brief's `ai_cost_note`.
 3. **`memory_save` escalation is stricter than "entered this turn".** The card appears whenever
@@ -62,22 +66,35 @@ codes and field names are as written; these are the details §5 left open.
    never invalidate the shard cache. Learning cursors (per conversation, newest 50) and the
    day's run count also live in the header.
 6. **Sensitive filter.** As D9, plus passport / voter-ID / licence numbers stated with their word
-   and access keys (`sk-…`, `AKIA…`, `ghp_…`); NFKC, invisible characters dropped, line breaks
-   read as separators. Postal PIN codes pass. Learned facts additionally drop on a
+   and access keys (`sk-…`, `AKIA…`, `ghp_…`, JWTs); text read after NFKD with combining marks,
+   variation selectors and invisible characters dropped and Cyrillic / Greek look-alikes folded
+   to Latin; any separators between digit groups; line breaks read as separators. A fact's
+   keywords are checked together with its text on every path. Postal PIN codes pass. Learned facts additionally drop on a
    special-category keyword check (health, religion, caste, politics, sexuality); facts the
    owner tells or adds do not (their choice), the numeric/secret filter applies to every path.
 7. **Learning details.** The extraction call uses the conversation's own brain (always one with
    `tools_allowed`), FAST tier, `allow_degrade=False`; existing notes most related to the
    messages (≤ 30, ≤ 2,400 chars) are sent so a `replace` can name an id. ≤ 10 new facts and ≤
-   5 replacements per run; any other key in the output (e.g. `delete`) is ignored. The run is
-   counted (and the cursor moved) in a transaction before the call, so the daily cap holds and a
-   failed call is not retried on the same messages; a run skipped at the ₹ limit is not
-   counted. Metered under brain label `memory`. A learned replacement keeps the old fact's
-   pinned flag. `source.turn` is the newest owner message of the batch; it is `null` for
-   `memory_save` (the tool does not know the turn index).
+   5 replacements per run; any other key in the output (e.g. `delete`) is ignored. Two-phase
+   (review fix round, `recall/lease.py`): the claim transaction stores a lease and counts the
+   run (so the daily cap holds); the cursor moves only in the apply transaction, which checks
+   the lease. A failed lease or one ≥ 5 minutes old is retried without counting a run; after 2
+   failed attempts the batch is skipped and audited. A generation bumped by "Forget everything"
+   and "learning off" makes a run in flight apply nothing. A run skipped at the ₹ limit is not
+   counted. Audit result, metering (a chars/4 estimate when no usage came back) and the lease
+   hand-back run in a shielded `finally`. Metered under brain label `memory`. Extraction may
+   replace only `learned` facts and the replacement is never pinned. Pasted third-party text
+   (> 1,500 chars, mail headers, "On … wrote:", `>`-quoted, forwarded) is not learning input.
+   `source.turn` is the newest owner message of the batch; it is `null` for `memory_save` (the
+   tool does not know the turn index). **Sweep:** at the start of a chat / stream request (≤
+   once per 5 minutes per owner and instance) ≤ 3 other conversations updated since the consent
+   with unlearned owner messages are learned in the background; the scheduler tick runs the
+   same sweep awaited (≤ 20 s). Cost: one session-list query (≤ 10 docs) plus ≤ 10 session
+   reads per sweep, only while learning is on.
 8. **Import** merges facts (origin `imported`, ids kept when free) and fills only empty profile
    blocks; settings are never imported (learning needs the owner's consent). History entries
-   in the file count as skipped.
+   in the file count as skipped. At most 1,000 facts per file; linear (one duplicate index, one
+   placement pass); imported dates are aware UTC clamped to 2000 … now.
 9. **Config.** `JARVIS_MEMORY_ENABLED` (default on: notes, tools, `/v1/memory`; off → 404) and
    `JARVIS_MEMORY_LEARN_DAILY_CAP` (default and maximum 20). Persona `p3.0` adds the memory
    standing rule. The CLI (`jarvis chat`) builds its Brain without long-term memory.
@@ -199,7 +216,39 @@ the owner as "About ₹5 a month, at most ₹24 at 20 runs a day" (8 runs/day ty
 worst). The notes block adds ≤ ~4.3k chars (≈ 1.1k tokens) to a reply's input when memory is
 full and relevant; typically a few hundred.
 
-**Open / deferred.** Fresh-context code, Python and security reviews (CLAUDE.md) still to run.
-Cloud Run throttles CPU after a response: a background learning run may finish only when the
-next request arrives (`--no-cpu-throttling` would make it prompt; not changed here). The CLI
-runs without long-term memory.
+**Open / deferred.** Cloud Run throttles CPU after a response: a background learning run may
+finish only when the next request arrives — the leases, the request-start sweep and the tick
+sweep (review fix round) make that late, never lost. The CLI runs without long-term memory.
+
+### Review findings and fixes (fix round, 2026-11-01)
+Two fresh-context reviews (Python, security); each finding was reproduced by a script, then got
+a failing regression test, then the fix. Unit suite 1,250 passed / 34 skipped on 3.11 (1,249 /
+35 on 3.12; was 1,160 / 34); `ruff check` and `ruff format --check` clean; `mypy src` 11 errors,
+all pre-existing (none in touched modules); `python evals/memory/run.py --mock` and
+`make eval-mock` PASS.
+
+| # | Finding | Sev. | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | Send-all (≤ 40 facts) cut to 12 by `render_block` in category order; the relevant fact never sent | HIGH | 12-fact cap only in ranked selection; `render_block` enforces the char budget only; send-all measured on the rendered lines, else ranked | `test_recall_retrieval::test_send_all_with_13_to_40_facts_keeps_every_fact_in_the_block`, `…_overflow_the_budget_falls_back_to_ranked`; eval `recall_small` |
+| 2 | O(n²) re-tokenisation on the event loop (500-fact import ≈ 14 s; 524 KB ≈ 50–68 s) | HIGH | Memoised tokens / token sets / keys; import = one duplicate index + one placement pass (500 facts ≈ 0.07 s); ≤ 1,000 facts (422); 413 from Content-Length before reading, or while a chunked body streams; BM25 iterates fact words | `test_recall_ops::test_a_500_fact_import_takes_well_under_a_second`, `test_memory_api::test_an_oversized_import_is_refused_from_its_content_length`, `…_500_fact_round_trip_is_fast_and_identical`; eval `scale` |
+| 3 | Learning lost on Cloud Run: cursor moved and run counted before the call; a cancelled / killed run lost its batch; audit stuck at `executing`; a cancelled call unmetered; retry only from the same conversation | HIGH | Two-phase lease (`recall/lease.py`), cursor moves in the apply transaction; 5-minute abandonment, retry uncounted, skip + audit after 2 failures; shielded `finally` (audit, meter with estimate, hand-back); request-start sweep (≤ 3 conversations) and tick sweep (≤ 20 s) | `test_recall_durable` (cancelled run retried, killed-instance lease, late stale run, two failures skipped, two instances racing, metering ×2, sweep ×3), `test_recall_brain::test_a_chat_request_sweeps_…`, `…_scheduler_sweep_is_awaited_bounded_…`, `test_scheduler_auth::test_tick_also_learns_…` |
+| 4 | Approval decided on a training brain: the narration with fact text was stored after the cutoff and sent to it | HIGH | `Turn.tool_derived` on approval narration and on replies written after tool rounds; `_window_for` drops them for training brains; `_decide_locked` / `_chat` split into helpers | `test_recall_brain::test_a_forget_approved_on_a_training_brain_never_reaches_it`, `…_a_mail_approved_…` |
+| 5 | A run in flight applied after "Forget everything" / learning off | MED | `LearnState.gen` bumped by wipe and learn-off; apply drops stale results and consumes the batch | `test_recall_durable::test_a_run_in_flight_across_a_wipe_or_learning_off_stores_nothing`; eval `learning_safety` (+ negative control) |
+| 6 | Extraction could replace a told / added fact and inherit `pinned`; pasted mail was learning input | MED | Replace only `origin == learned`, never pinned; `recall/pasted.py` keeps pasted text out of the snapshot | `test_recall_durable::test_extraction_cannot_replace_…`, `…_never_inherits_the_pin`, `…_pasted_third_party_text_…`; eval `learning_safety` |
+| 7 | Filter bypasses (separators, combining marks, VS16 / zero-width, Aadhaar 4-8, spaced / homoglyph PAN, password phrasings, "pin for …"); keywords unfiltered | MED | NFKD + marks / format dropped + confusables folded; separator-tolerant patterns; text + keywords checked on every path; keywords on the `memory_save` card | `test_recall_sensitive::test_disguised_numbers_…` (27 cases), `…_still_lets_ordinary_facts_through`, `test_recall_ops::test_keywords_cannot_smuggle_…`, `test_recall_tools::test_keywords_are_filtered_and_shown_on_the_card`; eval `sensitive` 47 × 6 + keyword smuggling |
+| 8 | Torn header / shard read cached under the old rev → deleted fact resurrected | MED | Shards cached only when they hash to the header rev; ≤ 3 retries, else used uncached | `test_recall_store::test_a_torn_read_is_never_cached_under_the_old_rev`, `…_stays_torn_is_returned_but_not_cached` |
+| 9 | Naive / year-9999 imported dates made recall raise every turn | MED | `Fact` dates aware UTC within 2000 … 2100; import clamps to now; the whole recall in `try`, a warning with the exception type | `test_recall_ops::test_imported_timestamps_are_aware_and_clamped`, `…_stored_naive_or_absurd_dates_…` |
+| 10 | Evals missing the above | MED | Suites `recall_small`, `scale`, `learning_safety`; 22 sensitive bypasses (the old filter misses 19) + keyword smuggling; training / taint / spend negative controls still fail | `test_evals_memory` |
+| 11 | `"\x1e"` in model text could forge the final event; README stream section stale | LOW | Stripped from deltas; route doc + README: parse after the LAST separator | `test_memory_api::test_a_record_separator_in_model_text_cannot_forge_the_final_event` |
+| 12 | Stop-word-only question ("what do you know about me", `memory_search("everything")`) with > 40 facts → nothing | LOW | Broad questions about the notes fall back to pinned, then most recent (small talk still gets nothing) | `test_recall_retrieval::test_a_broad_question_falls_back_…`, `test_recall_tools::test_search_for_everything_…` |
+| 13 | Blank / zero-width-only text on POST / PATCH → 500 | LOW | `InvalidMemoryInput` → 422 `input_rejected` with a plain message | `test_recall_ops::test_blank_text_is_an_input_error_not_a_crash`, `test_memory_api::test_blank_or_invisible_text_is_422_input_rejected` |
+| 14 | Deleting a fact kept the facts it replaced (30 days, exported) | LOW | Delete cascades along `replaced_by` chains | `test_recall_ops::test_deleting_a_fact_also_deletes_the_facts_it_replaced` |
+| 15 | Indic tokens split at marks; stale keywords after an edit; PATCH on history; cap 0 note "₹0"; 96-line `memory_tools` | LOW | Marks kept in tokens; new text drops keywords; history → 404; "learning is switched off"; three tool builders | `test_recall_retrieval::test_tokens_keep_indic_…`, `test_recall_ops::test_editing_the_text_drops_stale_keywords`, `…_editing_a_replaced_fact_is_not_found`, `test_memory_api::test_patch_on_a_replaced_fact_is_404`, `test_recall_learning::test_with_a_daily_cap_of_zero_…` |
+
+Deliberate choices: the request-start sweep is throttled to once per 5 minutes per owner and
+instance (always on a fresh instance): a warm plain-chat turn still adds ≤ 1 Firestore read, and
+while learning is on at most one turn per 5 minutes adds the session-list query (≤ 10 docs) plus
+a read per conversation with unlearned messages (with learning off: none); small talk made only of stop words still gets no notes (only broad questions
+about the notes fall back). The eval rig turns the HTTP rate limit off (past ~120 calls it
+measured the limiter, not the filter). Not changed: `Brain._run_loop` (70 lines) and
+`create_app` were over 50 lines before this round and are untouched.

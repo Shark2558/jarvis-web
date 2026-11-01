@@ -162,7 +162,7 @@ All settings are `JARVIS_*` env vars (see `.env.example`). Notable ones:
 GET  /health                      liveness + dependency check
 POST /v1/chat                     {"message": "...", "session_id": null, "tier": null}
 POST /v1/chat/stream              same body, text/plain streamed deltas
-GET  /v1/sessions?user_id=owner   list
+GET  /v1/sessions                 list (the signed-in owner's)
 GET  /v1/sessions/{id}            full transcript (audit / replay)
 DELETE /v1/sessions/{id}          forget
 ```
@@ -190,8 +190,8 @@ balanced tier, mean cost ≤ $0.01/turn. The harness writes `evals/phase0/report
 - **User turn is persisted before the LLM call.** A provider outage never loses owner input;
   the window builder tolerates the resulting same-role run.
 - **Graceful degradation.** STRONG → BALANCED → FAST on transient errors, never mid-stream.
-- **Single user, but no cross-user leaks.** `user_id` is checked against the session owner now
-  so multi-user (P6) is a config change, not a security retrofit.
+- **No cross-user leaks.** The user id comes from the sign-in (`jarvis.api.identity`), never
+  from the request body or query; every session and approval is checked against it.
 
 ## What is deliberately not here
 

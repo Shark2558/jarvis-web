@@ -206,3 +206,36 @@ def test_quick_path_also_creates_and_binds_the_token_key(script: str) -> None:
     assert _top_level_depth_at(script, line) == 0  # runs on the quick AND the full path
     quick = script.split('if [ "$QUICK" = yes ]; then\n  CONFIG_FLAGS=(', 1)[1].split("else", 1)[0]
     assert "--update-secrets" in quick and "JARVIS_TOKEN_KEY=jarvis-token-key:latest" in quick
+
+
+# ---- security review M5: nothing unhashed reaches the image; CI pins what it installs ---------
+
+DOCKERFILE = ROOT / "Dockerfile"
+LOCK = ROOT / "requirements.lock"
+
+
+def test_image_installs_only_hash_checked_artifacts() -> None:
+    df = DOCKERFILE.read_text(encoding="utf-8")
+    assert "--upgrade pip" not in df  # an unpinned, unhashed pip straight from the index
+    assert "pip install --require-hashes -r requirements.lock" in df
+    # the app builds with the LOCKED setuptools/wheel: no isolated env fetching them unhashed
+    assert "pip install --no-build-isolation --no-deps ." in df
+    for line in df.splitlines():
+        if line.startswith("RUN") and "pip install" in line:
+            assert "--require-hashes" in line or "--no-build-isolation --no-deps" in line, line
+
+
+def test_lock_pins_pip_and_the_build_backend_with_hashes() -> None:
+    lock = LOCK.read_text(encoding="utf-8")
+    for pkg in ("pip", "setuptools", "wheel"):
+        assert re.search(
+            rf"^{pkg}==[0-9][0-9.]* \\\n\s+--hash=sha256:[0-9a-f]{{64}}", lock, re.M
+        ), pkg
+    pins = re.findall(r"^([A-Za-z0-9_.-]+)==", lock, re.M)
+    assert len(pins) == len(re.findall(r"^[A-Za-z0-9_.-]+==[^\n]* \\\n\s+--hash=", lock, re.M))
+
+
+def test_browser_job_pins_playwright(ci: dict[str, Any]) -> None:
+    run = "\n".join(str(s.get("run", "")) for s in ci["jobs"]["browser"]["steps"])
+    assert "playwright==1.63.0" in run
+    assert not re.search(r"\bplaywright(?!==)(\s|$)", run.split("playwright install")[0])

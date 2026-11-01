@@ -1,0 +1,8 @@
+# requirements-build.in — the build toolchain for the Docker image, locked WITH HASHES into
+# requirements.lock next to the runtime dependencies (`make lock`). The image installs the
+# lock, then builds the app with `pip install --no-build-isolation --no-deps .`, so pip,
+# setuptools and wheel are never fetched unhashed. Exact pins on purpose: bump deliberately
+# (keep them satisfying [build-system].requires in pyproject.toml).
+pip==26.2.1
+setuptools==84.0.0
+wheel==0.48.0

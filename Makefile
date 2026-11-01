@@ -25,12 +25,14 @@ chat:
 	jarvis chat --stream
 
 # Playwright smoke tests against the real console in headless Chromium (CI `browser` job).
-# Needs: pip install playwright && playwright install --with-deps chromium
+# Needs: pip install playwright==1.63.0 && playwright install --with-deps chromium
 browser-test:
 	JARVIS_BROWSER_TESTS=1 pytest -q tests/browser -m browser
 
-# Regenerate the hash-locked runtime dependencies the Docker image installs from.
-# Run after any change to [project].dependencies in pyproject.toml (same Python as the image).
+# Regenerate the hash-locked dependencies the Docker image installs from: runtime deps from
+# pyproject.toml plus the build toolchain (pip, setuptools, wheel) from requirements-build.in.
+# Run after any change to either (same Python as the image: 3.12).
 lock:
 	pip install -q pip-tools
-	pip-compile --generate-hashes --strip-extras --allow-unsafe -o requirements.lock pyproject.toml
+	pip-compile --generate-hashes --strip-extras --allow-unsafe -o requirements.lock \
+		pyproject.toml requirements-build.in

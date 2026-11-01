@@ -192,6 +192,14 @@ class Settings(BaseSettings):
         "(Secret Manager `jarvis-token-key`). Outside dev the Google tools stay off without it.",
     )
 
+    # --- long-term memory (slice 8) ---
+    memory_enabled: bool = Field(
+        default=True, description="Notes about the owner, the memory tools and /v1/memory"
+    )
+    memory_learn_daily_cap: int = Field(
+        default=20, ge=0, le=20, description="Learning runs per owner per day (0: never learn)"
+    )
+
     # --- morning brief (slice 7) ---
     brief_scheduler_sa: str | None = Field(
         default=None,

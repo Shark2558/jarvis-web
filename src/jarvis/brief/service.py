@@ -511,6 +511,10 @@ class BriefService:
 
     # ---- scheduled ---------------------------------------------------------------------------
 
+    @property
+    def owners(self) -> tuple[str, ...]:
+        return tuple(self._owners)
+
     async def tick(self) -> TickResult:
         generated = delivered = 0
         for uid in self._owners:

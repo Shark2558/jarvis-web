@@ -17,6 +17,12 @@
   const refreshBtn = $('briefRefresh'), metaEl = $('briefMeta'), dlg = $('briefDialog');
   if (!panel || !box || !setBox || !noteEl) return;
   const Deck = window.JarvisDeck || { open() {}, isOpen: () => false, isPhone: () => false };
+  // per-device conveniences only (the settings disclosure); storage may throw or come back empty
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+  };
+  const SETTINGS_OPEN_KEY = 'jarvis_brief_settings_open'; // slice 8 D12: collapsed unless opened here
   const emit = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
   const log = (kind, text) => emit('jarvis:event', { kind, text, at: Date.now(), live: true });
 
@@ -68,6 +74,9 @@
     return svg;
   }
   const WARN = ['M8 1.8 14.6 13.5H1.4z', 'M8 6.2v3.3M8 11.6v.1'];
+  const GEAR = ['M8 3.6a4.4 4.4 0 1 1 0 8.8a4.4 4.4 0 1 1 0-8.8z', 'M8 6.1a1.9 1.9 0 1 1 0 3.8a1.9 1.9 0 1 1 0-3.8z',
+    'M8 1.3v2.3M8 12.4v2.3M1.3 8h2.3M12.4 8h2.3M3.3 3.3l1.6 1.6M11.1 11.1l1.6 1.6M3.3 12.7l1.6-1.6M11.1 4.9l1.6-1.6'];
+  const CHEVRON = ['M4.5 6.5 8 10l3.5-3.5'];
   function button(id, cls, text, onClick) {
     const b = mk('button', 'btn lift ' + cls, text); b.type = 'button'; if (id) b.id = id;
     b.addEventListener('click', onClick); return b;
@@ -336,7 +345,7 @@
     const on = settings().enabled === true, time = txt(settings().time, 5);
     const wrap = mk('div', 'bstate');
     wrap.append(mk('p', 'bempty', on ? `No brief yet today. JARVIS makes it${time ? ' at ' + time : ' each morning'}.`
-      : 'The morning brief is off. Switch it on below, or make one now.'));
+      : 'The morning brief is off. Switch it on in Settings below, or make one now.'));
     wrap.append(button('briefMake', 'primary bact', 'Make it now', () => generate(false, 'manual')));
     return wrap;
   }
@@ -500,19 +509,47 @@
   // The time picker is built once and updated in place, never rebuilt: rebuilding it under the
   // owner's arrow keys reset it to the saved time and dropped their next steps. It is never
   // disabled while saving either: that would drop keyboard focus.
-  let setSec = null, timeSel = null, timeDesc = null;
+  // The settings sit behind a "Settings" disclosure (slice 8 D12): collapsed by default, with a
+  // one-line summary while closed; open/closed is remembered on this device. Opening is never
+  // forced: a confirm started from a switch inside it can only start while it is open.
+  let setSec = null, setBtn = null, setSum = null, setBody = null, timeSel = null, timeDesc = null;
   function settingsShell() {
     if (setSec) return setSec;
     setSec = mk('section', 'bset');
-    const h = mk('h3', '', 'Settings'); h.id = 'briefSetT'; setSec.setAttribute('aria-labelledby', h.id);
+    const h = mk('h3', 'dhead');
+    setBtn = mk('button', 'dsc'); setBtn.type = 'button'; setBtn.id = 'briefSetBtn';
+    setBtn.setAttribute('aria-controls', 'briefSetBody');
+    const gear = icon(GEAR), chev = icon(CHEVRON);
+    gear.setAttribute('class', 'dgear'); chev.setAttribute('class', 'dchev');
+    setSum = mk('span', 'dsum'); setSum.id = 'briefSetSum';
+    setBtn.append(gear, mk('span', 'dl', 'Settings'), chev, setSum);
+    setBtn.addEventListener('click', () => settingsOpen(setBody.hidden, true));
+    h.append(setBtn);
+    setSec.setAttribute('aria-labelledby', setBtn.id);
+    setBody = mk('div', 'dbody'); setBody.id = 'briefSetBody';
     const row = mk('div', 'bopt'), t = mk('div', 'btxt');
     const l = mk('label', 'bl', 'Time'); l.htmlFor = 'briefTime';
     timeDesc = mk('small', ''); timeDesc.id = 'briefTimeD'; t.append(l, timeDesc);
     timeSel = mk('select', 'bsel'); timeSel.id = 'briefTime'; timeSel.setAttribute('aria-describedby', timeDesc.id);
     timeSel.addEventListener('change', () => timePicked(timeSel.value));
     row.append(t, timeSel);
-    setSec.append(h, row);
+    setBody.append(row);
+    setSec.append(h, setBody);
+    settingsOpen(store.get(SETTINGS_OPEN_KEY) === '1', false);
     return setSec;
+  }
+  function settingsOpen(open, remember) {
+    setBody.hidden = !open;
+    setSum.hidden = open; // the summary stands in for the rows only while they are hidden
+    setBtn.setAttribute('aria-expanded', String(open));
+    if (remember) store.set(SETTINGS_OPEN_KEY, open ? '1' : '0');
+  }
+  /** "07:00 · AI summary on · Inbox copy off" — what the closed settings hold, in one line. */
+  function settingsSummary(st) {
+    const word = (v) => (v === true ? 'on' : 'off');
+    const time = S.timeWant || txt(st.time, 5) || '07:00';
+    return [st.enabled === true ? time : 'Brief off', `AI summary ${word(st.ai_summary)}`,
+      `Inbox copy ${word(st.inbox_delivery)}`].join(' · ');
   }
   function syncTime(saved, tz) {
     timeDesc.textContent = tz ? `Every morning, ${tz} time.` : 'Every morning, your time.';
@@ -529,6 +566,8 @@
     if (!S.today) { setBox.textContent = ''; switchesKey = ''; return; } // nothing to set until the server has answered
     const st = settings(), t = S.today, sec = settingsShell(), timeRowEl = timeSel.parentNode;
     syncTime(txt(st.time, 5), txt(t.tz, 64));
+    const sum = settingsSummary(st);
+    if (setSum.textContent !== sum) setSum.textContent = sum;
     // the switches are rebuilt only when something they show changed: an unrelated update (the
     // live approvals count, a poll) must not swap a switch out from under a press
     const key = JSON.stringify([st.enabled, st.ai_summary, st.inbox_delivery, t.ai_available, t.inbox_available,
@@ -549,7 +588,7 @@
       !inOk && !inOn, askInbox);
     if (!inOk) inRow.querySelector('.btxt').append(button('briefReconnect', 'bact', 'Open Integrations', () => Deck.open('integrations', { focus: true })));
     // the switches are rebuilt around the time row, which stays where it is (moving it drops focus)
-    [...sec.children].forEach(n => { if (n !== timeRowEl && n.tagName !== 'H3') n.remove(); });
+    [...setBody.children].forEach(n => { if (n !== timeRowEl) n.remove(); });
     timeRowEl.before(onRow);
     timeRowEl.after(aiRow, inRow);
     if (sec.parentNode !== setBox) setBox.replaceChildren(sec);

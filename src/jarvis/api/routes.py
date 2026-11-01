@@ -3,7 +3,10 @@
 
 POST /v1/chat                 one turn (JSON)
 POST /v1/chat/stream          one turn, text/plain streamed deltas (402 first if the monthly
-                              limit refuses it: a stream that already said 200 can't)
+                              limit refuses it: a stream that already said 200 can't), then a
+                              final event: "\x1e" + {"memory_used": [{id, text}]} (slice 8).
+                              The reply text never contains "\x1e" (stripped from the model's
+                              deltas); clients parse the JSON after the LAST separator.
 GET  /v1/sessions             list the caller's sessions (+ total_cost_inr)
 GET  /v1/sessions/{id}        full transcript (audit / replay) (+ total_cost_inr)
 DELETE /v1/sessions/{id}      forget a session (owner's delete right)
@@ -12,6 +15,9 @@ GET  /health                  liveness + dependency check (unauthenticated)
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -19,7 +25,7 @@ from pydantic import BaseModel
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
 from jarvis.config import Settings
-from jarvis.core.brain import Brain
+from jarvis.core.brain import Brain, StreamMeta
 from jarvis.core.models import (
     ChatRequest,
     ChatResponse,
@@ -31,6 +37,7 @@ from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.tools.audit import AuditEntry
 
 router = APIRouter()
+STREAM_FINAL = "\x1e"  # ASCII record separator: the reply text ends, the final event follows
 
 
 # ---- dependencies --------------------------------------------------------------------------
@@ -113,7 +120,18 @@ async def chat_stream(
 ) -> StreamingResponse:
     req = req.model_copy(update={"user_id": uid})
     await brain.check_budget(req)  # 402 now; the stream checks again before its model call
-    return StreamingResponse(brain.chat_stream(req), media_type="text/plain; charset=utf-8")
+    return StreamingResponse(_with_final_event(brain, req), media_type="text/plain; charset=utf-8")
+
+
+async def _with_final_event(brain: Brain, req: ChatRequest) -> AsyncIterator[str]:
+    """The reply's deltas, then one final event (only when the reply finished)."""
+    meta = StreamMeta()
+    async for delta in brain.chat_stream(req, meta=meta):
+        text = delta.replace(STREAM_FINAL, "")  # model text can never forge the final event
+        if text:
+            yield text
+    used = [m.model_dump() for m in meta.memory_used]
+    yield STREAM_FINAL + json.dumps({"memory_used": used}, ensure_ascii=False)
 
 
 @router.get(

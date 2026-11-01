@@ -9,7 +9,9 @@ POST /v1/brief/seen         {date} → {ok, date, seen_at}; 404 when there is no
 GET  /v1/brief/settings     SettingsView
 PUT  /v1/brief/settings     SettingsPatch → SettingsView; 422 without a confirm flag, with an
                             out-of-range time, or inbox delivery without the gmail.insert scope
-POST /internal/brief/tick   Cloud Scheduler only (Google OIDC) → {checked, generated, delivered}
+POST /internal/brief/tick   Cloud Scheduler only (Google OIDC) → {checked, generated, delivered};
+                            then a learning sweep for each owner (slice 8, ≤ 20 s, awaited:
+                            the tick holds the CPU on Cloud Run)
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from jarvis.api.identity import current_user
 from jarvis.api.scheduler_auth import TICK_PATH, require_scheduler
 from jarvis.brief.models import SeenView, SettingsPatch, SettingsView, TickResult, TodayView
 from jarvis.brief.service import BriefService
+from jarvis.core.brain import Brain
 from jarvis.core.guardrails import InputRejected
 
 router = APIRouter(prefix="/v1/brief", dependencies=[Depends(require_auth)])
@@ -100,8 +103,11 @@ async def put_settings(
     dependencies=[Depends(require_scheduler)],
     include_in_schema=False,
 )
-async def tick(svc: BriefService = Depends(_svc)) -> TickResult:
-    return await svc.tick()
+async def tick(request: Request, svc: BriefService = Depends(_svc)) -> TickResult:
+    result = await svc.tick()
+    brain: Brain = request.app.state.brain
+    await brain.sweep_memory(svc.owners)  # bounded, never raises
+    return result
 
 
 __all__ = ["internal_router", "router"]

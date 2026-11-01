@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from jarvis.core.guardrails import PendingAction
 from jarvis.llm.base import ContentBlock, Role, Usage
+from jarvis.recall.models import MemoryRef
 
 
 def _now() -> datetime:
@@ -39,6 +40,9 @@ class Turn(BaseModel):
     usage: Usage | None = None
     cost_usd: float = 0.0
     latency_ms: int | None = None
+    # produced from a tool or approval outcome (an approval's narration, a reply written after
+    # tool rounds): private data, never sent to a brain that may train on content
+    tool_derived: bool = False
 
 
 class Session(BaseModel):
@@ -122,6 +126,9 @@ class ChatResponse(BaseModel):
     total_cost_inr: float = Field(default=0.0, description="The whole conversation, ≈ rupees")
     latency_ms: int
     turn_count: int
+    memory_used: list[MemoryRef] = Field(
+        default_factory=list, description="Notes about the owner sent with this reply"
+    )
 
 
 class SessionSummary(BaseModel):

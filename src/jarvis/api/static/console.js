@@ -10,6 +10,8 @@
 // Costs are shown in rupees only ("≈ ₹", JarvisDeck.rupees): the API sends *_inr beside *_usd.
 // console-brief.js uses the same transport through window.JarvisConsole.api, and asks
 // window.JarvisConsole.ready() when it starts in case it arrived after jarvis:ready.
+// Slice 8: jarvis:brain {id, label, trains, tools} (also JarvisConsole.brain()) for the Memory
+// panel; a reply's `memory_used: [{id, text}]` becomes a "Used N memories" chip (text only).
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -19,6 +21,8 @@
   // [U+202E] markers. The server already strips them from summaries; this also covers the
   // raw arguments.
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+  // Memory text keeps ZWNJ/ZWJ (U+200C/U+200D), which Indic scripts and emoji need.
+  const INVISIBLE_KEEP_JOINERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const visible = (s) => String(s).replace(INVISIBLE, (c) => `[U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}]`);
   const lsGet = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
@@ -36,6 +40,7 @@
   const state = { sessionId: null, authMode: 'token', token: ssGet('jarvis_token'), honorific: 'Sir',
     brains: [], brain: null, busy: false, seenApprovals: null, seenAudit: new Set() };
   let readyDetail = null; // the last jarvis:ready detail (frozen); null while signed out
+  let brainDetail = null; // the brain answering now (frozen): {id, label, trains, tools}; null until known
 
   const SUGGESTIONS = [
     'What can you help me with?',
@@ -126,6 +131,45 @@
       row.appendChild(m);
     }
     $('log').appendChild(row); scrollDown();
+    return row;
+  }
+
+  // ---- "Used N memories" (slice 8 D10): what JARVIS sent about the owner with this reply ---------
+  // The texts are the owner's own notes, but still untrusted data: textContent only, capped.
+  let usedSeq = 0;
+  function memoriesUsed(list) {
+    return (Array.isArray(list) ? list : []).slice(0, 50)
+      .map(m => (m && typeof m === 'object' && typeof m.text === 'string' ? m.text.replace(INVISIBLE_KEEP_JOINERS, '').trim().slice(0, 400) : ''))
+      .filter(Boolean);
+  }
+  function svgIcon(paths) {
+    const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
+    [['viewBox', '0 0 20 20'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '1.6'], ['stroke-linecap', 'round'],
+      ['stroke-linejoin', 'round'], ['aria-hidden', 'true'], ['focusable', 'false']].forEach(([k, v]) => svg.setAttribute(k, v));
+    paths.forEach(d => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); svg.appendChild(p); });
+    return svg;
+  }
+  const MEMORY_PATHS = ['M5 3.5h9a1.5 1.5 0 0 1 1.5 1.5v11.5H6.5A1.5 1.5 0 0 1 5 15z', 'M5 15a1.5 1.5 0 0 1 1.5-1.5h9', 'M8.5 3.5v5l1.75-1.3L12 8.5v-5'];
+  function memoryChip(row, texts) {
+    let meta = row.querySelector('.meta');
+    if (!meta) { meta = document.createElement('div'); meta.className = 'meta'; row.appendChild(meta); }
+    const listId = 'mused-' + (++usedSeq);
+    const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'mchip';
+    chip.setAttribute('aria-expanded', 'false'); chip.setAttribute('aria-controls', listId);
+    const words = document.createElement('span');
+    words.textContent = `Used ${texts.length} ${texts.length === 1 ? 'memory' : 'memories'}`;
+    chip.append(svgIcon(MEMORY_PATHS), words);
+    const box = document.createElement('div'); box.className = 'mused'; box.id = listId; box.hidden = true;
+    const ul = document.createElement('ul');
+    texts.forEach(t => { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+    const manage = document.createElement('button'); manage.type = 'button'; manage.className = 'mopen'; manage.textContent = 'Open Memory';
+    manage.addEventListener('click', () => Deck.open('memory', { focus: true }));
+    box.append(ul, manage);
+    chip.addEventListener('click', () => {
+      const show = box.hidden;
+      box.hidden = !show; chip.setAttribute('aria-expanded', String(show));
+    });
+    meta.appendChild(chip); row.appendChild(box);
   }
   function showTyping(on) {
     const t = $('typing');
@@ -474,6 +518,11 @@
     $('bannerText').textContent = text;
     $('banner').classList.toggle('show', !!text);
     $('brainSel').classList.toggle('training', !!(b && b.trains_on_content));
+    // the Memory panel says when memory is kept away from this brain (slice 8 D6)
+    const next = b ? Object.freeze({ id: String(b.id), label: String(b.label || b.id),
+      trains: b.trains_on_content === true, tools: b.tools_allowed !== false }) : null;
+    const same = (x, y) => (x && y ? x.id === y.id && x.trains === y.trains && x.tools === y.tools : x === y);
+    if (!same(next, brainDetail)) { brainDetail = next; emit('jarvis:brain', brainDetail); }
   }
   function renderBrains() {
     const sel = $('brainSel');
@@ -520,9 +569,11 @@
     if (r.brain && r.brain !== state.brain && state.brains.some(b => b.id === r.brain)) { state.brain = r.brain; renderBrains(); }
     const meta = [r.brain ? brainLabel(r.brain) : null, r.model, (r.latency_ms / 1000).toFixed(1) + ' s',
       r.cost_inr > 0 ? rupees(r.cost_inr) : null, r.tool_calls ? `${r.tool_calls} tool ${r.tool_calls === 1 ? 'call' : 'calls'}` : null];
-    addMsg('jarvis', r.reply, meta);
+    const row = addMsg('jarvis', r.reply, meta);
+    const used = memoriesUsed(r.memory_used);
+    if (used.length) memoryChip(row, used);
     renderStats(r, rttMs);
-    emit('jarvis:reply', { refused: false });
+    emit('jarvis:reply', { refused: false, tools: Number.isFinite(r.tool_calls) ? r.tool_calls : 0 });
     note('reply', Number.isFinite(rttMs) ? `Reply · ${Math.round(rttMs)} ms` : 'Reply');
     if (r.tool_calls || (r.pending_approvals || []).length || r.decided) refreshSide();
     if (fresh) refreshConvos(); else bumpCurrentConvo(r.turn_count);
@@ -591,7 +642,7 @@
   // One transport (auth, CSRF header, 401 → gate) for every panel. jarvis:ready fires once per
   // sign-in; a panel script that arrives after it (deferred scripts can be held back by a slow
   // network) asks ready() when it starts: the last jarvis:ready detail, or null until signed in.
-  window.JarvisConsole = Object.freeze({ api, ready: () => readyDetail });
+  window.JarvisConsole = Object.freeze({ api, ready: () => readyDetail, brain: () => brainDetail });
 
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {

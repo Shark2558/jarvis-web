@@ -6,6 +6,8 @@ Build with `create_app()` so tests can inject a mock provider and an in-memory s
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -21,6 +23,7 @@ from jarvis.api.brief import router as brief_router
 from jarvis.api.console import router as console_router
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
+from jarvis.api.memory import router as memory_router
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import router as v1_router
 from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier, SchedulerUnauthorized
@@ -49,6 +52,15 @@ from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientErr
 from jarvis.llm.brains import BrainRegistry
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
 from jarvis.memory import SessionNotFound, SessionStore
+from jarvis.recall.errors import (
+    ConsentRequired,
+    ImportTooLarge,
+    InvalidMemoryInput,
+    MemoryFull,
+    MemoryUnavailable,
+    SensitiveRejected,
+)
+from jarvis.recall.service import MemoryService, build_memory_service
 from jarvis.storage import Storage, build_storage
 from jarvis.storage.docs import Docs, MemoryDocs
 from jarvis.tools.audit import AuditLog, AuditTrail
@@ -96,6 +108,24 @@ def build_brief_service(
     )
 
 
+def build_app_memory(
+    s: Settings, docs: Docs, brains: BrainRegistry, billing: Billing, audit: AuditTrail
+) -> MemoryService | None:
+    """Long-term memory on the same documents, billing gate and audit chain (None when off)."""
+    if not s.memory_enabled:
+        return None
+    return build_memory_service(
+        docs=docs,
+        brains=brains,
+        billing=billing,
+        audit=audit,
+        prefix=s.firestore_prefix,
+        tz=s.user_timezone,
+        max_runs=s.memory_learn_daily_cap,
+    )
+
+
+DRAIN_TIMEOUT_S = 5.0
 SERVICE_ACCOUNT_SUFFIX = ".iam.gserviceaccount.com"
 
 
@@ -166,26 +196,32 @@ def create_app(
         app.state.router = app.state.brains.router_for(app.state.brains.default.id)
         tokens = built.tokens if built else MemoryTokenStore()
         app.state.google = build_google_connector(s, tokens)
-        gw: Gateway | None = gateway
-        if gw is None and s.tools_enabled:
-            gw = build_gateway(
-                s,
-                approvals=built.approvals if built else None,
-                audit=built.audit if built else None,
-                google=app.state.google,
-            )
-        app.state.gateway = gw
         docs = app_docs(built)
         app.state.fx_http = fx_client(s)
         app.state.billing = billing or build_billing(
             s, docs, app.state.brains, http=app.state.fx_http
         )
+        audit: AuditTrail = (
+            gateway.audit if gateway is not None else built.audit if built else AuditLog()
+        )
+        app.state.memory = build_app_memory(s, docs, app.state.brains, app.state.billing, audit)
+        gw: Gateway | None = gateway
+        if gw is None and s.tools_enabled:
+            gw = build_gateway(
+                s,
+                approvals=built.approvals if built else None,
+                audit=audit,
+                google=app.state.google,
+                memory=app.state.memory,
+            )
+        app.state.gateway = gw
         app.state.brain = Brain(
             brains=app.state.brains,
             store=app.state.store,
             settings=s,
             gateway=app.state.gateway,
             billing=app.state.billing,
+            memory=app.state.memory,
         )
         app.state.brief = build_brief_service(app, s, built, docs=docs)
         await adopt_legacy_sessions(app.state.store, s)
@@ -203,6 +239,9 @@ def create_app(
         try:
             yield
         finally:
+            if app.state.memory is not None:  # let a learning run that is under way finish
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(app.state.memory.drain(), DRAIN_TIMEOUT_S)
             if app.state.google is not None:
                 await app.state.google.http.aclose()
             if app.state.fx_http is not None:
@@ -305,6 +344,30 @@ def create_app(
     async def _brief_settings(_: Request, exc: SettingsRejected) -> JSONResponse:
         return _err(422, {"error": "invalid_settings", "detail": str(exc)})
 
+    @app.exception_handler(ConsentRequired)
+    async def _consent(_: Request, exc: ConsentRequired) -> JSONResponse:
+        return _err(409, {"error": "consent_required", "detail": str(exc)})
+
+    @app.exception_handler(SensitiveRejected)
+    async def _sensitive(_: Request, exc: SensitiveRejected) -> JSONResponse:
+        return _err(422, {"error": "sensitive", "detail": str(exc)})
+
+    @app.exception_handler(InvalidMemoryInput)
+    async def _memory_input(_: Request, exc: InvalidMemoryInput) -> JSONResponse:
+        return _err(422, {"error": "input_rejected", "detail": str(exc)})
+
+    @app.exception_handler(MemoryFull)
+    async def _memory_full(_: Request, exc: MemoryFull) -> JSONResponse:
+        return _err(409, {"error": "memory_full", "detail": str(exc)})
+
+    @app.exception_handler(MemoryUnavailable)
+    async def _memory_down(_: Request, exc: MemoryUnavailable) -> JSONResponse:
+        return _err(503, {"error": "memory_unavailable", "detail": str(exc)})
+
+    @app.exception_handler(ImportTooLarge)
+    async def _too_large(_: Request, exc: ImportTooLarge) -> JSONResponse:
+        return _err(413, {"error": "too_large", "detail": str(exc)})
+
     @app.exception_handler(SchedulerUnauthorized)
     async def _scheduler(_: Request, exc: SchedulerUnauthorized) -> Response:
         return Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})
@@ -312,6 +375,7 @@ def create_app(
     app.include_router(v1_router)
     app.include_router(brief_router)
     app.include_router(usage_router)
+    app.include_router(memory_router)
     _mount_scheduler(app, s, scheduler_verifier)
     app.include_router(console_router)
     return app

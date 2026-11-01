@@ -7,6 +7,14 @@
 Everything here is vendor-neutral. Phase 2 inserts the tool-calling loop between
 `router.complete` and `append assistant turn`; the data model already carries what it needs.
 
+Long-term memory (slice 8): the owner's notes go into the dynamic trailer (never the cached
+system prompt) for brains that keep content private; the reply reports which were sent; learning
+is scheduled after the reply is stored and never delays or breaks it. At the start of a request
+the owner's other conversations with unlearned messages are swept in the background (Cloud Run
+gives CPU only while a request runs); the scheduler tick sweeps too (`sweep_memory`). Each tool
+round runs with the "untrusted content seen" flag, so memory_save after other people's text
+becomes a card.
+
 Spending (slice 7b): every model call — chat, each tool round, the round-limit summary, approval
 narration, the stream — goes through `_admit` (the owner's monthly limit, `Billing.ensure_allowed`)
 BEFORE it is made, and its cost is added to the month after it (`Billing.record`, never fails the
@@ -20,11 +28,12 @@ import asyncio
 import contextlib
 import time
 import weakref
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+from dataclasses import dataclass, field
 
 from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
-from jarvis.core.guardrails import guard_input
+from jarvis.core.guardrails import PendingAction, guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
 from jarvis.core.prompts import PERSONA_VERSION, build_system_prompt, build_trailer
 from jarvis.core.window import build_window
@@ -35,7 +44,9 @@ from jarvis.llm.base import (
     LLMError,
     Role,
     TextBlock,
+    ToolCall,
     ToolResultBlock,
+    Usage,
 )
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.pricing import cost_usd as priced_cost
@@ -43,12 +54,60 @@ from jarvis.llm.pricing import estimate_usage
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.logging import get_logger, get_trace_id
 from jarvis.memory.base import SessionNotFound, SessionStore
-from jarvis.tools.gateway import Gateway, GatewayOutcome
+from jarvis.recall.models import MemoryRef
+from jarvis.recall.service import MemoryService, Recall
+from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
+from jarvis.tools.taint import context_trust, untrusted_seen
 
 log = get_logger(__name__)
 
 BRAIN_KEY = "brain"  # session.metadata key remembering the owner's brain choice
 CUTOFF_KEY = "brain_cutoff"  # turn index before which history is withheld from training brains
+SWEEP_TICK_S = 20.0  # the scheduler tick's memory sweep is awaited, at most this long
+
+
+@dataclass(frozen=True)
+class _Decision:
+    """What an owner's approve / decline produced, before it is narrated."""
+
+    call: ToolCall
+    result: GatewayResult
+    fallback: str
+    instruction: str
+
+
+def _record_exchange(session: Session, d: _Decision, trace_id: str | None) -> None:
+    """The decided action as a tool exchange (tool_use → tool_result + instruction)."""
+    session.append(Turn(role=Role.ASSISTANT, content="", blocks=[d.call], trace_id=trace_id))
+    result = ToolResultBlock(
+        tool_use_id=d.call.id,
+        content=d.result.for_model(),
+        is_error=d.result.outcome is not GatewayOutcome.EXECUTED,
+    )
+    session.append(
+        Turn(
+            role=Role.USER,
+            content="",
+            blocks=[result, TextBlock(text=d.instruction)],
+            trace_id=trace_id,
+        )
+    )
+
+
+@dataclass(frozen=True)
+class _ReplyMeta:
+    trace_id: str
+    total_ms: int
+    rounds: int
+    pending: list[PendingApproval]
+    memory_used: list[MemoryRef]
+
+
+@dataclass
+class StreamMeta:
+    """Filled in by `chat_stream` for its caller (the HTTP route's final event)."""
+
+    memory_used: list[MemoryRef] = field(default_factory=list)
 
 
 class Brain:
@@ -61,6 +120,7 @@ class Brain:
         brains: BrainRegistry | None = None,
         gateway: Gateway | None = None,
         billing: Billing | None = None,
+        memory: MemoryService | None = None,
     ) -> None:
         if brains is None:
             if router is None:
@@ -85,6 +145,7 @@ class Brain:
         self.gateway = gateway
         # the app passes its own (Firestore, daily rate); without one: in-memory, default rate
         self.billing = billing or Billing.in_memory(brains, settings)
+        self.memory = memory  # long-term notes about the owner (None: off)
         self._system = build_system_prompt(honorific=settings.user_honorific)
         # One owner action at a time per conversation (chat, approve, decline, delete): no
         # lost turns, no double execution, no resurrected deletes. Locks vanish when unused.
@@ -130,12 +191,13 @@ class Brain:
 
     def _window_for(self, session: Session, spec: BrainSpec) -> list[ChatMessage]:
         """The context sent to `spec`. A training brain sees only turns after its cutoff, and
-        never a turn that carries tool blocks (defence in depth for sessions created before
-        the cutoff existed or edited by hand)."""
+        never a turn that carries tool blocks or was produced from a tool / approval outcome
+        (`tool_derived`: an approval narrated while a training brain was current, a reply
+        written after tool rounds) — defence in depth beyond the cutoff."""
         turns = session.turns
         if not spec.tools_allowed:
             turns = turns[int(session.metadata.get(CUTOFF_KEY, 0)) :]
-            turns = [t for t in turns if not t.blocks]
+            turns = [t for t in turns if not t.blocks and not t.tool_derived]
         return build_window(
             turns, max_turns=self.s.session_max_turns, max_chars=self.s.session_max_chars
         )
@@ -159,6 +221,72 @@ class Brain:
 
     async def _rupees(self, *usd: float) -> tuple[float, ...]:
         return tuple([round(await self.billing.inr(u), 4) for u in usd])
+
+    # ---- long-term memory ------------------------------------------------------------------
+
+    async def _recall(self, user_id: str, spec: BrainSpec, text: str) -> Recall:
+        """The notes block for this turn (empty for training brains; never raises)."""
+        if self.memory is None:
+            return Recall()
+        return await self.memory.recall(user_id, spec, text)
+
+    def _after_turn(self, user_id: str, session: Session, spec: BrainSpec, rec: Recall) -> None:
+        """Background follow-up (learning, use counters) once the reply is stored."""
+        if self.memory is not None:
+            self.memory.after_turn(user_id, session, spec, rec)
+
+    async def _finish_turn(
+        self,
+        user_id: str,
+        session: Session,
+        spec: BrainSpec,
+        rec: Recall,
+        reply: Turn,
+        *,
+        model: str,
+        cost: float,
+    ) -> None:
+        """Store the streamed reply, then schedule the background follow-up."""
+        session.append(reply.model_copy(update={"model": model, "cost_usd": cost}))
+        await self.store.save(session)
+        self._after_turn(user_id, session, spec, rec)
+
+    def _sweep(self, user_id: str, rec: Recall, session_id: str) -> None:
+        """At the start of a request: learn the owner's other conversations in the background
+        while this request holds the CPU (≤ once per 5 minutes; never raises)."""
+        if self.memory is not None:
+            self.memory.schedule_sweep(
+                user_id, self.store, self.brain_of, rec.state, exclude=session_id
+            )
+
+    def brain_of(self, session: Session) -> BrainSpec | None:
+        """The brain a stored conversation uses now (None when it no longer exists)."""
+        try:
+            return self.brains.get(session.metadata.get(BRAIN_KEY) or self.brains.default.id)
+        except LookupError:
+            return None
+
+    async def sweep_memory(self, user_ids: Sequence[str], *, within_s: float = SWEEP_TICK_S) -> int:
+        """The scheduler tick's learning sweep: awaited, ≤ `within_s` in all, never raises.
+        Returns the number of learning runs attempted."""
+        memory = self.memory
+        if memory is None:
+            return 0
+        done = 0
+
+        async def every_owner() -> None:
+            nonlocal done
+            for uid in user_ids:
+                try:
+                    done += await memory.sweep(uid, self.store, self.brain_of)
+                except Exception as exc:  # noqa: BLE001 — one owner never blocks another
+                    log.warning("memory sweep failed", extra={"reason": type(exc).__name__})
+
+        try:
+            await asyncio.wait_for(every_owner(), within_s)
+        except TimeoutError:
+            log.warning("memory sweep stopped at its time bound", extra={"seconds": within_s})
+        return done
 
     # ---- session helpers -----------------------------------------------------------------
 
@@ -212,22 +340,21 @@ class Brain:
         spec = self._resolve_brain(session, req)
         await self._admit(req.user_id, spec)  # refused → nothing stored, nothing called
 
-        user_turn = Turn(role=Role.USER, content=text, trace_id=trace_id)
-        session.append(user_turn)
+        session.append(Turn(role=Role.USER, content=text, trace_id=trace_id))
         # persist the user turn before the LLM call so a crash never loses owner input
         await self.store.save(session)
 
         messages = self._window_for(session, spec)
-        trailer = build_trailer(
-            tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
-        )
-
+        rec = await self._recall(req.user_id, spec, text)
+        self._sweep(req.user_id, rec, session.id)
+        trailer = self._trailer(session) + rec.block
         try:
             completion, pending = await self._run_loop(session, messages, trailer, req, spec)
         except LLMError:
             log.exception("brain: llm failure", extra={"session_id": session.id})
             raise
 
+        rounds = int(session.metadata.pop("_rounds", 0))
         reply = completion.text.strip() or "I have nothing to add, Sir."
         session.append(
             Turn(
@@ -238,19 +365,31 @@ class Brain:
                 usage=completion.usage,
                 cost_usd=completion.cost_usd,
                 latency_ms=completion.latency_ms,
+                tool_derived=rounds > 0,  # written from tool results: never to a training brain
             )
         )
         await self.store.save(session)
-        rounds = session.metadata.pop("_rounds", 0)
-        cost_inr, total_inr = await self._rupees(completion.cost_usd, session.total_cost_usd)
-
+        self._after_turn(req.user_id, session, spec, rec)
         total_ms = int((time.perf_counter() - t0) * 1000)
+        self._log_turn(session, len(messages), spec, completion, total_ms)
+        reply_meta = _ReplyMeta(trace_id, total_ms, rounds, pending, list(rec.used))
+        return await self._chat_response(session, spec, reply, completion, reply_meta)
+
+    def _trailer(self, session: Session) -> str:
+        return build_trailer(
+            tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
+        )
+
+    @staticmethod
+    def _log_turn(
+        session: Session, window: int, spec: BrainSpec, completion: Completion, total_ms: int
+    ) -> None:
         log.info(
             "brain: turn complete",
             extra={
                 "session_id": session.id,
                 "turns": len(session.turns),
-                "window": len(messages),
+                "window": window,
                 "brain": spec.id,
                 "model": completion.model,
                 "cost_usd": completion.cost_usd,
@@ -258,10 +397,20 @@ class Brain:
                 "total_ms": total_ms,
             },
         )
+
+    async def _chat_response(
+        self,
+        session: Session,
+        spec: BrainSpec,
+        reply: str,
+        completion: Completion,
+        meta: _ReplyMeta,
+    ) -> ChatResponse:
+        cost_inr, total_inr = await self._rupees(completion.cost_usd, session.total_cost_usd)
         return ChatResponse(
             session_id=session.id,
             reply=reply,
-            trace_id=trace_id,
+            trace_id=meta.trace_id,
             model=completion.model,
             brain=spec.id,
             usage=completion.usage,
@@ -269,10 +418,11 @@ class Brain:
             cost_inr=cost_inr,
             total_cost_usd=session.total_cost_usd,
             total_cost_inr=total_inr,
-            latency_ms=total_ms,
+            latency_ms=meta.total_ms,
             turn_count=len(session.turns),
-            tool_calls=rounds,
-            pending_approvals=pending,
+            tool_calls=meta.rounds,
+            pending_approvals=meta.pending,
+            memory_used=meta.memory_used,
         )
 
     # ---- tool loop ----------------------------------------------------------------------
@@ -336,8 +486,11 @@ class Brain:
                 )
             )
             results: list = []
+            # what the model had seen when it asked for these calls: other people's text?
+            untrusted = untrusted_seen(msgs, self.gateway.registry)
             for call in completion.tool_calls:
-                gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
+                with context_trust(untrusted=untrusted):
+                    gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
                 if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending:
                     pending.append(PendingApproval.from_action(gr.pending))
                 results.append(
@@ -424,73 +577,82 @@ class Brain:
 
         The irreversible step is executed and persisted as a tool exchange BEFORE any model
         call, so a provider outage can never lose the record of what was done; and the
-        result reaches the model as a tool_result block, never as an owner instruction."""
+        result reaches the model as a tool_result block, never as an owner instruction. The
+        narration is a tool-derived turn: never sent to a brain that may train on content."""
         if self.gateway is None:
             raise SessionNotFound(session_id)
         scope = f"{user_id}:{session_id}"
         action = await self.gateway.gate.get(approval_id)
         if action is None or action.scope != scope:
             raise LookupError(f"no pending approval {approval_id} in this session")
-        session = await self._load_or_create(
-            ChatRequest(message="-", session_id=session_id, user_id=user_id)
-        )
-        from jarvis.llm.base import ToolCall
-
+        req = ChatRequest(message="-", session_id=session_id, user_id=user_id)
+        session = await self._load_or_create(req)
         call = ToolCall(id=f"approve_{approval_id}", name=action.tool, arguments=action.arguments)
         if approved:
-            gr = await self.gateway.execute(call, confirmation_id=approval_id, scope=scope)
-            if gr.outcome is GatewayOutcome.CONFIRMATION_INVALID:
-                # lost a race with another approve/decline: nothing ran, touch nothing
-                raise LookupError(f"no pending approval {approval_id} in this session")
-            done = gr.outcome is GatewayOutcome.EXECUTED
-            fallback = (
-                f"Done, Sir: {action.summary}."
-                if done
-                else f"That did not go through: {gr.error or gr.outcome.value}."
-            )
-            instruction = "Owner approved this action; report the outcome in one sentence."
+            d = await self._approved(call, action, approval_id, scope)
         else:
-            if not await self.gateway.gate.cancel(approval_id):
-                # approved (or declined) concurrently: never record a decline that didn't happen
-                raise LookupError(f"no pending approval {approval_id} in this session")
-            tool = self.gateway.registry.get(action.tool)
-            await self.gateway.audit.append(
-                agent=tool.agent if tool else "gateway",
-                tool=action.tool,
-                risk=action.risk,
-                outcome="declined",
-                args=action.arguments,
-            )
-            from jarvis.tools.gateway import GatewayResult
-
-            gr = GatewayResult(GatewayOutcome.DENIED, error="declined by owner")
-            fallback = "Understood, Sir. Nothing was sent or changed."
-            instruction = (
-                "Owner declined this action; acknowledge in one sentence, nothing was done."
-            )
-
-        # persist the exchange first (tool_use → tool_result), then ask the model to narrate
+            d = await self._declined(call, action, approval_id)
         trace_id = get_trace_id()
-        session.append(Turn(role=Role.ASSISTANT, content="", blocks=[call], trace_id=trace_id))
+        _record_exchange(session, d, trace_id)
+        await self._save_after_action(session)
+        spec = self._resolve_brain(session, req)
+        reply, completion = await self._narrate(session, req, spec, d.fallback)
         session.append(
             Turn(
-                role=Role.USER,
-                content="",
-                blocks=[
-                    ToolResultBlock(
-                        tool_use_id=call.id,
-                        content=gr.for_model(),
-                        is_error=gr.outcome is not GatewayOutcome.EXECUTED,
-                    ),
-                    TextBlock(text=instruction),
-                ],
+                role=Role.ASSISTANT,
+                content=reply,
                 trace_id=trace_id,
+                model=completion.model if completion else "none",
+                usage=completion.usage if completion else None,
+                cost_usd=completion.cost_usd if completion else 0.0,
+                tool_derived=True,
             )
         )
         await self._save_after_action(session)
+        return await self._decision_response(session, spec, reply, completion, trace_id, approved)
 
-        req = ChatRequest(message="-", session_id=session_id, user_id=user_id)
-        spec = self._resolve_brain(session, req)
+    async def _approved(
+        self, call: ToolCall, action: PendingAction, approval_id: str, scope: str
+    ) -> _Decision:
+        assert self.gateway is not None
+        gr = await self.gateway.execute(call, confirmation_id=approval_id, scope=scope)
+        if gr.outcome is GatewayOutcome.CONFIRMATION_INVALID:
+            # lost a race with another approve/decline: nothing ran, touch nothing
+            raise LookupError(f"no pending approval {approval_id} in this session")
+        done = gr.outcome is GatewayOutcome.EXECUTED
+        fallback = (
+            f"Done, Sir: {action.summary}."
+            if done
+            else f"That did not go through: {gr.error or gr.outcome.value}."
+        )
+        return _Decision(
+            call, gr, fallback, "Owner approved this action; report the outcome in one sentence."
+        )
+
+    async def _declined(self, call: ToolCall, action: PendingAction, approval_id: str) -> _Decision:
+        assert self.gateway is not None
+        if not await self.gateway.gate.cancel(approval_id):
+            # approved (or declined) concurrently: never record a decline that didn't happen
+            raise LookupError(f"no pending approval {approval_id} in this session")
+        tool = self.gateway.registry.get(action.tool)
+        await self.gateway.audit.append(
+            agent=tool.agent if tool else "gateway",
+            tool=action.tool,
+            risk=action.risk,
+            outcome="declined",
+            args=action.arguments,
+        )
+        return _Decision(
+            call,
+            GatewayResult(GatewayOutcome.DENIED, error="declined by owner"),
+            "Understood, Sir. Nothing was sent or changed.",
+            "Owner declined this action; acknowledge in one sentence, nothing was done.",
+        )
+
+    async def _narrate(
+        self, session: Session, req: ChatRequest, spec: BrainSpec, fallback: str
+    ) -> tuple[str, Completion | None]:
+        """The model reports the outcome; plainly (deterministic) when it can't or mustn't."""
         messages = self._window_for(session, spec)
         trailer = build_trailer(
             tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
@@ -501,35 +663,32 @@ class Brain:
                 # tool result is private data: narrate deterministically, never send it there.
                 raise LLMError("narration skipped: current brain may train on content")
             completion = await self._complete(messages, trailer, req, spec, with_tools=False)
-            reply = completion.text.strip() or fallback
-            usage, cost, model = completion.usage, completion.cost_usd, completion.model
         except (LLMError, BudgetError) as exc:  # the action stands: narrate it plainly
             log.warning(
                 "approval narration failed; using deterministic reply",
                 extra={"session_id": session.id, "error": str(exc)[:120]},
             )
-            reply, usage, cost, model = fallback, None, 0.0, "none"
-        session.append(
-            Turn(
-                role=Role.ASSISTANT,
-                content=reply,
-                trace_id=trace_id,
-                model=model,
-                usage=usage,
-                cost_usd=cost,
-            )
-        )
-        await self._save_after_action(session)
-        from jarvis.llm.base import Usage
+            return fallback, None
+        return completion.text.strip() or fallback, completion
 
+    async def _decision_response(
+        self,
+        session: Session,
+        spec: BrainSpec,
+        reply: str,
+        completion: Completion | None,
+        trace_id: str,
+        approved: bool,
+    ) -> ChatResponse:
+        cost = completion.cost_usd if completion else 0.0
         cost_inr, total_inr = await self._rupees(cost, session.total_cost_usd)
         return ChatResponse(
             session_id=session.id,
             reply=reply,
             trace_id=trace_id,
-            model=model,
+            model=completion.model if completion else "none",
             brain=spec.id,
-            usage=usage or Usage(),
+            usage=completion.usage if completion else Usage(),
             cost_usd=cost,
             cost_inr=cost_inr,
             total_cost_usd=session.total_cost_usd,
@@ -540,18 +699,21 @@ class Brain:
             pending_approvals=[],
         )
 
-    async def chat_stream(self, req: ChatRequest) -> AsyncIterator[str]:
-        """Streaming variant for the CLI (and Phase 1 TTS). Persists the full reply at the end."""
+    async def chat_stream(
+        self, req: ChatRequest, *, meta: StreamMeta | None = None
+    ) -> AsyncIterator[str]:
+        """Streaming variant for the CLI (and Phase 1 TTS). Persists the full reply at the end.
+        `meta` (optional) receives the notes sent with the reply before the first delta."""
         req = await self._start(req)
         async with self._serialised(req.session_id):
-            inner = self._chat_stream(req)
+            inner = self._chat_stream(req, meta or StreamMeta())
             try:
                 async for delta in inner:
                     yield delta
             finally:  # a reader that leaves early closes the inner stream now (and its meter)
                 await inner.aclose()
 
-    async def _chat_stream(self, req: ChatRequest) -> AsyncGenerator[str, None]:
+    async def _chat_stream(self, req: ChatRequest, meta: StreamMeta) -> AsyncGenerator[str, None]:
         trace_id = get_trace_id()
         if req.brain:
             self.brains.get(req.brain)
@@ -565,9 +727,10 @@ class Brain:
         await self.store.save(session)
 
         messages = self._window_for(session, spec)
-        trailer = build_trailer(
-            tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
-        )
+        rec = await self._recall(req.user_id, spec, text)
+        self._sweep(req.user_id, rec, session.id)
+        meta.memory_used = list(rec.used)
+        trailer = self._trailer(session) + rec.block
         chunks: list[str] = []
         model = router.resolve(self._tier(req))
         # Streams report no usage: estimate tokens from characters so a paid streamed reply is
@@ -596,8 +759,5 @@ class Brain:
                 cost = priced_cost(model, estimate_usage(sent, len("".join(chunks))))
                 await self.billing.record(req.user_id, spec.id, cost)
 
-        reply = "".join(chunks).strip()
-        session.append(
-            Turn(role=Role.ASSISTANT, content=reply, trace_id=trace_id, model=model, cost_usd=cost)
-        )
-        await self.store.save(session)
+        reply = Turn(role=Role.ASSISTANT, content="".join(chunks).strip(), trace_id=trace_id)
+        await self._finish_turn(req.user_id, session, spec, rec, reply, model=model, cost=cost)

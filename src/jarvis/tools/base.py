@@ -57,6 +57,9 @@ class Tool:
     # the card shows the real item and the risk can rise. A failure is fail-closed: no card,
     # nothing runs. The stored PendingAction arguments stay exactly the call's arguments.
     preview: PreviewFn | None = None
+    # True only for tools whose output is the owner's own data (the memory tools): their results
+    # do not make the context "untrusted" (jarvis.tools.taint). Default: other people's words.
+    trusted_output: bool = False
 
     def effective_risk(self, args: dict[str, Any]) -> ActionRisk:
         return self.risk_for(args) if self.risk_for is not None else self.risk

@@ -231,7 +231,10 @@ All settings are `JARVIS_*` env vars (see `.env.example`). Notable ones:
 ```
 GET  /health                      liveness + dependency check
 POST /v1/chat                     {"message": "...", "session_id": null, "tier": null}
-POST /v1/chat/stream              same body, text/plain streamed deltas
+POST /v1/chat/stream              same body, text/plain streamed deltas, then one final event:
+                                  "\x1e" + {"memory_used": [{id, text}]} (only when the reply
+                                  finished). The reply never contains "\x1e"; parse the JSON
+                                  after the LAST "\x1e".
 GET  /v1/sessions                 list (the signed-in owner's)
 GET  /v1/sessions/{id}            full transcript (audit / replay)
 DELETE /v1/sessions/{id}          forget

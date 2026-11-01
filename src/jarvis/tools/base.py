@@ -13,6 +13,7 @@ from jarvis.llm.base import ToolCall, ToolSpec
 
 ToolFn = Callable[[dict[str, Any]], Awaitable[Any] | Any]
 RiskFn = Callable[[dict[str, Any]], ActionRisk]
+CheckFn = Callable[[dict[str, Any]], None]
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,9 @@ class Tool:
     # Optional per-call risk: e.g. creating a calendar event is reversible alone but sends mail
     # (irreversible) once attendees are invited. Default: the declared `risk`.
     risk_for: RiskFn | None = None
+    # Optional pure argument check (no I/O), run by the gateway BEFORE the policy decision, so a
+    # malformed request fails fast instead of reaching an approval card or a URL.
+    check: CheckFn | None = None
 
     def effective_risk(self, args: dict[str, Any]) -> ActionRisk:
         return self.risk_for(args) if self.risk_for is not None else self.risk
@@ -47,6 +51,8 @@ class Tool:
         unknown = [k for k in args if props and k not in props]
         if unknown:
             raise ValueError(f"unknown arguments: {', '.join(unknown)}")
+        if self.check is not None:
+            self.check(args)
 
     def summary(self, args: dict[str, Any]) -> str:
         try:
@@ -56,4 +62,4 @@ class Tool:
             return f"{self.name} {json.dumps(args, default=str)[:200]}"
 
 
-__all__ = ["RiskFn", "Tool", "ToolCall", "ToolFn"]
+__all__ = ["CheckFn", "RiskFn", "Tool", "ToolCall", "ToolFn"]

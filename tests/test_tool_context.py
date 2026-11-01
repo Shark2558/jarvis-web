@@ -162,3 +162,30 @@ def test_scope_without_session_part() -> None:
 def test_no_scope_means_no_context() -> None:
     with tool_context(None) as ctx:
         assert ctx is None and current_tool_context() is None
+
+
+# ---- Tool.check -----------------------------------------------------------------------------
+
+
+async def test_check_hook_rejects_before_policy_so_nothing_is_proposed() -> None:
+    def check(a: dict[str, Any]) -> None:
+        if a.get("to") == "bad":
+            raise ValueError("bad recipient")
+
+    reg = ToolRegistry()
+    reg.register(
+        Tool(
+            "send_thing",
+            "d",
+            {"type": "object", "properties": {"to": {"type": "string"}}, "required": ["to"]},
+            ActionRisk.IRREVERSIBLE,
+            lambda a: {"sent": True},
+            check=check,
+        )
+    )
+    gateway = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
+    out = await gateway.execute(ToolCall(id="k1", name="send_thing", arguments={"to": "bad"}))
+    assert out.outcome is GatewayOutcome.ERROR and "bad recipient" in (out.error or "")
+    assert await gateway.pending() == []
+    ok = await gateway.execute(ToolCall(id="k2", name="send_thing", arguments={"to": "fine"}))
+    assert ok.outcome is GatewayOutcome.AWAITING_CONFIRMATION

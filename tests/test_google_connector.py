@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import httpx
 import pytest
-from pydantic import SecretStr
 
 from jarvis.integrations.google import (
     REVOKE_URL,
@@ -15,65 +13,27 @@ from jarvis.integrations.google import (
     GoogleConnector,
     GoogleNotConnected,
 )
-from jarvis.integrations.vault import GoogleTokens, MemoryTokenStore
+from jarvis.integrations.vault import MemoryTokenStore
+from tests.conftest import FakeGoogle
+from tests.conftest import google_tokens as _tokens
 
 NOW = 1_800_000_000.0
 UID = "u_owner"
 
 
-class FakeGoogle:
-    """Scriptable transport: records every request, answers from `routes`."""
-
-    def __init__(self) -> None:
-        self.requests: list[httpx.Request] = []
-        self.routes: dict[str, list[httpx.Response]] = {}
-
-    def on(self, method: str, url: str, *responses: httpx.Response) -> None:
-        self.routes.setdefault(f"{method} {url}", []).extend(responses)
-
-    def handler(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(request)
-        key = f"{request.method} {request.url.scheme}://{request.url.host}{request.url.path}"
-        queue = self.routes.get(key)
-        if not queue:
-            return httpx.Response(599, json={"error": f"unscripted {key}"})
-        return queue.pop(0) if len(queue) > 1 else queue[0]
-
-    def client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(transport=httpx.MockTransport(self.handler))
-
-
-def _tokens(expires_at: float = NOW + 3600, **over: Any) -> GoogleTokens:
-    base: dict[str, Any] = {
-        "email": "akash@example.com",
-        "access_token": "old-access",
-        "refresh_token": "the-refresh",
-        "expires_at": expires_at,
-        "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
-    }
-    base.update(over)
-    return GoogleTokens.model_validate(base)
+@pytest.fixture
+def fake(fake_google: FakeGoogle) -> FakeGoogle:
+    return fake_google
 
 
 @pytest.fixture
-def fake() -> FakeGoogle:
-    return FakeGoogle()
+def store(token_store: MemoryTokenStore) -> MemoryTokenStore:
+    return token_store
 
 
 @pytest.fixture
-def store() -> MemoryTokenStore:
-    return MemoryTokenStore()
-
-
-@pytest.fixture
-def conn(fake: FakeGoogle, store: MemoryTokenStore) -> GoogleConnector:
-    return GoogleConnector(
-        store,
-        client_id="cid",
-        client_secret=SecretStr("csecret"),
-        http=fake.client(),
-        now=lambda: NOW,
-    )
+def conn(google_conn: GoogleConnector) -> GoogleConnector:
+    return google_conn
 
 
 # ---- status ---------------------------------------------------------------------------------

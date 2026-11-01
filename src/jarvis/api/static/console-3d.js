@@ -174,7 +174,9 @@ function createEngine(THREE, S, made) {
   }, on);
 
   const tzOffset = -new Date().getTimezoneOffset();
-  const core = addView('coreGL', () => S.createCore(THREE));
+  // slice 9: listening / speaking and the real microphone or playback level (console-voice-mic.js)
+  const voice = () => { const V = window.JarvisVoice; try { return V && typeof V.visual === 'function' ? V.visual() : null; } catch (_) { return null; } };
+  const core = addView('coreGL', () => S.createCore(THREE, { voice }));
   addView('globeGL', () => S.createGlobe(THREE, { offsetMin: tzOffset }));
   const construct = addView('constructGL', () => S.createConstruct(THREE));
   if (construct) {

@@ -100,7 +100,7 @@
     custom: HEX.test(store.get('jarvis_accent') || '') ? store.get('jarvis_accent').toUpperCase() : null,
     motion: MOTIONS.includes(store.get('jarvis_motion')) ? store.get('jarvis_motion') : (reduceQ.matches ? 'calm' : 'full'),
     surface: SURFACES.includes(store.get('jarvis_surface')) ? store.get('jarvis_surface') : 'night',
-    busy: false, alert: false, offline: !navigator.onLine, tokens: null,
+    busy: false, alert: false, offline: !navigator.onLine, voice: null, tokens: null,
   };
   const themeOf = (id) => THEMES.find(t => t.id === id) || THEMES[0];
 
@@ -169,14 +169,22 @@
   };
 
   // ---- status ticker + clock -------------------------------------------------------------------
-  const STATUS_WORDS = { ok: 'Online', busy: 'Thinking', alert: 'Needs you', offline: 'Offline' };
+  const STATUS_WORDS = { ok: 'Online', busy: 'Thinking', alert: 'Needs you', offline: 'Offline', listening: 'Listening', speaking: 'Speaking' };
   function renderStatus() {
     const el = $('status'); if (!el) return;
-    const mode = state.offline ? 'offline' : state.busy ? 'busy' : (state.alert ? 'alert' : 'ok');
-    ['busy', 'alert', 'offline'].forEach(m => el.classList.toggle(m, mode === m));
+    const mode = state.offline ? 'offline' : state.voice ? state.voice : state.busy ? 'busy' : (state.alert ? 'alert' : 'ok');
+    ['busy', 'alert', 'offline', 'listening', 'speaking'].forEach(m => el.classList.toggle(m, mode === m));
     $('statusText').textContent = STATUS_WORDS[mode];
   }
-  const publishState = () => emit('jarvis:state', { busy: state.busy, alert: state.alert, offline: state.offline });
+  const publishState = () => emit('jarvis:state', { busy: state.busy, alert: state.alert, offline: state.offline, voice: state.voice });
+  /** Slice 9: 'listening' | 'speaking' | null, from the voice module (real microphone / playback). */
+  function setVoice(mode) {
+    const next = mode === 'listening' || mode === 'speaking' ? mode : null;
+    if (next === state.voice) return;
+    state.voice = next;
+    root.dataset.voice = next || '';
+    renderStatus(); publishState();
+  }
   function setBusy(on) {
     state.busy = !!on;
     document.querySelectorAll('.core').forEach(c => c.classList.toggle('busy', state.busy));
@@ -549,12 +557,12 @@
   renderStatus();
 
   window.JarvisFX = Object.freeze({
-    core, setBusy, setAlert, ripple,
+    core, setBusy, setAlert, setVoice, ripple,
     refresh: () => field.refresh(),
     tokens: () => Object.assign({}, state.tokens),
     surface: () => state.surface,
     motion: () => state.motion,
-    state: () => ({ busy: state.busy, alert: state.alert, offline: state.offline }),
+    state: () => ({ busy: state.busy, alert: state.alert, offline: state.offline, voice: state.voice }),
     contrast: (a, b) => contrast(hexToRgb(a), hexToRgb(b)),
     derive: (accent, accent2, surface) => derive(accent, accent2 || null, SURFACES.includes(surface) ? surface : 'night'),
   });

@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vitals', 'construct'];
+  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'voice', 'vitals', 'construct'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;
@@ -73,6 +73,7 @@
       history: { x: col2, y: b.top + 36, w: 320, h: Math.min(440, availH), open: false },
       memory: { x: Math.max(sL, sR - chatW - 14 - 400), y: b.top, w: 400, h: Math.min(availH, 760), open: false },
       integrations: { x: col2, y: b.top + 72, w: 340, h: null, open: false },
+      voice: { x: Math.max(sL, sR - chatW - 14 - 380), y: b.top + 24, w: 380, h: Math.min(availH, 720), open: false },
       construct: { x: Math.max(sL, sR - chatW - 14 - 330), y: b.top, w: 330, h: Math.min(380, availH), open: false },
     };
   }
@@ -328,7 +329,7 @@
     try { return '₹' + n.toLocaleString('en-IN'); } catch (_) { return '₹' + n; }
   }
   // wait: undefined = not loaded yet, null = could not load ("—", never a fake 0); audit likewise
-  const V = { lat: [], turns: 0, brain: '—', model: '—', cost: 0, wait: undefined, audit: null, auditCount: 0, events: [], busy: false, alert: false };
+  const V = { lat: [], turns: 0, brain: '—', model: '—', cost: 0, wait: undefined, audit: null, auditCount: 0, events: [], busy: false, alert: false, voice: null };
   const started = Date.now();
   const setText = (id, text) => { const el = $(id); if (el && el.textContent !== text) el.textContent = text; };
   const setCls = (id, base, extra) => { const el = $(id); if (el) el.className = base + (extra ? ' ' + extra : ''); };
@@ -384,8 +385,12 @@
   }
   function renderState() {
     const deck = $('app');
-    if (deck) { deck.classList.toggle('busy', V.busy); deck.classList.toggle('alert', V.alert && !V.busy); }
-    setText('coreState', V.busy ? 'Thinking' : V.alert ? 'Needs you' : navigator.onLine ? 'Standing by' : 'Offline');
+    if (deck) {
+      deck.classList.toggle('busy', V.busy); deck.classList.toggle('alert', V.alert && !V.busy && !V.voice);
+      deck.classList.toggle('listening', V.voice === 'listening'); deck.classList.toggle('speaking', V.voice === 'speaking');
+    }
+    setText('coreState', V.voice === 'listening' ? 'Listening' : V.voice === 'speaking' ? 'Speaking'
+      : V.busy ? 'Thinking' : V.alert ? 'Needs you' : navigator.onLine ? 'Standing by' : 'Offline');
   }
 
   // ---- events -------------------------------------------------------------------------------
@@ -429,7 +434,11 @@
     const d = e.detail || {}, w = GOOGLE_WORDS[d.google];
     setText('rGoogle', w ? w[0] : '—'); setCls('rGoogle', 'v up', w ? w[1] : '');
   });
-  document.addEventListener('jarvis:state', (e) => { const d = e.detail || {}; V.busy = !!d.busy; V.alert = !!d.alert; renderState(); radar.kick(); });
+  document.addEventListener('jarvis:state', (e) => {
+    const d = e.detail || {}; V.busy = !!d.busy; V.alert = !!d.alert;
+    V.voice = d.voice === 'listening' || d.voice === 'speaking' ? d.voice : null;
+    renderState(); radar.kick();
+  });
   window.addEventListener('online', () => { renderNet(); renderState(); addEvent({ kind: 'info', text: 'Connection restored' }); });
   window.addEventListener('offline', () => { renderNet(); renderState(); addEvent({ kind: 'error', text: 'Connection lost' }); });
 

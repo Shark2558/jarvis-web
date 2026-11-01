@@ -12,6 +12,9 @@
 // window.JarvisConsole.ready() when it starts in case it arrived after jarvis:ready.
 // Slice 8: jarvis:brain {id, label, trains, tools} (also JarvisConsole.brain()) for the Memory
 // panel; a reply's `memory_used: [{id, text}]` becomes a "Used N memories" chip (text only).
+// Slice 9 (voice): window.JarvisChat {send(text, {channel}), busy(), honorific(), raw(path, opts)};
+// jarvis:turn {channel} / jarvis:turn-end {channel, ok} around a turn, jarvis:answer {channel, text,
+// approvals} after a reply, jarvis:switch when the owner starts or opens another conversation.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -64,11 +67,27 @@
       showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err;
     }
     if (!r.ok) {
-      let detail = r.statusText;
-      try { const j = await r.json(); detail = j.detail || j.error || detail; } catch (_) {}
-      const err = new Error(detail); err.status = r.status; throw err;
+      let detail = r.statusText, code = '';
+      try {
+        const j = await r.json(), d = j.detail;
+        if (d && typeof d === 'object' && !Array.isArray(d)) { // {detail: {code, message}} (slice 9 voice)
+          code = typeof d.code === 'string' ? d.code : '';
+          detail = typeof d.message === 'string' && d.message ? d.message : code || detail;
+        } else detail = d || j.error || detail;
+      } catch (_) {}
+      const err = new Error(detail); err.status = r.status; if (code) err.code = code; throw err;
     }
     return r.status === 204 ? null : r.json();
+  }
+  /** Same transport for bytes (voice: audio/wav up, audio/mpeg down). The caller reads the
+   *  Response; a 401 still goes to the sign-in gate. The token never leaves this file. */
+  async function raw(path, opts = {}) {
+    if (typeof path !== 'string' || !OWN_PATH.test(path)) throw new Error('Not a JARVIS API path.');
+    const headers = Object.assign({}, opts.headers || {}, { 'X-Requested-With': 'JARVIS' });
+    if (state.authMode === 'token' && state.token) headers['Authorization'] = 'Bearer ' + state.token;
+    const r = await fetch(path, { method: opts.method || 'GET', headers, body: opts.body, signal: opts.signal, credentials: 'same-origin' });
+    if (r.status === 401) { showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err; }
+    return r;
   }
 
   // ---- sign-in gate -------------------------------------------------------------------------
@@ -360,10 +379,11 @@
   /** Open a saved conversation while holding the console, so a send cannot interleave. */
   async function openConversation(id) {
     if (state.busy) return;
+    emit('jarvis:switch', {}); // the voice module stops speaking and listening
     busy(true, false);
     try { await loadConversation(id); } finally { busy(false); }
   }
-  function newConversation() { setSession(null); renderWelcome(); renderStats({}); input.focus(); }
+  function newConversation() { emit('jarvis:switch', {}); setSession(null); renderWelcome(); renderStats({}); input.focus(); }
   function startNew() { if (state.busy) return; newConversation(); Deck.open('chat', { focus: true }); note('info', 'New conversation'); }
 
   // ---- integrations (slice 6): the Google link that unlocks Calendar + Gmail tools --------------
@@ -563,7 +583,7 @@
     if (!a || a === document.body || (chat && chat.contains(a))) input.focus();
   }
   function syncSend() { $('send').disabled = state.busy || !$('input').value.trim(); }
-  function handleResponse(r, rttMs) {
+  function handleResponse(r, rttMs, channel) {
     const fresh = r.session_id !== state.sessionId;
     setSession(r.session_id);
     if (r.brain && r.brain !== state.brain && state.brains.some(b => b.id === r.brain)) { state.brain = r.brain; renderBrains(); }
@@ -574,23 +594,36 @@
     if (used.length) memoryChip(row, used);
     renderStats(r, rttMs);
     emit('jarvis:reply', { refused: false, tools: Number.isFinite(r.tool_calls) ? r.tool_calls : 0 });
+    // slice 9: the voice module speaks it (per "Speak replies"); an approval left waiting after a
+    // spoken turn gets the fixed line instead, never the reply's own words (D11)
+    emit('jarvis:answer', { channel: channel === 'voice' ? 'voice' : 'text', text: typeof r.reply === 'string' ? r.reply : '',
+      approvals: Array.isArray(r.pending_approvals) ? r.pending_approvals.length : 0 });
     note('reply', Number.isFinite(rttMs) ? `Reply · ${Math.round(rttMs)} ms` : 'Reply');
     if (r.tool_calls || (r.pending_approvals || []).length || r.decided) refreshSide();
     if (fresh) refreshConvos(); else bumpCurrentConvo(r.turn_count);
   }
-  async function send(text) {
-    if (state.busy) return;
-    addMsg('user', text); busy(true); note('send', 'Message sent');
+  /** One turn. `opts.channel: 'voice'` (slice 9 D7): the words were spoken, so the server shapes a
+   *  reply for the ear; jarvis:turn / jarvis:turn-end tell the voice module (barge-in, states). */
+  async function send(text, opts = {}) {
+    if (state.busy) return false;
+    const channel = opts.channel === 'voice' ? 'voice' : 'text';
+    addMsg('user', text, channel === 'voice' ? ['Spoken'] : null); busy(true); note('send', channel === 'voice' ? 'Spoken message sent' : 'Message sent');
+    emit('jarvis:turn', { channel });
+    let ok = false;
     try {
       const t0 = performance.now(); // reply latency as the owner feels it: the whole round trip
-      const r = await api('/v1/chat', { body: { message: text, session_id: state.sessionId, brain: state.brain } });
-      handleResponse(r, performance.now() - t0);
+      const body = { message: text, session_id: state.sessionId, brain: state.brain };
+      if (channel === 'voice') body.channel = 'voice';
+      const r = await api('/v1/chat', { body });
+      handleResponse(r, performance.now() - t0, channel);
+      ok = true;
     } catch (e) {
       showTyping(false);
       if (e.status === 402) limitReached(e);
       else { addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); note('error', 'Reply failed'); }
     }
-    finally { busy(false); refocus(); }
+    finally { busy(false); refocus(); emit('jarvis:turn-end', { channel, ok }); }
+    return ok;
   }
   /** 402 budget_reached: not a crash, a JARVIS note in the conversation with the server's own
    *  words (rupees); Vitals reloads the month so its bar shows the limit reached. */
@@ -633,7 +666,9 @@
   });
   $('form').addEventListener('submit', (ev) => {
     ev.preventDefault(); const t = input.value.trim(); if (!t || state.busy) return;
-    FX.ripple($('send')); input.value = ''; autosize(); syncSend(); send(t);
+    const channel = input.dataset.channel === 'voice' ? 'voice' : 'text'; // dictated, then checked by the owner
+    delete input.dataset.channel;
+    FX.ripple($('send')); input.value = ''; autosize(); syncSend(); send(t, { channel });
   });
 
   // top bar + panel actions
@@ -643,6 +678,13 @@
   // sign-in; a panel script that arrives after it (deferred scripts can be held back by a slow
   // network) asks ready() when it starts: the last jarvis:ready detail, or null until signed in.
   window.JarvisConsole = Object.freeze({ api, ready: () => readyDetail, brain: () => brainDetail });
+  // slice 9 voice (console-voice*.js): send a spoken message, the bytes transport, the console's state
+  window.JarvisChat = Object.freeze({
+    send: (text, opts) => (typeof text === 'string' && text.trim() && !state.busy ? send(text.trim(), opts || {}) : Promise.resolve(false)),
+    busy: () => state.busy,
+    honorific: () => state.honorific,
+    raw,
+  });
 
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {

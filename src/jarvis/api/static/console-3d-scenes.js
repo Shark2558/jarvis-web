@@ -118,8 +118,11 @@ function makeMood() {
 }
 
 // ---- Core: tilted concentric rings with ticks, a faceted glowing core, orbiting particles ------
-export function createCore(THREE) {
+export function createCore(THREE, opts = {}) {
   const K = makeKit(THREE), mood = makeMood();
+  // slice 9: {mode: 'listening' | 'speaking' | null, level: 0..1} — the real mic / playback level
+  const voiceOf = typeof opts.voice === 'function' ? opts.voice : () => null;
+  let vLevel = 0, vListen = 0, vSpeak = 0;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50); camera.position.set(0, 0, 10);
   const glow = K.glowTexture();
@@ -166,15 +169,20 @@ export function createCore(THREE) {
     scene, camera,
     update(t, dt) {
       const m = mood.step(dt), k = dt * m.speed;
+      const v = voiceOf() || {}, lvl = typeof v.level === 'number' && v.mode ? Math.max(0, Math.min(1, v.level)) : 0;
+      vLevel = ease(vLevel, lvl, dt, 14);
+      vListen = ease(vListen, v.mode === 'listening' ? 1 : 0, dt, 4);
+      vSpeak = ease(vSpeak, v.mode === 'speaking' ? 1 : 0, dt, 4);
       outerTicks.rotation.z += 0.03 * k; bold.rotation.z -= 0.07 * k; dashed.rotation.z += 0.14 * k;
       gyroLoopA.rotation.z += 0.45 * k; gyroLoopB.rotation.z -= 0.32 * k;
       gyroA.rotation.y = Math.sin(t * 0.21) * 0.25; gyroB.rotation.x = Math.cos(t * 0.17) * 0.3;
-      innerTicks.rotation.z -= 0.2 * k; sweep.rotation.z -= 1.1 * k;
+      innerTicks.rotation.z -= 0.2 * k; sweep.rotation.z -= (1.1 + 2.2 * vListen * vLevel) * k;
       bands.forEach(b => { b.pts.rotation.z += b.w * k; });
       coreGroup.rotation.x += 0.22 * k; coreGroup.rotation.y += 0.31 * k;
       const pulse = m.busy ? 1 + 0.09 * Math.sin(t * 7.5) : 1 + 0.025 * Math.sin(t * 1.6);
-      coreGroup.scale.setScalar(pulse);
-      coreGlow.material.opacity = Math.min(1, K.base(coreGlow.material) * (m.busy ? 1.2 : 1));
+      coreGroup.scale.setScalar(pulse + 0.32 * vSpeak * vLevel);   // speaking: the core swells with the voice
+      halo.scale.setScalar(5.4 * (1 + 0.16 * vListen * vLevel));   // listening: the halo breathes with the mic
+      coreGlow.material.opacity = Math.min(1, K.base(coreGlow.material) * (m.busy ? 1.2 : 1) * (1 + 0.8 * vSpeak * vLevel));
       rig.rotation.y = -0.18 + Math.sin(t * 0.12) * 0.06;
       K.alert(m.alert);
     },

@@ -34,6 +34,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from jarvis.api.auth import require_auth
+from jarvis.api.body import read_capped
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.voice.ports import (
@@ -116,22 +117,6 @@ async def speak(
     )
 
 
-async def read_capped(request: Request, limit: int) -> bytes:
-    """The body, refused as soon as it is known to exceed `limit`: from Content-Length before
-    anything is read, else while it streams in (a chunked upload has no length)."""
-    declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > limit:
-        raise AudioTooLarge(limit)
-    parts: list[bytes] = []
-    size = 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if size > limit:
-            raise AudioTooLarge(limit)
-        parts.append(chunk)
-    return b"".join(parts)
-
-
 @router.post("/transcribe", response_model=TranscriptView)
 async def transcribe(
     request: Request, svc: VoiceService = Depends(_svc), uid: str = Depends(current_user)
@@ -140,7 +125,9 @@ async def transcribe(
     ctype = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if ctype not in WAV_TYPES:
         raise BadAudio("Send the recording as audio/wav (16-bit PCM, mono, 16,000 Hz).")
-    blob = await read_capped(request, MAX_AUDIO_BYTES)
+    blob = await read_capped(
+        request, MAX_AUDIO_BYTES, too_large=lambda: AudioTooLarge(MAX_AUDIO_BYTES)
+    )
     return await svc.transcribe(uid, blob)
 
 

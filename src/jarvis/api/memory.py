@@ -31,6 +31,7 @@ from fastapi import APIRouter, Body, Depends, Request, Response
 from pydantic import ValidationError
 
 from jarvis.api.auth import require_auth
+from jarvis.api.body import read_capped
 from jarvis.api.identity import current_user
 from jarvis.core.guardrails import InputRejected
 from jarvis.recall.errors import ImportTooLarge, InvalidMemoryInput
@@ -121,28 +122,12 @@ async def export(svc: MemoryService = Depends(_svc), uid: str = Depends(current_
     )
 
 
-async def _capped_body(request: Request, limit: int) -> bytes:
-    """The body, refused as soon as it is known to exceed `limit`: from Content-Length before
-    anything is read, else while it streams in (chunked uploads have no length)."""
-    declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > limit:
-        raise ImportTooLarge()
-    parts: list[bytes] = []
-    size = 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if size > limit:
-            raise ImportTooLarge()
-        parts.append(chunk)
-    return b"".join(parts)
-
-
 @router.post("/import", response_model=ImportResult)
 async def import_memory(
     request: Request, svc: MemoryService = Depends(_svc), uid: str = Depends(current_user)
 ) -> ImportResult:
     """The body is size-checked before (and while) it is read, then parsed; ≤ 1,000 facts."""
-    raw = await _capped_body(request, IMPORT_MAX_BYTES)
+    raw = await read_capped(request, IMPORT_MAX_BYTES, too_large=ImportTooLarge)
     try:
         req = ImportRequest.model_validate_json(raw)
     except ValidationError:

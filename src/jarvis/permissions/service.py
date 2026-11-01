@@ -27,7 +27,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
-from jarvis.core.guardrails import PendingAction
+from jarvis.core.guardrails import ActionRisk, PendingAction
 from jarvis.logging import get_logger
 from jarvis.permissions.ceremony import (
     CeremonyFailed,
@@ -59,12 +59,15 @@ from jarvis.permissions.passkeys import (
     CHALLENGE_TTL,
     LABEL_MAX,
     MAX_PASSKEYS,
+    Challenge,
     ChallengeStore,
+    NeedsProof,
     PasskeyLimit,
     PasskeyStore,
     StoredPasskey,
 )
 from jarvis.permissions.store import OwnerPermissions, PermissionsStore
+from jarvis.tools.audit import AuditTrail
 from jarvis.tools.policy import PolicyRule
 
 log = get_logger(__name__)
@@ -83,7 +86,7 @@ NEEDS_PROOF = (
     "Confirm it's you first: use one of your passkeys, or sign in with Google again (that counts "
     "for 5 minutes)."
 )
-_LABEL_DROP = re.compile(r"[\x00-\x1f\x7f-\x9f؜​-‏ -‮⁠-⁩﻿]")
+_LABEL_DROP = re.compile(r"[\x00-\x1f\x7f-\x9f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]")
 
 
 def _utcnow() -> datetime:
@@ -126,9 +129,31 @@ class PermissionsService:
         rp: RelyingParty | None,
         can_reauth: bool,
         clock: Clock = _utcnow,
+        audit: AuditTrail | None = None,
     ) -> None:
         self.store, self.passkeys, self.challenges = store, passkeys, challenges
         self.rp, self.can_reauth, self._clock = rp, can_reauth, clock
+        self.audit = audit  # every change to the owner's protection lands in the audit chain
+
+    async def _record(self, uid: str, tool: str, outcome: str, detail: str) -> None:
+        """Append to the audit chain AFTER the change: an outage is logged loudly, never turned
+        into an error for a change that already happened. Credential ids stay out of the text."""
+        if self.audit is None:
+            return
+        try:
+            await self.audit.append(
+                agent="owner",
+                tool=tool,
+                risk=ActionRisk.REVERSIBLE,
+                outcome=outcome,
+                args={"user": uid, "what": detail},
+                detail=detail,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "AUDIT WRITE FAILED after a permission change",
+                extra={"tool": tool, "outcome": outcome, "error": type(exc).__name__},
+            )
 
     # ---- the gateway's rule source --------------------------------------------------------------
     async def rules_for(self, user_id: str) -> list[PolicyRule]:
@@ -184,8 +209,11 @@ class PermissionsService:
         keys = await self.passkeys.owned(uid) if self.rp is not None else []
         if patch.require_passkey is True and not keys:
             raise PermissionRejected("Set up a passkey first, then switch this on.")
+        how = ""
         if patch.require_passkey is False and await self.passkey_required(uid):
-            await self._prove(uid, patch.proof, "disable", _binding(uid, "disable"), fresh_left_s)
+            how = await self._prove(
+                uid, patch.proof, "disable", _binding(uid, "disable"), fresh_left_s
+            )
 
         def change(cur: OwnerPermissions) -> OwnerPermissions:
             merged = {**cur.choices, **choices}
@@ -199,6 +227,13 @@ class PermissionsService:
             "permissions changed",
             extra={"groups": sorted(choices), "require_passkey": patch.require_passkey},
         )
+        what = [f"{gid}={effect.value}" for gid, effect in sorted(choices.items())]
+        if patch.require_passkey is not None:
+            what.append(f"require_passkey={'on' if patch.require_passkey else 'off'}")
+        if how:
+            what.append(f"proof: {how}")
+        if what:
+            await self._record(uid, "permissions", "changed", "; ".join(what))
         return self._view(perms, keys, fresh_left_s)
 
     async def passkey_required(self, uid: str) -> bool:
@@ -213,12 +248,19 @@ class PermissionsService:
             raise PasskeysUnavailable(NO_RP)
         return self.rp
 
-    async def _new_challenge(self, uid: str, purpose: str, binding: str) -> tuple[str, bytes]:
+    async def _new_challenge(
+        self, uid: str, purpose: str, binding: str, *, note: str = ""
+    ) -> tuple[str, bytes]:
         cid = secrets.token_urlsafe(24)
         # random bytes + the binding digest: the authenticator signs what the check is for
         challenge = secrets.token_bytes(32) + bytes.fromhex(binding)
         await self.challenges.create(
-            cid=cid, uid=uid, purpose=purpose, binding=binding, challenge=_b64u(challenge)
+            cid=cid,
+            uid=uid,
+            purpose=purpose,
+            binding=binding,
+            challenge=_b64u(challenge),
+            note=note,
         )
         return cid, challenge
 
@@ -261,9 +303,12 @@ class PermissionsService:
         keys = await self.passkeys.owned(uid)
         if len(keys) >= MAX_PASSKEYS:
             raise PermissionRejected(f"You have {MAX_PASSKEYS} passkeys. Remove one first.")
+        how = ""
         if keys:  # adding to an existing set lowers nothing only if it is really the owner
-            await self._prove(uid, proof, "add", _binding(uid, "add"), fresh_left_s)
-        cid, challenge = await self._new_challenge(uid, "register", _binding(uid, "register"))
+            how = await self._prove(uid, proof, "add", _binding(uid, "add"), fresh_left_s)
+        cid, challenge = await self._new_challenge(
+            uid, "register", _binding(uid, "register"), note=how
+        )
         handle = hashlib.sha256(f"jarvis-passkey-user:{uid}".encode()).digest()
         opts = registration_options(
             rp,
@@ -283,7 +328,7 @@ class PermissionsService:
         ch = await self._take(uid, req.challenge_id, "register", _binding(uid, "register"))
         try:
             new = verify_registration(
-                rp, req.credential.model_dump(exclude_none=True), challenge=_unb64u(ch)
+                rp, req.credential.model_dump(exclude_none=True), challenge=_unb64u(ch.challenge)
             )
         except CeremonyFailed as exc:
             log.warning("passkey registration refused", extra={"reason": exc.reason[:160]})
@@ -304,7 +349,12 @@ class PermissionsService:
                     transports=list(new.transports),
                     backed_up=new.backed_up,
                 ),
+                # options handed out without proof (no passkey then) can only add the FIRST one:
+                # else a stolen session could slip its own passkey in after the owner's
+                only_if_none=not ch.note,
             )
+        except NeedsProof as exc:
+            raise ProofRequired(NEEDS_PROOF) from exc
         except PasskeyLimit as exc:
             raise PermissionRejected(
                 "That passkey is already set up, or you have too many."
@@ -315,6 +365,10 @@ class PermissionsService:
                 uid, lambda cur: cur.model_copy(update={"require_passkey": True})
             )
         log.info("passkey registered", extra={"count": len(keys)})
+        first = "first passkey; requirement on"
+        await self._record(
+            uid, "passkey", "added", first if len(keys) == 1 else f"proof: {ch.note or 'none'}"
+        )
         return self._view(perms, keys, fresh_left_s)
 
     async def remove(
@@ -329,12 +383,15 @@ class PermissionsService:
         keys = await self.passkeys.owned(uid)
         if not any(k.id == cred_id for k in keys):
             raise PasskeyNotFound("No such passkey.")
-        await self._prove(uid, proof, "remove", _binding(uid, "remove", cred_id), fresh_left_s)
+        how = await self._prove(
+            uid, proof, "remove", _binding(uid, "remove", cred_id), fresh_left_s
+        )
         left = await self.passkeys.remove(uid, cred_id)
         if left is None:
             raise PasskeyNotFound("No such passkey.")
         perms = await self.store.get(uid)
         log.info("passkey removed", extra={"left": len(left)})
+        await self._record(uid, "passkey", "removed", f"proof: {how}")
         return self._view(perms, left, fresh_left_s)
 
     # ---- the approval guard ---------------------------------------------------------------------
@@ -356,17 +413,18 @@ class PermissionsService:
         purpose: str,
         binding: str,
         fresh_left_s: int | None,
-    ) -> None:
-        """A passkey check for exactly this, or a Google sign-in in the last 5 minutes."""
+    ) -> str:
+        """A passkey check for exactly this, or a Google sign-in in the last 5 minutes. Returns
+        which one it was (for the audit)."""
         if proof is not None:
             await self._verify(uid, proof, purpose, binding)
-            return
+            return "passkey"
         if self.can_reauth and fresh_left_s is not None and fresh_left_s > 0:
             log.info("recent Google sign-in accepted as proof")
-            return
+            return "recent Google sign-in"
         raise ProofRequired(NEEDS_PROOF)
 
-    async def _take(self, uid: str, challenge_id: str, purpose: str, binding: str) -> str:
+    async def _take(self, uid: str, challenge_id: str, purpose: str, binding: str) -> Challenge:
         ch = await self.challenges.take(challenge_id)  # gone now, whatever happens next
         if ch is None or ch.user_id != uid:
             raise PasskeyRejected(
@@ -384,11 +442,11 @@ class PermissionsService:
             raise PasskeyRejected(
                 "wrong_action", "That passkey check was made for something else. Please try again."
             )
-        return ch.challenge
+        return ch
 
     async def _verify(self, uid: str, proof: PasskeyProof, purpose: str, binding: str) -> None:
         rp = self._rp()
-        challenge = await self._take(uid, proof.challenge_id, purpose, binding)
+        challenge = (await self._take(uid, proof.challenge_id, purpose, binding)).challenge
         keys = await self.passkeys.owned(uid)
         key = next((k for k in keys if k.id == proof.credential.rawId), None)
         if key is None or proof.credential.id != proof.credential.rawId:

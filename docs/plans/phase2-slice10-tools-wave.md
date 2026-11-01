@@ -135,6 +135,59 @@ helper, sub-agents, CLI long-term memory (owner does not use the CLI).
   ceremony with a software authenticator in tests (no network), replay/expired/wrong-approval
   challenges refused, R3 approve without assertion refused when required.
 
+### D — builder notes (branch `s10-perm`)
+- **Library, verified 2026-11-01**: `webauthn` 3.0.1 = latest on PyPI (`pip index versions`),
+  Duo Labs, `License-Expression: BSD-3-Clause` (dist-info + LICENSE), Python ≥ 3.10. API used:
+  `generate_registration_options`, `verify_registration_response(require_user_verification=True)`,
+  `generate_authentication_options(user_verification=REQUIRED)`,
+  `verify_authentication_response(credential_current_sign_count=…, require_user_verification=True)`
+  (checks type, challenge, origin, RP ID hash, UP, UV, signature, and refuses a counter that does
+  not grow unless both are 0). Only `jarvis.permissions.ceremony` imports it. pypi.org / GitHub
+  pages could not be fetched from the build sandbox; facts are from the PyPI index and the
+  installed distribution.
+- **Groups (12)**, matched by tool-name pattern + effective risk: Calendar — look / add & change /
+  delete & invite (R3: `calendar_delete_event`, any `calendar_*` at R3); Email — search & read
+  (`gmail_*` R1) / drafts / send (R3: `gmail_send`, `send_message`, `gmail_*` R3); To-do — read &
+  change (`tasks_*`, `task_*`, `list_tasks`, `create_reminder`) / delete (R3: `task_delete`, `task_*`
+  / `tasks_*` R3); Memory — save / forget (R3); Web (`web_*`); Documents (`doc_*`, `docs_*`).
+  Unknown tools keep the risk default. A call in two groups gets the strictest choice. "Never" on
+  a domain's base group also stops its irreversible calls (an invitation is also an event).
+- **Storage** (`Docs` port): `{prefix}permissions/{uid}` (groups, require_passkey, rev),
+  `{prefix}passkeys/{uid}` (≤ 10 public keys + sign counts; one doc → one transaction),
+  `{prefix}webauthn_challenges/{id}` (2 min; taken = read+deleted in one transaction before any
+  check; expired ones swept per owner, ≤ 10 live). Optional: a Firestore TTL policy on
+  `expires_at` for challenges abandoned forever.
+- **Gateway**: per-call policy = configured rules + the owner's (cache 15 s, refreshed at once on a
+  change; last value on a read error; none → fail closed). Owner rules are appended, so DENY
+  wins, R3 always asks, and spoken / tainted tightening still applies after them. Deny result:
+  "switched off by the owner in Permissions (Email: Send email — Never). Do not try to do it
+  another way…"; audit detail `policy:owner:<group>`. `PendingAction.tool_risk` records the call's
+  own risk (the gate's `risk` stays IRREVERSIBLE for every card); a card without it counts as R3.
+- **Passkey rules**: in force = switched on AND ≥ 1 passkey; the first passkey switches it on.
+  Approving a card whose call is R3 needs `passkey: {challenge_id, credential}` on
+  `/v1/approvals/{id}/approve`; the challenge is 32 random bytes + sha256(uid, approval id, sha256
+  of the exact arguments, scope, tool), so the authenticator signs what it approves. Decline never
+  needs one. **Lowering protection needs proof** — removing any passkey, switching the requirement
+  off, and adding a passkey once one exists (else a stolen cookie could add its own passkey):
+  a passkey check made for exactly that, or a Google sign-in < 5 min old. Registration options
+  handed out without proof (no passkey yet) can only ever add the FIRST passkey (checked inside the
+  add transaction), so a stolen session can't race the owner's first registration. Every change
+  is in the audit chain (`agent: owner`, tool `permissions` / `passkey`, how it was proven).
+- **Recovery**: `/auth/login?reauth=1` sends `max_age=0`; the callback stores `auth_at` in the
+  signed cookie (Google's `auth_time` when sent and sane, else the moment sign-in completed) and
+  returns to `/?reauth=done`; the console opens Permissions and says the 5-minute window is open.
+  Changing `JARVIS_PUBLIC_BASE_URL` (RP ID) makes existing passkeys unusable → same recovery.
+- **Modes**: no `JARVIS_PUBLIC_BASE_URL`, or an IP address → passkeys unavailable (409
+  `passkeys_unavailable`), approvals as before. Bearer token (CLI, scripts): an R3 approve while a
+  passkey is required → 403 `passkey_required` "…Approve it in the JARVIS console in your browser
+  (the command line can't use passkeys)". Token mode has no sign-in recovery: a lost passkey there
+  is an operator action (delete `{prefix}passkeys/{uid}`; in-memory storage forgets on restart).
+  Dev on `http://localhost:<port>` works (WebAuthn allows localhost).
+- **Not verified live**: that Google honours `max_age=0` and returns `auth_time` (OIDC says it
+  must; without it the window is measured from the completed sign-in — still needs control of the
+  Google account, not just a JARVIS cookie). Real Windows Hello / phone authenticators (tested with
+  py_webauthn + a software authenticator and Chromium's CDP virtual authenticator).
+
 ## E — Document reading
 - **D-E1 Server-side text extraction**, model-agnostic: `pypdf` (BSD-3) for PDF, `python-docx`
   (MIT) for DOCX, UTF-8 (with BOM/latin-1 fallback) for TXT/MD/CSV. No OCR (scanned PDF → "no text

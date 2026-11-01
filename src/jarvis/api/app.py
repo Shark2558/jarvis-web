@@ -224,7 +224,9 @@ def create_app(
             )
         # slice 10 D: the owner's Allow / Ask first / Never rules and passkeys, on the same
         # documents; the gateway reads the rules on every call (one built elsewhere gets them too)
-        app.state.permissions = build_permissions(s, docs)
+        app.state.permissions = build_permissions(
+            s, docs, audit=gw.audit if gw is not None else audit
+        )
         if gw is not None and gw.rules is None:
             gw.rules = app.state.permissions
         app.state.gateway = gw

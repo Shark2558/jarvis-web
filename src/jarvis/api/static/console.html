@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="/static/console-deck.css">
 <link rel="stylesheet" href="/static/console-memory.css">
 <link rel="stylesheet" href="/static/console-voice.css">
+<link rel="stylesheet" href="/static/console-permissions.css">
 </head>
 <body>
 <div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
@@ -186,7 +187,28 @@
         <button class="pbtn" type="button" data-close aria-label="Close Approvals panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
       </div>
     </header>
-    <div class="pbody"><div id="approvals"><div class="empty">Nothing waiting.</div></div></div>
+    <div class="pbody">
+      <div id="approvals"><div class="empty">Nothing waiting.</div></div>
+      <!-- Permissions (slice 10 D, console-permissions.js): Allow / Ask first / Never per tool group and
+           passkeys for actions that can't be undone. Server text is filled in with textContent only. -->
+      <section class="bset" id="permSet" aria-labelledby="permSetBtn">
+        <h3 class="dhead"><button class="dsc" id="permSetBtn" type="button" aria-expanded="false" aria-controls="permSetBody">
+          <svg class="dgear" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3.6a4.4 4.4 0 1 1 0 8.8a4.4 4.4 0 1 1 0-8.8z"/><path d="M8 6.1a1.9 1.9 0 1 1 0 3.8a1.9 1.9 0 1 1 0-3.8z"/><path d="M8 1.3v2.3M8 12.4v2.3M1.3 8h2.3M12.4 8h2.3M3.3 3.3l1.6 1.6M11.1 11.1l1.6 1.6M3.3 12.7l1.6-1.6M11.1 4.9l1.6-1.6"/></svg>
+          <span class="dl">Permissions</span>
+          <svg class="dchev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+          <span class="dsum" id="permSum"></span>
+        </button></h3>
+        <div class="dbody" id="permSetBody" hidden>
+          <div class="bnote" id="permNote" role="status" aria-live="polite"></div>
+          <p class="bfine plead">What JARVIS may do without asking. Anything that can't be undone always asks first, or never happens.</p>
+          <div id="permGroups" aria-busy="false"></div>
+          <section class="psk" aria-labelledby="pskT">
+            <h4 class="pskh" id="pskT">Passkey</h4>
+            <div id="pskBox"></div>
+          </section>
+        </div>
+      </section>
+    </div>
   </section>
 
   <section class="panel card" id="p-activity" data-panel="activity" aria-labelledby="t-activity" hidden>
@@ -497,6 +519,7 @@
 <script src="/static/console-brief.js" defer></script>
 <script src="/static/console-usage.js" defer></script>
 <script src="/static/console-memory.js" defer></script>
+<script src="/static/console-permissions.js" defer></script>
 <script src="/static/console-voice-capture.js" defer></script>
 <script src="/static/console-voice-speech.js" defer></script>
 <script src="/static/console-wakeword.js" defer></script>

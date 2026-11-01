@@ -62,10 +62,15 @@ class Challenge(BaseModel):
     binding: str  # hex sha256 of what the ceremony is for
     challenge: str  # base64url bytes the authenticator signs
     expires_at: datetime
+    note: str = ""  # how a registration was authorised (for the audit): passkey / recent sign-in
 
 
 class PasskeyLimit(Exception):
     """The owner already has the most passkeys allowed."""
+
+
+class NeedsProof(Exception):
+    """A registration authorised without proof (no passkey existed then) met an existing one."""
 
 
 def _decode_creds(doc: Any) -> list[StoredPasskey]:
@@ -100,11 +105,17 @@ class PasskeyStore:
     async def owned(self, uid: str) -> list[StoredPasskey]:
         return _decode_creds(await self._d.get(self._path(uid)))
 
-    async def add(self, uid: str, cred: StoredPasskey) -> list[StoredPasskey]:
+    async def add(
+        self, uid: str, cred: StoredPasskey, *, only_if_none: bool = False
+    ) -> list[StoredPasskey]:
+        """Store a new passkey. `only_if_none`: the registration was authorised while the owner
+        had none, so it may only become the FIRST one (checked inside the transaction)."""
         path = self._path(uid)
 
         async def fn(tx: DocTx) -> list[StoredPasskey]:
             creds = _decode_creds(await tx.get(path))
+            if only_if_none and creds:
+                raise NeedsProof("a passkey exists now")
             if any(c.id == cred.id for c in creds):
                 raise PasskeyLimit("already registered")
             if len(creds) >= MAX_PASSKEYS:
@@ -161,7 +172,7 @@ class ChallengeStore:
         return f"{self._col}/{cid}"
 
     async def create(
-        self, *, cid: str, uid: str, purpose: str, binding: str, challenge: str
+        self, *, cid: str, uid: str, purpose: str, binding: str, challenge: str, note: str = ""
     ) -> Challenge:
         if not safe_id(cid) or not safe_id(uid):
             raise ValueError("invalid id")
@@ -173,6 +184,7 @@ class ChallengeStore:
             binding=binding,
             challenge=challenge,
             expires_at=now + CHALLENGE_TTL,
+            note=note,
         )
         await self._sweep(uid, now)
         await self._d.write(
@@ -232,6 +244,7 @@ __all__ = [
     "ChallengeStore",
     "LABEL_MAX",
     "MAX_PASSKEYS",
+    "NeedsProof",
     "PasskeyLimit",
     "PasskeyStore",
     "StoredPasskey",

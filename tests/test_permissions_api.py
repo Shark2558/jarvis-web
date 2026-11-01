@@ -401,3 +401,12 @@ async def test_signed_out_gets_401(gclient: AsyncClient) -> None:
     assert (await gclient.get("/v1/permissions")).status_code == 401
     r = await gclient.post("/v1/passkeys/register/options", json={}, headers=CSRF)
     assert r.status_code == 401
+
+
+async def test_permission_changes_land_in_the_shared_audit_chain(client: AsyncClient) -> None:
+    await client.put("/v1/permissions", json={"groups": {"web": "deny", "email_send": "deny"}})
+    audit = (await client.get("/v1/audit")).json()
+    last = audit["entries"][-1]
+    assert audit["verified"] is True
+    assert (last["agent"], last["tool"], last["outcome"]) == ("owner", "permissions", "changed")
+    assert last["detail"] == "email_send=deny; web=deny"

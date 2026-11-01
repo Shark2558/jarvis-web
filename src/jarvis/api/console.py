@@ -41,10 +41,12 @@ APP_ASSETS: dict[str, str] = {
     "console-3d.js": _JS,  # three.js scenes (ES module; loads three lazily, 2D fallback)
     "console-3d-scenes.js": _JS,  # Core / Globe / Construct scene builders (ES module)
     "console-wakeword.js": _JS,  # on-device "Hey Jarvis" (openWakeWord port, slice 9 D12)
+    "console-permissions.js": _JS,  # slice 10 D: Allow / Ask first / Never, passkeys (WebAuthn)
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",
     "console-voice.css": "text/css",
+    "console-permissions.css": "text/css",
 }
 
 # Self-hosted OFL fonts (licences beside them).

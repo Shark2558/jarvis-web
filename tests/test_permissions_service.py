@@ -28,6 +28,7 @@ from jarvis.permissions.passkeys import ChallengeStore, PasskeyStore
 from jarvis.permissions.service import PermissionsService, clean_label
 from jarvis.permissions.store import PermissionsStore
 from jarvis.storage.docs import MemoryDocs
+from jarvis.tools.audit import AuditLog
 from jarvis.tools.policy import Effect
 
 UID = "u_owner"
@@ -49,6 +50,7 @@ class Rig:
     def __init__(self, *, rp: RelyingParty | None = RP, can_reauth: bool = True) -> None:
         self.docs = MemoryDocs()
         self.clock = Clock()
+        self.audit = AuditLog()
         self.svc = PermissionsService(
             store=PermissionsStore(self.docs),
             passkeys=PasskeyStore(self.docs),
@@ -56,6 +58,7 @@ class Rig:
             rp=rp,
             can_reauth=can_reauth,
             clock=self.clock,
+            audit=self.audit,
         )
         self.auth = SoftAuthenticator(origin=RP.origin)
         self.approvals: dict[str, PendingAction] = {}
@@ -152,7 +155,7 @@ async def test_a_hand_edited_allow_for_an_irreversible_group_reads_as_ask(rig: R
 async def test_first_passkey_switches_the_requirement_on(rig: Rig) -> None:
     with pytest.raises(PermissionRejected):
         await rig.svc.update(UID, PermissionsPatch(require_passkey=True))
-    await rig.register("  My‮ laptop\n ")
+    await rig.register("  My\u202e laptop\n ")
     v = await rig.svc.view(UID)
     assert v.require_passkey is True and [p.label for p in v.passkeys] == ["My laptop"]
     stored = (await rig.svc.passkeys.owned(UID))[0]
@@ -168,6 +171,18 @@ async def test_a_second_passkey_needs_proof(rig: Rig) -> None:
     await rig.register("Phone", proof=await rig.proof("add"))
     await rig.register("Key", proof=None, fresh_left_s=120)  # recent Google sign-in
     assert len((await rig.svc.view(UID)).passkeys) == 3
+
+
+async def test_unproven_options_cannot_add_a_passkey_once_one_exists(rig: Rig) -> None:
+    # a stolen session asks for options while the owner has none yet (no proof needed then) ...
+    early = await rig.svc.register_options(UID, user_name="o")
+    attacker = SoftAuthenticator(origin=RP.origin)
+    cred = attacker.create(early.public_key)
+    await rig.register("Owner's laptop")  # ... the owner sets up the first passkey meanwhile
+    req = RegisterRequest.model_validate({"challenge_id": early.challenge_id, "credential": cred})
+    with pytest.raises(ProofRequired):
+        await rig.svc.register(UID, req)
+    assert [p.label for p in (await rig.svc.view(UID)).passkeys] == ["Owner's laptop"]
 
 
 async def test_registration_challenge_is_single_use_and_expires(rig: Rig) -> None:
@@ -382,7 +397,26 @@ async def test_challenges_are_swept_and_capped_per_owner(rig: Rig) -> None:
     assert len(await rig.docs.query(Query("jarvis_webauthn_challenges"))) == 1
 
 
+async def test_changes_to_protection_are_in_the_audit_chain(rig: Rig) -> None:
+    await rig.svc.update(UID, PermissionsPatch(groups={"web": "deny"}))
+    a = await rig.register("A")
+    b = await rig.register("B", proof=None, fresh_left_s=100)
+    await rig.svc.remove(UID, b, proof=await rig.proof("remove", credential_id=b))
+    await rig.svc.update(UID, PermissionsPatch(require_passkey=False), fresh_left_s=100)
+    tail = await rig.audit.tail(20)
+    assert tail.verified
+    got = [(e.agent, e.tool, e.outcome, e.detail) for e in tail.entries]
+    assert got == [
+        ("owner", "permissions", "changed", "web=deny"),
+        ("owner", "passkey", "added", "first passkey; requirement on"),
+        ("owner", "passkey", "added", "proof: recent Google sign-in"),
+        ("owner", "passkey", "removed", "proof: passkey"),
+        ("owner", "permissions", "changed", "require_passkey=off; proof: recent Google sign-in"),
+    ]
+    assert a not in str(got)  # credential ids stay out of the audit text
+
+
 def test_labels_are_cleaned_and_capped() -> None:
-    assert clean_label("‮abc​  def\n", "x") == "abc def"
+    assert clean_label("\u202eabc\u200b  def\n", "x") == "abc def"
     assert clean_label("   ", "Passkey 1") == "Passkey 1"
     assert len(clean_label("a" * 100, "x")) == 40

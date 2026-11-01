@@ -41,6 +41,7 @@ from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.config import AuthMode, Settings
 from jarvis.core.models import PendingApproval
+from jarvis.logging import get_logger
 from jarvis.permissions.ceremony import RelyingParty
 from jarvis.permissions.errors import (
     PasskeyRejected,
@@ -63,8 +64,10 @@ from jarvis.permissions.passkeys import ChallengeStore, PasskeyStore
 from jarvis.permissions.service import PermissionsService
 from jarvis.permissions.store import PermissionsStore
 from jarvis.storage.docs import Docs
+from jarvis.tools.audit import AuditTrail
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+log = get_logger(__name__)
 
 VIEW_PER_MINUTE = 60
 CHANGE_PER_MINUTE = 30
@@ -78,8 +81,11 @@ class PermissionsRateLimited(Exception):
         super().__init__("too many requests")
 
 
-def build_permissions(s: Settings, docs: Docs) -> PermissionsService:
-    """Choices, passkeys and challenges on the app's documents (Firestore in production)."""
+def build_permissions(
+    s: Settings, docs: Docs, *, audit: AuditTrail | None = None
+) -> PermissionsService:
+    """Choices, passkeys and challenges on the app's documents (Firestore in production); every
+    change to them goes to the same audit chain as the tool calls."""
     p = s.firestore_prefix
     return PermissionsService(
         store=PermissionsStore(docs, prefix=p),
@@ -87,6 +93,7 @@ def build_permissions(s: Settings, docs: Docs) -> PermissionsService:
         challenges=ChallengeStore(docs, prefix=p),
         rp=RelyingParty.from_base_url(s.public_base_url),
         can_reauth=s.auth_mode is AuthMode.GOOGLE,
+        audit=audit,
     )
 
 
@@ -206,7 +213,14 @@ async def mark_passkey_cards(
 ) -> list[PendingApproval]:
     """Which waiting cards the console must approve with a passkey."""
     svc: PermissionsService | None = getattr(request.app.state, "permissions", None)
-    if svc is None or not cards or not await svc.passkey_required(uid):
+    if svc is None or not cards:
+        return cards
+    try:
+        required = await svc.passkey_required(uid)
+    except Exception as exc:  # noqa: BLE001 — the list stays readable; approving still checks
+        log.warning("passkey setting unreadable", extra={"error": type(exc).__name__})
+        return cards
+    if not required:
         return cards
     return [
         c.model_copy(update={"passkey_required": c.tool_risk in (None, "irreversible")})

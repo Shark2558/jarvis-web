@@ -1,6 +1,6 @@
 # Phase 2 · Slice 5c — Command Deck (dark 3D HUD), deploy-on-merge, owner identity
 
-Status: IN PROGRESS · 2026-11-01
+Status: DONE · 2026-11-01 · PR #2 (owner merges)
 
 ## Owner ask
 Shared a reference screenshot of a dark sci-fi HUD (floating panels, central rotating ring,
@@ -92,3 +92,12 @@ every text token ≥ 4.5 : 1, minimum 4.56.
 
 **Not verified here.** Real-GPU frame rate (CI has software GL only: ~5 fps before the governor
 retires 3D); Google sign-in mode (`/auth/me` path is unchanged code); Safari / Firefox rendering.
+
+## Reviews (fresh context)
+| Review | Findings | Outcome |
+|---|---|---|
+| Security: identity + deploy | 0 critical, 1 HIGH, 6 MEDIUM, several LOW | HIGH = protect `main` (repo setting, owner's call; offered). Fixed: SHA-pinned actions + Dependabot, read-only default token, federation also pins event (push/dispatch), `ci.yml@main` and GitHub-hosted runners; no-traffic rollout with health check on the tagged URL and stale-run refusal; image clean-up keeps the 10 newest; quick re-run only for a fully set-up service and re-binds core secrets; start-up adoption time-boxed (20 s); CLI uses the primary owner id. Accepted: rollout-overlap race (old revision still on `owner`, self-healing), pre-migration approvals expire unlisted, `/v1/audit` not per-owner (hashes + tool names only). |
+| Front-end | 0 critical, 1 HIGH, 4 MEDIUM, 4 LOW — all fixed | Privacy banner moved into the layout (was covering title bars); Esc ignored while typing, = Keep in delete confirm; busy held across cross-conversation approve / restore / delete; approvals + audit failures show "—" and a Retry, never a false 0; 3D teardown aborts listeners + forces context loss; corrupt saved layout falls back to defaults; no focus stealing; phones never download three.js unless Construct opens; drag reads layout once. XSS, CSP, static routes, CSRF and localStorage validation checked fine. |
+
+Behaviour checks (≈ 95 Playwright assertions) live in the build harness, not CI — adding a browser
+test job to CI is a follow-up.

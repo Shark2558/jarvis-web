@@ -1,573 +1,253 @@
 <!doctype html>
-<html lang="en" data-theme="workshop">
+<html lang="en" data-theme="workshop" data-surface="night">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light">
-<meta name="theme-color" content="#FFFFFF">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#04070D">
 <title>JARVIS</title>
 <style>
-/* =============================================================================================
-   JARVIS console — "Holo-Lab" (docs/plans/phase2-slice5b-console-themes.md)
-   White lab surface, frosted-white panels with accent hairlines and HUD corner brackets.
-   Theme = a handful of custom properties on <html data-theme>; console-fx.js derives the
-   AA-safe ink / on-accent colours for every theme and for the owner's own colour.
-   Motion levels on <html data-motion="full|calm|off">. Content always wins over decoration.
-============================================================================================= */
+/* Self-hosted OFL fonts (static/fonts, licences beside them). Styles: console.css + console-deck.css */
 @font-face{font-family:"Orbitron";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/orbitron-latin-600-normal.woff2?v=1) format("woff2")}
 @font-face{font-family:"Orbitron";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/orbitron-latin-700-normal.woff2?v=1) format("woff2")}
 @font-face{font-family:"Rajdhani";font-style:normal;font-weight:500;font-display:swap;src:url(/static/fonts/rajdhani-latin-500-normal.woff2?v=1) format("woff2")}
 @font-face{font-family:"Rajdhani";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/rajdhani-latin-600-normal.woff2?v=1) format("woff2")}
 @font-face{font-family:"Rajdhani";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/rajdhani-latin-700-normal.woff2?v=1) format("woff2")}
-
-/* registered so a theme switch cross-fades instead of snapping */
-@property --accent{syntax:"<color>";inherits:true;initial-value:#0071E3}
-@property --accent-2{syntax:"<color>";inherits:true;initial-value:#00C2E0}
-@property --accent-ink{syntax:"<color>";inherits:true;initial-value:#0067D1}
-@property --on-accent{syntax:"<color>";inherits:true;initial-value:#0A1220}
-@property --bk{syntax:"<length>";inherits:false;initial-value:12px}
-
-:root{
-  --bg:#FFFFFF; --bg-2:#F4F7FB;
-  --ink:#0D1828; --ink-2:#44546A; --ink-3:#5A687B;
-  --line:color-mix(in srgb,var(--accent) 18%,#DCE3EC);
-  --line-2:color-mix(in srgb,var(--accent) 10%,#E8EDF3);
-  --tint:color-mix(in srgb,var(--accent) 8%,#FFFFFF);
-  --card:rgba(255,255,255,.9);
-  --amber:#F59E0B; --amber-ink:#8A4F00; --amber-tint:#FFF8EB; --amber-line:rgba(245,158,11,.55);
-  --ok:#16A36A; --ok-ink:#0A6F47; --bad:#E5484D; --bad-ink:#B42318;
-  --sh-1:0 1px 1px rgba(16,32,64,.04),0 3px 8px -2px rgba(16,32,64,.07),0 14px 30px -14px rgba(16,32,64,.16);
-  --sh-2:0 1px 2px rgba(16,32,64,.05),0 8px 20px -6px rgba(16,32,64,.10),0 28px 56px -20px rgba(16,32,64,.20),0 30px 70px -36px color-mix(in srgb,var(--accent) 45%,transparent);
-  --bloom:0 14px 34px -12px color-mix(in srgb,var(--accent) 55%,transparent),0 4px 10px -4px rgba(16,32,64,.16);
-  --blur:saturate(160%) blur(14px);
-  --r-sm:6px; --r-md:10px; --r-lg:14px;
-  --ease:cubic-bezier(.22,.8,.24,1);
-  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"Helvetica Neue",Roboto,sans-serif;
-  --hud:"Rajdhani",var(--font);
-  --disp:"Orbitron","Rajdhani",var(--font);
-  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
-  --gutter:16px;
-  transition:--accent .4s ease,--accent-2 .4s ease,--accent-ink .4s ease,--on-accent .4s ease;
-}
-/* theme accents (spec). console-fx.js sets the same tokens inline, contrast-checked. */
-html[data-theme="workshop"]{--accent:#0071E3;--accent-2:#00C2E0;--accent-ink:#0067D1;--on-accent:#FFFFFF}
-html[data-theme="hotrod"]{--accent:#C8102E;--accent-2:#D4A017;--accent-ink:#C8102E;--on-accent:#FFFFFF}
-html[data-theme="nanotech"]{--accent:#20262E;--accent-2:#C9A227;--accent-ink:#20262E;--on-accent:#FFFFFF}
-html[data-theme="stealth"]{--accent:#4A5868;--accent-2:#9AA8B8;--accent-ink:#4A5868;--on-accent:#FFFFFF}
-html[data-theme="reactor"]{--accent:#1E6BFF;--accent-2:#5FD4FF;--accent-ink:#1A5FE6;--on-accent:#FFFFFF}
-
-*{box-sizing:border-box}
-[hidden]{display:none!important}
-html,body{height:100%;margin:0}
-body{
-  color:var(--ink);font:15px/1.5 var(--font);-webkit-font-smoothing:antialiased;overflow:hidden;
-  background:
-    radial-gradient(900px 600px at 8% -10%,color-mix(in srgb,var(--accent) 7%,transparent),transparent 65%),
-    radial-gradient(800px 600px at 110% 110%,color-mix(in srgb,var(--accent-2) 8%,transparent),transparent 60%),
-    radial-gradient(130% 100% at 50% 35%,var(--bg) 55%,var(--bg-2) 100%);
-  background-color:var(--bg);
-}
-button,select,textarea,input{font:inherit;color:inherit}
-:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
-::selection{background:color-mix(in srgb,var(--accent) 22%,#fff)}
-.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-*{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--accent) 28%,transparent) transparent}
-
-/* ---- ambient layers: aurora + canvas field + scan line (behind everything) ----------------- */
-/* Messages and panels sit on near-opaque white cards, so the field can be clearly visible in
-   open space without ever competing with text. The element opacity is the hard ceiling. */
-#field{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.3;transition:opacity .2s linear}
-.aurora{position:fixed;z-index:0;pointer-events:none;border-radius:50%;filter:blur(60px);opacity:.55;will-change:transform}
-.aurora.a1{width:46vw;height:46vw;left:-12vw;top:-16vw;background:color-mix(in srgb,var(--accent) 16%,transparent);animation:drift1 26s ease-in-out infinite alternate}
-.aurora.a2{width:40vw;height:40vw;right:-10vw;bottom:-14vw;background:color-mix(in srgb,var(--accent-2) 18%,transparent);animation:drift2 32s ease-in-out infinite alternate}
-@keyframes drift1{to{transform:translate(18vw,12vh) scale(1.05)}}
-@keyframes drift2{to{transform:translate(-16vw,-10vh) scale(1.05)}}
-html[data-motion="calm"] .aurora,html[data-motion="off"] .aurora{animation:none}
-.scanline{position:fixed;left:0;right:0;top:0;height:72px;z-index:1;pointer-events:none;opacity:0;
-  background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--accent) 3%,transparent) 80%,color-mix(in srgb,var(--accent) 10%,transparent) 98.5%,transparent);
-  animation:scan 9s linear 1.2s infinite}
-@keyframes scan{0%{opacity:0;transform:translateY(-80px)}2%{opacity:1}24%{opacity:1}27%{opacity:0;transform:translateY(105vh)}100%{opacity:0;transform:translateY(105vh)}}
-
-/* ---- materials ------------------------------------------------------------------------------ */
-.card{
-  background:linear-gradient(90deg,transparent 6%,color-mix(in srgb,var(--accent) 55%,transparent) 50%,transparent 94%) top/100% 1px no-repeat,var(--card);
-  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);
-  border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--sh-1);
-}
-/* HUD corner brackets: eight 2px strokes, drawn in on load (--bk animates 0 -> 12px) */
-.hud{position:relative}
-.hud::before{
-  content:"";position:absolute;inset:-5px;pointer-events:none;z-index:2;
-  --bc:var(--bracket,color-mix(in srgb,var(--accent) 75%,transparent));
-  background:
-    linear-gradient(var(--bc),var(--bc)) left top/var(--bk) 2px,linear-gradient(var(--bc),var(--bc)) left top/2px var(--bk),
-    linear-gradient(var(--bc),var(--bc)) right top/var(--bk) 2px,linear-gradient(var(--bc),var(--bc)) right top/2px var(--bk),
-    linear-gradient(var(--bc),var(--bc)) left bottom/var(--bk) 2px,linear-gradient(var(--bc),var(--bc)) left bottom/2px var(--bk),
-    linear-gradient(var(--bc),var(--bc)) right bottom/var(--bk) 2px,linear-gradient(var(--bc),var(--bc)) right bottom/2px var(--bk);
-  background-repeat:no-repeat;
-}
-.section.hud::before{inset:-4px;
-  background:
-    linear-gradient(var(--bc),var(--bc)) left top/var(--bk) 2px,linear-gradient(var(--bc),var(--bc)) left top/2px var(--bk),
-    linear-gradient(var(--bc),var(--bc)) right bottom/var(--bk) 2px,linear-gradient(var(--bc),var(--bc)) right bottom/2px var(--bk);
-  background-repeat:no-repeat}
-.instant,.instant *,.instant *::before,.instant *::after{transition:none!important}
-@media (prefers-reduced-transparency: reduce){
-  :root{--card:#FFFFFF}
-  .card,.row.jarvis .bubble,.inspector,.menu{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
-  .gate{background:#F4F7FB!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
-}
-
-/* interactive affordance: lift + shadow bloom + sheen sweep (background-position, no overflow clip) */
-.lift{
-  background-image:linear-gradient(105deg,transparent 42%,var(--sheen,rgba(255,255,255,.55)) 50%,transparent 58%);
-  background-size:260% 100%;background-repeat:no-repeat;background-position:135% 0;
-  transition:transform .25s var(--ease),box-shadow .25s var(--ease),background-position .8s var(--ease),border-color .25s var(--ease),color .25s var(--ease),background-color .25s var(--ease);
-}
-.lift:hover:not(:disabled){transform:translateY(-2px);box-shadow:var(--bloom);background-position:-35% 0}
-.lift:active:not(:disabled){transform:translateY(0) scale(.98)}
-
-/* ---- the Core: original emblem (three tick rings + breathing centre) --------------------- */
-.core{--s:30px;position:relative;display:inline-block;flex:none;width:var(--s);height:var(--s);color:var(--accent)}
-.core svg{position:relative;z-index:1;display:block;width:100%;height:100%;overflow:visible}
-.core g{transform-box:view-box;transform-origin:50% 50%}
-.core .r1{animation:spin 48s linear infinite}
-.core .r2{animation:spin 21s linear infinite reverse}
-.core .r3{animation:spin 9s linear infinite}
-.core .glow{animation:breathe 4.2s ease-in-out infinite}
-.core .faint{stroke:var(--accent);stroke-opacity:.32;fill:none}
-.core .tick{stroke:var(--accent);stroke-opacity:.55}
-.core .tick.major{stroke:var(--accent-ink);stroke-opacity:.9}
-.core .arc{stroke:var(--accent);fill:none;stroke-linecap:round}
-.core .arc2{stroke:var(--accent-2);fill:none;stroke-linecap:round}
-.core .mark{fill:var(--accent-ink)}
-.core .nucleus{fill:#fff;stroke:var(--accent);stroke-width:1.5}
-.core .s1{stop-color:var(--accent-2)} .core .s2{stop-color:var(--accent)}
-.core::before{content:"";position:absolute;inset:-28%;border-radius:50%;z-index:0;
-  background:radial-gradient(closest-side,color-mix(in srgb,var(--accent-2) 26%,transparent),color-mix(in srgb,var(--accent) 8%,transparent) 60%,transparent)}
-.core.lg{--s:168px}
-.core.busy .glow{animation:pulse .9s ease-in-out infinite}
-.core.alert{--bracket:var(--amber)}
-.core.alert::after{content:"";position:absolute;inset:-12%;border-radius:50%;z-index:0;pointer-events:none;
-  box-shadow:0 0 0 1.5px var(--amber-line),0 0 18px 3px rgba(245,158,11,.38);animation:amberBreath 1.8s ease-in-out infinite}
-.core.alert .r1 .tick.major{stroke:var(--amber-ink)}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes breathe{0%,100%{transform:scale(.86);opacity:.75}50%{transform:scale(1.04);opacity:1}}
-@keyframes pulse{0%,100%{transform:scale(.9);opacity:.8}50%{transform:scale(1.12);opacity:1}}
-@keyframes amberBreath{0%,100%{opacity:.3}50%{opacity:1}}
-
-/* ---- app frame ------------------------------------------------------------------------------ */
-.app{position:relative;z-index:2;display:grid;grid-template-columns:1fr auto;height:100%;height:100dvh}
-.stage{position:relative;display:flex;flex-direction:column;min-width:0;height:100%}
-
-.toolbar{position:relative;z-index:6;margin:14px var(--gutter) 0;padding:8px 10px 8px 12px;display:flex;align-items:center;gap:12px;border-radius:var(--r-lg);box-shadow:var(--sh-2)}
-.brand{display:flex;align-items:center;gap:12px;min-width:0}
-.wordmark{font:700 16px/1 var(--disp);letter-spacing:.28em;color:var(--ink)}
-.status{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--tint);
-  font:700 12.5px/1 var(--hud);letter-spacing:.14em;text-transform:uppercase;color:var(--ok-ink);white-space:nowrap;transition:color .3s,background-color .3s,border-color .3s}
-.status i{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px rgba(22,163,106,.16);animation:amberBreath 2.4s ease-in-out infinite}
-.status.busy{color:var(--accent-ink)} .status.busy i{background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent);animation-duration:.9s}
-.status.alert{color:var(--amber-ink);background:var(--amber-tint);border-color:var(--amber-line)} .status.alert i{background:var(--amber);box-shadow:0 0 0 3px rgba(245,158,11,.2)}
-.clock{font:600 13px/1 var(--disp);letter-spacing:.08em;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
-.toolbar .grow{flex:1}
-.group{display:flex;align-items:center;gap:4px}
-.divider{width:1px;height:22px;background:var(--line);margin:0 4px}
-
-.icon-btn{position:relative;width:38px;height:38px;border-radius:var(--r-md);border:1px solid transparent;background-color:transparent;display:grid;place-items:center;color:var(--ink-2);cursor:pointer;--sheen:color-mix(in srgb,var(--accent) 16%,transparent)}
-.icon-btn:hover{color:var(--accent-ink);background-color:var(--tint);border-color:var(--line)}
-.icon-btn svg{width:19px;height:19px}
-.icon-btn[aria-pressed="true"],.icon-btn[aria-expanded="true"]{color:var(--accent-ink);background-color:var(--tint);border-color:var(--line)}
-.icon-btn.badge::after{content:"";position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 0 2px #fff,0 0 10px 2px rgba(245,158,11,.55)}
-
-.picker{position:relative;display:flex;align-items:center}
-.picker select{appearance:none;-webkit-appearance:none;cursor:pointer;height:38px;padding:0 34px 0 14px;border-radius:var(--r-md);
-  border:1px solid var(--line);background:#fff;color:var(--ink);font-size:14px;font-weight:550;max-width:230px;
-  transition:border-color .2s var(--ease),box-shadow .2s var(--ease)}
-.picker select:hover{border-color:color-mix(in srgb,var(--accent) 45%,#DCE3EC);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent)}
-.picker select:disabled{cursor:default}
-.picker select.training{border-color:var(--amber-line);background:var(--amber-tint)}
-.picker select option{background:#fff;color:var(--ink)}
-.picker svg{position:absolute;right:12px;width:12px;height:12px;pointer-events:none;color:var(--ink-2)}
-
-.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:700 14px/1 var(--hud);
-  background:var(--accent);color:var(--on-accent);box-shadow:0 0 0 2px #fff,0 0 0 3.5px color-mix(in srgb,var(--accent) 45%,transparent)}
-
-/* privacy notice: amber is reserved for this and for approvals */
-.notice{display:none;align-items:flex-start;gap:10px;position:relative;z-index:4;margin:12px auto 0;max-width:min(760px,calc(100% - 2*var(--gutter)));
-  padding:10px 16px;border-radius:var(--r-md);font-size:13.5px;line-height:1.45;color:var(--amber-ink);background:var(--amber-tint);border:1px solid var(--amber-line);box-shadow:var(--sh-1)}
-.notice.show{display:flex;animation:drop .5s var(--ease) both}
-.notice svg{flex:none;width:16px;height:16px;margin-top:2px;color:#B86E00}
-
-/* ---- conversation --------------------------------------------------------------------------- */
-.scroll{flex:1;overflow-y:auto;scroll-behavior:smooth;overscroll-behavior:contain;
-  -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 22px,#000 calc(100% - 28px),transparent);
-          mask-image:linear-gradient(180deg,transparent 0,#000 22px,#000 calc(100% - 28px),transparent)}
-.thread{max-width:780px;margin:0 auto;padding:30px var(--gutter) 160px;display:flex;flex-direction:column;gap:6px}
-
-.row{display:flex;flex-direction:column;max-width:84%}
-.row.user{align-self:flex-end;align-items:flex-end;animation:slideIn .38s var(--ease) both}
-.row.jarvis{align-self:flex-start;align-items:flex-start}
-.row + .row{margin-top:12px}
-.bubble{position:relative;padding:12px 16px;line-height:1.55;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
-.row.user .bubble{background:var(--accent);color:var(--on-accent);border-radius:14px 4px 14px 14px;font-weight:500;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 12px 26px -12px color-mix(in srgb,var(--accent) 70%,transparent),0 2px 6px -2px rgba(16,32,64,.18)}
-.row.jarvis .bubble{color:var(--ink);border-radius:4px 14px 14px 14px;padding-left:18px;
-  background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 40%,transparent),transparent 70%) top/100% 1px no-repeat,var(--card);
-  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border:1px solid var(--line);box-shadow:var(--sh-1);
-  animation:materialise .62s var(--ease) backwards}
-.row.jarvis .bubble::before{content:"";position:absolute;left:-1px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:linear-gradient(180deg,var(--accent),var(--accent-2))}
-.row.jarvis .bubble::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;opacity:0;
-  background:linear-gradient(180deg,transparent 80%,color-mix(in srgb,var(--accent-2) 22%,transparent) 96%,var(--accent) 98%,transparent 99.5%);
-  animation:scanReveal .62s var(--ease)}
-.meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:6px 4px 0;font:600 12.5px/1.2 var(--hud);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
-.meta span + span::before{content:"";display:inline-block;width:4px;height:4px;margin-right:10px;vertical-align:2px;transform:rotate(45deg);background:color-mix(in srgb,var(--accent) 55%,transparent)}
-
-.sys{align-self:stretch;display:flex;align-items:center;gap:14px;margin:14px 0;font:600 14px/1.35 var(--hud);letter-spacing:.04em;color:var(--ink-2);text-align:center;animation:fadeIn .5s var(--ease) both}
-.sys::before,.sys::after{content:"";flex:1 1 24px;min-width:24px;height:1px;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent) 45%,transparent))}
-.sys::after{transform:scaleX(-1)}
-.sys.error{align-self:center;display:block;max-width:92%;padding:10px 14px;border-radius:var(--r-md);font:14px/1.45 var(--font);letter-spacing:0;color:var(--bad-ink);background:#FFF3F2;border:1px solid #F4C4BF;box-shadow:var(--sh-1)}
-.sys.error::before,.sys.error::after{display:none}
-
-/* typing: 5-bar waveform (Calm: dots) */
-.bubble.typing{display:inline-flex;align-items:center;gap:12px;padding:12px 16px 12px 18px}
-.wave{display:inline-flex;align-items:center;gap:3px;height:18px}
-.wave i{display:block;width:3px;height:18px;border-radius:2px;background:linear-gradient(180deg,var(--accent-2),var(--accent));transform:scaleY(.3);animation:wave 1s ease-in-out infinite}
-.wave i:nth-child(2){animation-delay:.12s}.wave i:nth-child(3){animation-delay:.24s}.wave i:nth-child(4){animation-delay:.36s}.wave i:nth-child(5){animation-delay:.48s}
-.typing .lbl{font:700 12.5px/1 var(--hud);letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink)}
-@keyframes wave{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}
-
-/* empty state: the Core greets */
-.welcome{display:flex;flex-direction:column;align-items:center;text-align:center;margin:0 auto;padding:4vh 0 0}
-.welcome h1{margin:30px 0 8px;font:700 clamp(34px,4.4vw,50px)/1.04 var(--hud);letter-spacing:.005em;color:var(--ink)}
-.welcome p{margin:0;color:var(--ink-2);font-size:17px}
-.chips{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:32px;max-width:640px}
-.chip{position:relative;border:1px solid var(--line);background-color:rgba(255,255,255,.92);border-radius:var(--r-md);padding:10px 16px 10px 20px;cursor:pointer;
-  font:600 14.5px/1.2 var(--hud);letter-spacing:.07em;text-transform:uppercase;color:var(--ink);box-shadow:var(--sh-1);--sheen:color-mix(in srgb,var(--accent) 18%,transparent)}
-.chip::before{content:"";position:absolute;left:8px;top:50%;width:5px;height:5px;margin-top:-2.5px;transform:rotate(45deg);background:var(--accent)}
-.chip:hover{border-color:color-mix(in srgb,var(--accent) 55%,#DCE3EC);color:var(--accent-ink)}
-
-/* ---- composer: frosted capsule, rotating conic border on focus ---------------------------- */
-.composer-wrap{position:absolute;left:0;right:0;bottom:0;z-index:5;padding:0 var(--gutter) max(16px,env(safe-area-inset-bottom));pointer-events:none}
-.composer{pointer-events:auto;position:relative;isolation:isolate;overflow:hidden;max-width:780px;margin:0 auto;display:flex;align-items:flex-end;gap:8px;
-  padding:9px 9px 9px 18px;border-radius:var(--r-lg);background:var(--line);box-shadow:var(--sh-2);transition:box-shadow .3s var(--ease)}
-.composer::before{content:"";position:absolute;z-index:-2;left:50%;top:50%;width:130%;aspect-ratio:1;opacity:0;
-  background:conic-gradient(from 0deg,var(--accent) 0deg,transparent 70deg 180deg,var(--accent-2) 180deg,transparent 250deg 360deg);
-  transform:translate(-50%,-50%);transition:opacity .35s var(--ease)}
-.composer::after{content:"";position:absolute;z-index:-1;inset:1px;border-radius:calc(var(--r-lg) - 1px);background:#fff;transition:inset .2s}
-.composer:focus-within{box-shadow:var(--sh-2),0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent)}
-.composer:focus-within::before{opacity:1;animation:ring 4s linear infinite}
-.composer:focus-within::after{inset:2px;border-radius:calc(var(--r-lg) - 2px)}
-@keyframes ring{from{transform:translate(-50%,-50%) rotate(0)}to{transform:translate(-50%,-50%) rotate(360deg)}}
-.composer textarea{flex:1;resize:none;border:0;outline:0;background:transparent;min-height:24px;max-height:180px;padding:9px 0;line-height:1.45;font-size:15.5px;color:var(--ink)}
-.composer textarea::placeholder{color:var(--ink-3)}
-.send{position:relative;flex:none;width:42px;height:42px;border-radius:var(--r-md);border:0;cursor:pointer;display:grid;place-items:center;
-  background-color:var(--accent);color:var(--on-accent);box-shadow:0 8px 18px -8px color-mix(in srgb,var(--accent) 80%,transparent)}
-.send svg{width:18px;height:18px}
-.send:disabled{cursor:default;background-color:color-mix(in srgb,var(--accent) 16%,#EEF2F7);color:var(--ink-3);box-shadow:none}
-.send::after{content:"";position:absolute;inset:0;border-radius:inherit;border:2px solid var(--accent);opacity:0;pointer-events:none}
-.send.ripple::after{animation:ripple .65s var(--ease)}
-@keyframes ripple{from{opacity:.9;transform:scale(1)}to{opacity:0;transform:scale(1.9)}}
-.hint{max-width:780px;margin:9px auto 0;text-align:center;font-size:12px;color:var(--ink-3);pointer-events:auto}
-
-/* ---- inspector: column of floating HUD panels ---------------------------------------------- */
-.inspector{width:360px;margin:14px 14px 14px 0;padding:6px 8px 12px;overflow:auto;display:flex;flex-direction:column;gap:16px;align-self:start;max-height:calc(100% - 28px);
-  transition:width .45s var(--ease),opacity .3s var(--ease),margin .45s var(--ease),padding .45s var(--ease)}
-.app.collapsed .inspector{width:0;padding:0;margin-left:0;margin-right:0;opacity:0;overflow:hidden}
-.section{padding:14px 16px 16px}
-.section h2{margin:0 0 12px;display:flex;align-items:center;gap:9px;font:700 13.5px/1 var(--hud);letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink)}
-.section h2::before{content:"";width:6px;height:6px;transform:rotate(45deg);background:linear-gradient(135deg,var(--accent),var(--accent-2))}
-.section h2 .count{margin-left:auto;font:600 12px/1 var(--disp);letter-spacing:.06em;color:var(--ink-2)}
-.empty{color:var(--ink-3);font-size:13.5px}
-.list{display:flex;flex-direction:column}
-.kv{display:flex;justify-content:space-between;gap:12px;padding:8px 0;font-size:13.5px;border-top:1px solid var(--line-2)}
-.kv:first-child{border-top:0}
-.kv span{color:var(--ink-2)} .kv b{font-weight:600;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
-.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
-.tile{position:relative;padding:10px 8px 9px;border-radius:var(--r-sm);background:var(--tint);border:1px solid var(--line-2);text-align:center;min-width:0}
-.tile b{display:block;font:600 15px/1.15 var(--disp);letter-spacing:.02em;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tile span{display:block;margin-top:5px;font:700 11.5px/1 var(--hud);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
-
-.approval{position:relative;border-radius:var(--r-md);padding:12px 12px 12px;background:var(--amber-tint);border:1px solid var(--amber-line);margin-top:10px;animation:rise .4s var(--ease) both}
-.approval:first-of-type{margin-top:0}
-.approval::after{content:"";position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;box-shadow:0 0 0 1px rgba(245,158,11,.5),0 0 24px 2px rgba(245,158,11,.32);opacity:.3;animation:amberBreath 1.8s ease-in-out infinite}
-.approval .title{display:flex;align-items:center;gap:8px;font-weight:650;font-size:14px;color:var(--ink)}
-.approval .title::first-letter{text-transform:uppercase}
-.tag{display:inline-block;font:700 11.5px/1 var(--hud);letter-spacing:.12em;text-transform:uppercase;padding:4px 8px 3px;border-radius:4px;background:rgba(245,158,11,.18);color:var(--amber-ink)}
-.approval p{margin:7px 0 0;font-size:13.5px;color:var(--ink)}
-.approval pre{margin:9px 0 0;padding:9px 10px;border-radius:var(--r-sm);background:#fff;border:1px solid #F1DDB5;font:12px/1.5 var(--mono);color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere;max-height:140px;overflow:auto}
-.actions{display:flex;gap:8px;margin-top:12px}
-.btn{position:relative;flex:1;height:36px;border-radius:var(--r-sm);border:1px solid var(--line);background-color:#fff;color:var(--ink-2);cursor:pointer;
-  font:700 13.5px/1 var(--hud);letter-spacing:.12em;text-transform:uppercase;--sheen:color-mix(in srgb,var(--accent) 14%,transparent)}
-.btn:hover{color:var(--ink);border-color:color-mix(in srgb,var(--accent) 40%,#DCE3EC)}
-.btn.primary{flex:1.5;border-color:transparent;background-color:var(--accent);color:var(--on-accent);--sheen:rgba(255,255,255,.4);box-shadow:0 8px 18px -10px color-mix(in srgb,var(--accent) 85%,transparent)}
-.btn.primary:hover{color:var(--on-accent)}
-.btn:disabled{opacity:.5;cursor:default}
-.btn.danger{border-color:transparent;background-color:var(--bad-ink);color:#fff;--sheen:rgba(255,255,255,.35)}
-.btn.danger:hover{color:#fff}
-
-.event{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:8px 0;font-size:13px;border-top:1px solid var(--line-2)}
-.event:first-child{border-top:0;padding-top:0}
-.dot{width:8px;height:8px;border-radius:50%;background:#94A3B8}
-.dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(22,163,106,.14)} .dot.warn{background:var(--amber);box-shadow:0 0 0 3px rgba(245,158,11,.16)} .dot.bad{background:var(--bad);box-shadow:0 0 0 3px rgba(229,72,77,.14)}
-.event .what{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
-.event .what small{display:block;color:var(--ink-3);font-size:12px}
-.event time{font:600 11.5px/1 var(--disp);color:var(--ink-3);font-variant-numeric:tabular-nums}
-.convo{position:relative;display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px;padding:7px 0;border-top:1px solid var(--line-2);animation:rise .35s var(--ease) both}
-.convo:first-child{border-top:0;padding-top:0}
-.convo .open{appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0;padding:5px 8px;margin:-5px -8px;border-radius:var(--r-sm);transition:background-color .2s var(--ease)}
-.convo .open:hover{background-color:var(--tint)}
-.convo .open b{display:block;font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.convo .open small{display:block;font-size:12px;color:var(--ink-3)}
-.convo.current .open{background:linear-gradient(90deg,var(--tint),transparent);box-shadow:inset 3px 0 0 var(--accent)}
-.convo.current .open b{color:var(--accent-ink)}
-.convo .del{width:32px;height:32px}
-.convo .del svg{width:15px;height:15px}
-.convo .del:hover{color:var(--bad-ink);background-color:#FFF3F2;border-color:#F4C4BF}
-.confirm{grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);padding:8px 10px;margin-top:4px;border-radius:var(--r-sm);background:#FFF5F4;border:1px solid #F4C4BF}
-.confirm span{flex:1}
-.confirm .btn{flex:none;height:30px;padding:0 12px;font-size:12.5px}
-.verified{font:700 12px/1 var(--hud);letter-spacing:.12em;text-transform:uppercase}
-.verified.ok{color:var(--ok-ink)} .verified.bad{color:var(--bad-ink)}
-.section h2 .verified{margin-left:auto}
-
-.scrim{display:none}
-.grabber{display:none}
-
-/* ---- theme menu ----------------------------------------------------------------------------- */
-.menu{--card:rgba(255,255,255,.98);position:fixed;z-index:40;width:392px;max-height:calc(100dvh - 90px);overflow:auto;padding:16px 16px 14px;border-radius:var(--r-lg);box-shadow:var(--sh-2);animation:menuIn .26s var(--ease) both}
-.menu h3{margin:0 0 2px;font:700 12px/1 var(--disp);letter-spacing:.28em;text-transform:uppercase;color:var(--ink)}
-.menu fieldset{border:0;margin:14px 0 0;padding:0;min-width:0}
-.menu legend{padding:0;margin-bottom:8px;font:700 12.5px/1 var(--hud);letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink)}
-.menu .opt-in{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
-.themes{display:flex;flex-direction:column;gap:6px}
-.theme-opt{display:grid;grid-template-columns:56px 1fr 18px;align-items:center;gap:12px;padding:7px 10px 7px 7px;border-radius:var(--r-md);border:1px solid var(--line-2);background:#fff;cursor:pointer;
-  transition:border-color .2s var(--ease),box-shadow .2s var(--ease),background-color .2s var(--ease)}
-.theme-opt:hover{border-color:var(--line);box-shadow:var(--sh-1)}
-.theme-opt b{display:block;font:700 15px/1.1 var(--hud);letter-spacing:.06em;color:var(--ink)}
-.theme-opt small{display:block;margin-top:2px;font-size:12.5px;line-height:1.3;color:var(--ink-2)}
-.theme-opt .tick{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center}
-.opt-in:checked + .theme-opt{border-color:var(--accent);background-color:var(--tint);box-shadow:0 0 0 1px var(--accent) inset}
-.opt-in:checked + .theme-opt .tick{border-color:var(--accent);background:radial-gradient(circle,var(--accent) 0 4px,transparent 4.5px)}
-.opt-in:focus-visible + .theme-opt,.opt-in:focus-visible + .sw,.opt-in:focus-visible + .seg-opt{outline:2px solid var(--accent-ink);outline-offset:2px}
-.pv{position:relative;width:56px;height:38px;border-radius:var(--r-sm);overflow:hidden;background:#fff;border:1px solid var(--line-2)}
-.pv i{position:absolute;inset:-50%;display:block}
-.pv b{position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px;border-radius:50%;border:1.5px dashed var(--a);animation:spin 6s linear infinite}
-.pv-workshop{--a:#0A84FF;--b:#00C2E0}
-.pv-workshop i{background:linear-gradient(rgba(10,132,255,.22) 1px,transparent 1px) 0 0/8px 8px,linear-gradient(90deg,rgba(10,132,255,.22) 1px,transparent 1px) 0 0/8px 8px;animation:pvDrift 6s linear infinite}
-.pv-hotrod{--a:#C8102E;--b:#D4A017}
-.pv-hotrod i{background:repeating-linear-gradient(120deg,rgba(212,160,23,.0) 0 10px,rgba(212,160,23,.45) 12px,rgba(200,16,46,.35) 15px,rgba(212,160,23,0) 18px 30px);animation:pvSweep 2.6s linear infinite}
-.pv-nanotech{--a:#20262E;--b:#C9A227}
-.pv-nanotech i{background:radial-gradient(circle,rgba(32,38,46,.5) 1.2px,transparent 1.6px) 0 0/7px 6px,radial-gradient(circle,rgba(201,162,39,.7) 1.2px,transparent 1.6px) 3.5px 3px/7px 6px;animation:pvDrift 5s linear infinite}
-.pv-stealth{--a:#4A5868;--b:#9AA8B8}
-.pv-stealth i{background:linear-gradient(rgba(74,88,104,.18) 1px,transparent 1px) 0 0/14px 14px,linear-gradient(90deg,rgba(74,88,104,.18) 1px,transparent 1px) 0 0/14px 14px;animation:pvDrift 14s linear infinite}
-.pv-reactor{--a:#1E6BFF;--b:#5FD4FF}
-.pv-reactor i{inset:0;background:repeating-radial-gradient(circle at 50% 50%,transparent 0 5px,rgba(30,107,255,.32) 6px,transparent 7px 10px);animation:pvPulse 2.4s ease-out infinite}
-@keyframes pvDrift{to{transform:translate(8px,8px)}}
-@keyframes pvSweep{to{transform:translateX(30px)}}
-@keyframes pvPulse{from{transform:scale(.7);opacity:1}to{transform:scale(1.25);opacity:.4}}
-.sw-row{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
-.sw{display:block;aspect-ratio:1;border-radius:50%;cursor:pointer;background:var(--c);box-shadow:0 0 0 2px #fff inset,0 0 0 1px rgba(16,32,64,.14);transition:transform .2s var(--ease),box-shadow .2s var(--ease)}
-.sw:hover{transform:scale(1.08)}
-.opt-in:checked + .sw{box-shadow:0 0 0 2px #fff inset,0 0 0 2px var(--c),0 0 12px 1px color-mix(in srgb,var(--c) 50%,transparent)}
-.custom-row{display:flex;align-items:center;gap:10px;margin-top:12px}
-.yours{display:flex;align-items:center;gap:9px;cursor:pointer;font:700 13px/1 var(--hud);letter-spacing:.12em;text-transform:uppercase;color:var(--ink)}
-.yours input{width:34px;height:34px;padding:0;border:1px solid var(--line);border-radius:var(--r-sm);background:#fff;cursor:pointer}
-.yours input::-webkit-color-swatch-wrapper{padding:3px}
-.yours input::-webkit-color-swatch{border:0;border-radius:4px}
-.yours.on input{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}
-.custom-row .btn{flex:none;margin-left:auto;height:34px;padding:0 12px;font-size:12.5px}
-.seg{display:grid;grid-template-columns:repeat(3,1fr);padding:3px;border-radius:var(--r-md);background:var(--bg-2);border:1px solid var(--line-2)}
-.seg-wrap{position:relative}
-.seg-opt{display:block;text-align:center;padding:8px 0;border-radius:7px;cursor:pointer;font:700 13.5px/1 var(--hud);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);transition:background-color .2s,color .2s,box-shadow .2s}
-.opt-in:checked + .seg-opt{background:#fff;color:var(--accent-ink);box-shadow:var(--sh-1)}
-.menu .fine{margin:10px 0 0;font-size:12px;line-height:1.4;color:var(--ink-3)}
-.menu-scrim{position:fixed;inset:0;z-index:39;background:rgba(14,24,44,.28)}
-@keyframes menuIn{from{opacity:0;transform:translateY(-6px) scale(.985)}to{opacity:1;transform:none}}
-
-/* ---- sign-in gate --------------------------------------------------------------------------- */
-.gate{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:var(--gutter);
-  background:radial-gradient(700px 480px at 50% 38%,color-mix(in srgb,var(--accent) 10%,transparent),transparent 70%),rgba(255,255,255,.6);
-  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-.gate.show{display:flex}
-.gate-card{width:min(420px,100%);padding:40px 32px 32px;text-align:center;box-shadow:var(--sh-2);animation:pop .6s var(--ease) both}
-.gate-card .core{--s:150px;margin:0 auto}
-.gate-card h2{margin:30px 0 10px;padding-left:.34em;font:700 26px/1 var(--disp);letter-spacing:.34em;color:var(--ink)}
-.gate-card p{margin:0 auto 26px;color:var(--ink-2);max-width:32ch}
-.gate-card input{width:100%;height:48px;margin:0 0 12px;padding:0 16px;border-radius:var(--r-md);border:1px solid var(--line);background:#fff;color:var(--ink);outline:0;transition:border-color .2s,box-shadow .2s}
-.gate-card input::placeholder{color:var(--ink-3)}
-.gate-card input:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 15%,transparent)}
-.cta{width:100%;height:48px;border:0;border-radius:var(--r-md);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;
-  font:700 15.5px/1 var(--hud);letter-spacing:.16em;text-transform:uppercase;background-color:var(--accent);color:var(--on-accent);--sheen:rgba(255,255,255,.4);
-  box-shadow:0 12px 26px -12px color-mix(in srgb,var(--accent) 85%,transparent)}
-.cta svg{width:18px;height:18px}
-.fine{margin-top:18px;font-size:12.5px;color:var(--ink-3)}
-
-/* ---- assemble on load: stagger fade + 8 px rise, brackets draw in --------------------------- */
-.asm{animation:assemble .7s var(--ease) both;animation-delay:calc(var(--i,0) * 90ms + 60ms)}
-.asm.hud::before{animation:brackets .7s var(--ease) both;animation-delay:calc(var(--i,0) * 90ms + 380ms)}
-.welcome > *{animation:assemble .7s var(--ease) both}
-.welcome > :nth-child(2){animation-delay:.12s}.welcome > :nth-child(3){animation-delay:.2s}.welcome > :nth-child(4){animation-delay:.28s}
-
-@keyframes assemble{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-@keyframes brackets{from{--bk:0px;opacity:0}to{--bk:12px;opacity:1}}
-@keyframes materialise{from{clip-path:inset(0 0 100% 0);opacity:.35}to{clip-path:inset(0 0 -2px 0);opacity:1}}
-@keyframes scanReveal{0%{opacity:1;transform:translateY(-100%)}90%{opacity:1}100%{opacity:0;transform:translateY(0)}}
-@keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
-@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-@keyframes drop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes pop{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
-
-/* ---- motion levels (WCAG 2.2.2 / 2.3.3) ------------------------------------------------------
-   Calm: no ambient loops, rotations, scan line or lifts; keeps fades and colour changes.
-   Off: nothing animates at all. Before the script runs, a reduced-motion preference means Calm. */
-html[data-motion="calm"] .scanline,html[data-motion="off"] .scanline{display:none}
-html[data-motion="calm"] .core *,html[data-motion="calm"] .core::after,html[data-motion="calm"] .pv *,html[data-motion="calm"] .status i,
-html[data-motion="calm"] .composer:focus-within::before,html[data-motion="calm"] .approval::after{animation:none!important}
-html[data-motion="calm"] .approval::after,html[data-motion="calm"] .core.alert::after{opacity:.75}
-html[data-motion="calm"] .asm,html[data-motion="calm"] .welcome > *,html[data-motion="calm"] .row.user,html[data-motion="calm"] .row.jarvis .bubble,
-html[data-motion="calm"] .approval,html[data-motion="calm"] .convo,html[data-motion="calm"] .menu,html[data-motion="calm"] .gate-card,html[data-motion="calm"] .notice.show{animation-name:fadeIn!important}
-html[data-motion="calm"] .row.jarvis .bubble::after,html[data-motion="calm"] .send.ripple::after{animation:none}
-html[data-motion="calm"] .asm.hud::before{animation:none}
-html[data-motion="calm"] .lift:hover,html[data-motion="calm"] .lift:active,html[data-motion="calm"] .sw:hover{transform:none!important}
-html[data-motion="calm"] .lift{background-image:none}
-html[data-motion="calm"] .wave i,html[data-motion="off"] .wave i{width:6px;height:6px;border-radius:50%;transform:none}
-html[data-motion="calm"] .wave i{animation:dots 1.4s ease-in-out infinite}
-@keyframes dots{0%,100%{opacity:.35}50%{opacity:1}}
-html[data-motion="off"]{transition:none}
-html[data-motion="off"] *,html[data-motion="off"] *::before,html[data-motion="off"] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
-html[data-motion="off"] .lift:hover,html[data-motion="off"] .lift:active,html[data-motion="off"] .sw:hover{transform:none!important}
-html[data-motion="off"] .lift{background-image:none}
-html[data-motion="off"] .approval::after,html[data-motion="off"] .core.alert::after{opacity:.75}
-@media (prefers-reduced-motion: reduce){
-  html:not([data-motion]) *,html:not([data-motion]) *::before,html:not([data-motion]) *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
-}
-
-/* ---- compact widths: inspector becomes a bottom sheet ------------------------------------- */
-@media (max-width: 960px){
-  .app{grid-template-columns:1fr}
-  .inspector{position:fixed;left:8px;right:8px;bottom:8px;top:auto;width:auto;max-height:78vh;margin:0;z-index:15;padding:8px 14px 16px;gap:18px;
-    border-radius:20px;background:rgba(255,255,255,.97);border:1px solid var(--line);box-shadow:0 -10px 40px -10px rgba(16,32,64,.25);
-    transform:translateY(calc(100% + 20px));opacity:1;transition:transform .5s var(--ease)}
-  .app.sheet-open .inspector{transform:none}
-  .app.collapsed .inspector{width:auto;padding:8px 14px 16px;margin:0;opacity:1;overflow:auto}
-  .grabber{display:block;width:40px;height:5px;border-radius:3px;background:var(--line);margin:2px auto 0;flex:none}
-  .scrim{display:block;position:fixed;inset:0;z-index:14;background:rgba(14,24,44,.32);opacity:0;pointer-events:none;transition:opacity .35s var(--ease)}
-  .app.sheet-open .scrim{opacity:1;pointer-events:auto}
-  .clock{display:none}
-}
-@media (max-width: 600px){
-  :root{--gutter:12px}
-  .toolbar{margin-top:10px;padding:6px 6px 6px 8px;gap:6px}
-  .brand{gap:8px}
-  .wordmark,.status,.divider{display:none}
-  .picker select{max-width:132px;font-size:13px;padding-left:10px;padding-right:28px}
-  .picker svg{right:9px}
-  .icon-btn{width:36px;height:36px}
-  .group{gap:2px}
-  #who{display:none}
-  .row{max-width:92%}
-  .welcome{padding-top:2vh}
-  .welcome .core{--s:128px}
-  .welcome h1{margin-top:24px}
-  .chip{font-size:13.5px;padding:9px 14px 9px 19px}
-  .hint{display:none}
-  .menu{left:8px!important;right:8px!important;top:auto!important;bottom:8px;width:auto;max-height:82dvh;border-radius:20px}
-  .sw-row{grid-template-columns:repeat(5,40px);justify-content:space-between;gap:10px}
-  .themes{gap:5px}
-  .theme-opt{padding-top:5px;padding-bottom:5px}
-  .gate-card{padding:34px 22px 26px}
-  .gate-card .core{--s:124px}
-}
+@font-face{font-family:"Share Tech Mono";font-style:normal;font-weight:400;font-display:swap;src:url(/static/fonts/share-tech-mono-latin-400-normal.woff2?v=1) format("woff2")}
 </style>
+<link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/console-deck.css">
 </head>
 <body>
 <div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
 <canvas id="field" aria-hidden="true"></canvas>
 <div class="scanline" aria-hidden="true"></div>
 
-<div class="app collapsed" id="app">
-  <section class="stage">
-    <header class="toolbar card hud asm" role="banner" style="--i:0">
-      <div class="brand">
-        <span class="core" id="orb" aria-hidden="true"></span>
-        <b class="wordmark">JARVIS</b>
-        <span class="divider" aria-hidden="true"></span>
-        <span class="status" id="status"><i aria-hidden="true"></i><span id="statusText">Online</span></span>
-        <time class="clock" id="clock" aria-hidden="true"></time>
-      </div>
-      <div class="grow"></div>
+<div class="deck" id="app">
+  <!-- ===== top bar ===== -->
+  <header class="topbar" role="banner">
+    <div class="brand">
+      <span class="core" id="orb" aria-hidden="true"></span>
+      <b class="wordmark">JARVIS</b>
+      <span class="status" id="status"><i aria-hidden="true"></i><span id="statusText">Online</span></span>
+    </div>
+    <div class="timebox" aria-hidden="true"><time class="clock" id="clock"></time><span class="date" id="clockDate"></span></div>
+    <div class="tools">
       <label class="picker" title="Choose which AI answers. Remembered for this conversation.">
         <span class="sr-only">AI brain</span>
         <select id="brainSel" aria-label="AI brain"></select>
-        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
       </label>
-      <div class="group">
-        <button class="icon-btn lift" id="themeBtn" type="button" title="Theme, colour and motion" aria-label="Theme, colour and motion" aria-haspopup="dialog" aria-expanded="false" aria-controls="themeMenu">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.8a7.2 7.2 0 1 0 0 14.4c1 0 1.6-.7 1.6-1.5 0-.5-.2-.8-.5-1.2-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6h1.9a3.6 3.6 0 0 0 3.6-3.6C17.8 5.6 14.3 2.8 10 2.8z"/><circle cx="6.3" cy="9.6" r=".9" fill="currentColor" stroke="none"/><circle cx="8.6" cy="6.3" r=".9" fill="currentColor" stroke="none"/><circle cx="12.4" cy="6.3" r=".9" fill="currentColor" stroke="none"/></svg>
-        </button>
-        <button class="icon-btn lift" id="newBtn" type="button" title="New conversation" aria-label="New conversation">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 3.5H5.5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-5"/><path d="M14.6 2.9a1.6 1.6 0 0 1 2.3 2.3L10 12.1l-3 .8.8-3z"/></svg>
-        </button>
-        <button class="icon-btn lift" id="panelBtn" type="button" title="Approvals and activity" aria-label="Show approvals and activity" aria-pressed="false" aria-controls="inspector">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M12.5 3.5v13"/></svg>
-        </button>
-        <span class="avatar" id="who" title="" hidden></span>
-        <button class="icon-btn lift" id="logoutBtn" type="button" title="Sign out" aria-label="Sign out" hidden>
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.5H5.5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2H8"/><path d="M12 6.5 15.5 10 12 13.5M15.5 10H8"/></svg>
-        </button>
+      <button class="icon-btn lift" id="themeBtn" type="button" title="Appearance: surface, theme, colour, motion, layout" aria-label="Appearance" aria-haspopup="dialog" aria-expanded="false" aria-controls="themeMenu">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.8a7.2 7.2 0 1 0 0 14.4c1 0 1.6-.7 1.6-1.5 0-.5-.2-.8-.5-1.2-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6h1.9a3.6 3.6 0 0 0 3.6-3.6C17.8 5.6 14.3 2.8 10 2.8z"/><circle cx="6.3" cy="9.6" r=".9" fill="currentColor" stroke="none"/><circle cx="8.6" cy="6.3" r=".9" fill="currentColor" stroke="none"/><circle cx="12.4" cy="6.3" r=".9" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <span class="avatar" id="who" title="" hidden></span>
+      <button class="icon-btn lift" id="logoutBtn" type="button" title="Sign out" aria-label="Sign out" hidden>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4.5H5.5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2H8"/><path d="M12 6.5 15.5 10 12 13.5M15.5 10H8"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== 24-hour ruler (real local time; today's events as marks) ===== -->
+  <div class="ruler" id="ruler" aria-hidden="true"></div>
+
+  <div class="notice" id="banner" role="status">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M8 1.8 14.6 13.5H1.4z" stroke-linejoin="round"/><path d="M8 6.2v3.3M8 11.6v.1"/></svg>
+    <span id="bannerText"></span>
+  </div>
+
+  <!-- ===== left rail: link, latency, audit chain, activity radar ===== -->
+  <aside class="rail rail-l" aria-label="Link and activity">
+    <div class="rgroup">
+      <div class="ri"><span class="k">Link</span><span class="v ok" id="rLink"><i class="blink" aria-hidden="true"></i>Online</span></div>
+      <div class="ri"><span class="k">Reply latency</span><span class="v" id="rLat">—</span><span class="bar" aria-hidden="true"><i id="rLatBar"></i></span></div>
+      <div class="ri"><span class="k">Audit chain</span><span class="v" id="rAudit">—</span></div>
+    </div>
+    <div>
+      <div class="rhead"><span class="k">Activity radar</span><span class="k live" id="radarState">Live</span></div>
+      <div class="instrument"><canvas id="radar" role="img" aria-label="Activity radar: recent messages, replies, approvals and tool use"></canvas></div>
+      <div class="pair">
+        <div class="ri"><span class="k nw">Events 5m</span><span class="v" id="rEvents">0</span></div>
+        <div class="ri"><span class="k nw">Last</span><span class="v" id="rLast">—</span></div>
+      </div>
+    </div>
+    <div class="rgroup">
+      <div class="ri"><span class="k nw">Latency · last 20</span>
+        <svg class="spark" id="railSpark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><line class="base" x1="0" y1="29.5" x2="100" y2="29.5"/><polygon class="area" points=""/><polyline points=""/></svg></div>
+      <div class="ri"><span class="k nw">Turns</span><span class="v" id="rTurns">0</span></div>
+      <span class="foot">Private by default</span>
+    </div>
+  </aside>
+
+  <!-- ===== right rail: brain, approvals, time zone globe, session ===== -->
+  <aside class="rail rail-r" aria-label="Brain, approvals and time">
+    <div class="rgroup">
+      <div class="ri"><span class="k">Brain</span><span class="v acc" id="rBrain">—</span></div>
+      <div class="ri"><span class="k">Model</span><span class="v" id="rModel">—</span></div>
+      <div class="ri"><span class="k">Approvals</span><span class="v" id="rApprovals">0 waiting</span></div>
+    </div>
+    <div>
+      <div class="rhead"><span class="k">Time zone</span><span class="k live" id="rTzShort"></span></div>
+      <div class="instrument" id="globeBox">
+        <div class="globe2d" aria-hidden="true"><svg viewBox="0 0 100 100"><circle class="g" cx="50" cy="50" r="40"/><ellipse class="g" cx="50" cy="50" rx="14" ry="40"/><ellipse class="g" cx="50" cy="50" rx="28" ry="40"/><ellipse class="g" cx="50" cy="50" rx="40" ry="12"/><ellipse class="g" cx="50" cy="50" rx="40" ry="26"/><ellipse class="o" cx="50" cy="50" rx="48" ry="16"/></svg></div>
+        <canvas id="globeGL" role="img" aria-label="Wireframe globe; the highlighted meridian is this device's time zone"></canvas>
+      </div>
+      <div class="pair">
+        <div class="ri"><span class="k nw">Zone</span><span class="v" id="rTz">—</span></div>
+        <div class="ri"><span class="k nw">Offset</span><span class="v" id="rOffset">—</span></div>
+      </div>
+    </div>
+    <div class="rgroup">
+      <div class="ri"><span class="k">Session uptime</span><span class="v" id="rUptime">00:00:00</span></div>
+      <div class="ri"><span class="k">Connection</span><span class="v ok" id="rNet">Online</span></div>
+      <span class="foot" id="rDate"></span>
+    </div>
+  </aside>
+
+  <!-- ===== stage: the Core ===== -->
+  <div class="stage" id="stage">
+    <div class="core-wrap" id="coreWrap" aria-hidden="true">
+      <div class="core-top">
+        <div class="logline"><span class="k">Log</span><time id="logTime">--:--:--</time><span id="logText">Console online</span></div>
+      </div>
+      <div class="core-fallback" id="coreFallback"></div>
+      <canvas id="coreGL"></canvas>
+      <div class="core-label"><b>JARVIS</b><i class="line"></i><span id="coreState">Standing by</span></div>
+      <div class="core-read l"><span class="k">Last reply</span><span class="v" id="cLat">—</span></div>
+      <div class="core-read r"><span class="k">Turns</span><span class="v" id="cTurns">0</span></div>
+      <div class="core-bottom">
+        <div class="ri"><span class="k">Waiting</span><span class="v" id="cWait">0</span></div>
+        <div class="ri"><span class="k">Avg reply</span><span class="v" id="cAvg">—</span></div>
+        <div class="ri"><span class="k">Audit</span><span class="v" id="cAudit">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== floating panels ===== -->
+  <section class="panel card" id="p-chat" data-panel="chat" aria-labelledby="t-chat" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-3.5 3v-3h0a2 2 0 0 1-2-2z"/><path d="M7 8.5h6"/></svg>
+      <h2 id="t-chat">Conversation</h2><span class="pmeta" id="chatMeta"></span>
+      <div class="pacts">
+        <button class="pbtn" id="newBtn" type="button" title="New conversation" aria-label="New conversation"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3.5H5.5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-5"/><path d="M14.6 2.9a1.6 1.6 0 0 1 2.3 2.3L10 12.1l-3 .8.8-3z"/></svg></button>
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Conversation panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Conversation panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
       </div>
     </header>
-
-    <div class="notice" id="banner" role="status">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 1.8 14.6 13.5H1.4z" stroke-linejoin="round"/><path d="M8 6.2v3.3M8 11.6v.1"/></svg>
-      <span id="bannerText"></span>
-    </div>
-
-    <main class="scroll" id="scroll">
-      <div class="thread" id="log" aria-live="polite"></div>
-    </main>
-
-    <div class="composer-wrap asm" style="--i:3">
-      <form class="composer" id="form" autocomplete="off">
-        <label for="input" class="sr-only">Message JARVIS</label>
-        <textarea id="input" rows="1" placeholder="Message JARVIS"></textarea>
-        <button class="send lift" id="send" type="submit" aria-label="Send" disabled>
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 16V4M4.5 9.5 10 4l5.5 5.5"/></svg>
-        </button>
-      </form>
-      <div class="hint">Enter to send, Shift + Enter for a new line. Anything that sends, pays or deletes waits for your approval.</div>
+    <div class="pbody flush">
+      <main class="scroll" id="scroll"><div class="thread" id="log" aria-live="polite"></div></main>
+      <div class="composer-wrap">
+        <form class="composer" id="form" autocomplete="off">
+          <label for="input" class="sr-only">Message JARVIS</label>
+          <textarea id="input" rows="1" placeholder="Message JARVIS"></textarea>
+          <button class="send lift" id="send" type="submit" aria-label="Send" disabled>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 16V4M4.5 9.5 10 4l5.5 5.5"/></svg>
+          </button>
+        </form>
+        <div class="hint">Enter to send, Shift + Enter for a new line. Anything that sends, pays or deletes waits for your approval.</div>
+      </div>
     </div>
   </section>
 
-  <div class="scrim" id="scrim"></div>
-  <aside class="inspector" id="inspector" aria-label="Approvals and activity">
-    <div class="grabber" aria-hidden="true"></div>
-    <section class="section card hud asm" style="--i:1">
-      <h2>Waiting for you <span class="count" id="approvalCount"></span></h2>
-      <div id="approvals"><div class="empty">Nothing waiting.</div></div>
-    </section>
-    <section class="section card hud asm" style="--i:2">
-      <h2>This conversation</h2>
+  <section class="panel card fixed-size" id="p-approvals" data-panel="approvals" aria-labelledby="t-approvals" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5 4 5v4.6c0 3.6 2.5 6.6 6 7.9 3.5-1.3 6-4.3 6-7.9V5z"/><path d="m7.3 10 1.9 1.9 3.6-3.8"/></svg>
+      <h2 id="t-approvals">Approvals</h2><span class="pmeta warn" id="approvalCount"></span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Approvals panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Approvals panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"><div id="approvals"><div class="empty">Nothing waiting.</div></div></div>
+  </section>
+
+  <section class="panel card" id="p-activity" data-panel="activity" aria-labelledby="t-activity" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 3.5 4L4 14M9.5 14.5H16"/></svg>
+      <h2 id="t-activity">Activity</h2><span class="pmeta" id="auditMeta"></span>
+      <span class="verified nw" id="auditOk"></span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Activity panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Activity panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"><div id="audit"><div class="empty">JARVIS hasn't used any tools yet.</div></div></div>
+  </section>
+
+  <section class="panel card" id="p-history" data-panel="history" aria-labelledby="t-history" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 10a6.4 6.4 0 1 0 1.9-4.5L3.5 7.5"/><path d="M3.5 3.8v3.7h3.7M10 6.5V10l2.5 1.6"/></svg>
+      <h2 id="t-history">History</h2><span class="pmeta" id="convoCount"></span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move History panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close History panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"><div id="convos"><div class="empty">No saved conversations yet.</div></div></div>
+  </section>
+
+  <section class="panel card fixed-size" id="p-vitals" data-panel="vitals" aria-labelledby="t-vitals" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg>
+      <h2 id="t-vitals">Vitals</h2><span class="pmeta" id="vitMeta">This session</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Vitals panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Vitals panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody">
       <div class="tiles">
-        <div class="tile"><b id="sTurns">0</b><span>Messages</span></div>
-        <div class="tile"><b id="sCost">$0.00</b><span>Cost</span></div>
-        <div class="tile"><b id="sLat">—</b><span>Last reply</span></div>
+        <div class="tile"><b id="sLat">—</b><span>Last</span></div>
+        <div class="tile"><b id="sAvg">—</b><span>Average</span></div>
+        <div class="tile"><b id="sTurns">0</b><span>Turns</span></div>
+      </div>
+      <div class="vit-spark">
+        <div class="rhead"><span class="k nw">Latency · last 20</span><span class="k nw" id="sRange"></span></div>
+        <svg class="spark" id="vitSpark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><line class="base" x1="0" y1="29.5" x2="100" y2="29.5"/><polygon class="area" points=""/><polyline points=""/></svg>
       </div>
       <div class="list">
         <div class="kv"><span>Brain</span><b id="sBrain">—</b></div>
         <div class="kv"><span>Model</span><b id="sModel">—</b></div>
+        <div class="kv"><span>Cost · this conversation</span><b id="sCost">$0.00</b></div>
+        <div class="kv"><span>Approvals waiting</span><b id="sWait">0</b></div>
+        <div class="kv"><span>Audit chain</span><b id="sAudit">—</b></div>
+        <div class="kv"><span>Connection</span><b id="sNet">Online</b></div>
       </div>
-    </section>
-    <section class="section card hud asm" style="--i:3">
-      <h2>Conversations <span class="count" id="convoCount"></span></h2>
-      <div id="convos"><div class="empty">No saved conversations yet.</div></div>
-    </section>
-    <section class="section card hud asm" style="--i:4">
-      <h2>Activity <span class="verified" id="auditOk"></span></h2>
-      <div id="audit"><div class="empty">JARVIS hasn't used any tools yet.</div></div>
-    </section>
-  </aside>
+    </div>
+  </section>
+
+  <section class="panel card" id="p-construct" data-panel="construct" aria-labelledby="t-construct" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg>
+      <h2 id="t-construct">Construct</h2><span class="pmeta" id="constructMeta">Hologram</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Construct panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Construct panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody flush">
+      <div class="construct">
+        <div class="construct2d" aria-hidden="true"><svg viewBox="0 0 100 100"><polygon class="p p1" points="50,6 88,28 88,72 50,94 12,72 12,28"/><polygon class="p p2" points="50,22 74,64 26,64"/><polygon class="p p3" points="50,34 64,50 50,66 36,50"/></svg></div>
+        <canvas id="constructGL" role="img" aria-label="Construct: nested wireframe polyhedra with a scanning plane, rotating"></canvas>
+      </div>
+      <div class="construct-read">
+        <div class="ri"><span class="k">Vertices</span><span class="v" id="kVerts">—</span></div>
+        <div class="ri"><span class="k">Edges</span><span class="v" id="kEdges">—</span></div>
+        <div class="ri"><span class="k">Frame rate</span><span class="v" id="kFps">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== dock (desktop) / tab bar (phone) ===== -->
+  <nav class="dock card" id="dock" aria-label="Panels">
+    <button class="dk" type="button" data-open="chat" aria-controls="p-chat" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-3.5 3v-3h0a2 2 0 0 1-2-2z"/><path d="M7 8.5h6"/></svg><span>Chat</span></button>
+    <button class="dk" type="button" data-open="approvals" aria-controls="p-approvals" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5 4 5v4.6c0 3.6 2.5 6.6 6 7.9 3.5-1.3 6-4.3 6-7.9V5z"/><path d="m7.3 10 1.9 1.9 3.6-3.8"/></svg><span>Approvals</span><b class="badge" id="dockBadge" hidden></b></button>
+    <button class="dk" type="button" data-open="activity" aria-controls="p-activity" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 3.5 4L4 14M9.5 14.5H16"/></svg><span>Activity</span></button>
+    <button class="dk" type="button" data-open="history" aria-controls="p-history" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 10a6.4 6.4 0 1 0 1.9-4.5L3.5 7.5"/><path d="M3.5 3.8v3.7h3.7M10 6.5V10l2.5 1.6"/></svg><span>History</span></button>
+    <span class="sep" aria-hidden="true"></span>
+    <button class="dk" type="button" data-open="vitals" aria-controls="p-vitals" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span>Vitals</span></button>
+    <button class="dk" type="button" data-open="construct" aria-controls="p-construct" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg><span>Construct</span></button>
+  </nav>
 </div>
 
 <div class="menu-scrim" id="menuScrim" hidden></div>
@@ -576,6 +256,8 @@ html[data-motion="off"] .approval::after,html[data-motion="off"] .core.alert::af
 <div class="gate" id="gate"><div class="gate-card card hud" id="gateBox" role="dialog" aria-modal="true" aria-labelledby="gateTitle"></div></div>
 
 <script src="/static/console-fx.js" defer></script>
+<script src="/static/console-deck.js" defer></script>
 <script src="/static/console.js" defer></script>
+<script type="module" src="/static/console-3d.js"></script>
 </body>
 </html>

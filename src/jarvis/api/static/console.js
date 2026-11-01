@@ -1,5 +1,9 @@
 // src/jarvis/api/static/console.js — JARVIS web console (no build step; CSP script-src 'self').
+// Talks to the API (chat, brains, approvals, audit, conversations) and renders the panels' content.
 // All server text reaches the DOM via textContent or esc(); never raw innerHTML.
+// The Command Deck (console-deck.js) shows vitals from the events this file fires:
+//   jarvis:vitals {turns, brain, model, cost, rttMs?}  jarvis:approvals {count, fresh}
+//   jarvis:audit {verified, count}                     jarvis:event {kind, text, at, live?}
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -8,13 +12,15 @@
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
   const ssGet = (k) => { try { return sessionStorage.getItem(k) || ''; } catch (_) { return ''; } };
   const ssSet = (k, v) => { try { sessionStorage.setItem(k, v); } catch (_) {} };
-  const compact = () => window.matchMedia('(max-width: 960px)').matches;
-  // visual engine (console-fx.js); the console still works if it failed to load
+  const emit = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
+  const note = (kind, text, at, live) => emit('jarvis:event', { kind, text, at: at ?? Date.now(), live: live !== false });
+  // visual engine (console-fx.js) and deck (console-deck.js); the console still works without them
   const FX = window.JarvisFX || { core: (s) => `<span class="core ${s === 'lg' || s === 'sm' ? s : ''}" aria-hidden="true"></span>`,
     setBusy() {}, setAlert() {}, ripple() {}, refresh() {} };
+  const Deck = window.JarvisDeck || { open() {}, close() {}, isOpen: () => true, isPhone: () => false };
 
   const state = { sessionId: null, authMode: 'token', token: ssGet('jarvis_token'), honorific: 'Sir',
-    brains: [], brain: null, busy: false };
+    brains: [], brain: null, busy: false, seenApprovals: null, seenAudit: new Set() };
 
   const SUGGESTIONS = [
     'What can you help me with?',
@@ -109,19 +115,17 @@
     } else if (!on && t) { t.remove(); }
   }
 
-  // ---- inspector ----------------------------------------------------------------------------
-  function setPanel(open) {
-    const app = $('app');
-    if (compact()) { app.classList.toggle('sheet-open', open); }
-    else { app.classList.toggle('collapsed', !open); lsSet('jarvis_panel', open ? '1' : '0'); }
-    $('panelBtn').setAttribute('aria-pressed', String(open));
-  }
-  function panelOpen() { return compact() ? $('app').classList.contains('sheet-open') : !$('app').classList.contains('collapsed'); }
-
+  // ---- approvals, activity, vitals ----------------------------------------------------------
   function renderApprovals(list) {
     const el = $('approvals');
-    $('approvalCount').textContent = list.length ? String(list.length) : '';
-    $('panelBtn').classList.toggle('badge', list.length > 0); FX.setAlert(list.length > 0);
+    $('approvalCount').textContent = list.length ? `${list.length} waiting` : '';
+    FX.setAlert(list.length > 0);
+    const ids = new Set(list.map(a => a.id));
+    const fresh = list.filter(a => !state.seenApprovals || !state.seenApprovals.has(a.id));
+    const first = state.seenApprovals === null;
+    state.seenApprovals = ids;
+    fresh.forEach(a => note('approval', `Approval waiting · ${String(a.tool).replace(/_/g, ' ')}`));
+    emit('jarvis:approvals', { count: list.length, fresh: fresh.length > 0 || (first && list.length > 0) });
     if (!list.length) { el.innerHTML = '<div class="empty">Nothing waiting.</div>'; return; }
     el.innerHTML = list.map(a => `
       <div class="approval" data-id="${esc(a.id)}" data-sid="${esc(a.session_id || '')}">
@@ -132,19 +136,29 @@
       </div>`).join('');
     el.querySelectorAll('.approval').forEach(card => {
       const id = card.dataset.id; const sid = card.dataset.sid || null;
-      card.querySelector('.approve').addEventListener('click', () => decide(id, 'approve', card, sid));
-      card.querySelector('.decline').addEventListener('click', () => decide(id, 'decline', card, sid));
+      const tool = card.querySelector('.title').firstChild.textContent.trim();
+      card.querySelector('.approve').addEventListener('click', () => decide(id, 'approve', card, sid, tool));
+      card.querySelector('.decline').addEventListener('click', () => decide(id, 'decline', card, sid, tool));
     });
-    if (!compact() && !panelOpen()) setPanel(true); // something needs the owner: bring it forward
   }
+  const AUDIT_WORDS = { executed: 'Done', awaiting_confirmation: 'Waiting for you', denied: 'Blocked', declined: 'Declined', error: 'Failed' };
   function renderAudit(data) {
     const ok = $('auditOk');
     ok.textContent = data.verified ? 'Log verified' : 'Log tampered';
     ok.className = 'verified ' + (data.verified ? 'ok' : 'bad');
+    $('auditMeta').textContent = data.entries.length ? `${data.entries.length} ${data.entries.length === 1 ? 'entry' : 'entries'}` : '';
+    emit('jarvis:audit', { verified: !!data.verified, count: data.entries.length });
+    data.entries.forEach(e => { // each audit entry becomes one real event (radar + ruler), once
+      const key = `${e.at}|${e.tool}|${e.outcome}`; if (state.seenAudit.has(key)) return;
+      state.seenAudit.add(key);
+      const at = Date.parse(e.at || '');
+      note(e.outcome === 'awaiting_confirmation' ? 'approval' : e.outcome === 'error' ? 'error' : 'tool',
+        `${String(e.tool).replace(/_/g, ' ')} · ${AUDIT_WORDS[e.outcome] || e.outcome}`, Number.isFinite(at) ? at : Date.now(), false);
+    });
     const el = $('audit'); const entries = data.entries.slice(-40).reverse();
     if (!entries.length) { el.innerHTML = '<div class="empty">JARVIS hasn\'t used any tools yet.</div>'; return; }
     const cls = o => o === 'executed' ? 'ok' : (o === 'awaiting_confirmation' ? 'warn' : (['denied', 'declined', 'error'].includes(o) ? 'bad' : ''));
-    const words = { executed: 'Done', awaiting_confirmation: 'Waiting for you', denied: 'Blocked', declined: 'Declined', error: 'Failed' };
+    const words = AUDIT_WORDS;
     el.innerHTML = '<div class="list">' + entries.map(e => `
       <div class="event"><span class="dot ${cls(e.outcome)}"></span>
         <span class="what">${esc(String(e.tool).replace(/_/g, ' '))}<small>${esc(words[e.outcome] || e.outcome)}</small></span>
@@ -155,12 +169,11 @@
     return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
   function brainLabel(id) { const b = state.brains.find(x => x.id === id); return b ? b.label : id; }
-  function renderStats(r) {
-    $('sBrain').textContent = r.brain ? brainLabel(r.brain) : '—';
-    $('sModel').textContent = r.model || '—';
-    $('sTurns').textContent = r.turn_count ?? '—';
-    $('sCost').textContent = '$' + (r.cost_usd ?? 0).toFixed(r.cost_usd && r.cost_usd < 0.01 ? 4 : 2);
-    $('sLat').textContent = r.latency_ms != null ? (r.latency_ms / 1000).toFixed(1) + ' s' : '—';
+  function renderStats(r, rttMs) {
+    const d = { brain: r.brain ? brainLabel(r.brain) : (currentBrain() ? currentBrain().label : null), model: r.model || null,
+      turns: Number.isFinite(r.turn_count) ? r.turn_count : 0, cost: Number.isFinite(r.cost_usd) ? r.cost_usd : 0 };
+    if (Number.isFinite(rttMs)) d.rttMs = rttMs;
+    emit('jarvis:vitals', d);
   }
   // Each refresh costs database reads (free quota: 50k/day), so the panel refreshes only when
   // something in it can have changed: at start, after tool use, approvals, or a decision.
@@ -217,6 +230,7 @@
       try {
         await api(`/v1/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
         if (id === state.sessionId) newConversation();
+        note('info', 'Conversation deleted');
         refreshConvos();
       } catch (e) { box.remove(); addMsg('error', 'Couldn\'t delete that conversation. ' + e.message); }
     });
@@ -231,7 +245,7 @@
       else { addMsg('jarvis', t.content, [t.model]); last = t; }
       shown++;
     });
-    if (shown) addMsg('sys', 'Earlier conversation restored.');
+    if (shown) { addMsg('sys', 'Earlier conversation restored.'); note('info', 'Conversation restored'); }
     else renderWelcome();
     renderStats({ brain: (sess.metadata || {}).brain, model: last ? last.model : null,
       turn_count: sess.turns.length, cost_usd: sess.total_cost_usd, latency_ms: null });
@@ -250,6 +264,7 @@
     }
   }
   function newConversation() { setSession(null); renderWelcome(); renderStats({}); input.focus(); }
+  function startNew() { if (state.busy) return; newConversation(); Deck.open('chat', { focus: true }); note('info', 'New conversation'); }
 
   // ---- brain selector -----------------------------------------------------------------------
   function currentBrain() { return state.brains.find(b => b.id === state.brain) || state.brains.find(b => b.default) || null; }
@@ -279,7 +294,10 @@
   $('brainSel').addEventListener('change', () => {
     state.brain = $('brainSel').value; lsSet('jarvis_brain', state.brain); renderBanner();
     const b = currentBrain();
-    if (b) addMsg('sys', `Now using ${b.label}.` + (b.tools_allowed ? '' : ' Chat only: tools are off, and earlier messages in this conversation are not shared with it.'));
+    if (b) {
+      addMsg('sys', `Now using ${b.label}.` + (b.tools_allowed ? '' : ' Chat only: tools are off, and earlier messages in this conversation are not shared with it.'));
+      note('info', `Brain · ${b.label}`); emit('jarvis:vitals', { brain: b.label });
+    }
   });
 
   // ---- actions ------------------------------------------------------------------------------
@@ -287,25 +305,29 @@
     state.busy = on; FX.setBusy(on); showTyping(on); syncSend();
   }
   function syncSend() { $('send').disabled = state.busy || !$('input').value.trim(); }
-  function handleResponse(r) {
+  function handleResponse(r, rttMs) {
     const fresh = r.session_id !== state.sessionId;
     setSession(r.session_id);
     if (r.brain && r.brain !== state.brain && state.brains.some(b => b.id === r.brain)) { state.brain = r.brain; renderBrains(); }
     const meta = [r.brain ? brainLabel(r.brain) : null, r.model, (r.latency_ms / 1000).toFixed(1) + ' s',
       r.cost_usd > 0 ? '$' + r.cost_usd.toFixed(4) : null, r.tool_calls ? `${r.tool_calls} tool ${r.tool_calls === 1 ? 'call' : 'calls'}` : null];
     addMsg('jarvis', r.reply, meta);
-    renderStats(r);
+    renderStats(r, rttMs);
+    note('reply', Number.isFinite(rttMs) ? `Reply · ${Math.round(rttMs)} ms` : 'Reply');
     if (r.tool_calls || (r.pending_approvals || []).length || r.decided) refreshSide();
     if (fresh) refreshConvos(); else bumpCurrentConvo(r.turn_count);
   }
   async function send(text) {
     if (state.busy) return;
-    addMsg('user', text); busy(true);
-    try { handleResponse(await api('/v1/chat', { body: { message: text, session_id: state.sessionId, brain: state.brain } })); }
-    catch (e) { showTyping(false); addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); }
+    addMsg('user', text); busy(true); note('send', 'Message sent');
+    try {
+      const t0 = performance.now(); // reply latency as the owner feels it: the whole round trip
+      const r = await api('/v1/chat', { body: { message: text, session_id: state.sessionId, brain: state.brain } });
+      handleResponse(r, performance.now() - t0);
+    } catch (e) { showTyping(false); addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); note('error', 'Reply failed'); }
     finally { busy(false); $('input').focus(); }
   }
-  async function decide(id, action, card, sid) {
+  async function decide(id, action, card, sid, tool) {
     if (state.busy) return; // one action at a time: a reply may still be arriving
     const target = sid || state.sessionId;
     if (!target) { addMsg('error', 'This approval belongs to a conversation that no longer exists.'); return; }
@@ -313,7 +335,7 @@
     if (target !== state.sessionId && !(await loadConversation(target))) { // show it where it belongs
       card.querySelectorAll('button').forEach(b => { b.disabled = false; }); refreshSide(); return;
     }
-    busy(true);
+    busy(true); note('approval', `${action === 'approve' ? 'Approved' : 'Declined'} · ${tool || 'action'}`);
     try { handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } }), { decided: true })); }
     catch (e) { addMsg('error', `Couldn't ${action}. ` + e.message); refreshSide(); }
     finally { busy(false); }
@@ -331,11 +353,8 @@
     FX.ripple($('send')); input.value = ''; autosize(); syncSend(); send(t);
   });
 
-  // toolbar
-  $('newBtn').addEventListener('click', () => { if (!state.busy) newConversation(); });
-  $('panelBtn').addEventListener('click', () => setPanel(!panelOpen()));
-  $('scrim').addEventListener('click', () => setPanel(false));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && compact() && panelOpen()) setPanel(false); });
+  // top bar + panel actions
+  $('newBtn').addEventListener('click', startNew);
   $('logoutBtn').addEventListener('click', async () => { try { await api('/auth/logout', { body: {} }); } catch (_) {} location.reload(); });
 
   // ---- boot ---------------------------------------------------------------------------------
@@ -348,7 +367,6 @@
     input.focus();
   }
   (async () => {
-    if (!compact() && lsGet('jarvis_panel') !== '0' && window.innerWidth > 1180) setPanel(true);
     let fallbackWarning = '';
     try {
       const c = await (await fetch('/console/config')).json();

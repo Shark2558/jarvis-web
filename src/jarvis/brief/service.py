@@ -82,12 +82,13 @@ ERR_STALE = "The brief did not finish. Refresh to try again."
 MSG_LIMIT = "You've made {n} briefs today, Sir; that's the daily limit. Try again tomorrow."
 # What leaves JARVIS when the AI summary is on, in plain words (shown before the owner agrees).
 DATA_SENT = (
-    "To write it, JARVIS sends {ai} today's calendar titles and the senders, subjects and "
-    "previews of your unread mail."
+    "To write it, JARVIS sends {ai} today's calendar titles, the senders, subjects and "
+    "previews of your unread mail, and the titles of to-dos due today or overdue."
 )
 MSG_SPEND = (
     "The AI summary has a small cost, and to write it JARVIS sends {ai} today's calendar "
-    "titles and the senders, subjects and previews of your unread mail; confirm to switch it on."
+    "titles, the senders, subjects and previews of your unread mail, and the titles of to-dos "
+    "due today or overdue; confirm to switch it on."
 )
 MSG_INBOX = "Putting the brief in your Gmail inbox needs your confirmation."
 MSG_SCOPE = "Reconnect Google (Integrations) to allow inbox delivery, then try again."
@@ -411,7 +412,7 @@ class BriefService:
         if not self._summarizer.available:
             return None, NOTE_NO_BRAIN, calls
         st = got.data.sections_status
-        if st.calendar != "ok" and st.inbox != "ok":
+        if st.calendar != "ok" and st.inbox != "ok" and got.data.todo is None:
             return None, NOTE_NOTHING, calls
         if calls >= self._ai_cap:
             return None, NOTE_CAP, calls
@@ -483,7 +484,8 @@ class BriefService:
         d, st = got.data, got.data.sections_status
         detail = (
             f"calendar={st.calendar} events={len(d.calendar.today)} inbox={st.inbox} "
-            f"unread={d.inbox.total} approvals={d.jarvis.approvals_waiting}"
+            f"unread={d.inbox.total} approvals={d.jarvis.approvals_waiting} "
+            f"todo={st.todo} tasks={d.todo.total if d.todo else 0}"
         )
         try:
             await self._audit.append(

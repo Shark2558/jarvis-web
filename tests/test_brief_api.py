@@ -144,10 +144,25 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "at": None,
         "message_id": None,
     }
-    assert set(b["data"]) == {"date", "tz", "calendar", "inbox", "jarvis", "sections_status"}
+    assert set(b["data"]) == {
+        "date",
+        "tz",
+        "calendar",
+        "inbox",
+        "jarvis",
+        "todo",
+        "sections_status",
+    }
     assert set(b["data"]["calendar"]) == {"today", "clashes", "free_blocks", "tomorrow_first"}
     assert set(b["data"]["inbox"]) == {"total", "items"}
-    assert b["data"]["sections_status"] == {"calendar": "ok", "inbox": "ok", "jarvis": "ok"}
+    # slice 10 C: this link has no Tasks scope, so the to-do section says so (and asked nothing)
+    assert b["data"]["todo"] is None
+    assert b["data"]["sections_status"] == {
+        "calendar": "ok",
+        "inbox": "ok",
+        "jarvis": "ok",
+        "todo": "not_granted",
+    }
     assert {r.method for r in fake.requests} == {"GET"}
     forced = (await gc.post("/v1/brief/generate", json={"force": True}, headers=CSRF)).json()
     assert forced["brief"]["trigger"] == "manual"

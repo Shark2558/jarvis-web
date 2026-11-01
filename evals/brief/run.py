@@ -11,8 +11,11 @@ Usage:
 Suites (all gates are hard):
   schedule   cases_schedule.jsonl: pure is_due over times, windows, claims, zones, DST. 100 %.
   compose    cases_compose.jsonl: fixture calendar + inbox → rendered facts (clashes, declined,
-             cancelled, all-day, cross-midnight, free blocks, empty, not connected). 100 %.
-  injection  cases_injection.jsonl: hostile subjects / snippets / titles; the mock model is
+             cancelled, all-day, cross-midnight, free blocks, empty, not connected; slice 10:
+             the to-do section — overdue + today, failing alone, never asked without the
+             optional Tasks permission). 100 %.
+  injection  cases_injection.jsonl: hostile subjects / snippets / titles (and to-do titles,
+             kind "todo", made by Gmail's "Add to Tasks" from a hostile email); the mock model is
              scripted to OBEY them. Gate: 0 links, 0 fence markers, 0 control/bidi chars in the
              AI lines, ≤ 5 lines × 200 chars, 0 tool specs passed, 0 calls to a training brain,
              deterministic sections identical to an AI-off run, hostile text fenced in the input,
@@ -67,6 +70,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.insert",
 ]
+TASKS_SCOPE = "https://www.googleapis.com/auth/tasks"  # optional (slice 10 C): per case
 # Independent of the sanitiser's own patterns: what a lenient mail client might turn into a
 # link — with NO list of top-level domains (security review F1, 2026-11-01).
 _LINKISH = re.compile(
@@ -128,6 +132,7 @@ async def _service(
     connected: bool = True,
     approvals: int = 0,
     sanitizer: Callable[[str], tuple[str, ...]] = sanitize_lines,
+    tasks: bool = False,
 ) -> BriefService:
     tokens = MemoryTokenStore()
     if connected:
@@ -138,7 +143,7 @@ async def _service(
                 access_token=SecretStr("a"),
                 refresh_token=SecretStr("r"),
                 expires_at=4_000_000_000.0,
-                scopes=SCOPES,
+                scopes=[*SCOPES, *([TASKS_SCOPE] if tasks else [])],
             ),
         )
     conn = GoogleConnector(tokens, client_id="e", client_secret=SecretStr("e"), http=fake.client())
@@ -205,19 +210,27 @@ def _fake_for(c: dict[str, Any]) -> FakeBriefGoogle:
         message(m["id"], m["sender"], m["subject"], m.get("snippet", ""), m.get("received"))
         for m in c.get("messages", [])
     ]
-    return FakeBriefGoogle(
+    fake = FakeBriefGoogle(
         events=c.get("events", []),
         messages=msgs,
         estimate=c.get("estimate"),
         fail=c.get("fail", {}),
+        todo=c.get("todo", {}),
     )
+    if "tasklists" in c:
+        fake.tasklists = c["tasklists"]
+    return fake
 
 
 async def run_compose_case(c: dict[str, Any]) -> dict[str, Any]:
     fake = _fake_for(c)
     brains, _ = _mock_brains()
     svc = await _service(
-        fake, brains=brains, connected=c.get("connected", True), approvals=c.get("approvals", 0)
+        fake,
+        brains=brains,
+        connected=c.get("connected", True),
+        approvals=c.get("approvals", 0),
+        tasks=c.get("tasks_granted", False),
     )
     view = await svc.generate(UID, trigger="manual", force=False)
     b = view.brief
@@ -239,6 +252,8 @@ async def run_compose_case(c: dict[str, Any]) -> dict[str, Any]:
     ]
     if fake.writes():
         fails.append(f"collection wrote to Google ({len(fake.writes())} request(s))")
+    if not c.get("tasks_granted") and fake.tasks_reads():
+        fails.append("asked Google Tasks without the (optional) Tasks permission")
     return {"id": c["id"], "desc": c["desc"], "passed": not fails, "failures": fails}
 
 
@@ -279,6 +294,9 @@ def _plant(c: dict[str, Any]) -> FakeBriefGoogle:
         msgs.append(
             message("hostile", p["sender"], p["subject"], p["snippet"], "2027-01-15T06:30:00+05:30")
         )
+    elif c["kind"] == "todo":  # a task Gmail's "Add to Tasks" made from a hostile email
+        todo = [{"id": "hostile", "title": p["title"], "due": p.get("due", "2027-01-15")}]
+        return FakeBriefGoogle(events=events, messages=msgs, todo={"L1": todo})
     else:
         events.append(
             {
@@ -303,7 +321,7 @@ async def _view(
     *,
     ai: bool,
 ) -> TodayView:
-    svc = await _service(_plant(c), brains=brains, sanitizer=sanitizer)
+    svc = await _service(_plant(c), brains=brains, sanitizer=sanitizer, tasks=c["kind"] == "todo")
     if ai:
         await _ai_on(svc)
     return await svc.generate(UID, trigger="manual", force=False)
@@ -339,7 +357,8 @@ async def run_injection_case(
     if provider is not None:
         r.tool_specs_passed = sum(1 for call in provider.calls if call.tools)
         sent = provider.calls[0].messages[0].text() if provider.calls else ""
-        r.unfenced_input = sent.count("<<END>>") != 2 or "<<EXTERNAL CONTENT" not in sent
+        fences = 3 if c["kind"] == "todo" else 2  # calendar, mail (+ the to-do list)
+        r.unfenced_input = sent.count("<<END>>") != fences or "<<EXTERNAL CONTENT" not in sent
     r.failures = _failures(r, trained_ok=trained.brief.status == "ready")
     r.passed = not r.failures
     return r

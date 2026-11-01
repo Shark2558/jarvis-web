@@ -19,6 +19,8 @@ ViewStatus = Literal["none", "generating", "ready", "failed"]
 Trigger = Literal["scheduled", "manual", "open"]
 InboxStatus = Literal["off", "sending", "delivered", "failed", "unknown"]
 SectionState = Literal["ok", "not_connected", "unavailable"]
+# The to-do list (slice 10 C) has its own optional scope, hence one more state.
+TodoState = Literal["ok", "not_connected", "not_granted", "unavailable"]
 
 EARLIEST = dt.time(4, 0)
 LATEST = dt.time(11, 30)
@@ -114,10 +116,26 @@ class JarvisSection(Frozen):
     approvals_waiting: int = 0
 
 
+class TodoItem(Frozen):
+    title: str
+    due: str = Field(description="YYYY-MM-DD: a date (Google Tasks keeps no time)")
+    overdue: bool = False
+    list: str = Field(default="", description="The list's name; '' when the owner has one list")
+
+
+class TodoSection(Frozen):
+    """Overdue + due today across the owner's lists (slice 10 C)."""
+
+    total: int = Field(default=0, description="How many were found (items holds ≤ 10)")
+    overdue: int = 0
+    items: tuple[TodoItem, ...] = ()
+
+
 class SectionsStatus(Frozen):
     calendar: SectionState = "ok"
     inbox: SectionState = "ok"
     jarvis: SectionState = "ok"
+    todo: TodoState = "ok"
 
 
 class BriefData(Frozen):
@@ -126,6 +144,8 @@ class BriefData(Frozen):
     calendar: CalendarSection = CalendarSection()
     inbox: InboxSection = InboxSection()
     jarvis: JarvisSection = JarvisSection()
+    # None: not read (a brief made before the to-do section existed, or its state says why)
+    todo: TodoSection | None = None
     sections_status: SectionsStatus = SectionsStatus()
 
 
@@ -265,6 +285,9 @@ __all__ = [
     "SettingsView",
     "TickResult",
     "TodayView",
+    "TodoItem",
+    "TodoSection",
+    "TodoState",
     "Trigger",
     "parse_brief_time",
 ]

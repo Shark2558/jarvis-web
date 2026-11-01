@@ -283,14 +283,34 @@ async def test_adc_refresh_failures_are_upstream_errors_and_timeouts_time_out() 
 
     gate = threading.Event()
 
+    class SlowCreds(Creds):
+        def refresh(self, request: Any) -> None:
+            gate.wait(2)
+            super().refresh(request)
+
+    tokens = AdcTokens(discover=lambda s: SlowCreds(), timeout_s=0.05)
+    with pytest.raises(VoiceUnavailable) as e:
+        await tokens.headers()
+    assert e.value.reason == "timeout" and not tokens.not_configured  # transient
+    gate.set()
+
+
+async def test_adc_slow_discovery_means_no_credentials_here() -> None:
+    """Off Google Cloud, google-auth probes the metadata server for ~10 s before giving up; on
+    Cloud Run it answers at once. A slow lookup is therefore "not configured", remembered."""
+    gate, calls = threading.Event(), []
+
     def slow(s: Any) -> Any:
+        calls.append(1)
         gate.wait(2)
         return Creds()
 
-    tokens = AdcTokens(discover=slow, timeout_s=0.05)
-    with pytest.raises(VoiceUnavailable) as e:
-        await tokens.headers()
-    assert e.value.reason == "timeout"
+    tokens = AdcTokens(discover=slow, discovery_timeout_s=0.05)
+    for _ in range(2):
+        with pytest.raises(VoiceUnavailable) as e:
+            await tokens.headers()
+        assert e.value.reason == "not_configured"
+    assert tokens.not_configured and len(calls) == 1
     gate.set()
 
 

@@ -2,10 +2,11 @@
 # on the Docs port (voice_settings/{uid}), cached 30 s and refreshed on PUT.
 from __future__ import annotations
 
+import asyncio
 import math
 
 import pytest
-from billing_fakes import BrokenDocs, put_raw
+from billing_fakes import BrokenDocs, billing, put_raw, registry
 
 from jarvis.config import Settings
 from jarvis.storage.docs import MemoryDocs
@@ -20,6 +21,7 @@ from jarvis.voice.catalogue import (
     find_voice,
 )
 from jarvis.voice.ports import VoiceRejected
+from jarvis.voice.service import VoiceService
 from jarvis.voice.settings import CACHE_S, VoiceSettings, VoiceSettingsPatch, VoiceSettingsStore
 
 UID = "u_owner"
@@ -149,3 +151,53 @@ async def test_storage_errors_propagate() -> None:
 async def test_a_bad_user_id_is_refused() -> None:
     with pytest.raises(ValueError):
         await VoiceSettingsStore(MemoryDocs()).get("../other")
+
+
+# ---- the Brain's wit lookup ------------------------------------------------------------------
+
+
+class HangingDocs(MemoryDocs):
+    def __init__(self) -> None:
+        super().__init__()
+        self.gets = 0
+
+    async def get(self, path: str) -> dict[str, object] | None:
+        self.gets += 1
+        await asyncio.sleep(30)
+        return None
+
+
+def _service(docs: MemoryDocs, tick: Tick) -> VoiceService:
+    return VoiceService(
+        store=VoiceSettingsStore(docs, clock=tick),
+        billing=billing(registry()),
+        prices=PriceList.from_settings(Settings(_env_file=None)),
+        engines=None,
+        language="en-IN",
+        honorific="Sir",
+        clock=tick,
+    )
+
+
+async def test_wit_for_reads_the_owners_level() -> None:
+    docs, tick = MemoryDocs(), Tick()
+    await put_raw(docs, PATH, {"wit": "extra"})
+    assert await _service(docs, tick).wit_for(UID) == "extra"
+
+
+async def test_wit_for_failures_are_film_and_not_retried_for_30_seconds() -> None:
+    docs, tick = BrokenDocs(fail_reads=True), Tick()
+    svc = _service(docs, tick)
+    assert await svc.wit_for(UID) == "film"
+    docs.fail_reads = False
+    await put_raw(docs, PATH, {"wit": "extra"})
+    assert await svc.wit_for(UID) == "film"  # remembered: storage isn't asked again yet
+    tick.t += CACHE_S + 1
+    assert await svc.wit_for(UID) == "extra"
+
+
+async def test_wit_for_a_hung_read_is_bounded_and_remembered() -> None:
+    docs, tick = HangingDocs(), Tick()
+    svc = _service(docs, tick)
+    assert await asyncio.wait_for(svc.wit_for(UID), 2.0) == "film"
+    assert await svc.wit_for(UID) == "film" and docs.gets == 1

@@ -15,6 +15,7 @@ audio is stored; text and transcripts are never logged (lengths only).
 
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 from collections.abc import Callable
@@ -63,6 +64,7 @@ log = get_logger(__name__)
 
 MAX_TEXT_IN = 1_200
 DOWN_TTL_S = 600.0
+WIT_READ_S = 1.0  # inside the Brain's own bound, so a hung read is remembered as a failure
 STICKY: frozenset[str] = frozenset({"api_disabled", "not_configured"})
 Api = Literal["tts", "stt"]
 State = Literal["ready", "off", "unavailable"]
@@ -236,7 +238,7 @@ class VoiceService:
         if self._clock() < self._wit_fail_until.get(uid, 0.0):
             return DEFAULT_WIT
         try:
-            return (await self.store.get(uid)).wit
+            return (await asyncio.wait_for(self.store.get(uid), WIT_READ_S)).wit
         except Exception as exc:  # noqa: BLE001 — a persona nicety never fails a reply
             self._wit_fail_until[uid] = self._clock() + CACHE_S
             log.warning("wit level unreadable", extra={"reason": type(exc).__name__})

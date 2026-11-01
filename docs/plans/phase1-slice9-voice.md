@@ -133,3 +133,87 @@ it was fast-forwarded to `slice9-voice` (821abda) before any work.
   only in CI's emulator job; `evals/voice/run.py --real` was not run (needs the key; spends money).
 - The fresh-context code / Python / security reviews from CLAUDE.md were not run in this build
   session.
+
+### Build notes (console)
+
+Built on the console branch (fast-forwarded to `slice9-voice` 821abda, then merged with the backend
+at ee859a2). New: `voice-capture-worklet.js`, `console-voice-capture.js` (`JarvisAudio`, `JarvisWav`,
+`JarvisVad`), `console-voice-speech.js` (`JarvisSpeechChunker`, `JarvisSpeaker`), `console-voice.js`
+(Voice panel, settings, engines, the shared speaker → `JarvisVoice`), `console-voice-mic.js`
+(composer mic, spoken turns, "Hey Jarvis" wiring), `console-voice.css`. Changed: `console.js`,
+`console-fx.js` (pill), `console-deck.js` (panel order, Core label), `console-3d*.js` (Core level),
+`console.html`, `console.py` (`APP_ASSETS`). CSP unchanged (`audioWorklet.addModule` is `script-src
+'self'`); the wake-word builder adds `'wasm-unsafe-eval'` and its own `<script>`.
+
+**Contract as the console uses it.** `GET /v1/voice` (cloud.tts/stt/reason, settings, voices with
+`available` — only those shown, wit_levels, allowance.tts.used_chars/free_chars,
+allowance.stt.used_seconds/free_seconds, month.voice_inr, language) · `PUT /v1/voice/settings`
+`{voice?, rate?, wit?}` · `POST /v1/voice/speak` `{text, voice, rate}` or exactly `{preview: true,
+voice}` → audio bytes into `decodeAudioData` · `POST /v1/voice/transcribe` raw WAV with
+`Content-Type: audio/wav` → `{text, no_speech}` · `/v1/chat` body gains `channel: "voice"` (only on
+spoken turns). Every call carries `X-Requested-With: JARVIS` (+ the bearer token in token mode)
+through console.js. Errors read as `{error, detail, reason}` + `Retry-After` (console.js `api()` now
+also sets `err.code` from `error`).
+
+**Decisions and deviations.**
+- **Spoken turns use `/v1/chat` (JSON), not `/v1/chat/stream`** (deviation from D6's "streamed"
+  reply). The console never streamed, and the stream route returns no session id, runs no tools and
+  carries no approvals — a voice turn there could not keep a new conversation, use Calendar/Gmail or
+  give D11 its approval card. `JarvisSpeechChunker` is streaming-ready (`push(delta)`, identical
+  output whole or char by char, tested); fed the whole reply, the first sentence is still its own
+  chunk, so first audio = one short TTS call after the reply.
+- `window.JarvisChat` {send(text, {channel}), busy(), honorific(), raw()} is a new frozen global:
+  `JarvisConsole`'s exact shape is pinned by a test. Events: `jarvis:turn` / `turn-end` /
+  `answer {channel, text, approvals}` / `switch` (console.js), `jarvis:speech`, `jarvis:wake`,
+  `jarvis:voice-config` / `voice-device`.
+- Engines: Automatic = cloud → this browser → typing. A chosen engine is never swapped for another
+  (audio never goes where the owner didn't pick; the mic help says how to switch). Under Automatic a
+  transcribe 402 / 503 / `voice_busy` marks cloud listening down (10 min; `Retry-After` for busy)
+  and the browser's recognition starts at once ("Say that again: this browser is listening").
+- Speak refusals: 402 / 503 → browser voice for 10 min; `voice_busy` → for Retry-After; network,
+  `rate_limited`, other 422 / 5xx → browser voice for that reply; `nothing_to_say` → chunk skipped.
+  One note per page load. Chunks are fetched one ahead; on a fallback the in-flight fetches abort.
+- D11: a spoken turn that leaves an approval waiting speaks only "That one needs your approval on
+  screen, {honorific}." (never the reply's words), with no conversation-mode re-listen; no voice
+  script calls an approvals endpoint (unit-tested).
+- The capture AudioContext is made inside the tap; the microphone closes after each capture unless
+  "Hey Jarvis" is on (the browser's mic light goes off). The browser engine does not open our
+  capture (no second mic consumer), so its ring "breathes" instead of showing a level.
+- "Hey Jarvis": frames reach `JarvisWake` through a gate that drops them unless the mic is idle and
+  nothing is playing (no pause API needed); `start()` may return `{stop()}` or the module's `stop()`
+  is used. Saved on, after a reload the context may wait for a gesture: the chip says "tap anywhere"
+  and the first tap or key resumes it. A start error switches the setting off with a plain line.
+- Allowance line uses the spec's grouping ("12,340 of 1,000,000 free characters · 3 of 60 free
+  minutes · ≈ ₹0.00": minutes used round up); rupees via `JarvisDeck.rupees`. No "$" (unit test
+  over every voice script; browser test over the page text).
+- Pill precedence: Offline > Listening / Speaking > Thinking > Needs you. Reduced motion: Off = no
+  level visuals; Calm = the ring shows the level by brightness, never size; the 3D Core follows
+  levels only under Full (Calm/Off render still frames on state changes).
+- Hazard found: the authoring tool turned `\u2028`-style escapes into literal characters (a literal
+  U+2028 ended a regex: a page error). Fixed, and a unit test now rejects literal invisible / bidi /
+  line-separator characters in every console source.
+
+**Tests.** Unit: `tests/test_console_assets.py` (voice assets served, no HTML sinks / fetch / hosts,
+order, contract strings, worklet allow-list, panel + dock + More wiring, no "$", no invisible
+characters). Browser (`tests/browser/test_voice.py`, fake microphone = a generated speech-like WAV,
+`/v1/voice*` route-mocked): chunker (fences, tables with and without outer pipes, URLs, "Mr.",
+"e.g.", "a.m.", "₹1,234.50", lists, ellipses, initials; streamed = whole), WAV header, VAD start /
+end / 6 s timeout / 30 s cap, worklet resampling 48 and 44.1 kHz offline (pitch kept, 12 kHz alias
+filtered), live 1280-sample Int16 frames at 12.5/s, mic → VAD → WAV → transcribe → `channel: voice`
+→ reply spoken in order → conversation re-listen, browser engine interim words, send-straight-away
+off, barge-in, Esc + new conversation silence, 503 / 402 / voice_busy fallbacks, transcribe 503 →
+browser recognition, chosen cloud engine never swapped, the approval line, mic blocked help,
+Ctrl+Space / Esc, Voice panel (available voices only, debounced + serialized PUTs, preview body,
+device settings persisted, 422 reload, four cloud statuses, 404 "not available"), "Hey Jarvis"
+hidden without `JarvisWake` and wired to a stub, phone layout, contrast Night + Day, no "$", 0 JS
+errors, 0 CSP reports. `tests/browser/test_voice_live.py` runs the real app with only Google faked
+(`voice_live_server.py` + `tests/voice_fakes.py`): panel round trip + preview, and a whole spoken
+turn through the real WAV check, transcription, chat and /speak, with the allowance counting it.
+
+**Not verified.** A real microphone and speakers (echo cancellation against Web Audio playback,
+AGC / noise-suppression effect on the energy VAD's thresholds in a real room), Safari and Firefox
+(AudioWorklet resampling, `webkitSpeechRecognition`, autoplay / resume rules, MP3 decoding — tests
+decode WAV), Android Chrome with SpeechRecognition while "Hey Jarvis" holds the mic, the real
+`console-wakeword.js` (only a stub), the Comms finish by ear, the 3D Core's level response on a real
+GPU (headless only), real Google voices, and contrast on themes other than the default (Night and
+Day measured). The fresh-context reviews from CLAUDE.md were not run in this session.

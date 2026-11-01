@@ -245,6 +245,10 @@ html[data-surface="night"] .row.user .bubble{background:color-mix(in srgb,var(--
 .sys::after{transform:scaleX(-1)}
 .sys.error{align-self:center;display:block;max-width:92%;padding:10px 14px;border-radius:var(--r-md);font:14px/1.45 var(--font);letter-spacing:0;color:var(--bad-ink);background:var(--bad-tint);border:1px solid var(--bad-line);box-shadow:var(--sh-1)}
 .sys.error::before,.sys.error::after{display:none}
+/* the monthly spending limit said no (402): a JARVIS note, not a failure; amber, with words */
+.sys.limit{align-self:center;display:block;max-width:92%;padding:10px 14px;border-radius:var(--r-md);font:14px/1.45 var(--font);letter-spacing:0;color:var(--amber-ink);background:var(--amber-tint);border:1px solid var(--amber-line);box-shadow:var(--sh-1)}
+html[data-surface="night"] .sys.limit{background:color-mix(in srgb,#F59E0B 12%,var(--panel-solid))}
+.sys.limit::before,.sys.limit::after{display:none}
 
 /* typing: 5-bar waveform (Calm: dots) */
 .bubble.typing{display:inline-flex;align-items:center;gap:12px;padding:12px 16px 12px 18px}

@@ -6,7 +6,9 @@
 Equivalent to `make eval-mock` once the Makefile points here: phase0 (core loop plumbing),
 slice6 (calendar correctness over a fixture + the injection suite, whose gates are hard) and the
 slice 7 morning brief (due-logic, composed facts, AI-line injection containment + its negative
-control). The exit status is the gated suites: phase0 --mock is a smoke run and never fails CI.
+control) and slice 7b's monthly limit (rupees only; no paid call at or over the limit, on every
+path; + its negative control). The exit status is the gated suites: phase0 --mock is a smoke run
+and never fails CI.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ SUITES = [
     ("phase0 (smoke)", [sys.executable, str(HERE / "phase0" / "run.py"), "--mock"], False),
     ("slice6 (gated)", [sys.executable, str(HERE / "slice6" / "run.py"), "--mock"], True),
     ("brief (gated)", [sys.executable, str(HERE / "brief" / "run.py"), "--mock"], True),
+    ("budget (gated)", [sys.executable, str(HERE / "budget" / "run.py"), "--mock"], True),
 ]
 
 

@@ -273,6 +273,21 @@
   if (phoneQ.addEventListener) phoneQ.addEventListener('change', () => { syncMetrics(); applyMode(); });
 
   // ================================================================================== vitals
+  // Money is shown in rupees only (slice 7b): the server converts at the day's rate and sends
+  // `*_inr` beside its USD fields; every figure is an estimate, so it reads "≈ ₹". No dollar sign here.
+  function rupees(v) {
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return '₹0.00';
+    if (v < 0.01) return '< ₹0.01';
+    const d = v < 100 ? 2 : 0; // paise matter for a reply, not for a month in the hundreds
+    let s;
+    try { s = v.toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d }); } catch (_) { s = v.toFixed(d); }
+    return '≈ ₹' + s;
+  }
+  /** An exact whole-rupee amount the owner set (a limit): "₹1,00,000". */
+  function wholeRupees(n) {
+    if (!Number.isInteger(n)) return '';
+    try { return '₹' + n.toLocaleString('en-IN'); } catch (_) { return '₹' + n; }
+  }
   // wait: undefined = not loaded yet, null = could not load ("—", never a fake 0); audit likewise
   const V = { lat: [], turns: 0, brain: '—', model: '—', cost: 0, wait: undefined, audit: null, auditCount: 0, events: [], busy: false, alert: false };
   const started = Date.now();
@@ -306,7 +321,7 @@
     setText('rTurns', turns); setText('cTurns', turns); setText('sTurns', turns);
     setText('rBrain', V.brain); setText('sBrain', V.brain);
     setText('rModel', V.model); setText('sModel', V.model);
-    setText('sCost', '$' + V.cost.toFixed(V.cost && V.cost < 0.01 ? 4 : 2));
+    setText('sCost', rupees(V.cost)); // this conversation so far (total_cost_inr)
     const known = Number.isFinite(V.wait), wait = known ? String(V.wait) : '—';
     setText('rApprovals', known ? V.wait + ' waiting' : '—'); setCls('rApprovals', 'v', V.wait ? 'warn' : '');
     setText('cWait', wait); setCls('cWait', 'v', V.wait ? 'warn' : '');
@@ -529,5 +544,7 @@
     isOpen,
     isPhone,
     reset: resetLayout,
+    rupees,
+    wholeRupees,
   });
 })();

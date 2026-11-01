@@ -117,6 +117,9 @@ class ChatResponse(BaseModel):
     brain: str = Field(default="", description="Which brain answered")
     usage: Usage
     cost_usd: float
+    cost_inr: float = Field(default=0.0, description="This reply, ≈ rupees at today's rate")
+    total_cost_usd: float = Field(default=0.0, description="The whole conversation so far")
+    total_cost_inr: float = Field(default=0.0, description="The whole conversation, ≈ rupees")
     latency_ms: int
     turn_count: int
 
@@ -128,7 +131,15 @@ class SessionSummary(BaseModel):
     updated_at: datetime
     turn_count: int
     total_cost_usd: float
+    total_cost_inr: float = Field(default=0.0, description="≈ rupees at today's rate")
     title: str = Field(default="", description="First words of the owner's first message")
+
+
+class SessionView(Session):
+    """GET /v1/sessions/{id}: the stored conversation plus its cost in rupees (display only;
+    the stored record keeps USD, the provider's unit)."""
+
+    total_cost_inr: float = 0.0
 
 
 TITLE_MAX_CHARS = 80

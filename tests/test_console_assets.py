@@ -30,7 +30,13 @@ ALLOWED_FONTS = (
     "share-tech-mono-latin-400-normal.woff2",
 )
 THREE_URL = f"/static/vendor/{THREE_RELEASE}/three.module.min.js"
-DECK_SCRIPTS = ("console-fx.js", "console-deck.js", "console.js", "console-brief.js")
+DECK_SCRIPTS = (
+    "console-fx.js",
+    "console-deck.js",
+    "console.js",
+    "console-brief.js",
+    "console-usage.js",
+)
 MODULE_SCRIPTS = ("console-3d.js",)
 MODULE_DEPS = ("console-3d-scenes.js",)  # imported by console-3d.js, not by the page
 STYLES = ("console.css", "console-deck.css")
@@ -312,3 +318,50 @@ async def test_privacy_banner_sits_in_the_deck_flow_not_over_panels(client: Asyn
     assert notice, "the deck must style its privacy banner"
     assert all("position:fixed" not in body.replace(" ", "") for body in notice)
     assert any("grid-area:notice" in body.replace(" ", "") for body in notice)
+
+
+# ---- slice 7b: costs in rupees, this month's spend and the limit ---------------------------------
+async def test_usage_script_never_parses_server_text_as_html(client: AsyncClient) -> None:
+    js = (await client.get("/static/console-usage.js")).text
+    assert _sinks(js) == []
+    assert "textContent" in js and "fetch(" not in js  # the console's api() only
+    assert "/v1/usage" in js and "/v1/usage/budget" in js
+    # raising and removing send the confirmation; the plain body (a lower) does not
+    assert "{ monthly_limit_inr: want, confirm_raise: true }" in js
+    assert "{ monthly_limit_inr: null, confirm_raise: true }" in js
+    assert "{ monthly_limit_inr: want }" in js
+
+
+async def test_usage_script_loads_after_the_console_and_finds_it_ready(client: AsyncClient) -> None:
+    html = (await client.get("/")).text
+    names = ("console-deck.js", "console.js", "console-usage.js")
+    order = [html.index(f'src="/static/{n}"') for n in names]
+    assert order == sorted(order)
+    js = (await client.get("/static/console-usage.js")).text
+    assert "document.addEventListener('jarvis:ready'" in js
+    assert re.search(r"typeof \w+\.ready === 'function' && \w+\.ready\(\)", js)
+
+
+def _visible_strings(js: str) -> list[str]:
+    """String and template literals in `js` (what can reach the page as text)."""
+    return re.findall(r"'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\"(?:[^\"\\\n]|\\.)*\"", js)
+
+
+@pytest.mark.parametrize(
+    "name", ["console.js", "console-deck.js", "console-usage.js", "console-brief.js"]
+)
+def test_no_dollar_sign_in_any_console_string(name: str) -> None:
+    """Every cost the owner sees is in rupees. A template's ${…} is code, not text."""
+    js = (ROOT / "src/jarvis/api/static" / name).read_text(encoding="utf-8")
+    for lit in _visible_strings(js):
+        assert "$" not in re.sub(r"\$\{", "", lit), (name, lit[:80])
+
+
+async def test_console_page_text_has_rupees_and_no_dollars(client: AsyncClient) -> None:
+    html = (await client.get("/")).text
+    text = re.sub(r"<[^>]+>", " ", re.sub(r"<(script|style)\b.*?</\1>", " ", html, flags=re.S))
+    assert "$" not in text
+    assert 'id="sCost">₹0.00<' in html
+    assert ">Last reply by<" in html and ">Model<" not in html  # rail and Vitals both renamed
+    assert 'id="spend"' in html and 'id="limitBtn"' in html
+    assert '<dialog class="bdialog" id="limitDialog" role="alertdialog"' in html

@@ -83,7 +83,7 @@
   <aside class="rail rail-r" aria-label="Brain, approvals and time">
     <div class="rgroup">
       <div class="ri"><span class="k">Brain</span><span class="v acc" id="rBrain">—</span></div>
-      <div class="ri"><span class="k">Model</span><span class="v" id="rModel">—</span></div>
+      <div class="ri"><span class="k">Last reply by</span><span class="v" id="rModel">—</span></div>
       <div class="ri"><span class="k">Approvals</span><span class="v" id="rApprovals">0 waiting</span></div>
       <div class="ri"><span class="k">Google</span><span class="v up" id="rGoogle">—</span></div>
     </div>
@@ -235,10 +235,34 @@
         <div class="rhead"><span class="k nw">Latency · last 20</span><span class="k nw" id="sRange"></span></div>
         <svg class="spark" id="vitSpark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><line class="base" x1="0" y1="29.5" x2="100" y2="29.5"/><polygon class="area" points=""/><polyline points=""/></svg>
       </div>
+      <!-- this month's AI spend and the owner's limit (console-usage.js; GET /v1/usage) -->
+      <section class="spend" id="spend" data-state="loading" aria-labelledby="spendT">
+        <div class="rhead"><h3 class="k nw" id="spendT">This month</h3><span class="k nw sstate" id="spendState">Checking…</span></div>
+        <div class="sfig"><b id="sMonth">—</b><span id="sMonthOf"></span></div>
+        <div class="mbar" id="sBar" role="progressbar" aria-labelledby="spendT" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><i></i></div>
+        <p class="snote" id="spendNote"></p>
+        <p class="sfine" id="sBrains"></p>
+        <div class="sacts"><button class="btn lift sact" id="limitBtn" type="button" aria-expanded="false" aria-controls="limitForm" aria-disabled="true">Set limit</button><button class="btn lift sact" id="spendRetry" type="button" hidden>Retry</button></div>
+        <form class="limit-form" id="limitForm" hidden novalidate>
+          <label for="limitIn">Monthly limit for the paid AI, in rupees</label>
+          <div class="lrow">
+            <span class="pre" aria-hidden="true">₹</span>
+            <input id="limitIn" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="12" aria-describedby="limitHelp limitErr">
+            <button class="btn primary lift" id="limitSave" type="submit">Save</button>
+            <button class="btn lift" id="limitCancel" type="button">Cancel</button>
+          </div>
+          <p class="sfine" id="limitHelp">Whole rupees, ₹1 to ₹1,00,000. Lowering it saves at once; raising or removing it asks you first.</p>
+          <p class="lerr" id="limitErr" role="alert"></p>
+          <button class="btn lift sact" id="limitRemove" type="button" hidden>Remove limit</button>
+        </form>
+        <p class="snote ok" id="limitNote" role="status" aria-live="polite"></p>
+        <p class="sfine" id="sRate"></p>
+        <p class="sfine">Estimates: Anthropic bills in US dollars and your bank converts. The limit is checked before each paid reply, so one reply can go a little over it.</p>
+      </section>
       <div class="list">
         <div class="kv"><span>Brain</span><b id="sBrain">—</b></div>
-        <div class="kv"><span>Model</span><b id="sModel">—</b></div>
-        <div class="kv"><span>Cost · this conversation</span><b id="sCost">$0.00</b></div>
+        <div class="kv"><span>Last reply by</span><b id="sModel">—</b></div>
+        <div class="kv"><span>This conversation</span><b id="sCost">₹0.00</b></div>
         <div class="kv"><span>Approvals waiting</span><b id="sWait">0</b></div>
         <div class="kv"><span>Audit chain</span><b id="sAudit">—</b></div>
         <div class="kv"><span>Connection</span><b id="sNet">Online</b></div>
@@ -285,6 +309,13 @@
 <div class="menu-scrim" id="menuScrim" hidden></div>
 <div class="menu card" id="themeMenu" role="dialog" aria-modal="false" aria-labelledby="themeMenuTitle" hidden></div>
 
+<!-- Vitals: raising or removing the monthly limit lets JARVIS spend more, so it asks here first -->
+<dialog class="bdialog" id="limitDialog" role="alertdialog" aria-labelledby="limitDialogTitle" aria-describedby="limitDialogText">
+  <h2 id="limitDialogTitle"></h2>
+  <div id="limitDialogText"></div>
+  <div class="actions"><button class="btn lift" id="limitDialogNo" type="button">Not now</button><button class="btn primary lift" id="limitDialogYes" type="button">Raise</button></div>
+</dialog>
+
 <div class="gate" id="gate"><div class="gate-card card hud" id="gateBox" role="dialog" aria-modal="true" aria-labelledby="gateTitle"></div></div>
 
 <!-- Brief: switching on something that spends money or writes to Gmail asks here first -->
@@ -298,6 +329,7 @@
 <script src="/static/console-deck.js" defer></script>
 <script src="/static/console.js" defer></script>
 <script src="/static/console-brief.js" defer></script>
+<script src="/static/console-usage.js" defer></script>
 <script type="module" src="/static/console-3d.js"></script>
 </body>
 </html>

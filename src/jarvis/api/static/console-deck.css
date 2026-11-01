@@ -152,6 +152,46 @@ html[data-surface="night"] .panel.front{border-color:color-mix(in srgb,var(--acc
 .vit-spark{margin:4px 0 10px;padding:8px 10px 6px;border-radius:var(--r-sm);background:var(--tint);border:1px solid var(--line-2)}
 .vit-spark .rhead{margin:0}
 .vit-spark .spark{height:42px}
+/* This month's AI spend (slice 7b). The words carry the state ("8% used", "Limit reached"),
+   never colour alone; the bar repeats them: accent, amber from 80%, red at the limit. Text stays
+   on the same ink tokens as the rest of the panel (AA on the tint, the amber and the red tints). */
+.spend{margin:0 0 10px;padding:10px 10px 11px;border-radius:var(--r-sm);background:var(--tint);border:1px solid var(--line-2)}
+.spend .rhead{margin:0 0 6px}
+.spend h3{margin:0}
+.spend[data-state="warn"]{background:var(--amber-tint);border-color:var(--amber-line)}
+.spend[data-state="reached"],.spend[data-state="unreadable"]{background:var(--bad-tint);border-color:var(--bad-line)}
+/* Night tints are translucent: mix them into the panel colour so nothing behind shows through */
+html[data-surface="night"] .spend[data-state="warn"]{background:color-mix(in srgb,#F59E0B 11%,var(--panel-solid))}
+html[data-surface="night"] .spend[data-state="reached"],html[data-surface="night"] .spend[data-state="unreadable"]{background:color-mix(in srgb,#E5484D 12%,var(--panel-solid))}
+.sstate.warn{color:var(--amber-ink)} .sstate.bad{color:var(--bad-ink)}
+.sfig{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px}
+.sfig b{font:400 21px/1.15 var(--tech);letter-spacing:.02em;color:var(--ink);font-variant-numeric:tabular-nums}
+.sfig span{font:400 13.5px/1.2 var(--tech);letter-spacing:.04em;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.mbar{position:relative;height:6px;margin-top:9px;border-radius:3px;background:var(--line-2);overflow:hidden}
+.mbar[hidden]{display:none}
+.mbar i{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:inherit;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .6s var(--ease)}
+.spend[data-state="warn"] .mbar i{background:var(--amber)}
+.spend[data-state="reached"] .mbar i{background:var(--bad)}
+.snote{margin:8px 0 0;font-size:13px;line-height:1.4;color:var(--ink-2)}
+.snote.ok{color:var(--ok-ink)}
+.spend[data-state="warn"] #spendNote{color:var(--amber-ink);font-weight:600}
+.spend[data-state="reached"] #spendNote,.spend[data-state="unreadable"] #spendNote{color:var(--bad-ink);font-weight:600}
+.sfine{margin:6px 0 0;font-size:12px;line-height:1.4;color:var(--ink-3);overflow-wrap:anywhere}
+.snote:empty,.sfine:empty,.lerr:empty{display:none}
+.sacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.btn.sact{flex:none;height:32px;padding:0 12px;font-size:12px}
+.btn.sact[aria-disabled="true"]{opacity:.5;cursor:default}
+.limit-form{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-2)}
+.limit-form[hidden]{display:none}
+.limit-form label{display:block;margin-bottom:7px;font-size:13px;font-weight:600;line-height:1.35;color:var(--ink)}
+.lrow{display:flex;align-items:center;gap:6px}
+.lrow .pre{flex:none;font:400 15px/1 var(--tech);color:var(--ink-2)}
+.lrow input{flex:1;min-width:0;height:36px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--well);color:var(--ink);
+  font:400 15px/1 var(--tech);letter-spacing:.04em;font-variant-numeric:tabular-nums}
+.lrow input[aria-invalid="true"]{border-color:var(--bad-line);box-shadow:inset 0 0 0 1px var(--bad-line)}
+.lrow .btn{flex:none;height:36px;padding:0 12px;font-size:12px}
+.lerr{margin:6px 0 0;font-size:13px;line-height:1.4;color:var(--bad-ink)}
+.limit-form .btn.sact{margin-top:10px}
 
 /* Construct panel */
 .construct{position:relative;flex:1;min-height:200px}

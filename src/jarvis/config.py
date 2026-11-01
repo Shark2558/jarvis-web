@@ -205,6 +205,21 @@ class Settings(BaseSettings):
         default=7, ge=1, le=90, description="Days of briefs kept per owner"
     )
 
+    # --- costs in rupees + the owner's monthly limit (slice 7b) ---
+    usd_inr_rate: float = Field(
+        default=95.24,
+        gt=0,
+        le=1000,
+        description="Rupees per US dollar used when the daily rate can't be fetched (set 1 Nov "
+        "2026, mid-market). Every rupee figure is an estimate: Anthropic bills in USD and the "
+        "bank converts.",
+    )
+    usd_inr_live: bool = Field(
+        default=True,
+        description="Fetch the daily USD→INR rate from Frankfurter (frankfurter.dev, no key), at "
+        "most once a day. Off = always the rate above.",
+    )
+
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")
     user_timezone: str = "Asia/Kolkata"

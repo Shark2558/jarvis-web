@@ -9,13 +9,15 @@ import asyncio
 import sys
 
 from jarvis.api.identity import primary_user_id
+from jarvis.billing import BudgetError, build_billing, fx_client
 from jarvis.config import get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.models import ChatRequest
 from jarvis.llm.base import LLMError
 from jarvis.llm.brains import BrainRegistry
 from jarvis.logging import configure_logging, new_trace_id
-from jarvis.memory import build_session_store
+from jarvis.storage import build_storage
+from jarvis.storage.docs import MemoryDocs
 
 
 def _resolve_brain(brain: Brain, brain_id: str | None) -> str | None:
@@ -34,8 +36,13 @@ async def _repl(stream: bool, brain_id: str | None = None) -> None:
     s = get_settings()
     s.require_prod_invariants()
     configure_logging(s.log_level, s.log_json)
-    store = build_session_store(s)
-    brain = Brain(brains=BrainRegistry.from_settings(s), store=store, settings=s)
+    built = build_storage(s)
+    store = built.sessions
+    brains = BrainRegistry.from_settings(s)
+    http = fx_client(s)
+    # the same monthly limit and meter as the console (Firestore when configured)
+    billing = build_billing(s, built.docs or MemoryDocs(), brains, http=http)
+    brain = Brain(brains=brains, store=store, settings=s, billing=billing)
     chosen = _resolve_brain(brain, brain_id)
     session_id: str | None = None
     label = brain.brains.get(chosen).label if chosen else brain.brains.default.label
@@ -74,11 +81,15 @@ async def _repl(stream: bool, brain_id: str | None = None) -> None:
                     print(f"jarvis> {resp.reply}")
                     print(
                         f"        [{resp.model} · {resp.usage.total_tokens} tok · "
-                        f"${resp.cost_usd:.4f} · {resp.latency_ms} ms]"
+                        f"≈ ₹{resp.cost_inr:.2f} · {resp.latency_ms} ms]"
                     )
+            except BudgetError as exc:  # the monthly limit: said plainly, the REPL goes on
+                print(f"(jarvis: {exc})", file=sys.stderr)
             except LLMError as exc:
                 print(f"(llm error: {exc})", file=sys.stderr)
     finally:
+        if http is not None:
+            await http.aclose()
         await store.close()
 
 

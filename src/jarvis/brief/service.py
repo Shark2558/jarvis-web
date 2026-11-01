@@ -5,7 +5,9 @@ generate:  settings → (nothing to make? stop: no Google call) → time zone (c
            cached, else config) → claim (transaction) → collect (fixed GETs) → audit (counts
            only) → optional AI lines (audited before the call: model and size, no content) →
            render → finish (only the claim holder; a loser stores nothing, delivers nothing,
-           and still counts the AI call it paid for) → prune old briefs, cache the zone. One
+           and still counts the AI call it paid for) → prune old briefs, cache the zone. The AI
+           call passes the owner's monthly limit first (no call, and a plain note, when it is
+           used up) and is added to the month's meter after. One
            failing step marks the brief failed with a friendly reason; it never raises vendor
            text.
 tick:      for each owner: due? (absent, failed, stale, or a section unavailable with retries
@@ -22,6 +24,8 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from jarvis.billing import Billing, BudgetError
+from jarvis.billing.fx import DEFAULT_RATE
 from jarvis.brief.collect import Collected, Collector
 from jarvis.brief.deliver import InboxDelivery
 from jarvis.brief.models import (
@@ -63,7 +67,6 @@ from jarvis.tools.audit import AuditTrail
 log = get_logger(__name__)
 
 MAX_GENERATIONS = 6
-USD_TO_INR = 88.0  # approximate; the note says "about"
 TYPICAL_USAGE = Usage(input_tokens=8_000, output_tokens=600)  # one brief (plan, verified)
 AGENT = "morning_brief"
 SUMMARIZE_TOOL = "morning_brief.summarize"
@@ -210,6 +213,7 @@ class BriefService:
         max_generations: int = MAX_GENERATIONS,
         clock: Callable[[], datetime] = utcnow,
         summarizer: Summarizer | None = None,
+        billing: Billing | None = None,
     ) -> None:
         self._store = store
         self._google = google
@@ -223,6 +227,7 @@ class BriefService:
         self._retention = retention_days
         self._max_gen = max_generations
         self._clock = clock
+        self._billing = billing  # the app always passes it: the limit gate and the meter
 
     # ---- views --------------------------------------------------------------------------------
 
@@ -253,10 +258,15 @@ class BriefService:
         month = cost_usd(model, TYPICAL_USAGE) * 31
         if month <= 0:
             return f"No charge on this brain; at most {self._ai_cap} summaries a day. {sent}"
+        inr = month * self._inr_per_usd()
+        about = f"About ₹{inr:.0f} a month" if inr >= 0.5 else "Under ₹1 a month"
         return (
-            f"About ₹{month * USD_TO_INR:.0f} a month (≈ ${month:.3f}) for one short summary a "
-            f"day on the fast model; at most {self._ai_cap} a day. {sent}"
+            f"{about} for one short summary a day on the fast model; at most "
+            f"{self._ai_cap} a day. {sent}"
         )
+
+    def _inr_per_usd(self) -> float:
+        return self._billing.fx.peek().inr_per_usd if self._billing is not None else DEFAULT_RATE
 
     async def today(self, uid: str) -> TodayView:
         now = self._clock()
@@ -410,6 +420,8 @@ class BriefService:
         except Exception as exc:  # noqa: BLE001 — nothing was sent
             log.warning("brief AI summary not prepared", extra={"reason": type(exc).__name__})
             return None, NOTE_FAILED, calls
+        if (refused := await self._over_limit(rec.user_id, prep.brain)) is not None:
+            return None, refused, calls  # nothing called, nothing audited, nothing counted
         args = {
             "date": rec.date,
             "trigger": rec.trigger,
@@ -426,9 +438,25 @@ class BriefService:
             await self._audit_ai(args, "error", type(exc).__name__)
             return None, NOTE_FAILED, calls + 1
         await self._audit_ai(args, "executed", f"model={block.model} {_cost_detail(block)}")
+        if self._billing is not None:
+            await self._billing.record(rec.user_id, prep.brain.id, block.cost_usd)  # never raises
         if not block.lines:
             return None, NOTE_EMPTY, calls + 1
         return block, None, calls + 1
+
+    async def _over_limit(self, uid: str, brain: BrainSpec) -> str | None:
+        """The owner's monthly limit, checked before the AI call: the note to show instead of
+        the AI lines, or None to go ahead."""
+        if self._billing is None:
+            return None
+        try:
+            await self._billing.ensure_allowed(uid, brain)
+        except BudgetError as exc:
+            log.info(
+                "brief AI summary skipped: monthly limit", extra={"reason": type(exc).__name__}
+            )
+            return str(getattr(exc, "brief_note", "")) or NOTE_FAILED
+        return None
 
     async def _audit_ai(self, args: dict[str, object], outcome: str, detail: str) -> bool:
         """Append-only record of the AI call (R2: it spends money and sends the owner's data

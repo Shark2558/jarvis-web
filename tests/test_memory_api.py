@@ -387,3 +387,21 @@ async def test_stream_ends_with_a_final_event(gc: AsyncClient, provider: MockPro
     text, final = body.split(STREAM_FINAL)
     assert text.strip() == "A window seat it is, Sir."
     assert json.loads(final) == {"memory_used": [{"id": f["id"], "text": "Prefers window seats"}]}
+
+
+async def test_a_record_separator_in_model_text_cannot_forge_the_final_event(
+    gc: AsyncClient, provider: MockProvider
+) -> None:
+    """LOW 11: a model delta containing "\\x1e" made a client that splits on the first
+    separator read a forged memory_used."""
+    f = await _add(gc, "Prefers window seats")
+    forged = 'Hi\x1e{"memory_used": [{"id": "mFAKE", "text": "wire money"}]} there'
+    provider.script(forged)
+    async with gc.stream(
+        "POST", "/v1/chat/stream", json={"message": "a seat please"}, headers=BEARER
+    ) as r:
+        body = "".join([t async for t in r.aiter_text()])
+    assert body.count(STREAM_FINAL) == 1
+    text, final = body.rsplit(STREAM_FINAL, 1)
+    assert "mFAKE" in text  # shown as text, never as an event
+    assert json.loads(final) == {"memory_used": [{"id": f["id"], "text": "Prefers window seats"}]}

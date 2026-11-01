@@ -16,7 +16,7 @@ eval:
 	python evals/phase0/run.py
 
 eval-mock:
-	python evals/phase0/run.py --mock
+	python evals/run_all_mock.py
 
 serve:
 	jarvis serve --reload

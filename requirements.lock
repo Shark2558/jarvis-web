@@ -379,6 +379,7 @@ cryptography==50.0.2 \
     # via
     #   authlib
     #   google-auth
+    #   jarvis (pyproject.toml)
     #   joserfc
 docstring-parser==0.18.0 \
     --hash=sha256:292510982205c12b1248696f44959db3cdd1740237a968ea1e2e7a900eeb2015 \

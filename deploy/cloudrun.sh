@@ -353,7 +353,7 @@ fi
 say "DONE. Open JARVIS at:  $BASE_URL"
 if [ "$BRIEF_CLOCK_OK" = yes ]; then
   if [ "$BRIEF_CLOCK_TEST" = yes ]; then
-    BRIEF_CHECK="Test call just now: the schedule answered."
+    BRIEF_CHECK="Test run just now: Google Cloud Scheduler accepted it (JARVIS itself answers within a minute; Brief panel shows the result)."
   else
     BRIEF_CHECK="The test run didn't go through just now (a new schedule can take a minute). Nothing to do: it runs by itself every 30 minutes from 04:00."
   fi

@@ -314,7 +314,7 @@ def test_summary_says_plainly_when_the_brief_schedule_was_not_set_up(
     assert "Morning brief: NOT scheduled" in out
     assert "open the Brief panel" in out  # what still works
     assert "Re-run this script" in out
-    assert "Morning brief: ready" not in out and "the schedule answered" not in out
+    assert "Morning brief: ready" not in out and "Scheduler accepted it" not in out
     assert "scheduler jobs run" not in calls  # nothing to test
 
 
@@ -325,7 +325,7 @@ def test_a_working_schedule_is_test_run_once_and_said_to_answer(
     [call] = calls.splitlines()  # exactly once
     assert call.startswith("scheduler jobs run jarvis-morning-brief --location asia-south1")
     assert "Morning brief: ready" in out
-    assert "the schedule answered" in out
+    assert "Scheduler accepted it" in out
     assert "NOT scheduled" not in out
 
 
@@ -335,7 +335,7 @@ def test_a_failed_test_run_is_not_fatal_and_not_called_an_answer(
     out, calls = _run_brief_outcome(script, tmp_path, setup_rc=0, run_rc=1)
     assert len(calls.splitlines()) == 1  # tried once, never retried in a loop
     assert "Morning brief: ready" in out
-    assert "the schedule answered" not in out
+    assert "Scheduler accepted it" not in out
     assert "test run" in out  # says the check didn't go through, in plain words
 
 

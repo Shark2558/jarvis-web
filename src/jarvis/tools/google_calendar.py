@@ -41,7 +41,11 @@ MAX_LISTED_ATTENDEES = 50
 LINK_LIMIT = 500
 DEFAULT_WORKING_HOURS = "09:00-18:00"
 
-_EVENT_ID = re.compile(r"^[A-Za-z0-9_@.\-]{1,1024}$")
+# Google: event ids use base32hex (lower-case a-v, 0-9), 5-1024 characters. Instances of a
+# recurring event add "_" segments such as _20261101T090000Z or _R20150924T120000 (upper-case
+# R/T/Z). No ".", "/", "@": an id can never walk to another URL path.
+_EVENT_ID = re.compile(r"[a-v0-9]{5,1024}(?:_[0-9a-vRTZ]{1,64}){0,4}")
+MAX_EVENT_ID_LEN = 1024
 _HOURS = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
 
 _ISO = {"type": "string", "description": "ISO 8601 date-time, e.g. 2027-01-15T09:00:00+05:30"}
@@ -113,7 +117,7 @@ def _validate_attendees(raw: Any) -> list[str]:
 
 def _validate_event_id(raw: Any) -> str:
     eid = str(raw or "")
-    if not _EVENT_ID.match(eid):
+    if len(eid) > MAX_EVENT_ID_LEN or not _EVENT_ID.fullmatch(eid):
         raise ValueError("event_id is not a valid calendar event id")
     return eid
 

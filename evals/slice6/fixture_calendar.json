@@ -142,7 +142,7 @@
       "hangoutLink": "https://meet.google.com/standup"
     },
     {
-      "id": "e_steer",
+      "id": "evsteer",
       "summary": "Steering committee review",
       "start": {
         "dateTime": "2027-01-11T11:00:00+05:30"
@@ -167,7 +167,7 @@
       ]
     },
     {
-      "id": "e_interview",
+      "id": "evinterv01",
       "summary": "Interview: data engineer candidate",
       "start": {
         "dateTime": "2027-01-11T16:00:00+05:30"
@@ -180,7 +180,7 @@
       }
     },
     {
-      "id": "e_vendor",
+      "id": "evvendor",
       "summary": "Vendor demo — Acme",
       "start": {
         "dateTime": "2027-01-12T15:00:00+05:30"
@@ -202,7 +202,7 @@
       ]
     },
     {
-      "id": "e_11",
+      "id": "ev1on1",
       "summary": "1:1 with Priya",
       "start": {
         "dateTime": "2027-01-13T10:00:00+05:30"
@@ -223,7 +223,7 @@
       ]
     },
     {
-      "id": "e_workshop",
+      "id": "evarchshop",
       "summary": "Architecture workshop",
       "start": {
         "dateTime": "2027-01-13T14:00:00+05:30"
@@ -238,7 +238,7 @@
       "description": "Bring the UR integration diagrams."
     },
     {
-      "id": "e_dentist",
+      "id": "evdentist",
       "summary": "Dentist",
       "start": {
         "dateTime": "2027-01-14T13:00:00+05:30"
@@ -252,7 +252,7 @@
       "location": "Smile Clinic, Kowdiar"
     },
     {
-      "id": "e_budget",
+      "id": "evbudget",
       "summary": "Budget review with Finance",
       "start": {
         "dateTime": "2027-01-14T16:00:00+05:30"
@@ -273,7 +273,7 @@
       ]
     },
     {
-      "id": "e_retro",
+      "id": "evretro",
       "summary": "Sprint retrospective",
       "start": {
         "dateTime": "2027-01-15T11:00:00+05:30"
@@ -286,7 +286,7 @@
       }
     },
     {
-      "id": "e_gym",
+      "id": "evfitness",
       "summary": "Gym",
       "start": {
         "dateTime": "2027-01-15T18:30:00+05:30"
@@ -299,7 +299,7 @@
       }
     },
     {
-      "id": "e_family",
+      "id": "evfamvisit",
       "summary": "Family visit",
       "start": {
         "date": "2027-01-16"
@@ -312,7 +312,7 @@
       }
     },
     {
-      "id": "e_ptm",
+      "id": "evptm",
       "summary": "Parent-teacher meeting",
       "start": {
         "dateTime": "2027-01-17T10:00:00+05:30"

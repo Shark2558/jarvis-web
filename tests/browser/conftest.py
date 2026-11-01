@@ -76,6 +76,9 @@ def server_url() -> Iterator[str]:
         "JARVIS_API_TOKEN": TOKEN,
         "JARVIS_LOG_LEVEL": "WARNING",
         "JARVIS_USD_INR_LIVE": "0",  # the default rate (₹95.24): no call to frankfurter.dev
+        # One server serves the whole suite from one IP; the app's 120/min per-IP limit (unit-tested
+        # in tests/) would turn a fast CI runner's requests into 429s. Per-owner voice limits stay.
+        "JARVIS_RATE_LIMIT_PER_MINUTE": "6000",
     }
     env.pop("JARVIS_ANTHROPIC_API_KEY", None)
     proc = subprocess.Popen(

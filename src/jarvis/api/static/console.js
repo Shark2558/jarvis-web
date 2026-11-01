@@ -68,10 +68,11 @@
     }
     if (!r.ok) {
       let detail = r.statusText, code = '';
-      try {
+      try { // the app's shape: {error: code, detail: plain words}; err.code carries the code
         const j = await r.json(), d = j.detail;
-        if (d && typeof d === 'object' && !Array.isArray(d)) { // {detail: {code, message}} (slice 9 voice)
-          code = typeof d.code === 'string' ? d.code : '';
+        code = typeof j.error === 'string' ? j.error : '';
+        if (d && typeof d === 'object' && !Array.isArray(d)) { // tolerate {detail: {code, message}}
+          code = code || (typeof d.code === 'string' ? d.code : '');
           detail = typeof d.message === 'string' && d.message ? d.message : code || detail;
         } else detail = d || j.error || detail;
       } catch (_) {}

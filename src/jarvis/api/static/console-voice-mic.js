@@ -37,6 +37,7 @@
     busy: 'Another app is using the microphone. Close it, then tap the mic again.',
     unsupported: 'This browser can\'t record audio here. You can still type.',
     failed: 'The microphone didn\'t start. Please try again.',
+    cloud_down: 'Cloud listening isn\'t available right now. In Voice, set Speech engine to Automatic to use this browser\'s recognition, or type.',
   };
 
   const S = { mode: 'idle', turn: 0, vad: null, unsub: null, rec: null, recText: '', stop: false, cancel: false,
@@ -110,7 +111,7 @@
     const engine = V.inputEngine();
     if (engine === 'cloud') listenCloud(t);
     else if (engine === 'browser') listenBrowser(t);
-    else { setMode('idle'); help('unsupported'); releaseMic(); }
+    else { setMode('idle'); help(V.device().engine === 'cloud' && A.supported() ? 'cloud_down' : 'unsupported'); releaseMic(); }
   }
 
   async function listenCloud(t) {
@@ -148,22 +149,32 @@
       return;
     }
     if (t !== S.turn) return;
+    if (!r.ok) { const f = await V.refused(r); if (t === S.turn) { setMode('idle'); transcribeFailed(f); } return; }
     let j = null;
     try { j = await r.json(); } catch (_) { j = null; }
-    if (!r.ok) { setMode('idle'); transcribeFailed(r.status); return; }
     const text = j && typeof j.text === 'string' ? clean(j.text) : '';
     if (!text || (j && j.no_speech === true)) { setMode('idle'); if (!S.soft) say('I didn\'t catch that.'); return; }
     deliver(text);
   }
-  function transcribeFailed(status) {
-    if (status === 402 || status === 503) {
-      V.markDown('stt');
-      say(recognition() ? (status === 402 ? 'Cloud listening has reached this month\'s limit. Tap the mic again to use this browser\'s recognition.'
-        : 'Google\'s speech recognition isn\'t available right now. Tap the mic again to use this browser\'s recognition.')
-        : 'Cloud listening isn\'t available right now. You can still type.');
-    } else if (status === 413 || status === 422) say('That recording couldn\'t be used. Please try again.');
-    else if (status === 429) say('Too many voice requests just now. Wait a moment, then try again.');
-    else if (status !== 401) say('JARVIS couldn\'t hear that. Please try again.');
+  /** The cloud refused the recording ({error, detail, reason}; Retry-After on 429). 402, 503 and
+   *  voice_busy hand listening to this browser's recognition (when the engine is Automatic). */
+  function transcribeFailed(f) {
+    if (f.status === 401) return;
+    if (f.status === 413 || (f.status === 422 && f.code === 'bad_audio')) { say('That recording couldn\'t be used. Please try again.'); return; }
+    if (f.status === 429 && f.code !== 'voice_busy') { say('Too many voice requests just now. Wait a moment, then try again.'); return; }
+    const what = V.refusal(f.status, f.code, f.reason, f.retryAfter);
+    if (what.fallback && what.downMs) {
+      V.markDown('stt', what.downMs);
+      if (V.inputEngine() === 'browser') {
+        say(f.status === 402 ? 'Cloud listening has reached this month\'s limit. Say that again: this browser is listening.'
+          : 'Cloud listening isn\'t available. Say that again: this browser is listening.');
+        listen();
+        return;
+      }
+      say('Cloud listening isn\'t available right now. You can still type.');
+      return;
+    }
+    say(f.detail || 'JARVIS couldn\'t hear that. Please try again.');
   }
   const clean = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000);
 

@@ -11,7 +11,8 @@
 // window.JarvisVoice (used by console-voice-mic.js and console-3d.js):
 //   config() (undefined = not loaded, null = no voice service here), load(force), device(),
 //   setDevice(patch), settings(), inputEngine() / outputEngine() ('cloud' | 'browser' | 'none'),
-//   markDown(kind), language(), speaker (JarvisSpeaker), visual() / setVisual(fn) for the Core.
+//   markDown(kind, ms), refusal() / refused(response) (the {error, detail, reason} contract),
+//   language(), speaker (JarvisSpeaker), visual() / setVisual(fn) for the Core.
 // Fires: jarvis:voice-config, jarvis:voice-device, jarvis:voice-note {text}, jarvis:speech {text, engine}.
 // Listens: jarvis:ready, jarvis:panel (Voice shown), jarvis:wake {state} (console-voice-mic.js).
 (() => {
@@ -193,9 +194,12 @@
   const recognition = () => window.SpeechRecognition || window.webkitSpeechRecognition || null;
   const capture = () => !!(window.JarvisAudio && window.JarvisAudio.supported());
   const cloudReady = (kind) => !!(S.cfg && S.cfg.cloud[kind] === 'ready' && Date.now() >= S.down[kind]);
+  /** Automatic: cloud, else the browser's. A chosen engine is kept to (audio never goes somewhere
+   *  the owner did not pick), so it may be 'none' while that engine is unavailable. */
   function inputEngine() {
     const cloud = cloudReady('stt') && capture(), browser = !!recognition();
-    if (device.engine === 'browser') return browser ? 'browser' : cloud ? 'cloud' : 'none';
+    if (device.engine === 'cloud') return cloud ? 'cloud' : 'none';
+    if (device.engine === 'browser') return browser ? 'browser' : 'none';
     return cloud ? 'cloud' : browser ? 'browser' : 'none';
   }
   function outputEngine() {
@@ -203,23 +207,49 @@
     return window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function' ? 'browser' : 'none';
   }
   /** The cloud said no (503 / 402): use the browser's engine for ten minutes, then ask again. */
-  function markDown(kind) { if (kind === 'tts' || kind === 'stt') { S.down[kind] = Date.now() + DOWN_MS; render(); } }
+  function markDown(kind, ms) {
+    if (kind !== 'tts' && kind !== 'stt') return;
+    const span = typeof ms === 'number' && ms > 0 ? Math.min(ms, DOWN_MS) : DOWN_MS;
+    S.down[kind] = Math.max(S.down[kind], Date.now() + span);
+    render();
+  }
+  /** What a refused voice call means for the console (backend contract: {error, detail, reason}
+   *  plus Retry-After on 429). Returns {fallback, skip, downMs, reason}. */
+  function refusal(status, code, reason, retryAfter) {
+    if (status === 401) return { skip: true };                                 // the sign-in gate takes over
+    if (status === 402) return { fallback: true, downMs: DOWN_MS, reason: 'budget' }; // budget_reached
+    if (status === 503) return { fallback: true, downMs: DOWN_MS, reason: reason || code || 'unavailable' };
+    if (status === 429 && code === 'voice_busy') return { fallback: true, downMs: (retryAfter || 10) * 1000, reason: 'busy' };
+    if (status === 422 && code === 'nothing_to_say') return { skip: true };     // nothing speakable in it
+    return { fallback: true, downMs: 0, reason: code || 'error' };               // rate_limited, input_rejected, 5xx
+  }
+  /** Read a refused voice response: status, code, reason, Retry-After seconds, plain words. */
+  async function refused(r) {
+    let j = null;
+    try { j = obj(await r.json()); } catch (_) { j = null; }
+    const o = j || {}, d = obj(o.detail);
+    const code = typeof o.error === 'string' ? o.error : d && typeof d.code === 'string' ? d.code : '';
+    const reason = typeof o.reason === 'string' ? o.reason : d && typeof d.reason === 'string' ? d.reason : '';
+    const retry = parseInt(r.headers.get('Retry-After') || '', 10);
+    return { status: r.status, code, reason, retryAfter: Number.isFinite(retry) && retry > 0 ? retry : 0,
+      detail: typeof o.detail === 'string' ? txt(o.detail, 300) : '' };
+  }
 
   // ---- speech out: POST /v1/voice/speak → MP3 → the shared speaker ---------------------------------
-  function speakError(status, code, reason) {
-    const e = new Error(code || 'speak_failed'); e.status = status;
-    if (status === 422) e.skip = true;                                  // nothing_to_say: skip the chunk
-    else if (status === 402 || status === 503) { e.fallback = true; e.reason = status === 402 ? 'budget' : reason || 'unavailable'; markDown('tts'); }
-    else if (status === 401) e.skip = true;                             // the sign-in gate takes over
-    else e.fallback = true;                                             // 429, 5xx: the browser says it
+  function speakError(status, code, reason, retryAfter) {
+    const e = new Error(code || 'speak_failed'), what = refusal(status, code, reason, retryAfter);
+    e.status = status;
+    if (what.skip) e.skip = true;
+    if (what.fallback) { e.fallback = true; e.reason = what.reason; if (what.downMs) markDown('tts', what.downMs); }
     return e;
   }
   async function synth(text, signal, meta) {
     const raw = window.JarvisChat && window.JarvisChat.raw;
     if (!raw) throw Object.assign(new Error('no_transport'), { fallback: true });
     const s = settings();
-    const body = meta && meta.preview ? { preview: true, voice: meta.preview, rate: s.rate } : { text };
-    if (!(meta && meta.preview)) { if (s.voice) body.voice = s.voice; body.rate = s.rate; }
+    let body;
+    if (meta && meta.preview) body = { preview: true, voice: meta.preview };  // the server's fixed sample line
+    else { body = { text, rate: s.rate }; if (s.voice) body.voice = s.voice; }
     let r;
     try {
       r = await raw('/v1/voice/speak', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, signal });
@@ -229,9 +259,8 @@
       throw Object.assign(new Error('network'), { fallback: true, reason: 'network' });
     }
     if (r.ok) return r.arrayBuffer();
-    let detail = null;
-    try { detail = obj((await r.json()).detail); } catch (_) {}
-    throw speakError(r.status, detail && typeof detail.code === 'string' ? detail.code : '', detail && typeof detail.reason === 'string' ? detail.reason : '');
+    const f = await refused(r);
+    throw speakError(f.status, f.code, f.reason, f.retryAfter);
   }
   const speaker = window.JarvisSpeaker.create({ synth, finish: device.finish });
   speaker.on('chunk', (d) => emit('jarvis:speech', { text: d.text, engine: d.engine }));
@@ -463,6 +492,8 @@
     inputEngine,
     outputEngine,
     markDown,
+    refusal,
+    refused,
     language: () => (S.cfg ? S.cfg.language : 'en-IN'),
     speaker,
     visual: () => (visualFn ? visualFn() : null),

@@ -93,6 +93,8 @@ html[data-motion="full"] .deck.speaking #coreFallback .core .glow{transform:scal
   #p-voice .bopt{flex-wrap:wrap}
   #p-voice .bopt .bsel{max-width:100%}
 }
-html[data-motion="calm"] .mic .mring{transition:none}
-html[data-motion="calm"] .mic[data-state="listening"].nolevel .mring{animation:none;transform:scale(.9)}
+/* Calm: the ring keeps showing the real level, by brightness instead of size; Off: no level at all */
+html[data-motion="calm"] .mic .mring{transition:none;transform:scale(.9)}
+html[data-motion="calm"] .mic[data-state="listening"] .mring,html[data-motion="calm"] .mic[data-state="speaking"] .mring{opacity:calc(.3 + var(--lvl) * .7)}
+html[data-motion="calm"] .mic[data-state="listening"].nolevel .mring{animation:none;opacity:.9}
 html[data-motion="off"] .mic .mring{transform:scale(.9)}

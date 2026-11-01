@@ -278,9 +278,10 @@ class DocSessionStore(SessionStore):
                 extra={"session_id": session.id, "ours": len(ours), "theirs": len(theirs)},
             )
             raise SessionConflict("This conversation changed in another window.")
+        # without a mark this copy's base is unknown: its header fields are the caller's intent
         base_meta = json.loads(mark.metadata) if mark else stored.metadata
         session.metadata = _merged_metadata(base_meta, session.metadata, stored.metadata)
-        if mark is None or session.user_id == mark.user_id:
+        if mark is not None and session.user_id == mark.user_id:
             session.user_id = stored.user_id
         session.updated_at = max(session.updated_at, stored.updated_at)
         session._store_mark = stored._store_mark

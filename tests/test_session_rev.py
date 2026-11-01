@@ -180,6 +180,35 @@ async def test_a_brand_new_session_never_replaces_an_existing_one(docs: Docs, pr
     assert await _contents(docs, prefix, s.id) == ["turn 0", "turn 1"]
 
 
+async def test_a_copy_without_a_mark_keeps_its_own_owner_and_settings(
+    docs: Docs, prefix: str
+) -> None:
+    """A copy rebuilt from its JSON (no store mark) whose turns extend the stored ones is
+    consistent; its header fields are the caller's intent (reassign_user, a re-import)."""
+    store = DocSessionStore(docs, prefix=prefix)
+    s = _session(2)
+    s.metadata["brain"] = "anthropic"
+    await store.save(s)
+    rebuilt = Session.model_validate(s.model_dump())
+    rebuilt.user_id = "owner-2"
+    rebuilt.metadata["brain"] = "gemini"
+    await DocSessionStore(docs, prefix=prefix).save(_say(rebuilt, "moved"))
+    fresh = await DocSessionStore(docs, prefix=prefix).get(s.id)
+    assert fresh is not None and fresh.user_id == "owner-2"
+    assert fresh.metadata == {"brain": "gemini"} and fresh.turns[-1].content == "moved"
+
+
+async def test_reassign_user_moves_every_conversation_on_the_doc_store(
+    docs: Docs, prefix: str
+) -> None:
+    store = DocSessionStore(docs, prefix=prefix)
+    for _ in range(3):
+        await store.save(_session(2))
+    assert await store.reassign_user("owner", "u_new") == 3
+    assert len(await store.list_for_user("u_new")) == 3
+    assert await store.list_for_user("owner") == []
+
+
 # ---- cost and the twin's transaction limits (MemoryDocs only) ------------------------------------
 
 

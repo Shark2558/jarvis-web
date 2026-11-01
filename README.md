@@ -227,6 +227,13 @@ All settings are `JARVIS_*` env vars (see `.env.example`). Notable ones:
 - `JARVIS_API_TOKEN` — required when `JARVIS_ENV != dev`.
 - `JARVIS_VOICE_CLOUD=true|false`, `JARVIS_VOICE_LANGUAGE=en-IN` — Google Cloud speech (slice 9)
   with Application Default Credentials; without them the console uses the browser's voice.
+- `JARVIS_VOICE_TTS_FREE_CHARS` (default 900000 per voice type) and
+  `JARVIS_VOICE_STT_FREE_SECONDS` (default 3240) — how much of Google's free speech tier JARVIS
+  may use each month (90 % of Google's 1,000,000 characters / 60 minutes; counted once for the
+  deployment on Pacific-time months, like Google's). Google's free tier is per
+  billing account: if yours is shared with other projects or apps that use speech, set
+  `JARVIS_VOICE_TTS_FREE_CHARS=0` and `JARVIS_VOICE_STT_FREE_SECONDS=0` so every cloud-voice call
+  is priced against the monthly limit.
 
 ## API
 

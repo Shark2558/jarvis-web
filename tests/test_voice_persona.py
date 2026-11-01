@@ -127,6 +127,21 @@ def test_honorific_is_configurable() -> None:
     assert '"Ma\'am"' in p and "Sir" not in p
 
 
+@pytest.mark.parametrize(
+    ("wit", "line"),
+    [
+        ("film", "Your four o'clock overlaps your four o'clock, Ma'am."),
+        ("extra", "Three meetings back to back, Ma'am."),
+    ],
+)
+def test_the_film_and_extra_example_lines_use_the_configured_honorific(wit: str, line: str) -> None:
+    """Review: the new example lines must substitute the honorific, never hard-code "Sir"."""
+    rule = next(w.rule for w in WIT_LEVELS if w.id == wit)
+    assert "Sir" not in rule and "{honorific}" in rule
+    p = " ".join(build_system_prompt(honorific="Ma'am", wit=wit).split())
+    assert line in p and "Sir" not in p and "{honorific}" not in p
+
+
 def test_unknown_wit_is_refused() -> None:
     with pytest.raises(ValueError):
         build_system_prompt(honorific="Sir", wit="slapstick")

@@ -427,7 +427,7 @@ def test_runtime_account_may_consume_the_projects_services_without_stopping_the_
     # granted with the idempotent binding helper, never removed again
     removed = script.split("remove-iam-policy-binding", 1)[0].rsplit("for role in", 1)[1]
     assert "serviceUsageConsumer" not in removed
-    assert _top_level_depth_at(script, "try_bind \"serviceAccount:${RUN_SA}\"") == 0
+    assert _top_level_depth_at(script, 'try_bind "serviceAccount:${RUN_SA}"') == 0
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not installed")

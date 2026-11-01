@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from pathlib import Path
 
 import pytest
 from billing_fakes import BrokenDocs, billing, put_raw, registry
@@ -75,6 +76,23 @@ def test_prices_and_allowances_come_from_settings() -> None:
     )
     assert shared.chirp3_hd.free_units == shared.stt.free_units == 0  # a shared billing account
     assert stt.usd_per_unit == pytest.approx(0.024 / 60)
+
+
+def test_a_shared_billing_account_is_documented_with_the_real_setting_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review item 1: Google's allowance is per billing account. If it is shared, the owner
+    sets both allowances to 0 — with the names the app actually reads."""
+    monkeypatch.setenv("JARVIS_VOICE_TTS_FREE_CHARS", "0")
+    monkeypatch.setenv("JARVIS_VOICE_STT_FREE_SECONDS", "0")
+    s = Settings(_env_file=None)
+    assert s.voice_tts_free_chars == 0 and s.voice_stt_free_seconds == 0
+    root = Path(__file__).resolve().parents[1]
+    for doc in ("README.md", ".env.example"):
+        text = (root / doc).read_text(encoding="utf-8")
+        assert "JARVIS_VOICE_TTS_FREE_CHARS=0" in text, doc
+        assert "JARVIS_VOICE_STT_FREE_SECONDS=0" in text, doc
+        assert "billing account" in text, doc
 
 
 # ---- settings --------------------------------------------------------------------------------

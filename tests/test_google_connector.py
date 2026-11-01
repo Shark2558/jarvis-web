@@ -150,10 +150,49 @@ async def test_request_retries_once_on_5xx_and_429(
     fake.on("GET", CAL, httpx.Response(503), httpx.Response(200, json={"ok": 1}))
     assert await conn.request(UID, "GET", CAL) == {"ok": 1}
     fake.requests.clear()
-    fake.on("DELETE", CAL, httpx.Response(429), httpx.Response(429))
+    fake.on("GET", CAL + "/x", httpx.Response(429), httpx.Response(429))
     with pytest.raises(GoogleAPIError) as ei:
-        await conn.request(UID, "DELETE", CAL)
+        await conn.request(UID, "GET", CAL + "/x")
     assert len(fake.requests) == 2 and "rate" in str(ei.value).lower()
+
+
+# ---- security review L2: a write is never sent twice by a retry ------------------------------
+
+SEND = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+FREEBUSY = "https://www.googleapis.com/calendar/v3/freeBusy"
+
+
+@pytest.mark.parametrize(
+    "method, url, status",
+    [
+        ("POST", SEND, 503),  # messages.send may have gone out before the 503
+        ("POST", CAL, 500),  # events.insert
+        ("PATCH", CAL + "/abcde", 502),
+        ("DELETE", CAL + "/abcde", 429),
+    ],
+)
+async def test_unsafe_calls_are_not_retried(
+    conn: GoogleConnector,
+    store: MemoryTokenStore,
+    fake: FakeGoogle,
+    method: str,
+    url: str,
+    status: int,
+) -> None:
+    await store.put(UID, _tokens())
+    fake.on(method, url, httpx.Response(status), httpx.Response(200, json={"id": "twice"}))
+    with pytest.raises(GoogleAPIError):
+        await conn.request(UID, method, url, json={} if method != "DELETE" else None)
+    assert len(fake.requests) == 1
+
+
+async def test_read_only_post_can_opt_into_one_retry(
+    conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle
+) -> None:
+    await store.put(UID, _tokens())
+    fake.on("POST", FREEBUSY, httpx.Response(503), httpx.Response(200, json={"ok": 1}))
+    assert await conn.request(UID, "POST", FREEBUSY, json={}, retry_safe=True) == {"ok": 1}
+    assert len(fake.requests) == 2
 
 
 async def test_request_refreshes_once_on_401(

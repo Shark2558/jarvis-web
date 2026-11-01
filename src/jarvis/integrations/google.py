@@ -42,6 +42,9 @@ TOOL_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES)
 HTTP_TIMEOUT_S = 15.0
 REFRESH_SKEW_S = 60.0  # refresh when the access token has less than this left
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+# Only calls that change nothing are retried: a 5xx after messages.send / drafts.create /
+# events.insert may come AFTER Google acted, and a retry would send or create it twice.
+SAFE_METHODS = frozenset({"GET", "HEAD"})
 
 NOT_CONNECTED_MSG = (
     "Google is not connected. Connect it in the panel (Integrations) to use calendar and mail."
@@ -237,9 +240,13 @@ class GoogleConnector:
         *,
         params: dict[str, Any] | None = None,
         json: Any | None = None,
+        retry_safe: bool | None = None,
     ) -> Any:
-        """One Google REST call: bearer token, 15 s timeout, one retry on 429/5xx, one forced
-        refresh on 401. Returns parsed JSON ({} for an empty body)."""
+        """One Google REST call: bearer token, 15 s timeout, one forced refresh on 401 (not
+        processed, so safe to resend), and one retry on 429/5xx ONLY for safe calls: GET/HEAD,
+        or a read-only POST that passes `retry_safe=True` (freeBusy). Returns parsed JSON
+        ({} for an empty body)."""
+        safe = method.upper() in SAFE_METHODS if retry_safe is None else retry_safe
         token = await self.access_token(user_id)
         r = await self._send(method, url, token, params, json)
         if r.status_code == 401:
@@ -248,7 +255,7 @@ class GoogleConnector:
                 raise GoogleNotConnected(RECONNECT_MSG)
             token = await self._refresh(user_id, t)
             r = await self._send(method, url, token, params, json)
-        elif r.status_code in RETRY_STATUSES:
+        elif r.status_code in RETRY_STATUSES and safe:
             r = await self._send(method, url, token, params, json)
         if r.status_code >= 400:
             log.warning(

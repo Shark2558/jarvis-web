@@ -222,6 +222,7 @@ class CalendarAPI:
                 "timeMax": end.astimezone(UTC).isoformat(),
                 "items": [{"id": "primary"}],
             },
+            retry_safe=True,  # a read-only query: retrying cannot change anything
         )
         busy_raw = ((data.get("calendars") or {}).get("primary") or {}).get("busy") or []
         busy = sorted(

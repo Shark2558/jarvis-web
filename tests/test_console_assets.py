@@ -36,10 +36,11 @@ DECK_SCRIPTS = (
     "console.js",
     "console-brief.js",
     "console-usage.js",
+    "console-memory.js",
 )
 MODULE_SCRIPTS = ("console-3d.js",)
 MODULE_DEPS = ("console-3d-scenes.js",)  # imported by console-3d.js, not by the page
-STYLES = ("console.css", "console-deck.css")
+STYLES = ("console.css", "console-deck.css", "console-memory.css")
 
 
 # ---- fonts ------------------------------------------------------------------------------------
@@ -219,7 +220,8 @@ async def test_brief_script_finds_the_console_ready_however_late_it_arrives(
     order = [html.index(f'src="/static/{n}"') for n in names]
     assert order == sorted(order)
     console_js = (await client.get("/static/console.js")).text
-    assert "window.JarvisConsole = Object.freeze({ api, ready: () => readyDetail })" in console_js
+    frozen = "window.JarvisConsole = Object.freeze({ api, ready: () => readyDetail, "
+    assert frozen + "brain: () => brainDetail })" in console_js
     assert "readyDetail = Object.freeze({ returning: backFromGoogle })" in console_js
     assert console_js.index("readyDetail = Object.freeze(") < console_js.index(
         "emit('jarvis:ready', readyDetail)"
@@ -348,7 +350,8 @@ def _visible_strings(js: str) -> list[str]:
 
 
 @pytest.mark.parametrize(
-    "name", ["console.js", "console-deck.js", "console-usage.js", "console-brief.js"]
+    "name",
+    ["console.js", "console-deck.js", "console-usage.js", "console-brief.js", "console-memory.js"],
 )
 def test_no_dollar_sign_in_any_console_string(name: str) -> None:
     """Every cost the owner sees is in rupees. A template's ${…} is code, not text."""
@@ -365,3 +368,92 @@ async def test_console_page_text_has_rupees_and_no_dollars(client: AsyncClient) 
     assert ">Last reply by<" in html and ">Model<" not in html  # rail and Vitals both renamed
     assert 'id="spend"' in html and 'id="limitBtn"' in html
     assert '<dialog class="bdialog" id="limitDialog" role="alertdialog"' in html
+
+
+# ---- slice 8: long-term memory, collapsed settings, the phone "More" sheet ----------------------
+# The one URL the Memory panel ever assigns: the blob: URL of the export it has just built in the
+# page (never server text), so the browser saves it as a file.
+EXPORT_LINK = "a.href = URL.createObjectURL(blob)"
+
+
+async def test_memory_script_never_parses_memory_text_as_html(client: AsyncClient) -> None:
+    js = (await client.get("/static/console-memory.js")).text
+    assert js.count(EXPORT_LINK) == 1
+    assert _sinks(js.replace(EXPORT_LINK, "")) == []
+    assert "textContent" in js and "fetch(" not in js  # the console's api() only
+    for path in (
+        "'/v1/memory'",
+        "'/v1/memory/settings'",
+        "'/v1/memory/profile/'",
+        "'/v1/memory/facts'",
+        "'/v1/memory/facts/'",
+        "'/v1/memory/export'",
+        "'/v1/memory/import'",
+    ):
+        assert path in js, path
+    # learning spends money: it is switched on only with the confirmation flag
+    assert "{ learn: true, confirm_spend: true }" in js
+    assert "{ confirm: 'FORGET' }" in js
+    assert "encodeURIComponent(" in js  # fact ids never shape the path by themselves
+
+
+async def test_memory_script_loads_after_the_console_and_finds_it_ready(
+    client: AsyncClient,
+) -> None:
+    html = (await client.get("/")).text
+    names = ("console-deck.js", "console.js", "console-memory.js")
+    order = [html.index(f'src="/static/{n}"') for n in names]
+    assert order == sorted(order)
+    js = (await client.get("/static/console-memory.js")).text
+    assert "document.addEventListener('jarvis:ready'" in js
+    assert re.search(r"typeof \w+\.ready === 'function' \? \w+\.ready\(\) : null", js)
+
+
+async def test_memory_panel_dock_button_and_dialog_are_wired(client: AsyncClient) -> None:
+    html = (await client.get("/")).text
+    assert 'id="p-memory" data-panel="memory" aria-labelledby="t-memory"' in html
+    assert 'data-open="memory" aria-controls="p-memory" aria-pressed="false"' in html
+    assert '<dialog class="bdialog" id="memoryDialog" role="alertdialog"' in html
+    assert 'id="memoryNote" role="status"' in html
+    # every field has a visible label; the settings start collapsed
+    for label in ("about", "preferences", "people", "work"):
+        assert f'<label class="bl" for="memP-{label}">' in html, label
+        assert f'id="memP-{label}" maxlength="1000"' in html, label
+    assert 'id="memSetBtn" type="button" aria-expanded="false" aria-controls="memSetBody"' in html
+    assert 'id="memSetBody" hidden' in html
+    assert 'id="memForgetIn"' in html and 'id="memAddText" maxlength="300"' in html
+    deck = (await client.get("/static/console-deck.js")).text
+    assert "'history', 'memory', 'integrations'" in deck  # in the deck's order and default layout
+    assert re.search(r"\bmemory: \{ x:", deck)
+
+
+async def test_phone_dock_has_a_more_sheet_for_the_overflow_tabs(client: AsyncClient) -> None:
+    """Nine panels: a phone shows at most eight tabs; the rest sit behind "More"."""
+    html = (await client.get("/")).text
+    dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
+    tabs = re.findall(r'<button class="dk([^"]*)" type="button" data-open="(\w+)"', dock)
+    assert len(tabs) == 9
+    on_phone = [name for cls, name in tabs if "ovf" not in cls.split()]
+    overflow = [name for cls, name in tabs if "ovf" in cls.split()]
+    assert len(on_phone) + 1 <= 8 and overflow  # + the More tab itself
+    assert 'id="dockMore" type="button" aria-haspopup="dialog" aria-expanded="false"' in dock
+    assert '<dialog class="sheet" id="moreSheet" aria-labelledby="moreTitle">' in html
+    for name in overflow:
+        assert f'data-sheet-open="{name}"' in html, name
+    css = (await client.get("/static/console-deck.css")).text
+    assert re.search(r"\.dk\.ovf\s*\{[^}]*display:\s*none", css)  # inside the phone query
+
+
+async def test_brief_settings_sit_behind_a_remembered_disclosure(client: AsyncClient) -> None:
+    js = (await client.get("/static/console-brief.js")).text
+    assert "'aria-expanded'" in js and "'aria-controls'" in js
+    assert "jarvis_brief_settings_open" in js
+    # storage may throw (private mode, blocked site data): every access is wrapped
+    assert re.search(r"try \{ return localStorage\.getItem\(k\); \} catch", js)
+    assert re.search(r"try \{ localStorage\.setItem\(k, v\); \} catch", js)
+
+
+async def test_reply_meta_lists_the_memories_used_as_text(client: AsyncClient) -> None:
+    js = (await client.get("/static/console.js")).text
+    assert "memory_used" in js and "Used " in js
+    assert "emit('jarvis:brain'" in js

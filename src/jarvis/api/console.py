@@ -32,10 +32,12 @@ APP_ASSETS: dict[str, str] = {
     "console-deck.js": _JS,  # Command Deck: panels, dock, rails, radar, vitals
     "console-brief.js": _JS,  # morning Brief panel: today's brief, its settings and confirms
     "console-usage.js": _JS,  # Vitals: this month's AI spend in rupees and the owner's limit
+    "console-memory.js": _JS,  # Memory panel: About you, facts, learning consent (slice 8)
     "console-3d.js": _JS,  # three.js scenes (ES module; loads three lazily, 2D fallback)
     "console-3d-scenes.js": _JS,  # Core / Globe / Construct scene builders (ES module)
     "console.css": "text/css",
     "console-deck.css": "text/css",
+    "console-memory.css": "text/css",
 }
 
 # Self-hosted OFL fonts (licences beside them).

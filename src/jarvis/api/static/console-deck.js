@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'integrations', 'vitals', 'construct'];
+  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vitals', 'construct'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;
@@ -71,6 +71,7 @@
       activity: { x: sL, y: Math.max(b.top, bottom - 250), w: 300, h: 250, open: false },
       approvals: { x: col2, y: b.top, w: 340, h: null, open: false },
       history: { x: col2, y: b.top + 36, w: 320, h: Math.min(440, availH), open: false },
+      memory: { x: Math.max(sL, sR - chatW - 14 - 400), y: b.top, w: 400, h: Math.min(availH, 760), open: false },
       integrations: { x: col2, y: b.top + 72, w: 340, h: null, open: false },
       construct: { x: Math.max(sL, sR - chatW - 14 - 330), y: b.top, w: 330, h: Math.min(380, availH), open: false },
     };
@@ -122,6 +123,44 @@
   }
   function syncDock() {
     ids.forEach(id => { const p = panels[id]; if (p.btn) p.btn.setAttribute('aria-pressed', String(isOpen(id))); });
+    syncMore();
+  }
+
+  // ---- phones: at most eight tabs; the "ovf" tabs live in the More sheet (native modal dialog:
+  // the page behind is inert, Tab stays inside, Esc and the backdrop close it, focus returns) ----
+  const moreBtn = $('dockMore'), sheet = $('moreSheet');
+  const overflow = () => ids.filter(id => panels[id].btn && panels[id].btn.classList.contains('ovf'));
+  const titleOf = (id) => { const h = panels[id].el.querySelector('.ptitle h2'); return h ? h.textContent.trim() : id; };
+  function syncMore() {
+    if (!moreBtn) return;
+    const shown = isPhone() && overflow().includes(phoneTab) ? phoneTab : null;
+    moreBtn.classList.toggle('on', !!shown);
+    moreBtn.setAttribute('aria-label', shown ? `More panels, ${titleOf(shown)} shown` : 'More panels');
+  }
+  function closeSheet() { if (sheet && sheet.open) sheet.close(); }
+  if (moreBtn && sheet && typeof sheet.showModal === 'function') {
+    moreBtn.addEventListener('click', () => {
+      if (sheet.open) { closeSheet(); return; }
+      sheet.querySelectorAll('[data-sheet-open]').forEach(b => {
+        const on = isPhone() && phoneTab === b.dataset.sheetOpen;
+        if (on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+      });
+      sheet.showModal();
+      moreBtn.setAttribute('aria-expanded', 'true');
+      const first = sheet.querySelector('[data-sheet-open]'); if (first) first.focus();
+    });
+    sheet.addEventListener('close', () => { // a chosen panel takes focus; otherwise it goes back to More
+      moreBtn.setAttribute('aria-expanded', 'false');
+      const a = document.activeElement;
+      if (!a || a === document.body || sheet.contains(a)) moreBtn.focus({ preventScroll: true });
+    });
+    sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); }); // the backdrop
+    sheet.querySelectorAll('[data-sheet-open]').forEach(b => b.addEventListener('click', () => {
+      closeSheet(); open(b.dataset.sheetOpen, { focus: true });
+    }));
+    const done = $('moreClose'); if (done) done.addEventListener('click', closeSheet);
+  } else if (moreBtn) { // no <dialog>: no More tab, and the overflow tabs stay in the bar
+    moreBtn.hidden = true; root.classList.add('no-sheet');
   }
   function focusPanel(p) {
     const target = p.id === 'chat' ? $('input') : p.el.querySelector('.ptitle h2');
@@ -270,7 +309,7 @@
   function reflow() { syncMetrics(); if (!isPhone()) ids.filter(isOpen).forEach(id => applyGeom(panels[id])); layoutCore(); drawRuler(); }
   // the privacy banner appears / disappears with the brain: panels move to stay clear of it
   if (window.ResizeObserver && $('banner')) new ResizeObserver(() => reflow()).observe($('banner'));
-  if (phoneQ.addEventListener) phoneQ.addEventListener('change', () => { syncMetrics(); applyMode(); });
+  if (phoneQ.addEventListener) phoneQ.addEventListener('change', () => { closeSheet(); syncMetrics(); applyMode(); });
 
   // ================================================================================== vitals
   // Money is shown in rupees only (slice 7b): the server converts at the day's rate and sends

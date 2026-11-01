@@ -666,16 +666,17 @@ def test_phone_badges_the_brief_tab_then_shows_one_panel(make: Callable[..., Con
     assert tab.get_attribute("aria-label") == "Brief, new brief ready"
     assert page.locator("#p-chat").is_visible() and page.locator("#p-brief").is_hidden()
     assert fake.to("/v1/brief/seen") == []  # a badge is not "seen"
-    # eight tabs, all on screen, each a usable touch target with its label inside it
+    # eight tabs (seven panels + More), all on screen, each a usable touch target with its label
     tabs = page.evaluate(
-        """[...document.querySelectorAll('#dock .dk')].map(b => {
+        """[...document.querySelectorAll('#dock .dk')].filter(b => b.getClientRects().length)
+           .map(b => {
              const r = b.getBoundingClientRect();
              const label = [...b.querySelectorAll('span')].find(s => s.offsetWidth);
-             return {name: b.dataset.open, w: r.width, h: r.height, left: r.left, right: r.right,
-                     fits: !label || label.scrollWidth <= b.clientWidth};
+             return {name: b.dataset.open || b.id, w: r.width, h: r.height, left: r.left,
+                     right: r.right, fits: !label || label.scrollWidth <= b.clientWidth};
            })"""
     )
-    assert len(tabs) == 8
+    assert len(tabs) == 8 and tabs[-1]["name"] == "dockMore", tabs
     width = page.evaluate("window.innerWidth")
     for t in tabs:
         assert t["w"] >= 44 and t["h"] >= 44, t
@@ -706,7 +707,8 @@ def test_very_narrow_phone_keeps_every_tab_named(make: Callable[..., Console]) -
     FakeBrief(c.page, today_state())
     c.open()
     names = c.page.evaluate(
-        """[...document.querySelectorAll('#dock .dk')].map(b => {
+        """[...document.querySelectorAll('#dock .dk')].filter(b => b.getClientRects().length)
+           .map(b => {
              const r = b.getBoundingClientRect();
              return {w: r.width, name: (b.getAttribute('aria-label') || b.textContent).trim()};
            })"""

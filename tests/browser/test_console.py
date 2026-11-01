@@ -63,10 +63,11 @@ class Console:
     def _on_console(self, msg: Any) -> None:
         if msg.type != "error":
             return
-        # The 404s the console handles by design: a backend without the connect flow, or without
-        # the morning brief (the Brief panel then says "Not available in this setup").
+        # The 404s the console handles by design: a backend without the connect flow, the morning
+        # brief or long-term memory (those panels then say "Not available in this setup").
         url = str(msg.location.get("url", ""))
-        if "404" in msg.text and url.endswith(("/v1/integrations", "/v1/brief/today")):
+        by_design = ("/v1/integrations", "/v1/brief/today", "/v1/memory")
+        if "404" in msg.text and url.endswith(by_design):
             return
         self.errors.append(f"console.error: {msg.text} @ {msg.location.get('url', '')}")
 
@@ -92,7 +93,12 @@ class Console:
         return str(reply.text_content())
 
     def open_panel(self, panel: str) -> None:
-        self.page.locator(f'.dk[data-open="{panel}"]').click()
+        tab = self.page.locator(f'.dk[data-open="{panel}"]')
+        if tab.is_visible():
+            tab.click()
+        else:  # phones: the tabs that don't fit the bar sit behind More (slice 8)
+            self.page.locator("#dockMore").click()
+            self.page.locator(f'#moreSheet [data-sheet-open="{panel}"]').click()
         self.page.locator(f"#p-{panel}").wait_for(state="visible")
 
     def close(self) -> None:

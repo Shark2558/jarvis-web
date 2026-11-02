@@ -66,6 +66,7 @@ from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.taint import context_trust, untrusted_seen
+from jarvis.web.ledger import cited_sources, web_conversation
 
 log = get_logger(__name__)
 
@@ -392,6 +393,7 @@ class Brain:
                 cost_usd=completion.cost_usd,
                 latency_ms=completion.latency_ms,
                 tool_derived=rounds > 0,  # written from tool results: never to a training brain
+                sources=cited_sources(reply, session, enabled=spec.tools_allowed),
             )
         )
         await self.store.save(session)
@@ -452,6 +454,7 @@ class Brain:
             tool_calls=meta.rounds,
             pending_approvals=meta.pending,
             memory_used=meta.memory_used,
+            sources=session.turns[-1].sources,  # the reply just stored: what it cited
         )
 
     # ---- tool loop ----------------------------------------------------------------------
@@ -520,7 +523,7 @@ class Brain:
             untrusted = untrusted_seen(msgs, self.gateway.registry)
             spoken = req.channel == "voice"
             for call in completion.tool_calls:
-                with context_trust(untrusted=untrusted, spoken=spoken):
+                with context_trust(untrusted=untrusted, spoken=spoken), web_conversation(session):
                     gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
                 if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending:
                     pending.append(PendingApproval.from_action(gr.pending))
@@ -609,7 +612,8 @@ class Brain:
         session = await self._load_or_create(req)
         call = ToolCall(id=f"approve_{approval_id}", name=action.tool, arguments=action.arguments)
         if approved:
-            d = await self._approved(call, action, approval_id, scope)
+            with web_conversation(session):
+                d = await self._approved(call, action, approval_id, scope)
         else:
             d = await self._declined(call, action, approval_id)
         trace_id = get_trace_id()

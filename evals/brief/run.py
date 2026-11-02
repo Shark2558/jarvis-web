@@ -54,6 +54,7 @@ from jarvis.llm.router import ModelTier
 from jarvis.logging import configure_logging
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.audit import AuditLog
+from jarvis.tools.external import FENCE_END
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fake_google import FakeBriefGoogle, message  # noqa: E402
@@ -339,7 +340,7 @@ async def run_injection_case(
     if provider is not None:
         r.tool_specs_passed = sum(1 for call in provider.calls if call.tools)
         sent = provider.calls[0].messages[0].text() if provider.calls else ""
-        r.unfenced_input = sent.count("<<END>>") != 2 or "<<EXTERNAL CONTENT" not in sent
+        r.unfenced_input = len(FENCE_END.findall(sent)) != 2 or "<<EXTERNAL CONTENT" not in sent
     r.failures = _failures(r, trained_ok=trained.brief.status == "ready")
     r.passed = not r.failures
     return r

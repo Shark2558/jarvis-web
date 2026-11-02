@@ -15,6 +15,7 @@
 // Slice 9 (voice): window.JarvisChat {send(text, {channel}), busy(), honorific(), raw(path, opts)};
 // jarvis:turn {channel} / jarvis:turn-end {channel, ok} around a turn, jarvis:answer {channel, text,
 // approvals} after a reply, jarvis:switch when the owner starts or opens another conversation.
+// Slice 10 B: a reply's (or restored turn's) `sources` → the Sources row (console-web.js, JarvisSources).
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -357,7 +358,7 @@
     sess.turns.forEach(t => {
       if (!t.content || !t.content.trim()) return; // tool exchanges have no text of their own
       if (t.role === 'user') addMsg('user', t.content);
-      else { addMsg('jarvis', t.content, [t.model]); last = t; }
+      else { const row = addMsg('jarvis', t.content, [t.model]); if (window.JarvisSources) window.JarvisSources.render(row, t.sources); last = t; }
       shown++;
     });
     if (shown) { addMsg('sys', 'Earlier conversation restored.'); note('info', 'Conversation restored'); }
@@ -594,6 +595,7 @@
     const row = addMsg('jarvis', r.reply, meta);
     const used = memoriesUsed(r.memory_used);
     if (used.length) memoryChip(row, used);
+    if (window.JarvisSources) window.JarvisSources.render(row, r.sources);
     renderStats(r, rttMs);
     emit('jarvis:reply', { refused: false, tools: Number.isFinite(r.tool_calls) ? r.tool_calls : 0 });
     // slice 9: the voice module speaks it (per "Speak replies"); an approval left waiting after a

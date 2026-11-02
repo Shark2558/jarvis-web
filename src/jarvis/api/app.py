@@ -31,6 +31,7 @@ from jarvis.api.routes import router as v1_router
 from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier, SchedulerUnauthorized
 from jarvis.api.usage import router as usage_router
 from jarvis.api.voice import install_voice
+from jarvis.api.web import router as web_router
 from jarvis.billing import (
     Billing,
     BudgetReached,
@@ -70,6 +71,7 @@ from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.setup import build_gateway
 from jarvis.voice.service import VoiceEngines, build_voice_service
+from jarvis.web.service import build_web_service
 
 log = get_logger(__name__)
 
@@ -213,6 +215,7 @@ def create_app(
         # Voice (slice 9): settings + wit level always; Google speech only when switched on.
         # No network at start-up: credentials are looked up on first use.
         app.state.voice = build_voice_service(s, docs, app.state.billing, engines=voice_engines)
+        app.state.web = build_web_service(s, docs)  # slice 10 B: None without a Tavily key
         gw: Gateway | None = gateway
         if gw is None and s.tools_enabled:
             gw = build_gateway(
@@ -221,6 +224,7 @@ def create_app(
                 audit=audit,
                 google=app.state.google,
                 memory=app.state.memory,
+                web=app.state.web,
             )
         app.state.gateway = gw
         app.state.brain = Brain(
@@ -244,6 +248,7 @@ def create_app(
                 "google_tools": app.state.google is not None,
                 "brief_scheduler": getattr(app.state, "scheduler_verifier", None) is not None,
                 "voice_cloud": app.state.voice.engines is not None,
+                "web_search": app.state.web is not None,
             },
         )
         try:
@@ -257,6 +262,8 @@ def create_app(
             if app.state.fx_http is not None:
                 await app.state.fx_http.aclose()
             await app.state.voice.aclose()
+            if app.state.web is not None:
+                await app.state.web.aclose()
             verifier = getattr(app.state, "scheduler_verifier", None)
             if verifier is not None:
                 await verifier.aclose()
@@ -401,6 +408,7 @@ def create_app(
     app.include_router(brief_router)
     app.include_router(usage_router)
     app.include_router(memory_router)
+    app.include_router(web_router)
     install_voice(app)
     _mount_scheduler(app, s, scheduler_verifier)
     app.include_router(console_router)

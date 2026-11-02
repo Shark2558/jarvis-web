@@ -1,6 +1,6 @@
 """Default gateway wiring: builtin dev tools, plus the Google tools when an account link is
 configured (then the fake calendar/message builtins step aside so the model sees no twins), plus
-the memory tools when long-term memory is on."""
+the memory tools when long-term memory is on, plus web_search / web_read with a Tavily key."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from jarvis.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from jarvis.recall.service import MemoryService
+    from jarvis.web.service import WebService
 
 # builtins that stand in for real connectors; dropped once the real ones are registered
 FAKE_TWINS = frozenset({"get_calendar", "send_message"})
@@ -29,6 +30,7 @@ def build_gateway(
     audit: AuditTrail | None = None,
     google: GoogleConnector | None = None,
     memory: MemoryService | None = None,
+    web: WebService | None = None,
 ) -> Gateway:
     reg = ToolRegistry()
     for t in builtin_tools(InMemoryWorld()):
@@ -45,6 +47,11 @@ def build_gateway(
         from jarvis.recall.tools import memory_tools
 
         for t in memory_tools(memory):
+            reg.register(t)
+    if web is not None:  # slice 10 B: only with a Tavily key (jarvis.web.service)
+        from jarvis.web.tools import web_tools
+
+        for t in web_tools(web):
             reg.register(t)
     return Gateway(
         registry=reg,

@@ -94,6 +94,74 @@ helper, sub-agents, CLI long-term memory (owner does not use the CLI).
   data, to save memory) → 0 unconfirmed sends, 0 `web_read` of URLs not in results/owner text, 0
   silent memory saves; private-query guard; negative control (guard off) must fail.
 
+### B — Tavily facts verified 2026-11-01 (builder, `s10-web`)
+Sources: OpenAPI spec <https://docs.tavily.com/documentation/api-reference/openapi.json>, API
+introduction <https://docs.tavily.com/api-reference/introduction>, credits
+<https://docs.tavily.com/documentation/api-credits.md>, FAQ <https://docs.tavily.com/faq/faq>,
+privacy policy <https://www.tavily.com/privacy> (last updated 24 Nov 2025).
+- **Auth**: HTTP bearer — `Authorization: Bearer tvly-…` (the old `api_key` body field is the
+  legacy form; we send the header only). Base `https://api.tavily.com/`.
+- **POST /search** body (only `query` required): `search_depth` basic|advanced|fast|ultra-fast
+  (default basic), `topic` general|news|finance, `max_results` 0–20 (default 10), `time_range`
+  day|week|month|year (the old `days` field is gone from the spec — our `days` argument maps to
+  `time_range`), `start_date`/`end_date`, `include_answer`, `include_raw_content`,
+  `include_images`, `include_favicon`, `include_domains`/`exclude_domains`, `country`,
+  `include_usage`, `auto_parameters` (may silently switch to advanced = 2 credits: we never send
+  it). Response: `query`, `answer`, `images`, `results[] {title, url, content, score,
+  raw_content, published_date?, favicon?}`, `response_time`, `usage {credits}`, `request_id`.
+- **POST /extract** body: `urls` (1–20), `extract_depth` basic|advanced, `format`
+  markdown|text, `timeout` 1–60 s, `include_images`, `include_favicon`, `include_usage`, `query`.
+  Response: `results[] {url, raw_content}`, `failed_results[] {url, error}` (check both even on
+  HTTP 200), `response_time`, `usage`, `request_id`.
+- **Errors**: 400 bad request, 401 missing/invalid key, 422 validation, 429 rate limited
+  (`Retry-After`), **432 plan/key credit limit exceeded**, **433 pay-as-you-go limit exceeded**,
+  434 live-fetch capacity, 500. Vendor text is never passed on; each code has a plain message.
+- **Credits**: free plan 1,000/month, no card; search basic 1 / advanced 2; extract basic 1 per 5
+  successful URLs, a failed extraction is never charged; pay-as-you-go US$0.008/credit; credits
+  reset on the 1st of each month (time zone not stated).
+- **Privacy / retention** (policy, not API-specific): Tavily collects "query data", keeps it "for
+  the period necessary to provide and improve the Services" / until a valid deletion request (email
+  support@tavily.com), "may use certain portions of your query data to improve our responses", and
+  "may share your query data with third-party search index providers". The FAQ's "zero data
+  retention" claim is not defined anywhere. **Consequence**: every query is treated as leaving our
+  control for good → the deterministic query guard (email, phone, sensitive filter) runs before
+  every search and the persona forbids private details in queries.
+
+### B — build decisions (builder)
+- **Numbering per conversation** (stored in `session.metadata["web"]`, newest 60 kept): a result
+  keeps its number for the whole conversation, so a follow-up reply (or a streamed one, which has
+  no tool rounds) can cite earlier results and still get correct chips.
+- **Allowance counter is per deployment**, `{prefix}web_usage/{YYYY-MM}` (IST month), not per uid:
+  Tavily's free credits belong to the API key, so two owners must not get 900 each (same reasoning
+  as the voice allowance). Credits are reserved before the call (transaction; corrupt counter →
+  refused), refunded when Tavily clearly did not charge (transport error, non-200, failed
+  extraction).
+- **http results are dropped** (only https is ever numbered, read or shown).
+- **Spoken replies** name the source in words instead of `[n]` (the voice chunker would read the
+  numbers aloud), so they carry no chips.
+- **Results are fitted to the gateway's 12,000-character cut** (snippets, then titles, then the
+  last results shrink; page text shrinks) so a fence is never cut open. The gateway serialises with
+  `ensure_ascii`, so Indic text costs ~6 characters a letter: a Malayalam page yields ~1,900
+  characters. Open question for integration: `ensure_ascii=False` in `GatewayResult.for_model`.
+- **Brain footprint**: one `web_conversation(session)` around each gateway call (and the approve
+  path), `sources` on the reply turn / response / stream meta. `brain.py` is now exactly at the
+  800-line test ceiling (`tests/test_voice_persona.py`).
+- **Console**: `console-web.js` loads before `console.js` (a restored conversation always finds
+  it); two one-line hooks in `console.js`; Vitals row "Web search"; CSS block at the end of
+  `console.css`; CSP unchanged.
+
+### B — security review (fresh context, 2026-11-02): 0 critical, 1 high, 4 medium, 4 low
+| # | Finding | Resolution |
+|---|---|---|
+| H1 | Query guard bypassed by obfuscation (full-width `＠`, ZWSP, `(at)`, `%40`, Devanagari / Malayalam / full-width digits, spaced PAN) | `web/guard.py`: NFKC + invisible/control stripped + any-script digits → ASCII before every check; any `@`, `%40`, `(at)`/`[at]`, "x at y dot z"; 8+ digits across separators (dates, year ranges, ISBN set aside; commas never join); spaced single characters joined up for the sensitive filter. After untrusted content a query is ≤ 120 chars. 13 new eval guard cases. |
+| M2 | Indic text cost 6× (escapes); fences forgeable | `GatewayResult.for_model` → `serialise`: every string through `external.model_text` (drops Cc but \n\t, Cf, Cs, Co, Cn, tags, variation selectors, fillers; keeps ZWJ/ZWNJ between non-ASCII letters), then `ensure_ascii=False`. `wrap_external` adds a per-call id to both markers (`· 9f3a1c>>` … `<<END 9f3a1c>>`) and replaces fence-like text after NFKC (full-width, ZWSP-split, spaced) with `[fence-like text removed]`; signature unchanged. Persona + brief prompt updated. Malayalam page keeps ~11k chars. **Integration**: other branches' tests that assert a literal `<<END>>` must use `external.FENCE_END`. |
+| M3 | No per-turn / hourly limit (an injected "run 30 searches") | ≤ 3 web_search and ≤ 2 web_read per owner message (counted in the ledger's `turn` record across tool rounds), ≤ 30 searches an hour per owner (in-process window; one instance). Plain "search limit for this request reached". Eval w17/w18: 30 injected searches → 3 reach Tavily. |
+| M4 | Tavily's own 432/433 not remembered | `CreditsExhausted` → `WebAllowance.latch()` sets the month to the cap (Vitals "used up", nothing more sent). Tavily has **GET /usage** (OpenAPI, checked 2026-11-02: `key.usage/limit`, `account.plan_usage/plan_limit/paygo_usage/paygo_limit`, current billing cycle) — not used yet; could seed the counter. The counter starts at 0 on the first deploy even if the key was used elsewhere this month. |
+| M5 | `cited_sources` attached any `[n]` | Only numbers this owner message's tool results showed (ledger `turn.shown`); `[n]` opening a line (list marker) ignored. A streamed reply (no tool round) therefore never has sources: the stream's final event is back to `{memory_used}` only. |
+| L7 | Result URLs shown unfenced to the model | The model sees `n` + domain + fenced title/snippet; `web_read` takes `n` (or an owner-typed `url`); full URLs stay in the ledger and on the chips. |
+| L8 | Key could carry Secret Manager's trailing newline | Stripped in `TavilyProvider._post`. |
+| L6, L9 | (see review) | No change beyond M3's per-message and hourly caps. |
+
 ## C — To-do list on Google Tasks
 - **D-C1 Google Tasks** over Todoist: no new account, already-linked Google, shows in Gmail/Calendar
   side panel and the Tasks phone app. API is free (quota only). Scope

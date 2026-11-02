@@ -5,6 +5,8 @@ POST /v1/chat                 one turn (JSON)
 POST /v1/chat/stream          one turn, text/plain streamed deltas (402 first if the monthly
                               limit refuses it: a stream that already said 200 can't), then a
                               final event: "\x1e" + {"memory_used": [{id, text}]} (slice 8).
+                              (No web `sources`: a stream has no tool round, and a reply cites
+                              only what its own tool results showed — slice 10 review M5.)
                               The reply text never contains "\x1e" (stripped from the model's
                               deltas); clients parse the JSON after the LAST separator.
                               If the conversation changed in another window meanwhile

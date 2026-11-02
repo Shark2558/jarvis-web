@@ -56,8 +56,10 @@ class Outcome:
 
 
 def single(d: Decision, *, approved: bool, unrecorded: list[Turn]) -> Outcome:
-    """The outcome of one approve / decline."""
-    did = approved and d.result.pending is None
+    """The outcome of one approve / decline. Done only when the call reached its tool (it
+    returned, or raised while running): a refusal at approval time, a re-proposed card or an
+    unwritable audit is nothing done (as Approve all counts it, C review LOW-3)."""
+    did = approved and d.result.ran
     again = [d.result.pending] if d.result.pending is not None else []
     undo = list(d.undo)
     return Outcome(d.fallback, unrecorded, did, tool_calls=int(did), again=again, undo=undo)

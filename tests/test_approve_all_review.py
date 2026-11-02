@@ -29,7 +29,7 @@ from jarvis.tools import AuditLog, Gateway, Policy, Tool, ToolRegistry
 from jarvis.tools.base import Preview
 from jarvis.tools.budget import MAX_FREE_DELETES, turn_budget
 from jarvis.tools.builtin import InMemoryWorld
-from jarvis.tools.gateway import GatewayOutcome
+from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.tools.policy import Effect, PolicyRule
 from jarvis.tools.taint import context_trust, owner_text
 
@@ -287,6 +287,37 @@ async def test_a_card_refused_at_approval_time_is_not_counted_as_run(
     out = await brain.approve_all(_ids(resp), session_id=resp.session_id)
     assert [r.status for r in out.results] == [CardStatus.FAILED]
     assert world.reminders == [] and out.tool_calls == 0
+
+
+async def test_a_single_approve_refused_at_approval_time_is_not_counted_as_run(
+    brain: Brain, provider: MockProvider, world: InMemoryWorld, gateway: Gateway
+) -> None:
+    """The same rule for one card (slice 11 integration): only a call that reached its tool
+    counts as done — a refusal at approval time is no tool call."""
+    provider.script_tool_calls([_remind("r1", "a")], "Waiting.")
+    resp = await brain.chat(ChatRequest(message="x", channel="voice"))
+    gateway.policy = Policy([PolicyRule(tool_pattern="create_reminder", effect=Effect.DENY)])
+    provider.script("It was refused, Sir.")
+    out = await brain.approve(_ids(resp)[0], session_id=resp.session_id)
+    assert world.reminders == [] and out.tool_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("result", "did"),
+    [
+        (GatewayResult(GatewayOutcome.EXECUTED, result={"ok": True}), True),
+        (GatewayResult(GatewayOutcome.ERROR, error="it raised", raised=True), True),  # may be half
+        (GatewayResult(GatewayOutcome.ERROR, error="could not record the action"), False),
+        (GatewayResult(GatewayOutcome.DENIED, error="switched off by the owner"), False),
+    ],
+)
+def test_a_single_decision_counts_as_done_only_when_its_tool_ran(
+    result: GatewayResult, did: bool
+) -> None:
+    d = decisions.Decision(ToolCall(id="c", name="t", arguments={}), result, "f", "i")
+    out = decisions.single(d, approved=True, unrecorded=[])
+    assert out.did is did and out.tool_calls == int(did)
+    assert decisions.single(d, approved=False, unrecorded=[]).did is False
 
 
 async def test_bookkeeping_that_raises_after_a_run_never_says_nothing_was_done(

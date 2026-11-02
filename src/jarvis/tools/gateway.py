@@ -76,7 +76,7 @@ from jarvis.tools.external import model_safe
 from jarvis.tools.policy import Effect, OwnerRules, Policy
 from jarvis.tools.provenance import unwrap
 from jarvis.tools.registry import ToolRegistry
-from jarvis.tools.taint import spoken_in_context, tainted_round
+from jarvis.tools.taint import content_tainted, spoken_in_context, tainted_round
 
 log = get_logger(__name__)
 MAX_RESULT_CHARS = 12_000
@@ -273,6 +273,7 @@ class Gateway:
         why = ""
         if effect is Effect.ALLOW and tool.undoable and not take_free_delete():
             effect, why = Effect.ASK, DELETES_CAPPED  # slice 11 D3: the 11th delete is a card
+        outside = content_tainted()  # D8: what this call writes may carry other people's words
 
         if effect is Effect.ASK:
             # An ASK is confirm-before-commit whatever the declared class (a policy rule may
@@ -284,13 +285,14 @@ class Gateway:
                 summary=card if card is not None else tool.summary(call.arguments),
                 scope=scope,
                 tool_risk=risk,  # what the call itself can do: R3 may need a passkey
+                outside=outside,
             )
             note = ""
             if confirmation_id is not None:
                 pre = await self._before_consuming(tool, call, action, confirmation_id, proof)
                 if isinstance(pre, GatewayResult):
                     return pre
-                note = pre
+                note, outside = pre  # an approved card writes as its proposing round would
             asked = await self._gate(tool, call, risk, action, confirmation_id)
             if asked is not None:
                 return replace(asked, note=why) if asked.pending is not None else asked
@@ -314,8 +316,8 @@ class Gateway:
                 return GatewayResult(
                     GatewayOutcome.ERROR, error="could not record the action, so nothing was done"
                 )
-        try:  # the tool learns who it runs for and whether the owner approved it; always reset
-            with tool_context(scope, confirmed=confirmation_id is not None):
+        try:  # the tool learns who it runs for, whether approved, whether outside; always reset
+            with tool_context(scope, confirmed=confirmation_id is not None, outside=outside):
                 out = tool.run(call.arguments)
                 if hasattr(out, "__await__"):
                     out = await out
@@ -396,38 +398,41 @@ class Gateway:
         fresh: PendingAction,
         confirmation_id: str,
         proof: Any,
-    ) -> GatewayResult | str:
+    ) -> GatewayResult | tuple[str, bool]:
         """The card runs only as the owner saw it: changed since → withdrawn and re-proposed
         (nothing runs). Then the approval guard sees the card about to run (it raises to
-        refuse; the token is not spent). Returns the guard's note for the audit."""
+        refuse; the token is not spent). Returns the guard's note for the audit, and whether the
+        card's proposing round had read outside content (D8: `PendingAction.outside`)."""
         stored = await self.gate.get(confirmation_id)
         if stored is None or (stored.tool, stored.arguments, stored.scope) != (
             fresh.tool,
             fresh.arguments,
             fresh.scope,
         ):
-            return ""  # the gate reports it no longer valid; nothing runs
+            return "", True  # the gate reports it no longer valid; nothing runs
         why = _changed(stored, fresh)
         if why:
             if not await self.gate.cancel(stored.id):
-                return ""  # decided meanwhile: the gate reports it
+                return "", True  # decided meanwhile: the gate reports it
             log.warning("approved card changed since proposed; re-proposed", extra={"why": why})
             risk = fresh.tool_risk or ActionRisk.IRREVERSIBLE
             again = await self._gate(
                 tool,
                 call,
                 risk,
-                fresh,
+                fresh.model_copy(update={"outside": stored.outside is not False}),
                 None,
                 f" (changed since proposed: {why}; replaces {stored.id})",
             )
             assert again is not None  # no token: always a proposal
             return again
+        outside = stored.outside is not False  # a card from before D8: unknown, so outside
         if self.approval_guard is None:
-            return ""
+            return "", outside
         uid = ToolContext.from_scope(fresh.scope or "").user_id
         presented = proof if proof is not None else approval_proof()
-        return await self.approval_guard.check_approval(uid, stored, presented) or ""
+        note = await self.approval_guard.check_approval(uid, stored, presented) or ""
+        return note, outside
 
     async def _policy_for(
         self, tool: Tool, call: ToolCall, risk: ActionRisk, scope: str | None

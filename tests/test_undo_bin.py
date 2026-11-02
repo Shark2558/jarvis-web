@@ -28,10 +28,14 @@ class Clock:
 class FakeRestorer:
     def __init__(self, *, fail: Exception | None = None) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.outside: list[bool] = []  # slice 11 D8: what the bin said about each restore
         self.fail = fail
 
-    async def restore(self, uid: str, snapshot: dict[str, Any]) -> Restored:
+    async def restore(
+        self, uid: str, snapshot: dict[str, Any], *, outside: bool = False
+    ) -> Restored:
         self.calls.append((uid, snapshot))
+        self.outside.append(outside)
         if self.fail is not None:
             raise self.fail
         return Restored(new_id=f"new{len(self.calls)}", note="")

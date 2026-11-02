@@ -16,11 +16,13 @@ fitted under the gateway's 12,000-character cap. Due dates are DATES (Google kee
 "today" and "overdue" are the owner's local dates (primary calendar's zone, else the configured
 one).
 
-Slice 11 D8: tasks_list, task_add, task_update and task_complete vouch for their result
-(`may_vouch`) when every to-do in it is the owner's own (`provenance.is_owner_authored_task`: no
-Gmail / Chat / Keep `links`, no `assignmentInfo`); text stays fenced either way. tasks_list takes
-a `query`: every word must appear in the title or notes (any case), so a look-up before a change
-returns just the target.
+Slice 11 D8: tasks_list, task_add, task_update, task_complete and task_delete vouch for their
+result (`may_vouch`) when every to-do in it is the owner's own (`provenance.is_owner_authored_task`:
+no Gmail / Chat / Keep `links`, no `assignmentInfo`, and not in the owner's set of to-dos JARVIS
+wrote from outside content — `tools.task_marks`, which task_add / task_update fill when their
+call runs with `ToolContext.outside`); text stays fenced either way. tasks_list takes a `query`:
+every word must appear in the title or notes (any case), so a look-up before a change returns
+just the target.
 """
 
 from __future__ import annotations
@@ -36,12 +38,14 @@ from zoneinfo import ZoneInfo
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector
+from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import one_line, strip_invisible
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import clean_text, wrap_external
 from jarvis.tools.google_calendar import QUERY, query_arg
 from jarvis.tools.provenance import all_owner_authored, is_owner_authored_task, vouch
+from jarvis.tools.task_marks import OutsideTasks, owner_authored_task
 from jarvis.tools.tasks_api import (
     DEFAULT_LIST,
     GRANT_MSG,
@@ -177,6 +181,8 @@ class TasksAPI:
     default_tz: str
     clock: Callable[[], datetime] = utcnow
     undo: UndoBin | None = None  # slice 11: Recently deleted; None → deletes stay R3
+    # D8: to-dos JARVIS wrote from outside content (process-local unless wiring gives the Docs one)
+    marks: OutsideTasks = field(default_factory=lambda: OutsideTasks(MemoryDocs()))
     _zones: dict[str, tuple[ZoneInfo, float]] = field(default_factory=dict)
 
     async def _tz(self, uid: str) -> ZoneInfo:
@@ -286,12 +292,14 @@ class TasksAPI:
         }
         out = self._fit(rows, today, head, any(pg.more for pg in pages))
         shown = (t for _, t in rows[: len(out["tasks"])])  # _fit keeps a prefix of the rows
-        return vouch(out, all_owner_authored(shown, is_owner_authored_task))
+        marks = await self.marks.read(uid)  # unreadable → no to-do is the owner's own
+        return vouch(out, all_owner_authored(shown, lambda t: owner_authored_task(t, marks)))
 
     # ---- write -----------------------------------------------------------------------------
 
     async def add(self, a: dict[str, Any]) -> Any:
-        uid = require_tool_context().user_id
+        ctx = require_tool_context()
+        uid = ctx.user_id
         await self.client.require(uid)
         target = await self._resolve(uid, _list_arg(a["list"])) if "list" in a else None
         due, dropped = await self._due(uid, a)
@@ -301,7 +309,11 @@ class TasksAPI:
         if due is not None:
             body["due"] = due_to_api(due)
         list_id = target.id if target else DEFAULT_LIST
+        # D8: from other people's words → a pending mark first (none stored → nothing added)
+        token = await self.marks.begin(uid) if ctx.outside else None
         t = await self.client.insert(uid, list_id, body)
+        if token is not None:
+            await self.marks.finish(uid, token, [str(t["id"])])
         out: dict[str, Any] = {
             "status": "added",
             "id": TaskRef(list_id, str(t["id"])).composite,
@@ -311,7 +323,7 @@ class TasksAPI:
         }
         if dropped:
             out["note"] = TIME_DROPPED
-        return vouch(out, is_owner_authored_task(t))
+        return vouch(out, not ctx.outside and is_owner_authored_task(t))
 
     def _written(self, ref: TaskRef, t: dict[str, Any], status: str) -> dict[str, Any]:
         due = date_of(t.get("due"))
@@ -328,7 +340,8 @@ class TasksAPI:
         }
 
     async def update(self, a: dict[str, Any]) -> Any:
-        uid = require_tool_context().user_id
+        ctx = require_tool_context()
+        uid = ctx.user_id
         ref = parse_task_id(a.get("task_id"))
         await self.client.require(uid)
         body: dict[str, Any] = {}
@@ -340,25 +353,31 @@ class TasksAPI:
         if "due" in a:
             due, dropped = await self._due(uid, a)
             body["due"] = due_to_api(due) if due is not None else None
+        if ctx.outside:  # D8: marked BEFORE it changes; no mark stored → nothing changed
+            await self.marks.add(uid, [ref.task_id])
         t = await self.client.patch(uid, ref, body)
         out = self._written(ref, t, "updated")
         if dropped:
             out["note"] = TIME_DROPPED
-        return vouch(out, is_owner_authored_task(t))
+        return vouch(out, not ctx.outside and await self._own(uid, t))
 
     async def complete(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
         ref = parse_task_id(a.get("task_id"))
         await self.client.require(uid)
         t = await self.client.patch(uid, ref, {"status": "completed"})
-        return vouch(self._written(ref, t, "completed"), is_owner_authored_task(t))
+        return vouch(self._written(ref, t, "completed"), await self._own(uid, t))
 
-    async def delete(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def _own(self, uid: str, t: dict[str, Any]) -> bool:
+        """D8: the to-do as Google returned it is the owner's own (provenance + the outside set)."""
+        return owner_authored_task(t, await self.marks.read(uid))
+
+    async def delete(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
         ref = parse_task_id(a.get("task_id"))
         await self.client.require(uid)
         if self.undo is not None:  # re-read: the copy is of the to-do as it is now
-            return await delete_kept(self.client, self.undo, ref)
+            return await delete_kept(self.client, self.undo, ref, await self.marks.read(uid))
         await self.client.delete(uid, ref)
         return {"deleted": True, "id": ref.composite}
 
@@ -459,13 +478,16 @@ def tasks_tools(
     default_tz: str = "UTC",
     clock: Callable[[], datetime] = utcnow,
     undo: UndoBin | None = None,
+    marks: OutsideTasks | None = None,
 ) -> list[Tool]:
     """`undo`: the Recently deleted bin (slice 11). With it, deleting the owner's own to-do is R2
-    and undo-able (and the bin learns to restore to-dos); without it every delete is R3."""
+    and undo-able (and the bin learns to restore to-dos); without it every delete is R3.
+    `marks`: the owner's outside to-dos (D8) on the Docs port; None → process-local (dev/tests)."""
     client = TasksClient(conn)
-    api = TasksAPI(client, default_tz, clock, undo)
+    outside = marks if marks is not None else OutsideTasks(MemoryDocs())
+    api = TasksAPI(client, default_tz, clock, undo, outside)
     if undo is not None:
-        undo.register("task", TaskRestorer(client))
+        undo.register("task", TaskRestorer(client, outside))
     return [
         Tool(
             "tasks_list",
@@ -550,6 +572,7 @@ def tasks_tools(
             check=_check_ref,
             preview=api.preview_delete,
             undoable=undo is not None,
+            may_vouch=True,
         ),
     ]
 

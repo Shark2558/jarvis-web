@@ -66,9 +66,13 @@ class Restored:
 
 
 class Restorer(Protocol):
-    """Recreates one kind of item from its snapshot (new id); raises plain-words errors."""
+    """Recreates one kind of item from its snapshot (new id); raises plain-words errors.
+    `outside` (plan D8): the item was not the owner's own words, so the new copy must carry the
+    outside mark — a restore made by JARVIS never turns someone else's words into his."""
 
-    async def restore(self, uid: str, snapshot: dict[str, Any]) -> Restored: ...
+    async def restore(
+        self, uid: str, snapshot: dict[str, Any], *, outside: bool = False
+    ) -> Restored: ...
 
 
 class UndoBin:
@@ -149,7 +153,7 @@ class UndoBin:
             await self.store.settle(uid, item.id, restored_id=None, now=self._clock())
             return _outcome(item, RestoreStatus.UNAVAILABLE, MSG_UNAVAILABLE)
         try:
-            done = await restorer.restore(uid, item.snapshot)
+            done = await restorer.restore(uid, item.snapshot, outside=not item.owner_authored)
         except Exception:  # released for another try; the restorer's plain words propagate
             await self.store.settle(uid, item.id, restored_id=None, now=self._clock())
             raise
@@ -175,7 +179,13 @@ def _outcome(
     item: DeletedItem, status: RestoreStatus, message: str, **extra: Any
 ) -> RestoreOutcome:
     return RestoreOutcome(
-        status=status, message=message, undo_id=item.id, kind=item.kind, title=item.title, **extra
+        status=status,
+        message=message,
+        undo_id=item.id,
+        kind=item.kind,
+        title=item.title,
+        owner_authored=item.owner_authored,
+        **extra,
     )
 
 

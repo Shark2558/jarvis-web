@@ -38,7 +38,12 @@ from jarvis.tools.calendar_undo import CalendarRestorer, delete_kept, delete_ris
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
-from jarvis.tools.provenance import all_owner_authored, is_owner_authored_event, vouch
+from jarvis.tools.provenance import (
+    all_owner_authored,
+    is_owner_authored_event,
+    mark_outside,
+    vouch,
+)
 from jarvis.undo.service import UndoBin
 
 log = get_logger(__name__)
@@ -305,9 +310,12 @@ class CalendarAPI:
         return body
 
     async def create_event(self, a: dict[str, Any]) -> Any:
-        uid = require_tool_context().user_id
+        ctx = require_tool_context()
+        uid = ctx.user_id
         tz = await self.owner_tz(uid)
         body = self._body(a, tz, create=True)
+        if ctx.outside:  # D8: written from other people's words: never the owner's own
+            body = mark_outside(body)
         updates = "all" if body.get("attendees") else "none"
         e = await self.conn.request(
             uid, "POST", EVENTS_URL, params={"sendUpdates": updates}, json=body
@@ -315,13 +323,16 @@ class CalendarAPI:
         return vouch(self._written(e, tz), is_owner_authored_event(e))
 
     async def update_event(self, a: dict[str, Any]) -> Any:
-        uid = require_tool_context().user_id
+        ctx = require_tool_context()
+        uid = ctx.user_id
         eid = _validate_event_id(a.get("event_id"))
         changes = {k: v for k, v in a.items() if k != "event_id"}
         if not changes:
             raise ValueError("nothing to update: give at least one field to change")
         tz = await self.owner_tz(uid)
         body = self._body(changes, tz, create=False)
+        if ctx.outside:  # D8: keep every extended property the event has, add the mark
+            body = mark_outside(body, await self._event(a))
         # "all": an event only the owner is on has nobody to notify, and one with other
         # attendees only gets here after the owner approved a card that says they'll be told.
         e = await self.conn.request(
@@ -329,7 +340,9 @@ class CalendarAPI:
         )
         return vouch(self._written(e, tz), is_owner_authored_event(e))
 
-    async def delete_event(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def delete_event(self, a: dict[str, Any]) -> Any:
+        """With the bin, the result is the owner's own when the deleted event was (D8: the flag
+        its kept copy recorded); without it the result is only an id, left untrusted."""
         uid = require_tool_context().user_id
         eid = _validate_event_id(a.get("event_id"))
         url = f"{EVENTS_URL}/{eid}"
@@ -584,6 +597,7 @@ def calendar_tools(conn: GoogleConnector, *, undo: UndoBin | None = None) -> lis
             check=_check_event_id,
             preview=api.preview_delete,
             undoable=undo is not None,
+            may_vouch=True,
         ),
     ]
 

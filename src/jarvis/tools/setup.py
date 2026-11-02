@@ -22,6 +22,7 @@ from jarvis.tools.registry import ToolRegistry
 if TYPE_CHECKING:
     from jarvis.documents.service import DocumentService
     from jarvis.recall.service import MemoryService
+    from jarvis.tools.task_marks import OutsideTasks
     from jarvis.undo.service import UndoBin
     from jarvis.web.service import WebService
 
@@ -40,7 +41,10 @@ def build_gateway(
     web: WebService | None = None,
     documents: DocumentService | None = None,
     undo: UndoBin | None = None,
+    marks: OutsideTasks | None = None,
 ) -> Gateway:
+    """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
+    port; give it in production, or the set lives only as long as the process."""
     reg = ToolRegistry()
     for t in builtin_tools(InMemoryWorld()):
         if google is not None and t.name in FAKE_TWINS:
@@ -54,7 +58,7 @@ def build_gateway(
 
         for t in calendar_tools(google, undo=undo) + reminder_tools(google) + gmail_tools(google):
             reg.register(t)
-        for t in tasks_tools(google, default_tz=s.user_timezone, undo=undo):
+        for t in tasks_tools(google, default_tz=s.user_timezone, undo=undo, marks=marks):
             reg.register(t)
     if undo is not None:  # slice 11: Recently deleted (restore needs the Google tools above)
         from jarvis.undo.tools import undo_tools

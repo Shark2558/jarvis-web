@@ -45,6 +45,11 @@ VOUCHING = {
     "task_add",
     "task_update",
     "task_complete",
+    # with the Recently deleted bin (slice 11 A): by the flag each kept copy recorded
+    "calendar_delete_event",
+    "task_delete",
+    "deleted_list",
+    "deleted_restore",
 }
 TAG = {"private": {"jarvis": "reminder"}}
 
@@ -98,14 +103,16 @@ WINDOW = {"start": "2027-01-15T00:00:00", "end": "2027-01-16T00:00:00"}
 async def test_only_the_owners_calendar_reminder_and_todo_tools_may_vouch(
     gw: Gateway,
 ) -> None:
+    from jarvis.storage.docs import MemoryDocs
+    from jarvis.undo.service import UndoBin
+    from jarvis.undo.store import DeletedStore
+    from jarvis.undo.tools import undo_tools
+
     conn_tools = {t.name: t for t in gw.registry._tools.values()}
-    fake = FakeTasks()
-    for t in tasks_tools(await tasks_connector(fake)):
+    bin_ = UndoBin(DeletedStore(MemoryDocs()))
+    for t in tasks_tools(await tasks_connector(FakeTasks()), undo=bin_) + undo_tools(bin_):
         conn_tools[t.name] = t
     assert {n for n, t in conn_tools.items() if t.may_vouch} == VOUCHING
-    # deletes are workstream A's (undo bin): their results stay untrusted until A vouches
-    assert not conn_tools["calendar_delete_event"].may_vouch
-    assert not conn_tools["task_delete"].may_vouch
     assert all(not t.trusted_output for t in conn_tools.values())
 
 

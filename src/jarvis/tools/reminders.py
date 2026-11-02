@@ -59,7 +59,12 @@ from jarvis.tools.google_calendar import (
     parse_when,
     query_arg,
 )
-from jarvis.tools.provenance import all_owner_authored, is_owner_authored_event, vouch
+from jarvis.tools.provenance import (
+    all_owner_authored,
+    is_owner_authored_event,
+    mark_outside,
+    vouch,
+)
 
 SOURCE = "reminders"
 TEXT_MAX = 200
@@ -330,6 +335,8 @@ class ReminderAPI:
         }
         if rule is not None:
             body["recurrence"] = [rule]
+        if require_tool_context().outside:  # D8: other people's words: never the owner's own
+            body = mark_outside(body)
         e = await self.cal.conn.request(
             uid, "POST", EVENTS_URL, params={"sendUpdates": "none"}, json=body
         )
@@ -378,6 +385,8 @@ class ReminderAPI:
         e = await self.cal._event(a)  # the authoritative look-up: the tag is checked here too
         _own_reminder(e, a)
         body = self._changes(a, e, tz)
+        if require_tool_context().outside:  # D8: keep its tag and properties, add the mark
+            body = mark_outside(body, e)
         eid = _validate_event_id(a.get("event_id"))
         out = await self.cal.conn.request(
             uid, "PATCH", f"{EVENTS_URL}/{eid}", params={"sendUpdates": "none"}, json=body

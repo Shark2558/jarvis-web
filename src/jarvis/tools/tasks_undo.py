@@ -14,6 +14,11 @@ the new parent, and moves the ones Google kept back under it — right either wa
 The copy holds the to-do's title, notes, due, status and completed, its list, its parent and its
 previous sibling (by `position`); a restore inserts it into the same list, under the parent and
 after the sibling when they still exist (a gone parent → the top level).
+
+Plan D8: the kept copy records whether the to-do and every subtask kept with it were the owner's
+own (`provenance.is_owner_authored_task` plus his outside to-dos, `tools.task_marks`); the delete
+result is trusted by that flag, and a restore of one that was not marks every to-do it makes, so
+recreating it never launders a Gmail to-do (whose `links` Google won't recreate) into his own.
 """
 
 from __future__ import annotations
@@ -27,6 +32,8 @@ from jarvis.integrations.google import GoogleAPIError
 from jarvis.logging import get_logger
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
+from jarvis.tools.provenance import vouch
+from jarvis.tools.task_marks import OutsideSet, OutsideTasks, owner_authored_task
 from jarvis.tools.tasks_api import TaskRef, TasksClient, valid_list_id, valid_task_id
 from jarvis.undo.service import Restored, UndoBin
 from jarvis.undo.tools import deleted_result
@@ -43,10 +50,10 @@ WHY_ASSIGNED = "it was assigned from Google Docs or Chat"
 WHY_UNREAD = "its subtasks could not all be checked"
 
 
-def owner_authored(task: dict[str, Any]) -> bool:
-    """The owner's own words (plan D8, local rule until the shared helper lands): not made from
-    a mail by Gmail's "Add to Tasks" (`links`), not assigned from Docs or Chat."""
-    return not task.get("links") and not task.get("assignmentInfo")
+def owner_authored(task: dict[str, Any], marks: OutsideSet | None) -> bool:
+    """The owner's own words: plan D8's one rule (`provenance.is_owner_authored_task` plus the
+    owner's outside to-dos, `tools.task_marks`; an unreadable set → not his own)."""
+    return owner_authored_task(task, marks)
 
 
 def delete_risk(task: dict[str, Any], *, all_read: bool) -> tuple[ActionRisk, str]:
@@ -132,9 +139,12 @@ async def family(
     return Family(task, page.items, not page.more)
 
 
-async def delete_kept(client: TasksClient, undo: UndoBin, ref: TaskRef) -> dict[str, Any]:
+async def delete_kept(
+    client: TasksClient, undo: UndoBin, ref: TaskRef, marks: OutsideSet | None
+) -> Any:
     """Delete the to-do (re-read now): undo-able → copy kept FIRST (none kept → nothing
-    deleted); not undo-able → only when the owner approved it."""
+    deleted); not undo-able → only when the owner approved it. `marks`: the owner's outside
+    to-dos as read now (D8); the result is vouched for by the kept copy's flag."""
     ctx = require_tool_context()
     fam = await family(client, ctx.user_id, ref)
     risk, _ = delete_risk(fam.task, all_read=fam.all_read)
@@ -147,7 +157,8 @@ async def delete_kept(client: TasksClient, undo: UndoBin, ref: TaskRef) -> dict[
     title = one_line(fam.task.get("title"), 1024) or "(no title)"
     # owner-authored only when the to-do AND every subtask kept with it are (a restore and a
     # listing carry all of them)
-    mine = all(owner_authored(t) for t in [fam.task, *descendants(fam.items, ref.task_id)])
+    family_ = [fam.task, *descendants(fam.items, ref.task_id)]
+    mine = all(owner_authored(t, marks) for t in family_)
     item = await undo.keep(ctx.user_id, "task", title, snap, owner_authored=mine)
     try:
         await client.delete(ctx.user_id, ref)
@@ -155,7 +166,7 @@ async def delete_kept(client: TasksClient, undo: UndoBin, ref: TaskRef) -> dict[
         await undo.discard(ctx.user_id, item.id)  # not deleted: no "undo" for it
         raise
     extra = {"subtasks": len(snap["children"])} if snap["children"] else {}
-    return deleted_result(item, source=SOURCE, **extra)
+    return vouch(deleted_result(item, source=SOURCE, **extra), item.owner_authored)
 
 
 def _id_or_none(value: Any) -> str | None:
@@ -169,12 +180,19 @@ def _dict(value: Any) -> dict[str, Any]:
 @dataclass(frozen=True)
 class TaskRestorer:
     client: TasksClient
+    marks: OutsideTasks
 
-    async def restore(self, uid: str, snapshot: dict[str, Any]) -> Restored:
+    async def restore(
+        self, uid: str, snapshot: dict[str, Any], *, outside: bool = False
+    ) -> Restored:
+        """`outside`: the kept to-do was not the owner's own (D8): a pending mark is stored before
+        anything is made (none → nothing restored), and every id the restore makes or moves back
+        replaces it after."""
         list_id, root = str(snapshot.get("list_id") or ""), _id_or_none(snapshot.get("id"))
         if not valid_list_id(list_id) or root is None:
             raise GoogleAPIError("The kept copy is unreadable, so the to-do can't be restored.")
         await self.client.require(uid)
+        token = await self.marks.begin(uid) if outside else None
         parent = await self._still(uid, list_id, snapshot.get("parent"))
         # a sibling is only "previous" at the same level: a gone parent → the top level, alone
         had_parent = snapshot.get("parent") is not None
@@ -185,7 +203,10 @@ class TaskRestorer:
         new_id = str(made["id"])
         children = snapshot.get("children")
         kids = list(children) if isinstance(children, list) else []
-        note = await self._children(uid, list_id, {root: new_id}, kids)
+        ids = {root: new_id}  # filled by _children: every to-do this restore made or moved
+        note = await self._children(uid, list_id, ids, kids)
+        if token is not None:
+            await self.marks.finish(uid, token, ids.values())
         return Restored(new_id=new_id, note=note)
 
     async def _still(self, uid: str, list_id: str, task_id: Any) -> str | None:

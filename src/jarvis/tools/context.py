@@ -23,11 +23,22 @@ class ToolContext:
     # Slice 11: True while a call the owner approved on a card runs (the gateway spent its token).
     # A delete that finds the item changed since the decision (now shared) refuses unless approved.
     confirmed: bool = False
+    # Slice 11 D8: this call's content may carry other people's words (its round, or the round
+    # that proposed its card, had read outside content): what it writes is marked as outside.
+    outside: bool = False
 
     @classmethod
-    def from_scope(cls, scope: str, *, confirmed: bool = False) -> ToolContext:
+    def from_scope(
+        cls, scope: str, *, confirmed: bool = False, outside: bool = False
+    ) -> ToolContext:
         user_id, _, session_id = scope.partition(":")
-        return cls(user_id=user_id, session_id=session_id or None, scope=scope, confirmed=confirmed)
+        return cls(
+            user_id=user_id,
+            session_id=session_id or None,
+            scope=scope,
+            confirmed=confirmed,
+            outside=outside,
+        )
 
 
 _current: contextvars.ContextVar[ToolContext | None] = contextvars.ContextVar(
@@ -48,9 +59,11 @@ def require_tool_context() -> ToolContext:
 
 
 @contextmanager
-def tool_context(scope: str | None, *, confirmed: bool = False) -> Iterator[ToolContext | None]:
+def tool_context(
+    scope: str | None, *, confirmed: bool = False, outside: bool = False
+) -> Iterator[ToolContext | None]:
     """Set the context for the duration of a tool run; always reset, even on error."""
-    ctx = ToolContext.from_scope(scope, confirmed=confirmed) if scope else None
+    ctx = ToolContext.from_scope(scope, confirmed=confirmed, outside=outside) if scope else None
     token = _current.set(ctx)
     try:
         yield ctx

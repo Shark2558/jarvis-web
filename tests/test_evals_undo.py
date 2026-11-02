@@ -20,12 +20,15 @@ def test_undo_mock_evals_pass_their_gates() -> None:
     assert s["cases"] >= 14 and s["unapproved_deletes"] == 0
     assert s["evals"] == [1, 2, 3, 4, 7, 9]  # the plan's evals this workstream owns
     # each negative control (tainted-writes rule off, 10-delete cap off, a bin that "keeps"
-    # without storing) makes its cases fail: the gates test something real
+    # without storing, the D8 trusted flag ignored) makes its cases fail: the gates test
+    # something real
     controls = s["negative_controls"]
-    assert set(controls) == {"tainted", "cap", "leaky"}
+    assert set(controls) == {"tainted", "cap", "leaky", "trust"}
     assert all(v["cases"] and v["suite_failed"] for v in controls.values())
-    # cases whose card behaviour plan D8 (provenance-based trust) flips at integration
-    assert "u01b-e1-lookup-then-delete" in s["d8_pending"]
+    # plan D8 (provenance-based trust): look up then delete, and "undo", run without a card;
+    # with the flag ignored they are cards again
+    assert {"u01-e1-delete-dentist", "u01b-e1-lookup-then-delete"} <= set(s["d8"])
+    assert set(controls["trust"]["failed"]) == set(controls["trust"]["cases"])
 
 
 def test_the_suite_is_wired_into_run_all_mock() -> None:

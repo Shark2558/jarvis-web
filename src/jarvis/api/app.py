@@ -75,6 +75,7 @@ from jarvis.storage.docs import Docs, MemoryDocs
 from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.setup import build_gateway
+from jarvis.tools.task_marks import OutsideTasks
 from jarvis.undo.service import UndoBin
 from jarvis.undo.store import DeletedStore
 from jarvis.voice.service import VoiceEngines, build_voice_service
@@ -240,6 +241,8 @@ def create_app(
                 web=app.state.web,
                 documents=app.state.documents,
                 undo=app.state.undo,
+                # D8: to-dos JARVIS wrote from outside content, on the same documents
+                marks=OutsideTasks(docs, prefix=s.firestore_prefix),
             )
         # slice 10 D: the owner's Allow / Ask first / Never rules and passkeys, on the same
         # documents; the gateway reads the rules on every call (one built elsewhere gets them too)

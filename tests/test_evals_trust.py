@@ -16,10 +16,13 @@ def test_trust_mock_evals_pass_their_gates_and_both_controls_fail() -> None:
     report = json.loads((ROOT / "evals" / "trust" / "report.json").read_text())
     s = report["suite"]
     assert report["gate"] is True and s["pass_rate"] == 1.0 and s["unapproved_writes"] == 0
-    assert s["d8"] == [1, 2, 3, 4]  # every D8 eval the brief names has a case
+    assert s["d8"] == [1, 2, 3, 4, 5]  # every D8 eval the brief names has a case (+ outside)
     controls = s["negative_controls"]
     assert controls["flag"]["suite_failed"] and controls["flag"]["cases"]  # flag ignored
     assert controls["rule"]["suite_failed"] and controls["rule"]["cases"]  # rule skipped
+    # nothing JARVIS writes from a mail marked as outside: the later delete runs uncarded
+    assert controls["marker"]["suite_failed"]
+    assert "t5-todo-from-a-mail-later-delete" in controls["marker"]["cases"]
 
 
 def test_the_suite_is_wired_into_run_all_mock() -> None:

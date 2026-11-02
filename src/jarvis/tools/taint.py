@@ -16,6 +16,17 @@ write becomes a card (`policy.TAINTED_WRITES_ASK`) and memory_save asks. A trust
 clears taint other content brought: one untrusted result anywhere in the window is enough.
 Item text is fenced as external content whether trusted or not.
 
+What JARVIS writes from outside content stays outside (D8, security review of A+B). Approving
+"add a to-do from this mail" lets the mail's words into the owner's own list, and the
+owner-authored rule alone (creator self, no guests, no links) would trust them on the next read.
+So a write whose content the round's outside text may have shaped — inside a turn
+`content_tainted()` (content only: a spoken-only turn doesn't count, the owner said it), or an
+approved card whose proposing round was content-tainted (`PendingAction.outside`, recorded when
+the card is made; the owner saw the card, but not where its words came from) — runs with
+`ToolContext.outside`, and the calendar, reminder and to-do tools mark what they write
+(`provenance.mark_outside`, `tools.task_marks`). A marked item is never the owner's own, so a
+later look-up of it taints the round again. Restores from Recently deleted keep the item's flag.
+
 Outside a Brain turn (an approval being executed, a script) the answer is "untrusted": the safe
 default, which also makes an approved card consume its token.
 
@@ -43,6 +54,9 @@ _untrusted: contextvars.ContextVar[bool | None] = contextvars.ContextVar(
 _spoken: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "jarvis_spoken_in_context", default=False
 )
+_content: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "jarvis_content_tainted", default=False
+)
 
 
 def untrusted_in_context() -> bool:
@@ -62,13 +76,21 @@ def spoken_in_context() -> bool:
     return _spoken.get()
 
 
+def content_tainted() -> bool:
+    """True only INSIDE a turn whose model has seen other people's content — not merely a spoken
+    turn. What a write made now contains may be their words (see the module docstring)."""
+    return _content.get()
+
+
 @contextmanager
 def context_trust(*, untrusted: bool, spoken: bool = False) -> Iterator[None]:
     token = _untrusted.set(untrusted or spoken)
     spoken_token = _spoken.set(spoken)
+    content_token = _content.set(untrusted)
     try:
         yield
     finally:
+        _content.reset(content_token)
         _spoken.reset(spoken_token)
         _untrusted.reset(token)
 
@@ -110,6 +132,7 @@ def untrusted_seen(messages: Sequence[ChatMessage], registry: ToolRegistry) -> b
 
 
 __all__ = [
+    "content_tainted",
     "context_trust",
     "fenced_text_seen",
     "result_trusted",

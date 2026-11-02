@@ -108,13 +108,15 @@ def _status_line(state: SectionState, what: str) -> str | None:
 def when(e: BriefEvent) -> str:
     if e.all_day:
         return "All day"
+    if e.reminder:  # a pop-up at one moment, not a span of time
+        return e.start
     start = "…" if e.starts_earlier else e.start
     end = f"{e.end} (next day)" if e.ends_later else e.end
     return f"{start}–{end}"
 
 
 def event_line(e: BriefEvent) -> str:
-    parts = [theirs(e.title)]
+    parts = [("Reminder: " if e.reminder else "") + theirs(e.title)]
     if e.attendees > 1:
         parts.append(f"{e.attendees} people")
     if e.has_video:

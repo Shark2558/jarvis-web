@@ -35,6 +35,9 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     # delete"; a shared / repeating one (R3) is also in the ask-first row
     ("calendar_delete_event", R2, {"calendar_change"}),
     ("calendar_delete_event", R3, {"calendar_change", "calendar_delete"}),
+    ("reminder_add", R2, {"reminders"}),  # slice 11 B: its own row, after the Calendar rows
+    ("reminder_update", R2, {"reminders"}),
+    ("reminders_list", R1, {"reminders"}),
     ("gmail_search", R1, {"email_read"}),
     ("gmail_read", R1, {"email_read"}),
     ("gmail_create_draft", R2, {"email_draft"}),
@@ -138,6 +141,7 @@ RISK_OF = {
     "calendar_read": [R1],
     "calendar_change": [R2, R3],
     "calendar_delete": [R3],
+    "reminders": [R1, R2],
     "email_read": [R1],
     "email_draft": [R2],
     "email_send": [R3],
@@ -152,6 +156,7 @@ TOOL_OF = {
     "calendar_read": "calendar_list_events",
     "calendar_change": "calendar_create_event",
     "calendar_delete": "calendar_delete_event",
+    "reminders": "reminder_add",
     "email_read": "gmail_read",
     "email_draft": "gmail_create_draft",
     "email_send": "gmail_send",

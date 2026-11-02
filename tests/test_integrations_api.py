@@ -93,7 +93,10 @@ async def test_google_mode_registers_google_tools_and_drops_fake_twins(gc: Async
     names = {s.name for s in gc.app.state.gateway.registry.specs()}  # type: ignore[attr-defined]
     assert {"calendar_list_events", "gmail_send", "gmail_search", "calendar_delete_event"} <= names
     assert "get_calendar" not in names and "send_message" not in names
-    assert {"list_tasks", "create_reminder"} <= names  # harmless dev builtins stay
+    # slice 11 B: real reminders (Google Calendar) replace the in-memory demo one
+    assert "create_reminder" not in names
+    assert {"reminder_add", "reminders_list", "reminder_update"} <= names
+    assert "list_tasks" in names  # harmless dev builtin stays
 
 
 async def test_token_mode_has_no_google_tools_or_routes(client: AsyncClient) -> None:

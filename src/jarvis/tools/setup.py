@@ -26,7 +26,8 @@ if TYPE_CHECKING:
     from jarvis.web.service import WebService
 
 # builtins that stand in for real connectors; dropped once the real ones are registered
-FAKE_TWINS = frozenset({"get_calendar", "send_message"})
+# (slice 11 B: the in-memory create_reminder too, now that reminders are real calendar pop-ups)
+FAKE_TWINS = frozenset({"get_calendar", "send_message", "create_reminder"})
 
 
 def build_gateway(
@@ -49,8 +50,9 @@ def build_gateway(
         from jarvis.tools.gmail import gmail_tools
         from jarvis.tools.google_calendar import calendar_tools
         from jarvis.tools.google_tasks import tasks_tools
+        from jarvis.tools.reminders import reminder_tools
 
-        for t in calendar_tools(google, undo=undo) + gmail_tools(google):
+        for t in calendar_tools(google, undo=undo) + reminder_tools(google) + gmail_tools(google):
             reg.register(t)
         for t in tasks_tools(google, default_tz=s.user_timezone, undo=undo):
             reg.register(t)

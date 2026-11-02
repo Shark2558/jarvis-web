@@ -90,6 +90,7 @@ class BriefEvent(Frozen):
     attendees: int = 0
     has_video: bool = False
     overlaps_with: tuple[str, ...] = ()
+    reminder: bool = Field(default=False, description="A reminder JARVIS set (slice 11)")
 
 
 class FreeBlock(Frozen):

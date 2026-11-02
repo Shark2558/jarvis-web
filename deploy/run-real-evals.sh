@@ -9,7 +9,9 @@
 #        deploy/cloudrun.sh) into this run's memory only: never printed, never written to disk
 #   5/5  runs the tests and says in plain words what passed and what to do next
 # A safety stop ends the run by itself if spending reaches 1.5 times the estimate.
-# Each test writes its detailed report to evals/<test>/report.json; logs go to ~/.jarvis-evals/logs.
+# YES must be typed at the terminal: input from a pipe or another program is refused.
+# Each test writes its detailed report to evals/<test>/report.json. Each run keeps its own plan,
+# spending record and logs in a new folder ~/.jarvis-evals/run-<date>-<id>.
 #
 #   bash deploy/run-real-evals.sh          the Phase 0 check (everyday conversation)
 #   bash deploy/run-real-evals.sh --all    also memory, voice, morning brief, calendar & email tools
@@ -31,6 +33,9 @@ done
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\nSTOPPED: %s\nNothing was spent.\n' "$*" >&2; exit 2; }
+
+# Spending needs a person: YES is read from the terminal, so `echo YES | ...` can never approve it.
+[ -t 0 ] || die "Run this yourself in the Cloud Shell terminal: you will be asked to type YES, so input from a pipe or another program is not accepted."
 
 cd "$(dirname "$0")/.."
 REPO="$PWD"
@@ -64,8 +69,11 @@ if [ -z "$PY" ]; then
   PY="$VENV/bin/python"
 fi
 export PYTHONPATH="$REPO/src"  # always this checkout's JARVIS (after a git pull too)
-STATE="$EVALS_HOME/plan.json"
-LEDGER="$EVALS_HOME/spend.json"
+# This run's own folder: two runs at once never share (or reset) a plan or a spending record.
+RUN_DIR="$(mktemp -d "$EVALS_HOME/run-$(date +%Y%m%d-%H%M%S)-XXXXXX")" \
+  || die "Could not create a folder for this run in $EVALS_HOME."
+STATE="$RUN_DIR/plan.json"
+LEDGER="$RUN_DIR/spend.json"
 
 say "3/5  What will be tested, and the cost"
 "$PY" evals/run_real.py estimate "${ALL_FLAG[@]}" --state "$STATE" \
@@ -78,8 +86,8 @@ To go ahead:
   2. Type YES (capital letters) and press Enter to spend about ${AMOUNT}. Anything else cancels.
 MSG
 ANSWER=""
-read -r -p "Type YES to spend about ${AMOUNT}: " ANSWER || true
-if [ "$ANSWER" != "YES" ]; then  # exactly YES, nothing else, is the go-ahead
+read -r -p "Type YES to spend about ${AMOUNT}: " ANSWER < /dev/tty || ANSWER=""
+if [ "$ANSWER" != "YES" ]; then  # exactly YES, typed at the terminal, is the go-ahead
   echo
   echo "Cancelled. Nothing was spent."
   exit 0
@@ -94,7 +102,7 @@ trap 'unset CLAUDE_KEY' EXIT
 say "5/5  Running the tests (the Phase 0 check takes a few minutes; --all about 20 minutes)"
 RC=0
 JARVIS_ANTHROPIC_API_KEY="$CLAUDE_KEY" "$PY" evals/run_real.py run --state "$STATE" --ledger "$LEDGER" \
-  --logs "$EVALS_HOME/logs" || RC=$?
+  --logs "$RUN_DIR/logs" || RC=$?
 unset CLAUDE_KEY
 
 case "$RC" in

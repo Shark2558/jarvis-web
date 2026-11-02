@@ -49,12 +49,28 @@ TASKS_SCOPE = "https://www.googleapis.com/auth/tasks"
 CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts.readonly"
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 CONTACTS_CAPABLE_SCOPES = frozenset({CONTACTS_SCOPE, "https://www.googleapis.com/auth/contacts"})
+# Any of these lets playlists.list(mine) / playlistItems.list read (the same set as builder B's).
+YOUTUBE_READ_SCOPES = frozenset(
+    {
+        YOUTUBE_SCOPE,
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+    }
+)
 # The optional permissions an owner adds with Integrations → Grant (`/connect/google?add=<name>`):
-# exactly these names, each one scope. Order here is the order they are asked for.
+# exactly these names, each ONE scope asked for (the read-only one). Order here is the order they
+# are asked for.
 GRANTS: dict[str, str] = {
     "tasks": TASKS_SCOPE,
     "contacts": CONTACTS_SCOPE,
     "youtube": YOUTUBE_SCOPE,
+}
+# Review C8: one notion of "has this Grant" — any of these scopes held satisfies it (a wider
+# scope granted to the same app counts), for `held_grants` and every `can_use_*` alike.
+GRANT_ACCEPTS: dict[str, frozenset[str]] = {
+    "tasks": frozenset({TASKS_SCOPE}),  # tasks.readonly would not do: the to-do tools write
+    "contacts": CONTACTS_CAPABLE_SCOPES,
+    "youtube": YOUTUBE_READ_SCOPES,
 }
 OPTIONAL_SCOPES: tuple[str, ...] = (INSERT_SCOPE, *GRANTS.values())
 # Google accepts users.messages.insert with any of these.
@@ -85,9 +101,10 @@ def grant_name(raw: object) -> str | None:
 
 
 def held_grants(scopes: Iterable[str]) -> frozenset[str]:
-    """The Grants a link's scopes already hold (renewing the link asks for them again)."""
+    """The Grants a link's scopes already hold (`GRANT_ACCEPTS`); renewing the link asks for
+    each again — by its one read-only scope (`GRANTS`), never a wider one it happens to hold."""
     have = set(scopes)
-    return frozenset(n for n, s in GRANTS.items() if s in have)
+    return frozenset(n for n, ok in GRANT_ACCEPTS.items() if not ok.isdisjoint(have))
 
 
 def can_insert(scopes: Iterable[str]) -> bool:
@@ -98,17 +115,17 @@ def can_insert(scopes: Iterable[str]) -> bool:
 def can_use_tasks(scopes: Iterable[str]) -> bool:
     """True when the granted scopes allow reading AND changing the owner's Google Tasks
     (tasks.readonly alone would not do: the to-do tools write)."""
-    return TASKS_SCOPE in set(scopes)
+    return "tasks" in held_grants(scopes)
 
 
 def can_use_contacts(scopes: Iterable[str]) -> bool:
     """True when the granted scopes allow searching the owner's Google Contacts."""
-    return not CONTACTS_CAPABLE_SCOPES.isdisjoint(scopes)
+    return "contacts" in held_grants(scopes)
 
 
 def can_use_youtube(scopes: Iterable[str]) -> bool:
-    """True when the granted scopes allow reading the owner's own YouTube playlists."""
-    return YOUTUBE_SCOPE in set(scopes)
+    """True when the granted scopes let JARVIS read the owner's own YouTube playlists."""
+    return "youtube" in held_grants(scopes)
 
 
 HTTP_TIMEOUT_S = 15.0
@@ -499,6 +516,7 @@ __all__ = [
     "CONTACTS_CAPABLE_SCOPES",
     "CONTACTS_SCOPE",
     "GRANTS",
+    "GRANT_ACCEPTS",
     "INSERT_CAPABLE_SCOPES",
     "INSERT_SCOPE",
     "OPTIONAL_SCOPES",
@@ -507,6 +525,7 @@ __all__ = [
     "TASKS_SCOPE",
     "TOKEN_URL",
     "TOOL_SCOPES",
+    "YOUTUBE_READ_SCOPES",
     "YOUTUBE_SCOPE",
     "GoogleAPIError",
     "GoogleConflict",

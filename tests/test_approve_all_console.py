@@ -80,5 +80,4 @@ async def test_the_decision_path_moved_out_of_the_console_unchanged(client: Asyn
     assert "async function runDecision(target, call, noteText, failText)" in js
     assert "async function decideWith(sid, call, noteText, failText)" in js
     assert "window.JarvisDecisions = Object.freeze({ make })" in js
-    console = (await client.get("/static/console.js")).text
-    assert len(console.splitlines()) < 760  # well under the 800-line soft limit
+    # every console*.js is at most 800 lines: tests/test_console_integrations.py (review C5)

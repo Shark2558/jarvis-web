@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from people_fakes import FakePeople, people_connector, person
+from people_fakes import PEOPLE_UID, FakePeople, people_connector, person
 
 from jarvis.config import get_settings
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
@@ -109,14 +109,39 @@ OUTCOME = {
 CELLS = [(gid, name, e) for gid in NEW for name in PLANNED[gid] for e in Effect]
 
 
+# Review S2: the tools built on this branch run as the REAL registered tools (a card that can't be
+# written crashed the reply under "Ask first"); the parallel builders' names stay stubs here.
+REAL_ARGS: dict[str, dict[str, Any]] = {
+    "contacts_search": {"name": "Ravi"},
+    "whatsapp_draft": {"to": "98765 43210", "text": "Running late"},
+}
+
+
+async def _real_gw(choices: dict[str, Effect], fake: FakePeople) -> Gateway:
+    gw = build_gateway(get_settings(), google=await people_connector(fake))
+    gw.rules = Rules(choices)
+    return gw
+
+
 @pytest.mark.parametrize(("gid", "name", "effect"), CELLS)
 async def test_allow_ask_never_for_every_planned_tool(gid: str, name: str, effect: Effect) -> None:
     ran: list[Any] = []
-    gw = _gw(name, validate_choices({gid: effect.value}), ran)
-    with context_trust(untrusted=False):
-        out = await gw.execute(ToolCall(id="p", name=name, arguments={}), scope="u:s")
-    assert out.outcome is OUTCOME[effect]
-    assert bool(ran) == (effect is Effect.ALLOW)
+    choices = validate_choices({gid: effect.value})
+    fake = FakePeople(contacts=[person("c1", "Ravi", phones=["98765 43210"])])
+    real = name in REAL_ARGS
+    gw = await _real_gw(choices, fake) if real else _gw(name, choices, ran)
+    args = REAL_ARGS.get(name, {})
+    scope = f"{PEOPLE_UID}:s"  # the owner whose Google link the fake People API serves
+    with context_trust(untrusted=False, owner_text="WhatsApp 98765 43210; find Ravi"):
+        out = await gw.execute(ToolCall(id="p", name=name, arguments=args), scope=scope)
+    assert out.outcome is OUTCOME[effect], out.error
+    if real:
+        assert gw.registry.get(name) is not None  # the registered tool, not a stand-in
+        if effect is Effect.ASK:
+            assert out.pending is not None and out.pending.summary
+            assert fake.requests == []  # nothing looked up before the owner approves
+    else:
+        assert bool(ran) == (effect is Effect.ALLOW)
     if effect is Effect.DENY:
         assert "switched off by the owner in Permissions" in (out.error or "")
         entry = (await gw.audit.tail(1)).entries[-1]

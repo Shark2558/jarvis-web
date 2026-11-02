@@ -202,6 +202,148 @@ def test_grant_rows_rerun_connect_with_exactly_that_name(
     assert console.errors == []
 
 
+@pytest.mark.parametrize(
+    ("field", "avail"),
+    [("contacts_granted", "contacts_available"), ("youtube_granted", "youtube_available")],
+)
+def test_a_grant_that_is_not_available_shows_no_row(
+    console: Console, field: str, avail: str
+) -> None:
+    """Review C7: no YouTube tools on this server (no API key), or the row set to Never."""
+    google = {**LINKED["google"], "tasks_granted": False, "contacts_granted": True,
+              "youtube_granted": True, field: False, avail: False}  # fmt: skip
+    _integrations(console, google)
+    console.open()
+    console.open_panel("integrations")
+    rows = console.page.locator("#integrations .iopt")
+    rows.first.wait_for()
+    assert rows.count() == 1  # the to-do row only: the unavailable one is not offered
+    assert "To-do list" in (rows.first.text_content() or "")
+    assert console.errors == []
+
+
+def test_a_held_grant_switched_off_is_not_listed_in_unlocks(console: Console) -> None:
+    google = {**LINKED["google"], "tasks_granted": True, "contacts_granted": True,
+              "youtube_granted": True, "contacts_available": False}  # fmt: skip
+    _integrations(console, google)
+    console.open()
+    console.open_panel("integrations")
+    row = console.page.locator('#integrations .integ[data-state="linked"]')
+    row.wait_for()
+    unlocks = (row.text_content() or "").split("Unlocks:", 1)[1]
+    assert "to-do list" in unlocks and "contacts" not in unlocks
+    assert console.errors == []
+
+
+# ---- review S3 / S5 / S7 / S8: whole text, assumed country, hint, isolated number --------------
+
+LONG = "\n".join(["Bank details below"] + [f"line {i}: " + "x" * 60 for i in range(13)])
+RTL = "\u05e8\u05d1\u05d9"  # a Hebrew name: right-to-left
+
+
+def _draft(**over: Any) -> dict[str, Any]:
+    base = {"name": "", "number": "+919876543210", "text": "hi", "link": "", "warning": ""}
+    return {**base, **over}
+
+
+def _console_with(browser: Any, url: str, token: str, drafts: list[Any]) -> Console:
+    c = Console(browser, url, token, DESKTOP)
+    c.page.add_init_script("try { localStorage.removeItem('jarvis_session'); } catch (_) {}")
+    body = json.dumps(_reply(drafts))
+    c.page.route(
+        "**/v1/chat", lambda r: r.fulfill(status=200, content_type="application/json", body=body)
+    )
+    return c
+
+
+def test_a_long_draft_shows_every_line_without_a_scroll_box_and_says_how_many(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c = _console_with(browser, server_url, token, [_draft(text=LONG, name="Ravi")])
+    try:
+        c.open()
+        c.send("WhatsApp Ravi the details")
+        card = c.page.locator(".row.jarvis .wadraft").first
+        card.wait_for()
+        assert card.locator(".walines").text_content() == "14 lines"
+        text = card.locator(".watext")
+        assert text.text_content() == LONG
+        fits = text.evaluate("el => el.scrollHeight <= el.clientHeight + 1")
+        assert fits is True  # no inner scroll box: every line is on screen in the card
+        assert text.evaluate("el => getComputedStyle(el).overflowY") == "visible"
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+def test_the_hint_says_who_nothing_is_sent_to_and_what_opening_does(
+    browser: Any, server_url: str, token: str
+) -> None:
+    drafts = [_draft(name="Ravi Kumar"), _draft(number="+442079460958")]
+    c = _console_with(browser, server_url, token, drafts)
+    try:
+        c.open()
+        c.send("WhatsApp them")
+        cards = c.page.locator(".row.jarvis .wadraft")
+        cards.nth(1).wait_for()
+        first = cards.nth(0).locator(".wahint").text_content() or ""
+        assert "Nothing is sent to Ravi Kumar until you press Send in WhatsApp." in first
+        assert "Opening the link hands this text to WhatsApp." in first
+        second = cards.nth(1).locator(".wahint").text_content() or ""
+        assert "Nothing is sent to +442079460958 until you press Send in WhatsApp." in second
+        assert cards.nth(0).locator(".walines").count() == 0  # a short text: no count
+    finally:
+        c.close()
+
+
+def test_an_assumed_country_is_shown_and_the_number_is_isolated_from_a_rtl_name(
+    browser: Any, server_url: str, token: str
+) -> None:
+    drafts = [_draft(name=RTL, assumed="Assumed India (+91)"), _draft(number="+442079460958")]
+    c = _console_with(browser, server_url, token, drafts)
+    try:
+        c.open()
+        c.send("WhatsApp him")
+        cards = c.page.locator(".row.jarvis .wadraft")
+        cards.nth(1).wait_for()
+        assert cards.nth(0).locator(".waassumed").text_content() == "Assumed India (+91)"
+        assert cards.nth(1).locator(".waassumed").count() == 0
+        num = cards.nth(0).locator(".wanum")
+        style = num.evaluate(
+            "el => [getComputedStyle(el).unicodeBidi, getComputedStyle(el).direction]"
+        )
+        assert style == ["isolate", "ltr"]
+        assert num.text_content() == "+91 98765 43210"
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "hi\u3164there",  # a Hangul filler: the server would have stripped it
+        "hi\u2800",  # braille blank
+        "a\n\n\n\nb",  # more than two blank lines in a row
+        "trailing   \nspaces",  # spaces at the end of a line
+        "\ufe0fstart",  # a variation selector with nothing before it
+    ],
+)
+def test_a_draft_the_server_would_have_cleaned_is_dropped(
+    browser: Any, server_url: str, token: str, text: str
+) -> None:
+    c = _console_with(browser, server_url, token, [_draft(text=text), _draft(text="ok")])
+    try:
+        c.open()
+        c.send("WhatsApp")
+        cards = c.page.locator(".row.jarvis .wadraft")
+        cards.first.wait_for()
+        assert cards.count() == 1 and cards.first.locator(".watext").text_content() == "ok"
+        assert c.page.evaluate("(t) => window.JarvisWhatsApp.clean(t)", text) != text
+    finally:
+        c.close()
+
+
 def test_every_grant_held_shows_no_rows_and_says_what_it_unlocks(console: Console) -> None:
     google = {**LINKED["google"], "tasks_granted": True, "contacts_granted": True,
               "youtube_granted": True}  # fmt: skip

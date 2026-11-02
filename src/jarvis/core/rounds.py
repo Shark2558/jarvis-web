@@ -25,7 +25,7 @@ from jarvis.llm.base import Completion, ToolCall, Usage
 from jarvis.memory.base import SessionStore
 from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.tools.registry import ToolRegistry
-from jarvis.whatsapp.cards import draft_cards
+from jarvis.whatsapp.cards import capped, draft_cards
 
 
 def undo_refs(
@@ -69,7 +69,7 @@ class Rounds:
         """Remember each call of this round that ran and can change something. A tool that
         raised ran too — it may have written before it failed — and is noted as such."""
         self.undo += undo_refs(registry, calls, results)
-        self.drafts += draft_cards(registry, calls, results)
+        self.drafts = capped(self.drafts, draft_cards(registry, calls, results))
         for call, gr in zip(calls, results, strict=True):
             if not gr.ran:
                 continue

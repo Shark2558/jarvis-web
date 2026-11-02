@@ -28,7 +28,8 @@ Slice 12 D8: one R1 row per integration — Contacts and WhatsApp drafts after t
 people JARVIS writes to), Drive after Documents, then Maps and YouTube. Each matches its whole
 tool family at any risk, so "Never" switches every tool of it off (a later write tool in the
 family is at least as strict as today: an R3 call still always asks). A WhatsApp draft by NAME
-also obeys the Contacts row (the look-up names `contacts_search`, `Preview.also`).
+also obeys the Contacts row (the look-up names `contacts_search`, `Preview.also`): Never there
+refuses it, Ask first makes it a card (review S1).
 """
 
 from __future__ import annotations
@@ -194,7 +195,8 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "Contacts",
         "Look up your contacts",
         "Names, phone numbers and email addresses from Google Contacts, read only — after you "
-        "press Grant next to Contacts in Integrations. JARVIS keeps no copy.",
+        "press Grant next to Contacts in Integrations. What JARVIS looks up is kept only in that "
+        "conversation and deleted with it.",
         R1,
         (_m("contacts_*"),),
     ),

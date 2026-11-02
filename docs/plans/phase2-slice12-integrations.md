@@ -110,7 +110,9 @@ descriptions are other people's words (untrusted). **Spotify**: only if the owne
 **D5 · Contacts (R1).** Optional Grant (`contacts.readonly`), same pattern as the to-do list
 (`/connect/google?add=contacts`). `contacts_search(name)` → ≤ 5 matches: name, email addresses,
 phone numbers normalised to E.164 (+91 default). Untrusted (people write their own profile names),
-never to training brains, never stored by JARVIS.
+never to training brains. JARVIS keeps no contact list: a look-up's result is kept only in the
+conversation it was made in (as a tool result, like every tool's) and deleted with it; the audit
+holds only a hash of the name asked for.
 
 **D6 · WhatsApp drafts.** `whatsapp_draft(to, text)`: `to` is a phone number the owner typed or a
 Contacts match; text ≤ 2,000 characters. Result: a draft card with the recipient's name + number,
@@ -136,6 +138,34 @@ reply (as with web search).
 contact fields are other people's words: fenced with the per-call nonce, they taint the round
 (`policy.TAINTED_WRITES_ASK`), so a hostile document can't make JARVIS change anything without a
 card. Results never vouch (`may_vouch` false). No new R3 in this slice.
+
+**Review fixes for D5–D8 (builder C, after two independent reviews of 4784621).**
+- S1: a look-up that names another permission row (`Preview.also`) gets that row's whole
+  decision — "Never" refuses, "Ask first" makes the call a card (a draft by name with Contacts on
+  Ask first no longer lists names and numbers without a card).
+- S2: `contacts_search` has its own card text (`Look up “Ravi” in your Contacts`); `Tool.summary`
+  never raises (a template that can't be filled falls back to the generic card and is logged).
+- S3: `whatsapp_draft` asks on a spoken turn or in a tainted round (`ask_when`; the gateway
+  honours it for read-only calls, as builder B's maps_route needs): a one-by-one R1 card (no
+  passkey, never in Approve all) showing the whole text, quoted line by line, with its line count.
+  The text also loses characters that render blank (Hangul fillers, braille blank, CGJ, Khmer
+  inherent vowels, Mongolian selectors, variation selectors but an emoji's), trailing spaces and
+  runs of more than two blank lines; a text that is blank after that is refused. The console
+  checks the same and shows the whole text (no inner scroll box) with "N lines" for long texts.
+- S4: only typed owner messages vouch for a number; a spoken current message never does.
+- S5: a +91 number must have exactly 10 digits after the code (first 2–9), else "check the
+  number"; a number written without a country code shows "Assumed India (+91)" on both cards.
+- S6/C2: the wording now says what happens — a look-up's result lives in its conversation (a
+  tool-result turn) and is deleted with it (turns, waiting cards; the audit has only hashes).
+- S7/S8: the hint says "Nothing is sent to <name> until you press Send in WhatsApp." and that
+  opening the link hands the text to WhatsApp; the number is bidi-isolated.
+- C3: one usable number among more matches than shown still asks which.
+- C5: the Integrations section is `console-integrations.js`; every console*.js ≤ 800 lines.
+- C7/C8: `/v1/integrations` says per Grant whether it is `available` (its tools exist — YouTube
+  needs the server's API key — and its row is not Never); a Grant is held when any accepted scope
+  is (YouTube: youtube.readonly, youtube, youtube.force-ssl), but only the read-only one is asked.
+- C9: at most 5 draft cards per reply across rounds and in Approve all; the Contacts warm-up is
+  best effort; the name fence is read with `jarvis.tools.external.fence_body`.
 
 ## Next waves (not built in this slice)
 - **Swiggy (slice 13, after Swiggy approves the redirect URI).** First real MCP **client** in

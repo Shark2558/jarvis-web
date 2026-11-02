@@ -1,24 +1,32 @@
 /* src/jarvis/api/static/console-whatsapp.css -- slice 12 D6: the WhatsApp draft card under a reply
-   (console-whatsapp.js). Command Deck tokens only; ASCII source. */
+   (console-whatsapp.js). Command Deck tokens only; ASCII source. Review S3: the whole text shows (no
+   inner scroll box) and a long one says "N lines" in the head; S5: "Assumed India (+91)"; S8: the
+   number is isolated, so a right-to-left name beside it can't reorder its digits. */
 .wadraft{display:flex;flex-direction:column;gap:8px;width:min(460px,100%);max-width:100%;margin:8px 4px 0;padding:12px 14px;
   border-radius:var(--r-md);border:1px solid var(--line);background:var(--tint);color:var(--ink);box-sizing:border-box;
   font:14px/1.45 var(--font)}
-.wadraft .wahead{display:flex;align-items:center;justify-content:space-between;gap:8px;
+.wadraft .wahead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;
   font:600 12px/1.2 var(--hud);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.wadraft .walabel{margin-right:auto}
+.wadraft .walines{padding:2px 8px;border-radius:999px;border:1px solid var(--amber-line);color:var(--amber-ink);
+  background:var(--amber-tint);font-variant-numeric:tabular-nums}
 .wadraft .wastate{padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--card,transparent)}
 .wadraft .wato{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;min-width:0}
 .wadraft .wak{font:600 12px/1.2 var(--hud);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
-.wadraft .waname{font-weight:600;overflow-wrap:anywhere}
-.wadraft .wanum{font:500 13px/1.3 var(--tech);font-variant-numeric:tabular-nums;color:var(--ink-2);white-space:nowrap}
+.wadraft .waname{font-weight:600;overflow-wrap:anywhere;unicode-bidi:isolate}
+.wadraft .wanum{font:500 13px/1.3 var(--tech);font-variant-numeric:tabular-nums;color:var(--ink-2);white-space:nowrap;
+  unicode-bidi:isolate;direction:ltr}
+.wadraft .waassumed{font-size:12px;color:var(--amber-ink)}
 .wadraft .watext{margin:0;padding:8px 10px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--card,transparent);
-  white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+  white-space:pre-wrap;overflow-wrap:anywhere}
 .wadraft .wawarn{margin:0;padding:6px 10px;border-radius:var(--r-sm);font-size:13px;
   color:var(--amber-ink);background:var(--amber-tint);border:1px solid var(--amber-line)}
 .wadraft .waacts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .wadraft .waopen{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;padding:0 16px;
   text-decoration:none;font-weight:600}
 .wadraft .waopen:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.wadraft .wahint{flex:1 1 180px;font-size:12px;color:var(--ink-3)}
+.wadraft .wahint{flex:1 1 180px;display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--ink-3)}
+.wadraft .wawho{font-weight:600;color:var(--ink-2)}
 @media (max-width:560px){
   .wadraft{width:100%}
   .wadraft .waopen{min-height:44px;width:100%}

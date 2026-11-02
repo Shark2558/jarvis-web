@@ -112,6 +112,25 @@ def wrap_external(text: str, *, source: str, limit: int | None = None) -> str:
     return f"{_FENCE_OPEN.format(source=src, fid=fid)}\n{body}\n{_FENCE_CLOSE.format(fid=fid)}"
 
 
+_FENCED = re.compile(
+    r"\A"
+    + re.escape(_FENCE_OPEN)
+    .replace(re.escape("{source}"), r"[^\n]*")
+    .replace(re.escape("{fid}"), r"([0-9a-f]{6})")
+    + r"\n(.*)\n"
+    + re.escape(_FENCE_CLOSE).replace(re.escape("{fid}"), r"\1")
+    + r"\Z",
+    re.DOTALL,
+)
+
+
+def fence_body(value: object) -> str | None:
+    """The content of exactly one fence `wrap_external` made (both markers with the same id), or
+    None when `value` is anything else. What was fenced stays other people's words."""
+    m = _FENCED.match(value) if isinstance(value, str) else None
+    return m.group(2) if m else None
+
+
 def sender_address(header: str) -> str:
     """'Priya <priya@example.com>' → 'priya@example.com'; a bare address stays as is."""
     m = _EMAIL_IN_HEADER.search(header)
@@ -123,6 +142,7 @@ __all__ = [
     "FENCE_PREFIX",
     "FENCE_REMOVED",
     "clean_text",
+    "fence_body",
     "model_safe",
     "model_text",
     "sender_address",

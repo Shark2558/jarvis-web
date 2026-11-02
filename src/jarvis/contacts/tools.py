@@ -5,8 +5,11 @@ R1 through the gateway. Up to 5 matches: the name (fenced: people write their ow
 so it is other people's words), email addresses (validated) and phone numbers (E.164, +91 for the
 owner's 10-digit Indian numbers). Not `may_vouch` and not `trusted_output`: a result taints the
 round, so a write after it is a card. Training brains never get tools at all (`Brain._tools_on`).
-Nothing is stored by this tool. Without the optional contacts Grant it says how to grant it and
-asks Google nothing.
+The tool keeps nothing itself; like every tool result, what it returns is saved with the
+conversation it was looked up in (a tool-result turn) and deleted with that conversation — the
+audit records only a hash of the name asked for. Without the optional contacts Grant it says how
+to grant it and asks Google nothing. Its approval card (Contacts on "Ask first") reads
+'Look up “<name>” in your Contacts' (review S2: the generic template met the argument `name`).
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from jarvis.contacts.client import (
 )
 from jarvis.core.guardrails import ActionRisk
 from jarvis.tools.base import Tool
+from jarvis.tools.card import quoted
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
 
@@ -48,6 +52,11 @@ def match_view(c: Contact) -> dict[str, Any]:
 
 def _check(a: dict[str, Any]) -> None:
     query_arg(a.get("name"))
+
+
+def _card_text(a: dict[str, Any]) -> str:
+    """'Look up “Ravi” in your Contacts': the name as one clean line in quotes."""
+    return f"Look up {quoted(query_arg(a.get('name')), NAME_LIMIT)} in your Contacts"
 
 
 def contacts_tools(client: ContactsClient) -> list[Tool]:
@@ -83,6 +92,7 @@ def contacts_tools(client: ContactsClient) -> list[Tool]:
             search,
             agent="google",
             check=_check,
+            summarize=_card_text,
         )
     ]
 

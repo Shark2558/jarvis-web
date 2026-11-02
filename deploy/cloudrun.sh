@@ -483,9 +483,10 @@ GOOGLE CALENDAR + GMAIL (once): APIs & Services -> OAuth consent screen (Google 
        https://www.googleapis.com/auth/tasks           (optional: your to-do list in Google Tasks)
        https://www.googleapis.com/auth/contacts.readonly  (optional: look up your contacts, read only)
        https://www.googleapis.com/auth/youtube.readonly   (optional: your YouTube playlists, read only)
-     When you connect, leave every box ticked: JARVIS refuses a partial link. The two optional
+     When you connect, leave every box ticked: JARVIS refuses a partial link. The four optional
      ones are the exception: without gmail.insert the brief simply stays in JARVIS; without
-     tasks there is no to-do list. Linked before? Integrations -> To-do list -> Grant adds it.
+     tasks there is no to-do list; without contacts.readonly or youtube.readonly there are no
+     contact look-ups or playlists. Linked before? Integrations -> To-do list -> Grant adds it.
      Contacts and YouTube playlists are asked for only by their own Grant (Integrations ->
      Contacts -> Grant, or YouTube playlists -> Grant); a reconnect keeps what you granted.
   2. Audience -> Test users -> add your own Gmail address (the one JARVIS signs in with).

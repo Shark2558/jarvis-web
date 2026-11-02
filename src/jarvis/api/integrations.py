@@ -10,8 +10,13 @@ GET  /connect/google/callback        store tokens iff the consenting account IS 
                                      /?connect_error=<code> (browser landing); a grant from the
                                      wrong account is revoked at Google (best effort)
 GET  /v1/integrations          {google: {connected, email, scopes, expires_at, needs_reconnect,
-                                         tasks_granted, contacts_granted, youtube_granted}}
-                                         (the three Grants are optional)
+                                         tasks_granted, contacts_granted, youtube_granted,
+                                         tasks_available, contacts_available,
+                                         youtube_available}}
+                                         (the three Grants are optional; review C7: a Grant
+                                         is "available" — its row offered — only when its tools
+                                         exist on this server (YouTube: the server's API key)
+                                         and its permission row is not Never)
 POST /v1/integrations/google/disconnect   revoke at Google (best effort) + forget (CSRF header)
 
 Mounted only when auth_mode=google. Separate from sign-in: `/auth/*` keeps `openid email`.
@@ -28,7 +33,9 @@ from pydantic import BaseModel
 from jarvis.api.auth import require_auth, session_email
 from jarvis.api.identity import current_user, user_id_for_email
 from jarvis.config import Settings
+from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import (
+    GRANTS,
     GoogleConnector,
     GoogleScopesMissing,
     can_use_contacts,
@@ -39,11 +46,19 @@ from jarvis.integrations.google import (
     held_grants,
 )
 from jarvis.logging import get_logger
+from jarvis.tools.policy import Effect, Policy
 
 log = get_logger(__name__)
 
 router = APIRouter()
 CONNECT_OWNER_KEY = "google_connect_owner"  # session: who started the consent flow
+# Review C7 (D8): the tool each Grant unlocks, so "Never" on its permission row (To-do list,
+# Contacts, YouTube) hides the Grant row; decided by the owner's own rules, as the gateway would.
+GRANT_TOOLS: dict[str, str] = {
+    "tasks": "tasks_list",
+    "contacts": "contacts_search",
+    "youtube": "youtube_my_playlists",
+}
 
 
 def _settings(request: Request) -> Settings:
@@ -149,24 +164,57 @@ class GoogleStatus(BaseModel):
     # slice 12 D7: the optional contacts / YouTube playlists scopes, the same way
     contacts_granted: bool = False
     youtube_granted: bool = False
+    # review C7: false → the console offers no Grant row (no tools here, or the row is Never)
+    tasks_available: bool = True
+    contacts_available: bool = True
+    youtube_available: bool = False
 
 
 class Integrations(BaseModel):
     google: GoogleStatus
 
 
+async def _switched_off(request: Request, uid: str) -> frozenset[str]:
+    """The Grants whose permission row the owner set to Never. When the rules can't be read the
+    view can't tell, so it offers the rows; a call through the gateway still fails closed."""
+    source = getattr(request.app.state, "permissions", None)
+    if source is None:
+        return frozenset()
+    try:
+        policy = Policy(await source.rules_for(uid))
+    except Exception as exc:  # noqa: BLE001 — a view only; logged, never raised
+        log.warning(
+            "permissions unreadable for the Grant rows", extra={"error": type(exc).__name__}
+        )
+        return frozenset()
+    return frozenset(
+        name
+        for name, tool in GRANT_TOOLS.items()
+        if policy.decide(tool, ActionRisk.READ_ONLY, {}) is Effect.DENY
+    )
+
+
 @router.get("/v1/integrations", response_model=Integrations, dependencies=[Depends(require_auth)])
 async def integrations(
-    google: GoogleConnector = Depends(_google), uid: str = Depends(current_user)
+    request: Request,
+    google: GoogleConnector = Depends(_google),
+    uid: str = Depends(current_user),
+    s: Settings = Depends(_settings),
 ) -> Integrations:
     st = await google.status(uid)
     linked, scopes = bool(st["connected"]), st["scopes"]
+    off = await _switched_off(request, uid)
+    here = {"tasks": True, "contacts": True, "youtube": s.google_api_key is not None}
+    available = {name: here[name] and name not in off for name in GRANTS}
     return Integrations(
         google=GoogleStatus(
             **st,
             tasks_granted=linked and can_use_tasks(scopes),
             contacts_granted=linked and can_use_contacts(scopes),
             youtube_granted=linked and can_use_youtube(scopes),
+            tasks_available=available["tasks"],
+            contacts_available=available["contacts"],
+            youtube_available=available["youtube"],
         )
     )
 

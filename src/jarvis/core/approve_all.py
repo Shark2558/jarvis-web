@@ -49,6 +49,7 @@ from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.tools.card import one_line
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult, approved_via
 from jarvis.web.ledger import web_conversation
+from jarvis.whatsapp.cards import capped
 from jarvis.whatsapp.provenance import conversation_words
 
 log = get_logger(__name__)
@@ -219,7 +220,7 @@ async def _book(store: SessionStore, batch: Batch, d: decisions.Decision) -> Non
     """After a decision took effect: its Undo chip and its stored exchange. Never raises, so a
     failure here can't relabel a card that ran; a record that can't be stored stops the batch."""
     batch.undo += d.undo  # worked out by `decisions.approved`, which never raises for it
-    batch.drafts += d.drafts  # the same for a WhatsApp draft card (slice 12)
+    batch.drafts = capped(batch.drafts, d.drafts)  # a WhatsApp draft card (slice 12): at most 5
     exchange: list[Turn] = []
     try:
         exchange = decisions.record_exchange(batch.session, d, batch.trace_id)

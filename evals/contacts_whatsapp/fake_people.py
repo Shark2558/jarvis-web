@@ -76,6 +76,7 @@ class FakePeople:
     contacts: list[dict[str, Any]] = field(default_factory=list)
     cold_searches: int = 0
     fail_status: int | None = None  # every call answers this (403 → API switched off)
+    fail_warm_up: int | None = None  # only the empty-query warm-up answers this
     requests: list[httpx.Request] = field(default_factory=list)
     _cold_left: int = 0
 
@@ -92,6 +93,8 @@ class FakePeople:
         if not q.get("readMask"):
             return httpx.Response(400, json={"error": {"code": 400}})
         query = (q.get("query") or "").casefold().strip()
+        if not query and self.fail_warm_up is not None:
+            return httpx.Response(self.fail_warm_up, json={"error": {"code": self.fail_warm_up}})
         if not query:  # the warm-up
             self._cold_left = self.cold_searches
             return httpx.Response(200, json={})

@@ -306,7 +306,12 @@ async def test_a_typed_number_makes_a_ready_draft_without_a_warning() -> None:
     assert out.outcome is GatewayOutcome.EXECUTED
     r = out.result
     assert r["status"] == "draft_ready" and r["sent"] is False
-    assert r["to"] == {"number": "+919876543210", "name": None, "from": "you"}
+    assert r["to"] == {
+        "number": "+919876543210",
+        "name": None,
+        "from": "you",
+        "assumed_india": True,  # review S5: written without a country code
+    }
     assert "warning" not in r and "Open in WhatsApp" in r["next"]
     assert r["link"] == "https://wa.me/919876543210?text=Running%20late"
     card = card_from_result(r)
@@ -398,14 +403,17 @@ async def test_bad_arguments_are_refused_before_anything_runs(
     assert fake.requests == []
 
 
-async def test_in_a_tainted_round_a_draft_is_still_just_a_draft() -> None:
-    """R1: nothing leaves JARVIS, so a round that read a mail still gets the card — with the
-    warning when the number came from that mail."""
+async def test_in_a_tainted_round_a_draft_waits_for_the_owner() -> None:
+    """Review S3: a round that read a mail may have steered the text (stolen data) and the
+    number, so the draft is an approval card first — approved, it carries the warning when the
+    number came from that mail."""
     gw = await _gw(None)
     call = ToolCall(id="w", name="whatsapp_draft", arguments={"to": "+442079460958", "text": "ok"})
     with context_trust(untrusted=True, owner_text="answer the mail on WhatsApp"):
         out = await gw.execute(call, scope=SCOPE)
-    assert out.outcome is GatewayOutcome.EXECUTED and out.result["warning"] == WARNING
+    assert out.outcome is GatewayOutcome.AWAITING_CONFIRMATION and out.pending is not None
+    done = await gw.execute(call, confirmation_id=out.pending.id, scope=SCOPE)
+    assert done.outcome is GatewayOutcome.EXECUTED and done.result["warning"] == WARNING
 
 
 async def test_never_on_whatsapp_switches_it_off() -> None:
@@ -493,10 +501,16 @@ async def test_a_number_read_from_a_mail_gets_the_warning_on_the_reply(settings:
         [ToolCall(id="w", name="whatsapp_draft", arguments={"to": "+442079460958", "text": "Hi"})],
         "It's ready — tap Open in WhatsApp, then Send.",
     )
-    resp = await _brain(settings, gw, provider).chat(
+    brain = _brain(settings, gw, provider)
+    resp = await brain.chat(
         ChatRequest(message="WhatsApp the plumber from that mail", user_id=PEOPLE_UID)
     )
-    (card,) = resp.whatsapp
+    assert resp.whatsapp == [] and len(resp.pending_approvals) == 1  # review S3: a card first
+    provider.script("It's ready — check the number before you send.")
+    done = await brain.approve(
+        resp.pending_approvals[0].id, session_id=resp.session_id, user_id=PEOPLE_UID
+    )
+    (card,) = done.whatsapp
     assert card.warning == WARNING
 
 

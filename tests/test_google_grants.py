@@ -8,12 +8,14 @@ import pytest
 from jarvis.integrations.google import (
     CONNECT_SCOPES,
     CONTACTS_SCOPE,
+    GRANT_ACCEPTS,
     GRANTS,
     INSERT_SCOPE,
     OPTIONAL_SCOPES,
     REQUIRED_SCOPES,
     TASKS_SCOPE,
     TOOL_SCOPES,
+    YOUTUBE_READ_SCOPES,
     YOUTUBE_SCOPE,
     can_use_contacts,
     can_use_tasks,
@@ -88,3 +90,41 @@ def test_can_use_helpers() -> None:
     assert not can_use_contacts(["https://www.googleapis.com/auth/contacts.other.readonly"])
     assert can_use_youtube([YOUTUBE_SCOPE]) and not can_use_youtube(REQUIRED_SCOPES)
     assert can_use_tasks([TASKS_SCOPE]) and not can_use_tasks([CONTACTS_SCOPE])
+
+
+# ---- review C8: one notion of "has this Grant" ---------------------------------------------------
+
+YT = "https://www.googleapis.com/auth/youtube"
+WIDER = [
+    YT,
+    YT + ".force-ssl",
+    "https://www.googleapis.com/auth/contacts",
+]
+
+
+def test_youtube_accepts_the_wider_scopes_that_can_read_playlists() -> None:
+    assert YOUTUBE_READ_SCOPES == frozenset({YOUTUBE_SCOPE, YT, YT + ".force-ssl"})
+    for scope in (YOUTUBE_SCOPE, YT, YT + ".force-ssl"):
+        assert can_use_youtube([scope]) and held_grants([scope]) == frozenset({"youtube"})
+    assert not can_use_youtube([YT + ".upload", YT + "partner"])
+
+
+def test_each_grant_asks_only_for_its_one_scope_and_accepts_it() -> None:
+    for name, scope in GRANTS.items():
+        assert scope in GRANT_ACCEPTS[name]
+        assert connect_scopes({name}).split() == [*CONNECT_SCOPES, scope]
+    assert set(GRANT_ACCEPTS) == set(GRANTS)
+    for wider in WIDER:  # held: a renewal asks again for the read-only scope, never the wider one
+        assert wider not in connect_scopes(held_grants([wider])).split()
+
+
+@pytest.mark.parametrize(
+    "scopes",
+    [[], [TASKS_SCOPE], [CONTACTS_SCOPE, YT], WIDER, list(TOOL_SCOPES), [YT + ".force-ssl"]],
+)
+def test_held_grants_and_can_use_agree(scopes: list[str]) -> None:
+    held = held_grants(scopes)
+    assert ("tasks" in held) is can_use_tasks(scopes)
+    assert ("contacts" in held) is can_use_contacts(scopes)
+    assert ("youtube" in held) is can_use_youtube(scopes)
+    assert held_grants(iter(scopes)) == held  # a one-pass iterable reads the same

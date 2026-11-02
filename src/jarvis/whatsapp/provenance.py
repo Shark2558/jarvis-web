@@ -15,6 +15,12 @@ card being carried out), like `web.ledger.web_conversation`. Outside one, only t
 message counts: an unknown conversation can't vouch for a number (fail safe: a warning).
 Results are matched to their calls by tool-use id, so text in a mail can't pass for a Contacts
 result; a result whose call is not a look-up, an error, or one that does not parse adds nothing.
+
+Review S4: only TYPED words are the owner's — like `web.ledger.conversation_of`, an earlier
+message counts only when it came through the keyboard (`channel == "text"`), and the current
+message only when it is not spoken: through the microphone anyone in the room may have said the
+number. Review S5: `country_typed` tells whether the owner wrote the number WITH its country
+code (else the card says "Assumed India (+91)").
 """
 
 from __future__ import annotations
@@ -25,9 +31,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Literal
 
-from jarvis.contacts.phones import is_e164, typed_numbers
+from jarvis.contacts.phones import is_e164, typed_numbers, typed_with_country
 from jarvis.llm.base import ToolCall, ToolResultBlock
-from jarvis.tools.taint import owner_text
+from jarvis.tools.taint import owner_text, spoken_in_context
 from jarvis.web.ledger import is_owner_message
 
 if TYPE_CHECKING:
@@ -54,10 +60,15 @@ def conversation_words(session: Session) -> Iterator[None]:
 
 
 def _owner_texts(session: Session | None) -> list[str]:
+    """The owner's TYPED words: the current message unless spoken, and earlier typed messages."""
     said = owner_text()
-    texts = [said] if said else []
+    texts = [said] if said and not spoken_in_context() else []
     if session is not None:
-        texts += [t.content for t in session.turns[-MAX_TURNS:] if is_owner_message(t)]
+        texts += [
+            t.content
+            for t in session.turns[-MAX_TURNS:]
+            if is_owner_message(t) and t.channel == "text" and t.content
+        ]
     return texts
 
 
@@ -109,4 +120,9 @@ def number_source(number: str) -> Source:
     return "elsewhere"
 
 
-__all__ = ["LOOKUP_TOOLS", "Source", "conversation_words", "number_source"]
+def country_typed(number: str) -> bool:
+    """True when the owner's typed words write `number` with its country code at least once."""
+    return any(number in typed_with_country(text) for text in _owner_texts(_session.get()))
+
+
+__all__ = ["LOOKUP_TOOLS", "Source", "conversation_words", "country_typed", "number_source"]

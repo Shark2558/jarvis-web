@@ -12,7 +12,8 @@ developers.google.com/people/v1/contacts:
   request with an empty query", then search "after several seconds". JARVIS warms the cache once
   per owner every `WARM_TTL_S` (every search refreshes it too); when a search straight after a
   warm-up finds nothing, it waits `COLD_RETRY_S` and asks once more. Not verified: how long the
-  cache really takes to catch up (Google gives no figure).
+  cache really takes to catch up (Google gives no figure). The warm-up is best effort (review
+  C9): when it fails, the search is still asked once (and the next search warms up again).
 
 Every call goes through `GoogleConnector.request` (bearer, 15 s, one refresh, a retry only for
 GETs, vendor text never leaves), under one overall deadline; every response is checked for shape
@@ -149,6 +150,7 @@ class ContactsClient:
     conn: GoogleConnector
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
     clock: Callable[[], float] = time.monotonic
+    deadline_s: float = DEADLINE_S
     _warm: dict[str, float] = field(default_factory=dict)
 
     async def require(self, uid: str) -> None:
@@ -163,7 +165,7 @@ class ContactsClient:
         """Up to MAX_MATCHES contacts matching `name` (call `require` first)."""
         query = query_arg(name)
         try:
-            return await asyncio.wait_for(self._search(uid, query), DEADLINE_S)
+            return await asyncio.wait_for(self._search(uid, query), self.deadline_s)
         except TimeoutError:
             raise GoogleAPIError(TOO_SLOW) from None
 
@@ -176,11 +178,18 @@ class ContactsClient:
         return found
 
     async def _warm_up(self, uid: str) -> bool:
-        """The empty-query request Google asks for, at most every WARM_TTL_S per owner."""
+        """The empty-query request Google asks for, at most every WARM_TTL_S per owner. Best
+        effort: a failed warm-up is logged and not remembered; the search still runs once."""
         last = self._warm.get(uid)
         if last is not None and self.clock() - last < WARM_TTL_S:
             return False
-        await self._get(uid, "")
+        try:
+            await self._get(uid, "")
+        except GoogleAPIError as exc:
+            log.warning(
+                "contacts warm-up failed; searching anyway", extra={"error": type(exc).__name__}
+            )
+            return False
         self._warm[uid] = self.clock()
         return True
 

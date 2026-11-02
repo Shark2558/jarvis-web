@@ -22,6 +22,11 @@ log = get_logger(__name__)
 MAX_CARDS = 5
 
 
+def capped(have: Sequence[DraftCard], new: Sequence[DraftCard]) -> list[DraftCard]:
+    """A reply's draft cards after more arrive: the first MAX_CARDS, in order (review C9)."""
+    return [*have, *new][:MAX_CARDS]
+
+
 def draft_cards(
     registry: ToolRegistry, calls: Sequence[ToolCall], results: Sequence[GatewayResult]
 ) -> list[DraftCard]:
@@ -40,4 +45,4 @@ def draft_cards(
     return out
 
 
-__all__ = ["MAX_CARDS", "draft_cards"]
+__all__ = ["MAX_CARDS", "capped", "draft_cards"]

@@ -212,6 +212,13 @@ def test_the_people_api_is_switched_on_and_the_new_grants_are_printed_as_optiona
     assert "Grant" in script
 
 
+def test_the_count_of_optional_scopes_is_right(script: str) -> None:
+    """Review C9: four optional scopes are printed (insert, tasks, contacts, YouTube)."""
+    optional = [ln for ln in script.splitlines() if "auth/" in ln and "(optional" in ln]
+    assert len(optional) == 4
+    assert "The two optional" not in script and "The four optional" in script
+
+
 def test_default_brain_prompt_accepts_claude(script: str) -> None:
     assert "claude|Claude|CLAUDE) DEFAULT_BRAIN=anthropic" in script
 

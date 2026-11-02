@@ -243,6 +243,9 @@ async def test_status_requires_auth_and_is_per_user(gc: AsyncClient) -> None:
             "tasks_granted": False,
             "contacts_granted": False,  # slice 12 D7
             "youtube_granted": False,
+            "tasks_available": True,  # slice 12 review C7: a Grant row is offered only when
+            "contacts_available": True,  # its tools exist here and are not set to Never
+            "youtube_available": False,  # no API key on this server: no YouTube tools
         }
     }
     # bearer token = primary owner (OWNER is first in the list)
@@ -503,3 +506,50 @@ async def test_integrations_say_which_optional_permissions_are_granted(gc: Async
     assert st["contacts_granted"] is True
     assert st["youtube_granted"] is False and st["tasks_granted"] is False
     assert "drive" not in st  # Drive has its own route (builder A); not part of this view
+
+
+# ---- review C7: a Grant row only when its tools exist here and are not switched off ------------
+
+
+async def test_youtube_is_available_only_with_the_servers_api_key(gsettings: Settings) -> None:
+    keyed = gsettings.model_copy(update={"google_api_key": SecretStr("AIza-test-key")})
+    app = create_app(keyed, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        c = await _client(app)
+        try:
+            await _login(c, OWNER)
+            r = await c.get("/v1/integrations")
+            st = r.json()["google"]
+            assert st["youtube_available"] is True and st["contacts_available"] is True
+            assert "AIza" not in r.text  # the key never reaches the browser
+        finally:
+            await c.aclose()
+
+
+@pytest.mark.parametrize(("row", "grant"), [("contacts", "contacts"), ("todo_change", "tasks")])
+async def test_a_grant_whose_permission_row_is_never_is_not_offered(
+    gc: AsyncClient, row: str, grant: str
+) -> None:
+    await _login(gc, OWNER)
+    r = await gc.put("/v1/permissions", json={"groups": {row: "deny"}}, headers=CSRF)
+    assert r.status_code == 200
+    st = (await gc.get("/v1/integrations")).json()["google"]
+    assert st[f"{grant}_available"] is False
+    others = {"tasks", "contacts"} - {grant}
+    assert all(st[f"{o}_available"] is True for o in others)
+    await gc.put("/v1/permissions", json={"groups": {row: "ask"}}, headers=CSRF)
+    st = (await gc.get("/v1/integrations")).json()["google"]
+    assert st[f"{grant}_available"] is True  # "Ask first" still offers the Grant
+
+
+async def test_unreadable_permissions_still_offer_the_grants(gc: AsyncClient) -> None:
+    """The view can't tell: it offers the row; the gateway itself still fails closed on a call."""
+
+    class Broken:
+        async def rules_for(self, user_id: str) -> list[Any]:
+            raise RuntimeError("storage down")
+
+    await _login(gc, OWNER)
+    gc.app.state.permissions = Broken()  # type: ignore[attr-defined]
+    st = (await gc.get("/v1/integrations")).json()["google"]
+    assert st["contacts_available"] is True and st["tasks_available"] is True

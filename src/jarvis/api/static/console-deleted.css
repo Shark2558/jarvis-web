@@ -1,0 +1,32 @@
+/* src/jarvis/api/static/console-deleted.css — Approvals → Recently deleted, and the Undo chip under a
+   reply (slice 11 D1). Reuses the deck's settings language from console.css (.bset / .dsc disclosure,
+   .bnote, .bfine, .btn.bact, .empty, .btn.retry), .lerr (console-deck.css) and the reply-meta chip
+   (.meta .mchip, console-memory.css); adds only the list rows, the Restored pill and the chip's states.
+   Text sits on the ink tokens (AA on Night and Day); state never rests on colour alone (words: Restore /
+   Restoring… / Restored, Undo / Undoing…); touch targets ≥ 44 px on phones; calm motion respected. */
+#delSet .dbody{padding-bottom:10px}
+#delSet .bnote{margin:10px 0 0}
+.dlist{list-style:none;margin:6px 0 0;padding:0}
+.drow{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 10px;padding:9px 0;border-top:1px solid var(--line-2)}
+.drow:first-child{border-top:0}
+.drow .btxt{flex:1 1 160px;min-width:0}
+.drow .btxt b{display:block;max-width:100%;font-size:13.5px;font-weight:600;line-height:1.4;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drow .btn.bact{margin-top:0}
+.drow .btn.bact[aria-disabled="true"]{opacity:.6;cursor:default}
+.drow .lerr{flex:1 1 100%;margin:0;font-size:12.5px}
+.dpill{display:inline-flex;align-items:center;gap:5px;min-height:32px;font:400 11px/1.3 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ok-ink)}
+.dpill svg{width:14px;height:14px}
+
+/* the reply's Undo chip: the memory chip's shape; the deleted item's title once the list has it */
+.meta .uchip .ut{max-width:22ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-2)}
+.meta .uchip .ut:empty{display:none}
+.meta .uchip[aria-disabled="true"]{cursor:default}
+.meta .uchip.done,.meta .uchip.done .ut{color:var(--ok-ink)}
+.meta .uchip.done{border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.meta .uchip.bad{color:var(--bad-ink);border-color:var(--bad-line)}
+
+@media (max-width:760px){
+  .drow .btn.bact{height:44px}
+  .meta .uchip{min-height:44px}
+}
+html[data-motion="calm"] .meta .uchip{transition-duration:.01s}

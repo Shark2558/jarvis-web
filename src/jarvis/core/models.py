@@ -18,6 +18,7 @@ from jarvis.core.guardrails import PendingAction
 from jarvis.documents.models import AttachmentRef
 from jarvis.llm.base import ContentBlock, Role, Usage
 from jarvis.recall.models import MemoryRef
+from jarvis.undo.models import UndoRef as UndoRef  # re-exported: replies carry it (slice 11)
 from jarvis.web.sources import Source as Source  # re-exported: replies and turns carry it
 
 
@@ -162,6 +163,11 @@ class ChatResponse(BaseModel):
     sources: list[Source] = Field(
         default_factory=list,
         description="Web sources the reply cited as [n] (only stored search results)",
+    )
+    undo: list[UndoRef] = Field(
+        default_factory=list,
+        description="Deletes this reply made that can be undone (the console's Undo chip; "
+        "POST /v1/deleted/{undo_id}/restore)",
     )
 
 

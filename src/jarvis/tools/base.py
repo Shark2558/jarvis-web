@@ -60,6 +60,9 @@ class Tool:
     # True only for tools whose output is the owner's own data (the memory tools): their results
     # do not make the context "untrusted" (jarvis.tools.taint). Default: other people's words.
     trusted_output: bool = False
+    # Slice 11: a delete that keeps a copy in Recently deleted (jarvis.undo), so it may run as R2.
+    # One owner message runs at most `budget.MAX_FREE_DELETES` of them without a card.
+    undoable: bool = False
     # Slice 11 D8: True for tools that decide PER RESULT whether every item in it is the owner's
     # own (`jarvis.tools.provenance.vouch`): the owner's calendar, reminders and to-dos. The
     # gateway honours a vouched result only from such a tool. Never set it for mail, web,

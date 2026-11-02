@@ -14,6 +14,7 @@ from typing import Any
 
 from jarvis.tools.card import one_line, quoted
 from jarvis.tools.tasks_api import date_of, show_date
+from jarvis.undo.models import CARD_LINE
 
 TITLE_LIMIT = 120
 LIST_LIMIT = 60
@@ -71,29 +72,39 @@ def complete_card(task: dict[str, Any]) -> str:
     return f"{line}\n{ASSIGNED_CHANGE}" if task.get("assignmentInfo") else line
 
 
-def _subtasks_line(n: int, all_read: bool) -> str | None:
-    """Google does not document what happens to subtasks: assume they go with their parent."""
+def _subtasks_line(n: int, all_read: bool, *, undo: bool = False) -> str | None:
+    """Google does not document what happens to subtasks: assume they go with their parent.
+    Undo-able (slice 11): they are kept too and come back with it."""
     if n == 0 and all_read:
         return None
     count = f"{'' if all_read else 'at least '}{n} subtask{'' if n == 1 else 's'}"
+    if undo:
+        return f"It has {count}: they are kept too and come back with it on Undo."
     if n == 0:  # none in the part JARVIS could read
         return "Its subtasks could not all be checked: any it has may be deleted with it."
     return f"It has {count}: they may be deleted with it (Google does not say)."
 
 
 def delete_card(
-    task: dict[str, Any], list_title: str | None, *, subtasks: tuple[int, bool] = (0, True)
+    task: dict[str, Any],
+    list_title: str | None,
+    *,
+    subtasks: tuple[int, bool] = (0, True),
+    undo: bool = False,
 ) -> str:
+    """`undo`: the delete keeps a copy in Recently deleted (slice 11)."""
     lines = [
-        f"Delete to-do {_title(task)} — cannot be undone",
+        f"Delete to-do {_title(task)}" + ("" if undo else " — cannot be undone"),
         _due(date_of(task.get("due")), False),
     ]
     if list_title:
         lines.append(_list_line(list_title))
-    if (children := _subtasks_line(*subtasks)) is not None:
+    if (children := _subtasks_line(*subtasks, undo=undo)) is not None:
         lines.append(children)
     if task.get("assignmentInfo"):
         lines.append(ASSIGNED)
+    if undo:
+        lines.append(CARD_LINE)
     return "\n".join(lines)
 
 

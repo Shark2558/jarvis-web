@@ -43,10 +43,10 @@ from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
 from jarvis.core import brain_decisions as decisions
 from jarvis.core.guardrails import PendingAction, guard_input
-from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
+from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn, UndoRef
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
-from jarvis.core.rounds import Rounds
+from jarvis.core.rounds import Rounds, undo_refs
 from jarvis.core.saving import not_recorded_note, record_after_action
 from jarvis.core.window import build_window
 from jarvis.documents.service import DocumentService, forget_files, precheck, save_owner_turn
@@ -103,6 +103,7 @@ class _ReplyMeta:
     rounds: int
     pending: list[PendingApproval]
     memory_used: list[MemoryRef]
+    undo: list[UndoRef] = field(default_factory=list)  # slice 11: the reply's Undo chips
 
 
 @dataclass
@@ -385,7 +386,9 @@ class Brain:
         self._after_turn(req.user_id, session, spec, rec)
         total_ms = int((time.perf_counter() - t0) * 1000)
         self._log_turn(session, len(messages), spec, completion, total_ms)
-        reply_meta = _ReplyMeta(trace_id, total_ms, rounds.count, pending, list(rec.used))
+        reply_meta = _ReplyMeta(
+            trace_id, total_ms, rounds.count, pending, list(rec.used), rounds.undo
+        )
         reply += rounds.reply_note(stored)  # the record is incomplete: say so, plainly
         return await self._chat_response(session, spec, reply, completion, reply_meta)
 
@@ -441,6 +444,7 @@ class Brain:
             pending_approvals=meta.pending,
             memory_used=meta.memory_used,
             sources=session.turns[-1].sources,  # the reply just stored: what it cited
+            undo=meta.undo,
         )
 
     # ---- tool loop ----------------------------------------------------------------------
@@ -629,7 +633,7 @@ class Brain:
         if not (recorded or saved):  # the next turn will not know: tell the owner now
             reply = f"{reply} {not_recorded_note(approved and again is None)}"
         return await self._decision_response(
-            session, spec, reply, completion, trace_id, approved, again
+            session, spec, reply, completion, trace_id, approved, again, undo_refs([d.result])
         )
 
     async def _narrate(
@@ -664,6 +668,7 @@ class Brain:
         trace_id: str,
         approved: bool,
         again: PendingAction | None = None,
+        undo: list[UndoRef] | None = None,
     ) -> ChatResponse:
         cost = completion.cost_usd if completion else 0.0
         cost_inr, total_inr = await self._rupees(cost, session.total_cost_usd)
@@ -682,6 +687,7 @@ class Brain:
             turn_count=len(session.turns),
             tool_calls=1 if approved and again is None else 0,
             pending_approvals=[PendingApproval.from_action(again)] if again is not None else [],
+            undo=undo or [],
         )
 
     async def chat_stream(

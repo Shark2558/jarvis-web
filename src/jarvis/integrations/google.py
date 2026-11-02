@@ -102,6 +102,12 @@ class GoogleServiceDisabled(GoogleAPIError):
     Decided from Google's reason codes only; the vendor message is never shown."""
 
 
+class GoogleNotFound(GoogleAPIError):
+    """404 / 410: the item is not there (never existed, or deleted). Slice 11: a restore checks
+    whether a to-do's parent or subtasks still exist."""
+
+
+GONE_STATUSES = frozenset({404, 410})
 SERVICE_DISABLED_REASONS = frozenset({"accessNotConfigured", "SERVICE_DISABLED"})
 SERVICE_OFF_MSG = "That Google service is not switched on for your JARVIS project yet."
 
@@ -305,6 +311,8 @@ class GoogleConnector:
             )
             if r.status_code == 403 and not SERVICE_DISABLED_REASONS.isdisjoint(_reasons(r)):
                 raise GoogleServiceDisabled(SERVICE_OFF_MSG)
+            if r.status_code in GONE_STATUSES:
+                raise GoogleNotFound(_friendly(r.status_code))
             raise GoogleAPIError(_friendly(r.status_code))
         if not r.content:
             return {}
@@ -435,6 +443,7 @@ __all__ = [
     "GoogleAPIError",
     "GoogleConnector",
     "GoogleNotConnected",
+    "GoogleNotFound",
     "GoogleScopesMissing",
     "GoogleServiceDisabled",
     "build_google_connector",

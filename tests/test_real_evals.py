@@ -192,6 +192,135 @@ async def test_the_guard_refuses_a_model_it_cannot_price(tmp_path: Path) -> None
     assert calls == []  # refused before anything was sent
 
 
+SONNET = "claude-sonnet-5-5"
+
+
+async def _call(p: AnthropicProvider, max_tokens: int = 5) -> None:
+    await p.complete(system="s", messages=MSGS, model=SONNET, max_tokens=max_tokens)
+
+
+# Review L3: the guard fails closed.
+async def test_an_unreadable_spending_record_stops_before_any_call(tmp_path: Path) -> None:
+    ledger = grd.Ledger(tmp_path / "spend.json")
+    ledger.path.write_text("{not json")
+    calls: list[int] = []
+    undo = grd.install(grd.SpendGuard(cap_usd=10, ledger=ledger))
+    try:
+        with pytest.raises(grd.SpendCapReached):
+            await _call(_provider(calls))
+    finally:
+        undo()
+    assert calls == []
+
+
+class FullDisk(grd.Ledger):
+    def write(self, total: float) -> None:
+        raise OSError(28, "No space left on device")
+
+
+async def test_a_spending_record_that_cannot_be_written_stops_the_run(tmp_path: Path) -> None:
+    calls: list[int] = []
+    undo = grd.install(grd.SpendGuard(cap_usd=10, ledger=FullDisk(tmp_path / "spend.json")))
+    p = _provider(calls)
+    try:
+        with pytest.raises(grd.SpendCapReached):  # a BaseException: no suite can swallow it
+            await _call(p)
+        with pytest.raises(grd.SpendCapReached):  # and nothing more is sent
+            await _call(p)
+    finally:
+        undo()
+    assert len(calls) == 1
+
+
+async def test_a_record_that_cannot_even_be_reached_stops_before_any_call(tmp_path: Path) -> None:
+    (tmp_path / "not-a-folder").write_text("")
+    ledger = grd.Ledger(tmp_path / "not-a-folder" / "spend.json")
+    calls: list[int] = []
+    undo = grd.install(grd.SpendGuard(cap_usd=10, ledger=ledger))
+    try:
+        with pytest.raises(grd.SpendCapReached):
+            await _call(_provider(calls))
+    finally:
+        undo()
+    assert calls == []
+
+
+async def test_a_record_lost_mid_run_never_resets_what_was_spent(tmp_path: Path) -> None:
+    ledger = grd.Ledger(tmp_path / "spend.json")
+    calls: list[int] = []
+    undo = grd.install(grd.SpendGuard(cap_usd=0.30, ledger=ledger))
+    p = _provider(calls)
+    try:
+        await _call(p)  # $0.21
+        ledger.path.unlink()  # the file vanishes (or is reset by someone else)
+        with pytest.raises(grd.SpendCapReached):  # the guard still knows: $0.42 > $0.30
+            await _call(p)
+    finally:
+        undo()
+    assert ledger.read() == pytest.approx(0.42)
+
+
+# Review L4: calls in flight and failed calls count.
+async def test_calls_in_flight_count_against_the_stop(tmp_path: Path) -> None:
+    import asyncio
+
+    release = asyncio.Event()
+    calls: list[int] = []
+
+    async def slow(req: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        await release.wait()
+        return httpx.Response(200, json=_message())
+
+    p = _provider(calls)
+    p._client = anthropic.AsyncAnthropic(
+        api_key="sk-test",
+        max_retries=0,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(slow)),
+    )
+    # each call could cost up to 16k output tokens = US$0.16 on Sonnet 5.5; the stop is US$0.25
+    undo = grd.install(grd.SpendGuard(cap_usd=0.25, ledger=grd.Ledger(tmp_path / "s.json")))
+    try:
+        first = asyncio.create_task(_call(p, max_tokens=16_000))
+        for _ in range(500):
+            if calls or first.done():
+                break
+            await asyncio.sleep(0.01)
+        assert calls, first.exception() if first.done() else "the first call never started"
+        with pytest.raises(grd.SpendCapReached):  # a second one at once could pass the stop
+            await asyncio.wait_for(_call(p, max_tokens=16_000), 5)  # (admitted, it would hang)
+        release.set()
+        await first  # it finishes: US$0.21 actually spent, within the stop
+    finally:
+        release.set()
+        undo()
+    assert len(calls) == 1
+
+
+async def test_a_failed_call_is_metered_at_its_estimated_input(tmp_path: Path) -> None:
+    from jarvis.llm.base import LLMTransientError
+
+    def timeout(req: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("the answer never came", request=req)
+
+    p = _provider([])
+    p._client = anthropic.AsyncAnthropic(
+        api_key="sk-test",
+        max_retries=0,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(timeout)),
+    )
+    ledger = grd.Ledger(tmp_path / "spend.json")
+    undo = grd.install(grd.SpendGuard(cap_usd=10, ledger=ledger))
+    long = [ChatMessage(role=Role.USER, content="x" * 40_000)]  # ≈ 13,000 tokens
+    try:
+        with pytest.raises(LLMTransientError):
+            await p.complete(system="s", messages=long, model=SONNET, max_tokens=5)
+    finally:
+        undo()
+    want = est.tokens(40_001) * PRICES[SONNET].input_per_mtok / 1_000_000
+    assert ledger.read() == pytest.approx(want, rel=1e-3)
+
+
 def test_the_guard_runs_a_suite_script_and_maps_a_breach_to_exit_3(tmp_path: Path) -> None:
     script = tmp_path / "spendy.py"
     script.write_text(

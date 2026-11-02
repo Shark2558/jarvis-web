@@ -103,7 +103,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     keys, e = _state(args.state)
     cat = catalogue(ROOT)
     ledger = Ledger(Path(args.ledger))
-    ledger.reset()  # this run's spending starts at zero
+    try:
+        ledger.reset()  # this run's spending starts at zero
+    except OSError:
+        print("Could not create this run's spending record, so nothing was run or spent.")
+        return 2
     return run_suites(
         suites=[cat[k] for k in keys],
         estimate=e,

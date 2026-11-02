@@ -88,9 +88,12 @@ def run_suites(
         if rc in (EXIT_CAP, EXIT_UNMETERED):
             stopped = rc
             break
-    spent = ledger.read() * estimate.inr_per_usd
+    try:
+        spent = rupees(ledger.read() * estimate.inr_per_usd)
+    except (OSError, ValueError):  # the suites stopped on this too (fail closed)
+        spent, stopped = "unknown (the spending record could not be read)", stopped or EXIT_CAP
     say(
-        f"\nSpent: about {rupees(spent)} (estimate {rupees(estimate.total_inr)},"
+        f"\nSpent: about {spent} (estimate {rupees(estimate.total_inr)},"
         f" safety stop {rupees(estimate.cap_inr)})."
     )
     if stopped == EXIT_CAP:

@@ -49,7 +49,7 @@ from jarvis.tools.tasks_api import (
     parse_task_id,
 )
 from jarvis.tools.tasks_cards import add_card, complete_card, delete_card, update_card
-from jarvis.tools.tasks_undo import TaskRestorer, delete_kept, delete_risk, family
+from jarvis.tools.tasks_undo import TaskRestorer, delete_kept, family
 from jarvis.undo.service import UndoBin
 
 SOURCE = "to-do list"
@@ -366,7 +366,7 @@ class TasksAPI:
             card = delete_card(task, await self._list_title(uid, ref), subtasks=children)
             return Preview(card, ActionRisk.IRREVERSIBLE)
         fam = await family(self.client, uid, ref, task)  # fails closed like the look-up itself
-        risk, _ = delete_risk(fam.task, all_read=fam.all_read)
+        risk, _ = fam.risk()  # an assigned subtask makes it R3 too
         undo = risk is ActionRisk.REVERSIBLE
         title = await self._list_title(uid, ref)
         card = delete_card(fam.task, title, subtasks=(fam.subtasks, fam.all_read), undo=undo)

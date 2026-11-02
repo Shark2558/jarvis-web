@@ -107,6 +107,20 @@ class GoogleNotFound(GoogleAPIError):
     whether a to-do's parent or subtasks still exist."""
 
 
+class GoogleUncertain(GoogleAPIError):
+    """Slice 11 fix: Google may or may not have made the change — no answer (timeout, the
+    connection dropped) or a 5xx. A delete is checked by reading the item again."""
+
+
+class GoogleConflict(GoogleAPIError):
+    """409: an item with that id already exists (slice 11: a restore that already happened)."""
+
+
+class GoogleInvalid(GoogleAPIError):
+    """400: Google refused the request as invalid (slice 11: a restore retries without the
+    `previous` sibling it named)."""
+
+
 GONE_STATUSES = frozenset({404, 410})
 SERVICE_DISABLED_REASONS = frozenset({"accessNotConfigured", "SERVICE_DISABLED"})
 SERVICE_OFF_MSG = "That Google service is not switched on for your JARVIS project yet."
@@ -311,9 +325,7 @@ class GoogleConnector:
             )
             if r.status_code == 403 and not SERVICE_DISABLED_REASONS.isdisjoint(_reasons(r)):
                 raise GoogleServiceDisabled(SERVICE_OFF_MSG)
-            if r.status_code in GONE_STATUSES:
-                raise GoogleNotFound(_friendly(r.status_code))
-            raise GoogleAPIError(_friendly(r.status_code))
+            raise _error_for(r.status_code)
         if not r.content:
             return {}
         try:
@@ -340,7 +352,20 @@ class GoogleConnector:
             )
         except httpx.HTTPError as exc:
             log.warning("google api unreachable", extra={"reason": type(exc).__name__})
-            raise GoogleAPIError("Could not reach Google; try again shortly.") from exc
+            raise GoogleUncertain("Could not reach Google; try again shortly.") from exc
+
+
+def _error_for(status: int) -> GoogleAPIError:
+    """The class a failed call raises (its words are always ours, never Google's)."""
+    if status in GONE_STATUSES:
+        return GoogleNotFound(_friendly(status))
+    if status == 409:
+        return GoogleConflict(_friendly(status))
+    if status == 400:
+        return GoogleInvalid(_friendly(status))
+    if status >= 500:
+        return GoogleUncertain(_friendly(status))
+    return GoogleAPIError(_friendly(status))
 
 
 def _reasons(r: httpx.Response) -> set[str]:
@@ -441,11 +466,14 @@ __all__ = [
     "TOKEN_URL",
     "TOOL_SCOPES",
     "GoogleAPIError",
+    "GoogleConflict",
     "GoogleConnector",
+    "GoogleInvalid",
     "GoogleNotConnected",
     "GoogleNotFound",
     "GoogleScopesMissing",
     "GoogleServiceDisabled",
+    "GoogleUncertain",
     "build_google_connector",
     "can_insert",
     "can_use_tasks",

@@ -47,6 +47,10 @@ class DeletedItem(BaseModel):
     # created by the owner, nobody else on it, not from Gmail; to-do: no links, not assigned).
     # A Recently deleted listing whose every item is owner-authored can then be trusted.
     owner_authored: bool = False
+    # slice 11 fix: where the delete came from — the conversation and the request's trace id
+    # (the audit entry of the delete carries the same trace id in the logs)
+    session_id: str | None = None
+    trace_id: str | None = None
 
     def expired(self, now: datetime) -> bool:
         return now >= self.expires_at
@@ -64,6 +68,7 @@ class RestoreStatus(StrEnum):
     EXPIRED = "expired"
     BUSY = "busy"
     UNAVAILABLE = "unavailable"
+    STILL_THERE = "still_there"  # the original was never deleted: no copy is made
 
 
 class RestoreOutcome(BaseModel):
@@ -125,6 +130,8 @@ class DeletedView(BaseModel):
 class DeletedList(BaseModel):
     items: list[DeletedView]
     kept_days: int = RETENTION_DAYS
+    # slice 11 fix: False on a server without persistent storage (no bin: deletes stay R3)
+    available: bool = True
 
 
 __all__ = [

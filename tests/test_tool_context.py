@@ -119,8 +119,25 @@ async def test_tool_sees_user_and_session_from_scope(gw: tuple[Gateway, list[Any
         ToolCall(id="c4", name="calendar_create_event", arguments={"summary": "x"}),
         scope="u_abc:sess_1",
     )
-    assert seen == [ToolContext(user_id="u_abc", session_id="sess_1", scope="u_abc:sess_1")]
+    # slice 11 fix: the tool also learns the risk the call was decided at (R2: no guests)
+    want = ToolContext(
+        user_id="u_abc",
+        session_id="sess_1",
+        scope="u_abc:sess_1",
+        approved_risk=ActionRisk.REVERSIBLE,
+    )
+    assert seen == [want]
     assert current_tool_context() is None  # reset after the run
+
+
+def test_a_context_allows_no_more_than_was_approved() -> None:
+    r1, r2, r3 = ActionRisk.READ_ONLY, ActionRisk.REVERSIBLE, ActionRisk.IRREVERSIBLE
+    at_r2 = ToolContext("u", "s", "u:s", confirmed=True, approved_risk=r2)
+    assert at_r2.allows(r1) and at_r2.allows(r2) and not at_r2.allows(r3)
+    assert ToolContext("u", "s", "u:s", confirmed=True, approved_risk=r3).allows(r3)
+    outside = ToolContext("u", "s", "u:s")  # no gateway decision: R3 only when approved
+    assert outside.allows(r2) and not outside.allows(r3)
+    assert ToolContext("u", "s", "u:s", confirmed=True).allows(r3)
 
 
 async def test_context_is_set_on_the_approved_path_and_cleared_after(

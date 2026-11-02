@@ -3,8 +3,14 @@
 before one, and how a to-do comes back.
 
 Risk of a delete: R2 — undo-able — for the owner's own to-do; R3 for one assigned from a Google
-Doc or Chat space (deleting it here deletes it there too, for other people) and for one whose
-subtasks JARVIS can't all read (more than the list pages it reads: it couldn't keep them all).
+Doc or Chat space, or with such a subtask (deleting it here deletes it there too, for other
+people), and for one whose subtasks JARVIS can't all read (more than the list pages it reads: it
+couldn't keep them all). A run that finds more than was approved refuses (`ToolContext.allows`).
+
+Slice 11 fix: a delete whose answer is lost is checked by reading the to-do again (gone: 404 or
+`deleted: true`) before the copy is dropped (`tools.undo_delete`); a restore first checks that the
+original is really gone (`StillThere` otherwise), and an insert whose `previous` sibling Google
+refuses (400) is tried once more without it.
 
 Subtasks: Google's Tasks docs don't say what deleting a parent does to its subtasks (checked
 2026-11-02: tasks.delete only "Deletes the specified task from the task list"), so the copy keeps
@@ -23,12 +29,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.integrations.google import GoogleAPIError
+from jarvis.integrations.google import GoogleAPIError, GoogleInvalid
 from jarvis.logging import get_logger
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.tasks_api import TaskRef, TasksClient, valid_list_id, valid_task_id
-from jarvis.undo.service import Restored, UndoBin
+from jarvis.tools.undo_delete import delete_after_keep, keep_copy
+from jarvis.undo.models import DeletedItem
+from jarvis.undo.service import Restored, StillThere, UndoBin
 from jarvis.undo.tools import deleted_result
 
 log = get_logger(__name__)
@@ -40,7 +48,9 @@ CHANGED = (
     "deleted. Look it up again and ask the owner."
 )
 WHY_ASSIGNED = "it was assigned from Google Docs or Chat"
+WHY_ASSIGNED_KID = "one of its subtasks was assigned from Google Docs or Chat"
 WHY_UNREAD = "its subtasks could not all be checked"
+STILL_THERE = "That to-do is still on your list (it was never deleted), so nothing was restored."
 
 
 def owner_authored(task: dict[str, Any]) -> bool:
@@ -49,9 +59,14 @@ def owner_authored(task: dict[str, Any]) -> bool:
     return not task.get("links") and not task.get("assignmentInfo")
 
 
-def delete_risk(task: dict[str, Any], *, all_read: bool) -> tuple[ActionRisk, str]:
+def delete_risk(
+    task: dict[str, Any], *, all_read: bool, kids: Sequence[dict[str, Any]] = ()
+) -> tuple[ActionRisk, str]:
+    """`kids`: every subtask that goes with it (an assigned one makes the delete R3 too)."""
     if task.get("assignmentInfo"):
         return ActionRisk.IRREVERSIBLE, WHY_ASSIGNED
+    if any(k.get("assignmentInfo") for k in kids):
+        return ActionRisk.IRREVERSIBLE, WHY_ASSIGNED_KID
     if not all_read:
         return ActionRisk.IRREVERSIBLE, WHY_UNREAD
     return ActionRisk.REVERSIBLE, ""
@@ -119,8 +134,15 @@ class Family:
     all_read: bool
 
     @property
+    def kids(self) -> list[dict[str, Any]]:
+        return descendants(self.items, str(self.task.get("id") or ""))
+
+    @property
     def subtasks(self) -> int:
-        return len(descendants(self.items, str(self.task.get("id") or "")))
+        return len(self.kids)
+
+    def risk(self) -> tuple[ActionRisk, str]:
+        return delete_risk(self.task, all_read=self.all_read, kids=self.kids)
 
 
 async def family(
@@ -132,30 +154,34 @@ async def family(
     return Family(task, page.items, not page.more)
 
 
+async def _gone(client: TasksClient, uid: str, ref: TaskRef) -> bool:
+    """Read the to-do again after a lost answer: gone (404 / 410 / `deleted: true`) or not."""
+    return not await client.exists(uid, ref)
+
+
 async def delete_kept(client: TasksClient, undo: UndoBin, ref: TaskRef) -> dict[str, Any]:
     """Delete the to-do (re-read now): undo-able → copy kept FIRST (none kept → nothing
-    deleted); not undo-able → only when the owner approved it."""
+    deleted); not undo-able → only on a card approved at that risk."""
     ctx = require_tool_context()
-    fam = await family(client, ctx.user_id, ref)
-    risk, _ = delete_risk(fam.task, all_read=fam.all_read)
+    uid = ctx.user_id
+    fam = await family(client, uid, ref)
+    risk, _ = fam.risk()
+    if not ctx.allows(risk):
+        raise RuntimeError(CHANGED)
     if risk is ActionRisk.IRREVERSIBLE:
-        if not ctx.confirmed:
-            raise RuntimeError(CHANGED)
-        await client.delete(ctx.user_id, ref)
+        await client.delete(uid, ref)
         return {"deleted": True, "id": ref.composite}
     snap = task_snapshot(ref, fam.task, fam.items)
     title = one_line(fam.task.get("title"), 1024) or "(no title)"
     # owner-authored only when the to-do AND every subtask kept with it are (a restore and a
     # listing carry all of them)
-    mine = all(owner_authored(t) for t in [fam.task, *descendants(fam.items, ref.task_id)])
-    item = await undo.keep(ctx.user_id, "task", title, snap, owner_authored=mine)
-    try:
-        await client.delete(ctx.user_id, ref)
-    except Exception:
-        await undo.discard(ctx.user_id, item.id)  # not deleted: no "undo" for it
-        raise
-    extra = {"subtasks": len(snap["children"])} if snap["children"] else {}
-    return deleted_result(item, source=SOURCE, **extra)
+    mine = all(owner_authored(t) for t in [fam.task, *fam.kids])
+    item = await keep_copy(undo, ctx, "task", title, snap, owner_authored=mine)
+    done = await delete_after_keep(
+        undo, uid, item.id, lambda: client.delete(uid, ref), lambda: _gone(client, uid, ref)
+    )
+    extra: dict[str, Any] = {"subtasks": len(snap["children"])} if snap["children"] else {}
+    return deleted_result(item, source=SOURCE, confirmed=done, **extra)
 
 
 def _id_or_none(value: Any) -> str | None:
@@ -170,23 +196,39 @@ def _dict(value: Any) -> dict[str, Any]:
 class TaskRestorer:
     client: TasksClient
 
-    async def restore(self, uid: str, snapshot: dict[str, Any]) -> Restored:
+    async def restore(self, uid: str, item: DeletedItem) -> Restored:
+        snapshot = item.snapshot
         list_id, root = str(snapshot.get("list_id") or ""), _id_or_none(snapshot.get("id"))
         if not valid_list_id(list_id) or root is None:
             raise GoogleAPIError("The kept copy is unreadable, so the to-do can't be restored.")
         await self.client.require(uid)
+        if await self.client.exists(uid, TaskRef(list_id, root)):  # never deleted: no copy
+            raise StillThere(STILL_THERE)
         parent = await self._still(uid, list_id, snapshot.get("parent"))
         # a sibling is only "previous" at the same level: a gone parent → the top level, alone
         had_parent = snapshot.get("parent") is not None
         previous = None if had_parent and parent is None else snapshot.get("previous")
         previous = await self._still(uid, list_id, previous)
         body = _fields(_dict(snapshot.get("task")))
-        made = await self.client.insert(uid, list_id, body, parent=parent, previous=previous)
-        new_id = str(made["id"])
+        new_id = await self._insert(uid, list_id, body, parent, previous)
         children = snapshot.get("children")
         kids = list(children) if isinstance(children, list) else []
         note = await self._children(uid, list_id, {root: new_id}, kids)
         return Restored(new_id=new_id, note=note)
+
+    async def _insert(
+        self, uid: str, list_id: str, body: dict[str, Any], parent: str | None, prev: str | None
+    ) -> str:
+        """Insert under `parent` after `prev`; a `prev` Google refuses (400: moved, or no longer
+        a sibling) is dropped and the insert tried once more."""
+        try:
+            made = await self.client.insert(uid, list_id, body, parent=parent, previous=prev)
+        except GoogleInvalid:
+            if prev is None:
+                raise
+            log.info("restore: previous sibling refused; inserting without it")
+            made = await self.client.insert(uid, list_id, body, parent=parent)
+        return str(made["id"])
 
     async def _still(self, uid: str, list_id: str, task_id: Any) -> str | None:
         tid = _id_or_none(task_id)
@@ -232,8 +274,7 @@ class TaskRestorer:
                 await self.client.move(uid, ref, parent=parent, previous=previous)
             return cid
         body = _fields(_dict(c.get("task")))
-        made = await self.client.insert(uid, list_id, body, parent=parent, previous=previous)
-        return str(made["id"])
+        return await self._insert(uid, list_id, body, parent, previous)
 
 
 def _children_note(back: int, failed: int) -> str:

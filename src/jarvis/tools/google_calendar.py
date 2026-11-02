@@ -79,7 +79,10 @@ def parse_when(value: Any, tz: ZoneInfo, *, name: str) -> datetime:
         dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
     except ValueError:
         raise ValueError(f"{name} must be ISO 8601 (e.g. 2027-01-15T09:00:00+05:30)") from None
-    return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt.astimezone(tz)
+    try:
+        return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt.astimezone(tz)
+    except OverflowError:  # year 1 / 9999 shifted past the calendar's ends (slice 11 fix)
+        raise ValueError(f"{name} is out of range for a calendar") from None
 
 
 def parse_window(args: dict[str, Any], tz: ZoneInfo) -> tuple[datetime, datetime]:
@@ -166,15 +169,20 @@ def _event_time(part: dict[str, Any] | None, tz: ZoneInfo) -> tuple[str, bool]:
 class CalendarAPI:
     conn: GoogleConnector
     undo: UndoBin | None = None  # slice 11: Recently deleted; None → deletes stay R3
+    fallback_tz: str = "UTC"  # slice 11 fix: the owner's configured zone (reminders pass it)
 
     async def owner_tz(self, user_id: str) -> ZoneInfo:
-        """The primary calendar's time zone; UTC when it cannot be read. Looked up per call."""
+        """The primary calendar's time zone; `fallback_tz` (else UTC) when it cannot be read.
+        Looked up per call."""
         try:
             info = await self.conn.request(user_id, "GET", TZ_URL)
             return ZoneInfo(str(info.get("timeZone") or "UTC"))
         except (GoogleAPIError, ZoneInfoNotFoundError, ValueError):
-            log.info("calendar time zone unavailable; using UTC")
-            return ZoneInfo("UTC")
+            log.warning("calendar time zone unavailable; using the configured zone")
+            try:
+                return ZoneInfo(self.fallback_tz)
+            except (ZoneInfoNotFoundError, ValueError):
+                return ZoneInfo("UTC")
 
     def shape(self, e: dict[str, Any], tz: ZoneInfo) -> dict[str, Any]:
         """Only requested fields; addresses as clean bare lines (capped), other people's words
@@ -449,7 +457,7 @@ def calendar_tools(conn: GoogleConnector, *, undo: UndoBin | None = None) -> lis
     R2 and undo-able (and the bin learns to restore events); without it every delete is R3."""
     api = CalendarAPI(conn, undo)
     if undo is not None:
-        undo.register("event", CalendarRestorer(conn, EVENTS_URL))
+        undo.register("event", CalendarRestorer(conn, EVENTS_URL, TZ_URL))
     return [
         Tool(
             "calendar_list_events",

@@ -49,7 +49,12 @@ from jarvis.permissions.errors import (
     PasskeysUnavailable,
     ProofRequired,
 )
-from jarvis.permissions.groups import GROUPS, PermissionRejected, validate_choices
+from jarvis.permissions.groups import (
+    GROUPS,
+    PermissionGroup,
+    PermissionRejected,
+    validate_choices,
+)
 from jarvis.permissions.models import (
     ChallengeRequest,
     ChallengeView,
@@ -150,6 +155,24 @@ def _when(at: datetime) -> str:
     return at.strftime("%d %b %Y, %H:%M UTC")
 
 
+INHERITED_NOTE = "Never: you had switched off deleting before."
+
+
+def _group_view(g: PermissionGroup, perms: OwnerPermissions) -> GroupView:
+    inherited = g.id in perms.inherited  # slice 11 fix HIGH-1: say why it reads as Never
+    return GroupView(
+        id=g.id,
+        section=g.section,
+        label=g.label,
+        hint=f"{g.hint} {INHERITED_NOTE}" if inherited else g.hint,
+        irreversible=g.irreversible,
+        choices=[c.value for c in g.choices],
+        effect=perms.choices.get(g.id, g.default).value,
+        default=g.default.value,
+        inherited=inherited,
+    )
+
+
 class PermissionsService:
     def __init__(
         self,
@@ -248,19 +271,7 @@ class PermissionsService:
         fresh_left_s: int | None,
         error: str = "",
     ) -> PermissionsView:
-        groups = [
-            GroupView(
-                id=g.id,
-                section=g.section,
-                label=g.label,
-                hint=g.hint,
-                irreversible=g.irreversible,
-                choices=[c.value for c in g.choices],
-                effect=perms.choices.get(g.id, g.default).value,
-                default=g.default.value,
-            )
-            for g in GROUPS
-        ]
+        groups = [_group_view(g, perms) for g in GROUPS]
         reset = (
             ResetView(requested_at=perms.reset_requested_at, effective_at=perms.reset_effective_at)
             if perms.reset_requested_at and perms.reset_effective_at

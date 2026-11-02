@@ -9,7 +9,16 @@ from typing import Any
 import pytest
 
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
-from jarvis.permissions.groups import GROUPS, PermissionRejected, group_ids, groups_for, rules_for
+from jarvis.permissions.groups import (
+    GROUPS,
+    PermissionRejected,
+    group_ids,
+    groups_for,
+    inherited_ids,
+    pinned,
+    rules_for,
+    stored_choices,
+)
 from jarvis.permissions.groups import validate_choices as validate
 from jarvis.tools.audit import AuditLog
 from jarvis.tools.base import Tool, ToolCall
@@ -31,10 +40,14 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     ("calendar_create_event", R3, {"calendar_change", "calendar_delete"}),  # with attendees
     ("calendar_update_event", R2, {"calendar_change"}),
     ("calendar_update_event", R3, {"calendar_change", "calendar_delete"}),
-    # slice 11 D5: the owner's own event's delete is undo-able (R2) and only in "Add, change and
-    # delete"; a shared / repeating one (R3) is also in the ask-first row
-    ("calendar_delete_event", R2, {"calendar_change"}),
-    ("calendar_delete_event", R3, {"calendar_change", "calendar_delete"}),
+    # slice 11 fix HIGH-1: the owner's own event's delete is undo-able (R2) and has its own row
+    # ("Delete your own events"), so a Never on it keeps blocking; a shared / repeating one (R3)
+    # is only in the ask-first row. "Add and change" never matches a delete.
+    ("calendar_delete_event", R2, {"calendar_remove"}),
+    ("calendar_delete_event", R3, {"calendar_delete"}),
+    # a restore brings back an event or a to-do: both "change" rows (strictest wins)
+    ("deleted_restore", R2, {"calendar_change", "todo_change"}),
+    ("deleted_list", R1, {"calendar_read"}),
     ("reminder_add", R2, {"reminders"}),  # slice 11 B: its own row, after the Calendar rows
     ("reminder_update", R2, {"reminders"}),
     ("reminders_list", R1, {"reminders"}),
@@ -49,8 +62,8 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     ("task_update", R2, {"todo_change"}),
     ("task_complete", R2, {"todo_change"}),
     ("create_reminder", R2, {"todo_change"}),
-    ("task_delete", R2, {"todo_change"}),  # slice 11: undo-able
-    ("task_delete", R3, {"todo_change", "todo_delete"}),  # assigned from Docs / Chat
+    ("task_delete", R2, {"todo_remove"}),  # slice 11: undo-able, its own row
+    ("task_delete", R3, {"todo_delete"}),  # assigned from Docs / Chat
     ("memory_save", R2, {"memory_save"}),
     ("memory_save", R3, {"memory_save"}),  # tainted round
     ("memory_forget", R3, {"memory_forget"}),
@@ -95,16 +108,63 @@ def test_irreversible_groups_match_only_irreversible_calls() -> None:
 
 def test_slice_11_rows_read_as_planned() -> None:
     by_id = {g.id: g for g in GROUPS}
-    cal, shared = by_id["calendar_change"], by_id["calendar_delete"]
-    assert cal.label == "Add, change and delete your events" and cal.risk is R2
-    assert "Recently deleted" in cal.hint and "30 days" in cal.hint
-    assert shared.label == "Invite people, shared and repeating events" and shared.irreversible
-    todo, assigned = by_id["todo_change"], by_id["todo_delete"]
-    assert todo.label == "Read, change and delete your to-dos" and todo.risk is R2
-    assert "Recently deleted" in todo.hint
-    assert assigned.label == "Delete to-dos assigned from Docs or Chat" and assigned.irreversible
-    # R2 defaults stay Allow: the owner's "all rights"
-    assert cal.default is Effect.ALLOW and todo.default is Effect.ALLOW
+    cal, remove = by_id["calendar_change"], by_id["calendar_remove"]
+    shared = by_id["calendar_delete"]
+    assert cal.label == "Add and change your events" and cal.risk is R2
+    assert remove.label == "Delete your own events — kept 30 days in Recently deleted"
+    assert remove.risk is R2 and "undo" in remove.hint.lower()
+    assert shared.irreversible and "Invite people" in shared.label
+    assert "delete" in shared.label.lower() and "can't be undone" in shared.label
+    todo, todo_rm, assigned = by_id["todo_change"], by_id["todo_remove"], by_id["todo_delete"]
+    assert todo.label == "Read and change your to-dos" and todo.risk is R2
+    assert todo_rm.label == "Delete your own to-dos — kept 30 days" and todo_rm.risk is R2
+    assert assigned.irreversible and "can't be undone" in assigned.label
+    assert "Docs or Chat" in assigned.hint
+    for g in (cal, remove, todo, todo_rm):  # R2 defaults stay Allow: the owner's "all rights"
+        assert g.default is Effect.ALLOW
+    order = group_ids()
+    assert order.index("calendar_change") < order.index("calendar_remove")
+    assert order.index("calendar_remove") < order.index("calendar_delete")
+    assert order.index("todo_change") < order.index("todo_remove") < order.index("todo_delete")
+
+
+def test_the_change_rows_never_match_a_delete() -> None:
+    """Slice 11 fix HIGH-1: Allow on "Add and change" must not let through a delete the owner
+    switched off, and Never on it must not block deletes the owner allowed."""
+    by_id = {g.id: g for g in GROUPS}
+    for risk in (R2, R3):
+        assert not by_id["calendar_change"].matches("calendar_delete_event", risk)
+        assert not by_id["todo_change"].matches("task_delete", risk)
+    assert by_id["calendar_change"].matches("calendar_some_new_tool", R2)  # catch-all kept
+    assert by_id["todo_change"].matches("task_some_new_tool", R2)
+
+
+@pytest.mark.parametrize(
+    ("old", "new"), [("calendar_delete", "calendar_remove"), ("todo_delete", "todo_remove")]
+)
+def test_an_earlier_never_on_deletes_carries_over_to_the_new_delete_row(old: str, new: str) -> None:
+    """Before slice 11 every delete was in the R3 row: an owner who set it to Never meant "never
+    delete". Until they set the new R2 row themselves it reads as Never too."""
+    assert stored_choices({old: "deny"})[new] is Effect.DENY
+    assert new not in stored_choices({old: "ask"})
+    assert stored_choices({old: "deny", new: "allow"})[new] is Effect.ALLOW  # their own choice
+    assert stored_choices({old: "deny", new: "ask"})[new] is Effect.ASK
+    tool = TOOL_OF[new]
+    assert Policy(rules_for({old: Effect.DENY})).decide(tool, R2, {}) is Effect.DENY
+    assert Policy(rules_for({old: Effect.ASK})).decide(tool, R2, {}) is Effect.ALLOW
+
+
+def test_a_write_pins_the_new_delete_rows_so_a_later_never_does_not_spread() -> None:
+    """Once the owner's choices are written after the split, the new rows are stored explicitly:
+    a Never set on the R3 row afterwards means only what that row says."""
+    written = pinned({"web": Effect.DENY})
+    assert written["calendar_remove"] is Effect.ALLOW and written["todo_remove"] is Effect.ALLOW
+    raw = {k: v.value for k, v in {**written, "calendar_delete": Effect.DENY}.items()}
+    assert stored_choices(raw)["calendar_remove"] is Effect.ALLOW
+    kept = pinned(stored_choices({"calendar_delete": "deny"}))  # an inherited Never is kept
+    assert kept["calendar_remove"] is Effect.DENY
+    assert inherited_ids({"calendar_delete": "deny"}) == {"calendar_remove"}
+    assert inherited_ids({"calendar_delete": "deny", "calendar_remove": "allow"}) == set()
 
 
 def test_validate_refuses_allow_for_irreversible_groups_unknown_groups_and_effects() -> None:
@@ -140,12 +200,14 @@ def test_policy_refuses_an_allow_rule_scoped_to_irreversible_calls() -> None:
 RISK_OF = {
     "calendar_read": [R1],
     "calendar_change": [R2, R3],
+    "calendar_remove": [R2],
     "calendar_delete": [R3],
     "reminders": [R1, R2],
     "email_read": [R1],
     "email_draft": [R2],
     "email_send": [R3],
     "todo_change": [R1, R2],
+    "todo_remove": [R2],
     "todo_delete": [R3],
     "memory_save": [R2, R3],
     "memory_forget": [R3],
@@ -155,12 +217,14 @@ RISK_OF = {
 TOOL_OF = {
     "calendar_read": "calendar_list_events",
     "calendar_change": "calendar_create_event",
+    "calendar_remove": "calendar_delete_event",
     "calendar_delete": "calendar_delete_event",
     "reminders": "reminder_add",
     "email_read": "gmail_read",
     "email_draft": "gmail_create_draft",
     "email_send": "gmail_send",
     "todo_change": "task_add",
+    "todo_remove": "task_delete",
     "todo_delete": "task_delete",
     "memory_save": "memory_save",
     "memory_forget": "memory_forget",

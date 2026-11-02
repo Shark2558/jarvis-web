@@ -15,6 +15,7 @@ from httpx import AsyncClient
 
 from jarvis.config import Settings
 from jarvis.core import approve_all as approve_many
+from jarvis.core import brain_decisions as decisions
 from jarvis.core.approve_all import CardStatus
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ActionRisk, AskReason, ConfirmationGate, PendingAction
@@ -294,10 +295,12 @@ async def test_bookkeeping_that_raises_after_a_run_never_says_nothing_was_done(
     provider.script_tool_calls([_remind("r1", "a"), _remind("r2", "b")], "Waiting.")
     resp = await brain.chat(ChatRequest(message="x", channel="voice"))
 
-    def broken(results: Any) -> Any:
+    def broken(*args: Any) -> Any:
         raise RuntimeError("undo index unreadable")
 
-    monkeypatch.setattr(approve_many, "undo_refs", broken)
+    # the Undo chip is worked out right after the call ran (slice 11 integration: in
+    # `brain_decisions.approved`, shared with the single approve)
+    monkeypatch.setattr(decisions, "undo_refs", broken)
     provider.script("Both set, Sir.")
     out = await brain.approve_all(_ids(resp), session_id=resp.session_id)
     assert [r["text"] for r in world.reminders] == ["a", "b"]

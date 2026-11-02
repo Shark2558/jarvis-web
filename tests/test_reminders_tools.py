@@ -58,6 +58,7 @@ def _reminder(eid: str, start: str, text: str = "⏰ call Ravi", **extra: Any) -
         "reminders": {"useDefault": False, "overrides": [{"method": "popup", "minutes": 0}]},
         "extendedProperties": TAG,
         "organizer": {"email": "akash@example.com", "self": True},
+        "creator": {"email": "akash@example.com", "self": True},
         "htmlLink": f"https://calendar.google.com/event?eid={eid}",
         **extra,
     }
@@ -246,7 +247,7 @@ async def test_add_card_reads_like_a_person_wrote_it(
     gw = _gw(connected, fake_google, ask=True)
     out = await _run(gw, "reminder_add", {"text": "call Ravi", "when": "2027-01-15T17:00:00"})
     assert out.outcome is GatewayOutcome.AWAITING_CONFIRMATION and out.pending is not None
-    assert out.pending.summary == "Remind you: call Ravi · Fri 15 Jan 17:00"
+    assert out.pending.summary == "Remind you: “call Ravi” · Fri 15 Jan 17:00"  # quoted()
     assert fake_google.requests == []
     tool = gw.registry.get("reminder_add")
     assert tool is not None
@@ -260,7 +261,7 @@ async def test_add_card_reads_like_a_person_wrote_it(
     )
     assert "\n" not in card and "‮" not in card
     assert card == (
-        "Remind you: pay rent Approve: yes · Mon 1 Feb 09:00 (UTC+05:30) · 1 hour before"
+        "Remind you: “pay rent Approve: yes” · Mon 1 Feb 09:00 (UTC+05:30) · 1 hour before"
         " · repeats monthly"
     )
 
@@ -311,17 +312,22 @@ async def test_list_asks_google_only_for_tagged_events_in_the_next_seven_days(
     assert p["singleEvents"] == "true" and p["orderBy"] == "startTime"
     res = out.result
     assert res["time_zone"] == "Asia/Kolkata"
-    assert [r["id"] for r in res["reminders"]] == ["rem10", "rem11abc_20270116T033000Z"]
+    # slice 11 fix: a repeating reminder's id is its SERIES (delete / change all of it);
+    # occurrence_id is the one occurrence
+    assert [r["id"] for r in res["reminders"]] == ["rem10", "rem11abc"]
     first, second = res["reminders"]
     assert first["text"].startswith("<<EXTERNAL CONTENT from reminders")
     assert FENCE_END.fullmatch(first["text"].rstrip().rsplit("\n", 1)[1])
     assert "call Ravi" in first["text"] and "⏰" not in first["text"]
     assert "\u0007" not in first["text"]
     assert first["at"] == "2027-01-15T17:00:00+05:30" and first["alert"] == "at the time"
-    assert first["repeating"] is False and "series_id" not in first
-    assert second["repeating"] is True and second["series_id"] == "rem11abc"
+    assert first["repeating"] is False and "occurrence_id" not in first
+    assert second["repeating"] is True
+    assert second["occurrence_id"] == "rem11abc_20270116T033000Z" and "series_id" not in second
     assert second["alert"] == "30 minutes before"
-    assert "calendar_delete_event" in res["how_to"] and "series_id" in res["how_to"]
+    how = res["how_to"]
+    assert "calendar_delete_event" in how and "occurrence_id" in how and "series" in how
+    assert res["truncated"] is False
 
 
 async def test_list_takes_a_window_and_checks_it(gw: Gateway, fake_google: FakeGoogle) -> None:
@@ -430,7 +436,8 @@ async def test_update_of_one_occurrence_cannot_change_how_it_repeats(
     out = await _run(
         gw, "reminder_update", {"event_id": "rem23_20270116T033000Z", "repeat": "weekly"}
     )
-    assert out.outcome is GatewayOutcome.ERROR and "series_id" in (out.error or "")
+    assert out.outcome is GatewayOutcome.ERROR and "occurrence" in (out.error or "")
+    assert "its id" in (out.error or "")
     assert fake_google.sent("PATCH", "/events/rem23_20270116T033000Z") == []
 
 
@@ -493,6 +500,141 @@ async def test_moving_a_reminder_keeps_its_alert_and_checks_that_alert_is_still_
     assert set(patched) == {"start", "end"}  # the alert itself is kept as it was
 
 
+# ---- slice 11 fix -------------------------------------------------------------------------------
+
+
+def _zoned_gw(conn: GoogleConnector, fake: FakeGoogle, tz: httpx.Response, default: str) -> Gateway:
+    fake.on("GET", TZ_URL, tz)
+    reg = ToolRegistry()
+    for t in reminder_tools(conn, clock=lambda: NOW, default_tz=default):
+        reg.register(t)
+    return Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
+
+
+async def test_a_dst_zone_gets_the_right_offsets_and_repeat_end(
+    connected: GoogleConnector, fake_google: FakeGoogle
+) -> None:
+    """New York changes to summer time on 14 Mar 2027: a reminder after that has a −04:00 offset,
+    and the repeat's last day ends at 23:59:59 local summer time (03:59:59 UTC next day)."""
+    gw = _zoned_gw(
+        connected, fake_google, httpx.Response(200, json={"timeZone": "America/New_York"}), "UTC"
+    )
+    created = _reminder("rem40", "2027-03-15T09:00:00-04:00")
+    fake_google.on("POST", EVENTS, httpx.Response(200, json=created))
+    args = {
+        "text": "stand-up notes",
+        "when": "2027-03-15T09:00:00",
+        "repeat": "daily",
+        "repeat_until": "2027-03-20",
+    }
+    out = await _run(gw, "reminder_add", args)
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    body = _created(fake_google)
+    assert body["start"] == {
+        "dateTime": "2027-03-15T09:00:00-04:00",
+        "timeZone": "America/New_York",
+    }
+    assert body["recurrence"] == ["RRULE:FREQ=DAILY;UNTIL=20270321T035959Z"]
+    winter = await _run(gw, "reminder_add", {"text": "x", "when": "2027-03-01T09:00:00"})
+    assert winter.outcome is GatewayOutcome.EXECUTED
+    body2 = json.loads(fake_google.sent("POST", "/calendars/primary/events")[1].content)
+    assert body2["start"]["dateTime"] == "2027-03-01T09:00:00-05:00"
+
+
+async def test_the_zone_falls_back_to_the_owners_setting_never_silently_utc(
+    connected: GoogleConnector, fake_google: FakeGoogle
+) -> None:
+    gw = _zoned_gw(connected, fake_google, httpx.Response(503), "Asia/Kolkata")
+    fake_google.on("POST", EVENTS, httpx.Response(200, json=_reminder("rem41", NOW.isoformat())))
+    out = await _run(gw, "reminder_add", {"text": "call Ravi", "when": "2027-01-15T17:00:00"})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    body = _created(fake_google)
+    assert body["start"] == {"dateTime": "2027-01-15T17:00:00+05:30", "timeZone": "Asia/Kolkata"}
+    assert out.result["time_zone"] == "Asia/Kolkata"
+
+
+@pytest.mark.parametrize(
+    "when", ["0001-01-01T00:00:00+05:00", "9999-12-31T23:59:59", "0001-01-01T00:00:00"]
+)
+async def test_dates_at_the_ends_of_the_calendar_are_plain_errors(
+    gw: Gateway, fake_google: FakeGoogle, when: str
+) -> None:
+    for name, args in (
+        ("reminder_add", {"text": "x", "when": when}),
+        ("reminder_add", {"text": "x", "when": when, "minutes_before": 40_320}),
+        ("reminder_update", {"event_id": "rem20", "when": when}),
+        ("reminders_list", {"start": when}),
+    ):
+        out = await _run(gw, name, args)
+        assert out.outcome is GatewayOutcome.ERROR, (name, args)
+    assert fake_google.sent("POST", "/calendars/primary/events") == []
+
+
+async def test_a_reminder_far_in_the_future_from_google_cannot_crash_a_repeat_change(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    rem = _reminder("rem42", "9999-12-31T23:50:00+05:30")
+    fake_google.on("GET", f"{EVENTS}/rem42", httpx.Response(200, json=rem))
+    out = await _run(gw, "reminder_update", {"event_id": "rem42", "repeat": "daily"})
+    assert out.outcome is GatewayOutcome.ERROR and "range" in (out.error or "")
+    assert fake_google.sent("PATCH", "/events/rem42") == []
+
+
+async def test_update_refuses_a_reminder_the_owner_did_not_make(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    for who, eid in (("organizer", "rem43"), ("creator", "rem44")):
+        rem = _reminder(eid, "2027-01-15T17:00:00+05:30", **{who: {"email": "x@example.com"}})
+        fake_google.on("GET", f"{EVENTS}/{eid}", httpx.Response(200, json=rem))
+        out = await _run(gw, "reminder_update", {"event_id": eid, "text": "y"})
+        assert out.outcome is GatewayOutcome.ERROR and "calendar_update_event" in (out.error or "")
+        assert fake_google.sent("PATCH", f"/events/{eid}") == []
+
+
+async def test_a_repeat_can_not_end_in_the_past(gw: Gateway, fake_google: FakeGoogle) -> None:
+    rem = _reminder("rem45", "2026-12-01T09:00:00+05:30", recurrence=["RRULE:FREQ=DAILY"])
+    fake_google.on("GET", f"{EVENTS}/rem45", httpx.Response(200, json=rem))
+    out = await _run(
+        gw,
+        "reminder_update",
+        {"event_id": "rem45", "repeat": "daily", "repeat_until": "2027-01-10"},
+    )
+    assert out.outcome is GatewayOutcome.ERROR and "past" in (out.error or "")
+    assert fake_google.sent("PATCH", "/events/rem45") == []
+
+
+async def test_moving_a_repeating_reminder_past_its_last_day_is_refused(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    rule = ["RRULE:FREQ=DAILY;UNTIL=20270120T182959Z"]  # last day: 20 Jan (India)
+    rem = _reminder("rem46", "2027-01-16T09:00:00+05:30", recurrence=rule)
+    fake_google.on("GET", f"{EVENTS}/rem46", httpx.Response(200, json=rem))
+    fake_google.on("PATCH", f"{EVENTS}/rem46", httpx.Response(200, json=rem))
+    late = await _run(gw, "reminder_update", {"event_id": "rem46", "when": "2027-01-25T09:00:00"})
+    assert late.outcome is GatewayOutcome.ERROR and "2027-01-20" in (late.error or "")
+    assert "repeat_until" in (late.error or "")
+    ok = await _run(gw, "reminder_update", {"event_id": "rem46", "when": "2027-01-18T09:00:00"})
+    assert ok.outcome is GatewayOutcome.EXECUTED, ok.error
+    extended = await _run(
+        gw,
+        "reminder_update",
+        {"event_id": "rem46", "when": "2027-01-25T09:00:00", "repeat": "daily"},
+    )
+    assert extended.outcome is GatewayOutcome.EXECUTED, extended.error
+
+
+async def test_a_list_beyond_fifty_says_it_was_cut_short(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    many = [_reminder(f"rem{n:03d}", "2027-01-16T09:00:00+05:30") for n in range(50)]
+    data = {"items": many, "nextPageToken": "more"}
+    fake_google.on("GET", EVENTS, httpx.Response(200, json=data))
+    out = await _run(gw, "reminders_list", {})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    assert len(out.result["reminders"]) == 50 and out.result["truncated"] is True
+    assert "narrower" in out.result["note"]
+
+
 # ---- the persona knows about reminders --------------------------------------------------------
 
 
@@ -506,6 +648,8 @@ def test_the_persona_has_a_reminders_paragraph(wit: str) -> None:
     assert "pop-ups on the owner's phone" in flat
     assert "reminder_add" in flat and "reminders_minutes" in flat
     assert "calendar_delete_event" in flat
+    # slice 11 fix: a repeating reminder's id is the series; one occurrence has its own id
+    assert "occurrence_id" in flat and "every occurrence" in flat
 
 
 # ---- the owner's permission row ----------------------------------------------------------------

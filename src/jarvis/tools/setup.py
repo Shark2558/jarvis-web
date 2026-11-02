@@ -3,8 +3,9 @@ configured (then the fake calendar/message builtins step aside so the model sees
 the memory tools when long-term memory is on, plus web_search / web_read with a Tavily key, plus
 the document tools (slice 10 E). The to-do tools (Google Tasks) come with the Google tools: their
 scope is optional per owner, so they check it on every call (slice 10 C1). With the Recently
-deleted bin (slice 11, `undo`) the calendar and to-do deletes are undo-able and the undo tools
-(deleted_list / deleted_restore) are registered; without it every delete stays R3."""
+deleted bin (slice 11, `undo`) the calendar and to-do deletes are undo-able and — with Google
+linked, whose tools restore — the undo tools (deleted_list / deleted_restore) are registered;
+without it every delete stays R3."""
 
 from __future__ import annotations
 
@@ -52,11 +53,12 @@ def build_gateway(
         from jarvis.tools.google_tasks import tasks_tools
         from jarvis.tools.reminders import reminder_tools
 
-        for t in calendar_tools(google, undo=undo) + reminder_tools(google) + gmail_tools(google):
+        tz = s.user_timezone  # slice 11 fix: the reminders' zone when the calendar's can't be read
+        for t in calendar_tools(google, undo=undo) + reminder_tools(google, default_tz=tz):
             reg.register(t)
-        for t in tasks_tools(google, default_tz=s.user_timezone, undo=undo):
+        for t in gmail_tools(google) + tasks_tools(google, default_tz=tz, undo=undo):
             reg.register(t)
-    if undo is not None:  # slice 11: Recently deleted (restore needs the Google tools above)
+    if undo is not None and google is not None:  # slice 11: restore needs the Google tools
         from jarvis.undo.tools import undo_tools
 
         for t in undo_tools(undo):

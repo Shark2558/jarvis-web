@@ -13,7 +13,8 @@ from tasks_fakes import FakeTasks, tasks_connector
 
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.llm.base import ToolCall
-from jarvis.storage.docs import MemoryDocs
+from jarvis.permissions.store import PermissionsStore
+from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.tools.audit import AuditLog
 from jarvis.tools.external import FENCE_END
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
@@ -74,6 +75,16 @@ async def _rig(fake: FakeTasks | None = None, docs: MemoryDocs | None = None) ->
         reg.register(t)
     gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
     return Rig(gw, fake, undo)
+
+
+async def _gateway_for(rig: Rig) -> Gateway:
+    """A fresh connector over the rig's fake (after a test swapped its handler)."""
+    conn = await tasks_connector(rig.fake)
+    reg = ToolRegistry()
+    tools = tasks_tools(conn, default_tz="Asia/Kolkata", clock=lambda: NOW, undo=rig.bin)
+    for t in tools + undo_tools(rig.bin):
+        reg.register(t)
+    return Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
 
 
 async def test_with_a_bin_task_delete_is_declared_r2_and_undoable() -> None:
@@ -240,6 +251,100 @@ async def test_a_todo_that_became_assigned_after_the_decision_is_not_deleted() -
     )
     assert out.outcome is GatewayOutcome.ERROR and "changed" in (out.error or "")
     assert fake.changes("delete") == []
+
+
+# ---- slice 11 fix: a lost answer to the DELETE --------------------------------------------------
+
+
+@pytest.mark.parametrize("soft", [False, True])
+async def test_a_delete_whose_answer_was_lost_is_checked_and_kept(soft: bool) -> None:
+    """Google deleted it but answered 503: reading it again finds it gone (404, or — as Google
+    may — still readable with `deleted: true`), so the copy stays and the delete is done."""
+    fake = _fake(soft_delete=soft)
+    fake.lost["delete"] = 503
+    rig = await _rig(fake)
+    out = await rig.run("task_delete", {"task_id": "L2:t_rfp"})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    assert out.result["deleted"] is True
+    assert [i.id for i in await rig.bin.recent(UID)] == [out.result["undo_id"]]
+    if soft:
+        task = rig.fake.task("L2", "t_rfp")
+        assert task is not None and task["deleted"] is True
+
+
+async def test_a_delete_nobody_can_confirm_keeps_the_copy_and_restore_checks_first() -> None:
+    fake = _fake()
+    fake.fail["delete"] = 503
+    fake.after_delete["get"] = 503  # reading it again fails too
+    rig = await _rig(fake)
+    out = await rig.run("task_delete", {"task_id": "L2:t_rfp"})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    assert out.result["deleted"] == "unconfirmed" and "check Recently deleted" in out.result["note"]
+    assert len(await rig.bin.recent(UID)) == 1
+    fake.after_delete.clear()  # it was never deleted: a restore says so and makes nothing
+    back = await rig.run("deleted_restore", {"undo_id": out.result["undo_id"]})
+    assert back.result["restored"] is False and back.result["status"] == "still_there"
+    assert rig.fake.changes("insert") == []
+
+
+async def test_an_approved_r2_card_refuses_a_todo_that_became_assigned_meanwhile() -> None:
+    rig = await _rig()
+    real, gets = rig.fake.handler, [0]
+
+    def flip(request: Any) -> Any:  # card look-up, approval look-up: the owner's; the run's: not
+        if request.method == "GET" and request.url.path.endswith("/t_rfp"):
+            gets[0] += 1
+            task = rig.fake.task("L2", "t_rfp")
+            if gets[0] == 3 and task is not None:
+                task["assignmentInfo"] = {"surfaceType": "SPACE"}
+        return real(request)
+
+    rig.fake.handler = flip  # type: ignore[method-assign]
+    rig = Rig(await _gateway_for(rig), rig.fake, rig.bin)
+    with context_trust(untrusted=True):
+        card = await rig.run("task_delete", {"task_id": "L2:t_rfp"})
+    assert card.pending is not None and card.pending.tool_risk is ActionRisk.REVERSIBLE
+    ok = await rig.run("task_delete", {"task_id": "L2:t_rfp"}, confirmation_id=card.pending.id)
+    assert ok.outcome is GatewayOutcome.ERROR and "changed" in (ok.error or "")
+    assert rig.fake.changes("delete") == []
+
+
+async def test_a_todo_with_an_assigned_subtask_stays_r3() -> None:
+    fake = _fake()
+    hotel = fake.task("L1", "t_hotel")
+    assert hotel is not None
+    hotel["assignmentInfo"] = {"surfaceType": "DOCUMENT"}
+    rig = await _rig(fake)
+    held = await rig.run("task_delete", {"task_id": "L1:t_trip"})
+    assert held.outcome is GatewayOutcome.AWAITING_CONFIRMATION and held.pending is not None
+    assert held.pending.tool_risk is ActionRisk.IRREVERSIBLE
+
+
+async def test_a_restore_whose_previous_sibling_is_refused_retries_without_it() -> None:
+    rig = await _rig()
+    out = await rig.run("task_delete", {"task_id": "L2:t_rfp"})
+    first = rig.fake.task("L2", "t_first")
+    assert first is not None
+    first["parent"] = "t_last"  # moved meanwhile: no longer a sibling, Google answers 400
+    back = await rig.run("deleted_restore", {"undo_id": out.result["undo_id"]})
+    assert back.outcome is GatewayOutcome.EXECUTED, back.error
+    assert back.result["restored"] is True
+    [ins] = rig.fake.changes("insert")
+    assert ins.params == {}  # the second try, without `previous`
+    bad = [r for r in rig.fake.requests if r.method == "POST" and "previous" in r.url.params]
+    assert len(bad) == 1
+
+
+async def test_a_stored_never_on_deleting_todos_still_blocks_an_own_todo_delete() -> None:
+    """Slice 11 fix HIGH-1: Never on the old "Delete to-dos" row keeps meaning never."""
+    rig = await _rig()
+    docs = MemoryDocs()
+    legacy = {"user_id": UID, "groups": {"todo_delete": "deny"}}
+    await docs.write([Set(f"jarvis_permissions/{UID}", legacy)])
+    rig.gw.rules = PermissionsStore(docs)
+    out = await rig.run("task_delete", {"task_id": "L2:t_rfp"})
+    assert out.outcome is GatewayOutcome.DENIED and "switched off" in (out.error or "")
+    assert rig.fake.changes("delete") == [] and await rig.bin.recent(UID) == []
 
 
 async def test_without_a_bin_task_delete_stays_r3_as_before() -> None:

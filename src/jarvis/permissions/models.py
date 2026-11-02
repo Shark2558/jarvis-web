@@ -109,6 +109,9 @@ class GroupView(BaseModel):
     choices: list[str]
     effect: str
     default: str
+    # slice 11 fix HIGH-1: Never only because the owner chose Never for deletes before the split
+    # (the hint says so); False once the owner's choices are written again
+    inherited: bool = False
 
 
 class PasskeyView(BaseModel):

@@ -61,12 +61,20 @@ class FakeBin:
 
     def __init__(self, items: list[dict[str, Any]], fail: dict[str, tuple[int, dict[str, str]]]):
         self.items, self.fail, self.restores = items, fail, []
+        self.removed: list[str] = []
 
     def handle(self, route: Any) -> None:
         req = route.request
         if req.method == "GET":
             body = {"items": self.items, "kept_days": 30}
             route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+            return
+        if req.method == "DELETE":  # "Remove now"
+            iid = req.url.rsplit("/", 1)[-1]
+            self.removed.append(iid)
+            self.items = [it for it in self.items if it["id"] != iid]
+            out = json.dumps({"removed": True, "id": iid})
+            route.fulfill(status=200, content_type="application/json", body=out)
             return
         iid = req.url.rsplit("/", 2)[-2]
         self.restores.append(iid)
@@ -168,8 +176,8 @@ def test_recently_deleted_section_lists_and_restores(
         assert rows.nth(0).locator("b").text_content() == HOSTILE
         assert "Event" in (rows.nth(0).locator("small").text_content() or "")
         assert rows.nth(2).locator(".dpill").text_content() == "Restored"
-        assert rows.nth(2).locator("button").count() == 0
-        rows.nth(1).locator("button", has_text="Restore").click()
+        assert rows.nth(2).locator('[data-act="restore"]').count() == 0
+        rows.nth(1).locator('[data-act="restore"]').click()
         c.page.locator("#delList .drow").nth(1).locator(".dpill").wait_for()
         assert bin_.restores == [TODO]
         assert "Restored" in (c.page.locator("#delSet .bnote").text_content() or "")
@@ -193,10 +201,103 @@ def test_a_failed_restore_says_why_in_plain_words(
         c.page.locator("#delSetBtn").click()
         row = c.page.locator("#delList .drow").first
         row.wait_for()
-        row.locator("button").click()
+        row.locator('[data-act="restore"]').click()
         c.page.locator("#delList .drow .lerr:not(:empty)").first.wait_for()
         text = c.page.locator("#delList .lerr:not(:empty)").first.text_content() or ""
         assert "30 days" in text and "expired" not in text
+    finally:
+        c.close()
+
+
+def _reply_route(c: Console, refs: list[dict[str, str]]) -> None:
+    body = json.dumps(_reply(refs))
+    c.page.route(
+        "**/v1/chat", lambda r: r.fulfill(status=200, content_type="application/json", body=body)
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "words"),
+    [
+        (410, {"error": "expired", "detail": "That was deleted more than 30 days ago."}, "30 days"),
+        (409, {"error": "busy", "detail": "That is being restored right now."}, "right now"),
+        (502, {"error": "restore_failed", "detail": "Google's service is unavailable."}, "Google"),
+    ],
+)
+def test_a_failed_undo_says_why_next_to_the_chip(
+    browser: Any,
+    server_url: str,
+    token: str,
+    bin_: FakeBin,
+    status: int,
+    body: dict[str, str],
+    words: str,
+) -> None:
+    """Slice 11 fix: not a tooltip — visible words next to the chip, in an aria-live region."""
+    bin_.fail[DENTIST] = (status, body)
+    c = _console(browser, server_url, token, DESKTOP, bin_)
+    try:
+        _reply_route(c, [{"undo_id": DENTIST, "kind": "event"}])
+        c.open()
+        c.send("Delete my dentist appointment")
+        chip = c.page.locator(".row.jarvis .meta .uchip").first
+        chip.wait_for()
+        chip.click()
+        line = c.page.locator(".row.jarvis .meta .umsg:not(:empty)")
+        line.wait_for()
+        text = line.text_content() or ""
+        assert words in text and body["error"] not in text
+        assert line.get_attribute("aria-live") == "polite" and line.is_visible()
+        assert chip.get_attribute("aria-describedby") == line.get_attribute("id")
+        assert chip.locator(".uw").text_content() == "Undo"  # can be tried again
+        assert c.csp_violations() == []  # (the browser logs the 4xx itself)
+    finally:
+        c.close()
+
+
+def test_keyboard_focus_stays_in_the_row_after_restore(
+    browser: Any, server_url: str, token: str, bin_: FakeBin
+) -> None:
+    c = _console(browser, server_url, token, DESKTOP, bin_)
+    try:
+        c.open()
+        c.open_panel("approvals")
+        c.page.locator("#delSetBtn").click()
+        go = c.page.locator(f'#delList .drow[data-id="{TODO}"] [data-act="restore"]')
+        go.wait_for()
+        go.focus()
+        c.page.keyboard.press("Enter")
+        c.page.locator(f'#delList .drow[data-id="{TODO}"] .dpill').wait_for()
+        inside = c.page.evaluate(
+            f"""() => {{ const a = document.activeElement;
+                 return !!a && !!a.closest('.drow[data-id="{TODO}"]'); }}"""
+        )
+        assert inside, "focus fell out of the list after Restore"
+        assert bin_.restores == [TODO]
+    finally:
+        c.close()
+
+
+def test_remove_now_asks_once_then_removes_the_copy(
+    browser: Any, server_url: str, token: str, bin_: FakeBin
+) -> None:
+    c = _console(browser, server_url, token, DESKTOP, bin_)
+    try:
+        c.open()
+        c.open_panel("approvals")
+        c.page.locator("#delSetBtn").click()
+        rm = c.page.locator(f'#delList .drow[data-id="{TODO}"] [data-act="remove"]')
+        rm.wait_for()
+        assert rm.text_content() == "Remove now"
+        rm.click()
+        assert rm.text_content() == "Remove for good?" and bin_.removed == []
+        rm.click()
+        c.page.wait_for_function(
+            f"() => !document.querySelector('#delList .drow[data-id=\"{TODO}\"]')"
+        )
+        assert bin_.removed == [TODO]
+        assert "Removed" in (c.page.locator("#delSet .bnote").text_content() or "")
+        assert c.csp_violations() == [] and c.errors == []
     finally:
         c.close()
 

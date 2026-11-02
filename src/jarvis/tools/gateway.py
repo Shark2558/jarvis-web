@@ -33,7 +33,8 @@ nothing is stored. The duplicate look-up reads only the conversation's own cards
 Slice 11 D3: an undo-able delete (`Tool.undoable`, kept in Recently deleted) that would run
 without a card counts against the message's 10 free deletes; from the 11th it becomes an R2 card
 (bounded by the 5-card budget above), and the model is told why (`GatewayResult.note`). The tool
-runs knowing whether the owner approved it (`ToolContext.confirmed`).
+runs knowing whether the owner approved it (`ToolContext.confirmed`) and at what risk the call
+was decided (`ToolContext.approved_risk`): one that can do more at run time refuses.
 
 Approving (`confirmation_id`): the card runs only as the owner saw it. The call is looked at
 again; when it can now do more than its card said (an event gained guests) or its card would read
@@ -353,8 +354,8 @@ class Gateway:
                 return GatewayResult(
                     GatewayOutcome.ERROR, error="could not record the action, so nothing was done"
                 )
-        try:  # the tool learns who it runs for and whether the owner approved it; always reset
-            with tool_context(scope, confirmed=confirmation_id is not None):
+        try:  # the tool learns who it runs for, if approved, and at what risk; always reset
+            with tool_context(scope, confirmed=confirmation_id is not None, approved_risk=risk):
                 out = tool.run(call.arguments)
                 if hasattr(out, "__await__"):
                     out = await out

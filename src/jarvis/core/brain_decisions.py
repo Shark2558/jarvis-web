@@ -7,7 +7,9 @@ its tool exchange BEFORE any model call (`record_exchange` + `jarvis.core.saving
 
 - `approved`: runs the call through the gateway with the approval token. A lost race (the token
   is spent or expired) raises LookupError and touches nothing; a card that changed since the
-  owner saw it (slice 10 D) is withdrawn and proposed again — nothing ran.
+  owner saw it (slice 10 D) is withdrawn and proposed again — nothing ran. An approved
+  undo-able delete carries its Undo chip (`Decision.undo`, slice 11), worked out so that it can
+  never raise after the call ran (a lost chip leaves the copy in Recently deleted).
 - `declined`: cancels the card (a concurrent decision raises LookupError, so a decline that did
   not happen is never recorded) and audits it.
 - `Outcome`: what a decision — one card, or Approve all (`jarvis.core.approve_all`) — did, ready
@@ -22,7 +24,10 @@ from jarvis.core.guardrails import PendingAction
 from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn, UndoRef
 from jarvis.core.rounds import undo_refs
 from jarvis.llm.base import Completion, Role, TextBlock, ToolCall, ToolResultBlock, Usage
+from jarvis.logging import get_logger
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
+
+log = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -33,6 +38,7 @@ class Decision:
     result: GatewayResult
     fallback: str
     instruction: str
+    undo: tuple[UndoRef, ...] = ()  # slice 11: an approved undo-able delete's Undo chip
 
 
 @dataclass(frozen=True)
@@ -53,7 +59,7 @@ def single(d: Decision, *, approved: bool, unrecorded: list[Turn]) -> Outcome:
     """The outcome of one approve / decline."""
     did = approved and d.result.pending is None
     again = [d.result.pending] if d.result.pending is not None else []
-    undo = undo_refs([d.result])
+    undo = list(d.undo)
     return Outcome(d.fallback, unrecorded, did, tool_calls=int(did), again=again, undo=undo)
 
 
@@ -135,8 +141,22 @@ async def approved(
         else f"That did not go through: {gr.error or gr.outcome.value}."
     )
     return Decision(
-        call, gr, fallback, "Owner approved this action; report the outcome in one sentence."
+        call,
+        gr,
+        fallback,
+        "Owner approved this action; report the outcome in one sentence.",
+        _chips(gateway, call, gr),
     )
+
+
+def _chips(gateway: Gateway, call: ToolCall, gr: GatewayResult) -> tuple[UndoRef, ...]:
+    """The Undo chip of an approved undo-able delete. Never raises: the call already ran, and
+    bookkeeping after it must never relabel it as not done (slice 11 C review LOW-3)."""
+    try:
+        return tuple(undo_refs(gateway.registry, [call], [gr]))
+    except Exception as exc:  # noqa: BLE001 — the chip is lost; the delete stays in the bin
+        log.warning("no undo chip for an approved card", extra={"error": type(exc).__name__})
+        return ()
 
 
 async def declined(

@@ -42,7 +42,6 @@ from pydantic import BaseModel, Field, StringConstraints
 from jarvis.core import brain_decisions as decisions
 from jarvis.core.guardrails import PendingAction
 from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn, UndoRef
-from jarvis.core.rounds import undo_refs
 from jarvis.core.saving import record_after_action
 from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
@@ -212,10 +211,7 @@ async def _approve(gateway: Gateway, action: PendingAction, batch: Batch) -> dec
 async def _book(store: SessionStore, batch: Batch, d: decisions.Decision) -> None:
     """After a decision took effect: its Undo chip and its stored exchange. Never raises, so a
     failure here can't relabel a card that ran; a record that can't be stored stops the batch."""
-    try:
-        batch.undo += undo_refs([d.result])
-    except Exception as exc:  # noqa: BLE001 — the chip is lost; the delete stays in the bin
-        log.warning("approve all: no undo chip", extra={"error": type(exc).__name__})
+    batch.undo += d.undo  # worked out by `decisions.approved`, which never raises for it
     exchange: list[Turn] = []
     try:
         exchange = decisions.record_exchange(batch.session, d, batch.trace_id)

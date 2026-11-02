@@ -54,6 +54,12 @@ html[data-surface="night"] .pbanner{background:color-mix(in srgb,#E5484D 14%,var
 .pbanner p{flex:1 1 220px;margin:0;overflow-wrap:anywhere}
 .pbanner .btn.bact{margin-top:0}
 
+/* Approve all (slice 11 D6, console-approve-all.js): above the cards when 2+ can be undone */
+.apall{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 12px}
+.apall[hidden]{display:none}
+.apall .btn{margin:0}
+.apall-hint{flex:1 1 200px;margin:0;font-size:12.5px;line-height:1.45;color:var(--ink-2)}
+
 /* the approval card's own error line (a cancelled or failed passkey check) */
 .approval .perr{margin:8px 0 0;font-size:13px;line-height:1.4;color:var(--bad-ink)}
 .approval .perr:empty{display:none}
@@ -62,5 +68,6 @@ html[data-surface="night"] .pbanner{background:color-mix(in srgb,#E5484D 14%,var
   .pgrp .seg{max-width:none}
   .pgrp .seg-opt{min-height:44px}
   .pskadd .minput,.pskadd .btn.bact,.pskrow .btn.bact,.pskconfirm .btn.bact,.pskrec .btn.bact{height:44px}
+  .apall .btn{min-height:44px}
 }
 html[data-motion="calm"] .pgrp .seg-opt{transition-duration:.01s}

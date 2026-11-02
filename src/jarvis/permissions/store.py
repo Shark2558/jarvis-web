@@ -1,15 +1,19 @@
 # src/jarvis/permissions/store.py
 """The owner's permission choices (slice 10 D; Layer 7 via the `Docs` port).
 
-    {prefix}permissions/{uid}   user_id, groups {group id: allow|ask|deny}, require_passkey, rev,
+    {prefix}permissions/{uid}   user_id, groups {group id: allow|ask|deny}, require_passkey,
+                                reset_requested_at, reset_effective_at (a pending passkey reset),
+                                recovered_at (a reset happened; no passkey set up since), rev,
                                 updated_at
 
 The gateway reads it on every tool call (`rules_for`), so reads go through an in-process cache
 (15 s; one instance runs) that a change refreshes at once — an owner's "Never" applies to the very
 next call. When storage can't be read the last value seen is used, whatever its age; with none,
-the error propagates and the gateway fails closed (nothing runs). Writes are transactions on the
-stored value with `rev` bumped, so two tabs can't lose each other's change. A stored value that is
-not valid (hand-edited, a group renamed) reads as the default, field by field.
+the error propagates and the gateway fails closed (nothing runs). Passkey decisions read with
+`fresh=True` (no cache, no stale fallback): a change made by another instance counts at once.
+Writes are transactions on the stored value with `rev` bumped, so two tabs can't lose each
+other's change. A stored value that is not valid (hand-edited, a group renamed) reads as the
+default, field by field.
 """
 
 from __future__ import annotations
@@ -36,8 +40,15 @@ class OwnerPermissions(BaseModel):
 
     choices: dict[str, Effect] = Field(default_factory=dict)
     require_passkey: bool = False
+    reset_requested_at: str | None = None
+    reset_effective_at: str | None = None
+    recovered_at: str | None = None
     rev: int = 0
     updated_at: str | None = None
+
+
+def _iso(v: Any) -> str | None:
+    return v if isinstance(v, str) and 0 < len(v) <= 40 else None
 
 
 def decode(doc: Any) -> OwnerPermissions:
@@ -48,6 +59,9 @@ def decode(doc: Any) -> OwnerPermissions:
     return OwnerPermissions(
         choices=stored_choices(doc.get("groups")),
         require_passkey=doc.get("require_passkey") is True,
+        reset_requested_at=_iso(doc.get("reset_requested_at")),
+        reset_effective_at=_iso(doc.get("reset_effective_at")),
+        recovered_at=_iso(doc.get("recovered_at")),
         rev=rev if isinstance(rev, int) and not isinstance(rev, bool) and rev >= 0 else 0,
         updated_at=at if isinstance(at, str) else None,
     )
@@ -73,8 +87,13 @@ class PermissionsStore:
             raise ValueError("invalid user id")
         return f"{self._col}/{uid}"
 
-    async def get(self, uid: str) -> OwnerPermissions:
+    async def get(self, uid: str, *, fresh: bool = False) -> OwnerPermissions:
+        """`fresh`: read storage now (no cache, no stale fallback) — for passkey decisions."""
         path = self._path(uid)
+        if fresh:
+            value = decode(await self._d.get(path))
+            self._cache[uid] = (self._clock(), value)
+            return value
         hit = self._cache.get(uid)
         if hit is not None and self._clock() - hit[0] < self._cache_s:
             return hit[1]
@@ -111,6 +130,9 @@ class PermissionsStore:
                     "user_id": uid,
                     "groups": {k: v.value for k, v in new.choices.items()},
                     "require_passkey": new.require_passkey,
+                    "reset_requested_at": new.reset_requested_at,
+                    "reset_effective_at": new.reset_effective_at,
+                    "recovered_at": new.recovered_at,
                     "rev": new.rev,
                     "updated_at": at,
                 },

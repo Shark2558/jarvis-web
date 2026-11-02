@@ -637,7 +637,10 @@ class Brain:
             )
         )
         await self._save_after_action(session)
-        return await self._decision_response(session, spec, reply, completion, trace_id, approved)
+        again = d.result.pending  # set only when the card changed and was proposed again
+        return await self._decision_response(
+            session, spec, reply, completion, trace_id, approved, again
+        )
 
     async def _approved(
         self, call: ToolCall, action: PendingAction, approval_id: str, scope: str
@@ -647,6 +650,8 @@ class Brain:
         if gr.outcome is GatewayOutcome.CONFIRMATION_INVALID:
             # lost a race with another approve/decline: nothing ran, touch nothing
             raise LookupError(f"no pending approval {approval_id} in this session")
+        if (changed := gr.changed_card()) is not None:  # slice 10 D: nothing ran; a new card
+            return _Decision(call, gr, *changed)
         done = gr.outcome is GatewayOutcome.EXECUTED
         fallback = (
             f"Done, Sir: {action.summary}."
@@ -708,6 +713,7 @@ class Brain:
         completion: Completion | None,
         trace_id: str,
         approved: bool,
+        again: PendingAction | None = None,
     ) -> ChatResponse:
         cost = completion.cost_usd if completion else 0.0
         cost_inr, total_inr = await self._rupees(cost, session.total_cost_usd)
@@ -724,8 +730,8 @@ class Brain:
             total_cost_inr=total_inr,
             latency_ms=0,
             turn_count=len(session.turns),
-            tool_calls=1 if approved else 0,
-            pending_approvals=[],
+            tool_calls=1 if approved and again is None else 0,
+            pending_approvals=[PendingApproval.from_action(again)] if again is not None else [],
         )
 
     async def chat_stream(

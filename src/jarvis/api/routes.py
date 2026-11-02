@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
-from jarvis.api.permissions import guard_approval, mark_passkey_cards
+from jarvis.api.permissions import mark_passkey_cards
 from jarvis.config import Settings
 from jarvis.core.brain import Brain, StreamMeta
 from jarvis.core.models import (
@@ -37,6 +37,7 @@ from jarvis.core.models import (
 from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.permissions.models import PasskeyProof
 from jarvis.tools.audit import AuditEntry
+from jarvis.tools.context import presenting_proof
 
 router = APIRouter()
 STREAM_FINAL = "\x1e"  # ASCII record separator: the reply text ends, the final event follows
@@ -219,8 +220,9 @@ async def approve(
     brain: Brain = Depends(_brain),
     uid: str = Depends(current_user),
 ) -> ChatResponse:
-    await guard_approval(request, uid, approval_id, d.passkey)  # 403 before anything runs
-    return await brain.approve(approval_id, session_id=d.session_id, user_id=uid)
+    # the passkey check is made by the gateway's approval guard, on the card as it is now
+    with presenting_proof(d.passkey):
+        return await brain.approve(approval_id, session_id=d.session_id, user_id=uid)
 
 
 @router.post(

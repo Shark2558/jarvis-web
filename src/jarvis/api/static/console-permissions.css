@@ -44,6 +44,16 @@ html[data-surface="night"] .pskconfirm{background:color-mix(in srgb,#E5484D 12%,
 .pskrec .btn.bact{margin-top:2px}
 .psk .lerr{margin-top:8px}
 
+.pskflag{color:var(--amber-ink)!important}
+.pskreset{margin:8px 0}
+/* a pending passkey reset: shown at the top of the Approvals panel until it is over or cancelled */
+.pbanner{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px;padding:10px 12px;border-radius:var(--r-md);
+  border:1px solid var(--bad-line);background:var(--bad-tint);color:var(--bad-ink);font-size:13px;line-height:1.45}
+html[data-surface="night"] .pbanner{background:color-mix(in srgb,#E5484D 14%,var(--panel-solid))}
+.pbanner[hidden]{display:none}
+.pbanner p{flex:1 1 220px;margin:0;overflow-wrap:anywhere}
+.pbanner .btn.bact{margin-top:0}
+
 /* the approval card's own error line (a cancelled or failed passkey check) */
 .approval .perr{margin:8px 0 0;font-size:13px;line-height:1.4;color:var(--bad-ink)}
 .approval .perr:empty{display:none}

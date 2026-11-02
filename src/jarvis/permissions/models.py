@@ -61,7 +61,7 @@ class RegistrationCredential(_In):
     authenticatorAttachment: str | None = Field(default=None, max_length=32)  # noqa: N815
 
 
-Purpose = Literal["approve", "remove", "add", "disable"]
+Purpose = Literal["approve", "remove", "add", "disable", "cancel_reset"]
 
 
 class ChallengeRequest(_In):
@@ -81,6 +81,10 @@ class RegisterRequest(_In):
 
 
 class RemoveRequest(_In):
+    proof: PasskeyProof | None = None
+
+
+class CancelResetRequest(_In):
     proof: PasskeyProof | None = None
 
 
@@ -113,6 +117,12 @@ class PasskeyView(BaseModel):
     created_at: str
     last_used_at: str | None
     backed_up: bool
+    via_recovery: bool = Field(description="Set up right after a reset by Google sign-in")
+
+
+class ResetView(BaseModel):
+    requested_at: str
+    effective_at: str  # all passkeys are removed then, unless cancelled with a passkey
 
 
 class PermissionsView(BaseModel):
@@ -121,6 +131,12 @@ class PermissionsView(BaseModel):
     passkeys: list[PasskeyView]
     passkeys_available: bool
     passkeys_note: str = Field(description="Why passkeys can't be used here (plain words)")
+    passkeys_error: str = Field(
+        default="", description="The stored passkeys can't be read (irreversible actions blocked)"
+    )
+    reset: ResetView | None = Field(
+        default=None, description="A pending reset of all passkeys (requested by Google sign-in)"
+    )
     can_reauth: bool = Field(description="Google sign-in exists: the 5-minute recovery path")
     fresh_sign_in_s: int | None = Field(
         description="Seconds left in which a recent Google sign-in may stand in for a passkey"
@@ -132,6 +148,7 @@ class PermissionsView(BaseModel):
 
 __all__ = [
     "AssertionCredential",
+    "CancelResetRequest",
     "ChallengeRequest",
     "ChallengeView",
     "GroupView",
@@ -144,4 +161,5 @@ __all__ = [
     "RegisterRequest",
     "RegistrationCredential",
     "RemoveRequest",
+    "ResetView",
 ]

@@ -57,7 +57,7 @@ from suites_review import (  # noqa: E402
 )
 
 import jarvis.recall.gate as gate_mod  # noqa: E402
-import jarvis.recall.tools as tools_mod  # noqa: E402
+import jarvis.tools.policy as policy_mod  # noqa: E402
 from jarvis.api import create_app  # noqa: E402
 from jarvis.billing import Billing, BudgetPatch  # noqa: E402
 from jarvis.core.models import ChatRequest, ChatResponse, Turn  # noqa: E402
@@ -194,7 +194,7 @@ async def poison_case(c: dict[str, Any]) -> dict[str, Any]:
 
 async def suite_poisoning(cases: list[dict[str, Any]]) -> dict[str, Any]:
     results = [await poison_case(c) for c in cases]
-    with patched(tools_mod, "untrusted_in_context", lambda: False):
+    with patched(policy_mod, "TAINTED_WRITES_ASK", False):  # the tainted-round rule off
         control = [await poison_case(c) for c in cases]
     failed_control = sum(not x["passed"] for x in control)
     out = {

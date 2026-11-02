@@ -1,8 +1,11 @@
-# tests/test_permissions_api.py — /v1/permissions, /v1/passkeys and the passkey guard on
+# tests/test_permissions_api.py — /v1/permissions, /v1/passkeys and the passkey check on
 # /v1/approvals/{id}/approve through the real app (mock brain, in-process storage, software
-# authenticator). Token mode (the CLI's bearer) and Google mode (cookie, re-auth path).
+# authenticator). Passkeys need Google sign-in: the owner's browser has a signed cookie, and the
+# first passkey / a reset need a re-sign-in (/auth/login?reauth=1) in the last 5 minutes. The CLI's
+# bearer token is accepted everywhere else, and gets plain refusals for passkey-only steps.
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -14,21 +17,18 @@ from pydantic import SecretStr
 from jarvis.api import auth as auth_mod
 from jarvis.api import create_app
 from jarvis.config import AuthMode, Settings
+from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.llm.base import ToolCall
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
-from jarvis.tools import Gateway
-from jarvis.tools.builtin import InMemoryWorld
+from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
+from jarvis.tools.base import Preview, Tool
+from jarvis.tools.builtin import InMemoryWorld, builtin_tools
 
 ORIGIN = "http://test"
 OWNER = "akash@example.com"
 CSRF = {"X-Requested-With": "JARVIS"}
 BEARER = {"Authorization": "Bearer cli-token"}
-
-
-@pytest.fixture
-def rp_settings(settings: Settings) -> Settings:
-    return settings.model_copy(update={"public_base_url": ORIGIN})
 
 
 async def _client(app: Any) -> AsyncIterator[AsyncClient]:
@@ -39,12 +39,47 @@ async def _client(app: Any) -> AsyncIterator[AsyncClient]:
 
 
 @pytest.fixture
-async def pclient(
-    rp_settings: Settings, provider: MockProvider, store: InMemorySessionStore, gateway: Gateway
+def google_settings(settings: Settings) -> Settings:
+    return settings.model_copy(
+        update={
+            "auth_mode": AuthMode.GOOGLE,
+            "google_client_id": "cid.apps.googleusercontent.com",
+            "google_client_secret": SecretStr("gsecret"),
+            "owner_emails": [OWNER],
+            "session_secret": SecretStr("x" * 32),
+            "public_base_url": ORIGIN,
+            "api_token": SecretStr("cli-token"),
+        }
+    )
+
+
+@pytest.fixture
+async def gclient(
+    google_settings: Settings, provider: MockProvider, gateway: Gateway
 ) -> AsyncIterator[AsyncClient]:
-    app = create_app(rp_settings, provider=provider, store=store, gateway=gateway)
+    app = create_app(
+        google_settings, provider=provider, store=InMemorySessionStore(), gateway=gateway
+    )
     async for c in _client(app):
         yield c
+
+
+def _cli(c: AsyncClient) -> AsyncClient:
+    """A second client on the same app: the bearer token only, never the browser's cookie."""
+    return AsyncClient(transport=ASGITransport(app=c.app), base_url=ORIGIN, headers=BEARER)  # type: ignore[attr-defined]
+
+
+async def _google(c: AsyncClient, *, reauth: bool = True, **claims: Any) -> Any:
+    """Sign in through the real /auth routes; Google's half is faked (who the user is)."""
+
+    async def fake(request: Any) -> dict[str, Any]:
+        return {"userinfo": {"email": OWNER, "email_verified": True, "sub": "1", **claims}}
+
+    c.app.state.oauth.google.authorize_access_token = fake  # type: ignore[attr-defined]
+    if reauth:
+        start = await c.get("/auth/login?reauth=1", follow_redirects=False)
+        assert "max_age=0" in start.headers["location"]
+    return await c.get("/auth/callback?code=abc&state=s")
 
 
 async def _register(c: AsyncClient, auth: SoftAuthenticator, **body: Any) -> dict[str, Any]:
@@ -69,10 +104,10 @@ async def _proof(c: AsyncClient, auth: SoftAuthenticator, **req: Any) -> dict[st
     return {"challenge_id": ch["challenge_id"], "credential": auth.get(ch["public_key"])}
 
 
-async def _send_card(
-    c: AsyncClient, provider: MockProvider, tool: str = "send_message"
+async def _card(
+    c: AsyncClient, provider: MockProvider, tool: str = "send_message", **args: Any
 ) -> tuple[str, str]:
-    args = (
+    args = args or (
         {"to": "priya@x.com", "body": "3pm"}
         if tool == "send_message"
         else {"text": "call bank", "when": "17:00"}
@@ -83,17 +118,39 @@ async def _send_card(
     return card["id"], body["session_id"]
 
 
-# ---- choices -----------------------------------------------------------------------------------
+async def _ready(c: AsyncClient) -> SoftAuthenticator:
+    """Signed in again, first passkey set up."""
+    auth = SoftAuthenticator(origin=ORIGIN)
+    await _google(c)
+    v = await _register(c, auth)
+    assert v["require_passkey"] is True
+    return auth
+
+
+# ---- choices (token mode, no public address) ----------------------------------------------------
 
 
 async def test_view_defaults_without_a_public_address(client: AsyncClient) -> None:
     v = (await client.get("/v1/permissions")).json()
     assert v["passkeys_available"] is False and "JARVIS_PUBLIC_BASE_URL" in v["passkeys_note"]
-    assert v["require_passkey"] is False and v["can_reauth"] is False
+    assert v["require_passkey"] is False and v["can_reauth"] is False and v["reset"] is None
     send = next(g for g in v["groups"] if g["id"] == "email_send")
     assert send["choices"] == ["ask", "deny"] and send["effect"] == "ask" and send["irreversible"]
     r = await client.post("/v1/passkeys/register/options", json={})
     assert r.status_code == 409 and r.json()["error"] == "passkeys_unavailable"
+
+
+async def test_token_mode_with_an_address_still_has_no_passkeys(
+    settings: Settings, provider: MockProvider
+) -> None:
+    app = create_app(
+        settings.model_copy(update={"public_base_url": ORIGIN}),
+        provider=provider,
+        store=InMemorySessionStore(),
+    )
+    async for c in _client(app):
+        v = (await c.get("/v1/permissions")).json()
+        assert v["passkeys_available"] is False and "Google sign-in" in v["passkeys_note"]
 
 
 async def test_put_validates_and_refuses_allow_for_irreversible(client: AsyncClient) -> None:
@@ -124,161 +181,274 @@ async def test_never_reaches_the_tool_and_the_model_reads_why(
     assert audit[-1]["outcome"] == "denied" and audit[-1]["detail"] == "policy:owner:email_send"
 
 
-async def test_ask_first_on_a_reversible_group_makes_a_card_without_passkey(
-    pclient: AsyncClient, provider: MockProvider, world: InMemoryWorld
+async def test_permission_changes_land_in_the_shared_audit_chain(client: AsyncClient) -> None:
+    await client.put("/v1/permissions", json={"groups": {"web": "deny", "email_send": "deny"}})
+    audit = (await client.get("/v1/audit")).json()
+    last = audit["entries"][-1]
+    assert audit["verified"] is True
+    assert (last["agent"], last["tool"], last["outcome"]) == ("owner", "permissions", "changed")
+    assert last["detail"] == "email_send=deny; web=deny"
+
+
+# ---- sign-in: only a real re-sign-in counts ------------------------------------------------------
+
+
+async def test_reauth_asks_google_again_and_only_it_stamps_the_window(
+    gclient: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    await _register(pclient, SoftAuthenticator(origin=ORIGIN))
-    await pclient.put("/v1/permissions", json={"groups": {"todo_change": "ask"}}, headers=CSRF)
-    pid, sid = await _send_card(pclient, provider, "create_reminder")
-    cards = (await pclient.get("/v1/approvals")).json()
-    assert cards[0]["tool_risk"] == "reversible" and cards[0]["passkey_required"] is False
-    provider.script("Done.")
-    r = await pclient.post(f"/v1/approvals/{pid}/approve", json={"session_id": sid}, headers=CSRF)
-    assert r.status_code == 200 and len(world.reminders) == 1
+    now = [1_800_000_000.0]
+    monkeypatch.setattr(auth_mod, "_now", lambda: now[0])
+    plain = await gclient.get("/auth/login", follow_redirects=False)
+    assert "max_age" not in plain.headers["location"]
+    r = await _google(gclient, reauth=False)
+    assert r.headers["location"] == "/"
+    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 0  # not stamped
+    r = await _google(gclient)  # no auth_time from Google: the moment it completed
+    assert r.headers["location"] == "/?reauth=done"
+    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 300
+    now[0] += 299
+    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 1
+    now[0] += 2
+    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 0
+    # Google says the owner last authenticated before this re-sign-in began: nothing stamped
+    r = await _google(gclient, auth_time=int(now[0] - 3600))
+    assert r.headers["location"] == "/?reauth=stale"
+    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 0
+    r = await _google(gclient, auth_time=int(now[0]))
+    assert r.headers["location"] == "/?reauth=done"
+    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 300
 
 
-# ---- passkeys and the approval guard -----------------------------------------------------------
+async def test_a_re_sign_in_started_long_ago_does_not_count(
+    gclient: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = [1_800_000_000.0]
+    monkeypatch.setattr(auth_mod, "_now", lambda: now[0])
+    await gclient.get("/auth/login?reauth=1", follow_redirects=False)
+    now[0] += 3600  # the tab sat at Google's page for an hour
+    r = await _google(gclient, reauth=False)
+    assert r.headers["location"] == "/"
+    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 0
+
+
+# ---- the first passkey: a fresh re-sign-in in this browser ---------------------------------------
+
+
+async def test_the_first_passkey_needs_a_re_sign_in_and_refuses_bearer(
+    gclient: AsyncClient,
+) -> None:
+    r = await gclient.post("/v1/passkeys/register/options", json={}, headers=BEARER)
+    assert r.status_code == 403 and r.json()["reason"] == "reauth"
+    await _google(gclient, reauth=False)
+    r = await gclient.post("/v1/passkeys/register/options", json={}, headers=CSRF)
+    assert r.status_code == 403 and r.json() == {
+        "error": "proof_required",
+        "detail": r.json()["detail"],
+        "reason": "reauth",
+    }
+    await _ready(gclient)
+
+
+async def test_a_second_passkey_or_switching_off_needs_a_passkey_not_a_sign_in(
+    gclient: AsyncClient,
+) -> None:
+    auth = await _ready(gclient)
+    await _google(gclient)  # a fresh sign-in is no shortcut
+    r = await gclient.post("/v1/passkeys/register/options", json={}, headers=CSRF)
+    assert r.status_code == 403 and r.json()["reason"] == "passkey"
+    r = await gclient.put("/v1/permissions", json={"require_passkey": False}, headers=CSRF)
+    assert r.status_code == 403 and r.json()["reason"] == "passkey"
+    v = await _register(gclient, auth, proof=await _proof(gclient, auth, purpose="add"))
+    assert len(v["passkeys"]) == 2
+    proof = await _proof(gclient, auth, purpose="disable")
+    r = await gclient.put(
+        "/v1/permissions", json={"require_passkey": False, "proof": proof}, headers=CSRF
+    )
+    assert r.status_code == 200 and r.json()["require_passkey"] is False
+
+
+# ---- approvals --------------------------------------------------------------------------------
 
 
 async def test_irreversible_approval_needs_the_passkey_once_one_exists(
-    pclient: AsyncClient, provider: MockProvider, world: InMemoryWorld
+    gclient: AsyncClient, provider: MockProvider, world: InMemoryWorld
 ) -> None:
-    auth = SoftAuthenticator(origin=ORIGIN)
-    v = await _register(pclient, auth)
-    assert v["require_passkey"] is True and len(v["passkeys"]) == 1
-    pid, sid = await _send_card(pclient, provider)
-    cards = (await pclient.get("/v1/approvals")).json()
+    auth = await _ready(gclient)
+    pid, sid = await _card(gclient, provider)
+    cards = (await gclient.get("/v1/approvals")).json()
     assert cards[0]["passkey_required"] is True and cards[0]["tool_risk"] == "irreversible"
-
-    r = await pclient.post(f"/v1/approvals/{pid}/approve", json={"session_id": sid}, headers=CSRF)
+    r = await gclient.post(f"/v1/approvals/{pid}/approve", json={"session_id": sid}, headers=CSRF)
     assert r.status_code == 403 and r.json()["error"] == "passkey_required"
-    assert world.sent == [] and len((await pclient.get("/v1/approvals")).json()) == 1
-
-    proof = await _proof(pclient, auth, purpose="approve", approval_id=pid)
+    assert world.sent == [] and len((await gclient.get("/v1/approvals")).json()) == 1
+    proof = await _proof(gclient, auth, purpose="approve", approval_id=pid)
     provider.script("Sent, Sir.")
-    r = await pclient.post(
+    r = await gclient.post(
         f"/v1/approvals/{pid}/approve", json={"session_id": sid, "passkey": proof}, headers=CSRF
     )
     assert r.status_code == 200, r.text
     assert world.sent == [{"to": "priya@x.com", "body": "3pm"}]
-
-    # the same check again: refused before anything (and the card is spent anyway)
-    pid2, sid2 = await _send_card(pclient, provider)
-    r = await pclient.post(
+    executing = [
+        e for e in (await gclient.get("/v1/audit")).json()["entries"] if e["outcome"] == "executing"
+    ]
+    assert executing[-1]["detail"].startswith("confirmed; passkey ")
+    # the same check again on another card: refused before anything runs
+    pid2, sid2 = await _card(gclient, provider)
+    r = await gclient.post(
         f"/v1/approvals/{pid2}/approve", json={"session_id": sid2, "passkey": proof}, headers=CSRF
     )
-    assert r.status_code == 403 and r.json()["reason"] == "replayed"
-    assert len(world.sent) == 1
-
-
-async def test_a_check_for_another_card_is_refused(
-    pclient: AsyncClient, provider: MockProvider, world: InMemoryWorld
-) -> None:
-    auth = SoftAuthenticator(origin=ORIGIN)
-    await _register(pclient, auth)
-    a, sid = await _send_card(pclient, provider)
-    provider.script_tool_calls(
-        [ToolCall(id="t2", name="send_message", arguments={"to": "b@x.com", "body": "other"})], "ok"
-    )
-    body = (
-        await pclient.post("/v1/chat", json={"message": "x", "session_id": sid}, headers=CSRF)
-    ).json()
-    b = body["pending_approvals"][0]["id"]
-    proof = await _proof(pclient, auth, purpose="approve", approval_id=a)
-    r = await pclient.post(
-        f"/v1/approvals/{b}/approve", json={"session_id": sid, "passkey": proof}, headers=CSRF
-    )
-    assert r.status_code == 403 and r.json()["reason"] == "wrong_action" and world.sent == []
-
-
-async def test_a_check_from_another_origin_is_refused(
-    pclient: AsyncClient, provider: MockProvider, world: InMemoryWorld
-) -> None:
-    auth = SoftAuthenticator(origin=ORIGIN)
-    await _register(pclient, auth)
-    pid, sid = await _send_card(pclient, provider)
-    ch = (
-        await pclient.post(
-            "/v1/passkeys/challenge", json={"purpose": "approve", "approval_id": pid}, headers=CSRF
-        )
-    ).json()
-    cred = auth.get(ch["public_key"], origin="https://evil.example")
-    r = await pclient.post(
-        f"/v1/approvals/{pid}/approve",
-        json={
-            "session_id": sid,
-            "passkey": {"challenge_id": ch["challenge_id"], "credential": cred},
-        },
-        headers=CSRF,
-    )
-    assert r.status_code == 403 and r.json()["reason"] == "failed" and world.sent == []
+    assert r.status_code == 403 and r.json()["reason"] == "replayed" and len(world.sent) == 1
 
 
 async def test_the_cli_bearer_token_gets_a_plain_refusal(
-    rp_settings: Settings,
-    provider: MockProvider,
-    store: InMemorySessionStore,
-    gateway: Gateway,
-    world: InMemoryWorld,
+    gclient: AsyncClient, provider: MockProvider, world: InMemoryWorld
 ) -> None:
-    app = create_app(
-        rp_settings.model_copy(update={"api_token": SecretStr("cli-token")}),
-        provider=provider,
-        store=store,
-        gateway=gateway,
+    await _ready(gclient)
+    pid, sid = await _card(gclient, provider)
+    async with _cli(gclient) as cli:  # the CLI: bearer token, no browser cookie
+        r = await cli.post(f"/v1/approvals/{pid}/approve", json={"session_id": sid})
+    assert r.status_code == 403 and r.json()["error"] == "passkey_required"
+    assert "command line" in r.json()["detail"] and world.sent == []
+
+
+async def test_a_check_for_another_card_or_origin_is_refused(
+    gclient: AsyncClient, provider: MockProvider, world: InMemoryWorld
+) -> None:
+    auth = await _ready(gclient)
+    a, sid = await _card(gclient, provider)
+    b, sid_b = await _card(gclient, provider, to="b@x.com", body="other")
+    proof = await _proof(gclient, auth, purpose="approve", approval_id=a)
+    r = await gclient.post(
+        f"/v1/approvals/{b}/approve", json={"session_id": sid_b, "passkey": proof}, headers=CSRF
     )
-    async for c in _client(app):
-        c.headers.update(BEARER)
-        await _register(c, SoftAuthenticator(origin=ORIGIN))
-        pid, sid = await _send_card(c, provider)
-        r = await c.post(f"/v1/approvals/{pid}/approve", json={"session_id": sid})
-        assert r.status_code == 403 and r.json()["error"] == "passkey_required"
-        assert "command line" in r.json()["detail"] and world.sent == []
+    assert r.status_code == 403 and r.json()["reason"] == "wrong_action"
+    ch = (
+        await gclient.post(
+            "/v1/passkeys/challenge", json={"purpose": "approve", "approval_id": a}, headers=CSRF
+        )
+    ).json()
+    cred = auth.get(ch["public_key"], origin="https://evil.example")
+    body = {"session_id": sid, "passkey": {"challenge_id": ch["challenge_id"], "credential": cred}}
+    r = await gclient.post(f"/v1/approvals/{a}/approve", json=body, headers=CSRF)
+    assert r.status_code == 403 and r.json()["reason"] == "failed" and world.sent == []
 
 
-async def test_decline_never_needs_a_passkey(
-    pclient: AsyncClient, provider: MockProvider, world: InMemoryWorld
+async def test_reversible_cards_and_declines_never_need_a_passkey(
+    gclient: AsyncClient, provider: MockProvider, world: InMemoryWorld
 ) -> None:
-    await _register(pclient, SoftAuthenticator(origin=ORIGIN))
-    pid, sid = await _send_card(pclient, provider)
+    await _ready(gclient)
+    await gclient.put("/v1/permissions", json={"groups": {"todo_change": "ask"}}, headers=CSRF)
+    pid, sid = await _card(gclient, provider, "create_reminder")
+    cards = (await gclient.get("/v1/approvals")).json()
+    assert cards[0]["tool_risk"] == "reversible" and cards[0]["passkey_required"] is False
+    provider.script("Done.")
+    r = await gclient.post(f"/v1/approvals/{pid}/approve", json={"session_id": sid}, headers=CSRF)
+    assert r.status_code == 200 and len(world.reminders) == 1
+    pid, sid = await _card(gclient, provider)
     provider.script("Understood.")
-    r = await pclient.post(f"/v1/approvals/{pid}/decline", json={"session_id": sid}, headers=CSRF)
+    r = await gclient.post(f"/v1/approvals/{pid}/decline", json={"session_id": sid}, headers=CSRF)
     assert r.status_code == 200 and world.sent == []
 
 
-async def test_remove_and_switch_off_need_proof_in_token_mode(pclient: AsyncClient) -> None:
-    auth = SoftAuthenticator(origin=ORIGIN)
-    v = await _register(pclient, auth)
-    cid = v["passkeys"][0]["id"]
-    r = await pclient.post(f"/v1/passkeys/{cid}/remove", json={}, headers=CSRF)
-    assert r.status_code == 403 and r.json() == {
-        "error": "proof_required",
-        "detail": r.json()["detail"],
-        "reason": "passkey",
-    }
-    r = await pclient.put("/v1/permissions", json={"require_passkey": False}, headers=CSRF)
-    assert r.status_code == 403 and r.json()["error"] == "proof_required"
-    proof = await _proof(pclient, auth, purpose="disable")
-    r = await pclient.put(
-        "/v1/permissions", json={"require_passkey": False, "proof": proof}, headers=CSRF
+async def test_a_card_that_became_irreversible_comes_back_as_a_new_passkey_card(
+    google_settings: Settings, provider: MockProvider
+) -> None:
+    """H1 through the brain: approved as R2 after guests were added → nothing runs, a new R3
+    card (passkey) is waiting, and the reply says so."""
+    world, ran, guests = InMemoryWorld(), [], [False]
+
+    async def preview(a: dict[str, Any]) -> Preview:
+        who = "and email the guests" if guests[0] else "only you"
+        return Preview(
+            f"Move the dentist to {a['when']} ({who})",
+            ActionRisk.IRREVERSIBLE if guests[0] else None,
+        )
+
+    reg = ToolRegistry()
+    for t in builtin_tools(world):
+        reg.register(t)
+    reg.register(
+        Tool(
+            "calendar_update_event",
+            "move",
+            {"type": "object", "properties": {"when": {"type": "string"}}},
+            ActionRisk.REVERSIBLE,
+            ran.append,
+            preview=preview,
+        )
     )
-    assert r.status_code == 200 and r.json()["require_passkey"] is False
-    proof = await _proof(pclient, auth, purpose="remove", credential_id=cid)
-    r = await pclient.post(f"/v1/passkeys/{cid}/remove", json={"proof": proof}, headers=CSRF)
+    gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
+    app = create_app(google_settings, provider=provider, store=InMemorySessionStore(), gateway=gw)
+    async for c in _client(app):
+        auth = await _ready(c)
+        await c.put("/v1/permissions", json={"groups": {"calendar_change": "ask"}}, headers=CSRF)
+        pid, sid = await _card(c, provider, "calendar_update_event", when="15:00")
+        assert (await c.get("/v1/approvals")).json()[0]["passkey_required"] is False
+        guests[0] = True
+        provider.script("It changed, Sir.")
+        r = await c.post(f"/v1/approvals/{pid}/approve", json={"session_id": sid}, headers=CSRF)
+        assert r.status_code == 200 and ran == []
+        (new,) = r.json()["pending_approvals"]
+        assert new["id"] != pid and new["tool_risk"] == "irreversible"
+        assert "email the guests" in new["summary"]
+        listed = (await c.get("/v1/approvals")).json()
+        assert [x["id"] for x in listed] == [new["id"]] and listed[0]["passkey_required"] is True
+        r = await c.post(
+            f"/v1/approvals/{new['id']}/approve", json={"session_id": sid}, headers=CSRF
+        )
+        assert r.status_code == 403 and ran == []
+        proof = await _proof(c, auth, purpose="approve", approval_id=new["id"])
+        provider.script("Moved.")
+        r = await c.post(
+            f"/v1/approvals/{new['id']}/approve",
+            json={"session_id": sid, "passkey": proof},
+            headers=CSRF,
+        )
+        assert r.status_code == 200 and len(ran) == 1
+
+
+# ---- removal and the delayed reset --------------------------------------------------------------
+
+
+async def test_remove_needs_a_passkey_check(gclient: AsyncClient) -> None:
+    auth = await _ready(gclient)
+    cid = (await gclient.get("/v1/permissions")).json()["passkeys"][0]["id"]
+    r = await gclient.post(f"/v1/passkeys/{cid}/remove", json={}, headers=CSRF)
+    assert r.status_code == 403 and r.json()["reason"] == "passkey"
+    proof = await _proof(gclient, auth, purpose="remove", credential_id=cid)
+    r = await gclient.post(f"/v1/passkeys/{cid}/remove", json={"proof": proof}, headers=CSRF)
     assert r.status_code == 200 and r.json()["passkeys"] == []
-    r = await pclient.post(f"/v1/passkeys/{cid}/remove", json={}, headers=CSRF)
+    r = await gclient.post(f"/v1/passkeys/{cid}/remove", json={}, headers=CSRF)
     assert r.status_code == 404
 
 
-async def test_garbage_credentials_are_422_not_500(pclient: AsyncClient) -> None:
-    await _register(pclient, SoftAuthenticator(origin=ORIGIN))
+async def test_lost_passkey_reset_waits_24_hours_and_can_be_cancelled(
+    gclient: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth = await _ready(gclient)
+    now = [time.time() + 600]  # ten minutes later: the window has closed
+    monkeypatch.setattr(auth_mod, "_now", lambda: now[0])
+    r = await gclient.post("/v1/passkeys/reset", headers=CSRF)
+    assert r.status_code == 403 and r.json()["reason"] == "reauth"
+    async with _cli(gclient) as cli:
+        r = await cli.post("/v1/passkeys/reset")
+    assert r.status_code == 403 and r.json()["reason"] == "reauth"
+    await _google(gclient)
+    r = await gclient.post("/v1/passkeys/reset", headers=CSRF)
+    assert r.status_code == 200 and r.json()["reset"]["effective_at"]
+    assert len(r.json()["passkeys"]) == 1 and r.json()["require_passkey"] is True
+    events = [e["outcome"] for e in (await gclient.get("/v1/audit")).json()["entries"]]
+    assert events[-2:] == ["reset_requested", "reset_notice"]
+    r = await gclient.post("/v1/passkeys/reset/cancel", json={}, headers=CSRF)
+    assert r.status_code == 403 and r.json()["reason"] == "passkey"
+    proof = await _proof(gclient, auth, purpose="cancel_reset")
+    r = await gclient.post("/v1/passkeys/reset/cancel", json={"proof": proof}, headers=CSRF)
+    assert r.status_code == 200 and r.json()["reset"] is None and len(r.json()["passkeys"]) == 1
+
+
+async def test_garbage_credentials_are_422_not_500(gclient: AsyncClient) -> None:
+    await _ready(gclient)
     for body in (
-        {
-            "proof": {
-                "challenge_id": "x" * 20,
-                "credential": {"id": "a", "rawId": "a", "type": "nope"},
-            }
-        },
+        {"proof": {"challenge_id": "x" * 20, "credential": {"id": "a", "rawId": "a", "type": "x"}}},
         {"proof": {"challenge_id": "short", "credential": {}}},
         {
             "proof": {
@@ -287,113 +457,15 @@ async def test_garbage_credentials_are_422_not_500(pclient: AsyncClient) -> None
             }
         },
     ):
-        r = await pclient.post("/v1/passkeys/register/options", json=body, headers=CSRF)
+        r = await gclient.post("/v1/passkeys/register/options", json=body, headers=CSRF)
         assert r.status_code == 422, (body, r.text)
 
 
-# ---- Google mode: the cookie records when Google authenticated; the 5-minute recovery path -----
-
-
-@pytest.fixture
-def google_rp_settings(settings: Settings) -> Settings:
-    return settings.model_copy(
-        update={
-            "auth_mode": AuthMode.GOOGLE,
-            "google_client_id": "cid.apps.googleusercontent.com",
-            "google_client_secret": SecretStr("gsecret"),
-            "owner_emails": [OWNER],
-            "session_secret": SecretStr("x" * 32),
-            "public_base_url": ORIGIN,
-            "api_token": SecretStr("cli-token"),
-        }
-    )
-
-
-@pytest.fixture
-async def gclient(google_rp_settings: Settings) -> AsyncIterator[AsyncClient]:
-    app = create_app(google_rp_settings, provider=MockProvider(), store=InMemorySessionStore())
-    async for c in _client(app):
-        yield c
-
-
-async def _google_login(c: AsyncClient, **claims: Any) -> Any:
-    async def fake(request: Any) -> dict[str, Any]:
-        return {"userinfo": {"email": OWNER, "email_verified": True, "sub": "1", **claims}}
-
-    c.app.state.oauth.google.authorize_access_token = fake  # type: ignore[attr-defined]
-    return await c.get("/auth/callback?code=abc&state=s")
-
-
-async def test_reauth_asks_google_to_authenticate_again_and_comes_back(
-    gclient: AsyncClient,
-) -> None:
-    plain = await gclient.get("/auth/login", follow_redirects=False)
-    assert "max_age" not in plain.headers["location"]
-    r = await gclient.get("/auth/login?reauth=1", follow_redirects=False)
-    assert r.status_code in (302, 307) and "max_age=0" in r.headers["location"]
-    back = await _google_login(gclient)
-    assert back.status_code == 302 and back.headers["location"] == "/?reauth=done"
-    again = await _google_login(gclient)
-    assert again.headers["location"] == "/"  # the flag is spent
-
-
-async def test_fresh_sign_in_window_and_googles_auth_time(
-    gclient: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    now = [1_800_000_000.0]
-    monkeypatch.setattr(auth_mod, "_now", lambda: now[0])
-    await _google_login(gclient)
-    v = (await gclient.get("/v1/permissions")).json()
-    assert v["can_reauth"] is True and v["fresh_sign_in_s"] == 300
-    now[0] += 299
-    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 1
-    now[0] += 2
-    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 0
-    # Google says the owner last authenticated an hour ago: not fresh
-    await _google_login(gclient, auth_time=int(now[0] - 3600))
-    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 0
-    await _google_login(gclient, auth_time=int(now[0] - 10))
-    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 290
-
-
-async def test_lost_passkey_recovery_with_a_fresh_google_sign_in(
-    gclient: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    now = [1_800_000_000.0]
-    monkeypatch.setattr(auth_mod, "_now", lambda: now[0])
-    await _google_login(gclient)
-    v = await _register(gclient, SoftAuthenticator(origin=ORIGIN))
-    cid = v["passkeys"][0]["id"]
-    now[0] += 600  # ten minutes later the passkey is lost
-    r = await gclient.post(f"/v1/passkeys/{cid}/remove", json={}, headers=CSRF)
-    assert r.status_code == 403 and r.json()["reason"] == "reauth"
-    await _google_login(gclient)  # /auth/login?reauth=1 → Google → back
-    r = await gclient.post(f"/v1/passkeys/{cid}/remove", json={}, headers=CSRF)
-    assert r.status_code == 200 and r.json()["passkeys"] == []
-    assert r.json()["require_passkey"] is False
-
-
-async def test_a_second_passkey_needs_proof_after_the_window(
-    gclient: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    now = [1_800_000_000.0]
-    monkeypatch.setattr(auth_mod, "_now", lambda: now[0])
-    await _google_login(gclient)
-    auth = SoftAuthenticator(origin=ORIGIN)
-    await _register(gclient, auth)
-    now[0] += 301
-    r = await gclient.post("/v1/passkeys/register/options", json={}, headers=CSRF)
-    assert r.status_code == 403 and r.json()["error"] == "proof_required"
-    proof = await _proof(gclient, auth, purpose="add")
-    v = await _register(gclient, auth, proof=proof)
-    assert len(v["passkeys"]) == 2
-
-
 async def test_cookie_writes_need_the_csrf_header(gclient: AsyncClient) -> None:
-    await _google_login(gclient)
+    await _google(gclient)
     r = await gclient.put("/v1/permissions", json={"groups": {"web": "deny"}})
     assert r.status_code == 403 and r.json()["error"] == "csrf"
-    r = await gclient.post("/v1/passkeys/challenge", json={"purpose": "add"})
+    r = await gclient.post("/v1/passkeys/reset")
     assert r.status_code == 403 and r.json()["error"] == "csrf"
 
 
@@ -401,12 +473,3 @@ async def test_signed_out_gets_401(gclient: AsyncClient) -> None:
     assert (await gclient.get("/v1/permissions")).status_code == 401
     r = await gclient.post("/v1/passkeys/register/options", json={}, headers=CSRF)
     assert r.status_code == 401
-
-
-async def test_permission_changes_land_in_the_shared_audit_chain(client: AsyncClient) -> None:
-    await client.put("/v1/permissions", json={"groups": {"web": "deny", "email_send": "deny"}})
-    audit = (await client.get("/v1/audit")).json()
-    last = audit["entries"][-1]
-    assert audit["verified"] is True
-    assert (last["agent"], last["tool"], last["outcome"]) == ("owner", "permissions", "changed")
-    assert last["detail"] == "email_send=deny; web=deny"

@@ -11,7 +11,12 @@ Only public keys are stored — a passkey's private key never leaves the owner's
 challenge is taken (read + deleted in one transaction) before anything is checked, so it works
 once even when the check fails. The sign count is advanced with a compare-and-set inside a
 transaction: two uses of the same assertion can't both pass. Expired challenges a browser never
-answered are swept when the same owner asks for a new one (and at most 10 are live per owner).
+answered are swept when the same owner asks for a new one; at most 10 are live per owner AND
+purpose, so asking for many of one kind never pushes out a waiting approval's check.
+
+A passkeys document that exists but can't be read (hand-edited, truncated) is NOT "no passkeys":
+every read raises `PasskeyDataUnreadable` and the service fails closed (irreversible approvals
+blocked) until the owner resets their passkeys (`wipe`, which does not need to read it).
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.logging import get_logger
+from jarvis.permissions.errors import PasskeyDataUnreadable
 from jarvis.storage.docs import Delete, Docs, DocTx, Query, Set
 from jarvis.storage.sessions import safe_id
 
@@ -51,6 +57,7 @@ class StoredPasskey(BaseModel):
     last_used_at: str | None = None
     transports: list[str] = Field(default_factory=list)
     backed_up: bool = False
+    via_recovery: bool = False  # the first one set up after a reset by Google sign-in
 
 
 class Challenge(BaseModel):
@@ -74,15 +81,17 @@ class NeedsProof(Exception):
 
 
 def _decode_creds(doc: Any) -> list[StoredPasskey]:
-    if not isinstance(doc, dict) or not isinstance(doc.get("creds"), list):
+    """The stored passkeys; [] only when there is no document at all."""
+    if doc is None:
         return []
-    out: list[StoredPasskey] = []
-    for raw in doc["creds"]:
-        try:
-            out.append(StoredPasskey.model_validate(raw))
-        except (ValueError, TypeError):
-            log.error("unreadable stored passkey skipped")
-    return out
+    if not isinstance(doc, dict) or not isinstance(doc.get("creds"), list):
+        log.error("passkeys document unreadable")
+        raise PasskeyDataUnreadable("passkeys document unreadable")
+    try:
+        return [StoredPasskey.model_validate(raw) for raw in doc["creds"]]
+    except (ValueError, TypeError) as exc:
+        log.error("stored passkey unreadable")
+        raise PasskeyDataUnreadable("stored passkey unreadable") from exc
 
 
 class PasskeyStore:
@@ -103,7 +112,12 @@ class PasskeyStore:
         }
 
     async def owned(self, uid: str) -> list[StoredPasskey]:
+        """Raises PasskeyDataUnreadable when the document exists but can't be read."""
         return _decode_creds(await self._d.get(self._path(uid)))
+
+    async def wipe(self, uid: str) -> None:
+        """Remove every passkey (the delayed reset), without reading what is stored."""
+        await self._d.write([Set(self._path(uid), self._doc(uid, []))])
 
     async def add(
         self, uid: str, cred: StoredPasskey, *, only_if_none: bool = False
@@ -174,6 +188,8 @@ class ChallengeStore:
     async def create(
         self, *, cid: str, uid: str, purpose: str, binding: str, challenge: str, note: str = ""
     ) -> Challenge:
+        """Store a new challenge (2 minutes); this owner's expired ones and the oldest live
+        ones of the SAME purpose beyond the cap are dropped first."""
         if not safe_id(cid) or not safe_id(uid):
             raise ValueError("invalid id")
         now = self._clock()
@@ -186,7 +202,7 @@ class ChallengeStore:
             expires_at=now + CHALLENGE_TTL,
             note=note,
         )
-        await self._sweep(uid, now)
+        await self._sweep(uid, now, purpose)
         await self._d.write(
             [
                 Set(
@@ -197,8 +213,9 @@ class ChallengeStore:
         )
         return ch
 
-    async def _sweep(self, uid: str, now: datetime) -> None:
-        """Drop this owner's expired challenges and keep the live ones under the cap."""
+    async def _sweep(self, uid: str, now: datetime, purpose: str) -> None:
+        """Drop this owner's expired challenges and keep the live ones of `purpose` under the
+        cap (other purposes are untouched: no flooding away an approval's check)."""
         try:
             rows = await self._d.query(Query(self._col, where=("user_id", uid)))
         except Exception as exc:  # noqa: BLE001 — tidying must never block a ceremony
@@ -210,7 +227,7 @@ class ChallengeStore:
             exp = data.get("expires_at")
             if not isinstance(exp, datetime) or exp <= now:
                 gone.append(cid)
-            else:
+            elif data.get("purpose") == purpose:
                 live.append((exp, cid))
         live.sort()
         excess = len(live) - (MAX_LIVE_CHALLENGES - 1)
@@ -245,6 +262,7 @@ __all__ = [
     "LABEL_MAX",
     "MAX_PASSKEYS",
     "NeedsProof",
+    "PasskeyDataUnreadable",
     "PasskeyLimit",
     "PasskeyStore",
     "StoredPasskey",

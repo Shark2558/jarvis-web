@@ -4,29 +4,33 @@
 
 GET  /v1/permissions                   PermissionsView: groups [{id, section, label, hint,
                                        irreversible, choices, effect, default}], require_passkey,
-                                       passkeys [{id, label, created_at, last_used_at, backed_up}],
-                                       passkeys_available, passkeys_note, can_reauth,
-                                       fresh_sign_in_s, max_passkeys, label_max, rev
+                                       passkeys [{id, label, created_at, last_used_at, backed_up,
+                                       via_recovery}], passkeys_available, passkeys_note,
+                                       passkeys_error, reset {requested_at, effective_at} | null,
+                                       can_reauth, fresh_sign_in_s, max_passkeys, label_max, rev
 PUT  /v1/permissions                   {groups?: {id: allow|ask|deny}, require_passkey?, proof?}
                                        422 input_rejected (Allow on an irreversible group, unknown
                                        group / effect, requirement on without a passkey);
                                        403 proof_required when switching the requirement off
-POST /v1/passkeys/challenge            {purpose: approve|remove|add|disable, approval_id?,
-                                       credential_id?} → {challenge_id, public_key, expires_in_s}
-                                       (navigator.credentials.get options; 2 minutes, single use)
-POST /v1/passkeys/register/options     {proof?} → creation options (proof needed once a passkey
-                                       exists: a check for "add", or a sign-in < 5 min old)
+POST /v1/passkeys/challenge            {purpose: approve|remove|add|disable|cancel_reset,
+                                       approval_id?, credential_id?} → {challenge_id, public_key,
+                                       expires_in_s} (credentials.get options; 2 min, single use)
+POST /v1/passkeys/register/options     {proof?} → creation options. The first passkey: a browser
+                                       signed in with Google again < 5 min ago (bearer: refused);
+                                       later ones: a passkey check for "add"
 POST /v1/passkeys/register             {challenge_id, credential, label} → PermissionsView
-POST /v1/passkeys/{id}/remove          {proof?} → PermissionsView (proof: a check for removing
-                                       exactly this passkey, or a sign-in < 5 min old)
+POST /v1/passkeys/{id}/remove          {proof} → PermissionsView (a check for exactly this one)
+POST /v1/passkeys/reset                start removing ALL passkeys in 24 h (a browser signed in
+                                       with Google again < 5 min ago; inbox notice; audit)
+POST /v1/passkeys/reset/cancel         {proof} → cancel it with any passkey
 
 Approving an irreversible card while the requirement is in force: POST /v1/approvals/{id}/approve
-{session_id, passkey: {challenge_id, credential}} (`guard_approval`, called by that route). Without
-it: 403 passkey_required — what the CLI and scripts get (they can't do WebAuthn).
+{session_id, passkey: {challenge_id, credential}}; the gateway's approval guard checks it on the
+card as it is at that moment. Without it: 403 passkey_required — what the CLI and scripts get.
 
 Errors: {error, detail, reason?}: 409 passkeys_unavailable, 403 passkey_required, 403
 proof_required {reason: reauth|passkey}, 403 passkey_rejected {reason: replayed|expired|
-wrong_action|unknown_passkey|failed}, 404 not_found, 429 rate_limited.
+wrong_action|unknown_passkey|unreadable|failed}, 503 passkeys_unreadable, 404 not_found, 429.
 """
 
 from __future__ import annotations
@@ -41,9 +45,11 @@ from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.config import AuthMode, Settings
 from jarvis.core.models import PendingApproval
+from jarvis.integrations.google import GoogleConnector
 from jarvis.logging import get_logger
 from jarvis.permissions.ceremony import RelyingParty
 from jarvis.permissions.errors import (
+    PasskeyDataUnreadable,
     PasskeyRejected,
     PasskeyRequired,
     PasskeysUnavailable,
@@ -51,17 +57,18 @@ from jarvis.permissions.errors import (
     ProofRequired,
 )
 from jarvis.permissions.models import (
+    CancelResetRequest,
     ChallengeRequest,
     ChallengeView,
-    PasskeyProof,
     PermissionsPatch,
     PermissionsView,
     RegisterOptionsRequest,
     RegisterRequest,
     RemoveRequest,
 )
+from jarvis.permissions.notify import inbox_notifier
 from jarvis.permissions.passkeys import ChallengeStore, PasskeyStore
-from jarvis.permissions.service import PermissionsService
+from jarvis.permissions.service import UNREADABLE, PermissionsService
 from jarvis.permissions.store import PermissionsStore
 from jarvis.storage.docs import Docs
 from jarvis.tools.audit import AuditTrail
@@ -82,10 +89,14 @@ class PermissionsRateLimited(Exception):
 
 
 def build_permissions(
-    s: Settings, docs: Docs, *, audit: AuditTrail | None = None
+    s: Settings,
+    docs: Docs,
+    *,
+    audit: AuditTrail | None = None,
+    google: GoogleConnector | None = None,
 ) -> PermissionsService:
     """Choices, passkeys and challenges on the app's documents (Firestore in production); every
-    change to them goes to the same audit chain as the tool calls."""
+    change goes to the same audit chain as the tool calls; a reset notice to the Gmail inbox."""
     p = s.firestore_prefix
     return PermissionsService(
         store=PermissionsStore(docs, prefix=p),
@@ -94,6 +105,7 @@ def build_permissions(
         rp=RelyingParty.from_base_url(s.public_base_url),
         can_reauth=s.auth_mode is AuthMode.GOOGLE,
         audit=audit,
+        notify=inbox_notifier(google),
     )
 
 
@@ -111,6 +123,7 @@ def _limit(request: Request, name: str, uid: str) -> None:
 
 
 def _fresh(request: Request) -> int | None:
+    """Seconds left of a Google re-sign-in in THIS browser; None for a bearer caller."""
     return fresh_sign_in_left(request, request.app.state.settings)
 
 
@@ -178,6 +191,25 @@ async def passkey_register(
     return await svc.register(uid, req, fresh_left_s=_fresh(request))
 
 
+@router.post("/v1/passkeys/reset", response_model=PermissionsView)
+async def passkey_reset(
+    request: Request, svc: PermissionsService = Depends(_svc), uid: str = Depends(current_user)
+) -> PermissionsView:
+    _limit(request, "ceremony", uid)
+    return await svc.start_reset(uid, fresh_left_s=_fresh(request))
+
+
+@router.post("/v1/passkeys/reset/cancel", response_model=PermissionsView)
+async def passkey_reset_cancel(
+    req: CancelResetRequest,
+    request: Request,
+    svc: PermissionsService = Depends(_svc),
+    uid: str = Depends(current_user),
+) -> PermissionsView:
+    _limit(request, "ceremony", uid)
+    return await svc.cancel_reset(uid, proof=req.proof, fresh_left_s=_fresh(request))
+
+
 @router.post("/v1/passkeys/{credential_id}/remove", response_model=PermissionsView)
 async def passkey_remove(
     credential_id: str,
@@ -190,36 +222,22 @@ async def passkey_remove(
     return await svc.remove(uid, credential_id, proof=req.proof, fresh_left_s=_fresh(request))
 
 
-# ---- used by the approvals routes (jarvis.api.routes) -------------------------------------------
-
-
-async def guard_approval(
-    request: Request, uid: str, approval_id: str, proof: PasskeyProof | None
-) -> None:
-    """Before an approval runs: an irreversible card needs a passkey check made for exactly it
-    while the owner requires one. A card that is gone or someone else's is left to the brain,
-    which answers 404 and runs nothing."""
-    svc: PermissionsService | None = getattr(request.app.state, "permissions", None)
-    if svc is None:
-        return
-    action = await _lookup(request, approval_id)
-    if action is None or not (action.scope or "").startswith(f"{uid}:"):
-        return
-    await svc.check_approval(uid, action, proof)
+# ---- used by the approvals list (jarvis.api.routes) --------------------------------------------
 
 
 async def mark_passkey_cards(
     request: Request, uid: str, cards: list[PendingApproval]
 ) -> list[PendingApproval]:
-    """Which waiting cards the console must approve with a passkey."""
+    """Which waiting cards the console must approve with a passkey. The gateway's approval guard
+    decides for real at approval time; this only labels the button."""
     svc: PermissionsService | None = getattr(request.app.state, "permissions", None)
     if svc is None or not cards:
         return cards
     try:
         required = await svc.passkey_required(uid)
-    except Exception as exc:  # noqa: BLE001 — the list stays readable; approving still checks
+    except Exception as exc:  # noqa: BLE001 — label every irreversible card (fail closed)
         log.warning("passkey setting unreadable", extra={"error": type(exc).__name__})
-        return cards
+        required = svc.available
     if not required:
         return cards
     return [
@@ -253,14 +271,16 @@ def install_permissions(app: FastAPI) -> None:
         return _err(403, {"error": "passkey_required", "detail": str(exc)})
 
     @app.exception_handler(ProofRequired)
-    async def _proof(request: Request, exc: ProofRequired) -> JSONResponse:
-        svc: PermissionsService | None = getattr(request.app.state, "permissions", None)
-        reason = "reauth" if svc is not None and svc.can_reauth else "passkey"
-        return _err(403, {"error": "proof_required", "detail": str(exc), "reason": reason})
+    async def _proof(_: Request, exc: ProofRequired) -> JSONResponse:
+        return _err(403, {"error": "proof_required", "detail": str(exc), "reason": exc.reason})
 
     @app.exception_handler(PasskeyRejected)
     async def _bad_passkey(_: Request, exc: PasskeyRejected) -> JSONResponse:
         return _err(403, {"error": "passkey_rejected", "detail": str(exc), "reason": exc.reason})
+
+    @app.exception_handler(PasskeyDataUnreadable)
+    async def _unreadable(_: Request, exc: PasskeyDataUnreadable) -> JSONResponse:
+        return _err(503, {"error": "passkeys_unreadable", "detail": UNREADABLE})
 
     @app.exception_handler(PermissionsRateLimited)
     async def _limited(_: Request, exc: PermissionsRateLimited) -> JSONResponse:
@@ -272,7 +292,6 @@ def install_permissions(app: FastAPI) -> None:
 
 __all__ = [
     "build_permissions",
-    "guard_approval",
     "install_permissions",
     "mark_passkey_cards",
     "router",

@@ -90,6 +90,19 @@ class ConfirmationInvalid(PermissionError):
 ActionMatcher = Callable[[PendingAction], bool]
 
 
+def same_card(stored: PendingAction, proposed: PendingAction) -> bool:
+    """Is `proposed` exactly the action the owner saw on `stored`'s card? Same tool, arguments
+    (drift → re-confirm) and conversation — and (slice 10 D) the same card text and the same
+    risk of the call itself; a card stored before `tool_risk` existed matches any."""
+    return (
+        stored.tool == proposed.tool
+        and stored.arguments == proposed.arguments
+        and stored.scope == proposed.scope
+        and stored.summary == proposed.summary
+        and (stored.tool_risk is None or stored.tool_risk == proposed.tool_risk)
+    )
+
+
 class ApprovalStore(ABC):
     """Where actions awaiting owner approval live (Layer 7). Must survive restarts in prod."""
 
@@ -163,11 +176,7 @@ class ConfirmationGate:
             return
 
         def same(p: PendingAction) -> bool:
-            return (
-                p.tool == action.tool
-                and p.arguments == action.arguments  # argument drift → re-confirm
-                and p.scope == action.scope
-            )
+            return same_card(p, action)
 
         if confirmation_id is None:
             # the same proposal twice must not become two approvals (= two sends)

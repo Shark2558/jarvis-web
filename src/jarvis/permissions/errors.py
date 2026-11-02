@@ -16,23 +16,35 @@ class PasskeyRequired(PermissionError):
 
 
 class ProofRequired(PermissionError):
-    """403 proof_required: a passkey check, or a Google sign-in in the last 5 minutes."""
+    """403 proof_required {reason}: "passkey" — a passkey check made for exactly this; "reauth" —
+    a Google sign-in in this browser in the last 5 minutes (/auth/login?reauth=1)."""
+
+    def __init__(self, detail: str, *, reason: str = "passkey") -> None:
+        super().__init__(detail)
+        self.reason = reason
 
 
 class PasskeyRejected(PermissionError):
     """403 passkey_rejected: the check was replayed, expired, for another action, from another
     site, by an unknown passkey, or did not verify. `reason` is a stable code for the console."""
 
-    def __init__(self, reason: str, detail: str) -> None:
+    def __init__(self, reason: str, detail: str, *, audit_detail: str = "") -> None:
         super().__init__(detail)
         self.reason = reason
+        self.audit_detail = audit_detail or reason  # what the audit records (never shown)
 
 
 class PasskeyNotFound(LookupError):
     """404: no such passkey for this owner."""
 
 
+class PasskeyDataUnreadable(Exception):
+    """503 passkeys_unreadable: the owner's passkeys can't be read; irreversible approvals are
+    blocked (fail closed) until the owner resets their passkeys."""
+
+
 __all__ = [
+    "PasskeyDataUnreadable",
     "PasskeyNotFound",
     "PasskeyRejected",
     "PasskeyRequired",

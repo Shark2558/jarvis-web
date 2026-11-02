@@ -6,14 +6,17 @@
 // token; 401 → gate). Loads only when the Approvals panel opens or the section is expanded.
 // API: GET/PUT /v1/permissions; POST /v1/passkeys/challenge {purpose, approval_id?, credential_id?};
 // POST /v1/passkeys/register/options {proof?}; POST /v1/passkeys/register {challenge_id, credential,
-// label}; POST /v1/passkeys/{id}/remove {proof?}. Re-authentication: /auth/login?reauth=1 → /?reauth=done.
+// label}; POST /v1/passkeys/{id}/remove {proof}; POST /v1/passkeys/reset; POST /v1/passkeys/reset/cancel
+// {proof}. Re-sign-in: /auth/login?reauth=1 → /?reauth=done (or =stale: Google didn't ask again).
+// Lowering protection always takes a passkey; a fresh Google sign-in only sets up the FIRST passkey or
+// starts the 24-hour reset, which shows as a banner at the top of the Approvals panel until it's over.
 // Exposes window.JarvisPasskey {supported(), approve(approvalId) → proof, message(err)} for the
 // approval cards in console.js ("Approve with passkey").
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
   const btn = $('permSetBtn'), body = $('permSetBody'), sum = $('permSum');
-  const noteEl = $('permNote'), groupsEl = $('permGroups'), box = $('pskBox');
+  const noteEl = $('permNote'), groupsEl = $('permGroups'), box = $('pskBox'), banner = $('permBanner');
   const Deck = window.JarvisDeck || { open() {}, isOpen: () => false };
   const emit = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
   const log = (kind, text) => emit('jarvis:event', { kind, text, at: Date.now(), live: true });
@@ -135,15 +138,24 @@
     }).filter(Boolean);
     const passkeys = arr(o.passkeys).map(p => {
       const x = obj(p); const id = x && typeof x.id === 'string' && x.id.length <= 1400 ? x.id : '';
-      return id ? { id, label: txt(x.label, 40) || 'Passkey', created: day(x.created_at), used: day(x.last_used_at) } : null;
+      return id ? { id, label: txt(x.label, 40) || 'Passkey', created: day(x.created_at), used: day(x.last_used_at),
+        recovery: x.via_recovery === true } : null;
     }).filter(Boolean);
     const fresh = typeof o.fresh_sign_in_s === 'number' && Number.isFinite(o.fresh_sign_in_s) ? Math.max(0, o.fresh_sign_in_s) : 0;
+    const reset = obj(o.reset), resetAt = reset ? moment(reset.effective_at) : '';
     return { groups, passkeys, require: o.require_passkey === true, available: o.passkeys_available === true,
-      why: txt(o.passkeys_note, 300), canReauth: o.can_reauth === true, fresh, max: typeof o.max_passkeys === 'number' ? o.max_passkeys : 10 };
+      why: txt(o.passkeys_note, 300), error: txt(o.passkeys_error, 300), reset: resetAt ? { at: resetAt } : null,
+      canReauth: o.can_reauth === true, fresh, max: typeof o.max_passkeys === 'number' ? o.max_passkeys : 10 };
+  }
+  /** "2 Nov, 9:00 am" in the owner's own time and language. */
+  function moment(iso) {
+    const d = new Date(txt(iso, 40) || NaN);
+    if (isNaN(d)) return '';
+    try { return new Intl.DateTimeFormat([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(d); } catch (_) { return ''; }
   }
 
   // ---- state ------------------------------------------------------------------------------------
-  const S = { data: undefined, error: '', seq: 0, fetchedAt: 0, busy: false, confirm: null, signedIn: false };
+  const S = { data: undefined, error: '', seq: 0, fetchedAt: 0, busy: false, confirm: null, confirmReset: false, signedIn: false };
   const freshLeft = () => (S.data ? S.data.fresh - (Date.now() - S.fetchedAt) / 1000 : 0);
   function note(kind, text) { if (!noteEl) return; noteEl.className = 'bnote' + (kind ? ' ' + kind : ''); noteEl.textContent = text || ''; }
 
@@ -209,29 +221,26 @@
   }
 
   // ---- passkeys -----------------------------------------------------------------------------------
-  /** Lowering protection: a recent Google sign-in counts; otherwise a passkey check for exactly this. */
-  async function withProof(req, call) {
-    const d = S.data;
-    if (!d.passkeys.length || freshLeft() > 5) {
-      try { return await call(null); }
-      catch (e) { if (!(e && e.status === 403 && e.code === 'proof_required' && d.passkeys.length)) throw e; }
-    }
-    return call(await prove(req));
-  }
+  // Every change that lowers protection is confirmed with a passkey (no sign-in shortcut). A fresh
+  // Google sign-in only sets up the FIRST passkey, or starts the 24-hour reset of all of them.
   async function act(fn, ok) {
     if (S.busy) return;
     S.busy = true; note('', ''); render();
     try { const v = normal(await fn()); if (v) { S.data = v; S.fetchedAt = Date.now(); } note('ok', ok); log('info', ok); }
     catch (e) { note('bad', errText(e)); }
-    finally { S.busy = false; S.confirm = null; render(); }
+    finally { S.busy = false; S.confirm = null; S.confirmReset = false; render(); }
   }
-  const addPasskey = (label) => act(() => withProof({ purpose: 'add' }, (proof) => createPasskey(proof, label)),
+  const addPasskey = (label) => act(async () => createPasskey(S.data.passkeys.length ? await prove({ purpose: 'add' }) : null, label),
     'Passkey set up. Approving anything that can\'t be undone now asks for it.');
-  const removePasskey = (p) => act(() => withProof({ purpose: 'remove', credential_id: p.id },
-    (proof) => api(`/v1/passkeys/${encodeURIComponent(p.id)}/remove`, { body: proof ? { proof } : {} })), `Removed “${p.label}”.`);
-  const setRequire = (on) => act(() => (on ? api('/v1/permissions', { method: 'PUT', body: { require_passkey: true } })
-    : withProof({ purpose: 'disable' }, (proof) => api('/v1/permissions', { method: 'PUT', body: proof ? { require_passkey: false, proof } : { require_passkey: false } }))),
+  const removePasskey = (p) => act(async () => api(`/v1/passkeys/${encodeURIComponent(p.id)}/remove`,
+    { body: { proof: await prove({ purpose: 'remove', credential_id: p.id }) } }), `Removed “${p.label}”.`);
+  const setRequire = (on) => act(async () => api('/v1/permissions', { method: 'PUT',
+    body: on ? { require_passkey: true } : { require_passkey: false, proof: await prove({ purpose: 'disable' }) } }),
   on ? 'Passkey needed for actions that can\'t be undone.' : 'Passkey no longer needed. Approvals still ask first.');
+  const startReset = () => act(() => api('/v1/passkeys/reset', { body: {} }),
+    'Reset started: every passkey will be removed in 24 hours. Any passkey can still cancel it.');
+  const cancelReset = () => act(async () => api('/v1/passkeys/reset/cancel', { body: { proof: await prove({ purpose: 'cancel_reset' }) } }),
+    'Reset cancelled. Your passkeys stay.');
   function reauth() { try { window.location.assign('/auth/login?reauth=1'); } catch (_) {} }
 
   function button(text, cls, onClick) {
@@ -243,11 +252,11 @@
   function passkeyRow(p) {
     const li = mk('li', 'pskrow'), t = mk('div', 'btxt');
     t.append(mk('span', 'bl', p.label), mk('small', '', [p.created && `Added ${p.created}`, p.used && `last used ${p.used}`].filter(Boolean).join(' · ')));
+    if (p.recovery) t.appendChild(mk('small', 'pskflag', 'Set up after a reset by Google sign-in. Not you? Remove it.'));
     li.appendChild(t);
     if (S.confirm === p.id) {
       const c = mk('div', 'pskconfirm'); c.setAttribute('role', 'group'); c.setAttribute('aria-label', `Remove ${p.label}`);
-      c.appendChild(mk('p', '', freshLeft() > 5 ? `Remove “${p.label}”? You signed in with Google a moment ago, so no passkey is needed.`
-        : `Remove “${p.label}”? You'll confirm with one of your passkeys.`));
+      c.appendChild(mk('p', '', `Remove “${p.label}”? You'll confirm with one of your passkeys.`));
       const keep = button('Keep', '', () => { S.confirm = null; render(); });
       c.append(keep, button('Remove', 'mdanger', () => removePasskey(p)));
       li.appendChild(c);
@@ -261,9 +270,16 @@
     const d = S.data;
     if (!d.available) { box.appendChild(mk('p', 'bfine', d.why || 'Passkeys are off on this server.')); return; }
     box.appendChild(mk('p', 'bfine', 'With a passkey (Windows Hello, your phone\'s fingerprint or face, or a security key), approving anything that can\'t be undone — sending email, deleting — needs you, not just this browser.'));
+    if (d.error) box.appendChild(mk('p', 'lerr', d.error));
+    if (d.reset) {
+      const r = mk('div', 'pskconfirm pskreset'); r.setAttribute('role', 'group'); r.setAttribute('aria-label', 'Passkey reset pending');
+      r.appendChild(mk('p', '', `Every passkey will be removed on ${d.reset.at}. This was asked for with a Google sign-in. Not you? Cancel it with one of your passkeys, then secure your Google account.`));
+      if (d.passkeys.length) { const c = button('Cancel reset', 'primary', cancelReset); c.id = 'pskCancelReset'; r.appendChild(c); }
+      box.appendChild(r);
+    }
     const opt = mk('div', 'bopt'), t = mk('div', 'btxt'), l = mk('span', 'bl', 'Require passkey for irreversible actions');
     l.id = 'pskReqL'; t.appendChild(l);
-    t.appendChild(mk('small', '', d.passkeys.length ? 'Turning this off needs your passkey or a fresh Google sign-in.' : 'Set up a passkey first.'));
+    t.appendChild(mk('small', '', d.passkeys.length ? 'Turning this off needs your passkey.' : 'Set up a passkey first.'));
     const sw = mk('button', 'bsw'); sw.type = 'button'; sw.id = 'pskReq';
     sw.setAttribute('aria-pressed', String(d.require)); sw.setAttribute('aria-labelledby', l.id);
     const track = mk('span', 'track'); track.setAttribute('aria-hidden', 'true'); track.appendChild(mk('i'));
@@ -274,7 +290,10 @@
     opt.append(t, sw); box.appendChild(opt);
     if (d.passkeys.length) { const ul = mk('ul', 'psklist'); d.passkeys.forEach(p => ul.appendChild(passkeyRow(p))); box.appendChild(ul); }
     if (!supported()) box.appendChild(mk('p', 'lerr', NOT_SUPPORTED));
-    else if (d.passkeys.length < d.max) {
+    else if (!d.passkeys.length && !d.error && freshLeft() <= 5) {
+      box.appendChild(mk('p', 'bfine', 'Your first passkey needs a fresh Google sign-in in this browser (it counts for 5 minutes).'));
+      const go = button('Sign in with Google again', 'primary', reauth); go.id = 'pskReauth'; box.appendChild(go);
+    } else if (!d.error && d.passkeys.length < d.max) {
       const add = mk('form', 'pskadd'), lab = mk('label', 'sr-only', 'Name for the new passkey'), inp = mk('input', 'minput');
       inp.id = 'pskLabel'; inp.maxLength = 40; inp.placeholder = 'Name, e.g. Laptop'; inp.autocomplete = 'off'; lab.htmlFor = inp.id;
       const go = mk('button', 'btn primary lift bact', d.passkeys.length ? 'Add another passkey' : 'Set up a passkey');
@@ -282,16 +301,38 @@
       add.addEventListener('submit', (ev) => { ev.preventDefault(); if (!S.busy) addPasskey(inp.value.trim()); });
       add.append(lab, inp, go); box.appendChild(add);
     }
-    if (d.canReauth && d.passkeys.length) {
-      const r = mk('div', 'pskrec');
-      r.appendChild(mk('p', 'bfine', freshLeft() > 5 ? `Signed in again: for about ${Math.ceil(freshLeft() / 60)} more min you can remove a passkey or switch this off without one.`
-        : 'Lost your passkey? Sign in with Google again, then remove it within 5 minutes.'));
-      if (freshLeft() <= 5) r.appendChild(button('Sign in again', '', reauth));
-      box.appendChild(r);
+    if (d.canReauth && (d.passkeys.length || d.error) && !d.reset) box.appendChild(recovery());
+  }
+  /** Lost every passkey: a Google sign-in can only START a reset, which happens 24 hours later. */
+  function recovery() {
+    const r = mk('div', 'pskrec');
+    r.appendChild(mk('p', 'bfine', 'Lost all your passkeys? Sign in with Google again to start a reset: every passkey is removed after 24 hours, a notice goes to your Gmail inbox, and any passkey can cancel it.'));
+    if (freshLeft() <= 5) { r.appendChild(button('Sign in again', '', reauth)); return r; }
+    if (!S.confirmReset) {
+      const go = button('Start 24-hour reset', 'mdanger', () => { S.confirmReset = true; render(); }); go.id = 'pskReset';
+      r.appendChild(go); return r;
     }
+    const c = mk('div', 'pskconfirm'); c.setAttribute('role', 'group'); c.setAttribute('aria-label', 'Start passkey reset');
+    c.appendChild(mk('p', '', 'Remove every passkey in 24 hours? Until then nothing changes, and approving anything that can\'t be undone still needs a passkey.'));
+    const keep = button('Keep', '', () => { S.confirmReset = false; render(); });
+    const yes = button('Start reset', 'mdanger', startReset); yes.id = 'pskResetYes';
+    c.append(keep, yes); r.appendChild(c);
+    setTimeout(() => keep.focus(), 0);
+    return r;
+  }
+  /** A pending reset shows at the top of the Approvals panel, whether Permissions is open or not. */
+  function renderBanner() {
+    if (!banner) return;
+    const at = S.data && S.data.reset ? S.data.reset.at : '';
+    banner.hidden = !at;
+    banner.replaceChildren();
+    if (!at) return;
+    banner.appendChild(mk('p', '', `Passkey reset pending: every passkey will be removed on ${at}. Not you? Cancel it with one of your passkeys.`));
+    banner.appendChild(button('Review', '', () => expand(true, true)));
   }
   function render() {
     summary();
+    renderBanner();
     if (!groupsEl || body.hidden) return;
     groupsEl.replaceChildren();
     if (S.data === undefined && !S.error) { groupsEl.appendChild(mk('div', 'empty', 'Loading permissions…')); return; }
@@ -320,16 +361,20 @@
   btn.addEventListener('click', () => expand(body.hidden, true));
   function afterReauth() {
     let q; try { q = new URLSearchParams(window.location.search); } catch (_) { return; }
-    if (q.get('reauth') !== 'done') return;
+    const how = q.get('reauth');
+    if (how !== 'done' && how !== 'stale') return;
     try { history.replaceState(null, '', window.location.pathname); } catch (_) {}
     Deck.open('approvals', { focus: true });
     expand(true, false);
-    note('ok', 'Signed in again. For the next 5 minutes you can remove a passkey or switch the requirement off without one.');
+    if (how === 'done') note('ok', 'Signed in again. For the next 5 minutes you can set up your first passkey or start a passkey reset here.');
+    else note('bad', 'Google didn\'t ask you to sign in again, so this didn\'t count. Sign out of Google in this browser, then try again.');
   }
-  function ready() {
+  async function ready() {
     S.signedIn = true; S.data = undefined; S.error = '';
     expand(store.get(OPEN_KEY) === '1', false);
     afterReauth();
+    if (stale()) await load(); // once per sign-in: a pending passkey reset must be seen
+    if (S.data && S.data.reset) Deck.open('approvals', { focus: false });
   }
   document.addEventListener('jarvis:ready', ready);
   document.addEventListener('jarvis:panel', (e) => { const d = e.detail || {}; if (d.id === 'approvals' && d.open && stale()) load(); });

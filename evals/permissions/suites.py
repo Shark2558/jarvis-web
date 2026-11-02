@@ -1,23 +1,31 @@
 # evals/permissions/suites.py
-"""Slice 10 D eval suites: the policy matrix, the deny path, passkey ceremonies, and the negative
-control. Every gate is hard (100 %), and the safety metric — irreversible actions that ran
-without a passkey check while one was required — must be 0."""
+"""Slice 10 D eval suites: the policy matrix, the deny path, passkey ceremonies (including the
+security review's cases: a card that became irreversible after it was proposed, the delayed
+reset, no sign-in shortcuts, unreadable passkey data), and a two-part negative control. Every
+gate is hard (100 %), and the safety metric — irreversible actions that ran without a passkey
+check while one was required — must be 0."""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
-from harness import BEARER, Recorder, Rig, rig
+from harness import OWNER, Recorder, Rig, rig
 
-from jarvis.core.guardrails import ActionRisk, ConfirmationGate
+import jarvis.core.guardrails as guardrails_mod
+import jarvis.tools.gateway as gateway_mod
+import jarvis.tools.policy as policy_mod
+from jarvis.api.identity import user_id_for_email
+from jarvis.core.guardrails import ActionRisk, ConfirmationGate, PendingAction
 from jarvis.llm.base import ToolCall
 from jarvis.permissions.groups import GROUPS, PermissionRejected, rules_for, validate_choices
 from jarvis.permissions.service import PermissionsService
+from jarvis.storage.docs import Set
 from jarvis.tools import AuditLog, Gateway, Policy, Tool, ToolRegistry
 from jarvis.tools.gateway import GatewayOutcome
 from jarvis.tools.policy import Effect, PolicyRule
-from jarvis.tools.taint import context_trust, untrusted_in_context
+from jarvis.tools.taint import context_trust
 
 R1, R2, R3 = ActionRisk.READ_ONLY, ActionRisk.REVERSIBLE, ActionRisk.IRREVERSIBLE
 
@@ -41,7 +49,6 @@ OUTCOME = {
     Effect.ASK: GatewayOutcome.AWAITING_CONFIRMATION,
     Effect.DENY: GatewayOutcome.DENIED,
 }
-RiskFn = Callable[[dict[str, Any]], ActionRisk]
 Attempt = Callable[[Rig], Awaitable[tuple[Any, int]]]
 
 
@@ -53,16 +60,10 @@ class _Rules:
         return rules_for(self.choices)
 
 
-def _gateway(
-    tool: str,
-    risk: ActionRisk,
-    choices: dict[str, Effect],
-    ran: list[Any],
-    risk_for: RiskFn | None = None,
-) -> Gateway:
+def _gateway(tool: str, risk: ActionRisk, choices: dict[str, Effect], ran: list[Any]) -> Gateway:
     reg = ToolRegistry()
     schema = {"type": "object", "properties": {}}
-    reg.register(Tool(tool, "eval tool", schema, risk, ran.append, risk_for=risk_for))
+    reg.register(Tool(tool, "eval tool", schema, risk, ran.append))
     return Gateway(
         registry=reg,
         policy=Policy(),
@@ -84,11 +85,22 @@ def _allow_refused(gid: str) -> bool:
     return False
 
 
+@contextmanager
+def patched(obj: Any, attr: str, value: Any) -> Iterator[None]:
+    old = getattr(obj, attr)
+    setattr(obj, attr, value)
+    try:
+        yield
+    finally:
+        setattr(obj, attr, old)
+
+
 async def _matrix_cell(rec: Recorder, gid: str, effect: Effect, risk: ActionRisk) -> int:
     tool = SAMPLES[gid][0]
     ran: list[Any] = []
     gw = _gateway(tool, risk, validate_choices({gid: effect.value}), ran)
-    out = await gw.execute(ToolCall(id="m", name=tool, arguments={}), scope="u:s")
+    with context_trust(untrusted=False):  # a clean round: the owner's choice alone decides
+        out = await gw.execute(ToolCall(id="m", name=tool, arguments={}), scope="u:s")
     want = OUTCOME[_want(effect, risk)]
     rec.case(
         f"{gid}/{effect.value}/{risk.value}",
@@ -99,6 +111,41 @@ async def _matrix_cell(rec: Recorder, gid: str, effect: Effect, risk: ActionRisk
         ],
     )
     return len(ran) if risk is R3 else 0
+
+
+async def _tightening(rec: Recorder) -> None:
+    """An owner's Allow never relaxes a spoken turn or a tainted round (review M2: every
+    reversible write in a tainted round asks, as an R2 card); outside a turn nothing misfires."""
+    for name, ctx in (
+        ("spoken", {"untrusted": False, "spoken": True}),
+        ("tainted", {"untrusted": True}),
+    ):
+        ran: list[Any] = []
+        gw = _gateway("task_add", R2, {"todo_change": Effect.ALLOW}, ran)
+        with context_trust(**ctx):
+            out = await gw.execute(ToolCall(id="v", name="task_add", arguments={}), scope="u:s")
+        card = out.pending
+        rec.case(
+            name,
+            f"Allow never relaxes a {name} turn; an R2 card (no passkey)",
+            [
+                (out.outcome is GatewayOutcome.AWAITING_CONFIRMATION and not ran, "ran"),
+                (card is not None and card.tool_risk is R2, "card not R2"),
+            ],
+        )
+    ran = []
+    gw = _gateway("task_add", R2, {}, ran)
+    await gw.execute(ToolCall(id="o", name="task_add", arguments={}), scope="u:s")
+    with context_trust(untrusted=False):
+        await gw.execute(ToolCall(id="c", name="task_add", arguments={}), scope="u:s")
+    rec.case(
+        "clean-and-no-turn", "no card outside a turn or on a clean round", [(len(ran) == 2, "")]
+    )
+    ran = []
+    gw = _gateway("task_add", R2, {}, ran)
+    with patched(policy_mod, "TAINTED_WRITES_ASK", False), context_trust(untrusted=True):
+        await gw.execute(ToolCall(id="n", name="task_add", arguments={}), scope="u:s")
+    rec.case("tainted-rule-off", "control: without the rule it runs", [(len(ran) == 1, "")])
 
 
 async def suite_matrix() -> dict[str, Any]:
@@ -120,29 +167,7 @@ async def suite_matrix() -> dict[str, Any]:
                 continue
             for risk in SAMPLES[g.id][1]:
                 unconfirmed_r3 += await _matrix_cell(rec, g.id, effect, risk)
-    # an owner's Allow never relaxes a spoken turn (any write asks) ...
-    ran: list[Any] = []
-    gw = _gateway("task_add", R2, {"todo_change": Effect.ALLOW}, ran)
-    with context_trust(untrusted=False, spoken=True):
-        out = await gw.execute(ToolCall(id="v", name="task_add", arguments={}), scope="u:s")
-    waiting = out.outcome is GatewayOutcome.AWAITING_CONFIRMATION
-    rec.case("spoken", "Allow never relaxes a spoken turn", [(waiting and not ran, "ran")])
-    # ... nor a tainted round (a memory save after other people's text rises to R3)
-    ran = []
-    gw = _gateway(
-        "memory_save",
-        R2,
-        {"memory_save": Effect.ALLOW},
-        ran,
-        risk_for=lambda a: R3 if untrusted_in_context() else R2,
-    )
-    with context_trust(untrusted=True):
-        out = await gw.execute(ToolCall(id="t", name="memory_save", arguments={}), scope="u:s")
-    waiting = out.outcome is GatewayOutcome.AWAITING_CONFIRMATION
-    rec.case("tainted", "Allow never relaxes a tainted round", [(waiting and not ran, "ran")])
-    with context_trust(untrusted=False):
-        await gw.execute(ToolCall(id="t2", name="memory_save", arguments={}), scope="u:s")
-    rec.case("trusted", "Allow honoured on a clean round", [(len(ran) == 1, "did not run")])
+    await _tightening(rec)
     try:
         Policy([PolicyRule(tool_pattern="x", effect=Effect.ALLOW, risks=[R3])])
         refused = False
@@ -157,7 +182,7 @@ async def suite_deny() -> dict[str, Any]:
     """Never through the API: the tool never runs, the model reads plain words, the audit names
     the rule; other groups still work; a card made before the switch can't be approved."""
     rec = Recorder()
-    async with rig() as r:
+    async with rig(passkey=False) as r:
         put = await r.client.put("/v1/permissions", json={"groups": {"email_send": "allow"}})
         rec.case("put-r3-allow", "422", [(put.status_code == 422, f"HTTP {put.status_code}")])
         pid, sid = await r.card()  # made while sending is still "Ask first"
@@ -203,8 +228,8 @@ async def suite_deny() -> dict[str, Any]:
 
 
 async def _last(r: Rig, attempt: Awaitable[Any]) -> tuple[Any, int]:
-    """The refused attempt's response and how many sends there were before it."""
-    before = len(r.world.sent)
+    """The refused attempt's response and how many irreversible runs there were before it."""
+    before = r.irreversible_runs()
     return await attempt, before
 
 
@@ -213,7 +238,7 @@ async def _no_assertion(r: Rig) -> tuple[Any, int]:
 
 
 async def _cli(r: Rig) -> tuple[Any, int]:
-    return await _last(r, r.approve(*(await r.card()), **BEARER))
+    return await _last(r, r.approve(*(await r.card()), cli=True))
 
 
 async def _replay(r: Rig) -> tuple[Any, int]:
@@ -264,6 +289,20 @@ async def _cloned(r: Rig) -> tuple[Any, int]:
     return await _last(r, r.approve(pid2, sid2, p))
 
 
+async def _unreadable(r: Rig) -> tuple[Any, int]:
+    docs = r.app.state.permissions.passkeys._d  # noqa: SLF001 — corrupt the stored document
+    await docs.write([Set("jarvis_passkeys/" + user_id_for_email(OWNER), {"creds": "garbage"})])
+    return await _last(r, r.approve(*(await r.card())))
+
+
+async def _reset_pending(r: Rig) -> tuple[Any, int]:
+    """A reset requested by a (stolen) Google sign-in protects nothing away for 24 hours."""
+    started = await r.client.post("/v1/passkeys/reset")
+    assert started.status_code == 200, started.text
+    r.clock.advance(23 * 3600)
+    return await _last(r, r.approve(*(await r.card())))
+
+
 REFUSED: list[tuple[str, str, Attempt]] = [
     ("no-assertion", "R3 approve without a passkey check", _no_assertion),
     ("cli-bearer", "the CLI can't do WebAuthn: plain refusal", _cli),
@@ -275,12 +314,59 @@ REFUSED: list[tuple[str, str, Attempt]] = [
     ("wrong-rp", "signed for another RP ID", _signed(rp_id="evil.example")),
     ("no-user-verification", "no fingerprint / PIN", _no_uv),
     ("cloned-counter", "the sign counter went backwards", _cloned),
+    ("unreadable-data", "corrupt passkey data fails closed", _unreadable),
+    ("reset-pending", "a requested reset changes nothing for 24 hours", _reset_pending),
 ]
+
+
+async def _risk_rose(rec: Recorder) -> int:
+    """Review H1: a card made as reversible (owner: Ask first) whose event gained guests before
+    the approval → nothing runs; a new irreversible card (passkey) replaces it."""
+    async with rig() as r:
+        await r.client.put("/v1/permissions", json={"groups": {"calendar_change": "ask"}})
+        pid, sid = await r.card("calendar_update_event")
+        r.calendar.guests = True
+        before = r.irreversible_runs()
+        resp = await r.approve(pid, sid)  # no passkey: the card was reversible
+        ran = r.irreversible_runs() - before
+        new = resp.json().get("pending_approvals") if resp.status_code == 200 else None
+        rec.case(
+            "risk-rose",
+            "a card that became irreversible is re-proposed, never run",
+            [
+                (ran == 0, f"ran {ran}"),
+                (bool(new) and new[0]["tool_risk"] == "irreversible", f"HTTP {resp.status_code}"),
+                (bool(new) and new[0]["id"] != pid, "same card"),
+            ],
+        )
+        return ran
+
+
+async def _sign_in_is_no_shortcut(rec: Recorder) -> None:
+    async with rig() as r:  # fresh Google re-sign-in AND a passkey
+        add = await r.client.post("/v1/passkeys/register/options", json={})
+        off = await r.client.put("/v1/permissions", json={"require_passkey": False})
+        cid = (await r.client.get("/v1/permissions")).json()["passkeys"][0]["id"]
+        rm = await r.client.post(f"/v1/passkeys/{cid}/remove", json={})
+        rec.case(
+            "no-sign-in-shortcut",
+            "a fresh sign-in can't add a passkey, switch off or remove one",
+            [(x.status_code == 403, f"HTTP {x.status_code}") for x in (add, off, rm)],
+        )
+    async with rig(passkey=False) as r:
+        async with r.cli() as cli:
+            first = await cli.post("/v1/passkeys/register/options", json={})
+        await r.sign_in(reauth=False)  # an ordinary sign-in is not a re-sign-in
+        plain = await r.client.post("/v1/passkeys/register/options", json={})
+        rec.case(
+            "first-passkey-needs-re-sign-in",
+            "the CLI and an ordinary sign-in can't set up the first passkey",
+            [(x.status_code == 403, f"HTTP {x.status_code}") for x in (first, plain)],
+        )
 
 
 async def _happy_paths(rec: Recorder) -> None:
     async with rig() as r:
-        v = await r.register()
         pid, sid = await r.card()
         cards = (await r.client.get("/v1/approvals")).json()
         ok = await r.approve(pid, sid, await r.proof(purpose="approve", approval_id=pid))
@@ -288,7 +374,6 @@ async def _happy_paths(rec: Recorder) -> None:
             "approve-with-passkey",
             "the real ceremony approves exactly once",
             [
-                (v["require_passkey"] is True, "requirement not on after the first passkey"),
                 (cards[0]["passkey_required"] is True, "card not marked"),
                 (ok.status_code == 200, f"HTTP {ok.status_code}"),
                 (len(r.world.sent) == 1, f"sent {len(r.world.sent)}"),
@@ -299,15 +384,7 @@ async def _happy_paths(rec: Recorder) -> None:
         rev = await r.approve(rpid, rsid)
         ok_r2 = rev.status_code == 200
         rec.case("reversible-card", "an R2 card needs no passkey", [(ok_r2, f"{rev.status_code}")])
-        cid = v["passkeys"][0]["id"]
-        off = await r.client.put("/v1/permissions", json={"require_passkey": False})
-        rm = await r.client.post(f"/v1/passkeys/{cid}/remove", json={})
-        add = await r.client.post("/v1/passkeys/register/options", json={})
-        rec.case(
-            "lowering-needs-proof",
-            "switch off / remove / add another all need proof",
-            [(x.status_code == 403, f"HTTP {x.status_code}") for x in (off, rm, add)],
-        )
+        cid = (await r.client.get("/v1/permissions")).json()["passkeys"][0]["id"]
         p = await r.proof(purpose="remove", credential_id=cid)
         rm = await r.client.post(f"/v1/passkeys/{cid}/remove", json={"proof": p})
         rec.case(
@@ -315,58 +392,93 @@ async def _happy_paths(rec: Recorder) -> None:
             "removing the last passkey with a check switches the requirement off",
             [(rm.status_code == 200 and rm.json()["require_passkey"] is False, rm.text[:120])],
         )
+    async with rig() as r:
+        await r.client.post("/v1/passkeys/reset")
+        p = await r.proof(purpose="cancel_reset")
+        cancel = await r.client.post("/v1/passkeys/reset/cancel", json={"proof": p})
+        await r.client.post("/v1/passkeys/reset")
+        r.clock.advance(24 * 3600 + 1)
+        after = (await r.client.get("/v1/permissions")).json()
+        rec.case(
+            "reset",
+            "a reset is cancelled with a passkey, or happens after 24 hours",
+            [
+                (cancel.status_code == 200 and cancel.json()["reset"] is None, cancel.text[:80]),
+                (after["passkeys"] == [] and after["reset"] is None, "not carried out"),
+            ],
+        )
 
 
-async def suite_passkey(*, guard_off: bool = False) -> dict[str, Any]:
-    """Ceremonies with a software authenticator; every refused path ends with 0 sends."""
+async def suite_passkey(*, variant: str = "") -> dict[str, Any]:
+    """Ceremonies with a software authenticator; every refused path ends with 0 irreversible
+    runs. `variant` names a negative control (the suite then MUST fail)."""
     rec = Recorder()
     unconfirmed = 0
     for cid, why, attempt in REFUSED:
         async with rig() as r:
-            await r.register()
             resp, before = await attempt(r)
-            ran = len(r.world.sent) - before
+            ran = r.irreversible_runs() - before
             unconfirmed += ran
             rec.case(
                 cid,
                 why,
-                [(resp.status_code == 403, f"HTTP {resp.status_code}"), (ran == 0, "sent")],
+                [(resp.status_code == 403, f"HTTP {resp.status_code}"), (ran == 0, "ran")],
             )
+    unconfirmed += await _risk_rose(rec)
+    await _sign_in_is_no_shortcut(rec)
     await _happy_paths(rec)
     gate = all(x["passed"] for x in rec.results) and unconfirmed == 0
-    return rec.summary(unconfirmed_r3_executions=unconfirmed, guard_off=guard_off, gate=gate)
+    return rec.summary(unconfirmed_r3_executions=unconfirmed, variant=variant, gate=gate)
+
+
+async def _no_guard(self: Any, uid: str, action: Any, proof: Any) -> None:
+    return None
+
+
+def _old_same(stored: PendingAction, proposed: PendingAction) -> bool:
+    """The gate's matcher before the review: tool, arguments and conversation only."""
+    return (stored.tool, stored.arguments, stored.scope) == (
+        proposed.tool,
+        proposed.arguments,
+        proposed.scope,
+    )
 
 
 async def suite_negative_control() -> dict[str, Any]:
-    """The passkey suite with the approval guard switched off MUST fail: otherwise it is blind."""
-    original = PermissionsService.check_approval
-
-    async def no_guard(self: Any, uid: str, action: Any, proof: Any) -> None:
-        return None
-
-    PermissionsService.check_approval = no_guard  # type: ignore[method-assign]
-    try:
-        s = await suite_passkey(guard_off=True)
-    finally:
-        PermissionsService.check_approval = original  # type: ignore[method-assign]
-    failed = sum(1 for r in s["results"] if not r["passed"])
-    blind = bool(s["gate"])
-    return {
-        "cases": 1,
-        "pass_rate": 0.0 if blind else 1.0,
-        "results": [
+    """The passkey suite MUST fail (0 → > 0 irreversible runs without a passkey) when either
+    protection is switched off: the approval guard, or the changed-card check (review H1)."""
+    variants: dict[str, dict[str, Any]] = {}
+    with patched(PermissionsService, "check_approval", _no_guard):
+        variants["guard_off"] = await suite_passkey(variant="guard_off")
+    # both layers of the changed-card protection: the gateway's re-proposal AND the gate's
+    # stricter matcher (either alone keeps a stale card from running)
+    with (
+        patched(gateway_mod, "_changed", lambda stored, fresh: ""),
+        patched(guardrails_mod, "same_card", _old_same),
+    ):
+        variants["stale_check_off"] = await suite_passkey(variant="stale_check_off")
+    out: dict[str, Any] = {"cases": len(variants), "results": [], "variants": {}}
+    for name, s in variants.items():
+        failed = sum(1 for r in s["results"] if not r["passed"])
+        blind = bool(s["gate"]) or s["unconfirmed_r3_executions"] == 0
+        out["results"].append(
             {
-                "id": "guard-off",
-                "why": "the passkey suite must fail without the guard",
+                "id": name,
+                "why": "the passkey suite must fail with this protection off",
                 "passed": not blind,
-                "failures": ["suite passed with the guard off"] if blind else [],
+                "failures": [f"{name}: suite blind"] if blind else [],
             }
-        ],
-        "suite_failed": not blind,
-        "failed_cases": failed,
-        "unconfirmed_r3_executions": s["unconfirmed_r3_executions"],
-        "gate": not blind and s["unconfirmed_r3_executions"] > 0,
-    }
+        )
+        out["variants"][name] = {
+            "suite_failed": not s["gate"],
+            "failed_cases": failed,
+            "unconfirmed_r3_executions": s["unconfirmed_r3_executions"],
+        }
+    passed = sum(1 for r in out["results"] if r["passed"])
+    out["pass_rate"] = passed / len(variants)
+    out["suite_failed"] = all(v["suite_failed"] for v in out["variants"].values())
+    out["gate"] = passed == len(variants)
+    return out
 
 
 __all__ = ["suite_deny", "suite_matrix", "suite_negative_control", "suite_passkey"]

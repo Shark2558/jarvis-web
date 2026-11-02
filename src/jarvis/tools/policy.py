@@ -30,6 +30,11 @@ class Effect(StrEnum):
 
 _RANK = {Effect.ALLOW: 0, Effect.ASK: 1, Effect.DENY: 2}
 
+# Slice 10 D review M2: in a tainted round (the model has seen other people's text this turn) every
+# REVERSIBLE write becomes an approval card — an R2 card, so no passkey. Read at call time by the
+# gateway, so evals can switch it off for a negative control. Never relaxed by an owner's Allow.
+TAINTED_WRITES_ASK = True
+
 _DEFAULT: dict[ActionRisk, Effect] = {
     ActionRisk.READ_ONLY: Effect.ALLOW,
     ActionRisk.REVERSIBLE: Effect.ALLOW,

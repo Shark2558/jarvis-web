@@ -303,14 +303,15 @@ async def test_unreadable_rules_fail_closed() -> None:
     assert entry.outcome == "error" and "permissions" in entry.detail
 
 
-async def test_without_a_scope_or_a_rule_source_the_base_policy_applies() -> None:
-    world = InMemoryWorld()
-    rules = FakeRules({"u1": {"todo_change": Effect.DENY}})
-    gw = _gw(world, rules)
-    assert (await gw.execute(REMIND)).outcome is GatewayOutcome.EXECUTED
-    assert rules.calls == []
+async def test_without_a_rule_source_the_base_policy_applies_but_no_owner_fails_closed() -> None:
     plain = _gw(InMemoryWorld(), None)
     assert (await plain.execute(REMIND, scope="u1:s1")).outcome is GatewayOutcome.EXECUTED
+    assert (await plain.execute(REMIND)).outcome is GatewayOutcome.EXECUTED
+    # with owner rules, a call that names no owner can't be checked against them: nothing runs
+    world = InMemoryWorld()
+    rules = FakeRules({"u1": {"todo_change": Effect.DENY}})
+    out = await _gw(world, rules).execute(REMIND)
+    assert out.outcome is GatewayOutcome.ERROR and world.reminders == [] and rules.calls == []
 
 
 async def test_a_config_deny_still_says_blocked_by_policy() -> None:

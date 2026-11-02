@@ -17,7 +17,17 @@ Permissions) for the user in the call's scope. The owner's rules are appended, s
 wins, an R3 call still asks, and the tightening above still applies after them: an owner's
 "Allow" never relaxes a spoken turn or a tainted round. A refusal by an owner rule tells the model
 in plain words ("switched off by the owner in Permissions …"); the audit records the rule's
-source. When the owner's rules can't be read, nothing runs (fail closed).
+source. When the owner's rules can't be read — or the call has no owner — nothing runs.
+
+Slice 10 D review: a tainted round (other people's text reached the model: mail, web, a document)
+turns every REVERSIBLE write into an approval card too (`policy.TAINTED_WRITES_ASK`): an R2 card,
+so no passkey. Outside a turn nothing is tainted (an approval being executed, a script).
+
+Approving (`confirmation_id`): the card runs only as the owner saw it. The call is looked at
+again; when it can now do more than its card said (an event gained guests) or its card would read
+differently, the old card is withdrawn and a new one proposed — nothing runs. Otherwise the
+approval guard (`approval_guard`, the owner's passkey rule) sees the card about to run, BEFORE
+the token is spent; it raises to refuse, and its note (which passkey) goes into the audit.
 """
 
 from __future__ import annotations
@@ -26,7 +36,7 @@ import json
 import re
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol
 
 from jarvis.core.guardrails import (
     ActionRisk,
@@ -37,12 +47,13 @@ from jarvis.core.guardrails import (
 )
 from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
+from jarvis.tools import policy as _policy
 from jarvis.tools.audit import AuditTrail, args_hash
 from jarvis.tools.base import Preview, Tool
-from jarvis.tools.context import ToolContext, tool_context
+from jarvis.tools.context import ToolContext, approval_proof, tool_context
 from jarvis.tools.policy import Effect, OwnerRules, Policy
 from jarvis.tools.registry import ToolRegistry
-from jarvis.tools.taint import spoken_in_context
+from jarvis.tools.taint import spoken_in_context, tainted_round
 
 log = get_logger(__name__)
 MAX_RESULT_CHARS = 12_000
@@ -90,14 +101,50 @@ class GatewayResult:
             )
         return json.dumps({"status": self.outcome.value, "error": self.error})
 
+    def changed_card(self) -> tuple[str, str] | None:
+        """When an approved card was withdrawn because it changed (and a new one is waiting): the
+        owner's plain reply and the instruction for the model's narration; otherwise None."""
+        if self.outcome is not GatewayOutcome.AWAITING_CONFIRMATION or self.pending is None:
+            return None
+        return (
+            "That changed since you saw it, so nothing was done, Sir. A new approval is waiting: "
+            f"{self.pending.summary}.",
+            "The action changed after the owner's approval was asked for, so nothing was done "
+            "and a new approval card is waiting; tell the owner in one sentence.",
+        )
+
 
 def _tightened(effect: Effect, risk: ActionRisk, confirmation_id: str | None) -> Effect:
-    """ALLOW → ASK for a write on a spoken turn, or when an approval token is presented."""
+    """ALLOW → ASK for a write on a spoken turn, in a tainted round, or when an approval token
+    is presented. (An irreversible call is never ALLOW in the first place.)"""
     if effect is not Effect.ALLOW or risk is ActionRisk.READ_ONLY:
         return effect
     if confirmation_id is not None or spoken_in_context():
         return Effect.ASK
+    if _policy.TAINTED_WRITES_ASK and tainted_round():
+        return Effect.ASK
     return effect
+
+
+def _changed(stored: PendingAction, fresh: PendingAction) -> str:
+    """Why a card no longer describes its call ("" when it still does)."""
+    if stored.tool_risk is not None and stored.tool_risk != fresh.tool_risk:
+        rose = fresh.tool_risk is not None and (
+            _RISK_RANK[fresh.tool_risk] > _RISK_RANK[stored.tool_risk]
+        )
+        return "it can now do more" if rose else "its risk changed"
+    if stored.summary != fresh.summary:
+        return "it reads differently"
+    return ""
+
+
+class ApprovalGuard(Protocol):
+    """Checks a card about to run on the owner's approval (the passkey rule). Raises to refuse
+    (the token is not spent); returns a short note for the audit, or None."""
+
+    async def check_approval(
+        self, user_id: str, action: PendingAction, proof: Any
+    ) -> str | None: ...
 
 
 class Gateway:
@@ -109,16 +156,26 @@ class Gateway:
         gate: ConfirmationGate,
         audit: AuditTrail,
         rules: OwnerRules | None = None,
+        approval_guard: ApprovalGuard | None = None,
     ) -> None:
         self.registry, self.policy, self.gate, self.audit = registry, policy, gate, audit
         self.rules = rules  # the owner's own rules (slice 10 D); None: configured rules only
+        self.approval_guard = approval_guard  # the owner's passkey rule (slice 10 D)
 
     async def pending(self) -> list[PendingAction]:
         return await self.gate.pending()
 
     async def execute(
-        self, call: ToolCall, *, confirmation_id: str | None = None, scope: str | None = None
+        self,
+        call: ToolCall,
+        *,
+        confirmation_id: str | None = None,
+        scope: str | None = None,
+        proof: Any = None,
     ) -> GatewayResult:
+        """`proof`: what the approval guard needs to let an approved card run (a passkey check
+        made for it); opaque here. Default: what the approve request presented
+        (`context.presenting_proof`)."""
         tool = self.registry.get(call.name)
         if tool is None:
             await self.audit.append(
@@ -173,38 +230,15 @@ class Gateway:
                 scope=scope,
                 tool_risk=risk,  # what the call itself can do: R3 may need a passkey
             )
-            try:
-                await self.gate.check(action, confirmation_id=confirmation_id)
-            except ConfirmationRequired as exc:
-                try:
-                    await self.audit.append(
-                        agent=tool.agent,
-                        tool=tool.name,
-                        risk=risk,
-                        outcome="awaiting_confirmation",
-                        args=call.arguments,
-                        detail=exc.action.id,
-                    )
-                except Exception:
-                    if exc.action.id == action.id:  # never leave an unaudited approval behind
-                        await self.gate.cancel(action.id)
-                    raise
-                return GatewayResult(GatewayOutcome.AWAITING_CONFIRMATION, pending=exc.action)
-            except ConfirmationInvalid:
-                await self.audit.append(
-                    agent=tool.agent,
-                    tool=tool.name,
-                    risk=risk,
-                    outcome="confirmation_invalid",
-                    args=call.arguments,
-                    detail="approval spent, expired or changed",
-                )
-                log.warning("stale or mismatched approval token", extra={"tool": tool.name})
-                return GatewayResult(
-                    GatewayOutcome.CONFIRMATION_INVALID, error="approval is no longer valid"
-                )
-
-        if effect is Effect.ASK:
+            note = ""
+            if confirmation_id is not None:
+                pre = await self._before_consuming(tool, call, action, confirmation_id, proof)
+                if isinstance(pre, GatewayResult):
+                    return pre
+                note = pre
+            asked = await self._gate(tool, call, risk, action, confirmation_id)
+            if asked is not None:
+                return asked
             # Approved and consumed. Record intent BEFORE acting: an irreversible action never
             # runs without an audit entry. If the record can't be written, fail closed (the
             # approval is spent, nothing happens, the owner is told).
@@ -215,7 +249,7 @@ class Gateway:
                     risk=risk,
                     outcome="executing",
                     args=call.arguments,
-                    detail="confirmed",
+                    detail="confirmed" + (f"; {note}" if note else ""),
                 )
             except Exception as exc:  # noqa: BLE001
                 log.error(
@@ -239,15 +273,101 @@ class Gateway:
         )
         return GatewayResult(GatewayOutcome.EXECUTED, result=out)
 
+    async def _gate(
+        self,
+        tool: Tool,
+        call: ToolCall,
+        risk: ActionRisk,
+        action: PendingAction,
+        confirmation_id: str | None,
+        note: str = "",
+    ) -> GatewayResult | None:
+        """Propose (→ AWAITING_CONFIRMATION) or spend the token (→ None: go ahead)."""
+        try:
+            await self.gate.check(action, confirmation_id=confirmation_id)
+        except ConfirmationRequired as exc:
+            try:
+                await self.audit.append(
+                    agent=tool.agent,
+                    tool=tool.name,
+                    risk=risk,
+                    outcome="awaiting_confirmation",
+                    args=call.arguments,
+                    detail=exc.action.id + note,
+                )
+            except Exception:
+                if exc.action.id == action.id:  # never leave an unaudited approval behind
+                    await self.gate.cancel(action.id)
+                raise
+            return GatewayResult(GatewayOutcome.AWAITING_CONFIRMATION, pending=exc.action)
+        except ConfirmationInvalid:
+            await self.audit.append(
+                agent=tool.agent,
+                tool=tool.name,
+                risk=risk,
+                outcome="confirmation_invalid",
+                args=call.arguments,
+                detail="approval spent, expired or changed",
+            )
+            log.warning("stale or mismatched approval token", extra={"tool": tool.name})
+            return GatewayResult(
+                GatewayOutcome.CONFIRMATION_INVALID, error="approval is no longer valid"
+            )
+        return None
+
+    async def _before_consuming(
+        self,
+        tool: Tool,
+        call: ToolCall,
+        fresh: PendingAction,
+        confirmation_id: str,
+        proof: Any,
+    ) -> GatewayResult | str:
+        """The card runs only as the owner saw it: changed since → withdrawn and re-proposed
+        (nothing runs). Then the approval guard sees the card about to run (it raises to
+        refuse; the token is not spent). Returns the guard's note for the audit."""
+        stored = await self.gate.get(confirmation_id)
+        if stored is None or (stored.tool, stored.arguments, stored.scope) != (
+            fresh.tool,
+            fresh.arguments,
+            fresh.scope,
+        ):
+            return ""  # the gate reports it no longer valid; nothing runs
+        why = _changed(stored, fresh)
+        if why:
+            if not await self.gate.cancel(stored.id):
+                return ""  # decided meanwhile: the gate reports it
+            log.warning("approved card changed since proposed; re-proposed", extra={"why": why})
+            risk = fresh.tool_risk or ActionRisk.IRREVERSIBLE
+            again = await self._gate(
+                tool,
+                call,
+                risk,
+                fresh,
+                None,
+                f" (changed since proposed: {why}; replaces {stored.id})",
+            )
+            assert again is not None  # no token: always a proposal
+            return again
+        if self.approval_guard is None:
+            return ""
+        uid = ToolContext.from_scope(fresh.scope or "").user_id
+        presented = proof if proof is not None else approval_proof()
+        return await self.approval_guard.check_approval(uid, stored, presented) or ""
+
     async def _policy_for(
         self, tool: Tool, call: ToolCall, risk: ActionRisk, scope: str | None
     ) -> Policy | GatewayResult:
         """The configured rules plus the owner's own for the user in `scope`. Fail closed: when
-        the owner's rules can't be read, nothing is proposed and nothing runs."""
-        if self.rules is None or not scope:
+        the owner's rules can't be read — or the call names no owner — nothing is proposed and
+        nothing runs."""
+        if self.rules is None:
             return self.policy
         try:
-            owner = await self.rules.rules_for(ToolContext.from_scope(scope).user_id)
+            uid = ToolContext.from_scope(scope).user_id if scope else ""
+            if not uid:
+                raise LookupError("no owner in the call's scope")
+            owner = await self.rules.rules_for(uid)
             return self.policy.with_rules(owner)
         except Exception as exc:  # noqa: BLE001 — reported, never raised
             log.error(

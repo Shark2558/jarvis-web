@@ -39,6 +39,13 @@ def untrusted_in_context() -> bool:
     return True if flag is None else flag
 
 
+def tainted_round() -> bool:
+    """True only INSIDE a turn whose model has seen untrusted content (or a spoken turn).
+    Unlike `untrusted_in_context`, outside a turn this is False: an approval being executed or
+    a script is not a tainted round (slice 10 D review M2)."""
+    return _untrusted.get() is True
+
+
 def spoken_in_context() -> bool:
     """True while a tool call made on a spoken (`channel: voice`) turn is being decided."""
     return _spoken.get()
@@ -71,4 +78,10 @@ def untrusted_seen(messages: Sequence[ChatMessage], registry: ToolRegistry) -> b
     return False
 
 
-__all__ = ["context_trust", "spoken_in_context", "untrusted_in_context", "untrusted_seen"]
+__all__ = [
+    "context_trust",
+    "spoken_in_context",
+    "tainted_round",
+    "untrusted_in_context",
+    "untrusted_seen",
+]

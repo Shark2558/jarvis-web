@@ -23,6 +23,8 @@ async def test_permissions_script_never_parses_server_text_as_html(client: Async
         "'/v1/passkeys/register/options'",
         "'/v1/passkeys/register'",
         "`/v1/passkeys/${encodeURIComponent(p.id)}/remove`",
+        "'/v1/passkeys/reset'",
+        "'/v1/passkeys/reset/cancel'",
     ):
         assert path in js, path
     # the browser's own WebAuthn, user verification required, no library or remote script
@@ -40,6 +42,10 @@ async def test_permissions_script_speaks_plain_english_for_each_failure(
         assert f"'{name}'" in js
     for words in ("Cancelled.", "timed out", "not supported in this browser"):
         assert words in js
+    # no sign-in shortcut: removing and switching off always carry a passkey check
+    assert "{ body: { proof: await prove({ purpose: 'remove', credential_id: p.id }) } }" in js
+    assert "proof: await prove({ purpose: 'disable' })" in js
+    assert "Google didn\\'t ask you to sign in again" in js
 
 
 async def test_permissions_section_is_collapsed_in_the_approvals_panel(client: AsyncClient) -> None:
@@ -49,6 +55,9 @@ async def test_permissions_section_is_collapsed_in_the_approvals_panel(client: A
     assert re.search(r'id="permSetBtn"[^>]*aria-expanded="false"', panel)
     assert re.search(r'id="permSetBody"\s+hidden', panel)
     assert 'id="permSum"' in panel and 'id="pskBox"' in panel
+    # a pending passkey reset is a banner at the top of the panel, above the cards
+    assert re.search(r'id="permBanner"[^>]*role="alert"[^>]*hidden', panel)
+    assert panel.index('id="permBanner"') < panel.index('id="approvals"')
     names = ("console-deck.js", "console.js", "console-permissions.js")
     order = [html.index(f'src="/static/{n}"') for n in names]
     assert order == sorted(order)

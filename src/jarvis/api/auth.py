@@ -9,11 +9,13 @@ Two credentials are accepted:
 Cookie-authenticated writes must also carry `X-Requested-With: JARVIS` (CSRF defence: a
 cross-site form cannot set custom headers, and we serve no CORS headers).
 
-Slice 10 D: the cookie also records WHEN the owner last authenticated with Google (`auth_at`: the
-ID token's `auth_time` when Google sends one, else the moment the sign-in completed). For 5
-minutes after that, a sign-in stands in for a passkey to lower protection (remove a passkey,
-switch the requirement off) — the recovery path when a passkey is lost. `/auth/login?reauth=1`
-asks Google to authenticate again (`max_age=0`) and returns to `/?reauth=done`.
+Slice 10 D: `/auth/login?reauth=1` asks Google to authenticate the owner again (`max_age=0`)
+and remembers when that started. Only such a re-sign-in stamps `auth_at` in the cookie — the
+ID token's `auth_time` when Google sends one (and it must not be older than the start: Google
+did not actually ask again → `/?reauth=stale`, nothing stamped), else the moment it completed —
+and returns to `/?reauth=done`. For 5 minutes it lets THIS browser set up a first passkey or
+start the 24-hour passkey reset; it never removes a passkey or lowers protection by itself. An
+ordinary sign-in stamps nothing.
 """
 
 from __future__ import annotations
@@ -38,11 +40,11 @@ SESSION_EMAIL_KEY = "email"
 SESSION_ISSUED_KEY = "iat"
 SESSION_ABSOLUTE_MAX_S = 24 * 60 * 60  # the cookie's max_age slides; this one does not
 SESSION_AUTH_AT_KEY = "auth_at"  # when Google last authenticated the owner (epoch seconds)
-SESSION_REAUTH_KEY = "reauth"  # a re-authentication is under way (set by /auth/login?reauth=1)
+SESSION_REAUTH_KEY = "reauth"  # when a re-authentication started (set by /auth/login?reauth=1)
 FRESH_SIGN_IN_S = 5 * 60
 REAUTH_MAX_AGE_S = 0  # OIDC max_age: Google must authenticate the owner again now
-AUTH_TIME_OLDEST_S = 30 * 24 * 60 * 60
-AUTH_TIME_SKEW_S = 60
+REAUTH_FLOW_MAX_S = 10 * 60  # a re-sign-in started longer ago than this does not count
+AUTH_TIME_SKEW_S = 60  # Google's clock vs ours
 
 
 def _now() -> float:
@@ -155,20 +157,29 @@ def fresh_sign_in_left(request: Request, s: Settings) -> int | None:
     return max(0, int(FRESH_SIGN_IN_S - (_now() - at)))
 
 
-def _auth_at(info: Any, now: float) -> float:
-    """Google's `auth_time` when it is sane, else now (the sign-in just completed)."""
+def _reauth_at(info: Any, started: float, now: float) -> float | None:
+    """When the owner authenticated in this re-sign-in, or None when Google says it was before
+    the re-sign-in began (it did not ask again). No `auth_time` (Google may omit it): now."""
     at = info.get("auth_time") if hasattr(info, "get") else None
-    if isinstance(at, int | float) and not isinstance(at, bool):
-        if now - AUTH_TIME_OLDEST_S < at <= now + AUTH_TIME_SKEW_S:
-            return float(min(at, now))
-    return now
+    if not isinstance(at, int | float) or isinstance(at, bool):
+        return now
+    if at < started - AUTH_TIME_SKEW_S or at > now + AUTH_TIME_SKEW_S:
+        return None
+    return float(min(at, now))
+
+
+def _reauth_started(request: Request, now: float) -> float | None:
+    started = request.session.get(SESSION_REAUTH_KEY)
+    if not isinstance(started, int | float) or isinstance(started, bool):
+        return None
+    return float(started) if 0 <= now - started <= REAUTH_FLOW_MAX_S else None
 
 
 @auth_router.get("/login")
 async def login(request: Request, s: Settings = Depends(_settings), reauth: int = 0) -> Any:
     extra: dict[str, Any] = {}
     if reauth:
-        request.session[SESSION_REAUTH_KEY] = True
+        request.session[SESSION_REAUTH_KEY] = _now()
         extra["max_age"] = REAUTH_MAX_AGE_S
     return await _oauth(request).google.authorize_redirect(request, _callback_url(s), **extra)
 
@@ -184,7 +195,8 @@ async def callback(request: Request, s: Settings = Depends(_settings)) -> Any:
     info = token.get("userinfo") or {}
     email = str(info.get("email") or "").lower()
     verified = bool(info.get("email_verified"))
-    was_reauth = request.session.get(SESSION_REAUTH_KEY) is True
+    now = _now()
+    started = _reauth_started(request, now)
     request.session.clear()
     if not email or not verified or email not in s.owner_emails:
         log.warning(
@@ -194,12 +206,18 @@ async def callback(request: Request, s: Settings = Depends(_settings)) -> Any:
             status_code=403,
             content={"error": "not_owner", "detail": "This JARVIS belongs to someone else."},
         )
-    now = _now()
     request.session[SESSION_EMAIL_KEY] = email
     request.session[SESSION_ISSUED_KEY] = now
-    request.session[SESSION_AUTH_AT_KEY] = _auth_at(info, now)
-    log.info("owner signed in", extra={"reauth": was_reauth})
-    return RedirectResponse(url="/?reauth=done" if was_reauth else "/", status_code=302)
+    if started is None:
+        log.info("owner signed in")
+        return RedirectResponse(url="/", status_code=302)
+    at = _reauth_at(info, started, now)
+    if at is None:
+        log.warning("re-sign-in refused: Google did not authenticate again")
+        return RedirectResponse(url="/?reauth=stale", status_code=302)
+    request.session[SESSION_AUTH_AT_KEY] = at
+    log.info("owner signed in again")
+    return RedirectResponse(url="/?reauth=done", status_code=302)
 
 
 @auth_router.post("/logout")

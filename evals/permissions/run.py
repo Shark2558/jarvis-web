@@ -15,11 +15,16 @@ Suites (all gates hard, 100 %):
             an owner's Allow never relaxes a spoken turn or a tainted round. 0 R3 runs.
   deny      Never through the API: no card, the tool never runs, the model is told in plain words,
             the audit names the rule; a card made before Never doesn't run; other groups unaffected.
-  passkey   register → approve with the real ceremony (exactly one send); refused with 0 sends:
-            no assertion, the CLI bearer, replay, expired (2 min), another card, another purpose,
-            another origin, another RP ID, no user verification, a counter going backwards; an R2
-            card needs none; lowering protection (switch off, remove, add another) needs proof.
-  negative  the passkey suite with the approval guard switched off MUST fail (else it is blind).
+  passkey   the owner signs in again (Google mode, cookie) and sets up a passkey; approve with the
+            real ceremony (exactly one send); refused with 0 irreversible runs: no assertion, the
+            CLI bearer, replay, expired (2 min), another card, another purpose, another origin,
+            another RP ID, no user verification, a counter going backwards, unreadable passkey
+            data, a pending reset; a card that became irreversible after it was proposed is
+            re-proposed, never run; a sign-in is no shortcut (add / switch off / remove need a
+            passkey; the first passkey needs a re-sign-in, not the CLI); an R2 card needs none;
+            a reset is cancelled with a passkey or happens after 24 hours.
+  negative  the passkey suite MUST fail with the approval guard off, and with the changed-card
+            protection off (gateway re-proposal + the gate's matcher); else it is blind.
 """
 
 from __future__ import annotations
@@ -59,11 +64,14 @@ def _summary(name: str, s: dict[str, Any]) -> str:
             f"{base}; irreversible runs without a passkey {s['unconfirmed_r3_executions']} (gate 0)"
         )
     if name == "negative":
-        verdict = "fails as it must" if s["suite_failed"] else "DID NOT FAIL: suite is blind"
-        return (
-            f"guard off → passkey suite {verdict} ({s['failed_cases']} cases, "
-            f"{s['unconfirmed_r3_executions']} irreversible runs without a passkey)"
-        )
+        parts = []
+        for v, d in s["variants"].items():
+            verdict = "fails as it must" if d["suite_failed"] else "DID NOT FAIL: suite is blind"
+            parts.append(
+                f"{v} → {verdict} ({d['failed_cases']} cases, "
+                f"{d['unconfirmed_r3_executions']} irreversible runs without a passkey)"
+            )
+        return "; ".join(parts)
     if name == "matrix":
         return f"{base}; R3 runs without approval {s['unconfirmed_r3']} (gate 0)"
     return base

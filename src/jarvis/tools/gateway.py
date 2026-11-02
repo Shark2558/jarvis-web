@@ -263,6 +263,54 @@ def _changed(stored: PendingAction, fresh: PendingAction) -> str:
     return ""
 
 
+@dataclass(frozen=True)
+class _Ruling:
+    """The policy step's answer for one call that may go ahead (ALLOW) or must ask (ASK)."""
+
+    risk: ActionRisk  # what the call itself can do (a look-up may only raise it)
+    effect: Effect  # ALLOW or ASK, after the tightening (a DENY never gets this far)
+    ruled: Effect  # the policy's own effect at that risk: why a card asks (`_ask_reason`)
+    asks: bool  # the tool asks for this call (`Tool.ask_when`)
+    card: str | None = None  # the look-up's card text
+    why: str = ""  # DELETES_CAPPED: the message's free undo-able deletes are spent (D3)
+
+
+def _higher(risk: ActionRisk, looked: ActionRisk | None) -> ActionRisk:
+    """The look-up may only raise a call's risk, never lower it."""
+    return looked if looked is not None and _RISK_RANK[looked] > _RISK_RANK[risk] else risk
+
+
+def _card(
+    tool: Tool, call: ToolCall, ruling: _Ruling, scope: str | None, outside: bool
+) -> PendingAction:
+    """The card an ASK proposes (or that an approval must match). An ASK is confirm-before-
+    commit whatever the declared class (a policy rule may tighten a reversible tool), so the gate
+    sees it as irreversible; `tool_risk` is what the call itself can do (R3 may need a passkey)."""
+    return PendingAction(
+        tool=tool.name,
+        arguments=call.arguments,
+        risk=ActionRisk.IRREVERSIBLE,
+        summary=ruling.card if ruling.card is not None else tool.summary(call.arguments),
+        scope=scope,
+        tool_risk=ruling.risk,
+        reason=_ask_reason(ruling.ruled, ruling.risk, ruling.asks, bool(ruling.why)),
+        outside=outside,
+    )
+
+
+def _executed(tool: Tool, out: Any) -> GatewayResult:
+    """A result that ran: trusted only when a `may_vouch` tool vouched for it (D8)."""
+    value, trusted = _vouched(tool, out)
+    return GatewayResult(GatewayOutcome.EXECUTED, result=value, trusted=trusted)
+
+
+def _tool_failed(exc: BaseException) -> GatewayResult:
+    """A tool that raised: fixed words + the redacted detail, never its raw text (review LOW-6);
+    `raised` (it was called, so it may have done part of it); never trusted."""
+    error = f"{TOOL_FAILED} ({_safe_detail(exc)})"
+    return GatewayResult(GatewayOutcome.ERROR, error=error, raised=True)
+
+
 class ApprovalGuard(Protocol):
     """Checks a card about to run on the owner's approval (the passkey rule). Raises to refuse
     (the token is not spent); returns a short note for the audit, or None."""
@@ -298,9 +346,28 @@ class Gateway:
         scope: str | None = None,
         proof: Any = None,
     ) -> GatewayResult:
-        """`proof`: what the approval guard needs to let an approved card run (a passkey check
-        made for it); opaque here. Default: what the approve request presented
-        (`context.presenting_proof`)."""
+        """One tool call, in steps: the tool and its arguments (`_known`), the policy decision
+        (`_rule`: owner's rules, look-up, tightening, the delete cap), a card or an approval
+        (`_hold`), then the run and its audit (`_run`). `proof`: what the approval guard needs
+        to let an approved card run (a passkey check made for it); opaque here. Default: what
+        the approve request presented (`context.presenting_proof`)."""
+        tool = await self._known(call)
+        if isinstance(tool, GatewayResult):
+            return tool
+        ruling = await self._rule(tool, call, scope, confirmation_id)
+        if isinstance(ruling, GatewayResult):
+            return ruling
+        outside = content_tainted()  # D8: what this call writes may carry other people's words
+        if ruling.effect is Effect.ASK:
+            held = await self._hold(tool, call, ruling, scope, confirmation_id, proof, outside)
+            if isinstance(held, GatewayResult):
+                return held
+            outside = held  # an approved card writes as its proposing round would
+        return await self._run(tool, call, ruling.risk, scope, confirmation_id, outside)
+
+    async def _known(self, call: ToolCall) -> Tool | GatewayResult:
+        """The registered tool, its arguments checked. An unknown tool or bad arguments are
+        audited and refused: nothing is proposed, nothing runs."""
         tool = self.registry.get(call.name)
         if tool is None:
             await self.audit.append(
@@ -324,79 +391,101 @@ class Gateway:
                 detail=_safe_detail(exc),
             )
             return GatewayResult(GatewayOutcome.ERROR, error=str(exc))
+        return tool
 
+    async def _rule(
+        self, tool: Tool, call: ToolCall, scope: str | None, confirmation_id: str | None
+    ) -> _Ruling | GatewayResult:
+        """The policy step: the configured and owner's rules, tightened (`_tightened`); the
+        tool's look-up (card text; it may raise the risk) unless already denied; a DENY is
+        audited and refused; past the message's free deletes an undo-able ALLOW asks (D3)."""
         risk = tool.effective_risk(call.arguments)
         policy = await self._policy_for(tool, call, risk, scope)
         if isinstance(policy, GatewayResult):
             return policy
         asks = tool.asks(call.arguments)
-        effect = _tightened(
-            policy.decide(tool.name, risk, call.arguments), risk, confirmation_id, asks
-        )
+        ruled = policy.decide(tool.name, risk, call.arguments)
+        effect = _tightened(ruled, risk, confirmation_id, asks)
         card: str | None = None
         if effect is not Effect.DENY and tool.preview is not None:
             looked = await self._look_up(tool, call, risk, scope)
             if isinstance(looked, GatewayResult):
                 return looked
-            if looked.risk is not None and _RISK_RANK[looked.risk] > _RISK_RANK[risk]:
-                risk = looked.risk
-            card = looked.summary
-            effect = _tightened(
-                policy.decide(tool.name, risk, call.arguments), risk, confirmation_id, asks
-            )
+            risk, card = _higher(risk, looked.risk), looked.summary
+            ruled = policy.decide(tool.name, risk, call.arguments)
+            effect = _tightened(ruled, risk, confirmation_id, asks)
         if effect is Effect.DENY:
             return await self._denied(tool, call, risk, policy)
         why = ""
         if effect is Effect.ALLOW and tool.undoable and not take_free_delete():
             effect, why = Effect.ASK, DELETES_CAPPED  # slice 11 D3: the 11th delete is a card
-        outside = content_tainted()  # D8: what this call writes may carry other people's words
+        return _Ruling(risk, effect, ruled, asks, card, why)
 
-        if effect is Effect.ASK:
-            # An ASK is confirm-before-commit whatever the declared class (a policy rule may
-            # tighten a reversible tool), so the gate sees it as irreversible.
-            action = PendingAction(
+    async def _hold(
+        self,
+        tool: Tool,
+        call: ToolCall,
+        ruling: _Ruling,
+        scope: str | None,
+        confirmation_id: str | None,
+        proof: Any,
+        outside: bool,
+    ) -> GatewayResult | bool:
+        """An ASK. Without a token: the card is proposed (or refused past the card budget).
+        With one: the card must still read as the owner saw it (`_before_consuming`), the token
+        is spent, and the intent is audited BEFORE anything runs. Returns whether the run is
+        outside (D8: this round's, or the card's proposing round's)."""
+        action = _card(tool, call, ruling, scope, outside)
+        note = ""
+        if confirmation_id is not None:
+            pre = await self._before_consuming(tool, call, action, confirmation_id, proof)
+            if isinstance(pre, GatewayResult):
+                return pre
+            note, proposed_outside = pre
+            outside = outside or proposed_outside
+        asked = await self._gate(tool, call, ruling.risk, action, confirmation_id)
+        if asked is not None:
+            return replace(asked, note=ruling.why) if asked.pending is not None else asked
+        refused = await self._audit_intent(tool, call, ruling.risk, note)
+        return refused if refused is not None else outside
+
+    async def _audit_intent(
+        self, tool: Tool, call: ToolCall, risk: ActionRisk, note: str
+    ) -> GatewayResult | None:
+        """Approved and consumed. Record intent BEFORE acting: an irreversible action never
+        runs without an audit entry. If the record can't be written, fail closed (the approval
+        is spent, nothing happens, the owner is told)."""
+        try:
+            await self.audit.append(
+                agent=tool.agent,
                 tool=tool.name,
-                arguments=call.arguments,
-                risk=ActionRisk.IRREVERSIBLE,
-                summary=card if card is not None else tool.summary(call.arguments),
-                scope=scope,
-                tool_risk=risk,  # what the call itself can do: R3 may need a passkey
-                reason=_ask_reason(
-                    policy.decide(tool.name, risk, call.arguments), risk, asks, bool(why)
-                ),
-                outside=outside,
+                risk=risk,
+                outcome="executing",
+                args=call.arguments,
+                detail=_confirmed() + (f"; {note}" if note else ""),
             )
-            note = ""
-            if confirmation_id is not None:
-                pre = await self._before_consuming(tool, call, action, confirmation_id, proof)
-                if isinstance(pre, GatewayResult):
-                    return pre
-                note, proposed_outside = pre
-                outside = outside or proposed_outside  # writes as its proposing round would
-            asked = await self._gate(tool, call, risk, action, confirmation_id)
-            if asked is not None:
-                return replace(asked, note=why) if asked.pending is not None else asked
-            # Approved and consumed. Record intent BEFORE acting: an irreversible action never
-            # runs without an audit entry. If the record can't be written, fail closed (the
-            # approval is spent, nothing happens, the owner is told).
-            try:
-                await self.audit.append(
-                    agent=tool.agent,
-                    tool=tool.name,
-                    risk=risk,
-                    outcome="executing",
-                    args=call.arguments,
-                    detail=_confirmed() + (f"; {note}" if note else ""),
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.error(
-                    "audit unavailable; irreversible action NOT run",
-                    extra={"tool": tool.name, "error": type(exc).__name__},
-                )
-                return GatewayResult(
-                    GatewayOutcome.ERROR, error="could not record the action, so nothing was done"
-                )
-        try:  # who it runs for, if approved, at what risk, whether outside; always reset
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "audit unavailable; irreversible action NOT run",
+                extra={"tool": tool.name, "error": type(exc).__name__},
+            )
+            return GatewayResult(
+                GatewayOutcome.ERROR, error="could not record the action, so nothing was done"
+            )
+        return None
+
+    async def _run(
+        self,
+        tool: Tool,
+        call: ToolCall,
+        risk: ActionRisk,
+        scope: str | None,
+        confirmation_id: str | None,
+        outside: bool,
+    ) -> GatewayResult:
+        """The result step: run the tool — it learns who it runs for, whether approved, at what
+        risk and whether outside (always reset) — then audit what happened."""
+        try:
             with tool_context(
                 scope, confirmed=confirmation_id is not None, approved_risk=risk, outside=outside
             ):
@@ -406,13 +495,12 @@ class Gateway:
         except Exception as exc:  # noqa: BLE001 — tool failures are reported, not raised
             log.exception("tool failed", extra={"tool": tool.name})
             await self._audit_after_run(tool, call, risk, "error", _safe_detail(exc))
-            error = f"{TOOL_FAILED} ({_safe_detail(exc)})"  # never the raw text (review LOW-6)
-            return GatewayResult(GatewayOutcome.ERROR, error=error, raised=True)  # never trusted
-        out, trusted = _vouched(tool, out)
+            return _tool_failed(exc)
+        result = _executed(tool, out)
         await self._audit_after_run(
             tool, call, risk, "executed", _confirmed() if confirmation_id else ""
         )
-        return GatewayResult(GatewayOutcome.EXECUTED, result=out, trusted=trusted)
+        return result
 
     async def _gate(
         self,

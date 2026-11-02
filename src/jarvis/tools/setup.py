@@ -1,6 +1,8 @@
 """Default gateway wiring: builtin dev tools, plus the Google tools when an account link is
 configured (then the fake calendar/message builtins step aside so the model sees no twins), plus
-the memory tools when long-term memory is on, plus web_search / web_read with a Tavily key."""
+the memory tools when long-term memory is on, plus web_search / web_read with a Tavily key. The
+to-do tools (Google Tasks) come with the Google tools: their scope is optional per owner, so they
+check it on every call (slice 10 C1)."""
 
 from __future__ import annotations
 
@@ -24,7 +26,7 @@ FAKE_TWINS = frozenset({"get_calendar", "send_message"})
 
 
 def build_gateway(
-    _: Settings,
+    s: Settings,
     *,
     approvals: ApprovalStore | None = None,
     audit: AuditTrail | None = None,
@@ -40,8 +42,11 @@ def build_gateway(
     if google is not None:
         from jarvis.tools.gmail import gmail_tools
         from jarvis.tools.google_calendar import calendar_tools
+        from jarvis.tools.google_tasks import tasks_tools
 
         for t in calendar_tools(google) + gmail_tools(google):
+            reg.register(t)
+        for t in tasks_tools(google, default_tz=s.user_timezone):
             reg.register(t)
     if memory is not None:
         from jarvis.recall.tools import memory_tools

@@ -12,6 +12,7 @@ import httpx
 
 CAL = "/calendar/v3"
 GM = "/gmail/v1/users/me"
+TK = "/tasks/v1"
 
 
 @dataclass
@@ -20,7 +21,13 @@ class FakeBriefGoogle:
     events: list[dict[str, Any]] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
     estimate: int | None = None
-    fail: dict[str, int] = field(default_factory=dict)  # tz | events | list | meta | insert
+    # tz | events | list | meta | insert | tasklists | tasks
+    fail: dict[str, int] = field(default_factory=dict)
+    # Google Tasks (slice 10 C): list id → tasks ({"id", "title", "due": "YYYY-MM-DD", …})
+    tasklists: list[dict[str, Any]] = field(
+        default_factory=lambda: [{"id": "L1", "title": "My Tasks"}]
+    )
+    todo: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     requests: list[httpx.Request] = field(default_factory=list)
 
     def client(self) -> httpx.AsyncClient:
@@ -48,10 +55,23 @@ class FakeBriefGoogle:
             mid = path.rsplit("/", 1)[1]
             found = next((m for m in self.messages if m["id"] == mid), None)
             return self._answer("meta", found) if found else httpx.Response(404, json={})
+        if path == f"{TK}/users/@me/lists" and method == "GET":
+            return self._answer("tasklists", {"items": self.tasklists})
+        if path.startswith(f"{TK}/lists/") and path.endswith("/tasks") and method == "GET":
+            due_max = request.url.params.get("dueMax", "")
+            items = [
+                {**t, "due": f"{t['due']}T00:00:00.000Z"} if t.get("due") else dict(t)
+                for t in self.todo.get(path.split("/")[-2], [])
+            ]
+            keep = [t for t in items if not due_max or t.get("due", "~") < due_max]
+            return self._answer("tasks", {"items": keep})
         return httpx.Response(599, json={"error": f"unscripted {method} {path}"})
 
     def writes(self) -> list[httpx.Request]:
         return [r for r in self.requests if r.method != "GET"]
+
+    def tasks_reads(self) -> int:
+        return sum(1 for r in self.requests if r.url.path.startswith(TK))
 
 
 def message(

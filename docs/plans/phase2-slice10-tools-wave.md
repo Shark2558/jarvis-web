@@ -177,6 +177,111 @@ privacy policy <https://www.tavily.com/privacy> (last updated 24 Nov 2025).
   AI-lines input only through the existing fence.
 - **Evals**: 15+ task cases with the fake transport; injection in task notes → 0 deletes without card.
 
+### C — build notes (builder `s10-tasks`, 2026-11-01)
+**Google facts verified 2026-11-01** (developers.google.com pages, "last updated" in brackets):
+- REST: `https://tasks.googleapis.com/tasks/v1` — `GET users/@me/lists` (maxResults default and
+  max 1000) [2025-03-13]; `GET lists/{l}/tasks` (maxResults default 20, max 100; `dueMin`/`dueMax`
+  RFC 3339; `showCompleted` default true — tasks completed in the apps also need `showHidden`;
+  `showDeleted`/`showHidden` default false), `POST lists/{l}/tasks`, `PATCH|GET|DELETE
+  lists/{l}/tasks/{t}` [2026-10-29, reference index 2025-07-25]. list/get accept `tasks` or
+  `tasks.readonly`; insert/patch/delete need `https://www.googleapis.com/auth/tasks`.
+- Task: `title` ≤ 1024 chars, `notes` ≤ 8192, `status` needsAction|completed, `completed`
+  RFC 3339, `links[]`/`webViewLink`/`assignmentInfo` read-only. **`due` is "an RFC 3339
+  timestamp" but only the date is stored; the time is discarded and cannot be read or written via
+  the API** [tasks resource, 2026-10-19]. Limits: 20,000 non-hidden tasks per list, 100,000 total
+  [insert, 2026-10-29]. Deleting an *assigned* task (from Docs / Chat) also deletes the original
+  there [delete, 2025-03-13].
+- Quota: "a courtesy limit of 50,000 queries per day" [tasks/limits, 2026-09-03]; no charge is
+  listed (no price page found — treat as free, quota only). `@default` as the list id: used in
+  Google's own Tasks sample (developers.google.com/google-ads/scripts/docs/examples/google-tasks,
+  2025-08-20); the REST reference itself no longer mentions it.
+
+**Decisions**
+- **C1 Registration = "registered when Google is linked, answers 'grant access' until the scope
+  is granted"** — the `gmail.insert` pattern: the registry is built once per process at start-up,
+  before any owner's link exists, and scopes are per owner and change at runtime (Grant). So the
+  tools check `can_use_tasks(scopes)` from the stored link on every call (a vault read, no Google
+  call). `tasks_list` returns `{status: "permission_needed", message}`; the write tools fail in
+  their `Tool.preview` (fail closed: no card, nothing runs) with the same plain message.
+- **C2 Ids**: `tasks_list` returns `id = "<list id>:<task id>"` so the write tools need only
+  `task_id`; a bare id means the default list (`@default`). Each part must match
+  `[A-Za-z0-9_=-]{1,256}` (no `/`, `.`, `%`, `?`: an id can never walk to another URL).
+- **C3 Due dates**: sent as `YYYY-MM-DDT00:00:00.000Z`; read as the date part only (never
+  shifted by a time zone — it is a date, not an instant). The model passes `YYYY-MM-DD`; a
+  date-time is converted into the owner's zone (primary calendar's zone, else
+  `JARVIS_USER_TIMEZONE`) and its time is dropped — the card and result say so. "Overdue" and
+  "today" are the owner's local dates.
+- **C4 Risk**: list R1; add/update/complete R2 (default policy: run, as calendar events without
+  guests; a spoken turn still asks); delete R3 (always a card). update/complete/delete `preview`
+  fetch the real task for the card (title, due, list, "assigned from Docs/Chat: deleting also
+  removes it there"); a failed look-up proposes nothing.
+- **C5 Untrusted text**: titles and notes are fenced (`wrap_external`, source "to-do list") and
+  the round is tainted (`trusted_output=False`). The list result is fitted under the gateway's
+  12,000-char cap by shortening notes (400 → 150 → none) and then the number of tasks (≤ 30).
+- **C6 Brief "To-do"**: overdue + due today across the owner's lists (≤ 10 lists, ≤ 100 tasks
+  per list, ≤ 10 shown, overdue first), fixed-code GETs through `GoogleConnector.request` like the
+  calendar/inbox; own state `ok | not_connected | not_granted | unavailable` (`not_granted` makes
+  no Google call). Fails independently and never triggers the section retry (only calendar/inbox
+  do). Counted in the `morning_brief.collect` audit detail (`todo=<state> tasks=<n>`). Titles go
+  to the optional AI lines inside their own fence (≤ 1,000 chars); the consent text says so.
+  Old stored briefs have no `todo` and show no section.
+- **C7 Integrations**: `/v1/integrations` gains `google.tasks_granted`; the console shows
+  "To-do list — permission needed · Grant" (Grant re-runs `/connect/google`, which already asks
+  with `include_granted_scopes`) only when the server says `false`.
+- Persona: a separate "To-do list (standing rule)" paragraph; `PERSONA_VERSION` unchanged.
+
+**Go-live (owner, once; the integrator writes the guide)**: Google Cloud Console → APIs &
+Services → (1) Library: the Tasks API is switched on by `deploy/cloudrun.sh` step 2
+(`tasks.googleapis.com`) — on an older deploy, enable "Google Tasks API" once; (2) OAuth consent
+screen → Data Access → Add or remove scopes → add `https://www.googleapis.com/auth/tasks` → Save;
+(3) JARVIS → Integrations → "To-do list — permission needed" → **Grant** → keep the Tasks box
+ticked. **Not verified live**: Google's behaviour when the scope is requested before step (2) in
+Testing mode (expected: still grantable for test users, with the unverified-app screen).
+
+**Built (branch `s10-tasks`)** — `integrations/google.py` (`TASKS_SCOPE` in `OPTIONAL_SCOPES`,
+`can_use_tasks`); `tools/tasks_api.py` (ids, due-date rules, `TasksClient` shared with the
+brief); `tools/google_tasks.py` (5 tools, previews, result fitting); `tools/tasks_cards.py`;
+`tools/setup.py` (registered with the Google tools, `default_tz = JARVIS_USER_TIMEZONE`);
+`api/integrations.py` (`google.tasks_granted`); `brief/{models,collect,render,summarize,service}.py`
+(To-do section); `core/prompts.py` (`_TODO_RULES` paragraph); console `console.js` (Grant row),
+`console-brief.js` (To-do section), `console.css` (2 rules); `deploy/cloudrun.sh` (enables
+`tasks.googleapis.com`, prints the optional scope). Evals `evals/tasks/` (19 correctness + 10
+injection cases + negative control; in `run_all_mock.py`), brief eval compose c18–c20 and
+injection i35–i37 (hostile to-do titles).
+
+**Deviations / details the plan left open**
+- The brief's AI input budgets: mail 6,000 → 5,500 chars so calendar + mail + to-do + markers fit
+  under the 12,000 cap; the backstop now keeps the closing task line (it can no longer cut inside
+  a fence). The AI is skipped only when calendar, inbox AND to-do were all unreadable.
+- `due_before` is inclusive ("on or before"); `dueMax` is sent as the next midnight and the result
+  is filtered again locally (whatever Google's bound semantics are).
+- Brief to-do reads: 1 list read + 1 per list (≤ 10), each via `GoogleConnector.request` (which
+  also reads the stored link once per call — ≤ 12 extra Firestore reads per generation, ≤ 6
+  generations a day). No Google call and no extra read beyond the link status when not granted.
+- The tz look-up for tools is cached 5 minutes per owner (one calendar GET).
+
+**Unverified against live Google (fake transport only)**: clearing a due date with
+`PATCH {"due": null}`; `@default` accepted by insert/patch/delete (documented only by Google's
+Ads-scripts sample); whether `dueMax` is inclusive (handled either way); Testing-mode consent
+before the scope is added to Data Access.
+
+**Reviews**: builder self-review (fixed a double list read on `tasks_list(list=…)`), then a
+fresh-context security review (coordinator, 2026-11-02): 0 critical, 1 high, 4 medium, 5 low —
+all addressed test-first:
+
+| # | Finding | Outcome |
+|---|---|---|
+| H1 | Injected notes can complete / rename / add without a card | Not per tool: a gateway rule ("a tainted round turns every reversible write into ASK") lands in the permissions branch. Here: `evals/tasks/cases_tainted_writes.jsonl` (6 cases) gate 0 reversible writes + one card per ordered write once `jarvis.tools.policy.TAINTED_WRITES_ASK = True` exists; until then SKIPPED with the reason, and the report shows all 6 still fail (`tests/test_evals_tasks.py` has a `skipif` test that runs once the marker exists) |
+| M2 | `parse_due` OverflowError escaped the gateway | Range-checked before the zone conversion; overflow → `ValueError` |
+| M3 | Assigned tasks (Docs / Chat) are seen by others | Verified 2026-11-02: deleting an assigned task deletes the original (tasks.delete reference); assignee edits are flagged in the Doc and anyone with access sees its tasks (support.google.com/docs/answer/12048749). update/complete of an assigned task → preview raises to IRREVERSIBLE + "Assigned from a Google Doc or Chat space: people there can see this change." Subtasks on delete: **not documented by Google** — the delete card counts the task's subtasks (bounded read, fails closed) and says they may be deleted with it |
+| M4 | The existing AI consent silently widened to to-do titles | `BriefSettings.ai_consent` (stored briefs default 1); `AI_CONSENT_VERSION = 2` is recorded when the owner confirms the current text; titles go to the AI only under ≥ 2 (`build_input(include_todo=…)`). `SettingsView.ai_todo_consent`; the console consent dialog names to-dos and offers "Include to-dos" (re-confirm) when the server says `false` |
+| M5 | `due_by` read one page per list and ≤ 10 lists | Pages followed up to `PAGES_PER_LIST = 3` per list (tokens validated); more lists or pages than the budget → `TodoSection.complete = False` → "at least N" and a partial-read line, never "Nothing due" |
+| L6 | No overall deadline | Brief to-do section 20 s (`TODO_TIMEOUT_S`) → unavailable; `tasks_list` 20 s (`LIST_DEADLINE_S`) → plain "took too long" |
+| L7 | API switched off showed "reconnect to grant it" | Connector raises `GoogleServiceDisabled` on 403 with reason `accessNotConfigured` / `SERVICE_DISABLED` (reason codes only, no vendor text); the to-do tools say "The to-do service is not switched on for your JARVIS project yet…" |
+| L8 | Every reconnect asked for Tasks | `CONNECT_SCOPES` (pre-slice-10 set) by default; Tasks only on `/connect/google?add=tasks` (Grant) or when the link already holds it; `include_granted_scopes` kept |
+| L9 | AI ran with nothing to read | Skipped unless calendar or inbox is ok, or consented to-do titles exist |
+| L10 | Subtasks on delete | See M3 |
+
 ## D — Owner permission rules + passkey for irreversible actions
 - **D-D1 Permission rules**: per-owner `permissions/{uid}` mapping tool groups → `allow | ask | deny`.
   Groups (builder finalises from the registry): Calendar changes, Calendar deletes / invites, Email

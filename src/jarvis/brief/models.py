@@ -19,6 +19,8 @@ ViewStatus = Literal["none", "generating", "ready", "failed"]
 Trigger = Literal["scheduled", "manual", "open"]
 InboxStatus = Literal["off", "sending", "delivered", "failed", "unknown"]
 SectionState = Literal["ok", "not_connected", "unavailable"]
+# The to-do list (slice 10 C) has its own optional scope, hence one more state.
+TodoState = Literal["ok", "not_connected", "not_granted", "unavailable"]
 
 EARLIEST = dt.time(4, 0)
 LATEST = dt.time(11, 30)
@@ -26,6 +28,9 @@ DEFAULT_TIME = "07:00"
 _HHMM = re.compile(r"([0-9]{2}):([0-9]{2})")  # ASCII only: `\d` takes ٠٧ and int() parses it
 TIME_RULE = "Pick a time between 04:00 and 11:30, on the hour or the half hour."
 AI_LABEL = "AI summary — written from your calendar and other people's emails; may be wrong"
+# Version of the AI-summary consent text: 1 = calendar + mail (slice 7); 2 = also the titles of
+# to-dos due today or overdue (slice 10 C). Titles go to the AI only under consent ≥ 2.
+AI_CONSENT_VERSION = 2
 
 
 def parse_brief_time(value: str) -> dt.time:
@@ -56,6 +61,9 @@ class BriefSettings(Frozen):
     inbox_delivery: bool = False
     updated_at: dt.datetime | None = None
     tz: str | None = Field(default=None, description="Last calendar time zone seen (cache)")
+    ai_consent: int = Field(
+        default=1, description="Version of the AI consent text last confirmed (AI_CONSENT_VERSION)"
+    )
 
     @field_validator("time")
     @classmethod
@@ -114,10 +122,29 @@ class JarvisSection(Frozen):
     approvals_waiting: int = 0
 
 
+class TodoItem(Frozen):
+    title: str
+    due: str = Field(description="YYYY-MM-DD: a date (Google Tasks keeps no time)")
+    overdue: bool = False
+    list: str = Field(default="", description="The list's name; '' when the owner has one list")
+
+
+class TodoSection(Frozen):
+    """Overdue + due today across the owner's lists (slice 10 C)."""
+
+    total: int = Field(default=0, description="How many were found (items holds ≤ 10)")
+    overdue: int = 0
+    items: tuple[TodoItem, ...] = ()
+    complete: bool = Field(
+        default=True, description="False: the read budget ran out, so the counts are 'at least'"
+    )
+
+
 class SectionsStatus(Frozen):
     calendar: SectionState = "ok"
     inbox: SectionState = "ok"
     jarvis: SectionState = "ok"
+    todo: TodoState = "ok"
 
 
 class BriefData(Frozen):
@@ -126,6 +153,8 @@ class BriefData(Frozen):
     calendar: CalendarSection = CalendarSection()
     inbox: InboxSection = InboxSection()
     jarvis: JarvisSection = JarvisSection()
+    # None: not read (a brief made before the to-do section existed, or its state says why)
+    todo: TodoSection | None = None
     sections_status: SectionsStatus = SectionsStatus()
 
 
@@ -202,6 +231,8 @@ class SettingsView(Frozen):
     ai_summary: bool
     inbox_delivery: bool
     updated_at: dt.datetime | None
+    # the AI summary is on under the consent that names to-do titles (else they are not sent)
+    ai_todo_consent: bool = False
 
 
 class TodayView(Frozen):
@@ -243,6 +274,7 @@ class TickResult(Frozen):
 
 
 __all__ = [
+    "AI_CONSENT_VERSION",
     "AI_LABEL",
     "AIBlock",
     "AIView",
@@ -265,6 +297,9 @@ __all__ = [
     "SettingsView",
     "TickResult",
     "TodayView",
+    "TodoItem",
+    "TodoSection",
+    "TodoState",
     "Trigger",
     "parse_brief_time",
 ]

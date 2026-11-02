@@ -75,7 +75,7 @@ say "2/8  Switching on the Google services JARVIS needs (takes ~1 minute)"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
   secretmanager.googleapis.com firestore.googleapis.com iam.googleapis.com \
   iamcredentials.googleapis.com sts.googleapis.com \
-  calendar-json.googleapis.com gmail.googleapis.com --quiet
+  calendar-json.googleapis.com gmail.googleapis.com tasks.googleapis.com --quiet
 # Voice (slice 9) on its own: an organisation policy may block these, and JARVIS works without them.
 gcloud services enable texttospeech.googleapis.com speech.googleapis.com --quiet \
   || say "Note: the Google speech APIs could not be switched on; the browser voice will be used."
@@ -471,15 +471,16 @@ is off ("api_disabled"), run once in Cloud Shell:
 JARVIS uses the browser's own voice until then (it checks again within 10 minutes).
 
 GOOGLE CALENDAR + GMAIL (once): APIs & Services -> OAuth consent screen (Google Auth Platform)
-  1. Data Access -> Add or remove scopes -> add these five and Save:
+  1. Data Access -> Add or remove scopes -> add these six and Save:
        https://www.googleapis.com/auth/calendar.events
        https://www.googleapis.com/auth/calendar.readonly
        https://www.googleapis.com/auth/gmail.readonly
        https://www.googleapis.com/auth/gmail.compose   (drafts AND sending)
        https://www.googleapis.com/auth/gmail.insert    (optional: only needed for the brief in your inbox)
-     When you connect, leave every box ticked: JARVIS refuses a partial link. The fifth one
-     (gmail.insert) is the exception: leave it out and the morning brief simply stays in JARVIS.
-     Already linked before the morning brief? Reconnect once in Integrations to add it.
+       https://www.googleapis.com/auth/tasks           (optional: your to-do list in Google Tasks)
+     When you connect, leave every box ticked: JARVIS refuses a partial link. The two optional
+     ones are the exception: without gmail.insert the brief simply stays in JARVIS; without
+     tasks there is no to-do list. Linked before? Integrations -> To-do list -> Grant adds it.
   2. Audience -> Test users -> add your own Gmail address (the one JARVIS signs in with).
   3. In JARVIS: panel -> Integrations -> Connect Google.
   While the app stays in "Testing", Google expires the link every 7 days: JARVIS will show

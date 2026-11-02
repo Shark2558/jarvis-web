@@ -184,6 +184,16 @@ def test_script_prints_consent_scopes_and_test_user_reminder(script: str) -> Non
     assert "/connect/google/callback" in script  # second redirect URI
 
 
+def test_the_tasks_api_is_switched_on_and_its_scope_is_printed_as_optional(script: str) -> None:
+    """Slice 10 C: the to-do list. Without the API switched on in the project Google answers
+    403 even with the scope granted; the scope itself is optional (Integrations → Grant)."""
+    enable = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
+    assert "tasks.googleapis.com" in enable
+    line = next(ln for ln in script.splitlines() if "auth/tasks" in ln)
+    assert "optional" in line and "to-do" in line
+    assert "Grant" in script
+
+
 def test_default_brain_prompt_accepts_claude(script: str) -> None:
     assert "claude|Claude|CLAUDE) DEFAULT_BRAIN=anthropic" in script
 

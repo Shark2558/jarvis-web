@@ -25,12 +25,21 @@ from jarvis.brief.models import (
     BriefEvent,
     InboxItem,
     SectionState,
+    TodoItem,
 )
 from jarvis.tools.addresses import plain_address
 from jarvis.tools.card import quoted, strip_invisible
 
 NOT_CONNECTED = "Google is not connected: connect it in the console (Integrations) to see your {}."
 UNAVAILABLE = "Your {} could not be read just now."
+PARTIAL = (
+    "JARVIS read only part of your to-do list (at most 10 lists and 300 tasks each), so there "
+    "may be more."
+)
+NOT_GRANTED = (
+    "JARVIS has no permission for your to-do list yet: press Grant next to 'To-do list' in the "
+    "console (Integrations) to see it here."
+)
 OTHERS_NOTE = "Titles and subjects below were written by other people."
 LINK = "[link removed]"
 DOT = "[.]"
@@ -164,6 +173,45 @@ def sender(m: InboxItem) -> str:
     return name or addr or "unknown sender"
 
 
+def todo_when(item: TodoItem) -> str:
+    """'Today' or 'Overdue since Tue 12 Jan' — a date, never shifted (Tasks keeps no time)."""
+    if not item.overdue:
+        return "Today"
+    try:
+        return "Overdue since " + date.fromisoformat(item.due).strftime("%a %d %b")
+    except ValueError:
+        return "Overdue"
+
+
+def _todo(data: BriefData) -> list[str]:
+    state, todo = data.sections_status.todo, data.todo
+    if todo is None and state == "ok":
+        return []  # a brief made before the to-do section existed
+    head = "TO-DO"
+    if state == "not_granted":
+        return [head, "  " + NOT_GRANTED]
+    if state == "not_connected":
+        return [head, "  " + NOT_CONNECTED.format("to-do list")]
+    if state != "ok" or todo is None:
+        return [head, "  " + UNAVAILABLE.format("to-do list")]
+    least = "" if todo.complete else "at least "
+    if todo.total:
+        head += f" · {least}{todo.total} due" + (
+            f" ({todo.overdue} overdue)" if todo.overdue else ""
+        )
+    lines = [head]
+    for item in todo.items:
+        where = f" · {theirs(item.list)}" if item.list else ""
+        lines.append(f"  {todo_when(item)}  {theirs(item.title)}{where}")
+    if todo.total > len(todo.items):
+        lines.append(f"  … and {least}{todo.total - len(todo.items)} more in Google Tasks.")
+    if not todo.complete:
+        lines.append("  " + PARTIAL)  # never "nothing due" when JARVIS did not read it all
+    elif not todo.items:
+        lines.append("  Nothing due today or overdue.")
+    return lines
+
+
 def _jarvis(data: BriefData) -> list[str]:
     if data.sections_status.jarvis != "ok":
         return ["JARVIS", "  Approvals could not be checked just now."]
@@ -185,7 +233,15 @@ def render_text(data: BriefData, ai: AIBlock | None = None, ai_note: str | None 
     header = [f"JARVIS morning brief — {long_date(data.date)} ({data.tz})"]
     if "ok" in (data.sections_status.calendar, data.sections_status.inbox):
         header.append(OTHERS_NOTE)
-    blocks = [header, _today(data), _tomorrow(data), _inbox(data), _jarvis(data), _ai(ai, ai_note)]
+    blocks = [
+        header,
+        _today(data),
+        _tomorrow(data),
+        _inbox(data),
+        _todo(data),
+        _jarvis(data),
+        _ai(ai, ai_note),
+    ]
     return "\n\n".join("\n".join(b) for b in blocks if b) + "\n"
 
 
@@ -202,5 +258,6 @@ __all__ = [
     "sender",
     "subject_line",
     "theirs",
+    "todo_when",
     "when",
 ]

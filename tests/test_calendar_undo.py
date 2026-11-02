@@ -15,7 +15,8 @@ from google_fakes import GOOGLE_UID, FakeGoogle
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.integrations.google import GoogleConnector
 from jarvis.llm.base import ToolCall
-from jarvis.storage.docs import MemoryDocs
+from jarvis.permissions.store import PermissionsStore
+from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.tools.audit import AuditLog
 from jarvis.tools.external import FENCE_END
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
@@ -309,6 +310,20 @@ async def test_in_a_tainted_round_an_undoable_delete_is_an_r2_card_saying_it_can
         "calendar_delete_event", {"event_id": "ev0001"}, confirmation_id=out.pending.id
     )
     assert ok.outcome is GatewayOutcome.EXECUTED and "undo_id" in ok.result
+
+
+async def test_a_stored_never_on_deleting_events_still_blocks_a_solo_delete(rig: Rig) -> None:
+    """Slice 11 fix HIGH-1: an owner who set the old delete row to Never before the split meant
+    "never delete my events": the undo-able (R2) delete is refused, nothing is kept or deleted."""
+    docs = MemoryDocs()
+    legacy = {"user_id": GOOGLE_UID, "groups": {"calendar_delete": "deny"}}
+    await docs.write([Set(f"jarvis_permissions/{GOOGLE_UID}", legacy)])
+    rig.gw.rules = PermissionsStore(docs)
+    rig.serve(_event())
+    out = await rig.run("calendar_delete_event", {"event_id": "ev0001"})
+    assert out.outcome is GatewayOutcome.DENIED, out.error
+    assert "switched off by the owner" in (out.error or "")
+    assert rig.deletes() == [] and await rig.bin.recent(GOOGLE_UID) == []
 
 
 def test_without_a_bin_delete_stays_r3_as_before(connected: GoogleConnector) -> None:

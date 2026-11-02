@@ -35,9 +35,9 @@ INTENDED: dict[str, tuple[ActionRisk, set[str]]] = {
     "task_add": (R2, {"todo_change"}),
     "task_update": (R2, {"todo_change"}),
     "task_complete": (R2, {"todo_change"}),
-    # slice 11: with the Recently deleted bin a delete is undo-able (R2): "Never" on the to-do
-    # row stops it; an assigned to-do's delete (R3) also has its own ask-or-never row
-    "task_delete": (R2, {"todo_change"}),
+    # slice 11: with the Recently deleted bin a delete is undo-able (R2) and has its own row
+    # ("Delete your own to-dos"); an assigned to-do's delete (R3) has its ask-or-never row
+    "task_delete": (R2, {"todo_remove"}),
     "doc_read": (R1, {"documents"}),
     "doc_search": (R1, {"documents"}),
 }

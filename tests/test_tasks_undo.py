@@ -13,7 +13,8 @@ from tasks_fakes import FakeTasks, tasks_connector
 
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.llm.base import ToolCall
-from jarvis.storage.docs import MemoryDocs
+from jarvis.permissions.store import PermissionsStore
+from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.tools.audit import AuditLog
 from jarvis.tools.external import FENCE_END
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
@@ -240,6 +241,18 @@ async def test_a_todo_that_became_assigned_after_the_decision_is_not_deleted() -
     )
     assert out.outcome is GatewayOutcome.ERROR and "changed" in (out.error or "")
     assert fake.changes("delete") == []
+
+
+async def test_a_stored_never_on_deleting_todos_still_blocks_an_own_todo_delete() -> None:
+    """Slice 11 fix HIGH-1: Never on the old "Delete to-dos" row keeps meaning never."""
+    rig = await _rig()
+    docs = MemoryDocs()
+    legacy = {"user_id": UID, "groups": {"todo_delete": "deny"}}
+    await docs.write([Set(f"jarvis_permissions/{UID}", legacy)])
+    rig.gw.rules = PermissionsStore(docs)
+    out = await rig.run("task_delete", {"task_id": "L2:t_rfp"})
+    assert out.outcome is GatewayOutcome.DENIED and "switched off" in (out.error or "")
+    assert rig.fake.changes("delete") == [] and await rig.bin.recent(UID) == []
 
 
 async def test_without_a_bin_task_delete_stays_r3_as_before() -> None:

@@ -155,6 +155,28 @@ async def test_allow_on_an_irreversible_group_is_refused_and_nothing_written(rig
     assert rig.docs.sets == 0
 
 
+async def test_an_earlier_never_on_deleting_events_shows_on_the_new_row_and_sticks(
+    rig: Rig,
+) -> None:
+    """Slice 11 fix HIGH-1: a choice stored before the split ("Never" on the old delete row)
+    reads as Never on "Delete your own events", says why, and stays Never after another change
+    — even when the owner relaxes the R3 row afterwards."""
+    legacy = {"groups": {"calendar_delete": "deny"}}
+    await rig.docs.write([Set(f"jarvis_permissions/{UID}", legacy)])
+    view = {g.id: g for g in (await rig.svc.view(UID)).groups}
+    assert view["calendar_remove"].effect == "deny" and view["calendar_remove"].inherited
+    assert "Never" in view["calendar_remove"].hint
+    assert not view["todo_remove"].inherited and view["todo_remove"].effect == "allow"
+    sources = {r.source for r in await rig.svc.rules_for(UID)}
+    assert "owner:calendar_remove" in sources
+    v2 = await rig.svc.update(UID, PermissionsPatch(groups={"calendar_delete": "ask"}))
+    after = {g.id: g for g in v2.groups}
+    assert after["calendar_remove"].effect == "deny" and not after["calendar_remove"].inherited
+    stored = await rig.docs.get(f"jarvis_permissions/{UID}")
+    assert stored is not None and stored["groups"]["calendar_remove"] == "deny"
+    assert stored["groups"]["todo_remove"] == "allow"  # pinned: a later Never won't spread
+
+
 async def test_a_hand_edited_allow_for_an_irreversible_group_reads_as_ask(rig: Rig) -> None:
     await rig.docs.write(
         [Set(f"jarvis_permissions/{UID}", {"groups": {"email_send": "allow", "web": "nope"}})]

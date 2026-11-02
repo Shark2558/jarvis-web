@@ -26,7 +26,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.logging import get_logger
-from jarvis.permissions.groups import rules_for, stored_choices
+from jarvis.permissions.groups import inherited_ids, pinned, rules_for, stored_choices
 from jarvis.storage.docs import Docs, DocTx
 from jarvis.storage.sessions import safe_id
 from jarvis.tools.policy import Effect, PolicyRule
@@ -45,6 +45,8 @@ class OwnerPermissions(BaseModel):
     recovered_at: str | None = None
     rev: int = 0
     updated_at: str | None = None
+    # slice 11 fix HIGH-1: rows that read as Never only because an older row is (never written)
+    inherited: frozenset[str] = frozenset()
 
 
 def _iso(v: Any) -> str | None:
@@ -58,6 +60,7 @@ def decode(doc: Any) -> OwnerPermissions:
     at = doc.get("updated_at")
     return OwnerPermissions(
         choices=stored_choices(doc.get("groups")),
+        inherited=frozenset(inherited_ids(doc.get("groups"))),
         require_passkey=doc.get("require_passkey") is True,
         reset_requested_at=_iso(doc.get("reset_requested_at")),
         reset_effective_at=_iso(doc.get("reset_effective_at")),
@@ -123,7 +126,15 @@ class PermissionsStore:
 
         async def fn(tx: DocTx) -> OwnerPermissions:
             cur = decode(await tx.get(path))
-            new = change(cur).model_copy(update={"rev": cur.rev + 1, "updated_at": at})
+            new = change(cur)
+            new = new.model_copy(
+                update={
+                    "choices": pinned(new.choices),  # the split delete rows, explicitly
+                    "inherited": frozenset(),
+                    "rev": cur.rev + 1,
+                    "updated_at": at,
+                }
+            )
             tx.set(
                 path,
                 {

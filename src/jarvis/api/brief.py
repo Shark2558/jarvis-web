@@ -12,7 +12,8 @@ PUT  /v1/brief/settings     SettingsPatch → SettingsView; 422 without a confir
 POST /internal/brief/tick   Cloud Scheduler only (Google OIDC) → {checked, generated, delivered};
                             then a learning sweep for each owner (slice 8, ≤ 20 s, awaited:
                             the tick holds the CPU on Cloud Run), and the housekeeping sweeps
-                            (unsent uploads; slice 11: expired passkey challenges, ≤ 100)
+                            (unsent uploads; slice 11: expired passkey challenges, ≤ 100) and
+                            the once-a-day Tavily usage cross-check
 """
 
 from __future__ import annotations
@@ -114,6 +115,9 @@ async def tick(request: Request, svc: BriefService = Depends(_svc)) -> TickResul
     perms = getattr(request.app.state, "permissions", None)
     if perms is not None:  # passkey challenges never answered (slice 11 D7 c): never raises
         await perms.sweep_challenges()
+    web = getattr(request.app.state, "web", None)
+    if web is not None:  # Tavily's own count, at most once a day (slice 11 D7 b): never raises
+        await web.check_vendor_usage()
     return result
 
 

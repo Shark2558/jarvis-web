@@ -11,8 +11,8 @@ Each call RESERVES its credits first, in a transaction (two calls can't both tak
 and gives them back (`refund`) when Tavily clearly did not charge (no answer, an error status, a
 failed extraction); `settle` adds whatever Tavily reports above the reservation; `latch` marks the
 month used up when Tavily itself says the credits are gone (432/433). The counter starts at 0 on
-the first deploy even if the key was used elsewhere this month (Tavily's GET /usage could seed it
-later). Fail closed: an
+the first deploy even if the key was used elsewhere this month; once a day Tavily's own count
+(GET /usage, `jarvis.web.vendor_usage`) can only RAISE it (`correct`). Fail closed: an
 existing `credits` that is not a finite whole number ≥ 0 makes the month UNREADABLE — no search
 is made and the counter is never silently reset. `searches` / `reads` are only shown, read
 leniently.
@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs, DocTx
+from jarvis.web.ports import VendorUsage
 
 log = get_logger(__name__)
 
@@ -216,6 +217,28 @@ class WebAllowance:
         """Tavily reported charging more than was reserved: count the difference too."""
         if charged is not None and charged > r.credits:
             await self._shift(r, charged - r.credits, 0)
+
+    async def correct(self, vendor: VendorUsage) -> WebUse | None:
+        """Tavily's own count (slice 11 D7 b): RAISE this month's count to it — never lower it (a
+        low or glitchy reading must not reopen web search), never past the stop; a vendor whose
+        credits are gone closes the month. None when the counter is unreadable (it stays
+        closed). May raise on a store error (the caller logs it)."""
+        month = self.month()
+        path = self._path(month)
+        target = self.cap if vendor.exhausted else min(max(0, vendor.used), self.cap)
+
+        async def fn(tx: DocTx) -> WebUse | None:
+            try:
+                use = _decode(await tx.get(path), month, self.cap)
+            except AllowanceUnreadable:
+                return None
+            if target <= use.credits:
+                return use
+            new = WebUse(month, target, use.searches, use.reads, self.cap)
+            tx.set(path, self._encode(new))
+            return new
+
+        return await self.docs.transaction(fn)
 
 
 __all__ = [

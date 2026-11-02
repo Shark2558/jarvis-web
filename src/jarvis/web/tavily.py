@@ -7,6 +7,12 @@ vendor SDK. Request/response shapes, auth and error codes verified against docs.
                                           content / images / favicons, include_usage
     POST https://api.tavily.com/extract   one URL, basic depth, plain text (1 credit per 5
                                           successful URLs; a failed one is not charged)
+    GET  https://api.tavily.com/usage     slice 11 D7 b: {key: {usage, limit (null: none), …},
+                                          account: {current_plan, plan_usage, plan_limit,
+                                          paygo_usage, paygo_limit, …}} for the current billing
+                                          cycle (docs.tavily.com/documentation/api-reference/
+                                          endpoint/usage, checked 2026-11-02; not among the
+                                          credit-charging endpoints on the API-credits page)
 
 Auth is the bearer header only (the key never goes in a body, a log line or an error). Every call
 has an overall deadline; redirects are not followed; the response is read in a stream and refused
@@ -26,12 +32,21 @@ from pydantic import SecretStr
 
 from jarvis.logging import get_logger
 from jarvis.tools.card import one_line
-from jarvis.web.ports import CreditsExhausted, PageText, SearchHit, SearchPage, Topic, WebError
+from jarvis.web.ports import (
+    CreditsExhausted,
+    PageText,
+    SearchHit,
+    SearchPage,
+    Topic,
+    VendorUsage,
+    WebError,
+)
 
 log = get_logger(__name__)
 
 SEARCH_URL = "https://api.tavily.com/search"
 EXTRACT_URL = "https://api.tavily.com/extract"
+USAGE_URL = "https://api.tavily.com/usage"
 DEADLINE_S = 25.0  # the whole call, connect to last byte
 HTTP_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 EXTRACT_TIMEOUT_S = 15  # Tavily's own time budget to fetch the page (1–60)
@@ -91,6 +106,31 @@ def _credits(data: dict[str, Any]) -> int | None:
     return c if isinstance(c, int) and not isinstance(c, bool) and 0 <= c <= 1000 else None
 
 
+def _count(v: object) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
+
+
+def _part(data: dict[str, Any], name: str) -> dict[str, Any]:
+    part = data.get(name)
+    return part if isinstance(part, dict) else {}
+
+
+def _vendor_usage(data: dict[str, Any]) -> VendorUsage:
+    """GET /usage → (used, limit, exhausted), from the key's and the plan's counts: the larger
+    count, the smaller limit, and "exhausted" when either count has reached its limit."""
+    key, account = _part(data, "key"), _part(data, "account")
+    pairs = [
+        (_count(key.get("usage")), _count(key.get("limit"))),
+        (_count(account.get("plan_usage")), _count(account.get("plan_limit"))),
+    ]
+    used = [u for u, _ in pairs if u is not None]
+    if not used:
+        raise WebError("Tavily returned an unreadable usage report.")
+    limits = [lim for _, lim in pairs if lim is not None]
+    exhausted = any(u is not None and lim is not None and u >= lim for u, lim in pairs)
+    return VendorUsage(max(used), min(limits) if limits else None, exhausted)
+
+
 class TavilyProvider:
     name = "tavily"
 
@@ -112,7 +152,9 @@ class TavilyProvider:
 
     # ---- the one door ----------------------------------------------------------------------
 
-    async def _post(self, url: str, body: dict[str, Any]) -> dict[str, Any]:
+    async def _call(
+        self, method: str, url: str, body: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         headers = {  # stripped: a Secret Manager value often ends with a newline
             "Authorization": f"Bearer {self._key.get_secret_value().strip()}",
             "Accept": "application/json",
@@ -120,7 +162,7 @@ class TavilyProvider:
         try:
             async with asyncio.timeout(self._deadline):
                 async with self.http.stream(
-                    "POST", url, json=body, headers=headers, timeout=HTTP_TIMEOUT
+                    method, url, json=body, headers=headers, timeout=HTTP_TIMEOUT
                 ) as r:
                     if r.status_code != 200:
                         path = httpx.URL(url).path
@@ -171,7 +213,7 @@ class TavilyProvider:
         }
         if (span := _time_range(days)) is not None:
             body["time_range"] = span
-        data = await self._post(SEARCH_URL, body)
+        data = await self._call("POST", SEARCH_URL, body)
         results = data.get("results")
         if not isinstance(results, list):
             raise WebError("Tavily returned an unreadable response.")
@@ -204,7 +246,7 @@ class TavilyProvider:
             "timeout": EXTRACT_TIMEOUT_S,
             "include_usage": True,
         }
-        data = await self._post(EXTRACT_URL, body)
+        data = await self._call("POST", EXTRACT_URL, body)
         credits = _credits(data)
         results = data.get("results")
         for item in results if isinstance(results, list) else []:
@@ -213,5 +255,11 @@ class TavilyProvider:
                 return PageText(url=url, text=text[:MAX_PAGE_CHARS], ok=True, credits=credits)
         return PageText(url=url, ok=False, reason=NOT_READ, credits=credits)
 
+    # ---- usage (slice 11 D7 b) -------------------------------------------------------------
 
-__all__ = ["EXTRACT_URL", "MAX_RESPONSE_BYTES", "SEARCH_URL", "TavilyProvider"]
+    async def usage(self) -> VendorUsage:
+        """Tavily's own count for its current billing cycle; no body, no credit."""
+        return _vendor_usage(await self._call("GET", USAGE_URL))
+
+
+__all__ = ["EXTRACT_URL", "MAX_RESPONSE_BYTES", "SEARCH_URL", "USAGE_URL", "TavilyProvider"]

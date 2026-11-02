@@ -1,7 +1,8 @@
 # src/jarvis/web/service.py
 """Wiring for web search (slice 10 B): the provider (Tavily today) and the deployment's monthly
 allowance, built from settings. No key, or switched off → None: the tools are not registered and
-JARVIS says web search is not set up. Also the Vitals line's data (`usage_view`).
+JARVIS says web search is not set up. Also the Vitals line's data (`usage_view`) and, from the
+scheduler tick, the once-a-day cross-check with the vendor's own count (slice 11 D7 b).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from jarvis.config import Settings
 from jarvis.storage.docs import Docs
 from jarvis.web.allowance import AllowanceUnreadable, WebAllowance
 from jarvis.web.ports import SearchProvider
+from jarvis.web.vendor_usage import VendorCheck
 
 HOUR_S = 3600.0
 
@@ -29,6 +31,13 @@ class WebService:
     clock: Callable[[], float] = time.monotonic
     # searches per owner in the last hour (review M3). In-process: production runs ONE instance.
     _recent: dict[str, deque[float]] = field(default_factory=dict)
+    # slice 11 D7 b: the vendor's own count, once a day from the scheduler tick (None: none)
+    vendor_check: VendorCheck | None = None
+
+    async def check_vendor_usage(self) -> None:
+        """The scheduler tick: cross-check the month with the vendor's count. Never raises."""
+        if self.vendor_check is not None:
+            await self.vendor_check.run()
 
     def searches_last_hour(self, uid: str) -> int:
         q = self._recent.setdefault(uid, deque())
@@ -57,10 +66,10 @@ def build_web_service(
     from jarvis.web.tavily import TavilyProvider
 
     assert s.tavily_api_key is not None
-    return WebService(
-        TavilyProvider(s.tavily_api_key, http=http),
-        WebAllowance(docs, prefix=s.firestore_prefix, tz=s.user_timezone),
-    )
+    provider = TavilyProvider(s.tavily_api_key, http=http)
+    allowance = WebAllowance(docs, prefix=s.firestore_prefix, tz=s.user_timezone)
+    check = VendorCheck(docs, provider, allowance, prefix=s.firestore_prefix)
+    return WebService(provider, allowance, vendor_check=check)
 
 
 async def usage_view(web: WebService | None) -> dict[str, Any]:

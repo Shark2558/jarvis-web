@@ -1,30 +1,33 @@
 # src/jarvis/documents/service.py
 """Attached documents, end to end (slice 10 E; Layer 2 input → 7 data → 5 skill).
 
-upload   name → type (extension + magic bytes) → text in a worker thread with a time budget
-         (≤ 2 extractions running; a hung one keeps its slot until it ends: "busy", never a
-         pile of CPU-burning threads) → chunks → one commit. The file itself is dropped.
-         Waiting uploads: ≤ 10 per owner; older than a day → swept at the next upload.
+upload   name → type (extension + magic bytes) → text from a killable child process with CPU,
+         memory and wall-clock limits (`isolation`; one at a time, others queue ≤ 50 s, then
+         "busy") → chunks → one commit. The file itself is dropped. Waiting uploads: ≤ 10 per
+         owner; older than a day → swept at the next upload, a conversation delete, and the
+         scheduler tick (`sweep_waiting`, at most hourly).
 attach   on send (inside the Brain's per-conversation lock): refused for a training brain;
          ≤ 3 per message; each must be the owner's and still waiting; bound atomically to
-         the conversation and the turn; the turn gets a second text block (`render_note`).
+         the conversation and the turn; the turn gets a second text block (`render_note`). If
+         the turn then can't be stored, the binding is undone (`save_owner_turn`).
 read / search (the doc_read / doc_search tools): only the owner's files, only in the
-         conversation they were sent in. Text is fenced as external content.
+         conversation they were sent in. Text is fenced as external content. Ranking runs off
+         the event loop; a search without an id covers the 3 most recent files.
 forget_session  the owner deleted the conversation: its files go too (before the turns).
 """
 
 from __future__ import annotations
 
 import asyncio
-import threading
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from jarvis.core.guardrails import InputRejected
-from jarvis.core.models import ChatRequest, Turn
+from jarvis.core.models import ChatRequest, Session, Turn
 from jarvis.documents.chunking import excerpt, pages_label, rank, split
-from jarvis.documents.extract import Extracted, Limits, extract, kind_for, sniff
+from jarvis.documents.extract import Extracted, Limits, kind_for, sniff
+from jarvis.documents.isolation import Sandbox, extract_isolated
 from jarvis.documents.models import (
     CHUNKS_PER_PART,
     MAX_FILE_BYTES,
@@ -41,16 +44,17 @@ from jarvis.documents.store import AttachmentStore, NotAvailable
 from jarvis.llm.base import TextBlock
 from jarvis.llm.brains import BrainSpec
 from jarvis.logging import get_logger
+from jarvis.memory.base import SessionStore
 from jarvis.tools.external import wrap_external
 
 log = get_logger(__name__)
 
-MAX_RUNNING = 2
-GRACE_S = 2.0  # beyond the extractor's own between-pages budget
+QUEUE_WAIT_S = 50.0  # one child at a time; a queued upload gives up after this ("busy")
 WAITING_TTL = timedelta(hours=24)
+SWEEP_EVERY = timedelta(hours=1)  # the scheduler tick's sweep of unsent uploads
 TOP_HITS = 3
 EXCERPT_COST = 2_600  # per hit: three hits stay well inside the gateway's 12,000 characters
-MAX_SEARCH_DOCS = 10
+MAX_SEARCH_DOCS = 3  # a search without an id: the most recent files of the conversation
 
 GONE = "An attached file is no longer available. Attach it again."
 TRAINING_REFUSAL = (
@@ -71,18 +75,20 @@ class DocumentService:
         *,
         limits: Limits | None = None,
         now: Callable[[], datetime] = _utcnow,
-        max_running: int = MAX_RUNNING,
+        sandbox: Sandbox | None = None,
+        queue_wait_s: float = QUEUE_WAIT_S,
     ) -> None:
         self.store = store
         self.limits = limits or Limits()
+        self.sandbox = sandbox or Sandbox()
         self._now = now
-        self._max_running = max_running
-        self._running = 0
-        self._lock = threading.Lock()  # the count changes on worker threads too
+        self._queue_wait_s = queue_wait_s
+        self._slot = asyncio.Semaphore(1)  # one extraction child at a time
+        self._swept_at: datetime | None = None
 
     @property
     def running(self) -> int:
-        return self._running
+        return 1 if self._slot.locked() else 0
 
     # ---- upload ---------------------------------------------------------------------------
 
@@ -118,17 +124,31 @@ class DocumentService:
         )
         return att.ref()
 
-    async def _sweep(self, owner: str) -> int:
-        """Delete the owner's uploads never sent within a day; the number still waiting."""
+    async def _sweep(self, owner: str | None) -> int:
+        """Delete uploads never sent within a day (the owner's, or everyone's for None); the
+        number of the owner's still waiting."""
         fresh = 0
         for a in await self.store.waiting():
-            if a.owner != owner:
+            if owner is not None and a.owner != owner:
                 continue
             if self._now() - a.created_at > WAITING_TTL:
                 await self.store.delete(a.id)
             else:
                 fresh += 1
         return fresh
+
+    async def sweep_waiting(self) -> bool:
+        """The scheduler tick: every owner's stale unsent uploads, at most once an hour.
+        Never raises (a storage hiccup waits for the next tick). True when it ran."""
+        now = self._now()
+        if self._swept_at is not None and now - self._swept_at < SWEEP_EVERY:
+            return False
+        self._swept_at = now
+        try:
+            await self._sweep(None)
+        except Exception as exc:  # noqa: BLE001 — the tick's other work must go on
+            log.warning("unsent upload sweep failed", extra={"reason": type(exc).__name__})
+        return True
 
     async def _room_for(self, owner: str) -> None:
         """Sweep the owner's stale waiting uploads, then refuse past the waiting cap."""
@@ -140,30 +160,18 @@ class DocumentService:
             )
 
     async def _extract(self, data: bytes, kind: str) -> Extracted:
-        with self._lock:
-            if self._running >= self._max_running:
-                raise DocumentRejected(
-                    "busy",
-                    "JARVIS is still reading other files. Try again in a minute.",
-                    status=503,
-                )
-            self._running += 1
-
-        def work() -> Extracted:
-            try:
-                return extract(data, kind, self.limits)
-            finally:
-                with self._lock:
-                    self._running -= 1
-
+        """One child process at a time; the slot is released on every exit, cancellation
+        included, and `extract_isolated` kills its child on every exit too."""
         try:
-            return await asyncio.wait_for(asyncio.to_thread(work), self.limits.budget_s + GRACE_S)
+            await asyncio.wait_for(self._slot.acquire(), self._queue_wait_s)
         except TimeoutError:
-            log.warning("document extraction timed out", extra={"kind": kind})
             raise DocumentRejected(
-                "too_slow",
-                "This file took too long to read. Try a smaller file, or save it as text.",
+                "busy", "JARVIS is still reading other files. Try again in a minute.", status=503
             ) from None
+        try:
+            return await extract_isolated(data, kind, self.limits, self.sandbox)
+        finally:
+            self._slot.release()
 
     async def discard(self, owner: str, aid: str) -> None:
         """The owner removed a file before sending it."""
@@ -269,7 +277,9 @@ class DocumentService:
         found: list[tuple[float, Attachment, int, Any]] = []
         for a in targets:
             chunks = await self.store.chunks(a)
-            for i, score in rank([c.text for c in chunks], query)[:TOP_HITS]:
+            # tokenising ~300,000 characters takes a while: keep it off the event loop
+            ranked = await asyncio.to_thread(rank, [c.text for c in chunks], query)
+            for i, score in ranked[:TOP_HITS]:
                 found.append((score, a, i, chunks[i]))
         found.sort(key=lambda f: -f[0])
         hits = []
@@ -305,13 +315,33 @@ async def precheck(docs: DocumentService | None, req: ChatRequest, spec: BrainSp
         await files_of(docs).check(req.user_id, req.attachments, spec)
 
 
-async def with_files(
-    docs: DocumentService | None, turn: Turn, req: ChatRequest, spec: BrainSpec, session_id: str
-) -> Turn:
-    """The owner's turn, with the files sent with `req` bound to the conversation and noted."""
+async def save_owner_turn(
+    docs: DocumentService | None,
+    store: SessionStore,
+    session: Session,
+    turn: Turn,
+    req: ChatRequest,
+    spec: BrainSpec,
+) -> None:
+    """Append the owner's turn — with the files sent with `req` bound to this conversation and
+    noted — and store it before any model call. If storing fails the binding is undone, so the
+    files are still waiting and can be sent again (never bound to a turn that doesn't exist)."""
     if not req.attachments:
-        return turn
-    return await files_of(docs).attach(turn, req.user_id, session_id, req.attachments, spec)
+        session.append(turn)
+        await store.save(session)
+        return
+    svc = files_of(docs)
+    noted = await svc.attach(turn, req.user_id, session.id, req.attachments, spec)
+    session.append(noted)
+    try:
+        await store.save(session)
+    except Exception:
+        ids = [a.id for a in noted.attachments]
+        try:
+            await svc.store.unbind(ids, owner=req.user_id, turn_id=turn.id)
+        except Exception as exc:  # noqa: BLE001 — report the save failure, not this one
+            log.error("could not undo a file binding", extra={"reason": type(exc).__name__})
+        raise
 
 
 async def forget_files(docs: DocumentService | None, owner: str, session_id: str) -> None:
@@ -331,6 +361,6 @@ __all__ = [
     "files_of",
     "forget_files",
     "precheck",
+    "save_owner_turn",
     "too_large",
-    "with_files",
 ]

@@ -1,6 +1,7 @@
 # src/jarvis/documents/extract.py
-"""Text out of an attached file (slice 10 E, D-E1). Pure and synchronous: the service runs it in
-a worker thread with a time budget. Model-agnostic: the model only ever sees the text.
+"""Text out of an attached file (slice 10 E, D-E1). Pure and synchronous; in the app it runs only
+inside the extraction worker, a child process per upload with CPU and memory limits
+(`jarvis.documents.worker`). Model-agnostic: the model only ever sees the text.
 
     kind_for(name)      the type, from the extension (PDF, DOCX, TXT, MD, CSV) — else refused
     sniff(data, kind)   the bytes must agree: %PDF- for a PDF, a zip for a DOCX (an OLE file is
@@ -9,12 +10,17 @@ a worker thread with a time budget. Model-agnostic: the model only ever sees the
                         DOCX, UTF-8 / UTF-16 BOM / cp1252 / latin-1 for text; nothing is executed
 
 Limits (`Limits`): ≤ 300 PDF pages read, ≤ 300,000 characters kept, a time budget checked
-between pages / paragraphs (what was read in time is kept, marked truncated), and for a DOCX the
-zip's central directory is checked BEFORE any XML is parsed: ≤ 1,000 entries, ≤ 50 MB unpacked
-in total, no entry over 1 MB packed more than 100×. Declared sizes bound what zipfile inflates
-(it stops at the declared size and fails the CRC), so a lying header cannot inflate more. No OCR:
-a PDF without a text layer is "no text found". Every refusal is a `DocumentRejected` with a plain
-message; any other exception from a hostile file becomes "unreadable", never a crash.
+between pages, paragraphs and table rows (what was read in time is kept, marked truncated), and
+for a DOCX the zip's central directory is checked BEFORE any XML is parsed: ≤ 1,000 entries,
+≤ 50 MB unpacked in all, ≤ 10 MB of XML (lxml needs ~18× that in memory), no entry over 1 MB
+packed more than 100×. Declared sizes bound what zipfile inflates (it stops at the declared size
+and fails the CRC). Tables are read straight from their XML (python-docx's merged-cell lookup is
+quadratic). All clean-up is linear in the text. Running out of memory is "too complex". No OCR:
+a PDF without a text layer is "no text found". Every refusal is a `DocumentRejected` with a
+plain message; any other exception from a hostile file becomes "unreadable", never a crash.
+
+Imports: the standard library and `jarvis.documents.limits` only (pypdf / python-docx lazily),
+so the worker starts fast and small.
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
-from jarvis.documents.models import (
+from jarvis.documents.limits import (
     EXTENSIONS,
     MAX_CHARS,
     MAX_PAGES,
@@ -38,15 +44,16 @@ from jarvis.documents.models import (
     DocumentRejected,
     Kind,
 )
-from jarvis.tools.external import clean_text
 
-EXTRACT_BUDGET_S = 25.0
+EXTRACT_BUDGET_S = 20.0
 ZIP_MAX_ENTRIES = 1_000
 ZIP_MAX_TOTAL = 50 * 1024 * 1024
+ZIP_MAX_XML = 10 * 1024 * 1024
 ZIP_MAX_RATIO = 100
 ZIP_RATIO_FLOOR = 1024 * 1024  # smaller entries may compress as well as they like
 PDF_MAGIC_WINDOW = 1024  # readers accept a little junk before %PDF-
 CONTROL_SHARE = 0.01  # more control characters than this: not a text file
+_W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 _ZIP = b"PK\x03\x04"
 _OLE = bytes.fromhex("D0CF11E0A1B11AE1")
@@ -62,8 +69,9 @@ _BINARY: tuple[bytes, ...] = (
     b"7z\xbc\xaf",
     b"Rar!",
 )
+# the same characters `jarvis.tools.external.clean_text` removes (kept here: no app imports)
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 _SURROGATE = re.compile("[\ud800-\udfff]")
-_TRAILING_WS = re.compile(r"[ \t]+\n")
 _BLANK_RUN = re.compile(r"\n{3,}")
 
 logging.getLogger("pypdf").setLevel(logging.ERROR)  # a hostile file must not flood the logs
@@ -78,6 +86,7 @@ class Limits:
     budget_s: float = EXTRACT_BUDGET_S
     zip_max_entries: int = ZIP_MAX_ENTRIES
     zip_max_total: int = ZIP_MAX_TOTAL
+    zip_max_xml: int = ZIP_MAX_XML
     zip_max_ratio: int = ZIP_MAX_RATIO
 
 
@@ -105,6 +114,11 @@ NO_TEXT_PDF = (
     "No text found in this PDF. It looks like a scan or a picture of text, and JARVIS can't read "
     "scans yet."
 )
+TOO_COMPLEX = (
+    "This file is too large or unusual to read safely. Save it as plain text or a simpler PDF "
+    "and attach that."
+)
+TOO_SLOW = "This file took too long to read. Try a smaller file, or save it as text."
 
 
 def _unsupported(detail: str) -> DocumentRejected:
@@ -112,9 +126,8 @@ def _unsupported(detail: str) -> DocumentRejected:
 
 
 def _mismatch(kind: str) -> DocumentRejected:
-    ext = "docx" if kind == "docx" else kind
     return _unsupported(
-        f"The file's contents don't match its name (.{ext}). JARVIS can read {SUPPORTED_WORDS}."
+        f"The file's contents don't match its name (.{kind}). JARVIS can read {SUPPORTED_WORDS}."
     )
 
 
@@ -124,18 +137,20 @@ def _unreadable() -> DocumentRejected:
     )
 
 
-def _too_complex() -> DocumentRejected:
+def too_complex() -> DocumentRejected:
+    return DocumentRejected("too_complex", TOO_COMPLEX)
+
+
+def _zip_too_big() -> DocumentRejected:
     return DocumentRejected(
         "too_complex",
-        "This Word file is too large or unusual to open safely (it unpacks to more than 50 MB, "
-        "or is packed like a zip bomb). Save it as PDF or text and attach that.",
+        "This Word file is too large or unusual to open safely (it unpacks to too much, or is "
+        "packed like a zip bomb). Save it as PDF or text and attach that.",
     )
 
 
-def _too_slow() -> DocumentRejected:
-    return DocumentRejected(
-        "too_slow", "This file took too long to read. Try a smaller file, or save it as text."
-    )
+def too_slow() -> DocumentRejected:
+    return DocumentRejected("too_slow", TOO_SLOW)
 
 
 def _no_text(kind: str) -> DocumentRejected:
@@ -175,9 +190,11 @@ def sniff(data: bytes, kind: str) -> None:
 def normalise(text: str) -> str:
     """Controls out (line breaks and tabs kept), CR/CRLF → LF, lone surrogates out (a hostile
     font map can produce them), no trailing spaces, at most one blank line in a row. Joiners
-    (ZWJ / ZWNJ) stay: Malayalam and other Indic scripts need them."""
-    t = _SURROGATE.sub("", clean_text(text))
-    t = _TRAILING_WS.sub("\n", t)
+    (ZWJ / ZWNJ) stay: Malayalam and other Indic scripts need them. Linear in the text: no
+    pattern here can backtrack (review H1: `[ \\t]+\\n` was quadratic on long runs of spaces)."""
+    t = text.replace("\r\n", "\n").replace("\r", "\n")
+    t = _SURROGATE.sub("", _CONTROL.sub("", t))
+    t = "\n".join(line.rstrip(" \t") for line in t.split("\n"))
     return _BLANK_RUN.sub("\n\n", t).strip()
 
 
@@ -198,7 +215,7 @@ def _open_pdf(data: bytes) -> tuple[Any, int]:
         if reader.is_encrypted and not reader.decrypt(""):
             raise DocumentRejected("encrypted", ENCRYPTED_PDF)
         return reader, len(reader.pages)
-    except DocumentRejected:
+    except (DocumentRejected, MemoryError):
         raise
     except Exception as exc:  # noqa: BLE001 — anything a hostile file triggers is "unreadable"
         raise _unreadable() from exc
@@ -217,6 +234,8 @@ def _pdf(data: bytes, limits: Limits, deadline: float, clock: Clock) -> Extracte
             raw = reader.pages[i].extract_text() or ""
         except IndexError:  # the page count was larger than the real page tree
             break
+        except MemoryError:
+            raise
         except Exception:  # noqa: BLE001 — one bad page never sinks the whole file
             failed += 1
             raw = ""
@@ -226,7 +245,7 @@ def _pdf(data: bytes, limits: Limits, deadline: float, clock: Clock) -> Extracte
             more = more or i + 1 < total
             break
     if not texts and more:
-        raise _too_slow()
+        raise too_slow()
     starts: list[int] = []
     pos = 0
     for t in texts:
@@ -256,28 +275,51 @@ def _zip_guard(data: bytes, limits: Limits) -> None:
     except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, ValueError, EOFError) as exc:
         raise _unreadable() from exc
     if len(infos) > limits.zip_max_entries:
-        raise _too_complex()
+        raise _zip_too_big()
     if sum(i.file_size for i in infos) > limits.zip_max_total:
-        raise _too_complex()
+        raise _zip_too_big()
+    xml = sum(i.file_size for i in infos if i.filename.lower().endswith((".xml", ".rels")))
+    if xml > limits.zip_max_xml:
+        raise _zip_too_big()
     for i in infos:
         if i.file_size > ZIP_RATIO_FLOOR and i.file_size > limits.zip_max_ratio * max(
             i.compress_size, 1
         ):
-            raise _too_complex()
+            raise _zip_too_big()
     names = {i.filename for i in infos}
     if "[Content_Types].xml" not in names or not any(n.startswith("word/") for n in names):
         raise _mismatch("docx")
 
 
-def _table_text(table: Any) -> str:
+class _OutOfTime(Exception):
+    """The budget ran out in the middle of a table: keep the rows read so far."""
+
+    def __init__(self, partial: str) -> None:
+        super().__init__("out of time")
+        self.partial = partial
+
+
+def _cell_text(tc: Any) -> str:
+    paras = ("".join(t.text or "" for t in p.iter(_W_NS + "t")) for p in tc.iter(_W_NS + "p"))
+    return " ".join(" ".join(paras).split())
+
+
+def _table_text(tbl: Any, deadline: float, clock: Clock) -> str:
+    """Rows as "a | b | c", straight from the XML. A vertically merged continuation cell holds
+    no text of its own and is skipped (python-docx repeats the first cell, quadratically)."""
     lines: list[str] = []
-    for row in table.rows:
+    for tr in tbl.iterchildren(_W_NS + "tr"):  # this table's rows (a nested one is cell text)
+        if clock() > deadline:
+            raise _OutOfTime("\n".join(lines))
         cells: list[str] = []
-        for cell in row.cells:
-            text = " ".join(cell.text.split())
-            if not cells or cells[-1] != text:  # a merged cell repeats across the row
-                cells.append(text)
-        lines.append(" | ".join(cells))
+        for tc in tr.iterchildren(_W_NS + "tc"):
+            pr = tc.find(_W_NS + "tcPr")
+            merged = pr.find(_W_NS + "vMerge") if pr is not None else None
+            if merged is not None and merged.get(_W_NS + "val") != "restart":
+                continue
+            cells.append(_cell_text(tc))
+        if cells:
+            lines.append(" | ".join(cells))
     return "\n".join(lines)
 
 
@@ -295,17 +337,27 @@ def _docx(data: bytes, limits: Limits, deadline: float, clock: Clock) -> Extract
             if clock() > deadline:
                 more = True
                 break
-            parts.append(block.text if isinstance(block, Paragraph) else _table_text(block))
+            if isinstance(block, Paragraph):
+                parts.append(block.text)
+            else:
+                try:
+                    parts.append(_table_text(block._tbl, deadline, clock))
+                except _OutOfTime as late:
+                    parts.append(late.partial)
+                    more = True
+                    break
             used += len(parts[-1]) + 1
             if used > limits.max_chars * 2:
                 more = True
                 break
     except DocumentRejected:
         raise
+    except MemoryError:
+        raise too_complex() from None
     except Exception as exc:  # noqa: BLE001 — malformed XML, missing parts, wrong content type
         raise _unreadable() from exc
     if not parts and more:
-        raise _too_slow()
+        raise too_slow()
     text, cut = _cap(normalise("\n".join(parts)), limits)
     if not text:
         raise _no_text("docx")
@@ -320,7 +372,7 @@ def _decode(data: bytes) -> str:
         return data[len(codecs.BOM_UTF8) :].decode("utf-8", errors="replace")
     if data.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
         return data.decode("utf-16", errors="replace")
-    for encoding in ("utf-8", "cp1252"):  # Windows "ANSI" files: smart quotes, ₹-less Latin
+    for encoding in ("utf-8", "cp1252"):  # Windows "ANSI" files: smart quotes
         try:
             return data.decode(encoding)
         except UnicodeDecodeError:
@@ -357,11 +409,25 @@ def extract(
     """The text of `data` read as `kind` (from `kind_for`), within `limits`."""
     lim = limits or Limits()
     sniff(data, kind)
-    if kind == "pdf":
-        return _pdf(data, lim, clock() + lim.budget_s, clock)
-    if kind == "docx":
-        return _docx(data, lim, clock() + lim.budget_s, clock)
-    return _plain(data, kind, lim)
+    try:
+        if kind == "pdf":
+            return _pdf(data, lim, clock() + lim.budget_s, clock)
+        if kind == "docx":
+            return _docx(data, lim, clock() + lim.budget_s, clock)
+        return _plain(data, kind, lim)
+    except MemoryError:
+        raise too_complex() from None
 
 
-__all__ = ["EXTRACT_BUDGET_S", "Extracted", "Limits", "extract", "kind_for", "normalise", "sniff"]
+__all__ = [
+    "EXTRACT_BUDGET_S",
+    "ZIP_MAX_XML",
+    "Extracted",
+    "Limits",
+    "extract",
+    "kind_for",
+    "normalise",
+    "sniff",
+    "too_complex",
+    "too_slow",
+]

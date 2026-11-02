@@ -179,3 +179,39 @@ async def test_without_a_document_service_attachments_are_refused(settings: Sett
     )
     with pytest.raises(InputRejected, match="not available"):
         await brain.chat(ChatRequest(message="hi", attachments=["doc_" + "1" * 20]))
+
+
+class FlakyStore(InMemorySessionStore):
+    """Fails the next save after `arm()` (a storage outage between binding and storing)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed = False
+
+    def arm(self) -> None:
+        self.armed = True
+
+    async def save(self, session: Any) -> None:
+        if self.armed:
+            self.armed = False
+            raise RuntimeError("storage unavailable")
+        await super().save(session)
+
+
+async def test_a_turn_that_cannot_be_stored_leaves_its_files_waiting(rig: Rig) -> None:
+    flaky = FlakyStore()
+    rig.brain.store = flaky
+    first = await rig.brain.chat(ChatRequest(message="hello"))
+    aid = await rig.upload()
+    flaky.arm()
+    with pytest.raises(RuntimeError):
+        await rig.brain.chat(
+            ChatRequest(message="read it", session_id=first.session_id, attachments=[aid])
+        )
+    back = await rig.docs.store.get(aid)
+    assert back is not None and back.waiting  # not bound to a turn that was never stored
+    again = await rig.brain.chat(
+        ChatRequest(message="read it", session_id=first.session_id, attachments=[aid])
+    )
+    session = await flaky.get(again.session_id)
+    assert session is not None and session.turns[-2].attachments[0].id == aid

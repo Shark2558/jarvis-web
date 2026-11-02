@@ -97,3 +97,69 @@ def docx_bomb(uncompressed: int) -> bytes:
 
 
 OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
+
+# ---- raw WordprocessingML (security review probes, rebuilt in code) -----------------------------
+_W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+_CT_FULL = (
+    '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/'
+    'package/2006/content-types"><Default Extension="rels" ContentType="application/'
+    'vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType='
+    '"application/xml"/><Override PartName="/word/document.xml" ContentType="application/'
+    'vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'
+)
+_RELS = (
+    '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org'
+    '/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/'
+    'officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
+)
+
+
+def raw_docx(body: str) -> bytes:
+    """A minimal valid .docx around a hand-written <w:body>."""
+    head = '<?xml version="1.0" encoding="UTF-8"?>'
+    doc = f"{head}<w:document {_W}><w:body>{body}</w:body></w:document>"
+    return make_zip(
+        {
+            "[Content_Types].xml": _CT_FULL.encode(),
+            "_rels/.rels": _RELS.encode(),
+            "word/document.xml": doc.encode(),
+        }
+    )
+
+
+def vmerge_docx(rows: int, cols: int) -> bytes:
+    """A table whose every column is one vertically merged cell (python-docx's row.cells is
+    quadratic on these)."""
+    trs = []
+    for r in range(rows):
+        vm = '<w:vMerge w:val="restart"/>' if r == 0 else "<w:vMerge/>"
+        word = "top" if r == 0 else ""
+        cell = f"<w:tc><w:tcPr>{vm}</w:tcPr><w:p><w:r><w:t>{word}</w:t></w:r></w:p></w:tc>"
+        tcs = cell * cols
+        trs.append(f"<w:tr>{tcs}</w:tr>")
+    grid = '<w:gridCol w:w="100"/>' * cols
+    return raw_docx(
+        f"<w:tbl><w:tblGrid>{grid}</w:tblGrid>{''.join(trs)}</w:tbl><w:p><w:r><w:t>end</w:t></w:r></w:p>"
+    )
+
+
+def table_docx(rows: int, cols: int) -> bytes:
+    trs = "".join(
+        "<w:tr>"
+        + "".join(f"<w:tc><w:p><w:r><w:t>c{r}x{c}</w:t></w:r></w:p></w:tc>" for c in range(cols))
+        + "</w:tr>"
+        for r in range(rows)
+    )
+    grid = '<w:gridCol w:w="100"/>' * cols
+    return raw_docx(f"<w:tbl><w:tblGrid>{grid}</w:tblGrid>{trs}</w:tbl>")
+
+
+def empty_paragraphs_docx(xml_bytes: int) -> bytes:
+    """Mostly empty paragraphs with random rsids (compresses only ~4×, parses to ~18× in lxml)."""
+    import secrets
+
+    one = len('<w:p w:rsidR="00000000"/>')
+    body = "".join(
+        f'<w:p w:rsidR="{secrets.token_hex(4).upper()}"/>' for _ in range(xml_bytes // one)
+    )
+    return raw_docx(body + "<w:p><w:r><w:t>end</w:t></w:r></w:p>")

@@ -3,7 +3,6 @@
 # searching, forgetting with the conversation, and the training-brain refusal.
 from __future__ import annotations
 
-import asyncio
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -12,7 +11,7 @@ from doc_fakes import make_docx, make_pdf
 
 from jarvis.core.guardrails import InputRejected
 from jarvis.core.models import Turn
-from jarvis.documents.extract import Limits
+from jarvis.documents.isolation import Sandbox
 from jarvis.documents.models import MAX_FILE_BYTES, MAX_WAITING, DocumentRejected
 from jarvis.documents.note import clean_name, render_note
 from jarvis.documents.service import DocumentService
@@ -81,48 +80,33 @@ async def test_upload_refuses_big_files_unknown_types_and_mismatches(svc: Docume
     assert e.value.code == "unsupported"
 
 
-async def test_extraction_runs_off_the_event_loop(svc: DocumentService, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    seen: list[bool] = []
-    import jarvis.documents.service as mod
-
-    real = mod.extract
-
-    def spy(*a, **kw):  # type: ignore[no-untyped-def]
-        seen.append(threading.current_thread() is threading.main_thread())
-        return real(*a, **kw)
-
-    monkeypatch.setattr(mod, "extract", spy)
-    await svc.upload("u1", "a.txt", b"hello")
-    assert seen == [False]
-
-
-async def test_a_hung_extraction_is_cut_off_and_counted_until_it_ends(
-    clock: Clock, monkeypatch
+async def test_extraction_runs_in_a_child_process_never_in_the_server(
+    svc: DocumentService, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
     import jarvis.documents.service as mod
 
-    release = threading.Event()
+    assert not hasattr(mod, "extract")  # the in-process extractor is not even imported here
+    seen: list[str] = []
+    real = mod.extract_isolated
 
-    def hang(*a, **kw):  # type: ignore[no-untyped-def]
-        release.wait(5)
-        raise AssertionError("never used")
+    async def spy(data, kind, limits, box):  # type: ignore[no-untyped-def]
+        seen.append(kind)
+        return await real(data, kind, limits, box)
 
-    monkeypatch.setattr(mod, "extract", hang)
-    svc = DocumentService(
-        AttachmentStore(MemoryDocs()), now=clock, limits=Limits(budget_s=0.05), max_running=1
-    )
+    monkeypatch.setattr(mod, "extract_isolated", spy)
+    await svc.upload("u1", "a.txt", b"hello")
+    assert seen == ["txt"]
+
+
+async def test_a_timed_out_child_frees_the_slot_at_once(clock: Clock) -> None:
+    """Review H1: a hung thread used to keep its slot (uploads "busy" for hours); a killed child
+    gives it back immediately."""
+    store = AttachmentStore(MemoryDocs())
+    slow = DocumentService(store, now=clock, sandbox=Sandbox(timeout_s=0.01))
     with pytest.raises(DocumentRejected) as e:
-        await svc.upload("u1", "a.txt", b"hello")
-    assert e.value.code == "too_slow"
-    with pytest.raises(DocumentRejected) as e:  # the stuck thread still holds the only slot
-        await svc.upload("u1", "b.txt", b"hello")
-    assert e.value.code == "busy" and e.value.status == 503
-    release.set()
-    for _ in range(100):
-        if svc.running == 0:
-            break
-        await asyncio.sleep(0.01)
-    assert svc.running == 0
+        await slow.upload("u1", "a.txt", b"hello")
+    assert e.value.code == "too_slow" and slow.running == 0
+    assert (await DocumentService(store, now=clock).upload("u1", "b.txt", b"hello")).kind == "txt"
 
 
 async def test_waiting_uploads_are_capped_per_owner_and_stale_ones_swept(
@@ -290,3 +274,62 @@ async def test_docx_uploads_read_back_through_parts(svc: DocumentService) -> Non
     await svc.attach(owner_turn(), "u1", "s1", [ref.id], PRIVATE)
     part = await svc.read_part("u1", "s1", ref.id, 1)
     assert "Budget is 4 crore." in part["text"] and part["pages"] is None
+
+
+# ---- review M3 / M4 ---------------------------------------------------------------------------
+
+
+async def test_the_tick_sweep_clears_everyones_stale_uploads_at_most_hourly(
+    svc: DocumentService, clock: Clock
+) -> None:
+    a = await svc.upload("u1", "a.txt", b"one")
+    b = await svc.upload("u2", "b.txt", b"two")
+    assert await svc.sweep_waiting() is True  # nothing stale yet
+    clock.at += timedelta(hours=25)
+    assert await svc.sweep_waiting() is True
+    assert await svc.store.get(a.id) is None and await svc.store.get(b.id) is None
+    c = await svc.upload("u1", "c.txt", b"three")
+    clock.at += timedelta(hours=23, minutes=30)
+    assert await svc.sweep_waiting() is True  # c is not stale yet
+    clock.at += timedelta(minutes=40)  # now it is, but the last sweep was 40 minutes ago
+    assert await svc.sweep_waiting() is False and await svc.store.get(c.id) is not None
+    clock.at += timedelta(hours=1)
+    assert await svc.sweep_waiting() is True and await svc.store.get(c.id) is None
+
+
+async def test_the_tick_sweep_never_raises(svc: DocumentService, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    async def down() -> list[object]:
+        raise RuntimeError("firestore unavailable")
+
+    monkeypatch.setattr(svc.store, "waiting", down)
+    assert await svc.sweep_waiting() is True
+
+
+async def test_search_without_an_id_covers_the_three_most_recent_files(
+    svc: DocumentService, clock: Clock
+) -> None:
+    ids = []
+    for i in range(5):
+        clock.at += timedelta(minutes=1)
+        text = f"Clause {i}: the penalty is {i} percent.".encode()
+        ref = await svc.upload("u1", f"{i}.txt", text)
+        await svc.attach(owner_turn(), "u1", "s1", [ref.id], PRIVATE)
+        ids.append(ref.id)
+    out = await svc.search("u1", "s1", None, "penalty percent")
+    assert {h["doc_id"] for h in out["hits"]} == set(ids[-3:]) and len(out["hits"]) == 3
+
+
+async def test_ranking_runs_off_the_event_loop(svc: DocumentService, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import jarvis.documents.service as mod
+
+    threads: list[bool] = []
+    real = mod.rank
+
+    def spy(texts, query):  # type: ignore[no-untyped-def]
+        threads.append(threading.current_thread() is threading.main_thread())
+        return real(texts, query)
+
+    monkeypatch.setattr(mod, "rank", spy)
+    aid = await _sent(svc, ["Termination needs ninety days notice."])
+    await svc.search("u1", "s1", aid, "termination notice")
+    assert threads == [False]

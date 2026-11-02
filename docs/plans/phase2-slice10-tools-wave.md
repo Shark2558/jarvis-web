@@ -190,3 +190,18 @@ Integrations → Grant. 4. Approvals → Permissions → Set up a passkey. 5. Op
 
 ## Reviews
 (filled in after the fresh-context reviews)
+- **E security review (0 critical, 2 high, 2 medium, 4 low) — fixed on `s10-docs`.** H1/H2: text
+  extraction now runs in a child process per upload (`documents/isolation.py` + `worker.py`:
+  `python -I`, no inherited environment, the child sets RLIMIT_CPU 30 s and RLIMIT_AS 300 MB on
+  itself before reading input — not `preexec_fn`, unsafe in a threaded server — killed at 45 s
+  wall clock or on cancellation, one at a time, others queue ≤ 50 s); `normalise` is linear (no
+  `[ \t]+\n`); tables are read from their XML with the deadline checked per row; DOCX XML is
+  capped at 10 MB unpacked; MemoryError → "too complex". All review probe files now end in ≤ 10 s
+  with the parent's RSS flat (≤ 42 MB); the worst child peaked at 285 MB RSS — with a 512 MiB
+  instance, parent + child must fit: watch it, or lower `MEMORY_LIMIT_BYTES` / raise memory.
+  M3: the scheduler tick sweeps unsent uploads (hourly, never raises). M4: ranking runs in a
+  thread; a search without an id covers the 3 most recent files. LOW: the slot is released and
+  the child killed on every exit; a file binding is undone when the turn can't be stored; the
+  upload body has a 60 s overall deadline (408). Not changed: the file name stays outside the
+  fence, sanitised to one plain line with no brackets, quotes or angle brackets (the header
+  must stay readable; the content is fenced and the round is tainted either way).

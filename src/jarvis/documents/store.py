@@ -7,7 +7,8 @@ Layout:  {prefix}attachments/{id}                   header (`Attachment`): owner
 
 Every document stays far under Firestore's 1 MiB limit. An upload is one commit (≤ 480 chunks +
 the header, header LAST and create-only). Binding uploads to the conversation they were sent in
-is one transaction over all of them: owner-checked, only while still waiting, all or nothing.
+is one transaction over all of them: owner-checked, only while still waiting, all or nothing;
+`unbind` undoes it when the turn could not be stored.
 Chunk texts of the few most recent documents are kept in-process (doc_search reads them all).
 """
 
@@ -109,6 +110,22 @@ class AttachmentStore:
         if not all(DOC_ID.fullmatch(aid) for aid in ids):
             raise NotAvailable("malformed id")
         return await self._d.transaction(run)
+
+    async def unbind(self, ids: Sequence[str], *, owner: str, turn_id: str) -> None:
+        """Undo `bind` for a turn that could not be stored: back to waiting (only files that
+        are the owner's and still bound to exactly that turn)."""
+
+        async def run(tx: DocTx) -> None:
+            heads = [(aid, await tx.get(self._head(aid))) for aid in ids if DOC_ID.fullmatch(aid)]
+            for aid, raw in heads:
+                a = _parse(aid, raw)
+                if a is not None and a.owner == owner and a.turn == turn_id:
+                    tx.set(
+                        self._head(aid),
+                        a.model_copy(update={"session": "", "turn": ""}).model_dump(),
+                    )
+
+        await self._d.transaction(run)
 
     async def delete(self, aid: str) -> None:
         """Chunks first, header LAST: an interrupted delete is found and finished next time."""

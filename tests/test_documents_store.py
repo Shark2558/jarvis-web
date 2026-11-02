@@ -110,6 +110,19 @@ async def test_a_sent_attachment_cannot_be_sent_again(store: AttachmentStore) ->
         await store.bind([a.id], owner="u1", session_id="s2", turn_id="t9")
 
 
+async def test_unbind_returns_files_bound_to_that_turn_to_waiting(store: AttachmentStore) -> None:
+    a, b = att(), att()
+    await store.create(a, CHUNKS)
+    await store.create(b, CHUNKS)
+    await store.bind([a.id], owner="u1", session_id="s1", turn_id="t1")
+    await store.bind([b.id], owner="u1", session_id="s1", turn_id="t2")
+    await store.unbind([a.id, b.id], owner="u1", turn_id="t1")
+    back, other = await store.get(a.id), await store.get(b.id)
+    assert back is not None and back.waiting and back.session == ""
+    assert other is not None and other.turn == "t2"  # bound to another turn: untouched
+    await store.unbind([a.id], owner="u2", turn_id="t1")  # not theirs: nothing happens
+
+
 async def test_delete_removes_every_chunk_and_the_header(
     store: AttachmentStore, docs: MemoryDocs
 ) -> None:

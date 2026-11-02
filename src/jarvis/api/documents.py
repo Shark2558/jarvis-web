@@ -11,8 +11,10 @@ POST   /v1/attachments       body: the file's raw bytes (Content-Type is ignored
                              {id, name, kind, size, pages, words, chars, truncated}. The file is
                              not kept: its text is. Errors {error, detail}: 413 too_large, 415
                              unsupported, 422 no_name / empty / encrypted / no_text / unreadable /
-                             too_complex / too_slow, 409 too_many, 429 rate_limited, 503 busy
-                             (Retry-After on 429 / 503).
+                             too_complex / too_slow, 408 upload_timeout (the body took > 60 s),
+                             409 too_many, 429 rate_limited, 503 busy (Retry-After on 429 / 503).
+                             The file's text is read by a limited child process
+                             (`jarvis.documents.isolation`), one at a time.
 DELETE /v1/attachments/{id}  a file not sent yet (the owner removed its chip) → 204; 404
                              not_found. A sent file goes with its conversation.
 
@@ -21,6 +23,7 @@ Then POST /v1/chat {message, attachments: [id, …]} (≤ 3) sends them with a m
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from urllib.parse import unquote
 
@@ -39,6 +42,7 @@ from jarvis.documents.service import DocumentService, too_large
 ATTACH_PATH = "/v1/attachments"
 ATTACH_BODY_BYTES = MAX_FILE_BYTES + 64 * 1024  # the app-wide middleware's cap for this path
 UPLOADS_PER_MINUTE = 6
+READ_TIMEOUT_S = 60.0  # the whole body, however it arrives
 NAME_HEADER = "x-jarvis-filename"
 NAME_HEADER_LIMIT = 1_000
 BUSY_RETRY_S = 30
@@ -87,7 +91,16 @@ async def upload(
     _limit(request, uid)
     name = _name(request)
     kind_for(clean_name(name))  # an unsupported type is refused before the body is read
-    data = await read_capped(request, MAX_FILE_BYTES, too_large=too_large)
+    try:  # an overall deadline: a sender that trickles bytes can't hold the route open
+        data = await asyncio.wait_for(
+            read_capped(request, MAX_FILE_BYTES, too_large=too_large), READ_TIMEOUT_S
+        )
+    except TimeoutError:
+        raise DocumentRejected(
+            "upload_timeout",
+            "The upload took too long. Check the connection and try again.",
+            status=408,
+        ) from None
     return await svc.upload(uid, name, data)
 
 

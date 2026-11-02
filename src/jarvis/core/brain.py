@@ -43,7 +43,7 @@ from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Sessi
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
 from jarvis.core.window import build_window
-from jarvis.documents.service import DocumentService, forget_files, precheck, with_files
+from jarvis.documents.service import DocumentService, forget_files, precheck, save_owner_turn
 from jarvis.llm.base import (
     ChatMessage,
     Completion,
@@ -366,9 +366,8 @@ class Brain:
         await self._admit(req.user_id, spec)  # refused → nothing stored, nothing called
 
         turn = _owner_turn(text, req, trace_id)
-        session.append(await with_files(self.documents, turn, req, spec, session.id))
-        # persist the user turn before the LLM call so a crash never loses owner input
-        await self.store.save(session)
+        # persist the user turn (files bound) before the LLM call: a crash never loses owner input
+        await save_owner_turn(self.documents, self.store, session, turn, req, spec)
 
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)
@@ -759,8 +758,7 @@ class Brain:
         router = self.brains.router_for(spec.id)
         await self._admit(req.user_id, spec)  # turn-level: refused → nothing stored
         turn = _owner_turn(text, req, trace_id)
-        session.append(await with_files(self.documents, turn, req, spec, session.id))
-        await self.store.save(session)
+        await save_owner_turn(self.documents, self.store, session, turn, req, spec)
 
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)

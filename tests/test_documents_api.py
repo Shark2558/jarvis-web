@@ -4,6 +4,7 @@
 # and the whole path: attach → chat → transcript → delete the conversation → files gone.
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 from urllib.parse import quote
@@ -16,7 +17,8 @@ from pydantic import SecretStr
 from jarvis.api import create_app
 from jarvis.api.body import MAX_BODY_BYTES
 from jarvis.api.documents import UPLOADS_PER_MINUTE
-from jarvis.config import AuthMode, Settings
+from jarvis.api.scheduler_auth import TICK_PATH
+from jarvis.config import AuthMode, SessionBackend, Settings
 from jarvis.documents.models import MAX_FILE_BYTES
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
@@ -153,6 +155,22 @@ async def test_discard_a_waiting_file(client: AsyncClient) -> None:
     assert r.status_code == 404
 
 
+async def test_an_upload_that_trickles_in_is_cut_off(client: AsyncClient, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Review LOW: the body read has an overall deadline (a slow sender can't hold the route)."""
+    import jarvis.api.documents as mod
+
+    monkeypatch.setattr(mod, "READ_TIMEOUT_S", 0.2)
+
+    async def trickle() -> AsyncIterator[bytes]:
+        yield b"first bytes "
+        await asyncio.sleep(5)
+        yield b"never"
+
+    r = await client.post(PATH, content=trickle(), headers=named("slow.txt"))
+    assert r.status_code == 408 and r.json()["error"] == "upload_timeout"
+    assert "took too long" in r.json()["detail"]
+
+
 # ---- auth ---------------------------------------------------------------------------------------
 
 
@@ -230,3 +248,34 @@ async def test_doc_tools_are_offered_to_the_model(
     await client.post("/v1/chat", json={"message": "hello"})
     names = {t.name for t in provider.calls[-1].tools or []}
     assert {"doc_read", "doc_search"} <= names
+
+
+async def test_the_scheduler_tick_sweeps_unsent_uploads(settings: Settings) -> None:
+    """Review M3: stale unsent uploads go even when the owner never uploads or deletes again."""
+    from test_scheduler_auth import KEY, SA, FakeJWKS, token, verifier
+
+    s = settings.model_copy(
+        update={
+            "brief_scheduler_sa": SA,
+            "public_base_url": "http://test",
+            "api_token": SecretStr("cli-token"),
+            "session_backend": SessionBackend.FIRESTORE,  # the tick needs persistent storage
+        }
+    )
+    app = create_app(
+        s,
+        provider=MockProvider(),
+        store=InMemorySessionStore(),
+        scheduler_verifier=verifier(FakeJWKS(KEY)),
+    )
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            ran: list[bool] = []
+
+            async def spy() -> bool:
+                ran.append(True)
+                return True
+
+            app.state.documents.sweep_waiting = spy
+            r = await c.post(TICK_PATH, headers={"Authorization": f"Bearer {token()}"})
+            assert r.status_code == 200 and ran == [True]

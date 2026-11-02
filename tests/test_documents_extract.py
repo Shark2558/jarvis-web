@@ -5,19 +5,23 @@ from __future__ import annotations
 
 import codecs
 import itertools
+import time
 
 import pytest
 from doc_fakes import (
     CONTENT_TYPES,
     OLE_MAGIC,
     docx_bomb,
+    empty_paragraphs_docx,
     encrypt_pdf,
     make_docx,
     make_pdf,
     make_zip,
+    table_docx,
+    vmerge_docx,
 )
 
-from jarvis.documents.extract import Limits, extract, kind_for, normalise, sniff
+from jarvis.documents.extract import ZIP_MAX_XML, Limits, extract, kind_for, normalise, sniff
 from jarvis.documents.models import DocumentRejected
 
 
@@ -230,3 +234,67 @@ def test_whitespace_only_text_has_no_text() -> None:
 def test_normalise_cleans_controls_line_endings_blank_runs_and_lone_surrogates() -> None:
     raw = "a\r\nb\rc\x07d   \n\n\n\n\ne\ud800f‌"
     assert normalise(raw) == "a\nb\ncd\n\nef‌"  # ZWNJ (Malayalam) is kept
+
+
+# ---- security review (H1/H2): linear clean-up, bounded tables, XML cap, memory -------------------
+
+
+def test_normalise_is_linear_on_long_runs_of_spaces_and_tabs() -> None:
+    for raw in ("a" + " " * 300_000 + "b", "a\n" + "\t " * 300_000 + "\nb", " \n" * 200_000):
+        t0 = time.perf_counter()
+        normalise(raw)
+        assert time.perf_counter() - t0 < 0.5
+    assert normalise("x   \ny\t\t\nz") == "x\ny\nz"
+
+
+def test_merged_table_cells_are_read_linearly_and_once() -> None:
+    t0 = time.perf_counter()
+    out = extract(vmerge_docx(200, 30), "docx")
+    assert time.perf_counter() - t0 < 2.0
+    first, *rest = out.text.split("\n")
+    assert first == " | ".join(["top"] * 30)
+    assert rest[-1] == "end" and "top" not in "".join(rest)  # continuation cells add nothing
+
+
+def test_the_time_budget_is_checked_inside_a_table() -> None:
+    ticks = itertools.count(0.0, 1.0)  # every clock read is a second later
+    out = extract(table_docx(60, 3), "docx", Limits(budget_s=20), clock=lambda: next(ticks))
+    assert out.truncated and "c0x0" in out.text and "c59x2" not in out.text
+
+
+def test_docx_whose_xml_unpacks_past_the_xml_cap_is_refused_before_parsing() -> None:
+    assert ZIP_MAX_XML == 10 * 1024 * 1024
+    e = rejected(extract, empty_paragraphs_docx(1_200_000), "docx", Limits(zip_max_xml=1_000_000))
+    assert e.code == "too_complex"
+
+
+def test_running_out_of_memory_is_too_complex_not_unreadable(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import docx
+
+    data = make_docx(["hello"])
+
+    def boom(*a, **kw):  # type: ignore[no-untyped-def]
+        raise MemoryError
+
+    monkeypatch.setattr(docx, "Document", boom)
+    assert rejected(extract, data, "docx").code == "too_complex"
+
+
+def test_the_extractor_does_not_import_the_app() -> None:
+    """It runs in a child process for every upload: no vendor SDKs, no settings, no gateway."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); import jarvis.documents.worker; "
+        "print(sorted(m for m in sys.modules if m.startswith(('jarvis', 'anthropic', 'pydantic'))))"
+    )
+    out = subprocess.run([sys.executable, "-I", "-c", code, src], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    loaded = out.stdout
+    assert (
+        "anthropic" not in loaded and "jarvis.tools" not in loaded and "jarvis.config" not in loaded
+    )
+    assert "pydantic" not in loaded

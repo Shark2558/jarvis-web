@@ -25,6 +25,7 @@ from jarvis.api.console import router as console_router
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
 from jarvis.api.memory import router as memory_router
+from jarvis.api.permissions import build_permissions, install_permissions
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
@@ -226,6 +227,15 @@ def create_app(
                 memory=app.state.memory,
                 web=app.state.web,
             )
+        # slice 10 D: the owner's Allow / Ask first / Never rules and passkeys, on the same
+        # documents; the gateway reads the rules on every call (one built elsewhere gets them too)
+        app.state.permissions = build_permissions(
+            s, docs, audit=gw.audit if gw is not None else audit, google=app.state.google
+        )
+        if gw is not None and gw.rules is None:
+            gw.rules = app.state.permissions
+        if gw is not None and gw.approval_guard is None:
+            gw.approval_guard = app.state.permissions
         app.state.gateway = gw
         app.state.brain = Brain(
             brains=app.state.brains,
@@ -410,6 +420,7 @@ def create_app(
     app.include_router(memory_router)
     app.include_router(web_router)
     install_voice(app)
+    install_permissions(app)
     _mount_scheduler(app, s, scheduler_verifier)
     app.include_router(console_router)
     return app

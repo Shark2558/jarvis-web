@@ -54,12 +54,21 @@ class PendingAction(BaseModel):
     risk: ActionRisk
     summary: str = Field(description="Plain-language 'this will…' shown to the owner")
     scope: str | None = Field(default=None, description="session/user the action belongs to")
+    # Slice 10 D: `risk` is the gate's view (every card is confirm-before-commit, so it reads
+    # IRREVERSIBLE); `tool_risk` is what the call itself can do. A passkey is asked for only when
+    # it is IRREVERSIBLE — or unknown (a card stored before this field existed): fail safe.
+    tool_risk: ActionRisk | None = Field(default=None, description="Risk of the call itself")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC) + timedelta(minutes=10))
 
     @property
     def expired(self) -> bool:
         return datetime.now(UTC) > self.expires_at
+
+    @property
+    def irreversible(self) -> bool:
+        """True when the call itself can't be undone (or its risk is unknown: fail safe)."""
+        return self.tool_risk is None or self.tool_risk is ActionRisk.IRREVERSIBLE
 
 
 class ConfirmationRequired(PermissionError):
@@ -79,6 +88,19 @@ class ConfirmationInvalid(PermissionError):
 
 
 ActionMatcher = Callable[[PendingAction], bool]
+
+
+def same_card(stored: PendingAction, proposed: PendingAction) -> bool:
+    """Is `proposed` exactly the action the owner saw on `stored`'s card? Same tool, arguments
+    (drift → re-confirm) and conversation — and (slice 10 D) the same card text and the same
+    risk of the call itself; a card stored before `tool_risk` existed matches any."""
+    return (
+        stored.tool == proposed.tool
+        and stored.arguments == proposed.arguments
+        and stored.scope == proposed.scope
+        and stored.summary == proposed.summary
+        and (stored.tool_risk is None or stored.tool_risk == proposed.tool_risk)
+    )
 
 
 class ApprovalStore(ABC):
@@ -154,11 +176,7 @@ class ConfirmationGate:
             return
 
         def same(p: PendingAction) -> bool:
-            return (
-                p.tool == action.tool
-                and p.arguments == action.arguments  # argument drift → re-confirm
-                and p.scope == action.scope
-            )
+            return same_card(p, action)
 
         if confirmation_id is None:
             # the same proposal twice must not become two approvals (= two sends)

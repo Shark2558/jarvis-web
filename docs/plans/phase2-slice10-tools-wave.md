@@ -308,6 +308,80 @@ all addressed test-first:
   ceremony with a software authenticator in tests (no network), replay/expired/wrong-approval
   challenges refused, R3 approve without assertion refused when required.
 
+### D — builder notes (branch `s10-perm`)
+- **Library, verified 2026-11-01**: `webauthn` 3.0.1 = latest on PyPI (`pip index versions`),
+  Duo Labs, `License-Expression: BSD-3-Clause` (dist-info + LICENSE), Python ≥ 3.10. API used:
+  `generate_registration_options`, `verify_registration_response(require_user_verification=True)`,
+  `generate_authentication_options(user_verification=REQUIRED)`,
+  `verify_authentication_response(credential_current_sign_count=…, require_user_verification=True)`
+  (checks type, challenge, origin, RP ID hash, UP, UV, signature, and refuses a counter that does
+  not grow unless both are 0). Only `jarvis.permissions.ceremony` imports it. pypi.org / GitHub
+  pages could not be fetched from the build sandbox; facts are from the PyPI index and the
+  installed distribution.
+- **Groups (12)**, matched by tool-name pattern + effective risk: Calendar — look / add & change /
+  delete & invite (R3: `calendar_delete_event`, any `calendar_*` at R3); Email — search & read
+  (`gmail_*` R1) / drafts / send (R3: `gmail_send`, `send_message`, `gmail_*` R3); To-do — read &
+  change (`tasks_*`, `task_*`, `list_tasks`, `create_reminder`) / delete (R3: `task_delete`, `task_*`
+  / `tasks_*` R3); Memory — save / forget (R3); Web (`web_*`); Documents (`doc_*`, `docs_*`).
+  Unknown tools keep the risk default. A call in two groups gets the strictest choice. "Never" on
+  a domain's base group also stops its irreversible calls (an invitation is also an event).
+- **Storage** (`Docs` port): `{prefix}permissions/{uid}` (groups, require_passkey, rev),
+  `{prefix}passkeys/{uid}` (≤ 10 public keys + sign counts; one doc → one transaction),
+  `{prefix}webauthn_challenges/{id}` (2 min; taken = read+deleted in one transaction before any
+  check; expired ones swept per owner, ≤ 10 live). Optional: a Firestore TTL policy on
+  `expires_at` for challenges abandoned forever.
+- **Gateway**: per-call policy = configured rules + the owner's (cache 15 s, refreshed at once on a
+  change; last value on a read error; none → fail closed; a call with no owner in its scope → fail
+  closed). Owner rules are appended, so DENY wins, R3 always asks, and the spoken / tainted
+  tightening still applies after them. **Tainted rounds** (review M2): every REVERSIBLE write in a
+  round whose model saw other people's text becomes an approval card (`policy.TAINTED_WRITES_ASK`,
+  an R2 card — no passkey); outside a turn nothing is tainted. `memory_save` now relies on this
+  rule instead of raising itself to R3 (memory poisoning evals: still 0 silent saves). Deny result:
+  "switched off by the owner in Permissions (Email: Send email — Never). Do not try to do it
+  another way…"; audit detail `policy:owner:<group>`. `PendingAction.tool_risk` records the call's
+  own risk (the gate's `risk` stays IRREVERSIBLE for every card); a card without it counts as R3.
+- **Approving** (review H1): the gateway looks at the call again before spending the token. When it
+  can now do more than its card said (an event gained guests) or its card would read differently,
+  the old card is withdrawn and a new one proposed (new id, risk, text) — nothing runs, the reply
+  says so and carries the new card. The gate's matcher (`guardrails.same_card`) also compares the
+  card text and `tool_risk`, so an identical new proposal never reuses an older, milder card. Then
+  the gateway's approval guard (`PermissionsService.check_approval`, set on the gateway at start-up)
+  checks the passkey on the card about to run — on the brain's approve path, not only the route —
+  and its note ("passkey 1a2b3c4d") goes into the `executing` audit entry.
+- **Passkey rules**: passkeys need a relying party AND Google sign-in. In force = switched on AND
+  ≥ 1 passkey, or the stored passkeys are unreadable (fail closed; read fresh, never cached). The
+  first passkey switches it on. Approving a card whose call is R3 needs `passkey: {challenge_id,
+  credential}` on `/v1/approvals/{id}/approve`; the challenge is 32 random bytes + sha256(uid,
+  approval id, sha256 of the exact arguments, scope, tool), so the authenticator signs what it
+  approves. Decline never needs one. **No sign-in shortcuts** (review M3): removing a passkey,
+  switching the requirement off, adding a second passkey and cancelling a reset need a passkey
+  check made for exactly that. **The first passkey** (review M4) needs a cookie session with a
+  re-sign-in < 5 min old; bearer callers are refused. Registration options handed out before any
+  passkey existed can only add the FIRST one (checked in the add transaction). Every change, every
+  refused check (a counter going backwards is called out as a possible clone) and every reset step
+  is in the audit chain (`agent: owner`, tools `permissions` / `passkey`).
+- **Recovery** (review M3): `/auth/login?reauth=1` stores its start time and sends `max_age=0`;
+  only that flow stamps `auth_at` in the signed cookie — Google's `auth_time` when sent (older than
+  the start → `/?reauth=stale`, nothing stamped), else the moment it completed. A fresh re-sign-in
+  can only START a reset of ALL passkeys: it takes effect 24 h later (carried out lazily on the next
+  read), shows a banner at the top of the Approvals panel (opened at boot while pending), puts a
+  notice in the owner's Gmail inbox when the link allows `messages.insert` (the brief's inbox-copy
+  path), and any passkey cancels it. The next passkey after a reset is marked "set up after a reset
+  by Google sign-in" in the list. Changing `JARVIS_PUBLIC_BASE_URL` (RP ID) makes passkeys unusable
+  → the same reset.
+- **Modes**: no `JARVIS_PUBLIC_BASE_URL`, an IP address, or token auth mode → passkeys unavailable
+  (409 `passkeys_unavailable`), approvals as before. Bearer token (CLI, scripts): an R3 approve while
+  a passkey is required → 403 `passkey_required` "…Approve it in the JARVIS console in your browser
+  (the command line can't use passkeys)". Dev on `http://localhost:<port>` with Google sign-in works.
+- **Challenges**: at most 10 live per owner AND purpose, so asking for many of one kind never pushes
+  out a waiting approval's check (plus the per-owner rate limit, 20 ceremonies a minute).
+- **Follow-up**: "Approve all (n)" for the R2 cards a tainted round makes (never R3) — not built;
+  each approval still narrates once.
+- **Not verified live**: that Google honours `max_age=0` and returns `auth_time` (OIDC says it
+  must; without it the window starts when sign-in completes — which now only allows a first
+  passkey or a 24-hour, notified, cancellable reset). Real Windows Hello / phone authenticators
+  (tested with py_webauthn + a software authenticator and Chromium's CDP virtual authenticator).
+
 ## E — Document reading
 - **D-E1 Server-side text extraction**, model-agnostic: `pypdf` (BSD-3) for PDF, `python-docx`
   (MIT) for DOCX, UTF-8 (with BOM/latin-1 fallback) for TXT/MD/CSV. No OCR (scanned PDF → "no text

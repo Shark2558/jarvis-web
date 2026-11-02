@@ -110,6 +110,12 @@ class PendingApproval(BaseModel):
     session_id: str | None = Field(
         default=None, description="Conversation the action belongs to (approve from there)"
     )
+    tool_risk: str | None = Field(
+        default=None, description="What the call itself can do (slice 10 D); risk is the gate's"
+    )
+    passkey_required: bool = Field(
+        default=False, description="Approving needs a passkey check (GET /v1/approvals sets it)"
+    )
 
     @classmethod
     def from_action(cls, a: PendingAction) -> PendingApproval:
@@ -122,6 +128,7 @@ class PendingApproval(BaseModel):
             risk=a.risk.value,
             expires_at=a.expires_at,
             session_id=sid,
+            tool_risk=a.tool_risk.value if a.tool_risk is not None else None,
         )
 
 

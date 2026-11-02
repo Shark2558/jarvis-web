@@ -24,7 +24,7 @@ Spending (slice 7b): every model call — chat, each tool round, the round-limit
 narration, the stream — goes through `_admit` (the owner's monthly limit, `Billing.ensure_allowed`)
 BEFORE it is made, and its cost is added to the month after it (`Billing.record`, never fails the
 reply). A turn is also admitted before the owner's message is stored, so a refused turn leaves
-no unanswered message behind.
+no unanswered message behind. Approve / decline themselves: `jarvis.core.brain_decisions`.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 
 from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
+from jarvis.core import brain_decisions as decisions
 from jarvis.core.guardrails import PendingAction, guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
 from jarvis.core.persona import Persona, WitSource
@@ -64,7 +65,7 @@ from jarvis.logging import get_logger, get_trace_id
 from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
-from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
+from jarvis.tools.gateway import Gateway, GatewayOutcome
 from jarvis.tools.taint import context_trust, untrusted_seen
 from jarvis.web.ledger import cited_sources, web_conversation
 
@@ -73,35 +74,6 @@ log = get_logger(__name__)
 BRAIN_KEY = "brain"  # session.metadata key remembering the owner's brain choice
 CUTOFF_KEY = "brain_cutoff"  # turn index before which history is withheld from training brains
 SWEEP_TICK_S = 20.0  # the scheduler tick's memory sweep is awaited, at most this long
-
-
-@dataclass(frozen=True)
-class _Decision:
-    """What an owner's approve / decline produced, before it is narrated."""
-
-    call: ToolCall
-    result: GatewayResult
-    fallback: str
-    instruction: str
-
-
-def _record_exchange(session: Session, d: _Decision, trace_id: str | None) -> list[Turn]:
-    """The decided action as a tool exchange (tool_use → tool_result + instruction)."""
-    result = ToolResultBlock(
-        tool_use_id=d.call.id,
-        content=d.result.for_model(),
-        is_error=d.result.outcome is not GatewayOutcome.EXECUTED,
-    )
-    turns = [
-        Turn(role=Role.ASSISTANT, content="", blocks=[d.call], trace_id=trace_id),
-        Turn(
-            role=Role.USER, content="", blocks=[result, TextBlock(text=d.instruction)],
-            trace_id=trace_id,
-        ),
-    ]  # fmt: skip
-    for t in turns:
-        session.append(t)
-    return turns
 
 
 def _owner_turn(text: str, req: ChatRequest, trace_id: str | None) -> Turn:
@@ -613,13 +585,13 @@ class Brain:
         call = ToolCall(id=f"approve_{approval_id}", name=action.tool, arguments=action.arguments)
         if approved:
             with web_conversation(session):
-                d = await self._approved(call, action, approval_id, scope)
+                d = await decisions.approved(self.gateway, call, action, approval_id, scope)
         else:
-            d = await self._declined(call, action, approval_id)
+            d = await decisions.declined(self.gateway, call, action, approval_id)
         trace_id = get_trace_id()
         # the decision already took effect: storing its record never raises (jarvis.core.saving);
         # if another window changed the conversation, it is re-recorded on the newer one
-        exchange = _record_exchange(session, d, trace_id)
+        exchange = decisions.record_exchange(session, d, trace_id)
         session, recorded = await record_after_action(self.store, session, exchange)
         spec = self._resolve_brain(session, req)
         reply, completion = await self._narrate(session, req, spec, d.fallback)
@@ -635,46 +607,11 @@ class Brain:
         session.append(narration)
         unsaved = [narration] if recorded else [*exchange, narration]
         session, saved = await record_after_action(self.store, session, unsaved)
+        again = d.result.pending  # set only when the card changed and was proposed again
         if not (recorded or saved):  # the next turn will not know: tell the owner now
-            reply = f"{reply} {not_recorded_note(approved)}"
-        return await self._decision_response(session, spec, reply, completion, trace_id, approved)
-
-    async def _approved(
-        self, call: ToolCall, action: PendingAction, approval_id: str, scope: str
-    ) -> _Decision:
-        assert self.gateway is not None
-        gr = await self.gateway.execute(call, confirmation_id=approval_id, scope=scope)
-        if gr.outcome is GatewayOutcome.CONFIRMATION_INVALID:
-            # lost a race with another approve/decline: nothing ran, touch nothing
-            raise LookupError(f"no pending approval {approval_id} in this session")
-        done = gr.outcome is GatewayOutcome.EXECUTED
-        fallback = (
-            f"Done, Sir: {action.summary}."
-            if done
-            else f"That did not go through: {gr.error or gr.outcome.value}."
-        )
-        return _Decision(
-            call, gr, fallback, "Owner approved this action; report the outcome in one sentence."
-        )
-
-    async def _declined(self, call: ToolCall, action: PendingAction, approval_id: str) -> _Decision:
-        assert self.gateway is not None
-        if not await self.gateway.gate.cancel(approval_id):
-            # approved (or declined) concurrently: never record a decline that didn't happen
-            raise LookupError(f"no pending approval {approval_id} in this session")
-        tool = self.gateway.registry.get(action.tool)
-        await self.gateway.audit.append(
-            agent=tool.agent if tool else "gateway",
-            tool=action.tool,
-            risk=action.risk,
-            outcome="declined",
-            args=action.arguments,
-        )
-        return _Decision(
-            call,
-            GatewayResult(GatewayOutcome.DENIED, error="declined by owner"),
-            "Understood, Sir. Nothing was sent or changed.",
-            "Owner declined this action; acknowledge in one sentence, nothing was done.",
+            reply = f"{reply} {not_recorded_note(approved and again is None)}"
+        return await self._decision_response(
+            session, spec, reply, completion, trace_id, approved, again
         )
 
     async def _narrate(
@@ -708,6 +645,7 @@ class Brain:
         completion: Completion | None,
         trace_id: str,
         approved: bool,
+        again: PendingAction | None = None,
     ) -> ChatResponse:
         cost = completion.cost_usd if completion else 0.0
         cost_inr, total_inr = await self._rupees(cost, session.total_cost_usd)
@@ -724,8 +662,8 @@ class Brain:
             total_cost_inr=total_inr,
             latency_ms=0,
             turn_count=len(session.turns),
-            tool_calls=1 if approved else 0,
-            pending_approvals=[],
+            tool_calls=1 if approved and again is None else 0,
+            pending_approvals=[PendingApproval.from_action(again)] if again is not None else [],
         )
 
     async def chat_stream(

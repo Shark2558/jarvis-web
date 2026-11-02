@@ -29,6 +29,7 @@ from pydantic import BaseModel
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
+from jarvis.api.permissions import mark_passkey_cards
 from jarvis.config import Settings
 from jarvis.core.brain import Brain, StreamMeta
 from jarvis.core.models import (
@@ -39,7 +40,9 @@ from jarvis.core.models import (
     SessionView,
 )
 from jarvis.memory.base import MessageNotSaved, SessionConflict, SessionNotFound, SessionStore
+from jarvis.permissions.models import PasskeyProof
 from jarvis.tools.audit import AuditEntry
+from jarvis.tools.context import presenting_proof
 
 router = APIRouter()
 STREAM_FINAL = "\x1e"  # ASCII record separator: the reply text ends, the final event follows
@@ -204,6 +207,9 @@ async def delete_session(
 
 class Decision(BaseModel):
     session_id: str  # a client-sent user_id is ignored (pydantic drops unknown fields)
+    # slice 10 D: a passkey check made for this card, when the owner requires one for actions
+    # that can't be undone (403 passkey_required without it; ignored on decline)
+    passkey: PasskeyProof | None = None
 
 
 async def _pending_models(brain: Brain, uid: str) -> list[PendingApproval]:
@@ -221,9 +227,9 @@ async def _pending_models(brain: Brain, uid: str) -> list[PendingApproval]:
     "/v1/approvals", response_model=list[PendingApproval], dependencies=[Depends(require_auth)]
 )
 async def list_approvals(
-    brain: Brain = Depends(_brain), uid: str = Depends(current_user)
+    request: Request, brain: Brain = Depends(_brain), uid: str = Depends(current_user)
 ) -> list[PendingApproval]:
-    return await _pending_models(brain, uid)
+    return await mark_passkey_cards(request, uid, await _pending_models(brain, uid))
 
 
 @router.post(
@@ -232,9 +238,15 @@ async def list_approvals(
     dependencies=[Depends(require_auth)],
 )
 async def approve(
-    approval_id: str, d: Decision, brain: Brain = Depends(_brain), uid: str = Depends(current_user)
+    approval_id: str,
+    d: Decision,
+    request: Request,
+    brain: Brain = Depends(_brain),
+    uid: str = Depends(current_user),
 ) -> ChatResponse:
-    return await brain.approve(approval_id, session_id=d.session_id, user_id=uid)
+    # the passkey check is made by the gateway's approval guard, on the card as it is now
+    with presenting_proof(d.passkey):
+        return await brain.approve(approval_id, session_id=d.session_id, user_id=uid)
 
 
 @router.post(

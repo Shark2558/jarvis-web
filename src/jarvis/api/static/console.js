@@ -215,17 +215,20 @@
     fresh.forEach(a => note('approval', `Approval waiting · ${String(a.tool).replace(/_/g, ' ')}`));
     emit('jarvis:approvals', { count: list.length, fresh: fresh.length > 0 || (first && list.length > 0) });
     if (!list.length) { el.innerHTML = '<div class="empty">Nothing waiting.</div>'; return; }
+    // slice 10 D: a card whose action can't be undone, while the owner requires a passkey, is approved
+    // with one (console-permissions.js runs the browser's own WebAuthn prompt)
     el.innerHTML = list.map(a => `
-      <div class="approval" data-id="${esc(a.id)}" data-sid="${esc(a.session_id || '')}">
+      <div class="approval" data-id="${esc(a.id)}" data-sid="${esc(a.session_id || '')}" data-passkey="${a.passkey_required === true ? '1' : ''}">
         <div class="title">${esc(a.tool.replace(/_/g, ' '))} <span class="tag">${esc(a.risk)}</span></div>
         <p>${esc(visible(a.summary))}</p>
         <pre>${esc(visible(JSON.stringify(a.arguments, null, 2)))}</pre>
-        <div class="actions"><button class="btn primary approve lift">Approve</button><button class="btn decline lift">Decline</button></div>
+        <div class="actions"><button class="btn primary approve lift">${a.passkey_required === true ? 'Approve with passkey' : 'Approve'}</button><button class="btn decline lift">Decline</button></div>
+        <p class="perr" role="alert"></p>
       </div>`).join('');
     el.querySelectorAll('.approval').forEach(card => {
       const id = card.dataset.id; const sid = card.dataset.sid || null;
       const tool = card.querySelector('.title').firstChild.textContent.trim();
-      card.querySelector('.approve').addEventListener('click', () => decide(id, 'approve', card, sid, tool));
+      card.querySelector('.approve').addEventListener('click', () => decide(id, 'approve', card, sid, tool, card.dataset.passkey === '1'));
       card.querySelector('.decline').addEventListener('click', () => decide(id, 'decline', card, sid, tool));
     });
   }
@@ -661,12 +664,25 @@
     note('info', 'Monthly limit reached');
     emit('jarvis:reply', { refused: true });
   }
-  async function decide(id, action, card, sid, tool) {
+  async function decide(id, action, card, sid, tool, passkey) {
     if (state.busy) return; // one action at a time: a reply may still be arriving
     const target = sid || state.sessionId;
     if (!target) { addMsg('error', 'This approval belongs to a conversation that no longer exists.'); return; }
     busy(true); // claimed before any await: a second click, a send or History cannot interleave
     card.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    const perr = card.querySelector('.perr'); if (perr) perr.textContent = '';
+    const body = { session_id: target };
+    if (action === 'approve' && passkey) { // first, while the click still counts as the owner's gesture
+      const P = window.JarvisPasskey;
+      try {
+        if (!P) throw new Error('Passkeys are still loading. Try again in a moment.');
+        body.passkey = await P.approve(id);
+      } catch (e) {
+        if (perr) perr.textContent = P ? P.message(e) : e.message;
+        note('error', 'Passkey check not completed');
+        card.querySelectorAll('button').forEach(b => { b.disabled = false; }); busy(false); return;
+      }
+    }
     try {
       if (!Deck.isOpen('chat')) Deck.open('chat', { focus: false }); // the outcome is a reply: show it (phones: switch tab)
       if (target !== state.sessionId) { // show it in the conversation it belongs to
@@ -676,7 +692,7 @@
         showTyping(true); // loading the transcript cleared the indicator
       }
       note('approval', `${action === 'approve' ? 'Approved' : 'Declined'} · ${tool || 'action'}`);
-      handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } }), { decided: true }));
+      handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body }), { decided: true }));
     } catch (e) {
       showTyping(false);
       if (e.status === 402) limitReached(e); else addMsg('error', `Couldn't ${action}. ` + e.message);

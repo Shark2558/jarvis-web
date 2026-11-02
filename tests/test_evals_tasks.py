@@ -48,6 +48,7 @@ def test_tainted_writes_suite_waits_for_the_gateway_rule_and_proves_the_gap() ->
     assert tw["cases"] >= 6
     if _tainted_rule():
         assert tw["status"] == "pass" and tw["reversible_side_effects"] == 0
+        assert tw["negative_control"]["failed_cases"] == tw["cases"]  # rule off: all fail
     else:
         assert tw["status"] == "skipped" and "TAINTED_WRITES_ASK" in tw["reason"]
         assert tw["failing_without_the_rule"] == tw["cases"]  # the suite detects the gap

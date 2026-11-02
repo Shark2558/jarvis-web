@@ -12,6 +12,7 @@ from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.integrations.google import GoogleConnector
 from jarvis.llm.base import ToolCall
 from jarvis.tools.audit import AuditLog
+from jarvis.tools.external import FENCE_END
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.google_calendar import calendar_tools
 from jarvis.tools.policy import Policy
@@ -130,7 +131,7 @@ async def test_list_events_queries_the_window_in_owner_tz_and_shapes_output(
     assert "\u0007" not in json.dumps(e2)  # control chars stripped
     assert "IGNORE PREVIOUS INSTRUCTIONS" in e2["description"]  # left intact, wrapped as data
     assert e2["description"].startswith("<<EXTERNAL CONTENT from akash@example.com")
-    assert e2["description"].rstrip().endswith("<<END>>")
+    assert FENCE_END.fullmatch(e2["description"].rstrip().rsplit("\n", 1)[1])
     e3 = res["events"][2]
     assert e3["all_day"] is True and e3["start"] == "2027-01-26"
 

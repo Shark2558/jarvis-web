@@ -6,7 +6,9 @@
 // dropped, never guessed. Transport is the console's api() (cookie + X-Requested-With, or the bearer
 // token; 401 → gate). Loads when the Integrations panel opens (it asks Google), never on page load.
 // API: GET /v1/drive → {configured:false} | {configured, service_email, folders:[{id, name, confirmed,
-// shared}], others, max_folders}; PUT /v1/drive/roots/{id} {use} → the same, or {error, detail}.
+// readable}], others, others_more, max_folders}; PUT /v1/drive/roots/{id} {use} → the same, or
+// {error, detail}. `readable` is what JARVIS acts on: a switched-on folder it can't read now is said
+// so, never "can't be read" while it can; the switch here always stops access at once.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -49,11 +51,11 @@
       const it = obj(f);
       if (!it || typeof it.id !== 'string' || !ID.test(it.id) || seen.has(it.id)) return null;
       seen.add(it.id);
-      return { id: it.id, name: txt(it.name) || '(no name)', confirmed: it.confirmed === true, shared: it.shared !== false };
+      return { id: it.id, name: txt(it.name) || '(no name)', confirmed: it.confirmed === true, readable: it.readable !== false };
     }).filter(Boolean);
     const others = Number.isInteger(d.others) && d.others >= 0 && d.others < 10000 ? d.others : 0;
     const max = Number.isInteger(d.max_folders) && d.max_folders > 0 ? d.max_folders : 20;
-    return { email, folders, others, max };
+    return { email, folders, others, othersMore: d.others_more === true, max };
   }
 
   // ---- the card -------------------------------------------------------------------------------
@@ -117,7 +119,7 @@
     b.setAttribute('aria-label', `Use “${f.name}”`);
     const track = mk('span', 'track'); track.appendChild(mk('i', ''));
     b.append(track, mk('span', 'st', f.confirmed ? 'On' : 'Off'));
-    const blocked = !f.shared && !f.confirmed;
+    const blocked = !f.readable && !f.confirmed; // switching off is always allowed
     if (S.busy.has(f.id) || blocked) b.setAttribute('aria-disabled', 'true');
     b.addEventListener('click', () => { if (b.getAttribute('aria-disabled') !== 'true') setUse(f, !f.confirmed); });
     return b;
@@ -127,17 +129,19 @@
     d.folders.forEach((f) => {
       const li = mk('li', 'dfolder'); li.dataset.id = f.id;
       const t = mk('div', 'btxt');
-      t.append(mk('b', '', f.name), mk('small', '', !f.shared
-        ? 'No longer shared with JARVIS: nothing in it can be read. Switch it off, or share it again.'
-        : f.confirmed ? 'In use: JARVIS can read it and everything inside it.' : 'Not in use: JARVIS won\'t read it.'));
+      t.append(mk('b', '', f.name), mk('small', '', !f.confirmed
+        ? 'Not in use: JARVIS won\'t read it.'
+        : f.readable ? 'In use: JARVIS can read it and everything inside it.'
+          : 'Switched on, but JARVIS can\'t currently read it: it is no longer shared with JARVIS from your account, or it is in the trash. Share it again, or switch it off here.'));
       li.append(t, useSwitch(f));
       ul.appendChild(li);
     });
     return ul;
   }
-  function others(n) {
+  function others(n, more) {
     const p = mk('p', 'fine dothers'); p.id = 'driveOthers';
-    p.textContent = `${n} ${n === 1 ? 'folder' : 'folders'} not offered: shared by another account. JARVIS never reads ${n === 1 ? 'it' : 'them'}.`;
+    const many = more || n !== 1;
+    p.textContent = `${n}${more ? ' or more' : ''} ${many ? 'folders' : 'folder'} not offered: shared by another account. JARVIS never reads ${many ? 'them' : 'it'}.`;
     return p;
   }
 
@@ -156,7 +160,7 @@
     if (d === undefined) { card.dataset.state = 'loading'; stateEl.textContent = 'Checking…'; bodyEl.appendChild(mk('p', '', 'Checking folders shared with JARVIS…')); return; }
     if (d === null) { card.hidden = true; return; }
     card.hidden = false;
-    const inUse = d.folders.filter(f => f.confirmed && f.shared).length;
+    const inUse = d.folders.filter(f => f.confirmed && f.readable).length;
     card.dataset.state = inUse ? 'linked' : 'unlinked';
     stateEl.textContent = inUse ? `${inUse} in use` : 'No folders in use';
     bodyEl.appendChild(mk('p', '', 'JARVIS reads only the folders you share with it and switch on here (and what is inside them). It can\'t change or delete anything in your Drive.'));
@@ -170,7 +174,7 @@
     } else {
       bodyEl.append(steps(), mk('p', 'fine', 'The folder shows up here within a minute. Then switch on Use.'));
     }
-    if (d.others) bodyEl.appendChild(others(d.others));
+    if (d.others || d.othersMore) bodyEl.appendChild(others(d.others, d.othersMore));
     const refresh = mk('button', 'btn bact', 'Check again'); refresh.type = 'button'; refresh.id = 'driveRefresh';
     refresh.addEventListener('click', () => load(true));
     bodyEl.appendChild(refresh);

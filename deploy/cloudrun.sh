@@ -472,7 +472,9 @@ GOOGLE DRIVE (your chosen folders, read-only): JARVIS reads Drive as its own Goo
 only folders you share with it and switch on. For each folder: open it in Google Drive -> Share
 -> paste this address -> Viewer -> Send:
    ${RUN_SA}
-then in JARVIS: Integrations -> Google Drive -> Use. Un-sharing removes access at once.
+then in JARVIS: Integrations -> Google Drive -> Use. Switching a folder off in JARVIS stops
+access at once. Un-sharing in Drive also stops it (within a minute) unless someone else has
+shared it too.
 MSG
 cat <<'MSG'
 

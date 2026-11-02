@@ -31,6 +31,10 @@ class Tokens(StaticTokens):
         return SA
 
 
+async def _no_sleep(_: float) -> None:
+    return None
+
+
 def _fake() -> FakeDrive:
     d = FakeDrive()
     d.folder("root1", "Registry", shared_by=OWNER)
@@ -55,8 +59,11 @@ def gsettings(settings: Settings) -> Settings:
     )
 
 
-async def _client(s: Settings, d: FakeDrive) -> AsyncIterator[AsyncClient]:
-    svc = DriveService(DriveClient(Tokens(), http=d.client()), RootsStore(MemoryDocs()))
+async def _client(
+    s: Settings, d: FakeDrive, docs: MemoryDocs | None = None
+) -> AsyncIterator[AsyncClient]:
+    client = DriveClient(Tokens(), http=d.client(), sleep=_no_sleep)
+    svc = DriveService(client, RootsStore(docs or MemoryDocs()))
     app = create_app(s, provider=MockProvider(), store=InMemorySessionStore(), drive=svc)
     async with app.router.lifespan_context(app):
         c = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
@@ -95,11 +102,41 @@ async def test_get_shows_the_address_and_only_the_owners_folders(gc: AsyncClient
     assert r.status_code == 200
     body = r.json()
     assert body["configured"] is True and body["service_email"] == SA
-    assert {(f["id"], f["confirmed"]) for f in body["folders"]} == {
-        ("root1", False),
-        ("root2", False),
+    assert {(f["id"], f["confirmed"], f["readable"]) for f in body["folders"]} == {
+        ("root1", False, True),
+        ("root2", False, True),
     }
-    assert body["others"] == 1 and "stranger" not in r.text and "Free money" not in r.text
+    assert body["others"] == 1 and body["others_more"] is False
+    assert "stranger" not in r.text and "Free money" not in r.text
+    assert body["max_folders"] == 20
+
+
+async def test_a_switched_on_folder_reshared_by_someone_else_reads_as_unreadable(
+    gc: AsyncClient, drive: FakeDrive
+) -> None:
+    await _login(gc)
+    await gc.put("/v1/drive/roots/root1", json={"use": True}, headers=CSRF)
+    drive.items["root1"].shared_by = "colleague@example.com"  # the owner un-shared; an editor
+    drive.items["root1"].owner = OWNER  # had shared it too
+    body = (await gc.get("/v1/drive")).json()
+    (root1,) = [f for f in body["folders"] if f["id"] == "root1"]
+    assert root1["confirmed"] is True and root1["readable"] is False
+    assert "colleague" not in str(body)
+
+
+async def test_storage_trouble_on_a_change_is_a_plain_503(gsettings: Settings) -> None:
+    class BrokenTx(MemoryDocs):
+        async def transaction(self, fn: Any) -> Any:
+            raise RuntimeError("firestore internal detail")
+
+    async for c in _client(gsettings, _fake(), BrokenTx()):
+        await _login(c)
+        r = await c.put("/v1/drive/roots/root1", json={"use": True}, headers=CSRF)
+        assert r.status_code == 503
+        assert r.json()["error"] == "roots_unavailable" and set(r.json()) == {"error", "detail"}
+        assert "firestore" not in r.text
+        r = await c.put("/v1/drive/roots/root1", json={"use": False}, headers=CSRF)
+        assert r.status_code == 503 and r.json()["error"] == "roots_unavailable"
 
 
 async def test_put_needs_the_csrf_header(gc: AsyncClient) -> None:
@@ -168,11 +205,18 @@ def test_the_setting_switches_drive_on(settings: Settings) -> None:
     assert drive_configured(settings) is False
     on = settings.model_copy(update={"drive": True})
     assert drive_configured(on) is True
-    assert build_drive_service(settings, MemoryDocs()) is None
-    assert build_drive_service(on, MemoryDocs()) is not None
+
+    async def extract(data: bytes, kind: str) -> Any:
+        raise AssertionError("not called")
+
+    assert build_drive_service(settings, MemoryDocs(), extract=extract) is None
+    built = build_drive_service(on, MemoryDocs(), extract=extract)
+    assert built is not None and built.extract is extract
 
 
 def test_the_env_var_is_jarvis_drive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pydantic v2 parses on / off as booleans itself: no validator of our own."""
+    assert not hasattr(Settings, "_on_off")
     monkeypatch.setenv("JARVIS_DRIVE", "on")
     assert Settings(_env_file=None).drive is True  # type: ignore[call-arg]
     monkeypatch.setenv("JARVIS_DRIVE", "off")

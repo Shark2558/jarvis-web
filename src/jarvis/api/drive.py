@@ -1,22 +1,27 @@
 # src/jarvis/api/drive.py
 """Google Drive, chosen folders (slice 12 D1; Layer 1 → 6). Owner-only: `require_auth` +
 `current_user` (no client user id is read); cookie writes need `X-Requested-With: JARVIS`
-(enforced by `require_auth`); ≤ 20 changes a minute per owner.
+(enforced by `require_auth`); ≤ CHANGES_PER_MINUTE changes a minute per owner.
 
 GET /v1/drive              {configured: false}  — Drive is off on this server (JARVIS_DRIVE), or
                            {configured: true, service_email, folders: [{id, name, confirmed,
-                           shared}], others: N, max_folders}
-                           `folders`: shared with JARVIS by the signed-in owner (plus any chosen
-                           earlier that are no longer shared: shared false). `others`: how many
-                           folders other accounts shared with JARVIS — never their names or
-                           addresses (that text is someone else's; the console says "not offered").
+                           readable}], others: N, others_more, max_folders}
+                           `folders`: the signed-in owner's own folders shared with JARVIS, plus
+                           any switched on earlier. `readable`: whether JARVIS can read it now
+                           (asked of Drive afresh; a switched-on folder that is no longer the
+                           owner's share, or is in the trash, is false — and OFF for the tools).
+                           `others`: how many folders other accounts shared with JARVIS (true
+                           `others_more`: at least that many) — never their names or addresses
+                           (that text is someone else's; the console says "not offered").
 PUT /v1/drive/roots/{id}   {use: true | false} → the same view. Use on needs the owner's verified
                            Google address (a browser sign-in; the bearer token has none → 403
-                           no_owner_email) and a folder shared with JARVIS by exactly that address,
-                           as Drive says now. Errors {error, detail}: 422 bad_id / validation,
-                           403 not_offered / no_owner_email, 409 not_offered (not shared) /
-                           too_many, 404 drive_off, 429 rate_limited, 503 drive_unavailable /
-                           roots_unavailable. Google's own text never appears.
+                           no_owner_email) and that folder, as Drive says now, to be the owner's
+                           own (`jarvis.drive.live.owned_by`). Errors {error, detail}: 422 bad_id /
+                           not_a_folder / validation, 403 not_offered / no_owner_email, 409
+                           not_offered (not shared, or in the trash) / too_many, 404 drive_off, 429
+                           rate_limited, 503 drive_unavailable / roots_unavailable (storage
+                           trouble reading or changing the chosen folders). Google's own text
+                           never appears.
 """
 
 from __future__ import annotations
@@ -64,7 +69,8 @@ def _public(view: dict[str, Any]) -> dict[str, Any]:
         "configured": True,
         "service_email": view["service_email"],
         "folders": view["folders"],
-        "others": len(view["others"]),
+        "others": view["others"],
+        "others_more": view["others_more"],
         "max_folders": view["max_folders"],
     }
 

@@ -50,6 +50,15 @@ async def test_page_loads_the_drive_script_after_the_console(client: AsyncClient
     assert html.index('src="/static/console.js"') < html.index('src="/static/console-drive.js"')
 
 
+def test_a_switched_on_folder_jarvis_cannot_read_says_so_truthfully() -> None:
+    """Review F3: never "nothing in it can be read" while JARVIS can; the switch is the truth."""
+    js = (ROOT / "src/jarvis/api/static/console-drive.js").read_text(encoding="utf-8")
+    assert "nothing in it can be read" not in js and "it.shared" not in js
+    assert "readable: it.readable !== false" in js
+    assert "Switched on, but JARVIS can\\'t currently read it" in js
+    assert "f.confirmed && f.readable" in js  # "N in use" counts only what JARVIS can read
+
+
 def test_no_dollar_sign_in_drive_strings() -> None:
     js = (ROOT / "src/jarvis/api/static/console-drive.js").read_text(encoding="utf-8")
     for lit in _visible_strings(js):

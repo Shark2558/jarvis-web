@@ -6,9 +6,14 @@ import from tests/.
 What it models (what JARVIS relies on, docs checked 2026-11-03):
   - what the service account can SEE: an item shared with it, or anything below such an item
     (Drive's inherited access); everything else is a 404, as Drive answers for an unseen file;
-  - `sharingUser.emailAddress`: who shared the item (the nearest shared ancestor's sharer);
+  - `sharingUser.emailAddress`: who shared the item (the nearest shared ancestor's sharer); left
+    out when `sharing_user` is False (unverified for consumer accounts: the owners fallback);
+  - `owners[].emailAddress`: the item's own `owner`, else the nearest one above it, else whoever
+    shared it;
   - `trashed`: explicitly, or because a folder above it is in the trash;
-  - files.list for the three queries JARVIS sends (shared folders, children, fullText), paged;
+  - files.list for the queries JARVIS sends (shared folders, optionally `'<email>' in owners`;
+    children; fullText, optionally `'<email>' in owners`), paged; `incomplete` sets
+    `incompleteSearch`;
   - files.get metadata and `alt=media`, files.export (text/plain, text/csv).
 Every request is recorded, so tests assert on what Drive actually received.
 """
@@ -37,9 +42,11 @@ TOKEN_URL = (
 )
 DRIVE_TOKEN = "ya29.fake-drive-token"
 SERVICE_EMAIL = "jarvis-run@proj-123.iam.gserviceaccount.com"
-_SHARED_Q = re.compile(r"sharedWithMe and mimeType = '([^']+)' and trashed = false")
+_STR = r"'((?:[^'\\]|\\.)*)'"
+_OWNED = rf"(?:{_STR} in owners and )?"
+_SHARED_Q = re.compile(rf"sharedWithMe and {_OWNED}mimeType = '([^']+)' and trashed = false")
 _PARENTS_Q = re.compile(r"'([A-Za-z0-9_-]+)' in parents and trashed = false")
-_FULLTEXT_Q = re.compile(r"fullText contains '((?:[^'\\]|\\.)*)' and trashed = false")
+_FULLTEXT_Q = re.compile(rf"fullText contains {_STR} and {_OWNED}trashed = false")
 
 
 @dataclass
@@ -53,18 +60,23 @@ class Item:
     trashed: bool = False
     target: str | None = None  # a shortcut's target id
     size: int | None = None  # None: len(content) for a blob, absent for Google files
+    owner: str | None = None  # None: the nearest owner above it, else whoever shared it
 
 
 class FakeDrive:
-    """Scriptable Drive: `folder`/`file`/`shortcut` build the tree; `fail` maps an item id (or
-    "list") to an HTTP status served instead; `token` is the bearer it accepts."""
+    """Scriptable Drive: `folder`/`file`/`shortcut` build the tree; `fail` maps an item id, "list"
+    (every list) or "shared" (the unfiltered shared-folders list) to an HTTP status served
+    instead (`fail_reason`: the reason sent with it); `token` is the bearer it accepts."""
 
     def __init__(self) -> None:
         self.items: dict[str, Item] = {}
         self.requests: list[httpx.Request] = []
         self.fail: dict[str, int] = {}
+        self.fail_reason: dict[str, str] = {}
         self.token = DRIVE_TOKEN
         self.page_size_cap = 1000
+        self.sharing_user = True
+        self.incomplete = False
 
     # ---- building the tree -----------------------------------------------------------------
 
@@ -109,6 +121,9 @@ class FakeDrive:
     def sharer(self, item: Item) -> str | None:
         return next((it.shared_by for it in self._chain(item) if it.shared_by), None)
 
+    def owner_of(self, item: Item) -> str | None:
+        return next((it.owner for it in self._chain(item) if it.owner), None) or self.sharer(item)
+
     def visible(self, item: Item) -> bool:
         return self.sharer(item) is not None
 
@@ -124,8 +139,10 @@ class FakeDrive:
             "trashed": self.is_trashed(item),
             "modifiedTime": "2026-11-01T10:00:00.000Z",
         }
-        if (who := self.sharer(item)) is not None:
+        if self.sharing_user and (who := self.sharer(item)) is not None:
             out["sharingUser"] = {"emailAddress": who, "displayName": "Someone"}
+        if (owner := self.owner_of(item)) is not None:
+            out["owners"] = [{"emailAddress": owner, "displayName": "Owner"}]
         if not item.mime.startswith("application/vnd.google-apps."):
             out["size"] = str(item.size if item.size is not None else len(item.content))
         if item.target is not None:
@@ -148,15 +165,19 @@ class FakeDrive:
         path = request.url.path
         params = {k: v[0] for k, v in parse_qs(request.url.query.decode()).items()}
         if path == FILES_PATH:
-            if "list" in self.fail:
-                return _err(self.fail["list"], "backendError")
+            q = params.get("q", "")
+            key = "shared" if q.startswith("sharedWithMe and mimeType") else "list"
+            for k in ("list", key):
+                if k in self.fail:
+                    return _err(self.fail[k], self.fail_reason.get(k, "backendError"))
             return self._list(params)
         m = re.fullmatch(rf"{FILES_PATH}/([^/]+)(/export)?", path)
         if m is None:
             return _err(404, "notFound")
         fid, export = m.group(1), bool(m.group(2))
         if fid in self.fail:
-            return _err(self.fail[fid], "forbidden" if self.fail[fid] == 403 else "backendError")
+            default = "forbidden" if self.fail[fid] == 403 else "backendError"
+            return _err(self.fail[fid], self.fail_reason.get(fid, default))
         item = self.items.get(fid)
         if item is None or not self.visible(item):
             return _err(404, "notFound")
@@ -178,29 +199,44 @@ class FakeDrive:
         q = params.get("q", "")
         visible = [i for i in self.items.values() if self.visible(i) and not self.is_trashed(i)]
         if m := _SHARED_Q.fullmatch(q):
-            found = [i for i in visible if i.shared_by and i.mime == m.group(1)]
+            found = [i for i in visible if i.shared_by and i.mime == m.group(2)]
+            found = self._owned_by(found, m.group(1))
         elif m := _PARENTS_Q.fullmatch(q):
             found = [i for i in visible if m.group(1) in i.parents]
             found.sort(key=lambda i: (i.mime != FOLDER, i.name.lower()))
         elif m := _FULLTEXT_Q.fullmatch(q):
-            needle = re.sub(r"\\(.)", r"\1", m.group(1)).lower()
+            needle = _unescape(m.group(1)).lower()
             found = [
                 i
                 for i in visible
                 if needle in i.name.lower() or needle in i.content.decode("utf-8", "ignore").lower()
             ]
+            found = self._owned_by(found, m.group(2))
         else:
             return _err(400, "invalidQuery")
         size = min(int(params.get("pageSize", "100")), self.page_size_cap)
         start = int(params.get("pageToken", "o0")[1:] or 0)
         page = found[start : start + size]
-        body: dict[str, Any] = {"files": [self.meta(i) for i in page], "incompleteSearch": False}
+        body: dict[str, Any] = {
+            "files": [self.meta(i) for i in page],
+            "incompleteSearch": self.incomplete,
+        }
         if start + size < len(found):
             body["nextPageToken"] = f"o{start + size}"
         return httpx.Response(200, json=body)
 
+    def _owned_by(self, found: list[Item], quoted: str | None) -> list[Item]:
+        if quoted is None:
+            return found
+        who = _unescape(quoted)
+        return [i for i in found if self.owner_of(i) == who]
+
     def sent(self, *, path_suffix: str = "") -> list[httpx.Request]:
         return [r for r in self.requests if r.url.path.endswith(path_suffix)]
+
+
+def _unescape(quoted: str) -> str:
+    return re.sub(r"\\(.)", r"\1", quoted)
 
 
 def _err(status: int, reason: str) -> httpx.Response:

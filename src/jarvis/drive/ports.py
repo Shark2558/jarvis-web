@@ -62,6 +62,7 @@ class DriveFile:
     size: int | None = None  # bytes; Google Docs/Sheets/Slides have none
     modified: str | None = None
     sharer: str | None = None  # sharingUser.emailAddress, lower-cased
+    owners: tuple[str, ...] = ()  # owners[].emailAddress, lower-cased (none in shared drives)
     target_id: str | None = None  # a shortcut's target
     target_mime: str | None = None
 

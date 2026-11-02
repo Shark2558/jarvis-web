@@ -6,16 +6,17 @@ address can share things with it) and whatever id a model — or a hostile docum
 
     check(id, roots) → the item's fresh metadata, or NotInRoots ("not in your chosen folders")
 
-- No confirmed roots: refused without asking Drive anything.
+- No confirmed roots: refused without asking Drive anything. The roots given are the ones that
+  passed their own re-check this call (`jarvis.drive.live`): a root that fails it is OFF.
 - The item itself is always fetched fresh (trashed or moved shows at once); in the trash → no.
 - Its ancestors are walked through `parents` (breadth-first, so a file with two parents needs
-  one confirmed path), each folder's metadata cached 10 minutes, at most 12 levels and 40
+  one confirmed path), each folder's metadata cached 60 seconds, at most 12 levels and 40
   look-ups. A confirmed root id on the way → allowed. A trashed folder, a folder Drive won't show
   (404: above what was shared), a cycle, or the limits reached → that path ends.
 - Any other Drive error is raised as is (the call fails; nothing is read): fail closed.
 
-`PARENTS_CHECK` is read at call time so the eval's negative control can switch it off (and must
-then fail). Production never changes it.
+There is no switch to turn the check off: the eval's negative control injects a guard that
+allows everything instead (and must then fail).
 """
 
 from __future__ import annotations
@@ -30,8 +31,7 @@ from jarvis.logging import get_logger
 
 log = get_logger(__name__)
 
-PARENTS_CHECK = True
-CACHE_TTL_S = 600.0
+CACHE_TTL_S = 60.0
 MAX_DEPTH = 12
 MAX_LOOKUPS = 40
 CACHE_SIZE = 2_000
@@ -42,17 +42,16 @@ NOT_IN_ROOTS = (
 
 
 class WalkBudget:
-    """Drive look-ups several walks may still make together (one search's hits)."""
+    """Drive look-ups several walks may still make together (one search's hits). `ran_out` is
+    True once a walk was cut short by it (that hit's answer is "not shown", unchecked)."""
 
     def __init__(self, left: int) -> None:
         self.left = left
-
-    def cached(self, guard: ParentsGuard, fid: str) -> bool:
-        hit = guard._cache.get(fid)
-        return hit is not None and hit[0] > guard._clock()
+        self.ran_out = False
 
     def take(self) -> bool:
         if self.left <= 0:
+            self.ran_out = True
             return False
         self.left -= 1
         return True
@@ -66,6 +65,11 @@ class ParentsGuard:
 
     def forget(self) -> None:
         self._cache.clear()
+
+    def is_cached(self, fid: str) -> bool:
+        """Is this folder's metadata cached and still fresh (a walk past it costs no call)?"""
+        hit = self._cache.get(fid)
+        return hit is not None and hit[0] > self._clock()
 
     async def _ancestor(self, fid: str) -> DriveFile | None:
         """A folder above the item: cached metadata, or None when Drive won't show it."""
@@ -91,8 +95,6 @@ class ParentsGuard:
         walks (one search); spent → no (fail closed)."""
         if not roots or item.trashed:
             return False
-        if not PARENTS_CHECK:
-            return True
         if item.id in roots:
             return True
         seen = {item.id}
@@ -112,7 +114,7 @@ class ParentsGuard:
                 if lookups > MAX_LOOKUPS:
                     log.warning("drive parents walk: too many look-ups")
                     return False
-                if budget is not None and not budget.cached(self, pid) and not budget.take():
+                if budget is not None and not self.is_cached(pid) and not budget.take():
                     return False
                 parent = await self._ancestor(pid)
                 if parent is None or parent.trashed:
@@ -139,7 +141,6 @@ __all__ = [
     "CACHE_TTL_S",
     "MAX_DEPTH",
     "NOT_IN_ROOTS",
-    "PARENTS_CHECK",
     "ParentsGuard",
     "WalkBudget",
 ]

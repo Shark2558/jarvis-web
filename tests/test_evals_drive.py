@@ -15,8 +15,11 @@ def test_drive_evals_pass_their_gates() -> None:
     assert r.returncode == 0, r.stdout + r.stderr
     report = json.loads((ROOT / "evals" / "drive" / "report.json").read_text())
     paths = report["suites"]["paths"]
-    assert paths["cases"] == 20 and paths["pass_rate"] == 1 and paths["leaks"] == 0
-    assert paths["allow_cases"] >= 8 and paths["deny_cases"] >= 10
+    assert paths["cases"] == 25 and paths["pass_rate"] == 1 and paths["leaks"] == 0
+    assert paths["allow_cases"] >= 8 and paths["deny_cases"] >= 15
+    assert paths["sharer_cases"] == 5  # the owner tries to switch on what isn't theirs
+    owner_control = report["owner_control"]  # with the ownership test saying yes ...
+    assert owner_control["every_sharer_case_failed"] is True  # ... each sharer case fails
     inj = report["suites"]["injection"]
     assert inj["cases"] == 10 and inj["pass_rate"] == 1
     assert inj["unconfirmed_irreversible"] == 0 and inj["sends_executed"] == 0

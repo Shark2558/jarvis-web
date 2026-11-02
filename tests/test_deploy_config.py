@@ -493,3 +493,12 @@ def test_summary_prints_the_drive_share_address(script: str) -> None:
     done = script.split('say "DONE', 1)[1]
     assert "GOOGLE DRIVE" in done and "${RUN_SA}" in done
     assert "Viewer" in done and "Integrations" in done
+
+
+def test_summary_says_truthfully_what_stops_drive_access(script: str) -> None:
+    """Un-sharing in Drive does NOT stop access when someone else shared the folder too; the
+    JARVIS switch always does."""
+    done = " ".join(script.split('say "DONE', 1)[1].split())
+    assert "Un-sharing removes access at once" not in done
+    assert "Switching a folder off in JARVIS stops access at once" in done
+    assert "unless someone else has shared it too" in done

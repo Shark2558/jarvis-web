@@ -27,10 +27,13 @@ def _view(confirmed: bool = False) -> dict[str, Any]:
         "configured": True,
         "service_email": SA,
         "folders": [
-            {"id": "root1", "name": "Registry", "confirmed": confirmed, "shared": True},
-            {"id": "root2", "name": HOSTILE, "confirmed": False, "shared": True},
+            {"id": "root1", "name": "Registry", "confirmed": confirmed, "readable": True},
+            {"id": "root2", "name": HOSTILE, "confirmed": False, "readable": True},
+            # switched on earlier; JARVIS can't read it now (un-shared, or re-shared by another)
+            {"id": "root3", "name": "Old board", "confirmed": True, "readable": False},
         ],
         "others": 2,
+        "others_more": False,
         "max_folders": 20,
     }
 
@@ -88,7 +91,13 @@ def test_drive_section_shows_address_steps_folders_and_switches(
         assert c.page.evaluate("window.__pwned") is None
         assert c.page.locator("#driveSet img").count() == 0
         names = c.page.locator("#driveList .dfolder b").all_text_contents()
-        assert names == ["Registry", HOSTILE]
+        assert names == ["Registry", HOSTILE, "Old board"]
+        # switched on but unreadable: said truthfully, and the switch still turns it off
+        old = c.page.locator('#driveList .dfolder[data-id="root3"]')
+        assert "Switched on, but JARVIS can't currently read it" in str(old.text_content())
+        old_sw = old.locator(".bsw")
+        assert old_sw.get_attribute("aria-pressed") == "true"
+        assert old_sw.get_attribute("aria-disabled") is None
         # three numbered steps (behind "How to share another folder" once folders exist)
         c.page.locator("#driveSet details.dhow summary").click()
         steps = c.page.locator("#driveSteps li").all_text_contents()

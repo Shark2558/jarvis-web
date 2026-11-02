@@ -244,8 +244,12 @@ def create_app(
         # only on persistent storage, else None and deletes stay R3
         app.state.undo = undo or build_undo(s, built, docs)
         app.state.outside_tasks = OutsideTasks(docs, prefix=s.firestore_prefix)  # D8 (swept)
-        # Drive, chosen folders only (slice 12 D1): None unless JARVIS_DRIVE=on
-        app.state.drive = drive if drive is not None else build_drive_service(s, docs)
+        # Drive, chosen folders only (slice 12 D1): None unless JARVIS_DRIVE=on. Its files go
+        # through the documents' ONE extraction slot (never two children at once)
+        one_slot = app.state.documents.extract
+        app.state.drive = drive or build_drive_service(s, docs, extract=one_slot)
+        if app.state.drive is not None and app.state.drive.extract is None:
+            app.state.drive.extract = one_slot
         gw: Gateway | None = gateway
         if gw is None and s.tools_enabled:
             gw = build_gateway(

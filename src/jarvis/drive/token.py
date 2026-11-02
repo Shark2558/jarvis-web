@@ -16,9 +16,10 @@ server (`…/default/email`) once and is kept.
 
 One refresh at a time: every caller awaits the same in-flight request (shielded, each with its
 own deadline). A token is kept until 60 s before it expires, or until `invalidate()` (Drive said
-401). Off Cloud Run (no metadata server) the answer is "not available here", remembered for a
-minute so a chat turn doesn't wait on a DNS failure each call. Redirects are never followed,
-answers are size-capped and type-checked; the token is never logged.
+401). When the metadata server can't be reached (a passing network hiccup on Cloud Run looks the
+same as running elsewhere), the answer is "couldn't reach Google just now", remembered for a few
+seconds only, so a chat turn doesn't wait on the same failure each call yet a hiccup heals fast.
+Redirects are never followed, answers are size-capped and type-checked; the token is never logged.
 """
 
 from __future__ import annotations
@@ -46,16 +47,13 @@ HEADERS = {"Metadata-Flavor": "Google"}
 DEADLINE_S = 5.0
 HTTP_TIMEOUT = httpx.Timeout(4.0, connect=2.0)
 SKEW_S = 60.0
-NOT_HERE_TTL_S = 60.0
+UNREACHABLE_TTL_S = 5.0
 MAX_ANSWER_BYTES = 64 * 1024
 MAX_EXPIRES_S = 24 * 3600
 _TOKEN_CHARS = re.compile(r"[A-Za-z0-9._~+/=-]{1,4096}")
 _SA_EMAIL = re.compile(r"[a-z0-9][a-z0-9-]{4,62}@[a-z0-9-]{4,64}\.iam\.gserviceaccount\.com")
 
-NOT_HERE = (
-    "Google Drive works only when JARVIS runs on Google Cloud Run (it reads Drive as its own "
-    "Google account there)."
-)
+UNREACHABLE = "JARVIS couldn't reach Google just now for its Drive access. Try again in a minute."
 NO_TOKEN = "JARVIS couldn't get its Google Drive access just now. Try again in a minute."
 SLOW = "Google took too long to give JARVIS its Drive access. Try again in a minute."
 
@@ -79,7 +77,7 @@ class MetadataTokens:
         self._token: str | None = None
         self._expires_at = 0.0
         self._inflight: asyncio.Future[tuple[str, float]] | None = None
-        self._not_here_until = 0.0
+        self._unreachable_until = 0.0
         self._email: str | None = None
 
     async def aclose(self) -> None:
@@ -94,8 +92,8 @@ class MetadataTokens:
     async def token(self) -> str:
         if self._token is not None and self._clock() < self._expires_at - SKEW_S:
             return self._token
-        if self._clock() < self._not_here_until:
-            raise DriveUnavailable(NOT_HERE)
+        if self._clock() < self._unreachable_until:
+            raise DriveUnavailable(UNREACHABLE)
         task = self._inflight
         if task is None or task.done():
             task = asyncio.ensure_future(self._fetch())
@@ -128,9 +126,9 @@ class MetadataTokens:
                     chunks.append(chunk)
                 return b"".join(chunks)
         except (httpx.ConnectError, httpx.UnsupportedProtocol) as exc:
-            self._not_here_until = self._clock() + NOT_HERE_TTL_S
+            self._unreachable_until = self._clock() + UNREACHABLE_TTL_S
             log.warning("metadata server unreachable", extra={"reason": type(exc).__name__})
-            raise DriveUnavailable(NOT_HERE) from None
+            raise DriveUnavailable(UNREACHABLE) from None
         except httpx.HTTPError as exc:
             log.warning("metadata server error", extra={"reason": type(exc).__name__})
             raise DriveUnavailable(NO_TOKEN) from None
@@ -143,8 +141,8 @@ class MetadataTokens:
         """The service account's address (what the owner shares folders with)."""
         if self._email is not None:
             return self._email
-        if self._clock() < self._not_here_until:
-            raise DriveUnavailable(NOT_HERE)
+        if self._clock() < self._unreachable_until:
+            raise DriveUnavailable(UNREACHABLE)
         try:
             async with asyncio.timeout(self._deadline):
                 raw = await self._get(EMAIL_URL)
@@ -173,4 +171,11 @@ def _parse_token(raw: bytes) -> tuple[str, float]:
     return value, float(life)
 
 
-__all__ = ["EMAIL_URL", "NOT_HERE", "SKEW_S", "TOKEN_URL", "MetadataTokens"]
+__all__ = [
+    "EMAIL_URL",
+    "SKEW_S",
+    "TOKEN_URL",
+    "UNREACHABLE",
+    "UNREACHABLE_TTL_S",
+    "MetadataTokens",
+]

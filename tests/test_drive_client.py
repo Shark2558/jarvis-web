@@ -1,18 +1,35 @@
 # tests/test_drive_client.py — slice 12 D1: the Drive v3 adapter. httpx only, redirects off, size
-# caps, strict shape checks, one retry on 401 (fresh token) and on 429/5xx (all calls are reads),
-# plain-English errors that never carry Google's text. No network: a fake Drive transport.
+# caps, strict shape checks, one retry on 401 (fresh token); 429, 5xx and a 403 rate limit get at
+# most 2 retries with jittered exponential backoff (≤ 4 s asleep in all; all calls are reads);
+# plain-English errors that never carry Google's text; logs say the kind of call, never an id.
+# No network: a fake Drive transport.
 from __future__ import annotations
 
+import json
 from urllib.parse import parse_qs
 
 import httpx
 import pytest
 from drive_fakes import DOC, FOLDER, PDF, SHEET, SHORTCUT, FakeDrive, StaticTokens
 
-from jarvis.drive.client import DriveClient, escape_query
+from jarvis.drive.client import (
+    BACKOFF_TOTAL_S,
+    MAX_RETRIES,
+    NAME_LIMIT,
+    DriveClient,
+    escape_query,
+)
 from jarvis.drive.ports import DriveError, DriveNotFound, DriveUnavailable
 
 OWNER = "akash@example.com"
+
+
+class Sleeps:
+    def __init__(self) -> None:
+        self.calls: list[float] = []
+
+    async def __call__(self, seconds: float) -> None:
+        self.calls.append(seconds)
 
 
 def _drive() -> FakeDrive:
@@ -25,8 +42,10 @@ def _drive() -> FakeDrive:
     return d
 
 
-def _client(d: FakeDrive, tokens: StaticTokens | None = None) -> DriveClient:
-    return DriveClient(tokens or StaticTokens(), http=d.client())
+def _client(
+    d: FakeDrive, tokens: StaticTokens | None = None, sleeps: Sleeps | None = None
+) -> DriveClient:
+    return DriveClient(tokens or StaticTokens(), http=d.client(), sleep=sleeps or Sleeps())
 
 
 def _q(req: httpx.Request) -> dict[str, str]:
@@ -35,14 +54,48 @@ def _q(req: httpx.Request) -> dict[str, str]:
 
 async def test_shared_folders_lists_folders_shared_with_jarvis_and_who_shared_them() -> None:
     d = _drive()
-    found = await _client(d).shared_folders()
-    assert {(f.id, f.sharer) for f in found} == {
-        ("root1", OWNER),
-        ("other", "stranger@example.net"),
+    page = await _client(d).shared_folders()
+    assert {(f.id, f.sharer, f.owners) for f in page.files} == {
+        ("root1", OWNER, (OWNER,)),
+        ("other", "stranger@example.net", ("stranger@example.net",)),
     }
     q = _q(d.requests[0])
     assert q["q"] == f"sharedWithMe and mimeType = '{FOLDER}' and trashed = false"
-    assert "sharingUser" in q["fields"]
+    assert "sharingUser" in q["fields"] and "owners(emailAddress)" in q["fields"]
+    assert int(q["pageSize"]) <= 25  # small pages: very long names can't push one past the cap
+
+
+async def test_shared_folders_owned_by_one_address_and_paged() -> None:
+    d = _drive()
+    for i in range(30):
+        d.folder(f"mine{i}", f"Mine {i}", shared_by=OWNER)
+    c = _client(d)
+    first = await c.shared_folders(owner=OWNER)
+    second = await c.shared_folders(owner=OWNER, page_token=first.next_token)
+    ids = [f.id for f in (*first.files, *second.files)]
+    assert len(ids) == 31 and "other" not in ids and second.next_token is None
+    assert _q(d.requests[0])["q"] == (
+        f"sharedWithMe and '{OWNER}' in owners and mimeType = '{FOLDER}' and trashed = false"
+    )
+
+
+async def test_the_owners_address_is_escaped_in_a_query() -> None:
+    d = _drive()
+    await _client(d).shared_folders(owner="o'neil\\x@example.com")
+    assert "'o\\'neil\\\\x@example.com' in owners" in _q(d.requests[0])["q"]
+    await _client(d).search("budget", owner="o'neil@example.com")
+    assert _q(d.requests[1])["q"] == (
+        "fullText contains 'budget' and 'o\\'neil@example.com' in owners and trashed = false"
+    )
+
+
+async def test_names_over_the_limit_are_cut_not_dropped() -> None:
+    d = _drive()
+    d.folder("long", "L" * 5_000, shared_by=OWNER)
+    c = _client(d)
+    f = await c.get("long")
+    assert f.name.startswith("LLL") and len(f.name) <= NAME_LIMIT
+    assert "long" in [x.id for x in (await c.shared_folders()).files]
 
 
 async def test_children_lists_one_folder_paged() -> None:
@@ -125,14 +178,111 @@ async def test_a_401_twice_is_unavailable() -> None:
         await _client(d, StaticTokens("wrong")).get("doc1")
 
 
-@pytest.mark.parametrize("status", [429, 500, 503])
-async def test_busy_is_retried_once_then_reported_plainly(status: int) -> None:
+@pytest.mark.parametrize(
+    ("status", "reason"),
+    [
+        (429, "rateLimitExceeded"),
+        (500, "backendError"),
+        (503, "backendError"),
+        (403, "userRateLimitExceeded"),
+        (403, "rateLimitExceeded"),
+    ],
+)
+async def test_busy_is_retried_twice_with_backoff_then_reported_plainly(
+    status: int, reason: str
+) -> None:
     d = _drive()
     d.fail["doc1"] = status
+    d.fail_reason["doc1"] = reason
+    sleeps = Sleeps()
     with pytest.raises(DriveError) as e:
-        await _client(d).get("doc1")
-    assert len(d.requests) == 2
+        await _client(d, sleeps=sleeps).get("doc1")
+    assert len(d.requests) == 1 + MAX_RETRIES == 3
+    assert len(sleeps.calls) == MAX_RETRIES and 0 < sum(sleeps.calls) <= BACKOFF_TOTAL_S <= 4
     assert "VENDOR" not in str(e.value) and "vendor" not in str(e.value)
+    if status != 500 and status != 503:
+        assert "busy" in str(e.value)
+
+
+async def test_backoff_is_exponential_with_jitter_and_bounded() -> None:
+    seen: list[tuple[float, ...]] = []
+    for rand in (0.0, 0.5, 1.0):
+        d = _drive()
+        d.fail["doc1"] = 503
+        sleeps = Sleeps()
+        c = DriveClient(StaticTokens(), http=d.client(), sleep=sleeps, rand=lambda r=rand: r)
+        with pytest.raises(DriveError):
+            await c.get("doc1")
+        first, second = sleeps.calls
+        assert 0 < first < second and first + second <= BACKOFF_TOTAL_S  # grows, bounded
+        seen.append((first, second))
+    assert len(set(seen)) == 3  # the random part changes the waits (jitter)
+
+
+async def test_a_retry_that_works_returns_the_answer() -> None:
+    d = _drive()
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(503, content=b"{}")
+        return d.handler(request)
+
+    sleeps = Sleeps()
+    c = DriveClient(
+        StaticTokens(), http=httpx.AsyncClient(transport=httpx.MockTransport(handler)), sleep=sleeps
+    )
+    assert (await c.get("doc1")).id == "doc1"
+    assert calls == 2 and len(sleeps.calls) == 1
+
+
+@pytest.mark.parametrize("reason", ["forbidden", "insufficientFilePermissions"])
+async def test_a_plain_403_is_not_retried(reason: str) -> None:
+    d = _drive()
+    d.fail["doc1"] = 403
+    d.fail_reason["doc1"] = reason
+    sleeps = Sleeps()
+    with pytest.raises(DriveError):
+        await _client(d, sleeps=sleeps).get("doc1")
+    assert len(d.requests) == 1 and sleeps.calls == []
+
+
+async def test_an_export_over_googles_limit_is_too_big() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {
+            "error": {
+                "code": 403,
+                "message": "VENDOR This file is too large to be exported.",
+                "errors": [{"reason": "exportSizeLimitExceeded", "message": "VENDOR"}],
+            }
+        }
+        return httpx.Response(403, content=json.dumps(body).encode())
+
+    c = DriveClient(StaticTokens(), http=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    with pytest.raises(DriveError) as e:
+        await c.export("doc1", "text/plain")
+    assert "10 MB" in str(e.value) and "VENDOR" not in str(e.value)
+
+
+async def test_errors_log_the_kind_of_call_and_status_never_the_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    d = _drive()
+    d.fail["doc1"] = 404
+    caplog.set_level("DEBUG")
+    with pytest.raises(DriveNotFound):
+        await _client(d).get("doc1")
+    with pytest.raises(DriveNotFound):
+        await _client(d).export("doc1", "text/plain")
+    records = [r for r in caplog.records if r.getMessage() == "drive error"]
+    assert [(r.__dict__.get("op"), r.__dict__.get("status")) for r in records] == [
+        ("get", 404),
+        ("export", 404),
+    ]
+    assert all("path" not in r.__dict__ for r in records)
+    assert "doc1" not in caplog.text
 
 
 async def test_api_switched_off_is_said_plainly() -> None:

@@ -4,17 +4,22 @@
 # message; registered only when Drive is configured, and never offered to a training brain.
 from __future__ import annotations
 
+import asyncio
 import json
+from typing import Any
 
 import pytest
 from drive_fakes import FakeDrive, StaticTokens
 
+import jarvis.drive.tools as tools_mod
 from jarvis.config import get_settings
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
+from jarvis.documents.service import DocumentService
+from jarvis.documents.store import AttachmentStore
 from jarvis.drive.client import DriveClient
 from jarvis.drive.roots import RootsStore
 from jarvis.drive.service import DriveService
-from jarvis.drive.tools import DRIVE_TOOLS, MAX_DRIVE_CALLS, drive_tools
+from jarvis.drive.tools import DRIVE_TOOL_DEADLINE_S, DRIVE_TOOLS, MAX_DRIVE_CALLS, drive_tools
 from jarvis.llm.base import ToolCall, ToolResultBlock
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.audit import AuditLog
@@ -42,7 +47,10 @@ async def _rig() -> tuple[Gateway, DriveService, FakeDrive]:
     d.file("doc1", "Steering notes", "root1", "Budget is four crore.")
     d.folder("root2", "Personal", shared_by=OWNER)
     d.file("p1", "Diary", "root2", "private words")
-    svc = DriveService(DriveClient(Tokens(), http=d.client()), RootsStore(MemoryDocs()))
+    files = DocumentService(AttachmentStore(MemoryDocs()))
+    svc = DriveService(
+        DriveClient(Tokens(), http=d.client()), RootsStore(MemoryDocs()), extract=files.extract
+    )
     await svc.set_use(UID, OWNER, "root1", True)
     reg = ToolRegistry()
     for t in drive_tools(svc):
@@ -168,6 +176,41 @@ async def test_no_owner_context_runs_nothing() -> None:
     before = len(d.requests)
     gr = await gw.execute(ToolCall(id="c", name="drive_read", arguments={"file": "doc1"}))
     assert gr.outcome is GatewayOutcome.ERROR and len(d.requests) == before
+
+
+def test_every_drive_call_has_an_overall_deadline() -> None:
+    assert DRIVE_TOOL_DEADLINE_S == 45
+
+
+@pytest.mark.parametrize(
+    ("name", "args", "method"),
+    [
+        ("drive_folders", {}, "folders"),
+        ("drive_list", {"folder": "root1"}, "list_folder"),
+        ("drive_search", {"query": "budget"}, "search"),
+        ("drive_read", {"file": "doc1"}, "read"),
+    ],
+)
+async def test_a_drive_call_past_its_deadline_says_so_plainly(
+    name: str, args: dict[str, Any], method: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gw, svc, _ = await _rig()
+
+    async def hang(*_: Any, **__: Any) -> dict[str, Any]:
+        await asyncio.sleep(30)
+        return {}
+
+    monkeypatch.setattr(svc, method, hang)
+    monkeypatch.setattr(tools_mod, "DRIVE_TOOL_DEADLINE_S", 0.05)
+    gr = await gw.execute(ToolCall(id="c", name=name, arguments=args), scope=SCOPE)
+    assert gr.outcome is GatewayOutcome.ERROR
+    assert "Drive took too long" in gr.for_model()
+
+
+async def test_drive_read_says_sheets_give_their_first_sheet() -> None:
+    gw, _, _ = await _rig()
+    tool = gw.registry.get("drive_read")
+    assert tool is not None and "first sheet" in tool.description
 
 
 async def test_registered_only_when_drive_is_configured() -> None:

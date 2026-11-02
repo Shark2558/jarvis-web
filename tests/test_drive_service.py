@@ -1,7 +1,8 @@
 # tests/test_drive_service.py — slice 12 D1: DriveService — offering folders (only those the owner
 # shared), the Use switch (sharer must be the owner's verified address), listing, searching and
-# reading inside confirmed folders only; Google files exported, PDF/DOCX/text through the slice 10
-# sandboxed extractor, ≤ 10 MB; shortcuts resolved and checked again; ~4,000-character parts.
+# reading inside confirmed folders only; Google files exported, PDF/DOCX/text through the app's one
+# sandboxed extractor (slice 10), ≤ 10 MB; shortcuts resolved and checked again; ~4,000-character
+# parts; a search that couldn't check everything says so.
 from __future__ import annotations
 
 import pytest
@@ -9,10 +10,17 @@ from doc_fakes import make_pdf
 from drive_fakes import DOC, DOCX, FOLDER, PDF, SHEET, SLIDES, TXT, FakeDrive, StaticTokens
 
 from jarvis.documents.isolation import Sandbox
+from jarvis.documents.service import DocumentService
+from jarvis.documents.store import AttachmentStore
 from jarvis.drive.client import DriveClient
 from jarvis.drive.ports import DriveError, NotInRoots, RootsUnreadable
 from jarvis.drive.roots import RootsStore
-from jarvis.drive.service import SEARCH_LOOKUPS, DriveRejected, DriveService
+from jarvis.drive.service import (
+    SEARCH_LOOKUPS,
+    SEARCH_PAGES,
+    DriveRejected,
+    DriveService,
+)
 from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.tools.external import FENCE_PREFIX
 
@@ -40,7 +48,8 @@ def _drive() -> FakeDrive:
 
 def _svc(d: FakeDrive, docs: MemoryDocs | None = None) -> DriveService:
     client = DriveClient(Tokens(), http=d.client())
-    return DriveService(client, RootsStore(docs or MemoryDocs()), sandbox=Sandbox(timeout_s=30))
+    files = DocumentService(AttachmentStore(MemoryDocs()), sandbox=Sandbox(timeout_s=30))
+    return DriveService(client, RootsStore(docs or MemoryDocs()), extract=files.extract)
 
 
 async def _confirmed(d: FakeDrive, *ids: str) -> DriveService:
@@ -59,8 +68,9 @@ async def test_view_offers_only_folders_the_owner_shared() -> None:
     v = await svc.view(UID, OWNER)
     assert v["service_email"] == SA
     assert {(f["id"], f["confirmed"]) for f in v["folders"]} == {("root1", False), ("root2", False)}
-    assert v["others"] == [{"name": "Free money"}]
-    assert "stranger" not in str(v)  # the other account's address is not shown
+    assert v["others"] == 1 and v["others_more"] is False  # a count: never their names
+    assert "stranger" not in str(v) and "Free money" not in str(v)
+    assert v["max_folders"] == 20
 
 
 async def test_use_confirms_and_unuse_removes() -> None:
@@ -80,11 +90,21 @@ async def test_a_folder_shared_by_someone_else_cannot_be_confirmed() -> None:
     assert e.value.code == "not_offered" and "another account" in str(e.value)
 
 
-async def test_a_subfolder_not_shared_directly_cannot_be_confirmed() -> None:
-    svc = _svc(_drive())
+async def test_a_folder_never_shared_with_jarvis_cannot_be_confirmed() -> None:
+    d = _drive()
+    d.folder("private", "Private", None, owner=OWNER)
+    svc = _svc(d)
     with pytest.raises(DriveRejected) as e:
-        await svc.set_use(UID, OWNER, "sub1", True)
-    assert e.value.code == "not_offered"
+        await svc.set_use(UID, OWNER, "private", True)
+    assert e.value.code == "not_offered" and e.value.status == 409
+
+
+async def test_a_subfolder_of_the_owners_shared_folder_passes_the_same_four_checks() -> None:
+    """It is a folder, not in the trash, the same id, and the owner's own: switching it on
+    narrows what the owner already shared (the console only offers top-level shares)."""
+    svc = _svc(_drive())
+    await svc.set_use(UID, OWNER, "sub1", True)
+    assert [r.id for r in await svc.roots.load(UID)] == ["sub1"]
 
 
 async def test_without_the_owners_address_nothing_can_be_confirmed() -> None:
@@ -100,7 +120,7 @@ async def test_a_confirmed_folder_no_longer_shared_shows_so() -> None:
     d.items["root1"].shared_by = None
     v = await svc.view(UID, OWNER)
     gone = [f for f in v["folders"] if f["id"] == "root1"]
-    assert gone == [{"id": "root1", "name": "Registry", "confirmed": True, "shared": False}]
+    assert gone == [{"id": "root1", "name": "Registry", "confirmed": True, "readable": False}]
 
 
 async def test_bad_ids_are_rejected_before_drive() -> None:
@@ -113,14 +133,14 @@ async def test_bad_ids_are_rejected_before_drive() -> None:
 # ---- the tools' side ----------------------------------------------------------------------
 
 
-async def test_folders_lists_only_confirmed_roots_without_calling_drive() -> None:
+async def test_folders_lists_confirmed_roots_rechecked_from_the_minute_cache() -> None:
     d = _drive()
     svc = await _confirmed(d, "root1")
     before = len(d.requests)
     out = await svc.folders(UID)
     assert [f["id"] for f in out["folders"]] == ["root1"]
     assert FENCE_PREFIX in out["folders"][0]["name"]
-    assert len(d.requests) == before
+    assert len(d.requests) == before  # checked when switched on, less than a minute ago
 
 
 async def test_list_a_confirmed_folder_and_refuse_others() -> None:
@@ -166,8 +186,52 @@ async def test_one_search_makes_a_bounded_number_of_drive_calls() -> None:
     svc = await _confirmed(d, "root1")
     before = len(d.requests)
     out = await svc.search(UID, "budget")
-    assert [h["id"] for h in out["results"]] == ["doc1"] or out["results"] == []
-    assert len(d.requests) - before <= 1 + SEARCH_LOOKUPS
+    assert [h["id"] for h in out["results"]] == ["doc1"]  # the owner's own hits come first
+    lists = 2 * SEARCH_PAGES  # the owner's own files, then everyone's
+    assert len(d.requests) - before <= lists + SEARCH_LOOKUPS
+    assert "couldn't be checked" in out["note"]  # 50 x 10 levels: the allowance ran out
+
+
+async def test_drive_saying_the_search_was_incomplete_is_never_nothing_matched() -> None:
+    d = _drive()
+    d.incomplete = True
+    svc = await _confirmed(d, "root1")
+    out = await svc.search(UID, "no such words")
+    assert out["results"] == []
+    assert "couldn't be checked" in out["note"] and "Nothing" not in out["note"]
+
+
+async def test_a_plain_miss_says_nothing_matched() -> None:
+    svc = await _confirmed(_drive(), "root1")
+    out = await svc.search(UID, "no such words")
+    assert out["results"] == [] and "Nothing" in out["note"]
+
+
+async def test_a_listing_never_shows_an_item_from_another_folder() -> None:
+    """Page tokens may not be bound to their query: whatever comes back must have the folder
+    among its parents (no extra Drive calls needed)."""
+
+    class Leaky(FakeDrive):
+        def _list(self, params: dict[str, str]):  # type: ignore[no-untyped-def]
+            r = super()._list(params)
+            if "in parents" not in params.get("q", ""):
+                return r
+            import json as _json
+
+            import httpx
+
+            body = _json.loads(r.content)
+            body["files"].append(self.meta(self.items["p1"]))  # from root2, not root1
+            return httpx.Response(200, json=body)
+
+    d = Leaky()
+    for fid, it in _drive().items.items():
+        d.items[fid] = it
+    svc = await _confirmed(d, "root1")
+    before = len(d.requests)
+    out = await svc.list_folder(UID, "root1")
+    assert [i["id"] for i in out["items"]] == ["sub1"] and "Diary" not in str(out)
+    assert len(d.requests) - before == 2  # the folder itself, then its children
 
 
 async def test_search_with_no_confirmed_folder_never_asks_drive() -> None:

@@ -11,7 +11,7 @@ import pytest
 from drive_fakes import TOKEN_URL, FakeMetadata
 
 from jarvis.drive.ports import DRIVE_SCOPE, DriveUnavailable
-from jarvis.drive.token import MetadataTokens
+from jarvis.drive.token import UNREACHABLE_TTL_S, MetadataTokens
 
 
 class Clock:
@@ -110,7 +110,9 @@ async def test_odd_answers_are_refused_without_vendor_text(answer: httpx.Respons
     assert "evil" not in str(e.value) and "no such account" not in str(e.value)
 
 
-async def test_off_cloud_run_is_not_configured_and_not_retried_at_once() -> None:
+async def test_an_unreachable_metadata_server_is_said_accurately_and_tried_again_soon() -> None:
+    """A ConnectError can be a passing hiccup on Cloud Run: never "works only on Cloud Run" for a
+    minute — "couldn't reach Google just now", remembered only a few seconds."""
     calls = 0
 
     def unreachable(request: httpx.Request) -> httpx.Response:
@@ -125,12 +127,14 @@ async def test_off_cloud_run_is_not_configured_and_not_retried_at_once() -> None
     for _ in range(3):
         with pytest.raises(DriveUnavailable) as e:
             await src.token()
-        assert "Cloud Run" in str(e.value)
+        assert "couldn't reach Google just now" in str(e.value)
+        assert "Cloud Run" not in str(e.value) and "name resolution" not in str(e.value)
     assert calls == 1
-    clock.now += 61
+    clock.now += UNREACHABLE_TTL_S + 0.1
     with pytest.raises(DriveUnavailable):
-        await src.token()
+        await src.email()
     assert calls == 2
+    assert UNREACHABLE_TTL_S <= 10
 
 
 async def test_service_email_comes_from_the_metadata_server_once() -> None:

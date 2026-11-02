@@ -1,17 +1,25 @@
 # src/jarvis/drive/roots.py
 """The owner's chosen Drive folders (slice 12 D1; Layer 7) on the `Docs` port.
 
-    {prefix}drive_roots/{uid}   {roots: [{id, name, confirmed_at}], updated_at}   (≤ 20 roots)
+    {prefix}drive_roots/{uid}   {roots: [{id, name, confirmed_at, email}], updated_at}
+                                (≤ MAX_ROOTS roots)
 
-A folder gets here only through the owner's own "Use" switch in Integrations, and only when the
-account that shared it with JARVIS is the owner's verified address (`DriveService.set_use`).
-Reads fail closed: storage trouble, a missing field, a wrong type, an odd id or more than 20
-entries is `RootsUnreadable` — JARVIS then reads nothing from Drive until it can tell again.
-Writes are transactions (read, change, write), so two windows can't lose each other's change.
+A folder gets here only through the owner's own "Use" switch in Integrations, and only when it
+is the owner's own folder by the ownership test (`jarvis.drive.live.owned_by`) against the
+owner's verified address. That address is stored with the root (`email`) so every later re-check
+(`jarvis.drive.live`) uses the same address; a root stored without one (before this field) is
+kept but OFF until switched on again.
+
+Reads fail closed: storage trouble, a missing field, a wrong type, an odd id or more than
+MAX_ROOTS entries is `RootsUnreadable` — JARVIS then reads nothing from Drive until it can tell
+again. Writes are transactions (read, change, write), so two windows can't lose each other's
+change; storage trouble during one is `RootsUnreadable` too (the API's 503 roots_unavailable),
+logged by its type only.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -26,10 +34,12 @@ from jarvis.undo.store import owner_ok
 log = get_logger(__name__)
 
 NAME_LIMIT = 200
+EMAIL = re.compile(r"[^@\s]{1,64}@[^@\s]{1,255}")
 UNREADABLE = (
     "JARVIS couldn't read your chosen Drive folders just now, so nothing was read from Drive. "
     "Try again in a minute."
 )
+UNSAVED = "JARVIS couldn't save that change to your Drive folders just now. Try again in a minute."
 FULL = f"At most {MAX_ROOTS} Drive folders can be in use. Switch one off first."
 
 
@@ -37,11 +47,24 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def owner_address(value: object) -> str:
+    """The owner's address as stored and compared: trimmed, lower-case; ValueError if odd."""
+    text = value.strip().lower() if isinstance(value, str) else ""
+    if not EMAIL.fullmatch(text):
+        raise ValueError("not an email address")
+    return text
+
+
 @dataclass(frozen=True)
 class Root:
     id: str
     name: str
     confirmed_at: datetime
+    email: str | None = None  # the address that switched it on; None: stored before addresses
+
+
+def _decode_email(value: object) -> str | None:
+    return None if value is None else owner_address(value)
 
 
 def _decode(doc: Doc | None) -> list[Root]:
@@ -63,19 +86,22 @@ def _decode(doc: Doc | None) -> list[Root]:
         if not isinstance(at, str):
             raise ValueError("confirmed_at")
         when = datetime.fromisoformat(at)
-        out.append(Root(rid, name, when if when.tzinfo else when.replace(tzinfo=UTC)))
+        stamp = when if when.tzinfo else when.replace(tzinfo=UTC)
+        out.append(Root(rid, name, stamp, _decode_email(item.get("email"))))
     if len({r.id for r in out}) != len(out):
         raise ValueError("duplicate")
     return out
 
 
+def _entry(r: Root) -> dict[str, Any]:
+    out: dict[str, Any] = {"id": r.id, "name": r.name, "confirmed_at": r.confirmed_at.isoformat()}
+    if r.email is not None:
+        out["email"] = r.email
+    return out
+
+
 def _encode(roots: list[Root], now: datetime) -> Doc:
-    return {
-        "roots": [
-            {"id": r.id, "name": r.name, "confirmed_at": r.confirmed_at.isoformat()} for r in roots
-        ],
-        "updated_at": now.isoformat(),
-    }
+    return {"roots": [_entry(r) for r in roots], "updated_at": now.isoformat()}
 
 
 class RootsStore:
@@ -112,12 +138,20 @@ class RootsStore:
             t.set(path, _encode(updated, self._now()))
             return updated
 
-        return await self._d.transaction(tx)
+        try:
+            return await self._d.transaction(tx)
+        except (RootsUnreadable, ValueError):
+            raise  # already plain (corrupt list), or the owner's mistake (FULL)
+        except Exception as exc:  # noqa: BLE001 — storage trouble: nothing changed, say so
+            log.warning("drive roots change failed", extra={"reason": type(exc).__name__})
+            raise RootsUnreadable(UNSAVED) from None
 
-    async def confirm(self, uid: str, folder_id: str, name: str) -> list[Root]:
-        """Add (or rename) a chosen folder. Raises ValueError past 20."""
+    async def confirm(self, uid: str, folder_id: str, name: str, *, email: str) -> list[Root]:
+        """Add (or rename) a chosen folder, with the address that switched it on. Raises
+        ValueError past MAX_ROOTS, or for an odd id or address."""
         if not DRIVE_ID.fullmatch(folder_id):
             raise ValueError("not a Drive id")
+        address = owner_address(email)
         label = one_line(name, NAME_LIMIT) or "(no name)"
 
         def add(current: list[Root]) -> list[Root]:
@@ -125,14 +159,10 @@ class RootsStore:
             if len(kept) >= MAX_ROOTS:
                 raise ValueError(FULL)
             old = next((r for r in current if r.id == folder_id), None)
-            at = old.confirmed_at if old is not None else self._now()
-            return (
-                [*kept, Root(folder_id, label, at)]
-                if old is None
-                else [
-                    Root(r.id, label, r.confirmed_at) if r.id == folder_id else r for r in current
-                ]
-            )
+            if old is None:
+                return [*kept, Root(folder_id, label, self._now(), address)]
+            new = Root(folder_id, label, old.confirmed_at, address)
+            return [new if r.id == folder_id else r for r in current]
 
         return await self._change(uid, add)
 
@@ -144,4 +174,4 @@ def describe(roots: list[Root]) -> list[dict[str, Any]]:
     return [{"id": r.id, "name": r.name, "confirmed_at": r.confirmed_at.isoformat()} for r in roots]
 
 
-__all__ = ["FULL", "UNREADABLE", "Root", "RootsStore", "describe"]
+__all__ = ["FULL", "UNREADABLE", "UNSAVED", "Root", "RootsStore", "describe", "owner_address"]

@@ -28,6 +28,9 @@ class Preview:
 
     summary: str
     risk: ActionRisk | None = None
+    # Another tool's name whose permission rule also governs this call: a calendar tool that finds
+    # it is about to touch a reminder names the Reminders row, so "Never" there is total.
+    also: str | None = None
 
 
 PreviewFn = Callable[[dict[str, Any]], Awaitable[Preview]]

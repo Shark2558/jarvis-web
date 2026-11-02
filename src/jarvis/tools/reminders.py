@@ -412,7 +412,8 @@ class ReminderAPI:
         }
         if rule is not None:
             body["recurrence"] = [rule]
-        if require_tool_context().outside:  # D8: other people's words: never the owner's own
+        ctx = require_tool_context()
+        if ctx.outside:  # D8: other people's words: never the owner's own
             body = mark_outside(body)
         e = await self.cal.conn.request(
             uid, "POST", EVENTS_URL, params={"sendUpdates": "none"}, json=body
@@ -427,7 +428,7 @@ class ReminderAPI:
             "time_zone": tz.key,
             "note": DELETE_NOTE,
         }
-        return vouch(out, is_owner_authored_event(e))
+        return vouch(out, not ctx.outside and is_owner_authored_event(e))
 
     async def list_reminders(self, a: dict[str, Any]) -> Any:
         uid, tz = await self._zone()
@@ -467,13 +468,17 @@ class ReminderAPI:
         e = await self.cal._event(a)  # the authoritative look-up: the tag is checked here too
         _own_reminder(e, a)
         body = self._changes(a, e, tz)
-        if require_tool_context().outside:  # D8: keep its tag and properties, add the mark
+        ctx = require_tool_context()
+        if ctx.outside:  # D8: keep its tag and properties, add the mark
             body = mark_outside(body, e)
         eid = _validate_event_id(a.get("event_id"))
         out = await self.cal.conn.request(
             uid, "PATCH", f"{EVENTS_URL}/{eid}", params={"sendUpdates": "none"}, json=body
         )
-        return vouch({"status": "updated", **_shape(out, tz)}, is_owner_authored_event(out))
+        return vouch(
+            {"status": "updated", **_shape(out, tz)},
+            not ctx.outside and is_owner_authored_event(out),
+        )
 
     def _changes(self, a: dict[str, Any], e: dict[str, Any], tz: ZoneInfo) -> dict[str, Any]:
         body: dict[str, Any] = {}

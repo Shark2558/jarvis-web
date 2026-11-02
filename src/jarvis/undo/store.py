@@ -168,16 +168,34 @@ class DeletedStore:
                 return ClaimResult.UNKNOWN, None
             if item.restored:
                 return ClaimResult.RESTORED, item
+            since = item.restoring_since
+            live = since is not None and (now - since).total_seconds() < STALE_CLAIM_S
+            if item.restored_id and not live:  # a restore made the copy, then died: it IS back
+                back = item.model_copy(
+                    update={"restoring_since": None, "restored": True, "restored_at": now}
+                )
+                tx.set(path, encode(back))
+                return ClaimResult.RESTORED, back
             if item.expired(now):
                 return ClaimResult.EXPIRED, item
-            since = item.restoring_since
-            if since is not None and (now - since).total_seconds() < STALE_CLAIM_S:
+            if live:
                 return ClaimResult.BUSY, item
             claimed = item.model_copy(update={"restoring_since": now})
             tx.set(path, encode(claimed))
             return ClaimResult.CLAIMED, claimed
 
         return await self._d.transaction(fn)
+
+    async def note_made(self, uid: str, item_id: str, restored_id: str) -> None:
+        """A restore's root copy exists: record its id on the claim (the claim stays open)."""
+        path = self._path(uid, item_id)
+
+        async def fn(tx: DocTx) -> None:
+            item = decode(item_id, await tx.get(path))
+            if item is not None and not item.restored:
+                tx.set(path, encode(item.model_copy(update={"restored_id": restored_id})))
+
+        await self._d.transaction(fn)
 
     async def settle(
         self, uid: str, item_id: str, *, restored_id: str | None, now: datetime

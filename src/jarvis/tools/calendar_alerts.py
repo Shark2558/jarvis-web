@@ -21,6 +21,9 @@ from typing import Any
 REMINDER_KEY = "jarvis"
 REMINDER_VALUE = "reminder"
 REMINDER_FILTER = f"{REMINDER_KEY}={REMINDER_VALUE}"  # Events.list privateExtendedProperty
+# The Reminders permission row matches `reminder_*`: the names a calendar tool borrows when its
+# look-up finds it is about to change or delete a reminder (`Preview.also`).
+REMINDER_UPDATE, REMINDER_DELETE = "reminder_update", "reminder_delete"
 REMINDER_PREFIX = "⏰ "  # in the event title, so the Calendar app shows it is a reminder
 MAX_ALERTS = 5
 MAX_ALERT_MINUTES = 40_320  # 4 weeks

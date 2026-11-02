@@ -92,7 +92,7 @@ async def _approve(gw: Gateway, call: ToolCall, *, spoken: bool = False) -> Gate
     return await gw.execute(call, scope=SCOPE, confirmation_id=card.pending.id)
 
 
-# ---- the rule -----------------------------------------------------------------------------------
+# ---- the rule ----
 
 
 def test_a_marked_event_is_never_the_owners_own() -> None:
@@ -130,7 +130,7 @@ def test_the_calendar_undo_rule_is_the_provenance_rule() -> None:
         assert calendar_owner_authored(e) is is_owner_authored_event(e)
 
 
-# ---- the outside set --------------------------------------------------------------------------
+# ---- the outside set ----
 
 
 async def test_the_outside_set_marks_existing_and_new_todos() -> None:
@@ -187,7 +187,7 @@ async def test_marks_fail_loudly_when_they_cannot_be_kept(monkeypatch: pytest.Mo
         await full.add(UID, ["c"])
 
 
-# ---- which rounds count -----------------------------------------------------------------------
+# ---- which rounds count ----
 
 
 def test_content_taint_is_other_peoples_content_only() -> None:
@@ -357,7 +357,7 @@ async def test_a_card_stored_before_the_flag_existed_counts_as_outside() -> None
     assert out.outcome is GatewayOutcome.EXECUTED and seen == [True]
 
 
-# ---- events and reminders -----------------------------------------------------------------------
+# ---- events and reminders ----
 
 
 @pytest.fixture
@@ -445,7 +445,7 @@ async def test_reminders_from_outside_content_keep_their_tag_and_are_marked(
     }
 
 
-# ---- to-dos -------------------------------------------------------------------------------------
+# ---- to-dos ----
 
 
 def _todos() -> FakeTasks:
@@ -543,7 +543,7 @@ async def test_an_unreadable_set_makes_every_todo_untrusted() -> None:
     assert out.outcome is GatewayOutcome.EXECUTED and out.trusted is False
 
 
-# ---- Recently deleted -------------------------------------------------------------------------
+# ---- Recently deleted ----
 
 
 async def test_todo_delete_list_and_restore_are_trusted_by_the_kept_flag() -> None:
@@ -605,3 +605,125 @@ async def test_event_delete_and_restore_keep_the_events_verdict(
         assert back.outcome is GatewayOutcome.EXECUTED and back.trusted is trusted
         sent = _body(fake_google, "POST", "/calendars/primary/events")
         assert is_marked_outside(sent) is (not trusted)
+
+
+# ---- review follow-ups: a failed insert, expiry, and vouching without Google's echo ----
+
+
+async def test_a_failed_insert_drops_its_pending_token() -> None:
+    """Review MEDIUM: one Google 5xx in an outside round must not leave a token that makes every
+    later to-do count as outside."""
+    fake, marks = _todos(), OutsideTasks(MemoryDocs(), clock=lambda: NOW)
+    gw = await _tgw(fake, marks)
+    fake.fail["insert"] = 400  # refused: nothing was made
+    out = await _approve(gw, ADD_TODO)
+    assert out.outcome is GatewayOutcome.ERROR and fake.changes("insert") == []
+    got = await marks.read(UID)
+    assert got is not None and got.pending_since is None
+    fake.fail.clear()
+    assert (await _list(gw)).trusted is True
+
+
+async def test_an_insert_google_may_have_made_keeps_its_token_until_it_expires() -> None:
+    """A 5xx or lost answer may follow a committed insert: the token stays, then ages out."""
+    clock = {"now": NOW}
+    fake, marks = _todos(), OutsideTasks(MemoryDocs(), clock=lambda: clock["now"])
+    gw = await _tgw(fake, marks)
+    fake.fail["insert"] = 503
+    assert (await _approve(gw, ADD_TODO)).outcome is GatewayOutcome.ERROR
+    held = await marks.read(UID)
+    assert held is not None and held.pending_since is not None
+    fake.fail.clear()
+    assert (await _list(gw)).trusted is False
+    clock["now"] = NOW + timedelta(hours=2)
+    assert (await _list(gw)).trusted is True
+
+
+async def test_a_token_that_cannot_be_dropped_never_masks_the_inserts_error() -> None:
+    class DropFails(MemoryDocs):
+        calls = 0
+
+        async def transaction(self, fn: Any) -> Any:
+            DropFails.calls += 1
+            if DropFails.calls > 1:  # begin works; the drop (and anything after) does not
+                raise RuntimeError("store down")
+            return await super().transaction(fn)
+
+    fake = _todos()
+    fake.fail["insert"] = 400
+    gw = await _tgw(fake, OutsideTasks(DropFails(), clock=lambda: NOW))
+    out = await _approve(gw, ADD_TODO)
+    assert out.outcome is GatewayOutcome.ERROR and out.raised is True
+    assert "store down" not in (out.error or "")  # the tool's own failure, not the cleanup's
+
+
+async def test_a_pending_token_expires_after_an_hour_and_the_sweep_prunes_it() -> None:
+    clock = {"now": NOW}
+    marks = OutsideTasks(MemoryDocs(), clock=lambda: clock["now"])
+    await marks.begin(UID)
+    clock["now"] = NOW + timedelta(minutes=50)
+    young = await marks.read(UID)
+    assert young is not None and young.pending_since is not None
+    assert await marks.sweep([UID]) == 0  # still inside its hour
+    clock["now"] = NOW + timedelta(hours=2)
+    old = await marks.read(UID)
+    assert old is not None and old.pending_since is None  # no longer taints the list
+    assert await marks.sweep([UID]) == 1
+    doc = await marks._d.get(f"jarvis_outside_tasks/{UID}")
+    assert doc is not None and doc["pending"] == {}
+
+
+async def test_the_sweep_is_bounded_and_never_raises() -> None:
+    assert await OutsideTasks(UnreadableDocs(), clock=lambda: NOW).sweep([UID, "u_other"]) == 0
+    many = [f"u{i}" for i in range(task_marks.SWEEP_OWNERS + 50)]
+    assert await OutsideTasks(MemoryDocs(), clock=lambda: NOW).sweep(many) == 0
+
+
+def _unmarked_echo(fake: FakeGoogle, method: str, url: str, event: dict[str, Any]) -> None:
+    fake.on(method, url, httpx.Response(200, json=event))  # Google drops the private mark
+
+
+async def test_vouching_never_depends_on_google_echoing_the_mark(
+    cal: Gateway, fake_google: FakeGoogle
+) -> None:
+    """Review LOW: a write from an outside round is untrusted even if the answer lacks the mark."""
+    tag = {"private": {"jarvis": "reminder"}}
+    args = {"summary": "Dentist", "start": "2027-01-15T16:00:00", "end": "2027-01-15T16:30:00"}
+    _unmarked_echo(fake_google, "POST", EVENTS, _event())
+    made = await _approve(cal, ToolCall(id="c", name="calendar_create_event", arguments=args))
+    assert made.outcome is GatewayOutcome.EXECUTED and made.trusted is False
+    _unmarked_echo(fake_google, "GET", f"{EVENTS}/evdentist1", _event())
+    _unmarked_echo(fake_google, "PATCH", f"{EVENTS}/evdentist1", _event())
+    upd = ToolCall(id="u", name="calendar_update_event",
+                   arguments={"event_id": "evdentist1", "location": "x"})  # fmt: skip
+    assert (await _approve(cal, upd)).trusted is False
+    rem = _event("remnew001", summary="⏰ call Ravi", extendedProperties=tag)
+    _unmarked_echo(fake_google, "POST", EVENTS, rem)
+    add = ToolCall(id="a", name="reminder_add",
+                   arguments={"text": "call Ravi", "when": "2027-01-15T18:00:00"})  # fmt: skip
+    assert (await _approve(cal, add)).trusted is False
+    rem2 = _event("remravi01", summary="⏰ call Ravi", extendedProperties=tag)
+    _unmarked_echo(fake_google, "GET", f"{EVENTS}/remravi01", rem2)
+    _unmarked_echo(fake_google, "PATCH", f"{EVENTS}/remravi01", rem2)
+    radd = ToolCall(id="r", name="reminder_update",
+                    arguments={"event_id": "remravi01", "text": "call Ravi now"})  # fmt: skip
+    assert (await _approve(cal, radd)).trusted is False
+
+
+async def test_a_restore_whose_insert_is_refused_drops_its_pending_token() -> None:
+    fake, marks = _todos(), OutsideTasks(MemoryDocs(), clock=lambda: NOW)
+    fake.add("L1", "Invoice from vendor", id="t_mail", links=GMAIL_LINK)
+    undo = UndoBin(DeletedStore(MemoryDocs()), clock=lambda: NOW)
+    gw = await _tgw(fake, marks, undo)
+
+    async def run(name: str, args: dict[str, Any]) -> GatewayResult:
+        with context_trust(untrusted=False):
+            return await gw.execute(ToolCall(id="x", name=name, arguments=args), scope=SCOPE)
+
+    mail = await run("task_delete", {"task_id": "L1:t_mail"})
+    assert mail.outcome is GatewayOutcome.EXECUTED
+    fake.fail["insert"] = 400
+    back = await run("deleted_restore", {"undo_id": mail.result["undo_id"]})
+    assert back.outcome is GatewayOutcome.ERROR
+    got = await marks.read(UID)
+    assert got is not None and got.pending_since is None

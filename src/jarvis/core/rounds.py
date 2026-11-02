@@ -42,6 +42,9 @@ def undo_refs(
     return out
 
 
+MAY_NOT_BE_DONE = "(may not have been done)"
+
+
 @dataclass
 class Rounds:
     """One owner message's tool rounds: the session to continue with (a reload replaces it), how
@@ -61,14 +64,16 @@ class Rounds:
     def note(
         self, registry: ToolRegistry, calls: Sequence[ToolCall], results: Sequence[GatewayResult]
     ) -> None:
-        """Remember each call of this round that ran and can change something."""
+        """Remember each call of this round that ran and can change something. A tool that
+        raised ran too — it may have written before it failed — and is noted as such."""
         self.undo += undo_refs(registry, calls, results)
         for call, gr in zip(calls, results, strict=True):
-            if gr.outcome is not GatewayOutcome.EXECUTED:
+            if not gr.ran:
                 continue
             tool = registry.get(call.name)
             if tool is not None and tool.effective_risk(call.arguments) is not ActionRisk.READ_ONLY:
-                self.done.append(tool.summary(call.arguments))
+                said = tool.summary(call.arguments)
+                self.done.append(said if not gr.raised else f"{said} {MAY_NOT_BE_DONE}")
 
     async def store(self, store: SessionStore, turns: Sequence[Turn]) -> bool:
         """Store `self.session`, whose last `turns` were just appended. Before any write: a plain

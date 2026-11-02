@@ -153,8 +153,9 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "reminders",
         "Reminders",
         "Set, change and delete reminders",
-        "Pop-ups on your phone from the Google Calendar app. A reminder is deleted like an "
-        "event (Calendar), so Undo works for 30 days.",
+        "Pop-ups on your phone from the Google Calendar app. Never also stops the Calendar "
+        "tools changing or deleting a reminder. A reminder is deleted like an event, so Undo "
+        "works for 30 days.",
         R2,
         (_m("reminder_*"), _m("reminders_*")),
     ),

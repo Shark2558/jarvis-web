@@ -13,9 +13,12 @@ Layout:  {prefix}outside_tasks/{user_id}   ids: [task id, …]
 Fail closed at every step:
 - an existing to-do (update) is marked BEFORE it is changed; no mark → no change;
 - a new to-do (add, restore) gets a pending token BEFORE it is made (no token → nothing made),
-  and its id replaces the token after. If that second write fails the token stays, and every
-  to-do Google changed since a few minutes before it counts as outside (`OutsideSet`) — the new
-  one among them — until someone clears it by hand (logged loudly);
+  and its id replaces the token after. If the insert itself fails the token is dropped (best
+  effort) — unless Google may have made it anyway (`GoogleUncertain`), when it stays. If the
+  second write fails the token stays too, and every to-do Google changed since a few minutes
+  before it counts as outside (`OutsideSet`) — the new one among them. After `PENDING_TTL`
+  `read` ignores a token and the scheduler tick prunes it (`sweep`), so one failure never
+  taints every later to-do for good;
 - a set that can't be read (or a malformed one) makes every to-do count as outside.
 At most `MAX_IDS` ids: past that a mark fails, which fails the write that needed it.
 """
@@ -23,11 +26,12 @@ At most `MAX_IDS` ids: past that a mark fails, which fails the write that needed
 from __future__ import annotations
 
 import secrets
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from jarvis.integrations.google import GoogleUncertain
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs, DocTx
 from jarvis.tools.provenance import is_owner_authored_task
@@ -37,6 +41,8 @@ log = get_logger(__name__)
 
 MAX_IDS = 20_000
 PENDING_MARGIN = timedelta(minutes=5)  # Google's clock may run behind ours
+PENDING_TTL = timedelta(hours=1)  # an unfinished mark stops counting (and is pruned) after this
+SWEEP_OWNERS = 100  # owners one tick looks at
 
 
 def utcnow() -> datetime:
@@ -100,7 +106,8 @@ class OutsideTasks:
         """The set now; None when it can't be read (callers: no to-do is the owner's own)."""
         try:
             ids, pending = _decode(await self._d.get(self._path(uid)))
-            times = [_when(v) for v in pending.values()]
+            now = self._clock()
+            times = [t for v in pending.values() if not self._expired(t := _when(v), now)]
         except Exception as exc:  # noqa: BLE001 — unreadable: fail closed, never raise
             log.error("outside to-do set unreadable", extra={"error": type(exc).__name__})
             return None
@@ -108,6 +115,11 @@ class OutsideTasks:
             return OutsideSet(frozenset(ids), datetime.min.replace(tzinfo=UTC))
         since = min((t for t in times if t is not None), default=None)
         return OutsideSet(frozenset(ids), since - PENDING_MARGIN if since else None)
+
+    @staticmethod
+    def _expired(since: datetime | None, now: datetime) -> bool:
+        """A readable token older than `PENDING_TTL` (an unreadable one never expires: closed)."""
+        return since is not None and now - since >= PENDING_TTL
 
     async def _change(
         self, uid: str, add: Iterable[str], token: str | None, drop: str | None
@@ -138,6 +150,42 @@ class OutsideTasks:
         token = secrets.token_hex(8)
         await self._change(uid, (), token, None)
         return token
+
+    async def failed(self, uid: str, token: str, exc: Exception) -> None:
+        """The make raised `exc`. Unless Google may have made the to-do anyway
+        (`GoogleUncertain`: no answer, a 5xx), nothing exists: drop the token. Best effort —
+        logged, never raised, so it can't mask `exc`. An uncertain make keeps the token (fail
+        closed) until it expires."""
+        if isinstance(exc, GoogleUncertain):
+            return
+        try:
+            await self._change(uid, (), None, token)
+        except Exception as err:  # noqa: BLE001
+            log.error("pending to-do mark not dropped", extra={"error": type(err).__name__})
+
+    async def sweep(self, owners: Sequence[str]) -> int:
+        """Prune expired pending tokens of up to `SWEEP_OWNERS` owners; returns how many went.
+        Housekeeping: never raises, one owner never blocks another."""
+        gone = 0
+        for uid in list(owners)[:SWEEP_OWNERS]:
+            try:
+                gone += await self._prune(uid)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("outside to-do sweep failed", extra={"error": type(exc).__name__})
+        return gone
+
+    async def _prune(self, uid: str) -> int:
+        path = self._path(uid)
+        now = self._clock()
+
+        async def fn(tx: DocTx) -> int:
+            ids, pending = _decode(await tx.get(path))
+            kept = {k: v for k, v in pending.items() if not self._expired(_when(v), now)}
+            if len(kept) != len(pending):
+                tx.set(path, {"user_id": uid, "ids": ids, "pending": kept})
+            return len(pending) - len(kept)
+
+        return int(await self._d.transaction(fn))
 
     async def finish(self, uid: str, token: str, task_ids: Iterable[str]) -> None:
         """After: the new ids replace the token. A failure keeps the token (fail closed) and is

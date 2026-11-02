@@ -135,6 +135,15 @@ class TooManyApprovals(PermissionError):
 ActionMatcher = Callable[[PendingAction], bool]
 
 
+def carried_reason(stored: AskReason | None, fresh: AskReason | None) -> AskReason | None:
+    """The reason a card keeps when the same call is proposed again: the old one, unless the new
+    one is one-by-one by itself (RISK, DRAFT_RECIPIENT) or there was none (a card from before the
+    field). A one-by-one card never turns bulk."""
+    if fresh in (AskReason.RISK, AskReason.DRAFT_RECIPIENT) or stored is None:
+        return fresh
+    return stored
+
+
 def same_card(stored: PendingAction, proposed: PendingAction) -> bool:
     """Is `proposed` exactly the action the owner saw on `stored`'s card? Same tool, arguments
     (drift → re-confirm) and conversation — and (slice 10 D) the same card text and the same
@@ -240,8 +249,14 @@ class ConfirmationGate:
             # the same proposal twice must not become two approvals (= two sends)
             existing = next((p for p in await self.store.pending_in(action.scope) if same(p)), None)
             if existing is not None:
-                if action.outside and existing.outside is False:  # D8: never forgotten
-                    existing = existing.model_copy(update={"outside": True})
+                merged = {  # D8: outside is never forgotten; the stricter reason wins
+                    "outside": True
+                    if action.outside and existing.outside is False
+                    else existing.outside,
+                    "reason": carried_reason(existing.reason, action.reason),
+                }
+                if merged["outside"] != existing.outside or merged["reason"] != existing.reason:
+                    existing = existing.model_copy(update=merged)
                     await self.store.put(existing)
                 raise ConfirmationRequired(existing)
             if not new_allowed:

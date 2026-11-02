@@ -20,9 +20,10 @@ sweep    the scheduler tick's housekeeping: expired items go (no Firestore TTL: 
 
 from __future__ import annotations
 
+import contextvars
 import json
 import secrets
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
@@ -67,6 +68,22 @@ class SnapshotFailed(RuntimeError):
 
 class StillThere(RuntimeError):
     """The original is still there (its delete never happened): no copy is made (plain words)."""
+
+
+# Review LOW: while a restore runs, how its restorer tells the bin "the root copy exists now" (the
+# bin writes the new id into the claim). A crash after that point can then never lead to a second
+# copy: a later click finds a claim that already carries the id. A context variable, so the
+# Restorer signature stays as it was.
+_made: contextvars.ContextVar[Callable[[str], Awaitable[None]] | None] = contextvars.ContextVar(
+    "jarvis_undo_made", default=None
+)
+
+
+async def record_made(new_id: str) -> None:
+    """Called by a restorer as soon as the item's root copy exists. Outside a restore: nothing."""
+    note = _made.get()
+    if note is not None:
+        await note(new_id)
 
 
 @dataclass(frozen=True)
@@ -174,6 +191,7 @@ class UndoBin:
         if restorer is None:
             await self._release(uid, item.id)
             return _outcome(item, RestoreStatus.UNAVAILABLE, MSG_UNAVAILABLE)
+        token = _made.set(lambda new_id: self._note_made(uid, item.id, new_id))
         try:
             done = await restorer.restore(uid, item, outside=not item.owner_authored)
         except StillThere as exc:  # never deleted: nothing to bring back, nothing made
@@ -182,10 +200,21 @@ class UndoBin:
         except Exception:  # released for another try; the restorer's plain words propagate
             await self._release(uid, item.id)
             raise
+        finally:
+            _made.reset(token)
         await self._mark_restored(uid, item.id, done.new_id)
         word = KIND_WORDS[item.kind]
         msg = f"Restored the {word} (it is a new copy: links to the old one no longer work)."
         return _outcome(item, RestoreStatus.RESTORED, msg, new_id=done.new_id, note=done.note)
+
+    async def _note_made(self, uid: str, item_id: str, new_id: str) -> None:
+        """Best effort, never raises: the copy exists either way and the restore carries on."""
+        try:
+            await self.store.note_made(uid, item_id, new_id)
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "restored copy not recorded on its claim", extra={"error": type(exc).__name__}
+            )
 
     async def _release(self, uid: str, item_id: str) -> None:
         """End a claim without a restore. Never raises: the caller's own outcome or error
@@ -258,5 +287,6 @@ __all__ = [
     "SnapshotFailed",
     "StillThere",
     "UndoBin",
+    "record_made",
     "utcnow",
 ]

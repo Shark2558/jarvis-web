@@ -18,7 +18,7 @@ from jarvis.undo.models import (
     UndoRef,
     all_owner_authored,
 )
-from jarvis.undo.service import Restored, SnapshotFailed, StillThere, UndoBin
+from jarvis.undo.service import Restored, SnapshotFailed, StillThere, UndoBin, record_made
 from jarvis.undo.store import ClaimResult, DeletedStore
 
 NOW = datetime(2027, 1, 15, 3, 0, tzinfo=UTC)
@@ -332,3 +332,52 @@ def test_undo_ref_is_read_only_from_a_delete_result() -> None:
     assert UndoRef.from_result({"undo_id": "evil<script>"}) is None
     assert UndoRef.from_result({"deleted": True}) is None
     assert UndoRef.from_result("not a dict") is None
+
+
+class MadeThenCrash(FakeRestorer):
+    """Makes the root copy, tells the bin so, then dies before the bin hears it finished."""
+
+    def __init__(self, *, error: BaseException) -> None:
+        super().__init__()
+        self.error = error
+
+    async def restore(self, uid: str, item: DeletedItem, *, outside: bool = False) -> Restored:
+        self.calls.append((uid, item.snapshot))
+        await record_made("new1")
+        raise self.error
+
+
+@pytest.mark.parametrize("error", [asyncio.CancelledError(), RuntimeError("store down")])
+async def test_a_restore_that_made_the_copy_then_died_is_never_made_twice(
+    error: BaseException,
+) -> None:
+    """Review LOW: the claim carries the new id as soon as the root exists, so a click after the
+    stale-claim window (or after a release) says "already restored" instead of a duplicate."""
+    clock = Clock()
+    restorer = MadeThenCrash(error=error)
+    b = UndoBin(DeletedStore(MemoryDocs(), prefix="t_"), clock=clock)
+    b.register("task", restorer)
+    item = await b.keep(UID, "task", "Call plumber", {})
+    with pytest.raises(type(error)):
+        await b.restore(UID, item.id)
+    clock.now = NOW + timedelta(minutes=10)  # past the stale-claim window
+    again = await b.restore(UID, item.id)
+    assert again.status is RestoreStatus.ALREADY_RESTORED and again.new_id == "new1"
+    assert len(restorer.calls) == 1
+    kept = await b.store.get(UID, item.id)
+    assert kept is not None and kept.restored is True and kept.restoring_since is None
+
+
+async def test_a_claim_with_a_new_id_still_in_its_window_is_busy_not_restored() -> None:
+    clock = Clock()
+    restorer = MadeThenCrash(error=asyncio.CancelledError())
+    b = UndoBin(DeletedStore(MemoryDocs(), prefix="t_"), clock=clock)
+    b.register("task", restorer)
+    item = await b.keep(UID, "task", "Call plumber", {})
+    with pytest.raises(asyncio.CancelledError):
+        await b.restore(UID, item.id)
+    assert (await b.restore(UID, item.id)).status is RestoreStatus.BUSY
+
+
+async def test_record_made_outside_a_restore_is_a_no_op() -> None:
+    await record_made("anything")

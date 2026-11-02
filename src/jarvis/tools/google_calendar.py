@@ -32,7 +32,14 @@ from jarvis.integrations.google import GoogleAPIError, GoogleConnector
 from jarvis.logging import get_logger
 from jarvis.tools.addresses import MAX_RECIPIENTS, loose_address, parse_address
 from jarvis.tools.base import Preview, Tool
-from jarvis.tools.calendar_alerts import MAX_ALERT_MINUTES, alert_minutes, popup_reminders
+from jarvis.tools.calendar_alerts import (
+    MAX_ALERT_MINUTES,
+    REMINDER_DELETE,
+    REMINDER_UPDATE,
+    alert_minutes,
+    is_reminder,
+    popup_reminders,
+)
 from jarvis.tools.calendar_cards import create_card, delete_card, others_on, update_card
 from jarvis.tools.calendar_undo import CalendarRestorer, delete_kept, delete_risk
 from jarvis.tools.card import one_line
@@ -328,7 +335,7 @@ class CalendarAPI:
         e = await self.conn.request(
             uid, "POST", EVENTS_URL, params={"sendUpdates": updates}, json=body
         )
-        return vouch(self._written(e, tz), is_owner_authored_event(e))
+        return vouch(self._written(e, tz), not ctx.outside and is_owner_authored_event(e))
 
     async def update_event(self, a: dict[str, Any]) -> Any:
         ctx = require_tool_context()
@@ -346,7 +353,7 @@ class CalendarAPI:
         e = await self.conn.request(
             uid, "PATCH", f"{EVENTS_URL}/{eid}", params={"sendUpdates": "all"}, json=body
         )
-        return vouch(self._written(e, tz), is_owner_authored_event(e))
+        return vouch(self._written(e, tz), not ctx.outside and is_owner_authored_event(e))
 
     async def delete_event(self, a: dict[str, Any]) -> Any:
         """With the bin, the result is the owner's own when the deleted event was (D8: the flag
@@ -372,18 +379,20 @@ class CalendarAPI:
 
     async def preview_delete(self, a: dict[str, Any]) -> Preview:
         e = await self._event(a)
+        also = REMINDER_DELETE if is_reminder(e) else None
         if self.undo is None:
-            return Preview(delete_card(e), ActionRisk.IRREVERSIBLE)
+            return Preview(delete_card(e), ActionRisk.IRREVERSIBLE, also)
         risk, why = delete_risk(e)
         undoable = risk is ActionRisk.REVERSIBLE
-        return Preview(delete_card(e, undo=undoable, why=why), None if undoable else risk)
+        return Preview(delete_card(e, undo=undoable, why=why), None if undoable else risk, also)
 
     async def preview_update(self, a: dict[str, Any]) -> Preview:
         e = await self._event(a)
         guests = _validate_attendees(a["attendees"]) if "attendees" in a else None
         affects_others = bool(others_on(e)) or guests is not None
         risk = ActionRisk.IRREVERSIBLE if affects_others else None
-        return Preview(update_card(e, a, guests), risk)
+        also = REMINDER_UPDATE if is_reminder(e) else None
+        return Preview(update_card(e, a, guests), risk, also)
 
     def _written(self, e: dict[str, Any], tz: ZoneInfo) -> dict[str, Any]:
         start, _ = _event_time(e.get("start"), tz)

@@ -318,3 +318,35 @@ def test_chat_response_documents_the_undo_field() -> None:
     field = ChatResponse.model_fields["undo"]
     assert "Undo" in (field.description or "")
     assert "undo" in json.dumps(ChatResponse.model_json_schema()["properties"])
+
+
+async def test_the_scheduler_tick_prunes_unfinished_todo_marks(settings: Settings) -> None:
+    """Review MEDIUM: an unfinished outside-to-do mark is pruned by the tick, never raising."""
+    from test_scheduler_auth import KEY, SA, FakeJWKS, token, verifier
+
+    s = settings.model_copy(
+        update={
+            "brief_scheduler_sa": SA,
+            "public_base_url": "http://test",
+            "api_token": SecretStr("cli-token"),
+            "session_backend": SessionBackend.FIRESTORE,
+        }
+    )
+    app = create_app(
+        s,
+        provider=MockProvider(),
+        store=InMemorySessionStore(),
+        scheduler_verifier=verifier(FakeJWKS(KEY)),
+        undo=UndoBin(DeletedStore(MemoryDocs())),
+    )
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            swept: list[list[str]] = []
+
+            async def spy(owners: Any) -> int:
+                swept.append(list(owners))
+                return 0
+
+            app.state.outside_tasks.sweep = spy
+            r = await c.post(TICK_PATH, headers={"Authorization": f"Bearer {token()}"})
+            assert r.status_code == 200 and swept == [list(app.state.brief.owners)]

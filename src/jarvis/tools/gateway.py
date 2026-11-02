@@ -82,6 +82,7 @@ from jarvis.core.guardrails import (
     ConfirmationRequired,
     PendingAction,
     TooManyApprovals,
+    carried_reason,
 )
 from jarvis.llm.base import ToolCall, ToolResultBlock
 from jarvis.logging import get_logger
@@ -246,9 +247,8 @@ def _carried(stored: PendingAction, fresh: PendingAction) -> PendingAction:
     one-by-one by itself (a one-by-one card never turns bulk). Outside (D8): once outside, always
     — and a card from before the field (None) counts as outside."""
     outside = stored.outside is not False or bool(fresh.outside)
-    if fresh.reason in (AskReason.RISK, AskReason.DRAFT_RECIPIENT) or stored.reason is None:
-        return fresh.model_copy(update={"outside": outside})
-    return fresh.model_copy(update={"reason": stored.reason, "outside": outside})
+    reason = carried_reason(stored.reason, fresh.reason)
+    return fresh.model_copy(update={"reason": reason, "outside": outside})
 
 
 def _changed(stored: PendingAction, fresh: PendingAction) -> str:
@@ -412,6 +412,8 @@ class Gateway:
             if isinstance(looked, GatewayResult):
                 return looked
             risk, card = _higher(risk, looked.risk), looked.summary
+            if looked.also and policy.denied_by(looked.also, risk, call.arguments):
+                return await self._denied(tool, call, risk, policy, looked.also)  # "Never" is total
             ruled = policy.decide(tool.name, risk, call.arguments)
             effect = _tightened(ruled, risk, confirmation_id, asks)
         if effect is Effect.DENY:
@@ -638,9 +640,10 @@ class Gateway:
             )
 
     async def _denied(
-        self, tool: Tool, call: ToolCall, risk: ActionRisk, policy: Policy
+        self, tool: Tool, call: ToolCall, risk: ActionRisk, policy: Policy, name: str | None = None
     ) -> GatewayResult:
-        rule = policy.denied_by(tool.name, risk, call.arguments)
+        """`name`: the tool name the rule matched, when not the tool's own (`Preview.also`)."""
+        rule = policy.denied_by(name or tool.name, risk, call.arguments)
         source = rule.source if rule is not None else "config"
         await self.audit.append(
             agent=tool.agent,

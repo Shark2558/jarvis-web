@@ -311,7 +311,12 @@ class TasksAPI:
         list_id = target.id if target else DEFAULT_LIST
         # D8: from other people's words → a pending mark first (none stored → nothing added)
         token = await self.marks.begin(uid) if ctx.outside else None
-        t = await self.client.insert(uid, list_id, body)
+        try:
+            t = await self.client.insert(uid, list_id, body)
+        except Exception as exc:  # a failed make must not leave its token behind
+            if token is not None:
+                await self.marks.failed(uid, token, exc)
+            raise
         if token is not None:
             await self.marks.finish(uid, token, [str(t["id"])])
         out: dict[str, Any] = {

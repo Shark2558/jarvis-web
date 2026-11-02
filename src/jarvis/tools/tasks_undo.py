@@ -43,7 +43,7 @@ from jarvis.tools.task_marks import OutsideSet, OutsideTasks, owner_authored_tas
 from jarvis.tools.tasks_api import TaskRef, TasksClient, valid_list_id, valid_task_id
 from jarvis.tools.undo_delete import delete_after_keep, keep_copy
 from jarvis.undo.models import DeletedItem
-from jarvis.undo.service import Restored, StillThere, UndoBin
+from jarvis.undo.service import Restored, StillThere, UndoBin, record_made
 from jarvis.undo.tools import deleted_result
 
 log = get_logger(__name__)
@@ -220,13 +220,19 @@ class TaskRestorer:
         if await self.client.exists(uid, TaskRef(list_id, root)):  # never deleted: no copy
             raise StillThere(STILL_THERE)
         token = await self.marks.begin(uid) if outside else None
-        parent = await self._still(uid, list_id, snapshot.get("parent"))
-        # a sibling is only "previous" at the same level: a gone parent → the top level, alone
-        had_parent = snapshot.get("parent") is not None
-        previous = None if had_parent and parent is None else snapshot.get("previous")
-        previous = await self._still(uid, list_id, previous)
-        body = _fields(_dict(snapshot.get("task")))
-        new_id = await self._insert(uid, list_id, body, parent, previous)
+        try:
+            parent = await self._still(uid, list_id, snapshot.get("parent"))
+            # a sibling is only "previous" at the same level: a gone parent → the top level, alone
+            had_parent = snapshot.get("parent") is not None
+            previous = None if had_parent and parent is None else snapshot.get("previous")
+            previous = await self._still(uid, list_id, previous)
+            body = _fields(_dict(snapshot.get("task")))
+            new_id = await self._insert(uid, list_id, body, parent, previous)
+        except Exception as exc:  # a failed make must not leave its token behind
+            if token is not None:
+                await self.marks.failed(uid, token, exc)
+            raise
+        await record_made(new_id)  # the claim now carries it: a crash from here on can't duplicate
         children = snapshot.get("children")
         kids = list(children) if isinstance(children, list) else []
         ids = {root: new_id}  # filled by _children: every to-do this restore made or moved

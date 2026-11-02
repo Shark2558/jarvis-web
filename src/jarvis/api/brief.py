@@ -115,6 +115,9 @@ async def tick(request: Request, svc: BriefService = Depends(_svc)) -> TickResul
     undo = getattr(request.app.state, "undo", None)
     if undo is not None:  # Recently deleted past 30 days (slice 11; no billed TTL): never raises
         await undo.sweep(svc.owners)
+    marks = getattr(request.app.state, "outside_tasks", None)
+    if marks is not None:  # unfinished outside-to-do marks past an hour (slice 11 D8): never raises
+        await marks.sweep(svc.owners)
     perms = getattr(request.app.state, "permissions", None)
     if perms is not None:  # passkey challenges never answered (slice 11 D7 c): never raises
         await perms.sweep_challenges()

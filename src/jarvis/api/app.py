@@ -240,6 +240,7 @@ def create_app(
         # Recently deleted (slice 11): the owner's deletes keep a copy here for 30 days (undo);
         # only on persistent storage, else None and deletes stay R3
         app.state.undo = undo or build_undo(s, built, docs)
+        app.state.outside_tasks = OutsideTasks(docs, prefix=s.firestore_prefix)  # D8 (swept)
         gw: Gateway | None = gateway
         if gw is None and s.tools_enabled:
             gw = build_gateway(
@@ -252,7 +253,7 @@ def create_app(
                 documents=app.state.documents,
                 undo=app.state.undo,
                 # D8: to-dos JARVIS wrote from outside content, on the same documents
-                marks=OutsideTasks(docs, prefix=s.firestore_prefix),
+                marks=app.state.outside_tasks,
             )
         # slice 10 D: the owner's Allow / Ask first / Never rules and passkeys, on the same
         # documents; the gateway reads the rules on every call (one built elsewhere gets them too)

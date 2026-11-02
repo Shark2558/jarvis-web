@@ -272,3 +272,31 @@ all): `s11-fixc` (fast-forward), `s11-fix`, `s11-trust`. Every branch's behaviou
 767 lines (guard 800). New tests pin the trust rule on the fixer's paths and the merged fields.
 Known, not from this slice: `evals/memory` sensitive can fail rarely — it looks for a 3-digit value
 ("737") anywhere in the exported JSON, where a timestamp can contain it.
+
+### Final review follow-ups (2026-11-03, `s11-int` after cfd8834)
+
+The fresh-context review found no CRITICAL or HIGH; its 2 MEDIUM + 4 LOW are fixed, tests first
+(`tests/test_review_followups.py` and beside the neighbours):
+
+1. **Pending to-do token.** `OutsideTasks.failed` drops the token when the insert (or the
+   restore's inserts) raised — best effort, never masks the error — EXCEPT for `GoogleUncertain`
+   (a 5xx or lost answer may follow a committed insert: dropping would fail open, so that token
+   stays). A token older than `PENDING_TTL` (1 hour) is ignored by `read` and pruned by
+   `OutsideTasks.sweep`, which the scheduler tick runs (`app.state.outside_tasks`, at most
+   `SWEEP_OWNERS` owners, never raises). Residual, accepted: an insert whose answer was lost AND
+   whose id mark also failed is trusted again after the hour; the window is one unfinished write.
+2. **Reminders "Never" is total.** `Preview.also` lets a calendar tool's look-up name another
+   tool whose rule also governs the call: an update or delete of a tagged reminder names
+   `reminder_update` / `reminder_delete`, and the gateway refuses it (audited, plain words) when
+   the Reminders row is Never. Create cannot set the tag (the tool has no such field). The row's
+   hint now says Never covers the Calendar tools too. Calendar "Never" still blocks every
+   calendar tool.
+3. **Vouching without the echo.** `calendar_create/update_event` and `reminder_add/update` vouch
+   with `not ctx.outside and is_owner_authored_event(e)`.
+4. **To-do restore duplicate.** The restorer calls `undo.service.record_made(new_id)` as soon as
+   the root to-do exists; the bin writes it into the claim. A claim that carries a new id and is
+   no longer live counts as restored (`ClaimResult.RESTORED`); a live one is still busy.
+5. **`Rounds.note`** counts `gr.ran` (a raised tool may have partly written) above read-only,
+   worded "(may not have been done)".
+6. **Duplicate card.** `ConfirmationGate.check` merges `reason` with the same `carried_reason`
+   rule `_carried` uses (RISK and DRAFT_RECIPIENT win; never relaxed).

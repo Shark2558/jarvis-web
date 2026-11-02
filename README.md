@@ -139,7 +139,7 @@ jarvis/api/integrations.py       /connect/google, /connect/google/callback, /v1/
 | `calendar_list_events`, `calendar_free_slots`, `gmail_search`, `gmail_read` | R1 | no |
 | `calendar_create_event` without attendees, `calendar_update_event` of an event only you are on, `gmail_create_draft` | R2 | no |
 | `calendar_create_event` **with** attendees (invites = mail); `calendar_update_event` that changes attendees **or** touches an event that already has other attendees | R3 | **yes** |
-| `calendar_delete_event`, `gmail_send` | R3 | **always** — no "don't ask again" exists |
+| `calendar_delete_event`, `gmail_send` | R3 | **always** — no "don't ask again" exists (slice 11: a delete JARVIS can undo is R2, see below) |
 
 - **Approval cards say what will happen**: a send shows every recipient (an international domain
   also in punycode, so `pаypal.com` cannot pass for `paypal.com`), the subject, the first 200
@@ -189,6 +189,72 @@ jarvis/api/integrations.py       /connect/google, /connect/google/callback, /v1/
   `POST /v1/integrations/google/disconnect` revokes at Google (best effort) and forgets the tokens.
 - Only requested fields are passed to the model; search never returns bodies; read truncates at
   8 000 chars and lists attachments without fetching them; nothing from mail is written to memory.
+
+## Phase 2 · slice 11 — full control of calendar, reminders and to-dos (+ Approve all)
+
+The owner asked for "all rights" to add, change and delete events, reminders and to-dos. A
+literal "delete without asking" would break *R3 always asks*, so a delete of the owner's own item
+is made **undoable** instead: JARVIS keeps a full copy for 30 days in **Recently deleted**, and
+such a delete is R2 (it runs; Undo brings it back). Deletes that reach other people, or that
+can't be fully restored, stay R3. Plan, decisions D1–D8 and the integration notes:
+`docs/plans/phase2-slice11-full-control.md`. Persona `p4.2`.
+
+```
+jarvis/undo/                     Recently deleted on the Docs port: keep (fail-closed), restore
+                                 (claimed: never twice), purge, sweep; deleted_list / deleted_restore
+jarvis/tools/calendar_undo.py    which event deletes can be undone, the copy, the restore
+jarvis/tools/tasks_undo.py       the same for to-dos (with their subtasks)
+jarvis/tools/undo_delete.py      keep a copy, then delete; a lost answer is checked by reading again
+jarvis/tools/reminders.py        reminder_add · reminders_list · reminder_update (tagged pop-ups)
+jarvis/tools/provenance.py       D8: is a result entirely the owner's own? (the one rule) + vouch
+jarvis/tools/task_marks.py       D8: to-dos JARVIS wrote from other people's words
+jarvis/core/approve_all.py       Approve all: several R2 cards, one tap, one reply
+jarvis/api/deleted.py            /v1/deleted (list, restore, remove now)
+```
+
+| action | risk | confirms? |
+|---|---|---|
+| delete an event only you are on, that you organise, not repeating (a JARVIS reminder may repeat) | R2 | no — Undo for 30 days |
+| delete your own to-do (its subtasks are kept with it) | R2 | no — Undo for 30 days |
+| set / change a reminder (`reminder_add`, `reminder_update`); restore (`deleted_restore`) | R2 | no |
+| delete an event with guests, one you don't organise, a repeating or special one; a to-do assigned from Docs/Chat (or with such a subtask), or whose subtasks can't all be read | R3 | **yes** |
+| any delete on a server without persistent storage (no bin) | R3 | **yes** |
+
+- **Recently deleted** (D1): the copy is stored BEFORE the delete — none stored, nothing deleted.
+  A restore makes a new copy (new id; never the attendees), inserted with an id derived from the
+  undo id so a repeat after a lost answer finds the first; it never runs while the original is
+  still there. Meet links come back as a NEW link, attachments and source are re-attached; one
+  occurrence of a repeating reminder comes back as a one-off. A lost DELETE answer is checked by
+  reading the item again; when that fails too the copy is kept and the owner told to check.
+  Console: an **Undo** chip under a delete, and a *Recently deleted* panel (Restore, Remove now).
+- **Limits** (D3): at most 10 undo-able deletes run without a card per message; the 11th is an R2
+  card (at most 5 new cards per message). An approved R2 card never runs an R3 delete
+  (`ToolContext.approved_risk`): an event that gained guests meanwhile is refused.
+- **Permissions** (D5): own rows for deleting your events / to-dos ("kept 30 days"), Allow by
+  default; a "Never" stored on the old delete rows before the split keeps meaning never.
+- **Reminders** (D4): 5-minute transparent events tagged `jarvis=reminder` with a pop-up from the
+  Google Calendar app; `reminders_minutes` on events for "remind me 30 minutes before". A
+  repeating reminder's `id` is its series, `occurrence_id` the one occurrence.
+- **Approve all** (D6): `POST /v1/approvals/approve-all {session_id, ids}` approves the listed R2
+  cards one by one through the normal approval path (each re-checked), with no passkey. Never in
+  a batch: R3 cards, a draft to an address you didn't type, a memory write — they stay on their
+  own cards. The console shows "Approve all (n)" when two or more such cards wait.
+- **Trust by provenance** (D8): reading your own calendar, reminders or to-dos no longer counts
+  as reading other people's words, so "look up my dentist appointment, then move it" needs no
+  card. A result is trusted only when every item in it is yours (organiser and creator you,
+  nobody else on it; a to-do without Gmail/Docs links) — decided by the tool, kept as a
+  server-side flag beside the stored result, never from the model or a client. What JARVIS writes
+  from a mail or a web page is marked as not yours, so it never becomes trusted later. Mail, web,
+  documents and anything shared stay untrusted: the injection guard is unchanged for them.
+- **Hygiene** (D7): a Gmail draft to an address you didn't type this message asks; the Tavily
+  month is cross-checked with Tavily's own count once a day; stale passkey challenges are swept.
+
+```
+GET    /v1/deleted                     what can still be restored (newest first), kept_days, available
+POST   /v1/deleted/{id}/restore        restored | already_restored; 404 / 410 / 409 busy or still_there
+DELETE /v1/deleted/{id}                Remove now (can't be restored after)
+POST   /v1/approvals/approve-all       {session_id, ids ≤ 20} → one reply + a result per card
+```
 
 ## Quick start
 
@@ -266,6 +332,10 @@ pytest                              # 26 unit/integration tests, mock provider, 
 python evals/phase0/run.py          # Phase 0 exit gate against the real model
 python evals/phase0/run.py --mock   # plumbing smoke test only
 python evals/slice6/run.py --mock   # calendar Q&A (≥95 %) + injection suite (hard 0-gates)
+python evals/undo/run.py --mock     # slice 11: undo-able deletes, cap, restore (+ 4 controls)
+python evals/reminders/run.py --mock    # slice 11: reminders (plan evals 5, 6) (+ control)
+python evals/approvals/run.py --mock    # slice 11: Approve all, draft recipients (+ 3 controls)
+python evals/trust/run.py --mock    # slice 11 D8: provenance trust (+ 3 controls)
 python evals/run_all_mock.py        # everything above, mock mode (what CI should run)
 ```
 

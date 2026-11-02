@@ -1,6 +1,7 @@
 # Phase 2 · Slice 11 — Full control of calendar, reminders and to-dos (+ Approve all)
 
-Status: PLAN v1 · 2026-11-02 · branch `slice11` (from `main` @ 7f5a437, PR #16 merged)
+Status: PLAN v1 · 2026-11-02 · branch `slice11` (from `main` @ 7f5a437, PR #16 merged) ·
+integrated on `s11-int` (see Integration notes at the end)
 
 ## Owner request (2 Nov 20:23 IST)
 "I want to give all rights to jarvis add, edit delete events, reminders and tasks. Don't work on
@@ -190,3 +191,84 @@ mail saying "delete all my meetings" can't act. **Approve all** (below) makes th
 - **Evals**: `evals/approvals` (in `run_all_mock`): eval 8 with and without a passkey, scope and
   listing, risk rose → re-proposed; D7 a (7 cases); negative controls (R3 skip off → R3 runs;
   draft rule off → untyped drafts) must fail — they do.
+
+## Integration notes (2026-11-02, branch `s11-int`)
+Merged in order with merge commits on top of `slice11` @ a069701 (A undo, B reminders, C Approve
+all): `s11-fixc` (fast-forward), `s11-fix`, `s11-trust`. Every branch's behaviour is kept.
+
+**What the fixers decided** (from their commits):
+- *C review (`s11-fixc`).* MEDIUM-1: every card says why it asks (`PendingAction.reason`,
+  `AskReason`: untrusted_context, draft_recipient, spoken, owner_rule, cap, risk; set where the
+  gateway tightens Allow to Ask); `bulk_ok` is False for R3 / unknown risk, a draft to an untyped
+  address and any `memory_*` write, so Approve all reports those `needs_review` and leaves them on
+  their own cards (calendar / reminder / to-do cards after a mail stay one tap). The console counts
+  only `bulk_ok` cards, freezes the batch it shows and holds the button 1.5 s when it changes. LOW:
+  `owned()` (Approve all never creates a conversation; another owner's → 404), linear
+  `typed_addresses`, `GatewayResult.raised` / `ran` (only a call that reached its tool counts as
+  run), audit "confirmed; approve-all" (`approved_via`), `TOOL_FAILED` + `_safe_detail` (never a
+  tool's raw exception text), Tavily `_limit` / `_count` (0 = none set; NaN / inf are not counts).
+  `console-approvals.js` split out of `console.js` (750 lines).
+- *A/B review (`s11-fix`).* HIGH-1: undo-able deletes have their own R2 rows (`calendar_remove`,
+  `todo_remove`; `PolicyRule.except_tools` / `Matcher.exclude` keep them out of the change rows);
+  a Never stored on the old R3 row reads as Never on the new one until the owner sets it, and a
+  write pins the new rows. A lost DELETE answer (`GoogleUncertain`) is checked by reading the item
+  again (gone → done, still there → copy dropped, unreadable → `deleted: "unconfirmed"`, copy
+  kept); `GoogleConflict` (409) / `GoogleInvalid` (400). Restores: never while the original is
+  still there (`StillThere` → 409 `still_there`), an id derived from the undo id (a repeat finds
+  the first), a NEW Meet link, attachments and source re-attached, an occurrence of a repeating
+  reminder comes back as a one-off, a repeating restore gets the calendar's zone; settle retried
+  once. `ToolContext.approved_risk` / `allows()`: an approved R2 card never runs an R3 delete.
+  Assigned subtasks make a to-do delete R3; a refused `previous` (400) is retried once without it.
+  The bin is wired only on persistent storage (else deletes stay R3, `/v1/deleted` says
+  `available: false`); undo tools only with Google linked; `DeletedItem.session_id` / `trace_id`;
+  "Remove now" (`DELETE /v1/deleted/{id}`); undo chips only from `undoable` tools. Reminders:
+  `id` = the series, `occurrence_id` = the occurrence, `truncated` past 50; reminder_update only
+  for the owner's own (organizer and creator self); zone falls back to `Settings.user_timezone`;
+  year 1 / 9999 are plain errors. The eval fake Google keeps deleted events as cancelled (or 410),
+  validates insert bodies and makes base32hex ids.
+- *D8 (`s11-trust`).* See the D8 "as built" paragraphs above: `tools/provenance.py` is the one
+  owner-authored rule, `ToolResultBlock.trusted` set only by `GatewayResult.block`,
+  `taint.result_trusted` / `content_tainted`, `PendingAction.outside` + `ToolContext.outside`, the
+  `jarvis_src = "outside"` mark and `tools/task_marks.py`, `query` on the list tools and
+  `LOOKUP_RULE`; `evals/trust` and the flipped `d8` cases of `evals/undo` (control `trust`).
+
+**Where the sides met, and what was chosen:**
+- `PendingAction` carries `reason` and `outside`. A re-proposed card keeps the stricter of each
+  (`gateway._carried`: the old reason unless the new one is one-by-one; outside once outside, a
+  card from before the field counts as outside, OR-ed with the fresh value). A duplicate keeps
+  D8's rule (outside is never forgotten) and C's (the waiting card's reason stands).
+- `ToolContext` carries `approved_risk` and `outside`, both set by the gateway from the decision
+  and, on approval, the stored card (`outside` = the card's OR the round's — stricter than D8's
+  plain replace; the same in practice, approvals run outside a turn).
+- `GatewayResult`: `raised` / `ran` and `trusted` / `block()`; a raised result is an ERROR and
+  never vouches.
+- Restorer protocol: `restore(uid, item: DeletedItem, *, outside=False)` — the item for the
+  fixer's deterministic id, `outside = not item.owner_authored` from the bin (D8).
+- Trust over the fixer's paths: a delete result (also `deleted: "unconfirmed"`) vouches by the
+  kept copy's flag; a restore by its own id, with a new Meet request and attachments, carries the
+  outside mark when the item was not his; the to-do restore checks still-there BEFORE storing the
+  pending outside mark (a restore that makes nothing leaves nothing pending); `reminders_list`
+  vouches over every row it lists (series ids and `query` alongside `truncated`; the cut note
+  mentions query words). `calendar_undo` / `tasks_undo.owner_authored` stay thin wrappers over
+  `provenance`. `reminder_update`'s own check (organizer and creator self) is an ownership gate,
+  not the D8 rule, and stays: a reminder JARVIS made from a mail can still be changed, and a later
+  list of it is untrusted.
+- Undo chips: s11-fix computed the chip in `brain_decisions.approved`; C's rule is that nothing
+  after a call ran may relabel it. The chip is now `Decision.undo`, worked out by `_chips`, which
+  never raises; Approve all takes `d.undo` (its "bookkeeping raises" test patches the new place).
+- `evals/reminders` e5-change-a-reminder: s11-fix planted creator self (reminder_update now needs
+  it), which under D8 made the look-up trusted, so the card it expected no longer came. The case
+  now also lists a reminder a delegate created (still a card); new
+  `e5-change-own-reminder-after-list` covers the D8 no-card path. `tests/test_trust_outside`'s
+  event restore serves the deleted original as cancelled (the restore now checks first).
+- `fake_google`: both realism sets (cancelled / 410, insert validation, base32hex ids) and
+  organizer / creator self from its `owner` field.
+
+**Also here:** `brain_decisions.single` counts a single approve as done only when the call ran
+(`GatewayResult.ran`, as Approve all does) — a refusal at approval time is `tool_calls: 0`.
+`PERSONA_VERSION` p4.1 → p4.2 once for the slice. `Gateway.execute` split into `_known`, `_rule`
+(→ `_Ruling`), `_hold` + `_audit_intent`, `_run` and pure helpers (`_higher`, `_card`,
+`_executed`, `_tool_failed`): 123 → 26 lines, behaviour and tests unchanged. brain.py stays at
+767 lines (guard 800). New tests pin the trust rule on the fixer's paths and the merged fields.
+Known, not from this slice: `evals/memory` sensitive can fail rarely — it looks for a 3-digit value
+("737") anywhere in the exported JSON, where a timestamp can contain it.

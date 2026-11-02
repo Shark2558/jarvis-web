@@ -8,6 +8,16 @@ CI test 3.11/3.12, firestore, browser, eval-gate, deploy all green)
 Noise watch, My Ecovacs robo cleaner, Google home and any other integration, Google drive Selected
 folders only."
 
+## Owner decisions (3 Nov, after the research summary)
+- Music: **no Spotify Premium → YouTube only** (no Spotify slice).
+- Home hub: **try Home Assistant free on the laptop first** (VirtualBox); buy hardware only if it
+  proves useful. Slice 14 must cope with the hub being offline (plain "your home hub is off" reply).
+- Swiggy: request to builders@swiggy.in **saved as a Gmail draft** for the owner to send
+  (redirect URI `/connect/swiggy/callback`, Food + Instamart, single user, passkey on every order).
+  Swiggy's process: form at mcp.swiggy.com/builders/access/ or email → staging access → production
+  after the staging integration is green (demo video helps).
+- Ecovacs: **wait for the home box** — connect through Home Assistant, not Ecovacs' Open Platform.
+
 ## Architecture fit
 Every item is already named in the reference architecture's Layer 6 (Integration & Tools):
 *Messaging — WhatsApp*, *Smart Home / IoT — Home Assistant, Matter*, *Maps & Travel — Google Maps*,

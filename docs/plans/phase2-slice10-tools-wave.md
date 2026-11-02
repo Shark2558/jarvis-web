@@ -452,3 +452,35 @@ Integrations → Grant. 4. Approvals → Permissions → Set up a passkey. 5. Op
   upload body has a 60 s overall deadline (408). Not changed: the file name stays outside the
   fence, sanitised to one plain line with no brackets, quotes or angle brackets (the header
   must stay readable; the content is fenced and the round is tainted either way).
+
+## Integration (2026-11-02, branch `slice10-phase2-tools`)
+Merged in order with merge commits: `s10-web`, `s10-tasks`, `s10-perm`, `s10-docs`, then
+`origin/main` (PR #14 import-timing bound, PR #15 browser rate limit). Every branch's behaviour
+kept; the shared files (`tools/setup.py`, `api/app.py`, `api/routes.py`, `api/console.py`,
+`core/models.py`, `core/prompts.py`, `tools/gateway.py`, `tools/external.py`, `tools/taint.py`,
+console HTML/JS, `evals/run_all_mock.py`) carry all four workstreams. Changes made here:
+- **brain.py size guard (≤ 800 lines)**: the approve / decline machinery (`_Decision`,
+  `_record_exchange`, `_approved`, `_declined`) moved unchanged to `core/brain_decisions.py`;
+  brain.py is ~740 lines. A changed card on approve (D) now flows through A's compare-and-set
+  save (`record_after_action`); the "could not record" note says nothing was done in that case.
+- **Owner turn + files (A × E)**: `documents.service.save_owner_turn` stores through
+  `save_owner_message`, so a conversation changed in another window is `MessageNotSaved` (409,
+  send again) and the files are unbound, still waiting.
+- **Fences (B × C/E)**: every to-do, brief and document path fences with `wrap_external` (nonce
+  ids); tests and evals count closes with `FENCE_END` / `FENCE_REMOVED`, the documents eval
+  matches a needle to the close with its own id. `FENCE_PREFIX` (E) is the open marker's start.
+- **Tainted writes (C × D)**: with `policy.TAINTED_WRITES_ASK` the to-do tainted-writes suite runs
+  and passes (0 reversible side effects; it was SKIPPED on `s10-tasks`). Its injection negative
+  control now also switches that rule off (else the R2-downgraded delete still waits as a card),
+  and the tainted suite has its own negative control (rule off → all 6 cases fail).
+- **Permission groups (D × B/C/E)**: `tests/test_permissions_tool_names.py` builds the real web,
+  to-do and document tools through `build_gateway` and asserts each lands in its group (`web`;
+  `todo_change`, plus `todo_delete` for `task_delete`; `documents`).
+- **Persona**: `PERSONA_VERSION` p4.0 → p4.1, once; the three paragraphs stay separate, in the
+  order web, to-do, attached files.
+- **Documents memory cap**: `MEMORY_LIMIT_BYTES` 300 MB → 200 MB (RLIMIT_AS of the extraction
+  child; the 512 MiB instance also runs the server). Ordinary files (300-page PDF, long DOCX)
+  still extract; the review's heavy probe now ends as "too complex".
+- **Lock**: `make lock` (pip-compile 7.6.2, Python 3.12, existing pins kept) added cbor2,
+  lxml, pyopenssl, pypdf 6.21.4, python-docx 1.2.0, webauthn 3.0.1; hashed install verified.
+- **Browser**: the permissions test server (its own process) gets PR #15's raised per-IP limit.

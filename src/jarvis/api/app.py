@@ -24,6 +24,7 @@ from jarvis.api.brief import router as brief_router
 from jarvis.api.console import router as console_router
 from jarvis.api.deleted import router as deleted_router
 from jarvis.api.documents import ATTACH_BODY_BYTES, ATTACH_PATH, install_documents
+from jarvis.api.drive import install_drive
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
 from jarvis.api.memory import router as memory_router
@@ -50,6 +51,7 @@ from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ApprovalStore, InputRejected
 from jarvis.documents.service import DocumentService
 from jarvis.documents.store import AttachmentStore
+from jarvis.drive.service import DriveService, build_drive_service
 from jarvis.integrations.google import (
     build_google_connector,
     google_tools_configured,
@@ -204,6 +206,7 @@ def create_app(
     billing: Billing | None = None,
     voice_engines: VoiceEngines | None = None,
     undo: UndoBin | None = None,
+    drive: DriveService | None = None,
 ) -> FastAPI:
     s = settings or get_settings()
     configure_logging(s.log_level, s.log_json)
@@ -241,6 +244,8 @@ def create_app(
         # only on persistent storage, else None and deletes stay R3
         app.state.undo = undo or build_undo(s, built, docs)
         app.state.outside_tasks = OutsideTasks(docs, prefix=s.firestore_prefix)  # D8 (swept)
+        # Drive, chosen folders only (slice 12 D1): None unless JARVIS_DRIVE=on
+        app.state.drive = drive if drive is not None else build_drive_service(s, docs)
         gw: Gateway | None = gateway
         if gw is None and s.tools_enabled:
             gw = build_gateway(
@@ -254,6 +259,7 @@ def create_app(
                 undo=app.state.undo,
                 # D8: to-dos JARVIS wrote from outside content, on the same documents
                 marks=app.state.outside_tasks,
+                drive=app.state.drive,
             )
         # slice 10 D: the owner's Allow / Ask first / Never rules and passkeys, on the same
         # documents; the gateway reads the rules on every call (one built elsewhere gets them too)
@@ -290,6 +296,7 @@ def create_app(
                 "brief_scheduler": getattr(app.state, "scheduler_verifier", None) is not None,
                 "voice_cloud": app.state.voice.engines is not None,
                 "web_search": app.state.web is not None,
+                "drive": app.state.drive is not None,
             },
         )
         try:
@@ -305,6 +312,8 @@ def create_app(
             await app.state.voice.aclose()
             if app.state.web is not None:
                 await app.state.web.aclose()
+            if app.state.drive is not None:
+                await app.state.drive.aclose()
             verifier = getattr(app.state, "scheduler_verifier", None)
             if verifier is not None:
                 await verifier.aclose()
@@ -457,6 +466,7 @@ def create_app(
     install_voice(app)
     install_permissions(app)
     install_documents(app)
+    install_drive(app)
     _mount_scheduler(app, s, scheduler_verifier)
     app.include_router(console_router)
     return app

@@ -57,6 +57,11 @@ no new consent). Guard rails:
 - Token: the Cloud Run metadata server with the `drive.readonly` scope (verify; fallback: IAM
   Credentials `generateAccessToken` for `jarvis-run` on itself — `cloudrun.sh` grants
   `iam.serviceAccountTokenCreator` only if needed). `cloudrun.sh` enables `drive.googleapis.com`.
+  **Verified (builder A, 3 Nov):** google-auth's `compute_engine.Credentials` docstring: "On Cloud
+  Run, Flex and App Engine the server honours requested scopes" (only Compute Engine ignores
+  them); it sends `?scopes=` exactly as JARVIS does. So no fallback and no token-creator grant.
+  The official Cloud Run container-contract page could not be fetched from the build sandbox:
+  confirm live after deploy (Integrations → Google Drive lists a shared folder).
 - Content: Google Docs/Slides → `text/plain` export, Sheets → `text/csv` (first sheet), PDF/DOCX/
   TXT/MD/CSV ≤ 10 MB → the slice 10 sandboxed extractor. Everything is **other people's words**
   (untrusted, fenced, taints the round), never sent to training brains.

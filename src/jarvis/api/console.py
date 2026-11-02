@@ -49,6 +49,8 @@ APP_ASSETS: dict[str, str] = {
     "console-attach.css": "text/css",
     "console-deleted.js": _JS,  # slice 11: Approvals → Recently deleted, the reply's Undo chip
     "console-deleted.css": "text/css",
+    "console-drive.js": _JS,  # slice 12 D1: Integrations → Google Drive (address, folders, Use)
+    "console-drive.css": "text/css",
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",

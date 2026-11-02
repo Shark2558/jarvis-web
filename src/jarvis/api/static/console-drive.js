@@ -1,0 +1,218 @@
+// src/jarvis/api/static/console-drive.js — slice 12 D1 (docs/plans/phase2-slice12-integrations.md):
+// Integrations → Google Drive. JARVIS reads Drive as its own Google account, and only the folders the
+// owner shares with it AND switches on here. Built beside #integrations (console.js redraws that box),
+// so the page markup stays untouched. No build step; CSP script-src 'self'; every server string reaches
+// the page through textContent or an input's value (never markup); a field of the wrong type is
+// dropped, never guessed. Transport is the console's api() (cookie + X-Requested-With, or the bearer
+// token; 401 → gate). Loads when the Integrations panel opens (it asks Google), never on page load.
+// API: GET /v1/drive → {configured:false} | {configured, service_email, folders:[{id, name, confirmed,
+// shared}], others, max_folders}; PUT /v1/drive/roots/{id} {use} → the same, or {error, detail}.
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const ID = /^[A-Za-z0-9_-]{1,128}$/;
+  const SA = /^[a-z0-9][a-z0-9-]{4,62}@[a-z0-9-]{4,64}\.iam\.gserviceaccount\.com$/;
+  const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+  const STALE_MS = 30 * 1000;
+  const MAX_FOLDERS = 50;
+  const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
+  const STEPS = [
+    'Open the folder in Google Drive and press Share.',
+    'Paste JARVIS\'s address (Copy above) into the box.',
+    'Choose Viewer, then press Send.',
+  ];
+  const S = { data: undefined, error: '', loadedAt: 0, loading: null, busy: new Set(), note: null };
+  let card = null, stateEl = null, bodyEl = null, noteEl = null;
+
+  // ---- small, type-checking helpers -----------------------------------------------------------
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  const txt = (v, max = 200) => (typeof v === 'string' ? v.replace(INVISIBLE, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+  const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
+  const hasApi = () => !!(window.JarvisConsole && typeof window.JarvisConsole.api === 'function');
+  const api = (path, opts) => window.JarvisConsole.api(path, opts);
+  const emit = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
+  const log = (kind, text) => emit('jarvis:event', { kind, text, at: Date.now(), live: true });
+  function detailOf(e) {
+    if (e && e.name === 'TypeError') return OFFLINE;
+    const m = e && typeof e.message === 'string' ? e.message.replace(INVISIBLE, '').trim() : '';
+    return m && m.length <= 300 && !m.startsWith('[object') && !/^[a-z0-9_.-]+$/i.test(m) ? m : '';
+  }
+
+  /** GET /v1/drive, checked field by field; anything odd is dropped. null = not set up here. */
+  function normal(raw) {
+    const d = obj(raw);
+    if (!d || d.configured !== true) return null;
+    const email = typeof d.service_email === 'string' && SA.test(d.service_email) ? d.service_email : '';
+    const seen = new Set();
+    const folders = arr(d.folders).slice(0, MAX_FOLDERS).map((f) => {
+      const it = obj(f);
+      if (!it || typeof it.id !== 'string' || !ID.test(it.id) || seen.has(it.id)) return null;
+      seen.add(it.id);
+      return { id: it.id, name: txt(it.name) || '(no name)', confirmed: it.confirmed === true, shared: it.shared !== false };
+    }).filter(Boolean);
+    const others = Number.isInteger(d.others) && d.others >= 0 && d.others < 10000 ? d.others : 0;
+    const max = Number.isInteger(d.max_folders) && d.max_folders > 0 ? d.max_folders : 20;
+    return { email, folders, others, max };
+  }
+
+  // ---- the card -------------------------------------------------------------------------------
+  function build() {
+    if (card) return true;
+    const host = $('integrations');
+    if (!host || !host.parentNode) return false;
+    card = mk('section', 'integ drive'); card.id = 'driveSet'; card.dataset.state = 'loading';
+    card.setAttribute('aria-labelledby', 'driveHead');
+    const head = mk('div', 'ihead');
+    const title = mk('b', '', 'Google Drive'); title.id = 'driveHead';
+    stateEl = mk('span', 'istate', 'Checking…');
+    head.append(title, stateEl);
+    noteEl = mk('div', 'inote'); noteEl.id = 'driveNote'; noteEl.setAttribute('role', 'status'); noteEl.setAttribute('aria-live', 'polite'); noteEl.hidden = true;
+    bodyEl = mk('div', 'ibody'); bodyEl.id = 'driveBody';
+    card.append(head, bodyEl, noteEl);
+    host.parentNode.insertBefore(card, host.nextSibling);
+    return true;
+  }
+  function note(kind, text) {
+    if (!noteEl) return;
+    noteEl.className = 'inote' + (kind === 'bad' ? ' bad' : '');
+    noteEl.textContent = text || '';
+    noteEl.hidden = !text;
+  }
+
+  function addressRow(email) {
+    const wrap = mk('div', 'daddr');
+    const label = mk('label', 'dlbl', 'JARVIS\'s address'); label.htmlFor = 'driveAddr';
+    const row = mk('div', 'drow2');
+    const input = mk('input', 'dinput'); input.id = 'driveAddr'; input.type = 'text'; input.readOnly = true;
+    input.value = email; input.spellcheck = false; input.setAttribute('autocomplete', 'off');
+    const copy = mk('button', 'btn bact', 'Copy'); copy.type = 'button'; copy.id = 'driveCopy';
+    copy.setAttribute('aria-describedby', 'driveAddr');
+    copy.addEventListener('click', () => copyAddress(input, copy));
+    row.append(input, copy);
+    wrap.append(label, row);
+    return wrap;
+  }
+  async function copyAddress(input, btn) {
+    const value = input.value;
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') throw new Error('no clipboard');
+      await navigator.clipboard.writeText(value);
+      btn.textContent = 'Copied';
+      note('ok', 'Address copied. Paste it in Google Drive\'s Share box.');
+      setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+    } catch (_) {
+      input.focus(); input.select();
+      note('ok', 'Address selected: press Ctrl+C (⌘C on a Mac) to copy it.');
+    }
+  }
+  function steps() {
+    const ol = mk('ol', 'dsteps'); ol.id = 'driveSteps';
+    STEPS.forEach(s => ol.appendChild(mk('li', '', s)));
+    return ol;
+  }
+  function useSwitch(f) {
+    const b = mk('button', 'bsw'); b.type = 'button'; b.dataset.id = f.id;
+    b.setAttribute('aria-pressed', String(f.confirmed));
+    b.setAttribute('aria-label', `Use “${f.name}”`);
+    const track = mk('span', 'track'); track.appendChild(mk('i', ''));
+    b.append(track, mk('span', 'st', f.confirmed ? 'On' : 'Off'));
+    const blocked = !f.shared && !f.confirmed;
+    if (S.busy.has(f.id) || blocked) b.setAttribute('aria-disabled', 'true');
+    b.addEventListener('click', () => { if (b.getAttribute('aria-disabled') !== 'true') setUse(f, !f.confirmed); });
+    return b;
+  }
+  function folderList(d) {
+    const ul = mk('ul', 'dfolders'); ul.id = 'driveList'; ul.setAttribute('aria-label', 'Folders shared with JARVIS');
+    d.folders.forEach((f) => {
+      const li = mk('li', 'dfolder'); li.dataset.id = f.id;
+      const t = mk('div', 'btxt');
+      t.append(mk('b', '', f.name), mk('small', '', !f.shared
+        ? 'No longer shared with JARVIS: nothing in it can be read. Switch it off, or share it again.'
+        : f.confirmed ? 'In use: JARVIS can read it and everything inside it.' : 'Not in use: JARVIS won\'t read it.'));
+      li.append(t, useSwitch(f));
+      ul.appendChild(li);
+    });
+    return ul;
+  }
+  function others(n) {
+    const p = mk('p', 'fine dothers'); p.id = 'driveOthers';
+    p.textContent = `${n} ${n === 1 ? 'folder' : 'folders'} not offered: shared by another account. JARVIS never reads ${n === 1 ? 'it' : 'them'}.`;
+    return p;
+  }
+
+  function render() {
+    if (!build()) return;
+    const d = S.data;
+    bodyEl.textContent = '';
+    if (S.error) {
+      card.dataset.state = 'error'; stateEl.textContent = 'Unknown';
+      bodyEl.appendChild(mk('p', 'warn', 'Couldn\'t check Google Drive. ' + S.error));
+      const r = mk('button', 'btn bact', 'Retry'); r.type = 'button'; r.id = 'driveRetry';
+      r.addEventListener('click', () => { r.disabled = true; load(true); });
+      bodyEl.appendChild(r);
+      return;
+    }
+    if (d === undefined) { card.dataset.state = 'loading'; stateEl.textContent = 'Checking…'; bodyEl.appendChild(mk('p', '', 'Checking folders shared with JARVIS…')); return; }
+    if (d === null) { card.hidden = true; return; }
+    card.hidden = false;
+    const inUse = d.folders.filter(f => f.confirmed && f.shared).length;
+    card.dataset.state = inUse ? 'linked' : 'unlinked';
+    stateEl.textContent = inUse ? `${inUse} in use` : 'No folders in use';
+    bodyEl.appendChild(mk('p', '', 'JARVIS reads only the folders you share with it and switch on here (and what is inside them). It can\'t change or delete anything in your Drive.'));
+    if (d.email) bodyEl.appendChild(addressRow(d.email));
+    else bodyEl.appendChild(mk('p', 'warn', 'JARVIS\'s address isn\'t available right now. Try again in a minute.'));
+    if (d.folders.length) {
+      const how = mk('details', 'dhow');
+      how.appendChild(mk('summary', '', 'How to share another folder'));
+      how.appendChild(steps());
+      bodyEl.append(folderList(d), how);
+    } else {
+      bodyEl.append(steps(), mk('p', 'fine', 'The folder shows up here within a minute. Then switch on Use.'));
+    }
+    if (d.others) bodyEl.appendChild(others(d.others));
+    const refresh = mk('button', 'btn bact', 'Check again'); refresh.type = 'button'; refresh.id = 'driveRefresh';
+    refresh.addEventListener('click', () => load(true));
+    bodyEl.appendChild(refresh);
+  }
+
+  async function setUse(f, on) {
+    if (!hasApi() || S.busy.has(f.id)) return;
+    S.busy.add(f.id); render();
+    try {
+      const r = normal(await api(`/v1/drive/roots/${encodeURIComponent(f.id)}`, { method: 'PUT', body: { use: on } }));
+      if (r) S.data = r;
+      note('ok', on ? `JARVIS can now read “${f.name}” and what is inside it.` : `JARVIS no longer reads “${f.name}”.`);
+      log('info', on ? 'Drive folder in use' : 'Drive folder switched off');
+    } catch (e) {
+      if (e && e.status === 401) return;
+      note('bad', detailOf(e) || 'Couldn\'t change it. Please try again.');
+    } finally {
+      S.busy.delete(f.id); render();
+      const again = card && card.querySelector(`.bsw[data-id="${f.id}"]`);
+      if (again) again.focus();
+    }
+  }
+
+  function load(force) {
+    if (!hasApi() || !build()) return Promise.resolve();
+    if (S.loading) return S.loading;
+    if (!force && S.data !== undefined && !S.error && Date.now() - S.loadedAt < STALE_MS) return Promise.resolve();
+    S.loading = (async () => {
+      try {
+        S.data = normal(await api('/v1/drive')); S.error = '';
+      } catch (e) {
+        if (e && e.status === 401) return;
+        if (e && e.status === 404) { S.data = null; S.error = ''; } else { S.error = detailOf(e) || 'Please try again.'; }
+      } finally {
+        S.loadedAt = Date.now(); S.loading = null; render();
+      }
+    })();
+    return S.loading;
+  }
+
+  document.addEventListener('jarvis:panel', (e) => { const d = e.detail || {}; if (d.id === 'integrations' && d.open) load(false); });
+  document.addEventListener('jarvis:ready', () => { if (window.JarvisDeck && typeof window.JarvisDeck.isOpen === 'function' && window.JarvisDeck.isOpen('integrations')) load(false); });
+
+  window.JarvisDrive = Object.freeze({ refresh: () => load(true), normal });
+})();

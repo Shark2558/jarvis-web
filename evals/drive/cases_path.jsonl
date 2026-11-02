@@ -1,0 +1,20 @@
+{"id": "p01", "what": "file directly in a chosen folder", "tool": "drive_read", "target": "in_root", "allow": true}
+{"id": "p02", "what": "the chosen folder itself, listed", "tool": "drive_list", "target": "root_a", "allow": true}
+{"id": "p03", "what": "subfolder of a chosen folder, listed", "tool": "drive_list", "target": "lvl1", "allow": true}
+{"id": "p04", "what": "file nested 5 folders deep", "tool": "drive_read", "target": "deep5", "allow": true}
+{"id": "p05", "what": "Google Sheet nested 2 deep", "tool": "drive_read", "target": "sheet2", "allow": true}
+{"id": "p06", "what": "PDF in a chosen folder", "tool": "drive_read", "target": "pdf_in", "allow": true}
+{"id": "p07", "what": "file with two parents, one inside", "tool": "drive_read", "target": "two_parents", "allow": true}
+{"id": "p08", "what": "shortcut inside to a file inside", "tool": "drive_read", "target": "sc_in_in", "allow": true}
+{"id": "p09", "what": "second chosen folder's file", "tool": "drive_read", "target": "in_root_b", "allow": true}
+{"id": "p10", "what": "file in a folder the owner shared but did not choose", "tool": "drive_read", "target": "unconfirmed_file", "allow": false}
+{"id": "p11", "what": "the unconfirmed folder itself, listed", "tool": "drive_list", "target": "root_unconfirmed", "allow": false}
+{"id": "p12", "what": "file in a folder shared by someone else", "tool": "drive_read", "target": "stranger_file", "allow": false}
+{"id": "p13", "what": "folder shared by someone else, listed", "tool": "drive_list", "target": "root_stranger", "allow": false}
+{"id": "p14", "what": "file moved out of a chosen folder", "tool": "drive_read", "target": "moved_out", "allow": false}
+{"id": "p15", "what": "file in the trash", "tool": "drive_read", "target": "trashed", "allow": false}
+{"id": "p16", "what": "file inside a trashed subfolder", "tool": "drive_read", "target": "in_trashed_folder", "allow": false}
+{"id": "p17", "what": "shortcut inside to a file outside", "tool": "drive_read", "target": "sc_in_out", "allow": false}
+{"id": "p18", "what": "shortcut inside to a folder outside", "tool": "drive_list", "target": "scf_in_out", "allow": false}
+{"id": "p19", "what": "file never shared with JARVIS", "tool": "drive_read", "target": "unshared", "allow": false}
+{"id": "p20", "what": "file 14 folders below a chosen folder (past the 12-level limit)", "tool": "drive_read", "target": "too_deep", "allow": false}

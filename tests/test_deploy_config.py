@@ -464,3 +464,32 @@ def test_voice_needs_no_new_secret_or_env(script: str) -> None:
     # ADC as jarvis-run: no key, no secret; JARVIS_VOICE_CLOUD defaults on in the app
     assert "jarvis-voice" not in script and "JARVIS_VOICE_" not in script
     assert "texttospeech" in script.split('say "DONE', 1)[1]  # the one-time fix is printed
+
+
+# ---- slice 12 D1: Google Drive, chosen folders, as jarvis-run (no new secret, no new role) ------
+
+
+def test_drive_api_is_enabled_on_its_own_and_never_stops_the_deploy(script: str) -> None:
+    required = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
+    assert "drive.googleapis.com" not in required
+    drive = _command(script, "gcloud services enable drive.googleapis.com")
+    assert "--quiet" in drive and "||" in drive
+    assert _top_level_depth_at(script, "gcloud services enable drive.googleapis.com") == 0
+
+
+def test_drive_is_switched_on_for_both_deploy_paths(script: str) -> None:
+    infra = script.split("INFRA_ENV=", 1)[1].split("\n", 1)[0]
+    assert "JARVIS_DRIVE=on" in infra  # INFRA_ENV goes into both --update and --set env vars
+
+
+def test_drive_needs_no_token_creator_grant(script: str) -> None:
+    """The metadata server honours ?scopes= on Cloud Run (google-auth compute_engine docstring),
+    so jarvis-run never needs iam.serviceAccountTokenCreator on itself."""
+    assert "serviceAccountTokenCreator" not in script
+    assert "jarvis-drive" not in script  # no secret either
+
+
+def test_summary_prints_the_drive_share_address(script: str) -> None:
+    done = script.split('say "DONE', 1)[1]
+    assert "GOOGLE DRIVE" in done and "${RUN_SA}" in done
+    assert "Viewer" in done and "Integrations" in done

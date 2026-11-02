@@ -22,6 +22,7 @@ from jarvis.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from jarvis.documents.service import DocumentService
+    from jarvis.drive.service import DriveService
     from jarvis.recall.service import MemoryService
     from jarvis.tools.task_marks import OutsideTasks
     from jarvis.undo.service import UndoBin
@@ -43,9 +44,11 @@ def build_gateway(
     documents: DocumentService | None = None,
     undo: UndoBin | None = None,
     marks: OutsideTasks | None = None,
+    drive: DriveService | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
-    port; give it in production, or the set lives only as long as the process."""
+    port; give it in production, or the set lives only as long as the process. `drive` (slice 12
+    D1): the chosen-folders Drive tools, only when Drive is configured (`JARVIS_DRIVE=on`)."""
     reg = ToolRegistry()
     for t in builtin_tools(InMemoryWorld()):
         if google is not None and t.name in FAKE_TWINS:
@@ -81,6 +84,11 @@ def build_gateway(
         from jarvis.documents.tools import document_tools
 
         for t in document_tools(documents):
+            reg.register(t)
+    if drive is not None:  # slice 12 D1: read-only, chosen folders only
+        from jarvis.drive.tools import drive_tools
+
+        for t in drive_tools(drive):
             reg.register(t)
     return Gateway(
         registry=reg,

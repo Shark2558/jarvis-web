@@ -202,6 +202,21 @@ class Settings(BaseSettings):
         "as false, so re-runs don't ask again)",
     )
 
+    # --- Google Drive, chosen folders only (slice 12 D1): read as JARVIS's own service account
+    # (Cloud Run metadata server, drive.readonly), only inside folders the owner shared with it
+    # AND switched on in Integrations. deploy/cloudrun.sh sets JARVIS_DRIVE=on.
+    drive: bool = Field(
+        default=False,
+        description="Drive tools + /v1/drive (needs Cloud Run's metadata server and the Drive API)",
+    )
+
+    @field_validator("drive", mode="before")
+    @classmethod
+    def _on_off(cls, v: object) -> object:
+        if isinstance(v, str) and v.strip().lower() in ("on", "off"):
+            return v.strip().lower() == "on"
+        return v
+
     # --- long-term memory (slice 8) ---
     memory_enabled: bool = Field(
         default=True, description="Notes about the owner, the memory tools and /v1/memory"

@@ -6,7 +6,9 @@ a round that saw it is tainted: memory_save becomes a card, every write still as
 web_search(query, max_results ≤ 5, topic general|news, days?)
     The query passes the private-query guard first (argument check: refused before the policy,
     nothing sent, audited as an error); once other people's text is in the context it may be at
-    most 120 characters. At most 3 searches per owner message and 30 an hour per owner (review
+    most 120 characters (checked when proposed in a tainted round; an approved "Ask first" card
+    runs as shown — integration review L7). At most 3 searches per owner message and 30 an hour
+    per owner (review
     M3), then one credit is reserved from the month's allowance. https results only,
     de-duplicated, numbered in the conversation's ledger; the model sees each result's number,
     domain, title (≤ 200) and snippet (≤ 700), fenced — never its URL (review L7).
@@ -30,7 +32,7 @@ from jarvis.tools.card import one_line
 from jarvis.tools.context import current_tool_context
 from jarvis.tools.external import clean_text, wrap_external
 from jarvis.tools.gateway import MAX_RESULT_CHARS, serialise
-from jarvis.tools.taint import untrusted_in_context
+from jarvis.tools.taint import tainted_round
 from jarvis.web.allowance import AllowanceUnreadable, Kind, Reservation
 from jarvis.web.guard import query_problem
 from jarvis.web.ledger import Conversation, current_conversation
@@ -83,7 +85,9 @@ def _check_search(a: dict[str, Any]) -> None:
         raise ValueError("query is required")
     if len(q) > QUERY_LIMIT:
         raise ValueError(f"query is too long (at most {QUERY_LIMIT} characters)")
-    if untrusted_in_context() and len(q.strip()) > TAINTED_QUERY_LIMIT:
+    # only while proposing in a tainted round (integration review L7): outside a turn — the owner
+    # approving an "Ask first" card on screen — the query is the one the card showed, never cut
+    if tainted_round() and len(q.strip()) > TAINTED_QUERY_LIMIT:
         raise ValueError(
             f"After reading other people's text, a search query may be at most "
             f"{TAINTED_QUERY_LIMIT} characters. Search for the general topic in a few words."

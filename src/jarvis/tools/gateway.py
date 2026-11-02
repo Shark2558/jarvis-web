@@ -23,6 +23,10 @@ Slice 10 D review: a tainted round (other people's text reached the model: mail,
 turns every REVERSIBLE write into an approval card too (`policy.TAINTED_WRITES_ASK`): an R2 card,
 so no passkey. Outside a turn nothing is tainted (an approval being executed, a script).
 
+Slice 10 integration review L4: one owner message proposes at most 5 NEW cards (`tools.budget`;
+a duplicate of a waiting card is not new); past that a proposal is refused in plain words and
+nothing is stored. The duplicate look-up reads only the conversation's own cards.
+
 Approving (`confirmation_id`): the card runs only as the owner saw it. The call is looked at
 again; when it can now do more than its card said (an event gained guests) or its card would read
 differently, the old card is withdrawn and a new one proposed — nothing runs. Otherwise the
@@ -44,12 +48,14 @@ from jarvis.core.guardrails import (
     ConfirmationInvalid,
     ConfirmationRequired,
     PendingAction,
+    TooManyApprovals,
 )
 from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
 from jarvis.tools import policy as _policy
 from jarvis.tools.audit import AuditTrail, args_hash
 from jarvis.tools.base import Preview, Tool
+from jarvis.tools.budget import TOO_MANY_CARDS, current_budget
 from jarvis.tools.context import ToolContext, approval_proof, tool_context
 from jarvis.tools.external import model_safe
 from jarvis.tools.policy import Effect, OwnerRules, Policy
@@ -291,10 +297,28 @@ class Gateway:
         confirmation_id: str | None,
         note: str = "",
     ) -> GatewayResult | None:
-        """Propose (→ AWAITING_CONFIRMATION) or spend the token (→ None: go ahead)."""
+        """Propose (→ AWAITING_CONFIRMATION) or spend the token (→ None: go ahead). A NEW card
+        past this owner message's budget (`jarvis.tools.budget`) is refused, nothing stored."""
+        budget = current_budget() if confirmation_id is None else None
         try:
-            await self.gate.check(action, confirmation_id=confirmation_id)
+            await self.gate.check(
+                action,
+                confirmation_id=confirmation_id,
+                new_allowed=budget is None or budget.cards > 0,
+            )
+        except TooManyApprovals:
+            await self.audit.append(
+                agent=tool.agent,
+                tool=tool.name,
+                risk=risk,
+                outcome="denied",
+                args=call.arguments,
+                detail="too many approvals in one request",
+            )
+            return GatewayResult(GatewayOutcome.DENIED, error=TOO_MANY_CARDS)
         except ConfirmationRequired as exc:
+            if budget is not None and exc.action.id == action.id:
+                budget.cards -= 1  # a new card (a duplicate of a waiting one costs nothing)
             try:
                 await self.audit.append(
                     agent=tool.agent,

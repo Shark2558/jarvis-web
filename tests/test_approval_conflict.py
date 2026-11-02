@@ -182,3 +182,85 @@ async def test_the_stream_final_event_carries_the_same_truthful_detail(racing_ap
 
 def test_message_not_saved_is_a_session_conflict() -> None:
     assert issubclass(MessageNotSaved, SessionConflict)
+
+
+# ---- integration review M1: a tool round that changed something is never lost to a conflict ------
+
+REMIND = {"text": "call the bank", "when": "5pm"}
+
+
+async def _session_with_hi(brain: Brain) -> str:
+    return (await brain.chat(ChatRequest(message="hi"))).session_id
+
+
+def _round_turns(s: Session) -> tuple[list[Turn], list[Turn]]:
+    """The tool round's tool_use turns and tool_result turns."""
+    uses = [t for t in s.turns if any(isinstance(b, ToolCall) and b.id == "r1" for b in t.blocks)]
+    results = [
+        t
+        for t in s.turns
+        if any(isinstance(b, ToolResultBlock) and b.tool_use_id == "r1" for b in t.blocks)
+    ]
+    return uses, results
+
+
+@pytest.mark.parametrize("allow", [1, 2])  # the round's save, or the reply's, loses the race
+async def test_a_write_round_is_recorded_on_the_newer_conversation(
+    settings: Settings,
+    provider: MockProvider,
+    gateway: Gateway,
+    world: InMemoryWorld,
+    allow: int,
+) -> None:
+    store = RacingStore()
+    brain = _brain(settings, provider, store, gateway)
+    sid = await _session_with_hi(brain)
+    provider.script_tool_calls(
+        [ToolCall(id="r1", name="create_reminder", arguments=REMIND)], "Reminder set, Sir."
+    )
+    store.allow, store.refuse = allow, 1  # the owner's message is stored first
+    resp = await brain.chat(ChatRequest(message="remind me at 5pm", session_id=sid))  # no 409
+    assert world.reminders == [REMIND]  # it ran once
+    assert resp.reply == "Reminder set, Sir." and "could not record" not in resp.reply
+    s = await store.get(sid)
+    assert s is not None
+    assert PHONE in [t.content for t in s.turns]  # the other window's message survived
+    uses, results = _round_turns(s)
+    assert len(uses) == 1 and len(results) == 1  # stored exactly once
+    assert s.turns[-1].content == "Reminder set, Sir."
+    assert [t.content for t in s.turns].count("remind me at 5pm") == 1
+
+
+async def test_a_write_round_that_cannot_be_recorded_says_so_and_stops(
+    settings: Settings, provider: MockProvider, gateway: Gateway, world: InMemoryWorld
+) -> None:
+    store = RacingStore()
+    brain = _brain(settings, provider, store, gateway)
+    sid = await _session_with_hi(brain)
+    provider.script_tool_calls(
+        [ToolCall(id="r1", name="create_reminder", arguments=REMIND)], "Reminder set, Sir."
+    )
+    store.allow, store.refuse = 1, 99  # only the owner's message is ever stored
+    calls = len(provider.calls)
+    resp = await brain.chat(ChatRequest(message="remind me at 5pm", session_id=sid))
+    assert world.reminders == [REMIND]
+    assert "could not record" in resp.reply and "It was done" in resp.reply
+    assert "Remind at 5pm: call the bank" in resp.reply  # what ran, in plain words
+    assert len(provider.calls) == calls + 1  # no more model calls or tools in a lost conversation
+    assert "Reminder set, Sir." in provider.scripted  # the scripted reply was never asked for
+    s = await store.get(sid)
+    assert s is not None and _round_turns(s) == ([], [])
+
+
+async def test_a_read_only_round_that_loses_the_race_is_still_a_conflict(
+    settings: Settings, provider: MockProvider, gateway: Gateway
+) -> None:
+    store = RacingStore()
+    brain = _brain(settings, provider, store, gateway)
+    sid = await _session_with_hi(brain)
+    provider.script_tool_calls(
+        [ToolCall(id="r1", name="get_calendar", arguments={"day": "today"})], "Two meetings."
+    )
+    store.allow, store.refuse = 1, 1
+    with pytest.raises(SessionConflict):  # nothing changed anywhere: 409, your message was kept
+        await brain.chat(ChatRequest(message="what's on today?", session_id=sid))

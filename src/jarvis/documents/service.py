@@ -6,6 +6,8 @@ upload   name → type (extension + magic bytes) → text from a killable child 
          "busy") → chunks → one commit. The file itself is dropped. Waiting uploads: ≤ 10 per
          owner; older than a day → swept at the next upload, a conversation delete, and the
          scheduler tick (`sweep_waiting`, at most hourly).
+switched off  Documents on "Never" in Permissions refuses uploads and sending (integration
+         review), and an unreadable setting refuses too — no file's start reaches the model.
 attach   on send (inside the Brain's per-conversation lock): refused for a training brain;
          ≤ 3 per message; each must be the owner's and still waiting; bound atomically to
          the conversation and the turn; the turn gets a second text block (`render_note`). If
@@ -23,7 +25,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from jarvis.core.guardrails import InputRejected
+from jarvis.core.guardrails import ActionRisk, InputRejected
 from jarvis.core.models import ChatRequest, Session, Turn
 from jarvis.core.saving import save_owner_message
 from jarvis.documents.chunking import excerpt, pages_label, rank, split
@@ -47,6 +49,7 @@ from jarvis.llm.brains import BrainSpec
 from jarvis.logging import get_logger
 from jarvis.memory.base import SessionStore
 from jarvis.tools.external import wrap_external
+from jarvis.tools.policy import Effect, OwnerRules
 
 log = get_logger(__name__)
 
@@ -55,6 +58,10 @@ WAITING_TTL = timedelta(hours=24)
 SWEEP_EVERY = timedelta(hours=1)  # the scheduler tick's sweep of unsent uploads
 TOP_HITS = 3
 EXCERPT_COST = 2_600  # per hit: three hits stay well inside the gateway's 12,000 characters
+# After the fence-like text in it is replaced by a (longer) notice, the fenced text is cut to
+# these, so a part or a search answer always fits the gateway's cut and its fence closes.
+PART_TEXT_LIMIT = 10_000
+EXCERPT_LIMIT = 3_000
 MAX_SEARCH_DOCS = 3  # a search without an id: the most recent files of the conversation
 
 GONE = "An attached file is no longer available. Attach it again."
@@ -63,6 +70,9 @@ TRAINING_REFUSAL = (
     "Switch to a private brain to use them."
 )
 NOT_HERE = "No attached file with that id in this conversation."
+SWITCHED_OFF = "Documents are switched off in Permissions."
+UNCHECKED = "JARVIS couldn't check your Permissions just now, so no file was used. Try again."
+DOC_TOOLS = ("doc_read", "doc_search")  # the Documents permission group's tools
 
 
 def _utcnow() -> datetime:
@@ -86,16 +96,49 @@ class DocumentService:
         self._queue_wait_s = queue_wait_s
         self._slot = asyncio.Semaphore(1)  # one extraction child at a time
         self._swept_at: datetime | None = None
+        # the owner's Allow / Ask first / Never rules (slice 10 D; the app sets it): "Never" for
+        # Documents refuses uploads and sending, so no file's start ever reaches the model
+        self.rules: OwnerRules | None = None
 
     @property
     def running(self) -> int:
         return 1 if self._slot.locked() else 0
+
+    # ---- the owner's Documents permission ---------------------------------------------------
+
+    async def _switched_off(self, owner: str) -> bool:
+        """Is Documents on "Never" for `owner`? Raises when the rules can't be read."""
+        if self.rules is None:
+            return False
+        rules = await self.rules.rules_for(owner)
+        return any(
+            r.effect is Effect.DENY and r.matches(t, {}, ActionRisk.READ_ONLY)
+            for r in rules
+            for t in DOC_TOOLS
+        )
+
+    async def _off_problem(self, owner: str) -> str:
+        """Why files may not be taken in or sent now ("" when they may). Fails closed."""
+        try:
+            return SWITCHED_OFF if await self._switched_off(owner) else ""
+        except Exception as exc:  # noqa: BLE001 — refused, never raised as a server error
+            log.warning("owner permissions unreadable", extra={"reason": type(exc).__name__})
+            return UNCHECKED
+
+    async def ensure_on(self, owner: str) -> None:
+        """Upload: refused (403) when the owner switched Documents off; 503 when unreadable."""
+        problem = await self._off_problem(owner)
+        if problem == SWITCHED_OFF:
+            raise DocumentRejected("documents_off", problem, status=403)
+        if problem:
+            raise DocumentRejected("permissions_unavailable", problem, status=503)
 
     # ---- upload ---------------------------------------------------------------------------
 
     async def upload(self, owner: str, name: str, data: bytes) -> AttachmentRef:
         clean = clean_name(name)
         kind = kind_for(clean)
+        await self.ensure_on(owner)
         if len(data) > MAX_FILE_BYTES:
             raise too_large(len(data))
         sniff(data, kind)
@@ -187,6 +230,8 @@ class DocumentService:
         """Read-only: would these files go with a message to `spec`? (Raises InputRejected.)"""
         if not ids:
             return []
+        if problem := await self._off_problem(owner):
+            raise InputRejected(problem)  # nothing bound: the files stay waiting
         if not spec.tools_allowed:
             raise InputRejected(TRAINING_REFUSAL)
         unique = list(dict.fromkeys(ids))
@@ -240,7 +285,8 @@ class DocumentService:
         a = await self._usable(owner, session_id, aid)
         if not 1 <= part <= a.parts:
             raise ValueError(f"part must be 1-{a.parts} for this file")
-        chunks = (await self.store.chunks(a))[(part - 1) * CHUNKS_PER_PART : part * CHUNKS_PER_PART]
+        first = (part - 1) * CHUNKS_PER_PART
+        chunks = await self.store.part(a, first, first + CHUNKS_PER_PART)  # only this part's
         if not chunks:
             raise LookupError(NOT_HERE)
         pages = pages_label(chunks[0].page, chunks[-1].page_end)
@@ -255,6 +301,7 @@ class DocumentService:
             "text": wrap_external(
                 "".join(c.text for c in chunks).strip(),
                 source=source + (f", {pages}" if pages else ""),
+                limit=PART_TEXT_LIMIT,
             ),
         }
 
@@ -288,7 +335,9 @@ class DocumentService:
             part = i // CHUNKS_PER_PART + 1
             pages = pages_label(c.page, c.page_end)
             source = f"attached file “{a.name}”, part {part}" + (f", {pages}" if pages else "")
-            text = wrap_external(excerpt(c.text.strip(), query, EXCERPT_COST), source=source)
+            text = wrap_external(
+                excerpt(c.text.strip(), query, EXCERPT_COST), source=source, limit=EXCERPT_LIMIT
+            )
             hits.append(
                 {"doc_id": a.id, "name": a.name, "part": part, "pages": pages, "text": text}
             )

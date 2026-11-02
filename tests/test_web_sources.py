@@ -14,6 +14,7 @@ from jarvis.web.ledger import (
     cited_sources,
     conversation_of,
     current_conversation,
+    owner_index,
     web_conversation,
 )
 from jarvis.web.sources import domain_of, normalize_url, urls_in_text
@@ -133,6 +134,25 @@ def test_allow_list_is_results_plus_what_the_owner_typed() -> None:
     assert not c.allows("https://hidden.example/")  # tool/instruction blocks don't count
     assert not c.allows("https://spoken.example/page")  # spoken: may be someone else's words
     assert not c.allows("http://owner.example/report?id=7")
+
+
+def test_a_message_with_files_is_an_owner_message() -> None:
+    """Integration review M3: the owner's text plus the fenced note of an attached file (a second
+    text block) starts a new owner message; its typed link is readable, the file's are not. A tool
+    exchange (results, an approval's instruction) never is one."""
+    s = _session("hello")
+    s.append(Turn(role=Role.ASSISTANT, content="hi"))
+    text = "read this https://owner.example/a"
+    note = "<<EXTERNAL CONTENT from file · 123456>>\nsee https://file.example/b\n<<END 123456>>"
+    s.append(
+        Turn(role=Role.USER, content=text, blocks=[TextBlock(text=text), TextBlock(text=note)])
+    )
+    assert owner_index(s) == 2
+    c = conversation_of(s)
+    assert c.allows("https://owner.example/a") and not c.allows("https://file.example/b")
+    result = ToolResultBlock(tool_use_id="t", content="x")
+    s.append(Turn(role=Role.USER, content="", blocks=[result, TextBlock(text="Owner approved.")]))
+    assert owner_index(s) == 2
 
 
 def _copy_with_voice(s: Session, text: str) -> Session:

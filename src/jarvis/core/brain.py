@@ -25,7 +25,9 @@ narration, the stream — goes through `_admit` (the owner's monthly limit, `Bil
 BEFORE it is made, and its cost is added to the month after it (`Billing.record`, never fails the
 reply). A turn is also admitted before the owner's message is stored, so a refused turn leaves
 no unanswered message behind. Approve / decline themselves: `jarvis.core.brain_decisions`.
-Attached files (slice 10): `jarvis.documents.service` hooks.
+Attached files (slice 10): `jarvis.documents.service` hooks. Tool rounds (slice 10 integration):
+once a write has run, the message's saves are conflict-safe (`jarvis.core.rounds`), and one
+message has a budget of new approval cards and document calls (`jarvis.tools.budget`).
 """
 
 from __future__ import annotations
@@ -44,12 +46,14 @@ from jarvis.core.guardrails import PendingAction, guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
+from jarvis.core.rounds import Rounds
 from jarvis.core.saving import not_recorded_note, record_after_action
 from jarvis.core.window import build_window
 from jarvis.documents.service import DocumentService, forget_files, precheck, save_owner_turn
 from jarvis.llm.base import (
     ChatMessage,
     Completion,
+    ContentBlock,
     Effort,
     LLMError,
     Role,
@@ -67,7 +71,8 @@ from jarvis.logging import get_logger, get_trace_id
 from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
-from jarvis.tools.gateway import Gateway, GatewayOutcome
+from jarvis.tools.budget import turn_budget
+from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.taint import context_trust, untrusted_seen
 from jarvis.web.ledger import cited_sources, web_conversation
 
@@ -76,6 +81,7 @@ log = get_logger(__name__)
 BRAIN_KEY = "brain"  # session.metadata key remembering the owner's brain choice
 CUTOFF_KEY = "brain_cutoff"  # turn index before which history is withheld from training brains
 SWEEP_TICK_S = 20.0  # the scheduler tick's memory sweep is awaited, at most this long
+ROUND_LIMIT = "Tool round limit reached. Summarise what you found so far and what remains."
 
 
 def _owner_turn(text: str, req: ChatRequest, trace_id: str | None) -> Turn:
@@ -353,13 +359,14 @@ class Brain:
         prompt = _Prompt(
             await self.persona.system_for(req.user_id), self._trailer(session, req) + rec.block
         )
+        rounds = Rounds(session)  # the tool rounds; a conflict after a write reloads the session
         try:
-            completion, pending = await self._run_loop(session, messages, prompt, req, spec)
+            completion, pending = await self._run_loop(rounds, messages, prompt, req, spec)
         except LLMError:
             log.exception("brain: llm failure", extra={"session_id": session.id})
             raise
 
-        rounds = int(session.metadata.pop("_rounds", 0))
+        session = rounds.session
         reply = completion.text.strip() or "I have nothing to add, Sir."
         session.append(
             Turn(
@@ -370,15 +377,17 @@ class Brain:
                 usage=completion.usage,
                 cost_usd=completion.cost_usd,
                 latency_ms=completion.latency_ms,
-                tool_derived=rounds > 0,  # written from tool results: never to a training brain
+                tool_derived=rounds.count > 0,  # written from tool results: never to training
                 sources=cited_sources(reply, session, enabled=spec.tools_allowed),
             )
         )
-        await self.store.save(session)
+        stored = await rounds.store(self.store, session.turns[-1:])  # after a write: never 409
+        session = rounds.session
         self._after_turn(req.user_id, session, spec, rec)
         total_ms = int((time.perf_counter() - t0) * 1000)
         self._log_turn(session, len(messages), spec, completion, total_ms)
-        reply_meta = _ReplyMeta(trace_id, total_ms, rounds, pending, list(rec.used))
+        reply_meta = _ReplyMeta(trace_id, total_ms, rounds.count, pending, list(rec.used))
+        reply += rounds.reply_note(stored)  # the record is incomplete: say so, plainly
         return await self._chat_response(session, spec, reply, completion, reply_meta)
 
     def _trailer(self, session: Session, req: ChatRequest) -> str:
@@ -463,76 +472,83 @@ class Brain:
 
     async def _run_loop(
         self,
-        session: Session,
+        rounds: Rounds,
         messages: list[ChatMessage],
         prompt: _Prompt,
         req: ChatRequest,
         spec: BrainSpec,
     ) -> tuple[Completion, list[PendingApproval]]:
-        """model → tool calls → gateway → results → model, until text or the round cap."""
+        """model → tool calls → gateway → results → model, until text or the round cap. Each round
+        is stored as it ends (`jarvis.core.rounds`: conflict-safe once a write has run), inside
+        this owner message's budget of new approval cards and document calls."""
         pending: list[PendingApproval] = []
         if not self._tools_on(spec):
             return await self._complete(messages, prompt, req, spec, with_tools=False), pending
         assert self.gateway is not None
-        rounds = 0
         msgs = list(messages)
-        while True:
-            completion = await self._complete(msgs, prompt, req, spec, with_tools=True)
-            if not completion.tool_calls:
-                break
-            rounds += 1
-            # record the assistant's tool request and our results as block turns
-            asst_blocks: list = [TextBlock(text=completion.text)] if completion.text.strip() else []
-            asst_blocks += completion.tool_calls
-            session.append(
-                Turn(
+        with turn_budget():
+            while True:
+                completion = await self._complete(msgs, prompt, req, spec, with_tools=True)
+                if not completion.tool_calls:
+                    break
+                rounds.count += 1
+                # record the assistant's tool request and our results as block turns
+                text = completion.text
+                asst_blocks: list[ContentBlock] = [TextBlock(text=text)] if text.strip() else []
+                asst_blocks += completion.tool_calls
+                asst = Turn(
                     role=Role.ASSISTANT,
-                    content=completion.text,
+                    content=text,
                     blocks=asst_blocks,
                     model=completion.model,
                     usage=completion.usage,
                     cost_usd=completion.cost_usd,
                     latency_ms=completion.latency_ms,
                 )
-            )
-            results: list = []
-            # what the model had seen when it asked for these calls: other people's text? A
-            # spoken message may be: every write it leads to becomes an approval card.
-            untrusted = untrusted_seen(msgs, self.gateway.registry)
-            spoken = req.channel == "voice"
-            for call in completion.tool_calls:
-                with context_trust(untrusted=untrusted, spoken=spoken), web_conversation(session):
-                    gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
-                if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending:
-                    pending.append(PendingApproval.from_action(gr.pending))
-                results.append(
+                rounds.session.append(asst)
+                outcomes = await self._run_calls(rounds.session, msgs, completion.tool_calls, req)
+                pending += [
+                    PendingApproval.from_action(gr.pending)
+                    for gr in outcomes
+                    if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending
+                ]
+                results: list[ContentBlock] = [
                     ToolResultBlock(
                         tool_use_id=call.id,
                         content=gr.for_model(),
                         is_error=gr.outcome is GatewayOutcome.ERROR,
                     )
-                )
-            session.append(Turn(role=Role.USER, content="", blocks=results))
-            await self.store.save(session)
-            msgs = msgs + [
-                ChatMessage(role=Role.ASSISTANT, content=asst_blocks),
-                ChatMessage(role=Role.USER, content=results),
-            ]
-            if rounds >= self.s.tool_max_rounds:
-                log.warning("tool round limit reached", extra={"session_id": session.id})
-                msgs = msgs + [
-                    ChatMessage(
-                        role=Role.USER,
-                        content=(
-                            "Tool round limit reached. Summarise what you found so far "
-                            "and what remains."
-                        ),
-                    )
+                    for call, gr in zip(completion.tool_calls, outcomes, strict=True)
                 ]
-                completion = await self._complete(msgs, prompt, req, spec, with_tools=False)
-                break
-        session.metadata["_rounds"] = rounds
+                done = Turn(role=Role.USER, content="", blocks=results)
+                rounds.session.append(done)
+                rounds.note(self.gateway.registry, completion.tool_calls, outcomes)
+                if not await rounds.store(self.store, [asst, done]):
+                    return rounds.stopped(completion), pending  # ran, not recorded: no more tools
+                msgs = msgs + [
+                    ChatMessage(role=Role.ASSISTANT, content=asst_blocks),
+                    ChatMessage(role=Role.USER, content=results),
+                ]
+                if rounds.count >= self.s.tool_max_rounds:
+                    log.warning("tool round limit reached", extra={"session_id": rounds.session.id})
+                    msgs = msgs + [ChatMessage(role=Role.USER, content=ROUND_LIMIT)]
+                    completion = await self._complete(msgs, prompt, req, spec, with_tools=False)
+                    break
         return completion, pending
+
+    async def _run_calls(
+        self, session: Session, msgs: list[ChatMessage], calls: list[ToolCall], req: ChatRequest
+    ) -> list[GatewayResult]:
+        """One round's calls through the gateway, in order. What the model had seen when it asked
+        for them: other people's text? A spoken message may be: every write becomes a card."""
+        assert self.gateway is not None
+        untrusted = untrusted_seen(msgs, self.gateway.registry)
+        spoken = req.channel == "voice"
+        out: list[GatewayResult] = []
+        for call in calls:
+            with context_trust(untrusted=untrusted, spoken=spoken), web_conversation(session):
+                out.append(await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}"))
+        return out
 
     # ---- forgetting -----------------------------------------------------------------------
 

@@ -9,7 +9,7 @@ import pytest
 
 from jarvis.documents.chunking import Chunk
 from jarvis.documents.models import Attachment, new_doc_id
-from jarvis.documents.store import AttachmentStore, NotAvailable
+from jarvis.documents.store import CACHE_DOCS, AttachmentStore, NotAvailable
 from jarvis.storage.docs import Create, MemoryDocs, Set
 
 
@@ -68,6 +68,36 @@ async def test_chunks_come_back_in_order_and_are_cached(
     reads = docs.reads
     assert await store.chunks(a) == CHUNKS
     assert docs.reads == reads
+
+
+async def test_a_part_reads_only_its_own_chunks(store: AttachmentStore, docs: MemoryDocs) -> None:
+    # integration review M2: doc_read never re-reads the whole document for each part
+    many = [Chunk(f"chunk {i} ", i * 9, None, None) for i in range(40)]
+    a = att(chunk_count=40)
+    await store.create(a, many)
+    cold = AttachmentStore(docs, prefix="t_")  # another process: nothing cached
+    reads = docs.reads
+    assert await cold.part(a, 4, 6) == many[4:6]
+    assert docs.reads - reads == 2
+    assert await cold.part(a, 39, 41) == many[39:]  # the last part may be a single chunk
+    assert await cold.part(a, 40, 42) == []
+    await store.chunks(a)  # a document already cached is sliced, not read again
+    reads = docs.reads
+    assert await store.part(a, 0, 2) == many[:2] and docs.reads == reads
+
+
+async def test_reading_parts_never_pushes_searched_documents_out_of_the_cache(
+    store: AttachmentStore, docs: MemoryDocs
+) -> None:
+    searched = att()
+    await store.create(searched, CHUNKS)
+    await store.chunks(searched)
+    for _ in range(CACHE_DOCS + 2):  # parts of other documents: read, not cached
+        other = att()
+        await store.create(other, CHUNKS)
+        await store.part(other, 0, 2)
+    reads = docs.reads
+    assert await store.chunks(searched) == CHUNKS and docs.reads == reads
 
 
 async def test_get_refuses_a_malformed_id_without_reading(

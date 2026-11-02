@@ -243,6 +243,8 @@ def create_app(
             gw.rules = app.state.permissions
         if gw is not None and gw.approval_guard is None:
             gw.approval_guard = app.state.permissions
+        if app.state.documents.rules is None:  # Documents "Never": no upload, no file sent
+            app.state.documents.rules = app.state.permissions
         app.state.gateway = gw
         app.state.brain = Brain(
             brains=app.state.brains,

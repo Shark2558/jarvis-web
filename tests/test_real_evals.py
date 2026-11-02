@@ -338,6 +338,19 @@ def test_the_guard_runs_a_suite_script_and_maps_a_breach_to_exit_3(tmp_path: Pat
     assert grd.run_script(ok, ["--real"], guard) == 1  # the suite's own exit status
 
 
+def test_a_suite_can_tell_it_runs_under_the_spend_guard(tmp_path: Path) -> None:
+    """Integration review L6: `guarded()` is true only while the runner's guard wraps the Claude
+    provider (a suite outside the runner refuses to spend)."""
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import sys\nfrom realrun.guard import guarded\nsys.exit(0 if guarded() else 7)\n"
+    )
+    assert not grd.guarded()
+    guard = grd.SpendGuard(cap_usd=1, ledger=grd.Ledger(tmp_path / "spend.json"))
+    assert grd.run_script(probe, [], guard) == 0
+    assert not grd.guarded()  # put back afterwards
+
+
 # ---- the plain-English summary
 
 

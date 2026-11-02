@@ -12,7 +12,9 @@ POST   /v1/attachments       body: the file's raw bytes (Content-Type is ignored
                              not kept: its text is. Errors {error, detail}: 413 too_large, 415
                              unsupported, 422 no_name / empty / encrypted / no_text / unreadable /
                              too_complex / too_slow, 408 upload_timeout (the body took > 60 s),
-                             409 too_many, 429 rate_limited, 503 busy (Retry-After on 429 / 503).
+                             403 documents_off (Documents is "Never" in Permissions; also
+                             refused on send), 409 too_many, 429 rate_limited, 503 busy /
+                             permissions_unavailable (Retry-After on 429 / 503).
                              The file's text is read by a limited child process
                              (`jarvis.documents.isolation`), one at a time.
 DELETE /v1/attachments/{id}  a file not sent yet (the owner removed its chip) → 204; 404
@@ -91,6 +93,7 @@ async def upload(
     _limit(request, uid)
     name = _name(request)
     kind_for(clean_name(name))  # an unsupported type is refused before the body is read
+    await svc.ensure_on(uid)  # Documents on "Never" in Permissions: refused before reading too
     try:  # an overall deadline: a sender that trickles bytes can't hold the route open
         data = await asyncio.wait_for(
             read_capped(request, MAX_FILE_BYTES, too_large=too_large), READ_TIMEOUT_S

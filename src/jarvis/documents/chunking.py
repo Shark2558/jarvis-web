@@ -2,9 +2,12 @@
 """Chunks of an attached document's text, and finding them again (slice 10 E).
 
 A chunk is ≈ 4,000 characters of plain text, measured in what the gateway really sends: tool
-results are JSON with ASCII escapes, so a Malayalam letter costs six characters (`\\u0d15`) and an
-emoji twelve. Measuring the JSON cost keeps every `doc_read` part (two chunks) and every
-`doc_search` answer under the gateway's 12,000-character cut for any script. Chunks break at a
+results are JSON with real Unicode (`gateway.serialise`, `ensure_ascii=False`), so a Malayalam
+letter or an emoji costs one character; only ASCII control characters are escaped (`\\n` two,
+`\\u0001` six). Measuring the JSON cost keeps every `doc_read` part (two chunks) and every
+`doc_search` answer under the gateway's 12,000-character cut for any script, and a 300,000-
+character Malayalam file makes about as many chunks as a Latin one (integration review M2:
+they were sized for escapes, ~6× too many). Chunks break at a
 blank line, else a line end, a sentence end or a space in the last 40 %. Ranking is the memory
 ranking (BM25 over the same tokens, `jarvis.recall`), so documents and notes are found alike.
 """
@@ -38,13 +41,11 @@ class Chunk:
 
 def _cost(ch: str) -> int:
     o = ord(ch)
-    if o < 128:
-        return _ASCII_COST[o]
-    return 12 if o > 0xFFFF else 6
+    return _ASCII_COST[o] if o < 128 else 1
 
 
 def json_cost(text: str) -> int:
-    """len(json.dumps(text)) - 2: what `text` costs inside a tool result."""
+    """len(json.dumps(text, ensure_ascii=False)) - 2: what `text` costs in a tool result."""
     return sum(_cost(ch) for ch in text)
 
 

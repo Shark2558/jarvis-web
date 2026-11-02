@@ -10,7 +10,8 @@ Both see only the calling owner's files in the calling conversation (`ToolContex
 anywhere else is "not in this conversation". Their output is other people's words, not the
 owner's (`trusted_output` stays False), so a round that used them is tainted: a memory save or
 any write after it becomes an approval card. They keep each reply's cost bounded instead of
-re-sending a whole document every turn.
+re-sending a whole document every turn: at most 6 calls of the two per owner message
+(`jarvis.tools.budget`, integration review L5), then a plain "document limit" result.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from jarvis.core.guardrails import ActionRisk
 from jarvis.documents.models import DOC_ID
 from jarvis.documents.service import DocumentService
 from jarvis.tools.base import Tool
+from jarvis.tools.budget import take_doc_call
 from jarvis.tools.context import require_tool_context
 
 AGENT = "documents"
@@ -52,10 +54,12 @@ def _check_search(a: dict[str, Any]) -> None:
 def document_tools(svc: DocumentService) -> list[Tool]:
     async def read(a: dict[str, Any]) -> dict[str, Any]:
         ctx = require_tool_context()
+        take_doc_call()  # ≤ 6 document calls per owner message (integration review L5)
         return await svc.read_part(ctx.user_id, ctx.session_id, a["doc_id"], a.get("part", 1))
 
     async def search(a: dict[str, Any]) -> dict[str, Any]:
         ctx = require_tool_context()
+        take_doc_call()
         return await svc.search(ctx.user_id, ctx.session_id, a.get("doc_id"), a["query"])
 
     return [

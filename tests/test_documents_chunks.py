@@ -5,12 +5,29 @@ from __future__ import annotations
 import json
 
 from jarvis.documents.chunking import excerpt, fit, json_cost, pages_label, rank, split
-from jarvis.documents.models import CHUNK_COST, MAX_CHUNKS
+from jarvis.documents.models import CHUNK_COST, CHUNKS_PER_PART, MAX_CHUNKS
+from jarvis.tools.gateway import MAX_RESULT_CHARS, serialise
+
+MALAYALAM = "കേരള സംസ്ഥാന ഐടി മിഷൻ ഏകീകൃത രജിസ്ട്രി പദ്ധതി വിവരങ്ങൾ. "
+LATIN = "The quick brown fox jumps over the lazy dog. "
 
 
-def test_json_cost_is_exactly_what_json_dumps_produces() -> None:
+def test_json_cost_is_exactly_what_the_gateway_produces() -> None:
+    # integration review M2: the gateway sends real Unicode (ensure_ascii=False), so a Malayalam
+    # letter or an emoji costs one character; only ASCII control characters are still escaped
     for s in ["plain", 'quote " and \\ slash', "tab\tnew\nline", "\x01", "കേരളം", "😀", "é"]:
-        assert json_cost(s) == len(json.dumps(s)) - 2, s
+        assert json_cost(s) == len(json.dumps(s, ensure_ascii=False)) - 2, s
+    assert json_cost("കേരളം") == len("കേരളം") and json_cost("😀") == 1
+    assert json_cost("\n") == 2 and json_cost("\x01") == 6
+
+
+def test_a_malayalam_file_makes_about_as_many_chunks_as_a_latin_one() -> None:
+    ml, _ = split((MALAYALAM * 6_000)[:300_000])
+    lat, _ = split((LATIN * 8_000)[:300_000])
+    assert 69 <= len(ml) <= 75 and 69 <= len(lat) <= 75, (len(ml), len(lat))
+    assert abs(len(ml) - len(lat)) <= 3
+    part = "".join(c.text for c in ml[:CHUNKS_PER_PART])
+    assert len(serialise({"text": part})) <= MAX_RESULT_CHARS  # a doc_read part still fits
 
 
 def test_plain_text_chunks_are_about_4000_characters_and_cover_everything() -> None:
@@ -29,11 +46,14 @@ def test_chunks_break_at_paragraphs_when_they_can() -> None:
     assert all(c.text.endswith("\n\n") for c in chunks[:-1])
 
 
-def test_non_latin_text_makes_smaller_chunks_so_a_part_still_fits_the_gateway() -> None:
-    text = "കേരളം " * 3_000  # every letter becomes \\uXXXX in JSON
+def test_non_latin_chunks_are_full_size_and_still_fit_the_gateway() -> None:
+    text = "കേരളം " * 3_000  # one character a letter in the gateway's JSON
     chunks, _ = split(text)
     assert all(json_cost(c.text) <= CHUNK_COST for c in chunks)
-    assert len(chunks[0].text) < 1_000
+    assert len(chunks[0].text) > 3_000
+    emoji = "😀" * 9_000  # astral characters too: one each, no surrogate pairs
+    assert all(len(c.text) <= CHUNK_COST for c in split(emoji)[0])
+    assert len(split(emoji)[0]) == 3
 
 
 def test_page_numbers_follow_the_page_offsets() -> None:

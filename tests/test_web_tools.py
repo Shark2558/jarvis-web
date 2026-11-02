@@ -15,11 +15,13 @@ from web_fakes import FakeTavily, hit
 
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.core.models import Session, Turn
-from jarvis.llm.base import ChatMessage, Role, ToolCall, ToolResultBlock
+from jarvis.documents.models import AttachmentRef
+from jarvis.llm.base import ChatMessage, Role, TextBlock, ToolCall, ToolResultBlock
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
-from jarvis.tools.external import FENCE_END
+from jarvis.tools.external import FENCE_END, wrap_external
 from jarvis.tools.gateway import MAX_RESULT_CHARS, GatewayOutcome, GatewayResult
+from jarvis.tools.policy import Effect, PolicyRule
 from jarvis.tools.taint import context_trust, untrusted_seen
 from jarvis.web.allowance import WebAllowance
 from jarvis.web.ledger import web_conversation
@@ -41,7 +43,7 @@ SCOPE = "u_owner:sess_1"
 
 
 class Rig:
-    def __init__(self, cap: int = 900) -> None:
+    def __init__(self, cap: int = 900, policy: Policy | None = None) -> None:
         self.fake = FakeTavily()
         self.docs = MemoryDocs()
         self.clock = 1_000.0
@@ -56,7 +58,7 @@ class Rig:
             reg.register(t)
         self.audit = AuditLog()
         self.gateway = Gateway(
-            registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=self.audit
+            registry=reg, policy=policy or Policy(), gate=ConfirmationGate(), audit=self.audit
         )
         self.session = Session(user_id="u_owner")
         self._n = 0
@@ -201,6 +203,27 @@ async def test_after_untrusted_text_a_query_is_short() -> None:
     assert r.fake.queries() == [long_query.strip()]
 
 
+async def test_an_approved_long_query_card_runs() -> None:
+    """Integration review L7: with web on "Ask first", a long query proposed in an untainted turn
+    becomes a card; approving it (outside any turn) runs it — the 120-character cap belongs to the
+    proposal in a tainted round, never to the owner's approval."""
+    r = Rig(policy=Policy([PolicyRule(tool_pattern="web_*", effect=Effect.ASK)]))
+    long_query = "kerala monsoon rainfall " * 6
+    proposed = await r.call("web_search", untrusted=False, query=long_query)
+    assert proposed.outcome is GatewayOutcome.AWAITING_CONFIRMATION and proposed.pending
+    tainted = await r.call("web_search", untrusted=True, query=long_query + "now")
+    assert tainted.outcome is GatewayOutcome.ERROR and "120" in (tainted.error or "")
+    with web_conversation(r.session):  # the owner approves on screen: no turn, no taint flag
+        gr = await r.gateway.execute(
+            ToolCall(id="approve_1", name="web_search", arguments={"query": long_query}),
+            confirmation_id=proposed.pending.id,
+            scope=SCOPE,
+        )
+    assert gr.outcome is GatewayOutcome.EXECUTED, gr.error
+    assert r.fake.queries() == [long_query.strip()]
+    assert await r.gateway.gate.get(proposed.pending.id) is None  # the card was spent
+
+
 async def test_allowance_reached_stops_searching_with_a_plain_message() -> None:
     r = Rig(cap=1)
     assert (await r.call("web_search", query="one")).outcome is GatewayOutcome.EXECUTED
@@ -263,6 +286,36 @@ async def test_at_most_three_searches_and_two_reads_per_owner_message() -> None:
     assert len(r.fake.extracted()) == MAX_READS_PER_TURN
     r.owner_says("and another thing")  # a new owner message: a fresh allowance of calls
     assert (await r.call("web_search", query="next")).outcome is GatewayOutcome.EXECUTED
+
+
+async def test_a_message_with_an_attached_file_gets_its_own_searches() -> None:
+    """Integration review M3: a message with a file (its note is a second text block) is an owner
+    message too, not part of the previous one."""
+    r = Rig()
+    r.owner_says("look things up")
+    for i in range(MAX_SEARCHES_PER_TURN):
+        assert (await r.call("web_search", query=f"q{i}")).outcome is GatewayOutcome.EXECUTED
+    r.session.append(Turn(role=Role.ASSISTANT, content="Done, Sir."))
+    text = "summarise this PDF and check online"
+    note = wrap_external("Clause 7: rent is due on the 5th.", source="attached file Lease.pdf")
+    r.session.append(
+        Turn(
+            role=Role.USER,
+            content=text,
+            blocks=[TextBlock(text=text), TextBlock(text=note)],
+            attachments=[
+                AttachmentRef(
+                    id="doc_" + "0" * 20, name="Lease.pdf", kind="pdf", size=9, words=7, chars=33
+                )
+            ],
+        )
+    )
+    for i in range(MAX_SEARCHES_PER_TURN):
+        gr = await r.call("web_search", untrusted=True, query=f"rent law {i}")
+        assert gr.outcome is GatewayOutcome.EXECUTED, gr.error
+    over = await r.call("web_search", untrusted=True, query="one more")
+    assert "search limit for this request reached" in (over.error or "").lower()
+    assert len(r.fake.queries()) == 2 * MAX_SEARCHES_PER_TURN
 
 
 async def test_at_most_thirty_searches_an_hour_per_owner() -> None:

@@ -31,7 +31,9 @@ MAX_FILES_PER_MESSAGE = 3
 MAX_PAGES = 300
 MAX_CHARS = 300_000
 MAX_CHUNKS = 480  # one atomic Firestore commit (500 writes) with the header
-CHUNK_COST = 4_400  # chunk size in JSON-escaped characters (≈ 4,000 characters of plain text)
+# chunk size in the gateway's JSON characters (real Unicode: one per letter in any script; only
+# ASCII control characters escaped) ≈ 4,000 characters of text, Latin or Malayalam alike
+CHUNK_COST = 4_400
 CHUNKS_PER_PART = 2  # doc_read returns one part ≈ 8,000 characters
 PREVIEW_CHARS = 2_000  # the start of the text that travels with the turn
 NAME_LIMIT = 120

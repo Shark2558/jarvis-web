@@ -87,6 +87,15 @@ class ConfirmationInvalid(PermissionError):
         self.action = action
 
 
+class TooManyApprovals(PermissionError):
+    """A NEW card past this owner message's budget (`jarvis.tools.budget`): nothing is stored.
+    (A proposal identical to a waiting card is not new and is never refused.)"""
+
+    def __init__(self, action: PendingAction) -> None:
+        super().__init__(f"too many approvals in one request: {action.summary}")
+        self.action = action
+
+
 ActionMatcher = Callable[[PendingAction], bool]
 
 
@@ -124,6 +133,12 @@ class ApprovalStore(ABC):
     @abstractmethod
     async def list_pending(self) -> list[PendingAction]:
         """Unexpired actions, oldest first."""
+
+    async def pending_in(self, scope: str | None) -> list[PendingAction]:
+        """Unexpired actions of one conversation, oldest first: what a new proposal is checked
+        against for a duplicate. A store that can query by scope overrides this, so a proposal
+        never reads every waiting card (slice 10 integration review L4)."""
+        return [a for a in await self.list_pending() if a.scope == scope]
 
 
 class InMemoryApprovalStore(ApprovalStore):
@@ -165,13 +180,20 @@ class ConfirmationGate:
     def __init__(self, store: ApprovalStore | None = None) -> None:
         self.store: ApprovalStore = store or InMemoryApprovalStore()
 
-    async def check(self, action: PendingAction, *, confirmation_id: str | None = None) -> None:
+    async def check(
+        self,
+        action: PendingAction,
+        *,
+        confirmation_id: str | None = None,
+        new_allowed: bool = True,
+    ) -> None:
         """Raise ConfirmationRequired unless the action is safe or explicitly confirmed.
 
-        Without a token the action is stored and ConfirmationRequired raised. With a token it
-        runs only if the store atomically consumes a matching, unexpired approval; otherwise
-        ConfirmationInvalid — a wrong token never consumes another action's token and never
-        stores anything."""
+        Without a token the action is stored and ConfirmationRequired raised — or, when it is not
+        a duplicate and `new_allowed` is False (the message's card budget is spent),
+        TooManyApprovals and nothing is stored. With a token it runs only if the store atomically
+        consumes a matching, unexpired approval; otherwise ConfirmationInvalid — a wrong token
+        never consumes another action's token and never stores anything."""
         if action.risk is not ActionRisk.IRREVERSIBLE:
             return
 
@@ -180,9 +202,11 @@ class ConfirmationGate:
 
         if confirmation_id is None:
             # the same proposal twice must not become two approvals (= two sends)
-            existing = next((p for p in await self.store.list_pending() if same(p)), None)
+            existing = next((p for p in await self.store.pending_in(action.scope) if same(p)), None)
             if existing is not None:
                 raise ConfirmationRequired(existing)
+            if not new_allowed:
+                raise TooManyApprovals(action)
             await self.store.put(action)
             raise ConfirmationRequired(action)
         if await self.store.consume(confirmation_id, same) is None:

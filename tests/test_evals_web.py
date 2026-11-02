@@ -33,3 +33,22 @@ def test_web_mock_evals_pass_their_gates_and_the_negative_controls_fail() -> Non
     assert len(guard["results"]) >= 36  # review H1: obfuscated emails, numbers, PAN
     nc = report["negative_controls"]
     assert nc["guard_off_fails"] and nc["allow_list_off_fails"] and nc["gate"]
+
+
+def test_a_real_model_run_outside_the_guarded_runner_is_refused(tmp_path: Path) -> None:
+    """Integration review L6: without --mock this suite would call the real Claude models with no
+    rupee estimate, no typed YES and no safety stop — so it refuses before building anything."""
+    report = ROOT / "evals" / "web" / "report.json"
+    before = report.stat().st_mtime_ns if report.exists() else None
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "PYTHONPATH": str(ROOT / "src"),
+        "HOME": str(tmp_path),
+        "JARVIS_ANTHROPIC_API_KEY": "sk-ant-not-a-real-key",  # present: still refused
+    }
+    r = subprocess.run(
+        [sys.executable, str(RUN)], capture_output=True, text=True, env=env, cwd=tmp_path
+    )
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "--mock" in r.stdout and "run-real-evals.sh" in r.stdout
+    assert (report.stat().st_mtime_ns if report.exists() else None) == before  # nothing ran

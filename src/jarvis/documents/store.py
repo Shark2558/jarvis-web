@@ -9,11 +9,15 @@ Every document stays far under Firestore's 1 MiB limit. An upload is one commit 
 the header, header LAST and create-only). Binding uploads to the conversation they were sent in
 is one transaction over all of them: owner-checked, only while still waiting, all or nothing;
 `unbind` undoes it when the turn could not be stored.
-Chunk texts of the few most recent documents are kept in-process (doc_search reads them all).
+Chunk texts of the few most recent documents are kept in-process (doc_search reads them all);
+a doc_read part reads only its own chunks (integration review M2). The cache holds as many
+documents as one owner message may call document tools (`tools.budget.MAX_DOC_CALLS`), so one
+message's calls never evict each other (review L5).
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections import OrderedDict
 from collections.abc import Sequence
 from typing import Any
@@ -24,10 +28,11 @@ from jarvis.documents.chunking import Chunk
 from jarvis.documents.models import DOC_ID, Attachment
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Create, Delete, Doc, Docs, DocTx, Op, Query, Set
+from jarvis.tools.budget import MAX_DOC_CALLS
 
 log = get_logger(__name__)
 
-CACHE_DOCS = 4
+CACHE_DOCS = MAX_DOC_CALLS  # ≤ 6 × 300,000 characters in memory at most
 
 
 class NotAvailable(LookupError):
@@ -77,7 +82,23 @@ class AttachmentStore:
             return None
         return _parse(aid, await self._d.get(self._head(aid)))
 
+    async def part(self, att: Attachment, start: int, stop: int) -> list[Chunk]:
+        """Chunks [start, stop) only (a doc_read part): sliced from the cache when the document
+        is there, else read by path — never the whole document, never cached (so reading parts
+        can't push a searched document out of the cache)."""
+        stop = min(stop, att.chunk_count)
+        cached = self._cache.get(att.id)
+        if cached is not None:
+            return list(cached[start:stop])
+        if start >= stop:
+            return []
+        raws = await asyncio.gather(
+            *(self._d.get(f"{self._chunks_col(att.id)}/{i + 1:06d}") for i in range(start, stop))
+        )
+        return [_chunk_of(d) for d in raws if d is not None]
+
     async def chunks(self, att: Attachment) -> list[Chunk]:
+        """Every chunk (doc_search ranks them all), cached for the few most recent documents."""
         cached = self._cache.get(att.id)
         if cached is not None:
             self._cache.move_to_end(att.id)

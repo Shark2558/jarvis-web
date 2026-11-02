@@ -192,6 +192,28 @@ def install(guard: SpendGuard) -> Callable[[], None]:
     return undo
 
 
+def guarded() -> bool:
+    """True while `install` wraps the Claude provider — i.e. inside a suite the runner started
+    (`run_real.py guard …`, after the rupee estimate and the owner's typed YES). A suite with a
+    real mode that is not in the runner's catalogue refuses to spend without it
+    (`refuse_unguarded`; integration review L6)."""
+    return AnthropicProvider.complete is not ORIGINAL_COMPLETE
+
+
+UNGUARDED = (
+    "Real-model runs spend money, so they go through the guarded runner only "
+    "(bash deploy/run-real-evals.sh: a rupee estimate, your typed YES and a safety stop). "
+    "{suite} is not in its list yet: run it with --mock. Nothing was run or spent."
+)
+
+
+def refuse_unguarded(suite: str) -> None:
+    """Exit 2 (setup problem) before anything is built unless the spend guard is in place."""
+    if not guarded():
+        print(UNGUARDED.format(suite=suite), flush=True)
+        raise SystemExit(2)
+
+
 def run_script(script: Path, args: Sequence[str], guard: SpendGuard) -> int:
     """Run one suite's script as __main__ under the guard; its exit status, or EXIT_CAP /
     EXIT_UNMETERED when the guard stopped it."""
@@ -221,6 +243,8 @@ __all__ = [
     "SpendCapReached",
     "SpendGuard",
     "UnmeteredModel",
+    "guarded",
     "install",
+    "refuse_unguarded",
     "run_script",
 ]

@@ -99,6 +99,18 @@ def test_makes_its_private_python_in_the_home_folder(script: str) -> None:
     assert "umask 077" in script
 
 
+def test_installs_only_hash_locked_libraries_like_the_image(script: str) -> None:
+    """Integration review L8: the venv that later holds the Claude key installs exactly the
+    hash-locked requirements, then JARVIS itself with --no-deps (as the Dockerfile does)."""
+    installs = [ln.strip() for ln in script.splitlines() if "pip" in ln and " install " in ln]
+    assert len(installs) == 2, installs
+    locked, app = installs
+    assert '--require-hashes -r "$REPO/requirements.lock"' in locked
+    assert "--no-deps" in app and "--no-build-isolation" in app and '"$REPO"' in app
+    assert script.index("--require-hashes") < script.index("--no-deps")
+    assert "requirements.lock" in script[: script.index("--require-hashes")]  # in the stamp too
+
+
 def _stubs(tmp_path: Path, rc: int) -> tuple[dict[str, str], Path]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)

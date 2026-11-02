@@ -3,7 +3,8 @@
 
 Usage:
     python evals/web/run.py --mock        # CI: real Brain + gateway + tools, scripted mock model
-    python evals/web/run.py               # real model (JARVIS_ANTHROPIC_API_KEY); Tavily stays fake
+    python evals/web/run.py               # real model: refused unless started by the guarded
+                                          # runner (evals/realrun; not in its catalogue yet)
     python evals/web/run.py --suite injection --only w06
 
 Everything runs against an in-memory Tavily (evals/web/fake_tavily.py), so the gates are asserted
@@ -434,6 +435,11 @@ async def main() -> int:
     ap.add_argument("--suite", choices=["all", "citations", "injection", "guard"], default="all")
     ap.add_argument("--only", default=None, help="comma-separated case ids")
     args = ap.parse_args()
+    if not args.mock:  # real Claude: only under the runner's estimate, typed YES and safety stop
+        sys.path.append(str(HERE.parent))  # evals/, for realrun (already there in a guarded run)
+        from realrun.guard import refuse_unguarded
+
+        refuse_unguarded("The web search suite")
     configure_logging("ERROR", False)
     report: dict[str, Any] = {"mode": "mock" if args.mock else "real", "suites": {}}
     gate = True

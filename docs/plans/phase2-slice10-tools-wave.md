@@ -429,7 +429,8 @@ Integrations → Grant. 4. Approvals → Permissions → Set up a passkey. 5. Op
   with the name in `X-Jarvis-Filename`, not multipart — python-multipart is not installed (shared
   venvs, lock) and a raw body needs no parser, streams through the existing `read_capped`, and the
   body cap is exact; (2) chunks are cut by their JSON-escaped size (~4,000 chars of Latin text,
-  ~700 of Malayalam) so a `doc_read` part fits the gateway's 12,000-char cut in any script;
+  ~700 of Malayalam) so a `doc_read` part fits the gateway's 12,000-char cut in any script
+  (integration review M2: the gateway now sends real Unicode, so ~4,000 in any script);
   (3) text files try cp1252 before latin-1 (Windows "ANSI" smart quotes); (4) an upload waits
   unbound ("waiting") until sent, ≤ 10 per owner, swept after 24 h at the next upload or
   conversation delete; it is bound to the conversation and turn atomically on send; (5) a PDF
@@ -452,6 +453,19 @@ Integrations → Grant. 4. Approvals → Permissions → Set up a passkey. 5. Op
   upload body has a 60 s overall deadline (408). Not changed: the file name stays outside the
   fence, sanitised to one plain line with no brackets, quotes or angle brackets (the header
   must stay readable; the content is fenced and the round is tainted either way).
+
+### Integration review (fresh context on `slice10-phase2-tools`, 2026-11-02): 0 critical, 0 high, 3 medium, 5 low — fixed on `s10-fix`
+| # | Finding | Fix |
+|---|---|---|
+| M1 | A tool round was saved with a plain `store.save`: a `SessionConflict` after an R2 write (to-do, event, draft) ended the turn with 409, the write existed only in the audit log, and a retry did it twice | `core/rounds.py` (`Rounds`, brain.py now 759 lines): until a non-R1 call has run, rounds save plainly (a conflict is still the 409 "message kept"); from the first executed write, that round and every later save of the message (reply included) go through `record_after_action` — reload, re-append once, never raise. If even that fails the loop stops (no more tools in a conversation that can't record them), the reply says what was done ("Done, Sir: Remind at 5pm: …") and the response adds "It was done, but … could not record it here". Known limit: after such a reload the other window's message is the latest owner message, so that reply's source chips and per-message web counters start from it. |
+| M2 | Chunks were sized as if the gateway escaped non-ASCII (6 per Malayalam letter): a 300k-char Malayalam file made 358 chunks of ~840 chars; `read_part` re-read every chunk for each part | `chunking._cost`: 1 per non-ASCII character (ASCII control escapes kept; matches `serialise`, `ensure_ascii=False`) → 69 chunks for Malayalam and Latin alike, a part ≈ 8,750 serialised chars. `AttachmentStore.part()` reads only the part's chunks (cache slice, else 2 gets; never cached). Also: the fenced text of a part / search hit is cut after fence-like text is defused (`PART_TEXT_LIMIT` 10,000, `EXCERPT_LIMIT` 3,000) — a file made of `<<END>>` markers grew past the 12,000 cut and lost its closing fence. |
+| M3 | `owner_index` skipped user turns with blocks, so a message with an attached file shared the previous message's web counters (3 searches earlier → 0 now) and its typed link was not readable | `ledger.is_owner_message`: a user turn with no tool-result block (typed, spoken, or with files) is an owner message; typed links come from its `content` only, never the file's note. Test: "summarise this PDF and check online" gets its own 3 searches. |
+| L4 | No cap on approval cards per message; every proposal read up to 100 approval docs | `tools/budget.py` `turn_budget()` around the tool loop: ≤ 5 NEW cards per owner message (a duplicate of a waiting card is free), then a plain "Too many approvals in one request … nothing was proposed" (audited `denied`, nothing stored). The duplicate look-up is `ApprovalStore.pending_in(scope)` — Firestore equality query on `scope` (automatic single-field index). |
+| L5 | No per-message cap on doc tools; `CACHE_DOCS = 4` thrashed | ≤ 6 `doc_read`/`doc_search` calls per owner message (`take_doc_call`, plain "Document limit for this request reached"); `CACHE_DOCS = MAX_DOC_CALLS` (6) and parts never enter the cache. |
+| L6 | `evals/web/run.py` without `--mock` called live Claude with no estimate or spend stop | `realrun.guard.guarded()` (true only while the runner's guard wraps the provider) + `refuse_unguarded()`: the web suite exits 2 before building anything unless started by the guarded runner. The other new evals (tasks, documents, permissions) are mock-only. |
+| L7 | Web "Ask first": approving a > 120-char query failed (outside a turn counted as tainted) with a misleading message and the card stayed pending | `_check_search` applies the 120-char cap only in a tainted round (`tainted_round()`, the gateway's explicit check); an approved card runs as shown. |
+| L8 | `run-real-evals.sh` installed from unpinned PyPI into the venv that later holds the key | `pip install --require-hashes -r requirements.lock`, then `--no-build-isolation --no-deps "$REPO"` (as the Dockerfile); the install stamp covers the lock too. |
+| + | Documents on "Never" still took uploads and sent their 2,000-char preview to the model | `DocumentService.rules` (the owner's rules, wired in `create_app`): upload → 403 `documents_off` "Documents are switched off in Permissions." (checked before the body is read); send → 422 with the same words, nothing bound, no empty conversation. Unreadable permissions fail closed (503 / 422). |
 
 ## Integration (2026-11-02, branch `slice10-phase2-tools`)
 Merged in order with merge commits: `s10-web`, `s10-tasks`, `s10-perm`, `s10-docs`, then

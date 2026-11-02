@@ -57,11 +57,16 @@ if [ -z "$PY" ]; then
     || die "Python 3.11 or newer is needed (python3 --version shows what Cloud Shell has)."
   VENV="$EVALS_HOME/venv"
   [ -x "$VENV/bin/python" ] || python3 -m venv "$VENV" || die "Could not create the Python set-up."
-  STAMP="$(sha256sum pyproject.toml | cut -d' ' -f1)"
+  STAMP="$(cat pyproject.toml requirements.lock | sha256sum | cut -d' ' -f1)"
   if [ "$(cat "$EVALS_HOME/installed" 2>/dev/null || true)" != "$STAMP" ]; then
     echo "  Installing JARVIS's libraries (first time, or after an update: about 2 minutes)..."
-    "$VENV/bin/pip" install --quiet --disable-pip-version-check "$REPO" \
+    # Exactly the hash-locked libraries, as the Dockerfile does: pip refuses any file whose
+    # sha256 differs from requirements.lock, so this set-up (which later holds the Claude key)
+    # never runs an unpinned or tampered package. Then JARVIS itself, adding nothing else.
+    "$VENV/bin/pip" install --quiet --disable-pip-version-check --require-hashes -r "$REPO/requirements.lock" \
       || die "Could not install the libraries. Check the internet connection and try again."
+    "$VENV/bin/pip" install --quiet --disable-pip-version-check --no-build-isolation --no-deps "$REPO" \
+      || die "Could not install JARVIS into its Python set-up. Send the lines above to Claude."
     printf '%s' "$STAMP" > "$EVALS_HOME/installed"
   else
     echo "  Already prepared."

@@ -235,6 +235,28 @@ async def test_attach_chat_transcript_and_delete(
     assert await store.get(aid) is None
 
 
+async def test_documents_switched_off_refuses_uploads_and_sending(
+    client: AsyncClient, provider: MockProvider
+) -> None:
+    """Integration review (extra): with Documents on "Never" no file is taken in or sent, so the
+    start of a file (the note's ≤ 2,000 characters) never reaches the model."""
+    waiting = (await upload(client, "Lease.pdf", make_pdf(["Rent is due on the 5th."]))).json()
+    r = await client.put("/v1/permissions", json={"groups": {"documents": "deny"}})
+    assert r.status_code == 200, r.text
+    r = await client.post(PATH, content=_never(), headers=named("Other.txt"))
+    assert r.status_code == 403 and r.json()["error"] == "documents_off"
+    assert r.json()["detail"] == "Documents are switched off in Permissions."
+    calls = len(provider.calls)
+    r = await client.post("/v1/chat", json={"message": "read it", "attachments": [waiting["id"]]})
+    assert r.status_code == 422 and "switched off in Permissions" in r.json()["detail"]
+    assert len(provider.calls) == calls  # nothing reached the model
+    assert (await client.get("/v1/sessions")).json() == []  # no empty conversation left
+    await client.put("/v1/permissions", json={"groups": {"documents": "allow"}})
+    provider.script("On the 5th, Sir.")
+    r = await client.post("/v1/chat", json={"message": "read it", "attachments": [waiting["id"]]})
+    assert r.status_code == 200, r.text  # switched back on: the waiting file goes
+
+
 async def test_more_than_three_files_in_one_message_is_refused(client: AsyncClient) -> None:
     ids = [(await upload(client, f"{i}.txt", b"note")).json()["id"] for i in range(4)]
     r = await client.post("/v1/chat", json={"message": "read all", "attachments": ids})

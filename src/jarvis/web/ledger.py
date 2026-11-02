@@ -9,7 +9,8 @@ Stored in the conversation itself (`session.metadata["web"]`, saved with it, del
 
 A result keeps its number for the whole conversation (the newest `MAX_SOURCES` are kept; a number
 is never reused), so numbers never clash. `turn` belongs to ONE owner message (index `owner` in
-the conversation; a new owner message starts a fresh record): how many searches / page reads it
+the conversation; a new owner message — one with attached files too, integration review M3 —
+starts a fresh record): how many searches / page reads it
 has made (the per-message caps, review M3) and which numbers its tool results showed the model.
 
 The Brain opens `web_conversation(session)` around each gateway call; web_search numbers its
@@ -32,12 +33,12 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
-from jarvis.llm.base import Role
+from jarvis.llm.base import Role, ToolResultBlock
 from jarvis.tools.card import one_line
 from jarvis.web.sources import TITLE_LIMIT, Source, domain_of, normalize_url, urls_in_text
 
 if TYPE_CHECKING:
-    from jarvis.core.models import Session
+    from jarvis.core.models import Session, Turn
 
 LEDGER_KEY = "web"
 MAX_SOURCES = 60
@@ -81,11 +82,17 @@ def _stored(meta: Mapping[str, Any]) -> tuple[list[Source], int]:
     return found, max(nxt, floor) if _int(nxt) else floor
 
 
+def is_owner_message(t: Turn) -> bool:
+    """A message from the owner (typed or spoken), with or without attached files — their note
+    is a second text block (integration review M3) — never a tool exchange: tool results, or an
+    approval's result + instruction, always carry a tool result block."""
+    return t.role is Role.USER and not any(isinstance(b, ToolResultBlock) for b in t.blocks)
+
+
 def owner_index(session: Session) -> int:
     """The position of the owner's latest message (typed or spoken); -1 when there is none."""
     for i in range(len(session.turns) - 1, -1, -1):
-        t = session.turns[i]
-        if t.role is Role.USER and not t.blocks:
+        if is_owner_message(session.turns[i]):
             return i
     return -1
 
@@ -180,11 +187,12 @@ class Conversation:
 
 def conversation_of(session: Session) -> Conversation:
     """The ledger of `session`, the links in its owner's TYPED messages (not tool exchanges, not
-    instructions, not the model's words, not spoken messages) and its current owner message."""
+    instructions, not the model's words, not spoken messages, not an attached file's text — only
+    the message's own `content`) and its current owner message."""
     typed = tuple(
         t.content
         for t in session.turns
-        if t.role is Role.USER and not t.blocks and t.channel == "text" and t.content
+        if is_owner_message(t) and t.channel == "text" and t.content
     )
     return Conversation(session.metadata, typed, owner_index(session))
 
@@ -244,6 +252,7 @@ __all__ = [
     "cited_sources",
     "conversation_of",
     "current_conversation",
+    "is_owner_message",
     "owner_index",
     "web_conversation",
 ]

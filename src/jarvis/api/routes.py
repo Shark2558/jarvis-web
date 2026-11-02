@@ -15,6 +15,7 @@ POST /v1/chat/stream          one turn, text/plain streamed deltas (402 first if
 GET  /v1/sessions             list the caller's sessions (+ total_cost_inr)
 GET  /v1/sessions/{id}        full transcript (audit / replay) (+ total_cost_inr)
 DELETE /v1/sessions/{id}      forget a session (owner's delete right)
+POST /v1/approvals/approve-all {session_id, ids ≤ 20} → ChatResponse + results (slice 11 D6)
 GET  /health                  liveness + dependency check (unauthenticated)
 """
 
@@ -25,12 +26,13 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
 from jarvis.api.permissions import mark_passkey_cards
 from jarvis.config import Settings
+from jarvis.core.approve_all import MAX_IDS, ApprovalId, ApproveAllResponse
 from jarvis.core.brain import Brain, StreamMeta
 from jarvis.core.models import (
     ChatRequest,
@@ -247,6 +249,26 @@ async def approve(
     # the passkey check is made by the gateway's approval guard, on the card as it is now
     with presenting_proof(d.passkey):
         return await brain.approve(approval_id, session_id=d.session_id, user_id=uid)
+
+
+class ApproveAll(BaseModel):
+    session_id: str  # a client-sent user_id or passkey is ignored (pydantic drops unknown fields)
+    ids: list[ApprovalId] = Field(min_length=1, max_length=MAX_IDS)
+
+
+@router.post(
+    "/v1/approvals/approve-all",
+    response_model=ApproveAllResponse,
+    dependencies=[Depends(require_auth)],
+)
+async def approve_all(
+    d: ApproveAll, brain: Brain = Depends(_brain), uid: str = Depends(current_user)
+) -> ApproveAllResponse:
+    """Slice 11 D6: the listed cards of this conversation that can be undone, in order; cards
+    that can't be undone stay waiting for their own approval. No passkey is ever presented here,
+    so the approval guard refuses any card that would need one."""
+    with presenting_proof(None):
+        return await brain.approve_all(d.ids, session_id=d.session_id, user_id=uid)
 
 
 @router.post(

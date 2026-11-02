@@ -10,15 +10,17 @@ its tool exchange BEFORE any model call (`record_exchange` + `jarvis.core.saving
   owner saw it (slice 10 D) is withdrawn and proposed again — nothing ran.
 - `declined`: cancels the card (a concurrent decision raises LookupError, so a decline that did
   not happen is never recorded) and audits it.
+- `Outcome`: what a decision — one card, or Approve all (`jarvis.core.approve_all`) — did, ready
+  for its one reply (`Brain._narrated`).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from jarvis.core.guardrails import PendingAction
-from jarvis.core.models import Session, Turn
-from jarvis.llm.base import Role, TextBlock, ToolCall, ToolResultBlock
+from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn
+from jarvis.llm.base import Completion, Role, TextBlock, ToolCall, ToolResultBlock, Usage
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 
 
@@ -30,6 +32,68 @@ class Decision:
     result: GatewayResult
     fallback: str
     instruction: str
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """What an owner decision did, ready for its one reply."""
+
+    fallback: str  # the plain reply when the model can't (or mustn't) narrate
+    unrecorded: list[Turn]  # its exchange turns not stored yet: retried with the narration
+    did: bool  # something ran (the "not recorded" note says "It was done")
+    tool_calls: int = 0
+    again: list[PendingAction] = field(default_factory=list)  # cards proposed again
+    note: str = ""  # added to the reply as written (Approve all: the cards left waiting)
+    narrate: bool = True  # False: nothing ran or was recorded — no model call, nothing stored
+
+
+def single(d: Decision, *, approved: bool, unrecorded: list[Turn]) -> Outcome:
+    """The outcome of one approve / decline."""
+    did = approved and d.result.pending is None
+    again = [d.result.pending] if d.result.pending is not None else []
+    return Outcome(d.fallback, unrecorded, did, tool_calls=int(did), again=again)
+
+
+def narration(reply: str, completion: Completion | None, trace_id: str) -> Turn:
+    """The reply to a decision: tool-derived, so never sent to a brain that may train on it."""
+    return Turn(
+        role=Role.ASSISTANT,
+        content=reply,
+        trace_id=trace_id,
+        model=completion.model if completion else "none",
+        usage=completion.usage if completion else None,
+        cost_usd=completion.cost_usd if completion else 0.0,
+        tool_derived=True,
+    )
+
+
+def response(
+    session: Session,
+    brain_id: str,
+    reply: str,
+    completion: Completion | None,
+    trace_id: str,
+    out: Outcome,
+    inr: tuple[float, ...],
+) -> ChatResponse:
+    """The decision's ChatResponse; `inr` = (this reply, the whole conversation) in rupees."""
+    cost_inr, total_inr = inr
+    return ChatResponse(
+        session_id=session.id,
+        reply=reply,
+        trace_id=trace_id,
+        model=completion.model if completion else "none",
+        brain=brain_id,
+        usage=completion.usage if completion else Usage(),
+        cost_usd=completion.cost_usd if completion else 0.0,
+        cost_inr=cost_inr,
+        total_cost_usd=session.total_cost_usd,
+        total_cost_inr=total_inr,
+        latency_ms=0,
+        turn_count=len(session.turns),
+        tool_calls=out.tool_calls,
+        pending_approvals=[PendingApproval.from_action(a) for a in out.again],
+    )
 
 
 def record_exchange(session: Session, d: Decision, trace_id: str | None) -> list[Turn]:
@@ -93,4 +157,13 @@ async def declined(
     )
 
 
-__all__ = ["Decision", "approved", "declined", "record_exchange"]
+__all__ = [
+    "Decision",
+    "Outcome",
+    "approved",
+    "declined",
+    "narration",
+    "record_exchange",
+    "response",
+    "single",
+]

@@ -35,7 +35,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -48,6 +48,7 @@ from jarvis.logging import get_logger
 from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.tools.card import one_line
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult, approved_via
+from jarvis.tools.reply_cards import MAX_CARDS
 from jarvis.web.ledger import web_conversation
 
 log = get_logger(__name__)
@@ -122,6 +123,7 @@ class Batch:
     ran: int = 0  # approved calls that reached their tool (it returned, or raised while running)
     stopped: bool = False
     undo: list[UndoRef] = field(default_factory=list)  # undo-able deletes that ran: Undo chips
+    cards: list[Any] = field(default_factory=list)  # slice 12: the Maps / YouTube cards they made
 
     def outcome(self) -> decisions.Outcome:
         narrated = [r for r in self.results if r.status in _NARRATED]
@@ -134,6 +136,7 @@ class Batch:
             note=_note(self.results),
             narrate=bool(narrated),
             undo=list(self.undo),
+            cards=list(self.cards),
         )
 
 
@@ -209,9 +212,12 @@ async def _approve(gateway: Gateway, action: PendingAction, batch: Batch) -> dec
 
 
 async def _book(store: SessionStore, batch: Batch, d: decisions.Decision) -> None:
-    """After a decision took effect: its Undo chip and its stored exchange. Never raises, so a
-    failure here can't relabel a card that ran; a record that can't be stored stops the batch."""
+    """After a decision took effect: its Undo chip, its cards and its stored exchange. Never
+    raises, so a failure here can't relabel a card that ran; a record that can't be stored stops
+    the batch."""
     batch.undo += d.undo  # worked out by `decisions.approved`, which never raises for it
+    # slice 12: a place / route / video card shows with the batch's reply (one reply's cap)
+    batch.cards = [*batch.cards, *d.cards][:MAX_CARDS]
     exchange: list[Turn] = []
     try:
         exchange = decisions.record_exchange(batch.session, d, batch.trace_id)

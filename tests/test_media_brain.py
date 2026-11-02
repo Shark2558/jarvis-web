@@ -109,6 +109,28 @@ async def test_an_approved_maps_card_shows_its_place_card_with_the_reply() -> No
     assert [c.kind for c in done.cards] == ["places"]
 
 
+async def test_an_ask_first_maps_search_approved_with_approve_all_shows_its_card() -> None:
+    """Approve all runs each card as a single approval does: the place card the search made
+    rides on the batch's reply (it was dropped before)."""
+    brain, provider, _, fake = _rig()
+    assert brain.gateway is not None
+    from jarvis.tools.policy import Effect, PolicyRule
+
+    brain.gateway.policy = brain.gateway.policy.with_rules(
+        [PolicyRule(tool_pattern="maps_*", effect=Effect.ASK)]
+    )
+    provider.script_tool_calls([ToolCall(id="a", name="maps_search", arguments={"query": "cafe"})])
+    provider.script("An approval is waiting.")
+    resp = await brain.chat(ChatRequest(message="find a cafe", user_id="u_owner"))
+    assert resp.cards == [] and fake.requests == []
+    provider.script("Here they are.")
+    ids = [p.id for p in resp.pending_approvals]
+    out = await brain.approve_all(ids, session_id=resp.session_id, user_id="u_owner")
+    assert [r.status.value for r in out.results] == ["done"]
+    assert [c.kind for c in out.cards] == ["places"]
+    assert out.cards[0].items[0].url.startswith("https://maps.google.com/")  # type: ignore[union-attr]
+
+
 async def test_a_training_brain_is_offered_no_maps_or_youtube_tools() -> None:
     brain, provider, _, fake = _rig(trains=True)
     provider.script("I can't look that up here.")

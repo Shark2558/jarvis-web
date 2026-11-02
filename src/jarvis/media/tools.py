@@ -7,13 +7,18 @@ R1 through the gateway and audited. Titles and channel names are other people's 
 youtube_search(query, kind = video | music)
     Server key: search.list (type=video, embeddable only, safeSearch moderate, region IN; music
     adds videoCategoryId=10), then ONE videos.list for the durations. Costs one of the day's 90
-    searches and one of the 9,000 other units, and one of the message's 2 YouTube searches.
+    searches and one of the 9,000 other units, and one of the message's 2 YouTube searches. The
+    search is already paid, so when the durations can't be had (videos.list failed, or the units
+    are used up or unreadable) the videos are returned without them.
 youtube_my_playlists() / youtube_playlist(playlist, page?)
     Only when the owner has linked Google AND granted youtube.readonly (`can_use_youtube`;
     Integrations → Grant). Through `GoogleConnector.request` with the owner's token. "Liked videos"
     comes first (channels.list → relatedPlaylists.likes). `playlist`: a number from the last
     listing in this conversation, "liked", or a playlist id; `page`: the opaque next_page token
-    handed back. Not granted → {status: permission_needed} and nothing is sent.
+    handed back. Not granted → {status: permission_needed} and nothing is sent. Each owner call
+    takes a unit of the project's day like a key call, under the same rules: given back when it
+    never reached Google, the day closed when Google says the quota is gone; the owner's link is
+    checked before a unit is taken.
 The OWNER plays a result from its card (Media panel → Play, youtube-nocookie.com embed): JARVIS
 never starts playback itself. The model sees each video's number, id, title, channel and length.
 """
@@ -28,15 +33,19 @@ from jarvis.integrations.google import (
     RECONNECT_MSG,
     GoogleConnector,
     GoogleNotConnected,
+    GoogleQuotaExceeded,
     can_use_youtube,
+    never_sent,
 )
 from jarvis.integrations.google_key import KeyAPIError
+from jarvis.logging import get_logger
 from jarvis.media import youtube as yt
 from jarvis.media.service import YouTubeService
 from jarvis.media.youtube import iso_duration
 from jarvis.quota.ledger import (
     YOUTUBE_SEARCH,
     YOUTUBE_UNITS,
+    QuotaReached,
     QuotaUnreadable,
     Reservation,
     Sku,
@@ -51,6 +60,8 @@ from jarvis.tools.reply_cards import VideoItem, VideosCard, add_card
 from jarvis.web.guard import query_problem
 from jarvis.web.ledger import current_conversation
 
+log = get_logger(__name__)
+
 SOURCE = "YouTube"
 QUERY_LIMIT = 200
 KINDS = ("video", "music")
@@ -61,6 +72,7 @@ MAX_PLAYLISTS = 25
 LIKED = "liked"
 LIKED_TITLE = "Liked videos"
 LISTING_KEY = "youtube_playlists"  # the conversation's last listing: ids only, by number
+LIKES_KEY = "youtube_likes"  # the owner's likes playlist id from that listing (None: none)
 GRANT_MSG = (
     "JARVIS has no permission to read your YouTube playlists yet. Open Integrations and press "
     "Grant next to 'YouTube', then ask again."
@@ -157,12 +169,16 @@ class _YouTube:
         try:
             return await self.s.ledger.reserve(sku, n)
         except QuotaUnreadable as exc:
-            raise RuntimeError(unreadable_message(sku)) from exc
+            raise QuotaUnreadable(unreadable_message(sku)) from exc
 
     async def _failed(self, exc: Exception, r: Reservation) -> None:
-        if isinstance(exc, KeyAPIError) and exc.exhausted:
-            await self.s.ledger.latch(r.sku)
-        elif isinstance(exc, KeyAPIError) and exc.clear:
+        """The same rules for a key call and an owner call: Google's "quota gone" closes r's day
+        (or month); a call that never reached Google is given back; anything else keeps it."""
+        if isinstance(exc, KeyAPIError) and exc.used_up is not None:
+            await self.s.ledger.latch(r, exc.used_up)
+        elif isinstance(exc, GoogleQuotaExceeded):
+            await self.s.ledger.latch(r, exc.period)
+        elif (isinstance(exc, KeyAPIError) and exc.clear) or never_sent(exc):
             await self.s.ledger.refund(r)
 
     async def _key_get(self, sku: Sku, url: str, params: dict[str, Any]) -> tuple[Any, int]:
@@ -174,11 +190,16 @@ class _YouTube:
             raise
 
     async def _with_details(self, hits: list[yt.Video]) -> list[yt.Video]:
+        """The hits with their durations and embeddable flags (one videos.list). The listing was
+        already paid for: when the details can't be had, the hits are returned as they are."""
         if not hits:
             return []
-        ids = ",".join(v.id for v in hits)
-        params = {"part": "snippet,contentDetails,status", "id": ids, "maxResults": len(hits)}
-        data, _ = await self._key_get(YOUTUBE_UNITS, yt.VIDEOS_URL, params)
+        params = {"part": "snippet,contentDetails,status", "id": ",".join(v.id for v in hits)}
+        try:
+            data, _ = await self._key_get(YOUTUBE_UNITS, yt.VIDEOS_URL, params)
+        except (QuotaReached, QuotaUnreadable, KeyAPIError) as exc:
+            log.info("youtube details skipped", extra={"reason": type(exc).__name__})
+            return hits
         found = yt.details(data)
         return [found.get(v.id, v) for v in hits]
 
@@ -226,8 +247,16 @@ class _YouTube:
     async def _owner_get(
         self, conn: GoogleConnector, uid: str, url: str, params: dict[str, Any]
     ) -> dict[str, Any]:
-        await self._reserve(YOUTUBE_UNITS)  # the owner's call counts against the project's units
-        data = await conn.request(uid, "GET", url, params=params)
+        """One call with the owner's token: it counts against the project's units like a key
+        call and follows the same refund / latch rules (`_failed`). The link is made usable
+        first (a refresh that fails sends nothing to YouTube and takes no unit)."""
+        await conn.access_token(uid)
+        r = await self._reserve(YOUTUBE_UNITS)
+        try:
+            data = await conn.request(uid, "GET", url, params=params)
+        except Exception as exc:
+            await self._failed(exc, r)
+            raise
         return data if isinstance(data, dict) else {}
 
     async def _likes(self, conn: GoogleConnector, uid: str) -> str | None:
@@ -248,6 +277,7 @@ class _YouTube:
         conv = current_conversation()
         if conv is not None:  # ids only, so "play my 2nd playlist" can name it by number
             conv.set_note(LISTING_KEY, [p.id for p in listing])
+            conv.set_note(LIKES_KEY, likes)
         out = []
         for n, p in enumerate(listing, start=1):
             title = LIKED_TITLE if p.title == LIKED_TITLE and p.id == likes else None
@@ -260,7 +290,10 @@ class _YouTube:
             out.append(item)
         return {"playlists": out, "note": "Open one with youtube_playlist and its number."}
 
-    async def _playlist_id(self, conn: GoogleConnector, uid: str, ref: int | str) -> str:
+    async def _playlist_id(
+        self, conn: GoogleConnector, uid: str, ref: int | str
+    ) -> tuple[str, bool]:
+        """(the playlist id, whether it is the owner's liked videos)."""
         if isinstance(ref, int):
             conv = current_conversation()
             ids = conv.note(LISTING_KEY) if conv is not None else None
@@ -273,20 +306,20 @@ class _YouTube:
                 raise ValueError(
                     "No playlist with that number: list them with youtube_my_playlists."
                 )
-            return pid
+            return pid, self._known_likes() == pid
         if ref.strip().lower() == LIKED:
             likes = await self._likes(conn, uid)
             if likes is None:
                 raise RuntimeError("YouTube did not say where your liked videos are.")
-            return likes
-        return ref
+            return likes, True
+        return ref, self._known_likes() == ref
 
     async def playlist(self, a: dict[str, Any]) -> dict[str, Any]:
         granted = await self._granted()
         if granted is None:
             return {"status": "permission_needed", "message": GRANT_MSG}
         conn, uid = granted
-        pid = await self._playlist_id(conn, uid, a["playlist"])
+        pid, liked = await self._playlist_id(conn, uid, a["playlist"])
         params: dict[str, Any] = {
             "part": "snippet,contentDetails",
             "playlistId": pid,
@@ -296,7 +329,7 @@ class _YouTube:
             params["pageToken"] = a["page"]
         data = await self._owner_get(conn, uid, yt.ITEMS_URL, params)
         videos = await self._with_details(yt.playlist_videos(data)[:PLAYLIST_PAGE])
-        title = self._title_of(pid)
+        title = LIKED_TITLE if liked else ""  # other titles are other people's words: not kept
         _card(videos, title)
         out: dict[str, Any] = {
             "playlist": wrap_external(title, source=SOURCE) if title else pid,
@@ -307,11 +340,13 @@ class _YouTube:
             out["next_page"] = nxt
         return out
 
-    def _title_of(self, pid: str) -> str:
-        """Not stored (titles are other people's words): only "Liked videos" is known by id."""
+    @staticmethod
+    def _known_likes() -> str | None:
+        """The owner's likes playlist id from this conversation's last listing (None when that
+        listing had none, or there is none): the only playlist JARVIS names itself."""
         conv = current_conversation()
-        ids = conv.note(LISTING_KEY) if conv is not None else None
-        return LIKED_TITLE if isinstance(ids, list) and ids[:1] == [pid] else ""
+        likes = conv.note(LIKES_KEY) if conv is not None else None
+        return likes if isinstance(likes, str) and yt.PLAYLIST_ID.fullmatch(likes) else None
 
 
 def youtube_tools(service: YouTubeService) -> list[Tool]:

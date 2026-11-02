@@ -103,9 +103,9 @@ CONSOLE_CSP = (
     "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
     "frame-src https://www.youtube-nocookie.com"
 )
-# Slice 12 D4: YouTube's embedded player refuses to play when the page sends no referrer (player
-# error 153), so the console sends its ORIGIN only — never a path or query — to other sites.
-CONSOLE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+# The console page sends no referrer anywhere. Slice 12 D4: YouTube's player needs the embedding
+# ORIGIN (error 153 without one), so only the player's own iframe carries
+# referrerpolicy="strict-origin-when-cross-origin" (console-media.js) — never a path or query.
 
 
 def _settings(request: Request) -> Settings:
@@ -121,7 +121,7 @@ async def console() -> HTMLResponse:
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
             "X-Frame-Options": "DENY",
-            "Referrer-Policy": CONSOLE_REFERRER_POLICY,
+            "Referrer-Policy": "no-referrer",
             "Content-Security-Policy": CONSOLE_CSP,
         },
     )

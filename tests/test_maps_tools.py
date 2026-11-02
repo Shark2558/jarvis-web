@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote_plus, urlsplit
 
 import pytest
 from media_fakes import KEY, PLACES_URL, ROUTES_URL, FakeGoogleKeyAPIs, place
@@ -24,10 +24,18 @@ from jarvis.places.store import MapsPlaces
 from jarvis.places.tools import (
     MAX_MAPS_PER_HOUR,
     PLACES_FIELD_MASK,
+    ROUTE_SKU,
     ROUTES_FIELD_MASK,
+    directions_link,
     maps_tools,
 )
-from jarvis.quota.ledger import MAPS_GEOCODE, MAPS_ROUTE, MAPS_SEARCH, QuotaLedger
+from jarvis.quota.ledger import (
+    MAPS_ROUTE,
+    MAPS_ROUTE_2W,
+    MAPS_ROUTE_WALK,
+    MAPS_SEARCH,
+    QuotaLedger,
+)
 from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.tools.budget import MAX_MAPS_CALLS, turn_budget
@@ -409,20 +417,63 @@ async def test_bad_route_arguments_are_refused_before_anything_is_sent(
 # ---- allowance, caps, taint -----------------------------------------------------------------
 
 
+def test_each_mode_reserves_the_sku_google_bills_it_as() -> None:
+    """Routes billing (developers.google.com/maps/billing-and-pricing/sku-details/routes, checked
+    2026-11-03): TRAFFIC_AWARE → Compute Routes Pro; two-wheeled vehicle routing → Enterprise
+    (whatever the routing preference); anything without a Pro or Enterprise feature (walking,
+    two waypoints, duration + distance only) → Essentials."""
+    assert {m: s.id for m, s in ROUTE_SKU.items()} == {
+        "drive": "maps_route",
+        "two_wheeler": "maps_route_2w",
+        "walk": "maps_route_walk",
+    }
+
+
+@pytest.mark.parametrize(
+    ("mode", "sku"),
+    [("drive", MAPS_ROUTE), ("two_wheeler", MAPS_ROUTE_2W), ("walk", MAPS_ROUTE_WALK)],
+)
+async def test_each_route_counts_only_against_its_own_sku(mode: str, sku: Any) -> None:
+    r = Rig()
+    view = _view(await r.call("maps_route", **{"from": "a", "to": "b"}, mode=mode))
+    assert view["routes_left_this_month"] == sku.cap - 1
+    for other in (MAPS_ROUTE, MAPS_ROUTE_2W, MAPS_ROUTE_WALK):
+        assert (await r.ledger.use(other)).used == (1 if other is sku else 0)
+    assert {op.path for op in r.docs.log} == {f"jarvis_api_quota/{sku.id}@2026-11"}
+
+
+async def test_a_two_wheeler_route_at_its_enterprise_stop_never_reaches_google() -> None:
+    r = Rig()
+    await r.docs.write([Set("jarvis_api_quota/maps_route_2w@2026-11", {"used": MAPS_ROUTE_2W.cap})])
+    gr = await r.call("maps_route", **{"from": "a", "to": "b"}, mode="two_wheeler")
+    assert gr.outcome is GatewayOutcome.ERROR
+    assert f"{MAPS_ROUTE_2W.cap:,}" in (gr.error or "") and "two-wheeler" in (gr.error or "")
+    assert r.fake.requests == []
+    # drive (Pro) is a different SKU: it still goes
+    assert (await r.call("maps_route", **{"from": "a", "to": "b"})).outcome is (
+        GatewayOutcome.EXECUTED
+    )
+
+
 async def test_each_call_counts_against_its_sku_and_a_reached_stop_sends_nothing() -> None:
     r = Rig()
     await r.call("maps_search", query="cafe")
-    view = _view(await r.call("maps_route", **{"from": "a", "to": "b"}, mode="walk"))
-    assert view["routes_left_this_month"] == 31_499
+    await r.call("maps_route", **{"from": "a", "to": "b"}, mode="drive")
     assert (await r.ledger.use(MAPS_SEARCH)).used == 1
     assert (await r.ledger.use(MAPS_ROUTE)).used == 1
-    # Routes geocodes both address waypoints itself: counted too, in case Google bills them
-    assert (await r.ledger.use(MAPS_GEOCODE)).used == 2
-    await r.docs.write([Set("jarvis_api_quota/maps_search@2026-11", {"used": 31_500})])
+    stop = MAPS_SEARCH.cap  # the safe default: Google's global price list
+    await r.docs.write([Set("jarvis_api_quota/maps_search@2026-11", {"used": stop})])
     sent = len(r.fake.requests)
     gr = await r.call("maps_search", query="cafe")
-    assert gr.outcome is GatewayOutcome.ERROR and "31,500" in (gr.error or "")
+    assert gr.outcome is GatewayOutcome.ERROR and f"{stop:,}" in (gr.error or "")
     assert len(r.fake.requests) == sent
+
+
+async def test_a_route_reserves_no_address_look_ups() -> None:
+    """Routes geocodes address waypoints itself; no Geocoding counter is kept or needed."""
+    r = Rig()
+    await r.call("maps_route", **{"from": "a", "to": "b"})
+    assert {op.path.split("@")[0] for op in r.docs.log} == {"jarvis_api_quota/maps_route"}
 
 
 async def test_a_corrupt_counter_fails_closed() -> None:
@@ -433,13 +484,55 @@ async def test_a_corrupt_counter_fails_closed() -> None:
     assert r.fake.requests == []
 
 
-async def test_google_saying_quota_is_gone_latches_the_month() -> None:
+def _quota_429(limit: str) -> dict[str, Any]:
+    return {
+        "error": {
+            "code": 429,
+            "message": "Quota exceeded",
+            "status": "RESOURCE_EXHAUSTED",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "RATE_LIMIT_EXCEEDED",
+                    "domain": "googleapis.com",
+                    "metadata": {"service": "places.googleapis.com", "quota_limit": limit},
+                }
+            ],
+        }
+    }
+
+
+async def test_a_per_minute_429_does_not_close_maps() -> None:
     r = Rig()
-    r.fake.status = 429
-    r.fake.body = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}}
+    r.fake.status, r.fake.body = 429, _quota_429("SearchTextRequestsPerMinutePerProject")
     gr = await r.call("maps_search", query="cafe")
-    assert gr.outcome is GatewayOutcome.ERROR
-    assert (await r.ledger.use(MAPS_SEARCH)).reached
+    assert gr.outcome is GatewayOutcome.ERROR and "busy" in (gr.error or "").lower()
+    use = await r.ledger.use(MAPS_SEARCH)
+    assert use.used == 1 and not use.reached  # kept (it reached Google), never latched
+    r.fake.status = None
+    assert (await r.call("maps_search", query="cafe")).outcome is GatewayOutcome.EXECUTED
+
+
+async def test_a_per_day_quota_closes_only_today() -> None:
+    r = Rig()
+    r.fake.status, r.fake.body = 429, _quota_429("SearchTextRequestsPerDayPerProject")
+    await r.call("maps_search", query="cafe")
+    use = await r.ledger.use(MAPS_SEARCH)
+    assert use.used == 1 and not use.reached  # the month is not used up
+    r.fake.status = None
+    sent = len(r.fake.requests)
+    gr = await r.call("maps_search", query="cafe")
+    assert gr.outcome is GatewayOutcome.ERROR and "today" in (gr.error or "")
+    assert len(r.fake.requests) == sent
+    assert (await r.ledger.view())["maps_search"]["paused_today"] is True
+
+
+async def test_a_per_month_quota_latches_the_month() -> None:
+    r = Rig()
+    r.fake.status, r.fake.body = 429, _quota_429("ComputeRoutesRequestsPerMonthPerProject")
+    await r.call("maps_route", **{"from": "a", "to": "b"}, mode="drive")
+    assert (await r.ledger.use(MAPS_ROUTE)).reached
+    assert not (await r.ledger.use(MAPS_ROUTE_2W)).reached
 
 
 async def test_a_google_error_keeps_its_reservation() -> None:
@@ -460,7 +553,6 @@ async def test_a_call_that_never_reached_google_is_given_back() -> None:
     r.service.client.http = httpx.AsyncClient(transport=httpx.MockTransport(refuse))
     await r.call("maps_route", **{"from": "a", "to": "b"})
     assert (await r.ledger.use(MAPS_ROUTE)).used == 0
-    assert (await r.ledger.use(MAPS_GEOCODE)).used == 0
 
 
 async def test_at_most_three_maps_calls_per_message() -> None:
@@ -484,6 +576,98 @@ async def test_at_most_thirty_maps_calls_an_hour_per_owner() -> None:
     r.clock += 3_600
     with turn_budget():
         assert (await r.call("maps_search", query="later")).outcome is GatewayOutcome.EXECUTED
+
+
+async def test_a_call_refused_by_the_allowance_does_not_count_towards_the_hour() -> None:
+    r = Rig()
+    stop = {"used": MAPS_SEARCH.cap}
+    await r.docs.write([Set("jarvis_api_quota/maps_search@2026-11", stop)])
+    for i in range(MAX_MAPS_PER_HOUR + 5):
+        with turn_budget():
+            gr = await r.call("maps_search", query=f"q{i}")
+        assert gr.outcome is GatewayOutcome.ERROR and "hour" not in (gr.error or "")
+    await r.docs.write([Set("jarvis_api_quota/maps_search@2026-11", {"used": 0})])
+    with turn_budget():
+        assert (await r.call("maps_search", query="now")).outcome is GatewayOutcome.EXECUTED
+    assert r.service.hourly.last_hour(UID) == 1
+
+
+# ---- link shortening ------------------------------------------------------------------------
+
+
+def test_a_long_link_cuts_the_longest_encoded_field_at_a_comma() -> None:
+    """The limit is on the ENCODED link: a short Malayalam address can be far longer once
+    percent-encoded than a longer English one. The cut keeps whole comma-separated parts."""
+    origin = ", ".join(["തിരുവനന്തപുരം"] * 15)  # 223 letters, ~1,800 once encoded
+    destination = ("Technopark Phase 3 Main Gate Kazhakkoottam Road " * 5).strip()  # 239, no commas
+    assert len(destination) > len(origin)  # longer in letters, far shorter once encoded
+    assert len(quote_plus(origin)) > len(quote_plus(destination))
+    url = directions_link(origin, destination, "drive")
+    assert len(url) <= 2048
+    q = parse_qs(urlsplit(url).query)
+    assert q["destination"] == [destination]  # the shorter encoded field is untouched
+    cut = q["origin"][0]
+    assert cut and origin.startswith(cut) and len(cut) < len(origin)
+    assert origin[len(cut)] == ","  # a whole number of parts: cut at a comma boundary
+
+
+def test_a_long_link_without_commas_is_cut_by_letters_to_fit() -> None:
+    origin = "ക" * 230
+    url = directions_link(origin, "Kovalam", "walk")
+    assert len(url) <= 2048
+    q = parse_qs(urlsplit(url).query)
+    assert q["destination"] == ["Kovalam"] and origin.startswith(q["origin"][0])
+    assert len(url) > 2048 - 12  # cut only as far as needed (one letter is 9 characters)
+
+
+def test_a_short_link_is_left_alone() -> None:
+    url = directions_link("Kowdiar, Thiruvananthapuram", "Technopark", "two_wheeler")
+    assert parse_qs(urlsplit(url).query)["origin"] == ["Kowdiar, Thiruvananthapuram"]
+
+
+# ---- Home / Work in a round that read other people's words (F8) -----------------------------
+
+
+async def _route_in(r: Rig, *, untrusted: bool, spoken: bool = False, **args: Any) -> GatewayResult:
+    r._n += 1
+    with context_trust(untrusted=untrusted, spoken=spoken), collecting_cards(r.cards):
+        return await r.gateway.execute(
+            ToolCall(id=f"t{r._n}", name="maps_route", arguments=args), scope=SCOPE
+        )
+
+
+async def test_home_in_a_tainted_round_asks_first_and_runs_once_when_approved() -> None:
+    r = Rig()
+    await r.places.put(UID, home="Kowdiar", work="Technopark")
+    args = {"from": "home", "to": "Kovalam"}
+    gr = await _route_in(r, untrusted=True, **args)
+    assert gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending is not None
+    assert r.fake.requests == [] and (await r.ledger.use(MAPS_ROUTE)).used == 0
+    assert not gr.pending.bulk_ok  # the owner reviews it on its own card
+    call = ToolCall(id="ok", name="maps_route", arguments=args)
+    done = await r.gateway.execute(call, confirmation_id=gr.pending.id, scope=SCOPE)
+    assert done.outcome is GatewayOutcome.EXECUTED
+    assert r.fake.body_of(r.fake.sent(ROUTES_URL)[0])["origin"] == {"address": "Kowdiar"}
+    again = await r.gateway.execute(call, confirmation_id=gr.pending.id, scope=SCOPE)
+    assert again.outcome is GatewayOutcome.CONFIRMATION_INVALID  # the approval is spent
+    assert len(r.fake.sent(ROUTES_URL)) == 1
+
+
+@pytest.mark.parametrize(
+    ("untrusted", "spoken", "args"),
+    [
+        (False, False, {"from": "home", "to": "work"}),  # the owner's own round
+        (False, True, {"from": "my office", "to": "Kovalam"}),  # spoken, but no outside text
+        (True, False, {"from": "Kowdiar", "to": "Kovalam"}),  # tainted, no saved place
+    ],
+)
+async def test_otherwise_a_route_runs_without_a_card(
+    untrusted: bool, spoken: bool, args: dict[str, str]
+) -> None:
+    r = Rig()
+    await r.places.put(UID, home="Kowdiar", work="Technopark")
+    gr = await _route_in(r, untrusted=untrusted, spoken=spoken, **args)
+    assert gr.outcome is GatewayOutcome.EXECUTED, gr.error
 
 
 async def test_a_maps_result_taints_the_round() -> None:

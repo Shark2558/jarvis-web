@@ -211,25 +211,42 @@ web_search_answer() {
 }
 web_search_answer
 
-# Maps + YouTube (slice 12 D2): ONE API key, jarvis-maps-yt, restricted to Places (New), Routes,
-# Geocoding and YouTube Data v3. No question: made (or reused) here, its string kept only in Secret
-# Manager (jarvis-google-api-key, readable by jarvis-run alone via the grant loop in step 5), never
-# printed. Every part may fail without stopping the deploy: Maps and YouTube then stay off.
-MAPS_SECRET=""; MAPS_STATE=off
+# Maps + YouTube (slice 12 D2): ONE API key, jarvis-maps-yt, restricted to Places (New), Routes and
+# YouTube Data v3 — not Geocoding: Routes geocodes address waypoints itself. No question: made (or
+# reused) here, its string kept only in Secret Manager (jarvis-google-api-key, readable by
+# jarvis-run alone via the grant loop in step 5), never printed. Its allowed APIs are read back
+# after every create / update: unless they are exactly these three, Maps and YouTube stay off for
+# this deploy (and are unmounted on a quick re-run). Every part may fail without stopping the
+# deploy: Maps and YouTube then stay off.
+MAPS_SECRET=""; MAPS_STATE=off; MAPS_REMOVE=()
+MAPS_APIS="places.googleapis.com routes.googleapis.com youtube.googleapis.com"
+maps_key_allows_only() { # key-name: its allowed APIs, read back, are exactly MAPS_APIS
+  local got want
+  got="$(gcloud services api-keys describe "$1" --format='value(restrictions.apiTargets[].service)' 2>/dev/null \
+    | tr ';, ' '\n\n\n' | sed '/^$/d' | sort -u | tr '\n' ' ' || true)"
+  # shellcheck disable=SC2086  # MAPS_APIS is a list of service names
+  want="$(printf '%s\n' $MAPS_APIS | sort -u | tr '\n' ' ')"
+  [ -n "$got" ] && [ "$got" = "$want" ]
+}
 setup_maps_key() {
-  local name="" key="" saved=""
-  local -a targets=(--api-target=service=places.googleapis.com --api-target=service=routes.googleapis.com
-    --api-target=service=geocoding-backend.googleapis.com --api-target=service=youtube.googleapis.com)
-  if gcloud services enable places.googleapis.com routes.googleapis.com geocoding-backend.googleapis.com \
-       youtube.googleapis.com apikeys.googleapis.com --quiet >/dev/null 2>&1; then
+  local name="" key="" saved="" svc
+  local -a targets=()
+  for svc in $MAPS_APIS; do targets+=("--api-target=service=${svc}"); done
+  # shellcheck disable=SC2086  # MAPS_APIS is a list of service names
+  if gcloud services enable $MAPS_APIS apikeys.googleapis.com --quiet >/dev/null 2>&1; then
     name="$(gcloud services api-keys list --filter='displayName=jarvis-maps-yt' --format='value(name)' --limit=1 2>/dev/null || true)"
     if [ -z "$name" ]; then
       name="$(gcloud services api-keys create --display-name=jarvis-maps-yt "${targets[@]}" \
         --format='value(response.name)' --quiet 2>/dev/null || true)"
       [ -n "$name" ] || name="$(gcloud services api-keys list --filter='displayName=jarvis-maps-yt' --format='value(name)' --limit=1 2>/dev/null || true)"
-    else   # keep its restrictions exactly these four APIs
+    else   # keep its restrictions exactly these three APIs
       gcloud services api-keys update "$name" "${targets[@]}" --quiet >/dev/null 2>&1 || \
-        echo "  Note: could not re-check the Maps/YouTube key's restrictions (it keeps the ones it has)."
+        echo "  Note: could not update the Maps/YouTube key's restrictions."
+    fi
+    if [ -n "$name" ] && ! maps_key_allows_only "$name"; then
+      echo "  Note: the Maps/YouTube key could not be confirmed to allow exactly Places, Routes and YouTube, so Maps and YouTube stay off for this deploy. Re-run this script to try again."
+      MAPS_REMOVE=(--remove-secrets JARVIS_GOOGLE_API_KEY)
+      return 0
     fi
     if [ -n "$name" ]; then
       key="$(gcloud services api-keys get-key-string "$name" --format='value(keyString)' 2>/dev/null || true)"
@@ -248,6 +265,52 @@ setup_maps_key() {
   fi
 }
 setup_maps_key
+
+# Which of Google's Maps price lists applies (slice 12 D2): India's free allowance (35,000 searches
+# and car routes a month) only when the billing account bills in Indian rupees; anywhere else, or
+# when that can't be checked, the global one (5,000 each) — JARVIS then stops early, never late.
+MAPS_PRICING=global; BILLING_ACCOUNT=""
+maps_pricing() {
+  local currency=""
+  BILLING_ACCOUNT="$(gcloud billing projects describe "$PROJECT" --format='value(billingAccountName)' 2>/dev/null || true)"
+  BILLING_ACCOUNT="${BILLING_ACCOUNT#billingAccounts/}"
+  if [ -n "$BILLING_ACCOUNT" ]; then
+    currency="$(gcloud billing accounts describe "$BILLING_ACCOUNT" --format='value(currencyCode)' 2>/dev/null || true)"
+  fi
+  if [ "$currency" = INR ]; then
+    MAPS_PRICING=india
+  else
+    MAPS_PRICING=global
+    echo "  Note: your Cloud billing account is not billed in Indian rupees (or this could not be checked), so JARVIS keeps to Google's smaller global Maps free allowance. India's larger one applies only to a billing account in India."
+  fi
+}
+maps_pricing
+if [ "$MAPS_PRICING" = india ]; then
+  MAPS_STOPS="31,500 place searches and 31,500 car routes a month (6,300 two-wheeler and 63,000 walking routes)"
+else
+  MAPS_STOPS="4,500 place searches and 4,500 car routes a month (900 two-wheeler and 9,000 walking routes)"
+fi
+
+# A budget alert as a second brake (slice 12 D2): JARVIS keeps inside free allowances, so a budget
+# of 1 in the billing account's own currency (1 rupee for an Indian account) emails the billing
+# account's admins as soon as anything at all is charged to this project. Made once; it never
+# caps spending and never stops the deploy.
+setup_budget_alert() {
+  local found=""
+  if [ -z "$BILLING_ACCOUNT" ]; then
+    echo "  Note: no budget alert was added (the billing account could not be read)."; return 0
+  fi
+  if ! gcloud services enable billingbudgets.googleapis.com --quiet >/dev/null 2>&1; then
+    echo "  Note: no budget alert was added (budgets could not be switched on); add one in Billing, Budgets and alerts."; return 0
+  fi
+  found="$(gcloud billing budgets list --billing-account="$BILLING_ACCOUNT" --filter='displayName=jarvis-any-charge' --format='value(name)' 2>/dev/null || true)"
+  [ -z "$found" ] || return 0
+  gcloud billing budgets create --billing-account="$BILLING_ACCOUNT" --display-name=jarvis-any-charge \
+    --budget-amount=1 --filter-projects="projects/${PROJECT}" \
+    --threshold-rule=percent=0.01 --threshold-rule=percent=1.0 --quiet >/dev/null 2>&1 \
+    || echo "  Note: could not add the budget alert (it needs a billing account admin); add one in Billing, Budgets and alerts."
+}
+setup_budget_alert
 
 say "4/8  Setting up JARVIS's memory (a Firestore database in your project)"
 if DBTYPE="$(gcloud firestore databases describe --database='(default)' --format='value(type)' 2>/dev/null)"; then
@@ -328,10 +391,12 @@ show_logs() {
 SCHED_SA="jarvis-scheduler@${PROJECT}.iam.gserviceaccount.com"
 INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA}"
 INFRA_ENV="${INFRA_ENV},${WEB_ENV}"   # the web-search answer (on / remembered skip), both paths
+INFRA_ENV="${INFRA_ENV},JARVIS_MAPS_PRICING=${MAPS_PRICING}"   # Google's Maps price list (india / global)
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
     --update-env-vars "$INFRA_ENV"
     --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    "${MAPS_REMOVE[@]}"
   )
 else
   CONFIG_FLAGS=(
@@ -502,14 +567,12 @@ copy the key (tvly-...), then run:  bash deploy/cloudrun.sh --web-search
 MSG
 fi
 if [ "$MAPS_STATE" = on ]; then
-cat <<'MSG'
+cat <<MSG
 
-MAPS + YOUTUBE: on (key jarvis-maps-yt, restricted to Places, Routes, Geocoding and YouTube; kept
-in secret jarvis-google-api-key). JARVIS stops at 90 % of Google's free allowance: 31,500 place
-searches and 31,500 travel times a month, 90 YouTube searches a day. These numbers are Google's
-India prices, which apply only when your Cloud billing account is in India; with a billing
-account elsewhere the free Maps allowance is smaller (5,000 a month each), so tell Claude to
-lower the stops before using Maps a lot. Vitals shows the counts.
+MAPS + YOUTUBE: on (key jarvis-maps-yt, restricted to Places, Routes and YouTube; kept in secret
+jarvis-google-api-key). JARVIS stops at 90 % of Google's free allowance: ${MAPS_STOPS}, and
+90 YouTube searches a day. Maps price list: ${MAPS_PRICING} (India's larger allowance applies
+only when your Cloud billing account is in India and bills in rupees). Vitals shows the counts.
 MSG
 else
 cat <<'MSG'

@@ -98,22 +98,24 @@ async def test_an_answer_that_is_not_a_json_object_is_unreadable(raw: bytes) -> 
 
 
 @pytest.mark.parametrize(
-    ("status", "reason", "exhausted", "words"),
+    ("status", "reason", "used_up", "words"),
     [
-        (400, "badRequest", False, "invalid"),
-        (403, "API_KEY_INVALID", False, "key"),
-        (403, "API_KEY_SERVICE_BLOCKED", False, "not switched on"),
-        (403, "SERVICE_DISABLED", False, "not switched on"),
-        (403, "accessNotConfigured", False, "not switched on"),
-        (403, "quotaExceeded", True, "allowance"),
-        (403, "dailyLimitExceeded", True, "allowance"),
-        (429, "RATE_LIMIT_EXCEEDED", False, "busy"),
-        (500, "backendError", False, "unavailable"),
-        (503, "", False, "unavailable"),
+        (400, "badRequest", None, "invalid"),
+        (403, "API_KEY_INVALID", None, "key"),
+        (403, "API_KEY_SERVICE_BLOCKED", None, "not switched on"),
+        (403, "SERVICE_DISABLED", None, "not switched on"),
+        (403, "accessNotConfigured", None, "not switched on"),
+        (403, "quotaExceeded", "day", "allowance"),  # YouTube: its 10,000 units a day
+        (403, "dailyLimitExceeded", "day", "allowance"),
+        (403, "rateLimitExceeded", None, "busy"),  # YouTube's short-term limits: try again
+        (403, "userRateLimitExceeded", None, "busy"),
+        (429, "RATE_LIMIT_EXCEEDED", None, "busy"),
+        (500, "backendError", None, "unavailable"),
+        (503, "", None, "unavailable"),
     ],
 )
 async def test_errors_are_plain_words_with_a_latch_flag_and_never_a_refund(
-    status: int, reason: str, exhausted: bool, words: str, caplog: pytest.LogCaptureFixture
+    status: int, reason: str, used_up: str | None, words: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     """YouTube counts even invalid requests against the quota, and Maps billing for an error
     answer is not documented: once a request reached Google it is never given back."""
@@ -131,10 +133,89 @@ async def test_errors_are_plain_words_with_a_latch_flag_and_never_a_refund(
         with pytest.raises(KeyAPIError) as exc:
             await _client(fake).get(f"{YT}/search", {})
     err = exc.value
-    assert err.clear is False and err.exhausted is exhausted
+    assert err.clear is False and err.used_up == used_up
+    assert err.exhausted is (used_up is not None)
     assert words in str(err).lower()
     assert "VENDOR" not in str(err) and KEY not in str(err)
     assert KEY not in caplog.text and "VENDOR" not in caplog.text
+
+
+def _quota_429(limit: str, *, unit: str = "") -> dict[str, object]:
+    """A Places / Routes 429 as Google sends it: google.rpc.Status with RESOURCE_EXHAUSTED and an
+    ErrorInfo naming the quota limit that was hit."""
+    meta = {
+        "service": "places.googleapis.com",
+        "consumer": "projects/123456789",
+        "quota_metric": "places.googleapis.com/search_text_requests",
+        "quota_limit": limit,
+        "quota_limit_value": "600",
+        "quota_location": "global",
+    }
+    if unit:
+        meta["quota_unit"] = unit
+    return {
+        "error": {
+            "code": 429,
+            "message": "VENDOR Quota exceeded for quota metric 'SearchText requests'",
+            "status": "RESOURCE_EXHAUSTED",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "RATE_LIMIT_EXCEEDED",
+                    "domain": "googleapis.com",
+                    "metadata": meta,
+                },
+                {
+                    "@type": "type.googleapis.com/google.rpc.Help",
+                    "links": [{"description": "VENDOR", "url": "https://cloud.google.com/x"}],
+                },
+            ],
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _quota_429("SearchTextRequestsPerMinutePerProject"),
+        _quota_429("ComputeRoutesRequestsPerMinutePerProject", unit="1/min/{project}"),
+        {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}},  # names no limit at all
+        {"error": {"code": 429, "message": "VENDOR", "status": "RESOURCE_EXHAUSTED",
+                   "details": [{"@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                                "violations": [{"quotaId": "RequestsPerMinutePerProject"}]}]}},
+    ],
+)  # fmt: skip
+async def test_a_per_minute_429_is_busy_and_never_latches(body: dict[str, object]) -> None:
+    fake = FakeGoogleKeyAPIs()
+    fake.status, fake.body = 429, body
+    with pytest.raises(KeyAPIError) as exc:
+        await _client(fake).post(PLACES_URL, {"textQuery": "cafe"}, field_mask="places.id")
+    assert exc.value.used_up is None and not exc.value.exhausted and not exc.value.clear
+    assert "busy" in str(exc.value).lower() and "VENDOR" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("body", "used_up"),
+    [
+        (_quota_429("SearchTextRequestsPerDayPerProject"), "day"),
+        (_quota_429("search_text_requests_per_day"), "day"),
+        (_quota_429("defaultLimit", unit="1/d/{project}"), "day"),
+        (_quota_429("ComputeRoutesRequestsPerMonthPerProject"), "month"),
+        ({"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
+                    "details": [{"@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                                 "violations": [{"quotaId": "RequestsPerDayPerProject"}]}]}},
+         "day"),
+    ],
+)  # fmt: skip
+async def test_a_per_day_or_per_month_quota_says_which(
+    body: dict[str, object], used_up: str
+) -> None:
+    fake = FakeGoogleKeyAPIs()
+    fake.status, fake.body = 429, body
+    with pytest.raises(KeyAPIError) as exc:
+        await _client(fake).post(PLACES_URL, {"textQuery": "cafe"}, field_mask="places.id")
+    assert exc.value.used_up == used_up and exc.value.exhausted
+    assert "allowance" in str(exc.value) and "VENDOR" not in str(exc.value)
 
 
 async def test_unreachable_is_a_clear_failure_only_when_nothing_was_sent() -> None:

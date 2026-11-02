@@ -12,7 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize(("suite", "cases"), [("maps", 15), ("youtube", 10)])
+@pytest.mark.parametrize(("suite", "cases"), [("maps", 18), ("youtube", 10)])
 def test_media_mock_evals_pass_and_the_negative_control_fails(suite: str, cases: int) -> None:
     run = ROOT / "evals" / suite / "run.py"
     r = subprocess.run([sys.executable, str(run), "--mock"], capture_output=True, text=True)

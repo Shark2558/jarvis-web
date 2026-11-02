@@ -53,8 +53,9 @@ def build_media(
     client = build_google_key_client(s, http=http)
     if client is None:
         return None
-    ledger = QuotaLedger(docs, prefix=s.firestore_prefix)
-    places = MapsPlaces(docs, prefix=s.firestore_prefix)
+    ledger = QuotaLedger(docs, pricing=s.maps_pricing, prefix=s.firestore_prefix)
+    # Home / Work encrypted with the token key, as the Google tokens are (none: this process only)
+    places = MapsPlaces(docs, key=s.token_key_bytes(), prefix=s.firestore_prefix)
     return MediaServices(
         client=client,
         ledger=ledger,
@@ -64,11 +65,12 @@ def build_media(
 
 
 async def quota_view(media: MediaServices | None) -> dict[str, Any]:
-    """{configured: false} | {configured: true, <sku>: {period, used, limit, left, reached,
-    unreadable}, …}. Counts only: free allowances, never a price."""
+    """{configured: false} | {configured: true, pricing: india | global, <sku>: {period, used,
+    limit, left, reached, paused_today, unreadable}, …}. Counts only: free allowances, never a
+    price."""
     if media is None:
         return {"configured": False}
-    return {"configured": True, **(await media.ledger.view())}
+    return {"configured": True, "pricing": media.ledger.pricing, **(await media.ledger.view())}
 
 
 __all__ = ["MediaServices", "YouTubeService", "build_media", "quota_view"]

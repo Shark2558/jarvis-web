@@ -213,12 +213,17 @@ def _vouched(tool: Tool, out: Any) -> tuple[Any, bool]:
 def _tightened(
     effect: Effect, risk: ActionRisk, confirmation_id: str | None, asks: bool = False
 ) -> Effect:
-    """ALLOW → ASK for a write on a spoken turn, in a tainted round, when the tool asks for this
-    call (`Tool.ask_when`), or when an approval token is presented. (An irreversible call is never
-    ALLOW in the first place.)"""
-    if effect is not Effect.ALLOW or risk is ActionRisk.READ_ONLY:
+    """ALLOW → ASK when the tool asks for this call (`Tool.ask_when`; slice 12: a read-only Maps
+    route that would send the owner's Home in a tainted round asks too) or when an approval token
+    is presented (so the approved card's token is always spent) — and, for a write, on a spoken
+    turn or in a tainted round. (An irreversible call is never ALLOW in the first place.)"""
+    if effect is not Effect.ALLOW:
         return effect
-    if confirmation_id is not None or asks or spoken_in_context():
+    if confirmation_id is not None or asks:
+        return Effect.ASK
+    if risk is ActionRisk.READ_ONLY:
+        return effect
+    if spoken_in_context():
         return Effect.ASK
     if _policy.TAINTED_WRITES_ASK and tainted_round():
         return Effect.ASK
@@ -230,7 +235,7 @@ def _ask_reason(ruled: Effect, risk: ActionRisk, asks: bool, capped: bool) -> As
     None only when an approval token alone made it ASK: the stored card's reason stands."""
     if risk is ActionRisk.IRREVERSIBLE:
         return AskReason.RISK
-    if asks:
+    if asks:  # the tool's own one-by-one reason (a draft's recipient, Home sent to Maps)
         return AskReason.DRAFT_RECIPIENT
     if ruled is Effect.ASK:
         return AskReason.OWNER_RULE

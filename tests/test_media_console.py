@@ -1,9 +1,10 @@
 # tests/test_media_console.py — slice 12 D3/D4 console contract (static checks; the browser tests
 # drive it for real): the CSP gains exactly `frame-src https://www.youtube-nocookie.com`, the
-# console page's Referrer-Policy becomes strict-origin-when-cross-origin (Google's player refuses
-# no-referrer), the Media panel and its own script/style are served and packaged, the phone tab
-# bar keeps ≤ 8 tabs (Media sits behind More), and the new scripts write text only (no HTML
-# sinks, no fetch, no other hosts but the one embed origin and Google Maps links from the card).
+# console page keeps Referrer-Policy no-referrer (only the player's iframe sends its origin, which
+# is all YouTube's embed check needs), the Media panel and its own script/style are served and
+# packaged, the phone tab bar keeps ≤ 8 tabs (Media sits behind More), and the new scripts write
+# text only (no HTML sinks, no fetch, no other hosts but the one embed origin and Google Maps
+# links from the card).
 from __future__ import annotations
 
 import re
@@ -39,10 +40,23 @@ def test_csp_adds_only_the_youtube_nocookie_frame_source() -> None:
 
 
 async def test_console_page_headers(client: AsyncClient) -> None:
+    """The page itself sends no referrer anywhere; only the player's own iframe carries
+    referrerpolicy=strict-origin-when-cross-origin (its origin, for YouTube's embed check)."""
     r = await client.get("/")
     assert r.headers["content-security-policy"] == CONSOLE_CSP
-    assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert r.headers["referrer-policy"] == "no-referrer"
     assert r.headers["x-frame-options"] == "DENY"
+
+
+def test_only_the_player_iframe_sends_its_origin() -> None:
+    from pathlib import Path
+
+    import jarvis.api.console as console
+
+    assert not hasattr(console, "CONSOLE_REFERRER_POLICY")
+    js = (Path(console.__file__).parent / "static" / "console-media.js").read_text()
+    assert js.count("referrerPolicy") == 1
+    assert "f.referrerPolicy = 'strict-origin-when-cross-origin'" in js
 
 
 async def test_media_assets_are_served_no_store_and_loaded_after_the_console(

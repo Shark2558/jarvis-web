@@ -164,6 +164,7 @@ async def test_search_uses_the_server_key_in_a_header_and_embeddable_videos_only
     det = r.fake.sent(f"{YT}/videos")[0].url.params
     assert det["part"] == "snippet,contentDetails,status"
     assert det["id"] == ",".join(video_id(i) for i in range(1, 6))
+    assert "maxResults" not in det  # not allowed with id (videos.list reference)
     assert len(view["videos"]) == 5
     v = view["videos"][0]
     assert v == {
@@ -271,6 +272,60 @@ async def test_youtube_saying_the_quota_is_gone_latches_the_day() -> None:
     r.fake.status = 403
     await r.call("youtube_search", query="x")
     assert (await r.ledger.use(YOUTUBE_SEARCH)).reached
+
+
+@pytest.mark.parametrize("reason", ["rateLimitExceeded", "userRateLimitExceeded"])
+async def test_a_youtube_rate_limit_is_busy_not_a_bad_key_and_never_latches(reason: str) -> None:
+    r = Rig()
+    r.fake.status = 403
+    r.fake.body = {"error": {"code": 403, "errors": [{"reason": reason, "domain": "usageLimits"}]}}
+    gr = await r.call("youtube_search", query="x")
+    assert gr.outcome is GatewayOutcome.ERROR
+    assert "busy" in (gr.error or "").lower() and "refused" not in (gr.error or "")
+    use = await r.ledger.use(YOUTUBE_SEARCH)
+    assert use.used == 1 and not use.reached
+
+
+_VIDEOS = "/youtube/v3/videos"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        (500, {"error": {"code": 500, "errors": [{"reason": "backendError"}]}}),
+        (403, {"error": {"code": 403, "errors": [{"reason": "rateLimitExceeded"}]}}),
+    ],
+)
+async def test_a_failed_details_lookup_still_returns_the_paid_search(
+    failure: tuple[int, Any],
+) -> None:
+    r = Rig()
+    r.fake.fail[_VIDEOS] = failure
+    view = _view(await r.call("youtube_search", query="x"))
+    assert [v["id"] for v in view["videos"]] == [video_id(i) for i in range(1, 6)]
+    assert all(v["duration"] == "" for v in view["videos"])
+    assert [i["id"] for i in r.card()["items"]] == [video_id(i) for i in range(1, 6)]
+    assert (await r.ledger.use(YOUTUBE_SEARCH)).used == 1
+
+
+async def test_details_skipped_when_the_units_are_used_up_or_unreadable() -> None:
+    r = Rig()
+    stop = {"used": YOUTUBE_UNITS.cap}
+    await r.docs.write([Set("jarvis_api_quota/youtube_units@2026-11-14", stop)])
+    view = _view(await r.call("youtube_search", query="x"))
+    assert len(view["videos"]) == 5 and r.fake.sent(f"{YT}/videos") == []
+    await r.docs.write([Set("jarvis_api_quota/youtube_units@2026-11-14", {"used": "bad"})])
+    view = _view(await r.call("youtube_search", query="y"))
+    assert len(view["videos"]) == 5 and r.fake.sent(f"{YT}/videos") == []
+
+
+async def test_a_details_quota_answer_latches_the_units_and_keeps_the_hits() -> None:
+    r = Rig()
+    r.fake.fail[_VIDEOS] = (403, {"error": {"code": 403, "errors": [{"reason": "quotaExceeded"}]}})
+    view = _view(await r.call("youtube_search", query="x"))
+    assert len(view["videos"]) == 5
+    assert (await r.ledger.use(YOUTUBE_UNITS)).reached
+    assert not (await r.ledger.use(YOUTUBE_SEARCH)).reached  # its own bucket
 
 
 async def test_at_most_two_youtube_searches_per_message() -> None:
@@ -421,6 +476,72 @@ async def test_a_google_error_on_the_owners_link_is_plain_words() -> None:
     r.fake.body = {"error": {"code": 404, "message": "VENDOR playlistNotFound"}}
     gr = await r.call("youtube_playlist", playlist="PLabc123_-XYZ")
     assert gr.outcome is GatewayOutcome.ERROR and "VENDOR" not in (gr.error or "")
+
+
+_ITEMS = "/youtube/v3/playlistItems"
+
+
+async def test_an_owner_call_that_never_reached_google_gives_its_unit_back() -> None:
+    r = Rig()
+    await r.link()
+    r.fake.refuse.add(_ITEMS)
+    gr = await r.call("youtube_playlist", playlist="PLabc123_-XYZ")
+    assert gr.outcome is GatewayOutcome.ERROR
+    assert (await r.ledger.use(YOUTUBE_UNITS)).used == 0
+
+
+async def test_an_owner_call_that_reached_google_keeps_its_unit() -> None:
+    r = Rig()
+    await r.link()
+    r.fake.fail[_ITEMS] = (404, {"error": {"code": 404, "errors": [{"reason": "notFound"}]}})
+    await r.call("youtube_playlist", playlist="PLabc123_-XYZ")
+    use = await r.ledger.use(YOUTUBE_UNITS)
+    assert use.used == 1 and not use.reached
+
+
+async def test_an_owner_call_told_the_quota_is_gone_latches_todays_units() -> None:
+    r = Rig()
+    await r.link()
+    body = {"error": {"code": 403, "message": "VENDOR", "errors": [{"reason": "quotaExceeded"}]}}
+    r.fake.fail[_ITEMS] = (403, body)
+    gr = await r.call("youtube_playlist", playlist="PLabc123_-XYZ")
+    assert gr.outcome is GatewayOutcome.ERROR and "VENDOR" not in (gr.error or "")
+    assert "allowance" in (gr.error or "")
+    assert (await r.ledger.use(YOUTUBE_UNITS)).reached
+    gr = await r.call("youtube_my_playlists")  # nothing more is sent today
+    assert gr.outcome is GatewayOutcome.ERROR and r.fake.sent(f"{YT}/playlists") == []
+
+
+async def test_an_owner_call_whose_link_fails_first_takes_no_unit() -> None:
+    """The owner's token can't be refreshed: nothing went to YouTube, nothing is counted."""
+    r = Rig()
+    await r.tokens.put(
+        GOOGLE_UID, google_tokens(expires_at=GOOGLE_NOW - 10, scopes=[YOUTUBE_SCOPE])
+    )
+    r.fake.refuse.add("/token")
+    gr = await r.call("youtube_playlist", playlist="PLabc123_-XYZ")
+    assert gr.outcome is GatewayOutcome.ERROR
+    assert (await r.ledger.use(YOUTUBE_UNITS)).used == 0
+    assert r.fake.sent(f"{YT}/") == []
+
+
+async def test_without_a_likes_playlist_the_first_playlist_is_not_called_liked() -> None:
+    r = Rig()
+    await r.link()
+    r.fake.likes_id = None  # type: ignore[assignment]
+    view = _view(await r.call("youtube_my_playlists"))
+    assert len(view["playlists"]) == 1 and "Liked" not in json.dumps(view)
+    await r.call("youtube_playlist", playlist=1)
+    assert r.card()["title"] == ""
+    await r.call("youtube_playlist", playlist="PLabc123_-XYZ")
+    assert r.card()["title"] == ""
+
+
+async def test_liked_by_name_is_titled_liked_videos() -> None:
+    r = Rig()
+    await r.link()
+    await r.call("youtube_playlist", playlist="liked")
+    assert r.card()["title"] == "Liked videos"
 
 
 async def test_details_lookup_needs_no_owner_link() -> None:

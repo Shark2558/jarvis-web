@@ -90,6 +90,7 @@ VIDEOS = {
 }
 QUOTA = {
     "configured": True,
+    "pricing": "india",
     "maps_search": {
         "period": "2026-11",
         "used": 12,
@@ -106,12 +107,22 @@ QUOTA = {
         "reached": False,
         "unreadable": False,
     },
-    "maps_geocode": {
+    "maps_route_2w": {
         "period": "2026-11",
-        "used": 6,
+        "used": 6300,
+        "limit": 6300,
+        "left": 0,
+        "reached": True,
+        "paused_today": False,
+        "unreadable": False,
+    },
+    "maps_route_walk": {
+        "period": "2026-11",
+        "used": 2,
         "limit": 63000,
-        "left": 62994,
+        "left": 62998,
         "reached": False,
+        "paused_today": False,
         "unreadable": False,
     },
     "youtube_search": {
@@ -168,6 +179,7 @@ class Rig:
     def __init__(self, c: Console) -> None:
         self.c = c
         self.youtube: list[str] = []  # every request the page made to YouTube's host
+        self.referers: list[str] = []  # the Referer each of them carried ("" when none)
         self.saved: list[Any] = []
         c.page.add_init_script("try { localStorage.clear(); } catch (_) {}")
         c.page.route("https://www.youtube-nocookie.com/**", self._yt)
@@ -176,6 +188,7 @@ class Rig:
 
     def _yt(self, route: Any) -> None:
         self.youtube.append(route.request.url)
+        self.referers.append(str(route.request.all_headers().get("referer", "")))
         route.fulfill(
             status=200, content_type="text/html", body="<!doctype html><title>player</title>"
         )
@@ -274,6 +287,35 @@ def test_no_player_exists_until_the_owner_clicks_play(rig: Rig) -> None:
     assert c.csp_violations() == [] and c.errors == []
 
 
+def test_the_page_sends_no_referrer_and_only_the_player_frame_sends_its_origin(rig: Rig) -> None:
+    """Plan D4: the console page keeps Referrer-Policy no-referrer; the player's own iframe
+    carries referrerpolicy=strict-origin-when-cross-origin, so YouTube's embed check gets the
+    console's ORIGIN (never a path or query) and nothing else on the page sends a referrer."""
+    c = rig.c
+    policies: list[str] = []
+
+    def on_response(resp: Any) -> None:
+        if resp.request.resource_type == "document" and resp.url.startswith(c.url):
+            policies.append(str(resp.headers.get("referrer-policy")))
+
+    c.page.on("response", on_response)
+    _json(c.page, "**/v1/chat", _reply("Here is some music.", [VIDEOS]))
+    c.open("/?from=a-private-path")
+    assert policies and set(policies) == {"no-referrer"}
+    c.send("play some music")
+    c.page.locator(".row.jarvis .mvideos").wait_for()
+    c.open_panel("media")
+    c.page.locator(".mvideos .mplay").first.click()
+    frame = c.page.locator("#mediaStage iframe")
+    frame.wait_for()
+    assert frame.get_attribute("referrerpolicy") == "strict-origin-when-cross-origin"
+    c.page.wait_for_function("document.querySelector('#mediaStage iframe') !== null")
+    assert rig.referers, "the player was never requested"
+    origin = c.url.rstrip("/") + "/"
+    assert all(ref == origin for ref in rig.referers), rig.referers  # origin only, no path
+    assert c.csp_violations() == [] and c.errors == []
+
+
 def test_vitals_shows_the_free_allowance_lines(rig: Rig) -> None:
     c = rig.c
     c.open()
@@ -281,7 +323,8 @@ def test_vitals_shows_the_free_allowance_lines(rig: Rig) -> None:
     c.page.wait_for_function("document.getElementById('sMaps').textContent !== '—'")
     maps = c.page.locator("#sMaps").text_content()
     yt = c.page.locator("#sYouTube").text_content()
-    assert maps == "12 of 31,500 searches / 3 of 31,500 routes this month"
+    # the two-wheeler SKU (Compute Routes Enterprise) has its own, smaller stop: named when paused
+    assert maps == "12 of 31,500 searches / 3 of 31,500 routes this month · two-wheeler paused"
     assert yt == "4 of 90 searches today"
     assert (
         c.page.locator("#sYouTube").get_attribute("aria-label") == "YouTube searches today: 4 of 90"

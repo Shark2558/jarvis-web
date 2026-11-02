@@ -110,6 +110,10 @@ class FakeGoogleKeyAPIs:
             }
         }
         self.raw: bytes | None = None
+        # per endpoint (the URL path, e.g. "/youtube/v3/videos"): answer (status, body) instead,
+        # or refuse the connection (nothing reaches Google)
+        self.fail: dict[str, tuple[int, Any]] = {}
+        self.refuse: set[str] = set()
 
     # ---- inspection ---------------------------------------------------------------------------
 
@@ -123,7 +127,12 @@ class FakeGoogleKeyAPIs:
     # ---- transport ----------------------------------------------------------------------------
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path in self.refuse:
+            raise httpx.ConnectError("refused", request=request)
         self.requests.append(request)
+        if request.url.path in self.fail:
+            status, body = self.fail[request.url.path]
+            return httpx.Response(status, json=body)
         if self.status is not None:
             return httpx.Response(self.status, json=self.body)
         if self.raw is not None:

@@ -13,7 +13,8 @@
 //   on the iframe created by the owner's click, so playback starts from the owner's own gesture).
 //   Nothing creates an iframe before a Play click; Stop removes it again. A video id must match
 //   /^[A-Za-z0-9_-]{11}$/ or there is no Play button.
-//   Vitals: GET /v1/quota → {configured:false} | {configured, maps_search, maps_route, youtube_search…}.
+//   Vitals: GET /v1/quota → {configured:false} | {configured, pricing, maps_search, maps_route,
+//   maps_route_2w, maps_route_walk, youtube_search…} (a paused two-wheeler / walking SKU is named).
 //   Integrations: GET /v1/maps/places → {configured, home, work}; PUT saves both (≤ 200 characters).
 (() => {
   'use strict';
@@ -215,6 +216,9 @@
     if (s === 'unreadable' || rt === 'unreadable') maps = 'Count unavailable';
     else if (s && rt) maps = `${of(s)} searches / ${of(rt)} routes this month` + (s.reached || rt.reached ? ' · paused' : '');
     else if (s) maps = `${of(s)} searches this month` + (s.reached ? ' · paused' : '');
+    // two-wheeler and walking routes have their own (smaller / larger) free allowances
+    const other = [[count(r.maps_route_2w), 'two-wheeler'], [count(r.maps_route_walk), 'walking']];
+    if (s && s !== 'unreadable') maps += other.filter(([c]) => c && c.reached).map(([, w]) => ` · ${w} paused`).join('');
     if (y === 'unreadable') yt = 'Count unavailable';
     else if (y) yt = `${of(y)} searches today` + (y.reached ? ' · paused until midnight Pacific' : '');
     return { maps, yt, mapsSaid: `Maps: ${maps}`, ytSaid: y && y !== 'unreadable' ? `YouTube searches today: ${of(y)}` : `YouTube: ${yt}` };

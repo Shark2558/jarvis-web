@@ -3,6 +3,8 @@
 # closed on a damaged document; and GET /v1/quota (the Vitals lines) — counts only, ₹-free words.
 from __future__ import annotations
 
+import base64
+import json
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -12,6 +14,7 @@ from pydantic import SecretStr
 
 from jarvis.api import create_app
 from jarvis.config import Settings
+from jarvis.integrations.vault import TokenCipher
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.places.store import PLACE_LIMIT, MapsPlaces, PlacesRejected, PlacesUnreadable
@@ -20,11 +23,13 @@ from jarvis.tools import Gateway
 
 TOKEN = "t-maps-test"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
+KEY_BYTES = bytes(range(1, 33))  # 32 distinct bytes: a valid AES-256 test key
+OTHER_KEY = bytes(range(101, 133))
 
 
 async def test_store_round_trip_and_clear() -> None:
     docs = MemoryDocs()
-    s = MapsPlaces(docs)
+    s = MapsPlaces(docs, key=KEY_BYTES)
     assert await s.get("u1") == (None, None)
     await s.put("u1", home="  12 Kowdiar Road \n Thiruvananthapuram ", work="Technopark")
     assert await s.get("u1") == ("12 Kowdiar Road Thiruvananthapuram", "Technopark")
@@ -48,12 +53,67 @@ async def test_store_refuses_private_numbers_and_addresses(value: str) -> None:
         await s.put("u1", home=None, work=value)
 
 
-@pytest.mark.parametrize("doc", ["junk", {"home": 5}, {"home": "x" * 500}])
+@pytest.mark.parametrize(
+    "doc",
+    ["junk", {"home": "Kowdiar"}, {"blob": 5}, {"blob": "not base64!"}, {"blob": "AAAA"}],
+)
 async def test_a_damaged_document_fails_closed(doc: object) -> None:
     docs = MemoryDocs()
     docs._data["jarvis_maps_places/u1"] = doc  # type: ignore[assignment]
     with pytest.raises(PlacesUnreadable):
-        await MapsPlaces(docs).get("u1")
+        await MapsPlaces(docs, key=KEY_BYTES).get("u1")
+
+
+# ---- at rest: encrypted with the token key (the OAuth tokens' AES-256-GCM vault cipher) -----
+
+
+async def test_home_and_work_are_stored_encrypted_with_the_token_key() -> None:
+    docs = MemoryDocs()
+    s = MapsPlaces(docs, key=KEY_BYTES)
+    await s.put("u1", home="12 Kowdiar Road", work="Technopark Phase 3")
+    stored = await docs.get("jarvis_maps_places/u1")
+    assert stored is not None and set(stored) == {"blob", "updated_at"}
+    raw = json.dumps(stored)
+    assert "Kowdiar" not in raw and "Technopark" not in raw
+    assert stored["updated_at"].startswith("20")
+    assert await s.get("u1") == ("12 Kowdiar Road", "Technopark Phase 3")
+    # the vault's own cipher, bound to this owner and to Maps (never readable as a token blob)
+    plain = TokenCipher(KEY_BYTES).decrypt(stored["blob"], aad="maps_places/u1")
+    assert json.loads(plain) == {"home": "12 Kowdiar Road", "work": "Technopark Phase 3"}
+
+
+async def test_a_blob_moved_to_another_owner_or_read_with_another_key_fails_closed() -> None:
+    docs = MemoryDocs()
+    await MapsPlaces(docs, key=KEY_BYTES).put("u1", home="Kowdiar", work=None)
+    docs._data["jarvis_maps_places/u2"] = docs._data["jarvis_maps_places/u1"]
+    with pytest.raises(PlacesUnreadable):
+        await MapsPlaces(docs, key=KEY_BYTES).get("u2")
+    with pytest.raises(PlacesUnreadable):
+        await MapsPlaces(docs, key=OTHER_KEY).get("u1")
+
+
+async def test_without_a_token_key_home_and_work_never_reach_the_store_in_clear() -> None:
+    docs = MemoryDocs()
+    s = MapsPlaces(docs)
+    await s.put("u1", home="Kowdiar", work="Technopark")
+    assert await s.get("u1") == ("Kowdiar", "Technopark")
+    assert docs.log == []  # kept in this process only, like Google tokens without a key
+
+
+async def test_the_app_encrypts_home_and_work_when_it_has_a_token_key() -> None:
+    app = create_app(
+        _settings(token_key=SecretStr(base64.b64encode(KEY_BYTES).decode())),
+        provider=MockProvider(),
+        store=InMemorySessionStore(),
+    )
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.put("/v1/maps/places", headers=AUTH, json={"home": "Kowdiar", "work": None})
+            assert r.status_code == 200 and r.json()["home"] == "Kowdiar"
+            assert (await c.get("/v1/maps/places", headers=AUTH)).json()["home"] == "Kowdiar"
+        places = app.state.media.places
+        stored = [v for k, v in places.docs._data.items() if "maps_places" in k]
+        assert stored and "Kowdiar" not in json.dumps(stored)
 
 
 # ---- API ------------------------------------------------------------------------------------
@@ -118,10 +178,36 @@ async def test_quota_view_counts_without_rupees(app_client: AsyncClient) -> None
     r = await app_client.get("/v1/quota", headers=AUTH)
     assert r.status_code == 200
     j = r.json()
-    assert j["configured"] is True
-    assert j["maps_search"]["limit"] == 31_500 and j["maps_search"]["used"] == 0
+    assert j["configured"] is True and j["pricing"] == "global"  # the safe default
+    assert j["maps_search"]["limit"] == 4_500 and j["maps_search"]["used"] == 0
+    assert j["maps_route_2w"]["limit"] == 900
     assert j["youtube_search"]["limit"] == 90
+    assert "maps_geocode" not in j
     assert "₹" not in r.text and "$" not in r.text
+
+
+async def test_india_pricing_raises_the_stops_to_indias_free_allowance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JARVIS_MAPS_PRICING", "india")
+    s = _settings()
+    assert s.maps_pricing == "india"
+    app = create_app(s, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            j = (await c.get("/v1/quota", headers=AUTH)).json()
+    assert j["pricing"] == "india"
+    assert j["maps_search"]["limit"] == j["maps_route"]["limit"] == 31_500
+    assert j["maps_route_2w"]["limit"] == 6_300 and j["maps_route_walk"]["limit"] == 63_000
+
+
+def test_maps_pricing_defaults_to_global_and_refuses_anything_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert _settings().maps_pricing == "global"
+    monkeypatch.setenv("JARVIS_MAPS_PRICING", "usa")
+    with pytest.raises(ValueError):
+        _settings()
 
 
 async def test_without_a_key_the_quota_and_places_say_not_configured() -> None:

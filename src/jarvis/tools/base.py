@@ -69,8 +69,9 @@ class Tool:
     undoable: bool = False
     # Optional (slice 11 D7 a): True → this call becomes an approval card even where the policy
     # would allow it (an owner's Allow never relaxes it; the card keeps the call's own risk, so an
-    # R2 call needs no passkey). Pure, no I/O; may read `jarvis.tools.taint`. Never asked for a
-    # read-only call. An error counts as True (fail closed).
+    # R2 call needs no passkey). Pure, no I/O; may read `jarvis.tools.taint`. Slice 12: honoured
+    # for a read-only call too (maps_route sending Home / Work from a tainted round). An error
+    # counts as True (fail closed).
     ask_when: AskFn | None = None
     # Slice 11 D8: True for tools that decide PER RESULT whether every item in it is the owner's
     # own (`jarvis.tools.provenance.vouch`): the owner's calendar, reminders and to-dos. The

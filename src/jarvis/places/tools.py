@@ -10,20 +10,25 @@ maps_search(query, near?)
 maps_route(from, to, mode = drive | two_wheeler | walk, depart?)
     Routes computeRoutes: TRAFFIC_AWARE for drive / two-wheeler, none for walking. "home" / "work"
     (and "my office", …) resolve to the owner's saved Home / Work (Integrations → Maps); not set →
-    a plain question, nothing sent. `depart`: a future time with its zone (≤ 30 days ahead).
+    a plain question, nothing sent. In a round that read other people's words (`content_tainted`:
+    a page or a place name may be steering it), a route that would send Home / Work to Google asks
+    the owner first (`Tool.ask_when`). `depart`: a future time with its zone (≤ 30 days ahead).
 Both refuse private details in their words (`web.guard.query_problem`), cost one Maps call of the
-message's 3 (`budget.take_maps_call`) and of the owner's 30 an hour, and reserve their SKU from the
-deployment's allowance first (`jarvis.quota`): a route also reserves two address look-ups, since
-Routes geocodes each address waypoint itself. The OWNER sees each result as a card with the
-"Google Maps" attribution and its Open in Google Maps link (`reply_cards`); the model sees names,
-addresses, durations and distances — never the links, ids or coordinates. Nothing is stored.
+message's 3 (`budget.take_maps_call`), and reserve the SKU Google bills them as from the
+deployment's allowance first (`jarvis.quota`; `ROUTE_SKU`: a car route with traffic is Compute
+Routes Pro, a two-wheeler route Enterprise, a walk Essentials). Only a call the allowance let
+through counts towards the owner's 30 an hour. Routes geocodes address waypoints itself, with no
+Geocoding charge documented, so nothing else is reserved. The OWNER sees each result as a card
+with the "Google Maps" attribution and its Open in Google Maps link (`reply_cards`); the model sees
+names, addresses, durations and distances — never the links, ids or coordinates. Nothing is
+stored.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote_plus, urlencode
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google_key import KeyAPIError
@@ -38,8 +43,9 @@ from jarvis.places.google_maps import (
 )
 from jarvis.places.service import MapsService
 from jarvis.quota.ledger import (
-    MAPS_GEOCODE,
     MAPS_ROUTE,
+    MAPS_ROUTE_2W,
+    MAPS_ROUTE_WALK,
     MAPS_SEARCH,
     QuotaUnreadable,
     Reservation,
@@ -52,6 +58,7 @@ from jarvis.tools.card import one_line
 from jarvis.tools.context import current_tool_context, require_tool_context
 from jarvis.tools.external import wrap_external
 from jarvis.tools.reply_cards import PlaceItem, PlacesCard, RouteCard, add_card, google_maps_url
+from jarvis.tools.taint import content_tainted
 from jarvis.web.guard import query_problem
 
 SOURCE = "Google Maps"
@@ -65,7 +72,16 @@ LINK_MODE = {"drive": "driving", "two_wheeler": "two-wheeler", "walk": "walking"
 MODE_WORDS = {"drive": "by car", "two_wheeler": "by two-wheeler", "walk": "on foot"}
 HOME_WORDS = frozenset({"home", "my home", "my house", "house"})
 WORK_WORDS = frozenset({"work", "my work", "office", "my office", "workplace", "my workplace"})
-GEOCODES_PER_ROUTE = 2  # origin and destination are both addresses
+# The SKU Google bills each route as (developers.google.com/maps/billing-and-pricing/sku-details/
+# routes, checked 2026-11-03): TRAFFIC_AWARE → Compute Routes Pro; "two-wheeled vehicle routing"
+# → Enterprise, whatever the routing preference; no Pro / Enterprise feature (a walk: two
+# waypoints, no traffic, duration + distance only) → Essentials. The field mask asks for nothing
+# that raises a tier (no tolls, no traffic on polylines).
+ROUTE_SKU: dict[Mode, Sku] = {
+    "drive": MAPS_ROUTE,
+    "two_wheeler": MAPS_ROUTE_2W,
+    "walk": MAPS_ROUTE_WALK,
+}
 SEARCH_URL = "https://www.google.com/maps/search/"
 DIR_URL = "https://www.google.com/maps/dir/"
 MAX_MAPS_URL = 2048  # "URLs are limited to 2,048 characters" (Maps URLs, checked 2026-11-03)
@@ -153,21 +169,57 @@ def _route_card(a: dict[str, Any]) -> str:
     return one_line(f"Travel time from {a.get('from')} to {a.get('to')}", 300)
 
 
+def _saved_place_in_outside_round(a: dict[str, Any]) -> bool:
+    """`ask_when` for maps_route: True when the call would send the owner's saved Home / Work
+    to Google from a round that read other people's words (a page, a mail, a place name). The
+    owner then approves it on its own card; outside a turn (that approval running) it is False."""
+    if not content_tainted():
+        return False
+    return any(isinstance(a.get(k), str) and alias(a[k]) is not None for k in ("from", "to"))
+
+
 # ---- links ------------------------------------------------------------------------------------
 
 
+def _encoded(text: str) -> int:
+    """The length of `text` in a link (as `urlencode` writes it)."""
+    return len(quote_plus(text))
+
+
+def _start_within(value: str, budget: int) -> str:
+    """The longest start of `value` whose encoded length is at most `budget`: whole
+    comma-separated parts when at least one fits ("12 MG Road, Kowdiar, …" → "12 MG Road,
+    Kowdiar"), else as many letters as fit."""
+    parts = value.split(",")
+    for n in range(len(parts) - 1, 0, -1):
+        start = ",".join(parts[:n]).rstrip()
+        if start and _encoded(start) <= budget:
+            return start
+    out: list[str] = []
+    used = 0
+    for ch in value:
+        used += _encoded(ch)  # each letter is encoded on its own
+        if used > budget:
+            break
+        out.append(ch)
+    return "".join(out).rstrip()
+
+
 def _fitted(base: str, params: dict[str, str], shrink: tuple[str, ...]) -> str:
-    """`base?params`, within Google's 2,048-character Maps URL limit: the longest of the
-    `shrink` values is cut (from its end) until the link fits. Non-Latin text costs 6–12
-    characters a letter once percent-encoded, so a 200-letter Malayalam address alone can pass
-    the limit; the full words still went to Google's API, only the link is shortened."""
+    """`base?params`, within Google's 2,048-character Maps URL limit. The limit is on the
+    ENCODED link: non-Latin text costs 6–12 characters a letter once percent-encoded, so a
+    200-letter Malayalam address alone can pass it. The `shrink` value that is longest ONCE
+    ENCODED is cut back to fit — at a comma when it can — then the next if needed. The full words
+    still went to Google's API; only the link is shortened."""
     p = dict(params)
     url = base + "?" + urlencode(p)
     while len(url) > MAX_MAPS_URL:
-        key = max(shrink, key=lambda k: len(p[k]))
-        if len(p[key]) <= 1:
+        key = max(shrink, key=lambda k: _encoded(p[k]))
+        over = len(url) - MAX_MAPS_URL
+        cut = _start_within(p[key], _encoded(p[key]) - over) or p[key][:1]
+        if cut == p[key]:  # nothing left to cut
             break
-        p[key] = p[key][: max(1, int(len(p[key]) * 0.85))].rstrip()
+        p[key] = cut
         url = base + "?" + urlencode(p)
     return url
 
@@ -194,33 +246,34 @@ class _Maps:
     def __init__(self, service: MapsService) -> None:
         self.s = service
 
-    def _admit(self) -> None:
+    async def _admit(self, sku: Sku) -> Reservation:
+        """One of the message's Maps calls, within the owner's hour, and `sku` reserved from the
+        allowance. The hour counts the call only once the allowance let it through."""
         take_maps_call()
         ctx = current_tool_context()
         uid = ctx.user_id if ctx is not None else "local"
         if self.s.hourly.last_hour(uid) >= MAX_MAPS_PER_HOUR:
             raise RuntimeError(HOUR_LIMIT)
-        self.s.hourly.count(uid)
-
-    async def _reserve(self, sku: Sku, n: int = 1) -> Reservation:
         try:
-            return await self.s.ledger.reserve(sku, n)
+            r = await self.s.ledger.reserve(sku)
         except QuotaUnreadable as exc:
-            raise RuntimeError(unreadable_message(sku)) from exc
+            raise QuotaUnreadable(unreadable_message(sku)) from exc
+        self.s.hourly.count(uid)
+        return r
 
-    async def _failed(self, exc: Exception, primary: Reservation, *more: Reservation) -> None:
-        if isinstance(exc, KeyAPIError) and exc.exhausted:
-            await self.s.ledger.latch(primary.sku)
+    async def _failed(self, exc: Exception, r: Reservation) -> None:
+        """Google's "quota gone" closes r's day or month; a call that never reached Google is
+        given back; any other answer keeps its reservation."""
+        if isinstance(exc, KeyAPIError) and exc.used_up is not None:
+            await self.s.ledger.latch(r, exc.used_up)
         elif isinstance(exc, KeyAPIError) and exc.clear:
-            for r in (primary, *more):
-                await self.s.ledger.refund(r)
+            await self.s.ledger.refund(r)
 
     async def search(self, a: dict[str, Any]) -> dict[str, Any]:
         query = str(a["query"]).strip()
         near = str(a["near"]).strip() if a.get("near") else ""
         text = f"{query} near {near}" if near else query
-        self._admit()
-        r = await self._reserve(MAPS_SEARCH)
+        r = await self._admit(MAPS_SEARCH)
         try:
             places = await search_text(self.s.client, text)
         except Exception as exc:
@@ -268,17 +321,11 @@ class _Maps:
         depart = _depart(a)
         origin, origin_label = await self._resolve(str(a["from"]).strip())
         dest, dest_label = await self._resolve(str(a["to"]).strip())
-        self._admit()
-        r = await self._reserve(MAPS_ROUTE)
-        try:
-            g = await self._reserve(MAPS_GEOCODE, GEOCODES_PER_ROUTE)
-        except Exception:
-            await self.s.ledger.refund(r)
-            raise
+        r = await self._admit(ROUTE_SKU[mode])
         try:
             found = await compute_route(self.s.client, origin, dest, mode, depart)
         except Exception as exc:
-            await self._failed(exc, r, g)
+            await self._failed(exc, r)
             raise
         head = {"from": origin_label, "to": dest_label, "mode": mode}
         if found is None:
@@ -373,6 +420,7 @@ def maps_tools(service: MapsService) -> list[Tool]:
             agent="maps",
             summarize=_route_card,
             check=_check_route,
+            ask_when=_saved_place_in_outside_round,
         ),
     ]
 
@@ -381,6 +429,7 @@ __all__ = [
     "MAX_MAPS_PER_HOUR",
     "PLACES_FIELD_MASK",
     "ROUTES_FIELD_MASK",
+    "ROUTE_SKU",
     "alias",
     "directions_link",
     "maps_tools",

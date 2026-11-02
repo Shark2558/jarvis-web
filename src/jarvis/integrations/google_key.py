@@ -12,9 +12,11 @@ refused past `MAX_RESPONSE_BYTES`; it must be a JSON object (the callers validat
 
 Errors carry our own plain words, never Google's text. Each says whether the call clearly never
 reached Google (`clear`: the connection was refused before a byte was sent — the allowance ledger
-gives the reservation back) and whether Google says the quota is gone (`exhausted`: the ledger
-latches the period as used up). Every answer from Google keeps its reservation, error or not:
-YouTube counts even invalid requests against the quota
+gives the reservation back) and whether Google says a per-day or per-month quota is gone
+(`used_up` = "day" / "month": the ledger closes that day or that month; `google_errors`). A
+per-minute limit — most 429s, all of them RESOURCE_EXHAUSTED — and YouTube's short-term rate
+limits are only "busy": nothing is latched. Every answer from Google keeps its reservation, error
+or not: YouTube counts even invalid requests against the quota
 (developers.google.com/youtube/v3/determine_quota_cost: "All API requests, including invalid
 requests, incur a quota cost of at least one point"), and Maps billing for an error answer is not
 documented (checked 2026-11-03), so the safe reading is that it counts. A timeout or a dropped
@@ -31,6 +33,8 @@ import httpx
 from pydantic import SecretStr
 
 from jarvis.config import Settings
+from jarvis.integrations import google_errors
+from jarvis.integrations.google_errors import UsedUp
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -47,9 +51,6 @@ HTTP_TIMEOUT = httpx.Timeout(12.0, connect=5.0)
 MAX_RESPONSE_BYTES = 1_000_000
 
 # Google's machine-readable reasons (errors[].reason, details[].reason), never its message text
-EXHAUSTED = frozenset(
-    {"quotaExceeded", "dailyLimitExceeded", "RESOURCE_EXHAUSTED", "rateLimitExceeded_daily"}
-)
 SERVICE_OFF = frozenset(
     {"SERVICE_DISABLED", "accessNotConfigured", "API_KEY_SERVICE_BLOCKED", "API_KEY_API_BLOCKED"}
 )
@@ -62,7 +63,7 @@ KEY_BAD = "Google refused JARVIS's API key (check the jarvis-google-api-key secr
 OFF = (
     "That Google service is not switched on for your JARVIS project yet: re-run deploy/cloudrun.sh."
 )
-USED_UP = "Google says today's or this month's free allowance for that service is used up."
+USED_UP = google_errors.USED_UP_MSG
 BUSY = "Google is busy right now; try again in a minute."
 DOWN = "Google's service is temporarily unavailable; try again shortly."
 SLOW = "Google took too long to answer; try again shortly."
@@ -73,47 +74,34 @@ TOO_LARGE = "Google's answer was too large to use."
 
 class KeyAPIError(RuntimeError):
     """A call with the server key failed. The message is plain English, free of vendor text.
-    `clear`: the call never reached Google (give its reservation back). `exhausted`: Google says
-    the quota is gone (latch the period)."""
+    `clear`: the call never reached Google (give its reservation back). `used_up`: Google says a
+    per-day ("day") or per-month ("month") quota is gone (the ledger closes that day / month)."""
 
-    def __init__(self, message: str, *, clear: bool = False, exhausted: bool = False) -> None:
+    def __init__(self, message: str, *, clear: bool = False, used_up: UsedUp | None = None) -> None:
         super().__init__(message)
         self.clear = clear
-        self.exhausted = exhausted
+        self.used_up: UsedUp | None = used_up
 
-
-def _reasons(raw: bytes) -> set[str]:
-    try:
-        err = json.loads(raw).get("error")
-    except (ValueError, AttributeError):
-        return set()
-    if not isinstance(err, dict):
-        return set()
-    found: set[str] = set()
-    for key in ("errors", "details"):
-        items = err.get(key)
-        for item in items if isinstance(items, list) else []:
-            if isinstance(item, dict) and isinstance(item.get("reason"), str):
-                found.add(item["reason"][:64])
-    status = err.get("status")
-    if isinstance(status, str):
-        found.add(status[:64])
-    return found
+    @property
+    def exhausted(self) -> bool:
+        return self.used_up is not None
 
 
 def _error(status: int, raw: bytes) -> KeyAPIError:
     """Google answered: the reservation stands (see the module docstring)."""
-    reasons = _reasons(raw)
-    if reasons & EXHAUSTED:
-        return KeyAPIError(USED_UP, exhausted=True)
+    err = google_errors.envelope(raw)
+    reasons = google_errors.reasons(err)
+    period = google_errors.used_up(err)
+    if period is not None:
+        return KeyAPIError(USED_UP[period], used_up=period)
+    if status == 429 or google_errors.rate_limited(err):
+        return KeyAPIError(BUSY)
     if reasons & SERVICE_OFF:
         return KeyAPIError(OFF)
     if reasons & KEY_REFUSED or status in (401, 403):
         return KeyAPIError(KEY_BAD)
     if status in (400, 404, 411, 413):
         return KeyAPIError(INVALID)
-    if status == 429:
-        return KeyAPIError(BUSY)
     if status >= 500:
         return KeyAPIError(DOWN)
     return KeyAPIError(f"Google returned an unexpected status ({status}).")
@@ -197,7 +185,7 @@ class GoogleKeyClient:
             err = _error(status, raw)
             log.warning(
                 "google key api error",
-                extra={"status": status, "path": path, "exhausted": err.exhausted},
+                extra={"status": status, "path": path, "used_up": err.used_up or ""},
             )
             raise err
         try:

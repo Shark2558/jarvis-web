@@ -8,9 +8,10 @@ PUT /v1/maps/places   {home: str | null, work: str | null} (each ≤ 200 charact
                       empty string clears it) → same shape; 422 {error: "invalid_place", detail}
                       for text that can't be a place (too long, invisible-only, a phone or account
                       number, an email address); 404 without a key
-GET /v1/quota         {configured: false} | {configured: true, maps_search, maps_route,
-                      maps_geocode, youtube_search, youtube_units: {period, used, limit, left,
-                      reached, unreadable}} — free-allowance counts for Vitals, never a price
+GET /v1/quota         {configured: false} | {configured: true, pricing: india | global,
+                      maps_search, maps_route, maps_route_2w, maps_route_walk, youtube_search,
+                      youtube_units: {period, used, limit, left, reached, paused_today,
+                      unreadable}} — free-allowance counts for Vitals, never a price
 """
 
 from __future__ import annotations

@@ -11,6 +11,12 @@ and "Delete events and invite people"): the strictest choice wins, as in `Policy
 
 Irreversible groups offer only Ask first / Never: `validate_choices` refuses Allow (422), and
 `rules_for` drops one that was hand-edited into storage — and `Policy` would refuse it anyway.
+
+Slice 11 D5: deleting the owner's own events and to-dos is undo-able (Recently deleted, 30 days)
+and so R2: it sits in the "Add, change and delete …" rows, whose Allow default is the owner's
+"all rights". Every irreversible group matches ONLY irreversible calls (`_r3`), so an R2 delete
+never lands in an Ask-first R3 row; those rows keep their ids (`calendar_delete`, `todo_delete`)
+so stored choices carry over. (Workstream B adds the `reminders` row.)
 """
 
 from __future__ import annotations
@@ -86,7 +92,13 @@ def _m(pattern: str, *risks: ActionRisk) -> Matcher:
     return Matcher(pattern, frozenset(risks) if risks else None)
 
 
+def _r3(*patterns: str) -> tuple[Matcher, ...]:
+    """An irreversible group's matchers: irreversible calls only (slice 11 D5)."""
+    return tuple(_m(p, R3) for p in patterns)
+
+
 UNDO_HINT = "Can't be undone, so JARVIS always asks first — or never does it."
+KEPT_HINT = "Deleted items stay in Recently deleted for 30 days, so you can undo them."
 
 GROUPS: tuple[PermissionGroup, ...] = (
     PermissionGroup(
@@ -100,18 +112,24 @@ GROUPS: tuple[PermissionGroup, ...] = (
     PermissionGroup(
         "calendar_change",
         "Calendar",
-        "Add and change events",
-        "Events only you are in. Inviting people is the next row.",
+        "Add, change and delete your events",
+        f"Events only you are in. {KEPT_HINT}",
         R2,
-        (_m("calendar_create_event"), _m("calendar_update_event"), _m("calendar_*", R2)),
+        (
+            _m("calendar_create_event"),
+            _m("calendar_update_event"),
+            _m("calendar_delete_event"),
+            _m("calendar_*", R2),
+        ),
     ),
     PermissionGroup(
         "calendar_delete",
         "Calendar",
-        "Delete events and invite people",
-        UNDO_HINT,
+        "Invite people, shared and repeating events",
+        "Google emails the other people, or a delete can't be fully undone, so JARVIS always "
+        "asks first — or never does it.",
         R3,
-        (_m("calendar_delete_event"), _m("calendar_*", R3)),
+        _r3("calendar_*"),
     ),
     PermissionGroup(
         "email_read",
@@ -135,23 +153,23 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "Send email",
         UNDO_HINT,
         R3,
-        (_m("gmail_send"), _m("send_message"), _m("gmail_*", R3)),
+        _r3("gmail_send", "send_message", "gmail_*"),
     ),
     PermissionGroup(
         "todo_change",
         "To-do list",
-        "Read and change your to-do list",
-        "Add, edit and tick off to-dos. Never also stops deleting them.",
+        "Read, change and delete your to-dos",
+        f"Add, edit, tick off and delete to-dos. {KEPT_HINT}",
         R2,
         (_m("tasks_*"), _m("task_*"), _m("list_tasks"), _m("create_reminder")),
     ),
     PermissionGroup(
         "todo_delete",
         "To-do list",
-        "Delete to-dos",
-        UNDO_HINT,
+        "Delete to-dos assigned from Docs or Chat",
+        "Deleting one also deletes it where it was assigned, for other people. " + UNDO_HINT,
         R3,
-        (_m("task_delete"), _m("task_*", R3), _m("tasks_*", R3)),
+        _r3("task_*", "tasks_*"),
     ),
     PermissionGroup(
         "memory_save",
@@ -167,7 +185,7 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "Forget memories",
         UNDO_HINT,
         R3,
-        (_m("memory_forget"),),
+        _r3("memory_forget"),
     ),
     PermissionGroup(
         "web",

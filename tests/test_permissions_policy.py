@@ -31,7 +31,10 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     ("calendar_create_event", R3, {"calendar_change", "calendar_delete"}),  # with attendees
     ("calendar_update_event", R2, {"calendar_change"}),
     ("calendar_update_event", R3, {"calendar_change", "calendar_delete"}),
-    ("calendar_delete_event", R3, {"calendar_delete"}),
+    # slice 11 D5: the owner's own event's delete is undo-able (R2) and only in "Add, change and
+    # delete"; a shared / repeating one (R3) is also in the ask-first row
+    ("calendar_delete_event", R2, {"calendar_change"}),
+    ("calendar_delete_event", R3, {"calendar_change", "calendar_delete"}),
     ("gmail_search", R1, {"email_read"}),
     ("gmail_read", R1, {"email_read"}),
     ("gmail_create_draft", R2, {"email_draft"}),
@@ -43,7 +46,8 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     ("task_update", R2, {"todo_change"}),
     ("task_complete", R2, {"todo_change"}),
     ("create_reminder", R2, {"todo_change"}),
-    ("task_delete", R3, {"todo_change", "todo_delete"}),
+    ("task_delete", R2, {"todo_change"}),  # slice 11: undo-able
+    ("task_delete", R3, {"todo_change", "todo_delete"}),  # assigned from Docs / Chat
     ("memory_save", R2, {"memory_save"}),
     ("memory_save", R3, {"memory_save"}),  # tainted round
     ("memory_forget", R3, {"memory_forget"}),
@@ -75,6 +79,29 @@ def test_catalogue_has_the_planned_groups_and_irreversible_ones_offer_no_allow()
             assert g.default is Effect.ALLOW
     irreversible = {g.id for g in GROUPS if g.irreversible}
     assert {"calendar_delete", "email_send", "todo_delete", "memory_forget"} <= irreversible
+
+
+def test_irreversible_groups_match_only_irreversible_calls() -> None:
+    """Slice 11 D5: an R2 (undo-able) delete never lands in an Ask-first R3 group."""
+    for g in GROUPS:
+        if g.irreversible:
+            assert g.matchers and all(m.risks == frozenset({R3}) for m in g.matchers), g.id
+            assert not g.matches("calendar_delete_event", R2)
+            assert not g.matches("task_delete", R2)
+
+
+def test_slice_11_rows_read_as_planned() -> None:
+    by_id = {g.id: g for g in GROUPS}
+    cal, shared = by_id["calendar_change"], by_id["calendar_delete"]
+    assert cal.label == "Add, change and delete your events" and cal.risk is R2
+    assert "Recently deleted" in cal.hint and "30 days" in cal.hint
+    assert shared.label == "Invite people, shared and repeating events" and shared.irreversible
+    todo, assigned = by_id["todo_change"], by_id["todo_delete"]
+    assert todo.label == "Read, change and delete your to-dos" and todo.risk is R2
+    assert "Recently deleted" in todo.hint
+    assert assigned.label == "Delete to-dos assigned from Docs or Chat" and assigned.irreversible
+    # R2 defaults stay Allow: the owner's "all rights"
+    assert cal.default is Effect.ALLOW and todo.default is Effect.ALLOW
 
 
 def test_validate_refuses_allow_for_irreversible_groups_unknown_groups_and_effects() -> None:

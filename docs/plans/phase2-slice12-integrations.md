@@ -1,0 +1,218 @@
+# Phase 2 · Slice 12 — Integrations wave: Drive (chosen folders), Maps, YouTube & music, Contacts, WhatsApp drafts — and the road for Swiggy, home and watch
+
+Status: PLAN v1 · 2026-11-03 · branch `slice12` (from `main` @ 571402b, PR #17 merged and deployed —
+CI test 3.11/3.12, firestore, browser, eval-gate, deploy all green)
+
+## Owner request (3 Nov 00:51 IST)
+"Next I want you to integrate with Google Services, Google maps, Music, Youtube, Swiggy, Whatsapp,
+Noise watch, My Ecovacs robo cleaner, Google home and any other integration, Google drive Selected
+folders only."
+
+## Architecture fit
+Every item is already named in the reference architecture's Layer 6 (Integration & Tools):
+*Messaging — WhatsApp*, *Smart Home / IoT — Home Assistant, Matter*, *Maps & Travel — Google Maps*,
+*Media — Spotify, YouTube*, *Knowledge — Drive*, *E-commerce — orders*. No architecture change; one
+recorded deviation (D1: Drive through the runtime service account instead of the owner's OAuth).
+
+## Phase mapping and verdict (research verified 2026-11-03; sources at the end)
+
+| Integration | Phase · skill | Verdict | Why |
+|---|---|---|---|
+| **Google Drive — chosen folders only** | 2 (file system) · Research & Intel | **Build now** | Owner shares each folder with JARVIS's own Google identity; Google enforces the boundary (D1) |
+| **Google Maps** (places, travel time) | 2 · Task & Productivity | **Build now** | India pricing: 35,000 free text searches and 35,000 traffic-aware routes a month (D2–D3) |
+| **YouTube** (search, play, your playlists) | 2 · Creative | **Build now** | Data API free (10,000 units/day; search 100 calls/day since 1 Jun 2026) (D4) |
+| **Music** | 2 · Creative | **YouTube now; Spotify only with Premium** | Spotify dev mode (Feb–Mar 2026) needs the owner on Premium, ≤ 5 users; YouTube Music / JioSaavn / Gaana have no official API |
+| **Google Contacts** ("any other") | 2 · Communication | **Build now** | People API, free; needed to turn "message Ravi" into a number or address (D5) |
+| **WhatsApp** | 2 · Communication | **Build now as drafts** | JARVIS writes, owner taps Send (`wa.me` link). No sending by JARVIS (D6) |
+| **Swiggy** (food, Instamart) | 2 · Task (spends money) | **Next wave — blocked on Swiggy** | Official MCP (Jan 2026) with OAuth 2.1 + PKCE + DCR; a Cloud Run redirect URI needs Swiggy's approval (builders@swiggy.in). Orders: COD or UPI link (owner enters PIN) → always R3 card + passkey |
+| **Ecovacs robot vacuum** | 5 (IoT) · Automation | **Later — needs a home hub** | No official API; Home Assistant's official Ecovacs integration (deebot-client) |
+| **Google Home** devices | 5 · Automation | **Later — needs a home hub** | Home APIs are Android/iOS only; Home MCP (Sep 2026) needs Home Premium Advanced, US only, not India |
+| **Noise watch** | 6 (wearable) · Learning/health | **Premature** | No API; data only on the phone (Health Connect / Apple Health) → needs a phone companion app; health data is sensitive |
+
+Not chosen (and why): WhatsApp Business Cloud API as JARVIS's chat channel (Meta's Business
+Solution Terms, in force 15 Jan 2026, bar general-purpose AI assistants outside EEA/Brazil; also
+needs a separate number) → Telegram stays the planned mobile front door. Unofficial WhatsApp
+libraries (Baileys, whatsapp-web.js) → account-ban risk on the owner's main number. Zomato MCP
+(approved clients only, "third-party apps not allowed"). Google Keep (Workspace only). Google Fit
+(closed, ends 2026). Strava (bans AI use of its data). ytmusicapi (cookie scraping).
+
+## Decisions
+
+**D1 · Drive = folders shared with JARVIS's service account (read-only).** Verified: `drive.file`
+plus a Picker-chosen folder gives NO access to the files inside (Google's docs are silent; a
+community test in Oct 2026 listed 0 files), and `drive.readonly` would let a code bug read the whole
+Drive. So: the owner opens a folder in Drive → **Share** → pastes JARVIS's address
+(`jarvis-run@<project>.iam.gserviceaccount.com`, shown with a Copy button in Integrations) →
+**Viewer**. Subfolders and files added later are included automatically; un-sharing removes access
+at once. JARVIS calls Drive v3 as `jarvis-run` (no OAuth token, so **no 7-day Testing-mode expiry**,
+no new consent). Guard rails:
+- *Owner confirms each folder*: anyone who knows the address could share things with it, so
+  Integrations lists folders shared with JARVIS and only those the owner ticks **Use** are read; a
+  folder is only offered when its sharer (`sharingUser.emailAddress`) is the owner's verified
+  email. Store: `drive_roots/{uid}` {roots: [{id, name, confirmed_at}]} (≤ 20).
+- *Every file id is checked*: walk `parents` (cached 10 min, ≤ 12 levels) to a confirmed root
+  before reading; anything else → "not in your chosen folders".
+- Read-only: service accounts have no storage of their own, so JARVIS cannot create files there.
+  Saving into Drive is a later item (`drive.file` OAuth, files JARVIS creates).
+- Token: the Cloud Run metadata server with the `drive.readonly` scope (verify; fallback: IAM
+  Credentials `generateAccessToken` for `jarvis-run` on itself — `cloudrun.sh` grants
+  `iam.serviceAccountTokenCreator` only if needed). `cloudrun.sh` enables `drive.googleapis.com`.
+- Content: Google Docs/Slides → `text/plain` export, Sheets → `text/csv` (first sheet), PDF/DOCX/
+  TXT/MD/CSV ≤ 10 MB → the slice 10 sandboxed extractor. Everything is **other people's words**
+  (untrusted, fenced, taints the round), never sent to training brains.
+- Tools (R1): `drive_folders`, `drive_list(folder, page)`, `drive_search(query)` (fullText, then
+  filtered to confirmed roots), `drive_read(file, part)` (chunked like documents).
+- Deviation recorded: the owner's identity is not used for Drive; reading is done as JARVIS.
+
+**D2 · One server-side Google API key + JARVIS's own allowance ledger.** `cloudrun.sh` creates
+`jarvis-maps-yt` with `gcloud services api-keys create`, restricted to Places API (New), Routes
+API, Geocoding API and YouTube Data API v3, stores it in Secret Manager (`jarvis-google-api-key`,
+readable only by `jarvis-run`) and enables the four APIs. The key never reaches the browser.
+JARVIS keeps a deployment-wide counter per SKU and stops at **90 % of the free allowance** —
+like Tavily, it never runs into paid use: text search 31,500/month, route 31,500/month, geocode
+63,000/month (Pacific-time months, as Google bills); YouTube search 90/day and other YouTube units
+9,000/day (Pacific-time days, as Google resets). Plus per-message caps (3 Maps calls, 2 YouTube
+searches) and 30 Maps calls/hour. The per-day API quotas in Cloud Console are optional extra
+brakes (non-fatal step in `cloudrun.sh`). Corrupt counters fail closed. India pricing applies only
+when the billing account is in India: the deploy summary says so plainly.
+
+**D3 · Maps tools (R1).** `maps_search(query, near?)` — Places Text Search (New) with a **Pro field
+mask only** (id, displayName, formattedAddress, location, googleMapsUri, businessStatus); no
+ratings/hours/phone (Enterprise SKU, 7,000 free). `maps_route(from, to, mode, depart?)` — Routes
+`computeRoutes`, `TRAFFIC_AWARE` (Pro SKU) for drive / two-wheeler, `walk` without traffic;
+returns duration, distance, a Google Maps directions link. Terms: show "Google Maps" attribution and
+the `googleMapsUri` links on every card; cache nothing but `place_id`; never feed results to a
+training brain; never draw them on a non-Google map. Owner-set **Home** and **Work** (Integrations
+→ Maps; plain text ≤ 200 chars, stored in `maps_places/{uid}`) let "how long to work?" resolve
+without asking; they are the owner's own words (trusted), sent to Google only in a route call.
+
+**D4 · YouTube and music.** `youtube_search(query, kind=video|music)` (API key; music adds
+`videoCategoryId=10`); results show title, channel, length and a **Play** button; the console
+plays in a `youtube-nocookie.com` embed inside the Media panel (CSP adds only
+`frame-src https://www.youtube-nocookie.com`; console `Referrer-Policy` becomes
+`strict-origin-when-cross-origin` — Google's player refuses to play with `no-referrer` (Error
+153); it sends only the origin, never the path). JARVIS never autoplays without the owner's click
+on Play. Optional **Grant** (`youtube.readonly`): `youtube_my_playlists`, `youtube_playlist`
+(liked videos included). Watch history is not available through any API (verified). Titles and
+descriptions are other people's words (untrusted). **Spotify**: only if the owner has Premium
+(owner question); then a separate small slice (dev-mode app, PKCE, `user-modify-playback-state`).
+
+**D5 · Contacts (R1).** Optional Grant (`contacts.readonly`), same pattern as the to-do list
+(`/connect/google?add=contacts`). `contacts_search(name)` → ≤ 5 matches: name, email addresses,
+phone numbers normalised to E.164 (+91 default). Untrusted (people write their own profile names),
+never to training brains, never stored by JARVIS.
+
+**D6 · WhatsApp drafts.** `whatsapp_draft(to, text)`: `to` is a phone number the owner typed or a
+Contacts match; text ≤ 2,000 characters. Result: a draft card with the recipient's name + number,
+the text, and **Open in WhatsApp** (`https://wa.me/<digits>?text=<urlencoded>`, opened only by the
+owner's click). JARVIS sends nothing; WhatsApp then shows the text in the chat box and the owner
+presses Send. A number that came from outside content (an email, page, document) — not typed by
+the owner and not in Contacts — shows a warning line, like un-typed email recipients. Treated as
+R1 (nothing leaves JARVIS), its own permission row so the owner can switch it off.
+
+**D7 · Grants generalised.** `/connect/google?add=<tasks|contacts|youtube>` (exactly one name,
+allow-listed); a renewal keeps every optional scope already held. `/v1/integrations` adds
+`contacts_granted`, `youtube_granted`, Drive {service_email, shared, confirmed}, Maps
+{configured, home_set, work_set}.
+
+**D8 · Permissions rows (R1, Allow / Ask first / Never):** Drive · Maps · YouTube · Contacts ·
+WhatsApp drafts. "Never" switches the tools off and the console hides their buttons.
+
+**D9 · Costs.** All ₹0 inside the caps. Vitals: "Maps: N of 31,500 searches / N of 31,500 routes
+this month", "YouTube searches today: N of 90". Claude reading the results adds roughly ₹0.5–2 per
+reply (as with web search).
+
+**D10 · Safety, same as slice 10/11.** Drive files, place names/addresses, YouTube titles and
+contact fields are other people's words: fenced with the per-call nonce, they taint the round
+(`policy.TAINTED_WRITES_ASK`), so a hostile document can't make JARVIS change anything without a
+card. Results never vouch (`may_vouch` false). No new R3 in this slice.
+
+## Next waves (not built in this slice)
+- **Swiggy (slice 13, after Swiggy approves the redirect URI).** First real MCP **client** in
+  JARVIS (`jarvis.mcp`: streamable HTTP, OAuth 2.1 + PKCE + Dynamic Client Registration, tokens in
+  the AES-GCM vault, rotating refresh token). Read tools R1 (search, menu, cart view, track ≥ 10 s
+  apart); cart changes R2; **`place_*_order` = R3 always** (card shows items, total in ₹, address,
+  payment method; passkey); cancellation is by phone only (shown on the card). Owner step: email
+  builders@swiggy.in asking to allow `https://jarvis-320922108419.asia-south1.run.app/connect/swiggy/callback`
+  (Claude can draft it).
+- **Home (Phase 5; slice 14 once a hub exists).** Home Assistant at home (24/7) is the hub:
+  official Ecovacs integration (Deebot start/stop/dock/rooms), Google Cast (Nest speakers:
+  announcements, media), Matter devices, many Wi-Fi plugs/bulbs via their own integrations.
+  JARVIS → Home Assistant's official MCP server over a tunnel (details below), dedicated HA user,
+  only exposed entities; "start cleaning" R2, locks/garage/alarm R3 (never automatic).
+- **Noise watch (Phase 6).** Only via an Android companion app reading Health Connect — and only if
+  NoiseFit writes there (unverified). Health data stays on the device by default.
+- **Telegram front door** stays next in the pipeline (the WhatsApp-channel alternative).
+- Optional later: Google Photos Picker (pick photos to discuss), Zerodha Kite read-only portfolio
+  (Finance skill; never trades), Drive saving via `drive.file`.
+
+## Home automation research (filled in from the home report)
+_pending_
+
+## Shared rules for every builder
+- Start: `git merge --ff-only slice12` in your worktree; commit on your own branch `s12-<x>`.
+- Tests first. Run with `PYTHONPATH=$PWD/src /tmp/venv-b/bin/python -m pytest -q` (3.11) and
+  `/tmp/venv-12/bin/python` (3.12). Never `pip install -e` into the shared venvs. No 3.12-only APIs.
+  Never `from tests.conftest import`. Fences: use `jarvis.tools.external.FENCE_END` etc., never a
+  literal. Mock evals: `PYTHONPATH=$PWD/src /tmp/venv-b/bin/python evals/run_all_mock.py`.
+  Browser tests: `JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest
+  tests/browser -k <yours>` (never `playwright install`).
+- Every tool goes through `jarvis.tools.gateway`; only `jarvis.llm` imports vendor SDKs; HTTP
+  adapters use `httpx` with an overall deadline, redirects off, response size caps, strict response
+  validation; Google calls with the owner's token reuse `GoogleConnector.request`. Secrets only via
+  settings `SecretStr`; never logged. Vendor error text never reaches the model or the owner.
+- Tool output from Drive, Maps, YouTube, Contacts is untrusted: wrap with `jarvis.tools.external`
+  fences and taint the round (`jarvis.tools.taint`). Training brains (`trains_on_content`) never get
+  these tools or their content.
+- UI: `textContent` only, no CDNs, ₹ only (never "$"), plain-English messages, error shape
+  `{error, detail, reason?}`; follow Command Deck patterns (collapsed settings, confirm dialogs with
+  focus trap); CSP changes only as D4 says.
+- Do NOT bump `PERSONA_VERSION` (integration does). New persona/tool rules in a separated
+  paragraph. New dependencies: `pyproject.toml` only (integration runs `make lock`); permissive
+  licences only. `brain.py` stays under its 800-line guard.
+- Final report ≤ 300 words: what changed, test counts, not verified, open questions.
+
+## Builders (worktrees, tests first)
+- **A · Drive** — `jarvis.drive` (ports, service-account token, roots store, parents check,
+  export/extract), tools, Integrations section (address + Copy, shared folders, Use toggles),
+  `cloudrun.sh` (enable Drive API; token-creator grant only if needed).
+- **B · Maps + YouTube** — `jarvis.places` + `jarvis.media` on one `GoogleKeyClient`, the
+  allowance ledger (`jarvis.quota`), tools, Home/Work settings, console cards (place, route,
+  video) + Media panel player, CSP/referrer change, `cloudrun.sh` key + APIs + secret.
+- **C · Contacts + WhatsApp + grants + permissions** — Grant generalisation (D7), People API
+  client, `contacts_search`, `whatsapp_draft` + draft card, the five permission rows, persona note.
+- Then fresh-context reviews (security for A/B/C, code for each), fixes tests-first, an
+  integration builder, an integrated review, browser tests, mock evals, PR.
+
+## Evals (gate: all pass in mock mode; negative controls must fail)
+- **drive**: 20 path cases (in root, nested 5 deep, outside, unconfirmed root, root shared by
+  someone else, moved out of the root, trashed, shortcut to outside) → 100 % correct allow/deny;
+  injection 10 (a shared doc telling JARVIS to email/delete) → 0 unconfirmed writes; negative
+  control: parents check off → suite fails.
+- **maps**: 15 cases (place found / none / ambiguous, route drive/two-wheeler/walk, Home/Work
+  resolution, cap reached → plain message, corrupt ledger → fail closed, attribution + link
+  present on every card); negative control: ledger off → fails.
+- **youtube**: 10 cases (search, music filter, cap 90/day, playlist needs Grant, titles fenced);
+  0 autoplays without a click (browser test).
+- **contacts + whatsapp**: 15 cases (one match, several → asks, none, +91 normalisation, number
+  from an email → warning, text > 2,000 → refused, Never → refused; link built exactly); negative
+  control: provenance check off → fails.
+- **permissions**: each new row Allow/Ask/Never × its tools.
+
+## Sources (accessed 2026-11-03)
+Drive scopes/Picker: developers.google.com/workspace/drive/api/guides/api-specific-auth,
+developers.google.com/workspace/drive/picker/guides/overview, github.com/arc53/DocsGPT/pull/3169 ·
+Testing-mode 7-day consent: support.google.com/cloud/answer/15549945 · Maps India:
+developers.google.com/maps/billing-and-pricing/pricing-india, …/india, cloud.google.com/maps-platform/terms,
+developers.google.com/maps/documentation/places/web-service/policies · YouTube:
+developers.google.com/youtube/v3/determine_quota_cost, …/revision_history,
+developers.google.com/youtube/iframe_api_reference · Google Home: developers.home.google.com/apis,
+developers.home.google.com/mcp/home · People API / Photos Picker / Google Health:
+developers.google.com/people, developers.google.com/photos/picker, developers.google.com/health/about ·
+Swiggy: mcp.swiggy.com/builders/docs/start/authenticate.md, …/reference/food/place_food_order/,
+mcp.swiggy.com/builders/blog/2026-07-10-mcp-payments-upi/ · Zomato: github.com/Zomato/mcp-server-manifest ·
+WhatsApp: whatsapp.com/legal/business-solution-terms, developers.facebook.com/docs/whatsapp/pricing,
+whatsapp.com/faq/en/general/26000030 · Telegram: core.telegram.org/bots/faq · Spotify:
+developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide,
+…/concepts/quota-modes · Noise: play.google.com/store/apps/details?id=com.noisefit,
+developer.android.com/health-and-fitness/guides/health-connect · Strava: developers.strava.com/docs/getting-started/

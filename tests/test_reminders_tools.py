@@ -635,6 +635,38 @@ async def test_a_list_beyond_fifty_says_it_was_cut_short(
     assert "narrower" in out.result["note"]
 
 
+# ---- slice 11 integration: D8 over the series ids, the query and `truncated` ------------------
+
+
+async def test_a_list_with_series_ids_is_trusted_only_when_every_row_is_the_owners(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    own = LISTED[:2]  # a one-off and one occurrence of a repeating reminder, both his
+    fake_google.on("GET", EVENTS, httpx.Response(200, json={"items": own}))
+    mine = await _run(gw, "reminders_list", {})
+    assert mine.outcome is GatewayOutcome.EXECUTED and mine.trusted is True, mine.error
+    assert [r["id"] for r in mine.result["reminders"]] == ["rem10", "rem11abc"]  # the series
+    delegate = _reminder("rem12", "2027-01-16T10:00:00+05:30", creator={"email": "pa@x.example"})
+    fake_google.routes[f"GET {EVENTS}"] = [httpx.Response(200, json={"items": [*own, delegate]})]
+    mixed = await _run(gw, "reminders_list", {})
+    assert mixed.outcome is GatewayOutcome.EXECUTED and mixed.trusted is False
+
+
+async def test_a_query_narrows_the_list_and_a_cut_list_still_says_so_and_vouches(
+    gw: Gateway, fake_google: FakeGoogle
+) -> None:
+    many = [_reminder(f"rem{n:03d}", "2027-01-16T09:00:00+05:30") for n in range(50)]
+    fake_google.on("GET", EVENTS, httpx.Response(200, json={"items": many, "nextPageToken": "x"}))
+    out = await _run(gw, "reminders_list", {"query": "call Ravi"})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    params = fake_google.sent("GET", "/calendars/primary/events")[0].url.params
+    assert params["q"] == "call Ravi" and params["privateExtendedProperty"] == "jarvis=reminder"
+    assert out.result["truncated"] is True and "query" in out.result["note"]
+    assert out.trusted is True  # every row listed is his; the cut-off ones were never shown
+    too_long = await _run(gw, "reminders_list", {"query": "x" * 201})
+    assert too_long.outcome is GatewayOutcome.ERROR and "too long" in (too_long.error or "")
+
+
 # ---- the persona knows about reminders --------------------------------------------------------
 
 

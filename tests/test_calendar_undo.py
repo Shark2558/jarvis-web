@@ -24,6 +24,7 @@ from jarvis.tools.external import FENCE_END
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.google_calendar import calendar_tools
 from jarvis.tools.policy import Policy
+from jarvis.tools.provenance import OUTSIDE_KEY, OUTSIDE_VALUE
 from jarvis.tools.registry import ToolRegistry
 from jarvis.tools.taint import context_trust
 from jarvis.undo.service import UndoBin
@@ -566,6 +567,49 @@ async def test_a_stored_never_on_deleting_events_still_blocks_a_solo_delete(rig:
     assert out.outcome is GatewayOutcome.DENIED, out.error
     assert "switched off by the owner" in (out.error or "")
     assert rig.deletes() == [] and await rig.bin.recent(GOOGLE_UID) == []
+
+
+# ---- slice 11 integration: D8 over the fixer's delete and restore paths -----------------------
+
+DELEGATE = {"email": "pa@example.com"}  # made on the owner's calendar by someone else: not his
+
+
+@pytest.mark.parametrize(("creator", "mine"), [(ME, True), (DELEGATE, False)])
+async def test_an_unconfirmed_delete_is_trusted_only_by_the_kept_copys_flag(
+    rig: Rig, creator: dict[str, Any], mine: bool
+) -> None:
+    ev = httpx.Response(200, json=_event(creator=creator))
+    rig.fake.on("GET", f"{EVENTS}/ev0001", ev, ev, httpx.Response(503))
+    rig.fake.on("DELETE", f"{EVENTS}/ev0001", httpx.Response(503))
+    out = await rig.run("calendar_delete_event", {"event_id": "ev0001"})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    assert out.result["deleted"] == "unconfirmed"
+    [kept] = await rig.bin.recent(GOOGLE_UID)
+    assert kept.owner_authored is mine and out.trusted is mine
+
+
+@pytest.mark.parametrize(("creator", "mine"), [(ME, True), (DELEGATE, False)])
+async def test_a_restore_by_its_own_id_with_meet_and_attachments_marks_what_was_not_his(
+    rig: Rig, creator: dict[str, Any], mine: bool
+) -> None:
+    """The restore's deterministic id (a lost answer → 409 → found by that id), its new Meet
+    request and its attachments all go out with the outside mark when the event wasn't his."""
+    rig.serve(_event(creator=creator, **MEET))
+    out = await rig.run("calendar_delete_event", {"event_id": "ev0001"})
+    assert out.outcome is GatewayOutcome.EXECUTED and out.trusted is mine, out.error
+    rid = restore_event_id(out.result["undo_id"])
+    rig.fake.on("POST", EVENTS, httpx.Response(409))  # an earlier try made it, answer lost
+    rig.fake.on("GET", f"{EVENTS}/{rid}", httpx.Response(200, json=_event(rid)))
+    back = await rig.run("deleted_restore", {"undo_id": out.result["undo_id"]})
+    assert back.outcome is GatewayOutcome.EXECUTED, back.error
+    assert back.result["restored"] is True and back.result["id"] == rid
+    assert back.trusted is mine
+    body = rig.body()
+    assert body["id"] == rid and set(body["conferenceData"]) == {"createRequest"}
+    assert body["attachments"][0]["fileUrl"] == "https://drive.google.com/file/d/f1/view"
+    private = body["extendedProperties"]["private"]
+    assert private["note"] == "x"  # the event's own properties stay
+    assert (private.get(OUTSIDE_KEY) == OUTSIDE_VALUE) is (not mine)
 
 
 def test_without_a_bin_delete_stays_r3_as_before(connected: GoogleConnector) -> None:

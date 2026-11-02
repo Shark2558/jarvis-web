@@ -77,9 +77,11 @@ class Restored:
 
 class Restorer(Protocol):
     """Recreates one kind of item from its kept copy (`item.snapshot`; `item.id` keys a restore
-    that may be repeated); raises `StillThere` or other plain-words errors."""
+    that may be repeated); raises `StillThere` or other plain-words errors. `outside` (plan D8):
+    the item was not the owner's own words, so the new copy must carry the outside mark — a
+    restore made by JARVIS never turns someone else's words into his."""
 
-    async def restore(self, uid: str, item: DeletedItem) -> Restored: ...
+    async def restore(self, uid: str, item: DeletedItem, *, outside: bool = False) -> Restored: ...
 
 
 class UndoBin:
@@ -173,7 +175,7 @@ class UndoBin:
             await self._release(uid, item.id)
             return _outcome(item, RestoreStatus.UNAVAILABLE, MSG_UNAVAILABLE)
         try:
-            done = await restorer.restore(uid, item)
+            done = await restorer.restore(uid, item, outside=not item.owner_authored)
         except StillThere as exc:  # never deleted: nothing to bring back, nothing made
             await self._release(uid, item.id)
             return _outcome(item, RestoreStatus.STILL_THERE, str(exc))
@@ -223,7 +225,13 @@ def _outcome(
     item: DeletedItem, status: RestoreStatus, message: str, **extra: Any
 ) -> RestoreOutcome:
     return RestoreOutcome(
-        status=status, message=message, undo_id=item.id, kind=item.kind, title=item.title, **extra
+        status=status,
+        message=message,
+        undo_id=item.id,
+        kind=item.kind,
+        title=item.title,
+        owner_authored=item.owner_authored,
+        **extra,
     )
 
 

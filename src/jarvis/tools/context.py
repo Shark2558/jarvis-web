@@ -31,10 +31,18 @@ class ToolContext:
     # gateway). A tool that finds MORE at run time (a solo event that gained guests) refuses: an
     # approved R2 card never runs an R3 delete.
     approved_risk: ActionRisk | None = None
+    # Slice 11 D8: this call's content may carry other people's words (its round, or the round
+    # that proposed its card, had read outside content): what it writes is marked as outside.
+    outside: bool = False
 
     @classmethod
     def from_scope(
-        cls, scope: str, *, confirmed: bool = False, approved_risk: ActionRisk | None = None
+        cls,
+        scope: str,
+        *,
+        confirmed: bool = False,
+        approved_risk: ActionRisk | None = None,
+        outside: bool = False,
     ) -> ToolContext:
         user_id, _, session_id = scope.partition(":")
         return cls(
@@ -43,6 +51,7 @@ class ToolContext:
             scope=scope,
             confirmed=confirmed,
             approved_risk=approved_risk,
+            outside=outside,
         )
 
     def allows(self, live: ActionRisk) -> bool:
@@ -72,11 +81,17 @@ def require_tool_context() -> ToolContext:
 
 @contextmanager
 def tool_context(
-    scope: str | None, *, confirmed: bool = False, approved_risk: ActionRisk | None = None
+    scope: str | None,
+    *,
+    confirmed: bool = False,
+    approved_risk: ActionRisk | None = None,
+    outside: bool = False,
 ) -> Iterator[ToolContext | None]:
     """Set the context for the duration of a tool run; always reset, even on error."""
     ctx = (
-        ToolContext.from_scope(scope, confirmed=confirmed, approved_risk=approved_risk)
+        ToolContext.from_scope(
+            scope, confirmed=confirmed, approved_risk=approved_risk, outside=outside
+        )
         if scope
         else None
     )

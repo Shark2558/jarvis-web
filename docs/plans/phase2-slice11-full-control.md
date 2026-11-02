@@ -93,6 +93,25 @@ mail saying "delete all my meetings" can't act. **Approve all** (below) makes th
   mixed result is untrusted. List tools gain a text filter (`query`) so a look-up returns just
   the target; the prompt tells the model to look up by words. Email, web, documents, invites
   and anything shared stay untrusted — the injection guard is unchanged for them.
+  *As built (workstream D):* the flag is `ToolResultBlock.trusted`, set only by
+  `GatewayResult.block` for an EXECUTED result of a `Tool.may_vouch` tool that returned
+  `provenance.vouch(result, True)`; `taint.result_trusted` honours it (never for an error). The
+  event rule is stricter than above: `eventType` must be default / focusTime / outOfOffice /
+  workingLocation (an allow-list: `birthday` and future types are not his), and
+  `attendeesOmitted` must be unset. One rule for everything (`provenance.is_owner_authored_*`):
+  Recently deleted records its verdict per item, and delete / `deleted_list` /
+  `deleted_restore` results are trusted by it.
+  *Security review of A+B (added):* what JARVIS writes from outside content stays outside. A
+  write that runs in a content-tainted round (`taint.content_tainted`: a spoken-only round does
+  not count) — or an approved card whose proposing round was (`PendingAction.outside`, recorded at
+  proposal; a card from before the field counts as outside) — runs with `ToolContext.outside`,
+  and the tools mark what they write: events and reminders get
+  `extendedProperties.private.jarvis_src = "outside"` (kept by later writes), to-dos go into the
+  owner's set on the Docs port (`tools.task_marks`: marked before a change; a new one gets a
+  pending token first and its id after — a lost second write keeps every recently changed to-do
+  outside; an unreadable set trusts no to-do). A marked item is never the owner's own. A restore
+  of an item that was not his own is marked the same way. Evals: `evals/trust` (D8 1–5, controls
+  flag / rule / marker) and the `d8` cases of `evals/undo` (control trust).
 
 ## Workstreams (parallel builders, worktrees; merge order A → B → C → D)
 - **D — Provenance-based trust (D8)** — `tools/taint.py`, `llm/base.py` (flag), gateway result

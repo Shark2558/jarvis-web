@@ -22,6 +22,7 @@ from jarvis.tools.google_tasks import tasks_tools
 from jarvis.tools.policy import Policy
 from jarvis.tools.registry import ToolRegistry
 from jarvis.tools.taint import context_trust
+from jarvis.tools.task_marks import OutsideTasks
 from jarvis.undo.service import UndoBin
 from jarvis.undo.store import DeletedStore
 from jarvis.undo.tools import undo_tools
@@ -345,6 +346,80 @@ async def test_a_stored_never_on_deleting_todos_still_blocks_an_own_todo_delete(
     out = await rig.run("task_delete", {"task_id": "L2:t_rfp"})
     assert out.outcome is GatewayOutcome.DENIED and "switched off" in (out.error or "")
     assert rig.fake.changes("delete") == [] and await rig.bin.recent(UID) == []
+
+
+# ---- slice 11 integration: D8 over the fixer's delete and restore paths -----------------------
+
+GMAIL_LINK = [{"type": "email", "link": "https://mail.google.com/mail/#all/1"}]
+
+
+async def _marked_rig(fake: FakeTasks) -> tuple[Rig, OutsideTasks]:
+    """A rig whose outside to-do set the test can read."""
+    marks = OutsideTasks(MemoryDocs(), clock=lambda: NOW)
+    undo = UndoBin(DeletedStore(MemoryDocs()), clock=lambda: NOW)
+    conn = await tasks_connector(fake)
+    reg = ToolRegistry()
+    tools = tasks_tools(conn, default_tz="Asia/Kolkata", clock=lambda: NOW, undo=undo, marks=marks)
+    for t in [*tools, *undo_tools(undo)]:
+        reg.register(t)
+    gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
+    return Rig(gw, fake, undo), marks
+
+
+def _unconfirmable() -> FakeTasks:
+    """Its DELETE answers 503 and reading the to-do again fails too: "unconfirmed"."""
+    fake = _fake()
+    fake.add("L2", "Pay vendor", id="t_mail", links=GMAIL_LINK)  # Gmail "Add to Tasks"
+    fake.fail["delete"] = 503
+    fake.after_delete["get"] = 503
+    return fake
+
+
+@pytest.mark.parametrize(("task_id", "mine"), [("t_rfp", True), ("t_mail", False)])
+async def test_an_unconfirmed_todo_delete_is_trusted_only_by_the_kept_copys_flag(
+    task_id: str, mine: bool
+) -> None:
+    rig, _ = await _marked_rig(_unconfirmable())
+    out = await rig.run("task_delete", {"task_id": f"L2:{task_id}"})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    assert out.result["deleted"] == "unconfirmed"
+    [kept] = await rig.bin.recent(UID)
+    assert kept.owner_authored is mine and out.trusted is mine
+
+
+async def test_a_restore_that_finds_someone_elses_todo_still_there_marks_nothing() -> None:
+    """The still-there check comes before the pending outside mark: nothing made, nothing
+    pending (a pending mark would make every recently changed to-do count as outside)."""
+    fake = _unconfirmable()
+    rig, marks = await _marked_rig(fake)
+    out = await rig.run("task_delete", {"task_id": "L2:t_mail"})
+    fake.after_delete.clear()  # never deleted
+    back = await rig.run("deleted_restore", {"undo_id": out.result["undo_id"]})
+    assert back.result["status"] == "still_there" and back.trusted is False
+    got = await marks.read(UID)
+    assert got is not None and got.ids == frozenset() and got.pending_since is None
+    assert rig.fake.changes("insert") == []
+
+
+async def test_a_restore_of_someone_elses_todo_retrying_without_previous_marks_it() -> None:
+    """The fixer's `previous` retry (400) still ends with the new to-do in the outside set."""
+    fake = _fake()
+    rfp = fake.task("L2", "t_rfp")
+    assert rfp is not None
+    rfp["links"] = GMAIL_LINK  # Gmail "Add to Tasks": not the owner's own words
+    rig, marks = await _marked_rig(fake)
+    out = await rig.run("task_delete", {"task_id": "L2:t_rfp"})
+    assert out.outcome is GatewayOutcome.EXECUTED and out.trusted is False, out.error
+    first = rig.fake.task("L2", "t_first")
+    assert first is not None
+    first["parent"] = "t_last"  # moved meanwhile: no longer a sibling, Google answers 400
+    back = await rig.run("deleted_restore", {"undo_id": out.result["undo_id"]})
+    assert back.outcome is GatewayOutcome.EXECUTED and back.result["restored"] is True
+    assert back.trusted is False
+    [ins] = rig.fake.changes("insert")
+    assert ins.params == {}  # the second try, without `previous`
+    got = await marks.read(UID)
+    assert got is not None and got.ids == {ins.task_id} and got.pending_since is None
 
 
 async def test_without_a_bin_task_delete_stays_r3_as_before() -> None:

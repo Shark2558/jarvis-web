@@ -48,12 +48,19 @@ class ToolCall(BaseModel):
 
 
 class ToolResultBlock(BaseModel):
-    """Result handed back to the model. `content` is untrusted data, never instructions."""
+    """Result handed back to the model. `content` is untrusted data, never instructions.
+
+    `trusted` (slice 11 D8): every item in it was written by the owner, or by JARVIS for him —
+    so reading it does not taint the round (`jarvis.tools.taint`). Server-side only: set from the
+    gateway's result (`GatewayResult.block`), stored with the conversation, never sent to an LLM
+    vendor (each provider copies fields one by one), never accepted from a client (no API takes
+    blocks). Defaults to untrusted, which is also how history stored before slice 11 reads."""
 
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
     content: str
     is_error: bool = False
+    trusted: bool = False
 
 
 class TextBlock(BaseModel):

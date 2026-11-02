@@ -69,6 +69,11 @@ class Tool:
     # R2 call needs no passkey). Pure, no I/O; may read `jarvis.tools.taint`. Never asked for a
     # read-only call. An error counts as True (fail closed).
     ask_when: AskFn | None = None
+    # Slice 11 D8: True for tools that decide PER RESULT whether every item in it is the owner's
+    # own (`jarvis.tools.provenance.vouch`): the owner's calendar, reminders and to-dos. The
+    # gateway honours a vouched result only from such a tool. Never set it for mail, web,
+    # documents or anything that can carry other people's words.
+    may_vouch: bool = False
 
     def effective_risk(self, args: dict[str, Any]) -> ActionRisk:
         return self.risk_for(args) if self.risk_for is not None else self.risk

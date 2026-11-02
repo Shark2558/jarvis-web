@@ -29,7 +29,12 @@ Docs checked 2026-11-02: developers.google.com/workspace/calendar/api/v3/referen
 + conferenceData.createRequest; supportsAttachments=true, ≤ 25 attachments, fileUrl required;
 source writable; gadgets deprecated; status "cancelled" = deleted; no undelete method).
 
-Each kept copy also records whether the owner wrote the event (`owner_authored`, plan D8).
+Each kept copy also records whether the owner wrote the event (`owner_authored`: plan D8's one
+rule, `provenance.is_owner_authored_event`), so a listing of Recently deleted can be trusted when
+every item in it is the owner's own words, and the delete's own result is trusted by the same
+flag. A restore of an event that was NOT the owner's own carries the outside mark
+(`provenance.mark_outside`), so recreating it (as the owner, with JARVIS as creator) never makes
+someone else's words his.
 """
 
 from __future__ import annotations
@@ -51,6 +56,7 @@ from jarvis.tools.calendar_alerts import is_reminder
 from jarvis.tools.calendar_cards import others_on
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
+from jarvis.tools.provenance import is_owner_authored_event, mark_outside, vouch
 from jarvis.tools.undo_delete import delete_after_keep, keep_copy
 from jarvis.undo.models import DeletedItem
 from jarvis.undo.service import Restored, StillThere, UndoBin
@@ -117,14 +123,8 @@ def _owner_organises(event: dict[str, Any]) -> bool:
 
 
 def owner_authored(event: dict[str, Any]) -> bool:
-    """The owner's own words (plan D8, local rule until the shared helper lands): organised and
-    created by the owner, nobody else on it, not an event Gmail made."""
-    return (
-        _self(event, "organizer")
-        and _self(event, "creator")
-        and not others_on(event)
-        and event.get("eventType") != "fromGmail"
-    )
+    """The owner's own words: plan D8's one rule (`provenance.is_owner_authored_event`)."""
+    return is_owner_authored_event(event)
 
 
 def delete_risk(event: dict[str, Any]) -> tuple[ActionRisk, str]:
@@ -246,7 +246,8 @@ class CalendarRestorer:
     events_url: str
     tz_url: str
 
-    async def restore(self, uid: str, item: DeletedItem) -> Restored:
+    async def restore(self, uid: str, item: DeletedItem, *, outside: bool = False) -> Restored:
+        """`outside` (D8): the kept event was not the owner's own — the new copy is marked."""
         snap = item.snapshot
         body = restore_body(snap)
         if not isinstance(body.get("start"), dict) or not isinstance(body.get("end"), dict):
@@ -260,6 +261,8 @@ class CalendarRestorer:
             body["conferenceData"] = {
                 "createRequest": {"requestId": item.id, "conferenceSolutionKey": key}
             }
+        if outside:  # D8: recreated as the owner's, but its words are someone else's
+            body = mark_outside(body)
         rid = restore_event_id(item.id)
         new_id = await self._insert(uid, {**body, "id": rid}, _insert_params(snap, body), rid)
         return Restored(new_id=new_id, note=restore_note(snap))
@@ -327,20 +330,23 @@ async def _gone(conn: GoogleConnector, uid: str, url: str) -> bool:
 
 async def delete_kept(
     conn: GoogleConnector, undo: UndoBin, url: str, event: dict[str, Any], source: str
-) -> dict[str, Any]:
+) -> Any:
     """Delete `event` (just re-read): undo-able → copy kept FIRST (none kept → nothing deleted),
-    then deleted with nobody notified; not undo-able → only on a card approved at that risk."""
+    then deleted with nobody notified; not undo-able → only on a card approved at that risk. The
+    result is vouched for (D8) when the event was the owner's own — an undo-able one (also an
+    "unconfirmed" delete) by the flag its kept copy recorded."""
     ctx = require_tool_context()
     risk, _ = delete_risk(event)
     if not ctx.allows(risk):
         raise RuntimeError(CHANGED)
     uid = ctx.user_id
+    mine = owner_authored(event)
     if risk is ActionRisk.IRREVERSIBLE:
         await conn.request(uid, "DELETE", url, params={"sendUpdates": "all"})
-        return {"deleted": True, "id": one_line(event.get("id"), 1024)}
+        return vouch({"deleted": True, "id": one_line(event.get("id"), 1024)}, mine)
     title = str(event.get("summary") or "(no title)")
     snap = event_snapshot(event)
-    item = await keep_copy(undo, ctx, "event", title, snap, owner_authored=owner_authored(event))
+    item = await keep_copy(undo, ctx, "event", title, snap, owner_authored=mine)
     done = await delete_after_keep(
         undo,
         uid,
@@ -348,7 +354,8 @@ async def delete_kept(
         lambda: conn.request(uid, "DELETE", url, params={"sendUpdates": "none"}),
         lambda: _gone(conn, uid, url),
     )
-    return deleted_result(item, source=source, confirmed=done, extra_note=delete_note(event))
+    result = deleted_result(item, source=source, confirmed=done, extra_note=delete_note(event))
+    return vouch(result, item.owner_authored)
 
 
 __all__ = [

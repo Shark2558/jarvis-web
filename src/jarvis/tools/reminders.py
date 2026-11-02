@@ -25,6 +25,10 @@ reminder_update changes only reminders the owner made (organizer and creator `se
 repeat's end in the future and refuses to move a series past its last day (give repeat and
 repeat_until to extend it, within the year). A date the calendar can't hold (year 1, 9999) is a
 plain ValueError, never an OverflowError.
+
+Slice 11 D8: all three vouch for their result (`may_vouch`) when every reminder in it is the
+owner's own by the calendar rule (`provenance.is_owner_authored_event`: the tag alone proves
+nothing), and reminders_list takes a `query` (Google's `q`) to look one up by its words.
 """
 
 from __future__ import annotations
@@ -58,10 +62,18 @@ from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
 from jarvis.tools.google_calendar import (
     EVENTS_URL,
+    QUERY,
     CalendarAPI,
     _event_time,
     _validate_event_id,
     parse_when,
+    query_arg,
+)
+from jarvis.tools.provenance import (
+    all_owner_authored,
+    is_owner_authored_event,
+    mark_outside,
+    vouch,
 )
 
 SOURCE = "reminders"
@@ -96,7 +108,7 @@ HOW_TO = (
 )
 TRUNCATED = (
     f"More than {MAX_LISTED} reminders in that window: only the first {MAX_LISTED} are listed. "
-    "Ask again with a narrower start and end to see the rest."
+    "Ask again with a narrower start and end (or more specific query words) to see the rest."
 )
 NOT_A_REMINDER = (
     "That event is not a reminder JARVIS set, so reminder_update won't change it; use "
@@ -359,6 +371,7 @@ class ReminderAPI:
         end = parse_when(a["end"], _LATEST, name="end") if a.get("end") else None
         if start is not None and end is not None:
             _span(start, end)
+        query_arg(a.get("query"))
 
     def check_update(self, a: dict[str, Any]) -> None:
         _validate_event_id(a.get("event_id"))
@@ -381,7 +394,7 @@ class ReminderAPI:
         uid = require_tool_context().user_id
         return uid, await self.cal.owner_tz(uid)
 
-    async def add(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def add(self, a: dict[str, Any]) -> Any:
         uid, tz = await self._zone()
         now = self.clock()
         text = _text_arg(a.get("text"))
@@ -399,10 +412,12 @@ class ReminderAPI:
         }
         if rule is not None:
             body["recurrence"] = [rule]
+        if require_tool_context().outside:  # D8: other people's words: never the owner's own
+            body = mark_outside(body)
         e = await self.cal.conn.request(
             uid, "POST", EVENTS_URL, params={"sendUpdates": "none"}, json=body
         )
-        return {
+        out = {
             "status": "set",
             "id": one_line(e.get("id"), 1024),
             "text": text,
@@ -412,8 +427,9 @@ class ReminderAPI:
             "time_zone": tz.key,
             "note": DELETE_NOTE,
         }
+        return vouch(out, is_owner_authored_event(e))
 
-    async def list_reminders(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def list_reminders(self, a: dict[str, Any]) -> Any:
         uid, tz = await self._zone()
         now = self.clock().astimezone(tz)
         start = parse_when(a["start"], tz, name="start") if a.get("start") else now
@@ -428,30 +444,36 @@ class ReminderAPI:
             "maxResults": MAX_LISTED,
             "privateExtendedProperty": REMINDER_FILTER,
         }
+        if q := query_arg(a.get("query")):
+            params["q"] = q
         data = await self.cal.conn.request(uid, "GET", EVENTS_URL, params=params)
         raw = list(data.get("items") or [])
         items = [e for e in raw[:MAX_LISTED] if isinstance(e, dict)]
         cut = bool(data.get("nextPageToken")) or len(raw) > MAX_LISTED
+        shown = [e for e in items if is_reminder(e)]
         out: dict[str, Any] = {
             "time_zone": tz.key,
             "from": start.isoformat(),
             "to": end.isoformat(),
-            "reminders": [_shape(e, tz) for e in items if is_reminder(e)],
+            "reminders": [_shape(e, tz) for e in shown],
             "truncated": cut,
             "how_to": HOW_TO,
         }
-        return {**out, "note": TRUNCATED} if cut else out
+        mine = all_owner_authored(shown, is_owner_authored_event)  # D8: every row listed
+        return vouch({**out, "note": TRUNCATED} if cut else out, mine)
 
-    async def update(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def update(self, a: dict[str, Any]) -> Any:
         uid, tz = await self._zone()
         e = await self.cal._event(a)  # the authoritative look-up: the tag is checked here too
         _own_reminder(e, a)
         body = self._changes(a, e, tz)
+        if require_tool_context().outside:  # D8: keep its tag and properties, add the mark
+            body = mark_outside(body, e)
         eid = _validate_event_id(a.get("event_id"))
         out = await self.cal.conn.request(
             uid, "PATCH", f"{EVENTS_URL}/{eid}", params={"sendUpdates": "none"}, json=body
         )
-        return {"status": "updated", **_shape(out, tz)}
+        return vouch({"status": "updated", **_shape(out, tz)}, is_owner_authored_event(out))
 
     def _changes(self, a: dict[str, Any], e: dict[str, Any], tz: ZoneInfo) -> dict[str, Any]:
         body: dict[str, Any] = {}
@@ -602,18 +624,20 @@ def reminder_tools(
             agent="google",
             summarize=add_card,
             check=api.check_add,
+            may_vouch=True,
         ),
         Tool(
             "reminders_list",
             "List the owner's reminders (set with reminder_add) between start and end (default: "
             "the next 7 days), one row per occurrence, with the ids reminder_update takes: `id` "
-            "(a repeating reminder's whole series) and, for a repeating one, `occurrence_id`."
-            + _DELETE,
-            {"type": "object", "properties": {"start": _WHEN, "end": _WHEN}},
+            "(a repeating reminder's whole series) and, for a repeating one, `occurrence_id`. "
+            "Optional query (words in the reminder)." + _DELETE,
+            {"type": "object", "properties": {"start": _WHEN, "end": _WHEN, "query": QUERY}},
             ActionRisk.READ_ONLY,
             api.list_reminders,
             agent="google",
             check=api.check_list,
+            may_vouch=True,
         ),
         Tool(
             "reminder_update",
@@ -626,6 +650,7 @@ def reminder_tools(
             agent="google",
             check=api.check_update,
             preview=api.preview_update,
+            may_vouch=True,
         ),
     ]
 

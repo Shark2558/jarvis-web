@@ -63,7 +63,6 @@ from jarvis.llm.base import (
     StreamUsage,
     TextBlock,
     ToolCall,
-    ToolResultBlock,
 )
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.pricing import cost_usd as priced_cost
@@ -518,12 +517,8 @@ class Brain:
                     for gr in outcomes
                     if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending
                 ]
-                results: list[ContentBlock] = [
-                    ToolResultBlock(
-                        tool_use_id=call.id,
-                        content=gr.for_model(),
-                        is_error=gr.outcome is GatewayOutcome.ERROR,
-                    )
+                results: list[ContentBlock] = [  # trusted only by the gateway (slice 11 D8)
+                    gr.block(call.id)
                     for call, gr in zip(completion.tool_calls, outcomes, strict=True)
                 ]
                 done = Turn(role=Role.USER, content="", blocks=results)

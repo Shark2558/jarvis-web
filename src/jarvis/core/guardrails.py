@@ -79,6 +79,11 @@ class PendingAction(BaseModel):
     reason: AskReason | None = Field(
         default=None, description="Why it asks (slice 11); None: a card stored before the field"
     )
+    # Slice 11 D8: the round that proposed this card had read other people's content (a spoken-
+    # only round doesn't count), so what it writes is marked as outside when it runs. Set by the
+    # gateway at proposal; never part of what makes two cards the same. None: a card stored
+    # before this field existed — the gateway treats it as outside (fail closed).
+    outside: bool | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC) + timedelta(minutes=10))
 
@@ -235,6 +240,9 @@ class ConfirmationGate:
             # the same proposal twice must not become two approvals (= two sends)
             existing = next((p for p in await self.store.pending_in(action.scope) if same(p)), None)
             if existing is not None:
+                if action.outside and existing.outside is False:  # D8: never forgotten
+                    existing = existing.model_copy(update={"outside": True})
+                    await self.store.put(existing)
                 raise ConfirmationRequired(existing)
             if not new_allowed:
                 raise TooManyApprovals(action)

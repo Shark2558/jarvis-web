@@ -15,6 +15,10 @@ checks its body: start and end each hold exactly one of date / dateTime (a dateT
 offset needs a timeZone; a repeating event needs one), end after start; a client `id` must be
 base32hex (a-v, 0-9), 5-1024 characters, and one that exists already is a 409. Ids the fake
 makes are base32hex too.
+
+Slice 11 D8: like Google, an inserted event comes back with the owner as `creator` and
+`organizer`, both `self: true` (read-only fields Google sets): what JARVIS makes is the owner's
+own. Planted events carry whatever the case gives them.
 """
 
 from __future__ import annotations
@@ -116,6 +120,7 @@ class FakeGoogleServer:
     mutations: list[Mutation] = field(default_factory=list)
     requests: list[httpx.Request] = field(default_factory=list)
     deleted_status: int = 200  # GET of a deleted event: 200 + status "cancelled", or 410
+    owner: str = OWNER_EMAIL  # who Google says made what JARVIS inserts (creator, organizer)
 
     def live(self, eid: str) -> bool:
         """The event is on the calendar (planted or made, and not deleted)."""
@@ -249,7 +254,7 @@ class FakeGoogleServer:
             return httpx.Response(status, json={"error": {"message": why}})
         eid = str(body.get("id") or uuid.uuid4().hex[:16])  # base32hex, like Google's own
         link = f"https://calendar.google.com/event?eid={eid}"
-        me = {"email": OWNER_EMAIL, "self": True}  # Google: the caller organises what it makes
+        me = {"email": self.owner, "self": True}  # like Google: read-only, set on insert
         event = {"htmlLink": link, "organizer": me, "creator": me, **body}
         event.update(id=eid, status="confirmed")
         self.events[eid] = event

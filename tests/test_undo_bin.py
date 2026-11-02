@@ -36,11 +36,13 @@ class Clock:
 class FakeRestorer:
     def __init__(self, *, fail: Exception | None = None, pause: bool = False) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.outside: list[bool] = []  # slice 11 D8: what the bin said about each restore
         self.fail = fail
         self.pause = pause  # yield to the event loop mid-restore, so a racing call can run
 
-    async def restore(self, uid: str, item: DeletedItem) -> Restored:
+    async def restore(self, uid: str, item: DeletedItem, *, outside: bool = False) -> Restored:
         self.calls.append((uid, item.snapshot))
+        self.outside.append(outside)
         if self.pause:
             await asyncio.sleep(0.01)
         if self.fail is not None:

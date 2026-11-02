@@ -4,10 +4,13 @@ delete gives the model.
 
     deleted_list     R1 — what JARVIS deleted for the owner in the last 30 days, newest first.
                      Titles are other people's words as often as the owner's (an invitation, a
-                     task copied from a mail), so they are fenced and the output is NOT trusted.
+                     task copied from a mail), so they are fenced; the listing is trusted (plan
+                     D8, `may_vouch`) only when every item's recorded `owner_authored` is true.
     deleted_restore  R2 — bring one back (new id; events without guests). Looked up first for the
                      card (a tainted or spoken round makes it one); an unknown id proposes
-                     nothing. A second restore says "already restored".
+                     nothing. A second restore says "already restored". Its result is trusted
+                     when the item was the owner's own (D8), and a restore of one that was not
+                     marks the new copy as outside (the restorers).
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import quoted
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
+from jarvis.tools.provenance import vouch
 from jarvis.undo.models import (
     KIND_WORDS,
     RETENTION_DAYS,
@@ -27,6 +31,7 @@ from jarvis.undo.models import (
     DeletedItem,
     RestoreOutcome,
     RestoreStatus,
+    all_owner_authored,
 )
 from jarvis.undo.service import MSG_EXPIRED, MSG_UNKNOWN, UndoBin
 
@@ -84,10 +89,10 @@ class _UndoAPI:
     def __init__(self, bin_: UndoBin) -> None:
         self.bin = bin_
 
-    async def list(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def list(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
         items = await self.bin.recent(uid)
-        return {
+        out = {
             "kept_days": RETENTION_DAYS,
             "items": [
                 {
@@ -100,10 +105,12 @@ class _UndoAPI:
                 for i in items
             ],
         }
+        return vouch(out, all_owner_authored(items))
 
-    async def restore(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def restore(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
-        return _restore_result(await self.bin.restore(uid, a["undo_id"]))
+        out = await self.bin.restore(uid, a["undo_id"])
+        return vouch(_restore_result(out), out.owner_authored)
 
     async def preview_restore(self, a: dict[str, Any]) -> Preview:
         uid = require_tool_context().user_id
@@ -132,6 +139,7 @@ def undo_tools(bin_: UndoBin) -> list[Tool]:
             ActionRisk.READ_ONLY,
             api.list,
             agent="undo",
+            may_vouch=True,
         ),
         Tool(
             "deleted_restore",
@@ -144,6 +152,7 @@ def undo_tools(bin_: UndoBin) -> list[Tool]:
             agent="undo",
             check=_check_id,
             preview=api.preview_restore,
+            may_vouch=True,
         ),
     ]
 

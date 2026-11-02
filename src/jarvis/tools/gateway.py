@@ -26,6 +26,16 @@ so no passkey. Outside a turn nothing is tainted (an approval being executed, a 
 Slice 11 D7 a: a tool may ask for one call (`Tool.ask_when`, e.g. a Gmail draft to an address
 the owner did not type in this message): that ALLOW becomes ASK too, after the owner's rules.
 
+Slice 11 D8 — trust by provenance: a tool declared `may_vouch` (the owner's calendar, reminders,
+to-dos) may return `provenance.vouch(result, verdict)`: the verdict is True only when every item
+in the result was written by the owner or by JARVIS for him. The gateway unwraps it and marks the
+result `trusted` only when it ran (EXECUTED) and came from such a tool; an error, a card, a
+refusal or a vouch from any other tool is untrusted. The flag travels beside the text, never in
+it (`GatewayResult.block` → `ToolResultBlock.trusted`), so the model can't set it and no vendor
+sees it; the stored conversation keeps it. A trusted result does not taint the round: a write
+after looking up the owner's own event runs without a card. Nothing else changes: a spoken turn,
+mail / web / a document / someone else's item in the window, and every R3 call still ask.
+
 Slice 10 integration review L4: one owner message proposes at most 5 NEW cards (`tools.budget`;
 a duplicate of a waiting card is not new); past that a proposal is refused in plain words and
 nothing is stored. The duplicate look-up reads only the conversation's own cards.
@@ -47,6 +57,10 @@ card keeps the stronger of its old and new reasons), which decides what Approve 
 run by Approve all are audited "confirmed; approve-all" (`approved_via`). A tool that raises is
 reported to the owner and the model as a fixed sentence plus the redacted `_safe_detail`, never its
 raw text, and marked `raised` (it was called, so it may have done part of it).
+
+Slice 11 D8 (security review of A+B): a card records whether its proposing round had read other
+people's content (`PendingAction.outside`); approved, it runs with `ToolContext.outside` so what it
+writes is marked as theirs. A re-proposed card keeps the stricter reason and outside (`_carried`).
 """
 
 from __future__ import annotations
@@ -69,7 +83,7 @@ from jarvis.core.guardrails import (
     PendingAction,
     TooManyApprovals,
 )
-from jarvis.llm.base import ToolCall
+from jarvis.llm.base import ToolCall, ToolResultBlock
 from jarvis.logging import get_logger
 from jarvis.tools import policy as _policy
 from jarvis.tools.audit import AuditTrail, args_hash
@@ -78,8 +92,9 @@ from jarvis.tools.budget import DELETES_CAPPED, TOO_MANY_CARDS, current_budget, 
 from jarvis.tools.context import ToolContext, approval_proof, tool_context
 from jarvis.tools.external import model_safe
 from jarvis.tools.policy import Effect, OwnerRules, Policy
+from jarvis.tools.provenance import unwrap
 from jarvis.tools.registry import ToolRegistry
-from jarvis.tools.taint import spoken_in_context, tainted_round
+from jarvis.tools.taint import content_tainted, spoken_in_context, tainted_round
 
 log = get_logger(__name__)
 MAX_RESULT_CHARS = 12_000
@@ -135,11 +150,22 @@ class GatewayResult:
     pending: PendingAction | None = None
     note: str = ""  # why a call that could have run became a card (slice 11 D3), our own words
     raised: bool = False  # ERROR from the tool itself: it was called and raised (slice 11 review)
+    # slice 11 D8: every item in the result is the owner's own (set by `Gateway.execute` only)
+    trusted: bool = False
 
     @property
     def ran(self) -> bool:
         """The tool was called: it returned, or it raised while running (may have done part)."""
         return self.outcome is GatewayOutcome.EXECUTED or self.raised
+
+    def block(self, tool_use_id: str, *, is_error: bool | None = None) -> ToolResultBlock:
+        """The stored, replayed tool_result for this outcome — the one place its `trusted` flag
+        is set. Only a result that ran can be trusted; an error never is."""
+        error = self.outcome is GatewayOutcome.ERROR if is_error is None else is_error
+        trusted = self.trusted and self.outcome is GatewayOutcome.EXECUTED and not error
+        return ToolResultBlock(
+            tool_use_id=tool_use_id, content=self.for_model(), is_error=error, trusted=trusted
+        )
 
     def for_model(self) -> str:
         """Serialise for the model. Tool output is data, never instructions."""
@@ -171,6 +197,16 @@ class GatewayResult:
             "The action changed after the owner's approval was asked for, so nothing was done "
             "and a new approval card is waiting; tell the owner in one sentence.",
         )
+
+
+def _vouched(tool: Tool, out: Any) -> tuple[Any, bool]:
+    """The plain result and whether it is the owner's own (slice 11 D8): only a tool declared
+    `may_vouch` can say so; a vouch from any other tool is dropped (and logged)."""
+    value, vouched = unwrap(out)
+    if vouched and not tool.may_vouch:
+        log.warning("vouch from a tool that may not vouch; untrusted", extra={"tool": tool.name})
+        return value, False
+    return value, vouched
 
 
 def _tightened(
@@ -205,11 +241,14 @@ def _ask_reason(ruled: Effect, risk: ActionRisk, asks: bool, capped: bool) -> As
 
 
 def _carried(stored: PendingAction, fresh: PendingAction) -> PendingAction:
-    """A re-proposed card keeps its old reason unless the new one is one-by-one by itself (a
-    re-check outside the turn can't see why it asked then: a one-by-one card never turns bulk)."""
+    """A re-proposed card keeps the more protective of its old and new values (a re-check outside
+    the turn can't see the round it was proposed in). Reason: the old one unless the new one is
+    one-by-one by itself (a one-by-one card never turns bulk). Outside (D8): once outside, always
+    — and a card from before the field (None) counts as outside."""
+    outside = stored.outside is not False or bool(fresh.outside)
     if fresh.reason in (AskReason.RISK, AskReason.DRAFT_RECIPIENT) or stored.reason is None:
-        return fresh
-    return fresh.model_copy(update={"reason": stored.reason})
+        return fresh.model_copy(update={"outside": outside})
+    return fresh.model_copy(update={"reason": stored.reason, "outside": outside})
 
 
 def _changed(stored: PendingAction, fresh: PendingAction) -> str:
@@ -310,6 +349,7 @@ class Gateway:
         why = ""
         if effect is Effect.ALLOW and tool.undoable and not take_free_delete():
             effect, why = Effect.ASK, DELETES_CAPPED  # slice 11 D3: the 11th delete is a card
+        outside = content_tainted()  # D8: what this call writes may carry other people's words
 
         if effect is Effect.ASK:
             # An ASK is confirm-before-commit whatever the declared class (a policy rule may
@@ -324,13 +364,15 @@ class Gateway:
                 reason=_ask_reason(
                     policy.decide(tool.name, risk, call.arguments), risk, asks, bool(why)
                 ),
+                outside=outside,
             )
             note = ""
             if confirmation_id is not None:
                 pre = await self._before_consuming(tool, call, action, confirmation_id, proof)
                 if isinstance(pre, GatewayResult):
                     return pre
-                note = pre
+                note, proposed_outside = pre
+                outside = outside or proposed_outside  # writes as its proposing round would
             asked = await self._gate(tool, call, risk, action, confirmation_id)
             if asked is not None:
                 return replace(asked, note=why) if asked.pending is not None else asked
@@ -354,8 +396,10 @@ class Gateway:
                 return GatewayResult(
                     GatewayOutcome.ERROR, error="could not record the action, so nothing was done"
                 )
-        try:  # the tool learns who it runs for, if approved, and at what risk; always reset
-            with tool_context(scope, confirmed=confirmation_id is not None, approved_risk=risk):
+        try:  # who it runs for, if approved, at what risk, whether outside; always reset
+            with tool_context(
+                scope, confirmed=confirmation_id is not None, approved_risk=risk, outside=outside
+            ):
                 out = tool.run(call.arguments)
                 if hasattr(out, "__await__"):
                     out = await out
@@ -363,11 +407,12 @@ class Gateway:
             log.exception("tool failed", extra={"tool": tool.name})
             await self._audit_after_run(tool, call, risk, "error", _safe_detail(exc))
             error = f"{TOOL_FAILED} ({_safe_detail(exc)})"  # never the raw text (review LOW-6)
-            return GatewayResult(GatewayOutcome.ERROR, error=error, raised=True)
+            return GatewayResult(GatewayOutcome.ERROR, error=error, raised=True)  # never trusted
+        out, trusted = _vouched(tool, out)
         await self._audit_after_run(
             tool, call, risk, "executed", _confirmed() if confirmation_id else ""
         )
-        return GatewayResult(GatewayOutcome.EXECUTED, result=out)
+        return GatewayResult(GatewayOutcome.EXECUTED, result=out, trusted=trusted)
 
     async def _gate(
         self,
@@ -436,38 +481,41 @@ class Gateway:
         fresh: PendingAction,
         confirmation_id: str,
         proof: Any,
-    ) -> GatewayResult | str:
+    ) -> GatewayResult | tuple[str, bool]:
         """The card runs only as the owner saw it: changed since → withdrawn and re-proposed
         (nothing runs). Then the approval guard sees the card about to run (it raises to
-        refuse; the token is not spent). Returns the guard's note for the audit."""
+        refuse; the token is not spent). Returns the guard's note for the audit, and whether the
+        card's proposing round had read outside content (D8: `PendingAction.outside`)."""
         stored = await self.gate.get(confirmation_id)
         if stored is None or (stored.tool, stored.arguments, stored.scope) != (
             fresh.tool,
             fresh.arguments,
             fresh.scope,
         ):
-            return ""  # the gate reports it no longer valid; nothing runs
+            return "", True  # the gate reports it no longer valid; nothing runs
         why = _changed(stored, fresh)
         if why:
             if not await self.gate.cancel(stored.id):
-                return ""  # decided meanwhile: the gate reports it
+                return "", True  # decided meanwhile: the gate reports it
             log.warning("approved card changed since proposed; re-proposed", extra={"why": why})
             risk = fresh.tool_risk or ActionRisk.IRREVERSIBLE
             again = await self._gate(
                 tool,
                 call,
                 risk,
-                _carried(stored, fresh),
+                _carried(stored, fresh),  # keeps the stricter reason and outside
                 None,
                 f" (changed since proposed: {why}; replaces {stored.id})",
             )
             assert again is not None  # no token: always a proposal
             return again
+        outside = stored.outside is not False  # a card from before D8: unknown, so outside
         if self.approval_guard is None:
-            return ""
+            return "", outside
         uid = ToolContext.from_scope(fresh.scope or "").user_id
         presented = proof if proof is not None else approval_proof()
-        return await self.approval_guard.check_approval(uid, stored, presented) or ""
+        note = await self.approval_guard.check_approval(uid, stored, presented) or ""
+        return note, outside
 
     async def _policy_for(
         self, tool: Tool, call: ToolCall, risk: ActionRisk, scope: str | None

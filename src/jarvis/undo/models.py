@@ -18,6 +18,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from jarvis.tools.provenance import all_owner_authored as provenance_all
+
 RETENTION_DAYS = 30
 TITLE_LIMIT = 200
 UNDO_ID = re.compile(r"del_[0-9a-f]{20}")
@@ -57,8 +59,9 @@ class DeletedItem(BaseModel):
 
 
 def all_owner_authored(items: list[DeletedItem]) -> bool:
-    """Plan D8: a listing can be trusted only when every item in it is the owner's own words."""
-    return all(i.owner_authored for i in items)
+    """Plan D8: a listing can be trusted only when every item in it is the owner's own words —
+    the one rule (`provenance.all_owner_authored`) over each item's recorded verdict."""
+    return provenance_all(items, lambda i: i.owner_authored)
 
 
 class RestoreStatus(StrEnum):
@@ -84,6 +87,7 @@ class RestoreOutcome(BaseModel):
     title: str = ""
     new_id: str | None = None
     note: str = ""
+    owner_authored: bool = False  # plan D8: the item's recorded verdict (its title is his words)
 
 
 class UndoRef(BaseModel):

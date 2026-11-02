@@ -44,7 +44,11 @@ APP_ASSETS: dict[str, str] = {
     "console-web.js": _JS,  # slice 10 B: the Sources row under replies, Vitals web-search line
     "console-permissions.js": _JS,  # slice 10 D: Allow / Ask first / Never, passkeys (WebAuthn)
     "console-attach.js": _JS,  # slice 10 E: paperclip, drag-and-drop, file chips
+    "console-approve-all.js": _JS,  # slice 11 D6: "Approve all (n)" above the Approvals list
+    "console-approvals.js": _JS,  # slice 11 review: a card's Approve / Decline, Approve all's path
     "console-attach.css": "text/css",
+    "console-deleted.js": _JS,  # slice 11: Approvals → Recently deleted, the reply's Undo chip
+    "console-deleted.css": "text/css",
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",

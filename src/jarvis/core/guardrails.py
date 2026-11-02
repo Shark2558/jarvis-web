@@ -47,6 +47,24 @@ class ActionRisk(StrEnum):
     IRREVERSIBLE = "irreversible"  # send, pay, delete, publish — always confirm
 
 
+class AskReason(StrEnum):
+    """Why a call that could have run became a card (slice 11 review MEDIUM-1). Set by the gateway
+    where an Allow is tightened to Ask; decides what Approve all may run (`PendingAction.bulk_ok`).
+    """
+
+    UNTRUSTED_CONTEXT = "untrusted_context"  # the model had read other people's words this round
+    DRAFT_RECIPIENT = "draft_recipient"  # a draft to an address the owner did not type (D7 a)
+    SPOKEN = "spoken"  # a spoken turn: anyone in the room may have said it
+    OWNER_RULE = "owner_rule"  # an "Ask first" rule (the owner's, or the configured policy's)
+    CAP = "cap"  # past the message's free undo-able deletes (slice 11 D3)
+    RISK = "risk"  # can't be undone: always asks (R3)
+
+
+# Memory writes are never approved in bulk: a note planted by someone else's words must be read by
+# the owner one card at a time (slice 11 review MEDIUM-1).
+MEMORY_TOOL_PREFIX = "memory_"
+
+
 class PendingAction(BaseModel):
     id: str = Field(default_factory=lambda: secrets.token_urlsafe(12))
     tool: str
@@ -58,6 +76,14 @@ class PendingAction(BaseModel):
     # IRREVERSIBLE); `tool_risk` is what the call itself can do. A passkey is asked for only when
     # it is IRREVERSIBLE — or unknown (a card stored before this field existed): fail safe.
     tool_risk: ActionRisk | None = Field(default=None, description="Risk of the call itself")
+    reason: AskReason | None = Field(
+        default=None, description="Why it asks (slice 11); None: a card stored before the field"
+    )
+    # Slice 11 D8: the round that proposed this card had read other people's content (a spoken-
+    # only round doesn't count), so what it writes is marked as outside when it runs. Set by the
+    # gateway at proposal; never part of what makes two cards the same. None: a card stored
+    # before this field existed — the gateway treats it as outside (fail closed).
+    outside: bool | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC) + timedelta(minutes=10))
 
@@ -69,6 +95,16 @@ class PendingAction(BaseModel):
     def irreversible(self) -> bool:
         """True when the call itself can't be undone (or its risk is unknown: fail safe)."""
         return self.tool_risk is None or self.tool_risk is ActionRisk.IRREVERSIBLE
+
+    @property
+    def bulk_ok(self) -> bool:
+        """May Approve all run it? Never when it can't be undone (or its risk is unknown), never a
+        draft to an address the owner did not type, never a memory write — whatever its reason,
+        so also an old card without one. A calendar / reminder / to-do card made after reading a
+        mail stays one tap: "add these 5 events from the email"."""
+        if self.irreversible or self.reason is AskReason.DRAFT_RECIPIENT:
+            return False
+        return not self.tool.startswith(MEMORY_TOOL_PREFIX)
 
 
 class ConfirmationRequired(PermissionError):
@@ -97,6 +133,15 @@ class TooManyApprovals(PermissionError):
 
 
 ActionMatcher = Callable[[PendingAction], bool]
+
+
+def carried_reason(stored: AskReason | None, fresh: AskReason | None) -> AskReason | None:
+    """The reason a card keeps when the same call is proposed again: the old one, unless the new
+    one is one-by-one by itself (RISK, DRAFT_RECIPIENT) or there was none (a card from before the
+    field). A one-by-one card never turns bulk."""
+    if fresh in (AskReason.RISK, AskReason.DRAFT_RECIPIENT) or stored is None:
+        return fresh
+    return stored
 
 
 def same_card(stored: PendingAction, proposed: PendingAction) -> bool:
@@ -204,6 +249,15 @@ class ConfirmationGate:
             # the same proposal twice must not become two approvals (= two sends)
             existing = next((p for p in await self.store.pending_in(action.scope) if same(p)), None)
             if existing is not None:
+                merged = {  # D8: outside is never forgotten; the stricter reason wins
+                    "outside": True
+                    if action.outside and existing.outside is False
+                    else existing.outside,
+                    "reason": carried_reason(existing.reason, action.reason),
+                }
+                if merged["outside"] != existing.outside or merged["reason"] != existing.reason:
+                    existing = existing.model_copy(update=merged)
+                    await self.store.put(existing)
                 raise ConfirmationRequired(existing)
             if not new_allowed:
                 raise TooManyApprovals(action)

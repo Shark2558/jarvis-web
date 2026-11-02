@@ -45,6 +45,22 @@ class PageText:
     credits: int | None = None
 
 
+@dataclass(frozen=True)
+class VendorUsage:
+    """What the vendor itself counts for its current billing cycle (slice 11 D7 b)."""
+
+    used: int  # credits used: the larger of the key's and the plan's count
+    limit: int | None = None  # the smallest limit it reports (None: none reported)
+    exhausted: bool = False  # a count it reports has reached its limit
+
+
+@runtime_checkable
+class UsageReporter(Protocol):
+    """A vendor that reports its own usage without charging for the report (Tavily GET /usage)."""
+
+    async def usage(self) -> VendorUsage: ...
+
+
 @runtime_checkable
 class SearchProvider(Protocol):
     name: str
@@ -65,5 +81,7 @@ __all__ = [
     "SearchPage",
     "SearchProvider",
     "Topic",
+    "UsageReporter",
+    "VendorUsage",
     "WebError",
 ]

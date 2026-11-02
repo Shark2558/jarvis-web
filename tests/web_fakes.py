@@ -9,6 +9,31 @@ import httpx
 
 SEARCH_URL = "https://api.tavily.com/search"
 EXTRACT_URL = "https://api.tavily.com/extract"
+USAGE_URL = "https://api.tavily.com/usage"
+# GET /usage in the shape docs.tavily.com documents (checked 2026-11-02); values are the tests'
+USAGE_BODY: dict[str, Any] = {
+    "key": {
+        "usage": 150,
+        "limit": 1000,
+        "search_usage": 100,
+        "extract_usage": 50,
+        "crawl_usage": 0,
+        "map_usage": 0,
+        "research_usage": 0,
+    },
+    "account": {
+        "current_plan": "Researcher",
+        "plan_usage": 500,
+        "plan_limit": 1000,
+        "paygo_usage": 0,
+        "paygo_limit": 0,
+        "search_usage": 400,
+        "extract_usage": 100,
+        "crawl_usage": 0,
+        "map_usage": 0,
+        "research_usage": 0,
+    },
+}
 
 
 def hit(n: int, *, host: str = "example.com", **over: Any) -> dict[str, Any]:
@@ -34,12 +59,15 @@ class FakeTavily:
         self.status: int | None = None
         self.body: bytes | None = None
         self.raw_search: bytes | None = None  # served verbatim instead of the JSON results
+        self.usage: Any = json.loads(json.dumps(USAGE_BODY))  # GET /usage answer (slice 11)
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if self.status is not None:
             return httpx.Response(self.status, content=self.body or b'{"detail":"vendor text"}')
         url = f"{request.url.scheme}://{request.url.host}{request.url.path}"
+        if url == USAGE_URL and request.method == "GET":
+            return httpx.Response(200, json=self.usage)
         payload = json.loads(request.content or b"{}")
         if url == SEARCH_URL:
             if self.raw_search is not None:

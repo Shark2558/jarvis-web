@@ -25,6 +25,7 @@ from jarvis.integrations.google import (
     GoogleAPIError,
     GoogleConnector,
     GoogleNotConnected,
+    GoogleNotFound,
     GoogleServiceDisabled,
     can_use_tasks,
 )
@@ -87,6 +88,10 @@ class TaskRef:
 
 def valid_list_id(raw: str) -> bool:
     return raw == DEFAULT_LIST or bool(_ID.fullmatch(raw))
+
+
+def valid_task_id(raw: Any) -> bool:
+    return isinstance(raw, str) and bool(_ID.fullmatch(raw))
 
 
 def parse_task_id(raw: Any) -> TaskRef:
@@ -194,6 +199,13 @@ class DueScan:
     found: list[tuple[TaskList, dict[str, Any]]]
     lists: int
     complete: bool
+
+
+def _placement(parent: str | None, previous: str | None) -> dict[str, str]:
+    out = {k: v for k, v in (("parent", parent), ("previous", previous)) if v is not None}
+    if not all(_ID.fullmatch(v) for v in out.values()):
+        raise ValueError("not a valid to-do id")
+    return out
 
 
 def _token(value: Any) -> str | None:
@@ -337,11 +349,37 @@ class TasksClient:
             raise GoogleAPIError("Google returned no details for that to-do.")
         return t
 
-    async def insert(self, uid: str, list_id: str, body: dict[str, Any]) -> dict[str, Any]:
-        t = await self._call(uid, "POST", tasks_url(list_id), json=body)
+    async def insert(
+        self,
+        uid: str,
+        list_id: str,
+        body: dict[str, Any],
+        *,
+        parent: str | None = None,
+        previous: str | None = None,
+    ) -> dict[str, Any]:
+        """`parent` / `previous` (query parameters; slice 11 restore): under a task, after a
+        sibling. Both are Google task ids, checked before they reach the URL."""
+        params = _placement(parent, previous)
+        t = await self._call(uid, "POST", tasks_url(list_id), json=body, params=params or None)
         if not isinstance(t, dict) or not _ID.fullmatch(str(t.get("id") or "")):
             raise GoogleAPIError("Google did not confirm the new to-do.")
         return t
+
+    async def move(
+        self, uid: str, ref: TaskRef, *, parent: str | None, previous: str | None = None
+    ) -> None:
+        """Put an existing task under `parent` (after `previous`), in its own list."""
+        params = _placement(parent, previous)
+        await self._call(uid, "POST", f"{task_url(ref)}/move", params=params or None)
+
+    async def exists(self, uid: str, ref: TaskRef) -> bool:
+        """Whether the task is still there (not 404 / 410, not flagged deleted)."""
+        try:
+            t = await self.get(uid, ref)
+        except GoogleNotFound:
+            return False
+        return t.get("deleted") is not True
 
     async def patch(self, uid: str, ref: TaskRef, body: dict[str, Any]) -> dict[str, Any]:
         t = await self._call(uid, "PATCH", task_url(ref), json=body)
@@ -376,4 +414,5 @@ __all__ = [
     "task_url",
     "tasks_url",
     "valid_list_id",
+    "valid_task_id",
 ]

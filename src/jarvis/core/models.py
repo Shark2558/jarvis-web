@@ -18,6 +18,7 @@ from jarvis.core.guardrails import PendingAction
 from jarvis.documents.models import AttachmentRef
 from jarvis.llm.base import ContentBlock, Role, Usage
 from jarvis.recall.models import MemoryRef
+from jarvis.undo.models import UndoRef as UndoRef  # re-exported: replies carry it (slice 11)
 from jarvis.web.sources import Source as Source  # re-exported: replies and turns carry it
 
 
@@ -125,6 +126,10 @@ class PendingApproval(BaseModel):
     passkey_required: bool = Field(
         default=False, description="Approving needs a passkey check (GET /v1/approvals sets it)"
     )
+    reason: str | None = Field(default=None, description="Why it asks (slice 11; None: unknown)")
+    bulk_ok: bool = Field(
+        default=False, description="Approve all may run it (else: its own card, one by one)"
+    )
 
     @classmethod
     def from_action(cls, a: PendingAction) -> PendingApproval:
@@ -138,6 +143,8 @@ class PendingApproval(BaseModel):
             expires_at=a.expires_at,
             session_id=sid,
             tool_risk=a.tool_risk.value if a.tool_risk is not None else None,
+            reason=a.reason.value if a.reason is not None else None,
+            bulk_ok=a.bulk_ok,
         )
 
 
@@ -162,6 +169,11 @@ class ChatResponse(BaseModel):
     sources: list[Source] = Field(
         default_factory=list,
         description="Web sources the reply cited as [n] (only stored search results)",
+    )
+    undo: list[UndoRef] = Field(
+        default_factory=list,
+        description="Deletes this reply made that can be undone (the console's Undo chip; "
+        "POST /v1/deleted/{undo_id}/restore)",
     )
 
 

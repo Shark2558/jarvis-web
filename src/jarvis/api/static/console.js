@@ -18,6 +18,8 @@
 // Slice 10 B: a reply's (or restored turn's) `sources` → the Sources row (console-web.js, JarvisSources).
 // Slice 10 (console-attach.js): files waiting in window.JarvisAttach go with the next message as
 // `attachments: [id]`; jarvis:attach re-checks the Send button (disabled while one is uploading).
+// Slice 11 (console-approve-all.js): jarvis:approvals also carries `cards`; window.JarvisApprovals.
+// Slice 11 review: the approvals decision path (decide / runDecision) is console-approvals.js.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -47,6 +49,7 @@
   const state = { sessionId: null, authMode: 'token', token: ssGet('jarvis_token'), honorific: 'Sir',
     brains: [], brain: null, busy: false, seenApprovals: null, seenAudit: new Set() };
   let readyDetail = null; // the last jarvis:ready detail (frozen); null while signed out
+  let lastCards = []; // the approval cards last rendered
   let brainDetail = null; // the brain answering now (frozen): {id, label, trains, tools}; null until known
 
   const SUGGESTIONS = [
@@ -215,7 +218,8 @@
     const first = state.seenApprovals === null;
     state.seenApprovals = ids;
     fresh.forEach(a => note('approval', `Approval waiting · ${String(a.tool).replace(/_/g, ' ')}`));
-    emit('jarvis:approvals', { count: list.length, fresh: fresh.length > 0 || (first && list.length > 0) });
+    lastCards = list; // slice 11: console-approve-all.js offers "Approve all (n)" over them
+    emit('jarvis:approvals', { count: list.length, fresh: fresh.length > 0 || (first && list.length > 0), cards: list });
     if (!list.length) { el.innerHTML = '<div class="empty">Nothing waiting.</div>'; return; }
     // slice 10 D: a card whose action can't be undone, while the owner requires a passkey, is approved
     // with one (console-permissions.js runs the browser's own WebAuthn prompt)
@@ -616,6 +620,7 @@
     const used = memoriesUsed(r.memory_used);
     if (used.length) memoryChip(row, used);
     if (window.JarvisSources) window.JarvisSources.render(row, r.sources);
+    if (window.JarvisDeleted) window.JarvisDeleted.chips(row, r.undo); // slice 11: Undo chips
     renderStats(r, rttMs);
     emit('jarvis:reply', { refused: false, tools: Number.isFinite(r.tool_calls) ? r.tool_calls : 0 });
     // slice 9: the voice module speaks it (per "Speak replies"); an approval left waiting after a
@@ -675,42 +680,12 @@
     note('info', 'Monthly limit reached');
     emit('jarvis:reply', { refused: true });
   }
-  async function decide(id, action, card, sid, tool, passkey) {
-    if (state.busy) return; // one action at a time: a reply may still be arriving
-    const target = sid || state.sessionId;
-    if (!target) { addMsg('error', 'This approval belongs to a conversation that no longer exists.'); return; }
-    busy(true); // claimed before any await: a second click, a send or History cannot interleave
-    card.querySelectorAll('button').forEach(b => { b.disabled = true; });
-    const perr = card.querySelector('.perr'); if (perr) perr.textContent = '';
-    const body = { session_id: target };
-    if (action === 'approve' && passkey) { // first, while the click still counts as the owner's gesture
-      const P = window.JarvisPasskey;
-      try {
-        if (!P) throw new Error('Passkeys are still loading. Try again in a moment.');
-        body.passkey = await P.approve(id);
-      } catch (e) {
-        if (perr) perr.textContent = P ? P.message(e) : e.message;
-        note('error', 'Passkey check not completed');
-        card.querySelectorAll('button').forEach(b => { b.disabled = false; }); busy(false); return;
-      }
-    }
-    try {
-      if (!Deck.isOpen('chat')) Deck.open('chat', { focus: false }); // the outcome is a reply: show it (phones: switch tab)
-      if (target !== state.sessionId) { // show it in the conversation it belongs to
-        if (!(await loadConversation(target))) {
-          card.querySelectorAll('button').forEach(b => { b.disabled = false; }); refreshSide(); return;
-        }
-        showTyping(true); // loading the transcript cleared the indicator
-      }
-      note('approval', `${action === 'approve' ? 'Approved' : 'Declined'} · ${tool || 'action'}`);
-      handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body }), { decided: true }));
-    } catch (e) {
-      showTyping(false);
-      if (e.status === 402) limitReached(e); else addMsg('error', `Couldn't ${action}. ` + e.message);
-      refreshSide();
-    }
-    finally { busy(false); }
-  }
+  // Approve / Decline on a card, and Approve all: console-approvals.js (loaded first) gets the console's
+  // own pieces here, once; without it the buttons do nothing rather than break the console.
+  const Decisions = window.JarvisDecisions ? window.JarvisDecisions.make({ api, isBusy: () => state.busy, busy,
+    session: () => state.sessionId, addMsg, note, Deck, loadConversation, showTyping, handleResponse, limitReached,
+    refreshSide }) : { decide: async () => {}, decideWith: async () => false };
+  const decide = Decisions.decide, decideWith = Decisions.decideWith;
 
   // composer
   const input = $('input');
@@ -733,6 +708,8 @@
   // sign-in; a panel script that arrives after it (deferred scripts can be held back by a slow
   // network) asks ready() when it starts: the last jarvis:ready detail, or null until signed in.
   window.JarvisConsole = Object.freeze({ api, ready: () => readyDetail, brain: () => brainDetail });
+  // slice 11 (console-approve-all.js): the open conversation, the cards last rendered, a decision
+  window.JarvisApprovals = Object.freeze({ session: () => state.sessionId, cards: () => lastCards, decide: decideWith });
   // slice 9 voice (console-voice*.js): send a spoken message, the bytes transport, the console's state
   window.JarvisChat = Object.freeze({
     send: (text, opts) => (typeof text === 'string' && text.trim() && !state.busy ? send(text.trim(), opts || {}) : Promise.resolve(false)),

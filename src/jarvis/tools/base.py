@@ -16,6 +16,7 @@ ToolFn = Callable[[dict[str, Any]], Awaitable[Any] | Any]
 RiskFn = Callable[[dict[str, Any]], ActionRisk]
 CheckFn = Callable[[dict[str, Any]], None]
 SummaryFn = Callable[[dict[str, Any]], str]
+AskFn = Callable[[dict[str, Any]], bool]
 SUMMARY_FALLBACK_LIMIT = 300
 
 
@@ -27,6 +28,9 @@ class Preview:
 
     summary: str
     risk: ActionRisk | None = None
+    # Another tool's name whose permission rule also governs this call: a calendar tool that finds
+    # it is about to touch a reminder names the Reminders row, so "Never" there is total.
+    also: str | None = None
 
 
 PreviewFn = Callable[[dict[str, Any]], Awaitable[Preview]]
@@ -60,9 +64,30 @@ class Tool:
     # True only for tools whose output is the owner's own data (the memory tools): their results
     # do not make the context "untrusted" (jarvis.tools.taint). Default: other people's words.
     trusted_output: bool = False
+    # Slice 11: a delete that keeps a copy in Recently deleted (jarvis.undo), so it may run as R2.
+    # One owner message runs at most `budget.MAX_FREE_DELETES` of them without a card.
+    undoable: bool = False
+    # Optional (slice 11 D7 a): True → this call becomes an approval card even where the policy
+    # would allow it (an owner's Allow never relaxes it; the card keeps the call's own risk, so an
+    # R2 call needs no passkey). Pure, no I/O; may read `jarvis.tools.taint`. Never asked for a
+    # read-only call. An error counts as True (fail closed).
+    ask_when: AskFn | None = None
+    # Slice 11 D8: True for tools that decide PER RESULT whether every item in it is the owner's
+    # own (`jarvis.tools.provenance.vouch`): the owner's calendar, reminders and to-dos. The
+    # gateway honours a vouched result only from such a tool. Never set it for mail, web,
+    # documents or anything that can carry other people's words.
+    may_vouch: bool = False
 
     def effective_risk(self, args: dict[str, Any]) -> ActionRisk:
         return self.risk_for(args) if self.risk_for is not None else self.risk
+
+    def asks(self, args: dict[str, Any]) -> bool:
+        if self.ask_when is None:
+            return False
+        try:
+            return bool(self.ask_when(args))
+        except Exception:  # noqa: BLE001 — can't tell: ask
+            return True
 
     def spec(self) -> ToolSpec:
         return ToolSpec(
@@ -79,7 +104,10 @@ class Tool:
         if unknown:
             raise ValueError(f"unknown arguments: {', '.join(unknown)}")
         if self.check is not None:
-            self.check(args)
+            try:
+                self.check(args)
+            except OverflowError:  # a date far outside the calendar's range: plain words
+                raise ValueError("a date or number in the request is out of range") from None
 
     def summary(self, args: dict[str, Any]) -> str:
         # never show the owner a bare verb for something irreversible: the fallback is the
@@ -98,6 +126,7 @@ class Tool:
 
 
 __all__ = [
+    "AskFn",
     "CheckFn",
     "Preview",
     "PreviewFn",

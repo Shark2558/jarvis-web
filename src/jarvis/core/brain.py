@@ -24,7 +24,8 @@ Spending (slice 7b): every model call — chat, each tool round, the round-limit
 narration, the stream — goes through `_admit` (the owner's monthly limit, `Billing.ensure_allowed`)
 BEFORE it is made, and its cost is added to the month after it (`Billing.record`, never fails the
 reply). A turn is also admitted before the owner's message is stored, so a refused turn leaves
-no unanswered message behind. Approve / decline themselves: `jarvis.core.brain_decisions`.
+no unanswered message behind. Approve / decline themselves: `jarvis.core.brain_decisions`;
+Approve all (slice 11): `jarvis.core.approve_all`, narrated once like a single decision.
 Attached files (slice 10): `jarvis.documents.service` hooks. Tool rounds (slice 10 integration):
 once a write has run, the message's saves are conflict-safe (`jarvis.core.rounds`), and one
 message has a budget of new approval cards and document calls (`jarvis.tools.budget`).
@@ -41,9 +42,11 @@ from dataclasses import dataclass, field
 
 from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
+from jarvis.core import approve_all as approve_many
 from jarvis.core import brain_decisions as decisions
-from jarvis.core.guardrails import PendingAction, guard_input
-from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
+from jarvis.core.approve_all import ApproveAllResponse
+from jarvis.core.guardrails import guard_input
+from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn, UndoRef
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
 from jarvis.core.rounds import Rounds
@@ -60,8 +63,6 @@ from jarvis.llm.base import (
     StreamUsage,
     TextBlock,
     ToolCall,
-    ToolResultBlock,
-    Usage,
 )
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.pricing import cost_usd as priced_cost
@@ -104,6 +105,7 @@ class _ReplyMeta:
     rounds: int
     pending: list[PendingApproval]
     memory_used: list[MemoryRef]
+    undo: list[UndoRef] = field(default_factory=list)  # slice 11: the reply's Undo chips
 
 
 @dataclass
@@ -386,7 +388,9 @@ class Brain:
         self._after_turn(req.user_id, session, spec, rec)
         total_ms = int((time.perf_counter() - t0) * 1000)
         self._log_turn(session, len(messages), spec, completion, total_ms)
-        reply_meta = _ReplyMeta(trace_id, total_ms, rounds.count, pending, list(rec.used))
+        reply_meta = _ReplyMeta(
+            trace_id, total_ms, rounds.count, pending, list(rec.used), rounds.undo
+        )
         reply += rounds.reply_note(stored)  # the record is incomplete: say so, plainly
         return await self._chat_response(session, spec, reply, completion, reply_meta)
 
@@ -442,6 +446,7 @@ class Brain:
             pending_approvals=meta.pending,
             memory_used=meta.memory_used,
             sources=session.turns[-1].sources,  # the reply just stored: what it cited
+            undo=meta.undo,
         )
 
     # ---- tool loop ----------------------------------------------------------------------
@@ -512,12 +517,8 @@ class Brain:
                     for gr in outcomes
                     if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending
                 ]
-                results: list[ContentBlock] = [
-                    ToolResultBlock(
-                        tool_use_id=call.id,
-                        content=gr.for_model(),
-                        is_error=gr.outcome is GatewayOutcome.ERROR,
-                    )
+                results: list[ContentBlock] = [  # trusted only by the gateway (slice 11 D8)
+                    gr.block(call.id)
                     for call, gr in zip(completion.tool_calls, outcomes, strict=True)
                 ]
                 done = Turn(role=Role.USER, content="", blocks=results)
@@ -540,13 +541,18 @@ class Brain:
         self, session: Session, msgs: list[ChatMessage], calls: list[ToolCall], req: ChatRequest
     ) -> list[GatewayResult]:
         """One round's calls through the gateway, in order. What the model had seen when it asked
-        for them: other people's text? A spoken message may be: every write becomes a card."""
+        for them: other people's text? A spoken message may be: every write becomes a card. The
+        owner's own words of this message go along (a draft to an address not in them asks)."""
         assert self.gateway is not None
         untrusted = untrusted_seen(msgs, self.gateway.registry)
         spoken = req.channel == "voice"
+        said = req.message
         out: list[GatewayResult] = []
         for call in calls:
-            with context_trust(untrusted=untrusted, spoken=spoken), web_conversation(session):
+            with (
+                context_trust(untrusted=untrusted, spoken=spoken, owner_text=said),
+                web_conversation(session),
+            ):
                 out.append(await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}"))
         return out
 
@@ -616,26 +622,44 @@ class Brain:
         # if another window changed the conversation, it is re-recorded on the newer one
         exchange = decisions.record_exchange(session, d, trace_id)
         session, recorded = await record_after_action(self.store, session, exchange)
+        out = decisions.single(d, approved=approved, unrecorded=[] if recorded else exchange)
+        return await self._narrated(session, req, out, trace_id)
+
+    async def approve_all(
+        self, ids: Sequence[str], *, session_id: str, user_id: str = "owner"
+    ) -> ApproveAllResponse:
+        """Approve all (slice 11 D6, `jarvis.core.approve_all`): the listed cards that can be
+        undone, in order, each as a single approval runs; R3 cards stay. One reply."""
+        if self.gateway is None:
+            raise SessionNotFound(session_id)
+        async with self._serialised(session_id):
+            req = ChatRequest(message="-", session_id=session_id, user_id=user_id)
+            session = await approve_many.owned(self.store, session_id, user_id)  # never creates
+            scope, trace_id = f"{user_id}:{session_id}", get_trace_id()
+            batch = await approve_many.run(
+                self.gateway, self.store, session, ids, scope=scope, trace_id=trace_id
+            )
+            resp = await self._narrated(batch.session, req, batch.outcome(), trace_id)
+            return approve_many.response(resp, batch.results)
+
+    async def _narrated(
+        self, session: Session, req: ChatRequest, out: decisions.Outcome, trace_id: str
+    ) -> ChatResponse:
+        """One reply for a decision whose exchange is stored (or retried here): the model's
+        narration as a tool-derived turn (plainly when it can't), then `out.note`."""
         spec = self._resolve_brain(session, req)
-        reply, completion = await self._narrate(session, req, spec, d.fallback)
-        narration = Turn(
-            role=Role.ASSISTANT,
-            content=reply,
-            trace_id=trace_id,
-            model=completion.model if completion else "none",
-            usage=completion.usage if completion else None,
-            cost_usd=completion.cost_usd if completion else 0.0,
-            tool_derived=True,
-        )
+        if not out.narrate:  # nothing ran or was recorded: no model call, nothing stored
+            reply = f"{out.fallback} {out.note}".strip()
+            return await self._decision_response(session, spec, reply, None, trace_id, out)
+        reply, completion = await self._narrate(session, req, spec, out.fallback)
+        reply = f"{reply} {out.note}".strip()
+        narration = decisions.narration(reply, completion, trace_id)
         session.append(narration)
-        unsaved = [narration] if recorded else [*exchange, narration]
+        unsaved = [*out.unrecorded, narration]
         session, saved = await record_after_action(self.store, session, unsaved)
-        again = d.result.pending  # set only when the card changed and was proposed again
-        if not (recorded or saved):  # the next turn will not know: tell the owner now
-            reply = f"{reply} {not_recorded_note(approved and again is None)}"
-        return await self._decision_response(
-            session, spec, reply, completion, trace_id, approved, again
-        )
+        if out.unrecorded and not saved:  # the next turn will not know: tell the owner now
+            reply = f"{reply} {not_recorded_note(out.did)}"
+        return await self._decision_response(session, spec, reply, completion, trace_id, out)
 
     async def _narrate(
         self, session: Session, req: ChatRequest, spec: BrainSpec, fallback: str
@@ -667,27 +691,11 @@ class Brain:
         reply: str,
         completion: Completion | None,
         trace_id: str,
-        approved: bool,
-        again: PendingAction | None = None,
+        out: decisions.Outcome,
     ) -> ChatResponse:
         cost = completion.cost_usd if completion else 0.0
-        cost_inr, total_inr = await self._rupees(cost, session.total_cost_usd)
-        return ChatResponse(
-            session_id=session.id,
-            reply=reply,
-            trace_id=trace_id,
-            model=completion.model if completion else "none",
-            brain=spec.id,
-            usage=completion.usage if completion else Usage(),
-            cost_usd=cost,
-            cost_inr=cost_inr,
-            total_cost_usd=session.total_cost_usd,
-            total_cost_inr=total_inr,
-            latency_ms=0,
-            turn_count=len(session.turns),
-            tool_calls=1 if approved and again is None else 0,
-            pending_approvals=[PendingApproval.from_action(again)] if again is not None else [],
-        )
+        inr = await self._rupees(cost, session.total_cost_usd)
+        return decisions.response(session, spec.id, reply, completion, trace_id, out, inr)
 
     async def chat_stream(
         self, req: ChatRequest, *, meta: StreamMeta | None = None

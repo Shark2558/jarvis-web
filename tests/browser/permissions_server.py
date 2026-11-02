@@ -22,8 +22,9 @@ from jarvis.llm.mock_provider import MockProvider
 
 
 class CommandProvider(MockProvider):
-    """'send: <text>' → a send_message call (an irreversible approval card); after a tool result
-    or an approval, a short plain reply; anything else is echoed like the mock brain."""
+    """'send: <text>' → a send_message call (an irreversible approval card); 'batch: <n>' (slice
+    11) → n create_reminder calls (reversible: cards on a spoken turn) and one send_message; after
+    a tool result or an approval, a short plain reply; anything else is echoed like the mock."""
 
     def _reply(self, messages: list[ChatMessage]) -> tuple[str, list[ToolCall]]:
         last = messages[-1] if messages else None
@@ -31,6 +32,21 @@ class CommandProvider(MockProvider):
             if any(isinstance(b, ToolResultBlock) for b in last.content):
                 return "Noted, Sir.", []
         text = last.text().strip() if last is not None else ""
+        if text.lower().startswith("batch:"):
+            n = max(1, min(int(text[6:].strip() or "3"), 4))
+            calls = [
+                ToolCall(
+                    id=f"b{len(self.calls)}_{i}",
+                    name="create_reminder",
+                    arguments={"text": f"reminder {i + 1}", "when": f"{17 + i}:00"},
+                )
+                for i in range(n)
+            ]
+            send = {"to": "priya@example.com", "body": "batch done"}
+            return "", [
+                *calls,
+                ToolCall(id=f"s{len(self.calls)}", name="send_message", arguments=send),
+            ]
         if text.lower().startswith("send:"):
             body = text[5:].strip() or "hello"
             call = ToolCall(

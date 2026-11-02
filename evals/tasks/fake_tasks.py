@@ -8,6 +8,16 @@ discarded and comes back as T00:00:00.000Z), `@default` is the first list, `show
 defaults to true, a completed task gets a `completed` stamp. Every request is recorded, and every
 change is kept in `mutations` — the eval asserts on what this fake RECEIVED, not on what the
 model said.
+
+Slice 11 (undo): insert honours the `parent` / `previous` query parameters (kept in the task as
+`parent`, and in the mutation's `params`), `move` re-parents a task, and `cascade` makes a
+parent's delete take its subtasks with it — Google's docs don't say whether it does, so the
+tests run both ways.
+
+Slice 11 fix: `soft_delete` keeps a deleted task readable with `deleted: true` (the Tasks resource
+has that flag) instead of 404; `lost` answers a route with an error AFTER making the change (the
+answer was lost on the way back); `after_delete` answers a route with an error once a DELETE was
+asked for; insert refuses (400) a `previous` that isn't a sibling under the same parent.
 """
 
 from __future__ import annotations
@@ -29,10 +39,11 @@ COMPLETED_AT = "2027-01-15T03:00:00.000Z"
 
 @dataclass
 class Mutation:
-    kind: str  # insert | patch | complete | delete
+    kind: str  # insert | patch | complete | delete | move
     list_id: str
     task_id: str
     body: dict[str, Any] = field(default_factory=dict)
+    params: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -44,6 +55,10 @@ class FakeTasks:
     fail: dict[str, int] = field(default_factory=dict)
     requests: list[httpx.Request] = field(default_factory=list)
     mutations: list[Mutation] = field(default_factory=list)
+    cascade: bool = False  # deleting a parent also deletes its subtasks
+    soft_delete: bool = False  # a deleted task stays readable, flagged `deleted: true`
+    lost: dict[str, int] = field(default_factory=dict)  # route key → status AFTER the change
+    after_delete: dict[str, int] = field(default_factory=dict)  # route key → status after a DELETE
 
     # ---- set-up ---------------------------------------------------------------------------
 
@@ -70,9 +85,18 @@ class FakeTasks:
     # ---- transport -------------------------------------------------------------------------
 
     def _err(self, key: str) -> httpx.Response | None:
-        if key in self.fail:
-            return httpx.Response(self.fail[key], json={"error": {"message": "fake failure"}})
+        status = self.fail.get(key)
+        if status is None and any(r.method == "DELETE" for r in self.requests):
+            status = self.after_delete.get(key)  # once a delete was asked for (done or not)
+        if status is not None:
+            return httpx.Response(status, json={"error": {"message": "fake failure"}})
         return None
+
+    def _answer(self, key: str, ok: httpx.Response) -> httpx.Response:
+        """The change was made; its answer may still be lost (`lost`)."""
+        if key in self.lost:
+            return httpx.Response(self.lost[key], json={"error": {"message": "fake lost"}})
+        return ok
 
     def _list_id(self, raw: str) -> str | None:
         if raw == "@default":
@@ -86,12 +110,14 @@ class FakeTasks:
             return self._err("tz") or httpx.Response(200, json={"timeZone": self.tz})
         if path == f"{TASKS}/users/@me/lists" and method == "GET":
             return self._err("lists") or _paged(request, self.lists, "tasks#taskLists", 1000)
-        m = re.fullmatch(rf"{TASKS}/lists/([^/]+)/tasks(?:/([^/]+))?", path)
+        m = re.fullmatch(rf"{TASKS}/lists/([^/]+)/tasks(?:/([^/]+))?(/move)?", path)
         if m is None:
             return httpx.Response(599, json={"error": f"unscripted {method} {path}"})
         list_id = self._list_id(m.group(1))
         if list_id is None:
             return httpx.Response(404, json={"error": {"message": "list not found"}})
+        if m.group(3) is not None and method == "POST":
+            return self._err("move") or self._move(request, list_id, m.group(2))
         if m.group(2) is None:
             if method == "GET":
                 return self._err("tasks") or self._list(request, list_id)
@@ -116,15 +142,59 @@ class FakeTasks:
             items.append(t)
         return _paged(request, items, "tasks#tasks", 20)
 
+    def _sibling(self, list_id: str, previous: str, parent: str | None) -> bool:
+        t = self.task(list_id, previous)
+        return t is not None and not t.get("deleted") and t.get("parent") == parent
+
     def _insert(self, request: httpx.Request, list_id: str) -> httpx.Response:
         body = json.loads(request.content)
+        params = {k: v for k, v in request.url.params.items() if k in ("parent", "previous")}
+        if (p := params.get("parent")) and self.task(list_id, p) is None:
+            return httpx.Response(400, json={"error": {"message": "parent not found"}})
+        if (prev := params.get("previous")) and not self._sibling(
+            list_id, prev, params.get("parent")
+        ):
+            return httpx.Response(400, json={"error": {"message": "previous is not a sibling"}})
         tid = f"n{uuid.uuid4().hex[:10]}"
         task = {"kind": "tasks#task", "id": tid, "status": "needsAction", **body}
+        task.pop("parent", None)  # read-only in the body: only the query parameter sets it
+        if params.get("parent"):
+            task["parent"] = params["parent"]
         if task.get("due"):
             task["due"] = _date_only(str(task["due"]))
         self.tasks.setdefault(list_id, []).append(task)
-        self.mutations.append(Mutation("insert", list_id, tid, body))
+        self.mutations.append(Mutation("insert", list_id, tid, body, params))
         return httpx.Response(200, json=task)
+
+    def _move(self, request: httpx.Request, list_id: str, task_id: str) -> httpx.Response:
+        task = self.task(list_id, task_id)
+        if task is None:
+            return httpx.Response(404, json={"error": {"message": "task not found"}})
+        params = {k: v for k, v in request.url.params.items() if k in ("parent", "previous")}
+        if params.get("parent"):
+            task["parent"] = params["parent"]
+        else:
+            task.pop("parent", None)
+        self.mutations.append(Mutation("move", list_id, task_id, {}, params))
+        return httpx.Response(200, json=task)
+
+    def _delete(self, list_id: str, task_id: str) -> None:
+        gone = {task_id} | (self._descendants(list_id, task_id) if self.cascade else set())
+        if self.soft_delete:
+            for t in self.tasks[list_id]:
+                if t["id"] in gone:
+                    t.update(deleted=True, hidden=True)
+        else:
+            self.tasks[list_id] = [t for t in self.tasks[list_id] if t["id"] not in gone]
+        self.mutations.append(Mutation("delete", list_id, task_id))
+
+    def _descendants(self, list_id: str, task_id: str) -> set[str]:
+        found, frontier = set(), {task_id}
+        while frontier:
+            kids = {t["id"] for t in self.tasks.get(list_id, []) if t.get("parent") in frontier}
+            frontier = kids - found
+            found |= kids
+        return found
 
     def _one(self, request: httpx.Request, list_id: str, task_id: str) -> httpx.Response:
         task = self.task(list_id, task_id)
@@ -132,14 +202,15 @@ class FakeTasks:
         key = {"GET": "get", "PATCH": "patch", "DELETE": "delete"}.get(method, "")
         if (bad := self._err(key)) is not None:
             return bad
+        if task is not None and task.get("deleted") and method == "GET" and self.soft_delete:
+            return httpx.Response(200, json=task)
         if task is None or task.get("deleted"):
             return httpx.Response(404, json={"error": {"message": "task not found"}})
         if method == "GET":
             return httpx.Response(200, json=task)
         if method == "DELETE":
-            self.tasks[list_id] = [t for t in self.tasks[list_id] if t["id"] != task_id]
-            self.mutations.append(Mutation("delete", list_id, task_id))
-            return httpx.Response(204)
+            self._delete(list_id, task_id)
+            return self._answer("delete", httpx.Response(204))
         if method == "PATCH":
             body = json.loads(request.content)
             for k, v in body.items():

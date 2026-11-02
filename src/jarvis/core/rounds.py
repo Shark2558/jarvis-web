@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.core.models import Session, Turn
+from jarvis.core.models import Session, Turn, UndoRef
 from jarvis.core.saving import not_recorded_note, record_after_action
 from jarvis.llm.base import Completion, ToolCall, Usage
 from jarvis.memory.base import SessionStore
@@ -27,15 +27,35 @@ from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.tools.registry import ToolRegistry
 
 
+def undo_refs(
+    registry: ToolRegistry, calls: Sequence[ToolCall], results: Sequence[GatewayResult]
+) -> list[UndoRef]:
+    """The undo-able deletes among calls that ran (slice 11: the reply's Undo chips) — only
+    from tools marked undoable, so a result that merely looks like one never makes a chip."""
+    out: list[UndoRef] = []
+    for call, gr in zip(calls, results, strict=True):
+        tool = registry.get(call.name)
+        if gr.outcome is not GatewayOutcome.EXECUTED or tool is None or not tool.undoable:
+            continue
+        if (ref := UndoRef.from_result(gr.result)) is not None:
+            out.append(ref)
+    return out
+
+
+MAY_NOT_BE_DONE = "(may not have been done)"
+
+
 @dataclass
 class Rounds:
     """One owner message's tool rounds: the session to continue with (a reload replaces it), how
-    many rounds ran, what changed something (card-style summaries) and turns not yet stored."""
+    many rounds ran, what changed something (card-style summaries), the undo-able deletes among
+    them, and turns not yet stored."""
 
     session: Session
     count: int = 0
     done: list[str] = field(default_factory=list)
     unrecorded: list[Turn] = field(default_factory=list)
+    undo: list[UndoRef] = field(default_factory=list)
 
     @property
     def wrote(self) -> bool:
@@ -44,13 +64,16 @@ class Rounds:
     def note(
         self, registry: ToolRegistry, calls: Sequence[ToolCall], results: Sequence[GatewayResult]
     ) -> None:
-        """Remember each call of this round that ran and can change something."""
+        """Remember each call of this round that ran and can change something. A tool that
+        raised ran too — it may have written before it failed — and is noted as such."""
+        self.undo += undo_refs(registry, calls, results)
         for call, gr in zip(calls, results, strict=True):
-            if gr.outcome is not GatewayOutcome.EXECUTED:
+            if not gr.ran:
                 continue
             tool = registry.get(call.name)
             if tool is not None and tool.effective_risk(call.arguments) is not ActionRisk.READ_ONLY:
-                self.done.append(tool.summary(call.arguments))
+                said = tool.summary(call.arguments)
+                self.done.append(said if not gr.raised else f"{said} {MAY_NOT_BE_DONE}")
 
     async def store(self, store: SessionStore, turns: Sequence[Turn]) -> bool:
         """Store `self.session`, whose last `turns` were just appended. Before any write: a plain
@@ -82,4 +105,4 @@ class Rounds:
         return "" if stored or not self.wrote else " " + not_recorded_note(True)
 
 
-__all__ = ["Rounds"]
+__all__ = ["Rounds", "undo_refs"]

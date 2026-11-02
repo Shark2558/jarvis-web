@@ -59,9 +59,16 @@ class PolicyRule(BaseModel):
     when: dict[str, list[Any]] = Field(default_factory=dict)
     source: str = "config"
     reason: str = Field(default="", description="Plain words shown when this rule blocks a call")
+    # slice 11 fix HIGH-1: tool names the pattern covers but this rule leaves to another rule
+    # (e.g. "calendar_* except calendar_delete_event": deletes have their own permission row)
+    except_tools: list[str] = Field(
+        default_factory=list, description="fnmatch patterns on tool names this rule never matches"
+    )
 
     def matches(self, tool: str, args: dict[str, Any], risk: ActionRisk | None = None) -> bool:
         if not fnmatch.fnmatchcase(tool, self.tool_pattern):
+            return False
+        if any(fnmatch.fnmatchcase(tool, p) for p in self.except_tools):
             return False
         if self.risks is not None and (risk is None or risk not in self.risks):
             return False

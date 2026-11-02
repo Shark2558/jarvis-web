@@ -14,17 +14,52 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
+from jarvis.core.guardrails import ActionRisk
+
+_RANK = {ActionRisk.READ_ONLY: 0, ActionRisk.REVERSIBLE: 1, ActionRisk.IRREVERSIBLE: 2}
+
 
 @dataclass(frozen=True)
 class ToolContext:
     user_id: str
     session_id: str | None
     scope: str
+    # Slice 11: True while a call the owner approved on a card runs (the gateway spent its token).
+    # A delete that finds the item changed since the decision (now shared) refuses unless approved.
+    confirmed: bool = False
+    # Slice 11 fix: the risk the gateway decided on (an approved card's risk; None outside the
+    # gateway). A tool that finds MORE at run time (a solo event that gained guests) refuses: an
+    # approved R2 card never runs an R3 delete.
+    approved_risk: ActionRisk | None = None
+    # Slice 11 D8: this call's content may carry other people's words (its round, or the round
+    # that proposed its card, had read outside content): what it writes is marked as outside.
+    outside: bool = False
 
     @classmethod
-    def from_scope(cls, scope: str) -> ToolContext:
+    def from_scope(
+        cls,
+        scope: str,
+        *,
+        confirmed: bool = False,
+        approved_risk: ActionRisk | None = None,
+        outside: bool = False,
+    ) -> ToolContext:
         user_id, _, session_id = scope.partition(":")
-        return cls(user_id=user_id, session_id=session_id or None, scope=scope)
+        return cls(
+            user_id=user_id,
+            session_id=session_id or None,
+            scope=scope,
+            confirmed=confirmed,
+            approved_risk=approved_risk,
+            outside=outside,
+        )
+
+    def allows(self, live: ActionRisk) -> bool:
+        """May the call do what it can do NOW (`live`)? Not more than was approved; outside the
+        gateway's decision, an irreversible step only on an approved card."""
+        if self.approved_risk is None:
+            return live is not ActionRisk.IRREVERSIBLE or self.confirmed
+        return _RANK[live] <= _RANK[self.approved_risk]
 
 
 _current: contextvars.ContextVar[ToolContext | None] = contextvars.ContextVar(
@@ -45,9 +80,21 @@ def require_tool_context() -> ToolContext:
 
 
 @contextmanager
-def tool_context(scope: str | None) -> Iterator[ToolContext | None]:
+def tool_context(
+    scope: str | None,
+    *,
+    confirmed: bool = False,
+    approved_risk: ActionRisk | None = None,
+    outside: bool = False,
+) -> Iterator[ToolContext | None]:
     """Set the context for the duration of a tool run; always reset, even on error."""
-    ctx = ToolContext.from_scope(scope) if scope else None
+    ctx = (
+        ToolContext.from_scope(
+            scope, confirmed=confirmed, approved_risk=approved_risk, outside=outside
+        )
+        if scope
+        else None
+    )
     token = _current.set(ctx)
     try:
         yield ctx

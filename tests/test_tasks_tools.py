@@ -417,7 +417,7 @@ def test_the_persona_has_its_own_todo_paragraph_and_the_version_was_bumped(wit: 
     from jarvis.core.prompts import PERSONA_VERSION, build_system_prompt
 
     p = build_system_prompt(honorific="Sir", wit=wit)
-    assert PERSONA_VERSION == "p4.1"  # bumped once for slice 10 at integration
+    assert PERSONA_VERSION == "p4.2"  # bumped once per slice at integration (10: p4.1, 11)
     block = p.split("To-do list (standing rule)\n", 1)[1]
     flat = " ".join(block.split())
     assert "date only" in flat and "time zone" in flat

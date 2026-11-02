@@ -11,6 +11,18 @@ and "Delete events and invite people"): the strictest choice wins, as in `Policy
 
 Irreversible groups offer only Ask first / Never: `validate_choices` refuses Allow (422), and
 `rules_for` drops one that was hand-edited into storage — and `Policy` would refuse it anyway.
+
+Slice 11 D5: deleting the owner's own events and to-dos is undo-able (Recently deleted, 30 days)
+and so R2, with an Allow default (the owner's "all rights"). Every irreversible group matches ONLY
+irreversible calls (`_r3`), so an R2 delete never lands in an Ask-first R3 row; those rows keep
+their ids (`calendar_delete`, `todo_delete`) so stored choices carry over.
+
+Slice 11 fix HIGH-1: an undo-able delete has its OWN R2 row (`calendar_remove`, `todo_remove`);
+the "change" rows never match a delete tool (`Matcher.exclude`). Before the split every delete was
+in the R3 row, so an owner's earlier "Never" there meant "never delete": until the owner sets the
+new row, it reads as Never too (`INHERITS`, applied by `stored_choices` and `rules_for`). A write
+pins the new rows (`pinned`): from then on each row means only what it says. A restore
+(`deleted_restore`) is in both change rows — strictest wins; `deleted_list` is a calendar read.
 """
 
 from __future__ import annotations
@@ -33,6 +45,7 @@ class PermissionRejected(ValueError):
 class Matcher:
     pattern: str
     risks: frozenset[ActionRisk] | None = None  # None: any effective risk
+    exclude: tuple[str, ...] = ()  # tool names the pattern covers but another row decides
 
 
 @dataclass(frozen=True)
@@ -74,6 +87,7 @@ class PermissionGroup:
             risks=sorted(m.risks) if m.risks is not None else None,
             source=SOURCE_PREFIX + self.id,
             reason=self.refusal() if effect is Effect.DENY else "",
+            except_tools=list(m.exclude),
         )
 
     def rules(self, effect: Effect) -> list[PolicyRule]:
@@ -82,36 +96,68 @@ class PermissionGroup:
         return [self._rule(m, effect) for m in self.matchers]
 
 
-def _m(pattern: str, *risks: ActionRisk) -> Matcher:
-    return Matcher(pattern, frozenset(risks) if risks else None)
+def _m(pattern: str, *risks: ActionRisk, exclude: tuple[str, ...] = ()) -> Matcher:
+    return Matcher(pattern, frozenset(risks) if risks else None, exclude)
+
+
+def _r3(*patterns: str) -> tuple[Matcher, ...]:
+    """An irreversible group's matchers: irreversible calls only (slice 11 D5)."""
+    return tuple(_m(p, R3) for p in patterns)
 
 
 UNDO_HINT = "Can't be undone, so JARVIS always asks first — or never does it."
+EVENT_DELETE, TASK_DELETE = "calendar_delete_event", "task_delete"
+RESTORE, DELETED_LIST = "deleted_restore", "deleted_list"
 
 GROUPS: tuple[PermissionGroup, ...] = (
     PermissionGroup(
         "calendar_read",
         "Calendar",
         "Look at your calendar",
-        "Read events and find free time.",
+        "Read events and find free time, and see what is in Recently deleted.",
         R1,
-        (_m("calendar_*", R1), _m("get_calendar")),
+        (_m("calendar_*", R1), _m("get_calendar"), _m(DELETED_LIST)),
     ),
     PermissionGroup(
         "calendar_change",
         "Calendar",
-        "Add and change events",
-        "Events only you are in. Inviting people is the next row.",
+        "Add and change your events",
+        "Events only you are in. Also bringing back what was deleted (Recently deleted).",
         R2,
-        (_m("calendar_create_event"), _m("calendar_update_event"), _m("calendar_*", R2)),
+        (
+            _m("calendar_create_event"),
+            _m("calendar_update_event"),
+            _m(RESTORE),
+            _m("calendar_*", R2, exclude=(EVENT_DELETE,)),
+        ),
+    ),
+    PermissionGroup(  # slice 11 fix HIGH-1: undo-able deletes have their own row
+        "calendar_remove",
+        "Calendar",
+        "Delete your own events — kept 30 days in Recently deleted",
+        "Events only you are on that don't repeat (a JARVIS reminder may). You can undo a "
+        "delete for 30 days; it comes back as a new copy.",
+        R2,
+        (_m(EVENT_DELETE, R2),),
     ),
     PermissionGroup(
         "calendar_delete",
         "Calendar",
-        "Delete events and invite people",
-        UNDO_HINT,
+        "Invite people, and change or delete events that can't be undone",
+        "Shared, repeating or special events, and ones you don't organise: Google emails the "
+        "other people, or a delete can't be fully undone. " + UNDO_HINT,
         R3,
-        (_m("calendar_delete_event"), _m("calendar_*", R3)),
+        _r3("calendar_*"),
+    ),
+    PermissionGroup(  # slice 11 B (D4/D5): its own row, after the Calendar rows
+        "reminders",
+        "Reminders",
+        "Set, change and delete reminders",
+        "Pop-ups on your phone from the Google Calendar app. Never also stops the Calendar "
+        "tools changing or deleting a reminder. A reminder is deleted like an event, so Undo "
+        "works for 30 days.",
+        R2,
+        (_m("reminder_*"), _m("reminders_*")),
     ),
     PermissionGroup(
         "email_read",
@@ -135,23 +181,38 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "Send email",
         UNDO_HINT,
         R3,
-        (_m("gmail_send"), _m("send_message"), _m("gmail_*", R3)),
+        _r3("gmail_send", "send_message", "gmail_*"),
     ),
     PermissionGroup(
         "todo_change",
         "To-do list",
-        "Read and change your to-do list",
-        "Add, edit and tick off to-dos. Never also stops deleting them.",
+        "Read and change your to-dos",
+        "Add, edit and tick off to-dos, and bring back deleted ones (Recently deleted).",
         R2,
-        (_m("tasks_*"), _m("task_*"), _m("list_tasks"), _m("create_reminder")),
+        (
+            _m("tasks_*", exclude=(TASK_DELETE,)),
+            _m("task_*", exclude=(TASK_DELETE,)),
+            _m("list_tasks"),
+            _m("create_reminder"),
+            _m(RESTORE),
+        ),
+    ),
+    PermissionGroup(  # slice 11 fix HIGH-1: undo-able deletes have their own row
+        "todo_remove",
+        "To-do list",
+        "Delete your own to-dos — kept 30 days",
+        "Kept in Recently deleted with their subtasks, so you can undo a delete for 30 days.",
+        R2,
+        (_m(TASK_DELETE, R2),),
     ),
     PermissionGroup(
         "todo_delete",
         "To-do list",
-        "Delete to-dos",
-        UNDO_HINT,
+        "Delete to-dos that can't be undone",
+        "Assigned from Docs or Chat (deleting one also deletes it there, for other people), or "
+        "with subtasks JARVIS can't all keep. " + UNDO_HINT,
         R3,
-        (_m("task_delete"), _m("task_*", R3), _m("tasks_*", R3)),
+        _r3("task_*", "tasks_*"),
     ),
     PermissionGroup(
         "memory_save",
@@ -167,7 +228,7 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "Forget memories",
         UNDO_HINT,
         R3,
-        (_m("memory_forget"),),
+        _r3("memory_forget"),
     ),
     PermissionGroup(
         "web",
@@ -228,9 +289,20 @@ def validate_choices(choices: Mapping[str, object]) -> dict[str, Effect]:
     return out
 
 
-def stored_choices(raw: object) -> dict[str, Effect]:
-    """Choices read from storage, field by field: an unknown group, an unknown effect or an
-    Allow on an irreversible group (hand-edited) is dropped, i.e. reads as the default."""
+# slice 11 fix HIGH-1: new row → the row its calls were in before the split. A stored Never on
+# the old row reads as Never on the new one until the owner sets the new one (or a write pins it).
+INHERITS: dict[str, str] = {"calendar_remove": "calendar_delete", "todo_remove": "todo_delete"}
+
+
+def _inherit(choices: Mapping[str, Effect]) -> dict[str, Effect]:
+    out = dict(choices)
+    for new, old in INHERITS.items():
+        if new not in out and out.get(old) is Effect.DENY:
+            out[new] = Effect.DENY
+    return out
+
+
+def _parsed(raw: object) -> dict[str, Effect]:
     if not isinstance(raw, dict):
         return {}
     out: dict[str, Effect] = {}
@@ -247,10 +319,31 @@ def stored_choices(raw: object) -> dict[str, Effect]:
     return out
 
 
+def stored_choices(raw: object) -> dict[str, Effect]:
+    """Choices read from storage, field by field: an unknown group, an unknown effect or an
+    Allow on an irreversible group (hand-edited) is dropped, i.e. reads as the default. A new
+    delete row nobody set reads as Never when its old row is Never (`INHERITS`)."""
+    return _inherit(_parsed(raw))
+
+
+def inherited_ids(raw: object) -> set[str]:
+    """The rows that read as Never only because their old row is Never (the view says so)."""
+    return set(stored_choices(raw)) - set(_parsed(raw))
+
+
+def pinned(choices: Mapping[str, Effect]) -> dict[str, Effect]:
+    """What a write stores: the new delete rows explicitly (their current value, the default
+    when unset), so a Never set on an old row later means only what that row says."""
+    out = _inherit(choices)
+    for new in INHERITS:
+        out.setdefault(new, _BY_ID[new].default)
+    return out
+
+
 def rules_for(choices: Mapping[str, Effect]) -> list[PolicyRule]:
     """Policy rules for the owner's choices. A choice equal to the default adds nothing."""
     rules: list[PolicyRule] = []
-    for gid, effect in choices.items():
+    for gid, effect in _inherit(choices).items():
         group = _BY_ID.get(gid)
         if group is None or effect is group.default:
             continue
@@ -260,12 +353,15 @@ def rules_for(choices: Mapping[str, Effect]) -> list[PolicyRule]:
 
 __all__ = [
     "GROUPS",
+    "INHERITS",
     "Matcher",
     "PermissionGroup",
     "PermissionRejected",
     "get_group",
     "group_ids",
     "groups_for",
+    "inherited_ids",
+    "pinned",
     "rules_for",
     "stored_choices",
     "validate_choices",

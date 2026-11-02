@@ -22,6 +22,7 @@ from jarvis.api.body import MAX_BODY_BYTES, BodySizeLimit, BodyTooLarge, too_lar
 from jarvis.api.brief import internal_router as brief_internal_router
 from jarvis.api.brief import router as brief_router
 from jarvis.api.console import router as console_router
+from jarvis.api.deleted import router as deleted_router
 from jarvis.api.documents import ATTACH_BODY_BYTES, ATTACH_PATH, install_documents
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
@@ -74,6 +75,9 @@ from jarvis.storage.docs import Docs, MemoryDocs
 from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.setup import build_gateway
+from jarvis.tools.task_marks import OutsideTasks
+from jarvis.undo.service import UndoBin
+from jarvis.undo.store import DeletedStore
 from jarvis.voice.service import VoiceEngines, build_voice_service
 from jarvis.web.service import build_web_service
 
@@ -88,6 +92,15 @@ def app_docs(built: Storage | None) -> Docs:
     """The document store the brief and billing share: Firestore when configured, else
     in-process documents (dev, tests)."""
     return built.docs if built is not None and built.docs is not None else MemoryDocs()
+
+
+def build_undo(s: Settings, built: Storage | None, docs: Docs) -> UndoBin | None:
+    """Recently deleted (slice 11) only on persistent storage: a copy kept in process memory
+    would vanish on a restart, so "Undo for 30 days" would not hold. Without it every delete
+    stays R3 (card + passkey) and /v1/deleted says it isn't available."""
+    if built is None or not built.persistent:
+        return None
+    return UndoBin(DeletedStore(docs, prefix=s.firestore_prefix))
 
 
 def build_brief_service(
@@ -190,6 +203,7 @@ def create_app(
     scheduler_verifier: GoogleOIDCVerifier | None = None,
     billing: Billing | None = None,
     voice_engines: VoiceEngines | None = None,
+    undo: UndoBin | None = None,
 ) -> FastAPI:
     s = settings or get_settings()
     configure_logging(s.log_level, s.log_json)
@@ -223,6 +237,10 @@ def create_app(
         # Attached files (slice 10 E): text and chunks on the same documents, deleted with the
         # conversation; the doc tools join the gateway's registry.
         app.state.documents = DocumentService(AttachmentStore(docs, prefix=s.firestore_prefix))
+        # Recently deleted (slice 11): the owner's deletes keep a copy here for 30 days (undo);
+        # only on persistent storage, else None and deletes stay R3
+        app.state.undo = undo or build_undo(s, built, docs)
+        app.state.outside_tasks = OutsideTasks(docs, prefix=s.firestore_prefix)  # D8 (swept)
         gw: Gateway | None = gateway
         if gw is None and s.tools_enabled:
             gw = build_gateway(
@@ -233,6 +251,9 @@ def create_app(
                 memory=app.state.memory,
                 web=app.state.web,
                 documents=app.state.documents,
+                undo=app.state.undo,
+                # D8: to-dos JARVIS wrote from outside content, on the same documents
+                marks=app.state.outside_tasks,
             )
         # slice 10 D: the owner's Allow / Ask first / Never rules and passkeys, on the same
         # documents; the gateway reads the rules on every call (one built elsewhere gets them too)
@@ -432,6 +453,7 @@ def create_app(
     app.include_router(usage_router)
     app.include_router(memory_router)
     app.include_router(web_router)
+    app.include_router(deleted_router)
     install_voice(app)
     install_permissions(app)
     install_documents(app)

@@ -104,6 +104,40 @@ def parse_recipients(raw: Any) -> list[str]:
     return out
 
 
+# An address written somewhere in free text (the owner's message): no quotes, brackets, list
+# separators or whitespace on either side of the @; trailing sentence punctuation is dropped.
+# A match only starts where a run of address characters starts (the look-behind): the earliest
+# match always does, and a failed try costs O(1) inside a run instead of rescanning it.
+_ADDR_CHAR = r"[^\s<>()\[\],;:\"'@]"
+_IN_TEXT = re.compile(rf"(?<!{_ADDR_CHAR}){_ADDR_CHAR}+@{_ADDR_CHAR}+")
+_TRAILING = ".!?"
+MAX_TYPED = 50
+# A whitespace token longer than this can't be (or wrap, "<…>,") one address: never scanned.
+MAX_TOKEN = MAX_ADDRESS_LEN + 2
+
+
+def typed_addresses(text: str) -> frozenset[str]:
+    """The addresses written in `text`, normalised exactly as `parse_address` normalises a
+    recipient (so 'Ravi@Example.COM' matches 'ravi@example.com'); anything that does not parse as
+    one bare address is ignored. At most MAX_TYPED are read.
+
+    Linear in the text (slice 11 review LOW-2): read whitespace token by token, and only a token
+    short enough to hold an address and containing an @ is matched, so no scan is ever longer than
+    MAX_TOKEN characters."""
+    found: set[str] = set()
+    for token in (text or "").split():
+        if len(found) >= MAX_TYPED:
+            break
+        if len(token) > MAX_TOKEN or "@" not in token:
+            continue
+        for m in _IN_TEXT.finditer(token):
+            try:
+                found.add(parse_address(m.group(0).rstrip(_TRAILING)))
+            except ValueError:
+                continue
+    return frozenset(found)
+
+
 _LOOSE = re.compile(r'[^@\s<>"]+@[^@\s<>"]+')
 
 
@@ -162,4 +196,5 @@ __all__ = [
     "parse_address",
     "parse_recipients",
     "plain_address",
+    "typed_addresses",
 ]

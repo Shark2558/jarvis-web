@@ -3,9 +3,12 @@
 
 search/read are R1 and return only the fields asked for — search never returns bodies, read
 truncates the body and lists attachments without fetching them. create_draft is R2 (its result
-says "draft saved, not sent"). send is R3 and there is no "don't ask again": the approval card
-shows every recipient (IDN domains also in punycode), the subject, the first 200 characters of
-the body and whether it replies in a thread, each field flattened by `tools.card.one_line`.
+says "draft saved, not sent"); it asks first (an R2 card, no passkey) unless every recipient is an
+address the owner typed in the current message (slice 11 D7 a — an address from a mail, a page or
+the model's memory never fills a draft unseen; such a card is never approved with Approve all).
+send is R3 and there is no "don't ask again": the approval card shows every recipient (IDN
+domains also in punycode), the subject, the first 200 characters of the body and whether it
+replies in a thread, each field flattened by `tools.card.one_line`.
 Mail content reaches the model fenced as EXTERNAL CONTENT (see tools/external.py).
 """
 
@@ -18,7 +21,7 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleConnector
-from jarvis.tools.addresses import display_addresses, loose_address
+from jarvis.tools.addresses import display_addresses, loose_address, typed_addresses
 from jarvis.tools.base import SummaryFn, Tool
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
@@ -34,6 +37,7 @@ from jarvis.tools.gmail_mime import (
     safe_message_id,
     safe_references,
 )
+from jarvis.tools.taint import owner_text
 
 BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 MESSAGES_URL = f"{BASE}/messages"
@@ -272,6 +276,23 @@ def _check_compose(a: dict[str, Any]) -> None:
         _validate_message_id(a["reply_to_message_id"])
 
 
+def _untyped_recipient(a: dict[str, Any]) -> bool:
+    """Slice 11 D7 a: a draft asks first unless every recipient is an address the owner typed in
+    THIS message (`taint.owner_text`). Outside a turn — an approval being carried out — it does
+    not apply (that card was already decided). The recipients are parsed first (≤ 50; a bad one
+    raises, and the tool asks); the owner's text is scanned for addresses only when every
+    recipient's name part is in it at all."""
+    said = owner_text()
+    if said is None:
+        return False
+    recipients = parse_recipients(a.get("to"))
+    low = said.lower()
+    if any(addr.split("@", 1)[0] not in low for addr in recipients):
+        return True  # one was never typed: no need to read the text for addresses
+    typed = typed_addresses(said)
+    return any(addr not in typed for addr in recipients)
+
+
 def _compose_card(verb: str) -> SummaryFn:
     """Card text for a draft/send: recipients, subject, body preview, threading."""
 
@@ -350,6 +371,7 @@ def gmail_tools(conn: GoogleConnector) -> list[Tool]:
             agent="google",
             summarize=_compose_card("Save a draft in Gmail (nothing is sent)"),
             check=_check_compose,
+            ask_when=_untyped_recipient,
         ),
         Tool(
             "gmail_send",

@@ -213,6 +213,72 @@ async def test_unknown_conversation_is_not_found(brain: Brain) -> None:
         await brain.approve_all(["x"], session_id="nope")
 
 
+async def test_a_conversation_that_cannot_record_stops_the_batch(
+    brain: Brain,
+    provider: MockProvider,
+    world: InMemoryWorld,
+    store: InMemorySessionStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resp = await _cards(
+        brain, provider, [_remind("r1", "a"), _remind("r2", "b"), _remind("r3", "c")]
+    )
+    ids = _ids(resp)
+
+    async def down(session: Any) -> None:
+        raise ConnectionError("firestore unreachable")
+
+    monkeypatch.setattr(store, "save", down)
+    provider.script("Done, Sir.")
+    out = await brain.approve_all(ids, session_id=resp.session_id)
+    # the first ran but could not be recorded: no further tool runs (as in the tool loop)
+    assert [r["text"] for r in world.reminders] == ["a"]
+    assert [r.status for r in out.results] == [
+        CardStatus.DONE, CardStatus.NOT_RUN, CardStatus.NOT_RUN,
+    ]  # fmt: skip
+    assert "could not record it" in out.reply and "It was done" in out.reply
+    assert set(ids[1:]) <= await _waiting(brain)  # still waiting, approvable later
+
+
+async def test_a_card_that_cannot_be_read_is_reported_and_the_rest_run(
+    brain: Brain, provider: MockProvider, world: InMemoryWorld, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resp = await _cards(brain, provider, [_remind("r1", "a"), _remind("r2", "b")])
+    ids = _ids(resp)
+    assert brain.gateway is not None
+    gate = brain.gateway.gate
+    real = gate.get
+
+    async def flaky(aid: str) -> Any:
+        if aid == ids[0]:
+            raise ConnectionError("approvals store unreachable")
+        return await real(aid)
+
+    monkeypatch.setattr(gate, "get", flaky)
+    out = await brain.approve_all(ids, session_id=resp.session_id)
+    assert [r.status for r in out.results] == [CardStatus.ERROR, CardStatus.DONE]
+    assert [r["text"] for r in world.reminders] == ["b"]
+    assert "could not be approved just now" in out.reply
+
+
+async def test_a_card_decided_meanwhile_is_not_found_and_nothing_runs(
+    brain: Brain, provider: MockProvider, world: InMemoryWorld, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resp = await _cards(brain, provider, [_remind("r1", "a")])
+    gw = brain.gateway
+    assert gw is not None
+    real = gw.execute
+
+    async def raced(call: ToolCall, **kw: Any) -> Any:
+        await gw.gate.cancel(kw["confirmation_id"])  # another window declined it first
+        return await real(call, **kw)
+
+    monkeypatch.setattr(gw, "execute", raced)
+    out = await brain.approve_all(_ids(resp), session_id=resp.session_id)
+    assert [r.status for r in out.results] == [CardStatus.NOT_FOUND]
+    assert world.reminders == [] and "no longer waiting" in out.reply
+
+
 # ---- one card failing; a card that changed (rigs with their own tools) ----------------------
 
 

@@ -22,7 +22,7 @@ from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.permissions.groups import rules_for
-from jarvis.tools.addresses import typed_addresses
+from jarvis.tools.addresses import MAX_TYPED, typed_addresses
 from jarvis.tools.audit import AuditLog
 from jarvis.tools.base import Tool
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
@@ -81,6 +81,13 @@ def test_typed_addresses_ignores_text_that_is_not_an_address() -> None:
     assert typed_addresses("meet @ 5 at the cafe, email me later") == frozenset()
     assert typed_addresses('"a,b"@evil.example') == frozenset()  # quoted local parts: never
     assert typed_addresses("x" * 300 + "@example.com") == frozenset()  # too long: not an address
+
+
+def test_typed_addresses_reads_a_bounded_number() -> None:
+    said = " ".join(f"p{i}@example.com" for i in range(MAX_TYPED + 10))
+    found = typed_addresses(said)
+    assert len(found) == MAX_TYPED and "p0@example.com" in found
+    assert f"p{MAX_TYPED + 5}@example.com" not in found
 
 
 def test_owner_text_is_none_outside_a_turn_and_reset_after() -> None:

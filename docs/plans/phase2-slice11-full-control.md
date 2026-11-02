@@ -108,3 +108,49 @@ mail saying "delete all my meetings" can't act. **Approve all** (below) makes th
 - Undo of an event whose time slot has since filled — restore anyway (it's the owner's own).
 - Spoken-turn cards remain; if the owner wants voice to act without a card for undo-able
   changes, that's a separate opt-in (not in this slice).
+
+## Workstream C — builder notes (branch `s11-approve`)
+- **D6 Approve all** (`core/approve_all.py`, route in `api/routes.py`, `Brain.approve_all`).
+  `POST /v1/approvals/approve-all {session_id, ids}` (1–20 ids, ≤ 64 chars each; a repeated id
+  counts once; a client `passkey` / `user_id` is dropped). Per card, in the order listed:
+  not waiting in this conversation → `not_found`; can't be undone (R3, or unknown risk) →
+  `needs_passkey`, never run; otherwise the single-approval path (`brain_decisions.approved`:
+  gateway re-check, a changed card → `changed` + the new card) and its exchange is stored before
+  the next card. Results: `done | failed | changed | needs_passkey | not_found | error | not_run`.
+  One failing card is reported and the rest run; a conversation that can't record what ran stops
+  the batch (`not_run`, as the tool loop does). The route presents no passkey (`presenting_proof
+  (None)`), so the approval guard would refuse any card needing one. **One reply**: each exchange
+  tells the model it was an Approve all; ONE narration call for the batch (plain combined text
+  when it can't), plus a fixed sentence for cards the model was not told about; nothing ran → no
+  model call, nothing stored. Brain stays at 764 lines: the single approve/decline narration is
+  shared (`Brain._narrated`, `brain_decisions.Outcome`, `narration`, `response`).
+  Console (`console-approve-all.js`): "Approve all (n)" when ≥ 2 cards that can be undone wait in
+  ONE conversation (the open one, else the first listed — the API is per conversation); it sends
+  only those ids (least privilege: the R3 card is never in the request); hint says the R3 card
+  keeps its own Approve. Hooks: `jarvis:approvals` carries `cards`; `window.JarvisApprovals`
+  {session, cards, decide}; `decide` shares the single card's path (`runDecision`).
+- **D7 a rule (chosen)**: `gmail_create_draft` runs without a card only when EVERY recipient is an
+  address the owner typed in the CURRENT message (`taint.owner_text`, compared after the same
+  normalisation as recipients: case, IDN → punycode; `addresses.typed_addresses`). Otherwise it is
+  an R2 card (one tap, no passkey) — whether or not the round is tainted, so it covers what the
+  tainted-round rule can't: an address from an earlier reply, a note, or the model's guess, and
+  one typed only in an earlier message. Mechanism: `Tool.ask_when` (gateway ALLOW → ASK after the
+  owner's rules; an owner's Allow never relaxes it, Never still wins; an error asks). Outside a
+  turn (an approval being carried out) it does not apply.
+- **D7 b — verified** (WebFetch, 2026-11-02): `GET https://api.tavily.com/usage`, bearer auth, no
+  body; 200 → `{key: {usage, limit|null, search_usage, extract_usage, crawl_usage, map_usage,
+  research_usage}, account: {current_plan, plan_usage, plan_limit, paygo_usage, paygo_limit,
+  search_usage, …}}`, counts for the "current billing cycle"; 401 / 429 documented
+  (docs.tavily.com/documentation/api-reference/endpoint/usage). The API-credits page lists only
+  search, extract, map, crawl and research as charged — /usage costs no credit. Built: Tavily
+  port `usage()`; `web/vendor_usage.VendorCheck` from the scheduler tick at most once a day (a
+  claimed document shared by every instance; a failed call uses up the day); the month's count is
+  only RAISED to the vendor's (larger of key / plan count), capped at the stop; an exhausted
+  vendor closes the month; skipped while the IST month is not yet the UTC month. **Not** run on a
+  432/433: that answer already latches the month at the stop, and a raise-only correction can't
+  change a latched month.
+- **D7 c**: `ChallengeStore.sweep_expired` (≤ 100 per tick, oldest first, any owner; one ordered
+  read on `expires_at`, a single-field index) from the tick; never raises.
+- **Evals**: `evals/approvals` (in `run_all_mock`): eval 8 with and without a passkey, scope and
+  listing, risk rose → re-proposed; D7 a (7 cases); negative controls (R3 skip off → R3 runs;
+  draft rule off → untyped drafts) must fail — they do.

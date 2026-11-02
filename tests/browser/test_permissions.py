@@ -73,6 +73,9 @@ def perm_url() -> Iterator[str]:
         "JARVIS_API_TOKEN": TOKEN,
         "JARVIS_LOG_LEVEL": "WARNING",
         "JARVIS_USD_INR_LIVE": "0",
+        # One server serves the module from one IP; the app's 120/min per-IP limit (unit-tested
+        # in tests/) would turn a fast CI runner's requests into 429s (as in conftest.py).
+        "JARVIS_RATE_LIMIT_PER_MINUTE": "6000",
         "JARVIS_PUBLIC_BASE_URL": url,
     }
     env.pop("JARVIS_ANTHROPIC_API_KEY", None)

@@ -20,6 +20,7 @@ from jarvis.llm.base import ContentBlock, Role, Usage
 from jarvis.recall.models import MemoryRef
 from jarvis.undo.models import UndoRef as UndoRef  # re-exported: replies carry it (slice 11)
 from jarvis.web.sources import Source as Source  # re-exported: replies and turns carry it
+from jarvis.whatsapp.draft import DraftCard as DraftCard  # re-exported: replies carry it (s12)
 
 
 def _now() -> datetime:
@@ -174,6 +175,11 @@ class ChatResponse(BaseModel):
         default_factory=list,
         description="Deletes this reply made that can be undone (the console's Undo chip; "
         "POST /v1/deleted/{undo_id}/restore)",
+    )
+    whatsapp: list[DraftCard] = Field(
+        default_factory=list,
+        description="WhatsApp drafts this reply made (slice 12): the console's draft card with "
+        "Open in WhatsApp. Nothing was sent.",
     )
 
 

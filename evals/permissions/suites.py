@@ -46,6 +46,12 @@ SAMPLES: dict[str, tuple[str, list[ActionRisk]]] = {
     "memory_forget": ("memory_forget", [R3]),
     "web": ("web_read", [R1]),
     "documents": ("doc_search", [R1]),
+    # slice 12 D8: one R1 row per integration (stub tools under the planned names)
+    "contacts": ("contacts_search", [R1]),
+    "whatsapp": ("whatsapp_draft", [R1]),
+    "drive": ("drive_read", [R1]),
+    "maps": ("maps_route", [R1]),
+    "youtube": ("youtube_search", [R1]),
 }
 OUTCOME = {
     Effect.ALLOW: GatewayOutcome.EXECUTED,

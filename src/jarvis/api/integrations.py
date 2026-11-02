@@ -2,13 +2,16 @@
 """Linking the owner's Google account for the Calendar + Gmail tools (Layer 1 → 6).
 
 GET  /connect/google                 signed-in owner → Google consent (offline, PKCE, login_hint);
-                                     ?add=tasks (Integrations → Grant) also asks for the to-do list
+                                     ?add=<tasks|contacts|youtube> (Integrations → Grant; exactly
+                                     one allow-listed name) also asks for that optional scope; a
+                                     renewal asks again for every optional scope the link holds
 GET  /connect/google/callback        store tokens iff the consenting account IS the signed-in owner
                                      AND every tool scope was granted; failures redirect to
                                      /?connect_error=<code> (browser landing); a grant from the
                                      wrong account is revoked at Google (best effort)
 GET  /v1/integrations          {google: {connected, email, scopes, expires_at, needs_reconnect,
-                                         tasks_granted}}  (the to-do list scope is optional)
+                                         tasks_granted, contacts_granted, youtube_granted}}
+                                         (the three Grants are optional)
 POST /v1/integrations/google/disconnect   revoke at Google (best effort) + forget (CSRF header)
 
 Mounted only when auth_mode=google. Separate from sign-in: `/auth/*` keeps `openid email`.
@@ -28,8 +31,12 @@ from jarvis.config import Settings
 from jarvis.integrations.google import (
     GoogleConnector,
     GoogleScopesMissing,
+    can_use_contacts,
     can_use_tasks,
+    can_use_youtube,
     connect_scopes,
+    grant_name,
+    held_grants,
 )
 from jarvis.logging import get_logger
 
@@ -72,16 +79,18 @@ async def connect(request: Request, s: Settings = Depends(_settings)) -> Any:
     if email is None:  # a browser session only: scripts have no consent screen
         raise HTTPException(401, "sign in required")
     request.session[CONNECT_OWNER_KEY] = email
-    # The to-do list only when asked for (Integrations → Grant: ?add=tasks, exactly) or already
-    # held by the link being renewed; a plain reconnect asks for what it always did (review L8).
+    # An optional scope only when asked for (Integrations → Grant: ?add=<one allow-listed name>,
+    # exactly once) or already held by the link being renewed; a plain reconnect asks for what it
+    # always did plus what the link holds (review L8; slice 12 D7).
     held = await google.status(user_id_for_email(email))
-    tasks = request.query_params.get("add") == "tasks" or (
-        bool(held["connected"]) and can_use_tasks(held["scopes"])
-    )
+    grants = set(held_grants(held["scopes"])) if held["connected"] else set()
+    added = request.query_params.getlist("add")
+    if len(added) == 1 and (name := grant_name(added[0])) is not None:
+        grants.add(name)
     return await request.app.state.oauth.google_tools.authorize_redirect(
         request,
         _callback_url(s),
-        scope=connect_scopes(tasks=tasks),
+        scope=connect_scopes(grants),
         access_type="offline",
         prompt="consent",
         include_granted_scopes="true",
@@ -137,6 +146,9 @@ class GoogleStatus(BaseModel):
     needs_reconnect: bool
     # slice 10 C: the optional to-do list scope; false → the console offers "Grant"
     tasks_granted: bool = False
+    # slice 12 D7: the optional contacts / YouTube playlists scopes, the same way
+    contacts_granted: bool = False
+    youtube_granted: bool = False
 
 
 class Integrations(BaseModel):
@@ -148,8 +160,15 @@ async def integrations(
     google: GoogleConnector = Depends(_google), uid: str = Depends(current_user)
 ) -> Integrations:
     st = await google.status(uid)
-    granted = bool(st["connected"]) and can_use_tasks(st["scopes"])
-    return Integrations(google=GoogleStatus(**st, tasks_granted=granted))
+    linked, scopes = bool(st["connected"]), st["scopes"]
+    return Integrations(
+        google=GoogleStatus(
+            **st,
+            tasks_granted=linked and can_use_tasks(scopes),
+            contacts_granted=linked and can_use_contacts(scopes),
+            youtube_granted=linked and can_use_youtube(scopes),
+        )
+    )
 
 
 @router.post("/v1/integrations/google/disconnect", dependencies=[Depends(require_auth)])

@@ -23,7 +23,11 @@ Undo, shared ones R3, a mail can't delete, the 10-delete cap, restore, fail-clos
 negative controls), slice 11 C's approvals (plan eval 8, Approve all: 3 R2 run, R3 stays;
 drafts to un-typed addresses ask; + negative controls) and slice 11 D8's provenance-based trust
 (the owner's own items don't taint; an invite, a Gmail to-do or a mail still does; + negative
-controls). The exit status is the gated suites: phase0 --mock is a smoke run and never fails CI.
+controls), and slice 12 C's contacts look-ups and WhatsApp drafts (15 cases: matches, +91, the
+optional Grant, drafts by number or name, the warning for a number read from an email, the 2,000
+character limit, Never on both rows, Unicode kept and the link built exactly; nothing is ever
+sent; + its negative control). The exit status is the gated suites: phase0 --mock is a smoke run
+and never fails CI.
 """
 
 from __future__ import annotations
@@ -48,6 +52,11 @@ SUITES = [
     ("undo (gated)", [sys.executable, str(HERE / "undo" / "run.py"), "--mock"], True),
     ("approvals (gated)", [sys.executable, str(HERE / "approvals" / "run.py"), "--mock"], True),
     ("trust (gated)", [sys.executable, str(HERE / "trust" / "run.py"), "--mock"], True),
+    (
+        "contacts+whatsapp (gated)",
+        [sys.executable, str(HERE / "contacts_whatsapp" / "run.py"), "--mock"],
+        True,
+    ),
 ]
 
 

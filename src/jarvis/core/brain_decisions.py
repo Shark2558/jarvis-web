@@ -21,11 +21,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from jarvis.core.guardrails import PendingAction
-from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn, UndoRef
+from jarvis.core.models import ChatResponse, DraftCard, PendingApproval, Session, Turn, UndoRef
 from jarvis.core.rounds import undo_refs
 from jarvis.llm.base import Completion, Role, TextBlock, ToolCall, Usage
 from jarvis.logging import get_logger
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
+from jarvis.whatsapp.cards import draft_cards
 
 log = get_logger(__name__)
 
@@ -39,6 +40,7 @@ class Decision:
     fallback: str
     instruction: str
     undo: tuple[UndoRef, ...] = ()  # slice 11: an approved undo-able delete's Undo chip
+    drafts: tuple[DraftCard, ...] = ()  # slice 12: an approved WhatsApp draft's card
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,7 @@ class Outcome:
     note: str = ""  # added to the reply as written (Approve all: the cards left waiting)
     narrate: bool = True  # False: nothing ran or was recorded — no model call, nothing stored
     undo: list[UndoRef] = field(default_factory=list)  # undo-able deletes that ran: Undo chips
+    drafts: list[DraftCard] = field(default_factory=list)  # WhatsApp drafts made (slice 12)
 
 
 def single(d: Decision, *, approved: bool, unrecorded: list[Turn]) -> Outcome:
@@ -62,7 +65,15 @@ def single(d: Decision, *, approved: bool, unrecorded: list[Turn]) -> Outcome:
     did = approved and d.result.ran
     again = [d.result.pending] if d.result.pending is not None else []
     undo = list(d.undo)
-    return Outcome(d.fallback, unrecorded, did, tool_calls=int(did), again=again, undo=undo)
+    return Outcome(
+        d.fallback,
+        unrecorded,
+        did,
+        tool_calls=int(did),
+        again=again,
+        undo=undo,
+        drafts=list(d.drafts),
+    )
 
 
 def narration(reply: str, completion: Completion | None, trace_id: str) -> Turn:
@@ -105,6 +116,7 @@ def response(
         tool_calls=out.tool_calls,
         pending_approvals=[PendingApproval.from_action(a) for a in out.again],
         undo=list(out.undo),
+        whatsapp=list(out.drafts),
     )
 
 
@@ -145,6 +157,7 @@ async def approved(
         fallback,
         "Owner approved this action; report the outcome in one sentence.",
         _chips(gateway, call, gr),
+        tuple(draft_cards(gateway.registry, [call], [gr])),  # never raises (slice 12)
     )
 
 

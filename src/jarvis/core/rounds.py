@@ -19,12 +19,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.core.models import Session, Turn, UndoRef
+from jarvis.core.models import DraftCard, Session, Turn, UndoRef
 from jarvis.core.saving import not_recorded_note, record_after_action
 from jarvis.llm.base import Completion, ToolCall, Usage
 from jarvis.memory.base import SessionStore
 from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.tools.registry import ToolRegistry
+from jarvis.whatsapp.cards import draft_cards
 
 
 def undo_refs(
@@ -56,6 +57,7 @@ class Rounds:
     done: list[str] = field(default_factory=list)
     unrecorded: list[Turn] = field(default_factory=list)
     undo: list[UndoRef] = field(default_factory=list)
+    drafts: list[DraftCard] = field(default_factory=list)  # slice 12: WhatsApp draft cards
 
     @property
     def wrote(self) -> bool:
@@ -67,6 +69,7 @@ class Rounds:
         """Remember each call of this round that ran and can change something. A tool that
         raised ran too — it may have written before it failed — and is noted as such."""
         self.undo += undo_refs(registry, calls, results)
+        self.drafts += draft_cards(registry, calls, results)
         for call, gr in zip(calls, results, strict=True):
             if not gr.ran:
                 continue

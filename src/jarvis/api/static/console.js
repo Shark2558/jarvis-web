@@ -405,10 +405,16 @@
   // gmail.insert (slice 7) is optional: it only lets the morning brief be put in the owner's own inbox.
   // tasks (slice 10 C) is optional too: the to-do list. `tasks_granted: false` → a "Grant" row that re-runs
   // connect with ?add=tasks (only Grant asks for it; Google keeps what was granted: include_granted_scopes).
-  // A server without the field shows none.
+  // A server without the field shows none. Slice 12 D7: contacts_granted / youtube_granted alike (read only).
   const SCOPE_WORDS = { 'calendar.readonly': ['Calendar', 'read'], 'calendar.events': ['Calendar', 'edit'],
     'gmail.readonly': ['Gmail', 'read'], 'gmail.compose': ['Gmail', 'draft', 'send'], 'gmail.send': ['Gmail', 'send'],
-    'gmail.insert': ['Gmail', 'put the morning brief in your inbox (optional)'], tasks: ['To-do list', 'read & edit'] };
+    'gmail.insert': ['Gmail', 'put the morning brief in your inbox (optional)'], tasks: ['To-do list', 'read & edit'],
+    'contacts.readonly': ['Contacts', 'read'], 'youtube.readonly': ['YouTube', 'read your playlists'] };
+  const GRANTS = [ // the optional Grants: [field, ?add= name, button id, row words, what it unlocks]
+    ['tasks_granted', 'tasks', 'googleGrantTasks', 'To-do list \u2014 permission needed', 'your to-do list'],
+    ['contacts_granted', 'contacts', 'googleGrantContacts', 'Contacts \u2014 permission needed', 'your contacts (read only)'],
+    ['youtube_granted', 'youtube', 'googleGrantYoutube', 'YouTube playlists \u2014 permission needed', 'your YouTube playlists (read only)'],
+  ];
   /** "Calendar: read & edit · Gmail: read, draft, send" from the raw scope list (URLs or short names). */
   function scopeSummary(scopes) {
     const by = {}; let other = 0;
@@ -449,17 +455,18 @@
       const sc = scopeSummary(g.scopes); if (sc) body.appendChild(mk('p', 'scopes', sc));
       if (st === 'reconnect') body.appendChild(mk('p', 'warn', 'Google stopped accepting the saved link (test-mode links expire after 7 days). Calendar and Gmail tools are paused until you reconnect.'));
       else body.appendChild(mk('p', 'fine', 'Unlocks: calendar list, free slots, create / move / delete events, mail search, read, draft and send'
-        + (g.tasks_granted === true ? ', and your to-do list.' : '.')));
-      if (st === 'linked' && g.tasks_granted === false) body.appendChild(grantRow());
+        + andList(GRANTS.filter(x => g[x[0]] === true).map(x => x[4]))));
+      if (st === 'linked') GRANTS.filter(x => g[x[0]] === false).forEach(x => body.appendChild(grantRow(x)));
     }
     return body;
   }
-  /** "To-do list — permission needed · Grant": the optional Tasks scope, asked for by re-running connect. */
-  function grantRow() {
+  const andList = (xs) => (xs.length ? `, and ${xs.length > 1 ? xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1] : xs[0]}.` : '.');
+  /** "<what> - permission needed [Grant]": re-runs connect with ?add=<an allow-listed GRANTS name>. */
+  function grantRow([, name, id, words]) {
     const row = mk('div', 'iopt'), b = mk('button', 'btn lift', 'Grant');
-    b.type = 'button'; b.id = 'googleGrantTasks';
-    b.addEventListener('click', () => { note('info', 'Asking Google for the to-do list…'); window.location.assign('/connect/google?add=tasks'); });
-    row.append(mk('span', '', 'To-do list — permission needed'), b);
+    b.type = 'button'; b.id = id;
+    b.addEventListener('click', () => { note('info', 'Asking Google for permission\u2026'); window.location.assign('/connect/google?add=' + name); });
+    row.append(mk('span', '', words), b);
     return row;
   }
   function integActions(st, row) {
@@ -621,6 +628,7 @@
     if (used.length) memoryChip(row, used);
     if (window.JarvisSources) window.JarvisSources.render(row, r.sources);
     if (window.JarvisDeleted) window.JarvisDeleted.chips(row, r.undo); // slice 11: Undo chips
+    if (window.JarvisWhatsApp) window.JarvisWhatsApp.render(row, r.whatsapp); // slice 12: draft cards
     renderStats(r, rttMs);
     emit('jarvis:reply', { refused: false, tools: Number.isFinite(r.tool_calls) ? r.tool_calls : 0 });
     // slice 9: the voice module speaks it (per "Speak replies"); an approval left waiting after a

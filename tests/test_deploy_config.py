@@ -191,6 +191,24 @@ def test_the_tasks_api_is_switched_on_and_its_scope_is_printed_as_optional(scrip
     assert "tasks.googleapis.com" in enable
     line = next(ln for ln in script.splitlines() if "auth/tasks" in ln)
     assert "optional" in line and "to-do" in line
+
+
+def test_the_people_api_is_switched_on_and_the_new_grants_are_printed_as_optional(
+    script: str,
+) -> None:
+    """Slice 12 D5/D7: contacts search needs the People API switched on (non-fatal, like voice);
+    the contacts and YouTube playlist scopes are optional Grants, read only."""
+    people = next(ln for ln in script.splitlines() if "people.googleapis.com" in ln)
+    assert people.startswith("gcloud services enable") and "--quiet" in people
+    after = script.split("people.googleapis.com", 1)[1].split("\n", 2)[1]
+    assert after.lstrip().startswith("|| say")  # an organisation policy may block it: not fatal
+    for scope, words in (
+        ("auth/contacts.readonly", "contacts"),
+        ("auth/youtube.readonly", "YouTube"),
+    ):
+        line = next(ln for ln in script.splitlines() if scope in ln)
+        assert "optional" in line and words in line
+    assert "Contacts -> Grant" in script
     assert "Grant" in script
 
 

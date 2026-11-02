@@ -41,7 +41,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from jarvis.core import brain_decisions as decisions
 from jarvis.core.guardrails import PendingAction
-from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn, UndoRef
+from jarvis.core.models import ChatResponse, DraftCard, PendingApproval, Session, Turn, UndoRef
 from jarvis.core.saving import record_after_action
 from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
@@ -49,6 +49,7 @@ from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.tools.card import one_line
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult, approved_via
 from jarvis.web.ledger import web_conversation
+from jarvis.whatsapp.provenance import conversation_words
 
 log = get_logger(__name__)
 
@@ -122,6 +123,7 @@ class Batch:
     ran: int = 0  # approved calls that reached their tool (it returned, or raised while running)
     stopped: bool = False
     undo: list[UndoRef] = field(default_factory=list)  # undo-able deletes that ran: Undo chips
+    drafts: list[DraftCard] = field(default_factory=list)  # slice 12: WhatsApp draft cards
 
     def outcome(self) -> decisions.Outcome:
         narrated = [r for r in self.results if r.status in _NARRATED]
@@ -134,6 +136,7 @@ class Batch:
             note=_note(self.results),
             narrate=bool(narrated),
             undo=list(self.undo),
+            drafts=list(self.drafts),
         )
 
 
@@ -203,7 +206,11 @@ def _decided(action: PendingAction, d: decisions.Decision) -> CardResult:
 
 async def _approve(gateway: Gateway, action: PendingAction, batch: Batch) -> decisions.Decision:
     call = ToolCall(id=f"approve_{action.id}", name=action.tool, arguments=action.arguments)
-    with web_conversation(batch.session), approved_via("approve-all"):
+    with (
+        web_conversation(batch.session),
+        conversation_words(batch.session),
+        approved_via("approve-all"),
+    ):
         d = await decisions.approved(gateway, call, action, action.id, batch.scope)
     return d if d.result.pending is not None else replace(d, instruction=INSTRUCTION)
 
@@ -212,6 +219,7 @@ async def _book(store: SessionStore, batch: Batch, d: decisions.Decision) -> Non
     """After a decision took effect: its Undo chip and its stored exchange. Never raises, so a
     failure here can't relabel a card that ran; a record that can't be stored stops the batch."""
     batch.undo += d.undo  # worked out by `decisions.approved`, which never raises for it
+    batch.drafts += d.drafts  # the same for a WhatsApp draft card (slice 12)
     exchange: list[Turn] = []
     try:
         exchange = decisions.record_exchange(batch.session, d, batch.trace_id)

@@ -32,6 +32,24 @@ if TYPE_CHECKING:
 FAKE_TWINS = frozenset({"get_calendar", "send_message", "create_reminder"})
 
 
+def _register_people(reg: ToolRegistry, google: GoogleConnector | None) -> None:
+    """Slice 12 D5/D6: contacts_search with the Google link (its scope is optional per owner, so
+    it checks on every call), and whatsapp_draft always — a typed number needs no Google; with
+    the link it can also look a name up in Contacts (one client, one warm-up record)."""
+    from jarvis.whatsapp.tools import whatsapp_tools
+
+    contacts = None
+    if google is not None:
+        from jarvis.contacts.client import ContactsClient
+        from jarvis.contacts.tools import contacts_tools
+
+        contacts = ContactsClient(google)
+        for t in contacts_tools(contacts):
+            reg.register(t)
+    for t in whatsapp_tools(contacts):
+        reg.register(t)
+
+
 def build_gateway(
     s: Settings,
     *,
@@ -62,6 +80,7 @@ def build_gateway(
             reg.register(t)
         for t in gmail_tools(google) + tasks_tools(google, default_tz=tz, undo=undo, marks=marks):
             reg.register(t)
+    _register_people(reg, google)
     if undo is not None and google is not None:  # slice 11: restore needs the Google tools
         from jarvis.undo.tools import undo_tools
 

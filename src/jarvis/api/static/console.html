@@ -21,6 +21,7 @@
 <link rel="stylesheet" href="/static/console-voice.css">
 <link rel="stylesheet" href="/static/console-permissions.css">
 <link rel="stylesheet" href="/static/console-attach.css">
+<link rel="stylesheet" href="/static/console-deleted.css">
 </head>
 <body>
 <div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
@@ -164,7 +165,7 @@
         <p class="vmic-help" id="micHelp" role="status" hidden></p>
         <p class="vline" id="voiceLine" role="status" aria-live="polite"></p>
         <span class="sr-only" id="voiceLive" role="status" aria-live="polite"></span>
-        <div class="hint">Enter to send, Shift + Enter for a new line. Anything that sends, pays or deletes waits for your approval.</div>
+        <div class="hint">Enter to send, Shift + Enter for a new line. Anything that sends, pays or can't be undone waits for your approval.</div>
       </div>
     </div>
   </section>
@@ -532,6 +533,7 @@
 <script src="/static/console-usage.js" defer></script>
 <script src="/static/console-memory.js" defer></script>
 <script src="/static/console-permissions.js" defer></script>
+<script src="/static/console-deleted.js" defer></script>
 <script src="/static/console-voice-capture.js" defer></script>
 <script src="/static/console-voice-speech.js" defer></script>
 <script src="/static/console-wakeword.js" defer></script>

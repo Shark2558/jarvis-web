@@ -104,6 +104,28 @@ def parse_recipients(raw: Any) -> list[str]:
     return out
 
 
+# An address written somewhere in free text (the owner's message): no quotes, brackets, list
+# separators or whitespace on either side of the @; trailing sentence punctuation is dropped.
+_IN_TEXT = re.compile(r"[^\s<>()\[\],;:\"'@]+@[^\s<>()\[\],;:\"'@]+")
+_TRAILING = ".!?"
+MAX_TYPED = 50
+
+
+def typed_addresses(text: str) -> frozenset[str]:
+    """The addresses written in `text`, normalised exactly as `parse_address` normalises a
+    recipient (so 'Ravi@Example.COM' matches 'ravi@example.com'); anything that does not parse as
+    one bare address is ignored. At most MAX_TYPED are read."""
+    found: set[str] = set()
+    for m in _IN_TEXT.finditer(text or ""):
+        if len(found) >= MAX_TYPED:
+            break
+        try:
+            found.add(parse_address(m.group(0).rstrip(_TRAILING)))
+        except ValueError:
+            continue
+    return frozenset(found)
+
+
 _LOOSE = re.compile(r'[^@\s<>"]+@[^@\s<>"]+')
 
 
@@ -162,4 +184,5 @@ __all__ = [
     "parse_address",
     "parse_recipients",
     "plain_address",
+    "typed_addresses",
 ]

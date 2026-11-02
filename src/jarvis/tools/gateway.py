@@ -23,6 +23,9 @@ Slice 10 D review: a tainted round (other people's text reached the model: mail,
 turns every REVERSIBLE write into an approval card too (`policy.TAINTED_WRITES_ASK`): an R2 card,
 so no passkey. Outside a turn nothing is tainted (an approval being executed, a script).
 
+Slice 11 D7 a: a tool may ask for one call (`Tool.ask_when`, e.g. a Gmail draft to an address
+the owner did not type in this message): that ALLOW becomes ASK too, after the owner's rules.
+
 Slice 10 integration review L4: one owner message proposes at most 5 NEW cards (`tools.budget`;
 a duplicate of a waiting card is not new); past that a proposal is refused in plain words and
 nothing is stored. The duplicate look-up reads only the conversation's own cards.
@@ -129,12 +132,15 @@ class GatewayResult:
         )
 
 
-def _tightened(effect: Effect, risk: ActionRisk, confirmation_id: str | None) -> Effect:
-    """ALLOW → ASK for a write on a spoken turn, in a tainted round, or when an approval token
-    is presented. (An irreversible call is never ALLOW in the first place.)"""
+def _tightened(
+    effect: Effect, risk: ActionRisk, confirmation_id: str | None, asks: bool = False
+) -> Effect:
+    """ALLOW → ASK for a write on a spoken turn, in a tainted round, when the tool asks for this
+    call (`Tool.ask_when`), or when an approval token is presented. (An irreversible call is never
+    ALLOW in the first place.)"""
     if effect is not Effect.ALLOW or risk is ActionRisk.READ_ONLY:
         return effect
-    if confirmation_id is not None or spoken_in_context():
+    if confirmation_id is not None or asks or spoken_in_context():
         return Effect.ASK
     if _policy.TAINTED_WRITES_ASK and tainted_round():
         return Effect.ASK
@@ -219,7 +225,10 @@ class Gateway:
         policy = await self._policy_for(tool, call, risk, scope)
         if isinstance(policy, GatewayResult):
             return policy
-        effect = _tightened(policy.decide(tool.name, risk, call.arguments), risk, confirmation_id)
+        asks = tool.asks(call.arguments)
+        effect = _tightened(
+            policy.decide(tool.name, risk, call.arguments), risk, confirmation_id, asks
+        )
         card: str | None = None
         if effect is not Effect.DENY and tool.preview is not None:
             looked = await self._look_up(tool, call, risk, scope)
@@ -229,7 +238,7 @@ class Gateway:
                 risk = looked.risk
             card = looked.summary
             effect = _tightened(
-                policy.decide(tool.name, risk, call.arguments), risk, confirmation_id
+                policy.decide(tool.name, risk, call.arguments), risk, confirmation_id, asks
             )
         if effect is Effect.DENY:
             return await self._denied(tool, call, risk, policy)

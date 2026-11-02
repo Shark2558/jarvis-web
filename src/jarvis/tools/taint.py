@@ -15,6 +15,11 @@ room (a TV, a guest, the keep-listening window) may have said it. The Brain mark
 `spoken` as well as untrusted, and the gateway then turns EVERY write tool into an approval card
 — not only the memory tools. Outside a turn the answer is "not spoken" (an approval being
 executed was decided on screen).
+
+The owner's own words (slice 11 D7 a): the text of the owner's CURRENT message, set by the Brain
+around each call of its tool rounds (`owner_text`; None outside a turn). A tool may ask first when
+an argument did not come from them — a Gmail draft to an address the owner did not type in this
+message becomes a card (`tools.gmail`).
 """
 
 from __future__ import annotations
@@ -32,6 +37,9 @@ _untrusted: contextvars.ContextVar[bool | None] = contextvars.ContextVar(
 )
 _spoken: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "jarvis_spoken_in_context", default=False
+)
+_owner_text: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "jarvis_owner_text", default=None
 )
 
 
@@ -52,13 +60,22 @@ def spoken_in_context() -> bool:
     return _spoken.get()
 
 
+def owner_text() -> str | None:
+    """The owner's own words in the current message (None outside a turn)."""
+    return _owner_text.get()
+
+
 @contextmanager
-def context_trust(*, untrusted: bool, spoken: bool = False) -> Iterator[None]:
+def context_trust(
+    *, untrusted: bool, spoken: bool = False, owner_text: str | None = None
+) -> Iterator[None]:
     token = _untrusted.set(untrusted or spoken)
     spoken_token = _spoken.set(spoken)
+    text_token = _owner_text.set(owner_text)
     try:
         yield
     finally:
+        _owner_text.reset(text_token)
         _spoken.reset(spoken_token)
         _untrusted.reset(token)
 
@@ -94,6 +111,7 @@ def untrusted_seen(messages: Sequence[ChatMessage], registry: ToolRegistry) -> b
 __all__ = [
     "context_trust",
     "fenced_text_seen",
+    "owner_text",
     "spoken_in_context",
     "tainted_round",
     "untrusted_in_context",

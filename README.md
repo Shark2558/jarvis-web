@@ -150,6 +150,8 @@ jarvis/api/integrations.py       /connect/google, /connect/google/callback, /v1/
 - **Addresses**: recipients and invitees must be bare addresses (`name@example.com`): no quotes,
   comments, display names or domain literals; header values never carry control characters or
   Unicode line separators. Google calls are retried only when that cannot act twice (reads).
+  A draft runs without asking only when every recipient is an address you typed in that same
+  message; a draft to anyone else is an approval card (one tap, no passkey) — slice 11 D7 a.
 
 - **Connect**: console → panel → Integrations → *Connect Google* (`GET /connect/google`; signed-in
   owner only). Separate from sign-in: scopes `calendar.events`, `calendar.readonly`,

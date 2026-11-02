@@ -542,13 +542,18 @@ class Brain:
         self, session: Session, msgs: list[ChatMessage], calls: list[ToolCall], req: ChatRequest
     ) -> list[GatewayResult]:
         """One round's calls through the gateway, in order. What the model had seen when it asked
-        for them: other people's text? A spoken message may be: every write becomes a card."""
+        for them: other people's text? A spoken message may be: every write becomes a card. The
+        owner's own words of this message go along (a draft to an address not in them asks)."""
         assert self.gateway is not None
         untrusted = untrusted_seen(msgs, self.gateway.registry)
         spoken = req.channel == "voice"
+        said = req.message
         out: list[GatewayResult] = []
         for call in calls:
-            with context_trust(untrusted=untrusted, spoken=spoken), web_conversation(session):
+            with (
+                context_trust(untrusted=untrusted, spoken=spoken, owner_text=said),
+                web_conversation(session),
+            ):
                 out.append(await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}"))
         return out
 

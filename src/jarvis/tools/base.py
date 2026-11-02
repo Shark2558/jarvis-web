@@ -16,6 +16,7 @@ ToolFn = Callable[[dict[str, Any]], Awaitable[Any] | Any]
 RiskFn = Callable[[dict[str, Any]], ActionRisk]
 CheckFn = Callable[[dict[str, Any]], None]
 SummaryFn = Callable[[dict[str, Any]], str]
+AskFn = Callable[[dict[str, Any]], bool]
 SUMMARY_FALLBACK_LIMIT = 300
 
 
@@ -60,9 +61,22 @@ class Tool:
     # True only for tools whose output is the owner's own data (the memory tools): their results
     # do not make the context "untrusted" (jarvis.tools.taint). Default: other people's words.
     trusted_output: bool = False
+    # Optional (slice 11 D7 a): True → this call becomes an approval card even where the policy
+    # would allow it (an owner's Allow never relaxes it; the card keeps the call's own risk, so an
+    # R2 call needs no passkey). Pure, no I/O; may read `jarvis.tools.taint`. Never asked for a
+    # read-only call. An error counts as True (fail closed).
+    ask_when: AskFn | None = None
 
     def effective_risk(self, args: dict[str, Any]) -> ActionRisk:
         return self.risk_for(args) if self.risk_for is not None else self.risk
+
+    def asks(self, args: dict[str, Any]) -> bool:
+        if self.ask_when is None:
+            return False
+        try:
+            return bool(self.ask_when(args))
+        except Exception:  # noqa: BLE001 — can't tell: ask
+            return True
 
     def spec(self) -> ToolSpec:
         return ToolSpec(
@@ -98,6 +112,7 @@ class Tool:
 
 
 __all__ = [
+    "AskFn",
     "CheckFn",
     "Preview",
     "PreviewFn",

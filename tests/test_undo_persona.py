@@ -36,5 +36,5 @@ def test_old_rules_no_longer_say_every_delete_waits() -> None:
     assert "deleting what can't be undone" in prompt
 
 
-def test_persona_version_is_left_for_the_integration_bump() -> None:
-    assert PERSONA_VERSION == "p4.1"
+def test_persona_version_was_bumped_once_for_slice_11() -> None:
+    assert PERSONA_VERSION == "p4.2"  # reminders, undo and look-up paragraphs, one bump

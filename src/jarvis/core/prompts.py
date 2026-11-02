@@ -14,7 +14,9 @@ from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-PERSONA_VERSION = "p4.1"  # bumped: web search, to-do list, attached files paragraphs (slice 10)
+# p4.1: web search, to-do list, attached files paragraphs (slice 10). p4.2: reminders, deleting
+# and undo, looking items up by their words (slice 11, bumped once at integration).
+PERSONA_VERSION = "p4.2"
 
 Channel = Literal["text", "voice"]
 

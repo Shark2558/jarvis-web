@@ -43,6 +43,12 @@ WHY_ASSIGNED = "it was assigned from Google Docs or Chat"
 WHY_UNREAD = "its subtasks could not all be checked"
 
 
+def owner_authored(task: dict[str, Any]) -> bool:
+    """The owner's own words (plan D8, local rule until the shared helper lands): not made from
+    a mail by Gmail's "Add to Tasks" (`links`), not assigned from Docs or Chat."""
+    return not task.get("links") and not task.get("assignmentInfo")
+
+
 def delete_risk(task: dict[str, Any], *, all_read: bool) -> tuple[ActionRisk, str]:
     if task.get("assignmentInfo"):
         return ActionRisk.IRREVERSIBLE, WHY_ASSIGNED
@@ -139,7 +145,10 @@ async def delete_kept(client: TasksClient, undo: UndoBin, ref: TaskRef) -> dict[
         return {"deleted": True, "id": ref.composite}
     snap = task_snapshot(ref, fam.task, fam.items)
     title = one_line(fam.task.get("title"), 1024) or "(no title)"
-    item = await undo.keep(ctx.user_id, "task", title, snap)
+    # owner-authored only when the to-do AND every subtask kept with it are (a restore and a
+    # listing carry all of them)
+    mine = all(owner_authored(t) for t in [fam.task, *descendants(fam.items, ref.task_id)])
+    item = await undo.keep(ctx.user_id, "task", title, snap, owner_authored=mine)
     try:
         await client.delete(ctx.user_id, ref)
     except Exception:
@@ -243,6 +252,7 @@ __all__ = [
     "delete_risk",
     "descendants",
     "family",
+    "owner_authored",
     "previous_sibling",
     "task_snapshot",
 ]

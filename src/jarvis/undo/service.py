@@ -91,7 +91,16 @@ class UndoBin:
     def now(self) -> datetime:
         return self._clock()
 
-    async def keep(self, uid: str, kind: Kind, title: str, snapshot: dict[str, Any]) -> DeletedItem:
+    async def keep(
+        self,
+        uid: str,
+        kind: Kind,
+        title: str,
+        snapshot: dict[str, Any],
+        *,
+        owner_authored: bool = False,
+    ) -> DeletedItem:
+        """`owner_authored` (plan D8): the deleting tool's verdict on the item, captured now."""
         if not owner_ok(uid):
             raise SnapshotFailed(NOT_KEPT.format(why="no owner"))
         if len(json.dumps(snapshot, ensure_ascii=False, default=str)) > MAX_SNAPSHOT_CHARS:
@@ -105,6 +114,7 @@ class UndoBin:
             snapshot=snapshot,
             deleted_at=now,
             expires_at=now + self._keep_for,
+            owner_authored=owner_authored,
         )
         try:
             await self.store.add(item)

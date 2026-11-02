@@ -14,6 +14,10 @@ The copy keeps exactly what a restore sends back — summary, description, locat
 (with their time zones), reminders, colorId, transparency, visibility, extendedProperties, and
 recurrence for a reminder — and never attendees, ids or links. A restore recreates the event (new
 id, `sendUpdates=none`), from those fields only, whatever the stored copy holds.
+
+Each kept copy also records whether the owner wrote the event (`owner_authored`, plan D8: the
+owner organised and created it, nobody else is on it, and Gmail didn't make it), so a listing of
+Recently deleted can later be trusted when every item in it is the owner's own words.
 """
 
 from __future__ import annotations
@@ -24,13 +28,13 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector
+from jarvis.tools.calendar_alerts import is_reminder
 from jarvis.tools.calendar_cards import others_on
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.undo.service import Restored, UndoBin
 from jarvis.undo.tools import deleted_result
 
-REMINDER_TAG = "reminder"
 _RESTORED = (
     "summary",
     "description",
@@ -54,15 +58,24 @@ WHY_KIND = "JARVIS can't recreate this kind of event"
 WHY_REPEATS = "it repeats, and a restore would lose its changed occurrences"
 
 
-def is_reminder(event: dict[str, Any]) -> bool:
-    ext = event.get("extendedProperties")
-    private = ext.get("private") if isinstance(ext, dict) else None
-    return isinstance(private, dict) and private.get("jarvis") == REMINDER_TAG
+def _self(event: dict[str, Any], who: str) -> bool:
+    person = event.get(who)
+    return isinstance(person, dict) and person.get("self") is True
 
 
 def _owner_organises(event: dict[str, Any]) -> bool:
-    org = event.get("organizer")
-    return isinstance(org, dict) and org.get("self") is True
+    return _self(event, "organizer")
+
+
+def owner_authored(event: dict[str, Any]) -> bool:
+    """The owner's own words (plan D8, local rule until the shared helper lands): organised and
+    created by the owner, nobody else on it, not an event Gmail made."""
+    return (
+        _self(event, "organizer")
+        and _self(event, "creator")
+        and not others_on(event)
+        and event.get("eventType") != "fromGmail"
+    )
 
 
 def delete_risk(event: dict[str, Any]) -> tuple[ActionRisk, str]:
@@ -122,7 +135,8 @@ async def delete_kept(
         await conn.request(ctx.user_id, "DELETE", url, params={"sendUpdates": "all"})
         return {"deleted": True, "id": one_line(event.get("id"), 1024)}
     title = str(event.get("summary") or "(no title)")
-    item = await undo.keep(ctx.user_id, "event", title, event_snapshot(event))
+    mine = owner_authored(event)
+    item = await undo.keep(ctx.user_id, "event", title, event_snapshot(event), owner_authored=mine)
     try:
         await conn.request(ctx.user_id, "DELETE", url, params={"sendUpdates": "none"})
     except Exception:
@@ -132,11 +146,10 @@ async def delete_kept(
 
 
 __all__ = [
-    "REMINDER_TAG",
     "CalendarRestorer",
     "delete_kept",
     "delete_risk",
     "event_snapshot",
-    "is_reminder",
+    "owner_authored",
     "restore_body",
 ]

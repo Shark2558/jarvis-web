@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from jarvis.storage.docs import MemoryDocs
-from jarvis.undo.models import RETENTION_DAYS, RestoreStatus, UndoRef
+from jarvis.undo.models import RETENTION_DAYS, RestoreStatus, UndoRef, all_owner_authored
 from jarvis.undo.service import Restored, SnapshotFailed, UndoBin
 from jarvis.undo.store import DeletedStore
 
@@ -59,6 +59,18 @@ async def test_keep_stores_a_snapshot_per_owner_for_thirty_days() -> None:
     listed = await b.recent(UID)
     assert [i.id for i in listed] == [item.id] and listed[0].snapshot == {"summary": "Dentist"}
     assert await b.recent("u_other") == []  # scoped per owner
+
+
+async def test_owner_authored_is_kept_as_captured_and_read_back() -> None:
+    """Plan D8: the flag the deleting tool gave survives storage; a listing is trusted only when
+    every item in it is the owner's own words."""
+    b, _, _ = _bin()
+    mine = await b.keep(UID, "event", "Dentist", {}, owner_authored=True)
+    theirs = await b.keep(UID, "task", "From a mail", {})
+    got = {i.id: i.owner_authored for i in await b.recent(UID)}
+    assert got == {mine.id: True, theirs.id: False}
+    assert all_owner_authored([i for i in await b.recent(UID) if i.id == mine.id])
+    assert not all_owner_authored(await b.recent(UID))
 
 
 async def test_titles_are_one_line_and_capped() -> None:

@@ -104,6 +104,21 @@ async def test_deleting_my_own_todo_runs_without_a_card_and_restores_in_place() 
     assert again.result["status"] == "already_restored" and len(rig.fake.changes("insert")) == 1
 
 
+async def test_the_copy_records_whether_the_owner_wrote_the_todo() -> None:
+    fake = _fake()
+    fake.add("L1", "Reply to Priya", id="t_mail", links=[{"type": "email", "link": "https://x"}])
+    fake.add("L1", "Parent", id="t_par", position="00000000000000000009")
+    fake.add("L1", "From mail", id="t_kid", parent="t_par", links=[{"type": "email"}])
+    rig = await _rig(fake)
+    mine = await rig.run("task_delete", {"task_id": "L2:t_rfp"})
+    mail = await rig.run("task_delete", {"task_id": "L1:t_mail"})
+    mixed = await rig.run("task_delete", {"task_id": "L1:t_par"})  # a subtask came from a mail
+    flags = {i.id: i.owner_authored for i in await rig.bin.recent(UID)}
+    assert flags[mine.result["undo_id"]] is True
+    assert flags[mail.result["undo_id"]] is False
+    assert flags[mixed.result["undo_id"]] is False
+
+
 async def test_a_done_todo_comes_back_done() -> None:
     rig = await _rig()
     out = await rig.run("task_delete", {"task_id": "L1:t_done"})

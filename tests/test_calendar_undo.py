@@ -120,6 +120,23 @@ async def test_deleting_my_own_event_runs_without_a_card_and_keeps_a_copy_first(
         assert gone not in snap
 
 
+@pytest.mark.parametrize(
+    ("extra", "mine"),
+    [
+        ({}, True),  # organised and created by the owner, nobody else on it
+        ({"creator": {"email": "assistant@example.com"}}, False),  # someone else made it
+    ],
+)
+async def test_the_copy_records_whether_the_owner_wrote_the_event(
+    rig: Rig, extra: dict[str, Any], mine: bool
+) -> None:
+    rig.serve(_event(**extra))
+    out = await rig.run("calendar_delete_event", {"event_id": "ev0001"})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    [kept] = await rig.bin.recent(GOOGLE_UID)
+    assert kept.owner_authored is mine
+
+
 async def test_restore_recreates_the_event_once_with_its_fields_and_no_guests(rig: Rig) -> None:
     rig.serve(_event())
     out = await rig.run("calendar_delete_event", {"event_id": "ev0001"})

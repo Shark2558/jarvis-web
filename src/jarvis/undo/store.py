@@ -5,7 +5,8 @@ tests).
 Layout:  {prefix}deleted_items/{user_id}/items/{undo_id}
          user_id, kind, title, snapshot_json (the item as Google had it, as JSON text: field
          names Firestore would refuse stay inside a string), deleted_at, expires_at (UTC ISO
-         strings: they sort as text), restored, restored_at, restored_id, restoring_since.
+         strings: they sort as text), restored, restored_at, restored_id, restoring_since,
+         owner_authored (plan D8; anything but a stored true reads as false).
 
 Per owner by path, so one owner's list or sweep never reads another's. No Firestore TTL policy
 (TTL deletes are billed): the scheduler tick sweeps expired items (`UndoBin.sweep`). A new item is
@@ -77,6 +78,7 @@ def encode(item: DeletedItem) -> Doc:
         "restored_at": _iso(item.restored_at) if item.restored_at else None,
         "restored_id": item.restored_id,
         "restoring_since": _iso(item.restoring_since) if item.restoring_since else None,
+        "owner_authored": item.owner_authored,
     }
 
 
@@ -97,6 +99,7 @@ def decode(item_id: str, raw: Doc | None) -> DeletedItem | None:
             restored_at=_when(raw.get("restored_at")),
             restored_id=raw.get("restored_id"),
             restoring_since=_when(raw.get("restoring_since")),
+            owner_authored=raw.get("owner_authored") is True,
         )
     except (KeyError, ValueError, TypeError, ValidationError):
         log.error("unreadable deleted item", extra={"item": item_id})

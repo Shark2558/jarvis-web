@@ -5,7 +5,8 @@ A `DeletedItem` is one undo-able delete: the owner's event or to-do as it was ju
 deleted it (`snapshot`, the fields a restore needs), its title as one clean line (often someone
 else's words: fenced before it reaches the model), when it was deleted and when the copy goes
 (+30 days). `restored` / `restored_id` make a restore idempotent; `restoring_since` is the claim a
-restore holds while it recreates the item, so two clicks never make two copies.
+restore holds while it recreates the item, so two clicks never make two copies. `owner_authored`
+(captured at delete time, never from a client) records whether the item was the owner's own words.
 """
 
 from __future__ import annotations
@@ -42,9 +43,18 @@ class DeletedItem(BaseModel):
     restored_at: datetime | None = None
     restored_id: str | None = None
     restoring_since: datetime | None = None
+    # plan D8: the item was the owner's own words when it was deleted (calendar: organised and
+    # created by the owner, nobody else on it, not from Gmail; to-do: no links, not assigned).
+    # A Recently deleted listing whose every item is owner-authored can then be trusted.
+    owner_authored: bool = False
 
     def expired(self, now: datetime) -> bool:
         return now >= self.expires_at
+
+
+def all_owner_authored(items: list[DeletedItem]) -> bool:
+    """Plan D8: a listing can be trusted only when every item in it is the owner's own words."""
+    return all(i.owner_authored for i in items)
 
 
 class RestoreStatus(StrEnum):
@@ -131,4 +141,5 @@ __all__ = [
     "RestoreOutcome",
     "RestoreStatus",
     "UndoRef",
+    "all_owner_authored",
 ]

@@ -25,6 +25,7 @@ from jarvis.integrations.google import (
     GoogleAPIError,
     GoogleConnector,
     GoogleNotConnected,
+    GoogleServiceDisabled,
     can_use_tasks,
 )
 from jarvis.logging import get_logger
@@ -38,6 +39,8 @@ LISTS_URL = f"{BASE}/users/@me/lists"
 DEFAULT_LIST = "@default"
 MAX_LISTS = 10  # lists read per call (the owner's own; Google allows 1000 per page)
 PAGE_SIZE = 100  # Google's maximum page of tasks
+PAGES_PER_LIST = 3  # read budget per list (≤ 300 tasks); past it the brief says "at least"
+TOKEN_MAX = 1024
 LIST_TITLE_LIMIT = 100
 TITLE_MAX = 1024  # Google: title ≤ 1024, notes ≤ 8192 characters
 NOTES_MAX = 8192
@@ -47,16 +50,26 @@ GRANT_MSG = (
     "JARVIS has no permission for your to-do list (Google Tasks) yet. Open Integrations and "
     "press Grant next to 'To-do list', then ask again."
 )
+TASKS_OFF_MSG = (
+    "The to-do service is not switched on for your JARVIS project yet: re-run "
+    "deploy/cloudrun.sh, or switch on 'Google Tasks API' in Google Cloud Console → APIs & "
+    "Services → Library."
+)
 
 # Google ids are base64-style strings. No "/", ".", "%", "?", ":" or space: an id can never walk
 # to another URL path or carry a query.
 _ID = re.compile(r"[A-Za-z0-9_=-]{1,256}")
 _DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _DUE_PREFIX = re.compile(r"^([0-9]{4}-[0-9]{2}-[0-9]{2})")
+_TOKEN = re.compile(r"[A-Za-z0-9_=+/.-]+")  # an opaque page token, sent back as a query value
 
 
 class TasksNotGranted(RuntimeError):
     """The link exists but the owner has not granted the Tasks scope."""
+
+
+class TasksServiceOff(GoogleAPIError):
+    """The Google Tasks API is not switched on in the owner's Cloud project (403)."""
 
 
 # ---- ids --------------------------------------------------------------------------------------
@@ -126,7 +139,11 @@ def parse_due(value: Any, tz: ZoneInfo) -> tuple[date, bool]:
         raise ValueError("due must be a date like 2027-01-20 (YYYY-MM-DD)") from None
     if (dt.hour, dt.minute, dt.second, dt.microsecond) == (0, 0, 0, 0):
         return _in_range(dt.date()), False
-    local = dt.replace(tzinfo=tz) if dt.tzinfo is None else dt.astimezone(tz)
+    _in_range(dt.date())  # year 1 / 9999 would overflow the conversion below
+    try:
+        local = dt.replace(tzinfo=tz) if dt.tzinfo is None else dt.astimezone(tz)
+    except (OverflowError, ValueError):
+        raise ValueError("due must be a date between 1970 and 2100") from None
     return _in_range(local.date()), True
 
 
@@ -162,7 +179,26 @@ class TaskList:
 @dataclass(frozen=True)
 class Page:
     items: list[dict[str, Any]]
-    more: bool
+    token: str | None = None  # Google's nextPageToken: more remain
+
+    @property
+    def more(self) -> bool:
+        return self.token is not None
+
+
+@dataclass(frozen=True)
+class DueScan:
+    """Open tasks due on or before a day. `complete` is False when the read budget ran out (more
+    lists or pages remained): the brief then says "at least"."""
+
+    found: list[tuple[TaskList, dict[str, Any]]]
+    lists: int
+    complete: bool
+
+
+def _token(value: Any) -> str | None:
+    text = value if isinstance(value, str) else ""
+    return text if 0 < len(text) <= TOKEN_MAX and _TOKEN.fullmatch(text) else None
 
 
 def _dicts(value: Any) -> list[dict[str, Any]]:
@@ -190,6 +226,13 @@ class TasksClient:
         if not can_use_tasks(st["scopes"]):
             raise TasksNotGranted(GRANT_MSG)
 
+    async def _call(self, uid: str, method: str, url: str, **kw: Any) -> Any:
+        """Every Tasks call: the API switched off in the project gets its own plain words."""
+        try:
+            return await self.conn.request(uid, method, url, **kw)
+        except GoogleServiceDisabled:
+            raise TasksServiceOff(TASKS_OFF_MSG) from None
+
     async def owner_tz(self, uid: str, fallback: str) -> ZoneInfo:
         """The primary calendar's zone (the owner's), else `fallback`, else UTC."""
         fb = _zone(fallback) or ZoneInfo("UTC")
@@ -201,17 +244,29 @@ class TasksClient:
         zone = _zone(str(info.get("timeZone") or "")) if isinstance(info, dict) else None
         return zone or fb
 
-    async def lists(self, uid: str) -> list[TaskList]:
-        data = await self.conn.request(uid, "GET", LISTS_URL, params={"maxResults": MAX_LISTS})
+    async def lists_page(self, uid: str) -> tuple[list[TaskList], bool]:
+        """The owner's lists (≤ MAX_LISTS) and whether more exist beyond them."""
+        params = {"maxResults": MAX_LISTS}
+        data = await self._call(uid, "GET", LISTS_URL, params=params)
         out: list[TaskList] = []
         for item in _dicts(data.get("items") if isinstance(data, dict) else None):
             lid = str(item.get("id") or "")
             if _ID.fullmatch(lid):
                 out.append(TaskList(lid, one_line(item.get("title"), LIST_TITLE_LIMIT) or "(list)"))
-        return out[:MAX_LISTS]
+        more = isinstance(data, dict) and data.get("nextPageToken") is not None
+        return out[:MAX_LISTS], more or len(out) > MAX_LISTS
+
+    async def lists(self, uid: str) -> list[TaskList]:
+        return (await self.lists_page(uid))[0]
 
     async def page(
-        self, uid: str, list_id: str, *, due_through: date | None, completed: bool
+        self,
+        uid: str,
+        list_id: str,
+        *,
+        due_through: date | None,
+        completed: bool,
+        token: str | None = None,
     ) -> Page:
         """One page (≤ 100) of a list. `due_through` asks Google for tasks due on or before that
         date (dueMax is the next midnight; the caller filters again, whatever Google's bound)."""
@@ -222,20 +277,45 @@ class TasksClient:
         }
         if due_through is not None:
             params["dueMax"] = due_to_api(due_through + timedelta(days=1))
-        data = await self.conn.request(uid, "GET", tasks_url(list_id), params=params)
+        if token is not None:
+            params["pageToken"] = token
+        data = await self._call(uid, "GET", tasks_url(list_id), params=params)
         if not isinstance(data, dict):
             raise GoogleAPIError("Google returned an unreadable to-do list.")
         items = [t for t in _dicts(data.get("items")) if _ID.fullmatch(str(t.get("id") or ""))]
-        return Page(items, bool(data.get("nextPageToken")))
+        raw = data.get("nextPageToken")
+        if raw is not None and _token(raw) is None:
+            return Page(items, "?")  # a token we will not send back: count it as "more remain"
+        return Page(items, _token(raw))
 
-    async def due_by(
-        self, uid: str, day: date
-    ) -> tuple[list[tuple[TaskList, dict[str, Any]]], int]:
-        """Open tasks due on or before `day` in every list (≤ MAX_LISTS) → ((list, task), …),
-        number of lists. One failing list fails the call (the brief marks the section)."""
-        lists = await self.lists(uid)
+    async def read(
+        self,
+        uid: str,
+        list_id: str,
+        *,
+        due_through: date | None,
+        completed: bool,
+        max_pages: int = PAGES_PER_LIST,
+    ) -> Page:
+        """Up to `max_pages` pages of a list, in order; `more` when the budget ran out first."""
+        items: list[dict[str, Any]] = []
+        token: str | None = None
+        for _ in range(max_pages):
+            pg = await self.page(
+                uid, list_id, due_through=due_through, completed=completed, token=token
+            )
+            items += pg.items
+            token = pg.token
+            if token is None or token == "?":
+                break
+        return Page(items, token)
+
+    async def due_by(self, uid: str, day: date) -> DueScan:
+        """Open tasks due on or before `day` across the owner's lists, within a read budget
+        (≤ MAX_LISTS lists × PAGES_PER_LIST pages). One failing read fails the call."""
+        lists, more_lists = await self.lists_page(uid)
         pages = await asyncio.gather(
-            *(self.page(uid, tl.id, due_through=day, completed=False) for tl in lists)
+            *(self.read(uid, tl.id, due_through=day, completed=False) for tl in lists)
         )
         found = [
             (tl, t)
@@ -243,26 +323,32 @@ class TasksClient:
             for t in pg.items
             if t.get("status") != "completed" and (d := date_of(t.get("due"))) and d <= day
         ]
-        return found, len(lists)
+        complete = not more_lists and not any(pg.more for pg in pages)
+        return DueScan(found, len(lists), complete)
+
+    async def subtasks(self, uid: str, ref: TaskRef) -> tuple[int, bool]:
+        """(how many tasks in its list name it as parent, whether every page was read)."""
+        pg = await self.read(uid, ref.list_id, due_through=None, completed=True)
+        return sum(1 for t in pg.items if t.get("parent") == ref.task_id), not pg.more
 
     async def get(self, uid: str, ref: TaskRef) -> dict[str, Any]:
-        t = await self.conn.request(uid, "GET", task_url(ref))
+        t = await self._call(uid, "GET", task_url(ref))
         if not isinstance(t, dict) or not t.get("id"):
             raise GoogleAPIError("Google returned no details for that to-do.")
         return t
 
     async def insert(self, uid: str, list_id: str, body: dict[str, Any]) -> dict[str, Any]:
-        t = await self.conn.request(uid, "POST", tasks_url(list_id), json=body)
+        t = await self._call(uid, "POST", tasks_url(list_id), json=body)
         if not isinstance(t, dict) or not _ID.fullmatch(str(t.get("id") or "")):
             raise GoogleAPIError("Google did not confirm the new to-do.")
         return t
 
     async def patch(self, uid: str, ref: TaskRef, body: dict[str, Any]) -> dict[str, Any]:
-        t = await self.conn.request(uid, "PATCH", task_url(ref), json=body)
+        t = await self._call(uid, "PATCH", task_url(ref), json=body)
         return t if isinstance(t, dict) else {}
 
     async def delete(self, uid: str, ref: TaskRef) -> None:
-        await self.conn.request(uid, "DELETE", task_url(ref))
+        await self._call(uid, "DELETE", task_url(ref))
 
 
 __all__ = [
@@ -272,12 +358,16 @@ __all__ = [
     "LISTS_URL",
     "MAX_LISTS",
     "NOTES_MAX",
+    "PAGES_PER_LIST",
+    "TASKS_OFF_MSG",
     "TITLE_MAX",
+    "DueScan",
     "Page",
     "TaskList",
     "TaskRef",
     "TasksClient",
     "TasksNotGranted",
+    "TasksServiceOff",
     "date_of",
     "due_to_api",
     "parse_due",

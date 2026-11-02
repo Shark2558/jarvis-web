@@ -1,7 +1,8 @@
 # src/jarvis/api/integrations.py
 """Linking the owner's Google account for the Calendar + Gmail tools (Layer 1 → 6).
 
-GET  /connect/google                 signed-in owner → Google consent (offline, PKCE, login_hint)
+GET  /connect/google                 signed-in owner → Google consent (offline, PKCE, login_hint);
+                                     ?add=tasks (Integrations → Grant) also asks for the to-do list
 GET  /connect/google/callback        store tokens iff the consenting account IS the signed-in owner
                                      AND every tool scope was granted; failures redirect to
                                      /?connect_error=<code> (browser landing); a grant from the
@@ -24,7 +25,12 @@ from pydantic import BaseModel
 from jarvis.api.auth import require_auth, session_email
 from jarvis.api.identity import current_user, user_id_for_email
 from jarvis.config import Settings
-from jarvis.integrations.google import GoogleConnector, GoogleScopesMissing, can_use_tasks
+from jarvis.integrations.google import (
+    GoogleConnector,
+    GoogleScopesMissing,
+    can_use_tasks,
+    connect_scopes,
+)
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -61,14 +67,21 @@ def _failed(code: str) -> RedirectResponse:
 
 @router.get("/connect/google", include_in_schema=False)
 async def connect(request: Request, s: Settings = Depends(_settings)) -> Any:
-    _google(request)
+    google = _google(request)
     email = session_email(request, s)
     if email is None:  # a browser session only: scripts have no consent screen
         raise HTTPException(401, "sign in required")
     request.session[CONNECT_OWNER_KEY] = email
+    # The to-do list only when asked for (Integrations → Grant: ?add=tasks, exactly) or already
+    # held by the link being renewed; a plain reconnect asks for what it always did (review L8).
+    held = await google.status(user_id_for_email(email))
+    tasks = request.query_params.get("add") == "tasks" or (
+        bool(held["connected"]) and can_use_tasks(held["scopes"])
+    )
     return await request.app.state.oauth.google_tools.authorize_redirect(
         request,
         _callback_url(s),
+        scope=connect_scopes(tasks=tasks),
         access_type="offline",
         prompt="consent",
         include_granted_scopes="true",

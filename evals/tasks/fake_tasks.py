@@ -85,8 +85,7 @@ class FakeTasks:
         if path == TZ_PATH:
             return self._err("tz") or httpx.Response(200, json={"timeZone": self.tz})
         if path == f"{TASKS}/users/@me/lists" and method == "GET":
-            body = {"kind": "tasks#taskLists", "items": self.lists}
-            return self._err("lists") or httpx.Response(200, json=body)
+            return self._err("lists") or _paged(request, self.lists, "tasks#taskLists", 1000)
         m = re.fullmatch(rf"{TASKS}/lists/([^/]+)/tasks(?:/([^/]+))?", path)
         if m is None:
             return httpx.Response(599, json={"error": f"unscripted {method} {path}"})
@@ -115,11 +114,7 @@ class FakeTasks:
             if due_max and (not t.get("due") or t["due"] >= due_max):
                 continue  # strictly before dueMax: the client must not rely on the bound
             items.append(t)
-        limit = int(p.get("maxResults", 20))
-        body: dict[str, Any] = {"kind": "tasks#tasks", "items": items[:limit]}
-        if len(items) > limit:
-            body["nextPageToken"] = "next"
-        return httpx.Response(200, json=body)
+        return _paged(request, items, "tasks#tasks", 20)
 
     def _insert(self, request: httpx.Request, list_id: str) -> httpx.Response:
         body = json.loads(request.content)
@@ -160,6 +155,16 @@ class FakeTasks:
             self.mutations.append(Mutation(kind, list_id, task_id, body))
             return httpx.Response(200, json=task)
         return httpx.Response(405)
+
+
+def _paged(request: httpx.Request, items: list[Any], kind: str, default: int) -> httpx.Response:
+    """Google-style pages: `maxResults`, and an opaque `pageToken` (here: the offset)."""
+    p = request.url.params
+    limit, start = int(p.get("maxResults", default)), int(p.get("pageToken", "0") or 0)
+    body: dict[str, Any] = {"kind": kind, "items": items[start : start + limit]}
+    if start + limit < len(items):
+        body["nextPageToken"] = str(start + limit)
+    return httpx.Response(200, json=body)
 
 
 def _date_only(value: str) -> str:

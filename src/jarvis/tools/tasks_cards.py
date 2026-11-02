@@ -21,6 +21,7 @@ CHANGE_LIMIT = 80
 NOTES_LIMIT = 200
 DATE_ONLY = "Google Tasks keeps the date only: the time is not kept"
 ASSIGNED = "Assigned from Google Docs or Chat: deleting it here also deletes it there."
+ASSIGNED_CHANGE = "Assigned from a Google Doc or Chat space: people there can see this change."
 
 
 def _title(task: dict[str, Any]) -> str:
@@ -60,20 +61,37 @@ def update_card(task: dict[str, Any], a: dict[str, Any], *, due: date | None, dr
         lines.append(f"• due: {show_date(old_due)} → {new}")
     if "notes" in a:
         lines.append(f"• notes: {_value(task.get('notes'))} → {_value(a['notes'])}")
+    if task.get("assignmentInfo"):
+        lines.append(ASSIGNED_CHANGE)
     return "\n".join(lines)
 
 
 def complete_card(task: dict[str, Any]) -> str:
-    return f"Mark to-do done: {_title(task)} (due {show_date(date_of(task.get('due')))})"
+    line = f"Mark to-do done: {_title(task)} (due {show_date(date_of(task.get('due')))})"
+    return f"{line}\n{ASSIGNED_CHANGE}" if task.get("assignmentInfo") else line
 
 
-def delete_card(task: dict[str, Any], list_title: str | None) -> str:
+def _subtasks_line(n: int, all_read: bool) -> str | None:
+    """Google does not document what happens to subtasks: assume they go with their parent."""
+    if n == 0 and all_read:
+        return None
+    count = f"{'' if all_read else 'at least '}{n} subtask{'' if n == 1 else 's'}"
+    if n == 0:  # none in the part JARVIS could read
+        return "Its subtasks could not all be checked: any it has may be deleted with it."
+    return f"It has {count}: they may be deleted with it (Google does not say)."
+
+
+def delete_card(
+    task: dict[str, Any], list_title: str | None, *, subtasks: tuple[int, bool] = (0, True)
+) -> str:
     lines = [
         f"Delete to-do {_title(task)} — cannot be undone",
         _due(date_of(task.get("due")), False),
     ]
     if list_title:
         lines.append(_list_line(list_title))
+    if (children := _subtasks_line(*subtasks)) is not None:
+        lines.append(children)
     if task.get("assignmentInfo"):
         lines.append(ASSIGNED)
     return "\n".join(lines)

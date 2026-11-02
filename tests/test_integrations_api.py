@@ -324,12 +324,33 @@ async def test_google_mode_registers_the_todo_tools(gc: AsyncClient) -> None:
     assert {"tasks_list", "task_add", "task_update", "task_complete", "task_delete"} <= names
 
 
-async def test_connect_asks_for_the_tasks_scope_incrementally(gc: AsyncClient) -> None:
+def _asked(r: Any) -> set[str]:
+    return set(parse_qs(urlsplit(r.headers["location"]).query)["scope"][0].split())
+
+
+async def test_connect_asks_for_the_tasks_scope_only_on_grant(gc: AsyncClient) -> None:
+    """Security review L8: a plain (re)connect asks for exactly what it asked before slice 10;
+    only the explicit Grant (`?add=tasks`) adds the to-do list, incrementally."""
     await _login(gc, OWNER)
-    r = await gc.get("/connect/google", follow_redirects=False)
-    q = parse_qs(urlsplit(r.headers["location"]).query)
-    assert TASKS in q["scope"][0].split()
+    plain = await gc.get("/connect/google", follow_redirects=False)
+    assert TASKS not in _asked(plain)
+    assert "https://www.googleapis.com/auth/gmail.compose" in _asked(plain)
+    for junk in ("?add=TASKS", "?add=tasks.readonly", "?add=https://mail.google.com/"):
+        r = await gc.get("/connect/google" + junk, follow_redirects=False)
+        assert TASKS not in _asked(r) and "https://mail.google.com/" not in _asked(r)
+    grant = await gc.get("/connect/google?add=tasks", follow_redirects=False)
+    assert TASKS in _asked(grant) and _asked(plain) <= _asked(grant)
+    q = parse_qs(urlsplit(grant.headers["location"]).query)
     assert q["include_granted_scopes"] == ["true"]  # Grant keeps everything already granted
+
+
+async def test_a_reconnect_keeps_asking_for_tasks_once_granted(gc: AsyncClient) -> None:
+    await _login(gc, OWNER)
+    await gc.get("/connect/google?add=tasks", follow_redirects=False)
+    _fake_consent(gc, OWNER)  # every scope, tasks included
+    await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
+    again = await gc.get("/connect/google", follow_redirects=False)  # e.g. "Reconnect" after 7 days
+    assert TASKS in _asked(again)
 
 
 async def test_integrations_say_whether_the_todo_list_is_granted(gc: AsyncClient) -> None:
@@ -342,7 +363,7 @@ async def test_integrations_say_whether_the_todo_list_is_granted(gc: AsyncClient
     assert r.headers["location"] == "/?connected=google"
     st = (await gc.get("/v1/integrations")).json()["google"]
     assert st["connected"] is True and st["tasks_granted"] is False
-    await gc.get("/connect/google", follow_redirects=False)  # "Grant"
+    await gc.get("/connect/google?add=tasks", follow_redirects=False)  # "Grant"
     _fake_consent(gc, OWNER)
     await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
     st = (await gc.get("/v1/integrations")).json()["google"]

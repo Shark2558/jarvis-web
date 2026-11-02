@@ -49,7 +49,16 @@ INSERT_CAPABLE_SCOPES = frozenset(
     {INSERT_SCOPE, "https://www.googleapis.com/auth/gmail.modify", "https://mail.google.com/"}
 )
 # openid+email so the callback can prove WHICH Google account consented (must equal the owner).
+# Every scope a link may hold:
 TOOL_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES, *OPTIONAL_SCOPES)
+# What a plain (re)connect asks for — unchanged by slice 10 (review L8). The to-do list is asked
+# for only by the explicit Grant, or when the link being renewed already holds it.
+CONNECT_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES, INSERT_SCOPE)
+
+
+def connect_scopes(*, tasks: bool) -> str:
+    """The scope string for one consent request (with include_granted_scopes)."""
+    return " ".join((*CONNECT_SCOPES, TASKS_SCOPE) if tasks else CONNECT_SCOPES)
 
 
 def can_insert(scopes: Iterable[str]) -> bool:
@@ -86,6 +95,15 @@ class GoogleScopesMissing(ValueError):
 
 class GoogleAPIError(RuntimeError):
     """A Google call failed; the message is already owner-friendly and vendor-text free."""
+
+
+class GoogleServiceDisabled(GoogleAPIError):
+    """403 because the API is not switched on in the Cloud project (not a missing scope).
+    Decided from Google's reason codes only; the vendor message is never shown."""
+
+
+SERVICE_DISABLED_REASONS = frozenset({"accessNotConfigured", "SERVICE_DISABLED"})
+SERVICE_OFF_MSG = "That Google service is not switched on for your JARVIS project yet."
 
 
 _FRIENDLY: dict[int, str] = {
@@ -285,6 +303,8 @@ class GoogleConnector:
             log.warning(
                 "google api error", extra={"status": r.status_code, "path": httpx.URL(url).path}
             )
+            if r.status_code == 403 and not SERVICE_DISABLED_REASONS.isdisjoint(_reasons(r)):
+                raise GoogleServiceDisabled(SERVICE_OFF_MSG)
             raise GoogleAPIError(_friendly(r.status_code))
         if not r.content:
             return {}
@@ -313,6 +333,23 @@ class GoogleConnector:
         except httpx.HTTPError as exc:
             log.warning("google api unreachable", extra={"reason": type(exc).__name__})
             raise GoogleAPIError("Could not reach Google; try again shortly.") from exc
+
+
+def _reasons(r: httpx.Response) -> set[str]:
+    """Google's machine-readable error reasons (errors[].reason, details[].reason); never text."""
+    try:
+        err = r.json().get("error")
+    except (ValueError, AttributeError):
+        return set()
+    if not isinstance(err, dict):
+        return set()
+    found: set[str] = set()
+    for key in ("errors", "details"):
+        items = err.get(key)
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, dict) and isinstance(item.get("reason"), str):
+                found.add(item["reason"][:64])
+    return found
 
 
 def _json_error(r: httpx.Response) -> str:
@@ -375,7 +412,7 @@ def register_tools_oauth(oauth: Any, s: Settings) -> None:
         name="google_tools",
         client_id=s.google_client_id,
         client_secret=s.google_client_secret.get_secret_value(),
-        client_kwargs={"scope": " ".join(TOOL_SCOPES), "code_challenge_method": "S256"},
+        client_kwargs={"scope": connect_scopes(tasks=False), "code_challenge_method": "S256"},
         authorize_url=AUTHORIZE_URL,
         access_token_url=TOKEN_URL,
         jwks_uri=JWKS_URL,
@@ -386,6 +423,7 @@ def register_tools_oauth(oauth: Any, s: Settings) -> None:
 
 __all__ = [
     "AUTHORIZE_URL",
+    "CONNECT_SCOPES",
     "INSERT_CAPABLE_SCOPES",
     "INSERT_SCOPE",
     "OPTIONAL_SCOPES",
@@ -398,9 +436,11 @@ __all__ = [
     "GoogleConnector",
     "GoogleNotConnected",
     "GoogleScopesMissing",
+    "GoogleServiceDisabled",
     "build_google_connector",
     "can_insert",
     "can_use_tasks",
+    "connect_scopes",
     "google_tools_configured",
     "google_tools_startup_note",
     "register_tools_oauth",

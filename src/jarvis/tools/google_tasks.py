@@ -26,7 +26,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.integrations.google import GoogleConnector
+from jarvis.integrations.google import GoogleAPIError, GoogleConnector
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import one_line, strip_invisible
 from jarvis.tools.context import require_tool_context
@@ -54,6 +54,8 @@ MAX_SHOWN = 30
 RESULT_BUDGET = 11_000  # the gateway cuts tool output at 12,000 characters
 LIST_ARG_LIMIT = 200
 TZ_TTL_S = 300.0
+LIST_DEADLINE_S = 20.0  # all reads of one tasks_list call together
+TOO_SLOW = "Google Tasks took too long to answer; try again shortly."
 DATES_NOTE = "date only: Google Tasks keeps no time of day"
 TIME_DROPPED = (
     "Google Tasks keeps the date only; the time of day was not saved (offer a calendar event "
@@ -212,11 +214,18 @@ class TasksAPI:
         return out
 
     async def list_tasks(self, a: dict[str, Any]) -> dict[str, Any]:
+        """All of the reads under one overall deadline (each call already has its own 15 s)."""
         uid = require_tool_context().user_id
         try:
             await self.client.require(uid)
         except TasksNotGranted:
             return {"status": "permission_needed", "message": GRANT_MSG}
+        try:
+            return await asyncio.wait_for(self._list_tasks(uid, a), LIST_DEADLINE_S)
+        except TimeoutError:
+            raise GoogleAPIError(TOO_SLOW) from None
+
+    async def _list_tasks(self, uid: str, a: dict[str, Any]) -> dict[str, Any]:
         tz = await self._tz(uid)
         today = self.clock().astimezone(tz).date()
         through = parse_due(a["due_before"], tz)[0] if a.get("due_before") else None
@@ -336,15 +345,17 @@ class TasksAPI:
     async def preview_update(self, a: dict[str, Any]) -> Preview:
         uid, _, task = await self._task(a)
         due, dropped = await self._due(uid, a) if "due" in a else (None, False)
-        return Preview(update_card(task, a, due=due, dropped=dropped))
+        return Preview(update_card(task, a, due=due, dropped=dropped), _others_see(task))
 
     async def preview_complete(self, a: dict[str, Any]) -> Preview:
         _, _, task = await self._task(a)
-        return Preview(complete_card(task))
+        return Preview(complete_card(task), _others_see(task))
 
     async def preview_delete(self, a: dict[str, Any]) -> Preview:
         uid, ref, task = await self._task(a)
-        return Preview(delete_card(task, await self._list_title(uid, ref)), ActionRisk.IRREVERSIBLE)
+        children = await self.client.subtasks(uid, ref)  # fails closed like the look-up itself
+        card = delete_card(task, await self._list_title(uid, ref), subtasks=children)
+        return Preview(card, ActionRisk.IRREVERSIBLE)
 
     async def _list_title(self, uid: str, ref: TaskRef) -> str | None:
         """Best effort, for the card only: the task's list by name (not for '@default')."""
@@ -355,6 +366,12 @@ class TasksAPI:
         except Exception:  # noqa: BLE001 — the task itself was found; the name is a nicety
             return None
         return next((tl.title for tl in lists if tl.id == ref.list_id), None)
+
+
+def _others_see(task: dict[str, Any]) -> ActionRisk | None:
+    """A task assigned from a Google Doc or a Chat space is also on that Doc / space: changing
+    it there is seen by other people (Google flags it in the Doc), like an event with guests."""
+    return ActionRisk.IRREVERSIBLE if task.get("assignmentInfo") else None
 
 
 def _match(lists: list[TaskList], name: str) -> TaskList:

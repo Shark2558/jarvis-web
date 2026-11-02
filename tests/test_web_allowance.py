@@ -89,6 +89,27 @@ async def test_settle_adds_what_the_vendor_actually_charged_beyond_the_reservati
     assert (await a.usage()).credits == 2
 
 
+async def test_latch_marks_the_month_used_up_and_keeps_the_side_counts() -> None:
+    """Review M4: Tavily said the plan's credits are gone (432/433)."""
+    docs = MemoryDocs()
+    a = _allowance(docs)
+    await a.reserve(1, kind="search")
+    await a.latch()
+    use = await a.usage()
+    assert (use.credits, use.left, use.searches) == (900, 0, 1)
+    with pytest.raises(AllowanceReached):
+        await a.reserve(1, kind="search")
+
+
+async def test_latch_also_repairs_an_unreadable_month_to_used_up() -> None:
+    docs = MemoryDocs()
+    await docs.write([Set("jarvis_web_usage/2026-11", {"credits": "x", "reads": 2})])
+    a = _allowance(docs)
+    await a.latch()
+    use = await a.usage()
+    assert (use.credits, use.reads) == (900, 2)
+
+
 @pytest.mark.parametrize("bad", ["12", -1, float("nan"), float("inf"), True, None, [3]])
 async def test_a_corrupt_counter_fails_closed(bad: object) -> None:
     docs = MemoryDocs()

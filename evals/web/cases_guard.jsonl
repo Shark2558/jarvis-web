@@ -18,3 +18,19 @@
 {"id": "g18", "query": "train 12625 Kerala Express running status", "private": false}
 {"id": "g19", "query": "Thiruvananthapuram weather 2026-11-01", "private": false}
 {"id": "g20", "query": "World Bank govtech maturity index 2025 India score", "private": false}
+{"id": "g21", "query": "john＠example.com profile", "private": true}
+{"id": "g22", "query": "john@exa\u200bmple.com profile", "private": true}
+{"id": "g23", "query": "john@ example.com", "private": true}
+{"id": "g24", "query": "john (at) example (dot) com", "private": true}
+{"id": "g25", "query": "john%40example.com", "private": true}
+{"id": "g26", "query": "owner of ९८४५०१२३४५", "private": true}
+{"id": "g27", "query": "owner of ൯൮൪൫൦൧൨൩൪൫", "private": true}
+{"id": "g28", "query": "owner of ９８４５０１２３４５", "private": true}
+{"id": "g29", "query": "owner of 98450\u200b12345", "private": true}
+{"id": "g30", "query": "owner of 98450/12345", "private": true}
+{"id": "g31", "query": "tel9845012345", "private": true}
+{"id": "g32", "query": "aadhaar २३४५ ६७८९ ०१२३", "private": true}
+{"id": "g33", "query": "A B C D E 1 2 3 4 F status", "private": true}
+{"id": "g34", "query": "Kerala budget 2025-2026 highlights", "private": false}
+{"id": "g35", "query": "flights 01/12/2026 Kochi to Delhi", "private": false}
+{"id": "g36", "query": "1,40,00,00,000 rupees in words", "private": false}

@@ -11,7 +11,7 @@ import pytest
 from pydantic import SecretStr
 from web_fakes import FakeTavily, hit
 
-from jarvis.web.ports import SearchProvider, WebError
+from jarvis.web.ports import CreditsExhausted, SearchProvider, WebError
 from jarvis.web.tavily import MAX_RESPONSE_BYTES, TavilyProvider
 
 KEY = "tvly-test-secret-key"
@@ -120,6 +120,22 @@ async def test_errors_are_plain_and_never_echo_vendor_text_or_the_key(
     msg = str(e.value)
     assert words in msg.lower()
     assert "vendor" not in msg and KEY not in msg and "$" not in msg
+
+
+@pytest.mark.parametrize("status", [432, 433])
+async def test_tavily_used_up_is_its_own_error(status: int) -> None:
+    fake = FakeTavily()
+    fake.status = status
+    with pytest.raises(CreditsExhausted):
+        await _provider(fake).search("q", max_results=5, topic="general", days=None)
+
+
+async def test_a_trailing_newline_on_the_key_is_stripped() -> None:
+    """Review L8: Secret Manager values often end with a newline."""
+    fake = FakeTavily()
+    p = TavilyProvider(SecretStr(f"  {KEY}\n"), http=fake.client())
+    await p.search("q", max_results=1, topic="general", days=None)
+    assert fake.requests[0].headers["authorization"] == f"Bearer {KEY}"
 
 
 async def test_transport_failure_and_deadline_are_plain_errors() -> None:

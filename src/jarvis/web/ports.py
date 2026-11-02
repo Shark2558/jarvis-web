@@ -17,6 +17,11 @@ class WebError(RuntimeError):
     """A search or page read failed; the message is plain English, free of vendor text."""
 
 
+class CreditsExhausted(WebError):
+    """The vendor says the plan's (or pay-as-you-go) credits are used up: the month is latched
+    as used up, so nothing more is sent until it resets."""
+
+
 @dataclass(frozen=True)
 class SearchHit:
     title: str
@@ -53,4 +58,12 @@ class SearchProvider(Protocol):
     async def aclose(self) -> None: ...
 
 
-__all__ = ["PageText", "SearchHit", "SearchPage", "SearchProvider", "Topic", "WebError"]
+__all__ = [
+    "CreditsExhausted",
+    "PageText",
+    "SearchHit",
+    "SearchPage",
+    "SearchProvider",
+    "Topic",
+    "WebError",
+]

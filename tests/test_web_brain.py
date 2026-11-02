@@ -107,7 +107,7 @@ async def test_a_reply_without_citations_has_no_sources() -> None:
     assert resp.sources == []
 
 
-async def test_numbers_hold_across_turns_so_follow_ups_cite_correctly() -> None:
+async def test_numbers_stay_unique_but_a_turn_cites_only_what_it_was_shown() -> None:
     r = Rig()
     r.search_then("First [1].")
     first = await r.brain.chat(ChatRequest(message="a", user_id="u1"))
@@ -118,34 +118,30 @@ async def test_numbers_hold_across_turns_so_follow_ups_cite_correctly() -> None:
         {"title": "New A", "url": "https://new.example/a", "content": "x"},
         {"title": "Again 1", "url": "https://example.com/page1", "content": "y"},
     ]
-    r.provider.script("Newer [4], older [1], and from before [3].")
+    r.provider.script("Newer [4], shown again [1], and only from before [3].")
     second = await r.brain.chat(
         ChatRequest(message="more please", session_id=first.session_id, user_id="u1")
     )
-    assert [(s.n, s.title) for s in second.sources] == [
-        (1, "Result 1"),
-        (3, "Result 3"),
-        (4, "New A"),
-    ]
-    # a plain follow-up with no tool round can still cite the earlier results
-    r.provider.script("As said before [2].")
+    # [4] is new; [1] came back in this turn's results; [3] was only shown last turn
+    assert [(s.n, s.title) for s in second.sources] == [(1, "Result 1"), (4, "New A")]
+    # review M5: a message with no search cites nothing ("steps [1] and [2]" is not a citation)
+    r.provider.script("Do steps [1] and [2].")
     third = await r.brain.chat(
-        ChatRequest(message="remind me", session_id=first.session_id, user_id="u1")
+        ChatRequest(message="list the steps", session_id=first.session_id, user_id="u1")
     )
-    assert [s.n for s in third.sources] == [2]
+    assert third.sources == []
 
 
-async def test_stream_reports_sources_in_its_meta_and_stores_them() -> None:
+async def test_a_streamed_reply_has_no_tool_round_so_it_carries_no_sources() -> None:
     r = Rig()
     r.search_then("Earlier [1].")
     first = await r.brain.chat(ChatRequest(message="a", user_id="u1"))
     r.provider.script("Per the first result [1] and [2].")
-    meta = StreamMeta()
     req = ChatRequest(message="stream it", session_id=first.session_id, user_id="u1")
-    text = "".join([d async for d in r.brain.chat_stream(req, meta=meta)])
-    assert "[1]" in text and [s.n for s in meta.sources] == [1, 2]
+    text = "".join([d async for d in r.brain.chat_stream(req, meta=StreamMeta())])
+    assert "[1]" in text
     stored = await r.store.get(first.session_id)
-    assert stored is not None and [s.n for s in stored.turns[-1].sources] == [1, 2]
+    assert stored is not None and stored.turns[-1].sources == []
 
 
 async def test_a_training_brain_gets_no_web_tools_and_no_sources() -> None:
@@ -263,7 +259,9 @@ async def test_usage_needs_auth() -> None:
 
 
 @pytest.mark.parametrize("app_client", [{"tavily_api_key": "tvly-x"}], indirect=True)
-async def test_chat_json_and_stream_final_event_carry_sources(app_client: AsyncClient) -> None:
+async def test_chat_json_carries_sources_and_the_stream_event_is_unchanged(
+    app_client: AsyncClient,
+) -> None:
     app = app_client.app  # type: ignore[attr-defined]
     fake = FakeTavily()
     app.state.web.provider.http = fake.client()
@@ -281,10 +279,4 @@ async def test_chat_json_and_stream_final_event_carry_sources(app_client: AsyncC
         "/v1/chat/stream", json={"message": "again", "session_id": body["session_id"]}
     )
     text, final = s.text.rsplit(STREAM_FINAL, 1)
-    assert "[1]" in text
-    assert json.loads(final)["sources"][0]["url"] == "https://example.com/page1"
-    provider.script("No citations here.")
-    s = await app_client.post(
-        "/v1/chat/stream", json={"message": "plain", "session_id": body["session_id"]}
-    )
-    assert "sources" not in json.loads(s.text.rsplit(STREAM_FINAL, 1)[1])
+    assert "[1]" in text and json.loads(final) == {"memory_used": []}

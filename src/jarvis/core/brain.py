@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
 from jarvis.core.guardrails import PendingAction, guard_input
-from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Source, Turn
+from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
 from jarvis.core.window import build_window
@@ -128,7 +128,6 @@ class StreamMeta:
     """Filled in by `chat_stream` for its caller (the HTTP route's final event)."""
 
     memory_used: list[MemoryRef] = field(default_factory=list)
-    sources: list[Source] = field(default_factory=list)  # set once the reply is complete
 
 
 class Brain:
@@ -391,7 +390,7 @@ class Brain:
                 cost_usd=completion.cost_usd,
                 latency_ms=completion.latency_ms,
                 tool_derived=rounds > 0,  # written from tool results: never to a training brain
-                sources=cited_sources(reply, session.metadata, enabled=spec.tools_allowed),
+                sources=cited_sources(reply, session, enabled=spec.tools_allowed),
             )
         )
         await self.store.save(session)
@@ -794,7 +793,5 @@ class Brain:
                 cost = priced_cost(model, estimate_usage(sent, len("".join(chunks))))
                 await self.billing.record(req.user_id, spec.id, cost)
 
-        text = "".join(chunks).strip()
-        meta.sources = cited_sources(text, session.metadata, enabled=spec.tools_allowed)
-        reply = Turn(role=Role.ASSISTANT, content=text, trace_id=trace_id, sources=meta.sources)
+        reply = Turn(role=Role.ASSISTANT, content="".join(chunks).strip(), trace_id=trace_id)
         await self._finish_turn(req.user_id, session, spec, rec, reply, model=model, cost=cost)

@@ -9,7 +9,10 @@ IST). JARVIS stops at `MONTHLY_CREDITS` (90 %) and never uses pay-as-you-go: ₹
 
 Each call RESERVES its credits first, in a transaction (two calls can't both take the last one),
 and gives them back (`refund`) when Tavily clearly did not charge (no answer, an error status, a
-failed extraction); `settle` adds whatever Tavily reports above the reservation. Fail closed: an
+failed extraction); `settle` adds whatever Tavily reports above the reservation; `latch` marks the
+month used up when Tavily itself says the credits are gone (432/433). The counter starts at 0 on
+the first deploy even if the key was used elsewhere this month (Tavily's GET /usage could seed it
+later). Fail closed: an
 existing `credits` that is not a finite whole number ≥ 0 makes the month UNREADABLE — no search
 is made and the counter is never silently reset. `searches` / `reads` are only shown, read
 leniently.
@@ -185,6 +188,29 @@ class WebAllowance:
     async def refund(self, r: Reservation) -> None:
         """Tavily did not charge for the call: give its reservation back (never below 0)."""
         await self._shift(r, -r.credits, -1)
+
+    async def latch(self) -> None:
+        """Tavily said the plan's credits are gone (432/433): mark this month used up, so Vitals
+        says so and nothing more is sent until it resets. Repairs an unreadable counter too (to
+        "used up", which keeps it closed); the side counts are kept when they can be read."""
+        month = self.month()
+        path = self._path(month)
+
+        async def fn(tx: DocTx) -> None:
+            doc = await tx.get(path)
+            old = doc if isinstance(doc, dict) else {}
+
+            def side(key: str) -> int:
+                v = old.get(key, 0)
+                return int(v) if _whole(v) else 0
+
+            used = WebUse(month, self.cap, side("searches"), side("reads"), self.cap)
+            tx.set(path, self._encode(used))
+
+        try:
+            await self.docs.transaction(fn)
+        except Exception as exc:  # noqa: BLE001 — the call already failed; say so in the log
+            log.warning("web allowance latch failed", extra={"reason": type(exc).__name__})
 
     async def settle(self, r: Reservation, *, charged: int | None) -> None:
         """Tavily reported charging more than was reserved: count the difference too."""

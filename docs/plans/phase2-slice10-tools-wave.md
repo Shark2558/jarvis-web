@@ -150,6 +150,18 @@ privacy policy <https://www.tavily.com/privacy> (last updated 24 Nov 2025).
   it); two one-line hooks in `console.js`; Vitals row "Web search"; CSS block at the end of
   `console.css`; CSP unchanged.
 
+### B — security review (fresh context, 2026-11-02): 0 critical, 1 high, 4 medium, 4 low
+| # | Finding | Resolution |
+|---|---|---|
+| H1 | Query guard bypassed by obfuscation (full-width `＠`, ZWSP, `(at)`, `%40`, Devanagari / Malayalam / full-width digits, spaced PAN) | `web/guard.py`: NFKC + invisible/control stripped + any-script digits → ASCII before every check; any `@`, `%40`, `(at)`/`[at]`, "x at y dot z"; 8+ digits across separators (dates, year ranges, ISBN set aside; commas never join); spaced single characters joined up for the sensitive filter. After untrusted content a query is ≤ 120 chars. 13 new eval guard cases. |
+| M2 | Indic text cost 6× (escapes); fences forgeable | `GatewayResult.for_model` → `serialise`: every string through `external.model_text` (drops Cc but \n\t, Cf, Cs, Co, Cn, tags, variation selectors, fillers; keeps ZWJ/ZWNJ between non-ASCII letters), then `ensure_ascii=False`. `wrap_external` adds a per-call id to both markers (`· 9f3a1c>>` … `<<END 9f3a1c>>`) and replaces fence-like text after NFKC (full-width, ZWSP-split, spaced) with `[fence-like text removed]`; signature unchanged. Persona + brief prompt updated. Malayalam page keeps ~11k chars. **Integration**: other branches' tests that assert a literal `<<END>>` must use `external.FENCE_END`. |
+| M3 | No per-turn / hourly limit (an injected "run 30 searches") | ≤ 3 web_search and ≤ 2 web_read per owner message (counted in the ledger's `turn` record across tool rounds), ≤ 30 searches an hour per owner (in-process window; one instance). Plain "search limit for this request reached". Eval w17/w18: 30 injected searches → 3 reach Tavily. |
+| M4 | Tavily's own 432/433 not remembered | `CreditsExhausted` → `WebAllowance.latch()` sets the month to the cap (Vitals "used up", nothing more sent). Tavily has **GET /usage** (OpenAPI, checked 2026-11-02: `key.usage/limit`, `account.plan_usage/plan_limit/paygo_usage/paygo_limit`, current billing cycle) — not used yet; could seed the counter. The counter starts at 0 on the first deploy even if the key was used elsewhere this month. |
+| M5 | `cited_sources` attached any `[n]` | Only numbers this owner message's tool results showed (ledger `turn.shown`); `[n]` opening a line (list marker) ignored. A streamed reply (no tool round) therefore never has sources: the stream's final event is back to `{memory_used}` only. |
+| L7 | Result URLs shown unfenced to the model | The model sees `n` + domain + fenced title/snippet; `web_read` takes `n` (or an owner-typed `url`); full URLs stay in the ledger and on the chips. |
+| L8 | Key could carry Secret Manager's trailing newline | Stripped in `TavilyProvider._post`. |
+| L6, L9 | (see review) | No change beyond M3's per-message and hourly caps. |
+
 ## C — To-do list on Google Tasks
 - **D-C1 Google Tasks** over Todoist: no new account, already-linked Google, shows in Gmail/Calendar
   side panel and the Tasks phone app. API is free (quota only). Scope

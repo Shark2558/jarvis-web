@@ -6,7 +6,10 @@ JARVIS says web search is not set up. Also the Vitals line's data (`usage_view`)
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import time
+from collections import deque
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -16,11 +19,26 @@ from jarvis.storage.docs import Docs
 from jarvis.web.allowance import AllowanceUnreadable, WebAllowance
 from jarvis.web.ports import SearchProvider
 
+HOUR_S = 3600.0
+
 
 @dataclass
 class WebService:
     provider: SearchProvider
     allowance: WebAllowance
+    clock: Callable[[], float] = time.monotonic
+    # searches per owner in the last hour (review M3). In-process: production runs ONE instance.
+    _recent: dict[str, deque[float]] = field(default_factory=dict)
+
+    def searches_last_hour(self, uid: str) -> int:
+        q = self._recent.setdefault(uid, deque())
+        now = self.clock()
+        while q and now - q[0] >= HOUR_S:
+            q.popleft()
+        return len(q)
+
+    def count_search(self, uid: str) -> None:
+        self._recent.setdefault(uid, deque()).append(self.clock())
 
     async def aclose(self) -> None:
         await self.provider.aclose()

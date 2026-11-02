@@ -26,7 +26,7 @@ from pydantic import SecretStr
 
 from jarvis.logging import get_logger
 from jarvis.tools.card import one_line
-from jarvis.web.ports import PageText, SearchHit, SearchPage, Topic, WebError
+from jarvis.web.ports import CreditsExhausted, PageText, SearchHit, SearchPage, Topic, WebError
 
 log = get_logger(__name__)
 
@@ -53,6 +53,9 @@ _FRIENDLY: dict[int, str] = {
     433: "Tavily's pay-as-you-go limit was reached, so nothing was searched.",
     434: "Tavily is busy right now; try again shortly.",
 }
+
+
+USED_UP = frozenset({432, 433})  # plan / key limit, pay-as-you-go limit: latch the month
 
 
 def _friendly(status: int) -> str:
@@ -110,8 +113,8 @@ class TavilyProvider:
     # ---- the one door ----------------------------------------------------------------------
 
     async def _post(self, url: str, body: dict[str, Any]) -> dict[str, Any]:
-        headers = {
-            "Authorization": f"Bearer {self._key.get_secret_value()}",
+        headers = {  # stripped: a Secret Manager value often ends with a newline
+            "Authorization": f"Bearer {self._key.get_secret_value().strip()}",
             "Accept": "application/json",
         }
         try:
@@ -122,6 +125,8 @@ class TavilyProvider:
                     if r.status_code != 200:
                         path = httpx.URL(url).path
                         log.warning("tavily error", extra={"status": r.status_code, "path": path})
+                        if r.status_code in USED_UP:
+                            raise CreditsExhausted(_friendly(r.status_code))
                         raise WebError(_friendly(r.status_code))
                     raw = await self._read_capped(r)
         except TimeoutError as exc:

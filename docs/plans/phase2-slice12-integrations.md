@@ -29,7 +29,7 @@ recorded deviation (D1: Drive through the runtime service account instead of the
 | Integration | Phase · skill | Verdict | Why |
 |---|---|---|---|
 | **Google Drive — chosen folders only** | 2 (file system) · Research & Intel | **Build now** | Owner shares each folder with JARVIS's own Google identity; Google enforces the boundary (D1) |
-| **Google Maps** (places, travel time) | 2 · Task & Productivity | **Build now** | India pricing: 35,000 free text searches and 35,000 traffic-aware routes a month (D2–D3) |
+| **Google Maps** (places, travel time) | 2 · Task & Productivity | **Build now** | Free a month: 5,000 text searches and 5,000 traffic-aware routes (35,000 each on India's price list, India billing accounts only); two-wheeler 1,000 (7,000) (D2–D3) |
 | **YouTube** (search, play, your playlists) | 2 · Creative | **Build now** | Data API free (10,000 units/day; search 100 calls/day since 1 Jun 2026) (D4) |
 | **Music** | 2 · Creative | **YouTube now; Spotify only with Premium** | Spotify dev mode (Feb–Mar 2026) needs the owner on Premium, ≤ 5 users; YouTube Music / JioSaavn / Gaana have no official API |
 | **Google Contacts** ("any other") | 2 · Communication | **Build now** | People API, free; needed to turn "message Ravi" into a number or address (D5) |
@@ -102,15 +102,44 @@ Testing-mode expiry**, no new consent). Guard rails:
 
 **D2 · One server-side Google API key + JARVIS's own allowance ledger.** `cloudrun.sh` creates
 `jarvis-maps-yt` with `gcloud services api-keys create`, restricted to Places API (New), Routes
-API, Geocoding API and YouTube Data API v3, stores it in Secret Manager (`jarvis-google-api-key`,
-readable only by `jarvis-run`) and enables the four APIs. The key never reaches the browser.
-JARVIS keeps a deployment-wide counter per SKU and stops at **90 % of the free allowance** —
-like Tavily, it never runs into paid use: text search 31,500/month, route 31,500/month, geocode
-63,000/month (Pacific-time months, as Google bills); YouTube search 90/day and other YouTube units
-9,000/day (Pacific-time days, as Google resets). Plus per-message caps (3 Maps calls, 2 YouTube
-searches) and 30 Maps calls/hour. The per-day API quotas in Cloud Console are optional extra
-brakes (non-fatal step in `cloudrun.sh`). Corrupt counters fail closed. India pricing applies only
-when the billing account is in India: the deploy summary says so plainly.
+API and YouTube Data API v3 (not Geocoding: Routes geocodes address waypoints itself and no
+Google doc says it needs the Geocoding API), stores it in Secret Manager (`jarvis-google-api-key`,
+readable only by `jarvis-run`) and enables the three APIs. After every create / update it reads
+the key's allowed APIs back; unless they are exactly those three, Maps and YouTube stay off for
+that deploy (unmounted on a quick re-run). The key never reaches the browser.
+JARVIS keeps a deployment-wide counter per SKU — the SKU Google actually bills each call as — and
+stops at **90 % of the free allowance** of the billing account's price list; like Tavily, it never
+runs into paid use. Free allowances a month (Pacific-time months, as Google bills; verified
+2026-11-03, sources below):
+
+| JARVIS SKU | Google SKU (trigger) | India price list | global price list |
+|---|---|---|---|
+| `maps_search` | Places API Text Search Pro (our Pro-only field mask) | 35,000 → stop 31,500 | 5,000 → stop 4,500 |
+| `maps_route` | Routes: Compute Routes Pro (car, `TRAFFIC_AWARE`) | 35,000 → 31,500 | 5,000 → 4,500 |
+| `maps_route_2w` | Routes: Compute Routes Enterprise ("two-wheeled vehicle routing") | 7,000 → 6,300 | 1,000 → 900 |
+| `maps_route_walk` | Routes: Compute Routes Essentials (walk: no Pro / Enterprise feature) | 70,000 → 63,000 | 10,000 → 9,000 |
+
+YouTube search 90/day (of its own 100) and other YouTube units 9,000/day (of 10,000), Pacific-time
+days, on either list. `JARVIS_MAPS_PRICING` = `india` | `global` (default **global**, the low
+caps, so a wrong guess only stops early); `cloudrun.sh` sets `india` only when `gcloud billing
+accounts describe <account> --format='value(currencyCode)'` is `INR`, else `global` with a plain
+note. Every "paused" message is built from the cap (`Sku.reached`). Plus per-message caps (3 Maps
+calls, 2 YouTube searches) and 30 Maps calls/hour (a call counts towards the hour only once the
+allowance let it through). Corrupt counters fail closed.
+*Google's own "quota gone"*: every Places / Routes 429 is `RESOURCE_EXHAUSTED`, most of them
+per-minute. Only an error whose ErrorInfo `metadata.quota_limit` / `quota_unit` (or QuotaFailure
+`quotaId`) names a per-day or per-month limit latches — a per-day limit closes only that day
+(`closed_day` on the month's counter), a per-month one the month — and always the period of the
+call's reservation (a call made at 23:59 Pacific answered at 00:01 closes the old day). Every
+other 429, and YouTube's 403 `rateLimitExceeded` / `userRateLimitExceeded`, is "busy, try again";
+YouTube's `quotaExceeded` / `dailyLimitExceeded` close its day. Calls with the owner's token
+(playlists) follow the same refund / latch rules. Shared counter code with web search:
+`jarvis.quota.counter`.
+*Second brakes* (non-fatal steps in `cloudrun.sh`): a budget of 1 in the billing account's
+currency (₹1 for an Indian account) whose alerts email the billing account's admins on any charge
+to the project. Per-day consumer quota overrides (`gcloud beta quotas preferences create`) are
+NOT scripted: Google's docs (checked 2026-11-03) give no quota IDs for Places Text Search or
+Routes ComputeRoutes per day — set them by hand (see *Check after deploy*).
 
 **D3 · Maps tools (R1).** `maps_search(query, near?)` — Places Text Search (New) with a **Pro field
 mask only** (id, displayName, formattedAddress, location, googleMapsUri, businessStatus); no
@@ -119,16 +148,25 @@ ratings/hours/phone (Enterprise SKU, 7,000 free). `maps_route(from, to, mode, de
 returns duration, distance, a Google Maps directions link. Terms: show "Google Maps" attribution and
 the `googleMapsUri` links on every card; cache nothing but `place_id`; never feed results to a
 training brain; never draw them on a non-Google map. Owner-set **Home** and **Work** (Integrations
-→ Maps; plain text ≤ 200 chars, stored in `maps_places/{uid}`) let "how long to work?" resolve
-without asking; they are the owner's own words (trusted), sent to Google only in a route call.
+→ Maps; plain text ≤ 200 chars, stored in `maps_places/{uid}` **encrypted with the token key**,
+the OAuth tokens' AES-256-GCM cipher, AAD `maps_places/{uid}`; no key → this process only) let
+"how long to work?" resolve without asking; they are the owner's own words (trusted), sent to
+Google only in a route call — and in a round that read other people's words (a page, a mail, a
+place name) a route that would send them asks the owner first (`Tool.ask_when`; the gateway now
+honours it for read-only calls too, and an approval token is always spent). Directions links are
+cut to Google's 2,048-character limit by their ENCODED length, longest encoded field first, at a
+comma.
 
 **D4 · YouTube and music.** `youtube_search(query, kind=video|music)` (API key; music adds
 `videoCategoryId=10`); results show title, channel, length and a **Play** button; the console
 plays in a `youtube-nocookie.com` embed inside the Media panel (CSP adds only
-`frame-src https://www.youtube-nocookie.com`; console `Referrer-Policy` becomes
-`strict-origin-when-cross-origin` — Google's player refuses to play with `no-referrer` (Error
-153); it sends only the origin, never the path). JARVIS never autoplays without the owner's click
-on Play. Optional **Grant** (`youtube.readonly`): `youtube_my_playlists`, `youtube_playlist`
+`frame-src https://www.youtube-nocookie.com`). The console page keeps `Referrer-Policy:
+no-referrer`: Google's player refuses to play without the embedding origin (Error 153), but an
+iframe's own `referrerpolicy` attribute governs the request for that frame, so only the player's
+iframe carries `referrerpolicy="strict-origin-when-cross-origin"` — YouTube gets the console's
+origin (never a path or query) and nothing else on the page sends a referrer (browser-tested).
+JARVIS never autoplays without the owner's click on Play. The search is paid first, so when the
+durations can't be had (videos.list failed, units used up) the results come without them. Optional **Grant** (`youtube.readonly`): `youtube_my_playlists`, `youtube_playlist`
 (liked videos included). Watch history is not available through any API (verified). Titles and
 descriptions are other people's words (untrusted). **Spotify**: only if the owner has Premium
 (owner question); then a separate small slice (dev-mode app, PKCE, `user-modify-playback-state`).
@@ -154,9 +192,21 @@ allow-listed); a renewal keeps every optional scope already held. `/v1/integrati
 **D8 · Permissions rows (R1, Allow / Ask first / Never):** Drive · Maps · YouTube · Contacts ·
 WhatsApp drafts. "Never" switches the tools off and the console hides their buttons.
 
-**D9 · Costs.** All ₹0 inside the caps. Vitals: "Maps: N of 31,500 searches / N of 31,500 routes
-this month", "YouTube searches today: N of 90". Claude reading the results adds roughly ₹0.5–2 per
-reply (as with web search).
+**D9 · Costs.** All ₹0 inside the caps. Vitals: "Maps: N of 4,500 searches / N of 4,500 routes
+this month" (31,500 on India's price list; "· two-wheeler paused" / "· walking paused" when those
+SKUs' own stops are reached), "YouTube searches today: N of 90". Claude reading the results adds
+roughly ₹0.5–2 per reply (as with web search).
+
+**Check after deploy (owner, once):**
+- Billing report (Billing → Reports, group by SKU) shows no Geocoding charges from routes.
+- The deploy summary's "Maps price list" says `india` only if the billing account bills in INR.
+- Billing → Budgets and alerts lists `jarvis-any-charge` (1 in the account's currency); if the
+  deploy said it could not add it, add one by hand (alerts to billing admins).
+- Optional extra brake: Google Maps Platform → Quotas → Places API (New) Text Search and Routes
+  API ComputeRoutes → set a per-day limit of about the monthly stop ÷ 30 (150 a day on the global
+  list, 1,050 on India's). Not scripted (no documented quota IDs).
+- APIs & Services → Credentials → `jarvis-maps-yt` allows exactly Places API (New), Routes API
+  and YouTube Data API v3.
 
 **D10 · Safety, same as slice 10/11.** Drive files, place names/addresses, YouTube titles and
 contact fields are other people's words: fenced with the per-call nonce, they taint the round
@@ -255,8 +305,10 @@ card. Results never vouch (`may_vouch` false). No new R3 in this slice.
   injection 10 (a shared doc telling JARVIS to email/delete) → 0 unconfirmed writes; negative
   controls: an allow-all guard → suite fails; Drive tools trusted → injection fails; ownership
   test saying yes → every sharer case fails.
-- **maps**: 15 cases (place found / none / ambiguous, route drive/two-wheeler/walk, Home/Work
-  resolution, cap reached → plain message, corrupt ledger → fail closed, attribution + link
+- **maps**: 18 cases (place found / none / ambiguous, route drive/two-wheeler/walk, Home/Work
+  resolution, cap reached → plain message, two-wheeler (Enterprise) stop while a car route still
+  goes, corrupt ledger → fail closed, a per-minute 429 never latches, a per-day quota closes only
+  today, a hostile place name can't send Home to Google without a card, attribution + link
   present on every card); negative control: ledger off → fails.
 - **youtube**: 10 cases (search, music filter, cap 90/day, playlist needs Grant, titles fenced);
   0 autoplays without a click (browser test).
@@ -270,7 +322,19 @@ Drive scopes/Picker: developers.google.com/workspace/drive/api/guides/api-specif
 developers.google.com/workspace/drive/picker/guides/overview, github.com/arc53/DocsGPT/pull/3169 ·
 Testing-mode 7-day consent: support.google.com/cloud/answer/15549945 · Maps India:
 developers.google.com/maps/billing-and-pricing/pricing-india, …/india, cloud.google.com/maps-platform/terms,
-developers.google.com/maps/documentation/places/web-service/policies · YouTube:
+developers.google.com/maps/documentation/places/web-service/policies · Maps free caps and SKU
+triggers (verified 2026-11-03): developers.google.com/maps/billing-and-pricing/pricing-india
+("Places API Text Search Pro (India)" 35,000; "Routes: Compute Routes Essentials / Pro /
+Enterprise (India)" 70,000 / 35,000 / 7,000), developers.google.com/maps/billing-and-pricing/pricing
+(global: Text Search Pro 5,000; Compute Routes Essentials / Pro / Enterprise 10,000 / 5,000 /
+1,000), developers.google.com/maps/billing-and-pricing/sku-details/routes (Pro: TRAFFIC_AWARE;
+Enterprise: "Two-wheeled vehicle routing"; Essentials: no Pro / Enterprise feature),
+developers.google.com/maps/billing-and-pricing/sku-details/places (our six fields are Text Search
+Pro), developers.google.com/maps/documentation/routes/usage-and-billing,
+developers.google.com/maps/documentation/routes/specify_location ("Routes API internally geocodes
+the string"; no Geocoding API requirement stated) · Billing account currency:
+docs.cloud.google.com/billing/docs/reference/rest/v1/billingAccounts (`currencyCode`) · Budgets:
+docs.cloud.google.com/sdk/gcloud/reference/billing/budgets/create · YouTube:
 developers.google.com/youtube/v3/determine_quota_cost, …/revision_history,
 developers.google.com/youtube/iframe_api_reference · Google Home: developers.home.google.com/apis,
 developers.home.google.com/mcp/home · People API / Photos Picker / Google Health:

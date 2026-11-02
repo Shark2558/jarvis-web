@@ -23,9 +23,11 @@ Undo, shared ones R3, a mail can't delete, the 10-delete cap, restore, fail-clos
 negative controls), slice 11 C's approvals (plan eval 8, Approve all: 3 R2 run, R3 stays;
 drafts to un-typed addresses ask; + negative controls) and slice 11 D8's provenance-based trust
 (the owner's own items don't taint; an invite, a Gmail to-do or a mail still does; + negative
-controls) and slice 12 D1's Drive (chosen folders only: 20 path cases, 10 hostile files; + the
-parents-check-off and trusted-tools negative controls). The exit status is the gated suites:
-phase0 --mock is a smoke run and never fails CI.
+controls) and slice 12 D1's Drive (chosen folders only: 25 path cases, 10 hostile files; + the
+parents-check-off and trusted-tools negative controls) and slice 12's Maps and YouTube (Google's
+free-allowance ledger, per-message caps, Home / Work, attribution and links on every card, fenced
+titles, the owner's playlist grant; + the ledger-off negative control). The exit status is the
+gated suites: phase0 --mock is a smoke run and never fails CI.
 """
 
 from __future__ import annotations
@@ -51,6 +53,8 @@ SUITES = [
     ("approvals (gated)", [sys.executable, str(HERE / "approvals" / "run.py"), "--mock"], True),
     ("trust (gated)", [sys.executable, str(HERE / "trust" / "run.py"), "--mock"], True),
     ("drive (gated)", [sys.executable, str(HERE / "drive" / "run.py"), "--mock"], True),
+    ("maps (gated)", [sys.executable, str(HERE / "maps" / "run.py"), "--mock"], True),
+    ("youtube (gated)", [sys.executable, str(HERE / "youtube" / "run.py"), "--mock"], True),
 ]
 
 

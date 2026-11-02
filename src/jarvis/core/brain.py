@@ -39,6 +39,7 @@ import time
 import weakref
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
@@ -74,6 +75,7 @@ from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
 from jarvis.tools.budget import turn_budget
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
+from jarvis.tools.reply_cards import collecting_cards
 from jarvis.tools.taint import context_trust, untrusted_seen
 from jarvis.web.ledger import cited_sources, web_conversation
 
@@ -106,6 +108,7 @@ class _ReplyMeta:
     pending: list[PendingApproval]
     memory_used: list[MemoryRef]
     undo: list[UndoRef] = field(default_factory=list)  # slice 11: the reply's Undo chips
+    cards: list[Any] = field(default_factory=list)  # slice 12: place / route / video cards
 
 
 @dataclass
@@ -389,7 +392,7 @@ class Brain:
         total_ms = int((time.perf_counter() - t0) * 1000)
         self._log_turn(session, len(messages), spec, completion, total_ms)
         reply_meta = _ReplyMeta(
-            trace_id, total_ms, rounds.count, pending, list(rec.used), rounds.undo
+            trace_id, total_ms, rounds.count, pending, list(rec.used), rounds.undo, rounds.cards
         )
         reply += rounds.reply_note(stored)  # the record is incomplete: say so, plainly
         return await self._chat_response(session, spec, reply, completion, reply_meta)
@@ -447,6 +450,7 @@ class Brain:
             memory_used=meta.memory_used,
             sources=session.turns[-1].sources,  # the reply just stored: what it cited
             undo=meta.undo,
+            cards=meta.cards,
         )
 
     # ---- tool loop ----------------------------------------------------------------------
@@ -491,7 +495,7 @@ class Brain:
             return await self._complete(messages, prompt, req, spec, with_tools=False), pending
         assert self.gateway is not None
         msgs = list(messages)
-        with turn_budget():
+        with turn_budget(), collecting_cards(rounds.cards):  # slice 12: Maps / YouTube cards
             while True:
                 completion = await self._complete(msgs, prompt, req, spec, with_tools=True)
                 if not completion.tool_calls:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -200,6 +200,19 @@ class Settings(BaseSettings):
         default=True,
         description="Off: no web tools even with a key (deploy/cloudrun.sh records a skipped key "
         "as false, so re-runs don't ask again)",
+    )
+    # --- Maps + YouTube (slice 12 D2): JARVIS's own server-side Google API key, restricted to
+    # Places (New), Routes and YouTube Data v3. No key: those tools are not registered.
+    google_api_key: SecretStr | None = Field(
+        default=None,
+        description="Google API key jarvis-maps-yt (Secret Manager `jarvis-google-api-key`); "
+        "never sent to the browser",
+    )
+    maps_pricing: Literal["india", "global"] = Field(
+        default="global",
+        description="Google's price list for the billing account: 'india' only when it bills in "
+        "INR (deploy/cloudrun.sh checks); 'global' (the default) has the lower free caps, so a "
+        "wrong guess only stops Maps early",
     )
 
     # --- Google Drive, chosen folders only (slice 12 D1): read as JARVIS's own service account

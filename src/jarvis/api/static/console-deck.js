@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vitals', 'voice', 'construct'];
+  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vitals', 'voice', 'media', 'construct'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;
@@ -74,6 +74,7 @@
       memory: { x: Math.max(sL, sR - chatW - 14 - 400), y: b.top, w: 400, h: Math.min(availH, 760), open: false },
       integrations: { x: col2, y: b.top + 72, w: 340, h: null, open: false },
       voice: { x: Math.max(sL, sR - chatW - 14 - 380), y: b.top + 24, w: 380, h: Math.min(availH, 720), open: false },
+      media: { x: Math.max(sL, sR - chatW - 14 - 420), y: b.top + 12, w: 420, h: Math.min(availH, 620), open: false },
       construct: { x: Math.max(sL, sR - chatW - 14 - 330), y: b.top, w: 330, h: Math.min(380, availH), open: false },
     };
   }

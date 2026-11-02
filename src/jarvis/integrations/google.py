@@ -17,6 +17,8 @@ import httpx
 from pydantic import SecretStr
 
 from jarvis.config import AuthMode, Settings
+from jarvis.integrations import google_errors
+from jarvis.integrations.google_errors import UsedUp
 from jarvis.integrations.vault import GoogleTokens, TokenStore, VaultError
 from jarvis.logging import get_logger
 
@@ -72,6 +74,23 @@ def can_use_tasks(scopes: Iterable[str]) -> bool:
     return TASKS_SCOPE in set(scopes)
 
 
+# Slice 12 D4: the owner's own YouTube playlists (read-only), asked for by Integrations → Grant
+# (`?add=youtube`, builder C). Any of these lets playlists.list(mine) / playlistItems.list read.
+YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+YOUTUBE_READ_SCOPES = frozenset(
+    {
+        YOUTUBE_SCOPE,
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+    }
+)
+
+
+def can_use_youtube(scopes: Iterable[str]) -> bool:
+    """True when the granted scopes let JARVIS read the owner's own YouTube playlists."""
+    return not YOUTUBE_READ_SCOPES.isdisjoint(scopes)
+
+
 HTTP_TIMEOUT_S = 15.0
 REFRESH_SKEW_S = 60.0  # refresh when the access token has less than this left
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -119,6 +138,24 @@ class GoogleConflict(GoogleAPIError):
 class GoogleInvalid(GoogleAPIError):
     """400: Google refused the request as invalid (slice 11: a restore retries without the
     `previous` sibling it named)."""
+
+
+class GoogleQuotaExceeded(GoogleAPIError):
+    """Slice 12: Google says a per-day or per-month quota of the project is gone (`period`), from
+    its machine-readable fields only (`google_errors.used_up`). YouTube's units are the project's,
+    whichever credential spent them, so the allowance ledger closes them too."""
+
+    def __init__(self, message: str, *, period: UsedUp) -> None:
+        super().__init__(message)
+        self.period: UsedUp = period
+
+
+def never_sent(exc: BaseException) -> bool:
+    """Slice 12: a `request` that failed before its request left JARVIS (the connection was
+    refused), so Google did nothing with it — the allowance ledger gives its unit back."""
+    return isinstance(exc, GoogleUncertain) and isinstance(
+        exc.__cause__, httpx.ConnectError | httpx.ConnectTimeout
+    )
 
 
 GONE_STATUSES = frozenset({404, 410})
@@ -325,6 +362,12 @@ class GoogleConnector:
             )
             if r.status_code == 403 and not SERVICE_DISABLED_REASONS.isdisjoint(_reasons(r)):
                 raise GoogleServiceDisabled(SERVICE_OFF_MSG)
+            if r.status_code in (403, 429):  # slice 12: a used-up quota or a short-term limit
+                err = google_errors.envelope(r.content)
+                if (period := google_errors.used_up(err)) is not None:
+                    raise GoogleQuotaExceeded(google_errors.USED_UP_MSG[period], period=period)
+                if google_errors.rate_limited(err):
+                    raise GoogleAPIError(_friendly(429))
             raise _error_for(r.status_code)
         if not r.content:
             return {}
@@ -465,20 +508,24 @@ __all__ = [
     "TASKS_SCOPE",
     "TOKEN_URL",
     "TOOL_SCOPES",
+    "YOUTUBE_SCOPE",
     "GoogleAPIError",
     "GoogleConflict",
     "GoogleConnector",
     "GoogleInvalid",
     "GoogleNotConnected",
     "GoogleNotFound",
+    "GoogleQuotaExceeded",
     "GoogleScopesMissing",
     "GoogleServiceDisabled",
     "GoogleUncertain",
     "build_google_connector",
     "can_insert",
     "can_use_tasks",
+    "can_use_youtube",
     "connect_scopes",
     "google_tools_configured",
     "google_tools_startup_note",
+    "never_sent",
     "register_tools_oauth",
 ]

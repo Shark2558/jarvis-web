@@ -18,6 +18,7 @@ from jarvis.core.guardrails import PendingAction
 from jarvis.documents.models import AttachmentRef
 from jarvis.llm.base import ContentBlock, Role, Usage
 from jarvis.recall.models import MemoryRef
+from jarvis.tools.reply_cards import ReplyCard
 from jarvis.undo.models import UndoRef as UndoRef  # re-exported: replies carry it (slice 11)
 from jarvis.web.sources import Source as Source  # re-exported: replies and turns carry it
 
@@ -174,6 +175,11 @@ class ChatResponse(BaseModel):
         default_factory=list,
         description="Deletes this reply made that can be undone (the console's Undo chip; "
         "POST /v1/deleted/{undo_id}/restore)",
+    )
+    cards: list[ReplyCard] = Field(
+        default_factory=list,
+        description="Slice 12: place, route and video cards from this reply's Maps / YouTube "
+        "results (Google links and attribution; shown once, never stored)",
     )
 
 

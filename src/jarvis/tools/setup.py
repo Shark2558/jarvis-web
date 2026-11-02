@@ -1,8 +1,8 @@
 """Default gateway wiring: builtin dev tools, plus the Google tools when an account link is
 configured (then the fake calendar/message builtins step aside so the model sees no twins), plus
-the memory tools when long-term memory is on, plus web_search / web_read with a Tavily key. The
-to-do tools (Google Tasks) come with the Google tools: their scope is optional per owner, so they
-check it on every call (slice 10 C1)."""
+the memory tools when long-term memory is on, plus web_search / web_read with a Tavily key, plus
+the document tools (slice 10 E). The to-do tools (Google Tasks) come with the Google tools: their
+scope is optional per owner, so they check it on every call (slice 10 C1)."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from jarvis.tools.policy import Policy
 from jarvis.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
+    from jarvis.documents.service import DocumentService
     from jarvis.recall.service import MemoryService
     from jarvis.web.service import WebService
 
@@ -33,6 +34,7 @@ def build_gateway(
     google: GoogleConnector | None = None,
     memory: MemoryService | None = None,
     web: WebService | None = None,
+    documents: DocumentService | None = None,
 ) -> Gateway:
     reg = ToolRegistry()
     for t in builtin_tools(InMemoryWorld()):
@@ -57,6 +59,11 @@ def build_gateway(
         from jarvis.web.tools import web_tools
 
         for t in web_tools(web):
+            reg.register(t)
+    if documents is not None:
+        from jarvis.documents.tools import document_tools
+
+        for t in document_tools(documents):
             reg.register(t)
     return Gateway(
         registry=reg,

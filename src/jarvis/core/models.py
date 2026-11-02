@@ -15,6 +15,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, PrivateAttr
 
 from jarvis.core.guardrails import PendingAction
+from jarvis.documents.models import AttachmentRef
 from jarvis.llm.base import ContentBlock, Role, Usage
 from jarvis.recall.models import MemoryRef
 from jarvis.web.sources import Source as Source  # re-exported: replies and turns carry it
@@ -49,6 +50,9 @@ class Turn(BaseModel):
     channel: Literal["text", "voice"] = "text"
     # web sources this reply cited as [n] (slice 10 B), from the conversation's stored results
     sources: list[Source] = Field(default_factory=list)
+    # files sent with an owner message (slice 10 E): names and counts only. Their start travels
+    # as a second, fenced text block; a turn with blocks never reaches a training brain.
+    attachments: list[AttachmentRef] = Field(default_factory=list)
 
 
 class Session(BaseModel):
@@ -97,6 +101,11 @@ class ChatRequest(BaseModel):
         default="text",
         description="voice: the owner spoke this message and the reply will be read aloud "
         "(short, plain spoken answer; slice 9 D7)",
+    )
+    attachments: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Ids from POST /v1/attachments sent with this message (at most 3; slice 10)",
     )
 
 

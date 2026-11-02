@@ -420,6 +420,35 @@ Integrations → Grant. 4. Approvals → Permissions → Set up a passkey. 5. Op
 - Web search through Tavily instead of the architecture's generic "browser automation / search MCP":
   first-party adapter behind the same tool contract (as slice 6 did for Google).
 - Documents are text-extracted, not passed as native PDF blocks (model-agnostic; bounded cost).
+- **E builder notes (`s10-docs`)**. Verified from the installed wheels' metadata (PyPI JSON was not
+  reachable from the builder; ecosyste.ms confirms python-docx 1.2.0 is the latest, 2025-06-16):
+  pypdf 6.21.4 `BSD-3-Clause`, python-docx 1.2.0 `MIT` (deps lxml BSD-3, typing_extensions PSF);
+  python-docx parses with `resolve_entities=False`; pypdf 6.x caps decompression (75 MB per stream)
+  and fixed many loop/DoS bugs through 6.14 (changelog) → `pypdf>=6.21,<7`, `python-docx>=1.2,<2`
+  in pyproject only (integration runs `make lock`). Deviations: (1) the upload is the raw file body
+  with the name in `X-Jarvis-Filename`, not multipart — python-multipart is not installed (shared
+  venvs, lock) and a raw body needs no parser, streams through the existing `read_capped`, and the
+  body cap is exact; (2) chunks are cut by their JSON-escaped size (~4,000 chars of Latin text,
+  ~700 of Malayalam) so a `doc_read` part fits the gateway's 12,000-char cut in any script;
+  (3) text files try cp1252 before latin-1 (Windows "ANSI" smart quotes); (4) an upload waits
+  unbound ("waiting") until sent, ≤ 10 per owner, swept after 24 h at the next upload or
+  conversation delete; it is bound to the conversation and turn atomically on send; (5) a PDF
+  with only an owner password opens (as in any viewer); a user password is refused.
 
 ## Reviews
 (filled in after the fresh-context reviews)
+- **E security review (0 critical, 2 high, 2 medium, 4 low) — fixed on `s10-docs`.** H1/H2: text
+  extraction now runs in a child process per upload (`documents/isolation.py` + `worker.py`:
+  `python -I`, no inherited environment, the child sets RLIMIT_CPU 30 s and RLIMIT_AS 300 MB on
+  itself before reading input — not `preexec_fn`, unsafe in a threaded server — killed at 45 s
+  wall clock or on cancellation, one at a time, others queue ≤ 50 s); `normalise` is linear (no
+  `[ \t]+\n`); tables are read from their XML with the deadline checked per row; DOCX XML is
+  capped at 10 MB unpacked; MemoryError → "too complex". All review probe files now end in ≤ 10 s
+  with the parent's RSS flat (≤ 42 MB); the worst child peaked at 285 MB RSS — with a 512 MiB
+  instance, parent + child must fit: watch it, or lower `MEMORY_LIMIT_BYTES` / raise memory.
+  M3: the scheduler tick sweeps unsent uploads (hourly, never raises). M4: ranking runs in a
+  thread; a search without an id covers the 3 most recent files. LOW: the slot is released and
+  the child killed on every exit; a file binding is undone when the turn can't be stored; the
+  upload body has a 60 s overall deadline (408). Not changed: the file name stays outside the
+  fence, sanitised to one plain line with no brackets, quotes or angle brackets (the header
+  must stay readable; the content is fenced and the round is tainted either way).

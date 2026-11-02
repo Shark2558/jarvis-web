@@ -9,13 +9,15 @@
                     2,000,000 bytes, memory import: 512 KB); their tighter caps and their own
                     error messages still apply first.
 
-MAX_BODY_BYTES sits just above the largest per-route cap, so no route can be starved by it.
+MAX_BODY_BYTES sits just above the largest per-route cap, so no route can be starved by it. The
+one exception is declared by path (`routes`): the attachment upload (slice 10 E) gets its own,
+larger middleware cap just above its 10 MB route cap; every other path keeps MAX_BODY_BYTES.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable, MutableMapping
+from collections.abc import Awaitable, Callable, Mapping, MutableMapping
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -69,17 +71,25 @@ def _declared_length(scope: Scope) -> int | None:
 class BodySizeLimit:
     """Pure ASGI middleware (it must wrap `receive`, which BaseHTTPMiddleware can't)."""
 
-    def __init__(self, app: ASGIApp, max_bytes: int = MAX_BODY_BYTES) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        max_bytes: int = MAX_BODY_BYTES,
+        *,
+        routes: Mapping[str, int] | None = None,
+    ) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.routes = dict(routes or {})  # exact path → that path's cap
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
+        limit = self.routes.get(str(scope.get("path", "")), self.max_bytes)
         declared = _declared_length(scope)
-        if declared is not None and declared > self.max_bytes:
-            await self._refuse(send)
+        if declared is not None and declared > limit:
+            await self._refuse(send, limit)
             return
         received = 0
 
@@ -88,14 +98,14 @@ class BodySizeLimit:
             message = await receive()
             if message.get("type") == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_bytes:
-                    raise BodyTooLarge(self.max_bytes)
+                if received > limit:
+                    raise BodyTooLarge(limit)
             return message
 
         await self.app(scope, capped, send)
 
-    async def _refuse(self, send: Send) -> None:
-        body = json.dumps(too_large_body(_MESSAGE.format(limit=self.max_bytes))).encode()
+    async def _refuse(self, send: Send, limit: int) -> None:
+        body = json.dumps(too_large_body(_MESSAGE.format(limit=limit))).encode()
         await send(
             {
                 "type": "http.response.start",

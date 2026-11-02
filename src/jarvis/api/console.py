@@ -43,6 +43,8 @@ APP_ASSETS: dict[str, str] = {
     "console-wakeword.js": _JS,  # on-device "Hey Jarvis" (openWakeWord port, slice 9 D12)
     "console-web.js": _JS,  # slice 10 B: the Sources row under replies, Vitals web-search line
     "console-permissions.js": _JS,  # slice 10 D: Allow / Ask first / Never, passkeys (WebAuthn)
+    "console-attach.js": _JS,  # slice 10 E: paperclip, drag-and-drop, file chips
+    "console-attach.css": "text/css",
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",

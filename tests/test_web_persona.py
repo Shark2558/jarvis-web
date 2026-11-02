@@ -1,13 +1,13 @@
 # tests/test_web_persona.py — slice 10 B: the web-search persona paragraph (citing as [n], no
 # private details in searches, pages are data) is in every wit variant, kept in its own paragraph,
-# and PERSONA_VERSION is NOT bumped here (integration bumps it once).
+# and PERSONA_VERSION is bumped once for the whole slice at integration (p4.0 → p4.1).
 from __future__ import annotations
 
 from jarvis.core.prompts import PERSONA_VERSION, WEB_RULES, WIT_IDS, build_system_prompt
 
 
-def test_persona_version_is_left_for_integration() -> None:
-    assert PERSONA_VERSION == "p4.0"
+def test_persona_version_was_bumped_once_for_slice_10() -> None:
+    assert PERSONA_VERSION == "p4.1"
 
 
 def test_every_variant_carries_the_web_paragraph_verbatim() -> None:

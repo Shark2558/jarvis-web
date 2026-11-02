@@ -16,6 +16,8 @@
 // jarvis:turn {channel} / jarvis:turn-end {channel, ok} around a turn, jarvis:answer {channel, text,
 // approvals} after a reply, jarvis:switch when the owner starts or opens another conversation.
 // Slice 10 B: a reply's (or restored turn's) `sources` → the Sources row (console-web.js, JarvisSources).
+// Slice 10 (console-attach.js): files waiting in window.JarvisAttach go with the next message as
+// `attachments: [id]`; jarvis:attach re-checks the Send button (disabled while one is uploading).
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -360,7 +362,7 @@
     let shown = 0; let last = null;
     sess.turns.forEach(t => {
       if (!t.content || !t.content.trim()) return; // tool exchanges have no text of their own
-      if (t.role === 'user') addMsg('user', t.content);
+      if (t.role === 'user') { const row = addMsg('user', t.content); if (Attach()) Attach().show(row, t.attachments); }
       else { const row = addMsg('jarvis', t.content, [t.model]); if (window.JarvisSources) window.JarvisSources.render(row, t.sources); last = t; }
       shown++;
     });
@@ -601,7 +603,9 @@
     const a = document.activeElement, chat = $('p-chat');
     if (!a || a === document.body || (chat && chat.contains(a))) input.focus();
   }
-  function syncSend() { $('send').disabled = state.busy || !$('input').value.trim(); }
+  const Attach = () => window.JarvisAttach || null; // console-attach.js (loads after this file)
+  function syncSend() { $('send').disabled = state.busy || !$('input').value.trim() || !!(Attach() && Attach().busy()); }
+  document.addEventListener('jarvis:attach', () => syncSend());
   function handleResponse(r, rttMs, channel) {
     const fresh = r.session_id !== state.sessionId;
     setSession(r.session_id);
@@ -627,18 +631,25 @@
   async function send(text, opts = {}) {
     if (state.busy) return false;
     const channel = opts.channel === 'voice' ? 'voice' : 'text';
-    addMsg('user', text, channel === 'voice' ? ['Spoken'] : null); busy(true); note('send', channel === 'voice' ? 'Spoken message sent' : 'Message sent');
+    const files = Attach() && !Attach().busy() ? Attach().ready() : [];
+    const sent = addMsg('user', text, channel === 'voice' ? ['Spoken'] : null); busy(true); note('send', channel === 'voice' ? 'Spoken message sent' : 'Message sent');
+    if (files.length) Attach().show(sent, files);
     emit('jarvis:turn', { channel });
     let ok = false;
     try {
       const t0 = performance.now(); // reply latency as the owner feels it: the whole round trip
       const body = { message: text, session_id: state.sessionId, brain: state.brain };
       if (channel === 'voice') body.channel = 'voice';
+      if (files.length) body.attachments = files.map(f => f.id);
       const r = await api('/v1/chat', { body });
+      if (files.length) Attach().clear();
       handleResponse(r, performance.now() - t0, channel);
       ok = true;
     } catch (e) {
       showTyping(false);
+      // refused before anything was stored (a file kept from this brain, the spending limit): the
+      // files stay attached for another try; any other failure may have stored the message with them
+      if (files.length && e.code !== 'input_rejected' && e.status !== 402) Attach().clear();
       if (e.status === 402) limitReached(e);
       else if (isConflict(e)) await conflictReload(e);
       else { addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); note('error', 'Reply failed'); }

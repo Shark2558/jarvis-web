@@ -22,6 +22,7 @@ from jarvis.api.body import MAX_BODY_BYTES, BodySizeLimit, BodyTooLarge, too_lar
 from jarvis.api.brief import internal_router as brief_internal_router
 from jarvis.api.brief import router as brief_router
 from jarvis.api.console import router as console_router
+from jarvis.api.documents import ATTACH_BODY_BYTES, ATTACH_PATH, install_documents
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
 from jarvis.api.memory import router as memory_router
@@ -46,6 +47,8 @@ from jarvis.brief.store import BriefStore
 from jarvis.config import AuthMode, SessionBackend, Settings, get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ApprovalStore, InputRejected
+from jarvis.documents.service import DocumentService
+from jarvis.documents.store import AttachmentStore
 from jarvis.integrations.google import (
     build_google_connector,
     google_tools_configured,
@@ -217,6 +220,9 @@ def create_app(
         # No network at start-up: credentials are looked up on first use.
         app.state.voice = build_voice_service(s, docs, app.state.billing, engines=voice_engines)
         app.state.web = build_web_service(s, docs)  # slice 10 B: None without a Tavily key
+        # Attached files (slice 10 E): text and chunks on the same documents, deleted with the
+        # conversation; the doc tools join the gateway's registry.
+        app.state.documents = DocumentService(AttachmentStore(docs, prefix=s.firestore_prefix))
         gw: Gateway | None = gateway
         if gw is None and s.tools_enabled:
             gw = build_gateway(
@@ -226,6 +232,7 @@ def create_app(
                 google=app.state.google,
                 memory=app.state.memory,
                 web=app.state.web,
+                documents=app.state.documents,
             )
         # slice 10 D: the owner's Allow / Ask first / Never rules and passkeys, on the same
         # documents; the gateway reads the rules on every call (one built elsewhere gets them too)
@@ -245,6 +252,7 @@ def create_app(
             billing=app.state.billing,
             memory=app.state.memory,
             wit=app.state.voice,
+            documents=app.state.documents,
         )
         app.state.brief = build_brief_service(app, s, built, docs=docs)
         await adopt_legacy_sessions(app.state.store, s)
@@ -283,7 +291,10 @@ def create_app(
 
     # Every body is size-capped before it is parsed or authenticated (innermost of the http
     # middlewares, so the trace id still goes on a 413). Tighter per-route caps apply first.
-    app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
+    # Only the attachment upload has a larger cap (its own 10 MB, checked again by the route).
+    app.add_middleware(
+        BodySizeLimit, max_bytes=MAX_BODY_BYTES, routes={ATTACH_PATH: ATTACH_BODY_BYTES}
+    )
 
     if s.rate_limit_per_minute > 0:
         app.middleware("http")(make_middleware(RateLimiter(s.rate_limit_per_minute)))
@@ -421,6 +432,7 @@ def create_app(
     app.include_router(web_router)
     install_voice(app)
     install_permissions(app)
+    install_documents(app)
     _mount_scheduler(app, s, scheduler_verifier)
     app.include_router(console_router)
     return app

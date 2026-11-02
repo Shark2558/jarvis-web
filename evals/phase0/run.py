@@ -9,9 +9,11 @@ Usage:
 Gate (all must hold to exit Phase 0):
     pass rate            >= 90%   (deterministic string checks, see cases.jsonl)
     p95 end-to-end turn  <= 4000 ms on the balanced tier
-    mean cost per turn   <= $0.01
+    mean cost per turn   <= US$0.01, shown in rupees at the run's rate (≈ ₹0.95 at 95.24)
 
-Writes evals/phase0/report.json for diffing between prompt / model changes.
+Rupees: USD cost (jarvis.llm.pricing) × the day's rate from jarvis.billing.fx (one 5 s try),
+else JARVIS_USD_INR_RATE. Mock runs never fetch. Writes evals/phase0/report.json (also read by
+evals/run_real.py for the owner's plain-English summary).
 """
 
 from __future__ import annotations
@@ -25,6 +27,9 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import httpx
+
+from jarvis.billing.fx import FETCH_TIMEOUT_S, FxRates, Rate
 from jarvis.config import LLMBackend, Settings, get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.models import ChatRequest
@@ -49,6 +54,15 @@ class CaseResult:
     turns: int
     total_ms: int
     cost_usd: float
+    cost_inr: float = 0.0
+
+
+async def usd_inr(s: Settings, mock: bool) -> Rate:
+    """The rate for rupee figures: today's (one try, 5 s), else the configured default."""
+    if mock or not s.usd_inr_live:
+        return Rate(s.usd_inr_rate, None, "default")
+    async with httpx.AsyncClient(timeout=FETCH_TIMEOUT_S, follow_redirects=False) as http:
+        return await FxRates(docs=None, http=http, default_rate=s.usd_inr_rate).refresh()
 
 
 def _check(reply: str, checks: dict) -> list[str]:
@@ -111,39 +125,53 @@ async def main() -> int:
         keep = set(args.only.split(","))
         cases = [c for c in cases if c["id"] in keep]
 
+    fx = await usd_inr(s, args.mock)
     results = [await run_case(brain, c, args.tier) for c in cases]
+    for r in results:
+        r.cost_inr = round(r.cost_usd * fx.inr_per_usd, 6)
 
     passed = sum(r.passed for r in results)
     rate = passed / len(results) if results else 0.0
     per_turn_ms = [r.total_ms / r.turns for r in results]
     p95 = statistics.quantiles(per_turn_ms, n=20)[18] if len(per_turn_ms) >= 2 else max(per_turn_ms)
     mean_cost = statistics.mean(r.cost_usd / r.turns for r in results) if results else 0.0
+    mean_inr = mean_cost * fx.inr_per_usd
+    gate_inr = COST_GATE_USD * fx.inr_per_usd
 
-    print(f"\n{'id':8} {'category':22} {'result':6} {'ms/turn':>8} {'$/turn':>9}  notes")
+    print(f"\n{'id':8} {'category':22} {'result':6} {'ms/turn':>8} {'₹/turn':>9}  notes")
     for r in results:
         note = "; ".join(r.failures) if r.failures else ""
         print(
             f"{r.id:8} {r.category:22} {'PASS' if r.passed else 'FAIL':6} "
-            f"{r.total_ms / r.turns:8.0f} {r.cost_usd / r.turns:9.5f}  {note}"
+            f"{r.total_ms / r.turns:8.0f} {r.cost_inr / r.turns:9.4f}  {note}"
         )
     print(
         f"\npass {passed}/{len(results)} = {rate:.0%} (gate {PASS_RATE_GATE:.0%}) | "
         f"p95 {p95:.0f} ms (gate {P95_MS_GATE}) | "
-        f"mean ${mean_cost:.5f}/turn (gate ${COST_GATE_USD})"
+        f"mean ₹{mean_inr:.4f}/turn (gate ₹{gate_inr:.2f}) at ₹{fx.inr_per_usd:.2f} per US dollar"
     )
 
+    gate_ok = rate >= PASS_RATE_GATE and p95 <= P95_MS_GATE and mean_cost <= COST_GATE_USD
     report = {
         "provider": brain.router.provider.name,
         "tier": args.tier or s.default_tier,
         "model": brain.router.resolve(brain._tier(ChatRequest(message="x", tier=args.tier))),
+        "cases": len(results),
+        "passed": passed,
         "pass_rate": rate,
+        "pass_rate_gate": PASS_RATE_GATE,
         "p95_ms_per_turn": p95,
-        "mean_cost_per_turn": mean_cost,
+        "p95_gate_ms": P95_MS_GATE,
+        "mean_cost_per_turn": mean_cost,  # US dollars (the provider's unit)
+        "mean_cost_inr_per_turn": round(mean_inr, 6),
+        "cost_gate_inr": round(gate_inr, 4),
+        "usd_inr_rate": fx.inr_per_usd,
+        "usd_inr_source": fx.source,
+        "gate": gate_ok,
         "results": [asdict(r) for r in results],
     }
-    (HERE / "report.json").write_text(json.dumps(report, indent=2))
+    (HERE / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
 
-    gate_ok = rate >= PASS_RATE_GATE and p95 <= P95_MS_GATE and mean_cost <= COST_GATE_USD
     print("GATE:", "PASS" if gate_ok else "FAIL")
     return 0 if gate_ok or args.mock else 1
 

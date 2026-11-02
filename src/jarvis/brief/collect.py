@@ -6,6 +6,9 @@ No model is in the loop, so the tool gateway (which polices model-initiated call
 the service writes the audit entry. Everything other people wrote (titles, locations, names,
 subjects) is flattened to one capped line by `one_line`; mail snippets are returned separately
 and only ever reach the AI summary. One section failing never fails the others.
+
+To-do (slice 10 C): open Google Tasks due on or before today across the owner's lists (≤ 10
+lists), only when the optional Tasks scope is granted — otherwise "not_granted" and no call.
 """
 
 from __future__ import annotations
@@ -30,6 +33,9 @@ from jarvis.brief.models import (
     JarvisSection,
     SectionsStatus,
     SectionState,
+    TodoItem,
+    TodoSection,
+    TodoState,
 )
 from jarvis.core.guardrails import ApprovalStore
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector, GoogleNotConnected
@@ -39,6 +45,7 @@ from jarvis.tools.card import one_line
 from jarvis.tools.gmail import MESSAGES_URL
 from jarvis.tools.gmail_mime import headers_of
 from jarvis.tools.google_calendar import EVENTS_URL, TZ_URL, compute_free_slots
+from jarvis.tools.tasks_api import TaskList, TasksClient, TasksNotGranted, date_of
 
 log = get_logger(__name__)
 T = TypeVar("T")
@@ -51,6 +58,9 @@ LOCATION_LIMIT = 80
 NAME_LIMIT = 80
 SUBJECT_LIMIT = 120
 SNIPPET_LIMIT = 200
+MAX_TODO = 10
+TODO_TIMEOUT_S = 20.0  # all to-do reads together (each call already has its own 15 s)
+TODO_LIST_LIMIT = 60
 FREE_MIN = timedelta(minutes=30)
 WORK_FROM, WORK_TO = time(9, 0), time(18, 0)
 META_HEADERS = ("From", "Subject", "Date")
@@ -235,6 +245,34 @@ def shape_message(m: dict[str, Any], tz: ZoneInfo, day: date) -> tuple[InboxItem
     return item, one_line(html.unescape(str(m.get("snippet") or "")), SNIPPET_LIMIT)
 
 
+# ---- to-do (pure) ----------------------------------------------------------------------------
+
+
+def shape_todo(
+    found: list[tuple[TaskList, dict[str, Any]]], n_lists: int, day: date, *, complete: bool = True
+) -> TodoSection:
+    """Open tasks due on or before `day` → oldest first (overdue leads), ≤ MAX_TODO shown. The
+    list's name only when the owner has more than one list. `complete` False (the read budget
+    ran out) makes the counts "at least"."""
+    dated = [(d, tl, t) for tl, t in found if (d := date_of(t.get("due"))) is not None and d <= day]
+    dated.sort(key=lambda row: row[0])  # stable: same date keeps list and position order
+    items = tuple(
+        TodoItem(
+            title=one_line(t.get("title"), TITLE_LIMIT) or "(no title)",
+            due=d.isoformat(),
+            overdue=d < day,
+            list=one_line(tl.title, TODO_LIST_LIMIT) if n_lists > 1 else "",
+        )
+        for d, tl, t in dated[:MAX_TODO]
+    )
+    return TodoSection(
+        total=len(dated),
+        overdue=sum(1 for d, _, _ in dated if d < day),
+        items=items,
+        complete=complete,
+    )
+
+
 # ---- the collector ---------------------------------------------------------------------------
 
 
@@ -263,10 +301,16 @@ class Collector:
         return zone or fb
 
     async def collect(self, uid: str, tz: ZoneInfo, day: date) -> Collected:
-        (cal_state, cal), (in_state, inbox), (j_state, waiting) = await asyncio.gather(
+        (
+            (cal_state, cal),
+            (in_state, inbox),
+            (j_state, waiting),
+            (t_state, todo),
+        ) = await asyncio.gather(
             self._section(lambda: self._calendar(uid, tz, day)),
             self._section(lambda: self._inbox(uid, tz, day)),
             self._jarvis(uid),
+            self._todo(uid, day),
         )
         items, snippets = inbox if inbox is not None else (InboxSection(), ())
         data = BriefData(
@@ -275,9 +319,30 @@ class Collector:
             calendar=cal or CalendarSection(),
             inbox=items,
             jarvis=JarvisSection(approvals_waiting=waiting),
-            sections_status=SectionsStatus(calendar=cal_state, inbox=in_state, jarvis=j_state),
+            todo=todo,
+            sections_status=SectionsStatus(
+                calendar=cal_state, inbox=in_state, jarvis=j_state, todo=t_state
+            ),
         )
         return Collected(data=data, snippets=snippets)
+
+    async def _todo(self, uid: str, day: date) -> tuple[TodoState, TodoSection | None]:
+        """Never raises: its own state, like the other sections (and no call without the
+        optional scope)."""
+        if self._google is None:
+            return "not_connected", None
+        client = TasksClient(self._google)
+        try:
+            await client.require(uid)
+            scan = await asyncio.wait_for(client.due_by(uid, day), TODO_TIMEOUT_S)
+        except GoogleNotConnected:
+            return "not_connected", None
+        except TasksNotGranted:
+            return "not_granted", None
+        except Exception as exc:  # noqa: BLE001 — one section failing never fails the brief
+            log.warning("brief to-do section unavailable", extra={"reason": type(exc).__name__})
+            return "unavailable", None
+        return "ok", shape_todo(scan.found, scan.lists, day, complete=scan.complete)
 
     async def _section(self, fn: Callable[[], Awaitable[T]]) -> tuple[SectionState, T | None]:
         if self._google is None:
@@ -338,4 +403,12 @@ class Collector:
         return "ok", sum(1 for a in pending if (a.scope or "").startswith(mine))
 
 
-__all__ = ["INBOX_QUERY", "Collected", "Collector", "shape_calendar", "shape_message"]
+__all__ = [
+    "INBOX_QUERY",
+    "MAX_TODO",
+    "Collected",
+    "Collector",
+    "shape_calendar",
+    "shape_message",
+    "shape_todo",
+]

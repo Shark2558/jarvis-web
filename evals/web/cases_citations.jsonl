@@ -1,0 +1,10 @@
+{"id": "c01", "question": "What did the RBI decide?", "reply": "The repo rate was held [1].", "expect": [1]}
+{"id": "c02", "question": "Summarise the monsoon news.", "reply": "Rains arrived early [2][3], and dams are full [5].", "expect": [2, 3, 5]}
+{"id": "c03", "question": "Any update on fuel prices?", "reply": "Prices fell [1, 4]; one report disagreed [ 2 ].", "expect": [1, 2, 4]}
+{"id": "c04", "question": "What's new in Kerala IT?", "reply": "A new park opened [3]. Another claim [9] and [12] cannot be backed.", "expect": [3]}
+{"id": "c05", "question": "Tell me about the match.", "reply": "India won by six wickets, Sir. No sources were needed for the score you already knew.", "expect": []}
+{"id": "c06", "question": "Explain the new rule.", "reply": "Index arr[2] in code is not a citation; the rule itself is described in [4].", "expect": [4]}
+{"id": "c07", "question": "Compare the two reports.", "reply": "Report A [1] says up; report B [2] says down; both cite the same survey [1][2].", "expect": [1, 2]}
+{"id": "c08", "question": "Only the http and duplicate results, please.", "results": "mixed", "reply": "The https story [1] and the second https story [2]; nothing else [3].", "expect": [1, 2]}
+{"id": "c09", "question": "What does the latest report say?", "reply": "See [https://evil.example/fake](https://evil.example/fake) and [1].", "expect": [1]}
+{"id": "c10", "question": "Read me the details.", "reply": "Details [5]. Footnote [0] and [-1] are not citations.", "expect": [5]}

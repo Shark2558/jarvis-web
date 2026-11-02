@@ -1,0 +1,66 @@
+/* src/jarvis/api/static/console-permissions.css — Approvals → Permissions (slice 10 D).
+   Reuses the deck's settings language from console.css (.bset / .dsc disclosure, .bopt / .bsw switch,
+   .seg segmented control, .bnote, .btn.bact) and console-memory.css (.minput, .mdanger, .lerr); adds
+   only the group rows, the passkey list and the approval card's error line. Text sits on the ink
+   tokens (AA on Night and Day); state never rests on colour alone (words: Allow / Ask first / Never,
+   On / Off). Touch targets ≥ 44 px on phones. */
+#p-approvals .bset{margin-top:14px}
+#p-approvals .dbody{padding-bottom:10px}
+#p-approvals .bnote{margin:10px 0 0}
+.plead{margin:10px 0 0;font-size:12.5px;line-height:1.45;color:var(--ink-2)}
+
+/* group rows: label + hint, then the three (or two) choices */
+.pgsec{margin:14px 0 2px;font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink)}
+.pgrp{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:9px 0;border-top:1px solid var(--line-2)}
+.pgsec + .pgrp{border-top:0}
+.pgrp .btxt small{max-width:46ch}
+.pgrp .seg{max-width:340px}
+.pgrp .seg-opt{min-height:34px;padding:0 6px;font-size:12px;letter-spacing:.1em;white-space:nowrap}
+#p-approvals .opt-in{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+#p-approvals .opt-in:checked + .seg-opt.never{color:var(--bad-ink)}
+#p-approvals .opt-in:disabled + .seg-opt{cursor:default;opacity:.6}
+#permGroups[aria-busy="true"]{opacity:.6}
+#permGroups .retry{margin-top:8px}
+
+/* passkeys */
+.psk{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+.pskh{margin:0 0 6px;font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink)}
+.psk .bfine{margin:0 0 6px;font-size:12.5px;line-height:1.45;color:var(--ink-2)}
+.psk .bopt{border-top:0;padding-top:4px}
+.psk .bsw[aria-disabled="true"]{opacity:.5;cursor:default}
+.psklist{list-style:none;margin:4px 0 0;padding:0}
+.pskrow{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 10px;padding:8px 0;border-top:1px solid var(--line-2)}
+.pskrow .btxt{flex:1 1 160px}
+.pskrow .btn.bact{margin-top:0}
+.pskconfirm{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-sm);
+  border:1px solid var(--bad-line);background:var(--bad-tint)}
+html[data-surface="night"] .pskconfirm{background:color-mix(in srgb,#E5484D 12%,var(--panel-solid))}
+.pskconfirm p{flex:1 1 100%;margin:0;font-size:13px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.pskconfirm .btn.bact{margin-top:0}
+.pskadd{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.pskadd .minput{flex:1 1 150px;min-width:0}
+.pskadd .btn.bact{margin-top:0}
+.pskrec{margin-top:12px;padding-top:8px;border-top:1px dashed var(--line-2)}
+.pskrec .btn.bact{margin-top:2px}
+.psk .lerr{margin-top:8px}
+
+.pskflag{color:var(--amber-ink)!important}
+.pskreset{margin:8px 0}
+/* a pending passkey reset: shown at the top of the Approvals panel until it is over or cancelled */
+.pbanner{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px;padding:10px 12px;border-radius:var(--r-md);
+  border:1px solid var(--bad-line);background:var(--bad-tint);color:var(--bad-ink);font-size:13px;line-height:1.45}
+html[data-surface="night"] .pbanner{background:color-mix(in srgb,#E5484D 14%,var(--panel-solid))}
+.pbanner[hidden]{display:none}
+.pbanner p{flex:1 1 220px;margin:0;overflow-wrap:anywhere}
+.pbanner .btn.bact{margin-top:0}
+
+/* the approval card's own error line (a cancelled or failed passkey check) */
+.approval .perr{margin:8px 0 0;font-size:13px;line-height:1.4;color:var(--bad-ink)}
+.approval .perr:empty{display:none}
+
+@media (max-width:760px){
+  .pgrp .seg{max-width:none}
+  .pgrp .seg-opt{min-height:44px}
+  .pskadd .minput,.pskadd .btn.bact,.pskrow .btn.bact,.pskconfirm .btn.bact,.pskrec .btn.bact{height:44px}
+}
+html[data-motion="calm"] .pgrp .seg-opt{transition-duration:.01s}

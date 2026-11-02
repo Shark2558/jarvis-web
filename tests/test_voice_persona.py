@@ -77,10 +77,23 @@ def _brain(wit: Wit | None, *, training: bool = False) -> tuple[Brain, MockProvi
 
 
 def test_version_and_levels() -> None:
-    assert PERSONA_VERSION == "p4.0"
+    assert PERSONA_VERSION == "p4.1"  # slice 10 integration: bumped once for B, C and E
     assert [w.id for w in WIT_LEVELS] == ["measured", "film", "extra"]
     assert DEFAULT_WIT == "film"
     assert all(w.label and w.description for w in WIT_LEVELS)
+
+
+@pytest.mark.parametrize("wit", ["measured", "film", "extra"])
+def test_slice_10_paragraphs_are_each_present_once_in_their_own_block(wit: str) -> None:
+    p = build_system_prompt(honorific="Sir", wit=wit)
+    heads = [
+        "\nWeb search (standing rule)\n",
+        "\nTo-do list (standing rule)\n",
+        "\nAttached files (standing rule)\n",
+    ]
+    assert [p.count(h) for h in heads] == [1, 1, 1]
+    at = [p.index(h) for h in heads]
+    assert at == sorted(at) and p.index("Memory (standing rule)") < at[0]
 
 
 @pytest.mark.parametrize("wit", ["measured", "film", "extra"])
@@ -219,7 +232,7 @@ async def test_new_sessions_record_the_persona_version() -> None:
     brain, _ = _brain(None)
     res = await brain.chat(ChatRequest(message="hi", user_id="u1"))
     s = await brain.store.get(res.session_id)
-    assert s is not None and s.metadata["persona"] == "p4.0"
+    assert s is not None and s.metadata["persona"] == "p4.1"
 
 
 # ---- review fixes (slice 9 backend review) -----------------------------------------------------

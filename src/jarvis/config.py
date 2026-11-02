@@ -191,6 +191,16 @@ class Settings(BaseSettings):
         description="Base64 of 32 random bytes: AES-256-GCM key for the Google token vault "
         "(Secret Manager `jarvis-token-key`). Outside dev the Google tools stay off without it.",
     )
+    # --- web search (slice 10 B): Tavily behind jarvis.web's SearchProvider port. No key: the
+    # web tools are not registered and JARVIS says web search is not set up.
+    tavily_api_key: SecretStr | None = Field(
+        default=None, description="Tavily API key, tvly-… (Secret Manager `jarvis-tavily-key`)"
+    )
+    web_search_enabled: bool = Field(
+        default=True,
+        description="Off: no web tools even with a key (deploy/cloudrun.sh records a skipped key "
+        "as false, so re-runs don't ask again)",
+    )
 
     # --- long-term memory (slice 8) ---
     memory_enabled: bool = Field(

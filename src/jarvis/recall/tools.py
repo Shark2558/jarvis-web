@@ -2,9 +2,10 @@
 """Memory tools (Layer 5 skill: Knowledge Base & Memory; every call passes the gateway).
 
 memory_save    R2 reversible: the owner said "remember …". When text other people wrote is in
-               the context the model saw (`jarvis.tools.taint`), it becomes an approval card
-               showing the exact text: a stranger's "remember that…" never turns into a fact
-               about the owner on its own. Sensitive text is refused before any card.
+               the context the model saw (`jarvis.tools.taint`), the gateway's tainted-round rule
+               (`policy.TAINTED_WRITES_ASK`, slice 10 D) makes it an approval card showing the
+               exact text — an R2 card, so no passkey: a stranger's "remember that…" never turns
+               into a fact about the owner on its own. Sensitive text is refused before any card.
 memory_search  R1 read-only lookup of the owner's notes.
 memory_forget  with `ids`: R3 irreversible, the card lists each fact's exact text (looked up
                first; unknown ids → nothing proposed). With only `query`: a read-only lookup of
@@ -24,7 +25,6 @@ from jarvis.recall.text import clean_keywords
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import one_line, quoted
 from jarvis.tools.context import require_tool_context
-from jarvis.tools.taint import untrusted_in_context
 
 AGENT = "memory"
 MAX_FORGET = 20
@@ -88,10 +88,6 @@ def _check_forget(a: dict[str, Any]) -> None:
 # ---- risk and cards -----------------------------------------------------------------------
 
 
-def _save_risk(a: dict[str, Any]) -> ActionRisk:
-    return ActionRisk.IRREVERSIBLE if untrusted_in_context() else ActionRisk.REVERSIBLE
-
-
 def _forget_risk(a: dict[str, Any]) -> ActionRisk:
     return ActionRisk.IRREVERSIBLE if a.get("ids") else ActionRisk.READ_ONLY
 
@@ -153,7 +149,6 @@ def _save_tool(svc: MemoryService) -> Tool:
         save,
         agent=AGENT,
         summarize=_save_card,
-        risk_for=_save_risk,
         check=_check_save,
         trusted_output=True,
     )

@@ -15,6 +15,9 @@
 // Slice 9 (voice): window.JarvisChat {send(text, {channel}), busy(), honorific(), raw(path, opts)};
 // jarvis:turn {channel} / jarvis:turn-end {channel, ok} around a turn, jarvis:answer {channel, text,
 // approvals} after a reply, jarvis:switch when the owner starts or opens another conversation.
+// Slice 10 B: a reply's (or restored turn's) `sources` → the Sources row (console-web.js, JarvisSources).
+// Slice 10 (console-attach.js): files waiting in window.JarvisAttach go with the next message as
+// `attachments: [id]`; jarvis:attach re-checks the Send button (disabled while one is uploading).
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -39,6 +42,7 @@
   const Deck = window.JarvisDeck || { open() {}, close() {}, isOpen: () => true, isPhone: () => false };
   const rupees = (v) => (typeof Deck.rupees === 'function' ? Deck.rupees(v) : ''); // never a dollar sign
   const LIMIT_FALLBACK = 'This month\'s AI spending limit is used up. Raise it in Vitals, or switch to the free brain.';
+  const CONFLICT_FALLBACK = 'This conversation changed in another window — reloaded. Check whether your message is there before sending it again.';
 
   const state = { sessionId: null, authMode: 'token', token: ssGet('jarvis_token'), honorific: 'Sir',
     brains: [], brain: null, busy: false, seenApprovals: null, seenAudit: new Set() };
@@ -213,17 +217,20 @@
     fresh.forEach(a => note('approval', `Approval waiting · ${String(a.tool).replace(/_/g, ' ')}`));
     emit('jarvis:approvals', { count: list.length, fresh: fresh.length > 0 || (first && list.length > 0) });
     if (!list.length) { el.innerHTML = '<div class="empty">Nothing waiting.</div>'; return; }
+    // slice 10 D: a card whose action can't be undone, while the owner requires a passkey, is approved
+    // with one (console-permissions.js runs the browser's own WebAuthn prompt)
     el.innerHTML = list.map(a => `
-      <div class="approval" data-id="${esc(a.id)}" data-sid="${esc(a.session_id || '')}">
+      <div class="approval" data-id="${esc(a.id)}" data-sid="${esc(a.session_id || '')}" data-passkey="${a.passkey_required === true ? '1' : ''}">
         <div class="title">${esc(a.tool.replace(/_/g, ' '))} <span class="tag">${esc(a.risk)}</span></div>
         <p>${esc(visible(a.summary))}</p>
         <pre>${esc(visible(JSON.stringify(a.arguments, null, 2)))}</pre>
-        <div class="actions"><button class="btn primary approve lift">Approve</button><button class="btn decline lift">Decline</button></div>
+        <div class="actions"><button class="btn primary approve lift">${a.passkey_required === true ? 'Approve with passkey' : 'Approve'}</button><button class="btn decline lift">Decline</button></div>
+        <p class="perr" role="alert"></p>
       </div>`).join('');
     el.querySelectorAll('.approval').forEach(card => {
       const id = card.dataset.id; const sid = card.dataset.sid || null;
       const tool = card.querySelector('.title').firstChild.textContent.trim();
-      card.querySelector('.approve').addEventListener('click', () => decide(id, 'approve', card, sid, tool));
+      card.querySelector('.approve').addEventListener('click', () => decide(id, 'approve', card, sid, tool, card.dataset.passkey === '1'));
       card.querySelector('.decline').addEventListener('click', () => decide(id, 'decline', card, sid, tool));
     });
   }
@@ -355,8 +362,8 @@
     let shown = 0; let last = null;
     sess.turns.forEach(t => {
       if (!t.content || !t.content.trim()) return; // tool exchanges have no text of their own
-      if (t.role === 'user') addMsg('user', t.content);
-      else { addMsg('jarvis', t.content, [t.model]); last = t; }
+      if (t.role === 'user') { const row = addMsg('user', t.content); if (Attach()) Attach().show(row, t.attachments); }
+      else { const row = addMsg('jarvis', t.content, [t.model]); if (window.JarvisSources) window.JarvisSources.render(row, t.sources); last = t; }
       shown++;
     });
     if (shown) { addMsg('sys', 'Earlier conversation restored.'); note('info', 'Conversation restored'); }
@@ -392,9 +399,12 @@
   // A 404 means this server has no connect flow (token-auth setup / older backend): say so, no error.
   // gmail.compose covers drafts AND sending; gmail.send only appears on links made before it was dropped.
   // gmail.insert (slice 7) is optional: it only lets the morning brief be put in the owner's own inbox.
+  // tasks (slice 10 C) is optional too: the to-do list. `tasks_granted: false` → a "Grant" row that re-runs
+  // connect with ?add=tasks (only Grant asks for it; Google keeps what was granted: include_granted_scopes).
+  // A server without the field shows none.
   const SCOPE_WORDS = { 'calendar.readonly': ['Calendar', 'read'], 'calendar.events': ['Calendar', 'edit'],
     'gmail.readonly': ['Gmail', 'read'], 'gmail.compose': ['Gmail', 'draft', 'send'], 'gmail.send': ['Gmail', 'send'],
-    'gmail.insert': ['Gmail', 'put the morning brief in your inbox (optional)'] };
+    'gmail.insert': ['Gmail', 'put the morning brief in your inbox (optional)'], tasks: ['To-do list', 'read & edit'] };
   /** "Calendar: read & edit · Gmail: read, draft, send" from the raw scope list (URLs or short names). */
   function scopeSummary(scopes) {
     const by = {}; let other = 0;
@@ -434,9 +444,19 @@
       body.appendChild(who);
       const sc = scopeSummary(g.scopes); if (sc) body.appendChild(mk('p', 'scopes', sc));
       if (st === 'reconnect') body.appendChild(mk('p', 'warn', 'Google stopped accepting the saved link (test-mode links expire after 7 days). Calendar and Gmail tools are paused until you reconnect.'));
-      else body.appendChild(mk('p', 'fine', 'Unlocks: calendar list, free slots, create / move / delete events, mail search, read, draft and send.'));
+      else body.appendChild(mk('p', 'fine', 'Unlocks: calendar list, free slots, create / move / delete events, mail search, read, draft and send'
+        + (g.tasks_granted === true ? ', and your to-do list.' : '.')));
+      if (st === 'linked' && g.tasks_granted === false) body.appendChild(grantRow());
     }
     return body;
+  }
+  /** "To-do list — permission needed · Grant": the optional Tasks scope, asked for by re-running connect. */
+  function grantRow() {
+    const row = mk('div', 'iopt'), b = mk('button', 'btn lift', 'Grant');
+    b.type = 'button'; b.id = 'googleGrantTasks';
+    b.addEventListener('click', () => { note('info', 'Asking Google for the to-do list…'); window.location.assign('/connect/google?add=tasks'); });
+    row.append(mk('span', '', 'To-do list — permission needed'), b);
+    return row;
   }
   function integActions(st, row) {
     const acts = mk('div', 'actions');
@@ -583,7 +603,9 @@
     const a = document.activeElement, chat = $('p-chat');
     if (!a || a === document.body || (chat && chat.contains(a))) input.focus();
   }
-  function syncSend() { $('send').disabled = state.busy || !$('input').value.trim(); }
+  const Attach = () => window.JarvisAttach || null; // console-attach.js (loads after this file)
+  function syncSend() { $('send').disabled = state.busy || !$('input').value.trim() || !!(Attach() && Attach().busy()); }
+  document.addEventListener('jarvis:attach', () => syncSend());
   function handleResponse(r, rttMs, channel) {
     const fresh = r.session_id !== state.sessionId;
     setSession(r.session_id);
@@ -593,6 +615,7 @@
     const row = addMsg('jarvis', r.reply, meta);
     const used = memoriesUsed(r.memory_used);
     if (used.length) memoryChip(row, used);
+    if (window.JarvisSources) window.JarvisSources.render(row, r.sources);
     renderStats(r, rttMs);
     emit('jarvis:reply', { refused: false, tools: Number.isFinite(r.tool_calls) ? r.tool_calls : 0 });
     // slice 9: the voice module speaks it (per "Speak replies"); an approval left waiting after a
@@ -608,23 +631,41 @@
   async function send(text, opts = {}) {
     if (state.busy) return false;
     const channel = opts.channel === 'voice' ? 'voice' : 'text';
-    addMsg('user', text, channel === 'voice' ? ['Spoken'] : null); busy(true); note('send', channel === 'voice' ? 'Spoken message sent' : 'Message sent');
+    const files = Attach() && !Attach().busy() ? Attach().ready() : [];
+    const sent = addMsg('user', text, channel === 'voice' ? ['Spoken'] : null); busy(true); note('send', channel === 'voice' ? 'Spoken message sent' : 'Message sent');
+    if (files.length) Attach().show(sent, files);
     emit('jarvis:turn', { channel });
     let ok = false;
     try {
       const t0 = performance.now(); // reply latency as the owner feels it: the whole round trip
       const body = { message: text, session_id: state.sessionId, brain: state.brain };
       if (channel === 'voice') body.channel = 'voice';
+      if (files.length) body.attachments = files.map(f => f.id);
       const r = await api('/v1/chat', { body });
+      if (files.length) Attach().clear();
       handleResponse(r, performance.now() - t0, channel);
       ok = true;
     } catch (e) {
       showTyping(false);
+      // refused before anything was stored (a file kept from this brain, the spending limit): the
+      // files stay attached for another try; any other failure may have stored the message with them
+      if (files.length && e.code !== 'input_rejected' && e.status !== 402) Attach().clear();
       if (e.status === 402) limitReached(e);
+      else if (isConflict(e)) await conflictReload(e);
       else { addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); note('error', 'Reply failed'); }
     }
     finally { busy(false); refocus(); emit('jarvis:turn-end', { channel, ok }); }
     return ok;
+  }
+  /** 409 session_conflict (slice 10): another window saved this conversation first. Show what the
+   *  server holds now (the owner's message is there if it was kept), then the server's own plain
+   *  line saying whether it was. Never resent automatically: that could store it twice. */
+  function isConflict(e) { return !!e && e.status === 409 && e.code === 'session_conflict'; }
+  async function conflictReload(e) {
+    if (state.sessionId) await loadConversation(state.sessionId);
+    const m = e && typeof e.message === 'string' ? e.message.trim() : '';
+    addMsg('sys', m && m.length <= 300 && !/^[a-z0-9_.-]+$/i.test(m) ? m : CONFLICT_FALLBACK);
+    note('info', 'Conversation reloaded');
   }
   /** 402 budget_reached: not a crash, a JARVIS note in the conversation with the server's own
    *  words (rupees); Vitals reloads the month so its bar shows the limit reached. */
@@ -634,12 +675,25 @@
     note('info', 'Monthly limit reached');
     emit('jarvis:reply', { refused: true });
   }
-  async function decide(id, action, card, sid, tool) {
+  async function decide(id, action, card, sid, tool, passkey) {
     if (state.busy) return; // one action at a time: a reply may still be arriving
     const target = sid || state.sessionId;
     if (!target) { addMsg('error', 'This approval belongs to a conversation that no longer exists.'); return; }
     busy(true); // claimed before any await: a second click, a send or History cannot interleave
     card.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    const perr = card.querySelector('.perr'); if (perr) perr.textContent = '';
+    const body = { session_id: target };
+    if (action === 'approve' && passkey) { // first, while the click still counts as the owner's gesture
+      const P = window.JarvisPasskey;
+      try {
+        if (!P) throw new Error('Passkeys are still loading. Try again in a moment.');
+        body.passkey = await P.approve(id);
+      } catch (e) {
+        if (perr) perr.textContent = P ? P.message(e) : e.message;
+        note('error', 'Passkey check not completed');
+        card.querySelectorAll('button').forEach(b => { b.disabled = false; }); busy(false); return;
+      }
+    }
     try {
       if (!Deck.isOpen('chat')) Deck.open('chat', { focus: false }); // the outcome is a reply: show it (phones: switch tab)
       if (target !== state.sessionId) { // show it in the conversation it belongs to
@@ -649,7 +703,7 @@
         showTyping(true); // loading the transcript cleared the indicator
       }
       note('approval', `${action === 'approve' ? 'Approved' : 'Declined'} · ${tool || 'action'}`);
-      handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body: { session_id: target } }), { decided: true }));
+      handleResponse(Object.assign(await api(`/v1/approvals/${encodeURIComponent(id)}/${action}`, { body }), { decided: true }));
     } catch (e) {
       showTyping(false);
       if (e.status === 402) limitReached(e); else addMsg('error', `Couldn't ${action}. ` + e.message);

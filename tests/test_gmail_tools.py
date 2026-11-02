@@ -14,6 +14,7 @@ from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.integrations.google import GoogleConnector
 from jarvis.llm.base import ToolCall
 from jarvis.tools.audit import AuditLog
+from jarvis.tools.external import FENCE_END
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.gmail import BODY_LIMIT, gmail_tools
 from jarvis.tools.policy import Policy
@@ -209,7 +210,7 @@ async def test_read_converts_html_when_no_plain_part(gw: Gateway, fake_google: F
     out = await _run(gw, "gmail_read", {"message_id": "m2"})
     assert out.outcome is GatewayOutcome.EXECUTED, out.error
     body = out.result["body"]
-    inner = body.split("\n", 1)[1].rsplit("\n<<END>>", 1)[0]
+    inner = body.split("\n", 1)[1].rsplit("\n<<END ", 1)[0]  # the close carries the fence id
     assert "Weekly" in inner and "Line one&two" in inner and "Line three" in inner
     assert "alert(1)" not in inner and "p{}" not in inner and "<" not in inner
     assert out.result["attachments"] == []
@@ -504,7 +505,7 @@ async def test_read_cleans_cc_date_and_attachment_metadata(
     out = await _run(gw, "gmail_read", {"message_id": "m1"})
     assert out.outcome is GatewayOutcome.EXECUTED, out.error
     r = out.result
-    assert r["from"] == "priya@example.com" and r["from_name"].endswith("<<END>>")
+    assert r["from"] == "priya@example.com" and FENCE_END.search(r["from_name"])
     assert r["to"] == ["akash@example.com"] and r["cc"] == ["ops@example.com"]
     assert r["date"] == "2027-01-15T08:00:00+05:30"
     hostile = r["attachments"][1]

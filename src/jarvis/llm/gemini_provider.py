@@ -26,6 +26,7 @@ from jarvis.llm.base import (
     LLMError,
     LLMTransientError,
     Role,
+    StreamUsage,
     TextBlock,
     ToolCall,
     ToolResultBlock,
@@ -239,6 +240,7 @@ class GeminiProvider:
         model: str,
         max_tokens: int,
         effort: Effort | None = None,
+        usage: StreamUsage | None = None,  # not filled yet (free models): the caller estimates
     ) -> AsyncIterator[str]:
         body = self._body(
             system=system,

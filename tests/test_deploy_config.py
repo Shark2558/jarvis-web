@@ -184,6 +184,16 @@ def test_script_prints_consent_scopes_and_test_user_reminder(script: str) -> Non
     assert "/connect/google/callback" in script  # second redirect URI
 
 
+def test_the_tasks_api_is_switched_on_and_its_scope_is_printed_as_optional(script: str) -> None:
+    """Slice 10 C: the to-do list. Without the API switched on in the project Google answers
+    403 even with the scope granted; the scope itself is optional (Integrations → Grant)."""
+    enable = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
+    assert "tasks.googleapis.com" in enable
+    line = next(ln for ln in script.splitlines() if "auth/tasks" in ln)
+    assert "optional" in line and "to-do" in line
+    assert "Grant" in script
+
+
 def test_default_brain_prompt_accepts_claude(script: str) -> None:
     assert "claude|Claude|CLAUDE) DEFAULT_BRAIN=anthropic" in script
 
@@ -372,6 +382,20 @@ def test_lock_pins_pip_and_the_build_backend_with_hashes() -> None:
         ), pkg
     pins = re.findall(r"^([A-Za-z0-9_.-]+)==", lock, re.M)
     assert len(pins) == len(re.findall(r"^[A-Za-z0-9_.-]+==[^\n]* \\\n\s+--hash=", lock, re.M))
+
+
+def _norm(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def test_lock_pins_every_runtime_dependency_of_pyproject() -> None:
+    """A dependency added to pyproject.toml without `make lock` would be missing from the image
+    (it installs the lock with --no-deps). Slice 10 added webauthn, pypdf and python-docx."""
+    deps = (ROOT / "pyproject.toml").read_text(encoding="utf-8").split("dependencies = [", 1)[1]
+    names = re.findall(r'^\s+"([A-Za-z0-9_.-]+)', deps.split("]\n", 1)[0], re.M)
+    pinned = {_norm(p) for p in re.findall(r"^([A-Za-z0-9_.-]+)==", LOCK.read_text(), re.M)}
+    assert {"webauthn", "pypdf", "python-docx", "lxml", "cbor2"} <= pinned
+    assert [n for n in names if _norm(n) not in pinned] == []
 
 
 def test_browser_job_pins_playwright(ci: dict[str, Any]) -> None:

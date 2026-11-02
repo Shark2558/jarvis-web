@@ -18,6 +18,18 @@ class SessionNotFound(LookupError):
     pass
 
 
+class SessionConflict(RuntimeError):
+    """The conversation changed in another process (another window on another instance) since
+    this copy was read, in a way this save cannot be merged with. Nothing was saved; the caller
+    reloads (API: 409 session_conflict). Raised by a later save of a turn, the owner's message
+    was already stored: only the reply is lost."""
+
+
+class MessageNotSaved(SessionConflict):
+    """The conflict hit the save of the owner's new message itself: nothing of this turn was
+    stored and no model was called, so the owner may send it again."""
+
+
 class SessionStore(ABC):
     @abstractmethod
     async def get(self, session_id: str) -> Session | None: ...

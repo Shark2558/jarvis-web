@@ -20,6 +20,11 @@ dependencies = [
     "httpx>=0.27",
     "google-cloud-firestore>=2.19,<3",
     "cryptography>=42",
+    "webauthn>=3.0.1,<4",  # py_webauthn (Duo Labs, BSD-3-Clause): passkeys for R3 approvals
+    # slice 10 E: text from attached documents (no OCR). pypdf BSD-3-Clause (6.x: decompression
+    # and loop limits); python-docx MIT (lxml parser with resolve_entities=False).
+    "pypdf>=6.21,<7",
+    "python-docx>=1.2,<2",
 ]
 
 [project.optional-dependencies]

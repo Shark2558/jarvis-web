@@ -360,6 +360,7 @@ html[data-surface="night"] .welcome h1{font:400 clamp(21px,2.2vw,26px)/1.2 var(-
 .ibody .scopes{font:400 12px/1.5 var(--tech);letter-spacing:.04em;color:var(--ink-2)}
 .ibody .warn{color:var(--amber-ink)}
 .ibody .fine{font-size:12.5px;color:var(--ink-3)}
+.iopt{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:10px;padding:8px 10px;border-radius:var(--r-sm);font-size:13px;color:var(--amber-ink);background:var(--amber-tint);border:1px solid var(--amber-line)}
 .inote{margin-top:10px;padding:8px 10px;border-radius:var(--r-sm);font-size:13px;line-height:1.4;color:var(--ok-ink);background:color-mix(in srgb,var(--ok) 12%,transparent);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent)}
 .inote.bad{color:var(--bad-ink);background:var(--bad-tint);border-color:var(--bad-line)}
 .integ .confirm{margin-top:10px;flex-wrap:wrap}
@@ -379,6 +380,7 @@ html[data-surface="night"] .bdate{font:400 16px/1.15 var(--tech);letter-spacing:
 .bev{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px;padding:7px 0;border-top:1px dashed var(--line-2)}
 .bev:first-child{border-top:0;padding-top:2px}
 .bev.clash .btime{box-shadow:inset 2px 0 0 var(--amber);padding-left:7px}
+.bev.overdue .btime{color:var(--amber-ink);box-shadow:inset 2px 0 0 var(--amber);padding-left:7px;white-space:normal}
 .btime{font:400 12.5px/1.45 var(--tech);letter-spacing:.03em;color:var(--accent-ink);font-variant-numeric:tabular-nums;white-space:nowrap}
 .bwhat{min-width:0}
 .bwhat b{display:block;font-size:13.5px;font-weight:600;line-height:1.4;color:var(--ink);overflow-wrap:anywhere}
@@ -574,3 +576,15 @@ html[data-motion="off"] .approval::after,html[data-motion="off"] .core.alert::af
 @media (prefers-reduced-motion: reduce){
   html:not([data-motion]) *,html:not([data-motion]) *::before,html:not([data-motion]) *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
 }
+
+/* slice 10 B — the web sources a reply cited (console-web.js): numbered link chips, https only */
+.wsources{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:6px 4px 0;max-width:100%;
+  font:600 12px/1.2 var(--hud);letter-spacing:.06em;color:var(--ink-3)}
+.wsources .wslabel{text-transform:uppercase}
+.wsources .wsrc{display:inline-flex;align-items:center;gap:6px;min-width:0;min-height:24px;max-width:min(260px,100%);
+  padding:3px 8px 2px;border-radius:4px;border:1px solid var(--line);background:var(--tint);color:var(--accent-ink);
+  text-decoration:none;transition:border-color .2s var(--ease)}
+.wsources .wsrc b{font:700 11px/1 var(--tech);color:var(--accent)}
+.wsources .wsrc span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.02em}
+.wsources .wsrc:hover{border-color:var(--accent)}
+.wsources .wsrc:focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:2px}

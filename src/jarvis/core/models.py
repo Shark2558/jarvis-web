@@ -12,11 +12,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from jarvis.core.guardrails import PendingAction
+from jarvis.documents.models import AttachmentRef
 from jarvis.llm.base import ContentBlock, Role, Usage
 from jarvis.recall.models import MemoryRef
+from jarvis.web.sources import Source as Source  # re-exported: replies and turns carry it
 
 
 def _now() -> datetime:
@@ -46,6 +48,11 @@ class Turn(BaseModel):
     # how an owner message arrived (slice 9): "voice" was heard through the microphone, so it
     # may be someone else's words — never used for memory learning (jarvis.recall.learning)
     channel: Literal["text", "voice"] = "text"
+    # web sources this reply cited as [n] (slice 10 B), from the conversation's stored results
+    sources: list[Source] = Field(default_factory=list)
+    # files sent with an owner message (slice 10 E): names and counts only. Their start travels
+    # as a second, fenced text block; a turn with blocks never reaches a training brain.
+    attachments: list[AttachmentRef] = Field(default_factory=list)
 
 
 class Session(BaseModel):
@@ -59,6 +66,9 @@ class Session(BaseModel):
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cost_usd: float = 0.0
+    # Storage bookkeeping, never serialised: the stored revision this copy was read at or last
+    # saved as (the session store's compare-and-set, slice 10). Opaque outside the store.
+    _store_mark: Any = PrivateAttr(default=None)
 
     def append(self, turn: Turn) -> None:
         self.turns.append(turn)
@@ -92,6 +102,11 @@ class ChatRequest(BaseModel):
         description="voice: the owner spoke this message and the reply will be read aloud "
         "(short, plain spoken answer; slice 9 D7)",
     )
+    attachments: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Ids from POST /v1/attachments sent with this message (at most 3; slice 10)",
+    )
 
 
 class PendingApproval(BaseModel):
@@ -103,6 +118,12 @@ class PendingApproval(BaseModel):
     expires_at: datetime
     session_id: str | None = Field(
         default=None, description="Conversation the action belongs to (approve from there)"
+    )
+    tool_risk: str | None = Field(
+        default=None, description="What the call itself can do (slice 10 D); risk is the gate's"
+    )
+    passkey_required: bool = Field(
+        default=False, description="Approving needs a passkey check (GET /v1/approvals sets it)"
     )
 
     @classmethod
@@ -116,6 +137,7 @@ class PendingApproval(BaseModel):
             risk=a.risk.value,
             expires_at=a.expires_at,
             session_id=sid,
+            tool_risk=a.tool_risk.value if a.tool_risk is not None else None,
         )
 
 
@@ -136,6 +158,10 @@ class ChatResponse(BaseModel):
     turn_count: int
     memory_used: list[MemoryRef] = Field(
         default_factory=list, description="Notes about the owner sent with this reply"
+    )
+    sources: list[Source] = Field(
+        default_factory=list,
+        description="Web sources the reply cited as [n] (only stored search results)",
     )
 
 

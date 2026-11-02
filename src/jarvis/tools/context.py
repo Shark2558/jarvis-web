@@ -12,6 +12,7 @@ import contextvars
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -54,4 +55,30 @@ def tool_context(scope: str | None) -> Iterator[ToolContext | None]:
         _current.reset(token)
 
 
-__all__ = ["ToolContext", "current_tool_context", "require_tool_context", "tool_context"]
+# Slice 10 D: what the owner presented with an approval (a passkey check made for that card). The
+# approve route sets it around `Brain.approve`; the gateway's approval guard reads it on the card
+# about to run. Request-scoped like everything above: another request never sees it.
+_proof: contextvars.ContextVar[Any] = contextvars.ContextVar("jarvis_approval_proof", default=None)
+
+
+def approval_proof() -> Any:
+    return _proof.get()
+
+
+@contextmanager
+def presenting_proof(proof: Any) -> Iterator[None]:
+    token = _proof.set(proof)
+    try:
+        yield
+    finally:
+        _proof.reset(token)
+
+
+__all__ = [
+    "ToolContext",
+    "approval_proof",
+    "current_tool_context",
+    "presenting_proof",
+    "require_tool_context",
+    "tool_context",
+]

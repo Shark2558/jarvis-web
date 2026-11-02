@@ -5,8 +5,13 @@ POST /v1/chat                 one turn (JSON)
 POST /v1/chat/stream          one turn, text/plain streamed deltas (402 first if the monthly
                               limit refuses it: a stream that already said 200 can't), then a
                               final event: "\x1e" + {"memory_used": [{id, text}]} (slice 8).
+                              (No web `sources`: a stream has no tool round, and a reply cites
+                              only what its own tool results showed — slice 10 review M5.)
                               The reply text never contains "\x1e" (stripped from the model's
                               deltas); clients parse the JSON after the LAST separator.
+                              If the conversation changed in another window meanwhile
+                              (slice 10), the final event is {"error": "session_conflict",
+                              "detail": ...} and the reply was not saved.
 GET  /v1/sessions             list the caller's sessions (+ total_cost_inr)
 GET  /v1/sessions/{id}        full transcript (audit / replay) (+ total_cost_inr)
 DELETE /v1/sessions/{id}      forget a session (owner's delete right)
@@ -24,6 +29,7 @@ from pydantic import BaseModel
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
+from jarvis.api.permissions import mark_passkey_cards
 from jarvis.config import Settings
 from jarvis.core.brain import Brain, StreamMeta
 from jarvis.core.models import (
@@ -33,11 +39,28 @@ from jarvis.core.models import (
     SessionSummary,
     SessionView,
 )
-from jarvis.memory.base import SessionNotFound, SessionStore
+from jarvis.memory.base import MessageNotSaved, SessionConflict, SessionNotFound, SessionStore
+from jarvis.permissions.models import PasskeyProof
 from jarvis.tools.audit import AuditEntry
+from jarvis.tools.context import presenting_proof
 
 router = APIRouter()
 STREAM_FINAL = "\x1e"  # ASCII record separator: the reply text ends, the final event follows
+REPLY_LOST = (
+    "Your message was kept, but JARVIS's reply could not be saved because this conversation "
+    "changed in another window. The conversation has been reloaded."
+)
+MESSAGE_LOST = (
+    "Your message was not saved because this conversation changed in another window. The "
+    "conversation has been reloaded: send it again if it is still needed."
+)
+
+
+def conflict_body(exc: SessionConflict) -> dict[str, str]:
+    """The 409 body (and the stream's final event): says truthfully whether the owner's
+    message was stored, so resending never duplicates it."""
+    detail = MESSAGE_LOST if isinstance(exc, MessageNotSaved) else REPLY_LOST
+    return {"error": "session_conflict", "detail": detail}
 
 
 # ---- dependencies --------------------------------------------------------------------------
@@ -126,10 +149,14 @@ async def chat_stream(
 async def _with_final_event(brain: Brain, req: ChatRequest) -> AsyncIterator[str]:
     """The reply's deltas, then one final event (only when the reply finished)."""
     meta = StreamMeta()
-    async for delta in brain.chat_stream(req, meta=meta):
-        text = delta.replace(STREAM_FINAL, "")  # model text can never forge the final event
-        if text:
-            yield text
+    try:
+        async for delta in brain.chat_stream(req, meta=meta):
+            text = delta.replace(STREAM_FINAL, "")  # model text can never forge the final event
+            if text:
+                yield text
+    except SessionConflict as exc:  # the 200 is already sent: the final event says what happened
+        yield STREAM_FINAL + json.dumps(conflict_body(exc), ensure_ascii=False)
+        return
     used = [m.model_dump() for m in meta.memory_used]
     yield STREAM_FINAL + json.dumps({"memory_used": used}, ensure_ascii=False)
 
@@ -180,6 +207,9 @@ async def delete_session(
 
 class Decision(BaseModel):
     session_id: str  # a client-sent user_id is ignored (pydantic drops unknown fields)
+    # slice 10 D: a passkey check made for this card, when the owner requires one for actions
+    # that can't be undone (403 passkey_required without it; ignored on decline)
+    passkey: PasskeyProof | None = None
 
 
 async def _pending_models(brain: Brain, uid: str) -> list[PendingApproval]:
@@ -197,9 +227,9 @@ async def _pending_models(brain: Brain, uid: str) -> list[PendingApproval]:
     "/v1/approvals", response_model=list[PendingApproval], dependencies=[Depends(require_auth)]
 )
 async def list_approvals(
-    brain: Brain = Depends(_brain), uid: str = Depends(current_user)
+    request: Request, brain: Brain = Depends(_brain), uid: str = Depends(current_user)
 ) -> list[PendingApproval]:
-    return await _pending_models(brain, uid)
+    return await mark_passkey_cards(request, uid, await _pending_models(brain, uid))
 
 
 @router.post(
@@ -208,9 +238,15 @@ async def list_approvals(
     dependencies=[Depends(require_auth)],
 )
 async def approve(
-    approval_id: str, d: Decision, brain: Brain = Depends(_brain), uid: str = Depends(current_user)
+    approval_id: str,
+    d: Decision,
+    request: Request,
+    brain: Brain = Depends(_brain),
+    uid: str = Depends(current_user),
 ) -> ChatResponse:
-    return await brain.approve(approval_id, session_id=d.session_id, user_id=uid)
+    # the passkey check is made by the gateway's approval guard, on the card as it is now
+    with presenting_proof(d.passkey):
+        return await brain.approve(approval_id, session_id=d.session_id, user_id=uid)
 
 
 @router.post(

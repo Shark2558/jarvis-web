@@ -24,7 +24,10 @@ Spending (slice 7b): every model call — chat, each tool round, the round-limit
 narration, the stream — goes through `_admit` (the owner's monthly limit, `Billing.ensure_allowed`)
 BEFORE it is made, and its cost is added to the month after it (`Billing.record`, never fails the
 reply). A turn is also admitted before the owner's message is stored, so a refused turn leaves
-no unanswered message behind.
+no unanswered message behind. Approve / decline themselves: `jarvis.core.brain_decisions`.
+Attached files (slice 10): `jarvis.documents.service` hooks. Tool rounds (slice 10 integration):
+once a write has run, the message's saves are conflict-safe (`jarvis.core.rounds`), and one
+message has a budget of new approval cards and document calls (`jarvis.tools.budget`).
 """
 
 from __future__ import annotations
@@ -38,17 +41,23 @@ from dataclasses import dataclass, field
 
 from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
+from jarvis.core import brain_decisions as decisions
 from jarvis.core.guardrails import PendingAction, guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
+from jarvis.core.rounds import Rounds
+from jarvis.core.saving import not_recorded_note, record_after_action
 from jarvis.core.window import build_window
+from jarvis.documents.service import DocumentService, forget_files, precheck, save_owner_turn
 from jarvis.llm.base import (
     ChatMessage,
     Completion,
+    ContentBlock,
     Effort,
     LLMError,
     Role,
+    StreamUsage,
     TextBlock,
     ToolCall,
     ToolResultBlock,
@@ -56,48 +65,23 @@ from jarvis.llm.base import (
 )
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.pricing import cost_usd as priced_cost
-from jarvis.llm.pricing import estimate_usage
+from jarvis.llm.pricing import stream_usage
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.logging import get_logger, get_trace_id
 from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
+from jarvis.tools.budget import turn_budget
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.taint import context_trust, untrusted_seen
+from jarvis.web.ledger import cited_sources, web_conversation
 
 log = get_logger(__name__)
 
 BRAIN_KEY = "brain"  # session.metadata key remembering the owner's brain choice
 CUTOFF_KEY = "brain_cutoff"  # turn index before which history is withheld from training brains
 SWEEP_TICK_S = 20.0  # the scheduler tick's memory sweep is awaited, at most this long
-
-
-@dataclass(frozen=True)
-class _Decision:
-    """What an owner's approve / decline produced, before it is narrated."""
-
-    call: ToolCall
-    result: GatewayResult
-    fallback: str
-    instruction: str
-
-
-def _record_exchange(session: Session, d: _Decision, trace_id: str | None) -> None:
-    """The decided action as a tool exchange (tool_use → tool_result + instruction)."""
-    session.append(Turn(role=Role.ASSISTANT, content="", blocks=[d.call], trace_id=trace_id))
-    result = ToolResultBlock(
-        tool_use_id=d.call.id,
-        content=d.result.for_model(),
-        is_error=d.result.outcome is not GatewayOutcome.EXECUTED,
-    )
-    session.append(
-        Turn(
-            role=Role.USER,
-            content="",
-            blocks=[result, TextBlock(text=d.instruction)],
-            trace_id=trace_id,
-        )
-    )
+ROUND_LIMIT = "Tool round limit reached. Summarise what you found so far and what remains."
 
 
 def _owner_turn(text: str, req: ChatRequest, trace_id: str | None) -> Turn:
@@ -141,6 +125,7 @@ class Brain:
         billing: Billing | None = None,
         memory: MemoryService | None = None,
         wit: WitSource | None = None,
+        documents: DocumentService | None = None,
     ) -> None:
         if brains is None:
             if router is None:
@@ -166,6 +151,7 @@ class Brain:
         # the app passes its own (Firestore, daily rate); without one: in-memory, default rate
         self.billing = billing or Billing.in_memory(brains, settings)
         self.memory = memory  # long-term notes about the owner (None: off)
+        self.documents = documents  # attached files (None: refused with a plain message)
         # the owner's wit level picks the system prompt (None: always the default)
         self.persona = Persona(honorific=settings.user_honorific, wit=wit)
         # One owner action at a time per conversation (chat, approve, decline, delete): no
@@ -342,6 +328,7 @@ class Brain:
             self.brains.get(req.brain)  # fail before creating an orphan session
         guard_input(req.message, max_chars=self.s.max_input_chars)
         await self.check_budget(req)  # a refused first message leaves no empty conversation
+        await precheck(self.documents, req, self.brains.get(req.brain or self.brains.default.id))
         session = await self._load_or_create(req)
         return req.model_copy(update={"session_id": session.id})
 
@@ -361,9 +348,10 @@ class Brain:
         spec = self._resolve_brain(session, req)
         await self._admit(req.user_id, spec)  # refused → nothing stored, nothing called
 
-        session.append(_owner_turn(text, req, trace_id))
-        # persist the user turn before the LLM call so a crash never loses owner input
-        await self.store.save(session)
+        turn = _owner_turn(text, req, trace_id)
+        # persist the user turn (files bound) before the LLM call: a crash never loses owner input;
+        # another window's change first → MessageNotSaved (jarvis.core.saving), files unbound
+        await save_owner_turn(self.documents, self.store, session, turn, req, spec)
 
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)
@@ -371,13 +359,14 @@ class Brain:
         prompt = _Prompt(
             await self.persona.system_for(req.user_id), self._trailer(session, req) + rec.block
         )
+        rounds = Rounds(session)  # the tool rounds; a conflict after a write reloads the session
         try:
-            completion, pending = await self._run_loop(session, messages, prompt, req, spec)
+            completion, pending = await self._run_loop(rounds, messages, prompt, req, spec)
         except LLMError:
             log.exception("brain: llm failure", extra={"session_id": session.id})
             raise
 
-        rounds = int(session.metadata.pop("_rounds", 0))
+        session = rounds.session
         reply = completion.text.strip() or "I have nothing to add, Sir."
         session.append(
             Turn(
@@ -388,14 +377,17 @@ class Brain:
                 usage=completion.usage,
                 cost_usd=completion.cost_usd,
                 latency_ms=completion.latency_ms,
-                tool_derived=rounds > 0,  # written from tool results: never to a training brain
+                tool_derived=rounds.count > 0,  # written from tool results: never to training
+                sources=cited_sources(reply, session, enabled=spec.tools_allowed),
             )
         )
-        await self.store.save(session)
+        stored = await rounds.store(self.store, session.turns[-1:])  # after a write: never 409
+        session = rounds.session
         self._after_turn(req.user_id, session, spec, rec)
         total_ms = int((time.perf_counter() - t0) * 1000)
         self._log_turn(session, len(messages), spec, completion, total_ms)
-        reply_meta = _ReplyMeta(trace_id, total_ms, rounds, pending, list(rec.used))
+        reply_meta = _ReplyMeta(trace_id, total_ms, rounds.count, pending, list(rec.used))
+        reply += rounds.reply_note(stored)  # the record is incomplete: say so, plainly
         return await self._chat_response(session, spec, reply, completion, reply_meta)
 
     def _trailer(self, session: Session, req: ChatRequest) -> str:
@@ -449,6 +441,7 @@ class Brain:
             tool_calls=meta.rounds,
             pending_approvals=meta.pending,
             memory_used=meta.memory_used,
+            sources=session.turns[-1].sources,  # the reply just stored: what it cited
         )
 
     # ---- tool loop ----------------------------------------------------------------------
@@ -479,87 +472,83 @@ class Brain:
 
     async def _run_loop(
         self,
-        session: Session,
+        rounds: Rounds,
         messages: list[ChatMessage],
         prompt: _Prompt,
         req: ChatRequest,
         spec: BrainSpec,
     ) -> tuple[Completion, list[PendingApproval]]:
-        """model → tool calls → gateway → results → model, until text or the round cap."""
+        """model → tool calls → gateway → results → model, until text or the round cap. Each round
+        is stored as it ends (`jarvis.core.rounds`: conflict-safe once a write has run), inside
+        this owner message's budget of new approval cards and document calls."""
         pending: list[PendingApproval] = []
         if not self._tools_on(spec):
             return await self._complete(messages, prompt, req, spec, with_tools=False), pending
         assert self.gateway is not None
-        rounds = 0
         msgs = list(messages)
-        while True:
-            completion = await self._complete(msgs, prompt, req, spec, with_tools=True)
-            if not completion.tool_calls:
-                break
-            rounds += 1
-            # record the assistant's tool request and our results as block turns
-            asst_blocks: list = [TextBlock(text=completion.text)] if completion.text.strip() else []
-            asst_blocks += completion.tool_calls
-            session.append(
-                Turn(
+        with turn_budget():
+            while True:
+                completion = await self._complete(msgs, prompt, req, spec, with_tools=True)
+                if not completion.tool_calls:
+                    break
+                rounds.count += 1
+                # record the assistant's tool request and our results as block turns
+                text = completion.text
+                asst_blocks: list[ContentBlock] = [TextBlock(text=text)] if text.strip() else []
+                asst_blocks += completion.tool_calls
+                asst = Turn(
                     role=Role.ASSISTANT,
-                    content=completion.text,
+                    content=text,
                     blocks=asst_blocks,
                     model=completion.model,
                     usage=completion.usage,
                     cost_usd=completion.cost_usd,
                     latency_ms=completion.latency_ms,
                 )
-            )
-            results: list = []
-            # what the model had seen when it asked for these calls: other people's text? A
-            # spoken message may be: every write it leads to becomes an approval card.
-            untrusted = untrusted_seen(msgs, self.gateway.registry)
-            spoken = req.channel == "voice"
-            for call in completion.tool_calls:
-                with context_trust(untrusted=untrusted, spoken=spoken):
-                    gr = await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}")
-                if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending:
-                    pending.append(PendingApproval.from_action(gr.pending))
-                results.append(
+                rounds.session.append(asst)
+                outcomes = await self._run_calls(rounds.session, msgs, completion.tool_calls, req)
+                pending += [
+                    PendingApproval.from_action(gr.pending)
+                    for gr in outcomes
+                    if gr.outcome is GatewayOutcome.AWAITING_CONFIRMATION and gr.pending
+                ]
+                results: list[ContentBlock] = [
                     ToolResultBlock(
                         tool_use_id=call.id,
                         content=gr.for_model(),
                         is_error=gr.outcome is GatewayOutcome.ERROR,
                     )
-                )
-            session.append(Turn(role=Role.USER, content="", blocks=results))
-            await self.store.save(session)
-            msgs = msgs + [
-                ChatMessage(role=Role.ASSISTANT, content=asst_blocks),
-                ChatMessage(role=Role.USER, content=results),
-            ]
-            if rounds >= self.s.tool_max_rounds:
-                log.warning("tool round limit reached", extra={"session_id": session.id})
-                msgs = msgs + [
-                    ChatMessage(
-                        role=Role.USER,
-                        content=(
-                            "Tool round limit reached. Summarise what you found so far "
-                            "and what remains."
-                        ),
-                    )
+                    for call, gr in zip(completion.tool_calls, outcomes, strict=True)
                 ]
-                completion = await self._complete(msgs, prompt, req, spec, with_tools=False)
-                break
-        session.metadata["_rounds"] = rounds
+                done = Turn(role=Role.USER, content="", blocks=results)
+                rounds.session.append(done)
+                rounds.note(self.gateway.registry, completion.tool_calls, outcomes)
+                if not await rounds.store(self.store, [asst, done]):
+                    return rounds.stopped(completion), pending  # ran, not recorded: no more tools
+                msgs = msgs + [
+                    ChatMessage(role=Role.ASSISTANT, content=asst_blocks),
+                    ChatMessage(role=Role.USER, content=results),
+                ]
+                if rounds.count >= self.s.tool_max_rounds:
+                    log.warning("tool round limit reached", extra={"session_id": rounds.session.id})
+                    msgs = msgs + [ChatMessage(role=Role.USER, content=ROUND_LIMIT)]
+                    completion = await self._complete(msgs, prompt, req, spec, with_tools=False)
+                    break
         return completion, pending
 
-    async def _save_after_action(self, session: Session) -> None:
-        """The owner's decision has already taken effect. A storage hiccup must not turn that
-        into an error (the owner would ask again and e.g. send twice): log, still answer."""
-        try:
-            await self.store.save(session)
-        except Exception as exc:  # noqa: BLE001
-            log.error(
-                "SAVE FAILED after an approved action; reply still sent",
-                extra={"session_id": session.id, "error": type(exc).__name__},
-            )
+    async def _run_calls(
+        self, session: Session, msgs: list[ChatMessage], calls: list[ToolCall], req: ChatRequest
+    ) -> list[GatewayResult]:
+        """One round's calls through the gateway, in order. What the model had seen when it asked
+        for them: other people's text? A spoken message may be: every write becomes a card."""
+        assert self.gateway is not None
+        untrusted = untrusted_seen(msgs, self.gateway.registry)
+        spoken = req.channel == "voice"
+        out: list[GatewayResult] = []
+        for call in calls:
+            with context_trust(untrusted=untrusted, spoken=spoken), web_conversation(session):
+                out.append(await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}"))
+        return out
 
     # ---- forgetting -----------------------------------------------------------------------
 
@@ -572,6 +561,7 @@ class Brain:
                 return False
             if self.gateway is not None:
                 await self.gateway.gate.cancel_scope(f"{user_id}:{session_id}")
+            await forget_files(self.documents, user_id, session_id)  # none outlives the chat
             return await self.store.delete(session_id)
 
     # ---- approvals ----------------------------------------------------------------------
@@ -617,64 +607,34 @@ class Brain:
         session = await self._load_or_create(req)
         call = ToolCall(id=f"approve_{approval_id}", name=action.tool, arguments=action.arguments)
         if approved:
-            d = await self._approved(call, action, approval_id, scope)
+            with web_conversation(session):
+                d = await decisions.approved(self.gateway, call, action, approval_id, scope)
         else:
-            d = await self._declined(call, action, approval_id)
+            d = await decisions.declined(self.gateway, call, action, approval_id)
         trace_id = get_trace_id()
-        _record_exchange(session, d, trace_id)
-        await self._save_after_action(session)
+        # the decision already took effect: storing its record never raises (jarvis.core.saving);
+        # if another window changed the conversation, it is re-recorded on the newer one
+        exchange = decisions.record_exchange(session, d, trace_id)
+        session, recorded = await record_after_action(self.store, session, exchange)
         spec = self._resolve_brain(session, req)
         reply, completion = await self._narrate(session, req, spec, d.fallback)
-        session.append(
-            Turn(
-                role=Role.ASSISTANT,
-                content=reply,
-                trace_id=trace_id,
-                model=completion.model if completion else "none",
-                usage=completion.usage if completion else None,
-                cost_usd=completion.cost_usd if completion else 0.0,
-                tool_derived=True,
-            )
+        narration = Turn(
+            role=Role.ASSISTANT,
+            content=reply,
+            trace_id=trace_id,
+            model=completion.model if completion else "none",
+            usage=completion.usage if completion else None,
+            cost_usd=completion.cost_usd if completion else 0.0,
+            tool_derived=True,
         )
-        await self._save_after_action(session)
-        return await self._decision_response(session, spec, reply, completion, trace_id, approved)
-
-    async def _approved(
-        self, call: ToolCall, action: PendingAction, approval_id: str, scope: str
-    ) -> _Decision:
-        assert self.gateway is not None
-        gr = await self.gateway.execute(call, confirmation_id=approval_id, scope=scope)
-        if gr.outcome is GatewayOutcome.CONFIRMATION_INVALID:
-            # lost a race with another approve/decline: nothing ran, touch nothing
-            raise LookupError(f"no pending approval {approval_id} in this session")
-        done = gr.outcome is GatewayOutcome.EXECUTED
-        fallback = (
-            f"Done, Sir: {action.summary}."
-            if done
-            else f"That did not go through: {gr.error or gr.outcome.value}."
-        )
-        return _Decision(
-            call, gr, fallback, "Owner approved this action; report the outcome in one sentence."
-        )
-
-    async def _declined(self, call: ToolCall, action: PendingAction, approval_id: str) -> _Decision:
-        assert self.gateway is not None
-        if not await self.gateway.gate.cancel(approval_id):
-            # approved (or declined) concurrently: never record a decline that didn't happen
-            raise LookupError(f"no pending approval {approval_id} in this session")
-        tool = self.gateway.registry.get(action.tool)
-        await self.gateway.audit.append(
-            agent=tool.agent if tool else "gateway",
-            tool=action.tool,
-            risk=action.risk,
-            outcome="declined",
-            args=action.arguments,
-        )
-        return _Decision(
-            call,
-            GatewayResult(GatewayOutcome.DENIED, error="declined by owner"),
-            "Understood, Sir. Nothing was sent or changed.",
-            "Owner declined this action; acknowledge in one sentence, nothing was done.",
+        session.append(narration)
+        unsaved = [narration] if recorded else [*exchange, narration]
+        session, saved = await record_after_action(self.store, session, unsaved)
+        again = d.result.pending  # set only when the card changed and was proposed again
+        if not (recorded or saved):  # the next turn will not know: tell the owner now
+            reply = f"{reply} {not_recorded_note(approved and again is None)}"
+        return await self._decision_response(
+            session, spec, reply, completion, trace_id, approved, again
         )
 
     async def _narrate(
@@ -708,6 +668,7 @@ class Brain:
         completion: Completion | None,
         trace_id: str,
         approved: bool,
+        again: PendingAction | None = None,
     ) -> ChatResponse:
         cost = completion.cost_usd if completion else 0.0
         cost_inr, total_inr = await self._rupees(cost, session.total_cost_usd)
@@ -724,8 +685,8 @@ class Brain:
             total_cost_inr=total_inr,
             latency_ms=0,
             turn_count=len(session.turns),
-            tool_calls=1 if approved else 0,
-            pending_approvals=[],
+            tool_calls=1 if approved and again is None else 0,
+            pending_approvals=[PendingApproval.from_action(again)] if again is not None else [],
         )
 
     async def chat_stream(
@@ -752,8 +713,8 @@ class Brain:
         spec = self._resolve_brain(session, req)
         router = self.brains.router_for(spec.id)
         await self._admit(req.user_id, spec)  # turn-level: refused → nothing stored
-        session.append(_owner_turn(text, req, trace_id))
-        await self.store.save(session)
+        turn = _owner_turn(text, req, trace_id)
+        await save_owner_turn(self.documents, self.store, session, turn, req, spec)
 
         messages = self._window_for(session, spec)
         rec = await self._recall(req.user_id, spec, text)
@@ -763,12 +724,13 @@ class Brain:
         system = await self.persona.system_for(req.user_id)
         chunks: list[str] = []
         model = router.resolve(self._tier(req))
-        # Streams report no usage: estimate tokens from characters so a paid streamed reply is
-        # metered (and counts toward the limit) instead of costing "₹0".
+        # The vendor's own counts as they arrive (slice 10 A2); characters/4 only for what it
+        # did not report, flagged `estimated` — a paid streamed reply never meters "₹0".
+        reported = StreamUsage()
         sent = len(system) + len(trailer) + sum(len(m.text()) for m in messages)
         await self._admit(req.user_id, spec)  # call-level, like every other model call
         finished = False
-        cost = 0.0
+        cost, usage = 0.0, None
         try:
             async for delta in router.stream(
                 tier=self._tier(req),
@@ -777,17 +739,21 @@ class Brain:
                 messages=messages,
                 max_tokens=self.s.max_output_tokens,
                 effort=self._effort(),
+                usage=reported,
             ):
                 chunks.append(delta)
                 yield delta
             finished = True
         finally:
             # Metered here, once, for a finished stream AND one cut short (client gone, provider
-            # error): either way the provider bills what it wrote. `record` is shielded, so the
-            # cancellation of a disconnected response can't skip it.
-            if finished or chunks:
-                cost = priced_cost(model, estimate_usage(sent, len("".join(chunks))))
+            # error after the vendor read the prompt): the provider bills what it read and wrote.
+            # `record` is shielded, so a disconnected response's cancellation can't skip it.
+            if finished or chunks or reported.reported:
+                usage = stream_usage(reported, input_chars=sent, output_chars=sum(map(len, chunks)))
+                cost = priced_cost(model, usage)
                 await self.billing.record(req.user_id, spec.id, cost)
 
-        reply = Turn(role=Role.ASSISTANT, content="".join(chunks).strip(), trace_id=trace_id)
+        reply = Turn(
+            role=Role.ASSISTANT, content="".join(chunks).strip(), trace_id=trace_id, usage=usage
+        )
         await self._finish_turn(req.user_id, session, spec, rec, reply, model=model, cost=cost)

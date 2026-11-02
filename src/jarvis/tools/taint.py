@@ -23,7 +23,8 @@ import contextvars
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
-from jarvis.llm.base import ChatMessage, ToolCall, ToolResultBlock
+from jarvis.llm.base import ChatMessage, TextBlock, ToolCall, ToolResultBlock
+from jarvis.tools.external import FENCE_PREFIX
 from jarvis.tools.registry import ToolRegistry
 
 _untrusted: contextvars.ContextVar[bool | None] = contextvars.ContextVar(
@@ -37,6 +38,13 @@ _spoken: contextvars.ContextVar[bool] = contextvars.ContextVar(
 def untrusted_in_context() -> bool:
     flag = _untrusted.get()
     return True if flag is None else flag
+
+
+def tainted_round() -> bool:
+    """True only INSIDE a turn whose model has seen untrusted content (or a spoken turn).
+    Unlike `untrusted_in_context`, outside a turn this is False: an approval being executed or
+    a script is not a tainted round (slice 10 D review M2)."""
+    return _untrusted.get() is True
 
 
 def spoken_in_context() -> bool:
@@ -55,8 +63,20 @@ def context_trust(*, untrusted: bool, spoken: bool = False) -> Iterator[None]:
         _untrusted.reset(token)
 
 
+def fenced_text_seen(messages: Sequence[ChatMessage]) -> bool:
+    """True when a text block carries fenced external content: the note an attached document
+    adds to the owner's turn (slice 10 E). An owner who types a fence only makes it stricter."""
+    return any(
+        isinstance(b, TextBlock) and FENCE_PREFIX in b.text
+        for m in messages
+        if not isinstance(m.content, str)
+        for b in m.content
+    )
+
+
 def untrusted_seen(messages: Sequence[ChatMessage], registry: ToolRegistry) -> bool:
-    """True when any tool result in `messages` came from a tool without trusted output."""
+    """True when any tool result in `messages` came from a tool without trusted output, or an
+    attached document's text is in them."""
     called: dict[str, str] = {}
     for m in messages:
         if isinstance(m.content, str):
@@ -68,7 +88,14 @@ def untrusted_seen(messages: Sequence[ChatMessage], registry: ToolRegistry) -> b
                 tool = registry.get(called.get(b.tool_use_id, ""))
                 if tool is None or not tool.trusted_output:
                     return True
-    return False
+    return fenced_text_seen(messages)
 
 
-__all__ = ["context_trust", "spoken_in_context", "untrusted_in_context", "untrusted_seen"]
+__all__ = [
+    "context_trust",
+    "fenced_text_seen",
+    "spoken_in_context",
+    "tainted_round",
+    "untrusted_in_context",
+    "untrusted_seen",
+]

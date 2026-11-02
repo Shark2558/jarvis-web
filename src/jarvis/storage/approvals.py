@@ -85,6 +85,17 @@ class DocApprovalStore(ApprovalStore):
 
         return await self._d.transaction(take)
 
+    async def pending_in(self, scope: str | None) -> list[PendingAction]:
+        """One conversation's waiting cards only (an equality query: Firestore's automatic
+        single-field index), so a proposal never reads every card (integration review L4).
+        Expired ones are skipped here and tidied by `list_pending`."""
+        if scope is None:
+            return await super().pending_in(scope)
+        rows = await self._d.query(Query(self._col, where=("scope", scope), limit=LIST_LIMIT))
+        now = datetime.now(UTC)
+        live = [a for _, d in rows if (a := _decode(d)) is not None and a.expires_at >= now]
+        return sorted(live, key=lambda a: a.created_at)
+
     async def list_pending(self) -> list[PendingAction]:
         rows = await self._d.query(Query(self._col, order_by="created_at", limit=LIST_LIMIT))
         now = datetime.now(UTC)

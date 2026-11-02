@@ -107,6 +107,9 @@ async def tick(request: Request, svc: BriefService = Depends(_svc)) -> TickResul
     result = await svc.tick()
     brain: Brain = request.app.state.brain
     await brain.sweep_memory(svc.owners)  # bounded, never raises
+    docs = getattr(request.app.state, "documents", None)
+    if docs is not None:  # unsent uploads older than a day (slice 10 E): hourly, never raises
+        await docs.sweep_waiting()
     return result
 
 

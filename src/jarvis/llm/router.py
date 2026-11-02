@@ -18,6 +18,7 @@ from jarvis.llm.base import (
     Effort,
     LLMProvider,
     LLMTransientError,
+    StreamUsage,
     ToolSpec,
 )
 from jarvis.llm.gemini_provider import GeminiProvider
@@ -99,6 +100,7 @@ class ModelRouter:
         messages: list[ChatMessage],
         max_tokens: int,
         effort: Effort | None = None,
+        usage: StreamUsage | None = None,
     ) -> AsyncIterator[str]:
         # No mid-stream degradation: once tokens are flowing to a TTS engine we cannot restart.
         return self.provider.stream(
@@ -108,6 +110,7 @@ class ModelRouter:
             model=self.resolve(tier),
             max_tokens=max_tokens,
             effort=effort,
+            usage=usage,
         )
 
 

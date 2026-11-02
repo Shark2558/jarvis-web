@@ -69,8 +69,9 @@ async def test_permissions_section_is_collapsed_in_the_approvals_panel(client: A
 async def test_approval_cards_offer_approve_with_passkey(client: AsyncClient) -> None:
     js = (await client.get("/static/console.js")).text
     assert "a.passkey_required === true ? 'Approve with passkey' : 'Approve'" in js
-    assert "body.passkey = await P.approve(id)" in js
     assert '<p class="perr" role="alert"></p>' in js
+    decisions = (await client.get("/static/console-approvals.js")).text  # slice 11 review
+    assert "body.passkey = await P.approve(id)" in decisions
     perm = (await client.get("/static/console-permissions.js")).text
     assert "window.JarvisPasskey = Object.freeze(" in perm
     assert "document.addEventListener('jarvis:ready'" in perm

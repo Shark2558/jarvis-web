@@ -45,6 +45,7 @@ APP_ASSETS: dict[str, str] = {
     "console-permissions.js": _JS,  # slice 10 D: Allow / Ask first / Never, passkeys (WebAuthn)
     "console-attach.js": _JS,  # slice 10 E: paperclip, drag-and-drop, file chips
     "console-approve-all.js": _JS,  # slice 11 D6: "Approve all (n)" above the Approvals list
+    "console-approvals.js": _JS,  # slice 11 review: a card's Approve / Decline, Approve all's path
     "console-attach.css": "text/css",
     "console-deleted.js": _JS,  # slice 11: Approvals → Recently deleted, the reply's Undo chip
     "console-deleted.css": "text/css",

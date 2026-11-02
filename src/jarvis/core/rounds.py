@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.core.models import Session, Turn, UndoRef
@@ -56,6 +57,9 @@ class Rounds:
     done: list[str] = field(default_factory=list)
     unrecorded: list[Turn] = field(default_factory=list)
     undo: list[UndoRef] = field(default_factory=list)
+    # slice 12: place / route / video cards the message's Maps and YouTube results made for the
+    # owner's screen (`jarvis.tools.reply_cards`); shown with the reply, never stored
+    cards: list[Any] = field(default_factory=list)
 
     @property
     def wrote(self) -> bool:

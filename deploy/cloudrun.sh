@@ -211,6 +211,44 @@ web_search_answer() {
 }
 web_search_answer
 
+# Maps + YouTube (slice 12 D2): ONE API key, jarvis-maps-yt, restricted to Places (New), Routes,
+# Geocoding and YouTube Data v3. No question: made (or reused) here, its string kept only in Secret
+# Manager (jarvis-google-api-key, readable by jarvis-run alone via the grant loop in step 5), never
+# printed. Every part may fail without stopping the deploy: Maps and YouTube then stay off.
+MAPS_SECRET=""; MAPS_STATE=off
+setup_maps_key() {
+  local name="" key="" saved=""
+  local -a targets=(--api-target=service=places.googleapis.com --api-target=service=routes.googleapis.com
+    --api-target=service=geocoding-backend.googleapis.com --api-target=service=youtube.googleapis.com)
+  if gcloud services enable places.googleapis.com routes.googleapis.com geocoding-backend.googleapis.com \
+       youtube.googleapis.com apikeys.googleapis.com --quiet >/dev/null 2>&1; then
+    name="$(gcloud services api-keys list --filter='displayName=jarvis-maps-yt' --format='value(name)' --limit=1 2>/dev/null || true)"
+    if [ -z "$name" ]; then
+      name="$(gcloud services api-keys create --display-name=jarvis-maps-yt "${targets[@]}" \
+        --format='value(response.name)' --quiet 2>/dev/null || true)"
+      [ -n "$name" ] || name="$(gcloud services api-keys list --filter='displayName=jarvis-maps-yt' --format='value(name)' --limit=1 2>/dev/null || true)"
+    else   # keep its restrictions exactly these four APIs
+      gcloud services api-keys update "$name" "${targets[@]}" --quiet >/dev/null 2>&1 || \
+        echo "  Note: could not re-check the Maps/YouTube key's restrictions (it keeps the ones it has)."
+    fi
+    if [ -n "$name" ]; then
+      key="$(gcloud services api-keys get-key-string "$name" --format='value(keyString)' 2>/dev/null || true)"
+    fi
+  fi
+  if [ -n "$key" ]; then
+    saved="$(gcloud secrets versions access latest --secret=jarvis-google-api-key 2>/dev/null || true)"
+    if [ "$saved" != "$key" ]; then
+      put_secret jarvis-google-api-key "$key" || { echo "  Note: could not store the Maps/YouTube key; Maps and YouTube stay off."; return 0; }
+    fi
+  else
+    echo "  Note: the Maps/YouTube key could not be set up this time (JARVIS works without it)."
+  fi
+  if secret_exists jarvis-google-api-key; then
+    MAPS_SECRET="JARVIS_GOOGLE_API_KEY=jarvis-google-api-key:latest,"; MAPS_STATE=on
+  fi
+}
+setup_maps_key
+
 say "4/8  Setting up JARVIS's memory (a Firestore database in your project)"
 if DBTYPE="$(gcloud firestore databases describe --database='(default)' --format='value(type)' 2>/dev/null)"; then
   [ "$DBTYPE" = "FIRESTORE_NATIVE" ] || die "This project already has a database in '$DBTYPE' mode; JARVIS needs Firestore Native mode. Send this message to Claude."
@@ -260,7 +298,7 @@ try_bind "serviceAccount:${RUN_SA}" roles/serviceusage.serviceUsageConsumer \
   || echo "  Note: could not let JARVIS use the speech APIs; the browser voice will be used."
 for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key \
               jarvis-openai-compat-key jarvis-session-secret jarvis-api-token jarvis-token-key \
-              jarvis-tavily-key; do
+              jarvis-tavily-key jarvis-google-api-key; do
   secret_exists "$secret" || continue
   ok=no
   for _ in 1 2 3 4 5 6; do
@@ -293,12 +331,12 @@ INFRA_ENV="${INFRA_ENV},${WEB_ENV}"   # the web-search answer (on / remembered s
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
     --update-env-vars "$INFRA_ENV"
-    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 else
   CONFIG_FLAGS=(
     --set-env-vars "${INFRA_ENV},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV}"
-    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 fi
 gcloud run deploy "$SERVICE" --source . --region "$REGION" \
@@ -461,6 +499,22 @@ cat <<'MSG'
 WEB SEARCH: off (no Tavily key). To switch it on later: sign up free at https://app.tavily.com,
 copy the key (tvly-...), then run:  bash deploy/cloudrun.sh --web-search
 (the key is kept in secret jarvis-tavily-key).
+MSG
+fi
+if [ "$MAPS_STATE" = on ]; then
+cat <<'MSG'
+
+MAPS + YOUTUBE: on (key jarvis-maps-yt, restricted to Places, Routes, Geocoding and YouTube; kept
+in secret jarvis-google-api-key). JARVIS stops at 90 % of Google's free allowance: 31,500 place
+searches and 31,500 travel times a month, 90 YouTube searches a day. These numbers are Google's
+India prices, which apply only when your Cloud billing account is in India; with a billing
+account elsewhere the free Maps allowance is smaller (5,000 a month each), so tell Claude to
+lower the stops before using Maps a lot. Vitals shows the counts.
+MSG
+else
+cat <<'MSG'
+
+MAPS + YOUTUBE: off (the Maps/YouTube key could not be set up). Re-run this script to try again.
 MSG
 fi
 cat <<'MSG'

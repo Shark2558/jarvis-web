@@ -621,6 +621,7 @@
     if (used.length) memoryChip(row, used);
     if (window.JarvisSources) window.JarvisSources.render(row, r.sources);
     if (window.JarvisDeleted) window.JarvisDeleted.chips(row, r.undo); // slice 11: Undo chips
+    if (window.JarvisMedia) window.JarvisMedia.cards(row, r.cards); // slice 12: Maps / YouTube cards
     renderStats(r, rttMs);
     emit('jarvis:reply', { refused: false, tools: Number.isFinite(r.tool_calls) ? r.tool_calls : 0 });
     // slice 9: the voice module speaks it (per "Speak replies"); an approval left waiting after a

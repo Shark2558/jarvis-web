@@ -187,10 +187,11 @@ async def test_rejects_unknown_names_releases_and_traversal(client: AsyncClient,
 async def test_csp_adds_only_wasm_unsafe_eval_to_script_src(client: AsyncClient) -> None:
     csp = (await client.get("/")).headers["content-security-policy"]
     added = "script-src 'self' 'wasm-unsafe-eval';"
-    assert csp == PREVIOUS_CSP.replace("script-src 'self';", added)
+    media = "; frame-src https://www.youtube-nocookie.com"  # slice 12 D4 (test_media_console.py)
+    assert csp == PREVIOUS_CSP.replace("script-src 'self';", added) + media
     # nothing else: no unsafe-eval, no workers or blob:, no other hosts
     assert "'unsafe-eval'" not in csp and "blob:" not in csp and "worker-src" not in csp
-    assert "http" not in csp
+    assert "http" not in csp.removesuffix(media)
 
 
 # ---- packaging ---------------------------------------------------------------------------------

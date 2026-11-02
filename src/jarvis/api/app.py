@@ -26,6 +26,7 @@ from jarvis.api.deleted import router as deleted_router
 from jarvis.api.documents import ATTACH_BODY_BYTES, ATTACH_PATH, install_documents
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
+from jarvis.api.media import router as media_router
 from jarvis.api.memory import router as memory_router
 from jarvis.api.permissions import build_permissions, install_permissions
 from jarvis.api.ratelimit import RateLimiter, make_middleware
@@ -60,6 +61,7 @@ from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
 from jarvis.llm.brains import BrainRegistry
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
+from jarvis.media.service import build_media
 from jarvis.memory import SessionConflict, SessionNotFound, SessionStore
 from jarvis.recall.errors import (
     ConsentRequired,
@@ -234,6 +236,8 @@ def create_app(
         # No network at start-up: credentials are looked up on first use.
         app.state.voice = build_voice_service(s, docs, app.state.billing, engines=voice_engines)
         app.state.web = build_web_service(s, docs)  # slice 10 B: None without a Tavily key
+        # slice 12 D2–D4: Maps + YouTube on JARVIS's own Google API key (None without one)
+        app.state.media = build_media(s, docs, google=app.state.google)
         # Attached files (slice 10 E): text and chunks on the same documents, deleted with the
         # conversation; the doc tools join the gateway's registry.
         app.state.documents = DocumentService(AttachmentStore(docs, prefix=s.firestore_prefix))
@@ -254,6 +258,7 @@ def create_app(
                 undo=app.state.undo,
                 # D8: to-dos JARVIS wrote from outside content, on the same documents
                 marks=app.state.outside_tasks,
+                media=app.state.media,
             )
         # slice 10 D: the owner's Allow / Ask first / Never rules and passkeys, on the same
         # documents; the gateway reads the rules on every call (one built elsewhere gets them too)
@@ -290,6 +295,7 @@ def create_app(
                 "brief_scheduler": getattr(app.state, "scheduler_verifier", None) is not None,
                 "voice_cloud": app.state.voice.engines is not None,
                 "web_search": app.state.web is not None,
+                "maps_youtube": app.state.media is not None,
             },
         )
         try:
@@ -305,6 +311,8 @@ def create_app(
             await app.state.voice.aclose()
             if app.state.web is not None:
                 await app.state.web.aclose()
+            if app.state.media is not None:
+                await app.state.media.aclose()
             verifier = getattr(app.state, "scheduler_verifier", None)
             if verifier is not None:
                 await verifier.aclose()
@@ -453,6 +461,7 @@ def create_app(
     app.include_router(usage_router)
     app.include_router(memory_router)
     app.include_router(web_router)
+    app.include_router(media_router)
     app.include_router(deleted_router)
     install_voice(app)
     install_permissions(app)

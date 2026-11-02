@@ -201,6 +201,13 @@ class Settings(BaseSettings):
         description="Off: no web tools even with a key (deploy/cloudrun.sh records a skipped key "
         "as false, so re-runs don't ask again)",
     )
+    # --- Maps + YouTube (slice 12 D2): JARVIS's own server-side Google API key, restricted to
+    # Places (New), Routes, Geocoding and YouTube Data v3. No key: those tools are not registered.
+    google_api_key: SecretStr | None = Field(
+        default=None,
+        description="Google API key jarvis-maps-yt (Secret Manager `jarvis-google-api-key`); "
+        "never sent to the browser",
+    )
 
     # --- long-term memory (slice 8) ---
     memory_enabled: bool = Field(

@@ -72,6 +72,23 @@ def can_use_tasks(scopes: Iterable[str]) -> bool:
     return TASKS_SCOPE in set(scopes)
 
 
+# Slice 12 D4: the owner's own YouTube playlists (read-only), asked for by Integrations → Grant
+# (`?add=youtube`, builder C). Any of these lets playlists.list(mine) / playlistItems.list read.
+YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+YOUTUBE_READ_SCOPES = frozenset(
+    {
+        YOUTUBE_SCOPE,
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+    }
+)
+
+
+def can_use_youtube(scopes: Iterable[str]) -> bool:
+    """True when the granted scopes let JARVIS read the owner's own YouTube playlists."""
+    return not YOUTUBE_READ_SCOPES.isdisjoint(scopes)
+
+
 HTTP_TIMEOUT_S = 15.0
 REFRESH_SKEW_S = 60.0  # refresh when the access token has less than this left
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -465,6 +482,7 @@ __all__ = [
     "TASKS_SCOPE",
     "TOKEN_URL",
     "TOOL_SCOPES",
+    "YOUTUBE_SCOPE",
     "GoogleAPIError",
     "GoogleConflict",
     "GoogleConnector",
@@ -477,6 +495,7 @@ __all__ = [
     "build_google_connector",
     "can_insert",
     "can_use_tasks",
+    "can_use_youtube",
     "connect_scopes",
     "google_tools_configured",
     "google_tools_startup_note",

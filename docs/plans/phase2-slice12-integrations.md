@@ -8,6 +8,16 @@ CI test 3.11/3.12, firestore, browser, eval-gate, deploy all green)
 Noise watch, My Ecovacs robo cleaner, Google home and any other integration, Google drive Selected
 folders only."
 
+## Owner decisions (3 Nov, after the research summary)
+- Music: **no Spotify Premium → YouTube only** (no Spotify slice).
+- Home hub: **try Home Assistant free on the laptop first** (VirtualBox); buy hardware only if it
+  proves useful. Slice 14 must cope with the hub being offline (plain "your home hub is off" reply).
+- Swiggy: request to builders@swiggy.in **saved as a Gmail draft** for the owner to send
+  (redirect URI `/connect/swiggy/callback`, Food + Instamart, single user, passkey on every order).
+  Swiggy's process: form at mcp.swiggy.com/builders/access/ or email → staging access → production
+  after the staging integration is green (demo video helps).
+- Ecovacs: **wait for the home box** — connect through Home Assistant, not Ecovacs' Open Platform.
+
 ## Architecture fit
 Every item is already named in the reference architecture's Layer 6 (Integration & Tools):
 *Messaging — WhatsApp*, *Smart Home / IoT — Home Assistant, Matter*, *Maps & Travel — Google Maps*,
@@ -25,7 +35,7 @@ recorded deviation (D1: Drive through the runtime service account instead of the
 | **Google Contacts** ("any other") | 2 · Communication | **Build now** | People API, free; needed to turn "message Ravi" into a number or address (D5) |
 | **WhatsApp** | 2 · Communication | **Build now as drafts** | JARVIS writes, owner taps Send (`wa.me` link). No sending by JARVIS (D6) |
 | **Swiggy** (food, Instamart) | 2 · Task (spends money) | **Next wave — blocked on Swiggy** | Official MCP (Jan 2026) with OAuth 2.1 + PKCE + DCR; a Cloud Run redirect URI needs Swiggy's approval (builders@swiggy.in). Orders: COD or UPI link (owner enters PIN) → always R3 card + passkey |
-| **Ecovacs robot vacuum** | 5 (IoT) · Automation | **Later — needs a home hub** | No official API; Home Assistant's official Ecovacs integration (deebot-client) |
+| **Ecovacs robot vacuum** | 5 (IoT) · Automation | **Next wave — try Ecovacs' official connection first** | Ecovacs Open Platform publishes an official MCP server (start/stop/dock/status) — no home box needed if the owner's account is eligible; Home Assistant's Ecovacs integration is the fallback |
 | **Google Home** devices | 5 · Automation | **Later — needs a home hub** | Home APIs are Android/iOS only; Home MCP (Sep 2026) needs Home Premium Advanced, US only, not India |
 | **Noise watch** | 6 (wearable) · Learning/health | **Premature** | No API; data only on the phone (Health Connect / Apple Health) → needs a phone companion app; health data is sensitive |
 
@@ -151,8 +161,35 @@ card. Results never vouch (`may_vouch` false). No new R3 in this slice.
 - Optional later: Google Photos Picker (pick photos to discuss), Zerodha Kite read-only portfolio
   (Finance skill; never trades), Drive saving via `drive.file`.
 
-## Home automation research (filled in from the home report)
-_pending_
+## Home automation research (verified 2026-11-03)
+- **Ecovacs, direct (no hub) — try first.** Ecovacs' own Open Platform (open.ecovacs.com) publishes
+  an official MCP server (`ecovacs-ai/ecovacs-mcp`, MIT, v1.0 Apr 2025): list devices, start /
+  pause / resume / stop cleaning, return to dock, status; auth = a "server AK" from the Open
+  Platform console; remote SSE `https://mcp-open.ecovacs.com/sse?ak=…` (key in the URL → JARVIS must
+  never log that URL; key in Secret Manager). Unverified: who may register, cost, India accounts,
+  which models. Owner step: sign up and check. If it works, the vacuum joins slice 13 without
+  Home Assistant ("start cleaning" R2, Allow-able; nothing irreversible).
+- **Ecovacs via Home Assistant**: the built-in integration (`deebot-client`, reverse-engineered,
+  v18.7.0 16 Oct 2026, Python ≥ 3.14; broke in Jul 2026 on Ecovacs' device verification, fixed in
+  HA 2026.8–2026.10.2). Fallback only.
+- **Google Home devices**: no server API (Home APIs are Android/iOS; Home MCP needs Home Premium
+  Advanced, US only). Through Home Assistant: **Google Cast** (Nest speakers/displays: announcements,
+  media; same network), **Matter** sharing from Google Home via the Android Companion app, and each
+  Wi-Fi bulb/plug through its own vendor integration (Tuya / Smart Life by QR code; Wipro devices
+  are often Tuya). The Google Assistant SDK route is fragile (no text replies, Gemini replacing
+  Assistant on speakers) → not used.
+- **Home Assistant MCP server** (since 2025.2): Streamable HTTP `/api/mcp`; least privilege =
+  a dedicated **non-admin** HA user calling `/api/mcp/assist`, which reaches only entities exposed
+  to Assist. Token in Secret Manager.
+- **Hub hardware**: HA OS in VirtualBox on the owner's laptop = ₹0 prototype (offline whenever the
+  laptop sleeps); always-on Raspberry Pi 5 4 GB ≈ ₹12,000 in India + ≈ ₹1,500–3,000 accessories
+  (≈ ₹15–25/month power); HA Green US$199 ≈ ₹18,900 + import (no Indian distributor).
+- **Reaching home from Cloud Run, privately**: Tailscale (free Personal plan) inside Cloud Run in
+  userspace mode, so Home Assistant is never on the public internet (unverified: cold starts / idle
+  CPU throttling). Fallbacks: Nabu Casa ≈ ₹6,175/year (USD-billed); Cloudflare Tunnel needs a
+  domain (≈ ₹995/year).
+- **Device risk tiers** (slice 14): read state R1; lights, plugs, media, vacuum R2 (Allow-able);
+  locks, garage doors, alarms, heaters/geysers on a timer → R3 always, never by voice.
 
 ## Shared rules for every builder
 - Start: `git merge --ff-only slice12` in your worktree; commit on your own branch `s12-<x>`.

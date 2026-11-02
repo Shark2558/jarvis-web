@@ -19,7 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from jarvis.core.guardrails import PendingAction
-from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn
+from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn, UndoRef
+from jarvis.core.rounds import undo_refs
 from jarvis.llm.base import Completion, Role, TextBlock, ToolCall, ToolResultBlock, Usage
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 
@@ -45,13 +46,15 @@ class Outcome:
     again: list[PendingAction] = field(default_factory=list)  # cards proposed again
     note: str = ""  # added to the reply as written (Approve all: the cards left waiting)
     narrate: bool = True  # False: nothing ran or was recorded — no model call, nothing stored
+    undo: list[UndoRef] = field(default_factory=list)  # undo-able deletes that ran: Undo chips
 
 
 def single(d: Decision, *, approved: bool, unrecorded: list[Turn]) -> Outcome:
     """The outcome of one approve / decline."""
     did = approved and d.result.pending is None
     again = [d.result.pending] if d.result.pending is not None else []
-    return Outcome(d.fallback, unrecorded, did, tool_calls=int(did), again=again)
+    undo = undo_refs([d.result])
+    return Outcome(d.fallback, unrecorded, did, tool_calls=int(did), again=again, undo=undo)
 
 
 def narration(reply: str, completion: Completion | None, trace_id: str) -> Turn:
@@ -93,6 +96,7 @@ def response(
         turn_count=len(session.turns),
         tool_calls=out.tool_calls,
         pending_approvals=[PendingApproval.from_action(a) for a in out.again],
+        undo=list(out.undo),
     )
 
 

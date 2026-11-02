@@ -61,6 +61,9 @@ class Tool:
     # True only for tools whose output is the owner's own data (the memory tools): their results
     # do not make the context "untrusted" (jarvis.tools.taint). Default: other people's words.
     trusted_output: bool = False
+    # Slice 11: a delete that keeps a copy in Recently deleted (jarvis.undo), so it may run as R2.
+    # One owner message runs at most `budget.MAX_FREE_DELETES` of them without a card.
+    undoable: bool = False
     # Optional (slice 11 D7 a): True → this call becomes an approval card even where the policy
     # would allow it (an owner's Allow never relaxes it; the card keeps the call's own risk, so an
     # R2 call needs no passkey). Pure, no I/O; may read `jarvis.tools.taint`. Never asked for a

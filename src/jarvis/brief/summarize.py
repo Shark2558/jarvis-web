@@ -80,7 +80,7 @@ def choose_brain(registry: BrainRegistry) -> BrainSpec | None:
 
 
 def _event_fact(e: BriefEvent) -> str:
-    bits = [when(e), e.title]
+    bits = [when(e), ("Reminder: " if e.reminder else "") + e.title]
     if e.location:
         bits.append(f"at {e.location}")
     if e.attendees > 1:

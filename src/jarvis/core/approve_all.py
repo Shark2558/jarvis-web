@@ -33,7 +33,8 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from jarvis.core import brain_decisions as decisions
 from jarvis.core.guardrails import PendingAction
-from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn
+from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn, UndoRef
+from jarvis.core.rounds import undo_refs
 from jarvis.core.saving import record_after_action
 from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
@@ -107,6 +108,7 @@ class Batch:
     again: list[PendingAction] = field(default_factory=list)
     ran: int = 0  # approved calls that went to their tool (done or failed)
     stopped: bool = False
+    undo: list[UndoRef] = field(default_factory=list)  # undo-able deletes that ran: Undo chips
 
     def outcome(self) -> decisions.Outcome:
         narrated = [r for r in self.results if r.status in _NARRATED]
@@ -118,6 +120,7 @@ class Batch:
             again=list(self.again),
             note=_note(self.results),
             narrate=bool(narrated),
+            undo=list(self.undo),
         )
 
 
@@ -203,6 +206,7 @@ async def _one(gateway: Gateway, store: SessionStore, batch: Batch, aid: str) ->
         batch.again.append(d.result.pending)
     else:
         batch.ran += 1
+    batch.undo += undo_refs([d.result])
     return _decided(action, d)
 
 

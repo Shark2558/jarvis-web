@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.core.models import Session, Turn
+from jarvis.core.models import Session, Turn, UndoRef
 from jarvis.core.saving import not_recorded_note, record_after_action
 from jarvis.llm.base import Completion, ToolCall, Usage
 from jarvis.memory.base import SessionStore
@@ -27,15 +27,27 @@ from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.tools.registry import ToolRegistry
 
 
+def undo_refs(results: Sequence[GatewayResult]) -> list[UndoRef]:
+    """The undo-able deletes among calls that ran (slice 11: the reply's Undo chips)."""
+    refs = (UndoRef.from_result(gr.result) for gr in results)
+    return [
+        r
+        for gr, r in zip(results, refs, strict=True)
+        if r is not None and gr.outcome is GatewayOutcome.EXECUTED
+    ]
+
+
 @dataclass
 class Rounds:
     """One owner message's tool rounds: the session to continue with (a reload replaces it), how
-    many rounds ran, what changed something (card-style summaries) and turns not yet stored."""
+    many rounds ran, what changed something (card-style summaries), the undo-able deletes among
+    them, and turns not yet stored."""
 
     session: Session
     count: int = 0
     done: list[str] = field(default_factory=list)
     unrecorded: list[Turn] = field(default_factory=list)
+    undo: list[UndoRef] = field(default_factory=list)
 
     @property
     def wrote(self) -> bool:
@@ -45,6 +57,7 @@ class Rounds:
         self, registry: ToolRegistry, calls: Sequence[ToolCall], results: Sequence[GatewayResult]
     ) -> None:
         """Remember each call of this round that ran and can change something."""
+        self.undo += undo_refs(results)
         for call, gr in zip(calls, results, strict=True):
             if gr.outcome is not GatewayOutcome.EXECUTED:
                 continue
@@ -82,4 +95,4 @@ class Rounds:
         return "" if stored or not self.wrote else " " + not_recorded_note(True)
 
 
-__all__ = ["Rounds"]
+__all__ = ["Rounds", "undo_refs"]

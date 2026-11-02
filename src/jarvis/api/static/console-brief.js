@@ -391,12 +391,13 @@
     const li = mk('li', 'bev' + (ov.length ? ' clash' : ''));
     const early = e.starts_earlier === true, late = e.ends_later === true; // runs over midnight
     const start = txt(e.start, 5) || (early ? '…' : ''), end = txt(e.end, 5) || (late ? '…' : '');
-    const when = e.all_day === true ? 'All day' : [start, end].filter(Boolean).join('–');
+    const rem = e.reminder === true; // slice 11: a reminder JARVIS set pops up at one moment
+    const when = e.all_day === true ? 'All day' : rem ? start : [start, end].filter(Boolean).join('–');
     li.append(mk('span', 'btime', when || '—'));
     const what = mk('div', 'bwhat');
     what.append(mk('b', '', txt(e.title, 120) || '(No title)'));
     const people = num(e.attendees) ?? (Array.isArray(e.attendees) ? e.attendees.length : null);
-    const bits = [early ? 'Began on an earlier day' : '', late ? 'Runs past midnight' : '', txt(e.location, 80),
+    const bits = [rem ? 'Reminder' : '', early ? 'Began on an earlier day' : '', late ? 'Runs past midnight' : '', txt(e.location, 80),
       people ? plural(people, 'attendee', 'attendees') : '', e.has_video === true ? 'Video call' : ''].filter(Boolean);
     if (bits.length) what.append(mk('small', '', bits.join(' · ')));
     if (ov.length) { const c = mk('span', 'bclash'); c.append(icon(WARN), mk('span', '', 'Clashes with ' + ov.join(', '))); what.append(c); }

@@ -11,9 +11,9 @@ PUT  /v1/brief/settings     SettingsPatch → SettingsView; 422 without a confir
                             out-of-range time, or inbox delivery without the gmail.insert scope
 POST /internal/brief/tick   Cloud Scheduler only (Google OIDC) → {checked, generated, delivered};
                             then a learning sweep for each owner (slice 8, ≤ 20 s, awaited:
-                            the tick holds the CPU on Cloud Run), and the housekeeping sweeps
-                            (unsent uploads; slice 11: expired passkey challenges, ≤ 100) and
-                            the once-a-day Tavily usage cross-check
+                            the tick holds the CPU on Cloud Run), unsent uploads (slice 10 E),
+                            expired Recently deleted items, expired passkey challenges (≤ 100)
+                            and the once-a-day Tavily usage cross-check (slice 11)
 """
 
 from __future__ import annotations
@@ -112,6 +112,9 @@ async def tick(request: Request, svc: BriefService = Depends(_svc)) -> TickResul
     docs = getattr(request.app.state, "documents", None)
     if docs is not None:  # unsent uploads older than a day (slice 10 E): hourly, never raises
         await docs.sweep_waiting()
+    undo = getattr(request.app.state, "undo", None)
+    if undo is not None:  # Recently deleted past 30 days (slice 11; no billed TTL): never raises
+        await undo.sweep(svc.owners)
     perms = getattr(request.app.state, "permissions", None)
     if perms is not None:  # passkey challenges never answered (slice 11 D7 c): never raises
         await perms.sweep_challenges()

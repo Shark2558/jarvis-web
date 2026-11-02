@@ -384,6 +384,38 @@ async def test_a_card_that_became_irreversible_is_re_proposed_never_run(
     assert again.id in await _waiting(flaky_brain)
 
 
+async def test_undoable_deletes_approved_together_each_get_their_undo_chip(
+    settings: Settings, provider: MockProvider
+) -> None:
+    """Slice 11 A + C: a delete kept in Recently deleted, carded (spoken turn), approved with
+    Approve all → the reply carries one Undo chip per delete, as a single approval does."""
+    gone: list[str] = []
+
+    def delete(a: dict[str, Any]) -> dict[str, Any]:
+        gone.append(str(a["n"]))
+        return {"deleted": True, "undo_id": f"del_{int(a['n']):020x}", "kind": "event"}
+
+    reg = ToolRegistry()
+    reg.register(
+        Tool("event_delete", "Delete an event (kept 30 days).",
+             {"type": "object", "properties": {"n": {"type": "integer"}}},
+             ActionRisk.REVERSIBLE, delete, undoable=True)
+    )  # fmt: skip
+    gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
+    b = Brain(
+        router=ModelRouter(provider, TIERS), store=InMemorySessionStore(), settings=settings,
+        gateway=gw,
+    )  # fmt: skip
+    calls = [ToolCall(id=f"d{n}", name="event_delete", arguments={"n": n}) for n in (1, 2)]
+    resp = await _cards(b, provider, calls)
+    out = await b.approve_all(_ids(resp), session_id=resp.session_id)
+    assert gone == ["1", "2"]
+    assert [u.undo_id for u in out.undo] == [f"del_{1:020x}", f"del_{2:020x}"]
+    single = await _cards(b, provider, [ToolCall(id="d3", name="event_delete", arguments={"n": 3})])
+    one = await b.approve(_ids(single)[0], session_id=single.session_id)
+    assert [u.undo_id for u in one.undo] == [f"del_{3:020x}"]
+
+
 # ---- HTTP: same auth, CSRF and rate limit as a single approve; validation -------------------
 
 

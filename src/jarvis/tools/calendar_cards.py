@@ -13,7 +13,9 @@ from datetime import datetime
 from typing import Any
 
 from jarvis.tools.addresses import display_address
+from jarvis.tools.calendar_alerts import alert_minutes, alerts_label, event_alerts
 from jarvis.tools.card import one_line, quoted
+from jarvis.undo.models import CARD_LINE
 
 TITLE_LIMIT = 120
 TIME_LIMIT = 40
@@ -91,17 +93,23 @@ def create_card(a: dict[str, Any], guests: list[str]) -> str:
         lines.append(f"Location: {one_line(a.get('location'), FIELD_LIMIT)}")
     if one_line(a.get("description"), FIELD_LIMIT):
         lines.append(f"Description: {one_line(a.get('description'), FIELD_LIMIT)}")
+    if "reminders_minutes" in a:
+        lines.append(f"Alerts: {alerts_label(alert_minutes(a['reminders_minutes']))}")
     return "\n".join(lines)
 
 
-def delete_card(event: dict[str, Any]) -> str:
-    return "\n".join(
-        [
-            f"Delete event {_title(event)}",
-            f"When: {_when(event)}",
-            _notify(others_on(event), "that it is cancelled"),
-        ]
-    )
+def delete_card(event: dict[str, Any], *, undo: bool = False, why: str = "") -> str:
+    """`undo`: the delete keeps a copy (slice 11); `why`: why this one can't be undone."""
+    lines = [
+        f"Delete event {_title(event)}",
+        f"When: {_when(event)}",
+        _notify(others_on(event), "that it is cancelled"),
+    ]
+    if undo:
+        lines.append(CARD_LINE)
+    elif why:
+        lines.append(f"Can't be undone: {why}.")
+    return "\n".join(lines)
 
 
 def _changes(event: dict[str, Any], a: dict[str, Any], new_guests: list[str] | None) -> list[str]:
@@ -118,6 +126,9 @@ def _changes(event: dict[str, Any], a: dict[str, Any], new_guests: list[str] | N
             out.append(f"• {key}: {old} → {new}")
     if new_guests is not None:
         out.append(f"• attendees: {_people(others_on(event))} → {_people(new_guests)}")
+    if "reminders_minutes" in a:
+        new = alerts_label(alert_minutes(a["reminders_minutes"]))
+        out.append(f"• alerts: {event_alerts(event)} → {new}")
     return out
 
 

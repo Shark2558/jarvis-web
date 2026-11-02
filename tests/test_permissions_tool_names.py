@@ -18,6 +18,8 @@ from jarvis.permissions.groups import groups_for
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.setup import build_gateway
+from jarvis.undo.service import UndoBin
+from jarvis.undo.store import DeletedStore
 from jarvis.web.allowance import WebAllowance
 from jarvis.web.service import WebService
 from jarvis.web.tavily import TavilyProvider
@@ -33,8 +35,9 @@ INTENDED: dict[str, tuple[ActionRisk, set[str]]] = {
     "task_add": (R2, {"todo_change"}),
     "task_update": (R2, {"todo_change"}),
     "task_complete": (R2, {"todo_change"}),
-    # "Never" on the to-do row also stops deletes; deletes have their own ask-or-never row
-    "task_delete": (R3, {"todo_change", "todo_delete"}),
+    # slice 11: with the Recently deleted bin a delete is undo-able (R2): "Never" on the to-do
+    # row stops it; an assigned to-do's delete (R3) also has its own ask-or-never row
+    "task_delete": (R2, {"todo_change"}),
     "doc_read": (R1, {"documents"}),
     "doc_search": (R1, {"documents"}),
 }
@@ -50,6 +53,7 @@ async def _gateway() -> Gateway:
         google=await tasks_connector(FakeTasks()),
         web=web,
         documents=DocumentService(AttachmentStore(MemoryDocs())),
+        undo=UndoBin(DeletedStore(MemoryDocs())),
     )
 
 

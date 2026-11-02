@@ -46,7 +46,7 @@ from jarvis.core import approve_all as approve_many
 from jarvis.core import brain_decisions as decisions
 from jarvis.core.approve_all import ApproveAllResponse
 from jarvis.core.guardrails import guard_input
-from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
+from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn, UndoRef
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
 from jarvis.core.rounds import Rounds
@@ -106,6 +106,7 @@ class _ReplyMeta:
     rounds: int
     pending: list[PendingApproval]
     memory_used: list[MemoryRef]
+    undo: list[UndoRef] = field(default_factory=list)  # slice 11: the reply's Undo chips
 
 
 @dataclass
@@ -388,7 +389,9 @@ class Brain:
         self._after_turn(req.user_id, session, spec, rec)
         total_ms = int((time.perf_counter() - t0) * 1000)
         self._log_turn(session, len(messages), spec, completion, total_ms)
-        reply_meta = _ReplyMeta(trace_id, total_ms, rounds.count, pending, list(rec.used))
+        reply_meta = _ReplyMeta(
+            trace_id, total_ms, rounds.count, pending, list(rec.used), rounds.undo
+        )
         reply += rounds.reply_note(stored)  # the record is incomplete: say so, plainly
         return await self._chat_response(session, spec, reply, completion, reply_meta)
 
@@ -444,6 +447,7 @@ class Brain:
             pending_approvals=meta.pending,
             memory_used=meta.memory_used,
             sources=session.turns[-1].sources,  # the reply just stored: what it cited
+            undo=meta.undo,
         )
 
     # ---- tool loop ----------------------------------------------------------------------

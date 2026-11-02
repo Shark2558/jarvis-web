@@ -619,6 +619,7 @@
     const used = memoriesUsed(r.memory_used);
     if (used.length) memoryChip(row, used);
     if (window.JarvisSources) window.JarvisSources.render(row, r.sources);
+    if (window.JarvisDeleted) window.JarvisDeleted.chips(row, r.undo); // slice 11: Undo chips
     renderStats(r, rttMs);
     emit('jarvis:reply', { refused: false, tools: Number.isFinite(r.tool_calls) ? r.tool_calls : 0 });
     // slice 9: the voice module speaks it (per "Speak replies"); an approval left waiting after a

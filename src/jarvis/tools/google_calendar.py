@@ -4,10 +4,13 @@
 Risk classes: list/free-slots R1; create R2 alone but R3 once attendees are invited (an invite
 is mail to other people — `Tool.risk_for`); update R2 for an event only the owner is on, R3 when
 the event already has other attendees or the attendees change (decided by the `preview` look-up,
-which also fills the approval card with the event's real title, time and every change); delete
-R3, with the event looked up first for the card. A look-up that fails is fail-closed: no card,
-no change. Times are ISO 8601; a naive time is read in the owner's calendar time zone, and every
-time returned carries an offset.
+which also fills the approval card with the event's real title, time and every change); delete,
+with the event looked up first for the card: with a Recently deleted bin (slice 11,
+`jarvis.undo`) it is R2 — a copy is kept first, so it can be undone — and the look-up raises it to
+R3 for an event with other people, one the owner doesn't organise, a repeating one (a JARVIS
+reminder may repeat) or a special kind (`tools.calendar_undo`); without a bin it is R3. A look-up
+that fails is fail-closed: no card, no change. Times are ISO 8601; a naive time is read in the
+owner's calendar time zone, and every time returned carries an offset.
 """
 
 from __future__ import annotations
@@ -23,10 +26,13 @@ from jarvis.integrations.google import GoogleAPIError, GoogleConnector
 from jarvis.logging import get_logger
 from jarvis.tools.addresses import MAX_RECIPIENTS, loose_address, parse_address
 from jarvis.tools.base import Preview, Tool
+from jarvis.tools.calendar_alerts import MAX_ALERT_MINUTES, alert_minutes, popup_reminders
 from jarvis.tools.calendar_cards import create_card, delete_card, others_on, update_card
+from jarvis.tools.calendar_undo import CalendarRestorer, delete_kept, delete_risk
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
+from jarvis.undo.service import UndoBin
 
 log = get_logger(__name__)
 
@@ -53,6 +59,13 @@ _ATTENDEES = {
     "type": "array",
     "items": {"type": "string"},
     "description": "Email addresses to invite. Inviting people sends them mail: owner confirms.",
+}
+_ALERTS = {  # slice 11 D4: "remind me 30 minutes before the meeting"
+    "type": "array",
+    "items": {"type": "integer", "minimum": 0, "maximum": MAX_ALERT_MINUTES},
+    "maxItems": 5,
+    "description": "Pop-up alerts on the owner's phone, in minutes before the start (0 = at the "
+    "start; at most 5). Replaces the event's alerts; [] = none; leave out to keep them.",
 }
 
 
@@ -152,6 +165,7 @@ def _event_time(part: dict[str, Any] | None, tz: ZoneInfo) -> tuple[str, bool]:
 @dataclass
 class CalendarAPI:
     conn: GoogleConnector
+    undo: UndoBin | None = None  # slice 11: Recently deleted; None → deletes stay R3
 
     async def owner_tz(self, user_id: str) -> ZoneInfo:
         """The primary calendar's time zone; UTC when it cannot be read. Looked up per call."""
@@ -255,6 +269,8 @@ class CalendarAPI:
         for key in ("description", "location"):
             if key in a:
                 body[key] = str(a[key] or "")[:5_000]
+        if "reminders_minutes" in a:
+            body["reminders"] = popup_reminders(alert_minutes(a["reminders_minutes"]))
         return body
 
     async def create_event(self, a: dict[str, Any]) -> dict[str, Any]:
@@ -285,7 +301,11 @@ class CalendarAPI:
     async def delete_event(self, a: dict[str, Any]) -> dict[str, Any]:
         uid = require_tool_context().user_id
         eid = _validate_event_id(a.get("event_id"))
-        await self.conn.request(uid, "DELETE", f"{EVENTS_URL}/{eid}", params={"sendUpdates": "all"})
+        url = f"{EVENTS_URL}/{eid}"
+        if self.undo is not None:  # re-read: the copy is of the event as it is now
+            e = await self._event(a)
+            return await delete_kept(self.conn, self.undo, url, e, _organizer(e))
+        await self.conn.request(uid, "DELETE", url, params={"sendUpdates": "all"})
         return {"deleted": True, "id": eid}
 
     # ---- look-ups before the decision (Tool.preview) ----------------------------------------
@@ -299,7 +319,12 @@ class CalendarAPI:
         return e
 
     async def preview_delete(self, a: dict[str, Any]) -> Preview:
-        return Preview(delete_card(await self._event(a)), ActionRisk.IRREVERSIBLE)
+        e = await self._event(a)
+        if self.undo is None:
+            return Preview(delete_card(e), ActionRisk.IRREVERSIBLE)
+        risk, why = delete_risk(e)
+        undoable = risk is ActionRisk.REVERSIBLE
+        return Preview(delete_card(e, undo=undoable, why=why), None if undoable else risk)
 
     async def preview_update(self, a: dict[str, Any]) -> Preview:
         e = await self._event(a)
@@ -370,6 +395,7 @@ def _check_create(a: dict[str, Any]) -> None:
         raise ValueError("summary is required")
     parse_window(a, _ANY_TZ)
     _validate_attendees(a.get("attendees"))
+    _check_alerts(a)
 
 
 def _check_update(a: dict[str, Any]) -> None:
@@ -379,6 +405,12 @@ def _check_update(a: dict[str, Any]) -> None:
     if "start" in a or "end" in a:
         parse_window(a, _ANY_TZ)
     _validate_attendees(a.get("attendees"))
+    _check_alerts(a)
+
+
+def _check_alerts(a: dict[str, Any]) -> None:
+    if "reminders_minutes" in a:
+        alert_minutes(a["reminders_minutes"])
 
 
 def _check_event_id(a: dict[str, Any]) -> None:
@@ -400,8 +432,24 @@ def _attendee_change_risk(a: dict[str, Any]) -> ActionRisk:
     return ActionRisk.IRREVERSIBLE if "attendees" in a else ActionRisk.REVERSIBLE
 
 
-def calendar_tools(conn: GoogleConnector) -> list[Tool]:
-    api = CalendarAPI(conn)
+DELETE_UNDOABLE = (
+    "Delete an event from the owner's calendar. The owner's own event (nobody else on it, not "
+    "repeating — a JARVIS reminder may repeat) is deleted at once and kept in Recently deleted "
+    "for 30 days, so the owner can undo it (deleted_restore). An event with other people, one "
+    "the owner doesn't organise, or a repeating one can't be undone: the owner must approve it."
+)
+DELETE_FOR_GOOD = (
+    "Delete an event from the owner's calendar (attendees are notified). Irreversible: "
+    "the owner must confirm."
+)
+
+
+def calendar_tools(conn: GoogleConnector, *, undo: UndoBin | None = None) -> list[Tool]:
+    """`undo`: the Recently deleted bin (slice 11). With it a delete of the owner's own event is
+    R2 and undo-able (and the bin learns to restore events); without it every delete is R3."""
+    api = CalendarAPI(conn, undo)
+    if undo is not None:
+        undo.register("event", CalendarRestorer(conn, EVENTS_URL))
     return [
         Tool(
             "calendar_list_events",
@@ -439,7 +487,7 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
         Tool(
             "calendar_create_event",
             "Create an event on the owner's primary calendar. With attendees it sends invitations, "
-            "so the owner must confirm.",
+            "so the owner must confirm. reminders_minutes sets its pop-up alerts.",
             {
                 "type": "object",
                 "properties": {
@@ -449,6 +497,7 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
                     "attendees": _ATTENDEES,
                     "description": {"type": "string"},
                     "location": {"type": "string"},
+                    "reminders_minutes": _ALERTS,
                 },
                 "required": ["summary", "start", "end"],
             },
@@ -462,7 +511,8 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
         Tool(
             "calendar_update_event",
             "Change an existing event (only the given fields). If other people are on the event, "
-            "or the attendees change, they are notified, so the owner must confirm.",
+            "or the attendees change, they are notified, so the owner must confirm. For 'remind "
+            "me 30 minutes before <event>' give reminders_minutes [30].",
             {
                 "type": "object",
                 "properties": {
@@ -473,6 +523,7 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
                     "attendees": _ATTENDEES,
                     "description": {"type": "string"},
                     "location": {"type": "string"},
+                    "reminders_minutes": _ALERTS,
                 },
                 "required": ["event_id"],
             },
@@ -485,18 +536,18 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
         ),
         Tool(
             "calendar_delete_event",
-            "Delete an event from the owner's calendar (attendees are notified). Irreversible: "
-            "the owner must confirm.",
+            DELETE_UNDOABLE if undo is not None else DELETE_FOR_GOOD,
             {
                 "type": "object",
                 "properties": {"event_id": {"type": "string"}},
                 "required": ["event_id"],
             },
-            ActionRisk.IRREVERSIBLE,
+            ActionRisk.REVERSIBLE if undo is not None else ActionRisk.IRREVERSIBLE,
             api.delete_event,
             agent="google",
             check=_check_event_id,
             preview=api.preview_delete,
+            undoable=undo is not None,
         ),
     ]
 

@@ -16,9 +16,13 @@ to-do list (Google Tasks tools: correctness, the optional scope, injection in ta
 deletes without approval; + its negative control) and slice 10 D's permissions (policy matrix,
 deny path, passkey ceremonies with a software authenticator; + its negative control) and slice
 10 E's attached documents (extraction limits, recall via doc_search from a 100-page PDF,
-injection inside a document + its negative control, training-brain privacy) and slice 11 C's
-approvals (Approve all: 3 R2 run, R3 stays; drafts to un-typed addresses ask; + two negative
-controls). The exit status is the gated suites: phase0 --mock is a smoke run and never fails CI.
+injection inside a document + its negative control, training-brain privacy) and slice 11 B's
+reminders (plan evals 5 and 6: tagged pop-up events, alerts before a meeting; + its negative
+control) and slice 11 A's undo-able deletes (plan evals 1, 2, 3, 4, 7, 9: own items deleted with
+Undo, shared ones R3, a mail can't delete, the 10-delete cap, restore, fail-closed snapshots; +
+three negative controls) and slice 11 C's approvals (plan eval 8, Approve all: 3 R2 run, R3
+stays; drafts to un-typed addresses ask; + two negative controls). The exit status is the gated
+suites: phase0 --mock is a smoke run and never fails CI.
 """
 
 from __future__ import annotations
@@ -39,6 +43,8 @@ SUITES = [
     ("tasks (gated)", [sys.executable, str(HERE / "tasks" / "run.py"), "--mock"], True),
     ("permissions (gated)", [sys.executable, str(HERE / "permissions" / "run.py"), "--mock"], True),
     ("documents (gated)", [sys.executable, str(HERE / "documents" / "run.py"), "--mock"], True),
+    ("reminders (gated)", [sys.executable, str(HERE / "reminders" / "run.py"), "--mock"], True),
+    ("undo (gated)", [sys.executable, str(HERE / "undo" / "run.py"), "--mock"], True),
     ("approvals (gated)", [sys.executable, str(HERE / "approvals" / "run.py"), "--mock"], True),
 ]
 

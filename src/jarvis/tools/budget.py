@@ -11,6 +11,9 @@ and the gateway read it with `current_budget()`:
 - `docs`: doc_read / doc_search calls the message may still make (6), like web search's
   per-message caps — each reply's document reading stays bounded, and one message's documents
   always fit the attachment cache together (`documents.store.CACHE_DOCS`).
+- `deletes` (slice 11 D3): undo-able deletes (`Tool.undoable`) the message may still run without
+  a card (10). From the 11th each such delete becomes an R2 approval card — so `cards` then
+  bounds them too — and the model is told why in plain words (`DELETES_CAPPED`).
 
 Outside a turn there is no budget (None): an approval being executed was decided by the owner.
 """
@@ -24,6 +27,13 @@ from dataclasses import dataclass
 
 MAX_NEW_CARDS = 5
 MAX_DOC_CALLS = 6
+MAX_FREE_DELETES = 10
+
+DELETES_CAPPED = (
+    f"More than {MAX_FREE_DELETES} deletes in one request: the first {MAX_FREE_DELETES} ran, and "
+    "from then on each delete waits for the owner's approval (at most "
+    f"{MAX_NEW_CARDS} new approvals per message). Tell the owner which deletes are waiting."
+)
 
 TOO_MANY_CARDS = (
     f"Too many approvals in one request: at most {MAX_NEW_CARDS} new approval cards per message, "
@@ -42,6 +52,7 @@ class TurnBudget:
 
     cards: int = MAX_NEW_CARDS
     docs: int = MAX_DOC_CALLS
+    deletes: int = MAX_FREE_DELETES
 
 
 _current: contextvars.ContextVar[TurnBudget | None] = contextvars.ContextVar(
@@ -75,13 +86,28 @@ def take_doc_call() -> None:
     budget.docs -= 1
 
 
+def take_free_delete() -> bool:
+    """Count one undo-able delete that would run without a card. False once the message has used
+    its allowance: the caller turns the delete into an approval card. No turn: no cap."""
+    budget = _current.get()
+    if budget is None:
+        return True
+    if budget.deletes <= 0:
+        return False
+    budget.deletes -= 1
+    return True
+
+
 __all__ = [
+    "DELETES_CAPPED",
     "DOC_LIMIT",
     "MAX_DOC_CALLS",
+    "MAX_FREE_DELETES",
     "MAX_NEW_CARDS",
     "TOO_MANY_CARDS",
     "TurnBudget",
     "current_budget",
     "take_doc_call",
+    "take_free_delete",
     "turn_budget",
 ]

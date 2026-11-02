@@ -23,6 +23,7 @@ from jarvis.integrations.google import GoogleAPIError, GoogleConnector
 from jarvis.logging import get_logger
 from jarvis.tools.addresses import MAX_RECIPIENTS, loose_address, parse_address
 from jarvis.tools.base import Preview, Tool
+from jarvis.tools.calendar_alerts import MAX_ALERT_MINUTES, alert_minutes, popup_reminders
 from jarvis.tools.calendar_cards import create_card, delete_card, others_on, update_card
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
@@ -53,6 +54,13 @@ _ATTENDEES = {
     "type": "array",
     "items": {"type": "string"},
     "description": "Email addresses to invite. Inviting people sends them mail: owner confirms.",
+}
+_ALERTS = {  # slice 11 D4: "remind me 30 minutes before the meeting"
+    "type": "array",
+    "items": {"type": "integer", "minimum": 0, "maximum": MAX_ALERT_MINUTES},
+    "maxItems": 5,
+    "description": "Pop-up alerts on the owner's phone, in minutes before the start (0 = at the "
+    "start; at most 5). Replaces the event's alerts; [] = none; leave out to keep them.",
 }
 
 
@@ -255,6 +263,8 @@ class CalendarAPI:
         for key in ("description", "location"):
             if key in a:
                 body[key] = str(a[key] or "")[:5_000]
+        if "reminders_minutes" in a:
+            body["reminders"] = popup_reminders(alert_minutes(a["reminders_minutes"]))
         return body
 
     async def create_event(self, a: dict[str, Any]) -> dict[str, Any]:
@@ -370,6 +380,7 @@ def _check_create(a: dict[str, Any]) -> None:
         raise ValueError("summary is required")
     parse_window(a, _ANY_TZ)
     _validate_attendees(a.get("attendees"))
+    _check_alerts(a)
 
 
 def _check_update(a: dict[str, Any]) -> None:
@@ -379,6 +390,12 @@ def _check_update(a: dict[str, Any]) -> None:
     if "start" in a or "end" in a:
         parse_window(a, _ANY_TZ)
     _validate_attendees(a.get("attendees"))
+    _check_alerts(a)
+
+
+def _check_alerts(a: dict[str, Any]) -> None:
+    if "reminders_minutes" in a:
+        alert_minutes(a["reminders_minutes"])
 
 
 def _check_event_id(a: dict[str, Any]) -> None:
@@ -439,7 +456,7 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
         Tool(
             "calendar_create_event",
             "Create an event on the owner's primary calendar. With attendees it sends invitations, "
-            "so the owner must confirm.",
+            "so the owner must confirm. reminders_minutes sets its pop-up alerts.",
             {
                 "type": "object",
                 "properties": {
@@ -449,6 +466,7 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
                     "attendees": _ATTENDEES,
                     "description": {"type": "string"},
                     "location": {"type": "string"},
+                    "reminders_minutes": _ALERTS,
                 },
                 "required": ["summary", "start", "end"],
             },
@@ -462,7 +480,8 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
         Tool(
             "calendar_update_event",
             "Change an existing event (only the given fields). If other people are on the event, "
-            "or the attendees change, they are notified, so the owner must confirm.",
+            "or the attendees change, they are notified, so the owner must confirm. For 'remind "
+            "me 30 minutes before <event>' give reminders_minutes [30].",
             {
                 "type": "object",
                 "properties": {
@@ -473,6 +492,7 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
                     "attendees": _ATTENDEES,
                     "description": {"type": "string"},
                     "location": {"type": "string"},
+                    "reminders_minutes": _ALERTS,
                 },
                 "required": ["event_id"],
             },

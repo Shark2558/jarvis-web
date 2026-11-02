@@ -165,6 +165,17 @@ Attached files (standing rule)
 """
 
 
+# Slice 11 B — reminders. Its own paragraph so the slice 11 merges stay simple; the integration
+# step bumps PERSONA_VERSION once for the whole slice.
+REMINDERS_RULE = """
+Reminders (standing rule)
+- Reminders are calendar pop-ups on the owner's phone (the Google Calendar app). Use
+  reminder_add for "remind me to …" and reminders_minutes on calendar_create_event or
+  calendar_update_event for "remind me … before <event>". reminders_list gives their ids;
+  reminder_update changes one; calendar_delete_event with its id deletes one.
+"""
+
+
 def wit_level(wit: str) -> WitLevel:
     for w in WIT_LEVELS:
         if w.id == wit:
@@ -189,6 +200,7 @@ def build_system_prompt(*, honorific: str, wit: str = DEFAULT_WIT) -> str:
         + _RULES
         + WEB_RULES
         + _TODO_RULES
+        + REMINDERS_RULE
         + DOCUMENTS_RULE
     )
 
@@ -218,6 +230,7 @@ __all__ = [
     "DOCUMENTS_RULE",
     "HARD_LIMITS",
     "PERSONA_VERSION",
+    "REMINDERS_RULE",
     "VOICE_RULE",
     "VOICE_RULE_HEADING",
     "WEB_RULES",

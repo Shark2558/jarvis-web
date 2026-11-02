@@ -34,6 +34,7 @@ SAMPLES: dict[str, tuple[str, list[ActionRisk]]] = {
     "calendar_read": ("calendar_list_events", [R1]),
     "calendar_change": ("calendar_create_event", [R2, R3]),
     "calendar_delete": ("calendar_delete_event", [R3]),
+    "reminders": ("reminder_add", [R2]),  # slice 11 B
     "email_read": ("gmail_search", [R1]),
     "email_draft": ("gmail_create_draft", [R2]),
     "email_send": ("gmail_send", [R3]),

@@ -113,6 +113,15 @@ GROUPS: tuple[PermissionGroup, ...] = (
         R3,
         (_m("calendar_delete_event"), _m("calendar_*", R3)),
     ),
+    PermissionGroup(  # slice 11 B (D4/D5): its own row, after the Calendar rows
+        "reminders",
+        "Reminders",
+        "Set, change and delete reminders",
+        "Pop-ups on your phone from the Google Calendar app. A reminder is deleted like an "
+        "event (Calendar), so Undo works for 30 days.",
+        R2,
+        (_m("reminder_*"), _m("reminders_*")),
+    ),
     PermissionGroup(
         "email_read",
         "Email",

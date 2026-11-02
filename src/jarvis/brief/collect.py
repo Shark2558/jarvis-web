@@ -41,6 +41,7 @@ from jarvis.core.guardrails import ApprovalStore
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector, GoogleNotConnected
 from jarvis.logging import get_logger
 from jarvis.tools.addresses import loose_address
+from jarvis.tools.calendar_alerts import is_reminder, reminder_text
 from jarvis.tools.card import one_line
 from jarvis.tools.gmail import MESSAGES_URL
 from jarvis.tools.gmail_mime import headers_of
@@ -107,14 +108,18 @@ def _event(
     bounds: tuple[datetime, datetime],
     overlaps: tuple[str, ...] = (),
 ) -> BriefEvent:
-    """`span` None = all-day. `bounds` = the local day the event is listed under."""
+    """`span` None = all-day. `bounds` = the local day the event is listed under. A reminder
+    JARVIS set is labelled as one (and loses the ⏰ in its title: the label says it)."""
     attendees = [a for a in e.get("attendees") or [] if isinstance(a, dict)]
+    reminder = is_reminder(e)
+    title = reminder_text(e.get("summary")) if reminder else e.get("summary")
     common: dict[str, Any] = {
-        "title": one_line(e.get("summary"), TITLE_LIMIT) or "(no title)",
+        "title": one_line(title, TITLE_LIMIT) or "(no title)",
         "location": one_line(e.get("location"), LOCATION_LIMIT) or None,
         "attendees": len(attendees),
         "has_video": bool(e.get("hangoutLink") or e.get("conferenceData")),
         "overlaps_with": overlaps,
+        "reminder": reminder,
     }
     if span is None:
         return BriefEvent(start="", end="", all_day=True, **common)
@@ -163,10 +168,12 @@ def _overlaps(timed: list[Timed]) -> tuple[list[tuple[str, ...]], int]:
     titles = [one_line(e.get("summary"), TITLE_LIMIT) or "(no title)" for _, _, e in timed]
     found: list[list[str]] = [[] for _ in timed]
     pairs = 0
-    for i, (s1, e1, _) in enumerate(timed):
+    for i, (s1, e1, ev1) in enumerate(timed):
+        if is_reminder(ev1):  # a reminder is a pop-up, never a clash
+            continue
         for j in range(i + 1, len(timed)):
-            s2, e2, _ = timed[j]
-            if s1 < e2 and s2 < e1:
+            s2, e2, ev2 = timed[j]
+            if s1 < e2 and s2 < e1 and not is_reminder(ev2):
                 found[i].append(titles[j])
                 found[j].append(titles[i])
                 pairs += 1

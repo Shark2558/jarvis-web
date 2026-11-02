@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from jarvis.tools.addresses import display_address
+from jarvis.tools.calendar_alerts import alert_minutes, alerts_label, event_alerts
 from jarvis.tools.card import one_line, quoted
 
 TITLE_LIMIT = 120
@@ -91,6 +92,8 @@ def create_card(a: dict[str, Any], guests: list[str]) -> str:
         lines.append(f"Location: {one_line(a.get('location'), FIELD_LIMIT)}")
     if one_line(a.get("description"), FIELD_LIMIT):
         lines.append(f"Description: {one_line(a.get('description'), FIELD_LIMIT)}")
+    if "reminders_minutes" in a:
+        lines.append(f"Alerts: {alerts_label(alert_minutes(a['reminders_minutes']))}")
     return "\n".join(lines)
 
 
@@ -118,6 +121,9 @@ def _changes(event: dict[str, Any], a: dict[str, Any], new_guests: list[str] | N
             out.append(f"• {key}: {old} → {new}")
     if new_guests is not None:
         out.append(f"• attendees: {_people(others_on(event))} → {_people(new_guests)}")
+    if "reminders_minutes" in a:
+        new = alerts_label(alert_minutes(a["reminders_minutes"]))
+        out.append(f"• alerts: {event_alerts(event)} → {new}")
     return out
 
 

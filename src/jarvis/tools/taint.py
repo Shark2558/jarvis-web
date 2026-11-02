@@ -1,11 +1,20 @@
 # src/jarvis/tools/taint.py
 """Has untrusted content reached the model in this request? (Layer 4, slice 8 D4)
 
-The Brain computes it per tool round from the exact messages the model saw — any tool result
-from a tool whose output is not marked `trusted_output` (mail, calendar, web, …; a result whose
-call can't be found counts as untrusted) — and sets it around `Gateway.execute`. A tool may raise
-its risk with it: `memory_save` becomes an approval card, so text other people wrote can never
-become a stored "fact about the owner" without the owner seeing it.
+The Brain computes it per tool round from the exact messages the model saw (this turn's rounds
+plus the rolling window of earlier turns) and sets it around `Gateway.execute`. A tool result is
+untrusted unless one of these holds:
+  - its tool's output is the owner's own data by nature (`Tool.trusted_output`: memory), or
+  - slice 11 D8 — trust by provenance: the stored block is `trusted` (the gateway set it because
+    the tool, declared `may_vouch`, found every item in that result written by the owner or by
+    JARVIS for him: `jarvis.tools.provenance`), the result is not an error, and the call that
+    produced it is a `may_vouch` tool. The flag is per result: one invite from someone else, one
+    to-do from Gmail, makes that whole result untrusted.
+Everything else — mail, web, a document, someone else's event or to-do, an error, a result whose
+call can't be found, an attached file's fenced text — keeps the round tainted, and then every
+write becomes a card (`policy.TAINTED_WRITES_ASK`) and memory_save asks. A trusted result never
+clears taint other content brought: one untrusted result anywhere in the window is enough.
+Item text is fenced as external content whether trusted or not.
 
 Outside a Brain turn (an approval being executed, a script) the answer is "untrusted": the safe
 default, which also makes an approved card consume its token.
@@ -24,6 +33,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 from jarvis.llm.base import ChatMessage, TextBlock, ToolCall, ToolResultBlock
+from jarvis.tools.base import Tool
 from jarvis.tools.external import FENCE_PREFIX
 from jarvis.tools.registry import ToolRegistry
 
@@ -74,9 +84,18 @@ def fenced_text_seen(messages: Sequence[ChatMessage]) -> bool:
     )
 
 
+def result_trusted(block: ToolResultBlock, tool: Tool | None) -> bool:
+    """One tool result: the owner's own by its tool's nature, or by its provenance (D8)."""
+    if tool is None:
+        return False
+    if tool.trusted_output:
+        return True
+    return block.trusted and tool.may_vouch and not block.is_error
+
+
 def untrusted_seen(messages: Sequence[ChatMessage], registry: ToolRegistry) -> bool:
-    """True when any tool result in `messages` came from a tool without trusted output, or an
-    attached document's text is in them."""
+    """True when any tool result in `messages` is not trusted (`result_trusted`), or an attached
+    document's text is in them."""
     called: dict[str, str] = {}
     for m in messages:
         if isinstance(m.content, str):
@@ -85,8 +104,7 @@ def untrusted_seen(messages: Sequence[ChatMessage], registry: ToolRegistry) -> b
             if isinstance(b, ToolCall):
                 called[b.id] = b.name
             elif isinstance(b, ToolResultBlock):
-                tool = registry.get(called.get(b.tool_use_id, ""))
-                if tool is None or not tool.trusted_output:
+                if not result_trusted(b, registry.get(called.get(b.tool_use_id, ""))):
                     return True
     return fenced_text_seen(messages)
 
@@ -94,6 +112,7 @@ def untrusted_seen(messages: Sequence[ChatMessage], registry: ToolRegistry) -> b
 __all__ = [
     "context_trust",
     "fenced_text_seen",
+    "result_trusted",
     "spoken_in_context",
     "tainted_round",
     "untrusted_in_context",

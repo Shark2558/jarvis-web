@@ -8,6 +8,11 @@ which also fills the approval card with the event's real title, time and every c
 R3, with the event looked up first for the card. A look-up that fails is fail-closed: no card,
 no change. Times are ISO 8601; a naive time is read in the owner's calendar time zone, and every
 time returned carries an offset.
+
+Slice 11 D8: list, free slots, create and update vouch for their result (`may_vouch`) when every
+event in it is the owner's own (`provenance.is_owner_authored_event`; free slots are times only,
+always). Only the primary calendar is ever read. `query` narrows a list to the item the owner
+named, so a look-up before a change carries nobody else's event. Titles stay fenced either way.
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from jarvis.tools.calendar_cards import create_card, delete_card, others_on, upd
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
+from jarvis.tools.provenance import all_owner_authored, is_owner_authored_event, vouch
 
 log = get_logger(__name__)
 
@@ -41,6 +47,7 @@ DESCRIPTION_LIMIT = 2_000
 MAX_LISTED_ATTENDEES = 50
 LINK_LIMIT = 500
 DEFAULT_WORKING_HOURS = "09:00-18:00"
+QUERY_MAX = 200
 
 # Google: event ids use base32hex (lower-case a-v, 0-9), 5-1024 characters. Instances of a
 # recurring event add "_" segments such as _20261101T090000Z or _R20150924T120000 (upper-case
@@ -62,6 +69,24 @@ _ALERTS = {  # slice 11 D4: "remind me 30 minutes before the meeting"
     "description": "Pop-up alerts on the owner's phone, in minutes before the start (0 = at the "
     "start; at most 5). Replaces the event's alerts; [] = none; leave out to keep them.",
 }
+QUERY = {  # slice 11 D8: also the reminder and to-do lists
+    "type": "string",
+    "maxLength": QUERY_MAX,
+    "description": "Words the item contains (e.g. 'dentist'). To change or delete one item, look "
+    "it up by its words so only that item comes back.",
+}
+
+
+def query_arg(value: Any) -> str | None:
+    """A list tool's `query`: the words to look for, one clean line (None when absent/blank)."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("query must be text: the words to look for")
+    text = one_line(value, QUERY_MAX + 1)
+    if len(text) > QUERY_MAX:
+        raise ValueError(f"query is too long (at most {QUERY_MAX} characters)")
+    return text or None
 
 
 # ---- time helpers -------------------------------------------------------------------------
@@ -196,7 +221,7 @@ class CalendarAPI:
             )
         return out
 
-    async def list_events(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def list_events(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
         tz = await self.owner_tz(uid)
         start, end = parse_window(a, tz)
@@ -207,13 +232,18 @@ class CalendarAPI:
             "orderBy": "startTime",
             "maxResults": MAX_EVENTS,
         }
-        if a.get("query"):
-            params["q"] = str(a["query"])[:200]
+        if q := query_arg(a.get("query")):
+            params["q"] = q
         data = await self.conn.request(uid, "GET", EVENTS_URL, params=params)
         items = list(data.get("items") or [])[:MAX_EVENTS]
-        return {"time_zone": tz.key, "events": [self.shape(e, tz) for e in items]}
+        out = {"time_zone": tz.key, "events": [self.shape(e, tz) for e in items]}
+        return vouch(out, all_owner_authored(items, is_owner_authored_event))
 
-    async def free_slots(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def free_slots(self, a: dict[str, Any]) -> Any:
+        """Times only — Google's busy blocks carry no titles or people — so always the owner's."""
+        return vouch(await self._free_slots(a), True)
+
+    async def _free_slots(self, a: dict[str, Any]) -> dict[str, Any]:
         uid = require_tool_context().user_id
         tz = await self.owner_tz(uid)
         start, end = parse_window(a, tz)
@@ -267,7 +297,7 @@ class CalendarAPI:
             body["reminders"] = popup_reminders(alert_minutes(a["reminders_minutes"]))
         return body
 
-    async def create_event(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def create_event(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
         tz = await self.owner_tz(uid)
         body = self._body(a, tz, create=True)
@@ -275,9 +305,9 @@ class CalendarAPI:
         e = await self.conn.request(
             uid, "POST", EVENTS_URL, params={"sendUpdates": updates}, json=body
         )
-        return self._written(e, tz)
+        return vouch(self._written(e, tz), is_owner_authored_event(e))
 
-    async def update_event(self, a: dict[str, Any]) -> dict[str, Any]:
+    async def update_event(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
         eid = _validate_event_id(a.get("event_id"))
         changes = {k: v for k, v in a.items() if k != "event_id"}
@@ -290,7 +320,7 @@ class CalendarAPI:
         e = await self.conn.request(
             uid, "PATCH", f"{EVENTS_URL}/{eid}", params={"sendUpdates": "all"}, json=body
         )
-        return self._written(e, tz)
+        return vouch(self._written(e, tz), is_owner_authored_event(e))
 
     async def delete_event(self, a: dict[str, Any]) -> dict[str, Any]:
         uid = require_tool_context().user_id
@@ -365,6 +395,7 @@ _ANY_TZ = ZoneInfo("UTC")
 
 def _check_window(a: dict[str, Any]) -> None:
     parse_window(a, _ANY_TZ)
+    query_arg(a.get("query"))
 
 
 def _check_free_slots(a: dict[str, Any]) -> None:
@@ -426,13 +457,14 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
             "zone when no offset is given). Optional free-text query. At most 50 events.",
             {
                 "type": "object",
-                "properties": {"start": _ISO, "end": _ISO, "query": {"type": "string"}},
+                "properties": {"start": _ISO, "end": _ISO, "query": QUERY},
                 "required": ["start", "end"],
             },
             ActionRisk.READ_ONLY,
             api.list_events,
             agent="google",
             check=_check_window,
+            may_vouch=True,
         ),
         Tool(
             "calendar_free_slots",
@@ -452,6 +484,7 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
             api.free_slots,
             agent="google",
             check=_check_free_slots,
+            may_vouch=True,
         ),
         Tool(
             "calendar_create_event",
@@ -476,6 +509,7 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
             summarize=_summarize_create,
             risk_for=_invite_risk,
             check=_check_create,
+            may_vouch=True,
         ),
         Tool(
             "calendar_update_event",
@@ -502,6 +536,7 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
             risk_for=_attendee_change_risk,
             check=_check_update,
             preview=api.preview_update,
+            may_vouch=True,
         ),
         Tool(
             "calendar_delete_event",
@@ -521,4 +556,12 @@ def calendar_tools(conn: GoogleConnector) -> list[Tool]:
     ]
 
 
-__all__ = ["CalendarAPI", "calendar_tools", "compute_free_slots", "parse_when"]
+__all__ = [
+    "QUERY",
+    "QUERY_MAX",
+    "CalendarAPI",
+    "calendar_tools",
+    "compute_free_slots",
+    "parse_when",
+    "query_arg",
+]

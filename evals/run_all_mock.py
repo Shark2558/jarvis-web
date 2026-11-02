@@ -18,7 +18,9 @@ deny path, passkey ceremonies with a software authenticator; + its negative cont
 10 E's attached documents (extraction limits, recall via doc_search from a 100-page PDF,
 injection inside a document + its negative control, training-brain privacy) and slice 11 B's
 reminders (plan evals 5 and 6: tagged pop-up events, alerts before a meeting; + its negative
-control). The exit status is the gated suites: phase0 --mock is a smoke run and never fails CI.
+control) and slice 11 D8's provenance-based trust (the owner's own items don't taint; an invite,
+a Gmail to-do or a mail still does; + two negative controls). The exit status is the gated
+suites: phase0 --mock is a smoke run and never fails CI.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ SUITES = [
     ("permissions (gated)", [sys.executable, str(HERE / "permissions" / "run.py"), "--mock"], True),
     ("documents (gated)", [sys.executable, str(HERE / "documents" / "run.py"), "--mock"], True),
     ("reminders (gated)", [sys.executable, str(HERE / "reminders" / "run.py"), "--mock"], True),
+    ("trust (gated)", [sys.executable, str(HERE / "trust" / "run.py"), "--mock"], True),
 ]
 
 

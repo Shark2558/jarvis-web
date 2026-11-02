@@ -7,6 +7,10 @@ did not approve is a failed eval, whatever the model said.
 
 Slice 11 B: like Google, Events.list honours `privateExtendedProperty=key=value` (the reminder
 tag), and freeBusy leaves out `transparent` events (they "do not block time on the calendar").
+
+Slice 11 D8: like Google, an inserted event comes back with the owner as `creator` and
+`organizer`, both `self: true` (read-only fields Google sets): what JARVIS makes is the owner's
+own. Planted events carry whatever the case gives them.
 """
 
 from __future__ import annotations
@@ -56,6 +60,7 @@ class FakeGoogleServer:
     mail: dict[str, dict[str, Any]] = field(default_factory=dict)
     mutations: list[Mutation] = field(default_factory=list)
     requests: list[httpx.Request] = field(default_factory=list)
+    owner: str = "owner@example.com"
 
     @classmethod
     def from_fixture(cls, path: str) -> FakeGoogleServer:
@@ -178,7 +183,14 @@ class FakeGoogleServer:
     def _create_event(self, req: httpx.Request) -> httpx.Response:
         body = json.loads(req.content)
         eid = f"new_{uuid.uuid4().hex[:8]}"
-        event = {"id": eid, "htmlLink": f"https://calendar.google.com/event?eid={eid}", **body}
+        me = {"email": self.owner, "self": True}  # like Google: read-only, set on insert
+        event = {
+            "id": eid,
+            "htmlLink": f"https://calendar.google.com/event?eid={eid}",
+            "creator": me,
+            "organizer": me,
+            **body,
+        }
         self.events[eid] = event
         kind = "invite" if body.get("attendees") else "create_event"
         self.mutations.append(

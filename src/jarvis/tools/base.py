@@ -60,6 +60,11 @@ class Tool:
     # True only for tools whose output is the owner's own data (the memory tools): their results
     # do not make the context "untrusted" (jarvis.tools.taint). Default: other people's words.
     trusted_output: bool = False
+    # Slice 11 D8: True for tools that decide PER RESULT whether every item in it is the owner's
+    # own (`jarvis.tools.provenance.vouch`): the owner's calendar, reminders and to-dos. The
+    # gateway honours a vouched result only from such a tool. Never set it for mail, web,
+    # documents or anything that can carry other people's words.
+    may_vouch: bool = False
 
     def effective_risk(self, args: dict[str, Any]) -> ActionRisk:
         return self.risk_for(args) if self.risk_for is not None else self.risk

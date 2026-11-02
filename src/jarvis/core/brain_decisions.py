@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from jarvis.core.guardrails import PendingAction
 from jarvis.core.models import Session, Turn
-from jarvis.llm.base import Role, TextBlock, ToolCall, ToolResultBlock
+from jarvis.llm.base import Role, TextBlock, ToolCall
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 
 
@@ -33,12 +33,9 @@ class Decision:
 
 
 def record_exchange(session: Session, d: Decision, trace_id: str | None) -> list[Turn]:
-    """The decided action as a tool exchange (tool_use → tool_result + instruction)."""
-    result = ToolResultBlock(
-        tool_use_id=d.call.id,
-        content=d.result.for_model(),
-        is_error=d.result.outcome is not GatewayOutcome.EXECUTED,
-    )
+    """The decided action as a tool exchange (tool_use → tool_result + instruction). The result
+    is trusted only when it ran and the gateway found it the owner's own (slice 11 D8)."""
+    result = d.result.block(d.call.id, is_error=d.result.outcome is not GatewayOutcome.EXECUTED)
     turns = [
         Turn(role=Role.ASSISTANT, content="", blocks=[d.call], trace_id=trace_id),
         Turn(

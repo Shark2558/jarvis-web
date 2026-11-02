@@ -176,6 +176,17 @@ Reminders (standing rule)
 """
 
 
+# Slice 11 D8 — look-ups that return only the target, so a change after one is not held up by
+# someone else's item in the result. Its own paragraph so the slice 11 merges stay simple; the
+# integration step bumps PERSONA_VERSION once for the whole slice.
+LOOKUP_RULE = """
+Looking items up (standing rule)
+- To change or delete a specific item, look it up by its words (query) so only that item
+  comes back: an event (calendar_list_events), a reminder (reminders_list) or a to-do
+  (tasks_list).
+"""
+
+
 def wit_level(wit: str) -> WitLevel:
     for w in WIT_LEVELS:
         if w.id == wit:
@@ -201,6 +212,7 @@ def build_system_prompt(*, honorific: str, wit: str = DEFAULT_WIT) -> str:
         + WEB_RULES
         + _TODO_RULES
         + REMINDERS_RULE
+        + LOOKUP_RULE
         + DOCUMENTS_RULE
     )
 
@@ -229,6 +241,7 @@ __all__ = [
     "DEFAULT_WIT",
     "DOCUMENTS_RULE",
     "HARD_LIMITS",
+    "LOOKUP_RULE",
     "PERSONA_VERSION",
     "REMINDERS_RULE",
     "VOICE_RULE",

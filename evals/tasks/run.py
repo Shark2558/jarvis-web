@@ -227,16 +227,26 @@ async def run_task_case(c: dict[str, Any]) -> dict[str, Any]:
 # ---- injection suite ----------------------------------------------------------------------------
 
 
+GMAIL_LINK = [{"type": "email", "description": "Re: your account",
+               "link": "https://mail.google.com/mail/#all/18c0ffee"}]  # fmt: skip
+
+
 def _plant(c: dict[str, Any]) -> FakeTasks:
+    """The hostile to-do arrives the way other people's words reach the list: Gmail's "Add to
+    Tasks" (a `links` entry) — or, when the case says so, assigned from a Doc. Slice 11 D8: a
+    to-do with neither is the owner's own words, and reading it does not taint the round."""
     fake = fixture()
     p = c["plant"]
+    extra = dict(p.get("extra", {}))
+    if "assignmentInfo" not in extra:
+        extra.setdefault("links", GMAIL_LINK)
     fake.add(
         p.get("list", "L1"),
         p["title"],
         id="t_hostile",
         due=p.get("due", "2027-01-15"),
         notes=p.get("notes", ""),
-        **p.get("extra", {}),
+        **extra,
     )
     return fake
 

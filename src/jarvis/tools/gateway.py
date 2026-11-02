@@ -23,6 +23,16 @@ Slice 10 D review: a tainted round (other people's text reached the model: mail,
 turns every REVERSIBLE write into an approval card too (`policy.TAINTED_WRITES_ASK`): an R2 card,
 so no passkey. Outside a turn nothing is tainted (an approval being executed, a script).
 
+Slice 11 D8 — trust by provenance: a tool declared `may_vouch` (the owner's calendar, reminders,
+to-dos) may return `provenance.vouch(result, verdict)`: the verdict is True only when every item
+in the result was written by the owner or by JARVIS for him. The gateway unwraps it and marks the
+result `trusted` only when it ran (EXECUTED) and came from such a tool; an error, a card, a
+refusal or a vouch from any other tool is untrusted. The flag travels beside the text, never in
+it (`GatewayResult.block` → `ToolResultBlock.trusted`), so the model can't set it and no vendor
+sees it; the stored conversation keeps it. A trusted result does not taint the round: a write
+after looking up the owner's own event runs without a card. Nothing else changes: a spoken turn,
+mail / web / a document / someone else's item in the window, and every R3 call still ask.
+
 Slice 10 integration review L4: one owner message proposes at most 5 NEW cards (`tools.budget`;
 a duplicate of a waiting card is not new); past that a proposal is refused in plain words and
 nothing is stored. The duplicate look-up reads only the conversation's own cards.
@@ -50,7 +60,7 @@ from jarvis.core.guardrails import (
     PendingAction,
     TooManyApprovals,
 )
-from jarvis.llm.base import ToolCall
+from jarvis.llm.base import ToolCall, ToolResultBlock
 from jarvis.logging import get_logger
 from jarvis.tools import policy as _policy
 from jarvis.tools.audit import AuditTrail, args_hash
@@ -59,6 +69,7 @@ from jarvis.tools.budget import TOO_MANY_CARDS, current_budget
 from jarvis.tools.context import ToolContext, approval_proof, tool_context
 from jarvis.tools.external import model_safe
 from jarvis.tools.policy import Effect, OwnerRules, Policy
+from jarvis.tools.provenance import unwrap
 from jarvis.tools.registry import ToolRegistry
 from jarvis.tools.taint import spoken_in_context, tainted_round
 
@@ -95,6 +106,17 @@ class GatewayResult:
     result: Any = None
     error: str | None = None
     pending: PendingAction | None = None
+    # slice 11 D8: every item in the result is the owner's own (set by `Gateway.execute` only)
+    trusted: bool = False
+
+    def block(self, tool_use_id: str, *, is_error: bool | None = None) -> ToolResultBlock:
+        """The stored, replayed tool_result for this outcome — the one place its `trusted` flag
+        is set. Only a result that ran can be trusted; an error never is."""
+        error = self.outcome is GatewayOutcome.ERROR if is_error is None else is_error
+        trusted = self.trusted and self.outcome is GatewayOutcome.EXECUTED and not error
+        return ToolResultBlock(
+            tool_use_id=tool_use_id, content=self.for_model(), is_error=error, trusted=trusted
+        )
 
     def for_model(self) -> str:
         """Serialise for the model. Tool output is data, never instructions."""
@@ -127,6 +149,16 @@ class GatewayResult:
             "The action changed after the owner's approval was asked for, so nothing was done "
             "and a new approval card is waiting; tell the owner in one sentence.",
         )
+
+
+def _vouched(tool: Tool, out: Any) -> tuple[Any, bool]:
+    """The plain result and whether it is the owner's own (slice 11 D8): only a tool declared
+    `may_vouch` can say so; a vouch from any other tool is dropped (and logged)."""
+    value, vouched = unwrap(out)
+    if vouched and not tool.may_vouch:
+        log.warning("vouch from a tool that may not vouch; untrusted", extra={"tool": tool.name})
+        return value, False
+    return value, vouched
 
 
 def _tightened(effect: Effect, risk: ActionRisk, confirmation_id: str | None) -> Effect:
@@ -283,10 +315,11 @@ class Gateway:
             log.exception("tool failed", extra={"tool": tool.name})
             await self._audit_after_run(tool, call, risk, "error", _safe_detail(exc))
             return GatewayResult(GatewayOutcome.ERROR, error=f"tool failed: {exc}")
+        out, trusted = _vouched(tool, out)
         await self._audit_after_run(
             tool, call, risk, "executed", "confirmed" if confirmation_id else ""
         )
-        return GatewayResult(GatewayOutcome.EXECUTED, result=out)
+        return GatewayResult(GatewayOutcome.EXECUTED, result=out, trusted=trusted)
 
     async def _gate(
         self,

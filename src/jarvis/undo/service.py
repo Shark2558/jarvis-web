@@ -88,6 +88,9 @@ class UndoBin:
         """Wiring: the tools that delete a kind also know how to bring it back."""
         self._restorers[kind] = restorer
 
+    def now(self) -> datetime:
+        return self._clock()
+
     async def keep(self, uid: str, kind: Kind, title: str, snapshot: dict[str, Any]) -> DeletedItem:
         if not owner_ok(uid):
             raise SnapshotFailed(NOT_KEPT.format(why="no owner"))

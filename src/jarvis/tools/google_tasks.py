@@ -2,10 +2,13 @@
 """To-do list tools (Layer 5/6, Task & Productivity) on the owner's Google Tasks.
 
 Risk classes: tasks_list R1; task_add / task_update / task_complete R2 (the owner's own list,
-undoable in the Tasks app; a spoken turn still turns them into cards); task_delete R3 — always a
-card. update/complete/delete look the task up first (`Tool.preview`) so the card shows its real
-title and date; a failed look-up proposes nothing. The Tasks scope is optional (slice 10 C1): the
-tools are registered whenever Google is linked and answer "grant access" until it is granted.
+undoable in the Tasks app; a spoken turn still turns them into cards); task_delete R2 with a
+Recently deleted bin (slice 11: a copy, subtasks included, is kept first — `tools.tasks_undo`),
+raised to R3 by the look-up for a to-do assigned from Docs / Chat or one whose subtasks can't all
+be read; without a bin it is R3 — always a card. update/complete/delete look the task up first
+(`Tool.preview`) so the card shows its real title and date; a failed look-up proposes nothing.
+The Tasks scope is optional (slice 10 C1): the tools are registered whenever Google is linked and
+answer "grant access" until it is granted.
 
 Titles and notes are other people's words as often as the owner's (Gmail's "Add to Tasks"
 copies the email), so they reach the model fenced as EXTERNAL CONTENT, and the list result is
@@ -46,6 +49,8 @@ from jarvis.tools.tasks_api import (
     parse_task_id,
 )
 from jarvis.tools.tasks_cards import add_card, complete_card, delete_card, update_card
+from jarvis.tools.tasks_undo import TaskRestorer, delete_kept, delete_risk, family
+from jarvis.undo.service import UndoBin
 
 SOURCE = "to-do list"
 TITLE_LIMIT = 300
@@ -147,6 +152,7 @@ class TasksAPI:
     client: TasksClient
     default_tz: str
     clock: Callable[[], datetime] = utcnow
+    undo: UndoBin | None = None  # slice 11: Recently deleted; None → deletes stay R3
     _zones: dict[str, tuple[ZoneInfo, float]] = field(default_factory=dict)
 
     async def _tz(self, uid: str) -> ZoneInfo:
@@ -322,6 +328,8 @@ class TasksAPI:
         uid = require_tool_context().user_id
         ref = parse_task_id(a.get("task_id"))
         await self.client.require(uid)
+        if self.undo is not None:  # re-read: the copy is of the to-do as it is now
+            return await delete_kept(self.client, self.undo, ref)
         await self.client.delete(uid, ref)
         return {"deleted": True, "id": ref.composite}
 
@@ -353,9 +361,16 @@ class TasksAPI:
 
     async def preview_delete(self, a: dict[str, Any]) -> Preview:
         uid, ref, task = await self._task(a)
-        children = await self.client.subtasks(uid, ref)  # fails closed like the look-up itself
-        card = delete_card(task, await self._list_title(uid, ref), subtasks=children)
-        return Preview(card, ActionRisk.IRREVERSIBLE)
+        if self.undo is None:
+            children = await self.client.subtasks(uid, ref)  # fails closed like the look-up
+            card = delete_card(task, await self._list_title(uid, ref), subtasks=children)
+            return Preview(card, ActionRisk.IRREVERSIBLE)
+        fam = await family(self.client, uid, ref, task)  # fails closed like the look-up itself
+        risk, _ = delete_risk(fam.task, all_read=fam.all_read)
+        undo = risk is ActionRisk.REVERSIBLE
+        title = await self._list_title(uid, ref)
+        card = delete_card(fam.task, title, subtasks=(fam.subtasks, fam.all_read), undo=undo)
+        return Preview(card, None if undo else risk)
 
     async def _list_title(self, uid: str, ref: TaskRef) -> str | None:
         """Best effort, for the card only: the task's list by name (not for '@default')."""
@@ -401,13 +416,27 @@ _TASK_ID = {"type": "string", "description": "The id from tasks_list"}
 _LIST = {"type": "string", "description": "A to-do list name or id (default: the default list)"}
 
 
+DELETE_UNDOABLE = (
+    "Delete one of the owner's to-dos (its subtasks go with it). It is kept in Recently deleted "
+    "for 30 days, so the owner can undo it (deleted_restore). A to-do assigned from Google Docs "
+    "or Chat can't be undone: the owner must approve that one."
+)
+DELETE_FOR_GOOD = "Delete one of the owner's to-dos for good. Irreversible: the owner must confirm."
+
+
 def tasks_tools(
     conn: GoogleConnector,
     *,
     default_tz: str = "UTC",
     clock: Callable[[], datetime] = utcnow,
+    undo: UndoBin | None = None,
 ) -> list[Tool]:
-    api = TasksAPI(TasksClient(conn), default_tz, clock)
+    """`undo`: the Recently deleted bin (slice 11). With it, deleting the owner's own to-do is R2
+    and undo-able (and the bin learns to restore to-dos); without it every delete is R3."""
+    client = TasksClient(conn)
+    api = TasksAPI(client, default_tz, clock, undo)
+    if undo is not None:
+        undo.register("task", TaskRestorer(client))
     return [
         Tool(
             "tasks_list",
@@ -479,13 +508,14 @@ def tasks_tools(
         ),
         Tool(
             "task_delete",
-            "Delete one of the owner's to-dos for good. Irreversible: the owner must confirm.",
+            DELETE_UNDOABLE if undo is not None else DELETE_FOR_GOOD,
             {"type": "object", "properties": {"task_id": _TASK_ID}, "required": ["task_id"]},
-            ActionRisk.IRREVERSIBLE,
+            ActionRisk.REVERSIBLE if undo is not None else ActionRisk.IRREVERSIBLE,
             api.delete,
             agent="google",
             check=_check_ref,
             preview=api.preview_delete,
+            undoable=undo is not None,
         ),
     ]
 

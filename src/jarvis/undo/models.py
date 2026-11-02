@@ -24,6 +24,8 @@ UNDO_ID = re.compile(r"del_[0-9a-f]{20}")
 Kind = Literal["event", "task"]
 KINDS: tuple[Kind, ...] = ("event", "task")
 KIND_WORDS: dict[str, str] = {"event": "event", "task": "to-do"}
+# The line an approval card for an undo-able delete carries (a tainted round, the 11th delete).
+CARD_LINE = f"Kept in Recently deleted for {RETENTION_DAYS} days: you can undo it."
 
 
 class DeletedItem(BaseModel):
@@ -116,6 +118,7 @@ class DeletedList(BaseModel):
 
 
 __all__ = [
+    "CARD_LINE",
     "KINDS",
     "KIND_WORDS",
     "RETENTION_DAYS",

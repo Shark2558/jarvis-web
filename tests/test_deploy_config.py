@@ -384,6 +384,20 @@ def test_lock_pins_pip_and_the_build_backend_with_hashes() -> None:
     assert len(pins) == len(re.findall(r"^[A-Za-z0-9_.-]+==[^\n]* \\\n\s+--hash=", lock, re.M))
 
 
+def _norm(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def test_lock_pins_every_runtime_dependency_of_pyproject() -> None:
+    """A dependency added to pyproject.toml without `make lock` would be missing from the image
+    (it installs the lock with --no-deps). Slice 10 added webauthn, pypdf and python-docx."""
+    deps = (ROOT / "pyproject.toml").read_text(encoding="utf-8").split("dependencies = [", 1)[1]
+    names = re.findall(r'^\s+"([A-Za-z0-9_.-]+)', deps.split("]\n", 1)[0], re.M)
+    pinned = {_norm(p) for p in re.findall(r"^([A-Za-z0-9_.-]+)==", LOCK.read_text(), re.M)}
+    assert {"webauthn", "pypdf", "python-docx", "lxml", "cbor2"} <= pinned
+    assert [n for n in names if _norm(n) not in pinned] == []
+
+
 def test_browser_job_pins_playwright(ci: dict[str, Any]) -> None:
     run = "\n".join(str(s.get("run", "")) for s in ci["jobs"]["browser"]["steps"])
     assert "playwright==1.63.0" in run

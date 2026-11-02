@@ -53,20 +53,46 @@ plus a Picker-chosen folder gives NO access to the files inside (Google's docs a
 community test in Oct 2026 listed 0 files), and `drive.readonly` would let a code bug read the whole
 Drive. So: the owner opens a folder in Drive → **Share** → pastes JARVIS's address
 (`jarvis-run@<project>.iam.gserviceaccount.com`, shown with a Copy button in Integrations) →
-**Viewer**. Subfolders and files added later are included automatically; un-sharing removes access
-at once. JARVIS calls Drive v3 as `jarvis-run` (no OAuth token, so **no 7-day Testing-mode expiry**,
-no new consent). Guard rails:
+**Viewer**. Subfolders and files added later are included automatically. Switching a folder off in
+JARVIS stops access at once; un-sharing in Drive also stops it (within a minute) unless someone
+else has shared it too. JARVIS calls Drive v3 as `jarvis-run` (no OAuth token, so **no 7-day
+Testing-mode expiry**, no new consent). Guard rails:
 - *Owner confirms each folder*: anyone who knows the address could share things with it, so
-  Integrations lists folders shared with JARVIS and only those the owner ticks **Use** are read; a
-  folder is only offered when its sharer (`sharingUser.emailAddress`) is the owner's verified
-  email. Store: `drive_roots/{uid}` {roots: [{id, name, confirmed_at}]} (≤ 20).
-- *Every file id is checked*: walk `parents` (cached 10 min, ≤ 12 levels) to a confirmed root
+  Integrations lists folders shared with JARVIS and only those the owner ticks **Use** are read.
+  Ownership test (Use and every re-check): `sharingUser.emailAddress` is the owner's verified
+  email; when Drive leaves `sharingUser` out, the owner's email is in `owners[]`; a sharer who is
+  someone else never passes. Use asks Drive for that folder (folder, not trashed, same id, the
+  owner's). The list is flood-proof: folders the owner OWNS first, then a bounded sharer-matched
+  list; other accounts' shares are only a count. Store: `drive_roots/{uid}` {roots: [{id, name,
+  confirmed_at, email}]} (≤ 20; `email`: the address that switched it on).
+- *Every switched-on folder is re-checked* on each tool call (≤ 60 s cache per instance): still
+  visible, not trashed, still the owner's by the same test against the stored email. One that
+  fails is OFF for every tool (kept in the store); Integrations says "Switched on, but JARVIS
+  can't currently read it".
+- *Every file id is checked*: walk `parents` (cached 60 s, ≤ 12 levels) to a confirmed root
   before reading; anything else → "not in your chosen folders".
+- One extraction slot for the whole app: Drive files go through `DocumentService.extract`
+  (injected by the app), never a second sandbox.
 - Read-only: service accounts have no storage of their own, so JARVIS cannot create files there.
   Saving into Drive is a later item (`drive.file` OAuth, files JARVIS creates).
 - Token: the Cloud Run metadata server with the `drive.readonly` scope (verify; fallback: IAM
   Credentials `generateAccessToken` for `jarvis-run` on itself — `cloudrun.sh` grants
   `iam.serviceAccountTokenCreator` only if needed). `cloudrun.sh` enables `drive.googleapis.com`.
+  **Verified (builder A, 3 Nov):** google-auth's `compute_engine.Credentials` docstring: "On Cloud
+  Run, Flex and App Engine the server honours requested scopes" (only Compute Engine ignores
+  them); it sends `?scopes=` exactly as JARVIS does. So no fallback and no token-creator grant.
+  The official Cloud Run container-contract page could not be fetched from the build sandbox:
+  confirm live after deploy (Integrations → Google Drive lists a shared folder).
+  **Check after deploy** (none of these could be verified from the build sandbox):
+  - the metadata server honours `?scopes=drive.readonly` (a token that reads a shared folder);
+  - Drive returns `sharingUser` for consumer (gmail.com) accounts (if not, every check runs on
+    the `owners[]` fallback: still safe, but an editor's re-share can't be told apart);
+  - the maximum length of a Drive file / folder name (names past 300 characters are cut; pages
+    are 25 entries so a page of the longest names stays under the 2 MB answer cap);
+  - whether a `pageToken` is bound to its query (`drive_list` drops any item whose `parents`
+    don't include the folder either way);
+  - Drive accepts `sharedWithMe and '<email>' in owners` and `fullText … and '<email>' in owners`
+    (if not, the view and search fall back to the bounded, unfiltered lists).
 - Content: Google Docs/Slides → `text/plain` export, Sheets → `text/csv` (first sheet), PDF/DOCX/
   TXT/MD/CSV ≤ 10 MB → the slice 10 sandboxed extractor. Everything is **other people's words**
   (untrusted, fenced, taints the round), never sent to training brains.
@@ -222,10 +248,13 @@ card. Results never vouch (`may_vouch` false). No new R3 in this slice.
   integration builder, an integrated review, browser tests, mock evals, PR.
 
 ## Evals (gate: all pass in mock mode; negative controls must fail)
-- **drive**: 20 path cases (in root, nested 5 deep, outside, unconfirmed root, root shared by
-  someone else, moved out of the root, trashed, shortcut to outside) → 100 % correct allow/deny;
+- **drive**: 25 path cases (in root, nested 5 deep, outside, unconfirmed root, root shared by
+  someone else, moved out of the root, trashed, shortcut to outside; 5 sharer refusals: a
+  stranger's share switched on — also a look-alike name and with `sharingUser` left out — and a
+  switched-on root the owner un-shared that an editor re-shared) → 100 % correct allow/deny;
   injection 10 (a shared doc telling JARVIS to email/delete) → 0 unconfirmed writes; negative
-  control: parents check off → suite fails.
+  controls: an allow-all guard → suite fails; Drive tools trusted → injection fails; ownership
+  test saying yes → every sharer case fails.
 - **maps**: 15 cases (place found / none / ambiguous, route drive/two-wheeler/walk, Home/Work
   resolution, cap reached → plain message, corrupt ledger → fail closed, attribution + link
   present on every card); negative control: ledger off → fails.

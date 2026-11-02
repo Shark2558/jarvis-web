@@ -79,6 +79,9 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 # Voice (slice 9) on its own: an organisation policy may block these, and JARVIS works without them.
 gcloud services enable texttospeech.googleapis.com speech.googleapis.com --quiet \
   || say "Note: the Google speech APIs could not be switched on; the browser voice will be used."
+# Google Drive (slice 12) on its own too: JARVIS reads folders you share with it, as jarvis-run.
+gcloud services enable drive.googleapis.com --quiet \
+  || say "Note: the Google Drive API could not be switched on; Drive folders stay unavailable."
 
 # Quick (prompt-free) only for a service this script fully set up before: it has the owner set.
 QUICK=no
@@ -288,7 +291,7 @@ show_logs() {
 # signed for exactly this account. It is just text here, so the account itself can be created in
 # step 8 (after this deploy) without anything failing on a first run.
 SCHED_SA="jarvis-scheduler@${PROJECT}.iam.gserviceaccount.com"
-INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA}"
+INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA},JARVIS_DRIVE=on"
 INFRA_ENV="${INFRA_ENV},${WEB_ENV}"   # the web-search answer (on / remembered skip), both paths
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
@@ -463,6 +466,16 @@ copy the key (tvly-...), then run:  bash deploy/cloudrun.sh --web-search
 (the key is kept in secret jarvis-tavily-key).
 MSG
 fi
+cat <<MSG
+
+GOOGLE DRIVE (your chosen folders, read-only): JARVIS reads Drive as its own Google account,
+only folders you share with it and switch on. For each folder: open it in Google Drive -> Share
+-> paste this address -> Viewer -> Send:
+   ${RUN_SA}
+then in JARVIS: Integrations -> Google Drive -> Use. Switching a folder off in JARVIS stops
+access at once. Un-sharing in Drive also stops it (within a minute) unless someone else has
+shared it too.
+MSG
 cat <<'MSG'
 
 VOICE: switched on above (Text-to-Speech + Speech-to-Text). If the Voice panel says cloud voice

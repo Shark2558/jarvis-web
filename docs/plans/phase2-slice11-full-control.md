@@ -81,7 +81,24 @@ mail saying "delete all my meetings" can't act. **Approve all** (below) makes th
   and that came from outside content → card. (b) Tavily `GET /usage` cross-check folded into the
   web allowance (once a day / on 432-433). (c) Stale passkey challenges swept in the tick.
 
-## Workstreams (parallel builders, worktrees; merge order A → B → C)
+- **D8 Provenance-based trust (added after B's report).** Today ANY calendar / to-do read taints
+  the round (and, through the rolling window, later turns), so "delete my dentist appointment"
+  (look up → delete) still becomes a card — the owner's "all rights" would barely change. Fix:
+  a tool result is trusted when every item in it was written by the owner (or by JARVIS for
+  him), decided per result by the tool, carried as a structured server-side flag on the stored
+  `ToolResultBlock` (never from a client, never from text), and `untrusted_seen` honours it.
+  Owner-authored = calendar: primary calendar, `organizer.self` and `creator.self`, nobody else
+  on it, `eventType` not `fromGmail`; to-do: no `links` (Gmail "Add to Tasks"), no
+  `assignmentInfo`; JARVIS reminders; Recently-deleted items keep the flag their item had. A
+  mixed result is untrusted. List tools gain a text filter (`query`) so a look-up returns just
+  the target; the prompt tells the model to look up by words. Email, web, documents, invites
+  and anything shared stay untrusted — the injection guard is unchanged for them.
+
+## Workstreams (parallel builders, worktrees; merge order A → B → C → D)
+- **D — Provenance-based trust (D8)** — `tools/taint.py`, `llm/base.py` (flag), gateway result
+  marking, `Tool` hook, calendar / tasks / reminders list tools + `query`, prompts, evals
+  (a look-up of the owner's own event then delete runs without a card; an invite in the result
+  keeps the card; a forged flag in stored history / client input is impossible).
 - **A — Undo bin + undo-able deletes + permissions + cap** — `src/jarvis/undo/` (new), delete
   paths in `tools/google_calendar.py`, `tools/google_tasks.py`, cards, `permissions/groups.py`,
   `tools/budget.py`, `api/deleted.py` (new), `static/console-deleted.{js,css}` (new) + hooks

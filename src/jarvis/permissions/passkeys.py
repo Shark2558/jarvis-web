@@ -11,8 +11,9 @@ Only public keys are stored — a passkey's private key never leaves the owner's
 challenge is taken (read + deleted in one transaction) before anything is checked, so it works
 once even when the check fails. The sign count is advanced with a compare-and-set inside a
 transaction: two uses of the same assertion can't both pass. Expired challenges a browser never
-answered are swept when the same owner asks for a new one; at most 10 are live per owner AND
-purpose, so asking for many of one kind never pushes out a waiting approval's check.
+answered are swept when the same owner asks for a new one, and by the scheduler tick (slice 11
+D7 c: `sweep_expired`, at most `SWEEP_BATCH` per tick, any owner); at most 10 are live per owner
+AND purpose, so asking for many of one kind never pushes out a waiting approval's check.
 
 A passkeys document that exists but can't be read (hand-edited, truncated) is NOT "no passkeys":
 every read raises `PasskeyDataUnreadable` and the service fails closed (irreversible approvals
@@ -37,6 +38,7 @@ log = get_logger(__name__)
 MAX_PASSKEYS = 10
 CHALLENGE_TTL = timedelta(minutes=2)
 MAX_LIVE_CHALLENGES = 10
+SWEEP_BATCH = 100  # expired challenges deleted per scheduler tick (slice 11 D7 c)
 LABEL_MAX = 40
 
 Clock = Callable[[], datetime]
@@ -235,6 +237,25 @@ class ChallengeStore:
         if gone:
             await self._d.write([Delete(self._path(cid)) for cid in gone])
 
+    async def sweep_expired(self, *, limit: int = SWEEP_BATCH) -> int:
+        """The scheduler tick (slice 11 D7 c): delete up to `limit` challenges that expired
+        unanswered, oldest first, whoever asked for them (one ordered read, no Firestore TTL —
+        it is billed). Live ones are never touched. Returns how many; never raises."""
+        now = self._clock()
+        try:
+            rows = await self._d.query(Query(self._col, order_by="expires_at", limit=limit))
+            gone = [
+                cid
+                for cid, data in rows
+                if not isinstance(exp := data.get("expires_at"), datetime) or exp <= now
+            ]
+            if gone:
+                await self._d.write([Delete(self._path(cid)) for cid in gone])
+        except Exception as exc:  # noqa: BLE001 — tidying never fails the tick
+            log.warning("challenge sweep skipped", extra={"error": type(exc).__name__})
+            return 0
+        return len(gone)
+
     async def take(self, cid: str) -> Challenge | None:
         """Read and delete in one transaction: a challenge works at most once."""
         if not safe_id(cid):
@@ -265,5 +286,6 @@ __all__ = [
     "PasskeyDataUnreadable",
     "PasskeyLimit",
     "PasskeyStore",
+    "SWEEP_BATCH",
     "StoredPasskey",
 ]

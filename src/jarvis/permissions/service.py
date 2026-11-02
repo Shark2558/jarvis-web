@@ -199,6 +199,10 @@ class PermissionsService:
                 extra={"tool": tool, "outcome": outcome, "error": type(exc).__name__},
             )
 
+    async def sweep_challenges(self) -> int:
+        """The scheduler tick (slice 11 D7 c): challenges no browser answered. Never raises."""
+        return await self.challenges.sweep_expired()
+
     # ---- the gateway's rule source and approval guard ------------------------------------------
     async def rules_for(self, user_id: str) -> list[PolicyRule]:
         return await self.store.rules_for(user_id)

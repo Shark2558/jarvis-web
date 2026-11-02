@@ -13,9 +13,12 @@ from jarvis.integrations.google import (
     REVOKE_URL,
     TOKEN_URL,
     GoogleAPIError,
+    GoogleConflict,
     GoogleConnector,
+    GoogleInvalid,
     GoogleNotConnected,
     GoogleScopesMissing,
+    GoogleUncertain,
 )
 from jarvis.integrations.vault import MemoryTokenStore
 
@@ -237,6 +240,32 @@ async def test_request_handles_empty_body_and_network_errors(
     with pytest.raises(GoogleAPIError) as ei:
         await conn.request(UID, "GET", CAL)
     assert "reach" in str(ei.value).lower()
+
+
+async def test_a_lost_answer_is_uncertain_and_a_duplicate_or_bad_request_has_its_own_class(
+    conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle
+) -> None:
+    """Slice 11 fix: a change Google may or may not have made (no answer, a 5xx) is
+    `GoogleUncertain`, so a delete can be checked by reading the item again; a 409 (an id that
+    already exists) and a 400 are told apart. All stay `GoogleAPIError` with plain words."""
+    await store.put(UID, _tokens())
+    fake.on("DELETE", CAL + "/e1", httpx.Response(503, json={"error": {"message": "x-secret"}}))
+    with pytest.raises(GoogleUncertain) as e1:
+        await conn.request(UID, "DELETE", CAL + "/e1")
+    assert isinstance(e1.value, GoogleAPIError) and "x-secret" not in str(e1.value)
+    fake.on("POST", CAL, httpx.Response(409, json={"error": {"message": "duplicate"}}))
+    with pytest.raises(GoogleConflict):
+        await conn.request(UID, "POST", CAL, json={})
+    fake.on("POST", CAL + "/x", httpx.Response(400, json={"error": {"message": "bad"}}))
+    with pytest.raises(GoogleInvalid):
+        await conn.request(UID, "POST", CAL + "/x", json={})
+
+    def boom(_: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("no answer")
+
+    conn.http = httpx.AsyncClient(transport=httpx.MockTransport(boom))
+    with pytest.raises(GoogleUncertain):
+        await conn.request(UID, "DELETE", CAL + "/e1")
 
 
 # ---- save / disconnect ----------------------------------------------------------------------

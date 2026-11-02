@@ -46,7 +46,7 @@ from jarvis.core.guardrails import PendingAction, guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn, UndoRef
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
-from jarvis.core.rounds import Rounds, undo_refs
+from jarvis.core.rounds import Rounds
 from jarvis.core.saving import not_recorded_note, record_after_action
 from jarvis.core.window import build_window
 from jarvis.documents.service import DocumentService, forget_files, precheck, save_owner_turn
@@ -638,7 +638,7 @@ class Brain:
         if not (recorded or saved):  # the next turn will not know: tell the owner now
             reply = f"{reply} {not_recorded_note(approved and again is None)}"
         return await self._decision_response(
-            session, spec, reply, completion, trace_id, approved, again, undo_refs([d.result])
+            session, spec, reply, completion, trace_id, approved, again, list(d.undo)
         )
 
     async def _narrate(

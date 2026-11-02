@@ -6,8 +6,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from jarvis.config import Settings
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.llm.base import ToolCall
+from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.audit import AuditLog
 from jarvis.tools.base import Tool
 from jarvis.tools.budget import MAX_FREE_DELETES, MAX_NEW_CARDS, turn_budget
@@ -15,6 +17,9 @@ from jarvis.tools.context import current_tool_context
 from jarvis.tools.gateway import Gateway, GatewayOutcome
 from jarvis.tools.policy import Policy
 from jarvis.tools.registry import ToolRegistry
+from jarvis.tools.setup import build_gateway
+from jarvis.undo.service import UndoBin
+from jarvis.undo.store import DeletedStore
 
 SCOPE = "u1:sess_1"
 
@@ -115,3 +120,69 @@ async def test_an_approved_card_runs_and_the_tool_knows_it_was_approved() -> Non
     ok = await _call(gw, "thing_delete", 10, confirmation_id=card.id)  # the owner's approve
     assert ok.outcome is GatewayOutcome.EXECUTED
     assert [c for _, c in ran.calls] == [False] * 10 + [True]
+
+
+async def test_the_tool_knows_the_risk_it_was_approved_at() -> None:
+    """Slice 11 fix (LOW): the tool sees the risk the gateway decided on (the card's risk for
+    an approved call), so a tool that finds more at run time (an event that gained guests) can
+    refuse instead of doing more than the owner approved."""
+    seen: list[tuple[ActionRisk | None, bool]] = []
+
+    def run(args: dict[str, Any]) -> dict[str, Any]:
+        ctx = current_tool_context()
+        assert ctx is not None
+        seen.append((ctx.approved_risk, ctx.confirmed))
+        return {"ok": True}
+
+    r2 = Tool("thing_delete", "t", {"type": "object"}, ActionRisk.REVERSIBLE, run, undoable=True)
+    r3 = Tool("thing_send", "t", {"type": "object"}, ActionRisk.IRREVERSIBLE, run)
+    gw = _gw(r2, r3)
+    await gw.execute(ToolCall(id="a", name="thing_delete", arguments={}), scope=SCOPE)
+    card = (
+        await gw.execute(ToolCall(id="b", name="thing_send", arguments={}), scope=SCOPE)
+    ).pending
+    assert card is not None
+    await gw.execute(
+        ToolCall(id="b", name="thing_send", arguments={}), scope=SCOPE, confirmation_id=card.id
+    )
+    assert seen == [(ActionRisk.REVERSIBLE, False), (ActionRisk.IRREVERSIBLE, True)]
+
+
+async def test_the_undo_tools_join_only_with_the_google_tools(settings: Settings) -> None:
+    """Restore needs the Google tools' restorers: without a Google link there is nothing the
+    model could restore, so deleted_list / deleted_restore aren't offered."""
+    from tasks_fakes import FakeTasks, tasks_connector
+
+    undo = UndoBin(DeletedStore(MemoryDocs()))
+    alone = build_gateway(settings, undo=undo)
+    assert (
+        alone.registry.get("deleted_restore") is None and alone.registry.get("deleted_list") is None
+    )
+    linked = build_gateway(settings, undo=undo, google=await tasks_connector(FakeTasks()))
+    assert linked.registry.get("deleted_restore") is not None
+
+
+async def test_undo_chips_come_only_from_tools_marked_undoable() -> None:
+    """A result that merely LOOKS like a delete's (a page, a mail, a tool echoing text) never
+    puts an Undo chip under the reply."""
+    from jarvis.core.rounds import undo_refs
+
+    fake = {"deleted": True, "undo_id": "del_0123456789abcdef0123", "kind": "event"}
+    echo = Tool("web_read", "t", {"type": "object"}, ActionRisk.READ_ONLY, lambda a: fake)
+    real = Tool("thing_delete", "t", {"type": "object"}, ActionRisk.REVERSIBLE, lambda a: fake,
+                undoable=True)  # fmt: skip
+    gw = _gw(echo, real)
+    calls = [ToolCall(id=n, name=n, arguments={}) for n in ("web_read", "thing_delete")]
+    results = [await gw.execute(c, scope=SCOPE) for c in calls]
+    refs = undo_refs(gw.registry, calls, results)
+    assert [r.undo_id for r in refs] == ["del_0123456789abcdef0123"]  # the delete's only
+    assert undo_refs(gw.registry, calls[:1], results[:1]) == []
+
+
+async def test_an_argument_check_that_overflows_is_an_error_not_a_crash() -> None:
+    def check(args: dict[str, Any]) -> None:
+        raise OverflowError("date value out of range")
+
+    tool = Tool("thing_add", "t", {"type": "object"}, ActionRisk.REVERSIBLE, Ran(), check=check)
+    out = await _gw(tool).execute(ToolCall(id="o", name="thing_add", arguments={}), scope=SCOPE)
+    assert out.outcome is GatewayOutcome.ERROR

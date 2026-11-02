@@ -6,11 +6,15 @@
 // JarvisConsole: cookie + X-Requested-With, or the bearer token; 401 → gate).
 // API: GET /v1/deleted → {items: [{id, kind, title, deleted_at, expires_at, restored}], kept_days};
 // POST /v1/deleted/{id}/restore → {status: restored | already_restored, message, title, …}, or
-// {error, detail}: 404 not_found, 410 expired, 409 busy, 503 unavailable, 502 restore_failed.
+// {error, detail}: 404 not_found, 410 expired, 409 busy / still_there, 503 unavailable,
+// 502 restore_failed. DELETE /v1/deleted/{id} ("Remove now", asked twice) → {removed, id} | 404.
 //   window.JarvisDeleted  chips(row, undo) — console.js calls it for a fresh reply's `undo`
 //     ([{undo_id, kind}]): one Undo chip per delete in the reply's meta line. The chip's title comes
-//     from the list (plain text); a click restores the item and the chip then says "Restored".
+//     from the list (plain text); a click restores the item and the chip then says "Restored". Why a
+//     restore didn't happen (failed, expired, busy) is said in words next to the chip (aria-live).
 //   refresh() — reload the list (also on sign-in, when Approvals opens, after a reply with undo).
+// Keyboard focus survives a re-render of the list (the row's button, else the row itself), and chips
+// gone from the page are dropped from the registry.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -22,15 +26,19 @@
   const OPEN_KEY = 'jarvis_deleted_open';
   const MAX_ITEMS = 50;
   const FAILED = 'Couldn\'t restore it. Try again in a moment.';
+  const NOT_REMOVED = 'Couldn\'t remove it. Try again in a moment.';
+  const NOT_HERE = 'Recently deleted isn\'t available on this server: deletes always ask first here.';
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
+  const CONFIRM_MS = 5000;
   const emit = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
   const log = (kind, text) => emit('jarvis:event', { kind, text, at: Date.now(), live: true });
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
   };
-  const S = { items: undefined, kept: 30, error: '', loadedAt: 0, loading: null, busy: new Set(), errs: {} };
-  const chipsById = new Map(); // undo id → the chips that restore it
+  const S = { items: undefined, kept: 30, error: '', loadedAt: 0, loading: null, busy: new Set(), errs: {}, confirm: '', confirmTimer: 0 };
+  const chipsById = new Map(); // undo id → the chips that restore it (pruned when they leave the page)
+  let msgSeq = 0;
 
   // ---- small, type-checking helpers -----------------------------------------------------------
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
@@ -73,7 +81,7 @@
         expires: txt(it.expires_at, 40), restored: it.restored === true };
     }).filter(Boolean);
     const kept = Number.isInteger(d.kept_days) && d.kept_days > 0 && d.kept_days < 1000 ? d.kept_days : 30;
-    return { items, kept };
+    return { items, kept, available: d.available !== false };
   }
 
   // ---- the section in the Approvals panel ------------------------------------------------------
@@ -113,18 +121,35 @@
 
   function summary() {
     if (!sum) return;
-    if (S.items === undefined) { sum.textContent = S.error ? 'Couldn\'t load' : ''; return; }
+    if (S.items === undefined) { sum.textContent = S.error === NOT_HERE ? 'Not available here' : S.error ? 'Couldn\'t load' : ''; return; }
     const open = S.items.filter(i => !i.restored).length;
     sum.textContent = open ? `${open} ${open === 1 ? 'item' : 'items'} you can restore · kept ${S.kept} days` : `Nothing to restore · kept ${S.kept} days`;
+  }
+  /** Where keyboard focus is inside the list, so a re-render can put it back. */
+  function focusedIn() {
+    const a = document.activeElement;
+    if (!listEl || !a || !listEl.contains(a)) return null;
+    const li = a.closest('.drow');
+    return li ? { id: li.dataset.id, act: a.dataset ? a.dataset.act || '' : '' } : null;
+  }
+  function refocus(f) {
+    if (!f || !ID.test(f.id || '')) return;
+    const li = listEl.querySelector(`.drow[data-id="${f.id}"]`);
+    if (!li) { if (body && !body.hidden) btn.focus(); return; } // the row went: back to the section
+    const target = (f.act && li.querySelector(`[data-act="${f.act}"]`)) || li.querySelector('button') || li;
+    if (target === li) li.tabIndex = -1;
+    target.focus();
   }
   function render() {
     summary();
     labelChips();
     if (!listEl || body.hidden) return;
+    const f = focusedIn();
     listEl.replaceChildren();
     if (S.items === undefined) {
       if (!S.error) { listEl.appendChild(mk('div', 'empty', 'Loading…')); return; }
       listEl.appendChild(mk('div', 'empty', S.error));
+      if (S.error === NOT_HERE) return; // nothing to retry
       const retry = mk('button', 'btn lift retry', 'Retry'); retry.type = 'button';
       retry.addEventListener('click', () => { retry.disabled = true; load(); });
       listEl.appendChild(retry);
@@ -134,6 +159,7 @@
     const ul = mk('ul', 'dlist');
     S.items.forEach(it => ul.appendChild(row(it)));
     listEl.appendChild(ul);
+    refocus(f);
   }
   function row(it) {
     const li = mk('li', 'drow'); li.dataset.id = it.id;
@@ -142,18 +168,55 @@
     const bits = [KINDS[it.kind], it.deleted && `deleted ${when(it.deleted)}`, !it.restored && it.expires && `kept until ${day(it.expires)}`];
     t.append(b, mk('small', '', bits.filter(Boolean).join(' · ')));
     li.appendChild(t);
+    const acts = mk('div', 'dacts');
     if (it.restored) {
-      const p = mk('span', 'dpill'); p.append(svg(CHECK_PATHS), mk('span', '', 'Restored')); li.appendChild(p);
+      const p = mk('span', 'dpill'); p.append(svg(CHECK_PATHS), mk('span', '', 'Restored')); acts.appendChild(p);
     } else {
       const go = mk('button', 'btn lift bact', S.busy.has(it.id) ? 'Restoring…' : 'Restore'); go.type = 'button';
+      go.dataset.act = 'restore';
       go.setAttribute('aria-label', `Restore ${WORDS[it.kind]} “${it.title}”`);
       if (S.busy.has(it.id)) go.setAttribute('aria-disabled', 'true');
       go.addEventListener('click', () => restore(it.id));
-      li.appendChild(go);
+      acts.appendChild(go);
     }
+    acts.appendChild(removeButton(it));
+    li.appendChild(acts);
     const err = mk('p', 'lerr', S.errs[it.id] || ''); err.setAttribute('role', 'alert');
     li.appendChild(err);
     return li;
+  }
+  /** "Remove now": the copy goes for good, so the first click only asks ("Remove for good?"). */
+  function removeButton(it) {
+    const asking = S.confirm === it.id;
+    const rm = mk('button', 'btn lift bdel' + (asking ? ' ask' : ''), asking ? 'Remove for good?' : 'Remove now');
+    rm.type = 'button'; rm.dataset.act = 'remove';
+    rm.setAttribute('aria-label', asking ? `Remove “${it.title}” for good: it can't be restored after`
+      : `Remove ${WORDS[it.kind]} “${it.title}” from Recently deleted now`);
+    if (S.busy.has(it.id)) rm.setAttribute('aria-disabled', 'true');
+    rm.addEventListener('click', () => { if (rm.getAttribute('aria-disabled') !== 'true') removeNow(it.id); });
+    return rm;
+  }
+  async function removeNow(id) {
+    if (!ID.test(id) || S.busy.has(id) || !hasApi()) return;
+    clearTimeout(S.confirmTimer);
+    if (S.confirm !== id) { // first click: ask, and stop asking after a few seconds
+      S.confirm = id; render();
+      S.confirmTimer = setTimeout(() => { if (S.confirm === id) { S.confirm = ''; render(); } }, CONFIRM_MS);
+      return;
+    }
+    S.confirm = ''; S.busy.add(id); delete S.errs[id]; note('', ''); render();
+    try {
+      await api(`/v1/deleted/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      S.items = (S.items || []).filter(i => i.id !== id);
+      note('ok', 'Removed from Recently deleted.'); log('info', 'Removed from Recently deleted');
+      chipState(id, 'gone', 'Removed from Recently deleted: it can no longer be undone.');
+    } catch (e) {
+      S.errs[id] = detailOf(e) || NOT_REMOVED;
+      if (e && e.status === 404) S.loadedAt = 0;
+    } finally {
+      S.busy.delete(id);
+      if (stale()) await load(); else render();
+    }
   }
 
   async function load() {
@@ -162,10 +225,11 @@
     S.loading = (async () => {
       try {
         const d = normal(await api('/v1/deleted'));
+        if (!d.available) { S.items = undefined; S.error = NOT_HERE; S.loadedAt = Date.now(); return; }
         S.items = d.items; S.kept = d.kept; S.error = ''; S.loadedAt = Date.now();
       } catch (e) {
         if (e && e.status === 401) return; // the sign-in gate's job
-        S.items = undefined; S.error = e && e.status === 404 ? 'Recently deleted isn\'t available on this server.' : 'Couldn\'t load Recently deleted.';
+        S.items = undefined; S.error = e && e.status === 404 ? NOT_HERE : 'Couldn\'t load Recently deleted.';
       } finally { S.loading = null; render(); }
     })();
     return S.loading;
@@ -196,9 +260,18 @@
     return ok;
   }
 
-  /** One Undo chip per undo-able delete in a fresh reply (console.js: handleResponse). */
+  /** Chips no longer on the page (a cleared or reloaded conversation) leave the registry. */
+  function prune() {
+    chipsById.forEach((list, id) => {
+      const live = list.filter(c => c.isConnected);
+      if (live.length) chipsById.set(id, live); else chipsById.delete(id);
+    });
+  }
+  /** One Undo chip per undo-able delete in a fresh reply (console.js: handleResponse). Next to each,
+   *  an aria-live line says in words why a restore didn't happen (failed, expired, busy). */
   function chips(rowEl, undo) {
     if (!rowEl) return [];
+    prune();
     const refs = arr(undo).slice(0, 20).map(obj).filter(r => r && typeof r.undo_id === 'string' && ID.test(r.undo_id) &&
       Object.prototype.hasOwnProperty.call(KINDS, r.kind));
     if (!refs.length) return [];
@@ -208,9 +281,12 @@
       const c = mk('button', 'mchip uchip'); c.type = 'button'; c.dataset.undo = r.undo_id; c.dataset.kind = r.kind;
       c.append(svg(UNDO_PATHS), mk('span', 'uw', 'Undo'), mk('span', 'ut', ''));
       c.setAttribute('aria-label', `Undo: restore the deleted ${WORDS[r.kind]}`);
+      const msg = mk('span', 'umsg'); msg.id = `umsg${++msgSeq}`;
+      msg.setAttribute('role', 'status'); msg.setAttribute('aria-live', 'polite');
+      c.setAttribute('aria-describedby', msg.id);
       c.addEventListener('click', () => { if (c.getAttribute('aria-disabled') !== 'true') restore(r.undo_id); });
       const list = chipsById.get(r.undo_id) || []; list.push(c); chipsById.set(r.undo_id, list);
-      meta.appendChild(c);
+      meta.append(c, msg);
       return c;
     });
     // the new items: titles for the chips, and the panel's list (after any load already under way)
@@ -219,25 +295,30 @@
     return made;
   }
   function labelChips() {
+    prune();
     chipsById.forEach((list, id) => {
       const it = (S.items || []).find(i => i.id === id);
       list.forEach(c => {
-        if (!c.isConnected) return;
         if (it) {
           c.querySelector('.ut').textContent = it.title; c.title = it.title;
-          if (c.dataset.state !== 'done') c.setAttribute('aria-label', `Undo: restore the deleted ${WORDS[it.kind]} “${it.title}”`);
+          if (!['done', 'gone'].includes(c.dataset.state)) c.setAttribute('aria-label', `Undo: restore the deleted ${WORDS[it.kind]} “${it.title}”`);
           if (it.restored && c.dataset.state !== 'busy') chipState(id, 'done');
         }
       });
     });
   }
+  /** busy → "Undoing…"; done → "Restored"; gone → removed for good; bad → "Undo" again, and the
+   *  reason in words in the chip's aria-live line (visible, not just a tooltip). */
   function chipState(id, state, msg) {
     (chipsById.get(id) || []).forEach(c => {
       c.dataset.state = state;
-      c.classList.toggle('done', state === 'done'); c.classList.toggle('bad', state === 'bad');
+      c.classList.toggle('done', state === 'done'); c.classList.toggle('bad', state === 'bad' || state === 'gone');
       const w = c.querySelector('.uw');
+      const line = c.nextElementSibling && c.nextElementSibling.classList.contains('umsg') ? c.nextElementSibling : null;
+      if (line) line.textContent = state === 'bad' || state === 'gone' ? (msg || FAILED) : '';
       if (state === 'busy') { c.setAttribute('aria-disabled', 'true'); w.textContent = 'Undoing…'; }
       else if (state === 'done') { c.setAttribute('aria-disabled', 'true'); w.textContent = 'Restored'; c.setAttribute('aria-label', 'Restored'); }
+      else if (state === 'gone') { c.setAttribute('aria-disabled', 'true'); w.textContent = 'Removed'; c.setAttribute('aria-label', 'Removed from Recently deleted'); }
       else { c.removeAttribute('aria-disabled'); w.textContent = 'Undo'; c.title = msg || ''; }
     });
   }

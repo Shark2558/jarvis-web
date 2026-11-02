@@ -115,9 +115,19 @@ class LeakyBin(UndoBin):
         snapshot: dict[str, Any],
         *,
         owner_authored: bool = False,
+        session_id: str | None = None,
+        trace_id: str | None = None,
     ) -> DeletedItem:
         try:
-            return await super().keep(uid, kind, title, snapshot, owner_authored=owner_authored)
+            return await super().keep(
+                uid,
+                kind,
+                title,
+                snapshot,
+                owner_authored=owner_authored,
+                session_id=session_id,
+                trace_id=trace_id,
+            )
         except Exception:  # noqa: BLE001 — the bug the gate must catch
             return DeletedItem(
                 id="del_00000000000000000000",
@@ -406,7 +416,7 @@ def _there(h: Harness, ref: str) -> bool:
     if ":" in ref:
         lid, tid = ref.split(":", 1)
         return h.tasks.task(lid, tid) is not None
-    return ref in h.server.events
+    return h.server.live(ref)  # a deleted event stays as "cancelled", like Google
 
 
 # ---- the suite -----------------------------------------------------------------------------------

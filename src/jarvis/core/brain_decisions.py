@@ -17,7 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from jarvis.core.guardrails import PendingAction
-from jarvis.core.models import Session, Turn
+from jarvis.core.models import Session, Turn, UndoRef
+from jarvis.core.rounds import undo_refs
 from jarvis.llm.base import Role, TextBlock, ToolCall, ToolResultBlock
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 
@@ -30,6 +31,7 @@ class Decision:
     result: GatewayResult
     fallback: str
     instruction: str
+    undo: tuple[UndoRef, ...] = ()  # slice 11: an approved undo-able delete's Undo chip
 
 
 def record_exchange(session: Session, d: Decision, trace_id: str | None) -> list[Turn]:
@@ -67,7 +69,11 @@ async def approved(
         else f"That did not go through: {gr.error or gr.outcome.value}."
     )
     return Decision(
-        call, gr, fallback, "Owner approved this action; report the outcome in one sentence."
+        call,
+        gr,
+        fallback,
+        "Owner approved this action; report the outcome in one sentence.",
+        tuple(undo_refs(gateway.registry, [call], [gr])),
     )
 
 

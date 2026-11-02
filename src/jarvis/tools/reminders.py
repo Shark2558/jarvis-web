@@ -16,10 +16,20 @@ monthly) becomes an RFC 5545 RRULE that always ends: on `repeat_until`, at most 
 first reminder (or after today, for an older one). The pure argument checks run before the
 policy decision and are lenient about the zone (a naive time read in the latest zone, UTC−12);
 the exact checks run with the owner's zone.
+
+Slice 11 fix: reminders_list reads single occurrences (`singleEvents`), so a repeating reminder's
+`id` is its SERIES (reminder_update / calendar_delete_event on it change or delete every
+occurrence) and `occurrence_id` is that one occurrence; past 50 it says `truncated`. The zone is
+the calendar's, else the owner's configured zone (`Settings.user_timezone`) — never silently UTC.
+reminder_update changes only reminders the owner made (organizer and creator `self`), keeps a
+repeat's end in the future and refuses to move a series past its last day (give repeat and
+repeat_until to extend it, within the year). A date the calendar can't hold (year 1, 9999) is a
+plain ValueError, never an OverflowError.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -72,27 +82,39 @@ _FREQ = {  # weekdays before weekly: `_repeat_of` matches prefixes in this order
 }
 _LATEST = ZoneInfo("Etc/GMT+12")  # UTC−12 (POSIX sign): the latest a naive time can mean
 _CHANGES = ("text", "when", "minutes_before", "repeat")
+_RULE_UNTIL = re.compile(r"UNTIL=(\d{8})(?:T(\d{6})Z?)?")
 DELETE_NOTE = (
     "A pop-up from the Google Calendar app on the owner's phone. To delete it use "
-    "calendar_delete_event with this id (the owner can undo a delete)."
+    "calendar_delete_event with this id (for a repeating one that deletes every occurrence; the "
+    "owner can undo a delete)."
 )
 HOW_TO = (
-    "Change one with reminder_update (event_id = id). Delete one with calendar_delete_event "
-    "(event_id = id; the owner can undo it). For every occurrence of a repeating reminder use its "
-    "series_id instead of id."
+    "Change one with reminder_update and delete one with calendar_delete_event, by its id "
+    "(event_id = id; the owner can undo a delete). For a repeating reminder the id is the whole "
+    "series: every occurrence. To change or delete just one occurrence use its occurrence_id "
+    "instead (the series continues)."
+)
+TRUNCATED = (
+    f"More than {MAX_LISTED} reminders in that window: only the first {MAX_LISTED} are listed. "
+    "Ask again with a narrower start and end to see the rest."
 )
 NOT_A_REMINDER = (
     "That event is not a reminder JARVIS set, so reminder_update won't change it; use "
     "calendar_update_event for an ordinary event."
+)
+NOT_OWN = (
+    "That reminder isn't one the owner made (someone else organises or created it), so "
+    "reminder_update won't change it; use calendar_update_event (the owner may be asked first)."
 )
 SHARED = (
     "That reminder now has other people on it, so JARVIS won't change it as a reminder; use "
     "calendar_update_event (the owner will be asked first)."
 )
 ONE_OCCURRENCE = (
-    "That id is one occurrence of a repeating reminder: to change how it repeats, use its "
-    "series_id (from reminders_list) as event_id."
+    "That is one occurrence (occurrence_id) of a repeating reminder: to change how it repeats, "
+    "use its id from reminders_list as event_id."
 )
+OUT_OF_RANGE = "that date is out of range for a calendar; give a date within the next 5 years"
 
 
 def utcnow() -> datetime:
@@ -141,7 +163,10 @@ def _passed(alert: datetime) -> str:
 
 
 def _check_future(at: datetime, minutes_before: int, now: datetime) -> None:
-    alert = at - timedelta(minutes=minutes_before)
+    try:
+        alert = at - timedelta(minutes=minutes_before)
+    except OverflowError:  # year 1: its alert would fall before the calendar begins
+        raise ValueError(OUT_OF_RANGE) from None
     if alert < now - PAST_GRACE:
         raise ValueError(_passed(alert))
     if at - now > MAX_AHEAD:
@@ -157,18 +182,63 @@ def _repeat_rule(
         if until is not None:
             raise ValueError("repeat_until goes with repeat: give both")
         return None, None
+    try:
+        return _rule(repeat, first, until, today, timedelta(days=slack))
+    except OverflowError:  # a first day near year 9999: a year on would leave the calendar
+        raise ValueError(OUT_OF_RANGE) from None
+
+
+def _rule(
+    repeat: str, first: datetime, until: date | None, today: date, slack: timedelta
+) -> tuple[str, date]:
     day = first.date()
     cap = max(day, today) + MAX_REPEAT
     last = until if until is not None else cap
-    if last < day - timedelta(days=slack):
+    if last < day - slack:
         raise ValueError("repeat_until is before the first reminder")
-    if last > cap + timedelta(days=slack):
+    if until is not None and until < today - slack:
+        raise ValueError(
+            f"repeat_until ({until.isoformat()}) is in the past; give a day from today on"
+        )
+    if last > cap + slack:
         raise ValueError(
             f"repeat_until can be at most a year ahead ({cap.isoformat()}); the owner can extend "
             "it later"
         )
     end = datetime.combine(min(last, cap), time(23, 59, 59), tzinfo=first.tzinfo)
     return f"RRULE:{_FREQ[repeat]};UNTIL={end.astimezone(UTC):%Y%m%dT%H%M%SZ}", min(last, cap)
+
+
+def _repeat_end(e: dict[str, Any], tz: ZoneInfo) -> date | None:
+    """The last day of a reminder's repeat (its RRULE's UNTIL, in the owner's zone), if any."""
+    rules = [str(r) for r in e.get("recurrence") or [] if str(r).startswith("RRULE:")]
+    m = _RULE_UNTIL.search(rules[0]) if rules else None
+    if m is None:
+        return None
+    try:
+        if m.group(2) is None:  # a date only
+            return datetime.strptime(m.group(1), "%Y%m%d").date()
+        at = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S").replace(tzinfo=UTC)
+        return at.astimezone(tz).date()
+    except (ValueError, OverflowError):
+        return None
+
+
+def _within_repeat(e: dict[str, Any], start: datetime, tz: ZoneInfo) -> None:
+    """Moving a series' first reminder past its last day would leave nothing to remind of."""
+    last = _repeat_end(e, tz)
+    if last is not None and start.astimezone(tz).date() > last:
+        raise ValueError(
+            f"that is after the repeat ends ({last.isoformat()}); give repeat and repeat_until "
+            "too, to extend it (at most a year ahead)"
+        )
+
+
+def _plus(at: datetime, delta: timedelta) -> datetime:
+    try:
+        return at + delta
+    except OverflowError:
+        raise ValueError(OUT_OF_RANGE) from None
 
 
 def _span(start: datetime, end: datetime) -> None:
@@ -220,8 +290,8 @@ def _repeat_words(repeat: str, until: Any) -> str:
 
 
 def add_card(a: dict[str, Any]) -> str:
-    """'Remind you: call Ravi · Mon 3 Nov 17:00' (+ alert offset, + repeat)."""
-    parts = [f"Remind you: {one_line(a.get('text'), TEXT_MAX)}", _card_time(a.get("when"))]
+    """'Remind you: “call Ravi” · Mon 3 Nov 17:00' (+ alert offset, + repeat)."""
+    parts = [f"Remind you: {quoted(a.get('text'), TEXT_MAX)}", _card_time(a.get("when"))]
     if a.get("minutes_before"):
         parts.append(minutes_label(int(a["minutes_before"])))
     repeat = _repeat_arg(a.get("repeat"))
@@ -246,9 +316,16 @@ def update_card(e: dict[str, Any], a: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _self(e: dict[str, Any], who: str) -> bool:
+    person = e.get(who)
+    return isinstance(person, dict) and person.get("self") is True
+
+
 def _own_reminder(e: dict[str, Any], a: dict[str, Any]) -> None:
     if not is_reminder(e):
         raise ValueError(NOT_A_REMINDER)
+    if not (_self(e, "organizer") and _self(e, "creator")):
+        raise ValueError(NOT_OWN)
     if others_on(e):
         raise ValueError(SHARED)
     if "repeat" in a and e.get("recurringEventId"):
@@ -340,7 +417,8 @@ class ReminderAPI:
         uid, tz = await self._zone()
         now = self.clock().astimezone(tz)
         start = parse_when(a["start"], tz, name="start") if a.get("start") else now
-        end = parse_when(a["end"], tz, name="end") if a.get("end") else start + DEFAULT_WINDOW
+        end = parse_when(a["end"], tz, name="end") if a.get("end") else None
+        end = end if end is not None else _plus(start, DEFAULT_WINDOW)
         _span(start, end)
         params: dict[str, Any] = {
             "timeMin": start.isoformat(),
@@ -351,14 +429,18 @@ class ReminderAPI:
             "privateExtendedProperty": REMINDER_FILTER,
         }
         data = await self.cal.conn.request(uid, "GET", EVENTS_URL, params=params)
-        items = [e for e in list(data.get("items") or [])[:MAX_LISTED] if isinstance(e, dict)]
-        return {
+        raw = list(data.get("items") or [])
+        items = [e for e in raw[:MAX_LISTED] if isinstance(e, dict)]
+        cut = bool(data.get("nextPageToken")) or len(raw) > MAX_LISTED
+        out: dict[str, Any] = {
             "time_zone": tz.key,
             "from": start.isoformat(),
             "to": end.isoformat(),
             "reminders": [_shape(e, tz) for e in items if is_reminder(e)],
+            "truncated": cut,
             "how_to": HOW_TO,
         }
+        return {**out, "note": TRUNCATED} if cut else out
 
     async def update(self, a: dict[str, Any]) -> dict[str, Any]:
         uid, tz = await self._zone()
@@ -380,6 +462,8 @@ class ReminderAPI:
         start = parse_when(a["when"], tz, name="when") if "when" in a else None
         if start is not None:  # its alert (new or kept) must still be ahead
             _check_future(start, minutes, now)
+            if "repeat" not in a:  # the series' own end still applies
+                _within_repeat(e, start, tz)
             body.update(_slot(start, tz))
         if "minutes_before" in a:
             body["reminders"] = popup_reminders([minutes])
@@ -399,7 +483,7 @@ class ReminderAPI:
 def _slot(at: datetime, tz: ZoneInfo) -> dict[str, Any]:
     return {
         "start": {"dateTime": at.isoformat(), "timeZone": tz.key},
-        "end": {"dateTime": (at + LENGTH).isoformat(), "timeZone": tz.key},
+        "end": {"dateTime": _plus(at, LENGTH).isoformat(), "timeZone": tz.key},
     }
 
 
@@ -418,17 +502,21 @@ def _start_of(e: dict[str, Any], tz: ZoneInfo) -> datetime:
         return datetime.fromisoformat(str(part.get("dateTime")).replace("Z", "+00:00")).astimezone(
             tz
         )
+    except OverflowError:
+        raise ValueError(OUT_OF_RANGE) from None
     except ValueError:
         raise ValueError("that reminder has no time of day; give a new `when`") from None
 
 
 def _shape(e: dict[str, Any], tz: ZoneInfo) -> dict[str, Any]:
     """A reminder for the model: its text fenced (it may have been edited in the Calendar app,
-    or copied from someone else's words), when it pops up, and the ids to change it by."""
+    or copied from someone else's words), when it pops up, and the ids to change it by: `id` is
+    the whole series for a repeating reminder, `occurrence_id` the one occurrence listed."""
     start, _ = _event_time(e.get("start"), tz)
     series = one_line(e.get("recurringEventId"), 1024)
+    own = one_line(e.get("id"), 1024)
     out: dict[str, Any] = {
-        "id": one_line(e.get("id"), 1024),
+        "id": series or own,
         "text": wrap_external(
             reminder_text(e.get("summary")) or "(no text)", source=SOURCE, limit=TEXT_MAX
         ),
@@ -437,7 +525,7 @@ def _shape(e: dict[str, Any], tz: ZoneInfo) -> dict[str, Any]:
         "repeating": bool(series or e.get("recurrence")),
     }
     if series:
-        out["series_id"] = series
+        out["occurrence_id"] = own
     return out
 
 
@@ -459,11 +547,48 @@ _UNTIL = {
     "type": "string",
     "description": "Last day of a repeat, YYYY-MM-DD (default and maximum: a year after the first)",
 }
-_DELETE = " To delete a reminder use calendar_delete_event with its id (the owner can undo it)."
+_DELETE = (
+    " To delete a reminder use calendar_delete_event with its id (a repeating reminder's id: "
+    "every occurrence; its occurrence_id: just that one). The owner can undo a delete."
+)
+_ADD_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "text": _TEXT,
+        "when": _WHEN,
+        "minutes_before": _MINUTES,
+        "repeat": _REPEAT,
+        "repeat_until": _UNTIL,
+    },
+    "required": ["text", "when"],
+}
+_UPDATE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "event_id": {
+            "type": "string",
+            "description": "id from reminders_list (a repeating reminder: the whole series), "
+            "or occurrence_id to change just that occurrence",
+        },
+        "text": _TEXT,
+        "when": _WHEN,
+        "minutes_before": _MINUTES,
+        "repeat": _REPEAT,
+        "repeat_until": _UNTIL,
+    },
+    "required": ["event_id"],
+}
 
 
-def reminder_tools(conn: GoogleConnector, *, clock: Callable[[], datetime] = utcnow) -> list[Tool]:
-    api = ReminderAPI(CalendarAPI(conn), clock)
+def reminder_tools(
+    conn: GoogleConnector,
+    *,
+    clock: Callable[[], datetime] = utcnow,
+    default_tz: str = "UTC",
+) -> list[Tool]:
+    """`default_tz`: the owner's configured zone (`Settings.user_timezone`), used when the
+    calendar's own zone can't be read."""
+    api = ReminderAPI(CalendarAPI(conn, fallback_tz=default_tz), clock)
     return [
         Tool(
             "reminder_add",
@@ -471,17 +596,7 @@ def reminder_tools(conn: GoogleConnector, *, clock: Callable[[], datetime] = utc
             "Calendar app at `when`, or minutes_before earlier, optionally repeating (ends on "
             "repeat_until, at most a year ahead). For 'remind me before <event>' use "
             "reminders_minutes on calendar_update_event instead." + _DELETE,
-            {
-                "type": "object",
-                "properties": {
-                    "text": _TEXT,
-                    "when": _WHEN,
-                    "minutes_before": _MINUTES,
-                    "repeat": _REPEAT,
-                    "repeat_until": _UNTIL,
-                },
-                "required": ["text", "when"],
-            },
+            _ADD_SCHEMA,
             ActionRisk.REVERSIBLE,
             api.add,
             agent="google",
@@ -491,7 +606,9 @@ def reminder_tools(conn: GoogleConnector, *, clock: Callable[[], datetime] = utc
         Tool(
             "reminders_list",
             "List the owner's reminders (set with reminder_add) between start and end (default: "
-            "the next 7 days), with the ids reminder_update takes." + _DELETE,
+            "the next 7 days), one row per occurrence, with the ids reminder_update takes: `id` "
+            "(a repeating reminder's whole series) and, for a repeating one, `occurrence_id`."
+            + _DELETE,
             {"type": "object", "properties": {"start": _WHEN, "end": _WHEN}},
             ActionRisk.READ_ONLY,
             api.list_reminders,
@@ -503,18 +620,7 @@ def reminder_tools(conn: GoogleConnector, *, clock: Callable[[], datetime] = utc
             "Change a reminder set with reminder_add (only the given fields): text, when, "
             "minutes_before or repeat. Ordinary events are refused: use calendar_update_event."
             + _DELETE,
-            {
-                "type": "object",
-                "properties": {
-                    "event_id": {"type": "string", "description": "id or series_id from the list"},
-                    "text": _TEXT,
-                    "when": _WHEN,
-                    "minutes_before": _MINUTES,
-                    "repeat": _REPEAT,
-                    "repeat_until": _UNTIL,
-                },
-                "required": ["event_id"],
-            },
+            _UPDATE_SCHEMA,
             ActionRisk.REVERSIBLE,
             api.update,
             agent="google",

@@ -27,14 +27,19 @@ from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.tools.registry import ToolRegistry
 
 
-def undo_refs(results: Sequence[GatewayResult]) -> list[UndoRef]:
-    """The undo-able deletes among calls that ran (slice 11: the reply's Undo chips)."""
-    refs = (UndoRef.from_result(gr.result) for gr in results)
-    return [
-        r
-        for gr, r in zip(results, refs, strict=True)
-        if r is not None and gr.outcome is GatewayOutcome.EXECUTED
-    ]
+def undo_refs(
+    registry: ToolRegistry, calls: Sequence[ToolCall], results: Sequence[GatewayResult]
+) -> list[UndoRef]:
+    """The undo-able deletes among calls that ran (slice 11: the reply's Undo chips) — only
+    from tools marked undoable, so a result that merely looks like one never makes a chip."""
+    out: list[UndoRef] = []
+    for call, gr in zip(calls, results, strict=True):
+        tool = registry.get(call.name)
+        if gr.outcome is not GatewayOutcome.EXECUTED or tool is None or not tool.undoable:
+            continue
+        if (ref := UndoRef.from_result(gr.result)) is not None:
+            out.append(ref)
+    return out
 
 
 @dataclass
@@ -57,7 +62,7 @@ class Rounds:
         self, registry: ToolRegistry, calls: Sequence[ToolCall], results: Sequence[GatewayResult]
     ) -> None:
         """Remember each call of this round that ran and can change something."""
-        self.undo += undo_refs(results)
+        self.undo += undo_refs(registry, calls, results)
         for call, gr in zip(calls, results, strict=True):
             if gr.outcome is not GatewayOutcome.EXECUTED:
                 continue

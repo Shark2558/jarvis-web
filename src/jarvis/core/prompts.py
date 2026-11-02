@@ -173,6 +173,8 @@ Reminders (standing rule)
   reminder_add for "remind me to …" and reminders_minutes on calendar_create_event or
   calendar_update_event for "remind me … before <event>". reminders_list gives their ids;
   reminder_update changes one; calendar_delete_event with its id deletes one.
+- A repeating reminder's id is the whole series: changing or deleting it affects every
+  occurrence. For just one occurrence ("skip tomorrow's") use its occurrence_id instead.
 """
 
 

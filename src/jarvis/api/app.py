@@ -93,6 +93,15 @@ def app_docs(built: Storage | None) -> Docs:
     return built.docs if built is not None and built.docs is not None else MemoryDocs()
 
 
+def build_undo(s: Settings, built: Storage | None, docs: Docs) -> UndoBin | None:
+    """Recently deleted (slice 11) only on persistent storage: a copy kept in process memory
+    would vanish on a restart, so "Undo for 30 days" would not hold. Without it every delete
+    stays R3 (card + passkey) and /v1/deleted says it isn't available."""
+    if built is None or not built.persistent:
+        return None
+    return UndoBin(DeletedStore(docs, prefix=s.firestore_prefix))
+
+
 def build_brief_service(
     app: FastAPI, s: Settings, built: Storage | None, *, docs: Docs | None = None
 ) -> BriefService:
@@ -227,8 +236,9 @@ def create_app(
         # Attached files (slice 10 E): text and chunks on the same documents, deleted with the
         # conversation; the doc tools join the gateway's registry.
         app.state.documents = DocumentService(AttachmentStore(docs, prefix=s.firestore_prefix))
-        # Recently deleted (slice 11): the owner's deletes keep a copy here for 30 days (undo)
-        app.state.undo = undo or UndoBin(DeletedStore(docs, prefix=s.firestore_prefix))
+        # Recently deleted (slice 11): the owner's deletes keep a copy here for 30 days (undo);
+        # only on persistent storage, else None and deletes stay R3
+        app.state.undo = undo or build_undo(s, built, docs)
         gw: Gateway | None = gateway
         if gw is None and s.tools_enabled:
             gw = build_gateway(

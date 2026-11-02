@@ -36,18 +36,34 @@ UNDO_NOTE = (
     f"Kept in Recently deleted for {RETENTION_DAYS} days. Tell the owner it is done and that "
     "they can say “undo” or tap Undo to bring it back."
 )
+UNCONFIRMED = "unconfirmed"
+MAYBE_NOTE = (
+    "Google didn't confirm the delete and it couldn't be checked: it may have been deleted — "
+    f"check Recently deleted. A copy is kept there for {RETENTION_DAYS} days; if the item is "
+    "still there, a restore says so and makes no second copy. Tell the owner exactly this."
+)
 _ID_SCHEMA = {"type": "string", "description": "The undo_id from a delete's result or deleted_list"}
 
 
-def deleted_result(item: DeletedItem, *, source: str, **extra: Any) -> dict[str, Any]:
-    """What an undo-able delete tells the model: {deleted, kind, undo_id, title} + how to undo."""
+def deleted_result(
+    item: DeletedItem,
+    *,
+    source: str,
+    confirmed: bool = True,
+    extra_note: str = "",
+    **extra: Any,
+) -> dict[str, Any]:
+    """What an undo-able delete tells the model: {deleted, kind, undo_id, title} + how to undo.
+    `confirmed=False`: Google's answer was lost and the item couldn't be read again
+    (`deleted: "unconfirmed"`). `extra_note`: what else the owner should know (our words)."""
+    note = UNDO_NOTE if confirmed else MAYBE_NOTE
     return {
-        "deleted": True,
+        "deleted": True if confirmed else UNCONFIRMED,
         "kind": item.kind,
         "undo_id": item.id,
         "title": wrap_external(item.title, source=source, limit=TITLE_LIMIT),
         **extra,
-        "note": UNDO_NOTE,
+        "note": f"{note} {extra_note}".strip(),
     }
 
 
@@ -132,4 +148,4 @@ def undo_tools(bin_: UndoBin) -> list[Tool]:
     ]
 
 
-__all__ = ["SOURCE", "UNDO_NOTE", "deleted_result", "undo_tools"]
+__all__ = ["MAYBE_NOTE", "SOURCE", "UNCONFIRMED", "UNDO_NOTE", "deleted_result", "undo_tools"]

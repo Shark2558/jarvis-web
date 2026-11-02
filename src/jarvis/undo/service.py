@@ -8,7 +8,13 @@ restore  recreate the item from its snapshot through the restorer for its kind (
          restore — or two clicks at once — never makes two copies ("already restored"). An
          unknown or expired id, or a kind nothing can restore, is a plain message, never an
          exception. A restorer that fails releases the claim (try again) and raises its own
-         plain-words error.
+         plain-words error (a failed release is logged, never raised over it). A restorer that
+         finds the original still there (`StillThere`: the delete never happened) makes nothing
+         and says so. Marking the item restored is retried once; if it still fails, the restore
+         is reported anyway (the item IS back) and the claim keeps a second click busy for 5
+         minutes. A restored item stays stored (a second restore says "already restored") but
+         is no longer listed.
+purge    the owner's "Remove now": the copy goes at once (it can no longer be restored).
 sweep    the scheduler tick's housekeeping: expired items go (no Firestore TTL: it is billed).
 """
 
@@ -59,6 +65,10 @@ class SnapshotFailed(RuntimeError):
     """The copy for Undo could not be kept: the delete must not happen (plain words)."""
 
 
+class StillThere(RuntimeError):
+    """The original is still there (its delete never happened): no copy is made (plain words)."""
+
+
 @dataclass(frozen=True)
 class Restored:
     new_id: str
@@ -66,9 +76,10 @@ class Restored:
 
 
 class Restorer(Protocol):
-    """Recreates one kind of item from its snapshot (new id); raises plain-words errors."""
+    """Recreates one kind of item from its kept copy (`item.snapshot`; `item.id` keys a restore
+    that may be repeated); raises `StillThere` or other plain-words errors."""
 
-    async def restore(self, uid: str, snapshot: dict[str, Any]) -> Restored: ...
+    async def restore(self, uid: str, item: DeletedItem) -> Restored: ...
 
 
 class UndoBin:
@@ -99,8 +110,11 @@ class UndoBin:
         snapshot: dict[str, Any],
         *,
         owner_authored: bool = False,
+        session_id: str | None = None,
+        trace_id: str | None = None,
     ) -> DeletedItem:
-        """`owner_authored` (plan D8): the deleting tool's verdict on the item, captured now."""
+        """`owner_authored` (plan D8): the deleting tool's verdict on the item, captured now.
+        `session_id` / `trace_id`: the conversation and request the delete came from."""
         if not owner_ok(uid):
             raise SnapshotFailed(NOT_KEPT.format(why="no owner"))
         if len(json.dumps(snapshot, ensure_ascii=False, default=str)) > MAX_SNAPSHOT_CHARS:
@@ -115,6 +129,8 @@ class UndoBin:
             deleted_at=now,
             expires_at=now + self._keep_for,
             owner_authored=owner_authored,
+            session_id=session_id,
+            trace_id=trace_id,
         )
         try:
             await self.store.add(item)
@@ -131,14 +147,22 @@ class UndoBin:
             log.error("undo snapshot not discarded", extra={"error": type(exc).__name__})
 
     async def recent(self, uid: str) -> list[DeletedItem]:
+        """What can still be restored: not expired, not restored already (newest first)."""
         if not owner_ok(uid):
             return []
         now = self._clock()
-        return [i for i in await self.store.recent(uid) if not i.expired(now)]
+        return [i for i in await self.store.recent(uid) if not i.expired(now) and not i.restored]
 
     async def get(self, uid: str, item_id: str) -> DeletedItem | None:
         item = await self.store.get(uid, item_id)
         return item if item is not None and not item.expired(self._clock()) else None
+
+    async def purge(self, uid: str, item_id: str) -> bool:
+        """The owner's "Remove now": False when there is no such item of theirs."""
+        if await self.store.get(uid, item_id) is None:
+            return False
+        await self.store.remove(uid, [item_id])
+        return True
 
     async def restore(self, uid: str, item_id: str) -> RestoreOutcome:
         result, item = await self.store.claim(uid, item_id, self._clock())
@@ -146,17 +170,41 @@ class UndoBin:
             return _not_claimed(result, item)
         restorer = self._restorers.get(item.kind)
         if restorer is None:
-            await self.store.settle(uid, item.id, restored_id=None, now=self._clock())
+            await self._release(uid, item.id)
             return _outcome(item, RestoreStatus.UNAVAILABLE, MSG_UNAVAILABLE)
         try:
-            done = await restorer.restore(uid, item.snapshot)
+            done = await restorer.restore(uid, item)
+        except StillThere as exc:  # never deleted: nothing to bring back, nothing made
+            await self._release(uid, item.id)
+            return _outcome(item, RestoreStatus.STILL_THERE, str(exc))
         except Exception:  # released for another try; the restorer's plain words propagate
-            await self.store.settle(uid, item.id, restored_id=None, now=self._clock())
+            await self._release(uid, item.id)
             raise
-        await self.store.settle(uid, item.id, restored_id=done.new_id, now=self._clock())
+        await self._mark_restored(uid, item.id, done.new_id)
         word = KIND_WORDS[item.kind]
         msg = f"Restored the {word} (it is a new copy: links to the old one no longer work)."
         return _outcome(item, RestoreStatus.RESTORED, msg, new_id=done.new_id, note=done.note)
+
+    async def _release(self, uid: str, item_id: str) -> None:
+        """End a claim without a restore. Never raises: the caller's own outcome or error
+        matters more (a claim left behind goes stale after 5 minutes)."""
+        try:
+            await self.store.settle(uid, item_id, restored_id=None, now=self._clock())
+        except Exception as exc:  # noqa: BLE001
+            log.error("undo claim not released", extra={"error": type(exc).__name__})
+
+    async def _mark_restored(self, uid: str, item_id: str, new_id: str) -> None:
+        """The item IS back: record it (retried once). If that fails the restore still stands;
+        the claim keeps a second click "busy" until it goes stale. Error class only in logs."""
+        for attempt in (1, 2):
+            try:
+                await self.store.settle(uid, item_id, restored_id=new_id, now=self._clock())
+                return
+            except Exception as exc:  # noqa: BLE001
+                log.error(
+                    "restored item not marked restored",
+                    extra={"error": type(exc).__name__, "attempt": attempt},
+                )
 
     async def sweep(self, owners: Sequence[str]) -> int:
         """Delete expired items of each owner; returns how many went. Never raises."""
@@ -200,6 +248,7 @@ __all__ = [
     "Restored",
     "Restorer",
     "SnapshotFailed",
+    "StillThere",
     "UndoBin",
     "utcnow",
 ]

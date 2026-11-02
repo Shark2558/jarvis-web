@@ -82,7 +82,10 @@ class Tool:
         if unknown:
             raise ValueError(f"unknown arguments: {', '.join(unknown)}")
         if self.check is not None:
-            self.check(args)
+            try:
+                self.check(args)
+            except OverflowError:  # a date far outside the calendar's range: plain words
+                raise ValueError("a date or number in the request is out of range") from None
 
     def summary(self, args: dict[str, Any]) -> str:
         # never show the owner a bare verb for something irreversible: the fallback is the

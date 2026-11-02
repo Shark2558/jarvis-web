@@ -28,6 +28,9 @@ DEFAULT_TIME = "07:00"
 _HHMM = re.compile(r"([0-9]{2}):([0-9]{2})")  # ASCII only: `\d` takes ٠٧ and int() parses it
 TIME_RULE = "Pick a time between 04:00 and 11:30, on the hour or the half hour."
 AI_LABEL = "AI summary — written from your calendar and other people's emails; may be wrong"
+# Version of the AI-summary consent text: 1 = calendar + mail (slice 7); 2 = also the titles of
+# to-dos due today or overdue (slice 10 C). Titles go to the AI only under consent ≥ 2.
+AI_CONSENT_VERSION = 2
 
 
 def parse_brief_time(value: str) -> dt.time:
@@ -58,6 +61,9 @@ class BriefSettings(Frozen):
     inbox_delivery: bool = False
     updated_at: dt.datetime | None = None
     tz: str | None = Field(default=None, description="Last calendar time zone seen (cache)")
+    ai_consent: int = Field(
+        default=1, description="Version of the AI consent text last confirmed (AI_CONSENT_VERSION)"
+    )
 
     @field_validator("time")
     @classmethod
@@ -129,6 +135,9 @@ class TodoSection(Frozen):
     total: int = Field(default=0, description="How many were found (items holds ≤ 10)")
     overdue: int = 0
     items: tuple[TodoItem, ...] = ()
+    complete: bool = Field(
+        default=True, description="False: the read budget ran out, so the counts are 'at least'"
+    )
 
 
 class SectionsStatus(Frozen):
@@ -222,6 +231,8 @@ class SettingsView(Frozen):
     ai_summary: bool
     inbox_delivery: bool
     updated_at: dt.datetime | None
+    # the AI summary is on under the consent that names to-do titles (else they are not sent)
+    ai_todo_consent: bool = False
 
 
 class TodayView(Frozen):
@@ -263,6 +274,7 @@ class TickResult(Frozen):
 
 
 __all__ = [
+    "AI_CONSENT_VERSION",
     "AI_LABEL",
     "AIBlock",
     "AIView",

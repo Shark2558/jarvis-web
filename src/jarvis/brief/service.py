@@ -29,6 +29,7 @@ from jarvis.billing.fx import DEFAULT_RATE
 from jarvis.brief.collect import Collected, Collector
 from jarvis.brief.deliver import InboxDelivery
 from jarvis.brief.models import (
+    AI_CONSENT_VERSION,
     AIBlock,
     AIView,
     BriefRecord,
@@ -142,14 +143,21 @@ def apply_patch(
             raise SettingsRejected(MSG_INBOX)
         if not insert_ok:
             raise SettingsRejected(MSG_SCOPE)
-    changes = {
+    changes: dict[str, object] = {
         k: v
         for k, v in p.model_dump(
             include={"enabled", "time", "ai_summary", "inbox_delivery"}
         ).items()
         if v is not None
     }
+    if p.ai_summary and p.confirm_spend:  # the owner just read today's consent text
+        changes["ai_consent"] = AI_CONSENT_VERSION
     return BriefSettings.model_validate({**cur.model_dump(), **changes, "updated_at": now})
+
+
+def todo_consented(s: BriefSettings) -> bool:
+    """To-do titles go to the AI only under the consent text that names them (review M4)."""
+    return s.ai_summary and s.ai_consent >= AI_CONSENT_VERSION
 
 
 def settings_view(s: BriefSettings) -> SettingsView:
@@ -159,6 +167,7 @@ def settings_view(s: BriefSettings) -> SettingsView:
         ai_summary=s.ai_summary,
         inbox_delivery=s.inbox_delivery,
         updated_at=s.updated_at,
+        ai_todo_consent=todo_consented(s),
     )
 
 
@@ -411,13 +420,15 @@ class BriefService:
             return None, None, calls
         if not self._summarizer.available:
             return None, NOTE_NO_BRAIN, calls
-        st = got.data.sections_status
-        if st.calendar != "ok" and st.inbox != "ok" and got.data.todo is None:
+        st, todo = got.data.sections_status, got.data.todo
+        with_todo = todo_consented(s)
+        todo_lines = with_todo and todo is not None and bool(todo.items)
+        if st.calendar != "ok" and st.inbox != "ok" and not todo_lines:
             return None, NOTE_NOTHING, calls
         if calls >= self._ai_cap:
             return None, NOTE_CAP, calls
         try:
-            prep = self._summarizer.prepare(got.data, got.snippets)
+            prep = self._summarizer.prepare(got.data, got.snippets, include_todo=with_todo)
         except Exception as exc:  # noqa: BLE001 — nothing was sent
             log.warning("brief AI summary not prepared", extra={"reason": type(exc).__name__})
             return None, NOTE_FAILED, calls
@@ -571,5 +582,6 @@ __all__ = [
     "apply_patch",
     "brief_view",
     "settings_view",
+    "todo_consented",
     "utcnow",
 ]

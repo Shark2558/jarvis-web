@@ -460,7 +460,9 @@
   function todoSection(t, state) {
     if (!t && (!state || state === 'ok')) return null;
     const total = t ? num(t.total) : null, over = t ? num(t.overdue) : null;
-    const s = section('todo', 'To-do', total ? `${total} due` + (over ? ` · ${over} overdue` : '') : '');
+    const partial = !!t && t.complete === false; // the server read only part of the list: counts are "at least"
+    const least = partial ? 'at least ' : '';
+    const s = section('todo', 'To-do', total ? `${least}${total} due` + (over ? ` · ${over} overdue` : '') : '');
     if (state === 'not_granted') {
       const wrap = mk('div', 'bstate');
       wrap.append(mk('p', 'bempty', 'Grant JARVIS access to your to-do list (Integrations) to see it here.'),
@@ -469,7 +471,8 @@
     }
     if ((state && state !== 'ok') || !t) { s.append(missing(state || 'unavailable', 'to-do list', 'briefIntegTodo')); return s; }
     const items = arr(t.items).map(obj).filter(Boolean);
-    if (!items.length) { s.append(mk('p', 'bempty', 'Nothing due today or overdue.')); return s; }
+    const partLine = () => mk('p', 'bfine', 'JARVIS read only part of your to-do list, so there may be more.');
+    if (!items.length) { s.append(partial ? partLine() : mk('p', 'bempty', 'Nothing due today or overdue.')); return s; }
     const ul = mk('ul', 'bevents');
     items.forEach(i => {
       const late = i.overdue === true, due = fmtDate(txt(i.due, 10));
@@ -480,7 +483,8 @@
       li.append(what); ul.append(li);
     });
     s.append(ul);
-    if (total !== null && total > items.length) s.append(mk('p', 'bfine', `Showing ${items.length} of ${total}.`));
+    if (total !== null && total > items.length) s.append(mk('p', 'bfine', `Showing ${items.length} of ${least}${total}.`));
+    if (partial) s.append(partLine());
     return s;
   }
   function jarvisSection(j, state) {
@@ -600,7 +604,7 @@
     // the switches are rebuilt only when something they show changed: an unrelated update (the
     // live approvals count, a poll) must not swap a switch out from under a press
     const key = JSON.stringify([st.enabled, st.ai_summary, st.inbox_delivery, t.ai_available, t.inbox_available,
-      t.google_connected, S.saving]);
+      t.google_connected, S.saving, st.ai_todo_consent]);
     if (key === switchesKey && sec.parentNode === setBox) return;
     switchesKey = key;
     const enabled = st.enabled === true;
@@ -610,6 +614,12 @@
     const aiRow = toggleRow('briefAi', 'AI summary', aiOn,
       aiOk ? 'Up to five short lines on what matters today, written by Claude.' : 'Not available: needs the Claude brain.',
       !aiOk && !aiOn, askAi);
+    // slice 10 C (review M4): switched on before the consent named to-dos → their titles are not sent until
+    // the owner confirms again. Only when the server says so explicitly (an older server sends no flag).
+    if (aiOn && st.ai_todo_consent === false) {
+      aiRow.querySelector('.btxt').append(mk('small', '', 'To-do titles are not sent to Claude until you confirm.'),
+        button('briefAiTodo', 'bact', 'Include to-dos', (e) => askAi(e.currentTarget, true)));
+    }
     const inOn = st.inbox_delivery === true, inOk = t.inbox_available !== false;
     const why = t.google_connected === false ? 'Connect Google to allow this.' : 'Reconnect Google to allow this.';
     const inRow = toggleRow('briefInbox', 'Put it in my Gmail inbox', inOn,
@@ -629,17 +639,18 @@
     S.asking = true;
     try { await fn(); } finally { S.asking = false; }
   }
-  function askAi(trigger) {
-    if (settings().ai_summary === true) { saveSettings({ ai_summary: false }, 'AI summary off.'); return; }
+  /** `again`: the AI is on under an earlier consent; this confirms the current text (to-dos included). */
+  function askAi(trigger, again) {
+    if (settings().ai_summary === true && again !== true) { saveSettings({ ai_summary: false }, 'AI summary off.'); return; }
     asking(async () => {
       const cost = txt(S.today.ai_cost_note, 300);
-      const ok = await askConfirm(trigger, 'Switch on the AI summary?', [
+      const ok = await askConfirm(trigger, again === true ? 'Include your to-dos in the AI summary?' : 'Switch on the AI summary?', [
         { cls: 'strong', parts: ['Uses Claude; never the free brain.'] },
         cost ? { parts: [cost] } : null,
-        { parts: ['Each morning Claude reads today\'s calendar and the previews of your unread mail, then writes up to five short lines. It cannot act on anything, and it may be wrong.'] },
+        { parts: ['Each morning Claude reads today\'s calendar, the previews of your unread mail and the titles of your to-dos due today or overdue, then writes up to five short lines. It cannot act on anything, and it may be wrong.'] },
         { parts: ['You can switch it off here at any time.'] },
-      ], 'Switch on');
-      if (ok) saveSettings({ ai_summary: true, confirm_spend: true }, 'AI summary on.');
+      ], again === true ? 'Include to-dos' : 'Switch on');
+      if (ok) saveSettings({ ai_summary: true, confirm_spend: true }, again === true ? 'To-dos included in the AI summary.' : 'AI summary on.');
     });
   }
   function askInbox(trigger) {

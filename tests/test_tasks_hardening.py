@@ -89,7 +89,9 @@ async def test_an_overflowing_due_date_is_refused_through_the_gateway() -> None:
         ("task_update", {"task_id": "L1:t_doc", "title": "Clause 4 done"}),
     ],
 )
-async def test_changing_an_assigned_task_waits_for_the_owner(name: str, args: dict[str, Any]) -> None:
+async def test_changing_an_assigned_task_waits_for_the_owner(
+    name: str, args: dict[str, Any]
+) -> None:
     fake = _fake()
     out = await _run(await _gw(fake), name, args)
     assert out.outcome is GatewayOutcome.AWAITING_CONFIRMATION and out.pending is not None
@@ -142,7 +144,7 @@ async def test_a_slow_google_is_cut_off_by_the_list_deadline(
     assert out.outcome is GatewayOutcome.ERROR and "too long" in str(out.error)
 
 
-# ---- L7: the Tasks API switched off in the Cloud project ------------------------------------------
+# ---- L7: the Tasks API switched off in the Cloud project -------------------------------------
 
 
 async def test_the_tasks_api_switched_off_says_so_plainly() -> None:
@@ -150,10 +152,12 @@ async def test_the_tasks_api_switched_off_says_so_plainly() -> None:
     disabled = {
         "error": {
             "code": 403,
-            "message": "Google Tasks API has not been used in project 123 before or it is disabled.",
+            "message": "Google Tasks API has not been used in project 123 or it is disabled.",
             "status": "PERMISSION_DENIED",
             "errors": [{"reason": "accessNotConfigured", "domain": "usageLimits"}],
-            "details": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "SERVICE_DISABLED"}],
+            "details": [
+                {"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "SERVICE_DISABLED"}
+            ],
         }
     }
 

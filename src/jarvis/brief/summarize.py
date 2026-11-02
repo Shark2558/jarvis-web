@@ -133,16 +133,20 @@ def _todo_block(data: BriefData) -> str:
     ] or ["(nothing due today or overdue)"]
     if todo.total > len(todo.items):
         lines.append(f"(and {todo.total - len(todo.items)} more)")
+    if not todo.complete:
+        lines.append("(only part of the list was read: there may be more)")
     body = wrap_external("\n".join(lines), source="the owner's to-do list", limit=TODO_BUDGET)
     return f"To-do (titles may be copied from other people's emails):\n{body}\n"
 
 
-def build_input(data: BriefData, snippets: tuple[str, ...]) -> str:
+def build_input(data: BriefData, snippets: tuple[str, ...], *, include_todo: bool = False) -> str:
+    """`include_todo` only under the AI consent that names to-do titles (review M4)."""
     head = (
         f"Brief date: {long_date(data.date)} (time zone {one_line(data.tz, 64)}).\n"
         f"Approvals waiting for the owner in JARVIS: {data.jarvis.approvals_waiting}.\n"
     )
-    text = head + _calendar_block(data) + _mail_block(data, snippets) + _todo_block(data)
+    todo = _todo_block(data) if include_todo else ""
+    text = head + _calendar_block(data) + _mail_block(data, snippets) + todo
     # the budgets keep it under; this backstop never cuts the closing task line
     return text[: INPUT_CAP - len(TASK)] + TASK
 
@@ -198,11 +202,14 @@ class Summarizer:
     def brain(self) -> BrainSpec | None:
         return choose_brain(self._brains)
 
-    def prepare(self, data: BriefData, snippets: tuple[str, ...]) -> Prepared:
+    def prepare(
+        self, data: BriefData, snippets: tuple[str, ...], *, include_todo: bool = False
+    ) -> Prepared:
         spec = choose_brain(self._brains)
         if spec is None or not spec.tools_allowed:
             raise NoPrivateBrain("no brain that keeps content private is configured")
-        return Prepared(spec, spec.tiers[ModelTier.FAST], build_input(data, snippets))
+        text = build_input(data, snippets, include_todo=include_todo)
+        return Prepared(spec, spec.tiers[ModelTier.FAST], text)
 
     async def run(self, p: Prepared) -> AIBlock:
         if not p.brain.tools_allowed:  # belt and braces: a training brain never sees content

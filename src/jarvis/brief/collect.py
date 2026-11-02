@@ -59,6 +59,7 @@ NAME_LIMIT = 80
 SUBJECT_LIMIT = 120
 SNIPPET_LIMIT = 200
 MAX_TODO = 10
+TODO_TIMEOUT_S = 20.0  # all to-do reads together (each call already has its own 15 s)
 TODO_LIST_LIMIT = 60
 FREE_MIN = timedelta(minutes=30)
 WORK_FROM, WORK_TO = time(9, 0), time(18, 0)
@@ -248,10 +249,11 @@ def shape_message(m: dict[str, Any], tz: ZoneInfo, day: date) -> tuple[InboxItem
 
 
 def shape_todo(
-    found: list[tuple[TaskList, dict[str, Any]]], n_lists: int, day: date
+    found: list[tuple[TaskList, dict[str, Any]]], n_lists: int, day: date, *, complete: bool = True
 ) -> TodoSection:
     """Open tasks due on or before `day` → oldest first (overdue leads), ≤ MAX_TODO shown. The
-    list's name only when the owner has more than one list."""
+    list's name only when the owner has more than one list. `complete` False (the read budget
+    ran out) makes the counts "at least"."""
     dated = [(d, tl, t) for tl, t in found if (d := date_of(t.get("due"))) is not None and d <= day]
     dated.sort(key=lambda row: row[0])  # stable: same date keeps list and position order
     items = tuple(
@@ -264,7 +266,10 @@ def shape_todo(
         for d, tl, t in dated[:MAX_TODO]
     )
     return TodoSection(
-        total=len(dated), overdue=sum(1 for d, _, _ in dated if d < day), items=items
+        total=len(dated),
+        overdue=sum(1 for d, _, _ in dated if d < day),
+        items=items,
+        complete=complete,
     )
 
 
@@ -329,7 +334,7 @@ class Collector:
         client = TasksClient(self._google)
         try:
             await client.require(uid)
-            found, n_lists = await client.due_by(uid, day)
+            scan = await asyncio.wait_for(client.due_by(uid, day), TODO_TIMEOUT_S)
         except GoogleNotConnected:
             return "not_connected", None
         except TasksNotGranted:
@@ -337,7 +342,7 @@ class Collector:
         except Exception as exc:  # noqa: BLE001 — one section failing never fails the brief
             log.warning("brief to-do section unavailable", extra={"reason": type(exc).__name__})
             return "unavailable", None
-        return "ok", shape_todo(found, n_lists, day)
+        return "ok", shape_todo(scan.found, scan.lists, day, complete=scan.complete)
 
     async def _section(self, fn: Callable[[], Awaitable[T]]) -> tuple[SectionState, T | None]:
         if self._google is None:

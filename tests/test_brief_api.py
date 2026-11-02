@@ -49,7 +49,8 @@ BRIEF_KEYS = {
     "ai_calls_today",
     "generations_left",
 }
-SETTINGS_KEYS = {"enabled", "time", "ai_summary", "inbox_delivery", "updated_at"}
+# slice 10 C (review M4): whether the AI consent covers to-do titles
+SETTINGS_KEYS = {"enabled", "time", "ai_summary", "inbox_delivery", "updated_at", "ai_todo_consent"}
 
 
 @pytest.fixture

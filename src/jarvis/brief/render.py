@@ -32,6 +32,10 @@ from jarvis.tools.card import quoted, strip_invisible
 
 NOT_CONNECTED = "Google is not connected: connect it in the console (Integrations) to see your {}."
 UNAVAILABLE = "Your {} could not be read just now."
+PARTIAL = (
+    "JARVIS read only part of your to-do list (at most 10 lists and 300 tasks each), so there "
+    "may be more."
+)
 NOT_GRANTED = (
     "JARVIS has no permission for your to-do list yet: press Grant next to 'To-do list' in the "
     "console (Integrations) to see it here."
@@ -190,15 +194,22 @@ def _todo(data: BriefData) -> list[str]:
         return [head, "  " + NOT_CONNECTED.format("to-do list")]
     if state != "ok" or todo is None:
         return [head, "  " + UNAVAILABLE.format("to-do list")]
+    least = "" if todo.complete else "at least "
     if todo.total:
-        head += f" · {todo.total} due" + (f" ({todo.overdue} overdue)" if todo.overdue else "")
+        head += f" · {least}{todo.total} due" + (
+            f" ({todo.overdue} overdue)" if todo.overdue else ""
+        )
     lines = [head]
     for item in todo.items:
         where = f" · {theirs(item.list)}" if item.list else ""
         lines.append(f"  {todo_when(item)}  {theirs(item.title)}{where}")
     if todo.total > len(todo.items):
-        lines.append(f"  … and {todo.total - len(todo.items)} more in Google Tasks.")
-    return lines if todo.items else [head, "  Nothing due today or overdue."]
+        lines.append(f"  … and {least}{todo.total - len(todo.items)} more in Google Tasks.")
+    if not todo.complete:
+        lines.append("  " + PARTIAL)  # never "nothing due" when JARVIS did not read it all
+    elif not todo.items:
+        lines.append("  Nothing due today or overdue.")
+    return lines
 
 
 def _jarvis(data: BriefData) -> list[str]:

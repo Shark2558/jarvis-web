@@ -138,7 +138,7 @@ class BriefGoogle:
                 return httpx.Response(404, json={"error": "nf"})
             return self._err("meta") or httpx.Response(200, json=found)
         if path == f"{TK}/users/@me/lists" and method == "GET":
-            return self._err("tasklists") or httpx.Response(200, json={"items": self.tasklists})
+            return self._err("tasklists") or _paged(request, self.tasklists, 1000)
         if path.startswith(f"{TK}/lists/") and path.endswith("/tasks") and method == "GET":
             lid = path.split("/")[-2]
             due_max = request.url.params.get("dueMax", "")
@@ -147,14 +147,27 @@ class BriefGoogle:
                 for t in self.todo.get(lid, [])
                 if t.get("status") != "completed" and (not due_max or t.get("due", "~") < due_max)
             ]
-            return self._err("tasks") or httpx.Response(200, json={"items": items})
+            return self._err("tasks") or _paged(request, items, 20)
         return httpx.Response(599, json={"error": f"unscripted {method} {path}"})
+
+    def tasks_reads(self) -> list[httpx.Request]:
+        return [r for r in self.requests if r.url.path.startswith(TK)]
 
     def inserted_raw(self, i: int = 0) -> bytes:
         import json
 
         raw = json.loads(self.inserts[i].content)["raw"]
         return base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+
+
+def _paged(request: httpx.Request, items: list[Any], default: int) -> httpx.Response:
+    """Google-style pages: maxResults + an opaque pageToken (here: the offset)."""
+    p = request.url.params
+    limit, start = int(p.get("maxResults", default)), int(p.get("pageToken", "0") or 0)
+    body: dict[str, Any] = {"items": items[start : start + limit]}
+    if start + limit < len(items):
+        body["nextPageToken"] = str(start + limit)
+    return httpx.Response(200, json=body)
 
 
 class SlowDocs(MemoryDocs):

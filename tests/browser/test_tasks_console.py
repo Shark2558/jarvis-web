@@ -6,11 +6,18 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from test_brief import HOSTILE, FakeBrief, brief_record, today_state  # same directory
+from test_brief import (  # same directory
+    HOSTILE,
+    FakeBrief,
+    brief_record,
+    settings_view,
+    today_state,
+)
 from test_console import DESKTOP, LINKED, Console
 
 _pw = pytest.importorskip("playwright.sync_api")
@@ -65,7 +72,7 @@ def test_integrations_offers_grant_for_the_todo_list_and_grant_reruns_connect(
         route.fulfill(status=200, content_type="text/plain", body="Google consent")
 
     _integrations(console, {**LINKED["google"], "tasks_granted": False})
-    console.page.route("**/connect/google", consent)
+    console.page.route(re.compile(r".*/connect/google(\?.*)?$"), consent)
     console.open()
     console.open_panel("integrations")
     row = console.page.locator("#integrations .iopt")
@@ -74,8 +81,9 @@ def test_integrations_offers_grant_for_the_todo_list_and_grant_reruns_connect(
     grant = console.page.locator("#googleGrantTasks")
     assert grant.text_content() == "Grant"
     grant.click()
-    console.page.wait_for_url("**/connect/google")
-    assert len(went) == 1 and went[0].endswith("/connect/google")
+    console.page.wait_for_url(re.compile(r".*/connect/google\?add=tasks$"))
+    # only Grant asks for the to-do list (review L8): a plain Connect asks for what it always did
+    assert len(went) == 1 and went[0].endswith("/connect/google?add=tasks")
     assert console.errors == []
 
 
@@ -184,4 +192,80 @@ def test_an_older_brief_without_the_todo_section_shows_none(console: Console) ->
     console.open_panel("brief")
     console.page.locator("#brief .bview").wait_for()
     assert console.page.locator("#bsec-todo").count() == 0
+    assert console.errors == []
+
+
+def test_a_partial_read_says_at_least_and_never_nothing_due(console: Console) -> None:
+    partial = {**TODO, "total": 300, "complete": False}
+    FakeBrief(console.page, _brief(_record(partial, "ok")))
+    console.open()
+    console.open_panel("brief")
+    sec = console.page.locator("#brief section.bsec[aria-labelledby='bsec-todo']")
+    sec.wait_for()
+    assert "at least 300 due" in console.page.locator("#bsec-todo").text_content()
+    assert "read only part of your to-do list" in sec.text_content()
+    empty = {"total": 0, "overdue": 0, "items": [], "complete": False}
+    console.page.unroute("**/v1/brief/today")
+    FakeBrief(console.page, _brief(_record(empty, "ok")))
+    console.page.reload()
+    console.page.locator("#welcome").wait_for()
+    console.open_panel("brief")
+    sec.wait_for()
+    assert "Nothing due" not in sec.text_content()
+    assert "read only part of your to-do list" in sec.text_content()
+    assert console.errors == []
+
+
+# ---- the AI summary's consent must name to-do titles (review M4) ---------------------------------
+
+
+def _open_settings(console: Console) -> None:
+    btn = console.page.locator("#briefSetBtn")
+    if btn.get_attribute("aria-expanded") != "true":
+        btn.click()
+    console.page.locator("#briefSetBody").wait_for(state="visible")
+
+
+def test_switching_the_ai_on_names_the_to_do_titles(console: Console) -> None:
+    FakeBrief(console.page, today_state(settings=settings_view(ai_summary=False)))
+    console.open()
+    console.open_panel("brief")
+    console.page.locator("#brief .bview").wait_for()
+    _open_settings(console)
+    console.page.locator("#briefAi").click()
+    dialog = console.page.locator("#briefDialog")
+    dialog.wait_for(state="visible")
+    assert "to-dos due today or overdue" in dialog.text_content()
+    console.page.locator("#briefDialogNo").click()
+
+
+def test_an_earlier_consent_offers_to_include_to_dos_and_reconfirms(console: Console) -> None:
+    fake = FakeBrief(
+        console.page, today_state(settings=settings_view(ai_summary=True, ai_todo_consent=False))
+    )
+    console.open()
+    console.open_panel("brief")
+    console.page.locator("#brief .bview").wait_for()
+    _open_settings(console)
+    row = console.page.locator("#briefAi").locator("xpath=..")
+    assert "not sent to Claude" in row.text_content()
+    console.page.locator("#briefAiTodo").click()
+    dialog = console.page.locator("#briefDialog")
+    dialog.wait_for(state="visible")
+    assert "to-dos due today or overdue" in dialog.text_content()
+    console.page.locator("#briefDialogYes").click()
+    console.page.wait_for_function("document.getElementById('briefDialog').open === false")
+    puts = fake.to("/v1/brief/settings")
+    assert len(puts) == 1 and puts[0]["body"] == {"ai_summary": True, "confirm_spend": True}
+    assert console.errors == []
+
+
+def test_a_server_without_the_flag_shows_no_include_button(console: Console) -> None:
+    FakeBrief(console.page, today_state(settings=settings_view(ai_summary=True)))
+    console.open()
+    console.open_panel("brief")
+    console.page.locator("#brief .bview").wait_for()
+    _open_settings(console)
+    console.page.locator("#briefAi").wait_for()
+    assert console.page.locator("#briefAiTodo").count() == 0
     assert console.errors == []

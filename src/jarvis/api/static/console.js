@@ -393,7 +393,8 @@
   // gmail.compose covers drafts AND sending; gmail.send only appears on links made before it was dropped.
   // gmail.insert (slice 7) is optional: it only lets the morning brief be put in the owner's own inbox.
   // tasks (slice 10 C) is optional too: the to-do list. `tasks_granted: false` → a "Grant" row that re-runs
-  // connect (Google keeps what was granted: include_granted_scopes); a server without the field shows none.
+  // connect with ?add=tasks (only Grant asks for it; Google keeps what was granted: include_granted_scopes).
+  // A server without the field shows none.
   const SCOPE_WORDS = { 'calendar.readonly': ['Calendar', 'read'], 'calendar.events': ['Calendar', 'edit'],
     'gmail.readonly': ['Gmail', 'read'], 'gmail.compose': ['Gmail', 'draft', 'send'], 'gmail.send': ['Gmail', 'send'],
     'gmail.insert': ['Gmail', 'put the morning brief in your inbox (optional)'], tasks: ['To-do list', 'read & edit'] };
@@ -446,7 +447,7 @@
   function grantRow() {
     const row = mk('div', 'iopt'), b = mk('button', 'btn lift', 'Grant');
     b.type = 'button'; b.id = 'googleGrantTasks';
-    b.addEventListener('click', () => { note('info', 'Asking Google for the to-do list…'); window.location.assign('/connect/google'); });
+    b.addEventListener('click', () => { note('info', 'Asking Google for the to-do list…'); window.location.assign('/connect/google?add=tasks'); });
     row.append(mk('span', '', 'To-do list — permission needed'), b);
     return row;
   }

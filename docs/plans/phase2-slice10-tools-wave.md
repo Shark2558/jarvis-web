@@ -197,10 +197,22 @@ injection i35–i37 (hostile to-do titles).
 Ads-scripts sample); whether `dueMax` is inclusive (handled either way); Testing-mode consent
 before the scope is added to Data Access.
 
-**Reviews**: fresh-context `code-reviewer` / `security-reviewer` agents were not available to this
-builder session; a self-review against the gateway / fence / id / R3 rules was done (found and
-fixed: a double list read on `tasks_list(list=…)`). The integrator should run the fresh-context
-reviews on this branch.
+**Reviews**: builder self-review (fixed a double list read on `tasks_list(list=…)`), then a
+fresh-context security review (coordinator, 2026-11-02): 0 critical, 1 high, 4 medium, 5 low —
+all addressed test-first:
+
+| # | Finding | Outcome |
+|---|---|---|
+| H1 | Injected notes can complete / rename / add without a card | Not per tool: a gateway rule ("a tainted round turns every reversible write into ASK") lands in the permissions branch. Here: `evals/tasks/cases_tainted_writes.jsonl` (6 cases) gate 0 reversible writes + one card per ordered write once `jarvis.tools.policy.TAINTED_WRITES_ASK = True` exists; until then SKIPPED with the reason, and the report shows all 6 still fail (`tests/test_evals_tasks.py` has a `skipif` test that runs once the marker exists) |
+| M2 | `parse_due` OverflowError escaped the gateway | Range-checked before the zone conversion; overflow → `ValueError` |
+| M3 | Assigned tasks (Docs / Chat) are seen by others | Verified 2026-11-02: deleting an assigned task deletes the original (tasks.delete reference); assignee edits are flagged in the Doc and anyone with access sees its tasks (support.google.com/docs/answer/12048749). update/complete of an assigned task → preview raises to IRREVERSIBLE + "Assigned from a Google Doc or Chat space: people there can see this change." Subtasks on delete: **not documented by Google** — the delete card counts the task's subtasks (bounded read, fails closed) and says they may be deleted with it |
+| M4 | The existing AI consent silently widened to to-do titles | `BriefSettings.ai_consent` (stored briefs default 1); `AI_CONSENT_VERSION = 2` is recorded when the owner confirms the current text; titles go to the AI only under ≥ 2 (`build_input(include_todo=…)`). `SettingsView.ai_todo_consent`; the console consent dialog names to-dos and offers "Include to-dos" (re-confirm) when the server says `false` |
+| M5 | `due_by` read one page per list and ≤ 10 lists | Pages followed up to `PAGES_PER_LIST = 3` per list (tokens validated); more lists or pages than the budget → `TodoSection.complete = False` → "at least N" and a partial-read line, never "Nothing due" |
+| L6 | No overall deadline | Brief to-do section 20 s (`TODO_TIMEOUT_S`) → unavailable; `tasks_list` 20 s (`LIST_DEADLINE_S`) → plain "took too long" |
+| L7 | API switched off showed "reconnect to grant it" | Connector raises `GoogleServiceDisabled` on 403 with reason `accessNotConfigured` / `SERVICE_DISABLED` (reason codes only, no vendor text); the to-do tools say "The to-do service is not switched on for your JARVIS project yet…" |
+| L8 | Every reconnect asked for Tasks | `CONNECT_SCOPES` (pre-slice-10 set) by default; Tasks only on `/connect/google?add=tasks` (Grant) or when the link already holds it; `include_granted_scopes` kept |
+| L9 | AI ran with nothing to read | Skipped unless calendar or inbox is ok, or consented to-do titles exist |
+| L10 | Subtasks on delete | See M3 |
 
 ## D — Owner permission rules + passkey for irreversible actions
 - **D-D1 Permission rules**: per-owner `permissions/{uid}` mapping tool groups → `allow | ask | deny`.

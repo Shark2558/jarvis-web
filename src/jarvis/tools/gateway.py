@@ -40,18 +40,28 @@ again; when it can now do more than its card said (an event gained guests) or it
 differently, the old card is withdrawn and a new one proposed — nothing runs. Otherwise the
 approval guard (`approval_guard`, the owner's passkey rule) sees the card about to run, BEFORE
 the token is spent; it raises to refuse, and its note (which passkey) goes into the audit.
+
+Slice 11 review: every card says why it asks (`PendingAction.reason`, `_ask_reason`; a re-proposed
+card keeps the stronger of its old and new reasons), which decides what Approve all may run. Cards
+run by Approve all are audited "confirmed; approve-all" (`approved_via`). A tool that raises is
+reported to the owner and the model as a fixed sentence plus the redacted `_safe_detail`, never its
+raw text, and marked `raised` (it was called, so it may have done part of it).
 """
 
 from __future__ import annotations
 
+import contextvars
 import json
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any, Protocol
 
 from jarvis.core.guardrails import (
     ActionRisk,
+    AskReason,
     ConfirmationGate,
     ConfirmationInvalid,
     ConfirmationRequired,
@@ -89,6 +99,25 @@ def _safe_detail(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {_SECRETISH.sub('[redacted]', str(exc))[:160]}"
 
 
+TOOL_FAILED = "The tool failed, so it may not have been done; check before trying it again"
+_via: contextvars.ContextVar[str] = contextvars.ContextVar("jarvis_approved_via", default="")
+
+
+@contextmanager
+def approved_via(how: str) -> Iterator[None]:
+    """Approvals carried out inside are audited as "confirmed; <how>" (e.g. approve-all)."""
+    token = _via.set(how)
+    try:
+        yield
+    finally:
+        _via.reset(token)
+
+
+def _confirmed() -> str:
+    via = _via.get()
+    return f"confirmed; {via}" if via else "confirmed"
+
+
 class GatewayOutcome(StrEnum):
     EXECUTED = "executed"
     AWAITING_CONFIRMATION = "awaiting_confirmation"
@@ -104,6 +133,12 @@ class GatewayResult:
     error: str | None = None
     pending: PendingAction | None = None
     note: str = ""  # why a call that could have run became a card (slice 11 D3), our own words
+    raised: bool = False  # ERROR from the tool itself: it was called and raised (slice 11 review)
+
+    @property
+    def ran(self) -> bool:
+        """The tool was called: it returned, or it raised while running (may have done part)."""
+        return self.outcome is GatewayOutcome.EXECUTED or self.raised
 
     def for_model(self) -> str:
         """Serialise for the model. Tool output is data, never instructions."""
@@ -150,6 +185,30 @@ def _tightened(
     if _policy.TAINTED_WRITES_ASK and tainted_round():
         return Effect.ASK
     return effect
+
+
+def _ask_reason(ruled: Effect, risk: ActionRisk, asks: bool, capped: bool) -> AskReason | None:
+    """Why a call became a card, the most protective first (`ruled`: the policy's own effect).
+    None only when an approval token alone made it ASK: the stored card's reason stands."""
+    if risk is ActionRisk.IRREVERSIBLE:
+        return AskReason.RISK
+    if asks:
+        return AskReason.DRAFT_RECIPIENT
+    if ruled is Effect.ASK:
+        return AskReason.OWNER_RULE
+    if spoken_in_context():
+        return AskReason.SPOKEN
+    if _policy.TAINTED_WRITES_ASK and tainted_round():
+        return AskReason.UNTRUSTED_CONTEXT
+    return AskReason.CAP if capped else None
+
+
+def _carried(stored: PendingAction, fresh: PendingAction) -> PendingAction:
+    """A re-proposed card keeps its old reason unless the new one is one-by-one by itself (a
+    re-check outside the turn can't see why it asked then: a one-by-one card never turns bulk)."""
+    if fresh.reason in (AskReason.RISK, AskReason.DRAFT_RECIPIENT) or stored.reason is None:
+        return fresh
+    return fresh.model_copy(update={"reason": stored.reason})
 
 
 def _changed(stored: PendingAction, fresh: PendingAction) -> str:
@@ -261,6 +320,9 @@ class Gateway:
                 summary=card if card is not None else tool.summary(call.arguments),
                 scope=scope,
                 tool_risk=risk,  # what the call itself can do: R3 may need a passkey
+                reason=_ask_reason(
+                    policy.decide(tool.name, risk, call.arguments), risk, asks, bool(why)
+                ),
             )
             note = ""
             if confirmation_id is not None:
@@ -281,7 +343,7 @@ class Gateway:
                     risk=risk,
                     outcome="executing",
                     args=call.arguments,
-                    detail="confirmed" + (f"; {note}" if note else ""),
+                    detail=_confirmed() + (f"; {note}" if note else ""),
                 )
             except Exception as exc:  # noqa: BLE001
                 log.error(
@@ -299,9 +361,10 @@ class Gateway:
         except Exception as exc:  # noqa: BLE001 — tool failures are reported, not raised
             log.exception("tool failed", extra={"tool": tool.name})
             await self._audit_after_run(tool, call, risk, "error", _safe_detail(exc))
-            return GatewayResult(GatewayOutcome.ERROR, error=f"tool failed: {exc}")
+            error = f"{TOOL_FAILED} ({_safe_detail(exc)})"  # never the raw text (review LOW-6)
+            return GatewayResult(GatewayOutcome.ERROR, error=error, raised=True)
         await self._audit_after_run(
-            tool, call, risk, "executed", "confirmed" if confirmation_id else ""
+            tool, call, risk, "executed", _confirmed() if confirmation_id else ""
         )
         return GatewayResult(GatewayOutcome.EXECUTED, result=out)
 
@@ -393,7 +456,7 @@ class Gateway:
                 tool,
                 call,
                 risk,
-                fresh,
+                _carried(stored, fresh),
                 None,
                 f" (changed since proposed: {why}; replaces {stored.id})",
             )
@@ -479,7 +542,8 @@ class Gateway:
             )
             return GatewayResult(
                 GatewayOutcome.ERROR,
-                error=f"could not look it up first, so nothing was proposed or done: {exc}",
+                error="could not look it up first, so nothing was proposed or done "
+                f"({_safe_detail(exc)})",
             )
 
     async def _audit_after_run(

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
@@ -75,6 +76,15 @@ async def test_usage_is_a_get_with_bearer_auth_and_reads_the_documented_shape() 
         ({"usage": "7", "limit": True}, {"plan_usage": 9, "plan_limit": -1},
          VendorUsage(9, None, False)),
         ({"usage": 2.0}, {"plan_usage": 4}, VendorUsage(4, None, False)),
+        # slice 11 review LOW-5: a limit of 0 is "none set", never "used up"
+        ({"usage": 0, "limit": 0}, {"plan_usage": 0, "plan_limit": 0}, VendorUsage(0, None, False)),
+        ({"usage": 5, "limit": 0}, {"plan_usage": 7, "plan_limit": 1000},
+         VendorUsage(7, 1000, False)),
+        # integral floats are counts; a fraction, NaN or infinity is not
+        ({"usage": 12.0, "limit": 1000.0}, {}, VendorUsage(12, 1000, False)),
+        ({"usage": 1000.0, "limit": 1000}, {}, VendorUsage(1000, 1000, True)),
+        ({"usage": 3.5, "limit": 7.25}, {"plan_usage": 9, "plan_limit": -0.0},
+         VendorUsage(9, None, False)),
     ],
 )  # fmt: skip
 async def test_usage_fields_are_type_checked(
@@ -83,6 +93,25 @@ async def test_usage_fields_are_type_checked(
     fake = FakeTavily()
     fake.usage = {"key": key, "account": account}
     assert await _provider(fake).usage() == expected
+
+
+async def test_nan_and_infinity_are_never_counts() -> None:
+    """Python's JSON reader accepts NaN / Infinity: a count or limit that is one is dropped."""
+    raw = (
+        b'{"key": {"usage": NaN, "limit": Infinity},'
+        b' "account": {"plan_usage": 2, "plan_limit": -Infinity}}'
+    )
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, content=raw))
+    )
+    assert await TavilyProvider(SecretStr(KEY), http=http).usage() == VendorUsage(2, None, False)
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda r: httpx.Response(200, content=b'{"key": {"usage": Infinity}}')
+        )
+    )
+    with pytest.raises(WebError, match="unreadable"):
+        await TavilyProvider(SecretStr(KEY), http=http).usage()
 
 
 @pytest.mark.parametrize(

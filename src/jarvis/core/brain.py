@@ -639,7 +639,7 @@ class Brain:
             raise SessionNotFound(session_id)
         async with self._serialised(session_id):
             req = ChatRequest(message="-", session_id=session_id, user_id=user_id)
-            session = await self._load_or_create(req)
+            session = await approve_many.owned(self.store, session_id, user_id)  # never creates
             scope, trace_id = f"{user_id}:{session_id}", get_trace_id()
             batch = await approve_many.run(
                 self.gateway, self.store, session, ids, scope=scope, trace_id=trace_id

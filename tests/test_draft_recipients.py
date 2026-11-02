@@ -14,7 +14,7 @@ from google_fakes import GOOGLE_UID, FakeGoogle
 
 from jarvis.config import Settings
 from jarvis.core.brain import Brain
-from jarvis.core.guardrails import ActionRisk, ConfirmationGate
+from jarvis.core.guardrails import ActionRisk, AskReason, ConfirmationGate
 from jarvis.core.models import ChatRequest
 from jarvis.integrations.google import GoogleConnector
 from jarvis.llm.base import ToolCall
@@ -90,6 +90,53 @@ def test_typed_addresses_reads_a_bounded_number() -> None:
     assert f"p{MAX_TYPED + 5}@example.com" not in found
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "x" * 16_000,  # one long token, no spaces
+        "a@" * 8_000,  # @ everywhere, no spaces
+        ("y" * 250 + "@ ") * 64,  # tokens at the length limit, each ending in a bare @
+        ("ravi@example.com " + "z" * 300 + " ") * 50,  # addresses among over-long tokens
+    ],
+    ids=["no-spaces", "at-signs", "limit-tokens", "mixed"],
+)
+def test_typed_addresses_is_linear(said: str) -> None:
+    """Slice 11 review LOW-2: the owner's message (up to 16,000 characters) is read in one pass,
+    whitespace token by token; a token longer than any address is never scanned."""
+    import time
+
+    typed_addresses(said[:100])  # warm the regex and IDNA codecs
+    t0 = time.perf_counter()
+    typed_addresses(said)
+    assert time.perf_counter() - t0 < 0.05
+
+
+def test_typed_addresses_skips_a_token_longer_than_any_address() -> None:
+    ok = "a" * 60 + "@" + "b" * 60 + "." + "c" * 60 + ".example.com"
+    assert typed_addresses(f"to {ok}.") == frozenset({ok})
+    assert typed_addresses(f"to <{ok}>,{'d' * 120}") == frozenset()  # one token, too long
+
+
+def test_the_draft_rule_parses_recipients_first_and_reads_the_text_only_when_needed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jarvis.tools import gmail
+
+    scans: list[str] = []
+    real = gmail.typed_addresses
+    monkeypatch.setattr(gmail, "typed_addresses", lambda t: scans.append(t) or real(t))
+    [tool] = [t for t in gmail_tools(None) if t.name == "gmail_create_draft"]  # type: ignore[arg-type]
+    with context_trust(untrusted=False, owner_text="no address in here at all"):
+        assert tool.asks(_draft("ravi@example.com")) is True
+    with context_trust(untrusted=False, owner_text="write to priya@example.com"):
+        assert tool.asks(_draft("ravi@example.com")) is True  # "ravi" was never typed
+        assert tool.asks(_draft("not an address")) is True  # unparseable: ask, no scan
+    assert scans == []
+    with context_trust(untrusted=False, owner_text="write to Ravi@Example.com"):
+        assert tool.asks(_draft("ravi@example.com")) is False
+    assert scans == ["write to Ravi@Example.com"]
+
+
 def test_owner_text_is_none_outside_a_turn_and_reset_after() -> None:
     assert owner_text() is None
     with context_trust(untrusted=False, owner_text="hi ravi@example.com"):
@@ -114,6 +161,8 @@ async def test_a_draft_to_an_address_the_owner_never_typed_becomes_an_r2_card(
     assert out.outcome is GatewayOutcome.AWAITING_CONFIRMATION
     assert out.pending is not None and out.pending.tool_risk is ActionRisk.REVERSIBLE
     assert not out.pending.irreversible  # an R2 card: no passkey
+    # slice 11 review MEDIUM-1: the owner reviews it on its own card, never with Approve all
+    assert out.pending.reason is AskReason.DRAFT_RECIPIENT and out.pending.bulk_ok is False
     assert "attacker@evil.example" in out.pending.summary
     assert fake_google.sent("POST", "/drafts") == []
 

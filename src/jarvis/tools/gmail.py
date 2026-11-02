@@ -5,10 +5,10 @@ search/read are R1 and return only the fields asked for — search never returns
 truncates the body and lists attachments without fetching them. create_draft is R2 (its result
 says "draft saved, not sent"); it asks first (an R2 card, no passkey) unless every recipient is an
 address the owner typed in the current message (slice 11 D7 a — an address from a mail, a page or
-the model's memory never fills a draft unseen). send is R3 and there is no "don't ask again": the
-approval card
-shows every recipient (IDN domains also in punycode), the subject, the first 200 characters of
-the body and whether it replies in a thread, each field flattened by `tools.card.one_line`.
+the model's memory never fills a draft unseen; such a card is never approved with Approve all).
+send is R3 and there is no "don't ask again": the approval card shows every recipient (IDN
+domains also in punycode), the subject, the first 200 characters of the body and whether it
+replies in a thread, each field flattened by `tools.card.one_line`.
 Mail content reaches the model fenced as EXTERNAL CONTENT (see tools/external.py).
 """
 
@@ -279,12 +279,18 @@ def _check_compose(a: dict[str, Any]) -> None:
 def _untyped_recipient(a: dict[str, Any]) -> bool:
     """Slice 11 D7 a: a draft asks first unless every recipient is an address the owner typed in
     THIS message (`taint.owner_text`). Outside a turn — an approval being carried out — it does
-    not apply (that card was already decided)."""
+    not apply (that card was already decided). The recipients are parsed first (≤ 50; a bad one
+    raises, and the tool asks); the owner's text is scanned for addresses only when every
+    recipient's name part is in it at all."""
     said = owner_text()
     if said is None:
         return False
+    recipients = parse_recipients(a.get("to"))
+    low = said.lower()
+    if any(addr.split("@", 1)[0] not in low for addr in recipients):
+        return True  # one was never typed: no need to read the text for addresses
     typed = typed_addresses(said)
-    return any(addr not in typed for addr in parse_recipients(a.get("to")))
+    return any(addr not in typed for addr in recipients)
 
 
 def _compose_card(verb: str) -> SummaryFn:

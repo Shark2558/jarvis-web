@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from typing import Any
 
 import httpx
@@ -107,6 +108,10 @@ def _credits(data: dict[str, Any]) -> int | None:
 
 
 def _count(v: object) -> int | None:
+    """A non-negative whole number: an int, or an integral float (12.0); never a bool, a fraction,
+    NaN or infinity (Python's JSON reader accepts those)."""
+    if isinstance(v, float) and math.isfinite(v) and v.is_integer():
+        v = int(v)
     return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
 
 
@@ -115,19 +120,26 @@ def _part(data: dict[str, Any], name: str) -> dict[str, Any]:
     return part if isinstance(part, dict) else {}
 
 
+def _limit(v: object) -> int | None:
+    """A limit: a positive count. 0 means none is set (slice 11 review LOW-5), never "used up"."""
+    n = _count(v)
+    return n if n else None
+
+
 def _vendor_usage(data: dict[str, Any]) -> VendorUsage:
     """GET /usage → (used, limit, exhausted), from the key's and the plan's counts: the larger
-    count, the smaller limit, and "exhausted" when either count has reached its limit."""
+    count, the smaller limit, and "exhausted" when either count has reached its (positive)
+    limit."""
     key, account = _part(data, "key"), _part(data, "account")
     pairs = [
-        (_count(key.get("usage")), _count(key.get("limit"))),
-        (_count(account.get("plan_usage")), _count(account.get("plan_limit"))),
+        (_count(key.get("usage")), _limit(key.get("limit"))),
+        (_count(account.get("plan_usage")), _limit(account.get("plan_limit"))),
     ]
     used = [u for u, _ in pairs if u is not None]
     if not used:
         raise WebError("Tavily returned an unreadable usage report.")
     limits = [lim for _, lim in pairs if lim is not None]
-    exhausted = any(u is not None and lim is not None and u >= lim for u, lim in pairs)
+    exhausted = any(u is not None and lim is not None and lim > 0 and u >= lim for u, lim in pairs)
     return VendorUsage(max(used), min(limits) if limits else None, exhausted)
 
 

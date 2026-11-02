@@ -126,6 +126,10 @@ class PendingApproval(BaseModel):
     passkey_required: bool = Field(
         default=False, description="Approving needs a passkey check (GET /v1/approvals sets it)"
     )
+    reason: str | None = Field(default=None, description="Why it asks (slice 11; None: unknown)")
+    bulk_ok: bool = Field(
+        default=False, description="Approve all may run it (else: its own card, one by one)"
+    )
 
     @classmethod
     def from_action(cls, a: PendingAction) -> PendingApproval:
@@ -139,6 +143,8 @@ class PendingApproval(BaseModel):
             expires_at=a.expires_at,
             session_id=sid,
             tool_risk=a.tool_risk.value if a.tool_risk is not None else None,
+            reason=a.reason.value if a.reason is not None else None,
+            bulk_ok=a.bulk_ok,
         )
 
 

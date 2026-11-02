@@ -47,6 +47,24 @@ class ActionRisk(StrEnum):
     IRREVERSIBLE = "irreversible"  # send, pay, delete, publish — always confirm
 
 
+class AskReason(StrEnum):
+    """Why a call that could have run became a card (slice 11 review MEDIUM-1). Set by the gateway
+    where an Allow is tightened to Ask; decides what Approve all may run (`PendingAction.bulk_ok`).
+    """
+
+    UNTRUSTED_CONTEXT = "untrusted_context"  # the model had read other people's words this round
+    DRAFT_RECIPIENT = "draft_recipient"  # a draft to an address the owner did not type (D7 a)
+    SPOKEN = "spoken"  # a spoken turn: anyone in the room may have said it
+    OWNER_RULE = "owner_rule"  # an "Ask first" rule (the owner's, or the configured policy's)
+    CAP = "cap"  # past the message's free undo-able deletes (slice 11 D3)
+    RISK = "risk"  # can't be undone: always asks (R3)
+
+
+# Memory writes are never approved in bulk: a note planted by someone else's words must be read by
+# the owner one card at a time (slice 11 review MEDIUM-1).
+MEMORY_TOOL_PREFIX = "memory_"
+
+
 class PendingAction(BaseModel):
     id: str = Field(default_factory=lambda: secrets.token_urlsafe(12))
     tool: str
@@ -58,6 +76,9 @@ class PendingAction(BaseModel):
     # IRREVERSIBLE); `tool_risk` is what the call itself can do. A passkey is asked for only when
     # it is IRREVERSIBLE — or unknown (a card stored before this field existed): fail safe.
     tool_risk: ActionRisk | None = Field(default=None, description="Risk of the call itself")
+    reason: AskReason | None = Field(
+        default=None, description="Why it asks (slice 11); None: a card stored before the field"
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC) + timedelta(minutes=10))
 
@@ -69,6 +90,16 @@ class PendingAction(BaseModel):
     def irreversible(self) -> bool:
         """True when the call itself can't be undone (or its risk is unknown: fail safe)."""
         return self.tool_risk is None or self.tool_risk is ActionRisk.IRREVERSIBLE
+
+    @property
+    def bulk_ok(self) -> bool:
+        """May Approve all run it? Never when it can't be undone (or its risk is unknown), never a
+        draft to an address the owner did not type, never a memory write — whatever its reason,
+        so also an old card without one. A calendar / reminder / to-do card made after reading a
+        mail stays one tap: "add these 5 events from the email"."""
+        if self.irreversible or self.reason is AskReason.DRAFT_RECIPIENT:
+            return False
+        return not self.tool.startswith(MEMORY_TOOL_PREFIX)
 
 
 class ConfirmationRequired(PermissionError):

@@ -13,7 +13,7 @@ from pydantic import SecretStr
 
 from jarvis.api import create_app
 from jarvis.config import AuthMode, Settings
-from jarvis.core.approve_all import MAX_IDS, CardStatus
+from jarvis.core.approve_all import MAX_IDS, TOOL_ERROR, CardStatus
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate, PendingAction
 from jarvis.core.models import ChatRequest
@@ -339,7 +339,9 @@ async def test_one_failing_card_does_not_stop_the_others(
     assert [r.status for r in out.results] == [
         CardStatus.DONE, CardStatus.FAILED, CardStatus.DONE,
     ]  # fmt: skip
-    assert "did not go through" in out.results[1].detail.lower()
+    # review LOW-6: a fixed sentence, never the tool's own exception text
+    assert out.results[1].detail == TOOL_ERROR
+    assert out.tool_calls == 3  # the failing tool was called too: it may have done part of it
 
 
 async def test_an_exception_while_approving_one_card_is_reported_and_the_rest_run(

@@ -252,7 +252,8 @@ async def approve(
 
 
 class ApproveAll(BaseModel):
-    session_id: str  # a client-sent user_id or passkey is ignored (pydantic drops unknown fields)
+    # a client-sent user_id or passkey is ignored (pydantic drops unknown fields)
+    session_id: str = Field(min_length=1, max_length=64)
     ids: list[ApprovalId] = Field(min_length=1, max_length=MAX_IDS)
 
 

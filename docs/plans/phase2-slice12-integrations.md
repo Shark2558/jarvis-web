@@ -99,7 +99,10 @@ the key's allowed APIs back; unless they are exactly those three, Maps and YouTu
 that deploy (unmounted on a quick re-run). The key never reaches the browser.
 JARVIS keeps a deployment-wide counter per SKU — the SKU Google actually bills each call as — and
 stops at **90 % of the free allowance** of the billing account's price list; like Tavily, it never
-runs into paid use. Free allowances a month (Pacific-time months, as Google bills; verified
+runs into paid use. Security review SEC-4: Google may count these free allowances per billing
+account, and the counter sees only this deployment — so `cloudrun.sh` lists the billing account's
+projects (non-fatally) and, when other projects share it, the deploy summary says their Maps /
+YouTube use is invisible to JARVIS's counter (the ₹1 budget alert still emails on any charge). Free allowances a month (Pacific-time months, as Google bills; verified
 2026-11-03, sources below):
 
 | JARVIS SKU | Google SKU (trigger) | India price list | global price list |
@@ -250,6 +253,25 @@ card. Results never vouch (`may_vouch` false). No new R3 in this slice.
 - A reopened conversation gets its WhatsApp draft cards back (`GET /v1/sessions/{id}` `drafts`,
   rebuilt through `draft_card`); Maps / YouTube cards never come back.
 - One console invisible-character rule (`console-text.js`) that keeps ZWNJ / ZWJ for Malayalam.
+
+**Merged with the parallel code / security / console review fixes (CR-1..CR-9, SEC-1..SEC-4,
+FE-1..FE-11).** Where both fixed the same thing, one implementation stays:
+- Card caps: `reply_cards.reply_full` before any work, `{status: "not_shown", card_shown: false}`
+  (CR-1's `has_room` / `too_many_*` are gone). Every Maps / YouTube result says `card_shown`; a
+  card refused after the call returns no Google data; outside a reply the note says no card.
+- Allowance stops are answers with the whole message (CR-3 `stops_answered`), beside the neutral
+  Google quota words above.
+- `cloudrun.sh`: one `maps_off` for every path (incl. a failed key list, CR-5, and a failed
+  grant in step 5); the key string must be read and stored this run (no mount on trust, SEC-2);
+  Drive per this run's API answer; required secrets still stop the deploy; `billing_shared`
+  note (SEC-4).
+- WhatsApp text: SEC-1's strict `clean_text` (mirrored by console-whatsapp.js `clean`, one shared
+  fixture) wins over `console-text.js` for a draft; it also drops what the final review added
+  there (soft hyphen, CGJ, U+180E, tags) and the unassigned code points that render as nothing
+  (U+2065, U+FFF0-FFF8, U+E0000-E0FFF). A restored draft whose stored text no longer passes is
+  skipped, never shown cleaned.
+- Console: Never hides Drive / Home and Work AND the Drive switch-on confirm (an open confirm is
+  cancelled when Drive goes off), focus management, `<bdi>`, and Maps Retry (never while off).
 
 ## Slice 12: check after deploy
 None of these could be verified from the build sandbox. The owner checks them once, after the

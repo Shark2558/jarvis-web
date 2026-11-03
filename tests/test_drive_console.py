@@ -45,6 +45,8 @@ async def test_drive_section_has_the_three_steps_copy_and_not_offered_line(
 
 async def test_page_loads_the_drive_script_after_the_console(client: AsyncClient) -> None:
     html = (await client.get("/")).text
+    assert '<dialog class="bdialog" id="driveDialog" role="alertdialog"' in html  # FE-1
+    assert 'id="driveDialogNo" type="button">Not now</button>' in html
     assert '<script src="/static/console-drive.js" defer></script>' in html
     assert '<link rel="stylesheet" href="/static/console-drive.css">' in html
     assert html.index('src="/static/console.js"') < html.index('src="/static/console-drive.js"')
@@ -68,5 +70,19 @@ def test_no_dollar_sign_in_drive_strings() -> None:
 def test_drive_loads_only_when_integrations_opens() -> None:
     js = (ROOT / "src/jarvis/api/static/console-drive.js").read_text(encoding="utf-8")
     assert "d.id === 'integrations' && d.open" in js
-    # never on page load: Google is asked only when the owner looks
-    assert "jarvis:ready', () => { if (window.JarvisDeck" in js
+    # never on page load: Google is asked only when the owner looks (the panel is open)
+    assert "jarvis:ready', () => { if (integOpen()) load(false); }" in js
+    assert "window.JarvisDeck.isOpen('integrations')" in js
+    # review FE-9: a script arriving after jarvis:ready asks JarvisConsole.ready() too
+    assert "C.ready() && integOpen()) load(false);" in js
+
+
+def test_switching_a_folder_on_asks_first_and_off_is_one_tap() -> None:
+    """Review FE-1: a native modal names the folder (textContent) and says JARVIS will read its
+    files and send what it reads to Claude; switching off sends at once."""
+    js = (ROOT / "src/jarvis/api/static/console-drive.js").read_text(encoding="utf-8")
+    assert "if (f.confirmed) { setUse(f, false); return; }" in js
+    assert "if (await askOn(f, trigger)) setUse(f, true);" in js
+    assert "dlg.showModal();" in js and "$('driveDialogNo').focus();" in js
+    assert "JARVIS will be able to read the files in " in js
+    assert "sends what it reads to the brain (Claude)" in js

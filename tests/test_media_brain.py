@@ -30,7 +30,9 @@ from jarvis.tools.setup import build_gateway
 TIERS = {t: f"mock-{t.value}" for t in ModelTier}
 
 
-def _rig(*, trains: bool = False) -> tuple[Brain, MockProvider, InMemorySessionStore, Any]:
+def _rig(
+    *, trains: bool = False, places: MapsPlaces | None = None
+) -> tuple[Brain, MockProvider, InMemorySessionStore, Any]:
     fake = FakeGoogleKeyAPIs()
     docs = MemoryDocs()
     client = GoogleKeyClient(SecretStr(KEY), http=fake.client())
@@ -38,7 +40,7 @@ def _rig(*, trains: bool = False) -> tuple[Brain, MockProvider, InMemorySessionS
     media = MediaServices(
         client=client,
         ledger=ledger,
-        maps=MapsService(client, ledger, MapsPlaces(docs)),
+        maps=MapsService(client, ledger, places or MapsPlaces(docs)),
         youtube=YouTubeService(client, ledger),
     )
     s = Settings(
@@ -144,11 +146,8 @@ async def test_a_training_brain_is_offered_no_maps_or_youtube_tools() -> None:
 
 
 def _home_rig() -> tuple[Brain, MockProvider, MapsPlaces, Any]:
-    brain, provider, _, fake = _rig()
-    assert brain.gateway is not None
-    route = brain.gateway.registry.get("maps_route")
-    assert route is not None
-    places: MapsPlaces = route.run.__self__.s.places  # type: ignore[attr-defined]
+    places = MapsPlaces(MemoryDocs())  # the maps tools' own Home / Work store
+    brain, provider, _, fake = _rig(places=places)
     return brain, provider, places, fake
 
 

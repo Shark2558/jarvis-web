@@ -289,6 +289,78 @@ async def test_refund_keeps_a_closed_day() -> None:
         await led.reserve(MAPS_SEARCH)
 
 
+async def test_a_late_latch_for_yesterday_never_reopens_today() -> None:
+    """Code review CR-2: A reserves at 23:59:59 Pacific, B at 00:00:01. B's per-day "used up"
+    closes today; A's, handled later, is for yesterday — it must not move closed_day back and
+    reopen today."""
+    clock = Clock(BEFORE_MIDNIGHT)
+    led = QuotaLedger(MemoryDocs(), now=clock)
+    a = await led.reserve(MAPS_SEARCH)
+    clock.at = AFTER_MIDNIGHT
+    b = await led.reserve(MAPS_SEARCH)
+    assert (a.day, b.day) == ("2026-11-15", "2026-11-16")
+    await led.latch(b, "day")
+    await led.latch(a, "day")  # the late answer for yesterday's call
+    with pytest.raises(QuotaReached):
+        await led.reserve(MAPS_SEARCH)
+    assert (await led.view())["maps_search"]["paused_today"] is True
+
+
+async def test_a_refund_after_a_whole_period_latch_never_reopens_a_slot() -> None:
+    """Code review CR-2: once Google said the period's quota is gone, a refund of another call
+    (one that never reached Google) gives nothing back."""
+    for sku, limit in ((MAPS_SEARCH, "month"), (YOUTUBE_SEARCH, "day"), (MAPS_ROUTE, "month")):
+        led = _ledger()
+        latched = await led.reserve(sku)
+        other = await led.reserve(sku)
+        await led.latch(latched, limit)  # type: ignore[arg-type]
+        await led.refund(other)
+        with pytest.raises(QuotaReached):
+            await led.reserve(sku)
+        assert (await led.use(sku)).used >= sku.cap
+
+
+async def test_a_latched_counter_stays_latched_when_repaired_from_unreadable() -> None:
+    docs = MemoryDocs()
+    docs._data["jarvis_api_quota/maps_search@2026-11"] = {"used": "bad"}
+    led = _ledger(docs)
+    r = Reservation(MAPS_SEARCH, "2026-11", 1, day="2026-11-15")
+    await led.latch(r, "month")
+    await led.refund(r)
+    with pytest.raises(QuotaReached):
+        await led.reserve(MAPS_SEARCH)
+
+
+async def test_stops_answered_turns_only_the_allowance_stops_into_answers() -> None:
+    """Code review CR-3: a stop is an answer with the whole message; anything else still raises."""
+    from jarvis.quota.ledger import stops_answered
+
+    long = MAPS_ROUTE_2W.closed_today
+    assert len(long) > 160  # what a failure's text would have been cut to
+
+    async def reached(_: dict[str, object]) -> dict[str, object]:
+        raise QuotaReached(long)
+
+    async def unreadable(_: dict[str, object]) -> dict[str, object]:
+        raise QuotaUnreadable("can't read")
+
+    async def broken(_: dict[str, object]) -> dict[str, object]:
+        raise RuntimeError("other")
+
+    assert await stops_answered(reached)({}) == {"status": "paused", "message": long}
+    assert await stops_answered(unreadable)({}) == {"status": "unreadable", "message": "can't read"}
+    with pytest.raises(RuntimeError):
+        await stops_answered(broken)({})
+
+
+@pytest.mark.parametrize("latched", ["yes", 1, None])
+async def test_a_latched_flag_that_is_not_a_boolean_fails_closed(latched: object) -> None:
+    docs = MemoryDocs()
+    docs._data["jarvis_api_quota/maps_search@2026-11"] = {"used": 3, "latched": latched}
+    with pytest.raises(QuotaUnreadable):
+        await _ledger(docs).reserve(MAPS_SEARCH)
+
+
 @pytest.mark.parametrize(
     "stored",
     [

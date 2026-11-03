@@ -22,7 +22,8 @@ PUT /v1/drive/roots/{id}   {use: true | false} → the same view. Use on needs t
                            rate_limited, 503 drive_unavailable / roots_unavailable (storage
                            trouble reading or changing the chosen folders), 409 switched_off (the
                            owner set the Drive permission row to Never; final review). Google's
-                           own text never appears.
+                           own text never appears. A change is one audit entry (security review
+                           SEC-3: agent "drive", outcome "changed", a hash of the folder id only).
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ from jarvis.api.auth import require_auth, session_email
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.api.rows import DRIVE_TOOL, is_never, switched_off_reply
+from jarvis.api.settings_audit import record_change
 from jarvis.config import Settings
 from jarvis.drive.ports import DriveError, RootsUnreadable
 from jarvis.drive.service import DriveRejected, DriveService
@@ -106,6 +108,14 @@ async def drive_use(
     email = _owner_email(request)
     await svc.set_use(uid, email, folder_id, body.use)
     log.info("drive folder use changed", extra={"use": body.use})  # never the id or the name
+    # SEC-3: the audit chain holds a hash of the folder id only
+    await record_change(
+        request,
+        agent="drive",
+        tool="drive_use",
+        args={"folder": folder_id},
+        detail="on" if body.use else "off",
+    )
     return _public(await svc.view(uid, email))
 
 

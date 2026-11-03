@@ -141,6 +141,7 @@ NOT_CONNECTED_MSG = (
     "Google is not connected. Connect it in the panel (Integrations) to use calendar and mail."
 )
 RECONNECT_MSG = "Google needs reconnecting (panel → Integrations)."
+RENEWED_MSG = "Google asked JARVIS to renew its access to your account; it has. Please try again."
 
 
 class GoogleNotConnected(RuntimeError):
@@ -167,7 +168,13 @@ class GoogleNotFound(GoogleAPIError):
 
 class GoogleUncertain(GoogleAPIError):
     """Slice 11 fix: Google may or may not have made the change — no answer (timeout, the
-    connection dropped) or a 5xx. A delete is checked by reading the item again."""
+    connection dropped) or a 5xx. A delete is checked by reading the item again. `reached`
+    (slice 12 code review CR-4): an earlier attempt of the same call got Google's answer, so
+    Google was reached even if this attempt never connected."""
+
+    def __init__(self, message: str, *, reached: bool = False) -> None:
+        super().__init__(message)
+        self.reached = reached
 
 
 class GoogleConflict(GoogleAPIError):
@@ -190,10 +197,14 @@ class GoogleQuotaExceeded(GoogleAPIError):
 
 
 def never_sent(exc: BaseException) -> bool:
-    """Slice 12: a `request` that failed before its request left JARVIS (the connection was
-    refused), so Google did nothing with it — the allowance ledger gives its unit back."""
-    return isinstance(exc, GoogleUncertain) and isinstance(
-        exc.__cause__, httpx.ConnectError | httpx.ConnectTimeout
+    """Slice 12: a `request` that failed before ANY of its attempts reached Google (the
+    connection was refused), so Google did nothing with it — the allowance ledger gives its unit
+    back. A retry that could not connect after Google answered the first attempt is not one
+    (code review CR-4: `GoogleUncertain.reached`)."""
+    return (
+        isinstance(exc, GoogleUncertain)
+        and not exc.reached
+        and isinstance(exc.__cause__, httpx.ConnectError | httpx.ConnectTimeout)
     )
 
 
@@ -379,12 +390,18 @@ class GoogleConnector:
         params: dict[str, Any] | None = None,
         json: Any | None = None,
         retry_safe: bool | None = None,
+        send_once: bool = False,
     ) -> Any:
         """One Google REST call: bearer token, 15 s timeout, one forced refresh on 401 (not
         processed, so safe to resend), and one retry on 429/5xx ONLY for safe calls: GET/HEAD,
         or a read-only POST that passes `retry_safe=True` (freeBusy). Returns parsed JSON
-        ({} for an empty body)."""
-        safe = method.upper() in SAFE_METHODS if retry_safe is None else retry_safe
+        ({} for an empty body). `send_once` (slice 12 code review CR-4: a call Google counts
+        against a quota JARVIS reserved ONE unit for, e.g. YouTube with the owner's token):
+        exactly one request — no retry, and a 401 refreshes the link for the next call but is
+        not resent (plain "try again")."""
+        safe = not send_once and (
+            method.upper() in SAFE_METHODS if retry_safe is None else retry_safe
+        )
         token = await self.access_token(user_id)
         r = await self._send(method, url, token, params, json)
         if r.status_code == 401:
@@ -392,9 +409,11 @@ class GoogleConnector:
             if t is None or isinstance(t, VaultError):
                 raise GoogleNotConnected(RECONNECT_MSG)
             token = await self._refresh(user_id, t)
-            r = await self._send(method, url, token, params, json)
+            if send_once:
+                raise GoogleAPIError(RENEWED_MSG)
+            r = await self._again(method, url, token, params, json)
         elif r.status_code in RETRY_STATUSES and safe:
-            r = await self._send(method, url, token, params, json)
+            r = await self._again(method, url, token, params, json)
         if r.status_code >= 400:
             log.warning(
                 "google api error", extra={"status": r.status_code, "path": httpx.URL(url).path}
@@ -410,6 +429,21 @@ class GoogleConnector:
             return r.json()
         except ValueError as exc:
             raise GoogleAPIError("Google returned an unreadable response.") from exc
+
+    async def _again(
+        self,
+        method: str,
+        url: str,
+        token: str,
+        params: dict[str, Any] | None,
+        json: Any | None,
+    ) -> httpx.Response:
+        """A second attempt, after Google answered the first: if this one can't connect, the
+        call still reached Google (`GoogleUncertain.reached`, so `never_sent` is False)."""
+        try:
+            return await self._send(method, url, token, params, json)
+        except GoogleUncertain as exc:
+            raise GoogleUncertain(str(exc), reached=True) from exc.__cause__
 
     async def _send(
         self,

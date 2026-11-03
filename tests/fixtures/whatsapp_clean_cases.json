@@ -1,0 +1,307 @@
+[
+ {
+  "in": "Confi\u200c\u200d\u200c\u200c\u200d\u200d\u200d\u200d\u200c\u200d\u200c\u200d\u200c\u200d\u200c\u200c\u200c\u200d\u200c\u200d\u200c\u200c\u200c\u200c\u200c\u200c\u200d\u200c\u200c\u200c\u200c\u200c\u200c\u200c\u200d\u200d\u200c\u200d\u200c\u200c\u200c\u200c\u200d\u200d\u200d\u200c\u200c\u200c\u200c\u200c\u200d\u200d\u200c\u200c\u200d\u200c\u200c\u200c\u200d\u200d\u200d\u200c\u200c\u200d\u200c\u200c\u200d\u200d\u200c\u200c\u200c\u200d\u200c\u200c\u200d\u200d\u200c\u200c\u200d\u200drmed, see you Thursday",
+  "out": "Confirmed, see you Thursday",
+  "why": "SEC-1: 80 ZWNJ / ZWJ encoding 'OTP 482913' between Latin letters: all removed"
+ },
+ {
+  "in": "Con\u200cfir\u200dmed",
+  "out": "Confirmed",
+  "why": "ZWNJ / ZWJ between Latin letters: removed"
+ },
+ {
+  "in": "Confirmed,\u00a0see\u2009you\u200a\u200aThursday",
+  "out": "Confirmed, see you Thursday",
+  "why": "spaces as a channel: NBSP, thin and hair spaces become one plain space"
+ },
+ {
+  "in": "A\ufe0fB",
+  "out": "AB",
+  "why": "FE0F after a letter: removed"
+ },
+ {
+  "in": "ok\ufe0e",
+  "out": "ok",
+  "why": "FE0E after a letter: removed"
+ },
+ {
+  "in": "a\u00a0b\u2009c\u200ad\te  f",
+  "out": "a b c d e f",
+  "why": "NBSP, U+2009, U+200A, tab, double space: one space each"
+ },
+ {
+  "in": "see\u3000you\u202fsoon\u205fnow",
+  "out": "see you soon now",
+  "why": "ideographic, narrow no-break and medium mathematical spaces: one space"
+ },
+ {
+  "in": "\u0d15\t\u0d24",
+  "out": "\u0d15 \u0d24",
+  "why": "a tab between Malayalam letters: one space"
+ },
+ {
+  "in": "\u0d15\u200c\u200c\u200c\u0d24",
+  "out": "\u0d15\u0d24",
+  "why": "a run of joiners between letters: removed"
+ },
+ {
+  "in": "\u0d15\u200c\u3164\u200c\u3164\u200c\u0d24",
+  "out": "\u0d15\u0d24",
+  "why": "blank fillers can't split a joiner run into kept joiners"
+ },
+ {
+  "in": "\u0d15\u200c\ufe0f\u200c\ufe0f\u0d24",
+  "out": "\u0d15\u0d24",
+  "why": "selectors can't split a joiner run into kept joiners"
+ },
+ {
+  "in": "\u0d28\u0d4d\u200d",
+  "out": "\u0d28\u0d4d",
+  "why": "a joiner at the end of the text: removed"
+ },
+ {
+  "in": "\ud83d\ude00\u200c\ud83d\ude00",
+  "out": "\ud83d\ude00\ud83d\ude00",
+  "why": "ZWNJ between emoji: removed"
+ },
+ {
+  "in": "a\u200d\ud83d\ude00",
+  "out": "a\ud83d\ude00",
+  "why": "ZWJ between a Latin letter and an emoji: removed"
+ },
+ {
+  "in": "\u2764\ufe0f\u200c\u0d15",
+  "out": "\u2764\ufe0f\u0d15",
+  "why": "ZWNJ between an emoji's selector and a letter: removed"
+ },
+ {
+  "in": "1\ufe0f\u200d\ud83d\ude00",
+  "out": "1\ufe0f\ud83d\ude00",
+  "why": "ZWJ after a keycap base: removed"
+ },
+ {
+  "in": "\u0d38\u0d4d\u200c\u0d24",
+  "out": "\u0d38\u0d4d\u200c\u0d24",
+  "why": "Malayalam with ZWNJ between letters: kept"
+ },
+ {
+  "in": "\u0d0e\u0d28\u0d4d\u200d\u0d31\u0d46",
+  "out": "\u0d0e\u0d28\u0d4d\u200d\u0d31\u0d46",
+  "why": "Malayalam with ZWJ inside a word (old-style chillu): kept"
+ },
+ {
+  "in": "\u0915\u094d\u200d\u0937",
+  "out": "\u0915\u094d\u200d\u0937",
+  "why": "Devanagari conjunct with ZWJ: kept"
+ },
+ {
+  "in": "\u0939\u093f\u0928\u094d\u0926\u0940",
+  "out": "\u0939\u093f\u0928\u094d\u0926\u0940",
+  "why": "Hindi"
+ },
+ {
+  "in": "\u0b13\u0b21\u0b3c\u0b3f\u0b06",
+  "out": "\u0b13\u0b21\u0b3c\u0b3f\u0b06",
+  "why": "Odia"
+ },
+ {
+  "in": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67",
+  "out": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67",
+  "why": "emoji ZWJ sequence (family): kept"
+ },
+ {
+  "in": "\u2764\ufe0f",
+  "out": "\u2764\ufe0f",
+  "why": "heart with FE0F: kept"
+ },
+ {
+  "in": "1\ufe0f\u20e3",
+  "out": "1\ufe0f\u20e3",
+  "why": "keycap 1: kept"
+ },
+ {
+  "in": "#\ufe0f\u20e3 *\ufe0f\u20e3",
+  "out": "#\ufe0f\u20e3 *\ufe0f\u20e3",
+  "why": "keycaps # and *: kept"
+ },
+ {
+  "in": "\ud83c\udff3\ufe0f\u200d\ud83c\udf08",
+  "out": "\ud83c\udff3\ufe0f\u200d\ud83c\udf08",
+  "why": "rainbow flag: ZWJ after an emoji and its FE0F: kept"
+ },
+ {
+  "in": "\ud83d\udc69\ud83c\udffd\u200d\ud83d\udcbb",
+  "out": "\ud83d\udc69\ud83c\udffd\u200d\ud83d\udcbb",
+  "why": "woman technologist, medium skin tone: ZWJ after a skin tone: kept"
+ },
+ {
+  "in": "\u2764\ufe0f\u200d\ud83d\udd25",
+  "out": "\u2764\ufe0f\u200d\ud83d\udd25",
+  "why": "heart on fire: kept"
+ },
+ {
+  "in": "\ud83d\udc4d\ud83c\udffd",
+  "out": "\ud83d\udc4d\ud83c\udffd",
+  "why": "thumbs up with a skin tone: kept"
+ },
+ {
+  "in": "\u0d28\u0d3e\u0d33\u0d46 \u0d15\u0d3e\u0d23\u0d3e\u0d02 \ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67",
+  "out": "\u0d28\u0d3e\u0d33\u0d46 \u0d15\u0d3e\u0d23\u0d3e\u0d02 \ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67",
+  "why": "Malayalam and an emoji family together"
+ },
+ {
+  "in": "a\u0301\u0302\u0303\u0304",
+  "out": "a\u0301\u0302\u0303\u0304",
+  "why": "FE-8: four marks are fine"
+ },
+ {
+  "in": "\u2764\ufe0f\ufe0f\ufe0f\ufe0e",
+  "out": "\u2764\ufe0f",
+  "why": "S3: a run of selectors keeps one"
+ },
+ {
+  "in": "\ufe0fstart",
+  "out": "start",
+  "why": "S3: a selector with nothing before it"
+ },
+ {
+  "in": "hi\u3164there",
+  "out": "hithere",
+  "why": "S3: Hangul filler"
+ },
+ {
+  "in": "hi\u2800there",
+  "out": "hithere",
+  "why": "S3: braille blank"
+ },
+ {
+  "in": "hi\u034fthere",
+  "out": "hithere",
+  "why": "S3: combining grapheme joiner"
+ },
+ {
+  "in": "hi\u17b4\u180bthere",
+  "out": "hithere",
+  "why": "S3: Khmer inherent vowel, Mongolian selector"
+ },
+ {
+  "in": "a\n\n\n\n\n\nb",
+  "out": "a\n\n\nb",
+  "why": "S3: more than two blank lines in a row"
+ },
+ {
+  "in": "trailing   \nspaces",
+  "out": "trailing\nspaces",
+  "why": "S3: spaces at the end of a line"
+ },
+ {
+  "in": "  padded  \n",
+  "out": "padded",
+  "why": "spaces and new lines around the text"
+ },
+ {
+  "in": "pay \u202eexe.gpj",
+  "out": "pay exe.gpj",
+  "why": "a bidi override"
+ },
+ {
+  "in": "a\u2066b\u2069c\u200ed\u200ff\u061cg",
+  "out": "abcdfg",
+  "why": "bidi isolates and marks"
+ },
+ {
+  "in": "zero\u200bwidth\ufeff\u2060",
+  "out": "zerowidth",
+  "why": "zero-width space, BOM, word joiner"
+ },
+ {
+  "in": "tag\udb40\udc41\udb40\udc42 smuggled",
+  "out": "tag smuggled",
+  "why": "tag characters"
+ },
+ {
+  "in": "co\u00adoperate",
+  "out": "cooperate",
+  "why": "final review: soft hyphen (U+00AD): removed"
+ },
+ {
+  "in": "pay\u180enow",
+  "out": "paynow",
+  "why": "final review: Mongolian vowel separator (U+180E): removed"
+ },
+ {
+  "in": "x\udb40\udc00\udb40\udc01\udb40\udc20\udb40\udc7ey\udb40\udc7f",
+  "out": "xy",
+  "why": "final review: the whole tag block, U+E0000 to U+E007F: removed"
+ },
+ {
+  "in": "a\u2065b\ufff0c\ufff8d",
+  "out": "abcd",
+  "why": "final review: unassigned code points that render as nothing (U+2065, U+FFF0-FFF8)"
+ },
+ {
+  "in": "x\udb40\udc02\udb40\udc1f\udb40\udc80\udb43\udfffy",
+  "out": "xy",
+  "why": "final review: the tag block's unassigned rest, up to U+E0FFF: removed"
+ },
+ {
+  "in": "go \ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc65\udb40\udc6e\udb40\udc67\udb40\udc7f",
+  "out": "go \ud83c\udff4",
+  "why": "final review: a flag's tag sequence: its tags removed, the black flag kept"
+ },
+ {
+  "in": "a\u034f\u200d\u034fb",
+  "out": "ab",
+  "why": "final review: CGJ around a ZWJ between Latin letters: all removed"
+ },
+ {
+  "in": "line1\r\nline2\rline3",
+  "out": "line1\nline2\nline3",
+  "why": "line endings"
+ },
+ {
+  "in": "para\u2028next\u2029last",
+  "out": "para\nnext\nlast",
+  "why": "line / paragraph separators"
+ },
+ {
+  "in": "bell\u0007 null\u0000 esc\u001b c1\u0085",
+  "out": "bell null esc c1",
+  "why": "control characters"
+ },
+ {
+  "in": "\u3164",
+  "out": null,
+  "why": "S3: only blank: refused"
+ },
+ {
+  "in": "\u2800\n\u2800",
+  "out": null,
+  "why": "S3: only blank lines: refused"
+ },
+ {
+  "in": " \u00a0\t\u2009 ",
+  "out": null,
+  "why": "only spaces: refused"
+ },
+ {
+  "in": "\ufe0f",
+  "out": null,
+  "why": "only a selector: refused"
+ },
+ {
+  "in": "Hi\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310 pay here",
+  "out": null,
+  "why": "FE-8: 120 stacked marks: refused"
+ },
+ {
+  "in": "a\u0301\u0302\u0303\u0304\u0305",
+  "out": null,
+  "why": "FE-8: five marks after one base: refused"
+ },
+ {
+  "in": "a\u0301\u200d\u0301\u200d\u0301\u200d\u0301\u200d\u0301",
+  "out": null,
+  "why": "FE-8: joiners between the marks don't break the run"
+ }
+]

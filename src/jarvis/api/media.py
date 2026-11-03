@@ -8,7 +8,9 @@ PUT /v1/maps/places   {home: str | null, work: str | null} (each ≤ 200 charact
                       empty string clears it) → same shape; 422 {error: "invalid_place", detail}
                       for text that can't be a place (too long, invisible-only, a phone or account
                       number, an email address); 404 without a key; 409 {error: "switched_off",
-                      detail} while the owner's Maps permission row is Never (final review)
+                      detail} while the owner's Maps permission row is Never (final review). A
+                      save is one audit entry (security review SEC-3: agent "maps", outcome
+                      "changed", a hash of the field names only — never the address)
 GET /v1/quota         {configured: false} | {configured: true, pricing: india | global,
                       maps_search, maps_route, maps_route_2w, maps_route_walk, youtube_search,
                       youtube_units: {period, used, limit, left, reached, paused_today,
@@ -26,10 +28,12 @@ from pydantic import BaseModel, ConfigDict
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
 from jarvis.api.rows import MAPS_TOOL, is_never, switched_off_reply
+from jarvis.api.settings_audit import record_change
 from jarvis.media.service import MediaServices, quota_view
 from jarvis.places.store import PlacesRejected, PlacesUnreadable
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+PLACE_FIELDS = ["home", "work"]  # what a save sets (both, always): the audit hashes only these
 
 
 class PlacesIn(BaseModel):
@@ -71,6 +75,8 @@ async def put_places(
         home, work = await media.places.put(uid, home=body.home, work=body.work)
     except PlacesRejected as exc:
         return JSONResponse(status_code=422, content={"error": "invalid_place", "detail": str(exc)})
+    # SEC-3: the audit chain holds a hash of the field names only, never an address
+    await record_change(request, agent="maps", tool="maps_places", args={"fields": PLACE_FIELDS})
     return {"configured": True, "home": home, "work": work}
 
 

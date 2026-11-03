@@ -18,6 +18,9 @@ first ones, in order), so neither kind can crowd the other out. A card is never 
 (final review): a tool checks `reply_full` BEFORE it runs and refuses in plain words when its kind's
 cap is reached (`CARD_NOT_SHOWN` / `DRAFT_NOT_SHOWN`: nothing looked up, no allowance spent), and if
 `add_card` still says no, its result says the card was not shown and asks the owner to ask again.
+A result never claims a card that isn't there (code review CR-1): a Maps / YouTube result says
+`card_shown`, and outside a collecting reply (a script: nothing to show it on) its note says no
+card went with it.
 
 Every field is checked when a card is MADE (the pydantic models below raise; `add_card` takes only
 a made card): a Maps link must be an https Google Maps address (`google_maps_url`), a video id

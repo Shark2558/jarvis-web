@@ -1,7 +1,7 @@
 # src/jarvis/quota/ledger.py
 """The allowance ledger for Google's free tiers (slice 12 D2; Layer 7 via the `Docs` port).
 
-    {prefix}api_quota/{sku}@{period}   sku, period, tz, used, closed_day?, updated_at
+    {prefix}api_quota/{sku}@{period}   sku, period, tz, used, closed_day?, latched?, updated_at
 
 Google's free allowances belong to the billing account / Cloud project — the whole deployment,
 however many owners — so there is ONE counter per SKU and period. JARVIS stops at 90 % of the
@@ -27,10 +27,13 @@ back (`refund`) only when Google clearly did not use it (`KeyAPIError.clear`). `
 Google's own "quota gone" for the reservation's period, never the current one (a call made just
 before midnight is answered just after): a per-month limit marks that month used up; a per-day
 limit closes only that day (`closed_day` on the month's counter; for a daily SKU, the day itself).
+Latch state only moves forward (code review CR-2): `closed_day` keeps the later of the stored day
+and the call's, and a whole period Google closed is `latched` — a later refund gives nothing back.
 A per-minute limit never latches (`jarvis.integrations.google_key` calls that "busy"). Fail
-closed: an existing `used` that is not a finite whole number ≥ 0, or a `closed_day` that is not a
-date, makes that SKU's period UNREADABLE — nothing is called and the counter is never silently
-reset. The counter starts at 0 on the first deploy even if the key was used elsewhere this period.
+closed: an existing `used` that is not a finite whole number ≥ 0, a `closed_day` that is not a
+date, or a `latched` that is not true / false, makes that SKU's period UNREADABLE — nothing is
+called and the counter is never silently reset. The counter starts at 0 on the first deploy even if
+the key was used elsewhere this period.
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ from __future__ import annotations
 import re
 import time
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, get_args
@@ -148,11 +151,12 @@ class SkuUse:
     sku: Sku
     period: str
     used: int = 0
-    closed_day: str | None = None  # a day Google's per-day limit closed (monthly SKUs)
+    closed_day: str | None = None  # the latest day Google's per-day limit closed (monthly SKUs)
+    latched: bool = False  # Google said the whole period's quota is gone: no refund reopens it
 
     @property
     def left(self) -> int:
-        return max(0, self.sku.cap - self.used)
+        return 0 if self.latched else max(0, self.sku.cap - self.used)
 
     @property
     def reached(self) -> bool:
@@ -173,7 +177,10 @@ def _decode(doc: object, sku: Sku, period: str) -> SkuUse:
     closed = found.get("closed_day")
     if closed is not None and not (isinstance(closed, str) and _DAY.fullmatch(closed)):
         raise QuotaUnreadable(f"the {sku.label} counter's closed day is not a date")
-    return SkuUse(sku, period, used, closed)
+    latched = found.get("latched", False)
+    if not isinstance(latched, bool):
+        raise QuotaUnreadable(f"the {sku.label} counter's latch is not yes or no")
+    return SkuUse(sku, period, used, closed, latched)
 
 
 def unreadable_message(sku: Sku) -> str:
@@ -181,6 +188,28 @@ def unreadable_message(sku: Sku) -> str:
         f"{sku.label} are paused: JARVIS can't read {sku.when()}'s count, so nothing was sent "
         "to Google."
     )
+
+
+Answer = dict[str, Any]
+Run = Callable[[Answer], Awaitable[Answer]]
+
+
+def stops_answered(run: Run) -> Run:
+    """A tool run whose allowance stop is an ANSWER, not a failure (code review CR-3):
+    QuotaReached → {status: "paused", message}, QuotaUnreadable → {status: "unreadable",
+    message}, the way a missing Grant is {status: "permission_needed"}. The message is our own
+    plain words (the SKU's `reached` / `closed_today` / `unreadable_message`), reaching the model
+    whole — a failure's text is cut at 160 characters and starts "The tool failed"."""
+
+    async def answered(args: Answer) -> Answer:
+        try:
+            return await run(args)
+        except QuotaReached as exc:
+            return {"status": "paused", "message": str(exc)}
+        except QuotaUnreadable as exc:
+            return {"status": "unreadable", "message": str(exc)}
+
+    return answered
 
 
 class QuotaLedger:
@@ -229,6 +258,8 @@ class QuotaLedger:
         }
         if use.closed_day is not None:
             out["closed_day"] = use.closed_day
+        if use.latched:
+            out["latched"] = True
         return out
 
     async def use(self, sku: Sku | str) -> SkuUse:
@@ -250,7 +281,7 @@ class QuotaLedger:
             use = _decode(doc, s, period)
             if use.closed_day == day:
                 raise QuotaReached(s.closed_today)
-            if use.used + n > s.cap:
+            if use.latched or use.used + n > s.cap:
                 raise QuotaReached(s.reached)
             new = SkuUse(s, period, use.used + n, use.closed_day)
             return self._encode(new), Reservation(s, period, n, new.left, day)
@@ -259,10 +290,13 @@ class QuotaLedger:
 
     async def refund(self, r: Reservation) -> None:
         """Google clearly did not use the call: give its reservation back to the period it was
-        taken from (never below 0; a closed day stays closed). Never raises."""
+        taken from (never below 0; a closed day stays closed; a period Google said is used up
+        stays used up — code review CR-2). Never raises."""
 
-        def step(doc: object) -> Doc:
+        def step(doc: object) -> Doc | None:
             use = _decode(doc, r.sku, r.period)
+            if use.latched:
+                return None  # nothing to give back: the period is closed whatever the count
             back = SkuUse(r.sku, r.period, max(0, use.used - r.n), use.closed_day)
             return self._encode(back)
 
@@ -276,8 +310,10 @@ class QuotaLedger:
 
     async def latch(self, r: Reservation, limit: UsedUp) -> None:
         """Google says the quota `r` was taken against is gone. A per-month limit (or any limit
-        on a daily SKU) marks r's period used up; a per-day limit on a monthly SKU closes only
-        r's day. Repairs an unreadable counter to "used up", which keeps it closed. Never
+        on a daily SKU) marks r's period used up for good (`latched`: no refund reopens it); a
+        per-day limit on a monthly SKU closes only r's day — and never moves `closed_day` back
+        (code review CR-2: yesterday's late answer must not reopen today, which a later call
+        closed). Repairs an unreadable counter to "used up", which keeps it closed. Never
         raises."""
         sku = self.sku(r.sku)
         whole_period = limit == "month" or sku.period == "day"
@@ -287,10 +323,12 @@ class QuotaLedger:
             try:
                 use = _decode(doc, sku, r.period)
             except QuotaUnreadable:
-                return self._encode(SkuUse(sku, r.period, sku.cap))
+                return self._encode(SkuUse(sku, r.period, sku.cap, latched=True))
             if whole_period:
-                return self._encode(SkuUse(sku, r.period, max(use.used, sku.cap), use.closed_day))
-            return self._encode(SkuUse(sku, r.period, use.used, day))
+                used = max(use.used, sku.cap)
+                return self._encode(SkuUse(sku, r.period, used, use.closed_day, latched=True))
+            closed = max(use.closed_day, day) if use.closed_day else day  # ISO days sort as text
+            return self._encode(SkuUse(sku, r.period, use.used, closed, use.latched))
 
         await quietly(
             self.docs,
@@ -372,5 +410,6 @@ __all__ = [
     "SkuUse",
     "UsedUp",
     "skus_for",
+    "stops_answered",
     "unreadable_message",
 ]

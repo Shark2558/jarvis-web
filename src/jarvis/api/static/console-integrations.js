@@ -39,14 +39,15 @@
   ];
   /** "Calendar: read & edit - Gmail: read, draft, send" from the raw scope list (URLs or short names). */
   function scopeSummary(scopes) {
-    const by = {}; let other = 0;
+    const by = new Map(); let other = 0; // review FE-5: own keys only ('constructor' is no scope)
     (Array.isArray(scopes) ? scopes : []).forEach(s => {
-      const key = String(s).split('/').pop(), w = SCOPE_WORDS[key];
+      const key = String(s).split('/').pop(), w = Object.hasOwn(SCOPE_WORDS, key) ? SCOPE_WORDS[key] : null;
       if (!w) { other++; return; }
-      const words = (by[w[0]] = by[w[0]] || []);
+      if (!by.has(w[0])) by.set(w[0], []);
+      const words = by.get(w[0]);
       w.slice(1).forEach(x => { if (!words.includes(x)) words.push(x); });
     });
-    const parts = Object.keys(by).map(k => `${k}: ${by[k].length === 2 && k === 'Calendar' ? by[k].join(' & ') : by[k].join(', ')}`);
+    const parts = [...by].map(([k, ws]) => `${k}: ${ws.length === 2 && k === 'Calendar' ? ws.join(' & ') : ws.join(', ')}`);
     if (other) parts.push(`${other} other ${other === 1 ? 'permission' : 'permissions'}`);
     return parts.join(' \u00b7 ');
   }
@@ -186,5 +187,5 @@
     if (d.id === 'integrations' && d.open && integ.loaded && performance.now() - integ.at > INTEG_FRESH_MS) refreshIntegrations();
   });
 
-  window.JarvisIntegrations = Object.freeze({ afterConnectRedirect, refresh: refreshIntegrations });
+  window.JarvisIntegrations = Object.freeze({ afterConnectRedirect, refresh: refreshIntegrations, scopeSummary });
 })();

@@ -502,6 +502,7 @@ async def test_drafts_across_rounds_are_capped_at_five_and_the_sixth_says_so() -
             assert out.result["status"] == "not_shown" and out.result["sent"] is False
             said = out.for_model()
             assert "Open in WhatsApp" not in said and "link" not in out.result
+            assert "next" not in out.result  # code review CR-1: nothing to tap
             assert f"at most {MAX_DRAFTS} WhatsApp drafts" in said and "ask for it again" in said
     assert [c.text for c in cards] == ["hi 00", "hi 01", "hi 02", "hi 10", "hi 11"]
 
@@ -530,3 +531,9 @@ async def test_a_draft_that_still_can_not_be_added_says_it_was_not_shown(
     with collecting_cards([]):
         out = await _draft(gw, "98765 43210", said="98765 43210")
     assert out.result["status"] == "not_shown" and "Open in WhatsApp" not in out.for_model()
+
+
+async def test_outside_a_reply_a_draft_is_still_ready() -> None:
+    """Code review CR-1: no reply collecting cards (a script, a test): nothing caps the draft."""
+    out = await _draft(await _gw(None), "98765 43210", said="98765 43210")
+    assert out.result["status"] == "draft_ready"

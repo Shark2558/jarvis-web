@@ -1,7 +1,7 @@
-/* src/jarvis/api/static/console-drive.css — Integrations → Google Drive (slice 12 D1). Reuses the
+/* src/jarvis/api/static/console-drive.css -- Integrations -> Google Drive (slice 12 D1). Reuses the
    Integrations card (.integ / .ihead / .ibody / .inote, console.css) and the deck switch (.bsw); adds
    only the address row, the numbered steps and the folder rows. Text on the ink tokens (AA on Night and
-   Day); a switch says On / Off in words; touch targets ≥ 44 px on phones; no horizontal scroll. */
+   Day); a switch says On / Off in words; touch targets >= 44 px on phones; no horizontal scroll. */
 .integ.drive{margin-top:10px}
 .integ.drive .ibody > .btn.bact{margin-top:10px}
 .daddr{margin-top:10px}

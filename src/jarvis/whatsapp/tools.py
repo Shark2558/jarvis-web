@@ -22,16 +22,19 @@ names), a choice list, a number from anywhere else, or a run whose text may carr
 words (`ToolContext.outside`: an approved card proposed in a round that read a mail or a page,
 as the calendar, reminder and to-do writes mark it) never vouches and taints the round.
 
-Cards (final review): at most `reply_cards.MAX_DRAFTS` drafts per reply. When the reply is full
-the call is refused before anything runs (no Contacts look-up) and its result says the draft was
-not shown and asks the owner to ask again — never "tap Open in WhatsApp" without a card.
+Cards (final review, code review CR-1): at most `reply_cards.MAX_DRAFTS` drafts per reply. When
+the reply is full the call is refused before anything runs (no Contacts look-up) and answered
+{status: "not_shown", sent: false, message} — no link, no `next` — asking the owner to ask again:
+never "tap Open in WhatsApp" without a card.
 
 Review S3: what the owner hands to WhatsApp can carry other people's influence — a mail or a page
 read this round may have steered the text (2,000 characters of stolen data) and the recipient. So
 on a spoken turn or in a tainted round the draft asks first (`ask_when`, honoured for read-only
 calls): a one-by-one R1 card (no passkey, never in Approve all) that shows the WHOLE text, line
-by line ("> "), with its line count. Review S5: a number written without a country code says
-"Assumed India (+91)" on both cards (`to.assumed_india`).
+by line ("> "), with its line count. Security review SEC-1: each quoted line is EXACTLY the text
+that is sent (the same string the wa.me link carries; `text_arg` already left only what can be
+seen). Review S5: a number written without a country code says "Assumed India (+91)" on both
+cards (`to.assumed_india`).
 """
 
 from __future__ import annotations
@@ -122,7 +125,10 @@ def _card_text(a: dict[str, Any]) -> str:
         shown = f"{who} — {ASSUMED_INDIA}" if india_assumed(a.get("to")) else who
     text = text_arg(a.get("text"))
     lines = text.split("\n")
-    quoted = [QUOTE + one_line(ln, TEXT_MAX) if ln.strip() else QUOTE.rstrip() for ln in lines]
+    # SEC-1: each line EXACTLY as it is sent — no one_line, which would collapse or strip what
+    # the card then wouldn't show; `text_arg` already left only what can be seen (and the joiners
+    # and selectors a script or an emoji needs)
+    quoted = [QUOTE + ln if ln else QUOTE.rstrip() for ln in lines]
     count = f"{_plural(len(lines), 'line')}, {_plural(len(text), 'character')}"
     return "\n".join(
         [

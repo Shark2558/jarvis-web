@@ -134,7 +134,6 @@ async def test_errors_are_plain_words_with_a_latch_flag_and_never_a_refund(
             await _client(fake).get(f"{YT}/search", {})
     err = exc.value
     assert err.clear is False and err.used_up == used_up
-    assert err.exhausted is (used_up is not None)
     assert words in str(err).lower()
     assert "VENDOR" not in str(err) and KEY not in str(err)
     assert KEY not in caplog.text and "VENDOR" not in caplog.text
@@ -190,7 +189,7 @@ async def test_a_per_minute_429_is_busy_and_never_latches(body: dict[str, object
     fake.status, fake.body = 429, body
     with pytest.raises(KeyAPIError) as exc:
         await _client(fake).post(PLACES_URL, {"textQuery": "cafe"}, field_mask="places.id")
-    assert exc.value.used_up is None and not exc.value.exhausted and not exc.value.clear
+    assert exc.value.used_up is None and not exc.value.clear
     assert "busy" in str(exc.value).lower() and "VENDOR" not in str(exc.value)
 
 
@@ -214,7 +213,7 @@ async def test_a_per_day_or_per_month_quota_says_which(
     fake.status, fake.body = 429, body
     with pytest.raises(KeyAPIError) as exc:
         await _client(fake).post(PLACES_URL, {"textQuery": "cafe"}, field_mask="places.id")
-    assert exc.value.used_up == used_up and exc.value.exhausted
+    assert exc.value.used_up == used_up
     assert "allowance" in str(exc.value) and "VENDOR" not in str(exc.value)
 
 

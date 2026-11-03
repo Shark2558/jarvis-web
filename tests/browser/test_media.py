@@ -425,3 +425,354 @@ def test_home_and_work_are_hidden_when_integrations_says_maps_is_off(rig: Rig) -
     c.page.wait_for_timeout(300)  # a places answer arriving late must not show it again
     assert c.page.locator("#integMaps").is_hidden() and c.page.locator("#mapsEdit").count() == 0
     assert rig.saved == [] and c.errors == []
+
+
+def test_maps_off_shows_no_error_and_no_retry_even_when_its_check_would_fail(rig: Rig) -> None:
+    """Merge of FE-11 and the final review: while maps_available is false the section is not
+    asked for at all, so a failing /v1/maps/places can't bring it back as an error with Retry."""
+    c = rig.c
+    asked: list[str] = []
+
+    def failing(route: Any) -> None:
+        asked.append(route.request.method)
+        body = json.dumps({"error": "unavailable", "detail": "Try later."})
+        route.fulfill(status=503, content_type="application/json", body=body)
+
+    _json(c.page, "**/v1/integrations", INTEG_OFF)
+    c.page.route("**/v1/maps/places", failing)  # the newest route answers first
+    c.open()
+    c.open_panel("integrations")
+    c.page.locator("#integrations .integ").wait_for()  # drawn with the maps: false it fired
+    c.page.wait_for_function("() => document.getElementById('integMaps').hidden === true")
+    asked.clear()  # a check sent before the answer said "off" doesn't count
+    c.page.evaluate(
+        "document.dispatchEvent(new CustomEvent('jarvis:panel',"
+        " {detail: {id: 'integrations', open: true}}))"
+    )
+    c.page.wait_for_timeout(300)
+    assert c.page.locator("#integMaps").is_hidden() and c.page.locator("#mapsRetry").count() == 0
+    assert asked == []
+
+
+# ---- review FE-2: the Maps and YouTube Vitals lines wrap; "paused" is never cut off ------------
+
+PAUSED = {
+    **QUOTA,
+    "maps_search": {**QUOTA["maps_search"], "used": 31500, "left": 0, "reached": True},
+    "maps_route_walk": {**QUOTA["maps_route_walk"], "used": 63000, "left": 0, "reached": True},
+    "youtube_search": {**QUOTA["youtube_search"], "used": 90, "left": 0, "reached": True},
+}
+
+
+@pytest.mark.parametrize("width", [1366, 390])
+def test_vitals_maps_and_youtube_lines_are_never_cut_off(
+    browser: Any, server_url: str, token: str, width: int
+) -> None:
+    c = Console(browser, server_url, token, {"width": width, "height": 900})
+    try:
+        Rig(c)
+        _json(c.page, "**/v1/quota", PAUSED)  # the newest route answers first
+        c.open()
+        c.open_panel("vitals")
+        c.page.wait_for_function("document.getElementById('sMaps').textContent.includes('paused')")
+        maps = str(c.page.locator("#sMaps").text_content())
+        assert maps.endswith("· two-wheeler paused · walking paused")  # FE-10: same text
+        yt = str(c.page.locator("#sYouTube").text_content())
+        assert yt == "90 of 90 searches today · paused until midnight Pacific"
+        for el in ("#sMaps", "#sYouTube"):
+            fits = c.page.locator(el).evaluate(
+                "el => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().right"
+                " <= el.closest('.pbody').getBoundingClientRect().right + 0.5"
+            )
+            assert fits, el
+        # a short value on another row keeps its one line, right-aligned
+        net = c.page.locator("#sNet").evaluate(
+            "el => [getComputedStyle(el).whiteSpace, getComputedStyle(el).textAlign]"
+        )
+        assert net == ["nowrap", "right"]
+        overflow = c.page.evaluate(
+            "document.documentElement.scrollWidth - document.documentElement.clientWidth"
+        )
+        assert overflow <= 0
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+# ---- review FE-3: keyboard focus never falls to <body> after a re-render ------------------------
+
+
+def _active(c: Console) -> str:
+    return str(
+        c.page.evaluate(
+            "(() => { const a = document.activeElement;"
+            " return a === document.body || !a ? 'BODY' : (a.id || a.className || a.tagName); })()"
+        )
+    )
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, PHONE], ids=["desktop", "phone"])
+def test_keyboard_focus_stays_on_a_control_after_each_media_action(
+    browser: Any, server_url: str, token: str, viewport: dict[str, int]
+) -> None:
+    c = Console(browser, server_url, token, viewport)
+    try:
+        rig = Rig(c)
+        _json(c.page, "**/v1/chat", _reply("Here is some music.", [VIDEOS]))
+        c.open()
+        c.send("play some music")
+        c.page.locator(".row.jarvis .mvideos").wait_for()
+        # Play (Enter): on a phone the Media tab replaces the chat, so focus goes into the panel
+        c.page.locator(".mvideos .mplay").first.focus()
+        c.page.keyboard.press("Enter")
+        c.page.locator("#mediaStage iframe").wait_for(state="attached")
+        assert _active(c) != "BODY"
+        assert c.page.evaluate("document.activeElement.closest('.panel') !== null")
+        # a queue item (Enter): focus lands on the now-current item's button
+        c.page.locator("#mediaQueue .mqbtn").nth(1).focus()
+        c.page.keyboard.press("Enter")
+        c.page.wait_for_function(
+            "document.querySelector('#mediaStage iframe').src.includes('/embed/abcdefghijk')"
+        )
+        assert _active(c) == "mqbtn"
+        assert c.page.evaluate("document.activeElement.getAttribute('aria-current')") == "true"
+        # Stop (Enter): focus goes to the panel heading
+        c.page.locator("#mediaStop").focus()
+        c.page.keyboard.press("Enter")
+        assert rig.iframes() == 0
+        assert _active(c) == "t-media"
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, PHONE], ids=["desktop", "phone"])
+def test_keyboard_focus_stays_in_the_maps_section(
+    browser: Any, server_url: str, token: str, viewport: dict[str, int]
+) -> None:
+    c = Console(browser, server_url, token, viewport)
+    try:
+        rig = Rig(c)
+        c.open()
+        c.open_panel("integrations")
+        edit = c.page.locator("#integMaps #mapsEdit")
+        edit.wait_for()
+        assert edit.text_content() == "Set Home and Work"
+        edit.focus()
+        c.page.keyboard.press("Enter")
+        assert _active(c) == "mapsHome"  # Set Home and Work -> the first field
+        c.page.locator("#mapsEdit").focus()
+        c.page.keyboard.press("Enter")  # Close
+        assert _active(c) == "mapsEdit"
+        c.page.locator("#mapsEdit").focus()
+        c.page.keyboard.press("Enter")  # open again
+        c.page.locator("#mapsHome").fill("Kowdiar")
+        c.page.locator("#integMaps form button[type=submit]").focus()
+        c.page.keyboard.press("Enter")  # Save
+        c.page.locator("#integMaps .inote", has_text="Saved").wait_for()
+        assert rig.saved == [{"home": "Kowdiar", "work": None}]
+        assert _active(c) == "mapsEdit"
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+# ---- review FE-4: the video stops whenever the Media panel is no longer shown -------------------
+
+
+def test_on_a_phone_switching_to_chat_stops_the_video(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c = Console(browser, server_url, token, PHONE)
+    try:
+        rig = Rig(c)
+        _json(c.page, "**/v1/chat", _reply("Here is some music.", [VIDEOS]))
+        c.open()
+        c.send("play some music")
+        c.page.locator(".row.jarvis .mvideos .mplay").first.click()
+        c.page.locator("#mediaStage iframe").wait_for(state="attached")
+        assert rig.iframes() == 1
+        c.page.locator('.dk[data-open="chat"]').click()
+        c.page.locator("#p-chat").wait_for(state="visible")
+        assert rig.iframes() == 0
+        # reset layout (appearance menu) with the panel shown: stops too
+        c.page.locator(".row.jarvis .mvideos .mplay").first.click()
+        c.page.locator("#mediaStage iframe").wait_for(state="attached")
+        c.page.evaluate("document.dispatchEvent(new CustomEvent('jarvis:reset-layout', {}))")
+        assert rig.iframes() == 0
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+def test_on_a_desktop_another_panel_opening_keeps_the_video(rig: Rig) -> None:
+    c = rig.c
+    _json(c.page, "**/v1/chat", _reply("Here is some music.", [VIDEOS]))
+    c.open()
+    c.send("play some music")
+    c.page.locator(".row.jarvis .mvideos .mplay").first.click()
+    c.page.locator("#mediaStage iframe").wait_for(state="attached")
+    c.open_panel("vitals")  # the Media panel is still shown beside it
+    assert rig.iframes() == 1
+    c.page.evaluate("document.dispatchEvent(new CustomEvent('jarvis:reset-layout', {}))")
+    assert rig.iframes() == 0  # reset closes every panel but the chat
+    assert c.errors == []
+
+
+# ---- review FE-5: prototype keys are never a mode -----------------------------------------------
+
+
+@pytest.mark.parametrize("mode", ["toString", "constructor", "__proto__", "hasOwnProperty"])
+def test_a_route_with_a_prototype_key_as_mode_is_dropped(rig: Rig, mode: str) -> None:
+    c = rig.c
+    c.open()
+    c.page.wait_for_function("!!window.JarvisMedia")
+    got = c.page.evaluate(
+        "(card) => window.JarvisMedia.cards(document.createElement('div'), [card])",
+        {**ROUTE, "mode": mode},
+    )
+    assert got is None
+    assert c.page.evaluate(
+        "(card) => window.JarvisMedia.cards(document.createElement('div'), [card]) !== null", ROUTE
+    )
+    assert c.errors == []
+
+
+def test_scope_summary_counts_a_prototype_key_as_another_permission(rig: Rig) -> None:
+    c = rig.c
+    c.open()
+    c.page.wait_for_function("!!window.JarvisIntegrations")
+    for key in ("constructor", "toString", "__proto__"):
+        got = c.page.evaluate("(k) => window.JarvisIntegrations.scopeSummary([k])", key)
+        assert got == "1 other permission", key
+    assert c.errors == []
+
+
+# ---- review FE-6: right-to-left place names keep the route's reading order ---------------------
+
+HEB_FROM = "תל אביב"  # Tel Aviv
+HEB_TO = "ירושלים"  # Jerusalem
+
+
+def test_a_hebrew_route_reads_origin_arrow_destination(rig: Rig) -> None:
+    c = rig.c
+    route = {**ROUTE, "origin": HEB_FROM, "destination": HEB_TO}
+    rtl_places = {**PLACES, "items": [{**PLACES["items"][0], "name": HEB_TO, "address": HEB_FROM}]}
+    rtl_videos = {**VIDEOS, "items": [{**VIDEOS["items"][0], "title": HEB_TO, "channel": HEB_FROM}]}
+    _json(c.page, "**/v1/chat", _reply("Found.", [route, rtl_places, rtl_videos]))
+    c.open()
+    c.send("route")
+    head = c.page.locator(".row.jarvis .mroute .mrhead")
+    head.wait_for()
+    boxes = head.evaluate(
+        "el => [...el.children].map(n => { const r = n.getBoundingClientRect();"
+        " return [n.tagName, n.textContent, r.left, r.right]; })"
+    )
+    (t0, origin, o_l, o_r), (_, arrow, a_l, a_r), (t2, dest, d_l, _d_r) = boxes
+    assert origin == HEB_FROM and dest == HEB_TO
+    assert t0 == "BDI" and t2 == "BDI"
+    assert o_r <= a_l + 0.5 and a_r <= d_l + 0.5, boxes
+    assert arrow == " → "  # FE-10: the same arrow, from an escape
+    # place name / address and video title / channel are isolated too
+    for sel in (".mplaces .mtxt", ".mvideos .mtxt"):
+        tags = c.page.locator(f".row.jarvis {sel}").first.evaluate(
+            "el => [...el.querySelectorAll('bdi')].map(b => b.textContent)"
+        )
+        assert HEB_TO in tags and any(HEB_FROM in t for t in tags), (sel, tags)
+    assert c.errors == []
+
+
+# ---- review FE-11: a failing GET /v1/maps/places says so and offers Retry -----------------------
+
+
+def test_a_failing_maps_check_says_so_and_retry_fetches_again(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c = Console(browser, server_url, token, DESKTOP)
+    try:
+        Rig(c)
+        calls: list[str] = []
+        state = {"fail": True}
+
+        def places(route: Any) -> None:
+            calls.append(route.request.method)
+            if state["fail"]:
+                route.fulfill(
+                    status=503,
+                    content_type="application/json",
+                    body=json.dumps({"error": "unavailable", "detail": "Try again in a minute."}),
+                )
+            else:
+                route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps({"configured": True, "home": "Kowdiar", "work": None}),
+                )
+
+        c.page.route("**/v1/maps/places", places)  # the newest route answers first
+        c.open()
+        c.open_panel("integrations")
+        sec = c.page.locator("#integMaps")
+        sec.locator("#mapsRetry").wait_for()
+        assert "Couldn't check Maps" in str(sec.text_content())
+        assert sec.get_attribute("data-state") == "error"
+        before = len(calls)
+        state["fail"] = False
+        c.page.locator("#mapsRetry").click()
+        sec.locator("#mapsEdit").wait_for()
+        assert len(calls) == before + 1
+        assert "Kowdiar" in str(sec.text_content())
+        assert "Couldn't check Maps" not in str(sec.text_content())
+        assert [e for e in c.errors if "503" not in e] == []
+    finally:
+        c.close()
+
+
+def test_maps_section_stays_hidden_when_maps_is_not_set_up(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c = Console(browser, server_url, token, DESKTOP)
+    try:
+        Rig(c)
+        _json(c.page, "**/v1/maps/places", {"configured": False, "home": None, "work": None})
+        c.open()
+        c.open_panel("integrations")
+        c.page.wait_for_timeout(400)
+        assert c.page.locator("#integMaps").is_hidden()
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+# ---- review FE-10: the escaped strings render exactly as before --------------------------------
+
+
+def test_escaped_strings_render_as_before(rig: Rig) -> None:
+    c = rig.c
+    _json(c.page, "**/v1/chat", _reply("Found.", [ROUTE, VIDEOS]))
+    c.open()
+    c.send("route")
+    c.page.locator(".row.jarvis .mroute").wait_for()
+    fig = str(c.page.locator(".row.jarvis .mroute .mrfig").text_content())
+    assert fig == "1 h 15 min · 12.3 km by car · with current traffic"
+    sub = c.page.locator(".row.jarvis .mvideos .maddr").first.text_content()
+    assert sub == "Chan · 3:05"
+    c.open_panel("integrations")
+    c.page.locator("#integMaps #mapsEdit").click()
+    hint = c.page.locator("#integMaps .mform .fine").text_content()
+    assert hint == (
+        "An area, a street or a landmark — no phone numbers. "
+        "Sent to Google only when you ask for a travel time."
+    )
+    # the page's own slice 12 lines: character references render the same characters as before
+    first = c.page.evaluate(
+        """async () => {
+             const html = await (await fetch('/')).text();
+             const d = new DOMParser().parseFromString(html, 'text/html');
+             return [d.getElementById('sMaps').textContent,
+                     d.getElementById('sYouTube').textContent,
+                     d.querySelector('#integrations .empty').textContent];
+           }"""
+    )
+    assert first == ["—", "—", "Checking linked accounts…"]
+    assert c.errors == []

@@ -392,7 +392,7 @@
         <button class="pbtn" type="button" data-close aria-label="Close Integrations panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
       </div>
     </header>
-    <div class="pbody"><div id="integrations"><div class="empty">Checking linked accounts…</div></div>
+    <div class="pbody"><div id="integrations"><div class="empty">Checking linked accounts&#x2026;</div></div>
       <!-- slice 12 (console-media.js): Maps Home / Work, shown only when Maps is set up on this server -->
       <section class="integ imaps" id="integMaps" aria-labelledby="mapsT" hidden></section>
     </div>
@@ -468,8 +468,8 @@
         <div class="kv"><span>Approvals waiting</span><b id="sWait">0</b></div>
         <div class="kv"><span>Audit chain</span><b id="sAudit">—</b></div>
         <div class="kv"><span>Web search</span><b id="sWeb">—</b></div>
-        <div class="kv"><span>Maps</span><b id="sMaps">—</b></div>
-        <div class="kv"><span>YouTube</span><b id="sYouTube">—</b></div>
+        <div class="kv kwrap"><span>Maps</span><b id="sMaps">&#x2014;</b></div>
+        <div class="kv kwrap"><span>YouTube</span><b id="sYouTube">&#x2014;</b></div>
         <div class="kv"><span>Connection</span><b id="sNet">Online</b></div>
       </div>
     </div>
@@ -540,6 +540,13 @@
   <h2 id="memoryDialogTitle"></h2>
   <div id="memoryDialogText"></div>
   <div class="actions"><button class="btn lift" id="memoryDialogNo" type="button">Not now</button><button class="btn primary lift" id="memoryDialogYes" type="button">Switch on</button></div>
+</dialog>
+
+<!-- Drive (slice 12 FE-1, console-drive.js): switching a folder on lets JARVIS read it and send what it reads to Claude, so it asks first -->
+<dialog class="bdialog" id="driveDialog" role="alertdialog" aria-labelledby="driveDialogTitle" aria-describedby="driveDialogText">
+  <h2 id="driveDialogTitle"></h2>
+  <div id="driveDialogText"></div>
+  <div class="actions"><button class="btn lift" id="driveDialogNo" type="button">Not now</button><button class="btn primary lift" id="driveDialogYes" type="button">Switch on</button></div>
 </dialog>
 
 <!-- phones: the panels that do not fit the tab bar (console-deck.js) -->

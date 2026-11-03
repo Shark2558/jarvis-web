@@ -125,10 +125,16 @@ def test_an_assumed_country_is_said_on_the_card() -> None:
 def test_the_browser_check_mirrors_the_servers_cleaning() -> None:
     js = JS.read_text(encoding="utf-8")
     # the same blank-rendering characters the server strips; a card still holding one is dropped
+    # (the merge: the unassigned ones too, U+2065, U+FFF0-FFF8 and the whole tag block, which
+    # takes in the variation selectors supplement U+E0100-E01EF)
     hexes = ("3164", "115f", "1160", "ffa0", "2800", "034f", "17b4", "17b5", "180b", "180f",
-             "fe00", "fe0d", "{e0100}", "{e01ef}")  # fmt: skip
+             "fe00", "fe0d", "2065", "fff0", "fff8", "{e0000}", "{e0fff}")  # fmt: skip
     for code in hexes:
         assert "\\u" + code in js, code
+    from jarvis.whatsapp.draft import _blank
+
+    for code in (0x2065, 0xFFF0, 0xFFF8, 0xE0000, 0xE0100, 0xE01EF, 0xE0FFF):
+        assert _blank(chr(code)), hex(code)  # the server drops the same ones
     assert "\\p{Cc}\\p{Cf}\\p{Co}\\p{Cs}" in js  # the categories the server drops
     assert "clean(text) !== text" in js  # anything the server would have changed is refused
     assert "\\n{4,}" in js  # more than two blank lines

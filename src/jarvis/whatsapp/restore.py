@@ -14,7 +14,9 @@ Only a result that answers a `whatsapp_draft` call of the turn just before it co
 may repeat across turns), only a `draft_ready` one that is not an error, and at most `MAX_DRAFTS`
 per reply, as on the live reply. Each card belongs to the next assistant reply with text: the one
 the owner saw it under. The stored text is what the model was shown (`tools.external.model_text`
-removed what can't be seen), so the rebuilt link is the one for that text.
+removed what can't be seen), so the rebuilt link is the one for that text. A text today's
+`clean_text` would change, or `stacked` refuses (SEC-1, FE-8), is skipped (`draft_card`), never
+shown cleaned.
 """
 
 from __future__ import annotations

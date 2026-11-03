@@ -423,6 +423,16 @@ def test_lock_pins_every_runtime_dependency_of_pyproject() -> None:
     assert [n for n in names if _norm(n) not in pinned] == []
 
 
+def test_the_image_carries_its_own_time_zone_data() -> None:
+    """Code review CR-7: the quota ledger reads Pacific time (ZoneInfo("America/Los_Angeles"));
+    an image without the system zone files would fail at start whenever a Google API key is
+    set. `tzdata` is a runtime dependency, locked with its hashes."""
+    deps = (ROOT / "pyproject.toml").read_text(encoding="utf-8").split("dependencies = [", 1)[1]
+    assert re.search(r'^\s+"tzdata[>=<]', deps.split("]\n", 1)[0], re.M)
+    lock = LOCK.read_text(encoding="utf-8")
+    assert re.search(r"^tzdata==[0-9][0-9a-z.]* \\\n\s+--hash=sha256:[0-9a-f]{64}", lock, re.M)
+
+
 def test_browser_job_pins_playwright(ci: dict[str, Any]) -> None:
     run = "\n".join(str(s.get("run", "")) for s in ci["jobs"]["browser"]["steps"])
     assert "playwright==1.63.0" in run

@@ -152,6 +152,27 @@ def test_a_stored_draft_is_checked_again_before_it_is_a_card() -> None:
     assert stored_drafts(_exchange(_result(), name="maps_search")) == []
 
 
+def test_a_stored_text_the_new_clean_rule_refuses_is_skipped_never_shown_altered() -> None:
+    """Merge with security review SEC-1 / FE-8: a draft stored before the strict rule (or forged
+    into the history) whose text `clean_text` would now change, or `stacked` refuses, is not
+    rebuilt — neither as it was (an invisible channel) nor cleaned (a text the owner never
+    saw). A text that still passes comes back exactly as stored."""
+    hidden = "Confi" + "\u200c\u200d" * 40 + "rmed"  # SEC-1: joiners between Latin letters
+    for text in (
+        hidden,
+        "Con\u200cfir\u200dmed",
+        "see\u00a0you",  # NBSP: now one plain space
+        "ok\ufe0f",  # FE0F after a letter
+        "tag\U000e0041",  # a tag character
+        "co\u00adop",  # soft hyphen
+        "a\u0301\u0302\u0303\u0304\u0305",  # FE-8: five stacked marks
+    ):
+        assert stored_drafts(_exchange(_result(text=text))) == [], ascii(text)
+    malayalam = "\u0d38\u0d4d\u200c\u0d24"  # a ZWNJ between two Malayalam letters stays
+    (kept,) = stored_drafts(_exchange(_result(text=malayalam)))
+    assert kept.card.text == malayalam and kept.card.link == wa_link("+919876543210", malayalam)
+
+
 def test_an_unknown_source_carries_the_warning() -> None:
     (d,) = stored_drafts(_exchange(_result(to={"number": "+919876543210", "from": "made-up"})))
     assert d.card.warning == WARNING

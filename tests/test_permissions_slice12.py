@@ -234,6 +234,67 @@ async def test_the_wiring_registers_contacts_and_whatsapp_in_their_rows() -> Non
     ]
 
 
+def _type_lists(node: Any, where: str = "") -> list[str]:
+    """Every place in a JSON schema whose "type" is a list (some OpenAI-compatible backends
+    refuse type arrays, and one bad schema would break EVERY tool call: code review CR-6)."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        if isinstance(node.get("type"), list):
+            found.append(where or "/")
+        for k, v in node.items():
+            found += _type_lists(v, f"{where}/{k}")
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            found += _type_lists(v, f"{where}/{i}")
+    return found
+
+
+async def test_no_registered_tool_schema_uses_a_type_list() -> None:
+    """Every tool build_gateway can register (tools/setup.py), with every integration on:
+    Google linked, memory, web search, documents, the undo bin, Drive and the server's key."""
+    from datetime import UTC, datetime
+
+    from memory_fakes import rig as memory_rig
+    from web_fakes import FakeTavily
+
+    from jarvis.undo.service import UndoBin
+    from jarvis.undo.store import DeletedStore
+    from jarvis.web.allowance import WebAllowance
+    from jarvis.web.service import WebService
+    from jarvis.web.tavily import TavilyProvider
+
+    full = await _real_gw({})
+    old = full.gateway.registry
+    web = WebService(
+        TavilyProvider(SecretStr("tvly-k"), http=FakeTavily().client()),
+        WebAllowance(MemoryDocs(), now=lambda: datetime(2026, 11, 15, tzinfo=UTC)),
+    )
+    youtube = old.get("youtube_search")
+    assert youtube is not None
+    gw = build_gateway(
+        get_settings(),
+        google=await people_connector(FakePeople()),
+        memory=memory_rig().svc,
+        web=web,
+        documents=DocumentService(AttachmentStore(MemoryDocs())),
+        undo=UndoBin(DeletedStore(MemoryDocs())),
+    )
+    for spec in old.specs():  # Drive and Maps / YouTube from the slice 12 rig
+        if gw.registry.get(spec.name) is None:
+            tool = old.get(spec.name)
+            assert tool is not None
+            gw.registry.register(tool)
+    names = {s.name for s in gw.registry.specs()}
+    for family in ("web_", "doc_", "memory_", "deleted_", "drive_", "maps_", "youtube_", "task"):
+        assert any(n.startswith(family) for n in names), family
+    bad = {
+        s.name: _type_lists(s.input_schema)
+        for s in gw.registry.specs()
+        if _type_lists(s.input_schema)
+    }
+    assert bad == {}
+
+
 def test_without_google_whatsapp_drafts_still_exist_for_typed_numbers() -> None:
     names = {s.name for s in build_gateway(get_settings()).registry.specs()}
     assert "whatsapp_draft" in names and "contacts_search" not in names

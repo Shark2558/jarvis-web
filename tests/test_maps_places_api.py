@@ -160,6 +160,31 @@ async def test_places_api_round_trip(app_client: AsyncClient) -> None:
     assert r.json() == {"configured": True, "home": None, "work": None}
 
 
+async def test_saving_home_and_work_lands_in_the_audit_chain_without_the_address() -> None:
+    """Security review SEC-3: one audit entry per save, hashing the field names only — never
+    the address the owner typed."""
+    from jarvis.tools.audit import args_hash
+
+    app = create_app(_settings(), provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            audit = app.state.gateway.audit
+            before = (await audit.tail(500)).entries
+            body = {"home": "12 Kowdiar Road", "work": "Technopark Phase 3"}
+            assert (await c.put("/v1/maps/places", headers=AUTH, json=body)).status_code == 200
+            new = (await audit.tail(500)).entries[len(before) :]
+            assert len(new) == 1
+            (e,) = new
+            assert (e.agent, e.tool, e.outcome) == ("maps", "maps_places", "changed")
+            assert e.args_hash == args_hash({"fields": ["home", "work"]})
+            dumped = e.model_dump_json()
+            assert "Kowdiar" not in dumped and "Technopark" not in dumped
+            r = await c.put("/v1/maps/places", headers=AUTH, json={"home": "9845012345"})
+            assert r.status_code == 422
+            assert len((await audit.tail(500)).entries) == len(before) + 1  # refused: no entry
+            assert await audit.verify_all()
+
+
 @pytest.mark.parametrize(
     "body",
     [{"home": "x" * 201, "work": None}, {"home": "9845012345"}, {"home": 5}, {"nope": "x"}],

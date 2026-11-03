@@ -154,6 +154,37 @@ async def test_use_on_and_off(gc: AsyncClient) -> None:
     assert all(not f["confirmed"] for f in r.json()["folders"])
 
 
+async def test_switching_a_folder_on_or_off_lands_in_the_audit_chain(gc: AsyncClient) -> None:
+    """Security review SEC-3: one audit entry per change, with a hash of the folder id only —
+    never the plain id or the folder's name."""
+    from jarvis.tools.audit import args_hash
+
+    await _login(gc)
+    audit = gc.app.state.gateway.audit  # type: ignore[attr-defined]
+    before = (await audit.tail(500)).entries
+    r = await gc.put("/v1/drive/roots/root1", json={"use": True}, headers=CSRF)
+    assert r.status_code == 200
+    new = (await audit.tail(500)).entries[len(before) :]
+    assert len(new) == 1
+    (e,) = new
+    assert (e.agent, e.outcome) == ("drive", "changed") and e.tool == "drive_use"
+    assert e.args_hash == args_hash({"folder": "root1"})
+    assert "root1" not in e.model_dump_json() and "Registry" not in e.model_dump_json()
+    assert e.detail == "on"
+    await gc.put("/v1/drive/roots/root1", json={"use": False}, headers=CSRF)
+    last = (await audit.tail(1)).entries[-1]
+    assert last.detail == "off" and last.args_hash == e.args_hash
+    assert await audit.verify_all()
+
+
+async def test_a_refused_change_is_not_audited_as_changed(gc: AsyncClient) -> None:
+    await _login(gc)
+    audit = gc.app.state.gateway.audit  # type: ignore[attr-defined]
+    before = len((await audit.tail(500)).entries)
+    r = await gc.put("/v1/drive/roots/evil", json={"use": True}, headers=CSRF)
+    assert r.status_code == 403 and len((await audit.tail(500)).entries) == before
+
+
 async def test_a_folder_shared_by_another_account_is_refused(gc: AsyncClient) -> None:
     await _login(gc)
     r = await gc.put("/v1/drive/roots/evil", json={"use": True}, headers=CSRF)

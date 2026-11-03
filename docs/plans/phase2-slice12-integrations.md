@@ -230,6 +230,27 @@ card. Results never vouch (`may_vouch` false). No new R3 in this slice.
   `reply_cards.add_card` (caps per reply: 8 Maps / YouTube cards, 5 drafts, counted apart); the
   separate `ChatResponse.whatsapp` field, `whatsapp.cards` and the name-fence reader are gone.
 
+**Final review fixes (two fresh-context integrated reviews of 787d448; owner's decisions).**
+- No silent card drops: a tool refuses BEFORE it runs when the reply already shows 5 drafts / 8
+  Maps-YouTube cards (no allowance, look-up or per-message budget spent) and says "not shown —
+  ask again"; Approve all passes the batch's cards in. `youtube_playlist`: 2 pages a message.
+- A draft to a number the owner typed vouches for its result (`may_vouch`), so it no longer
+  taints its own round; one with a Contacts name still does.
+- `Preview.also` keeps the other row's WHOLE decision (Reminders "Ask first" also makes the
+  Calendar tools ask for a reminder: it closes a bypass); the row's hint says so.
+- Google quota words: "after midnight Pacific" only for the server key and YouTube; Calendar /
+  Gmail / Tasks / People get "Google is limiting requests for now; try again later".
+- `cloudrun.sh`: `JARVIS_DRIVE` on only when this run switched the Drive API on; the Maps key is
+  mounted only when this run's read-back matched and the stored secret is that key — every other
+  path unmounts it and says Maps and YouTube are off. Persona p4.4 (Drive "not switched on" line).
+- `/v1/integrations` adds `drive_available` / `maps_available` (booleans, not summary blocks:
+  each panel still reads its own endpoint); false hides Google Drive / Home and Work, and their
+  PUTs answer 409 `switched_off` while the row is Never.
+- A spoken route from Home stays one step unless the round read outside content (D3, unchanged).
+- A reopened conversation gets its WhatsApp draft cards back (`GET /v1/sessions/{id}` `drafts`,
+  rebuilt through `draft_card`); Maps / YouTube cards never come back.
+- One console invisible-character rule (`console-text.js`) that keeps ZWNJ / ZWJ for Malayalam.
+
 ## Slice 12: check after deploy
 None of these could be verified from the build sandbox. The owner checks them once, after the
 first deploy of this slice.

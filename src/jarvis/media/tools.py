@@ -21,6 +21,9 @@ youtube_my_playlists() / youtube_playlist(playlist, page?)
     checked before a unit is taken.
 The OWNER plays a result from its card (Media panel → Play, youtube-nocookie.com embed): JARVIS
 never starts playback itself. The model sees each video's number, id, title, channel and length.
+Code review CR-1: past the reply's `reply_cards.MAX_CARDS` cards nothing is fetched
+({status: too_many_cards}). CR-3: an allowance stop is an answer ({status: paused | unreadable,
+message}: the SKU's whole plain message, `quota.ledger.stops_answered`), not a failure.
 """
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ from jarvis.quota.ledger import (
     QuotaUnreadable,
     Reservation,
     Sku,
+    stops_answered,
     unreadable_message,
 )
 from jarvis.tools.base import Tool
@@ -387,7 +391,7 @@ def youtube_tools(service: YouTubeService) -> list[Tool]:
                 "required": ["query"],
             },
             ActionRisk.READ_ONLY,
-            y.search,
+            stops_answered(y.search),
             agent="youtube",
             summarize=_search_card,
             check=_check_search,
@@ -403,7 +407,7 @@ def youtube_tools(service: YouTubeService) -> list[Tool]:
             "needed, tell the owner that.",
             {"type": "object", "properties": {}},
             ActionRisk.READ_ONLY,
-            y.my_playlists,
+            stops_answered(y.my_playlists),
             agent="youtube",
             summary_template="List your YouTube playlists",
         ),
@@ -421,7 +425,7 @@ def youtube_tools(service: YouTubeService) -> list[Tool]:
                 "required": ["playlist"],
             },
             ActionRisk.READ_ONLY,
-            y.playlist,
+            stops_answered(y.playlist),
             agent="youtube",
             summarize=_playlist_card,
             check=_check_playlist,

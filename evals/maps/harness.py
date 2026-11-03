@@ -52,6 +52,20 @@ GOOGLE_NOW = 1_800_000_000.0
 TIERS = {t: f"mock-{t.value}" for t in ModelTier}
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 _FENCED = re.compile(r"<<EXTERNAL CONTENT from [^\n]*· ([0-9a-f]{6})>>.*?<<END \1>>", re.S)
+_UNTRUSTED = "[untrusted tool output"
+_STOPS = frozenset({"paused", "unreadable"})
+
+
+def _stopped(body: str) -> list[str]:
+    """An allowance stop's message, when the result is one."""
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return []
+    if isinstance(data, dict) and data.get("status") in _STOPS:
+        message = data.get("message")
+        return [message] if isinstance(message, str) else []
+    return []
 
 
 def settings() -> Settings:
@@ -122,7 +136,9 @@ class Rig:
         return out
 
     async def tool_errors(self) -> list[str]:
-        """The errors the model was told (plain words), from the stored tool results."""
+        """What the model was told instead of results (plain words), from the stored tool
+        results: a failure's error, and an allowance stop's whole message (code review CR-3:
+        {status: paused | unreadable, message} is an answer, not a failure)."""
         out = []
         for text in self.tool_results_seen():
             if text.startswith("{"):
@@ -132,6 +148,8 @@ class Rig:
                     continue
                 if isinstance(err, str):
                     out.append(err)
+            elif text.startswith(_UNTRUSTED):
+                out += _stopped(text.split("\n", 1)[-1])
         return out
 
     async def unconfirmed_writes(self) -> int:

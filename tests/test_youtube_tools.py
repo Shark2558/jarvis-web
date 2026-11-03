@@ -28,7 +28,7 @@ from jarvis.media.tools import (
     iso_duration,
     youtube_tools,
 )
-from jarvis.quota.ledger import YOUTUBE_SEARCH, YOUTUBE_UNITS, QuotaLedger
+from jarvis.quota.ledger import YOUTUBE_SEARCH, YOUTUBE_UNITS, QuotaLedger, unreadable_message
 from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.tools.budget import MAX_YOUTUBE_SEARCHES, turn_budget
@@ -254,16 +254,16 @@ async def test_search_and_details_count_against_their_own_daily_buckets() -> Non
 async def test_the_ninety_first_search_of_the_day_is_refused_and_nothing_is_sent() -> None:
     r = Rig()
     await r.docs.write([Set("jarvis_api_quota/youtube_search@2026-11-14", {"used": 90})])
-    gr = await r.call("youtube_search", query="x")
-    assert gr.outcome is GatewayOutcome.ERROR and "90" in (gr.error or "")
+    view = _view(await r.call("youtube_search", query="x"))
+    assert view["status"] == "paused" and "90" in view["message"]
     assert r.fake.requests == []
 
 
 async def test_a_corrupt_counter_fails_closed() -> None:
     r = Rig()
     await r.docs.write([Set("jarvis_api_quota/youtube_search@2026-11-14", {"used": -1})])
-    gr = await r.call("youtube_search", query="x")
-    assert gr.outcome is GatewayOutcome.ERROR and "can't read" in (gr.error or "")
+    view = _view(await r.call("youtube_search", query="x"))
+    assert view["status"] == "unreadable" and "can't read" in view["message"]
     assert r.fake.requests == []
 
 
@@ -509,7 +509,7 @@ async def test_an_owner_call_told_the_quota_is_gone_latches_todays_units() -> No
     assert "allowance" in (gr.error or "")
     assert (await r.ledger.use(YOUTUBE_UNITS)).reached
     gr = await r.call("youtube_my_playlists")  # nothing more is sent today
-    assert gr.outcome is GatewayOutcome.ERROR and r.fake.sent(f"{YT}/playlists") == []
+    assert _view(gr)["status"] == "paused" and r.fake.sent(f"{YT}/playlists") == []
 
 
 async def test_an_owner_call_whose_link_fails_first_takes_no_unit() -> None:
@@ -582,6 +582,32 @@ async def test_a_playlist_past_the_replys_card_cap_sends_nothing() -> None:
     view = _view(await r.call("youtube_playlist", playlist="liked"))
     assert view["card_shown"] is False and r.fake.requests == []
     assert (await r.ledger.use(YOUTUBE_UNITS)).used == 0
+
+
+async def test_todays_used_up_searches_are_answered_paused_with_the_whole_message() -> None:
+    """Code review CR-3: the stop's message reaches the model whole, as an answer."""
+    r = Rig()
+    stop = {"used": YOUTUBE_SEARCH.cap}
+    await r.docs.write([Set("jarvis_api_quota/youtube_search@2026-11-14", stop)])
+    gr = await r.call("youtube_search", query="x")
+    assert gr.outcome is GatewayOutcome.EXECUTED
+    assert _view(gr) == {"status": "paused", "message": YOUTUBE_SEARCH.reached}
+    assert YOUTUBE_SEARCH.reached in gr.for_model() and len(YOUTUBE_SEARCH.reached) > 100
+    assert r.fake.requests == []
+
+
+async def test_used_up_units_pause_the_playlists_in_full_words() -> None:
+    r = Rig()
+    await r.link()
+    stop = {"used": YOUTUBE_UNITS.cap}
+    await r.docs.write([Set("jarvis_api_quota/youtube_units@2026-11-14", stop)])
+    for name, args in (("youtube_my_playlists", {}), ("youtube_playlist", {"playlist": "liked"})):
+        gr = await r.call(name, **args)
+        assert _view(gr) == {"status": "paused", "message": YOUTUBE_UNITS.reached}
+    await r.docs.write([Set("jarvis_api_quota/youtube_units@2026-11-14", {"used": "bad"})])
+    gr = await r.call("youtube_my_playlists")
+    assert _view(gr) == {"status": "unreadable", "message": unreadable_message(YOUTUBE_UNITS)}
+    assert r.fake.sent(f"{YT}/") == []
 
 
 async def test_drafts_do_not_fill_the_youtube_cards() -> None:

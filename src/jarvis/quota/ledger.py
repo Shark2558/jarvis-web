@@ -41,7 +41,7 @@ from __future__ import annotations
 import re
 import time
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, get_args
@@ -188,6 +188,28 @@ def unreadable_message(sku: Sku) -> str:
         f"{sku.label} are paused: JARVIS can't read {sku.when()}'s count, so nothing was sent "
         "to Google."
     )
+
+
+Answer = dict[str, Any]
+Run = Callable[[Answer], Awaitable[Answer]]
+
+
+def stops_answered(run: Run) -> Run:
+    """A tool run whose allowance stop is an ANSWER, not a failure (code review CR-3):
+    QuotaReached → {status: "paused", message}, QuotaUnreadable → {status: "unreadable",
+    message}, the way a missing Grant is {status: "permission_needed"}. The message is our own
+    plain words (the SKU's `reached` / `closed_today` / `unreadable_message`), reaching the model
+    whole — a failure's text is cut at 160 characters and starts "The tool failed"."""
+
+    async def answered(args: Answer) -> Answer:
+        try:
+            return await run(args)
+        except QuotaReached as exc:
+            return {"status": "paused", "message": str(exc)}
+        except QuotaUnreadable as exc:
+            return {"status": "unreadable", "message": str(exc)}
+
+    return answered
 
 
 class QuotaLedger:
@@ -388,5 +410,6 @@ __all__ = [
     "SkuUse",
     "UsedUp",
     "skus_for",
+    "stops_answered",
     "unreadable_message",
 ]

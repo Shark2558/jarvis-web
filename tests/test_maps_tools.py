@@ -35,6 +35,7 @@ from jarvis.quota.ledger import (
     MAPS_ROUTE_WALK,
     MAPS_SEARCH,
     QuotaLedger,
+    unreadable_message,
 )
 from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
@@ -97,6 +98,13 @@ def _fenced(text: str) -> bool:
     return text.startswith("<<EXTERNAL CONTENT from Google Maps") and bool(
         FENCE_END.fullmatch(text.rsplit("\n", 1)[1])
     )
+
+
+def _paused(gr: GatewayResult, status: str = "paused") -> str:
+    """The plain message of an allowance stop (code review CR-3: an answer, not a failure)."""
+    view = _view(gr)
+    assert view["status"] == status, view
+    return str(view["message"])
 
 
 # ---- registration ---------------------------------------------------------------------------
@@ -446,8 +454,8 @@ async def test_a_two_wheeler_route_at_its_enterprise_stop_never_reaches_google()
     r = Rig()
     await r.docs.write([Set("jarvis_api_quota/maps_route_2w@2026-11", {"used": MAPS_ROUTE_2W.cap})])
     gr = await r.call("maps_route", **{"from": "a", "to": "b"}, mode="two_wheeler")
-    assert gr.outcome is GatewayOutcome.ERROR
-    assert f"{MAPS_ROUTE_2W.cap:,}" in (gr.error or "") and "two-wheeler" in (gr.error or "")
+    said = _paused(gr)
+    assert f"{MAPS_ROUTE_2W.cap:,}" in said and "two-wheeler" in said
     assert r.fake.requests == []
     # drive (Pro) is a different SKU: it still goes
     assert (await r.call("maps_route", **{"from": "a", "to": "b"})).outcome is (
@@ -465,7 +473,7 @@ async def test_each_call_counts_against_its_sku_and_a_reached_stop_sends_nothing
     await r.docs.write([Set("jarvis_api_quota/maps_search@2026-11", {"used": stop})])
     sent = len(r.fake.requests)
     gr = await r.call("maps_search", query="cafe")
-    assert gr.outcome is GatewayOutcome.ERROR and f"{stop:,}" in (gr.error or "")
+    assert f"{stop:,}" in _paused(gr)
     assert len(r.fake.requests) == sent
 
 
@@ -480,7 +488,7 @@ async def test_a_corrupt_counter_fails_closed() -> None:
     r = Rig()
     await r.docs.write([Set("jarvis_api_quota/maps_route@2026-11", {"used": "lots"})])
     gr = await r.call("maps_route", **{"from": "a", "to": "b"}, mode="drive")
-    assert gr.outcome is GatewayOutcome.ERROR and "can't read" in (gr.error or "")
+    assert "can't read" in _paused(gr, "unreadable")
     assert r.fake.requests == []
 
 
@@ -522,7 +530,7 @@ async def test_a_per_day_quota_closes_only_today() -> None:
     r.fake.status = None
     sent = len(r.fake.requests)
     gr = await r.call("maps_search", query="cafe")
-    assert gr.outcome is GatewayOutcome.ERROR and "today" in (gr.error or "")
+    assert "today" in _paused(gr)
     assert len(r.fake.requests) == sent
     assert (await r.ledger.view())["maps_search"]["paused_today"] is True
 
@@ -587,7 +595,7 @@ async def test_a_call_refused_by_the_allowance_does_not_count_towards_the_hour()
     for i in range(MAX_MAPS_PER_HOUR + 5):
         with turn_budget():
             gr = await r.call("maps_search", query=f"q{i}")
-        assert gr.outcome is GatewayOutcome.ERROR and "hour" not in (gr.error or "")
+        assert "hour" not in _paused(gr)
     await r.docs.write([Set("jarvis_api_quota/maps_search@2026-11", {"used": 0})])
     with turn_budget():
         assert (await r.call("maps_search", query="now")).outcome is GatewayOutcome.EXECUTED
@@ -734,6 +742,30 @@ async def test_a_full_reply_does_not_spend_the_messages_maps_calls() -> None:
     with turn_budget() as budget:
         await r.call("maps_search", query="cafe")
     assert budget.maps == MAX_MAPS_CALLS
+
+
+async def test_a_reached_stop_is_answered_paused_with_the_whole_message() -> None:
+    """Code review CR-3: the allowance's stop is an answer (like permission_needed), with the
+    whole plain message — never "The tool failed…" cut at 160 characters."""
+    r = Rig()
+    await r.docs.write([Set("jarvis_api_quota/maps_route_2w@2026-11", {"used": MAPS_ROUTE_2W.cap})])
+    gr = await r.call("maps_route", **{"from": "a", "to": "b"}, mode="two_wheeler")
+    assert gr.outcome is GatewayOutcome.EXECUTED
+    assert _view(gr) == {"status": "paused", "message": MAPS_ROUTE_2W.reached}
+    assert MAPS_ROUTE_2W.reached in gr.for_model() and len(MAPS_ROUTE_2W.reached) > 100
+    assert "tool failed" not in gr.for_model().lower() and r.fake.requests == []
+
+
+async def test_a_closed_day_and_an_unreadable_count_are_answered_in_full_too() -> None:
+    r = Rig()
+    stored = {"used": 1, "closed_day": "2026-11-14"}  # NOW is 14 November, Pacific
+    await r.docs.write([Set("jarvis_api_quota/maps_search@2026-11", stored)])
+    gr = await r.call("maps_search", query="cafe")
+    assert _view(gr) == {"status": "paused", "message": MAPS_SEARCH.closed_today}
+    await r.docs.write([Set("jarvis_api_quota/maps_route@2026-11", {"used": "lots"})])
+    gr = await r.call("maps_route", **{"from": "a", "to": "b"})
+    assert _view(gr) == {"status": "unreadable", "message": unreadable_message(MAPS_ROUTE)}
+    assert unreadable_message(MAPS_ROUTE) in gr.for_model() and r.fake.requests == []
 
 
 async def test_a_shown_card_is_said_to_be_shown() -> None:

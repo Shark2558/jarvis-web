@@ -23,6 +23,8 @@ with the "Google Maps" attribution and its Open in Google Maps link (`reply_card
 names, addresses, durations and distances — never the links, ids or coordinates. Nothing is
 stored. Code review CR-1: when the reply already shows `reply_cards.MAX_CARDS` cards, a call is
 not made at all ({status: too_many_cards, card_shown: false}); every result says `card_shown`.
+CR-3: a stop of the allowance is an answer ({status: paused | unreadable, message}: the SKU's
+whole plain message, `quota.ledger.stops_answered`), not a failure.
 """
 
 from __future__ import annotations
@@ -51,6 +53,7 @@ from jarvis.quota.ledger import (
     QuotaUnreadable,
     Reservation,
     Sku,
+    stops_answered,
     unreadable_message,
 )
 from jarvis.tools.base import Tool
@@ -416,7 +419,7 @@ def maps_tools(service: MapsService) -> list[Tool]:
                 "required": ["query"],
             },
             ActionRisk.READ_ONLY,
-            m.search,
+            stops_answered(m.search),
             agent="maps",
             summarize=_search_card,
             check=_check_search,
@@ -443,7 +446,7 @@ def maps_tools(service: MapsService) -> list[Tool]:
                 "required": ["from", "to"],
             },
             ActionRisk.READ_ONLY,
-            m.route,
+            stops_answered(m.route),
             agent="maps",
             summarize=_route_card,
             check=_check_route,

@@ -331,6 +331,28 @@ async def test_a_latched_counter_stays_latched_when_repaired_from_unreadable() -
         await led.reserve(MAPS_SEARCH)
 
 
+async def test_stops_answered_turns_only_the_allowance_stops_into_answers() -> None:
+    """Code review CR-3: a stop is an answer with the whole message; anything else still raises."""
+    from jarvis.quota.ledger import stops_answered
+
+    long = MAPS_ROUTE_2W.closed_today
+    assert len(long) > 160  # what a failure's text would have been cut to
+
+    async def reached(_: dict[str, object]) -> dict[str, object]:
+        raise QuotaReached(long)
+
+    async def unreadable(_: dict[str, object]) -> dict[str, object]:
+        raise QuotaUnreadable("can't read")
+
+    async def broken(_: dict[str, object]) -> dict[str, object]:
+        raise RuntimeError("other")
+
+    assert await stops_answered(reached)({}) == {"status": "paused", "message": long}
+    assert await stops_answered(unreadable)({}) == {"status": "unreadable", "message": "can't read"}
+    with pytest.raises(RuntimeError):
+        await stops_answered(broken)({})
+
+
 @pytest.mark.parametrize("latched", ["yes", 1, None])
 async def test_a_latched_flag_that_is_not_a_boolean_fails_closed(latched: object) -> None:
     docs = MemoryDocs()

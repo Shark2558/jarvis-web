@@ -1,25 +1,44 @@
 # tests/test_reply_cards.py — slice 12 D3/D4: the console cards (place, route, video) a reply
 # carries. A tool adds a card for the owner's screen beside its result (never in what the model
-# sees); the Brain collects the cards of one owner message onto the reply and its stored turn; every
-# field is re-checked on the way in, so a card can't carry a non-Google link, a bad video id, or a
-# stored turn that no longer reads back (it is dropped, never fails the conversation).
+# sees); the Brain collects the cards of one owner message onto the reply (never the stored turn);
+# every field is checked when a card is made, so a card can't carry a non-Google link or a bad
+# video id. Final review: a full reply is known before a tool runs (`reply_full`).
 from __future__ import annotations
 
 from typing import Any
 
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from jarvis.core.models import ChatResponse, Session, Turn
 from jarvis.llm.base import Role
 from jarvis.tools.reply_cards import (
     MAX_CARDS,
+    MAX_DRAFTS,
+    AnyCard,
     PlacesCard,
+    ReplyCard,
     RouteCard,
     VideosCard,
+    WhatsAppCard,
     add_card,
     collecting_cards,
-    parse_cards,
+    reply_full,
 )
+from jarvis.whatsapp.draft import wa_link
+
+_ONE: TypeAdapter[AnyCard] = TypeAdapter(ReplyCard)
+
+
+def parse_cards(raw: list[Any]) -> list[AnyCard]:
+    """The cards among `raw` that can be made (each checked field by field), in order."""
+    out: list[AnyCard] = []
+    for item in raw:
+        try:
+            out.append(_ONE.validate_python(item))
+        except ValidationError:
+            continue
+    return out
 
 
 def _places(url: str = "https://maps.google.com/?cid=1") -> dict[str, Any]:
@@ -113,3 +132,23 @@ def test_cards_ride_on_the_live_reply_only_never_on_the_stored_turn() -> None:
     assert "cards" not in Turn.model_fields
     t = Turn(role=Role.ASSISTANT, content="Here")
     assert "maps.google.com" not in Session(user_id="u", turns=[t]).model_dump_json()
+
+
+def _draft(i: int) -> WhatsAppCard:
+    text = f"hi {i}"
+    return WhatsAppCard(number="+919876543210", text=text, link=wa_link("+919876543210", text))
+
+
+def test_reply_full_is_known_per_kind_before_a_tool_runs() -> None:
+    got: list[AnyCard] = []
+    assert reply_full(drafts=True) is False and reply_full(drafts=False) is False  # no reply
+    with collecting_cards(got):
+        for i in range(MAX_DRAFTS):
+            assert reply_full(drafts=True) is False
+            assert add_card(_draft(i))
+        assert reply_full(drafts=True) is True  # five drafts: the sixth would be dropped
+        assert reply_full(drafts=False) is False  # Maps / YouTube cards are counted apart
+        for _ in range(MAX_CARDS):
+            assert add_card(VideosCard.model_validate(_video()))
+        assert reply_full(drafts=False) is True
+        assert add_card(_draft(9)) is False and add_card(PlacesCard()) is False

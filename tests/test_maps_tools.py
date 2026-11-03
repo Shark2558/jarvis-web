@@ -41,7 +41,7 @@ from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.tools.budget import MAX_MAPS_CALLS, turn_budget
 from jarvis.tools.external import FENCE_END
 from jarvis.tools.gateway import GatewayOutcome, GatewayResult
-from jarvis.tools.reply_cards import collecting_cards
+from jarvis.tools.reply_cards import MAX_CARDS, PlacesCard, collecting_cards
 from jarvis.tools.taint import context_trust, untrusted_seen
 
 NOW = datetime(2026, 11, 15, 6, 0, tzinfo=UTC)
@@ -568,8 +568,10 @@ async def test_at_most_three_maps_calls_per_message() -> None:
 async def test_at_most_thirty_maps_calls_an_hour_per_owner() -> None:
     r = Rig()
     for i in range(MAX_MAPS_PER_HOUR):
+        r.cards.clear()  # each call is its own owner message, with its own reply's cards
         with turn_budget():
             assert (await r.call("maps_search", query=f"q{i}")).outcome is GatewayOutcome.EXECUTED
+    r.cards.clear()
     with turn_budget():
         gr = await r.call("maps_search", query="one more")
     assert gr.outcome is GatewayOutcome.ERROR and "hour" in (gr.error or "")
@@ -698,3 +700,41 @@ async def test_a_card_is_made_only_inside_a_message_and_never_more_than_the_cap(
             ToolCall(id="x", name="maps_search", arguments={"query": "cafe"}), scope=SCOPE
         )
     assert gr.outcome is GatewayOutcome.EXECUTED and r.cards == []
+
+
+# ---- final review: a full reply is refused before anything is spent ----------------------------
+
+
+async def test_a_full_reply_refuses_before_google_the_allowance_or_the_budget_is_touched() -> None:
+    r = Rig()
+    r.cards.extend(PlacesCard() for _ in range(MAX_CARDS))
+    with turn_budget() as budget:
+        for name, args in (
+            ("maps_search", {"query": "cafe"}),
+            ("maps_route", {"from": "Kowdiar", "to": "Kovalam"}),
+        ):
+            view = _view(await r.call(name, **args))
+            assert view["status"] == "not_shown", view
+            assert f"at most {MAX_CARDS} Maps / YouTube cards" in view["message"]
+            assert "ask for it again" in view["message"] and "places" not in view
+        assert budget.maps == MAX_MAPS_CALLS
+    assert r.fake.requests == [] and (await r.ledger.use(MAPS_SEARCH)).used == 0
+    assert len(r.cards) == MAX_CARDS
+
+
+async def test_a_card_that_still_can_not_be_added_is_said_not_shown_without_google_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defence in depth: if `add_card` says no after the call, the model is told the card was
+    not shown — and gets no Google Maps data to repeat without its attribution and link."""
+    from jarvis.places import tools as maps_module
+
+    monkeypatch.setattr(maps_module, "add_card", lambda card: False)
+    monkeypatch.setattr(maps_module, "reply_full", lambda *, drafts: False)
+    r = Rig()
+    for name, args in (
+        ("maps_search", {"query": "cafe"}),
+        ("maps_route", {"from": "a", "to": "b"}),
+    ):
+        view = _view(await r.call(name, **args))
+        assert view["status"] == "not_shown" and set(view) == {"status", "message"}

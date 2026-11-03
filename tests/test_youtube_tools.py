@@ -31,10 +31,10 @@ from jarvis.media.tools import (
 from jarvis.quota.ledger import YOUTUBE_SEARCH, YOUTUBE_UNITS, QuotaLedger
 from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
-from jarvis.tools.budget import MAX_YOUTUBE_SEARCHES, turn_budget
+from jarvis.tools.budget import MAX_YOUTUBE_PLAYLISTS, MAX_YOUTUBE_SEARCHES, turn_budget
 from jarvis.tools.external import FENCE_END
 from jarvis.tools.gateway import GatewayOutcome, GatewayResult
-from jarvis.tools.reply_cards import collecting_cards
+from jarvis.tools.reply_cards import MAX_CARDS, PlacesCard, collecting_cards
 from jarvis.tools.taint import context_trust, untrusted_seen
 from jarvis.web.ledger import web_conversation
 
@@ -554,3 +554,52 @@ async def test_details_lookup_needs_no_owner_link() -> None:
 def test_fake_transport_used_by_these_tests_never_follows_redirects() -> None:
     assert FakeGoogleKeyAPIs().client().follow_redirects is False
     assert isinstance(FakeGoogleKeyAPIs().client(), httpx.AsyncClient)
+
+
+# ---- final review: a full reply is refused first; playlists have a per-message budget -----------
+
+
+async def test_a_full_reply_refuses_search_and_playlist_before_anything_is_spent() -> None:
+    r = Rig()
+    await r.link()
+    await r.call("youtube_my_playlists")
+    sent = len(r.fake.requests)
+    used = (await r.ledger.use(YOUTUBE_UNITS)).used
+    r.cards.extend(PlacesCard() for _ in range(MAX_CARDS))
+    with turn_budget() as budget:
+        for name, args in (
+            ("youtube_search", {"query": "lofi"}),
+            ("youtube_playlist", {"playlist": 2}),
+        ):
+            view = _view(await r.call(name, **args))
+            assert view["status"] == "not_shown", view
+            assert f"at most {MAX_CARDS} Maps / YouTube cards" in view["message"]
+            assert "videos" not in view
+        assert budget.youtube_searches == MAX_YOUTUBE_SEARCHES
+        assert budget.youtube_playlists == MAX_YOUTUBE_PLAYLISTS
+    assert len(r.fake.requests) == sent and (await r.ledger.use(YOUTUBE_SEARCH)).used == 0
+    assert (await r.ledger.use(YOUTUBE_UNITS)).used == used
+    assert len(r.cards) == MAX_CARDS
+
+
+async def test_at_most_two_playlist_pages_per_message_like_the_searches() -> None:
+    r = Rig()
+    await r.link()
+    await r.call("youtube_my_playlists")
+    with turn_budget():
+        outs = [await r.call("youtube_playlist", playlist=2) for _ in range(3)]
+    assert [o.outcome for o in outs].count(GatewayOutcome.EXECUTED) == MAX_YOUTUBE_PLAYLISTS == 2
+    assert "2 playlist pages" in (outs[2].error or "")
+    assert len(r.fake.sent(f"{YT}/playlistItems")) == 2
+
+
+async def test_a_video_card_that_still_can_not_be_added_is_said_not_shown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jarvis.media import tools as yt_module
+
+    monkeypatch.setattr(yt_module, "add_card", lambda card: False)
+    monkeypatch.setattr(yt_module, "reply_full", lambda *, drafts: False)
+    r = Rig()
+    view = _view(await r.call("youtube_search", query="lofi"))
+    assert view["status"] == "not_shown" and set(view) == {"status", "message"}

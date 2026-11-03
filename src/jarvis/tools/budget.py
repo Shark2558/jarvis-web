@@ -17,7 +17,8 @@ and the gateway read it with `current_budget()`:
 - `drive` (slice 12 D1): drive_* calls the message may still make (6), then "Drive limit".
 - `maps` / `youtube_searches` (slice 12 D2): Google Maps calls (3) and YouTube searches (2) the
   message may still make — Google's free allowances are the whole deployment's, so a page that
-  says "look up 50 places" can't spend them.
+  says "look up 50 places" can't spend them. `youtube_playlists` (final review): pages of the
+  owner's playlists (2), in line with the searches — each costs up to three YouTube units.
 
 Outside a turn there is no budget (None): an approval being executed was decided by the owner.
 """
@@ -35,6 +36,7 @@ MAX_FREE_DELETES = 10
 MAX_DRIVE_CALLS = 6  # slice 12 D1: drive_* calls per owner message
 MAX_MAPS_CALLS = 3
 MAX_YOUTUBE_SEARCHES = 2
+MAX_YOUTUBE_PLAYLISTS = 2  # youtube_playlist pages per owner message (final review)
 
 DELETES_CAPPED = (
     f"More than {MAX_FREE_DELETES} deletes in one request: the first {MAX_FREE_DELETES} ran, and "
@@ -59,6 +61,10 @@ YOUTUBE_LIMIT = (
     f"YouTube search limit for this request reached ({MAX_YOUTUBE_SEARCHES} searches per "
     "message). Answer with what you have; the owner can ask again in a new message."
 )
+PLAYLIST_LIMIT = (
+    f"YouTube playlist limit for this request reached ({MAX_YOUTUBE_PLAYLISTS} playlist pages "
+    "per message). Answer with what you have; the owner can ask again in a new message."
+)
 
 
 @dataclass
@@ -71,6 +77,7 @@ class TurnBudget:
     drive: int = MAX_DRIVE_CALLS
     maps: int = MAX_MAPS_CALLS
     youtube_searches: int = MAX_YOUTUBE_SEARCHES
+    youtube_playlists: int = MAX_YOUTUBE_PLAYLISTS
 
 
 _current: contextvars.ContextVar[TurnBudget | None] = contextvars.ContextVar(
@@ -140,6 +147,16 @@ def take_youtube_search() -> None:
     budget.youtube_searches -= 1
 
 
+def take_youtube_playlist() -> None:
+    """Count one page of the owner's playlists; raises (plain words) past the message's 2."""
+    budget = _current.get()
+    if budget is None:
+        return
+    if budget.youtube_playlists <= 0:
+        raise RuntimeError(PLAYLIST_LIMIT)
+    budget.youtube_playlists -= 1
+
+
 def take_free_delete() -> bool:
     """Count one undo-able delete that would run without a card. False once the message has used
     its allowance: the caller turns the delete into an approval card. No turn: no cap."""
@@ -162,7 +179,9 @@ __all__ = [
     "MAX_FREE_DELETES",
     "MAX_MAPS_CALLS",
     "MAX_NEW_CARDS",
+    "MAX_YOUTUBE_PLAYLISTS",
     "MAX_YOUTUBE_SEARCHES",
+    "PLAYLIST_LIMIT",
     "TOO_MANY_CARDS",
     "YOUTUBE_LIMIT",
     "TurnBudget",
@@ -171,6 +190,7 @@ __all__ = [
     "take_drive_call",
     "take_free_delete",
     "take_maps_call",
+    "take_youtube_playlist",
     "take_youtube_search",
     "turn_budget",
 ]

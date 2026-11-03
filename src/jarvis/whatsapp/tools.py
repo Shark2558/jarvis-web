@@ -12,7 +12,17 @@ owner's own words or a Contacts match carries a warning line (`whatsapp.provenan
 R1 (nothing leaves JARVIS), with its own permission row ("WhatsApp drafts"). A name look-up
 reads Contacts, so it also obeys the Contacts row: the look-up names `contacts_search`
 (`Preview.also`) and the gateway applies that row's whole decision — Never refuses, Ask first
-makes a card (review S1). Not `may_vouch`: a contact's name is fenced.
+makes a card (review S1).
+
+Trust (final review): a ready draft to a number the owner TYPED (`number_source` "you": a text
+turn's words) vouches for its result (`may_vouch`): it holds only the owner's number and the
+text the model wrote, so a second draft or a reminder later in the same message is not turned
+into a card by the first draft. A result with a Contacts name (fenced: people write their own
+names), a choice list, or a number from anywhere else never vouches and taints the round.
+
+Cards (final review): at most `reply_cards.MAX_DRAFTS` drafts per reply. When the reply is full
+the call is refused before anything runs (no Contacts look-up) and its result says the draft was
+not shown and asks the owner to ask again — never "tap Open in WhatsApp" without a card.
 
 Review S3: what the owner hands to WhatsApp can carry other people's influence — a mail or a page
 read this round may have steered the text (2,000 characters of stolen data) and the recipient. So
@@ -34,7 +44,8 @@ from jarvis.logging import get_logger
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import has_invisible_chars, has_line_breaking_chars, one_line
 from jarvis.tools.context import require_tool_context
-from jarvis.tools.reply_cards import add_card
+from jarvis.tools.provenance import vouch
+from jarvis.tools.reply_cards import DRAFT_NOT_SHOWN, add_card, reply_full, showing_cards
 from jarvis.tools.taint import spoken_in_context, tainted_round
 from jarvis.whatsapp.draft import (
     ASSUMED_INDIA,
@@ -151,6 +162,8 @@ class WhatsAppDrafts:
         uid = require_tool_context().user_id
         text = text_arg(a.get("text"))
         kind, who = recipient_arg(a.get("to"))
+        if reply_full(drafts=True):  # refused before anything runs: no Contacts look-up
+            return _not_shown()
         if kind == "number":
             source = number_source(who)
             return _ready(None, who, text, source, _assumed(a.get("to"), who, source))
@@ -188,14 +201,20 @@ def _assumed(raw: Any, number: str, source: str) -> bool:
     return india_assumed(raw) or (source == "you" and not country_typed(number))
 
 
-def _ready(name: str | None, number: str, text: str, source: str, assumed: bool) -> dict[str, Any]:
+def _not_shown() -> Any:
+    """The reply already shows MAX_DRAFTS drafts: nothing made, nothing sent (our own words)."""
+    return vouch({"status": "not_shown", "sent": False, "message": DRAFT_NOT_SHOWN}, True)
+
+
+def _ready(name: str | None, number: str, text: str, source: str, assumed: bool) -> Any:
     """The result the model sees — and, beside it, the owner's draft card for this reply
-    (`reply_cards.add_card`: kind "whatsapp", number and text checked again, link rebuilt)."""
+    (`reply_cards.add_card`: kind "whatsapp", number and text checked again, link rebuilt).
+    Vouched only for a number the owner typed and no Contacts name (see the module docstring)."""
     card = draft_card(name=name, number=number, text=text, source=source, assumed=assumed)
     if card is None:  # can't happen for checked arguments; the owner can ask again
         log.warning("whatsapp draft card not made", extra={"tool": TOOL})
-    else:
-        add_card(card)  # within the reply's MAX_DRAFTS
+    elif not add_card(card) and showing_cards():  # within the reply's MAX_DRAFTS, or said so
+        return _not_shown()
     link = wa_link(number, text)
     to = {"number": number, "name": fenced(name) if name else None, "from": source}
     out: dict[str, Any] = {
@@ -210,7 +229,7 @@ def _ready(name: str | None, number: str, text: str, source: str, assumed: bool)
         out["warning"] = WARNING
     if assumed:
         out["country"] = f"{ASSUMED_INDIA}: no country code was given. If it isn't Indian, ask."
-    return out
+    return vouch(out, name is None and source == "you")
 
 
 def whatsapp_tools(contacts: ContactsClient | None) -> list[Tool]:
@@ -240,6 +259,7 @@ def whatsapp_tools(contacts: ContactsClient | None) -> list[Tool]:
             summarize=_card_text,
             preview=api.preview,
             ask_when=_asks,
+            may_vouch=True,  # only a draft to a number the owner typed (see `_ready`)
         )
     ]
 

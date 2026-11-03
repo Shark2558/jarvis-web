@@ -12,6 +12,11 @@ never means "used up". Which limit was hit is named by an ErrorInfo's `metadata.
 (e.g. "SearchTextRequestsPerDayPerProject"): only a per-day or per-month name is "used up".
 YouTube's own reasons: `quotaExceeded` / `dailyLimitExceeded` are its daily quota (used up for the
 day); `rateLimitExceeded` / `userRateLimitExceeded` are short-term (try again: "busy").
+
+Words (final review): `USED_UP_MSG` — "starts again after midnight Pacific time" — is true only for
+the allowances JARVIS counts in Pacific days and months: the server-key APIs (Places, Routes,
+YouTube) and YouTube on the owner's token (`speaks_pacific`). Calendar, Gmail, Tasks and People
+quota answers get the neutral `LIMITED_MSG`: their limits are not JARVIS's to explain.
 """
 
 from __future__ import annotations
@@ -32,6 +37,8 @@ USED_UP_MSG: dict[UsedUp, str] = {  # plain words for the owner, never Google's
     "midnight Pacific time.",
     "month": "Google says this month's allowance for that service is used up.",
 }
+LIMITED_MSG = "Google is limiting requests for now; try again later."
+YOUTUBE_PATH = "/youtube/"  # www.googleapis.com/youtube/v3/...: YouTube's Pacific-day units
 _DAY_UNIT = re.compile(r"/d(?:/|$)")
 _MONTH_UNIT = re.compile(r"/(?:mo|month)(?:/|$)")
 _MAX_ITEMS = 20  # details / violations looked at; an answer is capped at 1 MB anyway
@@ -103,6 +110,11 @@ def used_up(err: dict[str, Any]) -> UsedUp | None:
     return None
 
 
+def speaks_pacific(host: str, path: str) -> bool:
+    """Whether an owner-token call's quota answer may use `USED_UP_MSG`: YouTube only."""
+    return host == "www.googleapis.com" and path.startswith(YOUTUBE_PATH)
+
+
 def rate_limited(err: dict[str, Any]) -> bool:
     """A short-term limit (try again in a minute), when it is not a used-up quota."""
     return used_up(err) is None and bool(reasons(err) & RATE_LIMITED)
@@ -110,11 +122,13 @@ def rate_limited(err: dict[str, Any]) -> bool:
 
 __all__ = [
     "DAILY_REASONS",
+    "LIMITED_MSG",
     "RATE_LIMITED",
     "USED_UP_MSG",
     "UsedUp",
     "envelope",
     "rate_limited",
     "reasons",
+    "speaks_pacific",
     "used_up",
 ]

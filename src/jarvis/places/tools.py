@@ -21,7 +21,10 @@ through counts towards the owner's 30 an hour. Routes geocodes address waypoints
 Geocoding charge documented, so nothing else is reserved. The OWNER sees each result as a card
 with the "Google Maps" attribution and its Open in Google Maps link (`reply_cards`); the model sees
 names, addresses, durations and distances — never the links, ids or coordinates. Nothing is
-stored.
+stored. A reply already showing `reply_cards.MAX_CARDS` cards refuses the call before the message's
+budget, the hour or the allowance is touched (final review); a card that still can't be added
+leaves the model no Google data, only "not shown — ask again" (Google's terms: attribution and
+link with every result).
 """
 
 from __future__ import annotations
@@ -57,7 +60,17 @@ from jarvis.tools.budget import take_maps_call
 from jarvis.tools.card import one_line
 from jarvis.tools.context import current_tool_context, require_tool_context
 from jarvis.tools.external import wrap_external
-from jarvis.tools.reply_cards import PlaceItem, PlacesCard, RouteCard, add_card, google_maps_url
+from jarvis.tools.reply_cards import (
+    CARD_NOT_SHOWN,
+    AnyCard,
+    PlaceItem,
+    PlacesCard,
+    RouteCard,
+    add_card,
+    google_maps_url,
+    reply_full,
+    showing_cards,
+)
 from jarvis.tools.taint import content_tainted
 from jarvis.web.guard import query_problem
 
@@ -92,6 +105,13 @@ SEARCH_NOTE = (
 HOUR_LIMIT = (
     f"Maps limit reached: at most {MAX_MAPS_PER_HOUR} Maps look-ups an hour. Try again later."
 )
+NOT_SHOWN: dict[str, Any] = {"status": "not_shown", "message": CARD_NOT_SHOWN}
+
+
+def shown(card: AnyCard) -> bool:
+    """False when the owner won't see `card` although a reply is collecting (it is full): the
+    caller then returns NOT_SHOWN instead of Google's data. Outside a reply: True (a script)."""
+    return add_card(card) or not showing_cards()
 
 
 def alias(text: str) -> str | None:
@@ -273,27 +293,29 @@ class _Maps:
         query = str(a["query"]).strip()
         near = str(a["near"]).strip() if a.get("near") else ""
         text = f"{query} near {near}" if near else query
+        if reply_full(drafts=False):  # refused before anything is spent (final review)
+            return dict(NOT_SHOWN)
         r = await self._admit(MAPS_SEARCH)
         try:
             places = await search_text(self.s.client, text)
         except Exception as exc:
             await self._failed(exc, r)
             raise
-        add_card(
-            PlacesCard(
-                query=one_line(text, 300),
-                items=[
-                    PlaceItem(
-                        name=p.name or "(no name)",
-                        address=p.address,
-                        url=place_link(p),
-                        place_id=p.id,
-                        status=p.status,  # type: ignore[arg-type]
-                    )
-                    for p in places
-                ],
-            )
+        card = PlacesCard(
+            query=one_line(text, 300),
+            items=[
+                PlaceItem(
+                    name=p.name or "(no name)",
+                    address=p.address,
+                    url=place_link(p),
+                    place_id=p.id,
+                    status=p.status,  # type: ignore[arg-type]
+                )
+                for p in places
+            ],
         )
+        if not shown(card):
+            return dict(NOT_SHOWN)
         return {
             "query": text,
             "places": [_place_view(n, p) for n, p in enumerate(places, start=1)],
@@ -319,6 +341,8 @@ class _Maps:
     async def route(self, a: dict[str, Any]) -> dict[str, Any]:
         mode: Mode = a.get("mode") or "drive"
         depart = _depart(a)
+        if reply_full(drafts=False):  # refused before Home / Work are read or anything spent
+            return dict(NOT_SHOWN)
         origin, origin_label = await self._resolve(str(a["from"]).strip())
         dest, dest_label = await self._resolve(str(a["to"]).strip())
         r = await self._admit(ROUTE_SKU[mode])
@@ -337,17 +361,17 @@ class _Maps:
             }
         minutes, km = round(found.seconds / 60), round(found.meters / 1000, 1)
         traffic = TRAVEL[mode][1] is not None
-        add_card(
-            RouteCard(
-                origin=origin_label,
-                destination=dest_label,
-                mode=mode,
-                duration_minutes=minutes,
-                distance_km=km,
-                traffic=traffic,
-                url=directions_link(origin, dest, mode),
-            )
+        card = RouteCard(
+            origin=origin_label,
+            destination=dest_label,
+            mode=mode,
+            duration_minutes=minutes,
+            distance_km=km,
+            traffic=traffic,
+            url=directions_link(origin, dest, mode),
         )
+        if not shown(card):
+            return dict(NOT_SHOWN)
         return {
             **head,
             "found": True,

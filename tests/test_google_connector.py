@@ -17,6 +17,7 @@ from jarvis.integrations.google import (
     GoogleConnector,
     GoogleInvalid,
     GoogleNotConnected,
+    GoogleQuotaExceeded,
     GoogleScopesMissing,
     GoogleUncertain,
 )
@@ -451,3 +452,49 @@ async def test_revoke_is_best_effort(conn: GoogleConnector, fake: FakeGoogle) ->
     conn.http = httpx.AsyncClient(transport=httpx.MockTransport(boom))
     await conn.revoke("tok-2")  # never raises
     await conn.revoke("")  # nothing to revoke: no request
+
+
+# ---- slice 12 final review: quota words per service ------------------------------------------
+
+GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
+CAL_EVENTS = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+YT_ITEMS = "https://www.googleapis.com/youtube/v3/playlistItems"
+
+
+def _quota_403(reason: str) -> httpx.Response:
+    body = {"error": {"code": 403, "message": "VENDOR", "errors": [{"reason": reason}]}}
+    return httpx.Response(403, json=body)
+
+
+@pytest.mark.parametrize(("method", "url"), [("POST", CAL_EVENTS), ("GET", GMAIL)])
+async def test_a_calendar_or_gmail_quota_answer_is_neutral_never_youtubes_pacific_midnight(
+    conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle, method: str, url: str
+) -> None:
+    await store.put(UID, _tokens())
+    fake.on(method, url, _quota_403("quotaExceeded"), _quota_403("quotaExceeded"))
+    with pytest.raises(GoogleAPIError) as ei:
+        await conn.request(UID, method, url)
+    said = str(ei.value)
+    assert said == "Google is limiting requests for now; try again later."
+    assert "Pacific" not in said and "allowance" not in said and "VENDOR" not in said
+
+
+@pytest.mark.parametrize(("method", "url"), [("POST", CAL_EVENTS), ("GET", GMAIL)])
+async def test_a_calendar_or_gmail_rate_limit_still_says_try_again_shortly(
+    conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle, method: str, url: str
+) -> None:
+    await store.put(UID, _tokens())
+    fake.on(method, url, _quota_403("rateLimitExceeded"), _quota_403("rateLimitExceeded"))
+    with pytest.raises(GoogleAPIError) as ei:
+        await conn.request(UID, method, url)
+    assert "try again shortly" in str(ei.value) and "Pacific" not in str(ei.value)
+
+
+async def test_youtube_on_the_owners_token_keeps_the_pacific_midnight_words(
+    conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle
+) -> None:
+    await store.put(UID, _tokens())
+    fake.on("GET", YT_ITEMS, _quota_403("quotaExceeded"), _quota_403("quotaExceeded"))
+    with pytest.raises(GoogleQuotaExceeded) as ei:
+        await conn.request(UID, "GET", YT_ITEMS)
+    assert "midnight Pacific" in str(ei.value) and ei.value.period == "day"

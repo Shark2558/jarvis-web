@@ -13,6 +13,7 @@ from urllib.parse import quote
 
 import pytest
 from people_fakes import PEOPLE_UID, FakePeople, people_connector, person
+from pydantic import ValidationError
 
 from jarvis.config import Settings
 from jarvis.contacts.client import ContactsClient
@@ -31,7 +32,7 @@ from jarvis.tools.external import FENCE_PREFIX
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.policy import Effect, Policy, PolicyRule
 from jarvis.tools.registry import ToolRegistry
-from jarvis.tools.reply_cards import collecting_cards, parse_cards
+from jarvis.tools.reply_cards import collecting_cards
 from jarvis.tools.taint import context_trust
 from jarvis.whatsapp.draft import (
     NAME_MAX,
@@ -198,9 +199,10 @@ def test_a_draft_that_does_not_check_makes_no_card(over: dict[str, Any]) -> None
         {**GOOD, "kind": "whatsapp_v2"},
     ],
 )
-def test_a_card_that_does_not_read_back_is_dropped(bad: dict[str, Any]) -> None:
-    assert parse_cards([bad]) == []
-    assert parse_cards([bad, GOOD]) == [WhatsAppCard(**GOOD)]
+def test_a_card_that_does_not_read_back_is_never_made(bad: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        WhatsAppCard.model_validate(bad)
+    assert WhatsAppCard.model_validate(GOOD) == WhatsAppCard(**GOOD)
 
 
 # ---- provenance ---------------------------------------------------------------------------------
@@ -331,10 +333,12 @@ async def _drafted(
     return out, cards
 
 
-def test_the_tool_is_r1_and_never_vouches() -> None:
+def test_the_tool_is_r1_and_vouches_only_per_result() -> None:
+    """Final review: may_vouch (a draft to a number the owner typed does not taint its own
+    round); never trusted_output (a Contacts name or a choice list still does)."""
     (tool,) = whatsapp_tools(None)
     assert tool.name == "whatsapp_draft" and tool.risk is ActionRisk.READ_ONLY
-    assert tool.may_vouch is False and tool.trusted_output is False
+    assert tool.may_vouch is True and tool.trusted_output is False
     assert "never sends" in tool.description.lower()
 
 

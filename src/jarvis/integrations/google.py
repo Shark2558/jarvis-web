@@ -402,11 +402,7 @@ class GoogleConnector:
             if r.status_code == 403 and not SERVICE_DISABLED_REASONS.isdisjoint(_reasons(r)):
                 raise GoogleServiceDisabled(SERVICE_OFF_MSG)
             if r.status_code in (403, 429):  # slice 12: a used-up quota or a short-term limit
-                err = google_errors.envelope(r.content)
-                if (period := google_errors.used_up(err)) is not None:
-                    raise GoogleQuotaExceeded(google_errors.USED_UP_MSG[period], period=period)
-                if google_errors.rate_limited(err):
-                    raise GoogleAPIError(_friendly(429))
+                _raise_quota(url, google_errors.envelope(r.content))
             raise _error_for(r.status_code)
         if not r.content:
             return {}
@@ -435,6 +431,19 @@ class GoogleConnector:
         except httpx.HTTPError as exc:
             log.warning("google api unreachable", extra={"reason": type(exc).__name__})
             raise GoogleUncertain("Could not reach Google; try again shortly.") from exc
+
+
+def _raise_quota(url: str, err: dict[str, Any]) -> None:
+    """A quota answer's exception, if it is one (else returns). Only YouTube's units are counted
+    in Pacific days, so only YouTube says when they start again; Calendar, Gmail, Tasks and
+    People get neutral words (final review). A short-term limit is "try again shortly"."""
+    if (period := google_errors.used_up(err)) is not None:
+        u = httpx.URL(url)
+        if google_errors.speaks_pacific(u.host, u.path):
+            raise GoogleQuotaExceeded(google_errors.USED_UP_MSG[period], period=period)
+        raise GoogleAPIError(google_errors.LIMITED_MSG)  # may be per-minute: not "used up"
+    if google_errors.rate_limited(err):
+        raise GoogleAPIError(_friendly(429))
 
 
 def _error_for(status: int) -> GoogleAPIError:

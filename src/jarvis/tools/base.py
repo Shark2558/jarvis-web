@@ -30,8 +30,9 @@ class Preview:
 
     summary: str
     risk: ActionRisk | None = None
-    # Another tool's name whose permission rule also governs this call: a calendar tool that finds
-    # it is about to touch a reminder names the Reminders row, so "Never" there is total.
+    # Another tool's name whose permission rule also governs this call, with its whole decision: a
+    # calendar tool that finds it is about to touch a reminder names the Reminders row, so "Never"
+    # there refuses and "Ask first" there makes this call a card (slice 12 review S1).
     also: str | None = None
 
 

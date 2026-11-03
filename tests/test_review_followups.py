@@ -146,6 +146,40 @@ async def test_the_reminders_row_says_it_covers_the_calendar_tools_too() -> None
     row = next(g for g in GROUPS if g.id == "reminders")
     assert "Calendar tools" in row.hint and "reminder" in row.hint
     assert "Reminders" in row.refusal() and "Never" in row.refusal()
+    # slice 12 final review: the row's whole choice applies, not only Never
+    assert "Ask first" in row.hint and "Never also stops" not in row.hint
+
+
+# ---- slice 12 final review: the other row's WHOLE decision (Preview.also) ----
+
+
+async def test_reminders_ask_first_makes_the_calendar_tools_ask_for_a_tagged_reminder(
+    connected: GoogleConnector, fake_google: FakeGoogle
+) -> None:
+    """Kept on purpose (it closes a bypass): with Reminders on "Ask first", changing or deleting
+    a reminder through the Calendar tools is a card too — nothing reaches Google until approved."""
+    gw = _gw(connected, fake_google, _rules(Effect.ASK, "reminders"))
+    _plant(fake_google, "remravi01", summary="⏰ call Ravi", extendedProperties=TAG)
+    upd = await _call(gw, "calendar_update_event", "remravi01", **UPDATE)
+    assert upd.outcome is GatewayOutcome.AWAITING_CONFIRMATION and upd.pending is not None
+    assert upd.pending.reason is AskReason.OWNER_RULE
+    assert fake_google.sent("PATCH", "/events/remravi01") == []
+    gone = await _call(gw, "calendar_delete_event", "remravi01")
+    assert gone.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    assert fake_google.sent("DELETE", "/events/remravi01") == []
+    call = ToolCall(id="ok", name="calendar_update_event", arguments=upd.pending.arguments)
+    done = await gw.execute(call, confirmation_id=upd.pending.id, scope=SCOPE)
+    assert done.outcome is GatewayOutcome.EXECUTED
+    assert len(fake_google.sent("PATCH", "/events/remravi01")) == 1
+
+
+async def test_reminders_ask_first_leaves_plain_calendar_events_to_the_calendar_rows(
+    connected: GoogleConnector, fake_google: FakeGoogle
+) -> None:
+    gw = _gw(connected, fake_google, _rules(Effect.ASK, "reminders"))
+    _plant(fake_google, "evdentist1")
+    out = await _call(gw, "calendar_update_event", "evdentist1", **UPDATE)
+    assert out.outcome is GatewayOutcome.EXECUTED
 
 
 # ---- LOW 5: a tool that raised may have written ----

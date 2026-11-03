@@ -11,7 +11,9 @@ youtube_search(query, kind = video | music)
     search is already paid, so when the durations can't be had (videos.list failed, or the units
     are used up or unreadable) the videos are returned without them.
 youtube_my_playlists() / youtube_playlist(playlist, page?)
-    Only when the owner has linked Google AND granted youtube.readonly (`can_use_youtube`;
+    youtube_playlist pages count against the message's 2 (`budget.take_youtube_playlist`, final
+    review), like the searches. Only when the owner has linked Google AND granted youtube.readonly
+    (`can_use_youtube`;
     Integrations → Grant). Through `GoogleConnector.request` with the owner's token. "Liked videos"
     comes first (channels.list → relatedPlaylists.likes). `playlist`: a number from the last
     listing in this conversation, "liked", or a playlist id; `page`: the opaque next_page token
@@ -21,6 +23,8 @@ youtube_my_playlists() / youtube_playlist(playlist, page?)
     checked before a unit is taken.
 The OWNER plays a result from its card (Media panel → Play, youtube-nocookie.com embed): JARVIS
 never starts playback itself. The model sees each video's number, id, title, channel and length.
+A reply already showing `reply_cards.MAX_CARDS` cards refuses a search or a playlist page before
+anything is spent (final review); a card that still can't be added is "not shown — ask again".
 """
 
 from __future__ import annotations
@@ -52,11 +56,18 @@ from jarvis.quota.ledger import (
     unreadable_message,
 )
 from jarvis.tools.base import Tool
-from jarvis.tools.budget import take_youtube_search
+from jarvis.tools.budget import take_youtube_playlist, take_youtube_search
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
-from jarvis.tools.reply_cards import VideoItem, VideosCard, add_card
+from jarvis.tools.reply_cards import (
+    CARD_NOT_SHOWN,
+    VideoItem,
+    VideosCard,
+    add_card,
+    reply_full,
+    showing_cards,
+)
 from jarvis.web.guard import query_problem
 from jarvis.web.ledger import current_conversation
 
@@ -139,23 +150,26 @@ def _video_view(n: int, v: yt.Video) -> dict[str, Any]:
     return out
 
 
-def _card(videos: list[yt.Video], title: str = "") -> None:
-    add_card(
-        VideosCard(
-            title=one_line(title, 300),
-            items=[
-                VideoItem(
-                    id=v.id,
-                    title=v.title or "(no title)",
-                    channel=v.channel,
-                    duration=v.duration,
-                    embeddable=v.embeddable,
-                    live=v.live,
-                )
-                for v in videos
-            ],
-        )
+NOT_SHOWN: dict[str, Any] = {"status": "not_shown", "message": CARD_NOT_SHOWN}
+
+
+def _card(videos: list[yt.Video], title: str = "") -> bool:
+    """Add the reply's video card; False when a collecting reply is full (said "not shown")."""
+    card = VideosCard(
+        title=one_line(title, 300),
+        items=[
+            VideoItem(
+                id=v.id,
+                title=v.title or "(no title)",
+                channel=v.channel,
+                duration=v.duration,
+                embeddable=v.embeddable,
+                live=v.live,
+            )
+            for v in videos
+        ],
     )
+    return add_card(card) or not showing_cards()
 
 
 # ---- runs -------------------------------------------------------------------------------------
@@ -205,6 +219,8 @@ class _YouTube:
 
     async def search(self, a: dict[str, Any]) -> dict[str, Any]:
         query = str(a["query"]).strip()
+        if reply_full(drafts=False):  # refused before anything is spent (final review)
+            return dict(NOT_SHOWN)
         take_youtube_search()
         params: dict[str, Any] = {
             "part": "snippet",
@@ -219,7 +235,8 @@ class _YouTube:
             params["videoCategoryId"] = MUSIC_CATEGORY
         data, left = await self._key_get(YOUTUBE_SEARCH, yt.SEARCH_URL, params)
         videos = await self._with_details(yt.search_hits(data)[:SEARCH_RESULTS])
-        _card(videos)
+        if not _card(videos):
+            return dict(NOT_SHOWN)
         return {
             "query": query,
             "kind": a.get("kind") or "video",
@@ -315,6 +332,9 @@ class _YouTube:
         return ref, self._known_likes() == ref
 
     async def playlist(self, a: dict[str, Any]) -> dict[str, Any]:
+        if reply_full(drafts=False):  # refused before anything is spent (final review)
+            return dict(NOT_SHOWN)
+        take_youtube_playlist()
         granted = await self._granted()
         if granted is None:
             return {"status": "permission_needed", "message": GRANT_MSG}
@@ -330,7 +350,8 @@ class _YouTube:
         data = await self._owner_get(conn, uid, yt.ITEMS_URL, params)
         videos = await self._with_details(yt.playlist_videos(data)[:PLAYLIST_PAGE])
         title = LIKED_TITLE if liked else ""  # other titles are other people's words: not kept
-        _card(videos, title)
+        if not _card(videos, title):
+            return dict(NOT_SHOWN)
         out: dict[str, Any] = {
             "playlist": wrap_external(title, source=SOURCE) if title else pid,
             "videos": [_video_view(n, v) for n, v in enumerate(videos, start=1)],
@@ -391,7 +412,8 @@ def youtube_tools(service: YouTubeService) -> list[Tool]:
             "youtube_playlist",
             "The videos in one of the owner's playlists (20 at a time): playlist is its number "
             "from youtube_my_playlists, 'liked', or a playlist id; page is next_page from the "
-            "previous result. The owner sees a card and presses Play.",
+            "previous result. The owner sees a card and presses Play. At most 2 pages per "
+            "message.",
             {
                 "type": "object",
                 "properties": {

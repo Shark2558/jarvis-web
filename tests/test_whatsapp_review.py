@@ -443,6 +443,28 @@ def _wa(text: str) -> WhatsAppCard:
     return WhatsAppCard(number="+919876543210", text=text, link=wa_link("+919876543210", text))
 
 
+async def test_approve_all_says_a_sixth_draft_was_not_shown_instead_of_dropping_it() -> None:
+    """Final review: each approved call runs knowing the cards the batch's reply already has, so
+    a draft past the fifth is refused in plain words (nothing made, nothing sent) — not made and
+    then silently cut from the reply by `capped`."""
+    from jarvis.core.approve_all import Batch, CardStatus, _one
+
+    gw = await _gw(None, {"whatsapp": Effect.ASK})
+    with context_trust(untrusted=False, owner_text="WhatsApp 98765 43210 hi"):
+        held = await gw.execute(_call("98765 43210", "hi"), scope=SCOPE)
+    assert held.pending is not None and held.pending.bulk_ok  # an owner-rule card: bulk-able
+    store = InMemorySessionStore()
+    session = Session(user_id=PEOPLE_UID)
+    await store.save(session)
+    batch = Batch(session=session, scope=SCOPE, trace_id="t")
+    batch.cards = [_wa(f"earlier {i}") for i in range(MAX_DRAFTS)]  # the reply is full
+    result = await _one(gw, store, batch, held.pending.id)
+    assert result.status is CardStatus.DONE  # it ran: and said it made nothing
+    assert [c.text for c in batch.cards] == [f"earlier {i}" for i in range(MAX_DRAFTS)]
+    said = [b.content for t in batch.session.turns for b in t.blocks if hasattr(b, "tool_use_id")]
+    assert '"not_shown"' in said[-1] and "draft_ready" not in said[-1]
+
+
 async def test_approve_all_keeps_at_most_five_draft_cards() -> None:
     from jarvis.core import brain_decisions as decisions
     from jarvis.core.approve_all import Batch, _book
@@ -463,14 +485,48 @@ async def test_approve_all_keeps_at_most_five_draft_cards() -> None:
     assert sum(isinstance(c, PlacesCard) for c in batch.cards) == MAX_CARDS  # not crowded out
 
 
-async def test_drafts_across_rounds_are_capped_at_five() -> None:
-    """The Brain collects one message's cards across all its rounds into one list: the tool's
-    sixth draft (and later ones) still runs — its result says ready — but shows no card."""
+async def test_drafts_across_rounds_are_capped_at_five_and_the_sixth_says_so() -> None:
+    """The Brain collects one message's cards across all its rounds into one list: from the sixth
+    draft on, the tool refuses BEFORE it runs and its result says plainly that the draft was not
+    shown because of the per-reply limit, and asks the owner to ask again (final review: the old
+    result said "tap Open in WhatsApp" with no card on screen)."""
     gw = await _gw(None)
     cards: list[Any] = []
     with collecting_cards(cards):
-        for r in range(3):
-            for i in range(3):
-                out = await _draft(gw, "98765 43210", f"hi {r}{i}", said="98765 43210")
+        for n, (r, i) in enumerate((r, i) for r in range(3) for i in range(3)):
+            out = await _draft(gw, "98765 43210", f"hi {r}{i}", said="98765 43210")
+            assert out.outcome is GatewayOutcome.EXECUTED
+            if n < MAX_DRAFTS:
                 assert out.result["status"] == "draft_ready"
+                continue
+            assert out.result["status"] == "not_shown" and out.result["sent"] is False
+            said = out.for_model()
+            assert "Open in WhatsApp" not in said and "link" not in out.result
+            assert f"at most {MAX_DRAFTS} WhatsApp drafts" in said and "ask for it again" in said
     assert [c.text for c in cards] == ["hi 00", "hi 01", "hi 02", "hi 10", "hi 11"]
+
+
+async def test_a_sixth_draft_by_name_reads_no_contacts() -> None:
+    """Refused before it runs: a full reply spends no People API look-up either."""
+    fake = FakePeople(contacts=[RAVI])
+    gw = await _gw(fake)
+    cards: list[Any] = [_wa(f"hi {i}") for i in range(MAX_DRAFTS)]
+    with collecting_cards(cards):
+        out = await _draft(gw, "Ravi", said="WhatsApp Ravi I'm late")
+    assert out.result["status"] == "not_shown" and fake.searches() == []
+    assert len(cards) == MAX_DRAFTS
+
+
+async def test_a_draft_that_still_can_not_be_added_says_it_was_not_shown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defence in depth: if `add_card` says no after the run, the result still never tells the
+    owner to tap a button that is not there."""
+    from jarvis.whatsapp import tools as wa_tools
+
+    monkeypatch.setattr(wa_tools, "add_card", lambda card: False)
+    monkeypatch.setattr(wa_tools, "reply_full", lambda *, drafts: False)
+    gw = await _gw(None)
+    with collecting_cards([]):
+        out = await _draft(gw, "98765 43210", said="98765 43210")
+    assert out.result["status"] == "not_shown" and "Open in WhatsApp" not in out.for_model()

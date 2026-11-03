@@ -39,7 +39,6 @@ import time
 import weakref
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any
 
 from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
@@ -75,7 +74,7 @@ from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
 from jarvis.tools.budget import turn_budget
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
-from jarvis.tools.reply_cards import collecting_cards
+from jarvis.tools.reply_cards import AnyCard, collecting_cards
 from jarvis.tools.taint import context_trust, untrusted_seen
 from jarvis.web.ledger import cited_sources, web_conversation
 from jarvis.whatsapp.provenance import conversation_words
@@ -109,7 +108,7 @@ class _ReplyMeta:
     pending: list[PendingApproval]
     memory_used: list[MemoryRef]
     undo: list[UndoRef] = field(default_factory=list)  # slice 11: the reply's Undo chips
-    cards: list[Any] = field(default_factory=list)  # slice 12: Maps / YouTube / WhatsApp cards
+    cards: list[AnyCard] = field(default_factory=list)  # slice 12: Maps / YouTube / drafts
 
 
 @dataclass

@@ -35,7 +35,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -48,7 +48,7 @@ from jarvis.logging import get_logger
 from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.tools.card import one_line
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult, approved_via
-from jarvis.tools.reply_cards import capped
+from jarvis.tools.reply_cards import AnyCard, capped
 from jarvis.web.ledger import web_conversation
 from jarvis.whatsapp.provenance import conversation_words
 
@@ -124,7 +124,7 @@ class Batch:
     ran: int = 0  # approved calls that reached their tool (it returned, or raised while running)
     stopped: bool = False
     undo: list[UndoRef] = field(default_factory=list)  # undo-able deletes that ran: Undo chips
-    cards: list[Any] = field(default_factory=list)  # slice 12: the reply cards they made
+    cards: list[AnyCard] = field(default_factory=list)  # slice 12: the reply cards they made
 
     def outcome(self) -> decisions.Outcome:
         narrated = [r for r in self.results if r.status in _NARRATED]
@@ -212,7 +212,9 @@ async def _approve(gateway: Gateway, action: PendingAction, batch: Batch) -> dec
         conversation_words(batch.session),
         approved_via("approve-all"),
     ):
-        d = await decisions.approved(gateway, call, action, action.id, batch.scope)
+        d = await decisions.approved(
+            gateway, call, action, action.id, batch.scope, shown=batch.cards
+        )
     return d if d.result.pending is not None else replace(d, instruction=INSTRUCTION)
 
 

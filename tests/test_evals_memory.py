@@ -10,6 +10,31 @@ ROOT = Path(__file__).resolve().parents[1]
 RUN = ROOT / "evals" / "memory" / "run.py"
 
 
+def test_sensitive_scan_reads_stored_content_not_ids_or_timestamps() -> None:
+    """A short value such as "737" can appear by chance in a timestamp's microseconds; the
+    sensitive suite must only look at what memory stores as content (fact text, keywords,
+    source, profile blocks), else it fails a few runs in a hundred with nothing stored."""
+    probe = (
+        "import sys; sys.path.insert(0, sys.argv[1]); import run\n"
+        "ts = '2026-11-03T01:46:09.252737+00:00'\n"
+        "clean = {'exported_at': ts, 'settings': {'learn_consented_at': ts},\n"
+        "         'profile': {'about': '', 'work': ''},\n"
+        "         'facts': [{'id': 'm737abc', 'text': 'Prefers tea', 'keywords': ['tea'],\n"
+        "                    'source': None, 'created_at': ts, 'updated_at': ts}]}\n"
+        "assert '737' not in run._stored_content(clean)\n"
+        "leaky = {**clean, 'facts': [{**clean['facts'][0], 'keywords': ['pin 737']}]}\n"
+        "assert '737' in run._stored_content(leaky)\n"
+        "prof = {**clean, 'profile': {'about': 'PIN is 4321', 'work': ''}}\n"
+        "assert 'is 4321' in run._stored_content(prof)\n"
+        "src = {**clean, 'facts': [{**clean['facts'][0], 'source': 'hunter2'}]}\n"
+        "assert 'hunter2' in run._stored_content(src)\n"
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", probe, str(RUN.parent)], capture_output=True, text=True
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
 def test_memory_mock_evals_pass_their_gates() -> None:
     r = subprocess.run([sys.executable, str(RUN), "--mock"], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr

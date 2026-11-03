@@ -24,13 +24,16 @@
 // spaces at either end of a line, more than two blank lines in a row). S5: "Assumed India (+91)" when the
 // number was written without a country code. S7: the hint names who nothing is sent to, and what
 // opening does.
-// Security reviews SEC-1 and SEC-5: the same rule as the server, character for character (both are
-// tested over tests/fixtures/whatsapp_clean_cases.json): spaces and tabs become one plain space; FE0E
-// never stays; FE0F only inside a keycap or right after a code point whose emoji is cp + FE0F
-// (FE0F_BASES); ZWNJ / ZWJ only right after a virama (VIRAMAS), a ZWNJ also between two Arabic letters
-// (ARABIC_LETTERS), a ZWJ also inside an emoji sequence; unassigned code points go, but future emoji --
-// so no invisible channel can ride on a card that shows only the words. The three tables are exact
-// copies of the server's (tests/test_whatsapp_console.py compares them).
+// Security reviews SEC-1, SEC-5 and SEC-6: the same rule as the server, character for character (both
+// are tested over tests/fixtures/whatsapp_clean_cases.json): spaces and tabs become one plain space;
+// FE0E never stays; FE0F only inside a keycap or right after a code point whose emoji is cp + FE0F
+// (FE0F_BASES); a ZWNJ only between a virama (VIRAMAS) and a letter, a ZWJ the same, or right after the
+// Malayalam virama (the chillu), or inside a chain of emoji that is one RGI emoji ZWJ sequence -- judged
+// by the browser's own \p{RGI_Emoji} (the server keeps Unicode 17.0's list; this file copies no list,
+// and a browser that knows fewer drops the card: it fails closed); Arabic presentation forms fold to
+// their letters, then NFC; a mark repeating the one before it goes; unassigned code points go, but
+// future emoji -- so no invisible channel can ride on a card that shows only the words. The two
+// tables are exact copies of the server's (tests/test_whatsapp_console.py compares them).
 (() => {
   'use strict';
   const KIND = 'whatsapp'; // its kind in ChatResponse.cards (jarvis.tools.reply_cards)
@@ -53,18 +56,28 @@
   // the server's, so its \p{Cn} never drops more than the server already did) ...
   const UNASSIGNED = /^\p{Cn}$/u;
   // ... and the letters and marks that render blank: Hangul fillers, the Khitan small script filler,
-  // braille blank, combining grapheme joiner, Khmer inherent vowels, Mongolian selectors, variation
-  // selectors but an emoji's FE0F (FE0E always), and the code points that render as nothing: U+2065,
-  // U+FFF0-FFF8 and the whole tag block U+E0000-E0FFF (the server's BLANK and _BLANK_RANGES)
-  const BLANK = /^[\u115f\u1160\u3164\uffa0\u{16fe4}\u2800\u034f\u17b4\u17b5\u180b-\u180d\u180f\ufe00-\ufe0e\u2065\ufff0-\ufff8\u{e0000}-\u{e0fff}]$/u;
+  // braille blank, the musical null notehead and the Egyptian hieroglyph blanks (SEC-6), combining
+  // grapheme joiner, Khmer inherent vowels, Mongolian selectors, variation selectors but an emoji's
+  // FE0F (FE0E always), and the code points that render as nothing: U+2065, U+FFF0-FFF8 and the whole
+  // tag block U+E0000-E0FFF (the server's BLANK and _BLANK_RANGES)
+  const BLANK = /^[\u115f\u1160\u3164\uffa0\u{16fe4}\u2800\u{1d159}\u{13441}\u{13442}\u034f\u17b4\u17b5\u180b-\u180d\u180f\ufe00-\ufe0e\u2065\ufff0-\ufff8\u{e0000}-\u{e0fff}]$/u;
   const JOINERS = new Set(['\u200c', '\u200d']);
-  const ZWNJ = '\u200c';
+  const ZWJ = '\u200d';
+  const MALAYALAM_VIRAMA = '\u0d4d'; // + ZWJ: the old-style chillu, also at a word's end (SEC-6 #4)
+  const LETTER = /^\p{L}$/u;
   const VS16 = '\ufe0f'; // the emoji presentation selector
   const KEYCAP = '\u20e3'; // [0-9#*] + FE0F + U+20E3 is a keycap emoji
   const SPACEISH = /^[\t\p{Zs}]$/u;
   const EMOJI = /^\p{Extended_Pictographic}$/u;
   const SKIN = /^[\u{1f3fb}-\u{1f3ff}]$/u;
   const KEYCAP_BASE = /^[0-9#*]$/;
+  // SEC-6 #1: the browser's own RGI emoji set (ZWJ sequences included). Without the v flag no emoji
+  // ZWJ is kept, so a card that has one is dropped: fails closed.
+  const rgiEmoji = (() => {
+    // one whole RGI emoji: the longest match from the start must be the whole chain
+    try { const re = new RegExp('^\\p{RGI_Emoji}', 'v'); return (s) => { const m = re.exec(s); return m !== null && m[0] === s; }; }
+    catch (_) { return () => false; }
+  })();
   // more than MAX_MARKS combining marks in a row: the server's draft.py refuses the text (FE-8);
   // a joiner between two marks does not break the run (as on the server)
   const MAX_MARKS = 4;
@@ -108,8 +121,8 @@
     [0x1f6cb, 0x1f6cb], [0x1f6cd, 0x1f6cf], [0x1f6e0, 0x1f6e5], [0x1f6e9, 0x1f6e9], [0x1f6f0, 0x1f6f0],
     [0x1f6f3, 0x1f6f3]
   ]);
-  // SEC-5 M1 (RFC 5892 CONTEXTJ): jarvis.whatsapp.joining VIRAMAS (canonical combining class 9) and
-  // ARABIC_LETTERS (Python 3.12, Unicode 15.0) -- JavaScript has no combining-class property
+  // SEC-5 M1 (RFC 5892 CONTEXTJ): jarvis.whatsapp.joining VIRAMAS (canonical combining class 9,
+  // Python 3.12, Unicode 15.0) -- JavaScript has no combining-class property
   const VIRAMAS = codes([
     [0x094d, 0x094d], [0x09cd, 0x09cd], [0x0a4d, 0x0a4d], [0x0acd, 0x0acd], [0x0b4d, 0x0b4d],
     [0x0bcd, 0x0bcd], [0x0c4d, 0x0c4d], [0x0ccd, 0x0ccd], [0x0d3b, 0x0d3c], [0x0d4d, 0x0d4d],
@@ -123,12 +136,6 @@
     [0x1172b, 0x1172b], [0x11839, 0x11839], [0x1193d, 0x1193e], [0x119e0, 0x119e0], [0x11a34, 0x11a34],
     [0x11a47, 0x11a47], [0x11a99, 0x11a99], [0x11c3f, 0x11c3f], [0x11d44, 0x11d45], [0x11d97, 0x11d97],
     [0x11f41, 0x11f42]
-  ]);
-  const ARABIC_LETTERS = codes([
-    [0x0620, 0x063f], [0x0641, 0x064a], [0x066e, 0x066f], [0x0671, 0x06d3], [0x06d5, 0x06d5],
-    [0x06ee, 0x06ef], [0x06fa, 0x06fc], [0x06ff, 0x06ff], [0x0750, 0x077f], [0x0870, 0x0882],
-    [0x0886, 0x0886], [0x0889, 0x088d], [0x08a0, 0x08c8], [0xfb50, 0xfbb1], [0xfbd3, 0xfbe9],
-    [0xfbfc, 0xfbff], [0xfe80, 0xfef4]
   ]);
 
   const emoji = (ch) => !!ch && EMOJI.test(ch);
@@ -148,46 +155,94 @@
     return out;
   }
 
-  /** SEC-5 M1: the joiner at chars[i] stays right after a virama, a ZWNJ also between two Arabic
-   *  letters, a ZWJ also between an emoji (or its skin tone or FE0F) and the next emoji. */
+  const neighbours = (chars, i) => [i > 0 ? chars[i - 1] : '', i + 1 < chars.length ? chars[i + 1] : ''];
+
+  /** SEC-5 M1 and SEC-6 #4: a joiner outside an emoji sequence stays only between a virama and a
+   *  letter, a ZWJ also right after the Malayalam virama (the chillu). */
   function keepJoiner(chars, i) {
-    const prev = i > 0 ? chars[i - 1] : '';
-    const next = i + 1 < chars.length ? chars[i + 1] : '';
-    if (inTable(VIRAMAS, prev)) return true;
-    if (chars[i] === ZWNJ) return inTable(ARABIC_LETTERS, prev) && inTable(ARABIC_LETTERS, next);
-    const before = prev === VS16 ? (i > 1 && emoji(chars[i - 2])) : (emoji(prev) || SKIN.test(prev));
-    return before && emoji(next);
+    const [prev, next] = neighbours(chars, i);
+    if (!inTable(VIRAMAS, prev)) return false;
+    return LETTER.test(next) || (chars[i] === ZWJ && prev === MALAYALAM_VIRAMA);
   }
 
   /** SEC-5 H1: an FE0F stays only inside a keycap or right after a FE0F_BASES code point. */
-  const keepSelector = (prev, next) => (KEYCAP_BASE.test(prev) && next === KEYCAP) || inTable(FE0F_BASES, prev);
+  function keepSelector(chars, i) {
+    const [prev, next] = neighbours(chars, i);
+    return (KEYCAP_BASE.test(prev) && next === KEYCAP) || inTable(FE0F_BASES, prev);
+  }
 
-  /** Pass 2: joiners and FE0F judged against their immediate neighbours in pass 1's text. */
+  const inChain = (ch) => emoji(ch) || SKIN.test(ch) || ch === VS16 || ch === ZWJ;
+
+  /** SEC-6 #1: the indexes of the ZWJs that join an RGI emoji ZWJ sequence. A chain starts at an
+   *  emoji and runs on over emoji, skin tones, FE0F and ZWJ until an emoji no ZWJ joins; its ZWJs
+   *  stay only when the whole chain (with the FE0F keepSelector keeps) is one RGI emoji. */
+  function sequenceZwjs(chars) {
+    const kept = new Set();
+    let i = 0;
+    while (i < chars.length) {
+      if (!emoji(chars[i])) { i += 1; continue; }
+      let end = i + 1;
+      while (end < chars.length && inChain(chars[end]) && !(emoji(chars[end]) && chars[end - 1] !== ZWJ)) end += 1;
+      const zwjs = [];
+      let chain = '';
+      for (let k = i; k < end; k += 1) {
+        if (chars[k] === ZWJ) zwjs.push(k);
+        if (chars[k] !== VS16 || keepSelector(chars, k)) chain += chars[k];
+      }
+      if (zwjs.length && rgiEmoji(chain)) zwjs.forEach((k) => kept.add(k));
+      i = end;
+    }
+    return kept;
+  }
+
+  /** Pass 2, on NFC text: joiners and FE0F judged against their immediate neighbours. */
   function joined(chars) {
+    const inSequences = sequenceZwjs(chars);
     const out = [];
     chars.forEach((ch, i) => {
       if (JOINERS.has(ch)) {
-        if (keepJoiner(chars, i)) out.push(ch);
+        if (inSequences.has(i) || keepJoiner(chars, i)) out.push(ch);
       } else if (ch === VS16) {
-        if (keepSelector(i > 0 ? chars[i - 1] : '', i + 1 < chars.length ? chars[i + 1] : '')) out.push(ch);
+        if (keepSelector(chars, i)) out.push(ch);
       } else out.push(ch);
     });
     return out.join('');
   }
 
+  /** SEC-6 #5, on NFD text: a mark identical to the character right before it goes. */
+  function singleMarks(text) {
+    const out = [];
+    for (const ch of text) if (!(out.length && ch === out[out.length - 1] && MARK.test(ch))) out.push(ch);
+    return out.join('');
+  }
+
+  /** SEC-6 #2: each Arabic presentation form as the letters it shows (NFKC, one by one). */
+  const folded = (s) => s.replace(/[\ufb50-\ufdff\ufe70-\ufefe]/g, (c) => c.normalize('NFKC'));
+
+  /** Pass 2 (joined, singleMarks in NFD, NFC) until nothing changes, as the server's _settled:
+   *  dropping a joiner can let canonical reordering move a mark next to another joiner. */
+  function settled(text) {
+    for (;;) {
+      const after = singleMarks(joined(Array.from(text)).normalize('NFD')).normalize('NFC');
+      if (after === text) return text;
+      text = after;
+    }
+  }
+
   /** The text as the server's clean_text leaves it (so a card whose text differs is dropped). */
   function clean(text) {
-    const once = joined(visible(text.replace(/\r\n?/g, '\n'))).replace(/ {2,}/g, ' ');
+    const first = folded(visible(text.replace(/\r\n?/g, '\n')).join('')).normalize('NFC');
+    const once = settled(first).replace(/ {2,}/g, ' ');
     const lines = once.split('\n').map((line) => line.replace(/^ +| +$/g, '')); // SEC-5 M2: both ends
     return lines.join('\n').replace(/\n{4,}/g, '\n\n\n').trim();
   }
 
-  /** True when `text` has more than MAX_MARKS combining marks in a row (a joiner between two
-   *  marks does not break the run): the server refuses such a text (FE-8). */
+  /** True when `text` has more than MAX_MARKS combining marks in a row, counted in NFD (a joiner
+   *  between two marks does not break the run): the server refuses such a text (FE-8, SEC-6). */
   function stacked(text) {
     if (typeof text !== 'string') return false;
     let run = 0;
-    for (const ch of text) {
+    for (const ch of text.normalize('NFD')) {
       if (JOINERS.has(ch)) continue;
       run = MARK.test(ch) ? run + 1 : 0;
       if (run > MAX_MARKS) return true;

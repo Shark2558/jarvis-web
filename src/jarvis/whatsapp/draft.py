@@ -14,10 +14,16 @@ every invisible character that stays must be one the visible text needs, so
   U+20E3) or right after a code point whose fully-qualified RGI emoji is cp + FE0F
   (`pictographic.EMOJI_FE0F_BASES`: the heart, the white flag; not the watch or a smiley, which
   are emoji already);
-- joiners (M1, RFC 5892 CONTEXTJ, `jarvis.whatsapp.joining`): a ZWNJ / ZWJ stays only right
-  after a virama (Malayalam chillu, Hindi half forms), a ZWNJ also between two Arabic letters
-  (Persian), a ZWJ also inside an emoji sequence (after an emoji, its skin tone or its FE0F,
-  before the next emoji); never between Latin, Cyrillic, CJK, mathematical or letterlike ones;
+- joiners (M1, RFC 5892 CONTEXTJ, `jarvis.whatsapp.joining`; narrowed by security review
+  SEC-6 #3 / #4): a ZWNJ stays only between a virama and a letter (Malayalam, Hindi, Odia,
+  Tamil); a ZWJ the same (Hindi half forms), or right after the Malayalam virama (the old-style
+  chillu, at a word's end too), or inside an RGI emoji ZWJ sequence (SEC-6 #1: the whole chain
+  of emoji, skin tones, FE0F and ZWJ must be one of `zwj_sequences`, Unicode 17.0, or every
+  ZWJ in it goes). Never between Latin, Cyrillic, CJK, Arabic (no Joining_Type table: Persian's
+  ZWNJ goes, an accepted trade-off), mathematical or letterlike letters;
+- one spelling per text (SEC-6 #2): Arabic presentation forms become the letters they show
+  (NFKC, one by one), then NFC; a combining mark identical to the one right before it goes
+  (SEC-6 #5, judged in NFD, then NFC again);
 - no space at the start or end of a line (M2: the approval card's pre-line would hide one);
 - unassigned code points (category Cn) go, but the Extended_Pictographic ones Unicode keeps for
   future emoji (M3: Python 3.11, 3.12 and the browser know different Unicode versions; a
@@ -26,14 +32,16 @@ Also gone: control characters, bidi controls and marks, zero-width spaces, BOMs,
 (invisible "ASCII smuggling"), other format characters, private-use code points and lone
 surrogates. Line / paragraph separators become new lines. Review S3 (hidden payloads): also the
 characters that render blank although they are letters or marks (`BLANK`: Hangul fillers and
-the Khitan small script filler, the braille blank, the combining grapheme joiner, Khmer inherent
+the Khitan small script filler, the braille blank, the musical null notehead and the Egyptian
+hieroglyph blanks (SEC-6), the combining grapheme joiner, Khmer inherent
 vowels, Mongolian selectors, variation selectors other than an emoji's FE0F, which also encode
 bytes invisibly, and, with the final review's console-text.js, the code points that render as
 nothing: U+2065, U+FFF0-FFF8 and the whole tag block U+E0000-E0FFF), and more than two blank
 lines in a row. A text that is empty or only blank after that is refused. At most `TEXT_MAX`
 characters after cleaning. Review FE-8: more than `MAX_MARKS` combining marks in a row ("Zalgo"
 text, a smear that hides what it says) is refused in plain words (`STACKED`), counted on the
-cleaned text (so a dropped character can't split the run). The console's draft card checks the
+cleaned text in NFD (so neither a dropped character nor a precomposed letter can split or hide
+the run). The console's draft card checks the
 same, character for character (`console-whatsapp.js`; tests/fixtures/whatsapp_clean_cases.json).
 
 Link (verified 2026-11-03; WhatsApp's own FAQ "How to use click to chat",
@@ -65,8 +73,9 @@ from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from jarvis.contacts.phones import is_e164, wa_digits
-from jarvis.whatsapp.joining import arabic_letter, virama
+from jarvis.whatsapp.joining import virama
 from jarvis.whatsapp.pictographic import emoji_fe0f_base, extended_pictographic
+from jarvis.whatsapp.zwj_sequences import rgi_zwj_sequence
 
 TEXT_MAX = 2000
 NAME_MAX = 100
@@ -80,7 +89,8 @@ ASSUMED_INDIA = "Assumed India (+91)"  # review S5: the number was written witho
 KNOWN_SOURCES = frozenset({"you", "contacts"})
 ZWNJ = "\u200c"
 ZWJ = "\u200d"
-_JOINERS = frozenset({ZWNJ, ZWJ})  # Indic scripts, Persian and emoji sequences need them
+_JOINERS = frozenset({ZWNJ, ZWJ})  # Indic scripts and emoji ZWJ sequences need them
+MALAYALAM_VIRAMA = "\u0d4d"  # + ZWJ: the old-style chillu, also at a word's end (SEC-6 #4)
 VS16 = "\ufe0f"  # the emoji presentation selector: kept only where it makes an emoji (SEC-5 H1)
 KEYCAP = "\u20e3"  # combining enclosing keycap: [0-9#*] + FE0F + U+20E3 is a keycap emoji
 KEYCAP_BASES = frozenset("0123456789#*")
@@ -91,6 +101,8 @@ BLANK = frozenset(
     "\u115f\u1160\u3164\uffa0"  # Hangul fillers
     "\U00016fe4"  # Khitan small script filler (SEC-5)
     "\u2800"  # braille pattern blank
+    "\U0001d159"  # musical symbol null notehead (SEC-6)
+    "\U00013441\U00013442"  # Egyptian hieroglyph full / half blank (SEC-6; Cn before Unicode 15)
     "\u034f"  # combining grapheme joiner
     "\u17b4\u17b5"  # Khmer inherent vowels
     "\u180b\u180c\u180d\u180f"  # Mongolian free variation selectors
@@ -104,6 +116,8 @@ _BLANK_RANGES = (
     (0xFFF0, 0xFFF8),
     (0xE0000, 0xE0FFF),
 )
+# SEC-6 #2: Arabic presentation forms A and B, folded to the plain letters they show (NFKC)
+_PRESENTATION_FORMS = ((0xFB50, 0xFDFF), (0xFE70, 0xFEFE))
 _TOO_MANY_BLANK_LINES = re.compile(r"\n{" + str(MAX_BLANK_LINES + 2) + r",}")
 _MANY_SPACES = re.compile(" {2,}")
 
@@ -121,35 +135,70 @@ def _dropped(ch: str) -> bool:
     return cat in _DROP_CATEGORIES or (cat == "Cn" and not extended_pictographic(ch))
 
 
-def _emoji_before(text: str, i: int) -> bool:
-    """Whether text[i] ends an emoji a ZWJ may follow: an emoji (Extended_Pictographic), its skin
-    tone (Emoji_Modifier, U+1F3FB..U+1F3FF) or its FE0F right after an emoji."""
-    ch = text[i] if 0 <= i < len(text) else ""
-    if ch == VS16:
-        return i > 0 and extended_pictographic(text[i - 1])
-    return bool(ch) and (extended_pictographic(ch) or ord(ch) in SKIN_TONES)
+def _folded(text: str) -> str:
+    """SEC-6 #2: each Arabic presentation form as its NFKC form, character by character."""
+    return "".join(
+        unicodedata.normalize("NFKC", ch)
+        if any(lo <= ord(ch) <= hi for lo, hi in _PRESENTATION_FORMS)
+        else ch
+        for ch in text
+    )
 
 
-def _keep_selector(prev: str, nxt: str) -> bool:
-    """SEC-5 H1: an FE0F stays only inside a keycap (1 + FE0F + U+20E3 is the keycap 1) or right
-    after a code point whose RGI emoji is cp + FE0F (`EMOJI_FE0F_BASES`). Anywhere else (after
-    a digit, a letter, a smiley that is emoji-style already, a skin tone) it changes nothing on
-    screen, so it could only carry data."""
-    keycap = prev in KEYCAP_BASES and nxt == KEYCAP
-    return keycap or emoji_fe0f_base(prev)
+def _neighbours(text: str, i: int) -> tuple[str, str]:
+    return (text[i - 1] if i > 0 else ""), (text[i + 1] if i + 1 < len(text) else "")
+
+
+def _keep_selector(text: str, i: int) -> bool:
+    """SEC-5 H1: the FE0F at text[i] stays only inside a keycap (1 + FE0F + U+20E3 is the keycap
+    1) or right after a code point whose RGI emoji is cp + FE0F (`EMOJI_FE0F_BASES`). Anywhere
+    else (after a digit, a letter, a smiley that is emoji-style already, a skin tone) it changes
+    nothing on screen, so it could only carry data."""
+    prev, nxt = _neighbours(text, i)
+    return (prev in KEYCAP_BASES and nxt == KEYCAP) or emoji_fe0f_base(prev)
 
 
 def _keep_joiner(text: str, i: int) -> bool:
-    """SEC-5 M1 (RFC 5892 CONTEXTJ): the ZWNJ / ZWJ at text[i] stays right after a virama, a ZWNJ
-    also between two Arabic letters, a ZWJ also between an emoji (or its skin tone or FE0F) and
-    the next emoji."""
-    prev = text[i - 1] if i > 0 else ""
-    nxt = text[i + 1] if i + 1 < len(text) else ""
-    if virama(prev):
-        return True
-    if text[i] == ZWNJ:
-        return arabic_letter(prev) and arabic_letter(nxt)
-    return _emoji_before(text, i - 1) and extended_pictographic(nxt)
+    """SEC-5 M1 and SEC-6 #4 (RFC 5892 CONTEXTJ, narrowed): a ZWNJ / ZWJ outside an emoji
+    sequence stays only between a virama and a letter (Hindi half forms, Malayalam's ZWNJ), a
+    ZWJ also right after the Malayalam virama (the old-style chillu, at a word's end too).
+    Before a space, a stop or the end it changes nothing on screen."""
+    prev, nxt = _neighbours(text, i)
+    if not virama(prev):
+        return False
+    letter = bool(nxt) and unicodedata.category(nxt)[0] == "L"
+    return letter or (text[i] == ZWJ and prev == MALAYALAM_VIRAMA)
+
+
+def _in_chain(ch: str) -> bool:
+    return extended_pictographic(ch) or ord(ch) in SKIN_TONES or ch in (VS16, ZWJ)
+
+
+def _sequence_zwjs(text: str) -> frozenset[int]:
+    """SEC-6 #1: the positions of the ZWJs that join an RGI emoji ZWJ sequence. A chain starts
+    at an emoji and runs on over emoji, skin tones, FE0F and ZWJ until an emoji no ZWJ joins
+    (it starts the next chain); its ZWJs stay only when the whole chain, with the FE0F that
+    `_keep_selector` keeps, is one RGI sequence (`zwj_sequences`). Otherwise all of them go: a
+    family + ZWJ + party popper loses every ZWJ, the emoji themselves stay."""
+    kept: set[int] = set()
+    i, n = 0, len(text)
+    while i < n:
+        if not extended_pictographic(text[i]):
+            i += 1
+            continue
+        end = i + 1
+        while end < n and _in_chain(text[end]):
+            if extended_pictographic(text[end]) and text[end - 1] != ZWJ:
+                break
+            end += 1
+        zwjs = [k for k in range(i, end) if text[k] == ZWJ]
+        chain = "".join(
+            text[k] for k in range(i, end) if text[k] != VS16 or _keep_selector(text, k)
+        )
+        if zwjs and rgi_zwj_sequence(chain):
+            kept.update(zwjs)
+        i = end
+    return frozenset(kept)
 
 
 def _visible_chars(text: str) -> str:
@@ -171,26 +220,53 @@ def _visible_chars(text: str) -> str:
 
 
 def _joined(text: str) -> str:
-    """Pass 2: a ZWNJ / ZWJ stays only where `_keep_joiner`, an FE0F only where `_keep_selector`.
-    Each is judged against its IMMEDIATE neighbours in pass 1's text, so a run of joiners or
-    selectors (or one split by characters pass 1 dropped) keeps at most the first."""
+    """Pass 2, on NFC text: a ZWJ stays inside an RGI emoji sequence (`_sequence_zwjs`) or where
+    `_keep_joiner`, a ZWNJ only where `_keep_joiner`, an FE0F only where `_keep_selector`. Each
+    is judged against its IMMEDIATE neighbours in this text, so a run of joiners or selectors
+    (or one split by characters pass 1 dropped) keeps at most one."""
+    in_sequences = _sequence_zwjs(text)
     out: list[str] = []
     for i, ch in enumerate(text):
         if ch in _JOINERS:
-            if _keep_joiner(text, i):
-                out.append(ch)
+            keep = i in in_sequences or _keep_joiner(text, i)
         elif ch == VS16:
-            prev = text[i - 1] if i > 0 else ""
-            if _keep_selector(prev, text[i + 1] if i + 1 < len(text) else ""):
-                out.append(ch)
+            keep = _keep_selector(text, i)
         else:
+            keep = True
+        if keep:
             out.append(ch)
     return "".join(out)
 
 
+def _single_marks(text: str) -> str:
+    """SEC-6 #5, on NFD text: a combining mark (M*) identical to the character right before it
+    goes. Drawn on top of the first it shows nothing ("a" + three U+0336 is "a" + one; a keycap
+    mark twice is one); NFD first, so a precomposed letter can't hide the first one."""
+    out: list[str] = []
+    for ch in text:
+        if not (out and ch == out[-1] and unicodedata.category(ch)[0] == "M"):
+            out.append(ch)
+    return "".join(out)
+
+
+def _settled(text: str) -> str:
+    """Pass 2 (`_joined`, then `_single_marks` in NFD, then NFC) until nothing changes. Dropping
+    a joiner can let canonical reordering move a mark between a virama and the next joiner, or
+    a repeat next to its twin, so the rules are applied again to their own result; each round
+    only removes characters, so it ends."""
+    while True:
+        after = unicodedata.normalize("NFD", _joined(text))
+        after = unicodedata.normalize("NFC", _single_marks(after))
+        if after == text:
+            return text
+        text = after
+
+
 def clean_text(raw: str) -> str:
     """The draft text with only what the owner can see (see the module docstring)."""
-    text = _joined(_visible_chars(raw.replace("\r\n", "\n").replace("\r", "\n")))
+    text = _visible_chars(raw.replace("\r\n", "\n").replace("\r", "\n"))
+    text = unicodedata.normalize("NFC", _folded(text))  # SEC-6 #2: one spelling per text
+    text = _settled(text)
     text = _MANY_SPACES.sub(" ", text)
     # SEC-5 M2: no space at either end of a line (the approval card's pre-line hides them)
     text = "\n".join(line.strip(" ") for line in text.split("\n"))
@@ -199,12 +275,13 @@ def clean_text(raw: str) -> str:
 
 
 def stacked(text: str) -> bool:
-    """True when more than MAX_MARKS combining marks (Unicode category M*) follow one another —
+    """True when more than MAX_MARKS combining marks (Unicode category M*) follow one another,
     after one base character or none (review FE-8: "Zalgo" text renders as a smear that hides
-    what it says). A zero-width (non-)joiner between two marks does not break the run. Real
-    scripts stay well inside: Malayalam, Devanagari, Odia and Tibetan stack at most 3."""
+    what it says), counted in NFD (SEC-6: a precomposed letter's accent still counts). A
+    zero-width (non-)joiner between two marks does not break the run. Real scripts stay well
+    inside: Malayalam, Devanagari, Odia and Tibetan stack at most 3."""
     run = 0
-    for ch in text:
+    for ch in unicodedata.normalize("NFD", text):
         if ch in _JOINERS:
             continue
         run = run + 1 if unicodedata.category(ch).startswith("M") else 0

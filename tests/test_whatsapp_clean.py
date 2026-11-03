@@ -16,6 +16,12 @@
 #         (RFC 5892 CONTEXTJ), ZWNJ also between Arabic letters, ZWJ also inside an emoji
 #         sequence; no space at either end of a line; unassigned code points (Cn) dropped but
 #         a future emoji's.
+#   SEC-6 a second fuzzing review: a ZWJ between any two emoji ("party ZWJ party", "(c) ZWJ
+#         (r)") and a joiner after a virama before a space were still invisible. Now: a ZWJ
+#         stays only inside an RGI emoji ZWJ sequence (Unicode 17.0 table) or between a virama
+#         and a letter (or after the Malayalam virama: the chillu); a ZWNJ only between a virama
+#         and a letter (no Arabic allowance); the text is NFC with Arabic presentation forms
+#         folded; a mark repeating the one before it goes; FE-8 counts marks in NFD.
 from __future__ import annotations
 
 import json
@@ -36,11 +42,12 @@ from jarvis.tools.taint import context_trust
 from jarvis.whatsapp.draft import MAX_MARKS, STACKED, draft_card, text_arg
 from jarvis.whatsapp.pictographic import emoji_fe0f_base, extended_pictographic
 from jarvis.whatsapp.tools import whatsapp_tools
+from jarvis.whatsapp.zwj_sequences import RGI_EMOJI_ZWJ_SEQUENCES
 
-ZALGO = "Hi" + "\u0310" * 120 + " pay here"
+ZALGO = "Hi" + "\u0310\u0311" * 60 + " pay here"  # 120 marks, no two alike in a row (SEC-6 #5)
 LEGIT = [
     "\u0d28\u0d3e\u0d33\u0d46 \u0d15\u0d3e\u0d23\u0d3e\u0d02",  # Malayalam: see you tomorrow
-    "\u0d38\u0d4d\u200c\u0d24",  # Malayalam with ZWNJ between letters
+    "\u0d38\u0d4d\u200c\u0d24",  # Malayalam: virama + ZWNJ + letter
     "\u0d0e\u0d28\u0d4d\u200d\u0d31\u0d46",  # Malayalam old-style chillu (ZWJ) inside a word
     "\u0939\u093f\u0928\u094d\u0926\u0940",  # Hindi
     "\u0915\u094d\u200d\u0937",  # Devanagari conjunct with ZWJ
@@ -49,7 +56,7 @@ LEGIT = [
     "\u2764\ufe0f",  # heart with the emoji variation selector
     "1\ufe0f\u20e3",  # keycap 1
     "\U0001f468\u200d\U0001f469\u200d\U0001f467",  # family (emoji ZWJ sequence)
-    "a\u0301\u0302\u0303\u0304",  # exactly four marks after one base: allowed
+    "\u00e1\u0302\u0303\u0304",  # exactly four marks (in NFD) after one base: allowed
 ]
 
 
@@ -62,10 +69,10 @@ def test_real_scripts_and_emoji_pass(text: str) -> None:
     "text",
     [
         ZALGO,
-        "a\u0301\u0302\u0303\u0304\u0305",  # five marks after one base
-        "pay \u0d15" + "\u0d4d" * 5,  # a real script's mark, stacked
-        "a" + "\u0301\u0301\u200d" * 10,  # joiners between the marks don't break the run
-        "\u0301" * 5 + "x",  # marks with no base at all
+        "a\u0301\u0302\u0303\u0304\u0305",  # five marks after one base (NFC hides one: NFD counts)
+        "pay \u0d15" + "\u0d4d\u0d3e" * 3,  # a real script's marks, stacked
+        "a" + "\u0301\u0302\u200d" * 10,  # joiners between the marks don't break the run
+        "\u0301\u0302\u0303\u0304\u0305x",  # marks with no base at all
     ],
 )
 def test_more_than_four_stacked_marks_are_refused_in_plain_words(text: str) -> None:
@@ -117,9 +124,16 @@ def test_the_fixture_is_ascii_and_covers_what_the_review_named() -> None:
                    "no virama",
                    # M2, M3 and the low findings
                    "start of a line", "U+0378", "U+FDD0", "U+FFFE", "Extended_Pictographic",
-                   "split a run", "U+16FE4"):  # fmt: skip
+                   "split a run", "U+16FE4",
+                   # SEC-6: ZWJ only in RGI sequences, NFC, no Arabic ZWNJ, joiners need a
+                   # letter after them, no repeated mark, more blanks
+                   "two party poppers", "(c) and (r)", "followed by ZWJ + party popper",
+                   "family of four", "people holding hands", "side by side", "NFC", "jamo",
+                   "presentation forms", "accepted trade-off", "before a space: removed",
+                   "full stop", "Tamil virama + ZWJ", "repeated overlay", "repeated keycap",
+                   "alternating", "U+1D159", "U+13441"):  # fmt: skip
         assert needle in whys, needle
-    assert any(c["out"] is None for c in CASES) and len(CASES) >= 95
+    assert any(c["out"] is None for c in CASES) and len(CASES) >= 125
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c["why"][:60] for c in CASES])
@@ -132,34 +146,44 @@ def test_clean_text_over_the_shared_fixture(case: dict[str, Any]) -> None:
         assert text_arg(case["out"]) == case["out"]  # cleaning is idempotent
 
 
-def _arabic_letter(ch: str) -> bool:
-    return (
-        bool(ch)
-        and unicodedata.category(ch)[0] == "L"
-        and unicodedata.name(ch, "").startswith("ARABIC LETTER ")
-    )
+def _in_emoji_chain(ch: str) -> bool:
+    return extended_pictographic(ch) or ch in (ZWJ, "\ufe0f") or 0x1F3FB <= ord(ch) <= 0x1F3FF
 
 
-def _emoji_end(text: str, i: int) -> bool:
-    """text[i] ends an emoji a ZWJ may follow: an emoji, its skin tone, or its FE0F."""
-    ch = text[i] if 0 <= i < len(text) else ""
-    if ch == "\ufe0f":
-        return i > 0 and extended_pictographic(text[i - 1])
-    return bool(ch) and (extended_pictographic(ch) or 0x1F3FB <= ord(ch) <= 0x1F3FF)
+def _in_rgi_sequence(text: str, i: int) -> bool:
+    """The ZWJ at text[i] lies inside an occurrence of an RGI emoji ZWJ sequence that no other
+    ZWJ glues to more emoji (none right after it, none right before it after an emoji)."""
+    for seq in RGI_EMOJI_ZWJ_SEQUENCES:
+        for k, ch in enumerate(seq):
+            p = i - k
+            if ch != ZWJ or p < 0 or text[p : p + len(seq)] != seq:
+                continue
+            end = p + len(seq)
+            glued_after = end < len(text) and text[end] == ZWJ
+            glued_before = p >= 2 and text[p - 1] == ZWJ and _in_emoji_chain(text[p - 2])
+            if not (glued_after or glued_before):
+                return True
+    return False
 
 
 @pytest.mark.parametrize("case", [c for c in CASES if c["out"]], ids=lambda c: c["why"][:60])
 def test_every_kept_invisible_sits_where_a_script_or_an_emoji_needs_it(
     case: dict[str, Any],
 ) -> None:
-    """Security review SEC-5, checked from Unicode's own data where Python has it: no FE0E; an
-    FE0F only inside a keycap ([0-9#*] FE0F U+20E3) or right after a code point whose emoji form
-    is cp + FE0F; a ZWNJ / ZWJ only right after a virama (canonical combining class 9, RFC 5892
-    CONTEXTJ), a ZWNJ also between two Arabic letters, a ZWJ also inside an emoji sequence. No
-    unassigned code point but a future emoji, no space at either end of a line (M2) \u2014 so none
-    can carry data between Latin letters, spaces or after a letter."""
+    """Security reviews SEC-5 and SEC-6, checked from Unicode's own data where Python has it: no
+    FE0E; an FE0F only inside a keycap ([0-9#*] FE0F U+20E3) or right after a code point whose
+    emoji form is cp + FE0F; a ZWNJ only between a virama (canonical combining class 9, RFC 5892
+    CONTEXTJ) and a letter; a ZWJ the same, or right after the Malayalam virama, or inside an
+    RGI emoji ZWJ sequence. NFC, no Arabic presentation form, no mark repeating the one before
+    it, no unassigned code point but a future emoji, no space at either end of a line \u2014 so
+    none can carry data between Latin letters, spaces or after a letter."""
     text = case["out"]
     assert "\ufe0e" not in text, case["why"]
+    assert unicodedata.normalize("NFC", text) == text, case["why"]
+    nfd = unicodedata.normalize("NFD", text)
+    assert not any(
+        a == b and unicodedata.category(b)[0] == "M" for a, b in zip(nfd, nfd[1:], strict=False)
+    ), case["why"]
     for i, ch in enumerate(text):
         before = text[i - 1] if i > 0 else ""
         after = text[i + 1] if i + 1 < len(text) else ""
@@ -168,9 +192,11 @@ def test_every_kept_invisible_sits_where_a_script_or_an_emoji_needs_it(
             assert keycap or emoji_fe0f_base(before), case["why"]
         elif ch in (ZWNJ, ZWJ):
             virama = before != "" and unicodedata.combining(before) == 9
-            arabic = ch == ZWNJ and _arabic_letter(before) and _arabic_letter(after)
-            emoji = ch == ZWJ and _emoji_end(text, i - 1) and extended_pictographic(after)
-            assert virama or arabic or emoji, case["why"]
+            letter = after != "" and unicodedata.category(after)[0] == "L"
+            chillu = ch == ZWJ and before == "\u0d4d"
+            emoji = ch == ZWJ and _in_rgi_sequence(text, i)
+            assert (virama and (letter or chillu)) or emoji, case["why"]
+        assert not (0xFB50 <= ord(ch) <= 0xFDFF or 0xFE70 <= ord(ch) <= 0xFEFE), case["why"]
         assert unicodedata.category(ch) != "Cn" or extended_pictographic(ch), case["why"]
         assert not (unicodedata.category(ch) == "Zs" and ch != " "), case["why"]
     assert "\t" not in text and "  " not in text

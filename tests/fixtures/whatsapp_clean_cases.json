@@ -151,8 +151,8 @@
  },
  {
   "in": "a\u0301\u0302\u0303\u0304",
-  "out": "a\u0301\u0302\u0303\u0304",
-  "why": "FE-8: four marks are fine"
+  "out": "\u00e1\u0302\u0303\u0304",
+  "why": "FE-8: four marks are fine (SEC-6 #2: NFC composes a + acute; still four marks in NFD)"
  },
  {
   "in": "\u2764\ufe0f\ufe0f\ufe0f\ufe0e",
@@ -291,8 +291,8 @@
  },
  {
   "in": "Hi\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310\u0310 pay here",
-  "out": null,
-  "why": "FE-8: 120 stacked marks: refused"
+  "out": "Hi\u0310 pay here",
+  "why": "FE-8: 120 identical stacked marks: SEC-6 #5 keeps one (nothing left to refuse)"
  },
  {
   "in": "a\u0301\u0302\u0303\u0304\u0305",
@@ -301,8 +301,8 @@
  },
  {
   "in": "a\u0301\u200d\u0301\u200d\u0301\u200d\u0301\u200d\u0301",
-  "out": null,
-  "why": "FE-8: joiners between the marks don't break the run"
+  "out": "\u00e1",
+  "why": "FE-8: joiners between identical marks: SEC-6 drops the joiners and the repeats"
  },
  {
   "in": "Call 9\ufe0f8\ufe0e76",
@@ -411,8 +411,8 @@
  },
  {
   "in": "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645",
-  "out": "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645",
-  "why": "M1: Persian (mi-khaham) with ZWNJ between two Arabic letters: kept"
+  "out": "\u0645\u06cc\u062e\u0648\u0627\u0647\u0645",
+  "why": "M1/SEC-6 #3: Persian (mi-khaham) ZWNJ between Arabic letters: removed (accepted trade-off: no Joining_Type table on either side; the letters join)"
  },
  {
   "in": "\u0645\u06cc\u200c \u0647\u0645",
@@ -488,5 +488,150 @@
   "in": "hi\ud81b\udfe4there",
   "out": "hithere",
   "why": "Khitan small script filler U+16FE4: removed"
+ },
+ {
+  "in": "\ud83c\udf89\u200d\ud83c\udf89",
+  "out": "\ud83c\udf89\ud83c\udf89",
+  "why": "SEC-6 #1: ZWJ between two party poppers (no RGI sequence): removed"
+ },
+ {
+  "in": "\u00a9\u200d\u00ae",
+  "out": "\u00a9\u00ae",
+  "why": "SEC-6 #1: ZWJ between (c) and (r): removed"
+ },
+ {
+  "in": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66",
+  "out": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66",
+  "why": "SEC-6 #1: family of four (RGI ZWJ sequence): kept"
+ },
+ {
+  "in": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66\u200d\ud83c\udf89",
+  "out": "\ud83d\udc68\ud83d\udc69\ud83d\udc67\ud83d\udc66\ud83c\udf89",
+  "why": "SEC-6 #1: a family followed by ZWJ + party popper: the whole sequence loses its ZWJs"
+ },
+ {
+  "in": "\ud83d\udc69\u200d\ud83d\udcbb",
+  "out": "\ud83d\udc69\u200d\ud83d\udcbb",
+  "why": "SEC-6 #1: woman technologist: kept"
+ },
+ {
+  "in": "\ud83c\udfc3\ud83c\udffd\u200d\u2642\ufe0f",
+  "out": "\ud83c\udfc3\ud83c\udffd\u200d\u2642\ufe0f",
+  "why": "SEC-6 #1: man running, medium skin tone: kept"
+ },
+ {
+  "in": "\ud83e\uddd1\ud83c\udffb\u200d\ud83e\udd1d\u200d\ud83e\uddd1\ud83c\udfff",
+  "out": "\ud83e\uddd1\ud83c\udffb\u200d\ud83e\udd1d\u200d\ud83e\uddd1\ud83c\udfff",
+  "why": "SEC-6 #1: people holding hands, light and dark skin tones: kept"
+ },
+ {
+  "in": "\ud83d\udc69\u200d\ud83d\udcbb\u2764\ufe0f\u200d\ud83d\udd25",
+  "out": "\ud83d\udc69\u200d\ud83d\udcbb\u2764\ufe0f\u200d\ud83d\udd25",
+  "why": "SEC-6 #1: two RGI sequences side by side: both kept"
+ },
+ {
+  "in": "\ud83c\udfc3\u200d\u2642",
+  "out": "\ud83c\udfc3\u2642",
+  "why": "SEC-6 #1: runner ZWJ male sign without its FE0F (not RGI): ZWJ removed"
+ },
+ {
+  "in": "\ud83c\udffb\u200d\ud83c\udffb",
+  "out": "\ud83c\udffb\ud83c\udffb",
+  "why": "SEC-6 #1: skin tone ZWJ skin tone: removed"
+ },
+ {
+  "in": "\u0d28\u0d4d\u200d\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66",
+  "out": "\u0d28\u0d4d\u200d\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66",
+  "why": "SEC-6 #1/#4: a Malayalam chillu right before a family: both kept"
+ },
+ {
+  "in": "cafe\u0301",
+  "out": "caf\u00e9",
+  "why": "SEC-6 #2 NFC: cafe with a combining acute"
+ },
+ {
+  "in": "\u0d15\u0d46\u0d3e",
+  "out": "\u0d15\u0d4a",
+  "why": "SEC-6 #2 NFC: Malayalam o written in two parts becomes one"
+ },
+ {
+  "in": "\u1100\u1161\u11a8",
+  "out": "\uac01",
+  "why": "SEC-6 #2 NFC: a Hangul jamo sequence becomes its syllable"
+ },
+ {
+  "in": "\ufe8d\ufedf",
+  "out": "\u0627\u0644",
+  "why": "SEC-6 #2: Arabic presentation forms (alef, lam) become plain Arabic"
+ },
+ {
+  "in": "\ufefb",
+  "out": "\u0644\u0627",
+  "why": "SEC-6 #2: the lam-alef ligature becomes two letters"
+ },
+ {
+  "in": "\ufe8d\u0653",
+  "out": "\u0622",
+  "why": "SEC-6 #2: a presentation form is folded before NFC composes it with its mark"
+ },
+ {
+  "in": "\u0ba8\u0bbe\u0ba9\u0bcd\u200c \u0bb5",
+  "out": "\u0ba8\u0bbe\u0ba9\u0bcd \u0bb5",
+  "why": "SEC-6 #4: Tamil virama + ZWNJ before a space: removed"
+ },
+ {
+  "in": "\u0915\u094d\u200c.",
+  "out": "\u0915\u094d.",
+  "why": "SEC-6 #4: Devanagari virama + ZWNJ before a full stop: removed"
+ },
+ {
+  "in": "\u0ba8\u0bbe\u0ba9\u0bcd\u200d \u0bb5",
+  "out": "\u0ba8\u0bbe\u0ba9\u0bcd \u0bb5",
+  "why": "SEC-6 #4: Tamil virama + ZWJ at a word end: removed (only the Malayalam chillu keeps it)"
+ },
+ {
+  "in": "\u0915\u094d\u094d\u200d",
+  "out": "\u0915\u094d",
+  "why": "SEC-6 #4/#5: a doubled virama + ZWJ at the end: the repeat and the ZWJ removed"
+ },
+ {
+  "in": "a\u0336\u0336\u0336",
+  "out": "a\u0336",
+  "why": "SEC-6 #5: a repeated overlay mark keeps one"
+ },
+ {
+  "in": "1\u20e3\u20e3",
+  "out": "1\u20e3",
+  "why": "SEC-6 #5: a repeated keycap mark keeps one"
+ },
+ {
+  "in": "1\ufe0f\u20e3\u20e3",
+  "out": "1\ufe0f\u20e3",
+  "why": "SEC-6 #5: a keycap whose mark is repeated stays a keycap"
+ },
+ {
+  "in": "a\u0301\u0301",
+  "out": "\u00e1",
+  "why": "SEC-6 #5: a repeated acute keeps one (and NFC composes it)"
+ },
+ {
+  "in": "e\u0302\u0302\u0301",
+  "out": "\u1ebf",
+  "why": "SEC-6 #5: with the repeat removed the rest composes (e circumflex acute)"
+ },
+ {
+  "in": "Hi\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311\u0310\u0311 pay here",
+  "out": null,
+  "why": "FE-8: 120 alternating stacked marks: refused"
+ },
+ {
+  "in": "Hi\ud834\udd59there",
+  "out": "Hithere",
+  "why": "SEC-6 #6: musical null notehead U+1D159: removed"
+ },
+ {
+  "in": "a\ud80d\udc41b\ud80d\udc42c",
+  "out": "abc",
+  "why": "SEC-6 #6: Egyptian hieroglyph full and half blanks U+13441, U+13442: removed"
  }
 ]

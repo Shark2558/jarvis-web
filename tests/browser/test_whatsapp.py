@@ -391,7 +391,7 @@ def test_stacked_combining_marks_are_dropped_like_the_server_refuses_them(
     """Review FE-8: the server refuses a text with more than 4 combining marks (Unicode M*) in a
     row on one base character; the console mirrors that and drops such a card. Four are fine
     (Malayalam and Devanagari stack a few)."""
-    four = "a" + "́̂̃̄" + " ok"
+    four = "\u00e1\u0302\u0303\u0304 ok"  # NFC (SEC-6): a + acute is one; four in NFD
     five = "a" + "́̂̃̄̅"
     ml = "ക്ഷേ"  # Malayalam: virama and a vowel sign are marks
     c = _console_with(browser, server_url, token, [])
@@ -423,7 +423,7 @@ def test_the_card_says_the_character_count_when_it_differs_from_what_you_see(
 ) -> None:
     """Review FE-8: a text whose characters differ from what renders (marks, a family emoji) says
     how many characters WhatsApp gets; a plain text does not."""
-    accented = "Café at 5"  # 10 characters, 9 visible
+    accented = "Ra\u0331m at 5"  # 9 characters, 8 visible (no precomposed a + macron below)
     drafts = [
         _draft(text=accented, link=_link("919876543210", accented), name="Marks"),
         _draft(text="Plain text", link=_link("919876543210", "Plain text"), name="Plain"),
@@ -434,7 +434,7 @@ def test_the_card_says_the_character_count_when_it_differs_from_what_you_see(
         c.send("WhatsApp")
         cards = c.page.locator(".row.jarvis .wadraft")
         cards.nth(1).wait_for()
-        assert cards.nth(0).locator(".wachars").text_content() == "10 characters"
+        assert cards.nth(0).locator(".wachars").text_content() == "9 characters"
         assert cards.nth(1).locator(".wachars").count() == 0
         assert c.errors == []
     finally:
@@ -506,13 +506,48 @@ def test_the_browsers_rgi_emoji_derives_the_same_fe0f_table(
         c.close()
 
 
+def test_the_browser_agrees_with_every_rgi_zwj_sequence_of_the_servers_table(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Security review SEC-6 #1: the server keeps a ZWJ only inside a sequence of its table
+    (Unicode 17.0's RGI_Emoji_ZWJ_Sequence); the console asks the browser's own
+    \\p{RGI_Emoji} instead of shipping the table. Chromium matches every entry, and the console
+    keeps each one whole while a ZWJ between emoji that make no sequence is dropped."""
+    from jarvis.whatsapp.zwj_sequences import RGI_EMOJI_ZWJ_SEQUENCES
+
+    seqs = sorted(RGI_EMOJI_ZWJ_SEQUENCES)
+    never = ["\U0001f389\u200d\U0001f389", "\u00a9\u200d\u00ae", "\U0001f3c3\u200d\u2642"]
+    c = Console(browser, server_url, token, DESKTOP)
+    try:
+        c.open()
+        c.page.wait_for_function("!!window.JarvisWhatsApp")
+        got = c.page.evaluate(
+            """([seqs, never]) => {
+                const rgi = new RegExp('^\\\\p{RGI_Emoji}$', 'v');
+                const W = window.JarvisWhatsApp;
+                return {
+                    missing: seqs.filter((s) => !rgi.test(s)),
+                    altered: seqs.filter((s) => W.clean(s) !== s),
+                    matched: never.filter((s) => rgi.test(s)),
+                    kept: never.filter((s) => W.clean(s).includes('\\u200d')),
+                };
+            }""",
+            [seqs, never],
+        )
+        assert got == {"missing": [], "altered": [], "matched": [], "kept": []}
+        assert len(seqs) == 1614
+        assert c.errors == []
+    finally:
+        c.close()
+
+
 def test_the_draft_text_takes_its_own_direction_and_a_long_name_is_cut_by_code_points(
     browser: Any, server_url: str, token: str
 ) -> None:
     """SEC-5 (low): the draft text has dir="auto" (a Persian draft reads right to left; a Latin
     one left to right), and a long name is cut at NAME_MAX code points like the server's, never
     in the middle of an emoji's surrogate pair."""
-    persian = "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 ok"
+    persian = "\u0645\u06cc\u062e\u0648\u0627\u0647\u0645 ok"  # (SEC-6: no ZWNJ)
     long_name = "\U0001f600" * 120
     drafts = [_draft(text=persian, name=long_name), _draft(text="Running late")]
     c = _console_with(browser, server_url, token, drafts)
@@ -540,7 +575,7 @@ def test_only_the_whatsapp_quote_on_an_approval_takes_its_own_direction(
     (the head lines stay as they are); every other approval keeps its one plain paragraph."""
     from jarvis.whatsapp.tools import _card_text
 
-    persian = "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645\n\u0628\u0627\u0634\u0647"
+    persian = "\u0645\u06cc\u062e\u0648\u0627\u0647\u0645\n\u0628\u0627\u0634\u0647"
     summary = _card_text({"to": "98765 43210", "text": persian})
     cards = [
         {"id": "wa1", "tool": "whatsapp_draft", "summary": summary,
@@ -569,8 +604,7 @@ def test_only_the_whatsapp_quote_on_an_approval_takes_its_own_direction(
         assert quote.get_attribute("dir") == "auto"
         assert quote.evaluate("el => getComputedStyle(el).direction") == "rtl"
         head, body = summary.split("\n", 3)[:3], summary.split("\n", 3)[3]
-        shown = body.replace("\u200c", "[U+200C]")  # the card's own visible markers, as before
-        assert quote.text_content() == shown
+        assert quote.text_content() == body
         assert wa.locator("p").first.text_content() == "\n".join(head)
         assert wa.locator("[dir]").count() == 1  # only the quote
         assert gen.locator("[dir]").count() == 0

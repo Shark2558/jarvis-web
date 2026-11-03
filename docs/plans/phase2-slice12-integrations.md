@@ -294,6 +294,29 @@ console (`console-whatsapp.js`), over the one shared fixture:
   other projects share the billing account.
 A stored draft the stricter rule would change is skipped on reload, never shown cleaned.
 
+**SEC-6 (a second fresh review that fuzzed both sides).** Python 3.11, 3.12 and the console already
+agreed; the review found more invisible channels, now closed on both sides with the same rule:
+1. A ZWJ that joins emoji stays only inside an RGI emoji ZWJ sequence. A chain (an emoji, then
+   emoji, skin tones, FE0F and ZWJ, until an emoji no ZWJ joins) keeps its ZWJs only when the
+   whole chain, after the FE0F rule, is one sequence; otherwise every ZWJ in it goes ("party
+   ZWJ party", "(c) ZWJ (r)", a family + ZWJ + party popper). The server keeps Unicode 17.0's
+   1,614 sequences (`whatsapp/zwj_sequences.py`, from the pinned npm package
+   @unicode/unicode-17.0.0@2.0.8, read as data); the console ships no table and asks the
+   browser's own `\p{RGI_Emoji}` (v flag), failing closed where it is missing. A browser test
+   checks Chromium matches every entry. Two sequences side by side (no ZWJ between) both stay.
+2. NFC after the first pass, Arabic presentation forms folded to NFKC one by one first.
+3. No ZWNJ between Arabic letters (no Joining_Type table; Persian's ZWNJ goes, the letters join:
+   an accepted trade-off). `ARABIC_LETTERS` is gone on both sides.
+4. After a virama, a ZWNJ stays only before a letter; a ZWJ before a letter or right after the
+   Malayalam virama (the chillu, also at a word's end).
+5. A combining mark identical to the one right before it goes (judged in NFD, then NFC again,
+   repeated until nothing changes: dropping a joiner can let canonical reordering move a mark).
+   FE-8 counts marks in NFD, so a precomposed letter can't hide an accent.
+6. U+1D159, U+13441 and U+13442 are blank.
+Accepted residual risk, not handled: mixed-script / homoglyph spelling (UTS #39), FE0F rewritten
+to the fully-qualified form, Bengali ra-phala, ideographic variation selectors, tag flags. Word
+choice can always encode bits; the recipient warning and the owner pressing Send are the control.
+
 ## Slice 12: check after deploy
 None of these could be verified from the build sandbox. The owner checks them once, after the
 first deploy of this slice.

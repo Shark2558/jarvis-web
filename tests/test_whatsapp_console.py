@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any
 
 import pytest
 from httpx import AsyncClient
@@ -130,20 +129,78 @@ def test_the_browser_check_mirrors_the_servers_cleaning() -> None:
     # the same blank-rendering characters the server strips; a card still holding one is dropped
     # (the merge: the unassigned ones too, U+2065, U+FFF0-FFF8 and the whole tag block, which
     # takes in the variation selectors supplement U+E0100-E01EF)
-    # (SEC-5: FE0E is always blank now, and so is the Khitan small script filler U+16FE4)
+    # (SEC-5: FE0E is always blank now, and so is the Khitan small script filler U+16FE4;
+    # SEC-6: the musical null notehead and the Egyptian hieroglyph blanks)
     hexes = ("3164", "115f", "1160", "ffa0", "2800", "034f", "17b4", "17b5", "180b", "180f",
-             "fe00", "fe0e", "2065", "fff0", "fff8", "{e0000}", "{e0fff}", "{16fe4}")  # fmt: skip
+             "fe00", "fe0e", "2065", "fff0", "fff8", "{e0000}", "{e0fff}", "{16fe4}",
+             "{1d159}", "{13441}", "{13442}")  # fmt: skip
     for code in hexes:
         assert "\\u" + code in js, code
     from jarvis.whatsapp.draft import _blank
 
-    for code in (0x2065, 0xFFF0, 0xFFF8, 0xE0000, 0xE0100, 0xE01EF, 0xE0FFF, 0xFE0E, 0x16FE4):
+    for code in (0x2065, 0xFFF0, 0xFFF8, 0xE0000, 0xE0100, 0xE01EF, 0xE0FFF, 0xFE0E, 0x16FE4,
+                 0x1D159, 0x13441, 0x13442):  # fmt: skip
         assert _blank(chr(code)), hex(code)  # the server drops the same ones
     assert not _blank("\ufe0f")  # an emoji's FE0F is judged in place (SEC-5 H1)
     assert "\\p{Cc}\\p{Cf}\\p{Co}\\p{Cs}" in js  # the categories the server drops
     assert "/^\\p{Cn}$/u" in js  # SEC-5 M3: and the unassigned code points, but future emoji
     assert "clean(text) !== text" in js  # anything the server would have changed is refused
     assert "\\n{4,}" in js  # more than two blank lines
+
+
+def test_the_console_normalizes_like_the_server() -> None:
+    """SEC-6 #2 and #5: NFC after the first pass (Arabic presentation forms folded first, one by
+    one, to NFKC), the repeated-mark rule in NFD, NFC again; FE-8 counts marks in NFD."""
+    js = JS.read_text(encoding="utf-8")
+    assert "/[\\ufb50-\\ufdff\\ufe70-\\ufefe]/g, (c) => c.normalize('NFKC')" in js
+    assert ".normalize('NFC')" in js and ".normalize('NFD')" in js
+    assert "for (const ch of text.normalize('NFD'))" in js  # stacked() counts decomposed marks
+
+
+def test_the_console_asks_the_browser_for_rgi_zwj_sequences_and_ships_no_table() -> None:
+    """SEC-6 #1: the browser judges an emoji ZWJ sequence with its own \\p{RGI_Emoji} (the v
+    flag, built in a try so an older browser fails closed: every ZWJ goes and the card with it);
+    the server's table is not copied into the console."""
+    js = JS.read_text(encoding="utf-8")
+    assert "new RegExp('^\\\\p{RGI_Emoji}', 'v')" in js
+    assert "return m !== null && m[0] === s;" in js  # the whole chain, not a prefix
+    assert "catch (_) { return () => false; }" in js
+    assert "\\u{1f468}" not in js.lower()  # no sequence table (the family's man is in many)
+
+
+def test_the_zwj_sequence_table_is_unicode_17s_rgi_set() -> None:
+    """RGI_EMOJI_ZWJ_SEQUENCES: Unicode 17.0's RGI_Emoji_ZWJ_Sequence (1,614 sequences, from
+    the pinned npm package @unicode/unicode-17.0.0@2.0.8), ASCII-only escaped strings. Every
+    sequence is made of what a chain may hold: emoji, skin tones, FE0F (only after a base whose
+    emoji form needs it) and ZWJ. tests/browser/test_whatsapp.py checks the browser agrees."""
+    from jarvis.whatsapp import zwj_sequences as z
+    from jarvis.whatsapp.pictographic import emoji_fe0f_base
+    from jarvis.whatsapp.pictographic import extended_pictographic as ep
+
+    source = Path(z.__file__).read_text(encoding="utf-8")
+    assert source.isascii()
+    assert z.UNICODE_VERSION == "17.0" and "@unicode/unicode-17.0.0@2.0.8" in (z.__doc__ or "")
+    seqs = z.RGI_EMOJI_ZWJ_SEQUENCES
+    assert len(seqs) == 1614 and isinstance(seqs, frozenset)
+    for s in seqs:
+        assert "\u200d" in s and ep(s[0]), ascii(s)
+        for k, ch in enumerate(s):
+            skin = 0x1F3FB <= ord(ch) <= 0x1F3FF
+            assert ep(ch) or skin or ch == "\u200d" or ch == "\ufe0f", ascii(s)
+            assert ch != "\ufe0f" or emoji_fe0f_base(s[k - 1]), ascii(s)
+            assert not ep(ch) or k == 0 or s[k - 1] == "\u200d", ascii(s)  # one chain each
+    for must in (
+        "\U0001f468\u200d\U0001f469\u200d\U0001f467\u200d\U0001f466",
+        "\U0001f469\u200d\U0001f4bb",
+        "\U0001f3f3\ufe0f\u200d\U0001f308",
+        "\u2764\ufe0f\u200d\U0001f525",
+        "\U0001f441\ufe0f\u200d\U0001f5e8\ufe0f",
+        "\U0001f3c3\U0001f3fd\u200d\u2642\ufe0f",
+        "\U0001f9d1\U0001f3fb\u200d\U0001f91d\u200d\U0001f9d1\U0001f3ff",
+    ):
+        assert z.rgi_zwj_sequence(must), ascii(must)
+    for never in ("\U0001f389\u200d\U0001f389", "\u00a9\u200d\u00ae", "\U0001f3c3\u200d\u2642"):
+        assert not z.rgi_zwj_sequence(never), ascii(never)
 
 
 # ---- security review SEC-5: one copy of each table per side, identical ------------------------
@@ -174,7 +231,6 @@ def _well_formed(table: tuple[tuple[int, int], ...]) -> bool:
     [
         ("FE0F_BASES", "jarvis.whatsapp.pictographic", "EMOJI_FE0F_BASES"),
         ("VIRAMAS", "jarvis.whatsapp.joining", "VIRAMAS"),
-        ("ARABIC_LETTERS", "jarvis.whatsapp.joining", "ARABIC_LETTERS"),
     ],
 )
 def test_the_consoles_tables_are_exactly_the_servers(js_name: str, module: str, attr: str) -> None:
@@ -183,6 +239,14 @@ def test_the_consoles_tables_are_exactly_the_servers(js_name: str, module: str, 
     table = getattr(importlib.import_module(module), attr)
     assert _well_formed(table), attr
     assert _js_ranges(JS.read_text(encoding="utf-8"), js_name) == table
+
+
+def test_the_arabic_letter_allowance_is_gone_on_both_sides() -> None:
+    """SEC-6 #3: no ZWNJ between Arabic letters (no Joining_Type table on either side)."""
+    from jarvis.whatsapp import joining
+
+    assert not hasattr(joining, "ARABIC_LETTERS") and not hasattr(joining, "arabic_letter")
+    assert "ARABIC" not in JS.read_text(encoding="utf-8")
 
 
 def test_the_fe0f_bases_are_emoji_whose_emoji_form_needs_the_selector() -> None:
@@ -202,31 +266,14 @@ def test_the_fe0f_bases_are_emoji_whose_emoji_form_needs_the_selector() -> None:
     assert not emoji_fe0f_base("") and not emoji_fe0f_base("\u2764\ufe0f")
 
 
-def _found(pick: Any) -> set[int]:
-    return {c for c in range(0x110000) if pick(chr(c))}
-
-
-@pytest.mark.parametrize(
-    ("attr", "pick"),
-    [
-        ("VIRAMAS", lambda ch: unicodedata.combining(ch) == 9),
-        (
-            "ARABIC_LETTERS",
-            lambda ch: (
-                unicodedata.category(ch)[0] == "L"
-                and unicodedata.name(ch, "").startswith("ARABIC LETTER ")
-            ),
-        ),
-    ],
-)
-def test_the_joiner_tables_are_python_3_12s_unicode_15(attr: str, pick: Any) -> None:
-    """VIRAMAS (canonical combining class 9) and ARABIC_LETTERS (letters named "ARABIC LETTER")
-    were generated with Python 3.12 (Unicode 15.0). An older Python knows fewer (the rest are
-    unassigned there, so cleaning drops them anyway); 15.x knows exactly these."""
+def test_the_virama_table_is_python_3_12s_unicode_15() -> None:
+    """VIRAMAS (canonical combining class 9) were generated with Python 3.12 (Unicode 15.0). An
+    older Python knows fewer (the rest are unassigned there, so cleaning drops them anyway);
+    15.x knows exactly these."""
     from jarvis.whatsapp import joining
 
-    table = _codes(getattr(joining, attr))
-    found = _found(pick)
+    table = _codes(joining.VIRAMAS)
+    found = {c for c in range(0x110000) if unicodedata.combining(chr(c)) == 9}
     major = int(unicodedata.unidata_version.split(".")[0])
     assert joining.UNICODE_VERSION == "15.0"
     if major == 15:

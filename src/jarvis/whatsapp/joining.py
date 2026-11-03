@@ -1,20 +1,21 @@
 # src/jarvis/whatsapp/joining.py
 """Where a zero-width non-joiner / joiner (U+200C / U+200D) may stay in a WhatsApp draft (slice
-12 security review SEC-5 M1; Layer 4 Safety). Pure, stdlib only.
+12 security reviews SEC-5 M1 and SEC-6; Layer 4 Safety). Pure, stdlib only.
 
-The rule is RFC 5892's CONTEXTJ (IDNA): a ZWNJ or ZWJ right after a virama (canonical combining
-class 9: Malayalam's chillu and ZWNJ, Hindi's half forms, Odia, Tamil ...), and a ZWNJ also
-between two Arabic letters (Persian "mi-khaham"). `jarvis.whatsapp.draft` adds the third place a
-ZWJ belongs: inside an emoji sequence. Anywhere else (between Latin, Cyrillic, CJK, mathematical
-or letterlike letters) a joiner shows nothing and could carry data, so it goes.
+The rule starts from RFC 5892's CONTEXTJ (IDNA): a ZWNJ or ZWJ right after a virama (canonical
+combining class 9: Malayalam's chillu and ZWNJ, Hindi's half forms, Odia, Tamil ...).
+`jarvis.whatsapp.draft` narrows it (SEC-6 #4: a letter must follow, or for a ZWJ the virama is
+Malayalam's, the old-style chillu) and adds the one other place a ZWJ belongs: inside an RGI
+emoji ZWJ sequence (`jarvis.whatsapp.zwj_sequences`). Anywhere else (between Latin, Cyrillic,
+CJK, Arabic, mathematical or letterlike letters) a joiner shows nothing and could carry data, so
+it goes. SEC-6 #3 removed CONTEXTJ's ZWNJ between Arabic letters: without a Joining_Type table on
+either side it can't be judged, and the owner writes Malayalam, Hindi, Odia and English.
 
-Both tables were generated once with Python 3.12 (Unicode 15.0): `VIRAMAS` from
-`unicodedata.combining(c) == 9`, `ARABIC_LETTERS` from the letters (category L*) whose name starts
-"ARABIC LETTER " (so not U+061C ARABIC LETTER MARK, a format character, nor U+0670 ARABIC LETTER
-SUPERSCRIPT ALEF, a mark). They are explicit so that every Python (CI also runs 3.11, Unicode 14)
-and the browser (JavaScript has no combining-class property) apply exactly the same rule:
-console-whatsapp.js keeps identical copies (tests/test_whatsapp_console.py compares them, and
-checks them against this Python's unicodedata).
+`VIRAMAS` was generated once with Python 3.12 (Unicode 15.0) from
+`unicodedata.combining(c) == 9`. It is explicit so that every Python (CI also runs 3.11,
+Unicode 14) and the browser (JavaScript has no combining-class property) apply exactly the same
+rule: console-whatsapp.js keeps an identical copy (tests/test_whatsapp_console.py compares them,
+and checks the table against this Python's unicodedata).
 """
 
 from __future__ import annotations
@@ -36,25 +37,12 @@ VIRAMAS: tuple[tuple[int, int], ...] = (
     (0x119E0, 0x119E0), (0x11A34, 0x11A34), (0x11A47, 0x11A47), (0x11A99, 0x11A99),
     (0x11C3F, 0x11C3F), (0x11D44, 0x11D45), (0x11D97, 0x11D97), (0x11F41, 0x11F42),
 )  # fmt: skip
-ARABIC_LETTERS: tuple[tuple[int, int], ...] = (
-    (0x0620, 0x063F), (0x0641, 0x064A), (0x066E, 0x066F), (0x0671, 0x06D3),
-    (0x06D5, 0x06D5), (0x06EE, 0x06EF), (0x06FA, 0x06FC), (0x06FF, 0x06FF),
-    (0x0750, 0x077F), (0x0870, 0x0882), (0x0886, 0x0886), (0x0889, 0x088D),
-    (0x08A0, 0x08C8), (0xFB50, 0xFBB1), (0xFBD3, 0xFBE9), (0xFBFC, 0xFBFF),
-    (0xFE80, 0xFEF4),
-)  # fmt: skip
 _VIRAMAS = frozenset(c for lo, hi in VIRAMAS for c in range(lo, hi + 1))
-_ARABIC = frozenset(c for lo, hi in ARABIC_LETTERS for c in range(lo, hi + 1))
 
 
 def virama(ch: str) -> bool:
-    """True for a virama (canonical combining class 9): a joiner right after it is kept."""
+    """True for a virama (canonical combining class 9): a joiner right after it may stay."""
     return len(ch) == 1 and ord(ch) in _VIRAMAS
 
 
-def arabic_letter(ch: str) -> bool:
-    """True for an Arabic letter: a ZWNJ between two of them is kept."""
-    return len(ch) == 1 and ord(ch) in _ARABIC
-
-
-__all__ = ["ARABIC_LETTERS", "UNICODE_VERSION", "VIRAMAS", "arabic_letter", "virama"]
+__all__ = ["UNICODE_VERSION", "VIRAMAS", "virama"]

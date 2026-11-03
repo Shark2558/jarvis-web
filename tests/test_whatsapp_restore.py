@@ -214,6 +214,22 @@ def test_a_stored_draft_with_a_selector_the_rule_now_drops_is_skipped() -> None:
     assert kept.card.text == heart and kept.card.link == wa_link("+919876543210", heart)
 
 
+def test_a_stored_draft_the_sec_6_rule_would_change_is_skipped() -> None:
+    """Security review SEC-6: a stored text with a ZWJ outside an RGI sequence, a text not in
+    NFC, a ZWNJ between Arabic letters or a repeated mark is skipped, never shown cleaned."""
+    for text in (
+        "\U0001f389\u200d\U0001f389",  # ZWJ between two party poppers
+        "cafe\u0301",  # not NFC
+        "\u0645\u06cc\u200c\u062e",  # Persian ZWNJ
+        "a\u0336\u0336",  # a repeated mark
+        "\u0ba8\u0bcd\u200c \u0bb5",  # Tamil virama + ZWNJ before a space
+    ):
+        assert stored_drafts(_exchange(_result(text=text))) == [], ascii(text)
+    family = "\U0001f468\u200d\U0001f469\u200d\U0001f467\u200d\U0001f466"
+    (kept,) = stored_drafts(_exchange(_result(text=family)))
+    assert kept.card.text == family
+
+
 def test_an_unknown_source_carries_the_warning() -> None:
     (d,) = stored_drafts(_exchange(_result(to={"number": "+919876543210", "from": "made-up"})))
     assert d.card.warning == WARNING

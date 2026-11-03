@@ -142,6 +142,47 @@ async def test_calendar_never_still_blocks_every_calendar_tool_even_for_a_remind
     assert fake_google.sent("PATCH", "/events/remravi01") == []
 
 
+async def test_reminders_ask_first_makes_a_calendar_change_to_a_reminder_a_card(
+    connected: GoogleConnector, fake_google: FakeGoogle
+) -> None:
+    """Slice 12 code review CR-9 — INTENDED: since review S1 a look-up that names another row
+    (`Preview.also`) gets that row's WHOLE decision. With Reminders on "Ask first", a calendar
+    delete or update that touches a JARVIS reminder becomes a card (nothing sent to Google until
+    approved), while a plain event still runs."""
+    from jarvis.storage.docs import MemoryDocs
+    from jarvis.undo.service import UndoBin
+    from jarvis.undo.store import DeletedStore
+
+    def gateway(rules: list[PolicyRule]) -> Gateway:
+        """With the Recently deleted bin: deleting the owner's own reminder is undo-able (R2),
+        so without the row's "Ask first" it runs without a card — the control below."""
+        fake_google.on("GET", TZ_URL, httpx.Response(200, json={"timeZone": "Asia/Kolkata"}))
+        undo = UndoBin(DeletedStore(MemoryDocs()))
+        reg = ToolRegistry()
+        for t in calendar_tools(connected, undo=undo) + reminder_tools(connected):
+            reg.register(t)
+        gate = ConfirmationGate()
+        return Gateway(registry=reg, policy=Policy(rules), gate=gate, audit=AuditLog())
+
+    _plant(fake_google, "remravi01", summary="⏰ call Ravi", extendedProperties=TAG)
+    _plant(fake_google, "evdentist1")
+    gw = gateway(_rules(Effect.ASK, "reminders"))
+    gone = await _call(gw, "calendar_delete_event", "remravi01")
+    assert gone.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    assert gone.pending is not None and gone.pending.tool == "calendar_delete_event"
+    assert gone.pending.reason is AskReason.OWNER_RULE
+    assert gone.pending.tool_risk is ActionRisk.REVERSIBLE  # undo-able: no passkey needed
+    upd = await _call(gw, "calendar_update_event", "remravi01", **UPDATE)
+    assert upd.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    assert fake_google.sent("DELETE", "/events/remravi01") == []
+    assert fake_google.sent("PATCH", "/events/remravi01") == []
+    plain = await _call(gw, "calendar_update_event", "evdentist1", **UPDATE)
+    assert plain.outcome is GatewayOutcome.EXECUTED
+    # control: the card came from the Reminders row — without it the same delete just runs
+    free = await _call(gateway([]), "calendar_delete_event", "remravi01")
+    assert free.outcome is GatewayOutcome.EXECUTED, free.error
+
+
 async def test_the_reminders_row_says_it_covers_the_calendar_tools_too() -> None:
     row = next(g for g in GROUPS if g.id == "reminders")
     assert "Calendar tools" in row.hint and "reminder" in row.hint

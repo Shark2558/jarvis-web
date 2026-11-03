@@ -25,6 +25,9 @@ dependencies = [
     # and loop limits); python-docx MIT (lxml parser with resolve_entities=False).
     "pypdf>=6.21,<7",
     "python-docx>=1.2,<2",
+    # slice 12 code review CR-7: IANA zone data for zoneinfo (the quota ledger's Pacific time)
+    # even in an image without /usr/share/zoneinfo. Apache-2.0.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

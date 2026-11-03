@@ -77,10 +77,13 @@ def _run(
         'die() { echo "DIE $*" >&2; exit 9; }\n'
         "MAPS_SECRET=''; MAPS_STATE=off; MAPS_REMOVE=()\n"
         f"MAPS_APIS='{' '.join(SERVICES)}'\n"
+        + next(ln for ln in script.splitlines() if ln.startswith("MAPS_OFF="))
+        + "\n"
     )
     body = (
         prelude
         + _function(script, "maps_key_allows_only")
+        + _function(script, "maps_key_name")
         + _function(script, "setup_maps_key")
         + 'setup_maps_key\nprintf "\\nSECRET=%s\\nSTATE=%s\\nREMOVE=%s\\n" '
         '"$MAPS_SECRET" "$MAPS_STATE" "${MAPS_REMOVE[*]:-}"\n'
@@ -333,3 +336,134 @@ def test_the_summary_is_plain_and_says_where_india_pricing_applies(script: str) 
 def test_script_still_parses() -> None:
     r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stderr
+
+
+# ---- code review CR-5 / security review SEC-2 -----------------------------------------------
+
+
+def test_a_failed_key_list_is_not_an_empty_one_and_never_creates_a_second_key(
+    script: str, tmp_path: Path
+) -> None:
+    """`api-keys list` failing must not read as "no key yet": a re-run would make a duplicate
+    jarvis-maps-yt. A failed list skips creating, with a plain note; Maps stays off."""
+    r = _run(script, tmp_path, existing=True, secret=KEY, fail="services api-keys list")
+    assert r["rc"] == "0" and "DIE" not in r["out"]
+    assert "services api-keys create" not in r["calls"]
+    assert (r["secret"], r["state"]) == ("", "off")
+    assert r["remove"] == "--remove-secrets JARVIS_GOOGLE_API_KEY"
+    assert "Note:" in r["out"] and "re-run" in r["out"].lower()
+
+
+@pytest.mark.parametrize(
+    "fail",
+    ["services enable", "services api-keys list", "services api-keys describe"],
+)
+def test_a_saved_key_is_mounted_only_after_this_runs_read_back(
+    script: str, tmp_path: Path, fail: str
+) -> None:
+    """SEC-2: an existing jarvis-google-api-key secret is mounted only when THIS run read the
+    key's restrictions back as exactly the three APIs; otherwise it is unmounted and Maps and
+    YouTube stay off with a plain note."""
+    r = _run(script, tmp_path, existing=True, secret=KEY, fail=fail)
+    assert r["rc"] == "0" and "DIE" not in r["out"]
+    assert (r["secret"], r["state"]) == ("", "off")
+    assert r["remove"] == "--remove-secrets JARVIS_GOOGLE_API_KEY"
+    assert "stay off" in r["out"] and KEY not in r["out"]
+
+
+def test_the_summary_says_maps_is_off_unless_the_key_was_confirmed(script: str) -> None:
+    done = script.split('say "DONE', 1)[1]
+    off = done.split('if [ "$MAPS_STATE" = on ]', 1)[1].split("fi\n", 1)[0].split("else", 1)[1]
+    assert "MAPS + YOUTUBE: off" in off and "re-run" in off.lower()
+
+
+def _grants(
+    script: str, tmp: Path, *, fail_secret: str, maps_secret: str, web_secret: str
+) -> dict[str, str]:
+    """The step-5 grant loop with a fake gcloud whose grant for `fail_secret` always fails."""
+    log = _fake_gcloud(
+        tmp, f'  *"add-iam-policy-binding {fail_secret} "*) exit 1 ;;\n', "@@never@@"
+    )
+    loop = script[script.index("grant_failed() {") :]
+    loop = loop[: loop.index("\ndone\n", loop.index("for secret in jarvis-google-client")) + 6]
+    body = (
+        "set -euo pipefail\n"
+        f'PATH="{tmp}:$PATH"\nRUN_SA=run@p\nsleep() {{ :; }}\n'
+        "secret_exists() { true; }\n"
+        'die() { echo "DIE $*" >&2; exit 9; }\n'
+        + next(ln for ln in script.splitlines() if ln.startswith("MAPS_OFF="))
+        + "\n"
+        f"MAPS_SECRET='{maps_secret}'; MAPS_STATE=on; MAPS_REMOVE=()\n"
+        f"WEB_SECRET='{web_secret}'; WEB_ENV=JARVIS_WEB_SEARCH_ENABLED=true\n"
+        + loop
+        + '\nprintf "\\nMAPS=%s\\nSTATE=%s\\nREMOVE=%s\\nWEB=%s\\nWEBENV=%s\\n" '
+        '"$MAPS_SECRET" "$MAPS_STATE" "${MAPS_REMOVE[*]:-}" "$WEB_SECRET" "$WEB_ENV"\n'
+    )
+    done = subprocess.run(["bash", "-c", body], capture_output=True, text=True, check=False)
+    lines = dict(
+        ln.split("=", 1)
+        for ln in done.stdout.splitlines()
+        if ln.startswith(("MAPS=", "STATE=", "REMOVE=", "WEB=", "WEBENV="))
+    )
+    return {"rc": str(done.returncode), "out": done.stdout + done.stderr, **lines,
+            "calls": log.read_text() if log.exists() else ""}  # fmt: skip
+
+
+@pytest.mark.parametrize("secret", ["jarvis-google-api-key", "jarvis-tavily-key"])
+def test_an_optional_secret_that_cant_be_granted_never_stops_the_deploy(
+    script: str, tmp_path: Path, secret: str
+) -> None:
+    """CR-5 (a): an optional part never stops the deploy — a grant that fails for the Maps key
+    or the Tavily key is a plain note, and that secret is not mounted."""
+    r = _grants(script, tmp_path, fail_secret=secret, maps_secret=BOUND,
+                web_secret="JARVIS_TAVILY_API_KEY=jarvis-tavily-key:latest,")  # fmt: skip
+    assert r["rc"] == "0" and "DIE" not in r["out"], r["out"]
+    assert "Note:" in r["out"] and secret in r["out"]
+    if secret == "jarvis-google-api-key":
+        assert (r["MAPS"], r["STATE"]) == ("", "off")
+        assert r["REMOVE"] == "--remove-secrets JARVIS_GOOGLE_API_KEY"
+        assert r["WEB"] != ""
+    else:
+        assert (r["WEB"], r["WEBENV"]) == ("", "JARVIS_WEB_SEARCH_ENABLED=false")
+        assert r["MAPS"] == BOUND
+
+
+def test_a_required_secret_that_cant_be_granted_still_stops_the_deploy(
+    script: str, tmp_path: Path
+) -> None:
+    r = _grants(script, tmp_path, fail_secret="jarvis-token-key", maps_secret=BOUND, web_secret="")
+    assert r["rc"] == "9" and "DIE" in r["out"] and "jarvis-token-key" in r["out"]
+
+
+def test_the_web_search_off_is_unmounted_on_a_quick_re_run(script: str) -> None:
+    quick = script.split('if [ "$QUICK" = yes ]; then\n  CONFIG_FLAGS=(', 1)[1].split(")", 1)[0]
+    assert '"${WEB_REMOVE[@]}"' in quick
+
+
+# ---- the budget alert: a failed list is not an empty one (CR-5 b) ---------------------------
+
+
+def test_a_failed_budget_list_never_creates_a_second_alert(script: str, tmp_path: Path) -> None:
+    r = _budget(script, tmp_path, fail="billing budgets list")
+    assert "RC_OK" in r["out"] and "billing budgets create" not in r["calls"]
+    notes = [ln for ln in r["out"].splitlines() if "Note:" in ln]
+    assert len(notes) == 1 and "budget" in notes[0] and "re-run" in notes[0].lower()
+
+
+def test_the_lists_tell_a_failure_from_an_empty_answer(script: str) -> None:
+    """No list whose failure decides whether something is CREATED may end in `|| true`."""
+    for fn in ("setup_maps_key", "setup_budget_alert"):
+        body = _function(script, fn)
+        for ln in body.splitlines():
+            if " list " in ln and ("api-keys" in ln or "budgets" in ln):
+                assert "|| true" not in ln, ln
+
+
+def test_deploy_script_passes_shellcheck() -> None:
+    import shutil
+    import sys
+
+    found = shutil.which("shellcheck") or str(Path(sys.executable).with_name("shellcheck"))
+    if not Path(found).exists():
+        pytest.skip("shellcheck not installed")
+    subprocess.run([found, "-S", "warning", str(SCRIPT)], check=True)

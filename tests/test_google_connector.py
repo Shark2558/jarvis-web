@@ -198,6 +198,55 @@ async def test_read_only_post_can_opt_into_one_retry(
     assert len(fake.requests) == 2
 
 
+async def test_a_retry_that_never_got_through_after_an_answer_is_not_never_sent(
+    conn: GoogleConnector, store: MemoryTokenStore
+) -> None:
+    """Code review CR-4: the first attempt got a 503 (Google answered), the retry could not
+    connect: Google WAS reached, so the call is not "never sent" (its unit is not given back)."""
+    from jarvis.integrations.google import never_sent
+
+    await store.put(UID, _tokens())
+    answers: list[int | None] = [503, None]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = answers.pop(0)
+        if status is None:
+            raise httpx.ConnectError("down", request=request)
+        return httpx.Response(status)
+
+    conn.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(GoogleUncertain) as ei:
+        await conn.request(UID, "GET", CAL)
+    assert never_sent(ei.value) is False
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down", request=request)
+
+    conn.http = httpx.AsyncClient(transport=httpx.MockTransport(refuse))
+    with pytest.raises(GoogleUncertain) as ei:
+        await conn.request(UID, "GET", CAL, send_once=True)
+    assert never_sent(ei.value) is True  # one attempt, and it never connected
+
+
+async def test_send_once_sends_exactly_one_request_and_refreshes_without_resending(
+    conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle
+) -> None:
+    await store.put(UID, _tokens())
+    fake.on("GET", CAL, httpx.Response(503), httpx.Response(200, json={"ok": 1}))
+    with pytest.raises(GoogleUncertain):
+        await conn.request(UID, "GET", CAL, send_once=True)
+    assert len(fake.requests) == 1
+    fake.requests.clear()
+    fake.on("GET", CAL + "/x", httpx.Response(401), httpx.Response(200, json={"ok": 2}))
+    fake.on("POST", TOKEN_URL, httpx.Response(200, json={"access_token": "n2", "expires_in": 999}))
+    with pytest.raises(GoogleAPIError) as ei:
+        await conn.request(UID, "GET", CAL + "/x", send_once=True)
+    assert "again" in str(ei.value).lower()
+    assert [r.method for r in fake.requests] == ["GET", "POST"]  # sent once, then the refresh
+    assert await conn.request(UID, "GET", CAL + "/x", send_once=True) == {"ok": 2}
+    assert fake.requests[-1].headers["authorization"] == "Bearer n2"
+
+
 async def test_request_refreshes_once_on_401(
     conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle
 ) -> None:

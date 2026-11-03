@@ -269,11 +269,12 @@ class _YouTube:
     ) -> dict[str, Any]:
         """One call with the owner's token: it counts against the project's units like a key
         call and follows the same refund / latch rules (`_failed`). The link is made usable
-        first (a refresh that fails sends nothing to YouTube and takes no unit)."""
+        first (a refresh that fails sends nothing to YouTube and takes no unit). Sent exactly
+        once (`send_once`, code review CR-4): one unit reserved, one request YouTube counts."""
         await conn.access_token(uid)
         r = await self._reserve(YOUTUBE_UNITS)
         try:
-            data = await conn.request(uid, "GET", url, params=params)
+            data = await conn.request(uid, "GET", url, params=params, send_once=True)
         except Exception as exc:
             await self._failed(exc, r)
             raise

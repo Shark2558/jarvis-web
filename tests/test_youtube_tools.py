@@ -512,6 +512,63 @@ async def test_an_owner_call_told_the_quota_is_gone_latches_todays_units() -> No
     assert _view(gr)["status"] == "paused" and r.fake.sent(f"{YT}/playlists") == []
 
 
+def _scripted(r: Rig, path: str, *answers: int | type[Exception]) -> list[httpx.Request]:
+    """The owner's link answers `path` with these, in order (a status, or an exception raised
+    as if the connection failed); everything else as the fake does. Returns the requests seen."""
+    seen: list[httpx.Request] = []
+    queue = list(answers)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/token":  # the link's refresh
+            return httpx.Response(200, json={"access_token": "fresh", "expires_in": 3600})
+        if request.url.path != path:
+            return r.fake.handler(request)
+        seen.append(request)
+        nxt = queue.pop(0) if queue else 200
+        if isinstance(nxt, int):
+            return httpx.Response(nxt, json={"error": {"code": nxt}})
+        raise nxt("scripted", request=request)  # type: ignore[call-arg]
+
+    r.oauth.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return seen
+
+
+async def test_an_owner_call_is_sent_once_so_youtube_counts_one_unit() -> None:
+    """Code review CR-4: each owner call reserves ONE unit, so it is sent once — no retry on a
+    5xx / 429 (YouTube counts every request it gets, answered or not)."""
+    r = Rig()
+    await r.link()
+    for status in (503, 429, 500):
+        seen = _scripted(r, _ITEMS, status, 200)
+        gr = await r.call("youtube_playlist", playlist="PLabc123_-XYZ")
+        assert gr.outcome is GatewayOutcome.ERROR and len(seen) == 1, status
+    assert (await r.ledger.use(YOUTUBE_UNITS)).used == 3
+
+
+async def test_a_503_then_a_lost_connection_keeps_the_unit() -> None:
+    """Code review CR-4: YouTube answered once, so the unit stays used even when what follows
+    never reached it (never_sent is only for a call that got no answer at all)."""
+    r = Rig()
+    await r.link()
+    seen = _scripted(r, _ITEMS, 503, httpx.ConnectError)
+    await r.call("youtube_playlist", playlist="PLabc123_-XYZ")
+    assert len(seen) == 1
+    assert (await r.ledger.use(YOUTUBE_UNITS)).used == 1
+
+
+async def test_a_401_refreshes_the_link_for_the_next_call_but_is_not_resent() -> None:
+    r = Rig()
+    await r.link()
+    seen = _scripted(r, _ITEMS, 401, 200)
+    gr = await r.call("youtube_playlist", playlist="PLabc123_-XYZ")
+    assert gr.outcome is GatewayOutcome.ERROR and len(seen) == 1
+    assert "try" in (gr.error or "").lower()
+    assert (await r.ledger.use(YOUTUBE_UNITS)).used == 1
+    gr = await r.call("youtube_playlist", playlist="PLabc123_-XYZ")  # the refreshed token works
+    assert gr.outcome is GatewayOutcome.EXECUTED and len(seen) == 2
+    assert seen[1].headers["authorization"] != seen[0].headers["authorization"]
+
+
 async def test_an_owner_call_whose_link_fails_first_takes_no_unit() -> None:
     """The owner's token can't be refreshed: nothing went to YouTube, nothing is counted."""
     r = Rig()

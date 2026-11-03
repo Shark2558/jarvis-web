@@ -10,6 +10,12 @@
 #         script (ZWJ also between emoji); FE0E / FE0F only after an emoji or a keycap base; and
 #         the card quotes the EXACT text. The cases are shared with the console
 #         (tests/fixtures/whatsapp_clean_cases.json, tests/browser/test_whatsapp.py).
+#   SEC-5 the selectors and joiners were still a channel ("Call 9<FE0F>8<FE0E>76" showed as
+#         "Call 9876"). Now: FE0E never; FE0F only inside a keycap or after a code point whose
+#         emoji form is cp + FE0F (EMOJI_FE0F_BASES); ZWNJ / ZWJ only right after a virama
+#         (RFC 5892 CONTEXTJ), ZWNJ also between Arabic letters, ZWJ also inside an emoji
+#         sequence; no space at either end of a line; unassigned code points (Cn) dropped but
+#         a future emoji's.
 from __future__ import annotations
 
 import json
@@ -28,6 +34,7 @@ from jarvis.tools.policy import Policy
 from jarvis.tools.registry import ToolRegistry
 from jarvis.tools.taint import context_trust
 from jarvis.whatsapp.draft import MAX_MARKS, STACKED, draft_card, text_arg
+from jarvis.whatsapp.pictographic import emoji_fe0f_base, extended_pictographic
 from jarvis.whatsapp.tools import whatsapp_tools
 
 ZALGO = "Hi" + "\u0310" * 120 + " pay here"
@@ -90,7 +97,6 @@ async def test_the_tool_refuses_a_stacked_text_before_anything_runs() -> None:
 FIXTURE = Path(__file__).parent / "fixtures" / "whatsapp_clean_cases.json"
 CASES: list[dict[str, Any]] = json.loads(FIXTURE.read_text(encoding="ascii"))
 ZWNJ, ZWJ = "\u200c", "\u200d"
-KEPT_INVISIBLES = frozenset({ZWNJ, ZWJ, "\ufe0e", "\ufe0f"})
 
 
 def test_the_fixture_is_ascii_and_covers_what_the_review_named() -> None:
@@ -100,9 +106,20 @@ def test_the_fixture_is_ascii_and_covers_what_the_review_named() -> None:
     for needle in ("Latin letters", "FE0F after a letter", "NBSP", "Malayalam", "Devanagari",
                    "family", "heart", "keycap", "stacked", "S3",
                    # the final review's console-text.js additions: the strict rule drops them too
-                   "soft hyphen", "U+180E", "U+E007F", "CGJ"):  # fmt: skip
+                   "soft hyphen", "U+180E", "U+E007F", "CGJ",
+                   # SEC-5 H1: variation selectors only where they make an emoji
+                   "Call 9876", "no U+20E3", "U+231A", "U+1F600", "FE0E (text style)",
+                   "FE0F twice", "EMOJI_FE0F_BASES", "eye in speech bubble", "skin tone ZWJ",
+                   "FE0F after a skin tone",
+                   # M1: joiners only after a virama (or ZWNJ between Arabic letters)
+                   "chillu", "Hindi half-form", "Odia virama", "Tamil virama", "Persian",
+                   "Cyrillic look-alikes", "CJK", "Mathematical Alphanumeric", "Letterlike",
+                   "no virama",
+                   # M2, M3 and the low findings
+                   "start of a line", "U+0378", "U+FDD0", "U+FFFE", "Extended_Pictographic",
+                   "split a run", "U+16FE4"):  # fmt: skip
         assert needle in whys, needle
-    assert any(c["out"] is None for c in CASES) and len(CASES) >= 40
+    assert any(c["out"] is None for c in CASES) and len(CASES) >= 95
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c["why"][:60] for c in CASES])
@@ -115,31 +132,49 @@ def test_clean_text_over_the_shared_fixture(case: dict[str, Any]) -> None:
         assert text_arg(case["out"]) == case["out"]  # cleaning is idempotent
 
 
-def _visible(text: str) -> int:
-    """Characters that show: everything but the joiners and selectors the rule may keep."""
-    return sum(ch not in KEPT_INVISIBLES for ch in text)
+def _arabic_letter(ch: str) -> bool:
+    return (
+        bool(ch)
+        and unicodedata.category(ch)[0] == "L"
+        and unicodedata.name(ch, "").startswith("ARABIC LETTER ")
+    )
+
+
+def _emoji_end(text: str, i: int) -> bool:
+    """text[i] ends an emoji a ZWJ may follow: an emoji, its skin tone, or its FE0F."""
+    ch = text[i] if 0 <= i < len(text) else ""
+    if ch == "\ufe0f":
+        return i > 0 and extended_pictographic(text[i - 1])
+    return bool(ch) and (extended_pictographic(ch) or 0x1F3FB <= ord(ch) <= 0x1F3FF)
 
 
 @pytest.mark.parametrize("case", [c for c in CASES if c["out"]], ids=lambda c: c["why"][:60])
 def test_every_kept_invisible_sits_where_a_script_or_an_emoji_needs_it(
     case: dict[str, Any],
 ) -> None:
-    """len(text) is the visible length plus ONLY allowed joiners / selectors \u2014 none can carry
-    data between Latin letters, spaces or after a letter."""
+    """Security review SEC-5, checked from Unicode's own data where Python has it: no FE0E; an
+    FE0F only inside a keycap ([0-9#*] FE0F U+20E3) or right after a code point whose emoji form
+    is cp + FE0F; a ZWNJ / ZWJ only right after a virama (canonical combining class 9, RFC 5892
+    CONTEXTJ), a ZWNJ also between two Arabic letters, a ZWJ also inside an emoji sequence. No
+    unassigned code point but a future emoji, no space at either end of a line (M2) \u2014 so none
+    can carry data between Latin letters, spaces or after a letter."""
     text = case["out"]
-    hidden = len(text) - _visible(text)
-    assert hidden == sum(ch in KEPT_INVISIBLES for ch in text)
+    assert "\ufe0e" not in text, case["why"]
     for i, ch in enumerate(text):
-        if ch in (ZWNJ, ZWJ):
-            before, after = text[i - 1], text[i + 1]
-            letters = all(
-                not c.isascii() and unicodedata.category(c)[0] in "LM" for c in (before, after)
-            )
-            assert letters or ch == ZWJ, case["why"]
-        elif ch in ("\ufe0e", "\ufe0f"):
-            assert i > 0 and (text[i - 1] in "0123456789#*" or ord(text[i - 1]) > 0x7F)
+        before = text[i - 1] if i > 0 else ""
+        after = text[i + 1] if i + 1 < len(text) else ""
+        if ch == "\ufe0f":
+            keycap = before != "" and before in "0123456789#*" and after == "\u20e3"
+            assert keycap or emoji_fe0f_base(before), case["why"]
+        elif ch in (ZWNJ, ZWJ):
+            virama = before != "" and unicodedata.combining(before) == 9
+            arabic = ch == ZWNJ and _arabic_letter(before) and _arabic_letter(after)
+            emoji = ch == ZWJ and _emoji_end(text, i - 1) and extended_pictographic(after)
+            assert virama or arabic or emoji, case["why"]
+        assert unicodedata.category(ch) != "Cn" or extended_pictographic(ch), case["why"]
         assert not (unicodedata.category(ch) == "Zs" and ch != " "), case["why"]
     assert "\t" not in text and "  " not in text
+    assert all(line == line.strip(" ") for line in text.split("\n")), case["why"]
 
 
 def _card_text(text: str) -> str:

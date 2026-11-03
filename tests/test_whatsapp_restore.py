@@ -202,6 +202,18 @@ def test_a_stored_text_the_new_clean_rule_refuses_is_skipped_never_shown_altered
     assert kept.card.text == malayalam and kept.card.link == wa_link("+919876543210", malayalam)
 
 
+def test_a_stored_draft_with_a_selector_the_rule_now_drops_is_skipped() -> None:
+    """Security review SEC-5 H1: a draft stored before the strict selector rule (or forged into
+    the history) whose text still carries an FE0F / FE0E that `clean_text` now drops is skipped:
+    never rebuilt with it (the invisible channel) and never shown cleaned (a text the owner never
+    saw). The restore rule is unchanged: skip, never alter."""
+    for text in ("Call 9\ufe0f8\ufe0e76", "\u231a\ufe0f", "\U0001f600\ufe0f", "\u2764\ufe0e"):
+        assert stored_drafts(_exchange(_result(text=text))) == [], ascii(text)
+    heart = "Call 9876 \u2764\ufe0f"  # a selector that makes an emoji still comes back exactly
+    (kept,) = stored_drafts(_exchange(_result(text=heart)))
+    assert kept.card.text == heart and kept.card.link == wa_link("+919876543210", heart)
+
+
 def test_an_unknown_source_carries_the_warning() -> None:
     (d,) = stored_drafts(_exchange(_result(to={"number": "+919876543210", "from": "made-up"})))
     assert d.card.warning == WARNING

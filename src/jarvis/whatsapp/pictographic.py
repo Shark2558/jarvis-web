@@ -1,6 +1,6 @@
 # src/jarvis/whatsapp/pictographic.py
-"""Unicode's Extended_Pictographic property as a range table (slice 12 security review SEC-1;
-Layer 4 Safety). Pure, stdlib only.
+"""Unicode's Extended_Pictographic property, and the emoji whose emoji form needs FE0F, as range
+tables (slice 12 security reviews SEC-1 and SEC-5; Layer 4 Safety). Pure, stdlib only.
 
 Python's unicodedata has no emoji properties, and JARVIS takes no new dependency for one. These
 are the Extended_Pictographic code points of Unicode's emoji-data.txt, Unicode 17.0, as compiled
@@ -11,6 +11,15 @@ pictographs (so a new emoji is already one). The data file itself
 (unicode.org/Public/17.0.0/ucd/emoji/emoji-data.txt) could not be fetched from the build sandbox.
 tests/browser/test_whatsapp.py checks the shared fixture's emoji against the browser's own
 property, so the two can't drift unseen.
+
+`EMOJI_FE0F_BASES` (SEC-5 H1): the code points an emoji presentation selector (U+FE0F) may follow
+in a draft, those whose fully-qualified RGI emoji is `cp + FE0F`: Extended_Pictographic with
+Emoji_Presentation=No (the heart, the white flag, the eye, the female sign ...). Unicode 17.0, the
+same version as the table above: derived once with Node 22.23.4 (ICU 78.3) by testing
+`/^\\p{RGI_Emoji}$/v.test(String.fromCodePoint(cp) + "\\uFE0F")` over every code point of
+`_RANGES` (207 code points; none of them has Emoji_Presentation=Yes). console-whatsapp.js keeps an
+identical copy (tests/test_whatsapp_console.py compares the two), and tests/browser/
+test_whatsapp.py derives the set again from the browser's own RGI_Emoji.
 """
 
 from __future__ import annotations
@@ -60,6 +69,38 @@ _RANGES: tuple[tuple[int, int], ...] = (
     (0x1F947, 0x1F9FF), (0x1FA58, 0x1FA5F), (0x1FA6E, 0x1FAFF), (0x1FC00, 0x1FFFD),
 )  # fmt: skip
 _STARTS = tuple(lo for lo, _ in _RANGES)
+EMOJI_FE0F_BASES: tuple[tuple[int, int], ...] = (
+    (0x00A9, 0x00A9), (0x00AE, 0x00AE), (0x203C, 0x203C), (0x2049, 0x2049),
+    (0x2122, 0x2122), (0x2139, 0x2139), (0x2194, 0x2199), (0x21A9, 0x21AA),
+    (0x2328, 0x2328), (0x23CF, 0x23CF), (0x23ED, 0x23EF), (0x23F1, 0x23F2),
+    (0x23F8, 0x23FA), (0x24C2, 0x24C2), (0x25AA, 0x25AB), (0x25B6, 0x25B6),
+    (0x25C0, 0x25C0), (0x25FB, 0x25FC), (0x2600, 0x2604), (0x260E, 0x260E),
+    (0x2611, 0x2611), (0x2618, 0x2618), (0x261D, 0x261D), (0x2620, 0x2620),
+    (0x2622, 0x2623), (0x2626, 0x2626), (0x262A, 0x262A), (0x262E, 0x262F),
+    (0x2638, 0x263A), (0x2640, 0x2640), (0x2642, 0x2642), (0x265F, 0x2660),
+    (0x2663, 0x2663), (0x2665, 0x2666), (0x2668, 0x2668), (0x267B, 0x267B),
+    (0x267E, 0x267E), (0x2692, 0x2692), (0x2694, 0x2697), (0x2699, 0x2699),
+    (0x269B, 0x269C), (0x26A0, 0x26A0), (0x26A7, 0x26A7), (0x26B0, 0x26B1),
+    (0x26C8, 0x26C8), (0x26CF, 0x26CF), (0x26D1, 0x26D1), (0x26D3, 0x26D3),
+    (0x26E9, 0x26E9), (0x26F0, 0x26F1), (0x26F4, 0x26F4), (0x26F7, 0x26F9),
+    (0x2702, 0x2702), (0x2708, 0x2709), (0x270C, 0x270D), (0x270F, 0x270F),
+    (0x2712, 0x2712), (0x2714, 0x2714), (0x2716, 0x2716), (0x271D, 0x271D),
+    (0x2721, 0x2721), (0x2733, 0x2734), (0x2744, 0x2744), (0x2747, 0x2747),
+    (0x2763, 0x2764), (0x27A1, 0x27A1), (0x2934, 0x2935), (0x2B05, 0x2B07),
+    (0x3030, 0x3030), (0x303D, 0x303D), (0x3297, 0x3297), (0x3299, 0x3299),
+    (0x1F170, 0x1F171), (0x1F17E, 0x1F17F), (0x1F202, 0x1F202), (0x1F237, 0x1F237),
+    (0x1F321, 0x1F321), (0x1F324, 0x1F32C), (0x1F336, 0x1F336), (0x1F37D, 0x1F37D),
+    (0x1F396, 0x1F397), (0x1F399, 0x1F39B), (0x1F39E, 0x1F39F), (0x1F3CB, 0x1F3CE),
+    (0x1F3D4, 0x1F3DF), (0x1F3F3, 0x1F3F3), (0x1F3F5, 0x1F3F5), (0x1F3F7, 0x1F3F7),
+    (0x1F43F, 0x1F43F), (0x1F441, 0x1F441), (0x1F4FD, 0x1F4FD), (0x1F549, 0x1F54A),
+    (0x1F56F, 0x1F570), (0x1F573, 0x1F579), (0x1F587, 0x1F587), (0x1F58A, 0x1F58D),
+    (0x1F590, 0x1F590), (0x1F5A5, 0x1F5A5), (0x1F5A8, 0x1F5A8), (0x1F5B1, 0x1F5B2),
+    (0x1F5BC, 0x1F5BC), (0x1F5C2, 0x1F5C4), (0x1F5D1, 0x1F5D3), (0x1F5DC, 0x1F5DE),
+    (0x1F5E1, 0x1F5E1), (0x1F5E3, 0x1F5E3), (0x1F5E8, 0x1F5E8), (0x1F5EF, 0x1F5EF),
+    (0x1F5F3, 0x1F5F3), (0x1F5FA, 0x1F5FA), (0x1F6CB, 0x1F6CB), (0x1F6CD, 0x1F6CF),
+    (0x1F6E0, 0x1F6E5), (0x1F6E9, 0x1F6E9), (0x1F6F0, 0x1F6F0), (0x1F6F3, 0x1F6F3),
+)  # fmt: skip
+_FE0F_BASES = frozenset(c for lo, hi in EMOJI_FE0F_BASES for c in range(lo, hi + 1))
 
 
 def extended_pictographic(ch: str) -> bool:
@@ -72,4 +113,10 @@ def extended_pictographic(ch: str) -> bool:
     return i >= 0 and _RANGES[i][0] <= code <= _RANGES[i][1]
 
 
-__all__ = ["UNICODE_VERSION", "extended_pictographic"]
+def emoji_fe0f_base(ch: str) -> bool:
+    """True when `ch` + U+FE0F is an RGI emoji (`EMOJI_FE0F_BASES`): the only places, besides a
+    keycap, where a draft keeps an FE0F (SEC-5 H1)."""
+    return len(ch) == 1 and ord(ch) in _FE0F_BASES
+
+
+__all__ = ["EMOJI_FE0F_BASES", "UNICODE_VERSION", "emoji_fe0f_base", "extended_pictographic"]

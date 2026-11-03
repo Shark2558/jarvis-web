@@ -6,6 +6,8 @@
 //     for a fresh reply with ChatResponse.cards, and for a conversation opened again with the drafts
 //     GET /v1/sessions/{id} rebuilt (final review); only kind "whatsapp" is drawn here
 //     ({kind: "whatsapp", name, number, text, link, warning, assumed}); console-media.js draws the rest.
+//     quoteParts(summary) -> {head, quote} | null: a whatsapp_draft approval's summary split so
+//     console.js can give the quoted text its own dir="auto" paragraph (security review SEC-5).
 //   The one link is built HERE from the checked number and the text (encodeURIComponent):
 //   https://wa.me/<digits>?text=<encoded>; the server builds the same string (jarvis.whatsapp.draft
 //   wa_link), so a card whose `link` differs was not made by it and is dropped (review FE-7). It is an
@@ -19,12 +21,16 @@
 //   half-right.
 // Review S3: the whole text is shown (no inner scroll box), with "N lines" in the card's head when it is
 // long; `clean` mirrors the server's jarvis.whatsapp.draft.clean_text (characters that render blank,
-// trailing spaces, more than two blank lines in a row). S5: "Assumed India (+91)" when the number was
-// written without a country code. S7: the hint names who nothing is sent to, and what opening does.
-// Security review SEC-1: the same rule as the server, character for character (both are tested over
-// tests/fixtures/whatsapp_clean_cases.json): spaces and tabs become one plain space; ZWNJ / ZWJ only
-// between two letters of a non-Latin script (ZWJ also inside an emoji sequence); FE0E / FE0F only after
-// an emoji or a keycap base -- so no invisible channel can ride on a card that shows only the words.
+// spaces at either end of a line, more than two blank lines in a row). S5: "Assumed India (+91)" when the
+// number was written without a country code. S7: the hint names who nothing is sent to, and what
+// opening does.
+// Security reviews SEC-1 and SEC-5: the same rule as the server, character for character (both are
+// tested over tests/fixtures/whatsapp_clean_cases.json): spaces and tabs become one plain space; FE0E
+// never stays; FE0F only inside a keycap or right after a code point whose emoji is cp + FE0F
+// (FE0F_BASES); ZWNJ / ZWJ only right after a virama (VIRAMAS), a ZWNJ also between two Arabic letters
+// (ARABIC_LETTERS), a ZWJ also inside an emoji sequence; unassigned code points go, but future emoji --
+// so no invisible channel can ride on a card that shows only the words. The three tables are exact
+// copies of the server's (tests/test_whatsapp_console.py compares them).
 (() => {
   'use strict';
   const KIND = 'whatsapp'; // its kind in ChatResponse.cards (jarvis.tools.reply_cards)
@@ -37,30 +43,28 @@
   // what the server already removed (bidi controls and marks, zero-width space, BOM, tags, controls
   // but new lines and tabs): a card whose name or text still holds one is dropped. That is the
   // console's lenient display rule (console-text.js, final review: it keeps every ZWNJ / ZWJ); a
-  // draft's TEXT must ALSO come back unchanged from the strict SEC-1 `clean` below, so for the text
-  // the stricter rule always wins.
+  // draft's TEXT must ALSO come back unchanged from the strict `clean` below, so for the text the
+  // stricter rule always wins.
   const hidden = (s) => window.JarvisText.hasInvisible(s);
   // the server's cleaning, one character at a time: the categories it drops (control, format,
   // private use, lone surrogates) ...
   const DROPPED = /^[\p{Cc}\p{Cf}\p{Co}\p{Cs}]$/u;
-  // ... and the letters and marks that render blank: Hangul fillers, braille blank, combining
-  // grapheme joiner, Khmer inherent vowels, Mongolian selectors, variation selectors but an emoji's,
-  // and the unassigned code points that render as nothing (no category above names them): U+2065,
-  // U+FFF0-FFF8 and the whole tag block U+E0000-E0FFF (the server's _BLANK_RANGES)
-  const BLANK = /^[\u115f\u1160\u3164\uffa0\u2800\u034f\u17b4\u17b5\u180b-\u180d\u180f\ufe00-\ufe0d\u2065\ufff0-\ufff8\u{e0000}-\u{e0fff}]$/u;
-  // Security review SEC-1, the server's exact rule (jarvis.whatsapp.draft): every Zs space and tab
-  // is one plain space; ZWNJ / ZWJ stay only between two letters of a non-Latin script (or a ZWJ
-  // between an emoji and the next emoji); FE0E / FE0F only right after an emoji or a keycap base.
+  // ... the unassigned code points but future emoji (SEC-5 M3: this browser's Unicode is newer than
+  // the server's, so its \p{Cn} never drops more than the server already did) ...
+  const UNASSIGNED = /^\p{Cn}$/u;
+  // ... and the letters and marks that render blank: Hangul fillers, the Khitan small script filler,
+  // braille blank, combining grapheme joiner, Khmer inherent vowels, Mongolian selectors, variation
+  // selectors but an emoji's FE0F (FE0E always), and the code points that render as nothing: U+2065,
+  // U+FFF0-FFF8 and the whole tag block U+E0000-E0FFF (the server's BLANK and _BLANK_RANGES)
+  const BLANK = /^[\u115f\u1160\u3164\uffa0\u{16fe4}\u2800\u034f\u17b4\u17b5\u180b-\u180d\u180f\ufe00-\ufe0e\u2065\ufff0-\ufff8\u{e0000}-\u{e0fff}]$/u;
   const JOINERS = new Set(['\u200c', '\u200d']);
-  const ZWJ = '\u200d';
-  const SELECTORS = new Set(['\ufe0e', '\ufe0f']);
+  const ZWNJ = '\u200c';
+  const VS16 = '\ufe0f'; // the emoji presentation selector
+  const KEYCAP = '\u20e3'; // [0-9#*] + FE0F + U+20E3 is a keycap emoji
   const SPACEISH = /^[\t\p{Zs}]$/u;
   const EMOJI = /^\p{Extended_Pictographic}$/u;
   const SKIN = /^[\u{1f3fb}-\u{1f3ff}]$/u;
   const KEYCAP_BASE = /^[0-9#*]$/;
-  const LETTER = /^[\p{L}\p{M}]$/u;
-  // the server's NOT_A_SCRIPT: Latin and the generic marks, next to which no joiner is kept
-  const NOT_A_SCRIPT = /^[\u0000-\u036f\u1ab0-\u1aff\u1d00-\u1eff\u20d0-\u20ff\u2c60-\u2c7f\ua720-\ua7ff\uab30-\uab6f\ufb00-\ufb06\ufe00-\ufe0f\ufe20-\ufe2f\uff21-\uff3a\uff41-\uff5a\u{10780}-\u{107bf}\u{1df00}-\u{1dfff}]$/u;
   // more than MAX_MARKS combining marks in a row: the server's draft.py refuses the text (FE-8);
   // a joiner between two marks does not break the run (as on the server)
   const MAX_MARKS = 4;
@@ -70,34 +74,102 @@
   const ASSUMED = 'Assumed India (+91)';
   const HANDS_OVER = 'Opening the link hands this text to WhatsApp.';
 
-  const scriptLetter = (ch) => !!ch && ch.codePointAt(0) > 0x7f && LETTER.test(ch) && !NOT_A_SCRIPT.test(ch);
-  const emoji = (ch) => !!ch && EMOJI.test(ch);
+  /** Every code point of a list of [first, last] ranges, as a Set. */
+  function codes(ranges) {
+    const set = new Set();
+    ranges.forEach(([lo, hi]) => { for (let c = lo; c <= hi; c += 1) set.add(c); });
+    return set;
+  }
+  // SEC-5 H1: jarvis.whatsapp.pictographic EMOJI_FE0F_BASES (Unicode 17.0): the code points whose
+  // fully-qualified RGI emoji is cp + FE0F (Extended_Pictographic, Emoji_Presentation=No)
+  const FE0F_BASES = codes([
+    [0x00a9, 0x00a9], [0x00ae, 0x00ae], [0x203c, 0x203c], [0x2049, 0x2049], [0x2122, 0x2122],
+    [0x2139, 0x2139], [0x2194, 0x2199], [0x21a9, 0x21aa], [0x2328, 0x2328], [0x23cf, 0x23cf],
+    [0x23ed, 0x23ef], [0x23f1, 0x23f2], [0x23f8, 0x23fa], [0x24c2, 0x24c2], [0x25aa, 0x25ab],
+    [0x25b6, 0x25b6], [0x25c0, 0x25c0], [0x25fb, 0x25fc], [0x2600, 0x2604], [0x260e, 0x260e],
+    [0x2611, 0x2611], [0x2618, 0x2618], [0x261d, 0x261d], [0x2620, 0x2620], [0x2622, 0x2623],
+    [0x2626, 0x2626], [0x262a, 0x262a], [0x262e, 0x262f], [0x2638, 0x263a], [0x2640, 0x2640],
+    [0x2642, 0x2642], [0x265f, 0x2660], [0x2663, 0x2663], [0x2665, 0x2666], [0x2668, 0x2668],
+    [0x267b, 0x267b], [0x267e, 0x267e], [0x2692, 0x2692], [0x2694, 0x2697], [0x2699, 0x2699],
+    [0x269b, 0x269c], [0x26a0, 0x26a0], [0x26a7, 0x26a7], [0x26b0, 0x26b1], [0x26c8, 0x26c8],
+    [0x26cf, 0x26cf], [0x26d1, 0x26d1], [0x26d3, 0x26d3], [0x26e9, 0x26e9], [0x26f0, 0x26f1],
+    [0x26f4, 0x26f4], [0x26f7, 0x26f9], [0x2702, 0x2702], [0x2708, 0x2709], [0x270c, 0x270d],
+    [0x270f, 0x270f], [0x2712, 0x2712], [0x2714, 0x2714], [0x2716, 0x2716], [0x271d, 0x271d],
+    [0x2721, 0x2721], [0x2733, 0x2734], [0x2744, 0x2744], [0x2747, 0x2747], [0x2763, 0x2764],
+    [0x27a1, 0x27a1], [0x2934, 0x2935], [0x2b05, 0x2b07], [0x3030, 0x3030], [0x303d, 0x303d],
+    [0x3297, 0x3297], [0x3299, 0x3299], [0x1f170, 0x1f171], [0x1f17e, 0x1f17f], [0x1f202, 0x1f202],
+    [0x1f237, 0x1f237], [0x1f321, 0x1f321], [0x1f324, 0x1f32c], [0x1f336, 0x1f336], [0x1f37d, 0x1f37d],
+    [0x1f396, 0x1f397], [0x1f399, 0x1f39b], [0x1f39e, 0x1f39f], [0x1f3cb, 0x1f3ce], [0x1f3d4, 0x1f3df],
+    [0x1f3f3, 0x1f3f3], [0x1f3f5, 0x1f3f5], [0x1f3f7, 0x1f3f7], [0x1f43f, 0x1f43f], [0x1f441, 0x1f441],
+    [0x1f4fd, 0x1f4fd], [0x1f549, 0x1f54a], [0x1f56f, 0x1f570], [0x1f573, 0x1f579], [0x1f587, 0x1f587],
+    [0x1f58a, 0x1f58d], [0x1f590, 0x1f590], [0x1f5a5, 0x1f5a5], [0x1f5a8, 0x1f5a8], [0x1f5b1, 0x1f5b2],
+    [0x1f5bc, 0x1f5bc], [0x1f5c2, 0x1f5c4], [0x1f5d1, 0x1f5d3], [0x1f5dc, 0x1f5de], [0x1f5e1, 0x1f5e1],
+    [0x1f5e3, 0x1f5e3], [0x1f5e8, 0x1f5e8], [0x1f5ef, 0x1f5ef], [0x1f5f3, 0x1f5f3], [0x1f5fa, 0x1f5fa],
+    [0x1f6cb, 0x1f6cb], [0x1f6cd, 0x1f6cf], [0x1f6e0, 0x1f6e5], [0x1f6e9, 0x1f6e9], [0x1f6f0, 0x1f6f0],
+    [0x1f6f3, 0x1f6f3]
+  ]);
+  // SEC-5 M1 (RFC 5892 CONTEXTJ): jarvis.whatsapp.joining VIRAMAS (canonical combining class 9) and
+  // ARABIC_LETTERS (Python 3.12, Unicode 15.0) -- JavaScript has no combining-class property
+  const VIRAMAS = codes([
+    [0x094d, 0x094d], [0x09cd, 0x09cd], [0x0a4d, 0x0a4d], [0x0acd, 0x0acd], [0x0b4d, 0x0b4d],
+    [0x0bcd, 0x0bcd], [0x0c4d, 0x0c4d], [0x0ccd, 0x0ccd], [0x0d3b, 0x0d3c], [0x0d4d, 0x0d4d],
+    [0x0dca, 0x0dca], [0x0e3a, 0x0e3a], [0x0eba, 0x0eba], [0x0f84, 0x0f84], [0x1039, 0x103a],
+    [0x1714, 0x1715], [0x1734, 0x1734], [0x17d2, 0x17d2], [0x1a60, 0x1a60], [0x1b44, 0x1b44],
+    [0x1baa, 0x1bab], [0x1bf2, 0x1bf3], [0x2d7f, 0x2d7f], [0xa806, 0xa806], [0xa82c, 0xa82c],
+    [0xa8c4, 0xa8c4], [0xa953, 0xa953], [0xa9c0, 0xa9c0], [0xaaf6, 0xaaf6], [0xabed, 0xabed],
+    [0x10a3f, 0x10a3f], [0x11046, 0x11046], [0x11070, 0x11070], [0x1107f, 0x1107f], [0x110b9, 0x110b9],
+    [0x11133, 0x11134], [0x111c0, 0x111c0], [0x11235, 0x11235], [0x112ea, 0x112ea], [0x1134d, 0x1134d],
+    [0x11442, 0x11442], [0x114c2, 0x114c2], [0x115bf, 0x115bf], [0x1163f, 0x1163f], [0x116b6, 0x116b6],
+    [0x1172b, 0x1172b], [0x11839, 0x11839], [0x1193d, 0x1193e], [0x119e0, 0x119e0], [0x11a34, 0x11a34],
+    [0x11a47, 0x11a47], [0x11a99, 0x11a99], [0x11c3f, 0x11c3f], [0x11d44, 0x11d45], [0x11d97, 0x11d97],
+    [0x11f41, 0x11f42]
+  ]);
+  const ARABIC_LETTERS = codes([
+    [0x0620, 0x063f], [0x0641, 0x064a], [0x066e, 0x066f], [0x0671, 0x06d3], [0x06d5, 0x06d5],
+    [0x06ee, 0x06ef], [0x06fa, 0x06fc], [0x06ff, 0x06ff], [0x0750, 0x077f], [0x0870, 0x0882],
+    [0x0886, 0x0886], [0x0889, 0x088d], [0x08a0, 0x08c8], [0xfb50, 0xfbb1], [0xfbd3, 0xfbe9],
+    [0xfbfc, 0xfbff], [0xfe80, 0xfef4]
+  ]);
 
-  /** Pass 1: each character kept (joiners and selectors for pass 2), dropped, turned into a new
-   *  line or one plain space. */
+  const emoji = (ch) => !!ch && EMOJI.test(ch);
+  const inTable = (table, ch) => !!ch && table.has(ch.codePointAt(0));
+
+  /** Pass 1: each character kept (joiners and FE0F for pass 2), dropped, turned into a new line or
+   *  one plain space. */
   function visible(text) {
     const out = [];
     for (const ch of text) {
-      if (ch === '\n' || JOINERS.has(ch) || SELECTORS.has(ch)) out.push(ch);
+      if (ch === '\n' || JOINERS.has(ch) || ch === VS16) out.push(ch);
       else if (SPACEISH.test(ch)) out.push(' ');
       else if (BLANK.test(ch)) continue;
       else if (ch === '\u2028' || ch === '\u2029') out.push('\n');
-      else if (!DROPPED.test(ch)) out.push(ch);
+      else if (!DROPPED.test(ch) && !(UNASSIGNED.test(ch) && !emoji(ch))) out.push(ch);
     }
     return out;
   }
 
-  /** Pass 2: joiners and selectors judged against their immediate neighbours in pass 1's text. */
+  /** SEC-5 M1: the joiner at chars[i] stays right after a virama, a ZWNJ also between two Arabic
+   *  letters, a ZWJ also between an emoji (or its skin tone or FE0F) and the next emoji. */
+  function keepJoiner(chars, i) {
+    const prev = i > 0 ? chars[i - 1] : '';
+    const next = i + 1 < chars.length ? chars[i + 1] : '';
+    if (inTable(VIRAMAS, prev)) return true;
+    if (chars[i] === ZWNJ) return inTable(ARABIC_LETTERS, prev) && inTable(ARABIC_LETTERS, next);
+    const before = prev === VS16 ? (i > 1 && emoji(chars[i - 2])) : (emoji(prev) || SKIN.test(prev));
+    return before && emoji(next);
+  }
+
+  /** SEC-5 H1: an FE0F stays only inside a keycap or right after a FE0F_BASES code point. */
+  const keepSelector = (prev, next) => (KEYCAP_BASE.test(prev) && next === KEYCAP) || inTable(FE0F_BASES, prev);
+
+  /** Pass 2: joiners and FE0F judged against their immediate neighbours in pass 1's text. */
   function joined(chars) {
     const out = [];
     chars.forEach((ch, i) => {
-      const prev = i > 0 ? chars[i - 1] : '';
-      const next = i + 1 < chars.length ? chars[i + 1] : '';
       if (JOINERS.has(ch)) {
-        const before = prev === '\ufe0f' ? (i > 1 && emoji(chars[i - 2])) : (emoji(prev) || SKIN.test(prev));
-        if ((scriptLetter(prev) && scriptLetter(next)) || (ch === ZWJ && before && emoji(next))) out.push(ch);
-      } else if (SELECTORS.has(ch)) {
-        if (prev && (KEYCAP_BASE.test(prev) || emoji(prev))) out.push(ch);
+        if (keepJoiner(chars, i)) out.push(ch);
+      } else if (ch === VS16) {
+        if (keepSelector(i > 0 ? chars[i - 1] : '', i + 1 < chars.length ? chars[i + 1] : '')) out.push(ch);
       } else out.push(ch);
     });
     return out.join('');
@@ -106,7 +178,7 @@
   /** The text as the server's clean_text leaves it (so a card whose text differs is dropped). */
   function clean(text) {
     const once = joined(visible(text.replace(/\r\n?/g, '\n'))).replace(/ {2,}/g, ' ');
-    const lines = once.split('\n').map((line) => line.replace(/ +$/, ''));
+    const lines = once.split('\n').map((line) => line.replace(/^ +| +$/g, '')); // SEC-5 M2: both ends
     return lines.join('\n').replace(/\n{4,}/g, '\n\n\n').trim();
   }
 
@@ -159,11 +231,24 @@
       if (stacked(text)) return null; // ... nor this (FE-8)
       const link = waLink(d.number, text);
       if (!link || d.link !== link) return null; // FE-7: exactly the server's link, or no card
+      // SEC-5: NAME_MAX counts code points, as the server's (Python) string does
       const name = typeof d.name === 'string' && !hidden(d.name)
-        ? d.name.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX) : '';
+        ? Array.from(d.name.replace(/\s+/g, ' ').trim()).slice(0, NAME_MAX).join('').trim() : '';
       const flag = (v) => typeof v === 'string' && v.length > 0;
       return { name, number: d.number, text, link, warn: flag(d.warning), assumed: flag(d.assumed) };
     }).filter(Boolean);
+  }
+
+  /** A whatsapp_draft approval's summary (jarvis.whatsapp.tools._card_text) as its head (what, To,
+   *  "Text (n lines, m characters), in full:") and its quote (every line "> "), so the approval card
+   *  can give the quoted text dir="auto" (SEC-5); null when it is not that shape (shown whole). */
+  function quoteParts(summary) {
+    if (typeof summary !== 'string') return null;
+    const lines = summary.split('\n');
+    if (lines.length < 4 || !/^Text \(.+\), in full:$/.test(lines[2])) return null;
+    const quote = lines.slice(3);
+    if (!quote.every((line) => line === '>' || line.startsWith('> '))) return null;
+    return { head: lines.slice(0, 3).join('\n'), quote: quote.join('\n') };
   }
 
   const mk = (tag, cls, text) => {
@@ -212,7 +297,9 @@
     if (d.name) to.append(mk('b', 'waname', d.name));
     to.append(mk('span', 'wanum', shown(d.number)));
     if (d.assumed) to.append(mk('span', 'waassumed', ASSUMED));
-    box.append(head, to, mk('p', 'watext', d.text));
+    const body = mk('p', 'watext', d.text);
+    body.dir = 'auto'; // SEC-5: a right-to-left draft (Persian, Arabic) reads in its own direction
+    box.append(head, to, body);
     if (d.warn) {
       const w = mk('p', 'wawarn', WARN);
       w.setAttribute('role', 'note');
@@ -239,5 +326,5 @@
     return cards[0];
   }
 
-  window.JarvisWhatsApp = Object.freeze({ render, normal, waLink, clean, stacked });
+  window.JarvisWhatsApp = Object.freeze({ render, normal, waLink, clean, stacked, quoteParts });
 })();

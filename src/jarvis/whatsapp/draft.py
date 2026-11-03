@@ -3,28 +3,38 @@
 pydantic and `jarvis.contacts.phones` only (`jarvis.tools.reply_cards` imports this module for
 its `WhatsAppCard` kind, so nothing here may import `jarvis.tools`).
 
-Text (`clean_text`): what the owner will send, so it is kept as written — Malayalam with its
-zero-width (non-)joiners, emoji sequences (ZWJ, skin tones, an emoji's variation selector) and new
-lines — and only what can't be seen or can reorder what is seen goes. Security review SEC-1 (an
-invisible channel: 80 ZWNJ / ZWJ between Latin letters carried "OTP 482913" past a card that
-showed only the words): every space character (Unicode Zs) and tab becomes one plain space and
-runs of spaces collapse; a ZWNJ / ZWJ stays only between two letters of a non-Latin script
-(`external.model_text`'s rule, minus Latin and generic marks: `NOT_A_SCRIPT`) or, for a ZWJ,
-between an emoji and the next emoji; FE0E / FE0F stay only right after an emoji
-(Extended_Pictographic, `jarvis.whatsapp.pictographic`) or a keycap base [0-9#*]. Also gone: control
-characters, bidi controls and marks, zero-width spaces, BOMs, tag characters (invisible "ASCII
-smuggling"), other format characters, private-use code points and lone surrogates. Line /
-paragraph separators become new lines. Review S3 (hidden payloads): also the characters that
-render blank although they are letters or marks (`BLANK`: Hangul fillers, the braille blank, the
-combining grapheme joiner, Khmer inherent vowels, Mongolian selectors, variation selectors other
-than an emoji's — which also encode bytes invisibly — and, with the final review's
-console-text.js, the unassigned code points that render as nothing: U+2065, U+FFF0-FFF8 and
-the whole tag block U+E0000-E0FFF), a variation selector with nothing before it
-or repeated, spaces at the end of a line, and more than two blank lines in a row. A text that is
-empty or only blank after that is refused. At most `TEXT_MAX` characters after cleaning. Review
-FE-8: more than `MAX_MARKS` combining marks in a row ("Zalgo" text, a smear that hides what it
-says) is refused in plain words (`STACKED`). The console's draft card checks the same
-(`console-whatsapp.js`).
+Text (`clean_text`): what the owner will send, so it is kept as written (Malayalam with its
+zero-width (non-)joiners, emoji sequences with their ZWJ, skin tones and FE0F, new lines) and
+only what can't be seen or can reorder what is seen goes. Security review SEC-1 (an invisible
+channel: 80 ZWNJ / ZWJ between Latin letters carried "OTP 482913" past a card that showed only
+the words): every space character (Unicode Zs) and tab becomes one plain space and runs of
+spaces collapse. Security review SEC-5 ("Call 9<FE0F>8<FE0E>76" still showed as "Call 9876"):
+every invisible character that stays must be one the visible text needs, so
+- variation selectors (H1): FE0E always goes; FE0F stays only inside a keycap ([0-9#*] FE0F
+  U+20E3) or right after a code point whose fully-qualified RGI emoji is cp + FE0F
+  (`pictographic.EMOJI_FE0F_BASES`: the heart, the white flag; not the watch or a smiley, which
+  are emoji already);
+- joiners (M1, RFC 5892 CONTEXTJ, `jarvis.whatsapp.joining`): a ZWNJ / ZWJ stays only right
+  after a virama (Malayalam chillu, Hindi half forms), a ZWNJ also between two Arabic letters
+  (Persian), a ZWJ also inside an emoji sequence (after an emoji, its skin tone or its FE0F,
+  before the next emoji); never between Latin, Cyrillic, CJK, mathematical or letterlike ones;
+- no space at the start or end of a line (M2: the approval card's pre-line would hide one);
+- unassigned code points (category Cn) go, but the Extended_Pictographic ones Unicode keeps for
+  future emoji (M3: Python 3.11, 3.12 and the browser know different Unicode versions; a
+  character this Python can't name is dropped, never judged).
+Also gone: control characters, bidi controls and marks, zero-width spaces, BOMs, tag characters
+(invisible "ASCII smuggling"), other format characters, private-use code points and lone
+surrogates. Line / paragraph separators become new lines. Review S3 (hidden payloads): also the
+characters that render blank although they are letters or marks (`BLANK`: Hangul fillers and
+the Khitan small script filler, the braille blank, the combining grapheme joiner, Khmer inherent
+vowels, Mongolian selectors, variation selectors other than an emoji's FE0F, which also encode
+bytes invisibly, and, with the final review's console-text.js, the code points that render as
+nothing: U+2065, U+FFF0-FFF8 and the whole tag block U+E0000-E0FFF), and more than two blank
+lines in a row. A text that is empty or only blank after that is refused. At most `TEXT_MAX`
+characters after cleaning. Review FE-8: more than `MAX_MARKS` combining marks in a row ("Zalgo"
+text, a smear that hides what it says) is refused in plain words (`STACKED`), counted on the
+cleaned text (so a dropped character can't split the run). The console's draft card checks the
+same, character for character (`console-whatsapp.js`; tests/fixtures/whatsapp_clean_cases.json).
 
 Link (verified 2026-11-03; WhatsApp's own FAQ "How to use click to chat",
 faq.whatsapp.com/5913398998672934, could not be fetched — robots.txt and this network's proxy
@@ -55,7 +65,8 @@ from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from jarvis.contacts.phones import is_e164, wa_digits
-from jarvis.whatsapp.pictographic import extended_pictographic
+from jarvis.whatsapp.joining import arabic_letter, virama
+from jarvis.whatsapp.pictographic import emoji_fe0f_base, extended_pictographic
 
 TEXT_MAX = 2000
 NAME_MAX = 100
@@ -67,51 +78,34 @@ JS_SAFE = "!*'()"  # with Python's always-safe "-_.~": exactly encodeURIComponen
 WARNING = "This number didn't come from you or your contacts — check it before you send."
 ASSUMED_INDIA = "Assumed India (+91)"  # review S5: the number was written without a country code
 KNOWN_SOURCES = frozenset({"you", "contacts"})
-_KEEP_FORMAT = frozenset({"\u200c", "\u200d"})  # ZWNJ / ZWJ: Indic scripts and emoji need them
+ZWNJ = "\u200c"
+ZWJ = "\u200d"
+_JOINERS = frozenset({ZWNJ, ZWJ})  # Indic scripts, Persian and emoji sequences need them
+VS16 = "\ufe0f"  # the emoji presentation selector: kept only where it makes an emoji (SEC-5 H1)
+KEYCAP = "\u20e3"  # combining enclosing keycap: [0-9#*] + FE0F + U+20E3 is a keycap emoji
+KEYCAP_BASES = frozenset("0123456789#*")
+SKIN_TONES = range(0x1F3FB, 0x1F3FF + 1)  # Emoji_Modifier (Fitzpatrick types 1-2 .. 6)
 _DROP_CATEGORIES = frozenset({"Cc", "Cf", "Co", "Cs"})
-_EMOJI_SELECTORS = frozenset({"\ufe0e", "\ufe0f"})  # text / emoji presentation, after a base
 # Letters and marks that render as nothing (review S3). Mirrored in console-whatsapp.js.
 BLANK = frozenset(
     "\u115f\u1160\u3164\uffa0"  # Hangul fillers
+    "\U00016fe4"  # Khitan small script filler (SEC-5)
     "\u2800"  # braille pattern blank
     "\u034f"  # combining grapheme joiner
     "\u17b4\u17b5"  # Khmer inherent vowels
     "\u180b\u180c\u180d\u180f"  # Mongolian free variation selectors
 )
 _BLANK_RANGES = (
-    (0xFE00, 0xFE0D),  # variation selectors but an emoji's
-    # Default_Ignorable code points that are unassigned (category Cn, so `_DROP_CATEGORIES`
-    # misses them) yet render as nothing: U+2065, U+FFF0-FFF8 and the whole tag block
-    # U+E0000-E0FFF (tags, its unassigned rest, and the variation selectors supplement).
-    # Not every Cn: a new emoji is Cn to an older Python. Mirrored in console-whatsapp.js.
+    (0xFE00, 0xFE0E),  # variation selectors but an emoji's FE0F (SEC-5 H1: FE0E always goes)
+    # Default_Ignorable code points that render as nothing: U+2065, U+FFF0-FFF8 (unassigned,
+    # so also caught as Cn) and the whole tag block U+E0000-E0FFF (tags, its unassigned rest,
+    # and the variation selectors supplement, category Mn). Mirrored in console-whatsapp.js.
     (0x2065, 0x2065),
     (0xFFF0, 0xFFF8),
     (0xE0000, 0xE0FFF),
 )
 _TOO_MANY_BLANK_LINES = re.compile(r"\n{" + str(MAX_BLANK_LINES + 2) + r",}")
 _MANY_SPACES = re.compile(" {2,}")
-# SEC-1: letters and marks next to which a ZWNJ / ZWJ is never kept — Latin (with its accents,
-# precomposed or combining), and the generic marks any script may carry (diacritics for
-# symbols incl. the keycap mark, half marks, variation selectors). Mirrored in console-whatsapp.js.
-NOT_A_SCRIPT: tuple[tuple[int, int], ...] = (
-    (0x0000, 0x036F),  # Basic Latin .. Latin Extended-B, IPA, modifier letters, combining marks
-    (0x1AB0, 0x1AFF),  # Combining Diacritical Marks Extended
-    (0x1D00, 0x1EFF),  # Phonetic Extensions (+ Supplement), marks supplement, Latin Ext. Additional
-    (0x20D0, 0x20FF),  # Combining Diacritical Marks for Symbols (the keycap mark U+20E3)
-    (0x2C60, 0x2C7F),  # Latin Extended-C
-    (0xA720, 0xA7FF),  # Latin Extended-D
-    (0xAB30, 0xAB6F),  # Latin Extended-E
-    (0xFB00, 0xFB06),  # Latin ligatures
-    (0xFE00, 0xFE0F),  # Variation Selectors
-    (0xFE20, 0xFE2F),  # Combining Half Marks
-    (0xFF21, 0xFF3A),  # Fullwidth Latin capitals
-    (0xFF41, 0xFF5A),  # Fullwidth Latin small letters
-    (0x10780, 0x107BF),  # Latin Extended-F
-    (0x1DF00, 0x1DFFF),  # Latin Extended-G
-)
-ZWJ = "\u200d"
-KEYCAP_BASES = frozenset("0123456789#*")  # what FE0F + U+20E3 makes a keycap emoji of
-SKIN_TONES = range(0x1F3FB, 0x1F3FF + 1)  # Emoji_Modifier (Fitzpatrick types 1-2 .. 6)
 
 
 def _blank(ch: str) -> bool:
@@ -119,66 +113,75 @@ def _blank(ch: str) -> bool:
     return ch in BLANK or any(lo <= code <= hi for lo, hi in _BLANK_RANGES)
 
 
-def _script_letter(ch: str) -> bool:
-    """A letter or mark of a non-Latin script: `jarvis.tools.external`'s joiner rule (non-ASCII,
-    category L* or M*), minus the Latin and generic blocks (`NOT_A_SCRIPT`) — an accented Latin
-    letter, a combining accent or a variation selector (category Mn) is not one."""
-    if not ch or ch.isascii() or unicodedata.category(ch)[0] not in "LM":
-        return False
-    code = ord(ch)
-    return not any(lo <= code <= hi for lo, hi in NOT_A_SCRIPT)
+def _dropped(ch: str) -> bool:
+    """Pass 1 drops it: a control, format, private-use or surrogate code point, or one that is
+    unassigned (Cn) to this Python but not a future emoji (SEC-5 M3: a character Unicode 14
+    can't name is dropped, never judged, so no rule below depends on the Python's version)."""
+    cat = unicodedata.category(ch)
+    return cat in _DROP_CATEGORIES or (cat == "Cn" and not extended_pictographic(ch))
 
 
 def _emoji_before(text: str, i: int) -> bool:
     """Whether text[i] ends an emoji a ZWJ may follow: an emoji (Extended_Pictographic), its skin
     tone (Emoji_Modifier, U+1F3FB..U+1F3FF) or its FE0F right after an emoji."""
     ch = text[i] if 0 <= i < len(text) else ""
-    if ch == "\ufe0f":
+    if ch == VS16:
         return i > 0 and extended_pictographic(text[i - 1])
     return bool(ch) and (extended_pictographic(ch) or ord(ch) in SKIN_TONES)
 
 
-def _selector_ok(text: str, i: int) -> bool:
-    """Whether the FE0E / FE0F at text[i] may stay: directly after an emoji (Extended_
-    Pictographic) or a keycap base [0-9#*] (1 + FE0F + U+20E3 is the keycap 1)."""
+def _keep_selector(prev: str, nxt: str) -> bool:
+    """SEC-5 H1: an FE0F stays only inside a keycap (1 + FE0F + U+20E3 is the keycap 1) or right
+    after a code point whose RGI emoji is cp + FE0F (`EMOJI_FE0F_BASES`). Anywhere else (after
+    a digit, a letter, a smiley that is emoji-style already, a skin tone) it changes nothing on
+    screen, so it could only carry data."""
+    keycap = prev in KEYCAP_BASES and nxt == KEYCAP
+    return keycap or emoji_fe0f_base(prev)
+
+
+def _keep_joiner(text: str, i: int) -> bool:
+    """SEC-5 M1 (RFC 5892 CONTEXTJ): the ZWNJ / ZWJ at text[i] stays right after a virama, a ZWNJ
+    also between two Arabic letters, a ZWJ also between an emoji (or its skin tone or FE0F) and
+    the next emoji."""
     prev = text[i - 1] if i > 0 else ""
-    return bool(prev) and (prev in KEYCAP_BASES or extended_pictographic(prev))
+    nxt = text[i + 1] if i + 1 < len(text) else ""
+    if virama(prev):
+        return True
+    if text[i] == ZWNJ:
+        return arabic_letter(prev) and arabic_letter(nxt)
+    return _emoji_before(text, i - 1) and extended_pictographic(nxt)
 
 
 def _visible_chars(text: str) -> str:
     """Pass 1: each character kept, dropped, turned into a new line or a plain space. ZWNJ / ZWJ
-    and the presentation selectors are kept here for pass 2 (`_joined`) to judge in place."""
+    and FE0F are kept here for pass 2 (`_joined`) to judge in place."""
     out: list[str] = []
     for ch in text:
-        if ch == "\n" or ch in _KEEP_FORMAT or ch in _EMOJI_SELECTORS:
+        if ch == "\n" or ch in _JOINERS or ch == VS16:
             out.append(ch)
         elif ch == "\t" or unicodedata.category(ch) == "Zs":
             out.append(" ")  # SEC-1: every space and tab is one plain space (no channel)
-        elif not _blank(ch):
-            cat = unicodedata.category(ch)
-            if cat in ("Zl", "Zp"):
-                out.append("\n")
-            elif cat not in _DROP_CATEGORIES:
-                out.append(ch)
+        elif _blank(ch):
+            continue
+        elif unicodedata.category(ch) in ("Zl", "Zp"):
+            out.append("\n")
+        elif not _dropped(ch):
+            out.append(ch)
     return "".join(out)
 
 
 def _joined(text: str) -> str:
-    """Pass 2 (SEC-1): a ZWNJ / ZWJ stays only between two letters of a non-Latin script, or a
-    ZWJ between an emoji and the next emoji (an emoji ZWJ sequence); FE0E / FE0F only where
-    `_selector_ok`. Each is judged against its IMMEDIATE neighbours in pass 1's text, so a run of
-    joiners or selectors (or one split by characters pass 1 dropped) keeps none of them."""
+    """Pass 2: a ZWNJ / ZWJ stays only where `_keep_joiner`, an FE0F only where `_keep_selector`.
+    Each is judged against its IMMEDIATE neighbours in pass 1's text, so a run of joiners or
+    selectors (or one split by characters pass 1 dropped) keeps at most the first."""
     out: list[str] = []
     for i, ch in enumerate(text):
-        prev = text[i - 1] if i > 0 else ""
-        nxt = text[i + 1] if i + 1 < len(text) else ""
-        if ch in _KEEP_FORMAT:
-            scripts = _script_letter(prev) and _script_letter(nxt)
-            emoji = ch == ZWJ and _emoji_before(text, i - 1) and extended_pictographic(nxt)
-            if scripts or emoji:
+        if ch in _JOINERS:
+            if _keep_joiner(text, i):
                 out.append(ch)
-        elif ch in _EMOJI_SELECTORS:
-            if _selector_ok(text, i):
+        elif ch == VS16:
+            prev = text[i - 1] if i > 0 else ""
+            if _keep_selector(prev, text[i + 1] if i + 1 < len(text) else ""):
                 out.append(ch)
         else:
             out.append(ch)
@@ -189,7 +192,8 @@ def clean_text(raw: str) -> str:
     """The draft text with only what the owner can see (see the module docstring)."""
     text = _joined(_visible_chars(raw.replace("\r\n", "\n").replace("\r", "\n")))
     text = _MANY_SPACES.sub(" ", text)
-    text = "\n".join(line.rstrip(" ") for line in text.split("\n"))
+    # SEC-5 M2: no space at either end of a line (the approval card's pre-line hides them)
+    text = "\n".join(line.strip(" ") for line in text.split("\n"))
     text = _TOO_MANY_BLANK_LINES.sub("\n" * (MAX_BLANK_LINES + 1), text)
     return text.strip()
 
@@ -201,7 +205,7 @@ def stacked(text: str) -> bool:
     scripts stay well inside: Malayalam, Devanagari, Odia and Tibetan stack at most 3."""
     run = 0
     for ch in text:
-        if ch in _KEEP_FORMAT:
+        if ch in _JOINERS:
             continue
         run = run + 1 if unicodedata.category(ch).startswith("M") else 0
         if run > MAX_MARKS:

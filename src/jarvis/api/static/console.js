@@ -209,6 +209,14 @@
   }
 
   // ---- approvals, activity, vitals ----------------------------------------------------------
+  /** A card's summary as one paragraph. Security review SEC-5: a WhatsApp draft's quoted text gets
+   *  its own paragraph with dir="auto" (a right-to-left draft reads in its own direction); the head
+   *  lines and every other card stay as they were. */
+  function summaryHtml(a) {
+    const wa = a.tool === 'whatsapp_draft' && window.JarvisWhatsApp ? window.JarvisWhatsApp.quoteParts(a.summary) : null;
+    if (!wa) return `<p>${esc(visible(a.summary))}</p>`;
+    return `<p>${esc(visible(wa.head))}</p><p class="waquote" dir="auto">${esc(visible(wa.quote))}</p>`;
+  }
   function renderApprovals(list) {
     const el = $('approvals');
     $('approvalCount').textContent = list.length ? `${list.length} waiting` : '';
@@ -226,7 +234,7 @@
     el.innerHTML = list.map(a => `
       <div class="approval" data-id="${esc(a.id)}" data-sid="${esc(a.session_id || '')}" data-passkey="${a.passkey_required === true ? '1' : ''}">
         <div class="title">${esc(a.tool.replace(/_/g, ' '))} <span class="tag">${esc(a.risk)}</span></div>
-        <p>${esc(visible(a.summary))}</p>
+        ${summaryHtml(a)}
         <pre>${esc(visible(JSON.stringify(a.arguments, null, 2)))}</pre>
         <div class="actions"><button class="btn primary approve lift">${a.passkey_required === true ? 'Approve with passkey' : 'Approve'}</button><button class="btn decline lift">Decline</button></div>
         <p class="perr" role="alert"></p>

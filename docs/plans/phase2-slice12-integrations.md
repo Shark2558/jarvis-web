@@ -274,6 +274,26 @@ FE-1..FE-11).** Where both fixed the same thing, one implementation stays:
 - Console: Never hides Drive / Home and Work AND the Drive switch-on confirm (an open confirm is
   cancelled when Drive goes off), focus management, `<bdi>`, and Maps Retry (never while off).
 
+**Security review SEC-5 (a fresh review of SEC-1's rule).** Every invisible character a draft keeps
+must be one the visible text needs; the same rule on the server (`whatsapp/draft.py`) and in the
+console (`console-whatsapp.js`), over the one shared fixture:
+- H1 (HIGH): "Call 9<FE0F>8<FE0E>76" showed as "Call 9876" while the link carried the selectors.
+  FE0E always goes; FE0F stays only inside a keycap ([0-9#*] FE0F U+20E3) or right after a code
+  point whose fully-qualified RGI emoji is cp + FE0F (`pictographic.EMOJI_FE0F_BASES`: 207 code
+  points, Unicode 17.0, derived with Node 22's `\p{RGI_Emoji}`; the browser test derives it again).
+  The approval card's INVISIBLE markers still leave FE0F alone: every one kept changes the glyph.
+- M1: a ZWNJ / ZWJ stays only right after a virama (RFC 5892 CONTEXTJ), a ZWNJ also between two
+  Arabic letters, a ZWJ also inside an emoji sequence (`whatsapp/joining.py`: VIRAMAS and
+  ARABIC_LETTERS, Python 3.12 / Unicode 15.0, mirrored in JS). A word-final chillu now stays.
+- M2: no space at the start or end of any line (the approval card's pre-line hid a leading one).
+- M3: unassigned code points (Cn) go, but Extended_Pictographic ones, before the stacked-marks
+  count, so Python 3.11, 3.12 and the browser can't disagree about a character one of them can't
+  name.
+- Low: U+16FE4 is blank; the draft text and the approval card's WhatsApp quote have `dir="auto"`;
+  the console cuts a name by code points; `cloudrun.sh` says so when it could not check whether
+  other projects share the billing account.
+A stored draft the stricter rule would change is skipped on reload, never shown cleaned.
+
 ## Slice 12: check after deploy
 None of these could be verified from the build sandbox. The owner checks them once, after the
 first deploy of this slice.

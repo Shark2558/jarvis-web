@@ -56,8 +56,8 @@
  },
  {
   "in": "\u0d28\u0d4d\u200d",
-  "out": "\u0d28\u0d4d",
-  "why": "a joiner at the end of the text: removed"
+  "out": "\u0d28\u0d4d\u200d",
+  "why": "M1: Malayalam chillu (virama + ZWJ) at the end of the text: kept"
  },
  {
   "in": "\ud83d\ude00\u200c\ud83d\ude00",
@@ -76,8 +76,8 @@
  },
  {
   "in": "1\ufe0f\u200d\ud83d\ude00",
-  "out": "1\ufe0f\ud83d\ude00",
-  "why": "ZWJ after a keycap base: removed"
+  "out": "1\ud83d\ude00",
+  "why": "ZWJ after a keycap base: removed (H1: its FE0F too, with no U+20E3 after it)"
  },
  {
   "in": "\u0d38\u0d4d\u200c\u0d24",
@@ -303,5 +303,190 @@
   "in": "a\u0301\u200d\u0301\u200d\u0301\u200d\u0301\u200d\u0301",
   "out": null,
   "why": "FE-8: joiners between the marks don't break the run"
+ },
+ {
+  "in": "Call 9\ufe0f8\ufe0e76",
+  "out": "Call 9876",
+  "why": "H1: variation selectors between digits (the card showed 'Call 9876'): removed"
+ },
+ {
+  "in": "9\ufe0f8",
+  "out": "98",
+  "why": "H1: FE0F after a keycap base with no U+20E3 after it: removed"
+ },
+ {
+  "in": "#\ufe0f and *\ufe0f",
+  "out": "# and *",
+  "why": "H1: FE0F after # and * without the keycap mark: removed"
+ },
+ {
+  "in": "\u231a\ufe0f",
+  "out": "\u231a",
+  "why": "H1: FE0F after watch U+231A (Emoji_Presentation=Yes): removed"
+ },
+ {
+  "in": "\ud83d\ude00\ufe0f",
+  "out": "\ud83d\ude00",
+  "why": "H1: FE0F after grinning face U+1F600 (no variation sequence): removed"
+ },
+ {
+  "in": "\u2764\ufe0e",
+  "out": "\u2764",
+  "why": "H1: FE0E (text style) is always removed, even after a heart"
+ },
+ {
+  "in": "\u2764\ufe0f\ufe0f",
+  "out": "\u2764\ufe0f",
+  "why": "H1: a heart with FE0F twice keeps one"
+ },
+ {
+  "in": "1\ufe0e\u20e3",
+  "out": "1\u20e3",
+  "why": "H1: FE0E inside a keycap: removed (the keycap mark stays)"
+ },
+ {
+  "in": "\u00a9\ufe0f 2026",
+  "out": "\u00a9\ufe0f 2026",
+  "why": "H1: copyright sign U+00A9 with FE0F (in EMOJI_FE0F_BASES): kept"
+ },
+ {
+  "in": "\ud83d\udc41\ufe0f\u200d\ud83d\udde8\ufe0f",
+  "out": "\ud83d\udc41\ufe0f\u200d\ud83d\udde8\ufe0f",
+  "why": "H1: eye in speech bubble (FE0F before the ZWJ and at the end): kept"
+ },
+ {
+  "in": "\ud83c\udfc3\ud83c\udffd\u200d\u2640\ufe0f",
+  "out": "\ud83c\udfc3\ud83c\udffd\u200d\u2640\ufe0f",
+  "why": "H1: woman running, medium skin tone (skin tone before the ZWJ, FE0F after the sign): kept"
+ },
+ {
+  "in": "\ud83e\uddd1\ud83c\udffd\u200d\ud83e\udd1d\u200d\ud83e\uddd1\ud83c\udffb",
+  "out": "\ud83e\uddd1\ud83c\udffd\u200d\ud83e\udd1d\u200d\ud83e\uddd1\ud83c\udffb",
+  "why": "H1: people holding hands, two skin tones (skin tone ZWJ sequence): kept"
+ },
+ {
+  "in": "\ud83d\udc4d\ud83c\udffd\ufe0f",
+  "out": "\ud83d\udc4d\ud83c\udffd",
+  "why": "H1: FE0F after a skin tone: removed"
+ },
+ {
+  "in": "\u0d05\u0d35\u0d28\u0d4d\u200d \u0d35\u0d28\u0d4d\u0d28\u0d41",
+  "out": "\u0d05\u0d35\u0d28\u0d4d\u200d \u0d35\u0d28\u0d4d\u0d28\u0d41",
+  "why": "M1: Malayalam old-style chillu before a space: kept"
+ },
+ {
+  "in": "\u0d15\u0d4d\u200c\u0d15",
+  "out": "\u0d15\u0d4d\u200c\u0d15",
+  "why": "M1: Malayalam virama + ZWNJ: kept"
+ },
+ {
+  "in": "\u0d15\u200c\u0d24",
+  "out": "\u0d15\u0d24",
+  "why": "M1: ZWNJ between two Malayalam letters with no virama: removed"
+ },
+ {
+  "in": "\u0d28\u0d4d\u200d\u200d",
+  "out": "\u0d28\u0d4d\u200d",
+  "why": "M1: two joiners after a virama keep one"
+ },
+ {
+  "in": "\u0932\u094d\u200d\u092f",
+  "out": "\u0932\u094d\u200d\u092f",
+  "why": "M1: Hindi half-form (virama + ZWJ): kept"
+ },
+ {
+  "in": "\u0915\u200c\u0937",
+  "out": "\u0915\u0937",
+  "why": "M1: ZWNJ between Devanagari letters with no virama: removed"
+ },
+ {
+  "in": "\u0b15\u0b4d\u200c\u0b37",
+  "out": "\u0b15\u0b4d\u200c\u0b37",
+  "why": "M1: Odia virama + ZWNJ: kept"
+ },
+ {
+  "in": "\u0b95\u0bcd\u200c\u0bb7",
+  "out": "\u0b95\u0bcd\u200c\u0bb7",
+  "why": "M1: Tamil virama + ZWNJ: kept"
+ },
+ {
+  "in": "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645",
+  "out": "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645",
+  "why": "M1: Persian (mi-khaham) with ZWNJ between two Arabic letters: kept"
+ },
+ {
+  "in": "\u0645\u06cc\u200c \u0647\u0645",
+  "out": "\u0645\u06cc \u0647\u0645",
+  "why": "M1: ZWNJ after an Arabic letter, before a space: removed"
+ },
+ {
+  "in": "\u0645\u200d\u0645",
+  "out": "\u0645\u0645",
+  "why": "M1: ZWJ between two Arabic letters: removed (only ZWNJ joins there)"
+ },
+ {
+  "in": "\u0430\u200c\u0441\u200d\u0435",
+  "out": "\u0430\u0441\u0435",
+  "why": "M1: joiners between Cyrillic look-alikes: removed"
+ },
+ {
+  "in": "\u4f60\u200c\u597d\u200d\u5417",
+  "out": "\u4f60\u597d\u5417",
+  "why": "M1: joiners between CJK ideographs: removed"
+ },
+ {
+  "in": "\ud835\udc00\u200c\ud835\udc01\u200d\ud835\udfff",
+  "out": "\ud835\udc00\ud835\udc01\ud835\udfff",
+  "why": "M1: joiners between Mathematical Alphanumeric Symbols (U+1D400-1D7FF): removed"
+ },
+ {
+  "in": "\u2102\u200c\u2115\u200d\u211d",
+  "out": "\u2102\u2115\u211d",
+  "why": "M1: joiners between Letterlike Symbols (U+2100-214F): removed"
+ },
+ {
+  "in": "caf\u00e9\u200c\u00e8",
+  "out": "caf\u00e9\u00e8",
+  "why": "M1: ZWNJ between accented Latin letters: removed"
+ },
+ {
+  "in": "Hi\n secret line",
+  "out": "Hi\nsecret line",
+  "why": "M2: a space at the start of a line (the approval card's pre-line hides it): removed"
+ },
+ {
+  "in": "one\n\u00a0\u2009two \n  three",
+  "out": "one\ntwo\nthree",
+  "why": "M2: spaces at the start and end of every line: removed"
+ },
+ {
+  "in": "a\n \n b",
+  "out": "a\n\nb",
+  "why": "M2: a line of only spaces becomes an empty line"
+ },
+ {
+  "in": "a\u0378b",
+  "out": "ab",
+  "why": "M3: an unassigned code point (U+0378, Cn): removed"
+ },
+ {
+  "in": "a\ufdd0b\ufffec",
+  "out": "abc",
+  "why": "M3: noncharacters U+FDD0 and U+FFFE (Cn): removed"
+ },
+ {
+  "in": "go \ud83f\udc00",
+  "out": "go \ud83f\udc00",
+  "why": "M3: a code point kept for future emoji (U+1FC00, Cn but Extended_Pictographic): kept"
+ },
+ {
+  "in": "a\u0301\u0302\u0378\u0303\u0304\u0305",
+  "out": null,
+  "why": "M3: an unassigned code point can't split a run of five stacked marks: refused"
+ },
+ {
+  "in": "hi\ud81b\udfe4there",
+  "out": "hithere",
+  "why": "Khitan small script filler U+16FE4: removed"
  }
 ]

@@ -482,6 +482,104 @@ def test_the_console_cleans_exactly_like_the_server_over_the_shared_fixture(
         c.close()
 
 
+def test_the_browsers_rgi_emoji_derives_the_same_fe0f_table(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Security review SEC-5 H1: EMOJI_FE0F_BASES are the Extended_Pictographic code points whose
+    cp + FE0F is an RGI emoji (Node 22, Unicode 17.0). The browser's own \\p{RGI_Emoji} derives
+    exactly the same set, so the table and what a browser draws as an emoji can't drift unseen."""
+    from jarvis.whatsapp.pictographic import _RANGES, EMOJI_FE0F_BASES
+
+    pictographs = [c for lo, hi in _RANGES for c in range(lo, hi + 1)]
+    want = sorted(c for lo, hi in EMOJI_FE0F_BASES for c in range(lo, hi + 1))
+    c = Console(browser, server_url, token, DESKTOP)
+    try:
+        c.open()
+        got = c.page.evaluate(
+            "(cps) => { const rgi = new RegExp('^\\\\p{RGI_Emoji}$', 'v');"
+            " return cps.filter((cp) => rgi.test(String.fromCodePoint(cp) + '\\ufe0f')); }",
+            pictographs,
+        )
+        assert got == want
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+def test_the_draft_text_takes_its_own_direction_and_a_long_name_is_cut_by_code_points(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """SEC-5 (low): the draft text has dir="auto" (a Persian draft reads right to left; a Latin
+    one left to right), and a long name is cut at NAME_MAX code points like the server's, never
+    in the middle of an emoji's surrogate pair."""
+    persian = "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 ok"
+    long_name = "\U0001f600" * 120
+    drafts = [_draft(text=persian, name=long_name), _draft(text="Running late")]
+    c = _console_with(browser, server_url, token, drafts)
+    try:
+        c.open()
+        c.send("WhatsApp")
+        cards = c.page.locator(".row.jarvis .wadraft")
+        cards.nth(1).wait_for()
+        first, second = cards.nth(0).locator(".watext"), cards.nth(1).locator(".watext")
+        assert first.get_attribute("dir") == "auto" and second.get_attribute("dir") == "auto"
+        assert first.evaluate("el => getComputedStyle(el).direction") == "rtl"
+        assert second.evaluate("el => getComputedStyle(el).direction") == "ltr"
+        assert first.text_content() == persian
+        name = cards.nth(0).locator(".waname").text_content() or ""
+        assert name == "\U0001f600" * 100  # 100 code points, as the server's NAME_MAX
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+def test_only_the_whatsapp_quote_on_an_approval_takes_its_own_direction(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """SEC-5 (low): the approval card quotes a draft's text in its own paragraph with dir="auto"
+    (the head lines stay as they are); every other approval keeps its one plain paragraph."""
+    from jarvis.whatsapp.tools import _card_text
+
+    persian = "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645\n\u0628\u0627\u0634\u0647"
+    summary = _card_text({"to": "98765 43210", "text": persian})
+    cards = [
+        {"id": "wa1", "tool": "whatsapp_draft", "summary": summary,
+         "arguments": {"to": "98765 43210", "text": persian}, "risk": "read_only",
+         "expires_at": "2030-01-01T00:00:00Z", "session_id": "sess_wa", "tool_risk": "read_only",
+         "passkey_required": False, "reason": "untrusted_context", "bulk_ok": False},
+        {"id": "gen1", "tool": "calendar_create_event", "summary": "Add: Dentist, Friday 10:00",
+         "arguments": {"title": "Dentist"}, "risk": "reversible",
+         "expires_at": "2030-01-01T00:00:00Z", "session_id": "sess_wa", "tool_risk": "reversible",
+         "passkey_required": False, "reason": "untrusted_context", "bulk_ok": False},
+    ]  # fmt: skip
+    c = Console(browser, server_url, token, DESKTOP)
+    page = c.page
+    page.route(
+        "**/v1/approvals",
+        lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps(cards)),
+    )
+    try:
+        c.open()
+        page.locator("#approvals .approval").nth(1).wait_for()
+        wa, gen = (
+            page.locator('#approvals .approval[data-id="wa1"]'),
+            page.locator('#approvals .approval[data-id="gen1"]'),
+        )
+        quote = wa.locator("p.waquote")
+        assert quote.get_attribute("dir") == "auto"
+        assert quote.evaluate("el => getComputedStyle(el).direction") == "rtl"
+        head, body = summary.split("\n", 3)[:3], summary.split("\n", 3)[3]
+        shown = body.replace("\u200c", "[U+200C]")  # the card's own visible markers, as before
+        assert quote.text_content() == shown
+        assert wa.locator("p").first.text_content() == "\n".join(head)
+        assert wa.locator("[dir]").count() == 1  # only the quote
+        assert gen.locator("[dir]").count() == 0
+        assert gen.locator("p").first.text_content() == "Add: Dentist, Friday 10:00"
+        assert c.errors == []
+    finally:
+        c.close()
+
+
 def test_every_grant_held_shows_no_rows_and_says_what_it_unlocks(console: Console) -> None:
     google = {**LINKED["google"], "tasks_granted": True, "contacts_granted": True,
               "youtube_granted": True}  # fmt: skip

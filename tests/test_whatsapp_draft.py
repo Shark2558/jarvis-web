@@ -57,8 +57,8 @@ TIERS = {t: f"mock-{t.value}" for t in ModelTier}
 
 MALAYALAM = "നാളെ കാണാം"  # നാളെ കാണാം
 # an old-style chillu inside a word (letter + virama + ZWJ + letter): the joiner is kept.
-# Security review SEC-1: a joiner is kept only BETWEEN two letters of a non-Latin script, so
-# a word-final one (before a space or the end) goes; modern text uses the atomic chillus.
+# Security review SEC-5 M1: a joiner is kept right after a virama (RFC 5892 CONTEXTJ), so a
+# word-final one stays too; modern text uses the atomic chillus.
 CHILLU_ZWJ = "\u0d0e\u0d28\u0d4d\u200d\u0d31\u0d46"
 ATOMIC_CHILLU = "\u0d05\u0d35\u0d7b \u0d35\u0d28\u0d4d\u0d28\u0d41"  # atomic chillu NN
 ZWNJ_WORD = "സ്\u200cത"  # a ZWNJ between letters is kept
@@ -77,11 +77,14 @@ def test_malayalam_and_emoji_are_kept_exactly() -> None:
         assert clean_text(text) == text
 
 
-def test_a_word_final_joiner_is_removed_under_the_sec_1_rule() -> None:
-    assert clean_text("\u0d28\u0d4d\u200d") == "\u0d28\u0d4d"
-    assert clean_text("\u0d05\u0d35\u0d28\u0d4d\u200d \u0d35\u0d28\u0d4d\u0d28\u0d41") == (
-        "\u0d05\u0d35\u0d28\u0d4d \u0d35\u0d28\u0d4d\u0d28\u0d41"
-    )
+def test_a_joiner_right_after_a_virama_stays_even_at_a_word_end() -> None:
+    """Security review SEC-5 M1 (RFC 5892 CONTEXTJ): a ZWNJ / ZWJ stays right after a virama, so
+    the old-style chillu NN (letter + virama + ZWJ) survives at the end of a word or the text;
+    one after a letter with no virama goes."""
+    assert clean_text("\u0d28\u0d4d\u200d") == "\u0d28\u0d4d\u200d"
+    chillu = "\u0d05\u0d35\u0d28\u0d4d\u200d \u0d35\u0d28\u0d4d\u0d28\u0d41"
+    assert clean_text(chillu) == chillu
+    assert clean_text("\u0d28\u200d") == "\u0d28"
 
 
 @pytest.mark.parametrize(

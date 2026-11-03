@@ -28,6 +28,7 @@ message}: the SKU's whole plain message, `quota.ledger.stops_answered`), not a f
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
@@ -117,14 +118,39 @@ def _check_search(a: dict[str, Any]) -> None:
         )
 
 
+_NUMBERISH = re.compile(r"[+-]?[0-9]+")
+_LISTING_NUMBER = re.compile(r"[0-9]{1,2}")
+PLAYLIST_ARG = "playlist must be a number from youtube_my_playlists, 'liked' or an id"
+
+
+def _listing_number(p: object) -> int | None:
+    """The listing number `p` names, or None when it names no number (code review CR-6: the
+    schema says string, so "2" — one or two digits — is listing number 2; an int is still read).
+    ValueError for a number that can't be one (0, 99, -1, 123): never taken for an id."""
+    if isinstance(p, bool):
+        raise ValueError(PLAYLIST_ARG)
+    if isinstance(p, int):
+        n = p
+    elif isinstance(p, str) and _NUMBERISH.fullmatch(p.strip()):
+        if not _LISTING_NUMBER.fullmatch(p.strip()):
+            raise ValueError("playlist number out of range: list them with youtube_my_playlists")
+        n = int(p.strip())
+    else:
+        return None
+    if not 1 <= n <= MAX_PLAYLISTS + 1:
+        raise ValueError("playlist number out of range: list them with youtube_my_playlists")
+    return n
+
+
 def _check_playlist(a: dict[str, Any]) -> None:
     p = a.get("playlist")
-    if isinstance(p, bool) or not isinstance(p, int | str):
-        raise ValueError("playlist must be a number from youtube_my_playlists, 'liked' or an id")
-    if isinstance(p, int) and not 1 <= p <= MAX_PLAYLISTS + 1:
-        raise ValueError("playlist number out of range: list them with youtube_my_playlists")
-    if isinstance(p, str) and p.strip().lower() != LIKED and not yt.PLAYLIST_ID.fullmatch(p):
-        raise ValueError("playlist must be a number from youtube_my_playlists, 'liked' or an id")
+    if not isinstance(p, int | str):
+        raise ValueError(PLAYLIST_ARG)
+    if _listing_number(p) is not None:
+        return  # a listing number in range
+    assert isinstance(p, str)  # an int is always a listing number (or refused above)
+    if p.strip().lower() != LIKED and not yt.PLAYLIST_ID.fullmatch(p):
+        raise ValueError(PLAYLIST_ARG)
     page = a.get("page")
     if page is not None and (not isinstance(page, str) or not yt.PAGE_TOKEN.fullmatch(page)):
         raise ValueError("page must be the next_page value from the previous result")
@@ -314,20 +340,25 @@ class _YouTube:
     async def _playlist_id(
         self, conn: GoogleConnector, uid: str, ref: int | str
     ) -> tuple[str, bool]:
-        """(the playlist id, whether it is the owner's liked videos)."""
-        if isinstance(ref, int):
+        """(the playlist id, whether it is the owner's liked videos). `ref`: a listing number
+        (an int, or a string of one or two digits — the schema says string, CR-6), "liked", or a
+        playlist id."""
+        n = _listing_number(ref)
+        if n is not None:
             conv = current_conversation()
             ids = conv.note(LISTING_KEY) if conv is not None else None
-            if not isinstance(ids, list) or not 1 <= ref <= len(ids):
+            if not isinstance(ids, list) or not 1 <= n <= len(ids):
                 raise ValueError(
                     "No playlist with that number: list them with youtube_my_playlists."
                 )
-            pid = ids[ref - 1]
+            pid = ids[n - 1]
             if not isinstance(pid, str) or not yt.PLAYLIST_ID.fullmatch(pid):
                 raise ValueError(
                     "No playlist with that number: list them with youtube_my_playlists."
                 )
             return pid, self._known_likes() == pid
+        if not isinstance(ref, str):  # unreachable: an int is a listing number
+            raise ValueError(PLAYLIST_ARG)
         if ref.strip().lower() == LIKED:
             likes = await self._likes(conn, uid)
             if likes is None:
@@ -420,7 +451,14 @@ def youtube_tools(service: YouTubeService) -> list[Tool]:
             {
                 "type": "object",
                 "properties": {
-                    "playlist": {"type": ["integer", "string"]},
+                    # one type only (code review CR-6): some OpenAI-compatible backends refuse
+                    # type lists, and one bad schema breaks every tool call. "2" = number 2.
+                    "playlist": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "description": "a number from youtube_my_playlists (e.g. 2), liked, "
+                        "or a playlist id",
+                    },
                     "page": {"type": "string", "maxLength": 128},
                 },
                 "required": ["playlist"],

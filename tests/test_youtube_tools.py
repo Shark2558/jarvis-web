@@ -667,6 +667,42 @@ async def test_used_up_units_pause_the_playlists_in_full_words() -> None:
     assert r.fake.sent(f"{YT}/") == []
 
 
+def test_the_playlist_argument_is_one_plain_string_type() -> None:
+    """Code review CR-6: no "type" list (some OpenAI-compatible backends refuse them)."""
+    (tool,) = [t for t in youtube_tools(Rig().service) if t.name == "youtube_playlist"]
+    assert tool.input_schema["properties"]["playlist"]["type"] == "string"
+
+
+@pytest.mark.parametrize("ref", ["2", " 2 ", "02", 2])
+async def test_a_one_or_two_digit_string_is_a_listing_number(ref: object) -> None:
+    r = Rig()
+    await r.link()
+    await r.call("youtube_my_playlists")
+    view = _view(await r.call("youtube_playlist", playlist=ref))
+    assert len(view["videos"]) == 4
+    assert r.fake.sent(f"{YT}/playlistItems")[-1].url.params["playlistId"] == "PLabc123_-XYZ"
+
+
+async def test_playlist_id_resolves_listing_number_two_from_a_string() -> None:
+    from jarvis.media.tools import _YouTube
+
+    r = Rig()
+    await r.link()
+    await r.call("youtube_my_playlists")
+    y = _YouTube(r.service)
+    with web_conversation(r.session):
+        assert await y._playlist_id(r.oauth, GOOGLE_UID, "2") == ("PLabc123_-XYZ", False)
+        assert await y._playlist_id(r.oauth, GOOGLE_UID, "1") == ("LLabcdef_123", True)
+
+
+@pytest.mark.parametrize("ref", ["0", "00", "99", "123", "-1", "1.5"])
+async def test_other_numbers_are_refused_before_anything_is_sent(ref: str) -> None:
+    r = Rig()
+    await r.link()
+    gr = await r.call("youtube_playlist", playlist=ref)
+    assert gr.outcome is GatewayOutcome.ERROR and r.fake.requests == []
+
+
 async def test_drafts_do_not_fill_the_youtube_cards() -> None:
     from jarvis.tools.reply_cards import MAX_DRAFTS
     from jarvis.whatsapp.draft import WhatsAppCard, wa_link

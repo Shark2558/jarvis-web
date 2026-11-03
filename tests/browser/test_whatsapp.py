@@ -254,9 +254,11 @@ RTL = "\u05e8\u05d1\u05d9"  # a Hebrew name: right-to-left
 
 
 def _draft(**over: Any) -> dict[str, Any]:
-    base = {"kind": WA, "name": "", "number": "+919876543210", "text": "hi", "link": "",
-            "warning": ""}  # fmt: skip
-    return {**base, **over}
+    """A draft card as the server makes it: its link is wa_link(number, text) unless given."""
+    base = {"kind": WA, "name": "", "number": "+919876543210", "text": "hi", "warning": ""}
+    d = {**base, **over}
+    d.setdefault("link", _link(str(d["number"]).lstrip("+"), str(d["text"])))
+    return d
 
 
 def _console_with(browser: Any, url: str, token: str, drafts: list[Any]) -> Console:
@@ -353,6 +355,87 @@ def test_a_draft_the_server_would_have_cleaned_is_dropped(
         cards.first.wait_for()
         assert cards.count() == 1 and cards.first.locator(".watext").text_content() == "ok"
         assert c.page.evaluate("(t) => window.JarvisWhatsApp.clean(t)", text) != text
+    finally:
+        c.close()
+
+
+def test_a_card_whose_link_differs_from_its_number_and_text_is_dropped(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Review FE-7: the server builds the link from the same number and text; a card whose link
+    is not exactly that string (here: one character off) was not made by the server, so it is
+    dropped rather than shown with a link the console made up."""
+    good = _link("919876543210", "ok")
+    bad = good[:-1] + "K"  # one character different
+    drafts = [_draft(text="ok", link=bad), _draft(text="ok", link=good, name="Kept")]
+    c = _console_with(browser, server_url, token, drafts)
+    try:
+        c.open()
+        c.send("WhatsApp")
+        cards = c.page.locator(".row.jarvis .wadraft")
+        cards.first.wait_for()
+        assert cards.count() == 1 and cards.first.locator(".waname").text_content() == "Kept"
+        assert cards.first.locator("a.waopen").get_attribute("href") == good
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+ZALGO = "Hi" + "̐" * 120  # 120 combining marks stacked on one letter
+
+
+def test_stacked_combining_marks_are_dropped_like_the_server_refuses_them(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Review FE-8: the server refuses a text with more than 4 combining marks (Unicode M*) in a
+    row on one base character; the console mirrors that and drops such a card. Four are fine
+    (Malayalam and Devanagari stack a few)."""
+    four = "a" + "́̂̃̄" + " ok"
+    five = "a" + "́̂̃̄̅"
+    ml = "ക്ഷേ"  # Malayalam: virama and a vowel sign are marks
+    c = _console_with(browser, server_url, token, [])
+    try:
+        c.open()
+        c.page.wait_for_function("!!window.JarvisWhatsApp")
+
+        def kept(text: str) -> int:
+            return int(
+                c.page.evaluate(
+                    "(d) => window.JarvisWhatsApp.normal([d]).length",
+                    _draft(text=text, link=_link("919876543210", text)),
+                )
+            )
+
+        assert kept(ZALGO) == 0
+        assert kept(five) == 0
+        assert kept("x " + five + " y") == 0
+        assert kept(four) == 1 and kept(ml) == 1 and kept("plain") == 1
+        assert c.page.evaluate("(t) => window.JarvisWhatsApp.stacked(t)", ZALGO) is True
+        assert c.page.evaluate("(t) => window.JarvisWhatsApp.stacked(t)", four) is False
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+def test_the_card_says_the_character_count_when_it_differs_from_what_you_see(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Review FE-8: a text whose characters differ from what renders (marks, a family emoji) says
+    how many characters WhatsApp gets; a plain text does not."""
+    accented = "Café at 5"  # 10 characters, 9 visible
+    drafts = [
+        _draft(text=accented, link=_link("919876543210", accented), name="Marks"),
+        _draft(text="Plain text", link=_link("919876543210", "Plain text"), name="Plain"),
+    ]
+    c = _console_with(browser, server_url, token, drafts)
+    try:
+        c.open()
+        c.send("WhatsApp")
+        cards = c.page.locator(".row.jarvis .wadraft")
+        cards.nth(1).wait_for()
+        assert cards.nth(0).locator(".wachars").text_content() == "10 characters"
+        assert cards.nth(1).locator(".wachars").count() == 0
+        assert c.errors == []
     finally:
         c.close()
 

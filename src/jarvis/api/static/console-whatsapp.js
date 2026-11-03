@@ -5,9 +5,14 @@
 //   window.JarvisWhatsApp  render(row, cards) -> the row's first card (or null). console.js calls it
 //     for a fresh reply with ChatResponse.cards; only kind "whatsapp" is drawn here
 //     ({kind: "whatsapp", name, number, text, link, warning, assumed}); console-media.js draws the rest.
-//   The one link is built HERE from the checked number and the text (encodeURIComponent), never taken
-//   from the server: https://wa.me/<digits>?text=<encoded>. It is an ordinary link -- it opens only when
-//   the owner clicks it, in a new tab, with rel="noopener noreferrer" and no referrer.
+//   The one link is built HERE from the checked number and the text (encodeURIComponent):
+//   https://wa.me/<digits>?text=<encoded>; the server builds the same string (jarvis.whatsapp.draft
+//   wa_link), so a card whose `link` differs was not made by it and is dropped (review FE-7). It is an
+//   ordinary link -- it opens only when the owner clicks it, in a new tab, with rel="noopener
+//   noreferrer" and no referrer.
+//   Review FE-8: a text with more than 4 combining marks in a row (Unicode M*) on one character is
+//   refused by the server, so such a card is dropped here too; a card whose character count differs
+//   from what renders (accents, emoji made of several characters) says "N characters" in its head.
 //   A draft that is malformed (number not E.164, text longer than 2,000 characters, a hidden character,
 //   a lone surrogate, anything the server's cleaning would have changed) is dropped, never shown
 //   half-right.
@@ -36,6 +41,10 @@
   const KEPT = new Set(['\n', '\t', '\u200c', '\u200d']); // ZWNJ / ZWJ: Malayalam and emoji need them
   const SELECTORS = new Set(['\ufe0e', '\ufe0f']); // an emoji's presentation: once, after a character
   const SPACE = /^\s$/u;
+  // more than MAX_MARKS combining marks in a row: the server's draft.py refuses the text (FE-8)
+  const MAX_MARKS = 4;
+  const STACKED = new RegExp('\\p{M}{' + (MAX_MARKS + 1) + ',}', 'u');
+  const MARKISH = /[\p{M}\u200c\u200d]/gu; // what a grapheme count would fold into its base
   const WARN = 'This number didn\u2019t come from you or your contacts \u2014 check it before you send.';
   const ASSUMED = 'Assumed India (+91)';
   const HANDS_OVER = 'Opening the link hands this text to WhatsApp.';
@@ -54,6 +63,19 @@
     }
     const lines = out.join('').split('\n').map((line) => line.replace(/\s+$/u, ''));
     return lines.join('\n').replace(/\n{4,}/g, '\n\n\n').trim();
+  }
+
+  /** True when `text` stacks more than MAX_MARKS combining marks on one character. */
+  const stacked = (text) => typeof text === 'string' && STACKED.test(text);
+
+  /** How many characters the text has, and how many show (grapheme clusters; without
+   *  Intl.Segmenter, the characters that are not marks or joiners). */
+  function lengths(text) {
+    const chars = Array.from(text).length;
+    let seen;
+    try { seen = Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)).length; }
+    catch (_) { seen = Array.from(text.replace(MARKISH, '')).length; }
+    return { chars, seen };
   }
 
   /** https://wa.me/<digits>?text=<encoded>, or null when the number is not E.164 or the text
@@ -79,8 +101,9 @@
       const text = d.text;
       if (!text.trim() || Array.from(text).length > TEXT_MAX || INVISIBLE.test(text)) return null;
       if (clean(text) !== text) return null; // the server would never have sent it so
+      if (stacked(text)) return null; // ... nor this (FE-8)
       const link = waLink(d.number, text);
-      if (!link) return null;
+      if (!link || d.link !== link) return null; // FE-7: exactly the server's link, or no card
       const name = typeof d.name === 'string' && !INVISIBLE.test(d.name)
         ? d.name.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX) : '';
       const flag = (v) => typeof v === 'string' && v.length > 0;
@@ -122,6 +145,12 @@
     head.append(mk('span', 'walabel', 'WhatsApp draft'));
     const count = lineCount(d.text);
     if (count) head.append(mk('span', 'walines', count));
+    const len = lengths(d.text);
+    if (len.chars !== len.seen) { // FE-8: what WhatsApp gets is more than what shows
+      const c = mk('span', 'wachars', len.chars + (len.chars === 1 ? ' character' : ' characters'));
+      c.title = `The text has ${len.chars} characters; ${len.seen} show on screen (accents and some emoji are made of several).`;
+      head.append(c);
+    }
     head.append(mk('span', 'wastate', 'Not sent'));
     const to = mk('div', 'wato');
     to.append(mk('span', 'wak', 'To'));
@@ -155,5 +184,5 @@
     return cards[0];
   }
 
-  window.JarvisWhatsApp = Object.freeze({ render, normal, waLink, clean });
+  window.JarvisWhatsApp = Object.freeze({ render, normal, waLink, clean, stacked });
 })();

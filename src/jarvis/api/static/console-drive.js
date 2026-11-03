@@ -1,14 +1,17 @@
-// src/jarvis/api/static/console-drive.js — slice 12 D1 (docs/plans/phase2-slice12-integrations.md):
-// Integrations → Google Drive. JARVIS reads Drive as its own Google account, and only the folders the
+// src/jarvis/api/static/console-drive.js -- slice 12 D1 (docs/plans/phase2-slice12-integrations.md):
+// Integrations -> Google Drive. JARVIS reads Drive as its own Google account, and only the folders the
 // owner shares with it AND switches on here. Built beside #integrations (console.js redraws that box),
-// so the page markup stays untouched. No build step; CSP script-src 'self'; every server string reaches
-// the page through textContent or an input's value (never markup); a field of the wrong type is
-// dropped, never guessed. Transport is the console's api() (cookie + X-Requested-With, or the bearer
-// token; 401 → gate). Loads when the Integrations panel opens (it asks Google), never on page load.
-// API: GET /v1/drive → {configured:false} | {configured, service_email, folders:[{id, name, confirmed,
-// readable}], others, others_more, max_folders}; PUT /v1/drive/roots/{id} {use} → the same, or
+// so the page markup stays untouched. No build step; CSP script-src 'self'; ASCII source with
+// backslash-u escapes only; every server string reaches the page through textContent or an input's
+// value (never markup); a field of the wrong type is dropped, never guessed. Transport is the console's
+// api() (cookie + X-Requested-With, or the bearer token; 401 -> gate). Loads when the Integrations
+// panel opens (it asks Google), never on page load.
+// API: GET /v1/drive -> {configured:false} | {configured, service_email, folders:[{id, name, confirmed,
+// readable}], others, others_more, max_folders}; PUT /v1/drive/roots/{id} {use} -> the same, or
 // {error, detail}. `readable` is what JARVIS acts on: a switched-on folder it can't read now is said
 // so, never "can't be read" while it can; the switch here always stops access at once.
+// Review FE-1: switching a folder ON asks first (#driveDialog, a native modal like the Brief and
+// Memory confirms: Esc and "Not now" cancel); switching off stays one tap. Focus returns to the switch.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -23,6 +26,8 @@
     'Paste JARVIS\'s address (Copy above) into the box.',
     'Choose Viewer, then press Send.',
   ];
+  const CHECKING = 'Checking\u2026';
+  const quoted = (name) => '\u201c' + name + '\u201d';
   const S = { data: undefined, error: '', loadedAt: 0, loading: null, busy: new Set(), note: null };
   let card = null, stateEl = null, bodyEl = null, noteEl = null;
 
@@ -67,7 +72,7 @@
     card.setAttribute('aria-labelledby', 'driveHead');
     const head = mk('div', 'ihead');
     const title = mk('b', '', 'Google Drive'); title.id = 'driveHead';
-    stateEl = mk('span', 'istate', 'Checking…');
+    stateEl = mk('span', 'istate', CHECKING);
     head.append(title, stateEl);
     noteEl = mk('div', 'inote'); noteEl.id = 'driveNote'; noteEl.setAttribute('role', 'status'); noteEl.setAttribute('aria-live', 'polite'); noteEl.hidden = true;
     bodyEl = mk('div', 'ibody'); bodyEl.id = 'driveBody';
@@ -105,7 +110,7 @@
       setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
     } catch (_) {
       input.focus(); input.select();
-      note('ok', 'Address selected: press Ctrl+C (⌘C on a Mac) to copy it.');
+      note('ok', 'Address selected: press Ctrl+C (\u2318C on a Mac) to copy it.');
     }
   }
   function steps() {
@@ -116,13 +121,68 @@
   function useSwitch(f) {
     const b = mk('button', 'bsw'); b.type = 'button'; b.dataset.id = f.id;
     b.setAttribute('aria-pressed', String(f.confirmed));
-    b.setAttribute('aria-label', `Use “${f.name}”`);
+    b.setAttribute('aria-label', 'Use ' + quoted(f.name));
     const track = mk('span', 'track'); track.appendChild(mk('i', ''));
     b.append(track, mk('span', 'st', f.confirmed ? 'On' : 'Off'));
     const blocked = !f.readable && !f.confirmed; // switching off is always allowed
     if (S.busy.has(f.id) || blocked) b.setAttribute('aria-disabled', 'true');
-    b.addEventListener('click', () => { if (b.getAttribute('aria-disabled') !== 'true') setUse(f, !f.confirmed); });
+    b.addEventListener('click', () => { if (b.getAttribute('aria-disabled') !== 'true') toggle(f, b); });
     return b;
+  }
+  /** Off -> On asks first (FE-1); On -> Off is one tap. */
+  async function toggle(f, trigger) {
+    if (f.confirmed) { setUse(f, false); return; }
+    if (await askOn(f, trigger)) setUse(f, true);
+  }
+
+  // ---- confirm dialog: native modal (the rest of the page is inert), Tab stays inside, Esc = Not now
+  let settle = null;
+  function askOn(f, trigger) {
+    const dlg = $('driveDialog');
+    if (!dlg || typeof dlg.showModal !== 'function') {
+      note('bad', 'This browser can\'t show the confirmation, so the folder was not switched on.');
+      return Promise.resolve(false);
+    }
+    if (settle) settle(false);
+    $('driveDialogTitle').textContent = 'Let JARVIS read this folder?';
+    const body = $('driveDialogText'); body.textContent = '';
+    const first = mk('p', 'strong');
+    first.append('JARVIS will be able to read the files in ', mk('b', '', quoted(f.name)), ' and in every folder inside it.');
+    body.append(first,
+      mk('p', '', 'When you ask about them, JARVIS sends what it reads to the brain (Claude) to answer you.'),
+      mk('p', '', 'It can\'t change or delete anything. You can switch it off here at any time.'));
+    return new Promise((resolve) => {
+      settle = (val) => {
+        settle = null;
+        if (dlg.open) dlg.close();
+        refocus(trigger, f.id);
+        resolve(val);
+      };
+      dlg.showModal();
+      $('driveDialogNo').focus(); // the safe choice is where Enter lands
+    });
+  }
+  /** Focus back on the switch: the same element, or the one a re-render put in its place. */
+  function refocus(trigger, id) {
+    const now = trigger && document.contains(trigger) ? trigger : card && card.querySelector(`.bsw[data-id="${id}"]`);
+    if (now && !now.closest('[hidden]')) now.focus({ preventScroll: true });
+  }
+  function wireDialog() {
+    const dlg = $('driveDialog');
+    if (!dlg) return;
+    $('driveDialogYes').addEventListener('click', () => { if (settle) settle(true); });
+    $('driveDialogNo').addEventListener('click', () => { if (settle) settle(false); });
+    dlg.addEventListener('cancel', (e) => { e.preventDefault(); if (settle) settle(false); });
+    dlg.addEventListener('close', () => { if (settle && !dlg.open) settle(false); });
+    dlg.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (settle) settle(false); return; }
+      if (e.key !== 'Tab') return;
+      const items = [...dlg.querySelectorAll('button:not([disabled])')];
+      if (!items.length) return;
+      const a = items[0], z = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+      else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+    });
   }
   function folderList(d) {
     const ul = mk('ul', 'dfolders'); ul.id = 'driveList'; ul.setAttribute('aria-label', 'Folders shared with JARVIS');
@@ -157,7 +217,7 @@
       bodyEl.appendChild(r);
       return;
     }
-    if (d === undefined) { card.dataset.state = 'loading'; stateEl.textContent = 'Checking…'; bodyEl.appendChild(mk('p', '', 'Checking folders shared with JARVIS…')); return; }
+    if (d === undefined) { card.dataset.state = 'loading'; stateEl.textContent = CHECKING; bodyEl.appendChild(mk('p', '', 'Checking folders shared with JARVIS\u2026')); return; }
     if (d === null) { card.hidden = true; return; }
     card.hidden = false;
     const inUse = d.folders.filter(f => f.confirmed && f.readable).length;
@@ -186,15 +246,14 @@
     try {
       const r = normal(await api(`/v1/drive/roots/${encodeURIComponent(f.id)}`, { method: 'PUT', body: { use: on } }));
       if (r) S.data = r;
-      note('ok', on ? `JARVIS can now read “${f.name}” and what is inside it.` : `JARVIS no longer reads “${f.name}”.`);
+      note('ok', on ? `JARVIS can now read ${quoted(f.name)} and what is inside it.` : `JARVIS no longer reads ${quoted(f.name)}.`);
       log('info', on ? 'Drive folder in use' : 'Drive folder switched off');
     } catch (e) {
       if (e && e.status === 401) return;
       note('bad', detailOf(e) || 'Couldn\'t change it. Please try again.');
     } finally {
       S.busy.delete(f.id); render();
-      const again = card && card.querySelector(`.bsw[data-id="${f.id}"]`);
-      if (again) again.focus();
+      refocus(null, f.id);
     }
   }
 
@@ -215,8 +274,13 @@
     return S.loading;
   }
 
+  const integOpen = () => !!(window.JarvisDeck && typeof window.JarvisDeck.isOpen === 'function' && window.JarvisDeck.isOpen('integrations'));
+  wireDialog();
   document.addEventListener('jarvis:panel', (e) => { const d = e.detail || {}; if (d.id === 'integrations' && d.open) load(false); });
-  document.addEventListener('jarvis:ready', () => { if (window.JarvisDeck && typeof window.JarvisDeck.isOpen === 'function' && window.JarvisDeck.isOpen('integrations')) load(false); });
+  document.addEventListener('jarvis:ready', () => { if (integOpen()) load(false); });
+  // FE-9: this script can arrive after jarvis:ready (deferred; a slow network holds it back): ask too
+  const C = window.JarvisConsole;
+  if (C && typeof C.ready === 'function' && C.ready() && integOpen()) load(false);
 
   window.JarvisDrive = Object.freeze({ refresh: () => load(true), normal });
 })();

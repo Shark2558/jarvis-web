@@ -10,6 +10,7 @@
 .wadraft .walabel{margin-right:auto}
 .wadraft .walines{padding:2px 8px;border-radius:999px;border:1px solid var(--amber-line);color:var(--amber-ink);
   background:var(--amber-tint);font-variant-numeric:tabular-nums}
+.wadraft .wachars{padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--ink-2);font-variant-numeric:tabular-nums}
 .wadraft .wastate{padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--card,transparent)}
 .wadraft .wato{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;min-width:0}
 .wadraft .wak{font:600 12px/1.2 var(--hud);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}

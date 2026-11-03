@@ -60,10 +60,48 @@ def test_it_writes_text_only_and_talks_through_the_consoles_transport() -> None:
         assert "$" not in re.sub(r"\$\{", "", lit), lit[:80]
 
 
+SLICE12_FILES = (  # review FE-10: every slice 12 console file is plain ASCII, like the older ones
+    NAME,
+    "console-drive.js",
+    "console-drive.css",
+    "console-media.js",
+    "console-media.css",
+    "console-whatsapp.js",
+    "console-whatsapp.css",
+)
+# the slice 12 lines of console.html (the rest of the page predates the rule)
+SLICE12_HTML_MARKS = (
+    'id="integrations"', "integMaps", "console-media.js", 'id="sMaps"', 'id="sYouTube"',
+    'data-open="media"', 'data-sheet-open="media"', "/static/console-drive.",
+    "/static/console-media.", "/static/console-whatsapp.", "/static/console-integrations.",
+    "driveDialog",
+)  # fmt: skip
+
+
+def _not_ascii(text: str) -> list[tuple[int, str]]:
+    return [(i, hex(ord(c))) for i, c in enumerate(text) if not (c in "\n\t" or " " <= c <= "~")]
+
+
 def test_plain_ascii_with_escapes_only() -> None:
-    text = JS.read_text(encoding="utf-8")
-    bad = [(i, hex(ord(c))) for i, c in enumerate(text) if not (c in "\n\t" or " " <= c <= "~")]
-    assert bad == [], bad[:5]
+    for name in SLICE12_FILES:
+        bad = _not_ascii((STATIC / name).read_text(encoding="utf-8"))
+        assert bad == [], (name, bad[:5])
+
+
+def _slice12_html() -> list[str]:
+    lines = (STATIC / "console.html").read_text(encoding="utf-8").splitlines()
+    picked = [ln for ln in lines if any(m in ln for m in SLICE12_HTML_MARKS)]
+    start = next(i for i, ln in enumerate(lines) if "<!-- Media (slice 12" in ln)
+    end = next(i for i in range(start, len(lines)) if lines[i].strip() == "</section>")
+    return picked + lines[start : end + 1]
+
+
+def test_the_slice12_lines_of_the_page_are_plain_ascii() -> None:
+    picked = _slice12_html()
+    assert len(picked) >= 30  # the Media panel, the Vitals rows, the dock / sheet, the dialog
+    assert any('id="driveDialog"' in ln for ln in picked)
+    for ln in picked:
+        assert _not_ascii(ln) == [], ln[:120]
 
 
 def test_a_grant_row_needs_the_grant_missing_and_available() -> None:

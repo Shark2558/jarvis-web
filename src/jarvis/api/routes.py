@@ -13,7 +13,8 @@ POST /v1/chat/stream          one turn, text/plain streamed deltas (402 first if
                               (slice 10), the final event is {"error": "session_conflict",
                               "detail": ...} and the reply was not saved.
 GET  /v1/sessions             list the caller's sessions (+ total_cost_inr)
-GET  /v1/sessions/{id}        full transcript (audit / replay) (+ total_cost_inr)
+GET  /v1/sessions/{id}        full transcript (audit / replay) (+ total_cost_inr, + drafts: the
+                              WhatsApp draft cards rebuilt from the stored results, final review)
 DELETE /v1/sessions/{id}      forget a session (owner's delete right)
 POST /v1/approvals/approve-all {session_id, ids ≤ 20} → ChatResponse + results (slice 11 D6)
 GET  /health                  liveness + dependency check (unauthenticated)
@@ -45,6 +46,7 @@ from jarvis.memory.base import MessageNotSaved, SessionConflict, SessionNotFound
 from jarvis.permissions.models import PasskeyProof
 from jarvis.tools.audit import AuditEntry
 from jarvis.tools.context import presenting_proof
+from jarvis.whatsapp.restore import stored_drafts
 
 router = APIRouter()
 STREAM_FINAL = "\x1e"  # ASCII record separator: the reply text ends, the final event follows
@@ -192,7 +194,9 @@ async def get_session(
     if s.user_id != uid:
         raise SessionNotFound(session_id)
     inr = round(await brain.billing.inr(s.total_cost_usd), 4)
-    return SessionView.model_validate({**dict(s), "total_cost_inr": inr})
+    # final review: the conversation's WhatsApp drafts get their Open in WhatsApp back
+    drafts = stored_drafts(s)
+    return SessionView.model_validate({**dict(s), "total_cost_inr": inr, "drafts": drafts})
 
 
 @router.delete("/v1/sessions/{session_id}", status_code=204, dependencies=[Depends(require_auth)])

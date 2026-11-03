@@ -3,7 +3,8 @@
 // presses Send there. JARVIS sends nothing. No build step; CSP script-src 'self'; ASCII source with
 // backslash-u escapes only; every server string reaches the page through textContent, never markup.
 //   window.JarvisWhatsApp  render(row, cards) -> the row's first card (or null). console.js calls it
-//     for a fresh reply with ChatResponse.cards; only kind "whatsapp" is drawn here
+//     for a fresh reply with ChatResponse.cards, and for a conversation opened again with the drafts
+//     GET /v1/sessions/{id} rebuilt (final review); only kind "whatsapp" is drawn here
 //     ({kind: "whatsapp", name, number, text, link, warning, assumed}); console-media.js draws the rest.
 //   The one link is built HERE from the checked number and the text (encodeURIComponent), never taken
 //   from the server: https://wa.me/<digits>?text=<encoded>. It is an ordinary link -- it opens only when

@@ -8,8 +8,10 @@ answer or from the checked draft, never from the model's words). Only code insid
 actually ran can add one: a call that became an approval card adds nothing until it is approved
 and runs. The Brain opens `collecting_cards` around one owner message's tool rounds (and around an
 approved card's run; Approve all joins each approved call's cards with `capped`) and puts what was
-collected on the reply (`ChatResponse.cards`). Cards are shown once, with that reply: they are not
-stored with the conversation (Google Maps terms: JARVIS caches nothing but place ids).
+collected on the reply (`ChatResponse.cards`). Cards are shown with that reply and not stored
+with the conversation (Google Maps terms: JARVIS caches nothing but place ids); only a WhatsApp
+draft — the owner's own message — is rebuilt from its stored result when the conversation is
+opened again (`jarvis.whatsapp.restore`); Maps and YouTube cards never are.
 
 Caps per reply: MAX_CARDS Maps / YouTube cards and, separately, MAX_DRAFTS WhatsApp drafts (the
 first ones, in order), so neither kind can crowd the other out. A card is never dropped silently

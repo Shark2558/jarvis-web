@@ -371,3 +371,75 @@ def test_every_grant_held_shows_no_rows_and_says_what_it_unlocks(console: Consol
     assert "YouTube playlists (read only)" in unlocks
     assert console.page.locator("#integrations .iopt").count() == 0
     assert console.errors == []
+
+
+# ---- final review fix 9: a reopened conversation gets its drafts back -------------------------
+
+
+def _turn(role: str, content: str, **over: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "id": f"turn_{role}_{len(content)}",
+        "role": role,
+        "content": content,
+        "blocks": [],
+        "created_at": "2026-11-03T00:00:00Z",
+        "model": "mock-balanced" if role == "assistant" else None,
+        "sources": [],
+        "attachments": [],
+        "channel": "text",
+    }
+    base.update(over)
+    return base
+
+
+def test_a_reopened_conversation_shows_its_draft_cards_again(
+    browser: Any, server_url: str, token: str
+) -> None:
+    good = DRAFTS[1]
+    session = {
+        "id": "sess_back",
+        "user_id": "owner",
+        "created_at": "2026-11-03T00:00:00Z",
+        "updated_at": "2026-11-03T00:01:00Z",
+        "turns": [
+            _turn("user", "WhatsApp Ravi in Malayalam"),
+            _turn("assistant", ""),  # the tool exchange: no text of its own
+            _turn("user", ""),
+            _turn("assistant", "It's ready - tap Open in WhatsApp, then Send."),
+        ],
+        "metadata": {},
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_cost_usd": 0.0,
+        "total_cost_inr": 0.0,
+        "drafts": [
+            {"turn": 3, "card": good},
+            {"turn": 3, "card": DRAFTS[3]},  # a malformed one is still dropped
+            {"turn": "3", "card": good},  # so is a bad turn index
+        ],
+    }
+    wa = WaMe()
+    c = Console(browser, server_url, token, DESKTOP)
+    try:
+        c.page.add_init_script(
+            "try { localStorage.setItem('jarvis_session', 'sess_back'); } catch (_) {}"
+        )
+        c.ctx.route(re.compile(r"^https://wa\.me/.*"), wa.handle)
+        body = json.dumps(session)
+        c.page.route(
+            "**/v1/sessions/sess_back",
+            lambda r: r.fulfill(status=200, content_type="application/json", body=body),
+        )
+        c.open()
+        card = c.page.locator(".row.jarvis .wadraft")
+        card.first.wait_for()
+        assert card.count() == 1
+        assert card.locator(".watext").text_content() == TEXT
+        link = card.locator("a.waopen")
+        assert link.get_attribute("href") == _link("919876543210", TEXT)
+        assert link.get_attribute("rel") == "noopener noreferrer"
+        assert wa.opened == []  # nothing opens by itself on reload
+        assert c.page.evaluate("window.__pwned") is None
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()

@@ -361,13 +361,28 @@
     });
     box.append(t, no, yes); row.appendChild(box); no.focus();
   }
+  /** Final review: the WhatsApp drafts GET /v1/sessions/{id} rebuilt, by the reply (turn index)
+   *  they belong under. console-whatsapp.js checks every field again; Maps / YouTube never come back. */
+  function draftsByTurn(sess) {
+    const by = new Map();
+    (Array.isArray(sess.drafts) ? sess.drafts : []).forEach(d => {
+      if (!d || !Number.isInteger(d.turn) || !d.card || typeof d.card !== 'object') return;
+      if (!by.has(d.turn)) by.set(d.turn, []);
+      by.get(d.turn).push(d.card);
+    });
+    return by;
+  }
   function renderTranscript(sess) {
     renderWelcome();
     let shown = 0; let last = null;
-    sess.turns.forEach(t => {
+    const drafts = draftsByTurn(sess);
+    sess.turns.forEach((t, i) => {
       if (!t.content || !t.content.trim()) return; // tool exchanges have no text of their own
       if (t.role === 'user') { const row = addMsg('user', t.content); if (Attach()) Attach().show(row, t.attachments); }
-      else { const row = addMsg('jarvis', t.content, [t.model]); if (window.JarvisSources) window.JarvisSources.render(row, t.sources); last = t; }
+      else {
+        const row = addMsg('jarvis', t.content, [t.model]); if (window.JarvisSources) window.JarvisSources.render(row, t.sources); last = t;
+        if (window.JarvisWhatsApp && drafts.has(i)) window.JarvisWhatsApp.render(row, drafts.get(i));
+      }
       shown++;
     });
     if (shown) { addMsg('sys', 'Earlier conversation restored.'); note('info', 'Conversation restored'); }

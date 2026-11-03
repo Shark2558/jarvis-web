@@ -26,9 +26,11 @@ the server's link and the console's are the same string.
 
 Card (`WhatsAppCard`, kind "whatsapp" in `ChatResponse.cards`): whatsapp_draft adds it with
 `jarvis.tools.reply_cards.add_card` when a draft is ready, beside its result and never inside what
-the model sees. `draft_card` checks the number and text again and builds the link from them; the
-model re-checks every field when it is made or read back (`jarvis.tools.reply_cards.parse_cards`),
-so a card whose link is not exactly `wa_link(number, text)` never exists.
+the model sees. `draft_card` checks the number and text again and builds the link from them, and
+the model re-checks every field whenever a card is made (its validator below), so a card whose
+link is not exactly `wa_link(number, text)` never exists. A conversation opened again gets its
+draft cards back the same way: rebuilt from the stored draft results through `draft_card`
+(`jarvis.whatsapp.restore`, final review).
 """
 
 from __future__ import annotations

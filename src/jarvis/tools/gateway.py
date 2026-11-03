@@ -224,10 +224,13 @@ def _stricter(a: Effect, b: Effect) -> Effect:
 def _tightened(
     effect: Effect, risk: ActionRisk, confirmation_id: str | None, asks: bool = False
 ) -> Effect:
-    """ALLOW → ASK when the tool asks for this call (`Tool.ask_when`; slice 12: a read-only Maps
-    route that would send the owner's Home in a tainted round asks too) or when an approval token
-    is presented (so the approved card's token is always spent) — and, for a write, on a spoken
-    turn or in a tainted round. (An irreversible call is never ALLOW in the first place.)"""
+    """ALLOW → ASK when the tool asks for this call (`Tool.ask_when` — slice 12: a read-only
+    Maps route that would send the owner's Home / Work asks when the round read other people's
+    CONTENT, `taint.content_tainted`; a spoken turn alone does not, so a spoken "how long to
+    work?" stays one step; a WhatsApp draft asks on a spoken turn or in a tainted round) or when an
+    approval token is presented (so the approved card's token is always spent) — and, for a
+    write, on a spoken turn or in a tainted round. (An irreversible call is never ALLOW in the
+    first place.)"""
     if effect is not Effect.ALLOW:
         return effect
     if confirmation_id is not None or asks:

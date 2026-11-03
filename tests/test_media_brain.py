@@ -138,3 +138,43 @@ async def test_a_training_brain_is_offered_no_maps_or_youtube_tools() -> None:
     offered = provider.calls[-1].tools or []
     assert not [t for t in offered if t.name.startswith(("maps_", "youtube_"))]
     assert fake.requests == []
+
+
+# ---- final review fix 8: a spoken "how long to work?" stays one step -------------------------
+
+
+def _home_rig() -> tuple[Brain, MockProvider, MapsPlaces, Any]:
+    brain, provider, _, fake = _rig()
+    assert brain.gateway is not None
+    route = brain.gateway.registry.get("maps_route")
+    assert route is not None
+    places: MapsPlaces = route.run.__self__.s.places  # type: ignore[attr-defined]
+    return brain, provider, places, fake
+
+
+async def test_a_spoken_travel_time_question_from_home_runs_without_a_card() -> None:
+    """D3 / gateway: Home or Work in a route asks first only when the round read other people's
+    content (`content_tainted`); a spoken turn alone is the owner asking out loud."""
+    brain, provider, places, fake = _home_rig()
+    await places.put("u_owner", home="Kowdiar", work="Technopark")
+    call = ToolCall(id="r", name="maps_route", arguments={"from": "home", "to": "work"})
+    provider.script_tool_calls([call])
+    provider.script("About twenty-five minutes.")
+    req = ChatRequest(message="how long to work?", user_id="u_owner", channel="voice")
+    resp = await brain.chat(req)
+    assert resp.pending_approvals == [] and [c.kind for c in resp.cards] == ["route"]
+    assert len(fake.requests) == 1
+
+
+async def test_a_spoken_route_from_home_after_a_place_search_asks_first() -> None:
+    brain, provider, places, fake = _home_rig()
+    await places.put("u_owner", home="Kowdiar", work="Technopark")
+    provider.script_tool_calls([ToolCall(id="s", name="maps_search", arguments={"query": "cafe"})])
+    provider.script_tool_calls(
+        [ToolCall(id="r", name="maps_route", arguments={"from": "home", "to": "Kovalam"})]
+    )
+    provider.script("An approval is waiting.")
+    msg = "find a cafe and the time from home"
+    resp = await brain.chat(ChatRequest(message=msg, user_id="u_owner", channel="voice"))
+    assert [p.tool for p in resp.pending_approvals] == ["maps_route"]
+    assert len(fake.requests) == 1  # the place search only: Home was not sent

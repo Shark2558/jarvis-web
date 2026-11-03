@@ -12,7 +12,9 @@ maps_route(from, to, mode = drive | two_wheeler | walk, depart?)
     (and "my office", …) resolve to the owner's saved Home / Work (Integrations → Maps); not set →
     a plain question, nothing sent. In a round that read other people's words (`content_tainted`:
     a page or a place name may be steering it), a route that would send Home / Work to Google asks
-    the owner first (`Tool.ask_when`). `depart`: a future time with its zone (≤ 30 days ahead).
+    the owner first (`Tool.ask_when`). A spoken turn alone does NOT ask (plan D3: the owner asking
+    "how long to work?" out loud stays one step; a spoken turn after a page or a place search
+    asks). `depart`: a future time with its zone (≤ 30 days ahead).
 Both refuse private details in their words (`web.guard.query_problem`), cost one Maps call of the
 message's 3 (`budget.take_maps_call`), and reserve the SKU Google bills them as from the
 deployment's allowance first (`jarvis.quota`; `ROUTE_SKU`: a car route with traffic is Compute
@@ -191,7 +193,8 @@ def _route_card(a: dict[str, Any]) -> str:
 
 def _saved_place_in_outside_round(a: dict[str, Any]) -> bool:
     """`ask_when` for maps_route: True when the call would send the owner's saved Home / Work
-    to Google from a round that read other people's words (a page, a mail, a place name). The
+    to Google from a round that read other people's words (a page, a mail, a place name). Only
+    content counts, never a spoken turn by itself (`content_tainted`, not `tainted_round`). The
     owner then approves it on its own card; outside a turn (that approval running) it is False."""
     if not content_tainted():
         return False

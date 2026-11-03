@@ -402,6 +402,17 @@ def test_a_malayalam_place_name_keeps_its_zero_width_joiners(rig: Rig) -> None:
     assert c.page.locator(".row.jarvis .mplaces .maddr").first.text_content() == MALAYALAM
     kept = c.page.evaluate("(s) => window.JarvisText.strip(s)", MALAYALAM)
     assert kept == MALAYALAM and c.errors == []
+    # final review: tag characters (U+E0000-E007F), soft hyphen, CGJ and U+180E go too
+    hidden = "\U000e0068\U000e0069\U000e007f\u00ad\u034f\u180e\U000e0000\U000e0001"
+    said = c.page.evaluate("(s) => window.JarvisText.strip(s)", MALAYALAM + hidden)
+    assert said == MALAYALAM
+    assert (
+        c.page.evaluate(
+            "(s) => window.JarvisText.hasInvisible(s)", "x" + "\U000e0068\U000e0069\U000e007f"
+        )
+        is True
+    )
+    assert c.page.evaluate("(s) => window.JarvisText.hasInvisible(s)", MALAYALAM) is False
 
 
 def test_home_and_work_are_hidden_when_integrations_says_maps_is_off(rig: Rig) -> None:

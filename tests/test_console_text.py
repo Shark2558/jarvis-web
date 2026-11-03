@@ -23,11 +23,13 @@ MALAYALAM = (
 
 
 def _class() -> str:
-    """The character class console-text.js builds its RegExp from, as JavaScript reads it."""
+    """The character class console-text.js builds its RegExp from, as JavaScript reads it (with
+    its `u` flag), written for Python's re: \\u{XXXXX} becomes \\UXXXXXXXX."""
     js = JS.read_text(encoding="ascii")
     m = re.search(r"const INVISIBLE_CLASS = '(\[[^']+\])';", js)
     assert m is not None
-    return m.group(1).replace("\\\\", "\\")  # the string literal's doubled backslashes
+    cls = m.group(1).replace("\\\\", "\\")  # the string literal's doubled backslashes
+    return re.sub(r"\\u\{([0-9a-fA-F]{1,6})\}", lambda g: "\\U" + g.group(1).zfill(8), cls)
 
 
 def _strip(text: str) -> str:
@@ -70,3 +72,20 @@ def test_each_module_uses_the_shared_rule_and_has_none_of_its_own() -> None:
 def test_the_new_file_is_plain_ascii() -> None:
     assert JS.read_bytes().isascii()
     assert "innerHTML" not in JS.read_text(encoding="ascii")
+
+
+# ---- final review LOW 2: tag characters and the other blank-rendering ones ----------------------
+
+TAGS = "\U000e0068\U000e0069\U000e007f"  # invisible tag letters ("ASCII smuggling") and CANCEL TAG
+
+
+def test_the_regexp_reads_code_points_so_tag_characters_can_be_matched() -> None:
+    js = JS.read_text(encoding="ascii")
+    assert "new RegExp(INVISIBLE_CLASS, 'u')" in js and "new RegExp(INVISIBLE_CLASS, 'gu')" in js
+    assert "\\\\u{e0000}-\\\\u{e007f}" in js
+
+
+def test_tag_characters_soft_hyphen_cgj_and_mongolian_separator_are_removed() -> None:
+    assert _strip("pay" + TAGS + "ment") == "payment"
+    assert _strip("a\u00ad\u034f\u180e\U000e0000\U000e0001b") == "ab"
+    assert _strip(MALAYALAM + TAGS) == MALAYALAM  # and Malayalam keeps its joiners

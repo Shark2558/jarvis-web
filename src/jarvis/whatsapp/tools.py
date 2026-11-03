@@ -18,7 +18,9 @@ Trust (final review): a ready draft to a number the owner TYPED (`number_source`
 turn's words) vouches for its result (`may_vouch`): it holds only the owner's number and the
 text the model wrote, so a second draft or a reminder later in the same message is not turned
 into a card by the first draft. A result with a Contacts name (fenced: people write their own
-names), a choice list, or a number from anywhere else never vouches and taints the round.
+names), a choice list, a number from anywhere else, or a run whose text may carry other people's
+words (`ToolContext.outside`: an approved card proposed in a round that read a mail or a page,
+as the calendar, reminder and to-do writes mark it) never vouches and taints the round.
 
 Cards (final review): at most `reply_cards.MAX_DRAFTS` drafts per reply. When the reply is full
 the call is refused before anything runs (no Contacts look-up) and its result says the draft was
@@ -159,14 +161,16 @@ class WhatsAppDrafts:
         self.contacts = contacts
 
     async def draft(self, a: dict[str, Any]) -> Any:
-        uid = require_tool_context().user_id
+        ctx = require_tool_context()
+        uid, outside = ctx.user_id, ctx.outside
         text = text_arg(a.get("text"))
         kind, who = recipient_arg(a.get("to"))
         if reply_full(drafts=True):  # refused before anything runs: no Contacts look-up
             return _not_shown()
         if kind == "number":
             source = number_source(who)
-            return _ready(None, who, text, source, _assumed(a.get("to"), who, source))
+            assumed = _assumed(a.get("to"), who, source)
+            return _ready(None, who, text, source, assumed, outside=outside)
         found = await self._look_up(uid, who)
         if isinstance(found, dict):
             return found
@@ -176,7 +180,7 @@ class WhatsAppDrafts:
         if len(options) > 1 or found.more:  # review C3: more exist than shown — never guess
             return _choices(found)
         contact, number = options[0]
-        return _ready(contact.name, number, text, "contacts", False)
+        return _ready(contact.name, number, text, "contacts", False, outside=outside)
 
     async def _look_up(self, uid: str, name: str) -> Found | dict[str, Any]:
         if self.contacts is None:
@@ -206,10 +210,13 @@ def _not_shown() -> Any:
     return vouch({"status": "not_shown", "sent": False, "message": DRAFT_NOT_SHOWN}, True)
 
 
-def _ready(name: str | None, number: str, text: str, source: str, assumed: bool) -> Any:
+def _ready(
+    name: str | None, number: str, text: str, source: str, assumed: bool, *, outside: bool
+) -> Any:
     """The result the model sees — and, beside it, the owner's draft card for this reply
     (`reply_cards.add_card`: kind "whatsapp", number and text checked again, link rebuilt).
-    Vouched only for a number the owner typed and no Contacts name (see the module docstring)."""
+    Vouched only for a number the owner typed, no Contacts name, and a text no outside content
+    can have shaped (`outside`; see the module docstring)."""
     card = draft_card(name=name, number=number, text=text, source=source, assumed=assumed)
     if card is None:  # can't happen for checked arguments; the owner can ask again
         log.warning("whatsapp draft card not made", extra={"tool": TOOL})
@@ -229,7 +236,7 @@ def _ready(name: str | None, number: str, text: str, source: str, assumed: bool)
         out["warning"] = WARNING
     if assumed:
         out["country"] = f"{ASSUMED_INDIA}: no country code was given. If it isn't Indian, ask."
-    return vouch(out, name is None and source == "you")
+    return vouch(out, name is None and source == "you" and not outside)
 
 
 def whatsapp_tools(contacts: ContactsClient | None) -> list[Tool]:

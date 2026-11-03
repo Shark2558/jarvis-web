@@ -3,7 +3,20 @@
 #   FE-8  stacked combining marks ("Zalgo" text) render as near-invisible smears: more than 4
 #         marks in a row (Unicode category M*) after one base character is refused in plain
 #         words; real Malayalam, Hindi / Devanagari, Odia, Tibetan and emoji still pass.
+#   SEC-1 an invisible channel: ZWNJ / ZWJ between Latin letters, FE0E / FE0F after a letter and
+#         odd spaces survived cleaning while the approval card's one_line hid them, so the card
+#         showed only the visible words and the wa.me link carried the rest. Now: every Zs
+#         space and tab is one plain space; ZWNJ / ZWJ only between two letters of a non-Latin
+#         script (ZWJ also between emoji); FE0E / FE0F only after an emoji or a keycap base; and
+#         the card quotes the EXACT text. The cases are shared with the console
+#         (tests/fixtures/whatsapp_clean_cases.json, tests/browser/test_whatsapp.py).
 from __future__ import annotations
+
+import json
+import unicodedata
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -70,3 +83,121 @@ async def test_the_tool_refuses_a_stacked_text_before_anything_runs() -> None:
     with context_trust(untrusted=False, owner_text="98765 43210"):
         out = await gw.execute(call, scope="u_owner:sess_1")
     assert out.outcome is GatewayOutcome.ERROR and out.error == STACKED
+
+
+# ---- SEC-1: one shared rule, one shared fixture ------------------------------------------------
+
+FIXTURE = Path(__file__).parent / "fixtures" / "whatsapp_clean_cases.json"
+CASES: list[dict[str, Any]] = json.loads(FIXTURE.read_text(encoding="ascii"))
+ZWNJ, ZWJ = "\u200c", "\u200d"
+KEPT_INVISIBLES = frozenset({ZWNJ, ZWJ, "\ufe0e", "\ufe0f"})
+
+
+def test_the_fixture_is_ascii_and_covers_what_the_review_named() -> None:
+    raw = FIXTURE.read_text(encoding="ascii")
+    assert raw.isascii()
+    whys = " ".join(c["why"] for c in CASES)
+    for needle in ("Latin letters", "FE0F after a letter", "NBSP", "Malayalam", "Devanagari",
+                   "family", "heart", "keycap", "stacked", "S3"):  # fmt: skip
+        assert needle in whys, needle
+    assert any(c["out"] is None for c in CASES) and len(CASES) >= 40
+
+
+@pytest.mark.parametrize("case", CASES, ids=[c["why"][:60] for c in CASES])
+def test_clean_text_over_the_shared_fixture(case: dict[str, Any]) -> None:
+    if case["out"] is None:
+        with pytest.raises(ValueError):
+            text_arg(case["in"])
+    else:
+        assert text_arg(case["in"]) == case["out"]
+        assert text_arg(case["out"]) == case["out"]  # cleaning is idempotent
+
+
+def _visible(text: str) -> int:
+    """Characters that show: everything but the joiners and selectors the rule may keep."""
+    return sum(ch not in KEPT_INVISIBLES for ch in text)
+
+
+@pytest.mark.parametrize("case", [c for c in CASES if c["out"]], ids=lambda c: c["why"][:60])
+def test_every_kept_invisible_sits_where_a_script_or_an_emoji_needs_it(
+    case: dict[str, Any],
+) -> None:
+    """len(text) is the visible length plus ONLY allowed joiners / selectors \u2014 none can carry
+    data between Latin letters, spaces or after a letter."""
+    text = case["out"]
+    hidden = len(text) - _visible(text)
+    assert hidden == sum(ch in KEPT_INVISIBLES for ch in text)
+    for i, ch in enumerate(text):
+        if ch in (ZWNJ, ZWJ):
+            before, after = text[i - 1], text[i + 1]
+            letters = all(
+                not c.isascii() and unicodedata.category(c)[0] in "LM" for c in (before, after)
+            )
+            assert letters or ch == ZWJ, case["why"]
+        elif ch in ("\ufe0e", "\ufe0f"):
+            assert i > 0 and (text[i - 1] in "0123456789#*" or ord(text[i - 1]) > 0x7F)
+        assert not (unicodedata.category(ch) == "Zs" and ch != " "), case["why"]
+    assert "\t" not in text and "  " not in text
+
+
+def _card_text(text: str) -> str:
+    from jarvis.whatsapp.tools import _card_text as card_text
+
+    return card_text({"to": "98765 43210", "text": text})
+
+
+def _quoted_body(card: str) -> str:
+    """The text as the approval card quotes it: its lines with the "> " prefix taken off."""
+    lines = card.split("\n")
+    start = next(i for i, ln in enumerate(lines) if ln.startswith("Text (")) + 1
+    return "\n".join(ln[2:] if ln.startswith("> ") else ln[1:] for ln in lines[start:])
+
+
+@pytest.mark.parametrize("case", [c for c in CASES if c["out"]], ids=lambda c: c["why"][:60])
+def test_the_approval_card_quotes_exactly_the_text_that_is_sent(case: dict[str, Any]) -> None:
+    sent = text_arg(case["in"])
+    assert _quoted_body(_card_text(case["in"])) == sent
+
+
+async def test_a_hidden_payload_after_approval_is_exactly_what_the_card_showed(
+    settings: Any,
+) -> None:
+    """The reviewer's attack through the REAL Brain and gateway: a mail steers the model into a
+    draft whose text hides 'OTP 482913' in 80 ZWNJ / ZWJ. The round is tainted, so the draft
+    waits for approval; after approval the wa.me link decodes to EXACTLY the card's text."""
+    from jarvis.core.brain import Brain
+    from jarvis.core.guardrails import ActionRisk
+    from jarvis.core.models import ChatRequest
+    from jarvis.llm.mock_provider import MockProvider
+    from jarvis.llm.router import ModelRouter, ModelTier
+    from jarvis.memory.inmemory import InMemorySessionStore
+    from jarvis.tools.base import Tool
+
+    hidden = next(c for c in CASES if c["why"].startswith("SEC-1: 80"))
+    reg = ToolRegistry()
+    for t in whatsapp_tools(None):
+        reg.register(t)
+    reg.register(Tool("gmail_read", "read a mail", {"type": "object", "properties": {}},
+                      ActionRisk.READ_ONLY, lambda a: {"body": "confirm Thursday"},
+                      agent="google"))  # fmt: skip
+    gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
+    provider = MockProvider()
+    provider.script_tool_calls([ToolCall(id="m", name="gmail_read", arguments={})])
+    provider.script_tool_calls(
+        [ToolCall(id="w", name="whatsapp_draft",
+                  arguments={"to": "98765 43210", "text": hidden["in"]})],
+        "An approval is waiting.",
+    )  # fmt: skip
+    tiers = {t: f"mock-{t.value}" for t in ModelTier}
+    s = settings.model_copy(update={"tools_enabled": True})
+    brain = Brain(router=ModelRouter(provider, tiers), store=InMemorySessionStore(), settings=s,
+                  gateway=gw)  # fmt: skip
+    first = await brain.chat(ChatRequest(message="WhatsApp 98765 43210 ok", user_id="u_owner"))
+    (pending,) = first.pending_approvals
+    shown = _quoted_body(pending.summary)
+    assert shown == hidden["out"] and ZWNJ not in pending.summary and ZWJ not in pending.summary
+    provider.script("It's ready.")
+    done = await brain.approve(pending.id, session_id=first.session_id, user_id="u_owner")
+    (card,) = [c for c in done.cards if c.kind == "whatsapp"]
+    (sent,) = parse_qs(urlsplit(card.link).query)["text"]
+    assert sent == card.text == shown

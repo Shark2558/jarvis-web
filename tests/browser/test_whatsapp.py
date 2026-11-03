@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -435,6 +436,47 @@ def test_the_card_says_the_character_count_when_it_differs_from_what_you_see(
         cards.nth(1).wait_for()
         assert cards.nth(0).locator(".wachars").text_content() == "10 characters"
         assert cards.nth(1).locator(".wachars").count() == 0
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "whatsapp_clean_cases.json"
+
+
+def test_the_console_cleans_exactly_like_the_server_over_the_shared_fixture(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Security review SEC-1: the console's clean() gives the server's output for every case of
+    tests/fixtures/whatsapp_clean_cases.json, and a card is dropped wherever the server refuses
+    the text (only blank, or stacked marks). The fixture's emoji are emoji to the browser's own
+    \\p{Extended_Pictographic} AND to the server's table (jarvis.whatsapp.pictographic)."""
+    from jarvis.whatsapp.pictographic import extended_pictographic
+
+    cases = json.loads(FIXTURE.read_text(encoding="ascii"))
+    c = _console_with(browser, server_url, token, [])
+    try:
+        c.open()
+        c.page.wait_for_function("!!window.JarvisWhatsApp")
+        js = """(cases) => cases.map((k) => {
+            const W = window.JarvisWhatsApp;
+            const out = W.clean(k.in);
+            const card = {kind: 'whatsapp', name: '', number: '+919876543210', text: out,
+                          link: W.waLink('+919876543210', out), warning: ''};
+            return {out, shown: out !== '' && W.normal([card]).length === 1};
+        })"""
+        got = c.page.evaluate(js, cases)
+        for case, res in zip(cases, got, strict=True):
+            if case["out"] is None:
+                assert not res["shown"], case["why"]
+            else:
+                assert res["out"] == case["out"], case["why"]
+                assert res["shown"], case["why"]
+        emoji = sorted({ch for k in cases for ch in k["in"] if ord(ch) >= 0x2000})
+        browser_says = c.page.evaluate(
+            "(cs) => cs.map((ch) => /^\\p{Extended_Pictographic}$/u.test(ch))", emoji
+        )
+        assert browser_says == [extended_pictographic(ch) for ch in emoji]
         assert c.errors == []
     finally:
         c.close()

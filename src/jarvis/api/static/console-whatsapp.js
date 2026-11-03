@@ -20,6 +20,10 @@
 // long; `clean` mirrors the server's jarvis.whatsapp.draft.clean_text (characters that render blank,
 // trailing spaces, more than two blank lines in a row). S5: "Assumed India (+91)" when the number was
 // written without a country code. S7: the hint names who nothing is sent to, and what opening does.
+// Security review SEC-1: the same rule as the server, character for character (both are tested over
+// tests/fixtures/whatsapp_clean_cases.json): spaces and tabs become one plain space; ZWNJ / ZWJ only
+// between two letters of a non-Latin script (ZWJ also inside an emoji sequence); FE0E / FE0F only after
+// an emoji or a keycap base -- so no invisible channel can ride on a card that shows only the words.
 (() => {
   'use strict';
   const KIND = 'whatsapp'; // its kind in ChatResponse.cards (jarvis.tools.reply_cards)
@@ -38,35 +42,80 @@
   // ... and the letters and marks that render blank: Hangul fillers, braille blank, combining
   // grapheme joiner, Khmer inherent vowels, Mongolian selectors, variation selectors but an emoji's
   const BLANK = /^[\u115f\u1160\u3164\uffa0\u2800\u034f\u17b4\u17b5\u180b-\u180d\u180f\ufe00-\ufe0d\u{e0100}-\u{e01ef}]$/u;
-  const KEPT = new Set(['\n', '\t', '\u200c', '\u200d']); // ZWNJ / ZWJ: Malayalam and emoji need them
-  const SELECTORS = new Set(['\ufe0e', '\ufe0f']); // an emoji's presentation: once, after a character
-  const SPACE = /^\s$/u;
-  // more than MAX_MARKS combining marks in a row: the server's draft.py refuses the text (FE-8)
+  // Security review SEC-1, the server's exact rule (jarvis.whatsapp.draft): every Zs space and tab
+  // is one plain space; ZWNJ / ZWJ stay only between two letters of a non-Latin script (or a ZWJ
+  // between an emoji and the next emoji); FE0E / FE0F only right after an emoji or a keycap base.
+  const JOINERS = new Set(['\u200c', '\u200d']);
+  const ZWJ = '\u200d';
+  const SELECTORS = new Set(['\ufe0e', '\ufe0f']);
+  const SPACEISH = /^[\t\p{Zs}]$/u;
+  const EMOJI = /^\p{Extended_Pictographic}$/u;
+  const SKIN = /^[\u{1f3fb}-\u{1f3ff}]$/u;
+  const KEYCAP_BASE = /^[0-9#*]$/;
+  const LETTER = /^[\p{L}\p{M}]$/u;
+  // the server's NOT_A_SCRIPT: Latin and the generic marks, next to which no joiner is kept
+  const NOT_A_SCRIPT = /^[\u0000-\u036f\u1ab0-\u1aff\u1d00-\u1eff\u20d0-\u20ff\u2c60-\u2c7f\ua720-\ua7ff\uab30-\uab6f\ufb00-\ufb06\ufe00-\ufe0f\ufe20-\ufe2f\uff21-\uff3a\uff41-\uff5a\u{10780}-\u{107bf}\u{1df00}-\u{1dfff}]$/u;
+  // more than MAX_MARKS combining marks in a row: the server's draft.py refuses the text (FE-8);
+  // a joiner between two marks does not break the run (as on the server)
   const MAX_MARKS = 4;
-  const STACKED = new RegExp('\\p{M}{' + (MAX_MARKS + 1) + ',}', 'u');
+  const MARK = /^\p{M}$/u;
   const MARKISH = /[\p{M}\u200c\u200d]/gu; // what a grapheme count would fold into its base
   const WARN = 'This number didn\u2019t come from you or your contacts \u2014 check it before you send.';
   const ASSUMED = 'Assumed India (+91)';
   const HANDS_OVER = 'Opening the link hands this text to WhatsApp.';
 
-  /** The text as the server's clean_text leaves it (so a card whose text differs is dropped). */
-  function clean(text) {
+  const scriptLetter = (ch) => !!ch && ch.codePointAt(0) > 0x7f && LETTER.test(ch) && !NOT_A_SCRIPT.test(ch);
+  const emoji = (ch) => !!ch && EMOJI.test(ch);
+
+  /** Pass 1: each character kept (joiners and selectors for pass 2), dropped, turned into a new
+   *  line or one plain space. */
+  function visible(text) {
     const out = [];
-    for (const ch of text.replace(/\r\n?/g, '\n')) {
-      if (KEPT.has(ch)) out.push(ch);
-      else if (SELECTORS.has(ch)) {
-        const prev = out.length ? out[out.length - 1] : '';
-        if (prev && !SPACE.test(prev) && !SELECTORS.has(prev)) out.push(ch);
-      } else if (BLANK.test(ch)) continue;
+    for (const ch of text) {
+      if (ch === '\n' || JOINERS.has(ch) || SELECTORS.has(ch)) out.push(ch);
+      else if (SPACEISH.test(ch)) out.push(' ');
+      else if (BLANK.test(ch)) continue;
       else if (ch === '\u2028' || ch === '\u2029') out.push('\n');
       else if (!DROPPED.test(ch)) out.push(ch);
     }
-    const lines = out.join('').split('\n').map((line) => line.replace(/\s+$/u, ''));
+    return out;
+  }
+
+  /** Pass 2: joiners and selectors judged against their immediate neighbours in pass 1's text. */
+  function joined(chars) {
+    const out = [];
+    chars.forEach((ch, i) => {
+      const prev = i > 0 ? chars[i - 1] : '';
+      const next = i + 1 < chars.length ? chars[i + 1] : '';
+      if (JOINERS.has(ch)) {
+        const before = prev === '\ufe0f' ? (i > 1 && emoji(chars[i - 2])) : (emoji(prev) || SKIN.test(prev));
+        if ((scriptLetter(prev) && scriptLetter(next)) || (ch === ZWJ && before && emoji(next))) out.push(ch);
+      } else if (SELECTORS.has(ch)) {
+        if (prev && (KEYCAP_BASE.test(prev) || emoji(prev))) out.push(ch);
+      } else out.push(ch);
+    });
+    return out.join('');
+  }
+
+  /** The text as the server's clean_text leaves it (so a card whose text differs is dropped). */
+  function clean(text) {
+    const once = joined(visible(text.replace(/\r\n?/g, '\n'))).replace(/ {2,}/g, ' ');
+    const lines = once.split('\n').map((line) => line.replace(/ +$/, ''));
     return lines.join('\n').replace(/\n{4,}/g, '\n\n\n').trim();
   }
 
-  /** True when `text` stacks more than MAX_MARKS combining marks on one character. */
-  const stacked = (text) => typeof text === 'string' && STACKED.test(text);
+  /** True when `text` has more than MAX_MARKS combining marks in a row (a joiner between two
+   *  marks does not break the run): the server refuses such a text (FE-8). */
+  function stacked(text) {
+    if (typeof text !== 'string') return false;
+    let run = 0;
+    for (const ch of text) {
+      if (JOINERS.has(ch)) continue;
+      run = MARK.test(ch) ? run + 1 : 0;
+      if (run > MAX_MARKS) return true;
+    }
+    return false;
+  }
 
   /** How many characters the text has, and how many show (grapheme clusters; without
    *  Intl.Segmenter, the characters that are not marks or joiners). */

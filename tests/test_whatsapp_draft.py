@@ -56,7 +56,11 @@ NOPHONE = person("c4", "Nobody Phone", emails=["np@example.com"])
 TIERS = {t: f"mock-{t.value}" for t in ModelTier}
 
 MALAYALAM = "നാളെ കാണാം"  # നാളെ കാണാം
-CHILLU_ZWJ = "ന്\u200d"  # ന് + ZWJ (an old-style chillu): the joiner is kept
+# an old-style chillu inside a word (letter + virama + ZWJ + letter): the joiner is kept.
+# Security review SEC-1: a joiner is kept only BETWEEN two letters of a non-Latin script, so
+# a word-final one (before a space or the end) goes; modern text uses the atomic chillus.
+CHILLU_ZWJ = "\u0d0e\u0d28\u0d4d\u200d\u0d31\u0d46"
+ATOMIC_CHILLU = "\u0d05\u0d35\u0d7b \u0d35\u0d28\u0d4d\u0d28\u0d41"  # atomic chillu NN
 ZWNJ_WORD = "സ്\u200cത"  # a ZWNJ between letters is kept
 FAMILY = "\U0001f468\u200d\U0001f469\u200d\U0001f467"  # 👨\u200d👩\u200d👧 (ZWJ sequence)
 THUMBS = "\U0001f44d\U0001f3fd"  # 👍🏽 (skin tone)
@@ -67,8 +71,17 @@ HEART = "❤️"  # ❤️ (variation selector 16)
 
 
 def test_malayalam_and_emoji_are_kept_exactly() -> None:
-    for text in (MALAYALAM, CHILLU_ZWJ, ZWNJ_WORD, FAMILY, THUMBS, HEART, "Hi \U0001f600"):
+    for text in (
+        MALAYALAM, CHILLU_ZWJ, ATOMIC_CHILLU, ZWNJ_WORD, FAMILY, THUMBS, HEART, "Hi \U0001f600"
+    ):  # fmt: skip
         assert clean_text(text) == text
+
+
+def test_a_word_final_joiner_is_removed_under_the_sec_1_rule() -> None:
+    assert clean_text("\u0d28\u0d4d\u200d") == "\u0d28\u0d4d"
+    assert clean_text("\u0d05\u0d35\u0d28\u0d4d\u200d \u0d35\u0d28\u0d4d\u0d28\u0d41") == (
+        "\u0d05\u0d35\u0d28\u0d4d \u0d35\u0d28\u0d4d\u0d28\u0d41"
+    )
 
 
 @pytest.mark.parametrize(
@@ -82,7 +95,7 @@ def test_malayalam_and_emoji_are_kept_exactly() -> None:
         ("para\u2028next\u2029last", "para\nnext\nlast"),
         ("tag\U000e0041\U000e0042 smuggled", "tag smuggled"),
         ("  padded  \n", "padded"),
-        ("tab\there", "tab\there"),
+        ("tab\there", "tab here"),  # security review SEC-1: a tab is one plain space
     ],
 )
 def test_bidi_control_and_invisible_characters_are_stripped(raw: str, want: str) -> None:

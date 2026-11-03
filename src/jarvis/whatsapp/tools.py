@@ -113,7 +113,10 @@ def _card_text(a: dict[str, Any]) -> str:
         shown = f"{who} — {ASSUMED_INDIA}" if india_assumed(a.get("to")) else who
     text = text_arg(a.get("text"))
     lines = text.split("\n")
-    quoted = [QUOTE + one_line(ln, TEXT_MAX) if ln.strip() else QUOTE.rstrip() for ln in lines]
+    # SEC-1: each line EXACTLY as it is sent — no one_line, which would collapse or strip what
+    # the card then wouldn't show; `text_arg` already left only what can be seen (and the joiners
+    # and selectors a script or an emoji needs)
+    quoted = [QUOTE + ln if ln else QUOTE.rstrip() for ln in lines]
     count = f"{_plural(len(lines), 'line')}, {_plural(len(text), 'character')}"
     return "\n".join(
         [

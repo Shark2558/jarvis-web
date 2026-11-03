@@ -615,7 +615,10 @@ def test_on_a_desktop_another_panel_opening_keeps_the_video(rig: Rig) -> None:
     c.open_panel("vitals")  # the Media panel is still shown beside it
     assert rig.iframes() == 1
     c.page.evaluate("document.dispatchEvent(new CustomEvent('jarvis:reset-layout', {}))")
-    assert rig.iframes() == 0  # reset closes every panel but the chat
+    # reset closes every panel but the chat; the check runs on the next task (setTimeout 0). A
+    # function, not an expression: polling an expression needs eval, which the CSP forbids.
+    c.page.wait_for_function("() => !document.querySelector('#mediaStage iframe')", timeout=2000)
+    assert rig.iframes() == 0
     assert c.errors == []
 
 

@@ -53,6 +53,9 @@ APP_ASSETS: dict[str, str] = {
     "console-drive.css": "text/css",
     "console-media.js": _JS,  # slice 12: Maps / YouTube cards, Media panel, Vitals, Home / Work
     "console-media.css": "text/css",
+    "console-whatsapp.js": _JS,  # slice 12 D6: the WhatsApp draft card (Open in WhatsApp)
+    "console-whatsapp.css": "text/css",
+    "console-integrations.js": _JS,  # slice 12 review C5: Integrations, out of console.js
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",

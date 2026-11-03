@@ -5,7 +5,8 @@ the document tools (slice 10 E). The to-do tools (Google Tasks) come with the Go
 scope is optional per owner, so they check it on every call (slice 10 C1). With the Recently
 deleted bin (slice 11, `undo`) the calendar and to-do deletes are undo-able and — with Google
 linked, whose tools restore — the undo tools (deleted_list / deleted_restore) are registered;
-without it every delete stays R3. With Drive configured (slice 12 D1, `drive`): the read-only
+without it every delete stays R3. Slice 12 D5/D6: contacts_search with the Google link, and
+whatsapp_draft always. With Drive configured (slice 12 D1, `drive`): the read-only
 chosen-folders Drive tools. With JARVIS's own Google API key (slice 12, `media`): Maps and
 YouTube search, plus the owner's playlists when the Google link exists."""
 
@@ -34,6 +35,24 @@ if TYPE_CHECKING:
 # builtins that stand in for real connectors; dropped once the real ones are registered
 # (slice 11 B: the in-memory create_reminder too, now that reminders are real calendar pop-ups)
 FAKE_TWINS = frozenset({"get_calendar", "send_message", "create_reminder"})
+
+
+def _register_people(reg: ToolRegistry, google: GoogleConnector | None) -> None:
+    """Slice 12 D5/D6: contacts_search with the Google link (its scope is optional per owner, so
+    it checks on every call), and whatsapp_draft always — a typed number needs no Google; with
+    the link it can also look a name up in Contacts (one client, one warm-up record)."""
+    from jarvis.whatsapp.tools import whatsapp_tools
+
+    contacts = None
+    if google is not None:
+        from jarvis.contacts.client import ContactsClient
+        from jarvis.contacts.tools import contacts_tools
+
+        contacts = ContactsClient(google)
+        for t in contacts_tools(contacts):
+            reg.register(t)
+    for t in whatsapp_tools(contacts):
+        reg.register(t)
 
 
 def build_gateway(
@@ -69,6 +88,7 @@ def build_gateway(
             reg.register(t)
         for t in gmail_tools(google) + tasks_tools(google, default_tz=tz, undo=undo, marks=marks):
             reg.register(t)
+    _register_people(reg, google)
     if undo is not None and google is not None:  # slice 11: restore needs the Google tools
         from jarvis.undo.tools import undo_tools
 

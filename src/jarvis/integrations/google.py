@@ -45,7 +45,36 @@ INSERT_SCOPE = "https://www.googleapis.com/auth/gmail.insert"
 # The to-do list (slice 10 C): Google Tasks read + write. Optional like gmail.insert: a link
 # without it keeps every other tool; the to-do tools then answer "grant access".
 TASKS_SCOPE = "https://www.googleapis.com/auth/tasks"
-OPTIONAL_SCOPES: tuple[str, ...] = (INSERT_SCOPE, TASKS_SCOPE)
+# Slice 12 D7: two more optional Grants, read only. Contacts: people.searchContacts (verified
+# 2026-11-03 against developers.google.com/people/api/rest/v1/people/searchContacts: contacts or
+# contacts.readonly). YouTube: the owner's own playlists (builder B's tools).
+CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts.readonly"
+YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+CONTACTS_CAPABLE_SCOPES = frozenset({CONTACTS_SCOPE, "https://www.googleapis.com/auth/contacts"})
+# Any of these lets playlists.list(mine) / playlistItems.list read (the same set as builder B's).
+YOUTUBE_READ_SCOPES = frozenset(
+    {
+        YOUTUBE_SCOPE,
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+    }
+)
+# The optional permissions an owner adds with Integrations → Grant (`/connect/google?add=<name>`):
+# exactly these names, each ONE scope asked for (the read-only one). Order here is the order they
+# are asked for.
+GRANTS: dict[str, str] = {
+    "tasks": TASKS_SCOPE,
+    "contacts": CONTACTS_SCOPE,
+    "youtube": YOUTUBE_SCOPE,
+}
+# Review C8: one notion of "has this Grant" — any of these scopes held satisfies it (a wider
+# scope granted to the same app counts), for `held_grants` and every `can_use_*` alike.
+GRANT_ACCEPTS: dict[str, frozenset[str]] = {
+    "tasks": frozenset({TASKS_SCOPE}),  # tasks.readonly would not do: the to-do tools write
+    "contacts": CONTACTS_CAPABLE_SCOPES,
+    "youtube": YOUTUBE_READ_SCOPES,
+}
+OPTIONAL_SCOPES: tuple[str, ...] = (INSERT_SCOPE, *GRANTS.values())
 # Google accepts users.messages.insert with any of these.
 INSERT_CAPABLE_SCOPES = frozenset(
     {INSERT_SCOPE, "https://www.googleapis.com/auth/gmail.modify", "https://mail.google.com/"}
@@ -53,14 +82,31 @@ INSERT_CAPABLE_SCOPES = frozenset(
 # openid+email so the callback can prove WHICH Google account consented (must equal the owner).
 # Every scope a link may hold:
 TOOL_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES, *OPTIONAL_SCOPES)
-# What a plain (re)connect asks for — unchanged by slice 10 (review L8). The to-do list is asked
-# for only by the explicit Grant, or when the link being renewed already holds it.
+# What a plain (re)connect asks for — unchanged by slice 10 (review L8). A Grant's scope is asked
+# for only by its explicit Grant, or when the link being renewed already holds it (slice 12 D7).
 CONNECT_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES, INSERT_SCOPE)
 
 
-def connect_scopes(*, tasks: bool) -> str:
-    """The scope string for one consent request (with include_granted_scopes)."""
-    return " ".join((*CONNECT_SCOPES, TASKS_SCOPE) if tasks else CONNECT_SCOPES)
+def connect_scopes(grants: Iterable[str] = ()) -> str:
+    """The scope string for one consent request (with include_granted_scopes): the plain set plus
+    the named Grants (each once, in `GRANTS` order). An unknown name is a ValueError."""
+    wanted = set(grants)
+    unknown = wanted - GRANTS.keys()
+    if unknown:
+        raise ValueError(f"unknown grant: {', '.join(sorted(unknown))}")
+    return " ".join((*CONNECT_SCOPES, *(s for n, s in GRANTS.items() if n in wanted)))
+
+
+def grant_name(raw: object) -> str | None:
+    """`raw` when it is exactly one allow-listed Grant name, else None (never guessed)."""
+    return raw if isinstance(raw, str) and raw in GRANTS else None
+
+
+def held_grants(scopes: Iterable[str]) -> frozenset[str]:
+    """The Grants a link's scopes already hold (`GRANT_ACCEPTS`); renewing the link asks for
+    each again — by its one read-only scope (`GRANTS`), never a wider one it happens to hold."""
+    have = set(scopes)
+    return frozenset(n for n, ok in GRANT_ACCEPTS.items() if not ok.isdisjoint(have))
 
 
 def can_insert(scopes: Iterable[str]) -> bool:
@@ -71,24 +117,17 @@ def can_insert(scopes: Iterable[str]) -> bool:
 def can_use_tasks(scopes: Iterable[str]) -> bool:
     """True when the granted scopes allow reading AND changing the owner's Google Tasks
     (tasks.readonly alone would not do: the to-do tools write)."""
-    return TASKS_SCOPE in set(scopes)
+    return "tasks" in held_grants(scopes)
 
 
-# Slice 12 D4: the owner's own YouTube playlists (read-only), asked for by Integrations → Grant
-# (`?add=youtube`, builder C). Any of these lets playlists.list(mine) / playlistItems.list read.
-YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
-YOUTUBE_READ_SCOPES = frozenset(
-    {
-        YOUTUBE_SCOPE,
-        "https://www.googleapis.com/auth/youtube",
-        "https://www.googleapis.com/auth/youtube.force-ssl",
-    }
-)
+def can_use_contacts(scopes: Iterable[str]) -> bool:
+    """True when the granted scopes allow searching the owner's Google Contacts."""
+    return "contacts" in held_grants(scopes)
 
 
 def can_use_youtube(scopes: Iterable[str]) -> bool:
     """True when the granted scopes let JARVIS read the owner's own YouTube playlists."""
-    return not YOUTUBE_READ_SCOPES.isdisjoint(scopes)
+    return "youtube" in held_grants(scopes)
 
 
 HTTP_TIMEOUT_S = 15.0
@@ -488,7 +527,7 @@ def register_tools_oauth(oauth: Any, s: Settings) -> None:
         name="google_tools",
         client_id=s.google_client_id,
         client_secret=s.google_client_secret.get_secret_value(),
-        client_kwargs={"scope": connect_scopes(tasks=False), "code_challenge_method": "S256"},
+        client_kwargs={"scope": connect_scopes(), "code_challenge_method": "S256"},
         authorize_url=AUTHORIZE_URL,
         access_token_url=TOKEN_URL,
         jwks_uri=JWKS_URL,
@@ -500,6 +539,10 @@ def register_tools_oauth(oauth: Any, s: Settings) -> None:
 __all__ = [
     "AUTHORIZE_URL",
     "CONNECT_SCOPES",
+    "CONTACTS_CAPABLE_SCOPES",
+    "CONTACTS_SCOPE",
+    "GRANTS",
+    "GRANT_ACCEPTS",
     "INSERT_CAPABLE_SCOPES",
     "INSERT_SCOPE",
     "OPTIONAL_SCOPES",
@@ -508,6 +551,7 @@ __all__ = [
     "TASKS_SCOPE",
     "TOKEN_URL",
     "TOOL_SCOPES",
+    "YOUTUBE_READ_SCOPES",
     "YOUTUBE_SCOPE",
     "GoogleAPIError",
     "GoogleConflict",
@@ -521,11 +565,14 @@ __all__ = [
     "GoogleUncertain",
     "build_google_connector",
     "can_insert",
+    "can_use_contacts",
     "can_use_tasks",
     "can_use_youtube",
     "connect_scopes",
     "google_tools_configured",
     "google_tools_startup_note",
+    "grant_name",
+    "held_grants",
     "never_sent",
     "register_tools_oauth",
 ]

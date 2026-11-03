@@ -19,5 +19,5 @@ def test_the_rule_says_what_matters() -> None:
     assert "not set up" in text
 
 
-def test_persona_version_is_left_to_the_integration_step() -> None:
-    assert PERSONA_VERSION == "p4.2"
+def test_persona_version_was_bumped_once_at_the_slice_12_integration() -> None:
+    assert PERSONA_VERSION == "p4.3"

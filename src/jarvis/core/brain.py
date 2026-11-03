@@ -78,6 +78,7 @@ from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.reply_cards import collecting_cards
 from jarvis.tools.taint import context_trust, untrusted_seen
 from jarvis.web.ledger import cited_sources, web_conversation
+from jarvis.whatsapp.provenance import conversation_words
 
 log = get_logger(__name__)
 
@@ -108,7 +109,7 @@ class _ReplyMeta:
     pending: list[PendingApproval]
     memory_used: list[MemoryRef]
     undo: list[UndoRef] = field(default_factory=list)  # slice 11: the reply's Undo chips
-    cards: list[Any] = field(default_factory=list)  # slice 12: place / route / video cards
+    cards: list[Any] = field(default_factory=list)  # slice 12: Maps / YouTube / WhatsApp cards
 
 
 @dataclass
@@ -495,7 +496,7 @@ class Brain:
             return await self._complete(messages, prompt, req, spec, with_tools=False), pending
         assert self.gateway is not None
         msgs = list(messages)
-        with turn_budget(), collecting_cards(rounds.cards):  # slice 12: Maps / YouTube cards
+        with turn_budget(), collecting_cards(rounds.cards):  # slice 12: the reply's cards
             while True:
                 completion = await self._complete(msgs, prompt, req, spec, with_tools=True)
                 if not completion.tool_calls:
@@ -556,6 +557,7 @@ class Brain:
             with (
                 context_trust(untrusted=untrusted, spoken=spoken, owner_text=said),
                 web_conversation(session),
+                conversation_words(session),  # slice 12: where a WhatsApp number came from
             ):
                 out.append(await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}"))
         return out
@@ -617,7 +619,7 @@ class Brain:
         session = await self._load_or_create(req)
         call = ToolCall(id=f"approve_{approval_id}", name=action.tool, arguments=action.arguments)
         if approved:
-            with web_conversation(session):
+            with web_conversation(session), conversation_words(session):
                 d = await decisions.approved(self.gateway, call, action, approval_id, scope)
         else:
             d = await decisions.declined(self.gateway, call, action, approval_id)

@@ -374,7 +374,8 @@ def test_the_tasks_scope_is_requested_but_never_required() -> None:
     )
 
     assert TASKS_SCOPE == "https://www.googleapis.com/auth/tasks"
-    assert OPTIONAL_SCOPES == (
+    # slice 12 D7: contacts and YouTube playlists are optional Grants too (tests/test_google_grants)
+    assert OPTIONAL_SCOPES[:2] == (
         "https://www.googleapis.com/auth/gmail.insert",
         TASKS_SCOPE,
     )

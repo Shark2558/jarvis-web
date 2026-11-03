@@ -82,17 +82,7 @@ Testing-mode expiry**, no new consent). Guard rails:
   Run, Flex and App Engine the server honours requested scopes" (only Compute Engine ignores
   them); it sends `?scopes=` exactly as JARVIS does. So no fallback and no token-creator grant.
   The official Cloud Run container-contract page could not be fetched from the build sandbox:
-  confirm live after deploy (Integrations → Google Drive lists a shared folder).
-  **Check after deploy** (none of these could be verified from the build sandbox):
-  - the metadata server honours `?scopes=drive.readonly` (a token that reads a shared folder);
-  - Drive returns `sharingUser` for consumer (gmail.com) accounts (if not, every check runs on
-    the `owners[]` fallback: still safe, but an editor's re-share can't be told apart);
-  - the maximum length of a Drive file / folder name (names past 300 characters are cut; pages
-    are 25 entries so a page of the longest names stays under the 2 MB answer cap);
-  - whether a `pageToken` is bound to its query (`drive_list` drops any item whose `parents`
-    don't include the folder either way);
-  - Drive accepts `sharedWithMe and '<email>' in owners` and `fullText … and '<email>' in owners`
-    (if not, the view and search fall back to the bounded, unfiltered lists).
+  confirm live after deploy (see *Slice 12: check after deploy*, Drive).
 - Content: Google Docs/Slides → `text/plain` export, Sheets → `text/csv` (first sheet), PDF/DOCX/
   TXT/MD/CSV ≤ 10 MB → the slice 10 sandboxed extractor. Everything is **other people's words**
   (untrusted, fenced, taints the round), never sent to training brains.
@@ -139,7 +129,7 @@ YouTube's `quotaExceeded` / `dailyLimitExceeded` close its day. Calls with the o
 currency (₹1 for an Indian account) whose alerts email the billing account's admins on any charge
 to the project. Per-day consumer quota overrides (`gcloud beta quotas preferences create`) are
 NOT scripted: Google's docs (checked 2026-11-03) give no quota IDs for Places Text Search or
-Routes ComputeRoutes per day — set them by hand (see *Check after deploy*).
+Routes ComputeRoutes per day — set them by hand (see *Slice 12: check after deploy*, Maps).
 
 **D3 · Maps tools (R1).** `maps_search(query, near?)` — Places Text Search (New) with a **Pro field
 mask only** (id, displayName, formattedAddress, location, googleMapsUri, businessStatus); no
@@ -174,7 +164,9 @@ descriptions are other people's words (untrusted). **Spotify**: only if the owne
 **D5 · Contacts (R1).** Optional Grant (`contacts.readonly`), same pattern as the to-do list
 (`/connect/google?add=contacts`). `contacts_search(name)` → ≤ 5 matches: name, email addresses,
 phone numbers normalised to E.164 (+91 default). Untrusted (people write their own profile names),
-never to training brains, never stored by JARVIS.
+never to training brains. JARVIS keeps no contact list: a look-up's result is kept only in the
+conversation it was made in (as a tool result, like every tool's) and deleted with it; the audit
+holds only a hash of the name asked for.
 
 **D6 · WhatsApp drafts.** `whatsapp_draft(to, text)`: `to` is a phone number the owner typed or a
 Contacts match; text ≤ 2,000 characters. Result: a draft card with the recipient's name + number,
@@ -185,9 +177,14 @@ the owner and not in Contacts — shows a warning line, like un-typed email reci
 R1 (nothing leaves JARVIS), its own permission row so the owner can switch it off.
 
 **D7 · Grants generalised.** `/connect/google?add=<tasks|contacts|youtube>` (exactly one name,
-allow-listed); a renewal keeps every optional scope already held. `/v1/integrations` adds
-`contacts_granted`, `youtube_granted`, Drive {service_email, shared, confirmed}, Maps
-{configured, home_set, work_set}.
+allow-listed); a renewal keeps every optional scope already held. `/v1/integrations` carries the
+Google link plus, per Grant, `tasks_granted` / `contacts_granted` / `youtube_granted` and
+`tasks_available` / `contacts_available` / `youtube_available` (its tools exist here and its row
+is not Never). **Decision at integration: Drive, Maps and the allowance counts keep their own
+endpoints** — `/v1/drive` (service address, shared and switched-on folders), `/v1/maps/places`
+(configured, Home / Work) and `/v1/quota` (the Vitals counts) — and `/v1/integrations` adds no
+summary blocks for them: each panel reads the endpoint it owns, so a Drive or Maps failure can't
+break the Google link's view.
 
 **D8 · Permissions rows (R1, Allow / Ask first / Never):** Drive · Maps · YouTube · Contacts ·
 WhatsApp drafts. "Never" switches the tools off and the console hides their buttons.
@@ -197,21 +194,85 @@ this month" (31,500 on India's price list; "· two-wheeler paused" / "· walking
 SKUs' own stops are reached), "YouTube searches today: N of 90". Claude reading the results adds
 roughly ₹0.5–2 per reply (as with web search).
 
-**Check after deploy (owner, once):**
-- Billing report (Billing → Reports, group by SKU) shows no Geocoding charges from routes.
-- The deploy summary's "Maps price list" says `india` only if the billing account bills in INR.
-- Billing → Budgets and alerts lists `jarvis-any-charge` (1 in the account's currency); if the
-  deploy said it could not add it, add one by hand (alerts to billing admins).
-- Optional extra brake: Google Maps Platform → Quotas → Places API (New) Text Search and Routes
-  API ComputeRoutes → set a per-day limit of about the monthly stop ÷ 30 (150 a day on the global
-  list, 1,050 on India's). Not scripted (no documented quota IDs).
-- APIs & Services → Credentials → `jarvis-maps-yt` allows exactly Places API (New), Routes API
-  and YouTube Data API v3.
-
 **D10 · Safety, same as slice 10/11.** Drive files, place names/addresses, YouTube titles and
 contact fields are other people's words: fenced with the per-call nonce, they taint the round
 (`policy.TAINTED_WRITES_ASK`), so a hostile document can't make JARVIS change anything without a
 card. Results never vouch (`may_vouch` false). No new R3 in this slice.
+
+**Review fixes for D5–D8 (builder C, after two independent reviews of 4784621).**
+- S1: a look-up that names another permission row (`Preview.also`) gets that row's whole
+  decision — "Never" refuses, "Ask first" makes the call a card (a draft by name with Contacts on
+  Ask first no longer lists names and numbers without a card).
+- S2: `contacts_search` has its own card text (`Look up “Ravi” in your Contacts`); `Tool.summary`
+  never raises (a template that can't be filled falls back to the generic card and is logged).
+- S3: `whatsapp_draft` asks on a spoken turn or in a tainted round (`ask_when`; the gateway
+  honours it for read-only calls, as builder B's maps_route needs): a one-by-one R1 card (no
+  passkey, never in Approve all) showing the whole text, quoted line by line, with its line count.
+  The text also loses characters that render blank (Hangul fillers, braille blank, CGJ, Khmer
+  inherent vowels, Mongolian selectors, variation selectors but an emoji's), trailing spaces and
+  runs of more than two blank lines; a text that is blank after that is refused. The console
+  checks the same and shows the whole text (no inner scroll box) with "N lines" for long texts.
+- S4: only typed owner messages vouch for a number; a spoken current message never does.
+- S5: a +91 number must have exactly 10 digits after the code (first 2–9), else "check the
+  number"; a number written without a country code shows "Assumed India (+91)" on both cards.
+- S6/C2: the wording now says what happens — a look-up's result lives in its conversation (a
+  tool-result turn) and is deleted with it (turns, waiting cards; the audit has only hashes).
+- S7/S8: the hint says "Nothing is sent to <name> until you press Send in WhatsApp." and that
+  opening the link hands the text to WhatsApp; the number is bidi-isolated.
+- C3: one usable number among more matches than shown still asks which.
+- C5: the Integrations section is `console-integrations.js`; every console*.js ≤ 800 lines.
+- C7/C8: `/v1/integrations` says per Grant whether it is `available` (its tools exist — YouTube
+  needs the server's API key — and its row is not Never); a Grant is held when any accepted scope
+  is (YouTube: youtube.readonly, youtube, youtube.force-ssl), but only the read-only one is asked.
+- C9: at most 5 draft cards per reply across rounds and in Approve all; the Contacts warm-up is
+  best effort.
+- Integration: a draft is one kind ("whatsapp") in `ChatResponse.cards`, added by the tool with
+  `reply_cards.add_card` (caps per reply: 8 Maps / YouTube cards, 5 drafts, counted apart); the
+  separate `ChatResponse.whatsapp` field, `whatsapp.cards` and the name-fence reader are gone.
+
+## Slice 12: check after deploy
+None of these could be verified from the build sandbox. The owner checks them once, after the
+first deploy of this slice.
+
+Drive
+- Integrations → Google Drive lists a folder you shared with JARVIS's address (this proves Cloud
+  Run's metadata server honours `?scopes=drive.readonly`).
+- Drive returns `sharingUser` for a gmail.com account (if not, every check runs on the `owners[]`
+  fallback: still safe, but an editor's re-share can't be told apart).
+- The longest Drive file / folder name (names past 300 characters are cut; pages are 25 entries so
+  a page of the longest names stays under the 2 MB answer cap).
+- Whether a `pageToken` is bound to its query (`drive_list` drops any item whose `parents` don't
+  include the folder either way).
+- Drive accepts `sharedWithMe and '<email>' in owners` and `fullText … and '<email>' in owners`
+  (if not, the view and search fall back to the bounded, unfiltered lists).
+
+Maps and YouTube
+- APIs & Services → Credentials → `jarvis-maps-yt` allows exactly Places API (New), Routes API and
+  YouTube Data API v3.
+- The deploy summary's "Maps price list" says `india` only if the billing account bills in rupees.
+- Billing → Budgets and alerts lists `jarvis-any-charge` (₹1 on an Indian billing account); if the
+  deploy said it could not add it, add one by hand (alerts to billing admins).
+- Billing → Reports, grouped by SKU, shows no Geocoding charges from routes.
+
+Contacts and WhatsApp
+- APIs & Services → Enabled APIs lists the People API (the deploy says so if it could not).
+- The OAuth consent screen's Data Access lists `contacts.readonly` and `youtube.readonly`; then
+  Integrations → Contacts → Grant and YouTube playlists → Grant each work.
+- After a Grant, a search for a contact you added minutes ago finds it (Google gives no figure for
+  how long its contacts cache takes to catch up).
+- Open in WhatsApp on a phone and on a laptop opens the right chat with the text filled in
+  (WhatsApp's own click-to-chat page could not be fetched; the wa.me format comes from pages that
+  cite it).
+
+Optional second safety net: Google's own per-day Maps caps. JARVIS already stops at 90 % of the
+free allowance; these caps make Google refuse calls past a daily limit even if JARVIS's counter were
+wrong. Not scripted, because Google publishes no quota IDs for these limits.
+1. Google Cloud Console → APIs & Services → Places API (New) → Quotas.
+2. Find the per-day Text Search request limit and choose Edit.
+3. Enter about the monthly stop ÷ 30: 150 a day on the global price list, 1,050 on India's.
+4. Save, and check the new limit is shown.
+5. Do the same for Routes API (APIs & Services → Routes API → Quotas → the per-day Compute Routes
+   limit), with the same numbers.
 
 ## Next waves (not built in this slice)
 - **Swiggy (slice 13, after Swiggy approves the redirect URI).** First real MCP **client** in

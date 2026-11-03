@@ -26,8 +26,11 @@ drafts to un-typed addresses ask; + negative controls) and slice 11 D8's provena
 controls) and slice 12 D1's Drive (chosen folders only: 25 path cases, 10 hostile files; + the
 parents-check-off and trusted-tools negative controls) and slice 12's Maps and YouTube (Google's
 free-allowance ledger, per-message caps, Home / Work, attribution and links on every card, fenced
-titles, the owner's playlist grant; + the ledger-off negative control). The exit status is the
-gated suites: phase0 --mock is a smoke run and never fails CI.
+titles, the owner's playlist grant; + the ledger-off negative control) and slice 12 C's contacts
+look-ups and WhatsApp drafts (17 cases: matches, +91, the optional Grant, drafts by number or
+name, the warning for a number read from an email, the 2,000 character limit, Never on both rows,
+Unicode kept and the link built exactly; nothing is ever sent; + its negative control). The exit
+status is the gated suites: phase0 --mock is a smoke run and never fails CI.
 """
 
 from __future__ import annotations
@@ -55,6 +58,11 @@ SUITES = [
     ("drive (gated)", [sys.executable, str(HERE / "drive" / "run.py"), "--mock"], True),
     ("maps (gated)", [sys.executable, str(HERE / "maps" / "run.py"), "--mock"], True),
     ("youtube (gated)", [sys.executable, str(HERE / "youtube" / "run.py"), "--mock"], True),
+    (
+        "contacts+whatsapp (gated)",
+        [sys.executable, str(HERE / "contacts_whatsapp" / "run.py"), "--mock"],
+        True,
+    ),
 ]
 
 

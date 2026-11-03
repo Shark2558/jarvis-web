@@ -179,7 +179,8 @@ class ChatResponse(BaseModel):
     cards: list[ReplyCard] = Field(
         default_factory=list,
         description="Slice 12: place, route and video cards from this reply's Maps / YouTube "
-        "results (Google links and attribution; shown once, never stored)",
+        "results (Google links and attribution) and WhatsApp drafts (kind 'whatsapp': Open in "
+        "WhatsApp; nothing was sent). Shown once, never stored",
     )
 
 

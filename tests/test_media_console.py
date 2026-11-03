@@ -119,3 +119,11 @@ async def test_vitals_and_integrations_have_their_maps_and_youtube_lines(
     literals = re.findall(r"'([^'\n]*)'|`([^`\n]*)`", js)
     shown = [re.sub(r"\$\{[^}]*\}", "", a or b) for a, b in literals]
     assert not [s for s in shown if "$" in s and not s.startswith("^")]
+
+
+async def test_media_cards_skip_other_kinds_before_their_cap(client: AsyncClient) -> None:
+    """ChatResponse.cards also carries WhatsApp drafts (console-whatsapp.js): only places / route /
+    videos count towards console-media.js's own cap, so drafts first can't crowd out a Maps card."""
+    js = (await client.get("/static/console-media.js")).text
+    assert "const MEDIA_KINDS = new Set(['places', 'route', 'videos']);" in js
+    assert "MEDIA_KINDS.has(c.kind)" in js and "mine.slice(0, MAX_CARDS)" in js

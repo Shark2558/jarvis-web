@@ -1,31 +1,42 @@
 # src/jarvis/tools/reply_cards.py
-"""Console cards a reply carries (slice 12 D3/D4; Layer 6 → 1): places, a route, videos.
+"""Console cards a reply carries (slice 12 D3/D4/D6; Layer 6 → 1): places, a route, videos, and
+WhatsApp drafts — one mechanism for every card under a reply.
 
 A tool adds a card for the OWNER's screen with `add_card` while it runs; the card travels beside
 the tool's result, never inside what the model sees (so a link on a card always came from Google's
-answer, never from the model's words). The Brain opens `collecting_cards` around one owner
-message's tool rounds (and around an approved card's run) and puts what was collected on the
-reply (`ChatResponse.cards`). Cards are shown once, with that reply: they are not stored with the
-conversation (Google Maps terms: JARVIS caches nothing but place ids).
+answer or from the checked draft, never from the model's words). Only code inside a tool that
+actually ran can add one: a call that became an approval card adds nothing until it is approved
+and runs. The Brain opens `collecting_cards` around one owner message's tool rounds (and around an
+approved card's run; Approve all joins each approved call's cards with `capped`) and puts what was
+collected on the reply (`ChatResponse.cards`). Cards are shown once, with that reply: they are not
+stored with the conversation (Google Maps terms: JARVIS caches nothing but place ids).
+
+Caps per reply: MAX_CARDS Maps / YouTube cards and, separately, MAX_DRAFTS WhatsApp drafts (the
+first ones, in order), so neither kind can crowd the other out.
 
 Every field is checked on the way in (`parse_cards` drops anything that doesn't read back): a Maps
 link must be an https Google Maps address (`google_maps_url`), a video id exactly 11 characters of
-[A-Za-z0-9_-], and each card's attribution is fixed by its kind ("Google Maps", "YouTube"). The
-console checks every field again and writes text with textContent only.
+[A-Za-z0-9_-], and each card's attribution is fixed by its kind ("Google Maps", "YouTube"); a
+WhatsApp draft's number must be E.164, its text clean and its link exactly the wa.me link of that
+number and text (`jarvis.whatsapp.draft.WhatsAppCard`). The console checks every field again and
+writes text with textContent only (console-media.js, console-whatsapp.js).
 """
 
 from __future__ import annotations
 
 import contextvars
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from typing import Annotated, Any, Final, Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
-MAX_CARDS = 8
+from jarvis.whatsapp.draft import WhatsAppCard
+
+MAX_CARDS = 8  # Maps / YouTube cards per reply
+MAX_DRAFTS = 5  # WhatsApp draft cards per reply (slice 12 D6), counted apart from MAX_CARDS
 MAX_ITEMS = 10
 MAX_URL = 2048  # Google Maps URLs are limited to 2,048 characters
 TEXT_LIMIT = 300
@@ -118,22 +129,39 @@ class VideosCard(_Strict):
     items: list[VideoItem] = Field(default_factory=list, max_length=MAX_ITEMS * 2)
 
 
-ReplyCard = Annotated[PlacesCard | RouteCard | VideosCard, Field(discriminator="kind")]
-_ONE: TypeAdapter[PlacesCard | RouteCard | VideosCard] = TypeAdapter(ReplyCard)
+AnyCard = PlacesCard | RouteCard | VideosCard | WhatsAppCard
+ReplyCard = Annotated[AnyCard, Field(discriminator="kind")]
+_ONE: TypeAdapter[AnyCard] = TypeAdapter(ReplyCard)
 
 
-def parse_cards(raw: object) -> list[PlacesCard | RouteCard | VideosCard]:
-    """Cards that read back exactly; anything else is dropped (never raises)."""
-    out: list[PlacesCard | RouteCard | VideosCard] = []
+def _has_room(cards: list[Any], card: AnyCard) -> bool:
+    """Whether `cards` can take `card` within the reply's cap for its kind."""
+    if isinstance(card, WhatsAppCard):
+        return sum(isinstance(c, WhatsAppCard) for c in cards) < MAX_DRAFTS
+    return sum(not isinstance(c, WhatsAppCard) for c in cards) < MAX_CARDS
+
+
+def capped(have: list[Any], new: Iterable[AnyCard]) -> list[Any]:
+    """One reply's cards after more arrive (Approve all): the first ones of each kind, in
+    order, within MAX_CARDS / MAX_DRAFTS. A new list; `have` is left as it was."""
+    out = list(have)
+    for card in new:
+        if _has_room(out, card):
+            out.append(card)
+    return out
+
+
+def parse_cards(raw: object) -> list[AnyCard]:
+    """Cards that read back exactly, within the caps; anything else is dropped (never raises)."""
+    out: list[AnyCard] = []
     for item in raw if isinstance(raw, list) else []:
-        if isinstance(item, PlacesCard | RouteCard | VideosCard):
-            out.append(item)
-            continue
         try:
-            out.append(_ONE.validate_python(item))
+            card = item if isinstance(item, AnyCard) else _ONE.validate_python(item)
         except ValidationError:
             continue
-    return out[:MAX_CARDS]
+        if _has_room(out, card):
+            out.append(card)
+    return out
 
 
 _current: contextvars.ContextVar[list[Any] | None] = contextvars.ContextVar(
@@ -143,7 +171,7 @@ _current: contextvars.ContextVar[list[Any] | None] = contextvars.ContextVar(
 
 @contextmanager
 def collecting_cards(into: list[Any]) -> Iterator[list[Any]]:
-    """Cards added inside go into `into` (at most MAX_CARDS); always reset."""
+    """Cards added inside go into `into` (within the caps); always reset."""
     token = _current.set(into)
     try:
         yield into
@@ -151,25 +179,32 @@ def collecting_cards(into: list[Any]) -> Iterator[list[Any]]:
         _current.reset(token)
 
 
-def add_card(card: PlacesCard | RouteCard | VideosCard) -> None:
-    """Show `card` with this reply (no-op outside a collecting reply)."""
+def add_card(card: AnyCard) -> bool:
+    """Show `card` with this reply. False when it won't be shown: outside a collecting reply, or
+    the reply already has its kind's cap (MAX_CARDS / MAX_DRAFTS)."""
     sink = _current.get()
-    if sink is not None and len(sink) < MAX_CARDS:
-        sink.append(card)
+    if sink is None or not _has_room(sink, card):
+        return False
+    sink.append(card)
+    return True
 
 
 __all__ = [
     "MAPS_ATTRIBUTION",
     "MAX_CARDS",
+    "MAX_DRAFTS",
     "VIDEO_ID",
     "YOUTUBE_ATTRIBUTION",
+    "AnyCard",
     "PlaceItem",
     "PlacesCard",
     "ReplyCard",
     "RouteCard",
     "VideoItem",
     "VideosCard",
+    "WhatsAppCard",
     "add_card",
+    "capped",
     "collecting_cards",
     "google_maps_url",
     "parse_cards",

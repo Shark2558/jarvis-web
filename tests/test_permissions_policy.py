@@ -71,6 +71,19 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     ("web_read", R1, {"web"}),
     ("doc_read", R1, {"documents"}),
     ("doc_search", R1, {"documents"}),
+    # slice 12 D8: one R1 row per integration (Drive, Maps, YouTube built in parallel)
+    ("drive_folders", R1, {"drive"}),
+    ("drive_list", R1, {"drive"}),
+    ("drive_search", R1, {"drive"}),
+    ("drive_read", R1, {"drive"}),
+    ("maps_search", R1, {"maps"}),
+    ("maps_route", R1, {"maps"}),
+    ("youtube_search", R1, {"youtube"}),
+    ("youtube_my_playlists", R1, {"youtube"}),
+    ("youtube_playlist", R1, {"youtube"}),
+    ("contacts_search", R1, {"contacts"}),
+    ("whatsapp_draft", R1, {"whatsapp"}),
+    ("whatsapp_draft", R2, {"whatsapp"}),  # a future write in the family is covered too
     ("memory_search", R1, set()),  # unknown to every group: the risk default applies
     ("brand_new_tool", R3, set()),
 ]
@@ -213,6 +226,11 @@ RISK_OF = {
     "memory_forget": [R3],
     "web": [R1],
     "documents": [R1],
+    "drive": [R1],  # slice 12 D8
+    "maps": [R1],
+    "youtube": [R1],
+    "contacts": [R1],
+    "whatsapp": [R1],
 }
 TOOL_OF = {
     "calendar_read": "calendar_list_events",
@@ -230,6 +248,11 @@ TOOL_OF = {
     "memory_forget": "memory_forget",
     "web": "web_search",
     "documents": "doc_read",
+    "drive": "drive_read",
+    "maps": "maps_route",
+    "youtube": "youtube_search",
+    "contacts": "contacts_search",
+    "whatsapp": "whatsapp_draft",
 }
 
 

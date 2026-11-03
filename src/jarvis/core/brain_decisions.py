@@ -41,7 +41,7 @@ class Decision:
     fallback: str
     instruction: str
     undo: tuple[UndoRef, ...] = ()  # slice 11: an approved undo-able delete's Undo chip
-    cards: tuple[Any, ...] = ()  # slice 12: an approved Maps / YouTube call's cards
+    cards: tuple[Any, ...] = ()  # slice 12: an approved call's reply cards
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,7 @@ class Outcome:
     note: str = ""  # added to the reply as written (Approve all: the cards left waiting)
     narrate: bool = True  # False: nothing ran or was recorded — no model call, nothing stored
     undo: list[UndoRef] = field(default_factory=list)  # undo-able deletes that ran: Undo chips
-    cards: list[Any] = field(default_factory=list)  # slice 12: Maps / YouTube cards
+    cards: list[Any] = field(default_factory=list)  # slice 12: Maps / YouTube / WhatsApp cards
 
 
 def single(d: Decision, *, approved: bool, unrecorded: list[Turn]) -> Outcome:
@@ -135,7 +135,7 @@ async def approved(
     gateway: Gateway, call: ToolCall, action: PendingAction, approval_id: str, scope: str
 ) -> Decision:
     cards: list[Any] = []
-    with collecting_cards(cards):  # slice 12: an approved Maps / YouTube call shows its card
+    with collecting_cards(cards):  # slice 12: an approved call shows its card (Maps, a draft)
         gr = await gateway.execute(call, confirmation_id=approval_id, scope=scope)
     if gr.outcome is GatewayOutcome.CONFIRMATION_INVALID:
         # lost a race with another approve/decline: nothing ran, touch nothing

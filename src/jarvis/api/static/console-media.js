@@ -28,6 +28,7 @@
   const MAPS_UNDER = new Set(['www.google.com', 'google.com']);
   const MAX_CARDS = 8, MAX_ITEMS = 20, TEXT_MAX = 300, PLACE_MAX = 200, MAX_URL = 2048;
   const MAPS_ATTR = 'Google Maps', YT_ATTR = 'YouTube';
+  const MEDIA_KINDS = new Set(['places', 'route', 'videos']);
   const REL = 'noopener noreferrer';
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const MODES = { drive: 'by car', two_wheeler: 'by two-wheeler', walk: 'on foot' };
@@ -129,8 +130,10 @@
   function cards(row, list) {
     if (!row || !Array.isArray(list) || !list.length) return null;
     const wrap = mk('div', 'mcards');
-    list.slice(0, MAX_CARDS).forEach((c) => {
-      if (!c || typeof c !== 'object') return;
+    // ChatResponse.cards also carries other kinds (a WhatsApp draft: console-whatsapp.js): only
+    // this module's kinds count towards its cap
+    const mine = list.filter((c) => c && typeof c === 'object' && MEDIA_KINDS.has(c.kind));
+    mine.slice(0, MAX_CARDS).forEach((c) => {
       let el = null;
       if (c.kind === 'places' && c.attribution === MAPS_ATTR) el = placesCard(c);
       else if (c.kind === 'route' && c.attribution === MAPS_ATTR) el = routeCard(c);

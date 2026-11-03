@@ -57,7 +57,7 @@ class Rounds:
     done: list[str] = field(default_factory=list)
     unrecorded: list[Turn] = field(default_factory=list)
     undo: list[UndoRef] = field(default_factory=list)
-    # slice 12: place / route / video cards the message's Maps and YouTube results made for the
+    # slice 12: place / route / video / WhatsApp draft cards the message's tools made for the
     # owner's screen (`jarvis.tools.reply_cards`); shown with the reply, never stored
     cards: list[Any] = field(default_factory=list)
 

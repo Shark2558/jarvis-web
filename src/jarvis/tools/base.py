@@ -10,8 +10,10 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.llm.base import ToolCall, ToolSpec
+from jarvis.logging import get_logger
 from jarvis.tools.card import one_line
 
+log = get_logger(__name__)
 ToolFn = Callable[[dict[str, Any]], Awaitable[Any] | Any]
 RiskFn = Callable[[dict[str, Any]], ActionRisk]
 CheckFn = Callable[[dict[str, Any]], None]
@@ -111,17 +113,20 @@ class Tool:
                 raise ValueError("a date or number in the request is out of range") from None
 
     def summary(self, args: dict[str, Any]) -> str:
-        # never show the owner a bare verb for something irreversible: the fallback is the
-        # tool name with its (sanitised) arguments
+        """The card text. Never raises: a card that can't be written would fail the whole reply
+        (review S2: a tool argument called `name` met the template's own `name`). The fallback
+        is the tool name with its (sanitised) arguments — never a bare verb for something
+        irreversible — and the failure is logged (tool and error class only, no argument)."""
         generic = f"{self.name} {json.dumps(args, default=str, ensure_ascii=False)}"
-        if self.summarize is not None:
-            try:
-                return self.summarize(args)
-            except (KeyError, TypeError, ValueError):
-                return one_line(generic, SUMMARY_FALLBACK_LIMIT)
         try:
+            if self.summarize is not None:
+                return self.summarize(args)
             text = self.summary_template.format(name=self.name, **args)
-        except (KeyError, IndexError, ValueError):
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            log.warning(
+                "card text could not be made; generic card shown",
+                extra={"tool": self.name, "error": type(exc).__name__},
+            )
             text = generic
         return one_line(text, SUMMARY_FALLBACK_LIMIT)
 

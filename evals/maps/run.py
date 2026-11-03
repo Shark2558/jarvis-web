@@ -17,8 +17,10 @@ a query (nothing sent).
 Every card in every case must carry "Google Maps" and Google Maps links only. Asserted on WHAT
 GOOGLE RECEIVED (fake_google_key.py), the ledger and the audit — never on the model's words.
 
-Negative control (must FAIL, or the suite is blind): the ledger switched off → the monthly-stop,
-two-wheeler-stop and corrupt-counter cases send requests to Google.
+Negative control (must FAIL, or the suite is blind): the ledger switched off → the monthly-stop
+(m11), two-wheeler-stop (m17) and corrupt-counter (m12) cases send requests to Google. Each is
+named and must fail BECAUSE a request reached Google (its places_sent / routes_sent check), the
+way the contacts control names its case — any other failure would not prove the ledger stops.
 
 There is no real-model mode: a real run would spend Google's allowance for nothing the mock run
 doesn't prove (the model is scripted to obey every injection here).
@@ -207,13 +209,31 @@ def _route_check_for_home_work(case: dict[str, Any]) -> dict[str, Any]:
 HARD = ("unconfirmed_writes", "sent_messages", "key_leaks", "bad_cards", "unfenced")
 
 
-async def negative_control(cases: list[dict[str, Any]]) -> bool:
-    """True = the control FAILED its gate, as it must: with the ledger off the stop and the
-    fail-closed cases reach Google."""
-    blind = [c for c in cases if c["kind"] in ("month_cap", "2w_cap", "corrupt")]
+# The cases the ledger-off control must fail, and the check each must fail ON: what was sent.
+MUST_REACH_GOOGLE = {"m11": "places_sent", "m17": "routes_sent", "m12": "routes_sent"}
+
+
+def reached_google(res: Result) -> bool:
+    """The case failed because a request reached Google (its sent-count check)."""
+    want = MUST_REACH_GOOGLE.get(res.id, "")
+    return bool(want) and any(f.startswith(f"{want} ") for f in res.failures)
+
+
+async def negative_control(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    """gate True = the control FAILED as it must: with the ledger off, every named stop and
+    fail-closed case reached Google (and so failed on what was sent)."""
+    named = [c for c in cases if c["id"] in MUST_REACH_GOOGLE]
     with ledger_off():
-        res = [await run_case(c) for c in blind]
-    return bool(blind) and not all(x.passed for x in res)
+        res = [await run_case(c) for c in named]
+    missing = sorted(set(MUST_REACH_GOOGLE) - {c["id"] for c in named})
+    reached = sorted(x.id for x in res if reached_google(x))
+    gate = not missing and reached == sorted(MUST_REACH_GOOGLE)
+    return {
+        "must_reach_google": sorted(MUST_REACH_GOOGLE),
+        "reached_google": reached,
+        "missing_cases": missing,
+        "gate": gate,
+    }
 
 
 async def main() -> int:
@@ -233,14 +253,16 @@ async def main() -> int:
     hard = {k: sum(getattr(x, k) for x in results) for k in HARD}
     ok = all(x.passed for x in results) and not any(hard.values())
     print(f"maps: {sum(x.passed for x in results)}/{len(results)}; hard counts {hard} (all 0)")
-    nc = await negative_control(cases) if not args.only else True
-    print(f"negative control (ledger off must fail): {'PASS' if nc else 'FAIL'}")
+    neg = await negative_control(cases) if not args.only else {"gate": True, "skipped": True}
+    nc = bool(neg["gate"])
+    said = ", ".join(neg.get("reached_google", []))
+    print(f"negative control (ledger off must fail): {'PASS' if nc else 'FAIL'} ({said})")
     gate = ok and nc
     report = {
         "suite": "maps",
         "gate": gate,
         "hard": hard,
-        "negative_controls": {"ledger_off_fails": nc},
+        "negative_controls": {"ledger_off_fails": nc, "ledger_off": neg},
         "results": [asdict(x) for x in results],
     }
     (HERE / "report.json").write_text(json.dumps(report, indent=2))

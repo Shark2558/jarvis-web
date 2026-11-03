@@ -14,8 +14,9 @@ the key must never appear in a URL or body. Playback: 0 autoplays without the ow
 browser property, proved by tests/browser/test_media.py (no iframe and no request to YouTube's
 host before Play); this suite checks that a reply only ever carries a card, never a player.
 
-Negative control (must FAIL, or the suite is blind): the ledger switched off → the daily-stop and
-corrupt-counter cases reach YouTube.
+Negative control (must FAIL, or the suite is blind): the ledger switched off → the daily-stop (y03)
+and corrupt-counter (y09) cases reach YouTube. Each is named and must fail BECAUSE a search was
+sent (its searches_sent check), the way the contacts control names its case.
 """
 
 from __future__ import annotations
@@ -149,11 +150,31 @@ def _check(res: Result, exp: dict[str, Any], videos: list[Any], r: Rig, errors: 
 HARD = ("unconfirmed_writes", "sent_messages", "key_leaks", "bad_cards", "unfenced", "players")
 
 
-async def negative_control(cases: list[dict[str, Any]]) -> bool:
-    blind = [c for c in cases if c["kind"] in ("day_cap", "corrupt")]
+# The cases the ledger-off control must fail, and the check each must fail ON: what was sent.
+MUST_REACH_GOOGLE = {"y03": "searches_sent", "y09": "searches_sent"}
+
+
+def reached_google(res: Result) -> bool:
+    """The case failed because a search reached YouTube (its sent-count check)."""
+    want = MUST_REACH_GOOGLE.get(res.id, "")
+    return bool(want) and any(f.startswith(f"{want} ") for f in res.failures)
+
+
+async def negative_control(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    """gate True = the control FAILED as it must: with the ledger off, the daily stop and the
+    fail-closed case both sent a search to YouTube."""
+    named = [c for c in cases if c["id"] in MUST_REACH_GOOGLE]
     with ledger_off():
-        res = [await run_case(c) for c in blind]
-    return bool(blind) and not all(x.passed for x in res)
+        res = [await run_case(c) for c in named]
+    missing = sorted(set(MUST_REACH_GOOGLE) - {c["id"] for c in named})
+    reached = sorted(x.id for x in res if reached_google(x))
+    gate = not missing and reached == sorted(MUST_REACH_GOOGLE)
+    return {
+        "must_reach_google": sorted(MUST_REACH_GOOGLE),
+        "reached_google": reached,
+        "missing_cases": missing,
+        "gate": gate,
+    }
 
 
 async def main() -> int:
@@ -173,14 +194,16 @@ async def main() -> int:
     hard = {k: sum(getattr(x, k) for x in results) for k in HARD}
     ok = all(x.passed for x in results) and not any(hard.values())
     print(f"youtube: {sum(x.passed for x in results)}/{len(results)}; hard counts {hard} (all 0)")
-    nc = await negative_control(cases) if not args.only else True
-    print(f"negative control (ledger off must fail): {'PASS' if nc else 'FAIL'}")
+    neg = await negative_control(cases) if not args.only else {"gate": True, "skipped": True}
+    nc = bool(neg["gate"])
+    said = ", ".join(neg.get("reached_google", []))
+    print(f"negative control (ledger off must fail): {'PASS' if nc else 'FAIL'} ({said})")
     gate = ok and nc
     report = {
         "suite": "youtube",
         "gate": gate,
         "hard": hard,
-        "negative_controls": {"ledger_off_fails": nc},
+        "negative_controls": {"ledger_off_fails": nc, "ledger_off": neg},
         "results": [asdict(x) for x in results],
     }
     (HERE / "report.json").write_text(json.dumps(report, indent=2))

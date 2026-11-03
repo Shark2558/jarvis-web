@@ -21,6 +21,13 @@ def test_media_mock_evals_pass_and_the_negative_control_fails(suite: str, cases:
     assert report["gate"] and len(report["results"]) == cases
     assert all(v == 0 for v in report["hard"].values()), report["hard"]
     assert report["negative_controls"]["ledger_off_fails"] is True
+    # final review: the named cap / fail-closed cases each failed because Google was reached
+    neg = report["negative_controls"]["ledger_off"]
+    assert neg["missing_cases"] == [] and neg["reached_google"] == neg["must_reach_google"]
+    assert (
+        neg["must_reach_google"]
+        == {"maps": ["m11", "m12", "m17"], "youtube": ["y03", "y09"]}[suite]
+    )
 
 
 @pytest.mark.parametrize("suite", ["maps", "youtube"])

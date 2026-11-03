@@ -561,6 +561,33 @@ def test_the_summary_warns_when_other_projects_share_the_billing_account(script:
     assert script.index("\nbilling_shared\n") < script.index("gcloud run deploy")
 
 
+def _billing_note(script: str, shared: str) -> str:
+    """What the deploy summary's billing-account block prints for SHARED_BILLING=`shared`."""
+    done = script.split('say "DONE', 1)[1]
+    start = done.index('if [ "$SHARED_BILLING" = yes ]')
+    block = done[start : done.index("\nfi\n", start) + 4]
+    run = subprocess.run(
+        ["bash", "-c", f"set -euo pipefail\nSHARED_BILLING={shared}\n{block}"],
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    assert run.returncode == 0, run.stderr
+    return run.stdout
+
+
+def test_the_summary_says_so_when_sharing_could_not_be_checked(script: str) -> None:
+    """Security review SEC-5 (low): `billing_shared` answers "unknown" when the billing account's
+    projects can't be listed; the summary then says JARVIS couldn't check, that its counter sees
+    only its own Maps / YouTube use, and that the 1-rupee alert still emails on any charge."""
+    unknown = " ".join(_billing_note(script, "unknown").split())
+    assert unknown.startswith("Note: could not check whether other projects share this billing")
+    assert "JARVIS counts only its own Maps and YouTube use" in unknown
+    assert "1-rupee budget alert (jarvis-any-charge) still emails you on any charge" in unknown
+    assert "$" not in unknown and "\u20b9" not in unknown  # rupees in words, never a symbol
+    assert "Other projects share this billing account" in _billing_note(script, "yes")
+    assert "could not check" not in _billing_note(script, "yes")
+    assert _billing_note(script, "no") == ""
+
+
 def test_the_plan_says_the_counter_is_per_deployment(script: str) -> None:
     plan = (ROOT / "docs" / "plans" / "phase2-slice12-integrations.md").read_text(encoding="utf-8")
     d2 = plan.split("**D2 ·", 1)[1].split("**D3 ·", 1)[0]

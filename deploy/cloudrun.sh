@@ -659,6 +659,13 @@ Note: Other projects share this billing account. If they also use Maps or YouTub
 free-allowance counter can't see their use (Google may count the free allowance per billing
 account) - the 1-rupee budget alert (jarvis-any-charge) will still email you on any charge.
 MSG
+elif [ "$SHARED_BILLING" = unknown ]; then
+cat <<'MSG'
+
+Note: could not check whether other projects share this billing account. JARVIS counts only its
+own Maps and YouTube use; the 1-rupee budget alert (jarvis-any-charge) still emails you on any
+charge.
+MSG
 fi
 cat <<'MSG'
 

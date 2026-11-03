@@ -17,6 +17,7 @@ from jarvis.integrations.google import (
     GoogleConnector,
     GoogleInvalid,
     GoogleNotConnected,
+    GoogleQuotaExceeded,
     GoogleScopesMissing,
     GoogleUncertain,
 )
@@ -198,6 +199,55 @@ async def test_read_only_post_can_opt_into_one_retry(
     assert len(fake.requests) == 2
 
 
+async def test_a_retry_that_never_got_through_after_an_answer_is_not_never_sent(
+    conn: GoogleConnector, store: MemoryTokenStore
+) -> None:
+    """Code review CR-4: the first attempt got a 503 (Google answered), the retry could not
+    connect: Google WAS reached, so the call is not "never sent" (its unit is not given back)."""
+    from jarvis.integrations.google import never_sent
+
+    await store.put(UID, _tokens())
+    answers: list[int | None] = [503, None]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = answers.pop(0)
+        if status is None:
+            raise httpx.ConnectError("down", request=request)
+        return httpx.Response(status)
+
+    conn.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(GoogleUncertain) as ei:
+        await conn.request(UID, "GET", CAL)
+    assert never_sent(ei.value) is False
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down", request=request)
+
+    conn.http = httpx.AsyncClient(transport=httpx.MockTransport(refuse))
+    with pytest.raises(GoogleUncertain) as ei:
+        await conn.request(UID, "GET", CAL, send_once=True)
+    assert never_sent(ei.value) is True  # one attempt, and it never connected
+
+
+async def test_send_once_sends_exactly_one_request_and_refreshes_without_resending(
+    conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle
+) -> None:
+    await store.put(UID, _tokens())
+    fake.on("GET", CAL, httpx.Response(503), httpx.Response(200, json={"ok": 1}))
+    with pytest.raises(GoogleUncertain):
+        await conn.request(UID, "GET", CAL, send_once=True)
+    assert len(fake.requests) == 1
+    fake.requests.clear()
+    fake.on("GET", CAL + "/x", httpx.Response(401), httpx.Response(200, json={"ok": 2}))
+    fake.on("POST", TOKEN_URL, httpx.Response(200, json={"access_token": "n2", "expires_in": 999}))
+    with pytest.raises(GoogleAPIError) as ei:
+        await conn.request(UID, "GET", CAL + "/x", send_once=True)
+    assert "again" in str(ei.value).lower()
+    assert [r.method for r in fake.requests] == ["GET", "POST"]  # sent once, then the refresh
+    assert await conn.request(UID, "GET", CAL + "/x", send_once=True) == {"ok": 2}
+    assert fake.requests[-1].headers["authorization"] == "Bearer n2"
+
+
 async def test_request_refreshes_once_on_401(
     conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle
 ) -> None:
@@ -374,7 +424,8 @@ def test_the_tasks_scope_is_requested_but_never_required() -> None:
     )
 
     assert TASKS_SCOPE == "https://www.googleapis.com/auth/tasks"
-    assert OPTIONAL_SCOPES == (
+    # slice 12 D7: contacts and YouTube playlists are optional Grants too (tests/test_google_grants)
+    assert OPTIONAL_SCOPES[:2] == (
         "https://www.googleapis.com/auth/gmail.insert",
         TASKS_SCOPE,
     )
@@ -450,3 +501,49 @@ async def test_revoke_is_best_effort(conn: GoogleConnector, fake: FakeGoogle) ->
     conn.http = httpx.AsyncClient(transport=httpx.MockTransport(boom))
     await conn.revoke("tok-2")  # never raises
     await conn.revoke("")  # nothing to revoke: no request
+
+
+# ---- slice 12 final review: quota words per service ------------------------------------------
+
+GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
+CAL_EVENTS = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+YT_ITEMS = "https://www.googleapis.com/youtube/v3/playlistItems"
+
+
+def _quota_403(reason: str) -> httpx.Response:
+    body = {"error": {"code": 403, "message": "VENDOR", "errors": [{"reason": reason}]}}
+    return httpx.Response(403, json=body)
+
+
+@pytest.mark.parametrize(("method", "url"), [("POST", CAL_EVENTS), ("GET", GMAIL)])
+async def test_a_calendar_or_gmail_quota_answer_is_neutral_never_youtubes_pacific_midnight(
+    conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle, method: str, url: str
+) -> None:
+    await store.put(UID, _tokens())
+    fake.on(method, url, _quota_403("quotaExceeded"), _quota_403("quotaExceeded"))
+    with pytest.raises(GoogleAPIError) as ei:
+        await conn.request(UID, method, url)
+    said = str(ei.value)
+    assert said == "Google is limiting requests for now; try again later."
+    assert "Pacific" not in said and "allowance" not in said and "VENDOR" not in said
+
+
+@pytest.mark.parametrize(("method", "url"), [("POST", CAL_EVENTS), ("GET", GMAIL)])
+async def test_a_calendar_or_gmail_rate_limit_still_says_try_again_shortly(
+    conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle, method: str, url: str
+) -> None:
+    await store.put(UID, _tokens())
+    fake.on(method, url, _quota_403("rateLimitExceeded"), _quota_403("rateLimitExceeded"))
+    with pytest.raises(GoogleAPIError) as ei:
+        await conn.request(UID, method, url)
+    assert "try again shortly" in str(ei.value) and "Pacific" not in str(ei.value)
+
+
+async def test_youtube_on_the_owners_token_keeps_the_pacific_midnight_words(
+    conn: GoogleConnector, store: MemoryTokenStore, fake: FakeGoogle
+) -> None:
+    await store.put(UID, _tokens())
+    fake.on("GET", YT_ITEMS, _quota_403("quotaExceeded"), _quota_403("quotaExceeded"))
+    with pytest.raises(GoogleQuotaExceeded) as ei:
+        await conn.request(UID, "GET", YT_ITEMS)
+    assert "midnight Pacific" in str(ei.value) and ei.value.period == "day"

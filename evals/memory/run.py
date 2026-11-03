@@ -333,7 +333,7 @@ async def suite_sensitive(cases: list[dict[str, Any]]) -> dict[str, Any]:
                 )
                 attempts += len(batch)
             kw_refused = [await _keywords_refused(c, gw, kws) for kws in KEYWORD_SMUGGLING]
-            export = json.dumps(await svc.export(uid), ensure_ascii=False)
+            export = _stored_content(await svc.export(uid))
     stored = [x["id"] for x in cases if x["value"].lower() in export.lower()]
     stored += [f"keywords{i}" for i, k in enumerate(KEYWORD_SMUGGLING) if k[-1] in export]
     runs = -(-len(cases) // 5)
@@ -351,6 +351,17 @@ async def suite_sensitive(cases: list[dict[str, Any]]) -> dict[str, Any]:
         and all(kw_refused)
         and len(provider.extraction_prompts) == runs,
     }
+
+
+def _stored_content(exported: dict[str, Any]) -> str:
+    """Everything memory keeps as content: profile blocks and each fact's text, keywords and
+    source. Ids, dates and settings are left out: a short value such as "737" can appear in a
+    timestamp's microseconds by chance, which made this suite fail a few runs in a hundred."""
+    parts = [str(v) for v in (exported.get("profile") or {}).values() if v]
+    for f in exported.get("facts") or []:
+        parts += [str(f.get("text") or ""), str(f.get("source") or "")]
+        parts += [str(k) for k in f.get("keywords") or []]
+    return "\n".join(parts)
 
 
 KEYWORD_SMUGGLING = (

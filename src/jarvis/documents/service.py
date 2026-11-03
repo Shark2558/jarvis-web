@@ -2,8 +2,9 @@
 """Attached documents, end to end (slice 10 E; Layer 2 input → 7 data → 5 skill).
 
 upload   name → type (extension + magic bytes) → text from a killable child process with CPU,
-         memory and wall-clock limits (`isolation`; one at a time, others queue ≤ 50 s, then
-         "busy") → chunks → one commit. The file itself is dropped. Waiting uploads: ≤ 10 per
+         memory and wall-clock limits (`isolation`; one at a time across the app — Drive files
+         use the same `extract` — others queue ≤ 50 s, then "busy") → chunks → one commit.
+         The file itself is dropped. Waiting uploads: ≤ 10 per
          owner; older than a day → swept at the next upload, a conversation delete, and the
          scheduler tick (`sweep_waiting`, at most hourly).
 switched off  Documents on "Never" in Permissions refuses uploads and sending (integration
@@ -143,7 +144,7 @@ class DocumentService:
             raise too_large(len(data))
         sniff(data, kind)
         await self._room_for(owner)
-        out = await self._extract(data, kind)
+        out = await self.extract(data, kind)
         chunks, cut = split(out.text, out.page_starts)
         kept = chunks[-1].start + len(chunks[-1].text) if cut else len(out.text)
         att = Attachment(
@@ -203,9 +204,12 @@ class DocumentService:
                 status=409,
             )
 
-    async def _extract(self, data: bytes, kind: str) -> Extracted:
-        """One child process at a time; the slot is released on every exit, cancellation
-        included, and `extract_isolated` kills its child on every exit too."""
+    async def extract(self, data: bytes, kind: str) -> Extracted:
+        """The app's ONE extraction door: chat uploads and Drive files (slice 12 D1, injected
+        into `DriveService` by the app) share this slot and sandbox, so two children never run
+        at once on the 512 MiB instance. One child process at a time; the slot is released on
+        every exit, cancellation included, and `extract_isolated` kills its child on every exit
+        too. Raises `DocumentRejected` (slice 10's words; callers may re-word them)."""
         try:
             await asyncio.wait_for(self._slot.acquire(), self._queue_wait_s)
         except TimeoutError:

@@ -241,7 +241,14 @@ async def test_status_requires_auth_and_is_per_user(gc: AsyncClient) -> None:
             "expires_at": None,
             "needs_reconnect": False,
             "tasks_granted": False,
-        }
+            "contacts_granted": False,  # slice 12 D7
+            "youtube_granted": False,
+            "tasks_available": True,  # slice 12 review C7: a Grant row is offered only when
+            "contacts_available": True,  # its tools exist here and are not set to Never
+            "youtube_available": False,  # no API key on this server: no YouTube tools
+        },
+        "drive_available": False,  # final review: JARVIS_DRIVE is off on this server
+        "maps_available": False,  # no API key: no Maps (Home / Work hidden)
     }
     # bearer token = primary owner (OWNER is first in the list)
     r = await gc.get("/v1/integrations", headers={"Authorization": "Bearer cli-token"})
@@ -429,3 +436,163 @@ async def test_malformed_vault_document_reads_as_needs_reconnect(gc: AsyncClient
     assert (
         r.json()["google"]["connected"] is False and r.json()["google"]["needs_reconnect"] is True
     )
+
+
+# ---- slice 12 D7: Grant generalised (to-do list, contacts, YouTube playlists) -----------------
+
+CONTACTS = "https://www.googleapis.com/auth/contacts.readonly"
+YOUTUBE = "https://www.googleapis.com/auth/youtube.readonly"
+
+
+async def _link(gc: AsyncClient, *granted: str) -> None:
+    """Link OWNER with the required scopes plus `granted` optional ones."""
+    await _login(gc, OWNER)
+    await gc.get("/connect/google", follow_redirects=False)
+    base = tuple(s for s in TOOL_SCOPES if s not in (TASKS, CONTACTS, YOUTUBE))
+    _fake_consent(gc, OWNER, scopes=(*base, *granted))
+    r = await gc.get("/connect/google/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/?connected=google"
+
+
+@pytest.mark.parametrize(("name", "scope"), [("contacts", CONTACTS), ("youtube", YOUTUBE)])
+async def test_grant_asks_for_exactly_that_one_scope_incrementally(
+    gc: AsyncClient, name: str, scope: str
+) -> None:
+    await _login(gc, OWNER)
+    plain = await gc.get("/connect/google", follow_redirects=False)
+    grant = await gc.get(f"/connect/google?add={name}", follow_redirects=False)
+    assert _asked(grant) == _asked(plain) | {scope}
+    q = parse_qs(urlsplit(grant.headers["location"]).query)
+    assert q["include_granted_scopes"] == ["true"]
+
+
+@pytest.mark.parametrize(
+    "junk",
+    [
+        "?add=contacts&add=youtube",  # exactly one name
+        "?add=contacts,youtube",
+        "?add=CONTACTS",
+        "?add=contacts.readonly",
+        "?add=" + CONTACTS,
+        "?add=drive",
+        "?add=",
+    ],
+)
+async def test_anything_but_one_allow_listed_name_asks_for_nothing_extra(
+    gc: AsyncClient, junk: str
+) -> None:
+    await _login(gc, OWNER)
+    plain = await gc.get("/connect/google", follow_redirects=False)
+    r = await gc.get("/connect/google" + junk, follow_redirects=False)
+    assert r.status_code in (302, 307) and _asked(r) == _asked(plain)
+
+
+async def test_a_renewal_keeps_every_optional_scope_already_held(gc: AsyncClient) -> None:
+    await _link(gc, TASKS, CONTACTS)
+    again = await gc.get("/connect/google", follow_redirects=False)  # "Reconnect"
+    assert {TASKS, CONTACTS} <= _asked(again) and YOUTUBE not in _asked(again)
+    more = await gc.get("/connect/google?add=youtube", follow_redirects=False)  # "Grant"
+    assert {TASKS, CONTACTS, YOUTUBE} <= _asked(more)
+
+
+async def test_a_plain_reconnect_asks_only_for_what_the_link_held(gc: AsyncClient) -> None:
+    """Review L8 still holds: nothing optional is asked for that the owner didn't grant."""
+    await _link(gc)
+    again = await gc.get("/connect/google", follow_redirects=False)
+    assert not {TASKS, CONTACTS, YOUTUBE} & _asked(again)
+
+
+async def test_integrations_say_which_optional_permissions_are_granted(gc: AsyncClient) -> None:
+    await _link(gc, CONTACTS)
+    st = (await gc.get("/v1/integrations")).json()["google"]
+    assert st["contacts_granted"] is True
+    assert st["youtube_granted"] is False and st["tasks_granted"] is False
+    assert "drive" not in st  # Drive has its own route (builder A); not part of this view
+
+
+# ---- review C7: a Grant row only when its tools exist here and are not switched off ------------
+
+
+async def test_youtube_is_available_only_with_the_servers_api_key(gsettings: Settings) -> None:
+    keyed = gsettings.model_copy(update={"google_api_key": SecretStr("AIza-test-key")})
+    app = create_app(keyed, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        c = await _client(app)
+        try:
+            await _login(c, OWNER)
+            r = await c.get("/v1/integrations")
+            st = r.json()["google"]
+            assert st["youtube_available"] is True and st["contacts_available"] is True
+            assert "AIza" not in r.text  # the key never reaches the browser
+        finally:
+            await c.aclose()
+
+
+@pytest.mark.parametrize(("row", "grant"), [("contacts", "contacts"), ("todo_change", "tasks")])
+async def test_a_grant_whose_permission_row_is_never_is_not_offered(
+    gc: AsyncClient, row: str, grant: str
+) -> None:
+    await _login(gc, OWNER)
+    r = await gc.put("/v1/permissions", json={"groups": {row: "deny"}}, headers=CSRF)
+    assert r.status_code == 200
+    st = (await gc.get("/v1/integrations")).json()["google"]
+    assert st[f"{grant}_available"] is False
+    others = {"tasks", "contacts"} - {grant}
+    assert all(st[f"{o}_available"] is True for o in others)
+    await gc.put("/v1/permissions", json={"groups": {row: "ask"}}, headers=CSRF)
+    st = (await gc.get("/v1/integrations")).json()["google"]
+    assert st[f"{grant}_available"] is True  # "Ask first" still offers the Grant
+
+
+async def test_unreadable_permissions_still_offer_the_grants(gc: AsyncClient) -> None:
+    """The view can't tell: it offers the row; the gateway itself still fails closed on a call."""
+
+    class Broken:
+        async def rules_for(self, user_id: str) -> list[Any]:
+            raise RuntimeError("storage down")
+
+    await _login(gc, OWNER)
+    gc.app.state.permissions = Broken()  # type: ignore[attr-defined]
+    st = (await gc.get("/v1/integrations")).json()["google"]
+    assert st["contacts_available"] is True and st["tasks_available"] is True
+
+
+# ---- final review: Drive and Maps say whether the console should show them --------------------
+
+
+@pytest.fixture
+async def full(gsettings: Settings) -> AsyncIterator[AsyncClient]:
+    """Drive switched on and the server's Maps / YouTube key set."""
+    on = gsettings.model_copy(update={"drive": True, "google_api_key": SecretStr("AIza-test")})
+    app = create_app(on, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        c = await _client(app)
+        try:
+            yield c
+        finally:
+            await c.aclose()
+
+
+async def test_drive_and_maps_are_available_when_on_and_not_never(full: AsyncClient) -> None:
+    await _login(full, OWNER)
+    r = (await full.get("/v1/integrations")).json()
+    assert r["drive_available"] is True and r["maps_available"] is True
+    assert "drive" not in r["google"] and "maps" not in r["google"]  # no summary blocks (D7)
+
+
+@pytest.mark.parametrize(
+    ("row", "field"), [("drive", "drive_available"), ("maps", "maps_available")]
+)
+async def test_never_on_drive_or_maps_hides_it_and_ask_first_does_not(
+    full: AsyncClient, row: str, field: str
+) -> None:
+    await _login(full, OWNER)
+    assert (
+        await full.put("/v1/permissions", json={"groups": {row: "deny"}}, headers=CSRF)
+    ).status_code == 200
+    r = (await full.get("/v1/integrations")).json()
+    assert r[field] is False
+    other = ({"drive_available", "maps_available"} - {field}).pop()
+    assert r[other] is True
+    await full.put("/v1/permissions", json={"groups": {row: "ask"}}, headers=CSRF)
+    assert (await full.get("/v1/integrations")).json()[field] is True

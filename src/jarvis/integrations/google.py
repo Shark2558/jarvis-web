@@ -17,6 +17,8 @@ import httpx
 from pydantic import SecretStr
 
 from jarvis.config import AuthMode, Settings
+from jarvis.integrations import google_errors
+from jarvis.integrations.google_errors import UsedUp
 from jarvis.integrations.vault import GoogleTokens, TokenStore, VaultError
 from jarvis.logging import get_logger
 
@@ -43,7 +45,36 @@ INSERT_SCOPE = "https://www.googleapis.com/auth/gmail.insert"
 # The to-do list (slice 10 C): Google Tasks read + write. Optional like gmail.insert: a link
 # without it keeps every other tool; the to-do tools then answer "grant access".
 TASKS_SCOPE = "https://www.googleapis.com/auth/tasks"
-OPTIONAL_SCOPES: tuple[str, ...] = (INSERT_SCOPE, TASKS_SCOPE)
+# Slice 12 D7: two more optional Grants, read only. Contacts: people.searchContacts (verified
+# 2026-11-03 against developers.google.com/people/api/rest/v1/people/searchContacts: contacts or
+# contacts.readonly). YouTube: the owner's own playlists (builder B's tools).
+CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts.readonly"
+YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+CONTACTS_CAPABLE_SCOPES = frozenset({CONTACTS_SCOPE, "https://www.googleapis.com/auth/contacts"})
+# Any of these lets playlists.list(mine) / playlistItems.list read (the same set as builder B's).
+YOUTUBE_READ_SCOPES = frozenset(
+    {
+        YOUTUBE_SCOPE,
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+    }
+)
+# The optional permissions an owner adds with Integrations → Grant (`/connect/google?add=<name>`):
+# exactly these names, each ONE scope asked for (the read-only one). Order here is the order they
+# are asked for.
+GRANTS: dict[str, str] = {
+    "tasks": TASKS_SCOPE,
+    "contacts": CONTACTS_SCOPE,
+    "youtube": YOUTUBE_SCOPE,
+}
+# Review C8: one notion of "has this Grant" — any of these scopes held satisfies it (a wider
+# scope granted to the same app counts), for `held_grants` and every `can_use_*` alike.
+GRANT_ACCEPTS: dict[str, frozenset[str]] = {
+    "tasks": frozenset({TASKS_SCOPE}),  # tasks.readonly would not do: the to-do tools write
+    "contacts": CONTACTS_CAPABLE_SCOPES,
+    "youtube": YOUTUBE_READ_SCOPES,
+}
+OPTIONAL_SCOPES: tuple[str, ...] = (INSERT_SCOPE, *GRANTS.values())
 # Google accepts users.messages.insert with any of these.
 INSERT_CAPABLE_SCOPES = frozenset(
     {INSERT_SCOPE, "https://www.googleapis.com/auth/gmail.modify", "https://mail.google.com/"}
@@ -51,14 +82,31 @@ INSERT_CAPABLE_SCOPES = frozenset(
 # openid+email so the callback can prove WHICH Google account consented (must equal the owner).
 # Every scope a link may hold:
 TOOL_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES, *OPTIONAL_SCOPES)
-# What a plain (re)connect asks for — unchanged by slice 10 (review L8). The to-do list is asked
-# for only by the explicit Grant, or when the link being renewed already holds it.
+# What a plain (re)connect asks for — unchanged by slice 10 (review L8). A Grant's scope is asked
+# for only by its explicit Grant, or when the link being renewed already holds it (slice 12 D7).
 CONNECT_SCOPES: tuple[str, ...] = ("openid", "email", *REQUIRED_SCOPES, INSERT_SCOPE)
 
 
-def connect_scopes(*, tasks: bool) -> str:
-    """The scope string for one consent request (with include_granted_scopes)."""
-    return " ".join((*CONNECT_SCOPES, TASKS_SCOPE) if tasks else CONNECT_SCOPES)
+def connect_scopes(grants: Iterable[str] = ()) -> str:
+    """The scope string for one consent request (with include_granted_scopes): the plain set plus
+    the named Grants (each once, in `GRANTS` order). An unknown name is a ValueError."""
+    wanted = set(grants)
+    unknown = wanted - GRANTS.keys()
+    if unknown:
+        raise ValueError(f"unknown grant: {', '.join(sorted(unknown))}")
+    return " ".join((*CONNECT_SCOPES, *(s for n, s in GRANTS.items() if n in wanted)))
+
+
+def grant_name(raw: object) -> str | None:
+    """`raw` when it is exactly one allow-listed Grant name, else None (never guessed)."""
+    return raw if isinstance(raw, str) and raw in GRANTS else None
+
+
+def held_grants(scopes: Iterable[str]) -> frozenset[str]:
+    """The Grants a link's scopes already hold (`GRANT_ACCEPTS`); renewing the link asks for
+    each again — by its one read-only scope (`GRANTS`), never a wider one it happens to hold."""
+    have = set(scopes)
+    return frozenset(n for n, ok in GRANT_ACCEPTS.items() if not ok.isdisjoint(have))
 
 
 def can_insert(scopes: Iterable[str]) -> bool:
@@ -69,7 +117,17 @@ def can_insert(scopes: Iterable[str]) -> bool:
 def can_use_tasks(scopes: Iterable[str]) -> bool:
     """True when the granted scopes allow reading AND changing the owner's Google Tasks
     (tasks.readonly alone would not do: the to-do tools write)."""
-    return TASKS_SCOPE in set(scopes)
+    return "tasks" in held_grants(scopes)
+
+
+def can_use_contacts(scopes: Iterable[str]) -> bool:
+    """True when the granted scopes allow searching the owner's Google Contacts."""
+    return "contacts" in held_grants(scopes)
+
+
+def can_use_youtube(scopes: Iterable[str]) -> bool:
+    """True when the granted scopes let JARVIS read the owner's own YouTube playlists."""
+    return "youtube" in held_grants(scopes)
 
 
 HTTP_TIMEOUT_S = 15.0
@@ -83,6 +141,7 @@ NOT_CONNECTED_MSG = (
     "Google is not connected. Connect it in the panel (Integrations) to use calendar and mail."
 )
 RECONNECT_MSG = "Google needs reconnecting (panel → Integrations)."
+RENEWED_MSG = "Google asked JARVIS to renew its access to your account; it has. Please try again."
 
 
 class GoogleNotConnected(RuntimeError):
@@ -109,7 +168,13 @@ class GoogleNotFound(GoogleAPIError):
 
 class GoogleUncertain(GoogleAPIError):
     """Slice 11 fix: Google may or may not have made the change — no answer (timeout, the
-    connection dropped) or a 5xx. A delete is checked by reading the item again."""
+    connection dropped) or a 5xx. A delete is checked by reading the item again. `reached`
+    (slice 12 code review CR-4): an earlier attempt of the same call got Google's answer, so
+    Google was reached even if this attempt never connected."""
+
+    def __init__(self, message: str, *, reached: bool = False) -> None:
+        super().__init__(message)
+        self.reached = reached
 
 
 class GoogleConflict(GoogleAPIError):
@@ -119,6 +184,28 @@ class GoogleConflict(GoogleAPIError):
 class GoogleInvalid(GoogleAPIError):
     """400: Google refused the request as invalid (slice 11: a restore retries without the
     `previous` sibling it named)."""
+
+
+class GoogleQuotaExceeded(GoogleAPIError):
+    """Slice 12: Google says a per-day or per-month quota of the project is gone (`period`), from
+    its machine-readable fields only (`google_errors.used_up`). YouTube's units are the project's,
+    whichever credential spent them, so the allowance ledger closes them too."""
+
+    def __init__(self, message: str, *, period: UsedUp) -> None:
+        super().__init__(message)
+        self.period: UsedUp = period
+
+
+def never_sent(exc: BaseException) -> bool:
+    """Slice 12: a `request` that failed before ANY of its attempts reached Google (the
+    connection was refused), so Google did nothing with it — the allowance ledger gives its unit
+    back. A retry that could not connect after Google answered the first attempt is not one
+    (code review CR-4: `GoogleUncertain.reached`)."""
+    return (
+        isinstance(exc, GoogleUncertain)
+        and not exc.reached
+        and isinstance(exc.__cause__, httpx.ConnectError | httpx.ConnectTimeout)
+    )
 
 
 GONE_STATUSES = frozenset({404, 410})
@@ -303,12 +390,18 @@ class GoogleConnector:
         params: dict[str, Any] | None = None,
         json: Any | None = None,
         retry_safe: bool | None = None,
+        send_once: bool = False,
     ) -> Any:
         """One Google REST call: bearer token, 15 s timeout, one forced refresh on 401 (not
         processed, so safe to resend), and one retry on 429/5xx ONLY for safe calls: GET/HEAD,
         or a read-only POST that passes `retry_safe=True` (freeBusy). Returns parsed JSON
-        ({} for an empty body)."""
-        safe = method.upper() in SAFE_METHODS if retry_safe is None else retry_safe
+        ({} for an empty body). `send_once` (slice 12 code review CR-4: a call Google counts
+        against a quota JARVIS reserved ONE unit for, e.g. YouTube with the owner's token):
+        exactly one request — no retry, and a 401 refreshes the link for the next call but is
+        not resent (plain "try again")."""
+        safe = not send_once and (
+            method.upper() in SAFE_METHODS if retry_safe is None else retry_safe
+        )
         token = await self.access_token(user_id)
         r = await self._send(method, url, token, params, json)
         if r.status_code == 401:
@@ -316,15 +409,19 @@ class GoogleConnector:
             if t is None or isinstance(t, VaultError):
                 raise GoogleNotConnected(RECONNECT_MSG)
             token = await self._refresh(user_id, t)
-            r = await self._send(method, url, token, params, json)
+            if send_once:
+                raise GoogleAPIError(RENEWED_MSG)
+            r = await self._again(method, url, token, params, json)
         elif r.status_code in RETRY_STATUSES and safe:
-            r = await self._send(method, url, token, params, json)
+            r = await self._again(method, url, token, params, json)
         if r.status_code >= 400:
             log.warning(
                 "google api error", extra={"status": r.status_code, "path": httpx.URL(url).path}
             )
             if r.status_code == 403 and not SERVICE_DISABLED_REASONS.isdisjoint(_reasons(r)):
                 raise GoogleServiceDisabled(SERVICE_OFF_MSG)
+            if r.status_code in (403, 429):  # slice 12: a used-up quota or a short-term limit
+                _raise_quota(url, google_errors.envelope(r.content))
             raise _error_for(r.status_code)
         if not r.content:
             return {}
@@ -332,6 +429,21 @@ class GoogleConnector:
             return r.json()
         except ValueError as exc:
             raise GoogleAPIError("Google returned an unreadable response.") from exc
+
+    async def _again(
+        self,
+        method: str,
+        url: str,
+        token: str,
+        params: dict[str, Any] | None,
+        json: Any | None,
+    ) -> httpx.Response:
+        """A second attempt, after Google answered the first: if this one can't connect, the
+        call still reached Google (`GoogleUncertain.reached`, so `never_sent` is False)."""
+        try:
+            return await self._send(method, url, token, params, json)
+        except GoogleUncertain as exc:
+            raise GoogleUncertain(str(exc), reached=True) from exc.__cause__
 
     async def _send(
         self,
@@ -353,6 +465,19 @@ class GoogleConnector:
         except httpx.HTTPError as exc:
             log.warning("google api unreachable", extra={"reason": type(exc).__name__})
             raise GoogleUncertain("Could not reach Google; try again shortly.") from exc
+
+
+def _raise_quota(url: str, err: dict[str, Any]) -> None:
+    """A quota answer's exception, if it is one (else returns). Only YouTube's units are counted
+    in Pacific days, so only YouTube says when they start again; Calendar, Gmail, Tasks and
+    People get neutral words (final review). A short-term limit is "try again shortly"."""
+    if (period := google_errors.used_up(err)) is not None:
+        u = httpx.URL(url)
+        if google_errors.speaks_pacific(u.host, u.path):
+            raise GoogleQuotaExceeded(google_errors.USED_UP_MSG[period], period=period)
+        raise GoogleAPIError(google_errors.LIMITED_MSG)  # may be per-minute: not "used up"
+    if google_errors.rate_limited(err):
+        raise GoogleAPIError(_friendly(429))
 
 
 def _error_for(status: int) -> GoogleAPIError:
@@ -445,7 +570,7 @@ def register_tools_oauth(oauth: Any, s: Settings) -> None:
         name="google_tools",
         client_id=s.google_client_id,
         client_secret=s.google_client_secret.get_secret_value(),
-        client_kwargs={"scope": connect_scopes(tasks=False), "code_challenge_method": "S256"},
+        client_kwargs={"scope": connect_scopes(), "code_challenge_method": "S256"},
         authorize_url=AUTHORIZE_URL,
         access_token_url=TOKEN_URL,
         jwks_uri=JWKS_URL,
@@ -457,6 +582,10 @@ def register_tools_oauth(oauth: Any, s: Settings) -> None:
 __all__ = [
     "AUTHORIZE_URL",
     "CONNECT_SCOPES",
+    "CONTACTS_CAPABLE_SCOPES",
+    "CONTACTS_SCOPE",
+    "GRANTS",
+    "GRANT_ACCEPTS",
     "INSERT_CAPABLE_SCOPES",
     "INSERT_SCOPE",
     "OPTIONAL_SCOPES",
@@ -465,20 +594,28 @@ __all__ = [
     "TASKS_SCOPE",
     "TOKEN_URL",
     "TOOL_SCOPES",
+    "YOUTUBE_READ_SCOPES",
+    "YOUTUBE_SCOPE",
     "GoogleAPIError",
     "GoogleConflict",
     "GoogleConnector",
     "GoogleInvalid",
     "GoogleNotConnected",
     "GoogleNotFound",
+    "GoogleQuotaExceeded",
     "GoogleScopesMissing",
     "GoogleServiceDisabled",
     "GoogleUncertain",
     "build_google_connector",
     "can_insert",
+    "can_use_contacts",
     "can_use_tasks",
+    "can_use_youtube",
     "connect_scopes",
     "google_tools_configured",
     "google_tools_startup_note",
+    "grant_name",
+    "held_grants",
+    "never_sent",
     "register_tools_oauth",
 ]

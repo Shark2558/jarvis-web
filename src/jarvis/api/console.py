@@ -49,6 +49,14 @@ APP_ASSETS: dict[str, str] = {
     "console-attach.css": "text/css",
     "console-deleted.js": _JS,  # slice 11: Approvals → Recently deleted, the reply's Undo chip
     "console-deleted.css": "text/css",
+    "console-drive.js": _JS,  # slice 12 D1: Integrations → Google Drive (address, folders, Use)
+    "console-drive.css": "text/css",
+    "console-media.js": _JS,  # slice 12: Maps / YouTube cards, Media panel, Vitals, Home / Work
+    "console-media.css": "text/css",
+    "console-text.js": _JS,  # slice 12 final review: one invisible-character rule (keeps ZWJ)
+    "console-whatsapp.js": _JS,  # slice 12 D6: the WhatsApp draft card (Open in WhatsApp)
+    "console-whatsapp.css": "text/css",
+    "console-integrations.js": _JS,  # slice 12 review C5: Integrations, out of console.js
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",
@@ -92,11 +100,18 @@ _WAKEWORD = _STATIC / "wakeword"
 
 # The console CSP. 'wasm-unsafe-eval' lets the wake word compile onnxruntime's WebAssembly (and
 # nothing else: it does not allow eval or new Function); no worker, blob: or other host is needed.
+# Slice 12 D4: the Media panel plays a video the owner chose in YouTube's privacy-enhanced embed —
+# the one frame source allowed. No YouTube script runs in the console (no IFrame API), so
+# script-src and connect-src stay 'self'.
 CONSOLE_CSP = (
     "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
     "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
-    "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
+    "frame-src https://www.youtube-nocookie.com"
 )
+# The console page sends no referrer anywhere. Slice 12 D4: YouTube's player needs the embedding
+# ORIGIN (error 153 without one), so only the player's own iframe carries
+# referrerpolicy="strict-origin-when-cross-origin" (console-media.js) — never a path or query.
 
 
 def _settings(request: Request) -> Settings:

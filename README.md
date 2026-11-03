@@ -256,6 +256,47 @@ DELETE /v1/deleted/{id}                Remove now (can't be restored after)
 POST   /v1/approvals/approve-all       {session_id, ids ≤ 20} → one reply + a result per card
 ```
 
+## Slice 12 — Drive (chosen folders), Maps, YouTube, Contacts, WhatsApp drafts
+
+JARVIS reads Google Drive folders you share with it, finds places and travel times on Google Maps,
+searches YouTube (you press Play), looks up your contacts and prepares WhatsApp messages you send
+yourself. Every new tool is R1 (read-only) with its own permission row (Allow / Ask first / Never);
+"Never" switches the tools off and hides their part of Integrations. Plan and decisions D1–D10:
+`docs/plans/phase2-slice12-integrations.md`. Persona `p4.4`.
+
+```
+jarvis/drive/                    D1: folders shared with JARVIS's own account, ticked "Use"; every
+                                 file id walked up to a confirmed folder; read-only
+jarvis/places/ · jarvis/media/   D2–D4: Maps (search, route; Home / Work) and YouTube on ONE
+                                 server key, inside Google's free allowance (jarvis/quota)
+jarvis/contacts/ · jarvis/whatsapp/   D5/D6: contacts_search; whatsapp_draft (a wa.me link the
+                                 owner opens; JARVIS sends nothing); restore.py rebuilds drafts
+jarvis/tools/reply_cards.py      the cards under a reply (places, route, videos, drafts) and caps
+jarvis/api/rows.py               "Never" on a row, as the gateway decides it, for the views
+```
+
+- **Cards** (`ChatResponse.cards`): kinds `places`, `route`, `videos` (Google Maps / YouTube
+  attribution and links from Google's own answer) and `whatsapp` (a draft: name, number, text,
+  Open in WhatsApp). At most 8 Maps / YouTube cards and 5 drafts per reply; when a reply is full a
+  tool refuses before it spends anything and its result says the card was not shown. Cards are
+  not stored; a conversation opened again gets back only its WhatsApp drafts
+  (`GET /v1/sessions/{id}` → `drafts`, rebuilt from the stored results and checked again).
+- **Trust**: Drive files, place names, video titles and contact names are other people's words
+  (fenced; the round is tainted, so writes become cards). A draft to a number you typed does not
+  taint its own round; a draft by a Contacts name does.
+- **Free allowances**: Maps stops at 90 % of Google's monthly free allowance for the billing
+  account's price list (`JARVIS_MAPS_PRICING`), YouTube at 90 searches a day; plus 3 Maps calls,
+  2 YouTube searches and 2 playlist pages per message. Vitals shows the counts (`/v1/quota`).
+
+```
+GET  /v1/drive                    {configured, service_email, folders, others, …}
+PUT  /v1/drive/roots/{id}         {use} → the same; 409 switched_off when the Drive row is Never
+GET  /v1/maps/places              {configured, home, work}
+PUT  /v1/maps/places              {home, work} (≤ 200 characters each); 409 switched_off on Never
+GET  /v1/quota                    free-allowance counts for Vitals (never a price)
+GET  /v1/integrations             … + drive_available, maps_available (false: off here or Never)
+```
+
 ## Quick start
 
 ```bash
@@ -294,6 +335,13 @@ All settings are `JARVIS_*` env vars (see `.env.example`). Notable ones:
 - `JARVIS_EFFORT=low|medium|high` — reasoning effort for chat turns (the planner raises it per task in P2).
 - `JARVIS_SESSION_BACKEND=memory|redis`, `JARVIS_SESSION_TTL_S`, `JARVIS_SESSION_MAX_TURNS`.
 - `JARVIS_API_TOKEN` — required when `JARVIS_ENV != dev`.
+- `JARVIS_DRIVE=on|off` — Drive tools and `/v1/drive` (slice 12 D1; reads as the Cloud Run
+  service account, so only on Cloud Run with the Drive API switched on; the deploy script sets it).
+- `JARVIS_GOOGLE_API_KEY` — the server key for Maps and YouTube (restricted to Places, Routes and
+  YouTube Data v3; Secret Manager `jarvis-google-api-key`). Without it there are no Maps / YouTube
+  tools and `/v1/maps/places` / `/v1/quota` say not configured.
+- `JARVIS_MAPS_PRICING=global|india` — which of Google's Maps price lists the billing account is
+  on (default `global`, the smaller free allowance; `india` only for a billing account in rupees).
 - `JARVIS_VOICE_CLOUD=true|false`, `JARVIS_VOICE_LANGUAGE=en-IN` — Google Cloud speech (slice 9)
   with Application Default Credentials; without them the console uses the browser's voice.
 - `JARVIS_VOICE_TTS_FREE_CHARS` (default 900000 per voice type) and
@@ -315,13 +363,17 @@ POST /v1/chat/stream              same body, text/plain streamed deltas, then on
                                   finished). The reply never contains "\x1e"; parse the JSON
                                   after the LAST "\x1e".
 GET  /v1/sessions                 list (the signed-in owner's)
-GET  /v1/sessions/{id}            full transcript (audit / replay)
+GET  /v1/sessions/{id}            full transcript (audit / replay) + drafts: the WhatsApp draft
+                                  cards rebuilt from the stored results ({turn, card})
 DELETE /v1/sessions/{id}          forget
 GET  /v1/voice                    voice settings, cloud status, voices, wit levels, allowance, ₹
 PUT  /v1/voice/settings           {voice?, rate?, wit?}
 POST /v1/voice/speak              {text} or {preview: true, voice} → audio/mpeg
 POST /v1/voice/transcribe         audio/wav (16 kHz mono PCM16, ≤ 60 s) → {text, …}
 ```
+
+A reply (`POST /v1/chat`, an approval, Approve all) carries `cards`: the place, route, video
+and WhatsApp draft cards its tools made (slice 12; see above).
 
 Every response carries `x-trace-id`; pass your own in to correlate client logs.
 

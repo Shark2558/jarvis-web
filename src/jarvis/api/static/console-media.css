@@ -1,0 +1,64 @@
+/* src/jarvis/api/static/console-media.css -- slice 12 D3/D4: the Maps and YouTube cards under a reply,
+   the Media panel's player and queue, and Integrations -> Maps. Reuses the console's tokens (ink, line,
+   tint, tech font, radii) and buttons (.btn, .lift); text on the ink tokens (AA on Night and Day);
+   the attribution line ("Google Maps", "YouTube") is always visible on its card; touch targets >= 44 px
+   on phones; calm motion respected. */
+.mcards{display:flex;flex-direction:column;gap:8px;margin:8px 4px 0;max-width:100%}
+.mcard{border:1px solid var(--line);border-radius:var(--r-md);background:var(--tint);padding:8px 10px 6px;min-width:0}
+.mcard .mlist{list-style:none;margin:0;padding:0}
+.mcard .mitem{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 10px;padding:7px 0;border-top:1px solid var(--line-2)}
+.mcard .mitem:first-child{border-top:0}
+.mcard .mtxt{flex:1 1 180px;min-width:0;display:flex;flex-direction:column;gap:1px}
+.mcard .mtxt b{font-size:13.5px;font-weight:600;line-height:1.35;color:var(--ink);overflow-wrap:anywhere}
+.mcard .maddr{font-size:12.5px;line-height:1.4;color:var(--ink-2);overflow-wrap:anywhere}
+.mcard .mstatus{font-size:12px;line-height:1.4;color:var(--amber-ink)}
+.mcard .mempty{margin:2px 0 4px;font-size:13px;color:var(--ink-2)}
+.mcard .mlink{display:inline-flex;align-items:center;min-height:28px;padding:0 10px;border-radius:999px;border:1px solid var(--line);
+  font:600 12px/1 var(--font);color:var(--accent-ink);text-decoration:none;white-space:nowrap;background:var(--card)}
+.mcard .mlink:hover{border-color:var(--accent)}
+.mcard .mlink:focus-visible,.mcard .mplay:focus-visible,.mqbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mcard .mplay{height:30px;padding:0 14px;margin:0}
+.mcard .mattr{margin:6px 0 0;font:400 11px/1.3 var(--tech);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.mroute .mrhead{margin:0;font-size:13.5px;line-height:1.4;color:var(--ink);overflow-wrap:anywhere}
+.mroute .mrhead .mend{font-weight:600;unicode-bidi:isolate}
+.mroute .marrow{color:var(--ink-3)}
+.mroute .mrfig{margin:4px 0 8px;font-size:13px;color:var(--ink-2)}
+.mroute .mrfig b{font:700 18px/1.2 var(--hud);color:var(--ink);letter-spacing:.02em}
+.mvideos .mvtitle{margin:0 0 4px;font-size:13px;font-weight:600;color:var(--ink-2)}
+
+/* Media panel: the player exists only after Play (console-media.js) */
+#p-media .pbody{display:flex;flex-direction:column;gap:8px}
+.mstage{position:relative;width:100%;aspect-ratio:16/9;border-radius:var(--r-md);overflow:hidden;border:1px solid var(--line);background:var(--panel-solid);display:flex;align-items:center;justify-content:center}
+.mstage .empty{padding:16px;text-align:center}
+.mstage .mframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.mnow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mnow .mtxt{min-width:0;display:flex;flex-direction:column}
+.mnow .mtxt b{font-size:14px;color:var(--ink);overflow-wrap:anywhere}
+.mnow .maddr{font-size:12.5px;color:var(--ink-2)}
+.mnote{margin:0;font-size:12.5px;color:var(--ink-2)} .mnote:empty{display:none}
+.mqueue{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto}
+.mqueue li{border-top:1px solid var(--line-2)} .mqueue li:first-child{border-top:0}
+.mqbtn{display:block;width:100%;min-height:32px;padding:6px 4px;text-align:left;background:none;border:0;color:var(--ink-2);font:500 13px/1.35 var(--font);cursor:pointer;overflow-wrap:anywhere}
+.mqbtn:hover{color:var(--ink)}
+.mqueue li.on .mqbtn{color:var(--accent-ink);font-weight:600}
+#p-media > .pbody > .mattr{margin:0;font-size:12px;color:var(--ink-3)}
+
+/* Vitals: the Maps and YouTube values are long sentences ("... routes this month - walking paused"),
+   so they wrap under their label instead of being cut off (review FE-2); other .kv rows keep one line */
+.kv.kwrap{flex-wrap:wrap;row-gap:2px}
+.kv.kwrap b{flex:1 1 12em;min-width:0;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+
+/* Integrations -> Maps */
+.imaps{margin-top:10px}
+.imaps #mapsRetry{margin-top:10px}
+.imaps .mform{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.imaps .mform input{height:36px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--panel-solid);color:var(--ink);font:400 14px/1 var(--font)}
+.imaps .mform input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.imaps .mform .btn{align-self:flex-start}
+.imaps #mapsEdit{margin-top:10px}
+
+@media (max-width:760px){
+  .mcard .mlink,.mcard .mplay,.mqbtn,.imaps .mform input,.imaps .btn{min-height:44px}
+  .mcard .mitem{align-items:flex-start}
+}
+html[data-motion="calm"] .mcard .mlink{transition-duration:.01s}

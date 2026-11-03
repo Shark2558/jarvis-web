@@ -61,6 +61,12 @@ raw text, and marked `raised` (it was called, so it may have done part of it).
 Slice 11 D8 (security review of A+B): a card records whether its proposing round had read other
 people's content (`PendingAction.outside`); approved, it runs with `ToolContext.outside` so what it
 writes is marked as theirs. A re-proposed card keeps the stricter reason and outside (`_carried`).
+
+Slice 12 review: a look-up that names another permission row (`Preview.also`: a WhatsApp draft by
+name reads Contacts) gets that row's whole decision — "Never" refuses, "Ask first" makes the call
+a card (S1). `Tool.ask_when` is honoured for a read-only call too, and an approval token is always
+spent: a WhatsApp draft asks on a spoken turn or in a tainted round (its text goes to WhatsApp
+when the owner opens it), as a one-by-one R1 card — no passkey, never in Approve all (S3).
 """
 
 from __future__ import annotations
@@ -100,6 +106,7 @@ from jarvis.tools.taint import content_tainted, spoken_in_context, tainted_round
 log = get_logger(__name__)
 MAX_RESULT_CHARS = 12_000
 _RISK_RANK = {ActionRisk.READ_ONLY: 0, ActionRisk.REVERSIBLE: 1, ActionRisk.IRREVERSIBLE: 2}
+_EFFECT_RANK = {Effect.ALLOW: 0, Effect.ASK: 1, Effect.DENY: 2}
 _SECRETISH = re.compile(r"(?i)(bearer\s+\S+|sk-[A-Za-z0-9_-]{8,}|[\w.+-]+@[\w-]+\.[\w.]+)")
 
 
@@ -210,15 +217,27 @@ def _vouched(tool: Tool, out: Any) -> tuple[Any, bool]:
     return value, vouched
 
 
+def _stricter(a: Effect, b: Effect) -> Effect:
+    return a if _EFFECT_RANK[a] >= _EFFECT_RANK[b] else b
+
+
 def _tightened(
     effect: Effect, risk: ActionRisk, confirmation_id: str | None, asks: bool = False
 ) -> Effect:
-    """ALLOW → ASK for a write on a spoken turn, in a tainted round, when the tool asks for this
-    call (`Tool.ask_when`), or when an approval token is presented. (An irreversible call is never
-    ALLOW in the first place.)"""
-    if effect is not Effect.ALLOW or risk is ActionRisk.READ_ONLY:
+    """ALLOW → ASK when the tool asks for this call (`Tool.ask_when` — slice 12: a read-only
+    Maps route that would send the owner's Home / Work asks when the round read other people's
+    CONTENT, `taint.content_tainted`; a spoken turn alone does not, so a spoken "how long to
+    work?" stays one step; a WhatsApp draft asks on a spoken turn or in a tainted round) or when an
+    approval token is presented (so the approved card's token is always spent) — and, for a
+    write, on a spoken turn or in a tainted round. (An irreversible call is never ALLOW in the
+    first place.)"""
+    if effect is not Effect.ALLOW:
         return effect
-    if confirmation_id is not None or asks or spoken_in_context():
+    if confirmation_id is not None or asks:
+        return Effect.ASK
+    if risk is ActionRisk.READ_ONLY:
+        return effect
+    if spoken_in_context():
         return Effect.ASK
     if _policy.TAINTED_WRITES_ASK and tainted_round():
         return Effect.ASK
@@ -230,7 +249,7 @@ def _ask_reason(ruled: Effect, risk: ActionRisk, asks: bool, capped: bool) -> As
     None only when an approval token alone made it ASK: the stored card's reason stands."""
     if risk is ActionRisk.IRREVERSIBLE:
         return AskReason.RISK
-    if asks:
+    if asks:  # the tool's own one-by-one reason (a draft's recipient, Home sent to Maps)
         return AskReason.DRAFT_RECIPIENT
     if ruled is Effect.ASK:
         return AskReason.OWNER_RULE
@@ -398,7 +417,9 @@ class Gateway:
     ) -> _Ruling | GatewayResult:
         """The policy step: the configured and owner's rules, tightened (`_tightened`); the
         tool's look-up (card text; it may raise the risk) unless already denied; a DENY is
-        audited and refused; past the message's free deletes an undo-able ALLOW asks (D3)."""
+        audited and refused; past the message's free deletes an undo-able ALLOW asks (D3).
+        A look-up that names another row (`Preview.also`) gets that row's whole decision too
+        (review S1): its "Never" refuses, its "Ask first" makes this call a card."""
         risk = tool.effective_risk(call.arguments)
         policy = await self._policy_for(tool, call, risk, scope)
         if isinstance(policy, GatewayResult):
@@ -412,9 +433,12 @@ class Gateway:
             if isinstance(looked, GatewayResult):
                 return looked
             risk, card = _higher(risk, looked.risk), looked.summary
-            if looked.also and policy.denied_by(looked.also, risk, call.arguments):
-                return await self._denied(tool, call, risk, policy, looked.also)  # "Never" is total
             ruled = policy.decide(tool.name, risk, call.arguments)
+            if looked.also:
+                also = policy.decide(looked.also, risk, call.arguments)
+                if also is Effect.DENY:  # "Never" there is total
+                    return await self._denied(tool, call, risk, policy, looked.also)
+                ruled = _stricter(ruled, also)
             effect = _tightened(ruled, risk, confirmation_id, asks)
         if effect is Effect.DENY:
             return await self._denied(tool, call, risk, policy)

@@ -25,6 +25,7 @@ from jarvis.llm.base import Completion, ToolCall, Usage
 from jarvis.memory.base import SessionStore
 from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.tools.registry import ToolRegistry
+from jarvis.tools.reply_cards import AnyCard
 
 
 def undo_refs(
@@ -56,6 +57,9 @@ class Rounds:
     done: list[str] = field(default_factory=list)
     unrecorded: list[Turn] = field(default_factory=list)
     undo: list[UndoRef] = field(default_factory=list)
+    # slice 12: place / route / video / WhatsApp draft cards the message's tools made for the
+    # owner's screen (`jarvis.tools.reply_cards`); shown with the reply, never stored
+    cards: list[AnyCard] = field(default_factory=list)
 
     @property
     def wrote(self) -> bool:

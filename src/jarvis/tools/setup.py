@@ -5,7 +5,10 @@ the document tools (slice 10 E). The to-do tools (Google Tasks) come with the Go
 scope is optional per owner, so they check it on every call (slice 10 C1). With the Recently
 deleted bin (slice 11, `undo`) the calendar and to-do deletes are undo-able and — with Google
 linked, whose tools restore — the undo tools (deleted_list / deleted_restore) are registered;
-without it every delete stays R3."""
+without it every delete stays R3. Slice 12 D5/D6: contacts_search with the Google link, and
+whatsapp_draft always. With Drive configured (slice 12 D1, `drive`): the read-only
+chosen-folders Drive tools. With JARVIS's own Google API key (slice 12, `media`): Maps and
+YouTube search, plus the owner's playlists when the Google link exists."""
 
 from __future__ import annotations
 
@@ -22,6 +25,8 @@ from jarvis.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from jarvis.documents.service import DocumentService
+    from jarvis.drive.service import DriveService
+    from jarvis.media.service import MediaServices
     from jarvis.recall.service import MemoryService
     from jarvis.tools.task_marks import OutsideTasks
     from jarvis.undo.service import UndoBin
@@ -30,6 +35,24 @@ if TYPE_CHECKING:
 # builtins that stand in for real connectors; dropped once the real ones are registered
 # (slice 11 B: the in-memory create_reminder too, now that reminders are real calendar pop-ups)
 FAKE_TWINS = frozenset({"get_calendar", "send_message", "create_reminder"})
+
+
+def _register_people(reg: ToolRegistry, google: GoogleConnector | None) -> None:
+    """Slice 12 D5/D6: contacts_search with the Google link (its scope is optional per owner, so
+    it checks on every call), and whatsapp_draft always — a typed number needs no Google; with
+    the link it can also look a name up in Contacts (one client, one warm-up record)."""
+    from jarvis.whatsapp.tools import whatsapp_tools
+
+    contacts = None
+    if google is not None:
+        from jarvis.contacts.client import ContactsClient
+        from jarvis.contacts.tools import contacts_tools
+
+        contacts = ContactsClient(google)
+        for t in contacts_tools(contacts):
+            reg.register(t)
+    for t in whatsapp_tools(contacts):
+        reg.register(t)
 
 
 def build_gateway(
@@ -43,9 +66,12 @@ def build_gateway(
     documents: DocumentService | None = None,
     undo: UndoBin | None = None,
     marks: OutsideTasks | None = None,
+    drive: DriveService | None = None,
+    media: MediaServices | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
-    port; give it in production, or the set lives only as long as the process."""
+    port; give it in production, or the set lives only as long as the process. `drive` (slice 12
+    D1): the chosen-folders Drive tools, only when Drive is configured (`JARVIS_DRIVE=on`)."""
     reg = ToolRegistry()
     for t in builtin_tools(InMemoryWorld()):
         if google is not None and t.name in FAKE_TWINS:
@@ -62,6 +88,7 @@ def build_gateway(
             reg.register(t)
         for t in gmail_tools(google) + tasks_tools(google, default_tz=tz, undo=undo, marks=marks):
             reg.register(t)
+    _register_people(reg, google)
     if undo is not None and google is not None:  # slice 11: restore needs the Google tools
         from jarvis.undo.tools import undo_tools
 
@@ -81,6 +108,17 @@ def build_gateway(
         from jarvis.documents.tools import document_tools
 
         for t in document_tools(documents):
+            reg.register(t)
+    if drive is not None:  # slice 12 D1: read-only, chosen folders only
+        from jarvis.drive.tools import drive_tools
+
+        for t in drive_tools(drive):
+            reg.register(t)
+    if media is not None:  # slice 12 D2–D4: only with JARVIS's server-side Google API key
+        from jarvis.media.tools import youtube_tools
+        from jarvis.places.tools import maps_tools
+
+        for t in maps_tools(media.maps) + youtube_tools(media.youtube):
             reg.register(t)
     return Gateway(
         registry=reg,

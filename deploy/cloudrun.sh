@@ -79,6 +79,17 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 # Voice (slice 9) on its own: an organisation policy may block these, and JARVIS works without them.
 gcloud services enable texttospeech.googleapis.com speech.googleapis.com --quiet \
   || say "Note: the Google speech APIs could not be switched on; the browser voice will be used."
+# Google Drive (slice 12) on its own too: JARVIS reads folders you share with it, as jarvis-run.
+# JARVIS_DRIVE is on for this deploy only when the Drive API was switched on in THIS run.
+DRIVE_STATE=off
+if gcloud services enable drive.googleapis.com --quiet; then
+  DRIVE_STATE=on
+else
+  say "Note: the Google Drive API could not be switched on, so Drive is off for this deploy. Re-run this script to try again."
+fi
+# Contacts (slice 12): People API for contacts_search; WhatsApp drafts to typed numbers work without.
+gcloud services enable people.googleapis.com --quiet \
+  || say "Note: the People API could not be switched on; contact look-ups stay off."
 
 # Quick (prompt-free) only for a service this script fully set up before: it has the owner set.
 QUICK=no
@@ -183,7 +194,7 @@ secret_exists jarvis-token-key || put_secret jarvis-token-key "$(rand_key)"
 # Web search (slice 10): the one question a quick re-run may ask, and only while there is no saved
 # answer. Saved answer = the jarvis-tavily-key secret, or a remembered skip (the live service has
 # JARVIS_WEB_SEARCH_ENABLED). The key goes straight to Secret Manager, never to a file or the log.
-WEB_SECRET=""; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=false"
+WEB_SECRET=""; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=false"; WEB_REMOVE=()
 web_search_answer() {
   local v=""
   if [ "$QUICK" = yes ] && [ "${ASK_WEB:-no}" = no ]; then
@@ -210,6 +221,137 @@ web_search_answer() {
   WEB_SECRET="JARVIS_TAVILY_API_KEY=jarvis-tavily-key:latest,"; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=true"
 }
 web_search_answer
+
+# Maps + YouTube (slice 12 D2): ONE API key, jarvis-maps-yt, restricted to Places (New), Routes and
+# YouTube Data v3 — not Geocoding: Routes geocodes address waypoints itself. No question: made (or
+# reused) here, its string kept only in Secret Manager (jarvis-google-api-key, readable by
+# jarvis-run alone via the grant loop in step 5), never printed. The key is mounted ONLY when, in
+# THIS run, its allowed APIs read back as exactly these three and the stored secret is that key's
+# string (security review SEC-2: a saved secret is never mounted on trust); in every other case (a
+# service that can't be switched on, a key list that FAILS - never read as "no key yet", so no
+# second key is made (code review CR-5) - no key, a failed create, read or store, a read-back that
+# doesn't match, or a grant that fails in step 5) Maps and YouTube are off for this deploy
+# (`maps_off`): unmounted on a quick re-run (removed), left out of the full deploy's secret list,
+# and one plain line says so. Every part may fail without stopping the deploy.
+MAPS_SECRET=""; MAPS_STATE=off; MAPS_REMOVE=(--remove-secrets JARVIS_GOOGLE_API_KEY)
+MAPS_APIS="places.googleapis.com routes.googleapis.com youtube.googleapis.com"
+maps_key_allows_only() { # key-name: its allowed APIs, read back, are exactly MAPS_APIS
+  local got want
+  got="$(gcloud services api-keys describe "$1" --format='value(restrictions.apiTargets[].service)' 2>/dev/null \
+    | tr ';, ' '\n\n\n' | sed '/^$/d' | sort -u | tr '\n' ' ' || true)"
+  # shellcheck disable=SC2086  # MAPS_APIS is a list of service names
+  want="$(printf '%s\n' $MAPS_APIS | sort -u | tr '\n' ' ')"
+  [ -n "$got" ] && [ "$got" = "$want" ]
+}
+maps_off() { # reason: Maps and YouTube are off and unmounted for this deploy
+  MAPS_SECRET=""; MAPS_STATE=off; MAPS_REMOVE=(--remove-secrets JARVIS_GOOGLE_API_KEY)
+  echo "  Note: $1, so Maps and YouTube are off for this deploy. Re-run this script to try again."
+}
+maps_key_name() { # prints the key's name ("" = none yet); fails when the list itself failed
+  gcloud services api-keys list --filter='displayName=jarvis-maps-yt' --format='value(name)' --limit=1 2>/dev/null
+}
+setup_maps_key() {
+  local name="" key="" saved="" svc
+  local -a targets=()
+  MAPS_SECRET=""; MAPS_STATE=off; MAPS_REMOVE=(--remove-secrets JARVIS_GOOGLE_API_KEY)
+  for svc in $MAPS_APIS; do targets+=("--api-target=service=${svc}"); done
+  # shellcheck disable=SC2086  # MAPS_APIS is a list of service names
+  if ! gcloud services enable $MAPS_APIS apikeys.googleapis.com --quiet >/dev/null 2>&1; then
+    maps_off "the Maps, YouTube and API Keys services could not be switched on"; return 0
+  fi
+  if ! name="$(maps_key_name)"; then   # a failed list is not an empty one: never a second key
+    maps_off "the project's API keys could not be listed, so no new key was made"; return 0
+  fi
+  if [ -z "$name" ]; then
+    name="$(gcloud services api-keys create --display-name=jarvis-maps-yt "${targets[@]}" \
+      --format='value(response.name)' --quiet 2>/dev/null || true)"
+    [ -n "$name" ] || name="$(maps_key_name || true)"
+  else   # keep its restrictions exactly these three APIs
+    gcloud services api-keys update "$name" "${targets[@]}" --quiet >/dev/null 2>&1 || \
+      echo "  Note: could not update the Maps/YouTube key's restrictions."
+  fi
+  if [ -z "$name" ]; then
+    maps_off "the Maps/YouTube key could not be created"; return 0
+  fi
+  if ! maps_key_allows_only "$name"; then
+    maps_off "the Maps/YouTube key could not be confirmed to allow exactly Places, Routes and YouTube"; return 0
+  fi
+  key="$(gcloud services api-keys get-key-string "$name" --format='value(keyString)' 2>/dev/null || true)"
+  if [ -z "$key" ]; then
+    maps_off "the Maps/YouTube key could not be read"; return 0
+  fi
+  saved="$(gcloud secrets versions access latest --secret=jarvis-google-api-key 2>/dev/null || true)"
+  if [ "$saved" != "$key" ] && ! put_secret jarvis-google-api-key "$key"; then
+    maps_off "the Maps/YouTube key could not be stored in Secret Manager"; return 0
+  fi
+  # the read-back matched and the stored secret is this key's string: mount it
+  MAPS_SECRET="JARVIS_GOOGLE_API_KEY=jarvis-google-api-key:latest,"; MAPS_STATE=on; MAPS_REMOVE=()
+}
+setup_maps_key
+
+# Which of Google's Maps price lists applies (slice 12 D2): India's free allowance (35,000 searches
+# and car routes a month) only when the billing account bills in Indian rupees; anywhere else, or
+# when that can't be checked, the global one (5,000 each) — JARVIS then stops early, never late.
+MAPS_PRICING=global; BILLING_ACCOUNT=""
+maps_pricing() {
+  local currency=""
+  BILLING_ACCOUNT="$(gcloud billing projects describe "$PROJECT" --format='value(billingAccountName)' 2>/dev/null || true)"
+  BILLING_ACCOUNT="${BILLING_ACCOUNT#billingAccounts/}"
+  if [ -n "$BILLING_ACCOUNT" ]; then
+    currency="$(gcloud billing accounts describe "$BILLING_ACCOUNT" --format='value(currencyCode)' 2>/dev/null || true)"
+  fi
+  if [ "$currency" = INR ]; then
+    MAPS_PRICING=india
+  else
+    MAPS_PRICING=global
+    echo "  Note: your Cloud billing account is not billed in Indian rupees (or this could not be checked), so JARVIS keeps to Google's smaller global Maps free allowance. India's larger one applies only to a billing account in India."
+  fi
+}
+maps_pricing
+if [ "$MAPS_PRICING" = india ]; then
+  MAPS_STOPS="31,500 place searches and 31,500 car routes a month (6,300 two-wheeler and 63,000 walking routes)"
+else
+  MAPS_STOPS="4,500 place searches and 4,500 car routes a month (900 two-wheeler and 9,000 walking routes)"
+fi
+
+# A budget alert as a second brake (slice 12 D2): JARVIS keeps inside free allowances, so a budget
+# of 1 in the billing account's own currency (1 rupee for an Indian account) emails the billing
+# account's admins as soon as anything at all is charged to this project. Made once; it never
+# caps spending and never stops the deploy.
+setup_budget_alert() {
+  local found=""
+  if [ -z "$BILLING_ACCOUNT" ]; then
+    echo "  Note: no budget alert was added (the billing account could not be read)."; return 0
+  fi
+  if ! gcloud services enable billingbudgets.googleapis.com --quiet >/dev/null 2>&1; then
+    echo "  Note: no budget alert was added (budgets could not be switched on); add one in Billing, Budgets and alerts."; return 0
+  fi
+  # a list that FAILS is not an empty one (code review CR-5): never a second alert
+  if ! found="$(gcloud billing budgets list --billing-account="$BILLING_ACCOUNT" --filter='displayName=jarvis-any-charge' --format='value(name)' 2>/dev/null)"; then
+    echo "  Note: could not check for the budget alert, so none was added this time; re-run this script to try again (or add one in Billing, Budgets and alerts)."; return 0
+  fi
+  [ -z "$found" ] || return 0
+  gcloud billing budgets create --billing-account="$BILLING_ACCOUNT" --display-name=jarvis-any-charge \
+    --budget-amount=1 --filter-projects="projects/${PROJECT}" \
+    --threshold-rule=percent=0.01 --threshold-rule=percent=1.0 --quiet >/dev/null 2>&1 \
+    || echo "  Note: could not add the budget alert (it needs a billing account admin); add one in Billing, Budgets and alerts."
+}
+setup_budget_alert
+
+# Google's free Maps / YouTube allowances may be counted per billing account, while JARVIS's counter
+# sees only this deployment (security review SEC-4): say so when other projects share the account.
+# Never stops the deploy; "unknown" when the list can't be read.
+SHARED_BILLING=no
+billing_shared() {
+  local projects="" others=""
+  [ -n "$BILLING_ACCOUNT" ] || { SHARED_BILLING=unknown; return 0; }
+  if ! projects="$(gcloud billing projects list --billing-account="$BILLING_ACCOUNT" --format='value(projectId)' 2>/dev/null)"; then
+    SHARED_BILLING=unknown; return 0
+  fi
+  others="$(printf '%s\n' "$projects" | grep -v -x -F -e "$PROJECT" -e '' || true)"
+  if [ -n "$others" ]; then SHARED_BILLING=yes; else SHARED_BILLING=no; fi
+}
+billing_shared
 
 say "4/8  Setting up JARVIS's memory (a Firestore database in your project)"
 if DBTYPE="$(gcloud firestore databases describe --database='(default)' --format='value(type)' 2>/dev/null)"; then
@@ -258,9 +400,22 @@ done
 # not needed, and voice falls back to the browser if it can't be granted.
 try_bind "serviceAccount:${RUN_SA}" roles/serviceusage.serviceUsageConsumer \
   || echo "  Note: could not let JARVIS use the speech APIs; the browser voice will be used."
+# An optional part never stops the deploy (code review CR-5): when JARVIS can't be let read the
+# Tavily or the Maps/YouTube key, that one is left unmounted (a quick re-run removes it) with a
+# plain note. Every other secret is required: failing to grant it stops here.
+grant_failed() { # secret
+  case "$1" in
+    jarvis-tavily-key)
+      echo "  Note: could not let JARVIS read the secret $1, so web search stays off this time; re-run this script to try again."
+      WEB_SECRET=""; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=false"; WEB_REMOVE=(--remove-secrets JARVIS_TAVILY_API_KEY) ;;
+    jarvis-google-api-key)
+      maps_off "could not let JARVIS read the secret $1" ;;
+    *) die "Could not let JARVIS read the secret $1." ;;
+  esac
+}
 for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key \
               jarvis-openai-compat-key jarvis-session-secret jarvis-api-token jarvis-token-key \
-              jarvis-tavily-key; do
+              jarvis-tavily-key jarvis-google-api-key; do
   secret_exists "$secret" || continue
   ok=no
   for _ in 1 2 3 4 5 6; do
@@ -268,7 +423,7 @@ for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key
       --role=roles/secretmanager.secretAccessor --quiet >/dev/null 2>&1 && { ok=yes; break; }
     sleep 5
   done
-  [ "$ok" = yes ] || die "Could not let JARVIS read the secret $secret."
+  [ "$ok" = yes ] || grant_failed "$secret"
 done
 SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"  # builds the container
 for role in roles/cloudbuild.builds.builder roles/artifactregistry.writer roles/logging.logWriter \
@@ -288,17 +443,19 @@ show_logs() {
 # signed for exactly this account. It is just text here, so the account itself can be created in
 # step 8 (after this deploy) without anything failing on a first run.
 SCHED_SA="jarvis-scheduler@${PROJECT}.iam.gserviceaccount.com"
-INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA}"
+INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA},JARVIS_DRIVE=${DRIVE_STATE}"
 INFRA_ENV="${INFRA_ENV},${WEB_ENV}"   # the web-search answer (on / remembered skip), both paths
+INFRA_ENV="${INFRA_ENV},JARVIS_MAPS_PRICING=${MAPS_PRICING}"   # Google's Maps price list (india / global)
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
     --update-env-vars "$INFRA_ENV"
-    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    "${MAPS_REMOVE[@]}" "${WEB_REMOVE[@]}"
   )
 else
   CONFIG_FLAGS=(
     --set-env-vars "${INFRA_ENV},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV}"
-    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 fi
 gcloud run deploy "$SERVICE" --source . --region "$REGION" \
@@ -463,6 +620,53 @@ copy the key (tvly-...), then run:  bash deploy/cloudrun.sh --web-search
 (the key is kept in secret jarvis-tavily-key).
 MSG
 fi
+if [ "$DRIVE_STATE" = on ]; then
+cat <<MSG
+
+GOOGLE DRIVE (your chosen folders, read-only): JARVIS reads Drive as its own Google account,
+only folders you share with it and switch on. For each folder: open it in Google Drive -> Share
+-> paste this address -> Viewer -> Send:
+   ${RUN_SA}
+then in JARVIS: Integrations -> Google Drive -> Use. Switching a folder off in JARVIS stops
+access at once. Un-sharing in Drive also stops it (within a minute) unless someone else has
+shared it too.
+MSG
+else
+cat <<'MSG'
+
+GOOGLE DRIVE: off (the Google Drive API could not be switched on). Re-run this script to try again.
+MSG
+fi
+if [ "$MAPS_STATE" = on ]; then
+cat <<MSG
+
+MAPS + YOUTUBE: on (key jarvis-maps-yt, restricted to Places, Routes and YouTube; kept in secret
+jarvis-google-api-key). JARVIS stops at 90 % of Google's free allowance: ${MAPS_STOPS}, and
+90 YouTube searches a day. Maps price list: ${MAPS_PRICING} (India's larger allowance applies
+only when your Cloud billing account is in India and bills in rupees). Vitals shows the counts.
+MSG
+else
+cat <<'MSG'
+
+MAPS + YOUTUBE: off for this deploy (the Maps/YouTube key could not be confirmed; see the note
+above). Re-run this script to try again.
+MSG
+fi
+if [ "$SHARED_BILLING" = yes ]; then
+cat <<'MSG'
+
+Note: Other projects share this billing account. If they also use Maps or YouTube, JARVIS's
+free-allowance counter can't see their use (Google may count the free allowance per billing
+account) - the 1-rupee budget alert (jarvis-any-charge) will still email you on any charge.
+MSG
+elif [ "$SHARED_BILLING" = unknown ]; then
+cat <<'MSG'
+
+Note: could not check whether other projects share this billing account. JARVIS counts only its
+own Maps and YouTube use; the 1-rupee budget alert (jarvis-any-charge) still emails you on any
+charge.
+MSG
+fi
 cat <<'MSG'
 
 VOICE: switched on above (Text-to-Speech + Speech-to-Text). If the Voice panel says cloud voice
@@ -471,16 +675,21 @@ is off ("api_disabled"), run once in Cloud Shell:
 JARVIS uses the browser's own voice until then (it checks again within 10 minutes).
 
 GOOGLE CALENDAR + GMAIL (once): APIs & Services -> OAuth consent screen (Google Auth Platform)
-  1. Data Access -> Add or remove scopes -> add these six and Save:
+  1. Data Access -> Add or remove scopes -> add these and Save:
        https://www.googleapis.com/auth/calendar.events
        https://www.googleapis.com/auth/calendar.readonly
        https://www.googleapis.com/auth/gmail.readonly
        https://www.googleapis.com/auth/gmail.compose   (drafts AND sending)
        https://www.googleapis.com/auth/gmail.insert    (optional: only needed for the brief in your inbox)
        https://www.googleapis.com/auth/tasks           (optional: your to-do list in Google Tasks)
-     When you connect, leave every box ticked: JARVIS refuses a partial link. The two optional
+       https://www.googleapis.com/auth/contacts.readonly  (optional: look up your contacts, read only)
+       https://www.googleapis.com/auth/youtube.readonly   (optional: your YouTube playlists, read only)
+     When you connect, leave every box ticked: JARVIS refuses a partial link. The four optional
      ones are the exception: without gmail.insert the brief simply stays in JARVIS; without
-     tasks there is no to-do list. Linked before? Integrations -> To-do list -> Grant adds it.
+     tasks there is no to-do list; without contacts.readonly or youtube.readonly there are no
+     contact look-ups or playlists. Linked before? Integrations -> To-do list -> Grant adds it.
+     Contacts and YouTube playlists are asked for only by their own Grant (Integrations ->
+     Contacts -> Grant, or YouTube playlists -> Grant); a reconnect keeps what you granted.
   2. Audience -> Test users -> add your own Gmail address (the one JARVIS signs in with).
   3. In JARVIS: panel -> Integrations -> Connect Google.
   While the app stays in "Testing", Google expires the link every 7 days: JARVIS will show

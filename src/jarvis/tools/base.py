@@ -10,8 +10,10 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.llm.base import ToolCall, ToolSpec
+from jarvis.logging import get_logger
 from jarvis.tools.card import one_line
 
+log = get_logger(__name__)
 ToolFn = Callable[[dict[str, Any]], Awaitable[Any] | Any]
 RiskFn = Callable[[dict[str, Any]], ActionRisk]
 CheckFn = Callable[[dict[str, Any]], None]
@@ -28,8 +30,9 @@ class Preview:
 
     summary: str
     risk: ActionRisk | None = None
-    # Another tool's name whose permission rule also governs this call: a calendar tool that finds
-    # it is about to touch a reminder names the Reminders row, so "Never" there is total.
+    # Another tool's name whose permission rule also governs this call, with its whole decision: a
+    # calendar tool that finds it is about to touch a reminder names the Reminders row, so "Never"
+    # there refuses and "Ask first" there makes this call a card (slice 12 review S1).
     also: str | None = None
 
 
@@ -69,8 +72,9 @@ class Tool:
     undoable: bool = False
     # Optional (slice 11 D7 a): True → this call becomes an approval card even where the policy
     # would allow it (an owner's Allow never relaxes it; the card keeps the call's own risk, so an
-    # R2 call needs no passkey). Pure, no I/O; may read `jarvis.tools.taint`. Never asked for a
-    # read-only call. An error counts as True (fail closed).
+    # R2 call needs no passkey). Pure, no I/O; may read `jarvis.tools.taint`. Slice 12: honoured
+    # for a read-only call too (maps_route sending Home / Work from a tainted round). An error
+    # counts as True (fail closed).
     ask_when: AskFn | None = None
     # Slice 11 D8: True for tools that decide PER RESULT whether every item in it is the owner's
     # own (`jarvis.tools.provenance.vouch`): the owner's calendar, reminders and to-dos. The
@@ -110,17 +114,20 @@ class Tool:
                 raise ValueError("a date or number in the request is out of range") from None
 
     def summary(self, args: dict[str, Any]) -> str:
-        # never show the owner a bare verb for something irreversible: the fallback is the
-        # tool name with its (sanitised) arguments
+        """The card text. Never raises: a card that can't be written would fail the whole reply
+        (review S2: a tool argument called `name` met the template's own `name`). The fallback
+        is the tool name with its (sanitised) arguments — never a bare verb for something
+        irreversible — and the failure is logged (tool and error class only, no argument)."""
         generic = f"{self.name} {json.dumps(args, default=str, ensure_ascii=False)}"
-        if self.summarize is not None:
-            try:
-                return self.summarize(args)
-            except (KeyError, TypeError, ValueError):
-                return one_line(generic, SUMMARY_FALLBACK_LIMIT)
         try:
+            if self.summarize is not None:
+                return self.summarize(args)
             text = self.summary_template.format(name=self.name, **args)
-        except (KeyError, IndexError, ValueError):
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            log.warning(
+                "card text could not be made; generic card shown",
+                extra={"tool": self.name, "error": type(exc).__name__},
+            )
             text = generic
         return one_line(text, SUMMARY_FALLBACK_LIMIT)
 

@@ -12,12 +12,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from jarvis.core.guardrails import PendingAction
 from jarvis.documents.models import AttachmentRef
 from jarvis.llm.base import ContentBlock, Role, Usage
 from jarvis.recall.models import MemoryRef
+from jarvis.tools.reply_cards import ReplyCard, WhatsAppCard
 from jarvis.undo.models import UndoRef as UndoRef  # re-exported: replies carry it (slice 11)
 from jarvis.web.sources import Source as Source  # re-exported: replies and turns carry it
 
@@ -175,6 +176,13 @@ class ChatResponse(BaseModel):
         description="Deletes this reply made that can be undone (the console's Undo chip; "
         "POST /v1/deleted/{undo_id}/restore)",
     )
+    cards: list[ReplyCard] = Field(
+        default_factory=list,
+        description="Slice 12: place, route and video cards from this reply's Maps / YouTube "
+        "results (Google links and attribution) and WhatsApp drafts (kind 'whatsapp': Open in "
+        "WhatsApp; nothing was sent). Never stored; a reopened conversation gets only its "
+        "WhatsApp drafts back (GET /v1/sessions/{id} drafts)",
+    )
 
 
 class SessionSummary(BaseModel):
@@ -188,11 +196,26 @@ class SessionSummary(BaseModel):
     title: str = Field(default="", description="First words of the owner's first message")
 
 
+class StoredDraft(BaseModel):
+    """A WhatsApp draft card rebuilt for a conversation opened again (`jarvis.whatsapp.restore`)
+    and the index in `turns` of the reply it belongs under."""
+
+    model_config = ConfigDict(frozen=True)
+
+    turn: int
+    card: WhatsAppCard
+
+
 class SessionView(Session):
     """GET /v1/sessions/{id}: the stored conversation plus its cost in rupees (display only;
-    the stored record keeps USD, the provider's unit)."""
+    the stored record keeps USD, the provider's unit) and its WhatsApp draft cards, rebuilt from
+    the stored draft results and checked again (final review; never Maps / YouTube cards)."""
 
     total_cost_inr: float = 0.0
+    drafts: list[StoredDraft] = Field(
+        default_factory=list,
+        description="WhatsApp draft cards (Open in WhatsApp), each under the reply at `turn`",
+    )
 
 
 TITLE_MAX_CHARS = 80

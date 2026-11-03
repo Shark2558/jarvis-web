@@ -1,7 +1,10 @@
 # src/jarvis/api/app.py
 """FastAPI application factory (Layer 1 surface: web/desktop clients hit this).
 
-Build with `create_app()` so tests can inject a mock provider and an in-memory store.
+Build with `create_app()` so tests can inject a mock provider and an in-memory store. It is a
+short list of named steps (slice 12 final review): the lifespan wires the core (`_wire_core`),
+the slice 10–11 features, the slice 12 ones (`_wire_slice12`: Maps + YouTube, Drive), the gateway
+with the owner's rules and the Brain; then the middleware, the error mapping and the routers.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
@@ -24,8 +28,10 @@ from jarvis.api.brief import router as brief_router
 from jarvis.api.console import router as console_router
 from jarvis.api.deleted import router as deleted_router
 from jarvis.api.documents import ATTACH_BODY_BYTES, ATTACH_PATH, install_documents
+from jarvis.api.drive import install_drive
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
+from jarvis.api.media import router as media_router
 from jarvis.api.memory import router as memory_router
 from jarvis.api.permissions import build_permissions, install_permissions
 from jarvis.api.ratelimit import RateLimiter, make_middleware
@@ -50,6 +56,7 @@ from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ApprovalStore, InputRejected
 from jarvis.documents.service import DocumentService
 from jarvis.documents.store import AttachmentStore
+from jarvis.drive.service import DriveService, build_drive_service
 from jarvis.integrations.google import (
     build_google_connector,
     google_tools_configured,
@@ -60,6 +67,7 @@ from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
 from jarvis.llm.brains import BrainRegistry
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
+from jarvis.media.service import build_media
 from jarvis.memory import SessionConflict, SessionNotFound, SessionStore
 from jarvis.recall.errors import (
     ConsentRequired,
@@ -193,152 +201,194 @@ def friendly_llm_error(exc: LLMError) -> str:
     return "The AI service could not answer. Please try again."
 
 
-def create_app(
-    settings: Settings | None = None,
-    *,
-    provider: LLMProvider | None = None,
-    store: SessionStore | None = None,
-    gateway: Gateway | None = None,
-    brains: BrainRegistry | None = None,
-    scheduler_verifier: GoogleOIDCVerifier | None = None,
-    billing: Billing | None = None,
-    voice_engines: VoiceEngines | None = None,
-    undo: UndoBin | None = None,
-) -> FastAPI:
-    s = settings or get_settings()
-    configure_logging(s.log_level, s.log_json)
-    if provider is None and brains is None:
-        s.require_prod_invariants()
-    if note := google_tools_startup_note(s):
-        log.warning(note)
+@dataclass(frozen=True)
+class _Injected:
+    """What a test (or another host) hands `create_app` instead of having it built."""
 
+    provider: LLMProvider | None = None
+    store: SessionStore | None = None
+    gateway: Gateway | None = None
+    brains: BrainRegistry | None = None
+    billing: Billing | None = None
+    voice_engines: VoiceEngines | None = None
+    undo: UndoBin | None = None
+    drive: DriveService | None = None
+
+
+def _wire_core(
+    app: FastAPI, s: Settings, inj: _Injected, built: Storage | None
+) -> tuple[Docs, AuditTrail]:
+    """Sessions, brains, the Google link, billing, memory and voice; returns the shared document
+    store and audit chain the rest is built on."""
+    app.state.settings = s
+    app.state.store = inj.store or (built.sessions if built else None)
+    app.state.brains = inj.brains or BrainRegistry.from_settings(s, inj.provider)
+    app.state.router = app.state.brains.router_for(app.state.brains.default.id)
+    tokens = built.tokens if built else MemoryTokenStore()
+    app.state.google = build_google_connector(s, tokens)
+    docs = app_docs(built)
+    app.state.fx_http = fx_client(s)
+    app.state.billing = inj.billing or build_billing(
+        s, docs, app.state.brains, http=app.state.fx_http
+    )
+    audit: AuditTrail = (
+        inj.gateway.audit if inj.gateway is not None else built.audit if built else AuditLog()
+    )
+    app.state.memory = build_app_memory(s, docs, app.state.brains, app.state.billing, audit)
+    # Voice (slice 9): settings + wit level always; Google speech only when switched on.
+    # No network at start-up: credentials are looked up on first use.
+    app.state.voice = build_voice_service(s, docs, app.state.billing, engines=inj.voice_engines)
+    return docs, audit
+
+
+def _wire_features(
+    app: FastAPI, s: Settings, inj: _Injected, built: Storage | None, docs: Docs
+) -> None:
+    """Slices 10–11 on the same documents: web search, attached files, Recently deleted and the
+    to-dos JARVIS wrote from outside content."""
+    app.state.web = build_web_service(s, docs)  # slice 10 B: None without a Tavily key
+    # Attached files (slice 10 E): text and chunks on the same documents, deleted with the
+    # conversation; the doc tools join the gateway's registry.
+    app.state.documents = DocumentService(AttachmentStore(docs, prefix=s.firestore_prefix))
+    # Recently deleted (slice 11): the owner's deletes keep a copy here for 30 days (undo);
+    # only on persistent storage, else None and deletes stay R3
+    app.state.undo = inj.undo or build_undo(s, built, docs)
+    app.state.outside_tasks = OutsideTasks(docs, prefix=s.firestore_prefix)  # D8 (swept)
+
+
+def _wire_slice12(app: FastAPI, s: Settings, docs: Docs, drive: DriveService | None) -> None:
+    """Maps + YouTube (D2–D4) on JARVIS's own Google API key (None without one), and Drive,
+    chosen folders only (D1): None unless JARVIS_DRIVE=on. Drive files go through the documents'
+    ONE extraction slot (never two children at once)."""
+    app.state.media = build_media(s, docs, google=app.state.google)
+    one_slot = app.state.documents.extract
+    app.state.drive = drive or build_drive_service(s, docs, extract=one_slot)
+    if app.state.drive is not None and app.state.drive.extract is None:
+        app.state.drive.extract = one_slot
+
+
+def _wire_gateway(
+    app: FastAPI, s: Settings, inj: _Injected, built: Storage | None, docs: Docs, audit: AuditTrail
+) -> None:
+    """The tool gateway with every tool family, and (slice 10 D) the owner's Allow / Ask first /
+    Never rules and passkeys on the same documents: the gateway reads the rules on every call
+    (one built elsewhere gets them too)."""
+    gw: Gateway | None = inj.gateway
+    if gw is None and s.tools_enabled:
+        gw = build_gateway(
+            s,
+            approvals=built.approvals if built else None,
+            audit=audit,
+            google=app.state.google,
+            memory=app.state.memory,
+            web=app.state.web,
+            documents=app.state.documents,
+            undo=app.state.undo,
+            # D8: to-dos JARVIS wrote from outside content, on the same documents
+            marks=app.state.outside_tasks,
+            drive=app.state.drive,
+            media=app.state.media,
+        )
+    app.state.permissions = build_permissions(
+        s, docs, audit=gw.audit if gw is not None else audit, google=app.state.google
+    )
+    if gw is not None and gw.rules is None:
+        gw.rules = app.state.permissions
+    if gw is not None and gw.approval_guard is None:
+        gw.approval_guard = app.state.permissions
+    if app.state.documents.rules is None:  # Documents "Never": no upload, no file sent
+        app.state.documents.rules = app.state.permissions
+    app.state.gateway = gw
+
+
+def _wire_brain(app: FastAPI, s: Settings, built: Storage | None, docs: Docs) -> None:
+    app.state.brain = Brain(
+        brains=app.state.brains,
+        store=app.state.store,
+        settings=s,
+        gateway=app.state.gateway,
+        billing=app.state.billing,
+        memory=app.state.memory,
+        wit=app.state.voice,
+        documents=app.state.documents,
+    )
+    app.state.brief = build_brief_service(app, s, built, docs=docs)
+
+
+def _log_up(app: FastAPI, s: Settings) -> None:
+    log.info(
+        "jarvis up",
+        extra={
+            "env": s.env,
+            "llm": app.state.router.provider.name,
+            "brains": [b.id for b in app.state.brains.list()],
+            "session_backend": s.session_backend.value,
+            "google_tools": app.state.google is not None,
+            "brief_scheduler": getattr(app.state, "scheduler_verifier", None) is not None,
+            "voice_cloud": app.state.voice.engines is not None,
+            "web_search": app.state.web is not None,
+            "drive": app.state.drive is not None,
+            "maps_youtube": app.state.media is not None,
+        },
+    )
+
+
+async def _shut_down(app: FastAPI) -> None:
+    """Close what the app opened, in the order it was opened."""
+    if app.state.memory is not None:  # let a learning run that is under way finish
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(app.state.memory.drain(), DRAIN_TIMEOUT_S)
+    if app.state.google is not None:
+        await app.state.google.http.aclose()
+    if app.state.fx_http is not None:
+        await app.state.fx_http.aclose()
+    await app.state.voice.aclose()
+    if app.state.web is not None:
+        await app.state.web.aclose()
+    if app.state.drive is not None:
+        await app.state.drive.aclose()
+    if app.state.media is not None:
+        await app.state.media.aclose()
+    verifier = getattr(app.state, "scheduler_verifier", None)
+    if verifier is not None:
+        await verifier.aclose()
+    await app.state.store.close()
+
+
+def _lifespan(
+    s: Settings, inj: _Injected
+) -> Callable[[FastAPI], contextlib.AbstractAsyncContextManager[None]]:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.settings = s
-        built = build_storage(s) if store is None else None
-        app.state.store = store or (built.sessions if built else None)
-        app.state.brains = brains or BrainRegistry.from_settings(s, provider)
-        app.state.router = app.state.brains.router_for(app.state.brains.default.id)
-        tokens = built.tokens if built else MemoryTokenStore()
-        app.state.google = build_google_connector(s, tokens)
-        docs = app_docs(built)
-        app.state.fx_http = fx_client(s)
-        app.state.billing = billing or build_billing(
-            s, docs, app.state.brains, http=app.state.fx_http
-        )
-        audit: AuditTrail = (
-            gateway.audit if gateway is not None else built.audit if built else AuditLog()
-        )
-        app.state.memory = build_app_memory(s, docs, app.state.brains, app.state.billing, audit)
-        # Voice (slice 9): settings + wit level always; Google speech only when switched on.
-        # No network at start-up: credentials are looked up on first use.
-        app.state.voice = build_voice_service(s, docs, app.state.billing, engines=voice_engines)
-        app.state.web = build_web_service(s, docs)  # slice 10 B: None without a Tavily key
-        # Attached files (slice 10 E): text and chunks on the same documents, deleted with the
-        # conversation; the doc tools join the gateway's registry.
-        app.state.documents = DocumentService(AttachmentStore(docs, prefix=s.firestore_prefix))
-        # Recently deleted (slice 11): the owner's deletes keep a copy here for 30 days (undo);
-        # only on persistent storage, else None and deletes stay R3
-        app.state.undo = undo or build_undo(s, built, docs)
-        app.state.outside_tasks = OutsideTasks(docs, prefix=s.firestore_prefix)  # D8 (swept)
-        gw: Gateway | None = gateway
-        if gw is None and s.tools_enabled:
-            gw = build_gateway(
-                s,
-                approvals=built.approvals if built else None,
-                audit=audit,
-                google=app.state.google,
-                memory=app.state.memory,
-                web=app.state.web,
-                documents=app.state.documents,
-                undo=app.state.undo,
-                # D8: to-dos JARVIS wrote from outside content, on the same documents
-                marks=app.state.outside_tasks,
-            )
-        # slice 10 D: the owner's Allow / Ask first / Never rules and passkeys, on the same
-        # documents; the gateway reads the rules on every call (one built elsewhere gets them too)
-        app.state.permissions = build_permissions(
-            s, docs, audit=gw.audit if gw is not None else audit, google=app.state.google
-        )
-        if gw is not None and gw.rules is None:
-            gw.rules = app.state.permissions
-        if gw is not None and gw.approval_guard is None:
-            gw.approval_guard = app.state.permissions
-        if app.state.documents.rules is None:  # Documents "Never": no upload, no file sent
-            app.state.documents.rules = app.state.permissions
-        app.state.gateway = gw
-        app.state.brain = Brain(
-            brains=app.state.brains,
-            store=app.state.store,
-            settings=s,
-            gateway=app.state.gateway,
-            billing=app.state.billing,
-            memory=app.state.memory,
-            wit=app.state.voice,
-            documents=app.state.documents,
-        )
-        app.state.brief = build_brief_service(app, s, built, docs=docs)
+        built = build_storage(s) if inj.store is None else None
+        docs, audit = _wire_core(app, s, inj, built)
+        _wire_features(app, s, inj, built, docs)
+        _wire_slice12(app, s, docs, inj.drive)
+        _wire_gateway(app, s, inj, built, docs, audit)
+        _wire_brain(app, s, built, docs)
         await adopt_legacy_sessions(app.state.store, s)
-        log.info(
-            "jarvis up",
-            extra={
-                "env": s.env,
-                "llm": app.state.router.provider.name,
-                "brains": [b.id for b in app.state.brains.list()],
-                "session_backend": s.session_backend.value,
-                "google_tools": app.state.google is not None,
-                "brief_scheduler": getattr(app.state, "scheduler_verifier", None) is not None,
-                "voice_cloud": app.state.voice.engines is not None,
-                "web_search": app.state.web is not None,
-            },
-        )
+        _log_up(app, s)
         try:
             yield
         finally:
-            if app.state.memory is not None:  # let a learning run that is under way finish
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(app.state.memory.drain(), DRAIN_TIMEOUT_S)
-            if app.state.google is not None:
-                await app.state.google.http.aclose()
-            if app.state.fx_http is not None:
-                await app.state.fx_http.aclose()
-            await app.state.voice.aclose()
-            if app.state.web is not None:
-                await app.state.web.aclose()
-            verifier = getattr(app.state, "scheduler_verifier", None)
-            if verifier is not None:
-                await verifier.aclose()
-            await app.state.store.close()
+            await _shut_down(app)
 
-    app = FastAPI(title="JARVIS", version="0.0.1", lifespan=lifespan, docs_url=None, redoc_url=None)
+    return lifespan
 
+
+def _install_middleware(app: FastAPI, s: Settings) -> None:
+    """In this order (Starlette wraps outward, so the last added runs first): the body cap, the
+    rate limit, the Google sign-in session (with its routes), then the trace id."""
     # Every body is size-capped before it is parsed or authenticated (innermost of the http
     # middlewares, so the trace id still goes on a 413). Tighter per-route caps apply first.
     # Only the attachment upload has a larger cap (its own 10 MB, checked again by the route).
     app.add_middleware(
         BodySizeLimit, max_bytes=MAX_BODY_BYTES, routes={ATTACH_PATH: ATTACH_BODY_BYTES}
     )
-
     if s.rate_limit_per_minute > 0:
         app.middleware("http")(make_middleware(RateLimiter(s.rate_limit_per_minute)))
-
     if s.auth_mode is AuthMode.GOOGLE:
-        s._require_google_auth_config()
-        assert s.session_secret is not None
-        # Added after the http middlewares so it runs *before* them (Starlette wraps outward).
-        app.add_middleware(
-            SessionMiddleware,
-            secret_key=s.session_secret.get_secret_value(),
-            session_cookie="jarvis_session",
-            max_age=s.session_cookie_max_age_s,
-            same_site="lax",
-            https_only=s.cookie_secure,
-        )
-        app.state.oauth = build_oauth(s)
-        app.include_router(auth_router)
-        if google_tools_configured(s):  # off (404 → "Not available") without a vault key
-            register_tools_oauth(app.state.oauth, s)
-            app.include_router(integrations_router)
+        _install_google_sign_in(app, s)
 
     @app.middleware("http")
     async def trace_middleware(
@@ -354,7 +404,28 @@ def create_app(
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
-    # ---- error mapping: never leak stack traces, always carry the trace id ----------------
+
+def _install_google_sign_in(app: FastAPI, s: Settings) -> None:
+    s._require_google_auth_config()
+    assert s.session_secret is not None
+    # Added after the http middlewares so it runs *before* them (Starlette wraps outward).
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=s.session_secret.get_secret_value(),
+        session_cookie="jarvis_session",
+        max_age=s.session_cookie_max_age_s,
+        same_site="lax",
+        https_only=s.cookie_secure,
+    )
+    app.state.oauth = build_oauth(s)
+    app.include_router(auth_router)
+    if google_tools_configured(s):  # off (404 → "Not available") without a vault key
+        register_tools_oauth(app.state.oauth, s)
+        app.include_router(integrations_router)
+
+
+def _install_core_errors(app: FastAPI) -> None:
+    """Error mapping: never leak stack traces, always carry the trace id."""
 
     @app.exception_handler(RequestValidationError)
     async def _invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -396,50 +467,6 @@ def create_app(
     async def _csrf(_: Request, exc: CSRFRejected) -> JSONResponse:
         return _err(403, {"error": "csrf", "detail": "missing X-Requested-With header"})
 
-    @app.exception_handler(BudgetReached)
-    async def _budget(_: Request, exc: BudgetReached) -> JSONResponse:
-        return _err(402, {"error": "budget_reached", "detail": str(exc)})
-
-    @app.exception_handler(BudgetUnavailable)
-    async def _budget_unknown(_: Request, exc: BudgetUnavailable) -> JSONResponse:
-        return _err(503, {"error": "budget_unavailable", "detail": str(exc)})
-
-    @app.exception_handler(BudgetRejected)
-    async def _budget_bad(_: Request, exc: BudgetRejected) -> JSONResponse:
-        return _err(422, {"error": "invalid_budget", "detail": str(exc)})
-
-    @app.exception_handler(BriefLimitReached)
-    async def _brief_limit(_: Request, exc: BriefLimitReached) -> JSONResponse:
-        return _err(429, {"error": "brief_limit", "detail": str(exc)})
-
-    @app.exception_handler(SettingsRejected)
-    async def _brief_settings(_: Request, exc: SettingsRejected) -> JSONResponse:
-        return _err(422, {"error": "invalid_settings", "detail": str(exc)})
-
-    @app.exception_handler(ConsentRequired)
-    async def _consent(_: Request, exc: ConsentRequired) -> JSONResponse:
-        return _err(409, {"error": "consent_required", "detail": str(exc)})
-
-    @app.exception_handler(SensitiveRejected)
-    async def _sensitive(_: Request, exc: SensitiveRejected) -> JSONResponse:
-        return _err(422, {"error": "sensitive", "detail": str(exc)})
-
-    @app.exception_handler(InvalidMemoryInput)
-    async def _memory_input(_: Request, exc: InvalidMemoryInput) -> JSONResponse:
-        return _err(422, {"error": "input_rejected", "detail": str(exc)})
-
-    @app.exception_handler(MemoryFull)
-    async def _memory_full(_: Request, exc: MemoryFull) -> JSONResponse:
-        return _err(409, {"error": "memory_full", "detail": str(exc)})
-
-    @app.exception_handler(MemoryUnavailable)
-    async def _memory_down(_: Request, exc: MemoryUnavailable) -> JSONResponse:
-        return _err(503, {"error": "memory_unavailable", "detail": str(exc)})
-
-    @app.exception_handler(ImportTooLarge)
-    async def _too_large(_: Request, exc: ImportTooLarge) -> JSONResponse:
-        return _err(413, {"error": "too_large", "detail": str(exc)})
-
     @app.exception_handler(BodyTooLarge)
     async def _body_too_large(_: Request, exc: BodyTooLarge) -> JSONResponse:
         return _err(413, too_large_body(str(exc.detail)))
@@ -448,15 +475,88 @@ def create_app(
     async def _scheduler(_: Request, exc: SchedulerUnauthorized) -> Response:
         return Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})
 
+
+# Plain feature errors: (exception, status, error code); the detail is the exception's own words.
+_FEATURE_ERRORS: tuple[tuple[type[Exception], int, str], ...] = (
+    (BudgetReached, 402, "budget_reached"),
+    (BudgetUnavailable, 503, "budget_unavailable"),
+    (BudgetRejected, 422, "invalid_budget"),
+    (BriefLimitReached, 429, "brief_limit"),
+    (SettingsRejected, 422, "invalid_settings"),
+    (ConsentRequired, 409, "consent_required"),
+    (SensitiveRejected, 422, "sensitive"),
+    (InvalidMemoryInput, 422, "input_rejected"),
+    (MemoryFull, 409, "memory_full"),
+    (MemoryUnavailable, 503, "memory_unavailable"),
+    (ImportTooLarge, 413, "too_large"),
+)
+
+
+def _plain(status: int, code: str) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
+    """A handler answering `status` {error: code, detail: the exception's own words}."""
+
+    async def handler(_: Request, exc: Exception) -> JSONResponse:
+        return _err(status, {"error": code, "detail": str(exc)})
+
+    return handler
+
+
+def _install_feature_errors(app: FastAPI) -> None:
+    """Billing, brief and memory errors: {error, detail} with the exception's own words."""
+    for exc_type, status, code in _FEATURE_ERRORS:
+        app.add_exception_handler(exc_type, _plain(status, code))
+
+
+def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | None) -> None:
     app.include_router(v1_router)
     app.include_router(brief_router)
     app.include_router(usage_router)
     app.include_router(memory_router)
     app.include_router(web_router)
+    app.include_router(media_router)
     app.include_router(deleted_router)
     install_voice(app)
     install_permissions(app)
     install_documents(app)
-    _mount_scheduler(app, s, scheduler_verifier)
+    install_drive(app)
+    _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
+
+
+def create_app(
+    settings: Settings | None = None,
+    *,
+    provider: LLMProvider | None = None,
+    store: SessionStore | None = None,
+    gateway: Gateway | None = None,
+    brains: BrainRegistry | None = None,
+    scheduler_verifier: GoogleOIDCVerifier | None = None,
+    billing: Billing | None = None,
+    voice_engines: VoiceEngines | None = None,
+    undo: UndoBin | None = None,
+    drive: DriveService | None = None,
+) -> FastAPI:
+    s = settings or get_settings()
+    configure_logging(s.log_level, s.log_json)
+    if provider is None and brains is None:
+        s.require_prod_invariants()
+    if note := google_tools_startup_note(s):
+        log.warning(note)
+    inj = _Injected(
+        provider=provider,
+        store=store,
+        gateway=gateway,
+        brains=brains,
+        billing=billing,
+        voice_engines=voice_engines,
+        undo=undo,
+        drive=drive,
+    )
+    app = FastAPI(
+        title="JARVIS", version="0.0.1", lifespan=_lifespan(s, inj), docs_url=None, redoc_url=None
+    )
+    _install_middleware(app, s)
+    _install_core_errors(app)
+    _install_feature_errors(app)
+    _include_routers(app, s, scheduler_verifier)
     return app

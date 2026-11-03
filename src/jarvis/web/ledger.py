@@ -173,6 +173,17 @@ class Conversation:
             return False
         return canon in self._typed or any(s.url == canon for s in self.sources())
 
+    # ---- other tools' per-conversation notes (slice 12) -------------------------------------
+
+    def note(self, key: str) -> object:
+        """What another tool kept in this conversation under `key` (None when nothing): the
+        YouTube playlist ids by number. Read back untrusted: the caller re-checks it."""
+        return self._meta.get(f"note_{key}")
+
+    def set_note(self, key: str, value: object) -> None:
+        """Keep a small JSON value with the conversation (saved and deleted with it)."""
+        self._meta[f"note_{key}"] = value
+
     # ---- per-message counters -------------------------------------------------------------
 
     def used(self, kind: Kind) -> int:

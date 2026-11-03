@@ -22,6 +22,9 @@
 <link rel="stylesheet" href="/static/console-permissions.css">
 <link rel="stylesheet" href="/static/console-attach.css">
 <link rel="stylesheet" href="/static/console-deleted.css">
+<link rel="stylesheet" href="/static/console-drive.css">
+<link rel="stylesheet" href="/static/console-media.css">
+<link rel="stylesheet" href="/static/console-whatsapp.css">
 </head>
 <body>
 <div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
@@ -389,7 +392,30 @@
         <button class="pbtn" type="button" data-close aria-label="Close Integrations panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
       </div>
     </header>
-    <div class="pbody"><div id="integrations"><div class="empty">Checking linked accounts…</div></div></div>
+    <div class="pbody"><div id="integrations"><div class="empty">Checking linked accounts&#x2026;</div></div>
+      <!-- slice 12 (console-media.js): Maps Home / Work, shown only when Maps is set up on this server -->
+      <section class="integ imaps" id="integMaps" aria-labelledby="mapsT" hidden></section>
+    </div>
+  </section>
+
+  <!-- Media (slice 12, console-media.js): plays a video the owner picked from a YouTube card, in
+       YouTube's privacy-enhanced player. The player is made only when the owner presses Play. -->
+  <section class="panel card" id="p-media" data-panel="media" aria-labelledby="t-media" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg>
+      <h2 id="t-media">Media</h2><span class="pmeta" id="mediaMeta">YouTube</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Media panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Media panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody">
+      <div class="mstage" id="mediaStage"><div class="empty" id="mediaEmpty">Ask JARVIS for a song or a video, then press Play on its card.</div></div>
+      <div class="mnow" id="mediaNow" hidden></div>
+      <p class="mnote" id="mediaNote" role="status" aria-live="polite"></p>
+      <ol class="mqueue" id="mediaQueue" aria-label="Videos from the last YouTube result"></ol>
+      <p class="mattr">Videos from YouTube, played in its privacy-enhanced player. Nothing plays until you press Play.</p>
+    </div>
   </section>
 
   <section class="panel card fixed-size" id="p-vitals" data-panel="vitals" aria-labelledby="t-vitals" hidden>
@@ -442,6 +468,8 @@
         <div class="kv"><span>Approvals waiting</span><b id="sWait">0</b></div>
         <div class="kv"><span>Audit chain</span><b id="sAudit">—</b></div>
         <div class="kv"><span>Web search</span><b id="sWeb">—</b></div>
+        <div class="kv kwrap"><span>Maps</span><b id="sMaps">&#x2014;</b></div>
+        <div class="kv kwrap"><span>YouTube</span><b id="sYouTube">&#x2014;</b></div>
         <div class="kv"><span>Connection</span><b id="sNet">Online</b></div>
       </div>
     </div>
@@ -482,6 +510,7 @@
     <!-- phones (< 900 px) show at most eight tabs: the "ovf" ones move behind More (console-deck.js) -->
     <button class="dk ovf" type="button" data-open="vitals" aria-controls="p-vitals" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span>Vitals</span></button>
     <button class="dk ovf" type="button" data-open="voice" aria-controls="p-voice" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span>Voice</span></button>
+    <button class="dk ovf" type="button" data-open="media" aria-controls="p-media" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg><span>Media</span></button>
     <button class="dk ovf" type="button" data-open="construct" aria-controls="p-construct" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg><span>Construct</span></button>
     <button class="dk more" id="dockMore" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="moreSheet" aria-label="More panels"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="5" height="5" rx="1"/><rect x="11.5" y="3.5" width="5" height="5" rx="1"/><rect x="3.5" y="11.5" width="5" height="5" rx="1"/><rect x="11.5" y="11.5" width="5" height="5" rx="1"/></svg><span>More</span></button>
   </nav>
@@ -513,12 +542,20 @@
   <div class="actions"><button class="btn lift" id="memoryDialogNo" type="button">Not now</button><button class="btn primary lift" id="memoryDialogYes" type="button">Switch on</button></div>
 </dialog>
 
+<!-- Drive (slice 12 FE-1, console-drive.js): switching a folder on lets JARVIS read it and send what it reads to Claude, so it asks first -->
+<dialog class="bdialog" id="driveDialog" role="alertdialog" aria-labelledby="driveDialogTitle" aria-describedby="driveDialogText">
+  <h2 id="driveDialogTitle"></h2>
+  <div id="driveDialogText"></div>
+  <div class="actions"><button class="btn lift" id="driveDialogNo" type="button">Not now</button><button class="btn primary lift" id="driveDialogYes" type="button">Switch on</button></div>
+</dialog>
+
 <!-- phones: the panels that do not fit the tab bar (console-deck.js) -->
 <dialog class="sheet" id="moreSheet" aria-labelledby="moreTitle">
   <div class="sheet-in">
     <h2 id="moreTitle">More panels</h2>
     <button class="sheet-item" type="button" data-sheet-open="vitals"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span><b>Vitals</b><small>Reply speed, this month's spend and your limit</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="voice"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span><b>Voice</b><small>JARVIS's voice, speed and wit; how this device listens</small></span></button>
+    <button class="sheet-item" type="button" data-sheet-open="media"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg><span><b>Media</b><small>Play the videos and music JARVIS found for you</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="construct"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg><span><b>Construct</b><small>The rotating hologram</small></span></button>
     <button class="btn lift sheet-close" id="moreClose" type="button">Close</button>
   </div>
@@ -527,6 +564,9 @@
 <script src="/static/console-fx.js" defer></script>
 <script src="/static/console-deck.js" defer></script>
 <script src="/static/console-web.js" defer></script>
+<script src="/static/console-text.js" defer></script>
+<script src="/static/console-whatsapp.js" defer></script>
+<script src="/static/console-integrations.js" defer></script>
 <script src="/static/console-approvals.js" defer></script>
 <script src="/static/console.js" defer></script>
 <script src="/static/console-attach.js" defer></script>
@@ -535,7 +575,9 @@
 <script src="/static/console-memory.js" defer></script>
 <script src="/static/console-permissions.js" defer></script>
 <script src="/static/console-deleted.js" defer></script>
+<script src="/static/console-drive.js" defer></script>
 <script src="/static/console-approve-all.js" defer></script>
+<script src="/static/console-media.js" defer></script>
 <script src="/static/console-voice-capture.js" defer></script>
 <script src="/static/console-voice-speech.js" defer></script>
 <script src="/static/console-wakeword.js" defer></script>

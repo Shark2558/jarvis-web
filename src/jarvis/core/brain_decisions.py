@@ -18,6 +18,7 @@ its tool exchange BEFORE any model call (`record_exchange` + `jarvis.core.saving
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from jarvis.core.guardrails import PendingAction
@@ -26,6 +27,7 @@ from jarvis.core.rounds import undo_refs
 from jarvis.llm.base import Completion, Role, TextBlock, ToolCall, Usage
 from jarvis.logging import get_logger
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
+from jarvis.tools.reply_cards import AnyCard, collecting_cards
 
 log = get_logger(__name__)
 
@@ -39,6 +41,7 @@ class Decision:
     fallback: str
     instruction: str
     undo: tuple[UndoRef, ...] = ()  # slice 11: an approved undo-able delete's Undo chip
+    cards: tuple[AnyCard, ...] = ()  # slice 12: an approved call's reply cards
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class Outcome:
     note: str = ""  # added to the reply as written (Approve all: the cards left waiting)
     narrate: bool = True  # False: nothing ran or was recorded — no model call, nothing stored
     undo: list[UndoRef] = field(default_factory=list)  # undo-able deletes that ran: Undo chips
+    cards: list[AnyCard] = field(default_factory=list)  # slice 12: Maps / YouTube / drafts
 
 
 def single(d: Decision, *, approved: bool, unrecorded: list[Turn]) -> Outcome:
@@ -61,8 +65,10 @@ def single(d: Decision, *, approved: bool, unrecorded: list[Turn]) -> Outcome:
     unwritable audit is nothing done (as Approve all counts it, C review LOW-3)."""
     did = approved and d.result.ran
     again = [d.result.pending] if d.result.pending is not None else []
-    undo = list(d.undo)
-    return Outcome(d.fallback, unrecorded, did, tool_calls=int(did), again=again, undo=undo)
+    undo, cards = list(d.undo), list(d.cards)
+    return Outcome(
+        d.fallback, unrecorded, did, tool_calls=int(did), again=again, undo=undo, cards=cards
+    )
 
 
 def narration(reply: str, completion: Completion | None, trace_id: str) -> Turn:
@@ -105,6 +111,7 @@ def response(
         tool_calls=out.tool_calls,
         pending_approvals=[PendingApproval.from_action(a) for a in out.again],
         undo=list(out.undo),
+        cards=list(out.cards),
     )
 
 
@@ -125,9 +132,19 @@ def record_exchange(session: Session, d: Decision, trace_id: str | None) -> list
 
 
 async def approved(
-    gateway: Gateway, call: ToolCall, action: PendingAction, approval_id: str, scope: str
+    gateway: Gateway,
+    call: ToolCall,
+    action: PendingAction,
+    approval_id: str,
+    scope: str,
+    shown: Sequence[AnyCard] = (),
 ) -> Decision:
-    gr = await gateway.execute(call, confirmation_id=approval_id, scope=scope)
+    """Run the approved call. `shown`: the cards its reply already carries (Approve all), so the
+    reply's caps hold and a tool told the reply is full says so instead of dropping its card."""
+    cards: list[AnyCard] = list(shown)
+    with collecting_cards(cards):  # slice 12: an approved call shows its card (Maps, a draft)
+        gr = await gateway.execute(call, confirmation_id=approval_id, scope=scope)
+    made = tuple(cards[len(shown) :])
     if gr.outcome is GatewayOutcome.CONFIRMATION_INVALID:
         # lost a race with another approve/decline: nothing ran, touch nothing
         raise LookupError(f"no pending approval {approval_id} in this session")
@@ -145,6 +162,7 @@ async def approved(
         fallback,
         "Owner approved this action; report the outcome in one sentence.",
         _chips(gateway, call, gr),
+        made,
     )
 
 

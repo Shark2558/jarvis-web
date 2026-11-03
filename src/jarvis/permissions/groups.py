@@ -23,6 +23,13 @@ in the R3 row, so an owner's earlier "Never" there meant "never delete": until t
 new row, it reads as Never too (`INHERITS`, applied by `stored_choices` and `rules_for`). A write
 pins the new rows (`pinned`): from then on each row means only what it says. A restore
 (`deleted_restore`) is in both change rows — strictest wins; `deleted_list` is a calendar read.
+
+Slice 12 D8: one R1 row per integration — Contacts and WhatsApp drafts after the Email rows (the
+people JARVIS writes to), Drive after Documents, then Maps and YouTube. Each matches its whole
+tool family at any risk, so "Never" switches every tool of it off (a later write tool in the
+family is at least as strict as today: an R3 call still always asks). A WhatsApp draft by NAME
+also obeys the Contacts row (the look-up names `contacts_search`, `Preview.also`): Never there
+refuses it, Ask first makes it a card (review S1).
 """
 
 from __future__ import annotations
@@ -153,9 +160,9 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "reminders",
         "Reminders",
         "Set, change and delete reminders",
-        "Pop-ups on your phone from the Google Calendar app. Never also stops the Calendar "
-        "tools changing or deleting a reminder. A reminder is deleted like an event, so Undo "
-        "works for 30 days.",
+        "Pop-ups on your phone from the Google Calendar app. Your choice here also applies when "
+        "the Calendar tools change or delete a reminder: Ask first asks, Never stops them. A "
+        "reminder is deleted like an event, so Undo works for 30 days.",
         R2,
         (_m("reminder_*"), _m("reminders_*")),
     ),
@@ -182,6 +189,25 @@ GROUPS: tuple[PermissionGroup, ...] = (
         UNDO_HINT,
         R3,
         _r3("gmail_send", "send_message", "gmail_*"),
+    ),
+    PermissionGroup(  # slice 12 D8 (D5)
+        "contacts",
+        "Contacts",
+        "Look up your contacts",
+        "Names, phone numbers and email addresses from Google Contacts, read only — after you "
+        "press Grant next to Contacts in Integrations. What JARVIS looks up is kept only in that "
+        "conversation and deleted with it.",
+        R1,
+        (_m("contacts_*"),),
+    ),
+    PermissionGroup(  # slice 12 D8 (D6)
+        "whatsapp",
+        "WhatsApp",
+        "Write WhatsApp drafts",
+        "JARVIS writes the message; you open it in WhatsApp and press Send yourself. Nothing is "
+        "sent by JARVIS.",
+        R1,
+        (_m("whatsapp_*"),),
     ),
     PermissionGroup(
         "todo_change",
@@ -245,6 +271,32 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "Files you attach in the chat.",
         R1,
         (_m("doc_*"), _m("docs_*")),
+    ),
+    PermissionGroup(  # slice 12 D8 (D1)
+        "drive",
+        "Drive",
+        "Read your chosen Drive folders",
+        "Only folders you shared with JARVIS and ticked Use in Integrations. Read only: JARVIS "
+        "can't change, add or delete files there.",
+        R1,
+        (_m("drive_*"),),
+    ),
+    PermissionGroup(  # slice 12 D8 (D3)
+        "maps",
+        "Maps",
+        "Search places and travel times",
+        "Your search words, and the start and end of a route, go to Google Maps.",
+        R1,
+        (_m("maps_*"),),
+    ),
+    PermissionGroup(  # slice 12 D8 (D4)
+        "youtube",
+        "YouTube",
+        "Search YouTube and read your playlists",
+        "Search words go to YouTube. Your own playlists only after you press Grant in "
+        "Integrations. Nothing plays until you press Play.",
+        R1,
+        (_m("youtube_*"),),
     ),
 )
 _BY_ID = {g.id: g for g in GROUPS}

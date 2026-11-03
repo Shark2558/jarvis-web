@@ -48,7 +48,9 @@ from jarvis.logging import get_logger
 from jarvis.memory.base import SessionNotFound, SessionStore
 from jarvis.tools.card import one_line
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult, approved_via
+from jarvis.tools.reply_cards import AnyCard, capped
 from jarvis.web.ledger import web_conversation
+from jarvis.whatsapp.provenance import conversation_words
 
 log = get_logger(__name__)
 
@@ -122,6 +124,7 @@ class Batch:
     ran: int = 0  # approved calls that reached their tool (it returned, or raised while running)
     stopped: bool = False
     undo: list[UndoRef] = field(default_factory=list)  # undo-able deletes that ran: Undo chips
+    cards: list[AnyCard] = field(default_factory=list)  # slice 12: the reply cards they made
 
     def outcome(self) -> decisions.Outcome:
         narrated = [r for r in self.results if r.status in _NARRATED]
@@ -134,6 +137,7 @@ class Batch:
             note=_note(self.results),
             narrate=bool(narrated),
             undo=list(self.undo),
+            cards=list(self.cards),
         )
 
 
@@ -203,15 +207,25 @@ def _decided(action: PendingAction, d: decisions.Decision) -> CardResult:
 
 async def _approve(gateway: Gateway, action: PendingAction, batch: Batch) -> decisions.Decision:
     call = ToolCall(id=f"approve_{action.id}", name=action.tool, arguments=action.arguments)
-    with web_conversation(batch.session), approved_via("approve-all"):
-        d = await decisions.approved(gateway, call, action, action.id, batch.scope)
+    with (
+        web_conversation(batch.session),
+        conversation_words(batch.session),
+        approved_via("approve-all"),
+    ):
+        d = await decisions.approved(
+            gateway, call, action, action.id, batch.scope, shown=batch.cards
+        )
     return d if d.result.pending is not None else replace(d, instruction=INSTRUCTION)
 
 
 async def _book(store: SessionStore, batch: Batch, d: decisions.Decision) -> None:
-    """After a decision took effect: its Undo chip and its stored exchange. Never raises, so a
-    failure here can't relabel a card that ran; a record that can't be stored stops the batch."""
+    """After a decision took effect: its Undo chip, its cards and its stored exchange. Never
+    raises, so a failure here can't relabel a card that ran; a record that can't be stored stops
+    the batch."""
     batch.undo += d.undo  # worked out by `decisions.approved`, which never raises for it
+    # slice 12: a place / route / video / WhatsApp draft card shows with the batch's reply, within
+    # one reply's caps (`reply_cards.capped`: 8 Maps / YouTube cards, 5 drafts)
+    batch.cards = capped(batch.cards, d.cards)
     exchange: list[Turn] = []
     try:
         exchange = decisions.record_exchange(batch.session, d, batch.trace_id)

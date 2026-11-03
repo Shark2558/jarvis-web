@@ -15,11 +15,14 @@ from jarvis.api.console import APP_ASSETS, FONT_FILES, THREE_RELEASE, VENDOR_FIL
 ROOT = Path(__file__).resolve().parents[1]
 IMMUTABLE = "public, max-age=31536000, immutable"
 # The console CSP is a security contract: any change here must be deliberate. Slice 9 (D12) added
-# exactly 'wasm-unsafe-eval' for the on-device wake word's WebAssembly (tests/test_wakeword_assets).
+# exactly 'wasm-unsafe-eval' for the on-device wake word's WebAssembly (tests/test_wakeword_assets);
+# slice 12 (D4) exactly `frame-src https://www.youtube-nocookie.com` for the Media panel's player
+# (tests/test_media_console.py).
 EXPECTED_CSP = (
     "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
     "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
-    "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
+    "frame-src https://www.youtube-nocookie.com"
 )
 
 ALLOWED_FONTS = (
@@ -450,12 +453,12 @@ async def test_memory_panel_dock_button_and_dialog_are_wired(client: AsyncClient
 
 
 async def test_phone_dock_has_a_more_sheet_for_the_overflow_tabs(client: AsyncClient) -> None:
-    """Ten panels (Voice joined in slice 9): a phone shows at most eight tabs; the rest sit behind
-    "More"."""
+    """Eleven panels (Voice joined in slice 9, Media in slice 12): a phone shows at most eight
+    tabs; the rest sit behind "More"."""
     html = (await client.get("/")).text
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     tabs = re.findall(r'<button class="dk([^"]*)" type="button" data-open="(\w+)"', dock)
-    assert len(tabs) == 10
+    assert len(tabs) == 11
     on_phone = [name for cls, name in tabs if "ovf" not in cls.split()]
     overflow = [name for cls, name in tabs if "ovf" in cls.split()]
     assert len(on_phone) + 1 <= 8 and overflow  # + the More tab itself
@@ -562,7 +565,7 @@ async def test_voice_panel_dock_tab_and_more_sheet_are_wired(client: AsyncClient
     assert 'aria-keyshortcuts="Control+Space"' in html
     assert 'id="voiceLive" role="status" aria-live="polite"' in html
     deck = (await client.get("/static/console-deck.js")).text
-    assert "'integrations', 'vitals', 'voice', 'construct'" in deck
+    assert "'integrations', 'vitals', 'voice', 'media', 'construct'" in deck  # + Media, slice 12
     assert re.search(r"\bvoice: \{ x:", deck)
     # device settings: storage may throw (private mode, blocked site data)
     voice = (await client.get("/static/console-voice.js")).text

@@ -15,12 +15,11 @@ the first deploy even if the key was used elsewhere this month; once a day Tavil
 (GET /usage, `jarvis.web.vendor_usage`) can only RAISE it (`correct`). Fail closed: an
 existing `credits` that is not a finite whole number ≥ 0 makes the month UNREADABLE — no search
 is made and the counter is never silently reset. `searches` / `reads` are only shown, read
-leniently.
+leniently. The counter rules are shared with Google's ledger (`jarvis.quota.counter`).
 """
 
 from __future__ import annotations
 
-import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -28,11 +27,9 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from jarvis.logging import get_logger
-from jarvis.storage.docs import Docs, DocTx
+from jarvis.quota.counter import Doc, counted, lenient, quietly, take
+from jarvis.storage.docs import Docs
 from jarvis.web.ports import VendorUsage
-
-log = get_logger(__name__)
 
 MONTHLY_CREDITS = 900  # 90 % of Tavily's free 1,000 a month
 _MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
@@ -45,16 +42,6 @@ class AllowanceReached(RuntimeError):
 
 class AllowanceUnreadable(RuntimeError):
     """The month's counter can't be read, so nothing is searched (fail closed)."""
-
-
-def _whole(v: object) -> bool:
-    return (
-        not isinstance(v, bool)
-        and isinstance(v, int | float)
-        and math.isfinite(v)
-        and v >= 0
-        and float(v).is_integer()
-    )
 
 
 @dataclass(frozen=True)
@@ -79,19 +66,10 @@ class Reservation:
 
 
 def _decode(doc: object, month: str, cap: int) -> WebUse:
-    if doc is None:
-        return WebUse(month, cap=cap)
-    if not isinstance(doc, dict):
-        raise AllowanceUnreadable("the web-search counter is not a document")
-    raw = doc.get("credits", 0)
-    if not _whole(raw):
-        raise AllowanceUnreadable("the web-search counter is not a whole number")
-
-    def side(key: str) -> int:
-        v = doc.get(key, 0)
-        return int(v) if _whole(v) else 0
-
-    return WebUse(month, int(raw), side("searches"), side("reads"), cap)
+    found, credits = counted(
+        doc, "credits", unreadable=AllowanceUnreadable, what="the web-search counter"
+    )
+    return WebUse(month, credits, lenient(found, "searches"), lenient(found, "reads"), cap)
 
 
 class WebAllowance:
@@ -140,10 +118,9 @@ class WebAllowance:
         """Take `credits` from this month before a call. Raises AllowanceReached (nothing
         taken) when they are not there, AllowanceUnreadable when the counter can't be read."""
         month = self.month()
-        path = self._path(month)
 
-        async def fn(tx: DocTx) -> Reservation:
-            use = _decode(await tx.get(path), month, self.cap)
+        def step(doc: object) -> tuple[Doc, Reservation]:
+            use = _decode(doc, month, self.cap)
             if use.credits + credits > self.cap:
                 raise AllowanceReached(
                     f"Web search is paused: this month's {self.cap} free searches are used up. "
@@ -156,35 +133,27 @@ class WebAllowance:
                 use.reads + (kind == "read"),
                 self.cap,
             )
-            tx.set(path, self._encode(new))
-            return Reservation(month, credits, kind, new.left)
+            return self._encode(new), Reservation(month, credits, kind, new.left)
 
-        return await self.docs.transaction(fn)
+        return await take(self.docs, self._path(month), step)
 
     async def _shift(self, r: Reservation, credits: int, count: int) -> None:
-        path = self._path(r.month)
+        """Bookkeeping after the call: never fails it (`quietly`)."""
 
-        async def fn(tx: DocTx) -> None:
-            use = _decode(await tx.get(path), r.month, self.cap)
+        def step(doc: object) -> Doc:
+            use = _decode(doc, r.month, self.cap)
             searches = use.searches + (count if r.kind == "search" else 0)
             reads = use.reads + (count if r.kind == "read" else 0)
-            tx.set(
-                path,
-                self._encode(
-                    WebUse(
-                        r.month,
-                        max(0, use.credits + credits),
-                        max(0, searches),
-                        max(0, reads),
-                        self.cap,
-                    )
-                ),
+            new = WebUse(
+                r.month,
+                max(0, use.credits + credits),
+                max(0, searches),
+                max(0, reads),
+                self.cap,
             )
+            return self._encode(new)
 
-        try:
-            await self.docs.transaction(fn)
-        except Exception as exc:  # noqa: BLE001 — bookkeeping after the call never fails it
-            log.warning("web allowance update failed", extra={"reason": type(exc).__name__})
+        await quietly(self.docs, self._path(r.month), step, event="web allowance update failed")
 
     async def refund(self, r: Reservation) -> None:
         """Tavily did not charge for the call: give its reservation back (never below 0)."""
@@ -195,23 +164,13 @@ class WebAllowance:
         says so and nothing more is sent until it resets. Repairs an unreadable counter too (to
         "used up", which keeps it closed); the side counts are kept when they can be read."""
         month = self.month()
-        path = self._path(month)
 
-        async def fn(tx: DocTx) -> None:
-            doc = await tx.get(path)
+        def step(doc: object) -> Doc:
             old = doc if isinstance(doc, dict) else {}
+            searches, reads = lenient(old, "searches"), lenient(old, "reads")
+            return self._encode(WebUse(month, self.cap, searches, reads, self.cap))
 
-            def side(key: str) -> int:
-                v = old.get(key, 0)
-                return int(v) if _whole(v) else 0
-
-            used = WebUse(month, self.cap, side("searches"), side("reads"), self.cap)
-            tx.set(path, self._encode(used))
-
-        try:
-            await self.docs.transaction(fn)
-        except Exception as exc:  # noqa: BLE001 — the call already failed; say so in the log
-            log.warning("web allowance latch failed", extra={"reason": type(exc).__name__})
+        await quietly(self.docs, self._path(month), step, event="web allowance latch failed")
 
     async def settle(self, r: Reservation, *, charged: int | None) -> None:
         """Tavily reported charging more than was reserved: count the difference too."""
@@ -224,21 +183,19 @@ class WebAllowance:
         credits are gone closes the month. None when the counter is unreadable (it stays
         closed). May raise on a store error (the caller logs it)."""
         month = self.month()
-        path = self._path(month)
         target = self.cap if vendor.exhausted else min(max(0, vendor.used), self.cap)
 
-        async def fn(tx: DocTx) -> WebUse | None:
+        def step(doc: object) -> tuple[Doc | None, WebUse | None]:
             try:
-                use = _decode(await tx.get(path), month, self.cap)
+                use = _decode(doc, month, self.cap)
             except AllowanceUnreadable:
-                return None
+                return None, None
             if target <= use.credits:
-                return use
+                return None, use
             new = WebUse(month, target, use.searches, use.reads, self.cap)
-            tx.set(path, self._encode(new))
-            return new
+            return self._encode(new), new
 
-        return await self.docs.transaction(fn)
+        return await take(self.docs, self._path(month), step)
 
 
 __all__ = [

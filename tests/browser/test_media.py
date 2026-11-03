@@ -181,6 +181,7 @@ class Rig:
         self.youtube: list[str] = []  # every request the page made to YouTube's host
         self.referers: list[str] = []  # the Referer each of them carried ("" when none)
         self.saved: list[Any] = []
+        self.gets = 0  # GET /v1/maps/places answered
         c.page.add_init_script("try { localStorage.clear(); } catch (_) {}")
         c.page.route("https://www.youtube-nocookie.com/**", self._yt)
         _json(c.page, "**/v1/quota", QUOTA)
@@ -203,6 +204,7 @@ class Rig:
                 body=json.dumps({"configured": True, **body}),
             )
         else:
+            self.gets += 1
             route.fulfill(
                 status=200,
                 content_type="application/json",
@@ -544,6 +546,33 @@ def test_keyboard_focus_stays_on_a_control_after_each_media_action(
         assert c.errors == []
     finally:
         c.close()
+
+
+def test_a_late_places_answer_keeps_what_the_owner_is_typing(rig: Rig) -> None:
+    """A full browser run (3 Nov) failed the focus test below once: Home was saved empty. A GET
+    /v1/maps/places that answers after the owner opened Set Home and Work redrew the open form
+    and wiped what was typed (and the focus). An open form is never redrawn by a load."""
+    c = rig.c
+    c.open()
+    c.open_panel("integrations")
+    edit = c.page.locator("#integMaps #mapsEdit")
+    edit.wait_for()
+    edit.click()
+    c.page.locator("#mapsHome").fill("Kowdiar")
+    before = rig.gets
+    with c.page.expect_response("**/v1/maps/places"):  # the panel opens again: a fresh load
+        c.page.evaluate(
+            "document.dispatchEvent(new CustomEvent('jarvis:panel',"
+            " { detail: { id: 'integrations', open: true } }))"
+        )
+    c.page.wait_for_timeout(200)  # let the answer be handled
+    assert rig.gets == before + 1
+    assert c.page.locator("#mapsHome").input_value() == "Kowdiar"
+    assert _active(c) == "mapsHome"
+    c.page.locator("#integMaps form button[type=submit]").click()
+    c.page.locator("#integMaps .inote", has_text="Saved").wait_for()
+    assert rig.saved == [{"home": "Kowdiar", "work": None}]
+    assert c.errors == []
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, PHONE], ids=["desktop", "phone"])

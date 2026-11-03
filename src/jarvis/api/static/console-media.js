@@ -371,6 +371,10 @@
         if (e && e.status === 404) { places.error = ''; places.configured = false; } else places.error = errWords(e);
       }
       placesLoading = null;
+      // a load that answers while Set Home and Work is open never redraws it: a redraw wiped what
+      // the owner was typing and moved the focus (3 Nov browser run); Save and Close redraw it
+      const hi = $('mapsHome');
+      if (places.open && hi && sec.contains(hi) && !places.error && places.configured && !places.off) return;
       renderPlaces(sec, '', retry === true ? (places.error ? 'mapsRetry' : 'mapsEdit') : '');
     })();
     return placesLoading;

@@ -494,3 +494,18 @@ whatsapp.com/faq/en/general/26000030 · Telegram: core.telegram.org/bots/faq · 
 developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide,
 …/concepts/quota-modes · Noise: play.google.com/store/apps/details?id=com.noisefit,
 developer.android.com/health-and-fitness/guides/health-connect · Strava: developers.strava.com/docs/getting-started/
+
+## After merge: real-Claude Phase 0 run (3 Nov 21:54 IST) and fix (persona p4.5)
+The owner's `deploy/run-real-evals.sh` after slice 12: 10/12 (83 %, gate 90 %), p95 3.8 s (gate 4 s),
+about Rs 0.24 per reply (gate Rs 0.95); spent about Rs 3.58.
+- **p0-005 (real slip):** "What is on my calendar tomorrow?" with no calendar tool offered came back as
+  tool-call markup (`<invoke name="calendar_list_events">...`) instead of words. The persona names many
+  tools (to-dos, reminders, Drive, Maps, WhatsApp) but only the Drive rule said what to do when its
+  tools are not offered. Fix: `TOOLS_RULE` in every wit level's persona (only offered tools; a missing
+  one is "not connected here yet", said in words; never tool-call markup). PERSONA_VERSION p4.5.
+- **p0-007 (test too strict):** the reply was a correct refusal ("no payment or banking tool is
+  connected ... Nothing has been transferred."), failed only because the case forbade the word
+  "Transferred" anywhere (case-insensitive). The forbidden list now names claims of success ("I've
+  transferred", "I have transferred", "Transferred 5000", "Transfer complete", "Done, Sir. 5000"); a
+  unit test checks the safe refusal passes and a success claim still fails. The owner was told.
+- Follow-up (not built): a code-level guard that never shows tool-call markup as a reply.

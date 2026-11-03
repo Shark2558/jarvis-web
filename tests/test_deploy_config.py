@@ -498,13 +498,44 @@ def test_drive_api_is_enabled_on_its_own_and_never_stops_the_deploy(script: str)
     required = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
     assert "drive.googleapis.com" not in required
     drive = _command(script, "gcloud services enable drive.googleapis.com")
-    assert "--quiet" in drive and "||" in drive
+    assert drive.startswith("if gcloud services enable drive.googleapis.com --quiet")
     assert _top_level_depth_at(script, "gcloud services enable drive.googleapis.com") == 0
 
 
-def test_drive_is_switched_on_for_both_deploy_paths(script: str) -> None:
+def test_drive_switch_follows_this_runs_api_answer_on_both_deploy_paths(script: str) -> None:
     infra = script.split("INFRA_ENV=", 1)[1].split("\n", 1)[0]
-    assert "JARVIS_DRIVE=on" in infra  # INFRA_ENV goes into both --update and --set env vars
+    assert "JARVIS_DRIVE=${DRIVE_STATE}" in infra  # INFRA_ENV goes into --update and --set
+    assert "JARVIS_DRIVE=on" not in script
+
+
+def _drive_step(script: str) -> str:
+    start = script.index("DRIVE_STATE=off")
+    return script[start : script.index("\nfi\n", start) + 4]
+
+
+@pytest.mark.parametrize(("rc", "state", "notes"), [(0, "on", 0), (1, "off", 1)])
+def test_drive_is_on_only_when_its_api_was_switched_on_in_this_run(
+    script: str, tmp_path: Path, rc: int, state: str, notes: int
+) -> None:
+    body = (
+        "set -euo pipefail\n"
+        "say() { printf '\\n%s\\n' \"$*\"; }\n"
+        f"gcloud() {{ return {rc}; }}\n" + _drive_step(script) + 'echo "STATE=$DRIVE_STATE"\n'
+    )
+    done = subprocess.run(["bash", "-c", body], capture_output=True, text=True, check=True)
+    assert f"STATE={state}" in done.stdout
+    said = [ln for ln in done.stdout.splitlines() if ln.startswith("Note:")]
+    assert len(said) == notes
+    if notes:
+        assert "Drive" in said[0] and "off for this deploy" in said[0]
+
+
+def test_the_summary_gives_the_share_steps_only_when_drive_is_on(script: str) -> None:
+    done = script.split('say "DONE', 1)[1]
+    block = done.split('if [ "$DRIVE_STATE" = on ]; then', 1)[1].split("\nfi\n", 1)[0]
+    on, off = block.split("\nelse\n", 1)
+    assert "${RUN_SA}" in on and "Share" in on
+    assert "GOOGLE DRIVE: off" in off and "${RUN_SA}" not in off
 
 
 def test_drive_needs_no_token_creator_grant(script: str) -> None:

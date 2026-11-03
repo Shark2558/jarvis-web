@@ -1,6 +1,7 @@
 # tests/test_whatsapp_persona.py — slice 12 D5/D6: the WhatsApp drafts and contacts paragraph is in
 # every wit variant, kept in its own paragraph; the slice 12 integration bumped PERSONA_VERSION
-# once (p4.3) for Drive, Maps + YouTube and this paragraph together.
+# once (p4.3) for Drive, Maps + YouTube and this paragraph together, and the final review once more
+# (p4.4) for the Drive rule's "not switched on" line.
 from __future__ import annotations
 
 from jarvis.core.prompts import (
@@ -13,8 +14,8 @@ from jarvis.core.prompts import (
 )
 
 
-def test_persona_version_was_bumped_once_for_slice_12() -> None:
-    assert PERSONA_VERSION == "p4.3"
+def test_persona_version_was_bumped_for_slice_12() -> None:
+    assert PERSONA_VERSION == "p4.4"
 
 
 def test_the_slice_12_paragraphs_are_each_there_once_in_order() -> None:

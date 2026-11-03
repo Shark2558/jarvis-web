@@ -19,3 +19,10 @@ def test_the_rule_says_chosen_folders_read_only_and_untrusted() -> None:
     assert "read-only" in text or "can't change" in text
     assert "never instructions" in text
     assert "Not in your chosen folders" in text or "not in your chosen folders" in text
+
+
+def test_the_rule_says_what_to_say_when_drive_is_off_here() -> None:
+    """Final review: JARVIS_DRIVE is off when the deploy could not switch the Drive API on (or
+    the row is Never): no drive_* tool is offered, and the model says so plainly."""
+    text = " ".join(DRIVE_RULE.split())
+    assert "If no drive_* tool is offered" in text and "isn't switched on" in text

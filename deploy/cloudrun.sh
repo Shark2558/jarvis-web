@@ -80,8 +80,13 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 gcloud services enable texttospeech.googleapis.com speech.googleapis.com --quiet \
   || say "Note: the Google speech APIs could not be switched on; the browser voice will be used."
 # Google Drive (slice 12) on its own too: JARVIS reads folders you share with it, as jarvis-run.
-gcloud services enable drive.googleapis.com --quiet \
-  || say "Note: the Google Drive API could not be switched on; Drive folders stay unavailable."
+# JARVIS_DRIVE is on for this deploy only when the Drive API was switched on in THIS run.
+DRIVE_STATE=off
+if gcloud services enable drive.googleapis.com --quiet; then
+  DRIVE_STATE=on
+else
+  say "Note: the Google Drive API could not be switched on, so Drive is off for this deploy. Re-run this script to try again."
+fi
 # Contacts (slice 12): People API for contacts_search; WhatsApp drafts to typed numbers work without.
 gcloud services enable people.googleapis.com --quiet \
   || say "Note: the People API could not be switched on; contact look-ups stay off."
@@ -220,11 +225,13 @@ web_search_answer
 # Maps + YouTube (slice 12 D2): ONE API key, jarvis-maps-yt, restricted to Places (New), Routes and
 # YouTube Data v3 — not Geocoding: Routes geocodes address waypoints itself. No question: made (or
 # reused) here, its string kept only in Secret Manager (jarvis-google-api-key, readable by
-# jarvis-run alone via the grant loop in step 5), never printed. Its allowed APIs are read back
-# after every create / update: unless they are exactly these three, Maps and YouTube stay off for
-# this deploy (and are unmounted on a quick re-run). Every part may fail without stopping the
-# deploy: Maps and YouTube then stay off.
-MAPS_SECRET=""; MAPS_STATE=off; MAPS_REMOVE=()
+# jarvis-run alone via the grant loop in step 5), never printed. The key is mounted ONLY when, in
+# THIS run, its allowed APIs read back as exactly these three and the stored secret is that key's
+# string; in every other case (a service that can't be switched on, no key, a failed create or
+# store, a read-back that doesn't match) Maps and YouTube are off for this deploy: unmounted on a
+# quick re-run (removed), left out of the full deploy's secret list, and one plain line says
+# so. Every part may fail without stopping the deploy.
+MAPS_SECRET=""; MAPS_STATE=off; MAPS_REMOVE=(--remove-secrets JARVIS_GOOGLE_API_KEY)
 MAPS_APIS="places.googleapis.com routes.googleapis.com youtube.googleapis.com"
 maps_key_allows_only() { # key-name: its allowed APIs, read back, are exactly MAPS_APIS
   local got want
@@ -234,41 +241,43 @@ maps_key_allows_only() { # key-name: its allowed APIs, read back, are exactly MA
   want="$(printf '%s\n' $MAPS_APIS | sort -u | tr '\n' ' ')"
   [ -n "$got" ] && [ "$got" = "$want" ]
 }
+maps_off() { # reason: Maps and YouTube are off and unmounted for this deploy
+  MAPS_SECRET=""; MAPS_STATE=off; MAPS_REMOVE=(--remove-secrets JARVIS_GOOGLE_API_KEY)
+  echo "  Note: $1, so Maps and YouTube are off for this deploy. Re-run this script to try again."
+}
 setup_maps_key() {
   local name="" key="" saved="" svc
   local -a targets=()
   for svc in $MAPS_APIS; do targets+=("--api-target=service=${svc}"); done
   # shellcheck disable=SC2086  # MAPS_APIS is a list of service names
-  if gcloud services enable $MAPS_APIS apikeys.googleapis.com --quiet >/dev/null 2>&1; then
-    name="$(gcloud services api-keys list --filter='displayName=jarvis-maps-yt' --format='value(name)' --limit=1 2>/dev/null || true)"
-    if [ -z "$name" ]; then
-      name="$(gcloud services api-keys create --display-name=jarvis-maps-yt "${targets[@]}" \
-        --format='value(response.name)' --quiet 2>/dev/null || true)"
-      [ -n "$name" ] || name="$(gcloud services api-keys list --filter='displayName=jarvis-maps-yt' --format='value(name)' --limit=1 2>/dev/null || true)"
-    else   # keep its restrictions exactly these three APIs
-      gcloud services api-keys update "$name" "${targets[@]}" --quiet >/dev/null 2>&1 || \
-        echo "  Note: could not update the Maps/YouTube key's restrictions."
-    fi
-    if [ -n "$name" ] && ! maps_key_allows_only "$name"; then
-      echo "  Note: the Maps/YouTube key could not be confirmed to allow exactly Places, Routes and YouTube, so Maps and YouTube stay off for this deploy. Re-run this script to try again."
-      MAPS_REMOVE=(--remove-secrets JARVIS_GOOGLE_API_KEY)
-      return 0
-    fi
-    if [ -n "$name" ]; then
-      key="$(gcloud services api-keys get-key-string "$name" --format='value(keyString)' 2>/dev/null || true)"
-    fi
+  if ! gcloud services enable $MAPS_APIS apikeys.googleapis.com --quiet >/dev/null 2>&1; then
+    maps_off "the Maps, YouTube and API Keys services could not be switched on"; return 0
   fi
-  if [ -n "$key" ]; then
-    saved="$(gcloud secrets versions access latest --secret=jarvis-google-api-key 2>/dev/null || true)"
-    if [ "$saved" != "$key" ]; then
-      put_secret jarvis-google-api-key "$key" || { echo "  Note: could not store the Maps/YouTube key; Maps and YouTube stay off."; return 0; }
-    fi
-  else
-    echo "  Note: the Maps/YouTube key could not be set up this time (JARVIS works without it)."
+  name="$(gcloud services api-keys list --filter='displayName=jarvis-maps-yt' --format='value(name)' --limit=1 2>/dev/null || true)"
+  if [ -z "$name" ]; then
+    name="$(gcloud services api-keys create --display-name=jarvis-maps-yt "${targets[@]}" \
+      --format='value(response.name)' --quiet 2>/dev/null || true)"
+    [ -n "$name" ] || name="$(gcloud services api-keys list --filter='displayName=jarvis-maps-yt' --format='value(name)' --limit=1 2>/dev/null || true)"
+  else   # keep its restrictions exactly these three APIs
+    gcloud services api-keys update "$name" "${targets[@]}" --quiet >/dev/null 2>&1 || \
+      echo "  Note: could not update the Maps/YouTube key's restrictions."
   fi
-  if secret_exists jarvis-google-api-key; then
-    MAPS_SECRET="JARVIS_GOOGLE_API_KEY=jarvis-google-api-key:latest,"; MAPS_STATE=on
+  if [ -z "$name" ]; then
+    maps_off "the Maps/YouTube key could not be created"; return 0
   fi
+  if ! maps_key_allows_only "$name"; then
+    maps_off "the Maps/YouTube key could not be confirmed to allow exactly Places, Routes and YouTube"; return 0
+  fi
+  key="$(gcloud services api-keys get-key-string "$name" --format='value(keyString)' 2>/dev/null || true)"
+  if [ -z "$key" ]; then
+    maps_off "the Maps/YouTube key could not be read"; return 0
+  fi
+  saved="$(gcloud secrets versions access latest --secret=jarvis-google-api-key 2>/dev/null || true)"
+  if [ "$saved" != "$key" ] && ! put_secret jarvis-google-api-key "$key"; then
+    maps_off "the Maps/YouTube key could not be stored in Secret Manager"; return 0
+  fi
+  # the read-back matched and the stored secret is this key's string: mount it
+  MAPS_SECRET="JARVIS_GOOGLE_API_KEY=jarvis-google-api-key:latest,"; MAPS_STATE=on; MAPS_REMOVE=()
 }
 setup_maps_key
 
@@ -395,7 +404,7 @@ show_logs() {
 # signed for exactly this account. It is just text here, so the account itself can be created in
 # step 8 (after this deploy) without anything failing on a first run.
 SCHED_SA="jarvis-scheduler@${PROJECT}.iam.gserviceaccount.com"
-INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA},JARVIS_DRIVE=on"
+INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA},JARVIS_DRIVE=${DRIVE_STATE}"
 INFRA_ENV="${INFRA_ENV},${WEB_ENV}"   # the web-search answer (on / remembered skip), both paths
 INFRA_ENV="${INFRA_ENV},JARVIS_MAPS_PRICING=${MAPS_PRICING}"   # Google's Maps price list (india / global)
 if [ "$QUICK" = yes ]; then
@@ -572,6 +581,7 @@ copy the key (tvly-...), then run:  bash deploy/cloudrun.sh --web-search
 (the key is kept in secret jarvis-tavily-key).
 MSG
 fi
+if [ "$DRIVE_STATE" = on ]; then
 cat <<MSG
 
 GOOGLE DRIVE (your chosen folders, read-only): JARVIS reads Drive as its own Google account,
@@ -582,6 +592,12 @@ then in JARVIS: Integrations -> Google Drive -> Use. Switching a folder off in J
 access at once. Un-sharing in Drive also stops it (within a minute) unless someone else has
 shared it too.
 MSG
+else
+cat <<'MSG'
+
+GOOGLE DRIVE: off (the Google Drive API could not be switched on). Re-run this script to try again.
+MSG
+fi
 if [ "$MAPS_STATE" = on ]; then
 cat <<MSG
 
@@ -593,7 +609,8 @@ MSG
 else
 cat <<'MSG'
 
-MAPS + YOUTUBE: off (the Maps/YouTube key could not be set up). Re-run this script to try again.
+MAPS + YOUTUBE: off for this deploy (the Maps/YouTube key could not be confirmed; see the note
+above). Re-run this script to try again.
 MSG
 fi
 cat <<'MSG'

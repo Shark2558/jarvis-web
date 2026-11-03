@@ -18,7 +18,9 @@ from zoneinfo import ZoneInfo
 # and undo, looking items up by their words (slice 11, bumped once at integration). p4.3: Google
 # Drive, Maps and YouTube, contacts and WhatsApp drafts (slice 12, bumped once at integration).
 # p4.4: the Drive rule says what to say when no drive_* tool is offered (slice 12 final review).
-PERSONA_VERSION = "p4.4"
+# p4.5: a tool that is not offered is "not connected", said in words, never tool-call markup (the
+# first real-Claude Phase 0 run after slice 12 answered the calendar question with markup).
+PERSONA_VERSION = "p4.5"
 
 Channel = Literal["text", "voice"]
 
@@ -226,6 +228,18 @@ Google Drive (standing rule)
 """
 
 
+# Tools that are not offered (real-Claude Phase 0 run, 3 Nov): without a calendar tool the model
+# wrote tool-call markup as its reply. Its own paragraph; PERSONA_VERSION p4.5.
+TOOLS_RULE = """
+Tools that are not offered (standing rule)
+- Use only the tools offered in this conversation. If a request needs one that is not offered
+  (the calendar, mail, Drive, Maps, to-dos, payments), say plainly that it is not connected
+  here yet and offer what you can do without it.
+- Never write tool-call markup (such as <invoke ...>) or pretend to have called a tool; a tool
+  runs only when you actually call it.
+"""
+
+
 # Slice 12 B — Maps and YouTube. Its own paragraph so the slice 12 merges stay simple; the
 # integration step bumps PERSONA_VERSION once for the whole slice.
 MEDIA_RULES = """
@@ -289,6 +303,7 @@ def build_system_prompt(*, honorific: str, wit: str = DEFAULT_WIT) -> str:
         + DRIVE_RULE
         + MEDIA_RULES
         + WHATSAPP_RULES
+        + TOOLS_RULE
     )
 
 
@@ -325,6 +340,7 @@ __all__ = [
     "VOICE_RULE",
     "VOICE_RULE_HEADING",
     "WEB_RULES",
+    "TOOLS_RULE",
     "WHATSAPP_RULES",
     "WIT_IDS",
     "WIT_LEVELS",

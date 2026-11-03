@@ -7,7 +7,7 @@ from jarvis.core.prompts import PERSONA_VERSION, WEB_RULES, WIT_IDS, build_syste
 
 
 def test_persona_version_was_bumped_once_for_slice_10() -> None:
-    assert PERSONA_VERSION == "p4.4"  # and once more for slices 11 and 12 (12: p4.3, p4.4)
+    assert PERSONA_VERSION == "p4.5"  # slices 11, 12 (p4.3, p4.4) and p4.5
 
 
 def test_every_variant_carries_the_web_paragraph_verbatim() -> None:

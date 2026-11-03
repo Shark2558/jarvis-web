@@ -20,4 +20,4 @@ def test_the_rule_says_what_matters() -> None:
 
 
 def test_persona_version_was_bumped_at_the_slice_12_integration() -> None:
-    assert PERSONA_VERSION == "p4.4"  # p4.3 at integration, p4.4 at the final review
+    assert PERSONA_VERSION == "p4.5"  # 12: p4.3, p4.4; p4.5 tools rule

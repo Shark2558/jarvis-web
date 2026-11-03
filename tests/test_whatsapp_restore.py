@@ -106,6 +106,24 @@ async def test_a_contacts_name_is_restored_without_its_fence(settings: Settings)
     assert "EXTERNAL" not in draft.card.model_dump_json()
 
 
+async def test_a_draft_the_stored_result_no_longer_spells_exactly_is_skipped(
+    settings: Settings,
+) -> None:
+    """Merge (never shown altered): what is stored is what the model was shown, and
+    `tools.external.model_text` drops an emoji's ZWJ and FE0F that the draft itself kept. Such a
+    draft is skipped on reload (its `characters` no longer match), never shown with a text and a
+    link the owner did not see; one the model saw whole comes back exactly."""
+    brain, provider, store = await _brain(settings)
+    family = "Home soon \U0001f468\u200d\U0001f469\u200d\U0001f467 \u2764\ufe0f"
+    provider.script_tool_calls([_draft("a", "98765 43210", family)])
+    provider.script_tool_calls([_draft("b", "98765 43210", "Running late")])
+    provider.script("Both are ready.")
+    resp = await brain.chat(ChatRequest(message="WhatsApp 98765 43210", user_id=PEOPLE_UID))
+    assert [c.text for c in resp.cards if c.kind == "whatsapp"] == [family, "Running late"]
+    drafts = stored_drafts(await _stored(store, resp.session_id))
+    assert [d.card.text for d in drafts] == ["Running late"]
+
+
 async def test_a_lookalike_result_from_another_tool_is_never_a_draft(settings: Settings) -> None:
     brain, provider, store = await _brain(settings)
     provider.script_tool_calls([ToolCall(id="w", name="web_read", arguments={})])
@@ -134,6 +152,14 @@ def _result(**over: Any) -> str:
         "text": "hi",
     }
     body.update(over)
+    if isinstance(body["text"], str):  # what whatsapp_draft says, unless a test says otherwise
+        body.setdefault("characters", len(body["text"]))
+    return PREFIX + json.dumps(body, ensure_ascii=False)
+
+
+def _without_characters(stored: str) -> str:
+    body = json.loads(stored.removeprefix(PREFIX))
+    del body["characters"]
     return PREFIX + json.dumps(body, ensure_ascii=False)
 
 
@@ -144,6 +170,9 @@ def test_a_stored_draft_is_checked_again_before_it_is_a_card() -> None:
         _result(text="pay \u202eexe"),  # no longer a clean draft text
         _result(to={"number": "919876543210", "from": "you"}),  # not E.164
         _result(sent=True),
+        _result(text="hi", characters=3),  # the model saw less than the draft
+        _result(text="hi", characters=True),
+        _without_characters(_result(text="hi")),  # a result that doesn't say its length
         PREFIX + "{not json",
         "a draft_ready result without the prefix",
     ):

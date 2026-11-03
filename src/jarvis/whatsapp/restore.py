@@ -14,9 +14,11 @@ Only a result that answers a `whatsapp_draft` call of the turn just before it co
 may repeat across turns), only a `draft_ready` one that is not an error, and at most `MAX_DRAFTS`
 per reply, as on the live reply. Each card belongs to the next assistant reply with text: the one
 the owner saw it under. The stored text is what the model was shown (`tools.external.model_text`
-removed what can't be seen), so the rebuilt link is the one for that text. A text today's
-`clean_text` would change, or `stacked` refuses (SEC-1, FE-8), is skipped (`draft_card`), never
-shown cleaned.
+removed what can't be seen) — and that can be LESS than the draft: an emoji's ZWJ and FE0F stay in
+a draft (`draft.clean_text`) but not in what the model sees. So the result also says how many
+`characters` the draft's text had; a stored text of any other length is skipped, never shown
+altered (merge of the final review with SEC-1). A text today's `clean_text` would change, or
+`stacked` refuses, is skipped the same way (`draft_card`).
 """
 
 from __future__ import annotations
@@ -68,6 +70,8 @@ def card_of(content: str) -> WhatsAppCard | None:
     text = data.get("text")
     if not isinstance(to, dict) or not isinstance(text, str):
         return None
+    if type(data.get("characters")) is not int or data["characters"] != len(text):
+        return None  # the model saw less than the draft: never show the owner an altered one
     number, source = to.get("number"), to.get("from")
     if not isinstance(number, str):
         return None

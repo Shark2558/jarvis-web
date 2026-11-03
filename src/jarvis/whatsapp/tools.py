@@ -235,6 +235,9 @@ def _ready(
         "sent": False,
         "to": {**to, "assumed_india": assumed},
         "text": text,
+        # how long the text the card carries is: `jarvis.whatsapp.restore` rebuilds the card on
+        # reload only when the stored text (what the model saw) still has exactly this many
+        "characters": len(text),
         "link": link if len(link) <= LINK_SHOWN_MAX else "(long: the owner's card has the button)",
         "next": READY,
     }

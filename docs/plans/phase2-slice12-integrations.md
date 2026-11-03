@@ -269,7 +269,8 @@ FE-1..FE-11).** Where both fixed the same thing, one implementation stays:
   fixture) wins over `console-text.js` for a draft; it also drops what the final review added
   there (soft hyphen, CGJ, U+180E, tags) and the unassigned code points that render as nothing
   (U+2065, U+FFF0-FFF8, U+E0000-E0FFF). A restored draft whose stored text no longer passes is
-  skipped, never shown cleaned.
+  skipped, never shown cleaned; so is one whose stored text is shorter than the draft's
+  `characters` (the model's copy loses an emoji's ZWJ / FE0F).
 - Console: Never hides Drive / Home and Work AND the Drive switch-on confirm (an open confirm is
   cancelled when Drive goes off), focus management, `<bdi>`, and Maps Retry (never while off).
 

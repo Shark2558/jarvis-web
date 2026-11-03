@@ -13,6 +13,7 @@ from urllib.parse import quote
 
 import pytest
 from people_fakes import PEOPLE_UID, FakePeople, people_connector, person
+from pydantic import TypeAdapter, ValidationError
 
 from jarvis.config import Settings
 from jarvis.contacts.client import ContactsClient
@@ -31,7 +32,7 @@ from jarvis.tools.external import FENCE_PREFIX
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.policy import Effect, Policy, PolicyRule
 from jarvis.tools.registry import ToolRegistry
-from jarvis.tools.reply_cards import collecting_cards, parse_cards
+from jarvis.tools.reply_cards import ReplyCard, collecting_cards
 from jarvis.tools.taint import context_trust
 from jarvis.whatsapp.draft import (
     NAME_MAX,
@@ -198,9 +199,12 @@ def test_a_draft_that_does_not_check_makes_no_card(over: dict[str, Any]) -> None
         {**GOOD, "kind": "whatsapp_v2"},
     ],
 )
-def test_a_card_that_does_not_read_back_is_dropped(bad: dict[str, Any]) -> None:
-    assert parse_cards([bad]) == []
-    assert parse_cards([bad, GOOD]) == [WhatsAppCard(**GOOD)]
+def test_a_card_that_does_not_check_can_not_be_made(bad: dict[str, Any]) -> None:
+    """Every field is checked when a card is made (ChatResponse.cards' own type)."""
+    cards: TypeAdapter[Any] = TypeAdapter(ReplyCard)
+    with pytest.raises(ValidationError):
+        cards.validate_python(bad)
+    assert cards.validate_python(GOOD) == WhatsAppCard(**GOOD)
 
 
 # ---- provenance ---------------------------------------------------------------------------------

@@ -82,10 +82,6 @@ class KeyAPIError(RuntimeError):
         self.clear = clear
         self.used_up: UsedUp | None = used_up
 
-    @property
-    def exhausted(self) -> bool:
-        return self.used_up is not None
-
 
 def _error(status: int, raw: bytes) -> KeyAPIError:
     """Google answered: the reservation stands (see the module docstring)."""

@@ -1,25 +1,37 @@
 # tests/test_reply_cards.py — slice 12 D3/D4: the console cards (place, route, video) a reply
 # carries. A tool adds a card for the owner's screen beside its result (never in what the model
-# sees); the Brain collects the cards of one owner message onto the reply and its stored turn; every
-# field is re-checked on the way in, so a card can't carry a non-Google link, a bad video id, or a
-# stored turn that no longer reads back (it is dropped, never fails the conversation).
+# sees); the Brain collects the cards of one owner message onto the reply (never the stored turn);
+# every field is checked when a card is made (`ReplyCard`, what ChatResponse.cards holds), so a
+# card can't carry a non-Google link or a bad video id.
 from __future__ import annotations
 
 from typing import Any
 
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from jarvis.core.models import ChatResponse, Session, Turn
 from jarvis.llm.base import Role
 from jarvis.tools.reply_cards import (
     MAX_CARDS,
     PlacesCard,
+    ReplyCard,
     RouteCard,
     VideosCard,
     add_card,
     collecting_cards,
-    parse_cards,
 )
+
+_CARD: TypeAdapter[Any] = TypeAdapter(ReplyCard)
+
+
+def _made(raw: object) -> bool:
+    """Whether a card can be made from `raw` (ChatResponse.cards' own type)."""
+    try:
+        _CARD.validate_python(raw)
+    except ValidationError:
+        return False
+    return True
 
 
 def _places(url: str = "https://maps.google.com/?cid=1") -> dict[str, Any]:
@@ -64,7 +76,7 @@ def test_cards_are_collected_in_order_up_to_the_cap() -> None:
     ],
 )
 def test_a_place_card_link_must_be_a_google_maps_address(url: str) -> None:
-    assert parse_cards([_places(url)]) == []
+    assert not _made(_places(url))
 
 
 @pytest.mark.parametrize(
@@ -78,15 +90,15 @@ def test_a_place_card_link_must_be_a_google_maps_address(url: str) -> None:
     ],
 )
 def test_google_maps_links_are_kept(url: str) -> None:
-    assert len(parse_cards([_places(url)])) == 1
+    assert _made(_places(url))
 
 
 @pytest.mark.parametrize("vid", ["short", "dQw4w9WgXcQ1", "dQw4w9WgX/Q", "dQw4w9WgX Q", 5])
 def test_a_video_card_needs_an_eleven_character_video_id(vid: object) -> None:
-    assert parse_cards([_video(vid)]) == []  # type: ignore[arg-type]
+    assert not _made(_video(vid))  # type: ignore[arg-type]
 
 
-def test_parse_cards_drops_what_does_not_read_back_and_keeps_the_rest() -> None:
+def test_each_kind_is_made_as_its_own_card_and_anything_else_is_refused() -> None:
     route = {
         "kind": "route",
         "attribution": "Google Maps",
@@ -97,13 +109,15 @@ def test_parse_cards_drops_what_does_not_read_back_and_keeps_the_rest() -> None:
         "distance_km": 12.3,
         "url": "https://www.google.com/maps/dir/?api=1&origin=a&destination=b&travelmode=driving",
     }
-    cards = parse_cards(["junk", {"kind": "nope"}, _places(), route, _video(), None])
-    assert [type(c) for c in cards] == [PlacesCard, RouteCard, VideosCard]
+    made = [_CARD.validate_python(c) for c in (_places(), route, _video())]
+    assert [type(c) for c in made] == [PlacesCard, RouteCard, VideosCard]
+    for junk in ("junk", {"kind": "nope"}, None):
+        assert not _made(junk)
 
 
 def test_attribution_is_fixed_by_kind() -> None:
-    assert parse_cards([{**_places(), "attribution": "Evil Maps"}]) == []
-    assert parse_cards([{**_video(), "attribution": "Not YouTube"}]) == []
+    assert not _made({**_places(), "attribution": "Evil Maps"})
+    assert not _made({**_video(), "attribution": "Not YouTube"})
 
 
 def test_cards_ride_on_the_live_reply_only_never_on_the_stored_turn() -> None:

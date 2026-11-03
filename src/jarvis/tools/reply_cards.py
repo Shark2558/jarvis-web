@@ -16,12 +16,13 @@ first ones, in order), so neither kind can crowd the other out. A tool asks `has
 BEFORE its work (code review CR-1): past the cap it sends nothing to Google, takes nothing from
 the allowances, and says so (`CARDS_FULL`, `DRAFTS_FULL`) — never "ready" for a card not shown.
 
-Every field is checked on the way in (`parse_cards` drops anything that doesn't read back): a Maps
-link must be an https Google Maps address (`google_maps_url`), a video id exactly 11 characters of
-[A-Za-z0-9_-], and each card's attribution is fixed by its kind ("Google Maps", "YouTube"); a
-WhatsApp draft's number must be E.164, its text clean and its link exactly the wa.me link of that
-number and text (`jarvis.whatsapp.draft.WhatsAppCard`). The console checks every field again and
-writes text with textContent only (console-media.js, console-whatsapp.js).
+Every field is checked when a card is made (each card is a frozen, validated model; a card that
+doesn't check raises and is never added): a Maps link must be an https Google Maps address
+(`google_maps_url`), a video id exactly 11 characters of [A-Za-z0-9_-], and each card's attribution
+is fixed by its kind ("Google Maps", "YouTube"); a WhatsApp draft's number must be E.164, its text
+clean and its link exactly the wa.me link of that number and text
+(`jarvis.whatsapp.draft.WhatsAppCard`). Cards are never read back from storage. The console checks
+every field again and writes text with textContent only (console-media.js, console-whatsapp.js).
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ from contextlib import contextmanager
 from typing import Annotated, Any, Final, Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from jarvis.whatsapp.draft import WhatsAppCard
 
@@ -133,7 +134,6 @@ class VideosCard(_Strict):
 
 AnyCard = PlacesCard | RouteCard | VideosCard | WhatsAppCard
 ReplyCard = Annotated[AnyCard, Field(discriminator="kind")]
-_ONE: TypeAdapter[AnyCard] = TypeAdapter(ReplyCard)
 
 
 CardKind = Literal["places", "route", "videos", "whatsapp"]
@@ -167,19 +167,6 @@ def capped(have: list[Any], new: Iterable[AnyCard]) -> list[Any]:
     order, within MAX_CARDS / MAX_DRAFTS. A new list; `have` is left as it was."""
     out = list(have)
     for card in new:
-        if _has_room(out, card):
-            out.append(card)
-    return out
-
-
-def parse_cards(raw: object) -> list[AnyCard]:
-    """Cards that read back exactly, within the caps; anything else is dropped (never raises)."""
-    out: list[AnyCard] = []
-    for item in raw if isinstance(raw, list) else []:
-        try:
-            card = item if isinstance(item, AnyCard) else _ONE.validate_python(item)
-        except ValidationError:
-            continue
         if _has_room(out, card):
             out.append(card)
     return out
@@ -243,5 +230,4 @@ __all__ = [
     "collecting_cards",
     "google_maps_url",
     "has_room",
-    "parse_cards",
 ]

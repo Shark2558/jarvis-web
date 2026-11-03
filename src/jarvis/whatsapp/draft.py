@@ -27,8 +27,8 @@ the server's link and the console's are the same string.
 Card (`WhatsAppCard`, kind "whatsapp" in `ChatResponse.cards`): whatsapp_draft adds it with
 `jarvis.tools.reply_cards.add_card` when a draft is ready, beside its result and never inside what
 the model sees. `draft_card` checks the number and text again and builds the link from them; the
-model re-checks every field when it is made or read back (`jarvis.tools.reply_cards.parse_cards`),
-so a card whose link is not exactly `wa_link(number, text)` never exists.
+model re-checks every field when the card is made (cards are never stored or read back), so a
+card whose link is not exactly `wa_link(number, text)` never exists.
 """
 
 from __future__ import annotations
@@ -128,8 +128,8 @@ class WhatsAppCard(BaseModel):
     """One draft under a reply (kind "whatsapp" in ChatResponse.cards): the console shows the
     name and number, "Assumed India (+91)" when no country code was written, the text, the
     warning line when there is one, and Open in WhatsApp (the link it builds from the number and
-    text with encodeURIComponent — the same string as `link`). Every field is checked again
-    whenever a card is made, so one that doesn't read back exactly is never shown."""
+    text with encodeURIComponent — the same string as `link`). Every field is checked when a
+    card is made, so one that doesn't check is never shown."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

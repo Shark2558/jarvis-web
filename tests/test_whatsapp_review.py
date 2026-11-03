@@ -464,13 +464,52 @@ async def test_approve_all_keeps_at_most_five_draft_cards() -> None:
 
 
 async def test_drafts_across_rounds_are_capped_at_five() -> None:
-    """The Brain collects one message's cards across all its rounds into one list: the tool's
-    sixth draft (and later ones) still runs — its result says ready — but shows no card."""
+    """The Brain collects one message's cards across all its rounds into one list: from the
+    sixth draft on, the tool says the reply is full (code review CR-1) and shows no card."""
     gw = await _gw(None)
     cards: list[Any] = []
+    statuses: list[str] = []
     with collecting_cards(cards):
         for r in range(3):
             for i in range(3):
                 out = await _draft(gw, "98765 43210", f"hi {r}{i}", said="98765 43210")
-                assert out.result["status"] == "draft_ready"
+                statuses.append(out.result["status"])
     assert [c.text for c in cards] == ["hi 00", "hi 01", "hi 02", "hi 10", "hi 11"]
+    assert statuses == ["draft_ready"] * 5 + ["too_many_drafts"] * 4
+
+
+# ---- code review CR-1: a draft past the reply's cap is never called ready ---------------------
+
+
+async def test_the_sixth_draft_of_a_reply_is_not_ready_and_says_why() -> None:
+    """Five drafts fill the reply's cards (MAX_DRAFTS): the sixth is refused in plain words —
+    never "draft_ready" or "tap Open in WhatsApp" for a card the owner would not see."""
+    gw = await _gw(None)
+    cards: list[Any] = []
+    outs = []
+    with collecting_cards(cards):
+        for i in range(MAX_DRAFTS + 1):
+            outs.append(await _draft(gw, "98765 43210", f"hi {i}", said="98765 43210"))
+    assert [o.result["status"] for o in outs[:MAX_DRAFTS]] == ["draft_ready"] * MAX_DRAFTS
+    sixth = outs[MAX_DRAFTS]
+    assert sixth.outcome is GatewayOutcome.EXECUTED
+    assert sixth.result["status"] == "too_many_drafts" and sixth.result["sent"] is False
+    assert "next" not in sixth.result and "link" not in sixth.result
+    assert str(MAX_DRAFTS) in sixth.result["message"]
+    assert len(cards) == MAX_DRAFTS
+
+
+async def test_a_full_reply_looks_up_no_contact_for_a_draft_it_cannot_show() -> None:
+    fake = FakePeople(contacts=[RAVI])
+    gw = await _gw(fake)
+    cards: list[Any] = [_wa(f"hi {i}") for i in range(MAX_DRAFTS)]
+    before = len(fake.requests)
+    with collecting_cards(cards):
+        out = await _draft(gw, "Ravi", said="WhatsApp Ravi")
+    assert out.result["status"] == "too_many_drafts" and len(fake.requests) == before
+
+
+async def test_outside_a_reply_a_draft_is_still_ready() -> None:
+    """No reply collecting cards (a script, a test): nothing caps the draft."""
+    out = await _draft(await _gw(None), "98765 43210", said="98765 43210")
+    assert out.result["status"] == "draft_ready"

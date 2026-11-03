@@ -20,6 +20,10 @@ on a spoken turn or in a tainted round the draft asks first (`ask_when`, honoure
 calls): a one-by-one R1 card (no passkey, never in Approve all) that shows the WHOLE text, line
 by line ("> "), with its line count. Review S5: a number written without a country code says
 "Assumed India (+91)" on both cards (`to.assumed_india`).
+
+Code review CR-1: a reply shows at most `reply_cards.MAX_DRAFTS` drafts. Past that the call is
+answered {status: "too_many_drafts", sent: false, message} — no link, no `next`, no Contacts
+look-up — so the model never tells the owner to tap a card that isn't there.
 """
 
 from __future__ import annotations
@@ -34,7 +38,7 @@ from jarvis.logging import get_logger
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import has_invisible_chars, has_line_breaking_chars, one_line
 from jarvis.tools.context import require_tool_context
-from jarvis.tools.reply_cards import add_card
+from jarvis.tools.reply_cards import DRAFTS_FULL, add_card, has_room
 from jarvis.tools.taint import spoken_in_context, tainted_round
 from jarvis.whatsapp.draft import (
     ASSUMED_INDIA,
@@ -151,6 +155,8 @@ class WhatsAppDrafts:
         uid = require_tool_context().user_id
         text = text_arg(a.get("text"))
         kind, who = recipient_arg(a.get("to"))
+        if not has_room("whatsapp"):  # code review CR-1: never "ready" for a card not shown
+            return _too_many()
         if kind == "number":
             source = number_source(who)
             return _ready(None, who, text, source, _assumed(a.get("to"), who, source))
@@ -188,14 +194,20 @@ def _assumed(raw: Any, number: str, source: str) -> bool:
     return india_assumed(raw) or (source == "you" and not country_typed(number))
 
 
+def _too_many() -> dict[str, Any]:
+    """The reply already shows MAX_DRAFTS drafts: nothing made, nothing to tap (no `next`)."""
+    return {"status": "too_many_drafts", "sent": False, "message": DRAFTS_FULL}
+
+
 def _ready(name: str | None, number: str, text: str, source: str, assumed: bool) -> dict[str, Any]:
     """The result the model sees — and, beside it, the owner's draft card for this reply
-    (`reply_cards.add_card`: kind "whatsapp", number and text checked again, link rebuilt)."""
+    (`reply_cards.add_card`: kind "whatsapp", number and text checked again, link rebuilt).
+    A card the reply can't take is never called ready (code review CR-1)."""
     card = draft_card(name=name, number=number, text=text, source=source, assumed=assumed)
     if card is None:  # can't happen for checked arguments; the owner can ask again
         log.warning("whatsapp draft card not made", extra={"tool": TOOL})
-    else:
-        add_card(card)  # within the reply's MAX_DRAFTS
+    elif not (add_card(card) or has_room("whatsapp")):  # full (outside a reply nothing caps it)
+        return _too_many()
     link = wa_link(number, text)
     to = {"number": number, "name": fenced(name) if name else None, "from": source}
     out: dict[str, Any] = {

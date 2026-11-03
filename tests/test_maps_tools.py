@@ -568,8 +568,10 @@ async def test_at_most_three_maps_calls_per_message() -> None:
 async def test_at_most_thirty_maps_calls_an_hour_per_owner() -> None:
     r = Rig()
     for i in range(MAX_MAPS_PER_HOUR):
+        r.cards = []  # each message is its own reply, with its own cards
         with turn_budget():
             assert (await r.call("maps_search", query=f"q{i}")).outcome is GatewayOutcome.EXECUTED
+    r.cards = []
     with turn_budget():
         gr = await r.call("maps_search", query="one more")
     assert gr.outcome is GatewayOutcome.ERROR and "hour" in (gr.error or "")
@@ -698,3 +700,43 @@ async def test_a_card_is_made_only_inside_a_message_and_never_more_than_the_cap(
             ToolCall(id="x", name="maps_search", arguments={"query": "cafe"}), scope=SCOPE
         )
     assert gr.outcome is GatewayOutcome.EXECUTED and r.cards == []
+
+
+# ---- code review CR-1: no paid call for a card the reply can't show --------------------------
+
+
+async def test_a_ninth_maps_card_is_not_looked_up_and_says_no_card() -> None:
+    """A reply shows at most MAX_CARDS Maps / YouTube cards. A search or route past that would
+    pay Google for a card the owner never sees (and show Google's words without its
+    attribution): it is not sent, takes nothing from the allowance, and says so plainly."""
+    from jarvis.tools.reply_cards import MAX_CARDS, PlacesCard
+
+    r = Rig()
+    r.cards.extend(PlacesCard(query=f"q{i}") for i in range(MAX_CARDS))
+    for name, args in (
+        ("maps_search", {"query": "cafe"}),
+        ("maps_route", {"from": "a", "to": "b"}),
+    ):
+        view = _view(await r.call(name, **args))
+        assert view["card_shown"] is False and view["status"] == "too_many_cards"
+        assert str(MAX_CARDS) in view["message"] and "new message" in view["message"]
+    assert r.fake.requests == []
+    assert (await r.ledger.use(MAPS_SEARCH)).used == 0
+    assert (await r.ledger.use(MAPS_ROUTE)).used == 0
+    assert len(r.cards) == MAX_CARDS
+
+
+async def test_a_full_reply_does_not_spend_the_messages_maps_calls() -> None:
+    from jarvis.tools.reply_cards import MAX_CARDS, PlacesCard
+
+    r = Rig()
+    r.cards.extend(PlacesCard(query=f"q{i}") for i in range(MAX_CARDS))
+    with turn_budget() as budget:
+        await r.call("maps_search", query="cafe")
+    assert budget.maps == MAX_MAPS_CALLS
+
+
+async def test_a_shown_card_is_said_to_be_shown() -> None:
+    r = Rig()
+    assert _view(await r.call("maps_search", query="cafe"))["card_shown"] is True
+    assert _view(await r.call("maps_route", **{"from": "a", "to": "b"}))["card_shown"] is True

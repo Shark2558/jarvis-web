@@ -12,7 +12,9 @@ collected on the reply (`ChatResponse.cards`). Cards are shown once, with that r
 stored with the conversation (Google Maps terms: JARVIS caches nothing but place ids).
 
 Caps per reply: MAX_CARDS Maps / YouTube cards and, separately, MAX_DRAFTS WhatsApp drafts (the
-first ones, in order), so neither kind can crowd the other out.
+first ones, in order), so neither kind can crowd the other out. A tool asks `has_room(kind)`
+BEFORE its work (code review CR-1): past the cap it sends nothing to Google, takes nothing from
+the allowances, and says so (`CARDS_FULL`, `DRAFTS_FULL`) — never "ready" for a card not shown.
 
 Every field is checked on the way in (`parse_cards` drops anything that doesn't read back): a Maps
 link must be an https Google Maps address (`google_maps_url`), a video id exactly 11 characters of
@@ -134,11 +136,30 @@ ReplyCard = Annotated[AnyCard, Field(discriminator="kind")]
 _ONE: TypeAdapter[AnyCard] = TypeAdapter(ReplyCard)
 
 
-def _has_room(cards: list[Any], card: AnyCard) -> bool:
-    """Whether `cards` can take `card` within the reply's cap for its kind."""
-    if isinstance(card, WhatsAppCard):
+CardKind = Literal["places", "route", "videos", "whatsapp"]
+KINDS: tuple[CardKind, ...] = ("places", "route", "videos", "whatsapp")
+# What a tool says when the reply can't show its card (code review CR-1): nothing was done
+CARDS_FULL = (
+    f"This reply already shows {MAX_CARDS} Maps and YouTube cards, the most one reply can show, "
+    "so this look-up was not made and nothing was sent to Google. Answer with what you have; the "
+    "owner can ask for more in a new message."
+)
+DRAFTS_FULL = (
+    f"This reply already has {MAX_DRAFTS} WhatsApp drafts, the most one reply can show, so this "
+    "draft was not made. Tell the owner which ones are still to do; they can ask for them in a "
+    "new message."
+)
+
+
+def _room(cards: list[Any], *, draft: bool) -> bool:
+    if draft:
         return sum(isinstance(c, WhatsAppCard) for c in cards) < MAX_DRAFTS
     return sum(not isinstance(c, WhatsAppCard) for c in cards) < MAX_CARDS
+
+
+def _has_room(cards: list[Any], card: AnyCard) -> bool:
+    """Whether `cards` can take `card` within the reply's cap for its kind."""
+    return _room(cards, draft=isinstance(card, WhatsAppCard))
 
 
 def capped(have: list[Any], new: Iterable[AnyCard]) -> list[Any]:
@@ -179,6 +200,16 @@ def collecting_cards(into: list[Any]) -> Iterator[list[Any]]:
         _current.reset(token)
 
 
+def has_room(kind: CardKind) -> bool:
+    """Whether this reply can still show a card of `kind` (code review CR-1). A tool asks BEFORE
+    its work, so it never pays Google for — or calls ready — a card the owner won't see. Outside
+    a collecting reply (a script) True: nothing caps it there."""
+    if kind not in KINDS:
+        raise ValueError("unknown card kind")
+    sink = _current.get()
+    return sink is None or _room(sink, draft=kind == "whatsapp")
+
+
 def add_card(card: AnyCard) -> bool:
     """Show `card` with this reply. False when it won't be shown: outside a collecting reply, or
     the reply already has its kind's cap (MAX_CARDS / MAX_DRAFTS)."""
@@ -190,12 +221,16 @@ def add_card(card: AnyCard) -> bool:
 
 
 __all__ = [
+    "CARDS_FULL",
+    "DRAFTS_FULL",
+    "KINDS",
     "MAPS_ATTRIBUTION",
     "MAX_CARDS",
     "MAX_DRAFTS",
     "VIDEO_ID",
     "YOUTUBE_ATTRIBUTION",
     "AnyCard",
+    "CardKind",
     "PlaceItem",
     "PlacesCard",
     "ReplyCard",
@@ -207,5 +242,6 @@ __all__ = [
     "capped",
     "collecting_cards",
     "google_maps_url",
+    "has_room",
     "parse_cards",
 ]

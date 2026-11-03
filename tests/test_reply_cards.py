@@ -113,3 +113,25 @@ def test_cards_ride_on_the_live_reply_only_never_on_the_stored_turn() -> None:
     assert "cards" not in Turn.model_fields
     t = Turn(role=Role.ASSISTANT, content="Here")
     assert "maps.google.com" not in Session(user_id="u", turns=[t]).model_dump_json()
+
+
+def test_has_room_counts_each_kinds_cap_apart_and_is_open_outside_a_reply() -> None:
+    """Code review CR-1: a tool asks BEFORE its work whether the reply can still show its card."""
+    from jarvis.tools.reply_cards import MAX_DRAFTS, has_room
+    from jarvis.whatsapp.draft import WhatsAppCard, wa_link
+
+    assert has_room("places") and has_room("whatsapp")  # no reply collecting: nothing to cap
+    got: list[Any] = []
+    with collecting_cards(got):
+        for _ in range(MAX_CARDS):
+            assert has_room("videos")
+            assert add_card(VideosCard.model_validate(_video()))
+        assert not has_room("videos") and not has_room("places") and not has_room("route")
+        assert not add_card(VideosCard.model_validate(_video()))
+        for i in range(MAX_DRAFTS):
+            assert has_room("whatsapp")
+            text = f"hi {i}"
+            add_card(WhatsAppCard(number="+919876543210", text=text,
+                                  link=wa_link("+919876543210", text)))  # fmt: skip
+        assert not has_room("whatsapp")
+    assert has_room("places")

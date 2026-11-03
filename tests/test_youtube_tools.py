@@ -554,3 +554,43 @@ async def test_details_lookup_needs_no_owner_link() -> None:
 def test_fake_transport_used_by_these_tests_never_follows_redirects() -> None:
     assert FakeGoogleKeyAPIs().client().follow_redirects is False
     assert isinstance(FakeGoogleKeyAPIs().client(), httpx.AsyncClient)
+
+
+# ---- code review CR-1: no YouTube call for a card the reply can't show -----------------------
+
+
+async def test_a_search_past_the_replys_card_cap_sends_nothing_and_says_no_card() -> None:
+    from jarvis.tools.reply_cards import MAX_CARDS, VideosCard
+
+    r = Rig()
+    r.cards.extend(VideosCard() for _ in range(MAX_CARDS))
+    with turn_budget() as budget:
+        view = _view(await r.call("youtube_search", query="lofi"))
+    assert view["card_shown"] is False and view["status"] == "too_many_cards"
+    assert str(MAX_CARDS) in view["message"]
+    assert r.fake.requests == [] and budget.youtube_searches == MAX_YOUTUBE_SEARCHES
+    assert (await r.ledger.use(YOUTUBE_SEARCH)).used == 0
+    assert len(r.cards) == MAX_CARDS
+
+
+async def test_a_playlist_past_the_replys_card_cap_sends_nothing() -> None:
+    from jarvis.tools.reply_cards import MAX_CARDS, VideosCard
+
+    r = Rig()
+    await r.link()
+    r.cards.extend(VideosCard() for _ in range(MAX_CARDS))
+    view = _view(await r.call("youtube_playlist", playlist="liked"))
+    assert view["card_shown"] is False and r.fake.requests == []
+    assert (await r.ledger.use(YOUTUBE_UNITS)).used == 0
+
+
+async def test_drafts_do_not_fill_the_youtube_cards() -> None:
+    from jarvis.tools.reply_cards import MAX_DRAFTS
+    from jarvis.whatsapp.draft import WhatsAppCard, wa_link
+
+    r = Rig()
+    r.cards.extend(
+        WhatsAppCard(number="+919876543210", text=f"t{i}", link=wa_link("+919876543210", f"t{i}"))
+        for i in range(MAX_DRAFTS)
+    )
+    assert _view(await r.call("youtube_search", query="lofi"))["card_shown"] is True

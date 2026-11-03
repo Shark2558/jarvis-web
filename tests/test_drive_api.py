@@ -233,3 +233,22 @@ async def test_the_app_registers_the_drive_tools_only_when_on(
     async with app.router.lifespan_context(app):
         names = {s.name for s in app.state.gateway.registry.specs()}
         assert not any(n.startswith("drive_") for n in names)
+
+
+# ---- final review: "Never" on the Drive row ------------------------------------------------
+
+
+async def test_a_put_while_the_drive_row_is_never_is_a_plain_409(gc: AsyncClient) -> None:
+    await _login(gc)
+    r = await gc.put("/v1/permissions", json={"groups": {"drive": "deny"}}, headers=CSRF)
+    assert r.status_code == 200
+    for use in (True, False):
+        r = await gc.put("/v1/drive/roots/root1", json={"use": use}, headers=CSRF)
+        assert r.status_code == 409
+        assert r.json() == {
+            "error": "switched_off",
+            "detail": "Google Drive is switched off in Permissions (Never). Change it there first.",
+        }
+    await gc.put("/v1/permissions", json={"groups": {"drive": "ask"}}, headers=CSRF)
+    r = await gc.put("/v1/drive/roots/root1", json={"use": True}, headers=CSRF)
+    assert r.status_code == 200  # "Ask first" still lets the owner choose folders

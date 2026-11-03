@@ -50,7 +50,8 @@ def test_the_only_sink_is_one_link_built_from_a_checked_number() -> None:
 def test_the_text_and_name_are_checked_and_capped_client_side() -> None:
     js = JS.read_text(encoding="utf-8")
     assert "TEXT_MAX = 2000" in js and "MAX_CARDS = 5" in js
-    assert "INVISIBLE" in js and "catch (_)" in js  # a malformed text (lone surrogate) is dropped
+    assert "hidden(text)" in js and "catch (_)" in js  # hidden characters, lone surrogate: dropped
+    assert "window.JarvisText.hasInvisible" in js  # the one rule (console-text.js), final review
 
 
 def test_new_files_are_plain_ascii_with_escapes_only() -> None:

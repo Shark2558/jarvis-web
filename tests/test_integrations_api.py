@@ -246,7 +246,9 @@ async def test_status_requires_auth_and_is_per_user(gc: AsyncClient) -> None:
             "tasks_available": True,  # slice 12 review C7: a Grant row is offered only when
             "contacts_available": True,  # its tools exist here and are not set to Never
             "youtube_available": False,  # no API key on this server: no YouTube tools
-        }
+        },
+        "drive_available": False,  # final review: JARVIS_DRIVE is off on this server
+        "maps_available": False,  # no API key: no Maps (Home / Work hidden)
     }
     # bearer token = primary owner (OWNER is first in the list)
     r = await gc.get("/v1/integrations", headers={"Authorization": "Bearer cli-token"})
@@ -553,3 +555,44 @@ async def test_unreadable_permissions_still_offer_the_grants(gc: AsyncClient) ->
     gc.app.state.permissions = Broken()  # type: ignore[attr-defined]
     st = (await gc.get("/v1/integrations")).json()["google"]
     assert st["contacts_available"] is True and st["tasks_available"] is True
+
+
+# ---- final review: Drive and Maps say whether the console should show them --------------------
+
+
+@pytest.fixture
+async def full(gsettings: Settings) -> AsyncIterator[AsyncClient]:
+    """Drive switched on and the server's Maps / YouTube key set."""
+    on = gsettings.model_copy(update={"drive": True, "google_api_key": SecretStr("AIza-test")})
+    app = create_app(on, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        c = await _client(app)
+        try:
+            yield c
+        finally:
+            await c.aclose()
+
+
+async def test_drive_and_maps_are_available_when_on_and_not_never(full: AsyncClient) -> None:
+    await _login(full, OWNER)
+    r = (await full.get("/v1/integrations")).json()
+    assert r["drive_available"] is True and r["maps_available"] is True
+    assert "drive" not in r["google"] and "maps" not in r["google"]  # no summary blocks (D7)
+
+
+@pytest.mark.parametrize(
+    ("row", "field"), [("drive", "drive_available"), ("maps", "maps_available")]
+)
+async def test_never_on_drive_or_maps_hides_it_and_ask_first_does_not(
+    full: AsyncClient, row: str, field: str
+) -> None:
+    await _login(full, OWNER)
+    assert (
+        await full.put("/v1/permissions", json={"groups": {row: "deny"}}, headers=CSRF)
+    ).status_code == 200
+    r = (await full.get("/v1/integrations")).json()
+    assert r[field] is False
+    other = ({"drive_available", "maps_available"} - {field}).pop()
+    assert r[other] is True
+    await full.put("/v1/permissions", json={"groups": {row: "ask"}}, headers=CSRF)
+    assert (await full.get("/v1/integrations")).json()[field] is True

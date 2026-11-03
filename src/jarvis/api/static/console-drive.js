@@ -9,12 +9,13 @@
 // readable}], others, others_more, max_folders}; PUT /v1/drive/roots/{id} {use} → the same, or
 // {error, detail}. `readable` is what JARVIS acts on: a switched-on folder it can't read now is said
 // so, never "can't be read" while it can; the switch here always stops access at once.
+// Final review: hidden while jarvis:integrations says drive: false (off on this server, or the owner
+// set the Drive permission row to Never); invisible characters go by window.JarvisText (console-text.js).
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
   const ID = /^[A-Za-z0-9_-]{1,128}$/;
   const SA = /^[a-z0-9][a-z0-9-]{4,62}@[a-z0-9-]{4,64}\.iam\.gserviceaccount\.com$/;
-  const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const STALE_MS = 30 * 1000;
   const MAX_FOLDERS = 50;
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
@@ -23,13 +24,14 @@
     'Paste JARVIS\'s address (Copy above) into the box.',
     'Choose Viewer, then press Send.',
   ];
-  const S = { data: undefined, error: '', loadedAt: 0, loading: null, busy: new Set(), note: null };
+  const S = { data: undefined, error: '', loadedAt: 0, loading: null, busy: new Set(), note: null, off: false };
   let card = null, stateEl = null, bodyEl = null, noteEl = null;
 
   // ---- small, type-checking helpers -----------------------------------------------------------
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
   const arr = (v) => (Array.isArray(v) ? v : []);
-  const txt = (v, max = 200) => (typeof v === 'string' ? v.replace(INVISIBLE, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+  const strip = (v) => window.JarvisText.strip(v); // console-text.js: keeps ZWNJ / ZWJ
+  const txt = (v, max = 200) => (typeof v === 'string' ? strip(v).replace(/\s+/g, ' ').trim().slice(0, max) : '');
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
   const hasApi = () => !!(window.JarvisConsole && typeof window.JarvisConsole.api === 'function');
   const api = (path, opts) => window.JarvisConsole.api(path, opts);
@@ -37,7 +39,7 @@
   const log = (kind, text) => emit('jarvis:event', { kind, text, at: Date.now(), live: true });
   function detailOf(e) {
     if (e && e.name === 'TypeError') return OFFLINE;
-    const m = e && typeof e.message === 'string' ? e.message.replace(INVISIBLE, '').trim() : '';
+    const m = e && typeof e.message === 'string' ? strip(e.message).trim() : '';
     return m && m.length <= 300 && !m.startsWith('[object') && !/^[a-z0-9_.-]+$/i.test(m) ? m : '';
   }
 
@@ -147,6 +149,7 @@
 
   function render() {
     if (!build()) return;
+    if (S.off) { card.hidden = true; return; } // off here, or Never in Permissions
     const d = S.data;
     bodyEl.textContent = '';
     if (S.error) {
@@ -200,6 +203,7 @@
 
   function load(force) {
     if (!hasApi() || !build()) return Promise.resolve();
+    if (S.off) { render(); return Promise.resolve(); } // nothing to ask Google for
     if (S.loading) return S.loading;
     if (!force && S.data !== undefined && !S.error && Date.now() - S.loadedAt < STALE_MS) return Promise.resolve();
     S.loading = (async () => {
@@ -216,6 +220,13 @@
   }
 
   document.addEventListener('jarvis:panel', (e) => { const d = e.detail || {}; if (d.id === 'integrations' && d.open) load(false); });
+  // /v1/integrations drive_available (a server without the field says nothing: shown as before)
+  document.addEventListener('jarvis:integrations', (e) => {
+    const d = e.detail || {};
+    if (typeof d.drive !== 'boolean' || S.off === !d.drive) return;
+    S.off = !d.drive;
+    if (S.off) render(); else if (card) load(true);
+  });
   document.addEventListener('jarvis:ready', () => { if (window.JarvisDeck && typeof window.JarvisDeck.isOpen === 'function' && window.JarvisDeck.isOpen('integrations')) load(false); });
 
   window.JarvisDrive = Object.freeze({ refresh: () => load(true), normal });

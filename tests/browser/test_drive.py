@@ -156,3 +156,36 @@ def test_drive_section_fits_a_phone(browser: Any, server_url: str, token: str) -
         assert c.errors == []
     finally:
         c.close()
+
+
+def test_drive_section_is_hidden_when_integrations_says_drive_is_off(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Final review: drive_available false (off here, or the Drive row is Never) hides the
+    section even when /v1/drive would list folders; nothing can be switched on from it."""
+    c = Console(browser, server_url, token, DESKTOP)
+    try:
+        puts: list[dict[str, Any]] = []
+        _drive_routes(c.page, puts)
+        off = {
+            "google": {"connected": False, "email": None, "scopes": [], "expires_at": None,
+                       "needs_reconnect": False},
+            "drive_available": False,
+            "maps_available": True,
+        }  # fmt: skip
+        c.page.route(
+            "**/v1/integrations",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json", body=json.dumps(off)
+            ),
+        )
+        c.open()
+        c.open_panel("integrations")
+        c.page.locator("#integrations .integ").wait_for()
+        c.page.locator("#driveSet[hidden]").wait_for(state="attached")
+        c.page.wait_for_timeout(300)  # a late /v1/drive answer must not show it again
+        assert c.page.locator("#driveSet").is_hidden()
+        assert not c.page.locator("#driveList").is_visible()
+        assert puts == [] and c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()

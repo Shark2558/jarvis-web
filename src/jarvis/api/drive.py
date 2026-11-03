@@ -20,8 +20,9 @@ PUT /v1/drive/roots/{id}   {use: true | false} → the same view. Use on needs t
                            not_a_folder / validation, 403 not_offered / no_owner_email, 409
                            not_offered (not shared, or in the trash) / too_many, 404 drive_off, 429
                            rate_limited, 503 drive_unavailable / roots_unavailable (storage
-                           trouble reading or changing the chosen folders). Google's own text
-                           never appears.
+                           trouble reading or changing the chosen folders), 409 switched_off (the
+                           owner set the Drive permission row to Never; final review). Google's
+                           own text never appears.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ from pydantic import BaseModel, ConfigDict, StrictBool
 from jarvis.api.auth import require_auth, session_email
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
+from jarvis.api.rows import DRIVE_TOOL, is_never, switched_off_reply
 from jarvis.config import Settings
 from jarvis.drive.ports import DriveError, RootsUnreadable
 from jarvis.drive.service import DriveRejected, DriveService
@@ -86,16 +88,18 @@ async def drive_view(
     return _public(await svc.view(uid, _owner_email(request)))
 
 
-@router.put("/roots/{folder_id}")
+@router.put("/roots/{folder_id}", response_model=None)
 async def drive_use(
     folder_id: str,
     body: UseBody,
     request: Request,
     svc: DriveService | None = Depends(_svc),
     uid: str = Depends(current_user),
-) -> dict[str, Any]:
+) -> dict[str, Any] | JSONResponse:
     if svc is None:
         raise DriveOff()
+    if await is_never(request, uid, DRIVE_TOOL):  # the console hides Drive; say so plainly
+        return switched_off_reply("Google Drive")
     allowed, _ = request.app.state.drive_limit.allow(uid)
     if not allowed:
         raise DriveRejected("rate_limited", "Too many changes; wait a moment.", status=429)

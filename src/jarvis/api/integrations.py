@@ -16,7 +16,12 @@ GET  /v1/integrations          {google: {connected, email, scopes, expires_at, n
                                          (the three Grants are optional; review C7: a Grant
                                          is "available" — its row offered — only when its tools
                                          exist on this server (YouTube: the server's API key)
-                                         and its permission row is not Never)
+                                         and its permission row is not Never),
+                                drive_available, maps_available}
+                                         (final review: Drive is on here — JARVIS_DRIVE — and
+                                         Maps has the server's key, and the row is not Never;
+                                         false → the console hides Drive / Home and Work. Each
+                                         still reads its own endpoint, D7)
 POST /v1/integrations/google/disconnect   revoke at Google (best effort) + forget (CSRF header)
 
 Mounted only when auth_mode=google. Separate from sign-in: `/auth/*` keeps `openid email`.
@@ -32,8 +37,8 @@ from pydantic import BaseModel
 
 from jarvis.api.auth import require_auth, session_email
 from jarvis.api.identity import current_user, user_id_for_email
+from jarvis.api.rows import DRIVE_TOOL, MAPS_TOOL, switched_off
 from jarvis.config import Settings
-from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import (
     GRANTS,
     GoogleConnector,
@@ -46,7 +51,6 @@ from jarvis.integrations.google import (
     held_grants,
 )
 from jarvis.logging import get_logger
-from jarvis.tools.policy import Effect, Policy
 
 log = get_logger(__name__)
 
@@ -59,6 +63,8 @@ GRANT_TOOLS: dict[str, str] = {
     "contacts": "contacts_search",
     "youtube": "youtube_my_playlists",
 }
+# Final review (D8): the features with their own endpoints whose sections "Never" hides.
+FEATURE_TOOLS: dict[str, str] = {"drive": DRIVE_TOOL, "maps": MAPS_TOOL}
 
 
 def _settings(request: Request) -> Settings:
@@ -172,26 +178,9 @@ class GoogleStatus(BaseModel):
 
 class Integrations(BaseModel):
     google: GoogleStatus
-
-
-async def _switched_off(request: Request, uid: str) -> frozenset[str]:
-    """The Grants whose permission row the owner set to Never. When the rules can't be read the
-    view can't tell, so it offers the rows; a call through the gateway still fails closed."""
-    source = getattr(request.app.state, "permissions", None)
-    if source is None:
-        return frozenset()
-    try:
-        policy = Policy(await source.rules_for(uid))
-    except Exception as exc:  # noqa: BLE001 — a view only; logged, never raised
-        log.warning(
-            "permissions unreadable for the Grant rows", extra={"error": type(exc).__name__}
-        )
-        return frozenset()
-    return frozenset(
-        name
-        for name, tool in GRANT_TOOLS.items()
-        if policy.decide(tool, ActionRisk.READ_ONLY, {}) is Effect.DENY
-    )
+    # final review: false → the console hides Integrations → Google Drive / Maps' Home and Work
+    drive_available: bool = False
+    maps_available: bool = False
 
 
 @router.get("/v1/integrations", response_model=Integrations, dependencies=[Depends(require_auth)])
@@ -202,13 +191,18 @@ async def integrations(
 ) -> Integrations:
     st = await google.status(uid)
     linked, scopes = bool(st["connected"]), st["scopes"]
-    off = await _switched_off(request, uid)
-    # YouTube's tools exist exactly when Maps + YouTube are set up here (app.state.media: the
-    # server's API key, `jarvis.media.service.build_media`)
+    # a Never row is decided as the gateway would (`api.rows`); unreadable rules: offered
+    off = await switched_off(request, uid, {**GRANT_TOOLS, **FEATURE_TOOLS})
+    # YouTube's (and Maps') tools exist exactly when Maps + YouTube are set up here
+    # (app.state.media: the server's API key, `jarvis.media.service.build_media`); Drive's when
+    # JARVIS_DRIVE is on (app.state.drive)
     media = getattr(request.app.state, "media", None)
+    drive = getattr(request.app.state, "drive", None)
     here = {"tasks": True, "contacts": True, "youtube": media is not None}
     available = {name: here[name] and name not in off for name in GRANTS}
     return Integrations(
+        drive_available=drive is not None and "drive" not in off,
+        maps_available=media is not None and "maps" not in off,
         google=GoogleStatus(
             **st,
             tasks_granted=linked and can_use_tasks(scopes),
@@ -217,7 +211,7 @@ async def integrations(
             tasks_available=available["tasks"],
             contacts_available=available["contacts"],
             youtube_available=available["youtube"],
-        )
+        ),
     )
 
 

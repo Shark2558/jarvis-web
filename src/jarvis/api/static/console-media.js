@@ -16,6 +16,8 @@
 //   Vitals: GET /v1/quota → {configured:false} | {configured, pricing, maps_search, maps_route,
 //   maps_route_2w, maps_route_walk, youtube_search…} (a paused two-wheeler / walking SKU is named).
 //   Integrations: GET /v1/maps/places → {configured, home, work}; PUT saves both (≤ 200 characters).
+//   Hidden while jarvis:integrations says maps: false (no key here, or the Maps row is Never; final
+//   review). Invisible characters go by window.JarvisText (console-text.js: keeps ZWNJ / ZWJ).
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -30,10 +32,9 @@
   const MAPS_ATTR = 'Google Maps', YT_ATTR = 'YouTube';
   const MEDIA_KINDS = new Set(['places', 'route', 'videos']);
   const REL = 'noopener noreferrer';
-  const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const MODES = { drive: 'by car', two_wheeler: 'by two-wheeler', walk: 'on foot' };
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
-  const txt = (v, max = TEXT_MAX) => (typeof v === 'string' ? v.replace(INVISIBLE, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+  const txt = (v, max = TEXT_MAX) => (typeof v === 'string' ? window.JarvisText.strip(v).replace(/\s+/g, ' ').trim().slice(0, max) : '');
   const nat = (v, max) => (Number.isFinite(v) && v >= 0 && v <= max ? v : null);
   const fmt = (n) => { try { return Number(n).toLocaleString('en-IN'); } catch (_) { return String(n); } };
 
@@ -247,7 +248,7 @@
   }
 
   // ---- Integrations → Maps: Home and Work ------------------------------------------------------
-  const places = { configured: false, home: null, work: null, open: false };
+  const places = { configured: false, home: null, work: null, open: false, off: false };
   function placesForm(sec) {
     const form = mk('form', 'mform'); form.noValidate = true;
     const field = (id, label, value) => {
@@ -277,7 +278,7 @@
   }
   function renderPlaces(sec, said) {
     sec.textContent = '';
-    if (!places.configured) { sec.hidden = true; return; }
+    if (!places.configured || places.off) { sec.hidden = true; return; }
     sec.hidden = false;
     const head = mk('div', 'ihead'); const h = mk('b', '', 'Maps'); h.id = 'mapsT';
     head.append(h, mk('span', 'istate', 'Ready'));
@@ -295,6 +296,7 @@
   async function loadPlaces() {
     const sec = $('integMaps'), c = C();
     if (!sec || !c || typeof c.api !== 'function') return;
+    if (places.off) { renderPlaces(sec); return; } // Never in Permissions: not asked, not shown
     try {
       const r = await c.api('/v1/maps/places');
       places.configured = r && r.configured === true;
@@ -312,6 +314,13 @@
     if (d.id === 'media' && !d.open && current) stop(); // closing the panel stops the video
   });
   document.addEventListener('jarvis:reply', (e) => { const d = e.detail || {}; if (d.tools > 0) refresh(); });
+  // /v1/integrations maps_available (a server without the field says nothing: shown as before)
+  document.addEventListener('jarvis:integrations', (e) => {
+    const d = e.detail || {};
+    if (typeof d.maps !== 'boolean' || places.off === !d.maps) return;
+    places.off = !d.maps; places.open = false;
+    loadPlaces();
+  });
   if (C() && typeof C().ready === 'function' && C().ready()) { refresh(); loadPlaces(); }
 
   window.JarvisMedia = Object.freeze({ cards, mapsUrl, lines, stop });

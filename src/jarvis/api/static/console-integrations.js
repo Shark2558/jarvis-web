@@ -6,7 +6,10 @@
 //     (the note is queued, the address bar cleaned); refresh() -> GET /v1/integrations, then render.
 //   Transport is the console's own (window.JarvisConsole.api: cookie + X-Requested-With, or the bearer
 //   token; 401 -> gate), read when a call is made, so it may arrive later.
-//   It fires jarvis:integrations {google, email} and jarvis:event (the activity line), as before.
+//   It fires jarvis:integrations {google, email, drive, maps} and jarvis:event (the activity line).
+//   drive / maps (final review): /v1/integrations drive_available / maps_available -- false hides
+//   Integrations -> Google Drive / Maps' Home and Work (off here, or the row is Never); null when the
+//   server did not say (an older server, or no Google sign-in): shown as before.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -108,7 +111,9 @@
   function renderIntegrations() {
     const box = $('integrations'); box.replaceChildren();
     const st = integState(), g = integ.data ? integ.data.google : null;
-    emit('jarvis:integrations', { google: integ.data ? st : null, email: g && g.connected && g.email ? String(g.email) : null });
+    const said = (k) => (integ.data && typeof integ.data[k] === 'boolean' ? integ.data[k] : null);
+    emit('jarvis:integrations', { google: integ.data ? st : null, email: g && g.connected && g.email ? String(g.email) : null,
+      drive: said('drive_available'), maps: said('maps_available') });
     const meta = $('integMeta');
     meta.textContent = st === 'linked' ? 'Google linked' : st === 'reconnect' ? 'Attention' : '';
     meta.className = 'pmeta' + (st === 'linked' ? ' ok' : st === 'reconnect' ? ' warn' : '');

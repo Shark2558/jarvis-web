@@ -232,3 +232,21 @@ async def test_with_a_key_the_maps_and_youtube_search_tools_are_registered(
     assert {"maps_search", "maps_route", "youtube_search"} <= names
     # without the owner's Google link the playlist tools have nothing to read
     assert "youtube_my_playlists" not in names
+
+
+# ---- final review: "Never" on the Maps row ------------------------------------------------
+
+
+async def test_a_put_while_the_maps_row_is_never_is_a_plain_409(app_client: AsyncClient) -> None:
+    r = await app_client.put("/v1/permissions", headers=AUTH, json={"groups": {"maps": "deny"}})
+    assert r.status_code == 200
+    r = await app_client.put("/v1/maps/places", headers=AUTH, json={"home": "Kowdiar"})
+    assert r.status_code == 409
+    assert r.json() == {
+        "error": "switched_off",
+        "detail": "Maps is switched off in Permissions (Never). Change it there first.",
+    }
+    assert (await app_client.get("/v1/maps/places", headers=AUTH)).json()["home"] is None
+    await app_client.put("/v1/permissions", headers=AUTH, json={"groups": {"maps": "allow"}})
+    r = await app_client.put("/v1/maps/places", headers=AUTH, json={"home": "Kowdiar"})
+    assert r.status_code == 200 and r.json()["home"] == "Kowdiar"

@@ -373,3 +373,44 @@ def test_a_phone_keeps_eight_tabs_and_the_cards_fit(
         assert c.errors == []
     finally:
         c.close()
+
+
+# ---- final review: one invisible-character rule (Malayalam keeps its joiners); "Never" hides ----
+
+# chillu n (ZWJ) and a ZWNJ conjunct
+MALAYALAM = (
+    "\u0d2e\u0d32\u0d2f\u0d3e\u0d33\u0d02 \u0d05\u0d35\u0d28\u0d4d\u200d \u0d15\u0d4d\u200c\u0d15"
+)
+INTEG_OFF = {
+    "google": {"connected": False, "email": None, "scopes": [], "expires_at": None,
+               "needs_reconnect": False},
+    "drive_available": False,
+    "maps_available": False,
+}  # fmt: skip
+
+
+def test_a_malayalam_place_name_keeps_its_zero_width_joiners(rig: Rig) -> None:
+    c = rig.c
+    name = MALAYALAM + "\u200b\u202e"  # a zero-width space and a bidi override are still dropped
+    place = {**PLACES, "items": [{**PLACES["items"][0], "name": name, "address": MALAYALAM}]}
+    _json(c.page, "**/v1/chat", _reply("Found it.", [place]))
+    c.open()
+    c.send("a place in Malayalam")
+    c.page.locator(".row.jarvis .mplaces").wait_for()
+    shown = c.page.locator(".row.jarvis .mplaces .mtxt b").first.text_content()
+    assert shown == MALAYALAM  # ZWJ / ZWNJ kept, the hidden two gone
+    assert c.page.locator(".row.jarvis .mplaces .maddr").first.text_content() == MALAYALAM
+    kept = c.page.evaluate("(s) => window.JarvisText.strip(s)", MALAYALAM)
+    assert kept == MALAYALAM and c.errors == []
+
+
+def test_home_and_work_are_hidden_when_integrations_says_maps_is_off(rig: Rig) -> None:
+    c = rig.c
+    _json(c.page, "**/v1/integrations", INTEG_OFF)
+    c.open()
+    c.open_panel("integrations")
+    c.page.locator("#integrations .integ").wait_for()
+    c.page.wait_for_function("document.getElementById('integMaps').hidden === true")
+    c.page.wait_for_timeout(300)  # a places answer arriving late must not show it again
+    assert c.page.locator("#integMaps").is_hidden() and c.page.locator("#mapsEdit").count() == 0
+    assert rig.saved == [] and c.errors == []

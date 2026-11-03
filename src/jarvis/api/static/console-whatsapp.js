@@ -25,8 +25,9 @@
   const LONG_CHARS = 400;
   const DIGITS = /^[1-9][0-9]{6,14}$/;
   // what the server already removed (bidi controls and marks, zero-width space, BOM, controls but
-  // new lines and tabs): a card whose name or text still holds one is dropped
-  const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/;
+  // new lines and tabs): a card whose name or text still holds one is dropped. One rule for the
+  // whole console (console-text.js, final review), which keeps ZWNJ / ZWJ for Malayalam.
+  const hidden = (s) => window.JarvisText.hasInvisible(s);
   // the server's cleaning, one character at a time: the categories it drops (control, format,
   // private use, lone surrogates) ...
   const DROPPED = /^[\p{Cc}\p{Cf}\p{Co}\p{Cs}]$/u;
@@ -77,11 +78,11 @@
     return drafts.slice(0, MAX_CARDS).map((d) => {
       if (typeof d.text !== 'string') return null;
       const text = d.text;
-      if (!text.trim() || Array.from(text).length > TEXT_MAX || INVISIBLE.test(text)) return null;
+      if (!text.trim() || Array.from(text).length > TEXT_MAX || hidden(text)) return null;
       if (clean(text) !== text) return null; // the server would never have sent it so
       const link = waLink(d.number, text);
       if (!link) return null;
-      const name = typeof d.name === 'string' && !INVISIBLE.test(d.name)
+      const name = typeof d.name === 'string' && !hidden(d.name)
         ? d.name.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX) : '';
       const flag = (v) => typeof v === 'string' && v.length > 0;
       return { name, number: d.number, text, link, warn: flag(d.warning), assumed: flag(d.assumed) };

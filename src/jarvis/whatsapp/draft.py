@@ -13,8 +13,10 @@ render blank although they are letters or marks (`BLANK`: Hangul fillers, the br
 combining grapheme joiner, Khmer inherent vowels, Mongolian selectors, variation selectors other
 than an emoji's — which also encode bytes invisibly), a variation selector with nothing before it
 or repeated, spaces at the end of a line, and more than two blank lines in a row. A text that is
-empty or only blank after that is refused. At most `TEXT_MAX` characters after cleaning. The
-console's draft card checks the same (`console-whatsapp.js`).
+empty or only blank after that is refused. At most `TEXT_MAX` characters after cleaning. Review
+FE-8: more than `MAX_MARKS` combining marks in a row ("Zalgo" text, a smear that hides what it
+says) is refused in plain words (`STACKED`). The console's draft card checks the same
+(`console-whatsapp.js`).
 
 Link (verified 2026-11-03; WhatsApp's own FAQ "How to use click to chat",
 faq.whatsapp.com/5913398998672934, could not be fetched — robots.txt and this network's proxy
@@ -45,6 +47,8 @@ from jarvis.contacts.phones import is_e164, wa_digits
 TEXT_MAX = 2000
 NAME_MAX = 100
 MAX_BLANK_LINES = 2
+MAX_MARKS = 4  # review FE-8: combining marks in a row; console-whatsapp.js mirrors it exactly
+STACKED = "That text has stacked accent marks I can't show clearly; please retype it."
 WA_BASE = "https://wa.me/"
 JS_SAFE = "!*'()"  # with Python's always-safe "-_.~": exactly encodeURIComponent's set
 WARNING = "This number didn't come from you or your contacts — check it before you send."
@@ -97,6 +101,21 @@ def clean_text(raw: str) -> str:
     return text.strip()
 
 
+def stacked(text: str) -> bool:
+    """True when more than MAX_MARKS combining marks (Unicode category M*) follow one another —
+    after one base character or none (review FE-8: "Zalgo" text renders as a smear that hides
+    what it says). A zero-width (non-)joiner between two marks does not break the run. Real
+    scripts stay well inside: Malayalam, Devanagari, Odia and Tibetan stack at most 3."""
+    run = 0
+    for ch in text:
+        if ch in _KEEP_FORMAT:
+            continue
+        run = run + 1 if unicodedata.category(ch).startswith("M") else 0
+        if run > MAX_MARKS:
+            return True
+    return False
+
+
 def text_arg(value: Any) -> str:
     """The draft text, cleaned, 1..TEXT_MAX characters — or ValueError in plain words."""
     if not isinstance(value, str):
@@ -108,6 +127,8 @@ def text_arg(value: Any) -> str:
         raise ValueError(
             f"text is too long (at most {TEXT_MAX:,} characters; it has {len(text):,})"
         )
+    if stacked(text):
+        raise ValueError(STACKED)
     return text
 
 
@@ -147,6 +168,8 @@ class WhatsAppCard(BaseModel):
             raise ValueError("number is not E.164")
         if not self.text or len(self.text) > TEXT_MAX or clean_text(self.text) != self.text:
             raise ValueError("text is not a clean draft text")
+        if stacked(self.text):
+            raise ValueError("text has stacked marks")
         if self.link != wa_link(self.number, self.text):
             raise ValueError("link is not the number and text's wa.me link")
         if card_name(self.name) != self.name:
@@ -185,13 +208,16 @@ __all__ = [
     "BLANK",
     "KNOWN_SOURCES",
     "MAX_BLANK_LINES",
+    "MAX_MARKS",
     "NAME_MAX",
+    "STACKED",
     "TEXT_MAX",
     "WARNING",
     "WhatsAppCard",
     "card_name",
     "clean_text",
     "draft_card",
+    "stacked",
     "text_arg",
     "wa_link",
 ]

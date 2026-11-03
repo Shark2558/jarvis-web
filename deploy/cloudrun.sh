@@ -330,6 +330,21 @@ setup_budget_alert() {
 }
 setup_budget_alert
 
+# Google's free Maps / YouTube allowances may be counted per billing account, while JARVIS's counter
+# sees only this deployment (security review SEC-4): say so when other projects share the account.
+# Never stops the deploy; "unknown" when the list can't be read.
+SHARED_BILLING=no
+billing_shared() {
+  local projects="" others=""
+  [ -n "$BILLING_ACCOUNT" ] || { SHARED_BILLING=unknown; return 0; }
+  if ! projects="$(gcloud billing projects list --billing-account="$BILLING_ACCOUNT" --format='value(projectId)' 2>/dev/null)"; then
+    SHARED_BILLING=unknown; return 0
+  fi
+  others="$(printf '%s\n' "$projects" | grep -v -x -F -e "$PROJECT" -e '' || true)"
+  if [ -n "$others" ]; then SHARED_BILLING=yes; else SHARED_BILLING=no; fi
+}
+billing_shared
+
 say "4/8  Setting up JARVIS's memory (a Firestore database in your project)"
 if DBTYPE="$(gcloud firestore databases describe --database='(default)' --format='value(type)' 2>/dev/null)"; then
   [ "$DBTYPE" = "FIRESTORE_NATIVE" ] || die "This project already has a database in '$DBTYPE' mode; JARVIS needs Firestore Native mode. Send this message to Claude."
@@ -621,6 +636,14 @@ cat <<'MSG'
 
 MAPS + YOUTUBE: off this time (the Maps/YouTube key could not be set up and checked in this run;
 the note above says why). Re-run this script to try again.
+MSG
+fi
+if [ "$SHARED_BILLING" = yes ]; then
+cat <<'MSG'
+
+Note: Other projects share this billing account. If they also use Maps or YouTube, JARVIS's
+free-allowance counter can't see their use (Google may count the free allowance per billing
+account) - the 1-rupee budget alert (jarvis-any-charge) will still email you on any charge.
 MSG
 fi
 cat <<'MSG'

@@ -440,6 +440,58 @@ def test_the_web_search_off_is_unmounted_on_a_quick_re_run(script: str) -> None:
     assert '"${WEB_REMOVE[@]}"' in quick
 
 
+# ---- security review SEC-4: other projects on the billing account ---------------------------
+
+
+def _shared(script: str, tmp: Path, *, listed: str, fail: str = "") -> dict[str, str]:
+    log = _fake_gcloud(tmp, f'  "billing projects list"*) printf "{listed}" ;;\n', fail)
+    body = (
+        "set -euo pipefail\n"
+        f'PATH="{tmp}:$PATH"\nPROJECT=p\nBILLING_ACCOUNT=0X0X0X-111111-222222\n'
+        "SHARED_BILLING=no\n"
+        + _function(script, "billing_shared")
+        + 'billing_shared\nprintf "\\nSHARED=%s\\n" "$SHARED_BILLING"\n'
+    )
+    done = subprocess.run(["bash", "-c", body], capture_output=True, text=True, check=False)
+    shared = next(
+        (ln.split("=", 1)[1] for ln in done.stdout.splitlines() if ln.startswith("SHARED=")), ""
+    )
+    return {"rc": str(done.returncode), "out": done.stdout + done.stderr, "shared": shared,
+            "calls": log.read_text() if log.exists() else ""}  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("listed", "fail", "shared"),
+    [
+        ("p\\n", "", "no"),  # only this project
+        ("p\\nother-project\\n", "", "yes"),
+        ("", "billing projects list", "unknown"),  # can't tell: never stops the deploy
+    ],
+)
+def test_other_projects_on_the_billing_account_are_noticed(
+    script: str, tmp_path: Path, listed: str, fail: str, shared: str
+) -> None:
+    r = _shared(script, tmp_path, listed=listed, fail=fail)
+    assert r["rc"] == "0" and r["shared"] == shared, r["out"]
+    call = next(c for c in r["calls"].splitlines() if c.startswith("billing projects list"))
+    assert "--billing-account=0X0X0X-111111-222222" in call
+
+
+def test_the_summary_warns_when_other_projects_share_the_billing_account(script: str) -> None:
+    done = script.split('say "DONE', 1)[1]
+    block = done.split('if [ "$SHARED_BILLING" = yes ]', 1)[1].split("fi\n", 1)[0]
+    assert "Other projects share this billing account" in block
+    assert "can't see their use" in block and "budget alert" in block
+    assert "$" not in block.split("MSG", 1)[1].split("MSG", 1)[0]  # never a dollar sign
+    assert script.index("\nbilling_shared\n") < script.index("gcloud run deploy")
+
+
+def test_the_plan_says_the_counter_is_per_deployment(script: str) -> None:
+    plan = (ROOT / "docs" / "plans" / "phase2-slice12-integrations.md").read_text(encoding="utf-8")
+    d2 = plan.split("**D2 ·", 1)[1].split("**D3 ·", 1)[0]
+    assert "billing account" in d2 and "other projects" in d2.lower()
+
+
 # ---- the budget alert: a failed list is not an empty one (CR-5 b) ---------------------------
 
 

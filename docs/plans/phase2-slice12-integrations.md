@@ -99,7 +99,10 @@ the key's allowed APIs back; unless they are exactly those three, Maps and YouTu
 that deploy (unmounted on a quick re-run). The key never reaches the browser.
 JARVIS keeps a deployment-wide counter per SKU — the SKU Google actually bills each call as — and
 stops at **90 % of the free allowance** of the billing account's price list; like Tavily, it never
-runs into paid use. Free allowances a month (Pacific-time months, as Google bills; verified
+runs into paid use. Security review SEC-4: Google may count these free allowances per billing
+account, and the counter sees only this deployment — so `cloudrun.sh` lists the billing account's
+projects (non-fatally) and, when other projects share it, the deploy summary says their Maps /
+YouTube use is invisible to JARVIS's counter (the ₹1 budget alert still emails on any charge). Free allowances a month (Pacific-time months, as Google bills; verified
 2026-11-03, sources below):
 
 | JARVIS SKU | Google SKU (trigger) | India price list | global price list |

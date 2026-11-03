@@ -1,21 +1,25 @@
-// src/jarvis/api/static/console-media.js — slice 12 D3/D4 (docs/plans/phase2-slice12-integrations.md):
+// src/jarvis/api/static/console-media.js -- slice 12 D3/D4 (docs/plans/phase2-slice12-integrations.md):
 // the Maps and YouTube cards under a reply, the Media panel's player, the Vitals lines "Maps: N of
-// 31,500 searches this month" / "YouTube searches today: N of 90", and Integrations → Maps (Home /
+// 31,500 searches this month" / "YouTube searches today: N of 90", and Integrations -> Maps (Home /
 // Work). No build step; CSP script-src 'self'; every server string reaches the DOM through
 // textContent or a checked attribute, never markup.
-//   window.JarvisMedia  cards(row, cards) → renders ChatResponse.cards under a reply (console.js):
+//   window.JarvisMedia  cards(row, cards) -> renders ChatResponse.cards under a reply (console.js):
 //     places   name, address, status, "Open in Google Maps" (an https Google Maps link only), and
 //              a "Google Maps" attribution line on the card
-//     route    from → to, minutes, km, "Open in Google Maps" (directions), "Google Maps" line
+//     route    from -> to, minutes, km, "Open in Google Maps" (directions), "Google Maps" line
 //     videos   title, channel, length and a Play button per video, a "YouTube" line
-//   Play: the ONLY way a video starts. It opens the Media panel and makes the player there — an
-//   iframe on https://www.youtube-nocookie.com/embed/<id> — at that moment (autoplay=1 is set only
+//   Play: the ONLY way a video starts. It opens the Media panel and makes the player there -- an
+//   iframe on https://www.youtube-nocookie.com/embed/<id> -- at that moment (autoplay=1 is set only
 //   on the iframe created by the owner's click, so playback starts from the owner's own gesture).
 //   Nothing creates an iframe before a Play click; Stop removes it again. A video id must match
 //   /^[A-Za-z0-9_-]{11}$/ or there is no Play button.
-//   Vitals: GET /v1/quota → {configured:false} | {configured, pricing, maps_search, maps_route,
-//   maps_route_2w, maps_route_walk, youtube_search…} (a paused two-wheeler / walking SKU is named).
-//   Integrations: GET /v1/maps/places → {configured, home, work}; PUT saves both (≤ 200 characters).
+//   Vitals: GET /v1/quota -> {configured:false} | {configured, pricing, maps_search, maps_route,
+//   maps_route_2w, maps_route_walk, youtube_search...} (a paused two-wheeler / walking SKU is named).
+//   Integrations: GET /v1/maps/places -> {configured, home, work}; PUT saves both (<= 200 characters).
+// Review fixes: FE-3 keyboard focus lands on a control after every re-render; FE-4 the video stops
+// whenever the Media panel is no longer shown (phones, reset layout, a desktop close); FE-5 no
+// prototype key is ever a mode; FE-6 names and addresses are bidi-isolated (<bdi>); FE-10 ASCII
+// source with backslash-u escapes only; FE-11 a failing Maps check says so, with Retry.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -31,8 +35,11 @@
   const MEDIA_KINDS = new Set(['places', 'route', 'videos']);
   const REL = 'noopener noreferrer';
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
-  const MODES = { drive: 'by car', two_wheeler: 'by two-wheeler', walk: 'on foot' };
+  const MODES = new Map([['drive', 'by car'], ['two_wheeler', 'by two-wheeler'], ['walk', 'on foot']]);
+  const DOT = ' \u00b7 ', NONE = '\u2014';
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+  /** A <tag> holding `text` in a <bdi>: a right-to-left name can't reorder the words around it. */
+  const iso = (tag, cls, text) => { const n = mk(tag, cls); n.appendChild(mk('bdi', '', text)); return n; };
   const txt = (v, max = TEXT_MAX) => (typeof v === 'string' ? v.replace(INVISIBLE, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
   const nat = (v, max) => (Number.isFinite(v) && v >= 0 && v <= max ? v : null);
   const fmt = (n) => { try { return Number(n).toLocaleString('en-IN'); } catch (_) { return String(n); } };
@@ -68,8 +75,8 @@
     const list = mk('ol', 'mlist');
     items.forEach((p) => {
       const li = mk('li', 'mitem');
-      const t = mk('div', 'mtxt'); t.append(mk('b', '', p.name));
-      if (p.address) t.append(mk('span', 'maddr', p.address));
+      const t = mk('div', 'mtxt'); t.append(iso('b', '', p.name));
+      if (p.address) t.append(iso('span', 'maddr', p.address));
       if (p.status) t.append(mk('span', 'mstatus', p.status));
       li.append(t, mapsLink(p.href, p.name));
       list.appendChild(li);
@@ -82,13 +89,14 @@
   function routeCard(c) {
     const href = mapsUrl(c.url);
     const mins = nat(c.duration_minutes, 100000), km = nat(c.distance_km, 100000);
-    if (!href || mins === null || km === null || !MODES[c.mode]) return null;
+    const mode = typeof c.mode === 'string' ? MODES.get(c.mode) : undefined; // FE-5: own keys only
+    if (!href || mins === null || km === null || !mode) return null;
     const from = txt(c.origin, PLACE_MAX) || 'Start', to = txt(c.destination, PLACE_MAX) || 'Destination';
     const box = mk('section', 'mcard mroute'); box.setAttribute('aria-label', 'Route from Google Maps');
-    const head = mk('p', 'mrhead'); head.append(mk('b', '', from), mk('span', 'marrow', ' → '), mk('b', '', to));
+    const head = mk('p', 'mrhead'); head.append(mk('bdi', 'mend', from), mk('span', 'marrow', ' \u2192 '), mk('bdi', 'mend', to));
     const h = Math.floor(mins / 60), m = mins % 60;
     const time = h ? `${h} h ${m} min` : `${m} min`;
-    const fig = mk('p', 'mrfig'); fig.append(mk('b', '', time), mk('span', '', ` · ${km} km ${MODES[c.mode]}` + (c.traffic === true ? ' · with current traffic' : '')));
+    const fig = mk('p', 'mrfig'); fig.append(mk('b', '', time), mk('span', '', `${DOT}${km} km ${mode}` + (c.traffic === true ? DOT + 'with current traffic' : '')));
     box.append(head, fig, mapsLink(href, `the route from ${from} to ${to}`), attribution(MAPS_ATTR));
     return box;
   }
@@ -110,14 +118,19 @@
     const list = mk('ol', 'mlist');
     items.forEach((v) => {
       const li = mk('li', 'mitem');
-      const t = mk('div', 'mtxt'); t.append(mk('b', '', v.title));
-      const sub = [v.channel, v.live ? 'live' : v.duration].filter(Boolean).join(' · ');
-      if (sub) t.append(mk('span', 'maddr', sub));
+      const t = mk('div', 'mtxt'); t.append(iso('b', '', v.title));
+      const when = v.live ? 'live' : v.duration;
+      if (v.channel || when) {
+        const sub = mk('span', 'maddr');
+        if (v.channel) sub.appendChild(mk('bdi', '', v.channel));
+        if (when) sub.append((v.channel ? DOT : '') + when);
+        t.append(sub);
+      }
       li.appendChild(t);
       if (v.embeddable) {
         const b = mk('button', 'btn lift mplay', 'Play'); b.type = 'button';
         b.setAttribute('aria-label', `Play ${v.title} in the Media panel`);
-        b.addEventListener('click', () => play(v, items));
+        b.addEventListener('click', () => play(v, items, 'card'));
         li.appendChild(b);
       } else li.appendChild(mk('span', 'mstatus', 'Can only be played on YouTube'));
       list.appendChild(li);
@@ -149,11 +162,21 @@
   let current = null;
   function setNote(text) { const n = $('mediaNote'); if (n) n.textContent = text || ''; }
 
-  function stop() {
+  /** Removes the player. `focus`: the owner pressed Stop, so keyboard focus goes to the panel's
+   *  heading (the Stop button is gone); a stop because the panel was hidden moves no focus. */
+  function stop(focus) {
     const stage = $('mediaStage'), now = $('mediaNow');
     if (stage) { stage.querySelectorAll('iframe').forEach((f) => f.remove()); const e = $('mediaEmpty'); if (e) e.hidden = false; }
     if (now) { now.textContent = ''; now.hidden = true; }
     current = null; setNote('Stopped.');
+    if (focus === true) { const h = $('t-media'); if (h) h.focus({ preventScroll: true }); }
+  }
+  const playing = () => !!current || !!document.querySelector('#mediaStage iframe');
+  /** FE-4: the video stops whenever the Media panel is no longer shown, on phones too (a phone's
+   *  other tab, reset layout and a phone/desktop switch hide it without a jarvis:panel close). */
+  function stopIfHidden() {
+    const D = Deck();
+    if (playing() && D && typeof D.isOpen === 'function' && !D.isOpen('media')) stop(false);
   }
 
   function queue(items) {
@@ -161,19 +184,22 @@
     q.textContent = '';
     items.forEach((v) => {
       const li = mk('li', current && current.id === v.id ? 'on' : '');
-      const b = mk('button', 'mqbtn', v.title); b.type = 'button';
+      const b = mk('button', 'mqbtn'); b.type = 'button'; b.appendChild(mk('bdi', '', v.title));
       if (current && current.id === v.id) b.setAttribute('aria-current', 'true');
       b.setAttribute('aria-label', `Play ${v.title}`);
-      b.addEventListener('click', () => play(v, items));
+      b.addEventListener('click', () => play(v, items, 'queue'));
       li.appendChild(b); q.appendChild(li);
     });
   }
 
-  function play(v, items) {
+  /** `from`: 'card' (a reply's Play button) or 'queue' (the panel's list), for keyboard focus. */
+  function play(v, items, from) {
     if (!v || !VIDEO_ID.test(v.id)) return;
     const stage = $('mediaStage'), now = $('mediaNow');
     if (!stage) return;
-    const D = Deck(); if (D) D.open('media', { focus: false });
+    // a phone shows one panel: the card's Play button is hidden with the chat, so focus moves in
+    const D = Deck();
+    if (D) D.open('media', { focus: from === 'card' && typeof D.isPhone === 'function' && D.isPhone() });
     stage.querySelectorAll('iframe').forEach((f) => f.remove());
     const e = $('mediaEmpty'); if (e) e.hidden = true;
     const f = document.createElement('iframe');
@@ -189,14 +215,18 @@
     current = v;
     if (now) {
       now.textContent = ''; now.hidden = false;
-      const t = mk('div', 'mtxt'); t.append(mk('b', '', v.title));
-      if (v.channel) t.append(mk('span', 'maddr', v.channel));
+      const t = mk('div', 'mtxt'); t.append(iso('b', '', v.title));
+      if (v.channel) t.append(iso('span', 'maddr', v.channel));
       const s = mk('button', 'btn lift', 'Stop'); s.type = 'button'; s.id = 'mediaStop';
-      s.addEventListener('click', stop);
+      s.addEventListener('click', () => stop(true));
       now.append(t, s);
     }
     queue(Array.isArray(items) ? items : [v]);
     setNote(`Playing: ${v.title}`);
+    if (from === 'queue') { // the list was redrawn: focus the item now playing
+      const b = document.querySelector('#mediaQueue .mqbtn[aria-current="true"]');
+      if (b) b.focus({ preventScroll: true });
+    }
   }
 
   // ---- Vitals ----------------------------------------------------------------------------------
@@ -211,19 +241,19 @@
   /** {maps, yt}: the two Vitals values, and {mapsSaid, ytSaid}: the same as whole sentences
    *  ("Maps: N of 31,500 searches / N of 31,500 routes this month", "YouTube searches today: N of 90"). */
   function lines(r) {
-    const none = { maps: '—', yt: '—', mapsSaid: '', ytSaid: '' };
+    const none = { maps: NONE, yt: NONE, mapsSaid: '', ytSaid: '' };
     if (!r || typeof r !== 'object') return none;
     if (r.configured !== true) return { maps: 'Not set up', yt: 'Not set up', mapsSaid: 'Maps: not set up', ytSaid: 'YouTube: not set up' };
     const s = count(r.maps_search), rt = count(r.maps_route), y = count(r.youtube_search);
-    let maps = '—', yt = '—';
+    let maps = NONE, yt = NONE;
     if (s === 'unreadable' || rt === 'unreadable') maps = 'Count unavailable';
-    else if (s && rt) maps = `${of(s)} searches / ${of(rt)} routes this month` + (s.reached || rt.reached ? ' · paused' : '');
-    else if (s) maps = `${of(s)} searches this month` + (s.reached ? ' · paused' : '');
+    else if (s && rt) maps = `${of(s)} searches / ${of(rt)} routes this month` + (s.reached || rt.reached ? DOT + 'paused' : '');
+    else if (s) maps = `${of(s)} searches this month` + (s.reached ? DOT + 'paused' : '');
     // two-wheeler and walking routes have their own (smaller / larger) free allowances
     const other = [[count(r.maps_route_2w), 'two-wheeler'], [count(r.maps_route_walk), 'walking']];
-    if (s && s !== 'unreadable') maps += other.filter(([c]) => c && c.reached).map(([, w]) => ` · ${w} paused`).join('');
+    if (s && s !== 'unreadable') maps += other.filter(([c]) => c && c.reached).map(([, w]) => `${DOT}${w} paused`).join('');
     if (y === 'unreadable') yt = 'Count unavailable';
-    else if (y) yt = `${of(y)} searches today` + (y.reached ? ' · paused until midnight Pacific' : '');
+    else if (y) yt = `${of(y)} searches today` + (y.reached ? DOT + 'paused until midnight Pacific' : '');
     return { maps, yt, mapsSaid: `Maps: ${maps}`, ytSaid: y && y !== 'unreadable' ? `YouTube searches today: ${of(y)}` : `YouTube: ${yt}` };
   }
   let loading = false;
@@ -242,12 +272,13 @@
       if (l.mapsSaid) m.setAttribute('aria-label', l.mapsSaid);
       if (l.ytSaid) y.setAttribute('aria-label', l.ytSaid);
     } catch (e) {
-      if (!e || e.status !== 401) { m.textContent = e && e.status === 404 ? 'Not available' : '—'; y.textContent = m.textContent; }
+      if (!e || e.status !== 401) { m.textContent = e && e.status === 404 ? 'Not available' : NONE; y.textContent = m.textContent; }
     } finally { loading = false; }
   }
 
-  // ---- Integrations → Maps: Home and Work ------------------------------------------------------
-  const places = { configured: false, home: null, work: null, open: false };
+  // ---- Integrations -> Maps: Home and Work ------------------------------------------------------
+  // error: '' or the words for a failed GET (FE-11: said, with Retry; never a silently hidden section)
+  const places = { configured: false, home: null, work: null, open: false, error: '' };
   function placesForm(sec) {
     const form = mk('form', 'mform'); form.noValidate = true;
     const field = (id, label, value) => {
@@ -260,7 +291,7 @@
     const [wl, wi] = field('mapsWork', 'Work', places.work);
     const err = mk('p', 'lerr'); err.id = 'mapsErr'; err.setAttribute('role', 'alert');
     const save = mk('button', 'btn primary lift', 'Save'); save.type = 'submit';
-    form.append(hl, hi, wl, wi, mk('p', 'fine', 'An area, a street or a landmark — no phone numbers. Sent to Google only when you ask for a travel time.'), err, save);
+    form.append(hl, hi, wl, wi, mk('p', 'fine', 'An area, a street or a landmark \u2014 no phone numbers. Sent to Google only when you ask for a travel time.'), err, save);
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault(); err.textContent = '';
       const c = C(); if (!c) return;
@@ -268,40 +299,76 @@
       try {
         const r = await c.api('/v1/maps/places', { method: 'PUT', body: { home: hi.value.trim() || null, work: wi.value.trim() || null } });
         places.home = typeof r.home === 'string' ? r.home : null; places.work = typeof r.work === 'string' ? r.work : null;
-        renderPlaces(sec, 'Saved.');
+        renderPlaces(sec, 'Saved.', 'mapsEdit'); // the form is gone: focus its button (FE-3)
       } catch (e) {
         err.textContent = e && e.status !== 401 ? String(e.message || 'Could not save.') : '';
-      } finally { save.disabled = false; }
+      } finally {
+        save.disabled = false; // a disabled button loses focus: give it back when the form stays
+        if (save.isConnected && (!document.activeElement || document.activeElement === document.body)) save.focus({ preventScroll: true });
+      }
     });
     return form;
   }
-  function renderPlaces(sec, said) {
+  /** Draws Integrations -> Maps. `focusId`: the control that takes keyboard focus once it is
+   *  redrawn (FE-3: the one pressed is gone, so focus would otherwise fall to the page). */
+  function renderPlaces(sec, said, focusId) {
     sec.textContent = '';
+    delete sec.dataset.state;
+    if (places.error) { renderPlacesError(sec); return; }
     if (!places.configured) { sec.hidden = true; return; }
     sec.hidden = false;
     const head = mk('div', 'ihead'); const h = mk('b', '', 'Maps'); h.id = 'mapsT';
     head.append(h, mk('span', 'istate', 'Ready'));
     const body = mk('div', 'ibody');
     body.append(mk('p', '', 'Place search and travel times with traffic, from Google Maps. Your Home and Work let you ask "how long to work?"'));
-    const kv = (k, v) => { const p = mk('p', 'who'); p.append(mk('span', '', `${k}: `), mk('b', '', v || 'not set')); return p; };
+    const kv = (k, v) => { const p = mk('p', 'who'); p.append(mk('span', '', `${k}: `), v ? iso('b', '', v) : mk('b', '', 'not set')); return p; };
     body.append(kv('Home', places.home), kv('Work', places.work));
     const btn = mk('button', 'btn lift', places.open ? 'Close' : 'Set Home and Work'); btn.type = 'button'; btn.id = 'mapsEdit';
     btn.setAttribute('aria-expanded', String(places.open));
-    btn.addEventListener('click', () => { places.open = !places.open; renderPlaces(sec); });
+    btn.addEventListener('click', () => { places.open = !places.open; renderPlaces(sec, '', places.open ? 'mapsHome' : 'mapsEdit'); });
     sec.append(head, body, btn);
     if (places.open) sec.appendChild(placesForm(sec));
     if (said) { const n = mk('div', 'inote ok', said); n.setAttribute('role', 'status'); sec.appendChild(n); }
+    const f = focusId ? $(focusId) : null; if (f) f.focus({ preventScroll: true });
   }
-  async function loadPlaces() {
+  function renderPlacesError(sec) {
+    sec.hidden = false; sec.dataset.state = 'error';
+    const head = mk('div', 'ihead'); const h = mk('b', '', 'Maps'); h.id = 'mapsT';
+    head.append(h, mk('span', 'istate', 'Unknown'));
+    const body = mk('div', 'ibody');
+    body.appendChild(mk('p', 'warn', 'Couldn\'t check Maps. ' + places.error));
+    const r = mk('button', 'btn lift', 'Retry'); r.type = 'button'; r.id = 'mapsRetry';
+    r.addEventListener('click', () => { r.disabled = true; loadPlaces(true); });
+    sec.append(head, body, r);
+  }
+  /** A thrown api() error as plain words (never a code or an object), or a fixed fallback. */
+  function errWords(e) {
+    if (e && e.name === 'TypeError') return 'Can\'t reach JARVIS. Check your connection.';
+    const m = e && typeof e.message === 'string' ? txt(e.message) : '';
+    return m && !m.startsWith('[object') && !/^[a-z0-9_.-]+$/i.test(m) ? m : 'Please try again.';
+  }
+  let placesLoading = null;
+  /** GET /v1/maps/places. `retry`: the owner pressed Retry, so focus lands on what replaces it. */
+  function loadPlaces(retry) {
     const sec = $('integMaps'), c = C();
-    if (!sec || !c || typeof c.api !== 'function') return;
-    try {
-      const r = await c.api('/v1/maps/places');
-      places.configured = r && r.configured === true;
-      places.home = r && typeof r.home === 'string' ? r.home : null;
-      places.work = r && typeof r.work === 'string' ? r.work : null;
-    } catch (_) { places.configured = false; }
-    renderPlaces(sec);
+    if (!sec || !c || typeof c.api !== 'function') return Promise.resolve();
+    if (placesLoading) return placesLoading;
+    placesLoading = (async () => {
+      try {
+        const r = await c.api('/v1/maps/places');
+        places.error = '';
+        places.configured = !!r && r.configured === true;
+        places.home = r && typeof r.home === 'string' ? r.home : null;
+        places.work = r && typeof r.work === 'string' ? r.work : null;
+      } catch (e) {
+        if (e && e.status === 401) { placesLoading = null; return; }
+        // a server without the route has no Maps here: nothing to say; anything else is said
+        if (e && e.status === 404) { places.error = ''; places.configured = false; } else places.error = errWords(e);
+      }
+      placesLoading = null;
+      renderPlaces(sec, '', retry === true ? (places.error ? 'mapsRetry' : 'mapsEdit') : '');
+    })();
+    return placesLoading;
   }
 
   document.addEventListener('jarvis:ready', () => { refresh(); loadPlaces(); });
@@ -309,10 +376,13 @@
     const d = e.detail || {};
     if (d.id === 'vitals' && d.open) refresh();
     if (d.id === 'integrations' && d.open) loadPlaces();
-    if (d.id === 'media' && !d.open && current) stop(); // closing the panel stops the video
+    stopIfHidden(); // FE-4: any panel change (a phone's other tab, a close) that hides Media stops it
   });
+  // reset layout and a phone/desktop switch change what is shown without a jarvis:panel event
+  document.addEventListener('jarvis:reset-layout', () => setTimeout(stopIfHidden, 0));
+  try { window.matchMedia('(max-width: 899px)').addEventListener('change', () => setTimeout(stopIfHidden, 0)); } catch (_) {}
   document.addEventListener('jarvis:reply', (e) => { const d = e.detail || {}; if (d.tools > 0) refresh(); });
   if (C() && typeof C().ready === 'function' && C().ready()) { refresh(); loadPlaces(); }
 
-  window.JarvisMedia = Object.freeze({ cards, mapsUrl, lines, stop });
+  window.JarvisMedia = Object.freeze({ cards, mapsUrl, lines, stop: () => stop(false) });
 })();

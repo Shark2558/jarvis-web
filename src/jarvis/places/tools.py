@@ -110,7 +110,7 @@ HOUR_LIMIT = (
 NOT_SHOWN: dict[str, Any] = {"status": "not_shown", "message": CARD_NOT_SHOWN}
 
 
-def shown(card: AnyCard) -> bool:
+def _shown(card: AnyCard) -> bool:
     """False when the owner won't see `card` although a reply is collecting (it is full): the
     caller then returns NOT_SHOWN instead of Google's data. Outside a reply: True (a script)."""
     return add_card(card) or not showing_cards()
@@ -317,7 +317,7 @@ class _Maps:
                 for p in places
             ],
         )
-        if not shown(card):
+        if not _shown(card):
             return dict(NOT_SHOWN)
         return {
             "query": text,
@@ -373,7 +373,7 @@ class _Maps:
             traffic=traffic,
             url=directions_link(origin, dest, mode),
         )
-        if not shown(card):
+        if not _shown(card):
             return dict(NOT_SHOWN)
         return {
             **head,

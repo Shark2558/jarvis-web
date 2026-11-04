@@ -36,6 +36,10 @@ against `telegram_webhook_secret` (`hmac.compare_digest`); body ≤ 64 KB.
 - `max_connections=1`: one update at a time, matching `--max-instances 1` and the per-conversation lock
 - `drop_pending_updates=true` on (re)registration
 - Processed synchronously inside the request (Cloud Run gives CPU only during a request).
+- At-most-once by design (security review): `update_id` is claimed BEFORE any work, so a retry never runs a turn twice;
+a crash after the claim loses that message (the owner resends); a storage failure while claiming answers 503 so Telegram retries.
+- Forwarded / via-bot text is outside content: fenced, commands ignored, every R2 write a card. Pairing tries are counted per
+sender (5) with a global cooldown (30), never against the owner's code. Telegram turns run only when `wrap_rules` is installed.
 - `update_id` is claimed create-only before any work, so a retry is a no-op 200. Every accepted or ignored update
 gets 200, because Telegram repeats non-2xx replies.
 - Settings `telegram_bot_token`, `telegram_webhook_secret` (`SecretStr | None`). Either missing → no webhook route

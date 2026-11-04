@@ -67,6 +67,9 @@ name reads Contacts) gets that row's whole decision — "Never" refuses, "Ask fi
 a card (S1). `Tool.ask_when` is honoured for a read-only call too, and an approval token is always
 spent: a WhatsApp draft asks on a spoken turn or in a tainted round (its text goes to WhatsApp
 when the owner opens it), as a one-by-one R1 card — no passkey, never in Approve all (S3).
+
+R1 I0: observers (`tools.observers`) hear each call that ended executed / error / awaiting /
+denied / declined, after its audit entry (`_audited`, `observe_declined`); `Tool.spoken_ok`.
 """
 
 from __future__ import annotations
@@ -93,11 +96,12 @@ from jarvis.core.guardrails import (
 from jarvis.llm.base import ToolCall, ToolResultBlock
 from jarvis.logging import get_logger
 from jarvis.tools import policy as _policy
-from jarvis.tools.audit import AuditTrail, args_hash
+from jarvis.tools.audit import AuditEntry, AuditTrail, args_hash
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.budget import DELETES_CAPPED, TOO_MANY_CARDS, current_budget, take_free_delete
 from jarvis.tools.context import ToolContext, approval_proof, tool_context
 from jarvis.tools.external import model_safe
+from jarvis.tools.observers import GatewayEvent, GatewayObserver, notify
 from jarvis.tools.policy import Effect, OwnerRules, Policy
 from jarvis.tools.provenance import unwrap
 from jarvis.tools.registry import ToolRegistry
@@ -222,7 +226,11 @@ def _stricter(a: Effect, b: Effect) -> Effect:
 
 
 def _tightened(
-    effect: Effect, risk: ActionRisk, confirmation_id: str | None, asks: bool = False
+    effect: Effect,
+    risk: ActionRisk,
+    confirmation_id: str | None,
+    asks: bool = False,
+    spoken_ok: bool = False,
 ) -> Effect:
     """ALLOW → ASK when the tool asks for this call (`Tool.ask_when` — slice 12: a read-only
     Maps route that would send the owner's Home / Work asks when the round read other people's
@@ -230,7 +238,7 @@ def _tightened(
     work?" stays one step; a WhatsApp draft asks on a spoken turn or in a tainted round) or when an
     approval token is presented (so the approved card's token is always spent) — and, for a
     write, on a spoken turn or in a tainted round. (An irreversible call is never ALLOW in the
-    first place.)"""
+    first place.) R1: a `spoken_ok` tool asks on a spoken turn only if `content_tainted`."""
     if effect is not Effect.ALLOW:
         return effect
     if confirmation_id is not None or asks:
@@ -238,13 +246,16 @@ def _tightened(
     if risk is ActionRisk.READ_ONLY:
         return effect
     if spoken_in_context():
-        return Effect.ASK
-    if _policy.TAINTED_WRITES_ASK and tainted_round():
+        if not spoken_ok or content_tainted():
+            return Effect.ASK
+    elif _policy.TAINTED_WRITES_ASK and tainted_round():
         return Effect.ASK
     return effect
 
 
-def _ask_reason(ruled: Effect, risk: ActionRisk, asks: bool, capped: bool) -> AskReason | None:
+def _ask_reason(
+    ruled: Effect, risk: ActionRisk, asks: bool, capped: bool, spoken_ok: bool = False
+) -> AskReason | None:
     """Why a call became a card, the most protective first (`ruled`: the policy's own effect).
     None only when an approval token alone made it ASK: the stored card's reason stands."""
     if risk is ActionRisk.IRREVERSIBLE:
@@ -253,9 +264,9 @@ def _ask_reason(ruled: Effect, risk: ActionRisk, asks: bool, capped: bool) -> As
         return AskReason.DRAFT_RECIPIENT
     if ruled is Effect.ASK:
         return AskReason.OWNER_RULE
-    if spoken_in_context():
+    if spoken_in_context() and not spoken_ok:
         return AskReason.SPOKEN
-    if _policy.TAINTED_WRITES_ASK and tainted_round():
+    if _policy.TAINTED_WRITES_ASK and (content_tainted() if spoken_ok else tainted_round()):
         return AskReason.UNTRUSTED_CONTEXT
     return AskReason.CAP if capped else None
 
@@ -312,7 +323,9 @@ def _card(
         summary=ruling.card if ruling.card is not None else tool.summary(call.arguments),
         scope=scope,
         tool_risk=ruling.risk,
-        reason=_ask_reason(ruling.ruled, ruling.risk, ruling.asks, bool(ruling.why)),
+        reason=_ask_reason(
+            ruling.ruled, ruling.risk, ruling.asks, bool(ruling.why), tool.spoken_ok
+        ),
         outside=outside,
     )
 
@@ -353,6 +366,7 @@ class Gateway:
         self.registry, self.policy, self.gate, self.audit = registry, policy, gate, audit
         self.rules = rules  # the owner's own rules (slice 10 D); None: configured rules only
         self.approval_guard = approval_guard  # the owner's passkey rule (slice 10 D)
+        self.observers: list[GatewayObserver] = []  # R1 D7: told after each call's audit entry
 
     async def pending(self) -> list[PendingAction]:
         return await self.gate.pending()
@@ -370,7 +384,7 @@ class Gateway:
         (`_hold`), then the run and its audit (`_run`). `proof`: what the approval guard needs
         to let an approved card run (a passkey check made for it); opaque here. Default: what
         the approve request presented (`context.presenting_proof`)."""
-        tool = await self._known(call)
+        tool = await self._known(call, scope)
         if isinstance(tool, GatewayResult):
             return tool
         ruling = await self._rule(tool, call, scope, confirmation_id)
@@ -384,32 +398,22 @@ class Gateway:
             outside = held  # an approved card writes as its proposing round would
         return await self._run(tool, call, ruling.risk, scope, confirmation_id, outside)
 
-    async def _known(self, call: ToolCall) -> Tool | GatewayResult:
+    async def _known(self, call: ToolCall, scope: str | None) -> Tool | GatewayResult:
         """The registered tool, its arguments checked. An unknown tool or bad arguments are
         audited and refused: nothing is proposed, nothing runs."""
         tool = self.registry.get(call.name)
         if tool is None:
-            await self.audit.append(
-                agent="gateway",
-                tool=call.name,
-                risk=ActionRisk.READ_ONLY,
-                outcome="error",
-                args=call.arguments,
-                detail="unknown tool",
-            )
-            return GatewayResult(GatewayOutcome.ERROR, error=f"unknown tool: {call.name}")
+            failed = GatewayResult(GatewayOutcome.ERROR, error=f"unknown tool: {call.name}")
+            read = ActionRisk.READ_ONLY
+            await self._audited(None, call, read, "error", "unknown tool", scope, failed)
+            return failed
         try:
             tool.validate(call.arguments)
         except ValueError as exc:
-            await self.audit.append(
-                agent=tool.agent,
-                tool=tool.name,
-                risk=tool.effective_risk(call.arguments),
-                outcome="error",
-                args=call.arguments,
-                detail=_safe_detail(exc),
-            )
-            return GatewayResult(GatewayOutcome.ERROR, error=str(exc))
+            failed = GatewayResult(GatewayOutcome.ERROR, error=str(exc))
+            risk = tool.effective_risk(call.arguments)
+            await self._audited(tool, call, risk, "error", _safe_detail(exc), scope, failed)
+            return failed
         return tool
 
     async def _rule(
@@ -426,7 +430,7 @@ class Gateway:
             return policy
         asks = tool.asks(call.arguments)
         ruled = policy.decide(tool.name, risk, call.arguments)
-        effect = _tightened(ruled, risk, confirmation_id, asks)
+        effect = _tightened(ruled, risk, confirmation_id, asks, tool.spoken_ok)
         card: str | None = None
         if effect is not Effect.DENY and tool.preview is not None:
             looked = await self._look_up(tool, call, risk, scope)
@@ -437,11 +441,11 @@ class Gateway:
             if looked.also:
                 also = policy.decide(looked.also, risk, call.arguments)
                 if also is Effect.DENY:  # "Never" there is total
-                    return await self._denied(tool, call, risk, policy, looked.also)
+                    return await self._denied(tool, call, risk, policy, scope, looked.also)
                 ruled = _stricter(ruled, also)
-            effect = _tightened(ruled, risk, confirmation_id, asks)
+            effect = _tightened(ruled, risk, confirmation_id, asks, tool.spoken_ok)
         if effect is Effect.DENY:
-            return await self._denied(tool, call, risk, policy)
+            return await self._denied(tool, call, risk, policy, scope)
         why = ""
         if effect is Effect.ALLOW and tool.undoable and not take_free_delete():
             effect, why = Effect.ASK, DELETES_CAPPED  # slice 11 D3: the 11th delete is a card
@@ -520,12 +524,12 @@ class Gateway:
                     out = await out
         except Exception as exc:  # noqa: BLE001 — tool failures are reported, not raised
             log.exception("tool failed", extra={"tool": tool.name})
-            await self._audit_after_run(tool, call, risk, "error", _safe_detail(exc))
-            return _tool_failed(exc)
+            failed = _tool_failed(exc)
+            await self._audit_after_run(tool, call, risk, "error", _safe_detail(exc), scope, failed)
+            return failed
         result = _executed(tool, out)
-        await self._audit_after_run(
-            tool, call, risk, "executed", _confirmed() if confirmation_id else ""
-        )
+        detail = _confirmed() if confirmation_id else ""
+        await self._audit_after_run(tool, call, risk, "executed", detail, scope, result)
         return result
 
     async def _gate(
@@ -547,32 +551,24 @@ class Gateway:
                 new_allowed=budget is None or budget.cards > 0,
             )
         except TooManyApprovals:
-            await self.audit.append(
-                agent=tool.agent,
-                tool=tool.name,
-                risk=risk,
-                outcome="denied",
-                args=call.arguments,
-                detail="too many approvals in one request",
-            )
-            return GatewayResult(GatewayOutcome.DENIED, error=TOO_MANY_CARDS)
+            capped = GatewayResult(GatewayOutcome.DENIED, error=TOO_MANY_CARDS)
+            detail = "too many approvals in one request"
+            await self._audited(tool, call, risk, "denied", detail, action.scope, capped)
+            return capped
         except ConfirmationRequired as exc:
             if budget is not None and exc.action.id == action.id:
                 budget.cards -= 1  # a new card (a duplicate of a waiting one costs nothing)
+            waiting = GatewayResult(GatewayOutcome.AWAITING_CONFIRMATION, pending=exc.action)
             try:
-                await self.audit.append(
-                    agent=tool.agent,
-                    tool=tool.name,
-                    risk=risk,
-                    outcome="awaiting_confirmation",
-                    args=call.arguments,
-                    detail=exc.action.id + note,
+                detail = exc.action.id + note
+                await self._audited(
+                    tool, call, risk, "awaiting_confirmation", detail, action.scope, waiting
                 )
             except Exception:
                 if exc.action.id == action.id:  # never leave an unaudited approval behind
                     await self.gate.cancel(action.id)
                 raise
-            return GatewayResult(GatewayOutcome.AWAITING_CONFIRMATION, pending=exc.action)
+            return waiting
         except ConfirmationInvalid:
             await self.audit.append(
                 agent=tool.agent,
@@ -650,36 +646,31 @@ class Gateway:
                 "owner permissions unreadable; nothing run",
                 extra={"tool": tool.name, "error": type(exc).__name__},
             )
-            await self.audit.append(
-                agent=tool.agent,
-                tool=tool.name,
-                risk=risk,
-                outcome="error",
-                args=call.arguments,
-                detail="permissions unavailable: " + type(exc).__name__,
-            )
-            return GatewayResult(
+            failed = GatewayResult(
                 GatewayOutcome.ERROR,
                 error="could not check the owner's permission settings, so nothing was done",
             )
+            detail = "permissions unavailable: " + type(exc).__name__
+            await self._audited(tool, call, risk, "error", detail, scope, failed)
+            return failed
 
     async def _denied(
-        self, tool: Tool, call: ToolCall, risk: ActionRisk, policy: Policy, name: str | None = None
+        self,
+        tool: Tool,
+        call: ToolCall,
+        risk: ActionRisk,
+        policy: Policy,
+        scope: str | None,
+        name: str | None = None,
     ) -> GatewayResult:
         """`name`: the tool name the rule matched, when not the tool's own (`Preview.also`)."""
         rule = policy.denied_by(name or tool.name, risk, call.arguments)
         source = rule.source if rule is not None else "config"
-        await self.audit.append(
-            agent=tool.agent,
-            tool=tool.name,
-            risk=risk,
-            outcome="denied",
-            args=call.arguments,
-            detail=f"policy:{source}",
-        )
-        log.warning("tool denied by policy", extra={"tool": tool.name, "source": source})
         reason = rule.reason if rule is not None and rule.reason else "blocked by policy"
-        return GatewayResult(GatewayOutcome.DENIED, error=reason)
+        denied = GatewayResult(GatewayOutcome.DENIED, error=reason)
+        await self._audited(tool, call, risk, "denied", f"policy:{source}", scope, denied)
+        log.warning("tool denied by policy", extra={"tool": tool.name, "source": source})
+        return denied
 
     async def _look_up(
         self, tool: Tool, call: ToolCall, risk: ActionRisk, scope: str | None
@@ -696,42 +687,72 @@ class Gateway:
                 "tool look-up failed; nothing proposed",
                 extra={"tool": tool.name, "error": type(exc).__name__},
             )
-            await self.audit.append(
-                agent=tool.agent,
-                tool=tool.name,
-                risk=risk,
-                outcome="error",
-                args=call.arguments,
-                detail="preview: " + _safe_detail(exc),
-            )
-            return GatewayResult(
+            failed = GatewayResult(
                 GatewayOutcome.ERROR,
                 error="could not look it up first, so nothing was proposed or done "
                 f"({_safe_detail(exc)})",
             )
+            detail = "preview: " + _safe_detail(exc)
+            await self._audited(tool, call, risk, "error", detail, scope, failed)
+            return failed
 
-    async def _audit_after_run(
-        self, tool: Tool, call: ToolCall, risk: ActionRisk, outcome: str, detail: str
-    ) -> None:
-        """The tool has ALREADY run: an audit outage must not turn that into an exception,
-        or the caller would lose the record that e.g. a message was sent (and the owner might
-        ask again). Log loudly instead; the trace id ties the log line to the request."""
+    async def _audited(
+        self,
+        tool: Tool | None,
+        call: ToolCall,
+        risk: ActionRisk,
+        outcome: str,
+        detail: str,
+        scope: str | None,
+        result: GatewayResult | None = None,
+        *,
+        strict: bool = True,
+    ) -> AuditEntry | None:
+        """Append one audit entry, then tell the observers. `strict`: a failure propagates;
+        else (the tool has ALREADY run) it is logged loudly and observers get `entry=None`: it
+        must not become an exception, or the caller loses the record that e.g. a mail was sent."""
+        agent, entry = tool.agent if tool is not None else "gateway", None
         try:
-            await self.audit.append(
-                agent=tool.agent,
-                tool=tool.name,
+            entry = await self.audit.append(
+                agent=agent,
+                tool=call.name,
                 risk=risk,
                 outcome=outcome,
                 args=call.arguments,
                 detail=detail,
             )
         except Exception as exc:  # noqa: BLE001
+            if strict:
+                raise
             log.error(
                 "AUDIT WRITE FAILED after tool ran",
                 extra={
-                    "tool": tool.name,
+                    "tool": call.name,
                     "outcome": outcome,
                     "args_hash": args_hash(call.arguments),
                     "error": type(exc).__name__,
                 },
             )
+        event = GatewayEvent(outcome, call.name, agent, risk, call.arguments, scope, entry, result)
+        await notify(self.observers, event)
+        return entry
+
+    async def observe_declined(self, action: PendingAction, entry: AuditEntry | None) -> None:
+        """The owner declined a card (audited by `brain_decisions.declined`): tell observers."""
+        tool, a = self.registry.get(action.tool), action
+        agent, risk = tool.agent if tool else "gateway", a.tool_risk or a.risk
+        event = GatewayEvent("declined", a.tool, agent, risk, a.arguments, a.scope, entry)
+        await notify(self.observers, event)
+
+    async def _audit_after_run(
+        self,
+        tool: Tool,
+        call: ToolCall,
+        risk: ActionRisk,
+        outcome: str,
+        detail: str,
+        scope: str | None = None,
+        result: GatewayResult | None = None,
+    ) -> AuditEntry | None:
+        """Audit a call that has already run (never raises); returns the entry or None."""
+        return await self._audited(tool, call, risk, outcome, detail, scope, result, strict=False)

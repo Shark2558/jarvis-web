@@ -49,7 +49,9 @@ class Turn(BaseModel):
     tool_derived: bool = False
     # how an owner message arrived (slice 9): "voice" was heard through the microphone, so it
     # may be someone else's words — never used for memory learning (jarvis.recall.learning)
-    channel: Literal["text", "voice"] = "text"
+    channel: Literal["text", "voice", "telegram"] = "text"
+    # R1: the fallback brain on the owner's laptop wrote this reply (llm.fallback)
+    offline: bool = False
     # web sources this reply cited as [n] (slice 10 B), from the conversation's stored results
     sources: list[Source] = Field(default_factory=list)
     # files sent with an owner message (slice 10 E): names and counts only. Their start travels
@@ -99,10 +101,11 @@ class ChatRequest(BaseModel):
         description="Brain id from GET /v1/brains. Omit to keep the session's brain (or the "
         "default). The choice is remembered on the session.",
     )
-    channel: Literal["text", "voice"] = Field(
+    channel: Literal["text", "voice", "telegram"] = Field(
         default="text",
         description="voice: the owner spoke this message and the reply will be read aloud "
-        "(short, plain spoken answer; slice 9 D7)",
+        "(short, plain spoken answer; slice 9 D7). telegram: set only by the Telegram service; "
+        "the HTTP chat routes refuse it (R1)",
     )
     attachments: list[str] = Field(
         default_factory=list,
@@ -167,6 +170,7 @@ class ChatResponse(BaseModel):
     memory_used: list[MemoryRef] = Field(
         default_factory=list, description="Notes about the owner sent with this reply"
     )
+    offline: bool = Field(default=False, description="R1: answered by the owner's laptop")
     sources: list[Source] = Field(
         default_factory=list,
         description="Web sources the reply cited as [n] (only stored search results)",

@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 # first real-Claude Phase 0 run after slice 12 answered the calendar question with markup).
 PERSONA_VERSION = "p4.5"
 
-Channel = Literal["text", "voice"]
+Channel = Literal["text", "voice", "telegram"]
 
 
 @dataclass(frozen=True)
@@ -317,6 +317,15 @@ VOICE_RULE = (
 )
 
 
+# R1 I0 placeholder; the final wording and its tests come with I1 (persona p4.6).
+TELEGRAM_RULE = (
+    "\nTelegram reply (the owner is typing in Telegram, which keeps chats on its servers)\n"
+    "- Plain text only: no markdown or tables. About 120 words unless asked for more.\n"
+    "- Never paste a whole email, document or contact list: give the gist and say the rest is\n"
+    "  in the console. Actions that can't be undone wait in the console.\n"
+)
+
+
 def build_trailer(*, tz: str, session_id: str, turn_index: int, channel: Channel = "text") -> str:
     now = datetime.now(ZoneInfo(tz))
     trailer = (
@@ -324,7 +333,7 @@ def build_trailer(*, tz: str, session_id: str, turn_index: int, channel: Channel
         f"- Local time: {now.strftime('%A %d %B %Y, %H:%M')} ({tz})\n"
         f"- Session: {session_id}, turn {turn_index}\n"
     )
-    return trailer + VOICE_RULE if channel == "voice" else trailer
+    return trailer + {"voice": VOICE_RULE, "telegram": TELEGRAM_RULE}.get(channel, "")
 
 
 __all__ = [
@@ -336,6 +345,7 @@ __all__ = [
     "MEDIA_RULES",
     "PERSONA_VERSION",
     "REMINDERS_RULE",
+    "TELEGRAM_RULE",
     "UNDO_RULES",
     "VOICE_RULE",
     "VOICE_RULE_HEADING",

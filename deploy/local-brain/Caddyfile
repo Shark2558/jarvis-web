@@ -1,0 +1,54 @@
+# deploy/local-brain/Caddyfile -- the access gate in front of Ollama (R1 offline mode, plan D10).
+#
+# Listens on 127.0.0.1:11435 ONLY (Tailscale Funnel forwards the public https address to it; TLS
+# ends on this laptop). Ollama itself (127.0.0.1:11434) is never published.
+#
+# Passes exactly two requests to Ollama, and only with the right key:
+#     POST /v1/chat/completions      GET /v1/models
+# Everything else gets 404, and those two paths without the key get 401. The key arrives in the
+# environment (JARVIS_LOCAL_KEY, set by start-unix.sh / start-windows.ps1), never in this file.
+{
+	admin off
+	auto_https off
+}
+
+http://127.0.0.1:11435 {
+	bind 127.0.0.1
+
+	request_body {
+		max_size 2MB
+	}
+
+	@chat {
+		method POST
+		path /v1/chat/completions
+		header Authorization "Bearer {env.JARVIS_LOCAL_KEY}"
+	}
+	@models {
+		method GET
+		path /v1/models
+		header Authorization "Bearer {env.JARVIS_LOCAL_KEY}"
+	}
+	@gated {
+		path /v1/chat/completions /v1/models
+	}
+
+	handle @chat {
+		reverse_proxy 127.0.0.1:11434 {
+			header_up -Authorization
+			header_up Host {upstream_hostport}
+		}
+	}
+	handle @models {
+		reverse_proxy 127.0.0.1:11434 {
+			header_up -Authorization
+			header_up Host {upstream_hostport}
+		}
+	}
+	handle @gated {
+		respond "Unauthorized" 401
+	}
+	handle {
+		respond "Not found" 404
+	}
+}

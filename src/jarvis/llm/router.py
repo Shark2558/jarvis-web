@@ -3,12 +3,20 @@
 
 Graceful degradation (architecture tenet): a transient failure on STRONG falls back to
 BALANCED, BALANCED to FAST. FAST failing is terminal — the caller decides what to do.
+
+R1 D12: a cloud that is UNREACHABLE (`LLMUnreachable`: no connection, timeout, 5xx) is different —
+every tier is down, so with a ready fallback brain (the owner's laptop) the same call goes there
+instead of down a tier. 429 / auth / 4xx never do. A stream switches only before its first text;
+never mid-stream. After a cloud miss answered by the laptop, the next two minutes skip the cloud
+(`Breaker`), then one cloud try.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Callable
 from enum import StrEnum
+from typing import Any
 
 from jarvis.config import LLMBackend, Settings
 from jarvis.llm.anthropic_provider import AnthropicProvider
@@ -16,11 +24,14 @@ from jarvis.llm.base import (
     ChatMessage,
     Completion,
     Effort,
+    LLMError,
     LLMProvider,
     LLMTransientError,
+    LLMUnreachable,
     StreamUsage,
     ToolSpec,
 )
+from jarvis.llm.fallback import Breaker, FallbackBrain, FallbackFailed
 from jarvis.llm.gemini_provider import GeminiProvider
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.logging import get_logger
@@ -42,9 +53,18 @@ _DEGRADE_TO: dict[ModelTier, ModelTier | None] = {
 
 
 class ModelRouter:
-    def __init__(self, provider: LLMProvider, tiers: dict[ModelTier, str]) -> None:
+    def __init__(
+        self,
+        provider: LLMProvider,
+        tiers: dict[ModelTier, str],
+        fallback: FallbackBrain | None = None,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self.provider = provider
         self._tiers = tiers
+        self.fallback = fallback
+        self._breaker = Breaker(clock=clock)
 
     @classmethod
     def from_settings(cls, s: Settings, provider: LLMProvider | None = None) -> ModelRouter:
@@ -54,6 +74,41 @@ class ModelRouter:
 
     def resolve(self, tier: ModelTier) -> str:
         return self._tiers[tier]
+
+    async def _fallback_ready(self) -> bool:
+        if self.fallback is None:
+            return False
+        try:
+            return await self.fallback.ready()
+        except Exception as exc:  # noqa: BLE001 — a broken fallback must not break the cloud path
+            log.warning("fallback brain check failed", extra={"error": type(exc).__name__})
+            return False
+
+    async def _cloud_ok(self) -> None:
+        self._breaker.reset()
+        if self.fallback is None:
+            return
+        try:
+            await self.fallback.cloud_ok()
+        except Exception as exc:  # noqa: BLE001 — bookkeeping only
+            log.warning("fallback cloud_ok failed", extra={"error": type(exc).__name__})
+
+    async def _offline_complete(self, cause: LLMError | None, **kw: Any) -> Completion | None:
+        """The fallback's answer, or None when it is off or (with no `cause`) failed. With a
+        `cause` (the cloud's error) a failed laptop raises `FallbackFailed` instead."""
+        if self.fallback is None or not await self._fallback_ready():
+            return None
+        try:
+            done = await self.fallback.complete(**kw)
+        except Exception as exc:  # noqa: BLE001 — anything the laptop does wrong = "no answer"
+            log.warning("fallback brain failed", extra={"error": type(exc).__name__})
+            self._breaker.reset()
+            if cause is None:
+                return None
+            raise FallbackFailed() from cause
+        if cause is not None:  # a cloud miss opens the window; answers inside it don't extend it
+            self._breaker.trip()
+        return done
 
     async def complete(
         self,
@@ -67,11 +122,26 @@ class ModelRouter:
         tools: list[ToolSpec] | None = None,
         allow_degrade: bool = True,
     ) -> Completion:
+        local = {
+            "tier": tier,
+            "system": system,
+            "system_dynamic": system_dynamic,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "effort": effort,
+            "tools": tools,
+        }
+        tried_laptop = False
+        if self._breaker.is_open():  # a recent miss: straight to the laptop, cloud as a last resort
+            done = await self._offline_complete(None, **local)
+            if done is not None:
+                return done
+            tried_laptop = True
         current: ModelTier | None = tier
         while current is not None:
             model = self.resolve(current)
             try:
-                return await self.provider.complete(
+                result = await self.provider.complete(
                     system=system,
                     system_dynamic=system_dynamic,
                     messages=messages,
@@ -80,18 +150,33 @@ class ModelRouter:
                     effort=effort,
                     tools=tools,
                 )
+            except LLMUnreachable as exc:
+                # every tier is down: the laptop (if ready), else degrade as before
+                if tried_laptop:
+                    raise FallbackFailed() from exc
+                done = await self._offline_complete(exc, **local)
+                if done is not None:
+                    return done
+                current = self._degrade(current, exc, allow_degrade)
             except LLMTransientError as exc:
-                nxt = _DEGRADE_TO[current] if allow_degrade else None
-                if nxt is None:
-                    raise
-                log.warning(
-                    "tier degraded after transient error",
-                    extra={"from": current.value, "to": nxt.value, "error": str(exc)[:200]},
-                )
-                current = nxt
+                current = self._degrade(current, exc, allow_degrade)
+            else:
+                await self._cloud_ok()
+                return result
         raise AssertionError("unreachable")
 
-    def stream(
+    @staticmethod
+    def _degrade(current: ModelTier, exc: LLMError, allow_degrade: bool) -> ModelTier:
+        nxt = _DEGRADE_TO[current] if allow_degrade else None
+        if nxt is None:
+            raise exc
+        log.warning(
+            "tier degraded after transient error",
+            extra={"from": current.value, "to": nxt.value, "error": str(exc)[:200]},
+        )
+        return nxt
+
+    async def stream(
         self,
         *,
         tier: ModelTier,
@@ -103,15 +188,71 @@ class ModelRouter:
         usage: StreamUsage | None = None,
     ) -> AsyncIterator[str]:
         # No mid-stream degradation: once tokens are flowing to a TTS engine we cannot restart.
-        return self.provider.stream(
-            system=system,
-            system_dynamic=system_dynamic,
-            messages=messages,
-            model=self.resolve(tier),
-            max_tokens=max_tokens,
-            effort=effort,
-            usage=usage,
-        )
+        # The laptop takes over only when the cloud stream failed BEFORE its first text.
+        local = {
+            "tier": tier,
+            "system": system,
+            "system_dynamic": system_dynamic,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "effort": effort,
+            "usage": usage,
+        }
+        tried_laptop = False
+        if self._breaker.is_open() and await self._fallback_ready():
+            try:
+                async for delta in self._local_stream(local, miss=False):
+                    yield delta
+                return
+            except _LaptopSilent:
+                tried_laptop = True  # nothing reached the caller: give the cloud a try
+        started = False
+        try:
+            async for delta in self.provider.stream(
+                system=system,
+                system_dynamic=system_dynamic,
+                messages=messages,
+                model=self.resolve(tier),
+                max_tokens=max_tokens,
+                effort=effort,
+                usage=usage,
+            ):
+                started = True
+                yield delta
+        except LLMUnreachable as exc:
+            if tried_laptop:
+                raise FallbackFailed() from exc
+            if started or not await self._fallback_ready():
+                raise
+            try:
+                async for delta in self._local_stream(local, miss=True):
+                    yield delta
+            except _LaptopSilent:
+                raise FallbackFailed() from exc
+            return
+        await self._cloud_ok()
+
+    async def _local_stream(self, kw: dict[str, Any], *, miss: bool) -> AsyncIterator[str]:
+        """The laptop's stream. Raises `_LaptopSilent` if it fails before its first text; a failure
+        after that propagates (text already reached the caller)."""
+        assert self.fallback is not None
+        got = False
+        try:
+            async for delta in self.fallback.stream(**kw):
+                got = True
+                yield delta
+        except Exception as exc:
+            if got:
+                raise
+            log.warning("fallback stream failed", extra={"error": type(exc).__name__})
+            self._breaker.reset()
+            raise _LaptopSilent() from exc
+        if miss:
+            self._breaker.trip()
+
+
+class _LaptopSilent(Exception):
+    """The fallback brain gave no text (internal to the router)."""
 
 
 def build_provider(s: Settings) -> LLMProvider:

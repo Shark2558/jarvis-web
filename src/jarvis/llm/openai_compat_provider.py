@@ -24,6 +24,7 @@ from jarvis.llm.base import (
     LLMAuthError,
     LLMError,
     LLMTransientError,
+    LLMUnreachable,
     Role,
     StreamUsage,
     TextBlock,
@@ -134,14 +135,22 @@ class OpenAICompatProvider:
             h["authorization"] = f"Bearer {self._key}"
         return h
 
+    async def _post(self, body: dict[str, Any]) -> httpx.Response:
+        """The one place a non-streamed request is sent (a subclass may cap the reply)."""
+        return await self._client.post(
+            f"{self._base}/chat/completions", headers=self._headers(), json=body
+        )
+
     # ---- response handling ---------------------------------------------------------------
 
     def _redact(self, text: str) -> str:
         return text.replace(self._key, "***") if self._key else text
 
     def _raise_for_status(self, resp: httpx.Response) -> None:
-        if resp.status_code < 400:
+        if resp.status_code < 300:
             return
+        if resp.status_code < 400:  # redirects are never followed: a wrong base URL
+            raise LLMError("OpenAI-compatible server redirected (check base URL)")
         try:
             err = resp.json().get("error", {})
             detail = str(err.get("message", err) if isinstance(err, dict) else err)[:300]
@@ -150,7 +159,9 @@ class OpenAICompatProvider:
         msg = self._redact(f"OpenAI-compatible HTTP {resp.status_code}: {detail}")
         if resp.status_code in (401, 403):
             raise LLMAuthError(msg)
-        if resp.status_code in (408, 429) or resp.status_code >= 500:
+        if resp.status_code >= 500:
+            raise LLMUnreachable(msg)
+        if resp.status_code in (408, 429):
             raise LLMTransientError(msg)
         raise LLMError(msg)
 
@@ -204,13 +215,11 @@ class OpenAICompatProvider:
             tools=tools,
         )
         try:
-            resp = await self._client.post(
-                f"{self._base}/chat/completions", headers=self._headers(), json=body
-            )
+            resp = await self._post(body)
         except httpx.TimeoutException as exc:
-            raise LLMTransientError("OpenAI-compatible request timed out") from exc
+            raise LLMUnreachable("OpenAI-compatible request timed out") from exc
         except httpx.TransportError as exc:
-            raise LLMTransientError(f"connection error: {type(exc).__name__}") from exc
+            raise LLMUnreachable(f"connection error: {type(exc).__name__}") from exc
         self._raise_for_status(resp)
         try:
             data = resp.json()
@@ -271,7 +280,7 @@ class OpenAICompatProvider:
             async with self._client.stream(
                 "POST", f"{self._base}/chat/completions", headers=self._headers(), json=body
             ) as resp:
-                if resp.status_code >= 400:
+                if resp.status_code >= 300:
                     await resp.aread()
                     self._raise_for_status(resp)
                 async for line in resp.aiter_lines():
@@ -289,6 +298,6 @@ class OpenAICompatProvider:
                     if text:
                         yield text
         except httpx.TimeoutException as exc:
-            raise LLMTransientError("OpenAI-compatible stream timed out") from exc
+            raise LLMUnreachable("OpenAI-compatible stream timed out") from exc
         except httpx.TransportError as exc:
-            raise LLMTransientError(f"connection error: {type(exc).__name__}") from exc
+            raise LLMUnreachable(f"connection error: {type(exc).__name__}") from exc

@@ -1,0 +1,39 @@
+/* src/jarvis/api/static/console-offline.css -- Integrations -> Offline mode (R1 C). Reuses the
+   Integrations card (.integ / .ihead / .ibody / .inote, console.css) and the deck switch (.bsw);
+   adds the form, the numbered steps, the Test result, the dialog and the reply marker. Text on the
+   ink tokens (AA on Night and Day); a switch says On / Off in words; touch targets >= 44 px on
+   phones; no horizontal scroll. */
+.integ.offline{margin-top:10px}
+.integ.offline .ibody > .btn.bact{margin-top:10px}
+.integ.offline .fine{font-size:12.5px;color:var(--ink-3)}
+.integ.offline .warn,.integ.offline .otest.warn{color:var(--amber-ink)}
+.integ.offline .otest.ok{color:var(--ok-ink)}
+.integ.offline[data-state="active"] .istate{color:var(--ok-ink)}
+.integ.offline[data-state="standby"] .istate{color:var(--ok-ink)}
+.integ.offline[data-state="unreachable"] .istate,.integ.offline[data-state="error"] .istate{color:var(--amber-ink)}
+.integ.offline[data-state="active"]{box-shadow:inset 3px 0 0 var(--ok)}
+.integ.offline[data-state="unreachable"]{box-shadow:inset 3px 0 0 var(--amber)}
+.osteps{margin:10px 0 0;padding-left:22px;font-size:13px;line-height:1.5;color:var(--ink-2)}
+.osteps li{margin:2px 0}
+.oform{margin-top:10px}
+.ofield{margin-top:8px}
+.olbl{display:block;font:400 11px/1.3 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.oinput{display:block;width:100%;box-sizing:border-box;height:36px;margin-top:5px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--well);color:var(--ink);font:400 12.5px/1 var(--tech);letter-spacing:.02em;text-overflow:ellipsis}
+.oinput:focus{outline:2px solid var(--accent);outline-offset:1px}
+.orow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.orow .btn.bact{margin-top:0}
+.ostatus{margin-top:8px}
+.otest{margin-top:10px;font-size:13px;line-height:1.4}
+.odialog{max-width:min(92vw,420px);padding:16px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--well-2);color:var(--ink)}
+.odialog::backdrop{background:rgba(0,0,0,.45)}
+.odialog h3{margin:0;font:700 15px/1.2 var(--hud);letter-spacing:.06em}
+.odialog p{margin:10px 0 0;font-size:13.5px;line-height:1.45;color:var(--ink-2)}
+/* the marker under a reply that the laptop answered */
+.offmark{margin-top:6px;font:400 11.5px/1.3 var(--tech);letter-spacing:.06em;color:var(--amber-ink)}
+#vOffline{font:400 11.5px/1.3 var(--tech);letter-spacing:.06em;color:var(--ink-3)}
+#vOffline[data-state="active"]{color:var(--ok-ink)}
+#vOffline[data-state="unreachable"]{color:var(--amber-ink)}
+@media (max-width: 560px){
+  .integ.offline .bsw,.integ.offline .btn.bact,.oinput{min-height:44px}
+  .oinput{height:44px}
+}

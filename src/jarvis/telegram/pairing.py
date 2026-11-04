@@ -12,7 +12,9 @@ ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford: no I, L, O, U
 CODE_LEN = 8
 CODE_TTL_S = 600
 MAX_TRIES = 5  # wrong tries per SENDER in TRY_WINDOW_S
-GLOBAL_TRIES = 30  # wrong tries by everyone in TRY_WINDOW_S (cooldown)
+GLOBAL_TRIES = (
+    30  # wrong tries by everyone in TRY_WINDOW_S: raises an alert; a right code still pairs
+)
 TRY_WINDOW_S = 600
 _LOOKALIKES = str.maketrans({"O": "0", "I": "1", "L": "1"})
 _VALID = re.compile(rf"[{ALPHABET}]{{{CODE_LEN}}}")

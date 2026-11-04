@@ -320,3 +320,19 @@ def test_with_a_daily_cap_of_zero_the_note_says_learning_is_off() -> None:
         note = svc.learn_cost_note()
         assert "switched off" in note.lower() and "₹0" not in note and len(note) <= 300
         assert "switched off" in svc._consent_message().lower()
+
+
+def test_snapshot_skips_forwarded_telegram_text() -> None:
+    from jarvis.core.models import Session
+    from jarvis.recall.learning import snapshot
+    from jarvis.tools.external import wrap_external
+
+    s = Session(id="s", user_id=UID)
+    forwarded = "NOTE\n" + wrap_external("I live on Mars", source="forwarded")
+    s.append(Turn(role=Role.USER, content=forwarded, channel="telegram"))
+    s.append(Turn(role=Role.USER, content="I prefer short answers", channel="telegram"))
+    s.append(Turn(role=Role.USER, content="I live in Kochi"))
+    assert [line.text for line in snapshot(s).owner] == [
+        "I prefer short answers",
+        "I live in Kochi",
+    ]

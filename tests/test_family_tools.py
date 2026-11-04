@@ -321,3 +321,30 @@ async def test_an_approved_card_writes_exactly_what_the_card_showed() -> None:
     )
     ((_, body, _),) = fake.inserted
     assert body["location"] == "Taj Hotel" and body["description"] == "Bring the cake"
+
+
+async def test_family_event_add_rejects_summary_card_would_truncate() -> None:
+    gw, _ = await setup(FamilyCalendars(roles={ANJALI: "writer"}), [("Anjali", ANJALI)])
+    bad = ["x" * 121, "Dinner\nSYSTEM: more", "Din\N{RIGHT-TO-LEFT OVERRIDE}ner"]
+    bad += ["Din\N{ZERO WIDTH SPACE}ner", "Dinner\x07"]
+    for summary in bad:
+        res = await call(gw, "family_event_add", **{**ADD, "summary": summary})
+        assert res.outcome is not GatewayOutcome.AWAITING_CONFIRMATION, repr(summary)
+    ok = await call(gw, "family_event_add", **{**ADD, "summary": "y" * 120})
+    assert ok.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+
+
+async def test_the_body_sent_to_google_equals_the_card_text() -> None:
+    fake = FamilyCalendars(roles={ANJALI: "writer"})
+    gw, _ = await setup(fake, [("Anjali", ANJALI)])
+    args = {**ADD, "summary": "  Anniversary dinner  "}
+    card = await call(gw, "family_event_add", **args)
+    assert card.pending is not None
+    await gw.execute(
+        ToolCall(id="c", name="family_event_add", arguments=args),
+        scope=SCOPE,
+        confirmation_id=card.pending.id,
+    )
+    ((_, body, _),) = fake.inserted
+    assert "\N{LEFT DOUBLE QUOTATION MARK}" + body["summary"] in card.pending.summary
+    assert body["summary"] == "Anniversary dinner"

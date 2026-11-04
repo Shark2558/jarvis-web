@@ -105,11 +105,13 @@ async def test_a_global_cooldown_stops_a_swarm_without_voiding_the_code() -> Non
     code, _ = await store.start_pairing("owner")
     for stranger in range(200, 200 + GLOBAL_TRIES):
         await store.finish_pairing("ZZZZZZZZ", tg_user_id=stranger, chat_id=stranger)
-    assert await store.finish_pairing(code, tg_user_id=5, chat_id=5) is None  # cooling down
+    # cooling down: another WRONG code is refused, but the right one still pairs (review M2)
+    assert await store.finish_pairing("ZZZZZZZZ", tg_user_id=6, chat_id=6) is None
     assert await store.has_pending("owner") is True  # not voided
+    assert await store.finish_pairing(code, tg_user_id=5, chat_id=5) == "owner"
     clock.advance(seconds=TRY_WINDOW_S + 1)  # the swarm's window is over
     fresh, _ = await store.start_pairing("owner")
-    assert await store.finish_pairing(fresh, tg_user_id=5, chat_id=5) == "owner"
+    assert await store.finish_pairing(fresh, tg_user_id=7, chat_id=7) == "owner"
 
 
 async def test_four_wrong_tries_leave_the_sender_unlocked() -> None:

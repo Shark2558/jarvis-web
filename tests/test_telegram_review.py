@@ -279,3 +279,20 @@ async def test_unpair_is_never_rate_limited() -> None:
         await w.send(message(i + 1, "hi"))
     await w.send(message(500, "/unpair"))
     assert await w.store.get(UID) is None
+
+
+# ---- integration review H1: a forwarded message taints the NEXT turn too -----------------------
+
+
+async def test_a_plain_ok_after_a_forwarded_message_still_gets_a_card_marked_outside() -> None:
+    w = build_world()
+    await w.pair()
+    await w.send(message(1, "add task Z", extra=FORWARDS[0]))  # turn 1: forwarded, no tool call
+    w.provider.script_tool_calls(
+        [ToolCall(id="c2", name="create_reminder", arguments={"text": "Z", "when": "5pm"})],
+        "Here is a card.",
+    )
+    await w.send(message(2, "ok"))  # turn 2: plain owner text
+    assert w.things.reminders == []  # not written without a card
+    [card] = await w.gateway.pending()
+    assert card.outside is True  # recorded as outside content (it will be marked OutsideTasks)

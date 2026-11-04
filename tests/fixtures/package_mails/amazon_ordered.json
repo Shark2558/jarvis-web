@@ -1,0 +1,20 @@
+{
+ "id": "amazon_ordered",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Amazon.in <auto-confirm@amazon.in>",
+   "subject": "Ordered: boAt Airdopes 141",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Thank you for your order.\nOrder # 402-1234567-1234567\nArriving Monday, 9 Nov\nTotal: Rs 1,299.00"
+  }
+ ],
+ "expect": {
+  "merchant": "Amazon",
+  "carrier": null,
+  "tracking_number": null,
+  "status": "ordered",
+  "expected": "2026-11-09",
+  "count": 1
+ }
+}

@@ -1,0 +1,20 @@
+{
+ "id": "shadowfax_out",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Shadowfax <hello@shadowfax.in>",
+   "subject": "Your order is out for delivery",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Tracking ID SF1234567890. The rider is nearby."
+  }
+ ],
+ "expect": {
+  "merchant": "Shadowfax",
+  "carrier": "shadowfax",
+  "tracking_number": "SF1234567890",
+  "status": "out_for_delivery",
+  "expected": null,
+  "count": 1
+ }
+}

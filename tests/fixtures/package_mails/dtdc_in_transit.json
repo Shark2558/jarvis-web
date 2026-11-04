@@ -1,0 +1,20 @@
+{
+ "id": "dtdc_in_transit",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "DTDC <notify@dtdc.in>",
+   "subject": "DTDC consignment update",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Consignment number: D12345678\nStatus: in transit. Expected on 12 Nov"
+  }
+ ],
+ "expect": {
+  "merchant": "DTDC",
+  "carrier": "dtdc",
+  "tracking_number": "D12345678",
+  "status": "shipped",
+  "expected": "2026-11-12",
+  "count": 1
+ }
+}

@@ -1,0 +1,20 @@
+{
+ "id": "amazon_shipped",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Amazon.in <shipment-tracking@amazon.in>",
+   "subject": "Shipped: boAt Airdopes 141",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Your package has shipped.\nAmazon Transport Reference ID: TBA123456789012\nOrder # 402-1234567-1234567\nArriving 9 Nov"
+  }
+ ],
+ "expect": {
+  "merchant": "Amazon",
+  "carrier": "amazon",
+  "tracking_number": "TBA123456789012",
+  "status": "shipped",
+  "expected": "2026-11-09",
+  "count": 1
+ }
+}

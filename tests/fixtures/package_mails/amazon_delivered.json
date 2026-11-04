@@ -1,0 +1,20 @@
+{
+ "id": "amazon_delivered",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Shop <shipment-tracking@amazon.in>",
+   "subject": "Delivered: Steel bottle",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Your package was delivered. It was left with the receptionist.\nOrder # 402-1234567-1234567"
+  }
+ ],
+ "expect": {
+  "merchant": "Amazon",
+  "carrier": null,
+  "tracking_number": null,
+  "status": "delivered",
+  "expected": null,
+  "count": 1
+ }
+}

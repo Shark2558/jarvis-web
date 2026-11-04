@@ -1,0 +1,20 @@
+{
+ "id": "instamart_delivered",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Swiggy <noreply@swiggy.in>",
+   "subject": "Your Instamart order has been delivered",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Enjoy! Your Instamart order was delivered at 09:12."
+  }
+ ],
+ "expect": {
+  "merchant": "Swiggy Instamart",
+  "carrier": null,
+  "tracking_number": null,
+  "status": "delivered",
+  "expected": null,
+  "count": 1
+ }
+}

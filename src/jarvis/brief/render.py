@@ -214,6 +214,65 @@ def _todo(data: BriefData) -> list[str]:
     return lines
 
 
+STATUS_WORDS = {
+    "ordered": "Ordered",
+    "shipped": "Shipped",
+    "out_for_delivery": "Out for delivery",
+    "delivered": "Delivered",
+}
+
+
+def _deliveries(data: BriefData) -> list[str]:
+    """R1 D13: parcels on their way; the mail subject is someone else's words."""
+    box = data.deliveries
+    if box is None:
+        return []
+    head = "DELIVERIES"
+    if (note := _status_line(box.state, "deliveries")) is not None:
+        return [head, note]
+    if box.total:
+        head += f" · {box.total} on the way or just delivered"
+    lines = [head]
+    for it in box.items:
+        parts = [STATUS_WORDS.get(it.status, "Update"), theirs(it.item)]
+        if it.merchant:
+            parts.append(it.merchant)
+        if it.carrier:
+            parts.append(it.carrier)
+        if it.expected:
+            try:
+                parts.append("expected " + date.fromisoformat(it.expected).strftime("%a %d %b"))
+            except ValueError:
+                pass
+        lines.append("  " + " · ".join(parts))
+    if box.total > len(box.items):
+        lines.append(f"  … and {box.total - len(box.items)} more.")
+    return lines if box.items else [head, "  No parcels on the way."]
+
+
+def _family(data: BriefData) -> list[str]:
+    """R1 D15: today on each registered family calendar; names are the owner's labels, titles
+    are their words."""
+    fam = data.family
+    if fam is None:
+        return []
+    head = "FAMILY TODAY"
+    if (note := _status_line(fam.state, "family calendars")) is not None:
+        return [head, note]
+    lines = [head]
+    for m in fam.members:
+        if m.unavailable:
+            lines.append(f"  {m.name}: not shared with you any more.")
+            continue
+        if not m.events:
+            lines.append(f"  {m.name}: nothing today.")
+            continue
+        lines.append(f"  {m.name}" + (" (busy times only)" if m.busy_only else ""))
+        for e in m.events:
+            lines.append(f"    {e.when}" + (f"  {theirs(e.title)}" if e.title else "  busy"))
+    return lines
+
+
 def _jarvis(data: BriefData) -> list[str]:
     if data.sections_status.jarvis != "ok":
         return ["JARVIS", "  Approvals could not be checked just now."]
@@ -241,6 +300,8 @@ def render_text(data: BriefData, ai: AIBlock | None = None, ai_note: str | None 
         _tomorrow(data),
         _inbox(data),
         _todo(data),
+        _deliveries(data),
+        _family(data),
         _jarvis(data),
         _ai(ai, ai_note),
     ]
@@ -263,3 +324,13 @@ __all__ = [
     "todo_when",
     "when",
 ]
+
+
+def spoken_brief_text(text: str) -> str:
+    """The brief as it may be SPOKEN (or read out on Telegram). The brief on screen, and its
+    opted-in AI summary input, keep the full text (`brief/collect.py` snippets); a spoken
+    readout must use this instead: links, addresses, amounts and numbers of 4+ digits are masked
+    (`tools.spoken`)."""
+    from jarvis.tools.spoken import mask_for_speech
+
+    return mask_for_speech(text)

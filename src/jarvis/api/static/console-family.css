@@ -1,0 +1,32 @@
+/* src/jarvis/api/static/console-family.css -- Integrations -> Family calendars (R1 D15) and the
+   Brief's Deliveries / Family today sections. Reuses the Integrations card (.integ / .ihead / .ibody /
+   .inote, console.css), the Drive input (.dinput / .dlbl) and the Brief section (.bsec). Text on the
+   ink tokens (AA on Night and Day); touch targets >= 44 px on phones; no horizontal scroll. */
+.integ.family{margin-top:10px}
+.integ.family .fine{font-size:12.5px;color:var(--ink-3)}
+.integ.family .warn{color:var(--amber-ink)}
+.integ.family[data-state="linked"] .istate{color:var(--ok-ink)}
+.integ.family[data-state="error"] .istate{color:var(--amber-ink)}
+.fmembers{list-style:none;margin:10px 0 0;padding:0}
+.fmember{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line-2)}
+.fmember:first-child{border-top:0}
+.fmember .btxt{flex:1 1 auto;min-width:0}
+.fmember .btxt b{display:block;font-size:13.5px;font-weight:600;line-height:1.4;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fmember .btxt small{display:block;font-size:12.5px;color:var(--ink-3);overflow-wrap:anywhere}
+.fmember .confirm{flex:1 1 100%}
+.fadd{margin-top:12px;display:grid;gap:8px}
+.ffield{min-width:0}
+.fadd .dinput{display:block;width:100%;margin-top:5px;box-sizing:border-box}
+.fadd .btn.bact{justify-self:start;height:36px}
+.fhow{margin-top:10px}
+/* the Brief's two R1 sections */
+.bpark,.bfam{list-style:none;margin:0;padding:0}
+.bpark li,.bfam li{padding:6px 0;border-top:1px dashed var(--line-2);min-width:0;overflow-wrap:anywhere}
+.bpark li:first-child,.bfam li:first-child{border-top:0}
+.bpark b,.bfam b{color:var(--ink)}
+.bpark small,.bfam small{display:block;color:var(--ink-3);font-size:12.5px}
+.bfam .bfev{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px;padding:2px 0}
+@media (max-width: 560px){
+  .fmember .btn.bact,.fadd .btn.bact{min-height:44px}
+  .fadd .dinput{height:44px}
+}

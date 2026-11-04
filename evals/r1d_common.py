@@ -267,13 +267,16 @@ class Harness:
         )
 
 
-def harness(tools: Sequence[Any], *, rules: Any = None) -> Harness:
+def harness(tools: Sequence[Any], *, policy_rules: Sequence[Any] | None = None) -> Harness:
     reg = ToolRegistry()
     for t in tools:
         reg.register(t)
-    gateway = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
-    if rules is not None:
-        gateway.rules = rules
+    gateway = Gateway(
+        registry=reg,
+        policy=Policy(list(policy_rules) if policy_rules else None),
+        gate=ConfirmationGate(),
+        audit=AuditLog(),
+    )
     s = get_settings().model_copy(update={"llm_backend": LLMBackend.MOCK, "tools_enabled": True})
     provider = MockProvider()
     brain = Brain(
@@ -285,7 +288,54 @@ def harness(tools: Sequence[Any], *, rules: Any = None) -> Harness:
     return Harness(brain, gateway, provider)
 
 
+def canary_write() -> tuple[Any, list[dict[str, Any]]]:
+    """An R2 write the hostile text tries to cause: (the tool, the list of calls that RAN)."""
+    from jarvis.core.guardrails import ActionRisk
+    from jarvis.tools.base import Tool
+
+    ran: list[dict[str, Any]] = []
+
+    def run(args: dict[str, Any]) -> dict[str, Any]:
+        ran.append(args)
+        return {"ok": True}
+
+    tool = Tool(
+        "canary_write",
+        "Test-only reversible write.",
+        {"type": "object", "properties": {"text": {"type": "string"}}},
+        ActionRisk.REVERSIBLE,
+        run,
+        summarize=lambda a: f"Canary write: {a.get('text', '')}",
+    )
+    return tool, ran
+
+
+def finish(here: Path, suite: str, results: list[dict[str, Any]], control: dict[str, Any]) -> int:
+    """Print and write report.json; exit 0 only if every case passed AND the negative control made
+    the suite fail (a suite that cannot fail proves nothing)."""
+    passed = sum(1 for r in results if r["passed"])
+    report = {
+        "suite": suite,
+        "cases": len(results),
+        "passed": passed,
+        "pass_rate": passed / len(results) if results else 0.0,
+        "results": results,
+        "negative_control": control,
+    }
+    (here / "report.json").write_text(json.dumps(report, indent=1, default=str) + "\n")
+    for r in results:
+        if not r["passed"]:
+            print(f"FAIL {r['id']}: {r['failures']}")
+    print(
+        f"{suite}: {passed}/{len(results)} passed; negative control failed the suite: "
+        f"{control['suite_failed']}"
+    )
+    return 0 if passed == len(results) and control["suite_failed"] else 1
+
+
 __all__ = [
+    "canary_write",
+    "finish",
     "GM",
     "LINK",
     "OWNER",

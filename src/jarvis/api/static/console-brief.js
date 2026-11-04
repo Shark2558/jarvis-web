@@ -381,6 +381,8 @@
     const tomorrow = tomorrowSection(cal, calState); if (tomorrow) view.append(tomorrow);
     view.append(inboxSection(obj(data.inbox), txt(ss.inbox, 20), tz));
     const todo = todoSection(obj(data.todo), txt(ss.todo, 20)); if (todo) view.append(todo);
+    // R1 D13 / D15 (console-brief-sections.js): Deliveries and Family today, when the brief carries them
+    if (window.JarvisBriefSections) window.JarvisBriefSections.render(data).forEach(n => view.append(n));
     const jarvis = jarvisSection(obj(data.jarvis), txt(ss.jarvis, 20)); if (jarvis) view.append(jarvis);
     const ai = aiSection(b); if (ai) view.append(ai);
     const deliv = deliverySection(b, tz); if (deliv) view.append(deliv);

@@ -25,6 +25,7 @@ from jarvis.llm.base import (
     LLMAuthError,
     LLMError,
     LLMTransientError,
+    LLMUnreachable,
     Role,
     StreamUsage,
     TextBlock,
@@ -129,7 +130,9 @@ class GeminiProvider:
         msg = f"Gemini HTTP {resp.status_code}: {detail}"
         if resp.status_code in (401, 403):
             raise LLMAuthError(msg)
-        if resp.status_code in (408, 429) or resp.status_code >= 500:
+        if resp.status_code >= 500:
+            raise LLMUnreachable(msg)
+        if resp.status_code in (408, 429):
             raise LLMTransientError(msg)
         raise LLMError(msg)
 
@@ -215,9 +218,9 @@ class GeminiProvider:
                     self._url(model, "generateContent"), headers=self._headers(), json=body
                 )
             except httpx.TimeoutException as exc:
-                raise LLMTransientError("Gemini request timed out") from exc
+                raise LLMUnreachable("Gemini request timed out") from exc
             except httpx.TransportError as exc:
-                raise LLMTransientError(f"Gemini connection error: {type(exc).__name__}") from exc
+                raise LLMUnreachable(f"Gemini connection error: {type(exc).__name__}") from exc
             if (
                 resp.status_code == 400
                 and thinking
@@ -272,6 +275,6 @@ class GeminiProvider:
                     if text:
                         yield text
         except httpx.TimeoutException as exc:
-            raise LLMTransientError("Gemini stream timed out") from exc
+            raise LLMUnreachable("Gemini stream timed out") from exc
         except httpx.TransportError as exc:
-            raise LLMTransientError(f"Gemini connection error: {type(exc).__name__}") from exc
+            raise LLMUnreachable(f"Gemini connection error: {type(exc).__name__}") from exc

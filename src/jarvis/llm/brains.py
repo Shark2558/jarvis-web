@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from jarvis.config import LLMBackend, Settings
 from jarvis.llm.anthropic_provider import AnthropicProvider
 from jarvis.llm.base import LLMProvider
+from jarvis.llm.fallback import FallbackBrain
 from jarvis.llm.gemini_provider import GeminiProvider
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.openai_compat_provider import OpenAICompatProvider
@@ -40,17 +41,24 @@ class BrainSpec:
     def warning(self) -> str:
         return TRAINING_WARNING.format(label=self.label) if self.trains_on_content else ""
 
-    def router(self) -> ModelRouter:
-        return ModelRouter(self.provider, self.tiers)
+    def router(self, fallback: FallbackBrain | None = None) -> ModelRouter:
+        return ModelRouter(self.provider, self.tiers, fallback=fallback)
 
 
 class BrainRegistry:
-    def __init__(self, brains: list[BrainSpec], *, default_id: str) -> None:
+    def __init__(
+        self,
+        brains: list[BrainSpec],
+        *,
+        default_id: str,
+        fallback: FallbackBrain | None = None,
+    ) -> None:
         self._brains = {b.id: b for b in brains}
         if default_id not in self._brains:
             raise ValueError(f"default brain {default_id!r} is not configured")
         self._default_id = default_id
-        self._routers = {b.id: b.router() for b in brains}
+        # R1 D10: every brain falls back to the owner's laptop when ITS cloud is unreachable
+        self._routers = {b.id: b.router(fallback) for b in brains}
 
     def list(self) -> list[BrainSpec]:
         return list(self._brains.values())
@@ -72,9 +80,16 @@ class BrainRegistry:
     # ---- construction --------------------------------------------------------------------
 
     @classmethod
-    def from_settings(cls, s: Settings, provider: LLMProvider | None = None) -> BrainRegistry:
+    def from_settings(
+        cls,
+        s: Settings,
+        provider: LLMProvider | None = None,
+        *,
+        local: FallbackBrain | None = None,
+    ) -> BrainRegistry:
         """Build every brain that has credentials. `provider` (tests) replaces the default
-        brain's provider and skips the credential check for it."""
+        brain's provider and skips the credential check for it. `local` (R1): the fallback brain
+        on the owner's laptop, shared by every router."""
         brains: list[BrainSpec] = []
         default = s.llm_backend.value
 
@@ -93,7 +108,7 @@ class BrainRegistry:
                     trains_on_content=s.llm_trains_on_content,
                 )
             )
-            return cls(brains, default_id=default)
+            return cls(brains, default_id=default, fallback=local)
 
         if s.anthropic_api_key is not None:
             add(
@@ -141,7 +156,7 @@ class BrainRegistry:
             )
         if default not in {b.id for b in brains}:
             raise RuntimeError(_MISSING[s.llm_backend])
-        return cls(brains, default_id=default)
+        return cls(brains, default_id=default, fallback=local)
 
 
 _LABELS = {

@@ -7,6 +7,7 @@ from jarvis.llm.base import (
     LLMError,
     LLMProvider,
     LLMTransientError,
+    LLMUnreachable,
     Role,
     StreamUsage,
     TextBlock,
@@ -15,16 +16,20 @@ from jarvis.llm.base import (
     ToolSpec,
     Usage,
 )
+from jarvis.llm.fallback import FallbackBrain, FallbackFailed
 from jarvis.llm.router import ModelRouter, ModelTier, build_provider
 
 __all__ = [
     "ChatMessage",
     "Completion",
     "Effort",
+    "FallbackBrain",
+    "FallbackFailed",
     "LLMAuthError",
     "LLMError",
     "LLMProvider",
     "LLMTransientError",
+    "LLMUnreachable",
     "ModelRouter",
     "ModelTier",
     "Role",

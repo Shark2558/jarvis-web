@@ -204,7 +204,7 @@ def test_integrations_panel_shows_not_available_when_the_route_is_missing(
     """Token-auth setups (and a backend without slice 6) answer 404: no error, a plain message."""
     console.open()
     console.open_panel("integrations")
-    row = console.page.locator("#integrations .integ")
+    row = console.page.locator("#integrations .integ").first  # Google; the WhatsApp row follows
     row.wait_for()
     assert row.get_attribute("data-state") in {"unavailable", "unlinked"}
     text = row.text_content()

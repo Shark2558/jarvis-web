@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
 from jarvis.llm.base import Role, ToolResultBlock
 from jarvis.tools.card import one_line
+from jarvis.tools.external import FENCE_PREFIX
 from jarvis.web.sources import TITLE_LIMIT, Source, domain_of, normalize_url, urls_in_text
 
 if TYPE_CHECKING:
@@ -87,6 +88,21 @@ def is_owner_message(t: Turn) -> bool:
     is a second text block (integration review M3) — never a tool exchange: tool results, or an
     approval's result + instruction, always carry a tool result block."""
     return t.role is Role.USER and not any(isinstance(b, ToolResultBlock) for b in t.blocks)
+
+
+TYPED_CHANNELS = frozenset({"text", "telegram"})
+
+
+def is_typed_message(t: Turn) -> bool:
+    """The owner's own typed words: a console keyboard message, or text from the paired owner on
+    Telegram (R1 I1). Never voice, and never a forwarded / via-bot Telegram message: that is
+    fenced as outside content, so its text is someone else's."""
+    return (
+        is_owner_message(t)
+        and t.channel in TYPED_CHANNELS
+        and bool(t.content)
+        and FENCE_PREFIX not in t.content
+    )
 
 
 def owner_index(session: Session) -> int:
@@ -200,11 +216,7 @@ def conversation_of(session: Session) -> Conversation:
     """The ledger of `session`, the links in its owner's TYPED messages (not tool exchanges, not
     instructions, not the model's words, not spoken messages, not an attached file's text — only
     the message's own `content`) and its current owner message."""
-    typed = tuple(
-        t.content
-        for t in session.turns
-        if is_owner_message(t) and t.channel == "text" and t.content
-    )
+    typed = tuple(t.content for t in session.turns if is_typed_message(t))
     return Conversation(session.metadata, typed, owner_index(session))
 
 
@@ -264,6 +276,7 @@ __all__ = [
     "conversation_of",
     "current_conversation",
     "is_owner_message",
+    "is_typed_message",
     "owner_index",
     "web_conversation",
 ]

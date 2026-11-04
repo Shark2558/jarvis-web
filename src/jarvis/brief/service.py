@@ -18,7 +18,7 @@ tick:      for each owner: due? (absent, failed, stale, or a section unavailable
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
@@ -238,6 +238,9 @@ class BriefService:
         self._max_gen = max_generations
         self._clock = clock
         self._billing = billing  # the app always passes it: the limit gate and the meter
+        # R1 I1: told (uid) when a SCHEDULED tick stored a ready brief; the app sets it to the
+        # brief-ready alert. Never raises into the tick.
+        self.ready_hook: Callable[[str], Awaitable[None]] | None = None
 
     # ---- views --------------------------------------------------------------------------------
 
@@ -552,6 +555,8 @@ class BriefService:
             if run.outcome is ClaimOutcome.CLAIMED and not run.stored:
                 return 0, 0  # lost the claim: the newer brief is delivered by a later tick
             rec, made = run.record, int(run.stored)
+            if made and rec is not None and rec.status == "ready":
+                await self._tell_ready(uid)
         if not s.inbox_delivery or self._delivery is None or rec is None:
             return made, 0
         if rec.status != "ready" or rec.inbox.status != "off":
@@ -559,6 +564,14 @@ class BriefService:
         if self._wait_for_retry(rec, now, s, tz):
             return made, 0
         return made, int(await self._delivery.deliver(uid, rec, now=self._clock()))
+
+    async def _tell_ready(self, uid: str) -> None:
+        if self.ready_hook is None:
+            return
+        try:
+            await self.ready_hook(uid)
+        except Exception as exc:  # noqa: BLE001 - an alert never blocks the brief
+            log.warning("brief-ready alert failed", extra={"reason": type(exc).__name__})
 
     def _wait_for_retry(
         self, rec: BriefRecord, now: datetime, s: BriefSettings, tz: ZoneInfo

@@ -24,6 +24,7 @@ from jarvis.tools.policy import Policy
 from jarvis.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
+    from jarvis.activity.store import ActivityStore
     from jarvis.documents.service import DocumentService
     from jarvis.drive.service import DriveService
     from jarvis.media.service import MediaServices
@@ -53,6 +54,16 @@ def _register_people(reg: ToolRegistry, google: GoogleConnector | None) -> None:
             reg.register(t)
     for t in whatsapp_tools(contacts):
         reg.register(t)
+
+
+def attach_activity(gw: Gateway, store: ActivityStore, s: Settings) -> None:
+    """R1 D7: the Activity recorder hears every call's outcome after its audit entry. Once per
+    gateway, so an injected gateway gets it too and a second call changes nothing."""
+    from jarvis.activity.recorder import ActivityRecorder
+
+    if any(isinstance(o, ActivityRecorder) for o in gw.observers):
+        return
+    gw.observers.append(ActivityRecorder(store, gw.registry, timezone=s.user_timezone))
 
 
 def build_gateway(

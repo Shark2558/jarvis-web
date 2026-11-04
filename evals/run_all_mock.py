@@ -63,6 +63,8 @@ SUITES = [
         [sys.executable, str(HERE / "contacts_whatsapp" / "run.py"), "--mock"],
         True,
     ),
+    ("telegram (gated)", [sys.executable, str(HERE / "telegram" / "run.py"), "--mock"], True),
+    ("activity (gated)", [sys.executable, str(HERE / "activity" / "run.py"), "--mock"], True),
 ]
 
 

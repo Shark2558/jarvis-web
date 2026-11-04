@@ -12,12 +12,14 @@ PUT  /v1/brief/settings     SettingsPatch → SettingsView; 422 without a confir
 POST /internal/brief/tick   Cloud Scheduler only (Google OIDC) → {checked, generated, delivered};
                             then a learning sweep for each owner (slice 8, ≤ 20 s, awaited:
                             the tick holds the CPU on Cloud Run), unsent uploads (slice 10 E),
-                            expired Recently deleted items, expired passkey challenges (≤ 100)
-                            and the once-a-day Tavily usage cross-check (slice 11)
+                            expired Recently deleted items, expired passkey challenges (≤ 100),
+                            the once-a-day Tavily usage cross-check (slice 11), Telegram's seen
+                            updates and counters, and Activity days past the window (R1)
 """
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from datetime import date
 from typing import Literal
 
@@ -31,6 +33,9 @@ from jarvis.brief.models import SeenView, SettingsPatch, SettingsView, TickResul
 from jarvis.brief.service import BriefService
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import InputRejected
+from jarvis.logging import get_logger
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/v1/brief", dependencies=[Depends(require_auth)])
 internal_router = APIRouter()
@@ -99,6 +104,14 @@ async def put_settings(
     return await svc.update_settings(uid, patch)
 
 
+async def _quietly(what: str, job: Awaitable[object]) -> None:
+    """A housekeeping sweep never fails the tick."""
+    try:
+        await job
+    except Exception as exc:  # noqa: BLE001
+        log.warning("tick: %s failed", what, extra={"reason": type(exc).__name__})
+
+
 @internal_router.post(
     TICK_PATH,
     response_model=TickResult,
@@ -121,6 +134,12 @@ async def tick(request: Request, svc: BriefService = Depends(_svc)) -> TickResul
     perms = getattr(request.app.state, "permissions", None)
     if perms is not None:  # passkey challenges never answered (slice 11 D7 c): never raises
         await perms.sweep_challenges()
+    tg = getattr(request.app.state, "telegram", None)
+    if tg is not None:  # seen update ids / counters past their time; a failure is only logged
+        await _quietly("telegram sweep", tg.store.sweep())
+    act = getattr(request.app.state, "activity", None)
+    if act is not None:  # Activity days past the 7-day window (R1 D7)
+        await _quietly("activity sweep", act.sweep(svc.owners))
     web = getattr(request.app.state, "web", None)
     if web is not None:  # Tavily's own count, at most once a day (slice 11 D7 b): never raises
         await web.check_vendor_usage()

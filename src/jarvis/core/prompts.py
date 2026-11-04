@@ -20,7 +20,8 @@ from zoneinfo import ZoneInfo
 # p4.4: the Drive rule says what to say when no drive_* tool is offered (slice 12 final review).
 # p4.5: a tool that is not offered is "not connected", said in words, never tool-call markup (the
 # first real-Claude Phase 0 run after slice 12 answered the calendar question with markup).
-PERSONA_VERSION = "p4.5"
+# p4.6: R1 - the Telegram trailer (what Telegram can and cannot do).
+PERSONA_VERSION = "p4.6"
 
 Channel = Literal["text", "voice", "telegram"]
 
@@ -317,12 +318,14 @@ VOICE_RULE = (
 )
 
 
-# R1 I0 placeholder; the final wording and its tests come with I1 (persona p4.6).
 TELEGRAM_RULE = (
     "\nTelegram reply (the owner is typing in Telegram, which keeps chats on its servers)\n"
-    "- Plain text only: no markdown or tables. About 120 words unless asked for more.\n"
-    "- Never paste a whole email, document or contact list: give the gist and say the rest is\n"
-    "  in the console. Actions that can't be undone wait in the console.\n"
+    "- Plain text only: no markdown, no tables. About 120 words unless asked for more.\n"
+    "- Never paste a whole email, document or contact list: give the gist and say the rest is in\n"
+    "  the console.\n"
+    "- Actions that can't be undone, and anything needing a passkey, cannot be approved here: say\n"
+    "  it waits in the console. Email, Drive, document and contact reads are off by default on\n"
+    "  Telegram; if one is refused, say it is the owner's choice in Integrations, Telegram.\n"
 )
 
 

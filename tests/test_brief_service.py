@@ -705,3 +705,31 @@ async def test_open_with_todays_brief_or_the_cap_makes_no_google_calls() -> None
     with pytest.raises(BriefLimitReached):
         await r.svc.generate(OWNER_UID, trigger="manual", force=True)
     assert r.fake.requests == []
+
+
+# ---- R1 I1: the brief-ready hook ----------------------------------------------------------------
+
+
+async def test_ready_hook_hears_a_scheduled_brief_once() -> None:
+    r = await _rig()
+    told: list[str] = []
+
+    async def hook(uid: str) -> None:
+        told.append(uid)
+
+    r.svc.ready_hook = hook
+    await r.svc.tick()
+    r.clock.at = NOW + timedelta(minutes=30)
+    await r.svc.tick()  # nothing new made: no second alert
+    assert told == [OWNER_UID]
+
+
+async def test_a_failing_ready_hook_never_blocks_the_brief() -> None:
+    r = await _rig()
+
+    async def hook(uid: str) -> None:
+        raise RuntimeError("telegram down")
+
+    r.svc.ready_hook = hook
+    res = await r.svc.tick()
+    assert res.generated == 1 and (await r.svc.today(OWNER_UID)).status == "ready"

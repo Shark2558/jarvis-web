@@ -2,15 +2,13 @@
 # Rows in plain words with Telegram / Voice / Offline chips, Undo only on a delete the bin can
 # restore (it calls the existing restore route and the row then reads Restored), the reason on every
 # other row, hostile text shown as text, the Yesterday tab, "Show full log" behind the list, a
-# 390 px
-# phone with no sideways scroll and 44 px targets.
-# /v1/activity and /v1/deleted/{id}/restore are answered by the test (page.route). The asset tags
-# the integrator adds to console.html / APP_ASSETS (I1) are injected here from the source files.
+# 390 px phone with no sideways scroll and 44 px targets.
+# /v1/activity and /v1/deleted/{id}/restore are answered by the test (page.route). The console is
+# the real one, with its real console-activity tags.
 from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -21,7 +19,6 @@ sync_playwright = _pw.sync_playwright
 
 pytestmark = pytest.mark.browser
 
-STATIC = Path(__file__).resolve().parents[2] / "src/jarvis/api/static"
 HOSTILE = '<img src=x onerror="window.__pwned=1">Remind you: call mum'
 DEL = "del_0123456789abcdef0123"
 GONE = "del_fedcba9876543210fedc"
@@ -145,29 +142,11 @@ def _wire(c: Console, fake: FakeActivity) -> None:
 
     c.page.route("**/v1/activity**", activity)
     c.page.route("**/v1/deleted/*/restore", restore)
-    c.page.route(
-        "**/static/console-activity.js",
-        lambda r: r.fulfill(
-            status=200,
-            content_type="text/javascript",
-            body=(STATIC / "console-activity.js").read_text(encoding="utf-8"),
-        ),
-    )
-    c.page.route(
-        "**/static/console-activity.css",
-        lambda r: r.fulfill(
-            status=200,
-            content_type="text/css",
-            body=(STATIC / "console-activity.css").read_text(encoding="utf-8"),
-        ),
-    )
 
 
 def _open(c: Console, fake: FakeActivity) -> None:
     _wire(c, fake)
     c.open()
-    c.page.add_style_tag(url="/static/console-activity.css")
-    c.page.add_script_tag(url="/static/console-activity.js")
     c.open_panel("activity")
     c.page.locator("#actPanel").wait_for()
     c.page.evaluate("window.JarvisActivity.refresh()")

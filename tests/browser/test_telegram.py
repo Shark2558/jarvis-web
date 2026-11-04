@@ -3,13 +3,11 @@
 # Telegram..." until paired), the private-reads switch with its confirm (and its cancel), alert
 # switches, Test alert, Unpair with its confirm, hostile text shown as text, and a 390 px phone with
 # no horizontal scroll. /v1/telegram* is answered by the test (page.route); the console is the real
-# one. The new script and style are injected into the served page (console.html gets its tags from
-# the integration step, not from this workstream). 0 JS errors and 0 CSP reports throughout.
+# one, with its real console-telegram tags. 0 JS errors and 0 CSP reports throughout.
 from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -20,7 +18,6 @@ sync_playwright = _pw.sync_playwright
 
 pytestmark = pytest.mark.browser
 
-STATIC = Path(__file__).resolve().parents[2] / "src" / "jarvis" / "api" / "static"
 HOSTILE = '<img src=x onerror="window.__pwned=1">Telegram said no'
 LINK = "https://t.me/jarvis_test_bot?start=AB12CD34"
 
@@ -54,28 +51,6 @@ class Fake:
 
 
 def _wire(page: Any, server_url: str, fake: Fake) -> None:
-    js = (STATIC / "console-telegram.js").read_text(encoding="utf-8")
-    css = (STATIC / "console-telegram.css").read_text(encoding="utf-8")
-    page.route(
-        "**/static/console-telegram.js",
-        lambda r: r.fulfill(status=200, content_type="application/javascript", body=js),
-    )
-    page.route(
-        "**/static/console-telegram.css",
-        lambda r: r.fulfill(status=200, content_type="text/css", body=css),
-    )
-
-    def home(route: Any) -> None:
-        resp = route.fetch()
-        html = resp.text().replace(
-            "</body>",
-            '<link rel="stylesheet" href="/static/console-telegram.css">'
-            '<script src="/static/console-telegram.js" defer></script></body>',
-        )
-        route.fulfill(response=resp, body=html)
-
-    page.route(server_url + "/", home)
-
     def api(route: Any) -> None:
         req = route.request
         path = req.url.split("/v1/telegram", 1)[1].split("?")[0]

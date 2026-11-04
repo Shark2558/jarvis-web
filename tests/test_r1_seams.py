@@ -285,8 +285,8 @@ def test_telegram_trailer_carries_the_rule_and_others_do_not() -> None:
     assert "TELEGRAM_RULE" in prompts_mod.__all__
 
 
-def test_persona_version_is_not_bumped() -> None:
-    assert prompts_mod.PERSONA_VERSION == "p4.5"
+def test_persona_version_is_p4_6() -> None:
+    assert prompts_mod.PERSONA_VERSION == "p4.6"
 
 
 # ---- tools/base.py + observers -----------------------------------------------------------

@@ -169,6 +169,7 @@ async def test_without_a_service_the_view_says_unavailable(settings: Settings) -
     app = create_app(settings, provider=MockProvider(), store=InMemorySessionStore())
     install_activity(app)
     async with app.router.lifespan_context(app):
+        app.state.activity = None  # the app wires one now (R1 I1); the route must cope without
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             body = (await c.get("/v1/activity")).json()
             assert body["available"] is False and body["items"] == []

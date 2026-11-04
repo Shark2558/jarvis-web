@@ -8,9 +8,11 @@ prefix. `undo_note` is the reason a row has no Undo button (plan D8 table).
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
+from jarvis.tools.base import Tool
 from jarvis.tools.card import one_line
 from jarvis.tools.registry import ToolRegistry
 
@@ -75,11 +77,25 @@ def _read_words(tool: str) -> tuple[str, str]:
     return _READ_FALLBACK
 
 
+_DELETE = re.compile(r"(^|_)delete($|_)")
+# Message content (subject, body, WhatsApp text, a memory note) is never copied into Activity:
+# these tools get fixed words; only the recipient (one short clean line) may be named.
+# tool -> (past tense, imperative, name the recipient from args["to"])
+_FIXED: dict[str, tuple[str, str, bool]] = {
+    "gmail_send": ("Sent an email to {to}", "Send an email to {to}", True),
+    "gmail_create_draft": ("Drafted an email to {to}", "Draft an email to {to}", True),
+    "whatsapp_draft": ("Drafted a WhatsApp to {to}", "Draft a WhatsApp to {to}", True),
+    "send_message": ("Sent a message to {to}", "Send a message to {to}", True),
+    "memory_save": ("Saved a memory", "Save a memory", False),
+}
+RECIPIENT_LIMIT = 80
+
+
 def kind_of(tool: str, risk: ActionRisk) -> str:
     """read | write | delete | send | draft | restore, from what the tool is and can do."""
     if tool == "deleted_restore":
         return "restore"
-    if "delete" in tool or tool in {"memory_forget"} or tool.startswith("grocery_remove"):
+    if _DELETE.search(tool) or tool == "memory_forget" or tool.startswith("grocery_remove"):
         return "delete"
     if tool in {"gmail_send", "send_message"}:
         return "send"
@@ -88,21 +104,42 @@ def kind_of(tool: str, risk: ActionRisk) -> str:
     return "read" if risk is ActionRisk.READ_ONLY else "write"
 
 
+def _card_text(tool: Tool, args: dict[str, Any]) -> str | None:
+    """The tool's own card text, or None when it could not be made (never the generic
+    fallback `Tool.summary` builds from the raw arguments)."""
+    try:
+        if tool.summarize is not None:
+            return tool.summarize(args)
+        return tool.summary_template.format(name=tool.name, **args)
+    except (KeyError, IndexError, TypeError, ValueError, OverflowError):
+        return None
+
+
+def _base(tool: str, args: dict[str, Any], kind: str, outcome: str, registry: ToolRegistry) -> str:
+    if kind == "read":
+        past, imperative = _read_words(tool)
+        return past if outcome == "done" else imperative
+    if tool in _FIXED:
+        past, imperative, names_recipient = _FIXED[tool]
+        text = past if outcome == "done" else imperative
+        if not names_recipient:
+            return text
+        to = one_line(args.get("to"), RECIPIENT_LIMIT) or "someone"
+        return text.format(to=to)
+    known = registry.get(tool)
+    card = _card_text(known, args) if known is not None else None
+    if card:
+        return one_line(card, WORDS_LIMIT)
+    return f"{'Used' if outcome == 'done' else 'Use'} {one_line(tool, NAME_LIMIT)}"
+
+
 def describe(
     tool: str, args: dict[str, Any], risk: ActionRisk, outcome: str, registry: ToolRegistry
 ) -> tuple[str, str]:
     """(kind, words) for one call. `outcome` is a row outcome (done, waiting, ...)."""
     kind = kind_of(tool, risk)
-    known = registry.get(tool)
-    if kind == "read":
-        past, imperative = _read_words(tool)
-        base = past if outcome == "done" else imperative
-    elif known is not None:
-        base = known.summary(args)
-    else:
-        base = f"Use {one_line(tool, NAME_LIMIT)}"
     prefix = PREFIXES.get(outcome, "")
-    return kind, one_line(prefix + base, WORDS_LIMIT)
+    return kind, one_line(prefix + _base(tool, args, kind, outcome, registry), WORDS_LIMIT)
 
 
 def undo_note(tool: str, kind: str, outcome: str, *, has_bin_copy: bool = False) -> str:

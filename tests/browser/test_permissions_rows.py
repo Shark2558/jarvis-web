@@ -156,6 +156,7 @@ def test_an_unavailable_feature_shows_its_note_and_stays_usable(
         never.click()  # the control is usable: Never can be pre-set
         c.page.locator("#permNote", has_text="Write WhatsApp drafts: Never.").wait_for()
         assert row.locator("input[value=deny]").is_checked()
+        assert row.locator(".pgnote").text_content() == note  # a change keeps the note
         # a group without a note shows none
         assert c.page.locator('#permGroups [data-group="memory_save"] .pgnote').count() == 0
     finally:

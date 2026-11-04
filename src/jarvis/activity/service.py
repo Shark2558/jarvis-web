@@ -152,12 +152,20 @@ def _bare(words: str) -> str:
 
 
 def _without_finished_waits(rows: list[ActivityItem]) -> list[ActivityItem]:
-    """A waiting row is dropped when the same tool has a row for the same words that is not
-    waiting (the card was approved, declined or refused)."""
-    finished = {(r.tool, _bare(r.words)) for r in rows if r.outcome != "waiting"}
-    return [
-        r for r in rows if not (r.outcome == "waiting" and (r.tool, _bare(r.words)) in finished)
-    ]
+    """Rows are newest first. A waiting row is dropped only when a NEWER row of the same tool and
+    words is not waiting (that card was approved, declined or refused); an older finished call
+    never hides a fresh pending card."""
+    finished: set[tuple[str, str]] = set()
+    kept: list[ActivityItem] = []
+    for r in rows:
+        key = (r.tool, r.call_key or _bare(r.words))
+        if r.outcome == "waiting":
+            if key in finished:
+                continue
+        else:
+            finished.add(key)
+        kept.append(r)
+    return kept
 
 
 __all__ = ["ActivityService"]

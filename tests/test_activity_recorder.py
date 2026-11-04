@@ -162,3 +162,11 @@ async def test_the_day_key_is_the_owners_local_day() -> None:
     await rec.on_event(event("executed"))
     assert len(await st.day("owner", "20261106")) == 1
     assert await st.day("owner", "20261105") == []
+
+
+async def test_a_card_and_the_call_it_became_share_a_call_key() -> None:
+    rec, st = rig()
+    await rec.on_event(event("awaiting_confirmation", result=None))
+    await rec.on_event(event("executed"))
+    rows = await st.day("owner", "20261105")
+    assert len(rows) == 2 and len({r.call_key for r in rows}) == 1 and rows[0].call_key

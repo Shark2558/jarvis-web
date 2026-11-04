@@ -162,3 +162,39 @@ async def test_record_restore_ignores_a_restore_that_did_not_happen() -> None:
 async def test_an_unknown_day_is_today() -> None:
     svc, _, _ = await rig()
     assert (await svc.view("owner", "tomorrow")).day == "today"
+
+
+async def test_a_new_pending_card_stays_visible_after_an_older_identical_one_finished() -> None:
+    svc, st, _ = await rig()
+    await st.add(item(1, outcome="done", words="Dentist", at=NOW), "20261105")
+    later = NOW + timedelta(hours=1)
+    await st.add(
+        item(2, outcome="waiting", words="Waiting for your OK: Dentist", at=later), "20261105"
+    )
+    words = [r.words for r in (await svc.view("owner", "today")).items]
+    assert "Waiting for your OK: Dentist" in words and "Dentist" in words
+
+
+async def test_a_waiting_card_and_the_call_it_became_match_by_call_key_not_words() -> None:
+    svc, st, _ = await rig()
+    await st.add(
+        item(
+            1,
+            outcome="waiting",
+            words="Waiting for your OK: Send an email to a@b.com",
+            call_key="k1",
+        ),
+        "20261105",
+    )
+    await st.add(
+        item(
+            2,
+            outcome="done",
+            words="Sent an email to a@b.com",
+            call_key="k1",
+            at=NOW + timedelta(minutes=1),
+        ),
+        "20261105",
+    )
+    words = [r.words for r in (await svc.view("owner", "today")).items]
+    assert words == ["Sent an email to a@b.com"]

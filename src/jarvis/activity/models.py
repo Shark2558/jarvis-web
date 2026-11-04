@@ -40,6 +40,9 @@ class ActivityItem(BaseModel):
     trace_id: str | None = None
     audit_seq: int | None = None
     undo_id: str | None = None
+    # a short hash of the call's arguments (what the audit keeps too): a waiting card and the
+    # call it became share it, whatever words each row has
+    call_key: str | None = None
 
 
 class UndoView(BaseModel):

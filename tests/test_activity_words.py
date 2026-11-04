@@ -113,3 +113,81 @@ def test_undo_note_for_a_read_and_for_unfinished_calls() -> None:
     assert undo_note("gmail_send", "send", "waiting") == "Nothing has happened yet"
     assert undo_note("gmail_send", "send", "declined") == "Nothing was done"
     assert undo_note("gmail_send", "send", "refused") == "Nothing was done"
+
+
+LEAKY = "SECRET-BODY-" + "z" * 400
+
+
+def _leaky_reg() -> ToolRegistry:
+    """Tools whose approval-card text WOULD carry the message content: Activity must not copy it."""
+    reg = ToolRegistry()
+    for name, risk in [
+        ("gmail_send", R3),
+        ("gmail_create_draft", R2),
+        ("whatsapp_draft", R1),
+        ("memory_save", R2),
+        ("send_message", R3),
+    ]:
+        reg.register(
+            Tool(
+                name=name,
+                description="d",
+                input_schema={"type": "object", "properties": {}},
+                risk=risk,
+                run=_noop,
+                summarize=lambda a: (
+                    f"To {a.get('to')} | {a.get('subject')} | {a.get('body')} | {a.get('text')}"
+                ),
+            )
+        )
+    return reg
+
+
+@pytest.mark.parametrize(
+    ("tool", "risk", "expected"),
+    [
+        ("gmail_send", R3, "Sent an email to bob@example.com"),
+        ("gmail_create_draft", R2, "Drafted an email to bob@example.com"),
+        ("whatsapp_draft", R1, "Drafted a WhatsApp to bob@example.com"),
+        ("send_message", R3, "Sent a message to bob@example.com"),
+        ("memory_save", R2, "Saved a memory"),
+    ],
+)
+def test_message_content_never_reaches_stored_words(
+    tool: str, risk: ActionRisk, expected: str
+) -> None:
+    args = {"to": "bob@example.com", "subject": LEAKY, "body": LEAKY, "text": LEAKY, "note": LEAKY}
+    _, done = describe(tool, args, risk, "done", _leaky_reg())
+    assert done == expected
+    for outcome in ("waiting", "refused", "failed", "declined"):
+        _, words = describe(tool, args, risk, outcome, _leaky_reg())
+        assert "SECRET" not in words and "zzzz" not in words
+
+
+def test_a_recipient_is_one_short_clean_line() -> None:
+    args = {"to": "x\n" + "y" * 500, "body": LEAKY}
+    _, words = describe("gmail_send", args, R3, "done", _leaky_reg())
+    assert "\n" not in words and len(words) <= 300 and "SECRET" not in words
+
+
+def test_a_card_text_that_could_not_be_made_is_not_stored() -> None:
+    reg = ToolRegistry()
+    reg.register(
+        Tool(
+            name="create_reminder",
+            description="d",
+            input_schema={"type": "object", "properties": {}},
+            risk=R2,
+            run=_noop,
+            summary_template="Remind you: {missing}",
+        )
+    )
+    _, words = describe("create_reminder", {"text": LEAKY}, R2, "done", reg)
+    assert words == "Used create_reminder" and "SECRET" not in words
+
+
+def test_deleted_list_is_a_read_not_a_delete() -> None:
+    assert kind_of("deleted_list", R1) == "read"
+    assert kind_of("deleted_restore", R2) == "restore"
+    _, words = describe("deleted_list", {}, R1, "done", _reg())
+    assert words == "Looked at Recently deleted"

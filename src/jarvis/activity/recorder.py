@@ -19,6 +19,7 @@ from jarvis.activity.words import describe
 from jarvis.core import channel
 from jarvis.logging import get_logger
 from jarvis.tools import taint
+from jarvis.tools.audit import args_hash
 from jarvis.tools.gateway import GatewayOutcome
 from jarvis.tools.observers import GatewayEvent
 from jarvis.tools.registry import ToolRegistry
@@ -91,6 +92,7 @@ class ActivityRecorder:
             trace_id=e.entry.trace_id if e.entry else None,
             audit_seq=e.entry.seq if e.entry else None,
             undo_id=undo_id,
+            call_key=args_hash(e.args),
         )
         await self.store.add(item, day_key(now.astimezone(self._tz).date()))
 

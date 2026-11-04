@@ -104,3 +104,24 @@ async def test_a_failing_availability_check_never_hides_rows(
         body = (await c.get("/v1/permissions")).json()
         assert [g["id"] for g in body["groups"]] == [g.id for g in GROUPS]
         assert all(g["available"] is True and g["note"] == "" for g in body["groups"])
+
+
+async def test_notes_are_computed_on_get_only_not_on_every_change(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import jarvis.api.permissions as api
+
+    calls: list[str] = []
+    real = api.availability_notes
+
+    async def counting(*a: Any, **k: Any) -> Any:
+        calls.append("x")
+        return await real(*a, **k)
+
+    monkeypatch.setattr(api, "availability_notes", counting)
+    async for c in _client(settings, google=False, contacts=False, never=False):
+        await c.get("/v1/permissions")
+        assert len(calls) == 1
+        r = await c.put("/v1/permissions", json={"groups": {"web": "deny"}}, headers=H)
+        assert r.status_code == 200
+        assert len(calls) == 1  # a change does not ask Google again

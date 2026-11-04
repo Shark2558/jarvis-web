@@ -67,7 +67,12 @@ class Rig:
         self.gw = Gateway(
             registry=self.reg, policy=Policy(rules), gate=ConfirmationGate(), audit=AuditLog()
         )
-        self.gw.observers = [ActivityRecorder(self.store, self.reg, clock=lambda: NOW)]
+        ticks = iter(range(1, 10_000))  # each row is a second later than the last
+        self.gw.observers = [
+            ActivityRecorder(
+                self.store, self.reg, clock=lambda: NOW + timedelta(seconds=next(ticks))
+            )
+        ]
         self.svc = ActivityService(self.store, self.undo, clock=lambda: NOW)
 
     def _tools(self) -> list[Tool]:

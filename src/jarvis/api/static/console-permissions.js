@@ -191,6 +191,15 @@
     sum.textContent = `${rules} · ${pk}`;
   }
 
+  /** Only GET /v1/permissions carries `available` / `note`; a change answers without them, so keep
+   *  the ones already on the page (R1 D9). */
+  function keepNotes(v) {
+    if (!v || !S.data) return v;
+    const old = new Map(S.data.groups.map(g => [g.id, g]));
+    v.groups.forEach(g => { const o = old.get(g.id); if (o) { g.available = o.available; g.note = o.note; } });
+    return v;
+  }
+
   // ---- groups: one segmented control each (native radios: arrows move, Space picks) -------------
   let uid = 0;
   function groupRow(g) {
@@ -221,7 +230,7 @@
     if (S.busy) return;
     S.busy = true;
     try {
-      S.data = normal(await api('/v1/permissions', { method: 'PUT', body: { groups: { [g.id]: effect } } })) || S.data;
+      S.data = keepNotes(normal(await api('/v1/permissions', { method: 'PUT', body: { groups: { [g.id]: effect } } }))) || S.data;
       S.fetchedAt = Date.now();
       note('ok', `${g.label}: ${WORDS[effect]}.`);
       log('info', `Permission · ${g.label}: ${WORDS[effect]}`);
@@ -235,7 +244,7 @@
   async function act(fn, ok) {
     if (S.busy) return;
     S.busy = true; note('', ''); render();
-    try { const v = normal(await fn()); if (v) { S.data = v; S.fetchedAt = Date.now(); } note('ok', ok); log('info', ok); }
+    try { const v = keepNotes(normal(await fn())); if (v) { S.data = v; S.fetchedAt = Date.now(); } note('ok', ok); log('info', ok); }
     catch (e) { note('bad', errText(e)); }
     finally { S.busy = false; S.confirm = null; S.confirmReset = false; render(); }
   }

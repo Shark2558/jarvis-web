@@ -84,3 +84,26 @@ async def test_sweep_never_raises() -> None:
             raise RuntimeError("down")
 
     assert await ActivityStore(Broken()).sweep(["owner"], keep_from="20261103") == 0
+
+
+async def test_sweep_removes_every_old_day_however_old_and_all_rows_of_a_day() -> None:
+    st = ActivityStore(MemoryDocs())
+    await st.add(item(1), "20260915")  # 50+ days before the cutoff
+    await st.add(item(2), "20261001")
+    for n in range(10, 1210):  # a day with more rows than one batch
+        await st.add(item(n), "20261020")
+    await st.add(item(3), "20261104")
+    gone = await st.sweep(["owner"], keep_from="20261104")
+    assert gone == 1202
+    for day in ("20260915", "20261001", "20261020"):
+        assert await st.day("owner", day) == []
+    assert len(await st.day("owner", "20261104")) == 1
+    assert await st.sweep(["owner"], keep_from="20261104") == 0  # nothing left to do
+
+
+async def test_sweep_only_touches_the_given_owners() -> None:
+    st = ActivityStore(MemoryDocs())
+    await st.add(item(1, "alice"), "20261001")
+    await st.add(item(2, "bob"), "20261001")
+    assert await st.sweep(["alice"], keep_from="20261104") == 1
+    assert len(await st.day("bob", "20261001")) == 1

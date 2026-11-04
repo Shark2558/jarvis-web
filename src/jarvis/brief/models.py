@@ -64,6 +64,9 @@ class BriefSettings(Frozen):
     ai_consent: int = Field(
         default=1, description="Version of the AI consent text last confirmed (AI_CONSENT_VERSION)"
     )
+    # R1 D13 / D15: the deterministic Deliveries and Family today sections (never sent to the AI)
+    deliveries: bool = True
+    family: bool = True
 
     @field_validator("time")
     @classmethod
@@ -141,6 +144,43 @@ class TodoSection(Frozen):
     )
 
 
+class DeliveryItem(Frozen):
+    """One parcel (R1 D13). `item` is the mail subject: someone else's words."""
+
+    item: str
+    status: str = Field(description="ordered | shipped | out_for_delivery | delivered | ...")
+    merchant: str = ""
+    carrier: str = ""
+    expected: str = Field(default="", description="YYYY-MM-DD, '' when the mail gave none")
+
+
+class DeliveriesSection(Frozen):
+    """Parcels on their way (or delivered today), from order emails. Deterministic, no AI."""
+
+    total: int = Field(default=0, description="How many were found (items holds <= 5)")
+    items: tuple[DeliveryItem, ...] = ()
+    state: SectionState = "ok"
+
+
+class FamilyEvent(Frozen):
+    when: str = Field(description="'09:30', 'All day' or '10:00-11:00'")
+    title: str = Field(default="", description="Their words; '' for a busy block")
+
+
+class FamilyMemberDay(Frozen):
+    name: str = Field(description="The owner's own label for the person")
+    events: tuple[FamilyEvent, ...] = ()
+    busy_only: bool = False
+    unavailable: bool = False
+
+
+class FamilySection(Frozen):
+    """What family members' calendars hold today (R1 D15); titles are their words."""
+
+    members: tuple[FamilyMemberDay, ...] = ()
+    state: SectionState = "ok"
+
+
 class SectionsStatus(Frozen):
     calendar: SectionState = "ok"
     inbox: SectionState = "ok"
@@ -156,6 +196,9 @@ class BriefData(Frozen):
     jarvis: JarvisSection = JarvisSection()
     # None: not read (a brief made before the to-do section existed, or its state says why)
     todo: TodoSection | None = None
+    # R1: None = not read (switched off in the brief settings, no members, or an older brief)
+    deliveries: DeliveriesSection | None = None
+    family: FamilySection | None = None
     sections_status: SectionsStatus = SectionsStatus()
 
 
@@ -234,6 +277,8 @@ class SettingsView(Frozen):
     updated_at: dt.datetime | None
     # the AI summary is on under the consent that names to-do titles (else they are not sent)
     ai_todo_consent: bool = False
+    deliveries: bool = True
+    family: bool = True
 
 
 class TodayView(Frozen):
@@ -264,6 +309,8 @@ class SettingsPatch(BaseModel):
     time: str | None = None
     ai_summary: bool | None = None
     inbox_delivery: bool | None = None
+    deliveries: bool | None = None
+    family: bool | None = None
     confirm_spend: bool = False
     confirm_inbox: bool = False
 
@@ -286,6 +333,11 @@ __all__ = [
     "BriefStatus",
     "BriefView",
     "CalendarSection",
+    "DeliveriesSection",
+    "DeliveryItem",
+    "FamilyEvent",
+    "FamilyMemberDay",
+    "FamilySection",
     "FreeBlock",
     "InboxItem",
     "InboxSection",

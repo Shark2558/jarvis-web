@@ -18,16 +18,19 @@ tick:      for each owner: due? (absent, failed, stale, or a section unavailable
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import asyncio
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Literal
+from typing import Literal, TypeVar
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jarvis.billing import Billing, BudgetError
 from jarvis.billing.fx import DEFAULT_RATE
 from jarvis.brief.collect import Collected, Collector
 from jarvis.brief.deliver import InboxDelivery
+from jarvis.brief.deliveries import DeliveriesBrief
+from jarvis.brief.family_day import FamilyBrief
 from jarvis.brief.models import (
     AI_CONSENT_VERSION,
     AIBlock,
@@ -35,6 +38,9 @@ from jarvis.brief.models import (
     BriefRecord,
     BriefSettings,
     BriefView,
+    DeliveriesSection,
+    FamilySection,
+    SectionState,
     SettingsPatch,
     SettingsView,
     TickResult,
@@ -57,7 +63,7 @@ from jarvis.brief.store import BriefStore, ClaimOutcome, claim_decision
 from jarvis.brief.summarize import Summarizer
 from jarvis.config import LLMBackend
 from jarvis.core.guardrails import ActionRisk, ApprovalStore
-from jarvis.integrations.google import GoogleConnector, can_insert
+from jarvis.integrations.google import GoogleConnector, GoogleNotConnected, can_insert
 from jarvis.llm.base import Usage
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.pricing import cost_usd, is_priced
@@ -66,7 +72,9 @@ from jarvis.logging import get_logger
 from jarvis.tools.audit import AuditTrail
 
 log = get_logger(__name__)
+T = TypeVar("T")
 
+EXTRA_TIMEOUT_S = 25.0  # each R1 section (Deliveries, Family today), all its reads together
 MAX_GENERATIONS = 6
 TYPICAL_USAGE = Usage(input_tokens=8_000, output_tokens=600)  # one brief (plan, verified)
 AGENT = "morning_brief"
@@ -105,6 +113,17 @@ class SettingsRejected(ValueError):
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+async def _own_section(work: Awaitable[T], failed: Callable[[SectionState], T]) -> T | None:
+    """One R1 section's result; its own `unavailable` / `not_connected` state when it fails."""
+    try:
+        return await asyncio.wait_for(work, EXTRA_TIMEOUT_S)
+    except GoogleNotConnected:
+        return failed("not_connected")
+    except Exception as exc:  # noqa: BLE001 -- one section failing never fails the brief
+        log.warning("brief section unavailable", extra={"reason": type(exc).__name__})
+        return failed("unavailable")
 
 
 def _zone(name: str | None) -> ZoneInfo | None:
@@ -146,7 +165,7 @@ def apply_patch(
     changes: dict[str, object] = {
         k: v
         for k, v in p.model_dump(
-            include={"enabled", "time", "ai_summary", "inbox_delivery"}
+            include={"enabled", "time", "ai_summary", "inbox_delivery", "deliveries", "family"}
         ).items()
         if v is not None
     }
@@ -168,6 +187,8 @@ def settings_view(s: BriefSettings) -> SettingsView:
         inbox_delivery=s.inbox_delivery,
         updated_at=s.updated_at,
         ai_todo_consent=todo_consented(s),
+        deliveries=s.deliveries,
+        family=s.family,
     )
 
 
@@ -224,6 +245,8 @@ class BriefService:
         clock: Callable[[], datetime] = utcnow,
         summarizer: Summarizer | None = None,
         billing: Billing | None = None,
+        deliveries: DeliveriesBrief | None = None,
+        family_day: FamilyBrief | None = None,
     ) -> None:
         self._store = store
         self._google = google
@@ -238,6 +261,8 @@ class BriefService:
         self._max_gen = max_generations
         self._clock = clock
         self._billing = billing  # the app always passes it: the limit gate and the meter
+        self._deliveries = deliveries  # R1: Deliveries section (None: not wired)
+        self._family_day = family_day  # R1: Family today section (None: not wired)
 
     # ---- views --------------------------------------------------------------------------------
 
@@ -389,7 +414,9 @@ class BriefService:
 
     async def _build(self, rec: BriefRecord, tz: ZoneInfo, s: BriefSettings) -> BriefRecord:
         try:
-            got = await self._collector.collect(rec.user_id, tz, date.fromisoformat(rec.date))
+            day = date.fromisoformat(rec.date)
+            got = await self._collector.collect(rec.user_id, tz, day)
+            got = await self._with_extras(got, s, rec.user_id, tz, day)
             await self._audit_collect(rec, got)
             ai, note, calls = await self._ai(rec, s, got)
             return rec.model_copy(
@@ -411,6 +438,25 @@ class BriefService:
             return rec.model_copy(
                 update={"status": "failed", "error": ERR_FAILED, "created_at": self._clock()}
             )
+
+    async def _with_extras(
+        self, got: Collected, s: BriefSettings, uid: str, tz: ZoneInfo, day: date
+    ) -> Collected:
+        """R1: the Deliveries and Family today sections. Each is switched by its setting, reads on
+        its own, and fails on its own (a state on the section, never a failed brief)."""
+        deliveries = family = None
+        if s.deliveries and self._deliveries is not None:
+            deliveries = await _own_section(
+                self._deliveries.section(uid, tz, day), lambda st: DeliveriesSection(state=st)
+            )
+        if s.family and self._family_day is not None:
+            family = await _own_section(
+                self._family_day.section(uid, tz, day), lambda st: FamilySection(state=st)
+            )
+        if deliveries is None and family is None:
+            return got
+        data = got.data.model_copy(update={"deliveries": deliveries, "family": family})
+        return Collected(data=data, snippets=got.snippets)
 
     async def _ai(
         self, rec: BriefRecord, s: BriefSettings, got: Collected

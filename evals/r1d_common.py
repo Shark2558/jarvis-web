@@ -225,9 +225,11 @@ def tokens_for(*, tasks: bool = True) -> GoogleTokens:
     )
 
 
-async def connector(http: httpx.AsyncClient, *, tasks: bool = True) -> GoogleConnector:
+async def connector(
+    http: httpx.AsyncClient, *, tasks: bool = True, uid: str = OWNER
+) -> GoogleConnector:
     store = MemoryTokenStore()
-    await store.put(OWNER, tokens_for(tasks=tasks))
+    await store.put(uid, tokens_for(tasks=tasks))
     return GoogleConnector(store, client_id="e", client_secret=SecretStr("e"), http=http)
 
 

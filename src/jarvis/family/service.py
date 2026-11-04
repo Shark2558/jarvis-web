@@ -230,32 +230,18 @@ class FamilyService:
             out["location"] = wrap_external(str(e["location"]), source=src, limit=PLACE_LIMIT)
         return out
 
-    async def member_events(
-        self,
-        uid: str,
-        m: Member,
-        start: datetime,
-        end: datetime,
-        tz: ZoneInfo,
-        query: str | None = None,
-    ) -> dict[str, Any]:
-        """One member's calendar between two times. Never raises for that calendar alone: a
-        calendar Google won't show any more answers `status: unavailable`."""
-        base: dict[str, Any] = {"member": m.name, "access": m.access}
+    async def fetch(
+        self, uid: str, m: Member, start: datetime, end: datetime, query: str | None = None
+    ) -> tuple[bool, list[Any]] | None:
+        """One member's calendar between two times, raw: (busy_only, busy blocks as
+        (start, end) pairs | Google events), or None when Google won't show that calendar any
+        more (un-shared, deleted, refused). Never raises for one calendar alone."""
         try:
             if m.access == "freeBusyReader":
-                busy = (await self._busy(uid, [m.calendar_id], start, end))[m.calendar_id]
-                if not busy[1]:
-                    return {**base, "status": "unavailable"}
-                return {
-                    **base,
-                    "status": "ok",
-                    "busy_only": True,
-                    "busy": [
-                        {"start": s.astimezone(tz).isoformat(), "end": e.astimezone(tz).isoformat()}
-                        for s, e in busy[0]
-                    ],
-                }
+                blocks, readable = (await self._busy(uid, [m.calendar_id], start, end))[
+                    m.calendar_id
+                ]
+                return (True, blocks) if readable else None
             params: dict[str, Any] = {
                 "timeMin": start.isoformat(),
                 "timeMax": end.isoformat(),
@@ -271,17 +257,43 @@ class FamilyService:
         except GoogleNotConnected:
             raise
         except GoogleAPIError:
-            return {**base, "status": "unavailable"}
+            return None
         items = [
             e
             for e in (data.get("items") if isinstance(data, dict) else None) or []
             if isinstance(e, dict) and e.get("status") != "cancelled"
         ][:MAX_EVENTS]
+        return False, items
+
+    async def member_events(
+        self,
+        uid: str,
+        m: Member,
+        start: datetime,
+        end: datetime,
+        tz: ZoneInfo,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        base: dict[str, Any] = {"member": m.name, "access": m.access}
+        got = await self.fetch(uid, m, start, end, query)
+        if got is None:
+            return {**base, "status": "unavailable"}
+        busy_only, rows = got
+        if busy_only:
+            return {
+                **base,
+                "status": "ok",
+                "busy_only": True,
+                "busy": [
+                    {"start": s.astimezone(tz).isoformat(), "end": e.astimezone(tz).isoformat()}
+                    for s, e in rows
+                ],
+            }
         return {
             **base,
             "status": "ok",
             "busy_only": False,
-            "events": [self._shape_event(e, tz, m.name) for e in items],
+            "events": [self._shape_event(e, tz, m.name) for e in rows],
         }
 
     async def events(self, uid: str, a: dict[str, Any]) -> dict[str, Any]:

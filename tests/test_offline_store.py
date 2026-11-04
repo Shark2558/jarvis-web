@@ -3,7 +3,9 @@
 # "local_brain/config"); the model, switch and bookkeeping are plain.
 from __future__ import annotations
 
+import asyncio
 import os
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -154,3 +156,59 @@ async def test_touch_ok_never_creates_a_document() -> None:
 async def test_a_bad_model_name_is_refused_by_the_store(model: str) -> None:
     with pytest.raises(ValueError):
         await _store().put(url=URL, key=SecretStr(KEY), model=model, enabled=True, set_by="u")
+
+
+# ---- M2: no lost update between the read and the write -----------------------------------------
+
+
+class _Interleaved(MemoryDocs):
+    """Runs `rival` as a separate task while the first read of the config is in flight."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rival: Callable[[], Awaitable[None]] | None = None
+        self.tasks: list[asyncio.Task[None]] = []
+
+    async def get(self, path: str):  # type: ignore[no-untyped-def]
+        got = await super().get(path)
+        if self.rival is not None:
+            rival, self.rival = self.rival, None
+            task = asyncio.create_task(rival())
+            self.tasks.append(task)
+            for _ in range(5):  # let the rival run as far as it can
+                await asyncio.sleep(0)
+        return got
+
+
+@pytest.mark.parametrize("op", ["touch_ok", "set_enabled"])
+async def test_forget_during_a_write_back_does_not_resurrect_the_document(op: str) -> None:
+    docs = _Interleaved()
+    st = _store(docs)
+    await st.put(url=URL, key=SecretStr(KEY), model="m", enabled=True, set_by="u1")
+    docs.rival = st.delete
+    if op == "touch_ok":
+        await st.touch_ok(T0 + timedelta(minutes=1))
+    else:
+        await st.set_enabled(False, by="u2")
+    await asyncio.gather(*docs.tasks)
+    assert await docs.get("jarvis_local_brain/config") is None
+
+
+@pytest.mark.parametrize("op", ["touch_ok", "set_enabled"])
+async def test_a_key_rotation_during_a_write_back_keeps_the_new_key(op: str) -> None:
+    docs = _Interleaved()
+    st = _store(docs)
+    await st.put(url=URL, key=SecretStr(KEY), model="m", enabled=True, set_by="u1")
+    new_key = SecretStr("N" * 30)
+
+    async def rotate() -> None:
+        await st.put(url=URL, key=new_key, model="m", enabled=True, set_by="u1")
+
+    docs.rival = rotate
+    if op == "touch_ok":
+        await st.touch_ok(T0 + timedelta(minutes=1))
+    else:
+        await st.set_enabled(False, by="u2")
+    await asyncio.gather(*docs.tasks)
+    got = await st.get()
+    assert got is not None and got.key.get_secret_value() == new_key.get_secret_value()

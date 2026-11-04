@@ -24,9 +24,31 @@ need caddy "Install it from https://caddyserver.com/docs/install"
 need tailscale "Install it from https://tailscale.com/download and sign in."
 need curl "Install curl with your package manager."
 
-if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
-  echo "Ollama is not answering on this laptop. Open the Ollama app (or run: ollama serve)," >&2
-  echo "then pull a model, for example: ollama pull qwen2.5:3b" >&2
+ollama_up() { curl -fsS --max-time 3 http://127.0.0.1:11434/api/version >/dev/null 2>&1; }
+
+# Ollama's default context window is 4096 tokens; JARVIS's prompt and tool list need more, and an
+# overflow silently drops the oldest words. A server we start here gets 8192. One that is already
+# running (the Ollama app) keeps its own setting: see README.md.
+OLLAMA_PID=""
+if ! ollama_up && command -v ollama >/dev/null 2>&1; then
+  OLLAMA_CONTEXT_LENGTH=8192 ollama serve >/dev/null 2>&1 &
+  OLLAMA_PID=$!
+  for _ in $(seq 1 "${JARVIS_OLLAMA_WAIT_S:-15}"); do
+    ollama_up && break
+    sleep 1
+  done
+fi
+if ! ollama_up; then
+  echo "Ollama is not answering on this laptop. Open the Ollama app (or run:" >&2
+  echo "OLLAMA_CONTEXT_LENGTH=8192 ollama serve), then pull a model, for example: ollama pull qwen2.5:3b" >&2
+  exit 1
+fi
+
+# Refuse to start twice: a second run would fight the first over the gate port, and its exit would
+# close the first run's Funnel.
+if (exec 3<>/dev/tcp/127.0.0.1/11435) 2>/dev/null; then
+  echo "Port 11435 is already in use, probably by a gate that is already running." >&2
+  echo "Close that window (or stop whatever uses the port), then run this again." >&2
   exit 1
 fi
 
@@ -45,12 +67,19 @@ if [ "${#KEY}" -lt 16 ]; then
 fi
 
 CADDY_PID=""
+FUNNEL_ON=0
 cleanup() {
   if [ -n "$CADDY_PID" ]; then
     kill "$CADDY_PID" 2>/dev/null || true
   fi
-  # close only this port; never `funnel reset` (it would wipe the owner's other Funnel/Serve setup)
-  tailscale funnel --https=8443 off >/dev/null 2>&1 || true
+  if [ -n "$OLLAMA_PID" ]; then
+    kill "$OLLAMA_PID" 2>/dev/null || true
+  fi
+  # close only this port, and only if THIS run opened it; never `funnel reset` (it would wipe the
+  # owner's other Funnel/Serve setup)
+  if [ "$FUNNEL_ON" = 1 ]; then
+    tailscale funnel --https=8443 off >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -64,6 +93,7 @@ if ! tailscale funnel --bg --https=8443 11435 >/dev/null 2>&1; then
   echo "(Tailscale admin console -> Access controls) and that you are signed in. See README.md." >&2
   exit 1
 fi
+FUNNEL_ON=1
 
 ADDRESS="$(tailscale funnel status 2>/dev/null | grep -o 'https://[A-Za-z0-9.-]*\.ts\.net\(:[0-9]*\)\{0,1\}' | head -n 1 || true)"
 echo

@@ -99,11 +99,18 @@ async def ensure_public(host: str, *, resolver: Resolver = system_resolver) -> N
     await public_ips(host, resolver=resolver)
 
 
+def _ipv4_first(ips: list[str]) -> list[str]:
+    """IPv4 before IPv6 (Cloud Run has no IPv6 egress), each family in the resolver's order."""
+    v4 = [i for i in ips if ":" not in i]
+    return v4 + [i for i in ips if ":" in i]
+
+
 class PinnedTransport(httpx.AsyncBaseTransport):
     """Connects to the address it just validated (closes the DNS-rebinding gap between a check and
     the connection). Per request: resolve the name, refuse unless every answer is public, then send
-    the request to the first answer with the Host header and the TLS server name (SNI, certificate
-    check) still the hostname. An IP-literal URL is refused outright."""
+    the request to an answer (IPv4 first, then each other validated one in turn if a connection
+    fails) with the Host header and the TLS server name (SNI, certificate check) still the
+    hostname. An IP-literal URL is refused outright."""
 
     def __init__(
         self, resolver: Resolver = system_resolver, inner: httpx.AsyncBaseTransport | None = None
@@ -127,14 +134,20 @@ class PinnedTransport(httpx.AsyncBaseTransport):
         host_header = f"{host}:{port}" if port is not None else host
         headers = [(k, v) for k, v in request.headers.raw if k.lower() != b"host"]
         headers.append((b"host", host_header.encode()))
-        pinned = httpx.Request(
-            request.method,
-            request.url.copy_with(host=ips[0]),
-            headers=headers,
-            stream=request.stream,
-            extensions={**request.extensions, "sni_hostname": host},
-        )
-        return await self._inner.handle_async_request(pinned)
+        last: httpx.ConnectError | httpx.ConnectTimeout | None = None
+        for ip in _ipv4_first(ips):
+            pinned = httpx.Request(
+                request.method,
+                request.url.copy_with(host=ip),
+                headers=headers,
+                stream=request.stream,
+                extensions={**request.extensions, "sni_hostname": host},
+            )
+            try:
+                return await self._inner.handle_async_request(pinned)
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last = exc  # this address did not connect: try the next validated one
+        raise last if last is not None else httpx.ConnectError("no address to connect to")
 
     async def aclose(self) -> None:
         await self._inner.aclose()

@@ -24,6 +24,10 @@ works exactly as before without it.
 1. **Ollama.** Install it from ollama.com, open it, then pull a model:
    `ollama pull qwen2.5:3b` (the default: it fits a laptop GPU with 4 GB). `ollama pull qwen2.5:7b`
    is smarter but, on a small GPU, mostly runs on the CPU and is slower: an optional choice.
+   JARVIS needs Ollama's memory of the conversation set to 8192 (its default, 4096, cuts off the
+   start of the chat): the start script does this if Ollama is not running yet, so quit the Ollama
+   app first; if you keep the app open, set the setting `OLLAMA_CONTEXT_LENGTH` to `8192` in your
+   system's environment variables and restart the app.
 2. **Caddy** (the little gate that checks the key). macOS: `brew install caddy`. Windows:
    `winget install CaddyServer.Caddy`. Linux: see caddyserver.com/docs/install.
 3. **Tailscale** (free Personal plan): install it from tailscale.com/download and sign in. In the

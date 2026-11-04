@@ -186,6 +186,9 @@ class SectionsStatus(Frozen):
     inbox: SectionState = "ok"
     jarvis: SectionState = "ok"
     todo: TodoState = "ok"
+    # R1: older stored records lack these two, so they default to "ok"
+    deliveries: SectionState = "ok"
+    family: SectionState = "ok"
 
 
 class BriefData(Frozen):
@@ -209,6 +212,7 @@ class AIBlock(Frozen):
     lines: tuple[str, ...]
     model: str
     cost_usd: float = 0.0
+    offline: bool = False  # the owner's laptop answered, not the cloud model
 
 
 class InboxState(Frozen):
@@ -319,6 +323,8 @@ class TickResult(Frozen):
     checked: int = 0
     generated: int = 0
     delivered: int = 0
+    # housekeeping sweeps of this tick: name -> "ok" | "failed" (no error text, ever)
+    sweeps: dict[str, Literal["ok", "failed"]] = Field(default_factory=dict)
 
 
 __all__ = [

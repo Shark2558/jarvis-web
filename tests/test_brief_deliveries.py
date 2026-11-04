@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -15,12 +15,15 @@ from r1d_fakes import connector as gmail_connector
 from jarvis.brief.deliveries import DeliveriesBrief
 from jarvis.brief.models import (
     BriefData,
+    BriefRecord,
     BriefSettings,
     DeliveriesSection,
     DeliveryItem,
+    SectionsStatus,
     SettingsPatch,
 )
 from jarvis.brief.render import render_text
+from jarvis.brief.schedule import has_unavailable_section
 from jarvis.brief.service import BriefService
 from jarvis.brief.store import BriefStore
 from jarvis.brief.summarize import build_input
@@ -132,8 +135,11 @@ def test_the_ai_summary_input_never_contains_deliveries() -> None:
 
 
 class Clock:
+    def __init__(self) -> None:
+        self.at = NOW
+
     def __call__(self) -> datetime:
-        return NOW
+        return self.at
 
 
 class Boom:
@@ -141,7 +147,7 @@ class Boom:
         raise RuntimeError("gmail down")
 
 
-async def service(deliveries: Any) -> BriefService:
+async def service(deliveries: Any, clock: Clock | None = None) -> BriefService:
     fake = BriefGoogle(
         events=[timed("e1", "Standup", "2026-11-05T09:30", "2026-11-05T10:00")],
         messages=[
@@ -158,7 +164,7 @@ async def service(deliveries: Any) -> BriefService:
         audit=AuditLog(),
         owners=[OWNER_UID],
         default_tz="Asia/Kolkata",
-        clock=Clock(),
+        clock=clock or Clock(),
         deliveries=deliveries,
     )
 
@@ -188,3 +194,51 @@ async def test_a_failing_deliveries_read_never_fails_the_brief() -> None:
 def test_settings_default_on() -> None:
     s = BriefSettings()
     assert s.deliveries is True and s.family is True
+
+
+# ---- R1 fix-4 M3: retries and the ready alert ---------------------------------------------
+
+
+async def test_an_unavailable_deliveries_section_is_retried_and_alerts_once() -> None:
+    clock = Clock()
+    svc = await service(Boom(), clock)
+    await svc.update_settings(OWNER_UID, SettingsPatch(enabled=True))
+    told: list[str] = []
+
+    async def hook(uid: str) -> None:
+        told.append(uid)
+
+    svc.ready_hook = hook
+    first = await svc.tick()
+    assert first.generated == 1
+    stored = await svc._store.get_brief(OWNER_UID, DAY.isoformat())
+    assert stored is not None and stored.data is not None
+    assert stored.data.sections_status.deliveries == "unavailable"
+    clock.at = NOW + timedelta(minutes=30)
+    second = await svc.tick()
+    assert second.generated == 1  # retried: the new section was unavailable
+    assert told == [OWNER_UID]  # but "ready" was announced only for the first record
+
+
+def test_an_unavailable_family_section_is_retryable() -> None:
+    data = BriefData(
+        date="2026-11-05", tz="UTC", sections_status=SectionsStatus(family="unavailable")
+    )
+    rec = BriefRecord.model_validate(
+        {
+            "user_id": "u",
+            "date": "2026-11-05",
+            "tz": "UTC",
+            "status": "ready",
+            "claim_id": "c",
+            "claimed_at": NOW,
+            "trigger": "scheduled",
+            "data": data.model_dump(),
+        }
+    )
+    assert has_unavailable_section(rec)
+
+
+def test_an_old_stored_status_without_the_new_fields_still_loads() -> None:
+    st = SectionsStatus.model_validate({"calendar": "ok", "inbox": "ok", "jarvis": "ok"})
+    assert st.deliveries == "ok" and st.family == "ok"

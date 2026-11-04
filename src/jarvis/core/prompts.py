@@ -20,7 +20,8 @@ from zoneinfo import ZoneInfo
 # p4.4: the Drive rule says what to say when no drive_* tool is offered (slice 12 final review).
 # p4.5: a tool that is not offered is "not connected", said in words, never tool-call markup (the
 # first real-Claude Phase 0 run after slice 12 answered the calendar question with markup).
-# p4.6: R1 - the Telegram trailer (what Telegram can and cannot do).
+# p4.6: R1 - the Telegram trailer (what Telegram can and cannot do) and the new paragraphs:
+# groceries, parcels, family calendars, mail read aloud and Activity.
 PERSONA_VERSION = "p4.6"
 
 Channel = Literal["text", "voice", "telegram"]
@@ -312,8 +313,9 @@ Reading mail aloud (standing rule)
 
 ACTIVITY_RULE = """
 Activity (standing rule)
-- "What did you do today" -> point to the Activity panel. A delete can be undone
-  (deleted_restore); an add cannot be undone automatically, so offer to change or delete it.
+- "What did you do today" -> point to the console's Activity panel. Only an undo-able delete
+  (see Deleting and undo) can be undone with deleted_restore; any other delete, and an add,
+  cannot be undone automatically, so offer to change or delete it.
 """
 
 

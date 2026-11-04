@@ -341,6 +341,7 @@ def _wire_gateway(
     if gw is not None:
         # R1 C: offline mode's rules are the OUTERMOST layer, outside telegram's (an inner one
         # would be dropped by the channel wrapper); the Telegram marker stays visible through it
+        assert gw.rules is not None  # set from the permissions service just above
         gw.rules = wrap_offline(gw.rules)
     # Activity (R1 B): a per-day store and the observer that fills it, on every gateway
     app.state.activity_store = ActivityStore(docs, prefix=s.firestore_prefix)
@@ -399,28 +400,53 @@ def _log_up(app: FastAPI, s: Settings) -> None:
     )
 
 
-async def _shut_down(app: FastAPI) -> None:
-    """Close what the app opened, in the order it was opened."""
-    if app.state.memory is not None:  # let a learning run that is under way finish
+async def _drain_memory(app: FastAPI) -> None:
+    """Let a learning run that is under way finish (bounded)."""
+    if app.state.memory is not None:
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(app.state.memory.drain(), DRAIN_TIMEOUT_S)
-    if app.state.google is not None:
-        await app.state.google.http.aclose()
-    if app.state.fx_http is not None:
-        await app.state.fx_http.aclose()
-    await app.state.voice.aclose()
-    if app.state.telegram is not None:
-        await app.state.telegram.client.aclose()
-    if app.state.web is not None:
-        await app.state.web.aclose()
-    if app.state.drive is not None:
-        await app.state.drive.aclose()
-    if app.state.media is not None:
-        await app.state.media.aclose()
-    verifier = getattr(app.state, "scheduler_verifier", None)
-    if verifier is not None:
-        await verifier.aclose()
-    await app.state.store.close()
+
+
+# (state attribute, closer path under it). Resolved when the close runs, so what is closed is
+# whatever the app holds at that time. Listed in the order the wiring opens them.
+_CLOSABLES: tuple[tuple[str, str], ...] = (
+    ("store", "close"),
+    ("google", "http.aclose"),
+    ("fx_http", "aclose"),
+    ("voice", "aclose"),
+    ("telegram", "client.aclose"),
+    ("web", "aclose"),
+    ("drive", "aclose"),
+    ("media", "aclose"),
+    ("scheduler_verifier", "aclose"),
+)
+
+
+def _closer(app: FastAPI, attr: str, path: str) -> Callable[[], Awaitable[None]]:
+    async def close() -> None:
+        obj = getattr(app.state, attr, None)
+        if obj is None:
+            return
+        for part in path.split("."):
+            obj = getattr(obj, part)
+        await obj()
+
+    return close
+
+
+class _Closers:
+    """Registers each close on an AsyncExitStack as its resource appears, so a failing close
+    never skips the rest and a wiring failure closes what was already opened. The stack runs
+    them last-in first-out: the session store, opened first, closes last."""
+
+    def __init__(self, app: FastAPI, stack: contextlib.AsyncExitStack) -> None:
+        self._app, self._stack, self._seen = app, stack, set[str]()
+
+    def register_new(self) -> None:
+        for attr, path in _CLOSABLES:
+            if attr not in self._seen and getattr(self._app.state, attr, None) is not None:
+                self._seen.add(attr)
+                self._stack.push_async_callback(_closer(self._app, attr, path))
 
 
 def _lifespan(
@@ -428,18 +454,23 @@ def _lifespan(
 ) -> Callable[[FastAPI], contextlib.AbstractAsyncContextManager[None]]:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        built = build_storage(s) if inj.store is None else None
-        docs, audit = _wire_core(app, s, inj, built)
-        _wire_features(app, s, inj, built, docs)
-        _wire_slice12(app, s, docs, inj.drive)
-        _wire_gateway(app, s, inj, built, docs, audit)
-        _wire_brain(app, s, built, docs)
-        await adopt_legacy_sessions(app.state.store, s)
-        _log_up(app, s)
-        try:
+        async with contextlib.AsyncExitStack() as stack:
+            closers = _Closers(app, stack)
+            built = build_storage(s) if inj.store is None else None
+            docs, audit = _wire_core(app, s, inj, built)
+            closers.register_new()
+            _wire_features(app, s, inj, built, docs)
+            closers.register_new()
+            _wire_slice12(app, s, docs, inj.drive)
+            closers.register_new()
+            _wire_gateway(app, s, inj, built, docs, audit)
+            closers.register_new()
+            _wire_brain(app, s, built, docs)
+            closers.register_new()
+            stack.push_async_callback(_drain_memory, app)  # runs first on the way out
+            await adopt_legacy_sessions(app.state.store, s)
+            _log_up(app, s)
             yield
-        finally:
-            await _shut_down(app)
 
     return lifespan
 

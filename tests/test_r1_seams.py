@@ -645,3 +645,36 @@ def test_decision_responses_carry_offline() -> None:
 def test_file_size_guards() -> None:
     assert len((ROOT / "core" / "brain.py").read_text().splitlines()) < 800
     assert len((ROOT / "tools" / "gateway.py").read_text().splitlines()) <= 760
+
+
+# ---- R1 fix-4 M4: a hung observer never stalls a tool call ---------------------------------
+
+
+class Hung:
+    async def on_event(self, event: GatewayEvent) -> None:
+        await asyncio.sleep(3600)
+
+
+def test_the_observer_timeout_is_two_seconds() -> None:
+    from jarvis.tools import observers
+
+    assert observers.OBSERVER_TIMEOUT_S == 2.0
+
+
+async def test_a_hung_observer_is_cut_off_logged_and_the_call_still_audited(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from jarvis.tools import observers
+
+    monkeypatch.setattr(observers, "OBSERVER_TIMEOUT_S", 0.05)
+    gw, audit = _gw(_tool("note_list", R1))
+    rec = Recorder()
+    gw.observers = [Hung(), rec]
+    call = ToolCall(id="1", name="note_list", arguments={"text": "secret"})
+    with caplog.at_level("WARNING"):
+        res = await asyncio.wait_for(gw.execute(call, scope=SCOPE), timeout=1.0)
+    assert res.outcome is GatewayOutcome.EXECUTED
+    assert len((await audit.tail(5)).entries) == 1
+    assert len(rec.events) == 1  # the next observer still ran
+    assert any("timed out" in r.getMessage() for r in caplog.records)
+    assert "secret" not in caplog.text

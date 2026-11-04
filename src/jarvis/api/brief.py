@@ -104,12 +104,18 @@ async def put_settings(
     return await svc.update_settings(uid, patch)
 
 
-async def _quietly(what: str, job: Awaitable[object]) -> None:
-    """A housekeeping sweep never fails the tick."""
+SweepResult = Literal["ok", "failed"]
+
+
+async def _sweep(what: str, job: Awaitable[object]) -> SweepResult:
+    """A housekeeping sweep never fails the tick; a failure is an error in the log (with the
+    traceback) and a "failed" in the tick answer, never the exception text."""
     try:
         await job
-    except Exception as exc:  # noqa: BLE001
-        log.warning("tick: %s failed", what, extra={"reason": type(exc).__name__})
+    except Exception:  # noqa: BLE001
+        log.error("tick: %s sweep failed", what, exc_info=True)
+        return "failed"
+    return "ok"
 
 
 @internal_router.post(
@@ -120,30 +126,32 @@ async def _quietly(what: str, job: Awaitable[object]) -> None:
 )
 async def tick(request: Request, svc: BriefService = Depends(_svc)) -> TickResult:
     result = await svc.tick()
-    brain: Brain = request.app.state.brain
-    await brain.sweep_memory(svc.owners)  # bounded, never raises
-    docs = getattr(request.app.state, "documents", None)
-    if docs is not None:  # unsent uploads older than a day (slice 10 E): hourly, never raises
-        await docs.sweep_waiting()
-    undo = getattr(request.app.state, "undo", None)
-    if undo is not None:  # Recently deleted past 30 days (slice 11; no billed TTL): never raises
-        await undo.sweep(svc.owners)
-    marks = getattr(request.app.state, "outside_tasks", None)
-    if marks is not None:  # unfinished outside-to-do marks past an hour (slice 11 D8): never raises
-        await marks.sweep(svc.owners)
-    perms = getattr(request.app.state, "permissions", None)
-    if perms is not None:  # passkey challenges never answered (slice 11 D7 c): never raises
-        await perms.sweep_challenges()
-    tg = getattr(request.app.state, "telegram", None)
-    if tg is not None:  # seen update ids / counters past their time; a failure is only logged
-        await _quietly("telegram sweep", tg.store.sweep())
-    act = getattr(request.app.state, "activity", None)
+    state = request.app.state
+    brain: Brain = state.brain
+    sweeps: dict[str, SweepResult] = {}
+    sweeps["memory"] = await _sweep("memory", brain.sweep_memory(svc.owners))  # bounded
+    docs = getattr(state, "documents", None)
+    if docs is not None:  # unsent uploads older than a day (slice 10 E): hourly
+        sweeps["documents"] = await _sweep("documents", docs.sweep_waiting())
+    undo = getattr(state, "undo", None)
+    if undo is not None:  # Recently deleted past 30 days (slice 11; no billed TTL)
+        sweeps["undo"] = await _sweep("undo", undo.sweep(svc.owners))
+    marks = getattr(state, "outside_tasks", None)
+    if marks is not None:  # unfinished outside-to-do marks past an hour (slice 11 D8)
+        sweeps["outside_tasks"] = await _sweep("outside_tasks", marks.sweep(svc.owners))
+    perms = getattr(state, "permissions", None)
+    if perms is not None:  # passkey challenges never answered (slice 11 D7 c)
+        sweeps["permissions"] = await _sweep("permissions", perms.sweep_challenges())
+    tg = getattr(state, "telegram", None)
+    if tg is not None:  # seen update ids / counters past their time
+        sweeps["telegram"] = await _sweep("telegram", tg.store.sweep())
+    act = getattr(state, "activity", None)
     if act is not None:  # Activity days past the 7-day window (R1 D7)
-        await _quietly("activity sweep", act.sweep(svc.owners))
-    web = getattr(request.app.state, "web", None)
-    if web is not None:  # Tavily's own count, at most once a day (slice 11 D7 b): never raises
-        await web.check_vendor_usage()
-    return result
+        sweeps["activity"] = await _sweep("activity", act.sweep(svc.owners))
+    web = getattr(state, "web", None)
+    if web is not None:  # Tavily's own count, at most once a day (slice 11 D7 b)
+        sweeps["web"] = await _sweep("web", web.check_vendor_usage())
+    return result.model_copy(update={"sweeps": sweeps})
 
 
 __all__ = ["internal_router", "router"]

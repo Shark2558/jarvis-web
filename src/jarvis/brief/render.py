@@ -324,3 +324,13 @@ __all__ = [
     "todo_when",
     "when",
 ]
+
+
+def spoken_brief_text(text: str) -> str:
+    """The brief as it may be SPOKEN (or read out on Telegram). The brief on screen, and its
+    opted-in AI summary input, keep the full text (`brief/collect.py` snippets); a spoken
+    readout must use this instead: links, addresses, amounts and numbers of 4+ digits are masked
+    (`tools.spoken`)."""
+    from jarvis.tools.spoken import mask_for_speech
+
+    return mask_for_speech(text)

@@ -4,11 +4,12 @@
 Metadata and Gmail's own snippet only -- no bodies are fetched. Per item: sender name, subject and
 the first line (<= 140 characters), each fenced as EXTERNAL CONTENT (other people's words), plus a
 relative received time. An item whose sender, subject or snippet looks like a code, a card, an
-account or a government id (`recall.sensitive.spoken_sensitive`) is WITHHELD: the
-model gets only a count and "open it on screen", never the text, the sender or the id, so it cannot
-be read aloud to a room. The tool is untrusted (taints the round, never vouches); drafting and
-sending by voice are unchanged (a spoken draft is a card, send is R3 + passkey). It sits in the
-`email_read` permission row (`gmail_*`, R1) and is off on Telegram unless the owner allows reads.
+account or a government id (`recall.sensitive.spoken_sensitive`) is WITHHELD: the model gets only a
+count, never the text, the sender or the id. What is kept is MASKED (`tools.spoken`): links, amounts
+and numbers of 4+ digits never reach the speaker, whatever the sender wrote. The tool is untrusted
+(taints the round, never vouches); drafting and sending by voice are unchanged (a spoken draft is
+a card, send is R3 + passkey). It sits in the `email_read` permission row (`gmail_*`, R1) and is
+off on Telegram unless the owner allows reads.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
 from jarvis.tools.gmail import MESSAGES_URL
 from jarvis.tools.gmail_mime import headers_of
+from jarvis.tools.spoken import mask_for_speech
 
 QUERY = "is:unread in:inbox category:primary newer_than:3d"
 MAX_ITEMS = 5
@@ -41,9 +43,8 @@ SUBJECT_LIMIT = 160
 NAME_LIMIT = 80
 READ_PARALLEL = 5
 _ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
-_URL = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
-WITHHELD_ONE = "1 message with a code or account number — open it on screen"
-WITHHELD_MANY = "{n} messages with a code or account number — open them on screen"
+WITHHELD_ONE = "1 message withheld — it looks like a code or bank message"
+WITHHELD_MANY = "{n} messages withheld — they look like code or bank messages"
 
 
 def utcnow() -> datetime:
@@ -55,9 +56,9 @@ def withheld(text: str) -> bool:
 
 
 def voice_line(text: str, limit: int) -> str:
-    """Gmail's snippet as one speakable line: entities decoded, links named, capped."""
-    plain = _URL.sub("a link", html.unescape(text))
-    return one_line(plain, limit)
+    """Gmail's snippet as one speakable line: entities decoded, then MASKED (links, addresses,
+    amounts and numbers of 4+ digits are replaced by what they are), capped."""
+    return one_line(mask_for_speech(html.unescape(text)), limit)
 
 
 def relative(then: datetime, now: datetime) -> str:
@@ -141,12 +142,16 @@ class DigestAPI:
             h = headers_of(m.get("payload") or {})
             name, addr = parseaddr(one_line(h.get("from", ""), 600))
             bare = loose_address(addr) or ""
-            sender = voice_line(name, NAME_LIMIT) or bare or "unknown sender"
-            subject = voice_line(h.get("subject", ""), SUBJECT_LIMIT) or "(no subject)"
-            line = voice_line(str(m.get("snippet") or ""), FIRST_LINE)
-            if withheld(f"{sender} {subject} {line}"):
+            raw_subject, raw_snippet = h.get("subject", ""), str(m.get("snippet") or "")
+            # the withhold check reads the RAW words (masking would hide the very digits it looks
+            # for); what is kept is the MASKED text
+            heard = f"{name[:200]} {raw_subject[:300]} {raw_snippet[:500]}"
+            if withheld(html.unescape(heard)):
                 held += 1
                 continue
+            sender = voice_line(name, NAME_LIMIT) or bare or "unknown sender"
+            subject = voice_line(raw_subject, SUBJECT_LIMIT) or "(no subject)"
+            line = voice_line(raw_snippet, FIRST_LINE)
             if len(items) >= top:
                 continue
             src = bare or "unknown sender"

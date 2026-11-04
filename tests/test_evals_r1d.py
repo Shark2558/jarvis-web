@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-MIN_CASES = {"packages": 5, "groceries": 14, "family": 12, "mail_aloud": 14}
+MIN_CASES = {"packages": 5, "groceries": 14, "family": 12, "mail_aloud": 15}
 
 
 @pytest.mark.parametrize("suite", sorted(MIN_CASES))

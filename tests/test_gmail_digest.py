@@ -109,7 +109,7 @@ async def test_sensitive_mail_is_withheld_and_never_reaches_the_model(
     text = res.for_model()
     assert res.result["withheld"] == 1
     assert (
-        res.result["withheld_note"] == "1 message with a code or account number — open it on screen"
+        res.result["withheld_note"] == "1 message withheld — it looks like a code or bank message"
     )
     assert [i["message_id"] for i in res.result["unread"]] == ["m2"]
     for secret in (subject, snippet, "alerts@bank.example", "482913", "4321", "ABCDE1234F", "m1"):
@@ -121,8 +121,7 @@ async def test_several_withheld_are_counted_in_the_plural() -> None:
     res = await digest(await gateway(fake))
     assert res.result["unread"] == []
     assert (
-        res.result["withheld_note"]
-        == "3 messages with a code or account number — open them on screen"
+        res.result["withheld_note"] == "3 messages withheld — they look like code or bank messages"
     )
     assert "note" not in res.result
 

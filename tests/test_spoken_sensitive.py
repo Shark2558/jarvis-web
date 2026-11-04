@@ -54,14 +54,14 @@ def test_it_is_separate_from_the_write_path_filter() -> None:
     assert spoken_sensitive("Swiggy 482910 is your OTP for login")
 
 
-@pytest.mark.parametrize("text", ["", "   ", "​"])
+@pytest.mark.parametrize("text", ["", "   ", "\u200b"])
 def test_empty_text_is_not_sensitive(text: str) -> None:
     assert spoken_sensitive(text) is False
 
 
 def test_look_alike_letters_and_zero_width_characters_do_not_hide_it() -> None:
-    assert spoken_sensitive("Swiggy 482910 is your O​TP")
-    assert spoken_sensitive("Rs 500 d​ebited")
+    assert spoken_sensitive("Swiggy 482910 is your O\u200bTP")
+    assert spoken_sensitive("Rs 500 d\u200bebited")
     assert spoken_sensitive("Use 482910 to sіgn in")  # Cyrillic i
 
 

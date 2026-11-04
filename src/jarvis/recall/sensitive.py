@@ -26,14 +26,16 @@ _NOT_A_VALUE = r"(?!(?:in|on|at|stored|kept|saved|managed|written|under|inside|w
 _VERB = r"(?:is|are|was|were|=|:|-)"
 _CARD_RUN = re.compile(rf"(?<![\w+])\d(?:{SEP}\d){{12,18}}(?!\w)")
 _AADHAAR = re.compile(rf"(?<![\w+])[2-9]\d{{3}}{SEP}\d{{4}}{SEP}\d{{4}}(?!\w)")
-_AADHAAR_WORD = re.compile(r"(?i)\baadh?aa?r\b.*\d{4}")
+_AADHAAR_WORD = re.compile(r"(?i)\baadh?aa?r\b.{0,120}\d{4}")
 _PAN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{5}\d{4}[A-Za-z](?![A-Za-z0-9])")
 _PAN_SPACED = re.compile(rf"(?<![A-Za-z0-9])[A-Z]{{5}}{SEP}\d{{4}}{SEP}[A-Z](?![A-Za-z0-9])")
 _PAN_WORD = re.compile(
-    rf"(?i)\bpan\b.*(?<![A-Za-z0-9])[A-Za-z]{{5}}{SEP}\d{{4}}{SEP}[A-Za-z](?![A-Za-z0-9])"
+    rf"(?i)\bpan\b.{{0,120}}(?<![A-Za-z0-9])[A-Za-z]{{5}}{SEP}\d{{4}}{SEP}[A-Za-z](?![A-Za-z0-9])"
 )
 _IFSC = re.compile(r"(?<![A-Za-z0-9])[A-Z]{4}0[A-Z0-9]{6}(?![A-Za-z0-9])")
-_IFSC_WORD = re.compile(r"(?i)\bifsc\b.*(?<![A-Za-z0-9])[A-Za-z]{4}0[A-Za-z0-9]{6}(?![A-Za-z0-9])")
+_IFSC_WORD = re.compile(
+    r"(?i)\bifsc\b.{0,120}(?<![A-Za-z0-9])[A-Za-z]{4}0[A-Za-z0-9]{6}(?![A-Za-z0-9])"
+)
 _IBAN = re.compile(r"(?<![A-Za-z0-9])[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}(?![A-Za-z0-9])")
 _IBAN_WORD = re.compile(r"(?i)\biban\b")
 _ACCOUNT_WORD = re.compile(
@@ -165,38 +167,102 @@ def special_category(text: str) -> bool:
 
 
 # ---- text that will be READ ALOUD (R1 D16) ----------------------------------------------------
-# A stricter, separate rule from the write-path filter above: a wrongly withheld mail costs one
-# "open it on screen"; a code or a balance read to a room costs more. Every pattern is linear
-# (no nested or adjacent open-ended repeats) and the input is capped.
-SPOKEN_MAX_CHARS = 20_000
+# JARVIS never classifies its way to safety here: what it SPEAKS from mail is MASKED
+# (`jarvis.tools.spoken.mask_for_speech`). This function is the extra layer on top: a whole mail
+# that looks like a code or a bank message is not read at all. A wrongly withheld mail costs one
+# "open it on screen"; a code or a balance read to a room costs more. Input is capped, every
+# pattern is linear or bounded, and nothing here calls a model.
+SPOKEN_MAX_CHARS = 1_000
+_DIGIT_TO_LETTER = str.maketrans("01345", "oleas")  # 0->o 1->l 3->e 4->a 5->s
+_ONE_AS_I = str.maketrans("1", "i")
+_TOKEN = re.compile(r"[A-Za-z0-9]+")
+_SPACED = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9](?:[ .\-_][A-Za-z0-9]){2,9}(?![A-Za-z0-9])")
+_DIGIT_GAP = re.compile(r"(?<=\d)[ .,\-]{1,2}(?=\d)")
+_RUN = re.compile(r"\d+")
 _SPOKEN_SECRET_WORD = re.compile(
     r"\b(?:otps?|one[- ]?time|log[- ]?in|sign[- ]?in|verif\w{0,12}|pins?|passwords?|passcodes?"
-    r"|cvv|cvc|code|auth\w{0,12})\b",
+    r"|cvv|cvc|code|auth\w{0,12}|secret)\b",
     re.IGNORECASE,
 )
-_SPOKEN_SHORT_NUMBER = re.compile(r"(?<!\d)\d{4,8}(?!\d)")
 _SPOKEN_ALWAYS = re.compile(
-    r"\b(?:otps?|one[- ]?time\s+(?:password|code|pin)|passcode|cvv|cvc"
-    r"|balance|txns?|transactions?|spent|debited|credited|statement|a/c|acct"
-    r"|account\s+(?:no|number|ending|balance|statement)|card\s+(?:ending|no|number)"
-    r"|upi|ifsc|neft|imps|rtgs|khate|jama|(?:debit|credit)\s+hua)\b|\d{12,}",
+    r"\b(?:otps?|one[- ]?time\s{0,3}(?:password|code|pin)|passcode|cvv|cvc"
+    r"|bal|balance|avl|txns?|transactions?|spent|debited|credited|statement|a/c|acct|emi"
+    r"|account\s{0,3}(?:no|number|ending|balance|statement)|card\s{0,3}(?:ending|no|number)|khate|khata|jama"
+    r"|upi|vpa|ifsc|neft|imps|rtgs|secret\s{0,3}(?:number|code|pin|key)"
+    r"|(?:login|log[- ]?in|sign[- ]?in|reset|verification)\s{0,3}link"
+    r"|(?:debit|credit)\s{0,3}hua)\b",
     re.IGNORECASE,
 )
+_CARD_X = re.compile(r"\bcard\s{0,3}[x*]{1,8}\s{0,2}\d", re.IGNORECASE)
+_UPI_HANDLE = re.compile(r"[\w.\-]{2,30}@[a-z]{2,20}\b(?!\.\w)", re.IGNORECASE)
+_INDIC_WORDS = (
+    "ओटीपी", "कोड", "बैलेंस", "खाता", "खाते", "पासवर्ड", "पिन", "जमा", "रुपये",  # Hindi
+    "ഒടിപി", "കോഡ്", "ബാലൻസ്", "അക്കൗണ്ട്", "പാസ്\u200dവേഡ്", "പിൻ",  # Malayalam
+)  # fmt: skip
 
 
-def spoken_sensitive(text: str) -> bool:
-    """True when `text` must not be read aloud: a 4-8 digit number beside an OTP / code / login /
-    sign-in / verify / PIN / password word, a money-movement or balance word (balance, txn,
-    spent, debited, credited, statement, a/c, account ending, UPI...), Hindi / Hinglish forms
-    ("aapka OTP", "khate", "jama"), or anything the write-path filter would refuse."""
-    t = _normal(str(text or "")[:SPOKEN_MAX_CHARS])
+def speech_normal(text: object, cap: int = SPOKEN_MAX_CHARS) -> str:
+    """The text as a listener's risk sees it: capped, NFKC (fullwidth to ASCII), every script's
+    decimal digits turned into 0-9, zero-width and format characters dropped, whitespace and
+    controls as one space, look-alike Cyrillic / Greek letters as Latin."""
+    out = []
+    for ch in unicodedata.normalize("NFKC", str(text or "")[:cap]):
+        cat = unicodedata.category(ch)
+        if cat == "Nd":
+            out.append(str(unicodedata.decimal(ch, 0)))
+        elif cat in ("Cf", "Co", "Cn"):
+            continue
+        elif cat in ("Cc", "Zl", "Zp", "Zs"):
+            out.append(" ")
+        else:
+            out.append(ch)
+    return " ".join("".join(out).translate(_CONFUSABLES).split())
+
+
+def _fold_letters(t: str, table: dict[int, int]) -> str:
+    """0TP -> oTP: in a token that has letters in it, digits that look like letters become them."""
+    return _TOKEN.sub(
+        lambda m: (
+            m.group(0).translate(table) if any(c.isalpha() for c in m.group(0)) else m.group(0)
+        ),
+        t,
+    )
+
+
+def _word_views(t: str) -> list[str]:
+    """The text, with spaced / dotted letters closed up (O T P, O.T.P) and look-alike digits
+    read as letters, in the two common ways (1 as l, 1 as i)."""
+    closed = _SPACED.sub(lambda m: re.sub(r"[ .\-_]", "", m.group(0)), t)
+    return [t, closed, _fold_letters(closed, _DIGIT_TO_LETTER), _fold_letters(closed, _ONE_AS_I)]
+
+
+def spoken_sensitive(text: object) -> bool:
+    """True when `text` must not be read aloud at all: an OTP / code / login / PIN / password /
+    secret word beside a number, a money, balance, EMI, card, account or UPI word or handle, the
+    same in Hindi or Malayalam, a "login link", a 6 or 8 digit code (digits may be spaced, dotted
+    or split), 12+ digits, or anything the write-path filter would refuse. Letters may be spaced
+    (O T P), dotted (O.T.P), fullwidth, or digits standing for letters (0TP)."""
+    t = speech_normal(text)
     if not t:
         return False
-    if _SPOKEN_ALWAYS.search(t):
+    joined = _DIGIT_GAP.sub("", t)
+    runs = [len(r) for r in _RUN.findall(joined)]
+    if any(n in (6, 8) or n >= 12 for n in runs):
         return True
-    if _SPOKEN_SHORT_NUMBER.search(t) and _SPOKEN_SECRET_WORD.search(t):
+    views = _word_views(t)
+    if any(_SPOKEN_ALWAYS.search(v) for v in views) or _UPI_HANDLE.search(t) or _CARD_X.search(t):
         return True
-    return sensitive_reason(t) is not None
+    if any(w in t for w in _INDIC_WORDS):
+        return True
+    if any(4 <= n <= 8 for n in runs) and any(_SPOKEN_SECRET_WORD.search(v) for v in views):
+        return True
+    return sensitive_reason(joined) is not None
 
 
-__all__ = ["is_sensitive", "sensitive_reason", "special_category", "spoken_sensitive"]
+__all__ = [
+    "is_sensitive",
+    "sensitive_reason",
+    "special_category",
+    "speech_normal",
+    "spoken_sensitive",
+]

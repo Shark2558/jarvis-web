@@ -37,6 +37,7 @@ from jarvis.tools.gmail_mime import (
     safe_message_id,
     safe_references,
 )
+from jarvis.tools.spoken import mask_for_speech, speaking_now
 from jarvis.tools.taint import owner_text
 
 BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
@@ -139,6 +140,13 @@ def _validate_message_id(raw: Any) -> str:
     return mid
 
 
+def _heard(text: str) -> str:
+    """On a voice or Telegram turn the words may be spoken or read in public: mask links,
+    addresses, amounts and numbers of 4+ digits (`tools.spoken`). On the text console the owner
+    reads his own screen: unchanged."""
+    return mask_for_speech(text) if speaking_now() else text
+
+
 @dataclass
 class GmailAPI:
     conn: GoogleConnector
@@ -175,10 +183,10 @@ class GmailAPI:
             "thread_id": m.get("threadId"),
             **people,
             "subject": wrap_external(
-                h.get("subject", "(no subject)"), source=sender, limit=SUBJECT_LIMIT
+                _heard(h.get("subject", "(no subject)")), source=sender, limit=SUBJECT_LIMIT
             ),
             "snippet": wrap_external(
-                str(m.get("snippet") or ""), source=sender, limit=SNIPPET_LIMIT
+                _heard(str(m.get("snippet") or "")), source=sender, limit=SNIPPET_LIMIT
             ),
         }
 
@@ -196,9 +204,11 @@ class GmailAPI:
             **people,
             "cc": _addresses(h.get("cc", "")),
             "subject": wrap_external(
-                h.get("subject", "(no subject)"), source=sender, limit=SUBJECT_LIMIT
+                _heard(h.get("subject", "(no subject)")), source=sender, limit=SUBJECT_LIMIT
             ),
-            "body": wrap_external(parsed.text or "(empty body)", source=sender, limit=BODY_LIMIT),
+            "body": wrap_external(
+                _heard(parsed.text or "(empty body)"), source=sender, limit=BODY_LIMIT
+            ),
             "attachments": _attachments(parsed.attachments, sender),
         }
         if len(parsed.attachments) > MAX_ATTACHMENTS:

@@ -115,3 +115,52 @@ async def test_an_ip_literal_url_is_refused_outright() -> None:
             PinnedTransport(resolver(["8.8.8.8"]), seen.transport()), "https://8.8.8.8/v1/models"
         )
     assert seen.requests == []
+
+
+# ---- M4: prefer IPv4, fail over across the validated addresses ---------------------------------
+
+
+class Flaky:
+    """Refuses to connect to the hosts in `dead`; records every attempt."""
+
+    def __init__(self, dead: set[str]) -> None:
+        self.dead = dead
+        self.attempts: list[httpx.Request] = []
+
+    def transport(self) -> httpx.MockTransport:
+        def h(req: httpx.Request) -> httpx.Response:
+            self.attempts.append(req)
+            if req.url.host in self.dead:
+                raise httpx.ConnectError("no route")
+            return httpx.Response(200, json={"ok": True})
+
+        return httpx.MockTransport(h)
+
+
+async def test_ipv4_is_tried_before_ipv6_whatever_the_resolver_order() -> None:
+    flaky = Flaky(set())
+    await _get(PinnedTransport(resolver(["2607:f8b0::1", "3.3.3.3"]), flaky.transport()))
+    assert [r.url.host for r in flaky.attempts] == ["3.3.3.3"]
+
+
+async def test_a_dead_first_address_fails_over_keeping_sni_and_host() -> None:
+    flaky = Flaky({"3.3.3.3"})
+    r = await _get(PinnedTransport(resolver(["2607:f8b0::1", "3.3.3.3"]), flaky.transport()))
+    assert r.status_code == 200
+    assert [a.url.host for a in flaky.attempts] == ["3.3.3.3", "2607:f8b0::1"]
+    for req in flaky.attempts:
+        assert req.extensions["sni_hostname"] == NAME and req.headers["host"] == NAME
+
+
+async def test_every_address_dead_is_a_connect_error() -> None:
+    flaky = Flaky({"3.3.3.3", "4.4.4.4"})
+    with pytest.raises(httpx.ConnectError):
+        await _get(PinnedTransport(resolver(["4.4.4.4", "3.3.3.3"]), flaky.transport()))
+    assert len(flaky.attempts) == 2
+
+
+async def test_failover_never_leaves_the_validated_set() -> None:
+    flaky = Flaky({"8.8.8.8"})
+    with pytest.raises(httpx.ConnectError):
+        await _get(PinnedTransport(resolver(["8.8.8.8", "10.0.0.1"]), flaky.transport()))
+    assert flaky.attempts == []

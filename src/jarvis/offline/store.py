@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -20,7 +20,7 @@ from pydantic import SecretStr
 
 from jarvis.integrations.vault import TokenCipher, VaultError
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Delete, Doc, Docs, Set
+from jarvis.storage.docs import Doc, Docs, DocTx
 
 log = get_logger(__name__)
 
@@ -96,60 +96,64 @@ class LocalBrainStore:
     ) -> LocalBrainConfig:
         if not valid_model(model):
             raise ValueError("bad model name")
-        old = await self.get()
-        same = (
-            old is not None
-            and old.url == url
-            and old.key.get_secret_value() == key.get_secret_value()
-        )
         blob = self._cipher.encrypt(
             json.dumps({"url": url, "key": key.get_secret_value()}).encode(), aad=AAD
         )
         now = self._now()
-        last_ok = old.last_ok_at if same and old is not None else None
-        await self._d.write(
-            [
-                Set(
-                    self._path,
-                    {
-                        "blob": blob,
-                        "model": model,
-                        "enabled": bool(enabled),
-                        "set_by": set_by,
-                        "updated_at": now.isoformat(),
-                        "last_ok_at": last_ok.isoformat() if last_ok else None,
-                    },
-                )
-            ]
-        )
-        return LocalBrainConfig(url, key, model, bool(enabled), set_by, now, last_ok)
+
+        async def work(tx: DocTx) -> LocalBrainConfig:
+            raw = await tx.get(self._path)
+            old = None if raw is None else self._decode(raw)
+            same = (
+                old is not None
+                and old.url == url
+                and old.key.get_secret_value() == key.get_secret_value()
+            )
+            last_ok = old.last_ok_at if same and old is not None else None
+            tx.set(
+                self._path,
+                {
+                    "blob": blob,
+                    "model": model,
+                    "enabled": bool(enabled),
+                    "set_by": set_by,
+                    "updated_at": now.isoformat(),
+                    "last_ok_at": last_ok.isoformat() if last_ok else None,
+                },
+            )
+            return LocalBrainConfig(url, key, model, bool(enabled), set_by, now, last_ok)
+
+        return await self._d.transaction(work)
+
+    async def _amend(self, changes: Doc) -> bool:
+        """Read-modify-write in one transaction, so a Forget or a new key that lands in between
+        is never undone (a plain get + set would write the old blob back). Never creates."""
+
+        async def work(tx: DocTx) -> bool:
+            raw = await tx.get(self._path)
+            if raw is None:
+                return False
+            tx.set(self._path, {**raw, **changes})
+            return True
+
+        return await self._d.transaction(work)
 
     async def set_enabled(self, enabled: bool, *, by: str) -> bool:
         """Flip the switch only. False when nothing is stored."""
-        raw = await self._raw()
-        if raw is None:
-            return False
-        await self._d.write(
-            [
-                Set(
-                    self._path,
-                    {
-                        **raw,
-                        "enabled": bool(enabled),
-                        "set_by": by,
-                        "updated_at": self._now().isoformat(),
-                    },
-                )
-            ]
+        return await self._amend(
+            {"enabled": bool(enabled), "set_by": by, "updated_at": self._now().isoformat()}
         )
-        return True
 
     async def touch_ok(self, when: datetime) -> None:
         """The laptop answered at `when`. Never creates the document."""
-        raw = await self._raw()
-        if raw is None:
-            return
-        await self._d.write([Set(self._path, {**raw, "last_ok_at": when.isoformat()})])
+        await self._amend({"last_ok_at": when.isoformat()})
 
     async def delete(self) -> None:
-        await self._d.write([Delete(self._path)])
+        await self._d.transaction(_forget(self._path))
+
+
+def _forget(path: str) -> Callable[[DocTx], Awaitable[None]]:
+    async def work(tx: DocTx) -> None:
+        tx.delete(path)
+
+    return work

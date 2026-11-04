@@ -209,3 +209,65 @@ async def test_stream_slow_server_is_cut_at_the_deadline_per_read() -> None:
         async for d in _provider(h, timeout_s=0.3).stream(**KW):
             got.append(d)
     assert got == ["a "]
+
+
+# ---- M1: the byte cap holds on the raw wire, whatever the stream carries -----------------------
+
+CHUNK = 64 * 1024
+
+
+def _gen(total: int, fill: bytes, served: list[int]) -> Any:
+    async def body() -> Any:
+        sent = 0
+        while sent < total:
+            piece = (fill * CHUNK)[:CHUNK]
+            sent += len(piece)
+            served.append(sent)
+            yield piece
+
+    return body()
+
+
+async def test_sse_comment_lines_do_not_get_round_the_cap() -> None:
+    served: list[int] = []
+
+    def h(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_gen(3_000_000, b": xxxxxxxx\n", served))
+
+    with pytest.raises(LLMError, match="too large"):
+        async for _ in _provider(h).stream(**KW):
+            pass
+    assert served[-1] <= MAX_RESPONSE_BYTES + 2 * CHUNK
+
+
+async def test_a_line_with_no_newline_is_cut_at_the_cap() -> None:
+    served: list[int] = []
+
+    def h(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_gen(3_000_000, b"x", served))
+
+    with pytest.raises(LLMError, match="too large"):
+        async for _ in _provider(h).stream(**KW):
+            pass
+    assert served[-1] <= MAX_RESPONSE_BYTES + 2 * CHUNK
+
+
+async def test_a_huge_error_body_is_not_buffered_whole() -> None:
+    served: list[int] = []
+
+    def h(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, content=_gen(3_000_000, b"e", served))
+
+    with pytest.raises(LLMError):
+        async for _ in _provider(h).stream(**KW):
+            pass
+    assert served[-1] <= MAX_RESPONSE_BYTES + 2 * CHUNK
+
+
+async def test_a_normal_stream_is_unaffected_by_the_wire_cap() -> None:
+    sse = 'data: {"choices":[{"delta":{"content":"hi "}}]}\n\ndata: [DONE]\n\n'
+
+    def h(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=sse.encode())
+
+    assert [d async for d in _provider(h).stream(**KW)] == ["hi "]

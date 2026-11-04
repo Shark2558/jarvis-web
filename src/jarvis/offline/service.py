@@ -57,6 +57,7 @@ from jarvis.offline.config import (
     ensure_public,
     system_resolver,
 )
+from jarvis.offline.prompt import OFFLINE_SYSTEM_PROMPT
 from jarvis.offline.store import LocalBrainConfig, LocalBrainStore, valid_model
 from jarvis.storage.docs import Docs
 
@@ -172,7 +173,7 @@ class LocalFallback:
         try:
             cfg, provider = await self._open()
             done = await provider.complete(
-                system=system,
+                system=OFFLINE_SYSTEM_PROMPT,
                 system_dynamic=offline_trailer(system_dynamic),
                 messages=messages,
                 model=cfg.model,
@@ -206,7 +207,7 @@ class LocalFallback:
             cfg, provider = await self._open()
             first = True
             async for delta in provider.stream(
-                system=system,
+                system=OFFLINE_SYSTEM_PROMPT,
                 system_dynamic=offline_trailer(system_dynamic),
                 messages=messages,
                 model=cfg.model,

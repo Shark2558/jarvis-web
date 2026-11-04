@@ -35,9 +35,21 @@ def test_the_kit_has_exactly_the_planned_files() -> None:
 
 def test_the_gate_listens_on_loopback_only_and_is_closed_to_admin() -> None:
     code = _code(CADDY)
-    assert "http://127.0.0.1:11435 {" in code and "bind 127.0.0.1" in code
+    assert "bind 127.0.0.1" in code
     assert "admin off" in code and "auto_https off" in code
-    assert "0.0.0.0" not in code and "[::]" not in code and ":11435 {" in code
+    assert "0.0.0.0" not in code and "[::]" not in code
+
+
+def test_the_site_address_has_no_host_so_a_tailscale_host_header_still_matches() -> None:
+    # Tailscale serve / funnel keeps the original Host (<machine>.<tailnet>.ts.net) when it proxies;
+    # a site address with a host (http://127.0.0.1:11435) would match none of those requests.
+    code = _code(CADDY)
+    top = [ln for ln in code.splitlines() if ln.endswith("{") and not ln.startswith(("\t", " "))]
+    assert ":11435 {" in top
+    assert not re.search(r"^\S*[A-Za-z0-9.]+:11435 \{", code, re.M)  # nothing before the colon
+    assert "127.0.0.1:11435" not in code and "http://" not in code
+    comments = "\n".join(ln for ln in CADDY.splitlines() if ln.startswith("#"))
+    assert "Host" in comments and "ts.net" in comments  # the reason is written down
 
 
 def test_the_gate_passes_only_two_requests_and_only_with_the_key() -> None:
@@ -93,6 +105,22 @@ def test_the_windows_script_checks_what_it_needs_and_cleans_up() -> None:
     assert "funnel --https=8443 off" in WIN
 
 
+def test_the_windows_script_only_closes_the_funnel_it_opened_and_refuses_a_taken_port() -> None:
+    win = _code(WIN)
+    assert "$funnelOn = $false" in win and "$funnelOn = $true" in win
+    assert win.index("$funnelOn = $true") > win.index("funnel --bg --https=8443 11435")
+    assert win.index("$funnelOn = $true") > win.index("$LASTEXITCODE -ne 0")
+    assert "if ($funnelOn)" in win and win.index("if ($funnelOn)") > win.index("finally")
+    assert "TcpClient" in win and "$probe.Connect('127.0.0.1', 11435)" in win
+    assert win.index("TcpClient") < win.index("Start-Process -FilePath 'caddy'")
+
+
+def test_the_windows_script_starts_ollama_with_a_bigger_context_window() -> None:
+    win = _code(WIN)
+    assert "OLLAMA_CONTEXT_LENGTH" in win and "8192" in win
+    assert "'serve'" in win and win.index("OLLAMA_CONTEXT_LENGTH") < win.index("'serve'")
+
+
 def test_the_readme_covers_the_setup_in_plain_words() -> None:
     for token in (
         "ollama pull qwen2.5:7b",
@@ -103,6 +131,8 @@ def test_the_readme_covers_the_setup_in_plain_words() -> None:
         "Integrations -> Offline mode",
         "Every change asks first",
         "awake",
+        "OLLAMA_CONTEXT_LENGTH",
+        "8192",
     ):
         assert token in README
     assert "Claude can't be reached and your laptop didn't answer" in " ".join(README.split())
@@ -123,7 +153,7 @@ def stubs(tmp_path: Path) -> dict[str, Path]:
         p.write_text("#!/usr/bin/env bash\n" + body)
         p.chmod(p.stat().st_mode | stat.S_IEXEC)
 
-    stub("ollama", "exit 0\n")
+    stub("ollama", f'echo "ctx=$OLLAMA_CONTEXT_LENGTH args=$*" >> "{log}/ollama"; exit 0\n')
     stub("curl", f'echo "$@" >> "{log}/curl"; exit 0\n')
     stub(
         "caddy",
@@ -145,6 +175,7 @@ def _run(tmp_path: Path, stubs: dict[str, Path]) -> subprocess.CompletedProcess[
         "PATH": f"{stubs['bin']}:/usr/bin:/bin",
         "HOME": str(tmp_path / "home"),
         "JARVIS_LOCAL_BRAIN_DIR": str(tmp_path / "home" / ".lb"),
+        "JARVIS_OLLAMA_WAIT_S": "1",
     }
     (tmp_path / "home").mkdir(exist_ok=True)
     return subprocess.run(
@@ -215,6 +246,50 @@ def test_funnel_failing_gives_a_hint_and_stops(tmp_path: Path, stubs: dict[str, 
     r = _run(tmp_path, stubs)
     assert r.returncode != 0 and "Funnel did not start" in r.stderr
     assert "Key:" not in r.stdout
+    # M5: this run never turned Funnel on, so it must not turn off one that is already running
+    assert "funnel --https=8443 off" not in (stubs["log"] / "tailscale").read_text()
+
+
+def test_a_taken_gate_port_stops_the_script_before_it_touches_funnel(
+    tmp_path: Path, stubs: dict[str, Path]
+) -> None:
+    # a second run (or anything else) already holds 127.0.0.1:11435: starting would fight over it
+    # and the exit trap would close the first instance's Funnel
+    import socket
+
+    held = socket.socket()
+    try:
+        held.bind(("127.0.0.1", 11435))
+    except OSError:
+        pytest.skip("port 11435 is busy on this machine")
+    held.listen(1)
+    try:
+        r = _run(tmp_path, stubs)
+    finally:
+        held.close()
+    assert r.returncode != 0 and "11435" in r.stderr and "already" in r.stderr
+    assert not (stubs["log"] / "caddy_env").exists()
+    assert not (stubs["log"] / "tailscale").exists()  # not even a `funnel ... off`
+
+
+def test_ollama_that_is_not_running_is_started_with_a_bigger_context_window(
+    tmp_path: Path, stubs: dict[str, Path]
+) -> None:
+    # H1: Ollama's default window is 4096 tokens; the prompt and the tool specs need more
+    (stubs["bin"] / "curl").write_text(
+        f'#!/usr/bin/env bash\n[ -f "{stubs["log"]}/ollama" ] || exit 22\nexit 0\n'
+    )
+    r = _run(tmp_path, stubs)
+    assert r.returncode == 0, r.stderr
+    assert (stubs["log"] / "ollama").read_text().strip() == "ctx=8192 args=serve"
+
+
+def test_ollama_that_is_already_running_is_left_alone(
+    tmp_path: Path, stubs: dict[str, Path]
+) -> None:
+    r = _run(tmp_path, stubs)
+    assert r.returncode == 0, r.stderr
+    assert not (stubs["log"] / "ollama").exists()
 
 
 # ---- security review fixes 5-7 ----------------------------------------------------------------

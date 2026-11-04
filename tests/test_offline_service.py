@@ -113,7 +113,8 @@ async def test_the_offline_note_is_added_to_the_prompt() -> None:
     rig = await Rig().ready()
     await rig.svc.complete(**_kw())
     system = rig.laptop.chats()[0]["messages"][0]["content"]
-    assert system.startswith("You are JARVIS.") and "now: 9am" in system and OFFLINE_NOTE in system
+    assert system.startswith("You are JARVIS, the owner's")  # the short offline prompt (H1)
+    assert "now: 9am" in system and system.count(OFFLINE_NOTE) == 1
 
 
 async def test_a_call_to_a_tool_outside_the_set_is_dropped_in_plain_words() -> None:

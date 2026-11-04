@@ -34,6 +34,43 @@ from jarvis.llm.openai_compat_provider import OpenAICompatProvider
 MAX_RESPONSE_BYTES = 1_000_000
 
 
+class _CappedBody(httpx.AsyncByteStream):
+    """The raw bytes of one reply, counted as they come off the wire: past the cap the read stops
+    (before httpx buffers a line or an error body, and whatever the SSE stream carries)."""
+
+    def __init__(self, inner: httpx.AsyncByteStream) -> None:
+        self._inner = inner
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        seen = 0
+        async for chunk in self._inner:
+            seen += len(chunk)
+            if seen > MAX_RESPONSE_BYTES:
+                raise LLMError("local brain reply too large")
+            yield chunk
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
+class _CappingTransport(httpx.AsyncBaseTransport):
+    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
+        self._inner = inner
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        resp = await self._inner.handle_async_request(request)
+        assert isinstance(resp.stream, httpx.AsyncByteStream)
+        return httpx.Response(
+            resp.status_code,
+            headers=resp.headers,
+            stream=_CappedBody(resp.stream),
+            extensions=resp.extensions,
+        )
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
 class LocalBrainProvider(OpenAICompatProvider):
     name = "local_brain"
 
@@ -49,7 +86,9 @@ class LocalBrainProvider(OpenAICompatProvider):
             base_url,
             api_key=api_key,
             client=httpx.AsyncClient(
-                timeout=timeout_s, follow_redirects=False, transport=transport
+                timeout=timeout_s,
+                follow_redirects=False,
+                transport=_CappingTransport(transport or httpx.AsyncHTTPTransport()),
             ),
         )
         self._deadline_s = timeout_s

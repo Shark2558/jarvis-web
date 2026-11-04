@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from jarvis.drive.service import DriveService
     from jarvis.media.service import MediaServices
     from jarvis.recall.service import MemoryService
+    from jarvis.storage.docs import Docs
     from jarvis.tools.task_marks import OutsideTasks
     from jarvis.undo.service import UndoBin
     from jarvis.web.service import WebService
@@ -79,6 +80,7 @@ def build_gateway(
     marks: OutsideTasks | None = None,
     drive: DriveService | None = None,
     media: MediaServices | None = None,
+    docs: Docs | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
@@ -99,6 +101,11 @@ def build_gateway(
             reg.register(t)
         for t in gmail_tools(google) + tasks_tools(google, default_tz=tz, undo=undo, marks=marks):
             reg.register(t)
+        if docs is not None:  # R1 D: parcels, mail aloud, groceries, family calendars
+            from jarvis.tools.r1_tools import r1_tools
+
+            for t in r1_tools(google, docs=docs, s=s, marks=marks):
+                reg.register(t)
     _register_people(reg, google)
     if undo is not None and google is not None:  # slice 11: restore needs the Google tools
         from jarvis.undo.tools import undo_tools

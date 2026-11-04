@@ -13,7 +13,7 @@ from offline_fakes import KEY, MODEL, URL, Rig
 from pydantic import SecretStr
 
 from jarvis.api import create_app
-from jarvis.api.offline import CHANGES_PER_MINUTE, install_offline
+from jarvis.api.offline import CHANGES_PER_MINUTE
 from jarvis.config import AuthMode, Settings
 from jarvis.core.guardrails import ConfirmationGate
 from jarvis.llm.mock_provider import MockProvider
@@ -35,9 +35,9 @@ async def _client(settings: Settings, rig: Rig | None) -> AsyncIterator[tuple[As
     app = create_app(
         settings, provider=MockProvider(), store=InMemorySessionStore(ttl_s=3600), gateway=gw
     )
-    install_offline(app)
-    app.state.offline = rig.svc if rig else None
     async with app.router.lifespan_context(app):
+        # the real app builds its own service in the lifespan (R1 I1); the test's replaces it
+        app.state.offline = rig.svc if rig else None
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             yield c, app
 

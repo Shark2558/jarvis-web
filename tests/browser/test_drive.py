@@ -185,7 +185,7 @@ def test_drive_section_is_hidden_when_integrations_says_drive_is_off(
         )
         c.open()
         c.open_panel("integrations")
-        c.page.locator("#integrations .integ").wait_for()
+        c.page.locator("#integrations .integ").first.wait_for()
         c.page.locator("#driveSet[hidden]").wait_for(state="attached")
         c.page.wait_for_timeout(300)  # a late /v1/drive answer must not show it again
         assert c.page.locator("#driveSet").is_hidden()

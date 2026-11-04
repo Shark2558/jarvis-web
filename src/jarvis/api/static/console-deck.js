@@ -232,6 +232,15 @@
 
   // ---- drag by the title bar (pointer events, captured), keyboard move on the grip button ----
   let drag = null;
+  // R1 I1: a panel whose content grows after it opens (Integrations gains rows as they load) must not
+  // end up under the dock: move it up when its height changes.
+  if (window.ResizeObserver) {
+    Object.values(panels).forEach(p => new ResizeObserver(() => {
+      if (drag || isPhone() || p.el.hidden || !p.el.offsetHeight) return;
+      const pos = clampPos(p.el, p.el.offsetLeft, p.el.offsetTop);
+      if (pos.x !== p.el.offsetLeft || pos.y !== p.el.offsetTop) place(p.el, pos);
+    }).observe(p.el));
+  }
   ids.forEach(id => {
     const p = panels[id], bar = p.el.querySelector('.ptitle');
     p.el.addEventListener('pointerdown', () => { if (!isPhone()) front(p); }, true);

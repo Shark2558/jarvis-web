@@ -1,7 +1,6 @@
 # tests/browser/test_offline.py -- R1 C in a real browser: Integrations -> Offline mode and the
-# reply marker. The page is the real console and the real server; console-offline.js/.css are
-# loaded by the test (the integrator wires the <script> tag) and /v1/offline* is answered by the
-# test (page.route).
+# reply marker. The page is the real console and the real server, with its real console-offline
+# tags (R1 I1); /v1/offline* is answered by the test (page.route).
 # Covers: the steps and the form when nothing is set up; Save sends url + key + model through the
 # console's transport with the CSRF header and empties the key field; Test shows the plain-words
 # result; the On switch says On / Off in words; Remove asks first; a server without the feature says
@@ -92,20 +91,6 @@ class Fake:
 
         page.route("**/v1/offline", main)
         page.route("**/v1/offline/test", test)
-        for name, kind in (
-            ("console-offline.js", "text/javascript"),
-            ("console-offline.css", "text/css"),
-        ):
-            page.route(f"**/static/{name}", _asset(STATIC / name, kind))
-
-
-def _asset(path: Path, kind: str) -> Any:
-    body = path.read_text()
-
-    def serve(route: Any) -> None:
-        route.fulfill(status=200, content_type=kind, body=body)
-
-    return serve
 
 
 def _console(
@@ -114,8 +99,6 @@ def _console(
     c = Console(browser, server_url, token, viewport)
     fake.attach(c.page)
     c.open()
-    c.page.add_style_tag(url="/static/console-offline.css")
-    c.page.add_script_tag(url="/static/console-offline.js")
     return c
 
 
@@ -223,7 +206,7 @@ def test_a_server_without_the_feature_says_so(browser: Any, server_url: str, tok
 
 MARK_JS = "([id, resp]) => window.JarvisOffline.mark(document.getElementById(id), resp)"
 ROWS_JS = """() => {
-  for (const id of ['vOffline', 'row1', 'row2']) {
+  for (const id of ['row1', 'row2']) {
     const n = document.createElement('div'); n.id = id; document.body.appendChild(n);
   }
   document.getElementById('row1').textContent = 'Two meetings today.';
@@ -236,6 +219,7 @@ def test_the_reply_marker_and_the_vitals_line(browser: Any, server_url: str, tok
     fake.s.update(configured=True, enabled=True, host=HOST, model="qwen2.5:7b", state="standby")
     c = _console(browser, server_url, token, fake, DESKTOP)
     try:
+        c.open_panel("vitals")  # the real #vOffline line lives in Vitals
         c.page.evaluate(ROWS_JS)
         c.page.evaluate("window.JarvisOffline.refresh()")
         c.page.locator("#vOffline", has_text="Offline mode: standby").wait_for()

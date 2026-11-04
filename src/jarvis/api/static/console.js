@@ -486,6 +486,7 @@
     const used = memoriesUsed(r.memory_used);
     if (used.length) memoryChip(row, used);
     if (window.JarvisSources) window.JarvisSources.render(row, r.sources);
+    if (window.JarvisOffline) window.JarvisOffline.mark(row, r); // R1 C: answered by the laptop
     if (window.JarvisDeleted) window.JarvisDeleted.chips(row, r.undo); // slice 11: Undo chips
     // slice 12: one ChatResponse.cards list; each module renders its own kinds and skips the rest
     if (window.JarvisMedia) window.JarvisMedia.cards(row, r.cards); // places / route / videos

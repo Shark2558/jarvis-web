@@ -7,7 +7,6 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
-from r1d_wiring import wire
 from test_brief import FakeBrief, brief_record, today_state
 from test_console import DESKTOP, Console  # same directory (pytest prepend import)
 
@@ -79,7 +78,6 @@ def make(browser: Any, server_url: str, token: str) -> Iterator[Callable[..., Co
 
     def factory() -> Console:
         c = Console(browser, server_url, token, DESKTOP)
-        wire(c.page)
         made.append(c)
         return c
 

@@ -33,10 +33,12 @@ from jarvis.api.console import router as console_router
 from jarvis.api.deleted import router as deleted_router
 from jarvis.api.documents import ATTACH_BODY_BYTES, ATTACH_PATH, install_documents
 from jarvis.api.drive import install_drive
+from jarvis.api.family import install_family
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
 from jarvis.api.media import router as media_router
 from jarvis.api.memory import router as memory_router
+from jarvis.api.offline import install_offline
 from jarvis.api.permissions import build_permissions, install_permissions
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
@@ -54,6 +56,8 @@ from jarvis.billing import (
     build_billing,
     fx_client,
 )
+from jarvis.brief.deliveries import DeliveriesBrief
+from jarvis.brief.family_day import FamilyBrief
 from jarvis.brief.service import BriefLimitReached, BriefService, SettingsRejected
 from jarvis.brief.store import BriefStore
 from jarvis.config import AuthMode, SessionBackend, Settings, get_settings
@@ -71,9 +75,13 @@ from jarvis.integrations.google import (
 from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
 from jarvis.llm.brains import BrainRegistry
+from jarvis.llm.fallback import FallbackFailed
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
 from jarvis.media.service import build_media
 from jarvis.memory import SessionConflict, SessionNotFound, SessionStore
+from jarvis.offline.rules import wrap_offline
+from jarvis.offline.service import build_local_fallback
+from jarvis.packages.tools import PackageScanner
 from jarvis.recall.errors import (
     ConsentRequired,
     ImportTooLarge,
@@ -89,6 +97,7 @@ from jarvis.telegram.alerts import ALERT_TEXT
 from jarvis.telegram.rules import wrap_rules
 from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.gateway import Gateway
+from jarvis.tools.r1_tools import build_family_service
 from jarvis.tools.setup import attach_activity, build_gateway
 from jarvis.tools.task_marks import OutsideTasks
 from jarvis.undo.service import UndoBin
@@ -143,6 +152,11 @@ def build_brief_service(
         ai_daily_cap=s.brief_ai_daily_cap,
         retention_days=s.brief_retention_days,
         billing=getattr(app.state, "billing", None),
+        # R1 D: Deliveries and Family today (only with the Google link they read through)
+        deliveries=DeliveriesBrief(PackageScanner(app.state.google))
+        if getattr(app.state, "google", None) is not None
+        else None,
+        family_day=FamilyBrief(family) if (family := getattr(app.state, "family", None)) else None,
     )
 
 
@@ -198,6 +212,8 @@ def _mount_scheduler(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
 
 def friendly_llm_error(exc: LLMError) -> str:
     """Owner-facing wording. Raw vendor error bodies never reach the browser."""
+    if isinstance(exc, FallbackFailed):  # R1 C: the laptop's own plain-words message
+        return str(exc)
     low = str(exc).lower()
     if "credit balance" in low or "billing" in low or "quota" in low:
         return "The AI provider account has no credit or quota left. Add credit, or switch brain."
@@ -229,23 +245,12 @@ def _wire_core(
     store and audit chain the rest is built on."""
     app.state.settings = s
     app.state.store = inj.store or (built.sessions if built else None)
-    app.state.brains = inj.brains or BrainRegistry.from_settings(s, inj.provider)
-    app.state.router = app.state.brains.router_for(app.state.brains.default.id)
-    tokens = built.tokens if built else MemoryTokenStore()
-    app.state.google = build_google_connector(s, tokens)
     docs = app_docs(built)
-    app.state.fx_http = fx_client(s)
-    app.state.billing = inj.billing or build_billing(
-        s, docs, app.state.brains, http=app.state.fx_http
-    )
+    # Offline mode (R1 C) needs the alert sink, which needs Telegram: build those first (no
+    # network here), then the brains that share the local fallback
     audit: AuditTrail = (
         inj.gateway.audit if inj.gateway is not None else built.audit if built else AuditLog()
     )
-    app.state.memory = build_app_memory(s, docs, app.state.brains, app.state.billing, audit)
-    # Voice (slice 9): settings + wit level always; Google speech only when switched on.
-    # No network at start-up: credentials are looked up on first use.
-    app.state.voice = build_voice_service(s, docs, app.state.billing, engines=inj.voice_engines)
-    # Telegram (R1 A): None unless the bot token AND the webhook secret are set; no network here
     app.state.telegram = build_telegram(s, docs, audit=audit)
     alerts: AlertSink = (
         app.state.telegram.alerts
@@ -253,6 +258,25 @@ def _wire_core(
         else NoAlerts("Telegram isn't set up")
     )
     app.state.alerts = alerts
+    app.state.offline = build_local_fallback(s, docs, alerts)  # None without JARVIS_TOKEN_KEY
+    app.state.brains = inj.brains or BrainRegistry.from_settings(
+        s, inj.provider, local=app.state.offline
+    )
+    app.state.router = app.state.brains.router_for(app.state.brains.default.id)
+    tokens = built.tokens if built else MemoryTokenStore()
+    app.state.google = build_google_connector(s, tokens)
+    # Family calendars (R1 D): None without the Google link
+    app.state.family = (
+        build_family_service(app.state.google, docs, s) if app.state.google is not None else None
+    )
+    app.state.fx_http = fx_client(s)
+    app.state.billing = inj.billing or build_billing(
+        s, docs, app.state.brains, http=app.state.fx_http
+    )
+    app.state.memory = build_app_memory(s, docs, app.state.brains, app.state.billing, audit)
+    # Voice (slice 9): settings + wit level always; Google speech only when switched on.
+    # No network at start-up: credentials are looked up on first use.
+    app.state.voice = build_voice_service(s, docs, app.state.billing, engines=inj.voice_engines)
     return docs, audit
 
 
@@ -303,6 +327,7 @@ def _wire_gateway(
             marks=app.state.outside_tasks,
             drive=app.state.drive,
             media=app.state.media,
+            docs=docs,  # R1 D: groceries, family, packages, digest
         )
     app.state.permissions = build_permissions(
         s, docs, audit=gw.audit if gw is not None else audit, google=app.state.google
@@ -311,9 +336,12 @@ def _wire_gateway(
         gw.rules = app.state.permissions
     if gw is not None and app.state.telegram is not None:
         # D4: the Telegram privacy rules wrap the owner's rules (the only supported way; the
-        # service refuses Telegram turns without them). Offline mode's rules (R1 C) wrap THIS:
-        # I1 part 2 -> gw.rules = OfflineRules(gw.rules, ...)  # <- C's OfflineRules go here
+        # service refuses Telegram turns without them)
         gw.rules = wrap_rules(gw.rules, app.state.telegram.store)
+    if gw is not None:
+        # R1 C: offline mode's rules are the OUTERMOST layer, outside telegram's (an inner one
+        # would be dropped by the channel wrapper); the Telegram marker stays visible through it
+        gw.rules = wrap_offline(gw.rules)
     # Activity (R1 B): a per-day store and the observer that fills it, on every gateway
     app.state.activity_store = ActivityStore(docs, prefix=s.firestore_prefix)
     if gw is not None:
@@ -561,6 +589,8 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_drive(app)
     install_telegram(app)
     install_activity(app)
+    install_offline(app)
+    install_family(app)
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

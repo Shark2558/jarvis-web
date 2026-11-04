@@ -10,7 +10,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-from r1d_wiring import wire
 from test_console import DESKTOP, LINKED, Console  # same directory (pytest prepend import)
 
 _pw = pytest.importorskip("playwright.sync_api")
@@ -107,7 +106,6 @@ def make(browser: Any, server_url: str, token: str) -> Iterator[Callable[..., Co
 
     def factory(viewport: dict[str, int] = DESKTOP) -> Console:
         c = Console(browser, server_url, token, viewport)
-        wire(c.page)
         made.append(c)
         return c
 

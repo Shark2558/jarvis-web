@@ -65,6 +65,11 @@ SUITES = [
     ),
     ("telegram (gated)", [sys.executable, str(HERE / "telegram" / "run.py"), "--mock"], True),
     ("activity (gated)", [sys.executable, str(HERE / "activity" / "run.py"), "--mock"], True),
+    ("offline (gated)", [sys.executable, str(HERE / "offline" / "run.py"), "--mock"], True),
+    ("packages (gated)", [sys.executable, str(HERE / "packages" / "run.py"), "--mock"], True),
+    ("groceries (gated)", [sys.executable, str(HERE / "groceries" / "run.py"), "--mock"], True),
+    ("family (gated)", [sys.executable, str(HERE / "family" / "run.py"), "--mock"], True),
+    ("mail aloud (gated)", [sys.executable, str(HERE / "mail_aloud" / "run.py"), "--mock"], True),
 ]
 
 

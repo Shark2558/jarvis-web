@@ -19,6 +19,7 @@ from jarvis.core.channel import telegram_turn
 from jarvis.core.guardrails import ConfirmationGate
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
+from jarvis.offline.rules import OfflineRules
 from jarvis.telegram.alerts import TelegramAlerts
 from jarvis.telegram.rules import MARKER, ChannelRules
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
@@ -72,7 +73,8 @@ async def without_telegram() -> AsyncIterator[tuple[object, AsyncClient]]:
 async def test_with_telegram_the_gateway_rules_carry_the_stores_marker(with_telegram) -> None:
     app, _ = with_telegram
     gw = app.state.gateway
-    assert isinstance(gw.rules, ChannelRules)
+    # R1 I1 part 2: offline mode's rules are outermost, the channel rules sit right inside them
+    assert isinstance(gw.rules, OfflineRules) and isinstance(gw.rules._inner, ChannelRules)
     with telegram_turn():
         rules = await gw.rules.rules_for(LEGACY_USER_ID)
     token = app.state.telegram.store.rules_token
@@ -100,7 +102,7 @@ async def test_without_telegram_it_is_absent_and_alerts_say_why(without_telegram
     app, c = without_telegram
     assert app.state.telegram is None
     assert isinstance(app.state.alerts, NoAlerts)
-    assert not isinstance(app.state.gateway.rules, ChannelRules)
+    assert not isinstance(app.state.gateway.rules._inner, ChannelRules)
     r = await c.post("/telegram/webhook", json={})
     assert r.status_code == 404
     res = await app.state.alerts.send("u", "x", kind="test")

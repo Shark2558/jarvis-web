@@ -38,13 +38,20 @@ log = get_logger(__name__)
 MAX_LIST_PAGES = 5
 LIST_PAGE = 100
 MAX_PAGES_OF_ITEMS = 3
+MANY_LISTS = (
+    "You have more than one list called Groceries in Google Tasks. Delete or rename the extras "
+    "so I know which one to use; nothing was changed."
+)
 
 
 class GroceryClient(TasksClient):
     """TasksClient plus the two list-level calls Groceries needs."""
 
-    async def find_by_title(self, uid: str, title: str) -> TaskList | None:
+    async def titled(self, uid: str, title: str) -> tuple[list[TaskList], bool]:
+        """Every list called `title`, oldest first (by Google's `updated`, then id), and whether
+        every page of lists was read (False: more lists exist than were looked at)."""
         token: str | None = None
+        found: list[tuple[str, TaskList]] = []
         for _ in range(MAX_LIST_PAGES):
             params: dict[str, Any] = {"maxResults": LIST_PAGE}
             if token:
@@ -55,13 +62,13 @@ class GroceryClient(TasksClient):
             for item in _dicts(data.get("items")):
                 lid = str(item.get("id") or "")
                 if _ID.fullmatch(lid) and item.get("title") == title:
-                    return TaskList(lid, title)
+                    found.append((str(item.get("updated") or ""), TaskList(lid, title)))
             token = (
                 data.get("nextPageToken") if isinstance(data.get("nextPageToken"), str) else None
             )
             if not token:
-                return None
-        return None
+                return [t for _, t in sorted(found, key=lambda x: (x[0], x[1].id))], True
+        return [t for _, t in sorted(found, key=lambda x: (x[0], x[1].id))], False
 
     async def create_list(self, uid: str, title: str) -> TaskList:
         data = await self._call(uid, "POST", LISTS_URL, json={"title": title})
@@ -101,27 +108,40 @@ class GroceryService:
     # ---- the list ---------------------------------------------------------------------------
 
     async def _find(self, uid: str) -> TaskList | None:
-        """The cached list if Google still has it, else the one titled "Groceries"."""
+        """The remembered list while Google still has it AND it is still called "Groceries";
+        otherwise the one list with that title. Several such lists and none remembered: say so
+        (never pick between them arbitrarily)."""
         cached = await self.store.list_id(uid)
-        if cached:
+        matches, complete = await self.client.titled(uid, TITLE)
+        if cached and any(m.id == cached for m in matches):
+            return TaskList(cached, TITLE)
+        if cached and not complete:  # too many lists to see them all: trust what we remembered
             try:
                 await self.client.page(uid, cached, due_through=None, completed=False)
                 return TaskList(cached, TITLE)
             except GoogleNotFound:
-                await self.store.forget(uid)
-        found = await self.client.find_by_title(uid, TITLE)
-        if found is not None:
-            await self.store.remember(uid, found.id)
-        return found
+                pass
+        if cached:  # deleted or renamed since
+            await self.store.forget(uid)
+        if len(matches) > 1:
+            raise ValueError(MANY_LISTS)
+        if matches:
+            await self.store.remember(uid, matches[0].id)
+            return matches[0]
+        return None
 
     async def ensure(self, uid: str, *, create: bool) -> tuple[TaskList | None, bool]:
-        """→ (the list or None, whether it was just made). Caller holds the owner's lock."""
+        """-> (the list or None, whether it was just made). Caller holds the owner's lock (one
+        per process; a second process may still make one at the same moment, so after creating,
+        the lists are read again and the oldest wins)."""
         found = await self._find(uid)
         if found is not None or not create:
             return found, False
         made = await self.client.create_list(uid, TITLE)
-        await self.store.remember(uid, made.id)
-        return made, True
+        matches, _ = await self.client.titled(uid, TITLE)
+        winner = matches[0] if matches and made.id in {m.id for m in matches} else made
+        await self.store.remember(uid, winner.id)
+        return winner, winner.id == made.id
 
     async def lines(self, uid: str, tl: TaskList) -> list[Line]:
         page = await self.client.read(

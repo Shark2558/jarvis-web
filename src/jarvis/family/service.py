@@ -125,6 +125,9 @@ class FamilyService:
             raise
         except GoogleAPIError:  # 404 (not in his list) or 403: try the calendar itself
             pass
+        # BY DESIGN: calendars.get also succeeds for any PUBLIC calendar, so this fallback accepts
+        # one. That is fine: only the owner can register a calendar (require_auth + current_user
+        # on /v1/family), and a public calendar is by definition already readable by anyone.
         try:
             await self._conn.request(uid, "GET", f"{CALENDARS_URL}/{_enc(cid)}")
         except (GoogleNotConnected, GoogleUncertain, GoogleQuotaExceeded, GoogleServiceDisabled):
@@ -378,7 +381,7 @@ class FamilyService:
         }
         for key in ("location", "description"):
             if a.get(key):
-                body[key] = str(a[key])[:5_000]
+                body[key] = str(a[key]).strip()  # exactly what the card showed (<= tools limits)
         e = await self._conn.request(
             uid, "POST", f"{CALENDARS_URL}/{_enc(m.calendar_id)}/events", json=body
         )

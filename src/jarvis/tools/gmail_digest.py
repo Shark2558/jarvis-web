@@ -4,7 +4,7 @@
 Metadata and Gmail's own snippet only -- no bodies are fetched. Per item: sender name, subject and
 the first line (<= 140 characters), each fenced as EXTERNAL CONTENT (other people's words), plus a
 relative received time. An item whose sender, subject or snippet looks like a code, a card, an
-account or a government id (`recall.sensitive` plus the stricter checks below) is WITHHELD: the
+account or a government id (`recall.sensitive.spoken_sensitive`) is WITHHELD: the
 model gets only a count and "open it on screen", never the text, the sender or the id, so it cannot
 be read aloud to a room. The tool is untrusted (taints the round, never vouches); drafting and
 sending by voice are unchanged (a spoken draft is a card, send is R3 + passkey). It sits in the
@@ -23,7 +23,7 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector, GoogleNotConnected
-from jarvis.recall.sensitive import sensitive_reason
+from jarvis.recall.sensitive import spoken_sensitive
 from jarvis.tools.addresses import loose_address
 from jarvis.tools.base import Tool
 from jarvis.tools.card import one_line
@@ -42,18 +42,6 @@ NAME_LIMIT = 80
 READ_PARALLEL = 5
 _ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 _URL = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
-# Stricter than recall.sensitive (which misses "verification code", "card ending 4321", "A/c XX1234
-# debited"): anything that smells like a code, a card or an account is withheld. Wrongly withholding
-# a harmless mail costs one "open it on screen"; wrongly reading a code aloud costs more.
-_SENSITIVE = re.compile(
-    r"\b(?:otp|one[- ]time|verification|security|login|sign[- ]?in|confirmation|auth)"
-    r"(?:entication)?"
-    r"\s*(?:code|pin|password)\b|\bpasscode\b|\bcvv\b|\bpin\b|"
-    r"\b(?:credit|debit)\s+card\b|\bcard\s+(?:ending|no\.?|number|xx)|"
-    r"\ba/c\b|\bacct\b|\baccount\s+(?:no\.?|number|ending|statement|balance)|"
-    r"\b(?:debited|credited)\b|\bupi\b|\bifsc\b|\d{12,}",
-    re.IGNORECASE,
-)
 WITHHELD_ONE = "1 message with a code or account number — open it on screen"
 WITHHELD_MANY = "{n} messages with a code or account number — open them on screen"
 
@@ -63,7 +51,7 @@ def utcnow() -> datetime:
 
 
 def withheld(text: str) -> bool:
-    return sensitive_reason(text) is not None or _SENSITIVE.search(text) is not None
+    return spoken_sensitive(text)
 
 
 def voice_line(text: str, limit: int) -> str:

@@ -115,7 +115,7 @@ def format_title(item: Item) -> str:
 
 
 def parse_title(title: str) -> Item:
-    m = _TITLE.match(" ".join(title.split()))
+    m = _TITLE.match(" ".join(title[:2000].split()))
     if not m or not m.group("name"):
         return Item(clean_name(title))
     try:

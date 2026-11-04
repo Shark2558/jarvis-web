@@ -28,7 +28,7 @@
 
   const TIMES = [];
   for (let m = 4 * 60; m <= 11 * 60 + 30; m += 30) TIMES.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
-  const FIELDS = ['enabled', 'time', 'ai_summary', 'inbox_delivery'];
+  const FIELDS = ['enabled', 'time', 'ai_summary', 'inbox_delivery', 'deliveries', 'family'];
   const POLL_MS = 4000;              // while the server says "generating" (a tick or another tab is on it)
   const POLL_MAX = 15;               // ~1 minute, then the owner presses Refresh
   const STALE_MS = 30 * 60 * 1000;   // coming back to a tab left open overnight re-checks today
@@ -607,7 +607,7 @@
     // the switches are rebuilt only when something they show changed: an unrelated update (the
     // live approvals count, a poll) must not swap a switch out from under a press
     const key = JSON.stringify([st.enabled, st.ai_summary, st.inbox_delivery, t.ai_available, t.inbox_available,
-      t.google_connected, S.saving, st.ai_todo_consent]);
+      t.google_connected, S.saving, st.ai_todo_consent, st.deliveries, st.family]);
     if (key === switchesKey && sec.parentNode === setBox) return;
     switchesKey = key;
     const enabled = st.enabled === true;
@@ -632,7 +632,12 @@
     // the switches are rebuilt around the time row, which stays where it is (moving it drops focus)
     [...setBody.children].forEach(n => { if (n !== timeRowEl) n.remove(); });
     timeRowEl.before(onRow);
-    timeRowEl.after(aiRow, inRow);
+    // R1 D13 / D15: switches for the Deliveries and Family today sections (only if the server sends them)
+    const secRow = (id, label, field, desc) => (typeof st[field] !== 'boolean' ? null : toggleRow(id, label, st[field], desc, false,
+      () => saveSettings({ [field]: !st[field] }, `${label} ${st[field] ? 'off' : 'on'} from the next brief.`)));
+    timeRowEl.after(...[aiRow, inRow,
+      secRow('briefDeliveries', 'Deliveries', 'deliveries', 'Parcels on the way, found in your order emails. No AI is involved.'),
+      secRow('briefFamily', 'Family today', 'family', 'What is on the family calendars you added. No AI is involved.')].filter(Boolean));
     if (sec.parentNode !== setBox) setBox.replaceChildren(sec);
   }
   /** One confirm at a time: a second press while the address is looked up (or a dialog is open)

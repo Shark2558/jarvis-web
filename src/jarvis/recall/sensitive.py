@@ -164,4 +164,39 @@ def special_category(text: str) -> bool:
     return bool(_SPECIAL.search(_normal(text)))
 
 
-__all__ = ["is_sensitive", "sensitive_reason", "special_category"]
+# ---- text that will be READ ALOUD (R1 D16) ----------------------------------------------------
+# A stricter, separate rule from the write-path filter above: a wrongly withheld mail costs one
+# "open it on screen"; a code or a balance read to a room costs more. Every pattern is linear
+# (no nested or adjacent open-ended repeats) and the input is capped.
+SPOKEN_MAX_CHARS = 20_000
+_SPOKEN_SECRET_WORD = re.compile(
+    r"\b(?:otps?|one[- ]?time|log[- ]?in|sign[- ]?in|verif\w{0,12}|pins?|passwords?|passcodes?"
+    r"|cvv|cvc|code|auth\w{0,12})\b",
+    re.IGNORECASE,
+)
+_SPOKEN_SHORT_NUMBER = re.compile(r"(?<!\d)\d{4,8}(?!\d)")
+_SPOKEN_ALWAYS = re.compile(
+    r"\b(?:otps?|one[- ]?time\s+(?:password|code|pin)|passcode|cvv|cvc"
+    r"|balance|txns?|transactions?|spent|debited|credited|statement|a/c|acct"
+    r"|account\s+(?:no|number|ending|balance|statement)|card\s+(?:ending|no|number)"
+    r"|upi|ifsc|neft|imps|rtgs|khate|jama|(?:debit|credit)\s+hua)\b|\d{12,}",
+    re.IGNORECASE,
+)
+
+
+def spoken_sensitive(text: str) -> bool:
+    """True when `text` must not be read aloud: a 4-8 digit number beside an OTP / code / login /
+    sign-in / verify / PIN / password word, a money-movement or balance word (balance, txn,
+    spent, debited, credited, statement, a/c, account ending, UPI...), Hindi / Hinglish forms
+    ("aapka OTP", "khate", "jama"), or anything the write-path filter would refuse."""
+    t = _normal(str(text or "")[:SPOKEN_MAX_CHARS])
+    if not t:
+        return False
+    if _SPOKEN_ALWAYS.search(t):
+        return True
+    if _SPOKEN_SHORT_NUMBER.search(t) and _SPOKEN_SECRET_WORD.search(t):
+        return True
+    return sensitive_reason(t) is not None
+
+
+__all__ = ["is_sensitive", "sensitive_reason", "special_category", "spoken_sensitive"]

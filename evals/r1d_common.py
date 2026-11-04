@@ -134,6 +134,7 @@ class GroceryTasks(FakeTasks):
                 "kind": "tasks#taskList",
                 "id": f"G{uuid.uuid4().hex[:8]}",
                 "title": body["title"],
+                "updated": "2026-11-05T00:00:00Z",  # Google stamps every list
             }
             self.lists.append(item)
             self.mutations.append(Mutation("insert_list", item["id"], "", body))

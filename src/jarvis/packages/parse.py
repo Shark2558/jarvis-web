@@ -38,12 +38,22 @@ STATUS_ORDER = ("ordered", "shipped", "out_for_delivery", "delivered")
 TERMINAL = ("cancelled", "returned", "refunded")
 CLOSED = frozenset({"delivered", *TERMINAL})
 _FLAGS = re.IGNORECASE
+RAW_CAP = 60_000  # characters looked at before whitespace is squashed (a hostile body can be huge)
+
+
+def squash(text: str, cap: int = BODY_SCAN_CHARS) -> str:
+    """Hostile-mail guard: every run of Unicode whitespace (NBSP, ideographic space, newlines...)
+    becomes ONE space and the text is cut to `cap`, so a pattern can never be fed thousands of
+    spaces to backtrack over. Applied at the entry of every scanner here."""
+    return " ".join(str(text)[:RAW_CAP].split())[:cap]
+
 
 # ---- tracking numbers --------------------------------------------------------------------------
 
 _TRACK = re.compile(
     r"(?:tracking|awb|waybill|way\s*bill|consignment|article|docket|shipment|transport\s+reference|lr)"
-    r"\s*(?:id|no\.?|number|num|#|code)?\s*(?:id|no\.?|number)?\s*[:#\-–]*\s*(?:is\s+)?"
+    r"\s{0,3}(?:id|no\.?|number|num|#|code)?\s{0,3}(?:id|no\.?|number)?\s{0,3}[:#\-–]{0,4}\s{0,3}"
+    r"(?:is\s{1,3})?"
     r"([A-Za-z0-9]{8,20})\b",
     _FLAGS,
 )
@@ -54,7 +64,7 @@ def find_tracking_number(
 ) -> tuple[str, Carrier] | tuple[None, None]:
     """The first token that follows a tracking word and is a valid number of `carrier` (or, with
     no carrier named, of a carrier whose format has letters in it)."""
-    for m in _TRACK.finditer(text):
+    for m in _TRACK.finditer(squash(text)):
         token = m.group(1).upper()
         if carrier is not None:
             if number_ok(carrier, token):
@@ -106,7 +116,7 @@ _CHECK_ORDER = ("returned", "cancelled", "refunded", "delivered", "out_for_deliv
 
 
 def _status_in(text: str) -> str | None:
-    t = _FUTURE.sub(" ", text)
+    t = _FUTURE.sub(" ", squash(text, BODY_STATUS_CHARS))
     for key in _CHECK_ORDER:
         if _PATTERNS[key].search(t):
             return key
@@ -116,7 +126,7 @@ def _status_in(text: str) -> str | None:
 
 
 def detect_status(subject: str, body: str) -> str | None:
-    return _status_in(subject) or _status_in(body[:BODY_STATUS_CHARS])
+    return _status_in(subject) or _status_in(body)
 
 
 # ---- expected date -----------------------------------------------------------------------------
@@ -184,7 +194,8 @@ def _int(value: str | None) -> int | None:
 
 def detect_expected(text: str, sent: date) -> date | None:
     best: tuple[int, date] | None = None
-    for m in _PHRASE.finditer(text[:BODY_SCAN_CHARS]):
+    text = squash(text)
+    for m in _PHRASE.finditer(text):
         hit = _first_date(text[m.end() : m.end() + DATE_WINDOW], sent)
         if hit is not None and (best is None or m.end() + hit[0] < best[0]):
             best = (m.end() + hit[0], hit[1])
@@ -196,11 +207,14 @@ def detect_expected(text: str, sent: date) -> date | None:
 _ORDER_PATTERNS = (
     re.compile(r"\b(\d{3}-\d{7}-\d{7})\b"),  # Amazon order id
     re.compile(r"\b(OD\d{15,20})\b"),  # Flipkart order id
-    re.compile(r"order\s*(?:id|no\.?|number|#)?\s*[:#]?\s*([A-Z0-9][A-Z0-9-]{5,24})\b", _FLAGS),
+    re.compile(
+        r"order\s{0,3}(?:id|no\.?|number|#)?\s{0,3}[:#]?\s{0,3}([A-Z0-9][A-Z0-9-]{5,24})\b", _FLAGS
+    ),
 )
 
 
 def find_order_id(text: str) -> str | None:
+    text = squash(text)
     for pat in _ORDER_PATTERNS:
         for m in pat.finditer(text):
             token = m.group(1).upper()
@@ -261,7 +275,8 @@ def parse_mail(
     if sent.tzinfo is None:
         sent = sent.replace(tzinfo=UTC)
     domain = known_domain(sender)
-    text = f"{subject}\n{body[:BODY_SCAN_CHARS]}"
+    subject, body = squash(subject, 300), squash(body)
+    text = f"{subject}\n{body}"
     named = _carrier_for(domain, text) if domain else None
     number = used = None
     if domain:  # a stranger's mail never yields a tracking number

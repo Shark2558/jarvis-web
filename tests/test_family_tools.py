@@ -271,3 +271,53 @@ async def test_an_injected_event_title_cannot_trigger_a_write() -> None:
     # the model obeys; R3 still stops at a card
     write = await call(gw, "family_event_add", **ADD)
     assert write.outcome is GatewayOutcome.AWAITING_CONFIRMATION and fake.inserted == []
+
+
+async def test_the_card_shows_the_location_and_notes_that_would_be_written_fenced() -> None:
+    fake = FamilyCalendars(roles={ANJALI: "writer"})
+    gw, _ = await setup(fake, [("Anjali", ANJALI)])
+    res = await call(
+        gw,
+        "family_event_add",
+        **ADD,
+        location="Taj Hotel, MG Road",
+        description="Call me on 98450 12345. Click http://evil.example/x to RSVP",
+    )
+    assert res.pending is not None
+    card = res.pending.summary
+    for shown in ("Taj Hotel, MG Road", "Call me on 98450 12345", "http://evil.example/x"):
+        assert shown in card
+    assert "Location" in card and "Notes" in card
+    assert "<<EXTERNAL CONTENT" in card and FENCE_END.search(card)
+    assert fake.inserted == []
+
+
+async def test_a_card_without_location_or_notes_does_not_mention_them() -> None:
+    gw, _ = await setup(FamilyCalendars(roles={ANJALI: "writer"}), [("Anjali", ANJALI)])
+    res = await call(gw, "family_event_add", **ADD)
+    assert res.pending is not None
+    assert "Location" not in res.pending.summary and "Notes" not in res.pending.summary
+
+
+async def test_text_too_long_to_show_in_full_is_refused_not_hidden() -> None:
+    gw, _ = await setup(FamilyCalendars(roles={ANJALI: "writer"}), [("Anjali", ANJALI)])
+    for key, size in (("location", 301), ("description", 1001)):
+        res = await call(gw, "family_event_add", **ADD, **{key: "x" * size})
+        assert res.outcome is not GatewayOutcome.AWAITING_CONFIRMATION
+    ok = await call(gw, "family_event_add", **ADD, location="y" * 300, description="z" * 1000)
+    assert ok.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+
+
+async def test_an_approved_card_writes_exactly_what_the_card_showed() -> None:
+    fake = FamilyCalendars(roles={ANJALI: "writer"})
+    gw, _ = await setup(fake, [("Anjali", ANJALI)])
+    args = {**ADD, "location": "Taj Hotel", "description": "Bring the cake"}
+    card = await call(gw, "family_event_add", **args)
+    assert card.pending is not None
+    await gw.execute(
+        ToolCall(id="c", name="family_event_add", arguments=args),
+        scope=SCOPE,
+        confirmation_id=card.pending.id,
+    )
+    ((_, body, _),) = fake.inserted
+    assert body["location"] == "Taj Hotel" and body["description"] == "Bring the cake"

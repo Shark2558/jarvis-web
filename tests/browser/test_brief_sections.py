@@ -159,3 +159,55 @@ def test_empty_deliveries_say_so(make: Callable[..., Console]) -> None:
     c = make()
     FakeBrief(c.page, state_with(deliveries={"state": "ok", "total": 0, "items": []}))
     assert "No parcels on the way." in str(_view(c).text_content())
+
+
+# ---- the two switches in the Brief's settings --------------------------------------------------
+
+
+def _open_settings(c: Console) -> None:
+    btn = c.page.locator("#briefSetBtn")
+    if btn.get_attribute("aria-expanded") != "true":
+        btn.click()
+    c.page.locator("#briefSetBody").wait_for(state="visible")
+
+
+def _with_switches(c: Console, **over: Any) -> Any:
+    state = state_with()
+    state["settings"] = {**state["settings"], "deliveries": True, "family": True, **over}
+    calls: list[dict[str, Any]] = []
+
+    def save(body: dict[str, Any]) -> tuple[int, Any]:
+        calls.append(body)
+        state["settings"] = {**state["settings"], **body}
+        return 200, state["settings"]
+
+    FakeBrief(c.page, state, settings=save)
+    return calls
+
+
+def test_the_two_switches_mirror_the_server_and_send_only_their_own_field(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    calls = _with_switches(c, family=False)
+    _view(c)
+    _open_settings(c)
+    assert c.page.locator("#briefDeliveries").get_attribute("aria-pressed") == "true"
+    assert c.page.locator("#briefFamily").get_attribute("aria-pressed") == "false"
+    c.page.locator("#briefDeliveries").click()
+    c.page.locator("#briefDeliveries[aria-pressed='false']").wait_for()
+    c.page.locator("#briefFamily").click()
+    c.page.locator("#briefFamily[aria-pressed='true']").wait_for()
+    assert calls == [{"deliveries": False}, {"family": True}]  # no confirm, no other field
+    c.page.locator(".bnote.ok", has_text="Family today on from the next brief.").wait_for()
+    assert c.errors == []
+
+
+def test_a_server_without_the_fields_shows_no_switches(make: Callable[..., Console]) -> None:
+    c = make()
+    FakeBrief(c.page, today_state())
+    _view(c)
+    _open_settings(c)
+    assert c.page.locator("#briefDeliveries").count() == 0
+    assert c.page.locator("#briefFamily").count() == 0
+    assert c.page.locator("#briefAi").count() == 1

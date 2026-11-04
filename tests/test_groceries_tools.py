@@ -209,7 +209,7 @@ async def test_the_list_id_is_cached_and_found_again_if_the_list_is_deleted() ->
     after = sum(
         1 for r in fake.requests if r.url.path.endswith("/users/@me/lists") and r.method == "GET"
     )
-    assert after == before  # the cached id was enough
+    assert after - before == 1  # one look at the lists re-checks the cached list's title
     fake.lists[:] = [x for x in fake.lists if x["title"] != "Groceries"]  # the owner deleted it
     await call(gw, "grocery_add", items=[{"name": "eggs"}])
     assert len(fake.created()) == 2 and titles(fake) == ["eggs"]
@@ -286,3 +286,57 @@ async def test_ask_first_and_never_still_win_on_a_spoken_turn() -> None:
     with context_trust(untrusted=False, spoken=True):
         refused = await call(gw2, "grocery_add", items=[{"name": "milk"}])
     assert refused.outcome is GatewayOutcome.DENIED and fake.requests == []
+
+
+# ---- which list is "Groceries" (review fixes) ---------------------------------------------------
+
+
+async def test_a_cached_list_that_was_renamed_is_not_written_to() -> None:
+    fake = GroceryTasks(lists=[{"id": "C1", "title": "Work stuff"}])
+    gw, svc = await build(fake)
+    await svc.store.remember(OWNER, "C1")
+    res = await call(gw, "grocery_add", items=[{"name": "milk"}])
+    assert res.outcome is GatewayOutcome.EXECUTED
+    assert fake.tasks.get("C1", []) == []  # nothing landed in the renamed list
+    assert len(fake.created()) == 1 and titles(fake) == ["milk"]
+
+
+async def test_several_lists_called_groceries_are_not_picked_between_arbitrarily() -> None:
+    fake = GroceryTasks(
+        lists=[{"id": "A1", "title": "Groceries"}, {"id": "B2", "title": "Groceries"}]
+    )
+    gw, _ = await build(fake)
+    for name, args in (("grocery_add", {"items": [{"name": "milk"}]}), ("grocery_list", {})):
+        res = await call(gw, name, **args)
+        assert res.outcome is not GatewayOutcome.EXECUTED
+        assert "more than one list called Groceries" in (res.error or "")
+    assert fake.tasks.get("A1", []) == [] and fake.tasks.get("B2", []) == []
+    assert fake.created() == []
+
+
+async def test_with_several_the_remembered_one_is_used() -> None:
+    fake = GroceryTasks(
+        lists=[{"id": "A1", "title": "Groceries"}, {"id": "B2", "title": "Groceries"}]
+    )
+    gw, svc = await build(fake)
+    await svc.store.remember(OWNER, "B2")
+    res = await call(gw, "grocery_add", items=[{"name": "milk"}])
+    assert res.outcome is GatewayOutcome.EXECUTED
+    assert [t["title"] for t in fake.tasks["B2"]] == ["milk"] and fake.tasks.get("A1", []) == []
+
+
+async def test_a_list_made_at_the_same_moment_by_another_process_gives_one_winner() -> None:
+    fake = GroceryTasks(lists=[])
+    gw, svc = await build(fake)
+    real = svc.client.create_list
+
+    async def racing(uid: str, title: str) -> Any:
+        # the other process's list appears first, with an older timestamp
+        fake.lists.append({"id": "OLD1", "title": "Groceries", "updated": "2020-01-01T00:00:00Z"})
+        return await real(uid, title)
+
+    svc.client.create_list = racing  # type: ignore[method-assign]
+    res = await call(gw, "grocery_add", items=[{"name": "milk"}])
+    assert res.outcome is GatewayOutcome.EXECUTED
+    assert [t["title"] for t in fake.tasks["OLD1"]] == ["milk"]
+    assert await svc.store.list_id(OWNER) == "OLD1"

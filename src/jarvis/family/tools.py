@@ -11,6 +11,7 @@ one.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -19,6 +20,7 @@ from jarvis.family.service import FamilyService
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
+from jarvis.tools.external import wrap_external
 from jarvis.tools.google_calendar import (
     QUERY,
     parse_window,
@@ -28,6 +30,8 @@ from jarvis.tools.google_calendar import (
 
 _ANY_TZ = ZoneInfo("UTC")
 _ISO = {"type": "string", "description": "ISO 8601 date-time, e.g. 2027-01-15T09:00:00+05:30"}
+LOCATION_MAX = 300  # shown in full on the card, so the tool refuses more than a card can show
+NOTES_MAX = 1_000
 _MEMBER = {"type": "string", "description": "The family member's name as registered"}
 
 
@@ -59,14 +63,34 @@ def _check_add(a: dict[str, Any]) -> None:
     if not str(a.get("summary") or "").strip():
         raise ValueError("summary is required")
     parse_window(a, _ANY_TZ)
+    for key, limit in (("location", LOCATION_MAX), ("description", NOTES_MAX)):
+        v = a.get(key)
+        if v is not None and (not isinstance(v, str) or len(v) > limit):
+            raise ValueError(f"{key} must be text of at most {limit} characters")
 
 
 def _card(member: str, a: dict[str, Any]) -> str:
-    return (
+    """What the owner approves. Location and notes go to another person's calendar (Google may
+    email them), so they are shown in full, fenced as text the model supplied."""
+    card = (
         f"Add “{one_line(a.get('summary'), 120)}” to {one_line(member, 60)}’s calendar, "
         f"{one_line(a.get('start'), 40)} to {one_line(a.get('end'), 40)}. "
         "They will see it and Google may email them."
     )
+    for key, label in (("location", "Location"), ("description", "Notes")):
+        text = str(a.get(key) or "").strip()
+        if text:
+            card += f"\n{label}: " + _stable_fence(text, f"event {label.lower()} to be written")
+    return card
+
+
+def _stable_fence(text: str, source: str) -> str:
+    """`wrap_external` with a fence id derived from the text: the card is built twice (preview,
+    then re-checked at approval) and must read identically, or the gateway re-proposes it."""
+    head, *middle, tail = wrap_external(text, source=source).split("\n")
+    old = tail.removeprefix("<<END ").removesuffix(">>")
+    new = hashlib.sha256(text.encode()).hexdigest()[: len(old)]
+    return "\n".join([head.removesuffix(old + ">>") + new + ">>", *middle, f"<<END {new}>>"])
 
 
 class FamilyAPI:

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from email import message_from_bytes
 from email.policy import default as default_policy
+from typing import Any
 
 import pytest
 from brief_fakes import (
@@ -23,7 +24,7 @@ from jarvis.brief.models import BriefData, InboxState, SettingsPatch
 from jarvis.brief.service import BriefLimitReached, BriefService, SettingsRejected
 from jarvis.brief.store import BriefStore
 from jarvis.core.guardrails import ActionRisk, InMemoryApprovalStore, PendingAction
-from jarvis.llm.base import LLMTransientError
+from jarvis.llm.base import Completion, LLMTransientError
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelTier
@@ -733,3 +734,30 @@ async def test_a_failing_ready_hook_never_blocks_the_brief() -> None:
     r.svc.ready_hook = hook
     res = await r.svc.tick()
     assert res.generated == 1 and (await r.svc.today(OWNER_UID)).status == "ready"
+
+
+# ---- R1 fix-4 M9: the audit names the new reads and the laptop ---------------------------------
+
+
+async def test_the_collect_audit_names_the_deliveries_and_family_reads() -> None:
+    r = await _rig()
+    await r.svc.generate(OWNER_UID, trigger="manual", force=False)
+    (entry,) = [e for e in r.audit._entries if e.tool == "morning_brief.collect"]
+    assert "deliveries=off/0" in entry.detail and "family=off/0" in entry.detail
+
+
+async def test_an_ai_summary_answered_by_the_laptop_is_audited_as_offline() -> None:
+    r = await _rig()
+    await _settings(r, ai_summary=True, confirm_spend=True)
+    real = r.provider.complete
+
+    async def laptop(**kw: Any) -> Completion:
+        done = await real(**kw)
+        return done.model_copy(update={"model": "qwen2.5:7b", "offline": True})
+
+    r.provider.complete = laptop  # type: ignore[method-assign]
+    await r.svc.generate(OWNER_UID, trigger="manual", force=False)
+    done = [e for e in r.audit._entries if e.tool == "morning_brief.summarize"]
+    assert done[-1].outcome == "executed"
+    assert "offline=true" in done[-1].detail and "model=qwen2.5:7b" in done[-1].detail
+    assert "unknown" not in done[-1].detail

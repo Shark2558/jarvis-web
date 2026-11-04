@@ -458,7 +458,15 @@ class BriefService:
             )
         if deliveries is None and family is None:
             return got
-        data = got.data.model_copy(update={"deliveries": deliveries, "family": family})
+        status = got.data.sections_status.model_copy(
+            update={
+                "deliveries": deliveries.state if deliveries is not None else "ok",
+                "family": family.state if family is not None else "ok",
+            }
+        )
+        data = got.data.model_copy(
+            update={"deliveries": deliveries, "family": family, "sections_status": status}
+        )
         return Collected(data=data, snippets=got.snippets)
 
     async def _ai(
@@ -498,7 +506,7 @@ class BriefService:
             log.warning("brief AI summary failed", extra={"reason": type(exc).__name__})
             await self._audit_ai(args, "error", type(exc).__name__)
             return None, NOTE_FAILED, calls + 1
-        await self._audit_ai(args, "executed", f"model={block.model} {_cost_detail(block)}")
+        await self._audit_ai(args, "executed", _executed_detail(block))
         if self._billing is not None:
             await self._billing.record(rec.user_id, prep.brain.id, block.cost_usd)  # never raises
         if not block.lines:
@@ -545,7 +553,9 @@ class BriefService:
         detail = (
             f"calendar={st.calendar} events={len(d.calendar.today)} inbox={st.inbox} "
             f"unread={d.inbox.total} approvals={d.jarvis.approvals_waiting} "
-            f"todo={st.todo} tasks={d.todo.total if d.todo else 0}"
+            f"todo={st.todo} tasks={d.todo.total if d.todo else 0} "
+            f"deliveries={_section_detail(d.deliveries, st.deliveries)} "
+            f"family={_section_detail(d.family, st.family)}"
         )
         try:
             await self._audit.append(
@@ -597,11 +607,12 @@ class BriefService:
         rec = await self._store.get_brief(uid, local_date(now, tz).isoformat())
         made = 0
         if is_due(now=now, settings=s, tz=tz, existing=rec):
+            first_ready = rec is None or rec.status != "ready"  # a retry is not news
             run = await self._generate(uid, s, trigger="scheduled", force=False)
             if run.outcome is ClaimOutcome.CLAIMED and not run.stored:
                 return 0, 0  # lost the claim: the newer brief is delivered by a later tick
             rec, made = run.record, int(run.stored)
-            if made and rec is not None and rec.status == "ready":
+            if made and first_ready and rec is not None and rec.status == "ready":
                 await self._tell_ready(uid)
         if not s.inbox_delivery or self._delivery is None or rec is None:
             return made, 0
@@ -625,6 +636,21 @@ class BriefService:
         """Hold the inbox copy while a later tick can still fill an unavailable section: until
         it is ok, the retries (or today's generations) are used up, or this is the last tick."""
         return retryable(rec) and rec.generations < self._max_gen and not is_last_tick(now, s, tz)
+
+
+def _section_detail(section: DeliveriesSection | FamilySection | None, state: str) -> str:
+    """`<state>/<count>` for an R1 section; `off/0` when it was not read."""
+    if section is None:
+        return "off/0"
+    n = section.total if isinstance(section, DeliveriesSection) else len(section.members)
+    return f"{state}/{n}"
+
+
+def _executed_detail(block: AIBlock) -> str:
+    """What answered: the model that really did, and `offline=true` when it was the laptop."""
+    if block.offline:
+        return f"model={block.model} offline=true cost_usd=0.000000"
+    return f"model={block.model} {_cost_detail(block)}"
 
 
 def _cost_detail(block: AIBlock) -> str:

@@ -223,7 +223,9 @@ class Summarizer:
             allow_degrade=False,
         )
         cost = c.cost_usd or cost_usd(c.model, c.usage)
-        return AIBlock(lines=self._sanitize(c.text), model=c.model, cost_usd=cost)
+        return AIBlock(
+            lines=self._sanitize(c.text), model=c.model, cost_usd=cost, offline=c.offline
+        )
 
     async def summarize(self, data: BriefData, snippets: tuple[str, ...]) -> AIBlock:
         return await self.run(self.prepare(data, snippets))

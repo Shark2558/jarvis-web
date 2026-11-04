@@ -175,6 +175,8 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "inbox": "ok",
         "jarvis": "ok",
         "todo": "not_granted",
+        "deliveries": "ok",
+        "family": "ok",
     }
     assert {r.method for r in fake.requests} == {"GET"}
     forced = (await gc.post("/v1/brief/generate", json={"force": True}, headers=CSRF)).json()

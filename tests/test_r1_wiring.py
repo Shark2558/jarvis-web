@@ -178,3 +178,57 @@ async def test_the_scheduler_tick_sweeps_telegram_and_activity() -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             r = await c.post(TICK_PATH, headers={"Authorization": f"Bearer {token()}"})
     assert r.status_code == 200 and ran == ["telegram", "activity"]
+
+
+# ---- R1 fix-4 M10: one failing close never skips the rest ---------------------------------
+
+
+def _tg_settings() -> object:
+    return dev_settings(
+        telegram_bot_token=SecretStr(TOKEN), telegram_webhook_secret=SecretStr(SECRET)
+    )
+
+
+async def test_a_failing_close_does_not_skip_the_store_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = InMemorySessionStore()
+    closed: list[str] = []
+
+    async def store_close() -> None:
+        closed.append("store")
+
+    monkeypatch.setattr(store, "close", store_close)
+    app = create_app(_tg_settings(), provider=MockProvider(), store=store)  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="telegram client down"):
+        async with app.router.lifespan_context(app):
+
+            async def bad() -> None:
+                raise RuntimeError("telegram client down")
+
+            monkeypatch.setattr(app.state.telegram.client, "aclose", bad)
+    assert closed == ["store"]
+
+
+async def test_a_wiring_failure_closes_what_was_already_opened(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jarvis.api import app as app_module
+
+    store = InMemorySessionStore()
+    closed: list[str] = []
+
+    async def store_close() -> None:
+        closed.append("store")
+
+    monkeypatch.setattr(store, "close", store_close)
+
+    def broken(*a: object, **k: object) -> None:
+        raise RuntimeError("wiring broke")
+
+    monkeypatch.setattr(app_module, "_wire_brain", broken)
+    app = create_app(_tg_settings(), provider=MockProvider(), store=store)  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="wiring broke"):
+        async with app.router.lifespan_context(app):
+            pass
+    assert closed == ["store"]

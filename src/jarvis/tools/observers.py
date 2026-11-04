@@ -10,6 +10,7 @@ no result text of its own: `result` is the gateway's `GatewayResult` (None for a
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -19,6 +20,8 @@ from jarvis.logging import get_logger
 from jarvis.tools.audit import AuditEntry
 
 log = get_logger(__name__)
+
+OBSERVER_TIMEOUT_S = 2.0  # one observer may hold a tool call this long, never longer
 
 
 @dataclass(frozen=True)
@@ -38,10 +41,17 @@ class GatewayObserver(Protocol):
 
 
 async def notify(observers: Sequence[GatewayObserver], event: GatewayEvent) -> None:
-    """Tell every observer; one that raises is logged (class name only) and skipped."""
+    """Tell every observer; one that raises or takes longer than OBSERVER_TIMEOUT_S is logged
+    (class name only, never the event) and skipped."""
     for obs in observers:
         try:
-            await obs.on_event(event)
+            async with asyncio.timeout(OBSERVER_TIMEOUT_S):
+                await obs.on_event(event)
+        except TimeoutError:
+            log.warning(
+                "gateway observer timed out",
+                extra={"observer": type(obs).__name__, "timeout_s": OBSERVER_TIMEOUT_S},
+            )
         except Exception as exc:  # noqa: BLE001 - an observer never fails a tool call
             log.warning(
                 "gateway observer failed",
@@ -49,4 +59,4 @@ async def notify(observers: Sequence[GatewayObserver], event: GatewayEvent) -> N
             )
 
 
-__all__ = ["GatewayEvent", "GatewayObserver", "notify"]
+__all__ = ["OBSERVER_TIMEOUT_S", "GatewayEvent", "GatewayObserver", "notify"]

@@ -78,3 +78,19 @@ def test_mail_aloud_uses_the_digest_and_never_reveals_withheld_items() -> None:
 def test_activity_points_to_the_panel_and_offers_undo_for_deletes_only() -> None:
     r = p.ACTIVITY_RULE
     assert "Activity panel" in r and "deleted_restore" in r and "cannot be undone" in r
+
+
+def test_activity_undo_is_only_for_undoable_deletes_and_the_console_panel() -> None:
+    r = " ".join(p.ACTIVITY_RULE.split())
+    assert "the console's Activity panel" in r
+    assert "Deleting and undo" in r and "undo-able delete" in r
+    assert "A delete can be undone" not in r
+
+
+def test_the_p46_comment_lists_every_new_paragraph() -> None:
+    import inspect
+
+    head = inspect.getsource(p).split("PERSONA_VERSION =")[0]
+    note = head[head.index("# p4.6") :]
+    for word in ("Telegram", "grocer", "parcel", "family", "aloud", "Activity"):
+        assert word.lower() in note.lower(), word

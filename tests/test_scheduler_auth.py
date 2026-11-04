@@ -286,8 +286,8 @@ async def sc(ssettings: Settings) -> AsyncIterator[AsyncClient]:
 async def test_tick_with_a_scheduler_token_runs(sc: AsyncClient) -> None:
     r = await sc.post(TICK_PATH, headers={"Authorization": f"Bearer {token()}"})
     assert r.status_code == 200
-    assert r.json() == {"checked": 1, "generated": r.json()["generated"], "delivered": 0}
-    assert set(r.json()) == {"checked", "generated", "delivered"}
+    assert r.json()["checked"] == 1 and r.json()["delivered"] == 0
+    assert set(r.json()) == {"checked", "generated", "delivered", "sweeps"}
 
 
 async def test_tick_also_learns_conversations_left_unlearned(sc: AsyncClient) -> None:
@@ -303,7 +303,7 @@ async def test_tick_also_learns_conversations_left_unlearned(sc: AsyncClient) ->
         s.append(Turn(role=Role.ASSISTANT, content="Noted, Sir."))
     await app.state.store.save(s)
     r = await sc.post(TICK_PATH, headers={"Authorization": f"Bearer {token()}"})
-    assert r.status_code == 200 and set(r.json()) == {"checked", "generated", "delivered"}
+    assert r.status_code == 200 and set(r.json()) == {"checked", "generated", "delivered", "sweeps"}
     state = await app.state.memory.store.load(LEGACY_USER_ID)
     assert state.learn.cursors.get("sess_tick") == len(s.turns)
 
@@ -407,3 +407,26 @@ async def test_tick_is_rate_limited(ssettings: Settings) -> None:
     async for c in _app_client(s, FakeJWKS(KEY)):
         codes = [(await c.post(TICK_PATH)).status_code for _ in range(3)]
         assert codes == [401, 401, 429]
+
+
+async def test_a_failing_sweep_logs_an_error_with_a_traceback_and_the_tick_says_failed(
+    sc: AsyncClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """R1 fix-4 M6: a housekeeping sweep that raises is an error in the log (with exc_info), a
+    "failed" in the tick answer (no exception text), and never fails the tick."""
+    monkeypatch.setattr(app_module, "configure_logging", lambda *a, **k: None)
+    app = sc.app  # type: ignore[attr-defined]
+
+    async def boom(owners: object) -> int:
+        raise RuntimeError("firestore says secret-detail")
+
+    monkeypatch.setattr(app.state.activity, "sweep", boom)
+    caplog.set_level(logging.WARNING)
+    r = await sc.post(TICK_PATH, headers={"Authorization": f"Bearer {token()}"})
+    assert r.status_code == 200
+    assert r.json()["sweeps"]["activity"] == "failed"
+    assert "secret-detail" not in r.text
+    errs = [
+        x for x in caplog.records if x.levelno == logging.ERROR and "activity" in x.getMessage()
+    ]
+    assert errs and errs[0].exc_info is not None

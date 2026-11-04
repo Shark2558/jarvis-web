@@ -103,13 +103,17 @@ class ActivityStore:
             try:
                 days = [d for d, _ in await self._d.query(Query(self._index(uid)))]
             except Exception as exc:  # noqa: BLE001
-                log.warning("activity sweep failed", extra={"error": type(exc).__name__})
+                log.error(
+                    "activity sweep failed", exc_info=True, extra={"error": type(exc).__name__}
+                )
                 continue
             for day in sorted(d for d in days if _DAY.fullmatch(d) and d < keep_from):
                 try:
                     gone += await self._sweep_day(uid, day)
                 except Exception as exc:  # noqa: BLE001
-                    log.warning("activity sweep failed", extra={"error": type(exc).__name__})
+                    log.error(
+                        "activity sweep failed", exc_info=True, extra={"error": type(exc).__name__}
+                    )
         return gone
 
     async def _sweep_day(self, uid: str, day: str) -> int:

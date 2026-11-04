@@ -4,9 +4,9 @@ so the eval suite can pin every edge (catch-up, stale claims, DST, the day bound
 
 Cloud Scheduler wakes the app every 30 minutes from 04:00 to 11:30; the app decides. A brief
 missed at its time (cold start, outage) is made at the next tick up to CATCH_UP later. A brief
-made while Google was failing (calendar or inbox "unavailable") is made again by the next
-ticks, at most MAX_SECTION_RETRIES times; "not_connected" is never retried (only the owner can
-fix it).
+made while Google was failing (calendar, inbox, deliveries or family "unavailable") is made again
+by the next ticks, at most MAX_SECTION_RETRIES times; "not_connected" is never retried (only the
+owner can fix it).
 """
 
 from __future__ import annotations
@@ -43,12 +43,12 @@ def claim_is_stale(record: BriefRecord, now: datetime) -> bool:
 
 
 def has_unavailable_section(record: BriefRecord) -> bool:
-    """A ready brief whose calendar or inbox could not be read (a Google error, not a missing
-    link)."""
+    """A ready brief whose calendar, inbox, deliveries or family section could not be read (a
+    Google error, not a missing link)."""
     if record.status != "ready" or record.data is None:
         return False
     st = record.data.sections_status
-    return "unavailable" in (st.calendar, st.inbox)
+    return "unavailable" in (st.calendar, st.inbox, st.deliveries, st.family)
 
 
 def retryable(record: BriefRecord) -> bool:

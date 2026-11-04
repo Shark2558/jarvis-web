@@ -12,6 +12,7 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from jarvis.activity.models import (
@@ -59,7 +60,7 @@ class ActivityService:
         return day_key(self._clock().astimezone(self._tz).date() - timedelta(days=offset_days))
 
     async def view(self, uid: str, day: str = "today") -> ActivityView:
-        which = "yesterday" if day == "yesterday" else "today"
+        which: Literal["today", "yesterday"] = "yesterday" if day == "yesterday" else "today"
         rows = await self.store.day(uid, self._local_day(1 if which == "yesterday" else 0))
         rows = _without_finished_waits(rows)
         out: list[ActivityRow] = []

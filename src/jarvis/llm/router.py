@@ -24,6 +24,7 @@ from jarvis.llm.base import (
     ChatMessage,
     Completion,
     Effort,
+    LLMAuthError,
     LLMError,
     LLMProvider,
     LLMTransientError,
@@ -31,7 +32,7 @@ from jarvis.llm.base import (
     StreamUsage,
     ToolSpec,
 )
-from jarvis.llm.fallback import Breaker, FallbackBrain, FallbackFailed
+from jarvis.llm.fallback import FALLBACK_REFUSED_TEXT, Breaker, FallbackBrain, FallbackFailed
 from jarvis.llm.gemini_provider import GeminiProvider
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.logging import get_logger
@@ -105,7 +106,7 @@ class ModelRouter:
             self._breaker.reset()
             if cause is None:
                 return None
-            raise FallbackFailed() from cause
+            raise _failed(exc) from cause
         if cause is not None:  # a cloud miss opens the window; answers inside it don't extend it
             self._breaker.trip()
         return done
@@ -133,10 +134,13 @@ class ModelRouter:
         }
         tried_laptop = False
         if self._breaker.is_open():  # a recent miss: straight to the laptop, cloud as a last resort
-            done = await self._offline_complete(None, **local)
-            if done is not None:
-                return done
-            tried_laptop = True
+            if await self._fallback_ready():
+                done = await self._offline_complete(None, **local)
+                if done is not None:
+                    return done
+                tried_laptop = True  # the laptop was really asked and did not answer
+            else:
+                self._breaker.reset()  # off / not configured: nothing to hold the cloud back
         current: ModelTier | None = tier
         while current is not None:
             model = self.resolve(current)
@@ -206,6 +210,8 @@ class ModelRouter:
                 return
             except _LaptopSilent:
                 tried_laptop = True  # nothing reached the caller: give the cloud a try
+        elif self._breaker.is_open():
+            self._breaker.reset()  # the fallback went off / away: nothing to hold the cloud back
         started = False
         try:
             async for delta in self.provider.stream(
@@ -227,8 +233,8 @@ class ModelRouter:
             try:
                 async for delta in self._local_stream(local, miss=True):
                     yield delta
-            except _LaptopSilent:
-                raise FallbackFailed() from exc
+            except _LaptopSilent as silent:
+                raise _failed(silent.args[0]) from exc
             return
         await self._cloud_ok()
 
@@ -246,9 +252,16 @@ class ModelRouter:
                 raise
             log.warning("fallback stream failed", extra={"error": type(exc).__name__})
             self._breaker.reset()
-            raise _LaptopSilent() from exc
+            raise _LaptopSilent(exc) from exc
         if miss:
             self._breaker.trip()
+
+
+def _failed(laptop_error: Exception) -> FallbackFailed:
+    """The friendly error for 'cloud unreachable and the laptop gave no answer'."""
+    if isinstance(laptop_error, LLMAuthError):
+        return FallbackFailed(FALLBACK_REFUSED_TEXT)
+    return FallbackFailed()
 
 
 class _LaptopSilent(Exception):

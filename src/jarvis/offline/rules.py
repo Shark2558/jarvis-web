@@ -5,7 +5,7 @@ A small model on the laptop picks arguments less reliably and is easier to steer
 text, so while `core.channel.answered_offline()` every reversible (R2) call becomes a one-tap card,
 whatever the owner's Allow says. Reads are untouched, and R3 already asks and can never be relaxed.
 Wraps the gateway's `OwnerRules` source (I1 builds the chain
-`OfflineRules(ChannelRules(permissions, ...))`); no gateway change.
+`wrap_offline(wrap_rules(permissions, ...))`; OfflineRules goes OUTERMOST); no gateway change.
 
 `WRITES_ASK` exists only so the offline eval can show its negative control.
 """
@@ -40,4 +40,15 @@ class OfflineRules:
         return rules
 
 
-__all__ = ["OFFLINE_ASK", "OfflineRules"]
+def wrap_offline(inner: OwnerRules) -> OfflineRules:
+    """Wrap the finished rules chain so offline turns ask on every write.
+
+    It must be the OUTERMOST wrapper, around telegram's `wrap_rules(...)`:
+    `rules = wrap_offline(wrap_rules(permission_rules, ...))`. A channel wrapper keeps only the
+    rule sources it knows, so an offline rule placed inside it is dropped and an offline calendar
+    add would run without a card (tests/test_offline_chain.py).
+    """
+    return OfflineRules(inner)
+
+
+__all__ = ["OFFLINE_ASK", "OfflineRules", "wrap_offline"]

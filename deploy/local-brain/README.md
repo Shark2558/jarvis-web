@@ -22,7 +22,8 @@ works exactly as before without it.
 ## One-time setup (about 20 minutes)
 
 1. **Ollama.** Install it from ollama.com, open it, then pull a model:
-   `ollama pull qwen2.5:7b` (laptop with 16 GB memory) or `ollama pull qwen2.5:3b` (8 GB).
+   `ollama pull qwen2.5:3b` (the default: it fits a laptop GPU with 4 GB). `ollama pull qwen2.5:7b`
+   is smarter but, on a small GPU, mostly runs on the CPU and is slower: an optional choice.
 2. **Caddy** (the little gate that checks the key). macOS: `brew install caddy`. Windows:
    `winget install CaddyServer.Caddy`. Linux: see caddyserver.com/docs/install.
 3. **Tailscale** (free Personal plan): install it from tailscale.com/download and sign in. In the
@@ -36,7 +37,7 @@ works exactly as before without it.
    Funnel and prints:
 
    ```
-   Address: https://my-laptop.tail1234.ts.net
+   Address: https://my-laptop.tail1234.ts.net:8443
    Key: <43 characters>
    ```
 5. **Tell JARVIS.** Integrations -> Offline mode: paste the address, the key and the model name
@@ -46,10 +47,10 @@ works exactly as before without it.
    Claude can't be reached; that reply then carries the offline marker, writes show a card, and (if
    Telegram is set up) you get an alert.
 7. Check tool calling with your model: ask "what's on today?" in offline mode. Small models
-   sometimes call tools badly; if so, try a bigger one (`qwen2.5:7b`) and change the model name in
+   sometimes call tools badly; if so, try the bigger `qwen2.5:7b` and change the model name in
    Integrations.
 
-Keep the script window open. Ctrl+C stops the gate and closes Funnel. You can run it at login if you
+Keep the script window open. Ctrl+C stops the gate and closes Funnel on port 8443 (nothing else of your Tailscale setup is touched). You can run it at login if you
 like.
 
 ## Why it is safe
@@ -58,7 +59,7 @@ like.
   ends on **your laptop**, not at Tailscale. JARVIS only accepts that kind of address, over https,
   and refuses anything that points at a private network.
 - Anyone on the internet can *find* the address, so the gate (Caddy) answers only two requests
-  (`POST /v1/chat/completions`, `GET /v1/models`) and only with your key. Everything else is 401 or 404.
+  (`POST /v1/chat/completions`, `GET /v1/models`) and only with your key. Everything else is 401 or 404, and with no key set at all it refuses everything (503).
   Ollama itself is never published.
 - The key is 256 random bits, stored encrypted in JARVIS and only in a private file on your laptop.
   JARVIS never shows it back.

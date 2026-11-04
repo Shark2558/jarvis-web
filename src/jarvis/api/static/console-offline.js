@@ -17,13 +17,13 @@
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
-  const STATES = { off: 'Off', standby: 'Standby', active: 'Active', unreachable: 'Laptop not answering' };
+  const STATES = { off: 'Off', standby: 'Standby', active: 'Active', unreachable: 'Laptop not answering', refused: 'Key refused' };
   const HOST = /^[a-z0-9-]{1,63}\.[a-z0-9-]{1,63}\.ts\.net$/;
   const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$/;
   const STALE_MS = 15 * 1000;
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
   const STEPS = [
-    'Install Ollama on your laptop and pull a model (for example: ollama pull qwen2.5:7b).',
+    'Install Ollama on your laptop and pull a model (for example: ollama pull qwen2.5:3b).',
     'Install Tailscale, sign in and allow Funnel when it asks.',
     'Run deploy/local-brain/start-unix.sh (Windows: start-windows.ps1). It prints an address and a key.',
     'Paste the address, the key and the model name below, press Save, then Test.',
@@ -133,7 +133,7 @@
     const f = mk('form', 'oform'); f.id = 'offlineForm'; f.noValidate = true;
     const url = field('offlineUrl', 'Address', { type: 'text', inputmode: 'url', placeholder: 'https://my-laptop.tail1234.ts.net', maxlength: '300' });
     const key = field('offlineKey', 'Key', { type: 'password', placeholder: d && d.configured ? 'Paste again only to change it' : 'The key the start script printed', maxlength: '300' });
-    const model = field('offlineModel', 'Model', { type: 'text', placeholder: 'qwen2.5:7b', maxlength: '100' });
+    const model = field('offlineModel', 'Model', { type: 'text', placeholder: 'qwen2.5:3b', maxlength: '100' });
     if (d && d.host) url.querySelector('input').placeholder = 'https://' + d.host;
     if (d && d.model) model.querySelector('input').value = d.model;
     const row = mk('div', 'orow');

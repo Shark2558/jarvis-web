@@ -142,3 +142,14 @@ async def test_stream_success_tells_the_fallback_the_cloud_is_back() -> None:
     cloud, fb = CloudProvider(), FakeFallback()
     await _collect(_router(cloud, fb).stream(tier=ModelTier.FAST, **KW))
     assert fb.cloud_oks == 1
+
+
+async def test_a_laptop_that_refuses_the_key_gives_the_key_message() -> None:
+    from jarvis.llm.fallback import FALLBACK_REFUSED_TEXT
+
+    cloud = CloudProvider(LLMUnreachable("503"))
+    fb = FakeFallback(error=LLMAuthError("401"))
+    with pytest.raises(FallbackFailed) as ei:
+        await _router(cloud, fb).complete(tier=ModelTier.BALANCED, **KW)
+    assert str(ei.value) == FALLBACK_REFUSED_TEXT
+    assert "paste the new key" in str(ei.value) and "Offline mode" in str(ei.value)

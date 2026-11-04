@@ -14,6 +14,7 @@ whether a URL is allowed, it only refuses to be pushed elsewhere.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -110,22 +111,41 @@ class LocalBrainProvider(OpenAICompatProvider):
         usage: StreamUsage | None = None,
     ) -> AsyncIterator[str]:
         sent = 0
+        # One monotonic deadline for the whole stream. Each read is bounded with wait_for on its
+        # own __anext__: a timeout scope must never be held across `yield` (its cancellation could
+        # land in the consumer's task).
+        deadline = time.monotonic() + self._deadline_s
+        inner = (
+            super()
+            .stream(
+                system=system,
+                system_dynamic=system_dynamic,
+                messages=messages,
+                model=model,
+                max_tokens=max_tokens,
+                effort=effort,
+            )
+            .__aiter__()
+        )
         try:
-            async with asyncio.timeout(self._deadline_s):
-                async for delta in super().stream(
-                    system=system,
-                    system_dynamic=system_dynamic,
-                    messages=messages,
-                    model=model,
-                    max_tokens=max_tokens,
-                    effort=effort,
-                ):
-                    sent += len(delta.encode())
-                    if sent > MAX_RESPONSE_BYTES:
-                        raise LLMError("local brain reply too large")
-                    yield delta
-        except TimeoutError as exc:
-            raise LLMUnreachable("local brain timed out") from exc
+            while True:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise LLMUnreachable("local brain timed out")
+                try:
+                    delta = await asyncio.wait_for(inner.__anext__(), left)
+                except StopAsyncIteration:
+                    break
+                except TimeoutError as exc:
+                    raise LLMUnreachable("local brain timed out") from exc
+                sent += len(delta.encode())
+                if sent > MAX_RESPONSE_BYTES:
+                    raise LLMError("local brain reply too large")
+                yield delta
+        finally:
+            aclose = getattr(inner, "aclose", None)
+            if aclose is not None:
+                await aclose()
         if usage is not None:  # free: metered as nothing, never guessed from characters
             usage.started(
                 input_tokens=0, output_tokens=0, cache_read_tokens=0, cache_write_tokens=0

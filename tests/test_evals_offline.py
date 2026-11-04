@@ -45,3 +45,6 @@ def test_offline_mock_evals_pass_their_gates() -> None:
     )
     assert nc["writes_ask_off"]["suite_failed"] and nc["writes_ask_off"]["metric"] >= 1
     assert nc["url_rule_off"]["suite_failed"] and nc["url_rule_off"]["metric"] >= 5
+    # offering a tool outside OFFLINE_TOOLS (filter off) or letting its call through (confine off)
+    assert nc["tools_filter_off"]["suite_failed"] and nc["tools_filter_off"]["metric"] >= 1
+    assert nc["confine_off"]["suite_failed"] and nc["confine_off"]["metric"] >= 1

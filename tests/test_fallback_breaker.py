@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fallback_fakes import KW, TIERS, CloudProvider, FakeFallback
-from jarvis.llm.fallback import BREAKER_S, Breaker
 
 from jarvis.llm.base import LLMUnreachable
+from jarvis.llm.fallback import BREAKER_S, Breaker
 from jarvis.llm.router import ModelRouter, ModelTier
 
 
@@ -118,3 +119,35 @@ async def test_stream_while_open_goes_to_the_laptop_first() -> None:
     await r.complete(tier=ModelTier.BALANCED, **KW)
     got = [d async for d in r.stream(tier=ModelTier.BALANCED, **KW)]
     assert got == ["lap ", "top "] and len(cloud.models) == 1
+
+
+async def test_a_fallback_switched_off_while_open_releases_the_cloud() -> None:
+    clock, cloud, fb = Clock(), Flaky(), FakeFallback()
+    r = _router(cloud, fb, clock)
+    await r.complete(tier=ModelTier.BALANCED, **KW)  # opens the breaker
+    fb._ready = False  # the owner switched offline mode off
+    cloud.down = False
+    c = await r.complete(tier=ModelTier.BALANCED, **KW)
+    assert c.text == "from cloud" and len(fb.calls) == 1
+    assert not r._breaker.is_open()
+
+
+async def test_cloud_down_and_fallback_off_is_the_original_error_not_a_laptop_failure() -> None:
+    from jarvis.llm.fallback import FallbackFailed
+
+    clock, cloud, fb = Clock(), Flaky(), FakeFallback()
+    r = _router(cloud, fb, clock)
+    await r.complete(tier=ModelTier.BALANCED, **KW)
+    fb._ready = False
+    with pytest.raises(LLMUnreachable) as ei:
+        await r.complete(tier=ModelTier.BALANCED, **KW)
+    assert not isinstance(ei.value, FallbackFailed)  # the laptop was never asked
+
+
+async def test_stream_with_the_fallback_off_while_open_releases_the_cloud() -> None:
+    clock, cloud, fb = Clock(), Flaky(), FakeFallback()
+    r = _router(cloud, fb, clock)
+    await r.complete(tier=ModelTier.BALANCED, **KW)
+    fb._ready = False
+    got = [d async for d in r.stream(tier=ModelTier.BALANCED, **KW)]
+    assert got == ["a ", "b "] and not r._breaker.is_open()

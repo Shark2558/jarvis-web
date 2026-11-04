@@ -10,9 +10,9 @@
 .integ.offline .otest.ok{color:var(--ok-ink)}
 .integ.offline[data-state="active"] .istate{color:var(--ok-ink)}
 .integ.offline[data-state="standby"] .istate{color:var(--ok-ink)}
-.integ.offline[data-state="unreachable"] .istate,.integ.offline[data-state="error"] .istate{color:var(--amber-ink)}
+.integ.offline[data-state="unreachable"] .istate,.integ.offline[data-state="refused"] .istate,.integ.offline[data-state="error"] .istate{color:var(--amber-ink)}
 .integ.offline[data-state="active"]{box-shadow:inset 3px 0 0 var(--ok)}
-.integ.offline[data-state="unreachable"]{box-shadow:inset 3px 0 0 var(--amber)}
+.integ.offline[data-state="unreachable"],.integ.offline[data-state="refused"]{box-shadow:inset 3px 0 0 var(--amber)}
 .osteps{margin:10px 0 0;padding-left:22px;font-size:13px;line-height:1.5;color:var(--ink-2)}
 .osteps li{margin:2px 0}
 .oform{margin-top:10px}
@@ -32,7 +32,7 @@
 .offmark{margin-top:6px;font:400 11.5px/1.3 var(--tech);letter-spacing:.06em;color:var(--amber-ink)}
 #vOffline{font:400 11.5px/1.3 var(--tech);letter-spacing:.06em;color:var(--ink-3)}
 #vOffline[data-state="active"]{color:var(--ok-ink)}
-#vOffline[data-state="unreachable"]{color:var(--amber-ink)}
+#vOffline[data-state="unreachable"],#vOffline[data-state="refused"]{color:var(--amber-ink)}
 @media (max-width: 560px){
   .integ.offline .bsw,.integ.offline .btn.bact,.oinput{min-height:44px}
   .oinput{height:44px}

@@ -61,6 +61,7 @@ from jarvis.logging import configure_logging  # noqa: E402
 from jarvis.memory.inmemory import InMemorySessionStore  # noqa: E402
 from jarvis.offline import config as url_rule  # noqa: E402
 from jarvis.offline import rules as rules_mod  # noqa: E402
+from jarvis.offline import service as service_mod  # noqa: E402
 from jarvis.offline.config import UrlRejected, check_url  # noqa: E402
 from jarvis.offline.rules import OfflineRules  # noqa: E402
 from jarvis.offline.service import LocalFallback  # noqa: E402
@@ -522,6 +523,12 @@ async def suite_negative() -> dict[str, Any]:
     with _patched(rules_mod, "WRITES_ASK", False):
         s = await suite_tools()
     variants["writes_ask_off"] = _variant(s)
+    with _patched(service_mod, "offline_tools", lambda tools: tools):  # every tool offered
+        s = await suite_tools()
+    variants["tools_filter_off"] = _variant(s)
+    with _patched(service_mod, "confine", lambda done, offered: done):  # calls not dropped
+        s = await suite_tools()
+    variants["confine_off"] = _variant(s)
     with _patched(url_rule, "ENFORCE_URL_RULE", False):
         s = await suite_url()
     variants["url_rule_off"] = _variant(s)

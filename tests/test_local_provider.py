@@ -171,3 +171,41 @@ async def test_close_releases_the_client() -> None:
     p = _provider(lambda _: httpx.Response(200, json=_ok()))
     await p.aclose()
     await p.aclose()  # idempotent
+
+
+async def test_stream_deadline_never_cancels_the_consumer() -> None:
+    """The timeout must not be a scope held across `yield`: a consumer that awaits between chunks
+    past the deadline gets LLMUnreachable on its next read, never a cancellation of its own task."""
+    sse = (
+        "".join(f'data: {{"choices":[{{"delta":{{"content":"w{i} "}}}}]}}\n\n' for i in range(6))
+        + "data: [DONE]\n\n"
+    )
+
+    def h(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=sse.encode())
+
+    got: list[str] = []
+    slept = 0
+    with pytest.raises(LLMUnreachable):
+        async for d in _provider(h, timeout_s=0.3).stream(**KW):
+            got.append(d)
+            await asyncio.sleep(0.15)  # the consumer's own awaits
+            slept += 1
+    assert 1 <= len(got) < 6
+    assert slept == len(got)  # every consumer sleep completed: none was cancelled
+
+
+async def test_stream_slow_server_is_cut_at_the_deadline_per_read() -> None:
+    async def trickle() -> Any:
+        yield b'data: {"choices":[{"delta":{"content":"a "}}]}\n\n'
+        await asyncio.sleep(5)
+        yield b"data: [DONE]\n\n"
+
+    def h(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=trickle())
+
+    got: list[str] = []
+    with pytest.raises(LLMUnreachable):
+        async for d in _provider(h, timeout_s=0.3).stream(**KW):
+            got.append(d)
+    assert got == ["a "]

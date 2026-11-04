@@ -7,6 +7,8 @@
 #     POST /v1/chat/completions      GET /v1/models
 # Everything else gets 404, and those two paths without the key get 401. The key arrives in the
 # environment (JARVIS_LOCAL_KEY, set by start-unix.sh / start-windows.ps1), never in this file.
+# Fail closed: with no key (unset, empty or under 16 characters) every request gets 503, so the
+# header match can never degrade to a bare "Bearer ".
 {
 	admin off
 	auto_https off
@@ -18,6 +20,8 @@ http://127.0.0.1:11435 {
 	request_body {
 		max_size 2MB
 	}
+
+	@nokey expression `size({env.JARVIS_LOCAL_KEY}) < 16`
 
 	@chat {
 		method POST
@@ -33,6 +37,9 @@ http://127.0.0.1:11435 {
 		path /v1/chat/completions /v1/models
 	}
 
+	handle @nokey {
+		respond "Offline gate has no key" 503
+	}
 	handle @chat {
 		reverse_proxy 127.0.0.1:11434 {
 			header_up -Authorization

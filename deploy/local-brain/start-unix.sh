@@ -38,13 +38,19 @@ if [ ! -s "$KEYFILE" ]; then
 fi
 chmod 600 "$KEYFILE"
 KEY="$(cat "$KEYFILE")"
+if [ "${#KEY}" -lt 16 ]; then
+  echo "The key in $KEYFILE is too short (it needs 16+ characters). Delete that file and run this again" >&2
+  echo "to make a new key (then paste the new key into JARVIS)." >&2
+  exit 1
+fi
 
 CADDY_PID=""
 cleanup() {
   if [ -n "$CADDY_PID" ]; then
     kill "$CADDY_PID" 2>/dev/null || true
   fi
-  tailscale funnel reset >/dev/null 2>&1 || true
+  # close only this port; never `funnel reset` (it would wipe the owner's other Funnel/Serve setup)
+  tailscale funnel --https=8443 off >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
@@ -53,13 +59,13 @@ JARVIS_LOCAL_KEY="$KEY" caddy run --config "$HERE/Caddyfile" --adapter caddyfile
 CADDY_PID=$!
 sleep 1
 
-if ! tailscale funnel --bg 11435 >/dev/null 2>&1; then
+if ! tailscale funnel --bg --https=8443 11435 >/dev/null 2>&1; then
   echo "Tailscale Funnel did not start. Check that Funnel is allowed for your tailnet" >&2
   echo "(Tailscale admin console -> Access controls) and that you are signed in. See README.md." >&2
   exit 1
 fi
 
-ADDRESS="$(tailscale funnel status 2>/dev/null | grep -o 'https://[A-Za-z0-9.-]*\.ts\.net' | head -n 1 || true)"
+ADDRESS="$(tailscale funnel status 2>/dev/null | grep -o 'https://[A-Za-z0-9.-]*\.ts\.net\(:[0-9]*\)\{0,1\}' | head -n 1 || true)"
 echo
 echo "Offline mode gate is running."
 echo "Address: ${ADDRESS:-run 'tailscale funnel status' to see it}"

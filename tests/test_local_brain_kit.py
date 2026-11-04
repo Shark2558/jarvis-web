@@ -55,7 +55,7 @@ def test_the_gate_passes_only_two_requests_and_only_with_the_key() -> None:
 
 def test_ollama_is_never_published() -> None:
     for text in (UNIX.read_text(), WIN):
-        assert "funnel --bg 11435" in text
+        assert "funnel --bg --https=8443 11435" in text
         assert not re.search(r"funnel[^\n]*11434", _code(text))
         assert "serve --bg" not in text
 
@@ -86,11 +86,11 @@ def test_the_windows_script_checks_what_it_needs_and_cleans_up() -> None:
         "Need 'caddy'",
         "Need 'tailscale'",
         "api/version",
-        "funnel --bg 11435",
+        "funnel --bg --https=8443 11435",
         "finally",
     ):
         assert token in WIN
-    assert "funnel reset" in WIN
+    assert "funnel --https=8443 off" in WIN
 
 
 def test_the_readme_covers_the_setup_in_plain_words() -> None:
@@ -134,7 +134,7 @@ def stubs(tmp_path: Path) -> dict[str, Path]:
         "tailscale",
         f'echo "$@" >> "{log}/tailscale"\n'
         'if [ "$1 $2" = "funnel status" ]; then\n'
-        '  echo "https://my-laptop.tail1234.ts.net (Funnel on)"; echo "|-- / proxy http://127.0.0.1:11435"\n'
+        '  echo "https://my-laptop.tail1234.ts.net:8443 (Funnel on)"; echo "|-- / proxy http://127.0.0.1:11435"\n'
         "fi\nexit 0\n",
     )
     return {"bin": bin_dir, "log": log}
@@ -163,15 +163,16 @@ def test_first_run_makes_a_private_key_and_prints_address_and_key(
     assert len(base64.urlsafe_b64decode(key + "=")) == 32
     assert stat.S_IMODE(key_file.stat().st_mode) == 0o600
     assert stat.S_IMODE(key_file.parent.stat().st_mode) == 0o700
-    assert "Address: https://my-laptop.tail1234.ts.net" in r.stdout
+    assert "Address: https://my-laptop.tail1234.ts.net:8443" in r.stdout
     assert f"Key: {key}" in r.stdout
     # Caddy got the key through its environment, never as an argument
     assert (stubs["log"] / "caddy_env").read_text().strip() == f"key={key}"
     args = (stubs["log"] / "caddy_args").read_text()
     assert "Caddyfile" in args and key not in args
     ts = (stubs["log"] / "tailscale").read_text()
-    assert "funnel --bg 11435" in ts and "11434" not in ts
-    assert "funnel reset" in ts  # closed again on exit
+    assert "funnel --bg --https=8443 11435" in ts and "11434" not in ts
+    assert "funnel --https=8443 off" in ts  # only this port is closed again on exit
+    assert "reset" not in ts  # never wipes the owner's other Funnel / Serve settings
 
 
 def test_second_run_keeps_the_same_key(tmp_path: Path, stubs: dict[str, Path]) -> None:
@@ -214,3 +215,39 @@ def test_funnel_failing_gives_a_hint_and_stops(tmp_path: Path, stubs: dict[str, 
     r = _run(tmp_path, stubs)
     assert r.returncode != 0 and "Funnel did not start" in r.stderr
     assert "Key:" not in r.stdout
+
+
+# ---- security review fixes 5-7 ----------------------------------------------------------------
+
+
+def test_the_caddyfile_fails_closed_when_the_key_is_missing_or_short() -> None:
+    code = _code(CADDY)
+    assert "@nokey" in code and "size({env.JARVIS_LOCAL_KEY}) < 16" in code
+    # the guard is the first handle, so it wins over every other route
+    assert code.index("handle @nokey") < code.index("handle @chat")
+    assert 'respond "Offline gate has no key" 503' in code
+
+
+def test_a_key_file_that_is_too_short_stops_the_script_before_caddy(
+    tmp_path: Path, stubs: dict[str, Path]
+) -> None:
+    key_dir = tmp_path / "home" / ".lb"
+    key_dir.mkdir(parents=True)
+    (key_dir / "key").write_text("abc")
+    r = _run(tmp_path, stubs)
+    assert r.returncode != 0 and "key" in r.stderr.lower()
+    assert not (stubs["log"] / "caddy_env").exists()
+    assert not (stubs["log"] / "tailscale").exists()
+
+
+def test_the_windows_script_refuses_a_short_key_and_never_resets_funnel() -> None:
+    win = _code(WIN)
+    assert "Length -lt 16" in win
+    assert "funnel reset" not in win
+    assert "funnel --https=8443 off" in win
+
+
+def test_the_windows_folder_is_locked_down_before_the_key_is_written() -> None:
+    win = _code(WIN)
+    assert win.index("icacls") < win.index("WriteAllText")
+    assert win.index("New-Item") < win.index("icacls")

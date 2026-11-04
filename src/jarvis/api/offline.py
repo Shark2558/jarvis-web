@@ -2,9 +2,9 @@
 """Offline mode settings (R1 D10-D12; Layer 1 -> 4). Owner-only: `require_auth` + `current_user`
 (cookie writes need `X-Requested-With: JARVIS`, enforced by `require_auth`); changes are
 rate-limited.
-
 GET    /v1/offline       {available, configured, enabled, host, model, state, last_ok_at,
-                         last_used_at}; state: off | standby | active | unreachable. `available`
+                         last_used_at}; state: off | standby | active | unreachable | refused.
+                         `available`
                          false: this server has no token key, so the feature is off (nothing else
                          is returned). The key and the full address are never sent back, only
                          the host name.

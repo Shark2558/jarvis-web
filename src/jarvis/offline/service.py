@@ -40,6 +40,7 @@ from jarvis.llm.base import (
     ChatMessage,
     Completion,
     Effort,
+    LLMAuthError,
     LLMError,
     StreamUsage,
     ToolSpec,
@@ -48,7 +49,14 @@ from jarvis.llm.fallback import confine, offline_tools, offline_trailer
 from jarvis.llm.local_provider import MAX_RESPONSE_BYTES, LocalBrainProvider
 from jarvis.llm.router import ModelTier
 from jarvis.logging import get_logger
-from jarvis.offline.config import Resolver, UrlRejected, check_url, ensure_public, system_resolver
+from jarvis.offline.config import (
+    PinnedTransport,
+    Resolver,
+    UrlRejected,
+    check_url,
+    ensure_public,
+    system_resolver,
+)
 from jarvis.offline.store import LocalBrainConfig, LocalBrainStore, valid_model
 from jarvis.storage.docs import Docs
 
@@ -96,6 +104,10 @@ def _model_listed(wanted: str, models: list[str]) -> bool:
     return wanted in models or (":" not in wanted and f"{wanted}:latest" in models)
 
 
+def _failure_state(exc: Exception) -> str:
+    return "refused" if isinstance(exc, LLMAuthError) else "unreachable"
+
+
 class LocalFallback:
     def __init__(
         self,
@@ -116,7 +128,7 @@ class LocalFallback:
         self._clock = clock
         self._now = now
         self._active = False  # the laptop has been answering and the cloud has not come back
-        self._failed = False  # the last attempt (answer or Test) got nothing from the laptop
+        self._failed: str | None = None  # 'unreachable' | 'refused' after a failed answer or Test
         self._last_used: datetime | None = None
         self._alert_at: dict[str, float] = {}
         self._ok_written_at: float | None = None
@@ -140,7 +152,7 @@ class LocalFallback:
             cfg.url,
             api_key=cfg.key.get_secret_value(),
             timeout_s=self._timeout,
-            transport=self._transport,
+            transport=PinnedTransport(self._resolver, self._transport),
         )
         return cfg, provider
 
@@ -168,8 +180,8 @@ class LocalFallback:
                 effort=effort,
                 tools=offered,
             )
-        except Exception:
-            self._failed = True
+        except Exception as exc:
+            self._failed = _failure_state(exc)
             raise
         finally:
             if provider is not None:
@@ -206,8 +218,8 @@ class LocalFallback:
                     mark_offline()
                     first = False
                 yield delta
-        except Exception:
-            self._failed = True
+        except Exception as exc:
+            self._failed = _failure_state(exc)
             raise
         finally:
             if provider is not None:
@@ -228,7 +240,7 @@ class LocalFallback:
         return cfg.set_by if cfg else None
 
     async def _answered(self, cfg: LocalBrainConfig) -> None:
-        self._failed = False
+        self._failed = None
         self._last_used = self._now()
         if (
             self._ok_written_at is None
@@ -266,7 +278,7 @@ class LocalFallback:
         elif not cfg.enabled:
             state = "off"
         elif self._failed:
-            state = "unreachable"
+            state = self._failed
         else:
             state = "active" if self._active else "standby"
         return {
@@ -305,24 +317,25 @@ class LocalFallback:
         new_model = model.strip() if isinstance(model, str) else (cfg.model if cfg else "")
         if not valid_model(new_model):
             raise OfflineRejected(
-                "invalid_model", "Name the model you pulled in Ollama, for example qwen2.5:7b."
+                "invalid_model", "Name the model you pulled in Ollama, for example qwen2.5:3b."
             )
         assert new_key is not None
         on = enabled if enabled is not None else (cfg.enabled if cfg else False)
         await self._store.put(url=new_url, key=new_key, model=new_model, enabled=on, set_by=uid)
         if not on:
             self._active = False
-        self._failed = False
+        self._failed = None
         return await self.status()
 
     async def clear(self, uid: str) -> dict[str, Any]:
         await self._store.delete()
-        self._active = self._failed = False
+        self._active = False
+        self._failed = None
         self._last_used = None
         return await self.status()
 
-    def _failure(self, detail: str) -> dict[str, Any]:
-        self._failed = True
+    def _failure(self, detail: str, state: str = "unreachable") -> dict[str, Any]:
+        self._failed = state
         return {"ok": False, "models": [], "detail": detail}
 
     async def test(self) -> dict[str, Any]:
@@ -341,7 +354,10 @@ class LocalFallback:
                 "Your laptop didn't answer. Is it awake, with Tailscale Funnel on?"
             )
         if status in (401, 403):
-            return self._failure("The laptop refused the key. Copy it again from the start script.")
+            return self._failure(
+                "The laptop refused the key. Paste the new key in Integrations -> Offline mode.",
+                "refused",
+            )
         if status == 404:
             return self._failure(
                 "Something answered, but it isn't the JARVIS gate. "
@@ -357,7 +373,7 @@ class LocalFallback:
         if models is None:
             return self._failure("The laptop gave an answer JARVIS didn't expect.")
         if not _model_listed(cfg.model, models):
-            self._failed = True
+            self._failed = "unreachable"
             return {
                 "ok": False,
                 "models": models,
@@ -366,7 +382,7 @@ class LocalFallback:
                     f"Run: ollama pull {cfg.model}"
                 ),
             }
-        self._failed = False
+        self._failed = None
         self._ok_written_at = self._clock()
         await self._safely(self._store.touch_ok(self._now()))
         return {
@@ -378,7 +394,9 @@ class LocalFallback:
     async def _get_models(self, cfg: LocalBrainConfig) -> tuple[int, bytes]:
         async with asyncio.timeout(TEST_TIMEOUT_S):
             async with httpx.AsyncClient(
-                timeout=TEST_TIMEOUT_S, follow_redirects=False, transport=self._transport
+                timeout=TEST_TIMEOUT_S,
+                follow_redirects=False,
+                transport=PinnedTransport(self._resolver, self._transport),
             ) as client:
                 async with client.stream(
                     "GET",

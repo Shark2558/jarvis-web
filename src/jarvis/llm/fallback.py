@@ -58,6 +58,10 @@ OFFLINE_NOTE = (
 )
 CANT_OFFLINE = "I can't do that in offline mode."
 FALLBACK_FAILED_TEXT = "Claude can't be reached and your laptop didn't answer."
+FALLBACK_REFUSED_TEXT = (
+    "Claude can't be reached and your laptop refused the key - "
+    "paste the new key in Integrations -> Offline mode."
+)
 BREAKER_S = 120.0  # D12: after a cloud miss, this long straight to the laptop, then one cloud try
 
 
@@ -162,6 +166,7 @@ __all__ = [
     "BREAKER_S",
     "CANT_OFFLINE",
     "FALLBACK_FAILED_TEXT",
+    "FALLBACK_REFUSED_TEXT",
     "OFFLINE_NOTE",
     "OFFLINE_TOOLS",
     "Breaker",

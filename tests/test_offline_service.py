@@ -11,8 +11,9 @@ from offline_fakes import KEY, MODEL, OWNER, T0, URL, Rig
 from pydantic import SecretStr
 
 from jarvis.core import channel
-from jarvis.llm.base import ChatMessage, LLMError, Role, StreamUsage, ToolSpec
+from jarvis.llm.base import ChatMessage, LLMAuthError, LLMError, Role, StreamUsage, ToolSpec
 from jarvis.llm.fallback import CANT_OFFLINE, OFFLINE_NOTE, OFFLINE_TOOLS
+from jarvis.llm.fallback import FALLBACK_REFUSED_TEXT as REFUSED_TEXT
 from jarvis.llm.router import ModelTier
 from jarvis.offline.service import OfflineRejected
 
@@ -77,7 +78,9 @@ async def test_answers_with_the_laptop_marks_offline_and_costs_nothing() -> None
     assert c.model == MODEL
     assert channel.answered_offline() is True
     req = rig.laptop.requests[0]
-    assert str(req.url) == f"{URL}/chat/completions"
+    assert req.url.path == "/v1/chat/completions"
+    assert req.headers["host"] == "laptop.tail1234.ts.net"  # pinned to the validated IP
+    assert req.url.host == "8.8.8.8" and req.extensions["sni_hostname"] == "laptop.tail1234.ts.net"
     assert req.headers["authorization"] == f"Bearer {KEY}"
     assert rig.laptop.chats()[0]["model"] == MODEL
 
@@ -385,7 +388,8 @@ async def test_test_says_the_laptop_answered_with_the_model() -> None:
     assert r["ok"] is True and r["models"] == [MODEL, "llama3.2:3b"]
     assert r["detail"] == f"Your laptop answered (model {MODEL})."
     req = rig.laptop.requests[0]
-    assert req.method == "GET" and str(req.url) == f"{URL}/models"
+    assert req.method == "GET" and req.url.path == "/v1/models"
+    assert req.headers["host"] == "laptop.tail1234.ts.net" and req.url.host == "8.8.8.8"
     assert req.headers["authorization"] == f"Bearer {KEY}"
     cfg = await rig.store.get()
     assert cfg is not None and cfg.last_ok_at == T0
@@ -458,4 +462,59 @@ async def test_a_second_after_ok_the_state_returns_to_standby() -> None:
     await rig.svc.test()
     rig.laptop.up = True
     assert (await rig.svc.test())["ok"] is True
+    assert (await rig.svc.status())["state"] == "standby"
+
+
+async def test_a_resolver_flip_between_the_check_and_the_connection_cannot_reach_inward() -> None:
+    rig = await Rig().ready()
+    answers = [["8.8.8.8"], ["169.254.169.254"]]
+    calls = {"n": 0}
+
+    async def flipping(host: str) -> list[str]:
+        i = min(calls["n"], len(answers) - 1)
+        calls["n"] += 1
+        return answers[i]
+
+    rig.svc._resolver = flipping  # first call = the pre-check, second = the connection
+    with pytest.raises(LLMError):
+        await rig.svc.complete(**_kw())
+    assert rig.laptop.requests == []  # the private address was never connected to
+
+
+async def test_the_test_button_also_connects_only_to_the_validated_address() -> None:
+    rig = await Rig().ready()
+    answers = [["8.8.8.8"], ["10.0.0.9"]]
+    calls = {"n": 0}
+
+    async def flipping(host: str) -> list[str]:
+        i = min(calls["n"], len(answers) - 1)
+        calls["n"] += 1
+        return answers[i]
+
+    rig.svc._resolver = flipping
+    r = await rig.svc.test()
+    assert r["ok"] is False and rig.laptop.requests == []
+
+
+async def test_a_laptop_that_refuses_the_key_is_named_in_state_and_message() -> None:
+    rig = await Rig().ready()
+    rig.laptop.status = 401
+    with pytest.raises(LLMAuthError):
+        await rig.svc.complete(**_kw())
+    st = await rig.svc.status()
+    assert st["state"] == "refused"
+    assert "refused the key" in REFUSED_TEXT and "Integrations" in REFUSED_TEXT
+    rig.laptop.status = None
+    await rig.svc.complete(**_kw())  # answers again: the state clears
+    assert (await rig.svc.status())["state"] == "active"
+
+
+async def test_the_test_button_marks_a_refused_key_in_the_state() -> None:
+    rig = await Rig().ready()
+    rig.laptop.status = 401
+    r = await rig.svc.test()
+    assert r["ok"] is False and "key" in r["detail"]
+    assert (await rig.svc.status())["state"] == "refused"
+    rig.laptop.status = None
+    await rig.svc.configure(OWNER, key="N3w-key-0123456789-abcdefghij")
     assert (await rig.svc.status())["state"] == "standby"

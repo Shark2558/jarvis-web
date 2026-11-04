@@ -27,6 +27,8 @@ import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+import httpx
+
 ENFORCE_URL_RULE = True
 MAX_URL_CHARS = 200
 ALLOWED_PORTS = frozenset({443, 8443, 10000})
@@ -77,8 +79,8 @@ def _is_public(raw: str) -> bool:
     return ip.is_global and not (ip.is_multicast or ip.is_reserved or ip.is_unspecified)
 
 
-async def ensure_public(host: str, *, resolver: Resolver = system_resolver) -> None:
-    """Refuse unless the name resolves, and every address it resolves to is public."""
+async def public_ips(host: str, *, resolver: Resolver = system_resolver) -> list[str]:
+    """Every address `host` resolves to, only if there is at least one and ALL are public."""
     try:
         ips = await resolver(host)
     except (OSError, TimeoutError):
@@ -89,6 +91,53 @@ async def ensure_public(host: str, *, resolver: Resolver = system_resolver) -> N
         raise UrlRejected(
             "That name points at a private address. Only public Funnel addresses are allowed."
         )
+    return ips
+
+
+async def ensure_public(host: str, *, resolver: Resolver = system_resolver) -> None:
+    """Refuse unless the name resolves, and every address it resolves to is public."""
+    await public_ips(host, resolver=resolver)
+
+
+class PinnedTransport(httpx.AsyncBaseTransport):
+    """Connects to the address it just validated (closes the DNS-rebinding gap between a check and
+    the connection). Per request: resolve the name, refuse unless every answer is public, then send
+    the request to the first answer with the Host header and the TLS server name (SNI, certificate
+    check) still the hostname. An IP-literal URL is refused outright."""
+
+    def __init__(
+        self, resolver: Resolver = system_resolver, inner: httpx.AsyncBaseTransport | None = None
+    ) -> None:
+        self._resolver = resolver
+        self._inner = inner if inner is not None else httpx.AsyncHTTPTransport()
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        try:
+            ipaddress.ip_address(host.strip("[]"))
+        except ValueError:
+            pass
+        else:
+            raise httpx.ConnectError("refused: an IP address is not an allowed target")
+        try:
+            ips = await public_ips(host, resolver=self._resolver)
+        except UrlRejected as exc:
+            raise httpx.ConnectError(exc.reason) from None
+        port = request.url.port
+        host_header = f"{host}:{port}" if port is not None else host
+        headers = [(k, v) for k, v in request.headers.raw if k.lower() != b"host"]
+        headers.append((b"host", host_header.encode()))
+        pinned = httpx.Request(
+            request.method,
+            request.url.copy_with(host=ips[0]),
+            headers=headers,
+            stream=request.stream,
+            extensions={**request.extensions, "sni_hostname": host},
+        )
+        return await self._inner.handle_async_request(pinned)
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
 
 
 async def check_url(url: str, *, resolver: Resolver = system_resolver) -> CheckedUrl:
@@ -117,9 +166,11 @@ async def check_url(url: str, *, resolver: Resolver = system_resolver) -> Checke
 __all__ = [
     "ALLOWED_PORTS",
     "CheckedUrl",
+    "PinnedTransport",
     "Resolver",
     "UrlRejected",
     "check_url",
     "ensure_public",
+    "public_ips",
     "system_resolver",
 ]

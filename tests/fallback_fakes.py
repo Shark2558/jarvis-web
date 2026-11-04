@@ -44,9 +44,12 @@ class CloudProvider:
 
 
 class FakeFallback:
-    def __init__(self, *, ready: bool = True, fail: bool = False) -> None:
+    def __init__(
+        self, *, ready: bool = True, fail: bool = False, error: Exception | None = None
+    ) -> None:
         self._ready = ready
         self.fail = fail
+        self.error = error
         self.calls: list[dict[str, Any]] = []
         self.streams: list[dict[str, Any]] = []
         self.cloud_oks = 0
@@ -56,6 +59,8 @@ class FakeFallback:
 
     async def complete(self, **kw: Any) -> Completion:
         self.calls.append(kw)
+        if self.error:
+            raise self.error
         if self.fail:
             raise LLMError("laptop down")
         return _completion("laptop", "from laptop", offline=True)

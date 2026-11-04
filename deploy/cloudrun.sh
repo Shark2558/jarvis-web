@@ -19,6 +19,10 @@
 # The one exception is a NEW optional feature that has no saved answer yet: web search (slice 10)
 # asks once for a Tavily key (Enter = skip; the skip is remembered). To be asked again:
 #   bash deploy/cloudrun.sh --web-search
+# R1 adds one more: Telegram asks once for a bot token (from @BotFather; Enter = skip, remembered as
+# JARVIS_TELEGRAM=off). With a token, a webhook secret is made once and, after the deploy, a
+# non-fatal step registers the webhook. To be asked again:
+#   bash deploy/cloudrun.sh --telegram
 # Step 7 sets up deploy-on-merge: GitHub Actions proves who it is with a short-lived token
 # (Workload Identity Federation) that Google accepts only from this repository's main branch.
 # No key exists. The deployer account may only roll out new revisions of this service, push
@@ -47,12 +51,13 @@ POOL="github"; PROVIDER="jarvis-web"; AR_REPO="cloud-run-source-deploy"
 BRIEF_JOB="jarvis-morning-brief"
 BRIEF_TZ="${BRIEF_TZ:-Asia/Kolkata}"   # the clock's window (04:00-11:30) is read in this time zone
 
-RECONFIGURE=no; ASK_WEB=no
+RECONFIGURE=no; ASK_WEB=no; ASK_TG=no
 for arg in "$@"; do
   case "$arg" in
     --reconfigure) RECONFIGURE=yes ;;
     --web-search) ASK_WEB=yes ;;
-    -h|--help) echo "Usage: bash deploy/cloudrun.sh [--reconfigure] [--web-search]"; exit 0 ;;
+    --telegram) ASK_TG=yes ;;
+    -h|--help) echo "Usage: bash deploy/cloudrun.sh [--reconfigure] [--web-search] [--telegram]"; exit 0 ;;
     *) printf 'Unknown option: %s (try --help)\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -221,6 +226,44 @@ web_search_answer() {
   WEB_SECRET="JARVIS_TAVILY_API_KEY=jarvis-tavily-key:latest,"; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=true"
 }
 web_search_answer
+
+# Telegram (R1): like web search, the one more question a quick re-run may ask, and only while there
+# is no saved answer. Saved answer = the jarvis-telegram-bot-token secret, or a remembered skip (the
+# live service has JARVIS_TELEGRAM). The token goes straight to Secret Manager, never to a file, the
+# log or the screen. The webhook secret is made once here (48 characters of [A-Za-z0-9]).
+TG_SECRET=""; TG_ENV="JARVIS_TELEGRAM=off"; TG_REMOVE=()
+telegram_answer() {
+  local v=""
+  if [ "$QUICK" = yes ] && [ "${ASK_TG:-no}" = no ]; then
+    if secret_exists jarvis-telegram-bot-token; then
+      TG_SECRET="JARVIS_TELEGRAM_BOT_TOKEN=jarvis-telegram-bot-token:latest,JARVIS_TELEGRAM_WEBHOOK_SECRET=jarvis-telegram-webhook-secret:latest,"
+      TG_ENV="JARVIS_TELEGRAM=on"
+      secret_exists jarvis-telegram-webhook-secret || put_secret jarvis-telegram-webhook-secret "$(rand)"
+      return 0
+    fi
+    case "${SVC_JSON:-}" in *'"JARVIS_TELEGRAM"'*) return 0 ;; esac   # skipped before
+  fi
+  echo
+  echo "NEW: chat with JARVIS from Telegram (and get alerts there). It needs a bot token: in Telegram"
+  echo "open @BotFather, send /newbot, follow the steps and copy the token it gives you (free)."
+  if secret_exists jarvis-telegram-bot-token; then
+    read -r -s -p "Telegram bot token from @BotFather (Enter keeps the saved token; type skip to switch Telegram off): " v || true; echo
+  else
+    read -r -s -p "Telegram bot token from @BotFather (Enter = skip, Telegram stays off): " v || true; echo
+  fi
+  case "$v" in
+    skip|SKIP|Skip|none|NONE|None) echo "  (Telegram off)"; return 0 ;;
+    "") if secret_exists jarvis-telegram-bot-token; then echo "  (keeping the saved token in secret jarvis-telegram-bot-token)"
+        else echo "  (skipped: Telegram stays off; the console will say how to switch it on)"; return 0; fi ;;
+    *) put_secret jarvis-telegram-bot-token "$v" || die "Could not store the Telegram token in Secret Manager (jarvis-telegram-bot-token)." ;;
+  esac
+  v=""
+  secret_exists jarvis-telegram-webhook-secret || put_secret jarvis-telegram-webhook-secret "$(rand)" \
+    || die "Could not store the Telegram webhook secret in Secret Manager (jarvis-telegram-webhook-secret)."
+  TG_SECRET="JARVIS_TELEGRAM_BOT_TOKEN=jarvis-telegram-bot-token:latest,JARVIS_TELEGRAM_WEBHOOK_SECRET=jarvis-telegram-webhook-secret:latest,"
+  TG_ENV="JARVIS_TELEGRAM=on"
+}
+telegram_answer
 
 # Maps + YouTube (slice 12 D2): ONE API key, jarvis-maps-yt, restricted to Places (New), Routes and
 # YouTube Data v3 — not Geocoding: Routes geocodes address waypoints itself. No question: made (or
@@ -410,12 +453,17 @@ grant_failed() { # secret
       WEB_SECRET=""; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=false"; WEB_REMOVE=(--remove-secrets JARVIS_TAVILY_API_KEY) ;;
     jarvis-google-api-key)
       maps_off "could not let JARVIS read the secret $1" ;;
+    jarvis-telegram-bot-token|jarvis-telegram-webhook-secret)
+      echo "  Note: could not let JARVIS read the secret $1, so Telegram stays off this time; re-run this script to try again."
+      TG_SECRET=""; TG_ENV="JARVIS_TELEGRAM=off"
+      TG_REMOVE=(--remove-secrets "JARVIS_TELEGRAM_BOT_TOKEN,JARVIS_TELEGRAM_WEBHOOK_SECRET") ;;
     *) die "Could not let JARVIS read the secret $1." ;;
   esac
 }
 for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key \
               jarvis-openai-compat-key jarvis-session-secret jarvis-api-token jarvis-token-key \
-              jarvis-tavily-key jarvis-google-api-key; do
+              jarvis-tavily-key jarvis-google-api-key jarvis-telegram-bot-token \
+              jarvis-telegram-webhook-secret; do
   secret_exists "$secret" || continue
   ok=no
   for _ in 1 2 3 4 5 6; do
@@ -445,17 +493,18 @@ show_logs() {
 SCHED_SA="jarvis-scheduler@${PROJECT}.iam.gserviceaccount.com"
 INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA},JARVIS_DRIVE=${DRIVE_STATE}"
 INFRA_ENV="${INFRA_ENV},${WEB_ENV}"   # the web-search answer (on / remembered skip), both paths
+INFRA_ENV="${INFRA_ENV},${TG_ENV}"   # the Telegram answer (on / remembered skip), both paths
 INFRA_ENV="${INFRA_ENV},JARVIS_MAPS_PRICING=${MAPS_PRICING}"   # Google's Maps price list (india / global)
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
     --update-env-vars "$INFRA_ENV"
-    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
-    "${MAPS_REMOVE[@]}" "${WEB_REMOVE[@]}"
+    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${TG_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    "${MAPS_REMOVE[@]}" "${WEB_REMOVE[@]}" "${TG_REMOVE[@]}"
   )
 else
   CONFIG_FLAGS=(
     --set-env-vars "${INFRA_ENV},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV}"
-    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${TG_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 fi
 gcloud run deploy "$SERVICE" --source . --region "$REGION" \
@@ -478,6 +527,30 @@ for role in roles/secretmanager.secretAccessor roles/datastore.user; do
     esac
   fi
 done
+
+# Telegram webhook (R1 D1): NON-FATAL. Both secrets are read into shell variables (never echoed,
+# never traced) and the bot token reaches curl only on stdin (--config -), so it is on no command
+# line. setWebhook: one connection (matches --max-instances 1), message + callback_query only, and
+# pending updates dropped on (re)registration. Then getMe names the bot.
+telegram_webhook() {
+  [ "$TG_ENV" = "JARVIS_TELEGRAM=on" ] || return 0
+  set +x
+  local tok hook body resp cfg
+  local note="  Note: couldn't register the webhook; re-run this script. (JARVIS itself is deployed and fine.)"
+  tok="$(gcloud secrets versions access latest --secret jarvis-telegram-bot-token 2>/dev/null)" || { unset tok; echo "$note"; return 1; }
+  hook="$(gcloud secrets versions access latest --secret jarvis-telegram-webhook-secret 2>/dev/null)" || { unset tok hook; echo "$note"; return 1; }
+  body="$(printf '{"url":"%s/telegram/webhook","secret_token":"%s","allowed_updates":["message","callback_query"],"max_connections":1,"drop_pending_updates":true}' "$BASE_URL" "$hook")"
+  cfg="$(printf 'url = "https://api.telegram.org/bot%s/setWebhook"\nheader = "Content-Type: application/json"\ndata = "%s"\n' "$tok" "$(printf '%s' "$body" | sed 's/\\/\\\\/g; s/"/\\"/g')")"
+  resp="$(printf '%s\n' "$cfg" | curl -fsS --max-time 20 --config - 2>/dev/null)" || { unset tok hook body cfg resp; echo "$note"; return 1; }
+  case "$resp" in *'"ok":true'*) ;; *) unset tok hook body cfg resp; echo "$note"; return 1 ;; esac
+  cfg="$(printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$tok")"
+  resp="$(printf '%s\n' "$cfg" | curl -fsS --max-time 20 --config - 2>/dev/null)" || resp=""
+  TG_BOT="$(printf '%s' "$resp" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')"
+  unset tok hook body cfg resp
+  echo "TELEGRAM: ready (@${TG_BOT:-your bot}) - in JARVIS: Integrations -> Telegram -> Pair"
+}
+TG_BOT=""; TG_WEBHOOK_OK=no
+if telegram_webhook; then TG_WEBHOOK_OK=yes; fi
 
 say "7/8  Automatic updates: let GitHub deploy JARVIS when you merge (no keys involved)"
 DEPLOY_SA="jarvis-deployer@${PROJECT}.iam.gserviceaccount.com"
@@ -618,6 +691,24 @@ cat <<'MSG'
 WEB SEARCH: off (no Tavily key). To switch it on later: sign up free at https://app.tavily.com,
 copy the key (tvly-...), then run:  bash deploy/cloudrun.sh --web-search
 (the key is kept in secret jarvis-tavily-key).
+MSG
+fi
+if [ "$TG_ENV" = "JARVIS_TELEGRAM=on" ]; then
+cat <<'MSG'
+
+TELEGRAM: on (bot token in secret jarvis-telegram-bot-token). In JARVIS open Integrations -> Telegram
+-> Pair, tap the link, press Start in Telegram, then send "what's on today?". Only the account you
+pair can talk to JARVIS; anything that can't be undone waits for you in the console.
+MSG
+if [ "$TG_WEBHOOK_OK" = no ]; then
+echo "The webhook is NOT registered yet (see the note above): re-run this script before pairing."
+fi
+else
+cat <<'MSG'
+
+TELEGRAM: off (no bot token). To switch it on later: in Telegram open @BotFather, send /newbot and
+copy the token, then run:  bash deploy/cloudrun.sh --telegram
+(the token is kept in secret jarvis-telegram-bot-token). Until then Integrations -> Telegram explains this.
 MSG
 fi
 if [ "$DRIVE_STATE" = on ]; then

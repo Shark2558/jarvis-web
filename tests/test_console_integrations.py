@@ -118,3 +118,14 @@ def test_a_grant_row_needs_the_grant_missing_and_available() -> None:
     assert "Contacts \\u2014 permission needed" in js
     assert "YouTube playlists \\u2014 permission needed" in js
     assert "'contacts.readonly'" in js and "'youtube.readonly'" in js  # scope words
+
+
+def test_a_whatsapp_drafts_line_is_always_drawn_and_never_conditional_on_google() -> None:
+    """R1 D9: the line is appended by every render, whatever the Google state or the Grants."""
+    js = JS.read_text(encoding="utf-8")
+    assert "id = 'waLine'" in js and "renderWhatsapp();" in js
+    assert "Switched off in Permissions" in js and "Ready for typed numbers" in js
+    assert "by name after the Contacts Grant" in js
+    start = js.index("function renderWhatsapp()")
+    body = js[start : js.index("async function loadWhatsapp")]
+    assert "contacts_granted" not in body and "googleState" not in body  # no Google gate here

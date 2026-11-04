@@ -47,6 +47,7 @@ from jarvis.config import AuthMode, Settings
 from jarvis.core.models import PendingApproval
 from jarvis.integrations.google import GoogleConnector
 from jarvis.logging import get_logger
+from jarvis.permissions.availability import notes as availability_notes
 from jarvis.permissions.ceremony import RelyingParty
 from jarvis.permissions.errors import (
     PasskeyDataUnreadable,
@@ -132,12 +133,31 @@ async def _lookup(request: Request, approval_id: str) -> Any:
     return await gw.gate.get(approval_id) if gw is not None else None
 
 
+async def _noted(request: Request, uid: str, view: PermissionsView) -> PermissionsView:
+    """R1 D9: every group keeps its row; `available` / `note` say what is not connected yet.
+    Only GET /v1/permissions computes them (one Google status read per load); the console keeps
+    the notes it has when a change answers with the plain view.
+    Fail-soft: if the check fails, every row stays listed as available with no note."""
+    try:
+        found = await availability_notes(request.app.state, uid)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("availability notes failed", extra={"error": type(exc).__name__})
+        return view
+    groups = [
+        g.model_copy(update={"available": a.available, "note": a.note})
+        if (a := found.get(g.id)) is not None
+        else g
+        for g in view.groups
+    ]
+    return view.model_copy(update={"groups": groups})
+
+
 @router.get("/v1/permissions", response_model=PermissionsView)
 async def get_permissions(
     request: Request, svc: PermissionsService = Depends(_svc), uid: str = Depends(current_user)
 ) -> PermissionsView:
     _limit(request, "view", uid)
-    return await svc.view(uid, fresh_left_s=_fresh(request))
+    return await _noted(request, uid, await svc.view(uid, fresh_left_s=_fresh(request)))
 
 
 @router.put("/v1/permissions", response_model=PermissionsView)

@@ -190,6 +190,24 @@ def test_cancelling_the_pair_dialog_stops_waiting(
         c.close()
 
 
+def test_a_voided_or_expired_code_is_said_in_the_dialog(
+    browser: Any, server_url: str, token: str
+) -> None:
+    fake = Fake(
+        {"configured": True, "bot_username": "jarvis_test_bot", "paired": False,
+         "account_hint": None, "pairing_pending": False,
+         "webhook": {"registered": True, "pending": 0}, "allow_private_reads": False,
+         "alerts": {}}
+    )  # fmt: skip
+    fake.paired_after_pair = False
+    c = _open(browser, server_url, token, fake, DESKTOP)
+    try:
+        c.page.locator("#telegramPair").click()
+        c.page.locator("#telegramWaiting", has_text="expired or was voided").wait_for(timeout=10000)
+    finally:
+        c.close()
+
+
 def test_paired_controls_confirm_save_and_unpair(browser: Any, server_url: str, token: str) -> None:
     fake = Fake({})
     fake.view = fake.paired_view(webhook={"registered": True, "pending": 2, "last_error": HOSTILE})

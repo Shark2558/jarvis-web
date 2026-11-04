@@ -1,7 +1,7 @@
 {"id": "pair-right-code", "group": "pairing", "desc": "the right code binds the owner's Telegram user and chat"}
 {"id": "pair-expired", "group": "pairing", "desc": "a code older than 10 minutes pairs nothing"}
 {"id": "pair-reused", "group": "pairing", "desc": "a used code pairs nothing a second time"}
-{"id": "pair-five-wrong-tries", "group": "pairing", "desc": "5 wrong tries void the code, even the right one afterwards"}
+{"id": "pair-five-wrong-tries", "group": "pairing", "desc": "5 wrong tries lock that sender (even with the right code) but never void the owner's code"}
 {"id": "pair-group-chat", "group": "pairing", "desc": "/start <code> from a group chat pairs nothing"}
 {"id": "pair-bot-sender", "group": "pairing", "desc": "/start <code> from a bot pairs nothing"}
 {"id": "pair-unpair", "group": "pairing", "desc": "/unpair from the bound account removes the binding; later messages are strangers"}

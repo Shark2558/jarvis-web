@@ -19,6 +19,7 @@ from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.storage.docs import MemoryDocs
 from jarvis.telegram.client import TelegramClient
 from jarvis.telegram.models import parse_update
+from jarvis.telegram.rules import wrap_rules
 from jarvis.telegram.service import TelegramService
 from jarvis.telegram.store import TelegramStore
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
@@ -112,6 +113,7 @@ def message(
     chat: int = OWNER_CHAT,
     chat_type: str = "private",
     is_bot: bool = False,
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     msg: dict[str, Any] = {
         "message_id": update_id,
@@ -121,6 +123,7 @@ def message(
     }
     if text is not None:
         msg["text"] = text
+    msg.update(extra or {})
     return {"update_id": update_id, "message": msg}
 
 
@@ -189,7 +192,7 @@ def build_world(
     *,
     policy: Policy | None = None,
     extra_tools: list[Tool] | None = None,
-    rules: Any = None,
+    rules: Any = "wired",
 ) -> World:
     bot = FakeBot()
     docs = MemoryDocs()
@@ -199,9 +202,7 @@ def build_world(
     reg = ToolRegistry()
     for t in [*builtin_tools(things), *(extra_tools or [])]:
         reg.register(t)
-    gateway = Gateway(
-        registry=reg, policy=policy or Policy(), gate=ConfirmationGate(), audit=audit, rules=rules
-    )
+    gateway = Gateway(registry=reg, policy=policy or Policy(), gate=ConfirmationGate(), audit=audit)
     provider = MockProvider()
     brain = Brain(
         router=ModelRouter(provider, TIERS),
@@ -210,5 +211,7 @@ def build_world(
         gateway=gateway,
     )
     store = TelegramStore(docs, prefix="jarvis_", clock=clock)
+    # "wired" is the one supported way (what the app does): rules wrapped by wrap_rules
+    gateway.rules = wrap_rules(None, store) if rules == "wired" else rules
     service = TelegramService(bot.client(), store, audit, brain=brain, clock=clock)
     return World(bot, docs, store, service, brain, provider, gateway, audit, things, clock)

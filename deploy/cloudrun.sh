@@ -232,6 +232,13 @@ web_search_answer
 # live service has JARVIS_TELEGRAM). The token goes straight to Secret Manager, never to a file, the
 # log or the screen. The webhook secret is made once here (48 characters of [A-Za-z0-9]).
 TG_SECRET=""; TG_ENV="JARVIS_TELEGRAM=off"; TG_REMOVE=()
+# Off must really be off: when the live service (or Secret Manager) still has the token, the two
+# bindings are removed from the service on this deploy (quick path; a full setup sets them anew).
+tg_unmount() {
+  if secret_exists jarvis-telegram-bot-token || case "${SVC_JSON:-}" in *JARVIS_TELEGRAM_BOT_TOKEN*) true ;; *) false ;; esac; then
+    TG_REMOVE=(--remove-secrets "JARVIS_TELEGRAM_BOT_TOKEN,JARVIS_TELEGRAM_WEBHOOK_SECRET")
+  fi
+}
 telegram_answer() {
   local v=""
   if [ "$QUICK" = yes ] && [ "${ASK_TG:-no}" = no ]; then
@@ -241,7 +248,7 @@ telegram_answer() {
       secret_exists jarvis-telegram-webhook-secret || put_secret jarvis-telegram-webhook-secret "$(rand)"
       return 0
     fi
-    case "${SVC_JSON:-}" in *'"JARVIS_TELEGRAM"'*) return 0 ;; esac   # skipped before
+    case "${SVC_JSON:-}" in *'"JARVIS_TELEGRAM"'*) tg_unmount; return 0 ;; esac   # skipped before
   fi
   echo
   echo "NEW: chat with JARVIS from Telegram (and get alerts there). It needs a bot token: in Telegram"
@@ -252,9 +259,9 @@ telegram_answer() {
     read -r -s -p "Telegram bot token from @BotFather (Enter = skip, Telegram stays off): " v || true; echo
   fi
   case "$v" in
-    skip|SKIP|Skip|none|NONE|None) echo "  (Telegram off)"; return 0 ;;
+    skip|SKIP|Skip|none|NONE|None) echo "  (Telegram off)"; tg_unmount; return 0 ;;
     "") if secret_exists jarvis-telegram-bot-token; then echo "  (keeping the saved token in secret jarvis-telegram-bot-token)"
-        else echo "  (skipped: Telegram stays off; the console will say how to switch it on)"; return 0; fi ;;
+        else echo "  (skipped: Telegram stays off; the console will say how to switch it on)"; tg_unmount; return 0; fi ;;
     *) put_secret jarvis-telegram-bot-token "$v" || die "Could not store the Telegram token in Secret Manager (jarvis-telegram-bot-token)." ;;
   esac
   v=""

@@ -50,17 +50,23 @@ def _answer(
         "TG_SECRET=''; TG_ENV='JARVIS_TELEGRAM=off'; TG_REMOVE=()\n"
     )
     body = (
-        prelude + _function(script, "telegram_answer") + "telegram_answer\n"
-        'printf "\\nSECRET=%s\\nENV=%s\\n" "$TG_SECRET" "$TG_ENV"\n'
+        prelude
+        + _function(script, "tg_unmount")
+        + _function(script, "telegram_answer")
+        + "telegram_answer\n"
+        'printf "\\nSECRET=%s\\nENV=%s\\nREMOVE=%s\\n" "$TG_SECRET" "$TG_ENV" "${TG_REMOVE[*]:-}"\n'
     )
     done = subprocess.run(
         ["bash", "-c", body], input=typed, capture_output=True, text=True, check=True
     )
     out = done.stdout + done.stderr
-    lines = dict(ln.split("=", 1) for ln in done.stdout.splitlines() if ln[:4] in ("SECR", "ENV="))
+    lines = dict(
+        ln.split("=", 1) for ln in done.stdout.splitlines() if ln[:4] in ("SECR", "ENV=", "REMO")
+    )
     return {
         "secret": lines.get("SECRET", ""),
         "env": lines.get("ENV", ""),
+        "remove": lines.get("REMOVE", ""),
         "asked": str("BotFather" in out),
         "stored": stored.read_text() if stored.exists() else "",
         "out": out,
@@ -235,3 +241,29 @@ def test_the_summary_says_whether_telegram_is_on(script: str) -> None:
 def test_script_still_parses() -> None:
     r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stderr
+
+
+UNMOUNT = "--remove-secrets JARVIS_TELEGRAM_BOT_TOKEN,JARVIS_TELEGRAM_WEBHOOK_SECRET"
+
+
+def test_skipping_on_a_telegram_rerun_unmounts_the_saved_secrets(
+    script: str, tmp_path: Path
+) -> None:
+    r = _answer(script, tmp_path, quick="yes", secrets=BOTH, ask="yes", typed="skip\n")
+    assert (r["secret"], r["env"], r["remove"]) == ("", OFF, UNMOUNT)
+
+
+def test_a_remembered_skip_still_unmounts_secrets_the_service_has(
+    script: str, tmp_path: Path
+) -> None:
+    svc = (
+        '{"env": [{"name": "JARVIS_TELEGRAM", "value": "off"}, '
+        '{"name": "JARVIS_TELEGRAM_BOT_TOKEN"}]}'
+    )
+    r = _answer(script, tmp_path, quick="yes", svc_json=svc)
+    assert (r["env"], r["remove"]) == (OFF, UNMOUNT)
+
+
+def test_nothing_to_unmount_when_nothing_was_ever_mounted(script: str, tmp_path: Path) -> None:
+    r = _answer(script, tmp_path, quick="yes", svc_json='{"env": []}', typed="\n")
+    assert r["remove"] == ""

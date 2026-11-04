@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import hmac
+import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -20,7 +21,15 @@ from pydantic import ValidationError
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Delete, DocExists, Docs, DocTx, Query, Set
 from jarvis.telegram.models import AlertToggles, TelegramLink
-from jarvis.telegram.pairing import CODE_TTL_S, MAX_TRIES, hash_code, new_code, normalise
+from jarvis.telegram.pairing import (
+    CODE_TTL_S,
+    GLOBAL_TRIES,
+    MAX_TRIES,
+    TRY_WINDOW_S,
+    hash_code,
+    new_code,
+    normalise,
+)
 
 log = get_logger(__name__)
 UPDATE_KEEP = timedelta(hours=48)
@@ -38,6 +47,8 @@ class TelegramStore:
         self._d = docs
         self._p = prefix
         self._now = clock
+        # proves to the service that THIS store's privacy rules are installed (telegram.rules)
+        self.rules_token = secrets.token_hex(8)
 
     def _path(self, coll: str, key: str | int) -> str:
         return f"{self._p}{coll}/{key}"
@@ -113,13 +124,53 @@ class TelegramStore:
 
     def _live(self, doc: dict[str, Any]) -> bool:
         try:
-            alive = datetime.fromisoformat(str(doc["expires_at"])) > self._now()
-            return alive and int(doc.get("tries", 0)) < MAX_TRIES
+            return datetime.fromisoformat(str(doc["expires_at"])) > self._now()
         except (KeyError, ValueError, TypeError):
             return False
 
+    async def has_pending(self, uid: str) -> bool:
+        """Whether a pairing code for this owner is alive now (the console says when it is not)."""
+        doc = await self._d.get(self._path("telegram_pairing", uid))
+        return doc is not None and self._live(doc)
+
+    def _count(self, doc: dict[str, Any] | None) -> int:
+        """Wrong tries in the current 10-minute window of a counter document."""
+        try:
+            if doc is None:
+                return 0
+            start = datetime.fromisoformat(str(doc["start"]))
+            fresh = (self._now() - start).total_seconds() <= TRY_WINDOW_S
+            return int(doc.get("count", 0)) if fresh else 0
+        except (KeyError, ValueError, TypeError):
+            return 0
+
+    async def _locked(self, tg_user_id: int) -> bool:
+        """Review: tries are counted per SENDER (5 in 10 minutes) with a global cooldown (30), and
+        never against the owner's code, so strangers cannot void it."""
+        mine = await self._d.get(self._path("telegram_pairing_tries", tg_user_id))
+        every = await self._d.get(self._path("telegram_pairing_tries", "all"))
+        return self._count(mine) >= MAX_TRIES or self._count(every) >= GLOBAL_TRIES
+
+    async def _wrong_try(self, tg_user_id: int) -> None:
+        paths = [
+            self._path("telegram_pairing_tries", tg_user_id),
+            self._path("telegram_pairing_tries", "all"),
+        ]
+        now = self._now().isoformat()
+
+        async def fn(tx: DocTx) -> None:
+            docs = [await tx.get(p) for p in paths]
+            for path, doc in zip(paths, docs, strict=True):
+                n = self._count(doc)
+                start = str(doc["start"]) if doc is not None and n else now
+                tx.set(path, {"count": n + 1, "start": start})
+
+        await self._d.transaction(fn)
+
     async def finish_pairing(self, code: str, *, tg_user_id: int, chat_id: int) -> str | None:
         """The owner id the code belongs to (now bound to this Telegram account), else None."""
+        if await self._locked(tg_user_id):
+            return None
         want = hash_code(code) if normalise(code) else None
         rows = await self._d.query(Query(self._p + "telegram_pairing"))
         live = [(uid, d) for uid, d in rows if self._live(d)]
@@ -127,19 +178,8 @@ class TelegramStore:
             for uid, d in live:
                 if hmac.compare_digest(str(d.get("code_hash", "")), want):
                     return await self._bind(uid, want, tg_user_id, chat_id)
-        for uid, _ in live:  # a wrong try counts against every pending code
-            await self._count_try(uid)
+        await self._wrong_try(tg_user_id)
         return None
-
-    async def _count_try(self, uid: str) -> None:
-        path = self._path("telegram_pairing", uid)
-
-        async def fn(tx: DocTx) -> None:
-            d = await tx.get(path)
-            if d is not None:
-                tx.set(path, {**d, "tries": int(d.get("tries", 0)) + 1})
-
-        await self._d.transaction(fn)
 
     async def _bind(self, uid: str, want: str, tg_user_id: int, chat_id: int) -> str | None:
         pairing = self._path("telegram_pairing", uid)
@@ -219,6 +259,9 @@ class TelegramStore:
             except (KeyError, ValueError):
                 ops.append(Delete(self._path("telegram_updates", uid)))
         swept = len(ops)
+        for key, d in await self._d.query(Query(self._p + "telegram_pairing_tries")):
+            if self._count(d) == 0:
+                ops.append(Delete(self._path("telegram_pairing_tries", key)))
         cutoff = f"{now - timedelta(days=COUNTER_KEEP_DAYS):%Y%m%d}"
         for key, _ in await self._d.query(Query(self._p + "telegram_alerts")):
             if key.rsplit("_", 1)[-1] < cutoff:

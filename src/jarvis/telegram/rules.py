@@ -7,7 +7,12 @@ Unpaired or unreadable state fails closed. No gateway change."""
 
 from __future__ import annotations
 
+import contextvars
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 from jarvis.core.channel import on_telegram
+from jarvis.core.guardrails import ActionRisk
 from jarvis.logging import get_logger
 from jarvis.telegram.store import TelegramStore
 from jarvis.tools.policy import Effect, OwnerRules, PolicyRule
@@ -25,6 +30,26 @@ PRIVATE_PATTERNS: tuple[str, ...] = (
     "contacts_*",
 )
 REFUSAL = "Not available from Telegram — your choice in Integrations → Telegram; open the console."
+
+
+# Review: a forwarded or via-bot message is someone else's text. While `outside_message()` is
+# active, every reversible write (R2) becomes a card, as in a tainted round; R3 always asks.
+_outside: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "jarvis_telegram_outside", default=False
+)
+# A rule that matches no tool. ChannelRules adds it on every Telegram turn, carrying its store's
+# token, so the service can prove the rules are INSTALLED on the gateway (fail closed if not).
+MARKER = "__telegram_channel_rules__"
+OUTSIDE_REASON = "That text came from someone else, so it needs your tap."
+
+
+@contextmanager
+def outside_message() -> Iterator[None]:
+    token = _outside.set(True)
+    try:
+        yield
+    finally:
+        _outside.reset(token)
 
 
 def _deny_rules() -> list[PolicyRule]:
@@ -51,7 +76,40 @@ class ChannelRules:
         except Exception as exc:  # noqa: BLE001 - fail closed
             log.warning("telegram settings unreadable", extra={"error": type(exc).__name__})
             allowed = False
-        return rules if allowed else [*rules, *_deny_rules()]
+        out = list(rules) if allowed else [*rules, *_deny_rules()]
+        if _outside.get():
+            out.append(
+                PolicyRule(
+                    tool_pattern="*",
+                    effect=Effect.ASK,
+                    risks=[ActionRisk.REVERSIBLE],
+                    source="telegram",
+                    reason=OUTSIDE_REASON,
+                )
+            )
+        out.append(
+            PolicyRule(
+                tool_pattern=MARKER,
+                effect=Effect.ASK,
+                source="telegram",
+                reason=self._store.rules_token,
+            )
+        )
+        return out
 
 
-__all__ = ["PRIVATE_PATTERNS", "REFUSAL", "ChannelRules"]
+def wrap_rules(inner: OwnerRules | None, store: TelegramStore) -> ChannelRules:
+    """The ONLY supported way to install the Telegram privacy rules: set the gateway's
+    `rules` to this (any other layer may wrap it). The service refuses Telegram turns when the
+    gateway's rules do not carry this store's marker."""
+    return ChannelRules(inner, store)
+
+
+__all__ = [
+    "MARKER",
+    "PRIVATE_PATTERNS",
+    "REFUSAL",
+    "ChannelRules",
+    "outside_message",
+    "wrap_rules",
+]

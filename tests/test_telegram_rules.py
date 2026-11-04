@@ -78,7 +78,8 @@ async def test_everyday_tools_stay_allowed(tool: str) -> None:
 async def test_the_owner_can_switch_private_reads_on() -> None:
     rules = ChannelRules(Inner(), await _store(reads=True))
     with telegram_turn():
-        assert await rules.rules_for(UID) == []
+        got = await rules.rules_for(UID)
+    assert not any(r.effect is Effect.DENY for r in got)  # only the install marker is added
 
 
 async def test_unpaired_or_unreadable_state_fails_closed() -> None:

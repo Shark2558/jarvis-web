@@ -8,7 +8,16 @@ import json
 from telegram_fakes import NOW, Clock
 
 from jarvis.storage.docs import MemoryDocs
-from jarvis.telegram.pairing import ALPHABET, CODE_TTL_S, MAX_TRIES, hash_code, new_code, normalise
+from jarvis.telegram.pairing import (
+    ALPHABET,
+    CODE_TTL_S,
+    GLOBAL_TRIES,
+    MAX_TRIES,
+    TRY_WINDOW_S,
+    hash_code,
+    new_code,
+    normalise,
+)
 from jarvis.telegram.store import TelegramStore
 
 
@@ -68,23 +77,56 @@ async def test_an_expired_code_fails() -> None:
     assert await store.get("owner") is None
 
 
-async def test_five_wrong_tries_void_the_code() -> None:
-    store, _, _ = _store()
+async def test_five_wrong_tries_lock_that_sender_for_ten_minutes() -> None:
+    store, _, clock = _store()
     code, _ = await store.start_pairing("owner")
     for _ in range(MAX_TRIES):
         assert await store.finish_pairing("ZZZZZZZZ", tg_user_id=1, chat_id=1) is None
-    assert await store.finish_pairing(code, tg_user_id=1, chat_id=1) is None  # now void
-    # a fresh code works again
+    # that sender is locked, even with the right code ...
+    assert await store.finish_pairing(code, tg_user_id=1, chat_id=1) is None
+    # ... but the owner's code was not voided by it: someone else can still use it
+    assert await store.finish_pairing(code, tg_user_id=2, chat_id=2) == "owner"
+    clock.advance(seconds=TRY_WINDOW_S + 1)
+    fresh, _ = await store.start_pairing("u_other")
+    assert await store.finish_pairing(fresh, tg_user_id=1, chat_id=1) == "u_other"
+
+
+async def test_strangers_cannot_void_the_owners_code() -> None:
+    store, _, _ = _store()
+    code, _ = await store.start_pairing("owner")
+    for stranger in range(100, 120):  # twenty different senders, one wrong try each
+        await store.finish_pairing("ZZZZZZZZ", tg_user_id=stranger, chat_id=stranger)
+    assert await store.has_pending("owner") is True  # the code is still alive
+    assert await store.finish_pairing(code, tg_user_id=5, chat_id=5) == "owner"
+
+
+async def test_a_global_cooldown_stops_a_swarm_without_voiding_the_code() -> None:
+    store, _, clock = _store()
+    code, _ = await store.start_pairing("owner")
+    for stranger in range(200, 200 + GLOBAL_TRIES):
+        await store.finish_pairing("ZZZZZZZZ", tg_user_id=stranger, chat_id=stranger)
+    assert await store.finish_pairing(code, tg_user_id=5, chat_id=5) is None  # cooling down
+    assert await store.has_pending("owner") is True  # not voided
+    clock.advance(seconds=TRY_WINDOW_S + 1)  # the swarm's window is over
     fresh, _ = await store.start_pairing("owner")
-    assert await store.finish_pairing(fresh, tg_user_id=1, chat_id=1) == "owner"
+    assert await store.finish_pairing(fresh, tg_user_id=5, chat_id=5) == "owner"
 
 
-async def test_four_wrong_tries_leave_the_code_alive() -> None:
+async def test_four_wrong_tries_leave_the_sender_unlocked() -> None:
     store, _, _ = _store()
     code, _ = await store.start_pairing("owner")
     for _ in range(MAX_TRIES - 1):
         await store.finish_pairing("ZZZZZZZZ", tg_user_id=1, chat_id=1)
     assert await store.finish_pairing(code, tg_user_id=1, chat_id=1) == "owner"
+
+
+async def test_has_pending_follows_the_code_life() -> None:
+    store, _, clock = _store()
+    assert await store.has_pending("owner") is False
+    await store.start_pairing("owner")
+    assert await store.has_pending("owner") is True
+    clock.advance(seconds=CODE_TTL_S + 1)
+    assert await store.has_pending("owner") is False
 
 
 async def test_the_code_is_stored_only_as_a_hash() -> None:

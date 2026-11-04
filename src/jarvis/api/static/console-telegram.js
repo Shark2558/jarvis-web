@@ -57,6 +57,7 @@
       configured: true,
       bot: typeof d.bot_username === 'string' && /^[A-Za-z0-9_]{4,64}$/.test(d.bot_username) ? d.bot_username : '',
       paired: d.paired === true,
+      pending: d.pairing_pending !== false, // a server that does not say is not blamed
       hint: typeof d.account_hint === 'string' && HINT.test(d.account_hint) ? d.account_hint : '',
       reads: d.allow_private_reads === true,
       alerts: { approval_waiting: al.approval_waiting !== false, offline: al.offline !== false, brief_ready: al.brief_ready === true },
@@ -292,6 +293,7 @@
       if (Date.now() - stamp > POLL_MAX_MS) { status.textContent = 'The code expired. Close this and press Pair again.'; return; }
       try {
         const d = normal(await api('/v1/telegram'));
+        if (!d.paired && !d.pending) { status.textContent = 'The code expired or was voided. Close this and press Pair again.'; return; }
         if (d.paired) { S.data = d; S.loadedAt = Date.now(); if (settle) settle(true); render(); note('ok', 'Paired. Send your bot a message.'); log('info', 'Telegram paired'); return; }
       } catch (e) { if (e && e.status === 401) return; }
       S.timer = setTimeout(tick, POLL_MS);

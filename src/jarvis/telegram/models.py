@@ -29,6 +29,31 @@ class Message(_In):
     sender: User | None = Field(default=None, alias="from")
     chat: Chat
     text: str | None = None
+    # Someone else's words typed by the owner's own thumb: a forwarded message, one sent via a bot,
+    # a reply to an external message. Parsed only to be recognised (review: outside content).
+    forward_origin: Any = None
+    forward_from: Any = None
+    forward_from_chat: Any = None
+    forward_sender_name: Any = None
+    forward_date: Any = None
+    via_bot: Any = None
+    external_reply: Any = None
+
+    @property
+    def outside_content(self) -> bool:
+        """True when this text may be someone else's: never owner instructions."""
+        return any(
+            v is not None
+            for v in (
+                self.forward_origin,
+                self.forward_from,
+                self.forward_from_chat,
+                self.forward_sender_name,
+                self.forward_date,
+                self.via_bot,
+                self.external_reply,
+            )
+        )
 
 
 class CallbackQuery(_In):

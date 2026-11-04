@@ -11,7 +11,9 @@ import secrets
 ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford: no I, L, O, U
 CODE_LEN = 8
 CODE_TTL_S = 600
-MAX_TRIES = 5
+MAX_TRIES = 5  # wrong tries per SENDER in TRY_WINDOW_S
+GLOBAL_TRIES = 30  # wrong tries by everyone in TRY_WINDOW_S (cooldown)
+TRY_WINDOW_S = 600
 _LOOKALIKES = str.maketrans({"O": "0", "I": "1", "L": "1"})
 _VALID = re.compile(rf"[{ALPHABET}]{{{CODE_LEN}}}")
 
@@ -44,7 +46,9 @@ __all__ = [
     "ALPHABET",
     "CODE_LEN",
     "CODE_TTL_S",
+    "GLOBAL_TRIES",
     "MAX_TRIES",
+    "TRY_WINDOW_S",
     "deep_link",
     "hash_code",
     "new_code",

@@ -72,6 +72,7 @@ async def test_view_before_pairing(api: tuple[AsyncClient, World]) -> None:
     v = (await c.get("/v1/telegram")).json()
     assert v["configured"] is True and v["bot_username"] == "jarvis_test_bot"
     assert v["paired"] is False and v["account_hint"] is None
+    assert v["pairing_pending"] is False
     assert v["webhook"] == {"registered": True, "pending": 0, "last_error": None}
     assert v["allow_private_reads"] is False
     assert v["alerts"] == {"approval_waiting": True, "offline": True, "brief_ready": False}
@@ -87,6 +88,7 @@ async def test_pair_gives_a_code_and_a_deep_link_and_finishes_in_telegram(
     body = r.json()
     assert len(body["code"]) == 8 and body["expires_in_s"] == 600
     assert body["link"] == f"https://t.me/jarvis_test_bot?start={body['code']}"
+    assert (await c.get("/v1/telegram")).json()["pairing_pending"] is True
     await w.send(message(1, f"/start {body['code']}"))
     v = (await c.get("/v1/telegram")).json()
     assert v["paired"] is True and v["account_hint"] == f"••{str(OWNER_TG)[-4:]}"

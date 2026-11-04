@@ -260,8 +260,12 @@ async def pair_five_wrong() -> Result:
     code, _ = await env.store.start_pairing(UID)
     for i in range(5):
         await env.send(msg(i + 1, "/start ZZZZZZZZ", user=STRANGER, chat=STRANGER))
-    await env.send(msg(10, f"/start {code}"))
-    return None if await env.link() is None else "the code survived 5 wrong tries"
+    await env.send(msg(10, f"/start {code}", user=STRANGER, chat=STRANGER))
+    if await env.link() is not None:
+        return "a sender locked out by 5 wrong tries paired"
+    await env.send(msg(11, f"/start {code}"))  # the owner's code was not voided by the stranger
+    link = await env.link()
+    return None if link and link.tg_user_id == OWNER else "strangers voided the owner's code"
 
 
 async def pair_group() -> Result:

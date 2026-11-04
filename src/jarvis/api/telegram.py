@@ -8,6 +8,7 @@ POST /telegram/webhook      Telegram only. Outside /v1, no `require_auth`. 404 w
                             Everything accepted or ignored is 200 (Telegram repeats non-2xx
                             replies); only a storage failure while claiming the update is 503.
 GET  /v1/telegram           {configured: false} or {configured, bot_username, paired, paired_at,
+                            pairing_pending (a code is alive; the console says when it is not),
                             account_hint: "••1234", webhook: {registered, pending, last_error},
                             allow_private_reads, alerts: {approval_waiting, offline, brief_ready}}
 POST /v1/telegram/pair      {code, link, expires_in_s}   (409 already_paired, 503
@@ -88,6 +89,8 @@ def _secret_ok(request: Request) -> bool:
     if s.telegram_webhook_secret is None:
         return False
     want = s.telegram_webhook_secret.get_secret_value().encode()
+    if not want:
+        return False  # an empty secret never matches an empty header
     got = request.headers.get(SECRET_HEADER, "").encode()
     return hmac.compare_digest(got, want)  # always compared, constant time
 
@@ -157,6 +160,7 @@ async def _view(svc: TelegramService, uid: str) -> dict[str, Any]:
         "bot_username": username,
         "paired": link is not None,
         "paired_at": link.paired_at if link else None,
+        "pairing_pending": await svc.store.has_pending(uid),
         "account_hint": _hint(link) if link else None,
         "webhook": webhook_state,
         "allow_private_reads": bool(link and link.allow_private_reads),

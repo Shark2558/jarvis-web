@@ -5,6 +5,7 @@ Telegram description): `from None`, so no chained httpx error carries the addres
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -49,21 +50,20 @@ class TelegramClient:
     async def call(self, method: str, payload: dict[str, Any] | None = None) -> Any:
         url = f"{API}/bot{self._token.get_secret_value()}/{method}"
         try:
-            resp = await self._http.post(
-                url, json=payload or {}, timeout=self._timeout, follow_redirects=False
-            )
+            status, raw = await self._read(url, payload or {})
         except httpx.HTTPError as exc:
             log.warning(
                 "telegram call failed", extra={"method": method, "error": type(exc).__name__}
             )
             raise TelegramError(method, "could not reach Telegram") from None
-        if resp.status_code != 200 or len(resp.content) > MAX_RESPONSE_BYTES:
-            log.warning(
-                "telegram call refused", extra={"method": method, "status": resp.status_code}
-            )
-            raise TelegramError(method, f"HTTP {resp.status_code}")
+        if raw is None:
+            log.warning("telegram answer too large", extra={"method": method})
+            raise TelegramError(method, "answer too large")
+        if status != 200:
+            log.warning("telegram call refused", extra={"method": method, "status": status})
+            raise TelegramError(method, f"HTTP {status}")
         try:
-            body = resp.json()
+            body = json.loads(raw)
         except ValueError:
             raise TelegramError(method, "unreadable answer") from None
         if not isinstance(body, dict) or body.get("ok") is not True:
@@ -71,6 +71,21 @@ class TelegramClient:
             log.warning("telegram call not ok", extra={"method": method, "code": code})
             raise TelegramError(method, "Telegram said no")
         return body.get("result")
+
+    async def _read(self, url: str, payload: dict[str, Any]) -> tuple[int, bytes | None]:
+        """(status, body); body None when it passed the size cap. Streams, so a huge answer is
+        never held whole: reading stops at the cap."""
+        async with self._http.stream(
+            "POST", url, json=payload, timeout=self._timeout, follow_redirects=False
+        ) as resp:
+            size = 0
+            parts: list[bytes] = []
+            async for chunk in resp.aiter_bytes():
+                size += len(chunk)
+                if size > MAX_RESPONSE_BYTES:
+                    return resp.status_code, None
+                parts.append(chunk)
+            return resp.status_code, b"".join(parts)
 
     async def send_message(
         self, chat_id: int, text: str, *, buttons: list[tuple[str, str]] | None = None

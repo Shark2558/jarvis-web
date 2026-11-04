@@ -47,6 +47,7 @@ from jarvis.config import AuthMode, Settings
 from jarvis.core.models import PendingApproval
 from jarvis.integrations.google import GoogleConnector
 from jarvis.logging import get_logger
+from jarvis.permissions.availability import notes as availability_notes
 from jarvis.permissions.ceremony import RelyingParty
 from jarvis.permissions.errors import (
     PasskeyDataUnreadable,
@@ -132,12 +133,29 @@ async def _lookup(request: Request, approval_id: str) -> Any:
     return await gw.gate.get(approval_id) if gw is not None else None
 
 
+async def _noted(request: Request, uid: str, view: PermissionsView) -> PermissionsView:
+    """R1 D9: every group keeps its row; `available` / `note` say what is not connected yet.
+    Fail-soft: if the check fails, every row stays listed as available with no note."""
+    try:
+        found = await availability_notes(request.app.state, uid)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("availability notes failed", extra={"error": type(exc).__name__})
+        return view
+    groups = [
+        g.model_copy(update={"available": a.available, "note": a.note})
+        if (a := found.get(g.id)) is not None
+        else g
+        for g in view.groups
+    ]
+    return view.model_copy(update={"groups": groups})
+
+
 @router.get("/v1/permissions", response_model=PermissionsView)
 async def get_permissions(
     request: Request, svc: PermissionsService = Depends(_svc), uid: str = Depends(current_user)
 ) -> PermissionsView:
     _limit(request, "view", uid)
-    return await svc.view(uid, fresh_left_s=_fresh(request))
+    return await _noted(request, uid, await svc.view(uid, fresh_left_s=_fresh(request)))
 
 
 @router.put("/v1/permissions", response_model=PermissionsView)
@@ -148,7 +166,7 @@ async def put_permissions(
     uid: str = Depends(current_user),
 ) -> PermissionsView:
     _limit(request, "change", uid)
-    return await svc.update(uid, patch, fresh_left_s=_fresh(request))
+    return await _noted(request, uid, await svc.update(uid, patch, fresh_left_s=_fresh(request)))
 
 
 @router.post("/v1/passkeys/challenge", response_model=ChallengeView)
@@ -188,7 +206,7 @@ async def passkey_register(
     uid: str = Depends(current_user),
 ) -> PermissionsView:
     _limit(request, "ceremony", uid)
-    return await svc.register(uid, req, fresh_left_s=_fresh(request))
+    return await _noted(request, uid, await svc.register(uid, req, fresh_left_s=_fresh(request)))
 
 
 @router.post("/v1/passkeys/reset", response_model=PermissionsView)
@@ -196,7 +214,7 @@ async def passkey_reset(
     request: Request, svc: PermissionsService = Depends(_svc), uid: str = Depends(current_user)
 ) -> PermissionsView:
     _limit(request, "ceremony", uid)
-    return await svc.start_reset(uid, fresh_left_s=_fresh(request))
+    return await _noted(request, uid, await svc.start_reset(uid, fresh_left_s=_fresh(request)))
 
 
 @router.post("/v1/passkeys/reset/cancel", response_model=PermissionsView)
@@ -207,7 +225,9 @@ async def passkey_reset_cancel(
     uid: str = Depends(current_user),
 ) -> PermissionsView:
     _limit(request, "ceremony", uid)
-    return await svc.cancel_reset(uid, proof=req.proof, fresh_left_s=_fresh(request))
+    return await _noted(
+        request, uid, await svc.cancel_reset(uid, proof=req.proof, fresh_left_s=_fresh(request))
+    )
 
 
 @router.post("/v1/passkeys/{credential_id}/remove", response_model=PermissionsView)
@@ -219,7 +239,11 @@ async def passkey_remove(
     uid: str = Depends(current_user),
 ) -> PermissionsView:
     _limit(request, "ceremony", uid)
-    return await svc.remove(uid, credential_id, proof=req.proof, fresh_left_s=_fresh(request))
+    return await _noted(
+        request,
+        uid,
+        await svc.remove(uid, credential_id, proof=req.proof, fresh_left_s=_fresh(request)),
+    )
 
 
 # ---- used by the approvals list (jarvis.api.routes) --------------------------------------------

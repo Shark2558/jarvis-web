@@ -124,6 +124,43 @@
     if (integ.note) { const n = mk('div', 'inote ' + integ.note.kind, integ.note.text); n.setAttribute('role', 'status'); row.appendChild(n); integ.note = null; }
     const acts = integActions(st, row); if (acts.childElementCount) row.appendChild(acts);
     box.appendChild(row);
+    renderWhatsapp();
+  }
+  // R1 D9: an always-present WhatsApp drafts line, whatever the Google link or the Contacts Grant
+  // is. Typed numbers need nothing; a name needs the Contacts Grant; the owner's Never is said.
+  const wa = { off: null }; // null = not known yet / unreadable
+  function whatsappWords() {
+    if (wa.off === true) return 'Switched off in Permissions';
+    const g = integ.data && integ.data.google;
+    return g && g.contacts_granted === true ? 'Ready for typed numbers and, by name, your contacts'
+      : 'Ready for typed numbers \u00b7 by name after the Contacts Grant';
+  }
+  function renderWhatsapp() {
+    const box = $('integrations'); if (!box) return;
+    let line = $('waLine');
+    if (!line) { line = mk('div', 'integ'); line.id = 'waLine'; }
+    const head = mk('div', 'ihead'); head.append(mk('b', '', 'WhatsApp drafts'), mk('span', 'istate', whatsappWords()));
+    const kids = [head];
+    if (wa.off === true) {
+      const open = mk('button', 'btn lift', 'Open'); open.type = 'button'; open.id = 'waOpen';
+      open.addEventListener('click', () => {
+        if (window.JarvisDeck && typeof window.JarvisDeck.open === 'function') window.JarvisDeck.open('approvals');
+        const b = $('permSetBtn'); if (b && b.getAttribute('aria-expanded') !== 'true') b.click();
+        const r = document.querySelector('#permGroups [data-group="whatsapp"]');
+        if (r) r.scrollIntoView({ block: 'nearest' });
+      });
+      const acts = mk('div', 'actions'); acts.appendChild(open); kids.push(acts);
+    }
+    line.replaceChildren(...kids);
+    box.appendChild(line);
+  }
+  async function loadWhatsapp() {
+    try {
+      const p = await api('/v1/permissions');
+      const g = p && Array.isArray(p.groups) ? p.groups.find((x) => x && x.id === 'whatsapp') : null;
+      wa.off = g ? g.effect === 'deny' : null;
+    } catch (_) { wa.off = null; }
+    renderWhatsapp();
   }
   function askDisconnect(row, trigger) {
     if (row.querySelector('.confirm')) return;
@@ -153,6 +190,7 @@
     }
     integ.loaded = true; integ.at = performance.now();
     renderIntegrations();
+    loadWhatsapp();
   }
   // /?connect_error=<code> from the callback: a fixed plain-English line per known code; the raw
   // query text is never shown.

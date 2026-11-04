@@ -119,6 +119,9 @@ async def restore(
         return _err(status, code, out.message)
     if out.status is RestoreStatus.RESTORED:
         await _audit(request, "deleted_restore", undo_id, "executed", "owner: Restore")
+        activity = getattr(request.app.state, "activity", None)
+        if activity is not None:  # R1 B: a "You restored ..." row in Activity (never raises)
+            await activity.record_restore(uid, out, session_id=None)
     return out
 
 

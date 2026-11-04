@@ -71,3 +71,5 @@ html[data-surface="night"] .pbanner{background:color-mix(in srgb,#E5484D 14%,var
   .apall .btn{min-height:44px}
 }
 html[data-motion="calm"] .pgrp .seg-opt{transition-duration:.01s}
+.pgrp .pgnote{display:block;margin-top:3px;color:var(--ink-2)}
+.pgrp .pgro{color:var(--ink-3);font-style:italic}

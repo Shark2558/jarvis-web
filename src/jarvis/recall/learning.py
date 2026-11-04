@@ -31,7 +31,6 @@ import anyio
 from jarvis.billing import Billing, BudgetError
 from jarvis.core.guardrails import ActionRisk
 from jarvis.core.models import Session
-from jarvis.llm.base import Role
 from jarvis.llm.brains import BrainSpec
 from jarvis.logging import get_logger
 from jarvis.recall import gate
@@ -70,6 +69,7 @@ from jarvis.recall.sensitive import special_category
 from jarvis.recall.store import MemoryStore
 from jarvis.recall.text import norm_key
 from jarvis.tools.audit import AuditTrail
+from jarvis.web.ledger import is_typed_message
 
 log = get_logger(__name__)
 
@@ -121,13 +121,13 @@ class LearnResult:
 
 
 def snapshot(session: Session) -> Snapshot:
-    """Owner messages only: typed user turns with text and no blocks, and not pasted text. A
-    spoken message (`channel: voice`) may be anyone in the room: never learned from."""
+    """Owner messages only: typed user turns (`web.ledger.is_typed_message`: console or paired
+    Telegram text, never voice, never a forwarded / fenced message) with no blocks, and not
+    pasted text. A spoken message may be anyone in the room: never learned from."""
     owner = tuple(
         OwnerLine(i, t.content, t.created_at)
         for i, t in enumerate(session.turns)
-        if t.role is Role.USER
-        and t.channel != "voice"
+        if is_typed_message(t)
         and not t.blocks
         and t.content.strip()
         and not looks_pasted(t.content)

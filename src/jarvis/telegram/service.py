@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import re
 from collections.abc import Callable
@@ -44,6 +45,9 @@ log = get_logger(__name__)
 MAX_MESSAGES_PER_WINDOW = 20
 MESSAGE_WINDOW_S = 600
 REJECTED_AUDIT_PER_HOUR = 20
+SENDER_MESSAGES_PER_WINDOW = 30  # per Telegram sender, in memory, before any store work (M3)
+THROTTLE_KEYS_MAX = 2_000
+TURN_BUDGET_S = 240.0  # a whole Telegram turn; Cloud Run kills the request at 300 s
 CARD_CHARS = 240
 R3_REFUSAL = True  # read at call time; only the eval negative control switches it off
 _CALLBACK = re.compile(r"([ad]):([A-Za-z0-9_-]{1,64})")
@@ -63,6 +67,7 @@ FRESH = "Fresh conversation started."
 UNPAIRED = "Unpaired. This Telegram account no longer reaches JARVIS. Pair again from the console."
 BUDGET = "The monthly AI limit has been reached. Open the console to change it."
 UNAVAILABLE = "The AI service is busy or unavailable right now. Please try again in a minute."
+TOO_SLOW = "That took too long, Sir. Please try again, or use the console."
 FAILED = "Something went wrong on my side. Please try again."
 CONSOLE_ONLY = "Approve in the console: this one can't be approved from Telegram."
 GONE = "That request was already handled or has expired."
@@ -112,6 +117,9 @@ class TelegramService:
         self.alerts = alerts or TelegramAlerts(client, store, audit)
         self._clock = clock
         self._recent: dict[str, list[float]] = {}
+        self._senders: dict[int, list[float]] = {}
+        if store.on_cooldown is None:
+            store.on_cooldown = self._cooldown_started
         self._rejected = (-1, 0)  # (hour bucket, audited so far)
 
     def bind(self, brain: Brain) -> None:
@@ -125,15 +133,73 @@ class TelegramService:
         # Telegram retry can never run a turn twice (a double reply, a double action). If the
         # process dies after the claim the message is lost and the owner simply sends it again;
         # a storage failure while claiming raises, so the route answers 503 and Telegram retries.
+        # Review M3: only the bound owner, or a /start from an eligible sender, is worth a store
+        # write; anyone else is turned away first, and a flooding sender is throttled in memory.
+        sender, chat = self._who(update)
+        if sender is not None and not self._sender_ok(sender.id):
+            log.warning("telegram sender throttled")
+            return
+        owner = await self._owner(sender, chat)
+        if owner is None and not self._is_pairing_attempt(update):
+            await self._reject(sender, chat, "not the paired owner")
+            return
         if not await self.store.claim_update(update.update_id):
             return  # a retry of an update already taken
         try:
             if update.message is not None:
-                await self._message(update.message)
+                await self._message(update.message, owner)
             elif update.callback_query is not None:
-                await self._callback(update.callback_query)
+                await self._callback(update.callback_query, owner)
         except Exception as exc:  # noqa: BLE001 - Telegram must still get its 200
             log.error("telegram update failed", extra={"error": type(exc).__name__})
+
+    @staticmethod
+    def _who(update: Update) -> tuple[User | None, Chat | None]:
+        if update.message is not None:
+            return update.message.sender, update.message.chat
+        cq = update.callback_query
+        if cq is not None:
+            return cq.sender, cq.message.chat if cq.message else None
+        return None, None
+
+    def _is_pairing_attempt(self, update: Update) -> bool:
+        """A `/start ...` typed by an eligible sender (never a forwarded one)."""
+        msg = update.message
+        if msg is None or msg.outside_content or not msg.text:
+            return False
+        text = msg.text.strip()
+        return (
+            self._eligible(msg.sender, msg.chat)
+            and text.startswith("/")
+            and text.split()[0].split("@")[0].lower() == "/start"
+        )
+
+    def _sender_ok(self, sender_id: int) -> bool:
+        """In-memory budget per Telegram sender (no store work). Excess is dropped silently."""
+        now = self._clock().timestamp()
+        if len(self._senders) > THROTTLE_KEYS_MAX:
+            self._senders = {
+                k: v for k, v in self._senders.items() if v and now - v[-1] < MESSAGE_WINDOW_S
+            }
+        recent = [t for t in self._senders.get(sender_id, []) if now - t < MESSAGE_WINDOW_S]
+        if len(recent) >= SENDER_MESSAGES_PER_WINDOW:
+            self._senders[sender_id] = recent
+            return False
+        self._senders[sender_id] = [*recent, now]
+        return True
+
+    async def _cooldown_started(self) -> None:
+        try:
+            await self.audit.append(
+                agent="telegram",
+                tool="telegram_pairing_cooldown",
+                risk=ActionRisk.READ_ONLY,
+                outcome="cooldown",
+                args={},
+                detail="many wrong pairing codes in ten minutes",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.error("AUDIT WRITE FAILED for a cooldown", extra={"error": type(exc).__name__})
 
     # ---- who is this ------------------------------------------------------------------------
 
@@ -200,14 +266,14 @@ class TelegramService:
 
     # ---- messages ---------------------------------------------------------------------------
 
-    async def _message(self, msg: Message) -> None:
+    async def _message(self, msg: Message, known: tuple[str, TelegramLink] | None = None) -> None:
         sender, chat = msg.sender, msg.chat
         text = (msg.text or "").strip() if msg.text is not None else None
         outside = msg.outside_content
         command = ""  # a forwarded "/unpair" is someone else's text, never a command
         if text and text.startswith("/") and not outside:
             command = text.split()[0].split("@")[0].lower()
-        owner = await self._owner(sender, chat)
+        owner = known if known is not None else await self._owner(sender, chat)
         if owner is None:
             await self._stranger(sender, chat, text, command)
             return
@@ -288,8 +354,15 @@ class TelegramService:
         if outside:  # forwarded / via a bot: data to look at, never instructions
             limit = max(100, brain.s.max_input_chars - 200)
             text = FORWARD_NOTE + "\n" + wrap_external(text, source="forwarded", limit=limit)
-        with outside_message() if outside else contextlib.nullcontext():
-            resp = await self._ask(brain, uid, link, text)
+        try:
+            async with asyncio.timeout(TURN_BUDGET_S):
+                with outside_message() if outside else contextlib.nullcontext():
+                    resp = await self._ask(brain, uid, link, text)
+        except TimeoutError:
+            log.error("telegram turn over budget")
+            await self._audit("telegram_turn_timeout", "timeout", uid)
+            await self._say(link.chat_id, TOO_SLOW)
+            return
         if resp is None:
             return
         await self._deliver(uid, link, resp)
@@ -347,9 +420,11 @@ class TelegramService:
 
     # ---- buttons ----------------------------------------------------------------------------
 
-    async def _callback(self, cq: CallbackQuery) -> None:
+    async def _callback(
+        self, cq: CallbackQuery, known: tuple[str, TelegramLink] | None = None
+    ) -> None:
         chat = cq.message.chat if cq.message else None
-        owner = await self._owner(cq.sender, chat)
+        owner = known if known is not None else await self._owner(cq.sender, chat)
         if owner is None or chat is None:
             await self._reject(cq.sender, chat, "button from someone else")
             return

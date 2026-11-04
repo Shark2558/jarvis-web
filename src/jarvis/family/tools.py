@@ -30,6 +30,7 @@ from jarvis.tools.google_calendar import (
 
 _ANY_TZ = ZoneInfo("UTC")
 _ISO = {"type": "string", "description": "ISO 8601 date-time, e.g. 2027-01-15T09:00:00+05:30"}
+SUMMARY_MAX = 120  # the card shows the title in full, so a longer one is refused
 LOCATION_MAX = 300  # shown in full on the card, so the tool refuses more than a card can show
 NOTES_MAX = 1_000
 _MEMBER = {"type": "string", "description": "The family member's name as registered"}
@@ -60,8 +61,14 @@ def _check_slots(a: dict[str, Any]) -> None:
 def _check_add(a: dict[str, Any]) -> None:
     if not isinstance(a.get("member"), str) or not a["member"].strip():
         raise ValueError("member is required")
-    if not str(a.get("summary") or "").strip():
+    summary = a.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
         raise ValueError("summary is required")
+    if len(summary.strip()) > SUMMARY_MAX or one_line(summary, 500) != summary.strip():
+        raise ValueError(
+            f"summary must be one plain line of at most {SUMMARY_MAX} characters, "
+            "with no control or invisible characters"
+        )
     parse_window(a, _ANY_TZ)
     for key, limit in (("location", LOCATION_MAX), ("description", NOTES_MAX)):
         v = a.get(key)
@@ -73,7 +80,7 @@ def _card(member: str, a: dict[str, Any]) -> str:
     """What the owner approves. Location and notes go to another person's calendar (Google may
     email them), so they are shown in full, fenced as text the model supplied."""
     card = (
-        f"Add “{one_line(a.get('summary'), 120)}” to {one_line(member, 60)}’s calendar, "
+        f"Add “{one_line(a.get('summary'), SUMMARY_MAX)}” to {one_line(member, 60)}’s calendar, "
         f"{one_line(a.get('start'), 40)} to {one_line(a.get('end'), 40)}. "
         "They will see it and Google may email them."
     )

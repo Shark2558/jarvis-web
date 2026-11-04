@@ -61,6 +61,7 @@ LIST_URL = f"{BASE}/users/me/calendarList"
 CALENDARS_URL = f"{BASE}/calendars"
 MAX_SLOTS_PER_CALL = 20
 TITLE_LIMIT = 200
+SUMMARY_WRITE_MAX = 500  # tools refuse a title over 120; this is only the backstop
 PLACE_LIMIT = 200
 
 
@@ -375,7 +376,7 @@ class FamilyService:
         tz = await self._calendar.owner_tz(uid)
         start, end = parse_window(a, tz)
         body: dict[str, Any] = {
-            "summary": str(a.get("summary") or "").strip()[:500],
+            "summary": one_line(a.get("summary"), SUMMARY_WRITE_MAX),  # exactly the card
             "start": {"dateTime": start.isoformat(), "timeZone": tz.key},
             "end": {"dateTime": end.isoformat(), "timeZone": tz.key},
         }

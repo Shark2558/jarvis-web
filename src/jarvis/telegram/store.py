@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hmac
 import secrets
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -49,6 +49,8 @@ class TelegramStore:
         self._now = clock
         # proves to the service that THIS store's privacy rules are installed (telegram.rules)
         self.rules_token = secrets.token_hex(8)
+        # called once when the global wrong-try cooldown trips (the service audits it)
+        self.on_cooldown: Callable[[], Awaitable[None]] | None = None
 
     def _path(self, coll: str, key: str | int) -> str:
         return f"{self._p}{coll}/{key}"
@@ -144,32 +146,39 @@ class TelegramStore:
         except (KeyError, ValueError, TypeError):
             return 0
 
-    async def _locked(self, tg_user_id: int) -> bool:
-        """Review: tries are counted per SENDER (5 in 10 minutes) with a global cooldown (30), and
-        never against the owner's code, so strangers cannot void it."""
+    async def _sender_locked(self, tg_user_id: int) -> bool:
         mine = await self._d.get(self._path("telegram_pairing_tries", tg_user_id))
-        every = await self._d.get(self._path("telegram_pairing_tries", "all"))
-        return self._count(mine) >= MAX_TRIES or self._count(every) >= GLOBAL_TRIES
+        return self._count(mine) >= MAX_TRIES
 
-    async def _wrong_try(self, tg_user_id: int) -> None:
+    async def _wrong_try(self, tg_user_id: int) -> bool:
+        """Count a miss against the sender and everyone. True when this miss tripped the global
+        cooldown (the count just reached the limit)."""
         paths = [
             self._path("telegram_pairing_tries", tg_user_id),
             self._path("telegram_pairing_tries", "all"),
         ]
         now = self._now().isoformat()
 
-        async def fn(tx: DocTx) -> None:
+        async def fn(tx: DocTx) -> bool:
             docs = [await tx.get(p) for p in paths]
-            for path, doc in zip(paths, docs, strict=True):
+            tripped = False
+            for i, (path, doc) in enumerate(zip(paths, docs, strict=True)):
                 n = self._count(doc)
                 start = str(doc["start"]) if doc is not None and n else now
                 tx.set(path, {"count": n + 1, "start": start})
+                tripped = i == 1 and n + 1 == GLOBAL_TRIES
+            return tripped
 
-        await self._d.transaction(fn)
+        return await self._d.transaction(fn)
 
     async def finish_pairing(self, code: str, *, tg_user_id: int, chat_id: int) -> str | None:
-        """The owner id the code belongs to (now bound to this Telegram account), else None."""
-        if await self._locked(tg_user_id):
+        """The owner id the code belongs to (now bound to this Telegram account), else None.
+
+        Review: wrong tries are counted per SENDER (5 in 10 minutes) and globally (30: a cooldown
+        that refuses further GUESSES). The hash is checked first, so a code that matches always
+        pairs while the global cooldown is on: a swarm of throwaway accounts cannot lock the owner
+        out. A locked sender is refused even with the right code."""
+        if await self._sender_locked(tg_user_id):
             return None
         want = hash_code(code) if normalise(code) else None
         rows = await self._d.query(Query(self._p + "telegram_pairing"))
@@ -178,7 +187,10 @@ class TelegramStore:
             for uid, d in live:
                 if hmac.compare_digest(str(d.get("code_hash", "")), want):
                     return await self._bind(uid, want, tg_user_id, chat_id)
-        await self._wrong_try(tg_user_id)
+        if await self._wrong_try(tg_user_id):
+            log.warning("telegram pairing: global wrong-try cooldown started")
+            if self.on_cooldown is not None:
+                await self.on_cooldown()
         return None
 
     async def _bind(self, uid: str, want: str, tg_user_id: int, chat_id: int) -> str | None:

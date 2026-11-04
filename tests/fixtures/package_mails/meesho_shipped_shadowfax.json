@@ -1,0 +1,20 @@
+{
+ "id": "meesho_shipped_shadowfax",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Meesho <orders@meesho.com>",
+   "subject": "Your Meesho order has shipped",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Shadowfax will deliver your parcel.\nTracking number: SFX123456789\nArriving by 13 Nov"
+  }
+ ],
+ "expect": {
+  "merchant": "Meesho",
+  "carrier": "shadowfax",
+  "tracking_number": "SFX123456789",
+  "status": "shipped",
+  "expected": "2026-11-13",
+  "count": 1
+ }
+}

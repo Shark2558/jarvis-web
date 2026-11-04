@@ -1,0 +1,20 @@
+{
+ "id": "ecom_dispatched",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Ecom Express <support@ecomexpress.in>",
+   "subject": "Shipment dispatched",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "AWB number: 4123456789\nDelivery by Fri, 13 Nov"
+  }
+ ],
+ "expect": {
+  "merchant": "Ecom Express",
+  "carrier": "ecom",
+  "tracking_number": "4123456789",
+  "status": "shipped",
+  "expected": "2026-11-13",
+  "count": 1
+ }
+}

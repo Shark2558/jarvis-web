@@ -1,0 +1,20 @@
+{
+ "id": "indiapost_delivered",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "India Post <no-reply@indiapost.gov.in>",
+   "subject": "Speed Post delivery",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Article number: CP876543216IN was delivered on 03-11-2026."
+  }
+ ],
+ "expect": {
+  "merchant": "India Post",
+  "carrier": "indiapost",
+  "tracking_number": "CP876543216IN",
+  "status": "delivered",
+  "expected": null,
+  "count": 1
+ }
+}

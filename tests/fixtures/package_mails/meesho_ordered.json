@@ -1,0 +1,20 @@
+{
+ "id": "meesho_ordered",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Meesho <orders@meesho.com>",
+   "subject": "Order placed",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Thanks! Your order is confirmed. Order number 8812345."
+  }
+ ],
+ "expect": {
+  "merchant": "Meesho",
+  "carrier": null,
+  "tracking_number": null,
+  "status": "ordered",
+  "expected": null,
+  "count": 1
+ }
+}

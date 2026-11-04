@@ -1,0 +1,20 @@
+{
+ "id": "year_rollover",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Flipkart <noreply@flipkart.com>",
+   "subject": "Your order has been shipped",
+   "date": "Mon, 28 Dec 2026 10:00:00 +0530",
+   "body": "Shipped via Ekart.\nTracking ID: FMPP5550001112\nArriving Jan 2"
+  }
+ ],
+ "expect": {
+  "merchant": "Flipkart",
+  "carrier": "ekart",
+  "tracking_number": "FMPP5550001112",
+  "status": "shipped",
+  "expected": "2027-01-02",
+  "count": 1
+ }
+}

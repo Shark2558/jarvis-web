@@ -1,0 +1,27 @@
+{
+ "id": "cancelled_after_shipped",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Flipkart <noreply@flipkart.com>",
+   "subject": "Your order has been shipped",
+   "date": "Mon, 02 Nov 2026 10:00:00 +0530",
+   "body": "Shipped via Ekart.\nTracking ID: FMPP7770001112\nOrder ID OD999888777666555444\nDelivery by Sat, 7 Nov"
+  },
+  {
+   "id": "m2",
+   "from": "Flipkart <noreply@flipkart.com>",
+   "subject": "Your order has been cancelled",
+   "date": "Wed, 04 Nov 2026 18:30:00 +0530",
+   "body": "Order ID OD999888777666555444 was cancelled at your request."
+  }
+ ],
+ "expect": {
+  "merchant": "Flipkart",
+  "carrier": "ekart",
+  "tracking_number": "FMPP7770001112",
+  "status": "cancelled",
+  "expected": null,
+  "count": 1
+ }
+}

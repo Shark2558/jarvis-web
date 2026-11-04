@@ -1,0 +1,20 @@
+{
+ "id": "ekart_out_for_delivery",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Ekart <updates@ekartlogistics.com>",
+   "subject": "Out for delivery",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Your Ekart shipment FMPC9876543210 is out for delivery today."
+  }
+ ],
+ "expect": {
+  "merchant": "Ekart",
+  "carrier": "ekart",
+  "tracking_number": "FMPC9876543210",
+  "status": "out_for_delivery",
+  "expected": null,
+  "count": 1
+ }
+}

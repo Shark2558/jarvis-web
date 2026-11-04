@@ -1,0 +1,20 @@
+{
+ "id": "flipkart_delivered",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Flipkart <noreply@flipkart.com>",
+   "subject": "Delivered: your order OD123456789012345678",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Your order was delivered on 4 Nov. Thanks for shopping."
+  }
+ ],
+ "expect": {
+  "merchant": "Flipkart",
+  "carrier": null,
+  "tracking_number": null,
+  "status": "delivered",
+  "expected": null,
+  "count": 1
+ }
+}

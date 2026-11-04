@@ -1,0 +1,20 @@
+{
+ "id": "myntra_shipped_delhivery",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Myntra <no-reply@myntra.com>",
+   "subject": "Your Myntra order has been shipped",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Your order is on the way with Delhivery.\nAWB: 12345678901234\nExpected delivery: 12 Nov"
+  }
+ ],
+ "expect": {
+  "merchant": "Myntra",
+  "carrier": "delhivery",
+  "tracking_number": "12345678901234",
+  "status": "shipped",
+  "expected": "2026-11-12",
+  "count": 1
+ }
+}

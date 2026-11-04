@@ -1,0 +1,20 @@
+{
+ "id": "no_phone_as_number",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Amazon.in <auto-confirm@amazon.in>",
+   "subject": "Ordered: phone case",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Thank you for your order.\nOrder # 402-1234567-1234567\nNeed help? Call +91 9876543210 or 1800 3000 9009. Tracking support is open daily."
+  }
+ ],
+ "expect": {
+  "merchant": "Amazon",
+  "carrier": null,
+  "tracking_number": null,
+  "status": "ordered",
+  "expected": null,
+  "count": 1
+ }
+}

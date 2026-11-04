@@ -1,0 +1,20 @@
+{
+ "id": "myntra_return",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Myntra <no-reply@myntra.com>",
+   "subject": "Return initiated for your Myntra order",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "We have started your return. A pickup will be arranged.\nOrder number: MYN8841123"
+  }
+ ],
+ "expect": {
+  "merchant": "Myntra",
+  "carrier": null,
+  "tracking_number": null,
+  "status": "returned",
+  "expected": null,
+  "count": 1
+ }
+}

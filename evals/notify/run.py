@@ -21,7 +21,9 @@ Push service run over an in-memory Docs port, a fake Telegram Bot API and a fake
   channels (6)  zero model calls; a failing push never blocks Telegram (and the other way round);
                 audit without content; the photo only with the opt-in; a child is never named
   Negative controls (each must make the suite FAIL): quiet hours off; VIP check off; storm cap
-  off; endpoint allow-list off; urgent bucket merged with the normal one.
+  off; endpoint allow-list off; urgent bucket merged with the normal one; hazards capped.
+  Review fixes: a hazard rings after a burglar flood and ignores every cap; flapping alerts make
+  one push; vault_expiry is off everywhere; held alerts survive a failed send.
 Gate (hard): every case passes; every negative control fails the suite.
 """
 
@@ -223,7 +225,8 @@ async def _() -> list[str]:
 
     d = Decision(action="ring", reason="x", urgency="urgent")
     for i in range(25):
-        out += s.admit(UID, sig("home_hazard"), d, NOON + timedelta(seconds=i)).admit
+        cam = f"c{i}"
+        out += s.admit(UID, sig("home_intruder", camera=cam), d, NOON + timedelta(seconds=i)).admit
     return want(out, 10, "admitted")
 
 
@@ -287,8 +290,56 @@ async def _() -> list[str]:
 @case("storm", "urgent_has_its_own_hourly_cap")
 async def _() -> list[str]:
     w = await build(with_push=False)
-    sent = [(await w.alerts.send(UID, "x", kind="home_hazard")).sent for _ in range(35)]
+    sent = [(await w.alerts.send(UID, "x", kind="home_intruder")).sent for _ in range(35)]
     return want(sent.count(True), telegram_out.URGENT_PER_HOUR, "urgent sent")
+
+
+@case("storm", "hazard_rings_after_a_burglar_flood")
+async def _() -> list[str]:
+    w = await build()
+    for i in range(30):
+        await w.service.notify(UID, sig("home_intruder", camera=f"c{i}"), "Someone.")
+        w.clock.advance(seconds=100)
+    d = await w.service.notify(UID, sig("home_hazard", camera="kitchen"), "Smoke alarm at home.")
+    return want((d.action, d.telegram, d.push), ("ring", True, 1), "hazard")
+
+
+@case("storm", "hazard_ignores_every_cap")
+async def _() -> list[str]:
+    w = await build()
+    for _ in range(telegram_out.URGENT_PER_HOUR):
+        await w.store.take_urgent(UID, NOON, per_hour=30, per_day=100)
+    for _ in range(20):
+        await w.store.take_push(UID, NOON, per_hour=20)
+    burglar = await w.alerts.send(UID, "x", kind="home_intruder")
+    d = await w.service.notify(UID, sig("home_hazard", camera="garage"), "Gas leak at home.")
+    return want((burglar.sent, d.telegram, d.push), (False, True, 1), "burglar / hazard")
+
+
+@case("channels", "flapping_offline_makes_one_push")
+async def _() -> list[str]:
+    w = await build()
+    for _ in range(40):
+        await w.service.notify(UID, sig("home_offline"), "Laptop off.")
+        w.clock.advance(seconds=1)
+    return want(len(w.push.requests) <= 1, True, f"pushes {len(w.push.requests)}")
+
+
+@case("channels", "vault_expiry_off_by_default_everywhere")
+async def _() -> list[str]:
+    w = await build()
+    d = await w.service.notify(UID, sig("vault_expiry"), "A document is due.")
+    return want((d.action, d.telegram, d.push), ("drop", False, 0), "vault_expiry")
+
+
+@case("channels", "held_alerts_survive_a_failed_send")
+async def _() -> list[str]:
+    w = await build(MIDNIGHT, with_push=False)
+    await w.service.notify(UID, sig("home_package"), "Pkg.")
+    w.clock.now = NOON
+    w.tg.bot.raise_transport = True
+    sent = await w.service.flush_held(UID)
+    return want((sent, len(await w.store.held_list(UID))), (False, 1), "held after failure")
 
 
 # ---- push ------------------------------------------------------------------------------------
@@ -620,6 +671,7 @@ async def controls() -> dict[str, Any]:
             ),
         ),
         "endpoint_allow_list_off": (endpoints, "ENFORCE", False),
+        "hazard_capped": (telegram_out, "NO_CAP_KINDS", frozenset()),
         "urgent_bucket_merged": (telegram_out.TelegramHomeAlerts, "_allowed", _merged_bucket()),
     }
     for name, (obj, attr, val) in plans.items():

@@ -7,6 +7,12 @@ Names: `named_message` is used only when names in alerts are on and the signal i
 a child is never named on any channel. The photo (D12) goes to Telegram only, for a burglar alert
 that rings, and only when the snapshot opt-in is on. One audit line per alert with kinds and
 counts, never text (the channels audit their own results too).
+
+Review fixes: the owner's R1 per-kind Telegram switches (vault_expiry off by default, ...) are
+consulted before any hold or ring, so push and the held summary obey them too; normal kinds share
+an hourly push allowance across instances (urgent kinds, hazards first, never ask for it); held
+alerts are removed only after a channel took the summary; a Telegram cap refusal of a burglar
+alert joins the storm summary.
 """
 
 from __future__ import annotations
@@ -20,20 +26,27 @@ from jarvis.alerts import AlertResult, AlertSink
 from jarvis.core.guardrails import ActionRisk
 from jarvis.logging import get_logger
 from jarvis.notify.held import Held
+from jarvis.notify.held import summary as held_summary
 from jarvis.notify.models import NotifySettings
 from jarvis.notify.policy import Policy
 from jarvis.notify.ports import Decision, Delivery, NotifyPolicy, Signal
 from jarvis.notify.quiet import in_quiet
 from jarvis.notify.store import NotifyStore
 from jarvis.notify.storm import Storm, summary_text
+from jarvis.notify.telegram_out import LIMIT_REASON
 from jarvis.tools.audit import AuditTrail
 
 log = get_logger(__name__)
 MAX_TEXT = 300
+PUSH_PER_HOUR = 20  # per owner, all instances; urgent kinds and tests are exempt
 
 
 class PushSender(Protocol):
     async def send(self, uid: str, *, kind: str, text: str, silent: bool = False) -> int: ...
+
+
+class KindSwitches(Protocol):
+    async def kind_off(self, uid: str, kind: str) -> bool: ...
 
 
 def _clean(text: str) -> str:
@@ -50,6 +63,7 @@ class NotifyService:
         telegram: AlertSink | None = None,
         push: PushSender | None = None,
         policy: NotifyPolicy | None = None,
+        switches: KindSwitches | None = None,
         storm: Storm | None = None,
         timezone: str = "Asia/Kolkata",
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -63,10 +77,25 @@ class NotifyService:
         self._tz = timezone
         self._now = now
         self._held = Held(store)
+        found = switches if switches is not None else telegram
+        self._switches: KindSwitches | None = found if hasattr(found, "kind_off") else None  # type: ignore[assignment]
 
     @property
     def store(self) -> NotifyStore:
         return self._store
+
+    @property
+    def storm(self) -> Storm:
+        return self._storm
+
+    async def _kind_off(self, uid: str, kind: str) -> bool:
+        if self._switches is None or kind == "test":
+            return False
+        try:
+            return await self._switches.kind_off(uid, kind)
+        except Exception as exc:  # noqa: BLE001 - unreadable: keep the alert
+            log.warning("notify: kind switch unreadable", extra={"error": type(exc).__name__})
+            return False
 
     async def settings(self, uid: str) -> NotifySettings:
         """The owner's settings. Unreadable settings never stop an alert: the defaults apply
@@ -92,6 +121,8 @@ class NotifyService:
         now = self._now()
         settings = await self.settings(uid)
         await self._send_due_summary(uid, settings, now)
+        if await self._kind_off(uid, signal.kind):
+            return await self._done(uid, signal, Delivery(action="drop", reason="switched_off"))
         decision = self._policy.decide(signal, settings, now)
         if decision.action == "drop":
             return await self._done(uid, signal, Delivery(action="drop", reason=decision.reason))
@@ -139,9 +170,11 @@ class NotifyService:
         silent = decision.action == "silent"
         results = await asyncio.gather(
             self._telegram_send(uid, signal, text, silent, photo),
-            self._push_send(uid, signal, text, silent),
+            self._push_send(uid, signal, decision, text, silent),
         )
         tg, pushed = results
+        if signal.kind == "home_intruder" and getattr(tg, "reason", "") == LIMIT_REASON:
+            self._storm.note_suppressed(uid, self._now())
         return Delivery(
             action=decision.action,
             reason=decision.reason,
@@ -163,8 +196,19 @@ class NotifyService:
             log.warning("notify: telegram failed", extra={"error": type(exc).__name__})
             return AlertResult(False, "Telegram couldn't be reached")
 
-    async def _push_send(self, uid: str, signal: Signal, text: str, silent: bool) -> int:
-        if self._push is None:
+    async def _push_allowed(self, uid: str, signal: Signal, decision: Decision) -> bool:
+        if decision.urgency == "urgent" or signal.kind == "test":
+            return True  # burglar and hazard alerts are bounded by the storm control, not here
+        try:
+            return await self._store.take_push(uid, self._now(), per_hour=PUSH_PER_HOUR)
+        except Exception as exc:  # noqa: BLE001 - fail closed for normal kinds
+            log.warning("notify: push counter unreadable", extra={"error": type(exc).__name__})
+            return False
+
+    async def _push_send(
+        self, uid: str, signal: Signal, decision: Decision, text: str, silent: bool
+    ) -> int:
+        if self._push is None or not await self._push_allowed(uid, signal, decision):
             return 0
         try:
             return await self._push.send(uid, kind=signal.kind, text=text, silent=silent)
@@ -192,20 +236,30 @@ class NotifyService:
         return sent
 
     async def flush_held(self, uid: str) -> bool:
-        """When quiet hours are over, send the held alerts as ONE summary (kinds and counts)."""
+        """When quiet hours are over, send the held alerts as ONE summary (kinds and counts).
+        They are removed only after Telegram or a browser took it; otherwise the next tick
+        tries again. Kinds the owner has since switched off are left out."""
         settings = await self.settings(uid)
         now = self._now()
         if in_quiet(now, settings.quiet, settings.tz):
             return False
-        text = await self._held.flush(uid)
-        if text is None:
+        items = await self._store.held_list(uid)
+        if not items:
+            return False
+        kept = [i for i in items if not await self._kind_off(uid, i.get("kind", ""))]
+        if not kept:
+            await self._store.held_discard(uid, items)
             return False
         signal = Signal(source="home", kind="test")
         decision = Decision(action="ring", reason="held_summary", urgency="important")
         decision = decision.model_copy(
             update={"action": "silent" if settings.ring_for == "urgent" else "ring"}
         )
-        await self._done(uid, signal, await self._deliver(uid, signal, decision, text, None))
+        delivery = await self._deliver(uid, signal, decision, held_summary(kept), None)
+        await self._done(uid, signal, delivery)
+        if not (delivery.telegram or delivery.push):
+            return False  # nothing took it: keep every item for the next tick
+        await self._store.held_discard(uid, items)
         return True
 
     async def flush_all_held(self) -> int:

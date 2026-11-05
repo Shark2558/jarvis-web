@@ -52,7 +52,7 @@ async def build(
         await tg.pair()
     push = PushWorld()
     clock = Clock(now)
-    store = NotifyStore(tg.docs)
+    store = NotifyStore(tg.docs, push.ring)
     photos: list[tuple[int, bytes, str]] = []
 
     async def photo_sender(chat: int, data: bytes, caption: str) -> None:

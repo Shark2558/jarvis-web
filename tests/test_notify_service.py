@@ -49,11 +49,10 @@ def test_fifty_detections_in_two_minutes_give_few_rings_and_one_summary() -> Non
 
 def test_the_window_slides() -> None:
     s, d = Storm(), Decision(action="ring", reason="x", urgency="urgent")
-    sig = Signal(source="home", kind="home_hazard")
     for i in range(10):
-        assert s.admit(UID, sig, d, NOON + timedelta(seconds=i)).admit
-    assert not s.admit(UID, sig, d, NOON + timedelta(minutes=9)).admit
-    assert s.admit(UID, sig, d, NOON + timedelta(minutes=11)).admit
+        assert s.admit(UID, intruder(f"c{i}"), d, NOON + timedelta(seconds=i)).admit
+    assert not s.admit(UID, intruder("cx"), d, NOON + timedelta(minutes=9)).admit
+    assert s.admit(UID, intruder("cy"), d, NOON + timedelta(minutes=11)).admit
 
 
 def test_packages_are_ten_minutes_apart_and_greetings_thirty_per_person() -> None:
@@ -410,9 +409,8 @@ async def test_the_urgent_bucket_is_not_used_up_by_normal_alerts() -> None:
 
 async def test_urgent_has_its_own_hourly_cap() -> None:
     w = await build(with_push=False)
-    res = [
-        (await w.alerts.send(UID, "x", kind="home_hazard")).sent for _ in range(URGENT_PER_HOUR + 3)
-    ]
+    kind = "home_intruder"
+    res = [(await w.alerts.send(UID, "x", kind=kind)).sent for _ in range(URGENT_PER_HOUR + 3)]
     assert res.count(True) == URGENT_PER_HOUR
 
 

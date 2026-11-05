@@ -8,7 +8,10 @@ an I1 file, so this adapter does the same job for the policy without touching it
   switch only (`notify/{uid}.kinds`, applied before we get here); `test` always goes.
 - Normal kinds use R1's counter (10 an hour, 50 a day, unreadable -> not sent). Urgent kinds have
   their own bucket (30 an hour, 100 a day) that normal kinds can't use up; an unreadable counter
-  fails OPEN for them with an in-process cap of 30 an hour (one instance).
+  fails OPEN for them with an in-process cap of 30 an hour (one instance only: deploy/cloudrun.sh
+  pins `--max-instances 1`; raise that and this cap multiplies). Burglar rings are limited by the
+  storm control to 20 an hour and 80 a day so that, with the summaries, they fit this bucket.
+- SAFETY: a hazard (`home_hazard`: smoke, gas, water) is never refused by any cap here.
 - `silent` -> `disable_notification`. `photo` (D12, burglar alerts only) goes through the
   `photo_sender` I1 supplies (a `sendPhoto` with `protect_content`); without one it is dropped. The
   bytes are held in memory only: never stored, logged or audited.
@@ -30,12 +33,15 @@ from jarvis.notify.ports import DEFAULT_URGENCY
 from jarvis.notify.store import NotifyStore
 from jarvis.telegram.alerts import MAX_PER_DAY, MAX_PER_HOUR, plain
 from jarvis.telegram.client import TelegramClient, TelegramError
+from jarvis.telegram.models import AlertToggles
 from jarvis.telegram.store import TelegramStore
 from jarvis.tools.audit import AuditTrail
 
 log = get_logger(__name__)
 URGENT_PER_HOUR = 30
 URGENT_PER_DAY = 100
+LIMIT_REASON = "alert limit reached for now"
+NO_CAP_KINDS = frozenset({"home_hazard"})
 SWITCHED_OFF = "switched off for this kind of alert"
 # kinds that still have an R1 Telegram switch (field name on AlertToggles)
 R1_TOGGLE = {
@@ -74,6 +80,20 @@ class TelegramHomeAlerts:
         self._clock = clock
         self._urgent_recent: deque[float] = deque()
 
+    async def kind_off(self, uid: str, kind: str) -> bool:
+        """Whether the owner's R1 Telegram switch for this kind is off. Not paired or unreadable
+        settings use R1's defaults (vault_expiry and brief_ready off), the private direction."""
+        field = R1_TOGGLE.get(kind)
+        if field is None:
+            return False
+        try:
+            link = await self._store.get(uid)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("alert: link unreadable", extra={"error": type(exc).__name__})
+            link = None
+        toggles = link.alerts if link is not None else AlertToggles()
+        return not getattr(toggles, field)
+
     async def send(
         self,
         uid: str,
@@ -94,7 +114,7 @@ class TelegramHomeAlerts:
         if field is not None and not getattr(link.alerts, field):
             return AlertResult(False, SWITCHED_OFF)
         if not await self._allowed(uid, kind):
-            return AlertResult(False, "alert limit reached for now")
+            return AlertResult(False, LIMIT_REASON)
         sent_photo = False
         try:
             if photo is not None and self._photo_sender is not None and kind == "home_intruder":
@@ -124,6 +144,8 @@ class TelegramHomeAlerts:
         return True
 
     async def _allowed(self, uid: str, kind: str) -> bool:
+        if kind in NO_CAP_KINDS:
+            return True
         if DEFAULT_URGENCY.get(kind) != "urgent":
             try:
                 return await self._store.count_alert(
@@ -163,6 +185,8 @@ class TelegramHomeAlerts:
 
 
 __all__ = [
+    "LIMIT_REASON",
+    "NO_CAP_KINDS",
     "R1_TOGGLE",
     "URGENT_PER_DAY",
     "URGENT_PER_HOUR",

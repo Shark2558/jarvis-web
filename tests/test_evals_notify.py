@@ -1,5 +1,5 @@
 # tests/test_evals_notify.py -- R3 D: the notify eval gate runs in the unit suite too (mock mode):
-# every case passes and each of the five negative controls makes the suite fail.
+# every case passes and each of the six negative controls makes the suite fail.
 from __future__ import annotations
 
 import json
@@ -29,5 +29,6 @@ def test_notify_mock_evals_pass_their_gates() -> None:
         "storm_cap_off",
         "endpoint_allow_list_off",
         "urgent_bucket_merged",
+        "hazard_capped",
     }
     assert all(controls.values())

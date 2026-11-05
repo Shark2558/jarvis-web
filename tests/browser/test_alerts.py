@@ -362,12 +362,14 @@ def test_the_worker_shows_the_template_text_and_ignores_junk(
               await handlers.push(ev(good));
               await handlers.push(ev({ kind: 'x', text: 'ok', url: 'https://evil.example/' }));
               await handlers.push(ev('bad'));
+              await handlers.push(ev({ kind: 'x', text: 'ok', url: '//evil.example/x' }));
               return shown;
             }""".replace("__SRC__", json.dumps((STATIC / "console-sw.js").read_text()))
         )
         assert out[0][1]["body"] == "Someone at the Gate." and out[0][1]["data"]["url"] == "/#home"
         assert out[1][1]["data"]["url"] == "/"  # a foreign address is never a click target
         assert out[2][1]["body"] == "JARVIS has something for you."
+        assert out[3][1]["data"]["url"] == "/"  # a protocol-relative address is not a path
     finally:
         c.close()
 

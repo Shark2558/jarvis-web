@@ -10,7 +10,7 @@ self.addEventListener('push', (event) => {
   try { data = event.data ? event.data.json() : null; } catch (_) { data = null; }
   const ok = data && typeof data === 'object' && !Array.isArray(data);
   const text = ok && typeof data.text === 'string' ? data.text.slice(0, 300) : 'JARVIS has something for you.';
-  const url = ok && typeof data.url === 'string' && /^\/[#A-Za-z0-9_\/-]*$/.test(data.url) ? data.url : '/';
+  const url = ok && typeof data.url === 'string' && /^\/(?!\/)[#A-Za-z0-9_\/-]*$/.test(data.url) ? data.url : '/';
   const kind = ok && typeof data.kind === 'string' ? data.kind.slice(0, 40) : 'alert';
   event.waitUntil(self.registration.showNotification('JARVIS', {
     body: text,
@@ -23,7 +23,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const d = event.notification.data;
-  const target = d && typeof d.url === 'string' && d.url.charAt(0) === '/' ? d.url : '/';
+  const target = d && typeof d.url === 'string' && d.url.charAt(0) === '/' && d.url.charAt(1) !== '/' ? d.url : '/';
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const w of wins) {

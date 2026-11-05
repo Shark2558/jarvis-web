@@ -136,13 +136,13 @@ def _check_update(a: dict[str, Any]) -> None:
 
 
 def _write_origin() -> str:
-    """Where the words came from. `ctx.spoken` is the flag the gateway sets (I1) on the context of
-    a call whose card was proposed on a spoken turn, so approving that card on screen, outside
-    the turn, still records `voice`. Absent (before I1) it is read as False."""
+    """Where the words came from. `ctx.spoken` is the flag the gateway sets (R2 I1) on the context
+    of a call whose card was proposed on a spoken turn, so approving that card on screen, outside
+    the turn, still records `voice`."""
     ctx = current_tool_context()
     if (ctx is not None and ctx.outside) or content_tainted():
         return "outside"
-    spoken = spoken_in_context() or bool(getattr(ctx, "spoken", False))
+    spoken = spoken_in_context() or (ctx is not None and ctx.spoken)
     return "voice" if spoken else "typed"
 
 

@@ -1,8 +1,9 @@
-# tests/browser/test_vault.py -- the Vault panel (R2 D1-D8) in a real browser. console.html is I1's
-# file, so the test injects the panel shell (`#p-vault > #vaultBody`), serves console-vault*.js/.css
-# from disk through page.route and fakes /v1/vault* (shapes: src/jarvis/api/vault.py). They pin the
-# console's side of the contract: the list, the unlock dialog (focus trap, Esc), the ticket/download
-# hand-off, delete with Undo, upload then confirm, and that every server string is text only.
+# tests/browser/test_vault.py -- the Vault panel (R2 D1-D8) in a real browser: the real console's
+# `#p-vault > .pbody > #vaultBody` with its own console-vault*.js/.css (R2 I1 put them in
+# console.html), opened from the dock; /v1/vault* is faked (shapes: src/jarvis/api/vault.py). They
+# pin the console's side of the contract: the list, the unlock dialog (focus trap, Esc), the
+# ticket/download hand-off, delete with Undo, upload then confirm, and that every server string is
+# text only.
 from __future__ import annotations
 
 import base64
@@ -20,12 +21,6 @@ sync_playwright = _pw.sync_playwright
 
 pytestmark = pytest.mark.browser
 
-STATIC = Path(__file__).resolve().parents[2] / "src" / "jarvis" / "api" / "static"
-ASSETS = {
-    "/__vault/console-vault.js": ("console-vault.js", "application/javascript"),
-    "/__vault/console-vault-add.js": ("console-vault-add.js", "application/javascript"),
-    "/__vault/console-vault.css": ("console-vault.css", "text/css"),
-}
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/"
     "q842iQAAAABJRU5ErkJggg=="
@@ -86,13 +81,8 @@ class FakeVault:
         self.calls: list[dict[str, Any]] = []
         self.unlock_answer: tuple[int, Any] | None = None
         self.inbox: dict[str, Any] = {"available": False}
-        page.route("**/__vault/*", self._asset)
         page.route("**/v1/vault**", self._vault)
         page.route("**/v1/deleted/**", self._deleted)
-
-    def _asset(self, route: Any) -> None:
-        name, mime = ASSETS[urlsplit(route.request.url).path]
-        route.fulfill(status=200, content_type=mime, body=(STATIC / name).read_bytes())
 
     def _record(self, route: Any) -> dict[str, Any]:
         req = route.request
@@ -220,24 +210,13 @@ def make(browser: Any, server_url: str, token: str) -> Iterator[Callable[..., Co
 def _panel(c: Console, data: dict[str, Any]) -> tuple[FakeVault, Any]:
     fake = FakeVault(c.page, data)
     c.open()
-    c.page.evaluate(
-        """() => { const s = document.createElement('section'); s.id = 'p-vault';
-          const b = document.createElement('div'); b.className = 'pbody';
-          const w = document.createElement('div'); w.id = 'vaultBody'; b.append(w); s.append(b);
-          document.body.append(s); }"""
-    )
-    c.page.add_style_tag(url="/__vault/console-vault.css")
-    c.page.add_script_tag(url="/__vault/console-vault.js")
-    c.page.add_script_tag(url="/__vault/console-vault-add.js")
-    _toggle(c, True)
+    c.open_panel("vault")  # the real panel, from the dock (or More on a phone)
     return fake, c.page.locator("#vaultBody")
 
 
 def _toggle(c: Console, open_: bool) -> None:
     c.page.evaluate(
-        "o => document.dispatchEvent("
-        "new CustomEvent('jarvis:panel', {detail: {id: 'vault', open: o}}))",
-        open_,
+        "o => o ? window.JarvisDeck.open('vault') : window.JarvisDeck.close('vault')", open_
     )
 
 
@@ -494,15 +473,7 @@ def test_check_digilocker_now_reports_how_many_came_in(make: Callable[..., Conso
     fake = FakeVault(c.page, view([]))
     fake.inbox = {"available": True, "configured": True}
     c.open()
-    c.page.evaluate(
-        "() => { const s = document.createElement('section'); s.id = 'p-vault';"
-        " const w = document.createElement('div');"
-        " w.id = 'vaultBody'; s.append(w); document.body.append(s); }"
-    )
-    c.page.add_style_tag(url="/__vault/console-vault.css")
-    c.page.add_script_tag(url="/__vault/console-vault.js")
-    c.page.add_script_tag(url="/__vault/console-vault-add.js")
-    _toggle(c, True)
+    c.open_panel("vault")
     c.page.locator("#vaultCheck").click()
     c.page.locator(".vnote", has_text="2 documents imported").wait_for()
     assert fake.to("POST", "/v1/vault/inbox/check")
@@ -513,12 +484,6 @@ def test_not_set_up_inbox_points_to_integrations(make: Callable[..., Console]) -
     fake = FakeVault(c.page, view([]))
     fake.inbox = {"available": True, "configured": False}
     c.open()
-    c.page.evaluate(
-        "() => { const s = document.createElement('section'); s.id = 'p-vault';"
-        " const w = document.createElement('div');"
-        " w.id = 'vaultBody'; s.append(w); document.body.append(s); }"
-    )
-    c.page.add_script_tag(url="/__vault/console-vault.js")
-    _toggle(c, True)
+    c.open_panel("vault")
     c.page.locator("text=set it up in Integrations").wait_for()
     assert c.page.locator("#vaultCheck").count() == 0

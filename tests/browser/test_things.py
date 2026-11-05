@@ -11,7 +11,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-from r2b_shell import add_things_panel
 from test_console import DESKTOP, PHONE, Console  # same directory (pytest prepend import)
 
 _pw = pytest.importorskip("playwright.sync_api")
@@ -141,7 +140,6 @@ def _open(
     browser: Any, server_url: str, token: str, viewport: Any = DESKTOP, **kw: Any
 ) -> tuple[Console, FakeThings]:
     c = Console(browser, server_url, token, viewport)
-    add_things_panel(c.page)
     fake = FakeThings(c.page, kw.pop("things", [PASSPORT, KEYS]), **kw)
     c.open()
     c.open_panel("things")
@@ -256,7 +254,6 @@ def test_without_a_key_the_panel_says_so(browser: Any, server_url: str, token: s
 def test_the_panel_fits_a_phone(browser: Any, server_url: str, token: str) -> None:
     c = Console(browser, server_url, token, PHONE)
     try:
-        add_things_panel(c.page)
         FakeThings(c.page, [PASSPORT, KEYS])
         c.open()
         c.page.evaluate("window.JarvisDeck.open('things')")

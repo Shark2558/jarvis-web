@@ -47,7 +47,7 @@ ALLOWED: dict[str, set[str]] = {
     "drive": {"folders", "name", "id", "added_at", "email", "link", "confirmed_at"},
     "telegram": {
         "paired", "paired_at", "allow_private_reads", "alerts", "approval_waiting", "brief_ready",
-        "offline",
+        "offline", "allow_personal_reads", "vault_expiry",  # R2 I1: the second switch, the alert
     },
     "groceries": {"list_id", "title"},
     "family": {"members", "name", "calendar", "access", "added_at"},

@@ -1,7 +1,6 @@
 # tests/browser/test_notes.py -- the Notes panel (R2 C, console-notes*.js) in a real browser.
-# The panel shell and the asset routes belong to the integrator (console.html,
-# api/console.py), so this test brings its own: it adds <section id="p-notes"> to the real console
-# page and serves the three files from disk. /v1/notes* is faked with page.route, shaped as
+# The real console's #p-notes panel (R2 I1 put it and its three files in console.html), opened
+# from the dock. /v1/notes* is faked with page.route, shaped as
 # docs/plans/r2-memory-vault.md says. Covers: empty and off states, add / search / filter,
 # textContent only (hostile text stays text), links (https only, rel noopener noreferrer
 # nofollow, punycode),
@@ -13,7 +12,6 @@ import copy
 import json
 import re
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -25,12 +23,6 @@ sync_playwright, expect = _pw.sync_playwright, _pw.expect
 
 pytestmark = pytest.mark.browser
 
-STATIC = Path(__file__).resolve().parents[2] / "src" / "jarvis" / "api" / "static"
-SHELL = (
-    '<section class="card" id="p-notes" data-panel="notes" style="position:fixed;top:10px;'
-    'left:10px;width:720px;max-height:90vh;overflow:auto;z-index:50">'
-    '<div class="pbody"><div id="notes"></div></div></section>'
-)
 NOTES_URL = re.compile(r".*/v1/(?:notes(?:/[^?]*)?|deleted/del_[0-9a-f]+/restore)(?:\?.*)?$")
 TRANSCRIBE_URL = re.compile(r".*/v1/voice/transcribe$")
 VOUCH = ("typed", "memo", "imported")
@@ -197,34 +189,20 @@ def console(browser: Any, server_url: str, token: str) -> Iterator[Console]:
     c.close()
 
 
-def _asset_handler(path: Path) -> Any:
-    kind = "text/css" if path.suffix == ".css" else "application/javascript"
-
-    def handle(route: Any) -> None:
-        route.fulfill(status=200, content_type=kind, body=path.read_text(encoding="utf-8"))
-
-    return handle
-
-
-def serve_assets(page: Any) -> None:
-    for name in ("console-notes.js", "console-notes-memo.js", "console-notes.css"):
-        page.route(f"**/static/{name}", _asset_handler(STATIC / name))
-
-
 def open_notes(console: Console, items: list[dict[str, Any]] | None = None) -> FakeNotes:
-    page = console.page
-    fake = FakeNotes(page, items)
-    serve_assets(page)
+    fake = FakeNotes(console.page, items)
     console.open()
-    page.evaluate("html => document.body.insertAdjacentHTML('beforeend', html)", SHELL)
-    page.add_style_tag(url="/static/console-notes.css")
-    page.add_script_tag(url="/static/console-notes.js")
-    page.add_script_tag(url="/static/console-notes-memo.js")
-    page.evaluate(
-        "document.dispatchEvent(new CustomEvent('jarvis:panel', "
-        "{detail: {id: 'notes', open: true}}))"
-    )
+    console.open_panel("notes")  # the real panel, from the dock
     return fake
+
+
+def _posted(page: Any, fake: FakeNotes, path: str, timeout_ms: int = 5000) -> list[dict[str, Any]]:
+    """The POSTs the fake saw, once there is one (the browser sends after the click returns)."""
+    for _ in range(timeout_ms // 50):
+        if got := fake.to("POST", path):
+            return got
+        page.wait_for_timeout(50)
+    return fake.to("POST", path)
 
 
 def clean(console: Console) -> None:
@@ -234,8 +212,8 @@ def clean(console: Console) -> None:
 
 def test_empty_list_says_what_to_do_and_loads_lazily(console: Console) -> None:
     fake = open_notes(console)
-    console.page.locator("#notes .empty").wait_for()
-    assert "Nothing saved yet" in str(console.page.locator("#notes .empty").text_content())
+    # the panel says "Loading your notes" first, then what to do
+    expect(console.page.locator("#notes .empty")).to_contain_text("Nothing saved yet")
     assert len(fake.to("GET", "/v1/notes")) == 1
     clean(console)
 
@@ -244,14 +222,8 @@ def test_off_without_a_key_says_why(console: Console) -> None:
     page = console.page
     fake = FakeNotes(page)
     fake.available = False
-    serve_assets(page)
     console.open()
-    page.evaluate("html => document.body.insertAdjacentHTML('beforeend', html)", SHELL)
-    page.add_script_tag(url="/static/console-notes.js")
-    page.evaluate(
-        "document.dispatchEvent(new CustomEvent('jarvis:panel', "
-        "{detail: {id: 'notes', open: true}}))"
-    )
+    console.open_panel("notes")
     expect(page.locator("#notes .empty")).to_contain_text("no encryption key")
     assert page.locator("#nAdd").count() == 0
 
@@ -386,7 +358,7 @@ def test_voice_memo_becomes_an_editable_transcript_then_saves(console: Console) 
     expect(box).to_have_value("call the bank tomorrow")
     box.fill("Call the bank tomorrow morning")
     page.locator("#nMemoSave").click()
-    sent = fake.to("POST", "/v1/notes")[0]["body"]
+    sent = _posted(page, fake, "/v1/notes")[0]["body"]
     assert sent == {"kind": "memo", "text": "Call the bank tomorrow morning"}
     assert len(fake.to("POST", "/v1/voice/transcribe")) >= 1
     expect(page.locator("#nMemo")).to_have_count(0)
@@ -449,7 +421,7 @@ def test_save_waits_until_the_whole_recording_is_in_words(console: Console) -> N
     expect(page.locator("#nMemoText")).to_have_value("call the bank tomorrow")
     expect(save).not_to_have_attribute("aria-disabled", "true")
     save.click()
-    assert fake.to("POST", "/v1/notes")[0]["body"]["text"] == "call the bank tomorrow"
+    assert _posted(page, fake, "/v1/notes")[0]["body"]["text"] == "call the bank tomorrow"
     clean(console)
 
 

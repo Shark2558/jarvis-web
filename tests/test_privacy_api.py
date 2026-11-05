@@ -16,7 +16,6 @@ from pydantic import SecretStr
 from jarvis.api import auth as auth_mod
 from jarvis.api import create_app
 from jarvis.api.identity import user_id_for_email
-from jarvis.api.privacy import install_privacy
 from jarvis.config import AuthMode, Settings
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
@@ -83,7 +82,6 @@ async def rig(
     app = create_app(
         google_settings, provider=provider, store=InMemorySessionStore(), gateway=gateway
     )
-    install_privacy(app)
     seeded = Seeded()
     async with app.router.lifespan_context(app):
         app.state.privacy = PrivacyService(
@@ -167,8 +165,8 @@ async def test_without_the_service_the_routes_say_not_available(
     app = create_app(
         google_settings, provider=provider, store=InMemorySessionStore(), gateway=gateway
     )
-    install_privacy(app)
     async with app.router.lifespan_context(app):
+        app.state.privacy = None  # I1: create_app wires the service; here it is missing
         async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as c:
             c.app = app  # type: ignore[attr-defined]
             await _sign_in(c)

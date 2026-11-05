@@ -50,6 +50,7 @@ def telegram_source(store: TelegramStore) -> CallbackSource:
             "paired": True,
             "paired_at": link.paired_at,
             "allow_private_reads": link.allow_private_reads,
+            "allow_personal_reads": link.allow_personal_reads,  # R2 D12
             "alerts": link.alerts.model_dump(mode="json"),
         }
 

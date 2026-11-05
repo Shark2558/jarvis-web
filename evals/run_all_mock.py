@@ -29,8 +29,12 @@ free-allowance ledger, per-message caps, Home / Work, attribution and links on e
 titles, the owner's playlist grant; + the ledger-off negative control) and slice 12 C's contacts
 look-ups and WhatsApp drafts (17 cases: matches, +91, the optional Grant, drafts by number or
 name, the warning for a number read from an email, the 2,000 character limit, Never on both rows,
-Unicode kept and the link built exactly; nothing is ever sent; + its negative control). The exit
-status is the gated suites: phase0 --mock is a smoke run and never fails CI.
+Unicode kept and the link built exactly; nothing is ever sent; + its negative control), R1's
+telegram, activity, offline, packages, groceries, family and mail-aloud suites, and R2's vault,
+DigiLocker import, things, notes, privacy dashboard and the cross-cutting r2_needles scan (a full
+ID number, file bytes, a place and a note never reach a document, log, audit entry, Activity row,
+alert, training brain or a Telegram turn with the switch off). The exit status is the gated
+suites: phase0 --mock is a smoke run and never fails CI.
 """
 
 from __future__ import annotations
@@ -70,6 +74,14 @@ SUITES = [
     ("groceries (gated)", [sys.executable, str(HERE / "groceries" / "run.py"), "--mock"], True),
     ("family (gated)", [sys.executable, str(HERE / "family" / "run.py"), "--mock"], True),
     ("mail aloud (gated)", [sys.executable, str(HERE / "mail_aloud" / "run.py"), "--mock"], True),
+    # R2: the vault, DigiLocker import, things, notes, the privacy dashboard and the cross-cutting
+    # needle scan (each with its negative controls)
+    ("vault (gated)", [sys.executable, str(HERE / "vault" / "run.py"), "--mock"], True),
+    ("digilocker (gated)", [sys.executable, str(HERE / "digilocker" / "run.py"), "--mock"], True),
+    ("belongings (gated)", [sys.executable, str(HERE / "belongings" / "run.py"), "--mock"], True),
+    ("notes (gated)", [sys.executable, str(HERE / "notes" / "run.py"), "--mock"], True),
+    ("privacy (gated)", [sys.executable, str(HERE / "privacy" / "run.py"), "--mock"], True),
+    ("r2 needles (gated)", [sys.executable, str(HERE / "r2_needles" / "run.py"), "--mock"], True),
 ]
 
 

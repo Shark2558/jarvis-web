@@ -11,7 +11,6 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
 from jarvis.api import create_app
-from jarvis.api.belongings import install_belongings
 from jarvis.api.identity import user_id_for_email
 from jarvis.config import AuthMode, Settings
 from jarvis.llm.mock_provider import MockProvider
@@ -48,9 +47,8 @@ async def _login(c: AsyncClient) -> None:
 
 async def _client(s: Settings, t: Things | None) -> AsyncIterator[AsyncClient]:
     app = create_app(s, provider=MockProvider(), store=InMemorySessionStore())
-    install_belongings(app)
-    app.state.belongings = t.svc if t else None
     async with app.router.lifespan_context(app):
+        app.state.belongings = t.svc if t else None  # I1: create_app mounts /v1/things
         c = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         c.app = app  # type: ignore[attr-defined]
         yield c

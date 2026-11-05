@@ -29,6 +29,10 @@
 <link rel="stylesheet" href="/static/console-activity.css">
 <link rel="stylesheet" href="/static/console-offline.css">
 <link rel="stylesheet" href="/static/console-family.css">
+<link rel="stylesheet" href="/static/console-vault.css">
+<link rel="stylesheet" href="/static/console-things.css">
+<link rel="stylesheet" href="/static/console-notes.css">
+<link rel="stylesheet" href="/static/console-privacy.css">
 </head>
 <body>
 <div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
@@ -217,7 +221,7 @@
         </button></h3>
         <div class="dbody" id="permSetBody" hidden>
           <div class="bnote" id="permNote" role="status" aria-live="polite"></div>
-          <p class="bfine plead">What JARVIS may do without asking. Anything that can't be undone always asks first, or never happens.</p>
+          <p class="bfine plead">What JARVIS may do without asking. Anything that can't be undone always asks first, or never happens. <button class="btn lift bact" id="permPrivacy" type="button" data-goto="privacy">What JARVIS keeps</button></p>
           <div id="permGroups" aria-busy="false"></div>
           <section class="psk" aria-labelledby="pskT">
             <h4 class="pskh" id="pskT">Passkey</h4>
@@ -348,6 +352,7 @@
               <button class="btn lift bact" id="memExport" type="button">Export</button>
               <button class="btn lift bact" id="memImport" type="button" aria-expanded="false" aria-controls="memImportBox">Import</button>
               <button class="btn lift bact mdanger" id="memForget" type="button" aria-expanded="false" aria-controls="memForgetBox">Forget everything</button>
+              <button class="btn lift bact" id="memPrivacy" type="button" data-goto="privacy">Everything JARVIS keeps</button>
             </div>
             <input id="memImportFile" type="file" accept="application/json,.json" hidden>
             <p class="bfine" id="memExportInfo"></p>
@@ -368,6 +373,57 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- R2 (docs/plans/r2-memory-vault.md "Console"): the Vault (console-vault.js + console-vault-add.js),
+       Things (console-things.js), Notes (console-notes.js + console-notes-memo.js) and Privacy
+       (console-privacy.js) panels. Each script fills its .pbody with textContent only. -->
+  <section class="panel card" id="p-vault" data-panel="vault" aria-labelledby="t-vault" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="9" width="12" height="8.5" rx="1.6"/><path d="M6.8 9V6.6a3.2 3.2 0 0 1 6.4 0V9M10 12.4v2"/></svg>
+      <h2 id="t-vault">Vault</h2><span class="pmeta" id="vaultMeta">Your documents</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Vault panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Vault panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"><div id="vaultBody"></div></div>
+  </section>
+
+  <section class="panel card" id="p-things" data-panel="things" aria-labelledby="t-things" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="12.5" r="3.2"/><path d="m9.3 10.2 6.4-6.4M13.6 6.2l2 2M11.8 8l1.6 1.6"/></svg>
+      <h2 id="t-things">Things</h2><span class="pmeta" id="thingsMeta">Where did I keep it?</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Things panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Things panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"></div>
+  </section>
+
+  <section class="panel card" id="p-notes" data-panel="notes" aria-labelledby="t-notes" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2.5h7.5L16 6v11.5H5z"/><path d="M12.5 2.5V6H16M7.5 10h6M7.5 13h4"/></svg>
+      <h2 id="t-notes">Notes</h2><span class="pmeta" id="notesMeta">Notes, memos and links</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Notes panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Notes panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"><div id="notes"></div></div>
+  </section>
+
+  <section class="panel card" id="p-privacy" data-panel="privacy" aria-labelledby="t-privacy" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z"/><circle cx="10" cy="10" r="2.2"/></svg>
+      <h2 id="t-privacy">Privacy</h2><span class="pmeta" id="privacyMeta">What JARVIS keeps</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Privacy panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Privacy panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"></div>
   </section>
 
   <!-- Voice (slice 9, console-voice.js): the owner's voice, speed and wit (saved on the server) and this
@@ -513,6 +569,10 @@
     <button class="dk wide" type="button" data-open="integrations" aria-controls="p-integrations" aria-pressed="false" aria-label="Integrations"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.2 11.8 11.8 8.2"/><path d="M7 13 5.6 14.4a2.7 2.7 0 0 1-3.8-3.8L5 7.4a2.7 2.7 0 0 1 3.8 0"/><path d="M13 7l1.4-1.4a2.7 2.7 0 0 1 3.8 3.8L15 12.6a2.7 2.7 0 0 1-3.8 0"/></svg><span class="full">Integrations</span><span class="short" aria-hidden="true">Links</span></button>
     <span class="sep" aria-hidden="true"></span>
     <!-- phones (< 900 px) show at most eight tabs: the "ovf" ones move behind More (console-deck.js) -->
+    <button class="dk ovf" type="button" data-open="vault" aria-controls="p-vault" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="9" width="12" height="8.5" rx="1.6"/><path d="M6.8 9V6.6a3.2 3.2 0 0 1 6.4 0V9M10 12.4v2"/></svg><span>Vault</span></button>
+    <button class="dk ovf" type="button" data-open="things" aria-controls="p-things" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="12.5" r="3.2"/><path d="m9.3 10.2 6.4-6.4M13.6 6.2l2 2M11.8 8l1.6 1.6"/></svg><span>Things</span></button>
+    <button class="dk ovf" type="button" data-open="notes" aria-controls="p-notes" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2.5h7.5L16 6v11.5H5z"/><path d="M12.5 2.5V6H16M7.5 10h6M7.5 13h4"/></svg><span>Notes</span></button>
+    <button class="dk ovf" type="button" data-open="privacy" aria-controls="p-privacy" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z"/><circle cx="10" cy="10" r="2.2"/></svg><span>Privacy</span></button>
     <button class="dk ovf" type="button" data-open="vitals" aria-controls="p-vitals" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span>Vitals</span></button>
     <button class="dk ovf" type="button" data-open="voice" aria-controls="p-voice" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span>Voice</span></button>
     <button class="dk ovf" type="button" data-open="media" aria-controls="p-media" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg><span>Media</span></button>
@@ -558,6 +618,10 @@
 <dialog class="sheet" id="moreSheet" aria-labelledby="moreTitle">
   <div class="sheet-in">
     <h2 id="moreTitle">More panels</h2>
+    <button class="sheet-item" type="button" data-sheet-open="vault"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="9" width="12" height="8.5" rx="1.6"/><path d="M6.8 9V6.6a3.2 3.2 0 0 1 6.4 0V9M10 12.4v2"/></svg><span><b>Vault</b><small>Your ID documents and their expiry reminders</small></span></button>
+    <button class="sheet-item" type="button" data-sheet-open="things"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="12.5" r="3.2"/><path d="m9.3 10.2 6.4-6.4M13.6 6.2l2 2M11.8 8l1.6 1.6"/></svg><span><b>Things</b><small>Where you keep your passport, keys and papers</small></span></button>
+    <button class="sheet-item" type="button" data-sheet-open="notes"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2.5h7.5L16 6v11.5H5z"/><path d="M12.5 2.5V6H16M7.5 10h6M7.5 13h4"/></svg><span><b>Notes</b><small>Notes, voice memos and saved links</small></span></button>
+    <button class="sheet-item" type="button" data-sheet-open="privacy"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z"/><circle cx="10" cy="10" r="2.2"/></svg><span><b>Privacy</b><small>Everything JARVIS keeps about you, with export and delete</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="vitals"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span><b>Vitals</b><small>Reply speed, this month's spend and your limit</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="voice"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span><b>Voice</b><small>JARVIS's voice, speed and wit; how this device listens</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="media"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg><span><b>Media</b><small>Play the videos and music JARVIS found for you</small></span></button>
@@ -593,6 +657,12 @@
 <script src="/static/console-wakeword.js" defer></script>
 <script src="/static/console-voice.js" defer></script>
 <script src="/static/console-voice-mic.js" defer></script>
+<script src="/static/console-vault.js" defer></script>
+<script src="/static/console-vault-add.js" defer></script>
+<script src="/static/console-things.js" defer></script>
+<script src="/static/console-notes.js" defer></script>
+<script src="/static/console-notes-memo.js" defer></script>
+<script src="/static/console-privacy.js" defer></script>
 <script type="module" src="/static/console-3d.js"></script>
 </body>
 </html>

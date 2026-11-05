@@ -602,6 +602,11 @@
     const linkCheck = integrations ? integrations.refresh() : Promise.resolve();
     if (backFromGoogle) linkCheck.then(() => Deck.open('integrations', { focus: true })); else input.focus();
   }
+  // R2: a button with data-goto="<panel>" (Memory -> Privacy, Permissions -> Privacy) opens that panel
+  document.addEventListener('click', (e) => {
+    const b = e.target instanceof Element ? e.target.closest('[data-goto]') : null;
+    if (b && /^[a-z]{2,20}$/.test(b.dataset.goto || '')) Deck.open(b.dataset.goto, { focus: true });
+  });
   (async () => {
     let fallbackWarning = '';
     try {

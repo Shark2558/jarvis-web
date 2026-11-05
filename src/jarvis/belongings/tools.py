@@ -46,10 +46,11 @@ NOT_NOTED = "Nothing is noted under that name."
 
 def origin_of(ctx: ToolContext) -> str:
     """How a line written now is to be trusted: outside (the round read other people's words),
-    voice (a spoken turn), else typed."""
+    voice (a spoken turn, or a card proposed on one and approved later: `ToolContext.spoken`),
+    else typed."""
     if ctx.outside:
         return "outside"
-    return "voice" if spoken_in_context() or speaking_now() else "typed"
+    return "voice" if ctx.spoken or spoken_in_context() or speaking_now() else "typed"
 
 
 def _say(text: str, limit: int) -> str:

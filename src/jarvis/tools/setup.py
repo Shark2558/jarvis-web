@@ -8,7 +8,9 @@ linked, whose tools restore — the undo tools (deleted_list / deleted_restore) 
 without it every delete stays R3. Slice 12 D5/D6: contacts_search with the Google link, and
 whatsapp_draft always. With Drive configured (slice 12 D1, `drive`): the read-only
 chosen-folders Drive tools. With JARVIS's own Google API key (slice 12, `media`): Maps and
-YouTube search, plus the owner's playlists when the Google link exists."""
+YouTube search, plus the owner's playlists when the Google link exists. R2 (each only when on, i.e.
+with the server's token key): the vault's metadata tools, notes and links (kb_*), and where things
+are kept (belongings_*)."""
 
 from __future__ import annotations
 
@@ -25,13 +27,16 @@ from jarvis.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from jarvis.activity.store import ActivityStore
+    from jarvis.belongings.service import BelongingsService
     from jarvis.documents.service import DocumentService
     from jarvis.drive.service import DriveService
+    from jarvis.kb.service import NotesService
     from jarvis.media.service import MediaServices
     from jarvis.recall.service import MemoryService
     from jarvis.storage.docs import Docs
     from jarvis.tools.task_marks import OutsideTasks
     from jarvis.undo.service import UndoBin
+    from jarvis.vault.service import VaultService
     from jarvis.web.service import WebService
 
 # builtins that stand in for real connectors; dropped once the real ones are registered
@@ -55,6 +60,31 @@ def _register_people(reg: ToolRegistry, google: GoogleConnector | None) -> None:
             reg.register(t)
     for t in whatsapp_tools(contacts):
         reg.register(t)
+
+
+def _register_personal(
+    reg: ToolRegistry,
+    vault: VaultService | None,
+    notes: NotesService | None,
+    belongings: BelongingsService | None,
+) -> None:
+    """R2: the owner's vault list (metadata only), notes and things. Telegram refuses all three by
+    default (`telegram.rules.PERSONAL_PATTERNS`); offline mode never offers them."""
+    if vault is not None:
+        from jarvis.vault.tools import vault_tools
+
+        for t in vault_tools(vault):
+            reg.register(t)
+    if notes is not None:
+        from jarvis.kb.tools import notes_tools
+
+        for t in notes_tools(notes):
+            reg.register(t)
+    if belongings is not None:
+        from jarvis.belongings.tools import belongings_tools
+
+        for t in belongings_tools(belongings):
+            reg.register(t)
 
 
 def attach_activity(gw: Gateway, store: ActivityStore, s: Settings) -> None:
@@ -81,6 +111,9 @@ def build_gateway(
     drive: DriveService | None = None,
     media: MediaServices | None = None,
     docs: Docs | None = None,
+    vault: VaultService | None = None,
+    notes: NotesService | None = None,
+    belongings: BelongingsService | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
@@ -138,6 +171,7 @@ def build_gateway(
 
         for t in maps_tools(media.maps) + youtube_tools(media.youtube):
             reg.register(t)
+    _register_personal(reg, vault, notes, belongings)
     return Gateway(
         registry=reg,
         policy=Policy(),

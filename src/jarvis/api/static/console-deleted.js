@@ -8,6 +8,9 @@
 // POST /v1/deleted/{id}/restore → {status: restored | already_restored, message, title, …}, or
 // {error, detail}: 404 not_found, 410 expired, 409 busy / still_there, 503 unavailable,
 // 502 restore_failed. DELETE /v1/deleted/{id} ("Remove now", asked twice) → {removed, id} | 404.
+// R2: for a vault document, note or thing the server may answer 403 passkey_required: the console then
+// asks JarvisPasskey.prove('privacy_delete', <bin id>) and sends {proof}; 403 proof_required (a stale
+// Google sign-in) shows "Sign in with Google again".
 //   window.JarvisDeleted  chips(row, undo) — console.js calls it for a fresh reply's `undo`
 //     ([{undo_id, kind}]): one Undo chip per delete in the reply's meta line. The chip's title comes
 //     from the list (plain text); a click restores the item and the chip then says "Restored". Why a
@@ -36,7 +39,7 @@
     get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
   };
-  const S = { items: undefined, kept: 30, error: '', loadedAt: 0, loading: null, busy: new Set(), errs: {}, confirm: '', confirmTimer: 0 };
+  const S = { items: undefined, kept: 30, error: '', loadedAt: 0, loading: null, busy: new Set(), errs: {}, confirm: '', confirmTimer: 0, reauth: '' };
   const chipsById = new Map(); // undo id → the chips that restore it (pruned when they leave the page)
   let msgSeq = 0;
 
@@ -183,7 +186,30 @@
     li.appendChild(acts);
     const err = mk('p', 'lerr', S.errs[it.id] || ''); err.setAttribute('role', 'alert');
     li.appendChild(err);
+    if (S.reauth === it.id) { // R2: a stale Google sign-in; the owner signs in again, then retries
+      const again = mk('button', 'btn lift bact', 'Sign in with Google again'); again.type = 'button';
+      again.dataset.act = 'reauth';
+      again.addEventListener('click', () => { try { window.location.assign('/auth/login?reauth=1'); } catch (_) {} });
+      li.appendChild(again);
+    }
     return li;
+  }
+  /** R2 D8: a vault document, note or thing can't be brought back, so the server asks for a passkey
+   *  check made for exactly this bin entry (purpose privacy_delete); asked only when it says so. */
+  async function purgeNow(id) {
+    const path = `/v1/deleted/${encodeURIComponent(id)}`;
+    try { return await api(path, { method: 'DELETE' }); } catch (e) {
+      if (!(e && e.code === 'passkey_required')) throw e;
+      const P = window.JarvisPasskey;
+      if (!P || typeof P.prove !== 'function' || (typeof P.supported === 'function' && !P.supported())) {
+        throw new Error('This needs your passkey, and this browser can\'t use passkeys.');
+      }
+      let proof;
+      try { proof = await P.prove('privacy_delete', id); } catch (pe) {
+        throw new Error((typeof P.message === 'function' && P.message(pe)) || detailOf(pe) || 'The passkey check didn\'t finish, so nothing was removed.');
+      }
+      return api(path, { method: 'DELETE', body: { proof } });
+    }
   }
   /** "Remove now": the copy goes for good, so the first click only asks ("Remove for good?"). */
   function removeButton(it) {
@@ -204,14 +230,15 @@
       S.confirmTimer = setTimeout(() => { if (S.confirm === id) { S.confirm = ''; render(); } }, CONFIRM_MS);
       return;
     }
-    S.confirm = ''; S.busy.add(id); delete S.errs[id]; note('', ''); render();
+    S.confirm = ''; S.busy.add(id); delete S.errs[id]; S.reauth = ''; note('', ''); render();
     try {
-      await api(`/v1/deleted/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await purgeNow(id);
       S.items = (S.items || []).filter(i => i.id !== id);
       note('ok', 'Removed from Recently deleted.'); log('info', 'Removed from Recently deleted');
       chipState(id, 'gone', 'Removed from Recently deleted: it can no longer be undone.');
     } catch (e) {
       S.errs[id] = detailOf(e) || NOT_REMOVED;
+      if (e && e.code === 'proof_required') S.reauth = id;
       if (e && e.status === 404) S.loadedAt = 0;
     } finally {
       S.busy.delete(id);

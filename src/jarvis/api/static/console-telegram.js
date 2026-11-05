@@ -6,10 +6,13 @@
 // console's api() (cookie + X-Requested-With, or the bearer token; 401 -> gate). Loads when the
 // Integrations panel opens, never on page load.
 // API: GET /v1/telegram -> {configured:false} | {configured, bot_username, paired, paired_at,
-// account_hint, webhook:{registered, pending, last_error}, allow_private_reads, alerts:{approval_waiting,
-// offline, brief_ready}}; POST /v1/telegram/pair -> {code, link, expires_in_s}; DELETE /v1/telegram/pair;
-// PUT /v1/telegram/settings {allow_private_reads?, alerts?}; POST /v1/telegram/test-alert -> {sent, reason?}.
+// account_hint, webhook:{registered, pending, last_error}, allow_private_reads, allow_personal_reads,
+// alerts:{approval_waiting, offline, brief_ready, vault_expiry}}; POST /v1/telegram/pair -> {code, link,
+// expires_in_s}; DELETE /v1/telegram/pair; PUT /v1/telegram/settings {allow_private_reads?,
+// allow_personal_reads?, alerts?}; POST /v1/telegram/test-alert -> {sent, reason?}.
 // Off (no bot token): the section stays visible and says how to switch it on.
+// R2 D12: a second switch for the vault list, notes and things, with its own confirm that names
+// exactly what it opens (vault metadata, never files; notes, memos and links; where things are kept).
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -29,6 +32,7 @@
     ['approval_waiting', 'Something is waiting for my approval'],
     ['offline', 'Offline mode switches on or off'],
     ['brief_ready', 'My morning brief is ready'],
+    ['vault_expiry', 'A document in my vault is due to expire'],
   ];
   const S = { data: undefined, error: '', loadedAt: 0, loading: null, busy: false, pair: null, timer: 0 };
   let card = null, stateEl = null, bodyEl = null, noteEl = null, dlg = null, settle = null;
@@ -60,7 +64,8 @@
       pending: d.pairing_pending !== false, // a server that does not say is not blamed
       hint: typeof d.account_hint === 'string' && HINT.test(d.account_hint) ? d.account_hint : '',
       reads: d.allow_private_reads === true,
-      alerts: { approval_waiting: al.approval_waiting !== false, offline: al.offline !== false, brief_ready: al.brief_ready === true },
+      personal: d.allow_personal_reads === true,
+      alerts: { approval_waiting: al.approval_waiting !== false, offline: al.offline !== false, brief_ready: al.brief_ready === true, vault_expiry: al.vault_expiry === true },
       webhook: {
         registered: wh.registered === true ? true : wh.registered === false ? false : null,
         pending: Number.isInteger(wh.pending) && wh.pending >= 0 ? wh.pending : 0,
@@ -139,8 +144,9 @@
   function renderPaired(d) {
     card.dataset.state = 'linked'; stateEl.textContent = 'Paired';
     bodyEl.appendChild(mk('p', '', `Paired with your Telegram account ${d.hint || ''}`.trim() + '. Only that account can talk to JARVIS.'));
-    bodyEl.appendChild(mk('p', 'fine', 'Telegram keeps bot chats on its servers (not end-to-end encrypted). By default JARVIS will not read email, Drive, documents or contacts there.'));
+    bodyEl.appendChild(mk('p', 'fine', 'Telegram keeps bot chats on its servers (not end-to-end encrypted). By default JARVIS will not read email, Drive, documents or contacts there, nor your vault list, notes and things.'));
     bodyEl.appendChild(toggleRow('telegramReads', 'Let Telegram read my email, Drive, documents, contacts and family calendars', d.reads, askReads, 'Let Telegram read my private data'));
+    bodyEl.appendChild(toggleRow('telegramPersonal', 'Let Telegram answer from my vault list, notes and things (never files)', d.personal, askPersonal, 'Let Telegram answer from my vault list, notes and things'));
     const al = mk('div', 'talerts'); al.id = 'telegramAlerts'; al.setAttribute('role', 'group'); al.setAttribute('aria-label', 'Alerts');
     ALERTS.forEach(([key, label]) => al.appendChild(toggleRow('telegramAlert_' + key, label, d.alerts[key], (on) => saveAlert(key, on), 'Alert: ' + label)));
     bodyEl.appendChild(al);
@@ -251,6 +257,19 @@
     const r = await call('/v1/telegram/settings', { method: 'PUT', body: { allow_private_reads: on } },
       on ? 'Telegram may now read your email, Drive, documents, contacts and family calendars.' : 'Telegram no longer reads your private data.');
     if (r) { S.data = normal(r); render(); log('info', on ? 'Telegram private reads on' : 'Telegram private reads off'); }
+  }
+  /** R2 D12: the second switch. Its dialog names exactly what it opens, and nothing of the first. */
+  async function askPersonal(on) {
+    if (on) {
+      const sure = await ask('Let Telegram answer from your vault list, notes and things?', [
+        mk('p', 'strong', 'Telegram keeps bot chats on its servers and they are not end-to-end encrypted.'),
+        mk('p', '', 'If you switch this on, JARVIS can tell you in that chat: your vault list (document types, whose they are, the last 4 characters and the dates, never the files); your notes, voice memos and saved links; and where you keep things. It can also save, change or delete notes and things and change vault dates from there, the same way as in the console. Anyone with your Telegram account could then see them.'),
+        mk('p', '', 'You can switch it off here at any time.')], 'Switch on', $('telegramPersonal'));
+      if (!sure) return;
+    }
+    const r = await call('/v1/telegram/settings', { method: 'PUT', body: { allow_personal_reads: on } },
+      on ? 'Telegram may now answer from your vault list, notes and things.' : 'Telegram no longer answers from your vault list, notes and things.');
+    if (r) { S.data = normal(r); render(); log('info', on ? 'Telegram vault, notes and things on' : 'Telegram vault, notes and things off'); }
   }
   async function askUnpair(trigger) {
     const sure = await ask('Unpair Telegram?', [

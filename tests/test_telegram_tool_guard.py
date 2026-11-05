@@ -15,6 +15,8 @@ from pydantic import SecretStr
 from telegram_fakes import UID, Clock
 from web_fakes import FakeTavily
 
+from jarvis.belongings.service import BelongingsService
+from jarvis.belongings.store import BelongingsStore
 from jarvis.config import get_settings
 from jarvis.core.channel import telegram_turn
 from jarvis.core.guardrails import ActionRisk
@@ -24,18 +26,25 @@ from jarvis.drive.client import DriveClient
 from jarvis.drive.roots import RootsStore
 from jarvis.drive.service import DriveService
 from jarvis.integrations.google_key import GoogleKeyClient
+from jarvis.kb.service import NotesService
+from jarvis.kb.store import NotesStore
+from jarvis.keyring import Keyring
+from jarvis.llm.base import ToolCall
 from jarvis.media.service import MediaServices, YouTubeService
 from jarvis.places.service import MapsService
 from jarvis.places.store import MapsPlaces
 from jarvis.quota.ledger import QuotaLedger
 from jarvis.storage.docs import MemoryDocs
-from jarvis.telegram.rules import PRIVATE_PATTERNS, ChannelRules
+from jarvis.telegram.rules import PRIVATE_PATTERNS, ChannelRules, wrap_rules
 from jarvis.telegram.store import TelegramStore
-from jarvis.tools.gateway import Gateway
+from jarvis.tools.gateway import Gateway, GatewayOutcome
 from jarvis.tools.policy import Effect
 from jarvis.tools.setup import build_gateway
 from jarvis.undo.service import UndoBin
 from jarvis.undo.store import DeletedStore
+from jarvis.vault.crypto import VaultCrypto
+from jarvis.vault.service import VaultService
+from jarvis.vault.store import VaultStore
 from jarvis.web.allowance import WebAllowance
 from jarvis.web.service import WebService
 from jarvis.web.tavily import TavilyProvider
@@ -93,16 +102,23 @@ async def linked_gateway() -> Gateway:
         TavilyProvider(SecretStr("tvly-k"), http=FakeTavily().client()),
         WebAllowance(MemoryDocs(), now=lambda: datetime(2026, 11, 15, tzinfo=UTC)),
     )
+    ring = Keyring(bytes(range(1, 33)))
+    undo = UndoBin(DeletedStore(MemoryDocs()))
+    crypto = VaultCrypto(ring)
     return build_gateway(
         get_settings(),
         google=google,
         memory=memory_rig().svc,
         web=web,
         documents=files,
-        undo=UndoBin(DeletedStore(MemoryDocs())),
+        undo=undo,
         drive=drive,
         media=media,
         docs=docs,
+        # R2 I1: the vault list, notes and things (the second private group, D12)
+        vault=VaultService(VaultStore(docs, crypto), crypto, undo=undo),
+        notes=NotesService(NotesStore(docs, ring), web=web, undo=undo),
+        belongings=BelongingsService(BelongingsStore(docs, ring), undo),
     )
 
 
@@ -150,3 +166,37 @@ async def test_private_titles_are_denied_on_telegram_by_default(tool: str) -> No
 
 def test_the_patterns_are_not_a_catch_all() -> None:
     assert "*" not in PRIVATE_PATTERNS
+
+
+R2_READS = (
+    "vault_list",
+    "vault_expiring",
+    "kb_search",
+    "kb_read",
+    "belongings_where",
+    "belongings_list",
+    "belongings_history",
+)
+
+
+async def test_every_r2_read_is_registered_and_private_on_telegram() -> None:
+    reads = read_tools(await linked_gateway())
+    assert set(R2_READS) <= set(reads)
+    assert await denied_on_telegram(list(R2_READS)) == set(R2_READS)
+
+
+@pytest.mark.parametrize("tool", R2_READS)
+async def test_gate_with_defaults_an_r2_read_is_refused_on_a_telegram_turn(tool: str) -> None:
+    """R2 D12 gate: through the real gateway with the wired Telegram rules, nothing paired or
+    switched on: the call is refused and audited as denied; nothing is read."""
+    gw = await linked_gateway()
+    gw.rules = wrap_rules(gw.rules, TelegramStore(MemoryDocs(), prefix="t_", clock=Clock()))
+    args = {"item": "passport"} if tool in ("belongings_where", "belongings_history") else {}
+    if tool == "kb_search":
+        args = {"query": "plumber"}
+    elif tool == "kb_read":
+        args = {"id": "n_000000000000"}
+    with telegram_turn():
+        out = await gw.execute(ToolCall(id="t1", name=tool, arguments=args), scope=f"{UID}:tg")
+    assert out.outcome is GatewayOutcome.DENIED, (tool, out.error)
+    assert "Telegram" in (out.error or "")

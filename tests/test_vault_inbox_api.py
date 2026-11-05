@@ -12,7 +12,6 @@ from inbox_fakes import OWNER, PDF_BYTES, Rig, rig
 from pydantic import SecretStr
 
 from jarvis.api import create_app
-from jarvis.api.vault_inbox import install_vault_inbox
 from jarvis.config import AuthMode, Settings
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
@@ -46,9 +45,8 @@ async def _login(c: AsyncClient) -> None:
 
 async def _client(s: Settings, r: Rig | None) -> AsyncIterator[AsyncClient]:
     app = create_app(s, provider=MockProvider(), store=InMemorySessionStore())
-    install_vault_inbox(app)
-    app.state.vault_inbox = r.inbox if r else None
     async with app.router.lifespan_context(app):
+        app.state.vault_inbox = r.inbox if r else None  # I1: create_app mounts the routes
         c = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         c.app = app  # type: ignore[attr-defined]
         yield c

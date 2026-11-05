@@ -3,7 +3,11 @@
 encrypted, so email, Drive, documents and contacts readouts are refused during a Telegram turn
 unless the owner switched them on (Integrations -> Telegram). `ChannelRules` wraps the gateway's
 `OwnerRules` and appends DENY rules (source "telegram") only while `core.channel.on_telegram()`.
-Unpaired or unreadable state fails closed. No gateway change."""
+Unpaired or unreadable state fails closed. No gateway change.
+
+R2 D12: the vault list, notes and things (`vault_*`, `kb_*`, `belongings_*`, reads and writes) are
+a SECOND group with its own switch (`allow_personal_reads`, default off). Neither switch opens the
+other's group, so widening one consent never widens the other silently."""
 
 from __future__ import annotations
 
@@ -36,6 +40,12 @@ PRIVATE_PATTERNS: tuple[str, ...] = (
     "deleted_list",
 )
 REFUSAL = "Not available from Telegram — your choice in Integrations → Telegram; open the console."
+# R2 D12: the owner's vault list (metadata only, never files), notes, memos, links and things.
+PERSONAL_PATTERNS: tuple[str, ...] = ("vault_*", "kb_*", "belongings_*")
+PERSONAL_REFUSAL = (
+    "Your vault list, notes and things are not available from Telegram - your choice in "
+    "Integrations -> Telegram; open the console."
+)
 
 
 # Review: a forwarded or via-bot message is someone else's text. While `outside_message()` is
@@ -80,10 +90,10 @@ def private_reads(allowed: bool) -> Iterator[None]:
         _reads_allowed.reset(token)
 
 
-def _deny_rules() -> list[PolicyRule]:
+def _deny_rules(patterns: tuple[str, ...], reason: str) -> list[PolicyRule]:
     return [
-        PolicyRule(tool_pattern=p, effect=Effect.DENY, source="telegram", reason=REFUSAL)
-        for p in PRIVATE_PATTERNS
+        PolicyRule(tool_pattern=p, effect=Effect.DENY, source="telegram", reason=reason)
+        for p in patterns
     ]
 
 
@@ -101,11 +111,14 @@ class ChannelRules:
         try:
             link = await self._store.get(user_id)
             allowed = link is not None and link.allow_private_reads
+            personal = link is not None and link.allow_personal_reads
         except Exception as exc:  # noqa: BLE001 - fail closed
             log.warning("telegram settings unreadable", extra={"error": type(exc).__name__})
-            allowed = False
+            allowed = personal = False
         _reads_allowed.set(allowed)
-        out = list(rules) if allowed else [*rules, *_deny_rules()]
+        out = list(rules) if allowed else [*rules, *_deny_rules(PRIVATE_PATTERNS, REFUSAL)]
+        if not personal:  # R2 D12: its own switch, never opened by the one above
+            out += _deny_rules(PERSONAL_PATTERNS, PERSONAL_REFUSAL)
         if _outside.get():
             out.append(
                 PolicyRule(
@@ -136,6 +149,8 @@ def wrap_rules(inner: OwnerRules | None, store: TelegramStore) -> ChannelRules:
 
 __all__ = [
     "MARKER",
+    "PERSONAL_PATTERNS",
+    "PERSONAL_REFUSAL",
     "PRIVATE_PATTERNS",
     "REFUSAL",
     "ChannelRules",

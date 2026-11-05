@@ -935,6 +935,26 @@ sandbox): masks all but the last 4 digits. Not verified at source.
 - whether Drive keeps a PDF's signature intact on upload (JARVIS keeps bytes as received)
 - Cloud KMS Autokey's eligibility for a project without an organisation
 
+## Done at R2 I1 (5 Nov) - what differs from the text above
+- Wiring lives in `api/personal.py` (`wire_personal` after Drive, `wire_privacy` + `personal_tick_jobs` after the
+  brain), so `app.py` stays a list of steps. Tick jobs: `vault_reminders`, `vault_chunks`, `vault_unlocks`,
+  `digilocker_inbox` (only with Drive and the vault).
+- The DigiLocker inbox id is denied to the Drive tools whenever Drive is configured, vault on or off; the import
+  itself (and its privacy row) needs the vault.
+- Gateway: `PendingAction.spoken` -> `ToolContext.spoken` (kept like `outside`, also on a duplicate and a re-proposed
+  card); kb and belongings both read it.
+- Telegram: `PERSONAL_PATTERNS = vault_*, kb_*, belongings_*` (reads and writes), its own refusal words; the
+  `vault_expiry` alert switch defaults off.
+- Remove now (`DELETE /v1/deleted/{id}` + optional `{proof}`) answers 403 `proof_required` {reason: reauth} for a
+  stale sign-in, like the privacy routes. A restored entry is 404 before any proof is asked.
+- Privacy sections: the vault and the DigiLocker folder are "Documents"; notes and things "Notes and things".
+  `vault_inbox` is a new source (`vault_inbox/privacy.py`, delete = switch the import off).
+- Console: the four panels sit behind More on phones (15 tabs); Memory's footer and Approvals -> Permissions open the
+  Privacy panel (`data-goto`); the deck no longer closes a panel on Esc pressed inside an open dialog in it. No
+  `console.js` reply hook was needed: the R2 panels already listen for `jarvis:reply`.
+- `evals/r2_needles`: 20 conversations + 5 scans; the offline case checks `OFFLINE_TOOLS` only, and the brief's AI input
+  is covered by `evals/vault` (not repeated).
+
 ## Risks and open questions
 - **One root key.** `jarvis-token-key` now guards tokens and the vault. If it is lost or regenerated, the vault can't
 be opened and there is no recovery. Mitigations: the deploy never overwrites it (pinned by a test), the owner keeps a

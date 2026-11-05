@@ -34,6 +34,9 @@ class ToolContext:
     # Slice 11 D8: this call's content may carry other people's words (its round, or the round
     # that proposed its card, had read outside content): what it writes is marked as outside.
     outside: bool = False
+    # R2 I1: this call was made on a spoken turn, or is a card proposed on one and approved later
+    # on screen (`PendingAction.spoken`): what it writes is the owner's VOICE, never typed.
+    spoken: bool = False
 
     @classmethod
     def from_scope(
@@ -43,6 +46,7 @@ class ToolContext:
         confirmed: bool = False,
         approved_risk: ActionRisk | None = None,
         outside: bool = False,
+        spoken: bool = False,
     ) -> ToolContext:
         user_id, _, session_id = scope.partition(":")
         return cls(
@@ -52,6 +56,7 @@ class ToolContext:
             confirmed=confirmed,
             approved_risk=approved_risk,
             outside=outside,
+            spoken=spoken,
         )
 
     def allows(self, live: ActionRisk) -> bool:
@@ -86,11 +91,12 @@ def tool_context(
     confirmed: bool = False,
     approved_risk: ActionRisk | None = None,
     outside: bool = False,
+    spoken: bool = False,
 ) -> Iterator[ToolContext | None]:
     """Set the context for the duration of a tool run; always reset, even on error."""
     ctx = (
         ToolContext.from_scope(
-            scope, confirmed=confirmed, approved_risk=approved_risk, outside=outside
+            scope, confirmed=confirmed, approved_risk=approved_risk, outside=outside, spoken=spoken
         )
         if scope
         else None

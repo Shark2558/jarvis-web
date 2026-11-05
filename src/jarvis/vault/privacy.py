@@ -18,7 +18,7 @@ from jarvis.vault.service import MB, VaultService
 
 class VaultPrivacy:
     id = "vault"
-    section = "Documents and notes"
+    section = "Documents"  # I1: with the DigiLocker folder; notes and things have their own
     label = "Vault documents"
 
     def __init__(self, svc: VaultService) -> None:

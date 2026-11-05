@@ -12,7 +12,7 @@ from jarvis.core.channel import telegram_turn
 from jarvis.core.guardrails import ActionRisk
 from jarvis.llm.base import ToolCall
 from jarvis.storage.docs import MemoryDocs
-from jarvis.telegram.rules import PRIVATE_PATTERNS, REFUSAL, ChannelRules
+from jarvis.telegram.rules import PERSONAL_PATTERNS, PRIVATE_PATTERNS, REFUSAL, ChannelRules
 from jarvis.telegram.store import TelegramStore
 from jarvis.tools import Effect, PolicyRule
 from jarvis.tools.base import Tool
@@ -79,7 +79,9 @@ async def test_the_owner_can_switch_private_reads_on() -> None:
     rules = ChannelRules(Inner(), await _store(reads=True))
     with telegram_turn():
         got = await rules.rules_for(UID)
-    assert not any(r.effect is Effect.DENY for r in got)  # only the install marker is added
+    # R2 D12: only the second group (vault, notes, things; its own switch) is still refused
+    denied = {r.tool_pattern for r in got if r.effect is Effect.DENY}
+    assert denied == set(PERSONAL_PATTERNS)
 
 
 async def test_unpaired_or_unreadable_state_fails_closed() -> None:

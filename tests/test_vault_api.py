@@ -15,7 +15,7 @@ from vault_fakes import JPEG, KEY, PDF, PNG, ring, scan
 
 from jarvis.api import create_app
 from jarvis.api.identity import user_id_for_email
-from jarvis.api.vault import VAULT_BODY_BYTES, VAULT_UPLOAD_PATH, install_vault
+from jarvis.api.vault import VAULT_BODY_BYTES, VAULT_UPLOAD_PATH
 from jarvis.config import AuthMode, Settings
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
@@ -107,8 +107,7 @@ async def rig(gsettings: Settings, monkeypatch: pytest.MonkeyPatch) -> AsyncIter
         app.state.vault = VaultService(VaultStore(docs, crypto), crypto, undo=bin_)
         app.state.vault_unlock = UnlockStore(docs, ring(), minutes=10)
         app.state.permissions = perms
-        app.state.gateway = SimpleNamespace(audit=audit)
-        install_vault(app)
+        app.state.gateway = SimpleNamespace(audit=audit)  # I1: create_app mounts /v1/vault
         monkeypatch.setattr("jarvis.api.vault.fresh_sign_in_left", lambda r, s: 240)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             c.app = app  # type: ignore[attr-defined]

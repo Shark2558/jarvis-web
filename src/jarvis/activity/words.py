@@ -4,6 +4,10 @@
 A write reads as the tool's own card text (`Tool.summary`, one clean line). A read reads as a
 fixed verb with NO query text ("Searched your email"). Anything that did not run gets a short
 prefix. `undo_note` is the reason a row has no Undo button (plan D8 table).
+
+R2 D13: a tool's own fixed `Tool.activity_words` win over both, for reads and writes alike (a
+note's text, a place or a vault date never lands in Activity, which is kept in clear); a row that
+did not run says them as an imperative ("Waiting for your OK: Save a note").
 """
 
 from __future__ import annotations
@@ -78,6 +82,28 @@ def _read_words(tool: str) -> tuple[str, str]:
 
 
 _DELETE = re.compile(r"(^|_)delete($|_)")
+# R2: undo-able deletes whose names don't say "delete" (their Undo shows in Activity)
+_REMOVES = frozenset({"kb_remove", "belongings_remove"})
+# R2 D13: the first word of fixed Activity words, past -> imperative (for rows that did not run)
+_IMPERATIVE = {
+    "Looked": "Look",
+    "Changed": "Change",
+    "Searched": "Search",
+    "Opened": "Open",
+    "Saved": "Save",
+    "Deleted": "Delete",
+    "Noted": "Note",
+    "Forgot": "Forget",
+}
+
+
+def _fixed_words(words: str, outcome: str) -> str:
+    if outcome == "done":
+        return words
+    first, sep, rest = words.partition(" ")
+    return _IMPERATIVE.get(first, first) + sep + rest
+
+
 # Message content (subject, body, WhatsApp text, a memory note) is never copied into Activity:
 # these tools get fixed words; only the recipient (one short clean line) may be named.
 # tool -> (past tense, imperative, name the recipient from args["to"])
@@ -95,7 +121,12 @@ def kind_of(tool: str, risk: ActionRisk) -> str:
     """read | write | delete | send | draft | restore, from what the tool is and can do."""
     if tool == "deleted_restore":
         return "restore"
-    if _DELETE.search(tool) or tool == "memory_forget" or tool.startswith("grocery_remove"):
+    if (
+        _DELETE.search(tool)
+        or tool in _REMOVES
+        or tool == "memory_forget"
+        or tool.startswith("grocery_remove")
+    ):
         return "delete"
     if tool in {"gmail_send", "send_message"}:
         return "send"
@@ -116,6 +147,9 @@ def _card_text(tool: Tool, args: dict[str, Any]) -> str | None:
 
 
 def _base(tool: str, args: dict[str, Any], kind: str, outcome: str, registry: ToolRegistry) -> str:
+    known = registry.get(tool)
+    if known is not None and known.activity_words:  # R2 D13: fixed words first
+        return _fixed_words(one_line(known.activity_words, WORDS_LIMIT), outcome)
     if kind == "read":
         past, imperative = _read_words(tool)
         return past if outcome == "done" else imperative
@@ -126,7 +160,6 @@ def _base(tool: str, args: dict[str, Any], kind: str, outcome: str, registry: To
             return text
         to = one_line(args.get("to"), RECIPIENT_LIMIT) or "someone"
         return text.format(to=to)
-    known = registry.get(tool)
     card = _card_text(known, args) if known is not None else None
     if card:
         return one_line(card, WORDS_LIMIT)

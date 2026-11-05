@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vitals', 'voice', 'media', 'construct'];
+  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'vitals', 'voice', 'media', 'construct'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;
@@ -76,6 +76,11 @@
       voice: { x: Math.max(sL, sR - chatW - 14 - 380), y: b.top + 24, w: 380, h: Math.min(availH, 720), open: false },
       media: { x: Math.max(sL, sR - chatW - 14 - 420), y: b.top + 12, w: 420, h: Math.min(availH, 620), open: false },
       construct: { x: Math.max(sL, sR - chatW - 14 - 330), y: b.top, w: 330, h: Math.min(380, availH), open: false },
+      // R2: the vault, things, notes and privacy panels
+      vault: { x: col2, y: b.top + 24, w: 420, h: Math.min(availH, 720), open: false },
+      things: { x: col2, y: b.top + 48, w: 380, h: Math.min(availH, 620), open: false },
+      notes: { x: Math.max(sL, sR - chatW - 14 - 420), y: b.top + 18, w: 420, h: Math.min(availH, 720), open: false },
+      privacy: { x: Math.max(sL, sR - chatW - 14 - 440), y: b.top, w: 440, h: Math.min(availH, 760), open: false },
     };
   }
   /** Stored layout, validated field by field. Anything malformed falls back to the defaults, and a
@@ -306,6 +311,7 @@
     if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
     const t = e.target;
     if (t && t.closest && (t.closest('input,textarea,select') || t.isContentEditable)) return; // Esc while typing is not "close"
+    if (t && t.closest && t.closest('dialog[open]')) return; // R2 I1: an open dialog in a panel owns its Esc (closes itself)
     const el = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.panel[data-panel]') : null;
     if (!el) return;
     e.preventDefault();

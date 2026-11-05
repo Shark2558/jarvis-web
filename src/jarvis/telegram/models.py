@@ -84,6 +84,7 @@ class AlertToggles(BaseModel):
     approval_waiting: bool = True
     offline: bool = True
     brief_ready: bool = False
+    vault_expiry: bool = False  # R2 D5: a vault document is due; off until he switches it on
 
 
 class TelegramLink(BaseModel):
@@ -94,6 +95,8 @@ class TelegramLink(BaseModel):
     paired_at: str
     session_id: str | None = None
     allow_private_reads: bool = False
+    # R2 D12: the vault list, notes and things (its own switch; telegram.rules)
+    allow_personal_reads: bool = False
     alerts: AlertToggles = Field(default_factory=AlertToggles)
     rev: int = 0
 

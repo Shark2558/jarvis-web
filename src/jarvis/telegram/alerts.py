@@ -31,6 +31,7 @@ _TOGGLE = {
     "offline_on": "offline",
     "offline_off": "offline",
     "brief_ready": "brief_ready",
+    "vault_expiry": "vault_expiry",  # R2 D5: the text is the vault reminders' fixed template
 }
 
 

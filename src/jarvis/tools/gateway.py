@@ -58,9 +58,9 @@ run by Approve all are audited "confirmed; approve-all" (`approved_via`). A tool
 reported to the owner and the model as a fixed sentence plus the redacted `_safe_detail`, never its
 raw text, and marked `raised` (it was called, so it may have done part of it).
 
-Slice 11 D8 (security review of A+B): a card records whether its proposing round had read other
-people's content (`PendingAction.outside`); approved, it runs with `ToolContext.outside` so what it
-writes is marked as theirs. A re-proposed card keeps the stricter reason and outside (`_carried`).
+Slice 11 D8 / R2 I1: a card records whether its proposing round had read other people's content
+(`PendingAction.outside`) or was spoken (`.spoken`); approved, both go to its `ToolContext`, so what
+it writes is marked as theirs / as voice. A re-proposed card keeps the stricter (`_carried`).
 
 Slice 12 review: a look-up that names another permission row (`Preview.also`: a WhatsApp draft by
 name reads Contacts) gets that row's whole decision — "Never" refuses, "Ask first" makes the call
@@ -277,8 +277,8 @@ def _carried(stored: PendingAction, fresh: PendingAction) -> PendingAction:
     one-by-one by itself (a one-by-one card never turns bulk). Outside (D8): once outside, always
     — and a card from before the field (None) counts as outside."""
     outside = stored.outside is not False or bool(fresh.outside)
-    reason = carried_reason(stored.reason, fresh.reason)
-    return fresh.model_copy(update={"reason": reason, "outside": outside})
+    reason, spoken = carried_reason(stored.reason, fresh.reason), stored.spoken or fresh.spoken
+    return fresh.model_copy(update={"reason": reason, "outside": outside, "spoken": spoken})
 
 
 def _changed(stored: PendingAction, fresh: PendingAction) -> str:
@@ -327,6 +327,7 @@ def _card(
             ruling.ruled, ruling.risk, ruling.asks, bool(ruling.why), tool.spoken_ok
         ),
         outside=outside,
+        spoken=spoken_in_context(),
     )
 
 
@@ -390,13 +391,13 @@ class Gateway:
         ruling = await self._rule(tool, call, scope, confirmation_id)
         if isinstance(ruling, GatewayResult):
             return ruling
-        outside = content_tainted()  # D8: what this call writes may carry other people's words
+        outside, spoken = content_tainted(), spoken_in_context()  # D8 their words / R2 voice
         if ruling.effect is Effect.ASK:
             held = await self._hold(tool, call, ruling, scope, confirmation_id, proof, outside)
             if isinstance(held, GatewayResult):
                 return held
-            outside = held  # an approved card writes as its proposing round would
-        return await self._run(tool, call, ruling.risk, scope, confirmation_id, outside)
+            outside, spoken = held  # an approved card writes as its proposing round would
+        return await self._run(tool, call, ruling.risk, scope, confirmation_id, (outside, spoken))
 
     async def _known(self, call: ToolCall, scope: str | None) -> Tool | GatewayResult:
         """The registered tool, its arguments checked. An unknown tool or bad arguments are
@@ -460,24 +461,24 @@ class Gateway:
         confirmation_id: str | None,
         proof: Any,
         outside: bool,
-    ) -> GatewayResult | bool:
+    ) -> GatewayResult | tuple[bool, bool]:
         """An ASK. Without a token: the card is proposed (or refused past the card budget).
         With one: the card must still read as the owner saw it (`_before_consuming`), the token
         is spent, and the intent is audited BEFORE anything runs. Returns whether the run is
-        outside (D8: this round's, or the card's proposing round's)."""
+        outside (D8) and spoken (R2): this round's, or the card's proposing round's."""
         action = _card(tool, call, ruling, scope, outside)
-        note = ""
+        note, spoken = "", action.spoken
         if confirmation_id is not None:
             pre = await self._before_consuming(tool, call, action, confirmation_id, proof)
             if isinstance(pre, GatewayResult):
                 return pre
-            note, proposed_outside = pre
-            outside = outside or proposed_outside
+            note, proposed_outside, proposed_spoken = pre
+            outside, spoken = outside or proposed_outside, spoken or proposed_spoken
         asked = await self._gate(tool, call, ruling.risk, action, confirmation_id)
         if asked is not None:
             return replace(asked, note=ruling.why) if asked.pending is not None else asked
         refused = await self._audit_intent(tool, call, ruling.risk, note)
-        return refused if refused is not None else outside
+        return refused if refused is not None else (outside, spoken)
 
     async def _audit_intent(
         self, tool: Tool, call: ToolCall, risk: ActionRisk, note: str
@@ -511,13 +512,14 @@ class Gateway:
         risk: ActionRisk,
         scope: str | None,
         confirmation_id: str | None,
-        outside: bool,
+        carried: tuple[bool, bool],
     ) -> GatewayResult:
         """The result step: run the tool — it learns who it runs for, whether approved, at what
-        risk and whether outside (always reset) — then audit what happened."""
+        risk and whether outside / spoken (always reset) — then audit what happened."""
+        (outside, spoken), approved = carried, confirmation_id is not None
         try:
             with tool_context(
-                scope, confirmed=confirmation_id is not None, approved_risk=risk, outside=outside
+                scope, confirmed=approved, approved_risk=risk, outside=outside, spoken=spoken
             ):
                 out = tool.run(call.arguments)
                 if hasattr(out, "__await__"):
@@ -591,22 +593,22 @@ class Gateway:
         fresh: PendingAction,
         confirmation_id: str,
         proof: Any,
-    ) -> GatewayResult | tuple[str, bool]:
+    ) -> GatewayResult | tuple[str, bool, bool]:
         """The card runs only as the owner saw it: changed since → withdrawn and re-proposed
         (nothing runs). Then the approval guard sees the card about to run (it raises to
         refuse; the token is not spent). Returns the guard's note for the audit, and whether the
-        card's proposing round had read outside content (D8: `PendingAction.outside`)."""
+        card's proposing round had read outside content (D8) or was spoken (R2), as stored."""
         stored = await self.gate.get(confirmation_id)
         if stored is None or (stored.tool, stored.arguments, stored.scope) != (
             fresh.tool,
             fresh.arguments,
             fresh.scope,
         ):
-            return "", True  # the gate reports it no longer valid; nothing runs
+            return "", True, True  # the gate reports it no longer valid; nothing runs
         why = _changed(stored, fresh)
         if why:
             if not await self.gate.cancel(stored.id):
-                return "", True  # decided meanwhile: the gate reports it
+                return "", True, True  # decided meanwhile: the gate reports it
             log.warning("approved card changed since proposed; re-proposed", extra={"why": why})
             risk = fresh.tool_risk or ActionRisk.IRREVERSIBLE
             again = await self._gate(
@@ -621,11 +623,11 @@ class Gateway:
             return again
         outside = stored.outside is not False  # a card from before D8: unknown, so outside
         if self.approval_guard is None:
-            return "", outside
+            return "", outside, stored.spoken
         uid = ToolContext.from_scope(fresh.scope or "").user_id
         presented = proof if proof is not None else approval_proof()
         note = await self.approval_guard.check_approval(uid, stored, presented) or ""
-        return note, outside
+        return note, outside, stored.spoken
 
     async def _policy_for(
         self, tool: Tool, call: ToolCall, risk: ActionRisk, scope: str | None

@@ -75,7 +75,13 @@ async def test_view_before_pairing(api: tuple[AsyncClient, World]) -> None:
     assert v["pairing_pending"] is False
     assert v["webhook"] == {"registered": True, "pending": 0, "last_error": None}
     assert v["allow_private_reads"] is False
-    assert v["alerts"] == {"approval_waiting": True, "offline": True, "brief_ready": False}
+    assert v["allow_personal_reads"] is False  # R2 D12
+    assert v["alerts"] == {
+        "approval_waiting": True,
+        "offline": True,
+        "brief_ready": False,
+        "vault_expiry": False,  # R2 D5: off until he switches it on
+    }
     assert TOKEN not in str(v) and SECRET not in str(v)
 
 
@@ -148,7 +154,12 @@ async def test_settings_change_and_audit(api: tuple[AsyncClient, World]) -> None
     assert r.status_code == 200
     v = r.json()
     assert v["allow_private_reads"] is True
-    assert v["alerts"] == {"approval_waiting": True, "offline": False, "brief_ready": True}
+    assert v["alerts"] == {
+        "approval_waiting": True,
+        "offline": False,
+        "brief_ready": True,
+        "vault_expiry": False,
+    }
     assert len(w.audited("telegram_settings")) == 1
     link = await w.store.get("owner")
     assert link is not None and link.allow_private_reads is True

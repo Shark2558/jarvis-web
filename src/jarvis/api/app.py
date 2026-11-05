@@ -3,8 +3,10 @@
 
 Build with `create_app()` so tests can inject a mock provider and an in-memory store. It is a
 short list of named steps (slice 12 final review): the lifespan wires the core (`_wire_core`),
-the slice 10–11 features, the slice 12 ones (`_wire_slice12`: Maps + YouTube, Drive), the gateway
-with the owner's rules and the Brain; then the middleware, the error mapping and the routers.
+the slice 10–11 features, the slice 12 ones (`_wire_slice12`: Maps + YouTube, Drive), R2's
+personal data (`api/personal.py`: vault, notes, things, DigiLocker inbox), the gateway with the
+owner's rules and the Brain, then R2's privacy dashboard and tick jobs; then the middleware, the
+error mapping and the routers.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from jarvis.activity.store import ActivityStore
 from jarvis.alerts import AlertSink, NoAlerts
 from jarvis.api.activity import install_activity
 from jarvis.api.auth import CSRFRejected, auth_router, build_oauth
+from jarvis.api.belongings import install_belongings
 from jarvis.api.body import MAX_BODY_BYTES, BodySizeLimit, BodyTooLarge, too_large_body
 from jarvis.api.brief import internal_router as brief_internal_router
 from jarvis.api.brief import router as brief_router
@@ -38,14 +41,19 @@ from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_f
 from jarvis.api.integrations import router as integrations_router
 from jarvis.api.media import router as media_router
 from jarvis.api.memory import router as memory_router
+from jarvis.api.notes import install_notes
 from jarvis.api.offline import install_offline
 from jarvis.api.permissions import build_permissions, install_permissions
+from jarvis.api.personal import personal_tick_jobs, wire_personal, wire_privacy
+from jarvis.api.privacy import install_privacy
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
 from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier, SchedulerUnauthorized
 from jarvis.api.telegram import build_telegram, install_telegram
 from jarvis.api.usage import router as usage_router
+from jarvis.api.vault import VAULT_BODY_BYTES, VAULT_UPLOAD_PATH, install_vault
+from jarvis.api.vault_inbox import install_vault_inbox
 from jarvis.api.voice import install_voice
 from jarvis.api.web import router as web_router
 from jarvis.billing import (
@@ -60,6 +68,7 @@ from jarvis.brief.deliveries import DeliveriesBrief
 from jarvis.brief.family_day import FamilyBrief
 from jarvis.brief.service import BriefLimitReached, BriefService, SettingsRejected
 from jarvis.brief.store import BriefStore
+from jarvis.brief.vault_due import VaultDueBrief
 from jarvis.config import AuthMode, SessionBackend, Settings, get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ApprovalStore, InputRejected
@@ -157,6 +166,8 @@ def build_brief_service(
         if getattr(app.state, "google", None) is not None
         else None,
         family_day=FamilyBrief(family) if (family := getattr(app.state, "family", None)) else None,
+        # R2 D5: the Documents section (deterministic, never in the AI input)
+        vault_due=VaultDueBrief(vault) if (vault := getattr(app.state, "vault", None)) else None,
     )
 
 
@@ -328,6 +339,10 @@ def _wire_gateway(
             drive=app.state.drive,
             media=app.state.media,
             docs=docs,  # R1 D: groceries, family, packages, digest
+            # R2: each only when on (the server's token key; api/personal.py)
+            vault=app.state.vault,
+            notes=app.state.notes,
+            belongings=app.state.belongings,
         )
     app.state.permissions = build_permissions(
         s, docs, audit=gw.audit if gw is not None else audit, google=app.state.google
@@ -396,6 +411,9 @@ def _log_up(app: FastAPI, s: Settings) -> None:
             "web_search": app.state.web is not None,
             "drive": app.state.drive is not None,
             "maps_youtube": app.state.media is not None,
+            "vault": app.state.vault is not None,
+            "notes": app.state.notes is not None,
+            "things": app.state.belongings is not None,
         },
     )
 
@@ -463,10 +481,13 @@ def _lifespan(
             closers.register_new()
             _wire_slice12(app, s, docs, inj.drive)
             closers.register_new()
+            wire_personal(app, s, docs)  # R2: vault, notes, things, DigiLocker inbox
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()
             _wire_brain(app, s, built, docs)
             closers.register_new()
+            wire_privacy(app, s, docs, audit)  # R2 D14: after the gateway and the brief
+            app.state.tick_jobs = personal_tick_jobs(app)  # R2: run after the tick's sweeps
             stack.push_async_callback(_drain_memory, app)  # runs first on the way out
             await adopt_legacy_sessions(app.state.store, s)
             _log_up(app, s)
@@ -480,9 +501,12 @@ def _install_middleware(app: FastAPI, s: Settings) -> None:
     rate limit, the Google sign-in session (with its routes), then the trace id."""
     # Every body is size-capped before it is parsed or authenticated (innermost of the http
     # middlewares, so the trace id still goes on a 413). Tighter per-route caps apply first.
-    # Only the attachment upload has a larger cap (its own 10 MB, checked again by the route).
+    # Only the attachment and vault uploads have a larger cap (10 MB each, checked again by the
+    # route).
     app.add_middleware(
-        BodySizeLimit, max_bytes=MAX_BODY_BYTES, routes={ATTACH_PATH: ATTACH_BODY_BYTES}
+        BodySizeLimit,
+        max_bytes=MAX_BODY_BYTES,
+        routes={ATTACH_PATH: ATTACH_BODY_BYTES, VAULT_UPLOAD_PATH: VAULT_BODY_BYTES},
     )
     if s.rate_limit_per_minute > 0:
         app.middleware("http")(make_middleware(RateLimiter(s.rate_limit_per_minute)))
@@ -622,6 +646,11 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_activity(app)
     install_offline(app)
     install_family(app)
+    install_vault_inbox(app)  # R2 (before /v1/vault, whose prefix it shares)
+    install_vault(app)
+    install_belongings(app)
+    install_notes(app)
+    install_privacy(app)
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

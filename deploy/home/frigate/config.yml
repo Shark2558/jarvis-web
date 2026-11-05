@@ -1,0 +1,110 @@
+# deploy/home/frigate/config.yml -- Frigate for JARVIS (R3 D7, D13, D16, D20). Plain words below.
+#
+# One old phone is the camera (IP Webcam app). Frigate runs on YOUR laptop; pictures and video never
+# leave it. The values in {BRACES} come from environment variables that the setup script writes into
+# the compose file (Frigate fills in only variables whose names start with FRIGATE_):
+#   {FRIGATE_MQTT_USER} {FRIGATE_MQTT_PASSWORD} {FRIGATE_GATE_RTSP}
+# Nothing secret is written in this file.
+#
+# Frigate must be 0.17.2 or newer. Option names below follow the 0.17 docs; if Frigate refuses a name
+# when it starts, open http://localhost:8971 -> Settings -> Config, or /api/docs, and tell Claude.
+
+mqtt:
+  enabled: true
+  host: mosquitto
+  user: "{FRIGATE_MQTT_USER}"
+  password: "{FRIGATE_MQTT_PASSWORD}"
+
+# The CPU detector with the model that ships inside Frigate (/cpu_model.tflite). Frigate says it is
+# "not recommended for general use", but one camera at 5 frames a second is light. If Frigate -> System
+# shows detection above about half a core, run export-yolov9.ps1 (see its comments) and switch to
+# the OpenVINO detector described there.
+detectors:
+  cpu1:
+    type: cpu
+    num_threads: 2
+
+# The phone's stream goes through go2rtc inside Frigate; the address and password stay in the
+# environment variable above, not here.
+go2rtc:
+  streams:
+    gate:
+      - "{FRIGATE_GATE_RTSP}"
+
+cameras:
+  gate:
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/gate
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+            - record
+    detect:
+      enabled: true
+      width: 1280
+      height: 720
+      fps: 5
+    objects:
+      track:
+        - person
+        - car
+        - motorcycle
+        - bicycle
+        - dog
+        - cat
+    # Zones. These two are TINY PLACEHOLDERS in the top-left corner: they cover nothing until you
+    # redraw them (Frigate -> Settings -> Masks and zones). Draw `gate` only over your own gate and
+    # `doorstep` only over your own doorstep. Do NOT cover the road or a neighbour's door or window:
+    # JARVIS must not watch them. Keep the names `gate` and `doorstep`.
+    zones:
+      gate:
+        coordinates: 0.0,0.0,0.02,0.0,0.02,0.02,0.0,0.02
+        objects:
+          - person
+      doorstep:
+        coordinates: 0.0,0.04,0.02,0.04,0.02,0.06,0.0,0.06
+        objects:
+          - person
+    # Burglar alerts only for people who enter the gate zone.
+    review:
+      alerts:
+        labels:
+          - person
+        required_zones:
+          - gate
+
+# Recordings are kept only around events; there is no continuous recording.
+record:
+  enabled: true
+  continuous:
+    days: 0
+  motion:
+    days: 0
+  alerts:
+    retain:
+      days: 7
+      mode: motion
+  detections:
+    retain:
+      days: 3
+      mode: motion
+
+snapshots:
+  enabled: true
+  bounding_box: false
+  retain:
+    default: 7
+
+birdseye:
+  enabled: false
+
+# Faces (workstream C owns this block). People are added in JARVIS -> Faces with their consent, then
+# their photos on this laptop. Frigate knows them by an id (fp_...), never by a name.
+face_recognition:
+  enabled: true
+  model_size: small
+  save_attempts: 20
+
+# Parcels: in Frigate -> Classification create a STATE model named `doorstep` with the states
+# `package` and `empty` (setup step 12). Frigate writes that part of this file itself.

@@ -1,0 +1,36 @@
+/* src/jarvis/api/static/console-home-panel.css -- the Home panel (R3 B). Reuses the deck tokens, the
+   .btn / .bact buttons, .bnote and .bdialog. State is told by words AND colour; text on the ink
+   tokens; touch targets >= 44 px on phones; no horizontal scroll. */
+.home{display:flex;flex-direction:column;gap:10px;min-width:0}
+.home .tin{display:block;width:100%;min-width:0;height:36px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--well);color:var(--ink);font:400 13.5px/1 var(--sans, inherit)}
+.home .tin:focus{outline:2px solid var(--accent);outline-offset:1px}
+.hnote{min-height:1.4em;font-size:13px;color:var(--ink-2)}
+.hnote.bad{color:var(--amber-ink)}
+.hlink{color:var(--accent);text-decoration:underline}
+.hstate{font-size:30px;font-weight:700;line-height:1.1;padding:14px 16px;border-radius:var(--r-sm);border:2px solid var(--line);color:var(--ink);overflow-wrap:anywhere}
+.hstate.on{border-color:var(--accent)}
+.hstate.wait{border-style:dashed;border-color:var(--amber-ink)}
+.hstate.off{color:var(--ink-2)}
+.hsub{margin:0}
+.hacts{display:flex;flex-wrap:wrap;gap:8px}
+.hchips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.hchip{display:flex;flex-direction:column;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r-sm);min-width:0;overflow-wrap:anywhere}
+.hchip.down{border-color:var(--amber-ink)}
+.hchip small{color:var(--ink-3);font-size:12px}
+.hh{margin:6px 0 0;font-size:14px;color:var(--ink)}
+.hdays{display:flex;gap:6px}
+.hdays [aria-pressed="true"]{border-color:var(--accent);font-weight:600}
+.hfeed{list-style:none;margin:0;padding:0}
+.hrow{display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 0;border-top:1px solid var(--line-2)}
+.hrow:first-child{border-top:0}
+.htxt{flex:1 1 200px;min-width:0;overflow-wrap:anywhere;color:var(--ink)}
+.hbox{border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 10px}
+.hbox summary{cursor:pointer;font-weight:600;color:var(--ink);min-height:24px}
+.hform{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px;align-items:end}
+.hfield{display:flex;flex-direction:column;gap:4px;min-width:0}
+.hrows{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+.hcam{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px}
+@media (max-width: 560px){
+  .hstate{font-size:26px}
+  .home .tin,.home .btn,.hbox summary{min-height:44px}
+}

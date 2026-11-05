@@ -2,12 +2,17 @@
 """The scheduled health check as a TickJob (R4 D14). Rides the existing tick: no new Cloud
 Scheduler job. Owners are checked in parallel (bounded), each forced fresh. One owner's failure
 is counted under `failed` and stops no one; so is an owner still unserved at the job's own
-deadline, or one whose result could not be saved."""
+deadline, or one whose result could not be saved.
+
+Cadence (R4 I2 F5): the tick fires only in the morning window (`0,30 4-11`), so this runs then,
+at most once per `CHECK_EVERY_S` per owner (in memory; a restart simply checks once early).
+An outage outside that window is found on demand (`systems_check`) or at the next window."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 
 from jarvis.health.service import HealthService
 from jarvis.logging import get_logger
@@ -18,6 +23,7 @@ log = get_logger(__name__)
 TICK_BUDGET_S = 30.0
 TICK_DEADLINE_S = 40.0  # stop waiting before the tick cancels us, so the count is still returned
 MAX_PARALLEL_OWNERS = 8
+CHECK_EVERY_S = 1800.0  # at most one scheduled check per owner per half hour
 OWNERS_COUNT = "owners"
 FAULTS_COUNT = "faults"
 
@@ -26,9 +32,25 @@ class HealthTickJob:
     name = "health_check"
     budget_s = TICK_BUDGET_S
 
-    def __init__(self, svc: HealthService, *, deadline_s: float = TICK_DEADLINE_S) -> None:
+    def __init__(
+        self,
+        svc: HealthService,
+        *,
+        deadline_s: float = TICK_DEADLINE_S,
+        every_s: float = CHECK_EVERY_S,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._svc = svc
         self._deadline_s = deadline_s
+        self._every_s, self._clock = every_s, clock
+        self._last: dict[str, float] = {}
+
+    def _due(self, owners: Sequence[str]) -> list[str]:
+        """The owners not checked within `every_s`; marks them as attempted now."""
+        now = self._clock()
+        due = [u for u in owners if now - self._last.get(u, float("-inf")) >= self._every_s]
+        self._last.update(dict.fromkeys(due, now))
+        return due
 
     async def _one(self, uid: str, gate: asyncio.Semaphore) -> tuple[bool, bool]:
         """(failed, faulty) for one owner."""
@@ -41,6 +63,7 @@ class HealthTickJob:
         return (not report.persisted), report.overall != "ok"
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
+        owners = self._due(owners)
         if not owners:
             return {OWNERS_COUNT: 0, FAULTS_COUNT: 0, FAILED_COUNT: 0}
         gate = asyncio.Semaphore(MAX_PARALLEL_OWNERS)
@@ -66,6 +89,7 @@ class HealthTickJob:
 
 
 __all__ = [
+    "CHECK_EVERY_S",
     "FAULTS_COUNT",
     "MAX_PARALLEL_OWNERS",
     "OWNERS_COUNT",

@@ -123,6 +123,8 @@ needed. LinkedIn/X/Instagram/Facebook open this way for free even though their d
 a saved dossier are irreversible → gateway R3 token (card + passkey), no "don't ask again". Enrolling a face →
 consent. `connect_github`/`connect_youtube`/`photos_import` store or read auth but are not R3; they are owner-initiated
 in the console.
+*Deviation (R2, recorded at I2):* `vitals_delete_key` deletes only reversible tracked-key *metadata* (never a
+key value, which is never stored), so it is a normal gateway-approved reversible tool, not an R3 irreversible one.
 
 **D13 · Persona p4.8 → p4.9** (`core/prompts.py`), adding vitals, the systems check, the no-AI mode and scoped
 research to what JARVIS says it can do. Re-check R3's final value at I1.
@@ -130,6 +132,10 @@ research to what JARVIS says it can do. Re-check R3's final value at I1.
 **D14 · Scheduling without a new job.** Vitals poll (hourly) and the scheduled health check register as `TickJob`s
 on the existing tick, isolated per the tick's rules (a failing job is logged and reported, stops no one). No new
 Cloud Scheduler job; stays within the 2-of-3 free jobs already used.
+*Cadence note (I2 F5):* the tick fires only in the morning window (`0,30 4-11`), so the "hourly" vitals poll and
+the scheduled health check run then (the health job at most once per 30 min per owner). An off-window outage is
+found on demand (`systems_check`) or at the next window; the owner's go-live guide says so. The tick has an
+aggregate deadline of 150 s (R4 job budgets 30 s each).
 
 **D15 · Audit + untrusted data.** Every new tool call is append-only audited (`tools.audit`). Content fetched during
 research (web pages, profiles) is untrusted data, never instructions; it is never learned into memory and never

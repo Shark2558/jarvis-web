@@ -50,8 +50,9 @@ A bad body or id is a plain 422 (field names only, the input is never echoed); s
 `from jarvis.vitals.job import VitalsJob`
 `app.state.tick_jobs.append(VitalsJob(vitals, notifier, settings=s))`
 `notifier` = the app's `jarvis.notify` `Notifier` (the same one the home alerts use). Name `vitals_poll`,
-`budget_s=45`. Alerts only on an upward line-cross (`Signal(source="system", kind="vitals_warn" |
-"vitals_critical")`). The job polls each owner at most once per `POLL_EVERY_S = 3600` (in-memory last-poll time), so a per-minute tick is fine. Delivery is at-least-once: an alert is sent before its new status is recorded, so a failed record means one repeat next hour.
+`budget_s=30`. Alerts only on an upward line-cross (`Signal(source="system", kind="vitals_warn" |
+"vitals_critical")`). The job polls each owner at most once per `POLL_EVERY_S = 3600` (in-memory last-poll time), so a per-minute tick is fine. CADENCE: the tick fires only in the morning window (`0,30 4-11`), so the
+"hourly" poll runs then; an off-window red is seen on the next window or on demand (`vitals_show`). Delivery is at-least-once: an alert is sent before its new status is recorded, so a failed record means one repeat next hour.
 
 ## 5. Brief section
 

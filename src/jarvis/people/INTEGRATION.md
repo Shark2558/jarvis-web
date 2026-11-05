@@ -145,11 +145,15 @@ New static file `src/jarvis/api/static/console-people.js` (the repo's static dir
   Sir." Gateway error text is never repeated to the owner except the project's own fixed refusals.
   Writes still go through the gateway policy, so they may come back as an approval card.
 - Wire: pass the SAME `BrainMode` to `Brain(brain_mode=...)`, `app.state.brain_mode` and
-  `PeopleService(mode=...)`.
+  `PeopleService(mode=brain_mode.load)` (an ASYNC per-owner reader, awaited on every call).
 
 ## 6. Data / tick jobs / brief
 
 New documents: `<prefix>settings/<uid>` (brain mode) and, when `DossierCache(docs)` is used,
 `<prefix>people_last/<uid>` (last dossier + last target, 1 h, expiry checked on read, deleted by
-`clear`). Consider a Firestore TTL policy on `people_last.at`. Dossiers are never written to memory.
+`clear`; carries `expires_at`). A REFUSED target is never written (memory only). Dossiers are never
+written to long-term memory. TODO for `deploy/cloudrun.sh` (not yet added): a Firestore TTL policy on
+collection group `jarvis_people_last`, field `expires_at`
+(`gcloud firestore fields ttls update expires_at --collection-group=jarvis_people_last --enable-ttl`),
+so an unread entry is removed too. The privacy panel has a People research category (export + delete).
 No tick jobs; the brief's AI summary skips quietly while the switch is `none`.

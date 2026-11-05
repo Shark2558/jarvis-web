@@ -72,7 +72,7 @@ def test_tick_job_has_a_name_and_a_budget_and_fits_the_protocol() -> None:
 async def test_tick_runs_the_check_for_each_owner_and_alerts_on_change() -> None:
     flip, notes = Flip(), Notes()
     s = svc(flip.probe, notifier=notes)
-    job = HealthTickJob(s)
+    job = HealthTickJob(s, every_s=0)
     assert await job.run(["u1", "u2"]) == {"owners": 2, "faults": 0, "failed": 0}
     flip.status = "down"
     await job.run(["u1", "u2"])
@@ -111,7 +111,7 @@ async def test_tick_job_runs_with_no_owners() -> None:
 async def test_tick_always_forces_a_fresh_check_past_the_cooldown() -> None:
     flip = Flip()
     s = svc(flip.probe)
-    job = HealthTickJob(s)
+    job = HealthTickJob(s, every_s=0)
     await job.run([UID])
     flip.status = "down"
     counts = await job.run([UID])  # same clock: inside the cooldown, but the tick forces
@@ -160,3 +160,18 @@ async def test_an_owner_whose_result_could_not_be_saved_counts_as_failed() -> No
 
 def test_the_counter_names_are_constants() -> None:
     assert (OWNERS_COUNT, FAULTS_COUNT) == ("owners", "faults")
+
+
+# ---- cadence (R4 I2 F5) -------------------------------------------------------------------------
+async def test_an_owner_is_checked_at_most_once_per_half_hour() -> None:
+    now = [0.0]
+    s = svc(fixed("a", "A", "ok"))
+    job = HealthTickJob(s, clock=lambda: now[0])
+
+    first = await job.run([UID])
+    now[0] += 60
+    second = await job.run([UID])  # the next tick, a minute later: not due
+    now[0] += 1800
+    third = await job.run([UID])
+
+    assert first["owners"] == 1 and second["owners"] == 0 and third["owners"] == 1

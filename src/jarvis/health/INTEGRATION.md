@@ -49,7 +49,9 @@ The persona/offline rules should route "run a systems check" / "are all systems 
 
 ## 3. Tick job (D14)
 `from jarvis.health.tick import HealthTickJob` -> append `HealthTickJob(health)` to
-`app.state.tick_jobs`. name `health_check`, budget 45 s. No Cloud Scheduler job. The tick runs
+`app.state.tick_jobs`. name `health_check`, budget 30 s, at most one scheduled check per owner per 30 minutes.
+CADENCE: the tick fires only in the morning window (`0,30 4-11`), so the scheduled check runs then;
+an outage outside it is detected on demand (`systems_check`) or at the next window. No Cloud Scheduler job. The tick runs
 the check per owner and alerts on change; the job counts an unserved owner under `failed`.
 Owners are checked in parallel (8 at a time) and each check is forced fresh; an owner still
 unserved at 40 s, or whose result could not be saved, counts under `failed`.

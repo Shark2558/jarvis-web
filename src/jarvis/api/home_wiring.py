@@ -13,11 +13,14 @@ short list of named steps, as R2's `api/personal.py` does.
   detection, face_seen, package, heartbeat, `arm:` acks; C: face_deleted acks, heartbeat); the
   heartbeat answer merges A's devices, B's arm and settings and C's faces. Faces off -> B's
   directory names nobody (`NoFaces`); a face lookup that fails is "not recognised" (B's
-  `safe_resolve`), so recognition never suppresses an armed alert.
+  `safe_resolve`), so recognition never suppresses an armed alert. `home_unlink_guard`: unlinking
+  while armed needs the Disarm button's proof (integrated review S4).
+- `notify_tick_jobs`: the alert policy's jobs run once, in the watchdog when Home is wired, else in
+  the scheduler tick (review H3).
 - `home_privacy_sources`: home, home_feed, camera_home, notify, webpush, then faces (LAST, where
   R2's placeholder was).
 Everything is OFF (None, the routes say why) without the server's token key or with
-`JARVIS_HOME_ENABLED=false`.
+`JARVIS_HOME_ENABLED=false`, and when a part fails to build (review M9: logged, never fatal).
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from jarvis.alerts import AlertSink, NoAlerts
+from jarvis.camera.guard import ArmedUnlinkGuard
 from jarvis.camera.privacy import CameraHomePrivacy, HomeFeedPrivacy
 from jarvis.camera.service import CameraServices, build_camera
 from jarvis.config import Settings
@@ -84,6 +88,7 @@ HOME_STATE = (
     "camera",
     "faces",
     "faces_laptop",
+    "home_unlink_guard",
 )
 # The watchdog's own steps and the brief tick's sweeps: an added job may take none of these
 RESERVED_HOME_JOBS = frozenset({"home_offline", "home_claims_sweep", "home_link_sweep"})
@@ -126,7 +131,13 @@ def wire_notify(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> Ale
         if tg is not None
         else None
     )
-    pushed = build_push(s, docs, ring, audit)
+    try:  # M9: browser notifications are optional; their failure never takes the app down
+        pushed = build_push(s, docs, ring, audit)
+    except Exception as exc:  # noqa: BLE001 - log the class only; alerts still go to Telegram
+        log.error(
+            "browser notifications are OFF: setup failed", extra={"error": type(exc).__name__}
+        )
+        pushed = None
     st.push_store, st.push = pushed if pushed is not None else (None, None)
     st.notify_store = store
     st.notify = NotifyService(
@@ -214,6 +225,17 @@ def notify_jobs(notify: NotifyService | None, clock: Callable[[], Any]) -> tuple
     )
 
 
+def notify_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
+    """Integrated review H3: the alert policy's jobs (the held-alerts summary after quiet hours,
+    storm summaries, old counters) run whether or not Home is on, and ONCE: in the home watchdog
+    (every 5 minutes, all day) when it is wired, else in the scheduler tick. R1's and R2's alerts
+    go through the policy too, so with Home off they would otherwise be held for ever."""
+    st = app.state
+    if getattr(st, "home_watchdog", None) is not None:
+        return ()
+    return notify_jobs(getattr(st, "notify", None), lambda: datetime.now(UTC))
+
+
 def check_job_names(jobs: Sequence[TickJob]) -> None:
     from jarvis.api.personal import RESERVED_JOB_NAMES
 
@@ -240,6 +262,18 @@ def _notifier(app: FastAPI) -> Notifier:
 
 
 def wire_home(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail | None = None) -> None:
+    """Home, the camera and faces, or all OFF. M9: a part that fails to build (a bad setting, a
+    store client that won't start) never takes the app down: it is logged by class name and
+    everything Home stays None, so the routes say it is not available."""
+    try:
+        _wire_home(app, s, docs, audit)
+    except Exception as exc:  # noqa: BLE001 - optional part: the rest of JARVIS keeps working
+        log.error("Home is OFF: its setup failed", extra={"error": type(exc).__name__})
+        for name in HOME_STATE:
+            setattr(app.state, name, None)
+
+
+def _wire_home(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail | None) -> None:
     st = app.state
     for name in HOME_STATE:
         setattr(st, name, None)
@@ -299,6 +333,8 @@ def wire_home(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail | None = 
     st.faces = faces
     st.faces_laptop = _laptop_online(store, s.home_offline_after_s, clock)
     st.home_parts = HomeParts(devices=devices, status=st.home_status, camera=camera, faces=faces)
+    # S4: unlinking while armed switches the alarm off: the Disarm button's proof first
+    st.home_unlink_guard = ArmedUnlinkGuard(camera.gate, camera.alarm, audit)
 
 
 def home_privacy_sources(app: FastAPI) -> list[PrivacySource]:
@@ -306,7 +342,7 @@ def home_privacy_sources(app: FastAPI) -> list[PrivacySource]:
     st = app.state
     camera: CameraServices | None = getattr(st, "camera", None)
     out: list[PrivacySource] = [
-        HomePrivacy(getattr(st, "home_store", None)),
+        HomePrivacy(getattr(st, "home_store", None), getattr(st, "home_unlink_guard", None)),
         camera.privacy[0] if camera is not None else HomeFeedPrivacy(None),
         camera.privacy[1] if camera is not None else CameraHomePrivacy(),
     ]
@@ -323,6 +359,7 @@ __all__ = [
     "build_push",
     "home_privacy_sources",
     "notify_jobs",
+    "notify_tick_jobs",
     "wire_home",
     "wire_notify",
 ]

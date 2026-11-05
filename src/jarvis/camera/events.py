@@ -10,8 +10,11 @@ order that matters for the burglar alert (D9: 10 seconds from the camera to the 
 - A detection that arrives while the cloud says disarmed is dropped and counted (D8); recognition
   never suppresses or softens an armed alert (a VIP, a family member at the gate still rings).
 - A face lookup that fails counts as "not recognised" (`safe_resolve`). A detection whose alert
-  could not be delivered, or that failed for any other reason, is RAISED (`AlertNotSent` or the
-  error): the webhook answers 503, gives the event id back and the bridge retries it.
+  could not be delivered (the notifier failed, or it said ring and no channel took it), or that
+  failed for any other reason, is RAISED (`AlertNotSent` or the error): the webhook answers 503,
+  gives the event id back and the bridge retries it.
+- A heartbeat whose camera part says it is not receiving Frigate's events (`mqtt: false`) while
+  armed raises one `home_arm_failed` alert per outage.
 - If the arm record can't be read the alert goes out (a missed burglar is worse than a false one).
 - Frigate's labels and zone ids are untrusted text: they have already passed the wire models
   (`jarvis.home.ports`), and the alert text uses only the owner's camera labels and fixed words.
@@ -42,6 +45,7 @@ from jarvis.home.ports import (
     FaceSeen,
     Hazard,
     Heartbeat,
+    HeartbeatParts,
     Package,
 )
 from jarvis.logging import get_logger
@@ -54,12 +58,23 @@ ARM_ACK_PREFIX = "arm:"  # the bridge's arm ack carries this id prefix, so no ot
 NOTIFY_TRIES = 2
 
 
+CAMERA_LINK_DOWN = (
+    "Your home laptop is on, but it isn't getting the camera's events, so burglar alerts can't "
+    "reach you. Check JARVIS Home on the laptop."
+)
+
+
 class AlertNotSent(RuntimeError):
     """A burglar alert could not be delivered. Raised out of `handle` so the webhook answers 503,
     gives the event id back and the bridge's retry (same id) tries again."""
 
 
 Event = Heartbeat | Detection | FaceSeen | Package | Hazard | Ack
+
+
+def unheard(delivery: Delivery) -> bool:
+    """The policy let it out (ring or silent), but neither Telegram nor a browser took it."""
+    return delivery.action in ("ring", "silent") and not (delivery.telegram or delivery.push)
 
 
 def who_phrase(resolved: Resolved) -> str:
@@ -98,6 +113,7 @@ class CameraEvents:
         self._tz = ZoneInfo(tz)
         self._clock = clock
         self._greeted: dict[tuple[str, str], float] = {}
+        self._link_down: set[str] = set()  # owners already told their camera link is down
 
     # ---- dispatch ----------------------------------------------------------------------------
 
@@ -110,6 +126,7 @@ class CameraEvents:
             elif isinstance(event, Package):
                 await self._package(uid, event)
             elif isinstance(event, Heartbeat):
+                await self._camera_link(uid, event.parts)
                 await self._config.record_heartbeat(uid, event.parts)
             elif isinstance(event, Ack):
                 await self._ack(uid, event)
@@ -135,6 +152,23 @@ class CameraEvents:
     async def _ack(self, uid: str, ev: Ack) -> None:
         if ev.what == "state" and ev.rev is not None and ev.id.startswith(ARM_ACK_PREFIX):
             await self._alarm.ack(uid, ev.rev)
+
+    async def _camera_link(self, uid: str, parts: HeartbeatParts) -> None:
+        """Integrated review S1: the bridge says it is not receiving Frigate's events (its MQTT
+        link is down, or the camera part never started) while the alarm is armed, so burglar
+        alerts can't arrive. One alert per outage (a working link ends it); one that no channel
+        took is tried again at the next heartbeat."""
+        if parts.mqtt is None:
+            return
+        if parts.mqtt:
+            self._link_down.discard(uid)
+            return
+        if uid in self._link_down or not await self._armed(uid):
+            return
+        signal = Signal(source="home", kind="home_arm_failed")
+        delivery = await self._notify(uid, signal, CAMERA_LINK_DOWN)
+        if delivery is not None and not unheard(delivery):
+            self._link_down.add(uid)
 
     # ---- helpers -----------------------------------------------------------------------------
 
@@ -178,7 +212,7 @@ class CameraEvents:
     ) -> Delivery | None:
         for attempt in range(NOTIFY_TRIES):
             try:
-                return await self._notifier.notify(
+                delivery = await self._notifier.notify(
                     uid, signal, message, named_message=named, photo=photo
                 )
             except Exception as exc:  # noqa: BLE001 - try once more, then give up loudly
@@ -186,6 +220,13 @@ class CameraEvents:
                     "alert not sent",
                     extra={"kind": signal.kind, "try": attempt + 1, "reason": type(exc).__name__},
                 )
+                continue
+            if must and delivery.action == "ring" and unheard(delivery):
+                # integrated review S3: the policy said ring but no channel took it (Telegram
+                # down, no browser): raised, so the webhook answers 503 and the bridge retries
+                log.error("alert reached no channel", extra={"kind": signal.kind})
+                raise AlertNotSent("alert reached no channel")
+            return delivery
         if must:
             raise AlertNotSent("alert not sent")
         return None
@@ -355,9 +396,11 @@ class CameraEvents:
 
 __all__ = [
     "ARM_ACK_PREFIX",
+    "CAMERA_LINK_DOWN",
     "GREETING_EVERY_S",
     "AlertNotSent",
     "CameraEvents",
     "intruder_text",
+    "unheard",
     "who_phrase",
 ]

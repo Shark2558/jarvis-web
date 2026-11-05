@@ -153,7 +153,6 @@ def env_file(public_url: str) -> bytes:
         "HA_TOKEN=",
         "MQTT_USER=bridge",  # I1: the broker's read-only user (mosquitto/acl)
         "MQTT_PASSWORD=",
-        "FRIGATE_PASSWORD=",
         "",
     ]
     return "\n".join(lines).encode()

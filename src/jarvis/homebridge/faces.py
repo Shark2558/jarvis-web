@@ -10,7 +10,9 @@
   consented id at Frigate's threshold on a `person`. A name someone typed in Frigate's UI, an
   unknown id or a low score gives None, so the cloud never even hears of it.
 - A delete removes the library entry and the person's attempts, then acks to the cloud
-  (`Ack(face_deleted)`); until the ack lands it is retried (also when Frigate was down).
+  (`Ack(face_deleted)`) - only when none of their pictures is left on this laptop (a folder the
+  bridge may not delete in, or a picture that could not be removed, is never "done"); until
+  then it is retried (also when Frigate was down).
 - Pictures and embeddings never leave this machine: heartbeats carry counts only.
 
 Frigate's face-library HTTP endpoints below (`HttpFrigateFaces`) are written from its documented
@@ -130,6 +132,9 @@ class HttpFrigateFaces:
     async def classify(self, name: str, file: str) -> None:
         await self._json("POST", f"/api/faces/train/{name}/classify", json={"training_file": file})
 
+    async def aclose(self) -> None:
+        await self._c.aclose()
+
 
 class FaceLibrary:
     """What the bridge knows about faces: the synced ids (persisted in `faces.json`) and the
@@ -186,6 +191,12 @@ class FaceLibrary:
         self.deleting = frozenset(faces.deleting) | self.deleting
         self.people = frozenset(faces.people) - self.deleting
         self._save()
+
+    @property
+    def retention_on(self) -> bool:
+        """Old visitors' pictures are being cleaned up and deletes can finish (the page says
+        so when not)."""
+        return self._retention.ready
 
     # ---- decisions -------------------------------------------------------------------------
 
@@ -271,12 +282,18 @@ class FaceLibrary:
     # ---- deleting --------------------------------------------------------------------------
 
     async def delete(self, person: str) -> bool:
-        """Remove the library entry and every attempt crop of this person; True when done."""
+        """Remove the library entry and every attempt crop of this person. True only when
+        nothing of them is left on this laptop (review H4/S5): the folder is one the bridge may
+        delete in, every unlink worked, and a fresh look finds none. The file work runs off the
+        event loop."""
         if not PERSON.fullmatch(person):
             return False
         await self._call(self._lib.delete(person))
-        self._retention.delete_for(person)
-        return self._retention.ready  # crops could remain where nothing is swept: not "done"
+        _, failed = await asyncio.to_thread(self._retention.delete_for, person)
+        if failed or not self._retention.ready:
+            return False  # crops could remain where nothing is swept: never "done"
+        left = await asyncio.to_thread(self._retention.remaining_for, person)
+        return left == 0
 
     async def finish_deletes(self) -> list[str]:
         """Delete every person the cloud asked to delete and ack each. Safe to repeat: the cloud
@@ -321,11 +338,13 @@ class FacesPlugin:
         self.retention = Retention(Path(attempts), Path(doorstep), now=ctx.now)
         if not self.retention.ready:
             log.warning(
-                "Faces: the folder of Frigate's face attempts was not found or is wrong, so "
-                "old pictures of visitors are NOT being cleaned up and face deletes will wait. "
-                "Check that Frigate's media folder is shared with the bridge."
+                "Faces: the folder of Frigate's face attempts was not found, is wrong or the "
+                "bridge may not delete in it, so old pictures of visitors are NOT being cleaned "
+                "up and face deletes will wait. Run setup-wsl.sh configure again (it shares "
+                "Frigate's face folders with the bridge)."
             )
         lib = library or HttpFrigateFaces(env.get("FRIGATE_URL", "http://frigate:5000"))
+        self._lib = lib
         self.library = FaceLibrary(
             lib, ctx.data_dir, self.retention, post_ack=ctx.events.post_event, now=ctx.now
         )
@@ -372,6 +391,12 @@ class FacesPlugin:
             return
         self.library.apply(state.faces)
         await self.library.finish_deletes()
+
+    async def aclose(self) -> None:
+        """The bridge is stopping (review M10): close Frigate's client."""
+        close = getattr(self._lib, "aclose", None)
+        if close is not None:
+            await close()
 
 
 def create_plugin(ctx: BridgeContext) -> FacesPlugin:

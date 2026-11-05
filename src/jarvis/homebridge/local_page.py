@@ -2,8 +2,10 @@
 """The laptop's Faces page, `http://localhost:8098/faces` (R3 D13). Home only: pictures never go
 to the JARVIS cloud, and this page is the only place they are added.
 
-- Binds 127.0.0.1 only (`HOST`). A request whose Host is not localhost / 127.0.0.1 on this port
-  is refused (DNS rebinding); a POST whose Origin is another site is refused.
+- Binds 127.0.0.1 (`HOST`), or the container's address when the kit sets `FACES_BIND=0.0.0.0`
+  (Docker publishes it on the laptop's 127.0.0.1:8098 only). A request whose Host is not
+  localhost / 127.0.0.1 on this port is refused (DNS rebinding); a POST whose Origin is another
+  site is refused.
 - Login: a code the setup prints (`FACES_CODE` or `/data/faces_code.txt`), compared in constant
   time, 5 wrong tries lock the page for a minute. The session is a random cookie (HttpOnly,
   SameSite=Strict, 12 hours) plus a CSRF token the page sends in `X-CSRF` on every write.
@@ -19,7 +21,7 @@ import hmac
 import os
 import secrets
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +33,7 @@ from jarvis.homebridge.faces import MAX_IMAGE_BYTES, FaceLibrary, FaceRefused
 from jarvis.homebridge.plugins import BridgeContext
 
 HOST = "127.0.0.1"
+ANY = "0.0.0.0"  # noqa: S104 - only inside the bridge's container (the kit publishes 127.0.0.1)
 PORT = 8098
 SESSION_S = 12 * 3600
 MAX_SESSIONS = 4
@@ -209,6 +212,7 @@ def create_local_app(
                 "people": [{"id": p, "pictures": n} for p, n in summary.items()],
                 "recent": recent,
                 "max_pictures": 20,
+                "retention": "on" if library.retention_on else "off",  # review S5: said here
                 "csrf": sessions.csrf(request.cookies.get(COOKIE)),
             },
         )
@@ -257,14 +261,31 @@ def create_local_app(
     return app
 
 
+def bind_host(env: Mapping[str, str]) -> str:
+    """Where the page listens: 127.0.0.1, unless the kit says `FACES_BIND=0.0.0.0` (inside the
+    bridge's container, so Docker's 127.0.0.1:8098 publish reaches it; review H2). Anything else
+    is ignored. The Host check above still admits only localhost:8098."""
+    return ANY if env.get("FACES_BIND", "") == ANY else HOST
+
+
 async def serve_local_page(library: FaceLibrary, ctx: BridgeContext) -> None:
-    """Run the page on 127.0.0.1 until cancelled."""
+    """Run the page until cancelled."""
     import uvicorn
 
     port = int(ctx.env.get("FACES_PORT", PORT))
     app = create_local_app(library, login_code(ctx.env, ctx.data_dir), port=port, now=ctx.now)
-    config = uvicorn.Config(app, host=HOST, port=port, log_level="warning", access_log=False)
+    config = uvicorn.Config(
+        app, host=bind_host(ctx.env), port=port, log_level="warning", access_log=False
+    )
     await uvicorn.Server(config).serve()
 
 
-__all__ = ["HOST", "PORT", "Sessions", "create_local_app", "login_code", "serve_local_page"]
+__all__ = [
+    "HOST",
+    "PORT",
+    "Sessions",
+    "bind_host",
+    "create_local_app",
+    "login_code",
+    "serve_local_page",
+]

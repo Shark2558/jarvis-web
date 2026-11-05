@@ -140,7 +140,7 @@ def test_readme_has_the_sixteen_steps_in_plain_words() -> None:
     for needle in (
         "works only while this laptop is on",
         "C:\\JARVIS-Home",
-        "Run with PowerShell",
+        "powershell -ExecutionPolicy Bypass -File .\\setup-windows.ps1",
         "IP Webcam",
         "localhost:8971",
         "localhost:8098/faces",
@@ -156,7 +156,7 @@ def test_readme_has_the_sixteen_steps_in_plain_words() -> None:
 def test_setup_windows_covers_the_plan_steps() -> None:
     ps = (HOME / "setup-windows.ps1").read_text()
     for needle in (
-        "#Requires -RunAsAdministrator",
+        "[Security.Principal.WindowsBuiltInRole]::Administrator",  # its own check, plain words
         "wsl --install",
         "Ubuntu-24.04",
         ".wslconfig",
@@ -184,6 +184,8 @@ def make_stubs(bin_dir: Path, log: Path) -> None:
         "systemctl": f"#!/bin/bash\n{tail}",
         "dpkg": f"#!/bin/bash\n{tail}echo amd64\n",
         "chown": f"#!/bin/bash\n{tail}",
+        "chgrp": f"#!/bin/bash\n{tail}",
+        "setfacl": f"#!/bin/bash\n{tail}",
         "openssl": f'#!/bin/bash\n{tail}echo "QWxwaGFCZXRhR2FtbWFEZWx0YQ=="\n',
         "sleep": "#!/bin/bash\nexit 0\n",
         "docker": (
@@ -203,6 +205,7 @@ def make_stubs(bin_dir: Path, log: Path) -> None:
             'if [[ "$*" == *"curl -s"* ]]; then\n'
             '  echo \'{"cameras":{"gate":{"camera_fps": 5.0}}}\'\n'
             "fi\n"
+            'if [[ "$*" == *"cat /data/faces_code.txt"* ]]; then echo "FacesCode-77aa"; fi\n'
             "exit 0\n"
         ),
     }
@@ -527,3 +530,237 @@ def test_the_bridge_base_image_is_pinned_by_digest_like_the_others() -> None:
     assert 'pin_digest BASE_IMAGE "${BASE_IMAGE:-python:3.12-slim}"' in sh
     assert 'docker pull "${BASE_IMAGE:-python:3.12-slim}"' in sh  # --ignore-buildable skips it
     assert sh.index("docker pull") < sh.index("pin_digest BASE_IMAGE")
+
+
+# ---- integrated review C1 / S1: every package the bridge imports is in its image, hash-locked ----
+
+# import name -> PyPI name, where they differ
+DIST = {"pydantic_core": "pydantic-core", "annotated_types": "annotated-types"}
+MQTT_PINS = {
+    "aiomqtt": (
+        "2.5.1",
+        {
+            "fd58c3593160e4d475d90ce911cdfc4239cd64de96b0ba22edf6c86bd7afa278",
+            "25a0a47d157e8f158d2da1110ea4786c0615518751e94f7b04976c977a8ff20d",
+        },
+    ),
+    "paho-mqtt": (
+        "2.1.0",
+        {
+            "6db9ba9b34ed5bc6b6e3812718c7e06e2fd7444540df2455d2c51bd58808feee",
+            "12d6e7511d4137555a3f6ea167ae846af2c7357b10bc6fa4f7c3968fc1723834",
+        },
+    ),
+}
+
+
+def _pins() -> dict[str, tuple[str, set[str]]]:
+    """bridge-requirements.txt as {name: (version, {sha256})}."""
+    out: dict[str, tuple[str, set[str]]] = {}
+    name = ""
+    for line in (HOME / "bridge-requirements.txt").read_text().splitlines():
+        m = re.match(r"^([A-Za-z0-9_.-]+)==([^\s\\]+)", line)
+        if m:
+            name = m.group(1).lower()
+            out[name] = (m.group(2), set())
+        for h in re.findall(r"--hash=sha256:([0-9a-f]{64})", line):
+            out[name][1].add(h)
+    return out
+
+
+def _third_party_imports() -> dict[str, str]:
+    """{top-level module: file} for every import in the kit's Python (function level too)."""
+    import ast
+    import sys
+
+    found: dict[str, str] = {}
+    for rel, data in kit.bridge_sources(ROOT / "src").items():
+        if not rel.endswith(".py"):
+            continue
+        for node in ast.walk(ast.parse(data.decode("utf-8"))):
+            names: list[str] = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                names = [node.module]
+            for n in names:
+                top = n.split(".")[0]
+                if top not in ("jarvis", "__future__") and top not in sys.stdlib_module_names:
+                    found.setdefault(top, rel)
+    return found
+
+
+def test_every_bridge_third_party_import_is_hash_locked() -> None:
+    pins = _pins()
+    imports = _third_party_imports()
+    assert "aiomqtt" in imports  # the camera's MQTT client (imported where it connects)
+    for top, where in imports.items():
+        dist = DIST.get(top, top).lower().replace("_", "-")
+        assert dist in pins, f"{where} imports {top}: not in bridge-requirements.txt"
+        assert pins[dist][1], f"{dist} has no hash"
+
+
+def test_the_mqtt_packages_are_the_reviewed_versions_with_wheel_and_sdist_hashes() -> None:
+    pins = _pins()
+    for name, (version, hashes) in MQTT_PINS.items():
+        assert pins[name] == (version, hashes), name
+    text = (HOME / "bridge-requirements.txt").read_text()
+    assert "is added with its hashes by the camera part" not in text  # the old promise is kept
+    pyproject = (ROOT / "pyproject.toml").read_text()
+    assert 'homebridge = ["aiomqtt==2.5.1", "paho-mqtt==2.1.0"]' in pyproject
+
+
+def test_the_bridge_image_installs_only_the_locked_files_and_no_dependencies_of_its_own() -> None:
+    df = (HOME / "bridge.Dockerfile").read_text()
+    assert "pip install --require-hashes --no-deps -r bridge-requirements.txt" in df
+
+
+# ---- integrated review H2: the laptop Faces page is reachable and its code is shown -------------
+
+
+def test_the_faces_page_listens_inside_its_container_where_compose_publishes_it(
+    compose: dict,
+) -> None:
+    b = compose["services"]["bridge"]
+    assert "127.0.0.1:8098:8098" in b["ports"]  # the laptop only
+    env = b.get("environment", {})
+    assert env.get("FACES_BIND") == "0.0.0.0", "a loopback-only bind inside the container is dead"
+
+
+def test_up_and_link_print_the_faces_page_code(tmp_path: Path) -> None:
+    sh = (HOME / "setup-wsl.sh").read_text()
+    assert "exec -T bridge cat /data/faces_code.txt" in sh
+    run_script(tmp_path, "configure")
+    done, calls = run_script(tmp_path, "up")
+    assert done.returncode == 0, done.stderr
+    assert "FacesCode-77aa" in done.stdout and "localhost:8098/faces" in done.stdout
+    done, _ = run_script(tmp_path, "link", "ABCD-EFGH", "https://l.tail1.ts.net:8443")
+    assert done.returncode == 0 and "FacesCode-77aa" in done.stdout
+
+
+# ---- integrated review H4: the bridge may delete in Frigate's face folders ----------------------
+
+
+def test_configure_shares_frigates_face_folders_with_the_bridge(tmp_path: Path) -> None:
+    done, calls = run_script(tmp_path, "configure")
+    assert done.returncode == 0, done.stderr
+    media = tmp_path / "home" / "jarvis-home" / "frigate" / "media" / "clips"
+    for sub in ("faces/train", "doorstep/train"):
+        assert (media / sub).is_dir(), sub
+    assert "chgrp -R 10001 frigate/media/clips/faces frigate/media/clips/doorstep" in calls
+    assert "chmod -R g+rwX frigate/media/clips/faces" in calls
+    assert "-type d -exec chmod g+s {} +" in calls  # new files keep the bridge's group
+    assert "setfacl -R -d -m g:10001:rwX" in calls  # new folders stay deletable by the bridge
+
+
+# ---- integrated review M12 / Minor / hygiene: the kit agrees with the code -------------------
+
+
+def _keys(text: str) -> set[str]:
+    return {m.group(1) for m in re.finditer(r"^([A-Z][A-Z0-9_]*)=", text, re.M)}
+
+
+def test_every_setting_the_kit_writes_for_the_bridge_is_one_the_bridge_reads(compose: dict) -> None:
+    from jarvis.homebridge.plugins import PLUGIN_ENV_KEYS
+
+    read = set(PLUGIN_ENV_KEYS) | {
+        "JARVIS_URL",
+        "HA_URL",
+        "HA_TOKEN",
+        "BRIDGE_DATA_DIR",
+        "BRIDGE_BIND",
+    }
+    example = _keys((HOME / "bridge.env.example").read_text())
+    shipped = _keys(kit.env_file(PUBLIC).decode())
+    sh = (HOME / "setup-wsl.sh").read_text()
+    written = set(re.findall(r"set_env bridge\.env ([A-Z_]+)", sh))
+    environment = set(compose["services"]["bridge"].get("environment", {}))
+    for name, keys in (
+        ("example", example),
+        ("kit", shipped),
+        ("setup", written),
+        ("compose", environment),
+    ):
+        assert keys <= read, (name, keys - read)
+    assert "FRIGATE_PASSWORD" not in example | shipped  # Minor: never read by anything
+    assert {"JARVIS_URL", "MQTT_USER", "MQTT_PASSWORD", "HA_TOKEN"} <= example
+
+
+def test_frigate_env_never_reaches_the_bridge(compose: dict) -> None:
+    b = compose["services"]["bridge"]
+    assert b["env_file"] == "bridge.env"
+    frigate_keys = {"FRIGATE_MQTT_USER", "FRIGATE_MQTT_PASSWORD", "FRIGATE_GATE_RTSP"}
+    assert not frigate_keys & _keys((HOME / "bridge.env.example").read_text())
+    assert not frigate_keys & set(b.get("environment", {}))
+
+
+def test_the_broker_can_read_its_password_file(tmp_path: Path) -> None:
+    """Hygiene: Mosquitto runs as uid 1883 and reads passwd itself; the file is its own, 600,
+    and a re-run replaces it instead of failing on a file it can no longer write."""
+    done, calls = run_script(tmp_path, "configure")
+    assert done.returncode == 0, done.stderr
+    assert "sudo rm -f mosquitto/passwd" in calls
+    assert "chown 1883:1883 mosquitto/passwd" in calls
+    assert calls.index("sudo rm -f mosquitto/passwd") < calls.index("mosquitto_passwd -b -c")
+    assert calls.index("mosquitto_passwd -b /work/passwd bridge") < calls.index(
+        "chown 1883:1883 mosquitto/passwd"
+    )
+
+
+# ---- owner's guide fixes (coordinator, 5 Nov): admin, the zip folder, the HA token, the task ----
+
+
+def test_the_windows_script_checks_for_administrator_and_says_the_exact_command() -> None:
+    ps = (HOME / "setup-windows.ps1").read_text()
+    assert "#Requires -RunAsAdministrator" not in ps  # it would stop before any plain words
+    check = ps.index("WindowsBuiltInRole]::Administrator")
+    assert check < ps.index("wsl --install")
+    assert "powershell -ExecutionPolicy Bypass -File .\\setup-windows.ps1" in ps[check:]
+    readme = " ".join((HOME / "README.txt").read_text().split())
+    assert "Run with PowerShell" not in readme and "Right-click setup-windows.ps1" not in readme
+    assert "as administrator" in readme
+    assert "Run with PowerShell" not in (HOME / "setup-windows.ps1").read_text()
+
+
+def test_extracting_the_kit_gives_the_folder_the_steps_use(zipped: bytes) -> None:
+    names = zipfile.ZipFile(io.BytesIO(zipped)).namelist()
+    assert {n.split("/")[0] for n in names} == {"JARVIS-Home"}
+    readme = " ".join((HOME / "README.txt").read_text().split())
+    assert "Unzip it to C:\\JARVIS-Home" not in readme
+    assert "Extract it to C:\\ (this makes the folder C:\\JARVIS-Home)" in readme
+    assert "cd C:\\JARVIS-Home" in readme
+    console = (ROOT / "src" / "jarvis" / "api" / "static" / "console-home.js").read_text()
+    assert "unzip it to C:\\\\JARVIS-Home" not in console
+    assert "extract it to C:\\\\ (this makes C:\\\\JARVIS-Home)" in console
+
+
+def test_the_home_assistant_token_is_a_later_step_once_it_is_running() -> None:
+    ps = (HOME / "setup-windows.ps1").read_text()
+    assert re.search(r"param\(\s*\[switch\]\$HaToken\s*\)", ps)
+    # the token is asked for once, only in the -HaToken run, which ends before the first-run steps
+    asks = [m.start() for m in re.finditer(r"\$env:HA_TOKEN = AskSecret", ps)]
+    branch, first_run = ps.index("if ($HaToken) {"), ps.index("# 1. Windows")
+    assert len(asks) == 1 and branch < asks[0] < first_run
+    assert "exit 0" in ps[asks[0] : first_run]
+    assert "setup-windows.ps1 -HaToken" in ps[first_run:]  # said at the end of the first run
+    assert "HA_TOKEN" not in ps[first_run:].replace("-HaToken", "")
+    readme = " ".join((HOME / "README.txt").read_text().split())
+    assert "setup-windows.ps1 -HaToken" in readme and "localhost:8123" in readme
+
+
+def test_ha_token_step_saves_it_without_echo_and_restarts_the_bridge(tmp_path: Path) -> None:
+    run_script(tmp_path, "configure")
+    done, calls = run_script(tmp_path, "ha-token", HA_TOKEN="hatoken-later-42")
+    assert done.returncode == 0, done.stderr
+    env = (tmp_path / "home" / "jarvis-home" / "bridge.env").read_text()
+    assert "HA_TOKEN=hatoken-later-42" in env
+    assert "hatoken-later-42" not in done.stdout + done.stderr + calls
+    assert "up -d --force-recreate bridge" in calls
+    done, _ = run_script(tmp_path, "ha-token")
+    assert done.returncode == 1 and "token" in done.stderr
+
+
+def test_the_logon_task_runs_its_script_past_the_execution_policy() -> None:
+    ps = (HOME / "setup-windows.ps1").read_text()
+    line = next(x for x in ps.splitlines() if "New-ScheduledTaskAction" in x)
+    assert "-NoProfile -ExecutionPolicy Bypass" in line and "start-home.ps1" in line

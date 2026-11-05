@@ -18,8 +18,8 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable, Mapping, Sequence
-from contextlib import asynccontextmanager, suppress
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from typing import Any
 
 import httpx
@@ -43,9 +43,11 @@ from jarvis.homebridge.plugins import (
     BridgeContext,
     BridgePlugin,
     BridgeRoute,
+    FatalTaskError,
     PluginFactory,
     TaskFactory,
     check_routes,
+    plugin_env,
 )
 from jarvis.homebridge.state import BridgeStore
 
@@ -64,11 +66,13 @@ class CorePlugin:
         ha: HAClient,
         devices: DeviceBridge,
         apply: Callable[[BridgeState], Any],
+        broken: Callable[[], Sequence[str]] = tuple,
     ) -> None:
         self._store = store
         self._ha = ha
         self._devices = devices
         self._apply = apply
+        self._broken = broken
 
     def routes(self) -> Sequence[BridgeRoute]:
         return (
@@ -82,7 +86,10 @@ class CorePlugin:
         return (self._devices.watch,)
 
     async def heartbeat_part(self) -> HeartbeatParts:
-        return HeartbeatParts(ha=await self._ha.ping() if self._ha.linked else False)
+        ha = await self._ha.ping() if self._ha.linked else False
+        # review M10: a part that could not start means the camera can't be trusted; a camera
+        # plugin that did start reports its own MQTT state, laid over this one
+        return HeartbeatParts(ha=ha, mqtt=False if self._broken() else None)
 
     async def apply_state(self, state: BridgeState) -> None:
         return None  # the core keeps no state of its own: devices read the store
@@ -117,7 +124,9 @@ class CorePlugin:
 
 
 class Supervisor:
-    """Runs each task and starts it again if it stops (a plugin crash must not end the bridge)."""
+    """Runs each task and starts it again if it stops (a plugin crash must not end the bridge).
+    Every stop is logged (review M10: never a silent restart); a task that raises
+    `FatalTaskError` can never work as installed and is not started again."""
 
     def __init__(self, delay_s: float = RESTART_DELAY_S) -> None:
         self._delay = delay_s
@@ -130,8 +139,12 @@ class Supervisor:
         while True:
             try:
                 await factory()
+                log.warning("a bridge task ended; starting it again", extra={"task": name})
             except asyncio.CancelledError:
                 raise
+            except FatalTaskError:
+                log.error("a bridge task can't run here and was stopped", extra={"task": name})
+                return
             except Exception as exc:  # noqa: BLE001
                 log.error(
                     "a bridge task stopped", extra={"task": name, "error": type(exc).__name__}
@@ -174,15 +187,17 @@ class Bridge:
             events=self.link,
             clock=clock,
         )
-        # I1: each plugin reads its own keys from bridge.env (MQTT, Frigate, Faces) and can find
-        # the plugins built before or after it by name when a message arrives
+        # I1: each plugin reads its own keys from bridge.env (MQTT, Frigate, Faces; never the Home
+        # Assistant token: `plugin_env`) and can find the plugins built before or after it by name
+        # when a message arrives
         peers: dict[str, BridgePlugin] = {}
         ctx = BridgeContext(
-            env=dict(env or {}), data_dir=cfg.data_dir, events=self.link, now=clock, peers=peers
+            env=plugin_env(env), data_dir=cfg.data_dir, events=self.link, now=clock, peers=peers
         )
         self.heartbeat: HeartbeatLoop | None = None
-        core = CorePlugin(self.store, self.ha, self.devices, self._apply)
-        self.plugins: list[BridgePlugin] = [core, *(f(ctx) for f in factories)]
+        self.broken: tuple[str, ...] = ()
+        core = CorePlugin(self.store, self.ha, self.devices, self._apply, lambda: self.broken)
+        self.plugins: list[BridgePlugin] = [core, *self._build(factories, ctx)]
         peers.update({p.name: p for p in self.plugins})
         check_routes(self.plugins)
         self.heartbeat = HeartbeatLoop(self.store, self.link, self.plugins, clock=clock)
@@ -190,15 +205,46 @@ class Bridge:
             (r.method, r.path): r for p in self.plugins for r in p.routes()
         }
         self.supervisor = Supervisor()
-        self.app = self._build()
+        self.app = self._app()
+
+    def _build(self, factories: Sequence[PluginFactory], ctx: BridgeContext) -> list[BridgePlugin]:
+        """Each plugin from its factory. Review M10: one that raises is logged by name and
+        skipped (the core and the others still start) and the heartbeat says so (`mqtt` false)."""
+        built: list[BridgePlugin] = []
+        broken: list[str] = []
+        for factory in factories:
+            name = str(getattr(factory, "__name__", "plugin"))
+            try:
+                built.append(factory(ctx))
+            except Exception as exc:  # noqa: BLE001 - the bridge itself keeps running
+                log.error(
+                    "a bridge part could not start",
+                    extra={"part": name, "error": type(exc).__name__},
+                )
+                broken.append(name)
+        self.broken = tuple(broken)
+        return built
 
     async def _apply(self, state: BridgeState) -> None:
         assert self.heartbeat is not None
         await self.heartbeat.apply(state)
 
-    def _build(self) -> FastAPI:
+    async def _close_plugins(self) -> None:
+        for plugin in self.plugins:
+            close = getattr(plugin, "aclose", None)
+            if close is None:
+                continue
+            try:
+                await close()
+            except Exception as exc:  # noqa: BLE001 - every plugin gets its turn to close
+                log.warning(
+                    "a bridge part did not close",
+                    extra={"part": plugin.name, "error": type(exc).__name__},
+                )
+
+    def _lifespan(self) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
         @asynccontextmanager
-        async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
+        async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             assert self.heartbeat is not None
             self.supervisor.start("heartbeat", self.heartbeat.run)
             for plugin in self.plugins:
@@ -208,10 +254,14 @@ class Bridge:
                 yield
             finally:
                 await self.supervisor.stop()
+                await self._close_plugins()
                 await self.link.aclose()
                 await self.ha.aclose()
 
-        app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+        return lifespan
+
+    def _app(self) -> FastAPI:
+        app = FastAPI(lifespan=self._lifespan(), docs_url=None, redoc_url=None, openapi_url=None)
 
         @app.api_route(
             "/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]

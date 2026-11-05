@@ -76,7 +76,7 @@
     };
   }
   const vips = (raw) => (Array.isArray(raw && raw.vip) ? raw.vip.map(obj).filter((v) => v && /^v_[0-9a-f]{8}$/.test(v.id)).slice(0, 20)
-    .map((v) => ({ id: v.id, kind: v.kind === 'email' ? 'email' : 'phone', ref: txt(v.ref, 120) })) : []);
+    .map((v) => ({ id: v.id, kind: v.kind === 'email' ? 'email' : 'phone', hint: txt(v.hint, 60) })) : []);
   const devices = (raw) => (Array.isArray(raw && raw.devices) ? raw.devices.map(obj).filter((v) => v && /^w_[0-9a-f]{8}$/.test(v.id))
     .slice(0, 5).map((v) => ({ id: v.id, name: txt(v.name, 40) || 'Browser' })) : []);
 
@@ -164,8 +164,9 @@
     const ul = mk('ul', 'avips'); ul.id = 'alertsVips';
     S.vip.forEach((v) => {
       const li = mk('li');
-      li.appendChild(mk('span', '', (v.kind === 'email' ? 'Email ' : 'Phone ') + v.ref));
-      const rm = button('', 'Remove', 'btn bact'); rm.setAttribute('aria-label', 'Remove ' + v.ref);
+      const who = (v.kind === 'email' ? 'Email ' : 'Phone ') + (v.hint || '');
+      li.appendChild(mk('span', '', who));
+      const rm = button('', 'Remove', 'btn bact'); rm.setAttribute('aria-label', 'Remove ' + who);
       rm.addEventListener('click', () => removeVip(v.id));
       li.appendChild(rm);
       ul.appendChild(li);

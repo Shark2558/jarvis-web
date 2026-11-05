@@ -7,7 +7,9 @@ pending after 5 minutes -> `home_arm_failed`) and D (the held-alerts summary whe
 
 - `home_offline`: no heartbeat for `home_offline_after_s` (12 minutes) -> state `offline`; if the
   alarm is armed, ONE `home_offline` alert per outage ("your home laptop stopped answering at
-  23:10 - camera alerts are off until it's back"); disarmed -> the state changes, nobody is told.
+  23:10 - camera alerts are off until it's back"), urgent (it rings through quiet hours); one
+  that no channel took is tried again at the next run; disarmed -> the state changes, nobody is
+  told.
   The heartbeat handler says "back" (`home_online`). `last_seen` is read from the stored value and
   the in-process one (whichever is newer), so an instance restart can't fake an outage.
 - `home_claims_sweep`: event claims older than 48 hours.
@@ -70,9 +72,9 @@ class OfflineJob:
         seen = status.last_seen_at
         if seen is None or self._clock() - seen <= self._after:
             return
-        if status.state == "offline":
-            counts["offline"] += 1
-            return
+        counts["offline"] += 1
+        if status.state == "offline" and status.outage_alerted:
+            return  # once per outage
         armed = False
         if self._arm is not None:
             armed = (await self._arm.view(uid)).armed
@@ -83,11 +85,13 @@ class OfflineJob:
                 f"Your home laptop stopped answering at {at:%H:%M}. "
                 "Camera alerts are off until it's back."
             )
-            await self._notifier.notify(uid, Signal(source="home", kind="home_offline"), text)
-            sent = True
-            counts["alerts"] += 1
-        await self._store.mark_offline(uid, alerted=sent)
-        counts["offline"] += 1
+            got = await self._notifier.notify(uid, Signal(source="home", kind="home_offline"), text)
+            # integrated review H5: only an alert Telegram or a browser took counts; one that was
+            # held or reached nobody is tried again at the next run while the outage lasts
+            sent = bool(got.telegram or got.push)
+            counts["alerts"] += int(sent)
+        if status.state != "offline" or sent:
+            await self._store.mark_offline(uid, alerted=sent)
 
 
 class _Sweep:

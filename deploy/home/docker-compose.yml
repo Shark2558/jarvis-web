@@ -63,6 +63,10 @@ services:
     extra_hosts:
       - "host.docker.internal:172.29.80.1" # Home Assistant listens here and on 127.0.0.1 only
     env_file: bridge.env
+    environment:
+      # the Faces page listens on the container's own address, or the 127.0.0.1:8098 publish
+      # above reaches nothing; only this laptop can open it, and it checks the Host name too
+      FACES_BIND: "0.0.0.0"
     volumes:
       - ./bridge-data:/data
       # Frigate's face pictures: the Faces plugin deletes a removed person's pictures and sweeps

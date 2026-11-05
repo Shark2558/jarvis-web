@@ -141,9 +141,10 @@ class NotifyService:
             and settings.snapshot.on
             else None
         )
-        return await self._done(
-            uid, signal, await self._deliver(uid, signal, decision, text, want_photo)
-        )
+        delivery = await self._deliver(uid, signal, decision, text, want_photo)
+        if decision.action == "ring" and not (delivery.telegram or delivery.push):
+            self._storm.rollback(uid, signal, now)  # its retry must not count as a storm
+        return await self._done(uid, signal, delivery)
 
     async def _hold(
         self,

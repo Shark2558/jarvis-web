@@ -226,3 +226,14 @@ def test_decomposed_input_still_matches() -> None:
     import unicodedata
 
     assert emergency(unicodedata.normalize("NFD", "\u0d15\u0d33\u0d4d\u0d33\u0d7b")) is True
+
+
+# ---- integrated review H5: a laptop or arming problem is never held through the night ---------
+
+
+@pytest.mark.parametrize("kind", ["home_offline", "home_arm_failed"])
+def test_laptop_off_and_arming_problems_ring_through_quiet_hours(kind: str) -> None:
+    night = NotifySettings(quiet=QuietHours(on=True, start="22:00", end="07:00"))
+    two_am = datetime(2027, 1, 14, 20, 30, tzinfo=UTC)  # 02:00 local
+    assert DEFAULT_URGENCY[kind] == "urgent"
+    assert act(kind, two_am, night) == ("ring", "urgent")

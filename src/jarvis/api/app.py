@@ -41,7 +41,7 @@ from jarvis.api.drive import install_drive
 from jarvis.api.faces import install_faces
 from jarvis.api.family import install_family
 from jarvis.api.home import install_home
-from jarvis.api.home_wiring import wire_home, wire_notify
+from jarvis.api.home_wiring import check_job_names, notify_tick_jobs, wire_home, wire_notify
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
 from jarvis.api.media import router as media_router
@@ -446,6 +446,13 @@ def _log_up(app: FastAPI, s: Settings) -> None:
     )
 
 
+def _tick_jobs(app: FastAPI) -> tuple[Any, ...]:
+    """R2's feature jobs, plus the alert policy's when the home watchdog doesn't run them."""
+    jobs = (*personal_tick_jobs(app), *notify_tick_jobs(app))
+    check_job_names(jobs)
+    return jobs
+
+
 async def _drain_memory(app: FastAPI) -> None:
     """Let a learning run that is under way finish (bounded)."""
     if app.state.memory is not None:
@@ -517,7 +524,7 @@ def _lifespan(
             _wire_brain(app, s, built, docs)
             closers.register_new()
             wire_privacy(app, s, docs, audit)  # R2 D14: after the gateway and the brief
-            app.state.tick_jobs = personal_tick_jobs(app)  # R2: run after the tick's sweeps
+            app.state.tick_jobs = _tick_jobs(app)  # R2 + R3 H3: run after the tick's sweeps
             stack.push_async_callback(_drain_memory, app)  # runs first on the way out
             await adopt_legacy_sessions(app.state.store, s)
             _log_up(app, s)

@@ -41,14 +41,16 @@ MAX_PUSH_DEVICES = 5  # D11
 DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
     {
         # urgent: rings through quiet hours. home_summary is the storm summary ("12 more
-        # detections at the Gate") that follows urgent rings.
+        # detections at the Gate") that follows urgent rings. A laptop that stopped answering
+        # while armed, and an alarm that could not arm or lost its camera link, mean burglar
+        # alerts can't arrive: never held through the night (integrated review H5).
         "home_intruder": "urgent",
         "home_hazard": "urgent",
         "home_summary": "urgent",
+        "home_offline": "urgent",
+        "home_arm_failed": "urgent",
         # important: held in quiet hours; rings unless "Only urgent things ring"
         "home_package": "important",
-        "home_offline": "important",
-        "home_arm_failed": "important",
         "approval_waiting": "important",
         "vault_expiry": "important",
         "test": "important",  # D10 rule 1 rings a test whatever its level

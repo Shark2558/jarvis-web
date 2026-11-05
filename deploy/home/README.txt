@@ -19,9 +19,13 @@ The steps
 ---------
  1. Check your laptop: Windows 10 22H2 or Windows 11, plugged in. Task Manager -> Performance ->
     CPU says "Virtualization: Enabled". If not, ask Claude for the BIOS steps.
- 2. In JARVIS: Integrations -> Home -> Download home kit. Unzip it to C:\JARVIS-Home.
- 3. Right-click setup-windows.ps1 -> Run with PowerShell (say Yes to administrator). If it asks
-    you to restart, do, then run it again.
+ 2. In JARVIS: Integrations -> Home -> Download home kit. Right-click the zip -> Extract All.
+    Extract it to C:\ (this makes the folder C:\JARVIS-Home).
+ 3. Start -> type PowerShell -> right-click Windows PowerShell -> Run as administrator (say Yes).
+    Type these two lines:
+        cd C:\JARVIS-Home
+        powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1
+    If it asks you to restart, do, then open PowerShell as administrator and type them again.
  4. When Ubuntu opens the first time, choose a user name and a password and write them down.
  5. Say Yes when the script offers to keep the laptop awake when plugged in and to ignore closing
     the lid.
@@ -31,10 +35,13 @@ The steps
     the address it shows.
  7. Type that address, login and password into the script. It says "Camera works" when Frigate
     sees the picture.
- 8. Home Assistant (you can skip this; the camera works without it): open http://localhost:8123 and
-    create your account. Settings -> People -> add a person "JARVIS bridge" who can log in and is
-    NOT an administrator. Log in as it in a private window -> Profile -> Security -> Long-lived
-    access tokens -> Create -> paste it into the script.
+ 8. Home Assistant (optional; the camera works without it). Do this after the script has finished,
+    when Home Assistant is running: open http://localhost:8123 and create your account. Settings ->
+    People -> add a person "JARVIS bridge" who can log in and is NOT an administrator. Log in as it
+    in a private window -> Profile -> Security -> Long-lived access tokens -> Create. Then, in
+    PowerShell as administrator in C:\JARVIS-Home, type
+        powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HaToken
+    and paste the token (it is not shown while you paste).
  9. Tailscale (installed for offline mode; if not, install it and sign in). When the script asks,
     allow Funnel in the browser page that opens.
 10. In JARVIS: Integrations -> Home -> Link -> type the code into the script. Wait for "Linked" (it

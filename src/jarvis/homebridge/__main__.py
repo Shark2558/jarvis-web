@@ -19,9 +19,15 @@ from jarvis.homebridge.plugins import PluginFactory
 
 
 def _registry() -> Sequence[PluginFactory]:
+    """The camera and faces parts. Review M10: a registry that can't be imported is said loudly
+    (the bridge still starts its core, and the heartbeat shows the camera isn't receiving)."""
     try:
         from jarvis.homebridge.registry import PLUGINS
-    except ImportError:  # pragma: no cover
+    except ImportError as exc:
+        logging.getLogger("jarvis.homebridge").error(
+            "the bridge's parts could not be loaded: camera and faces are OFF",
+            extra={"error": type(exc).__name__},
+        )
         return ()
     return PLUGINS
 

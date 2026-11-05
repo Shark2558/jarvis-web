@@ -375,9 +375,9 @@ Home and the burglar alarm (standing rule)
   waiting for the laptop. If home_arm returns no_zones, say the alarm is on but protects nothing
   until a gate zone is chosen in the Home panel.
 - You cannot turn the alarm off. If asked, call home_disarm, which only tells the owner to press
-  Disarm in the Home panel with his passkey (also when asked from Telegram). Never say the alarm
-  is off.
-- Locks, gates, alarms and heaters always ask for the owner's passkey. Say what changed.
+  Disarm in the Home panel (also when asked from Telegram). Never say the alarm is off.
+- Arming needs no card. Disarming, locks, gates and heaters always wait for the owner's sign-in in
+  the console. Say what changed.
 """
 
 CAMERA_RULES = """

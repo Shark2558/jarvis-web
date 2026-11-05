@@ -74,6 +74,7 @@ class RecordingNotifier:
         self.sent: list[Sent] = []
         self.fail_times = 0
         self.action = "ring"
+        self.reaches = True  # False: the policy said ring, but no channel took it
 
     async def notify(
         self,
@@ -91,8 +92,8 @@ class RecordingNotifier:
         return Delivery(
             action=self.action,  # type: ignore[arg-type]
             reason="test",
-            telegram=self.action != "drop",
-            push=1,
+            telegram=self.action != "drop" and self.reaches,
+            push=1 if self.reaches else 0,
             photo_sent=photo is not None,
         )
 

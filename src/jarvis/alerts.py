@@ -47,8 +47,12 @@ HOME_ALERT_KINDS: tuple[AlertKind, ...] = (
 
 @dataclass(frozen=True)
 class AlertResult:
+    """`queued`: not sent yet but kept to go out later (an alert held for quiet hours goes out in
+    the morning summary), so a caller must not send it again."""
+
     sent: bool
     reason: str = ""
+    queued: bool = False
 
 
 @runtime_checkable

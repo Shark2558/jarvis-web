@@ -22,7 +22,9 @@ _WHY = {
 def result_of(delivery: Delivery) -> AlertResult:
     if delivery.telegram or delivery.push:
         return AlertResult(sent=True)
-    if delivery.action in {"drop", "hold"}:
+    if delivery.action == "hold":  # it goes out in the held summary: queued, never "failed"
+        return AlertResult(sent=False, reason=_WHY["quiet_hours"], queued=True)
+    if delivery.action == "drop":
         return AlertResult(sent=False, reason=_WHY.get(delivery.reason, "not sent"))
     return AlertResult(sent=False, reason="no channel could deliver it")
 

@@ -43,6 +43,8 @@ def parts_for_store(event: Heartbeat) -> dict[str, Any]:
         out["frigate"] = p.frigate
     if p.doorstep_model is not None:
         out["doorstep_model"] = p.doorstep_model
+    if p.mqtt is not None:
+        out["mqtt"] = p.mqtt
     if p.cameras is not None:
         out["cameras"] = [{"id": c.id, "online": c.online} for c in p.cameras]
     return out
@@ -63,7 +65,8 @@ class HeartbeatHandler:
             uid,
             parts=parts,
             bridge_version=event.bridge_version,
-            degraded=parts.get("frigate") is False,
+            # Frigate silent, or the bridge not receiving its events: the camera can't alert
+            degraded=parts.get("frigate") is False or parts.get("mqtt") is False,
         )
         if seen is not None and seen.previous == "offline" and seen.outage_alerted:
             if self._notifier is not None:

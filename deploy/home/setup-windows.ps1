@@ -1,6 +1,10 @@
-# JARVIS home kit, the Windows half of the setup (R3 D2). Right-click -> Run with PowerShell.
+# JARVIS home kit, the Windows half of the setup (R3 D2). Open PowerShell as administrator, then:
+#   cd C:\JARVIS-Home
+#   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1
+# Later, once Home Assistant runs and has its accounts (optional):
+#   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HaToken
 # Safe to run again: every step checks first and skips what is already done.
-#Requires -RunAsAdministrator
+param([switch]$HaToken)
 $ErrorActionPreference = 'Stop'
 $Kit = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Distro = 'Ubuntu-24.04'
@@ -16,6 +20,28 @@ function AskSecret($text) { # typed without echo
 function Yes($text) { return ((Read-Host "$text (Y/N)") -match '^[Yy]') }
 function InWsl($command) { wsl -d $Distro -- bash -lc $command; if ($LASTEXITCODE -ne 0) { throw 'A step inside Ubuntu failed. Read the lines above and tell Claude.' } }
 function WslPath($path) { return (wsl -d $Distro -- wslpath -a ($path -replace '\\', '/')).Trim() }
+
+# 0. Administrator (a right-click on the script does not give it) ------------------------------
+$me = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $me.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host 'This needs PowerShell as administrator: Start -> type PowerShell -> Run as administrator. Then type:'
+    Write-Host "  cd `"$Kit`""
+    if ($HaToken) { Write-Host '  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HaToken' }
+    else { Write-Host '  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1' }
+    exit 1
+}
+
+# Later, optional: the Home Assistant token, once Home Assistant runs and has its accounts --------
+if ($HaToken) {
+    Say 'Home Assistant token for the JARVIS bridge user'
+    Write-Host 'Make it at http://localhost:8123 (logged in as the JARVIS bridge person): Profile -> Security -> Long-lived access tokens -> Create.'
+    $env:HA_TOKEN = AskSecret 'Paste the token'
+    if (-not $env:HA_TOKEN) { Write-Host 'No token: nothing changed.'; exit 0 }
+    $env:WSLENV = 'HA_TOKEN'
+    try { InWsl 'bash ~/jarvis-home/setup-wsl.sh ha-token' }
+    finally { Remove-Item Env:HA_TOKEN -ErrorAction SilentlyContinue }
+    exit 0
+}
 
 # 1. Windows and virtualisation -----------------------------------------------------------------
 Say 'Checking this laptop'
@@ -63,20 +89,18 @@ $out = wsl -d $Distro -- bash -lc "KIT_DIR='$kitInWsl' bash '$kitInWsl/setup-wsl
 if ($LASTEXITCODE -ne 0) { throw 'Installing Docker failed. Read the lines above and tell Claude.' }
 if (($log -join ' ') -match 'RESTART_WSL') { wsl --shutdown; Start-Sleep -Seconds 8 }
 
-# 6. The phone camera and Home Assistant --------------------------------------------------------
+# 6. The phone camera (Home Assistant's token comes later: -HaToken) ----------------------------
 Say 'The phone camera (IP Webcam app)'
 Write-Host 'On the old phone: open IP Webcam, press Start server, and note the address it shows (like 192.168.1.20).'
 $phone = Ask 'Phone address'
 $user = Ask 'Camera login'
 $pass = AskSecret 'Camera password'
 $env:CAMERA_URL = "rtsp://${user}:${pass}@${phone}:8080/h264_ulaw.sdp"
-Say 'Home Assistant (optional: press Enter to skip; the camera works without it)'
-$env:HA_TOKEN = AskSecret 'Home Assistant token for the JARVIS bridge user'
-$env:WSLENV = 'CAMERA_URL:HA_TOKEN'
+$env:WSLENV = 'CAMERA_URL'
 
 InWsl "KIT_DIR='$kitInWsl' bash '$kitInWsl/setup-wsl.sh' configure"
 InWsl "bash ~/jarvis-home/setup-wsl.sh up"
-Remove-Item Env:CAMERA_URL, Env:HA_TOKEN -ErrorAction SilentlyContinue
+Remove-Item Env:CAMERA_URL -ErrorAction SilentlyContinue
 wsl -d $Distro -- bash -lc 'bash ~/jarvis-home/setup-wsl.sh camera'
 
 # 7. Tailscale Funnel ---------------------------------------------------------------------------
@@ -105,7 +129,12 @@ wsl -d $Distro -- bash -lc 'bash ~/jarvis-home/setup-wsl.sh passwords'
 Write-Host 'Frigate: open http://localhost:8971 and log in as admin with the password above.'
 
 Say 'Starting JARVIS Home whenever you log in'
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -File `"$Kit\start-home.ps1`""
+# -ExecutionPolicy Bypass: Windows' default policy would block the script after a restart
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Kit\start-home.ps1`""
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:UserName
 Register-ScheduledTask -TaskName 'JARVIS Home' -Action $action -Trigger $trigger -Force | Out-Null
 Write-Host 'Done. JARVIS should say Online in Integrations -> Home.'
+
+Say 'Later (optional): Home Assistant'
+Write-Host 'Open http://localhost:8123, create your account, add a person "JARVIS bridge" who can log in and is NOT an administrator, make a long-lived token as that person, then run (PowerShell as administrator, in this folder):'
+Write-Host '  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HaToken'

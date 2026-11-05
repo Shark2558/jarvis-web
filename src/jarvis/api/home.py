@@ -7,13 +7,16 @@ Outside /v1 (like /telegram/webhook), each with its own door:
                                 (plain words); 409 not_reachable; 10 a minute per client
   POST /home/webhook            HMAC up-key (jarvis.home.webhook), bare 401; 404 when Home is off
   POST /internal/home/watchdog  Cloud Scheduler OIDC, audience = this exact URL ->
-                                `{homes, offline, held_sent, swept, jobs}`
+                                `{homes, offline, held_sent, swept, jobs}`; 503 (same body)
+                                when any job failed, so the Scheduler shows it
 
 Owner only (`require_auth` + `current_user`, errors `{error, detail, reason?}`):
   GET    /v1/home               {available, reason?, linked, state, host, last_seen_at, parts,
                                  bridge_version, kit_outdated, devices_available}
   POST   /v1/home/link-code     {code, expires_in_s}
-  DELETE /v1/home/link?confirm=1  unlink (audited)
+  DELETE /v1/home/link?confirm=1  unlink (audited); while armed it is a disarm too: body
+                                {proof?} and exactly the Disarm button's rules (403
+                                console_only / reauth_required / passkey_required)
   GET    /v1/home/kit           the zip, `X-Kit-Sha256`, `Cache-Control: no-store`
   GET    /v1/home/kit/info      {sha256, size, version}
   GET    /v1/home/devices[?catalogue=1]   the exposed list, or what he could expose
@@ -32,11 +35,12 @@ from fastapi import APIRouter, Depends, FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from jarvis.api.auth import require_auth
+from jarvis.api.auth import fresh_sign_in_left, require_auth
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter, client_key
 from jarvis.api.scheduler_auth import WATCHDOG_PATH, require_scheduler
 from jarvis.api.settings_audit import record_change
+from jarvis.camera.guard import ArmedUnlinkGuard
 from jarvis.home import kit
 from jarvis.home.devices import DeviceRejected, DeviceService
 from jarvis.home.link import LinkRefused, LinkService
@@ -45,6 +49,7 @@ from jarvis.home.store import HomeStore, HomeStoreUnavailable
 from jarvis.home.watchdog import Watchdog
 from jarvis.home.webhook import HomeWebhook
 from jarvis.logging import get_logger
+from jarvis.permissions.models import PasskeyProof
 
 log = get_logger(__name__)
 
@@ -62,6 +67,14 @@ class LinkBody(BaseModel):
     bridge_url: str = Field(max_length=300)
     bridge_version: str = Field(max_length=20)
     link_secret: str = Field(max_length=64)
+
+
+class UnlinkBody(BaseModel):
+    """Only needed while armed: the Disarm button's passkey check (home_disarm, this home and
+    arm rev)."""
+
+    model_config = ConfigDict(extra="forbid")
+    proof: PasskeyProof | None = None
 
 
 class DeviceRow(BaseModel):
@@ -130,12 +143,16 @@ async def home_webhook(request: Request) -> Response:
     return await hook.receive(request)
 
 
-@internal.post("/watchdog", dependencies=[Depends(require_scheduler)])
-async def home_watchdog(request: Request) -> dict[str, Any]:
+@internal.post("/watchdog", dependencies=[Depends(require_scheduler)], response_model=None)
+async def home_watchdog(request: Request) -> dict[str, Any] | JSONResponse:
     dog: Watchdog | None = _svc(request, "home_watchdog")
     if dog is None:
         return {"homes": 0, "offline": 0, "held_sent": 0, "swept": 0, "jobs": {}}
-    return await dog.run()
+    out = await dog.run()
+    jobs = out.get("jobs")
+    if isinstance(jobs, dict) and "failed" in jobs.values():
+        return JSONResponse(status_code=503, content=out)  # M9: the Scheduler shows the failure
+    return out
 
 
 # ---- the owner's side ---------------------------------------------------------------------------
@@ -209,6 +226,7 @@ async def home_link_code(request: Request, uid: str = Depends(current_user)) -> 
 @router.delete("/link")
 async def home_unlink(
     request: Request,
+    body: UnlinkBody | None = None,
     confirm: str | None = Query(default=None, max_length=5),
     uid: str = Depends(current_user),
 ) -> JSONResponse:
@@ -217,6 +235,15 @@ async def home_unlink(
         return _err(503, "unavailable", NOT_AVAILABLE)
     if confirm != "1":
         return _err(422, "confirm_required", "Confirm that you want to unlink your home laptop.")
+    guard: ArmedUnlinkGuard | None = _svc(request, "home_unlink_guard")
+    if guard is not None:  # S4: armed -> the Disarm button's proof, audited as a disarm, first
+        await guard.check(
+            uid,
+            body.proof if body is not None else None,
+            fresh_left_s=fresh_sign_in_left(request, request.app.state.settings),
+            where="unlink",
+            from_panel=True,
+        )
     had = await store.unlink(uid)
     await record_change(
         request, agent="owner", tool="home_unlink", args={"linked": had}, detail="unlinked"

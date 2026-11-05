@@ -172,6 +172,25 @@ async def test_vip_references_are_validated_listed_and_removable(gc: Any) -> Non
     assert (await c.delete(f"/v1/notify/vip/{vid}", headers=CSRF)).status_code == 404
 
 
+async def test_list_vip_never_returns_references(gc: Any) -> None:
+    """Integrated review S6: the list says who is there by kind and a short hint only; the phone
+    number or address itself never leaves the server again (it is sealed in Firestore)."""
+    c, _ = gc
+    await c.post("/v1/notify/vip", json={"kind": "phone", "ref": "+91 98765 43210"}, headers=CSRF)
+    await c.post(
+        "/v1/notify/vip", json={"kind": "email", "ref": "Anjali@Example.com"}, headers=CSRF
+    )
+    got = await c.get("/v1/notify/vip")
+    assert got.status_code == 200
+    body = got.json()
+    for v in body["vip"]:
+        assert set(v) == {"id", "kind", "hint"}, v
+    assert "98765" not in got.text and "43210" not in got.text
+    assert "anjali" not in got.text.lower() and "example" not in got.text.lower()
+    hints = {v["kind"]: v["hint"] for v in body["vip"]}
+    assert hints == {"phone": "ends in 10", "email": "a..."}
+
+
 async def test_the_vip_list_is_capped_and_duplicates_are_ignored(gc: Any) -> None:
     c, _ = gc
     for i in range(20):

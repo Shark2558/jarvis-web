@@ -616,18 +616,23 @@ New separated paragraphs, each pinned by `tests/test_r3_persona.py`:
 **Owner setup guide (outline; plain words; `deploy/home/README.txt` and the console's collapsed steps)**
 1. Check your laptop: Windows 10 22H2 or 11, plugged in. Task Manager → Performance → CPU says "Virtualization:
    Enabled" (if not, ask Claude for the BIOS steps).
-2. In JARVIS: Integrations → Home → **Download home kit**. Unzip it to `C:\JARVIS-Home`.
-3. Right-click `setup-windows.ps1` → Run with PowerShell (say Yes to administrator). If it asks you to restart, do,
-   then run it again.
+2. In JARVIS: Integrations -> Home -> **Download home kit**. Extract it to `C:\` (the zip holds the folder, so this
+   makes `C:\JARVIS-Home`).
+3. Open PowerShell **as administrator**, then `cd C:\JARVIS-Home` and
+   `powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1` (the script checks it is elevated and prints this
+   line if not; a right-click "Run with PowerShell" is not elevated). If it asks you to restart, do, then run it
+   again.
 4. When Ubuntu opens the first time, choose a user name and a password (write them down).
 5. Say Yes when the script offers to keep the laptop awake when plugged in and to ignore closing the lid.
 6. Old phone: install **IP Webcam** from the Play Store. In it: Connection settings → Login/password (set both);
    Video preferences → 1280×720; turn off the phone's battery optimisation for the app. Plug in the charger and
    mount the phone facing **your own** gate. Press **Start server** and note the address it shows.
 7. Type that address, login and password into the script. It says "Camera works" when Frigate sees the picture.
-8. Home Assistant (you can skip this; the camera works without it): open `http://localhost:8123`, create your
-   account. Settings → People → add a person "JARVIS bridge" who can log in, **not** an administrator. Log in as it
-   in a private window → Profile → Security → Long-lived access tokens → Create → paste it into the script.
+8. Home Assistant (optional; the camera works without it), after the script has finished and Home Assistant runs:
+   open `http://localhost:8123`, create your account. Settings -> People -> add a person "JARVIS bridge" who can
+   log in, **not** an administrator. Log in as it in a private window -> Profile -> Security -> Long-lived access
+   tokens -> Create -> `powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HaToken` (as administrator)
+   and paste it.
 9. Tailscale (installed for offline mode; if not, install it and sign in). When the script asks, allow Funnel in the
    browser page that opens.
 10. In JARVIS: Integrations → Home → **Link** → type the code into the script. Wait for "Linked" (it can take 10

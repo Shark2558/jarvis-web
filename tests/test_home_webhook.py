@@ -391,3 +391,91 @@ async def test_the_negative_cache_is_bounded_and_a_new_link_clears_it(tmp_path: 
         assert await world.store.find(rec.home_id) is not None
     finally:
         await world.aclose()
+
+
+# ---- integrated review S2 / H5 ------------------------------------------------------------------
+
+
+async def test_handler_store_unavailable_gives_claim_back(w: World) -> None:
+    """S2: a hazard whose handler hits a store blip answers 503 and gives its id back, so the
+    bridge's retry (same id) still rings."""
+    from jarvis.home.store import HomeStoreUnavailable
+
+    w.ha_states[4]["attributes"]["device_class"] = "smoke"
+    await w.devices.expose(
+        UID,
+        [{"entity_id": "binary_sensor.kitchen_smoke", "label": "Kitchen", "class": "read"}],
+    )
+    real = w.store.load_devices
+    calls = {"n": 0}
+
+    async def flaky(uid: str) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise HomeStoreUnavailable("blip")
+        return await real(uid)
+
+    w.store.load_devices = flaky  # type: ignore[method-assign]
+    ev = {
+        "id": "hz-blip", "type": "hazard", "entity": "binary_sensor.kitchen_smoke",
+        "device_class": "smoke", "state": "on", "at": 1.0,
+    }  # fmt: skip
+    first = await post(w, ev)
+    assert first.status_code == 503 and bare(first)
+    assert (await post(w, ev)).status_code == 200
+    assert w.notes.kinds() == ["home_hazard"]
+
+
+async def test_a_claim_that_cannot_be_made_is_503_and_nothing_is_given_back(w: World) -> None:
+    from jarvis.home.store import HomeStoreUnavailable
+
+    async def down(uid: str, event_id: str) -> bool:
+        raise HomeStoreUnavailable("down")
+
+    released: list[str] = []
+
+    async def release(uid: str, event_id: str) -> None:
+        released.append(event_id)
+
+    w.store.claim = down  # type: ignore[method-assign]
+    w.store.release = release  # type: ignore[method-assign]
+    assert (await post(w, det("no-claim"))).status_code == 503
+    assert released == []  # nothing was claimed, so nothing is given back
+
+
+class _Unheard:
+    """A notifier whose every alert reached no channel."""
+
+    def __init__(self) -> None:
+        self.kinds: list[str] = []
+
+    async def notify(self, uid: str, signal: Any, message: str, **_: Any) -> Any:
+        from jarvis.notify.ports import Delivery
+
+        self.kinds.append(signal.kind)
+        return Delivery(action="ring", reason="urgent", telegram=False, push=0)
+
+
+async def test_an_offline_alert_that_reached_nobody_is_not_counted_and_is_tried_again(
+    w: World,
+) -> None:
+    """H5: the watchdog marks the outage alerted only when Telegram or a browser took it."""
+    unheard = _Unheard()
+    w.offline._notifier = unheard  # noqa: SLF001
+    w.arm.armed = True
+    await post(w, hb("h1"))
+    w.clock.t += 800
+    await w.watchdog.run()
+    status = await w.store.status(UID)
+    assert status is not None and status.state == "offline" and status.outage_alerted is False
+    w.clock.t += 300
+    await w.watchdog.run()
+    assert unheard.kinds == ["home_offline", "home_offline"]  # tried again: nobody had it
+    w.offline._notifier = w.notes  # noqa: SLF001
+    w.clock.t += 300
+    await w.watchdog.run()
+    status = await w.store.status(UID)
+    assert status is not None and status.outage_alerted is True
+    w.clock.t += 300
+    await w.watchdog.run()
+    assert w.notes.kinds() == ["home_offline"]  # once delivered: once per outage

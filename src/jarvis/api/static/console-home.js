@@ -20,13 +20,13 @@
   const SHA = /^[0-9a-f]{64}$/;
   const STEPS = [
     'Check your laptop: Windows 10 22H2 or Windows 11, plugged in, virtualization enabled.',
-    'Download the home kit here and unzip it to C:\\JARVIS-Home.',
-    'Right-click setup-windows.ps1 and choose Run with PowerShell (say Yes to administrator).',
+    'Download the home kit here and extract it to C:\\ (this makes C:\\JARVIS-Home).',
+    'Open PowerShell as administrator, type cd C:\\JARVIS-Home, then powershell -ExecutionPolicy Bypass -File .\\setup-windows.ps1',
     'When Ubuntu opens the first time, choose a user name and a password and write them down.',
     'Say Yes when the script offers to keep the laptop awake when plugged in.',
     'Old phone: install IP Webcam, set a login, mount it facing your own gate and press Start server.',
     'Type the camera address, login and password into the script.',
-    'Optional: create a Home Assistant account and a long-lived token for a non-administrator person, and paste it into the script.',
+    'Optional, once the script has finished: create a Home Assistant account and a long-lived token for a non-administrator person, then run setup-windows.ps1 -HaToken and paste it.',
     'Tailscale: when the script asks, allow Funnel in the browser page that opens.',
     'Press Link here and type the code into the script. Wait for Linked.',
     'Frigate: draw a zone named gate over your own gate. Mask the road and your neighbours.',
@@ -253,16 +253,32 @@
     S.timer = setTimeout(tick, POLL_MS);
     await done;
   }
+  // R3 review S4: while the alarm is on, unlinking switches it off, so it asks what Disarm asks
+  // (the passkey for this home and arm rev, or a fresh Google sign-in).
+  async function disarmProof() {
+    const P = window.JarvisPasskey;
+    if (!P || typeof P.supported !== 'function' || !P.supported()) throw new Error('This browser can\'t use passkeys. Disarm in the Home panel first.');
+    const a = obj(await api('/v1/home/alarm'));
+    const t = a && typeof a.disarm_target === 'string' && /^h_[0-9a-f]{8}:[0-9]{1,12}$/.test(a.disarm_target) ? a.disarm_target : null;
+    if (!t) throw new Error('Disarm in the Home panel first, then unlink.');
+    return P.prove('home_disarm', t);
+  }
   async function askUnlink(trigger) {
     const sure = await ask('Unlink your laptop?', [
-      mk('p', '', 'JARVIS will stop talking to your home laptop and forget the link. You can link again at any time.')], 'Unlink', trigger);
+      mk('p', '', 'JARVIS will stop talking to your home laptop and forget the link. You can link again at any time.'),
+      mk('p', 'bfine', 'If the alarm is on, unlinking switches it off: you will be asked to approve that like Disarm.')], 'Unlink', trigger);
     if (!sure || S.busy) return;
     S.busy = true;
     try {
-      await api('/v1/home/link?confirm=1', { method: 'DELETE' });
+      try { await api('/v1/home/link?confirm=1', { method: 'DELETE' }); }
+      catch (e) {
+        if (!e || (e.code !== 'passkey_required' && e.code !== 'passkey_rejected')) throw e;
+        await api('/v1/home/link?confirm=1', { method: 'DELETE', body: { proof: await disarmProof() } });
+      }
       S.data = normal({ available: true, linked: false }); note('ok', 'Unlinked.');
     } catch (e) {
-      if (!(e && e.status === 401)) note('bad', detailOf(e) || 'Couldn\'t unlink. Please try again.');
+      if (e && e.code === 'reauth_required') note('bad', 'The alarm is on: disarm it in the Home panel first (it asks you to sign in again), then unlink.');
+      else if (!(e && e.status === 401)) note('bad', detailOf(e) || 'Couldn\'t unlink. Please try again.');
     } finally { S.busy = false; render(); }
   }
 

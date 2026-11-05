@@ -184,8 +184,9 @@ async def test_state_push_applies_newer_parts_and_acks_arm(w: World) -> None:
     state = BridgeState(arm=ArmState(armed=True, rev=3), settings=SettingsState(rev=1))
     await w.client.call(UID, "POST", "/bridge/v1/state", state.model_dump(mode="json"))
     assert w.bridge.store.state.arm is not None and w.bridge.store.state.arm.rev == 3
-    acks = [e for e in posted if e["type"] == "ack"]
-    assert acks and acks[0]["what"] == "state" and acks[0]["rev"] == 3
+    # review M7: the core no longer sends its own ack (the cloud ignored it); only the camera
+    # plugin's `arm:<rev>:...` ack confirms an arm
+    assert [e for e in posted if e["type"] == "ack"] == []
     posted.clear()
     await w.client.call(UID, "POST", "/bridge/v1/state", state.model_dump(mode="json"))
     assert posted == []  # nothing newer: no second ack
@@ -247,6 +248,40 @@ async def test_a_broken_part_never_stops_the_heartbeat(w: World) -> None:
     w.bridge.heartbeat._plugins = [*w.bridge.plugins, Bad()]  # type: ignore[union-attr]  # noqa: SLF001
     w.bridge_state.state = BridgeState(arm=ArmState(armed=True, rev=1))  # type: ignore[union-attr]
     assert await w.bridge.heartbeat.beat() is True  # type: ignore[union-attr]
+
+
+async def test_every_heartbeat_answer_reaches_plugins_that_want_it(w: World) -> None:
+    """Review M7: a plugin with `on_reply` sees the cloud's whole state after each beat, even when
+    nothing in it is newer (the camera re-sends an arm ack that was lost); one that fails never
+    stops the heartbeat."""
+    got: list[BridgeState] = []
+
+    class Listener:
+        name = "listener"
+
+        def routes(self) -> list[Any]:
+            return []
+
+        def tasks(self) -> list[Any]:
+            return []
+
+        async def heartbeat_part(self) -> Any:
+            from jarvis.home.ports import HeartbeatParts
+
+            return HeartbeatParts()
+
+        async def apply_state(self, state: Any) -> None:
+            return None
+
+        async def on_reply(self, state: BridgeState) -> None:
+            got.append(state)
+            raise RuntimeError("one bad plugin")
+
+    w.bridge.heartbeat._plugins = [*w.bridge.plugins, Listener()]  # type: ignore[union-attr]  # noqa: SLF001
+    w.bridge_state.state = BridgeState(arm=ArmState(armed=True, rev=2))  # type: ignore[union-attr]
+    assert await w.bridge.heartbeat.beat() is True  # type: ignore[union-attr]
+    assert await w.bridge.heartbeat.beat() is True  # type: ignore[union-attr]
+    assert [s.arm.rev for s in got if s.arm is not None] == [2, 2]
 
 
 # ---- the cloud link --------------------------------------------------------------------------

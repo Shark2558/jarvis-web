@@ -186,8 +186,15 @@ async def test_telegram_alerts_accept_the_keywords_and_send_no_photo_yet() -> No
 def test_every_alert_kind_has_a_default_urgency() -> None:
     assert set(DEFAULT_URGENCY) == set(get_args(AlertKind))
     urgent = {k for k, v in DEFAULT_URGENCY.items() if v == "urgent"}
-    assert urgent == {"home_intruder", "home_hazard", "home_summary"}
-    for kind in ("home_package", "home_offline", "home_arm_failed", "approval_waiting"):
+    # integrated review H5: a laptop that stopped answering or an alarm that can't work rings
+    assert urgent == {
+        "home_intruder",
+        "home_hazard",
+        "home_summary",
+        "home_offline",
+        "home_arm_failed",
+    }
+    for kind in ("home_package", "approval_waiting"):
         assert DEFAULT_URGENCY[kind] == "important"
     assert DEFAULT_URGENCY["vault_expiry"] == "important"
     for kind in ("home_greeting", "home_online", "offline_on", "offline_off", "brief_ready"):
@@ -1050,9 +1057,14 @@ def test_the_offline_window_covers_two_heartbeats() -> None:
 
 def test_the_bridge_extra_is_optional_and_the_cloud_image_unchanged() -> None:
     cfg = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert cfg["project"]["optional-dependencies"]["homebridge"] == ["aiomqtt>=2.3,<3"]
-    assert not any(d.startswith("aiomqtt") for d in cfg["project"]["dependencies"])
-    assert "aiomqtt" not in (ROOT / "requirements.lock").read_text(encoding="utf-8")
+    # integrated review C1: pinned like the bridge image's hash-locked requirements
+    assert cfg["project"]["optional-dependencies"]["homebridge"] == [
+        "aiomqtt==2.5.1",
+        "paho-mqtt==2.1.0",
+    ]
+    assert not any(d.startswith(("aiomqtt", "paho")) for d in cfg["project"]["dependencies"])
+    lock = (ROOT / "requirements.lock").read_text(encoding="utf-8")
+    assert "aiomqtt" not in lock and "paho-mqtt" not in lock
 
 
 # ---- Telegram: the home group ----------------------------------------------------------------

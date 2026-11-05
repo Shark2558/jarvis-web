@@ -79,7 +79,8 @@ class Fake:
             "names_in_alerts": False,
             "snapshot": {"on": False},
         }  # fmt: skip
-        self.vip: list[dict[str, str]] = [{"id": "v_00000001", "kind": "phone", "ref": HOSTILE}]
+        # review S6: the list carries a hint, never the number or address itself
+        self.vip: list[dict[str, str]] = [{"id": "v_00000001", "kind": "phone", "hint": HOSTILE}]
         self.devices: list[dict[str, str]] = []
         self.test_body: dict[str, Any] = {"sent": True, "telegram": True, "browsers": 1}
         self.confirm_seen = False
@@ -121,11 +122,12 @@ def _wire(page: Any, fake: Fake) -> None:
         if path == "notify/vip" and req.method == "GET":
             return json_(route, {"available": True, "vip": fake.vip})
         if path == "notify/vip" and req.method == "POST":
+            digits = [ch for ch in body["ref"] if ch.isdigit()]
             fake.vip.append(
                 {
                     "id": f"v_0000000{len(fake.vip) + 1}",
                     "kind": body["kind"],
-                    "ref": body["ref"],
+                    "hint": "ends in " + "".join(digits[-2:]),
                 }
             )
             return json_(route, {"id": fake.vip[-1]["id"], "kind": body["kind"]}, 201)
@@ -267,12 +269,13 @@ def test_vip_list_adds_removes_and_shows_hostile_text_as_text(
         )
         c.page.locator("#alertsVipRef").fill("+91 98765 43210")
         c.page.locator("#alertsVipAdd").click()
-        c.page.locator("#alertsVips li", has_text="98765").wait_for()
+        c.page.locator("#alertsVips li", has_text="ends in 10").wait_for()
         assert _last(fake, "POST", "notify/vip")["body"] == {
             "kind": "phone",
             "ref": "+91 98765 43210",
         }
-        c.page.locator("#alertsVips li", has_text="98765").locator("button").click()
+        assert "98765" not in str(c.page.locator("#alertsVips").text_content())
+        c.page.locator("#alertsVips li", has_text="ends in 10").locator("button").click()
         expect(c.page.locator("#alertsVips li")).to_have_count(1)
         assert c.errors == [] and c.csp_violations() == []
     finally:

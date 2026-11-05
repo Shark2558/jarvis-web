@@ -224,7 +224,7 @@ def camera_tools(
         Tool(
             "home_disarm",
             "The home alarm cannot be turned off by JARVIS. Calling this only tells the owner to "
-            "press Disarm in the Home panel with his passkey. Never say the alarm is off.",
+            "press Disarm in the Home panel with the owner's passkey. Never say the alarm is off.",
             {"type": "object", "properties": {}},
             ActionRisk.READ_ONLY,
             api.disarm,

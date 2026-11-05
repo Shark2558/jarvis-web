@@ -13,8 +13,9 @@ logged by check name only and never audited (a flood must not fill the audit cha
 5. strict parsing (`ports.parse_event`): 413 too large, 422 anything else wrong, and 422 for a kind
    no registered handler takes (I1: never claimed, never answered as handled)
 6. event ids are claimed create-only, so a replay or a bridge retry is a no-op 200
-7. dispatch to every registered `HomeEventHandler` that takes the type; a handler that fails gives
-   the claim back and answers 503, so the bridge's retry is not lost
+7. dispatch to every registered `HomeEventHandler` that takes the type; a handler that fails for
+   any reason (a store blip included) gives the claim back and answers 503, so the bridge's retry
+   is not lost; only a claim that could not be made at all has nothing to give back
 
 The answer is signed with the DOWN key and bound to the request, so the bridge trusts the state it
 gets back. A heartbeat's answer carries the cloud's `BridgeState` (the laptop catches up when it
@@ -46,6 +47,10 @@ from jarvis.logging import get_logger
 log = get_logger(__name__)
 
 CLIENT_PER_MINUTE = 120  # per network client, before the home id is even looked up (review H1)
+
+
+class _NotClaimed(Exception):
+    """The event id could not be claimed (the store is down): nothing to give back."""
 
 
 def bare(status: int) -> Response:
@@ -137,23 +142,40 @@ class HomeWebhook:
             return bare(422)
         try:
             data = await self._dispatch(uid, event)
-        except HomeStoreUnavailable:
-            return bare(503)
-        except Exception as exc:  # noqa: BLE001 - give the claim back so the retry counts
+        except _NotClaimed:
+            return bare(503)  # nothing was claimed: the retry is handled as new
+        except Exception as exc:  # noqa: BLE001 - the claim was given back: the retry counts
             log.error("home event handler failed", extra={"error": type(exc).__name__})
-            if event.type != "heartbeat":
-                await self._store.release(uid, event.id)
             return bare(503)
         return self._answer(record.keys(), record.home_id, signed.nonce, data)
 
     async def _dispatch(self, uid: str, event: object) -> dict[str, object]:
-        etype = event.type  # type: ignore[attr-defined]
-        if etype != "heartbeat" and not await self._store.claim(uid, event.id):  # type: ignore[attr-defined]
-            return {}
-        for handler in self._handlers:
-            if etype in handler.handles:
-                await handler.handle(uid, event)  # type: ignore[arg-type]
+        """Integrated review S2: once an id is claimed, ANY failure after it (a store blip in a
+        handler included) gives the claim back, so the bridge's retry of a hazard or a burglar
+        alert is never answered as already handled."""
+        etype, event_id = event.type, event.id  # type: ignore[attr-defined]
+        if etype != "heartbeat":
+            try:
+                fresh = await self._store.claim(uid, event_id)
+            except Exception as exc:
+                raise _NotClaimed from exc
+            if not fresh:
+                return {}
+        try:
+            for handler in self._handlers:
+                if etype in handler.handles:
+                    await handler.handle(uid, event)  # type: ignore[arg-type]
+        except BaseException:
+            if etype != "heartbeat":
+                await self._give_back(uid, event_id)
+            raise
         return {"state": await self._state(uid)} if etype == "heartbeat" else {}
+
+    async def _give_back(self, uid: str, event_id: str) -> None:
+        try:
+            await self._store.release(uid, event_id)
+        except Exception as exc:  # noqa: BLE001 - the 503 still goes out; the claim ages out
+            log.error("home event claim not given back", extra={"error": type(exc).__name__})
 
     def _answer(
         self, keys: signing.HomeKeys, home_id: str, nonce: str, data: dict[str, object]

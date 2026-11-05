@@ -32,6 +32,7 @@ from jarvis.api.auth import fresh_sign_in_left, require_auth
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.api.settings_audit import record_change
+from jarvis.camera.guard import audited_disarm
 from jarvis.camera.history import HistoryRejected
 from jarvis.camera.models import (
     LABEL_MAX,
@@ -42,7 +43,6 @@ from jarvis.camera.models import (
 from jarvis.camera.packages import model_note
 from jarvis.camera.ports import AlarmRefused, CameraUnavailable
 from jarvis.camera.service import CameraServices
-from jarvis.core.guardrails import ActionRisk
 from jarvis.home.ports import MAX_CAMERAS, MAX_ZONES, CameraId, HomeUnavailable, ZoneId
 from jarvis.logging import get_logger
 from jarvis.permissions.models import PasskeyProof
@@ -156,23 +156,10 @@ async def disarm_post(
     approved = await s.gate.panel_pass(uid, body.proof, fresh_left_s=fresh)
     if approved is not None:
         gw = getattr(request.app.state, "gateway", None)
-        if gw is None:
-            raise CameraUnavailable("The alarm can't be switched off while the audit is down.")
-        try:  # audit first: a security downgrade is never unrecorded
-            await gw.audit.append(
-                agent="home",
-                tool="home_disarm",
-                risk=ActionRisk.IRREVERSIBLE,
-                outcome="executed",
-                args={},
-                detail=f"console, {approved.how}",
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.error("AUDIT WRITE FAILED for a disarm", extra={"error": type(exc).__name__})
-            raise CameraUnavailable(
-                "The alarm can't be switched off while the audit is down."
-            ) from None
-        await s.alarm.disarm(uid, approved, via="console")
+        # audit first: a security downgrade is never unrecorded (no audit: nothing switched off)
+        await audited_disarm(
+            s.alarm, approved, gw.audit if gw is not None else None, where="console"
+        )
     return await _alarm_view(s, uid)
 
 
@@ -285,6 +272,7 @@ _REFUSED = {
     "not_linked": (409, None),
     "changed": (409, None),
     "needs_console": (403, None),
+    "disarm_first": (403, None),  # S4: Privacy can't ask for the Disarm passkey
     "rate_limited": (429, None),
 }
 

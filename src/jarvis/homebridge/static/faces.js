@@ -1,6 +1,6 @@
 // The laptop Faces page (R3 D13). Same-origin only; textContent only; no inline script.
 // API (this bridge): POST /faces/api/login {code} -> {csrf}; GET /faces/api/people ->
-// {people:[{id, pictures}], recent:[file], max_pictures}; POST /faces/api/enrol?person=<id> (raw
+// {people:[{id, pictures}], recent:[file], max_pictures, retention: on|off}; POST /faces/api/enrol?person=<id> (raw
 // image body, X-CSRF); POST /faces/api/classify {person, file}; POST /faces/api/logout.
 (() => {
   'use strict';
@@ -39,6 +39,8 @@
   }
 
   function render(d) {
+    // review S5: say so when the bridge can't clean up or delete pictures in Frigate's folder
+    if (d.retention === 'off') say('Old pictures of visitors are not being cleaned up, and deleting a person waits until they are. Run setup-wsl.sh configure again on this laptop.', true);
     const people = Array.isArray(d.people) ? d.people.filter((p) => p && ID.test(p.id)) : [];
     const list = $('people'); list.textContent = '';
     if (!people.length) list.appendChild(mk('li', 'Nobody is listed yet. Add a person in JARVIS \u2192 Faces first (with their consent).'));

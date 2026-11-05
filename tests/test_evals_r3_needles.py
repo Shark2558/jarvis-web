@@ -14,7 +14,10 @@ def test_r3_needles_pass_and_a_debug_log_of_webhook_bodies_fails_the_suite() -> 
     r = subprocess.run([sys.executable, str(RUN), "--mock"], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
     report = json.loads((RUN.parent / "report.json").read_text())
-    assert report["pass_rate"] == 1 and report["cases"] >= 11
+    assert report["pass_rate"] == 1 and report["cases"] >= 15
     control = report["negative_control"]
     assert control["suite_failed"] is True
     assert "n07_snapshot_with_opt_in_only_as_a_photo" in control["failed_cases"][control["name"]]
+    # integrated review S7: logging a VIP number or a push endpoint fails the suite too
+    typed = control["failed_cases"]["debug_log_vip_and_push"]
+    assert {"n12_vip_reference_stays_sealed", "n13_push_subscription_stays_sealed"} <= set(typed)

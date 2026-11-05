@@ -11,8 +11,10 @@ Registered by I1 in `homebridge/registry.py` (`PLUGINS = (core, camera_plugin, f
   `GET /bridge/v1/packages` (the 7-day doorstep log).
 - `apply_state`: takes the cloud's arm, camera settings and consented ids; an arm part at or above
   the local rev is acked with an `arm:<rev>:<nonce>` event id, which is the only ack the cloud
-  counts as the alarm being confirmed.
-- Heartbeat part: Frigate up, cameras producing frames, the doorstep model configured.
+  counts as the alarm being confirmed. `on_reply` (every heartbeat answer) sends that ack again
+  while the cloud still holds the rev and the first ack never got through (review M7).
+- Heartbeat part: Frigate up, cameras producing frames, the doorstep model configured, and
+  whether Frigate's events are reaching the bridge over MQTT (`mqtt`, review C1/S1).
 
 Bridge-kit module: standard library, pydantic, httpx, aiomqtt and `jarvis.home` /
 `jarvis.homebridge` only.
@@ -26,6 +28,7 @@ import json
 import logging
 import re
 import secrets
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -55,6 +58,7 @@ from jarvis.homebridge.snapshot import small
 log = logging.getLogger(__name__)
 
 MAX_INFLIGHT = 32  # detections being sent at once; the rest wait for Frigate's next update
+FACES_REMEMBERED = 200  # recent (event, person) pairs, so one face is sent once per event
 SNAPSHOT_WAIT_S = 2.0  # a photo never holds a burglar alert back for longer than this
 MAX_QUERY_SPAN_S = 32 * 86400
 FETCH_MAX = 100
@@ -85,8 +89,9 @@ class CameraPlugin:
         if not cfg.has_credentials:
             log.error("MQTT_USER / MQTT_PASSWORD are empty: the bridge will not connect to MQTT")
         self.mqtt = MqttEvents(connect or real_connect(cfg), self.on_message)
-        self._faces_seen: set[str] = set()
+        self._faces_seen: OrderedDict[str, None] = OrderedDict()  # newest last, at most 200
         self._tasks: set[asyncio.Task[None]] = set()
+        self._acked_rev = 0  # the newest arm rev whose ack the cloud took (review M7)
 
     def face(self, sub_label: Any, label: object = "person") -> FaceMatch | None:
         """Frigate's face result -> a `FaceMatch`, or None (I1). C's face library decides when the
@@ -112,25 +117,47 @@ class CameraPlugin:
         return (self.mqtt.run,)
 
     async def heartbeat_part(self) -> HeartbeatParts:
+        receiving = self.mqtt.connected  # Frigate's events reach the bridge (review C1/S1)
         up, online = await self.frigate.stats()
         cams = tuple(CameraPart(id=c, online=ok) for c, ok in list(online.items())[:MAX_CAMERAS])
         model = await self.frigate.has_doorstep_model() if up else None
-        return HeartbeatParts(frigate=up, cameras=cams if up else None, doorstep_model=model)
+        return HeartbeatParts(
+            frigate=up, cameras=cams if up else None, doorstep_model=model, mqtt=receiving
+        )
 
     async def apply_state(self, state: BridgeState) -> None:
         home = self._home_id()
         if home is not None:
+            if self.arm.home not in (None, home):
+                self._acked_rev = 0  # another home: its revs start again
             self.arm.bind(home)
         rev = self.arm.apply(state)
         if rev is not None:
-            ack = Ack(
-                type="ack",
-                id=f"arm:{rev}:{secrets.token_hex(3)}",
-                at=float(self._ctx.now()),
-                what="state",
-                rev=rev,
-            )
-            await self._ctx.events.post_event(ack)
+            await self._ack(rev)
+
+    async def on_reply(self, state: BridgeState) -> None:
+        """Every heartbeat answer (review M7): while the cloud still holds the arm rev this bridge
+        applied and its ack never got through, ack it again (the cloud's ack is idempotent)."""
+        arm = state.arm
+        if arm is not None and arm.rev == self.arm.rev and self._acked_rev < arm.rev:
+            await self._ack(arm.rev)
+
+    async def _ack(self, rev: int) -> None:
+        ack = Ack(
+            type="ack",
+            id=f"arm:{rev}:{secrets.token_hex(3)}",
+            at=float(self._ctx.now()),
+            what="state",
+            rev=rev,
+        )
+        if await self._ctx.events.post_event(ack):
+            self._acked_rev = max(self._acked_rev, rev)
+
+    async def aclose(self) -> None:
+        """The bridge stops: stop listening, cancel sends in flight, close Frigate's client."""
+        self.mqtt.stop()
+        await self.cancel()
+        await self.frigate.aclose()
 
     def _home_id(self) -> str | None:
         """The home id of the current link (the bridge's own secret file); None when unreadable."""
@@ -218,7 +245,9 @@ class CameraPlugin:
         key = f"{event}:{match.person}"
         if key in self._faces_seen:
             return
-        self._faces_seen = {*list(self._faces_seen)[-200:], key}
+        self._faces_seen[key] = None
+        while len(self._faces_seen) > FACES_REMEMBERED:
+            self._faces_seen.popitem(last=False)  # forget the oldest
         stamp = obj.get("timestamp")
         at = (
             float(stamp)

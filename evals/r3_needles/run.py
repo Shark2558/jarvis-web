@@ -21,7 +21,13 @@ a Telegram turn with the third switch off never sees faces. Not here (each has i
 Home Assistant token stays on the laptop (home_link s01-s04: cloud documents, logs, audit, model
 requests); a training brain is offered no tools at all (Brain._tools_on; faces c04).
 
-Negative control (must make the suite FAIL): a "debug" log line of every webhook body.
+Integrated review S7 adds flows for what the owner types or a browser sends: a VIP phone number,
+a browser's push subscription (endpoint and keys, with a burglar alert pushed to it), the
+owner's camera label (seen on Telegram as the positive control) and a detection carrying a face
+id (the id never in a log line or audit entry). Each is scanned like the rest.
+
+Negative controls (each must make the suite FAIL): a "debug" log line of every webhook body; a log
+line of the VIP references and of a new push endpoint.
 """
 
 from __future__ import annotations
@@ -44,14 +50,18 @@ ROOT = HERE.parent.parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(ROOT / "src"))
+import httpx  # noqa: E402
 from r1d_common import finish  # noqa: E402
 from r3_app import SEED, UID, H, R3App, detection, heartbeat, r3_app  # noqa: E402
+from webpush_fakes import Browser  # noqa: E402
 
 import jarvis.home.webhook as webhook_mod  # noqa: E402
 from jarvis.brief.home_overnight import HomeOvernightBrief  # noqa: E402
 from jarvis.core.channel import telegram_turn  # noqa: E402
 from jarvis.llm.base import ToolCall  # noqa: E402
+from jarvis.notify.store import NotifyStore  # noqa: E402
 from jarvis.tools.gateway import GatewayOutcome  # noqa: E402
+from jarvis.webpush.store import PushStore  # noqa: E402
 
 CHILD = "Mira Needlechild"
 ADULT = "Anjali Needleadult"
@@ -60,8 +70,14 @@ JPEG = b"\xff\xd8\xff\xe0" + MARK + b"\x00" * 64 + b"\xff\xd9"
 SNAP = base64.b64encode(JPEG).decode()
 SEED_B64 = base64.urlsafe_b64encode(SEED).decode().rstrip("=")
 SEED_STD = base64.b64encode(SEED).decode()
+VIP_REF = "+91 98765 13579"
+PUSH_ENDPOINT = "https://fcm.googleapis.com/fcm/send/needle-endpoint-5c3d"
+LABEL = "Needlegate Porch"
 SECRET_NEEDLES = (SEED_B64, SEED_STD, SEED.hex(), MARK.decode(), SNAP[:40])
 NAME_NEEDLES = (CHILD, ADULT)
+# S7: what the owner typed or a browser sent (the push auth secret is a fixed fake's)
+TYPED_NEEDLES = ("9876513579", "98765 13579", "needle-endpoint-5c3d", Browser().auth, LABEL)
+LOG_AUDIT_ONLY: list[str] = []  # needles a flow adds that may sit sealed in a document
 
 
 class Capture(logging.Handler):
@@ -99,6 +115,10 @@ def scan(w: R3App, cap: Capture, needles: tuple[str, ...]) -> list[str]:
     logs = "\n".join(cap.lines)
     for n in needles:
         for where, text in (("document", docs), ("log", logs), ("audit", audit)):
+            if n in text:
+                found.append(f"{n[:12]}... in a {where}")
+    for n in LOG_AUDIT_ONLY:
+        for where, text in (("log", logs), ("audit", audit)):
             if n in text:
                 found.append(f"{n[:12]}... in a {where}")
     return found
@@ -275,6 +295,70 @@ async def f11_offline_alert_while_armed(w: R3App) -> list[str]:
     return [] if "stopped answering" in _texts(w) else ["no offline alert"]
 
 
+async def f12_vip_reference_stays_sealed(w: R3App) -> list[str]:
+    r = await w.client.post("/v1/notify/vip", json={"kind": "phone", "ref": VIP_REF}, headers=H)
+    f = [] if r.status_code == 201 else [f"VIP not added: {r.status_code}"]
+    listed = (await w.client.get("/v1/notify/vip", headers=H)).text
+    settings = (await w.client.get("/v1/notify/settings", headers=H)).text
+    if "9876513579" in listed.replace(" ", "") or "98765" in listed + settings:
+        f.append("the number came back from the server")
+    return f
+
+
+async def _public(host: str) -> list[str]:
+    return ["142.250.1.1"]
+
+
+async def f13_push_subscription_stays_sealed(w: R3App) -> list[str]:
+    pushed: list[str] = []
+
+    async def no_network(request: httpx.Request) -> httpx.Response:
+        pushed.append(request.url.host)
+        return httpx.Response(201)
+
+    push = w.state.push
+    push._resolver = _public  # noqa: SLF001 - no DNS in the eval
+    push._http = httpx.AsyncClient(transport=httpx.MockTransport(no_network))  # noqa: SLF001
+    br = Browser(PUSH_ENDPOINT)
+    body = {
+        "name": "Chrome",
+        "endpoint": br.endpoint,
+        "keys": {"p256dh": br.p256dh, "auth": br.auth},
+    }
+    r = await w.client.post("/v1/push/subscribe", json=body, headers=H)
+    f = [] if r.status_code == 201 else [f"not subscribed: {r.status_code} {r.text[:80]}"]
+    await _arm(w)
+    await w.event(detection())  # the burglar alert is pushed to that browser too
+    if pushed != ["fcm.googleapis.com"]:
+        f.append(f"the alert was not pushed to the browser: {pushed}")
+    devices = (await w.client.get("/v1/push/devices", headers=H)).text
+    if "needle-endpoint" in devices or br.auth in devices:
+        f.append("the device list returned the endpoint or its key")
+    return f
+
+
+async def f14_camera_label_only_where_the_owner_reads_it(w: R3App) -> list[str]:
+    """Positive control: the owner's own label is in his alert, so the scan can see it."""
+    cams = {"cameras": {"gate": {"label": LABEL, "alarm_zones": ["gate"]}}}
+    assert (await w.client.put("/v1/home/cameras", json=cams, headers=H)).status_code == 200
+    assert (await w.client.post("/v1/home/arm", json={}, headers=H)).status_code == 200
+    rev = (await w.state.camera.alarm.record(UID)).rev
+    await w.event({"type": "ack", "id": f"arm:{rev}:abc", "at": 1.0, "what": "state", "rev": rev})
+    await w.event(detection())
+    return [] if LABEL in _texts(w) else ["the owner's label did not reach his alert"]
+
+
+async def f15_detection_with_a_face_id(w: R3App) -> list[str]:
+    pid = await _add(w, ADULT, child=False)
+    LOG_AUDIT_ONLY.append(pid)
+    await w.event(heartbeat(faces={pid: 6}))
+    await _arm(w)
+    await w.event(detection(face={"person": pid, "score": 0.97}))
+    t = _texts(w)
+    f = [] if "Burglar alert" in t else ["no alert for a recognised face"]
+    return f + ([f"face id on Telegram: {t[:60]}"] if pid in t else [])
+
+
 FLOWS: tuple[tuple[str, Flow], ...] = (
     ("n01_link_and_heartbeat", f01_link_and_heartbeat),
     ("n02_child_added_and_enrolled", f02_child_added_and_enrolled),
@@ -287,11 +371,16 @@ FLOWS: tuple[tuple[str, Flow], ...] = (
     ("n09_telegram_turn_faces_refused", f09_telegram_turn_faces_refused),
     ("n10_privacy_and_unlink", f10_privacy_export_and_delete),
     ("n11_offline_alert_while_armed", f11_offline_alert_while_armed),
+    ("n12_vip_reference_stays_sealed", f12_vip_reference_stays_sealed),
+    ("n13_push_subscription_stays_sealed", f13_push_subscription_stays_sealed),
+    ("n14_camera_label_only_in_the_owners_alert", f14_camera_label_only_where_the_owner_reads_it),
+    ("n15_detection_with_a_face_id", f15_detection_with_a_face_id),
 )
 
 
 async def one(case: str, flow: Flow) -> dict[str, Any]:
     failures: list[str] = []
+    LOG_AUDIT_ONLY.clear()
     try:
         async with r3_app() as w:
             # after create_app: its logging set-up replaces the root handlers
@@ -302,7 +391,7 @@ async def one(case: str, flow: Flow) -> dict[str, Any]:
                     w.state.camera.feed, w.state.camera.config
                 )
                 failures += await flow(w)
-                failures += scan(w, cap, SECRET_NEEDLES + NAME_NEEDLES)
+                failures += scan(w, cap, SECRET_NEEDLES + NAME_NEEDLES + TYPED_NEEDLES)
                 if not any("r3 needles canary" in line for line in cap.lines):
                     failures.append("the log capture saw nothing: the scan would be blind")
             if CHILD in _texts(w):
@@ -334,11 +423,35 @@ async def controls() -> dict[str, Any]:
     finally:
         webhook_mod.read_capped = original  # type: ignore[assignment]
     failed = [r["id"] for r in results if not r["passed"]]
+    typed = await _typed_control()
     return {
         "name": "debug_log_webhook_bodies",
-        "suite_failed": bool(failed),
-        "failed_cases": {"debug_log_webhook_bodies": failed},
+        "suite_failed": bool(failed) and bool(typed),
+        "failed_cases": {"debug_log_webhook_bodies": failed, "debug_log_vip_and_push": typed},
     }
+
+
+async def _typed_control() -> list[str]:
+    """S7: a log line of the VIP references and of a new push endpoint must fail the suite."""
+    update, add = NotifyStore.update, PushStore.add
+    leak = logging.getLogger("jarvis.notify.store")
+
+    async def leaky_update(self: NotifyStore, uid: str, fn: Any) -> Any:
+        new = await update(self, uid, fn)
+        leak.info("notify settings saved", extra={"vip": [v.ref for v in new.vip]})
+        return new
+
+    async def leaky_add(self: PushStore, uid: str, name: str, endpoint: str, *a: Any) -> Any:
+        leak.info("push device added", extra={"endpoint": endpoint})
+        return await add(self, uid, name, endpoint, *a)
+
+    NotifyStore.update = leaky_update  # type: ignore[method-assign]
+    PushStore.add = leaky_add  # type: ignore[method-assign]
+    try:
+        results = await run_all()
+    finally:
+        NotifyStore.update, PushStore.add = update, add  # type: ignore[method-assign]
+    return [r["id"] for r in results if not r["passed"]]
 
 
 def main() -> int:

@@ -49,6 +49,37 @@ class Storm:
         self._pending: dict[str, tuple[int, datetime]] = {}  # uid -> (suppressed, first at)
         self._package: dict[str, datetime] = {}
         self._greeting: dict[tuple[str, str], datetime] = {}
+        # what a gap stamp was before the last admission set it (for `rollback`), by table
+        self._before: dict[tuple[str, str, str], datetime | None] = {}
+
+    def _stamp(
+        self, tag: str, table: dict[tuple[str, str], datetime], key: tuple[str, str], now: datetime
+    ) -> None:
+        if len(self._before) > MAX_KEYS:
+            self._before.clear()
+        self._before[(tag, *key)] = table.get(key)
+        table[key] = now
+
+    def rollback(self, uid: str, signal: Signal, now: datetime) -> None:
+        """A burglar ring or a laptop/arming alert admitted at `now` reached no channel: give its
+        slot back, so the retry (the bridge's, or the watchdog's next run) is not swallowed as a
+        storm or a flap (integrated review S3). A later admission is never undone."""
+        if signal.kind == "home_intruder":
+            tag, key, table = "intruder", (uid, signal.camera or "-"), self._intruder
+        elif signal.kind in FLAP_KINDS:
+            tag, key, table = "flap", (uid, signal.kind), self._flap
+        else:
+            return
+        if table.get(key) != now or (tag, *key) not in self._before:
+            return
+        before = self._before.pop((tag, *key))
+        if before is None:
+            del table[key]
+        else:
+            table[key] = before
+        window = self._urgent.get(uid) if signal.kind == "home_intruder" else None
+        if window is not None and now in window:
+            window.remove(now)
 
     @staticmethod
     def _prune(table: dict, now: datetime, keep: timedelta) -> None:  # type: ignore[type-arg]
@@ -106,13 +137,13 @@ class Storm:
             last_f = self._flap.get(flap)
             if last_f is not None and now - last_f < FLAP_GAP:
                 return Verdict(False, "flap_gap")
-            self._flap[flap] = now
+            self._stamp("flap", self._flap, flap, now)
         if kind == "home_intruder":
             key = (uid, signal.camera or "-")
             last = self._intruder.get(key)
             if last is not None and now - last < INTRUDER_GAP:
                 return self._suppress(uid, now)
-            self._intruder[key] = now
+            self._stamp("intruder", self._intruder, key, now)
             self._prune(self._intruder, now, INTRUDER_GAP)
         if kind == "home_package":
             last_pkg = self._package.get(uid)

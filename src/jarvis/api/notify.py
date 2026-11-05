@@ -5,7 +5,8 @@
 
 GET/PUT /v1/notify/settings   quiet hours, ring_for, per-kind switches, names, snapshot opt-in
                               (`{"snapshot": {"on": true, "confirm": true}}`)
-GET/POST/DELETE /v1/notify/vip  phone / email references for R12 (face VIPs live in Faces)
+GET/POST/DELETE /v1/notify/vip  phone / email references for R12 (face VIPs live in Faces);
+                                GET lists {id, kind, hint} only, never the reference itself
 GET /v1/push/key              the VAPID public key
 GET /v1/push/devices          {devices:[{id, name, added_at}]}
 POST /v1/push/subscribe       {name, endpoint, keys:{p256dh, auth}} -> 201 (422 bad_endpoint)
@@ -213,7 +214,19 @@ async def list_vip(
     if svc is None:
         return {"available": False, "reason": NOT_SET_UP, "vip": []}
     s = await svc.store.get(uid)
-    return {"available": True, "vip": [v.model_dump() for v in s.vip], "vip_max": MAX_VIPS}
+    # integrated review S6: never the number or address itself, only a hint to tell rows apart
+    rows = [{"id": v.id, "kind": v.kind, "hint": _hint(v.kind, v.ref)} for v in s.vip]
+    return {"available": True, "vip": rows, "vip_max": MAX_VIPS}
+
+
+def _hint(kind: str, ref: str) -> str:
+    """A phone's last two digits, an address's first letter; nothing for anything else."""
+    if kind == "phone":
+        digits = [c for c in ref if c.isdigit()]
+        return f"ends in {''.join(digits[-2:])}" if len(digits) >= 2 else ""
+    if kind == "email" and ref[:1].isalnum():
+        return f"{ref[0].lower()}..."
+    return ""
 
 
 @router.post("/notify/vip", response_model=None, status_code=201)

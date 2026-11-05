@@ -358,3 +358,69 @@ async def test_an_unexpected_error_before_the_alert_is_raised_not_swallowed() ->
 async def test_greetings_are_off_by_default() -> None:
     r = await rig()
     assert (await r.config.get(UID)).greetings is False
+
+
+# ---- integrated review S3 / S1 ------------------------------------------------------------------
+
+
+async def test_detection_with_no_channel_delivering_raises_alert_not_sent() -> None:
+    """S3: the policy said ring but neither Telegram nor a browser took it: the webhook must
+    answer 503 so the bridge retries, never 200."""
+    r = await rig()
+    await armed(r)
+    r.notifier.reaches = False
+    with pytest.raises(AlertNotSent):
+        await r.events.handle(UID, det())
+    lines = await r.feed.day_items(UID, r.feed.local_day(T0))
+    assert [i.decision for i in lines] == ["failed"]
+    r.notifier.reaches = True
+    await r.events.handle(UID, det())  # the retry rings
+    assert len(r.notifier.sent) == 2
+
+
+async def test_a_storm_drop_is_not_a_failure() -> None:
+    r = await rig()
+    await armed(r)
+    r.notifier.action = "drop"  # grouped into the storm summary
+    await r.events.handle(UID, det())
+    assert len(r.notifier.sent) == 1
+
+
+def _beat(i: str, **parts: object) -> Heartbeat:
+    return Heartbeat(
+        type="heartbeat",
+        id=i,
+        at=T0,
+        bridge_version="0.1.0",
+        state_rev=0,
+        parts=HeartbeatParts(**parts),  # type: ignore[arg-type]
+    )
+
+
+async def test_an_armed_home_whose_camera_link_is_down_alerts_once_per_outage() -> None:
+    """S1: the bridge says it is not receiving Frigate's events (no MQTT) while armed: one
+    alert per outage; a working link ends the outage."""
+    r = await rig()
+    await r.events.handle(UID, _beat("h0", mqtt=False))
+    assert r.notifier.sent == []  # disarmed: nothing to warn about
+    await armed(r)
+    await r.events.handle(UID, _beat("h1", mqtt=False))
+    await r.events.handle(UID, _beat("h2", mqtt=False))
+    kinds = [s.signal.kind for s in r.notifier.sent]
+    assert kinds == ["home_arm_failed"]
+    text = r.notifier.sent[0].message
+    assert "camera" in text and "alerts" in text and len(text) <= 300
+    await r.events.handle(UID, _beat("h3", mqtt=True))
+    await r.events.handle(UID, _beat("h4", mqtt=False))
+    assert [s.signal.kind for s in r.notifier.sent] == ["home_arm_failed"] * 2
+
+
+async def test_a_camera_link_alert_that_reached_nobody_is_tried_at_the_next_heartbeat() -> None:
+    r = await rig()
+    await armed(r)
+    r.notifier.reaches = False
+    await r.events.handle(UID, _beat("h1", mqtt=False))
+    r.notifier.reaches = True
+    await r.events.handle(UID, _beat("h2", mqtt=False))
+    await r.events.handle(UID, _beat("h3", mqtt=False))
+    assert len(r.notifier.sent) == 2  # the unheard one, then one that was delivered

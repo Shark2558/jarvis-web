@@ -511,7 +511,139 @@ async def test_mqtt_reconnects_with_a_growing_pause() -> None:
         max_pause_s=4.0,
     )
     await m.run()
-    assert pauses == [1.0, 2.0, 4.0, 4.0]
+    # the third session connected and subscribed, so the pause starts again at 1 s (review M6)
+    assert pauses == [1.0, 2.0, 1.0, 2.0]
+
+
+async def test_mqtt_pause_resets_after_every_session_that_subscribed() -> None:
+    """Integrated review M6: long sessions that end with a drop never grow the pause."""
+    pauses: list[float] = []
+    m: MqttEvents
+
+    async def sleep(s: float) -> None:
+        pauses.append(s)
+        if len(pauses) == 3:
+            m.stop()
+
+    async def handler(topic: str, payload: bytes) -> None: ...
+
+    m = MqttEvents(fake_connect([[RuntimeError("broker restarted")]], []), handler, sleep=sleep)
+    await m.run()
+    assert pauses == [1.0, 1.0, 1.0]
+
+
+async def test_mqtt_says_connected_only_while_a_subscribed_session_runs() -> None:
+    seen: list[bool] = []
+    m: MqttEvents
+
+    async def handler(topic: str, payload: bytes) -> None:
+        seen.append(m.connected)
+
+    async def sleep(_: float) -> None:
+        seen.append(m.connected)
+        m.stop()
+
+    m = MqttEvents(fake_connect([[("frigate/events", b"{}")]], []), handler, sleep=sleep)
+    assert m.connected is False
+    await m.run()
+    assert seen == [True, False]
+
+
+async def test_the_real_connect_without_its_library_is_fatal(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Integrated review C1: no `aiomqtt` in the image -> the loop stops for good (no silent
+    retries), says so at error level, and the camera's heartbeat part says not receiving."""
+    import sys
+
+    from frigate_fakes import ctx
+
+    from jarvis.homebridge.camera import CameraPlugin
+    from jarvis.homebridge.mqtt import real_connect
+    from jarvis.homebridge.plugins import FatalTaskError
+
+    monkeypatch.setitem(sys.modules, "aiomqtt", None)  # `import aiomqtt` -> ImportError
+    cfg = MqttConfig.from_env({"MQTT_USER": "bridge", "MQTT_PASSWORD": "pw-123456"})
+    p = CameraPlugin(
+        ctx(tmp_path, Sink()), frigate=FrigateFake().client(), connect=real_connect(cfg)
+    )
+    caplog.set_level("ERROR")
+    with pytest.raises(FatalTaskError):
+        await p.mqtt.run()
+    assert "MQTT library" in caplog.text and "pw-123456" not in caplog.text
+    parts = await p.heartbeat_part()
+    assert parts.mqtt is False and parts.frigate is True
+
+
+def test_mqtt_config_never_shows_the_password() -> None:
+    c = MqttConfig.from_env({"MQTT_USER": "bridge", "MQTT_PASSWORD": "pw-secret-77"})
+    assert "pw-secret-77" not in repr(c) and "pw-secret-77" not in str(c)
+
+
+class FlakySink(Sink):
+    """The cloud is unreachable for the first `fail` posts."""
+
+    def __init__(self, fail: int) -> None:
+        super().__init__()
+        self.fail = fail
+
+    async def post_event(self, event: Any) -> bool:
+        self.events.append(event)
+        if self.fail > 0:
+            self.fail -= 1
+            return False
+        return True
+
+
+async def test_a_lost_arm_ack_is_sent_again_after_the_next_heartbeat(tmp_path: Path) -> None:
+    """Integrated review M7: the first ack never reached the cloud; while the cloud's reply still
+    holds that arm rev, the camera acks it again (the cloud's ack is idempotent)."""
+    sink = FlakySink(fail=1)
+    p = plugin(tmp_path, sink)
+    await p.apply_state(state(rev=5))
+    assert [e.rev for e in sink.events if isinstance(e, Ack)] == [5]
+    await p.on_reply(state(rev=5))  # the next heartbeat's answer
+    acks = [e for e in sink.events if isinstance(e, Ack)]
+    assert [a.rev for a in acks] == [5, 5] and all(a.id.startswith("arm:5:") for a in acks)
+    assert acks[0].id != acks[1].id
+    await p.on_reply(state(rev=5))  # delivered now: nothing more
+    await p.on_reply(state(rev=6, armed=False))  # a newer rev comes through apply_state
+    assert len([e for e in sink.events if isinstance(e, Ack)]) == 2
+
+
+async def test_a_new_home_link_forgets_which_arm_ack_got_through(tmp_path: Path) -> None:
+    """M7 follow-up: linked again to another home, revs start low; a lost ack of rev 1 must still
+    be sent again, whatever the old link had acked."""
+    sink = FlakySink(fail=0)
+    p = plugin(tmp_path, sink)
+    secret = tmp_path / "secret.json"
+    secret.write_text(json.dumps({"home_id": "h_0123abcd"}))
+    await p.apply_state(state(rev=7))
+    secret.write_text(json.dumps({"home_id": "h_89abcdef"}))
+    sink.fail = 1
+    await p.apply_state(state(rev=1))  # the new home's first arm; its ack is lost
+    await p.on_reply(state(rev=1))
+    assert [e.rev for e in sink.events if isinstance(e, Ack)] == [7, 1, 1]
+
+
+async def test_seen_faces_are_remembered_newest_first(tmp_path: Path) -> None:
+    """Minor: the de-duplication keeps the most recent 200 faces, in order."""
+    sink = Sink()
+    p = plugin(tmp_path, sink)
+    await p.apply_state(state(faces=(PERSON,)))
+
+    def face(i: int) -> bytes:
+        msg = {"type": "face", "id": f"e{i}", "name": PERSON, "score": 0.95, "camera": "gate"}
+        return json.dumps(msg).encode()
+
+    for i in range(300):
+        await p.on_message("frigate/tracked_object_update", face(i))
+    n = len(sink.events)
+    for i in range(150, 300):  # the newest 150 again: all still remembered
+        await p.on_message("frigate/tracked_object_update", face(i))
+    assert len(sink.events) == n
+    await p.on_message("frigate/tracked_object_update", face(0))  # long forgotten
+    assert len(sink.events) == n + 1
 
 
 def test_mqtt_config_reads_and_validates_env() -> None:

@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
 # JARVIS home kit, the Ubuntu (WSL2) half of the setup. setup-windows.ps1 runs this for you; you
-# can also run it by hand:  bash setup-wsl.sh install | configure | up | link CODE ADDRESS | status | camera | passwords
+# can also run it by hand:  bash setup-wsl.sh install | configure | up | link CODE ADDRESS | status | camera | passwords | ha-token | faces-code
 # Re-runnable: every step checks first and skips what is already done.
 #
 #   install    Docker Engine (from Docker's apt repository) and systemd for Ubuntu
 #   configure  copies the kit to ~/jarvis-home, writes bridge.env and frigate.env (passwords made
 #              here, kept here; the camera address only in frigate.env), the Mosquitto users
-#              (frigate writes, bridge only reads) and Frigate's settings
-#   up         pulls the images, records each image's digest in images.env, starts everything
+#              (frigate writes, bridge only reads; the file is the broker's own), Frigate's
+#              settings, and lets the bridge clean up Frigate's face pictures
+#   up         pulls the images, records each image's digest in images.env, starts everything,
+#              prints the laptop Faces page's code
 #   link       links the bridge to JARVIS with the code from Integrations -> Home -> Link
 #   status     says in plain words what is running
 #   camera     says "Camera works" once Frigate is receiving the phone's picture
 #   passwords  prints the Frigate login the first start made (write it down)
+#   ha-token   saves the Home Assistant token (HA_TOKEN) once Home Assistant runs; restarts the bridge
+#   faces-code prints the laptop Faces page's code again
 #
 # Environment (set by setup-windows.ps1, all optional):
 #   KIT_DIR        where the kit is (default: this script's folder)
 #   HOME_DIR       where the running copy lives (default: ~/jarvis-home)
 #   CAMERA_URL     the phone camera's RTSP address, with its login (kept only in frigate.env)
-#   HA_TOKEN       the Home Assistant token for the "JARVIS bridge" user (Enter = skip = camera only)
+#   HA_TOKEN       the Home Assistant token for the "JARVIS bridge" user (ha-token, later)
 set -euo pipefail
 
 KIT_DIR="${KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
@@ -34,7 +38,7 @@ step_install() {
     echo "Docker is already installed."
   else
     sudo apt-get update
-    sudo apt-get install -y ca-certificates curl openssl
+    sudo apt-get install -y ca-certificates curl openssl acl
     sudo install -m 0755 -d /etc/apt/keyrings
     sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
     sudo chmod a+r /etc/apt/keyrings/docker.asc
@@ -67,6 +71,24 @@ set_env() { # file key value : replaces KEY=... or appends it, without printing 
 
 get_env() { grep -s "^$2=" "$1" | head -n1 | cut -d= -f2- || true; }
 
+# Frigate (root in its container) writes face and doorstep pictures; the bridge (uid and gid 10001)
+# must be able to delete them (a removed person's pictures, strangers' after 72 hours). Deleting a
+# file needs write access to its folder: the folders belong to group 10001, new files and folders
+# inside keep that group (setgid) and stay group-writable (default ACL).
+share_face_folders() {
+  say "Letting the bridge clean up Frigate's face pictures"
+  local dirs=(frigate/media/clips/faces frigate/media/clips/doorstep)
+  sudo mkdir -p frigate/media/clips/faces/train frigate/media/clips/doorstep/train
+  sudo chgrp -R 10001 "${dirs[@]}"
+  sudo chmod -R g+rwX "${dirs[@]}"
+  sudo find "${dirs[@]}" -type d -exec chmod g+s {} +
+  if command -v setfacl >/dev/null 2>&1; then
+    sudo setfacl -R -d -m g:10001:rwX "${dirs[@]}"
+  else
+    echo "Note: install the acl package (sudo apt-get install acl) and run configure again."
+  fi
+}
+
 step_configure() {
   say "Preparing the home folder $HOME_DIR"
   mkdir -p "$HOME_DIR"
@@ -96,12 +118,17 @@ step_configure() {
 
   say "Making the Mosquitto users (frigate writes, bridge only reads; nobody without a password)"
   local mqtt_pw; mqtt_pw="$(get_env bridge.env MQTT_PASSWORD)"
+  sudo rm -f mosquitto/passwd # a re-run replaces it (the last run gave it to the broker)
   : > mosquitto/passwd
   docker run --rm -v "$HOME_DIR/mosquitto:/work" "${MOSQUITTO_IMAGE:-eclipse-mosquitto:2.0.20}" \
     mosquitto_passwd -b -c /work/passwd frigate "$frigate_pw" >/dev/null
   docker run --rm -v "$HOME_DIR/mosquitto:/work" "${MOSQUITTO_IMAGE:-eclipse-mosquitto:2.0.20}" \
     mosquitto_passwd -b /work/passwd bridge "$mqtt_pw" >/dev/null
-  chmod 600 mosquitto/passwd || true
+  # Mosquitto runs as its own user (uid 1883) and reads this file itself: its own, private
+  sudo chown 1883:1883 mosquitto/passwd
+  sudo chmod 600 mosquitto/passwd
+
+  share_face_folders
 
   if [ -f frigate/config.yml ] && [ ! -f frigate/config/config.yml ]; then
     say "Copying Frigate's settings (the camera address stays in frigate.env, not here)"
@@ -129,6 +156,32 @@ step_up() {
   say "Starting JARVIS Home"
   "${COMPOSE[@]}" up -d --build || fail "couldn't start. Run  bash setup-wsl.sh status  and tell Claude what it says."
   echo "Started."
+  show_faces_code
+}
+
+# ---- the laptop Faces page's code ------------------------------------------------------------
+show_faces_code() { # the bridge makes the code on its first start, in its private data folder
+  local code="" tries=0
+  while [ "$tries" -lt 10 ]; do
+    code="$("${COMPOSE[@]}" exec -T bridge cat /data/faces_code.txt 2>/dev/null | tr -d '\r\n' || true)"
+    if [ -n "$code" ]; then break; fi
+    tries=$((tries + 1))
+    sleep 3
+  done
+  if [ -n "$code" ]; then
+    echo "Faces page on this laptop: http://localhost:8098/faces   code: $code"
+  else
+    echo "The Faces page code is not ready yet. Later run:  bash ~/jarvis-home/setup-wsl.sh faces-code"
+  fi
+}
+
+# ---- the Home Assistant token, later ----------------------------------------------------------
+step_ha_token() { # once Home Assistant runs and has its accounts (setup-windows.ps1 -HaToken)
+  cd "$HOME_DIR"
+  [ -n "${HA_TOKEN:-}" ] || fail "no Home Assistant token was given. Run setup-windows.ps1 -HaToken and paste it."
+  set_env bridge.env HA_TOKEN "$HA_TOKEN"
+  "${COMPOSE[@]}" up -d --force-recreate bridge >/dev/null || fail "couldn't restart the bridge. Run  bash setup-wsl.sh status  and tell Claude what it says."
+  echo "Saved. The bridge now talks to Home Assistant."
 }
 
 # ---- link -----------------------------------------------------------------------------------
@@ -145,6 +198,7 @@ step_link() {
     sleep 30
   done
   echo "Linked. JARVIS should now say Online."
+  show_faces_code
 }
 
 # ---- status ---------------------------------------------------------------------------------
@@ -181,5 +235,7 @@ case "${1:-}" in
   status) step_status ;;
   camera) step_camera ;;
   passwords) step_passwords ;;
-  *) echo "Usage: bash setup-wsl.sh install | configure | up | link CODE ADDRESS | status | camera | passwords" >&2; exit 2 ;;
+  ha-token) step_ha_token ;;
+  faces-code) cd "$HOME_DIR"; show_faces_code ;;
+  *) echo "Usage: bash setup-wsl.sh install | configure | up | link CODE ADDRESS | status | camera | passwords | ha-token | faces-code" >&2; exit 2 ;;
 esac

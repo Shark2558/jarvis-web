@@ -278,13 +278,124 @@ async def test_r1_alerts_go_through_the_policy_and_wait_out_quiet_hours() -> Non
 
 async def test_unlink_wipes_the_camera_state_and_the_arm_rev_never_goes_back() -> None:
     async with r3_app() as w:
-        await _armed(w)
-        before = (await w.state.camera.alarm.record(UID)).rev
-        r = await w.client.delete("/v1/home/link?confirm=1", headers=H)
+        await _cameras(w)
+        rev = (await w.state.camera.alarm.record(UID)).rev
+        r = await w.client.delete("/v1/home/link?confirm=1", headers=H)  # disarmed: simple
         assert r.status_code == 200 and r.json()["unlinked"] is True
         after = await w.state.camera.alarm.record(UID)
-        assert after.armed is False and after.rev > before
+        assert after.armed is False and after.rev > rev
         assert (await w.state.camera.config.get(UID)).cameras == {}
+
+
+# ---- integrated review S4: unlinking while armed is a disarm ------------------------------------
+
+OWNER_EMAIL = "akash@example.com"
+
+
+def _google() -> Any:
+    from jarvis.config import AuthMode
+
+    return r3_settings(
+        auth_mode=AuthMode.GOOGLE,
+        google_client_id="cid.apps.googleusercontent.com",
+        google_client_secret=SecretStr("gsecret"),
+        owner_emails=[OWNER_EMAIL],
+        session_secret=SecretStr("x" * 32),
+        api_token=SecretStr("cli-token"),
+        public_base_url="http://test",
+    )
+
+
+async def _sign_in(w: R3App, *, fresh: bool) -> str:
+    """A Google session in this browser; `fresh`: the owner just signed in again (5 minutes)."""
+    from jarvis.api.identity import user_id_for_email
+
+    async def fake(request: Any) -> dict[str, Any]:
+        return {"userinfo": {"email": OWNER_EMAIL, "email_verified": True, "sub": OWNER_EMAIL}}
+
+    w.app.state.oauth.google.authorize_access_token = fake
+    assert (await w.client.get("/auth/callback?code=abc&state=x")).status_code in (302, 307)
+    if fresh:
+        await w.client.get("/auth/login?reauth=1", follow_redirects=False)
+        assert (await w.client.get("/auth/callback?code=abc&state=x")).status_code in (302, 307)
+    uid = user_id_for_email(OWNER_EMAIL)
+    await w.state.home_store.link(uid, HOME_ID, "https://laptop.tail1234.ts.net:8443", b"s" * 32)
+    return uid
+
+
+async def _arm_signed_in(w: R3App, uid: str) -> None:
+    await _cameras(w)
+    assert (await w.client.post("/v1/home/arm", json={}, headers=H)).status_code == 200
+    assert (await w.state.camera.alarm.record(uid)).armed is True
+
+
+async def test_unlink_while_armed_needs_disarm_proof() -> None:
+    async with r3_app() as w:
+        await _armed(w)
+        r = await w.client.delete("/v1/home/link?confirm=1", headers=H)  # a bearer caller
+        assert r.status_code == 403 and r.json()["error"] == "console_only", r.text
+        assert (await w.state.camera.alarm.record(UID)).armed is True
+        assert await w.state.home_store.status(UID) is not None  # still linked
+    async with r3_app(_google(), link=False) as w:
+        uid = await _sign_in(w, fresh=False)
+        await _arm_signed_in(w, uid)
+        r = await w.client.delete("/v1/home/link?confirm=1", headers=H)
+        assert r.status_code == 403 and r.json()["error"] == "reauth_required", r.text
+        assert (await w.state.camera.alarm.record(uid)).armed is True
+        assert await w.state.home_store.status(uid) is not None
+
+
+async def test_unlink_while_armed_with_a_fresh_sign_in_disarms_audited_then_unlinks() -> None:
+    async with r3_app(_google(), link=False) as w:
+        uid = await _sign_in(w, fresh=True)
+        await _arm_signed_in(w, uid)
+        r = await w.client.delete("/v1/home/link?confirm=1", headers=H)
+        assert r.status_code == 200 and r.json()["unlinked"] is True, r.text
+        assert (await w.state.camera.alarm.record(uid)).armed is False
+        assert await w.state.home_store.status(uid) is None
+        tools = [e.tool for e in w.state.gateway.audit._entries]  # noqa: SLF001
+        assert "home_disarm" in tools and tools.index("home_disarm") < tools.index("home_unlink")
+
+
+async def test_privacy_delete_of_the_home_link_while_armed_needs_disarm_proof() -> None:
+    async with r3_app(_google(), link=False) as w:
+        uid = await _sign_in(w, fresh=False)
+        await _arm_signed_in(w, uid)
+        cats = {
+            c["id"]: c for c in (await w.client.get("/v1/privacy", headers=H)).json()["categories"]
+        }
+        r = await w.client.post(
+            "/v1/privacy/home/delete", json={"rev": cats["home"]["rev"]}, headers=H
+        )
+        assert r.status_code == 403 and r.json()["error"] == "reauth_required", r.text
+        assert (await w.state.camera.alarm.record(uid)).armed is True
+        assert await w.state.home_store.status(uid) is not None
+        await w.client.get("/auth/login?reauth=1", follow_redirects=False)
+        assert (await w.client.get("/auth/callback?code=abc&state=x")).status_code in (302, 307)
+        r = await w.client.post(
+            "/v1/privacy/home/delete", json={"rev": cats["home"]["rev"]}, headers=H
+        )
+        assert r.status_code == 200, r.text
+        assert (await w.state.camera.alarm.record(uid)).armed is False
+        assert await w.state.home_store.status(uid) is None
+
+
+async def test_the_home_privacy_source_never_unlinks_an_armed_home_on_its_own() -> None:
+    from jarvis.camera.ports import AlarmRefused
+
+    async with r3_app() as w:
+        await _armed(w)
+        home = next(s for s in _privacy_sources(w) if s.id == "home")
+        with pytest.raises(AlarmRefused):
+            await home.delete(UID)
+        assert (await w.state.camera.alarm.record(UID)).armed is True
+        assert await w.state.home_store.status(UID) is not None
+
+
+def _privacy_sources(w: R3App) -> list[Any]:
+    from jarvis.api.home_wiring import home_privacy_sources
+
+    return home_privacy_sources(w.app)
 
 
 async def test_home_disarm_through_the_gateway_never_disarms() -> None:
@@ -389,3 +500,160 @@ async def test_telegram_send_photo_is_one_protected_multipart_upload() -> None:
 
 CHAT = 42
 _ = HOME_ID
+
+
+# ---- integrated review S3 / S1: an armed alert is never lost ------------------------------------
+
+
+def _telegram_failing_first(w: R3App, failures: int) -> list[int]:
+    left = [failures]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request.read()
+        w.telegram.append(request)
+        if request.url.path.endswith("/sendMessage") and left[0] > 0:
+            left[0] -= 1
+            return httpx.Response(500, json={"ok": False, "description": "down"})
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
+
+    w.state.telegram.client._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))  # noqa: SLF001
+    return left
+
+
+async def test_armed_detection_with_telegram_500_answers_503_then_delivers_on_retry() -> None:
+    async with r3_app() as w:
+        await _armed(w)
+        _telegram_failing_first(w, 1)
+        ev = detection(id="det:fail-1")
+        assert (await w.event(ev)).status_code == 503  # nobody had it: the bridge retries
+        assert (await w.event(ev)).status_code == 200  # never swallowed as a storm
+        delivered = [
+            json.loads(r.content)["text"]
+            for r in w.telegram
+            if r.url.path.endswith("/sendMessage") and b"Burglar alert" in r.content
+        ]
+        assert len(delivered) == 2  # the failed try and the retry that rang
+        assert (await w.event(ev)).status_code == 200  # a third copy is a no-op
+        assert sum(1 for r in w.telegram if b"Burglar alert" in r.content) == 2
+
+
+async def test_a_bridge_whose_mqtt_library_is_missing_makes_an_armed_home_alert(
+    tmp_path: Path,
+) -> None:
+    """C1/S1 end to end: the camera plugin can't connect (no MQTT library in the image) -> its
+    heartbeat part says mqtt false -> the cloud, armed, alerts that camera alerts can't arrive."""
+    from contextlib import AbstractAsyncContextManager
+
+    from jarvis.homebridge.camera import CameraPlugin
+    from jarvis.homebridge.plugins import BridgeContext, FatalTaskError
+
+    def connect() -> AbstractAsyncContextManager[Any]:
+        raise ModuleNotFoundError("No module named 'aiomqtt'")
+
+    class Frigate:
+        async def stats(self) -> tuple[bool, dict[str, bool]]:
+            return True, {"gate": True}
+
+        async def has_doorstep_model(self) -> bool:
+            return False
+
+    ctx = BridgeContext(env={}, data_dir=tmp_path, events=_Sink())
+    plugin = CameraPlugin(ctx, frigate=Frigate(), connect=connect)  # type: ignore[arg-type]
+    with pytest.raises(FatalTaskError):
+        await plugin.mqtt.run()
+    parts = (await plugin.heartbeat_part()).model_dump(mode="json", exclude_none=True)
+    assert parts["mqtt"] is False
+    async with r3_app() as w:
+        await _armed(w)
+        assert (await w.event(heartbeat(**parts))).status_code == 200
+        texts = [t for t in w.sent_texts() if "camera's events" in t]
+        assert len(texts) == 1
+        assert (await w.client.get("/v1/home", headers=H)).json()["state"] == "degraded"
+
+
+# ---- integrated review H3: held alerts and storm summaries go out with Home off ------------------
+
+
+async def test_with_home_off_the_tick_runs_the_alert_jobs() -> None:
+    async with r3_app(r3_settings(home_enabled=False), link=False) as w:
+        names = [j.name for j in w.state.tick_jobs]
+        assert {"notify_held", "notify_summaries", "notify_rate_sweep"} <= set(names)
+        assert len(names) == len(set(names))
+    async with r3_app() as w:  # Home on: the 5-minute watchdog runs them, the tick does not
+        names = [j.name for j in w.state.tick_jobs]
+        assert not {"notify_held", "notify_summaries", "notify_rate_sweep"} & set(names)
+
+
+async def test_with_home_off_a_held_vault_reminder_is_delivered_after_quiet_hours() -> None:
+    from jarvis.ticks import run_jobs
+
+    async with r3_app(r3_settings(home_enabled=False), link=False) as w:
+        await w.state.telegram.store.set_settings(UID, alerts={"vault_expiry": True})
+        store: NotifyStore = w.state.notify_store
+        await store.update(
+            UID,
+            lambda s: s.model_copy(
+                update={"quiet": QuietHours(on=True, start="00:00", end="23:59")}
+            ),
+        )
+        got = await w.state.alerts.send(UID, "A document expires soon.", kind="vault_expiry")
+        assert got.queued is True and w.sent_texts() == []
+        await store.update(UID, lambda s: s.model_copy(update={"quiet": QuietHours(on=False)}))
+        out = await run_jobs(w.state.tick_jobs, [UID])
+        assert out["notify_held"] == "ok", out
+        assert any("While you were resting" in t for t in w.sent_texts()), w.sent_texts()
+
+
+# ---- integrated review M9: an optional part that fails never takes the app down ------------------
+
+
+async def test_a_home_part_that_fails_to_build_leaves_the_app_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import jarvis.api.home_wiring as hw
+
+    class Broken:
+        def __init__(self, *a: Any, **k: Any) -> None:
+            raise RuntimeError("firestore client exploded")
+
+    monkeypatch.setattr(hw, "HomeStore", Broken)
+    async with r3_app(link=False) as w:
+        assert w.state.home_store is None and w.state.camera is None
+        chat = await w.client.post("/v1/chat", json={"message": "Hello"}, headers=H)
+        assert chat.status_code == 200, chat.text
+        assert (await w.client.get("/v1/home", headers=H)).json()["available"] is False
+        names = {j.name for j in w.state.tick_jobs}  # the alert jobs still run (the tick)
+        assert "notify_held" in names
+
+
+async def test_browser_push_that_fails_to_build_leaves_alerts_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import jarvis.api.home_wiring as hw
+
+    def broken(*a: Any, **k: Any) -> Any:
+        raise ValueError("bad VAPID key")
+
+    monkeypatch.setattr(hw, "build_push", broken)
+    async with r3_app() as w:
+        assert w.state.push is None and isinstance(w.state.alerts, PolicyAlerts)
+        assert w.state.home_store is not None
+
+
+async def test_the_watchdog_answers_503_when_a_job_failed() -> None:
+    from jarvis.api.scheduler_auth import require_scheduler
+
+    async with r3_app() as w:
+        w.app.dependency_overrides[require_scheduler] = lambda: None
+        try:
+            ok = await w.client.post("/internal/home/watchdog")
+            assert ok.status_code == 200, ok.text
+
+            async def boom(owners: Any) -> dict[str, int]:
+                raise RuntimeError("x")
+
+            w.state.home_watchdog._offline.run = boom  # noqa: SLF001
+            bad = await w.client.post("/internal/home/watchdog")
+            assert bad.status_code == 503 and bad.json()["jobs"]["home_offline"] == "failed"
+        finally:
+            w.app.dependency_overrides.clear()

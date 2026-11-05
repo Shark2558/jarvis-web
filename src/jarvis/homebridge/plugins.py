@@ -10,9 +10,16 @@
 - `heartbeat_part()`: this plugin's part of the next heartbeat (`HeartbeatParts`, others None).
 - `apply_state(state)`: a new `BridgeState` from the cloud (parts it doesn't carry are unchanged).
 
-A plugin is built by a factory from a `BridgeContext`: the bridge.env values (each plugin reads
-and validates its own keys), its data directory, the event sink that signs and posts events up
-(with the outbox and retries, A) and the clock.
+A plugin is built by a factory from a `BridgeContext`: the bridge.env values it may read (only
+`PLUGIN_ENV_KEYS`: never the Home Assistant token), its data directory, the event sink that signs
+and posts events up (with the outbox and retries, A) and the clock.
+
+Optional (integrated review M7, M10), looked up with getattr so older plugins still fit:
+- `on_reply(state)`: the cloud's WHOLE state after every heartbeat, even when nothing in it is
+  newer (the camera re-sends an arm ack that was lost).
+- `aclose()`: called once when the bridge stops (close clients, cancel work in flight).
+- A task that raises `FatalTaskError` can never work (a library missing from the image): the
+  bridge logs it once and does not start it again.
 """
 
 from __future__ import annotations
@@ -39,6 +46,30 @@ from jarvis.home.ports import (
 Query = Mapping[str, str]
 Handler = Callable[[Query, Mapping[str, Any] | None], Awaitable[dict[str, Any]]]
 TaskFactory = Callable[[], Awaitable[None]]
+# The bridge.env keys plugins read (hygiene: a plugin never sees HA_TOKEN or anything else)
+PLUGIN_ENV_KEYS = frozenset(
+    {
+        "MQTT_HOST",
+        "MQTT_PORT",
+        "MQTT_USER",
+        "MQTT_PASSWORD",
+        "FRIGATE_URL",
+        "FACES_ATTEMPTS_DIR",
+        "FACES_DOORSTEP_DIR",
+        "FACES_CODE",
+        "FACES_PORT",
+        "FACES_BIND",
+    }
+)
+
+
+class FatalTaskError(RuntimeError):
+    """A bridge task that can never work as installed; the supervisor does not restart it."""
+
+
+def plugin_env(env: Mapping[str, str] | None) -> dict[str, str]:
+    """Only the keys plugins may read."""
+    return {k: str(v) for k, v in (env or {}).items() if k in PLUGIN_ENV_KEYS}
 
 
 @dataclass(frozen=True)
@@ -104,13 +135,16 @@ def check_routes(plugins: Iterable[BridgePlugin]) -> None:
 
 
 __all__ = [
+    "PLUGIN_ENV_KEYS",
     "BridgeContext",
     "BridgePlugin",
     "BridgeRoute",
     "EventSink",
+    "FatalTaskError",
     "Handler",
     "PluginFactory",
     "Query",
     "TaskFactory",
     "check_routes",
+    "plugin_env",
 ]

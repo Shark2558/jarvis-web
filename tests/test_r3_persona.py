@@ -37,9 +37,23 @@ def test_home_says_armed_only_when_confirmed_and_never_disarms() -> None:
     assert "no_zones" in r and "protects nothing" in r
     assert "You cannot turn the alarm off" in r
     assert "call home_disarm, which only tells the owner to press Disarm in the Home panel" in r
-    assert "with his passkey" in r and "also when asked from Telegram" in r
+    assert "also when asked from Telegram" in r
     assert "Never say the alarm is off" in r
-    assert "Locks, gates, alarms and heaters always ask" in r
+
+
+def test_home_rules_match_the_permission_rows_and_name_no_pronoun() -> None:
+    """Integrated review M11: arming by voice has no card (permission row home_arm); disarming,
+    locks, gates and heaters wait for the owner's sign-in in the console (home_secure); the rule
+    no longer says alarms "always ask for the passkey" or "his"."""
+    r = _flat(p.HOME_RULES)
+    assert "Arming needs no card." in r
+    assert (
+        "Disarming, locks, gates and heaters always wait for the owner's sign-in in the console."
+        in r
+    )
+    assert "his passkey" not in r and " his " not in f" {r} "
+    assert "alarms and heaters always ask" not in r and "Locks, gates, alarms" not in r
+    assert p.PERSONA_VERSION == "p4.8"  # R3 is unreleased: the wording changes in place
 
 
 def test_camera_never_names_or_describes_an_unknown_person() -> None:

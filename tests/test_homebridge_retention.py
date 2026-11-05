@@ -62,9 +62,10 @@ def test_delete_for_removes_that_persons_crops_only(tmp_path: Path) -> None:
     mine = make(att / f"1-{A}-0.9.webp", 1)
     other = make(att / "2-fp_000000000001-0.9.webp", 1)
     r = Retention(att, now=lambda: NOW)
-    assert r.delete_for("Anjali") == 0 and r.delete_for("fp_*") == 0
-    assert r.delete_for(A) == 1
+    assert r.delete_for("Anjali") == (0, 0) and r.delete_for("fp_*") == (0, 0)
+    assert r.delete_for(A) == (1, 0)  # (deleted, could not be deleted): review H4
     assert not mine.exists() and other.exists()
+    assert r.remaining_for(A) == 0
 
 
 def test_a_root_holding_the_enrolled_library_is_refused_and_nothing_is_deleted(
@@ -79,7 +80,7 @@ def test_a_root_holding_the_enrolled_library_is_refused_and_nothing_is_deleted(
     res = r.sweep()
     assert (res.unknown, res.kept, res.doorstep) == (0, 0, 0)
     assert enrolled.exists() and loose.exists()
-    assert r.delete_for(A) == 0
+    assert r.delete_for(A) == (0, 0)
 
 
 def test_ready_means_a_real_folder_that_is_not_a_library(tmp_path: Path) -> None:

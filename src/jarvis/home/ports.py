@@ -153,6 +153,9 @@ class HeartbeatParts(_Wire):
     cameras: tuple[CameraPart, ...] | None = Field(default=None, max_length=MAX_CAMERAS)
     doorstep_model: StrictBool | None = None  # B (D16): the doorstep state model exists
     faces: dict[PersonId, PictureCount] | None = Field(default=None, max_length=MAX_PEOPLE)  # C
+    # B (integrated review C1/S1): the bridge is receiving Frigate's events over MQTT. False
+    # while the link is down or the camera part could not start: burglar alerts can't arrive.
+    mqtt: StrictBool | None = None
 
     def merged(self, other: HeartbeatParts) -> HeartbeatParts:
         """These parts with every part `other` reported laid over them."""

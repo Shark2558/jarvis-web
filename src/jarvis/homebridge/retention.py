@@ -11,6 +11,7 @@ subfolders (`fp_<id>/`, Frigate's enrolled library) is refused: it is not an att
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import time
@@ -18,6 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+log = logging.getLogger(__name__)
 UNKNOWN_HOURS = 72
 KEPT_DAYS = 7
 IMAGE = re.compile(r"\.(webp|jpe?g|png)$", re.IGNORECASE)
@@ -60,10 +62,18 @@ class Retention:
 
     @property
     def ready(self) -> bool:
-        """The attempts folder exists and is safe to sweep. When False, crops may remain on disk,
-        so a delete must not be reported as done."""
+        """The attempts folder exists, is safe to sweep and this process may delete in it
+        (deleting a file needs write and search on its folder; review S5: Frigate's folders are
+        root's unless the kit shares them). When False, crops may remain on disk, so a delete
+        must not be reported as done."""
         a = self._attempts
-        return a is not None and a.is_dir() and not a.is_symlink() and not self.misconfigured
+        return (
+            a is not None
+            and a.is_dir()
+            and not a.is_symlink()
+            and os.access(a, os.W_OK | os.X_OK)
+            and not self.misconfigured
+        )
 
     @staticmethod
     def _files(root: Path | None) -> list[Path]:
@@ -98,19 +108,30 @@ class Retention:
             doorstep=self._drop_older(self._files(self._doorstep), KEPT_DAYS * 24),
         )
 
-    def delete_for(self, person_id: str) -> int:
-        """Every attempt crop of this person, now."""
+    def delete_for(self, person_id: str) -> tuple[int, int]:
+        """Every attempt crop of this person, now: (deleted, could not be deleted). Review H4: a
+        failure is counted and said (plain words, no path), never swallowed."""
         if not PERSON_ID.fullmatch(person_id):
-            return 0
-        gone = 0
+            return 0, 0
+        gone = failed = 0
         for path in self._files(self._attempts):
             if person_id in path.name:
                 try:
                     path.unlink()
                     gone += 1
-                except OSError:
-                    continue
-        return gone
+                except OSError as exc:
+                    failed += 1
+                    log.warning(
+                        "a face picture could not be deleted (check the kit's folder sharing)",
+                        extra={"error": type(exc).__name__},
+                    )
+        return gone, failed
+
+    def remaining_for(self, person_id: str) -> int:
+        """How many of this person's crops are still in the folder (a delete re-checks)."""
+        if not PERSON_ID.fullmatch(person_id):
+            return 0
+        return sum(1 for p in self._files(self._attempts) if person_id in p.name)
 
 
 __all__ = ["KEPT_DAYS", "UNKNOWN_HOURS", "Retention", "Swept"]

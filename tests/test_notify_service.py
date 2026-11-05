@@ -194,7 +194,7 @@ async def test_quiet_hours_hold_then_one_summary_when_they_end() -> None:
 
 async def test_flush_all_held_sends_each_owner_once() -> None:
     w = await build(MIDNIGHT)
-    await w.service.notify(UID, Signal(source="home", kind="home_offline"), "Laptop off.")
+    await w.service.notify(UID, Signal(source="home", kind="home_package"), "A parcel.")
     w.clock.now = NOON
     assert await w.service.flush_all_held() == 1 and len(w.tg.bot.texts) == 1
 
@@ -206,8 +206,15 @@ async def test_a_failed_hold_rings_instead_of_losing_the_alert() -> None:
         raise NotifyUnavailable("x")
 
     w.service.store.held_add = boom  # type: ignore[method-assign]
-    d = await w.service.notify(UID, Signal(source="home", kind="home_offline"), "Laptop off.")
+    d = await w.service.notify(UID, Signal(source="home", kind="home_package"), "A parcel.")
     assert d.reason == "hold_failed" and d.telegram
+
+
+async def test_a_laptop_that_stopped_answering_rings_at_midnight() -> None:
+    """Integrated review H5: never held for the morning summary."""
+    w = await build(MIDNIGHT)
+    d = await w.service.notify(UID, Signal(source="home", kind="home_offline"), "Laptop off.")
+    assert d.action == "ring" and d.telegram and await w.store.held_list(UID) == []
 
 
 async def test_dropped_decisions_send_nothing_but_are_reported() -> None:
@@ -528,3 +535,42 @@ def test_the_policy_never_calls_a_model() -> None:
         src = open(mod.__file__).read()  # noqa: SIM115
         assert "jarvis.llm" not in src and "anthropic" not in src.lower()
     assert decide(intruder(), NotifySettings(), NOON).action == "ring"
+
+
+# ---- integrated review M8 / S3 -------------------------------------------------------------------
+
+
+async def test_a_held_alert_is_queued_not_failed() -> None:
+    w = await build(MIDNIGHT)
+    got = await PolicyAlerts(w.service).send(UID, "A card is waiting.", kind="approval_waiting")
+    assert got.sent is False and got.queued is True and "quiet hours" in got.reason
+    w.tg.bot.raise_transport = True
+    w.push.status = 500
+    w.clock.now = NOON
+    failed = await PolicyAlerts(w.service).send(UID, "Again.", kind="approval_waiting")
+    assert failed.sent is False and failed.queued is False
+
+
+async def test_an_undelivered_burglar_ring_gives_its_storm_slot_back() -> None:
+    w = await build()
+    w.tg.bot.raise_transport = True
+    w.push.status = 500
+    first = await w.service.notify(UID, intruder(), "Someone at the gate.")
+    assert first.action == "ring" and not (first.telegram or first.push)
+    w.tg.bot.raise_transport = False
+    w.push.status = 201
+    w.clock.advance(seconds=5)  # the bridge's retry, well inside the per-camera minute
+    again = await w.service.notify(UID, intruder(), "Someone at the gate.")
+    assert again.action == "ring" and again.telegram, again
+    assert w.service.storm.due_summary(UID, w.clock.now + timedelta(minutes=20)) == 0
+
+
+def test_storm_rollback_frees_the_camera_gap_and_the_window_only_for_that_ring() -> None:
+    s, d = Storm(), Decision(action="ring", reason="intruder", urgency="urgent")
+    assert s.admit(UID, intruder(), d, NOON).admit
+    later = NOON + timedelta(seconds=70)
+    assert s.admit(UID, intruder(), d, later).admit
+    s.rollback(UID, intruder(), later)  # the second ring reached nobody
+    assert s.admit(UID, intruder(), d, later + timedelta(seconds=1)).admit
+    assert not s.admit(UID, intruder(), d, later + timedelta(seconds=2)).admit
+    s.rollback(UID, intruder("door"), later)  # nothing recorded there: a no-op

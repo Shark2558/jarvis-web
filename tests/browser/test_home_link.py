@@ -38,6 +38,7 @@ class Fake:
         self.calls: list[dict[str, Any]] = []
         self.linked_after_code = True
         self.exposed: list[dict[str, Any]] = []
+        self.armed = False  # review S4: an armed unlink first answers 403 passkey_required
 
     def linked(self, **kw: Any) -> dict[str, Any]:
         base = {
@@ -74,6 +75,11 @@ def _wire(page: Any, fake: Fake) -> None:
                 body = {"rev": 0, "entities": fake.exposed}
         elif path == "/devices" and req.method == "PUT":
             body = {"rev": 1, "count": len(req.post_data_json["entities"])}
+        elif path == "/alarm":
+            body = {"available": True, "armed": fake.armed, "disarm_target": "h_0a1b2c3d:7"}
+        elif req.method == "DELETE" and fake.armed and not req.post_data:
+            err = {"error": "passkey_required", "detail": "Use your passkey."}
+            return route.fulfill(status=403, content_type="application/json", body=json.dumps(err))
         elif req.method == "DELETE":
             fake.view = {"available": True, "linked": False, "state": "not_linked"}
             body = {"unlinked": True}
@@ -190,6 +196,33 @@ def test_unlink_needs_a_confirm_and_cancel_changes_nothing(
         c.page.locator("#homeSet .istate", has_text="Not linked").wait_for()
         dels = [x for x in fake.calls if x["method"] == "DELETE"]
         assert dels and dels[0]["path"].startswith("/link?confirm=1")
+    finally:
+        c.close()
+
+
+def test_unlinking_an_armed_home_proves_like_disarm(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Review S4: the server asks for the Disarm passkey; the card proves for this home and arm
+    rev (home_disarm) and sends it with the unlink."""
+    fake = Fake({})
+    fake.view = fake.linked()
+    fake.armed = True
+    c = _open(browser, server_url, token, fake, DESKTOP)
+    try:
+        c.page.evaluate(
+            "window.__proved = []; window.JarvisPasskey = {supported: () => true,"
+            " prove: (p, t) => { window.__proved.push([p, t]);"
+            " return Promise.resolve({id: 'x'}); }}"
+        )
+        c.page.locator("#homeUnlink").click()
+        c.page.locator("#homeDialogYes").click()
+        c.page.locator("#homeSet .istate", has_text="Not linked").wait_for()
+        dels = [x for x in fake.calls if x["method"] == "DELETE"]
+        assert len(dels) == 2 and "body" not in dels[0]
+        assert dels[1]["body"] == {"proof": {"id": "x"}}
+        assert c.page.evaluate("window.__proved") == [["home_disarm", "h_0a1b2c3d:7"]]
+        assert [e for e in c.errors if "403" not in e] == [] and c.csp_violations() == []
     finally:
         c.close()
 

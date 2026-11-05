@@ -3,9 +3,13 @@
 
 `MqttEvents.run()` keeps one subscription alive: it connects, subscribes to the three Frigate
 topics the camera feature needs and hands every message (topic, payload) to one handler. A
-connection that drops is retried with a growing pause (1 s up to 60 s); a handler that fails never
-stops the loop. `aiomqtt` is imported only when a real connection is made (it is in the bridge
-image, not in the cloud's), so tests give `connect` a fake.
+connection that fails is retried with a growing pause (1 s up to 60 s); a session that subscribed
+starts the pause again at 1 s (integrated review M6); a handler that fails never stops the loop.
+`connected` is True only while a subscribed session runs: the camera's heartbeat part reports it,
+so the cloud knows when burglar alerts can't arrive. `aiomqtt` is imported only when a real
+connection is made (it is in the bridge image, hash-locked in bridge-requirements.txt, not in the
+cloud's), so tests give `connect` a fake. If it is missing the loop stops for good with an error
+line (`FatalTaskError`), never silent retries (review C1).
 
 Bridge-kit module: standard library only (+ aiomqtt at run time).
 """
@@ -16,10 +20,16 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from jarvis.homebridge.plugins import FatalTaskError
+
 log = logging.getLogger(__name__)
+NO_LIBRARY = (
+    "The MQTT library is missing from the bridge image, so camera alerts can't work. "
+    "Download the home kit again and run setup-wsl.sh up."
+)
 
 TOPICS = (
     "frigate/events",
@@ -40,7 +50,7 @@ class MqttConfig:
     host: str = "mosquitto"
     port: int = 1883
     user: str = ""
-    password: str = ""
+    password: str = field(default="", repr=False)  # never in a log line or a traceback
 
     @property
     def has_credentials(self) -> bool:
@@ -90,6 +100,8 @@ class MqttEvents:
         self._sleep = sleep
         self._max_pause = max_pause_s
         self._stopped = False
+        self._pause = 1.0
+        self.connected = False  # a subscribed session is running right now
 
     def stop(self) -> None:
         self._stopped = True
@@ -98,6 +110,7 @@ class MqttEvents:
         async with self._connect() as client:
             for topic in TOPICS:
                 await client.subscribe(topic)
+            self.connected, self._pause = True, 1.0
             async for message in client.messages:
                 if self._stopped:
                     return
@@ -111,19 +124,23 @@ class MqttEvents:
                     log.warning("mqtt message failed", extra={"reason": type(exc).__name__})
 
     async def run(self) -> None:
-        pause = 1.0
+        self._pause = 1.0
         while not self._stopped:
             try:
                 await self._session()
-                pause = 1.0
             except asyncio.CancelledError:
                 raise
+            except ImportError:  # the image has no MQTT library: retrying can't help
+                log.critical(NO_LIBRARY)
+                raise FatalTaskError("mqtt library missing") from None
             except Exception as exc:  # noqa: BLE001 - connection trouble: wait and try again
                 log.warning("mqtt disconnected", extra={"reason": type(exc).__name__})
+            finally:
+                self.connected = False
             if self._stopped:
                 return
-            await self._sleep(pause)
-            pause = min(pause * 2, self._max_pause)
+            await self._sleep(self._pause)
+            self._pause = min(self._pause * 2, self._max_pause)
 
 
 __all__ = ["TOPICS", "MqttConfig", "MqttCredentialsMissing", "MqttEvents", "real_connect"]

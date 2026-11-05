@@ -42,8 +42,9 @@ dev = [
     "shellcheck-py>=0.10",
 ]
 # R3: the home bridge on the owner's laptop (deploy/home/bridge.Dockerfile), never the cloud
-# image: Frigate's events over MQTT. aiomqtt BSD-3-Clause (paho-mqtt EPL-2.0 / EDL-1.0).
-homebridge = ["aiomqtt>=2.3,<3"]
+# image: Frigate's events over MQTT. aiomqtt BSD-3-Clause (paho-mqtt EPL-2.0 OR BSD-3-Clause).
+# Pinned to the versions hash-locked in deploy/home/bridge-requirements.txt (integrated review C1).
+homebridge = ["aiomqtt==2.5.1", "paho-mqtt==2.1.0"]
 
 [project.scripts]
 jarvis = "jarvis.cli:main"

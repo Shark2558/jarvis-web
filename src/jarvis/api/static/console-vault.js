@@ -430,7 +430,10 @@
     if (d.open) load(false); else { forget(); S.open = ''; S.editing = ''; S.adding = false; render(); }
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden && S.token) { forget(); S.preview = null; render(); } });
-  document.addEventListener('jarvis:reply', () => { if (S.data !== undefined) load(true); });
+  // R2 review M3: a reply refreshes the list only while the panel is open (GET /v1/vault decrypts
+  // the index and runs the reminders check); closed, the next open fetches fresh
+  const Deck = window.JarvisDeck && typeof window.JarvisDeck.isOpen === 'function' ? window.JarvisDeck : { isOpen: () => false };
+  document.addEventListener('jarvis:reply', () => { if (Deck.isOpen('vault') && S.data !== undefined) load(true); else S.loadedAt = 0; });
   document.addEventListener('jarvis:ready', () => { if (document.getElementById('p-vault') && !document.getElementById('p-vault').hidden) load(false); });
 
   window.JarvisVault = Object.freeze({ refresh: () => load(true), normal, left, niceDate, lastTrigger: () => lastTrigger });

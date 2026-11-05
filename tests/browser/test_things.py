@@ -224,10 +224,10 @@ def test_an_outside_thing_says_so_and_a_move_adopts_it_only_when_ticked(
         assert "from someone else's words" in str(row.locator(".tmeta").text_content())
         typed = c.page.locator('.trow[data-id="t_0123456789ab"]')
         assert "someone else" not in str(typed.text_content())
-        typed.get_by_role("button", name="Move “Passport”").click()
+        typed.get_by_role("button", name="Move \u201cPassport\u201d").click()
         assert typed.locator(".tmove input[type=checkbox]").count() == 0  # nothing to adopt
         typed.locator(".tmove button", has_text="Cancel").click()
-        row.get_by_role("button", name="Move “Gold”").click()
+        row.get_by_role("button", name="Move \u201cGold\u201d").click()
         mine = row.get_by_role("checkbox", name="This is mine: I checked the name and note")
         assert mine.is_checked() is False
         row.locator(".tmove input:not([type=checkbox])").fill("the locker")
@@ -235,7 +235,7 @@ def test_an_outside_thing_says_so_and_a_move_adopts_it_only_when_ticked(
         c.page.locator("#thingsNote", has_text="It was in").wait_for()
         assert fake.sent("PATCH")[-1]["body"] == {"place": "the locker"}  # not adopted
         row = c.page.locator('.trow[data-id="t_cccccccccccc"]')
-        row.get_by_role("button", name="Move “Gold”").click()
+        row.get_by_role("button", name="Move \u201cGold\u201d").click()
         row.get_by_role("checkbox", name="This is mine: I checked the name and note").check()
         row.locator(".tmove button[type=submit]").click()
         row.locator(".tmove").wait_for(state="detached")  # saved: the list was drawn again

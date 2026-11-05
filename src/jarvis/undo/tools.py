@@ -6,7 +6,7 @@ delete gives the model.
                      Titles are other people's words as often as the owner's (an invitation, a
                      task copied from a mail), so they are fenced; the listing is trusted (plan
                      D8, `may_vouch`) only when every item's recorded `owner_authored` is true.
-    deleted_restore  R2 — bring one back (events and to-dos: a new id, events without guests;
+    deleted_restore  R2 - bring one back (events and to-dos: a new id, events without guests;
                      R2's vault documents, notes and things: in place). Looked up first for the
                      card (a tainted or spoken round makes it one); an unknown id proposes
                      nothing. A second restore says "already restored". Its result is trusted

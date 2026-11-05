@@ -11,8 +11,9 @@ The cloud decides, the laptop confirms:
   `ArmPendingJob` sends one `home_arm_failed` alert per rev.
 - `disarm` is the security downgrade. `Alarm.disarm` only runs with a `DisarmPass`, and only
   `DisarmGate` issues one: a passkey check made for exactly (this home, this arm rev), or - when no
-  passkeys are in force - a Google sign-in under 5 minutes old, or an approved irreversible card
-  (R3). Nothing spoken, typed in chat or sent from Telegram can reach `disarm` any other way.
+  passkeys are in force - a Google sign-in under 5 minutes old. Nothing spoken, typed in chat,
+  sent from Telegram or run as a tool can reach `disarm`: the `home_disarm` tool only points to the
+  Home panel.
 - Both ends filter: the cloud's record is what drops a detection that arrives while disarmed.
 - Every change keeps the record readable or fails closed (`CameraUnavailable`); an unreadable
   record is never overwritten.
@@ -32,12 +33,10 @@ from pydantic import ValidationError
 
 from jarvis.camera.models import ARM_FAIL_AFTER_S, ArmRecord, Mode, SetVia
 from jarvis.camera.ports import AlarmRefused, CameraUnavailable, HomeDirectory
-from jarvis.core.guardrails import ActionRisk
 from jarvis.home.ports import ArmView, HomeCaller, HomeUnavailable
 from jarvis.logging import get_logger
 from jarvis.notify.ports import Notifier, Signal
-from jarvis.storage.docs import Delete, Docs, DocTx
-from jarvis.tools.context import ToolContext
+from jarvis.storage.docs import Docs, DocTx
 from jarvis.undo.store import owner_ok
 
 log = get_logger(__name__)
@@ -82,7 +81,9 @@ class Alarm:
         caller: HomeCaller | None = None,
         clock: Callable[[], float] = time.time,
         prefix: str = "jarvis_",
+        has_zones: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
+        self._has_zones = has_zones
         self._d = docs
         self._caller = caller
         self._clock = clock
@@ -143,6 +144,11 @@ class Alarm:
             confirmed=rec.confirmed,
             pending_since=None if rec.confirmed else rec.pending_since,
         )
+
+    async def protecting(self, uid: str) -> bool:
+        """Can an alert fire at all? False when no camera has an alarm zone: armed, but nothing
+        is watched (the owner is told so)."""
+        return True if self._has_zones is None else await self._has_zones(uid)
 
     async def view(self, uid: str) -> ArmView:
         return self._view(await self.record(uid))
@@ -268,7 +274,15 @@ class Alarm:
         return sent
 
     async def wipe(self, uid: str) -> None:
-        await self._d.write([Delete(self._path(uid))])
+        """Forget the arm state, but never the counter: a tombstone keeps `rev` going up, so a
+        bridge that remembers rev 7 still follows the next arm (a reset to 1 would be ignored)."""
+        now = self._clock()
+
+        def change(cur: ArmRecord) -> ArmRecord | None:
+            rev = cur.rev + 1
+            return ArmRecord(rev=rev, acked_rev=rev, set_at=now, failed_rev=rev)
+
+        await self._change(uid, change)
 
 
 class DisarmGate:
@@ -312,16 +326,6 @@ class DisarmGate:
                 raise AlarmRefused("reauth_required", NEEDS_REAUTH)
             how = "re-sign-in"
         return self._issue(uid, rec.rev, how)
-
-    async def card_pass(self, uid: str, ctx: ToolContext) -> DisarmPass:
-        """The home_disarm tool: only a card the owner approved on screen (the gateway already
-        checked his passkey for it). Anything else - a spoken request, Telegram, a round the model
-        ran alone - is refused."""
-        approved = ctx.confirmed and ctx.approved_risk is ActionRisk.IRREVERSIBLE
-        if not approved or ctx.user_id != uid:
-            raise AlarmRefused("needs_console", NEEDS_CONSOLE)
-        rec = await self._alarm.record(uid)
-        return self._issue(uid, rec.rev, "approved card")
 
 
 class ArmPendingJob:

@@ -27,6 +27,6 @@ def test_suite_passes_and_its_negative_controls_fail_it() -> None:
         "disarmed_filter_off",
         "recognition_may_suppress",
         "history_passes_bridge_strings",
-        "disarm_gate_waves_cards_through",
+        "disarm_tool_disarms",
     }
     assert all(control["failed_cases"].values())  # each control broke something on its own

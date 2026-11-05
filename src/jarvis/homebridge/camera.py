@@ -42,6 +42,7 @@ from jarvis.home.ports import (
     FaceSeen,
     HeartbeatParts,
     HomeRefused,
+    is_home_id,
 )
 from jarvis.homebridge.arm import ArmState
 from jarvis.homebridge.detections import RECOGNITION_THRESHOLD, Detections, face_of
@@ -53,6 +54,7 @@ from jarvis.homebridge.snapshot import small
 
 log = logging.getLogger(__name__)
 
+MAX_INFLIGHT = 32  # detections being sent at once; the rest wait for Frigate's next update
 SNAPSHOT_WAIT_S = 2.0  # a photo never holds a burglar alert back for longer than this
 MAX_QUERY_SPAN_S = 32 * 86400
 FETCH_MAX = 100
@@ -80,8 +82,11 @@ class CameraPlugin:
         self.packages = PackagesLog(ctx.data_dir / "packages.jsonl", ctx.now)
         self.frigate = frigate or FrigateClient(ctx.env.get("FRIGATE_URL") or DEFAULT_URL)
         cfg = MqttConfig.from_env(ctx.env)
+        if not cfg.has_credentials:
+            log.error("MQTT_USER / MQTT_PASSWORD are empty: the bridge will not connect to MQTT")
         self.mqtt = MqttEvents(connect or real_connect(cfg), self.on_message)
         self._faces_seen: set[str] = set()
+        self._tasks: set[asyncio.Task[None]] = set()
 
     # ---- plugin surface ----------------------------------------------------------------------
 
@@ -101,6 +106,9 @@ class CameraPlugin:
         return HeartbeatParts(frigate=up, cameras=cams if up else None, doorstep_model=model)
 
     async def apply_state(self, state: BridgeState) -> None:
+        home = self._home_id()
+        if home is not None:
+            self.arm.bind(home)
         rev = self.arm.apply(state)
         if rev is not None:
             ack = Ack(
@@ -111,6 +119,15 @@ class CameraPlugin:
                 rev=rev,
             )
             await self._ctx.events.post_event(ack)
+
+    def _home_id(self) -> str | None:
+        """The home id of the current link (the bridge's own secret file); None when unreadable."""
+        try:
+            raw = json.loads((self._ctx.data_dir / "secret.json").read_text(encoding="utf-8"))
+            home = raw.get("home_id") if isinstance(raw, dict) else None
+        except (OSError, ValueError):
+            return None
+        return home if isinstance(home, str) and is_home_id(home) else None
 
     # ---- MQTT --------------------------------------------------------------------------------
 
@@ -126,10 +143,35 @@ class CameraPlugin:
         det = self.detections.filter(payload)
         if det is None:
             return
-        settings = self.arm.settings
-        if settings is not None and settings.snapshot and det.label == "person":
-            det = await self._with_snapshot(det)
-        await self._ctx.events.post_event(det)
+        if len(self._tasks) >= MAX_INFLIGHT:
+            log.warning("too many detections in flight; this one is retried on its next update")
+            self.detections.release(det.id.removeprefix("det:"))
+            return
+        task = asyncio.create_task(self._deliver(det))  # never awaited here: the MQTT loop goes on
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _deliver(self, det: Detection) -> None:
+        ok = False
+        try:
+            settings = self.arm.settings
+            if settings is not None and settings.snapshot and det.label == "person":
+                det = await self._with_snapshot(det)
+            ok = await self._ctx.events.post_event(det)
+        except Exception as exc:  # noqa: BLE001 - a failed send is retried on the next update
+            log.warning("detection not posted", extra={"reason": type(exc).__name__})
+        if not ok:
+            self.detections.release(det.id.removeprefix("det:"))
+
+    async def drain(self) -> None:
+        """Wait for the detections in flight (tests, shutdown)."""
+        while self._tasks:
+            await asyncio.gather(*list(self._tasks), return_exceptions=True)
+
+    async def cancel(self) -> None:
+        for task in list(self._tasks):
+            task.cancel()
+        await self.drain()
 
     async def _with_snapshot(self, det: Detection) -> Detection:
         frigate_id = det.id.removeprefix("det:")

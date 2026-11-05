@@ -256,3 +256,22 @@ async def test_history_through_the_bridge_and_plain_words_when_the_laptop_is_off
     r.caller.online = False
     off = await c.get("/v1/home/history", params={"from": start, "to": end})
     assert off.status_code == 503 and "home laptop is off" in off.json()["detail"]
+
+
+async def test_arm_with_no_alarm_zones_is_flagged_everywhere(env: Any) -> None:
+    c, r, svc = env
+    got = await c.post("/v1/home/arm", json={}, headers=CSRF)
+    body = got.json()
+    assert body["armed"] is True and body["zones_configured"] is False
+    assert "not protecting anything yet" in body["warning"]
+    assert (await c.get("/v1/home/alarm")).json()["zones_configured"] is False
+
+
+async def test_arm_with_a_zone_has_no_warning(env: Any) -> None:
+    from jarvis.camera.models import CameraConfig
+
+    c, r, svc = env
+    cam = CameraConfig(label="Gate", alarm_zones=("gate",))
+    await r.config.set_cameras(UID, {"gate": cam})
+    body = (await c.post("/v1/home/arm", json={}, headers=CSRF)).json()
+    assert body["zones_configured"] is True and body.get("warning") is None

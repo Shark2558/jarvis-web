@@ -16,9 +16,8 @@ mqtt:
   password: "{FRIGATE_MQTT_PASSWORD}"
 
 # The CPU detector with the model that ships inside Frigate (/cpu_model.tflite). Frigate says it is
-# "not recommended for general use", but one camera at 5 frames a second is light. If Frigate -> System
-# shows detection above about half a core, run export-yolov9.ps1 (see its comments) and switch to
-# the OpenVINO detector described there.
+# "not recommended for general use", but one camera at 5 frames a second is light. JARVIS uses only
+# this built-in model: it downloads and builds nothing else.
 detectors:
   cpu1:
     type: cpu
@@ -73,6 +72,13 @@ cameras:
           - person
         required_zones:
           - gate
+      # Other detections are kept only when they happen in one of your own zones too.
+      detections:
+        labels:
+          - person
+        required_zones:
+          - gate
+          - doorstep
 
 # Recordings are kept only around events; there is no continuous recording.
 record:
@@ -93,6 +99,10 @@ record:
 snapshots:
   enabled: true
   bounding_box: false
+  # Pictures are saved only for objects inside your own gate or doorstep zone, never the road.
+  required_zones:
+    - gate
+    - doorstep
   retain:
     default: 7
 

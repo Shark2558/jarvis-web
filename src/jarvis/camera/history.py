@@ -34,6 +34,7 @@ from jarvis.camera.models import (
     HistoryResult,
     spaced,
 )
+from jarvis.camera.ports import safe_resolve
 from jarvis.faces.ports import FAMILY_CHILD, UNKNOWN_PERSON, FaceDirectory
 from jarvis.home.ports import (
     LABEL_ID,
@@ -239,7 +240,7 @@ class History:
     ) -> tuple[float, HistoryItem] | None:
         who: str | None = None
         if ev.label == "person":
-            res = await self._faces.resolve(uid, ev.person, ev.score)
+            res = await safe_resolve(self._faces, uid, ev.person, ev.score)
             who = FAMILY_CHILD if res.child and hide_children else (res.name or UNKNOWN_PERSON)
             if q.who == "known" and not res.named:
                 return None

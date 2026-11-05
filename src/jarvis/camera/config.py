@@ -67,6 +67,15 @@ class CameraConfigService:
     async def get(self, uid: str) -> CameraSettings:
         return await self._doc.load(uid)
 
+    async def has_alarm_zones(self, uid: str) -> bool:
+        """Does any camera have an alarm zone? (Unreadable settings: say yes, never a false alarm
+        about the setup.)"""
+        try:
+            return any(c.alarm_zones for c in (await self.get(uid)).cameras.values())
+        except Exception as exc:  # noqa: BLE001
+            log.warning("camera settings unreadable", extra={"reason": type(exc).__name__})
+            return True
+
     async def set_cameras(
         self,
         uid: str,

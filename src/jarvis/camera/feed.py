@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 from jarvis.camera.config import CameraConfigService
 from jarvis.camera.models import FEED_KEEP_DAYS, MAX_FEED_PER_DAY, FeedItem, first_upper, spaced
-from jarvis.camera.ports import CameraUnavailable
+from jarvis.camera.ports import CameraUnavailable, safe_resolve
 from jarvis.faces.ports import UNKNOWN_PERSON as UNKNOWN_WORDS
 from jarvis.faces.ports import FaceDirectory, Resolved
 from jarvis.keyring import Keyring
@@ -150,7 +150,7 @@ class Feed:
     # ---- view --------------------------------------------------------------------------------
 
     async def _name(self, uid: str, item: FeedItem) -> Resolved:
-        return await self._faces.resolve(uid, item.person, item.score)
+        return await safe_resolve(self._faces, uid, item.person, item.score)
 
     async def line(self, uid: str, item: FeedItem, cams: dict[str, str]) -> dict[str, Any]:
         """A feed line as the console shows it (names are the owner's own, so shown to him)."""

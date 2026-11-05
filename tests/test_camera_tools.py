@@ -1,6 +1,7 @@
 # tests/test_camera_tools.py -- R3 D8/D15 through the gateway: a spoken "arm" in a clean round needs
-# no card and never says armed before the ack; a tainted round makes a card; "disarm" is ALWAYS a
-# card, and a call that skips the card refuses; camera_history is fenced, vouched and masked.
+# no card and never says armed before the ack; a tainted round makes a card; "disarm" is
+# refused with a fixed "use the Home panel" answer, never executed; camera_history is fenced,
+# vouched and masked.
 from __future__ import annotations
 
 import json
@@ -9,7 +10,7 @@ from typing import Any
 
 from camera_fakes import PERSON, T0, UID, Rig, rig
 
-from jarvis.camera.tools import camera_tools
+from jarvis.camera.tools import DISARM_ANSWER, camera_tools
 from jarvis.core.channel import telegram_turn
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.faces.ports import Resolved
@@ -41,10 +42,10 @@ async def test_registered_with_declared_risks_flags_and_activity_words() -> None
     by = {t.name: t for t in camera_tools(r.alarm, r.gate, r.history, confirm_wait_s=0.0)}
     assert set(by) == {"home_arm", "home_disarm", "camera_history"}
     assert by["home_arm"].risk is ActionRisk.REVERSIBLE and by["home_arm"].spoken_ok
-    assert by["home_disarm"].risk is ActionRisk.IRREVERSIBLE and not by["home_disarm"].spoken_ok
+    assert by["home_disarm"].risk is ActionRisk.READ_ONLY
     assert by["camera_history"].risk is ActionRisk.READ_ONLY and by["camera_history"].may_vouch
     assert by["home_arm"].activity_words == "Armed the home alarm"
-    assert by["home_disarm"].activity_words == "Disarmed the home alarm"
+    assert by["home_disarm"].activity_words == "Pointed to the Home panel to disarm"
     assert by["camera_history"].activity_words == "Searched camera history"
 
 
@@ -103,61 +104,28 @@ async def test_a_bad_mode_is_refused_before_anything_runs() -> None:
     assert res.outcome is GatewayOutcome.ERROR and (await r.alarm.record(UID)).rev == 0
 
 
-async def test_disarm_is_always_a_card_spoken_typed_or_telegram() -> None:
+async def test_disarm_tool_never_disarms_however_it_is_called() -> None:
     r = await rig()
     await r.alarm.arm(UID, "away", "console")
     gw = build(r)
-    outcomes = []
+    results = []
     with context_trust(untrusted=False, spoken=True):
-        outcomes.append((await call(gw, "home_disarm")).outcome)
-    outcomes.append((await call(gw, "home_disarm")).outcome)
+        results.append(await call(gw, "home_disarm"))
+    results.append(await call(gw, "home_disarm"))
     with telegram_turn():
-        outcomes.append((await call(gw, "home_disarm")).outcome)
-    assert outcomes == [GatewayOutcome.AWAITING_CONFIRMATION] * 3
-    assert (await r.alarm.view(UID)).armed is True
-
-
-async def test_disarm_never_runs_on_an_allow_rule() -> None:
-    r = await rig()
-    await r.alarm.arm(UID, "away", "console")
-    rules = [PolicyRule(tool_pattern="home_disarm", effect=Effect.ALLOW)]
-    res = await call(build(r, rules=rules), "home_disarm")
-    assert res.outcome is GatewayOutcome.AWAITING_CONFIRMATION
-    assert (await r.alarm.view(UID)).armed is True
-
-
-async def test_an_approved_card_disarms() -> None:
-    r = await rig()
-    await r.alarm.arm(UID, "away", "console")
-    gw = build(r)
-    card = await call(gw, "home_disarm")
-    assert card.pending is not None and card.pending.summary == "Turn off the home burglar alarm"
-    done = await gw.execute(
-        ToolCall(id="c", name="home_disarm", arguments={}),
-        confirmation_id=card.pending.id,
-        scope=SCOPE,
+        results.append(await call(gw, "home_disarm"))
+    results.append(
+        await call(
+            build(r, rules=[PolicyRule(tool_pattern="home_disarm", effect=Effect.ALLOW)]),
+            "home_disarm",
+        )
     )
-    assert done.outcome is GatewayOutcome.EXECUTED and done.result["armed"] is False
-    assert (await r.alarm.view(UID)).armed is False
-
-
-async def test_the_tool_body_refuses_without_an_approved_card() -> None:
-    r = await rig()
-    await r.alarm.arm(UID, "away", "console")
-    tool = next(
-        t
-        for t in camera_tools(r.alarm, r.gate, r.history, confirm_wait_s=0.0)
-        if t.name == "home_disarm"
-    )
-    from jarvis.tools.context import tool_context
-
-    with tool_context(SCOPE, spoken=True):
-        out = await tool.run({})
-    assert out["status"] == "refused" and out["code"] == "needs_console"
-    with tool_context(SCOPE):
-        out = await tool.run({})
-    assert out["status"] == "refused"
-    assert (await r.alarm.view(UID)).armed is True
+    for res in results:
+        assert res.outcome is GatewayOutcome.EXECUTED
+        assert res.result["status"] == "refused" and res.result["code"] == "needs_console"
+        assert res.result["message"] == DISARM_ANSWER
+    view = await r.alarm.view(UID)
+    assert view.armed is True and view.rev == 1
 
 
 def hist(**kw: Any) -> dict[str, Any]:
@@ -242,3 +210,11 @@ async def test_never_refuses_all_three() -> None:
     )
     for name, args in (("home_arm", {}), ("home_disarm", {}), ("camera_history", hist())):
         assert (await call(gw, name, **args)).outcome is GatewayOutcome.DENIED
+
+
+async def test_arming_a_home_with_no_alarm_zones_says_it_protects_nothing_yet() -> None:
+    r = await rig(camera=False)
+    res = await call(build(r), "home_arm")
+    assert res.result["status"] == "no_zones"
+    assert "armed" not in res.result and res.result["confirmed"] is False
+    assert "not protecting anything yet" in res.result["message"]

@@ -8,14 +8,15 @@ Alarm cases: an armed person at the gate rings once, fast, with fixed words; a d
 dropped and counted at BOTH ends (bridge and cloud); an unreadable arm record still rings; arm is
 pending until the laptop's own ack (an unrelated or older ack does nothing; a stuck arm raises
 home_arm_failed once); spoken arm in a clean round works and never says "armed" early, a tainted
-round makes a card, Telegram arm works; disarm is ALWAYS a card or a passkey (spoken, Telegram,
-typed, an allow rule, a forged / stale / foreign pass, the wrong rev, no proof, a bearer caller);
-recognition never softens an alert and a child is never named. History: the question is
-allow-listed, bridge strings
-never reach the answer, strangers are not named. Parcels: one alert per parcel, flaps absorbed.
+round makes a card, Telegram arm works; disarm is ONLY the Home panel with the passkey (the tool
+never disarms, spoken, Telegram, typed or allowed; a forged / stale / foreign pass, the wrong
+rev, no proof, a bearer caller); recognition never softens an alert and a child is never named.
+History: the question is allow-listed, bridge strings never reach the answer, strangers are
+not named. Parcels: one alert per parcel, flaps absorbed.
+absorbed.
 Negative controls (each must make the suite FAIL): the disarmed filter off at both ends; recognition
-allowed to suppress an alert; history passing bridge strings through; the disarm gate waving a card
-through.
+allowed to suppress an alert; history passing bridge strings through; the disarm tool really
+disarming.
 """
 
 from __future__ import annotations
@@ -40,16 +41,17 @@ from camera_fakes import CHILD, HOME, PERSON, T0, UID, Rig, rig  # noqa: E402
 from frigate_fakes import event_payload, state  # noqa: E402
 from r1d_common import finish  # noqa: E402
 
+import jarvis.camera.alarm as alarm_mod  # noqa: E402
 import jarvis.camera.events as events_mod  # noqa: E402
 from jarvis.camera.alarm import ArmPendingJob, DisarmGate, DisarmPass  # noqa: E402
-from jarvis.camera.events import ARM_ACK_PREFIX  # noqa: E402
+from jarvis.camera.events import ARM_ACK_PREFIX, AlertNotSent  # noqa: E402
 from jarvis.camera.history import History, HistoryRejected  # noqa: E402
 from jarvis.camera.models import CameraConfig, HistoryQuery  # noqa: E402
 from jarvis.camera.packages import NO_MODEL_NOTE  # noqa: E402
 from jarvis.camera.ports import AlarmRefused  # noqa: E402
-from jarvis.camera.tools import camera_tools  # noqa: E402
+from jarvis.camera.tools import CameraAPI, camera_tools  # noqa: E402
 from jarvis.core.channel import telegram_turn  # noqa: E402
-from jarvis.core.guardrails import ActionRisk, ConfirmationGate  # noqa: E402
+from jarvis.core.guardrails import ConfirmationGate  # noqa: E402
 from jarvis.faces.ports import Resolved  # noqa: E402
 from jarvis.home.ports import (  # noqa: E402
     Ack,
@@ -67,7 +69,7 @@ from jarvis.logging import configure_logging  # noqa: E402
 from jarvis.permissions.errors import PasskeyRequired  # noqa: E402
 from jarvis.tools import Effect, PolicyRule  # noqa: E402
 from jarvis.tools.audit import AuditLog  # noqa: E402
-from jarvis.tools.context import ToolContext, tool_context  # noqa: E402
+from jarvis.tools.context import require_tool_context  # noqa: E402
 from jarvis.tools.external import FENCE_END  # noqa: E402
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult  # noqa: E402
 from jarvis.tools.policy import Policy  # noqa: E402
@@ -127,14 +129,8 @@ async def arm(r: Rig, mode: str = "away") -> None:
 
 
 async def card_pass(r: Rig) -> DisarmPass:
-    ctx = ToolContext(
-        user_id=UID,
-        session_id="s",
-        scope=SCOPE,
-        confirmed=True,
-        approved_risk=ActionRisk.IRREVERSIBLE,
-    )
-    p = await r.gate.card_pass(UID, ctx)
+    """A pass the way the Home panel gets one (fresh sign-in, no passkeys in force)."""
+    p = await r.gate.panel_pass(UID, None, fresh_left_s=900)
     assert p is not None
     return p
 
@@ -248,16 +244,19 @@ async def _() -> list[str]:
     return f
 
 
-@case("a_notifier_that_keeps_failing_never_raises_into_the_webhook")
+@case("a_notifier_that_keeps_failing_raises_so_the_bridge_retries")
 async def _() -> list[str]:
     f: list[str] = []
     r = await rig()
     await arm(r)
-    r.notifier.fail_times = 9
+    r.notifier.fail_times = 2
     try:
         await r.events.handle(UID, det())
-    except Exception as exc:  # noqa: BLE001
-        f.append(f"raised {type(exc).__name__}")
+        f.append("a lost alert was reported as handled")
+    except AlertNotSent:
+        pass
+    await r.events.handle(UID, det())
+    check(len(r.notifier.sent) == 1, "the retry did not ring", f)
     return f
 
 
@@ -508,74 +507,32 @@ async def _() -> list[str]:
 # ---- disarm never works without the passkey on screen -------------------------------------------
 
 
-@case("disarm_by_voice_telegram_or_typing_is_only_ever_a_card")
+@case("the_disarm_tool_never_disarms_by_voice_telegram_typing_or_an_allow_rule")
 async def _() -> list[str]:
     f: list[str] = []
     r = await rig()
     await arm(r)
     gw = gateway(r)
+    allow = gateway(r, [PolicyRule(tool_pattern="home_disarm", effect=Effect.ALLOW)])
     got = []
     with context_trust(untrusted=False, spoken=True):
-        got.append((await call(gw, "home_disarm")).outcome)
-    got.append((await call(gw, "home_disarm")).outcome)
+        got.append(await call(gw, "home_disarm"))
+    got.append(await call(gw, "home_disarm"))
     with telegram_turn():
-        got.append((await call(gw, "home_disarm")).outcome)
-    check(got == [GatewayOutcome.AWAITING_CONFIRMATION] * 3, f"outcomes {got}", f)
-    check((await r.alarm.view(UID)).armed, "disarmed behind a card", f)
+        got.append(await call(gw, "home_disarm"))
+    got.append(await call(allow, "home_disarm"))
+    for res in got:
+        ok = isinstance(res.result, dict) and res.result.get("status") == "refused"
+        check(ok, f"outcome {res.outcome} result {res.result}", f)
+    view = await r.alarm.view(UID)
+    check(view.armed and view.rev == 1, "the alarm changed behind the tool", f)
     return f
 
 
-@case("an_allow_rule_cannot_turn_the_disarm_card_off")
+@case("the_gate_has_no_card_door")
 async def _() -> list[str]:
     f: list[str] = []
-    r = await rig()
-    await arm(r)
-    rules = [PolicyRule(tool_pattern="home_disarm", effect=Effect.ALLOW)]
-    res = await call(gateway(r, rules), "home_disarm")
-    check(res.outcome is GatewayOutcome.AWAITING_CONFIRMATION, "allow rule skipped the card", f)
-    check((await r.alarm.view(UID)).armed, "disarmed", f)
-    return f
-
-
-@case("the_disarm_tool_body_refuses_a_spoken_or_unapproved_call")
-async def _() -> list[str]:
-    f: list[str] = []
-    r = await rig()
-    await arm(r)
-    tool = next(
-        t
-        for t in camera_tools(r.alarm, r.gate, r.history, confirm_wait_s=0.0)
-        if t.name == "home_disarm"
-    )
-    with tool_context(SCOPE, spoken=True):
-        out = await tool.run({})
-    check(out["status"] == "refused", "spoken body ran", f)
-    with tool_context(SCOPE):
-        out = await tool.run({})
-    check(out["status"] == "refused", "unapproved body ran", f)
-    check((await r.alarm.view(UID)).armed, "disarmed", f)
-    return f
-
-
-@case("an_approved_irreversible_card_disarms")
-async def _() -> list[str]:
-    f: list[str] = []
-    r = await rig()
-    await arm(r)
-    gw = gateway(r)
-    card = await call(gw, "home_disarm")
-    check(card.pending is not None, "no card", f)
-    if card.pending is not None:
-        done = await gw.execute(
-            ToolCall(id="c", name="home_disarm", arguments={}),
-            confirmation_id=card.pending.id,
-            scope=SCOPE,
-        )
-        check(
-            done.outcome is GatewayOutcome.EXECUTED and not (await r.alarm.view(UID)).armed,
-            "no disarm",
-            f,
-        )
+    check(not hasattr(DisarmGate, "card_pass"), "DisarmGate.card_pass exists", f)
     return f
 
 
@@ -665,30 +622,6 @@ async def _() -> list[str]:
         try:
             await r.gate.panel_pass(UID, None, fresh_left_s=fresh)
             f.append(f"issued a pass with fresh_left_s={fresh}")
-        except AlarmRefused:
-            pass
-    return f
-
-
-@case("a_card_pass_needs_an_approved_irreversible_card")
-async def _() -> list[str]:
-    f: list[str] = []
-    r = await rig()
-    await arm(r)
-    for ctx in (
-        ToolContext(user_id=UID, session_id="s", scope=SCOPE, spoken=True),
-        ToolContext(user_id=UID, session_id="s", scope=SCOPE, confirmed=True),
-        ToolContext(
-            user_id=UID,
-            session_id="s",
-            scope=SCOPE,
-            confirmed=True,
-            approved_risk=ActionRisk.REVERSIBLE,
-        ),
-    ):
-        try:
-            await r.gate.card_pass(UID, ctx)
-            f.append("a pass without an approved card")
         except AlarmRefused:
             pass
     return f
@@ -1000,6 +933,47 @@ async def _() -> list[str]:
     return f
 
 
+# ---- review fixes: the alert survives a broken face lookup, an empty setup and a wipe ---------
+
+
+@case("a_face_directory_that_raises_still_rings_the_armed_alert")
+async def _() -> list[str]:
+    f: list[str] = []
+    r = await rig()
+    await arm(r)
+
+    async def boom(*a: Any, **k: Any) -> Resolved:
+        raise RuntimeError("registry unreadable")
+
+    r.faces.resolve = boom  # type: ignore[method-assign]
+    await r.events.handle(UID, det(face={"person": PERSON, "score": 0.95}))
+    check(len(r.notifier.sent) == 1, f"alerts sent {len(r.notifier.sent)}", f)
+    return f
+
+
+@case("arming_with_no_alarm_zones_is_never_reported_as_protecting")
+async def _() -> list[str]:
+    f: list[str] = []
+    r = await rig(camera=False)
+    res = await call(gateway(r), "home_arm")
+    check(res.result["status"] == "no_zones", f"status {res.result['status']}", f)
+    check("not protecting anything yet" in res.result["message"], "no plain warning", f)
+    return f
+
+
+@case("a_wiped_arm_record_never_takes_its_rev_back")
+async def _() -> list[str]:
+    f: list[str] = []
+    r = await rig()
+    await arm(r)
+    await r.alarm.arm(UID, "night", "console")
+    before = (await r.alarm.record(UID)).rev
+    await r.alarm.wipe(UID)
+    rec = await r.alarm.record(UID)
+    check(rec.rev > before and not rec.armed, f"rev {rec.rev} after {before}", f)
+    return f
+
+
 # ---- running it ---------------------------------------------------------------------------------
 
 
@@ -1066,18 +1040,21 @@ def history_passes_bridge_strings() -> Iterator[None]:
 
 
 @contextmanager
-def disarm_gate_waves_cards_through() -> Iterator[None]:
-    old = DisarmGate.card_pass
+def disarm_tool_disarms() -> Iterator[None]:
+    old = CameraAPI.disarm
 
-    async def wave(self: Any, uid: str, ctx: Any) -> Any:
-        rec = await self._alarm.record(uid)
-        return DisarmPass(uid=uid, rev=rec.rev, how="waved through")
+    async def disarm(self: Any, a: dict[str, Any]) -> Any:
+        ctx = require_tool_context()
+        rec = await self._alarm.record(ctx.user_id)
+        p = DisarmPass(uid=ctx.user_id, rev=rec.rev, how="tool", seal=alarm_mod._SEAL)
+        await self._alarm.disarm(ctx.user_id, p, via="chat")
+        return {"status": "done", "armed": False}
 
-    DisarmGate.card_pass = wave  # type: ignore[method-assign,assignment]
+    CameraAPI.disarm = disarm  # type: ignore[method-assign,assignment]
     try:
         yield
     finally:
-        DisarmGate.card_pass = old  # type: ignore[method-assign]
+        CameraAPI.disarm = old  # type: ignore[method-assign]
 
 
 async def controls() -> dict[str, Any]:
@@ -1087,13 +1064,13 @@ async def controls() -> dict[str, Any]:
         suppress = await run_all()
     with history_passes_bridge_strings():
         passthrough = await run_all()
-    with disarm_gate_waves_cards_through():
+    with disarm_tool_disarms():
         waved = await run_all()
     failed = {
         "disarmed_filter_off": [r["id"] for r in no_filter if not r["passed"]],
         "recognition_may_suppress": [r["id"] for r in suppress if not r["passed"]],
         "history_passes_bridge_strings": [r["id"] for r in passthrough if not r["passed"]],
-        "disarm_gate_waves_cards_through": [r["id"] for r in waved if not r["passed"]],
+        "disarm_tool_disarms": [r["id"] for r in waved if not r["passed"]],
     }
     return {"suite_failed": all(failed.values()), "failed_cases": failed}
 

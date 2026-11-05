@@ -9,6 +9,9 @@ order that matters for the burglar alert (D9: 10 seconds from the camera to the 
 
 - A detection that arrives while the cloud says disarmed is dropped and counted (D8); recognition
   never suppresses or softens an armed alert (a VIP, a family member at the gate still rings).
+- A face lookup that fails counts as "not recognised" (`safe_resolve`). A detection whose alert
+  could not be delivered, or that failed for any other reason, is RAISED (`AlertNotSent` or the
+  error): the webhook answers 503, gives the event id back and the bridge retries it.
 - If the arm record can't be read the alert goes out (a missed burglar is worse than a false one).
 - Frigate's labels and zone ids are untrusted text: they have already passed the wire models
   (`jarvis.home.ports`), and the alert text uses only the owner's camera labels and fixed words.
@@ -30,7 +33,7 @@ from jarvis.camera.config import CameraConfigService
 from jarvis.camera.feed import Feed, camera_words
 from jarvis.camera.models import CameraSettings, FeedItem, first_upper
 from jarvis.camera.packages import Packages
-from jarvis.camera.ports import NoSnapshots, SnapshotPolicy
+from jarvis.camera.ports import NoSnapshots, SnapshotPolicy, safe_resolve
 from jarvis.faces.ports import (
     FAMILY_CHILD,
     RECOGNISED_PERSON,
@@ -54,6 +57,13 @@ log = get_logger(__name__)
 GREETING_EVERY_S = 1800.0  # D10: one greeting line per person per 30 minutes
 ARM_ACK_PREFIX = "arm:"  # the bridge's arm ack carries this id prefix, so no other rev can confirm
 NOTIFY_TRIES = 2
+
+
+class AlertNotSent(RuntimeError):
+    """A burglar alert could not be delivered. Raised out of `handle` so the webhook answers 503,
+    gives the event id back and the bridge's retry (same id) tries again."""
+
+
 Event = Heartbeat | Detection | FaceSeen | Package | Hazard | Ack
 
 
@@ -100,7 +110,7 @@ class CameraEvents:
     async def handle(self, uid: str, event: Event) -> None:
         try:
             if isinstance(event, Detection):
-                await self._detection(uid, event)
+                await self._detection_or_retry(uid, event)
             elif isinstance(event, FaceSeen):
                 await self._face_seen(uid, event)
             elif isinstance(event, Package):
@@ -110,10 +120,23 @@ class CameraEvents:
             elif isinstance(event, Ack):
                 await self._ack(uid, event)
         except Exception as exc:  # noqa: BLE001 - one bad event never breaks the webhook
+            if isinstance(event, Detection):
+                raise  # ...except a detection: the bridge must retry it
             log.warning(
                 "camera event failed",
                 extra={"type": getattr(event, "type", "?"), "reason": type(exc).__name__},
             )
+
+    async def _detection_or_retry(self, uid: str, ev: Detection) -> None:
+        """A detection that can't be turned into an alert is raised, never swallowed: the bridge
+        retries it (same id) instead of believing it was handled."""
+        try:
+            await self._detection(uid, ev)
+        except AlertNotSent:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.error("detection failed; asking for a retry", extra={"reason": type(exc).__name__})
+            raise
 
     async def _ack(self, uid: str, ev: Ack) -> None:
         if ev.what == "state" and ev.rev is not None and ev.id.startswith(ARM_ACK_PREFIX):
@@ -138,6 +161,9 @@ class CameraEvents:
             log.warning("camera settings unreadable", extra={"reason": type(exc).__name__})
             return None
 
+    async def _who(self, uid: str, person: str | None, score: float | None) -> Resolved:
+        return await safe_resolve(self._faces, uid, person, score)
+
     def _when(self, epoch: float) -> str:
         return datetime.fromtimestamp(epoch, UTC).astimezone(self._tz).strftime("%H:%M")
 
@@ -154,6 +180,7 @@ class CameraEvents:
         *,
         named: str | None = None,
         photo: bytes | None = None,
+        must: bool = False,
     ) -> Delivery | None:
         for attempt in range(NOTIFY_TRIES):
             try:
@@ -165,6 +192,8 @@ class CameraEvents:
                     "alert not sent",
                     extra={"kind": signal.kind, "try": attempt + 1, "reason": type(exc).__name__},
                 )
+        if must:
+            raise AlertNotSent("alert not sent")
         return None
 
     async def _record(self, uid: str, item: FeedItem) -> None:
@@ -217,9 +246,7 @@ class CameraEvents:
             await self._record(uid, base)
             await self._touch(uid, ev.camera, ev.start)
             return
-        resolved = (
-            await self._faces.resolve(uid, ev.face.person, ev.face.score) if ev.face else Resolved()
-        )
+        resolved = await self._who(uid, ev.face.person, ev.face.score) if ev.face else Resolved()
         place = self._place(settings, ev.camera)
         when = self._when(ev.start)
         text = intruder_text(place, when, who_phrase(resolved))
@@ -237,7 +264,13 @@ class CameraEvents:
             child=resolved.child,
             camera=ev.camera,
         )
-        delivery = await self._notify(uid, signal, text, named=named, photo=photo)
+        try:
+            delivery = await self._notify(uid, signal, text, named=named, photo=photo, must=True)
+        except AlertNotSent:
+            await self._record(
+                uid, base.model_copy(update={"kind": "intruder", "decision": "failed"})
+            )
+            raise
         item = base.model_copy(
             update={
                 "kind": "intruder",
@@ -269,7 +302,7 @@ class CameraEvents:
     # ---- faces and packages ------------------------------------------------------------------
 
     async def _face_seen(self, uid: str, ev: FaceSeen) -> None:
-        resolved = await self._faces.resolve(uid, ev.face.person, ev.face.score)
+        resolved = await self._who(uid, ev.face.person, ev.face.score)
         if not resolved.named:
             return  # strangers while disarmed produce nothing (D1)
         armed = await self._armed(uid)
@@ -332,6 +365,7 @@ class CameraEvents:
 __all__ = [
     "ARM_ACK_PREFIX",
     "GREETING_EVERY_S",
+    "AlertNotSent",
     "CameraEvents",
     "intruder_text",
     "who_phrase",

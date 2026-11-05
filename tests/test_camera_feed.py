@@ -89,3 +89,15 @@ async def test_export_has_ids_and_times_but_no_names() -> None:
 async def test_the_sweep_job_counts_an_owner_it_could_not_serve() -> None:
     r = await rig()
     assert (await FeedSweepJob(r.feed).run(["bad/owner"]))["failed"] == 1
+
+
+async def test_a_face_directory_that_raises_makes_the_feed_line_unrecognised_not_fail() -> None:
+    r = await rig()
+
+    async def boom(*a: object, **k: object) -> object:
+        raise RuntimeError("registry unreadable")
+
+    r.faces.resolve = boom  # type: ignore[method-assign]
+    await r.feed.add(UID, item(T0, person=PERSON, score=0.95))
+    lines = await r.feed.view(UID, "today")
+    assert len(lines) == 1 and "omeone JARVIS didn't recognise" in lines[0]["words"]

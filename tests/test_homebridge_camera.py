@@ -156,7 +156,6 @@ def test_small_strips_every_metadata_segment_and_keeps_the_picture() -> None:
         jpeg(100, 900),
         jpeg()[:-2],  # no end marker
         jpeg()[:20],
-        jpeg() + b"trailing-junk",
         b"\xff\xd8\xff\xda\x00\x04\x00\x00",  # a scan before any frame header
     ],
 )
@@ -179,10 +178,12 @@ async def test_the_snapshot_is_attached_only_when_the_cloud_said_so(tmp_path: Pa
     p = plugin(tmp_path, sink, fr)
     await p.apply_state(state(snapshot=False))
     await p.on_message("frigate/events", event_payload(event_id="a"))
+    await p.drain()
     assert sink.events[-1].snapshot is None
     assert not any(c[0].endswith("snapshot.jpg") for c in fr.calls)
     await p.apply_state(state(snapshot=True, srev=2))
     await p.on_message("frigate/events", event_payload(event_id="b"))
+    await p.drain()
     det = sink.events[-1]
     assert det.snapshot is not None and det.snapshot_bytes() == small(fr.snapshot)
     snap_call = next(c for c in fr.calls if c[0].endswith("snapshot.jpg"))
@@ -194,8 +195,10 @@ async def test_a_bad_or_missing_snapshot_never_holds_back_the_alert(tmp_path: Pa
     p = plugin(tmp_path, sink, fr)
     await p.apply_state(state(snapshot=True))
     await p.on_message("frigate/events", event_payload(event_id="a"))  # 404
+    await p.drain()
     fr.snapshot = jpeg(1280, 720)
     await p.on_message("frigate/events", event_payload(event_id="b"))  # too big a picture
+    await p.drain()
     assert [e.snapshot for e in sink.events if isinstance(e, Detection)] == [None, None]
 
 
@@ -205,6 +208,7 @@ async def test_a_car_never_carries_a_snapshot(tmp_path: Path) -> None:
     p = plugin(tmp_path, sink, fr)
     await p.apply_state(state(snapshot=True))
     await p.on_message("frigate/events", event_payload(label="car"))
+    await p.drain()
     assert sink.events[-1].snapshot is None
 
 
@@ -286,6 +290,7 @@ async def test_a_package_after_a_person_in_the_zone_is_a_delivery(tmp_path: Path
     p = plugin(tmp_path, sink)
     await p.apply_state(state(zones=("gate", "doorstep")))
     await p.on_message("frigate/events", event_payload(zones=["doorstep"]))
+    await p.drain()
     await p.on_message("frigate/gate/classification/doorstep", b"package")
     assert [e for e in sink.events if isinstance(e, Package)][0].delivered is True
 
@@ -581,3 +586,107 @@ def test_bytes_are_ascii_and_nothing_is_logged_with_a_payload() -> None:
         src = (root / f"{name}.py").read_text()
         assert src.isascii(), name
         assert "payload=" not in src.replace("payload=payload", "") or name == "mqtt"
+
+
+def test_a_new_home_link_resets_the_arm_state_so_a_low_rev_is_taken(tmp_path: Path) -> None:
+    arm = ArmState(tmp_path / "s.json")
+    arm.bind("h_0123abcd")
+    arm.apply(state(armed=False, rev=7))
+    assert arm.rev == 7
+    arm.bind("h_0123abcd")  # same home, nothing changes
+    assert arm.rev == 7
+    arm.bind("h_89abcdef")  # linked again to another home
+    assert arm.rev == 0 and arm.armed is False
+    assert arm.apply(state(armed=True, rev=1)) == 1 and arm.armed is True
+
+
+def test_the_first_bind_keeps_what_the_bridge_already_holds(tmp_path: Path) -> None:
+    arm = ArmState(tmp_path / "s.json")
+    arm.apply(state(armed=True, rev=4))
+    arm.bind("h_0123abcd")
+    assert arm.rev == 4 and arm.armed is True
+    assert ArmState(tmp_path / "s.json").home == "h_0123abcd"
+
+
+# ---- review fixes: the alert path never blocks the MQTT loop -------------------------------------
+
+
+async def test_a_slow_first_post_does_not_delay_the_next_detection(tmp_path: Path) -> None:
+    import asyncio
+    import time
+
+    class SlowFirst(Sink):
+        async def post_event(self, event: Any) -> bool:
+            if not self.events and not isinstance(event, Ack):
+                self.events.append(event)
+                await asyncio.sleep(10)
+                return True
+            return await super().post_event(event)
+
+    sink = SlowFirst()
+    p = plugin(tmp_path, sink)
+    await p.apply_state(state())
+    sink.events.clear()
+    await p.on_message("frigate/events", event_payload(event_id="a"))
+    started = time.monotonic()
+    await p.on_message("frigate/events", event_payload(event_id="b"))
+    await asyncio.sleep(0.05)
+    assert time.monotonic() - started < 0.5
+    assert [e.id for e in sink.events if isinstance(e, Detection)] == ["det:a", "det:b"]
+    await p.cancel()
+
+
+async def test_an_event_that_could_not_be_posted_is_tried_again_on_the_next_update(
+    tmp_path: Path,
+) -> None:
+    class Flaky(Sink):
+        up = False
+
+        async def post_event(self, event: Any) -> bool:
+            if isinstance(event, Detection) and not self.up:
+                return False
+            return await super().post_event(event)
+
+    sink = Flaky()
+    p = plugin(tmp_path, sink)
+    await p.apply_state(state())
+    await p.on_message("frigate/events", event_payload(event_id="a"))
+    await p.drain()
+    assert not [e for e in sink.events if isinstance(e, Detection)]
+    sink.up = True
+    await p.on_message("frigate/events", event_payload(event_id="a", kind="update"))
+    await p.drain()
+    assert [e.id for e in sink.events if isinstance(e, Detection)] == ["det:a"]
+
+
+def test_an_event_with_no_score_yet_is_not_used_up(tmp_path: Path) -> None:
+    arm = ArmState(tmp_path / "s.json")
+    arm.apply(state())
+    d = Detections(arm)
+    assert d.filter(event_payload(event_id="a", score=None)) is None  # type: ignore[arg-type]
+    assert d.filter(event_payload(event_id="a", kind="update")) is not None
+
+
+def test_bytes_after_the_first_end_marker_are_cut_and_a_second_picture_is_refused() -> None:
+    plain = jpeg()
+    assert small(plain + b"GPS-and-other-bytes") == small(plain)
+    assert small(plain + plain) == small(plain)  # a whole second picture after the end is cut
+    inside = plain[:-2] + b"\xff\xd8\xff\xd9" + b"\xff\xd9"
+    assert small(inside) is None  # a second start marker inside the picture
+    assert small(plain[:-2]) is None  # no end marker
+
+
+def test_the_bridge_refuses_to_connect_to_mqtt_without_a_user_and_password() -> None:
+    from jarvis.homebridge.mqtt import MqttCredentialsMissing, real_connect
+
+    for env in (
+        {},
+        {"MQTT_USER": "bridge"},
+        {"MQTT_PASSWORD": "x"},
+        {"MQTT_USER": " ", "MQTT_PASSWORD": "x"},
+    ):
+        cfg = MqttConfig.from_env(env)
+        assert cfg.has_credentials is False
+        with pytest.raises(MqttCredentialsMissing):
+            real_connect(cfg)()
+    assert MqttConfig.from_env({"MQTT_USER": "bridge", "MQTT_PASSWORD": "x"}).has_credentials

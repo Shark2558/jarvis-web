@@ -55,9 +55,14 @@ def test_the_words_for_the_owner_say_to_keep_public_places_out() -> None:
     assert "Draw zones" in CFG or "redraw" in CFG
 
 
-def test_the_export_script_is_optional_changes_nothing_by_itself_and_is_ascii() -> None:
-    ps = (HOME / "export-yolov9.ps1").read_text()
-    assert ps.isascii() and "OPTIONAL" in ps and "never edits" in ps
-    assert "Remove-Item" not in ps and "Invoke-Expression" not in ps and "iex " not in ps
-    assert "yolov9-t-320.onnx" in ps and "type: openvino" in ps
+def test_snapshots_and_review_only_cover_the_owners_own_zones() -> None:
+    cam = DOC["cameras"]["gate"]
+    assert cam["review"]["alerts"]["required_zones"] == ["gate"]
+    assert cam["review"]["detections"]["required_zones"] == ["gate", "doorstep"]
+    assert DOC["snapshots"]["required_zones"] == ["gate", "doorstep"]
+
+
+def test_no_model_export_script_ships_and_the_built_in_model_is_used() -> None:
+    assert not list(HOME.glob("export-*")) and not list(HOME.rglob("*yolov9*"))
+    assert "yolov9" not in CFG.lower() and "built-in model" in CFG
     assert (HOME / "frigate" / "README.txt").read_text().isascii() and CFG.isascii()

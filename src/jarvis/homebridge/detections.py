@@ -107,6 +107,10 @@ class Detections:
             self._seen.popitem(last=False)
         return True
 
+    def release(self, event_id: str) -> None:
+        """The detection could not be posted: let this event's next update try again."""
+        self._seen.pop(event_id, None)
+
     def person_seen_recently(self, camera: str, zone: str, now: float) -> bool:
         at = self._person_at.get((camera, zone))
         return at is not None and 0 <= now - at <= DELIVERY_WINDOW_S
@@ -134,10 +138,10 @@ class Detections:
         zones = tuple(z for z in entered if z in cam.alarm_zones)
         if not zones:
             return None
-        if not self._first_time(ev.id):
-            return None
         score = ev.top_score if ev.top_score is not None else ev.score
         if score is None or not 0 <= score <= 1:
+            return None  # not used up: a later update of this event may carry a score
+        if not self._first_time(ev.id):
             return None
         try:
             return Detection(

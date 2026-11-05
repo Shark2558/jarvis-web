@@ -24,6 +24,24 @@ _STANDALONE = {_TEM, *range(0xD0, 0xD8)}  # no length: RSTn, TEM
 _DROP = {*range(0xE0, 0xF0), 0xFE}  # APP0-APP15 and COM
 
 
+def _scan(jpeg: bytes, start: int) -> bytes | None:
+    """`jpeg[start:]` cut after the first EOI. None when there is no EOI or a second SOI starts
+    inside the picture (a picture hidden in the picture)."""
+    i = start
+    n = len(jpeg)
+    while i + 1 < n:
+        if jpeg[i] != 0xFF:
+            i += 1
+            continue
+        marker = jpeg[i + 1]
+        if marker == _EOI:
+            return jpeg[start : i + 2]
+        if marker == _SOI:
+            return None
+        i += 2 if marker != 0xFF else 1
+    return None
+
+
 def _segments(jpeg: bytes) -> tuple[list[bytes], tuple[int, int]] | None:
     """The kept header segments and (width, height); None when the file isn't a sound JPEG."""
     if not jpeg.startswith(JPEG_MAGIC):
@@ -55,7 +73,10 @@ def _segments(jpeg: bytes) -> tuple[list[bytes], tuple[int, int]] | None:
         if marker == _SOS:
             if size is None:
                 return None
-            kept.append(jpeg[i:])  # the scan and the rest are copied as they are
+            scan = _scan(jpeg, i)  # the scan, up to and including the first EOI, and nothing after
+            if scan is None:
+                return None
+            kept.append(scan)
             return kept, size
         if marker not in _DROP:
             kept.append(jpeg[i:end])

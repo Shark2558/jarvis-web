@@ -52,6 +52,10 @@ log = get_logger(__name__)
 VIEW_PER_MINUTE = 60
 CHANGE_PER_MINUTE = 30
 NOT_AVAILABLE = "Not available on this server (no encryption key)."
+NO_ZONES_WARNING = (
+    "JARVIS is not protecting anything yet: no camera has an alarm zone. "
+    "Choose the gate zone under Cameras."
+)
 router = APIRouter(prefix="/v1/home", dependencies=[Depends(require_auth)])
 
 
@@ -99,6 +103,7 @@ def _limit(request: Request, name: str, uid: str) -> None:
 async def _alarm_view(svc: CameraServices, uid: str) -> dict[str, Any]:
     rec = await svc.alarm.record(uid)
     home = await svc.gate.homes.home_id(uid) if rec.armed else None
+    zones = await svc.alarm.protecting(uid)
     return {
         "available": True,
         # what the passkey check for Disarm is bound to; no secret (an id and a counter)
@@ -109,6 +114,8 @@ async def _alarm_view(svc: CameraServices, uid: str) -> dict[str, Any]:
         "pending_since": None if rec.confirmed else rec.pending_since,
         "set_via": rec.set_via,
         "dropped_disarmed": rec.dropped_disarmed,
+        "zones_configured": zones,
+        "warning": NO_ZONES_WARNING if rec.armed and not zones else None,
     }
 
 

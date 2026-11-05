@@ -36,7 +36,7 @@ ARM_FAIL_AFTER_S = 300.0  # D8: no ack in 5 minutes -> home_arm_failed
 SetVia = Literal["console", "chat", "voice", "telegram"]
 Mode = Literal["away", "night"]
 FeedKind = Literal["intruder", "greeting", "package", "other"]
-FeedDecision = Literal["ring", "silent", "held", "dropped"]
+FeedDecision = Literal["ring", "silent", "held", "dropped", "failed"]
 ObjectLabel = Literal["person", "car", "motorcycle", "bicycle", "dog", "cat"]
 
 
@@ -87,7 +87,7 @@ class CameraStatus(Frozen):
 class CameraSettings(Frozen):
     cameras: dict[CameraId, CameraConfig] = Field(default_factory=dict, max_length=MAX_CAMERAS)
     retention_days: Annotated[StrictInt, Field(ge=1, le=30)] = DEFAULT_RETENTION_DAYS
-    greetings: StrictBool = True  # feed lines for consented people while disarmed
+    greetings: StrictBool = False  # feed lines for consented people while disarmed (D20: off)
     rev: Annotated[StrictInt, Field(ge=0)] = 0
     status: CameraStatus = CameraStatus()
 

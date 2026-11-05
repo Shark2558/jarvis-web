@@ -207,3 +207,15 @@ async def test_the_result_is_json_with_no_thumbnail_field() -> None:
     reply(r, [ev(1, thumbnail="AAAA")])
     out = json.loads((await r.history.search(UID, q())).model_dump_json())
     assert "thumbnail" not in json.dumps(out) and "AAAA" not in json.dumps(out)
+
+
+async def test_a_face_directory_that_raises_makes_history_say_unrecognised_not_fail() -> None:
+    r = await rig()
+
+    async def boom(*a: Any, **k: Any) -> Resolved:
+        raise RuntimeError("registry unreadable")
+
+    r.faces.resolve = boom  # type: ignore[method-assign]
+    reply(r, [ev(1, person=PERSON, score=0.95)])
+    res = await r.history.search(UID, q())
+    assert [i.who for i in res.items] == ["someone JARVIS didn't recognise"]

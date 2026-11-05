@@ -6,9 +6,10 @@ from __future__ import annotations
 import base64
 import json
 
+import pytest
 from camera_fakes import CHILD, PERSON, T0, UID, Rig, rig
 
-from jarvis.camera.events import ARM_ACK_PREFIX
+from jarvis.camera.events import ARM_ACK_PREFIX, AlertNotSent
 from jarvis.camera.models import CameraConfig
 from jarvis.faces.ports import Resolved
 from jarvis.home.ports import (
@@ -178,11 +179,12 @@ async def test_a_failed_send_is_tried_again_once() -> None:
     assert len(r.notifier.sent) == 1
 
 
-async def test_a_notifier_that_keeps_failing_never_raises_into_the_webhook() -> None:
+async def test_a_notifier_that_keeps_failing_is_raised_into_the_webhook_for_a_retry() -> None:
     r = await rig()
     await armed(r)
     r.notifier.fail_times = 5
-    await r.events.handle(UID, det())
+    with pytest.raises(AlertNotSent):
+        await r.events.handle(UID, det())
     assert r.notifier.sent == []
 
 
@@ -203,6 +205,7 @@ async def test_the_feed_line_is_written_after_the_alert_and_holds_ids_not_names(
 async def test_greeting_while_disarmed_for_a_consented_person() -> None:
     r = await rig()
     r.faces.people[PERSON] = Resolved(name="Anjali", person=PERSON)
+    await r.config.set_cameras(UID, (await r.config.get(UID)).cameras, greetings=True)
     ev = FaceSeen(
         type="face_seen",
         id="f1",
@@ -287,3 +290,71 @@ async def test_heartbeat_parts_are_stored_once_and_not_rewritten_when_unchanged(
     await r.events.handle(UID, hb.model_copy(update={"id": "h2"}))
     assert r.docs.sets == sets
     assert (await r.config.get(UID)).status.doorstep_model is True
+
+
+# ---- review fixes (R3 B security review) ---------------------------------------------------------
+
+
+async def test_a_face_directory_that_raises_still_rings_the_armed_alert() -> None:
+    r = await rig()
+    await armed(r)
+
+    async def boom(*a: object, **k: object) -> Resolved:
+        raise RuntimeError("registry unreadable")
+
+    r.faces.resolve = boom  # type: ignore[method-assign]
+    await r.events.handle(UID, det(face={"person": PERSON, "score": 0.95}))
+    assert len(r.notifier.sent) == 1
+    assert r.notifier.sent[0].signal.kind == "home_intruder"
+    assert "someone JARVIS didn't recognise" in r.notifier.sent[0].message
+
+
+async def test_a_face_directory_that_raises_does_not_break_a_greeting_event() -> None:
+    r = await rig()
+
+    async def boom(*a: object, **k: object) -> Resolved:
+        raise RuntimeError("registry unreadable")
+
+    r.faces.resolve = boom  # type: ignore[method-assign]
+    await r.config.set_cameras(UID, (await r.config.get(UID)).cameras, greetings=True)
+    ev = FaceSeen(
+        type="face_seen",
+        id="f1",
+        event="e1",
+        camera="gate",
+        zones=("gate",),
+        at=T0,
+        face=FaceMatch(person=PERSON, score=0.95),
+    )
+    await r.events.handle(UID, ev)
+    assert r.notifier.sent == []
+
+
+async def test_a_failed_delivery_is_raised_so_the_bridge_retries_and_the_retry_rings() -> None:
+    r = await rig()
+    await armed(r)
+    r.notifier.fail_times = 2
+    with pytest.raises(AlertNotSent):
+        await r.events.handle(UID, det())
+    assert r.notifier.sent == []
+    lines = await r.feed.day_items(UID, r.feed.local_day(T0))
+    assert [i.decision for i in lines] == ["failed"]
+    await r.events.handle(UID, det())  # the bridge retries with the same id
+    assert len(r.notifier.sent) == 1
+
+
+async def test_an_unexpected_error_before_the_alert_is_raised_not_swallowed() -> None:
+    r = await rig()
+    await armed(r)
+
+    async def boom(*a: object, **k: object) -> None:
+        raise RuntimeError("boom")
+
+    r.events._photo = boom  # type: ignore[method-assign,assignment]
+    with pytest.raises(RuntimeError):
+        await r.events.handle(UID, det())
+
+
+async def test_greetings_are_off_by_default() -> None:
+    r = await rig()
+    assert (await r.config.get(UID)).greetings is False

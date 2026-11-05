@@ -109,3 +109,26 @@ async def test_without_a_caller_nothing_is_pushed() -> None:
     r = await rig()
     cfg = CameraConfigService(r.docs, r.config._doc._ring)  # noqa: SLF001
     assert await cfg.push(UID) is False
+
+
+async def test_a_wipe_never_takes_the_arm_rev_back_so_the_bridge_follows_the_next_arm() -> None:
+    from pathlib import Path
+    from tempfile import mkdtemp
+
+    from jarvis.home.ports import BridgeState
+    from jarvis.homebridge.arm import ArmState
+
+    r = await rig()
+    bridge = ArmState(Path(mkdtemp()) / "s.json")
+    for _ in range(3):  # arm, disarm-less churn: modes flip the rev up
+        await r.alarm.arm(UID, "away", "console")
+        await r.alarm.arm(UID, "night", "console")
+    before = (await r.alarm.record(UID)).rev
+    bridge.apply(BridgeState(arm=(await CameraStateSource(r.alarm, r.config).state_part(UID)).arm))
+    await CameraData(r.alarm, r.config).wipe(UID)
+    after_wipe = await r.alarm.record(UID)
+    assert after_wipe.rev > before and after_wipe.armed is False
+    await r.alarm.arm(UID, "away", "console")
+    part = await CameraStateSource(r.alarm, r.config).state_part(UID)
+    bridge.apply(BridgeState(arm=part.arm))
+    assert bridge.armed is True

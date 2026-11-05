@@ -149,7 +149,7 @@ async def rig(*, camera: bool = True, tz: str = "Asia/Kolkata") -> Rig:
     snap = Snap()
     ring = Keyring(ROOT)
     config = CameraConfigService(docs, ring, caller=caller, snapshots=snap, clock=clock)
-    alarm = Alarm(docs, caller=caller, clock=clock)
+    alarm = Alarm(docs, caller=caller, clock=clock, has_zones=config.has_alarm_zones)
     feed = Feed(docs, ring, faces=faces, config=config, tz=tz, clock=clock)
     events = CameraEvents(
         alarm=alarm,

@@ -31,12 +31,20 @@ Handler = Callable[[str, bytes], Awaitable[None]]
 Connect = Callable[[], AbstractAsyncContextManager[Any]]
 
 
+class MqttCredentialsMissing(RuntimeError):
+    """MQTT_USER or MQTT_PASSWORD is empty: the bridge never listens to an open broker."""
+
+
 @dataclass(frozen=True)
 class MqttConfig:
     host: str = "mosquitto"
     port: int = 1883
     user: str = ""
     password: str = ""
+
+    @property
+    def has_credentials(self) -> bool:
+        return bool(self.user.strip()) and bool(self.password.strip())
 
     @classmethod
     def from_env(cls, env: dict[str, str] | Any) -> MqttConfig:
@@ -52,13 +60,15 @@ class MqttConfig:
 
 def real_connect(cfg: MqttConfig) -> Connect:
     def make() -> AbstractAsyncContextManager[Any]:
+        if not cfg.has_credentials:  # refuse anonymous: the run loop reports it and retries
+            raise MqttCredentialsMissing("MQTT_USER and MQTT_PASSWORD must both be set")
         import aiomqtt  # the bridge image only
 
         client: AbstractAsyncContextManager[Any] = aiomqtt.Client(
             hostname=cfg.host,
             port=cfg.port,
-            username=cfg.user or None,
-            password=cfg.password or None,
+            username=cfg.user,
+            password=cfg.password,
             identifier="jarvis-bridge",
         )
         return client
@@ -116,4 +126,4 @@ class MqttEvents:
             pause = min(pause * 2, self._max_pause)
 
 
-__all__ = ["TOPICS", "MqttConfig", "MqttEvents", "real_connect"]
+__all__ = ["TOPICS", "MqttConfig", "MqttCredentialsMissing", "MqttEvents", "real_connect"]

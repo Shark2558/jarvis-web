@@ -22,7 +22,7 @@
   const STALE_MS = 30 * 1000, POLL_MS = 3000, POLL_MAX = 100, MAX_ROWS = 100;
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
   const LAPTOP = 'Your home laptop is off or asleep \u2014 the camera can\'t see or alert you.';
-  const DECISION = { ring: 'alerted you', silent: 'sent quietly', held: 'held until morning', dropped: 'noted only' };
+  const DECISION = { ring: 'alerted you', silent: 'sent quietly', held: 'held until morning', dropped: 'noted only', failed: 'could not be sent' };
   const S = { alarm: undefined, cams: undefined, feed: undefined, day: 'today', hist: null, loadedAt: 0, busy: false, poll: 0, polls: 0 };
   let el = {}, settle = null;
 
@@ -53,11 +53,11 @@
     if (d.available !== true) return { available: false, reason: txt(d.reason, 200) || 'Not available on this server.' };
     const t = typeof d.disarm_target === 'string' && TARGET.test(d.disarm_target) ? d.disarm_target : null;
     return { available: true, armed: d.armed === true, mode: d.mode === 'night' ? 'night' : 'away', confirmed: d.confirmed === true,
-      target: t, dropped: Number.isInteger(d.dropped_disarmed) ? d.dropped_disarmed : 0 };
+      target: t, dropped: Number.isInteger(d.dropped_disarmed) ? d.dropped_disarmed : 0, zones: d.zones_configured !== false };
   }
   function camsOf(raw) {
     const d = obj(raw);
-    if (!d || d.available !== true) return { available: false, cams: [], retention: 7, greetings: true, note: '' };
+    if (!d || d.available !== true) return { available: false, cams: [], retention: 7, greetings: false, note: '' };
     const cams = arr(d.cameras).slice(0, 8).map((c) => {
       const it = obj(c);
       if (!it || typeof it.id !== 'string' || !ID.test(it.id)) return null;
@@ -65,7 +65,7 @@
         pkg: typeof it.package_zone === 'string' && ID.test(it.package_zone) ? it.package_zone : '',
         online: typeof it.online === 'boolean' ? it.online : null, last: typeof it.last_event_at === 'number' ? it.last_event_at : null };
     }).filter(Boolean);
-    return { available: true, cams, retention: Number.isInteger(d.retention_days) ? d.retention_days : 7, greetings: d.greetings !== false, note: txt(d.model_note, 200) };
+    return { available: true, cams, retention: Number.isInteger(d.retention_days) ? d.retention_days : 7, greetings: d.greetings === true, note: txt(d.model_note, 200) };
   }
   const rowsOf = (raw) => arr(obj(raw) && raw.items).slice(0, MAX_ROWS).map(obj).filter(Boolean);
 
@@ -158,7 +158,7 @@
     if (a === undefined) { el.state.textContent = 'Loading\u2026'; el.state.classList.add('off'); }
     else if (!a || !a.available) { el.state.textContent = 'Not available'; el.state.classList.add('off'); el.sub.textContent = (a && a.reason) || ''; }
     else if (a.armed && !a.confirmed) { el.state.textContent = 'Arming\u2026'; el.state.classList.add('wait'); el.sub.textContent = 'Waiting for your laptop to confirm. ' + LAPTOP; }
-    else if (a.armed) { el.state.textContent = 'Armed (' + (a.mode === 'night' ? 'Night' : 'Away') + ')'; el.state.classList.add('on'); el.sub.textContent = 'A person at your gate raises an alert within seconds.'; }
+    else if (a.armed) { el.state.textContent = 'Armed (' + (a.mode === 'night' ? 'Night' : 'Away') + ')'; el.state.classList.add('on'); el.sub.textContent = a.zones ? 'A person at your gate raises an alert within seconds.' : 'JARVIS is not protecting anything yet: no camera has an alarm zone. Choose the gate zone under Cameras.'; }
     else { el.state.textContent = 'Disarmed'; el.state.classList.add('off'); el.sub.textContent = a.dropped ? 'The laptop sent ' + a.dropped + ' alerts while disarmed - download the home kit again.' : 'Nothing is watching the gate for burglars.'; }
     const ok = !!(a && a.available), armed = ok && a.armed;
     [el.away, el.night].forEach((b) => { b.disabled = !ok; });
@@ -286,7 +286,7 @@
     if (!hasApi()) return;
     if (!force && S.alarm !== undefined && Date.now() - S.loadedAt < STALE_MS) return;
     await loadAlarm();
-    try { S.cams = camsOf(await api('/v1/home/cameras')); } catch (e) { if (e && e.status === 401) return; S.cams = { available: false, cams: [], retention: 7, greetings: true, note: '' }; }
+    try { S.cams = camsOf(await api('/v1/home/cameras')); } catch (e) { if (e && e.status === 401) return; S.cams = { available: false, cams: [], retention: 7, greetings: false, note: '' }; }
     await loadFeed();
     S.loadedAt = Date.now(); render();
     if (S.alarm && S.alarm.armed && !S.alarm.confirmed) poll();

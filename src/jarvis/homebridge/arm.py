@@ -34,6 +34,7 @@ class _Saved(BaseModel):
     settings: SettingsState | None = None
     faces: tuple[PersonId, ...] = ()
     faces_rev: int = 0
+    home: str | None = None
 
 
 class ArmState:
@@ -76,6 +77,22 @@ class ArmState:
     @property
     def rev(self) -> int:
         return self._saved.arm.rev if self._saved.arm is not None else 0
+
+    @property
+    def home(self) -> str | None:
+        return self._saved.home
+
+    def bind(self, home_id: str) -> None:
+        """Remember which home link this state belongs to. A different home (the laptop was linked
+        again) starts from nothing: disarmed, rev 0, so the new link's lower revs are not ignored
+        for ever. The first bind keeps what is held."""
+        if self._saved.home == home_id:
+            return
+        keep = self._saved.home is None
+        self._saved = (
+            self._saved.model_copy(update={"home": home_id}) if keep else _Saved(home=home_id)
+        )
+        self._save()
 
     @property
     def settings(self) -> SettingsState | None:

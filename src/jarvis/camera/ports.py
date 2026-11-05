@@ -7,7 +7,14 @@ safe one: no home id (nothing can be disarmed), no snapshot (no picture leaves h
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+from jarvis.logging import get_logger
+
+if TYPE_CHECKING:
+    from jarvis.faces.ports import FaceDirectory, Resolved
+
+log = get_logger(__name__)
 
 
 class CameraUnavailable(RuntimeError):
@@ -42,10 +49,25 @@ class NoSnapshots:
         return False
 
 
+async def safe_resolve(
+    faces: FaceDirectory, uid: str, person: str | None, score: float | None
+) -> Resolved:
+    """Who a face is, or "nobody recognised" when the directory can't answer. A face lookup that
+    fails must never cost a burglar alert, so every camera path asks through here."""
+    from jarvis.faces.ports import Resolved
+
+    try:
+        return await faces.resolve(uid, person, score)
+    except Exception as exc:  # noqa: BLE001 - unrecognised is the safe answer
+        log.warning("face lookup failed", extra={"reason": type(exc).__name__})
+        return Resolved()
+
+
 __all__ = [
     "AlarmRefused",
     "CameraUnavailable",
     "HomeDirectory",
     "NoSnapshots",
     "SnapshotPolicy",
+    "safe_resolve",
 ]

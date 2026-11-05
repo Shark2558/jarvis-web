@@ -60,7 +60,7 @@ def build_camera(
     config = CameraConfigService(
         docs, keyring, caller=caller, snapshots=snapshots, clock=clock, prefix=prefix
     )
-    alarm = Alarm(docs, caller=caller, clock=clock, prefix=prefix)
+    alarm = Alarm(docs, caller=caller, clock=clock, prefix=prefix, has_zones=config.has_alarm_zones)
     feed = Feed(docs, keyring, faces=faces, config=config, tz=tz, clock=clock, prefix=prefix)
     packages = Packages(config)
     events = CameraEvents(

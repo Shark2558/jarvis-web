@@ -1,5 +1,5 @@
 # tests/test_camera_alarm.py -- R3 D8: arm is pending until the laptop acks; disarm needs a pass
-# only the gate can issue (passkey for exactly this home and rev, or an approved R3 card); both ends
+# only the gate can issue (passkey for exactly this home and rev,); both ends
 # filter; a stuck arm raises home_arm_failed once.
 from __future__ import annotations
 
@@ -10,9 +10,7 @@ from camera_fakes import HOME, UID, FakeHomes, Rig, rig
 
 from jarvis.camera.alarm import ArmPendingJob, DisarmPass
 from jarvis.camera.ports import AlarmRefused
-from jarvis.core.guardrails import ActionRisk
 from jarvis.permissions.errors import PasskeyRequired
-from jarvis.tools.context import ToolContext
 
 
 class FakePerms:
@@ -72,14 +70,7 @@ async def test_arming_twice_the_same_way_is_one_change() -> None:
 
 
 async def _pass(r: Rig) -> DisarmPass:
-    ctx = ToolContext(
-        user_id=UID,
-        session_id="s",
-        scope=f"{UID}:s",
-        confirmed=True,
-        approved_risk=ActionRisk.IRREVERSIBLE,
-    )
-    p = await r.gate.card_pass(UID, ctx)
+    p = await r.gate.panel_pass(UID, None, fresh_left_s=900)
     assert p is not None
     return p
 
@@ -164,23 +155,10 @@ async def test_an_unlinked_home_can_not_be_disarmed_through_the_panel() -> None:
     assert e.value.code == "not_linked"
 
 
-async def test_a_card_pass_needs_an_approved_irreversible_card() -> None:
-    r = await rig()
-    await r.alarm.arm(UID, "away", "console")
-    for ctx in (
-        ToolContext(user_id=UID, session_id="s", scope="x", spoken=True),
-        ToolContext(user_id=UID, session_id="s", scope="x", confirmed=True),
-        ToolContext(
-            user_id=UID,
-            session_id="s",
-            scope="x",
-            confirmed=True,
-            approved_risk=ActionRisk.REVERSIBLE,
-        ),
-    ):
-        with pytest.raises(AlarmRefused) as e:
-            await r.gate.card_pass(UID, ctx)
-        assert e.value.code == "needs_console"
+async def test_the_gate_has_no_card_door() -> None:
+    from jarvis.camera.alarm import DisarmGate
+
+    assert not hasattr(DisarmGate, "card_pass")
 
 
 async def test_disarming_what_is_already_disarmed_changes_nothing() -> None:
@@ -249,3 +227,14 @@ async def test_dropped_disarmed_is_counted() -> None:
     assert await r.alarm.count_dropped(UID) == 1
     assert await r.alarm.count_dropped(UID) == 2
     assert (await r.alarm.record(UID)).dropped_disarmed == 2
+
+
+async def test_protecting_needs_a_camera_with_an_alarm_zone() -> None:
+    from jarvis.camera.models import CameraConfig
+
+    r = await rig(camera=False)
+    assert await r.alarm.protecting(UID) is False
+    await r.config.set_cameras(UID, {"gate": CameraConfig(label="Gate")})
+    assert await r.alarm.protecting(UID) is False  # a camera, but no zone
+    await r.config.set_cameras(UID, {"gate": CameraConfig(label="Gate", alarm_zones=("gate",))})
+    assert await r.alarm.protecting(UID) is True

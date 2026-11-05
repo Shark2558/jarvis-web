@@ -7,7 +7,11 @@ Unpaired or unreadable state fails closed. No gateway change.
 
 R2 D12: the vault list, notes and things (`vault_*`, `kb_*`, `belongings_*`, reads and writes) are
 a SECOND group with its own switch (`allow_personal_reads`, default off). Neither switch opens the
-other's group, so widening one consent never widens the other silently."""
+other's group, so widening one consent never widens the other silently.
+
+Recently deleted holds entries of both groups (R2 review H1): `deleted_list` needs the first switch
+and, while the second is off, hides vault documents, notes and things (`personal_reads_allowed`,
+read by the tool); `deleted_restore` of any kind needs BOTH switches."""
 
 from __future__ import annotations
 
@@ -45,6 +49,12 @@ PERSONAL_PATTERNS: tuple[str, ...] = ("vault_*", "kb_*", "belongings_*")
 PERSONAL_REFUSAL = (
     "Your vault list, notes and things are not available from Telegram - your choice in "
     "Integrations -> Telegram; open the console."
+)
+# R2 review H1: a restore can bring back an entry of either group, so it needs both switches.
+BOTH_PATTERNS: tuple[str, ...] = ("deleted_restore",)
+BOTH_REFUSAL = (
+    "Restoring from Recently deleted works on Telegram only when both switches are on in "
+    "Integrations -> Telegram; open the console to restore it."
 )
 
 
@@ -90,6 +100,27 @@ def private_reads(allowed: bool) -> Iterator[None]:
         _reads_allowed.reset(token)
 
 
+# The same for the second switch: `deleted_list` hides vault, note and thing entries while it is
+# off on a Telegram turn. Unset means "off".
+_personal_allowed: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "jarvis_telegram_personal_allowed", default=False
+)
+
+
+def personal_reads_allowed() -> bool:
+    """True only if the owner switched the second group on and this turn's rules saw it."""
+    return _personal_allowed.get()
+
+
+@contextmanager
+def personal_reads(allowed: bool) -> Iterator[None]:
+    token = _personal_allowed.set(allowed)
+    try:
+        yield
+    finally:
+        _personal_allowed.reset(token)
+
+
 def _deny_rules(patterns: tuple[str, ...], reason: str) -> list[PolicyRule]:
     return [
         PolicyRule(tool_pattern=p, effect=Effect.DENY, source="telegram", reason=reason)
@@ -116,9 +147,12 @@ class ChannelRules:
             log.warning("telegram settings unreadable", extra={"error": type(exc).__name__})
             allowed = personal = False
         _reads_allowed.set(allowed)
+        _personal_allowed.set(personal)
         out = list(rules) if allowed else [*rules, *_deny_rules(PRIVATE_PATTERNS, REFUSAL)]
         if not personal:  # R2 D12: its own switch, never opened by the one above
             out += _deny_rules(PERSONAL_PATTERNS, PERSONAL_REFUSAL)
+        if not (allowed and personal):  # review H1: a restore spans both groups
+            out += _deny_rules(BOTH_PATTERNS, BOTH_REFUSAL)
         if _outside.get():
             out.append(
                 PolicyRule(
@@ -148,6 +182,8 @@ def wrap_rules(inner: OwnerRules | None, store: TelegramStore) -> ChannelRules:
 
 
 __all__ = [
+    "BOTH_PATTERNS",
+    "BOTH_REFUSAL",
     "MARKER",
     "PERSONAL_PATTERNS",
     "PERSONAL_REFUSAL",
@@ -155,6 +191,8 @@ __all__ = [
     "REFUSAL",
     "ChannelRules",
     "outside_message",
+    "personal_reads",
+    "personal_reads_allowed",
     "private_reads",
     "private_reads_allowed",
     "wrap_rules",

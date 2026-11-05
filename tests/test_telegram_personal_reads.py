@@ -21,14 +21,20 @@ from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.storage.docs import MemoryDocs
 from jarvis.telegram.models import AlertToggles, TelegramLink
 from jarvis.telegram.rules import (
+    BOTH_REFUSAL,
     PERSONAL_PATTERNS,
     PERSONAL_REFUSAL,
     PRIVATE_PATTERNS,
     ChannelRules,
+    personal_reads,
+    personal_reads_allowed,
 )
 from jarvis.telegram.store import TelegramStore
 from jarvis.tools import Effect, PolicyRule
 from jarvis.tools.base import Tool
+from jarvis.undo.service import UndoBin
+from jarvis.undo.store import DeletedStore
+from jarvis.undo.tools import undo_tools
 
 R1, R2 = ActionRisk.READ_ONLY, ActionRisk.REVERSIBLE
 R2_READS = (
@@ -104,6 +110,40 @@ async def test_both_switches_on_leave_no_deny_rule() -> None:
     assert not any(r.effect is Effect.DENY for r in got)
 
 
+@pytest.mark.parametrize(("private", "personal"), [(False, False), (True, False), (False, True)])
+async def test_deleted_restore_is_refused_unless_both_switches_are_on(
+    private: bool, personal: bool
+) -> None:
+    """R2 review H1: a restore can bring back a vault document, note or thing, so it needs the
+    second switch; it is also a Recently deleted action, so it needs the first."""
+    got = await _rules(await _store(private=private, personal=personal))
+    assert _denied(got, "deleted_restore", R2)
+    rule = next(r for r in got if r.effect is Effect.DENY and r.matches("deleted_restore", {}, R2))
+    assert rule.reason == BOTH_REFUSAL and rule.source == "telegram"
+    assert "both" in BOTH_REFUSAL and "Telegram" in BOTH_REFUSAL
+
+
+async def test_deleted_list_and_restore_need_both_switches() -> None:
+    """Private on, personal off: the list is allowed (it hides vault, note and thing entries, as
+    the turn knows the second switch is off); a restore is refused. Both off: both refused."""
+    got = await _rules(await _store(private=True))
+    assert not _denied(got, "deleted_list") and _denied(got, "deleted_restore", R2)
+    assert personal_reads_allowed() is False
+    got = await _rules(await _store(private=True, personal=True))
+    assert not _denied(got, "deleted_list") and not _denied(got, "deleted_restore", R2)
+    assert personal_reads_allowed() is True
+    got = await _rules(await _store())
+    assert _denied(got, "deleted_list") and _denied(got, "deleted_restore", R2)
+    assert personal_reads_allowed() is False
+
+
+async def test_personal_reads_are_off_unless_a_rule_read_says_so() -> None:
+    assert personal_reads_allowed() is False
+    with personal_reads(True):
+        assert personal_reads_allowed() is True
+    assert personal_reads_allowed() is False
+
+
 async def test_unreadable_settings_keep_the_personal_group_closed() -> None:
     class Broken(TelegramStore):
         async def get(self, uid: str) -> Any:
@@ -147,6 +187,34 @@ async def test_a_kb_read_on_a_telegram_turn_never_runs_until_switched_on() -> No
     w.provider.script_tool_calls([ToolCall(id="c3", name="kb_read", arguments={})], "Here.")
     await w.send(message(3, "read my note"))
     assert ran == ["read"]
+
+
+async def test_a_telegram_turn_lists_recently_deleted_without_r2_entries_and_cannot_restore() -> (
+    None
+):
+    """End to end (R2 review H1): private reads on, the second switch off. The model sees the
+    deleted event but no vault, note or thing entry; a restore of a note is refused unrun."""
+    bin_ = UndoBin(DeletedStore(MemoryDocs()))
+    w = build_world(extra_tools=undo_tools(bin_))
+    await w.pair()
+    await w.store.set_settings(UID, allow_private_reads=True)
+    event = await bin_.keep(UID, "event", "Dentist zq-event", {"ref": "e"}, owner_authored=True)
+    note = await bin_.keep(UID, "note", "A note zq-note", {"ref": "n"}, owner_authored=True)
+    await bin_.keep(UID, "vault_item", "A document zq-vault", {"ref": "v"}, owner_authored=True)
+    await bin_.keep(UID, "thing", "A thing zq-thing", {"ref": "t"}, owner_authored=True)
+    w.provider.script_tool_calls([ToolCall(id="c1", name="deleted_list", arguments={})], "Here.")
+    await w.send(message(1, "what did you delete?"))
+    seen = "\n".join(m.model_dump_json() for c in w.provider.calls for m in c.messages)
+    assert "zq-event" in seen  # the scan can see
+    assert "zq-note" not in seen and "zq-vault" not in seen and "zq-thing" not in seen
+    assert w.audited("deleted_list")[-1].outcome == "executed"
+    call = ToolCall(id="c2", name="deleted_restore", arguments={"undo_id": note.id})
+    w.provider.script_tool_calls([call], "I can't.")
+    await w.send(message(2, "bring the note back"))
+    assert w.audited("deleted_restore")[-1].outcome == "denied"
+    got = await bin_.get(UID, note.id)
+    assert got is not None and not got.restored
+    assert (await bin_.get(UID, event.id)) is not None
 
 
 # ---- the API ------------------------------------------------------------------------------------

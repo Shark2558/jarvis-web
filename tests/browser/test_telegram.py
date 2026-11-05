@@ -201,8 +201,11 @@ def test_paired_controls_confirm_save_and_unpair(browser: Any, server_url: str, 
         c.page.locator("#telegramDialog[open]").wait_for()
         said = str(c.page.locator("#telegramDialogText").text_content())
         assert "end-to-end" in said
-        # the switch also covers family calendars and recently deleted items (R1 review fix)
-        assert "family calendars" in said and "recently deleted" in said
+        # the switch also covers family calendars and deleted events and to-dos (R1 review fix);
+        # deleted vault documents, notes and things, and any restore, need both (R2 review H1)
+        assert "family calendars" in said and "events and to-dos in Recently deleted" in said
+        assert "Deleted vault documents, notes and things stay hidden" in said
+        assert "restoring anything from Recently deleted in that chat needs both switches" in said
         c.page.locator("#telegramDialogNo").click()
         assert not [x for x in fake.calls if x["method"] == "PUT"]
         c.page.locator("#telegramReads").click()
@@ -254,6 +257,8 @@ def test_the_personal_switch_names_exactly_what_it_opens(
         assert "notes" in said and "voice memos" in said and "saved links" in said
         assert "where you keep things" in said
         assert "email" not in said.lower()  # this switch opens nothing of the other one
+        # R2 review H1: Recently deleted needs the other switch too
+        assert "Only with the other switch on too" in said and "Recently deleted" in said
         assert c.page.evaluate("document.activeElement.id") == "telegramDialogNo"
         c.page.locator("#telegramDialogNo").click()
         assert not [x for x in fake.calls if x["method"] == "PUT"]

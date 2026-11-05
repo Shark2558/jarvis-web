@@ -145,7 +145,7 @@
     card.dataset.state = 'linked'; stateEl.textContent = 'Paired';
     bodyEl.appendChild(mk('p', '', `Paired with your Telegram account ${d.hint || ''}`.trim() + '. Only that account can talk to JARVIS.'));
     bodyEl.appendChild(mk('p', 'fine', 'Telegram keeps bot chats on its servers (not end-to-end encrypted). By default JARVIS will not read email, Drive, documents or contacts there, nor your vault list, notes and things.'));
-    bodyEl.appendChild(toggleRow('telegramReads', 'Let Telegram read my email, Drive, documents, contacts and family calendars', d.reads, askReads, 'Let Telegram read my private data'));
+    bodyEl.appendChild(toggleRow('telegramReads', 'Let Telegram read my email, Drive, documents, contacts, family calendars and deleted events and to-dos', d.reads, askReads, 'Let Telegram read my private data'));
     bodyEl.appendChild(toggleRow('telegramPersonal', 'Let Telegram answer from my vault list, notes and things (never files)', d.personal, askPersonal, 'Let Telegram answer from my vault list, notes and things'));
     const al = mk('div', 'talerts'); al.id = 'telegramAlerts'; al.setAttribute('role', 'group'); al.setAttribute('aria-label', 'Alerts');
     ALERTS.forEach(([key, label]) => al.appendChild(toggleRow('telegramAlert_' + key, label, d.alerts[key], (on) => saveAlert(key, on), 'Alert: ' + label)));
@@ -250,12 +250,12 @@
     if (on) {
       const sure = await ask('Let Telegram read your private data?', [
         mk('p', 'strong', 'Telegram keeps bot chats on its servers and they are not end-to-end encrypted.'),
-        mk('p', '', 'If you switch this on, JARVIS can read out your email, Drive files, documents, contacts, family calendars and recently deleted items in that chat. Anyone with your Telegram account could then see them.'),
+        mk('p', '', 'If you switch this on, JARVIS can read out your email, Drive files, documents, contacts and family calendars in that chat, and list the events and to-dos in Recently deleted. Deleted vault documents, notes and things stay hidden there unless the other switch is on too, and restoring anything from Recently deleted in that chat needs both switches. Anyone with your Telegram account could then see them.'),
         mk('p', '', 'You can switch it off here at any time.')], 'Switch on', $('telegramReads'));
       if (!sure) return;
     }
     const r = await call('/v1/telegram/settings', { method: 'PUT', body: { allow_private_reads: on } },
-      on ? 'Telegram may now read your email, Drive, documents, contacts and family calendars.' : 'Telegram no longer reads your private data.');
+      on ? 'Telegram may now read your email, Drive, documents, contacts, family calendars and deleted events and to-dos.' : 'Telegram no longer reads your private data.');
     if (r) { S.data = normal(r); render(); log('info', on ? 'Telegram private reads on' : 'Telegram private reads off'); }
   }
   /** R2 D12: the second switch. Its dialog names exactly what it opens, and nothing of the first. */
@@ -263,7 +263,7 @@
     if (on) {
       const sure = await ask('Let Telegram answer from your vault list, notes and things?', [
         mk('p', 'strong', 'Telegram keeps bot chats on its servers and they are not end-to-end encrypted.'),
-        mk('p', '', 'If you switch this on, JARVIS can tell you in that chat: your vault list (document types, whose they are, the last 4 characters and the dates, never the files); your notes, voice memos and saved links; and where you keep things. It can also save, change or delete notes and things and change vault dates from there, the same way as in the console. Anyone with your Telegram account could then see them.'),
+        mk('p', '', 'If you switch this on, JARVIS can tell you in that chat: your vault list (document types, whose they are, the last 4 characters and the dates, never the files); your notes, voice memos and saved links; and where you keep things. It can also save, change or delete notes and things and change vault dates from there, the same way as in the console. Only with the other switch on too can it list deleted vault documents, notes and things, or restore anything from Recently deleted, in that chat. Anyone with your Telegram account could then see them.'),
         mk('p', '', 'You can switch it off here at any time.')], 'Switch on', $('telegramPersonal'));
       if (!sure) return;
     }

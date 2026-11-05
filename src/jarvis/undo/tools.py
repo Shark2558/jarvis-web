@@ -17,13 +17,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from jarvis.core.channel import on_telegram
 from jarvis.core.guardrails import ActionRisk
+from jarvis.telegram.rules import personal_reads_allowed
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import quoted
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
 from jarvis.tools.provenance import vouch
 from jarvis.undo.models import (
+    IN_PLACE_KINDS,
     KIND_WORDS,
     RETENTION_DAYS,
     TITLE_LIMIT,
@@ -48,6 +51,11 @@ MAYBE_NOTE = (
     "still there, a restore says so and makes no second copy. Tell the owner exactly this."
 )
 _ID_SCHEMA = {"type": "string", "description": "The undo_id from a delete's result or deleted_list"}
+# R2 review H1: on Telegram with the vault, notes and things switch off, their entries are left out
+TELEGRAM_HIDDEN = (
+    "Deleted vault documents, notes and things are not listed on Telegram: the owner's choice in "
+    "Integrations, Telegram. They are in Recently deleted in the console."
+)
 
 
 def deleted_result(
@@ -92,7 +100,11 @@ class _UndoAPI:
     async def list(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
         items = await self.bin.recent(uid)
-        out = {
+        hidden = False
+        if on_telegram() and not personal_reads_allowed():  # review H1: the second switch
+            shown = [i for i in items if i.kind not in IN_PLACE_KINDS]
+            hidden, items = len(shown) < len(items), shown
+        out: dict[str, Any] = {
             "kept_days": RETENTION_DAYS,
             "items": [
                 {
@@ -105,6 +117,8 @@ class _UndoAPI:
                 for i in items
             ],
         }
+        if hidden:
+            out["note"] = TELEGRAM_HIDDEN
         return vouch(out, all_owner_authored(items))
 
     async def restore(self, a: dict[str, Any]) -> Any:

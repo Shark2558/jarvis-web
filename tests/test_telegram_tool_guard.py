@@ -81,7 +81,7 @@ class DriveTokens(StaticTokens):
         return "jarvis-run@proj-123.iam.gserviceaccount.com"
 
 
-async def linked_gateway() -> Gateway:
+async def linked_gateway(undo: UndoBin | None = None) -> Gateway:
     google = await people_connector(FakePeople())
     docs = MemoryDocs()
     files = DocumentService(AttachmentStore(MemoryDocs()))
@@ -103,7 +103,7 @@ async def linked_gateway() -> Gateway:
         WebAllowance(MemoryDocs(), now=lambda: datetime(2026, 11, 15, tzinfo=UTC)),
     )
     ring = Keyring(bytes(range(1, 33)))
-    undo = UndoBin(DeletedStore(MemoryDocs()))
+    undo = undo if undo is not None else UndoBin(DeletedStore(MemoryDocs()))
     crypto = VaultCrypto(ring)
     return build_gateway(
         get_settings(),
@@ -200,3 +200,89 @@ async def test_gate_with_defaults_an_r2_read_is_refused_on_a_telegram_turn(tool:
         out = await gw.execute(ToolCall(id="t1", name=tool, arguments=args), scope=f"{UID}:tg")
     assert out.outcome is GatewayOutcome.DENIED, (tool, out.error)
     assert "Telegram" in (out.error or "")
+
+
+# ---- Recently deleted on Telegram (R2 integrated review H1 / S1) --------------------------------
+# deleted_list needs the first switch, and shows vault documents, notes and things only when the
+# second is on too; deleted_restore (any kind) needs both. Through the real gateway.
+SWITCHES = [(False, False), (True, False), (False, True), (True, True)]
+EVERY_KIND = (
+    ("event", "Dentist"),
+    ("task", "Pay the bill"),
+    ("vault_item", "A document"),
+    ("note", "A note from 4 Nov"),
+    ("thing", "A thing you noted"),
+)
+
+
+async def _switched(gw: Gateway, *, private: bool, personal: bool) -> None:
+    store = TelegramStore(MemoryDocs(), prefix="t_", clock=Clock())
+    code, _ = await store.start_pairing(UID)
+    await store.finish_pairing(code, tg_user_id=1, chat_id=2)
+    await store.set_settings(UID, allow_private_reads=private, allow_personal_reads=personal)
+    gw.rules = wrap_rules(gw.rules, store)
+
+
+async def _bin_with_every_kind(undo: UndoBin) -> dict[str, str]:
+    ids: dict[str, str] = {}
+    for kind, title in EVERY_KIND:
+        item = await undo.keep(UID, kind, title, {"ref": "x"}, owner_authored=True)  # type: ignore[arg-type]
+        ids[kind] = item.id
+    return ids
+
+
+@pytest.mark.parametrize(("private", "personal"), SWITCHES)
+async def test_gate_deleted_list_shows_r2_entries_only_with_both_switches(
+    private: bool, personal: bool
+) -> None:
+    undo = UndoBin(DeletedStore(MemoryDocs()))
+    gw = await linked_gateway(undo)
+    await _switched(gw, private=private, personal=personal)
+    await _bin_with_every_kind(undo)
+    call = ToolCall(id="t1", name="deleted_list", arguments={})
+    with telegram_turn():
+        out = await gw.execute(call, scope=f"{UID}:tg")
+    if not private:
+        assert out.outcome is GatewayOutcome.DENIED and "Telegram" in (out.error or "")
+        return
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    kinds = {i["kind"] for i in out.result["items"]}
+    if personal:
+        assert kinds == {"event", "to-do", "vault document", "note", "thing"}
+        assert "note" not in out.result
+    else:
+        assert kinds == {"event", "to-do"}
+        assert "Telegram" in out.result["note"] and "3" not in out.result["note"]
+        blob = str(out.result)
+        assert "A document" not in blob and "A note from" not in blob and "A thing" not in blob
+
+
+async def test_off_telegram_deleted_list_shows_every_kind() -> None:
+    undo = UndoBin(DeletedStore(MemoryDocs()))
+    gw = await linked_gateway(undo)
+    await _switched(gw, private=False, personal=False)
+    await _bin_with_every_kind(undo)
+    out = await gw.execute(ToolCall(id="t1", name="deleted_list", arguments={}), scope=f"{UID}:s")
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    assert len(out.result["items"]) == len(EVERY_KIND) and "note" not in out.result
+
+
+@pytest.mark.parametrize(("private", "personal"), SWITCHES)
+@pytest.mark.parametrize("kind", ["event", "note", "vault_item", "thing"])
+async def test_gate_deleted_restore_needs_both_switches_on_telegram(
+    private: bool, personal: bool, kind: str
+) -> None:
+    undo = UndoBin(DeletedStore(MemoryDocs()))
+    gw = await linked_gateway(undo)
+    await _switched(gw, private=private, personal=personal)
+    ids = await _bin_with_every_kind(undo)
+    call = ToolCall(id="t2", name="deleted_restore", arguments={"undo_id": ids[kind]})
+    with telegram_turn():
+        out = await gw.execute(call, scope=f"{UID}:tg")
+    if private and personal:
+        assert out.outcome is not GatewayOutcome.DENIED, out.error
+        return
+    assert out.outcome is GatewayOutcome.DENIED, (kind, out.outcome)
+    assert "Telegram" in (out.error or "") and "both" in (out.error or "")
+    item = await undo.get(UID, ids[kind])
+    assert item is not None and not item.restored and item.restoring_since is None

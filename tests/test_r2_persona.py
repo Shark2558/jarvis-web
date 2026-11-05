@@ -72,6 +72,7 @@ def test_deleted_notes_and_things_come_back_in_place() -> None:
 def test_the_telegram_trailer_names_the_second_switch() -> None:
     r = _flat(p.TELEGRAM_RULE)
     assert "vault list, notes and things" in r and "switch of their own" in r
+    assert "Restoring from Recently deleted needs both switches" in r  # review H1
     assert len(p.TELEGRAM_RULE.split()) <= 120 and p.TELEGRAM_RULE.isascii()
 
 

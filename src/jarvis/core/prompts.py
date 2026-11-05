@@ -23,7 +23,8 @@ from zoneinfo import ZoneInfo
 # p4.6: R1 - the Telegram trailer (what Telegram can and cannot do) and the new paragraphs:
 # groceries, parcels, family calendars, mail read aloud and Activity.
 # p4.7: R2 - the document vault, notes and links, where things are kept, the Privacy panel; the
-# Telegram trailer names the second switch (vault list, notes and things).
+# Telegram trailer names the second switch (vault list, notes and things) and that a restore from
+# Recently deleted needs both switches.
 PERSONA_VERSION = "p4.7"
 
 Channel = Literal["text", "voice", "telegram"]
@@ -425,6 +426,7 @@ TELEGRAM_RULE = (
     "  it waits in the console. Email, Drive, document and contact reads are off by default on\n"
     "  Telegram; if one is refused, say it is the owner's choice in Integrations, Telegram.\n"
     "  The vault list, notes and things have a switch of their own, also off by default.\n"
+    "  Restoring from Recently deleted needs both switches.\n"
 )
 
 

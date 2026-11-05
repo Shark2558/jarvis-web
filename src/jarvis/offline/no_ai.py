@@ -84,6 +84,11 @@ def _line(res: GatewayResult) -> str:
     return UNAVAILABLE
 
 
+def _stopped(result: Any) -> bool:
+    """A tool that ran but declined (`refused`) or could not (`unavailable`): nothing follows."""
+    return isinstance(result, dict) and bool(result.get("refused") or result.get("unavailable"))
+
+
 def _unavailable(res: GatewayResult) -> bool:
     return res.outcome is GatewayOutcome.ERROR and (res.error or "").startswith("unknown tool")
 
@@ -119,7 +124,7 @@ async def run_no_ai(
             lines.append(UNAVAILABLE if _unavailable(res) else _line(res))
             if res.outcome is GatewayOutcome.AWAITING_CONFIRMATION and res.pending:
                 pending.append(PendingApproval.from_action(res.pending))
-            if res.outcome is not GatewayOutcome.EXECUTED:
+            if res.outcome is not GatewayOutcome.EXECUTED or _stopped(res.result):
                 break  # a refused or waiting step ends the chain (no URLs after a refusal)
     return NoAIResult("\n".join(lines), len(ran), pending, cards, tuple(ran), tuple(results))
 

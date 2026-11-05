@@ -43,6 +43,8 @@ def _segments(path: str) -> list[str]:
 def _linkedin(seg: list[str]) -> str | None:
     if len(seg) >= 2 and seg[0] == "in" and _ID.match(seg[1]):
         return f"https://www.linkedin.com/in/{seg[1]}"
+    if len(seg) >= 2 and seg[0] == "company" and _ID.match(seg[1]):
+        return f"https://www.linkedin.com/company/{seg[1]}"
     return None
 
 
@@ -91,7 +93,8 @@ def classify_profile(url: str) -> ProfileLink | None:
         return None
     seg = _segments(parts.path)
     if _host_is(host, "linkedin.com"):
-        found, platform = _linkedin(seg), "linkedin"
+        found = _linkedin(seg)
+        platform = "linkedin_company" if found and "/company/" in found else "linkedin"
     elif host == "github.com" or host == "www.github.com":
         found, platform = _github(seg), "github"
     elif _host_is(host, "youtube.com"):

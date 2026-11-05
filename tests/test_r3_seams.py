@@ -649,6 +649,9 @@ def test_bridge_routes_are_the_fixed_list() -> None:
             ("GET", "/bridge/v1/events"),
             ("GET", "/bridge/v1/packages"),
             ("GET", "/bridge/v1/faces/summary"),
+            # R4 C (D-C3): picked photos and consented enrolment; the kit serves them later
+            ("POST", "/bridge/v1/faces/photos"),
+            ("POST", "/bridge/v1/faces/enrol"),
         }
     )
     assert route_allowed("GET", "/bridge/v1/health")

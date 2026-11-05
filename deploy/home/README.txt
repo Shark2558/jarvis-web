@@ -89,3 +89,14 @@ Safety notes
    check it monthly.
  - Face recognition: only people you added with their consent (a parent's for a child). Personal use
    in your own home only.
+
+Kit to-do for R4 Photos (not built yet; until then JARVIS says "laptop not reachable" for photos)
+------------------------------------------------------------------------------------------------
+ - Serve the two bridge routes JARVIS now allows: POST /bridge/v1/faces/photos (one base64 JPEG
+   in {"image"}; reply {"faces": [{"cluster": "c_<8-16 hex>", "person": "fp_<12 hex>"|null,
+   "score": 0..1}]}, at most 20 faces) and POST /bridge/v1/faces/enrol ({"cluster", "person"};
+   reply {}). The cluster -> embedding map stays on this laptop; the cloud never sees embeddings.
+ - Decoder safety (the cloud only checks the JPEG's structure; this laptop is the only decoder):
+   set PIL.Image.MAX_IMAGE_PIXELS (e.g. 4,200,000 = 2048x2048) and treat DecompressionBombWarning
+   as an error; open JPEG only (Image.open(..., formats=["JPEG"])) and re-check width/height
+   <= 2048; cap the body at the route's 6 MB; process one picture per request.

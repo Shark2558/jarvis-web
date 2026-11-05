@@ -21,6 +21,7 @@ from jarvis.integrations import google_errors
 from jarvis.integrations.google_errors import UsedUp
 from jarvis.integrations.vault import GoogleTokens, TokenStore, VaultError
 from jarvis.logging import get_logger
+from jarvis.photos.models import PHOTOS_SCOPE  # R4 C (W8): the Picker scope, owned there
 
 log = get_logger(__name__)
 
@@ -66,6 +67,7 @@ GRANTS: dict[str, str] = {
     "tasks": TASKS_SCOPE,
     "contacts": CONTACTS_SCOPE,
     "youtube": YOUTUBE_SCOPE,
+    "photos": PHOTOS_SCOPE,  # R4 C (D8): the Picker only; Google exposes no whole-library read
 }
 # Review C8: one notion of "has this Grant" — any of these scopes held satisfies it (a wider
 # scope granted to the same app counts), for `held_grants` and every `can_use_*` alike.
@@ -73,6 +75,7 @@ GRANT_ACCEPTS: dict[str, frozenset[str]] = {
     "tasks": frozenset({TASKS_SCOPE}),  # tasks.readonly would not do: the to-do tools write
     "contacts": CONTACTS_CAPABLE_SCOPES,
     "youtube": YOUTUBE_READ_SCOPES,
+    "photos": frozenset({PHOTOS_SCOPE}),
 }
 OPTIONAL_SCOPES: tuple[str, ...] = (INSERT_SCOPE, *GRANTS.values())
 # Google accepts users.messages.insert with any of these.

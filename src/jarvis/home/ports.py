@@ -77,6 +77,10 @@ BRIDGE_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/bridge/v1/events"),
         ("GET", "/bridge/v1/packages"),
         ("GET", "/bridge/v1/faces/summary"),
+        # R4 C (D-C3): one picked photo for recognition; enrol a cluster to a consented person.
+        # Until the kit serves them it answers 404 and photos say "laptop not reachable".
+        ("POST", "/bridge/v1/faces/photos"),
+        ("POST", "/bridge/v1/faces/enrol"),
     }
 )
 

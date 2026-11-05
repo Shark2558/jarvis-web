@@ -19,7 +19,11 @@ from jarvis.tools.policy import Effect, OwnerRules, PolicyRule
 
 log = get_logger(__name__)
 
-# gmail_track_packages (carrier and status only), gmail_create_draft and the rest stay allowed
+# Reads that return other people's or private titles (mail, Drive, documents, contacts, family
+# members' events, deleted items). gmail_track_packages shapes its own answer (status only while
+# these are off), family_free_slots returns names and times only, grocery_list is the owner's own
+# list; gmail_create_draft and the rest stay allowed. tests/test_telegram_tool_guard.py makes every
+# read tool pick a side, so a new one cannot slip through unclassified.
 PRIVATE_PATTERNS: tuple[str, ...] = (
     "gmail_search",
     "gmail_read",
@@ -28,6 +32,8 @@ PRIVATE_PATTERNS: tuple[str, ...] = (
     "doc_*",
     "docs_*",
     "contacts_*",
+    "family_calendar_events",
+    "deleted_list",
 )
 REFUSAL = "Not available from Telegram — your choice in Integrations → Telegram; open the console."
 
@@ -50,6 +56,28 @@ def outside_message() -> Iterator[None]:
         yield
     finally:
         _outside.reset(token)
+
+
+# Whether the owner allowed private reads, as of the last time the rules were read in this turn.
+# Tools that can shape their own answer (gmail_track_packages) read it; unset means "off".
+_reads_allowed: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "jarvis_telegram_reads_allowed", default=False
+)
+
+
+def private_reads_allowed() -> bool:
+    """True only if the owner switched private reads on and this turn's rules saw it."""
+    return _reads_allowed.get()
+
+
+@contextmanager
+def private_reads(allowed: bool) -> Iterator[None]:
+    """Set the toggle for a block (tests, and callers that know it)."""
+    token = _reads_allowed.set(allowed)
+    try:
+        yield
+    finally:
+        _reads_allowed.reset(token)
 
 
 def _deny_rules() -> list[PolicyRule]:
@@ -76,6 +104,7 @@ class ChannelRules:
         except Exception as exc:  # noqa: BLE001 - fail closed
             log.warning("telegram settings unreadable", extra={"error": type(exc).__name__})
             allowed = False
+        _reads_allowed.set(allowed)
         out = list(rules) if allowed else [*rules, *_deny_rules()]
         if _outside.get():
             out.append(
@@ -111,5 +140,7 @@ __all__ = [
     "REFUSAL",
     "ChannelRules",
     "outside_message",
+    "private_reads",
+    "private_reads_allowed",
     "wrap_rules",
 ]

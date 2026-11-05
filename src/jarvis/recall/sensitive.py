@@ -177,8 +177,24 @@ _DIGIT_TO_LETTER = str.maketrans("01345", "oleas")  # 0->o 1->l 3->e 4->a 5->s
 _ONE_AS_I = str.maketrans("1", "i")
 _TOKEN = re.compile(r"[A-Za-z0-9]+")
 _SPACED = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9](?:[ .\-_][A-Za-z0-9]){2,9}(?![A-Za-z0-9])")
-_DIGIT_GAP = re.compile(r"(?<=\d)[ .,\-]{1,2}(?=\d)")
+# ONE definition of "digits that belong together" for everything that is spoken: 1 to 3 characters
+# that are neither letters nor digits (space, dash, dot, middle dot, pipe, star, underscore ...)
+# between digit groups are a joiner. `tools.spoken` masks with the same run pattern.
+JOINER = r"[\W_]{1,3}"
+DIGIT_RUN = re.compile(rf"\d(?:{JOINER}\d|\d)*")
+_DIGIT_GAP = re.compile(rf"(?<=\d){JOINER}(?=\d)")
 _RUN = re.compile(r"\d+")
+# Spelled-out digits (English, Hindi, Malayalam in Latin letters): 3 or more in a row are a code.
+_ENGLISH = "zero one two three four five six seven eight nine".split()
+_HINDI = "shunya shoonya ek do teen char chaar paanch panch chhe chhah saat aath nau".split()
+_MALAYALAM = "poojyam onnu randu moonnu naalu anchu aaru ezhu ettu ombathu".split()
+DIGIT_WORDS: dict[str, str] = {
+    **{w: str(i) for i, w in enumerate(_ENGLISH)},
+    **dict(zip(_HINDI, "00123445566789", strict=True)),
+    **{w: str(i) for i, w in enumerate(_MALAYALAM)},
+}
+_DW = "|".join(sorted(DIGIT_WORDS, key=len, reverse=True))
+DIGIT_WORD_RUN = re.compile(rf"\b(?:{_DW})\b(?:[\s,.\-]{{1,3}}(?:{_DW})\b){{2,}}", re.IGNORECASE)
 _SPOKEN_SECRET_WORD = re.compile(
     r"\b(?:otps?|one[- ]?time|log[- ]?in|sign[- ]?in|verif\w{0,12}|pins?|passwords?|passcodes?"
     r"|cvv|cvc|code|auth\w{0,12}|secret)\b",
@@ -236,6 +252,15 @@ def _word_views(t: str) -> list[str]:
     return [t, closed, _fold_letters(closed, _DIGIT_TO_LETTER), _fold_letters(closed, _ONE_AS_I)]
 
 
+def join_digits(text: str) -> str:
+    """`text` with every joiner between digit groups removed: "12|34 - 56" -> "123456"."""
+    return _DIGIT_GAP.sub("", text)
+
+
+def _digits_of_words(run: re.Match[str]) -> str:
+    return "".join(DIGIT_WORDS[w.lower()] for w in re.findall(r"[A-Za-z]+", run.group(0)))
+
+
 def spoken_sensitive(text: object) -> bool:
     """True when `text` must not be read aloud at all: an OTP / code / login / PIN / password /
     secret word beside a number, a money, balance, EMI, card, account or UPI word or handle, the
@@ -245,7 +270,8 @@ def spoken_sensitive(text: object) -> bool:
     t = speech_normal(text)
     if not t:
         return False
-    joined = _DIGIT_GAP.sub("", t)
+    t = DIGIT_WORD_RUN.sub(lambda m: f" {_digits_of_words(m)} ", t)
+    joined = join_digits(t)
     runs = [len(r) for r in _RUN.findall(joined)]
     if any(n in (6, 8) or n >= 12 for n in runs):
         return True
@@ -254,13 +280,16 @@ def spoken_sensitive(text: object) -> bool:
         return True
     if any(w in t for w in _INDIC_WORDS):
         return True
-    if any(4 <= n <= 8 for n in runs) and any(_SPOKEN_SECRET_WORD.search(v) for v in views):
+    if sum(runs) >= 4 and any(_SPOKEN_SECRET_WORD.search(v) for v in views):
         return True
     return sensitive_reason(joined) is not None
 
 
 __all__ = [
+    "DIGIT_RUN",
+    "DIGIT_WORD_RUN",
     "is_sensitive",
+    "join_digits",
     "sensitive_reason",
     "special_category",
     "speech_normal",

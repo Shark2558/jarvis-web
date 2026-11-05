@@ -188,3 +188,41 @@ async def test_a_failing_deliveries_read_never_fails_the_brief() -> None:
 def test_settings_default_on() -> None:
     s = BriefSettings()
     assert s.deliveries is True and s.family is True
+
+
+# ---- review slice 3 item 7: someone else's code in a subject never reaches the brief ----------
+
+OTP_MAIL = {
+    "id": "otp1",
+    "from": "Amazon.in <shipment-tracking@amazon.in>",
+    "subject": "Out for delivery: share OTP 482913 with the agent. Call +91 98765 43210",
+    "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+    "body": "Amazon Transport Reference ID: TBA123456789012\nOut for delivery today",
+}
+
+
+async def test_a_code_in_the_subject_is_withheld_before_the_section_is_stored() -> None:
+    brief = DeliveriesBrief(PackageScanner(await gmail_connector(GmailFake([OTP_MAIL]).client())))
+    sec = await brief.section("owner", IST, DAY)
+    (it,) = sec.items
+    assert "482913" not in it.item and "98765" not in it.item and "OTP" not in it.item
+    assert it.item == "(withheld - open it on screen)"
+    assert it.status == "out_for_delivery" and it.carrier == "Amazon Logistics"
+
+
+def test_a_stored_section_with_a_code_is_withheld_again_when_rendered() -> None:
+    sec = DeliveriesSection(
+        total=1,
+        items=(DeliveryItem(item="Your OTP 12|34|56", status="shipped", merchant="Amazon"),),
+    )
+    text = render_text(BriefData(date="2026-11-05", tz="UTC", deliveries=sec))
+    assert "12|34|56" not in text and "OTP" not in text and "withheld" in text
+    assert "Shipped" in text and "Amazon" in text
+
+
+def test_a_plain_subject_is_still_shown() -> None:
+    sec = DeliveriesSection(
+        total=1, items=(DeliveryItem(item="Shipped: boAt Airdopes 141", status="shipped"),)
+    )
+    data = BriefData(date="2026-11-05", tz="UTC", deliveries=sec)
+    assert "boAt Airdopes 141" in render_text(data)

@@ -61,6 +61,7 @@ def facts(sc: dict[str, Any], find: Callable[..., Any] | None) -> list[MailFacts
                 subject=m["subject"],
                 sent=parsedate_to_datetime(m["date"]),
                 body=m["body"],
+                authenticated=m.get("authenticated", True),
                 **kw,
             )
         )

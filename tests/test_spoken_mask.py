@@ -257,10 +257,43 @@ async def test_the_console_reads_unmasked() -> None:
     assert "998877" in read.for_model()
 
 
-def test_a_spoken_brief_uses_the_masked_text() -> None:
-    # the brief on screen (and its opted-in AI summary) keeps the full text; if it is ever SPOKEN
-    # it must go through spoken_brief_text, which masks
-    from jarvis.brief.render import spoken_brief_text
+WITHHELD_LINE = "withheld - open it on screen"
 
-    text = "Inbox\n  Priya · Your OTP 482910 · Rs 5000 at https://x.com/a"
-    assert leaks(spoken_brief_text(text)) == []
+
+@pytest.mark.parametrize("channel", ["voice", "telegram"])
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Your OTP is one two three four five six",
+        "Your verification code 123 - 456",
+        "Your OTP 12|34|56",
+        "OTP onnu randu moonnu naalu anchu aaru",
+    ],
+)
+async def test_gmail_read_and_search_withhold_a_code_mail_on_voice_and_telegram(
+    channel: str, body: str
+) -> None:
+    fake = GmailFake([mail(1, "Your Swiggy login", body, body)])
+    gw = await gateway(fake)
+    ctx = context_trust(untrusted=True, spoken=True) if channel == "voice" else telegram_turn()
+    with ctx:
+        search = await call(gw, "gmail_search", query="swiggy")
+        read = await call(gw, "gmail_read", message_id="m1")
+    for res in (search, read):
+        spoken = spoken_fields(res)
+        assert WITHHELD_LINE in spoken, spoken
+        assert not re.search(r"one two|123|12\|34|onnu|456", res.for_model()), res.for_model()
+
+
+async def test_gmail_read_leaves_an_ordinary_mail_alone_on_voice() -> None:
+    fake = GmailFake([mail(1, "Lunch?", "Are we still on for lunch tomorrow?")])
+    with context_trust(untrusted=True, spoken=True):
+        read = await call(await gateway(fake), "gmail_read", message_id="m1")
+    assert "still on for lunch" in read.for_model()
+    assert WITHHELD_LINE not in spoken_fields(read)
+
+
+async def test_the_console_still_reads_a_code_mail_in_full() -> None:
+    fake = GmailFake([mail(1, "Login", "Your OTP is one two three four five six")])
+    read = await call(await gateway(fake), "gmail_read", message_id="m1")
+    assert "one two three four five six" in read.for_model()

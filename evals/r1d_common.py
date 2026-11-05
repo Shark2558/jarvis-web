@@ -16,6 +16,7 @@ import re
 import sys
 import uuid
 from collections.abc import Sequence
+from email.utils import parseaddr
 from pathlib import Path
 from typing import Any
 
@@ -54,8 +55,25 @@ def b64(text: str) -> str:
     return base64.urlsafe_b64encode(text.encode()).decode().rstrip("=")
 
 
+def auth_results(mail: dict[str, Any]) -> str | None:
+    """The Authentication-Results header Gmail would add. A fixture mail may say `"auth"`:
+    "none" / "fail" (nothing passed), "other" (passed, but for another domain), "missing" (no
+    header at all), or leave it out for a clean dkim=pass + dmarc=pass for the From domain."""
+    kind = mail.get("auth", "pass")
+    if kind == "missing":
+        return None
+    domain = parseaddr(mail["from"])[1].rpartition("@")[2].lower()
+    if kind in ("pass", "other"):
+        d = domain if kind == "pass" else "evil.test"
+        return (
+            f"mx.google.com; dkim=pass header.i=@{d} header.s=s1 header.b=abc; "
+            f"spf=pass smtp.mailfrom={d}; dmarc=pass (p=REJECT) header.from={d}"
+        )
+    return f"mx.google.com; dkim={kind} header.i=@{domain}; dmarc={kind} header.from={domain}"
+
+
 def gmail_message(mail: dict[str, Any], *, full: bool = True) -> dict[str, Any]:
-    """A fixture mail ({id, from, subject, date, body, snippet?, labels?}) as Gmail shows it."""
+    """A fixture mail (snippet, labels and auth are optional) as Gmail shows it."""
     headers = [
         {"name": "From", "value": mail["from"]},
         {"name": "To", "value": "akash@example.com"},
@@ -63,6 +81,8 @@ def gmail_message(mail: dict[str, Any], *, full: bool = True) -> dict[str, Any]:
         {"name": "Date", "value": mail["date"]},
         {"name": "Message-ID", "value": f"<{mail['id']}@mail.test>"},
     ]
+    if (auth := auth_results(mail)) is not None:
+        headers.insert(0, {"name": "Authentication-Results", "value": auth})
     payload: dict[str, Any] = {"mimeType": "text/plain", "headers": headers}
     if full:
         payload["body"] = {"data": b64(mail["body"]), "size": len(mail["body"])}

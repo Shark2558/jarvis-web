@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -63,10 +64,11 @@ MIME_LIMIT = 200
 EMAIL_LIMIT = 320
 MAX_OWNERS = 10
 FILE_FIELDS = (
-    "id,name,mimeType,parents,trashed,size,modifiedTime,"
+    "id,name,mimeType,parents,trashed,size,modifiedTime,md5Checksum,"
     "sharingUser(emailAddress),owners(emailAddress),shortcutDetails(targetId,targetMimeType)"
 )
 LIST_FIELDS = f"nextPageToken,incompleteSearch,files({FILE_FIELDS})"
+MD5 = re.compile(r"[0-9a-fA-F]{32}")
 RETRY = frozenset({429, 500, 502, 503, 504})
 RATE_REASONS = frozenset({"userRateLimitExceeded", "rateLimitExceeded"})
 OFF_REASONS = frozenset({"accessNotConfigured", "SERVICE_DISABLED"})
@@ -160,6 +162,7 @@ def parse_file(raw: object) -> DriveFile | None:
     target = sc.get("targetId") if isinstance(sc, dict) else None
     target_mime = sc.get("targetMimeType") if isinstance(sc, dict) else None
     modified = raw.get("modifiedTime")
+    md5 = raw.get("md5Checksum")
     return DriveFile(
         id=fid,
         name=name,
@@ -172,6 +175,7 @@ def parse_file(raw: object) -> DriveFile | None:
         owners=_owners(raw.get("owners")),
         target_id=target if isinstance(target, str) and DRIVE_ID.fullmatch(target) else None,
         target_mime=_str(target_mime, MIME_LIMIT),
+        md5=md5 if isinstance(md5, str) and MD5.fullmatch(md5) else None,
     )
 
 
@@ -294,7 +298,9 @@ class DriveClient:
             raise DriveError(UNREADABLE)
         return data
 
-    async def _list(self, q: str, page_token: str | None, page_size: int) -> Page:
+    async def _list(
+        self, q: str, page_token: str | None, page_size: int, order_by: str | None = None
+    ) -> Page:
         params: dict[str, Any] = {
             "q": q,
             "fields": LIST_FIELDS,
@@ -303,6 +309,8 @@ class DriveClient:
         }
         if page_token:
             params["pageToken"] = page_token
+        if order_by:
+            params["orderBy"] = order_by
         data = await self._json("list", API, params)
         files = data.get("files")
         if not isinstance(files, list):
@@ -325,10 +333,16 @@ class DriveClient:
         return Page(tuple(f for f in page.files if f.is_folder), page.next_token, page.incomplete)
 
     async def children(
-        self, folder_id: str, *, page_token: str | None = None, page_size: int = MAX_PAGE
+        self,
+        folder_id: str,
+        *,
+        page_token: str | None = None,
+        page_size: int = MAX_PAGE,
+        order_by: str | None = None,
     ) -> Page:
         fid = check_id(folder_id)
-        return await self._list(f"'{fid}' in parents and trashed = false", page_token, page_size)
+        q = f"'{fid}' in parents and trashed = false"
+        return await self._list(q, page_token, page_size, order_by)
 
     async def search(
         self, text: str, *, owner: str | None = None, page_token: str | None = None

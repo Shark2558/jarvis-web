@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 import anyio
 
+from jarvis.belongings.text import looks_like_storage
 from jarvis.billing import Billing, BudgetError
 from jarvis.core.guardrails import ActionRisk
 from jarvis.core.models import Session
@@ -433,6 +434,13 @@ class Learner:
 # ---- applying an extraction (pure) ----------------------------------------------------------
 
 
+def _not_learnable(text: str) -> bool:
+    """A learned fact is dropped when it is a special category (health, religion, ...) or says where
+    a physical thing is kept (R2 D11: those go in Things, encrypted, never learned). Facts the
+    owner tells or adds himself never pass through here."""
+    return special_category(text) or looks_like_storage(text)
+
+
 def _replace_one(
     cur: MemoryState, r: Replacement, source: FactSource, now: datetime
 ) -> tuple[MemoryState, str] | None:
@@ -440,7 +448,7 @@ def _replace_one(
     if old is None or old.origin != "learned":  # what the owner told / added is theirs
         return None
     text = fact_text(r.text)
-    if special_category(text) or norm_key(text) == norm_key(old.text):
+    if _not_learnable(text) or norm_key(text) == norm_key(old.text):
         return None
     new = new_fact(
         cur,
@@ -474,7 +482,7 @@ def _merge(
     for item in ext.facts:
         try:
             text = fact_text(item.text)
-            if special_category(text) or find_duplicate(cur, text) is not None:
+            if _not_learnable(text) or find_duplicate(cur, text) is not None:
                 raise ValueError("not kept")
             f = new_fact(
                 cur,

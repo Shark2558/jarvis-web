@@ -48,6 +48,8 @@ Rules
 - Never record health or medical details, religion, caste, politics, sexuality, government ID,
   card, bank or account numbers, passwords, PINs, OTPs, or exact addresses of other people.
 - Never record what the owner quotes or pastes from someone else (emails, messages, documents).
+- Never record where physical things are kept (a passport, keys, gold, papers): the owner keeps
+  those in Things.
 - If a message contradicts an existing note, put the corrected fact in "replace" with that
   note's id. Never repeat a note that already exists.
 - If nothing is worth keeping, reply {"facts": [], "replace": []}."""

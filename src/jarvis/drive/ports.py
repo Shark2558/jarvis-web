@@ -65,6 +65,7 @@ class DriveFile:
     owners: tuple[str, ...] = ()  # owners[].emailAddress, lower-cased (none in shared drives)
     target_id: str | None = None  # a shortcut's target
     target_mime: str | None = None
+    md5: str | None = None  # md5Checksum of a binary file (the DigiLocker import's change test)
 
     @property
     def is_folder(self) -> bool:

@@ -15,6 +15,10 @@ address can share things with it) and whatever id a model — or a hostile docum
   (404: above what was shared), a cycle, or the limits reached → that path ends.
 - Any other Drive error is raised as is (the call fails; nothing is read): fail closed.
 
+`deny` (R2 D9): ids a path may not pass through (the DigiLocker inbox). With a deny list the whole
+ancestry is walked, so a file under the inbox is refused even when a chosen root is also above it;
+a walk a limit cut short is a no. The inbox itself is refused too.
+
 There is no switch to turn the check off: the eval's negative control injects a guard that
 allows everything instead (and must then fail).
 """
@@ -89,22 +93,35 @@ class ParentsGuard:
         return f
 
     async def inside(
-        self, item: DriveFile, roots: Collection[str], budget: WalkBudget | None = None
+        self,
+        item: DriveFile,
+        roots: Collection[str],
+        budget: WalkBudget | None = None,
+        deny: Collection[str] = (),
     ) -> bool:
         """Is the (fresh) `item` inside a confirmed root? `budget`: look-ups shared by several
-        walks (one search); spent → no (fail closed)."""
+        walks (one search); spent -> no (fail closed). `deny` (R2 D9, the DigiLocker inbox): ids
+        no path may pass through; the whole ancestry is walked, and one denied id on it, or a walk
+        cut short by a limit, is a no."""
         if not roots or item.trashed:
             return False
-        if item.id in roots:
+        if item.id in deny:
+            return False
+        if item.id in roots and not deny:
             return True
         seen = {item.id}
         level = list(item.parents)
         lookups = 0
+        found = item.id in roots
         for _ in range(MAX_DEPTH):
             if not level:
+                return found
+            if any(p in deny for p in level):
                 return False
             if any(p in roots for p in level):
-                return True
+                if not deny:
+                    return True
+                found = True
             nxt: list[str] = []
             for pid in level:
                 if pid in seen:
@@ -121,10 +138,13 @@ class ParentsGuard:
                     continue
                 nxt.extend(p for p in parent.parents if p not in seen)
             level = nxt
-        return False  # a root further than MAX_DEPTH levels up does not count
+        return False  # a root (or a walk's end) beyond MAX_DEPTH levels does not count
 
-    async def check(self, file_id: str, roots: Collection[str]) -> DriveFile:
-        """The item's fresh metadata when it is inside a confirmed root; else NotInRoots."""
+    async def check(
+        self, file_id: str, roots: Collection[str], *, deny: Collection[str] = ()
+    ) -> DriveFile:
+        """The item's fresh metadata when it is inside a confirmed root (and under no `deny` id);
+        else NotInRoots."""
         fid = check_id(file_id)
         if not roots:
             raise NotInRoots(NOT_IN_ROOTS)
@@ -132,7 +152,10 @@ class ParentsGuard:
             item = await self.client.get(fid)
         except DriveNotFound:
             raise NotInRoots(NOT_IN_ROOTS) from None
-        if not await self.inside(item, roots):
+        # `deny` is passed only when there is one: a guard that overrides `inside` (the evals'
+        # negative control) keeps the older signature
+        inside = await (self.inside(item, roots, deny=deny) if deny else self.inside(item, roots))
+        if not inside:
             raise NotInRoots(NOT_IN_ROOTS)
         return item
 

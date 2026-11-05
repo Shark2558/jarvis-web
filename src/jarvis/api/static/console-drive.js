@@ -15,6 +15,9 @@
 // Final review: hidden while jarvis:integrations says drive: false (off on this server, or the owner
 // set the Drive permission row to Never; an open confirm is cancelled); invisible characters go by
 // window.JarvisText (console-text.js).
+// R2 D9 (DigiLocker import): a folder can instead be the vault inbox (GET/PUT/DELETE /v1/vault/inbox):
+// "Use for DigiLocker import" asks first (same dialog), the inbox row says so and offers Switch off;
+// a Use folder or a folder inside one is refused by the server in plain words. Drive tools never read it.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -30,7 +33,7 @@
   ];
   const CHECKING = 'Checking\u2026';
   const quoted = (name) => '\u201c' + name + '\u201d';
-  const S = { data: undefined, error: '', loadedAt: 0, loading: null, busy: new Set(), note: null, off: false };
+  const S = { data: undefined, error: '', loadedAt: 0, loading: null, busy: new Set(), note: null, off: false, inbox: null };
   let card = null, stateEl = null, bodyEl = null, noteEl = null;
 
   // ---- small, type-checking helpers -----------------------------------------------------------
@@ -59,11 +62,11 @@
       const it = obj(f);
       if (!it || typeof it.id !== 'string' || !ID.test(it.id) || seen.has(it.id)) return null;
       seen.add(it.id);
-      return { id: it.id, name: txt(it.name) || '(no name)', confirmed: it.confirmed === true, readable: it.readable !== false };
+      return { id: it.id, name: txt(it.name) || '(no name)', confirmed: it.confirmed === true, readable: it.readable !== false, inbox: it.inbox === true };
     }).filter(Boolean);
     const others = Number.isInteger(d.others) && d.others >= 0 && d.others < 10000 ? d.others : 0;
     const max = Number.isInteger(d.max_folders) && d.max_folders > 0 ? d.max_folders : 20;
-    return { email, folders, others, othersMore: d.others_more === true, max };
+    return { email, folders, others, othersMore: d.others_more === true, max, inboxWired: d.inbox_wired === true };
   }
 
   // ---- the card -------------------------------------------------------------------------------
@@ -140,20 +143,27 @@
 
   // ---- confirm dialog: native modal (the rest of the page is inert), Tab stays inside, Esc = Not now
   let settle = null;
-  function askOn(f, trigger) {
+  function askOn(f, trigger, forInbox) {
     const dlg = $('driveDialog');
     if (!dlg || typeof dlg.showModal !== 'function') {
       note('bad', 'This browser can\'t show the confirmation, so the folder was not switched on.');
       return Promise.resolve(false);
     }
     if (settle) settle(false);
-    $('driveDialogTitle').textContent = 'Let JARVIS read this folder?';
+    $('driveDialogTitle').textContent = forInbox ? 'Use this folder for DigiLocker documents?' : 'Let JARVIS read this folder?';
     const body = $('driveDialogText'); body.textContent = '';
     const first = mk('p', 'strong');
-    first.append('JARVIS will be able to read the files in ', mk('b', '', quoted(f.name)), ' and in every folder inside it.');
-    body.append(first,
-      mk('p', '', 'When you ask about them, JARVIS sends what it reads to the brain (Claude) to answer you.'),
-      mk('p', '', 'It can\'t change or delete anything. You can switch it off here at any time.'));
+    if (forInbox) {
+      first.append('JARVIS will copy new PDFs and photos from ', mk('b', '', quoted(f.name)), ' into your encrypted vault.');
+      body.append(first,
+        mk('p', '', 'JARVIS\'s Drive tools will never read this folder. The copies stay in Drive: delete them yourself after they are imported.'),
+        mk('p', '', 'You can switch it off here at any time.'));
+    } else {
+      first.append('JARVIS will be able to read the files in ', mk('b', '', quoted(f.name)), ' and in every folder inside it.');
+      body.append(first,
+        mk('p', '', 'When you ask about them, JARVIS sends what it reads to the brain (Claude) to answer you.'),
+        mk('p', '', 'It can\'t change or delete anything. You can switch it off here at any time.'));
+    }
     return new Promise((resolve) => {
       settle = (val) => {
         settle = null;
@@ -167,7 +177,7 @@
   }
   /** Focus back on the switch: the same element, or the one a re-render put in its place. */
   function refocus(trigger, id) {
-    const now = trigger && document.contains(trigger) ? trigger : card && card.querySelector(`.bsw[data-id="${id}"]`);
+    const now = trigger && document.contains(trigger) ? trigger : card && card.querySelector(`.bsw[data-id="${id}"], .dinbox[data-id="${id}"]`);
     if (now && !now.closest('[hidden]')) now.focus({ preventScroll: true });
   }
   function wireDialog() {
@@ -196,10 +206,52 @@
         ? 'Not in use: JARVIS won\'t read it.'
         : f.readable ? 'In use: JARVIS can read it and everything inside it.'
           : 'Switched on, but JARVIS can\'t currently read it: it is no longer shared with JARVIS from your account, or it is in the trash. Share it again, or switch it off here.'));
+      if (f.inbox) { li.append(t, mk('span', 'dchip', 'DigiLocker import')); ul.appendChild(li); return; }
       li.append(t, useSwitch(f));
+      if (!f.confirmed && f.readable && S.inbox) li.appendChild(inboxButton(f));
       ul.appendChild(li);
     });
     return ul;
+  }
+  // ---- DigiLocker folder (R2 D9) --------------------------------------------------------
+  function inboxButton(f) {
+    const b = mk('button', 'btn bact dinbox', 'Use for DigiLocker import'); b.type = 'button'; b.dataset.id = f.id;
+    b.addEventListener('click', async () => { if (await askOn(f, b, true)) pickInbox(f); });
+    return b;
+  }
+  function inboxStatus() {
+    const i = S.inbox; if (!i || !i.configured) return null;
+    const box = mk('div', 'dinboxrow'); box.id = 'driveInbox';
+    const t = mk('div', 'btxt');
+    t.append(mk('b', '', 'DigiLocker import: ' + quoted(i.name)), mk('small', '', i.note));
+    const off = mk('button', 'btn bact', 'Switch off'); off.type = 'button'; off.id = 'driveInboxOff';
+    off.addEventListener('click', () => { off.disabled = true; clearInbox(); });
+    box.append(t, off);
+    return box;
+  }
+  function inboxNormal(raw) {
+    const d = obj(raw); if (!d || d.available !== true) return null;
+    const f = obj(d.folder);
+    return { configured: d.configured === true && !!f, name: f ? txt(f.name) || '(no name)' : '', note: txt(d.note, 300) };
+  }
+  async function loadInbox() {
+    if (!hasApi() || S.off || !(S.data && S.data.inboxWired)) return;
+    try { S.inbox = inboxNormal(await api('/v1/vault/inbox')); } catch (e) { S.inbox = null; }
+    render();
+  }
+  async function pickInbox(f) {
+    try {
+      S.inbox = inboxNormal(await api('/v1/vault/inbox', { method: 'PUT', body: { folder_id: f.id } }));
+      note('ok', quoted(f.name) + ' is now the DigiLocker folder.');
+      await load(true);
+    } catch (e) { if (!(e && e.status === 401)) note('bad', detailOf(e) || 'Couldn\'t set it. Please try again.'); }
+  }
+  async function clearInbox() {
+    try {
+      S.inbox = inboxNormal(await api('/v1/vault/inbox', { method: 'DELETE' }));
+      note('ok', 'DigiLocker copying is off. Nothing in Drive was changed.');
+      await load(true);
+    } catch (e) { if (!(e && e.status === 401)) note('bad', detailOf(e) || 'Couldn\'t switch it off. Please try again.'); }
   }
   function others(n, more) {
     const p = mk('p', 'fine dothers'); p.id = 'driveOthers';
@@ -238,6 +290,7 @@
     } else {
       bodyEl.append(steps(), mk('p', 'fine', 'The folder shows up here within a minute. Then switch on Use.'));
     }
+    const ib = inboxStatus(); if (ib) bodyEl.appendChild(ib);
     if (d.others || d.othersMore) bodyEl.appendChild(others(d.others, d.othersMore));
     const refresh = mk('button', 'btn bact', 'Check again'); refresh.type = 'button'; refresh.id = 'driveRefresh';
     refresh.addEventListener('click', () => load(true));
@@ -275,6 +328,7 @@
       } finally {
         S.loadedAt = Date.now(); S.loading = null; render();
       }
+      loadInbox();
     })();
     return S.loading;
   }

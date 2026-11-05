@@ -226,6 +226,15 @@ async def test_people_research_is_on_with_a_web_key(settings: Settings) -> None:
         assert PEOPLE_TOOLS <= a.tools()
 
 
+async def test_people_research_is_a_privacy_category_and_faces_stays_last(
+    settings: Settings,
+) -> None:
+    s = settings.model_copy(update={"tavily_api_key": SecretStr("tvly-test")})
+    async with plain_app(s) as a:
+        ids = a.state.privacy.registry.ids()
+        assert "people_research" in ids and ids[-1] == "faces"
+
+
 async def test_a_part_that_fails_to_build_is_off_not_fatal(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:

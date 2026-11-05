@@ -45,9 +45,10 @@ from jarvis.config import Settings
 from jarvis.core import approve_all as approve_many
 from jarvis.core import brain_decisions as decisions
 from jarvis.core.approve_all import ApproveAllResponse
+from jarvis.core.brain_types import _owner_turn, _Prompt, _ReplyMeta
 from jarvis.core.channel import answered_offline, reset_offline
 from jarvis.core.guardrails import guard_input
-from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn, UndoRef
+from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
 from jarvis.core.rounds import Rounds
@@ -71,7 +72,8 @@ from jarvis.llm.pricing import stream_usage
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.logging import get_logger, get_trace_id
 from jarvis.memory.base import SessionNotFound, SessionStore
-from jarvis.offline.no_ai import no_ai_turn
+from jarvis.offline.mode import BrainMode
+from jarvis.offline.no_ai import NoAIRunner
 from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
 from jarvis.tools.budget import turn_budget
@@ -89,35 +91,13 @@ SWEEP_TICK_S = 20.0  # the scheduler tick's memory sweep is awaited, at most thi
 ROUND_LIMIT = "Tool round limit reached. Summarise what you found so far and what remains."
 
 
-def _owner_turn(text: str, req: ChatRequest, trace_id: str | None) -> Turn:
-    """The owner's message, marked with how it arrived (a spoken one is never learned from)."""
-    return Turn(role=Role.USER, content=text, trace_id=trace_id, channel=req.channel)
-
-
-@dataclass(frozen=True)
-class _Prompt:
-    """One turn's prompt: the persona (read once per turn) and the per-request trailer."""
-
-    system: str
-    trailer: str
-
-
-@dataclass(frozen=True)
-class _ReplyMeta:
-    trace_id: str
-    total_ms: int
-    rounds: int
-    pending: list[PendingApproval]
-    memory_used: list[MemoryRef]
-    undo: list[UndoRef] = field(default_factory=list)  # slice 11: the reply's Undo chips
-    cards: list[AnyCard] = field(default_factory=list)  # slice 12: Maps / YouTube / drafts
-
-
 @dataclass
 class StreamMeta:
     """Filled in by `chat_stream` for its caller (the HTTP route's final event)."""
 
     memory_used: list[MemoryRef] = field(default_factory=list)
+    pending: list[PendingApproval] = field(default_factory=list)  # no-AI mode: approvals waiting
+    cards: list[AnyCard] = field(default_factory=list)
 
 
 class Brain:
@@ -133,6 +113,7 @@ class Brain:
         memory: MemoryService | None = None,
         wit: WitSource | None = None,
         documents: DocumentService | None = None,
+        brain_mode: BrainMode | None = None,
     ) -> None:
         if brains is None:
             if router is None:
@@ -152,8 +133,6 @@ class Brain:
             )
         self.brains = brains
         self.router = brains.router_for(brains.default.id)  # default brain (health, CLI)
-        for known in brains.list():  # R4 D7: a stray model call fails loudly in no-AI mode
-            brains.router_for(known.id).blocked = self._no_ai
         self.store = store
         self.s = settings
         self.gateway = gateway
@@ -161,23 +140,18 @@ class Brain:
         self.billing = billing or Billing.in_memory(brains, settings)
         self.memory = memory  # long-term notes about the owner (None: off)
         self.documents = documents  # attached files (None: refused with a plain message)
+        # R4 D7: the persisted AI on / off switch; a stray model call fails loudly while it is off
+        self.mode = brain_mode or BrainMode(settings)
+        self.noai = NoAIRunner(
+            store=store, settings=settings, gateway=gateway, mode=self.mode, documents=documents
+        )
+        for known in brains.list():
+            brains.router_for(known.id).bind_blocked(lambda: self.noai.active)
         # the owner's wit level picks the system prompt (None: always the default)
         self.persona = Persona(honorific=settings.user_honorific, wit=wit)
         # One owner action at a time per conversation (chat, approve, decline, delete): no
         # lost turns, no double execution, no resurrected deletes. Locks vanish when unused.
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
-
-    def _no_ai(self) -> bool:
-        return self.s.brain_mode == "none"  # R4 D7: fixed rules, no model
-
-    async def _no_ai_reply(
-        self, session: Session, req: ChatRequest, text: str, spec: BrainSpec, t0: float
-    ) -> ChatResponse:
-        gw = self.gateway if self.s.tools_enabled else None
-        return await no_ai_turn(
-            store=self.store, settings=self.s, gateway=gw, session=session, req=req, text=text,
-            brain_id=spec.id, trace_id=get_trace_id() or "", started=t0,
-        )  # fmt: skip
 
     @contextlib.asynccontextmanager
     async def _serialised(self, session_id: str | None) -> AsyncIterator[None]:
@@ -238,7 +212,10 @@ class Brain:
 
     async def check_budget(self, req: ChatRequest) -> None:
         """Would this request be refused by the monthly limit? Read-only: the stream route asks
-        first so it can answer 402 instead of breaking a stream that already said 200."""
+        first so it can answer 402 instead of breaking a stream that already said 200.
+        No-AI mode spends nothing, so the limit never refuses it."""
+        if await self.noai.refresh(req.user_id):
+            return
         brain_id = req.brain
         if brain_id is None and req.session_id:
             session = await self.store.get(req.session_id)
@@ -368,8 +345,8 @@ class Brain:
         text = guard_input(req.message, max_chars=self.s.max_input_chars)
         session = await self._load_or_create(req)
         spec = self._resolve_brain(session, req)
-        if self._no_ai():
-            return await self._no_ai_reply(session, req, text, spec, t0)
+        if await self.noai.refresh(req.user_id):
+            return await self.noai.reply(session, req, text, spec, t0)
         await self._admit(req.user_id, spec)  # refused → nothing stored, nothing called
 
         turn = _owner_turn(text, req, trace_id)
@@ -747,8 +724,9 @@ class Brain:
         session = await self._load_or_create(req)
         spec = self._resolve_brain(session, req)
         router = self.brains.router_for(spec.id)
-        if self._no_ai():
-            done = await self._no_ai_reply(session, req, text, spec, time.perf_counter())
+        if await self.noai.refresh(req.user_id):
+            done = await self.noai.reply(session, req, text, spec, time.perf_counter())
+            meta.pending, meta.cards = done.pending_approvals, done.cards
             yield done.reply
             return
         await self._admit(req.user_id, spec)  # turn-level: refused → nothing stored

@@ -36,6 +36,7 @@ BAD_NAME_REFUSAL = (
     "I need a plain public name to research, Sir, not a number or an address. "
     "I only research public figures."
 )
+REFUSAL_LINES = frozenset({PRIVATE_REFUSAL, FACE_REFUSAL, BAD_NAME_REFUSAL})
 
 
 class Scope(StrEnum):
@@ -120,6 +121,7 @@ __all__ = [
     "FACE_REFUSAL",
     "GUARD_ENABLED",
     "PRIVATE_REFUSAL",
+    "REFUSAL_LINES",
     "Scope",
     "ScopeVerdict",
     "check_scope",

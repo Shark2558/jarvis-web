@@ -70,16 +70,21 @@ class ModelRouter:
         fallback: FallbackBrain | None = None,
         *,
         clock: Callable[[], float] = time.monotonic,
+        blocked: Callable[[], bool] | None = None,
     ) -> None:
         self.provider = provider
         self._tiers = tiers
         self.fallback = fallback
         self._breaker = Breaker(clock=clock)
-        # R4 D7: True while the owner has the AI switched off; `Brain` wires it to the setting
-        self.blocked: Callable[[], bool] | None = None
+        self._blocked: Callable[[], bool] | None = blocked
+
+    def bind_blocked(self, blocked: Callable[[], bool]) -> None:
+        """R4 D7: `Brain` hands every router the no-AI switch once, at construction. While it
+        reads True a model call raises `BrainOff`."""
+        self._blocked = blocked
 
     def _refuse_if_off(self) -> None:
-        if self.blocked is not None and self.blocked():
+        if self._blocked is not None and self._blocked():
             raise BrainOff(NO_AI_REFUSAL)
 
     @classmethod

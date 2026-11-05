@@ -46,6 +46,7 @@ from jarvis.brief.models import (
     TickResult,
     TodayView,
     Trigger,
+    VaultDueSection,
     parse_brief_time,
 )
 from jarvis.brief.render import render_text
@@ -61,6 +62,7 @@ from jarvis.brief.schedule import (
 )
 from jarvis.brief.store import BriefStore, ClaimOutcome, claim_decision
 from jarvis.brief.summarize import Summarizer
+from jarvis.brief.vault_due import VaultDueBrief
 from jarvis.config import LLMBackend
 from jarvis.core.guardrails import ActionRisk, ApprovalStore
 from jarvis.integrations.google import GoogleConnector, GoogleNotConnected, can_insert
@@ -165,7 +167,15 @@ def apply_patch(
     changes: dict[str, object] = {
         k: v
         for k, v in p.model_dump(
-            include={"enabled", "time", "ai_summary", "inbox_delivery", "deliveries", "family"}
+            include={
+                "enabled",
+                "time",
+                "ai_summary",
+                "inbox_delivery",
+                "deliveries",
+                "family",
+                "vault",
+            }
         ).items()
         if v is not None
     }
@@ -189,6 +199,7 @@ def settings_view(s: BriefSettings) -> SettingsView:
         ai_todo_consent=todo_consented(s),
         deliveries=s.deliveries,
         family=s.family,
+        vault=s.vault,
     )
 
 
@@ -247,6 +258,7 @@ class BriefService:
         billing: Billing | None = None,
         deliveries: DeliveriesBrief | None = None,
         family_day: FamilyBrief | None = None,
+        vault_due: VaultDueBrief | None = None,
     ) -> None:
         self._store = store
         self._google = google
@@ -266,6 +278,7 @@ class BriefService:
         self.ready_hook: Callable[[str], Awaitable[None]] | None = None
         self._deliveries = deliveries  # R1: Deliveries section (None: not wired)
         self._family_day = family_day  # R1: Family today section (None: not wired)
+        self._vault_due = vault_due  # R2: Documents section (None: not wired)
 
     # ---- views --------------------------------------------------------------------------------
 
@@ -456,16 +469,27 @@ class BriefService:
             family = await _own_section(
                 self._family_day.section(uid, tz, day), lambda st: FamilySection(state=st)
             )
-        if deliveries is None and family is None:
+        vault = None
+        if s.vault and self._vault_due is not None:
+            vault = await _own_section(
+                self._vault_due.section(uid, tz, day), lambda st: VaultDueSection(state=st)
+            )
+        if deliveries is None and family is None and vault is None:
             return got
         status = got.data.sections_status.model_copy(
             update={
                 "deliveries": deliveries.state if deliveries is not None else "ok",
                 "family": family.state if family is not None else "ok",
+                "vault": vault.state if vault is not None else "ok",
             }
         )
         data = got.data.model_copy(
-            update={"deliveries": deliveries, "family": family, "sections_status": status}
+            update={
+                "deliveries": deliveries,
+                "family": family,
+                "vault": vault,
+                "sections_status": status,
+            }
         )
         return Collected(data=data, snippets=got.snippets)
 

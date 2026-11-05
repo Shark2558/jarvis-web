@@ -14,7 +14,8 @@ POST /internal/brief/tick   Cloud Scheduler only (Google OIDC) → {checked, gen
                             the tick holds the CPU on Cloud Run), unsent uploads (slice 10 E),
                             expired Recently deleted items, expired passkey challenges (≤ 100),
                             the once-a-day Tavily usage cross-check (slice 11), Telegram's seen
-                            updates and counters, and Activity days past the window (R1)
+                            updates and counters, and Activity days past the window (R1); then
+                            the feature jobs in `app.state.tick_jobs` (R2, `jarvis.ticks`)
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from jarvis.brief.service import BriefService
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import InputRejected
 from jarvis.logging import get_logger
+from jarvis.ticks import run_jobs
 
 log = get_logger(__name__)
 
@@ -151,6 +153,9 @@ async def tick(request: Request, svc: BriefService = Depends(_svc)) -> TickResul
     web = getattr(state, "web", None)
     if web is not None:  # Tavily's own count, at most once a day (slice 11 D7 b)
         sweeps["web"] = await _sweep("web", web.check_vendor_usage())
+    # R2: feature jobs (vault reminders, the DigiLocker inbox); never raises, same ok/failed words
+    jobs = await run_jobs(getattr(state, "tick_jobs", ()), svc.owners)
+    sweeps.update({name: res for name, res in jobs.items() if name not in sweeps})
     return result.model_copy(update={"sweeps": sweeps})
 
 

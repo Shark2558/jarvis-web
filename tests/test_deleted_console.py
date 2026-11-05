@@ -17,7 +17,10 @@ async def test_deleted_script_never_parses_server_text_as_html(client: AsyncClie
     assert "'/v1/deleted'" in js
     assert "`/v1/deleted/${encodeURIComponent(id)}/restore`, { method: 'POST' }" in js
     # slice 11 fix: "Remove now" through the same transport; why an Undo failed, in words
-    assert "`/v1/deleted/${encodeURIComponent(id)}`, { method: 'DELETE' }" in js
+    assert "const path = `/v1/deleted/${encodeURIComponent(id)}`;" in js
+    assert "api(path, { method: 'DELETE' })" in js
+    # R2: a vault document, note or thing asks for the passkey bound to that bin entry
+    assert "P.prove('privacy_delete', id)" in js and "{ method: 'DELETE', body: { proof } }" in js
     assert "msg.setAttribute('aria-live', 'polite')" in js and "function prune()" in js
     assert "import " not in js and "http" not in js.replace("http://www.w3.org/2000/svg", "")
     assert "window.JarvisDeleted = Object.freeze(" in js

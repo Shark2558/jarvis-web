@@ -13,11 +13,22 @@ GET    /v1/deleted               DeletedList {items: [{id, kind, title, deleted_
 POST   /v1/deleted/{id}/restore  RestoreOutcome {status: restored | already_restored, message,
                                  undo_id, kind, title, new_id, note}. The owner's own click, like
                                  approving a card: it is audited (agent "console").
-                                 404 not_found (unknown / malformed id), 410 expired, 409 busy (a
-                                 restore is under way) or still_there (never deleted: no copy
-                                 made), 503 unavailable (Google not linked), 502 restore_failed.
+                                 404 not_found (unknown / malformed id; or, R2, the item was
+                                 removed for good: "It's gone", the entry is dropped), 410
+                                 expired, 409 busy (a restore is under way) or still_there (never
+                                 deleted: no copy made), 503 unavailable (Google not linked; R2:
+                                 that feature is off here), 502 restore_failed.
 DELETE /v1/deleted/{id}          "Remove now": the copy goes at once (it can't be restored after).
                                  {removed: true, id}; 404 not_found. Audited (agent "console").
+                                 R2 I1: for a vault document, a note or a thing
+                                 (`PASSKEY_PURGE_KINDS`, nothing brings them back) the optional
+                                 body {proof} must be a passkey check for purpose privacy_delete
+                                 made for exactly this bin id; with no passkeys in force, a Google
+                                 sign-in under 5 minutes old (token-mode dev: none; token mode
+                                 in staging or prod: refused, proof_required). 403
+                                 passkey_required / passkey_rejected / proof_required {reason:
+                                 reauth}, 503 passkeys_unreadable. A restored entry is 404 and
+                                 asks for nothing.
 
 Error text: only our own error classes carry their words to the owner (Google errors are already
 vendor-free plain words); anything else is one generic sentence, never a stack trace.
@@ -25,18 +36,34 @@ vendor-free plain words); anything else is one generic sentence, never a stack t
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-from jarvis.api.auth import require_auth
+from jarvis.api.auth import fresh_sign_in_left, require_auth
 from jarvis.api.identity import current_user
+from jarvis.config import AuthMode
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleAPIError, GoogleNotConnected
 from jarvis.logging import get_logger
+from jarvis.permissions.errors import (
+    PasskeyDataUnreadable,
+    PasskeyRejected,
+    PasskeyRequired,
+    ProofRequired,
+)
+from jarvis.permissions.models import PasskeyProof
 from jarvis.tools.tasks_api import TasksNotGranted
-from jarvis.undo.models import UNDO_ID, DeletedList, DeletedView, RestoreOutcome, RestoreStatus
-from jarvis.undo.service import UndoBin
+from jarvis.undo.models import (
+    PASSKEY_PURGE_KINDS,
+    UNDO_ID,
+    DeletedItem,
+    DeletedList,
+    DeletedView,
+    RestoreOutcome,
+    RestoreStatus,
+)
+from jarvis.undo.service import MSG_GONE, Gone, PurgeFailed, UndoBin
 
 router = APIRouter(prefix="/v1/deleted", dependencies=[Depends(require_auth)])
 log = get_logger(__name__)
@@ -95,6 +122,9 @@ async def _restore(
 ) -> RestoreOutcome | JSONResponse:
     try:
         return await undo.restore(uid, undo_id)
+    except Gone as exc:  # R2 review H2: removed for good (the bin dropped its entry)
+        await _audit(request, "deleted_restore", undo_id, "error", type(exc).__name__)
+        return _err(404, "not_found", MSG_GONE)
     except (GoogleNotConnected, TasksNotGranted) as exc:  # plain words already
         await _audit(request, "deleted_restore", undo_id, "error", type(exc).__name__)
         return _err(503, "unavailable", str(exc))
@@ -130,14 +160,86 @@ class Removed(BaseModel):
     id: str
 
 
+class RemoveBody(BaseModel):
+    """R2: the passkey check for a kind nothing can bring back (absent for the others)."""
+
+    model_config = ConfigDict(extra="forbid")
+    proof: PasskeyProof | None = None
+
+
+REAUTH = "Sign in with Google again (within 5 minutes) to remove it for good."
+PROOF_NEEDED = (
+    "Removing it for good needs a passkey or a recent Google sign-in; this server has neither."
+)
+
+
+def _err_reason(status: int, code: str, detail: str, reason: str) -> JSONResponse:
+    body = {"error": code, "detail": detail, "reason": reason}
+    return JSONResponse(status_code=status, content=body)
+
+
+def _proof_failure(exc: Exception) -> JSONResponse:
+    if isinstance(exc, PasskeyRequired):
+        return _err(403, "passkey_required", str(exc))
+    if isinstance(exc, PasskeyRejected):
+        return _err_reason(403, "passkey_rejected", str(exc), exc.reason)
+    if isinstance(exc, ProofRequired):
+        return _err_reason(403, "proof_required", str(exc), exc.reason)
+    return _err(503, "passkeys_unreadable", "Your passkeys can't be read right now.")
+
+
+async def _for_good(
+    request: Request, uid: str, item: DeletedItem, proof: PasskeyProof | None
+) -> str | JSONResponse:
+    """R2 D8: a vault document, note or thing goes for good only on a passkey check made for this
+    bin id (purpose privacy_delete) or, with no passkeys in force, a recent Google sign-in
+    (token-mode dev: nothing; token mode elsewhere: refused, review S2). Returns the audit note,
+    or the refusal. Fails closed."""
+    perms = getattr(request.app.state, "permissions", None)
+    how: str | None = None
+    if perms is not None:
+        try:
+            how = await perms.check_purpose(uid, "privacy_delete", item.id, proof)
+        except (PasskeyRequired, PasskeyRejected, ProofRequired, PasskeyDataUnreadable) as exc:
+            await _audit(request, "deleted_purge", item.id, "denied", type(exc).__name__)
+            return _proof_failure(exc)
+    if how is not None:
+        return how
+    s = request.app.state.settings
+    if s.auth_mode is AuthMode.GOOGLE:
+        if not fresh_sign_in_left(request, s):
+            return _err_reason(403, "proof_required", REAUTH, "reauth")
+        return "sign-in"
+    if s.env == "dev":  # review S2: token-mode dev only, as the vault's console-only rule
+        return "no passkeys (token-mode dev)"
+    await _audit(request, "deleted_purge", item.id, "denied", "no proof outside dev")
+    return _err_reason(403, "proof_required", PROOF_NEEDED, "reauth")
+
+
 @router.delete("/{undo_id}", response_model=Removed)
 async def purge(
-    undo_id: str, request: Request, uid: str = Depends(current_user)
+    undo_id: str,
+    request: Request,
+    uid: str = Depends(current_user),
+    body: RemoveBody | None = Body(default=None),  # noqa: B008 - FastAPI's way
 ) -> Removed | JSONResponse:
     undo = _bin(request)
-    if not UNDO_ID.fullmatch(undo_id) or not await undo.purge(uid, undo_id):
+    item = await undo.get(uid, undo_id) if UNDO_ID.fullmatch(undo_id) else None
+    if item is None or item.restored:  # never a proof for something that can't be purged
         return _err(404, "not_found", NOT_FOUND)
-    await _audit(request, "deleted_purge", undo_id, "executed", "owner: Remove now")
+    how = "owner: Remove now"
+    if item.kind in PASSKEY_PURGE_KINDS:
+        checked = await _for_good(request, uid, item, body.proof if body else None)
+        if isinstance(checked, JSONResponse):
+            return checked
+        how += f"; {checked}"
+    try:
+        purged = await undo.purge(uid, undo_id)
+    except PurgeFailed as exc:  # R2: the kind's purger failed; the entry stays (plain words)
+        return _err(503, "unavailable", str(exc))
+    if not purged:
+        return _err(404, "not_found", NOT_FOUND)
+    await _audit(request, "deleted_purge", undo_id, "executed", how)
     return Removed(removed=True, id=undo_id)
 
 

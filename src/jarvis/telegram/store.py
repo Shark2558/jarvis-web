@@ -94,11 +94,14 @@ class TelegramStore:
         *,
         allow_private_reads: bool | None = None,
         alerts: dict[str, bool] | None = None,
+        allow_personal_reads: bool | None = None,
     ) -> TelegramLink | None:
         def change(cur: TelegramLink) -> TelegramLink:
             out = cur
             if allow_private_reads is not None:
                 out = out.model_copy(update={"allow_private_reads": allow_private_reads})
+            if allow_personal_reads is not None:  # R2 D12
+                out = out.model_copy(update={"allow_personal_reads": allow_personal_reads})
             if alerts:
                 toggles = out.alerts.model_copy(update=alerts)
                 out = out.model_copy(update={"alerts": AlertToggles.model_validate(toggles)})

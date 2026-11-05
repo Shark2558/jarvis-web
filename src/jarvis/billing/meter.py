@@ -37,7 +37,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from jarvis.storage.docs import Docs, DocTx
+from jarvis.storage.docs import Delete, Docs, DocTx, Query
 from jarvis.storage.sessions import safe_id
 
 _MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
@@ -235,6 +235,30 @@ class UsageMeter:
 
     async def get(self, uid: str, month: str) -> MonthUsage:
         return decode(await self._d.get(self._path(uid, month)), month)
+
+    async def months(self, uid: str) -> list[MonthUsage]:
+        """Every stored month of this owner, oldest first (R2 privacy dashboard). UsageUnreadable
+        when one can't be read."""
+        if not safe_id(uid):
+            raise ValueError("invalid user id")
+        rows = await self._d.query(Query(self._col, where=("user_id", uid)))
+        out: list[MonthUsage] = []
+        for _doc_id, doc in rows:
+            month = doc.get("month")
+            if not isinstance(month, str) or not _MONTH.fullmatch(month):
+                raise UsageUnreadable("month document has no month")
+            out.append(decode(doc, month))
+        return sorted(out, key=lambda m: m.month)
+
+    async def forget_before(self, uid: str, month: str) -> int:
+        """Delete this owner's months before `month` (YYYY-MM); the current month stays because the
+        owner's limit is compared with it. Returns how many went."""
+        if not _MONTH.fullmatch(month):
+            raise ValueError("month must be YYYY-MM")
+        old = [m.month for m in await self.months(uid) if m.month < month]
+        if old:
+            await self._d.write([Delete(self._path(uid, m)) for m in old])
+        return len(old)
 
     async def allowance(self, month: str) -> AllowanceUse:
         """The deployment's allowance use in a Pacific-time month (UsageUnreadable as above)."""

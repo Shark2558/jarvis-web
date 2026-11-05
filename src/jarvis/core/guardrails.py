@@ -84,6 +84,10 @@ class PendingAction(BaseModel):
     # gateway at proposal; never part of what makes two cards the same. None: a card stored
     # before this field existed — the gateway treats it as outside (fail closed).
     outside: bool | None = None
+    # R2 I1: the round that proposed this card was spoken (`taint.spoken_in_context`). Approved on
+    # screen, outside that turn, it still runs as spoken (`ToolContext.spoken`), so a note or a
+    # thing it writes records `voice` origin. Never part of what makes two cards the same.
+    spoken: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC) + timedelta(minutes=10))
 
@@ -254,8 +258,9 @@ class ConfirmationGate:
                     if action.outside and existing.outside is False
                     else existing.outside,
                     "reason": carried_reason(existing.reason, action.reason),
+                    "spoken": existing.spoken or action.spoken,  # R2: never forgotten either
                 }
-                if merged["outside"] != existing.outside or merged["reason"] != existing.reason:
+                if any(merged[k] != getattr(existing, k) for k in merged):
                     existing = existing.model_copy(update=merged)
                     await self.store.put(existing)
                 raise ConfirmationRequired(existing)

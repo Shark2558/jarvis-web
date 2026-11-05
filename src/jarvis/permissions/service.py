@@ -56,6 +56,8 @@ from jarvis.permissions.groups import (
     validate_choices,
 )
 from jarvis.permissions.models import (
+    TARGET_PATTERN,
+    TARGETED_PURPOSES,
     ChallengeRequest,
     ChallengeView,
     GroupView,
@@ -132,6 +134,21 @@ def _binding(uid: str, purpose: str, *parts: str) -> str:
     return hashlib.sha256(
         "\x00".join(["jarvis-passkey", uid, purpose, *parts]).encode()
     ).hexdigest()
+
+
+_TARGET = re.compile(TARGET_PATTERN)
+NEEDS_TARGET = "That passkey check has to name what it is for."
+
+
+def purpose_binding(uid: str, purpose: str, target: str | None) -> str:
+    """What an R2 purpose check is bound to: owner, purpose and target (R2 D6, D8, D14).
+    Fails closed: another purpose, a delete without a target or an odd target is refused."""
+    text = target or ""
+    if purpose not in TARGETED_PURPOSES or (text and not _TARGET.fullmatch(text)):
+        raise PermissionRejected("That passkey check isn't one JARVIS knows.")
+    if purpose == "privacy_delete" and not text:
+        raise PermissionRejected(NEEDS_TARGET)
+    return _binding(uid, purpose, text)
 
 
 def passkey_ref(cred_id: str) -> str:
@@ -250,6 +267,22 @@ class PermissionsService:
         if proof is None:
             raise PasskeyRequired(NEEDS_PASSKEY)
         key = await self._verify(uid, proof, "approve", approval_binding(uid, action))
+        return f"passkey {passkey_ref(key.id)}"
+
+    async def check_purpose(
+        self, uid: str, purpose: str, target: str | None, proof: PasskeyProof | None
+    ) -> str | None:
+        """R2 guard for the vault unlock and the privacy export / delete (and Remove now): None
+        when passkeys are not in force (the caller then asks for a fresh Google sign-in);
+        otherwise a passkey check made for exactly (purpose, target), single use, returning
+        which passkey for the audit. Fails closed: no proof, a proof for something else, a
+        purpose or target that isn't valid, unreadable passkey data."""
+        binding = purpose_binding(uid, purpose, target)
+        if not await self.passkey_required(uid):
+            return None
+        if proof is None:
+            raise PasskeyRequired(NEEDS_PASSKEY)
+        key = await self._verify(uid, proof, purpose, binding)
         return f"passkey {passkey_ref(key.id)}"
 
     # ---- view and changes -----------------------------------------------------------------------
@@ -376,6 +409,8 @@ class PermissionsService:
             if not any(k.id == req.credential_id for k in keys):
                 raise PasskeyNotFound("No such passkey.")
             binding = _binding(uid, "remove", req.credential_id or "")
+        elif req.purpose in TARGETED_PURPOSES:  # R2: bound to the target too
+            binding = purpose_binding(uid, req.purpose, req.target)
         else:  # add another passkey, switch the requirement off, cancel a reset
             binding = _binding(uid, req.purpose)
         cid, challenge = await self._new_challenge(uid, req.purpose, binding)

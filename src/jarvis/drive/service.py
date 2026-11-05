@@ -78,6 +78,7 @@ from jarvis.tools.external import wrap_external
 log = get_logger(__name__)
 
 Extractor = Callable[[bytes, str], Awaitable[Extracted]]
+InboxSource = Callable[[str], Awaitable[str | None]]  # uid -> the DigiLocker inbox folder id
 
 LIST_PAGE = 25
 SEARCH_LIMIT = 10
@@ -99,6 +100,11 @@ NOT_SET_UP = (
 SOME_OFF = (
     "{n} switched-on Drive folder(s) can't be read right now (no longer shared with JARVIS from "
     "the owner's account, or in the trash): the owner can check Integrations → Google Drive."
+)
+NO_INBOX = "JARVIS couldn't check the DigiLocker folder just now, so nothing was read from Drive."
+IS_INBOX = (
+    "That folder is the DigiLocker import folder, which JARVIS's Drive tools never read. "
+    "Switch the import off first, or pick another folder."
 )
 NO_READER = "JARVIS can't read Drive files on this server right now."
 MATCHED = "Read one with drive_read and its id."
@@ -151,6 +157,7 @@ class _Scan:
     hits: list[dict[str, Any]] = field(default_factory=list)
     seen: set[str] = field(default_factory=set)
     unchecked: bool = False
+    deny: tuple[str, ...] = ()
 
 
 def _name(f: DriveFile) -> str:
@@ -184,6 +191,7 @@ class DriveService:
         extract: Extractor | None = None,
         guard: ParentsGuard | None = None,
         checks: RootChecks | None = None,
+        inbox: InboxSource | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.client = client
@@ -191,6 +199,7 @@ class DriveService:
         self.extract = extract  # the app's DocumentService.extract (one slot for the whole app)
         self.guard = guard or ParentsGuard(client, clock=clock)
         self.checks = checks or RootChecks(client, clock=clock)
+        self.inbox = inbox  # R2 D9: the vault inbox id; no Drive tool may read it
         self._clock = clock
         self._texts: OrderedDict[tuple[str, str], tuple[float, _Text]] = OrderedDict()
 
@@ -204,12 +213,30 @@ class DriveService:
         live = await self.checks.live(chosen)
         return live, len(chosen) - len(live)
 
+    async def _deny(self, uid: str) -> tuple[str, ...]:
+        """The ids no Drive tool may read through: the DigiLocker inbox. When it can't be read
+        the answer is unknown, so the call fails (nothing is read): fail closed."""
+        if self.inbox is None:
+            return ()
+        try:
+            found = await self.inbox(uid)
+        except Exception as exc:  # noqa: BLE001 - storage trouble: read nothing
+            log.warning("drive: inbox unreadable", extra={"reason": type(exc).__name__})
+            raise DriveError(NO_INBOX) from None
+        return (found,) if found else ()
+
+    async def offered_folders(self, owner_email: str | None) -> list[DriveFile]:
+        """The owner's own folders shared with JARVIS (what Integrations offers)."""
+        offered, _, _ = await self._offered(_address(owner_email))
+        return offered
+
     # ---- Integrations ------------------------------------------------------------------------
 
     async def view(self, uid: str, owner_email: str | None) -> dict[str, Any]:
         email = await self.client.tokens.email()
         offered, others, more = await self._offered(_address(owner_email))
         chosen = await self.roots.load(uid)
+        inbox = (await self._deny(uid)) if self.inbox is not None else ()
         readable = {r.id: not await self.checks.problem_of(r, fresh=True) for r in chosen}
         folders = [
             {
@@ -217,22 +244,32 @@ class DriveService:
                 "name": f.name,
                 "confirmed": f.id in readable,
                 "readable": readable.get(f.id, True),
+                **({"inbox": True} if f.id in inbox else {}),
             }
             for f in offered
         ]
         shown = {f.id for f in offered}
         folders += [
-            {"id": r.id, "name": r.name, "confirmed": True, "readable": readable[r.id]}
+            {
+                "id": r.id,
+                "name": r.name,
+                "confirmed": True,
+                "readable": readable[r.id],
+                **({"inbox": True} if r.id in inbox else {}),
+            }
             for r in chosen
             if r.id not in shown
         ]
-        return {
+        out: dict[str, Any] = {
             "service_email": email,
             "folders": folders,
             "others": others,
             "others_more": more,
             "max_folders": MAX_ROOTS,
         }
+        if self.inbox is not None:
+            out["inbox_wired"] = True  # the console then also asks /v1/vault/inbox (R2 D9)
+        return out
 
     async def _offered(self, mine: str | None) -> tuple[list[DriveFile], int, bool]:
         """The owner's folders shared with JARVIS (owned first), how many other shares there
@@ -294,6 +331,8 @@ class DriveService:
             self.checks.forget(folder_id)
             self.guard.forget()
             return
+        if folder_id in await self._deny(uid):
+            raise DriveRejected("is_inbox", IS_INBOX, status=409)
         mine = _address(owner_email)
         if mine is None:
             raise DriveRejected(
@@ -339,11 +378,12 @@ class DriveService:
         """The item, checked; a shortcut is followed to its target, which is checked again."""
         live, _ = await self._live(uid)
         roots = {r.id for r in live}
-        item = await self.guard.check(file_id, roots)
+        deny = await self._deny(uid)
+        item = await self.guard.check(file_id, roots, deny=deny)
         if item.is_shortcut:
             if item.target_id is None:
                 raise DriveError(BROKEN_SHORTCUT)
-            item = await self.guard.check(item.target_id, roots)
+            item = await self.guard.check(item.target_id, roots, deny=deny)
             if item.is_shortcut:
                 raise DriveError(BROKEN_SHORTCUT)
         return item
@@ -355,8 +395,9 @@ class DriveService:
         if not folder.is_folder:
             raise DriveError("That is a file, not a folder: use drive_read to read it.")
         got = await self.client.children(folder.id, page_token=page, page_size=LIST_PAGE)
-        inside = [f for f in got.files if folder.id in f.parents]
-        if len(inside) != len(got.files):  # e.g. a page token from another listing
+        deny = await self._deny(uid)
+        inside = [f for f in got.files if folder.id in f.parents and f.id not in deny]
+        if len(inside) != len(got.files):  # a page token from another listing, or the inbox
             log.warning("drive list: items from elsewhere dropped")
         return {
             "folder": folder.id,
@@ -371,6 +412,7 @@ class DriveService:
         if not roots:
             return {"query": query, "results": [], "note": NOT_SET_UP}
         scan = _Scan(WalkBudget(SEARCH_LOOKUPS))  # one search costs a bounded number of calls
+        scan.deny = await self._deny(uid)
         owners: list[str | None] = [*sorted({r.email for r in live if r.email}), None]
         failed: DriveError | None = None
         answered = 0
@@ -408,7 +450,10 @@ class DriveService:
                     continue
                 scan.seen.add(f.id)
                 try:
-                    inside = await self.guard.inside(f, roots, scan.budget)
+                    if scan.deny:
+                        inside = await self.guard.inside(f, roots, scan.budget, scan.deny)
+                    else:
+                        inside = await self.guard.inside(f, roots, scan.budget)
                 except DriveUnavailable:
                     raise
                 except DriveError:
@@ -503,7 +548,9 @@ def drive_configured(s: Settings) -> bool:
     return bool(s.drive)
 
 
-def build_drive_service(s: Settings, docs: Docs, *, extract: Extractor) -> DriveService | None:
+def build_drive_service(
+    s: Settings, docs: Docs, *, extract: Extractor, inbox: InboxSource | None = None
+) -> DriveService | None:
     """None unless `JARVIS_DRIVE=on`: then no tools, and /v1/drive says not configured. No
     network here: the token and address are fetched on first use. `extract`: the app's
     `DocumentService.extract`, so Drive files share the one extraction slot."""
@@ -512,7 +559,7 @@ def build_drive_service(s: Settings, docs: Docs, *, extract: Extractor) -> Drive
     from jarvis.drive.token import MetadataTokens
 
     roots = RootsStore(docs, prefix=s.firestore_prefix)
-    return DriveService(DriveClient(MetadataTokens()), roots, extract=extract)
+    return DriveService(DriveClient(MetadataTokens()), roots, extract=extract, inbox=inbox)
 
 
 __all__ = [
@@ -520,6 +567,7 @@ __all__ = [
     "NOT_SET_UP",
     "DriveNotFound",
     "DriveRejected",
+    "InboxSource",
     "DriveService",
     "Extractor",
     "NotInRoots",

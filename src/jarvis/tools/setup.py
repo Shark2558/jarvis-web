@@ -3,12 +3,15 @@ configured (then the fake calendar/message builtins step aside so the model sees
 the memory tools when long-term memory is on, plus web_search / web_read with a Tavily key, plus
 the document tools (slice 10 E). The to-do tools (Google Tasks) come with the Google tools: their
 scope is optional per owner, so they check it on every call (slice 10 C1). With the Recently
-deleted bin (slice 11, `undo`) the calendar and to-do deletes are undo-able and — with Google
-linked, whose tools restore — the undo tools (deleted_list / deleted_restore) are registered;
-without it every delete stays R3. Slice 12 D5/D6: contacts_search with the Google link, and
+deleted bin (slice 11, `undo`) the calendar and to-do deletes are undo-able and the undo tools
+(deleted_list / deleted_restore) are registered (R2 review M2: notes and things restore without
+Google; an event or a to-do without Google says Google isn't connected); without it every delete
+stays R3. Slice 12 D5/D6: contacts_search with the Google link, and
 whatsapp_draft always. With Drive configured (slice 12 D1, `drive`): the read-only
 chosen-folders Drive tools. With JARVIS's own Google API key (slice 12, `media`): Maps and
-YouTube search, plus the owner's playlists when the Google link exists."""
+YouTube search, plus the owner's playlists when the Google link exists. R2 (each only when on, i.e.
+with the server's token key): the vault's metadata tools, notes and links (kb_*), and where things
+are kept (belongings_*)."""
 
 from __future__ import annotations
 
@@ -25,13 +28,17 @@ from jarvis.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from jarvis.activity.store import ActivityStore
+    from jarvis.belongings.service import BelongingsService
     from jarvis.documents.service import DocumentService
     from jarvis.drive.service import DriveService
+    from jarvis.kb.service import NotesService
     from jarvis.media.service import MediaServices
     from jarvis.recall.service import MemoryService
     from jarvis.storage.docs import Docs
+    from jarvis.tools.base import Tool
     from jarvis.tools.task_marks import OutsideTasks
     from jarvis.undo.service import UndoBin
+    from jarvis.vault.service import VaultService
     from jarvis.web.service import WebService
 
 # builtins that stand in for real connectors; dropped once the real ones are registered
@@ -55,6 +62,95 @@ def _register_people(reg: ToolRegistry, google: GoogleConnector | None) -> None:
             reg.register(t)
     for t in whatsapp_tools(contacts):
         reg.register(t)
+
+
+def _register_google(
+    reg: ToolRegistry,
+    s: Settings,
+    google: GoogleConnector,
+    *,
+    undo: UndoBin | None,
+    marks: OutsideTasks | None,
+    docs: Docs | None,
+) -> None:
+    """Calendar, reminders, Gmail and to-dos (their deletes undo-able with the bin), and R1's
+    parcels, mail aloud, groceries and family calendars (on the Docs port)."""
+    from jarvis.tools.gmail import gmail_tools
+    from jarvis.tools.google_calendar import calendar_tools
+    from jarvis.tools.google_tasks import tasks_tools
+    from jarvis.tools.reminders import reminder_tools
+
+    tz = s.user_timezone  # slice 11 fix: the reminders' zone when the calendar's can't be read
+    for t in calendar_tools(google, undo=undo) + reminder_tools(google, default_tz=tz):
+        reg.register(t)
+    for t in gmail_tools(google) + tasks_tools(google, default_tz=tz, undo=undo, marks=marks):
+        reg.register(t)
+    if docs is not None:  # R1 D: parcels, mail aloud, groceries, family calendars
+        from jarvis.tools.r1_tools import r1_tools
+
+        for t in r1_tools(google, docs=docs, s=s, marks=marks):
+            reg.register(t)
+
+
+def _register_services(
+    reg: ToolRegistry,
+    memory: MemoryService | None,
+    web: WebService | None,
+    documents: DocumentService | None,
+    drive: DriveService | None,
+    media: MediaServices | None,
+) -> None:
+    """Long-term memory, web search (a Tavily key), attached files, Drive (chosen folders,
+    read-only) and Maps / YouTube (JARVIS's own Google API key): each only when it exists."""
+    tools: list[Tool] = []
+    if memory is not None:
+        from jarvis.recall.tools import memory_tools
+
+        tools += memory_tools(memory)
+    if web is not None:  # slice 10 B: only with a Tavily key (jarvis.web.service)
+        from jarvis.web.tools import web_tools
+
+        tools += web_tools(web)
+    if documents is not None:
+        from jarvis.documents.tools import document_tools
+
+        tools += document_tools(documents)
+    if drive is not None:  # slice 12 D1: read-only, chosen folders only
+        from jarvis.drive.tools import drive_tools
+
+        tools += drive_tools(drive)
+    if media is not None:  # slice 12 D2-D4: only with JARVIS's server-side Google API key
+        from jarvis.media.tools import youtube_tools
+        from jarvis.places.tools import maps_tools
+
+        tools += maps_tools(media.maps) + youtube_tools(media.youtube)
+    for t in tools:
+        reg.register(t)
+
+
+def _register_personal(
+    reg: ToolRegistry,
+    vault: VaultService | None,
+    notes: NotesService | None,
+    belongings: BelongingsService | None,
+) -> None:
+    """R2: the owner's vault list (metadata only), notes and things. Telegram refuses all three by
+    default (`telegram.rules.PERSONAL_PATTERNS`); offline mode never offers them."""
+    if vault is not None:
+        from jarvis.vault.tools import vault_tools
+
+        for t in vault_tools(vault):
+            reg.register(t)
+    if notes is not None:
+        from jarvis.kb.tools import notes_tools
+
+        for t in notes_tools(notes):
+            reg.register(t)
+    if belongings is not None:
+        from jarvis.belongings.tools import belongings_tools
+
+        for t in belongings_tools(belongings):
+            reg.register(t)
 
 
 def attach_activity(gw: Gateway, store: ActivityStore, s: Settings) -> None:
@@ -81,6 +177,9 @@ def build_gateway(
     drive: DriveService | None = None,
     media: MediaServices | None = None,
     docs: Docs | None = None,
+    vault: VaultService | None = None,
+    notes: NotesService | None = None,
+    belongings: BelongingsService | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
@@ -91,53 +190,15 @@ def build_gateway(
             continue
         reg.register(t)
     if google is not None:
-        from jarvis.tools.gmail import gmail_tools
-        from jarvis.tools.google_calendar import calendar_tools
-        from jarvis.tools.google_tasks import tasks_tools
-        from jarvis.tools.reminders import reminder_tools
-
-        tz = s.user_timezone  # slice 11 fix: the reminders' zone when the calendar's can't be read
-        for t in calendar_tools(google, undo=undo) + reminder_tools(google, default_tz=tz):
-            reg.register(t)
-        for t in gmail_tools(google) + tasks_tools(google, default_tz=tz, undo=undo, marks=marks):
-            reg.register(t)
-        if docs is not None:  # R1 D: parcels, mail aloud, groceries, family calendars
-            from jarvis.tools.r1_tools import r1_tools
-
-            for t in r1_tools(google, docs=docs, s=s, marks=marks):
-                reg.register(t)
+        _register_google(reg, s, google, undo=undo, marks=marks, docs=docs)
     _register_people(reg, google)
-    if undo is not None and google is not None:  # slice 11: restore needs the Google tools
+    if undo is not None:  # R2 review M2: notes and things are undo-able without Google too
         from jarvis.undo.tools import undo_tools
 
         for t in undo_tools(undo):
             reg.register(t)
-    if memory is not None:
-        from jarvis.recall.tools import memory_tools
-
-        for t in memory_tools(memory):
-            reg.register(t)
-    if web is not None:  # slice 10 B: only with a Tavily key (jarvis.web.service)
-        from jarvis.web.tools import web_tools
-
-        for t in web_tools(web):
-            reg.register(t)
-    if documents is not None:
-        from jarvis.documents.tools import document_tools
-
-        for t in document_tools(documents):
-            reg.register(t)
-    if drive is not None:  # slice 12 D1: read-only, chosen folders only
-        from jarvis.drive.tools import drive_tools
-
-        for t in drive_tools(drive):
-            reg.register(t)
-    if media is not None:  # slice 12 D2–D4: only with JARVIS's server-side Google API key
-        from jarvis.media.tools import youtube_tools
-        from jarvis.places.tools import maps_tools
-
-        for t in maps_tools(media.maps) + youtube_tools(media.youtube):
-            reg.register(t)
+    _register_services(reg, memory, web, documents, drive, media)
+    _register_personal(reg, vault, notes, belongings)
     return Gateway(
         registry=reg,
         policy=Policy(),

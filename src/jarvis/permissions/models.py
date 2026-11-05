@@ -61,13 +61,29 @@ class RegistrationCredential(_In):
     authenticatorAttachment: str | None = Field(default=None, max_length=32)  # noqa: N815
 
 
-Purpose = Literal["approve", "remove", "add", "disable", "cancel_reset"]
+Purpose = Literal[
+    "approve",
+    "remove",
+    "add",
+    "disable",
+    "cancel_reset",
+    # R2: unlock the vault, delete a privacy category (or Remove now), export everything
+    "vault_unlock",
+    "privacy_delete",
+    "privacy_export",
+]
+# The purposes whose challenge is bound to (owner, purpose, target); checked by `check_purpose`.
+TARGETED_PURPOSES: tuple[str, ...] = ("vault_unlock", "privacy_delete", "privacy_export")
+TARGET_PATTERN = r"^[A-Za-z0-9_.:=-]{1,64}$"
 
 
 class ChallengeRequest(_In):
     purpose: Purpose
     approval_id: str | None = Field(default=None, max_length=64)
     credential_id: str | None = Field(default=None, max_length=CRED_ID_MAX, pattern=B64)
+    # what a targeted purpose is for (a privacy category and its rev, a bin id), bound into the
+    # challenge so a proof made for one target can't serve another
+    target: str | None = Field(default=None, max_length=64, pattern=TARGET_PATTERN)
 
 
 class RegisterOptionsRequest(_In):
@@ -163,6 +179,8 @@ __all__ = [
     "PasskeyView",
     "PermissionsPatch",
     "PermissionsView",
+    "TARGETED_PURPOSES",
+    "TARGET_PATTERN",
     "Purpose",
     "RegisterOptionsRequest",
     "RegisterRequest",

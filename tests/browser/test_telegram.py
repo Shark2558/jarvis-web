@@ -72,6 +72,8 @@ def _wire(page: Any, server_url: str, fake: Fake) -> None:
             b = req.post_data_json
             if "allow_private_reads" in b:
                 fake.view = {**fake.view, "allow_private_reads": b["allow_private_reads"]}
+            if "allow_personal_reads" in b:
+                fake.view = {**fake.view, "allow_personal_reads": b["allow_personal_reads"]}
             if "alerts" in b:
                 fake.view = {**fake.view, "alerts": {**fake.view["alerts"], **b["alerts"]}}
             body = fake.view
@@ -199,8 +201,11 @@ def test_paired_controls_confirm_save_and_unpair(browser: Any, server_url: str, 
         c.page.locator("#telegramDialog[open]").wait_for()
         said = str(c.page.locator("#telegramDialogText").text_content())
         assert "end-to-end" in said
-        # the switch also covers family calendars and recently deleted items (R1 review fix)
-        assert "family calendars" in said and "recently deleted" in said
+        # the switch also covers family calendars and deleted events and to-dos (R1 review fix);
+        # deleted vault documents, notes and things, and any restore, need both (R2 review H1)
+        assert "family calendars" in said and "events and to-dos in Recently deleted" in said
+        assert "Deleted vault documents, notes and things stay hidden" in said
+        assert "restoring anything from Recently deleted in that chat needs both switches" in said
         c.page.locator("#telegramDialogNo").click()
         assert not [x for x in fake.calls if x["method"] == "PUT"]
         c.page.locator("#telegramReads").click()
@@ -226,6 +231,51 @@ def test_paired_controls_confirm_save_and_unpair(browser: Any, server_url: str, 
         c.page.locator("#telegramDialogYes").click()
         c.page.locator("#telegramPair").wait_for()
         assert [x for x in fake.calls if x["method"] == "DELETE"][-1]["csrf"] == "JARVIS"
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+def test_the_personal_switch_names_exactly_what_it_opens(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R2 D12: vault metadata (never files), notes and things; its own switch, its own PUT."""
+    fake = Fake({})
+    fake.view = fake.paired_view(allow_personal_reads=False)
+    c = _open(browser, server_url, token, fake, DESKTOP)
+    try:
+        sw = c.page.locator("#telegramPersonal")
+        sw.wait_for()
+        assert sw.get_attribute("aria-pressed") == "false"
+        label = str(c.page.locator("#telegramSet").text_content())
+        assert "vault list, notes and things (never files)" in label
+        sw.click()
+        c.page.locator("#telegramDialog[open]").wait_for()
+        said = str(c.page.locator("#telegramDialogText").text_content())
+        assert "end-to-end" in said
+        assert "vault list" in said and "never the files" in said and "last 4" in said
+        assert "notes" in said and "voice memos" in said and "saved links" in said
+        assert "where you keep things" in said
+        assert "email" not in said.lower()  # this switch opens nothing of the other one
+        # R2 review H1: Recently deleted needs the other switch too
+        assert "Only with the other switch on too" in said and "Recently deleted" in said
+        assert c.page.evaluate("document.activeElement.id") == "telegramDialogNo"
+        c.page.locator("#telegramDialogNo").click()
+        assert not [x for x in fake.calls if x["method"] == "PUT"]
+        sw.click()
+        c.page.locator("#telegramDialogYes").click()
+        c.page.locator('#telegramPersonal[aria-pressed="true"]').wait_for()
+        put = [x for x in fake.calls if x["method"] == "PUT"][-1]
+        assert put["body"] == {"allow_personal_reads": True} and put["csrf"] == "JARVIS"
+        assert c.page.locator('#telegramReads[aria-pressed="false"]').count() == 1
+        # the vault alert switch (D5), off by default
+        va = c.page.locator("#telegramAlert_vault_expiry")
+        assert va.get_attribute("aria-pressed") == "false"
+        va.click()
+        c.page.locator('#telegramAlert_vault_expiry[aria-pressed="true"]').wait_for()
+        assert [x for x in fake.calls if x["method"] == "PUT"][-1]["body"] == {
+            "alerts": {"vault_expiry": True}
+        }
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()

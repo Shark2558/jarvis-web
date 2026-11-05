@@ -12,7 +12,7 @@ KW: dict[str, Any] = {"tz": "Asia/Kolkata", "session_id": "s", "turn_index": 1}
 
 
 def test_persona_is_p4_6() -> None:
-    assert p.PERSONA_VERSION == "p4.6"
+    assert p.PERSONA_VERSION == "p4.7"
 
 
 def test_the_telegram_rule_says_what_telegram_can_and_cannot_do() -> None:

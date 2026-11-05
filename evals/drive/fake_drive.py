@@ -20,6 +20,7 @@ Every request is recorded, so tests assert on what Drive actually received.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -145,6 +146,7 @@ class FakeDrive:
             out["owners"] = [{"emailAddress": owner, "displayName": "Owner"}]
         if not item.mime.startswith("application/vnd.google-apps."):
             out["size"] = str(item.size if item.size is not None else len(item.content))
+            out["md5Checksum"] = hashlib.md5(item.content, usedforsecurity=False).hexdigest()
         if item.target is not None:
             target = self.items.get(item.target)
             out["shortcutDetails"] = {

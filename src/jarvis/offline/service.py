@@ -134,6 +134,11 @@ class LocalFallback:
         self._alert_at: dict[str, float] = {}
         self._ok_written_at: float | None = None
 
+    @property
+    def store(self) -> LocalBrainStore:
+        """The laptop's stored address and key (R2: the privacy dashboard's `offline` row)."""
+        return self._store
+
     # ---- FallbackBrain (called by ModelRouter) -------------------------------------------
 
     async def ready(self) -> bool:

@@ -282,7 +282,9 @@ async def test_gmail_read_and_search_withhold_a_code_mail_on_voice_and_telegram(
     for res in (search, read):
         spoken = spoken_fields(res)
         assert WITHHELD_LINE in spoken, spoken
-        assert not re.search(r"one two|123|12\|34|onnu|456", res.for_model()), res.for_model()
+        # the fences' random 6-hex ids (e.g. "b1237f") are not the mail's words: drop them first
+        text = re.sub(r"· [0-9a-f]{6}>>|<<END [0-9a-f]{6}>>", "", res.for_model())
+        assert not re.search(r"one two|123|12\|34|onnu|456", text), res.for_model()
 
 
 async def test_gmail_read_leaves_an_ordinary_mail_alone_on_voice() -> None:

@@ -41,6 +41,15 @@ _GOOGLE_ROWS = frozenset(
 )
 _TASKS_ROWS = frozenset({"todo_change", "todo_remove", "todo_delete", "groceries"})
 _SERVER_FEATURES = {"drive": "drive", "maps": "media", "youtube": "media", "web": "web"}
+# R2 I1: rows whose feature is off without the server's encryption key (or switched off)
+NO_KEY = "Not available on this server (no encryption key)."
+_KEYED_FEATURES = {
+    "vault_read": "vault",
+    "vault_change": "vault",
+    "notes_read": "notes",
+    "notes_change": "notes",
+    "belongings": "belongings",
+}
 
 
 @dataclass(frozen=True)
@@ -82,6 +91,9 @@ def _row(gid: str, state: Any, link: tuple[str, list[str]] | None) -> Availabili
             if getattr(state, _SERVER_FEATURES[gid], None) is not None
             else Availability(False, NOT_HERE)
         )
+    if gid in _KEYED_FEATURES:
+        on = getattr(state, _KEYED_FEATURES[gid], None) is not None
+        return OK if on else Availability(False, NO_KEY)
     if gid == "whatsapp":  # typed numbers always work; names need the Contacts Grant
         has = link is not None and link[0] == "ok" and can_use_contacts(link[1])
         return OK if has or link is None else Availability(True, WHATSAPP_BY_NAME)
@@ -108,6 +120,7 @@ async def notes(state: Any, uid: str) -> dict[str, Availability]:
 __all__ = [
     "CONNECT",
     "CONTACTS_GRANT",
+    "NO_KEY",
     "NOT_HERE",
     "OK",
     "RECONNECT",

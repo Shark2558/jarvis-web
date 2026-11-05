@@ -900,7 +900,8 @@ def test_phone_tab_bar_has_memory_and_a_more_sheet(make: Callable[..., Console])
     more.click()
     sheet.wait_for(state="visible")
     assert more.get_attribute("aria-expanded") == "true"
-    assert page.evaluate("document.activeElement.dataset.sheetOpen") == "vitals"
+    # focus lands on the first item: Vault since R2 (its four panels lead the sheet, as in the dock)
+    assert page.evaluate("document.activeElement.dataset.sheetOpen") == "vault"
     page.keyboard.press("Escape")
     sheet.wait_for(state="hidden")
     expect(more).to_have_attribute("aria-expanded", "false")  # the close event comes a tick later

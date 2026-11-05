@@ -308,6 +308,51 @@ GROUPS: tuple[PermissionGroup, ...] = (
         R1,
         (_m("drive_*"),),
     ),
+    # R2 D7 / D10 / D11: the vault, notes and things rows (after Drive, before Maps). None is
+    # irreversible: deletes keep a copy in Recently deleted for 30 days.
+    PermissionGroup(
+        "vault_read",
+        "Vault",
+        "Look at your vault list",
+        "Document types, whose they are, the last 4 characters and dates \u2014 never the files "
+        "or full numbers. Off on Telegram unless you switch it on.",
+        R1,
+        (_m("vault_*", R1),),
+    ),
+    PermissionGroup(
+        "vault_change",
+        "Vault",
+        "Change vault dates",
+        "Expiry and issue dates you tell JARVIS. Files are added and removed only in the Vault "
+        "panel.",
+        R2,
+        (_m("vault_*", R2),),
+    ),
+    PermissionGroup(
+        "notes_read",
+        "Notes",
+        "Search and read your notes and links",
+        "Text from saved web pages is treated as information, never instructions.",
+        R1,
+        (_m("kb_*", R1),),
+    ),
+    PermissionGroup(
+        "notes_change",
+        "Notes",
+        "Save, change and delete notes and links",
+        "Deleted notes stay in Recently deleted for 30 days.",
+        R2,
+        (_m("kb_*", R2),),
+    ),
+    PermissionGroup(
+        "belongings",
+        "Things",
+        "Remember where you keep things",
+        "Where you put your passport, keys or papers. By voice it saves without a card unless "
+        "JARVIS just read an email or a page. Off on Telegram unless you switch it on.",
+        R2,
+        (_m("belongings_*"),),
+    ),
     PermissionGroup(  # slice 12 D8 (D3)
         "maps",
         "Maps",

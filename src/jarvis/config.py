@@ -219,6 +219,21 @@ class Settings(BaseSettings):
     activity_retention_days: int = Field(
         default=7, ge=1, le=30, description="Days the Activity view keeps its rows"
     )
+    # --- R2 memory and vault (docs/plans/r2-memory-vault.md). All encrypted by JARVIS with keys
+    # derived from `token_key` (jarvis.keyring); without that key they stay OFF.
+    vault_enabled: bool = Field(default=True, description="Document vault (needs token_key)")
+    vault_max_total_mb: int = Field(
+        default=150, ge=10, le=500, description="MB of original files the vault keeps in total"
+    )
+    vault_unlock_minutes: int = Field(
+        default=10, ge=2, le=30, description="Minutes a vault unlock token stays valid"
+    )
+    notes_enabled: bool = Field(
+        default=True, description="Notes, memos and links (needs token_key)"
+    )
+    belongings_enabled: bool = Field(
+        default=True, description="'Where did I keep it?' things (needs token_key)"
+    )
     # --- Maps + YouTube (slice 12 D2): JARVIS's own server-side Google API key, restricted to
     # Places (New), Routes and YouTube Data v3. No key: those tools are not registered.
     google_api_key: SecretStr | None = Field(

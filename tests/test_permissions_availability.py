@@ -9,6 +9,7 @@ from jarvis.integrations.google import CONTACTS_SCOPE, TASKS_SCOPE
 from jarvis.permissions.availability import (
     CONNECT,
     CONTACTS_GRANT,
+    NO_KEY,
     NOT_HERE,
     RECONNECT,
     TASKS_GRANT,
@@ -100,3 +101,21 @@ async def test_memory_and_documents_rows_never_have_a_note() -> None:
     out = await notes(state(UNLINKED), "owner")
     for gid in ("memory_save", "memory_forget", "documents"):
         assert out[gid].available is True and out[gid].note == ""
+
+
+R2_ROWS = ("vault_read", "vault_change", "notes_read", "notes_change", "belongings")
+
+
+async def test_r2_rows_say_when_their_feature_is_off_here() -> None:
+    """R2 I1: no encryption key (or switched off) -> the row stays listed, with plain words."""
+    off = await notes(state(linked(), vault=None, notes=None, belongings=None), "owner")
+    for gid in R2_ROWS:
+        assert off[gid].available is False and off[gid].note == NO_KEY
+    on = await notes(state(linked(), vault=object(), notes=object(), belongings=object()), "owner")
+    for gid in R2_ROWS:
+        assert on[gid].available is True and on[gid].note == ""
+
+
+async def test_r2_rows_need_no_google() -> None:
+    out = await notes(state(UNLINKED, vault=object(), notes=object(), belongings=object()), "owner")
+    assert all(out[gid].available for gid in R2_ROWS)

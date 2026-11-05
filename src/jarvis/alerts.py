@@ -12,7 +12,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
 
-AlertKind = Literal["approval_waiting", "offline_on", "offline_off", "brief_ready", "test"]
+AlertKind = Literal[
+    "approval_waiting", "offline_on", "offline_off", "brief_ready", "vault_expiry", "test"
+]
 
 
 @dataclass(frozen=True)

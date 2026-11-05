@@ -302,6 +302,90 @@ def test_remove_now_asks_once_then_removes_the_copy(
         c.close()
 
 
+NOTE_ID = "del_aaaaaaaaaaaaaaaaaaaa"
+
+
+class PasskeyBin(FakeBin):
+    """R2: Remove now on a note answers 403 passkey_required until the DELETE carries a proof."""
+
+    def __init__(self, items: list[dict[str, Any]]) -> None:
+        super().__init__(items, {})
+        self.bodies: list[Any] = []
+
+    def handle(self, route: Any) -> None:
+        req = route.request
+        if req.method == "DELETE":
+            body = req.post_data_json if req.post_data else None
+            self.bodies.append(body)
+            if not (body and body.get("proof")):
+                out = {"error": "passkey_required", "detail": "Approve this with your passkey."}
+                route.fulfill(status=403, content_type="application/json", body=json.dumps(out))
+                return
+        super().handle(route)
+
+
+def test_remove_now_on_a_note_asks_for_the_passkey_bound_to_that_entry(
+    browser: Any, server_url: str, token: str
+) -> None:
+    fake = PasskeyBin([_item(NOTE_ID, "note", "A note from 3 Nov")])
+    c = _console(browser, server_url, token, DESKTOP, fake)
+    try:
+        c.open()
+        c.page.evaluate(
+            "window.__proofs = []; window.JarvisPasskey = { supported: () => true,"
+            " message: () => '', prove: async (p, t) => { window.__proofs.push([p, t]);"
+            " return { challenge_id: 'c'.repeat(20), credential: {} }; } };"
+        )
+        c.open_panel("approvals")
+        c.page.locator("#delSetBtn").click()
+        rm = c.page.locator(f'#delList .drow[data-id="{NOTE_ID}"] [data-act="remove"]')
+        rm.wait_for()
+        rm.click()
+        rm.click()
+        c.page.wait_for_function(
+            f"() => !document.querySelector('#delList .drow[data-id=\"{NOTE_ID}\"]')"
+        )
+        assert c.page.evaluate("window.__proofs") == [["privacy_delete", NOTE_ID]]
+        assert fake.bodies[0] is None and fake.bodies[1]["proof"]["challenge_id"] == "c" * 20
+        assert fake.removed == [NOTE_ID]
+        # the 403 the fake answers first is logged by the browser itself; no script error
+        assert c.csp_violations() == [] and not [e for e in c.errors if "pageerror" in e]
+    finally:
+        c.close()
+
+
+def test_a_stale_sign_in_offers_signing_in_again(browser: Any, server_url: str, token: str) -> None:
+    class Stale(FakeBin):
+        def handle(self, route: Any) -> None:
+            if route.request.method == "DELETE":
+                out = {
+                    "error": "proof_required",
+                    "detail": "Sign in with Google again (within 5 minutes) to remove it for good.",
+                    "reason": "reauth",
+                }
+                route.fulfill(status=403, content_type="application/json", body=json.dumps(out))
+                return
+            super().handle(route)
+
+    fake = Stale([_item(NOTE_ID, "thing", "A thing you noted")], {})
+    c = _console(browser, server_url, token, DESKTOP, fake)
+    try:
+        c.open()
+        c.open_panel("approvals")
+        c.page.locator("#delSetBtn").click()
+        rm = c.page.locator(f'#delList .drow[data-id="{NOTE_ID}"] [data-act="remove"]')
+        rm.wait_for()
+        rm.click()
+        rm.click()
+        row = c.page.locator(f'#delList .drow[data-id="{NOTE_ID}"]')
+        row.locator('[data-act="reauth"]').wait_for()
+        assert "Sign in with Google again" in str(row.locator(".lerr").text_content())
+        assert fake.removed == []
+        assert c.csp_violations() == [] and not [e for e in c.errors if "pageerror" in e]
+    finally:
+        c.close()
+
+
 def test_phone_fits_without_horizontal_scroll(
     browser: Any, server_url: str, token: str, bin_: FakeBin
 ) -> None:

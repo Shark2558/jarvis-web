@@ -297,6 +297,48 @@ GET  /v1/quota                    free-allowance counts for Vitals (never a pric
 GET  /v1/integrations             … + drive_available, maps_available (false: off here or Never)
 ```
 
+## R2 - memory and personal vault
+
+A document vault with expiry reminders, DigiLocker import through a Drive folder, notes / voice
+memos / links, "Where did I keep it?" (Things) and a Privacy panel listing everything JARVIS keeps.
+Plan and decisions D1-D16: `docs/plans/r2-memory-vault.md`. Persona `p4.7`.
+
+```
+jarvis/keyring.py                one root (JARVIS_TOKEN_KEY) -> purpose keys (HKDF); no key: R2 OFF
+jarvis/vault/                    D1-D8: files as AES-GCM chunks in Firestore (<= 10 MB each, 150 MB
+                                 total), metadata + last 4 only, PDF text via the documents'
+                                 sandboxed extractor, reminders at 90 / 30 / 7 days (tick job)
+jarvis/vault_inbox/              D9: a Drive folder you share and pick; Drive tools never read it
+jarvis/kb/                       D10: notes, memos (transcript only), links; trust by origin
+jarvis/belongings/               D11: where things are kept, with history; voice adds need no card
+jarvis/privacy/                  D14: one row per kind of data; export; delete (passkey for content)
+jarvis/api/personal.py           the app wiring: services, Recently deleted, tick jobs, privacy
+```
+
+- **The model sees metadata only**: `vault_list` / `vault_expiring` (type, whose, dates, last 4)
+  and `vault_set_dates`; no tool reads a file or a full number. `kb_*` and `belongings_*` read
+  and write notes and things; page text from a link is other people's words (fenced, never
+  vouches). A card proposed on a spoken turn and approved on screen still writes `voice` origin.
+- **Telegram**: the vault list, notes and things are a second switch (Integrations -> Telegram ->
+  "Let Telegram answer from my vault list, notes and things (never files)", off by default);
+  the vault reminder alert has its own switch (off by default).
+- **Recently deleted**: a deleted document, note or thing comes back in place; "Remove now" asks
+  for the passkey (or a Google sign-in under 5 minutes old).
+- **Activity** shows fixed words ("Saved a note", "Looked up where something is kept"), never a
+  note's text or a place.
+
+```
+GET  /v1/vault | POST /v1/vault/upload | PATCH/DELETE /v1/vault/items/{id} | POST /v1/vault/unlock
+POST /v1/vault/items/{id}/files/{fid}/ticket | GET /v1/vault/download/{ticket}
+GET/PUT/DELETE /v1/vault/inbox | POST /v1/vault/inbox/check
+GET/POST /v1/things | PATCH/DELETE /v1/things/{id} | GET /v1/things/{id}/history
+GET/POST /v1/notes | PATCH/DELETE /v1/notes/{id} | POST /v1/notes/{id}/fetch | export / import
+GET /v1/privacy | POST /v1/privacy/{id}/export | POST /v1/privacy/export-all
+POST /v1/privacy/{id}/delete
+DELETE /v1/deleted/{id} {proof?}   Remove now (vault document, note, thing: passkey)
+PUT  /v1/telegram/settings {allow_personal_reads?, alerts: {vault_expiry?}}
+```
+
 ## Quick start
 
 ```bash
@@ -342,6 +384,9 @@ All settings are `JARVIS_*` env vars (see `.env.example`). Notable ones:
   tools and `/v1/maps/places` / `/v1/quota` say not configured.
 - `JARVIS_MAPS_PRICING=global|india` — which of Google's Maps price lists the billing account is
   on (default `global`, the smaller free allowance; `india` only for a billing account in rupees).
+- `JARVIS_VAULT_ENABLED`, `JARVIS_NOTES_ENABLED`, `JARVIS_BELONGINGS_ENABLED` (default on),
+  `JARVIS_VAULT_MAX_TOTAL_MB` (150, 10-500), `JARVIS_VAULT_UNLOCK_MINUTES` (10, 2-30) - R2; all
+  need `JARVIS_TOKEN_KEY` (without it they are off and say so; nothing is stored in clear).
 - `JARVIS_VOICE_CLOUD=true|false`, `JARVIS_VOICE_LANGUAGE=en-IN` — Google Cloud speech (slice 9)
   with Application Default Credentials; without them the console uses the browser's voice.
 - `JARVIS_VOICE_TTS_FREE_CHARS` (default 900000 per voice type) and
@@ -388,6 +433,8 @@ python evals/undo/run.py --mock     # slice 11: undo-able deletes, cap, restore 
 python evals/reminders/run.py --mock    # slice 11: reminders (plan evals 5, 6) (+ control)
 python evals/approvals/run.py --mock    # slice 11: Approve all, draft recipients (+ 3 controls)
 python evals/trust/run.py --mock    # slice 11 D8: provenance trust (+ 3 controls)
+python evals/vault/run.py --mock    # R2: vault fields, crypto, reminders, privacy (+ 4 controls)
+python evals/r2_needles/run.py --mock   # R2: no needle through a side door (+ control)
 python evals/run_all_mock.py        # everything above, mock mode (what CI should run)
 ```
 

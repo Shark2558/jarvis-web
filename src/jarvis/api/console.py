@@ -65,7 +65,17 @@ APP_ASSETS: dict[str, str] = {
     "console-offline.css": "text/css",
     "console-family.js": _JS,  # R1 D: Integrations -> Family calendars
     "console-family.css": "text/css",
-    "console-brief-sections.js": _JS,  # R1 D: Deliveries and Family today in the Brief panel
+    "console-brief-sections.js": _JS,  # R1 D + R2 A: Deliveries, Family today, Documents
+    "console-vault.js": _JS,  # R2 A: the Vault panel (list, unlock, open, export)
+    "console-vault-add.js": _JS,  # R2 A: Vault -> Add (upload, the proposal, Confirm)
+    "console-vault.css": "text/css",
+    "console-things.js": _JS,  # R2 B: Things ("Where did I keep it?")
+    "console-things.css": "text/css",
+    "console-notes.js": _JS,  # R2 C: Notes, memos and links
+    "console-notes-memo.js": _JS,  # R2 C: Record a voice memo (transcript only)
+    "console-notes.css": "text/css",
+    "console-privacy.js": _JS,  # R2 D: the Privacy panel
+    "console-privacy.css": "text/css",
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",

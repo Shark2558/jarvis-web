@@ -33,7 +33,7 @@ from jarvis.alerts import AlertKind, AlertSink
 from jarvis.home.ports import LABEL_ID
 
 Urgency = Literal["urgent", "important", "info"]
-SignalSource = Literal["home", "nudge", "call", "message"]
+SignalSource = Literal["home", "nudge", "call", "message", "system"]  # R4: vitals + self-health
 Action = Literal["ring", "silent", "hold", "drop"]
 FeedDecision = Literal["ring", "silent", "held", "dropped"]
 MAX_PUSH_DEVICES = 5  # D11
@@ -60,6 +60,12 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "offline_on": "info",
         "offline_off": "info",
         "brief_ready": "info",
+        # R4: a red vitals line and a self-health fault ring through quiet hours (never held, like
+        # hazards); an amber warning and a recovery are info (silent / feed only).
+        "vitals_critical": "urgent",
+        "health_fault": "urgent",
+        "vitals_warn": "info",
+        "health_recovered": "info",
     }
 )
 _FEED: dict[str, FeedDecision] = {

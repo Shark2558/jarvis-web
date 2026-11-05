@@ -261,6 +261,32 @@ class Settings(BaseSettings):
     webpush_enabled: bool = Field(
         default=True, description="Browser notifications (Web Push; needs token_key)"
     )
+    # --- R4 (docs/plans/r4-vitals-health-people.md): vitals, self-health, Photos->faces, scoped
+    # people research, a no-AI mode. All free; no new secret; vitals/health make no model call.
+    brain_mode: Literal["ai", "none"] = Field(
+        default="ai",
+        description="'none' answers with no model at all (deterministic skills only); R1's "
+        "automatic laptop fallback is separate (D7).",
+    )
+    vitals_enabled: bool = Field(
+        default=True, description="Vitals board: API keys, quotas, bills and limits (D2)"
+    )
+    vitals_amber_fraction: float = Field(
+        default=0.8, ge=0.5, le=0.99, description="Warn amber at this fraction of a limit (D3)"
+    )
+    vitals_expiry_amber_days: int = Field(
+        default=30, ge=1, le=120, description="Warn amber this many days before expiry/renewal (D3)"
+    )
+    health_enabled: bool = Field(
+        default=True, description="JARVIS self-health check, spoken, runs with the brain off (D5)"
+    )
+    photos_enabled: bool = Field(
+        default=True,
+        description="Google Photos Picker -> faces & contacts (needs token_key + the R3 home kit)",
+    )
+    people_research_enabled: bool = Field(
+        default=True, description="Scoped people research: public figures / work due-diligence (D10)"
+    )
     # --- Maps + YouTube (slice 12 D2): JARVIS's own server-side Google API key, restricted to
     # Places (New), Routes and YouTube Data v3. No key: those tools are not registered.
     google_api_key: SecretStr | None = Field(

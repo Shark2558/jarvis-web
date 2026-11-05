@@ -417,6 +417,53 @@ GROUPS: tuple[PermissionGroup, ...] = (
         R1,
         (_m("youtube_*"),),
     ),
+    # R4 (docs/plans/r4-vitals-health-people.md "New tools"): vitals, self-health, people research
+    # and the own-account connectors (after YouTube). None is irreversible: the only "delete" is a
+    # tracked-key record, which is reversible metadata (re-add it), so vitals change stays R2.
+    PermissionGroup(
+        "vitals",
+        "Vitals",
+        "See your keys, quotas, bills and limits",
+        "Usage, limits, reset and expiry for everything JARVIS uses, and this month's spend. "
+        "Read only.",
+        R1,
+        (_m("vitals_*", R1),),
+    ),
+    PermissionGroup(
+        "vitals_change",
+        "Vitals",
+        "Add, edit and remove the keys you track",
+        "The limit and expiry you type for a key. Removing a tracked key is reversible (re-add it).",
+        R2,
+        (_m("vitals_*", R2),),
+    ),
+    PermissionGroup(
+        "systems",
+        "Systems check",
+        "Check JARVIS's own health",
+        "Pings every connection and reads the result aloud. Read only, and it works with the AI "
+        "switched off.",
+        R1,
+        (_m("systems_*"), _m("health_*", R1)),
+    ),
+    PermissionGroup(
+        "people",
+        "People research",
+        "Research a person and open their public profiles",
+        "Public figures and work due-diligence from public sources. JARVIS opens profiles in your "
+        "browser for you to read; it never gathers a private person's private accounts.",
+        R1,
+        (_m("people_*"), _m("research_*")),
+    ),
+    PermissionGroup(
+        "connectors",
+        "Connectors",
+        "Connect your own GitHub and Google Photos",
+        "Reads your own GitHub (repos, activity) and the photos you pick in Google Photos. Your "
+        "GitHub token is kept encrypted, never shown. Read only.",
+        R1,
+        (_m("connect_*"), _m("github_*"), _m("photos_*")),
+    ),
 )
 _BY_ID = {g.id: g for g in GROUPS}
 

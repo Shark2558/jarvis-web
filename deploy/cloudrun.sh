@@ -731,7 +731,8 @@ fi
 cat <<'MSG'
 
 VAULT: on - files encrypted in Firestore (Mumbai) with jarvis-token-key. Keep that secret: without it
-the vault can't be opened. Open the console -> Vault; documents open only with your passkey.
+the vault can't be opened. Open the console -> Vault; documents open with your passkey, or with a fresh Google
+sign-in if you have no passkey yet.
 MSG
 if [ "$DRIVE_STATE" = on ]; then
 cat <<MSG

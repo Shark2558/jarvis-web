@@ -59,3 +59,8 @@ def test_the_summary_tells_him_to_keep_the_key(script: str) -> None:
     assert "VAULT: on - files encrypted in Firestore (Mumbai) with jarvis-token-key." in script
     assert "Keep that secret: without it" in script
     assert "the vault can't be opened" in script
+
+
+def test_the_summary_does_not_claim_only_a_passkey_opens_documents(script: str) -> None:
+    assert "only with your passkey" not in script
+    assert "or with a fresh Google" in script and "sign-in if you have no passkey yet" in script

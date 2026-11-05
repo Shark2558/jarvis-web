@@ -128,3 +128,14 @@ async def test_sweep_drops_expired() -> None:
     clock.advance(700)
     assert await store.sweep(UID) == 1
     assert docs._data[f"jarvis_vault_unlocks/{UID}"] == {"grants": [], "tickets": []}
+
+
+async def test_ticket_never_outlives_the_unlock_window() -> None:
+    store, _, clock = build(10)
+    g = await store.grant(UID)
+    clock.advance(590)  # 10 seconds of the window left
+    t = await store.ticket(UID, g.token, "v_000000000001", "f_000000000001")
+    assert t.expires_in_s <= 10
+    clock.advance(11)  # the window is over, though the ticket's own 60 seconds are not
+    with pytest.raises(TicketGone):
+        await store.take(UID, t.ticket)

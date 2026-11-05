@@ -12,6 +12,7 @@ are marked sent; at most 3 alerts a run, more become one summary. Alert text is 
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -20,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 from jarvis.alerts import AlertSink
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Docs, Set
+from jarvis.storage.docs import Docs, DocTx
 from jarvis.vault.models import ME, TYPES, Item, VaultIndex, days_left
 from jarvis.vault.service import IST, VaultService
 
@@ -28,6 +29,7 @@ log = get_logger(__name__)
 DEFAULT_BRIEF_TIME = dt.time(9, 0)
 MAX_ALERTS = 3
 EXPIRED_QUIET_DAYS = 30  # an item expired longer ago than this is marked, not announced
+CLAIM_STALE_S = 300  # a run that died half-way may be taken over after 5 minutes
 EXPIRED, TODAY = -1, 0  # thresholds beyond the day counts
 HOW = "Open the console and go to Vault."
 
@@ -80,6 +82,18 @@ def _candidate(item: Item, today: dt.date, sent: dict[str, Any]) -> _Candidate |
     if not reached:
         return None
     return _Candidate(item, left, tuple(_key(t) for t in reached), _key(min(reached)))
+
+
+def _parse(value: Any) -> dt.datetime | None:
+    try:
+        when = dt.datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=dt.UTC)
+
+
+def _sent(doc: dict[str, Any]) -> dict[str, dict[str, str]]:
+    return {k: dict(v) for k, v in (doc.get("sent") or {}).items() if isinstance(v, dict)}
 
 
 class VaultReminders:
@@ -138,21 +152,85 @@ class VaultReminders:
             if local.time() < (at or DEFAULT_BRIEF_TIME):
                 return None
         path = f"{self._col}/{uid}"
-        doc = await self._d.get(path) or {}
-        if doc.get("last_run_day") == today.isoformat():
+        sent_state = await self._claim(path, today)
+        if sent_state is None:
             return None
         index = await self._svc.index(uid)
-        sent_state: dict[str, dict[str, str]] = {
-            k: dict(v) for k, v in (doc.get("sent") or {}).items() if isinstance(v, dict)
-        }
-        count = await self._deliver(uid, index, today, sent_state)
+        count = await self._deliver(uid, index, today, sent_state, path)
         live = {i.id for i in index.live_items()}
-        kept = {k: v for k, v in sent_state.items() if k in live}
-        await self._d.write([Set(path, {"last_run_day": today.isoformat(), "sent": kept})])
+        await asyncio.shield(self._finish(path, today, sent_state, live))
         return count
 
+    async def _claim(self, path: str, today: dt.date) -> dict[str, dict[str, str]] | None:
+        """Take today's run in a transaction (only one caller wins), or None. The sent state is
+        returned with it; an unfinished claim may be taken over once it has gone stale."""
+        now = self._clock()
+
+        async def fn(tx: DocTx) -> dict[str, dict[str, str]] | None:
+            doc = await tx.get(path) or {}
+            if doc.get("last_run_day") == today.isoformat():
+                at = _parse(doc.get("claimed_at"))
+                if (
+                    doc.get("done") is True
+                    or at is None
+                    or (now - at).total_seconds() < CLAIM_STALE_S
+                ):
+                    return None
+            sent = _sent(doc)
+            tx.set(
+                path,
+                {
+                    "last_run_day": today.isoformat(),
+                    "claimed_at": now.isoformat(),
+                    "done": False,
+                    "sent": sent,
+                },
+            )
+            return sent
+
+        return await self._d.transaction(fn)
+
+    async def _mark(self, path: str, marks: dict[str, dict[str, str]]) -> None:
+        """Record sent alerts at once (merged into the stored state), so a cancel or a crash
+        right after a send can never make the next run send it again."""
+
+        async def fn(tx: DocTx) -> None:
+            doc = await tx.get(path) or {}
+            sent = _sent(doc)
+            for item_id, keys in marks.items():
+                sent.setdefault(item_id, {}).update(keys)
+            tx.set(path, {**doc, "sent": sent})
+
+        await self._d.transaction(fn)
+
+    async def _finish(
+        self, path: str, today: dt.date, sent: dict[str, dict[str, str]], live: set[str]
+    ) -> None:
+        async def fn(tx: DocTx) -> None:
+            doc = await tx.get(path) or {}
+            merged = _sent(doc)
+            for item_id, keys in sent.items():
+                merged.setdefault(item_id, {}).update(keys)
+            kept = {k: v for k, v in merged.items() if k in live}
+            tx.set(
+                path,
+                {
+                    "last_run_day": today.isoformat(),
+                    "claimed_at": doc.get("claimed_at"),
+                    "done": True,
+                    "sent": kept,
+                },
+            )
+
+        await self._d.transaction(fn)
+
     async def _deliver(
-        self, uid: str, index: VaultIndex, today: dt.date, sent: dict[str, dict[str, str]]
+        self,
+        uid: str,
+        index: VaultIndex,
+        today: dt.date,
+        sent: dict[str, dict[str, str]],
+        path: str,
     ) -> int:
         due: list[_Candidate] = []
         for item in index.live_items():
@@ -187,8 +265,10 @@ class VaultReminders:
             result = await self._alerts.send(uid, text, kind="vault_expiry")
             if result.sent:  # a failed send is retried tomorrow
                 delivered += 1
-                for c in group:
-                    sent[c.item.id].update({k: today.isoformat() for k in c.fresh})
+                marks = {c.item.id: {k: today.isoformat() for k in c.fresh} for c in group}
+                for item_id, keys in marks.items():
+                    sent[item_id].update(keys)
+                await asyncio.shield(self._mark(path, marks))
         return delivered
 
 

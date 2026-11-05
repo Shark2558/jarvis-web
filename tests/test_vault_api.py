@@ -1,6 +1,7 @@
 # tests/test_vault_api.py -- R2 D6: owner-only routes, unlock, single-use tickets, console-only
 from __future__ import annotations
 
+import asyncio
 import io
 import zipfile
 from collections.abc import AsyncIterator
@@ -399,6 +400,17 @@ async def test_nothing_is_sent_when_the_audit_cannot_be_written(rig: Rig) -> Non
     assert (await rig.c.post("/v1/vault/unlock", json={}, headers=CSRF)).status_code == 503
 
 
+async def test_download_without_audit_chain_sends_nothing(rig: Rig) -> None:
+    await login(rig.c)
+    item = (await upload(rig.c)).json()["item"]
+    token = await unlock(rig.c)
+    t = await ticket(rig.c, token, item)
+    rig.app.state.gateway = None
+    r = await rig.c.get(f"/v1/vault/download/{t}")
+    assert r.status_code == 503 and PDF[:5] not in r.content
+    assert (await rig.c.post("/v1/vault/unlock", json={}, headers=CSRF)).status_code == 503
+
+
 async def test_bad_ticket_shapes_are_gone_not_errors(rig: Rig) -> None:
     await login(rig.c)
     for t in ("short", "x" * 300, "a b" + "c" * 30):
@@ -442,4 +454,24 @@ async def test_the_panel_opening_runs_todays_reminders(rig: Rig) -> None:
 
     rig.app.state.vault_reminders = R()
     await rig.c.get("/v1/vault")
+    await asyncio.sleep(0.05)  # the check runs detached from the request
     assert calls == [UID]
+
+
+async def test_a_slow_reminder_check_does_not_hold_up_or_get_cancelled_by_the_panel(
+    rig: Rig,
+) -> None:
+    await login(rig.c)
+    gate, done = asyncio.Event(), asyncio.Event()
+
+    class R:
+        async def check(self, uid: str) -> int:
+            await gate.wait()  # held open until the response is out
+            done.set()
+            return 0
+
+    rig.app.state.vault_reminders = R()
+    r = await rig.c.get("/v1/vault")  # would hang here if the panel waited for the check
+    assert r.status_code == 200 and not done.is_set()
+    gate.set()
+    await asyncio.wait_for(done.wait(), 5)

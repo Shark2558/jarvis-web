@@ -119,22 +119,26 @@ class UnlockStore:
             raise PermissionError("locked")
         now = self._clock()
         secret = secrets.token_urlsafe(32)
-        row = {
-            "mac": self._mac(secret),
-            "item": item,
-            "fid": fid,
-            "until": (now + dt.timedelta(seconds=TICKET_S)).isoformat(),
-        }
         mac = self._mac(token)
 
-        async def fn(tx: DocTx) -> None:
+        async def fn(tx: DocTx) -> int:
             grants, tickets = self._read(await tx.get(self._path(uid)), now)
-            if not any(g["mac"] == mac for g in grants):
+            grant = next((g for g in grants if g["mac"] == mac), None)
+            if grant is None:
                 raise PermissionError("locked")
+            # a ticket never outlives the unlock window it was made in
+            left = (dt.datetime.fromisoformat(grant["until"]) - now).total_seconds()
+            life = max(1, min(TICKET_S, int(left)))
+            row = {
+                "mac": self._mac(secret),
+                "item": item,
+                "fid": fid,
+                "until": (now + dt.timedelta(seconds=min(TICKET_S, left))).isoformat(),
+            }
             tx.set(self._path(uid), {"grants": grants, "tickets": [*tickets, row][-MAX_TICKETS:]})
+            return life
 
-        await self._d.transaction(fn)
-        return Ticket(secret, TICKET_S)
+        return Ticket(secret, await self._d.transaction(fn))
 
     async def take(self, uid: str, ticket: str) -> Taken:
         """Use a ticket: it is removed in the same transaction, so a second use finds nothing."""

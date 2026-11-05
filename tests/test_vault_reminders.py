@@ -1,6 +1,7 @@
 # tests/test_vault_reminders.py -- R2 D5: thresholds once, catch-up, caps, templates, no leaks
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 from zoneinfo import ZoneInfo
 
@@ -217,3 +218,51 @@ def test_alert_text_templates_directly() -> None:
     assert "in 1 day." in alert_text("generic", "Passport", "you", 1, dt.date(2027, 1, 2))
     t = alert_text("type", "PAN card", "you", 14, dt.date(2027, 1, 2))
     assert t == "JARVIS: your PAN card expires in 14 days (02 Jan 2027)."
+
+
+class SlowSink(Sink):
+    """Sends take a moment, so two checks overlap; `block_at` hangs the nth send for ever."""
+
+    def __init__(self, block_at: int = 0) -> None:
+        super().__init__()
+        self.block_at, self.started = block_at, 0
+
+    async def send(self, uid: str, text: str, *, kind: str) -> AlertResult:
+        self.started += 1
+        if self.started == self.block_at:
+            await asyncio.Event().wait()
+        await asyncio.sleep(0.01)
+        return await super().send(uid, text, kind=kind)
+
+
+async def test_concurrent_checks_send_once() -> None:
+    sink = SlowSink()
+    svc, _, _, job, _ = await rig(sink=sink)
+    await add(svc, 5)
+    other = VaultReminders(svc, sink, job._d, clock=job._clock)  # a second instance
+    got = await asyncio.gather(job.check(UID), job.check(UID), other.check(UID))
+    assert len(sink.calls) == 1 and sorted(got) == [0, 0, 1]
+
+
+async def test_cancelled_check_does_not_resend() -> None:
+    sink = SlowSink(block_at=2)
+    clock = Clock()
+    svc, _, _, job, _ = await rig(sink=sink, clock=clock)
+    await add(svc, 5, n=1)
+    await add(svc, 20, n=2)
+    task = asyncio.create_task(job.check(UID))
+    for _ in range(50):  # until the first alert is out and the second is hanging
+        await asyncio.sleep(0.01)
+        if sink.started == 2:
+            break
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    assert len(sink.calls) == 1
+    clock.t += dt.timedelta(minutes=10)  # the unfinished claim goes stale
+    sink.block_at = 0
+    await job.check(UID)
+    texts = [c[1] for c in sink.calls]
+    assert len(texts) == 2 and len(set(texts)) == 2  # the second alert, never the first again
+    clock.t += dt.timedelta(minutes=10)
+    await job.check(UID)
+    assert len(sink.calls) == 2  # and the day is now done

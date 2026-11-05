@@ -475,9 +475,12 @@ class VaultService:
 
     # ---- changes ---------------------------------------------------------------------------
 
-    async def update(self, uid: str, item_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    async def update(
+        self, uid: str, item_id: str, patch: dict[str, Any], *, dates_flag: str = "auto"
+    ) -> dict[str, Any]:
         """Apply the fields the owner sent. `confirm: true` fills missing dates / last 4 from the
-        proposal and marks the dates confirmed (reminders start)."""
+        proposal and marks the dates confirmed (reminders start). `dates_flag` (tools only): "set"
+        confirms the dates without touching the proposal, "keep" leaves the flag as it is."""
         if not ID_ITEM.fullmatch(item_id):
             raise VaultRejected("not_found", "That document isn't in your vault.", status=404)
         now = self._clock()
@@ -497,7 +500,9 @@ class VaultService:
             upd: dict[str, Any] = {**fields, "updated_at": now}
             if confirm:
                 upd.update(self._confirmed(cur, fields))
-            elif {"issued_on", "expires_on"} & fields.keys():
+            elif dates_flag == "set":
+                upd["dates_confirmed"] = True
+            elif dates_flag == "auto" and {"issued_on", "expires_on"} & fields.keys():
                 upd["dates_confirmed"] = False  # a changed date is the owner's to confirm again
             item = cur.model_copy(update=upd)
             if item.issued_on and item.expires_on and item.expires_on < item.issued_on:
@@ -557,12 +562,16 @@ class VaultService:
         self, uid: str, item_id: str, *, issued_on: Any = None, expires_on: Any = None
     ) -> dict[str, Any]:
         """The `vault_set_dates` tool: the owner told JARVIS the date, so it counts as confirmed."""
-        patch: dict[str, Any] = {"confirm": True}
+        # Only the dates given are applied: the proposal (read from untrusted file text) is never
+        # copied in or cleared, and only an expiry the owner gave counts as confirmed (R2 M2).
+        patch: dict[str, Any] = {}
         if issued_on is not None:
             patch["issued_on"] = issued_on
         if expires_on is not None:
             patch["expires_on"] = expires_on
-        return await self.update(uid, item_id, patch)
+        return await self.update(
+            uid, item_id, patch, dates_flag="set" if expires_on is not None else "keep"
+        )
 
     # ---- holders and settings ---------------------------------------------------------------
 
@@ -623,9 +632,11 @@ class VaultService:
         if self._undo is None:
             raise VaultUnavailable("Recently deleted isn't available, so nothing was deleted")
         label = TYPES.get(item.type, TYPES["other"]).label.lower()
+        now = self._clock()
+        snapshot = {"ref": item_id, "deleted_at": now.isoformat()}  # the purge matches on this
         try:
             kept = await self._undo.keep(
-                uid, "vault_item", f"Vault item: {label}", {"ref": item_id},
+                uid, "vault_item", f"Vault item: {label}", snapshot,
                 owner_authored=True, session_id=session_id,
             )  # fmt: skip
         except Exception as exc:  # noqa: BLE001
@@ -633,7 +644,6 @@ class VaultService:
             raise VaultUnavailable(
                 "a copy for Undo could not be kept, so nothing was deleted"
             ) from None
-        now = self._clock()
 
         def tombstone(index: VaultIndex) -> tuple[VaultIndex, None]:
             cur = index.item(item_id)
@@ -662,14 +672,17 @@ class VaultService:
 
         return await self.store.change(uid, clear)
 
-    async def purge(self, uid: str, item_id: str) -> bool:
+    async def purge(self, uid: str, item_id: str, *, deleted_at: dt.datetime | None = None) -> bool:
         """Hard delete: the index entry first (the wrapped keys go with it, so the chunks are
-        unreadable at once), then the chunks by path. Safe to repeat."""
+        unreadable at once), then the chunks by path. Safe to repeat. With `deleted_at` it shreds
+        only an item still tombstoned at exactly that time (the bin entry's own delete)."""
         removed: list[Item] = []
 
         def shred(index: VaultIndex) -> tuple[VaultIndex, bool]:
             cur = index.item(item_id) if ID_ITEM.fullmatch(item_id) else None
             if cur is None:
+                return index, False
+            if deleted_at is not None and (cur.deleted_at is None or cur.deleted_at != deleted_at):
                 return index, False
             removed.clear()
             removed.append(cur)
@@ -837,7 +850,15 @@ class VaultPurger:
         self._svc = svc
 
     async def purge(self, uid: str, item: DeletedItem) -> None:
-        await self._svc.purge(uid, str(item.snapshot.get("ref", "")))
+        """Shreds only while the item is still tombstoned by THIS entry's delete (R2 review C1):
+        a restored, re-deleted or legacy entry (no tombstone time) does nothing."""
+        try:
+            stamp = dt.datetime.fromisoformat(str(item.snapshot.get("deleted_at", "")))
+        except ValueError:
+            return
+        if stamp.tzinfo is None:
+            return
+        await self._svc.purge(uid, str(item.snapshot.get("ref", "")), deleted_at=stamp)
 
 
 __all__ = [

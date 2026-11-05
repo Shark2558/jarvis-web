@@ -381,3 +381,36 @@ async def test_a_claim_with_a_new_id_still_in_its_window_is_busy_not_restored() 
 
 async def test_record_made_outside_a_restore_is_a_no_op() -> None:
     await record_made("anything")
+
+
+class SpyPurger:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def purge(self, uid: str, item: DeletedItem) -> None:
+        self.calls.append(item.id)
+
+
+@pytest.mark.parametrize("kind", ["event", "task", "vault_item", "note", "thing"])
+async def test_a_restored_entry_is_never_purged_whatever_its_kind(kind: str) -> None:
+    """R2 review C1: the restored item is live again; its old bin entry must not shred it."""
+    clock, spy = Clock(), SpyPurger()
+    b = UndoBin(DeletedStore(MemoryDocs(), prefix="t_"), clock=clock)
+    b.register(kind, FakeRestorer(), spy)  # type: ignore[arg-type]
+    entry = await b.keep(UID, kind, "Thing", {"ref": "x"})  # type: ignore[arg-type]
+    assert (await b.restore(UID, entry.id)).status is RestoreStatus.RESTORED
+    clock.now = NOW + timedelta(days=RETENTION_DAYS, hours=1)
+    assert await b.store.expired(UID, clock.now) == []  # the seam skips restored entries
+    assert await b.sweep([UID]) == 1  # housekeeping still drops the spent entry ...
+    assert spy.calls == []  # ... without ever calling the purger
+    assert await b.store.get(UID, entry.id) is None
+
+
+async def test_remove_now_on_restored_entry_is_noop() -> None:
+    spy = SpyPurger()
+    b = UndoBin(DeletedStore(MemoryDocs(), prefix="t_"), clock=Clock())
+    b.register("vault_item", FakeRestorer(), spy)  # type: ignore[arg-type]
+    entry = await b.keep(UID, "vault_item", "Vault item: passport", {"ref": "i"})
+    await b.restore(UID, entry.id)
+    assert await b.purge(UID, entry.id) is False
+    assert spy.calls == []

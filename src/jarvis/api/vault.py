@@ -62,10 +62,19 @@ CHANGES_PER_MINUTE = 30
 UNLOCKS_PER_MINUTE = 10
 OPENS_PER_MINUTE = 20
 READ_TIMEOUT_S = 60.0
-PANEL_CHECK_S = 5.0
 TOKEN_HEADER = "X-Jarvis-Vault"
 NO_KEY = "Not available on this server (no encryption key)."
 LOCKED = "Unlock the vault first."
+_DETACHED: set[asyncio.Task[Any]] = set()  # strong refs: a task nobody holds can be collected
+
+
+def _detach(work: Any) -> None:
+    """Run `work` (a coroutine that never raises) on its own task, outside the request."""
+    task = asyncio.ensure_future(work)
+    _DETACHED.add(task)
+    task.add_done_callback(_DETACHED.discard)
+
+
 router = APIRouter(prefix="/v1/vault", dependencies=[Depends(require_auth)])
 
 
@@ -144,8 +153,8 @@ async def _audit(request: Request, tool: str, args: dict[str, Any], detail: str 
     """Audit first; False means the entry could not be written (the caller sends nothing)."""
     gw = getattr(request.app.state, "gateway", None)
     if gw is None:
-        log.warning("no audit chain for a vault event", extra={"tool": tool})
-        return True
+        log.error("no audit chain: a vault event is refused", extra={"tool": tool})
+        return False
     try:
         await gw.audit.append(
             agent="owner",
@@ -174,10 +183,7 @@ async def vault_view(request: Request, uid: str = Depends(current_user)) -> Any:
         return {"available": False, "reason": NO_KEY, "items": [], "holders": []}
     reminders = getattr(request.app.state, "vault_reminders", None)
     if reminders is not None:  # the panel opening is a chance to send today's reminders
-        try:
-            await asyncio.wait_for(reminders.check(uid), PANEL_CHECK_S)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("vault reminder check skipped", extra={"error": type(exc).__name__})
+        _detach(reminders.check(uid))  # never under the request's timeout or cancel
     view = await svc.view(uid)
     s = request.app.state.settings
     if await _passkeys_in_force(request, uid):

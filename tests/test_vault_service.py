@@ -194,6 +194,20 @@ async def test_set_dates_confirms() -> None:
     assert done["dates_confirmed"] and done["days_left"] == (dt.date(2027, 3, 3) - NOW.date()).days
 
 
+async def test_set_dates_does_not_import_unseen_proposal_fields() -> None:
+    svc, _, _ = make(text=DL_TEXT)
+    item = (await svc.add_file(UID, PDF)).item
+    only_issue = await svc.set_dates(UID, item.id, issued_on="2020-01-01")
+    assert only_issue["issued_on"] == "2020-01-01"
+    assert only_issue["expires_on"] is None and only_issue["last4"] is None
+    assert not only_issue["dates_confirmed"] and only_issue["proposal"]  # proposal untouched
+    done = await svc.set_dates(UID, item.id, expires_on="2031-01-01")
+    assert done["dates_confirmed"] and done["expires_on"] == "2031-01-01"
+    assert done["last4"] is None and done["proposal"]  # still the owner's to confirm
+    later = await svc.set_dates(UID, item.id, issued_on="2021-01-01")
+    assert later["dates_confirmed"]  # an issue date alone never un-confirms
+
+
 async def test_holders() -> None:
     svc, _, _ = make()
     h = await svc.add_holder(UID, "Anjali")
@@ -230,7 +244,8 @@ async def test_delete_is_soft_with_a_bin_entry_then_restore_in_place() -> None:
     item = (await svc.add_file(UID, PDF, type_hint="passport")).item
     undo_id = await svc.remove(UID, item.id)
     assert undo_id.startswith("del_")
-    assert bin_.kept == [(UID, "vault_item", "Vault item: passport", {"ref": item.id})]
+    snap = {"ref": item.id, "deleted_at": NOW.isoformat()}
+    assert bin_.kept == [(UID, "vault_item", "Vault item: passport", snap)]
     assert (await svc.view(UID))["items"] == []
     with pytest.raises(VaultRejected):
         await svc.stream_file(UID, item.id, item.files[0].fid)  # a deleted item can't be opened
@@ -286,7 +301,7 @@ async def test_undo_adapters() -> None:
     await svc.remove(UID, item.id)
     rec = DeletedItem(
         id="del_" + "0" * 20, user_id=UID, kind="vault_item", title="t",
-        snapshot={"ref": item.id}, deleted_at=NOW, expires_at=NOW,
+        snapshot={"ref": item.id, "deleted_at": NOW.isoformat()}, deleted_at=NOW, expires_at=NOW,
     )  # fmt: skip
     got = await VaultRestorer(svc).restore(UID, rec)
     assert got.new_id == item.id

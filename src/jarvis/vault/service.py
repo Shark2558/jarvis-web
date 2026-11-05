@@ -25,7 +25,7 @@ from jarvis.logging import get_logger
 from jarvis.recall.sensitive import sensitive_reason
 from jarvis.tools.card import one_line
 from jarvis.undo.models import DeletedItem
-from jarvis.undo.service import Restored
+from jarvis.undo.service import Gone, Restored, discard_kind
 from jarvis.vault.crypto import VaultCrypto, chunk_count
 from jarvis.vault.fields import propose
 from jarvis.vault.models import (
@@ -68,6 +68,7 @@ KEEP_ONLY_LAST4 = "JARVIS keeps only the last 4 characters of an ID number."
 IDS_IN_FILE = "Keep the number in the file; type only its last 4 in 'Ends with'."
 EXT = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png"}
 NEEDS_JPEG = "JARVIS keeps PDF, JPEG and PNG files. Save it as PDF or JPEG first."
+VAULT_BIN_TITLE = "A document"  # R2 review H2: bin titles are in clear, so no document type
 
 
 def utcnow() -> dt.datetime:
@@ -631,12 +632,11 @@ class VaultService:
             raise VaultRejected("not_found", "That document isn't in your vault.", status=404)
         if self._undo is None:
             raise VaultUnavailable("Recently deleted isn't available, so nothing was deleted")
-        label = TYPES.get(item.type, TYPES["other"]).label.lower()
         now = self._clock()
         snapshot = {"ref": item_id, "deleted_at": now.isoformat()}  # the purge matches on this
         try:
             kept = await self._undo.keep(
-                uid, "vault_item", f"Vault item: {label}", snapshot,
+                uid, "vault_item", VAULT_BIN_TITLE, snapshot,
                 owner_authored=True, session_id=session_id,
             )  # fmt: skip
         except Exception as exc:  # noqa: BLE001
@@ -710,7 +710,8 @@ class VaultService:
                 log.warning("vault orphan list not cleared", extra={"error": type(exc).__name__})
 
     async def wipe(self, uid: str) -> int:
-        """Delete everything the owner keeps in the vault (the privacy dashboard). Returns items."""
+        """Delete everything the owner keeps in the vault (the privacy dashboard), and its entries
+        in Recently deleted (R2 review H2). Returns items."""
         files: list[FileRef] = []
         pend: list[Pending] = []
         count = [0]
@@ -734,6 +735,7 @@ class VaultService:
         _, index = await self.store.load(uid)
         if not index.orphans:
             await self.store.delete_all(uid)
+        await discard_kind(self._undo, uid, "vault_item")
         return n
 
     # ---- opening files (the console only; tickets are checked by the API) -------------------
@@ -838,8 +840,8 @@ class VaultRestorer:
         ref = str(item.snapshot.get("ref", ""))
         try:
             await self._svc.restore(uid, ref)
-        except VaultRejected as exc:
-            raise RuntimeError(exc.detail) from None
+        except VaultRejected:  # removed for good (purged, or the vault was wiped)
+            raise Gone() from None
         return Restored(new_id=ref)
 
 
@@ -862,6 +864,7 @@ class VaultPurger:
 
 
 __all__ = [
+    "VAULT_BIN_TITLE",
     "Added",
     "Download",
     "Due",

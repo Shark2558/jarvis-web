@@ -7,7 +7,7 @@ from kb_fakes import OTHER, UID, Rig, build_rig, scan
 
 from jarvis.kb.models import MAX_LIVE, NotesError, vouches
 from jarvis.undo.models import RestoreStatus
-from jarvis.undo.service import StillThere
+from jarvis.undo.service import Gone, StillThere
 
 
 async def add(r: Rig, text: str = "The plumber is Ravi, comes on Tuesdays.", **kw: object):  # type: ignore[no-untyped-def]
@@ -125,7 +125,7 @@ async def test_restore_of_a_live_or_missing_note_makes_nothing() -> None:
     with pytest.raises(StillThere):
         await r.svc.restore(UID, item)
     await r.svc.purge(UID, (await r.svc.remove(UID, n.id)))
-    with pytest.raises(NotesError):
+    with pytest.raises(Gone):  # review H2: a plain "It's gone", never a 502
         await r.svc.restore(UID, item)
 
 

@@ -13,9 +13,11 @@ GET    /v1/deleted               DeletedList {items: [{id, kind, title, deleted_
 POST   /v1/deleted/{id}/restore  RestoreOutcome {status: restored | already_restored, message,
                                  undo_id, kind, title, new_id, note}. The owner's own click, like
                                  approving a card: it is audited (agent "console").
-                                 404 not_found (unknown / malformed id), 410 expired, 409 busy (a
-                                 restore is under way) or still_there (never deleted: no copy
-                                 made), 503 unavailable (Google not linked), 502 restore_failed.
+                                 404 not_found (unknown / malformed id; or, R2, the item was
+                                 removed for good: "It's gone", the entry is dropped), 410
+                                 expired, 409 busy (a restore is under way) or still_there (never
+                                 deleted: no copy made), 503 unavailable (Google not linked), 502
+                                 restore_failed.
 DELETE /v1/deleted/{id}          "Remove now": the copy goes at once (it can't be restored after).
                                  {removed: true, id}; 404 not_found. Audited (agent "console").
                                  R2 I1: for a vault document, a note or a thing
@@ -32,8 +34,6 @@ vendor-free plain words); anything else is one generic sentence, never a stack t
 """
 
 from __future__ import annotations
-
-from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse
@@ -62,7 +62,7 @@ from jarvis.undo.models import (
     RestoreOutcome,
     RestoreStatus,
 )
-from jarvis.undo.service import PurgeFailed, UndoBin
+from jarvis.undo.service import MSG_GONE, Gone, PurgeFailed, UndoBin
 
 router = APIRouter(prefix="/v1/deleted", dependencies=[Depends(require_auth)])
 log = get_logger(__name__)
@@ -121,6 +121,9 @@ async def _restore(
 ) -> RestoreOutcome | JSONResponse:
     try:
         return await undo.restore(uid, undo_id)
+    except Gone as exc:  # R2 review H2: removed for good (the bin dropped its entry)
+        await _audit(request, "deleted_restore", undo_id, "error", type(exc).__name__)
+        return _err(404, "not_found", MSG_GONE)
     except (GoogleNotConnected, TasksNotGranted) as exc:  # plain words already
         await _audit(request, "deleted_restore", undo_id, "error", type(exc).__name__)
         return _err(503, "unavailable", str(exc))
@@ -228,9 +231,6 @@ async def purge(
         return _err(404, "not_found", NOT_FOUND)
     await _audit(request, "deleted_purge", undo_id, "executed", how)
     return Removed(removed=True, id=undo_id)
-
-
-_ = Any
 
 
 __all__ = ["router"]

@@ -36,7 +36,7 @@ from jarvis.undo.models import (
     RestoreStatus,
     all_owner_authored,
 )
-from jarvis.undo.service import MSG_EXPIRED, MSG_UNKNOWN, UndoBin
+from jarvis.undo.service import MSG_EXPIRED, MSG_UNKNOWN, Gone, UndoBin
 
 SOURCE = "Recently deleted"
 CARD_TITLE_LIMIT = 120
@@ -123,7 +123,10 @@ class _UndoAPI:
 
     async def restore(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
-        out = await self.bin.restore(uid, a["undo_id"])
+        try:
+            out = await self.bin.restore(uid, a["undo_id"])
+        except Gone as exc:  # R2 review H2: removed for good; our own words only
+            return vouch({"restored": False, "status": "gone", "message": str(exc)}, True)
         return vouch(_restore_result(out), out.owner_authored)
 
     async def preview_restore(self, a: dict[str, Any]) -> Preview:

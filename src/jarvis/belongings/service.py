@@ -50,7 +50,14 @@ from jarvis.recall.sensitive import sensitive_reason
 from jarvis.recall.text import tokens
 from jarvis.tools.card import one_line
 from jarvis.undo.models import DeletedItem
-from jarvis.undo.service import Restored, SnapshotFailed, StillThere, UndoBin
+from jarvis.undo.service import (
+    Gone,
+    Restored,
+    SnapshotFailed,
+    StillThere,
+    UndoBin,
+    discard_kind,
+)
 
 log = get_logger(__name__)
 
@@ -361,20 +368,17 @@ class BelongingsService:
     def _ref(item: DeletedItem) -> str:
         ref = item.snapshot.get("ref")
         if not isinstance(ref, str) or not THING_ID.fullmatch(ref):
-            raise ThingRejected("not_found", "That entry can't be restored.", status=404)
+            raise Gone()
         return ref
 
     async def restore(self, uid: str, item: DeletedItem, *, outside: bool = False) -> Restored:
+        """In place (same id). A thing removed for good (purged, or wiped) is `Gone`."""
         ref = self._ref(item)
 
         def fn(state: State) -> Change:
             t = state.get(ref)
             if t is None:
-                raise ThingRejected(
-                    "gone",
-                    "That was already removed for good, so it can't be restored.",
-                    status=410,
-                )
+                raise Gone()
             if t.live:
                 raise StillThere("That thing is still in your list.")
             back = t.moved(deleted_at=None, origin="outside" if outside else t.origin)
@@ -400,20 +404,10 @@ class BelongingsService:
 
     async def wipe(self, uid: str) -> int:
         """Everything of this owner's: the things, their histories and the bin entries of kind
-        thing (public `UndoBin` methods only; best effort, the entries hold no name)."""
+        thing (`discard_kind`, shared with notes and the vault; best effort)."""
         count = await self.store.wipe(uid)
-        await self._clear_bin(uid)
+        await discard_kind(self.undo, uid, "thing")
         return count
-
-    async def _clear_bin(self, uid: str) -> None:
-        if self.undo is None:
-            return
-        try:
-            for item in await self.undo.recent(uid):
-                if item.kind == "thing":
-                    await self.undo.discard(uid, item.id)
-        except Exception as exc:  # noqa: BLE001 - the things are gone; entries expire on their own
-            log.warning("bin entries not cleared", extra={"reason": type(exc).__name__})
 
     # ---- export ----------------------------------------------------------------------------
 

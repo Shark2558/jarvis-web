@@ -79,9 +79,10 @@ async def test_the_owner_can_switch_private_reads_on() -> None:
     rules = ChannelRules(Inner(), await _store(reads=True))
     with telegram_turn():
         got = await rules.rules_for(UID)
-    # R2 D12: only the second group (vault, notes, things; its own switch) is still refused
+    # R2 D12: only the second group (vault, notes, things; its own switch) is still refused, and
+    # a restore from Recently deleted, which needs both switches (R2 review H1)
     denied = {r.tool_pattern for r in got if r.effect is Effect.DENY}
-    assert denied == set(PERSONAL_PATTERNS)
+    assert denied == {*PERSONAL_PATTERNS, "deleted_restore"}
 
 
 async def test_unpaired_or_unreadable_state_fails_closed() -> None:

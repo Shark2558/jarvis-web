@@ -57,7 +57,14 @@ from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs
 from jarvis.tools.external import clean_text, model_text
 from jarvis.undo.models import DeletedItem
-from jarvis.undo.service import Restored, SnapshotFailed, StillThere, UndoBin
+from jarvis.undo.service import (
+    Gone,
+    Restored,
+    SnapshotFailed,
+    StillThere,
+    UndoBin,
+    discard_kind,
+)
 from jarvis.web.service import WebService
 
 log = get_logger(__name__)
@@ -271,17 +278,18 @@ class NotesService:
     def _ref(item: DeletedItem) -> str:
         ref = item.snapshot.get("ref") if isinstance(item.snapshot, dict) else None
         if not isinstance(ref, str) or not NOTE_ID.fullmatch(ref):
-            raise NotesError(404, "not_found", "That note can't be found any more.")
+            raise Gone()
         return ref
 
     async def restore(self, uid: str, item: DeletedItem, *, outside: bool = False) -> Restored:
-        """Restorer (the bin calls it): clear the tombstone in place; same id."""
+        """Restorer (the bin calls it): clear the tombstone in place; same id. A note removed for
+        good (purged, or the privacy dashboard wiped the notes) is `Gone`."""
         ref = self._ref(item)
 
         def fn(cur: tuple[Note, ...]) -> tuple[tuple[Note, ...], None]:
             found = next((n for n in cur if n.id == ref), None)
             if found is None:
-                raise NotesError(404, "not_found", "That note can't be found any more.")
+                raise Gone()
             if found.live:
                 raise StillThere("That note is still there; nothing was restored.")
             if _live_count(cur) >= MAX_LIVE:
@@ -430,8 +438,11 @@ class NotesService:
         )
 
     async def wipe(self, uid: str) -> int:
-        """Delete every note of this owner (the privacy dashboard); returns the live ones."""
-        return await self.store.wipe(uid)
+        """Delete every note of this owner (the privacy dashboard), and their entries in Recently
+        deleted (R2 review H2: nothing could restore them); returns the live ones."""
+        count = await self.store.wipe(uid)
+        await discard_kind(self.undo, uid, "note")
+        return count
 
 
 def _find(notes: tuple[Note, ...], note_id: str) -> Note:

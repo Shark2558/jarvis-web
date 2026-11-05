@@ -10,10 +10,11 @@ restore  recreate the item from its snapshot through the restorer for its kind (
          exception. A restorer that fails releases the claim (try again) and raises its own
          plain-words error (a failed release is logged, never raised over it). A restorer that
          finds the original still there (`StillThere`: the delete never happened) makes nothing
-         and says so. Marking the item restored is retried once; if it still fails, the restore
-         is reported anyway (the item IS back) and the claim keeps a second click busy for 5
-         minutes. A restored item stays stored (a second restore says "already restored") but
-         is no longer listed.
+         and says so; one that finds it removed for good (`Gone`, R2) drops the entry and the
+         error propagates ("It's gone"). Marking the item restored is retried once; if it still
+         fails, the restore is reported anyway (the item IS back) and the claim keeps a second
+         click busy for 5 minutes. A restored item stays stored (a second restore says "already
+         restored") but is no longer listed.
 purge    the owner's "Remove now": the copy goes at once (it can no longer be restored).
 sweep    the scheduler tick's housekeeping: expired items go (no Firestore TTL: it is billed).
 """
@@ -61,6 +62,7 @@ MSG_UNAVAILABLE = (
     "JARVIS can't restore that right now: Google isn't connected for it. Reconnect Google in "
     "Integrations, then try again."
 )
+MSG_GONE = "It's gone: it was removed for good, so it can't be restored."
 
 
 def utcnow() -> datetime:
@@ -77,6 +79,14 @@ class PurgeFailed(RuntimeError):
 
 class StillThere(RuntimeError):
     """The original is still there (its delete never happened): no copy is made (plain words)."""
+
+
+class Gone(LookupError):
+    """R2 review H2: what the entry stands for was removed for good (a privacy wipe, a purge):
+    nothing can bring it back. The bin drops the entry; the API answers 404 with `MSG_GONE`."""
+
+    def __init__(self, message: str = MSG_GONE) -> None:
+        super().__init__(message)
 
 
 # Review LOW: while a restore runs, how its restorer tells the bin "the root copy exists now" (the
@@ -242,6 +252,9 @@ class UndoBin:
         except StillThere as exc:  # never deleted: nothing to bring back, nothing made
             await self._release(uid, item.id)
             return _outcome(item, RestoreStatus.STILL_THERE, str(exc))
+        except Gone:  # removed for good: no try can ever succeed, so the entry goes too
+            await self.discard(uid, item.id)
+            raise
         except Exception:  # released for another try; the restorer's plain words propagate
             await self._release(uid, item.id)
             raise
@@ -303,6 +316,23 @@ class UndoBin:
         return gone
 
 
+async def discard_kind(bin_: UndoBin | None, uid: str, kind: Kind) -> int:
+    """R2 review H2: after a category is deleted for good (the privacy dashboard), drop this
+    owner's Recently deleted entries of that kind; nothing could restore them. Public `UndoBin`
+    methods only; best effort (logged, class only), never raises; returns how many went."""
+    if bin_ is None:
+        return 0
+    gone = 0
+    try:
+        for item in await bin_.recent(uid):
+            if item.kind == kind:
+                await bin_.discard(uid, item.id)
+                gone += 1
+    except Exception as exc:  # noqa: BLE001 - the data is gone; entries expire on their own
+        log.warning("bin entries not cleared", extra={"kind": kind, "error": type(exc).__name__})
+    return gone
+
+
 def _outcome(
     item: DeletedItem, status: RestoreStatus, message: str, **extra: Any
 ) -> RestoreOutcome:
@@ -335,6 +365,8 @@ def _not_claimed(result: ClaimResult, item: DeletedItem | None) -> RestoreOutcom
 
 __all__ = [
     "MAX_SNAPSHOT_CHARS",
+    "MSG_GONE",
+    "Gone",
     "PurgeFailed",
     "Purger",
     "Restored",
@@ -342,6 +374,7 @@ __all__ = [
     "SnapshotFailed",
     "StillThere",
     "UndoBin",
+    "discard_kind",
     "record_made",
     "utcnow",
 ]

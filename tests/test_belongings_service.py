@@ -8,6 +8,7 @@ from belongings_fakes import OTHER, UID, things
 from jarvis.belongings.models import MAX_LIVE
 from jarvis.belongings.service import ThingRejected, search
 from jarvis.undo.models import RestoreStatus
+from jarvis.undo.service import MSG_GONE, Gone
 
 
 async def test_put_adds_then_moves_and_says_the_previous_place() -> None:
@@ -201,9 +202,9 @@ async def test_restore_after_purge_says_so() -> None:
     await t.svc.put(UID, "Keys", "hook")
     _, kept = await t.svc.remove(UID, "keys")
     await t.svc.purge(UID, kept)
-    with pytest.raises(ThingRejected) as e:
+    with pytest.raises(Gone) as e:  # R2 review H2: one plain "It's gone" for every R2 kind
         await t.svc.restore(UID, kept)
-    assert e.value.status == 410
+    assert str(e.value) == MSG_GONE
 
 
 async def test_export_and_wipe() -> None:

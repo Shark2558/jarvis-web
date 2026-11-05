@@ -7,6 +7,7 @@ import pytest
 from vault_fakes import JPEG, NOW, OTHER, PDF, PNG, UID, Bin, make, pdf_with_text, scan
 
 from jarvis.documents.extract import extract
+from jarvis.undo.service import Gone
 from jarvis.vault.models import VaultRejected, VaultUnavailable
 from jarvis.vault.ports import IntakeResult, VaultIntake
 from jarvis.vault.service import VaultPurger, VaultRestorer, sniff_mime
@@ -245,7 +246,7 @@ async def test_delete_is_soft_with_a_bin_entry_then_restore_in_place() -> None:
     undo_id = await svc.remove(UID, item.id)
     assert undo_id.startswith("del_")
     snap = {"ref": item.id, "deleted_at": NOW.isoformat()}
-    assert bin_.kept == [(UID, "vault_item", "Vault item: passport", snap)]
+    assert bin_.kept == [(UID, "vault_item", "A document", snap)]  # review H2: no type in clear
     assert (await svc.view(UID))["items"] == []
     with pytest.raises(VaultRejected):
         await svc.stream_file(UID, item.id, item.files[0].fid)  # a deleted item can't be opened
@@ -309,7 +310,7 @@ async def test_undo_adapters() -> None:
     await VaultPurger(svc).purge(UID, rec)
     assert (await svc.index(UID)).items == ()
     await VaultPurger(svc).purge(UID, rec)  # repeat is safe
-    with pytest.raises(RuntimeError):
+    with pytest.raises(Gone):  # review H2: a plain "It's gone", never a 502
         await VaultRestorer(svc).restore(UID, rec)
 
 

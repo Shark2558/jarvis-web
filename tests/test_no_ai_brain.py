@@ -21,7 +21,7 @@ from jarvis.people.tools import PeopleDeps, people_tools
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.tools.base import Tool
 from tests.conftest import TIERS
-from tests.test_people_research import FakeComposer, FakeSearcher
+from tests.people_fakes import FakeModel, FakeSearcher
 
 
 def fake(name: str, result: Any, risk: ActionRisk = ActionRisk.READ_ONLY) -> Tool:
@@ -37,8 +37,8 @@ def mode_settings(settings: Settings) -> Settings:
 
 
 @pytest.fixture
-def composer() -> FakeComposer:
-    return FakeComposer()
+def composer() -> FakeModel:
+    return FakeModel()
 
 
 @pytest.fixture
@@ -53,7 +53,9 @@ def no_ai_brain(
         fake("reminder_add", {"status": "set"}, ActionRisk.REVERSIBLE),
         fake("calendar_list_events", {"events": [{"title": "Standup"}]}),
         *people_tools(
-            PeopleDeps(PeopleService(FakeSearcher(), composer), lambda: mode_settings.brain_mode)
+            PeopleDeps(
+                PeopleService(FakeSearcher(), composer, mode=lambda: mode_settings.brain_mode)
+            )
         ),
     ]:
         reg.register(t)
@@ -115,7 +117,7 @@ async def test_a_write_still_goes_through_the_gateway_policy(
 
 
 async def test_open_profiles_lists_the_urls_with_no_summary_and_no_model(
-    no_ai_brain: Brain, provider: MockProvider, composer: FakeComposer
+    no_ai_brain: Brain, provider: MockProvider, composer: FakeModel
 ) -> None:
     resp = await no_ai_brain.chat(
         ChatRequest(message="open profiles for Satya Nadella at Microsoft")
@@ -217,3 +219,12 @@ async def test_ai_mode_is_untouched_by_the_no_ai_code(
     resp = await brain.chat(ChatRequest(message="run a systems check"))
 
     assert len(provider.calls) == 1 and resp.model == "mock-balanced"
+
+
+async def test_a_bare_private_name_gets_the_fixed_refusal_and_no_links_in_no_ai_mode(
+    no_ai_brain: Brain, provider: MockProvider
+) -> None:
+    resp = await no_ai_brain.chat(ChatRequest(message="research Priya Nair"))
+
+    assert "verify" in resp.reply and "https://" not in resp.reply
+    assert provider.calls == []

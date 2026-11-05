@@ -204,9 +204,7 @@ def due_diligence(hits: list[SearchHit], tokens: list[str], context: str) -> boo
     if not org and not role:
         return False
     if org:
-        return any(
-            _independent_page(h, org) and _mentions(_text(h), [*tokens, *org]) for h in hits
-        )
+        return any(_independent_page(h, org) and _mentions(_text(h), [*tokens, *org]) for h in hits)
     sites = {
         registrable(_host(h.url))
         for h in hits

@@ -27,6 +27,7 @@ from jarvis.core.channel import telegram_turn
 from jarvis.core.guardrails import ActionRisk, InputRejected
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval
 from jarvis.llm.base import LLMError
+from jarvis.llm.router import NO_AI_REFUSAL, BrainOff
 from jarvis.logging import get_logger
 from jarvis.memory.base import SessionNotFound
 from jarvis.telegram.alerts import ALERT_TEXT, TelegramAlerts
@@ -385,6 +386,9 @@ class TelegramService:
                 return None
             except BudgetReached:
                 await self._say(link.chat_id, BUDGET)
+                return None
+            except BrainOff:  # R4 D7: the owner switched the AI off
+                await self._say(link.chat_id, NO_AI_REFUSAL)
                 return None
             except LLMError:
                 await self._say(link.chat_id, UNAVAILABLE)

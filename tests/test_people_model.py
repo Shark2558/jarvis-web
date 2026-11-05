@@ -86,4 +86,3 @@ async def test_no_private_brain_means_unavailable() -> None:
     )  # fmt: skip
 
     assert await BrainPeopleModel(only_training, billing(only_training)).available(UID) is False
-

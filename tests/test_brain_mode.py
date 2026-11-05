@@ -1,5 +1,5 @@
 # tests/test_brain_mode.py
-"""The persisted no-AI switch (R4 D-D3): survives a restart, cached briefly, audited, fail-closed."""
+"""The persisted no-AI switch (R4 D-D3): survives restarts, cached briefly, audited, fail-closed."""
 
 from __future__ import annotations
 

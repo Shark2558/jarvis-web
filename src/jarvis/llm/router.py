@@ -83,6 +83,10 @@ class ModelRouter:
         reads True a model call raises `BrainOff`."""
         self._blocked = blocked
 
+    def is_blocked(self) -> bool:
+        """True while the AI is switched off: background callers skip instead of calling."""
+        return self._blocked is not None and self._blocked()
+
     def _refuse_if_off(self) -> None:
         if self._blocked is not None and self._blocked():
             raise BrainOff(NO_AI_REFUSAL)

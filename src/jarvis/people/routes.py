@@ -39,7 +39,8 @@ from jarvis.people.research import PeopleService, RateLimited, ScopeRefused, Sea
 NOT_SET_UP = "People research is not set up on this server."
 MEANING = {
     "ai": "AI on: JARVIS reasons and writes with the model.",
-    "none": "No-AI: JARVIS answers only from fixed rules; anything that needs the AI says so.",
+    "none": "No-AI covers the brain only: JARVIS answers from fixed rules and anything that "
+    "needs the AI says so. Speech is metered separately.",
 }
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_auth)])

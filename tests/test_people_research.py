@@ -42,7 +42,13 @@ async def test_public_figure_gets_a_dossier_with_resolved_profiles_and_a_summary
 
     d = await svc.research(OWNER, "Satya Nadella", "CEO Microsoft")
 
-    assert {p.platform for p in d.profiles} == {"linkedin", "wikipedia", "x", "instagram", "facebook"}
+    assert {p.platform for p in d.profiles} == {
+        "linkedin",
+        "wikipedia",
+        "x",
+        "instagram",
+        "facebook",
+    }
     assert all(p.url.startswith("https://") for p in d.profiles)
     assert d.summary and "Microsoft" in d.summary
     assert "Satya Nadella" in d.spoken and not d.no_ai and d.subject == "public_figure"
@@ -158,7 +164,9 @@ async def test_no_results_is_refused_as_unverified_with_one_credit() -> None:
     assert exc.value.verdict.scope is Scope.UNVERIFIED and searcher.credits == 1
 
 
-async def test_a_tie_between_two_people_is_ambiguous_regardless_of_context_and_has_no_summary() -> None:
+async def test_a_tie_between_two_people_is_ambiguous_regardless_of_context_and_has_no_summary() -> (
+    None
+):
     wiki = hit("Jane Doe - Wikipedia", "https://en.wikipedia.org/wiki/Jane_Doe", "Jane Doe, actor")
     hits = [
         wiki,
@@ -391,4 +399,3 @@ async def test_web_searcher_stops_when_the_month_is_used_up() -> None:
 
     with pytest.raises(SearchFailed):
         await WebSearcher(svc).search("Satya Nadella", max_results=5)
-

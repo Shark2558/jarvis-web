@@ -47,3 +47,13 @@ def test_script_has_valid_syntax() -> None:
         pytest.skip("node is not installed")
     done = subprocess.run([node, "--check", str(JS)], capture_output=True, text=True, check=False)
     assert done.returncode == 0, done.stderr
+
+
+def test_script_mirrors_the_servers_exact_host_rule(source: str) -> None:
+    assert "HOSTS" not in source and "hostOk" in source
+    assert r"(?:www\.)?github\.com$" in source  # github: the bare host or www, never a subdomain
+    assert r"[a-z0-9-]+\.wikipedia\.org$" in source
+
+
+def test_the_badge_says_no_ai_covers_the_brain_only(source: str) -> None:
+    assert "No-AI (brain only)" in source

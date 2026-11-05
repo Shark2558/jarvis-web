@@ -15,6 +15,7 @@ from jarvis.core.brain import Brain
 from jarvis.core.models import ChatRequest
 from jarvis.llm.base import LLMError
 from jarvis.llm.brains import BrainRegistry
+from jarvis.llm.router import NO_AI_REFUSAL, BrainOff
 from jarvis.logging import configure_logging, new_trace_id
 from jarvis.storage import build_storage
 from jarvis.storage.docs import MemoryDocs
@@ -85,6 +86,8 @@ async def _repl(stream: bool, brain_id: str | None = None) -> None:
                     )
             except BudgetError as exc:  # the monthly limit: said plainly, the REPL goes on
                 print(f"(jarvis: {exc})", file=sys.stderr)
+            except BrainOff:
+                print(f"(jarvis: {NO_AI_REFUSAL})", file=sys.stderr)
             except LLMError as exc:
                 print(f"(llm error: {exc})", file=sys.stderr)
     finally:

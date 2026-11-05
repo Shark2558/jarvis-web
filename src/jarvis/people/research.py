@@ -372,9 +372,7 @@ class PeopleService:
         await self._cache.put(uid, name, ctx, dossier)
         return dossier
 
-    async def _more_hits(
-        self, name: str, ctx: str, subject: Subject, ai: bool
-    ) -> list[SearchHit]:
+    async def _more_hits(self, name: str, ctx: str, subject: Subject, ai: bool) -> list[SearchHit]:
         """Queries 2 and 3: a failure here returns what was found so far."""
         more: list[SearchHit] = []
         for q in _queries(name, ctx, subject, ai=ai)[1:]:

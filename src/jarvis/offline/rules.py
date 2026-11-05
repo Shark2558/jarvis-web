@@ -96,42 +96,67 @@ _NOTE_SEARCH = re.compile(
     r"\b(?:search|find|look\s+up|show|read)\s+(?:in\s+)?(?:my\s+)?notes?\b(?:\s+(?:for|about|on))?\s*(.*)$",
     _I,
 )
-_TIMER = re.compile(r"\btimer\b.*?(\d+)\s*(sec(?:ond)?|min(?:ute)?|h(?:ou)?r)s?\b", _I)
+_UNIT = r"(sec(?:ond)?|min(?:ute)?|h(?:ou)?r)s?"
+_TIMER = re.compile(rf"\btimer\b.*?(\d+)\s*{_UNIT}\b", _I)
+_ANY_DURATION = re.compile(rf"\d+\s*{_UNIT}\b", _I)
 _REMIND = re.compile(r"\bremind\s+me\b\s*(?:to\s+)?(.*)$", _I | re.S)
-_IN = re.compile(r"\s*\bin\s+(\d+)\s*(sec(?:ond)?|min(?:ute)?|h(?:ou)?r)s?\b\s*", _I)
+_IN = re.compile(rf"\s*\bin\s+(\d+)\s*{_UNIT}\b\s*", _I)
 _AT = re.compile(r"\s*\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b\s*", _I)
-_OPEN_FOR = re.compile(
-    r"\b(?:open|show)\s+(?:the\s+)?(?:\w+\s+)?profiles?\s+(?:of|for|on)\s+(.+)$", _I
+# A command starts the sentence: "show my X", "what's my X", or just "X" (no embedded mentions).
+_VERB = r"(?:show|list|read|check|open|get|what(?:'s|\s+is|\s+are))"
+_LEAD = (
+    r"^\s*(?:jarvis[,\s]+)?(?:please\s+)?"
+    rf"(?:{_VERB}\s+(?:me\s+)?(?:all\s+)?(?:my\s+|the\s+)?)?"
 )
+_DAY = r"(?:\s+(?:for\s+)?(?:today|tomorrow|this\s+week|the\s+week))?\s*[?.!]*$"
+_NAME = r"([A-Z][A-Za-z.'\-]+(?:\s+[A-Z][A-Za-z.'\-]+){1,3})"  # 2-4 capitalised words
+_REST = r"(?:\s+(?:(?:at|of|from)\s+)?(.+))?\s*$"
 _RESEARCH = re.compile(
-    r"\b(?:research|look\s+up|find\s+out\s+about|due\s+diligence\s+on)\s+(.+)$", _I
+    r"^\s*(?:jarvis[,\s]+)?(?:please\s+)?(?i:research|look\s+up|find\s+out\s+about|"
+    r"due\s+diligence\s+on|profiles?\s+(?:of|for|on)|(?:open|show)\s+(?:the\s+)?(?:\w+\s+)?"
+    r"profiles?\s+(?:of|for|on))\s+" + _NAME + _REST
 )
-_OPEN_ONLY = re.compile(r"\b(?:open|show)\b.*\bprofiles?\b", _I)
-_CONTEXT = re.compile(r"^(.+?)\s+(?:at|of|from)\s+(.+)$", _I)
+_OPEN_ONLY = re.compile(r"^\s*(?:jarvis[,\s]+)?(?:please\s+)?(?:open|show)\b.*\bprofiles?\b", _I)
 _GENERATIVE = re.compile(
     r"\b(?:draft|compose|summari[sz]e|explain|teach|translate|brainstorm|poem|essay|story|quiz|"
     r"write\s+(?:me|a|an|the))\b",
     _I,
 )
 _SYSTEMS = re.compile(r"\bsystems?\s+check\b|\bhealth\s+check\b|\bdiagnostics?\b", _I)
-_VITALS = re.compile(r"\bvitals?\b|\bapi\s+keys?\b|\bquotas?\b", _I)
+_VITALS = re.compile(r"\bvitals?\b|\bapi\s+keys?\b", _I)
+_QUOTA = re.compile(_LEAD + r"quotas?\s*[?.!]*$", _I)
 _REMINDERS = re.compile(r"\breminders?\b", _I)
-_TASKS = re.compile(r"\bto-?\s?do\b|\btasks?\b", _I)
+_TASKS = re.compile(_LEAD + r"(?:to-?\s?do\s+list|to-?\s?dos?|tasks?)\s*[?.!]*$", _I)
+_SCHEDULE = re.compile(_LEAD + r"schedule" + _DAY, _I)
 _CALENDAR = re.compile(
-    r"\bcalendar\b|\bschedule\b|\bagenda\b|\bmeetings?\b|\bappointments?\b|what'?s\s+on\b", _I
+    r"\bcalendar\b|\bagenda\b|\bmeetings?\b|\bappointments?\b|what'?s\s+on\b", _I
 )
+_LEADING_TO = re.compile(r"^(?:to\s+)+", _I)
+MAX_AMOUNT = 10_000
 
 
-def _seconds(amount: str, unit: str) -> int:
-    return int(amount) * _SECONDS[unit[0].lower()]
+def _seconds(amount: str, unit: str) -> int | None:
+    """Whole seconds for `amount unit`, or None when the amount is outside 1..MAX_AMOUNT."""
+    n = int(amount) if len(amount) <= len(str(MAX_AMOUNT)) else 0
+    if not 1 <= n <= MAX_AMOUNT:
+        return None
+    return n * _SECONDS[unit[0].lower()]
 
 
-def _later(now: datetime, seconds: int) -> str:
-    minutes = max(1, -(-seconds // 60))  # reminders have minute resolution: round up
-    return (now.replace(second=0, microsecond=0) + timedelta(minutes=minutes)).isoformat()
+def _later(now: datetime, seconds: int) -> str | None:
+    """`seconds` from now, rounded UP to the next whole minute (a reminder never fires early)."""
+    try:
+        target = now + timedelta(seconds=seconds)
+    except OverflowError:
+        return None
+    if target.second or target.microsecond:
+        target = target.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    return target.isoformat()
 
 
 def _clock_time(now: datetime, hour: str, minute: str | None, meridiem: str | None) -> str | None:
+    if not meridiem and minute is None:
+        return None  # "at 5": morning or evening? ask
     h, m = int(hour), int(minute or 0)
     if meridiem:
         if not 1 <= h <= 12:
@@ -143,27 +168,35 @@ def _clock_time(now: datetime, hour: str, minute: str | None, meridiem: str | No
     return (when if when > now else when + timedelta(days=1)).isoformat()
 
 
+def _after(now: datetime, amount: str, unit: str) -> str | None:
+    seconds = _seconds(amount, unit)
+    return None if seconds is None else _later(now, seconds)
+
+
 def _timer(text: str, now: datetime) -> NoAIRoute | None:
     m = _TIMER.search(text)
     if m is None:
         return None
-    return _one("reminder_add", text=TIMER_TEXT, when=_later(now, _seconds(m[1], m[2])))
+    when = None if len(_ANY_DURATION.findall(text)) > 1 else _after(now, m[1], m[2])
+    if when is None:
+        return NoAIRoute(reply=NEEDS_TIME_LINE)
+    return _one("reminder_add", text=TIMER_TEXT, when=when)
 
 
 def _remind(text: str, now: datetime) -> NoAIRoute | None:
     m = _REMIND.search(text)
     if m is None:
         return None
-    body = m[1]
+    body = _LEADING_TO.sub("", m[1])
     when: str | None
     if (rel := _IN.search(body)) is not None:
-        when, what = _later(now, _seconds(rel[1], rel[2])), _IN.sub(" ", body, count=1)
+        when, what = _after(now, rel[1], rel[2]), _IN.sub(" ", body, count=1)
     elif (at := _AT.search(body)) is not None:
         when, what = _clock_time(now, at[1], at[2], at[3]), _AT.sub(" ", body, count=1)
     else:
         return NoAIRoute(reply=NEEDS_TIME_LINE)
     what = " ".join(what.split()).strip(" .,")
-    if when is None or not what:
+    if when is None or not what or len(_ANY_DURATION.findall(body)) > 1:
         return NoAIRoute(reply=NEEDS_TIME_LINE)
     return _one("reminder_add", text=what, when=when)
 
@@ -179,17 +212,19 @@ def _notes(text: str) -> NoAIRoute | None:
 
 
 def _people(text: str) -> NoAIRoute | None:
-    m = _OPEN_FOR.search(text) or _RESEARCH.search(text)
+    """Only a command that starts with research/profiles AND a proper name (2-4 capitalised
+    words). Anything else is left alone: with no model to arbitrate, a paid search is never a
+    guess."""
+    m = _RESEARCH.match(text)
     if m is None:
-        return _one("people_open_profiles") if _OPEN_ONLY.search(text) else None
-    rest = m[1].strip(" .?!")
-    split = _CONTEXT.match(rest)
-    args = {"name": split[1].strip(), "context": split[2].strip()} if split else {"name": rest}
+        return _one("people_open_profiles") if _OPEN_ONLY.match(text) else None
+    rest = (m[2] or "").strip(" .?!")
+    args = {"name": m[1].strip(), "context": rest} if rest else {"name": m[1].strip()}
     return NoAIRoute((NoAICall("research_person", args), NoAICall("people_open_profiles", {})))
 
 
 def _calendar(text: str, now: datetime) -> NoAIRoute | None:
-    if not _CALENDAR.search(text):
+    if not (_CALENDAR.search(text) or _SCHEDULE.match(text)):
         return None
     day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     lower = text.lower()
@@ -224,9 +259,11 @@ def route_no_ai(text: str, now: datetime) -> NoAIRoute:
     for pattern, tool in simple:
         if pattern.search(text):
             return _one(tool)
+    if _QUOTA.match(text):
+        return _one("vitals_show")
     if _REMINDERS.search(text):
         return _one("reminders_list")
-    if _TASKS.search(text):
+    if _TASKS.match(text):
         return _one("tasks_list")
     return _calendar(text, now) or NoAIRoute()
 

@@ -15,10 +15,15 @@
   const panel = document.getElementById('p-people');
   const host = panel && panel.querySelector('.pbody');
   if (!host) return;
-  const HOSTS = /^(?:[a-z0-9-]+\.)*(?:linkedin\.com|github\.com|youtube\.com|x\.com|twitter\.com|wikipedia\.org|instagram\.com|facebook\.com)$/;
+  // Mirrors the server's exact-host rule (people/sources.py): a look-alike or a stray subdomain never opens.
+  const HOST_OK = [
+    /^(?:[a-z0-9-]+\.)*linkedin\.com$/, /^(?:www\.)?github\.com$/, /^(?:[a-z0-9-]+\.)*youtube\.com$/,
+    /^(?:www\.|mobile\.)?(?:x|twitter)\.com$/, /^[a-z0-9-]+\.wikipedia\.org$/,
+    /^(?:[a-z0-9-]+\.)*instagram\.com$/, /^(?:[a-z0-9-]+\.)*facebook\.com$/];
+  const hostOk = (h) => HOST_OK.some((re) => re.test(h));
   const MAX_PROFILES = 8, MAX_FINDINGS = 4;
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
-  const MODE_TEXT = { ai: 'AI on', none: 'No-AI' };
+  const MODE_TEXT = { ai: 'AI on', none: 'No-AI (brain only)' };
   const S = { dossier: null, mode: 'ai', meaning: '', busy: false };
   let nameEl, ctxEl, goBtn, noteEl, card, openBtn, speakBtn, modeAi, modeNone, meaningEl, badge;
 
@@ -40,7 +45,7 @@
   function safeUrl(raw) {
     try {
       const u = new URL(String(raw));
-      return u.protocol === 'https:' && !u.username && !u.password && HOSTS.test(u.hostname) ? u.href : null;
+      return u.protocol === 'https:' && !u.username && !u.password && hostOk(u.hostname) ? u.href : null;
     } catch (_) { return null; }
   }
   function normal(raw) {

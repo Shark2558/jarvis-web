@@ -41,7 +41,7 @@ NOTHING_YET = "Nothing has been researched yet, Sir. Ask me to research a person
 
 @dataclass(frozen=True)
 class PeopleDeps:
-    service: PeopleService  # reads the persisted brain mode itself, per call
+    service: PeopleService  # awaits the persisted brain mode (BrainMode.load) on every call
 
 
 def _check_research(service: PeopleService) -> Callable[[dict[str, Any]], None]:

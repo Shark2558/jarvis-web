@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from research_fakes import PRIVATE_HITS, FakeModel, FakeSearcher, fixed_mode
+
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.llm.base import ToolCall
 from jarvis.people.guard import UNVERIFIED_REFUSAL
@@ -12,13 +14,12 @@ from jarvis.permissions.groups import GROUPS
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.tools.budget import turn_budget
 from jarvis.tools.gateway import GatewayOutcome
-from tests.research_fakes import PRIVATE_HITS, FakeModel, FakeSearcher
 
 SCOPE = "owner:s1"
 
 
 def build(mode: str = "ai", model: FakeModel | None = None, searcher=None, gate: bool = True):
-    svc = PeopleService(searcher or FakeSearcher(), model, mode=lambda: mode, gate_enabled=gate)
+    svc = PeopleService(searcher or FakeSearcher(), model, mode=fixed_mode(mode), gate_enabled=gate)
     reg = ToolRegistry()
     for t in people_tools(PeopleDeps(service=svc)):
         reg.register(t)

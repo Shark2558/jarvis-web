@@ -118,3 +118,12 @@ class FakeModel:
     @property
     def classifier_calls(self) -> list[tuple[str, str]]:
         return [c for c in self.calls if c[0].startswith(CLASSIFY_MARK)]
+
+
+def fixed_mode(value: str):
+    """An async per-owner mode reader that always answers `value` (PeopleService mode)."""
+
+    async def read(_uid: str) -> str:
+        return value
+
+    return read

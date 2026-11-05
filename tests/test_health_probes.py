@@ -7,6 +7,7 @@ import asyncio
 import pytest
 from fallback_fakes import TIERS, CloudProvider
 from health_fakes import NOW, UID, Clock
+from research_fakes import fixed_mode
 
 from jarvis.health import probes as P
 from jarvis.health.models import LABELS, ProbeOutcome, ProbeResult
@@ -91,20 +92,20 @@ async def test_brain_probe_reports_the_routers_last_outcome(
     state: str, on_laptop: bool, status: str
 ) -> None:
     read, _ = reading(state, on_laptop=on_laptop)
-    res = await run(P.brain_probe(read, brain_mode="ai"))
+    res = await run(P.brain_probe(read, fixed_mode("ai")))
     assert res is not None and res.status == status
 
 
 async def test_brain_probe_with_the_brain_off_reads_nothing_and_is_ok() -> None:
     read, calls = reading("unreachable")
-    res = await run(P.brain_probe(read, brain_mode="none"))
+    res = await run(P.brain_probe(read, fixed_mode("none")))
     assert res is not None and res.status == "ok" and "switched off" in res.reason
     assert calls["n"] == 0
 
 
 async def test_brain_probe_makes_no_model_call_at_all() -> None:
     router = ModelRouter(CloudProvider(), TIERS)
-    res = await run(P.brain_probe(router.health, brain_mode="ai"))
+    res = await run(P.brain_probe(router.health, fixed_mode("ai")))
     assert res is not None and res.status == "ok"
     assert router.provider.models == []  # type: ignore[attr-defined]
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from research_fakes import FakeModel, FakeSearcher, fixed_mode
 
 from jarvis.config import Settings
 from jarvis.core.brain import Brain
@@ -21,7 +22,6 @@ from jarvis.people.tools import PeopleDeps, people_tools
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.tools.base import Tool
 from tests.conftest import TIERS
-from tests.research_fakes import FakeModel, FakeSearcher
 
 
 def fake(name: str, result: Any, risk: ActionRisk = ActionRisk.READ_ONLY) -> Tool:
@@ -54,7 +54,7 @@ def no_ai_brain(
         fake("calendar_list_events", {"events": [{"title": "Standup"}]}),
         *people_tools(
             PeopleDeps(
-                PeopleService(FakeSearcher(), composer, mode=lambda: mode_settings.brain_mode)
+                PeopleService(FakeSearcher(), composer, mode=fixed_mode(mode_settings.brain_mode))
             )
         ),
     ]:

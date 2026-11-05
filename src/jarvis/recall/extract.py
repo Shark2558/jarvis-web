@@ -185,7 +185,7 @@ class Extractor:
         if not p.brain.tools_allowed:
             raise PermissionError("learning never uses a brain that may train on content")
         router = self._brains.router_for(p.brain.id)
-        if router.is_blocked():  # R4 D7: the AI is switched off; skip quietly
+        if await router.blocked_now():  # R4 D7: the AI is switched off; skip quietly
             return Outcome(None, p.model, 0.0)
         c = await router.complete(
             tier=ModelTier.FAST,

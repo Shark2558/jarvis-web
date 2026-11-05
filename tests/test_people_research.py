@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from research_fakes import SATYA_HITS, FakeModel, FakeSearcher, fixed_mode, hit
 
 from jarvis.people.cache import DossierCache
 from jarvis.people.guard import Scope
@@ -23,7 +24,6 @@ from jarvis.tools.budget import turn_budget
 from jarvis.web.allowance import WebAllowance
 from jarvis.web.ports import CreditsExhausted, PageText, SearchPage
 from jarvis.web.service import WebService
-from tests.research_fakes import SATYA_HITS, FakeModel, FakeSearcher, hit
 
 OWNER = "owner"
 
@@ -32,7 +32,11 @@ def make(searcher=None, model=None, mode="ai", docs=None):
     clock = [datetime(2026, 11, 5, tzinfo=UTC).timestamp()]
     cache = DossierCache(docs, clock=lambda: clock[0])
     svc = PeopleService(
-        searcher or FakeSearcher(), model, mode=lambda: mode, clock=lambda: clock[0], cache=cache
+        searcher or FakeSearcher(),
+        model,
+        mode=fixed_mode(mode),
+        clock=lambda: clock[0],
+        cache=cache,
     )
     return svc, clock
 

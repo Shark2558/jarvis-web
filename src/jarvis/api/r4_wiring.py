@@ -35,7 +35,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException
 
 from jarvis.api.auth import require_auth
-from jarvis.api.identity import current_user
+from jarvis.api.identity import LEGACY_USER_ID, current_user, user_id_for_email
 from jarvis.brief.models import VitalsSection
 from jarvis.config import Settings
 from jarvis.faces.privacy import FacesPrivacy
@@ -112,6 +112,14 @@ def wire_brain_mode(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) ->
     return mode
 
 
+async def load_owner_modes(app: FastAPI, s: Settings) -> None:
+    """I2 F1: read the persisted switch for every configured owner right after `wire_r4`, so the
+    first tick or API call on a cold instance already sees it (until then the mode reads none)."""
+    owners = [user_id_for_email(e) for e in s.owner_emails] or [LEGACY_USER_ID]
+    for uid in owners:
+        await app.state.brain_mode.load(uid)
+
+
 # ---- vitals (A) ---------------------------------------------------------------------------------
 
 
@@ -142,13 +150,13 @@ def wire_vitals(app: FastAPI, s: Settings, docs: Docs) -> VitalsService | None:
 # ---- self-health (B) ----------------------------------------------------------------------------
 
 
-def health_probes(app: FastAPI, s: Settings, docs: Docs) -> list[P.Probe]:
+def health_probes(app: FastAPI, s: Settings, docs: Docs, mode: BrainMode) -> list[P.Probe]:
     """Per `health/INTEGRATION.md` §1: the brain's FREE record (never a completion), the document
     store, then each integration only when it exists (W4)."""
     st = app.state
     router = st.brains.router_for(st.brains.default.id)
     probes = [
-        P.brain_probe(router.health, brain_mode=s.brain_mode),
+        P.brain_probe(router.health, mode.load),
         P.docs_probe(docs, prefix=s.firestore_prefix),
     ]
     if s.session_backend.value == "redis":
@@ -167,12 +175,12 @@ def health_probes(app: FastAPI, s: Settings, docs: Docs) -> list[P.Probe]:
     return probes
 
 
-def wire_health(app: FastAPI, s: Settings, docs: Docs) -> HealthService | None:
+def wire_health(app: FastAPI, s: Settings, docs: Docs, mode: BrainMode) -> HealthService | None:
     if not s.health_enabled:
         _off("The systems check", "JARVIS_HEALTH_ENABLED=false")
         return None
     return HealthService(
-        health_probes(app, s, docs),
+        health_probes(app, s, docs, mode),
         HealthStore(docs, prefix=s.firestore_prefix),
         notifier=_notifier(app),
         voice=getattr(app.state, "voice", None),
@@ -277,7 +285,7 @@ def wire_people(app: FastAPI, s: Settings, docs: Docs, mode: BrainMode) -> Peopl
     return PeopleService(
         WebSearcher(web),
         BrainPeopleModel(app.state.brains, app.state.billing),
-        mode=lambda: mode.current,
+        mode=mode.load,
         cache=DossierCache(docs, prefix=s.firestore_prefix),
     )
 
@@ -295,14 +303,14 @@ def _part(what: str, build: Callable[[], Any]) -> Any:
         return None
 
 
-def wire_r4(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> None:
+async def wire_r4(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> None:
     """Everything R4 on `app.state` (None when off), before the gateway and the Brain."""
     st = app.state
     for name in R4_STATE:
         setattr(st, name, None)
     mode = wire_brain_mode(app, s, docs, audit)
     st.vitals = _part("Vitals", lambda: wire_vitals(app, s, docs))
-    st.health = _part("The systems check", lambda: wire_health(app, s, docs))
+    st.health = _part("The systems check", lambda: wire_health(app, s, docs, mode))
     st.github = _part("GitHub", lambda: wire_github(s, docs))
     st.youtube_own = _part("The owner's YouTube", lambda: wire_youtube_own(app))
     st.photos = _part("Photos", lambda: wire_photos(app, s, docs))
@@ -311,6 +319,7 @@ def wire_r4(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> None:
     st.r4_parts = R4Parts(
         settings=s, vitals=st.vitals, health=st.health, connectors=st.connectors, people=st.people
     )
+    await load_owner_modes(app, s)  # I2 F1: the persisted no-AI switch, before any tick or call
 
 
 def register_r4_tools(reg: ToolRegistry, parts: R4Parts | None) -> None:
@@ -403,6 +412,7 @@ __all__ = [
     "VitalsBrief",
     "health_probes",
     "install_r4_routes",
+    "load_owner_modes",
     "r4_tick_jobs",
     "register_r4_tools",
     "vitals_brief",

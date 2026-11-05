@@ -14,7 +14,7 @@ never mid-stream. After a cloud miss answered by the laptop, the next two minute
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal
@@ -40,6 +40,7 @@ from jarvis.logging import get_logger
 
 log = get_logger(__name__)
 
+GUARD_REFRESH_S = 5.0  # how often the router re-reads the persisted no-AI switch
 NO_AI_REFUSAL = "The AI is switched off (no-AI mode): no model was called."
 
 
@@ -91,19 +92,40 @@ class ModelRouter:
         self._breaker = Breaker(clock=clock)
         self._last: BrainState = "unknown"  # R4 B: how the last real call ended (health())
         self._blocked: Callable[[], bool] | None = blocked  # R4 D7: the no-AI switch
+        self._refresh: Callable[[], Awaitable[None]] | None = None  # re-reads the switch
+        self._clock = clock
+        self._refreshed_at = float("-inf")
 
-    def bind_blocked(self, blocked: Callable[[], bool]) -> None:
+    def bind_blocked(
+        self, blocked: Callable[[], bool], refresh: Callable[[], Awaitable[None]] | None = None
+    ) -> None:
         """R4 D7: `Brain` hands every router the no-AI switch once, at construction. While it
-        reads True a model call raises `BrainOff`."""
-        self._blocked = blocked
+        reads True a model call raises `BrainOff`. `refresh` re-reads the persisted switch; the
+        router calls it at most every `GUARD_REFRESH_S` before any provider call (I2 F1)."""
+        self._blocked, self._refresh = blocked, refresh
 
     def is_blocked(self) -> bool:
         """True while the AI is switched off: background callers skip instead of calling."""
         return self._blocked is not None and self._blocked()
 
-    def _refuse_if_off(self) -> None:
-        if self._blocked is not None and self._blocked():
+    async def _ensure_allowed(self) -> None:
+        """Refresh the switch (at most every `GUARD_REFRESH_S`), then refuse while it is off. A
+        refresh that fails is a refusal: when we cannot tell, no model is called."""
+        if await self.blocked_now():
             raise BrainOff(NO_AI_REFUSAL)
+
+    async def blocked_now(self) -> bool:
+        """`is_blocked` after a (rate-limited) re-read of the persisted switch: what background
+        callers (brief summary, recall sweep) ask before a call."""
+        now = self._clock()
+        if self._refresh is not None and now - self._refreshed_at >= GUARD_REFRESH_S:
+            try:
+                await self._refresh()
+            except Exception as exc:  # noqa: BLE001 - fail closed
+                log.error("no-AI switch unreadable", extra={"error": type(exc).__name__})
+                return True
+            self._refreshed_at = now
+        return self.is_blocked()
 
     @classmethod
     def from_settings(cls, s: Settings, provider: LLMProvider | None = None) -> ModelRouter:
@@ -176,7 +198,7 @@ class ModelRouter:
         tools: list[ToolSpec] | None = None,
         allow_degrade: bool = True,
     ) -> Completion:
-        self._refuse_if_off()
+        await self._ensure_allowed()
         local = {
             "tier": tier,
             "system": system,
@@ -250,7 +272,7 @@ class ModelRouter:
         effort: Effort | None = None,
         usage: StreamUsage | None = None,
     ) -> AsyncIterator[str]:
-        self._refuse_if_off()
+        await self._ensure_allowed()
         # No mid-stream degradation: once tokens are flowing to a TTS engine we cannot restart.
         # The laptop takes over only when the cloud stream failed BEFORE its first text.
         local = {

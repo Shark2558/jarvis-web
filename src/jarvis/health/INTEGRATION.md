@@ -15,7 +15,7 @@ from jarvis.health.store import HealthStore
 probes = [
     # brain: NO model call. Reads the router's own record (the last real completion and whether
     # the laptop is covering). Pass the router of the brain in use: brains.router_for(default_id).health
-    P.brain_probe(router.health, brain_mode=s.brain_mode),
+    P.brain_probe(router.health, mode.load),  # mode = the app's BrainMode: the PERSISTED switch, awaited per owner
     P.docs_probe(docs, prefix=s.firestore_prefix),
     P.redis_probe(redis_pinger(s.redis_url)),  # only when session_backend == redis
 ]

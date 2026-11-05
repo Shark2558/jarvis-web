@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 import time
 from collections import Counter, deque
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from typing import Protocol
 
@@ -270,16 +270,22 @@ def _spoken(d: Dossier) -> str:
 # ---- the service -------------------------------------------------------------------------------
 
 
+async def _always_ai(_uid: str) -> str:
+    return "ai"
+
+
 class PeopleService:
-    """`mode` is read per call (`"ai"` | `"none"`); `gate_enabled=False` exists only so the eval
-    set can show its negative control and is never read from settings."""
+    """`mode` is an ASYNC per-owner reader (`BrainMode.load`), awaited on every call, so a cold
+    instance sees the persisted switch (R4 I2 F1); it answers `"ai"` | `"none"`.
+    `gate_enabled=False` exists only so the eval set can show its negative control and is
+    never read from settings."""
 
     def __init__(
         self,
         searcher: Searcher,
         model: PeopleModel | None = None,
         *,
-        mode: Callable[[], str] = lambda: "ai",
+        mode: Callable[[str], Awaitable[str]] = _always_ai,
         clock: Callable[[], float] = time.time,
         cache: DossierCache | None = None,
         gate_enabled: bool = True,
@@ -352,7 +358,7 @@ class PeopleService:
         await self._prefilter(uid, name, ctx)
         self._take_rate(uid)
         take_people_call()
-        ai = self._mode() == "ai"
+        ai = await self._mode(uid) == "ai"
         model_ok = ai and self._model is not None and await self._model.available(uid)
         hits = await self._searcher.search(f"{name} {ctx}".strip(), max_results=RESULTS_PER_QUERY)
         subject = Subject.PUBLIC_FIGURE

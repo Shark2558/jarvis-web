@@ -118,11 +118,12 @@ _BRAIN_REASONS = {
 }
 
 
-def brain_probe(read: BrainReader, *, brain_mode: str) -> Probe:
-    """`read` is `ModelRouter.health` of the brain in use. Nothing is sent to any model."""
+def brain_probe(read: BrainReader, brain_mode: Callable[[str], Awaitable[str]]) -> Probe:
+    """`read` is `ModelRouter.health` of the brain in use. Nothing is sent to any model.
+    `brain_mode` is the async persisted reader (`BrainMode.load`), awaited per owner (I2 F1)."""
 
-    async def check(_uid: str) -> ProbeOutcome:
-        if brain_mode == "none":
+    async def check(uid: str) -> ProbeOutcome:
+        if await brain_mode(uid) == "none":
             return _ok("the AI is switched off (no-AI mode)")
         seen = read()
         if seen.state == "unreachable":

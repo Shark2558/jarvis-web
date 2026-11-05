@@ -13,19 +13,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import pytest
-
-from jarvis.people.guard import Scope
-from jarvis.people.research import PeopleService, ScopeRefused
-from jarvis.web.ports import SearchHit
-from tests.research_fakes import (
+from research_fakes import (
     DD_HITS,
     NEWS_HITS,
     PRIVATE_HITS,
     SATYA_HITS,
     FakeModel,
     FakeSearcher,
+    fixed_mode,
     hit,
 )
+
+from jarvis.people.guard import Scope
+from jarvis.people.research import PeopleService, ScopeRefused
+from jarvis.web.ports import SearchHit
 
 PROFESSIONAL = {"linkedin", "linkedin_company", "github", "wikipedia"}
 PERSONAL = {"instagram", "facebook", "x", "youtube"}
@@ -116,7 +117,7 @@ CASES = [
 
 def build(case: Case, *, gate_enabled: bool = True) -> tuple[PeopleService, FakeSearcher]:
     searcher = FakeSearcher(case.hits)
-    svc = PeopleService(searcher, case.model, mode=lambda: case.mode, gate_enabled=gate_enabled)
+    svc = PeopleService(searcher, case.model, mode=fixed_mode(case.mode), gate_enabled=gate_enabled)
     return svc, searcher
 
 
@@ -160,7 +161,7 @@ def test_the_eval_set_covers_every_target_type_and_mode() -> None:
 async def test_a_bare_private_name_is_refused_with_no_links_and_one_credit_at_most() -> None:
     searcher = FakeSearcher(PRIVATE_HITS)
     model = FakeModel(label="public_figure")
-    svc = PeopleService(searcher, model, mode=lambda: "ai")
+    svc = PeopleService(searcher, model, mode=fixed_mode("ai"))
 
     with pytest.raises(ScopeRefused) as exc:
         await svc.research("owner", "Priya Nair")

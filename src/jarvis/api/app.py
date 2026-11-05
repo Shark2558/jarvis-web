@@ -453,7 +453,7 @@ def _log_up(app: FastAPI, s: Settings) -> None:
             "faces": app.state.faces is not None,
             "browser_push": app.state.push is not None,
             # R4: each OFF-until-connected part says so here (and in its own console line)
-            "brain_mode": app.state.brain_mode.current,
+            "brain_mode": app.state.brain_mode.state,
             "vitals": app.state.vitals is not None,
             "systems_check": app.state.health is not None,
             "github": app.state.github is not None,
@@ -538,7 +538,7 @@ def _lifespan(
             closers.register_new()
             wire_personal(app, s, docs)  # R2: vault, notes, things, DigiLocker inbox
             wire_home(app, s, docs, audit)  # R3: home link, camera, faces (tools need them)
-            wire_r4(app, s, docs, audit)  # R4: brain mode, vitals, health, connectors, people
+            await wire_r4(app, s, docs, audit)  # R4: brain mode (loaded), vitals, health, people
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()

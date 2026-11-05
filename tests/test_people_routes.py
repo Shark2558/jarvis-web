@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from research_fakes import PRIVATE_HITS, FakeModel, FakeSearcher
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
@@ -18,7 +19,6 @@ from jarvis.people.research import RATE_BURST, PeopleService
 from jarvis.people.routes import install_people
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.audit import AuditLog
-from tests.research_fakes import PRIVATE_HITS, FakeModel, FakeSearcher
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ async def client(settings: Settings) -> AsyncIterator[AsyncClient]:
     app.state.audit = AuditLog()
     app.state.brain_mode = BrainMode(settings, MemoryDocs(), audit=app.state.audit)
     mode = app.state.brain_mode
-    app.state.people = PeopleService(FakeSearcher(), FakeModel(), mode=lambda: mode.current)
+    app.state.people = PeopleService(FakeSearcher(), FakeModel(), mode=mode.load)
     app.dependency_overrides[require_auth] = lambda: None
     app.dependency_overrides[current_user] = lambda: "owner"
     install_people(app)

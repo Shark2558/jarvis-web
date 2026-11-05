@@ -7,7 +7,10 @@ holds `{brain_mode, set_by, updated_at}` and survives a restart. It is read per 
 an unknown value, reads as `none` (fail closed: no model is called when we cannot tell).
 
 Without a document store (CLI, tests) the deployment `Settings.brain_mode` is the mode, read live.
-`current` is synchronous because `ModelRouter` asks it on every call; `load` refreshes it.
+With a store, `current` is FAIL-CLOSED (R4 I2 F1): until an owner has been read it is `none`, never
+the env default, and it is `none` while ANY loaded owner is `none`. The cache is per owner.
+`current` is synchronous because `ModelRouter` asks it on every call; `load` / `load_known`
+refresh it (the router, background jobs and the lifespan all call them).
 """
 
 from __future__ import annotations
@@ -47,15 +50,22 @@ class BrainMode:
         self._audit = audit
         self._prefix = prefix
         self._clock = clock
-        self._value: Mode | None = None  # None until a persisted read has happened
-        self._read_at = float("-inf")
+        self._cache: dict[str, tuple[Mode, float]] = {}  # uid -> (value, read_at)
 
     @property
     def current(self) -> Mode:
-        """The mode as last read (the setting itself when nothing is persisted)."""
-        if self._docs is None or self._value is None:
+        """The mode as last read. Without a store: the setting. With one: `none` until an owner
+        has been read, and `none` while any read owner is `none` (fail closed)."""
+        if self._docs is None:
             return self._s.brain_mode
-        return self._value
+        if not self._cache or any(v == "none" for v, _ in self._cache.values()):
+            return "none"
+        return "ai"
+
+    @property
+    def state(self) -> str:
+        """`current`, or "unloaded" while a store exists and no owner has been read (for logs)."""
+        return "unloaded" if self._docs is not None and not self._cache else self.current
 
     def _path(self, uid: str) -> str:
         return f"{self._prefix}settings/{uid}"
@@ -64,23 +74,32 @@ class BrainMode:
         """Refresh from the store when the cached read is older than `CACHE_S`."""
         if self._docs is None:
             return self._s.brain_mode
-        if self._clock() - self._read_at < CACHE_S and self._value is not None:
-            return self._value
+        hit = self._cache.get(uid)
+        if hit is not None and self._clock() - hit[1] < CACHE_S:
+            return hit[0]
         try:
             raw = await self._docs.get(self._path(uid))
         except Exception as exc:  # noqa: BLE001 — fail closed: cannot tell, so no model
             log.error("brain mode unreadable; no-AI", extra={"reason": type(exc).__name__})
-            return self._remember("none")
+            return self._remember(uid, "none")
         if raw is None:
-            return self._remember(self._s.brain_mode)
+            return self._remember(uid, self._s.brain_mode)
         value = raw.get("brain_mode")
         if value not in _MODES:
             log.error("brain mode document invalid; no-AI")
-            return self._remember("none")
-        return self._remember(value)
+            return self._remember(uid, "none")
+        return self._remember(uid, value)
 
-    def _remember(self, value: Mode) -> Mode:
-        self._value, self._read_at = value, self._clock()
+    async def load_known(self, *, force: bool = False) -> None:
+        """Refresh every owner read so far (cached `CACHE_S`; `force` skips the cache)."""
+        for uid in tuple(self._cache):
+            if force:
+                self._cache.pop(uid, None)
+                self._cache[uid] = ("none", float("-inf"))  # closed while the re-read runs
+            await self.load(uid)
+
+    def _remember(self, uid: str, value: Mode) -> Mode:
+        self._cache[uid] = (value, self._clock())
         return value
 
     async def set(self, uid: str, mode: Mode, *, by: str) -> Mode:
@@ -96,7 +115,7 @@ class BrainMode:
                 tx.set(self._path(uid), doc)
 
             await self._docs.transaction(work)
-            self._remember(mode)
+            self._remember(uid, mode)
         if self._audit is not None:
             await self._audit.append(
                 agent=AUDIT_AGENT,

@@ -7,6 +7,7 @@ import asyncio
 import pytest
 from fallback_fakes import KW, TIERS, CloudProvider
 from health_fakes import UID, Clock, Flip, Notes, fixed
+from research_fakes import fixed_mode
 
 from jarvis.health import probes as P
 from jarvis.health.models import HealthReport, ProbeOutcome, ProbeResult
@@ -106,7 +107,7 @@ async def test_negative_control_a_down_integration_never_reports_ok() -> None:
 async def test_runs_with_the_brain_off_and_never_touches_the_provider() -> None:
     cloud = CloudProvider(LLMUnreachable("no brain"))
     router = ModelRouter(cloud, TIERS)
-    svc = service(P.brain_probe(router.health, brain_mode="none"), fixed("redis", "Redis", "ok"))
+    svc = service(P.brain_probe(router.health, fixed_mode("none")), fixed("redis", "Redis", "ok"))
     rep = await svc.check(UID, force=True)
     assert rep.overall == "ok" and cloud.models == []
     assert compose_line(rep) == "All systems nominal, Sir."
@@ -115,7 +116,7 @@ async def test_runs_with_the_brain_off_and_never_touches_the_provider() -> None:
 async def test_the_whole_check_makes_no_model_call_even_with_the_brain_on() -> None:
     cloud = CloudProvider()
     router = ModelRouter(cloud, TIERS)
-    svc = service(P.brain_probe(router.health, brain_mode="ai"), fixed("redis", "Redis", "ok"))
+    svc = service(P.brain_probe(router.health, fixed_mode("ai")), fixed("redis", "Redis", "ok"))
     await svc.check(UID, force=True)
     assert cloud.models == []
 
@@ -124,7 +125,7 @@ async def test_reports_the_brain_down_after_the_router_saw_it_unreachable() -> N
     router = ModelRouter(CloudProvider(LLMUnreachable("x")), TIERS)
     with pytest.raises(LLMUnreachable):
         await router.complete(tier=ModelTier.FAST, **KW)
-    svc = service(P.brain_probe(router.health, brain_mode="ai"), fixed("redis", "Redis", "ok"))
+    svc = service(P.brain_probe(router.health, fixed_mode("ai")), fixed("redis", "Redis", "ok"))
     rep = await svc.check(UID, force=True)
     brain = next(r for r in rep.results if r.key == "brain")
     assert brain.status == "down" and rep.overall == "down"

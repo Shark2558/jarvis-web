@@ -146,7 +146,9 @@ class Brain:
             store=store, settings=settings, gateway=gateway, mode=self.mode, documents=documents
         )
         for known in brains.list():
-            brains.router_for(known.id).bind_blocked(lambda: self.noai.active)
+            brains.router_for(known.id).bind_blocked(
+                lambda: self.noai.active, self.mode.load_known
+            )
         # the owner's wit level picks the system prompt (None: always the default)
         self.persona = Persona(honorific=settings.user_honorific, wit=wit)
         # One owner action at a time per conversation (chat, approve, decline, delete): no
@@ -673,6 +675,8 @@ class Brain:
             tz=self.s.user_timezone, session_id=session.id, turn_index=len(session.turns)
         )
         try:
+            if await self.noai.refresh(req.user_id):  # I2 F1: approve/decline honour no-AI too
+                raise LLMError("narration skipped: the AI is switched off")
             if not spec.tools_allowed:
                 # The owner switched to a training brain after this action was proposed. The
                 # tool result is private data: narrate deterministically, never send it there.

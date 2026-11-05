@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'voice', 'media', 'construct'];
+  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'voice', 'media', 'construct'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;
@@ -84,6 +84,9 @@
       // R3: the Home panel (alarm, cameras, feed, history) and Faces
       home: { x: col2, y: b.top + 12, w: 420, h: Math.min(availH, 760), open: false },
       faces: { x: Math.max(sL, sR - chatW - 14 - 400), y: b.top + 30, w: 400, h: Math.min(availH, 680), open: false },
+      // R4: Connectors (GitHub, YouTube, Photos) and People (scoped research)
+      connectors: { x: col2, y: b.top + 36, w: 400, h: Math.min(availH, 640), open: false },
+      people: { x: Math.max(sL, sR - chatW - 14 - 420), y: b.top + 42, w: 420, h: Math.min(availH, 700), open: false },
     };
   }
   /** Stored layout, validated field by field. Anything malformed falls back to the defaults, and a

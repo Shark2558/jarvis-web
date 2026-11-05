@@ -50,6 +50,8 @@
       <span class="core" id="orb" aria-hidden="true"></span>
       <b class="wordmark">JARVIS</b>
       <span class="status" id="status"><i aria-hidden="true"></i><span id="statusText">Online</span></span>
+      <!-- R4 D (console-people.js): "Brain: AI on" / "No-AI (brain only)"; speech is metered apart -->
+      <span class="status brainmode" id="brainModeSlot"></span>
     </div>
     <div class="timebox" aria-hidden="true"><time class="clock" id="clock"></time><span class="date" id="clockDate"></span></div>
     <div class="tools">
@@ -487,6 +489,8 @@
     <div class="pbody"><div id="integrations"><div class="empty">Checking linked accounts&#x2026;</div></div>
       <!-- slice 12 (console-media.js): Maps Home / Work, shown only when Maps is set up on this server -->
       <section class="integ imaps" id="integMaps" aria-labelledby="mapsT" hidden></section>
+      <!-- R4 B (console-systems.js): the systems check card (Run, one row per system, Speak) -->
+      <div id="systems"></div>
     </div>
   </section>
 
@@ -565,7 +569,38 @@
         <div class="kv"><span>Connection</span><b id="sNet">Online</b></div>
         <p class="sfine"><span id="vOffline" hidden></span></p>
       </div>
+      <!-- R4 A (console-vitals.js): the board of tracked keys, quotas and bills (GET /v1/vitals).
+           Labels, limits and dates only; a key's value never reaches the server or this page. -->
+      <div id="vitals-board"></div>
     </div>
+  </section>
+
+  <!-- R4 C (console-connectors.js): GitHub (the token is typed HERE, never in chat), the owner's
+       YouTube channel and Google Photos (pick-only; faces need consent). R4 D (console-people.js):
+       scoped people research (public figures and work due-diligence only) with "Open all profiles"
+       in the owner's own browser. Each script fills its .pbody with textContent only. -->
+  <section class="panel card" id="p-connectors" data-panel="connectors" aria-labelledby="t-connectors" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="m7 9 6-3M7 11l6 3"/></svg>
+      <h2 id="t-connectors">Connectors</h2><span class="pmeta" id="connectorsMeta">GitHub, YouTube, Photos</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Connectors panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Connectors panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"></div>
+  </section>
+
+  <section class="panel card" id="p-people" data-panel="people" aria-labelledby="t-people" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="4.5"/><path d="m12 12 4.5 4.5"/></svg>
+      <h2 id="t-people">People</h2><span class="pmeta" id="peopleMeta">Public figures and work due-diligence</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move People panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close People panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"></div>
   </section>
 
   <section class="panel card" id="p-construct" data-panel="construct" aria-labelledby="t-construct" hidden>
@@ -608,6 +643,8 @@
     <button class="dk ovf" type="button" data-open="home" aria-controls="p-home" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.2 10 3.5l7 5.7"/><path d="M5 8v8.5h10V8"/><path d="M8.5 16.5v-4h3v4"/></svg><span>Home</span></button>
     <button class="dk ovf" type="button" data-open="faces" aria-controls="p-faces" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.2"/><path d="M4 17c.8-3 3.2-4.6 6-4.6s5.2 1.6 6 4.6"/><path d="M2.5 6V3.5H5M15 3.5h2.5V6M2.5 14v2.5M17.5 14v2.5"/></svg><span>Faces</span></button>
     <button class="dk ovf" type="button" data-open="vitals" aria-controls="p-vitals" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span>Vitals</span></button>
+    <button class="dk ovf" type="button" data-open="connectors" aria-controls="p-connectors" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="m7 9 6-3M7 11l6 3"/></svg><span>Connectors</span></button>
+    <button class="dk ovf" type="button" data-open="people" aria-controls="p-people" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="4.5"/><path d="m12 12 4.5 4.5"/></svg><span>People</span></button>
     <button class="dk ovf" type="button" data-open="voice" aria-controls="p-voice" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span>Voice</span></button>
     <button class="dk ovf" type="button" data-open="media" aria-controls="p-media" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg><span>Media</span></button>
     <button class="dk ovf" type="button" data-open="construct" aria-controls="p-construct" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg><span>Construct</span></button>
@@ -659,6 +696,8 @@
     <button class="sheet-item" type="button" data-sheet-open="home"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.2 10 3.5l7 5.7"/><path d="M5 8v8.5h10V8"/><path d="M8.5 16.5v-4h3v4"/></svg><span><b>Home</b><small>Arm the burglar alarm, the camera's feed and history</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="faces"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.2"/><path d="M4 17c.8-3 3.2-4.6 6-4.6s5.2 1.6 6 4.6"/><path d="M2.5 6V3.5H5M15 3.5h2.5V6M2.5 14v2.5M17.5 14v2.5"/></svg><span><b>Faces</b><small>People JARVIS may recognise at home, with their consent</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="vitals"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span><b>Vitals</b><small>Reply speed, this month's spend and your limit</small></span></button>
+    <button class="sheet-item" type="button" data-sheet-open="connectors"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="m7 9 6-3M7 11l6 3"/></svg><span><b>Connectors</b><small>GitHub, your YouTube channel and Google Photos</small></span></button>
+    <button class="sheet-item" type="button" data-sheet-open="people"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="4.5"/><path d="m12 12 4.5 4.5"/></svg><span><b>People</b><small>Public figures and work due-diligence, profiles open in your browser</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="voice"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span><b>Voice</b><small>JARVIS's voice, speed and wit; how this device listens</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="media"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg><span><b>Media</b><small>Play the videos and music JARVIS found for you</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="construct"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg><span><b>Construct</b><small>The rotating hologram</small></span></button>
@@ -703,6 +742,10 @@
 <script src="/static/console-home-panel.js" defer></script>
 <script src="/static/console-faces.js" defer></script>
 <script src="/static/console-alerts.js" defer></script>
+<script src="/static/console-vitals.js" defer></script>
+<script src="/static/console-systems.js" defer></script>
+<script src="/static/console-connectors.js" defer></script>
+<script src="/static/console-people.js" defer></script>
 <script type="module" src="/static/console-3d.js"></script>
 </body>
 </html>

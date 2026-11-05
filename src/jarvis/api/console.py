@@ -85,6 +85,10 @@ APP_ASSETS: dict[str, str] = {
     "console-alerts.js": _JS,  # R3 D: Integrations -> Alerts (quiet hours, VIPs, this device)
     "console-alerts.css": "text/css",
     "console-sw.js": _JS,  # R3 D: the service worker (push, notificationclick; /static/push/)
+    "console-vitals.js": _JS,  # R4 A: Vitals -> the board (keys, quotas, bills, expiry; no key)
+    "console-systems.js": _JS,  # R4 B: Integrations -> Systems check (Run, per-system rows, Speak)
+    "console-connectors.js": _JS,  # R4 C: Connectors (GitHub token in the panel, YouTube, Photos)
+    "console-people.js": _JS,  # R4 D: People research + the Brain: AI on / No-AI badge and switch
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",

@@ -454,13 +454,13 @@ async def test_memory_panel_dock_button_and_dialog_are_wired(client: AsyncClient
 
 
 async def test_phone_dock_has_a_more_sheet_for_the_overflow_tabs(client: AsyncClient) -> None:
-    """Seventeen panels (Voice joined in slice 9, Media in slice 12, Vault, Things, Notes and
-    Privacy in R2, Home and Faces in R3): a phone shows at most eight tabs; the rest sit behind
-    "More"."""
+    """Nineteen panels (Voice joined in slice 9, Media in slice 12, Vault, Things, Notes and
+    Privacy in R2, Home and Faces in R3, Connectors and People in R4): a phone shows at most eight
+    tabs; the rest sit behind "More"."""
     html = (await client.get("/")).text
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     tabs = re.findall(r'<button class="dk([^"]*)" type="button" data-open="(\w+)"', dock)
-    assert len(tabs) == 17
+    assert len(tabs) == 19
     on_phone = [name for cls, name in tabs if "ovf" not in cls.split()]
     overflow = [name for cls, name in tabs if "ovf" in cls.split()]
     assert len(on_phone) + 1 <= 8 and overflow  # + the More tab itself
@@ -567,7 +567,7 @@ async def test_voice_panel_dock_tab_and_more_sheet_are_wired(client: AsyncClient
     assert 'aria-keyshortcuts="Control+Space"' in html
     assert 'id="voiceLive" role="status" aria-live="polite"' in html
     deck = (await client.get("/static/console-deck.js")).text
-    assert "'vitals', 'voice', 'media', 'construct'" in deck  # + Media, slice 12
+    assert "'vitals', 'connectors', 'people', 'voice', 'media', 'construct'" in deck  # + R4's two
     assert re.search(r"\bvoice: \{ x:", deck)
     # device settings: storage may throw (private mode, blocked site data)
     voice = (await client.get("/static/console-voice.js")).text

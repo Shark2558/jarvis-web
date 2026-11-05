@@ -13,12 +13,15 @@
 Scope `photospicker.mediaitems.readonly`. The Library API can no longer read a whole library, so
 JARVIS only ever sees what the owner selected. Calls ride `GoogleConnector.request` (bearer, one
 refresh, vendor text never leaves). Hosts are checked: the picker link must be on
-photos.google.com and a base URL on googleusercontent.com, both https. A picture must be a JPEG
-and at most MAX_IMAGE_BYTES.
+photos.google.com and a base URL on googleusercontent.com, both https. A picture is streamed
+and capped at MAX_IMAGE_BYTES before it is buffered, must be `image/jpeg`, and leaves here with
+all metadata (EXIF/GPS) stripped (`photos.imaging`).
 """
 
 from __future__ import annotations
 
+import asyncio
+import re
 from typing import Any
 
 import httpx
@@ -30,34 +33,33 @@ from jarvis.integrations.google import (
     GoogleConnector,
     GoogleNotConnected,
 )
+from jarvis.integrations.vault import GoogleTokens
 from jarvis.logging import get_logger
+from jarvis.photos.errors import BAD_ANSWER, BAD_PICTURE, PickerError
+from jarvis.photos.imaging import sanitise_jpeg
 from jarvis.photos.models import PHOTOS_SCOPE, SESSION_ID, PickedItem, PickerSession
 
 log = get_logger(__name__)
 
 API = "https://photospicker.googleapis.com/v1"
 PICKER_HOST = "photos.google.com"
-IMAGE_HOST_SUFFIX = ".googleusercontent.com"
+IMAGE_HOST = re.compile(r"lh[0-9]+\.googleusercontent\.com")
 SIZE_SUFFIX = "=w1024-h1024"
 MAX_PICKED = 20  # photos per import: a small, owner-chosen batch, never a library
 MAX_IMAGE_BYTES = 4_000_000
-JPEG_MAGIC = b"\xff\xd8\xff"
+JPEG_TYPE = "image/jpeg"
+STATUS_UNAUTHORIZED = 401
 DOWNLOAD_TIMEOUT_S = 20.0
+HTTP_OK = 200
 
 GRANT_MSG = (
     "JARVIS has no permission to open the photos you pick yet. Open Integrations and press "
     "Grant next to 'Google Photos', then try again."
 )
-BAD_ANSWER = "Google Photos returned something JARVIS can't use."
-BAD_PICTURE = "One of the photos couldn't be read."
 
 
 class PhotosNotGranted(RuntimeError):
     """The Google link exists but the Picker scope is not granted."""
-
-
-class PickerError(RuntimeError):
-    """The Picker answered something unusable (plain words)."""
 
 
 def _https_host(url: object) -> str | None:
@@ -97,11 +99,19 @@ def _item(raw: Any) -> PickedItem | None:
         return None
     base, mime, iid = media.get("baseUrl"), media.get("mimeType"), raw.get("id")
     host = _https_host(base)
-    if host is None or not host.endswith(IMAGE_HOST_SUFFIX):
+    if host is None or not IMAGE_HOST.fullmatch(host):
         return None
     if not isinstance(iid, str) or not isinstance(mime, str) or not mime.startswith("image/"):
         return None
     return PickedItem(iid[:200], mime, str(base))
+
+
+def _check_headers(r: httpx.Response) -> None:
+    if r.headers.get("content-type", "").split(";")[0].strip().lower() != JPEG_TYPE:
+        raise PickerError(BAD_PICTURE)
+    declared = r.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_IMAGE_BYTES:
+        raise PickerError(BAD_PICTURE)
 
 
 class PickerClient:
@@ -131,7 +141,8 @@ class PickerClient:
 
     async def create_session(self, uid: str) -> PickerSession:
         await self._require(uid)
-        raw = await self._g.request(uid, "POST", f"{API}/sessions", json={}, send_once=True)
+        body = {"pickingConfig": {"maxItemCount": str(MAX_PICKED)}}  # int64 travels as a string
+        raw = await self._g.request(uid, "POST", f"{API}/sessions", json=body, send_once=True)
         return _session(raw)
 
     async def get_session(self, uid: str, session_id: str) -> PickerSession:
@@ -150,22 +161,46 @@ class PickerClient:
         return tuple(i for i in found if i is not None)[:MAX_PICKED]
 
     async def download(self, uid: str, item: PickedItem) -> bytes:
+        """One picture, size-capped while streaming, one refresh on 401, metadata stripped."""
         await self._require(uid)
-        token = await self._g.access_token(uid)
+        url = item.base_url + SIZE_SUFFIX
+        status, data = await self._fetch(url, await self._g.access_token(uid))
+        if status == STATUS_UNAUTHORIZED:
+            status, data = await self._fetch(url, await self._renew(uid))
+        if status != HTTP_OK:
+            raise PickerError(BAD_PICTURE)
+        return await asyncio.to_thread(sanitise_jpeg, data)
+
+    async def _renew(self, uid: str) -> str:
+        """A fresh access token (the stored one was refused). `GoogleConnector.request` only
+        does this for JSON calls, so the photo stream reuses its refresh step."""
+        tokens = await self._g._load(uid)  # noqa: SLF001 - same package family; see INTEGRATION.md
+        if not isinstance(tokens, GoogleTokens):
+            raise GoogleNotConnected(RECONNECT_MSG)
+        return await self._g._refresh(uid, tokens)  # noqa: SLF001
+
+    async def _fetch(self, url: str, token: str) -> tuple[int, bytes]:
+        """(status, body). The body is only read for a 200 `image/jpeg` that fits the cap."""
         try:
-            r = await self._g.http.get(
-                item.base_url + SIZE_SUFFIX,
+            async with self._g.http.stream(
+                "GET",
+                url,
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=DOWNLOAD_TIMEOUT_S,
                 follow_redirects=False,
-            )
+            ) as r:
+                if r.status_code != HTTP_OK:
+                    return r.status_code, b""
+                _check_headers(r)
+                buf = bytearray()
+                async for chunk in r.aiter_bytes():
+                    buf += chunk
+                    if len(buf) > MAX_IMAGE_BYTES:
+                        raise PickerError(BAD_PICTURE)
+                return r.status_code, bytes(buf)
         except httpx.HTTPError as exc:
             log.warning("photo download failed", extra={"reason": type(exc).__name__})
             raise PickerError(BAD_PICTURE) from None
-        data = r.content
-        if r.status_code != 200 or len(data) > MAX_IMAGE_BYTES or not data.startswith(JPEG_MAGIC):
-            raise PickerError(BAD_PICTURE)
-        return data
 
     async def delete_session(self, uid: str, session_id: str) -> None:
         """Best effort: Google expires sessions on its own."""

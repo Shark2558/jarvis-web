@@ -14,13 +14,18 @@ Flows (cross-part):
   f03  a bare private name is refused with no links (the web is a fake: no credit, no network)
   f04  a pasted key never appears in any output: the REST write and the gateway tool both refuse it
   f05  a child added to Faces is never named by vitals, the systems check, the brief or an alert
+  f06  COLD START (I2 F1): the persisted mode is "none" and nothing is loaded yet; a direct
+       /people/research call, the brief summariser, the recall sweep and the health probe make
+       ZERO provider calls, and the health probe says the AI is switched off
+  f07  FLAP (I2 F2): fifty health / vitals urgent alerts never leave the Telegram urgent budget
+       short for a burglar ring (<= 6 of them ring; the next home_intruder is still delivered)
 
 After every flow every Firestore document, log record and audit entry are scanned for the key
 needle and the child's name; every Telegram text for the key and the child's name.
 
 Negative controls (each must make the suite FAIL): a "debug" log line of the vitals write body
-(before the guard);
-the urgent kinds demoted to "important" (then quiet hours hold them); the people gate removed.
+(before the guard); the urgent kinds demoted to "important" (then quiet hours hold them); the
+people gate removed; the router's no-AI guard unbound (f06); the flap protection removed (f07).
 """
 
 from __future__ import annotations
@@ -43,15 +48,23 @@ sys.path.insert(0, str(ROOT / "src"))
 from pydantic import SecretStr  # noqa: E402
 from r1d_common import finish  # noqa: E402
 from r3_app import UID, H, R3App, r3_app, r3_settings  # noqa: E402
-from research_fakes import PRIVATE_HITS  # noqa: E402
+from research_fakes import PRIVATE_HITS, SATYA_HITS  # noqa: E402
 
 import jarvis.notify.policy as policy_mod  # noqa: E402
+import jarvis.notify.telegram_out as telegram_out_mod  # noqa: E402
 import jarvis.vitals.api as vitals_api_mod  # noqa: E402
+from jarvis.brief.summarize import Prepared as BriefPrepared  # noqa: E402
+from jarvis.brief.summarize import Summarizer  # noqa: E402
 from jarvis.llm.base import ToolCall  # noqa: E402
+from jarvis.llm.router import ModelRouter, ModelTier  # noqa: E402
 from jarvis.notify.models import NotifySettings, QuietHours  # noqa: E402
+from jarvis.notify.ports import Signal  # noqa: E402
 from jarvis.notify.store import NotifyStore  # noqa: E402
+from jarvis.notify.storm import Storm  # noqa: E402
 from jarvis.offline.rules import NO_AI_LINE  # noqa: E402
 from jarvis.people.research import PeopleService  # noqa: E402
+from jarvis.recall.extract import Extractor  # noqa: E402
+from jarvis.recall.extract import Prepared as LearnPrepared  # noqa: E402
 from jarvis.tools.gateway import GatewayOutcome  # noqa: E402
 from jarvis.web.ports import PageText, SearchPage  # noqa: E402
 
@@ -157,6 +170,12 @@ async def _chat(w: R3App, text: str) -> str:
     return str(r.json()["reply"])
 
 
+def _health_job(w: R3App) -> Any:
+    job = w.state.tick_jobs[-1]
+    job._every_s = 0.0  # noqa: SLF001 - the flow checks twice in a row; lift the due-gate
+    return job
+
+
 def _model_calls(w: R3App) -> int:
     return len(w.state.brains.default.provider.calls)
 
@@ -177,8 +196,9 @@ async def f01_red_vitals_and_health_fault(w: R3App) -> list[str]:
     if r.status_code != 200:
         f.append(f"vitals write refused: {r.status_code} {r.text}")
     await w.state.tick_jobs[-2].run([UID])  # vitals_poll
-    await w.state.tick_jobs[-1].run([UID])  # health_check (1st: the home has never reported)
-    await w.state.tick_jobs[-1].run([UID])  # 2nd consecutive down -> health_fault
+    health = _health_job(w)  # the real job; only its 30-minute due-gate is lifted here
+    await health.run([UID])  # health_check (1st: the home has never reported)
+    await health.run([UID])  # 2nd consecutive down -> health_fault
     texts = w.sent_texts()
     if not any("Vitals" in t and "Brave key" in t for t in texts):
         f.append(f"the red vitals line did not ring through quiet hours: {texts}")
@@ -260,8 +280,9 @@ async def f04_a_pasted_key_never_appears_in_any_output(w: R3App) -> list[str]:
 async def f05_a_child_is_never_named(w: R3App) -> list[str]:
     f: list[str] = []
     await _add_child(w)
-    await w.state.tick_jobs[-1].run([UID])
-    await w.state.tick_jobs[-1].run([UID])
+    health_job = _health_job(w)
+    await health_job.run([UID])
+    await health_job.run([UID])
     health = (await w.client.post("/v1/health/run", headers=H)).text
     board = (await w.client.get("/v1/vitals", headers=H)).text
     brief = await w.state.brief.generate(UID, trigger="manual", force=True)
@@ -272,12 +293,75 @@ async def f05_a_child_is_never_named(w: R3App) -> list[str]:
     return f
 
 
+class PublicWeb(FakeWeb):
+    """The same fake vendor, answering with a public figure (so research may reach the model)."""
+
+    async def search(self, query: str, *, max_results: int, topic: str, days: Any) -> SearchPage:
+        return SearchPage(hits=list(SATYA_HITS), credits=1)
+
+
+async def _go_cold(w: R3App) -> None:
+    """Persisted "none", nothing loaded: what a freshly started instance sees before any read."""
+    await w.state.brain_mode.set(UID, "none", by="needles")
+    w.state.brain_mode._cache.clear()  # noqa: SLF001
+
+
+async def f06_cold_start_makes_no_model_call(w: R3App) -> list[str]:
+    f: list[str] = []
+    w.state.web.provider = PublicWeb()
+    brains = w.state.brains
+    spec = brains.default
+    before = _model_calls(w)
+    await _go_cold(w)
+    r = await w.client.post(
+        "/v1/people/research", json={"name": "Satya Nadella", "context": "Microsoft"}, headers=H
+    )
+    if r.status_code not in (200, 422):
+        f.append(f"people research: {r.status_code} {r.text[:200]}")
+    await _go_cold(w)
+    block = await Summarizer(brains).run(BriefPrepared(spec, spec.tiers[ModelTier.FAST], "x"))
+    if block.lines:
+        f.append("the brief summariser produced lines while the AI was off")
+    await _go_cold(w)
+    out = await Extractor(brains).run(LearnPrepared(spec, spec.tiers[ModelTier.FAST], "x"))
+    if out.extraction is not None:
+        f.append("the recall sweep extracted while the AI was off")
+    await _go_cold(w)
+    health = (await w.client.post("/v1/health/run", headers=H)).text
+    if "switched off" not in health:
+        f.append(f"the health report does not say the AI is switched off: {health[:200]}")
+    if _model_calls(w) != before:
+        f.append(f"{_model_calls(w) - before} provider call(s) on a cold start with the AI off")
+    return f
+
+
+async def f07_flapping_alerts_never_starve_a_burglar_ring(w: R3App) -> list[str]:
+    f: list[str] = []
+    notify = w.state.notify
+    for i in range(50):
+        kind = "health_fault" if i % 2 == 0 else "vitals_critical"
+        await notify.notify(
+            UID, Signal(source="system", kind=kind, subject=f"k{i}"), f"Attention, Sir: item {i}."
+        )
+    flapped = [t for t in w.sent_texts() if t.startswith("Attention, Sir: item")]
+    if len(flapped) > 6:
+        f.append(f"{len(flapped)} health / vitals alerts rang in one hour (cap is 6)")
+    await notify.notify(
+        UID, Signal(source="home", kind="home_intruder", camera="gate"), "Burglar at the gate."
+    )
+    if not any("Burglar at the gate" in t for t in w.sent_texts()):
+        f.append("the burglar ring was not delivered after the flapping alerts")
+    return f
+
+
 FLOWS: list[tuple[str, Flow]] = [
     ("f01_red_vitals_and_health_fault_ring_in_quiet_hours", f01_red_vitals_and_health_fault),
     ("f02_no_ai_mode_answers_free_skills_refuses_drafting", f02_no_ai_mode_free_skills),
     ("f03_bare_private_name_refused_no_links", f03_a_bare_private_name_is_refused_with_no_links),
     ("f04_pasted_key_never_in_any_output", f04_a_pasted_key_never_appears_in_any_output),
     ("f05_child_never_named", f05_a_child_is_never_named),
+    ("f06_cold_start_with_persisted_none_makes_no_model_call", f06_cold_start_makes_no_model_call),
+    ("f07_flapping_alerts_never_starve_a_burglar_ring", f07_flapping_alerts_never_starve_a_burglar_ring),
 ]
 
 
@@ -351,17 +435,59 @@ async def _control_remove_the_people_gate() -> list[str]:
         PeopleService.__init__ = original  # type: ignore[method-assign]
 
 
+async def _control_unbind_the_router_guard() -> list[str]:
+    """With the router's no-AI guard a no-op, the cold-start background callers reach the
+    provider: f06 must fail."""
+    original = ModelRouter.bind_blocked
+
+    def unbound(self: Any, blocked: Any, refresh: Any = None) -> None:
+        return None
+
+    ModelRouter.bind_blocked = unbound  # type: ignore[method-assign]
+    try:
+        return [r["id"] for r in await run_all() if not r["passed"]]
+    finally:
+        ModelRouter.bind_blocked = original  # type: ignore[method-assign]
+
+
+async def _control_remove_the_flap_protection() -> list[str]:
+    """With no gap / cap in the storm and health / vitals rings drawing from the urgent budget,
+    fifty flaps starve the burglar ring: f07 must fail."""
+    original_soft = Storm._soft_ok  # noqa: SLF001
+    original_kinds = telegram_out_mod.SOFT_URGENT_KINDS
+
+    def always(self: Any, uid: str, signal: Any, now: Any) -> Any:
+        from jarvis.notify.storm import Verdict
+
+        return Verdict(True)
+
+    Storm._soft_ok = always  # type: ignore[method-assign]  # noqa: SLF001
+    telegram_out_mod.SOFT_URGENT_KINDS = frozenset()
+    try:
+        return [r["id"] for r in await run_all() if not r["passed"]]
+    finally:
+        Storm._soft_ok = original_soft  # type: ignore[method-assign]  # noqa: SLF001
+        telegram_out_mod.SOFT_URGENT_KINDS = original_kinds
+
+
 async def controls() -> dict[str, Any]:
     logged = await _control_log_the_vitals_write()
     demoted = await _control_demote_the_urgent_kinds()
     ungated = await _control_remove_the_people_gate()
+    unbound = await _control_unbind_the_router_guard()
+    unflapped = await _control_remove_the_flap_protection()
     return {
-        "name": "debug_log_vitals_write + demote_urgent_kinds + remove_people_gate",
-        "suite_failed": bool(logged) and bool(demoted) and bool(ungated),
+        "name": "debug_log_vitals_write + demote_urgent_kinds + remove_people_gate"
+        " + unbind_router_guard + remove_flap_protection",
+        "suite_failed": all(bool(x) for x in (logged, demoted, ungated, unbound, unflapped))
+        and any(c.startswith("f06") for c in unbound)
+        and any(c.startswith("f07") for c in unflapped),
         "failed_cases": {
             "debug_log_vitals_write": logged,
             "demote_urgent_kinds": demoted,
             "remove_people_gate": ungated,
+            "unbind_router_guard": unbound,
+            "remove_flap_protection": unflapped,
         },
     }
 

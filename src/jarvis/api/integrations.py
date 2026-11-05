@@ -62,6 +62,7 @@ GRANT_TOOLS: dict[str, str] = {
     "tasks": "tasks_list",
     "contacts": "contacts_search",
     "youtube": "youtube_my_playlists",
+    "photos": "photos_import",  # R4 C (W8): the Picker grant, offered only when Photos is wired
 }
 # Final review (D8): the features with their own endpoints whose sections "Never" hides.
 FEATURE_TOOLS: dict[str, str] = {"drive": DRIVE_TOOL, "maps": MAPS_TOOL}
@@ -170,10 +171,12 @@ class GoogleStatus(BaseModel):
     # slice 12 D7: the optional contacts / YouTube playlists scopes, the same way
     contacts_granted: bool = False
     youtube_granted: bool = False
+    photos_granted: bool = False  # R4: the Google Photos Picker (pick-only)
     # review C7: false → the console offers no Grant row (no tools here, or the row is Never)
     tasks_available: bool = True
     contacts_available: bool = True
     youtube_available: bool = False
+    photos_available: bool = False  # R4: Photos needs the Google link, Faces and the home kit
 
 
 class Integrations(BaseModel):
@@ -198,7 +201,13 @@ async def integrations(
     # JARVIS_DRIVE is on (app.state.drive)
     media = getattr(request.app.state, "media", None)
     drive = getattr(request.app.state, "drive", None)
-    here = {"tasks": True, "contacts": True, "youtube": media is not None}
+    photos = getattr(request.app.state, "photos", None)  # R4: wired only with Faces + home kit
+    here = {
+        "tasks": True,
+        "contacts": True,
+        "youtube": media is not None,
+        "photos": photos is not None,
+    }
     available = {name: here[name] and name not in off for name in GRANTS}
     return Integrations(
         drive_available=drive is not None and "drive" not in off,
@@ -208,9 +217,11 @@ async def integrations(
             tasks_granted=linked and can_use_tasks(scopes),
             contacts_granted=linked and can_use_contacts(scopes),
             youtube_granted=linked and can_use_youtube(scopes),
+            photos_granted=linked and "photos" in held_grants(scopes),
             tasks_available=available["tasks"],
             contacts_available=available["contacts"],
             youtube_available=available["youtube"],
+            photos_available=available["photos"],
         ),
     )
 

@@ -423,6 +423,15 @@ IDX_OUT="$(gcloud firestore indexes composite create --database='(default)' --co
     *) echo "  Note: the conversation-list index could not be created yet (JARVIS works without it):"
        printf '  %s\n' "$IDX_OUT" | tail -2 ;;
   esac
+# R4 A (W15): the Vitals board lists an owner's tracked keys by label (equality + order_by on
+# another field needs a composite index). Until it is built the board says "unavailable".
+IDX_OUT="$(gcloud firestore indexes composite create --database='(default)' --collection-group=jarvis_vitals_providers \
+  --field-config=field-path=user_id,order=ascending --field-config=field-path=label,order=ascending \
+  --async --quiet 2>&1)" || case "$IDX_OUT" in
+    *already*exists*|*ALREADY_EXISTS*) ;;
+    *) echo "  Note: the Vitals index could not be created yet (the Vitals board waits for it):"
+       printf '  %s\n' "$IDX_OUT" | tail -2 ;;
+  esac
 # R2 D1: the vault's, notes' and things' encrypted blobs are never searched, so keep them out of the
 # single-field indexes (saves free storage). NON-FATAL: a failure changes nothing else.
 VAULT_INDEX_FAILED=no

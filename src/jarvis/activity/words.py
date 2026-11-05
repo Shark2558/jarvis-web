@@ -47,6 +47,14 @@ _READS_PREFIX: tuple[tuple[str, tuple[str, str]], ...] = (
     ("youtube_", ("Looked at YouTube", "Look at YouTube")),
     ("contacts_", ("Looked up your contacts", "Look up your contacts")),
     ("memory_", ("Looked in your memory", "Look in your memory")),
+    # R4 (W14): vitals, the systems check, connectors and people research
+    ("vitals_", ("Checked your Vitals board", "Check your Vitals board")),
+    ("systems_", ("Ran a systems check", "Run a systems check")),
+    ("people_", ("Looked up a public profile", "Look up a public profile")),
+    ("research_", ("Researched a public figure", "Research a public figure")),
+    ("connect_", ("Checked a connected account", "Check a connected account")),
+    ("github_", ("Looked at your GitHub", "Look at your GitHub")),
+    ("photos_", ("Looked at your picked photos", "Look at your picked photos")),
 )
 _READ_FALLBACK = ("Looked something up", "Look something up")
 
@@ -94,6 +102,14 @@ _IMPERATIVE = {
     "Deleted": "Delete",
     "Noted": "Note",
     "Forgot": "Forget",
+    # R4: the fixed words the vitals, health, connector and people tools declare
+    "Checked": "Check",
+    "Ran": "Run",
+    "Researched": "Research",
+    "Connected": "Connect",
+    "Imported": "Import",
+    "Updated": "Update",
+    "Removed": "Remove",
 }
 
 

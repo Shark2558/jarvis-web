@@ -243,9 +243,11 @@ async def test_status_requires_auth_and_is_per_user(gc: AsyncClient) -> None:
             "tasks_granted": False,
             "contacts_granted": False,  # slice 12 D7
             "youtube_granted": False,
+            "photos_granted": False,  # R4 (W8): the Picker grant
             "tasks_available": True,  # slice 12 review C7: a Grant row is offered only when
             "contacts_available": True,  # its tools exist here and are not set to Never
             "youtube_available": False,  # no API key on this server: no YouTube tools
+            "photos_available": True,  # R4: key + Faces + Home here: Photos is wired
         },
         "drive_available": False,  # final review: JARVIS_DRIVE is off on this server
         "maps_available": False,  # no API key: no Maps (Home / Work hidden)

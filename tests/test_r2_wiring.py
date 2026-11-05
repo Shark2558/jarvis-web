@@ -140,7 +140,9 @@ async def test_the_brief_gets_the_documents_section(on: App) -> None:
 async def test_without_the_token_key_everything_is_off_with_plain_words(off: App) -> None:
     st = off.app.state
     assert st.vault is None and st.notes is None and st.belongings is None
-    assert st.vault_inbox is None and st.tick_jobs == ()
+    assert st.vault_inbox is None
+    # R4 I1: vitals and the systems check need no key, so their two jobs ride the tick anyway
+    assert [j.name for j in st.tick_jobs] == ["vitals_poll", "health_check"]
     assert st.notes_reason == NOT_CONFIGURED
     names = {s.name for s in st.gateway.registry.specs()}
     assert not names & R2_TOOLS
@@ -238,7 +240,9 @@ async def test_notes_switched_off_say_so(settings: Settings) -> None:
 
 async def test_tick_jobs_have_unique_names_none_of_the_ticks_own(on: App) -> None:
     names = [j.name for j in on.app.state.tick_jobs]
-    assert names == ["vault_reminders", "vault_chunks", "vault_unlocks"]
+    # R4 I1 (D14): the vitals poll and the health check ride the same tick
+    r2 = ["vault_reminders", "vault_chunks", "vault_unlocks"]
+    assert names == [*r2, "vitals_poll", "health_check"]
     assert not RESERVED_JOB_NAMES & set(names)
     assert await run_jobs(on.app.state.tick_jobs, [UID]) == dict.fromkeys(names, "ok")
 

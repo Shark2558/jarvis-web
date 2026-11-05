@@ -325,39 +325,12 @@ def _wire_gateway(
     (one built elsewhere gets them too)."""
     gw: Gateway | None = inj.gateway
     if gw is None and s.tools_enabled:
-        gw = build_gateway(
-            s,
-            approvals=built.approvals if built else None,
-            audit=audit,
-            google=app.state.google,
-            memory=app.state.memory,
-            web=app.state.web,
-            documents=app.state.documents,
-            undo=app.state.undo,
-            # D8: to-dos JARVIS wrote from outside content, on the same documents
-            marks=app.state.outside_tasks,
-            drive=app.state.drive,
-            media=app.state.media,
-            docs=docs,  # R1 D: groceries, family, packages, digest
-            # R2: each only when on (the server's token key; api/personal.py)
-            vault=app.state.vault,
-            notes=app.state.notes,
-            belongings=app.state.belongings,
-        )
+        gw = _build_tool_gateway(app, s, built, docs, audit)
     app.state.permissions = build_permissions(
         s, docs, audit=gw.audit if gw is not None else audit, google=app.state.google
     )
-    if gw is not None and gw.rules is None:
-        gw.rules = app.state.permissions
-    if gw is not None and app.state.telegram is not None:
-        # D4: the Telegram privacy rules wrap the owner's rules (the only supported way; the
-        # service refuses Telegram turns without them)
-        gw.rules = wrap_rules(gw.rules, app.state.telegram.store)
     if gw is not None:
-        # R1 C: offline mode's rules are the OUTERMOST layer, outside telegram's (an inner one
-        # would be dropped by the channel wrapper); the Telegram marker stays visible through it
-        assert gw.rules is not None  # set from the permissions service just above
-        gw.rules = wrap_offline(gw.rules)
+        _wrap_rules(app, gw)
     # Activity (R1 B): a per-day store and the observer that fills it, on every gateway
     app.state.activity_store = ActivityStore(docs, prefix=s.firestore_prefix)
     if gw is not None:
@@ -368,11 +341,50 @@ def _wire_gateway(
         timezone=s.user_timezone,
         retention_days=s.activity_retention_days,
     )
-    if gw is not None and gw.approval_guard is None:
-        gw.approval_guard = app.state.permissions
     if app.state.documents.rules is None:  # Documents "Never": no upload, no file sent
         app.state.documents.rules = app.state.permissions
     app.state.gateway = gw
+
+
+def _build_tool_gateway(
+    app: FastAPI, s: Settings, built: Storage | None, docs: Docs, audit: AuditTrail
+) -> Gateway:
+    return build_gateway(
+        s,
+        approvals=built.approvals if built else None,
+        audit=audit,
+        google=app.state.google,
+        memory=app.state.memory,
+        web=app.state.web,
+        documents=app.state.documents,
+        undo=app.state.undo,
+        # D8: to-dos JARVIS wrote from outside content, on the same documents
+        marks=app.state.outside_tasks,
+        drive=app.state.drive,
+        media=app.state.media,
+        docs=docs,  # R1 D: groceries, family, packages, digest
+        # R2: each only when on (the server's token key; api/personal.py)
+        vault=app.state.vault,
+        notes=app.state.notes,
+        belongings=app.state.belongings,
+    )
+
+
+def _wrap_rules(app: FastAPI, gw: Gateway) -> None:
+    """The owner's rules (and passkeys for approvals), wrapped by Telegram's, wrapped by
+    offline mode's."""
+    if gw.rules is None:
+        gw.rules = app.state.permissions
+    if app.state.telegram is not None:
+        # D4: the Telegram privacy rules wrap the owner's rules (the only supported way; the
+        # service refuses Telegram turns without them)
+        gw.rules = wrap_rules(gw.rules, app.state.telegram.store)
+    # R1 C: offline mode's rules are the OUTERMOST layer, outside telegram's (an inner one
+    # would be dropped by the channel wrapper); the Telegram marker stays visible through it
+    assert gw.rules is not None  # set from the permissions service just above
+    gw.rules = wrap_offline(gw.rules)
+    if gw.approval_guard is None:
+        gw.approval_guard = app.state.permissions
 
 
 def _wire_brain(app: FastAPI, s: Settings, built: Storage | None, docs: Docs) -> None:

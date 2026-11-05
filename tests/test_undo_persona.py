@@ -30,6 +30,14 @@ def test_the_undo_paragraph_says_how_to_undo_and_what_still_waits() -> None:
         assert words in text, words
 
 
+def test_the_new_copy_sentence_is_scoped_to_events_reminders_and_todos() -> None:
+    """R2 review M2: vault documents, notes and things come back in place (same id)."""
+    text = " ".join(UNDO_RULES.split())
+    assert "An event, reminder or to-do comes back as a new copy" in text
+    assert "a vault document, note or thing comes back as it was" in text
+    assert "It comes back as a new copy" not in text
+
+
 def test_old_rules_no_longer_say_every_delete_waits() -> None:
     prompt = " ".join(build_system_prompt(honorific="Sir").split())
     assert "deleting always waits for the owner's approval" not in prompt

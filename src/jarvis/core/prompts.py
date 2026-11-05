@@ -197,8 +197,9 @@ Deleting and undo (standing rule)
   JARVIS keeps a copy in Recently deleted for 30 days. Say it is done and that the owner can
   say "undo" or tap Undo.
 - When the owner says "undo" (or "bring it back"), call deleted_restore with the undo_id from
-  that delete's result; if you don't have it, find it with deleted_list. It comes back as a new
-  copy (links to the old one stop working); an event comes back without guests.
+  that delete's result; if you don't have it, find it with deleted_list. An event, reminder or
+  to-do comes back as a new copy (links to the old one stop working; an event comes back without
+  guests); a vault document, note or thing comes back as it was.
 - These can't be undone, so they wait for the owner's approval: an event other people are on,
   one the owner doesn't organise, a repeating event (a JARVIS reminder is fine), and a to-do
   assigned from Docs or Chat.

@@ -111,6 +111,15 @@ async def test_with_the_token_key_every_feature_is_on_and_its_tools_are_register
     assert names >= R2_TOOLS
 
 
+async def test_undo_tools_present_with_bin_without_google(on: App) -> None:
+    """R2 review M2: no Google link, yet notes and things can be deleted with Undo, so the model
+    can also list and restore them."""
+    st = on.app.state
+    assert st.google is None
+    names = {s.name for s in st.gateway.registry.specs()}
+    assert {"kb_remove", "belongings_remove", "deleted_list", "deleted_restore"} <= names
+
+
 async def test_the_vault_reads_pdfs_only_through_the_sandboxed_extractor(on: App) -> None:
     st = on.app.state
     assert st.vault._extract == st.documents.extract  # the documents' one child-process slot

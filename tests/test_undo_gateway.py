@@ -20,6 +20,7 @@ from jarvis.tools.registry import ToolRegistry
 from jarvis.tools.setup import build_gateway
 from jarvis.undo.service import UndoBin
 from jarvis.undo.store import DeletedStore
+from jarvis.undo.tools import undo_tools
 
 SCOPE = "u1:sess_1"
 
@@ -148,18 +149,50 @@ async def test_the_tool_knows_the_risk_it_was_approved_at() -> None:
     assert seen == [(ActionRisk.REVERSIBLE, False), (ActionRisk.IRREVERSIBLE, True)]
 
 
-async def test_the_undo_tools_join_only_with_the_google_tools(settings: Settings) -> None:
-    """Restore needs the Google tools' restorers: without a Google link there is nothing the
-    model could restore, so deleted_list / deleted_restore aren't offered."""
+async def test_undo_tools_present_with_bin_without_google(settings: Settings) -> None:
+    """R2 review M2: notes and things are undo-able without Google (kb_remove and
+    belongings_remove are offered), so deleted_list / deleted_restore join whenever the bin
+    exists. An event or a to-do without Google is a plain "Google isn't connected"; without the
+    bin there is nothing to list or restore."""
+    from belongings_fakes import things
     from tasks_fakes import FakeTasks, tasks_connector
 
     undo = UndoBin(DeletedStore(MemoryDocs()))
-    alone = build_gateway(settings, undo=undo)
-    assert (
-        alone.registry.get("deleted_restore") is None and alone.registry.get("deleted_list") is None
-    )
-    linked = build_gateway(settings, undo=undo, google=await tasks_connector(FakeTasks()))
+    t = things()
+    alone = build_gateway(settings, undo=undo, belongings=t.svc)
+    assert alone.registry.get("belongings_remove") is not None
+    assert alone.registry.get("deleted_restore") is not None
+    assert alone.registry.get("deleted_list") is not None
+    other = UndoBin(DeletedStore(MemoryDocs()))  # the Google tools register their restorers on it
+    linked = build_gateway(settings, undo=other, google=await tasks_connector(FakeTasks()))
     assert linked.registry.get("deleted_restore") is not None
+    none = build_gateway(settings)
+    assert (
+        none.registry.get("deleted_restore") is None and none.registry.get("deleted_list") is None
+    )
+    event = await undo.keep("u1", "event", "Dentist", {"ref": "e"})
+    call = ToolCall(id="r", name="deleted_restore", arguments={"undo_id": event.id})
+    out = await alone.execute(call, scope="u1:s")
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    assert out.result["status"] == "unavailable" and "Google" in out.result["message"]
+
+
+async def test_an_r2_kind_with_its_feature_off_says_so_not_google() -> None:
+    """A note left in the bin on a server whose notes are now off: no Google words."""
+    undo = UndoBin(DeletedStore(MemoryDocs()))
+    note = await undo.keep("u1", "note", "A note from 4 Nov", {"ref": "n_000000000000"})
+    out = await undo.restore("u1", note.id)
+    assert out.status.value == "unavailable"
+    assert "Google" not in out.message and "switched off" in out.message
+
+
+def test_the_undo_tools_say_what_comes_back_in_place() -> None:
+    tools = {t.name: t for t in undo_tools(UndoBin(DeletedStore(MemoryDocs())))}
+    listing = " ".join(tools["deleted_list"].description.split())
+    assert "vault documents, notes and things" in listing
+    restore = " ".join(tools["deleted_restore"].description.split())
+    assert "An event, reminder or to-do comes back as a new copy" in restore
+    assert "a vault document, note or thing comes back as it was" in restore
 
 
 async def test_undo_chips_come_only_from_tools_marked_undoable() -> None:

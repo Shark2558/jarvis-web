@@ -62,6 +62,10 @@ MSG_UNAVAILABLE = (
     "JARVIS can't restore that right now: Google isn't connected for it. Reconnect Google in "
     "Integrations, then try again."
 )
+MSG_FEATURE_OFF = (
+    "JARVIS can't restore that right now: it is switched off on this server. It stays in "
+    "Recently deleted until it expires."
+)
 MSG_GONE = "It's gone: it was removed for good, so it can't be restored."
 
 
@@ -243,9 +247,10 @@ class UndoBin:
         if result is not ClaimResult.CLAIMED or item is None:
             return _not_claimed(result, item)
         restorer = self._restorers.get(item.kind)
-        if restorer is None:
+        if restorer is None:  # events / to-dos: no Google; R2 kinds: that feature is off here
             await self._release(uid, item.id)
-            return _outcome(item, RestoreStatus.UNAVAILABLE, MSG_UNAVAILABLE)
+            why = MSG_FEATURE_OFF if item.kind in IN_PLACE_KINDS else MSG_UNAVAILABLE
+            return _outcome(item, RestoreStatus.UNAVAILABLE, why)
         token = _made.set(lambda new_id: self._note_made(uid, item.id, new_id))
         try:
             done = await restorer.restore(uid, item, outside=not item.owner_authored)
@@ -365,6 +370,7 @@ def _not_claimed(result: ClaimResult, item: DeletedItem | None) -> RestoreOutcom
 
 __all__ = [
     "MAX_SNAPSHOT_CHARS",
+    "MSG_FEATURE_OFF",
     "MSG_GONE",
     "Gone",
     "PurgeFailed",

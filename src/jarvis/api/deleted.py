@@ -16,8 +16,8 @@ POST   /v1/deleted/{id}/restore  RestoreOutcome {status: restored | already_rest
                                  404 not_found (unknown / malformed id; or, R2, the item was
                                  removed for good: "It's gone", the entry is dropped), 410
                                  expired, 409 busy (a restore is under way) or still_there (never
-                                 deleted: no copy made), 503 unavailable (Google not linked), 502
-                                 restore_failed.
+                                 deleted: no copy made), 503 unavailable (Google not linked; R2:
+                                 that feature is off here), 502 restore_failed.
 DELETE /v1/deleted/{id}          "Remove now": the copy goes at once (it can't be restored after).
                                  {removed: true, id}; 404 not_found. Audited (agent "console").
                                  R2 I1: for a vault document, a note or a thing

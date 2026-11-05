@@ -23,19 +23,22 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool, field_validator
 
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.faces import consent
 from jarvis.faces.models import CONSENT_VERSION, NAME_MAX
+from jarvis.faces.ports import FAMILY_CHILD
 from jarvis.faces.service import PersonRejected
-from jarvis.integrations.github import MAX_TOKEN_CHARS, GithubError
+from jarvis.integrations.github import GithubError, token_ok
 from jarvis.integrations.google import GoogleAPIError, GoogleNotConnected
 from jarvis.integrations.youtube import YouTubeNotGranted
 from jarvis.logging import get_logger
-from jarvis.photos.edge import EdgeOffline
+from jarvis.photos.edge import EdgeBadReply, EdgeOffline
 from jarvis.photos.picker import PhotosNotGranted, PickerError
 from jarvis.photos.service import NoSession
 from jarvis.photos.tools import ConnectorDeps
@@ -45,6 +48,21 @@ log = get_logger(__name__)
 CHANGES_PER_MINUTE = 20
 NOT_BUILT = "This connector isn't available on this server."
 RATE = "Too many changes; wait a moment."
+BAD_REQUEST = "That request wasn't in the expected shape."
+_PREFIX = "/v1/connectors"
+_FIELDS = frozenset(
+    {
+        "token",
+        "cluster",
+        "name",
+        "relation",
+        "child",
+        "vip",
+        "given_by",
+        "consent_version",
+        "confirm",
+    }
+)
 _PROBLEMS = (
     GithubError,
     GoogleAPIError,
@@ -54,6 +72,7 @@ _PROBLEMS = (
     PickerError,
     NoSession,
     EdgeOffline,
+    EdgeBadReply,
 )
 
 
@@ -73,7 +92,14 @@ def _limited(request: Request, uid: str) -> bool:
 
 class GithubBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    token: SecretStr = Field(max_length=MAX_TOKEN_CHARS * 2)
+    token: str  # a plain str only until checked: SecretStr is built from it in the route
+
+    @field_validator("token")
+    @classmethod
+    def _shape(cls, value: str) -> str:
+        if not token_ok(value):
+            raise ValueError("invalid")  # generic: the value is never part of the message
+        return value
 
 
 class EnrolBody(BaseModel):
@@ -136,7 +162,7 @@ async def github_connect(
     if _limited(request, uid):
         return _err(429, "rate_limited", RATE)
     try:
-        login = await gh.connect(uid, body.token)
+        login = await gh.connect(uid, SecretStr(body.token))
     except GithubError as exc:
         return _err(422, "github_refused", str(exc))
     return {"connected": True, "login": login}
@@ -187,8 +213,12 @@ async def photos_import(
         "photos": res.photos,
         "faces_found": res.faces_found,
         "skipped": res.skipped,
-        "recognised": [{"name": p.name, "child": p.child} for p in res.recognised],
+        "recognised": [
+            {"name": FAMILY_CHILD if p.child else p.name, "child": p.child}  # D-C4
+            for p in res.recognised
+        ],
         "unknown": list(res.unknown_clusters),
+        "picker_uri": res.picker_uri,
     }
 
 
@@ -214,8 +244,31 @@ async def photos_enrol(
     }
 
 
+def _field_names(exc: RequestValidationError) -> list[str]:
+    """Known field names only. Never `input`, `ctx` or `msg` (they can hold the pasted token) and
+    never an unknown key (a caller could name a key after a secret)."""
+    names = {str(e["loc"][-1]) for e in exc.errors() if e.get("loc")}
+    found = sorted(names & _FIELDS)
+    return found + (["(unknown)"] if names - _FIELDS else [])
+
+
+async def _invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+    detail = ", ".join(_field_names(exc)) or "body"
+    return _err(422, "invalid_request", f"{BAD_REQUEST} Check: {detail}.")
+
+
 def install_connectors(app: FastAPI) -> None:
     app.state.connectors_limit = RateLimiter(CHANGES_PER_MINUTE)
+    previous = app.exception_handlers.get(
+        RequestValidationError, request_validation_exception_handler
+    )
+
+    async def handler(request: Request, exc: Exception) -> Any:
+        if isinstance(exc, RequestValidationError) and request.url.path.startswith(_PREFIX):
+            return await _invalid_request(request, exc)
+        return await previous(request, exc)  # type: ignore[misc]
+
+    app.add_exception_handler(RequestValidationError, handler)
     app.include_router(_auth_router())
 
 

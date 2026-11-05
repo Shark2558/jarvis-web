@@ -147,3 +147,86 @@ async def test_connectors_that_are_not_built_answer_503(gsettings: Settings) -> 
         r = await c.put("/v1/connectors/github", json={"token": TOKEN}, headers=CSRF)
         assert r.status_code == 503
         await c.aclose()
+
+
+# ---- review fixes ----------------------------------------------------------------------------
+
+LONG_TOKEN = "ghp_" + "Z" * 400
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"token": LONG_TOKEN},  # too long
+        {"token": TOKEN, "extra": "x"},  # extra field
+        {TOKEN: "x"},  # the secret as a KEY
+        {"token": 12345678},  # wrong type
+        {"token": ["ghp_" + "Q" * 40]},  # wrong shape
+        {"token": "has space " + TOKEN},
+    ],
+)
+async def test_a_422_never_echoes_the_pasted_token(ctx: Ctx, payload: dict) -> None:
+    r = await ctx.c.put("/v1/connectors/github", json=payload, headers=CSRF)
+    assert r.status_code == 422
+    assert r.json()["error"] == "invalid_request"
+    for secret in (TOKEN, LONG_TOKEN, "Q" * 40, "Z" * 40):
+        assert secret not in r.text
+    assert "input" not in r.json() and "ctx" not in r.json()
+
+
+async def test_a_malformed_json_body_is_a_clean_422(ctx: Ctx) -> None:
+    r = await ctx.c.put(
+        "/v1/connectors/github",
+        content=b'{"token": "' + TOKEN.encode() + b'"',
+        headers={**CSRF, "content-type": "application/json"},
+    )
+    assert r.status_code == 422 and TOKEN not in r.text
+
+
+async def test_validation_errors_name_fields_only(ctx: Ctx) -> None:
+    r = await ctx.c.post("/v1/connectors/photos/enrol", json={"cluster": 5}, headers=CSRF)
+    assert r.status_code == 422 and r.json()["error"] == "invalid_request"
+    assert "cluster" in r.json()["detail"]
+
+
+async def test_a_child_is_never_named_or_contact_matched_by_the_server(ctx: Ctx) -> None:
+    child = await ctx.r.f.svc.add(
+        UID,
+        name="Mini",
+        relation="family",
+        child=True,
+        vip=False,
+        given_by="parent_guardian",
+        consent_version="fc1",
+        confirm=True,
+    )
+    await ctx.r.f.svc.apply_pictures(UID, {child.id: 5})
+    ctx.r.edge.script = [(FaceHit(C1, child.id, 0.99),)]
+    await ctx.c.post("/v1/connectors/photos/start", headers=CSRF)
+    imp = (await ctx.c.post("/v1/connectors/photos/import", headers=CSRF)).json()
+    assert imp["recognised"] == [{"name": "a child from your family", "child": True}]
+    assert "Mini" not in str(imp)
+    assert ctx.r.contacts.queries == []
+
+
+async def test_waiting_import_returns_the_picker_link_again(ctx: Ctx) -> None:
+    ctx.r.picker.ready = False
+    await ctx.c.post("/v1/connectors/photos/start", headers=CSRF)
+    imp = (await ctx.c.post("/v1/connectors/photos/import", headers=CSRF)).json()
+    assert imp["status"] == "waiting" and imp["picker_uri"].startswith("https://photos.google.com/")
+
+
+async def test_the_photos_path_never_logs_tokens_or_base_urls(
+    ctx: Ctx, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.DEBUG):
+        await ctx.c.post("/v1/connectors/photos/start", headers=CSRF)
+        await ctx.c.post("/v1/connectors/photos/import", headers=CSRF)
+    assert "Bearer" not in caplog.text and "googleusercontent" not in caplog.text
+
+
+async def test_a_bad_home_reply_is_reported_apart_from_offline(ctx: Ctx) -> None:
+    ctx.r.edge.bad = True
+    await ctx.c.post("/v1/connectors/photos/start", headers=CSRF)
+    imp = (await ctx.c.post("/v1/connectors/photos/import", headers=CSRF)).json()
+    assert imp["status"] == "edge_error"

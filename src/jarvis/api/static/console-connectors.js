@@ -41,7 +41,7 @@
   // ---- normalise what the server sent ------------------------------------------------------
   function statusOf(raw) {
     const r = obj(raw); if (!r) return null;
-    const one = (k) => { const o = obj(r[k]) || {}; return { connected: o.connected === true, login: txt(o.login, 60), reason: txt(o.reason, 40) }; };
+    const one = (k) => { const o = obj(r[k]) || {}; return { connected: o.connected === true, login: txt(o.login, 60), reason: txt(o.reason, 40), reconnect: o.needs_reconnect === true }; };
     const st = obj(r.statements) || {};
     return { github: one('github'), youtube: one('youtube'), photos: one('photos'), adult: txt(st.adult, 400), child: txt(st.child, 400), version: txt(st.version, 16) };
   }
@@ -49,7 +49,7 @@
     const r = obj(raw) || {};
     return {
       status: txt(r.status, 20), photos: Number.isInteger(r.photos) ? r.photos : 0, faces: Number.isInteger(r.faces_found) ? r.faces_found : 0,
-      skipped: Number.isInteger(r.skipped) ? r.skipped : 0,
+      skipped: Number.isInteger(r.skipped) ? r.skipped : 0, uri: txt(r.picker_uri, 500),
       recognised: arr(r.recognised).slice(0, MAX_ROWS).map((p) => ({ name: p && p.child === true ? CHILD : txt(p && p.name, 40) })),
       unknown: arr(r.unknown).filter((x) => typeof x === 'string' && /^c_[0-9a-f]{8,16}$/.test(x)).slice(0, MAX_ROWS),
     };
@@ -79,7 +79,7 @@
   }
   function render() {
     const d = S.data; if (!d) return;
-    el.gstate.replaceChildren(chip(d.github.connected, 'Connected' + (d.github.login ? ' as ' + d.github.login : ''), 'Not connected'));
+    el.gstate.replaceChildren(chip(d.github.connected, 'Connected' + (d.github.login ? ' as ' + d.github.login : ''), d.github.reconnect ? 'Needs reconnecting: paste a new token' : 'Not connected'));
     el.token.hidden = el.gconnect.hidden = d.github.connected; el.gdrop.hidden = !d.github.connected;
     el.ystate.replaceChildren(chip(d.youtube.connected, 'Connected', 'Not connected'), mk('span', 'chint', d.youtube.connected ? '' : WHY[d.youtube.reason] || ''));
     el.pstate.replaceChildren(chip(d.photos.connected, 'Ready', 'Off'), mk('span', 'chint', d.photos.connected ? '' : WHY[d.photos.reason] || ''));
@@ -120,7 +120,8 @@
   const runImport = () => guard(async () => {
     const r = importOf(await api('/v1/connectors/photos/import', { method: 'POST', body: {} }));
     S.unknown = r.unknown;
-    const words = { waiting: 'Still waiting for you to choose photos.', no_session: 'Press Choose photos first.', laptop_offline: 'Your home laptop is off or asleep.' };
+    const words = { waiting: 'Still waiting for you to choose photos.', no_session: 'Press Choose photos first.', laptop_offline: 'Your home laptop is off or asleep.', edge_error: 'Your home laptop answered in a way JARVIS could not use.', timed_out: 'That took too long. Your picks are kept: press Import again.' };
+    if (r.status === 'waiting' && r.uri.startsWith('https://photos.google.com/')) { window.open(r.uri, '_blank', 'noopener'); }
     if (r.status !== 'done') { say('ok', words[r.status] || 'Nothing to import yet.'); return; }
     el.pout.textContent = r.photos + ' photos looked at, ' + r.faces + ' faces found' + (r.recognised.length ? '; recognised: ' + r.recognised.map((p) => p.name).join(', ') : '') + (r.unknown.length ? '; ' + r.unknown.length + ' not recognised (not named).' : '.');
     say('ok', 'Done.');
@@ -129,8 +130,8 @@
     const body = { cluster, name: name.trim(), relation: 'friend', child, vip: false, given_by: child ? 'parent_guardian' : 'self', consent_version: (S.data && S.data.version) || 'fc1', confirm: agreed === true };
     if (!body.name) { say('bad', 'Type a name first.'); return; }
     const r = obj(await api('/v1/connectors/photos/enrol', { method: 'POST', body })) || {};
-    S.unknown = S.unknown.filter((x) => x !== cluster);
-    say('ok', r.at_home === false ? 'Added. Finish on your laptop when it is on.' : 'Added.');
+    if (r.at_home !== false) S.unknown = S.unknown.filter((x) => x !== cluster);
+    say('ok', r.at_home === false ? 'Added. Your laptop is off: press Add again on that face when it is on.' : 'Added.');
   }, 'Couldn\'t add that person. Tick the consent box and try again.');
 
   async function load(force) {

@@ -1,7 +1,8 @@
 # src/jarvis/photos/tools.py
 """R4 C tools (permission row `connectors`): connect_github, connect_youtube, photos_import,
-github_profile, github_repos, github_activity. Registered by the integrator (INTEGRATION.md);
-a connector that is not built gets no tools.
+github_profile, github_repos, github_activity (row `connectors`) and youtube_own_channel (the
+existing `youtube_*` row; counted in the slice-12 allowance ledger). Registered by the
+integrator (INTEGRATION.md); a connector that is not built gets no tools.
 
 - No tool ever takes a token: GitHub's is pasted in the Connectors panel (HTTP), never in chat.
 - GitHub and YouTube words are other people's: fenced with `wrap_external`, never vouched.
@@ -20,18 +21,26 @@ from typing import Any
 from jarvis.core.guardrails import ActionRisk
 from jarvis.faces.models import NAME_MAX
 from jarvis.faces.ports import FAMILY_CHILD
-from jarvis.integrations.github import DEFAULT_ITEMS, MAX_ITEMS, GithubClient, GithubError
+from jarvis.integrations.github import (
+    DEFAULT_ITEMS,
+    MAX_ITEMS,
+    RECONNECT,
+    GithubClient,
+    GithubError,
+)
 from jarvis.integrations.google import GoogleAPIError, GoogleNotConnected
 from jarvis.integrations.youtube import YouTubeNotGranted, YouTubeOwn
-from jarvis.photos.edge import EdgeOffline
+from jarvis.photos.edge import EdgeBadReply, EdgeOffline
 from jarvis.photos.picker import PhotosNotGranted, PickerError
 from jarvis.photos.service import NoSession, PhotosService
+from jarvis.quota.ledger import QuotaReached, QuotaUnreadable
 from jarvis.tools.base import Tool
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
 
 GITHUB_SOURCE = "your GitHub account"
 PHOTOS_SOURCE = "your Faces list"
+YOUTUBE_SOURCE = "your YouTube channel"
 TEXT_LIMIT = 200
 EMPTY_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
 LIMIT_SCHEMA: dict[str, Any] = {
@@ -52,6 +61,13 @@ IMPORT_NOTE = (
     "a parent for a child) must agree first."
 )
 PICK_NOTE = "Open the link, choose the photos, then ask me to import them again."
+DEFAULT_VIDEOS = 5
+WAIT = {
+    "waiting": "Still waiting for you to choose photos in Google Photos.",
+    "laptop_offline": "Your home laptop isn't reachable; try again when it's on.",
+    "edge_error": "Your home laptop's answer couldn't be understood, so JARVIS ignored it.",
+    "timed_out": "That took too long; the photos you picked are kept, ask me again.",
+}
 _PROBLEMS = (
     GithubError,
     GoogleAPIError,
@@ -60,6 +76,10 @@ _PROBLEMS = (
     PhotosNotGranted,
     PickerError,
     NoSession,
+    EdgeOffline,
+    EdgeBadReply,
+    QuotaReached,
+    QuotaUnreadable,
 )
 
 
@@ -101,6 +121,8 @@ def _uid() -> str:
 def _github_tools(gh: GithubClient) -> list[Tool]:
     async def connect(_a: dict[str, Any]) -> Any:
         st = await gh.status(_uid())
+        if st.get("needs_reconnect"):
+            return {"connected": False, "message": RECONNECT}
         if not st["connected"]:
             return {"connected": False, "message": GITHUB_HOW}
         return {
@@ -116,7 +138,7 @@ def _github_tools(gh: GithubClient) -> list[Tool]:
             "name": _fence(p.name),
             "public_repos": p.public_repos,
             "followers": p.followers,
-            "url": p.url,
+            "url": _fence(p.url),
         }
 
     async def repos(a: dict[str, Any]) -> Any:
@@ -131,7 +153,7 @@ def _github_tools(gh: GithubClient) -> list[Tool]:
                     "language": r.language,
                     "stars": r.stars,
                     "pushed_at": r.pushed_at,
-                    "url": r.url,
+                    "url": _fence(r.url),
                 }
                 for r in found
             ],
@@ -189,22 +211,52 @@ def _github_tools(gh: GithubClient) -> list[Tool]:
     ]
 
 
-def _youtube_tool(yt: YouTubeOwn) -> Tool:
+def _youtube_tools(yt: YouTubeOwn) -> list[Tool]:
     async def connect(_a: dict[str, Any]) -> Any:
         st = await yt.status(_uid())
         if st["connected"]:
             return {"connected": True, "message": "Your YouTube account is connected."}
         return {"connected": False, "message": YOUTUBE_HOW}
 
-    return Tool(
-        "connect_youtube",
-        "Say whether your own YouTube account is connected and how to grant it.",
-        EMPTY_SCHEMA,
-        ActionRisk.READ_ONLY,
-        _guarded(connect),
-        agent="connectors",
-        activity_words="Checked your YouTube connection",
-    )
+    async def own_channel(a: dict[str, Any]) -> Any:
+        uid, n = _uid(), a.get("limit", DEFAULT_VIDEOS)
+        ch = await yt.channel(uid)
+        if ch is None:
+            return {"channel": None, "message": "No YouTube channel is linked to this account."}
+        found = await yt.videos(uid, n) if n > 0 else ()
+        return {
+            "title": _fence(ch.title, YOUTUBE_SOURCE),
+            "handle": ch.handle,
+            "subscribers": ch.subscribers,
+            "videos_total": ch.videos,
+            "views": ch.views,
+            "videos": [
+                {"title": _fence(v.title, YOUTUBE_SOURCE), "published_at": v.published_at}
+                for v in found
+            ],
+        }
+
+    return [
+        Tool(
+            "connect_youtube",
+            "Say whether your own YouTube account is connected and how to grant it.",
+            EMPTY_SCHEMA,
+            ActionRisk.READ_ONLY,
+            _guarded(connect),
+            agent="connectors",
+            activity_words="Checked your YouTube connection",
+        ),
+        Tool(
+            "youtube_own_channel",
+            "Your own YouTube channel and latest uploads (read only; uses YouTube quota).",
+            LIMIT_SCHEMA,
+            ActionRisk.READ_ONLY,
+            _guarded(own_channel),
+            agent="connectors",
+            check=_limit_check,
+            activity_words="Read your YouTube channel",
+        ),
+    ]
 
 
 def _person(name: str, child: bool) -> str:
@@ -218,8 +270,11 @@ def _photos_tool(svc: PhotosService) -> Tool:
         if res.status == "no_session":
             s = await svc.begin(uid)
             return {"status": "pick_photos", "picker_uri": s.picker_uri, "note": PICK_NOTE}
-        if res.status in ("waiting", "laptop_offline"):
-            return {"status": res.status, "message": _WAIT[res.status]}
+        if res.status in WAIT:
+            reply: dict[str, Any] = {"status": res.status, "message": WAIT[res.status]}
+            if res.picker_uri:
+                reply["picker_uri"] = res.picker_uri
+            return reply
         return {
             "status": "done",
             "photos": res.photos,
@@ -237,28 +292,10 @@ def _photos_tool(svc: PhotosService) -> Tool:
         "whole library.",
         EMPTY_SCHEMA,
         ActionRisk.REVERSIBLE,
-        _guarded(_edge_safe(run)),
+        _guarded(run),
         agent="connectors",
         activity_words="Looked at the photos you picked",
     )
-
-
-_WAIT = {
-    "waiting": "Still waiting for you to choose photos in Google Photos.",
-    "laptop_offline": "Your home laptop isn't reachable; try again when it's on.",
-}
-
-
-def _edge_safe(
-    fn: Callable[[dict[str, Any]], Awaitable[Any]],
-) -> Callable[[dict[str, Any]], Awaitable[Any]]:
-    async def run(args: dict[str, Any]) -> Any:
-        try:
-            return await fn(args)
-        except EdgeOffline as exc:
-            return {"status": "laptop_offline", "message": str(exc)}
-
-    return run
 
 
 def tools(deps: ConnectorDeps) -> list[Tool]:
@@ -266,7 +303,7 @@ def tools(deps: ConnectorDeps) -> list[Tool]:
     if deps.github is not None:
         out.extend(_github_tools(deps.github))
     if deps.youtube is not None:
-        out.append(_youtube_tool(deps.youtube))
+        out.extend(_youtube_tools(deps.youtube))
     if deps.photos is not None:
         out.append(_photos_tool(deps.photos))
     return out

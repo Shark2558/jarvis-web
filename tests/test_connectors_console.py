@@ -33,3 +33,9 @@ def test_a_token_is_never_stored_or_logged_by_the_page() -> None:
 def test_syntax_is_valid() -> None:
     done = subprocess.run(["node", "--check", str(JS)], capture_output=True, text=True, check=False)
     assert done.returncode == 0, done.stderr
+
+
+def test_the_page_handles_reconnect_and_the_new_import_states() -> None:
+    text = JS.read_text(encoding="utf-8")
+    for needle in ("needs_reconnect", "edge_error", "timed_out", "picker_uri"):
+        assert needle in text

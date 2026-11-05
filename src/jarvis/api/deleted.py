@@ -24,7 +24,8 @@ DELETE /v1/deleted/{id}          "Remove now": the copy goes at once (it can't b
                                  (`PASSKEY_PURGE_KINDS`, nothing brings them back) the optional
                                  body {proof} must be a passkey check for purpose privacy_delete
                                  made for exactly this bin id; with no passkeys in force, a Google
-                                 sign-in under 5 minutes old (token-mode dev: none). 403
+                                 sign-in under 5 minutes old (token-mode dev: none; token mode
+                                 in staging or prod: refused, proof_required). 403
                                  passkey_required / passkey_rejected / proof_required {reason:
                                  reauth}, 503 passkeys_unreadable. A restored entry is 404 and
                                  asks for nothing.
@@ -167,6 +168,9 @@ class RemoveBody(BaseModel):
 
 
 REAUTH = "Sign in with Google again (within 5 minutes) to remove it for good."
+PROOF_NEEDED = (
+    "Removing it for good needs a passkey or a recent Google sign-in; this server has neither."
+)
 
 
 def _err_reason(status: int, code: str, detail: str, reason: str) -> JSONResponse:
@@ -188,8 +192,9 @@ async def _for_good(
     request: Request, uid: str, item: DeletedItem, proof: PasskeyProof | None
 ) -> str | JSONResponse:
     """R2 D8: a vault document, note or thing goes for good only on a passkey check made for this
-    bin id (purpose privacy_delete) or, with no passkeys in force, a recent Google sign-in.
-    Returns the audit note, or the refusal. Fails closed."""
+    bin id (purpose privacy_delete) or, with no passkeys in force, a recent Google sign-in
+    (token-mode dev: nothing; token mode elsewhere: refused, review S2). Returns the audit note,
+    or the refusal. Fails closed."""
     perms = getattr(request.app.state, "permissions", None)
     how: str | None = None
     if perms is not None:
@@ -201,9 +206,14 @@ async def _for_good(
     if how is not None:
         return how
     s = request.app.state.settings
-    if s.auth_mode is AuthMode.GOOGLE and not fresh_sign_in_left(request, s):
-        return _err_reason(403, "proof_required", REAUTH, "reauth")
-    return "sign-in" if s.auth_mode is AuthMode.GOOGLE else "no passkeys"
+    if s.auth_mode is AuthMode.GOOGLE:
+        if not fresh_sign_in_left(request, s):
+            return _err_reason(403, "proof_required", REAUTH, "reauth")
+        return "sign-in"
+    if s.env == "dev":  # review S2: token-mode dev only, as the vault's console-only rule
+        return "no passkeys (token-mode dev)"
+    await _audit(request, "deleted_purge", item.id, "denied", "no proof outside dev")
+    return _err_reason(403, "proof_required", PROOF_NEEDED, "reauth")
 
 
 @router.delete("/{undo_id}", response_model=Removed)

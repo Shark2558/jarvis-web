@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 
 from jarvis.api import create_app
 from jarvis.config import AuthMode, Settings
@@ -197,6 +198,35 @@ async def test_an_unknown_or_malformed_id_is_not_found_without_a_proof(rig: Rig)
         r = await rig.client.request("DELETE", f"/v1/deleted/{bad}", headers=H)
         assert r.status_code == 404
     assert rig.perms.seen == []
+
+
+@pytest.mark.parametrize("env", ["prod", "staging"])
+@pytest.mark.parametrize("kind", ["note", "thing", "vault_item"])
+async def test_token_mode_outside_dev_needs_a_proof_even_without_passkeys(
+    settings: Settings, env: str, kind: str
+) -> None:
+    """R2 review S2: with no passkey in force, only token-mode dev removes for good without a
+    proof (as the vault's console-only rule). Token mode in prod or staging has no Google
+    sign-in to stand in for one, so it is refused and nothing is purged."""
+    undo = UndoBin(DeletedStore(MemoryDocs()))
+    purger = Purger()
+    undo.register(kind, Restorer(), purger)  # type: ignore[arg-type]
+    token = "t" * 40
+    s = settings.model_copy(
+        update={"env": env, "api_token": SecretStr(token), "tools_enabled": True}
+    )
+    app = create_app(s, provider=MockProvider(), store=InMemorySessionStore(), undo=undo)
+    async with app.router.lifespan_context(app):
+        perms = Perms()  # no passkeys in force
+        app.state.permissions = perms
+        item = await undo.keep(UID, kind, "A note from 3 Nov", {"ref": "n_000000000000"})  # type: ignore[arg-type]
+        bearer = {"Authorization": f"Bearer {token}", **H}
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.request("DELETE", f"/v1/deleted/{item.id}", headers=bearer)
+    assert r.status_code == 403, r.text
+    assert r.json()["error"] == "proof_required" and r.json()["reason"] == "reauth"
+    assert purger.purged == [] and await undo.get(UID, item.id) is not None
+    assert perms.seen == [("privacy_delete", item.id, None)]
 
 
 async def test_a_body_that_is_not_a_proof_is_refused(rig: Rig) -> None:

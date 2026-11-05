@@ -40,6 +40,15 @@ from jarvis.logging import get_logger
 
 log = get_logger(__name__)
 
+NO_AI_REFUSAL = "The AI is switched off (no-AI mode): no model was called."
+
+
+class BrainOff(LLMError):
+    """R4 D7: a model call was attempted while `brain_mode == "none"`. Defence in depth: the brain
+    routes around the model in that mode, and this makes a stray call fail loudly instead of
+    spending money. Not transient and not an outage: neither the laptop fallback nor a lower
+    tier is tried."""
+
 
 class ModelTier(StrEnum):
     FAST = "fast"  # classification, routing, extraction — Haiku-class
@@ -74,12 +83,27 @@ class ModelRouter:
         fallback: FallbackBrain | None = None,
         *,
         clock: Callable[[], float] = time.monotonic,
+        blocked: Callable[[], bool] | None = None,
     ) -> None:
         self.provider = provider
         self._tiers = tiers
         self.fallback = fallback
         self._breaker = Breaker(clock=clock)
-        self._last: BrainState = "unknown"
+        self._last: BrainState = "unknown"  # R4 B: how the last real call ended (health())
+        self._blocked: Callable[[], bool] | None = blocked  # R4 D7: the no-AI switch
+
+    def bind_blocked(self, blocked: Callable[[], bool]) -> None:
+        """R4 D7: `Brain` hands every router the no-AI switch once, at construction. While it
+        reads True a model call raises `BrainOff`."""
+        self._blocked = blocked
+
+    def is_blocked(self) -> bool:
+        """True while the AI is switched off: background callers skip instead of calling."""
+        return self._blocked is not None and self._blocked()
+
+    def _refuse_if_off(self) -> None:
+        if self._blocked is not None and self._blocked():
+            raise BrainOff(NO_AI_REFUSAL)
 
     @classmethod
     def from_settings(cls, s: Settings, provider: LLMProvider | None = None) -> ModelRouter:
@@ -152,6 +176,7 @@ class ModelRouter:
         tools: list[ToolSpec] | None = None,
         allow_degrade: bool = True,
     ) -> Completion:
+        self._refuse_if_off()
         local = {
             "tier": tier,
             "system": system,
@@ -225,6 +250,7 @@ class ModelRouter:
         effort: Effort | None = None,
         usage: StreamUsage | None = None,
     ) -> AsyncIterator[str]:
+        self._refuse_if_off()
         # No mid-stream degradation: once tokens are flowing to a TTS engine we cannot restart.
         # The laptop takes over only when the cloud stream failed BEFORE its first text.
         local = {

@@ -93,6 +93,7 @@ from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
 from jarvis.llm.brains import BrainRegistry
 from jarvis.llm.fallback import FallbackFailed
+from jarvis.llm.router import NO_AI_REFUSAL, BrainOff
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
 from jarvis.media.service import build_media
 from jarvis.memory import SessionConflict, SessionNotFound, SessionStore
@@ -237,6 +238,8 @@ def _mount_scheduler(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
 
 def friendly_llm_error(exc: LLMError) -> str:
     """Owner-facing wording. Raw vendor error bodies never reach the browser."""
+    if isinstance(exc, BrainOff):  # R4 D7: the owner switched the AI off; say exactly that
+        return NO_AI_REFUSAL
     if isinstance(exc, FallbackFailed):  # R1 C: the laptop's own plain-words message
         return str(exc)
     low = str(exc).lower()
@@ -622,6 +625,10 @@ def _install_core_errors(app: FastAPI) -> None:
     async def _auth(_: Request, exc: LLMAuthError) -> JSONResponse:
         log.error("llm auth error", extra={"detail": str(exc)[:200]})
         return _err(502, {"error": "llm_auth", "detail": "LLM credentials rejected"})
+
+    @app.exception_handler(BrainOff)
+    async def _brain_off(_: Request, exc: BrainOff) -> JSONResponse:
+        return _err(409, {"error": "brain_off", "detail": NO_AI_REFUSAL})
 
     @app.exception_handler(LLMError)
     async def _llm(_: Request, exc: LLMError) -> JSONResponse:

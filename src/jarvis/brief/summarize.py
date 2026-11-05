@@ -214,7 +214,10 @@ class Summarizer:
     async def run(self, p: Prepared) -> AIBlock:
         if not p.brain.tools_allowed:  # belt and braces: a training brain never sees content
             raise NoPrivateBrain("no brain that keeps content private is configured")
-        c = await self._brains.router_for(p.brain.id).complete(
+        router = self._brains.router_for(p.brain.id)
+        if router.is_blocked():  # R4 D7: the AI is switched off; skip quietly
+            return AIBlock(lines=(), model=p.model)
+        c = await router.complete(
             tier=ModelTier.FAST,
             system=SYSTEM,
             messages=[ChatMessage(role=Role.USER, content=p.prompt)],

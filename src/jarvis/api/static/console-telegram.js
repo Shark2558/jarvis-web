@@ -140,7 +140,7 @@
     card.dataset.state = 'linked'; stateEl.textContent = 'Paired';
     bodyEl.appendChild(mk('p', '', `Paired with your Telegram account ${d.hint || ''}`.trim() + '. Only that account can talk to JARVIS.'));
     bodyEl.appendChild(mk('p', 'fine', 'Telegram keeps bot chats on its servers (not end-to-end encrypted). By default JARVIS will not read email, Drive, documents or contacts there.'));
-    bodyEl.appendChild(toggleRow('telegramReads', 'Let Telegram read my email, Drive, documents and contacts', d.reads, askReads, 'Let Telegram read my private data'));
+    bodyEl.appendChild(toggleRow('telegramReads', 'Let Telegram read my email, Drive, documents, contacts and family calendars', d.reads, askReads, 'Let Telegram read my private data'));
     const al = mk('div', 'talerts'); al.id = 'telegramAlerts'; al.setAttribute('role', 'group'); al.setAttribute('aria-label', 'Alerts');
     ALERTS.forEach(([key, label]) => al.appendChild(toggleRow('telegramAlert_' + key, label, d.alerts[key], (on) => saveAlert(key, on), 'Alert: ' + label)));
     bodyEl.appendChild(al);
@@ -244,12 +244,12 @@
     if (on) {
       const sure = await ask('Let Telegram read your private data?', [
         mk('p', 'strong', 'Telegram keeps bot chats on its servers and they are not end-to-end encrypted.'),
-        mk('p', '', 'If you switch this on, JARVIS can read out your email, Drive files, documents and contacts in that chat. Anyone with your Telegram account could then see them.'),
+        mk('p', '', 'If you switch this on, JARVIS can read out your email, Drive files, documents, contacts, family calendars and recently deleted items in that chat. Anyone with your Telegram account could then see them.'),
         mk('p', '', 'You can switch it off here at any time.')], 'Switch on', $('telegramReads'));
       if (!sure) return;
     }
     const r = await call('/v1/telegram/settings', { method: 'PUT', body: { allow_private_reads: on } },
-      on ? 'Telegram may now read your email, Drive, documents and contacts.' : 'Telegram no longer reads your private data.');
+      on ? 'Telegram may now read your email, Drive, documents, contacts and family calendars.' : 'Telegram no longer reads your private data.');
     if (r) { S.data = normal(r); render(); log('info', on ? 'Telegram private reads on' : 'Telegram private reads off'); }
   }
   async function askUnpair(trigger) {

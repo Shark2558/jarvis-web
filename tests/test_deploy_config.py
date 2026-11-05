@@ -357,7 +357,7 @@ def test_a_working_schedule_is_test_run_once_and_said_to_answer(
     script: str, tmp_path: Path
 ) -> None:
     out, calls = _run_brief_outcome(script, tmp_path, setup_rc=0, run_rc=0)
-    [call] = calls.splitlines()  # exactly once
+    [call] = [ln for ln in calls.splitlines() if "morning-brief" in ln]  # exactly once
     assert call.startswith("scheduler jobs run jarvis-morning-brief --location asia-south1")
     assert "Morning brief: ready" in out
     assert "Scheduler accepted it" in out
@@ -368,7 +368,7 @@ def test_a_failed_test_run_is_not_fatal_and_not_called_an_answer(
     script: str, tmp_path: Path
 ) -> None:
     out, calls = _run_brief_outcome(script, tmp_path, setup_rc=0, run_rc=1)
-    assert len(calls.splitlines()) == 1  # tried once, never retried in a loop
+    assert len([ln for ln in calls.splitlines() if "morning-brief" in ln]) == 1  # never looped
     assert "Morning brief: ready" in out
     assert "Scheduler accepted it" not in out
     assert "test run" in out  # says the check didn't go through, in plain words
@@ -568,3 +568,43 @@ def test_summary_says_truthfully_what_stops_drive_access(script: str) -> None:
     assert "Un-sharing removes access at once" not in done
     assert "Switching a folder off in JARVIS stops access at once" in done
     assert "unless someone else has shared it too" in done
+
+
+def test_home_watchdog_block_is_self_contained_and_creates_the_job(
+    script: str, tmp_path: Path
+) -> None:
+    """Review M5: the watchdog block needs no variable set elsewhere and says when it is on."""
+    out, calls = _run_brief_outcome(script, tmp_path, setup_rc=0, run_rc=1)
+    assert "HOME: watchdog off" in out  # gcloud failing is non-fatal
+    log = tmp_path / "ok.log"
+    log.touch()
+    prelude = (
+        "set -euo pipefail\n"
+        "say() { printf '\\n%s\\n' \"$*\"; }\n"
+        "setup_brief_clock() { return 0; }\n"
+        'retry() { "$@"; }\n'
+        f"gcloud() {{ printf '%s\\n' \"$*\" >> '{log}'; "
+        'case "$*" in *"jobs describe"*) return 1;; esac; return 0; }\n'
+        "BRIEF_JOB=jarvis-morning-brief REGION=asia-south1 BRIEF_TZ=Asia/Kolkata\n"
+        "BASE_URL=https://jarvis.example\n"
+    )
+    done = subprocess.run(
+        ["bash", "-c", prelude + _brief_outcome(script)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "HOME: watchdog on" in done.stdout
+    created = log.read_text(encoding="utf-8")
+    assert "jobs create http jarvis-home-watchdog" in created
+    assert "https://jarvis.example/internal/home/watchdog" in created
+
+
+def test_cloud_run_stays_on_one_instance_because_the_home_nonce_cache_is_per_process(
+    script: str,
+) -> None:
+    """Review M3: signed home messages are replay-checked in memory, so two instances would let
+    a captured message be replayed once per instance (inside the 60 s window)."""
+    assert "--max-instances 1" in script
+    assert "--max-instances 2" not in script
+    assert "home nonce" in script.lower()

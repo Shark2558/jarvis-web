@@ -101,7 +101,11 @@ async def home_link(request: Request, body: LinkBody) -> Response:
         return Response(status_code=429, headers={"Retry-After": "60"})
     try:
         linked = await link.complete(
-            body.code, body.bridge_url, body.bridge_version, body.link_secret
+            body.code,
+            body.bridge_url,
+            body.bridge_version,
+            body.link_secret,
+            client=client_key(request),
         )
     except LinkRefused as exc:
         if exc.code == "bad_code":

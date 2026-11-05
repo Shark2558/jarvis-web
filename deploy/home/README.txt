@@ -67,8 +67,10 @@ Safety notes
 ------------
  - bridge.env on this laptop holds your Home Assistant token and passwords. Never send it to
    anyone, and never put it in the download kit. JARVIS never asks for it.
- - Everything listens on 127.0.0.1 (this laptop only). The only thing on the internet is the
-   bridge's signed door, through Tailscale Funnel on port 8443.
+ - The published ports listen on 127.0.0.1 (this laptop only). Home Assistant listens on 127.0.0.1
+   and on 172.29.80.1, the kit's private Docker network, so the bridge can reach it; nothing else
+   can. The only thing on the internet is the bridge's signed door, through Tailscale Funnel on
+   port 8443.
  - Anyone with this laptop (or its disk) can act as your home. Use a Windows login password.
  - An old phone on a charger 24/7 can overheat or swell its battery: keep it out of direct sun and
    check it monthly.

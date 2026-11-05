@@ -45,7 +45,7 @@ def test_services_and_hardening(compose: dict) -> None:
     b = svc["bridge"]
     assert b["read_only"] is True and b["cap_drop"] == ["ALL"] and b["user"] == "10001:10001"
     assert "no-new-privileges:true" in b["security_opt"] and b["mem_limit"] == "256m"
-    assert "host.docker.internal:host-gateway" in b["extra_hosts"]
+    assert "host.docker.internal:172.29.80.1" in b["extra_hosts"]  # review M4
     assert b["env_file"] == "bridge.env" and "./bridge-data:/data" in b["volumes"]
     assert svc["homeassistant"]["network_mode"] == "host"
     assert (
@@ -391,7 +391,7 @@ def test_cloudrun_watchdog_step_is_non_fatal_and_exact() -> None:
     assert '--schedule "*/5 * * * *"' in block and "--attempt-deadline 60s" in block
     assert '--oidc-token-audience "$HOME_WATCH_URL"' in block
     assert 'HOME_WATCH_URL="${BASE_URL}/internal/home/watchdog"' in sh
-    assert '--oidc-service-account-email "$SCHED_SA"' in block
+    assert '--oidc-service-account-email "${SCHED_SA:-}"' in block
     assert "if setup_home_watchdog; then" in block  # a failure never stops the deploy
     assert "HOME: laptop-offline alerts are off (re-run this script)." in block
     assert "HOME: watchdog on" in sh and "3 free jobs per billing account" in sh
@@ -410,3 +410,70 @@ def test_dockerfile_and_dockerignore_carry_the_kit() -> None:
     ignore = (ROOT / ".dockerignore").read_text().splitlines()
     assert "!deploy/home" in ignore and ignore.index("!deploy/home") > ignore.index("deploy")
     assert "deploy/home/bridge.env" in ignore and "deploy/home/bridge-data" in ignore
+
+
+def test_dockerfile_tells_the_app_where_the_kit_is() -> None:
+    """Review H2: after `pip install .` the package lives in site-packages, not next to deploy/."""
+    df = (ROOT / "Dockerfile").read_text()
+    assert "ENV HOME_KIT_ROOT=/app" in df
+
+
+def test_kit_is_found_from_an_installed_layout_through_home_kit_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site = tmp_path / "usr" / "lib" / "python3.12" / "site-packages" / "jarvis" / "home"
+    site.mkdir(parents=True)
+    monkeypatch.setattr(kit, "__file__", str(site / "kit.py"))
+    monkeypatch.delenv("HOME_KIT_ROOT", raising=False)
+    with pytest.raises(kit.KitError):  # nothing next to site-packages
+        kit.build(PUBLIC)
+    monkeypatch.setenv("HOME_KIT_ROOT", str(ROOT))
+    assert kit.build(PUBLIC)[:2] == b"PK"
+
+
+def test_a_home_kit_root_without_the_kit_is_a_plain_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME_KIT_ROOT", str(tmp_path))
+    with pytest.raises(kit.KitError):
+        kit.build(PUBLIC)
+
+
+def test_home_assistant_listens_only_on_loopback_and_the_home_network_gateway() -> None:
+    """Review M4: network_mode host binds 0.0.0.0 inside the WSL VM unless the config says not."""
+    cfg = yaml.safe_load((HOME / "homeassistant" / "configuration.yaml").read_text())
+    http = cfg["http"]
+    compose = yaml.safe_load((HOME / "docker-compose.yml").read_text())
+    ipam = compose["networks"]["home"]["ipam"]["config"][0]
+    gateway = ipam["gateway"]
+    assert http["server_host"] == ["127.0.0.1", gateway]
+    assert "0.0.0.0" not in http["server_host"] and "::" not in http["server_host"]
+    # the bridge reaches Home Assistant at that same gateway address
+    assert compose["services"]["bridge"]["extra_hosts"] == [f"host.docker.internal:{gateway}"]
+    assert gateway.startswith("172.29.80.") and ipam["subnet"] == "172.29.80.0/24"
+
+
+def test_readme_does_not_overclaim_what_listens_where() -> None:
+    text = (HOME / "README.txt").read_text()
+    assert "Everything listens on 127.0.0.1" not in text
+    assert "Home Assistant" in text.split("Safety notes", 1)[1]
+    assert "172.29.80.1" in text
+
+
+def test_secrets_are_typed_without_echo_in_the_windows_script() -> None:
+    """Review LOW: the camera password and the Home Assistant token are not shown while typed."""
+    ps = (HOME / "setup-windows.ps1").read_text()
+    assert "Read-Host $text -AsSecureString" in ps
+    assert "$pass = AskSecret " in ps and "$env:HA_TOKEN = AskSecret " in ps
+    assert "$pass = Ask " not in ps and "$env:HA_TOKEN = Ask " not in ps
+
+
+def test_the_bridge_base_image_is_pinned_by_digest_like_the_others() -> None:
+    sh = (HOME / "setup-wsl.sh").read_text()
+    compose = yaml.safe_load((HOME / "docker-compose.yml").read_text())
+    assert compose["services"]["bridge"]["build"]["args"]["BASE_IMAGE"] == (
+        "${BASE_IMAGE:-python:3.12-slim}"
+    )
+    assert 'pin_digest BASE_IMAGE "${BASE_IMAGE:-python:3.12-slim}"' in sh
+    assert 'docker pull "${BASE_IMAGE:-python:3.12-slim}"' in sh  # --ignore-buildable skips it
+    assert sh.index("docker pull") < sh.index("pin_digest BASE_IMAGE")

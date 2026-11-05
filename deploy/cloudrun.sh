@@ -12,7 +12,8 @@
 # account) has those two permissions removed. Note: an OLD revision (before slice 5) ran as the
 # build account, so rolling back to one would fail to start; roll forward instead.
 # Why still one instance: rate limiting and the per-conversation write queue are per process.
-# Raise --max-instances only after sessions gain a cross-process concurrency check.
+# Raise --max-instances only after sessions gain a cross-process concurrency check, and the
+# home nonce cache (home/signing.py NonceCache, replay protection) moves out of process (R3 review M3).
 #
 # Re-runs ask nothing: answers are kept in the live service and Secret Manager. To change them:
 #   bash deploy/cloudrun.sh --reconfigure
@@ -664,12 +665,12 @@ HOME_WATCH_URL="${BASE_URL}/internal/home/watchdog"
 setup_home_watchdog() {
   local flags=(--location "$REGION" --schedule "*/5 * * * *" --time-zone "$BRIEF_TZ"
     --uri "$HOME_WATCH_URL" --http-method POST
-    --oidc-service-account-email "$SCHED_SA" --oidc-token-audience "$HOME_WATCH_URL"
+    --oidc-service-account-email "${SCHED_SA:-}" --oidc-token-audience "$HOME_WATCH_URL"
     --attempt-deadline 60s --quiet)
-  if gcloud scheduler jobs describe "$HOME_JOB" --location "$REGION" >/dev/null 2>&1; then
-    retry gcloud scheduler jobs update http "$HOME_JOB" "${flags[@]}" || return 1
+  if gcloud scheduler jobs describe "${HOME_JOB:-jarvis-home-watchdog}" --location "$REGION" >/dev/null 2>&1; then
+    retry gcloud scheduler jobs update http "${HOME_JOB:-jarvis-home-watchdog}" "${flags[@]}" || return 1
   else
-    retry gcloud scheduler jobs create http "$HOME_JOB" --description="JARVIS home: is the laptop still answering?" \
+    retry gcloud scheduler jobs create http "${HOME_JOB:-jarvis-home-watchdog}" --description="JARVIS home: is the laptop still answering?" \
       "${flags[@]}" || return 1
   fi
 }

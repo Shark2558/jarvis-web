@@ -105,10 +105,16 @@ class LinkService:
         return LinkCode(code=f"{code[:4]}-{code[4:]}", expires_in_s=int(CODE_TTL_S))
 
     async def complete(
-        self, code: object, bridge_url: object, bridge_version: object, link_secret: object
+        self,
+        code: object,
+        bridge_url: object,
+        bridge_version: object,
+        link_secret: object,
+        *,
+        client: str = "",
     ) -> Linked:
         norm = normalise(code)
-        uid = None if norm is None else await self._store.take_code(code_hash(norm))
+        uid = None if norm is None else await self._store.take_code(code_hash(norm), client)
         if uid is None:
             raise LinkRefused("bad_code", "")
         if not isinstance(bridge_version, str) or not _VERSION_RE.fullmatch(bridge_version):

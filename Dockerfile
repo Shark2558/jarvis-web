@@ -13,6 +13,8 @@ RUN pip install --require-hashes -r requirements.lock
 COPY src ./src
 # R3: the home kit that GET /v1/home/kit zips (with src/jarvis/homebridge)
 COPY deploy/home ./deploy/home
+# Where kit.build finds deploy/home and src (the installed package sits in site-packages)
+ENV HOME_KIT_ROOT=/app
 RUN pip install --no-build-isolation --no-deps .
 USER jarvis
 EXPOSE 8000

@@ -19,6 +19,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import io
+import os
 import sys
 import zipfile
 from pathlib import Path
@@ -59,6 +60,11 @@ class KitError(RuntimeError):
 
 
 def repo_root() -> Path:
+    """Where `deploy/home` and `src` live: HOME_KIT_ROOT (the image sets /app, because after a
+    plain `pip install .` this file is in site-packages), else the source checkout."""
+    configured = os.environ.get("HOME_KIT_ROOT", "").strip()
+    if configured:
+        return Path(configured)
     return Path(__file__).resolve().parents[3]
 
 

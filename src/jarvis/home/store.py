@@ -42,7 +42,12 @@ log = get_logger(__name__)
 VERSION = 1
 SEEN_WRITE_EVERY_S = 300.0
 CLAIM_KEEP_S = 48 * 3600.0
-MAX_CODE_TRIES = 5
+MAX_CODE_TRIES = 5  # wrong tries per client in the window
+MAX_CODE_TRIES_ALL = 50  # and across all clients
+CODE_TRY_WINDOW_S = 300.0
+WRONG_CLIENTS_MAX = 1000
+UNKNOWN_IDS_MAX = 512  # forged home ids remembered (bounded, oldest out)
+UNKNOWN_ID_TTL_S = 60.0
 UNAVAILABLE = "JARVIS couldn't open your home link just now. Try again in a minute."
 _STATES = ("linked", "online", "offline", "degraded")
 
@@ -74,6 +79,9 @@ class HomeStore:
         self._seen: dict[str, tuple[float, str]] = {}  # uid -> (last seen, state), in process
         self._written: dict[str, float] = {}  # uid -> when last_seen_at was last written
         self._by_home: dict[str, str] = {}  # home id -> uid (verified on every use)
+        self._wrong: dict[str, tuple[int, float]] = {}  # client -> (wrong tries, window start)
+        self._wrong_all: tuple[int, float] = (0, 0.0)
+        self._unknown: dict[str, float] = {}  # forged/unknown home id -> until (bounded, review H1)
 
     def now(self) -> float:
         return self._clock()
@@ -154,6 +162,9 @@ class HomeStore:
         """(uid, record) for a home id, None if unknown. The webhook's lookup, before any parse."""
         if not is_home_id(home_id):
             return None
+        now = self._clock()
+        if self._unknown.get(home_id, 0.0) > now:
+            return None  # asked about a moment ago and not ours: no read for a stranger's guess
         uid = self._by_home.get(home_id)
         if uid is not None:
             rec = await self.load(uid)
@@ -162,6 +173,7 @@ class HomeStore:
             self._by_home.pop(home_id, None)
         rows = await self._query(Query(self._home, where=("home_id", home_id), limit=1))
         if not rows:
+            self._remember_unknown(home_id, now)
             return None
         uid = rows[0][0]
         try:
@@ -170,6 +182,11 @@ class HomeStore:
             raise HomeStoreUnavailable(UNAVAILABLE) from None
         self._by_home[home_id] = uid
         return uid, rec
+
+    def _remember_unknown(self, home_id: str, now: float) -> None:
+        if len(self._unknown) >= UNKNOWN_IDS_MAX:
+            self._unknown.pop(next(iter(self._unknown)))  # the oldest guess goes first
+        self._unknown[home_id] = now + UNKNOWN_ID_TTL_S
 
     async def _query(self, q: Query) -> list[tuple[str, dict[str, Any]]]:
         try:
@@ -211,6 +228,7 @@ class HomeStore:
         self._written.pop(uid, None)
         self._by_home = {h: u for h, u in self._by_home.items() if u != uid}
         self._by_home[home_id] = uid
+        self._unknown.pop(home_id, None)
 
     async def unlink(self, uid: str) -> bool:
         """Delete the link, the exposed devices and any pending code. True if there was one."""
@@ -391,23 +409,40 @@ class HomeStore:
             log.error("home code save failed", extra={"error": type(exc).__name__})
             raise HomeStoreUnavailable(UNAVAILABLE) from None
 
-    async def take_code(self, code_hash: str) -> str | None:
-        """The uid whose live pending code this is, else None. A wrong code counts a try against
-        every live pending code; the fifth voids them (R1 D2's pairing rule). Not spent here."""
+    def _guesses_exhausted(self, client: str, now: float) -> bool:
+        """Wrong tries are counted per client (and under one small global ceiling), never against
+        the owner's code: a stranger's guesses lock the stranger out, not the owner (review M1)."""
+        mine = self._wrong.get(client)
+        if mine is not None and now - mine[1] >= CODE_TRY_WINDOW_S:
+            del self._wrong[client]
+            mine = None
+        if self._wrong_all[1] and now - self._wrong_all[1] >= CODE_TRY_WINDOW_S:
+            self._wrong_all = (0, 0.0)
+        return (mine is not None and mine[0] >= MAX_CODE_TRIES) or (
+            self._wrong_all[0] >= MAX_CODE_TRIES_ALL
+        )
+
+    def _count_wrong(self, client: str, now: float) -> None:
+        count, since = self._wrong.get(client, (0, now))
+        if client not in self._wrong and len(self._wrong) >= WRONG_CLIENTS_MAX:
+            self._wrong.pop(next(iter(self._wrong)))
+        self._wrong[client] = (count + 1, since)
+        total, started = self._wrong_all
+        self._wrong_all = (total + 1, started or now)
+
+    async def take_code(self, code_hash: str, client: str = "") -> str | None:
+        """The uid whose live pending code this is, else None. A wrong code is counted against the
+        client that sent it: five lock that client out for CODE_TRY_WINDOW_S (even with the right
+        code), and a global ceiling stops a spread-out run. It never touches the codes themselves.
+        Not spent here."""
         now = self._clock()
+        if self._guesses_exhausted(client, now):
+            return None
         rows = await self._query(Query(self._codes, limit=20))
-        live = [(u, d) for u, d in rows if float(d.get("expires_at", 0)) > now]
-        for uid, doc in live:
-            if doc.get("code_hash") == code_hash and int(doc.get("tries", 0)) < MAX_CODE_TRIES:
+        for uid, doc in rows:
+            if float(doc.get("expires_at", 0)) > now and doc.get("code_hash") == code_hash:
                 return uid
-        for uid, doc in live:
-            tries = int(doc.get("tries", 0)) + 1
-            op = (
-                Delete(f"{self._codes}/{uid}")
-                if tries >= MAX_CODE_TRIES
-                else Set(f"{self._codes}/{uid}", {**doc, "tries": tries})
-            )
-            await self._d.write([op])
+        self._count_wrong(client, now)
         return None
 
     async def spend_code(self, uid: str) -> None:

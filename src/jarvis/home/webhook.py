@@ -4,6 +4,7 @@
 Order of checks, each before anything is parsed, every failure a BARE answer (no body, no header),
 logged by check name only and never audited (a flood must not fill the audit chain):
 
+0. <= 120 requests a minute per network client (429), before anything is read
 1. body <= 128 KB (413), read with a cap
 2. header shape, home id known (401 for both: no oracle)
 3. |now - t| <= 60 s, nonce not seen in 5 minutes, `hmac.compare_digest` over the UP key, and only
@@ -27,7 +28,7 @@ from collections.abc import Callable, Sequence
 from fastapi import Request
 from fastapi.responses import Response
 
-from jarvis.api.ratelimit import RateLimiter
+from jarvis.api.ratelimit import RateLimiter, client_key
 from jarvis.home import signing
 from jarvis.home.ports import (
     MAX_WEBHOOK_BYTES,
@@ -42,6 +43,8 @@ from jarvis.home.store import HomeStore, HomeStoreUnavailable
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
+
+CLIENT_PER_MINUTE = 120  # per network client, before the home id is even looked up (review H1)
 
 
 def bare(status: int) -> Response:
@@ -72,6 +75,7 @@ class HomeWebhook:
         *,
         clock: Callable[[], float],
         per_minute: int = 60,
+        client_per_minute: int = CLIENT_PER_MINUTE,
     ) -> None:
         self._store = store
         self._handlers = tuple(handlers)
@@ -79,6 +83,7 @@ class HomeWebhook:
         self._clock = clock
         self._nonces = signing.NonceCache()
         self._limit = RateLimiter(per_minute, now=clock)
+        self._client_limit = RateLimiter(client_per_minute, now=clock)
 
     async def _state(self, uid: str) -> dict[str, object]:
         merged = BridgeState()
@@ -90,6 +95,9 @@ class HomeWebhook:
         return merged.model_dump(mode="json", exclude_none=True)
 
     async def receive(self, request: Request) -> Response:
+        # Before the body, the home id or any store read: a stranger's flood costs nothing here.
+        if not self._client_limit.allow(client_key(request))[0]:
+            return bare(429)
         body = await read_capped(request, MAX_WEBHOOK_BYTES)
         if body is None:
             return bare(413)

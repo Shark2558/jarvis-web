@@ -44,6 +44,7 @@ CHECKED = "Checked your home"
 LOOKED = "Looked at your home devices"
 SWITCHED = "Switched a home device"
 SOURCE = "your home devices"
+STATE_FENCE_LIMIT = 80
 NO_DEVICES = "No devices are shared with JARVIS yet: choose them in Integrations -> Home."
 NO_MATCH = "None of your shared devices has that name."
 _RISK = {
@@ -174,7 +175,10 @@ class HomeTools:
         out: dict[str, Any] = {"devices": shown}
         if note:
             out["message"] = note
-        return vouch(out, all(e.label for e in entries))
+        plain = all(
+            classes.plain_state(getattr(states.get(e.entity_id), "state", "on")) for e in entries
+        )
+        return vouch(out, plain and all(e.label for e in entries))
 
     # ---- control -------------------------------------------------------------------------------
 
@@ -253,7 +257,9 @@ def _device_line(entry: ExposedEntry, item: Any) -> dict[str, Any]:
         out["name"] = wrap_external(_say(entry.name), source=SOURCE, limit=80)
     state = getattr(item, "state", None)
     if isinstance(state, str):
-        out["state"] = one_line(state, 32)
+        out["state"] = classes.plain_state(state) or wrap_external(
+            _say(state), source=SOURCE, limit=STATE_FENCE_LIMIT
+        )
     return out
 
 
@@ -261,7 +267,8 @@ def card_text(a: dict[str, Any], entry: ExposedEntry | None, state: str | None) 
     verb = _VERB.get(str(a.get("action")), "Change")
     who = _who(entry) if entry else one_line(a.get("device"), 60)
     value = f" to {a['value']}" if a.get("value") is not None else ""
-    now = f" (now {one_line(state, 32)})" if state else ""
+    shown = classes.plain_state(state)  # a free-text state never goes onto the owner's card
+    now = f" (now {shown})" if shown else ""
     if entry is None:
         return f"{verb} {who}{value} (no shared device has that name, so nothing will happen)"
     return f"{verb} {who}{value}{now}"

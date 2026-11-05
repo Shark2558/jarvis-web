@@ -28,6 +28,7 @@ from jarvis.home.ports import BridgeState, is_home_id
 SECRET = "secret.json"
 PENDING = "link-pending.json"
 STATE = "state.json"
+LAST_SEEN = "last-seen.json"
 PENDING_TTL_S = 900.0
 
 
@@ -89,6 +90,24 @@ class BridgeStore:
         self._state = BridgeState()
         self._loaded_for = None
         self._write_state()
+
+    # ---- the newest cloud message accepted (replay floor across restarts, review M3) ----------
+
+    def last_message_t(self) -> int:
+        """Signing time of the newest cloud message accepted before now (0 if none/unreadable)."""
+        try:
+            raw = json.loads((self._dir / LAST_SEEN).read_text(encoding="utf-8"))
+            t = raw["t"]
+            return t if isinstance(t, int) and not isinstance(t, bool) and t > 0 else 0
+        except (OSError, ValueError, KeyError, TypeError):
+            return 0
+
+    def save_last_message_t(self, t: int) -> None:
+        try:
+            self._dir.mkdir(parents=True, exist_ok=True)
+            _write_private(self._dir / LAST_SEEN, {"t": int(t)})
+        except OSError:
+            pass  # the in-memory nonce cache still covers this run
 
     # ---- the one-time link secret --------------------------------------------------------------
 

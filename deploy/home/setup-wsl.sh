@@ -109,6 +109,8 @@ step_up() {
   cd "$HOME_DIR"
   say "Downloading the programs (a few minutes the first time)"
   "${COMPOSE[@]}" pull --ignore-buildable || fail "couldn't download the images. Check the internet and run this again."
+  docker pull "${BASE_IMAGE:-python:3.12-slim}" >/dev/null || fail "couldn't download the base image. Check the internet and run this again."
+  pin_digest BASE_IMAGE "${BASE_IMAGE:-python:3.12-slim}"
   pin_digest MOSQUITTO_IMAGE "${MOSQUITTO_IMAGE:-eclipse-mosquitto:2.0.20}"
   pin_digest FRIGATE_IMAGE "${FRIGATE_IMAGE:-ghcr.io/blakeblackshear/frigate:0.17.2}"
   pin_digest HOMEASSISTANT_IMAGE "${HOMEASSISTANT_IMAGE:-ghcr.io/home-assistant/home-assistant:2026.10.0}"

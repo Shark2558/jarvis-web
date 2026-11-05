@@ -326,3 +326,68 @@ async def test_hazard_rings_only_for_an_exposed_sensor(w: World) -> None:
 def test_exposed_device_model_refuses_never_exposed() -> None:
     with pytest.raises(ValueError):
         ExposedDevice(entity_id="script.go", tier="read")
+
+
+async def _forge(w: World, home_id: str) -> httpx.Response:
+    rec = await w.store.load(UID)
+    assert rec is not None
+    body = b"{}"
+    header = signing.sign(
+        rec.keys(), "up", home_id=home_id, method="POST", target=WEBHOOK_PATH,
+        body=body, now=w.clock(),
+    )  # fmt: skip
+    return await w.cloud.post(WEBHOOK_PATH, content=body, headers={signing.HEADER: header})
+
+
+def _count_queries(world: World) -> dict[str, int]:
+    reads = {"n": 0}
+    orig = world.store._d.query  # noqa: SLF001
+
+    async def counting(q: Any) -> Any:
+        reads["n"] += 1
+        return await orig(q)
+
+    world.store._d.query = counting  # noqa: SLF001
+    return reads
+
+
+async def test_forged_home_ids_are_cut_off_by_a_client_bucket_before_any_read(
+    tmp_path: Path,
+) -> None:
+    """Review H1: a stranger cannot make one Firestore read per forged request."""
+    world = build(tmp_path)
+    try:
+        await world.link_up()
+        reads = _count_queries(world)
+        codes = [(await _forge(world, f"h_{i:08x}")).status_code for i in range(200)]
+        assert 429 in codes
+        assert reads["n"] <= 120
+        assert codes.count(401) <= 120
+    finally:
+        await world.aclose()
+
+
+async def test_an_unknown_home_id_is_remembered_so_it_costs_one_read(tmp_path: Path) -> None:
+    world = build(tmp_path)
+    try:
+        await world.link_up()
+        reads = _count_queries(world)
+        for _ in range(10):
+            assert (await _forge(world, "h_deadbeef")).status_code == 401
+        assert reads["n"] == 1
+    finally:
+        await world.aclose()
+
+
+async def test_the_negative_cache_is_bounded_and_a_new_link_clears_it(tmp_path: Path) -> None:
+    world = build(tmp_path)
+    try:
+        for i in range(2000):
+            assert await world.store.find(f"h_{i:08x}") is None
+        assert len(world.store._unknown) <= 512  # noqa: SLF001
+        await world.link_up()
+        rec = await world.store.load(UID)
+        assert rec is not None
+        assert await world.store.find(rec.home_id) is not None
+    finally:
+        await world.aclose()

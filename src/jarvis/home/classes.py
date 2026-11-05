@@ -16,9 +16,33 @@ the bridge refuses any exposed entity whose class is looser than the floor it wo
 
 from __future__ import annotations
 
+import re
 from typing import Any, Final
 
 from jarvis.home.ports import NEVER_EXPOSED_DOMAINS
+
+# A device state is shown as the owner's own only when it is one of Home Assistant's plain words or
+# a short number; anything else is somebody else's text (review M2) and gets fenced.
+STATE_WORDS: Final = frozenset(
+    {
+        "on", "off", "open", "opening", "closed", "closing", "locked", "unlocked", "locking",
+        "unlocking", "jammed", "unavailable", "unknown", "home", "not_home", "heat", "cool",
+        "auto", "dry", "fan_only", "heat_cool", "playing", "paused", "idle", "standby",
+        "armed_home", "armed_away", "armed_night", "disarmed", "triggered", "stopped",
+        "clear", "detected", "problem", "ok",
+    }
+)  # fmt: skip
+_NUMBER: Final = re.compile(r"-?\d{1,7}(\.\d{1,3})?")
+
+
+def plain_state(state: object) -> str | None:
+    """The state itself when it is a plain word or number, else None (treat as outside text)."""
+    if not isinstance(state, str):
+        return None
+    if state in STATE_WORDS or _NUMBER.fullmatch(state):
+        return state
+    return None
+
 
 READ_DOMAINS: Final = frozenset({"sensor", "binary_sensor", "weather"})
 EVERYDAY_DOMAINS: Final = frozenset({"light", "fan", "media_player"})

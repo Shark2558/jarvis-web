@@ -7,6 +7,12 @@ $Distro = 'Ubuntu-24.04'
 
 function Say($text) { Write-Host ''; Write-Host "== $text" -ForegroundColor Cyan }
 function Ask($text) { return (Read-Host $text) }
+function AskSecret($text) { # typed without echo
+  $secure = Read-Host $text -AsSecureString
+  $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+  try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+  finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+}
 function Yes($text) { return ((Read-Host "$text (Y/N)") -match '^[Yy]') }
 function InWsl($command) { wsl -d $Distro -- bash -lc $command; if ($LASTEXITCODE -ne 0) { throw 'A step inside Ubuntu failed. Read the lines above and tell Claude.' } }
 function WslPath($path) { return (wsl -d $Distro -- wslpath -a ($path -replace '\\', '/')).Trim() }
@@ -62,10 +68,10 @@ Say 'The phone camera (IP Webcam app)'
 Write-Host 'On the old phone: open IP Webcam, press Start server, and note the address it shows (like 192.168.1.20).'
 $phone = Ask 'Phone address'
 $user = Ask 'Camera login'
-$pass = Ask 'Camera password'
+$pass = AskSecret 'Camera password'
 $env:CAMERA_URL = "rtsp://${user}:${pass}@${phone}:8080/h264_ulaw.sdp"
 Say 'Home Assistant (optional: press Enter to skip; the camera works without it)'
-$env:HA_TOKEN = Ask 'Home Assistant token for the JARVIS bridge user'
+$env:HA_TOKEN = AskSecret 'Home Assistant token for the JARVIS bridge user'
 $env:WSLENV = 'CAMERA_URL:HA_TOKEN'
 
 InWsl "KIT_DIR='$kitInWsl' bash '$kitInWsl/setup-wsl.sh' configure"

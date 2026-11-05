@@ -526,3 +526,45 @@ def test_cli_link_reports_plain_failure(
     assert cli.main(["link", "ABCD-EFGH", URL]) == 1
     assert "Couldn't reach JARVIS" in capsys.readouterr().err
     assert (tmp_path / "link-pending.json").exists()
+
+
+def _down(keys: signing.HomeKeys, home_id: str, now: float) -> str:
+    return signing.sign(
+        keys, "down", home_id=home_id, method="GET", target="/bridge/v1/health", body=b"", now=now
+    )
+
+
+def test_bridge_refuses_a_message_older_than_the_last_one_after_a_restart(
+    tmp_path: Path,
+) -> None:
+    """Review M3: the replay cache is in memory; the newest accepted time survives a restart."""
+    from jarvis.homebridge.auth import BridgeAuth
+
+    now = 1_800_000_000.0
+    store = BridgeStore(tmp_path)
+    store.save_link("h_0a0b0c0d", bytes(range(32)))
+    keys = signing.derive_keys(bytes(range(32)))
+    first = BridgeAuth(store, lambda: now)
+    old = _down(keys, "h_0a0b0c0d", now - 20)
+    newer = _down(keys, "h_0a0b0c0d", now)
+    first.check(newer, method="GET", target="/bridge/v1/health", body=b"")
+    restarted = BridgeAuth(BridgeStore(tmp_path), lambda: now + 1)
+    with pytest.raises(signing.SignatureError):  # captured earlier, still inside the 60 s window
+        restarted.check(old, method="GET", target="/bridge/v1/health", body=b"")
+    with pytest.raises(signing.SignatureError):  # the very message that was already accepted
+        restarted.check(newer, method="GET", target="/bridge/v1/health", body=b"")
+    fresh = _down(keys, "h_0a0b0c0d", now + 1)
+    restarted.check(fresh, method="GET", target="/bridge/v1/health", body=b"")
+
+
+def test_a_damaged_last_seen_file_does_not_lock_the_bridge_out(tmp_path: Path) -> None:
+    from jarvis.homebridge.auth import BridgeAuth
+
+    now = 1_800_000_000.0
+    store = BridgeStore(tmp_path)
+    store.save_link("h_0a0b0c0d", bytes(range(32)))
+    (tmp_path / "last-seen.json").write_text("not json")
+    keys = signing.derive_keys(bytes(range(32)))
+    BridgeAuth(BridgeStore(tmp_path), lambda: now).check(
+        _down(keys, "h_0a0b0c0d", now), method="GET", target="/bridge/v1/health", body=b""
+    )

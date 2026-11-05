@@ -376,12 +376,12 @@ async def _l04(w: World) -> list[str]:
     code = await code_for(w)
     for _ in range(5):
         try:
-            await w.link.complete("ZZZZ-ZZZZ", URL, "0.1.0", "a" * 43)
+            await w.link.complete("ZZZZ-ZZZZ", URL, "0.1.0", "a" * 43, client="1.1.1.1")
         except LinkRefused:
             pass
     f: list[str] = []
     try:
-        await w.link.complete(code, URL, "0.1.0", "a" * 43)
+        await w.link.complete(code, URL, "0.1.0", "a" * 43, client="1.1.1.1")
         f.append("the voided code worked")
     except LinkRefused as exc:
         check(exc.code == "bad_code", exc.code, f)

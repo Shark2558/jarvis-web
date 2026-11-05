@@ -9,7 +9,7 @@ import pytest
 from home_fakes import HA_TOKEN, UID, URL, World, build, private_resolver
 
 from jarvis.home import signing
-from jarvis.home.link import CODE_CHARS, LinkRefused, normalise
+from jarvis.home.link import CODE_CHARS, LinkRefused, code_hash, normalise
 from jarvis.home.store import HomeStoreUnavailable
 from jarvis.homebridge.cloud import LinkFailed
 from jarvis.offline.config import UrlRejected
@@ -53,14 +53,42 @@ async def test_expired_code_refused(w: World) -> None:
         await w.bridge.link.link(code, URL, b"s" * 32)
 
 
-async def test_five_wrong_tries_void_the_code(w: World) -> None:
+async def test_five_wrong_tries_lock_that_client_out(w: World) -> None:
     code = (await w.link.code(UID)).code
     for _ in range(5):
         with pytest.raises(LinkRefused):
-            await w.link.complete("ZZZZ-ZZZZ", URL, "0.1.0", "a" * 43)
-    with pytest.raises(LinkRefused):
-        await w.link.complete(code, URL, "0.1.0", "a" * 43)
+            await w.link.complete("ZZZZ-ZZZZ", URL, "0.1.0", "a" * 43, client="1.1.1.1")
+    with pytest.raises(LinkRefused):  # even the right code, from the client that guessed
+        await w.link.complete(code, URL, "0.1.0", "a" * 43, client="1.1.1.1")
     assert await w.store.load(UID) is None
+
+
+async def test_a_strangers_wrong_tries_do_not_void_the_owners_code(w: World) -> None:
+    """Review M1: five wrong codes from client A leave a code entered from client B working."""
+    code = (await w.link.code(UID)).code
+    for _ in range(12):
+        with pytest.raises(LinkRefused):
+            await w.link.complete("ZZZZ-ZZZZ", URL, "0.1.0", "a" * 43, client="6.6.6.6")
+    assert (await w.link_up(code)).startswith("h_")  # the bridge's own request, another client
+
+
+async def test_the_client_lockout_ends_with_the_window(w: World) -> None:
+    code = (await w.link.code(UID)).code
+    for _ in range(5):
+        with pytest.raises(LinkRefused):
+            await w.link.complete("ZZZZ-ZZZZ", URL, "0.1.0", "a" * 43, client="1.1.1.1")
+    assert await w.store.take_code(code_hash(normalise(code) or ""), "1.1.1.1") is None
+    w.clock.t += 301
+    assert await w.store.take_code(code_hash(normalise(code) or ""), "1.1.1.1") == UID
+
+
+async def test_a_wide_spread_guessing_run_trips_the_global_ceiling(w: World) -> None:
+    code = (await w.link.code(UID)).code
+    for i in range(60):
+        with pytest.raises(LinkRefused):
+            await w.link.complete("ZZZZ-ZZZZ", URL, "0.1.0", "a" * 43, client=f"9.9.9.{i}")
+    with pytest.raises(LinkRefused):
+        await w.link.complete(code, URL, "0.1.0", "a" * 43, client="2.2.2.2")
 
 
 @pytest.mark.parametrize(

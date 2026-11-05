@@ -40,7 +40,7 @@ services:
   homeassistant:
     image: ${HOMEASSISTANT_IMAGE:-ghcr.io/home-assistant/home-assistant:2026.10.0}
     restart: unless-stopped
-    network_mode: host # its docs ask for this; inside the WSL VM only, the home network can't reach it
+    network_mode: host # its docs ask for this; configuration.yaml limits it to 127.0.0.1 and 172.29.80.1
     environment:
       TZ: Asia/Kolkata
     volumes:
@@ -50,13 +50,15 @@ services:
     build:
       context: .
       dockerfile: bridge.Dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-python:3.12-slim} # setup-wsl.sh records its digest in images.env
     image: jarvis-home-bridge:local
     restart: unless-stopped
     ports:
       - "127.0.0.1:8099:8099" # the signed API (Funnel proxies to it)
       - "127.0.0.1:8098:8098" # the local Faces page (never funnelled)
     extra_hosts:
-      - "host.docker.internal:host-gateway" # to reach Home Assistant
+      - "host.docker.internal:172.29.80.1" # Home Assistant listens here and on 127.0.0.1 only
     env_file: bridge.env
     volumes:
       - ./bridge-data:/data
@@ -74,3 +76,7 @@ services:
 networks:
   home:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.80.0/24 # fixed, so Home Assistant (host network) can bind to its gateway
+          gateway: 172.29.80.1

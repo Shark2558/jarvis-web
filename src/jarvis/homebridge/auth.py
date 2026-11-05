@@ -40,6 +40,10 @@ class BridgeAuth:
         self._store = store
         self._clock = clock
         self._nonces = signing.NonceCache()
+        # The nonce cache is in memory. After a restart a message captured earlier would still be
+        # inside the 60 s window, so nothing at or before the newest time accepted so far is taken.
+        self._floor = store.last_message_t()
+        self._newest = self._floor
         self.offset_s = 0.0  # added to the local clock (set from the cloud's Date header)
 
     def now(self) -> float:
@@ -61,6 +65,9 @@ class BridgeAuth:
             raise signing.SignatureError("shape")
         last: signing.SignatureError | None = None
         for keys in candidates:
+            if linked is not None and keys is linked.keys and signed.t <= self._floor:
+                last = signing.SignatureError("stale")
+                continue
             try:
                 signing.verify(
                     signed,
@@ -75,8 +82,15 @@ class BridgeAuth:
             except signing.SignatureError as exc:
                 last = exc
                 continue
+            if linked is not None and keys is linked.keys:
+                self._advance(signed.t)
             return Verified(home_id=signed.home_id, nonce=signed.nonce, keys=keys)
         raise last if last is not None else signing.SignatureError("mac")
+
+    def _advance(self, t: int) -> None:
+        if t > self._newest:
+            self._newest = t
+            self._store.save_last_message_t(t)
 
     def reply_header(
         self, who: Verified, *, status: int, method: str, target: str, body: bytes

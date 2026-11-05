@@ -31,6 +31,7 @@ from jarvis.brief.collect import Collected, Collector
 from jarvis.brief.deliver import InboxDelivery
 from jarvis.brief.deliveries import DeliveriesBrief
 from jarvis.brief.family_day import FamilyBrief
+from jarvis.brief.home_overnight import HomeOvernightBrief
 from jarvis.brief.models import (
     AI_CONSENT_VERSION,
     AIBlock,
@@ -40,6 +41,7 @@ from jarvis.brief.models import (
     BriefView,
     DeliveriesSection,
     FamilySection,
+    HomeOvernightSection,
     SectionState,
     SettingsPatch,
     SettingsView,
@@ -175,6 +177,7 @@ def apply_patch(
                 "deliveries",
                 "family",
                 "vault",
+                "home",
             }
         ).items()
         if v is not None
@@ -200,6 +203,7 @@ def settings_view(s: BriefSettings) -> SettingsView:
         deliveries=s.deliveries,
         family=s.family,
         vault=s.vault,
+        home=s.home,
     )
 
 
@@ -259,6 +263,7 @@ class BriefService:
         deliveries: DeliveriesBrief | None = None,
         family_day: FamilyBrief | None = None,
         vault_due: VaultDueBrief | None = None,
+        home_overnight: HomeOvernightBrief | None = None,
     ) -> None:
         self._store = store
         self._google = google
@@ -279,6 +284,7 @@ class BriefService:
         self._deliveries = deliveries  # R1: Deliveries section (None: not wired)
         self._family_day = family_day  # R1: Family today section (None: not wired)
         self._vault_due = vault_due  # R2: Documents section (None: not wired)
+        self._home = home_overnight  # R3: Home overnight section (None: not wired)
 
     # ---- views --------------------------------------------------------------------------------
 
@@ -474,13 +480,19 @@ class BriefService:
             vault = await _own_section(
                 self._vault_due.section(uid, tz, day), lambda st: VaultDueSection(state=st)
             )
-        if deliveries is None and family is None and vault is None:
+        home = None
+        if s.home and self._home is not None:
+            home = await _own_section(
+                self._home.section(uid, tz, day), lambda st: HomeOvernightSection(state=st)
+            )
+        if deliveries is None and family is None and vault is None and home is None:
             return got
         status = got.data.sections_status.model_copy(
             update={
                 "deliveries": deliveries.state if deliveries is not None else "ok",
                 "family": family.state if family is not None else "ok",
                 "vault": vault.state if vault is not None else "ok",
+                "home": home.state if home is not None else "ok",
             }
         )
         data = got.data.model_copy(
@@ -488,6 +500,7 @@ class BriefService:
                 "deliveries": deliveries,
                 "family": family,
                 "vault": vault,
+                "home": home,
                 "sections_status": status,
             }
         )

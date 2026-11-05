@@ -61,6 +61,7 @@ SETTINGS_KEYS = {
     "deliveries",
     "family",
     "vault",  # R2 D5: the Documents section switch
+    "home",  # R3: the Home overnight section switch
 }
 
 
@@ -166,6 +167,7 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "deliveries",  # R1: null until the section is wired and on
         "family",
         "vault",  # R2: null until wired and something is due
+        "home",  # R3: null until wired and something happened overnight
         "sections_status",
     }
     assert set(b["data"]["calendar"]) == {"today", "clashes", "free_blocks", "tomorrow_first"}
@@ -180,6 +182,7 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "deliveries": "ok",
         "family": "ok",
         "vault": "ok",
+        "home": "ok",
     }
     assert {r.method for r in fake.requests} == {"GET"}
     forced = (await gc.post("/v1/brief/generate", json={"force": True}, headers=CSRF)).json()

@@ -247,7 +247,9 @@ async def run_compose_case(c: dict[str, Any]) -> dict[str, Any]:
         "free": len(b.data.calendar.free_blocks),
         "inbox_total": b.data.inbox.total,
         # the compose cases pin the four original sections; deliveries and family have own evals
-        "status": b.data.sections_status.model_dump(exclude={"deliveries", "family", "vault"}),
+        "status": b.data.sections_status.model_dump(
+            exclude={"deliveries", "family", "vault", "home"}
+        ),
     }
     fails += [
         f"{k}={checks[k]!r} want {exp[k]!r}" for k in checks if k in exp and checks[k] != exp[k]

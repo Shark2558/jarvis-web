@@ -1180,3 +1180,18 @@ developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-wi
 developers.cloudflare.com/tunnel/get-started · cloud.google.com/run/pricing · cloud.google.com/scheduler/pricing ·
 learn.microsoft.com/en-us/windows/wsl/wsl-config · rfc-editor.org/rfc/rfc8291 · webkit.org/blog/13878 ·
 docs.aiogram.dev/en/latest/api/methods/send_photo.html · dpdpa.com/dpdpa2023/chapter-1/section3.html
+
+
+## R3 B security review fixes (5 Nov)
+
+- D8: the `home_disarm` tool never disarms. It is READ_ONLY and answers "Disarming needs your passkey:
+  open the Home panel and press Disarm." Disarm happens only through the console button with the
+  bound passkey (or the fresh sign-in fallback). `DisarmGate.card_pass` is gone.
+- D8: a wipe keeps a tombstone with a higher `rev`; the bridge forgets its arm state when the home
+  link changes (`ArmState.bind`). Arming with no alarm zone is reported as "not protecting anything yet".
+- D9: a delivery failure is raised to the webhook (503, claim given back, bridge retries); the bridge
+  posts detections in the background and releases the event id when the post fails.
+- D7: `export-yolov9.ps1` is removed; Frigate's built-in CPU model is used. The template limits
+  snapshots and review detections to the gate and doorstep zones.
+- D12: snapshot bytes after the first JPEG end marker are cut.
+- D20: greeting alerts default off. The bridge refuses to connect to MQTT without user and password.

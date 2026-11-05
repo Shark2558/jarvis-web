@@ -303,6 +303,22 @@ def _vault(data: BriefData) -> list[str]:
     return lines
 
 
+def _home(data: BriefData) -> list[str]:
+    """R3: what the home camera noted overnight; JARVIS's own template, counts and times."""
+    box = data.home
+    if box is None:
+        return []
+    head = "HOME OVERNIGHT"
+    if (note := _status_line(box.state, "home camera")) is not None:
+        return [head, note]
+    held = f" \u00b7 {box.held} held for quiet hours" if box.held else ""
+    lines = [f"{head} \u00b7 {box.total} noted{held}"]
+    lines.extend(f"  {it.when}  {it.words}" for it in box.items)
+    if box.total > len(box.items):
+        lines.append(f"  \u2026 and {box.total - len(box.items)} more in the Home panel.")
+    return lines
+
+
 def inbox_text(text: str, data: BriefData | None) -> str:
     """The brief as put in the Gmail inbox: the Documents block says only how many need attention
     unless the owner switched on `inbox_copy` (R2 D5)."""
@@ -346,6 +362,7 @@ def render_text(data: BriefData, ai: AIBlock | None = None, ai_note: str | None 
         _deliveries(data),
         _family(data),
         _vault(data),
+        _home(data),
         _jarvis(data),
         _ai(ai, ai_note),
     ]

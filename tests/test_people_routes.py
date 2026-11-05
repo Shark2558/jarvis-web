@@ -18,7 +18,7 @@ from jarvis.people.research import RATE_BURST, PeopleService
 from jarvis.people.routes import install_people
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.audit import AuditLog
-from tests.people_fakes import PRIVATE_HITS, FakeModel, FakeSearcher
+from tests.research_fakes import PRIVATE_HITS, FakeModel, FakeSearcher
 
 
 @pytest.fixture

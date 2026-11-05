@@ -17,7 +17,7 @@ import pytest
 from jarvis.people.guard import Scope
 from jarvis.people.research import PeopleService, ScopeRefused
 from jarvis.web.ports import SearchHit
-from tests.people_fakes import (
+from tests.research_fakes import (
     DD_HITS,
     NEWS_HITS,
     PRIVATE_HITS,

@@ -23,7 +23,7 @@ from jarvis.tools.budget import turn_budget
 from jarvis.web.allowance import WebAllowance
 from jarvis.web.ports import CreditsExhausted, PageText, SearchPage
 from jarvis.web.service import WebService
-from tests.people_fakes import SATYA_HITS, FakeModel, FakeSearcher, hit
+from tests.research_fakes import SATYA_HITS, FakeModel, FakeSearcher, hit
 
 OWNER = "owner"
 

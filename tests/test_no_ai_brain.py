@@ -21,7 +21,7 @@ from jarvis.people.tools import PeopleDeps, people_tools
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.tools.base import Tool
 from tests.conftest import TIERS
-from tests.people_fakes import FakeModel, FakeSearcher
+from tests.research_fakes import FakeModel, FakeSearcher
 
 
 def fake(name: str, result: Any, risk: ActionRisk = ActionRisk.READ_ONLY) -> Tool:

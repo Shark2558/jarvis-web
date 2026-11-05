@@ -12,7 +12,7 @@ from jarvis.permissions.groups import GROUPS
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.tools.budget import turn_budget
 from jarvis.tools.gateway import GatewayOutcome
-from tests.people_fakes import PRIVATE_HITS, FakeModel, FakeSearcher
+from tests.research_fakes import PRIVATE_HITS, FakeModel, FakeSearcher
 
 SCOPE = "owner:s1"
 

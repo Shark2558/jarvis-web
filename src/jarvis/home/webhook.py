@@ -10,7 +10,8 @@ logged by check name only and never audited (a flood must not fill the audit cha
 3. |now - t| <= 60 s, nonce not seen in 5 minutes, `hmac.compare_digest` over the UP key, and only
    then the nonce is remembered (`signing.verify`)
 4. <= `per_minute` verified messages a minute per home (429)
-5. strict parsing (`ports.parse_event`): 413 too large, 422 anything else wrong
+5. strict parsing (`ports.parse_event`): 413 too large, 422 anything else wrong, and 422 for a kind
+   no registered handler takes (I1: never claimed, never answered as handled)
 6. event ids are claimed create-only, so a replay or a bridge retry is a no-op 200
 7. dispatch to every registered `HomeEventHandler` that takes the type; a handler that fails gives
    the claim back and answers 503, so the bridge's retry is not lost
@@ -130,6 +131,10 @@ class HomeWebhook:
         except EventRejected as exc:
             log.info("home webhook event rejected", extra={"reason": exc.code})
             return bare(413 if exc.code == "too_large" else 422)
+        if not any(event.type in h.handles for h in self._handlers):
+            # I1: a kind no handler takes is refused before its id is claimed (never "handled")
+            log.info("home webhook event kind not handled", extra={"type": event.type})
+            return bare(422)
         try:
             data = await self._dispatch(uid, event)
         except HomeStoreUnavailable:

@@ -80,6 +80,37 @@ def test_no_password_in_the_compose_file_or_env_example() -> None:
 def test_mosquitto_is_never_anonymous() -> None:
     conf = (HOME / "mosquitto" / "mosquitto.conf").read_text()
     assert "allow_anonymous false" in conf and "password_file" in conf
+    assert "acl_file /mosquitto/config/acl" in conf
+
+
+def test_mosquitto_acl_lets_frigate_write_and_the_bridge_only_read(compose: dict) -> None:
+    """I1 (review B): Frigate's user may publish frigate/#; the bridge's user may only read it."""
+    rules: dict[str, list[str]] = {}
+    user = ""
+    for line in (HOME / "mosquitto" / "acl").read_text().splitlines():
+        line = line.strip()
+        if line.startswith("user "):
+            user = line.split()[1]
+            rules[user] = []
+        elif line.startswith("topic "):
+            rules[user].append(" ".join(line.split()[1:]))
+    assert rules == {"frigate": ["readwrite frigate/#"], "bridge": ["read frigate/#"]}
+    vols = compose["services"]["mosquitto"]["volumes"]
+    assert any(v.startswith("./mosquitto/acl:/mosquitto/config/acl:ro") for v in vols)
+
+
+def test_frigate_gets_its_own_env_file_and_the_bridge_sees_frigate_media(compose: dict) -> None:
+    """I1: the camera's address and Frigate's broker password reach only Frigate (frigate.env);
+    the bridge mounts Frigate's media so the Faces plugin can delete and sweep face pictures
+    (review C: without it face deletes are never acknowledged)."""
+    svc = compose["services"]
+    assert svc["frigate"]["env_file"] == "frigate.env"
+    assert "FRIGATE_MQTT_PASSWORD" not in svc["frigate"].get("environment", {})
+    assert svc["bridge"]["env_file"] == "bridge.env"
+    assert "./frigate/media:/media/frigate" in svc["bridge"]["volumes"]
+    example = (HOME / "bridge.env.example").read_text()
+    assert "MQTT_USER=bridge" in example and "FRIGATE_GATE_RTSP" not in example
+    assert "frigate.env" in kit.SKIP_NAMES and "passwd" in kit.SKIP_NAMES
 
 
 def test_bridge_image_is_hash_locked_and_unprivileged() -> None:
@@ -235,11 +266,29 @@ def test_configure_writes_private_files_and_no_secret_in_output(tmp_path: Path) 
     )  # never echoed or put on a command line
     assert "camsecret" not in done.stdout + done.stderr + calls
     assert "chown 10001:10001 bridge-data" in calls
-    assert "mosquitto_passwd -b -c /work/passwd jarvis" in calls
-    # the camera address lands only in Frigate's own file
-    frigate = run / "frigate" / "config" / "config.yml"
-    if (HOME / "frigate" / "config.yml").exists():
-        assert "camsecret" in frigate.read_text()
+    # I1: two broker users, Frigate's (writes frigate/#) and the bridge's (reads only)
+    assert "mosquitto_passwd -b -c /work/passwd frigate" in calls
+    assert "mosquitto_passwd -b /work/passwd bridge" in calls
+    assert "MQTT_USER=bridge" in env
+    # the camera address lands only in Frigate's own env file (mode 600), never in bridge.env or
+    # Frigate's config.yml (which is copied as it is: it reads {FRIGATE_GATE_RTSP})
+    fenv = (run / "frigate.env").read_text()
+    assert "FRIGATE_GATE_RTSP=rtsp://cam:camsecret@192.168.1.20:8080/x" in fenv
+    assert "FRIGATE_MQTT_USER=frigate" in fenv
+    assert re.search(r"FRIGATE_MQTT_PASSWORD=\S{10,}", fenv)
+    assert stat.S_IMODE((run / "frigate.env").stat().st_mode) == 0o600
+    assert "camsecret" not in env
+    frigate = (run / "frigate" / "config" / "config.yml").read_text()
+    assert "camsecret" not in frigate and "{FRIGATE_GATE_RTSP}" in frigate
+
+
+def test_configure_keeps_frigate_passwords_and_camera_on_a_rerun(tmp_path: Path) -> None:
+    run_script(tmp_path, "configure", CAMERA_URL="rtsp://cam:a&b|c@192.168.1.20:8080/x")
+    run = tmp_path / "home" / "jarvis-home"
+    first = (run / "frigate.env").read_text()
+    assert "FRIGATE_GATE_RTSP=rtsp://cam:a&b|c@192.168.1.20:8080/x" in first  # printf, not sed
+    run_script(tmp_path, "configure")
+    assert (run / "frigate.env").read_text() == first
 
 
 def test_configure_keeps_an_existing_password(tmp_path: Path) -> None:
@@ -399,6 +448,7 @@ def test_cloudrun_watchdog_step_is_non_fatal_and_exact() -> None:
         "jarvis_home",
         "jarvis_home_devices",
         "jarvis_home_feed",
+        "jarvis_home_cameras",  # I1: B's sealed camera settings
         "jarvis_faces",
         "jarvis_webpush",
     ):

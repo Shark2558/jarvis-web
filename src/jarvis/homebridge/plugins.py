@@ -61,10 +61,15 @@ class EventSink(Protocol):
 
 @dataclass(frozen=True)
 class BridgeContext:
+    """`peers` (I1): the plugins already built, by name, filled by the bridge as it builds them,
+    so one plugin can use another's public parts later (B's camera asks C's face library whether
+    a face is a consented id). Read it when a message arrives, never in a factory."""
+
     env: Mapping[str, str]
     data_dir: Path
     events: EventSink
     now: Callable[[], float] = field(default=time.time)
+    peers: Mapping[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable

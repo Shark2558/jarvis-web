@@ -74,6 +74,18 @@ class Arm:
         return ArmView(armed=self.armed, mode="away", rev=1, confirmed=True)
 
 
+class CameraStandIn:
+    """B's and C's kinds for A's rig (I1: the webhook refuses a kind no handler takes)."""
+
+    handles = frozenset({"detection", "face_seen", "package", "ack"})
+
+    def __init__(self) -> None:
+        self.seen: list[Any] = []
+
+    async def handle(self, uid: str, event: Any) -> None:
+        self.seen.append(event)
+
+
 class StateBits:
     def __init__(self, state: BridgeState) -> None:
         self.state = state
@@ -177,7 +189,7 @@ def build(tmp: Path, *, ha_token: str = HA_TOKEN, per_minute: int = 60) -> World
     bits = StateBits(BridgeState())
     webhook = HomeWebhook(
         store,
-        [HeartbeatHandler(store, notes), HazardHandler(store, notes)],
+        [HeartbeatHandler(store, notes), HazardHandler(store, notes), CameraStandIn()],
         [bits, devices],
         clock=clock,
         per_minute=per_minute,

@@ -4,9 +4,10 @@
 Build with `create_app()` so tests can inject a mock provider and an in-memory store. It is a
 short list of named steps (slice 12 final review): the lifespan wires the core (`_wire_core`),
 the slice 10–11 features, the slice 12 ones (`_wire_slice12`: Maps + YouTube, Drive), R2's
-personal data (`api/personal.py`: vault, notes, things, DigiLocker inbox), the gateway with the
-owner's rules and the Brain, then R2's privacy dashboard and tick jobs; then the middleware, the
-error mapping and the routers.
+personal data (`api/personal.py`: vault, notes, things, DigiLocker inbox), R3's home, camera and
+faces (`api/home_wiring.py`; its one alert policy is wired in the core, before anything takes the
+alert sink), the gateway with the owner's rules and the Brain, then the privacy dashboard and tick
+jobs; then the middleware, the error mapping and the routers.
 """
 
 from __future__ import annotations
@@ -25,23 +26,28 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from jarvis.activity.service import ActivityService
 from jarvis.activity.store import ActivityStore
-from jarvis.alerts import AlertSink, NoAlerts
+from jarvis.alerts import AlertSink
 from jarvis.api.activity import install_activity
 from jarvis.api.auth import CSRFRejected, auth_router, build_oauth
 from jarvis.api.belongings import install_belongings
 from jarvis.api.body import MAX_BODY_BYTES, BodySizeLimit, BodyTooLarge, too_large_body
 from jarvis.api.brief import internal_router as brief_internal_router
 from jarvis.api.brief import router as brief_router
+from jarvis.api.camera import install_camera
 from jarvis.api.console import router as console_router
 from jarvis.api.deleted import router as deleted_router
 from jarvis.api.documents import ATTACH_BODY_BYTES, ATTACH_PATH, install_documents
 from jarvis.api.drive import install_drive
+from jarvis.api.faces import install_faces
 from jarvis.api.family import install_family
+from jarvis.api.home import install_home
+from jarvis.api.home_wiring import wire_home, wire_notify
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
 from jarvis.api.media import router as media_router
 from jarvis.api.memory import router as memory_router
 from jarvis.api.notes import install_notes
+from jarvis.api.notify import install_notify
 from jarvis.api.offline import install_offline
 from jarvis.api.permissions import build_permissions, install_permissions
 from jarvis.api.personal import personal_tick_jobs, wire_personal, wire_privacy
@@ -66,6 +72,7 @@ from jarvis.billing import (
 )
 from jarvis.brief.deliveries import DeliveriesBrief
 from jarvis.brief.family_day import FamilyBrief
+from jarvis.brief.home_overnight import HomeOvernightBrief
 from jarvis.brief.service import BriefLimitReached, BriefService, SettingsRejected
 from jarvis.brief.store import BriefStore
 from jarvis.brief.vault_due import VaultDueBrief
@@ -75,6 +82,7 @@ from jarvis.core.guardrails import ApprovalStore, InputRejected
 from jarvis.documents.service import DocumentService
 from jarvis.documents.store import AttachmentStore
 from jarvis.drive.service import DriveService, build_drive_service
+from jarvis.home.ports import MAX_WEBHOOK_BYTES, WEBHOOK_PATH
 from jarvis.integrations.google import (
     build_google_connector,
     google_tools_configured,
@@ -168,6 +176,10 @@ def build_brief_service(
         family_day=FamilyBrief(family) if (family := getattr(app.state, "family", None)) else None,
         # R2 D5: the Documents section (deterministic, never in the AI input)
         vault_due=VaultDueBrief(vault) if (vault := getattr(app.state, "vault", None)) else None,
+        # R3 B: Home overnight (held alerts, parcels, visitors; counts and times)
+        home_overnight=HomeOvernightBrief(cam.feed, cam.config)
+        if (cam := getattr(app.state, "camera", None))
+        else None,
     )
 
 
@@ -189,6 +201,8 @@ def build_app_memory(
 
 
 DRAIN_TIMEOUT_S = 5.0
+HOME_LINK_PATH = "/home/link"
+HOME_LINK_BYTES = 4096
 SERVICE_ACCOUNT_SUFFIX = ".iam.gserviceaccount.com"
 
 
@@ -263,11 +277,9 @@ def _wire_core(
         inj.gateway.audit if inj.gateway is not None else built.audit if built else AuditLog()
     )
     app.state.telegram = build_telegram(s, docs, audit=audit)
-    alerts: AlertSink = (
-        app.state.telegram.alerts
-        if app.state.telegram is not None
-        else NoAlerts("Telegram isn't set up")
-    )
+    # R3 D10: every alert goes through the one policy (quiet hours, storm control, Telegram and
+    # browser notifications); without the token key, R1's Telegram alerts as before
+    alerts: AlertSink = wire_notify(app, s, docs, audit)
     app.state.alerts = alerts
     app.state.offline = build_local_fallback(s, docs, alerts)  # None without JARVIS_TOKEN_KEY
     app.state.brains = inj.brains or BrainRegistry.from_settings(
@@ -367,6 +379,7 @@ def _build_tool_gateway(
         vault=app.state.vault,
         notes=app.state.notes,
         belongings=app.state.belongings,
+        home=app.state.home_parts,  # R3: home, camera and faces tools (only when on)
     )
 
 
@@ -426,6 +439,9 @@ def _log_up(app: FastAPI, s: Settings) -> None:
             "vault": app.state.vault is not None,
             "notes": app.state.notes is not None,
             "things": app.state.belongings is not None,
+            "home": app.state.home_store is not None,
+            "faces": app.state.faces is not None,
+            "browser_push": app.state.push is not None,
         },
     )
 
@@ -449,6 +465,7 @@ _CLOSABLES: tuple[tuple[str, str], ...] = (
     ("drive", "aclose"),
     ("media", "aclose"),
     ("scheduler_verifier", "aclose"),
+    ("push", "aclose"),  # R3 D11: Web Push's pinned client
 )
 
 
@@ -494,6 +511,7 @@ def _lifespan(
             _wire_slice12(app, s, docs, inj.drive)
             closers.register_new()
             wire_personal(app, s, docs)  # R2: vault, notes, things, DigiLocker inbox
+            wire_home(app, s, docs, audit)  # R3: home link, camera, faces (tools need them)
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()
             _wire_brain(app, s, built, docs)
@@ -518,7 +536,12 @@ def _install_middleware(app: FastAPI, s: Settings) -> None:
     app.add_middleware(
         BodySizeLimit,
         max_bytes=MAX_BODY_BYTES,
-        routes={ATTACH_PATH: ATTACH_BODY_BYTES, VAULT_UPLOAD_PATH: VAULT_BODY_BYTES},
+        routes={
+            ATTACH_PATH: ATTACH_BODY_BYTES,
+            VAULT_UPLOAD_PATH: VAULT_BODY_BYTES,
+            WEBHOOK_PATH: MAX_WEBHOOK_BYTES,  # R3: the bridge's signed events (128 KB)
+            HOME_LINK_PATH: HOME_LINK_BYTES,  # R3: a link request is a few hundred bytes
+        },
     )
     if s.rate_limit_per_minute > 0:
         app.middleware("http")(make_middleware(RateLimiter(s.rate_limit_per_minute)))
@@ -663,6 +686,10 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_belongings(app)
     install_notes(app)
     install_privacy(app)
+    install_home(app)  # R3: /home/link, /home/webhook, the watchdog, /v1/home
+    install_camera(app)  # R3: /v1/home/alarm, arm, disarm, cameras, feed, history
+    install_faces(app)
+    install_notify(app)  # R3: /v1/notify, /v1/push
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

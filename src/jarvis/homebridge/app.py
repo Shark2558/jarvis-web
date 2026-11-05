@@ -161,6 +161,7 @@ class Bridge:
         clock: Callable[[], float] = time.time,
         http: httpx.AsyncClient | None = None,
         ha_http: httpx.AsyncClient | None = None,
+        env: Mapping[str, str] | None = None,
     ) -> None:
         self.cfg = cfg
         self.store = BridgeStore(cfg.data_dir, clock=clock)
@@ -173,10 +174,16 @@ class Bridge:
             events=self.link,
             clock=clock,
         )
-        ctx = BridgeContext(env={}, data_dir=cfg.data_dir, events=self.link, now=clock)
+        # I1: each plugin reads its own keys from bridge.env (MQTT, Frigate, Faces) and can find
+        # the plugins built before or after it by name when a message arrives
+        peers: dict[str, BridgePlugin] = {}
+        ctx = BridgeContext(
+            env=dict(env or {}), data_dir=cfg.data_dir, events=self.link, now=clock, peers=peers
+        )
         self.heartbeat: HeartbeatLoop | None = None
         core = CorePlugin(self.store, self.ha, self.devices, self._apply)
         self.plugins: list[BridgePlugin] = [core, *(f(ctx) for f in factories)]
+        peers.update({p.name: p for p in self.plugins})
         check_routes(self.plugins)
         self.heartbeat = HeartbeatLoop(self.store, self.link, self.plugins, clock=clock)
         self._routes: dict[tuple[str, str], BridgeRoute] = {

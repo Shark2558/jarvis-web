@@ -15,8 +15,8 @@ def _flat(rule: str) -> str:
     return " ".join(rule.split())
 
 
-def test_persona_is_p4_7() -> None:
-    assert p.PERSONA_VERSION == "p4.7"
+def test_persona_is_p4_8() -> None:  # R3 I1 bumped it (R2: p4.7)
+    assert p.PERSONA_VERSION == "p4.8"
 
 
 @pytest.mark.parametrize("name", ["VAULT_RULES", "NOTES_RULES", "THINGS_RULES", "PRIVACY_RULE"])

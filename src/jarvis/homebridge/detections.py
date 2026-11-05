@@ -23,6 +23,7 @@ import json
 import logging
 import re
 from collections import OrderedDict
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -93,9 +94,14 @@ def face_of(sub_label: Any, faces: frozenset[str]) -> FaceMatch | None:
     return FaceMatch(person=name, score=float(score))
 
 
+FaceMatcher = Callable[[Any, Any], FaceMatch | None]  # (sub_label, object label) -> match
+
+
 class Detections:
-    def __init__(self, arm: ArmState) -> None:
+    def __init__(self, arm: ArmState, matcher: FaceMatcher | None = None) -> None:
+        """`matcher` (I1): C's face library when the faces plugin runs; else the synced ids."""
         self._arm = arm
+        self._match: FaceMatcher = matcher or (lambda sub, _label: face_of(sub, arm.faces))
         self._seen: OrderedDict[str, None] = OrderedDict()
         self._person_at: dict[tuple[str, str], float] = {}
 
@@ -152,11 +158,11 @@ class Detections:
                 label=ev.label,  # type: ignore[arg-type]
                 start=ev.start_time,
                 score=float(score),
-                face=face_of(ev.sub_label, self._arm.faces),
+                face=self._match(ev.sub_label, ev.label),
             )
         except ValidationError:
             log.warning("a detection did not fit the wire vocabulary; dropped")
             return None
 
 
-__all__ = ["DELIVERY_WINDOW_S", "Detections", "face_of", "parse_message"]
+__all__ = ["DELIVERY_WINDOW_S", "Detections", "FaceMatcher", "face_of", "parse_message"]

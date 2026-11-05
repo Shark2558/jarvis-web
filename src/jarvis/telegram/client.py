@@ -17,6 +17,7 @@ log = get_logger(__name__)
 API = "https://api.telegram.org"
 MAX_RESPONSE_BYTES = 1_000_000
 TIMEOUT_S = 15.0
+CAPTION_MAX = 1024  # Telegram's limit for a photo caption
 
 
 class TelegramError(Exception):
@@ -48,9 +49,12 @@ class TelegramClient:
         await self._http.aclose()
 
     async def call(self, method: str, payload: dict[str, Any] | None = None) -> Any:
+        return await self._call(method, json=payload or {})
+
+    async def _call(self, method: str, **body: Any) -> Any:
         url = f"{API}/bot{self._token.get_secret_value()}/{method}"
         try:
-            status, raw = await self._read(url, payload or {})
+            status, raw = await self._read(url, **body)
         except httpx.HTTPError as exc:
             log.warning(
                 "telegram call failed", extra={"method": method, "error": type(exc).__name__}
@@ -72,11 +76,11 @@ class TelegramClient:
             raise TelegramError(method, "Telegram said no")
         return body.get("result")
 
-    async def _read(self, url: str, payload: dict[str, Any]) -> tuple[int, bytes | None]:
+    async def _read(self, url: str, **body: Any) -> tuple[int, bytes | None]:
         """(status, body); body None when it passed the size cap. Streams, so a huge answer is
         never held whole: reading stops at the cap."""
         async with self._http.stream(
-            "POST", url, json=payload, timeout=self._timeout, follow_redirects=False
+            "POST", url, timeout=self._timeout, follow_redirects=False, **body
         ) as resp:
             size = 0
             parts: list[bytes] = []
@@ -100,6 +104,20 @@ class TelegramClient:
         result = await self.call("sendMessage", payload)
         mid = result.get("message_id") if isinstance(result, dict) else None
         return mid if isinstance(mid, int) else 0
+
+    async def send_photo(self, chat_id: int, jpeg: bytes, caption: str) -> None:
+        """R3 D12 (I1): one small JPEG with a burglar alert, only after the owner's opt-in.
+        `protect_content` stops forwarding and saving in Telegram's apps. The bytes go out in this
+        request and are dropped: never stored, logged or audited (errors name the method only)."""
+        await self._call(
+            "sendPhoto",
+            data={
+                "chat_id": str(chat_id),
+                "caption": caption[:CAPTION_MAX],
+                "protect_content": "true",
+            },
+            files={"photo": ("alert.jpg", jpeg, "image/jpeg")},
+        )
 
     async def answer_callback(self, callback_id: str, text: str = "") -> None:
         payload: dict[str, Any] = {"callback_query_id": callback_id}

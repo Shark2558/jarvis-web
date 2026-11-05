@@ -10,14 +10,16 @@ POST /telegram/webhook      Telegram only. Outside /v1, no `require_auth`. 404 w
 GET  /v1/telegram           {configured: false} or {configured, bot_username, paired, paired_at,
                             pairing_pending (a code is alive; the console says when it is not),
                             account_hint: "••1234", webhook: {registered, pending, last_error},
-                            allow_private_reads, allow_personal_reads, alerts: {approval_waiting,
-                            offline, brief_ready, vault_expiry}}
+                            allow_private_reads, allow_personal_reads, allow_home_reads,
+                            alerts: {approval_waiting, offline, brief_ready, vault_expiry}}
 POST /v1/telegram/pair      {code, link, expires_in_s}   (409 already_paired, 503
                             telegram_unavailable)
 DELETE /v1/telegram/pair    unpair (audited) -> the view
-PUT  /v1/telegram/settings  {allow_private_reads?, allow_personal_reads?, alerts?} -> the view
-                            (409 not_paired). R2 D12: allow_personal_reads is the vault list,
-                            notes and things switch, separate from the private-reads one.
+PUT  /v1/telegram/settings  {allow_private_reads?, allow_personal_reads?, allow_home_reads?,
+                            alerts?} -> the view (409 not_paired). R2 D12: allow_personal_reads is
+                            the vault list, notes and things switch, separate from the private-reads
+                            one. R3 D15: allow_home_reads (home devices, camera history, faces) is
+                            a third, opened by neither of the others.
 POST /v1/telegram/test-alert {sent, reason?}
 
 All /v1 routes: `require_auth` + `current_user`, errors {error, detail}. Telegram's own error text
@@ -139,6 +141,7 @@ class SettingsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     allow_private_reads: StrictBool | None = None
     allow_personal_reads: StrictBool | None = None
+    allow_home_reads: StrictBool | None = None
     alerts: AlertsPatch | None = None
 
 
@@ -170,6 +173,7 @@ async def _view(svc: TelegramService, uid: str) -> dict[str, Any]:
         "webhook": webhook_state,
         "allow_private_reads": bool(link and link.allow_private_reads),
         "allow_personal_reads": bool(link and link.allow_personal_reads),
+        "allow_home_reads": bool(link and link.allow_home_reads),
         "alerts": (link.alerts if link else AlertToggles()).model_dump(),
     }
 
@@ -230,11 +234,13 @@ async def settings(
         allow_private_reads=body.allow_private_reads,
         alerts=alerts,
         allow_personal_reads=body.allow_personal_reads,
+        allow_home_reads=body.allow_home_reads,
     )
     if link is None:
         return _err(409, "not_paired", "Pair Telegram first.")
     private = "on" if link.allow_private_reads else "off"
     personal = "on" if link.allow_personal_reads else "off"
+    home = "on" if link.allow_home_reads else "off"
     await record_change(
         request,
         agent="telegram",
@@ -242,9 +248,10 @@ async def settings(
         args={
             "private_reads": link.allow_private_reads,
             "personal_reads": link.allow_personal_reads,
+            "home_reads": link.allow_home_reads,
             "alerts": sorted(alerts or {}),
         },
-        detail=f"private reads {private}; personal reads {personal}",
+        detail=f"private reads {private}; personal reads {personal}; home reads {home}",
     )
     return await _view(svc, uid)
 

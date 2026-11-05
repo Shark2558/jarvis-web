@@ -1,5 +1,5 @@
-# tests/browser/test_faces.py -- the Faces panel (R3 D13) in a browser. The page shell is a tiny test
-# page with the console's own CSP (I1 adds the real #p-faces); /v1/faces* is answered by the test
+# tests/browser/test_faces.py -- the Faces panel (R3 D13) in a browser: the real console with I1's
+# #p-faces shell, dock button and tags; /v1/faces* is answered by the test
 # (shapes: src/jarvis/api/faces.py). Pins: empty first, Add person with the consent statement by age and
 # the right body + CSRF header, no pictures anywhere, yearly check, delete behind a focus-trapped confirm
 # then a passkey bound to face:<id>, "deleting when it's back", hostile text shown as text, a phone
@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
+from test_console import Console  # same directory (pytest prepend import)
 
 _pw = pytest.importorskip("playwright.sync_api")
 sync_playwright = _pw.sync_playwright
@@ -21,8 +22,6 @@ sync_playwright = _pw.sync_playwright
 pytestmark = pytest.mark.browser
 
 STATIC = Path(__file__).resolve().parents[2] / "src" / "jarvis" / "api" / "static"
-ORIGIN = "http://faces.test"
-CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:"
 HOSTILE = '<img src=x onerror="window.__pwned=1">Anjali'
 A = "fp_3a9c12ab34cd"
 STATEMENTS = {
@@ -30,20 +29,11 @@ STATEMENTS = {
     "adult": "<name> agreed that the camera at my home may recognise their face and greet them by name; their face pictures stay on my laptop; they can ask me to delete them at any time",
     "child": "<name> is under 18 and I am their parent or legal guardian (or have their parent's agreement)",
 }
-PAGE = """<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/static/console-faces.css"></head>
-<body><section id="p-faces"><div class="pbody"></div></section>
-<script src="/static/shim.js"></script><script src="/static/console-faces.js"></script></body></html>"""
-SHIM = """
-window.JarvisDeck = { isOpen: () => true };
-window.__proofs = [];
-window.JarvisPasskey = { supported: () => true, message: () => 'no', prove: async (purpose, target) => { window.__proofs.push([purpose, target]); return { challenge_id: 'x'.repeat(20) }; } };
-window.JarvisConsole = { ready: () => true, api: async (path, opts) => {
-  opts = opts || {}; const init = { method: opts.method || 'GET', headers: { 'X-Requested-With': 'JARVIS' } };
-  if (opts.body !== undefined) { init.body = JSON.stringify(opts.body); init.headers['Content-Type'] = 'application/json'; }
-  const r = await fetch(path, init); const d = await r.json().catch(() => ({}));
-  if (!r.ok) { const e = new Error(d.detail || 'failed'); e.status = r.status; if (d.error) e.code = d.error; throw e; }
-  return d; } };
-"""
+STUB = (
+    "window.__proofs = []; window.JarvisPasskey = { supported: () => true, message: () => 'no',"
+    " prove: async (purpose, target) => { window.__proofs.push([purpose, target]);"
+    " return { challenge_id: 'x'.repeat(20) }; } };"
+)
 
 
 def until(page: Any, check: Any, what: str = "condition") -> None:
@@ -90,23 +80,11 @@ class Fake:
         self.available = available
         self.calls: list[dict[str, Any]] = []
         self.delete_needs_passkey = True
-        page.route(ORIGIN + "/**", self._serve)
+        page.route("**/v1/faces", self._serve)
+        page.route("**/v1/faces/**", self._serve)
 
     def _serve(self, route: Any) -> None:
         r, path = route.request, urlsplit(route.request.url).path
-        if path == "/":
-            return route.fulfill(
-                status=200,
-                content_type="text/html",
-                body=PAGE,
-                headers={"Content-Security-Policy": CSP},
-            )
-        if path == "/static/shim.js":
-            return route.fulfill(status=200, content_type="text/javascript", body=SHIM)
-        if path.startswith("/static/"):
-            f = STATIC / path.rsplit("/", 1)[1]
-            kind = "text/css" if f.suffix == ".css" else "text/javascript"
-            return route.fulfill(status=200, content_type=kind, body=f.read_text())
         self.calls.append(
             {
                 "method": r.method,
@@ -179,32 +157,34 @@ class Fake:
 
 def open_page(
     browser: Any,
+    server_url: str,
+    token: str,
     people: list[dict[str, Any]],
     *,
     available: bool = True,
     size: dict[str, int] | None = None,
 ) -> tuple[Any, Fake, list[str]]:
-    ctx = browser.new_context(viewport=size or {"width": 1200, "height": 800})
-    page = ctx.new_page()
-    errors: list[str] = []
-    page.on("pageerror", lambda e: errors.append(str(e)))
-    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-    fake = Fake(page, people, available=available)
-    page.goto(ORIGIN + "/")
-    page.wait_for_selector("#facesAdd")
-    return page, fake, errors
+    c = Console(browser, server_url, token, size or {"width": 1200, "height": 800})
+    fake = Fake(c.page, people, available=available)
+    c.open()
+    c.page.evaluate(STUB)  # the passkey ceremony is console-permissions.js's; stubbed here
+    c.open_panel("faces")
+    c.page.wait_for_selector("#facesAdd")
+    return c.page, fake, c.errors
 
 
-def test_empty_state_explains_consent_and_the_laptop(browser: Any) -> None:
-    page, _, errors = open_page(browser, [])
+def test_empty_state_explains_consent_and_the_laptop(
+    browser: Any, server_url: str, token: str
+) -> None:
+    page, _, errors = open_page(browser, server_url, token, [])
     until(page, lambda: "Nobody is added" in page.inner_text("#facesState"), "empty state")
     assert "only works on your home laptop" in page.inner_text("#facesLocal")
     assert "never leave it" in page.inner_text("#faces")
     assert errors == []
 
 
-def test_add_an_adult_sends_the_consent_and_csrf(browser: Any) -> None:
-    page, fake, errors = open_page(browser, [])
+def test_add_an_adult_sends_the_consent_and_csrf(browser: Any, server_url: str, token: str) -> None:
+    page, fake, errors = open_page(browser, server_url, token, [])
     page.wait_for_selector("#facesAdd")
     page.click("#facesAdd")
     assert page.is_visible("#facesDialog")
@@ -231,8 +211,10 @@ def test_add_an_adult_sends_the_consent_and_csrf(browser: Any) -> None:
     assert errors == []
 
 
-def test_a_child_is_added_with_a_guardians_consent(browser: Any) -> None:
-    page, fake, _ = open_page(browser, [])
+def test_a_child_is_added_with_a_guardians_consent(
+    browser: Any, server_url: str, token: str
+) -> None:
+    page, fake, _ = open_page(browser, server_url, token, [])
     page.wait_for_selector("#facesAdd")
     page.click("#facesAdd")
     page.fill("#facesName", "Mini")
@@ -245,8 +227,10 @@ def test_a_child_is_added_with_a_guardians_consent(browser: Any) -> None:
     assert "under 18" in page.inner_text("li.trow")
 
 
-def test_without_ticking_consent_the_server_words_are_shown(browser: Any) -> None:
-    page, fake, _ = open_page(browser, [])
+def test_without_ticking_consent_the_server_words_are_shown(
+    browser: Any, server_url: str, token: str
+) -> None:
+    page, fake, _ = open_page(browser, server_url, token, [])
     page.wait_for_selector("#facesAdd")
     page.click("#facesAdd")
     page.fill("#facesName", "Ravi")
@@ -255,9 +239,11 @@ def test_without_ticking_consent_the_server_words_are_shown(browser: Any) -> Non
     assert fake.people == []
 
 
-def test_pictures_count_and_hostile_names_are_text(browser: Any) -> None:
+def test_pictures_count_and_hostile_names_are_text(
+    browser: Any, server_url: str, token: str
+) -> None:
     page, _, errors = open_page(
-        browser, [person(name=HOSTILE, pictures=5, state="enrolled", vip=True)]
+        browser, server_url, token, [person(name=HOSTILE, pictures=5, state="enrolled", vip=True)]
     )
     page.wait_for_selector("li.trow")
     text = page.inner_text("li.trow")
@@ -267,8 +253,8 @@ def test_pictures_count_and_hostile_names_are_text(browser: Any) -> None:
     assert errors == []
 
 
-def test_the_yearly_check_asks_and_renews(browser: Any) -> None:
-    page, fake, _ = open_page(browser, [person(renewal_due=True)])
+def test_the_yearly_check_asks_and_renews(browser: Any, server_url: str, token: str) -> None:
+    page, fake, _ = open_page(browser, server_url, token, [person(renewal_due=True)])
     page.wait_for_selector(".fdue")
     assert "Still OK to recognise Anjali?" in page.inner_text(".fdue")
     page.click("button:has-text('Yes, still OK')")
@@ -276,8 +262,12 @@ def test_the_yearly_check_asks_and_renews(browser: Any) -> None:
     assert any(c["method"] == "PATCH" and c["body"] == {"reconfirm": True} for c in fake.calls)
 
 
-def test_delete_asks_first_traps_focus_then_uses_a_passkey_for_that_person(browser: Any) -> None:
-    page, fake, errors = open_page(browser, [person(pictures=3, state="enrolled")])
+def test_delete_asks_first_traps_focus_then_uses_a_passkey_for_that_person(
+    browser: Any, server_url: str, token: str
+) -> None:
+    page, fake, errors = open_page(
+        browser, server_url, token, [person(pictures=3, state="enrolled")]
+    )
     page.wait_for_selector("li.trow")
     page.click("button[aria-label='Delete Anjali']")
     assert page.is_visible("#facesDialog")
@@ -297,23 +287,27 @@ def test_delete_asks_first_traps_focus_then_uses_a_passkey_for_that_person(brows
     assert all("403" in e for e in errors)  # only the expected passkey_required answer is logged
 
 
-def test_a_person_being_deleted_says_so_and_has_no_delete_button(browser: Any) -> None:
-    page, _, _ = open_page(browser, [person(state="deleting")])
+def test_a_person_being_deleted_says_so_and_has_no_delete_button(
+    browser: Any, server_url: str, token: str
+) -> None:
+    page, _, _ = open_page(browser, server_url, token, [person(state="deleting")])
     page.wait_for_selector("li.trow")
     assert "Deleting on your laptop when it's back." in page.inner_text("li.trow")
     assert page.locator("li.trow button").count() == 0
 
 
-def test_not_available_says_so_and_add_is_inert(browser: Any) -> None:
-    page, fake, _ = open_page(browser, [], available=False)
+def test_not_available_says_so_and_add_is_inert(browser: Any, server_url: str, token: str) -> None:
+    page, fake, _ = open_page(browser, server_url, token, [], available=False)
     until(page, lambda: "no encryption key" in page.inner_text("#facesState"), "unavailable words")
     page.click("#facesAdd", force=True)
     assert not page.is_visible("#facesDialog") and fake.people == []
 
 
-def test_phone_has_no_sideways_scroll(browser: Any) -> None:
+def test_phone_has_no_sideways_scroll(browser: Any, server_url: str, token: str) -> None:
     page, _, _ = open_page(
         browser,
+        server_url,
+        token,
         [person(name="A very long name " * 2, pictures=2)],
         size={"width": 390, "height": 844},
     )

@@ -47,7 +47,7 @@ SAFE_JARVIS = (
     "jarvis.home.classes",
     "jarvis.faces.ports",
 )
-SKIP_NAMES = frozenset({"bridge.env", "secret.json", ".env", "state.json"})
+SKIP_NAMES = frozenset({"bridge.env", "frigate.env", "passwd", "secret.json", ".env", "state.json"})
 SKIP_PARTS = frozenset({"bridge-data", "__pycache__", ".git", "mosquitto-data"})
 SKIP_SUFFIXES = (".pem", ".key", ".pyc", ".tmp", ".log")
 _STAMP = (2026, 1, 1, 0, 0, 0)
@@ -151,6 +151,7 @@ def env_file(public_url: str) -> bytes:
         f"JARVIS_URL={public_url.rstrip('/')}",
         "HA_URL=http://host.docker.internal:8123",
         "HA_TOKEN=",
+        "MQTT_USER=bridge",  # I1: the broker's read-only user (mosquitto/acl)
         "MQTT_PASSWORD=",
         "FRIGATE_PASSWORD=",
         "",

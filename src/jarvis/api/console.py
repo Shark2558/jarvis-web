@@ -76,6 +76,15 @@ APP_ASSETS: dict[str, str] = {
     "console-notes.css": "text/css",
     "console-privacy.js": _JS,  # R2 D: the Privacy panel
     "console-privacy.css": "text/css",
+    "console-home.js": _JS,  # R3 A: Integrations -> Home (link, kit, devices)
+    "console-home.css": "text/css",
+    "console-home-panel.js": _JS,  # R3 B: the Home panel (alarm, cameras, feed, history)
+    "console-home-panel.css": "text/css",
+    "console-faces.js": _JS,  # R3 C: the Faces panel (consent, delete with a passkey)
+    "console-faces.css": "text/css",
+    "console-alerts.js": _JS,  # R3 D: Integrations -> Alerts (quiet hours, VIPs, this device)
+    "console-alerts.css": "text/css",
+    "console-sw.js": _JS,  # R3 D: the service worker (push, notificationclick; /static/push/)
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",

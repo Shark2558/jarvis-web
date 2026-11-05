@@ -7,12 +7,15 @@
 // Integrations panel opens, never on page load.
 // API: GET /v1/telegram -> {configured:false} | {configured, bot_username, paired, paired_at,
 // account_hint, webhook:{registered, pending, last_error}, allow_private_reads, allow_personal_reads,
-// alerts:{approval_waiting, offline, brief_ready, vault_expiry}}; POST /v1/telegram/pair -> {code, link,
-// expires_in_s}; DELETE /v1/telegram/pair; PUT /v1/telegram/settings {allow_private_reads?,
-// allow_personal_reads?, alerts?}; POST /v1/telegram/test-alert -> {sent, reason?}.
+// allow_home_reads, alerts:{approval_waiting, offline, brief_ready, vault_expiry}}; POST
+// /v1/telegram/pair -> {code, link, expires_in_s}; DELETE /v1/telegram/pair; PUT
+// /v1/telegram/settings {allow_private_reads?, allow_personal_reads?, allow_home_reads?, alerts?};
+// POST /v1/telegram/test-alert -> {sent, reason?}.
 // Off (no bot token): the section stays visible and says how to switch it on.
 // R2 D12: a second switch for the vault list, notes and things, with its own confirm that names
 // exactly what it opens (vault metadata, never files; notes, memos and links; where things are kept).
+// R3 D15: a third switch for home devices, camera history and the people JARVIS recognises (its
+// own confirm; disarming and locks never happen from Telegram whatever it says).
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -65,6 +68,7 @@
       hint: typeof d.account_hint === 'string' && HINT.test(d.account_hint) ? d.account_hint : '',
       reads: d.allow_private_reads === true,
       personal: d.allow_personal_reads === true,
+      home: d.allow_home_reads === true,
       alerts: { approval_waiting: al.approval_waiting !== false, offline: al.offline !== false, brief_ready: al.brief_ready === true, vault_expiry: al.vault_expiry === true },
       webhook: {
         registered: wh.registered === true ? true : wh.registered === false ? false : null,
@@ -144,9 +148,10 @@
   function renderPaired(d) {
     card.dataset.state = 'linked'; stateEl.textContent = 'Paired';
     bodyEl.appendChild(mk('p', '', `Paired with your Telegram account ${d.hint || ''}`.trim() + '. Only that account can talk to JARVIS.'));
-    bodyEl.appendChild(mk('p', 'fine', 'Telegram keeps bot chats on its servers (not end-to-end encrypted). By default JARVIS will not read email, Drive, documents or contacts there, nor your vault list, notes and things.'));
+    bodyEl.appendChild(mk('p', 'fine', 'Telegram keeps bot chats on its servers (not end-to-end encrypted). By default JARVIS will not read email, Drive, documents or contacts there, nor your vault list, notes and things, nor your home devices and camera.'));
     bodyEl.appendChild(toggleRow('telegramReads', 'Let Telegram read my email, Drive, documents, contacts, family calendars and deleted events and to-dos', d.reads, askReads, 'Let Telegram read my private data'));
     bodyEl.appendChild(toggleRow('telegramPersonal', 'Let Telegram answer from my vault list, notes and things (never files)', d.personal, askPersonal, 'Let Telegram answer from my vault list, notes and things'));
+    bodyEl.appendChild(toggleRow('telegramHome', 'Let Telegram answer from my home devices, camera history and the people JARVIS recognises', d.home, askHome, 'Let Telegram answer from my home devices, camera history and the people JARVIS recognises'));
     const al = mk('div', 'talerts'); al.id = 'telegramAlerts'; al.setAttribute('role', 'group'); al.setAttribute('aria-label', 'Alerts');
     ALERTS.forEach(([key, label]) => al.appendChild(toggleRow('telegramAlert_' + key, label, d.alerts[key], (on) => saveAlert(key, on), 'Alert: ' + label)));
     bodyEl.appendChild(al);
@@ -270,6 +275,20 @@
     const r = await call('/v1/telegram/settings', { method: 'PUT', body: { allow_personal_reads: on } },
       on ? 'Telegram may now answer from your vault list, notes and things.' : 'Telegram no longer answers from your vault list, notes and things.');
     if (r) { S.data = normal(r); render(); log('info', on ? 'Telegram vault, notes and things on' : 'Telegram vault, notes and things off'); }
+  }
+  /** R3 D15: the third switch. Its dialog names what it opens; it never allows a disarm. */
+  async function askHome(on) {
+    if (on) {
+      const sure = await ask('Let Telegram answer from your home devices, camera history and faces?', [
+        mk('p', 'strong', 'Telegram keeps bot chats on its servers and they are not end-to-end encrypted.'),
+        mk('p', '', 'If you switch this on, JARVIS can tell you in that chat which home devices you shared and their state (including whether a lock or door is open), what your camera saw and when (times, places and the names of people JARVIS recognised; never children\u2019s names, never pictures), and who is set up in Faces. Anyone with your Telegram account could then see them.'),
+        mk('p', '', 'Whether the house is armed works on Telegram either way. Disarming, locks and gates still wait for your passkey in the console.'),
+        mk('p', '', 'You can switch it off here at any time.')], 'Switch on', $('telegramHome'));
+      if (!sure) return;
+    }
+    const r = await call('/v1/telegram/settings', { method: 'PUT', body: { allow_home_reads: on } },
+      on ? 'Telegram may now answer from your home devices, camera history and faces.' : 'Telegram no longer answers from your home devices, camera history and faces.');
+    if (r) { S.data = normal(r); render(); log('info', on ? 'Telegram home reads on' : 'Telegram home reads off'); }
   }
   async function askUnpair(trigger) {
     const sure = await ask('Unpair Telegram?', [

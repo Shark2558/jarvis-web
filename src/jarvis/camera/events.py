@@ -34,13 +34,8 @@ from jarvis.camera.feed import Feed, camera_words
 from jarvis.camera.models import CameraSettings, FeedItem, first_upper
 from jarvis.camera.packages import Packages
 from jarvis.camera.ports import NoSnapshots, SnapshotPolicy, safe_resolve
-from jarvis.faces.ports import (
-    FAMILY_CHILD,
-    RECOGNISED_PERSON,
-    UNKNOWN_PERSON,
-    FaceDirectory,
-    Resolved,
-)
+from jarvis.faces.directory import alert_words
+from jarvis.faces.ports import FaceDirectory, Resolved
 from jarvis.home.ports import (
     Ack,
     Detection,
@@ -68,10 +63,9 @@ Event = Heartbeat | Detection | FaceSeen | Package | Hazard | Ack
 
 
 def who_phrase(resolved: Resolved) -> str:
-    """Who, for an alert that names nobody."""
-    if resolved.child:
-        return FAMILY_CHILD
-    return RECOGNISED_PERSON if resolved.named else UNKNOWN_PERSON
+    """Who, for an alert that names nobody: C's `alert_words` with names off (I1: one rule for
+    every channel; a child is never named, an adult's name goes only in `named_message`)."""
+    return alert_words(resolved, say_names=False)
 
 
 def intruder_text(place: str, when: str, who: str) -> str:
@@ -326,10 +320,7 @@ class CameraEvents:
         delivery: Delivery | None = None
         if not armed:
             place = self._place(settings, ev.camera)
-            plain = (
-                first_upper(FAMILY_CHILD if resolved.child else RECOGNISED_PERSON)
-                + f" arrived at {place}."
-            )
+            plain = first_upper(who_phrase(resolved)) + f" arrived at {place}."
             named = None if resolved.child else f"{resolved.name} arrived at {place}."
             signal = Signal(
                 source="home",

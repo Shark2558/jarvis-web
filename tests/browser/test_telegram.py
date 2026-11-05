@@ -74,6 +74,8 @@ def _wire(page: Any, server_url: str, fake: Fake) -> None:
                 fake.view = {**fake.view, "allow_private_reads": b["allow_private_reads"]}
             if "allow_personal_reads" in b:
                 fake.view = {**fake.view, "allow_personal_reads": b["allow_personal_reads"]}
+            if "allow_home_reads" in b:
+                fake.view = {**fake.view, "allow_home_reads": b["allow_home_reads"]}
             if "alerts" in b:
                 fake.view = {**fake.view, "alerts": {**fake.view["alerts"], **b["alerts"]}}
             body = fake.view
@@ -276,6 +278,39 @@ def test_the_personal_switch_names_exactly_what_it_opens(
         assert [x for x in fake.calls if x["method"] == "PUT"][-1]["body"] == {
             "alerts": {"vault_expiry": True}
         }
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+def test_the_home_switch_names_what_it_opens_and_never_disarms(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R3 D15: home devices, camera history and faces; its own switch, its own PUT; the dialog
+    says disarming still waits for the passkey in the console."""
+    fake = Fake({})
+    fake.view = fake.paired_view(allow_home_reads=False)
+    c = _open(browser, server_url, token, fake, DESKTOP)
+    try:
+        sw = c.page.locator("#telegramHome")
+        sw.wait_for()
+        assert sw.get_attribute("aria-pressed") == "false"
+        sw.click()
+        c.page.locator("#telegramDialog[open]").wait_for()
+        said = str(c.page.locator("#telegramDialogText").text_content())
+        assert "end-to-end" in said and "home devices" in said and "camera" in said
+        assert "never children" in said and "never pictures" in said
+        assert "Disarming, locks and gates still wait for your passkey in the console" in said
+        assert "email" not in said.lower() and "vault" not in said.lower()
+        assert c.page.evaluate("document.activeElement.id") == "telegramDialogNo"
+        c.page.locator("#telegramDialogNo").click()
+        assert not [x for x in fake.calls if x["method"] == "PUT"]
+        sw.click()
+        c.page.locator("#telegramDialogYes").click()
+        c.page.locator('#telegramHome[aria-pressed="true"]').wait_for()
+        put = [x for x in fake.calls if x["method"] == "PUT"][-1]
+        assert put["body"] == {"allow_home_reads": True} and put["csrf"] == "JARVIS"
+        assert c.page.locator('#telegramPersonal[aria-pressed="false"]').count() == 1
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()

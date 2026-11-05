@@ -339,6 +339,51 @@ DELETE /v1/deleted/{id} {proof?}   Remove now (vault document, note, thing: pass
 PUT  /v1/telegram/settings {allow_personal_reads?, alerts: {vault_expiry?}}
 ```
 
+## R3 - home bridge and camera security
+
+Home Assistant, Frigate and Mosquitto on the owner's laptop (WSL2 Docker), linked to JARVIS by a
+signed bridge; an old phone as the gate camera with burglar alerts; one alert policy for every
+alert (quiet hours, storm control, Telegram and browser notifications); faces recognised only with
+consent; camera history; parcels. Plan and decisions D1-D20: `docs/plans/r3-home-camera.md`.
+Persona `p4.8`.
+
+```
+jarvis/home/                     A: the link (HMAC both ways, one seed per home), devices with
+                                 allow-listed classes, the webhook, the watchdog, the home kit zip
+jarvis/homebridge/               the laptop's bridge (ships in the kit): core + B's camera plugin
+                                 (Frigate MQTT) + C's faces plugin (face library, retention, the
+                                 local Faces page on 127.0.0.1:8098)
+jarvis/camera/                   B: arm / disarm, detections -> alerts, the feed, history, parcels
+jarvis/faces/                    C: the consent registry (sealed), the one place an id becomes a name
+jarvis/notify/, jarvis/webpush/  D: the policy (no model), storm control, Telegram with an urgent
+                                 bucket, standard Web Push (RFC 8291 + VAPID)
+jarvis/api/home_wiring.py        the app wiring: one webhook dispatcher, the watchdog's jobs,
+                                 app.state.alerts = the policy, privacy rows
+deploy/home/                     the kit: compose (every port on 127.0.0.1), Mosquitto users and ACL,
+                                 Frigate config, WSL2 and PowerShell setup, the 16 steps
+```
+
+- **Armed means confirmed**: `home_arm` says armed only after the laptop acknowledged the new arm
+  number. **Disarm never happens from the chat or Telegram**: `home_disarm` only points to the Home
+  panel's Disarm button, which needs the passkey bound to this home and arm number.
+- **Recognition never suppresses an alert**; a failed face lookup counts as "not recognised"; a
+  child is never named off the console; adults are named only with "Say names in alerts" on.
+- **Nothing visual leaves home** except the opted-in small snapshot, which goes to Telegram's
+  `sendPhoto` (protected content) and is never stored. JARVIS never sees pictures.
+- **Telegram**: home devices, camera history and faces are a third switch (off by default);
+  `home_status` and `home_arm` work there; locks, gates and disarming wait in the console.
+
+```
+POST /home/link | POST /home/webhook (signed) | POST /internal/home/watchdog (Scheduler OIDC)
+GET  /v1/home | POST /v1/home/link-code | DELETE /v1/home/link | GET /v1/home/kit[/info]
+GET/PUT /v1/home/devices | GET /v1/home/alarm | POST /v1/home/arm | POST /v1/home/disarm {proof?}
+GET/PUT /v1/home/cameras | GET /v1/home/feed?day= | GET /v1/home/history
+GET/POST /v1/faces | PATCH /v1/faces/{id} | POST /v1/faces/{id}/delete {proof?} | GET /v1/faces/local
+GET/PUT /v1/notify/settings | GET/POST/DELETE /v1/notify/vip
+GET /v1/push/key | GET /v1/push/devices | POST/DELETE /v1/push/subscribe | POST /v1/push/test
+PUT  /v1/telegram/settings {allow_home_reads?}
+```
+
 ## Quick start
 
 ```bash

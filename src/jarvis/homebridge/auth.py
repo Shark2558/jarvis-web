@@ -66,7 +66,7 @@ class BridgeAuth:
         last: signing.SignatureError | None = None
         for keys in candidates:
             if linked is not None and keys is linked.keys and signed.t <= self._floor:
-                last = signing.SignatureError("stale")
+                last = signing.SignatureError("time")  # older than the last one seen (review M3)
                 continue
             try:
                 signing.verify(

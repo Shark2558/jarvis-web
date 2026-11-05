@@ -72,7 +72,7 @@
   // ---- build -------------------------------------------------------------------------------
   function build() {
     const root = mk('div', 'home'); root.id = 'home';
-    el.note = mk('div', 'bnote hnote'); el.note.id = 'homeNote'; el.note.setAttribute('role', 'status'); el.note.setAttribute('aria-live', 'polite');
+    el.note = mk('div', 'bnote hnote'); el.note.id = 'homePanelNote'; el.note.setAttribute('role', 'status'); el.note.setAttribute('aria-live', 'polite');
     el.state = mk('div', 'hstate off'); el.state.id = 'homeState'; el.state.setAttribute('role', 'status');
     el.sub = mk('p', 'bfine hsub'); el.sub.id = 'homeSub';
     const acts = mk('div', 'hacts');
@@ -125,8 +125,8 @@
     return d;
   }
   function dialog() {
-    const dlg = mk('dialog', 'bdialog'); dlg.id = 'homeDialog'; dlg.setAttribute('role', 'alertdialog'); dlg.setAttribute('aria-labelledby', 'homeDialogTitle');
-    const h = mk('h3', '', 'Switch off the burglar alarm?'); h.id = 'homeDialogTitle';
+    const dlg = mk('dialog', 'bdialog'); dlg.id = 'homePanelDialog'; dlg.setAttribute('role', 'alertdialog'); dlg.setAttribute('aria-labelledby', 'homePanelDialogTitle');
+    const h = mk('h3', '', 'Switch off the burglar alarm?'); h.id = 'homePanelDialogTitle';
     el.dtext = mk('p', '', 'The camera at your gate stops alerting you until you arm it again. You will be asked for your passkey.');
     const row = mk('div', 'brow');
     el.dno = mk('button', 'btn', 'Keep it on'); el.dno.type = 'button';

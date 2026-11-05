@@ -3,8 +3,7 @@
 # polling until linked), the device picker (vendor names as text, a PUT with the chosen classes),
 # the Unlink confirm (and its cancel), the "kit is older" notice, and a 390 px phone
 # with no horizontal scroll. /v1/home* is answered by the test (page.route). The console is the
-# real one; its tags for
-# the Home asset are I1's, so the test serves and injects console-home.js/css itself.
+# real one, with I1's tags for console-home.js/css.
 from __future__ import annotations
 
 import json
@@ -84,13 +83,6 @@ def _wire(page: Any, fake: Fake) -> None:
     page.route("**/v1/home/**", api)
     page.route("**/v1/home?**", api)
 
-    def asset(route: Any) -> None:
-        name = route.request.url.rsplit("/", 1)[1]
-        kind = "text/css" if name.endswith(".css") else "text/javascript"
-        route.fulfill(status=200, content_type=kind, body=(STATIC / name).read_text())
-
-    page.route("**/static/console-home.*", asset)
-
 
 def _open(
     browser: Any, server_url: str, token: str, fake: Fake, viewport: dict[str, int]
@@ -99,8 +91,6 @@ def _open(
     _wire(c.page, fake)
     c.open()
     c.open_panel("integrations")
-    c.page.add_style_tag(url="/static/console-home.css")
-    c.page.add_script_tag(url="/static/console-home.js")
     c.page.locator("#homeSet .istate:not(:has-text('Checking'))").wait_for()
     return c
 

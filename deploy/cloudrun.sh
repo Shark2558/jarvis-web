@@ -427,7 +427,7 @@ IDX_OUT="$(gcloud firestore indexes composite create --database='(default)' --co
 # single-field indexes (saves free storage). NON-FATAL: a failure changes nothing else.
 VAULT_INDEX_FAILED=no
 for g in vault_chunks jarvis_vault jarvis_kb_shards jarvis_belongings jarvis_belongings_history \
-  jarvis_home jarvis_home_devices jarvis_home_feed jarvis_faces jarvis_webpush; do  # R3 D14: home blobs
+  jarvis_home jarvis_home_devices jarvis_home_feed jarvis_home_cameras jarvis_faces jarvis_webpush; do  # R3
   gcloud firestore indexes fields update blob --collection-group="$g" --database='(default)' \
     --disable-indexes --async --quiet >/dev/null 2>&1 || VAULT_INDEX_FAILED=yes
 done

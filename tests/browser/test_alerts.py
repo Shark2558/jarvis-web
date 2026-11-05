@@ -3,8 +3,8 @@
 # trapped confirm, "This device" (service worker registered with scope /static/push/ and no fetch
 # handler; the permission prompt and the push service are stubbed), device list, Test, hostile text
 # shown as text, a 390 px phone with no sideways scroll. /v1/notify* and /v1/push* are answered by
-# the test (page.route); the console is the real one. I1 adds the script and link tags to
-# console.html and console-sw.js to APP_ASSETS; until then this test serves those files itself.
+# the test (page.route); the console is the real one, with I1's tags and console-sw.js served
+# from APP_ASSETS.
 # 0 JS errors and 0 CSP reports throughout.
 from __future__ import annotations
 
@@ -150,28 +150,15 @@ def _wire(page: Any, fake: Fake) -> None:
     page.route("**/v1/push/**", api)
 
 
-def _serve_assets(ctx: Any) -> None:
-    def asset(route: Any) -> None:
-        name = route.request.url.rsplit("/", 1)[1]
-        kind = "text/css" if name.endswith(".css") else "text/javascript"
-        route.fulfill(status=200, content_type=kind, body=(STATIC / name).read_text())
-
-    for name in ("console-alerts.js", "console-alerts.css", "console-sw.js"):
-        ctx.route(f"**/static/{name}", asset)
-
-
 def _open(
     browser: Any, server_url: str, token: str, fake: Fake, viewport: dict[str, int]
 ) -> Console:
     c = Console(browser, server_url, token, viewport)
     c.page.add_init_script(INIT)
-    _serve_assets(c.ctx)
     _wire(c.page, fake)
     c.open()
     c.open_panel("integrations")
     c.page.locator("#integrations").wait_for()
-    c.page.add_style_tag(url="/static/console-alerts.css")
-    c.page.add_script_tag(url="/static/console-alerts.js")
     c.page.wait_for_function("window.JarvisAlerts !== undefined")
     c.page.evaluate("window.JarvisAlerts.refresh()")
     c.page.locator("#alertsSet[data-state='ready']").wait_for()
@@ -396,7 +383,6 @@ def test_off_server_says_so(browser: Any, server_url: str, token: str) -> None:
     c = Console(browser, server_url, token, DESKTOP)
     try:
         c.page.add_init_script(INIT)
-        _serve_assets(c.ctx)
         c.page.route(
             "**/v1/notify/**",
             lambda r: r.fulfill(
@@ -411,7 +397,6 @@ def test_off_server_says_so(browser: Any, server_url: str, token: str) -> None:
         )
         c.open()
         c.open_panel("integrations")
-        c.page.add_script_tag(url="/static/console-alerts.js")
         c.page.wait_for_function("window.JarvisAlerts !== undefined")
         c.page.evaluate("window.JarvisAlerts.refresh()")
         c.page.locator("#alertsSet[data-state='off']").wait_for()

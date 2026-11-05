@@ -3,7 +3,7 @@
 
     {prefix}notify/{uid}                  the NotifySettings fields + rev; the VIP list (phone and
                                           email references) is sealed in `vip_blob` (keyring purpose
-                                          `faces`, AAD `notify_vip/{uid}/v1`)
+                                          `notify`, AAD `notify_vip/{uid}/v1`)
     {prefix}notify_held/{uid}             {items:[{kind, at, camera?}]}  <= 50, kinds and times only
     {prefix}notify_rate/{uid}_{YYYYMMDDHH} {urgent, normal, push}  per hour
     {prefix}notify_rate/{uid}_{YYYYMMDD}   {urgent}             per day
@@ -30,7 +30,7 @@ MAX_HELD = 50
 RATE_KEEP = timedelta(days=3)
 UNAVAILABLE = "JARVIS couldn't open your alert settings just now. Try again in a minute."
 _FIELDS = ("quiet", "ring_for", "kinds", "names_in_alerts", "snapshot")
-VIP_PURPOSE = "faces"  # an existing purpose; the AAD below is the domain tag
+VIP_PURPOSE = "notify"  # its own keyring purpose (I1); the AAD below is the domain tag
 
 
 class NotifyUnavailable(RuntimeError):

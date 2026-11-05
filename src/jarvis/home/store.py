@@ -20,7 +20,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from jarvis.home.models import (
@@ -82,6 +82,13 @@ class HomeStore:
         self._wrong: dict[str, tuple[int, float]] = {}  # client -> (wrong tries, window start)
         self._wrong_all: tuple[int, float] = (0, 0.0)
         self._unknown: dict[str, float] = {}  # forged/unknown home id -> until (bounded, review H1)
+        self._unlink_hooks: list[Callable[[str], Awaitable[None]]] = []
+
+    def on_unlink(self, hook: Callable[[str], Awaitable[None]]) -> None:
+        """I1: run `hook(uid)` on every unlink, after the link is deleted (B's camera data wipe:
+        the arm state becomes a tombstone whose rev never goes back). A hook that fails makes the
+        unlink answer "try again"; the next unlink runs every hook again (they are idempotent)."""
+        self._unlink_hooks.append(hook)
 
     def now(self) -> float:
         return self._clock()
@@ -248,6 +255,12 @@ class HomeStore:
         self._seen.pop(uid, None)
         self._written.pop(uid, None)
         self._by_home = {h: u for h, u in self._by_home.items() if u != uid}
+        for hook in self._unlink_hooks:
+            try:
+                await hook(uid)
+            except Exception as exc:  # noqa: BLE001 - plain words; the retry runs it again
+                log.error("home unlink cleanup failed", extra={"error": type(exc).__name__})
+                raise HomeStoreUnavailable(UNAVAILABLE) from None
         return had
 
     # ---- heartbeat bookkeeping -----------------------------------------------------------------

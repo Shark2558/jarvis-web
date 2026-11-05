@@ -34,7 +34,7 @@ def run() -> int:
         return 2
     import uvicorn
 
-    bridge = create_bridge(cfg, _registry())
+    bridge = create_bridge(cfg, _registry(), env=dict(os.environ))  # each plugin reads its keys
     uvicorn.run(bridge.app, host=cfg.bind_host, port=cfg.signed_port, log_level="warning")
     return 0
 

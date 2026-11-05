@@ -78,7 +78,7 @@ class CameraPlugin:
     ) -> None:
         self._ctx = ctx
         self.arm = ArmState(ctx.data_dir / "camera_state.json")
-        self.detections = Detections(self.arm)
+        self.detections = Detections(self.arm, self.face)
         self.packages = PackagesLog(ctx.data_dir / "packages.jsonl", ctx.now)
         self.frigate = frigate or FrigateClient(ctx.env.get("FRIGATE_URL") or DEFAULT_URL)
         cfg = MqttConfig.from_env(ctx.env)
@@ -87,6 +87,18 @@ class CameraPlugin:
         self.mqtt = MqttEvents(connect or real_connect(cfg), self.on_message)
         self._faces_seen: set[str] = set()
         self._tasks: set[asyncio.Task[None]] = set()
+
+    def face(self, sub_label: Any, label: object = "person") -> FaceMatch | None:
+        """Frigate's face result -> a `FaceMatch`, or None (I1). C's face library decides when the
+        faces plugin runs (a person being deleted stays unmatched until the laptop removed their
+        pictures); without it, the consented ids the cloud synced to this plugin."""
+        library = getattr(self._ctx.peers.get("faces"), "library", None)
+        if library is None:
+            return face_of(sub_label, self.arm.faces) if label == "person" else None
+        if not (isinstance(sub_label, list | tuple) and len(sub_label) == 2):
+            return None
+        match = library.match(sub_label[0], sub_label[1], label)
+        return match if isinstance(match, FaceMatch) else None
 
     # ---- plugin surface ----------------------------------------------------------------------
 
@@ -197,7 +209,7 @@ class CameraPlugin:
             return
         if not (isinstance(camera, str) and re.fullmatch(LABEL_ID, camera)):
             return
-        match = face_of([name, score], self.arm.faces)
+        match = self.face([name, score])
         settings = self.arm.settings
         if match is None or settings is None or camera not in settings.cameras:
             return
@@ -316,7 +328,7 @@ class CameraPlugin:
         }
         if isinstance(end, int | float) and not isinstance(end, bool) and end >= start:
             item["end"] = float(end)
-        match = face_of(row.get("sub_label"), self.arm.faces)
+        match = self.face(row.get("sub_label"), label)
         if match is not None and match.score >= RECOGNITION_THRESHOLD:
             item["person"], item["score"] = match.person, match.score
         return item

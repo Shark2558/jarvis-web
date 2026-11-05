@@ -4,8 +4,9 @@
 # Re-runnable: every step checks first and skips what is already done.
 #
 #   install    Docker Engine (from Docker's apt repository) and systemd for Ubuntu
-#   configure  copies the kit to ~/jarvis-home, writes bridge.env (passwords made here, kept here),
-#              the Mosquitto password file, and fills in the camera address
+#   configure  copies the kit to ~/jarvis-home, writes bridge.env and frigate.env (passwords made
+#              here, kept here; the camera address only in frigate.env), the Mosquitto users
+#              (frigate writes, bridge only reads) and Frigate's settings
 #   up         pulls the images, records each image's digest in images.env, starts everything
 #   link       links the bridge to JARVIS with the code from Integrations -> Home -> Link
 #   status     says in plain words what is running
@@ -15,7 +16,7 @@
 # Environment (set by setup-windows.ps1, all optional):
 #   KIT_DIR        where the kit is (default: this script's folder)
 #   HOME_DIR       where the running copy lives (default: ~/jarvis-home)
-#   CAMERA_URL     the phone camera's RTSP address, with its login (kept only in Frigate's config)
+#   CAMERA_URL     the phone camera's RTSP address, with its login (kept only in frigate.env)
 #   HA_TOKEN       the Home Assistant token for the "JARVIS bridge" user (Enter = skip = camera only)
 set -euo pipefail
 
@@ -76,24 +77,35 @@ step_configure() {
   chmod 700 bridge-data
   if [ ! -f bridge.env ]; then cp bridge.env.example bridge.env; fi
   chmod 600 bridge.env
+  if [ -z "$(get_env bridge.env MQTT_USER)" ]; then set_env bridge.env MQTT_USER bridge; fi
   if [ -z "$(get_env bridge.env MQTT_PASSWORD)" ]; then set_env bridge.env MQTT_PASSWORD "$(random_secret)"; fi
   if [ -n "${HA_TOKEN:-}" ]; then set_env bridge.env HA_TOKEN "$HA_TOKEN"; fi
   touch images.env
   chmod 600 images.env
 
-  say "Making the Mosquitto password file (the broker accepts nobody without a password)"
+  say "Writing Frigate's private settings (only Frigate reads frigate.env)"
+  touch frigate.env
+  chmod 600 frigate.env
+  local frigate_pw camera
+  frigate_pw="$(get_env frigate.env FRIGATE_MQTT_PASSWORD)"
+  if [ -z "$frigate_pw" ]; then frigate_pw="$(random_secret)"; fi
+  camera="${CAMERA_URL:-$(get_env frigate.env FRIGATE_GATE_RTSP)}"
+  # printf, not sed: the camera's password may hold characters sed would read as commands
+  printf 'FRIGATE_MQTT_USER=frigate\nFRIGATE_MQTT_PASSWORD=%s\nFRIGATE_GATE_RTSP=%s\n' \
+    "$frigate_pw" "$camera" > frigate.env
+
+  say "Making the Mosquitto users (frigate writes, bridge only reads; nobody without a password)"
   local mqtt_pw; mqtt_pw="$(get_env bridge.env MQTT_PASSWORD)"
   : > mosquitto/passwd
   docker run --rm -v "$HOME_DIR/mosquitto:/work" "${MOSQUITTO_IMAGE:-eclipse-mosquitto:2.0.20}" \
-    mosquitto_passwd -b -c /work/passwd jarvis "$mqtt_pw" >/dev/null
+    mosquitto_passwd -b -c /work/passwd frigate "$frigate_pw" >/dev/null
+  docker run --rm -v "$HOME_DIR/mosquitto:/work" "${MOSQUITTO_IMAGE:-eclipse-mosquitto:2.0.20}" \
+    mosquitto_passwd -b /work/passwd bridge "$mqtt_pw" >/dev/null
   chmod 600 mosquitto/passwd || true
 
-  if [ -n "${CAMERA_URL:-}" ] && [ -f frigate/config.yml ]; then
-    say "Writing Frigate's camera address (only Frigate's file on this laptop holds it)"
-    if [ ! -f frigate/config/config.yml ]; then
-      sed "s|__CAMERA_URL__|${CAMERA_URL}|g" frigate/config.yml > frigate/config/config.yml
-      chmod 600 frigate/config/config.yml
-    fi
+  if [ -f frigate/config.yml ] && [ ! -f frigate/config/config.yml ]; then
+    say "Copying Frigate's settings (the camera address stays in frigate.env, not here)"
+    cp frigate/config.yml frigate/config/config.yml
   fi
   echo "Configured."
 }

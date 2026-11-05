@@ -17,6 +17,7 @@ services:
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./mosquitto/passwd:/mosquitto/config/passwd:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro # Frigate's user writes frigate/#, the bridge's only reads
       - ./mosquitto-data:/mosquitto/data
     networks: [home]
 
@@ -28,7 +29,9 @@ services:
       - "127.0.0.1:8971:8971" # Frigate's own login page; 5000, 8554 and 8555 are not published
     environment:
       TZ: Asia/Kolkata
-      FRIGATE_MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+    # FRIGATE_MQTT_USER, FRIGATE_MQTT_PASSWORD and FRIGATE_GATE_RTSP (the phone's address with its
+    # login): only Frigate gets this file, never the bridge (setup-wsl.sh writes it, mode 600)
+    env_file: frigate.env
     volumes:
       - ./frigate/config:/config
       - ./frigate/media:/media/frigate
@@ -62,6 +65,9 @@ services:
     env_file: bridge.env
     volumes:
       - ./bridge-data:/data
+      # Frigate's face pictures: the Faces plugin deletes a removed person's pictures and sweeps
+      # strangers' face attempts (72 hours) and doorstep pictures (7 days) here
+      - ./frigate/media:/media/frigate
     read_only: true
     tmpfs:
       - /tmp

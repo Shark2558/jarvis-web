@@ -11,7 +11,9 @@ whatsapp_draft always. With Drive configured (slice 12 D1, `drive`): the read-on
 chosen-folders Drive tools. With JARVIS's own Google API key (slice 12, `media`): Maps and
 YouTube search, plus the owner's playlists when the Google link exists. R2 (each only when on, i.e.
 with the server's token key): the vault's metadata tools, notes and links (kb_*), and where things
-are kept (belongings_*)."""
+are kept (belongings_*). R3 (only with the home on, i.e. the token key and JARVIS_HOME_ENABLED):
+home_status / home_devices / home_control, home_arm / home_disarm (which never disarms: it points to
+the Home panel's passkey button), camera_history and, with Faces on, faces_list."""
 
 from __future__ import annotations
 
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from jarvis.belongings.service import BelongingsService
     from jarvis.documents.service import DocumentService
     from jarvis.drive.service import DriveService
+    from jarvis.home.parts import HomeParts
     from jarvis.kb.service import NotesService
     from jarvis.media.service import MediaServices
     from jarvis.recall.service import MemoryService
@@ -153,6 +156,26 @@ def _register_personal(
             reg.register(t)
 
 
+def _register_home(reg: ToolRegistry, home: HomeParts | None) -> None:
+    """R3: the home, its alarm, camera history and the people JARVIS recognises. Telegram refuses
+    home_devices, camera_* and faces_* by default (`telegram.rules.HOME_PATTERNS`); home_status
+    and home_arm stay. A training brain is offered no tools at all and offline mode only
+    `llm.fallback.OFFLINE_TOOLS` (none of these), so the private ones reach neither."""
+    if home is None:
+        return
+    from jarvis.camera.tools import camera_tools
+    from jarvis.home.tools import home_tools
+
+    cam = home.camera
+    tools = home_tools(home.devices, home.status) + camera_tools(cam.alarm, cam.gate, cam.history)
+    if home.faces is not None:
+        from jarvis.faces.tools import faces_tools
+
+        tools += faces_tools(home.faces)
+    for t in tools:
+        reg.register(t)
+
+
 def attach_activity(gw: Gateway, store: ActivityStore, s: Settings) -> None:
     """R1 D7: the Activity recorder hears every call's outcome after its audit entry. Once per
     gateway, so an injected gateway gets it too and a second call changes nothing."""
@@ -180,6 +203,7 @@ def build_gateway(
     vault: VaultService | None = None,
     notes: NotesService | None = None,
     belongings: BelongingsService | None = None,
+    home: HomeParts | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
@@ -199,6 +223,7 @@ def build_gateway(
             reg.register(t)
     _register_services(reg, memory, web, documents, drive, media)
     _register_personal(reg, vault, notes, belongings)
+    _register_home(reg, home)
     return Gateway(
         registry=reg,
         policy=Policy(),

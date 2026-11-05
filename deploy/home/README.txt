@@ -67,6 +67,12 @@ Safety notes
 ------------
  - bridge.env on this laptop holds your Home Assistant token and passwords. Never send it to
    anyone, and never put it in the download kit. JARVIS never asks for it.
+ - frigate.env holds the phone camera's address with its login and Frigate's broker password;
+   only Frigate reads it (not the bridge, not JARVIS).
+ - Mosquitto, the message broker inside the kit, lets nobody in without a password: Frigate's
+   user may publish its events, the bridge's user may only read them (mosquitto/acl).
+ - The bridge sees Frigate's media folder only to delete a removed person's face pictures and to
+   clean up strangers' face pictures after 72 hours and doorstep pictures after 7 days.
  - The published ports listen on 127.0.0.1 (this laptop only). Home Assistant listens on 127.0.0.1
    and on 172.29.80.1, the kit's private Docker network, so the bridge can reach it; nothing else
    can. The only thing on the internet is the bridge's signed door, through Tailscale Funnel on

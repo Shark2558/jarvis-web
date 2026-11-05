@@ -175,8 +175,21 @@ async def home_get(request: Request, uid: str = Depends(current_user)) -> dict[s
         "bridge_version": status.bridge_version,
         "kit_outdated": kit.outdated(status.bridge_version),
         "devices_available": bool(status.parts.get("ha")),
-        "dropped_disarmed": status.dropped_disarmed,
+        "dropped_disarmed": await _dropped(request, uid, status.dropped_disarmed),
     }
+
+
+async def _dropped(request: Request, uid: str, stored: int) -> int:
+    """I1: B counts detections dropped while disarmed in its arm record (D8); A's field is the
+    fallback when the camera isn't wired or can't be read."""
+    camera = _svc(request, "camera")
+    if camera is None:
+        return stored
+    try:
+        return max(stored, int((await camera.alarm.record(uid)).dropped_disarmed))
+    except Exception as exc:  # noqa: BLE001 - the status line still shows
+        log.warning("dropped count unreadable", extra={"error": type(exc).__name__})
+        return stored
 
 
 @router.post("/link-code")

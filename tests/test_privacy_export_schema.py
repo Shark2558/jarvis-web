@@ -48,6 +48,7 @@ ALLOWED: dict[str, set[str]] = {
     "telegram": {
         "paired", "paired_at", "allow_private_reads", "alerts", "approval_waiting", "brief_ready",
         "offline", "allow_personal_reads", "vault_expiry",  # R2 I1: the second switch, the alert
+        "allow_home_reads",  # R3 I1: the third switch
     },
     "groceries": {"list_id", "title"},
     "family": {"members", "name", "calendar", "access", "added_at"},

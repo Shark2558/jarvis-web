@@ -749,8 +749,9 @@ class _Plugin:
         return None
 
 
-def test_the_registry_starts_empty_and_plugins_satisfy_the_port() -> None:
-    assert PLUGINS == ()
+def test_the_registry_lists_the_camera_and_faces_plugins_and_plugins_satisfy_the_port() -> None:
+    # I1: the core plugin is built by the bridge itself; the registry adds B's and C's
+    assert [f.__name__ for f in PLUGINS] == ["camera_plugin", "create_plugin"]
     assert isinstance(_Plugin("camera"), BridgePlugin)
     ctx = BridgeContext(env={}, data_dir=ROOT, events=None)  # type: ignore[arg-type]
     assert ctx.now() > 0
@@ -814,7 +815,7 @@ def _purpose_key(info: str, length: int = 32) -> bytes:
 
 
 def test_r3_cipher_purposes_are_pinned() -> None:
-    assert set(PURPOSES) == R2_PURPOSES | {"home", "home_feed", "faces", "webpush"}
+    assert set(PURPOSES) == R2_PURPOSES | {"home", "home_feed", "faces", "webpush", "notify"}
     ring = Keyring(KEY)
     for purpose in ("home", "home_feed", "faces", "webpush"):
         from jarvis.integrations.vault import TokenCipher

@@ -1,13 +1,11 @@
-# tests/browser/test_home_panel.py -- the Home panel (R3 B) in a real browser. The shell of
-# #p-home and its dock button are I1's; here the served page is given a copy of the Things shell
-# plus this panel's css and script, and /v1/home/* is answered by the test (shapes:
+# tests/browser/test_home_panel.py -- the Home panel (R3 B) in a real browser: the real console with
+# I1's #p-home shell, dock button, tags and deck entry; /v1/home/* is answered by the test (shapes:
 # src/jarvis/api/camera.py). Pins:
 # "Armed" only once confirmed, Disarm asks first, then proves with the passkey (never without), a
 # reauth link, hostile text as text, a phone without sideways scroll. 0 JS errors, 0 CSP reports.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -24,20 +22,6 @@ pytestmark = pytest.mark.browser
 STATIC = Path(__file__).resolve().parents[2] / "src" / "jarvis" / "api" / "static"
 HOSTILE = '<img src=x onerror="window.__pwned=1">Gate'
 TARGET = "h_0123abcd:7"
-SHELL = (
-    '<section class="panel card" id="p-home" data-panel="home" aria-labelledby="t-home" hidden>'
-    '<header class="ptitle"><h2 id="t-home">Home</h2>'
-    '<div class="pacts"><button class="pbtn" type="button" data-close '
-    'aria-label="Close Home panel">x</button></div></header><div class="pbody"></div></section>'
-)
-DOCK = (
-    '<button class="dk ovf" type="button" data-open="home" aria-controls="p-home" '
-    'aria-pressed="false"><span>Home</span></button>'
-)
-SHEET = (
-    '<button class="sheet-item" type="button" data-sheet-open="home">'
-    "<span><b>Home</b></span></button>"
-)
 
 
 @pytest.fixture(scope="module")
@@ -50,30 +34,6 @@ def browser() -> Iterator[Any]:
 
 def _json(route: Any, status: int, body: Any) -> None:
     route.fulfill(status=status, content_type="application/json", body=json.dumps(body))
-
-
-def _inject(html: str) -> str:
-    html = html.replace(
-        '<link rel="stylesheet" href="/static/console-things.css">',
-        '<link rel="stylesheet" href="/static/console-things.css">'
-        '<link rel="stylesheet" href="/static/console-home-panel.css">',
-        1,
-    )
-    html = html.replace(
-        '<section class="panel card" id="p-things"',
-        SHELL + '\n<section class="panel card" id="p-things"',
-        1,
-    )
-    html = re.sub(r'(<button class="dk ovf"[^>]*data-open="things")', DOCK + r"\1", html, count=1)
-    html = re.sub(
-        r'(<button class="sheet-item"[^>]*data-sheet-open="things")', SHEET + r"\1", html, count=1
-    )
-    return html.replace(
-        '<script src="/static/console-things.js" defer></script>',
-        '<script src="/static/console-things.js" defer></script>'
-        '<script src="/static/console-home-panel.js" defer></script>',
-        1,
-    )
 
 
 class FakeHome:
@@ -109,34 +69,7 @@ class FakeHome:
                 "model_note": "",
             },
         )
-        page.route("**/", self._page)
         page.route("**/v1/home/**", self._api)
-        page.route(
-            "**/static/console-home-panel.*", self._static
-        )  # I1 adds them to console.py's list
-        page.route("**/static/console-deck.js", self._deck)  # I1 adds 'home' to the deck for real
-
-    def _page(self, route: Any) -> None:
-        if urlsplit(route.request.url).path != "/":
-            return route.fallback()
-        resp = route.fetch()
-        route.fulfill(response=resp, body=_inject(resp.text()))
-
-    def _static(self, route: Any) -> None:
-        name = urlsplit(route.request.url).path.rsplit("/", 1)[-1]
-        kind = "text/css" if name.endswith(".css") else "text/javascript"
-        route.fulfill(status=200, content_type=kind, body=(STATIC / name).read_text())
-
-    def _deck(self, route: Any) -> None:
-        resp = route.fetch()
-        js = resp.text().replace("'things', 'notes'", "'things', 'home', 'notes'", 1)
-        js = js.replace(
-            "      notes: {",
-            "      home: { x: col2, y: b.top + 36, w: 400, h: Math.min(availH, 700),"
-            " open: false },\n      notes: {",
-            1,
-        )
-        route.fulfill(response=resp, body=js)
 
     def _api(self, route: Any) -> None:
         r = route.request
@@ -229,17 +162,17 @@ def test_disarm_asks_then_proves_with_the_passkey_for_this_arm(
             " return Promise.resolve({id: 'x'}); }}"
         )
         c.page.locator("#homeDisarm").click()
-        c.page.locator("#homeDialog[open]").wait_for()
+        c.page.locator("#homePanelDialog[open]").wait_for()
         assert c.page.evaluate("document.activeElement.textContent") == "Keep it on"
         c.page.keyboard.press("Tab")
         assert c.page.evaluate("document.activeElement.textContent") == "Disarm"
         c.page.keyboard.press("Tab")
         assert c.page.evaluate("document.activeElement.textContent") == "Keep it on"
         c.page.keyboard.press("Escape")
-        c.page.locator("#homeDialog[open]").wait_for(state="detached")
+        c.page.locator("#homePanelDialog[open]").wait_for(state="detached")
         assert fake.sent("POST", "/v1/home/disarm") == []  # asking is not disarming
         c.page.locator("#homeDisarm").click()
-        c.page.locator("#homeDialog button", has_text="Disarm").click()
+        c.page.locator("#homePanelDialog button", has_text="Disarm").click()
         c.page.locator("#homeState", has_text="Disarmed").wait_for()
         posts = fake.sent("POST", "/v1/home/disarm")
         assert posts[0]["body"] == {} and posts[1]["body"] == {"proof": {"id": "x"}}
@@ -262,8 +195,8 @@ def test_without_a_fresh_sign_in_it_offers_the_sign_in_link(
     )
     try:
         c.page.locator("#homeDisarm").click()
-        c.page.locator("#homeDialog button", has_text="Disarm").click()
-        link = c.page.locator("#homeNote a")
+        c.page.locator("#homePanelDialog button", has_text="Disarm").click()
+        link = c.page.locator("#homePanelNote a")
         link.wait_for()
         assert link.get_attribute("href") == "/auth/login?reauth=1"
         assert "Armed" in str(c.page.locator("#homeState").text_content())  # still on

@@ -1000,6 +1000,38 @@ for R3 on Telegram, `telegram/service.py`); `Keyring` (`cipher`, `mac`, `mac_mat
   home_heartbeat_s`. The bridge learns the interval from `SettingsState.heartbeat_s`.
 - `pyproject.toml`: extra `homebridge = ["aiomqtt>=2.3,<3"]`; `requirements.lock` (the cloud image) unchanged.
 
+## I1 as built (5 Nov)
+- **Wiring** lives in `api/home_wiring.py`: `wire_notify` runs in the core right after Telegram, so
+  `app.state.alerts = PolicyAlerts(NotifyService)` before offline mode, the vault and the brief take
+  the sink (R1 / R2 alerts get quiet hours); `wire_home` after R2's personal data. One
+  `HomeWebhook`: A (heartbeat, hazard), B (detection, face_seen, package, heartbeat, `arm:` acks),
+  C (face_deleted acks, heartbeat); state from A's devices, B's arm + settings, C's faces. A kind no
+  handler takes is refused (422) before its id is claimed.
+- **Watchdog jobs**: A's three plus `home_arm_pending`, `home_feed_sweep`, `notify_held`,
+  `notify_summaries`, `notify_rate_sweep` (D's run over the owners they know, not the linked homes).
+- **Unlink** runs `HomeStore.on_unlink` hooks: B's `CameraData.wipe` (the arm rev never goes back).
+- **Faces <-> camera**: cloud - B's directory is C's `Directory` (`NoFaces` when Faces is off) and
+  B's alert words are C's `alert_words`; bridge - `BridgeContext.peers` lets B's camera plugin ask
+  C's `FaceLibrary.match` (a person being deleted never matches). The bridge now passes its
+  environment to every plugin (`create_bridge(..., env=os.environ)`; it was `{}`).
+- **Keyring**: a `notify` purpose for the Alerts VIP list (D had borrowed `faces`).
+- **Telegram**: `TelegramClient.send_photo` (multipart, `protect_content`) is D's photo sender.
+- **Kit**: Mosquitto users `frigate` (readwrite `frigate/#`) and `bridge` (read only) with
+  `mosquitto/acl`; `frigate.env` (mode 600, Frigate only) holds `FRIGATE_MQTT_USER/PASSWORD` and
+  `FRIGATE_GATE_RTSP`; the config template is copied as it is; the bridge mounts
+  `./frigate/media:/media/frigate`. `aiomqtt` / `paho-mqtt` hashes are NOT in
+  `bridge-requirements.txt` (not in any lock; no network here): the camera's MQTT task can't start
+  until they are added (see the go-live steps).
+- **Console**: `#p-home` (B) and `#p-faces` (C) with dock and More entries; Integrations -> Home (A)
+  and -> Alerts (D); the Home panel's dialog and note ids were renamed (`homePanelDialog`,
+  `homePanelNote`) because A's card uses `homeDialog` / `homeNote`.
+- **Permissions** notes: the four Home rows and Camera say "Link your home laptop in Integrations ->
+  Home first." until a laptop is linked.
+- **Persona p4.8**: HOME_RULES, CAMERA_RULES, FACES_RULE, ALERTS_RULE; the Telegram trailer names
+  the third switch and says disarming is only in the console's Home panel.
+- **Evals**: `run_all_mock.py` + home_link, home_alarm, faces, notify and `r3_needles` (11 flows
+  through the wired app; negative control: a debug log of webhook bodies).
+
 ## Verified in code (5 Nov, `r2-plan` @ 88055a7; R1 builder branches `r1-a` @ 2989bbd, `r1-b` @ 62aed4b, `r1-d`
 @ 63c6d8a; `r1-c` has no commit yet)
 1. `alerts.py`: `AlertKind` has 5 kinds; `AlertSink.send(uid, text, *, kind)` has no silent or photo option.

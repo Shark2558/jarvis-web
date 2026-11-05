@@ -742,7 +742,7 @@ async def _s04(w: World) -> list[str]:
         all(
             line.endswith("=")
             for line in env.splitlines()
-            if line.startswith(("HA_TOKEN", "MQTT_", "FRIGATE_"))
+            if line.startswith(("HA_TOKEN", "MQTT_PASSWORD", "FRIGATE_"))  # MQTT_USER is a name
         ),
         "env not blank",
         f,

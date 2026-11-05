@@ -353,18 +353,31 @@ IMPORT_TO_DIST = {
 }
 
 
+def _names(found: list[str]) -> set[str]:
+    return {re.split(r"[\[<>=!~ ;]", m)[0].lower().replace("_", "-") for m in found}
+
+
 def _declared() -> set[str]:
     text = (ROOT / "pyproject.toml").read_text()
     block = text.split("dependencies = [", 1)[1].split("\n]", 1)[0]
-    found = re.findall(r'^\s*"([^"]+)"', block, re.M)
-    return {re.split(r"[\[<>=!~ ;]", m)[0].lower().replace("_", "-") for m in found}
+    return _names(re.findall(r'^\s*"([^"]+)"', block, re.M))
+
+
+def _bridge_extra() -> set[str]:
+    """I1: the home bridge's own extra (its image, never the cloud's): aiomqtt."""
+    text = (ROOT / "pyproject.toml").read_text()
+    line = re.search(r"^homebridge = \[(.*)\]$", text, re.M)
+    assert line is not None
+    return _names(re.findall(r'"([^"]+)"', line.group(1)))
 
 
 def test_every_third_party_top_level_import_in_src_is_in_pyproject() -> None:
     declared = _declared()
+    bridge = declared | _bridge_extra()
     stdlib = set(sys.stdlib_module_names)
     missing: dict[str, str] = {}
     for path in (ROOT / "src").rglob("*.py"):
+        allowed = bridge if "homebridge" in path.parts else declared
         for node in ast.walk(ast.parse(path.read_text())):
             mods: list[str] = []
             if isinstance(node, ast.Import):
@@ -374,7 +387,7 @@ def test_every_third_party_top_level_import_in_src_is_in_pyproject() -> None:
             for m in mods:
                 if m in stdlib or m in {"jarvis", "__future__"}:
                     continue
-                if IMPORT_TO_DIST.get(m, m).lower().replace("_", "-") not in declared:
+                if IMPORT_TO_DIST.get(m, m).lower().replace("_", "-") not in allowed:
                     missing[m] = str(path.relative_to(ROOT))
     assert missing == {}
 

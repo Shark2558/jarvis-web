@@ -47,6 +47,7 @@ PURPOSES: tuple[str, ...] = (
     "home_feed",
     "faces",
     "webpush",
+    "notify",  # R3 I1: the Alerts VIP list (phone / email references), its own key
 )
 SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
 MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64

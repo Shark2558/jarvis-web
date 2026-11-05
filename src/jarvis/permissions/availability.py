@@ -49,7 +49,15 @@ _KEYED_FEATURES = {
     "notes_read": "notes",
     "notes_change": "notes",
     "belongings": "belongings",
+    # R3 I1: the home's rows need the home link's store; camera history needs the camera
+    "home_read": "home_store",
+    "home_control": "home_store",
+    "home_arm": "home_store",
+    "home_secure": "home_store",
+    "camera": "camera",
 }
+LINK_HOME = "Link your home laptop in Integrations -> Home first."
+_HOME_ROWS = frozenset({"home_read", "home_control", "home_arm", "home_secure", "camera"})
 
 
 @dataclass(frozen=True)
@@ -84,7 +92,21 @@ def _google_gate(link: tuple[str, list[str]] | None) -> Availability | None:
     return Availability(False, {"off": NOT_HERE, "reconnect": RECONNECT}.get(link[0], CONNECT))
 
 
-def _row(gid: str, state: Any, link: tuple[str, list[str]] | None) -> Availability:
+async def _home_linked(state: Any, uid: str) -> bool | None:
+    """Whether the owner linked a home laptop; None when Home is off or unreadable (no note)."""
+    store = getattr(state, "home_store", None)
+    if store is None:
+        return None
+    try:
+        return await store.status(uid) is not None
+    except Exception as exc:  # noqa: BLE001 - fail-soft: unknown means no note
+        log.warning("home link unreadable for notes", extra={"error": type(exc).__name__})
+        return None
+
+
+def _row(
+    gid: str, state: Any, link: tuple[str, list[str]] | None, home: bool | None = None
+) -> Availability:
     if gid in _SERVER_FEATURES:
         return (
             OK
@@ -93,6 +115,8 @@ def _row(gid: str, state: Any, link: tuple[str, list[str]] | None) -> Availabili
         )
     if gid in _KEYED_FEATURES:
         on = getattr(state, _KEYED_FEATURES[gid], None) is not None
+        if on and gid in _HOME_ROWS and home is False:
+            return Availability(False, LINK_HOME)
         return OK if on else Availability(False, NO_KEY)
     if gid == "whatsapp":  # typed numbers always work; names need the Contacts Grant
         has = link is not None and link[0] == "ok" and can_use_contacts(link[1])
@@ -114,10 +138,12 @@ def _row(gid: str, state: Any, link: tuple[str, list[str]] | None) -> Availabili
 async def notes(state: Any, uid: str) -> dict[str, Availability]:
     """One entry per permission group (all of them, in any state)."""
     link = await _link(state, uid)
-    return {g.id: _row(g.id, state, link) for g in GROUPS}
+    home = await _home_linked(state, uid)
+    return {g.id: _row(g.id, state, link, home) for g in GROUPS}
 
 
 __all__ = [
+    "LINK_HOME",
     "CONNECT",
     "CONTACTS_GRANT",
     "NO_KEY",

@@ -253,6 +253,12 @@ RISK_OF = {
     "home_arm": [R2],
     "home_secure": [R3],
     "camera": [R1],
+    # R4 I0
+    "vitals": [R1],
+    "vitals_change": [R2],
+    "systems": [R1],
+    "people": [R1],
+    "connectors": [R1],
 }
 TOOL_OF = {
     "calendar_read": "calendar_list_events",
@@ -288,6 +294,12 @@ TOOL_OF = {
     "home_arm": "home_arm",
     "home_secure": "home_disarm",
     "camera": "camera_history",
+    # R4 I0 (stub tools under the planned names)
+    "vitals": "vitals_show",
+    "vitals_change": "vitals_set_key",
+    "systems": "systems_check",
+    "people": "research_person",
+    "connectors": "connect_github",
 }
 
 

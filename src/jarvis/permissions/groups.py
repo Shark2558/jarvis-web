@@ -400,26 +400,10 @@ GROUPS: tuple[PermissionGroup, ...] = (
         R1,
         (_m("camera_*"), _m("faces_*")),
     ),
-    PermissionGroup(  # slice 12 D8 (D3)
-        "maps",
-        "Maps",
-        "Search places and travel times",
-        "Your search words, and the start and end of a route, go to Google Maps.",
-        R1,
-        (_m("maps_*"),),
-    ),
-    PermissionGroup(  # slice 12 D8 (D4)
-        "youtube",
-        "YouTube",
-        "Search YouTube and read your playlists",
-        "Search words go to YouTube. Your own playlists only after you press Grant in "
-        "Integrations. Nothing plays until you press Play.",
-        R1,
-        (_m("youtube_*"),),
-    ),
     # R4 (docs/plans/r4-vitals-health-people.md "New tools"): vitals, self-health, people research
-    # and the own-account connectors (after YouTube). None is irreversible: the only "delete" is a
-    # tracked-key record, which is reversible metadata (re-add it), so vitals change stays R2.
+    # and the own-account connectors (after Camera, before Maps — Maps and YouTube stay last). None
+    # is irreversible: the only "delete" is a tracked-key record, reversible metadata (re-add it),
+    # so vitals change stays R2.
     PermissionGroup(
         "vitals",
         "Vitals",
@@ -433,7 +417,8 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "vitals_change",
         "Vitals",
         "Add, edit and remove the keys you track",
-        "The limit and expiry you type for a key. Removing a tracked key is reversible (re-add it).",
+        "The limit and expiry you type for a key. Removing a tracked key is reversible "
+        "(re-add it).",
         R2,
         (_m("vitals_*", R2),),
     ),
@@ -463,6 +448,23 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "GitHub token is kept encrypted, never shown. Read only.",
         R1,
         (_m("connect_*"), _m("github_*"), _m("photos_*")),
+    ),
+    PermissionGroup(  # slice 12 D8 (D3)
+        "maps",
+        "Maps",
+        "Search places and travel times",
+        "Your search words, and the start and end of a route, go to Google Maps.",
+        R1,
+        (_m("maps_*"),),
+    ),
+    PermissionGroup(  # slice 12 D8 (D4)
+        "youtube",
+        "YouTube",
+        "Search YouTube and read your playlists",
+        "Search words go to YouTube. Your own playlists only after you press Grant in "
+        "Integrations. Nothing plays until you press Play.",
+        R1,
+        (_m("youtube_*"),),
     ),
 )
 _BY_ID = {g.id: g for g in GROUPS}

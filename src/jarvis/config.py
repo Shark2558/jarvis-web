@@ -285,7 +285,8 @@ class Settings(BaseSettings):
         description="Google Photos Picker -> faces & contacts (needs token_key + the R3 home kit)",
     )
     people_research_enabled: bool = Field(
-        default=True, description="Scoped people research: public figures / work due-diligence (D10)"
+        default=True,
+        description="Scoped people research: public figures / work due-diligence (D10)",
     )
     # --- Maps + YouTube (slice 12 D2): JARVIS's own server-side Google API key, restricted to
     # Places (New), Routes and YouTube Data v3. No key: those tools are not registered.

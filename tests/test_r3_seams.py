@@ -156,7 +156,8 @@ def test_r3_alert_kinds_join_the_older_ones() -> None:
     assert HOME_ALERT_KINDS == NEW_KINDS and set(NEW_KINDS) <= set(kinds)
     for older in ("approval_waiting", "offline_on", "offline_off", "brief_ready", "vault_expiry"):
         assert older in kinds
-    assert "test" in kinds and len(kinds) == len(set(kinds)) == 14
+    # R4 added vitals_warn/vitals_critical/health_fault/health_recovered (14 -> 18)
+    assert "test" in kinds and len(kinds) == len(set(kinds)) == 18
 
 
 async def test_the_sink_takes_silent_and_photo_keywords() -> None:
@@ -186,13 +187,16 @@ async def test_telegram_alerts_accept_the_keywords_and_send_no_photo_yet() -> No
 def test_every_alert_kind_has_a_default_urgency() -> None:
     assert set(DEFAULT_URGENCY) == set(get_args(AlertKind))
     urgent = {k for k, v in DEFAULT_URGENCY.items() if v == "urgent"}
-    # integrated review H5: a laptop that stopped answering or an alarm that can't work rings
+    # integrated review H5: a laptop that stopped answering or an alarm that can't work rings.
+    # R4 D4/D6: a red vitals line and a self-health fault also ring (never held, like hazards).
     assert urgent == {
         "home_intruder",
         "home_hazard",
         "home_summary",
         "home_offline",
         "home_arm_failed",
+        "vitals_critical",
+        "health_fault",
     }
     for kind in ("home_package", "approval_waiting"):
         assert DEFAULT_URGENCY[kind] == "important"
@@ -822,7 +826,14 @@ def _purpose_key(info: str, length: int = 32) -> bytes:
 
 
 def test_r3_cipher_purposes_are_pinned() -> None:
-    assert set(PURPOSES) == R2_PURPOSES | {"home", "home_feed", "faces", "webpush", "notify"}
+    assert set(PURPOSES) == R2_PURPOSES | {
+        "home",
+        "home_feed",
+        "faces",
+        "webpush",
+        "notify",
+        "connectors",  # R4 D9: the owner's own GitHub token
+    }
     ring = Keyring(KEY)
     for purpose in ("home", "home_feed", "faces", "webpush"):
         from jarvis.integrations.vault import TokenCipher
@@ -863,10 +874,11 @@ ROWS = {
 
 def test_five_rows_sit_after_things_and_before_maps() -> None:
     ids = [g.id for g in GROUPS]
-    assert len(ids) == 33
+    assert len(ids) == 38  # R4 added 5 rows (vitals, vitals_change, systems, people, connectors)
     at = ids.index("belongings")
-    assert ids[at + 1 : at + 6] == list(ROWS) and ids[at + 6] == "maps"
-    assert ids[-1] == "youtube"
+    assert ids[at + 1 : at + 6] == list(ROWS)  # the five R3 rows still sit right after Things
+    # R4's rows sit after the R3 block; Maps and YouTube stay last
+    assert ids.index("maps") > at + 5 and ids[-1] == "youtube"
 
 
 @pytest.mark.parametrize("gid", list(ROWS))

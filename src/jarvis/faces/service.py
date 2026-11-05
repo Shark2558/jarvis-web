@@ -91,6 +91,17 @@ def _relation(value: object) -> str:
     return str(value)
 
 
+DELETED_NAME = "Deleted person"
+
+
+def _forgotten(person: Person, stamp: str) -> Person:
+    """A person being deleted keeps only their id: the name and relation go at once, so they do
+    not outlive the delete if the laptop never comes back."""
+    return person.with_(
+        state="deleting", delete_requested_at=stamp, name=DELETED_NAME, relation="other", vip=False
+    )
+
+
 def _same_name(people: tuple[Person, ...], name: str, *, but: str | None = None) -> None:
     key = name.casefold()
     if any(p.name.casefold() == key and p.id != but for p in people if p.state != "deleting"):
@@ -256,7 +267,7 @@ class FacesService:
                 raise PersonRejected("not_found", "There is no such person.", status=404)
             if current.state == "deleting":
                 return state
-            gone = current.with_(state="deleting", delete_requested_at=stamp)
+            gone = _forgotten(current, stamp)
             return State(state.rev, tuple(gone if p.id == person_id else p for p in state.people))
 
         await self._store.change(uid, fn)
@@ -271,12 +282,7 @@ class FacesService:
             count.append(len(state.live()))
             return State(
                 state.rev,
-                tuple(
-                    p
-                    if p.state == "deleting"
-                    else p.with_(state="deleting", delete_requested_at=stamp)
-                    for p in state.people
-                ),
+                tuple(p if p.state == "deleting" else _forgotten(p, stamp) for p in state.people),
             )
 
         await self._store.change(uid, fn)

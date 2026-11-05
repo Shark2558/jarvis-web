@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import secrets
@@ -45,6 +46,11 @@ from jarvis.homebridge.plugins import BridgeContext, BridgeRoute, TaskFactory
 from jarvis.homebridge.retention import Retention
 
 T = TypeVar("T")
+log = logging.getLogger(__name__)
+# Frigate's own folders, as the home kit mounts Frigate's media (compose: ./frigate/media is
+# /media/frigate in Frigate; the bridge gets the same path). Overridable by env.
+DEFAULT_ATTEMPTS_DIR = "/media/frigate/clips/faces/train"
+DEFAULT_DOORSTEP_DIR = "/media/frigate/clips/doorstep/train"
 RECOGNITION_THRESHOLD = 0.9
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PER_PERSON = 20
@@ -53,7 +59,7 @@ PNG = b"\x89PNG\r\n\x1a\n"
 FRIGATE_TIMEOUT_S = 8.0
 RETRY_S = 60.0
 SWEEP_S = 3600.0
-RECENT_FILE = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
+RECENT_FILE = re.compile(r"^(?!\.+$)[A-Za-z0-9._-]{1,116}\.(?:webp|jpe?g|png)$", re.IGNORECASE)
 PERSON = re.compile(PERSON_ID)
 
 
@@ -115,6 +121,8 @@ class HttpFrigateFaces:
         return [f for f in train if isinstance(f, str) and RECENT_FILE.fullmatch(f)][:40]
 
     async def recent_image(self, file: str) -> bytes:
+        if not RECENT_FILE.fullmatch(file):
+            raise FaceRefused("bad_file", "That picture isn't one of the recent visitors.")
         r = await self._c.get(f"{self._base}/clips/faces/train/{file}")
         r.raise_for_status()
         return r.content[:MAX_IMAGE_BYTES]
@@ -169,9 +177,13 @@ class FaceLibrary:
         os.replace(tmp, self._path)
 
     def apply(self, faces: FacesState) -> None:
-        """A new faces part from the cloud. A person being deleted never counts as consented."""
+        """A new faces part from the cloud. A person being deleted never counts as consented.
+        An older rev (a push that arrived late) is ignored; a person once asked to be deleted
+        stays so until the delete is done here (their id is never un-deleted by a later push)."""
+        if faces.rev < self.rev:
+            return
         self.rev = faces.rev
-        self.deleting = frozenset(faces.deleting)
+        self.deleting = frozenset(faces.deleting) | self.deleting
         self.people = frozenset(faces.people) - self.deleting
         self._save()
 
@@ -264,7 +276,7 @@ class FaceLibrary:
             return False
         await self._call(self._lib.delete(person))
         self._retention.delete_for(person)
-        return True
+        return self._retention.ready  # crops could remain where nothing is swept: not "done"
 
     async def finish_deletes(self) -> list[str]:
         """Delete every person the cloud asked to delete and ack each. Safe to repeat: the cloud
@@ -272,7 +284,8 @@ class FaceLibrary:
         done: list[str] = []
         for person in sorted(self.deleting):
             try:
-                await self.delete(person)
+                if not await self.delete(person):
+                    continue
             except FaceRefused:
                 continue
             if self._post_ack is not None:
@@ -284,6 +297,8 @@ class FaceLibrary:
                     person=person,
                 )
                 await self._post_ack(ack)
+            self.deleting = self.deleting - {person}
+            self._save()
             done.append(person)
         return done
 
@@ -301,11 +316,15 @@ class FacesPlugin:
         serve: Callable[[FaceLibrary], Any] | None = None,
     ) -> None:
         env = ctx.env
-        attempts = env.get("FACES_ATTEMPTS_DIR")
-        doorstep = env.get("FACES_DOORSTEP_DIR")
-        self.retention = Retention(
-            Path(attempts) if attempts else None, Path(doorstep) if doorstep else None, now=ctx.now
-        )
+        attempts = env.get("FACES_ATTEMPTS_DIR") or DEFAULT_ATTEMPTS_DIR
+        doorstep = env.get("FACES_DOORSTEP_DIR") or DEFAULT_DOORSTEP_DIR
+        self.retention = Retention(Path(attempts), Path(doorstep), now=ctx.now)
+        if not self.retention.ready:
+            log.warning(
+                "Faces: the folder of Frigate's face attempts was not found or is wrong, so "
+                "old pictures of visitors are NOT being cleaned up and face deletes will wait. "
+                "Check that Frigate's media folder is shared with the bridge."
+            )
         lib = library or HttpFrigateFaces(env.get("FRIGATE_URL", "http://frigate:5000"))
         self.library = FaceLibrary(
             lib, ctx.data_dir, self.retention, post_ack=ctx.events.post_event, now=ctx.now
@@ -320,9 +339,10 @@ class FacesPlugin:
         self, query: Mapping[str, str], body: Mapping[str, Any] | None
     ) -> dict[str, Any]:
         try:
-            return {"people": await self.library.summary()}
+            people = await self.library.summary()
         except FaceRefused:
-            return {"people": {}}
+            people = {}
+        return {"people": people, "retention": "on" if self.retention.ready else "off"}
 
     def tasks(self) -> Sequence[TaskFactory]:
         out: list[TaskFactory] = [self._deletions, self._retention_loop]
@@ -362,6 +382,8 @@ def create_plugin(ctx: BridgeContext) -> FacesPlugin:
 
 
 __all__ = [
+    "DEFAULT_ATTEMPTS_DIR",
+    "DEFAULT_DOORSTEP_DIR",
     "MAX_IMAGE_BYTES",
     "MAX_PER_PERSON",
     "FaceLibrary",

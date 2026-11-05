@@ -4,8 +4,9 @@
 Frigate keeps cropped "attempts" of faces it saw. Strangers' crops must not pile up: an attempt
 with no enrolled person's id in its name goes after 72 hours; one with an id, and the doorstep
 state-classification attempts, after 7 days. A deleted person's attempts go at once
-(`delete_for`). Only regular files directly inside (or one folder below) the configured folder
-are touched; links are never followed; nothing outside the folder is ever deleted.
+(`delete_for`). Only regular image files directly inside the configured folder are touched; links
+are never followed; nothing outside the folder is ever deleted. A folder that holds per-person
+subfolders (`fp_<id>/`, Frigate's enrolled library) is refused: it is not an attempts folder.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ KEPT_DAYS = 7
 IMAGE = re.compile(r"\.(webp|jpe?g|png)$", re.IGNORECASE)
 PERSON_IN_NAME = re.compile(r"fp_[0-9a-f]{12}")
 PERSON_ID = re.compile(r"fp_[0-9a-f]{12}")
+LIBRARY_DIR = PERSON_ID
 
 
 @dataclass(frozen=True)
@@ -44,18 +46,34 @@ class Retention:
         self._now = now
 
     @staticmethod
+    def _holds_library(root: Path) -> bool:
+        try:
+            return any(LIBRARY_DIR.fullmatch(e.name) for e in os.scandir(root) if e.is_dir())
+        except OSError:
+            return False
+
+    @property
+    def misconfigured(self) -> bool:
+        """A configured folder that is really the enrolled library: never swept."""
+        roots = (self._attempts, self._doorstep)
+        return any(r is not None and r.is_dir() and self._holds_library(r) for r in roots)
+
+    @property
+    def ready(self) -> bool:
+        """The attempts folder exists and is safe to sweep. When False, crops may remain on disk,
+        so a delete must not be reported as done."""
+        a = self._attempts
+        return a is not None and a.is_dir() and not a.is_symlink() and not self.misconfigured
+
+    @staticmethod
     def _files(root: Path | None) -> list[Path]:
-        if root is None or not root.is_dir() or root.is_symlink():
+        if root is None or not root.is_dir() or root.is_symlink() or Retention._holds_library(root):
             return []
         out: list[Path] = []
-        for base, dirs, names in os.walk(root, followlinks=False):
-            if Path(base) != root:
-                dirs[:] = []  # one folder below the root, no deeper
-            dirs[:] = [d for d in dirs if not (Path(base) / d).is_symlink()]
-            for name in names:
-                path = Path(base) / name
-                if IMAGE.search(name) and path.is_file() and not path.is_symlink():
-                    out.append(path)
+        for entry in os.scandir(root):
+            path = Path(entry.path)
+            if IMAGE.search(entry.name) and path.is_file() and not path.is_symlink():
+                out.append(path)
         return out
 
     def _drop_older(self, files: list[Path], hours: float) -> int:

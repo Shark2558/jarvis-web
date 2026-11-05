@@ -220,9 +220,13 @@ def create_local_app(
         declared = request.headers.get("content-length")
         if declared and declared.isdigit() and int(declared) > MAX_IMAGE_BYTES:
             return _plain(413, "too_big", "Pictures can be at most 5 MB.")
-        data = await request.body()
+        data = bytearray()
+        async for chunk in request.stream():
+            data.extend(chunk)
+            if len(data) > MAX_IMAGE_BYTES:  # no trust in the header: stop reading at the limit
+                return _plain(413, "too_big", "Pictures can be at most 5 MB.")
         try:
-            n = await library.enrol(person, data)
+            n = await library.enrol(person, bytes(data))
         except FaceRefused as exc:
             return _plain(413 if exc.code == "too_big" else 422, exc.code, exc.words)
         return _reply(200, {"pictures": n})

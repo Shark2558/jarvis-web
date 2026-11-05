@@ -183,3 +183,20 @@ async def test_no_home_means_nothing_is_pushed_and_nothing_breaks() -> None:
     f.svc._home = None  # type: ignore[attr-defined]
     p = await add_adult(f)
     assert (await f.svc.remove(UID, p.id)).pushed is False
+
+
+async def test_a_deleted_persons_name_is_gone_from_the_cloud_even_if_the_laptop_stays_off() -> None:
+    # review M2
+    f = faces(online=False)
+    p = await add_adult(f, "Anjali Rao")
+    q = await add_adult(f, "Ravi Kumar")
+    await f.svc.remove(UID, p.id)
+    await f.svc.remove_all(UID)
+    state = await f.store.load(UID)
+    assert {x.id for x in state.people} == {p.id, q.id}
+    assert all(x.state == "deleting" for x in state.people)
+    assert all(x.name == "Deleted person" and x.relation == "other" for x in state.people)
+    stored = str(f.store.__dict__) + str(state)
+    assert "Anjali" not in stored and "Ravi" not in stored
+    view = await f.svc.view(UID)
+    assert all(x.name == "Deleted person" for x in view.people)

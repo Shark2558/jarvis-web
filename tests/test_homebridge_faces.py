@@ -12,6 +12,8 @@ import pytest
 
 from jarvis.home.ports import Ack, BridgeState, FacesState
 from jarvis.homebridge.faces import (
+    DEFAULT_ATTEMPTS_DIR,
+    DEFAULT_DOORSTEP_DIR,
     FaceLibrary,
     FaceRefused,
     FacesPlugin,
@@ -239,7 +241,9 @@ class Events:
 
 async def test_the_plugin_serves_counts_heartbeats_state_and_deletes(tmp_path: Path) -> None:
     lib, events = FakeLib(), Events()
-    ctx = BridgeContext(env={}, data_dir=tmp_path, events=events, now=lambda: 5.0)
+    (tmp_path / "att").mkdir()
+    env = {"FACES_ATTEMPTS_DIR": str(tmp_path / "att")}
+    ctx = BridgeContext(env=env, data_dir=tmp_path, events=events, now=lambda: 5.0)
     plugin = FacesPlugin(ctx, lib)
     check_routes([plugin])
     await plugin.apply_state(BridgeState())  # no faces part: unchanged
@@ -247,13 +251,13 @@ async def test_the_plugin_serves_counts_heartbeats_state_and_deletes(tmp_path: P
     await plugin.library.enrol(A, JPEG)
     (route,) = plugin.routes()
     assert (route.method, route.path) == ("GET", "/bridge/v1/faces/summary")
-    assert await route.handler({}, None) == {"people": {A: 1}}
+    assert await route.handler({}, None) == {"people": {A: 1}, "retention": "on"}
     assert (await plugin.heartbeat_part()).faces == {A: 1}
     await plugin.apply_state(BridgeState(faces=FacesState(rev=3, deleting=(A,))))
     assert lib.pictures == {} and [e.person for e in events.posted] == [A]
     lib.down = True
     assert (await plugin.heartbeat_part()).faces is None  # Frigate silent: says nothing
-    assert await route.handler({}, None) == {"people": {}}
+    assert await route.handler({}, None) == {"people": {}, "retention": "on"}
     assert len(plugin.tasks()) == 2
 
 
@@ -294,3 +298,70 @@ def test_the_bridge_faces_files_import_nothing_from_the_cloud_app() -> None:
                     assert mod in {"jarvis.home.ports", "jarvis.home.signing"} or mod.startswith(
                         "jarvis.homebridge."
                     ), (name, mod)
+
+
+async def test_a_delete_is_not_acked_while_retention_is_off(tmp_path: Path) -> None:
+    # review H1: no folder to sweep -> the crops may remain -> never tell the cloud "done"
+    lib, acks = FakeLib(), Acks()
+    fl = FaceLibrary(lib, tmp_path, Retention(None), post_ack=acks, now=lambda: 1000.0)
+    consent(fl, deleting=(A,))
+    assert await fl.finish_deletes() == [] and acks.sent == []
+    assert A in fl.deleting
+
+
+async def test_the_plugin_defaults_to_frigates_folders_and_says_when_retention_is_off(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    ctx = BridgeContext(env={}, data_dir=tmp_path, events=Events(), now=lambda: 5.0)
+    with caplog.at_level("WARNING"):
+        plugin = FacesPlugin(ctx, FakeLib())
+    assert DEFAULT_ATTEMPTS_DIR == "/media/frigate/clips/faces/train"
+    assert DEFAULT_DOORSTEP_DIR == "/media/frigate/clips/doorstep/train"
+    assert plugin.retention.ready is False  # nothing mounted in the test machine
+    assert "not being cleaned up" in caplog.text.lower()
+    (route,) = plugin.routes()
+    got = await route.handler({}, None)
+    assert got["retention"] == "off"
+
+
+async def test_a_stale_state_push_cannot_re_consent_a_person_being_deleted(
+    tmp_path: Path,
+) -> None:
+    # review M1
+    fl, _, _ = rig(tmp_path)
+    fl.apply(FacesState(rev=5, people=(), deleting=(A,)))
+    fl.apply(FacesState(rev=4, people=(A,), deleting=()))
+    assert fl.rev == 5 and not fl.consented(A) and A in fl.deleting
+    fl.apply(FacesState(rev=5, people=(A,), deleting=(A,)))  # same rev again: harmless
+    assert not fl.consented(A)
+    fl.apply(FacesState(rev=6, people=(A,), deleting=()))  # newer rev without it: still deleting
+    assert not fl.consented(A) and A in fl.deleting
+
+
+async def test_once_acked_a_person_stops_being_a_pending_delete(tmp_path: Path) -> None:
+    fl, _, acks = rig(tmp_path)
+    fl.apply(FacesState(rev=2, people=(), deleting=(A,)))
+    assert await fl.finish_deletes() == [A]
+    assert A not in fl.deleting and len(acks.sent) == 1
+    fl.apply(FacesState(rev=3, people=(), deleting=()))
+    assert await fl.finish_deletes() == []
+
+
+@pytest.mark.parametrize("name", ["..", ".", "...", "noext", "a.txt", "a/b.webp"])
+async def test_recent_names_must_be_real_picture_files(tmp_path: Path, name: str) -> None:
+    # review M4
+    fl, _, _ = rig(tmp_path)
+    with pytest.raises(FaceRefused) as err:
+        await fl.recent_image(name)
+    assert err.value.code == "bad_file"
+    consent(fl, A)
+    with pytest.raises(FaceRefused):
+        await fl.enrol_recent(A, name)
+
+
+async def test_the_http_adapter_refuses_dot_names_too() -> None:
+    http = HttpFrigateFaces("http://frigate:5000", httpx.AsyncClient())
+    for bad in ("..", "."):
+        with pytest.raises(FaceRefused) as err:
+            await http.recent_image(bad)
+        assert err.value.code == "bad_file"

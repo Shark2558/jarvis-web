@@ -439,6 +439,8 @@ build these safe defaults; each is a setting he can change later, and none needs
 - Phone alerts: urgent only. `notify.ring_for` defaults to `urgent` (not `important` as D10 rule 7 assumed):
   important alerts arrive silently, info ones silently or in the feed only; burglar and hazard alerts ring, also in
   quiet hours. Quiet hours 23:00-06:30 on, names in alerts off, no VIPs (question 6).
+- Yearly consent (R3 review): an expired yearly consent keeps naming and only asks "Still OK?". There is no grace limit
+  for now; this is a deliberate owner default (D13), changeable later.
 - Camera zones (question 8): nothing public. B's Frigate template ships with no zone and no detection outside the
   zones he draws (`required_zones`, and the bridge forwards only detections inside `SettingsState` alarm zones).
   Setup step 11 and Integrations -> Home -> Cameras say plainly: "Draw zones only over your own gate and doorstep.

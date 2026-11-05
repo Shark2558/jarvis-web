@@ -50,7 +50,7 @@ class FacesPrivacy:
         fingerprint = hashlib.sha256(f"{state.rev}:{len(live)}:{len(going)}".encode()).hexdigest()[
             :16
         ]
-        note = "Deleting removes the names now and the pictures on your laptop when it checks in."
+        note = "Deleting wipes the name here now; the pictures on your laptop go when it checks in."
         if going:
             note = f"{len(going)} being deleted on your laptop when it is back."
         return CategoryView(

@@ -184,3 +184,20 @@ def test_login_code_comes_from_the_environment_or_a_private_file(tmp_path: Path)
 def test_the_page_script_never_uses_inline_markup() -> None:
     js = (Path(local_page.__file__).parent / "static" / "faces.js").read_text()
     assert "innerHTML" not in js and "eval(" not in js and "document.write" not in js
+
+
+async def test_a_chunked_upload_over_5mb_is_cut_off_while_streaming(tmp_path: Path) -> None:
+    # review M5: no Content-Length, so the size check cannot trust a header
+    c, lib, _ = await client(tmp_path)
+    h = await signed_in(c)
+    seen = 0
+
+    async def body() -> Any:
+        nonlocal seen
+        for _ in range(6):
+            seen += 1024 * 1024
+            yield (JPEG if seen == 1024 * 1024 else b"") + b"x" * (1024 * 1024)
+
+    r = await c.post(f"/faces/api/enrol?person={A}", content=body(), headers=h)
+    assert r.status_code == 413 and r.json()["error"] == "too_big"
+    assert lib.pictures == {}

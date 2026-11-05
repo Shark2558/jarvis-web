@@ -39,12 +39,12 @@ def test_only_image_files_one_folder_deep_and_never_through_links(tmp_path: Path
     att = tmp_path / "attempts"
     note = make(att / "readme.txt", 500)
     deep = make(att / "a" / "b" / "x.webp", 500)
-    one = make(att / "a" / "y.webp", 500)
+    one = make(att / "a" / "y.webp", 500)  # one folder down: no longer touched (review M3)
     outside = make(tmp_path / "outside" / "z.webp", 500)
     (att / "link").symlink_to(tmp_path / "outside")
     (att / "lnk.webp").symlink_to(outside)
     Retention(att, now=lambda: NOW).sweep()
-    assert note.exists() and deep.exists() and outside.exists() and not one.exists()
+    assert note.exists() and deep.exists() and outside.exists() and one.exists()
 
 
 def test_missing_or_linked_roots_are_quietly_nothing(tmp_path: Path) -> None:
@@ -65,3 +65,36 @@ def test_delete_for_removes_that_persons_crops_only(tmp_path: Path) -> None:
     assert r.delete_for("Anjali") == 0 and r.delete_for("fp_*") == 0
     assert r.delete_for(A) == 1
     assert not mine.exists() and other.exists()
+
+
+def test_a_root_holding_the_enrolled_library_is_refused_and_nothing_is_deleted(
+    tmp_path: Path,
+) -> None:
+    # review M3: FACES_ATTEMPTS_DIR pointed at the faces folder (fp_<id>/ per person)
+    root = tmp_path / "faces"
+    enrolled = make(root / "fp_aaaaaaaaaaaa" / "1.webp", 24 * 30)
+    loose = make(root / "2.webp", 24 * 30)
+    r = Retention(root, now=lambda: NOW)
+    assert r.misconfigured and not r.ready
+    res = r.sweep()
+    assert (res.unknown, res.kept, res.doorstep) == (0, 0, 0)
+    assert enrolled.exists() and loose.exists()
+    assert r.delete_for(A) == 0
+
+
+def test_ready_means_a_real_folder_that_is_not_a_library(tmp_path: Path) -> None:
+    # review H1: unset or missing folders are "off", not quietly fine
+    assert not Retention(None).ready
+    assert not Retention(tmp_path / "nope").ready
+    (tmp_path / "ok").mkdir()
+    assert Retention(tmp_path / "ok").ready and not Retention(tmp_path / "ok").misconfigured
+
+
+def test_the_doorstep_folder_is_checked_too(tmp_path: Path) -> None:
+    door = tmp_path / "door"
+    keep = make(door / "fp_bbbbbbbbbbbb" / "1.webp", 24 * 30)
+    (tmp_path / "att").mkdir()
+    r = Retention(tmp_path / "att", door, now=lambda: NOW)
+    assert r.misconfigured
+    r.sweep()
+    assert keep.exists()

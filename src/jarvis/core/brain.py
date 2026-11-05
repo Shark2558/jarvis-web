@@ -71,6 +71,7 @@ from jarvis.llm.pricing import stream_usage
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.logging import get_logger, get_trace_id
 from jarvis.memory.base import SessionNotFound, SessionStore
+from jarvis.offline.no_ai import no_ai_turn
 from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
 from jarvis.tools.budget import turn_budget
@@ -151,6 +152,8 @@ class Brain:
             )
         self.brains = brains
         self.router = brains.router_for(brains.default.id)  # default brain (health, CLI)
+        for known in brains.list():  # R4 D7: a stray model call fails loudly in no-AI mode
+            brains.router_for(known.id).blocked = self._no_ai
         self.store = store
         self.s = settings
         self.gateway = gateway
@@ -163,6 +166,18 @@ class Brain:
         # One owner action at a time per conversation (chat, approve, decline, delete): no
         # lost turns, no double execution, no resurrected deletes. Locks vanish when unused.
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+
+    def _no_ai(self) -> bool:
+        return self.s.brain_mode == "none"  # R4 D7: fixed rules, no model
+
+    async def _no_ai_reply(
+        self, session: Session, req: ChatRequest, text: str, spec: BrainSpec, t0: float
+    ) -> ChatResponse:
+        gw = self.gateway if self.s.tools_enabled else None
+        return await no_ai_turn(
+            store=self.store, settings=self.s, gateway=gw, session=session, req=req, text=text,
+            brain_id=spec.id, trace_id=get_trace_id() or "", started=t0,
+        )  # fmt: skip
 
     @contextlib.asynccontextmanager
     async def _serialised(self, session_id: str | None) -> AsyncIterator[None]:
@@ -353,6 +368,8 @@ class Brain:
         text = guard_input(req.message, max_chars=self.s.max_input_chars)
         session = await self._load_or_create(req)
         spec = self._resolve_brain(session, req)
+        if self._no_ai():
+            return await self._no_ai_reply(session, req, text, spec, t0)
         await self._admit(req.user_id, spec)  # refused → nothing stored, nothing called
 
         turn = _owner_turn(text, req, trace_id)
@@ -730,6 +747,10 @@ class Brain:
         session = await self._load_or_create(req)
         spec = self._resolve_brain(session, req)
         router = self.brains.router_for(spec.id)
+        if self._no_ai():
+            done = await self._no_ai_reply(session, req, text, spec, time.perf_counter())
+            yield done.reply
+            return
         await self._admit(req.user_id, spec)  # turn-level: refused → nothing stored
         turn = _owner_turn(text, req, trace_id)
         await save_owner_turn(self.documents, self.store, session, turn, req, spec)

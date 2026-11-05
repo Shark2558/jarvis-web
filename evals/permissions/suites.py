@@ -56,6 +56,12 @@ SAMPLES: dict[str, tuple[str, list[ActionRisk]]] = {
     "groceries": ("grocery_add", [R1, R2]),
     "family_read": ("family_free_slots", [R1]),
     "family_change": ("family_event_add", [R3]),
+    # R2 I0: stub tools under the planned names
+    "vault_read": ("vault_list", [R1]),
+    "vault_change": ("vault_set_dates", [R2]),
+    "notes_read": ("kb_search", [R1]),
+    "notes_change": ("kb_update", [R2]),
+    "belongings": ("belongings_put", [R1, R2]),
 }
 OUTCOME = {
     Effect.ALLOW: GatewayOutcome.EXECUTED,

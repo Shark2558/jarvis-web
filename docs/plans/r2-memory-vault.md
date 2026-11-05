@@ -1,7 +1,8 @@
 # Release R2 — Memory and personal vault: document vault with expiry reminders, DigiLocker import, notes and links, "Where did I keep it?", privacy dashboard
 
-Status: PLAN v1 · 2026-11-05 · branch `r2-plan` (from `r1` @ d367a5d) · builders start from `r2` = `main` after the R1
-PR is merged (gate G0 below). Not in this plan: R3 face recognition (it needs the privacy dashboard first: D14), OCR of
+Status: PLAN v1 · 2026-11-05 · branch `r2-plan` (from `r1` @ d367a5d) · builders start from branch `r2` (cut from
+`r1` @ f5354c2, I0 committed; the owner merges the R1 PR himself, gate G0 below). See "Re-checked at R2 I0 (5 Nov)"
+before relying on any R1 name. Not in this plan: R3 face recognition (it needs the privacy dashboard first: D14), OCR of
 scanned documents (open question), encrypting conversation turns (open question).
 
 ## Owner's rules for R2 (5 Nov)
@@ -737,6 +738,91 @@ with focus trap), ₹ only, plain words, ui-ux-pro-max conventions already in us
 8. **Free tier**: Cloud Console → Firestore → Usage shows storage well under 1 GiB; Billing → Reports shows ₹0. If the
 deploy said it couldn't add the index exemptions, nothing to do.
 9. Tell Claude about any DigiLocker PDF whose dates weren't found (no text layer → typed by hand).
+
+## Re-checked at R2 I0 (5 Nov, `r1` @ f5354c2)
+The plan was written against d367a5d. Each item below was re-read in the current code; I0 is built as
+`src/jarvis/{keyring,ticks}.py`, `privacy/`, `vault/`, `tests/test_r2_seams.py`. Builders: this section wins
+over the older text above.
+
+**Names that held (checked, no change):** `TokenCipher`, `Settings.token_key_bytes()`, `DocumentService.extract`,
+`DriveClient`, `ParentsGuard`, `RootsStore`, `recall.sensitive`, `WebAllowance`, `telegram/{uid}.allow_private_reads`
+(R1's name for the private-reads switch; D12 adds `allow_personal_reads` beside it), `llm/fallback.OFFLINE_TOOLS`
+(12 tools, no R2 tool), `brief/models.py` `BriefSettings`, `core/channel.on_telegram()`.
+
+**Changed or added since d367a5d:**
+1. **`api/app.py`**: the lifespan uses `contextlib.AsyncExitStack` with `_Closers.register_new()` after each
+   `_wire_*` step. I1 wires R2 inside that: a new store that has an async `close` goes in `_CLOSABLES`; nothing else
+   about the order changes. Nothing in I0 touches app.py (`tick_jobs` is read with `getattr(state, "tick_jobs", ())`,
+   so the default `()` needs no assignment; I1 sets `app.state.tick_jobs`).
+2. **`api/brief.py` tick**: sweeps go through `_sweep(what, job)` and `TickResult.sweeps` is
+   `dict[str, "ok"|"failed"]`. `ticks.run_jobs(jobs, owners)` returns the same shape, never raises, runs the jobs
+   one after another, each under `asyncio.timeout(budget_s)` (capped at `MAX_BUDGET_S` = 60 s), and the tick merges
+   it into `sweeps` (a job named like an existing sweep does not overwrite it). Counts go to the log only. A job's
+   `run` returns `dict[str, int]`; any other shape counts as failed. **Job names must be unique and not `memory`,
+   `documents`, `undo`, `outside_tasks`, `permissions`, `telegram`, `activity`, `web`.**
+3. **`telegram/rules.py`**: `PRIVATE_PATTERNS` (now includes `family_calendar_events` and `deleted_list`), a
+   `private_reads` context var and `private_reads_allowed()`. `tests/test_telegram_tool_guard.py` fails for any READ
+   tool that is neither covered by `PRIVATE_PATTERNS` nor named in its `TELEGRAM_SAFE` set. **I1 must classify
+   every R2 read tool there** (`vault_list`, `vault_expiring`, `kb_search`, `kb_read`, `belongings_where`,
+   `belongings_list`, `belongings_history`): the second private group (D12) is what covers them, so the guard
+   test is how I1 proves nothing slipped. Builders A, B, C register tools in their own tests but do not edit the
+   guard test.
+4. **`tools/observers.py`**: `notify` runs each observer under `OBSERVER_TIMEOUT_S`; a slow observer is skipped.
+   Nothing R2 adds is a gateway observer.
+5. **`brief/models.py` `SectionsStatus`** has `deliveries` and `family` (default "ok", older records lack them).
+   A's Documents section adds `vault: SectionState = "ok"` the same way, so stored records still load.
+6. **`tools/spoken.py`, `recall/sensitive.py`**: `mask_for_speech` removes every 4+ digit number, link, address and
+   amount on a voice or Telegram turn (`speaking_now()`); `withhold_if_sensitive` replaces code-like text. **Vault
+   tools and things text returned on a spoken turn must go through `mask_for_speech`** (so "ends 4821" is never read
+   aloud, which also backs the persona rule), and every R2 write path uses `sensitive_reason` as D3/D10 say.
+7. **`PERSONA_VERSION`** is still `p4.6`: I1 sets `p4.7`.
+8. **`activity/words.py`**: `describe(tool, args, risk, outcome, registry)` -> `(kind, words)`; `_base` uses the
+   tool's card text for writes and `_read_words` for reads. I1 makes `_base` return `Tool.activity_words` first,
+   for reads and writes alike, and `kind_of` must call `kb_remove` / `belongings_remove` a delete (the `_DELETE`
+   regex only matches `..._delete`): I1 adds them.
+9. **`TelegramAlerts`** (`_TOGGLE` kind -> alert switch): an unmapped kind used to be SENT. I0 changed it to fail
+   closed (a kind with no switch, other than `test`, is refused "switched off for this kind of alert"), so
+   `vault_expiry` never reaches Telegram until I1 adds its switch (`AlertToggles.vault_expiry`, `_TOGGLE`, API,
+   `console-telegram.js`; the alert text itself is written by A's reminders, not `ALERT_TEXT`).
+10. **Permission rows**: 23 -> 28. Position: **between Drive and Maps** (the plan said "after the Drive row"; R1's
+    order test needs Youtube last and Maps before it). `tests/test_permissions_policy.py` (`RISK_OF` / `TOOL_OF`),
+    `evals/permissions/suites.py` (`SAMPLES`) and `tests/test_r1_seams.py` (count) were extended in I0.
+    `availability.py` needs nothing (unknown rows read as available): I1 adds notes.
+
+**Seams chosen differently from the plan (smallest correct version):**
+- `Keyring`: also `kid` and `mac_matches(purpose, data, tag)` (constant time). `mac` uses its own HKDF domain
+  (`jarvis/mac/<purpose>/v1`), not the AES key. The root must be 32 bytes with >= 16 distinct values (same rule as
+  `decode_key`). Errors are `VaultError`. `Keyring.from_settings` returns None without a token key.
+- `PrivacySource` also carries `section` and `label` (the registry needs them to keep a failed source's row).
+  `CategoryView.rev` is a `str` fingerprint (not an int; D builds it), `export` is a bool, plus `available: bool`
+  (False = "Couldn't check right now", count None, delete none). `PrivacyRegistry(budget_s=5)`: `register` (duplicate
+  id -> ValueError), `get`, `ids`, `describe_all(uid)` (concurrent; a failing, slow or mis-identified source gets
+  the placeholder row; never raises). `DeleteClass` stays `none|simple|confirm|passkey`.
+- `vault.ports`: `IntakeResult {status: added|duplicate|skipped, item_id|None, code, message}`;
+  `intake(uid, data, *, source: "upload"|"digilocker", drive_id=None)`; `NoVaultIntake` (skipped/`unavailable`)
+  for a server without the vault. No magic-byte helper in I0: A owns it.
+- `undo`: `Purger.purge(uid, item: DeletedItem)` (raises to keep the entry); `UndoBin.register(kind, restorer,
+  purger=None)`; `UndoBin.purge` raises `PurgeFailed` (plain words, entry kept) and `api/deleted.py` answers 503
+  `unavailable` with those words; `sweep` purges first and drops only entries whose purge ran (one extra `get` per
+  expired entry, only when any purger is registered). New: `IN_PLACE_KINDS` (restore says "Restored the note.", no
+  "new copy") and `PASSKEY_PURGE_KINDS` (= the three new kinds). **I1 must wire "Remove now" in `DELETE
+  /v1/deleted/{id}` for `PASSKEY_PURGE_KINDS`:** `PermissionsService.check_purpose(uid, "privacy_delete", undo_id,
+  proof)`, and with passkeys not in force a Google sign-in <= 5 minutes old (as D6); this was not in the plan's file
+  lists. `UndoRef.from_result` accepts the new kinds, so an Undo chip appears for `kb_remove` / `belongings_remove`.
+  Restorers for in-place kinds return `Restored(new_id=<the same item id>)`.
+- `permissions`: `ChallengeRequest.target` is `^[A-Za-z0-9_.:=-]{1,64}$` (validated in the model; one binding digest
+  cannot be confused by a separator character). `check_purpose(uid, purpose, target, proof)` and the challenge both
+  use `service.purpose_binding(uid, purpose, target)`: only `vault_unlock | privacy_delete | privacy_export`, a
+  `privacy_delete` without a target is refused (`PermissionRejected`, 422). It returns None when passkeys are not in
+  force (the caller then requires the recent Google sign-in), raises `PasskeyRequired` without a proof,
+  `PasskeyRejected` for a proof made for another purpose, target, owner or one already used. Challenges are already
+  capped per purpose. `JarvisPasskey.prove(purpose, target)` accepts only the three purposes.
+- `ticks.TickJob`: `name`, `budget_s`, `async run(owners) -> dict[str, int]`; see item 2.
+- `Tool.activity_words` is only the field: nothing reads it until I1.
+- Settings: `vault_enabled`, `vault_max_total_mb` (10-500, 150), `vault_unlock_minutes` (2-30, 10), `notes_enabled`,
+  `belongings_enabled`. All need `token_key` to take effect; I1 wires "no key -> OFF with words".
+- `console-deleted.js` also changes its lead sentence (restore of the new kinds is in place). Sizes now:
+  `console-permissions.js` 407, `console-deleted.js` 339; every console*.js <= 800 (pinned in the seam test).
 
 ## Verified in code (5 Nov, `r1` @ d367a5d)
 1. `integrations/vault.py`:

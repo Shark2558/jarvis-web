@@ -31,6 +31,7 @@ from typing import Any, Protocol
 from jarvis.logging import get_logger
 from jarvis.tools.card import one_line
 from jarvis.undo.models import (
+    IN_PLACE_KINDS,
     KIND_WORDS,
     RETENTION_DAYS,
     TITLE_LIMIT,
@@ -51,6 +52,10 @@ MSG_UNKNOWN = "That isn't in Recently deleted (it may have been cleared). Nothin
 MSG_EXPIRED = (
     f"That was deleted more than {RETENTION_DAYS} days ago, so it can no longer be restored."
 )
+MSG_PURGE_FAILED = (
+    "JARVIS couldn't remove that for good right now, so it is still in Recently deleted. "
+    "Try again shortly."
+)
 MSG_BUSY = "That is being restored right now; check again in a moment."
 MSG_UNAVAILABLE = (
     "JARVIS can't restore that right now: Google isn't connected for it. Reconnect Google in "
@@ -64,6 +69,10 @@ def utcnow() -> datetime:
 
 class SnapshotFailed(RuntimeError):
     """The copy for Undo could not be kept: the delete must not happen (plain words)."""
+
+
+class PurgeFailed(RuntimeError):
+    """The kind's purger failed: the bin entry stays for the next try (plain words)."""
 
 
 class StillThere(RuntimeError):
@@ -101,6 +110,14 @@ class Restorer(Protocol):
     async def restore(self, uid: str, item: DeletedItem, *, outside: bool = False) -> Restored: ...
 
 
+class Purger(Protocol):
+    """Hard-deletes what a bin entry stands for (R2 D8): the vault item and its chunks, a note, a
+    thing. Called before the entry goes, on "Remove now" and on the sweep; raises on failure so
+    the entry is kept and retried. Must be safe to repeat."""
+
+    async def purge(self, uid: str, item: DeletedItem) -> None: ...
+
+
 class UndoBin:
     def __init__(
         self,
@@ -113,10 +130,14 @@ class UndoBin:
         self._clock = clock
         self._keep_for = timedelta(days=retention_days)
         self._restorers: dict[str, Restorer] = {}
+        self._purgers: dict[str, Purger] = {}
 
-    def register(self, kind: Kind, restorer: Restorer) -> None:
-        """Wiring: the tools that delete a kind also know how to bring it back."""
+    def register(self, kind: Kind, restorer: Restorer, purger: Purger | None = None) -> None:
+        """Wiring: the tools that delete a kind also know how to bring it back (and, for kinds
+        kept in their own store, how to delete them for good)."""
         self._restorers[kind] = restorer
+        if purger is not None:
+            self._purgers[kind] = purger
 
     def now(self) -> datetime:
         return self._clock()
@@ -178,10 +199,34 @@ class UndoBin:
 
     async def purge(self, uid: str, item_id: str) -> bool:
         """The owner's "Remove now": False when there is no such item of theirs."""
-        if await self.store.get(uid, item_id) is None:
+        item = await self.store.get(uid, item_id)
+        if item is None:
             return False
+        if not await self._purged(uid, item):
+            raise PurgeFailed(MSG_PURGE_FAILED)
         await self.store.remove(uid, [item_id])
         return True
+
+    async def _purged(self, uid: str, item: DeletedItem) -> bool:
+        """The kind's purger ran (or there is none). False keeps the entry; logged, class only."""
+        purger = self._purgers.get(item.kind)
+        if purger is None:
+            return True
+        try:
+            await purger.purge(uid, item)
+        except Exception as exc:  # noqa: BLE001 - the entry stays; the sweep tries again
+            log.error("purge failed", extra={"kind": item.kind, "error": type(exc).__name__})
+            return False
+        return True
+
+    async def _purgeable(self, uid: str, ids: list[str]) -> list[str]:
+        """Of the expired ids, those safe to drop: the kind's purger ran, or the kind has none."""
+        ready: list[str] = []
+        for item_id in ids:
+            item = await self.store.get(uid, item_id)
+            if item is None or await self._purged(uid, item):
+                ready.append(item_id)
+        return ready
 
     async def restore(self, uid: str, item_id: str) -> RestoreOutcome:
         result, item = await self.store.claim(uid, item_id, self._clock())
@@ -204,7 +249,10 @@ class UndoBin:
             _made.reset(token)
         await self._mark_restored(uid, item.id, done.new_id)
         word = KIND_WORDS[item.kind]
-        msg = f"Restored the {word} (it is a new copy: links to the old one no longer work)."
+        if item.kind in IN_PLACE_KINDS:
+            msg = f"Restored the {word}."
+        else:
+            msg = f"Restored the {word} (it is a new copy: links to the old one no longer work)."
         return _outcome(item, RestoreStatus.RESTORED, msg, new_id=done.new_id, note=done.note)
 
     async def _note_made(self, uid: str, item_id: str, new_id: str) -> None:
@@ -243,6 +291,8 @@ class UndoBin:
         for uid in owners:
             try:
                 ids = await self.store.expired(uid, self._clock())
+                if self._purgers:
+                    ids = await self._purgeable(uid, ids)
                 await self.store.remove(uid, ids)
                 gone += len(ids)
             except Exception as exc:  # noqa: BLE001 — housekeeping: one owner never blocks another
@@ -282,6 +332,8 @@ def _not_claimed(result: ClaimResult, item: DeletedItem | None) -> RestoreOutcom
 
 __all__ = [
     "MAX_SNAPSHOT_CHARS",
+    "PurgeFailed",
+    "Purger",
     "Restored",
     "Restorer",
     "SnapshotFailed",

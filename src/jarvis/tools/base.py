@@ -85,6 +85,9 @@ class Tool:
     # other people's content (`taint.content_tainted`). Only for writes that are visible and easy
     # to undo (groceries); the owner's Ask first / Never and R3 still apply. Default: False.
     spoken_ok: bool = False
+    # R2 D13: fixed words the Activity recorder shows instead of `summary(args)` (Activity is kept
+    # in clear for 7 days; a note's text or a place must never land there). Plain, no arguments.
+    activity_words: str | None = None
 
     def effective_risk(self, args: dict[str, Any]) -> ActionRisk:
         return self.risk_for(args) if self.risk_for is not None else self.risk

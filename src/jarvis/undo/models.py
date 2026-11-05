@@ -24,9 +24,22 @@ RETENTION_DAYS = 30
 TITLE_LIMIT = 200
 UNDO_ID = re.compile(r"del_[0-9a-f]{20}")
 
-Kind = Literal["event", "task"]
-KINDS: tuple[Kind, ...] = ("event", "task")
-KIND_WORDS: dict[str, str] = {"event": "event", "task": "to-do"}
+# R2 D8: vault documents, notes and things are soft-deleted inside their own encrypted stores; the
+# bin entry holds only `snapshot = {ref: <item id>}` under a generic title. Their restore clears the
+# tombstone in place (same id, so no "new copy" wording) and their purge hard-deletes the item.
+Kind = Literal["event", "task", "vault_item", "note", "thing"]
+KINDS: tuple[Kind, ...] = ("event", "task", "vault_item", "note", "thing")
+KIND_WORDS: dict[str, str] = {
+    "event": "event",
+    "task": "to-do",
+    "vault_item": "vault document",
+    "note": "note",
+    "thing": "thing",
+}
+IN_PLACE_KINDS: frozenset[str] = frozenset({"vault_item", "note", "thing"})
+# "Remove now" for these can't be brought back: the caller asks for a passkey (purpose
+# `privacy_delete`, target = the bin id) where passkeys are in force.
+PASSKEY_PURGE_KINDS: frozenset[str] = frozenset({"vault_item", "note", "thing"})
 # The line an approval card for an undo-able delete carries (a tainted round, the 11th delete).
 CARD_LINE = f"Kept in Recently deleted for {RETENTION_DAYS} days: you can undo it."
 
@@ -140,8 +153,10 @@ class DeletedList(BaseModel):
 
 __all__ = [
     "CARD_LINE",
+    "IN_PLACE_KINDS",
     "KINDS",
     "KIND_WORDS",
+    "PASSKEY_PURGE_KINDS",
     "RETENTION_DAYS",
     "TITLE_LIMIT",
     "UNDO_ID",

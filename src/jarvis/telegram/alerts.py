@@ -55,6 +55,8 @@ class TelegramAlerts:
         if link is None:
             return AlertResult(False, "Telegram isn't paired")
         field = _TOGGLE.get(kind)
+        if field is None and kind != "test":  # R2: a kind with no switch yet is OFF, never sent
+            return AlertResult(False, "switched off for this kind of alert")
         if field is not None and not getattr(link.alerts, field):
             return AlertResult(False, "switched off for this kind of alert")
         try:

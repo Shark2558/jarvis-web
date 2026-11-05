@@ -234,6 +234,11 @@ RISK_OF = {
     "groceries": [R1, R2],  # R1 I0
     "family_read": [R1],
     "family_change": [R3],
+    "vault_read": [R1],  # R2 I0
+    "vault_change": [R2],
+    "notes_read": [R1],
+    "notes_change": [R2],
+    "belongings": [R1, R2],
 }
 TOOL_OF = {
     "calendar_read": "calendar_list_events",
@@ -259,6 +264,11 @@ TOOL_OF = {
     "groceries": "grocery_add",
     "family_read": "family_free_slots",
     "family_change": "family_event_add",
+    "vault_read": "vault_list",
+    "vault_change": "vault_set_dates",
+    "notes_read": "kb_search",
+    "notes_change": "kb_update",
+    "belongings": "belongings_put",
 }
 
 

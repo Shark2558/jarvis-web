@@ -36,7 +36,7 @@ from jarvis.integrations.google import GoogleAPIError, GoogleNotConnected
 from jarvis.logging import get_logger
 from jarvis.tools.tasks_api import TasksNotGranted
 from jarvis.undo.models import UNDO_ID, DeletedList, DeletedView, RestoreOutcome, RestoreStatus
-from jarvis.undo.service import UndoBin
+from jarvis.undo.service import PurgeFailed, UndoBin
 
 router = APIRouter(prefix="/v1/deleted", dependencies=[Depends(require_auth)])
 log = get_logger(__name__)
@@ -135,7 +135,11 @@ async def purge(
     undo_id: str, request: Request, uid: str = Depends(current_user)
 ) -> Removed | JSONResponse:
     undo = _bin(request)
-    if not UNDO_ID.fullmatch(undo_id) or not await undo.purge(uid, undo_id):
+    try:
+        purged = UNDO_ID.fullmatch(undo_id) is not None and await undo.purge(uid, undo_id)
+    except PurgeFailed as exc:  # R2: the kind's purger failed; the entry stays (plain words)
+        return _err(503, "unavailable", str(exc))
+    if not purged:
         return _err(404, "not_found", NOT_FOUND)
     await _audit(request, "deleted_purge", undo_id, "executed", "owner: Remove now")
     return Removed(removed=True, id=undo_id)

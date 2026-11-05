@@ -175,15 +175,14 @@ async def test_fetch_errors_use_the_documented_codes(s: Settings) -> None:
         assert r2.status_code == 422
 
 
-async def test_private_links_are_refused_for_fetch_with_a_reason(c: AsyncClient, rig: Rig) -> None:
-    link = await post(c, kind="link", url="https://example.com/u?email=ravi@example.com")
-    r = await c.post(f"/v1/notes/{link['id']}/fetch", json={"confirm_credit": True})
-    assert r.status_code == 422
-    assert r.json() == {
-        "error": "bad_url",
-        "detail": "That link holds private details, so it was not fetched.",
-        "reason": "private",
-    }
+async def test_private_links_are_refused_at_save_with_a_reason(c: AsyncClient, rig: Rig) -> None:
+    for url in (
+        "https://example.com/u?email=ravi@example.com",
+        "https://aadhaar-123456789012.x.example/",
+    ):
+        r = await c.post("/v1/notes", json={"kind": "link", "url": url})
+        assert r.status_code == 422
+        assert r.json()["error"] == "bad_url" and r.json()["reason"] == "private"
     assert rig.fake.requests == []
 
 

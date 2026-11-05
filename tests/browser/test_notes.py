@@ -65,6 +65,8 @@ class FakeNotes:
         self.refuse: tuple[int, dict[str, Any]] | None = None
         self.transcript = "call the bank tomorrow"
         self.transcribe_status = 200
+        self.hold = False
+        self.held: list[Any] = []
         page.route(NOTES_URL, self._notes)
         page.route(TRANSCRIBE_URL, self._transcribe)
 
@@ -73,6 +75,9 @@ class FakeNotes:
 
     def _transcribe(self, route: Any) -> None:
         self.calls.append({"method": "POST", "path": "/v1/voice/transcribe", "body": None})
+        if self.hold:
+            self.held.append(route)
+            return
         if self.transcribe_status != 200:
             route.fulfill(
                 status=self.transcribe_status,
@@ -82,6 +87,13 @@ class FakeNotes:
             return
         body = {"text": self.transcript, "no_speech": False, "seconds": 2.0}
         route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+
+    def release(self) -> None:
+        """Answer every transcription that was held back."""
+        held, self.held, self.hold = self.held, [], False
+        body = {"text": self.transcript, "no_speech": False, "seconds": 2.0}
+        for route in held:
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
 
     def _notes(self, route: Any) -> None:
         req = route.request
@@ -400,3 +412,57 @@ def test_export_downloads_a_json_file(console: Console) -> None:
         page.locator("#nExport").click()
     assert dl.value.suggested_filename.startswith("jarvis-notes-")
     assert dl.value.suggested_filename.endswith(".json")
+
+
+def test_a_late_transcript_after_discard_leaves_no_ghost_text(console: Console) -> None:
+    fake = open_notes(console)
+    fake.hold = True
+    page = console.page
+    page.locator("#nRecord").click()
+    page.wait_for_timeout(1500)
+    page.locator("#nRecord").click()  # Stop: the piece is on its way, the answer is held back
+    expect(page.locator("#nMemoDiscard")).to_be_visible()
+    page.locator("#nMemoDiscard").click()
+    fake.release()
+    page.wait_for_timeout(500)
+    expect(page.locator("#nMemo")).to_have_count(0)
+    assert fake.to("POST", "/v1/notes") == []
+    page.locator("#nRecord").click()  # a new memo starts clean
+    page.wait_for_timeout(500)
+    page.locator("#nRecord").click()
+    expect(page.locator("#nMemoText")).to_have_value("call the bank tomorrow")
+    clean(console)
+
+
+def test_save_waits_until_the_whole_recording_is_in_words(console: Console) -> None:
+    fake = open_notes(console)
+    fake.hold = True
+    page = console.page
+    page.locator("#nRecord").click()
+    page.wait_for_timeout(1500)
+    page.locator("#nRecord").click()
+    save = page.locator("#nMemoSave")
+    expect(save).to_have_attribute("aria-disabled", "true")
+    save.click(force=True)
+    assert fake.to("POST", "/v1/notes") == []  # a half-finished memo is never stored
+    fake.release()
+    expect(page.locator("#nMemoText")).to_have_value("call the bank tomorrow")
+    expect(save).not_to_have_attribute("aria-disabled", "true")
+    save.click()
+    assert fake.to("POST", "/v1/notes")[0]["body"]["text"] == "call the bank tomorrow"
+    clean(console)
+
+
+def test_editing_an_outside_note_asks_before_taking_it_as_mine(console: Console) -> None:
+    fake = open_notes(console, [note(1, origin="outside", trusted=False)])
+    page = console.page
+    page.locator("#nOpen-n_000000000001").click()
+    page.locator("#nEdit-n_000000000001").click()
+    page.locator("#neText").fill("Changed body")
+    page.locator("#neSave").click()
+    assert "adopt" not in fake.to("PATCH", "/v1/notes/n_000000000001")[0]["body"]
+    page.locator("#nEdit-n_000000000001").click()
+    page.locator("#neAdopt").check()
+    page.locator("#neSave").click()
+    assert fake.to("PATCH", "/v1/notes/n_000000000001")[1]["body"]["adopt"] is True
+    clean(console)

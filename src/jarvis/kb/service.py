@@ -19,8 +19,9 @@ export / import_ / wipe
 
 from __future__ import annotations
 
+import asyncio
+import json
 import secrets
-from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -65,6 +66,7 @@ FETCH_PER_HOUR = 10
 HOUR_S = 3600.0
 EXPORT_FORMAT = "jarvis-notes"
 EXPORT_VERSION = 1
+EXPORT_SIGN_TAG = "jarvis-notes-export/v1"
 KIND_WORD = {"note": "note", "memo": "memo", "link": "link"}
 NOT_CONFIGURED = "Notes are not available on this server (no encryption key)."
 
@@ -100,7 +102,6 @@ class NotesService:
         self.web = web
         self.undo = undo
         self._clock = clock
-        self._fetches: dict[str, deque[float]] = {}
 
     # ---- writing --------------------------------------------------------------------------------
 
@@ -150,11 +151,11 @@ class NotesService:
         tags: Any = None,
         owner_note: object = None,
         origin: str = "typed",
-        reviewed: bool = False,
+        adopt: bool = False,
     ) -> Note:
-        """Change a live note. `None` leaves a field as it is. An edit from a round that did not
-        vouch (`origin` voice / outside) can only lower the note's trust; `reviewed=True` (the
-        console: the owner read the text and saved it) makes a rewritten text his own."""
+        """Change a live note. `None` leaves a field as it is. An edit never makes a note more
+        trusted by itself: a voice or outside note stays so. Only `adopt=True` (the console, where
+        the owner read the whole text and ticked "mark as mine") makes it his own."""
         self._id(note_id)
 
         def fn(cur: tuple[Note, ...]) -> tuple[tuple[Note, ...], Note]:
@@ -168,7 +169,7 @@ class NotesService:
                 owner_note=old.owner_note if owner_note is None else owner_note,
             )
             new_origin = worse_origin(old.origin, origin)
-            if reviewed and text is not None and f.text != old.text:
+            if adopt and old.page is None:
                 new_origin = "typed"
             new = old.model_copy(
                 update={
@@ -252,7 +253,7 @@ class NotesService:
             )
         except SnapshotFailed as exc:
             raise NotesError(503, "undo_unavailable", str(exc)) from None
-        now = self._clock()
+        now = item.deleted_at  # the tombstone carries its bin entry's time: purge matches on it
 
         def fn(cur: tuple[Note, ...]) -> tuple[tuple[Note, ...], None]:
             old = _find(cur, note_id)
@@ -302,63 +303,70 @@ class NotesService:
 
         def fn(cur: tuple[Note, ...]) -> tuple[tuple[Note, ...], None]:
             found = next((n for n in cur if n.id == ref), None)
-            if found is None or found.live:
-                return cur, None
+            if found is None or found.live or found.deleted_at != item.deleted_at:
+                return cur, None  # restored, or deleted again by a later bin entry: not ours
             return tuple(n for n in cur if n.id != ref), None
 
         await self.store.change(uid, fn)
 
     # ---- fetching a link's page -----------------------------------------------------------------
 
-    def _fetch_allowed(self, uid: str) -> None:
+    async def _take_fetch_slot(self, uid: str) -> float:
         now = self._clock().timestamp()
-        q = self._fetches.setdefault(uid, deque())
-        while q and now - q[0] >= HOUR_S:
-            q.popleft()
-        if len(q) >= FETCH_PER_HOUR:
+        if not await self.store.take_fetch_slot(uid, now, FETCH_PER_HOUR, HOUR_S):
             raise NotesError(
                 429, "rate_limited", f"At most {FETCH_PER_HOUR} page fetches an hour. Try later."
             )
-        q.append(now)
+        return now
 
     async def fetch(self, uid: str, note_id: str) -> Note:
-        note = await self.get(uid, note_id)
+        note = await self.get(uid, note_id)  # live first: a deleted note reserves nothing
         if note.kind != "link" or not note.url:
             raise invalid("Only a saved link has a page to fetch.")
-        self._fetch_allowed(uid)
-        got = await fetch_page(self.web, note.url)
-        page = PageExcerpt(title=got.title, excerpt=got.excerpt, fetched_at=self._clock())
+        slot = await self._take_fetch_slot(uid)
+        try:
+            got = await fetch_page(self.web, note.url)
+            page = PageExcerpt(title=got.title, excerpt=got.excerpt, fetched_at=self._clock())
 
-        def fn(cur: tuple[Note, ...]) -> tuple[tuple[Note, ...], Note]:
-            old = _find(cur, note_id)
-            new = old.model_copy(update={"page": page, "updated_at": self._clock()})
-            return tuple(new if n.id == note_id else n for n in cur), new
+            def fn(cur: tuple[Note, ...]) -> tuple[tuple[Note, ...], Note]:
+                old = _find(cur, note_id)
+                new = old.model_copy(update={"page": page, "updated_at": self._clock()})
+                return tuple(new if n.id == note_id else n for n in cur), new
 
-        return (await self.store.change(uid, fn))[1]
+            return (await self.store.change(uid, fn))[1]
+        except BaseException:
+            await self.store.give_back_fetch_slot(uid, slot)  # nothing was fetched or kept
+            raise
 
     # ---- export, import, wipe -------------------------------------------------------------------
 
+    @staticmethod
+    def _signed_text(uid: str, notes: object) -> str:
+        """What the export signature covers: a domain tag (the notes key is shared with the
+        encryption purpose), the owner, and the canonical JSON of the notes."""
+        body = json.dumps(notes, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        return f"{EXPORT_SIGN_TAG}\n{uid}\n{body}"
+
     async def export(self, uid: str) -> dict[str, Any]:
-        notes = [n for n in (await self.store.load(uid)).notes if n.live]
+        live = [n for n in (await self.store.load(uid)).notes if n.live]
+        notes = [n.model_dump(mode="json", exclude={"deleted_at"}) for n in live]
         return {
             "format": EXPORT_FORMAT,
             "version": EXPORT_VERSION,
             "exported_at": self._clock().isoformat(),
-            "notes": [n.model_dump(mode="json", exclude={"deleted_at"}) for n in notes],
+            "notes": notes,
+            "signature": self.store.mac(self._signed_text(uid, notes)),
         }
 
     async def import_(self, uid: str, data: object) -> ImportResult:
         """Add the notes of an export. Each is checked like a new note (the sensitive filter,
-        lengths, the link); a duplicate id, a deleted note or anything odd is skipped."""
+        lengths, the link); a duplicate id, a deleted note or anything odd is skipped. A file
+        whose signature checks (this owner's own export, unchanged) keeps each note's trust; any
+        other file is outside content, so every note in it is `outside`."""
         raw = _export_notes(data)
-        done: list[Note] = []
-        skipped = 0
-        for item in raw:
-            note = self._importable(item)
-            if note is None:
-                skipped += 1
-            else:
-                done.append(note)
+        sig = data.get("signature") if isinstance(data, dict) else None
+        signed = self.store.mac_matches(self._signed_text(uid, raw), sig)
+        done, skipped = await asyncio.to_thread(self._clean_all, raw, signed)
 
         def fn(cur: tuple[Note, ...]) -> tuple[tuple[Note, ...], int]:
             have = {n.id for n in cur}
@@ -374,7 +382,18 @@ class NotesService:
         count = (await self.store.change(uid, fn))[1]
         return ImportResult(added=count, skipped=len(raw) - count)
 
-    def _importable(self, item: object) -> Note | None:
+    def _clean_all(self, raw: list[Any], signed: bool) -> tuple[list[Note], int]:
+        done: list[Note] = []
+        skipped = 0
+        for item in raw:
+            note = self._importable(item, signed)
+            if note is None:
+                skipped += 1
+            else:
+                done.append(note)
+        return done, skipped
+
+    def _importable(self, item: object, signed: bool) -> Note | None:
         if not isinstance(item, dict):
             return None
         try:
@@ -400,6 +419,7 @@ class NotesService:
         return note.model_copy(
             update={
                 "id": nid,
+                "origin": worse_origin(note.origin, "imported") if signed else "outside",
                 "title": f.title,
                 "text": f.text,
                 "tags": f.tags,

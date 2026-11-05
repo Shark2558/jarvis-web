@@ -95,3 +95,35 @@ async def test_non_https_or_userinfo_links_are_never_sent(url: str) -> None:
 
 async def test_excerpt_cap_constant_matches_the_model() -> None:
     assert MAX_FETCHED >= MAX_EXCERPT
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://aadhaar-123456789012.evil.example/",
+        "https://4111111111111111.evil.example/x",
+        "https://evil.example/?e=john.smith%40gmail.com",
+    ],
+)
+async def test_a_private_host_is_never_sent_to_the_provider(url: str) -> None:
+    r = build_rig()
+    with pytest.raises(NotesError) as e:
+        await fetch_page(r.web, url)
+    assert e.value.code == "bad_url" and e.value.status == 422
+    assert r.fake.requests == [] and await credits(r) == 0
+
+
+async def test_saving_a_link_with_a_private_host_is_refused_even_with_a_title() -> None:
+    from kb_fakes import UID
+
+    r = build_rig()
+    with pytest.raises(NotesError) as e:
+        await r.svc.add(
+            UID,
+            kind="link",
+            url="https://aadhaar-123456789012.evil.example/",
+            title="x",
+            origin="outside",
+        )
+    assert e.value.code in ("sensitive", "bad_url")
+    assert (await r.store.load(UID)).notes == ()

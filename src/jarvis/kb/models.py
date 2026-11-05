@@ -26,11 +26,13 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
+from urllib.parse import unquote_plus, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.recall.sensitive import sensitive_reason
 from jarvis.recall.text import clean_block, clean_keywords, clean_text
+from jarvis.web.guard import query_problem
 from jarvis.web.sources import MAX_URL_CHARS, domain_of, normalize_url
 
 MAX_TITLE = 120
@@ -189,6 +191,13 @@ def normalise_link(raw: object) -> str:
     return url
 
 
+def private_part(url: str) -> str | None:
+    """What private data the link's host, path or query holds ("an email address", ...), or None.
+    The host counts: a planted `aadhaar-123456789012.evil.example` must not be kept or fetched."""
+    parts = urlsplit(url)
+    return query_problem(unquote_plus(f"{parts.hostname or ''} {parts.path} {parts.query}"))
+
+
 def host_of(url: str) -> str:
     """The host to show (punycode stays punycode, so a look-alike name can't pass as another)."""
     return domain_of(url)
@@ -248,6 +257,10 @@ def clean_fields(
     link = None
     if kind == "link":
         link = normalise_link(url)
+        if private_part(link) is not None:
+            raise NotesError(
+                422, "bad_url", "That link holds private details, so it was not kept.", "private"
+            )
     elif url not in (None, ""):
         raise invalid("Only a link has a web address.")
     if title is not None and not isinstance(title, str):

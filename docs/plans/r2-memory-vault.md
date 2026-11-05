@@ -245,8 +245,8 @@ updated_at, deleted_at}`, plus for links `url` (https only, ≤ 2,048, normalise
 - Search: `kb.search` = `recall.text.tokens` + `recall.retrieval.bm25` over title, text, tags, owner note and page
 excerpt, plus small boosts for exact title words and recent items; ≤ 8 hits with 300-character snippets.
 - Trust by origin (slice 11 D8 style; the item's verdict is recorded at write time, never taken from a client):
-- vouch: `typed` (console form or a typed chat turn), `memo` (he reviewed it before Save) and `imported` (his own
-  export)
+- vouch: `typed` (console form or a typed chat turn), `memo` (he reviewed it before Save) and signed imported vouches (his own
+  export, signed with the notes key and unchanged; an unsigned import is outside content: every note in it is `outside`)
 - never vouch: `voice` (a spoken chat turn), `outside` (written in a content-tainted round or from a card proposed
   in one: `ToolContext.outside`), and any result that includes page text
 - The memory sensitive filter applies to every write (card numbers, Aadhaar, PAN, passwords, OTPs): "IDs go in the

@@ -167,6 +167,7 @@
     const ed = S.edit; if (!ed || ed.busy) return;
     const patch = { title: ed.title.trim() || '', text: ed.text };
     if (n.kind === 'link') { delete patch.text; patch.owner_note = ed.note; }
+    if (ed.adopt) patch.adopt = true;
     ed.busy = true; ed.error = ''; render();
     try { await api('/v1/notes/' + encodeURIComponent(n.id), { method: 'PATCH', body: patch }); S.edit = null; flash('ok', 'Saved.'); await load(); }
     catch (e) { if (e.status !== 401) ed.error = refusal(e); ed.busy = false; render(); }
@@ -260,7 +261,7 @@
       const fb = button('nFetch-' + n.id, '', n.page ? 'Fetch page text again' : 'Fetch page text', (b) => fetchPage(n, b));
       busyAttr(fb, S.busy.has(n.id)); acts.append(fb);
     }
-    acts.append(button('nEdit-' + n.id, '', 'Edit', () => { S.edit = { id: n.id, title: n.title, text: n.text, note: n.ownerNote, error: '', busy: false }; render(); focusId('neTitle'); }));
+    acts.append(button('nEdit-' + n.id, '', 'Edit', () => { S.edit = { id: n.id, title: n.title, text: n.text, note: n.ownerNote, adopt: false, error: '', busy: false }; render(); focusId('neTitle'); }));
     if (S.confirmDel === n.id) {
       const c = mk('span', 'confirm'); c.setAttribute('role', 'alert');
       const keep = button('nKeep-' + n.id, '', 'Keep', () => { S.confirmDel = null; render(); focusId('nDel-' + n.id); });
@@ -276,6 +277,12 @@
     d.append(field('Title', input(ed.title, v => { ed.title = v; }, 120), 'neTitle'));
     if (n.kind === 'link') d.append(field('Why you saved it', area(ed.note, v => { ed.note = v; }, NOTE_MAX, 2), 'neNote'));
     else d.append(field('Text', area(ed.text, v => { ed.text = v; }, TEXT_MAX, 6), 'neText'));
+    if (!n.trusted && !n.page) {
+      const w = mk('label', 'nmeta nadopt'), cb = mk('input'); cb.type = 'checkbox'; cb.id = 'neAdopt'; cb.checked = ed.adopt;
+      cb.addEventListener('change', () => { ed.adopt = cb.checked; });
+      w.append(cb, document.createTextNode(' I have read all of this and it is mine (JARVIS will then treat it as your own words)'));
+      d.append(w);
+    }
     if (ed.error) { const er = mk('p', 'mstat bad', ed.error); er.setAttribute('role', 'alert'); d.append(er); }
     const row = mk('div', 'mrow'), go = button('neSave', 'primary', ed.busy ? 'Saving' : 'Save', () => saveEdit(n)); busyAttr(go, ed.busy);
     row.append(go, button('neCancel', '', 'Cancel', () => { S.edit = null; render(); focusId('nOpen-' + n.id); }));

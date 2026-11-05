@@ -19,6 +19,7 @@ overwritten. Nothing is logged but class names.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 from collections import OrderedDict
@@ -94,6 +95,8 @@ class NotesStore:
     def __init__(self, docs: Docs, keyring: Keyring, *, prefix: str = "jarvis_") -> None:
         self._d = docs
         self._cipher = keyring.cipher("notes")
+        self._keyring = keyring
+        self._fetch_doc = f"{prefix}kb_fetch"
         self._headers = f"{prefix}kb"
         self._shards = f"{prefix}kb_shards"
         self._known: OrderedDict[str, _Loaded] = OrderedDict()
@@ -155,7 +158,8 @@ class NotesStore:
         plains: list[str] = []
         notes: list[Note] = []
         for sid, want in entries:
-            plain, got = self._open(uid, sid, await get(self._spath(uid, sid)), want)
+            doc = await get(self._spath(uid, sid))
+            plain, got = await asyncio.to_thread(self._open, uid, sid, doc, want)
             plains.append(plain)
             notes.extend(got)
         return _Loaded(rev, entries, tuple(plains), tuple(notes))
@@ -202,7 +206,8 @@ class NotesStore:
             if new_notes == cur.notes:
                 result.append((cur, answer))
                 return
-            result.append((self._write(tx, uid, cur, new_notes), answer))
+            plains = await asyncio.to_thread(_pack, new_notes)  # CPU: off the event loop
+            result.append((await self._write(tx, uid, cur, new_notes, plains), answer))
 
         try:
             await self._d.transaction(tx_fn)
@@ -218,15 +223,18 @@ class NotesStore:
             self._remember(uid, loaded)
         return NotesState(loaded.rev, loaded.notes), answer
 
-    def _write(self, tx: DocTx, uid: str, cur: _Loaded, notes: tuple[Note, ...]) -> _Loaded:
-        plains = _pack(notes)
+    async def _write(
+        self, tx: DocTx, uid: str, cur: _Loaded, notes: tuple[Note, ...], plains: list[str]
+    ) -> _Loaded:
         entries: list[tuple[str, str]] = []
         for i, plain in enumerate(plains):
             sid = f"s{i}"
             if i < len(cur.plains) and cur.plains[i] == plain and cur.entries[i][0] == sid:
                 entries.append(cur.entries[i])
                 continue
-            blob = self._cipher.encrypt(plain.encode(), aad=self._aad(uid, sid))
+            blob = await asyncio.to_thread(
+                self._cipher.encrypt, plain.encode(), aad=self._aad(uid, sid)
+            )
             if len(blob) > SHARD_CIPHER_MAX:  # cannot happen with SHARD_PLAIN_MAX; fail closed
                 raise unavailable()
             tx.set(self._spath(uid, sid), {"blob": blob})
@@ -246,6 +254,67 @@ class NotesStore:
             },
         )
         return _Loaded(rev, tuple(entries), tuple(plains), notes)
+
+    # ---- export signature and the hourly fetch window ------------------------------------------
+
+    def mac(self, data: str) -> str:
+        """HMAC of `data` under the notes MAC key (the export signature)."""
+        return self._keyring.mac("notes", data)
+
+    def mac_matches(self, data: str, tag: object) -> bool:
+        return isinstance(tag, str) and self._keyring.mac_matches("notes", data, tag)
+
+    def _fetch_path(self, uid: str) -> str:
+        if not isinstance(uid, str) or not safe_id(uid):
+            raise ValueError("invalid user id")
+        return f"{self._fetch_doc}/{uid}"
+
+    async def take_fetch_slot(self, uid: str, now: float, limit: int, window: float) -> bool:
+        """Record a fetch at `now` unless `limit` already happened in the last `window` seconds
+        (one transaction, so two servers cannot both take the last slot)."""
+        path = self._fetch_path(uid)
+        took: list[bool] = []
+
+        async def tx_fn(tx: DocTx) -> None:
+            took.clear()
+            doc = await tx.get(path)
+            raw = doc.get("at") if doc else None
+            at = (
+                [float(x) for x in raw if isinstance(x, int | float)]
+                if isinstance(raw, list)
+                else []
+            )
+            at = [x for x in at if now - x < window]
+            if len(at) >= limit:
+                took.append(False)
+                return
+            tx.set(path, {"at": [*at, now]})
+            took.append(True)
+
+        try:
+            await self._d.transaction(tx_fn)
+        except Exception as exc:  # noqa: BLE001
+            log.error("notes fetch window failed", extra={"error": type(exc).__name__})
+            raise unavailable() from None
+        return took[0]
+
+    async def give_back_fetch_slot(self, uid: str, now: float) -> None:
+        """Take back the slot recorded at `now` (the fetch did not happen)."""
+        path = self._fetch_path(uid)
+
+        async def tx_fn(tx: DocTx) -> None:
+            doc = await tx.get(path)
+            raw = doc.get("at") if doc else None
+            if not isinstance(raw, list) or now not in raw:
+                return
+            left = list(raw)
+            left.remove(now)
+            tx.set(path, {"at": left})
+
+        try:
+            await self._d.transaction(tx_fn)
+        except Exception as exc:  # noqa: BLE001
+            log.error("notes fetch window refund failed", extra={"error": type(exc).__name__})
 
     async def summary(self, uid: str) -> tuple[str, dict[str, int]]:
         """(the revision, the header's counters): one read, no decryption. ("", zeros) when the

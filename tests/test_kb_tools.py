@@ -314,3 +314,61 @@ async def test_every_call_is_audited_and_search_makes_no_model_call() -> None:
     await t.call("kb_search", query="alpha")
     entries = (await t.gateway.audit.tail(10)).entries
     assert [e.tool for e in entries] == ["kb_search"] and entries[0].outcome == "executed"
+
+
+# ---- review fixes (r2-c-fix) -------------------------------------------------------------------
+
+
+class _SpokenCtx:
+    """What I1's gateway will put in the ToolContext for a card proposed on a spoken turn."""
+
+    def __init__(self, spoken: bool) -> None:
+        self.spoken = spoken
+        self.outside = False
+
+
+def test_write_origin_is_voice_when_the_tool_context_says_the_card_was_spoken(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jarvis.kb import tools as kbtools
+
+    monkeypatch.setattr(kbtools, "current_tool_context", lambda: _SpokenCtx(True))
+    assert kbtools._write_origin() == "voice"
+    monkeypatch.setattr(kbtools, "current_tool_context", lambda: _SpokenCtx(False))
+    assert kbtools._write_origin() == "typed"
+
+
+def test_write_origin_stays_typed_without_the_flag_and_outside_wins() -> None:
+    from jarvis.kb.tools import _write_origin
+
+    assert _write_origin() == "typed"
+
+
+async def test_a_long_note_card_shows_every_character() -> None:
+    t = ToolRig()
+    text = ("word " * 790) + "THE-VERY-END"  # ~3,960 characters
+    with context_trust(untrusted=False, spoken=True):
+        card = await t.call("kb_add_note", text=text)
+    assert card.outcome is GatewayOutcome.AWAITING_CONFIRMATION and card.pending
+    assert "THE-VERY-END" in card.pending.summary and "\u2026" not in card.pending.summary
+
+
+async def test_a_long_update_card_shows_every_character() -> None:
+    t = ToolRig()
+    n = await t.r.svc.add(UID, kind="note", text="short one", origin="typed")
+    text = ("word " * 790) + "THE-VERY-END"
+    with context_trust(untrusted=True):
+        card = await t.call("kb_update", id=n.id, text=text, note="n" * 1000)
+    assert card.outcome is GatewayOutcome.AWAITING_CONFIRMATION and card.pending
+    assert "THE-VERY-END" in card.pending.summary and "\u2026" not in card.pending.summary
+
+
+async def test_kb_read_does_not_turn_a_storage_outage_into_no_such_note() -> None:
+    t = ToolRig()
+    n = await t.r.svc.add(UID, kind="note", text="alpha beta", origin="typed")
+    for path in [p for p in t.r.docs._data if "kb_shards" in p]:
+        t.r.docs._data[path]["blob"] = "garbage"
+    t.r.store._known.clear()
+    gr = await t.call("kb_read", id=n.id)
+    assert gr.outcome is GatewayOutcome.ERROR
+    assert "no such note" not in (gr.error or "").lower()

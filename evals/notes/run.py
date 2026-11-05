@@ -555,7 +555,13 @@ async def run_roundtrip() -> bool:
     await r.svc.wipe(UID)
     res = await r.svc.import_(UID, data)
     after = {n.id: n for n in (await r.store.load(UID)).notes}
-    return res.added == 4 and res.skipped == 0 and after == before
+    if not (res.added == 4 and res.skipped == 0 and after == before):
+        return False
+    # a file without a valid signature is outside content, whatever origins it claims
+    forged = {k: v for k, v in data.items() if k != "signature"}
+    await r.svc.wipe(UID)
+    await r.svc.import_(UID, forged)
+    return all(n.origin == "outside" for n in (await r.store.load(UID)).notes)
 
 
 # ---- negative controls --------------------------------------------------------------------------

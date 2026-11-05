@@ -16,7 +16,7 @@
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
   const Notes = () => window.JarvisNotes;
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const S = { mode: 'idle', text: '', error: '', unsub: null, frames: [], total: 0, pieces: 0, chain: Promise.resolve(), cloud: true, rec: null, busy: false };
+  const S = { mode: 'idle', text: '', error: '', unsub: null, frames: [], total: 0, pieces: 0, chain: Promise.resolve(), cloud: true, rec: null, busy: false, sid: 0, pending: 0 };
   let box = null;
 
   const say = (kind, text) => { const n = Notes(); if (n) n.flash(kind, text); };
@@ -24,7 +24,7 @@
 
   // ---- transcribing one piece --------------------------------------------------------------------
   async function sendPiece(frames) {
-    if (frames.length < MIN_FRAMES) return;
+    if (frames.length < MIN_FRAMES) return '';
     const raw = window.JarvisChat && window.JarvisChat.raw;
     if (!raw) throw Object.assign(new Error('no transport'), { cloud: false });
     const r = await raw('/v1/voice/transcribe', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: window.JarvisWav.encode(frames) });
@@ -33,20 +33,26 @@
     let j = null;
     try { j = await r.json(); } catch (_) { j = null; }
     const t = j && typeof j.text === 'string' ? j.text.trim() : '';
-    if (t && j.no_speech !== true) S.text = (S.text ? S.text + ' ' : '') + t;
+    return t && j.no_speech !== true ? t : '';
   }
+  // Each recording has a session number; a piece that comes back after Discard (or after a new
+  // recording began) is dropped, and Save waits until every piece of this session is back.
   function queue(frames) {
-    S.pieces += 1;
-    S.chain = S.chain.then(() => sendPiece(frames)).catch((e) => {
+    const sid = S.sid;
+    S.pieces += 1; S.pending += 1;
+    S.chain = S.chain.then(() => (sid === S.sid ? sendPiece(frames) : '')).then((t) => {
+      if (sid === S.sid && t) S.text = (S.text ? S.text + ' ' : '') + t;
+    }).catch((e) => {
+      if (sid !== S.sid) return;
       if (e && e.cloud === false && Speech && S.mode !== 'browser') { S.cloud = false; useBrowser(); }
       else fail(e && e.cloud === false ? 'Cloud voice is off and this browser can\'t listen on its own. Type the note instead.' : 'Couldn\'t turn that recording into words. Try again, or type the note.');
-    }).then(draw);
+    }).then(() => { if (sid === S.sid) S.pending = Math.max(0, S.pending - 1); draw(); });
   }
 
   // ---- recording through JarvisAudio -------------------------------------------------------------
   async function start() {
     if (S.mode !== 'idle') return;
-    S.error = ''; S.text = ''; S.frames = []; S.total = 0; S.pieces = 0; S.cloud = true;
+    S.sid += 1; S.pending = 0; S.error = ''; S.text = ''; S.frames = []; S.total = 0; S.pieces = 0; S.cloud = true;
     const A = window.JarvisAudio;
     if (!A || !A.supported || !A.supported()) { if (Speech) { useBrowser(); return; } fail('This browser can\'t record. Type the note instead.'); return; }
     S.mode = 'recording'; draw();
@@ -84,7 +90,7 @@
   // ---- save or discard ---------------------------------------------------------------------------
   async function saveMemo() {
     const text = S.text.trim();
-    if (!text || S.busy) return;
+    if (!text || S.busy || S.pending > 0) return;
     S.busy = true; S.error = ''; draw();
     try {
       await Notes().save({ kind: 'memo', text });
@@ -97,7 +103,7 @@
       draw();
     }
   }
-  function reset() { release(); if (S.rec) { try { S.rec.abort(); } catch (_) {} S.rec = null; } S.mode = 'idle'; S.text = ''; S.error = ''; S.frames = []; draw(); }
+  function reset() { S.sid += 1; S.pending = 0; release(); if (S.rec) { try { S.rec.abort(); } catch (_) {} S.rec = null; } S.mode = 'idle'; S.text = ''; S.error = ''; S.frames = []; draw(); }
 
   // ---- the box under the buttons -----------------------------------------------------------------
   function draw() {
@@ -126,9 +132,10 @@
       t.addEventListener('input', () => { S.text = t.value; });
       box.append(l, t);
       const row = mk('div', 'mrow');
-      const save = mk('button', 'btn lift bact primary', S.busy ? 'Saving' : 'Save memo'); save.type = 'button'; save.id = 'nMemoSave';
-      if (S.busy) save.setAttribute('aria-disabled', 'true');
-      save.addEventListener('click', () => { if (!S.busy) saveMemo(); });
+      const waiting = S.pending > 0;
+      const save = mk('button', 'btn lift bact primary', S.busy ? 'Saving' : (waiting ? 'Turning speech into words' : 'Save memo')); save.type = 'button'; save.id = 'nMemoSave';
+      if (S.busy || waiting) save.setAttribute('aria-disabled', 'true');
+      save.addEventListener('click', () => { if (!S.busy && !waiting) saveMemo(); });
       const drop = mk('button', 'btn lift bact', 'Discard'); drop.type = 'button'; drop.id = 'nMemoDiscard'; drop.addEventListener('click', reset);
       row.append(save, drop); box.append(row);
       if (S.mode === 'review' && !S.text && S.pieces === 0) box.append(mk('p', 'nmeta', 'Nothing was heard. Try again, or type the note.'));

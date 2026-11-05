@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
-from urllib.parse import unquote_plus, urlsplit
 
-from jarvis.kb.models import MAX_EXCERPT, MAX_PAGE_TITLE, NotesError, normalise_link
+from jarvis.kb.models import (
+    MAX_EXCERPT,
+    MAX_PAGE_TITLE,
+    NotesError,
+    normalise_link,
+    private_part,
+)
 from jarvis.tools.external import clean_text, model_text
 from jarvis.web.allowance import AllowanceReached, AllowanceUnreadable
-from jarvis.web.guard import query_problem
 from jarvis.web.ports import CreditsExhausted
 from jarvis.web.service import WebService
 
@@ -34,12 +38,6 @@ class PageText:
     title: str
     excerpt: str
     left: int  # web credits left this month
-
-
-def private_part(url: str) -> str | None:
-    """What private data the link's path or query holds ("an email address", ...), or None."""
-    parts = urlsplit(url)
-    return query_problem(unquote_plus(f"{parts.path} {parts.query}"))
 
 
 def _clean(raw: str) -> str:

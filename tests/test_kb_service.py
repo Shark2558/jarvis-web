@@ -81,10 +81,12 @@ async def test_update_rechecks_and_keeps_the_worse_origin() -> None:
     assert (await r.svc.get(UID, n.id)).text == "changed text here"
 
 
-async def test_a_console_edit_that_rewrites_the_text_is_the_owners_own() -> None:
+async def test_a_console_edit_is_the_owners_own_only_when_he_adopts_it() -> None:
     r = build_rig()
     n = await add(r, origin="outside")
-    up = await r.svc.update(UID, n.id, text="rewritten by the owner", reviewed=True)
+    kept = await r.svc.update(UID, n.id, text="rewritten by the owner")
+    assert kept.origin == "outside"
+    up = await r.svc.update(UID, n.id, text="rewritten by the owner again", adopt=True)
     assert up.origin == "typed"
     again = await r.svc.update(UID, n.id, title="only a title", origin="voice")
     assert again.origin == "voice"

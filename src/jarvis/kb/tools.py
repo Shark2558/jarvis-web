@@ -31,10 +31,12 @@ from jarvis.core.guardrails import ActionRisk
 from jarvis.kb.models import (
     MAX_EXCERPT,
     MAX_HITS,
+    MAX_OWNER_NOTE,
     MAX_TAGS,
     MAX_TEXT,
     NOTE_ID,
     Note,
+    NotesError,
     clean_fields,
     host_of,
     vouches,
@@ -54,7 +56,13 @@ from jarvis.undo.tools import deleted_result
 
 AGENT = "notes"
 QUERY_LIMIT = 200
-CARD_TEXT = 300
+# A card shows every character the tool will store (never a cut-off preview): the limits below are
+# the storage limits, so nothing the owner approves is hidden from him.
+CARD_TEXT = MAX_TEXT
+CARD_TITLE = 400
+CARD_NOTE = MAX_OWNER_NOTE
+CARD_URL = 2048
+CARD_TAGS = 400
 RESULT_BUDGET = MAX_RESULT_CHARS - 500
 OWN = "your notes"
 OUTSIDE_SOURCE = "your notes (saved from outside content)"
@@ -128,10 +136,14 @@ def _check_update(a: dict[str, Any]) -> None:
 
 
 def _write_origin() -> str:
+    """Where the words came from. `ctx.spoken` is the flag the gateway sets (I1) on the context of
+    a call whose card was proposed on a spoken turn, so approving that card on screen, outside
+    the turn, still records `voice`. Absent (before I1) it is read as False."""
     ctx = current_tool_context()
     if (ctx is not None and ctx.outside) or content_tainted():
         return "outside"
-    return "voice" if spoken_in_context() else "typed"
+    spoken = spoken_in_context() or bool(getattr(ctx, "spoken", False))
+    return "voice" if spoken else "typed"
 
 
 def _say(text: str) -> str:
@@ -206,7 +218,9 @@ class _Notes:
         uid = require_tool_context().user_id
         try:
             n = await self.s.get(uid, a["id"])
-        except ValueError:  # NotesError not_found: say so, plainly
+        except NotesError as exc:
+            if exc.code != "not_found":  # an outage is an error, never "no such note"
+                raise
             return {"found": False, "note": "There is no such note."}
         view = _fit(lambda size: _read_view(n, size), MAX_EXCERPT, 200)
         return vouch(view, vouches(n))
@@ -270,11 +284,11 @@ class _Notes:
         if a.get("text") is not None:
             bits.append(f"new text {quoted(a['text'], CARD_TEXT)}")
         if a.get("title") is not None:
-            bits.append(f"new title {quoted(a['title'], 80)}")
+            bits.append(f"new title {quoted(a['title'], CARD_TITLE)}")
         if a.get("note") is not None:
-            bits.append(f"new note about the link {quoted(a['note'], 120)}")
+            bits.append(f"new note about the link {quoted(a['note'], CARD_NOTE)}")
         if a.get("tags") is not None:
-            bits.append("new tags " + one_line(", ".join(map(str, a["tags"])), 120))
+            bits.append("new tags " + one_line(", ".join(map(str, a["tags"])), CARD_TAGS))
         return Preview(" ".join(bits))
 
     async def preview_remove(self, a: dict[str, Any]) -> Preview:
@@ -319,7 +333,7 @@ def _read_view(n: Note, excerpt_limit: int) -> dict[str, Any]:
 def _tag_words(a: dict[str, Any]) -> str:
     tags = a.get("tags")
     return (
-        f" (tags: {one_line(', '.join(map(str, tags)), 100)})"
+        f" (tags: {one_line(', '.join(map(str, tags)), CARD_TAGS)})"
         if isinstance(tags, list) and tags
         else ""
     )
@@ -330,8 +344,8 @@ def _add_card(a: dict[str, Any]) -> str:
 
 
 def _link_card(a: dict[str, Any]) -> str:
-    extra = f" with the note {quoted(a['note'], 120)}" if a.get("note") else ""
-    return f"Save the link {one_line(a.get('url'), 200)}{extra}{_tag_words(a)}"
+    extra = f" with the note {quoted(a['note'], CARD_NOTE)}" if a.get("note") else ""
+    return f"Save the link {one_line(a.get('url'), CARD_URL)}{extra}{_tag_words(a)}"
 
 
 def notes_tools(svc: NotesService) -> list[Tool]:

@@ -9,8 +9,8 @@ GET    /v1/notes?q=&kind=&page=   NotesPage {items: [NoteView], total, page, pag
 POST   /v1/notes                  {kind: note|memo|link, text, title?, tags?, url?, owner_note?}
                                   -> 201 NoteView. A memo is a transcript the owner reviewed. 422
                                   sensitive / bad_url / input_rejected, 409 notes_full.
-PATCH  /v1/notes/{id}             {text?, title?, tags?, owner_note?} -> NoteView (a rewritten text
-                                  is the owner's own). 404 not_found.
+PATCH  /v1/notes/{id}             {text?, title?, tags?, owner_note?, adopt?} -> NoteView.
+                                  An outside or voice note stays so unless adopt: true. 404.
 DELETE /v1/notes/{id}             -> {undo_id, kind: "note"}: Recently deleted for 30 days.
 POST   /v1/notes/{id}/fetch       {confirm_credit: true} -> NoteView with the page excerpt; uses 1
                                   of the month's web credits. 409 web_off / allowance, 422 bad_url.
@@ -65,6 +65,7 @@ class NotePatch(_Body):
     title: str | None = Field(default=None, max_length=400)
     tags: list[str] | None = Field(default=None, max_length=MAX_TAGS * 4)
     owner_note: str | None = Field(default=None, max_length=MAX_OWNER_NOTE + 1)
+    adopt: bool = False  # "mark as mine": the owner read the whole note and takes it as his own
 
 
 class FetchRequest(_Body):
@@ -141,7 +142,7 @@ async def patch_note(
         title=body.title,
         tags=body.tags,
         owner_note=body.owner_note,
-        reviewed=True,
+        adopt=body.adopt,
     )
     return NoteView.of(note)
 

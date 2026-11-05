@@ -146,9 +146,7 @@ class Brain:
             store=store, settings=settings, gateway=gateway, mode=self.mode, documents=documents
         )
         for known in brains.list():
-            brains.router_for(known.id).bind_blocked(
-                lambda: self.noai.active, self.mode.load_known
-            )
+            brains.router_for(known.id).bind_blocked(lambda: self.noai.active, self.mode.load_known)
         # the owner's wit level picks the system prompt (None: always the default)
         self.persona = Persona(honorific=settings.user_honorific, wit=wit)
         # One owner action at a time per conversation (chat, approve, decline, delete): no

@@ -245,6 +245,7 @@ def wire_photos(app: FastAPI, s: Settings, docs: Docs) -> PhotosService | None:
     from jarvis.contacts.client import ContactsClient
     from jarvis.photos.edge import BridgeHomeEdge
     from jarvis.photos.picker import PickerClient
+
     return PhotosService(
         PickerClient(google),
         BridgeHomeEdge(home_client),

@@ -156,8 +156,8 @@ def test_r3_alert_kinds_join_the_older_ones() -> None:
     assert HOME_ALERT_KINDS == NEW_KINDS and set(NEW_KINDS) <= set(kinds)
     for older in ("approval_waiting", "offline_on", "offline_off", "brief_ready", "vault_expiry"):
         assert older in kinds
-    # R4 added vitals_warn/vitals_critical/health_fault/health_recovered (14 -> 18)
-    assert "test" in kinds and len(kinds) == len(set(kinds)) == 18
+    # R4 added vitals_warn/vitals_critical/health_fault/health_recovered/health_degraded (14 -> 19)
+    assert "test" in kinds and len(kinds) == len(set(kinds)) == 19
 
 
 async def test_the_sink_takes_silent_and_photo_keywords() -> None:

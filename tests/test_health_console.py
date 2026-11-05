@@ -8,7 +8,9 @@ from fastapi import Depends, FastAPI
 from health_fakes import UID, Clock, fixed
 from httpx import ASGITransport, AsyncClient
 
-from jarvis.health.api import health_router
+from jarvis.health.api import RUN_PER_MINUTE, health_router
+from jarvis.health.models import ProbeOutcome
+from jarvis.health.probes import Probe
 from jarvis.health.service import HealthService
 from jarvis.health.store import HealthStore
 from jarvis.storage.docs import MemoryDocs
@@ -123,3 +125,47 @@ async def test_speak_other_voice_error_is_422_and_no_voice_is_503() -> None:
     a2, s2 = app(None)
     await s2.check(UID)
     assert (await get(a2, "POST", "/v1/health/speak")).status_code == 503
+
+
+# ---- review fixes ------------------------------------------------------------------------------
+async def test_the_empty_answer_is_a_fresh_dict_each_time() -> None:
+    a, _ = app()
+    first = (await get(a, "GET", "/v1/health")).json()
+    first["systems"].append("x")
+    assert (await get(a, "GET", "/v1/health")).json()["systems"] == []
+
+
+async def test_voice_unavailable_never_echoes_the_vendor_reason() -> None:
+    a, s = app(Voice(VoiceUnavailable("not_configured")))
+    await s.check(UID, force=True)
+    r = await get(a, "POST", "/v1/health/speak")
+    assert r.status_code == 503 and "not_configured" not in r.text and "reason" not in r.json()
+
+
+async def test_run_and_speak_are_rate_limited_per_owner_inside_the_router() -> None:
+    a, s = app(Voice())
+    await s.check(UID, force=True)
+    codes = [
+        (await get(a, "POST", "/v1/health/run")).status_code for _ in range(RUN_PER_MINUTE + 2)
+    ]
+    assert codes[:RUN_PER_MINUTE] == [200] * RUN_PER_MINUTE and codes[-1] == 429
+    assert (await get(a, "POST", "/v1/health/speak")).status_code == 429  # shared budget
+
+
+async def test_a_run_inside_the_cooldown_does_not_rerun_the_probes() -> None:
+    n = {"runs": 0}
+
+    async def counted(_uid: str) -> ProbeOutcome:
+        n["runs"] += 1
+        return ProbeOutcome("ok", "fine")
+
+    s = HealthService(
+        [Probe(key="redis", label="Redis", check=counted)],
+        HealthStore(MemoryDocs(), prefix="jarvis_"),
+        clock=Clock(),
+    )
+    a = FastAPI()
+    a.include_router(health_router(s, user=lambda: UID))
+    await get(a, "POST", "/v1/health/run")
+    await get(a, "POST", "/v1/health/run")
+    assert n["runs"] == 1

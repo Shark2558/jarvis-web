@@ -5,14 +5,15 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from health_fakes import NOW, UID, BoomProvider, Clock
+from fallback_fakes import TIERS, CloudProvider
+from health_fakes import NOW, UID, Clock
 
 from jarvis.health import probes as P
-from jarvis.health.models import ProbeOutcome, ProbeResult
+from jarvis.health.models import LABELS, ProbeOutcome, ProbeResult
 from jarvis.home.models import HomeStatus
 from jarvis.home.store import HomeStoreUnavailable
 from jarvis.integrations.google import GoogleAPIError, GoogleNotConnected, GoogleServiceDisabled
-from jarvis.llm.base import LLMAuthError, LLMError, LLMTransientError, LLMUnreachable
+from jarvis.llm.router import BrainHealth, ModelRouter
 from jarvis.storage.docs import MemoryDocs
 from jarvis.telegram.client import TelegramError
 from jarvis.web.ports import CreditsExhausted, VendorUsage, WebError
@@ -63,45 +64,84 @@ async def test_the_result_carries_key_label_time() -> None:
     )
 
 
-# ---- brains ------------------------------------------------------------------------------------
+# ---- brains (free: read from the router, never a model call) ----------------------------------
+def reading(state: str, *, on_laptop: bool = False):  # type: ignore[no-untyped-def]
+    calls = {"n": 0}
+
+    def read() -> BrainHealth:
+        calls["n"] += 1
+        return BrainHealth(state=state, on_laptop=on_laptop)  # type: ignore[arg-type]
+
+    return read, calls
+
+
 @pytest.mark.parametrize(
-    ("exc", "status"),
+    ("state", "on_laptop", "status"),
     [
-        (None, "ok"),
-        (LLMUnreachable("x"), "down"),
-        (LLMAuthError("x"), "down"),
-        (LLMTransientError("429"), "degraded"),
-        (LLMError("odd"), "degraded"),
+        ("unknown", False, "ok"),
+        ("ok", False, "ok"),
+        ("busy", False, "degraded"),
+        ("odd", False, "degraded"),
+        ("refused", False, "down"),
+        ("unreachable", False, "down"),
+        ("unreachable", True, "degraded"),
     ],
 )
-async def test_brain_probe_classifies_the_vendor_errors(exc: Exception | None, status: str) -> None:
-    prov = BoomProvider(exc)
-    probe = P.brain_probe(P.provider_ping(prov, "m"), brain_mode="ai")  # type: ignore[arg-type]
-    res = await run(probe)
+async def test_brain_probe_reports_the_routers_last_outcome(
+    state: str, on_laptop: bool, status: str
+) -> None:
+    read, _ = reading(state, on_laptop=on_laptop)
+    res = await run(P.brain_probe(read, brain_mode="ai"))
     assert res is not None and res.status == status
-    assert prov.calls == 1
 
 
-async def test_brain_probe_with_the_brain_off_makes_no_call_and_is_ok() -> None:
-    prov = BoomProvider(LLMUnreachable("down"))
-    probe = P.brain_probe(P.provider_ping(prov, "m"), brain_mode="none")  # type: ignore[arg-type]
-    res = await run(probe)
+async def test_brain_probe_with_the_brain_off_reads_nothing_and_is_ok() -> None:
+    read, calls = reading("unreachable")
+    res = await run(P.brain_probe(read, brain_mode="none"))
     assert res is not None and res.status == "ok" and "switched off" in res.reason
-    assert prov.calls == 0
+    assert calls["n"] == 0
 
 
-async def test_provider_ping_asks_for_one_token_at_most() -> None:
-    seen: dict[str, object] = {}
+async def test_brain_probe_makes_no_model_call_at_all() -> None:
+    router = ModelRouter(CloudProvider(), TIERS)
+    res = await run(P.brain_probe(router.health, brain_mode="ai"))
+    assert res is not None and res.status == "ok"
+    assert router.provider.models == []  # type: ignore[attr-defined]
 
-    class Spy:
-        name = "spy"
 
-        async def complete(self, **kw: object) -> object:
-            seen.update(kw)
-            return object()
+def test_the_probe_module_has_no_provider_ping_and_no_vendor_import() -> None:
+    assert not hasattr(P, "provider_ping")
+    assert not hasattr(P, "ChatMessage")
 
-    await P.provider_ping(Spy(), "m-fast")()  # type: ignore[arg-type]
-    assert seen["max_tokens"] == 1 and seen["model"] == "m-fast" and seen["tools"] is None
+
+# ---- the runner never lets one probe kill the check ---------------------------------------------
+async def test_an_overlong_reason_is_down_not_an_exception() -> None:
+    async def wordy(_uid: str) -> ProbeOutcome:
+        return ProbeOutcome("ok", "x" * 500)
+
+    res = await run(P.Probe(key="x", label="x", check=wordy))
+    assert res is not None and res.status == "down" and len(res.reason) < 120
+
+
+@pytest.mark.parametrize("bad", ["ok", 7, ("ok", "fine"), {"status": "ok"}])
+async def test_a_probe_answering_the_wrong_type_is_down(bad: object) -> None:
+    async def odd(_uid: str) -> object:
+        return bad
+
+    res = await run(P.Probe(key="x", label="x", check=odd))  # type: ignore[arg-type]
+    assert res is not None and res.status == "down"
+
+
+async def test_an_unknown_status_value_is_down() -> None:
+    async def odd(_uid: str) -> ProbeOutcome:
+        return ProbeOutcome("great", "fine")  # type: ignore[arg-type]
+
+    res = await run(P.Probe(key="x", label="x", check=odd))
+    assert res is not None and res.status == "down"
+
+
+def test_the_label_registry_covers_every_probe_key() -> None:
+    assert set(LABELS) == {"brain", "google", "telegram", "home", "docs", "redis", "web"}
 
 
 # ---- Google ------------------------------------------------------------------------------------

@@ -1,12 +1,16 @@
 # tests/test_health_tool_tick.py -- R4 D6/D14: `systems_check` through the gateway, and the TickJob.
 from __future__ import annotations
 
+import asyncio
+
 from health_fakes import UID, Clock, Flip, Notes, fixed
 
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
+from jarvis.health.models import ProbeOutcome
+from jarvis.health.probes import Probe
 from jarvis.health.service import HealthService
 from jarvis.health.store import HealthStore
-from jarvis.health.tick import HealthTickJob
+from jarvis.health.tick import FAULTS_COUNT, MAX_PARALLEL_OWNERS, OWNERS_COUNT, HealthTickJob
 from jarvis.health.tools import health_tools
 from jarvis.llm.base import ToolCall
 from jarvis.storage.docs import MemoryDocs
@@ -71,6 +75,7 @@ async def test_tick_runs_the_check_for_each_owner_and_alerts_on_change() -> None
     job = HealthTickJob(s)
     assert await job.run(["u1", "u2"]) == {"owners": 2, "faults": 0, "failed": 0}
     flip.status = "down"
+    await job.run(["u1", "u2"])
     counts = await job.run(["u1", "u2"])
     assert counts == {"owners": 2, "faults": 2, "failed": 0}
     assert notes.kinds() == ["health_fault", "health_fault"]
@@ -78,10 +83,10 @@ async def test_tick_runs_the_check_for_each_owner_and_alerts_on_change() -> None
 
 async def test_tick_counts_an_owner_it_could_not_serve_and_carries_on() -> None:
     class Flaky(HealthService):
-        async def check(self, uid: str):  # type: ignore[no-untyped-def]
+        async def check(self, uid: str, *, force: bool = False):  # type: ignore[no-untyped-def]
             if uid == "bad":
                 raise RuntimeError("store")
-            return await super().check(uid)
+            return await super().check(uid, force=force)
 
     s = Flaky([fixed("a", "A", "ok")], HealthStore(MemoryDocs(), prefix="jarvis_"), clock=Clock())
     counts = await HealthTickJob(s).run(["bad", "good"])
@@ -91,7 +96,7 @@ async def test_tick_counts_an_owner_it_could_not_serve_and_carries_on() -> None:
 
 async def test_run_jobs_reports_failed_when_an_owner_failed() -> None:
     class Boom(HealthService):
-        async def check(self, uid: str):  # type: ignore[no-untyped-def]
+        async def check(self, uid: str, *, force: bool = False):  # type: ignore[no-untyped-def]
             raise RuntimeError("x")
 
     s = Boom([], HealthStore(MemoryDocs(), prefix="jarvis_"), clock=Clock())
@@ -100,3 +105,58 @@ async def test_run_jobs_reports_failed_when_an_owner_failed() -> None:
 
 async def test_tick_job_runs_with_no_owners() -> None:
     assert await HealthTickJob(svc()).run([]) == {"owners": 0, "faults": 0, "failed": 0}
+
+
+# ---- review fixes ------------------------------------------------------------------------------
+async def test_tick_always_forces_a_fresh_check_past_the_cooldown() -> None:
+    flip = Flip()
+    s = svc(flip.probe)
+    job = HealthTickJob(s)
+    await job.run([UID])
+    flip.status = "down"
+    counts = await job.run([UID])  # same clock: inside the cooldown, but the tick forces
+    assert counts["faults"] == 1
+
+
+async def test_owners_are_checked_in_parallel_but_bounded() -> None:
+    state = {"now": 0, "peak": 0}
+
+    async def slow(_uid: str) -> ProbeOutcome:
+        state["now"] += 1
+        state["peak"] = max(state["peak"], state["now"])
+        await asyncio.sleep(0.01)
+        state["now"] -= 1
+        return ProbeOutcome("ok", "fine")
+
+    s = svc(Probe(key="redis", label="Redis", check=slow))
+    owners = [f"u{i}" for i in range(MAX_PARALLEL_OWNERS * 3)]
+    counts = await HealthTickJob(s).run(owners)
+    assert counts["owners"] == len(owners) and counts["failed"] == 0
+    assert 1 < state["peak"] <= MAX_PARALLEL_OWNERS
+
+
+async def test_owners_still_unserved_at_the_deadline_are_counted_failed() -> None:
+    async def hang(_uid: str) -> ProbeOutcome:
+        await asyncio.sleep(10)
+        return ProbeOutcome("ok", "never")
+
+    s = svc(Probe(key="redis", label="Redis", check=hang, timeout_s=30))
+    counts = await HealthTickJob(s, deadline_s=0.05).run(["u1", "u2", "u3"])
+    assert counts == {"owners": 3, "faults": 0, "failed": 3}
+
+
+async def test_an_owner_whose_result_could_not_be_saved_counts_as_failed() -> None:
+    class DownStore(HealthStore):
+        async def state(self, uid: str):  # type: ignore[no-untyped-def]
+            raise OSError("down")
+
+        async def save(self, uid: str, state):  # type: ignore[no-untyped-def]
+            raise OSError("down")
+
+    s = HealthService([fixed("a", "A", "ok")], DownStore(MemoryDocs()), clock=Clock())
+    counts = await HealthTickJob(s).run([UID])
+    assert counts["failed"] == 1
+
+
+def test_the_counter_names_are_constants() -> None:
+    assert (OWNERS_COUNT, FAULTS_COUNT) == ("owners", "faults")

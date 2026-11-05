@@ -66,6 +66,7 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "health_fault": "urgent",
         "vitals_warn": "info",
         "health_recovered": "info",
+        "health_degraded": "info",  # a degraded integration is a note, never a ring
     }
 )
 _FEED: dict[str, FeedDecision] = {

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from jarvis.health.models import HealthReport, ProbeResult, Status
+from jarvis.health.models import LABELS, HealthReport, ProbeResult, Status
 
 NOMINAL = "All systems nominal, Sir."
 NOTHING_WATCHED = "There are no systems to check, Sir."
@@ -19,6 +19,11 @@ def rollup(results: Iterable[ProbeResult]) -> Status:
         if _ORDER[r.status] > _ORDER[worst]:
             worst = r.status
     return worst
+
+
+def spoken_label(r: ProbeResult) -> str:
+    """The code-side label for a known integration; the stored one only for an unknown key."""
+    return LABELS.get(r.key, r.label)
 
 
 def _join(names: Sequence[str]) -> str:
@@ -42,8 +47,8 @@ def compose_line(report: HealthReport, *, only: frozenset[str] | None = None) ->
     if report.overall == "ok":
         return NOMINAL
     chosen = [r for r in report.results if only is None or r.key in only]
-    down = [r.label for r in chosen if r.status == "down"]
-    slow = [r.label for r in chosen if r.status == "degraded"]
+    down = [spoken_label(r) for r in chosen if r.status == "down"]
+    slow = [spoken_label(r) for r in chosen if r.status == "degraded"]
     parts: list[str] = []
     if down:
         parts.append(_sentence(down, "is not answering", "are not answering"))
@@ -57,4 +62,4 @@ def compose_line(report: HealthReport, *, only: frozenset[str] | None = None) ->
     return " ".join(parts)
 
 
-__all__ = ["NOMINAL", "NOTHING_WATCHED", "compose_line", "rollup"]
+__all__ = ["NOMINAL", "NOTHING_WATCHED", "compose_line", "rollup", "spoken_label"]

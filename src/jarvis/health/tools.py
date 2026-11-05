@@ -8,7 +8,8 @@ from __future__ import annotations
 from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.health.report import compose_line
+from jarvis.health.models import HealthReport
+from jarvis.health.report import compose_line, spoken_label
 from jarvis.health.service import HealthService
 from jarvis.tools.base import Tool
 from jarvis.tools.context import require_tool_context
@@ -17,14 +18,20 @@ from jarvis.tools.provenance import vouch
 RAN = "Ran a systems check"
 
 
-def view(report: Any) -> dict[str, Any]:
+def view(report: HealthReport) -> dict[str, Any]:
     """The report as plain data (shared by the tool and the HTTP route)."""
     return {
         "overall": report.overall,
         "spoken": compose_line(report),
         "checked_at": report.at,
         "systems": [
-            {"key": r.key, "name": r.label, "status": r.status, "reason": r.reason, "at": r.at}
+            {
+                "key": r.key,
+                "name": spoken_label(r),
+                "status": r.status,
+                "reason": r.reason,
+                "at": r.at,
+            }
             for r in report.results
         ],
     }

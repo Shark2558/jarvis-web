@@ -1,7 +1,8 @@
 # src/jarvis/health/probes.py
-"""One probe per integration (R4 D5). No LLM reasoning is on this path: the brain probe only asks
-the vendor whether it answers (one output token at most; the provider port has no free ping), and
-in `brain_mode == "none"` it makes no call at all.
+"""One probe per integration (R4 D5). No model is called on this path, ever: the brain probe only
+READS what `jarvis.llm`'s router already knows (how the last real completion ended, and whether
+the laptop is covering for the cloud), which costs nothing. In `brain_mode == "none"` it reads
+nothing at all.
 
 Every probe is read-only, has its own timeout, and answers `ok | degraded | down` with a one-line
 reason written HERE (fixed words, never a vendor's or an exception's text). A probe may answer
@@ -16,7 +17,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from jarvis.health.models import ProbeOutcome, ProbeResult
+from pydantic import ValidationError
+
+from jarvis.health.models import LABELS, ProbeOutcome, ProbeResult
 from jarvis.home.store import HomeStore
 from jarvis.integrations.google import (
     GoogleAPIError,
@@ -24,15 +27,7 @@ from jarvis.integrations.google import (
     GoogleNotConnected,
     GoogleServiceDisabled,
 )
-from jarvis.llm.base import (
-    ChatMessage,
-    LLMAuthError,
-    LLMError,
-    LLMProvider,
-    LLMTransientError,
-    LLMUnreachable,
-    Role,
-)
+from jarvis.llm.router import BrainHealth
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs
 from jarvis.web.ports import UsageReporter
@@ -43,9 +38,10 @@ PROBE_TIMEOUT_S = 5.0
 SECONDS_PER_MINUTE = 60
 GOOGLE_METADATA_URL = "https://www.googleapis.com/calendar/v3/users/me/calendarList/primary"
 DOCS_PROBE_DOC = "health_last/_probe"
-PING_PROMPT = "ping"
+CHECK_FAILED = "the check itself failed"
 
 Check = Callable[[str], Awaitable[ProbeOutcome | None]]
+BrainReader = Callable[[], BrainHealth]
 Ping = Callable[[], Awaitable[object]]
 Clock = Callable[[], float]
 
@@ -59,7 +55,7 @@ class Probe:
 
 
 class TelegramLike(Protocol):
-    async def call(self, method: str, payload: dict[str, Any] | None = None) -> Any: ...
+    async def call(self, method: str, payload: dict[str, Any] | None = None) -> object: ...
 
 
 class HomeStatusLike(Protocol):
@@ -78,56 +74,65 @@ def _slow(reason: str) -> ProbeOutcome:
     return ProbeOutcome("degraded", reason)
 
 
-async def run_probe(probe: Probe, uid: str, *, clock: Clock) -> ProbeResult | None:
-    """Run one probe; never raises. A hang or a failure is `down` with fixed words."""
-    try:
-        async with asyncio.timeout(probe.timeout_s):
-            out = await probe.check(uid)
-    except TimeoutError:
-        out = _down("did not answer in time")
-    except Exception as exc:  # noqa: BLE001 - a probe never fails the check
-        log.warning("health probe failed", extra={"probe": probe.key, "error": type(exc).__name__})
-        out = _down("the check itself failed")
-    if out is None:
-        return None
+def _result(probe: Probe, out: ProbeOutcome, clock: Clock) -> ProbeResult:
     return ProbeResult(
         key=probe.key, label=probe.label, status=out.status, reason=out.reason, at=clock()
     )
 
 
-# ---- brains ------------------------------------------------------------------------------------
-def provider_ping(provider: LLMProvider, model: str) -> Ping:
-    """The cheapest call the provider port offers: one output token, no tools, no history."""
+def crashed_result(probe: Probe, *, clock: Clock) -> ProbeResult:
+    """A probe task that died outside its guard: `down`, fixed words."""
+    return _result(probe, _down(CHECK_FAILED), clock)
 
-    async def ping() -> object:
-        return await provider.complete(
-            system=PING_PROMPT,
-            messages=[ChatMessage(role=Role.USER, content=PING_PROMPT)],
-            model=model,
-            max_tokens=1,
-            tools=None,
+
+async def run_probe(probe: Probe, uid: str, *, clock: Clock) -> ProbeResult | None:
+    """Run one probe; never raises. A hang, a failure or a malformed answer is `down` with fixed
+    words, so one bad probe can never take the whole check with it."""
+    try:
+        async with asyncio.timeout(probe.timeout_s):
+            out = await probe.check(uid)
+        if out is None:
+            return None
+        if not isinstance(out, ProbeOutcome):
+            raise TypeError("probe answered with the wrong type")
+        return _result(probe, out, clock)
+    except TimeoutError:
+        return _result(probe, _down("did not answer in time"), clock)
+    except (ValidationError, AttributeError, TypeError) as exc:
+        log.warning(
+            "health probe malformed", extra={"probe": probe.key, "error": type(exc).__name__}
         )
+        return _result(probe, _down(CHECK_FAILED), clock)
+    except Exception as exc:  # noqa: BLE001 - a probe never fails the check
+        log.warning("health probe failed", extra={"probe": probe.key, "error": type(exc).__name__})
+        return _result(probe, _down(CHECK_FAILED), clock)
 
-    return ping
+
+# ---- brain (free: reads the router's own record; never a model call) ----------------------------
+_BRAIN_REASONS = {
+    "refused": ("down", "the AI key was refused"),
+    "busy": ("degraded", "the AI service is busy"),
+    "odd": ("degraded", "the AI service answered oddly"),
+    "unknown": ("ok", "no AI call has failed since JARVIS started"),
+    "ok": ("ok", "the last AI call worked"),
+}
 
 
-def brain_probe(ping: Ping, *, brain_mode: str) -> Probe:
+def brain_probe(read: BrainReader, *, brain_mode: str) -> Probe:
+    """`read` is `ModelRouter.health` of the brain in use. Nothing is sent to any model."""
+
     async def check(_uid: str) -> ProbeOutcome:
         if brain_mode == "none":
             return _ok("the AI is switched off (no-AI mode)")
-        try:
-            await ping()
-        except LLMAuthError:
-            return _down("the AI key was refused")
-        except LLMUnreachable:
+        seen = read()
+        if seen.state == "unreachable":
+            if seen.on_laptop:
+                return _slow("the cloud AI is down; the laptop is answering")
             return _down("the AI service could not be reached")
-        except LLMTransientError:
-            return _slow("the AI service is busy")
-        except LLMError:
-            return _slow("the AI service answered oddly")
-        return _ok("the AI service answers")
+        status, reason = _BRAIN_REASONS[seen.state]
+        return ProbeOutcome(status, reason)  # type: ignore[arg-type]
 
-    return Probe(key="brain", label="the AI brain", check=check)
+    return Probe(key="brain", label=LABELS["brain"], check=check)
 
 
 # ---- Google ------------------------------------------------------------------------------------
@@ -146,7 +151,7 @@ def google_probe(google: GoogleConnector) -> Probe:
             return _down("Google refused the check")
         return _ok("Google answers")
 
-    return Probe(key="google", label="Google", check=check)
+    return Probe(key="google", label=LABELS["google"], check=check)
 
 
 # ---- Telegram ----------------------------------------------------------------------------------
@@ -155,7 +160,7 @@ def telegram_probe(client: TelegramLike) -> Probe:
         await client.call("getMe")  # a failure is classified by run_probe
         return _ok("Telegram answers")
 
-    return Probe(key="telegram", label="Telegram", check=check)
+    return Probe(key="telegram", label=LABELS["telegram"], check=check)
 
 
 # ---- home bridge (R3 heartbeat) ----------------------------------------------------------------
@@ -173,7 +178,7 @@ def home_probe(store: HomeStatusLike | HomeStore, *, clock: Clock, offline_after
             return _down(f"no heartbeat for {minutes} minutes")
         return _ok("the home laptop reports in")
 
-    return Probe(key="home", label="the home bridge", check=check)
+    return Probe(key="home", label=LABELS["home"], check=check)
 
 
 # ---- Docs store, Redis, web search -------------------------------------------------------------
@@ -182,7 +187,7 @@ def docs_probe(docs: Docs, *, prefix: str) -> Probe:
         await docs.get(f"{prefix}{DOCS_PROBE_DOC}")  # a read; the document need not exist
         return _ok("the document store answers")
 
-    return Probe(key="docs", label="the document store", check=check)
+    return Probe(key="docs", label=LABELS["docs"], check=check)
 
 
 def redis_probe(ping: Ping) -> Probe:
@@ -190,7 +195,7 @@ def redis_probe(ping: Ping) -> Probe:
         await ping()
         return _ok("Redis answers")
 
-    return Probe(key="redis", label="Redis", check=check)
+    return Probe(key="redis", label=LABELS["redis"], check=check)
 
 
 def web_probe(reporter: UsageReporter) -> Probe:
@@ -200,7 +205,7 @@ def web_probe(reporter: UsageReporter) -> Probe:
             return _slow("web search credits are used up")
         return _ok("web search answers")
 
-    return Probe(key="web", label="web search", check=check)
+    return Probe(key="web", label=LABELS["web"], check=check)
 
 
 __all__ = [
@@ -209,10 +214,10 @@ __all__ = [
     "Probe",
     "ProbeResult",
     "brain_probe",
+    "crashed_result",
     "docs_probe",
     "google_probe",
     "home_probe",
-    "provider_ping",
     "redis_probe",
     "run_probe",
     "telegram_probe",

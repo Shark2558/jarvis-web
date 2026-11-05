@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -12,6 +13,18 @@ Status = Literal["ok", "degraded", "down"]
 REASON_MAX = 120
 KEY_MAX = 40
 LABEL_MAX = 60
+
+# How each integration is spoken. Code-side: the spoken line never uses a label read back from
+# storage for a key listed here (R4 review py-L1).
+LABELS: Mapping[str, str] = {
+    "brain": "the AI brain",
+    "google": "Google",
+    "telegram": "Telegram",
+    "home": "the home bridge",
+    "docs": "the document store",
+    "redis": "Redis",
+    "web": "web search",
+}
 
 
 @dataclass(frozen=True)
@@ -38,10 +51,21 @@ class HealthReport(_Frozen):
     overall: Status
     results: tuple[ProbeResult, ...]
     at: float
+    persisted: bool = True  # False: the result could not be saved (the store was down)
 
     @property
     def faulty_keys(self) -> frozenset[str]:
         return frozenset(r.key for r in self.results if r.status != "ok")
 
 
-__all__ = ["HealthReport", "ProbeOutcome", "ProbeResult", "Status"]
+@dataclass(frozen=True)
+class HealthState:
+    """The stored document: the last report plus what the owner was last TOLD per integration
+    (`alerted`) and how many checks in a row each status has held (`streaks`)."""
+
+    report: HealthReport
+    alerted: Mapping[str, Status]
+    streaks: Mapping[str, tuple[Status, int]]
+
+
+__all__ = ["LABELS", "HealthReport", "HealthState", "ProbeOutcome", "ProbeResult", "Status"]

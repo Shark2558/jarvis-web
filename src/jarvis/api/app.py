@@ -49,7 +49,7 @@ from jarvis.api.privacy import install_privacy
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
-from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier, SchedulerUnauthorized
+from jarvis.api.scheduler_auth import GoogleOIDCVerifier, SchedulerUnauthorized
 from jarvis.api.telegram import build_telegram, install_telegram
 from jarvis.api.usage import router as usage_router
 from jarvis.api.vault import VAULT_BODY_BYTES, VAULT_UPLOAD_PATH, install_vault
@@ -216,8 +216,8 @@ def _mount_scheduler(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
             "Scheduler signs as a service account; check the value"
         )
     app.state.scheduler_verifier = verifier or GoogleOIDCVerifier(
-        audience=s.public_base_url.rstrip("/") + TICK_PATH, email=s.brief_scheduler_sa
-    )
+        base_url=s.public_base_url, email=s.brief_scheduler_sa
+    )  # R3 I0: one exact audience per scheduler route (the tick; the home watchdog at I1)
     app.include_router(brief_internal_router)
 
 

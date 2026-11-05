@@ -118,15 +118,18 @@ WAKEWORD_FILES = frozenset({"melspectrogram.onnx", "embedding_model.onnx", "hey_
 _WAKEWORD = _STATIC / "wakeword"
 
 # The console CSP. 'wasm-unsafe-eval' lets the wake word compile onnxruntime's WebAssembly (and
-# nothing else: it does not allow eval or new Function); no worker, blob: or other host is needed.
+# nothing else: it does not allow eval or new Function); no blob: or other host is needed.
 # Slice 12 D4: the Media panel plays a video the owner chose in YouTube's privacy-enhanced embed —
 # the one frame source allowed. No YouTube script runs in the console (no IFrame API), so
 # script-src and connect-src stay 'self'.
+# R3 D11: browser notifications need one service worker (console-sw.js, push and notificationclick
+# only, no fetch handler) registered with scope /static/push/, so it controls no page. It would
+# load under script-src 'self' anyway; `worker-src 'self'` says so explicitly (no blob: worker).
 CONSOLE_CSP = (
     "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
     "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
     "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
-    "frame-src https://www.youtube-nocookie.com"
+    "frame-src https://www.youtube-nocookie.com; worker-src 'self'"
 )
 # The console page sends no referrer anywhere. Slice 12 D4: YouTube's player needs the embedding
 # ORIGIN (error 153 without one), so only the player's own iframe carries

@@ -62,6 +62,12 @@ SAMPLES: dict[str, tuple[str, list[ActionRisk]]] = {
     "notes_read": ("kb_search", [R1]),
     "notes_change": ("kb_update", [R2]),
     "belongings": ("belongings_put", [R1, R2]),
+    # R3 I0: stub tools under the planned names
+    "home_read": ("home_status", [R1]),
+    "home_control": ("home_control", [R2]),
+    "home_arm": ("home_arm", [R2]),
+    "home_secure": ("home_disarm", [R3]),
+    "camera": ("camera_history", [R1]),
 }
 OUTCOME = {
     Effect.ALLOW: GatewayOutcome.EXECUTED,

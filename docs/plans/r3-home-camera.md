@@ -5,6 +5,9 @@ from `r3` = `main` after the R2 PR is merged (gate G0). Not in this plan: Ecovac
 devices (R4), spoken greetings through a speaker (R4, needs Google Home), calls (R12; the alert policy is built for
 them), the Raspberry Pi 5 move (after the laptop trial), anything paid (Frigate+, Nabu Casa, a domain).
 
+I0 (5 Nov): built on `r3` = `r2` @ 5b00b7a + this plan (Gate G0's `r2` path; R1 is merged, R2's PR #21 waits for the
+owner). *Re-checked at R3 I0* and D20 win over any older text below.
+
 ## Owner's rules for R3 (5 Nov)
 - Everything free: no paid service, no new Secret Manager secret (the deploy is already past the 6 free versions,
   R2 D2), no new model call. R3 makes **no model call of its own**: detection, recognition, history search and the
@@ -425,6 +428,24 @@ console; tainted rounds still turn writes into cards; new R2 rows offer Allow / 
 / Never. Vendor text (HA, Frigate, push services) never reaches the owner or the model. Nothing R3 stores is logged
 (ids and counts only). `brain.py` and `gateway.py` are not touched.
 
+**D20 - Owner defaults until he answers (R3 I0, 5 Nov).** The owner has not answered the open questions yet. Builders
+build these safe defaults; each is a setting he can change later, and none needs a code change when he answers:
+- Runtime (question 2): Docker Engine inside WSL2 Ubuntu, as D2. Home Assistant OS in VirtualBox stays the fallback.
+- Snapshots (question 5): off. Only the opt-in of D12 turns them on (`notify.snapshot.on = false`,
+  `SettingsState.snapshot = false` on the wire, so the bridge never attaches one by default).
+- Faces (question 7): nobody is enrolled. The registry starts empty; JARVIS names a person only after he adds them in
+  Faces with their consent (a parent's or guardian's for a child) and adds photos on the laptop page. Greeting alerts
+  are off.
+- Phone alerts: urgent only. `notify.ring_for` defaults to `urgent` (not `important` as D10 rule 7 assumed):
+  important alerts arrive silently, info ones silently or in the feed only; burglar and hazard alerts ring, also in
+  quiet hours. Quiet hours 23:00-06:30 on, names in alerts off, no VIPs (question 6).
+- Camera zones (question 8): nothing public. B's Frigate template ships with no zone and no detection outside the
+  zones he draws (`required_zones`, and the bridge forwards only detections inside `SettingsState` alarm zones).
+  Setup step 11 and Integrations -> Home -> Cameras say plainly: "Draw zones only over your own gate and doorstep.
+  Mask the road and your neighbours' doors and windows - JARVIS must not watch them."
+- Still open: questions 1 (does the laptop stay home), 3 (CPU, GPU, Windows), 4 (phone), 9 (Wi-Fi, gate light) and
+  10 (text greetings for now).
+
 ## Data model (Docs port, prefix `jarvis_`; equality + single order_by only)
 ```
 home/{uid}                  {home_id:"h_<8 hex>", blob: AES-GCM({bridge_url, seed}) (keyring "home", AAD
@@ -712,6 +733,7 @@ New separated paragraphs, each pinned by `tests/test_r3_persona.py`:
 
 ## Workstreams (worktrees, tests first; branches `r3-a`..`r3-d` from `r3`)
 **I0 · Seams (integrator, BEFORE the builders; one commit on `r3`; `tests/test_r3_seams.py`):**
+(Built 5 Nov. What differs from this list is in *Re-checked at R3 I0*; that section wins.)
 - `alerts.py`: `AlertKind` + `home_intruder`, `home_hazard`, `home_package`, `home_greeting`, `home_offline`,
   `home_online`, `home_arm_failed`, `home_summary`; `AlertSink.send(uid, text, *, kind, silent=False, photo=None)`;
   `NoAlerts` and R1's `TelegramAlerts.send` accept the two new keywords (ignored until D).
@@ -846,6 +868,135 @@ New separated paragraphs, each pinned by `tests/test_r3_persona.py`:
 11. Browser notifications arrive on your phone with Chrome closed; tell Claude if they are late.
 12. Snapshot opt-in (only if you switched it on): the photo arrives with the alert.
 13. Free tier: Billing → Reports shows ₹0; Cloud Run requests well under 2 million a month.
+
+## Re-checked at R3 I0 (5 Nov, `r2` @ 5b00b7a)
+The plan was written against `r2-plan` @ 88055a7 (R1 I0 plus the plans). R1 has since been merged to `main` and R2
+reviewed on `r2`. Every name the plan relies on was re-read in the current code; I0 is built as `alerts.py`,
+`notify/`, `home/{__init__,ports,signing}.py`, `faces/`, `homebridge/{__init__,plugins,registry}.py`, the keyring,
+permissions, scheduler, CSP, settings, extra and Telegram changes below, pinned by `tests/test_r3_seams.py`.
+**Builders: this section and D20 win over the older text above.**
+
+**Names that held (checked, no change):** `offline.config.check_url`, `CheckedUrl`, `PinnedTransport`,
+`ENFORCE_URL_RULE`; `TelegramAlerts`, `TelegramClient.send_message`, `TelegramStore.count_alert`; `ChannelRules`,
+`PRIVATE_PATTERNS`, `PERSONAL_PATTERNS` with `allow_personal_reads`, `wrap_rules`; R1 D3 ("Waiting in the console"
+for R3 on Telegram, `telegram/service.py`); `Keyring` (`cipher`, `mac`, `mac_matches`, `from_settings`);
+`PrivacySource`, `PrivacyRegistry`, `CategoryView`; `PermissionsService.check_purpose`, `purpose_binding`,
+`JarvisPasskey.prove`; `Tool.activity_words`; `ticks.TickJob`, `run_jobs`; `brief/models.py` `SectionsStatus`,
+`BriefSettings`; `console-brief-sections.js`; `core/channel.on_telegram()`; `tools/observers.py`;
+`llm/fallback.OFFLINE_TOOLS` (12 tools, none of R3); `Tool.risk_for`, `preview`, `spoken_ok`, `may_vouch`.
+
+**Changed since 88055a7 - what builders must know:**
+1. **Persona** is `p4.7` (R2 I1). I1 sets `p4.8`.
+2. **Privacy dashboard** (R2 D14 as built): `CategoryView` carries `section`, `label`, `rev: str` (a fingerprint),
+   `export: bool`, `available` and `delete_count`; `DeleteClass` is `none | simple | confirm | passkey`; a passkey
+   delete is checked for purpose `privacy_delete` with target `<category id>:<rev>`. The `faces` placeholder is
+   `privacy/sources.faces_source()` (section `Faces`), appended LAST by `api/personal.privacy_sources` (existing ->
+   R1 -> R2 -> faces). I1 puts C's `FacesPrivacy` in its place and registers `home`, `home_feed`, `camera_home`,
+   `notify` and `webpush` before it. **D13's per-person delete target `faces/<id>` is not valid**: `TARGET_PATTERN`
+   is `^[A-Za-z0-9_.:=-]{1,64}$` (no slash). C uses `face:<person id>` (for example `face:fp_3a9c12ab34cd`) with
+   purpose `privacy_delete`; the whole-category delete keeps `faces:<rev>`.
+3. **Undo** (R2): restored entries are never purged, and a per-kind purger must check its tombstone stamp. R3 adds
+   **no** Recently deleted kind: a face delete is final (passkey) and a home feed delete is a privacy delete. A
+   builder who wants one asks the integrator first.
+4. **Telegram - decided here and built in I0.** Three groups, each with its own switch; none opens another: R1
+   private (`allow_private_reads`), R2 personal (`allow_personal_reads`) and **R3 home: `HOME_PATTERNS =
+   ("home_devices", "camera_*", "faces_*")` behind `TelegramLink.allow_home_reads`** (default off; the store's
+   `set_settings(allow_home_reads=...)` exists). `home_devices` is in it because a lock's or door's state is
+   security-sensitive. `home_status` (armed or not, laptop online - what the alerts already say) and `home_arm` stay
+   available on Telegram (D8); `home_control` works for Everyday devices and every R3 call waits in the console (R1
+   D3). I1 adds the API field, the console switch ("Let Telegram answer from my home devices, camera history and the
+   people JARVIS recognises"), `home_status` in `TELEGRAM_SAFE` and an `R3_READS` gate test in
+   `tests/test_telegram_tool_guard.py` (like `R2_READS`).
+5. **Alerts:** `AlertKind` has the 8 home kinds (I0). `TelegramAlerts` refuses any kind without a `_TOGGLE` entry
+   (R2 I0), so **no R3 alert reaches Telegram until D maps them**. D decides how the policy's per-kind switches
+   (`notify/{uid}.kinds`) and Telegram's `AlertToggles` combine (home kinds: the policy's switch only;
+   `home_intruder` and `home_hazard` have none). R1's caps (10 an hour, 50 a day, one counter, fail closed) stay
+   until D's urgent bucket.
+6. **Ticks:** `run_jobs` answers "ok" or "failed" per job, and a job whose counts carry `failed` > 0 is "failed".
+   The watchdog route is A's; its steps are `TickJob`s run with `run_jobs`, each with a unique name: B's arm-pending
+   check (`home_arm_failed`), D's held-alerts flush, A's sweeps (claims, link codes) and B's feed-day sweep.
+7. **Lifespan and wiring:** `api/app.py`'s lifespan is an `AsyncExitStack` with `_Closers.register_new()` after each
+   `_wire_*` step; R2's wiring lives in `api/personal.py`. I1 puts R3's in a new `api/home_wiring.py` the same way
+   (`app.py` gains a few lines); a store with an async `close` goes in `_CLOSABLES`.
+8. **Gateway:** `tools/gateway.py` is at its 760-line guard (`tests/test_r1_seams.py`). R3 never touches it (D19).
+9. **`ToolContext.spoken`** exists (R2 I1). B sets `home_arm`'s `set_via` from it (`voice`), from
+   `core.channel.on_telegram()` (`telegram`), else `chat`; the panel's route says `console`.
+10. **Keyring:** cipher purposes + `home`, `home_feed`, `faces`, `webpush`. `webpush_vapid` is a **secret** purpose:
+    `Keyring.secret("webpush_vapid", length=48)` is raw HKDF output (domain `jarvis/secret/<purpose>/v1`) that D
+    reduces into a P-256 key; `cipher()` and `mac()` refuse it and `secret()` refuses every cipher purpose. No new
+    Secret Manager secret (D4).
+11. **`check_url`** returns `CheckedUrl(base="https://<host>[:port]/v1", host)`; the `/v1` is for R1's local brain.
+    A builds the bridge URL from `host` and port **8443** (refusing 443, which is R1's local brain on Funnel) and
+    uses `PinnedTransport` for every call (DNS rebinding).
+12. **Activity words:** `activity/words.py` already honours `Tool.activity_words` (R2 I1); I1 has nothing to add
+    there, and no R3 tool is a delete.
+13. **Brief:** B adds `home` to `SectionsStatus` and `BriefSettings` with defaults (`"ok"`, `True`) so stored records
+    still load (R2 pattern).
+14. **Permission rows:** 28 -> 33 (Home x4, Camera x1), between Things (`belongings`) and Maps;
+    `PermissionsPatch.groups` max 48. Hints are ASCII ("Integrations -> Home"). `tests/test_r1_seams.py` and
+    `tests/test_r2_seams.py` (counts), `tests/test_permissions_policy.py` (`EXPECTED`, `RISK_OF`, `TOOL_OF`) and
+    `evals/permissions/suites.py` (`SAMPLES`) were extended in I0.
+15. **CSP:** the three tests that pin it (`test_console_assets`, `test_media_console`, `test_wakeword_assets`) now
+    expect `; worker-src 'self'` at the end.
+16. **Sizes now:** console.js 626, console.html 668, console-brief.js 758 (42 lines left: B's brief section goes in
+    `console-brief-sections.js`, 122), console-integrations.js 229, console-telegram.js 348, console-permissions.js
+    408, console-privacy.js 259; gateway.py 760, brain.py 778.
+
+**Seams built differently from the I0 list (the smallest correct version):**
+- `alerts.py`: also `HOME_ALERT_KINDS`. `TelegramAlerts.send` takes `silent` and `photo` and ignores them (D).
+- `notify/ports.py`: `Urgency = urgent | important | info`; `DEFAULT_URGENCY` (read-only, every `AlertKind`;
+  `home_summary` is urgent so a storm summary passes quiet hours; `test` important). `Signal {source: home | nudge |
+  call | message, kind, person_ref?, vip, child, camera?, text?}` (frozen, extra fields refused). `Decision {action:
+  ring | silent | hold | drop, reason (a short word), urgency}`: "feed only" is `drop` with reason `feed_only`.
+  `Delivery {action, reason, telegram, push 0-5, photo_sent}` with `feed_decision` (ring | silent | held |
+  dropped). `NotifyPolicy.decide(signal, settings, now)` (settings: D's model). `Notifier.notify(uid, signal,
+  message, *, named_message=None, photo=None)`: callers pass a text that names nobody and, when the directory named
+  an adult, the named text; the notifier uses it only with names in alerts on and never for `signal.child`.
+  `DirectNotifier` rings (silent for info kinds), never names anyone and never forwards a photo.
+- **Face VIPs have one home:** the Faces registry (`Person.vip`) -> `Resolved.vip` -> `Signal.vip`. `notify.vip`
+  keeps R12 references (phone, email); the Alerts panel shows face VIPs read-only with a link to Faces.
+- `home/signing.py`: `derive_keys(seed) -> HomeKeys(up, down)` (HKDF-SHA256, no salt), `new_seed`, `parse(header)
+  -> Signed`, `sign` and `verify(signed, keys, direction, *, method, target, body, now, nonces)`, `sign_response`
+  and `verify_response`, `NonceCache` (5 minutes, 4,096 entries; full -> refuses), `SignatureError.check` (shape |
+  time | nonce | mac). `target` is the path plus "?query" as sent. The nonce is remembered only after the MAC
+  verifies, so forged messages can't fill the cache or burn a real nonce. Responses are signed in the other
+  direction under their own domain (`jarvis-home-v1-res`), bound to the request's nonce, method and target and to
+  the status. The request string is exactly D5's.
+- `home/ports.py`: events `Heartbeat {at, bridge_version, state_rev, parts}`, `Detection {camera, zones, label,
+  start, end?, score, face?, snapshot?}`, `FaceSeen {event, camera, zones, at, face}`, `Package {camera, zone, state,
+  at, delivered}`, `Hazard {entity, device_class, state, at}`, `Ack {at, what: state | face_deleted, rev?,
+  person?}`, each with an `id`. `HeartbeatParts {ha, frigate, cameras, doorstep_model, faces: {fp_id: pictures}}`
+  (`merged`). `parse_event(raw)` is the only parser (after the signature): `EventRejected("too_large" | "invalid")`
+  carries no input. A snapshot is allowed only on a `person` detection and must be base64 of one JPEG <= 80 KB
+  (`snapshot_bytes()`). `BridgeState {arm, faces, devices, settings}`, a `rev` per part (`merged`): `SettingsState
+  {cameras: {id: {alarm_zones, package_zone}}, retention_days 1-30, greetings, packages, snapshot (all off by
+  default), heartbeat_s 60-600}`; `ExposedDevice {entity_id, tier: read | everyday | passkey | always_passkey}`
+  refuses D6's never-exposed domains. `BRIDGE_ROUTES`, `route_allowed`; `HomeUnavailable(code, words)` ->
+  `HomeOffline` (`HOME_OFFLINE` words) and `HomeRefused`; `ArmView`. Protocols: `HomeEventHandler {handles,
+  handle(uid, event)}` (I1's dispatcher calls every handler whose `handles` has the type: heartbeat -> A and B, ack
+  -> B for state and C for face_deleted), `HomeCaller.call(uid, method, path, body=None, *, query=None)`, and two the
+  plan didn't name: `ArmReader.view(uid)` (A's watchdog asks B whether the home is armed) and
+  `StateSource.state_part(uid) -> BridgeState` (A merges B's arm and settings, C's faces and its own devices for the
+  heartbeat reply and the state push).
+- `faces/ports.py`: `Resolved(name, person, vip, child)` (an id, VIP or child mark only for a named person, else
+  `ValueError`), `UNKNOWN`, `NoFaces`, the words `UNKNOWN_PERSON`, `RECOGNISED_PERSON`, `FAMILY_CHILD`,
+  `RECOGNITION_THRESHOLD = 0.9`, `is_person_id`. `resolve` is async.
+- `homebridge/plugins.py`: `BridgeRoute(method, path, handler)` (only `BRIDGE_ROUTES`; `handler(query, body) ->
+  dict`, run after A's signature check, size cap and JSON parse; a `HomeRefused` becomes a signed refusal),
+  `BridgeContext(env, data_dir, events: EventSink, now)`, `TaskFactory`, `BridgePlugin {name, routes(), tasks(),
+  async heartbeat_part(), async apply_state(state)}`, `PluginFactory`, `check_routes`. `registry.PLUGINS = ()` holds
+  factories (I1 fills it). **Kit rule (tested):** `home/{__init__,ports,signing}.py` and these `homebridge/` files
+  import only the standard library, pydantic, cryptography and each other. A's bridge files may add fastapi,
+  uvicorn, httpx and aiomqtt (the bridge image), never another `jarvis.*` module.
+- `permissions`: `home_disarm` is in `Purpose` and `TARGETED_PURPOSES`; `purpose_binding` requires the target
+  `h_<8 hex>:<rev>` (`HOME_DISARM_TARGET`). `JarvisPasskey.prove` accepts `home_disarm`.
+- `api/scheduler_auth.py`: `WATCHDOG_PATH`, `SCHEDULER_PATHS`; `GoogleOIDCVerifier(base_url=..., email=...)` holds
+  one exact audience per path, `verify(token, *, path=TICK_PATH)`, and `require_scheduler` passes
+  `request.url.path`. `api/app.py` builds the verifier with `base_url` (the tick behaves as before); `audience=`
+  alone still means the tick only.
+- `config.py`: the seven settings, `home_webhook_per_min` 10-600, and a check that `home_offline_after_s >= 2 *
+  home_heartbeat_s`. The bridge learns the interval from `SettingsState.heartbeat_s`.
+- `pyproject.toml`: extra `homebridge = ["aiomqtt>=2.3,<3"]`; `requirements.lock` (the cloud image) unchanged.
 
 ## Verified in code (5 Nov, `r2-plan` @ 88055a7; R1 builder branches `r1-a` @ 2989bbd, `r1-b` @ 62aed4b, `r1-d`
 @ 63c6d8a; `r1-c` has no commit yet)

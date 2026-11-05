@@ -47,7 +47,17 @@ class TelegramAlerts:
         self._store = store
         self._audit = audit
 
-    async def send(self, uid: str, text: str, *, kind: AlertKind) -> AlertResult:
+    async def send(
+        self,
+        uid: str,
+        text: str,
+        *,
+        kind: AlertKind,
+        silent: bool = False,
+        photo: bytes | None = None,
+    ) -> AlertResult:
+        # R3 I0: `silent` and `photo` are accepted and not used yet (R3 D adds
+        # disable_notification and sendPhoto). A kind with no switch here is still refused.
         try:
             link = await self._store.get(uid)
         except Exception as exc:  # noqa: BLE001

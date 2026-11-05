@@ -97,6 +97,8 @@ class TelegramLink(BaseModel):
     allow_private_reads: bool = False
     # R2 D12: the vault list, notes and things (its own switch; telegram.rules)
     allow_personal_reads: bool = False
+    # R3 D15: home devices, camera history and the people JARVIS recognises (its own switch)
+    allow_home_reads: bool = False
     alerts: AlertToggles = Field(default_factory=AlertToggles)
     rev: int = 0
 

@@ -10,7 +10,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -234,6 +234,33 @@ class Settings(BaseSettings):
     belongings_enabled: bool = Field(
         default=True, description="'Where did I keep it?' things (needs token_key)"
     )
+    # --- R3 home bridge and camera security (docs/plans/r3-home-camera.md). Each needs
+    # `token_key` (the home record, feed, faces registry and push devices are encrypted by
+    # JARVIS); without it they stay OFF. No new secret.
+    home_enabled: bool = Field(
+        default=True, description="Home link: the laptop bridge, camera and devices"
+    )
+    home_heartbeat_s: int = Field(
+        default=120, ge=60, le=600, description="Seconds between the bridge's heartbeats"
+    )
+    home_offline_after_s: int = Field(
+        default=720,
+        ge=300,
+        le=3600,
+        description="No heartbeat for this long -> the laptop counts as offline (>= 2 beats)",
+    )
+    home_feed_days: int = Field(
+        default=7, ge=1, le=30, description="Days the cloud keeps the home alert feed"
+    )
+    home_webhook_per_min: int = Field(
+        default=60, ge=10, le=600, description="Signed webhooks a home may send a minute"
+    )
+    faces_enabled: bool = Field(
+        default=True, description="Faces JARVIS recognises, with consent (needs token_key)"
+    )
+    webpush_enabled: bool = Field(
+        default=True, description="Browser notifications (Web Push; needs token_key)"
+    )
     # --- Maps + YouTube (slice 12 D2): JARVIS's own server-side Google API key, restricted to
     # Places (New), Routes and YouTube Data v3. No key: those tools are not registered.
     google_api_key: SecretStr | None = Field(
@@ -339,6 +366,15 @@ class Settings(BaseSettings):
     def _norm_sa(cls, v: object) -> str | None:
         text = str(v or "").strip().lower()
         return text or None
+
+    @model_validator(mode="after")
+    def _home_timing(self) -> Settings:
+        """R3 D9: one late heartbeat must never look like an outage."""
+        if self.home_offline_after_s < 2 * self.home_heartbeat_s:
+            raise ValueError(
+                "JARVIS_HOME_OFFLINE_AFTER_S must be at least twice JARVIS_HOME_HEARTBEAT_S"
+            )
+        return self
 
     def require_prod_invariants(self) -> None:
         """Fail fast on misconfiguration that is acceptable in dev but not beyond it."""

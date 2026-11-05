@@ -71,10 +71,18 @@ Purpose = Literal[
     "vault_unlock",
     "privacy_delete",
     "privacy_export",
+    # R3 D8: switch the burglar alert off, bound to "<home_id>:<arm rev>"
+    "home_disarm",
 ]
 # The purposes whose challenge is bound to (owner, purpose, target); checked by `check_purpose`.
-TARGETED_PURPOSES: tuple[str, ...] = ("vault_unlock", "privacy_delete", "privacy_export")
+TARGETED_PURPOSES: tuple[str, ...] = (
+    "vault_unlock",
+    "privacy_delete",
+    "privacy_export",
+    "home_disarm",
+)
 TARGET_PATTERN = r"^[A-Za-z0-9_.:=-]{1,64}$"
+HOME_DISARM_TARGET = r"^h_[0-9a-f]{8}:[0-9]{1,12}$"
 
 
 class ChallengeRequest(_In):
@@ -105,7 +113,7 @@ class CancelResetRequest(_In):
 
 
 class PermissionsPatch(_In):
-    groups: dict[str, str] | None = Field(default=None, max_length=32)
+    groups: dict[str, str] | None = Field(default=None, max_length=48)  # R3: 33 rows
     require_passkey: bool | None = None
     proof: PasskeyProof | None = None
 
@@ -175,6 +183,7 @@ __all__ = [
     "ChallengeRequest",
     "ChallengeView",
     "GroupView",
+    "HOME_DISARM_TARGET",
     "PasskeyProof",
     "PasskeyView",
     "PermissionsPatch",

@@ -81,7 +81,8 @@ def test_purpose_keys_are_pinned_hkdf_outputs() -> None:
 
 
 def test_purposes_are_allow_listed_and_independent() -> None:
-    assert set(PURPOSES) == {"vault", "vault_index", "notes", "belongings", "tickets"}
+    r2 = {"vault", "vault_index", "notes", "belongings", "tickets"}
+    assert r2 <= set(PURPOSES)  # R3 I0 adds its own (tests/test_r3_seams.py pins the whole set)
     ring = Keyring(KEY)
     with pytest.raises(VaultError):
         ring.cipher("tokens")
@@ -571,9 +572,9 @@ ROWS = {
 
 def test_five_rows_sit_between_drive_and_maps() -> None:
     ids = [g.id for g in GROUPS]
-    assert len(ids) == 28
+    assert len(ids) == 33  # R3 I0: + the five Home / Camera rows, after these and before Maps
     at = ids.index("drive")
-    assert ids[at + 1 : at + 6] == list(ROWS) and ids[at + 6] == "maps"
+    assert ids[at + 1 : at + 6] == list(ROWS) and ids.index("maps") > at + 5
     assert ids[-1] == "youtube"
 
 

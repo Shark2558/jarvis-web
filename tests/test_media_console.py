@@ -34,7 +34,8 @@ HTML_SINKS = (
 
 
 def test_csp_adds_only_the_youtube_nocookie_frame_source() -> None:
-    assert CONSOLE_CSP == BEFORE + "; frame-src https://www.youtube-nocookie.com"
+    worker = "; worker-src 'self'"  # R3 I0 (D11): the notifications' service worker
+    assert CONSOLE_CSP == BEFORE + "; frame-src https://www.youtube-nocookie.com" + worker
     assert "youtube.com" not in CONSOLE_CSP.replace("youtube-nocookie.com", "")
     assert "child-src" not in CONSOLE_CSP and "img-src 'self' data:;" in CONSOLE_CSP
 

@@ -13,6 +13,10 @@ token vault keeps using the raw key, so tokens stored before R2 still decrypt.
   `VaultError`; nothing here logs a key, a blob or a plaintext, and `repr` shows neither.
 - `Keyring.from_settings` is None without a token key: the vault, notes and things are then OFF
   (R2 never stores them in clear).
+- R3: cipher purposes for the home link, the home feed, faces and Web Push subscriptions, and one
+  SECRET purpose: `secret("webpush_vapid")` is raw HKDF output (its own domain,
+  `jarvis/secret/<purpose>/v1`) that R3 D reduces into a P-256 private key. A secret purpose is
+  never a cipher or MAC purpose and the other way round; still no new stored secret (R3 D4).
 """
 
 from __future__ import annotations
@@ -32,7 +36,20 @@ if TYPE_CHECKING:
 
 KEY_ID = "tk1"  # carried in stored envelopes so a later rotation can re-wrap DEKs
 SALT = b"jarvis-keyring-v1"
-PURPOSES: tuple[str, ...] = ("vault", "vault_index", "notes", "belongings", "tickets")
+PURPOSES: tuple[str, ...] = (
+    "vault",
+    "vault_index",
+    "notes",
+    "belongings",
+    "tickets",
+    # R3: home link record, home feed, faces registry, Web Push subscriptions
+    "home",
+    "home_feed",
+    "faces",
+    "webpush",
+)
+SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
+MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64
 
 
 class Keyring:
@@ -94,5 +111,18 @@ class Keyring:
     def mac_matches(self, purpose: str, data: bytes | str, tag: str) -> bool:
         return hmac.compare_digest(self.mac(purpose, data), tag)
 
+    def secret(self, purpose: str, *, length: int = KEY_BYTES) -> bytes:
+        """Raw key material for a SECRET purpose (R3: the VAPID private key), 16-64 bytes."""
+        if purpose not in SECRET_PURPOSES:
+            raise VaultError("unknown secret purpose")
+        if isinstance(length, bool) or not MIN_SECRET_BYTES <= length <= MAX_SECRET_BYTES:
+            raise VaultError("a derived secret is 16 to 64 bytes")
+        return HKDF(
+            algorithm=hashes.SHA256(),
+            length=length,
+            salt=SALT,
+            info=f"jarvis/secret/{purpose}/v1".encode(),
+        ).derive(self._root)
 
-__all__ = ["KEY_ID", "PURPOSES", "Keyring"]
+
+__all__ = ["KEY_ID", "PURPOSES", "SECRET_PURPOSES", "Keyring"]

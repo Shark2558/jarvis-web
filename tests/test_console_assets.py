@@ -17,12 +17,13 @@ IMMUTABLE = "public, max-age=31536000, immutable"
 # The console CSP is a security contract: any change here must be deliberate. Slice 9 (D12) added
 # exactly 'wasm-unsafe-eval' for the on-device wake word's WebAssembly (tests/test_wakeword_assets);
 # slice 12 (D4) exactly `frame-src https://www.youtube-nocookie.com` for the Media panel's player
-# (tests/test_media_console.py).
+# (tests/test_media_console.py); R3 I0 (D11) exactly `worker-src 'self'` for the browser
+# notifications' service worker (tests/test_r3_seams.py).
 EXPECTED_CSP = (
     "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
     "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
     "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
-    "frame-src https://www.youtube-nocookie.com"
+    "frame-src https://www.youtube-nocookie.com; worker-src 'self'"
 )
 
 ALLOWED_FONTS = (

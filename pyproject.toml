@@ -40,6 +40,9 @@ dev = [
     "pyyaml>=6",
     "shellcheck-py>=0.10",
 ]
+# R3: the home bridge on the owner's laptop (deploy/home/bridge.Dockerfile), never the cloud
+# image: Frigate's events over MQTT. aiomqtt BSD-3-Clause (paho-mqtt EPL-2.0 / EDL-1.0).
+homebridge = ["aiomqtt>=2.3,<3"]
 
 [project.scripts]
 jarvis = "jarvis.cli:main"

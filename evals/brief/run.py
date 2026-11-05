@@ -246,9 +246,10 @@ async def run_compose_case(c: dict[str, Any]) -> dict[str, Any]:
         "today": len(b.data.calendar.today),
         "free": len(b.data.calendar.free_blocks),
         "inbox_total": b.data.inbox.total,
-        # the compose cases pin the four original sections; deliveries and family have own evals
+        # the compose cases pin the four original sections; deliveries, family, vault, home and
+        # vitals (R4) have their own evals
         "status": b.data.sections_status.model_dump(
-            exclude={"deliveries", "family", "vault", "home"}
+            exclude={"deliveries", "family", "vault", "home", "vitals"}
         ),
     }
     fails += [

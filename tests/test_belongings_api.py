@@ -87,8 +87,9 @@ async def test_add_then_move_then_list(gc: AsyncClient) -> None:
     listing = (await gc.get("/v1/things")).json()
     assert listing["available"] and listing["total"] == 1
     assert set(listing["things"][0]) == {
-        "id", "name", "place", "note", "holder", "updated_at", "moves",
+        "id", "name", "place", "note", "holder", "updated_at", "moves", "origin",
     }  # fmt: skip
+    assert listing["things"][0]["origin"] == "typed"
     hit = (await gc.get("/v1/things?q=almirah")).json()
     assert [x["name"] for x in hit["things"]] == ["My passport"]
 
@@ -114,6 +115,22 @@ async def test_edit_history_and_delete_with_undo(gc: AsyncClient, t: Things) -> 
     out = await t.undo.restore(UID, d.json()["undo_id"])
     assert out.status.value == "restored"
     assert (await gc.get("/v1/things")).json()["total"] == 1
+
+
+async def test_a_panel_edit_keeps_an_outside_origin_unless_adopted(
+    gc: AsyncClient, t: Things
+) -> None:
+    """R2 review S3: a move in the panel never vouches by itself; "This is mine" does."""
+    made = await t.svc.put(UID, "Passport", "blue file", note="from a mail", origin="outside")
+    tid = made.thing.id
+    moved = await gc.patch(f"/v1/things/{tid}", json={"place": "drawer"}, headers=CSRF)
+    assert moved.status_code == 200 and moved.json()["thing"]["origin"] == "outside"
+    mine = await gc.patch(
+        f"/v1/things/{tid}", json={"place": "locker", "adopt": True}, headers=CSRF
+    )
+    assert mine.status_code == 200 and mine.json()["thing"]["origin"] == "typed"
+    bad = await gc.patch(f"/v1/things/{tid}", json={"adopt": "yes"}, headers=CSRF)
+    assert bad.status_code == 422
 
 
 async def test_errors_have_the_standard_shape(gc: AsyncClient) -> None:

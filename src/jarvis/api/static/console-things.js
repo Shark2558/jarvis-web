@@ -8,8 +8,8 @@
 // Mounts into #p-things .pbody (the panel shell is in console.html). Listens: jarvis:ready,
 // jarvis:panel (Things shown), jarvis:reply (a tool may have noted or moved something).
 // API: GET /v1/things?q= -> {available, reason?, things:[{id, name, place, note, holder, updated_at,
-// moves}], holders, total}; POST /v1/things {name, place} (adds or moves) -> {thing, previous_place,
-// moved}; PATCH /v1/things/{id} {place} ; DELETE /v1/things/{id} -> {undo_id}; GET /v1/things/{id}/
+// moves, origin}], holders, total}; POST /v1/things {name, place} (adds or moves) -> {thing,
+// previous_place, moved}; PATCH /v1/things/{id} {place, adopt?} ; DELETE /v1/things/{id} -> {undo_id}; GET /v1/things/{id}/
 // history -> {earlier:[{place, from_at, to_at}]}; POST /v1/deleted/{undo_id}/restore.
 (() => {
   'use strict';
@@ -17,6 +17,9 @@
   const host = panel && panel.querySelector('.pbody');
   if (!host) return;
   const THING_ID = /^t_[0-9a-f]{12}$/, UNDO_ID = /^del_[0-9a-f]{20}$/;
+  // R2 review S3: how a line was noted. A move keeps it; only "This is mine" (adopt) makes it his.
+  const ORIGINS = ['typed', 'voice', 'outside'];
+  const HOW = { voice: 'said by voice', outside: 'from someone else\'s words' };
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const STALE_MS = 60 * 1000, MAX_ROWS = 500, SEARCH_MS = 250;
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
@@ -59,7 +62,8 @@
       if (!it || typeof it.id !== 'string' || !THING_ID.test(it.id) || seen.has(it.id)) return null;
       seen.add(it.id);
       return { id: it.id, name: txt(it.name, 60) || '(no name)', place: txt(it.place, 200), holder: txt(it.holder, 40),
-        at: txt(it.updated_at, 40), moves: Number.isInteger(it.moves) && it.moves > 0 ? it.moves : 0 };
+        at: txt(it.updated_at, 40), moves: Number.isInteger(it.moves) && it.moves > 0 ? it.moves : 0,
+        origin: ORIGINS.includes(it.origin) ? it.origin : 'typed' };
     }).filter(Boolean);
     return { available: true, things, total: Number.isInteger(d.total) ? d.total : things.length };
   }
@@ -114,7 +118,7 @@
     const li = mk('li', 'trow'); li.dataset.id = t.id;
     const main = mk('div', 'ttxt');
     main.append(mk('b', 'tname', t.name), mk('span', 'tplace', t.place));
-    const meta = [t.holder ? 'for ' + t.holder : '', t.at ? 'updated ' + when(t.at) : ''].filter(Boolean).join(' \u00b7 ');
+    const meta = [t.holder ? 'for ' + t.holder : '', t.at ? 'updated ' + when(t.at) : '', HOW[t.origin] || ''].filter(Boolean).join(' \u00b7 ');
     if (meta) main.appendChild(mk('small', 'tmeta', meta));
     const acts = mk('div', 'tacts');
     const mv = mk('button', 'btn bact', 'Moved\u2026'); mv.type = 'button'; mv.setAttribute('aria-label', 'Move ' + quoted(t.name));
@@ -144,9 +148,15 @@
     const no = mk('button', 'btn bact', 'Cancel'); no.type = 'button';
     no.addEventListener('click', () => { f.remove(); });
     f.append(inp, ok, no);
+    let mine = null;
+    if (HOW[t.origin]) { // not typed by him: he may take it as his own, never by default
+      const w = mk('label', 'tmeta tadopt'); mine = mk('input'); mine.type = 'checkbox';
+      w.append(mine, ' This is mine: I checked the name and note'); f.appendChild(w);
+    }
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
-      try { const r = await api('/v1/things/' + t.id, { method: 'PATCH', body: { place: inp.value } }); movedNote(r); await load(true); }
+      const body = { place: inp.value }; if (mine && mine.checked) body.adopt = true;
+      try { const r = await api('/v1/things/' + t.id, { method: 'PATCH', body }); movedNote(r); await load(true); }
       catch (err) { say('bad', detailOf(err) || 'Couldn\'t save that. Please try again.'); }
     });
     main.appendChild(f); inp.focus(); inp.select();

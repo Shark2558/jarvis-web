@@ -41,6 +41,7 @@ from jarvis.belongings.models import (
     Move,
     State,
     Thing,
+    worse_origin,
 )
 from jarvis.belongings.store import BelongingsStore, Change
 from jarvis.belongings.text import thing_key
@@ -271,7 +272,7 @@ class BelongingsService:
                 place=p if not same else old.place,
                 note=t or ("" if not same else old.note),
                 holder_id=hid or old.holder_id,
-                origin=origin,
+                origin=worse_origin(old.origin, origin),  # review S3: never vouches for old text
                 updated_at=now,
                 moves=min(old.moves + len(move), MAX_HISTORY),
             )
@@ -290,8 +291,11 @@ class BelongingsService:
         place: object = None,
         note: object = None,
         holder: object = None,
+        adopt: bool = False,
     ) -> PutResult:
-        """The panel's edit: rename, move, change the note or the holder of one thing."""
+        """The panel's edit: rename, move, change the note or the holder of one thing. An edit
+        keeps the thing's origin (a voice or outside line stays so); only `adopt=True` (the
+        owner ticked "This is mine" in the panel) makes it his own (review S3)."""
         seen: list[PutResult] = []
         h = _limited(holder, HOLDER_MAX, "A holder") if holder else ""
 
@@ -312,7 +316,7 @@ class BelongingsService:
                 place=p,
                 note=t,
                 holder_id=hid or old.holder_id,
-                origin="typed",
+                origin="typed" if adopt else old.origin,
                 updated_at=now,
                 moves=min(old.moves + len(move), MAX_HISTORY),
             )

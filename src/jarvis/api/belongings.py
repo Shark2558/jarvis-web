@@ -6,13 +6,15 @@ Everything is encrypted by JARVIS in storage; without an encryption key the list
 GET    /v1/things?q=        {available, reason?, things: [ThingView], holders: [label], total}
 POST   /v1/things           {name, place, note?, holder?} adds or moves -> 201 / 200 {thing,
                             previous_place, moved}
-PATCH  /v1/things/{id}      {name?, place?, note?, holder?} -> {thing, previous_place, moved}
+PATCH  /v1/things/{id}      {name?, place?, note?, holder?, adopt?} -> {thing, previous_place,
+                            moved}. The thing keeps its origin unless adopt: true (review S3).
 DELETE /v1/things/{id}      -> {undo_id, kind: "thing", title}   (Recently deleted, 30 days)
 GET    /v1/things/{id}/history  {thing, earlier: [{place, from_at, to_at}]}  (<= 10)
 GET    /v1/things/export    JSON attachment of every thing and its history (console only: a bearer
                             token alone gets 403 console_only when Google sign-in is in force)
 
-ThingView {id, name, place, note, holder, updated_at, moves}. Errors {error, detail}: 404
+ThingView {id, name, place, note, holder, updated_at, moves, origin: typed | voice | outside}.
+Errors {error, detail}: 404
 not_found, 409 things_full / holders_full, 422 no_name / no_place / too_long / sensitive, 503
 unavailable. Stored text is the owner's own and is shown with textContent.
 """
@@ -24,7 +26,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from jarvis.api.auth import require_auth, session_email
 from jarvis.api.identity import current_user
@@ -57,6 +59,8 @@ class EditThing(BaseModel):
     place: str | None = Field(default=None, max_length=PLACE_MAX * 4)
     note: str | None = Field(default=None, max_length=NOTE_MAX * 4)
     holder: str | None = Field(default=None, max_length=HOLDER_MAX * 4)
+    # review S3: "This is mine": the owner read it and takes it as his own (else origin is kept)
+    adopt: StrictBool = False
 
 
 def _svc(request: Request) -> BelongingsService | None:
@@ -78,6 +82,7 @@ def _view(t: Thing, state: State) -> dict[str, Any]:
         "holder": state.holder_label(t.holder_id),
         "updated_at": t.updated_at,
         "moves": t.moves,
+        "origin": t.origin,
     }
 
 
@@ -175,7 +180,13 @@ async def things_edit(
     s = _need(svc)
     _limit(request, uid)
     got = await s.update(
-        uid, thing_id, name=body.name, place=body.place, note=body.note, holder=body.holder
+        uid,
+        thing_id,
+        name=body.name,
+        place=body.place,
+        note=body.note,
+        holder=body.holder,
+        adopt=body.adopt,
     )
     return _put_view(got, await s.state(uid))
 

@@ -6,7 +6,9 @@
 - put: "Hey Jarvis, I kept my passport in the blue file" saves without a card unless the round read
   other people's content (the gateway's `spoken_ok` rule); the owner's Ask first / Never still win.
   The answer says the previous place on a move. What it writes is marked by origin (typed, voice,
-  or outside when written in a round that read other people's words).
+  or outside when written in a round that read other people's words); a put on an existing thing
+  keeps the worse of the two origins, so it never vouches for older text (review S3). Its card
+  shows the note as well.
 - Reads vouch (`may_vouch`) only when no returned line is of outside origin: the places are the
   owner's own words. Every name, place and note reaches the model fenced.
 - On a spoken or Telegram turn, text goes through `mask_for_speech` (no 4+ digit number, link or
@@ -29,7 +31,7 @@ from jarvis.belongings.store import ThingsUnavailable
 from jarvis.core.guardrails import ActionRisk
 from jarvis.logging import get_trace_id
 from jarvis.tools.base import Preview, Tool
-from jarvis.tools.card import one_line
+from jarvis.tools.card import one_line, quoted
 from jarvis.tools.context import ToolContext, require_tool_context
 from jarvis.tools.external import wrap_external
 from jarvis.tools.provenance import vouch
@@ -103,8 +105,10 @@ def _check_name(a: dict[str, Any]) -> None:
 
 
 def _card_put(a: dict[str, Any]) -> str:
-    name, place, _ = clean_fields(a.get("item"), a.get("place"), a.get("note"))
-    return f"Note that your {name} is kept in {place}"
+    """Everything the put would save is on the card, the note too (review S3)."""
+    name, place, note = clean_fields(a.get("item"), a.get("place"), a.get("note"))
+    card = f"Note that your {name} is kept in {place}"
+    return f"{card}, with the note {quoted(note, NOTE_MAX)}" if note else card
 
 
 def _card_remove(a: dict[str, Any], name: str | None = None) -> str:
@@ -194,7 +198,8 @@ class ThingsAPI:
         }
         if got.previous_place:
             out["previous_place"] = _say(got.previous_place, PLACE_MAX)
-        return vouch(out, origin_of(ctx) == "typed")
+        # review S3: the stored origin (the worse of the old and this put's), not this put's own
+        return vouch(out, got.thing.origin == "typed")
 
     async def preview_remove(self, a: dict[str, Any]) -> Preview:
         """Read-only look-up before the card: the owner approves the thing that would really go."""

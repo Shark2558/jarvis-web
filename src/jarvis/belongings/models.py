@@ -21,7 +21,14 @@ THING_ID = re.compile(r"t_[0-9a-f]{12}")
 HOLDER_ID = re.compile(r"h_[0-9a-f]{8}")
 
 Origin = Literal["typed", "voice", "outside"]
-ORIGINS: tuple[str, ...] = ("typed", "voice", "outside")
+ORIGINS: tuple[str, ...] = ("typed", "voice", "outside")  # most trusted first
+
+
+def worse_origin(a: str, b: str) -> str:
+    """The less trusted of two origins (R2 review S3): a later put never vouches for text that
+    came from someone else (an unknown origin counts as the worst)."""
+    rank = {o: i for i, o in enumerate(ORIGINS)}
+    return a if rank.get(a, len(ORIGINS)) >= rank.get(b, len(ORIGINS)) else b
 
 
 @dataclass(frozen=True)
@@ -172,4 +179,5 @@ __all__ = [
     "Origin",
     "State",
     "Thing",
+    "worse_origin",
 ]

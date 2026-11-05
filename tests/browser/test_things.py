@@ -212,6 +212,41 @@ def test_move_says_where_it_was_and_history_lists_earlier_places(
         c.close()
 
 
+def test_an_outside_thing_says_so_and_a_move_adopts_it_only_when_ticked(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R2 review S3: a move keeps the origin; "This is mine" (adopt) is the owner's own tick."""
+    gold = {**PASSPORT, "id": "t_cccccccccccc", "name": "Gold", "origin": "outside"}
+    c, fake = _open(browser, server_url, token, things=[{**PASSPORT, "origin": "typed"}, gold])
+    try:
+        row = c.page.locator('.trow[data-id="t_cccccccccccc"]')
+        row.wait_for()
+        assert "from someone else's words" in str(row.locator(".tmeta").text_content())
+        typed = c.page.locator('.trow[data-id="t_0123456789ab"]')
+        assert "someone else" not in str(typed.text_content())
+        typed.get_by_role("button", name="Move “Passport”").click()
+        assert typed.locator(".tmove input[type=checkbox]").count() == 0  # nothing to adopt
+        typed.locator(".tmove button", has_text="Cancel").click()
+        row.get_by_role("button", name="Move “Gold”").click()
+        mine = row.get_by_role("checkbox", name="This is mine: I checked the name and note")
+        assert mine.is_checked() is False
+        row.locator(".tmove input:not([type=checkbox])").fill("the locker")
+        row.locator(".tmove button[type=submit]").click()
+        c.page.locator("#thingsNote", has_text="It was in").wait_for()
+        assert fake.sent("PATCH")[-1]["body"] == {"place": "the locker"}  # not adopted
+        row = c.page.locator('.trow[data-id="t_cccccccccccc"]')
+        row.get_by_role("button", name="Move “Gold”").click()
+        row.get_by_role("checkbox", name="This is mine: I checked the name and note").check()
+        row.locator(".tmove button[type=submit]").click()
+        row.locator(".tmove").wait_for(state="detached")  # saved: the list was drawn again
+        assert len(fake.sent("PATCH")) == 2
+        body = fake.sent("PATCH")[-1]["body"]
+        assert body == {"place": "the blue file, top shelf", "adopt": True}
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
 def test_delete_asks_first_traps_focus_and_undo_brings_it_back(
     browser: Any, server_url: str, token: str
 ) -> None:

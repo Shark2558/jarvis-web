@@ -10,17 +10,24 @@ app builds it (Activity recorder, Telegram rules), and a Brain with a private br
 brain (scripted mock models). Seeded with marked needles: a full driving-licence number inside a
 vault PDF, a marker inside the PDF's bytes, a place where something is kept, a note.
 
-20 scripted conversations: typed (7, one the positive control: the place IS in that model request,
-so the scan can see), voice (4), Telegram with the switch off (4), a training brain on a session
-that read the place (2), offline (1: no R2 tool is ever offered), a brief day (2: the reminder
-alert and the Documents section). Then the scans: every Firestore document, every log record,
-every audit entry, every Activity row and every stored conversation turn.
+22 scripted conversations: typed (7, one the positive control: the place IS in that model request,
+so the scan can see), voice (5, one a spoken note that waits as a card), Telegram with the switch
+off (4), a training brain on a session that read the place (2), offline (1: no R2 tool is ever
+offered), a brief day (3: the reminder alert, the Documents section and the brief's Gmail copy).
+Then the scans: every Firestore document, every log record, every audit entry, every Activity row
+and every stored conversation turn.
 
 Asserted: the full number never appears in any document, log record, audit entry or model request;
 the file bytes never in a model request or any document (the chunks are encrypted); no needle in a
-training-brain request, a Telegram turn with the switch off, an Activity row, an alert or the brief
-section. Negative control (must make the suite FAIL): `Tool.activity_words` ignored (the cards'
-own text reaches Activity).
+training-brain request, a Telegram turn with the switch off, an Activity row, an alert, the brief
+section or its Gmail copy. Negative control (must make the suite FAIL): `Tool.activity_words`
+ignored (the cards' own text reaches Activity).
+
+Documented limit (plan D13, review S4): the gateway keeps waiting approval cards the way the app
+does (`DocApprovalStore`, Firestore documents under `jarvis_approvals/`), and a card keeps its
+arguments as written, not JARVIS-encrypted, until the owner decides (he must see what he
+approves). Those card documents are the ONLY ones allowed to hold a note's or a place's words
+(never the full number or the file bytes); every other document stays needle-free.
 """
 
 from __future__ import annotations
@@ -48,6 +55,8 @@ from jarvis.activity.store import ActivityStore  # noqa: E402
 from jarvis.alerts import AlertKind, AlertResult  # noqa: E402
 from jarvis.belongings.service import BelongingsService  # noqa: E402
 from jarvis.belongings.store import BelongingsStore  # noqa: E402
+from jarvis.brief.models import BriefData  # noqa: E402
+from jarvis.brief.render import inbox_text, render_text  # noqa: E402
 from jarvis.brief.vault_due import VaultDueBrief  # noqa: E402
 from jarvis.config import LLMBackend, get_settings  # noqa: E402
 from jarvis.core.brain import Brain  # noqa: E402
@@ -64,6 +73,7 @@ from jarvis.llm.fallback import OFFLINE_TOOLS  # noqa: E402
 from jarvis.llm.mock_provider import MockProvider  # noqa: E402
 from jarvis.logging import configure_logging  # noqa: E402
 from jarvis.memory.inmemory import InMemorySessionStore  # noqa: E402
+from jarvis.storage.approvals import DocApprovalStore  # noqa: E402
 from jarvis.storage.docs import MemoryDocs  # noqa: E402
 from jarvis.telegram.rules import wrap_rules  # noqa: E402
 from jarvis.telegram.store import TelegramStore  # noqa: E402
@@ -81,7 +91,11 @@ FILE_MARK = "FILEBYTES-NEEDLE-7a91c3"  # inside the PDF's bytes (a comment), nev
 PLACE = "behind the teak almirah zq7"
 PLACE_2 = "in the steel trunk qx4"
 NOTE = "the plumber Ravi zq-note-55 comes on Tuesdays"
-NEEDLES = (FULL_ID, FILE_MARK, PLACE, PLACE_2, NOTE)
+VOICE_NOTE = "the gas man Suresh zq-voice-77 reads the meter"  # a spoken note: a waiting card
+NEEDLES = (FULL_ID, FILE_MARK, PLACE, PLACE_2, NOTE, VOICE_NOTE)
+# Review S4 / plan D13 (documented limit): a waiting card keeps its arguments as written (not
+# JARVIS-encrypted) until the owner decides, so these documents alone may hold a note's words.
+APPROVALS = "jarvis_approvals/"
 R2_TOOLS = (
     "vault_list",
     "vault_expiring",
@@ -185,7 +199,15 @@ async def build_world(*, ignore_activity_words: bool = False) -> World:
     assert vault is not None
     notes = NotesService(NotesStore(docs, ring), web=None, undo=undo)
     things = BelongingsService(BelongingsStore(docs, ring), undo)
-    gw = build_gateway(s, undo=undo, docs=docs, vault=vault.service, notes=notes, belongings=things)
+    gw = build_gateway(
+        s,
+        approvals=DocApprovalStore(docs),  # review S4: cards in Firestore, as the app keeps them
+        undo=undo,
+        docs=docs,
+        vault=vault.service,
+        notes=notes,
+        belongings=things,
+    )
     if ignore_activity_words:  # the negative control
         for name in R2_TOOLS:
             tool = gw.registry.get(name)
@@ -358,6 +380,28 @@ for _name, _tool, _args in (
     _voice(_name, _tool, _args)
 
 
+def approval_cards(w: World) -> dict[str, Any]:
+    """The waiting approval cards, as Firestore documents (DocApprovalStore, the app's store)."""
+    return {k: v for k, v in w.docs._data.items() if k.startswith(APPROVALS)}  # type: ignore[attr-defined]
+
+
+@case("voice_kb_add_note_card")
+async def voice_note_card(w: World) -> list[str]:
+    """Review S4: a spoken note waits as a card (plan D10), and its words sit in that card's
+    document until the owner decides (D13). The scan below allows exactly those documents."""
+    seen, _ = await _turn(
+        w,
+        "take a note",
+        [{"name": "kb_add_note", "arguments": {"text": VOICE_NOTE}}],
+        "That waits for your tap.",
+        channel="voice",
+    )
+    out = _absent("a spoken turn's model request", seen, (FULL_ID, FILE_MARK))
+    if not any(VOICE_NOTE in json.dumps(v, default=str) for v in approval_cards(w).values()):
+        out.append("the spoken note did not wait as a stored card: the approvals case is blind")
+    return out
+
+
 def _telegram(name: str, tool: str, args: dict[str, Any]) -> None:
     @case(f"telegram_off_{name}")
     async def run(w: World) -> list[str]:
@@ -424,12 +468,36 @@ async def brief_section(w: World) -> list[str]:
     return _absent("the brief's Documents section", sec.model_dump_json(), (*NEEDLES, "8765"))
 
 
+@case("brief_day_inbox_copy")
+async def brief_inbox_copy(w: World) -> list[str]:
+    """Review S4: the brief's Gmail copy says only how many documents need attention while the
+    owner's inbox_copy switch is off (D5); the console's brief has the lines (the control)."""
+    zone = ZoneInfo("Asia/Kolkata")
+    day = NOW.astimezone(zone).date()
+    sec = await VaultDueBrief(w.vault.service).section(UID, zone, day)
+    if sec is None or not sec.items or sec.inbox_copy:
+        return ["the Documents section is empty or its inbox copy is on"]
+    data = BriefData(date=day.isoformat(), tz="Asia/Kolkata", vault=sec)
+    full = render_text(data)
+    copy = inbox_text(full, data)
+    label = sec.items[0].type_label
+    out = [] if label in full else ["the console brief has no document line: the case is blind"]
+    if label in copy or "need" not in copy:
+        out.append("the inbox copy carries the document lines with inbox_copy off")
+    return out + _absent("the brief's inbox copy", copy, (*NEEDLES, "8765"))
+
+
 # ---- the scans (after every conversation) -------------------------------------------------------
 
 
 async def scan_documents(w: World) -> list[str]:
-    blob = json.dumps(w.docs._data, default=str)  # type: ignore[attr-defined]
-    return _absent("a Firestore document", blob, NEEDLES)
+    """Every Firestore document is needle-free, except the waiting approval cards (D13, the
+    documented limit): those may hold a note's words, never the full number or the file bytes."""
+    data = w.docs._data  # type: ignore[attr-defined]
+    cards = approval_cards(w)
+    rest = {k: v for k, v in data.items() if k not in cards}
+    out = _absent("a Firestore document", json.dumps(rest, default=str), NEEDLES)
+    return out + _absent("an approval card", json.dumps(cards, default=str), (FULL_ID, FILE_MARK))
 
 
 async def scan_logs(w: World) -> list[str]:

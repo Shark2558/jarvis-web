@@ -320,6 +320,15 @@ async def test_approvals_waiting_can_be_declined() -> None:
     assert (await src.describe(UID)).count == 0 and (await src.describe(OTHER)).count == 1
 
 
+async def test_approvals_say_a_waiting_card_is_kept_as_written() -> None:
+    """R2 review S4 / plan D13: the documented limit is said where the owner looks for it."""
+    v = await approvals_source(ConfirmationGate()).describe(UID)
+    words = f"{v.what} {v.where} {v.note}"
+    assert v.encrypted_by_jarvis is False
+    assert "as written" in words and "not encrypted by JARVIS" in words
+    assert "until you decide" in words and "Declining does nothing" in words
+
+
 async def test_passkeys_are_listed_but_managed_elsewhere() -> None:
     from test_permissions_service import Rig as PermRig
 

@@ -32,8 +32,9 @@ name, the warning for a number read from an email, the 2,000 character limit, Ne
 Unicode kept and the link built exactly; nothing is ever sent; + its negative control), R1's
 telegram, activity, offline, packages, groceries, family and mail-aloud suites, and R2's vault,
 DigiLocker import, things, notes, privacy dashboard and the cross-cutting r2_needles scan (a full
-ID number, file bytes, a place and a note never reach a document, log, audit entry, Activity row,
-alert, training brain or a Telegram turn with the switch off). The exit status is the gated
+ID number, file bytes, a place and a note never reach a document (a waiting approval card aside,
+plan D13), log, audit entry, Activity row, alert, training brain or a Telegram turn with the
+switch off). The exit status is the gated
 suites: phase0 --mock is a smoke run and never fails CI.
 """
 

@@ -566,12 +566,15 @@ def approvals_source(gate: ConfirmationGate) -> CallbackSource:
             "approvals",
             SEC_ACTIVITY,
             "Approvals waiting",
-            "Actions JARVIS asked you to approve and that are still waiting.",
+            "Actions JARVIS asked you to approve and that are still waiting, with what each "
+            "would do (a note's words, a place) as written.",
             "cards",
             "Until you decide, or 10 minutes.",
-            "Firestore",
+            "Firestore, not encrypted by JARVIS",
             delete="simple",
-            note="Declining does nothing to your accounts.",
+            # R2 review S4 / plan D13: you must see what you approve, so a card is kept as written
+            note="A waiting card is kept as written, not encrypted by JARVIS, until you decide. "
+            "Declining does nothing to your accounts.",
         ),
         look,
         export,

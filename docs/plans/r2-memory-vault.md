@@ -292,7 +292,9 @@ stored in clear for 7 days):
 - "Searched your notes", "Opened a note", "Saved a note", "Saved a link", "Changed a note", "Deleted a note"
 - "Looked up where something is kept", "Noted where something is kept", "Forgot where something is kept"
 - Approval cards still show the real content (he must see what he approves). A waiting card's arguments sit in
-`approvals` until he decides.
+`approvals` until he decides, **as written, not JARVIS-encrypted** (a spoken note, a place from a tainted round). This
+is a documented limit (integrated review S4): the Privacy panel's "Approvals waiting" says so, and `evals/r2_needles`
+stores cards the way the app does (`DocApprovalStore`) and allows a note's words in exactly those card documents.
 - **Honest limit**: what a tool returns inside a conversation (a note's text, where the passport is, vault dates) is
 kept with that conversation's turns. Those are in Firestore under Google's encryption, not JARVIS's, until the
 conversation is deleted. The Privacy panel says so under Conversations. Encrypting turns is an open question.
@@ -952,8 +954,9 @@ sandbox): masks all but the last 4 digits. Not verified at source.
 - Console: the four panels sit behind More on phones (15 tabs); Memory's footer and Approvals -> Permissions open the
   Privacy panel (`data-goto`); the deck no longer closes a panel on Esc pressed inside an open dialog in it. No
   `console.js` reply hook was needed: the R2 panels already listen for `jarvis:reply`.
-- `evals/r2_needles`: 20 conversations + 5 scans; the offline case checks `OFFLINE_TOOLS` only, and the brief's AI input
-  is covered by `evals/vault` (not repeated).
+- `evals/r2_needles`: 22 conversations + 5 scans (integrated review S4 added a spoken note that waits as a card, and
+  the brief's Gmail copy); approval cards are stored as the app stores them and are the one allowed exception (D13);
+  the offline case checks `OFFLINE_TOOLS` only, and the brief's AI input is covered by `evals/vault` (not repeated).
 
 ## Risks and open questions
 - **One root key.** `jarvis-token-key` now guards tokens and the vault. If it is lost or regenerated, the vault can't

@@ -412,7 +412,8 @@ VITALS_RULE = """
 Vitals (standing rule)
 - JARVIS keeps a Vitals board of your keys, quotas and bills: ask what is running low, when a key
   expires, or tell it a key's limit and expiry (never the key itself). vitals_show reads the
-  board; vitals_set_key records a label, limit and expiry only. If a message holds what looks like
+  board; vitals_set_key records a label, limit and expiry only; vitals_delete_key stops tracking
+  a key (the record only, never the key). If a message holds what looks like
   a key or token, do not repeat it and do not store it: say the panel takes limits and dates only.
 """
 
@@ -421,7 +422,7 @@ Systems check (standing rule)
 - "Run a systems check", "are all systems OK?" -> systems_check. I can run a systems check on all
   my connections (brain, Google, Telegram, the home bridge, the document store, Redis, web search)
   and tell you by voice what is fine or broken -- even with the AI switched off. Say the result in
-  its own words; it makes no model call and spends nothing.
+  its own words; the check makes no model call (speaking it aloud is a metered voice use).
 """
 
 CONNECTORS_RULE = """

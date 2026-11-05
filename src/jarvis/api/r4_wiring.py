@@ -30,7 +30,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, tzinfo
-from typing import Any
+from typing import Any, TypeVar
 
 from fastapi import Depends, FastAPI, HTTPException
 
@@ -64,6 +64,7 @@ from jarvis.vitals.store import VitalsStore
 from jarvis.voice.catalogue import TYPES, PriceList
 
 log = get_logger(__name__)
+T = TypeVar("T")
 
 R4_STATE = (
     "brain_mode",
@@ -208,7 +209,7 @@ class LiveHealth:
     async def check(self, uid: str, *, force: bool = False) -> HealthReport:
         return await self._svc().check(uid, force=force)
 
-    async def speak(self, uid: str) -> Any:
+    async def speak(self, uid: str) -> Any | None:
         return await self._svc().speak(uid)
 
 
@@ -318,7 +319,7 @@ def r4_privacy_sources(app: FastAPI, s: Settings, docs: Docs) -> tuple[Any, ...]
     return tuple(out)
 
 
-def _part(what: str, build: Callable[[], Any]) -> Any:
+def _part(what: str, build: Callable[[], T]) -> T | None:
     """One part, or None: a part that fails to build is logged by class name (R3 review M9) and
     the rest of JARVIS keeps working."""
     try:
@@ -400,7 +401,7 @@ def install_r4_routes(app: FastAPI) -> None:
     app.include_router(vitals_router)
     app.include_router(
         health_router(
-            LiveHealth(app),  # type: ignore[arg-type]  # the same three methods, found live
+            LiveHealth(app),  # the same three methods, found live
             user=current_user,
             dependencies=[Depends(require_auth)],
         )

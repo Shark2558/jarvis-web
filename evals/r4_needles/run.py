@@ -335,7 +335,7 @@ async def f06_cold_start_makes_no_model_call(w: R3App) -> list[str]:
     return f
 
 
-async def f07_flapping_alerts_never_starve_a_burglar_ring(w: R3App) -> list[str]:
+async def f07_flapping_never_starves_a_burglar(w: R3App) -> list[str]:
     f: list[str] = []
     notify = w.state.notify
     for i in range(50):
@@ -361,7 +361,7 @@ FLOWS: list[tuple[str, Flow]] = [
     ("f04_pasted_key_never_in_any_output", f04_a_pasted_key_never_appears_in_any_output),
     ("f05_child_never_named", f05_a_child_is_never_named),
     ("f06_cold_start_with_persisted_none_makes_no_model_call", f06_cold_start_makes_no_model_call),
-    ("f07_flapping_alerts_never_starve_a_burglar_ring", f07_flapping_alerts_never_starve_a_burglar_ring),
+    ("f07_flapping_alerts_never_starve_a_burglar_ring", f07_flapping_never_starves_a_burglar),
 ]
 
 

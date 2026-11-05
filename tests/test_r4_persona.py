@@ -40,7 +40,7 @@ def test_vitals_takes_limits_and_dates_never_the_key() -> None:
     r = _flat(p.VITALS_RULE)
     assert "Vitals board of your keys, quotas and bills" in r
     assert "tell it a key's limit and expiry (never the key itself)" in r
-    assert "vitals_show" in r and "vitals_set_key" in r
+    assert "vitals_show" in r and "vitals_set_key" in r and "vitals_delete_key" in r
     assert "do not repeat it and do not store it" in r
 
 
@@ -48,7 +48,7 @@ def test_systems_check_works_with_the_ai_switched_off() -> None:
     r = _flat(p.SYSTEMS_RULE)
     assert "systems_check" in r
     assert "even with the AI switched off" in r
-    assert "makes no model call and spends nothing" in r
+    assert "makes no model call" in r and "spends nothing" not in r  # TTS is metered
     for system in ("brain", "Google", "Telegram", "home bridge", "document store", "Redis", "web"):
         assert system in r, system
 

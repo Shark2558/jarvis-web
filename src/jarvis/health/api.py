@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import JSONResponse
 
 from jarvis.api.ratelimit import RateLimiter
-from jarvis.health.service import HealthService
+from jarvis.health.models import HealthReport
 from jarvis.health.tools import view
 from jarvis.voice.ports import VoiceError, VoiceUnavailable
 
@@ -32,8 +32,18 @@ def _empty() -> dict[str, Any]:
     return {"overall": None, "spoken": "", "checked_at": None, "systems": []}
 
 
+class HealthLike(Protocol):
+    """What the routes need of a health service (`HealthService`, or the app's live stand-in)."""
+
+    async def last(self, uid: str) -> HealthReport | None: ...
+
+    async def check(self, uid: str, *, force: bool = False) -> HealthReport: ...
+
+    async def speak(self, uid: str) -> Any | None: ...
+
+
 def health_router(
-    svc: HealthService,
+    svc: HealthLike,
     *,
     user: Callable[..., str],
     dependencies: Sequence[Any] = (),

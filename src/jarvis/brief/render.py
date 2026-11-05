@@ -26,6 +26,7 @@ from jarvis.brief.models import (
     InboxItem,
     SectionState,
     TodoItem,
+    VaultDueItem,
 )
 from jarvis.tools.addresses import plain_address
 from jarvis.tools.card import quoted, strip_invisible
@@ -274,6 +275,47 @@ def _family(data: BriefData) -> list[str]:
     return lines
 
 
+def _vault_line(it: VaultDueItem) -> str:
+    who = "you" if it.whose == "you" else "family"
+    if it.days_left < 0:
+        n = -it.days_left
+        when = f"expired {n} day{'' if n == 1 else 's'} ago"
+    elif it.days_left == 0:
+        when = "expires today"
+    else:
+        on = date.fromisoformat(it.expires_on).strftime("%d %b %Y")
+        when = f"expires {on} (in {it.days_left} day{'' if it.days_left == 1 else 's'})"
+    return f"  {it.type_label} ({who}) \u00b7 {when}"
+
+
+def _vault(data: BriefData) -> list[str]:
+    """R2 D5: vault documents due; JARVIS's own template over the owner's own data."""
+    box = data.vault
+    if box is None:
+        return []
+    head = "DOCUMENTS"
+    if (note := _status_line(box.state, "vault documents")) is not None:
+        return [head, note]
+    lines = [f"{head} \u00b7 {box.total} need{'s' if box.total == 1 else ''} attention"]
+    lines.extend(_vault_line(it) for it in box.items)
+    if box.total > len(box.items):
+        lines.append(f"  \u2026 and {box.total - len(box.items)} more in your vault.")
+    return lines
+
+
+def inbox_text(text: str, data: BriefData | None) -> str:
+    """The brief as put in the Gmail inbox: the Documents block says only how many need attention
+    unless the owner switched on `inbox_copy` (R2 D5)."""
+    box = data.vault if data is not None else None
+    if box is None or box.inbox_copy or box.state != "ok":
+        return text
+    n = box.total
+    noun = "document in your vault needs" if n == 1 else "documents in your vault need"
+    short = f"DOCUMENTS\n  {n} {noun} attention - open JARVIS."
+    blocks = [short if b.startswith("DOCUMENTS") else b for b in text.split("\n\n")]
+    return "\n\n".join(blocks)
+
+
 def _jarvis(data: BriefData) -> list[str]:
     if data.sections_status.jarvis != "ok":
         return ["JARVIS", "  Approvals could not be checked just now."]
@@ -303,6 +345,7 @@ def render_text(data: BriefData, ai: AIBlock | None = None, ai_note: str | None 
         _todo(data),
         _deliveries(data),
         _family(data),
+        _vault(data),
         _jarvis(data),
         _ai(ai, ai_note),
     ]
@@ -316,6 +359,7 @@ __all__ = [
     "SCHEME_PATTERNS",
     "defang",
     "event_line",
+    "inbox_text",
     "long_date",
     "normalise",
     "render_text",

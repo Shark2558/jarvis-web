@@ -148,11 +148,23 @@ class DeletedStore:
         if item_ids:
             await self._d.write([Delete(self._path(uid, i)) for i in item_ids])
 
-    async def expired(self, uid: str, now: datetime) -> list[str]:
-        """Ids of this owner's items past their expiry (oldest first, one batch)."""
+    async def _expired_rows(self, uid: str, now: datetime, *, restored: bool) -> list[str]:
         q = Query(self._col(uid), order_by="expires_at", limit=SWEEP_BATCH)
         cut = _iso(now)
-        return [i for i, d in await self._d.query(q) if str(d.get("expires_at", "")) <= cut]
+        return [
+            i
+            for i, d in await self._d.query(q)
+            if str(d.get("expires_at", "")) <= cut and (d.get("restored") is True) is restored
+        ]
+
+    async def expired(self, uid: str, now: datetime) -> list[str]:
+        """Ids of this owner's items past their expiry (oldest first, one batch). A restored
+        entry is never listed: the item it stood for is live again, so nothing may purge it."""
+        return await self._expired_rows(uid, now, restored=False)
+
+    async def expired_restored(self, uid: str, now: datetime) -> list[str]:
+        """Expired entries whose item was restored: spent, to be dropped without any purge."""
+        return await self._expired_rows(uid, now, restored=True)
 
     async def claim(
         self, uid: str, item_id: str, now: datetime

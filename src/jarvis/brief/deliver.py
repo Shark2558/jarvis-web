@@ -19,7 +19,7 @@ from email.policy import SMTP
 from email.utils import format_datetime, make_msgid
 
 from jarvis.brief.models import BriefRecord, InboxState
-from jarvis.brief.render import subject_line
+from jarvis.brief.render import inbox_text, subject_line
 from jarvis.brief.store import BriefStore
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleConnector, can_insert
@@ -109,7 +109,10 @@ class InboxDelivery:
             return False
         try:
             raw = build_brief_message(
-                owner=owner, subject=subject_line(taken.data), body=taken.text, now=now
+                owner=owner,
+                subject=subject_line(taken.data),
+                body=inbox_text(taken.text, taken.data),
+                now=now,
             )
             mid = await insert_message(self._google, uid, raw)
         except Exception as exc:  # noqa: BLE001 — recorded, never retried

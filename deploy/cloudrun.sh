@@ -421,6 +421,16 @@ IDX_OUT="$(gcloud firestore indexes composite create --database='(default)' --co
     *) echo "  Note: the conversation-list index could not be created yet (JARVIS works without it):"
        printf '  %s\n' "$IDX_OUT" | tail -2 ;;
   esac
+# R2 D1: the vault's, notes' and things' encrypted blobs are never searched, so keep them out of the
+# single-field indexes (saves free storage). NON-FATAL: a failure changes nothing else.
+VAULT_INDEX_FAILED=no
+for g in vault_chunks jarvis_vault jarvis_kb_shards jarvis_belongings jarvis_belongings_history; do
+  gcloud firestore indexes fields update blob --collection-group="$g" --database='(default)' \
+    --disable-indexes --async --quiet >/dev/null 2>&1 || VAULT_INDEX_FAILED=yes
+done
+if [ "$VAULT_INDEX_FAILED" = yes ]; then
+  echo "  Note: couldn't exempt vault fields from indexing (uses a little more free storage; nothing else changes)."
+fi
 
 say "5/8  Permissions: JARVIS's own account reads secrets + memory; the build account only builds"
 bind() { # member role  (a brand-new service account can take a few seconds to be visible)
@@ -718,6 +728,12 @@ copy the token, then run:  bash deploy/cloudrun.sh --telegram
 (the token is kept in secret jarvis-telegram-bot-token). Until then Integrations -> Telegram explains this.
 MSG
 fi
+cat <<'MSG'
+
+VAULT: on - files encrypted in Firestore (Mumbai) with jarvis-token-key. Keep that secret: without it
+the vault can't be opened. Open the console -> Vault; documents open with your passkey, or with a fresh Google
+sign-in if you have no passkey yet.
+MSG
 if [ "$DRIVE_STATE" = on ]; then
 cat <<MSG
 

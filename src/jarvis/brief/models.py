@@ -67,6 +67,8 @@ class BriefSettings(Frozen):
     # R1 D13 / D15: the deterministic Deliveries and Family today sections (never sent to the AI)
     deliveries: bool = True
     family: bool = True
+    # R2 D5: the deterministic Documents section (vault documents due), never sent to the AI
+    vault: bool = True
 
     @field_validator("time")
     @classmethod
@@ -181,6 +183,25 @@ class FamilySection(Frozen):
     state: SectionState = "ok"
 
 
+class VaultDueItem(Frozen):
+    """One vault document that is due: the type label, whose, the date. Never a name or last 4."""
+
+    type_label: str
+    whose: Literal["you", "family"] = "you"
+    expires_on: str = Field(description="YYYY-MM-DD")
+    days_left: int
+
+
+class VaultDueSection(Frozen):
+    """Vault documents expiring within 90 days or expired in the last 30 (R2 D5). Deterministic,
+    no AI. `inbox_copy`: the Gmail copy may carry the details (else it says only how many)."""
+
+    total: int = Field(default=0, description="How many are due (items holds <= 5)")
+    items: tuple[VaultDueItem, ...] = ()
+    state: SectionState = "ok"
+    inbox_copy: bool = False
+
+
 class SectionsStatus(Frozen):
     calendar: SectionState = "ok"
     inbox: SectionState = "ok"
@@ -189,6 +210,7 @@ class SectionsStatus(Frozen):
     # R1: older stored records lack these two, so they default to "ok"
     deliveries: SectionState = "ok"
     family: SectionState = "ok"
+    vault: SectionState = "ok"
 
 
 class BriefData(Frozen):
@@ -202,6 +224,8 @@ class BriefData(Frozen):
     # R1: None = not read (switched off in the brief settings, no members, or an older brief)
     deliveries: DeliveriesSection | None = None
     family: FamilySection | None = None
+    # R2: None = nothing due, switched off, or an older brief
+    vault: VaultDueSection | None = None
     sections_status: SectionsStatus = SectionsStatus()
 
 
@@ -283,6 +307,7 @@ class SettingsView(Frozen):
     ai_todo_consent: bool = False
     deliveries: bool = True
     family: bool = True
+    vault: bool = True
 
 
 class TodayView(Frozen):
@@ -315,6 +340,7 @@ class SettingsPatch(BaseModel):
     inbox_delivery: bool | None = None
     deliveries: bool | None = None
     family: bool | None = None
+    vault: bool | None = None
     confirm_spend: bool = False
     confirm_inbox: bool = False
 
@@ -359,6 +385,8 @@ __all__ = [
     "TodoItem",
     "TodoSection",
     "TodoState",
+    "VaultDueItem",
+    "VaultDueSection",
     "Trigger",
     "parse_brief_time",
 ]

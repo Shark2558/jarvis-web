@@ -200,7 +200,7 @@ class UndoBin:
     async def purge(self, uid: str, item_id: str) -> bool:
         """The owner's "Remove now": False when there is no such item of theirs."""
         item = await self.store.get(uid, item_id)
-        if item is None:
+        if item is None or item.restored:  # a restored item is live again: nothing to purge
             return False
         if not await self._purged(uid, item):
             raise PurgeFailed(MSG_PURGE_FAILED)
@@ -224,7 +224,7 @@ class UndoBin:
         ready: list[str] = []
         for item_id in ids:
             item = await self.store.get(uid, item_id)
-            if item is None or await self._purged(uid, item):
+            if item is None or item.restored or await self._purged(uid, item):
                 ready.append(item_id)
         return ready
 
@@ -290,6 +290,9 @@ class UndoBin:
         gone = 0
         for uid in owners:
             try:
+                spent = await self.store.expired_restored(uid, self._clock())
+                await self.store.remove(uid, spent)  # restored: dropped, never purged
+                gone += len(spent)
                 ids = await self.store.expired(uid, self._clock())
                 if self._purgers:
                     ids = await self._purgeable(uid, ids)

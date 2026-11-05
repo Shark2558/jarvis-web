@@ -28,6 +28,11 @@ MAX_INTRUDER_PER_DAY = 80
 HAZARD_GAP = timedelta(seconds=30)
 FLAP_GAP = timedelta(minutes=10)
 FLAP_KINDS = frozenset({"home_offline", "home_online", "home_arm_failed"})
+# Health and vitals rings are "urgent" by default but must never crowd out a burglar ring (I2 F2):
+# one per subject per 30 minutes and 6 an hour in all, counted apart from the burglar window.
+SOFT_URGENT_KINDS = frozenset({"health_fault", "vitals_critical"})
+SOFT_URGENT_GAP = timedelta(minutes=30)
+MAX_SOFT_URGENT_PER_HOUR = 6
 SUMMARY_EVERY = timedelta(minutes=10)
 PACKAGE_GAP = timedelta(minutes=10)
 GREETING_GAP = timedelta(minutes=30)
@@ -46,6 +51,8 @@ class Storm:
         self._urgent: dict[str, deque[datetime]] = {}  # burglar rings only, last 24 h
         self._hazard: dict[tuple[str, str], datetime] = {}
         self._flap: dict[tuple[str, str], datetime] = {}
+        self._soft: dict[tuple[str, str, str], datetime] = {}  # (uid, kind, subject) gap stamps
+        self._soft_rings: dict[str, deque[datetime]] = {}  # uid -> health/vitals rings, last hour
         self._pending: dict[str, tuple[int, datetime]] = {}  # uid -> (suppressed, first at)
         self._package: dict[str, datetime] = {}
         self._greeting: dict[tuple[str, str], datetime] = {}
@@ -64,6 +71,9 @@ class Storm:
         """A burglar ring or a laptop/arming alert admitted at `now` reached no channel: give its
         slot back, so the retry (the bridge's, or the watchdog's next run) is not swallowed as a
         storm or a flap (integrated review S3). A later admission is never undone."""
+        if signal.kind in SOFT_URGENT_KINDS:
+            self._rollback_soft(uid, signal, now)
+            return
         if signal.kind == "home_intruder":
             tag, key, table = "intruder", (uid, signal.camera or "-"), self._intruder
         elif signal.kind in FLAP_KINDS:
@@ -80,6 +90,30 @@ class Storm:
         window = self._urgent.get(uid) if signal.kind == "home_intruder" else None
         if window is not None and now in window:
             window.remove(now)
+
+    def _rollback_soft(self, uid: str, signal: Signal, now: datetime) -> None:
+        key = (uid, signal.kind, signal.subject or "-")
+        if self._soft.get(key) == now:
+            del self._soft[key]
+        window = self._soft_rings.get(uid)
+        if window is not None and now in window:
+            window.remove(now)
+
+    def _soft_ok(self, uid: str, signal: Signal, now: datetime) -> Verdict:
+        """Health / vitals urgent rings: a gap per subject, then an hourly cap of their own."""
+        key = (uid, signal.kind, signal.subject or "-")
+        last = self._soft.get(key)
+        if last is not None and now - last < SOFT_URGENT_GAP:
+            return Verdict(False, "flap_gap")
+        window = self._soft_rings.setdefault(uid, deque())
+        while window and now - window[0] >= timedelta(hours=1):
+            window.popleft()
+        if len(window) >= MAX_SOFT_URGENT_PER_HOUR:
+            return Verdict(False, "soft_cap")
+        window.append(now)
+        self._soft[key] = now
+        self._prune(self._soft, now, SOFT_URGENT_GAP)
+        return Verdict(True)
 
     @staticmethod
     def _prune(table: dict, now: datetime, keep: timedelta) -> None:  # type: ignore[type-arg]
@@ -132,6 +166,8 @@ class Storm:
             if kind == "home_hazard" and not self._hazard_ok(uid, signal, now):
                 return Verdict(False, "duplicate")
             return Verdict(True)
+        if kind in SOFT_URGENT_KINDS:
+            return self._soft_ok(uid, signal, now)
         if kind in FLAP_KINDS:
             flap = (uid, kind)
             last_f = self._flap.get(flap)

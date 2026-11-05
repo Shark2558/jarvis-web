@@ -179,13 +179,13 @@ async def test_a_flapping_probe_never_alerts() -> None:
     assert notes.sent == []
 
 
-async def test_fault_to_ok_raises_health_recovered_after_two_good_checks() -> None:
+async def test_fault_to_ok_raises_health_recovered_after_three_good_checks() -> None:
     flip, notes = Flip(), Notes()
     flip.status = "down"
     svc = service(flip.probe, notifier=notes)
     await runs(svc, 2)
     flip.status = "ok"
-    await runs(svc, 1)
+    await runs(svc, 2)
     assert notes.kinds() == ["health_fault"]
     await runs(svc, 1)
     assert notes.kinds() == ["health_fault", "health_recovered"]

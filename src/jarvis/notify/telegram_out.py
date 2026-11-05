@@ -31,6 +31,7 @@ from jarvis.core.guardrails import ActionRisk
 from jarvis.logging import get_logger
 from jarvis.notify.ports import DEFAULT_URGENCY
 from jarvis.notify.store import NotifyStore
+from jarvis.notify.storm import SOFT_URGENT_KINDS
 from jarvis.telegram.alerts import MAX_PER_DAY, MAX_PER_HOUR, plain
 from jarvis.telegram.client import TelegramClient, TelegramError
 from jarvis.telegram.models import AlertToggles
@@ -146,7 +147,8 @@ class TelegramHomeAlerts:
     async def _allowed(self, uid: str, kind: str) -> bool:
         if kind in NO_CAP_KINDS:
             return True
-        if DEFAULT_URGENCY.get(kind) != "urgent":
+        if DEFAULT_URGENCY.get(kind) != "urgent" or kind in SOFT_URGENT_KINDS:
+            # health / vitals rings use the normal bucket: the urgent one is for burglar / hazard
             try:
                 return await self._store.count_alert(
                     uid, per_hour=MAX_PER_HOUR, per_day=MAX_PER_DAY

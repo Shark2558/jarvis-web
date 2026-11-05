@@ -152,9 +152,9 @@ class VitalsService:
     @staticmethod
     async def _send(uid: str, notifier: Notifier, v: ProviderView) -> bool:
         signal = (
-            Signal(source="system", kind="vitals_critical")
+            Signal(source="system", kind="vitals_critical", subject=v.provider.id)
             if v.status == "red"
-            else Signal(source="system", kind="vitals_warn")
+            else Signal(source="system", kind="vitals_warn", subject=v.provider.id)
         )
         try:
             await notifier.notify(uid, signal, alert_text(v))

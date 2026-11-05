@@ -138,7 +138,8 @@ class HealthService:
         if notifier is None:
             return False
         try:
-            await notifier.notify(uid, Signal(source="system", kind=msg.kind), msg.text)
+            signal = Signal(source="system", kind=msg.kind, subject=",".join(sorted(msg.keys)))
+            await notifier.notify(uid, signal, msg.text)
         except Exception as exc:  # noqa: BLE001 - an alert that cannot go never fails the check
             log.error(
                 "health alert not sent", extra={"kind": msg.kind, "error": type(exc).__name__}

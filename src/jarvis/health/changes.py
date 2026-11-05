@@ -2,7 +2,7 @@
 """What to tell the owner after a check (R4 D6, integrator decisions D-B2 / D-B3). Pure: no I/O.
 
 - A status must HOLD for `DEBOUNCE_CHECKS` consecutive checks before it counts (a single timeout
-  blip never alerts). Until then the owner's last-told status for that integration stands.
+  blip never alerts); a recovery needs `RECOVERY_CHECKS` clear checks in a row. Until then the owner's last-told status for that integration stands.
 - Only `down` rings (`health_fault`). `degraded` goes out as a silent info note
   (`health_degraded`). Getting worse (degraded -> down) rings; getting better (down -> degraded)
   is a note. All faults gone -> `health_recovered`.
@@ -20,6 +20,7 @@ from jarvis.health.models import HealthReport, ProbeResult, Status
 from jarvis.health.report import NOMINAL, compose_line
 
 DEBOUNCE_CHECKS = 2
+RECOVERY_CHECKS = 3  # a flapping probe gives one fault, not a fault / recovered loop
 Streaks = Mapping[str, tuple[Status, int]]
 
 
@@ -49,8 +50,12 @@ def next_streaks(results: tuple[ProbeResult, ...], prior: Streaks) -> dict[str, 
 def _confirmed(
     results: tuple[ProbeResult, ...], streaks: Streaks, alerted: Mapping[str, Status]
 ) -> dict[str, Status]:
+    def needed(r: ProbeResult) -> int:
+        recovering = r.status == "ok" and alerted.get(r.key, "ok") != "ok"
+        return RECOVERY_CHECKS if recovering else DEBOUNCE_CHECKS
+
     return {
-        r.key: r.status if streaks[r.key][1] >= DEBOUNCE_CHECKS else alerted.get(r.key, "ok")
+        r.key: r.status if streaks[r.key][1] >= needed(r) else alerted.get(r.key, "ok")
         for r in results
     }
 
@@ -78,4 +83,4 @@ def plan(report: HealthReport, alerted: Mapping[str, Status], prior: Streaks) ->
     return Plan(streaks=streaks, confirmed=confirmed, messages=tuple(messages))
 
 
-__all__ = ["DEBOUNCE_CHECKS", "Outgoing", "Plan", "next_streaks", "plan"]
+__all__ = ["DEBOUNCE_CHECKS", "RECOVERY_CHECKS", "Outgoing", "Plan", "next_streaks", "plan"]

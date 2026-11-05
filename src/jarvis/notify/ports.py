@@ -89,6 +89,7 @@ class Signal(_Frozen):
     child: StrictBool = False  # set only from faces.ports.Resolved.child: never named
     camera: str | None = Field(default=None, pattern=LABEL_ID)
     text: str | None = Field(default=None, max_length=4000)
+    subject: str | None = Field(default=None, max_length=120)  # what a health/vitals alert is about
 
 
 class Decision(_Frozen):

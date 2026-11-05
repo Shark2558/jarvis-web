@@ -68,6 +68,9 @@ WHY_UNSUPPORTED = "Only PDF, JPEG and PNG files are imported."
 WHY_TOO_BIG = "Over 10 MB, so it wasn't imported."
 WHY_DUPLICATE = "Already in your vault."
 WHY_UNREADABLE = "JARVIS couldn't download it."
+WHY_IMPORT_FAILED = "JARVIS couldn't import it."
+WHY_NOT_YOURS = "Not yours: it isn't owned by your account."
+LIST_ORDER = "createdTime desc"  # newest first, so a new file is never behind 100 old ones
 ERRORS = {
     "gone": "JARVIS can no longer see the import folder (it was un-shared or deleted). "
     "Imports have stopped.",
@@ -78,6 +81,7 @@ ERRORS = {
         "The import folder is now inside a folder JARVIS reads for you. Imports have stopped."
     ),
     "drive": "Google Drive couldn't be reached. JARVIS will try again.",
+    "failed": "The check didn't finish. JARVIS will try again.",
 }
 _REFUSED = {
     "gone": (
@@ -123,6 +127,7 @@ class _Run:
     box: Inbox
     result: CheckResult = field(default_factory=CheckResult)
     downloads: int = 0
+    listing_cut: bool = False  # the folder has more files than one run lists
 
 
 def _version(f: DriveFile) -> str:
@@ -132,6 +137,13 @@ def _version(f: DriveFile) -> str:
         if f.md5
         else f"mod:{f.modified or '-'}:{f.size if f.size is not None else '-'}"
     )
+
+
+def _owned_by(f: DriveFile, email: str) -> bool:
+    """Only files the owner's own account owns are imported: an editor of the folder can drop a
+    file in, but cannot make the owner own it. Shared-drive files (no owners) need the sharer."""
+    mine = email.strip().lower()
+    return mine in f.owners if f.owners else f.sharer == mine
 
 
 def _address(value: str | None) -> str | None:
@@ -286,7 +298,11 @@ class InboxService:
             except (DriveError, RootsUnreadable) as exc:
                 log.warning("inbox check failed", extra={"reason": type(exc).__name__})
                 run.result.stopped = ERRORS["drive"]
-            await self._finish(uid, run)
+            except Exception as exc:  # noqa: BLE001 - never lose the run's record
+                log.error("inbox check broke", extra={"reason": type(exc).__name__})
+                run.result.stopped = ERRORS["failed"]
+            finally:
+                await self._finish(uid, run)
             return run.result
 
     async def _run(self, uid: str, run: _Run) -> None:
@@ -295,7 +311,9 @@ class InboxService:
             run.result.stopped = why
             return
         deadline = self._mono() + RUN_BUDGET_S
-        for f in await self._children(run.box.folder_id):
+        files, run.listing_cut = await self._children(run.box.folder_id)
+        run.result.more = run.listing_cut
+        for f in files:
             seen = run.box.seen.get(f.id)
             if seen is not None and seen.version == _version(f):
                 continue
@@ -318,18 +336,19 @@ class InboxService:
         assert f is not None
         return ERRORS["in_use"] if await self._in_use(uid, f) else None
 
-    async def _children(self, folder_id: str) -> list[DriveFile]:
+    async def _children(self, folder_id: str) -> tuple[list[DriveFile], bool]:
+        """The folder's files, newest first, and whether more remain than were listed."""
         out: list[DriveFile] = []
         token: str | None = None
         for _ in range(LIST_PAGES):
             page = await self.drive.client.children(
-                folder_id, page_token=token, page_size=LIST_PAGE
+                folder_id, page_token=token, page_size=LIST_PAGE, order_by=LIST_ORDER
             )
             out.extend(f for f in page.files if not f.is_folder and not f.is_shortcut)
             token = page.next_token
             if token is None:
                 break
-        return out
+        return out, token is not None
 
     def _skip(self, run: _Run, f: DriveFile, why: str) -> None:
         run.box = run.box.with_seen(f.id, Seen(_version(f), None, why, self._clock().isoformat()))
@@ -340,6 +359,8 @@ class InboxService:
             return self._skip(run, f, WHY_UNSUPPORTED)
         if f.size is not None and f.size > MAX_FILE_BYTES:
             return self._skip(run, f, WHY_TOO_BIG)
+        if not _owned_by(f, run.box.email):
+            return self._skip(run, f, WHY_NOT_YOURS)
         run.downloads += 1
         try:
             data = await self.drive.client.download(f.id)
@@ -347,7 +368,11 @@ class InboxService:
             raise
         except DriveError:  # this file only: not tried again until it changes
             return self._skip(run, f, WHY_UNREADABLE)
-        got = await self.intake.intake(uid, data, source="digilocker", drive_id=f.id)
+        try:
+            got = await self.intake.intake(uid, data, source="digilocker", drive_id=f.id)
+        except Exception as exc:  # noqa: BLE001 - this file only; the others still go in
+            log.warning("inbox intake failed", extra={"reason": type(exc).__name__})
+            return self._skip(run, f, WHY_IMPORT_FAILED)
         self._record(run, f, got)
 
     def _record(self, run: _Run, f: DriveFile, got: IntakeResult) -> None:

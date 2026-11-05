@@ -138,8 +138,8 @@ async def test_remove_keeps_a_copy_and_undo_restores_in_place() -> None:
     t = things()
     r = await t.svc.put(UID, "Passport", "the blue file")
     thing, kept = await t.svc.remove(UID, "my passport")
-    assert thing.id == r.thing.id and kept.kind == "thing" and kept.title == "Thing: Passport"
-    assert kept.snapshot == {"ref": r.thing.id}  # the bin holds an id only, never a place
+    assert thing.id == r.thing.id and kept.kind == "thing" and kept.title == "A thing you noted"
+    assert set(kept.snapshot) == {"ref", "deleted_at"}  # an id and a stamp, never a place
     assert "blue file" not in str(t.docs._data)  # type: ignore[attr-defined]
     assert (await t.svc.where(UID, "passport"))[0].best is None
     out = await t.undo.restore(UID, kept.id)

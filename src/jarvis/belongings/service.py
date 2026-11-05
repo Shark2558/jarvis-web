@@ -44,6 +44,7 @@ from jarvis.belongings.models import (
 )
 from jarvis.belongings.store import BelongingsStore, Change
 from jarvis.belongings.text import thing_key
+from jarvis.logging import get_logger
 from jarvis.recall.retrieval import bm25
 from jarvis.recall.sensitive import sensitive_reason
 from jarvis.recall.text import tokens
@@ -51,20 +52,32 @@ from jarvis.tools.card import one_line
 from jarvis.undo.models import DeletedItem
 from jarvis.undo.service import Restored, SnapshotFailed, StillThere, UndoBin
 
+log = get_logger(__name__)
+
 LIST_MAX = 50
 CANDIDATES = 3
 HISTORY_SHOWN = 10
 SENSITIVE_WORDS = "IDs go in the Vault; JARVIS doesn't keep passwords or card numbers."
+BIN_TITLE = "A thing you noted"  # the bin shows no name: it is Firestore, in clear
+NOT_EXACT = "No thing is noted under exactly that name. Say which one you mean."
 NO_BIN = "Removing needs Recently deleted, which isn't available on this server."
 
 
 class ThingRejected(ValueError):
     """A change that is not allowed, in plain words (`code` is stable; `status` the HTTP one)."""
 
-    def __init__(self, code: str, detail: str, *, status: int = 422) -> None:
+    def __init__(
+        self,
+        code: str,
+        detail: str,
+        *,
+        status: int = 422,
+        candidates: Sequence[Thing] = (),
+    ) -> None:
         super().__init__(detail)
         self.code = code
         self.status = status
+        self.candidates = tuple(candidates)  # near matches, for "did you mean"
 
 
 def _now() -> datetime:
@@ -186,11 +199,26 @@ class BelongingsService:
         return thing, list(reversed(moves))[:HISTORY_SHOWN], state
 
     @staticmethod
-    def _resolve(state: State, ref: str) -> Thing:
+    def resolve_exact(state: State, ref: str) -> Thing:
+        """The thing a change would touch (id, exact key or alias), or `ThingRejected`."""
+        return BelongingsService._resolve(state, ref, exact=True)
+
+    @staticmethod
+    def _resolve(state: State, ref: str, *, exact: bool = False) -> Thing:
+        """A live thing by id or name. Reads may take the best match; a change (`exact`) takes
+        only an id, the exact key or an alias, else it refuses and offers the near matches."""
         if isinstance(ref, str) and THING_ID.fullmatch(ref):
             found = state.get(ref)
             if found is not None and found.live:
                 return found
+        elif exact:
+            key = thing_key(ref)
+            hits = _newest([t for t in state.live() if key and _matches(t, key)])
+            if hits:
+                return hits[0]
+            near = search(state.things, ref).candidates if isinstance(ref, str) else ()
+            if near:
+                raise ThingRejected("not_exact", NOT_EXACT, status=409, candidates=near)
         else:
             best = search(state.things, ref).best
             if best is not None:
@@ -261,7 +289,7 @@ class BelongingsService:
         h = _limited(holder, HOLDER_MAX, "A holder") if holder else ""
 
         def fn(state: State) -> Change:
-            old = self._resolve(state, ref)
+            old = self._resolve(state, ref, exact=True)
             n, p, t = clean_fields(
                 old.name if name is None else name,
                 old.place if place is None else place,
@@ -299,13 +327,14 @@ class BelongingsService:
         if self.undo is None:
             raise ThingRejected("no_bin", NO_BIN, status=503)
         state = await self.store.load(uid)
-        thing = self._resolve(state, ref)
+        thing = self._resolve(state, ref, exact=True)
+        stamp = self._stamp()  # tells this delete from any later one of the same thing
         try:
             kept = await self.undo.keep(
                 uid,
                 "thing",
-                f"Thing: {thing.name}",
-                {"ref": thing.id},
+                BIN_TITLE,
+                {"ref": thing.id, "deleted_at": stamp},
                 owner_authored=thing.origin != "outside",
                 session_id=session_id,
                 trace_id=trace_id,
@@ -317,7 +346,7 @@ class BelongingsService:
             t = cur.get(thing.id)
             if t is None or not t.live:
                 raise ThingRejected("not_found", "Nothing is noted under that name.", status=404)
-            return Change(cur.with_thing(t.moved(deleted_at=self._stamp())))
+            return Change(cur.with_thing(t.moved(deleted_at=stamp)))
 
         try:
             await self.store.change(uid, fn)
@@ -355,12 +384,36 @@ class BelongingsService:
         return Restored(new_id=ref)
 
     async def purge(self, uid: str, item: DeletedItem) -> None:
-        """Delete the thing and its history for good. Safe to repeat."""
+        """Delete the thing and its history for good. Safe to repeat. Only the delete this entry
+        recorded is purged: a thing that was restored (or deleted again since) is left alone, so
+        an old entry that expires can never destroy a live thing."""
         ref = self._ref(item)
-        await self.store.change(uid, lambda s: Change(s.without(ref), (), (ref,)))
+        stamp = item.snapshot.get("deleted_at")
+
+        def fn(state: State) -> Change:
+            t = state.get(ref)
+            if t is None or t.live or (isinstance(stamp, str) and t.deleted_at != stamp):
+                return Change(state)
+            return Change(state.without(ref), (), (ref,))
+
+        await self.store.change(uid, fn)
 
     async def wipe(self, uid: str) -> int:
-        return await self.store.wipe(uid)
+        """Everything of this owner's: the things, their histories and the bin entries of kind
+        thing (public `UndoBin` methods only; best effort, the entries hold no name)."""
+        count = await self.store.wipe(uid)
+        await self._clear_bin(uid)
+        return count
+
+    async def _clear_bin(self, uid: str) -> None:
+        if self.undo is None:
+            return
+        try:
+            for item in await self.undo.recent(uid):
+                if item.kind == "thing":
+                    await self.undo.discard(uid, item.id)
+        except Exception as exc:  # noqa: BLE001 - the things are gone; entries expire on their own
+            log.warning("bin entries not cleared", extra={"reason": type(exc).__name__})
 
     # ---- export ----------------------------------------------------------------------------
 

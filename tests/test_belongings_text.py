@@ -47,6 +47,12 @@ def test_nothing_left_is_an_empty_key(junk: object) -> None:
         "Stores his documents in a steel almirah",
         "Put the passport on the top shelf",
         "The car papers are inside the glove box",
+        "Spare key lives in the steel almirah",
+        "The spare key is under the flowerpot",
+        "Owner hides the house keys under the mat",
+        "Gold is kept with his sister",
+        "Owner's passport is located in the almirah",
+        "Keys on the hook by the door",
     ],
 )
 def test_storage_sentences_are_flagged(text: str) -> None:
@@ -60,6 +66,9 @@ def test_storage_sentences_are_flagged(text: str) -> None:
         "Lives in Thiruvananthapuram",
         "Keeps in touch with his sister",
         "Works at Amnex Infotechnologies",
+        "Owner works in the office",
+        "Sister lives in the house next door",
+        "Daughter studies at the school near home",
         "Daughter is in class five",
         "",
     ],

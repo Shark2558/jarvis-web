@@ -320,3 +320,74 @@ async def test_slice12_guarantees_still_hold_with_an_inbox_wired() -> None:
 
 async def test_a_fake_intake_defaults() -> None:
     assert FakeIntake().answer is None
+
+
+# ---- security review fixes (M3, M4) -------------------------------------------------------------
+
+
+class _Boom(FakeIntake):
+    poisoned = 0
+
+    async def intake(self, uid, data, *, source, drive_id=None):  # type: ignore[no-untyped-def]
+        if data == b"poison":
+            self.poisoned += 1
+            raise RuntimeError("parser crash")
+        return await super().intake(uid, data, source=source, drive_id=drive_id)
+
+
+async def test_a_file_that_crashes_intake_is_skipped_and_the_next_one_still_imports() -> None:
+    r = rig(intake=_Boom())
+    await r.inbox.pick(UID, OWNER, "inbox1")
+    r.drive.file("a", "a.pdf", "inbox1", b"poison", mime=PDF)
+    r.drive.file("b", "b.pdf", "inbox1", b"good", mime=PDF)
+    res = await r.inbox.check(UID)
+    assert res.imported == 1 and res.skipped == 1 and list(r.intake.items.values())
+    v = await r.inbox.view(UID, OWNER)
+    assert v["skipped"][0]["why"] == "JARVIS couldn't import it."
+    assert "parser crash" not in str(r.docs._data)  # type: ignore[attr-defined]
+    again = await r.inbox.check(UID)  # the poison file is not retried until it changes
+    assert again.skipped == 0 and again.imported == 0 and r.intake.poisoned == 1  # type: ignore[attr-defined]
+
+
+async def test_the_run_is_saved_even_when_something_unexpected_breaks_it() -> None:
+    r = await _picked()
+    r.drive.file("a", "a.pdf", "inbox1", PDF_BYTES, mime=PDF)
+
+    async def boom(*_: object, **__: object) -> list[object]:
+        raise RuntimeError("listing exploded")
+
+    r.inbox._children = boom  # type: ignore[method-assign]
+    res = await r.inbox.check(UID)
+    assert res.stopped
+    assert (await r.store.load(UID)).last_check_at is not None  # type: ignore[union-attr]
+
+
+async def test_more_is_true_when_the_folder_has_more_files_than_one_run_lists() -> None:
+    r = await _picked()
+    for i in range(101):
+        r.drive.file(f"x{i:03d}", f"{i}.txt", "inbox1", b"junk%d" % i, mime="text/plain")
+    res = await r.inbox.check(UID)
+    assert res.more is True and res.skipped == 100
+
+
+async def test_the_listing_asks_for_the_newest_first() -> None:
+    r = await _picked()
+    await r.inbox.check(UID)
+    lists = [q for q in r.drive.requests if "in parents" in q.url.params.get("q", "")]
+    assert lists and all(q.url.params.get("orderBy") == "createdTime desc" for q in lists)
+
+
+async def test_a_file_someone_else_owns_is_not_imported() -> None:
+    r = await _picked()
+    r.drive.file("s1", "p.pdf", "inbox1", b"%PDF planted", mime=PDF, owner="stranger@evil.example")
+    res = await r.inbox.check(UID)
+    assert res.imported == 0 and res.skipped == 1 and r.intake.calls == []
+    assert not [q for q in r.drive.requests if q.url.params.get("alt") == "media"]
+    v = await r.inbox.view(UID, OWNER)
+    assert v["skipped"][0]["why"] == "Not yours: it isn't owned by your account."
+
+
+async def test_a_file_the_owner_owns_in_the_folder_still_imports() -> None:
+    r = await _picked()
+    r.drive.file("o1", "mine.pdf", "inbox1", PDF_BYTES, mime=PDF, owner=OWNER)
+    assert (await r.inbox.check(UID)).imported == 1

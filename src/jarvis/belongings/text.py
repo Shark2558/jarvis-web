@@ -76,14 +76,40 @@ _IS_IN = re.compile(
 _PEOPLE_PLACES = re.compile(r"\b(?:lives?|works?|studies|studying|stays?|born)\b", re.IGNORECASE)
 
 
+# A sentence that names a thing people keep somewhere, then a preposition and a place (wider than
+# `_PLACE`: hiding places, hooks, relatives). Only used when such a thing is named, so "Keeps in
+# touch with his sister" and "Works in the office" stay ordinary facts.
+_THING = re.compile(
+    r"\b(?:passports?|keys?|gold|licen[cs]es?|papers|documents?|deeds?|jewell?ery|"
+    r"certificates?|cash|wallets?|spectacles|glasses|chains?|ornaments)\b",
+    re.IGNORECASE,
+)
+_PREP_WIDE = r"(?:in|inside|on|under|underneath|behind|beside|at|near|within|with|by)"
+_PLACE_WIDE = (
+    rf"(?:{_PLACE}|mat|flowerpot|pot|hook|door|doormat|bed|pillow|mattress|floor|window|"
+    r"sister|brother|mother|father|wife|husband|son|daughter|friend|neighbou?r|parents|"
+    r"relative|uncle|aunt|bookshelf|stand|tray|balcony|terrace|lobby|hallway)"
+)
+_WIDE_AT = re.compile(
+    rf"\b{_PREP_WIDE}\s+(?:{_DET}\s+)?(?:[\w'\u2019-]+\s+){{0,3}}?{_PLACE_WIDE}\b", re.IGNORECASE
+)
+
+
+def _thing_then_place(t: str) -> bool:
+    """A named thing, and after it a preposition with a place ("Keys on the hook by the door")."""
+    return any(_WIDE_AT.search(t, m.end()) for m in _THING.finditer(t))
+
+
 def looks_like_storage(text: object) -> bool:
     """True when `text` says where a thing is kept ("Passport is kept in the blue file")."""
     if not isinstance(text, str) or not text.strip():
         return False
     t = unicodedata.normalize("NFKC", strip_invisible(text))
-    if _PEOPLE_PLACES.search(t) and not _KEPT_AT.search(t):
+    if _KEPT_AT.search(t) or _thing_then_place(t):
+        return True
+    if _PEOPLE_PLACES.search(t):
         return False
-    return bool(_KEPT_AT.search(t) or _IS_IN.search(t))
+    return bool(_IS_IN.search(t))
 
 
 __all__ = ["looks_like_storage", "thing_key"]

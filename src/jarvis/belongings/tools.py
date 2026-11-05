@@ -28,7 +28,7 @@ from jarvis.belongings.service import (
 from jarvis.belongings.store import ThingsUnavailable
 from jarvis.core.guardrails import ActionRisk
 from jarvis.logging import get_trace_id
-from jarvis.tools.base import Tool
+from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import one_line
 from jarvis.tools.context import ToolContext, require_tool_context
 from jarvis.tools.external import wrap_external
@@ -72,11 +72,24 @@ def _line(t: Thing, holder: str | None) -> dict[str, Any]:
         out["note"] = _say(t.note, NOTE_MAX)
     if holder:
         out["whose"] = _say(holder, NAME_MAX)
+    if how := _how(t):
+        out["noted_how"] = how
     return out
 
 
 def _owners(things: list[Thing]) -> bool:
-    return all(t.origin != "outside" for t in things)
+    """Only lines the owner typed vouch. A spoken line may be a mis-heard or overheard sentence,
+    so voice never vouches (plan D10); an outside line is other people's words."""
+    return all(t.origin == "typed" for t in things)
+
+
+def _how(t: Thing) -> str | None:
+    """Say how a line that does not vouch came to be noted."""
+    if t.origin == "voice":
+        return f"you said this by voice on {t.updated_at[:10]}"
+    if t.origin == "outside":
+        return f"noted from content other people wrote, on {t.updated_at[:10]}"
+    return None
 
 
 def _check_put(a: dict[str, Any]) -> None:
@@ -93,10 +106,14 @@ def _card_put(a: dict[str, Any]) -> str:
     return f"Note that your {name} is kept in {place}"
 
 
-def _card_remove(a: dict[str, Any]) -> str:
-    return (
-        f"Forget where your {one_line(a.get('item'), NAME_MAX)} is kept (kept in Recently deleted)"
-    )
+def _card_remove(a: dict[str, Any], name: str | None = None) -> str:
+    """The card names the thing that would go (`name`), else says no thing has that exact name."""
+    if name is None:
+        return (
+            f"Forget a thing called {one_line(a.get('item'), NAME_MAX)}"
+            " (no thing has exactly that name, so nothing will be removed)"
+        )
+    return f"Forget where your {one_line(name, NAME_MAX)} is kept (kept in Recently deleted)"
 
 
 class ThingsAPI:
@@ -176,7 +193,17 @@ class ThingsAPI:
         }
         if got.previous_place:
             out["previous_place"] = _say(got.previous_place, PLACE_MAX)
-        return vouch(out, not ctx.outside)
+        return vouch(out, origin_of(ctx) == "typed")
+
+    async def preview_remove(self, a: dict[str, Any]) -> Preview:
+        """Read-only look-up before the card: the owner approves the thing that would really go."""
+        uid = require_tool_context().user_id
+        name: str | None = None
+        try:
+            name = BelongingsService.resolve_exact(await self._svc.state(uid), a["item"]).name
+        except (ThingRejected, ThingsUnavailable):
+            name = None
+        return Preview(_card_remove(a, name))
 
     async def remove(self, a: dict[str, Any]) -> Any:
         ctx = require_tool_context()
@@ -189,10 +216,13 @@ class ThingsAPI:
                 trace_id=None if trace == "-" else trace,
             )
         except ThingRejected as exc:
-            return {"status": "refused", "message": str(exc)}
+            out: dict[str, Any] = {"status": "refused", "message": str(exc)}
+            if exc.candidates:
+                out["did_you_mean"] = [_say(c.name, NAME_MAX) for c in exc.candidates]
+            return out
         except ThingsUnavailable as exc:
             return {"status": "unavailable", "message": str(exc)}
-        return vouch(deleted_result(kept, source=SOURCE), thing.origin != "outside")
+        return vouch(deleted_result(kept, source=SOURCE), thing.origin == "typed")
 
 
 def belongings_tools(svc: BelongingsService) -> list[Tool]:
@@ -267,6 +297,7 @@ def belongings_tools(svc: BelongingsService) -> list[Tool]:
             agent="belongings",
             check=_check_name,
             summarize=_card_remove,
+            preview=api.preview_remove,
             may_vouch=True,
             undoable=True,
             activity_words=FORGOT,

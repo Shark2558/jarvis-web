@@ -7,9 +7,16 @@ import pytest
 from google_fakes import GOOGLE_NOW, GOOGLE_UID, FakeGoogle, google_tokens
 from pydantic import SecretStr
 
-from jarvis.integrations.google import YOUTUBE_SCOPE, GoogleConnector, GoogleNotConnected
+from jarvis.integrations.google import (
+    YOUTUBE_SCOPE,
+    GoogleConnector,
+    GoogleNotConnected,
+    GoogleQuotaExceeded,
+)
 from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.integrations.youtube import YouTubeNotGranted, YouTubeOwn
+from jarvis.quota.ledger import YOUTUBE_UNITS, QuotaLedger, QuotaReached
+from jarvis.storage.docs import MemoryDocs
 
 API = "https://www.googleapis.com/youtube/v3"
 CHANNEL = {
@@ -36,7 +43,10 @@ async def build(*, scopes: list[str] | None = None, linked: bool = True):
         http=fake.client(),
         now=lambda: GOOGLE_NOW,
     )
-    return YouTubeOwn(conn), fake
+    ledger = QuotaLedger(MemoryDocs())
+    yt = YouTubeOwn(conn, ledger)
+    yt.ledger = ledger  # type: ignore[attr-defined]  # test handle
+    return yt, fake
 
 
 async def test_status_reflects_the_granted_scope() -> None:
@@ -105,3 +115,60 @@ async def test_no_channel_gives_an_empty_answer() -> None:
     fake.on("GET", f"{API}/channels", httpx.Response(200, json={}))
     assert await yt.channel(GOOGLE_UID) is None
     assert await yt.videos(GOOGLE_UID) == ()
+
+
+# ---- the slice-12 quota ledger (py-M5): every owner-token call is counted --------------------
+
+
+def _items(n: int) -> dict:
+    return {
+        "items": [
+            {"snippet": {"title": "t", "resourceId": {"videoId": "abcdefghij" + str(i % 10)}}}
+            for i in range(n)
+        ]
+    }
+
+
+async def used(yt: YouTubeOwn) -> int:
+    return (await yt.ledger.use(YOUTUBE_UNITS)).used  # type: ignore[attr-defined]
+
+
+async def test_channel_reserves_one_unit_and_videos_two() -> None:
+    yt, fake = await build()
+    fake.on("GET", f"{API}/channels", httpx.Response(200, json=CHANNEL))
+    fake.on("GET", f"{API}/playlistItems", httpx.Response(200, json=_items(1)))
+    await yt.channel(GOOGLE_UID)
+    assert await used(yt) == 1
+    await yt.videos(GOOGLE_UID)
+    assert await used(yt) == 3  # 1 + 2
+
+
+async def test_a_used_up_allowance_stops_the_call_before_google() -> None:
+    yt, fake = await build()
+    cap = yt.ledger.sku(YOUTUBE_UNITS).cap  # type: ignore[attr-defined]
+    await yt.ledger.reserve(YOUTUBE_UNITS, cap)  # type: ignore[attr-defined]
+    with pytest.raises(QuotaReached):
+        await yt.channel(GOOGLE_UID)
+    assert fake.requests == []
+
+
+async def test_googles_quota_answer_closes_the_day() -> None:
+    yt, fake = await build()
+    body = {"error": {"code": 403, "message": "V", "errors": [{"reason": "quotaExceeded"}]}}
+    fake.on("GET", f"{API}/channels", httpx.Response(403, json=body))
+    with pytest.raises(GoogleQuotaExceeded):
+        await yt.channel(GOOGLE_UID)
+    with pytest.raises(QuotaReached):
+        await yt.channel(GOOGLE_UID)
+
+
+async def test_a_call_that_never_reached_google_gives_its_unit_back() -> None:
+    yt, fake = await build()
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down", request=request)
+
+    yt._g.http = httpx.AsyncClient(transport=httpx.MockTransport(refuse))  # noqa: SLF001
+    with pytest.raises(Exception):  # noqa: B017, PT011 - GoogleUncertain
+        await yt.channel(GOOGLE_UID)
+    assert await used(yt) == 0

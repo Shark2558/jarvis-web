@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
+from jarvis.integrations.vault import VaultError
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Delete, Docs, Set
@@ -35,14 +36,24 @@ MAX_TOKEN_CHARS = 255
 MAX_ITEMS = 30
 DEFAULT_ITEMS = 10
 FIELD_LIMIT = 200
-PROFILE_PREFIX = "https://github.com/"
+HTTP_OK = 200
+STATUS_FORBIDDEN = 403
+STATUS_UNAUTHORIZED = 401
+STATUS_TOO_MANY = 429
+STATUS_SERVER_ERROR = 500
 _TOKEN = re.compile(r"[A-Za-z0-9_\-]{1,255}")
 _LOGIN = re.compile(r"[A-Za-z0-9-]{1,39}")
+_OWN_URL = re.compile(r"https://github\.com/[A-Za-z0-9._/-]{1,200}")
 
 NOT_CONNECTED = "GitHub is not connected yet: add your token in the Connectors panel."
 BAD_TOKEN = "That doesn't look like a GitHub token."
 REFUSED = "GitHub refused the token: make a new one and connect again."
 LIMIT = "GitHub's rate limit is reached; try again later."
+NO_ACCESS = "GitHub says that token lacks access to this; make a new one with read access."
+RECONNECT = (
+    "JARVIS can't read the saved GitHub token any more: reconnect GitHub with a new token "
+    "in the Connectors panel."
+)
 DOWN = "GitHub is unavailable right now; try again shortly."
 UNREACHABLE = "Could not reach GitHub; try again shortly."
 UNREADABLE = "GitHub returned an unreadable response."
@@ -51,6 +62,13 @@ UNSAVED = "JARVIS couldn't save that just now. Try again in a minute."
 
 class GithubError(RuntimeError):
     """A GitHub call failed (plain words, no vendor text, never the token)."""
+
+
+class GithubNeedsReconnect(GithubError):
+    """The saved token can't be read (wrong key, tampered or malformed record)."""
+
+    def __init__(self) -> None:
+        super().__init__(RECONNECT)
 
 
 def token_ok(value: str) -> bool:
@@ -102,28 +120,34 @@ class GithubStore:
         return f"github/{uid}/v1"
 
     async def save(self, uid: str, token: SecretStr, login: str) -> None:
-        plain = json.dumps({"token": token.get_secret_value(), "login": login})
-        blob = self._ring.cipher("connectors").encrypt(plain.encode(), aad=self._aad(uid))
         try:
+            plain = json.dumps({"token": token.get_secret_value(), "login": login})
+            blob = self._ring.cipher("connectors").encrypt(plain.encode(), aad=self._aad(uid))
             await self._d.write(
                 [Set(self._path(uid), {"v": 1, "kid": self._ring.kid, "blob": blob})]
             )
-        except Exception as exc:  # noqa: BLE001 - never leak the cause
+        except Exception as exc:  # noqa: BLE001 - never leak the cause (it may hold the token)
             log.warning("github save failed", extra={"reason": type(exc).__name__})
             raise GithubError(UNSAVED) from None
 
     async def load(self, uid: str) -> tuple[SecretStr, str] | None:
+        """(token, login), None when nothing is saved; `GithubNeedsReconnect` when a record
+        exists but can't be read, so the owner is told to reconnect rather than "not connected"."""
         doc = await self._d.get(self._path(uid))
-        if doc is None or not isinstance(doc.get("blob"), str):
+        if doc is None:
             return None
         try:
-            raw = json.loads(
-                self._ring.cipher("connectors").decrypt(doc["blob"], aad=self._aad(uid))
-            )
-            return SecretStr(str(raw["token"])), str(raw["login"])
-        except Exception as exc:  # noqa: BLE001 - unreadable means "reconnect"
+            blob = doc["blob"]
+            if not isinstance(blob, str):
+                raise TypeError("blob is not a string")
+            raw = json.loads(self._ring.cipher("connectors").decrypt(blob, aad=self._aad(uid)))
+            token, login = str(raw["token"]), str(raw["login"])
+            if not token_ok(token) or not _LOGIN.fullmatch(login):
+                raise ValueError("stored values have a bad shape")
+            return SecretStr(token), login
+        except (VaultError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             log.warning("github record unreadable", extra={"reason": type(exc).__name__})
-            return None
+            raise GithubNeedsReconnect from None
 
     async def delete(self, uid: str) -> None:
         await self._d.write([Delete(self._path(uid))])
@@ -138,15 +162,17 @@ def _count(value: Any) -> int:
 
 
 def _own_url(value: Any) -> str:
-    return value if isinstance(value, str) and value.startswith(PROFILE_PREFIX) else ""
+    return value if isinstance(value, str) and _OWN_URL.fullmatch(value) else ""
 
 
-def _status_error(status: int) -> GithubError:
-    if status == 401:
+def _status_error(status: int, headers: httpx.Headers) -> GithubError:
+    if status == STATUS_UNAUTHORIZED:
         return GithubError(REFUSED)
-    if status in (403, 429):
+    if status == STATUS_TOO_MANY:
         return GithubError(LIMIT)
-    if status >= 500:
+    if status == STATUS_FORBIDDEN:  # 403 is a limit only when the allowance is spent
+        return GithubError(LIMIT if headers.get("x-ratelimit-remaining") == "0" else NO_ACCESS)
+    if status >= STATUS_SERVER_ERROR:
         return GithubError(DOWN)
     return GithubError(f"GitHub returned an unexpected status ({status}).")
 
@@ -159,9 +185,17 @@ class GithubClient:
     def __repr__(self) -> str:
         return "GithubClient(<hidden>)"
 
+    async def aclose(self) -> None:
+        """Close the HTTP client (call from the app's lifespan shutdown)."""
+        await self._http.aclose()
+
     async def status(self, uid: str) -> dict[str, Any]:
-        found = await self._store.load(uid)
-        return {"connected": found is not None, "login": None if found is None else found[1]}
+        try:
+            found = await self._store.load(uid)
+        except GithubNeedsReconnect:
+            return {"connected": False, "login": None, "needs_reconnect": True}
+        login = None if found is None else found[1]
+        return {"connected": found is not None, "login": login, "needs_reconnect": False}
 
     async def connect(self, uid: str, token: SecretStr) -> str:
         raw = token.get_secret_value()
@@ -236,27 +270,47 @@ class GithubClient:
             "X-GitHub-Api-Version": "2022-11-28",
         }
         try:
-            r = await self._http.get(
-                f"{API}{path}", params=params, headers=headers, follow_redirects=False
-            )
+            async with self._http.stream(
+                "GET",
+                f"{API}{path}",
+                params=params,
+                headers=headers,
+                timeout=HTTP_TIMEOUT,
+                follow_redirects=False,
+            ) as r:
+                if r.status_code != HTTP_OK:
+                    log.warning(
+                        "github error", extra={"status": r.status_code, "path": path.split("/")[1]}
+                    )
+                    raise _status_error(r.status_code, r.headers)
+                body = await _capped(r)
         except httpx.HTTPError as exc:
             log.warning("github unreachable", extra={"reason": type(exc).__name__})
             raise GithubError(UNREACHABLE) from None
-        if r.status_code != 200:
-            log.warning("github error", extra={"status": r.status_code, "path": path.split("/")[1]})
-            raise _status_error(r.status_code)
-        if len(r.content) > MAX_RESPONSE_BYTES:
-            raise GithubError(UNREADABLE)
         try:
-            return r.json()
+            return json.loads(body)
         except ValueError:
             raise GithubError(UNREADABLE) from None
+
+
+async def _capped(r: httpx.Response) -> bytes:
+    """The body, refused by its declared length first and aborted at the cap while streaming."""
+    declared = r.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_RESPONSE_BYTES:
+        raise GithubError(UNREADABLE)
+    buf = bytearray()
+    async for chunk in r.aiter_bytes():
+        buf += chunk
+        if len(buf) > MAX_RESPONSE_BYTES:
+            raise GithubError(UNREADABLE)
+    return bytes(buf)
 
 
 __all__ = [
     "Activity",
     "GithubClient",
     "GithubError",
+    "GithubNeedsReconnect",
     "GithubStore",
     "Profile",
     "Repo",

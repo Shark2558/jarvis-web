@@ -4,26 +4,35 @@
 (`jarvis.media`, the `youtube_*` row): that searches YouTube; this reads the owner's account.
 
 channels.list (mine=true) and playlistItems.list cost 1 quota unit each (developers.google.com/
-youtube/v3/determine_quota_cost); each call is sent once (`send_once`), so nothing is retried at
-the owner's quota. Every field is type-checked and cut to one clean line; titles are other
-people's words as far as the model is concerned (the tools fence them).
+youtube/v3/determine_quota_cost) of the project's daily 10,000, shared with the slice-12 search
+tool. Every call is counted in the slice-12 allowance ledger (`YOUTUBE_UNITS`): reserved before
+it is sent, given back if it never reached Google, and the day closed when Google says the quota
+is gone. Each call is sent once (`send_once`), so nothing is retried at the owner's quota.
+Every field is type-checked and cut to one
+clean line; titles are other people's words as far as the model is concerned (the tools
+fence them).
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 from jarvis.integrations.google import (
     NOT_CONNECTED_MSG,
     RECONNECT_MSG,
     GoogleConnector,
     GoogleNotConnected,
+    GoogleQuotaExceeded,
     can_use_youtube,
+    never_sent,
 )
+from jarvis.quota.ledger import YOUTUBE_UNITS, QuotaLedger, QuotaUnreadable, unreadable_message
 from jarvis.tools.card import one_line
 
+T = TypeVar("T")
 API = "https://www.googleapis.com/youtube/v3"
 CHANNELS_URL = f"{API}/channels"
 ITEMS_URL = f"{API}/playlistItems"
@@ -31,6 +40,8 @@ VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 CHANNEL_ID = re.compile(r"[A-Za-z0-9_-]{10,40}")
 MAX_VIDEOS = 25
 DEFAULT_VIDEOS = 10
+CHANNEL_UNITS = 1
+VIDEOS_UNITS = 2  # channels.list + playlistItems.list
 TITLE_LIMIT = 150
 GRANT_MSG = (
     "JARVIS has no permission to read your YouTube account yet. Open Integrations and press "
@@ -69,8 +80,9 @@ def _num(value: Any) -> int:
 
 
 class YouTubeOwn:
-    def __init__(self, google: GoogleConnector) -> None:
+    def __init__(self, google: GoogleConnector, ledger: QuotaLedger) -> None:
         self._g = google
+        self._ledger = ledger
 
     async def status(self, uid: str) -> dict[str, Any]:
         st = await self._g.status(uid)
@@ -87,8 +99,26 @@ class YouTubeOwn:
         if not can_use_youtube(st["scopes"]):
             raise YouTubeNotGranted(GRANT_MSG)
 
-    async def channel(self, uid: str) -> Channel | None:
+    async def _counted(self, uid: str, units: int, run: Callable[[], Awaitable[T]]) -> T:
+        """`run` under the allowance ledger: reserve first (QuotaReached when none are left),
+        give the units back if Google never saw the call, close the day if Google says it is
+        gone."""
         await self._require(uid)
+        try:
+            held = await self._ledger.reserve(YOUTUBE_UNITS, units)
+        except QuotaUnreadable as exc:
+            raise QuotaUnreadable(unreadable_message(YOUTUBE_UNITS)) from exc
+        try:
+            return await run()
+        except GoogleQuotaExceeded as exc:
+            await self._ledger.latch(held, exc.period)
+            raise
+        except Exception as exc:
+            if never_sent(exc):
+                await self._ledger.refund(held)
+            raise
+
+    async def _channel(self, uid: str) -> Channel | None:
         body = await self._g.request(
             uid,
             "GET",
@@ -102,8 +132,14 @@ class YouTubeOwn:
         )
         return None if first is None else _channel(first)
 
+    async def channel(self, uid: str) -> Channel | None:
+        return await self._counted(uid, CHANNEL_UNITS, lambda: self._channel(uid))
+
     async def videos(self, uid: str, limit: int = DEFAULT_VIDEOS) -> tuple[OwnVideo, ...]:
-        ch = await self.channel(uid)
+        return await self._counted(uid, VIDEOS_UNITS, lambda: self._videos(uid, limit))
+
+    async def _videos(self, uid: str, limit: int) -> tuple[OwnVideo, ...]:
+        ch = await self._channel(uid)
         if ch is None or not ch.uploads_playlist:
             return ()
         n = max(1, min(limit, MAX_VIDEOS))

@@ -18,8 +18,9 @@ from jarvis.integrations.github import (
     GithubStore,
     token_ok,
 )
+from jarvis.integrations.vault import VaultError
 from jarvis.keyring import Keyring
-from jarvis.storage.docs import MemoryDocs
+from jarvis.storage.docs import MemoryDocs, Set
 
 TOKEN = "ghp_SuperSecretTokenValue1234567890abcd"
 API = "https://api.github.com"
@@ -46,7 +47,7 @@ async def connected() -> tuple[GithubClient, FakeGoogle, MemoryDocs]:
 
 async def test_status_is_off_until_a_token_is_connected() -> None:
     client, _, _ = build()
-    assert await client.status(UID) == {"connected": False, "login": None}
+    assert await client.status(UID) == {"connected": False, "login": None, "needs_reconnect": False}
 
 
 async def test_connect_validates_the_token_with_github_and_stores_the_login() -> None:
@@ -54,7 +55,11 @@ async def test_connect_validates_the_token_with_github_and_stores_the_login() ->
     user_ok(fake)
     login = await client.connect(UID, SecretStr(TOKEN))
     assert login == "akash-dev"
-    assert await client.status(UID) == {"connected": True, "login": "akash-dev"}
+    assert await client.status(UID) == {
+        "connected": True,
+        "login": "akash-dev",
+        "needs_reconnect": False,
+    }
     assert fake.requests[0].headers["Authorization"] == f"Bearer {TOKEN}"
 
 
@@ -73,7 +78,7 @@ async def test_token_is_never_logged_even_when_github_refuses_it(
         with pytest.raises(GithubError) as err:
             await client.connect(UID, SecretStr(TOKEN))
     assert TOKEN not in caplog.text and TOKEN not in str(err.value)
-    assert await client.status(UID) == {"connected": False, "login": None}
+    assert await client.status(UID) == {"connected": False, "login": None, "needs_reconnect": False}
 
 
 async def test_token_is_not_logged_on_normal_calls(caplog: pytest.LogCaptureFixture) -> None:
@@ -169,7 +174,7 @@ async def test_reads_without_a_connection_say_how_to_connect() -> None:
 
 @pytest.mark.parametrize(
     ("status", "word"),
-    [(401, "refused"), (403, "limit"), (429, "limit"), (500, "unavailable")],
+    [(401, "refused"), (403, "lacks access"), (429, "limit"), (500, "unavailable")],
 )
 async def test_github_errors_become_plain_words(status: int, word: str) -> None:
     client, fake, _ = await connected()
@@ -202,3 +207,119 @@ async def test_disconnect_deletes_the_token() -> None:
 async def test_another_owner_has_no_connection() -> None:
     client, _, _ = await connected()
     assert (await client.status("u_other"))["connected"] is False
+
+
+# ---- review fixes ----------------------------------------------------------------------------
+
+
+async def _tamper(docs: MemoryDocs, **over: object) -> None:
+    path = f"jarvis_connectors_github/{UID}"
+    doc = dict(await docs.get(path) or {})
+    doc.update(over)
+    await docs.write([Set(path, doc)])
+
+
+@pytest.mark.parametrize("over", [{"blob": "AAAA"}, {"blob": "!!notbase64!!"}, {"blob": 7}])
+async def test_a_tampered_record_says_reconnect_not_just_not_connected(over: dict) -> None:
+    client, _, docs = await connected()
+    await _tamper(docs, **over)
+    st = await client.status(UID)
+    assert st["connected"] is False and st["needs_reconnect"] is True
+    with pytest.raises(GithubError, match="reconnect"):
+        await client.profile(UID)
+
+
+async def test_a_record_that_decrypts_to_the_wrong_shape_needs_reconnect() -> None:
+    client, _, docs = await connected()
+    store = GithubStore(docs, Keyring(ROOT))
+    blob = store._ring.cipher("connectors").encrypt(b"[1, 2]", aad=f"github/{UID}/v1")  # noqa: SLF001
+    await _tamper(docs, blob=blob)
+    assert (await GithubClient(store).status(UID))["needs_reconnect"] is True
+    assert client is not None
+
+
+async def test_a_stored_login_with_a_bad_shape_is_not_trusted() -> None:
+    client, fake, docs = await connected()
+    store = GithubStore(docs, Keyring(ROOT))
+    plain = json.dumps({"token": TOKEN, "login": "../../admin"}).encode()
+    blob = store._ring.cipher("connectors").encrypt(plain, aad=f"github/{UID}/v1")  # noqa: SLF001
+    await _tamper(docs, blob=blob)
+    before = len(fake.requests)
+    assert (await client.status(UID))["needs_reconnect"] is True
+    assert len(fake.requests) == before  # nothing was sent to GitHub
+
+
+async def test_a_wrong_keyring_needs_reconnect() -> None:
+    _, _, docs = await connected()
+    other = GithubClient(GithubStore(docs, Keyring(bytes(range(40, 72)))))
+    assert (await other.status(UID))["needs_reconnect"] is True
+
+
+async def test_a_vault_error_while_saving_is_plain_words_and_never_the_token() -> None:
+    client, fake, docs = build()
+    user_ok(fake)
+
+    class Broken:
+        kid = "k"
+
+        def cipher(self, purpose: str):  # noqa: ANN202
+            raise VaultError(f"boom {TOKEN}")
+
+    client = GithubClient(GithubStore(docs, Broken()), http=fake.client())  # type: ignore[arg-type]
+    with pytest.raises(GithubError) as err:
+        await client.connect(UID, SecretStr(TOKEN))
+    assert TOKEN not in str(err.value)
+
+
+async def test_every_request_carries_its_own_timeout() -> None:
+    client, fake, _ = await connected()
+    fake.on("GET", f"{API}/user", httpx.Response(200, json={"login": "akash-dev"}))
+    await client.profile(UID)
+    assert fake.requests[-1].extensions["timeout"]["read"] == 10.0
+
+
+async def test_403_is_a_rate_limit_only_when_the_quota_is_spent() -> None:
+    client, fake, _ = await connected()
+    fake.on("GET", f"{API}/user", httpx.Response(403, headers={"X-RateLimit-Remaining": "0"}))
+    with pytest.raises(GithubError, match="rate limit"):
+        await client.profile(UID)
+    fake.routes.clear()
+    fake.on("GET", f"{API}/user", httpx.Response(403, headers={"X-RateLimit-Remaining": "4000"}))
+    with pytest.raises(GithubError, match="lacks access"):
+        await client.profile(UID)
+
+
+async def test_aclose_closes_the_http_client() -> None:
+    client, _, _ = build()
+    await client.aclose()
+    assert client._http.is_closed  # noqa: SLF001
+
+
+async def test_a_response_over_the_cap_is_refused_while_streaming() -> None:
+    client, fake, _ = await connected()
+
+    class Endless(httpx.AsyncByteStream):
+        async def __aiter__(self):  # noqa: ANN204
+            for _ in range(10_000):
+                yield b" " * 100_000
+
+    fake.on("GET", f"{API}/user", httpx.Response(200, stream=Endless()))
+    with pytest.raises(GithubError, match="unreadable"):
+        await client.profile(UID)
+
+
+async def test_a_declared_length_over_the_cap_is_refused_unread() -> None:
+    client, fake, _ = await connected()
+    headers = {"content-length": "999999999"}
+    fake.on("GET", f"{API}/user", httpx.Response(200, headers=headers, content=b"{}"))
+    with pytest.raises(GithubError, match="unreadable"):
+        await client.profile(UID)
+
+
+@pytest.mark.parametrize(
+    "url", ["https://github.com/a b", "https://github.com/x\ny", "https://github.com/" + "a" * 300]
+)
+async def test_odd_github_urls_are_dropped(url: str) -> None:
+    client, fake, _ = await connected()
+    fake.on("GET", f"{API}/user", httpx.Response(200, json={"login": "akash-dev", "html_url": url}))
+    assert (await client.profile(UID)).url == ""

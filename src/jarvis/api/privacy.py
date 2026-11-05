@@ -3,11 +3,17 @@
 `current_user` (no client user id is read); cookie writes need `X-Requested-With: JARVIS`.
 
 GET  /v1/privacy                  {categories: [CategoryView], passkey_in_force, generated_at}
-GET  /v1/privacy/{id}/export      JSON attachment {category, generated_at, data} (never a secret)
+GET  /v1/privacy/{id}/export      JSON attachment {category, generated_at, data} (never a secret);
+                                  for content (passkey-class) categories it needs the proof below,
+                                  so a bare GET there is 403 (passkey_required / proof_required)
+POST /v1/privacy/{id}/export      {proof?} -> the same; the proof (purpose privacy_export, target
+                                  "export:<id>") or a Google sign-in < 5 minutes old is required
+                                  for content categories; simple categories need neither
 POST /v1/privacy/export-all       {proof?} -> JSON attachment of every exportable category except
                                   vault files; passkey check (purpose privacy_export) or a Google
                                   sign-in < 5 minutes old
-POST /v1/privacy/{id}/delete      {rev, confirm?: "DELETE", proof?} -> {deleted, category}
+POST /v1/privacy/{id}/delete      {rev, confirm?: "DELETE", proof?} -> {deleted, category,
+                                  remaining} (remaining > 0: some are still there)
 
 Errors {error, detail, reason?}: 403 console_only (a bearer token can look, never export or
 delete), 403 not_deletable / no_export, 403 passkey_required / passkey_rejected / proof_required
@@ -120,6 +126,19 @@ async def get_privacy(
     return await svc.view(uid)
 
 
+async def _export_one(
+    request: Request,
+    svc: PrivacyService,
+    uid: str,
+    category_id: str,
+    proof: PasskeyProof | None,
+) -> Response:
+    _limit(request, "change", uid)
+    fresh = _browser_only(request)
+    body = await svc.export(uid, category_id, proof=proof, fresh_left_s=fresh)
+    return _attachment(body, f"jarvis-{category_id}-{_today()}.json")
+
+
 @router.get("/{category_id}/export")
 async def export_category(
     request: Request,
@@ -127,10 +146,18 @@ async def export_category(
     svc: PrivacyService = Depends(_svc),
     uid: str = Depends(current_user),
 ) -> Response:
-    _limit(request, "change", uid)
-    _browser_only(request)
-    body = await svc.export(uid, category_id)
-    return _attachment(body, f"jarvis-{category_id}-{_today()}.json")
+    return await _export_one(request, svc, uid, category_id, None)
+
+
+@router.post("/{category_id}/export")
+async def export_category_with_proof(
+    req: ExportAllRequest,
+    request: Request,
+    category_id: str = CategoryPath,
+    svc: PrivacyService = Depends(_svc),
+    uid: str = Depends(current_user),
+) -> Response:
+    return await _export_one(request, svc, uid, category_id, req.proof)
 
 
 @router.post("/export-all")

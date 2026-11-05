@@ -92,7 +92,7 @@ async def test_view_keeps_the_row_of_a_failing_source() -> None:
 
 async def test_export_returns_the_seeded_data_and_is_audited_without_content() -> None:
     w = await world()
-    out = await w.svc.export(UID, "notes")
+    out = await w.svc.export(UID, "notes", proof=None, fresh_left_s=FRESH)
     assert out["category"] == "notes" and out["data"] == {"items": ["n1", "n2"]}
     last = (await w.audit_entries())[-1]
     assert last.tool == "privacy_export" and last.agent == "owner"  # type: ignore[attr-defined]
@@ -336,3 +336,103 @@ async def test_with_no_permissions_service_a_passkey_class_delete_still_needs_th
     )
     assert out.deleted == 2
     assert (await w.svc.view(UID)).passkey_in_force is False
+
+
+# ---- review fixes: H1 single export proof, M2 rev recheck, M4 verify, M5 delete count ---------
+
+
+async def test_h1_passkey_class_export_needs_a_fresh_sign_in_when_there_is_no_passkey() -> None:
+    w = await world()
+    for fresh in (None, 0):
+        with pytest.raises(ProofRequired) as e:
+            await w.svc.export(UID, "notes", proof=None, fresh_left_s=fresh)
+        assert e.value.reason == "reauth"
+    out = await w.svc.export(UID, "notes", proof=None, fresh_left_s=FRESH)
+    assert out["data"]["items"] == ["n1", "n2"]
+
+
+async def test_h1_simple_class_export_stays_open() -> None:
+    w = await world()
+    out = await w.svc.export(UID, "places", proof=None, fresh_left_s=None)
+    assert out["data"]["items"] == ["home"]
+
+
+async def test_h1_with_a_passkey_in_force_the_export_needs_a_proof_for_this_category() -> None:
+    w = await world(passkey=True)
+    with pytest.raises(PasskeyRequired):
+        await w.svc.export(UID, "notes", proof=None, fresh_left_s=FRESH)
+    wrong = await w.rig.proof("privacy_export", target="export:things")
+    with pytest.raises(PasskeyRejected):
+        await w.svc.export(UID, "notes", proof=wrong, fresh_left_s=None)
+    proof = await w.rig.proof("privacy_export", target="export:notes")
+    out = await w.svc.export(UID, "notes", proof=proof, fresh_left_s=None)
+    assert out["data"]["items"] == ["n1", "n2"]
+    with pytest.raises(PasskeyRejected):  # replay
+        await w.svc.export(UID, "notes", proof=proof, fresh_left_s=None)
+    all_proof = await w.rig.proof("privacy_export", target="all")  # export-all's proof is not this
+    with pytest.raises(PasskeyRejected):
+        await w.svc.export(UID, "notes", proof=all_proof, fresh_left_s=None)
+
+
+async def test_m2_data_that_changes_while_the_proof_is_checked_is_a_conflict() -> None:
+    w = await world()
+
+    async def moving(uid: str, purpose: str, target: str, proof: object) -> str | None:
+        w.heavy.items[UID].append("added-after-rev-check")
+        return "passkey abcd"
+
+    w.svc.permissions = type("P", (), {"check_purpose": staticmethod(moving)})()  # type: ignore[assignment]
+    with pytest.raises(Changed):
+        await w.svc.delete(
+            UID,
+            "notes",
+            rev=await w.rev("notes"),
+            confirm=None,
+            proof=None,
+            fresh_left_s=None,
+        )
+    assert w.heavy.items[UID] == ["n1", "n2", "added-after-rev-check"]
+    assert w.heavy.deleted_calls == []
+
+
+async def test_m4_a_delete_that_removed_nothing_reports_what_is_left() -> None:
+    w = await world()
+    w.simple.noop_delete = True
+    out = await w.svc.delete(
+        UID, "places", rev=await w.rev("places"), confirm=None, proof=None, fresh_left_s=None
+    )
+    assert out.deleted == 0 and out.remaining == 1
+    last = (await w.audit_entries())[-1]
+    assert "places: 0" in last.detail  # type: ignore[attr-defined]
+
+
+async def test_m4_a_clean_delete_reports_zero_remaining() -> None:
+    w = await world()
+    out = await w.svc.delete(
+        UID, "places", rev=await w.rev("places"), confirm=None, proof=None, fresh_left_s=None
+    )
+    assert out.deleted == 1 and out.remaining == 0
+
+
+async def test_m4_a_delete_that_raises_after_removing_some_is_reported_as_partial() -> None:
+    w = await world()
+
+    async def half(uid: str) -> int:
+        w.simple.items[uid] = w.simple.items[uid][1:]
+        raise RuntimeError("boom")
+
+    w.simple.items[UID] = ["a", "b", "c"]
+    w.simple.delete = half  # type: ignore[method-assign]
+    out = await w.svc.delete(
+        UID, "places", rev=await w.rev("places"), confirm=None, proof=None, fresh_left_s=None
+    )
+    assert out.deleted == 1 and out.remaining == 2
+    last = (await w.audit_entries())[-1]
+    assert "places: 1" in last.detail  # type: ignore[attr-defined]
+
+
+async def test_m5_the_delete_count_is_what_the_delete_removes() -> None:
+    w = await world()
+    view = await w.svc.view(UID)
+    notes = next(c for c in view.categories if c.id == "notes")
+    assert notes.delete_count == 2

@@ -26,6 +26,7 @@ class FakeSource:
         self.secret = secret
         self.fail_describe = False
         self.fail_delete = False
+        self.noop_delete = False  # reports 0 and leaves the rows (a swallowed failure)
         self.deleted_calls: list[str] = []
 
     def _mine(self, uid: str) -> list[str]:
@@ -47,6 +48,7 @@ class FakeSource:
             export=self.exportable,
             delete=self.delete_class,
             rev=fingerprint(self.id, mine),
+            delete_count=len(mine),
         )
 
     async def export(self, uid: str) -> dict[str, Any] | None:
@@ -62,6 +64,8 @@ class FakeSource:
         self.deleted_calls.append(uid)
         if self.fail_delete:
             raise RuntimeError("delete failed")
+        if self.noop_delete:
+            return 0
         n = len(self._mine(uid))
         self.items[uid] = []
         return n

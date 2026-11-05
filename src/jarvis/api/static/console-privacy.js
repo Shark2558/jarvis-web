@@ -5,9 +5,10 @@
 // type is dropped, never guessed. Transport is the console's api() (window.JarvisConsole).
 // API: GET /v1/privacy -> {categories: [{id, section, label, what, count, unit, retention, where,
 // size_hint, encrypted_by_jarvis, export, delete: none|simple|confirm|passkey, recoverable, note,
-// rev, available}], passkey_in_force, generated_at}; GET /v1/privacy/{id}/export -> JSON;
-// POST /v1/privacy/export-all {proof?}; POST /v1/privacy/{id}/delete {rev, confirm?, proof?} ->
-// {deleted, category}. Errors {error, detail, reason?}: 409 changed, 403 proof_required {reason:
+// rev, available, delete_count}], passkey_in_force, generated_at}; POST /v1/privacy/{id}/export
+// {proof?} -> JSON (content categories need the proof, purpose privacy_export, target export:<id>,
+// or a fresh Google sign-in); POST /v1/privacy/export-all {proof?}; POST /v1/privacy/{id}/delete
+// {rev, confirm?, proof?} -> {deleted, category, remaining}. Errors {error, detail, reason?}: 409 changed, 403 proof_required {reason:
 // reauth}, passkey_required / passkey_rejected, console_only.
 // Deletes that can't be brought back: a passkey check (window.JarvisPasskey.prove, bound to the
 // category and its rev) when passkeys are in force; otherwise the typed word DELETE plus a Google
@@ -54,6 +55,8 @@
         count: Number.isInteger(c.count) && c.count >= 0 ? c.count : null, size: txt(c.size_hint, 40),
         enc: c.encrypted_by_jarvis === true, canExport: c.export === true, del: cls,
         recoverable: c.recoverable === true, note: txt(c.note, 500), rev: txt(c.rev, 64),
+        // what a delete removes (never more than is shown); older servers send none: use the count
+        delCount: Number.isInteger(c.delete_count) && c.delete_count >= 0 ? c.delete_count : (Number.isInteger(c.count) && c.count >= 0 ? c.count : null),
         available: c.available !== false,
       };
     }).filter(Boolean);
@@ -152,8 +155,12 @@
   const stamp = () => new Date().toISOString().slice(0, 10);
   async function exportOne(c, btn) {
     btn.disabled = true; note('', '');
-    try { save(`jarvis-${c.id}-${stamp()}.json`, await api(`/v1/privacy/${c.id}/export`)); note('ok', `${c.label} downloaded.`); }
-    catch (e) { note('bad', errText(e)); } finally { btn.disabled = false; }
+    try {
+      // content that can't be brought back needs a proof of its own; the rest is a plain export
+      const proof = c.del === 'passkey' ? await proveIf('privacy_export', `export:${c.id}`) : null;
+      save(`jarvis-${c.id}-${stamp()}.json`, await api(`/v1/privacy/${c.id}/export`, { body: proof ? { proof } : {} }));
+      note('ok', `${c.label} downloaded.`);
+    } catch (e) { fail(e); } finally { btn.disabled = false; }
   }
   async function downloadAll() {
     if (S.busy) return; S.busy = true; allBtn.disabled = true; note('', '');
@@ -198,7 +205,7 @@
     if (dlg) return;
     const typed = c.del === 'passkey' && !(S.data && S.data.passkey);
     const el = mk('div', 'pv-dlg'); el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', 'pvDlgT');
-    const n = c.count === null ? '' : `${c.count.toLocaleString()} ${plural(c.count, c.unit)}`;
+    const n = c.delCount === null ? '' : `${c.delCount.toLocaleString()} ${plural(c.delCount, c.unit)}`;
     const box = mk('div', 'pv-box');
     box.appendChild(mk('h4', 'pv-dt', `Delete ${c.label}?`)); box.firstChild.id = 'pvDlgT';
     box.appendChild(mk('p', '', n ? `This removes ${n}: ${c.what}` : c.what));
@@ -227,7 +234,10 @@
       if (c.del === 'passkey' && !ui.typed) body.proof = await proveIf('privacy_delete', `${c.id}:${c.rev}`);
       const out = obj(await api(`/v1/privacy/${c.id}/delete`, { body })) || {};
       closeDlg();
-      note('ok', `Deleted ${Number.isInteger(out.deleted) ? out.deleted.toLocaleString() : 'it'} from ${c.label}.`);
+      const gone = Number.isInteger(out.deleted) ? out.deleted.toLocaleString() : 'it';
+      if (Number.isInteger(out.remaining) && out.remaining > 0) note('bad', `Deleted ${gone} from ${c.label}, but ${out.remaining.toLocaleString()} ${out.remaining === 1 ? 'is' : 'are'} still there. Try again in a moment.`);
+      else if (out.remaining === null || out.remaining === undefined) note('ok', `Deleted ${gone} from ${c.label}. Check the list to be sure nothing is left.`);
+      else note('ok', `Deleted ${gone} from ${c.label}.`);
       await load(true);
     } catch (e) {
       ui.ok.disabled = false; ui.no.disabled = false;

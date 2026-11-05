@@ -194,6 +194,66 @@ async def test_category_export_is_a_json_attachment_without_secrets(rig: Any) ->
     assert "TOPSECRET" not in r.text and "theirs" not in r.text
 
 
+async def test_h1_content_export_needs_a_fresh_sign_in_without_passkeys(rig: Any) -> None:
+    c, _ = rig
+    await _sign_in(c, reauth=False)
+    for r in (
+        await c.get("/v1/privacy/notes/export"),
+        await c.post("/v1/privacy/notes/export", json={}, headers=CSRF),
+    ):
+        assert r.status_code == 403, r.text
+        assert r.json()["error"] == "proof_required" and r.json()["reason"] == "reauth"
+        assert "n1" not in r.text
+    # a category he can make again stays a plain export
+    assert (await c.get("/v1/privacy/places/export")).status_code == 200
+    await _sign_in(c, reauth=True)
+    r = await c.post("/v1/privacy/notes/export", json={}, headers=CSRF)
+    assert r.status_code == 200 and r.json()["data"]["items"] == ["n1", "n2"]
+
+
+async def test_h1_content_export_with_a_passkey_in_force_needs_the_export_proof(rig: Any) -> None:
+    c, _ = rig
+    await _sign_in(c)
+    auth = SoftAuthenticator(origin=ORIGIN)
+    await _register_passkey(c, auth)
+    for r in (
+        await c.get("/v1/privacy/notes/export"),
+        await c.post("/v1/privacy/notes/export", json={}, headers=CSRF),
+    ):
+        assert r.status_code == 403 and r.json()["error"] == "passkey_required"
+    wrong = await _proof(c, auth, purpose="privacy_export", target="all")
+    r = await c.post("/v1/privacy/notes/export", json={"proof": wrong}, headers=CSRF)
+    assert r.status_code == 403 and r.json()["error"] == "passkey_rejected"
+    proof = await _proof(c, auth, purpose="privacy_export", target="export:notes")
+    r = await c.post("/v1/privacy/notes/export", json={"proof": proof}, headers=CSRF)
+    assert r.status_code == 200 and r.json()["data"]["items"] == ["n1", "n2"]
+    assert (await c.get("/v1/privacy/places/export")).status_code == 200  # simple: no proof
+
+
+async def test_h1_the_post_export_needs_the_csrf_header(rig: Any) -> None:
+    c, _ = rig
+    await _sign_in(c)
+    r = await c.post("/v1/privacy/notes/export", json={})
+    assert r.status_code in (401, 403)
+
+
+async def test_m4_a_delete_that_left_rows_says_how_many(rig: Any) -> None:
+    c, s = rig
+    await _sign_in(c)
+    s.places.noop_delete = True
+    rev = await _rev(c, "places")
+    r = await c.post("/v1/privacy/places/delete", json={"rev": rev}, headers=CSRF)
+    assert r.status_code == 200
+    assert r.json() == {"deleted": 0, "category": "places", "remaining": 1}
+
+
+async def test_m5_the_view_carries_the_delete_count(rig: Any) -> None:
+    c, _ = rig
+    await _sign_in(c)
+    notes = next(x for x in (await c.get("/v1/privacy")).json()["categories"] if x["id"] == "notes")
+    assert notes["delete_count"] == 2
+
+
 async def test_export_of_an_unknown_or_unexportable_category(rig: Any) -> None:
     c, _ = rig
     await _sign_in(c)
@@ -241,7 +301,7 @@ async def test_a_simple_delete_returns_the_count_and_needs_the_csrf_header(rig: 
     assert r.status_code == 403 and r.json()["error"] == "csrf"
     r = await c.post("/v1/privacy/places/delete", json={"rev": rev}, headers=CSRF)
     assert r.status_code == 200, r.text
-    assert r.json() == {"deleted": 1, "category": "places"}
+    assert r.json() == {"deleted": 1, "category": "places", "remaining": 0}
     assert s.places.items[UID] == []
 
 
@@ -311,7 +371,7 @@ async def test_passkey_class_with_a_passkey_in_force(rig: Any) -> None:
     # the right one works once, and never twice
     proof = await _proof(c, auth, purpose="privacy_delete", target=f"notes:{rev}")
     r = await c.post("/v1/privacy/notes/delete", json={"rev": rev, "proof": proof}, headers=CSRF)
-    assert r.status_code == 200 and r.json() == {"deleted": 2, "category": "notes"}
+    assert r.status_code == 200 and r.json() == {"deleted": 2, "category": "notes", "remaining": 0}
     s.notes.items[UID] = ["again"]
     rev2 = await _rev(c, "notes")
     r = await c.post("/v1/privacy/notes/delete", json={"rev": rev2, "proof": proof}, headers=CSRF)

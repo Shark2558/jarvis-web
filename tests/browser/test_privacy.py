@@ -74,8 +74,12 @@ class Backend:
     def __init__(self, cats: list[dict[str, Any]], passkey: bool = False) -> None:
         self.cats, self.passkey = cats, passkey
         self.deletes: list[tuple[str, dict[str, Any]]] = []
-        self.delete_reply: tuple[int, dict[str, Any]] = (200, {"deleted": 2, "category": "x"})
+        self.delete_reply: tuple[int, dict[str, Any]] = (
+            200,
+            {"deleted": 2, "category": "x", "remaining": 0},
+        )
         self.gets = 0
+        self.exports: list[tuple[str, str, dict[str, Any]]] = []
 
     def handle(self, route: Any) -> None:
         req = route.request
@@ -88,6 +92,7 @@ class Backend:
             route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
         elif path.endswith("/export"):
             cid = path.split("/")[3]
+            self.exports.append((req.method, cid, json.loads(req.post_data or "{}")))
             route.fulfill(
                 status=200,
                 content_type="application/json",
@@ -192,6 +197,62 @@ def test_export_downloads_a_json_file(browser: Any) -> None:
     assert dl.value.suggested_filename.startswith("jarvis-places-")
     data = json.loads(Path(dl.value.path()).read_text())
     assert data["category"] == "places"
+    page.ctx.close()  # type: ignore[attr-defined]
+
+
+def test_h1_a_content_export_carries_a_proof_bound_to_the_export(browser: Any) -> None:
+    be = Backend([cat("notes", delete="passkey"), cat("places")], passkey=True)
+    page = open_panel(browser, be)
+    with page.expect_download() as dl:
+        page.locator("#pv-notes button", has_text="Export").click()
+    assert dl.value.suggested_filename.startswith("jarvis-notes-")
+    assert page.evaluate("window.__passkey") == [["privacy_export", "export:notes"]]
+    assert be.exports[0][:2] == ("POST", "notes") and be.exports[0][2]["proof"]["challenge_id"]
+    with page.expect_download():
+        page.locator("#pv-places button", has_text="Export").click()
+    assert be.exports[1] == ("POST", "places", {})  # a simple category needs no proof
+    assert len(page.evaluate("window.__passkey")) == 1
+    page.ctx.close()  # type: ignore[attr-defined]
+
+
+def test_h1_a_stale_sign_in_on_export_offers_to_sign_in_again(browser: Any) -> None:
+    be = Backend([cat("notes", delete="passkey")])
+    page = open_panel(browser, be)
+    page.route(
+        HOST + "/v1/privacy/notes/export",
+        lambda r: r.fulfill(
+            status=403,
+            content_type="application/json",
+            body=json.dumps(
+                {"error": "proof_required", "reason": "reauth", "detail": "Sign in again first."}
+            ),
+        ),
+    )
+    page.locator("#pv-notes button", has_text="Export").click()
+    page.locator("#pvReauth").wait_for()
+    assert "Sign in again first." in page.locator("#pvNote").inner_text()
+    page.ctx.close()  # type: ignore[attr-defined]
+
+
+def test_m5_the_dialog_shows_what_the_delete_removes_not_the_whole_count(browser: Any) -> None:
+    be = Backend([cat("spend", count=3, unit="months", delete_count=2, delete="passkey")])
+    page = open_panel(browser, be)
+    page.locator("#pv-spend button", has_text="Delete").click()
+    text = page.locator("[role=dialog]").inner_text()
+    assert "2 months" in text and "3 months" not in text
+    page.ctx.close()  # type: ignore[attr-defined]
+
+
+def test_m4_a_delete_that_left_rows_says_how_many_are_still_there(browser: Any) -> None:
+    be = Backend([cat("places")])
+    be.delete_reply = (200, {"deleted": 1, "category": "places", "remaining": 3})
+    page = open_panel(browser, be)
+    page.locator("#pv-places button", has_text="Delete").click()
+    page.locator("#pvGo").click()
+    page.locator("[role=dialog]").wait_for(state="detached")
+    text = page.locator("#pvNote").inner_text()
+    assert "Deleted 1" in text and "3 are still there" in text
+    assert "bad" in str(page.locator("#pvNote").get_attribute("class"))
     page.ctx.close()  # type: ignore[attr-defined]
 
 

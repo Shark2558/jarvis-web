@@ -15,7 +15,8 @@ Every case gets a fresh world: an owner and another owner, every existing and R1
              without a passkey the typed word and a fresh sign-in are needed; unsafe categories
              refuse; every delete has an audit entry without content; a bearer token is refused
 Negative controls (each MUST make the suite fail): the proof's binding ignored, the owner filter
-off, the rev check off.
+off, the rev check off, the single-export proof off, the read-back after a delete off.
+(Over the soft 800 lines on purpose: each case is a short, independent scenario.)
 """
 
 from __future__ import annotations
@@ -335,6 +336,14 @@ class World:
             uid, cid, rev=view.rev, confirm="DELETE", proof=proof, fresh_left_s=FRESH
         )
 
+    async def export(self, cid: str, uid: str = UID) -> dict[str, Any]:
+        """The honest export: a content category with its own proof (target export:<id>)."""
+        view = (await self.views(uid))[cid]
+        proof = None
+        if view.delete == "passkey" and self.use_passkey:
+            proof = await self.proof("privacy_export", f"export:{cid}")
+        return await self.svc.export(uid, cid, proof=proof, fresh_left_s=FRESH)
+
     def dump(self) -> str:
         return repr(self.docs._data)
 
@@ -442,11 +451,11 @@ EXPORT_NEEDLES = {
 async def _exports(w: World) -> list[str]:
     out = []
     for cid, key in EXPORT_NEEDLES.items():
-        text = json.dumps((await w.svc.export(UID, cid))["data"])
+        text = json.dumps((await w.export(cid))["data"])
         if N[key] not in text:
             out.append(f"{cid}: needle missing from its export")
     for cid in ("memory", "conversations", "activity", "notes"):
-        text = json.dumps((await w.svc.export(UID, cid))["data"])
+        text = json.dumps((await w.export(cid))["data"])
         if "theirs" in text or "Other fact" in text or "nx" in text:
             out.append(f"{cid}: another owner's data in the export")
     return out
@@ -457,7 +466,7 @@ async def _no_secrets(w: World) -> list[str]:
     blobs = [v.model_dump_json() for v in (await w.views()).values()]
     for cid, v in (await w.views()).items():
         if v.export:
-            blobs.append(json.dumps(await w.svc.export(UID, cid)))
+            blobs.append(json.dumps(await w.export(cid)))
     blobs.append(
         json.dumps(
             await w.svc.export_all(
@@ -497,6 +506,32 @@ async def _export_all_gate(w: World) -> list[str]:
     except PasskeyRejected:
         pass
     return out
+
+
+@case("export-one-content-category-needs-its-own-proof")
+async def _export_one_gate(w: World) -> list[str]:
+    out = []
+    for proof_for in (None, ("privacy_export", "all"), ("privacy_delete", "export:notes")):
+        proof = await w.proof(*proof_for) if proof_for else None
+        try:
+            await w.svc.export(UID, "notes", proof=proof, fresh_left_s=FRESH)
+            out.append(f"notes exported with proof {proof_for}")
+        except (PasskeyRequired, PasskeyRejected):
+            pass
+    try:  # a category he can make again stays a plain export
+        await w.svc.export(UID, "places", proof=None, fresh_left_s=None)
+    except Exception as exc:  # noqa: BLE001
+        out.append(f"places needed a proof: {type(exc).__name__}")
+    return out
+
+
+@case("export-one-without-a-passkey-needs-a-fresh-sign-in", passkey=False)
+async def _export_one_fresh(w: World) -> list[str]:
+    try:
+        await w.svc.export(UID, "notes", proof=None, fresh_left_s=None)
+        return ["notes exported with no sign-in"]
+    except ProofRequired:
+        return []
 
 
 # ---- deletes ----------------------------------------------------------------------------------
@@ -645,6 +680,46 @@ async def _changed(w: World) -> list[str]:
     return [] if (await w.views())["places"].count == 1 else ["places changed"]
 
 
+@case("gate-data-that-moves-while-the-proof-is-checked-is-a-conflict")
+async def _moves(w: World) -> list[str]:
+    v = (await w.views())["notes"]
+    proof = await w.proof("privacy_delete", f"notes:{v.rev}")
+    real = w.perms.check_purpose
+
+    async def moving(*a: Any, **k: Any) -> Any:
+        w.standins["notes"].items[UID].append("n3")  # a note arrives during the check
+        return await real(*a, **k)
+
+    w.perms.check_purpose = moving  # type: ignore[method-assign]
+    try:
+        await w.svc.delete(UID, "notes", rev=v.rev, confirm=None, proof=proof, fresh_left_s=None)
+        return ["deleted data that arrived after he looked"]
+    except Changed:
+        return [] if (await w.views())["notes"].count == 3 else ["notes changed"]
+
+
+@case("delete-reports-what-is-left-and-never-a-false-all-gone")
+async def _left(w: World) -> list[str]:
+    out = []
+    res = await w.delete("places")
+    if (res.deleted, res.remaining) != (1, 0):
+        out.append(f"clean delete reported {res.deleted}/{res.remaining}")
+    real = w.activity.sweep
+
+    async def swallowed(*a: Any, **k: Any) -> int:
+        return 0  # the real sweep logs and returns 0 when Firestore fails
+
+    w.activity.sweep = swallowed  # type: ignore[method-assign]
+    res = await w.delete("activity")
+    w.activity.sweep = real  # type: ignore[method-assign]
+    if res.deleted != 0 or not res.remaining:
+        out.append(f"a swallowed failure reported {res.deleted}/{res.remaining}")
+    res = await w.delete("spend")  # this month's row stays: that is not "left"
+    if res.remaining != 0:
+        out.append(f"spend reported {res.remaining} left")
+    return out
+
+
 @case("gate-a-proof-for-an-old-rev-cannot-delete-newer-data")
 async def _old_rev(w: World) -> list[str]:
     old = (await w.views())["notes"]
@@ -774,12 +849,46 @@ def rev_check_off() -> Any:
         sources_mod.fingerprint = saved
 
 
+@contextmanager
+def export_gate_off() -> Any:
+    """A single-category export passes without proof (the review H1 bypass)."""
+    orig = PrivacyService._prove
+
+    async def loose(self: Any, uid: str, purpose: str, target: str, **k: Any) -> str:
+        if purpose == "privacy_export" and target.startswith("export:"):
+            return "open"
+        return await orig(self, uid, purpose, target, **k)
+
+    PrivacyService._prove = loose  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        PrivacyService._prove = orig  # type: ignore[method-assign]
+
+
+@contextmanager
+def verify_off() -> Any:
+    """The delete does not read back what is left (reports a clean success)."""
+    orig = PrivacyService._left
+
+    async def blind(self: Any, uid: str, source: Any) -> int | None:
+        return 0
+
+    PrivacyService._left = blind  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        PrivacyService._left = orig  # type: ignore[method-assign]
+
+
 async def controls() -> dict[str, Any]:
     failed: dict[str, list[str]] = {}
     for name, ctx in (
         ("binding_off", binding_off),
         ("owner_filter_off", owner_filter_off),
         ("rev_check_off", rev_check_off),
+        ("export_gate_off", export_gate_off),
+        ("verify_off", verify_off),
     ):
         with ctx():
             failed[name] = [r["id"] for r in await run_all() if not r["passed"]]

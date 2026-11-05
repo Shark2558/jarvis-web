@@ -79,6 +79,7 @@ class Look:
     note: str = ""
     size_hint: str | None = None
     deletable: bool = True  # False: nothing to delete now (the class falls back to none)
+    delete_count: int | None = None  # what a delete removes, when that is less than `count`
 
 
 LookFn = Callable[[str], Awaitable[Look]]
@@ -118,6 +119,7 @@ class CallbackSource:
             recoverable=s.recoverable,
             note=seen.note or s.note,
             rev=fingerprint(s.id, seen.count, seen.basis),
+            delete_count=seen.count if seen.delete_count is None else seen.delete_count,
         )
 
     async def export(self, uid: str) -> dict[str, Any] | None:
@@ -208,15 +210,28 @@ def conversations_source(
         return {"newest": CONVERSATIONS_EXPORTED, "conversations": out}
 
     async def delete(uid: str) -> int:
-        gone = 0
+        """Counts only what really went. A conversation that fails is logged and skipped (the
+        rest still go); the service then reads what is left."""
+        gone, failed = 0, set()
         for _ in range(DELETE_PASSES):
-            rows = await store.list_for_user(uid, limit=CONVERSATIONS_LISTED)
-            if not rows:
-                break
+            rows = [r for r in await store.list_for_user(uid, limit=CONVERSATIONS_LISTED)]
+            rows = [r for r in rows if r.id not in failed]
+            removed = 0
             for r in rows:
-                await forget_files(documents, uid, r.id)  # its files go first
-                if await store.delete(r.id):
-                    gone += 1
+                try:
+                    await forget_files(documents, uid, r.id)  # its files go first
+                    if await store.delete(r.id):
+                        removed += 1
+                    else:
+                        failed.add(r.id)
+                except Exception as exc:  # noqa: BLE001
+                    log.error(
+                        "a conversation could not be deleted", extra={"error": type(exc).__name__}
+                    )
+                    failed.add(r.id)
+            gone += removed
+            if not rows or removed == 0:
+                break
         return gone
 
     return CallbackSource(
@@ -491,6 +506,7 @@ def spend_source(meter: UsageMeter, clock: Callable[[], datetime]) -> CallbackSo
             len(past) + len(current),
             [(m.month, m.calls) for m in [*past, *current]],
             deletable=bool(past),
+            delete_count=len(past),
         )
 
     async def export(uid: str) -> dict[str, Any]:

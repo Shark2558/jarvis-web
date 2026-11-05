@@ -16,7 +16,13 @@ def test_privacy_mock_evals_pass_their_gates_and_each_control_fails_the_suite() 
     report = json.loads((ROOT / "evals" / "privacy" / "report.json").read_text())
     assert report["cases"] >= 30 and report["pass_rate"] == 1.0
     control = report["negative_control"]
-    assert set(control["failed_cases"]) == {"binding_off", "owner_filter_off", "rev_check_off"}
+    assert set(control["failed_cases"]) == {
+        "binding_off",
+        "owner_filter_off",
+        "rev_check_off",
+        "export_gate_off",
+        "verify_off",
+    }
     assert all(control["failed_cases"].values()) and control["suite_failed"] is True
     ids = {x["id"] for x in report["results"]}
     assert {"count-faces-placeholder-is-listed", "delete-this-months-spend-is-kept"} <= ids

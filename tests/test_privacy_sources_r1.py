@@ -93,6 +93,24 @@ async def test_activity_delete_covers_a_day_with_more_than_one_sweep_batch() -> 
     assert await src.delete(UID) == 5
 
 
+async def test_m4_an_activity_sweep_that_swallows_a_failure_does_not_look_like_success() -> None:
+    from jarvis.privacy.service import PrivacyService
+
+    store = ActivityStore(MemoryDocs())
+    await store.add(_item(1, UID, "x"), "20261104")
+
+    async def swallowed(owners: object, *, keep_from: str) -> int:
+        return 0  # the real sweep logs and returns 0 when Firestore fails
+
+    store.sweep = swallowed  # type: ignore[method-assign]
+    reg = PrivacyRegistry()
+    reg.register(activity_source(store, lambda: TODAY))
+    svc = PrivacyService(reg)
+    rev = (await svc.view(UID)).categories[0].rev
+    out = await svc.delete(UID, "activity", rev=rev, confirm="DELETE", proof=None, fresh_left_s=60)
+    assert out.deleted == 0 and out.remaining == 1
+
+
 async def test_offline_shows_only_that_one_is_set_and_never_its_address_or_key() -> None:
     docs = MemoryDocs()
     cipher = TokenCipher(bytes(range(1, 33)))

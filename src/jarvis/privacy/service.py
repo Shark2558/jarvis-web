@@ -77,6 +77,9 @@ class PrivacyView(BaseModel):
 class Deleted(BaseModel):
     deleted: int
     category: str
+    # what is still there after the delete (None: it could not be read back). A delete that
+    # left rows is reported with this number, never as a clean success.
+    remaining: int | None = None
 
 
 class PrivacyService:
@@ -180,15 +183,36 @@ class PrivacyService:
 
     # ---- export ---------------------------------------------------------------------------------
 
-    async def export(self, uid: str, category_id: str) -> dict[str, Any]:
+    async def export(
+        self,
+        uid: str,
+        category_id: str,
+        *,
+        proof: PasskeyProof | None = None,
+        fresh_left_s: int | None = None,
+    ) -> dict[str, Any]:
+        """One category. Content (passkey-class) categories need a proof of their own - purpose
+        `privacy_export`, target `export:<id>` - or the fresh sign-in fallback, so a stolen
+        session cannot read them one by one around the "Download everything" gate."""
         source = self._source(category_id)
         view = await self._describe(uid, source)
         if not view.export:
             raise NotExportable("This category can't be downloaded.")
+        how = ""
+        if view.delete == "passkey":
+            how = await self._prove(
+                uid,
+                "privacy_export",
+                f"export:{category_id}",
+                typed=False,
+                confirm=None,
+                proof=proof,
+                fresh_left_s=fresh_left_s,
+            )
         data = await source.export(uid)
         if data is None:
             raise NotExportable("This category can't be downloaded.")
-        await self._audit("privacy_export", "executed", category_id, view.count or 0, "")
+        await self._audit("privacy_export", "executed", category_id, view.count or 0, how)
         return {
             "category": category_id,
             "generated_at": self._clock().isoformat(),
@@ -265,17 +289,39 @@ class PrivacyService:
                 proof=proof,
                 fresh_left_s=fresh_left_s,
             )
+            # the proof was checked for the rev he saw; the data may have moved while that ran
+            if (await self._describe(uid, source)).rev != view.rev:
+                raise Changed(CHANGED)
+        before = _to_delete(view)
+        failure: str | None = None
+        count = 0
         try:
             count = await source.delete(uid)
         except Exception as exc:
-            log.error(
-                "privacy delete failed",
-                extra={"source": category_id, "error": type(exc).__name__},
-            )
-            await self._audit("privacy_delete", "error", category_id, 0, type(exc).__name__)
-            raise DeleteFailed(DELETE_FAILED) from None
-        await self._audit("privacy_delete", "executed", category_id, count, how)
-        return Deleted(deleted=count, category=category_id)
+            failure = type(exc).__name__
+            log.error("privacy delete failed", extra={"source": category_id, "error": failure})
+        left = await self._left(uid, source)
+        if failure is not None:  # what the delete did before it failed is what the rows say
+            count = max(0, before - left) if left is not None and before is not None else 0
+            if count == 0:
+                await self._audit("privacy_delete", "error", category_id, 0, failure)
+                raise DeleteFailed(DELETE_FAILED)
+        suffix = f"{how}, {left} left" if left else how
+        await self._audit("privacy_delete", "executed", category_id, count, suffix)
+        return Deleted(deleted=count, category=category_id, remaining=left)
+
+    async def _left(self, uid: str, source: PrivacySource) -> int | None:
+        """What a delete of this category would still remove; None when it can't be read back."""
+        try:
+            return _to_delete(await self._describe(uid, source), after=True)
+        except SourceUnavailable:
+            return None
+
+
+def _to_delete(view: CategoryView, *, after: bool = False) -> int | None:
+    if after and view.delete == "none":  # nothing deletable is left
+        return 0
+    return view.count if view.delete_count is None else view.delete_count
 
 
 __all__ = [

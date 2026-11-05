@@ -252,6 +252,49 @@ async def test_spend_never_deletes_this_months_row() -> None:
     assert (await meter.get(OTHER, "2026-09")).calls == 1
 
 
+async def test_m5_spend_delete_count_is_the_past_months_only() -> None:
+    meter = UsageMeter(MemoryDocs())
+    clock = Clock(datetime(2026, 11, 15, 6, 0, tzinfo=UTC))
+    for day in (datetime(2026, 9, 3, tzinfo=UTC), datetime(2026, 10, 3, tzinfo=UTC), clock()):
+        await meter.add(UID, brain_id="b", cost_usd=0.1, cost_inr=9.5, now=day)
+    v = await spend_source(meter, clock).describe(UID)
+    assert v.count == 3 and v.delete_count == 2
+
+
+async def test_m5_a_category_with_no_separate_delete_count_uses_its_count() -> None:
+    v = await settings_source(BriefStore(MemoryDocs())).describe(UID)
+    assert v.delete_count == v.count
+
+
+async def test_m4_conversations_delete_counts_only_what_went_when_one_fails() -> None:
+    docs = MemoryDocs()
+    store = DocSessionStore(docs)
+    await _chat(store, UID, "sess_a1", "one")
+    await _chat(store, UID, "sess_a2", "two")
+    real = store.delete
+
+    async def flaky(sid: str) -> bool:
+        if sid == "sess_a2":
+            raise RuntimeError("firestore down")
+        return await real(sid)
+
+    store.delete = flaky  # type: ignore[method-assign]
+    src = conversations_source(store)
+    assert await src.delete(UID) == 1  # reports the one that went; never raises with it lost
+    assert (await src.describe(UID)).count == 1
+
+
+async def test_m4_conversations_that_report_not_deleted_are_not_counted() -> None:
+    store = DocSessionStore(MemoryDocs())
+    await _chat(store, UID, "sess_a1", "one")
+
+    async def nothing(sid: str) -> bool:
+        return False
+
+    store.delete = nothing  # type: ignore[method-assign]
+    assert await conversations_source(store).delete(UID) == 0
+
+
 # ---- approvals, passkeys, audit, marks, counters, faces ---------------------------------------
 
 

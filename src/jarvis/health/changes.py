@@ -2,8 +2,8 @@
 """What to tell the owner after a check (R4 D6, integrator decisions D-B2 / D-B3). Pure: no I/O.
 
 - A status must HOLD for `DEBOUNCE_CHECKS` consecutive checks before it counts (a single timeout
-  blip never alerts); a recovery needs `RECOVERY_CHECKS` clear checks in a row. Until then the owner's last-told
-  status for that integration stands.
+  blip never alerts); a recovery needs `RECOVERY_CHECKS` clear checks in a row. Until then the owner's
+  last-told status for that integration stands.
 - Only `down` rings (`health_fault`). `degraded` goes out as a silent info note
   (`health_degraded`). Getting worse (degraded -> down) rings; getting better (down -> degraded)
   is a note. All faults gone -> `health_recovered`.

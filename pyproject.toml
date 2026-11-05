@@ -65,6 +65,8 @@ where = ["src"]
     "static/wakeword/*.onnx",
     "static/wakeword/*.txt",
 ]
+# R3 C: the laptop Faces page the bridge serves on 127.0.0.1:8098
+"jarvis.homebridge" = ["static/faces.html", "static/faces.js", "static/faces.css"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

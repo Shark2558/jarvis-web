@@ -1,0 +1,20 @@
+/* The laptop Faces page. Own file, no remote anything (CSP default-src 'self'). */
+:root{color-scheme:light dark;--ink:#16202b;--bg:#f6f8fa;--card:#fff;--line:#c9d3dd;--accent:#0b5cad;--bad:#9a3412}
+@media (prefers-color-scheme:dark){:root{--ink:#e6edf3;--bg:#0f1720;--card:#16202b;--line:#31404f;--accent:#7cb7ff;--bad:#fdba74}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.4rem;margin:0 0 8px}
+h2{font-size:1.1rem;margin:24px 0 8px}
+.fine{font-size:.9rem;opacity:.85;margin:4px 0 12px}
+#status{min-height:1.5em}
+#status.bad{color:var(--bad)}
+ul{list-style:none;margin:0;padding:0}
+li{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin:0 0 8px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between}
+code{font:14px ui-monospace,monospace;overflow-wrap:anywhere}
+input,button,select{font:inherit;min-height:44px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+button{cursor:pointer;border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#recent li{flex-direction:column;align-items:flex-start}
+#recent img{width:96px;height:96px;object-fit:cover;border-radius:6px;background:var(--line)}
+@media (prefers-reduced-motion:no-preference){button{transition:background .15s}}

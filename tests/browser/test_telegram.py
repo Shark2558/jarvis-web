@@ -197,7 +197,10 @@ def test_paired_controls_confirm_save_and_unpair(browser: Any, server_url: str, 
         assert reads.get_attribute("aria-pressed") == "false"
         reads.click()
         c.page.locator("#telegramDialog[open]").wait_for()
-        assert "end-to-end" in str(c.page.locator("#telegramDialogText").text_content())
+        said = str(c.page.locator("#telegramDialogText").text_content())
+        assert "end-to-end" in said
+        # the switch also covers family calendars and recently deleted items (R1 review fix)
+        assert "family calendars" in said and "recently deleted" in said
         c.page.locator("#telegramDialogNo").click()
         assert not [x for x in fake.calls if x["method"] == "PUT"]
         c.page.locator("#telegramReads").click()

@@ -8,10 +8,12 @@ import base64
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import date
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from drive_fakes import FakeDrive, StaticTokens
+from fastapi.routing import iter_route_contexts
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
@@ -42,6 +44,7 @@ from jarvis.undo.store import DeletedStore
 
 KEY = SecretStr(base64.b64encode(bytes(range(1, 33))).decode())
 UID = "owner"
+H = {"X-Requested-With": "JARVIS"}
 SECRET = "the spare key is under the blue flowerpot"
 R2_TOOLS = {
     "vault_list",
@@ -146,7 +149,83 @@ async def test_without_the_token_key_everything_is_off_with_plain_words(off: App
     n = (await off.client.get("/v1/notes")).json()
     assert n["available"] is False and "no encryption key" in n["reason"]
     t = await off.client.get("/v1/things")
-    assert t.status_code in (200, 503) and "encryption key" in t.text
+    assert t.status_code == 200, t.text  # review M4: the list says so; it is not an error
+    assert t.json()["available"] is False and "no encryption key" in t.json()["reason"]
+    w = await off.client.post("/v1/things", json={"name": "keys", "place": "hook"}, headers=H)
+    assert w.status_code == 503 and w.json()["error"] == "unavailable", w.text
+
+
+# ---- the route table (review M4) -----------------------------------------------------------------
+
+R2_ROUTES = {
+    ("GET", "/v1/vault"),
+    ("POST", "/v1/vault/upload"),
+    ("PATCH", "/v1/vault/items/{item_id}"),
+    ("DELETE", "/v1/vault/items/{item_id}"),
+    ("POST", "/v1/vault/holders"),
+    ("DELETE", "/v1/vault/holders/{holder_id}"),
+    ("PUT", "/v1/vault/settings"),
+    ("POST", "/v1/vault/unlock"),
+    ("DELETE", "/v1/vault/unlock"),
+    ("POST", "/v1/vault/items/{item_id}/files/{fid}/ticket"),
+    ("POST", "/v1/vault/export/ticket"),
+    ("GET", "/v1/vault/download/{ticket}"),
+    ("GET", "/v1/vault/inbox"),
+    ("PUT", "/v1/vault/inbox"),
+    ("DELETE", "/v1/vault/inbox"),
+    ("POST", "/v1/vault/inbox/check"),
+    ("GET", "/v1/things"),
+    ("POST", "/v1/things"),
+    ("PATCH", "/v1/things/{thing_id}"),
+    ("DELETE", "/v1/things/{thing_id}"),
+    ("GET", "/v1/things/{thing_id}/history"),
+    ("GET", "/v1/things/export"),
+    ("GET", "/v1/notes"),
+    ("POST", "/v1/notes"),
+    ("PATCH", "/v1/notes/{note_id}"),
+    ("DELETE", "/v1/notes/{note_id}"),
+    ("POST", "/v1/notes/{note_id}/fetch"),
+    ("GET", "/v1/notes/export"),
+    ("POST", "/v1/notes/import"),
+    ("GET", "/v1/privacy"),
+    ("GET", "/v1/privacy/{category_id}/export"),
+    ("POST", "/v1/privacy/export-all"),
+    ("POST", "/v1/privacy/{category_id}/delete"),
+    ("POST", "/v1/passkeys/challenge"),
+    ("GET", "/v1/telegram"),
+    ("PUT", "/v1/telegram/settings"),
+    ("POST", "/v1/telegram/pair"),
+    ("DELETE", "/v1/telegram/pair"),
+    ("POST", "/v1/telegram/test-alert"),
+    ("GET", "/v1/deleted"),
+    ("POST", "/v1/deleted/{undo_id}/restore"),
+    ("DELETE", "/v1/deleted/{undo_id}"),
+}
+
+
+def _route_table(app: Any) -> list[tuple[str, str]]:
+    """Every (method, path) the app really serves, through included routers (FastAPI's public
+    `iter_route_contexts`), with repeats kept so a duplicate shows."""
+    return [
+        (m, str(rc.path))
+        for rc in iter_route_contexts(app.routes)
+        for m in sorted(rc.methods or ())
+        if m != "HEAD"
+    ]
+
+
+@pytest.mark.parametrize("keyed_on", [True, False])
+async def test_the_app_serves_every_r2_route_exactly_once(
+    settings: Settings, keyed_on: bool
+) -> None:
+    """With or without the token key (off, the routes answer "not available"), with Drive."""
+    s = keyed(settings) if keyed_on else settings.model_copy(update={"tools_enabled": True})
+    async for a in _app(s, drive=_drive()):
+        table = _route_table(a.app)
+        assert len(table) > 100  # the whole app, not one router
+        repeats = sorted({p for p in table if table.count(p) > 1})
+        assert repeats == []
+        assert sorted(R2_ROUTES - set(table)) == []
 
 
 async def test_notes_switched_off_say_so(settings: Settings) -> None:
@@ -177,9 +256,20 @@ async def test_with_drive_the_inbox_is_wired_and_never_readable_by_drive_tools(
         assert st.drive.inbox is not None  # but a folder picked earlier stays unreadable
 
 
-async def test_a_never_drive_row_stops_the_inbox_job(settings: Settings) -> None:
+async def test_a_never_drive_row_stops_the_inbox_job(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Through the job's public `run` (review M4): with the owner's Drive row Never, or rules
+    that can't be read, the inbox is never checked for that owner; with Allow it is."""
+    checked: list[str] = []
+
+    async def check(uid: str) -> Any:
+        checked.append(uid)
+        return SimpleNamespace(imported=0, skipped=0)
+
     async for a in _app(keyed(settings), drive=_drive()):
         job = next(j for j in a.app.state.tick_jobs if j.name == "digilocker_inbox")
+        monkeypatch.setattr(a.app.state.vault_inbox, "check", check)
 
         class Never:
             async def rules_for(self, uid: str) -> list[PolicyRule]:
@@ -189,9 +279,16 @@ async def test_a_never_drive_row_stops_the_inbox_job(settings: Settings) -> None
             async def rules_for(self, uid: str) -> list[PolicyRule]:
                 raise RuntimeError("down")
 
+        class Allow:
+            async def rules_for(self, uid: str) -> list[PolicyRule]:
+                return []
+
         for perms in (Never(), Broken()):
             a.app.state.permissions = perms
-            assert await job._allowed(UID) is False  # type: ignore[attr-defined]
+            assert await job.run([UID]) == {"owners": 0, "imported": 0, "skipped": 0, "failed": 0}
+        assert checked == []
+        a.app.state.permissions = Allow()
+        assert (await job.run([UID]))["owners"] == 1 and checked == [UID]
 
 
 async def test_an_owner_sweep_failure_stops_no_one() -> None:

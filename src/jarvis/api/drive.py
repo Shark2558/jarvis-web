@@ -69,7 +69,7 @@ def _owner_email(request: Request) -> str | None:
 
 
 def _public(view: dict[str, Any]) -> dict[str, Any]:
-    return {
+    out = {
         "configured": True,
         "service_email": view["service_email"],
         "folders": view["folders"],
@@ -77,6 +77,9 @@ def _public(view: dict[str, Any]) -> dict[str, Any]:
         "others_more": view["others_more"],
         "max_folders": view["max_folders"],
     }
+    if view.get("inbox_wired"):
+        out["inbox_wired"] = True  # R2 D9: the DigiLocker import folder can be picked here
+    return out
 
 
 @router.get("")

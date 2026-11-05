@@ -1,0 +1,20 @@
+{
+ "id": "dtdc_delivered",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "DTDC <notify@dtdc.com>",
+   "subject": "DTDC delivery confirmation",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Consignment D98765432 was delivered to the addressee."
+  }
+ ],
+ "expect": {
+  "merchant": "DTDC",
+  "carrier": "dtdc",
+  "tracking_number": "D98765432",
+  "status": "delivered",
+  "expected": null,
+  "count": 1
+ }
+}

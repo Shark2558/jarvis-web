@@ -1,0 +1,20 @@
+{
+ "id": "flipkart_shipped_ekart",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Flipkart <noreply@flipkart.com>",
+   "subject": "Your order has been shipped",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Hi Akash, your item has shipped via Ekart Logistics.\nTracking ID: FMPP1234567890\nOrder ID OD123456789012345678\nDelivery by Sat, 14 Nov"
+  }
+ ],
+ "expect": {
+  "merchant": "Flipkart",
+  "carrier": "ekart",
+  "tracking_number": "FMPP1234567890",
+  "status": "shipped",
+  "expected": "2026-11-14",
+  "count": 1
+ }
+}

@@ -1,0 +1,20 @@
+{
+ "id": "myntra_cancelled",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Myntra <no-reply@myntra.com>",
+   "subject": "Your order has been cancelled",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "As you asked, the order was cancelled. Refund initiated to your card.\nOrder number: MYN7712990"
+  }
+ ],
+ "expect": {
+  "merchant": "Myntra",
+  "carrier": null,
+  "tracking_number": null,
+  "status": "cancelled",
+  "expected": null,
+  "count": 1
+ }
+}

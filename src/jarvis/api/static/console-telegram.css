@@ -1,0 +1,26 @@
+/* src/jarvis/api/static/console-telegram.css -- Integrations -> Telegram (R1). Reuses the Integrations
+   card (.integ / .ihead / .ibody / .inote, console.css), the deck switch (.bsw) and the confirm dialog
+   (.bdialog); adds only the numbered steps, switch rows, the pairing code and the action row. Text on the
+   ink tokens (AA on Night and Day); a switch says On / Off in words; touch targets >= 44 px on phones;
+   no horizontal scroll. */
+.integ.telegram{margin-top:10px}
+.integ.telegram .ibody > .btn.bact{margin-top:10px}
+.integ.telegram .fine{font-size:12.5px;color:var(--ink-3)}
+.integ.telegram .warn{color:var(--amber-ink)}
+.integ.telegram[data-state="linked"] .istate{color:var(--ok-ink)}
+.integ.telegram[data-state="error"] .istate{color:var(--amber-ink)}
+.tsteps{margin:10px 0 0;padding-left:22px;font-size:13px;line-height:1.5;color:var(--ink-2)}
+.tsteps li{margin:2px 0;overflow-wrap:anywhere}
+.trow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line-2)}
+.trow .btxt{flex:1 1 auto;min-width:0}
+.trow .btxt b{display:block;font-size:13.5px;font-weight:600;line-height:1.4;color:var(--ink)}
+.talerts{margin-top:6px}
+.tactions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.tactions .btn.bact{margin-top:0}
+.twebhook{margin-top:10px}
+#telegramDialog .tcode{margin:10px 0 0;font:600 22px/1.2 var(--tech);letter-spacing:.2em;color:var(--ink);overflow-wrap:anywhere}
+#telegramDialog a.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;margin:6px 0}
+#telegramDialog .fine{font-size:12.5px;color:var(--ink-3);overflow-wrap:anywhere}
+@media (max-width: 560px){
+  .trow .bsw,.tactions .btn.bact,#telegramDialog a.btn{min-height:44px}
+}

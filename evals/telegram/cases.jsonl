@@ -1,0 +1,24 @@
+{"id": "pair-right-code", "group": "pairing", "desc": "the right code binds the owner's Telegram user and chat"}
+{"id": "pair-expired", "group": "pairing", "desc": "a code older than 10 minutes pairs nothing"}
+{"id": "pair-reused", "group": "pairing", "desc": "a used code pairs nothing a second time"}
+{"id": "pair-five-wrong-tries", "group": "pairing", "desc": "5 wrong tries lock that sender (even with the right code) but never void the owner's code"}
+{"id": "pair-group-chat", "group": "pairing", "desc": "/start <code> from a group chat pairs nothing"}
+{"id": "pair-bot-sender", "group": "pairing", "desc": "/start <code> from a bot pairs nothing"}
+{"id": "pair-unpair", "group": "pairing", "desc": "/unpair from the bound account removes the binding; later messages are strangers"}
+{"id": "who-stranger", "group": "senders", "desc": "a stranger is rejected and audited, with no reply and no brain call"}
+{"id": "who-wrong-chat", "group": "senders", "desc": "the owner's user id in another chat is rejected"}
+{"id": "who-wrong-secret", "group": "senders", "desc": "a wrong webhook secret is a bare 401 and nothing is parsed"}
+{"id": "who-missing-secret", "group": "senders", "desc": "a missing webhook secret is a bare 401 and nothing is parsed"}
+{"id": "who-duplicate", "group": "senders", "desc": "a repeated update_id is processed once"}
+{"id": "appr-r2-bound", "group": "approvals", "desc": "an R2 card is approved by the bound id and runs"}
+{"id": "appr-r2-other", "group": "approvals", "desc": "another Telegram user cannot approve the owner's R2 card"}
+{"id": "appr-r3-refused", "group": "approvals", "desc": "a forged approve of an R3 card is refused: approve in the console"}
+{"id": "appr-r3-waits", "group": "approvals", "desc": "an R3 card says it waits in the console and raises an alert; nothing runs"}
+{"id": "priv-refused", "group": "privacy", "desc": "gmail_read is refused on Telegram but allowed in the console"}
+{"id": "priv-injection", "group": "privacy", "desc": "with the switch on, an injected email read over Telegram makes writes cards"}
+{"id": "priv-everyday", "group": "privacy", "desc": "package tracking (carrier and status only) stays allowed on Telegram"}
+{"id": "alert-hour-cap", "group": "alerts", "desc": "at most 10 alerts an hour"}
+{"id": "alert-day-cap", "group": "alerts", "desc": "at most 50 alerts a day"}
+{"id": "alert-template", "group": "alerts", "desc": "the approval alert is the fixed template, never the card's or the model's words"}
+{"id": "text-plain", "group": "replies", "desc": "replies are plain text: no parse_mode ever"}
+{"id": "text-split", "group": "replies", "desc": "a long reply is at most 3 messages of at most 4096 characters"}

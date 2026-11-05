@@ -50,7 +50,17 @@ BRIEF_KEYS = {
     "generations_left",
 }
 # slice 10 C (review M4): whether the AI consent covers to-do titles
-SETTINGS_KEYS = {"enabled", "time", "ai_summary", "inbox_delivery", "updated_at", "ai_todo_consent"}
+# R1 D: the Deliveries and Family today switches
+SETTINGS_KEYS = {
+    "enabled",
+    "time",
+    "ai_summary",
+    "inbox_delivery",
+    "updated_at",
+    "ai_todo_consent",
+    "deliveries",
+    "family",
+}
 
 
 @pytest.fixture
@@ -152,6 +162,8 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "inbox",
         "jarvis",
         "todo",
+        "deliveries",  # R1: null until the section is wired and on
+        "family",
         "sections_status",
     }
     assert set(b["data"]["calendar"]) == {"today", "clashes", "free_blocks", "tomorrow_first"}
@@ -163,6 +175,8 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "inbox": "ok",
         "jarvis": "ok",
         "todo": "not_granted",
+        "deliveries": "ok",
+        "family": "ok",
     }
     assert {r.method for r in fake.requests} == {"GET"}
     forced = (await gc.post("/v1/brief/generate", json={"force": True}, headers=CSRF)).json()

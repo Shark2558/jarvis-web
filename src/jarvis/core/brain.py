@@ -45,6 +45,7 @@ from jarvis.config import Settings
 from jarvis.core import approve_all as approve_many
 from jarvis.core import brain_decisions as decisions
 from jarvis.core.approve_all import ApproveAllResponse
+from jarvis.core.channel import answered_offline, reset_offline
 from jarvis.core.guardrails import guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn, UndoRef
 from jarvis.core.persona import Persona, WitSource
@@ -343,6 +344,7 @@ class Brain:
             return await self._chat(req)
 
     async def _chat(self, req: ChatRequest) -> ChatResponse:
+        reset_offline()  # R1: nothing answered by the fallback brain yet
         t0 = time.perf_counter()
         trace_id = get_trace_id()
         if req.brain:
@@ -383,6 +385,7 @@ class Brain:
                 cost_usd=completion.cost_usd,
                 latency_ms=completion.latency_ms,
                 tool_derived=rounds.count > 0,  # written from tool results: never to training
+                offline=completion.offline or answered_offline(),
                 sources=cited_sources(reply, session, enabled=spec.tools_allowed),
             )
         )
@@ -448,6 +451,7 @@ class Brain:
             tool_calls=meta.rounds,
             pending_approvals=meta.pending,
             memory_used=meta.memory_used,
+            offline=session.turns[-1].offline,
             sources=session.turns[-1].sources,  # the reply just stored: what it cited
             undo=meta.undo,
             cards=meta.cards,
@@ -717,6 +721,7 @@ class Brain:
                 await inner.aclose()
 
     async def _chat_stream(self, req: ChatRequest, meta: StreamMeta) -> AsyncGenerator[str, None]:
+        reset_offline()
         trace_id = get_trace_id()
         if req.brain:
             self.brains.get(req.brain)
@@ -767,6 +772,7 @@ class Brain:
                 await self.billing.record(req.user_id, spec.id, cost)
 
         reply = Turn(
-            role=Role.ASSISTANT, content="".join(chunks).strip(), trace_id=trace_id, usage=usage
-        )
+            role=Role.ASSISTANT, content="".join(chunks).strip(), trace_id=trace_id, usage=usage,
+            offline=answered_offline(),
+        )  # fmt: skip
         await self._finish_turn(req.user_id, session, spec, rec, reply, model=model, cost=cost)

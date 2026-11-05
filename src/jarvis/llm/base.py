@@ -159,6 +159,8 @@ class Completion(BaseModel):
     stop_reason: str | None = None
     latency_ms: int
     cost_usd: float = 0.0
+    # R1: answered by the fallback brain on the owner's laptop (set by the fallback only)
+    offline: bool = False
 
 
 class LLMError(Exception):
@@ -167,6 +169,12 @@ class LLMError(Exception):
 
 class LLMTransientError(LLMError):
     """Rate limit, overload, timeout — safe to retry or degrade to a cheaper tier."""
+
+
+class LLMUnreachable(LLMTransientError):
+    """The vendor could not be reached at all: connection error, timeout or HTTP 5xx (R1 D12).
+    A 429 stays a plain LLMTransientError. Every tier is down, so the router goes to the
+    fallback brain instead of degrading to a cheaper tier."""
 
 
 class LLMAuthError(LLMError):

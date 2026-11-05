@@ -57,6 +57,15 @@ APP_ASSETS: dict[str, str] = {
     "console-whatsapp.js": _JS,  # slice 12 D6: the WhatsApp draft card (Open in WhatsApp)
     "console-whatsapp.css": "text/css",
     "console-integrations.js": _JS,  # slice 12 review C5: Integrations, out of console.js
+    "console-telegram.js": _JS,  # R1 A: Integrations -> Telegram (pair, privacy, alerts)
+    "console-telegram.css": "text/css",
+    "console-activity.js": _JS,  # R1 B: Activity (what JARVIS did, with Undo)
+    "console-activity.css": "text/css",
+    "console-offline.js": _JS,  # R1 C: Integrations -> Offline mode, reply marker, Vitals line
+    "console-offline.css": "text/css",
+    "console-family.js": _JS,  # R1 D: Integrations -> Family calendars
+    "console-family.css": "text/css",
+    "console-brief-sections.js": _JS,  # R1 D: Deliveries and Family today in the Brief panel
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",

@@ -1,0 +1,21 @@
+{
+ "id": "no_number_from_stranger",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Amazon <shipping@amazon.in.evil.test>",
+   "subject": "Shipped: your parcel",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Your package has shipped. Tracking ID: TBA123456789012"
+  }
+ ],
+ "expect": {
+  "merchant": null,
+  "carrier": null,
+  "tracking_number": null,
+  "status": "shipped",
+  "expected": null,
+  "count": 1,
+  "known_sender": false
+ }
+}

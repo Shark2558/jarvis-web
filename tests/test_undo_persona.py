@@ -37,4 +37,4 @@ def test_old_rules_no_longer_say_every_delete_waits() -> None:
 
 
 def test_persona_version_was_bumped_once_per_slice() -> None:
-    assert PERSONA_VERSION == "p4.5"  # 11: p4.2; 12: p4.4; p4.5 tools rule
+    assert PERSONA_VERSION == "p4.6"  # 11: p4.2; 12: p4.4; p4.5 tools rule

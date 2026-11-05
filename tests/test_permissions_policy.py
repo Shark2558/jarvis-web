@@ -231,6 +231,9 @@ RISK_OF = {
     "youtube": [R1],
     "contacts": [R1],
     "whatsapp": [R1],
+    "groceries": [R1, R2],  # R1 I0
+    "family_read": [R1],
+    "family_change": [R3],
 }
 TOOL_OF = {
     "calendar_read": "calendar_list_events",
@@ -253,6 +256,9 @@ TOOL_OF = {
     "youtube": "youtube_search",
     "contacts": "contacts_search",
     "whatsapp": "whatsapp_draft",
+    "groceries": "grocery_add",
+    "family_read": "family_free_slots",
+    "family_change": "family_event_add",
 }
 
 

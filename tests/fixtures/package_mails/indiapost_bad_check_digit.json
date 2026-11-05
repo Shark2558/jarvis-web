@@ -1,0 +1,20 @@
+{
+ "id": "indiapost_bad_check_digit",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "India Post <no-reply@indiapost.gov.in>",
+   "subject": "Speed Post article update",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Your article EE123456784IN has been dispatched."
+  }
+ ],
+ "expect": {
+  "merchant": "India Post",
+  "carrier": "indiapost",
+  "tracking_number": null,
+  "status": "shipped",
+  "expected": null,
+  "count": 1
+ }
+}

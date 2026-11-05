@@ -133,8 +133,10 @@
       const x = obj(g); if (!x || typeof x.id !== 'string') return null;
       const choices = arr(x.choices).filter(c => own(WORDS, c));
       const effect = own(WORDS, x.effect) ? x.effect : (own(WORDS, x.default) ? x.default : 'ask');
-      return choices.length ? { id: txt(x.id, 40), section: txt(x.section, 40), label: txt(x.label, 80), hint: txt(x.hint, 200),
-        irreversible: x.irreversible === true, choices, effect, dflt: own(WORDS, x.default) ? x.default : effect } : null;
+      // R1 D9: no row ever vanishes. Choices this page doesn't know -> the row stays, read-only.
+      return { id: txt(x.id, 40), section: txt(x.section, 40), label: txt(x.label, 80) || txt(x.id, 40), hint: txt(x.hint, 200),
+        irreversible: x.irreversible === true, choices, readonly: choices.length === 0, effect, dflt: own(WORDS, x.default) ? x.default : effect,
+        available: x.available !== false, note: txt(x.note, 200) };
     }).filter(Boolean);
     const passkeys = arr(o.passkeys).map(p => {
       const x = obj(p); const id = x && typeof x.id === 'string' && x.id.length <= 1400 ? x.id : '';
@@ -189,6 +191,15 @@
     sum.textContent = `${rules} · ${pk}`;
   }
 
+  /** Only GET /v1/permissions carries `available` / `note`; a change answers without them, so keep
+   *  the ones already on the page (R1 D9). */
+  function keepNotes(v) {
+    if (!v || !S.data) return v;
+    const old = new Map(S.data.groups.map(g => [g.id, g]));
+    v.groups.forEach(g => { const o = old.get(g.id); if (o) { g.available = o.available; g.note = o.note; } });
+    return v;
+  }
+
   // ---- groups: one segmented control each (native radios: arrows move, Space picks) -------------
   let uid = 0;
   function groupRow(g) {
@@ -196,6 +207,13 @@
     const l = mk('span', 'bl', g.label); l.id = `pg${n}`;
     const h = mk('small', '', g.hint); h.id = `pgh${n}`;
     t.append(l, h);
+    row.dataset.group = g.id;
+    if (g.note) t.appendChild(mk('small', 'pgnote', g.note)); // R1 D9: what isn't connected yet; the control stays usable
+    if (g.readonly) {
+      t.appendChild(mk('small', 'pgnote pgro', 'Reload the page to change this'));
+      row.appendChild(t);
+      return row;
+    }
     const seg = mk('div', 'seg' + (g.choices.length === 2 ? ' two' : ''));
     seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-labelledby', l.id); seg.setAttribute('aria-describedby', h.id);
     g.choices.forEach(c => {
@@ -212,7 +230,7 @@
     if (S.busy) return;
     S.busy = true;
     try {
-      S.data = normal(await api('/v1/permissions', { method: 'PUT', body: { groups: { [g.id]: effect } } })) || S.data;
+      S.data = keepNotes(normal(await api('/v1/permissions', { method: 'PUT', body: { groups: { [g.id]: effect } } }))) || S.data;
       S.fetchedAt = Date.now();
       note('ok', `${g.label}: ${WORDS[effect]}.`);
       log('info', `Permission · ${g.label}: ${WORDS[effect]}`);
@@ -226,7 +244,7 @@
   async function act(fn, ok) {
     if (S.busy) return;
     S.busy = true; note('', ''); render();
-    try { const v = normal(await fn()); if (v) { S.data = v; S.fetchedAt = Date.now(); } note('ok', ok); log('info', ok); }
+    try { const v = keepNotes(normal(await fn())); if (v) { S.data = v; S.fetchedAt = Date.now(); } note('ok', ok); log('info', ok); }
     catch (e) { note('bad', errText(e)); }
     finally { S.busy = false; S.confirm = null; S.confirmReset = false; render(); }
   }

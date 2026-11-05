@@ -422,7 +422,7 @@ def test_home_and_work_are_hidden_when_integrations_says_maps_is_off(rig: Rig) -
     _json(c.page, "**/v1/integrations", INTEG_OFF)
     c.open()
     c.open_panel("integrations")
-    c.page.locator("#integrations .integ").wait_for()
+    c.page.locator("#integrations .integ").first.wait_for()
     c.page.wait_for_function("document.getElementById('integMaps').hidden === true")
     c.page.wait_for_timeout(300)  # a places answer arriving late must not show it again
     assert c.page.locator("#integMaps").is_hidden() and c.page.locator("#mapsEdit").count() == 0
@@ -444,7 +444,7 @@ def test_maps_off_shows_no_error_and_no_retry_even_when_its_check_would_fail(rig
     c.page.route("**/v1/maps/places", failing)  # the newest route answers first
     c.open()
     c.open_panel("integrations")
-    c.page.locator("#integrations .integ").wait_for()  # drawn with the maps: false it fired
+    c.page.locator("#integrations .integ").first.wait_for()  # drawn with the maps: false it fired
     c.page.wait_for_function("() => document.getElementById('integMaps').hidden === true")
     asked.clear()  # a check sent before the answer said "off" doesn't count
     c.page.evaluate(

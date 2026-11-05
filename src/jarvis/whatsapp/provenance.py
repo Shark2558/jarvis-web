@@ -17,7 +17,8 @@ Results are matched to their calls by tool-use id, so text in a mail can't pass 
 result; a result whose call is not a look-up, an error, or one that does not parse adds nothing.
 
 Review S4: only TYPED words are the owner's — like `web.ledger.conversation_of`, an earlier
-message counts only when it came through the keyboard (`channel == "text"`), and the current
+message counts only when it was typed (`channel` "text", or "telegram" from the paired owner;
+never a forwarded Telegram message, which is fenced outside content), and the current
 message only when it is not spoken: through the microphone anyone in the room may have said the
 number. Review S5: `country_typed` tells whether the owner wrote the number WITH its country
 code (else the card says "Assumed India (+91)").
@@ -33,8 +34,9 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from jarvis.contacts.phones import is_e164, typed_numbers, typed_with_country
 from jarvis.llm.base import ToolCall, ToolResultBlock
+from jarvis.tools.external import FENCE_PREFIX
 from jarvis.tools.taint import owner_text, spoken_in_context
-from jarvis.web.ledger import is_owner_message
+from jarvis.web.ledger import is_typed_message
 
 if TYPE_CHECKING:
     from jarvis.core.models import Session
@@ -62,13 +64,10 @@ def conversation_words(session: Session) -> Iterator[None]:
 def _owner_texts(session: Session | None) -> list[str]:
     """The owner's TYPED words: the current message unless spoken, and earlier typed messages."""
     said = owner_text()
-    texts = [said] if said and not spoken_in_context() else []
+    typed_now = bool(said) and not spoken_in_context() and FENCE_PREFIX not in (said or "")
+    texts = [said] if said and typed_now else []
     if session is not None:
-        texts += [
-            t.content
-            for t in session.turns[-MAX_TURNS:]
-            if is_owner_message(t) and t.channel == "text" and t.content
-        ]
+        texts += [t.content for t in session.turns[-MAX_TURNS:] if is_typed_message(t)]
     return texts
 
 

@@ -475,3 +475,15 @@ async def test_the_model_cannot_make_a_result_trusted(
     )
     texts = [b for t in stored.turns for b in t.blocks if isinstance(b, TextBlock)]
     assert any("tool_result" in b.text for b in texts)  # stayed the model's text
+
+
+def test_fenced_text_in_a_user_string_message_taints_the_round() -> None:
+    from jarvis.llm.base import ChatMessage, Role
+    from jarvis.tools.external import wrap_external
+
+    fenced = ChatMessage(role=Role.USER, content=wrap_external("x", source="forwarded"))
+    assert untrusted_seen([fenced], ToolRegistry()) is True
+    plain = ChatMessage(role=Role.USER, content="add a task, please")
+    assert untrusted_seen([plain], ToolRegistry()) is False
+    reply = ChatMessage(role=Role.ASSISTANT, content=wrap_external("x", source="forwarded"))
+    assert untrusted_seen([reply], ToolRegistry()) is False  # only the user's side is scanned

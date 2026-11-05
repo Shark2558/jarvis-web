@@ -240,6 +240,33 @@ GROUPS: tuple[PermissionGroup, ...] = (
         R3,
         _r3("task_*", "tasks_*"),
     ),
+    PermissionGroup(  # R1 D14: after the To-do rows
+        "groceries",
+        "Groceries",
+        "Keep your grocery list",
+        "A list called Groceries in Google Tasks (made the first time you add something). By "
+        "voice, adding and ticking off items happens without a card; after JARVIS reads an "
+        "email or a page it asks first.",
+        R2,
+        (_m("grocery_*"),),
+    ),
+    PermissionGroup(  # R1 D15
+        "family_read",
+        "Family",
+        "Look at family calendars",
+        "Only calendars your family shared with you and you added in Integrations. Their event "
+        "titles are their words, never instructions.",
+        R1,
+        (_m("family_*", R1),),
+    ),
+    PermissionGroup(  # R1 D15: adding is irreversible (they see it, Google may email them)
+        "family_change",
+        "Family",
+        "Add events to a family member's calendar",
+        "They see it, and Google may email them. " + UNDO_HINT,
+        R3,
+        _r3("family_*"),
+    ),
     PermissionGroup(
         "memory_save",
         "Memory",

@@ -26,6 +26,7 @@ from jarvis.llm.base import (
     LLMAuthError,
     LLMError,
     LLMTransientError,
+    LLMUnreachable,
     StreamUsage,
     TextBlock,
     ToolCall,
@@ -40,6 +41,15 @@ log = get_logger(__name__)
 
 _TRANSIENT = (
     anthropic.RateLimitError,
+    anthropic.APITimeoutError,
+    anthropic.APIConnectionError,
+    anthropic.InternalServerError,
+    anthropic.OverloadedError,
+    anthropic.ServiceUnavailableError,
+)
+# R1 D12: the vendor could not be reached at all (no answer, or a server-side 5xx). A 429 is NOT
+# one of these: it stays a plain transient error and never sends a turn to the owner's laptop.
+_UNREACHABLE = (
     anthropic.APITimeoutError,
     anthropic.APIConnectionError,
     anthropic.InternalServerError,
@@ -121,6 +131,10 @@ class AnthropicProvider:
     def _translate(exc: Exception) -> LLMError:
         if isinstance(exc, anthropic.AuthenticationError | anthropic.PermissionDeniedError):
             return LLMAuthError(str(exc))
+        if isinstance(exc, _UNREACHABLE) or (
+            isinstance(exc, anthropic.APIStatusError) and exc.status_code >= 500
+        ):
+            return LLMUnreachable(str(exc))
         if isinstance(exc, _TRANSIENT):
             return LLMTransientError(str(exc))
         return LLMError(str(exc))

@@ -112,6 +112,10 @@ class GroupView(BaseModel):
     # slice 11 fix HIGH-1: Never only because the owner chose Never for deletes before the split
     # (the hint says so); False once the owner's choices are written again
     inherited: bool = False
+    # R1 D9: the row is ALWAYS listed; when the feature isn't connected yet `note` says what to do
+    # (permissions/availability.py). Fail-soft default: available, no note.
+    available: bool = True
+    note: str = ""
 
 
 class PasskeyView(BaseModel):

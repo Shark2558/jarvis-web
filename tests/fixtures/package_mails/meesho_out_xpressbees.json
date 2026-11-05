@@ -1,0 +1,20 @@
+{
+ "id": "meesho_out_xpressbees",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Meesho <orders@meesho.com>",
+   "subject": "Out for delivery",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "XpressBees is delivering your parcel today. Tracking ID 21345678901234"
+  }
+ ],
+ "expect": {
+  "merchant": "Meesho",
+  "carrier": "xpressbees",
+  "tracking_number": "21345678901234",
+  "status": "out_for_delivery",
+  "expected": null,
+  "count": 1
+ }
+}

@@ -134,10 +134,17 @@ async def list_brains(brain: Brain = Depends(_brain)) -> list[BrainInfo]:
     ]
 
 
+def _no_telegram(req: ChatRequest) -> None:
+    """Only the Telegram service may set `channel="telegram"` (it grants no extra trust here)."""
+    if req.channel == "telegram":
+        raise HTTPException(422, "channel 'telegram' is set by the Telegram service only")
+
+
 @router.post("/v1/chat", response_model=ChatResponse, dependencies=[Depends(require_auth)])
 async def chat(
     req: ChatRequest, brain: Brain = Depends(_brain), uid: str = Depends(current_user)
 ) -> ChatResponse:
+    _no_telegram(req)
     return await brain.chat(req.model_copy(update={"user_id": uid}))
 
 
@@ -145,6 +152,7 @@ async def chat(
 async def chat_stream(
     req: ChatRequest, brain: Brain = Depends(_brain), uid: str = Depends(current_user)
 ) -> StreamingResponse:
+    _no_telegram(req)
     req = req.model_copy(update={"user_id": uid})
     await brain.check_budget(req)  # 402 now; the stream checks again before its model call
     return StreamingResponse(_with_final_event(brain, req), media_type="text/plain; charset=utf-8")

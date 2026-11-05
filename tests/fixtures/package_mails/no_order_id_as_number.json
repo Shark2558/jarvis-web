@@ -1,0 +1,20 @@
+{
+ "id": "no_order_id_as_number",
+ "mails": [
+  {
+   "id": "m1",
+   "from": "Amazon.in <shipment-tracking@amazon.in>",
+   "subject": "Shipped: kettle",
+   "date": "Thu, 05 Nov 2026 09:00:00 +0530",
+   "body": "Your package has shipped.\nOrder # 402-1234567-1234567\nTracking ID: 40212345671234567\nTotal Rs 2,450"
+  }
+ ],
+ "expect": {
+  "merchant": "Amazon",
+  "carrier": null,
+  "tracking_number": null,
+  "status": "shipped",
+  "expected": null,
+  "count": 1
+ }
+}

@@ -48,7 +48,7 @@ import contextvars
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
-from jarvis.llm.base import ChatMessage, TextBlock, ToolCall, ToolResultBlock
+from jarvis.llm.base import ChatMessage, Role, TextBlock, ToolCall, ToolResultBlock
 from jarvis.tools.base import Tool
 from jarvis.tools.external import FENCE_PREFIX
 from jarvis.tools.registry import ToolRegistry
@@ -113,14 +113,17 @@ def context_trust(
 
 
 def fenced_text_seen(messages: Sequence[ChatMessage]) -> bool:
-    """True when a text block carries fenced external content: the note an attached document
-    adds to the owner's turn (slice 10 E). An owner who types a fence only makes it stricter."""
-    return any(
-        isinstance(b, TextBlock) and FENCE_PREFIX in b.text
-        for m in messages
-        if not isinstance(m.content, str)
-        for b in m.content
-    )
+    """True when the owner's side carries fenced external content: a text block (the note an
+    attached document adds to the owner's turn, slice 10 E) or a plain user message (a forwarded
+    Telegram message is stored fenced, integration review H1). The owner's own typed words never
+    carry a fence; one who types it only makes the round stricter."""
+    for m in messages:
+        if isinstance(m.content, str):
+            if m.role is Role.USER and FENCE_PREFIX in m.content:
+                return True
+        elif any(isinstance(b, TextBlock) and FENCE_PREFIX in b.text for b in m.content):
+            return True
+    return False
 
 
 def result_trusted(block: ToolResultBlock, tool: Tool | None) -> bool:

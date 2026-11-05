@@ -21,6 +21,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
+from jarvis.activity.service import ActivityService
+from jarvis.activity.store import ActivityStore
+from jarvis.alerts import AlertSink, NoAlerts
+from jarvis.api.activity import install_activity
 from jarvis.api.auth import CSRFRejected, auth_router, build_oauth
 from jarvis.api.body import MAX_BODY_BYTES, BodySizeLimit, BodyTooLarge, too_large_body
 from jarvis.api.brief import internal_router as brief_internal_router
@@ -29,15 +33,18 @@ from jarvis.api.console import router as console_router
 from jarvis.api.deleted import router as deleted_router
 from jarvis.api.documents import ATTACH_BODY_BYTES, ATTACH_PATH, install_documents
 from jarvis.api.drive import install_drive
+from jarvis.api.family import install_family
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
 from jarvis.api.media import router as media_router
 from jarvis.api.memory import router as memory_router
+from jarvis.api.offline import install_offline
 from jarvis.api.permissions import build_permissions, install_permissions
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
 from jarvis.api.scheduler_auth import TICK_PATH, GoogleOIDCVerifier, SchedulerUnauthorized
+from jarvis.api.telegram import build_telegram, install_telegram
 from jarvis.api.usage import router as usage_router
 from jarvis.api.voice import install_voice
 from jarvis.api.web import router as web_router
@@ -49,6 +56,8 @@ from jarvis.billing import (
     build_billing,
     fx_client,
 )
+from jarvis.brief.deliveries import DeliveriesBrief
+from jarvis.brief.family_day import FamilyBrief
 from jarvis.brief.service import BriefLimitReached, BriefService, SettingsRejected
 from jarvis.brief.store import BriefStore
 from jarvis.config import AuthMode, SessionBackend, Settings, get_settings
@@ -66,9 +75,13 @@ from jarvis.integrations.google import (
 from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
 from jarvis.llm.brains import BrainRegistry
+from jarvis.llm.fallback import FallbackFailed
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
 from jarvis.media.service import build_media
 from jarvis.memory import SessionConflict, SessionNotFound, SessionStore
+from jarvis.offline.rules import wrap_offline
+from jarvis.offline.service import build_local_fallback
+from jarvis.packages.tools import PackageScanner
 from jarvis.recall.errors import (
     ConsentRequired,
     ImportTooLarge,
@@ -80,9 +93,12 @@ from jarvis.recall.errors import (
 from jarvis.recall.service import MemoryService, build_memory_service
 from jarvis.storage import Storage, build_storage
 from jarvis.storage.docs import Docs, MemoryDocs
+from jarvis.telegram.alerts import ALERT_TEXT
+from jarvis.telegram.rules import wrap_rules
 from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.gateway import Gateway
-from jarvis.tools.setup import build_gateway
+from jarvis.tools.r1_tools import build_family_service
+from jarvis.tools.setup import attach_activity, build_gateway
 from jarvis.tools.task_marks import OutsideTasks
 from jarvis.undo.service import UndoBin
 from jarvis.undo.store import DeletedStore
@@ -136,6 +152,11 @@ def build_brief_service(
         ai_daily_cap=s.brief_ai_daily_cap,
         retention_days=s.brief_retention_days,
         billing=getattr(app.state, "billing", None),
+        # R1 D: Deliveries and Family today (only with the Google link they read through)
+        deliveries=DeliveriesBrief(PackageScanner(app.state.google))
+        if getattr(app.state, "google", None) is not None
+        else None,
+        family_day=FamilyBrief(family) if (family := getattr(app.state, "family", None)) else None,
     )
 
 
@@ -191,6 +212,8 @@ def _mount_scheduler(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
 
 def friendly_llm_error(exc: LLMError) -> str:
     """Owner-facing wording. Raw vendor error bodies never reach the browser."""
+    if isinstance(exc, FallbackFailed):  # R1 C: the laptop's own plain-words message
+        return str(exc)
     low = str(exc).lower()
     if "credit balance" in low or "billing" in low or "quota" in low:
         return "The AI provider account has no credit or quota left. Add credit, or switch brain."
@@ -222,17 +245,33 @@ def _wire_core(
     store and audit chain the rest is built on."""
     app.state.settings = s
     app.state.store = inj.store or (built.sessions if built else None)
-    app.state.brains = inj.brains or BrainRegistry.from_settings(s, inj.provider)
+    docs = app_docs(built)
+    # Offline mode (R1 C) needs the alert sink, which needs Telegram: build those first (no
+    # network here), then the brains that share the local fallback
+    audit: AuditTrail = (
+        inj.gateway.audit if inj.gateway is not None else built.audit if built else AuditLog()
+    )
+    app.state.telegram = build_telegram(s, docs, audit=audit)
+    alerts: AlertSink = (
+        app.state.telegram.alerts
+        if app.state.telegram is not None
+        else NoAlerts("Telegram isn't set up")
+    )
+    app.state.alerts = alerts
+    app.state.offline = build_local_fallback(s, docs, alerts)  # None without JARVIS_TOKEN_KEY
+    app.state.brains = inj.brains or BrainRegistry.from_settings(
+        s, inj.provider, local=app.state.offline
+    )
     app.state.router = app.state.brains.router_for(app.state.brains.default.id)
     tokens = built.tokens if built else MemoryTokenStore()
     app.state.google = build_google_connector(s, tokens)
-    docs = app_docs(built)
+    # Family calendars (R1 D): None without the Google link
+    app.state.family = (
+        build_family_service(app.state.google, docs, s) if app.state.google is not None else None
+    )
     app.state.fx_http = fx_client(s)
     app.state.billing = inj.billing or build_billing(
         s, docs, app.state.brains, http=app.state.fx_http
-    )
-    audit: AuditTrail = (
-        inj.gateway.audit if inj.gateway is not None else built.audit if built else AuditLog()
     )
     app.state.memory = build_app_memory(s, docs, app.state.brains, app.state.billing, audit)
     # Voice (slice 9): settings + wit level always; Google speech only when switched on.
@@ -288,12 +327,32 @@ def _wire_gateway(
             marks=app.state.outside_tasks,
             drive=app.state.drive,
             media=app.state.media,
+            docs=docs,  # R1 D: groceries, family, packages, digest
         )
     app.state.permissions = build_permissions(
         s, docs, audit=gw.audit if gw is not None else audit, google=app.state.google
     )
     if gw is not None and gw.rules is None:
         gw.rules = app.state.permissions
+    if gw is not None and app.state.telegram is not None:
+        # D4: the Telegram privacy rules wrap the owner's rules (the only supported way; the
+        # service refuses Telegram turns without them)
+        gw.rules = wrap_rules(gw.rules, app.state.telegram.store)
+    if gw is not None:
+        # R1 C: offline mode's rules are the OUTERMOST layer, outside telegram's (an inner one
+        # would be dropped by the channel wrapper); the Telegram marker stays visible through it
+        assert gw.rules is not None  # set from the permissions service just above
+        gw.rules = wrap_offline(gw.rules)
+    # Activity (R1 B): a per-day store and the observer that fills it, on every gateway
+    app.state.activity_store = ActivityStore(docs, prefix=s.firestore_prefix)
+    if gw is not None:
+        attach_activity(gw, app.state.activity_store, s)
+    app.state.activity = ActivityService(
+        app.state.activity_store,
+        app.state.undo,
+        timezone=s.user_timezone,
+        retention_days=s.activity_retention_days,
+    )
     if gw is not None and gw.approval_guard is None:
         gw.approval_guard = app.state.permissions
     if app.state.documents.rules is None:  # Documents "Never": no upload, no file sent
@@ -312,7 +371,15 @@ def _wire_brain(app: FastAPI, s: Settings, built: Storage | None, docs: Docs) ->
         wit=app.state.voice,
         documents=app.state.documents,
     )
+    if app.state.telegram is not None:
+        app.state.telegram.bind(app.state.brain)
     app.state.brief = build_brief_service(app, s, built, docs=docs)
+    alerts: AlertSink = app.state.alerts
+
+    async def brief_ready(uid: str) -> None:  # the alert's own toggle and limits apply
+        await alerts.send(uid, ALERT_TEXT["brief_ready"], kind="brief_ready")
+
+    app.state.brief.ready_hook = brief_ready
 
 
 def _log_up(app: FastAPI, s: Settings) -> None:
@@ -333,26 +400,53 @@ def _log_up(app: FastAPI, s: Settings) -> None:
     )
 
 
-async def _shut_down(app: FastAPI) -> None:
-    """Close what the app opened, in the order it was opened."""
-    if app.state.memory is not None:  # let a learning run that is under way finish
+async def _drain_memory(app: FastAPI) -> None:
+    """Let a learning run that is under way finish (bounded)."""
+    if app.state.memory is not None:
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(app.state.memory.drain(), DRAIN_TIMEOUT_S)
-    if app.state.google is not None:
-        await app.state.google.http.aclose()
-    if app.state.fx_http is not None:
-        await app.state.fx_http.aclose()
-    await app.state.voice.aclose()
-    if app.state.web is not None:
-        await app.state.web.aclose()
-    if app.state.drive is not None:
-        await app.state.drive.aclose()
-    if app.state.media is not None:
-        await app.state.media.aclose()
-    verifier = getattr(app.state, "scheduler_verifier", None)
-    if verifier is not None:
-        await verifier.aclose()
-    await app.state.store.close()
+
+
+# (state attribute, closer path under it). Resolved when the close runs, so what is closed is
+# whatever the app holds at that time. Listed in the order the wiring opens them.
+_CLOSABLES: tuple[tuple[str, str], ...] = (
+    ("store", "close"),
+    ("google", "http.aclose"),
+    ("fx_http", "aclose"),
+    ("voice", "aclose"),
+    ("telegram", "client.aclose"),
+    ("web", "aclose"),
+    ("drive", "aclose"),
+    ("media", "aclose"),
+    ("scheduler_verifier", "aclose"),
+)
+
+
+def _closer(app: FastAPI, attr: str, path: str) -> Callable[[], Awaitable[None]]:
+    async def close() -> None:
+        obj = getattr(app.state, attr, None)
+        if obj is None:
+            return
+        for part in path.split("."):
+            obj = getattr(obj, part)
+        await obj()
+
+    return close
+
+
+class _Closers:
+    """Registers each close on an AsyncExitStack as its resource appears, so a failing close
+    never skips the rest and a wiring failure closes what was already opened. The stack runs
+    them last-in first-out: the session store, opened first, closes last."""
+
+    def __init__(self, app: FastAPI, stack: contextlib.AsyncExitStack) -> None:
+        self._app, self._stack, self._seen = app, stack, set[str]()
+
+    def register_new(self) -> None:
+        for attr, path in _CLOSABLES:
+            if attr not in self._seen and getattr(self._app.state, attr, None) is not None:
+                self._seen.add(attr)
+                self._stack.push_async_callback(_closer(self._app, attr, path))
 
 
 def _lifespan(
@@ -360,18 +454,23 @@ def _lifespan(
 ) -> Callable[[FastAPI], contextlib.AbstractAsyncContextManager[None]]:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        built = build_storage(s) if inj.store is None else None
-        docs, audit = _wire_core(app, s, inj, built)
-        _wire_features(app, s, inj, built, docs)
-        _wire_slice12(app, s, docs, inj.drive)
-        _wire_gateway(app, s, inj, built, docs, audit)
-        _wire_brain(app, s, built, docs)
-        await adopt_legacy_sessions(app.state.store, s)
-        _log_up(app, s)
-        try:
+        async with contextlib.AsyncExitStack() as stack:
+            closers = _Closers(app, stack)
+            built = build_storage(s) if inj.store is None else None
+            docs, audit = _wire_core(app, s, inj, built)
+            closers.register_new()
+            _wire_features(app, s, inj, built, docs)
+            closers.register_new()
+            _wire_slice12(app, s, docs, inj.drive)
+            closers.register_new()
+            _wire_gateway(app, s, inj, built, docs, audit)
+            closers.register_new()
+            _wire_brain(app, s, built, docs)
+            closers.register_new()
+            stack.push_async_callback(_drain_memory, app)  # runs first on the way out
+            await adopt_legacy_sessions(app.state.store, s)
+            _log_up(app, s)
             yield
-        finally:
-            await _shut_down(app)
 
     return lifespan
 
@@ -519,6 +618,10 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_permissions(app)
     install_documents(app)
     install_drive(app)
+    install_telegram(app)
+    install_activity(app)
+    install_offline(app)
+    install_family(app)
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from jarvis.core.channel import answered_offline
 from jarvis.core.guardrails import PendingAction
 from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn, UndoRef
 from jarvis.core.rounds import undo_refs
@@ -103,6 +104,7 @@ def response(
         brain=brain_id,
         usage=completion.usage if completion else Usage(),
         cost_usd=completion.cost_usd if completion else 0.0,
+        offline=bool(completion and completion.offline) or answered_offline(),
         cost_inr=cost_inr,
         total_cost_usd=session.total_cost_usd,
         total_cost_inr=total_inr,
@@ -183,13 +185,14 @@ async def declined(
         # approved (or declined) concurrently: never record a decline that didn't happen
         raise LookupError(f"no pending approval {approval_id} in this session")
     tool = gateway.registry.get(action.tool)
-    await gateway.audit.append(
+    entry = await gateway.audit.append(
         agent=tool.agent if tool else "gateway",
         tool=action.tool,
         risk=action.risk,
         outcome="declined",
         args=action.arguments,
     )
+    await gateway.observe_declined(action, entry)  # R1 D7: the Activity view hears of it
     return Decision(
         call,
         GatewayResult(GatewayOutcome.DENIED, error="declined by owner"),

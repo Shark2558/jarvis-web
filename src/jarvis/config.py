@@ -201,6 +201,24 @@ class Settings(BaseSettings):
         description="Off: no web tools even with a key (deploy/cloudrun.sh records a skipped key "
         "as false, so re-runs don't ask again)",
     )
+    # --- Telegram (R1 D1): both needed, else no webhook route. Secrets only as SecretStr.
+    telegram_bot_token: SecretStr | None = Field(
+        default=None,
+        description="Bot token from @BotFather (Secret Manager "
+        "`jarvis-telegram-bot-token`); it sits in Bot API URLs: never log a URL",
+    )
+    telegram_webhook_secret: SecretStr | None = Field(
+        default=None,
+        description="X-Telegram-Bot-Api-Secret-Token value "
+        "(Secret Manager `jarvis-telegram-webhook-secret`)",
+    )
+    # --- Offline mode (R1 D12) and Activity (R1 D7)
+    local_brain_timeout_s: float = Field(
+        default=90, ge=5, le=300, description="Timeout for the owner's laptop brain (CPU is slow)"
+    )
+    activity_retention_days: int = Field(
+        default=7, ge=1, le=30, description="Days the Activity view keeps its rows"
+    )
     # --- Maps + YouTube (slice 12 D2): JARVIS's own server-side Google API key, restricted to
     # Places (New), Routes and YouTube Data v3. No key: those tools are not registered.
     google_api_key: SecretStr | None = Field(

@@ -14,6 +14,7 @@ from jarvis.photos.edge import (
     ENROL_PATH,
     PHOTOS_PATH,
     BridgeHomeEdge,
+    EdgeBadReply,
     EdgeOffline,
     parse_faces,
 )
@@ -57,19 +58,56 @@ async def test_an_unreachable_or_refusing_home_is_offline(exc: Exception) -> Non
         await edge.enrol(UID, C1, PID)
 
 
-def test_malformed_faces_are_dropped_not_guessed() -> None:
-    rows = [
+@pytest.mark.parametrize(
+    "row",
+    [
         {"cluster": "nope", "person": None, "score": 0.5},
-        {"cluster": C1, "person": "Anjali", "score": 0.99},  # a name is not an id: unnamed
+        {"cluster": C1, "person": "Anjali", "score": 0.99},  # a name is not an id
         {"cluster": C1, "person": PID, "score": 7},
         {"cluster": C1, "person": PID, "score": True},
         {"cluster": C1, "person": PID, "score": float("nan")},
+        {"cluster": C1, "person": PID, "score": "0.9"},
+        {"cluster": C1, "person": PID, "score": 0.9, "name": "Anjali"},  # extra field
         "junk",
-    ]
-    (only,) = parse_faces({"faces": rows})
-    assert only.person is None and only.score == 0.99
+    ],
+)
+def test_a_malformed_face_makes_the_whole_reply_bad_not_offline(row: Any) -> None:
+    with pytest.raises(EdgeBadReply) as e:
+        parse_faces({"faces": [row]})
+    assert not isinstance(e.value, EdgeOffline)
 
 
-def test_a_reply_without_a_faces_list_is_refused() -> None:
-    with pytest.raises(EdgeOffline):
+def test_a_reply_with_more_than_twenty_faces_or_extra_keys_is_bad() -> None:
+    row = {"cluster": C1, "person": None, "score": 0.5}
+    with pytest.raises(EdgeBadReply):
+        parse_faces({"faces": [row] * 21})
+    with pytest.raises(EdgeBadReply):
+        parse_faces({"faces": [], "embedding": [0.1]})
+
+
+def test_a_valid_reply_parses_with_int_scores_and_no_person() -> None:
+    (a, b) = parse_faces(
+        {
+            "faces": [
+                {"cluster": C1, "person": None, "score": 1},
+                {"cluster": C1, "person": PID, "score": 0},
+            ]
+        }
+    )
+    assert a.person is None and a.score == 1.0 and b.person == PID
+
+
+def test_a_reply_without_a_faces_list_is_bad() -> None:
+    with pytest.raises(EdgeBadReply):
         parse_faces({"nothing": 1})
+    with pytest.raises(EdgeBadReply):
+        parse_faces(["not", "a", "dict"])
+
+
+async def test_a_bad_reply_is_logged_by_type_only(caplog: pytest.LogCaptureFixture) -> None:
+    edge = BridgeHomeEdge(
+        ScriptedHome({"faces": [{"cluster": C1, "person": "SECRET-NAME", "score": 2}]})
+    )  # type: ignore[arg-type]
+    with pytest.raises(EdgeBadReply):
+        await edge.analyse(UID, [JPEG])
+    assert "SECRET-NAME" not in caplog.text

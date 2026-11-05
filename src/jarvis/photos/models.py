@@ -48,12 +48,13 @@ class RecognisedPerson:
 
 @dataclass(frozen=True)
 class ImportResult:
-    status: str  # done | waiting | no_session | laptop_offline
+    status: str  # done | waiting | no_session | laptop_offline | edge_error | timed_out
     photos: int = 0
     faces_found: int = 0
     recognised: tuple[RecognisedPerson, ...] = ()
     unknown_clusters: tuple[str, ...] = ()
     skipped: int = 0
+    picker_uri: str = ""  # on `waiting`: the link again, in case the first was lost
 
 
 __all__ = [

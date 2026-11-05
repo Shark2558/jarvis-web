@@ -1,6 +1,7 @@
 # tests/photos_fakes.py -- in-memory picker, home edge and contacts for the Photos tests (R4 C).
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -8,12 +9,14 @@ from typing import Any
 from faces_fakes import Faces, faces
 
 from jarvis.contacts.client import Contact, Found
-from jarvis.photos.edge import EdgeOffline
+from jarvis.photos.edge import EdgeBadReply, EdgeOffline
+from jarvis.photos.errors import PickerError
 from jarvis.photos.models import FaceHit, PickedItem, PickerSession
 from jarvis.photos.service import PhotosService, PhotosState
 from jarvis.storage.docs import MemoryDocs
 
 JPEG = b"\xff\xd8\xff fake"
+URI = "https://photos.google.com/picker/x"
 C1 = "c_0123456789ab"
 C2 = "c_ba9876543210"
 
@@ -27,18 +30,27 @@ class FakePicker:
         ]
         self.deleted: list[str] = []
         self.created = 0
+        self.events: list[str] = []
+        self.expires = "2999-01-01T00:00:00Z"
+        self.slow = 0.0  # seconds each download takes
+        self.fail: set[str] = set()  # item ids whose download raises PickerError
 
     async def create_session(self, uid: str) -> PickerSession:
         self.created += 1
-        return PickerSession("sess1", "https://photos.google.com/picker/x", False, "")
+        return PickerSession(f"sess{self.created}", URI, False, self.expires)
 
     async def get_session(self, uid: str, sid: str) -> PickerSession:
-        return PickerSession(sid, "", self.ready, "")
+        return PickerSession(sid, URI, self.ready, self.expires)
 
     async def list_items(self, uid: str, sid: str) -> tuple[PickedItem, ...]:
         return tuple(self.items)
 
     async def download(self, uid: str, item: PickedItem) -> bytes:
+        self.events.append(f"download {item.id}")
+        if self.slow:
+            await asyncio.sleep(self.slow)
+        if item.id in self.fail:
+            raise PickerError("One of the photos couldn't be read.")
         return JPEG
 
     async def delete_session(self, uid: str, sid: str) -> None:
@@ -53,10 +65,15 @@ class FakeEdge:
         self.online = online
         self.received: list[bytes] = []
         self.enrolled: list[tuple[str, str]] = []
+        self.events: list[str] = []
+        self.bad = False
 
     async def analyse(self, uid: str, images: Sequence[bytes]) -> tuple[tuple[FaceHit, ...], ...]:
         if not self.online:
             raise EdgeOffline()
+        if self.bad:
+            raise EdgeBadReply()
+        self.events.append(f"analyse {len(images)}")
         self.received.extend(images)
         return tuple(self.script.pop(0) if self.script else () for _ in images)
 
@@ -106,6 +123,7 @@ def rig(
         FakeContacts(contacts),
     )
     state = PhotosState(f.docs)
+    edge.events = picker.events  # one timeline: download / analyse order
     return Rig(f, picker, edge, con, state, PhotosService(picker, edge, f.svc, con, state))  # type: ignore[arg-type]
 
 

@@ -3,6 +3,7 @@
 # auto-enrolled; pictures go to the home edge only and the cloud keeps ids only.
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -159,11 +160,57 @@ async def test_enrol_refuses_a_cluster_the_cloud_never_saw() -> None:
     assert err.value.code == "unknown_face" and r.edge.enrolled == []
 
 
-async def test_enrol_when_the_laptop_is_off_keeps_the_person_and_says_so() -> None:
+async def test_enrol_when_the_laptop_is_off_keeps_the_person_and_the_cluster() -> None:
     r = await _with_cluster()
     r.edge.online = False
     out = await r.svc.enrol(UID, C1, name="Anjali", **consent_args())
     assert out.at_home is False and len((await r.f.svc.state(UID)).people) == 1
+    assert C1 in (await r.state.get(UID)).clusters  # still finishable
+
+
+async def test_offline_then_retry_links_the_same_person_without_adding_twice() -> None:
+    r = await _with_cluster()
+    r.edge.online = False
+    first = await r.svc.enrol(UID, C1, name="Anjali", **consent_args())
+    r.edge.online = True
+    again = await r.svc.enrol(UID, C1, name="Anjali", **consent_args())
+    assert again.at_home is True and again.person.id == first.person.id
+    assert r.edge.enrolled == [(C1, first.person.id)]
+    assert len((await r.f.svc.state(UID)).people) == 1
+    data = await r.state.get(UID)
+    assert data.clusters == () and data.pending == ()
+
+
+async def test_a_home_unavailable_from_a_custom_edge_is_also_offline() -> None:
+    from jarvis.home.ports import HomeOffline
+
+    r = await _with_cluster()
+
+    async def boom(uid: str, cluster: str, person_id: str) -> None:
+        raise HomeOffline()
+
+    r.edge.enrol = boom  # type: ignore[method-assign]
+    out = await r.svc.enrol(UID, C1, name="Anjali", **consent_args())
+    assert out.at_home is False and (await r.state.get(UID)).pending
+
+
+async def test_a_pending_person_deleted_meanwhile_cannot_be_linked() -> None:
+    r = await _with_cluster()
+    r.edge.online = False
+    out = await r.svc.enrol(UID, C1, name="Anjali", **consent_args())
+    await r.f.svc.remove(UID, out.person.id)
+    r.edge.online = True
+    with pytest.raises(PersonRejected) as err:
+        await r.svc.enrol(UID, C1, name="Anjali", **consent_args())
+    assert err.value.code == "unknown_face" and r.edge.enrolled == []
+
+
+async def test_a_child_is_never_matched_against_contacts() -> None:
+    r = await _with_cluster(("Mini",))
+    out = await r.svc.enrol(
+        UID, C1, name="Mini", **consent_args(child=True, given_by="parent_guardian")
+    )
+    assert out.contact_matched is False and r.contacts.queries == []
 
 
 async def test_collect_never_enrols_anyone_by_itself() -> None:
@@ -201,3 +248,108 @@ async def test_an_expired_picker_session_is_forgotten_so_a_new_one_can_start() -
     r.picker.get_session = gone  # type: ignore[method-assign]
     assert (await r.svc.collect(UID)).status == "no_session"
     assert (await r.state.get(UID)).session_id is None
+
+
+# ---- review fixes: streaming, locking, budget, session hygiene --------------------------------
+
+
+async def test_photos_are_processed_one_at_a_time_never_batched() -> None:
+    r = rig([(), (), ()], items=3)
+    await r.svc.begin(UID)
+    await r.svc.collect(UID)
+    assert r.picker.events == [
+        "download m0", "analyse 1", "download m1", "analyse 1", "download m2", "analyse 1",
+    ]  # fmt: skip
+
+
+async def test_an_unreadable_photo_is_skipped_and_the_rest_still_go() -> None:
+    r = rig([(FaceHit(C1, None, 0.5),)], items=3)
+    r.picker.fail = {"m0"}
+    await r.svc.begin(UID)
+    res = await r.svc.collect(UID)
+    assert res.status == "done" and res.photos == 2 and res.skipped == 1
+
+
+async def test_begin_deletes_the_previous_google_session_first() -> None:
+    r = rig()
+    await r.svc.begin(UID)
+    await r.svc.begin(UID)
+    assert r.picker.deleted == ["sess1"]
+    assert (await r.state.get(UID)).session_id == "sess2"
+
+
+async def test_concurrent_collects_for_one_owner_do_not_double_process(monkeypatch) -> None:  # noqa: ANN001
+    r = rig([(), ()], items=2)
+    r.picker.slow = 0.01
+    await r.svc.begin(UID)
+    a, b = await asyncio.gather(r.svc.collect(UID), r.svc.collect(UID))
+    assert sorted([a.status, b.status]) == ["done", "no_session"]
+    assert r.picker.events.count("download m0") == 1
+
+
+async def test_collect_has_a_global_time_budget_and_keeps_the_session(monkeypatch) -> None:  # noqa: ANN001
+    import jarvis.photos.service as svc_mod
+
+    monkeypatch.setattr(svc_mod, "COLLECT_BUDGET_S", 0.05)
+    r = rig([(), ()], items=2)
+    r.picker.slow = 0.2
+    await r.svc.begin(UID)
+    res = await r.svc.collect(UID)
+    assert res.status == "timed_out"
+    assert (await r.state.get(UID)).session_id == "sess1" and r.picker.deleted == []
+
+
+async def test_a_bad_edge_reply_is_reported_apart_from_offline() -> None:
+    r = rig([()])
+    r.edge.bad = True
+    await r.svc.begin(UID)
+    res = await r.svc.collect(UID)
+    assert res.status == "edge_error" and r.picker.deleted == []
+
+
+async def test_waiting_gives_the_picker_link_back() -> None:
+    r = rig(ready=False)
+    await r.svc.begin(UID)
+    res = await r.svc.collect(UID)
+    assert res.status == "waiting" and res.picker_uri.startswith("https://photos.google.com/")
+
+
+async def test_a_locally_expired_session_is_cleared_without_calling_google() -> None:
+    from datetime import UTC, datetime
+
+    r = rig()
+    r.picker.expires = "2026-11-05T10:00:00Z"
+    r.svc._now = lambda: datetime(2026, 11, 5, 11, tzinfo=UTC)  # noqa: SLF001
+    await r.svc.begin(UID)
+    res = await r.svc.collect(UID)
+    assert res.status == "no_session" and (await r.state.get(UID)).session_id is None
+    assert r.picker.events == []
+
+
+async def test_a_stale_list_items_404_self_heals() -> None:
+    r = rig()
+    await r.svc.begin(UID)
+
+    async def gone(uid: str, sid: str):  # noqa: ANN202
+        raise GoogleNotFound("gone")
+
+    r.picker.list_items = gone  # type: ignore[method-assign]
+    assert (await r.svc.collect(UID)).status == "no_session"
+    assert (await r.state.get(UID)).session_id is None
+
+
+async def test_purge_removes_the_session_and_every_cluster_id() -> None:
+    r = await _with_cluster()
+    await r.svc.begin(UID)
+    await r.svc.purge(UID)
+    data = await r.state.get(UID)
+    assert data.session_id is None and data.clusters == () and r.picker.deleted
+    assert not any("photos" in k for k in r.f.docs._data)  # noqa: SLF001
+
+
+async def test_no_assert_guards_remain_in_the_service() -> None:
+    import inspect
+
+    import jarvis.photos.service as svc_mod
+
+    assert "assert " not in inspect.getsource(svc_mod)

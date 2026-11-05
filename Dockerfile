@@ -11,6 +11,8 @@ RUN useradd -m -u 10001 jarvis
 COPY pyproject.toml README.md requirements.lock ./
 RUN pip install --require-hashes -r requirements.lock
 COPY src ./src
+# R3: the home kit that GET /v1/home/kit zips (with src/jarvis/homebridge)
+COPY deploy/home ./deploy/home
 RUN pip install --no-build-isolation --no-deps .
 USER jarvis
 EXPOSE 8000

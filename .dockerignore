@@ -9,6 +9,10 @@ tests
 evals
 docs
 deploy
+# R3: the home kit that GET /v1/home/kit zips
+!deploy/home
+deploy/home/bridge-data
+deploy/home/bridge.env
 .env
 *.md
 !README.md

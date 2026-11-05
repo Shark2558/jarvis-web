@@ -1,0 +1,5 @@
+# Home Assistant for the JARVIS home kit: as small as it can be.
+default_config:
+
+homeassistant:
+  time_zone: Asia/Kolkata

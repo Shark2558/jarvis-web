@@ -38,6 +38,7 @@ AlertKind = Literal[
     "vitals_critical",
     "health_fault",
     "health_recovered",
+    "health_degraded",
 ]
 HOME_ALERT_KINDS: tuple[AlertKind, ...] = (
     "home_intruder",

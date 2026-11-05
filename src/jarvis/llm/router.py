@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import time
 from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from jarvis.config import LLMBackend, Settings
 from jarvis.llm.anthropic_provider import AnthropicProvider
@@ -46,6 +47,18 @@ class ModelTier(StrEnum):
     STRONG = "strong"  # planning, multi-step reasoning — Opus-class
 
 
+BrainState = Literal["unknown", "ok", "busy", "unreachable", "refused", "odd"]
+
+
+@dataclass(frozen=True)
+class BrainHealth:
+    """What the router already knows about the cloud brain: how its last real call ended and
+    whether the laptop is covering for it. Reading it costs nothing (no call, no tokens)."""
+
+    state: BrainState
+    on_laptop: bool
+
+
 _DEGRADE_TO: dict[ModelTier, ModelTier | None] = {
     ModelTier.STRONG: ModelTier.BALANCED,
     ModelTier.BALANCED: ModelTier.FAST,
@@ -66,6 +79,7 @@ class ModelRouter:
         self._tiers = tiers
         self.fallback = fallback
         self._breaker = Breaker(clock=clock)
+        self._last: BrainState = "unknown"
 
     @classmethod
     def from_settings(cls, s: Settings, provider: LLMProvider | None = None) -> ModelRouter:
@@ -75,6 +89,20 @@ class ModelRouter:
 
     def resolve(self, tier: ModelTier) -> str:
         return self._tiers[tier]
+
+    def health(self) -> BrainHealth:
+        """The cloud brain's state from the last real call; never makes a call itself."""
+        return BrainHealth(state=self._last, on_laptop=self._breaker.is_open())
+
+    def _note_failure(self, exc: LLMError) -> None:
+        if isinstance(exc, LLMUnreachable):
+            self._last = "unreachable"
+        elif isinstance(exc, LLMAuthError):
+            self._last = "refused"
+        elif isinstance(exc, LLMTransientError):
+            self._last = "busy"
+        else:
+            self._last = "odd"
 
     async def _fallback_ready(self) -> bool:
         if self.fallback is None:
@@ -86,6 +114,7 @@ class ModelRouter:
             return False
 
     async def _cloud_ok(self) -> None:
+        self._last = "ok"
         self._breaker.reset()
         if self.fallback is None:
             return
@@ -155,6 +184,7 @@ class ModelRouter:
                     tools=tools,
                 )
             except LLMUnreachable as exc:
+                self._note_failure(exc)
                 # every tier is down: the laptop (if ready), else degrade as before
                 if tried_laptop:
                     raise FallbackFailed() from exc
@@ -163,7 +193,11 @@ class ModelRouter:
                     return done
                 current = self._degrade(current, exc, allow_degrade)
             except LLMTransientError as exc:
+                self._note_failure(exc)
                 current = self._degrade(current, exc, allow_degrade)
+            except LLMError as exc:  # auth / other: not retried, but remembered
+                self._note_failure(exc)
+                raise
             else:
                 await self._cloud_ok()
                 return result
@@ -226,6 +260,7 @@ class ModelRouter:
                 started = True
                 yield delta
         except LLMUnreachable as exc:
+            self._note_failure(exc)
             if tried_laptop:
                 raise FallbackFailed() from exc
             if started or not await self._fallback_ready():
@@ -236,6 +271,9 @@ class ModelRouter:
             except _LaptopSilent as silent:
                 raise _failed(silent.args[0]) from exc
             return
+        except LLMError as exc:  # busy / auth / other: propagates, but remembered
+            self._note_failure(exc)
+            raise
         await self._cloud_ok()
 
     async def _local_stream(self, kw: dict[str, Any], *, miss: bool) -> AsyncIterator[str]:

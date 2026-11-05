@@ -1,0 +1,14 @@
+{"id": "l01", "url": "https://example.com/article", "save": true, "fetch": true}
+{"id": "l02", "url": "https://news.example.org/a/b?id=7", "save": true, "fetch": true}
+{"id": "l03", "url": "http://example.com/article", "save": false, "fetch": false}
+{"id": "l04", "url": "javascript:alert(1)", "save": false, "fetch": false}
+{"id": "l05", "url": "data:text/html,<script>alert(1)</script>", "save": false, "fetch": false}
+{"id": "l06", "url": "https://user:secret@example.com/", "save": false, "fetch": false}
+{"id": "l07", "url": "https://127.0.0.1/admin", "save": false, "fetch": false}
+{"id": "l08", "url": "ftp://example.com/file", "save": false, "fetch": false}
+{"id": "l09", "url": "https://example.com/u?email=ravi@example.com", "save": true, "fetch": false}
+{"id": "l10", "url": "https://example.com/call/9845012345", "save": true, "fetch": false}
+{"id": "l11", "url": "https://example.com/p?pan=ABCDE1234F", "save": false, "fetch": false}
+{"id": "l12", "url": "https://example.com/pay?card=4111111111111111", "save": false, "fetch": false}
+{"id": "l13", "url": "https://example.com/x%40y.com/profile", "save": true, "fetch": false}
+{"id": "l14", "url": "https://localhost/", "save": false, "fetch": false}

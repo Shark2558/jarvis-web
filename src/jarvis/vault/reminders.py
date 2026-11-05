@@ -120,17 +120,18 @@ class VaultReminders:
         self._clock = clock or (lambda: dt.datetime.now(dt.UTC))
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
-        ran = sent = 0
+        ran = sent = failed = 0
         for uid in owners:
             try:
                 n = await self._one(uid, scheduled=True)
             except Exception as exc:  # noqa: BLE001 - one owner never stops the others
                 log.warning("vault reminders failed", extra={"error": type(exc).__name__})
+                failed += 1  # review M1: counted, so the tick says "failed"
                 continue
             if n is not None:
                 ran += 1
                 sent += n
-        return {"owners": ran, "alerts": sent}
+        return {"owners": ran, "alerts": sent, "failed": failed}
 
     async def check(self, uid: str) -> int:
         """Run now if today's run has not happened (the Vault panel opened). Never raises."""

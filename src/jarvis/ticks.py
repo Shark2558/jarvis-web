@@ -4,8 +4,10 @@
 A feature adds a `TickJob` (vault reminders, the DigiLocker inbox) to `app.state.tick_jobs`; the
 tick (`api/brief.py`) calls `run_jobs` after its fixed sweeps. `run_jobs` never raises: a job that
 fails, times out (`asyncio.timeout(budget_s)`, capped at `MAX_BUDGET_S`) or answers oddly is
-logged (class name only) and reported "failed", the same words the sweeps use. Jobs run one after
-another so the tick's CPU use stays bounded; a failure stops no one. A job's counts go to the log.
+logged (class name only) and reported "failed", the same words the sweeps use. So is a job whose
+counts carry `failed` > 0: jobs isolate owners (one owner's failure stops no one) and count the
+owners they could not serve. Jobs run one after another so the tick's CPU use stays bounded; a
+failure stops no one. A job's counts go to the log.
 """
 
 from __future__ import annotations
@@ -20,6 +22,9 @@ from jarvis.logging import get_logger
 log = get_logger(__name__)
 
 MAX_BUDGET_S = 60.0
+# A job keeps one owner's failure from stopping the others and counts it under this key; any
+# such count makes the job "failed" in the tick answer (R2 review M1).
+FAILED_COUNT = "failed"
 JobResult = Literal["ok", "failed"]
 
 
@@ -58,6 +63,9 @@ async def _run_one(job: TickJob, name: str, owners: Sequence[str]) -> JobResult:
     ):
         log.error("tick job answered in the wrong shape", extra={"job": name})
         return "failed"
+    if counts.get(FAILED_COUNT, 0) > 0:  # review M1: owners it could not serve, never "ok"
+        log.error("tick job failed for some owners", extra={"job": name, "counts": counts})
+        return "failed"
     log.info("tick job done", extra={"job": name, "counts": counts})
     return "ok"
 
@@ -75,4 +83,4 @@ async def run_jobs(jobs: Sequence[TickJob] | None, owners: Sequence[str]) -> dic
     return out
 
 
-__all__ = ["MAX_BUDGET_S", "JobResult", "TickJob", "run_jobs"]
+__all__ = ["FAILED_COUNT", "MAX_BUDGET_S", "JobResult", "TickJob", "run_jobs"]

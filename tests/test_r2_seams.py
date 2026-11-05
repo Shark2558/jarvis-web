@@ -275,6 +275,16 @@ async def test_a_bad_result_shape_is_a_failure_and_a_duplicate_name_fails_both()
     assert out == {"same": "failed"}
 
 
+async def test_tick_reports_failed_when_every_owner_fails() -> None:
+    """R2 review M1: a job isolates owners and counts the ones that failed; any such count makes
+    the job "failed" in the tick answer (never a silent "ok"). Zero failures stay "ok"."""
+    every = _Job("vault_chunks", result={"owners": 2, "swept": 0, "failed": 2})
+    one = _Job("digilocker_inbox", result={"owners": 1, "imported": 3, "failed": 1})
+    none = _Job("vault_unlocks", result={"owners": 2, "swept": 4, "failed": 0})
+    out = await run_jobs([every, one, none], ["u1", "u2"])
+    assert out == {"vault_chunks": "failed", "digilocker_inbox": "failed", "vault_unlocks": "ok"}
+
+
 def test_a_job_satisfies_the_port() -> None:
     assert isinstance(_Job("x"), TickJob)
 

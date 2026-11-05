@@ -430,3 +430,24 @@ async def test_a_failing_sweep_logs_an_error_with_a_traceback_and_the_tick_says_
         x for x in caplog.records if x.levelno == logging.ERROR and "activity" in x.getMessage()
     ]
     assert errs and errs[0].exc_info is not None
+
+
+async def test_a_tick_job_whose_every_owner_fails_says_failed(sc: AsyncClient) -> None:
+    """R2 review M1: a per-owner job (vault chunks, reminders, the DigiLocker inbox) keeps going
+    past a failing owner, but the tick answer says "failed" for it, never a silent "ok"."""
+    from jarvis.api.personal import OwnerSweep
+
+    app = sc.app  # type: ignore[attr-defined]
+
+    async def boom(uid: str) -> int:
+        raise RuntimeError("firestore says secret-detail")
+
+    async def fine(uid: str) -> int:
+        return 1
+
+    app.state.tick_jobs = (OwnerSweep("vault_chunks", boom), OwnerSweep("vault_unlocks", fine))
+    r = await sc.post(TICK_PATH, headers={"Authorization": f"Bearer {token()}"})
+    assert r.status_code == 200
+    assert r.json()["sweeps"]["vault_chunks"] == "failed"
+    assert r.json()["sweeps"]["vault_unlocks"] == "ok"
+    assert "secret-detail" not in r.text

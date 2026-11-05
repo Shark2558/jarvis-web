@@ -62,10 +62,29 @@ async def test_it_is_a_tick_job_with_a_unique_name() -> None:
     assert (await run_jobs([job], [UID])) == {"vault_reminders": "ok"}
 
 
+async def test_an_owner_that_fails_is_counted_and_the_tick_says_failed() -> None:
+    """R2 review M1: one owner's failure stops no one, but it is counted, so the tick answer
+    says "failed" instead of "ok"."""
+    svc, _, sink, job, _ = await rig()
+    await add(svc, 5)
+    real = svc.index
+
+    async def index(uid: str):  # type: ignore[no-untyped-def]
+        if uid.startswith("u_broken"):
+            raise RuntimeError("firestore down")
+        return await real(uid)
+
+    svc.index = index  # type: ignore[method-assign]
+    assert await job.run(["u_broken", UID]) == {"owners": 1, "alerts": 1, "failed": 1}
+    assert len(sink.calls) == 1
+    # (a failed owner's claim goes stale before it is retried, so the tick check uses another)
+    assert await run_jobs([job], ["u_broken_2"]) == {"vault_reminders": "failed"}
+
+
 async def test_each_threshold_is_sent_once() -> None:
     svc, _, sink, job, clock = await rig()
     await add(svc, 90)
-    assert await job.run([UID]) == {"owners": 1, "alerts": 1}
+    assert await job.run([UID]) == {"owners": 1, "alerts": 1, "failed": 0}
     clock.next_day()
     await job.run([UID])
     assert len(sink.calls) == 1  # 89 days left: nothing new
@@ -84,7 +103,7 @@ async def test_not_before_the_brief_time() -> None:
     clock = Clock(hour=7)
     svc, _, sink, job, _ = await rig(clock=clock)
     await add(svc, 5)
-    assert await job.run([UID]) == {"owners": 0, "alerts": 0}
+    assert await job.run([UID]) == {"owners": 0, "alerts": 0, "failed": 0}
     assert sink.calls == []
     clock.t += dt.timedelta(hours=3)
     assert (await job.run([UID]))["alerts"] == 1

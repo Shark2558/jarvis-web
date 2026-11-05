@@ -1,0 +1,25 @@
+/* src/jarvis/api/static/console-alerts.css -- Integrations -> Alerts (R3 D10/D11). Reuses the
+   Integrations card (.integ / .ihead / .ibody / .inote), the deck switch (.bsw) and the confirm
+   dialog (.bdialog) and the switch rows of console-telegram.css; adds only section headings, the
+   time / select row and the VIP and device lists. Text on the ink tokens; a switch says On / Off in
+   words; touch targets >= 44 px on phones; no horizontal scroll. */
+.integ.alerts{margin-top:10px}
+.integ.alerts .fine{display:block;font-size:12.5px;color:var(--ink-3)}
+.integ.alerts .warn{color:var(--amber-ink)}
+.integ.alerts[data-state="ready"] .istate{color:var(--ok-ink)}
+.integ.alerts[data-state="error"] .istate{color:var(--amber-ink)}
+.integ.alerts .trow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line-2)}
+.integ.alerts .trow .btxt{flex:1 1 auto;min-width:0}
+.integ.alerts .trow .btxt b{display:block;font-size:13.5px;font-weight:600;line-height:1.4;color:var(--ink)}
+.asec{margin-top:14px}
+.asec h3{margin:0 0 4px;font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--ink-2)}
+.arow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:var(--ink-2)}
+.arow input,.integ.alerts select{min-height:36px;max-width:100%;padding:4px 8px;font:inherit;color:var(--ink);background:var(--panel-2,transparent);border:1px solid var(--line-2);border-radius:8px}
+.arow input[type="text"]{flex:1 1 160px;min-width:0}
+.integ.alerts .btn.bact{margin-top:0}
+.avips{list-style:none;margin:6px 0 0;padding:0}
+.avips li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line-2);font-size:13px;overflow-wrap:anywhere}
+#alertsDialog .strong{font-weight:700}
+@media (max-width: 560px){
+  .integ.alerts .bsw,.integ.alerts .btn.bact,.arow input,.integ.alerts select{min-height:44px}
+}

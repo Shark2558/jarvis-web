@@ -69,6 +69,8 @@ class BriefSettings(Frozen):
     family: bool = True
     # R2 D5: the deterministic Documents section (vault documents due), never sent to the AI
     vault: bool = True
+    # R3 B: the deterministic "Home overnight" section (held alerts, parcels, visitors), never AI
+    home: bool = True
 
     @field_validator("time")
     @classmethod
@@ -202,6 +204,23 @@ class VaultDueSection(Frozen):
     inbox_copy: bool = False
 
 
+class HomeOvernightItem(Frozen):
+    """One thing the camera noted overnight: a local time and fixed words. Never a name."""
+
+    when: str = Field(description="HH:MM local")
+    words: str
+
+
+class HomeOvernightSection(Frozen):
+    """What the home camera noted since last evening (R3 D10, D16). Counts and times only: no
+    name, no picture. Deterministic, never part of the AI-summary input."""
+
+    total: int = Field(default=0, description="How many entries there were (items holds <= 5)")
+    held: int = Field(default=0, description="Alerts held back for quiet hours")
+    items: tuple[HomeOvernightItem, ...] = ()
+    state: SectionState = "ok"
+
+
 class SectionsStatus(Frozen):
     calendar: SectionState = "ok"
     inbox: SectionState = "ok"
@@ -211,6 +230,7 @@ class SectionsStatus(Frozen):
     deliveries: SectionState = "ok"
     family: SectionState = "ok"
     vault: SectionState = "ok"
+    home: SectionState = "ok"
 
 
 class BriefData(Frozen):
@@ -226,6 +246,8 @@ class BriefData(Frozen):
     family: FamilySection | None = None
     # R2: None = nothing due, switched off, or an older brief
     vault: VaultDueSection | None = None
+    # R3: None = nothing overnight, switched off, not linked, or an older brief
+    home: HomeOvernightSection | None = None
     sections_status: SectionsStatus = SectionsStatus()
 
 
@@ -308,6 +330,7 @@ class SettingsView(Frozen):
     deliveries: bool = True
     family: bool = True
     vault: bool = True
+    home: bool = True
 
 
 class TodayView(Frozen):
@@ -341,6 +364,7 @@ class SettingsPatch(BaseModel):
     deliveries: bool | None = None
     family: bool | None = None
     vault: bool | None = None
+    home: bool | None = None
     confirm_spend: bool = False
     confirm_inbox: bool = False
 

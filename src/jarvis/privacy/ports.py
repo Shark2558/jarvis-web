@@ -46,6 +46,8 @@ class CategoryView(BaseModel):
     # a fingerprint of the data as it was shown; a delete quotes it, a changed one is refused
     rev: str = ""
     available: bool = True
+    # how many of `count` a delete removes (None: all of them). The dialog shows this number.
+    delete_count: int | None = None
 
 
 @runtime_checkable

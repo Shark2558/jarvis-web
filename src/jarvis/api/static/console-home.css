@@ -1,0 +1,25 @@
+/* src/jarvis/api/static/console-home.css -- Integrations -> Home (R3 A). Reuses the Integrations card
+   (.integ / .ihead / .ibody / .inote), the confirm dialog (.bdialog) and the Telegram look. Text on
+   the ink tokens; touch targets >= 44 px on phones; no horizontal scroll. */
+.integ.homelink{margin-top:10px}
+.integ.homelink .ibody > .btn.bact,.integ.homelink .hkit .btn.bact{margin-top:10px}
+.integ.homelink .fine{font-size:12.5px;color:var(--ink-3);overflow-wrap:anywhere}
+.integ.homelink .warn{color:var(--amber-ink)}
+.integ.homelink[data-state="online"] .istate,.integ.homelink[data-state="linked"] .istate{color:var(--ok-ink)}
+.integ.homelink[data-state="offline"] .istate,.integ.homelink[data-state="error"] .istate{color:var(--amber-ink)}
+.integ.homelink a.btn{display:inline-flex;align-items:center;text-decoration:none}
+.hsteps{margin-top:10px;font-size:13px;color:var(--ink-2)}
+.hsteps summary{cursor:pointer;min-height:24px}
+.hsteps ol{margin:6px 0 0;padding-left:22px;line-height:1.5}
+.hsteps li{margin:2px 0;overflow-wrap:anywhere}
+.hactions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.hactions .btn.bact{margin-top:0}
+#homeDialog .hcode{margin:10px 0 0;font:600 22px/1.2 var(--tech);letter-spacing:.2em;color:var(--ink);overflow-wrap:anywhere}
+#homeDialog .fine{font-size:12.5px;color:var(--ink-3)}
+#homeDialog .hrows{max-height:50vh;overflow-y:auto}
+#homeDialog .hrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line-2)}
+#homeDialog .hname{flex:1 1 140px;min-width:0;overflow-wrap:anywhere}
+#homeDialog select,#homeDialog input[type=text]{max-width:100%;min-width:0}
+@media (max-width: 560px){
+  .hactions .btn.bact,#homeDialog select,#homeDialog input{min-height:44px}
+}

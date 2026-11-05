@@ -1,0 +1,8 @@
+# Saved by setup-windows.ps1 as %UserProfile%\.wslconfig (it asks before replacing yours).
+[wsl2]
+# Windows keeps the rest of the memory. Frigate, Home Assistant, Mosquitto and the bridge fit in 5 GB.
+memory=5GB
+
+[general]
+# Without this the Ubuntu distro stops 15 seconds after the last window closes, and so does everything in it.
+instanceIdleTimeout=-1

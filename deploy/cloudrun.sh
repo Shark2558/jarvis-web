@@ -12,7 +12,8 @@
 # account) has those two permissions removed. Note: an OLD revision (before slice 5) ran as the
 # build account, so rolling back to one would fail to start; roll forward instead.
 # Why still one instance: rate limiting and the per-conversation write queue are per process.
-# Raise --max-instances only after sessions gain a cross-process concurrency check.
+# Raise --max-instances only after sessions gain a cross-process concurrency check, and the
+# home nonce cache (home/signing.py NonceCache, replay protection) moves out of process (R3 review M3).
 #
 # Re-runs ask nothing: answers are kept in the live service and Secret Manager. To change them:
 #   bash deploy/cloudrun.sh --reconfigure
@@ -49,6 +50,7 @@ GH_REPO="Shark2558/jarvis-web"
 GH_REPO_ID="1441253681"           # numeric id: survives renames, can't be re-registered by others
 POOL="github"; PROVIDER="jarvis-web"; AR_REPO="cloud-run-source-deploy"
 BRIEF_JOB="jarvis-morning-brief"
+HOME_JOB="jarvis-home-watchdog"
 BRIEF_TZ="${BRIEF_TZ:-Asia/Kolkata}"   # the clock's window (04:00-11:30) is read in this time zone
 
 RECONFIGURE=no; ASK_WEB=no; ASK_TG=no
@@ -424,7 +426,8 @@ IDX_OUT="$(gcloud firestore indexes composite create --database='(default)' --co
 # R2 D1: the vault's, notes' and things' encrypted blobs are never searched, so keep them out of the
 # single-field indexes (saves free storage). NON-FATAL: a failure changes nothing else.
 VAULT_INDEX_FAILED=no
-for g in vault_chunks jarvis_vault jarvis_kb_shards jarvis_belongings jarvis_belongings_history; do
+for g in vault_chunks jarvis_vault jarvis_kb_shards jarvis_belongings jarvis_belongings_history \
+  jarvis_home jarvis_home_devices jarvis_home_feed jarvis_faces jarvis_webpush; do  # R3 D14: home blobs
   gcloud firestore indexes fields update blob --collection-group="$g" --database='(default)' \
     --disable-indexes --async --quiet >/dev/null 2>&1 || VAULT_INDEX_FAILED=yes
 done
@@ -655,6 +658,29 @@ if setup_brief_clock; then
 else echo "  Note: the morning-brief clock could not be set up. JARVIS works; the brief is made when you open the Brief panel. Re-run this script later to try again."
 fi
 
+# R3 D9: the home laptop watchdog. A second Scheduler job, every 5 minutes, all day (the brief clock
+# runs only 04:00-11:30). It uses the same account (no roles) and its own exact audience. NON-FATAL:
+# if it fails, JARVIS works; only the "your laptop stopped answering" alert is off.
+HOME_WATCH_URL="${BASE_URL}/internal/home/watchdog"
+setup_home_watchdog() {
+  local flags=(--location "$REGION" --schedule "*/5 * * * *" --time-zone "$BRIEF_TZ"
+    --uri "$HOME_WATCH_URL" --http-method POST
+    --oidc-service-account-email "${SCHED_SA:-}" --oidc-token-audience "$HOME_WATCH_URL"
+    --attempt-deadline 60s --quiet)
+  if gcloud scheduler jobs describe "${HOME_JOB:-jarvis-home-watchdog}" --location "$REGION" >/dev/null 2>&1; then
+    retry gcloud scheduler jobs update http "${HOME_JOB:-jarvis-home-watchdog}" "${flags[@]}" || return 1
+  else
+    retry gcloud scheduler jobs create http "${HOME_JOB:-jarvis-home-watchdog}" --description="JARVIS home: is the laptop still answering?" \
+      "${flags[@]}" || return 1
+  fi
+}
+HOME_WATCHDOG_OK=no; HOME_JOBS_FOUND=0
+if setup_home_watchdog; then
+  HOME_WATCHDOG_OK=yes
+  HOME_JOBS_FOUND="$(gcloud scheduler jobs list --location "$REGION" --format='value(name)' 2>/dev/null | wc -l | tr -d ' ')"
+else echo "  HOME: laptop-offline alerts are off (re-run this script)."
+fi
+
 say "DONE. Open JARVIS at:  $BASE_URL"
 if [ "$BRIEF_CLOCK_OK" = yes ]; then
   if [ "$BRIEF_CLOCK_TEST" = yes ]; then
@@ -674,6 +700,20 @@ cat <<'MSG'
 Morning brief: NOT scheduled. Step 8 could not set up the clock that makes it each morning.
 JARVIS works, and the brief is still made whenever you open the Brief panel.
 Re-run this script later to add the schedule (nothing else changes).
+MSG
+fi
+if [ "$HOME_WATCHDOG_OK" = yes ]; then
+cat <<MSG
+
+HOME: watchdog on (checks every 5 minutes that your home laptop is still answering).
+Cloud Scheduler gives 3 free jobs per billing account; this project uses ${HOME_JOBS_FOUND} in this region. If
+other projects on the same billing account use Scheduler too, a 4th job costs about US\$0.10 a month.
+MSG
+else
+cat <<'MSG'
+
+HOME: watchdog off. The "your home laptop stopped answering" alert will not be sent.
+Re-run this script later to add it (nothing else changes).
 MSG
 fi
 if [ "$AUTODEPLOY_OK" = yes ]; then

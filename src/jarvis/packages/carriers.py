@@ -158,6 +158,35 @@ def known_domain(address: str) -> str | None:
     return None
 
 
+_AR_PASS = re.compile(r"^\s*(dkim|dmarc)\s*=\s*pass\b(.*)$", re.IGNORECASE | re.DOTALL)
+_AR_DKIM = re.compile(r"header\.(?:d|i)\s*=\s*\"?(?:[^@\s;\"]*@)?([A-Za-z0-9.\-]+)", re.IGNORECASE)
+_AR_FROM = re.compile(r"header\.from\s*=\s*\"?(?:[^@\s;\"]*@)?([A-Za-z0-9.\-]+)", re.IGNORECASE)
+AR_CAP = 2_000
+
+
+def _aligned(found: str, domain: str) -> bool:
+    x = found.lower().rstrip(".")
+    return x == domain or x.endswith("." + domain) or ("." in x and domain.endswith("." + x))
+
+
+def authenticated(results: str | None, domain: str) -> bool:
+    """True when the receiving server (Gmail's own, top-most `Authentication-Results` header)
+    says dkim=pass or dmarc=pass for `domain`, the From domain. A From line alone proves nothing:
+    anyone can write `shipment-tracking@amazon.in`. SPF alone is not enough (it checks the
+    envelope sender, not From). Anything unreadable is False."""
+    domain = domain.strip().lower().rstrip(".")
+    if not results or not domain:
+        return False
+    for part in str(results)[:AR_CAP].split(";"):
+        m = _AR_PASS.match(part)
+        if m is None:
+            continue
+        pattern = _AR_DKIM if m.group(1).lower() == "dkim" else _AR_FROM
+        if any(_aligned(x, domain) for x in pattern.findall(m.group(2))):
+            return True
+    return False
+
+
 def gmail_query(days: int) -> str:
     senders = " OR ".join(SENDER_DOMAINS)
     words = " OR ".join(f'"{w}"' if " " in w else w for w in SHIPPING_SUBJECT_WORDS)
@@ -191,6 +220,7 @@ __all__ = [
     "MERCHANTS",
     "SENDER_DOMAINS",
     "Carrier",
+    "authenticated",
     "domain_of",
     "gmail_query",
     "known_domain",

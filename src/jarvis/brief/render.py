@@ -29,6 +29,7 @@ from jarvis.brief.models import (
 )
 from jarvis.tools.addresses import plain_address
 from jarvis.tools.card import quoted, strip_invisible
+from jarvis.tools.spoken import withhold_if_sensitive
 
 NOT_CONNECTED = "Google is not connected: connect it in the console (Integrations) to see your {}."
 UNAVAILABLE = "Your {} could not be read just now."
@@ -234,7 +235,7 @@ def _deliveries(data: BriefData) -> list[str]:
         head += f" · {box.total} on the way or just delivered"
     lines = [head]
     for it in box.items:
-        parts = [STATUS_WORDS.get(it.status, "Update"), theirs(it.item)]
+        parts = [STATUS_WORDS.get(it.status, "Update"), theirs(withhold_if_sensitive(it.item))]
         if it.merchant:
             parts.append(it.merchant)
         if it.carrier:
@@ -324,13 +325,3 @@ __all__ = [
     "todo_when",
     "when",
 ]
-
-
-def spoken_brief_text(text: str) -> str:
-    """The brief as it may be SPOKEN (or read out on Telegram). The brief on screen, and its
-    opted-in AI summary input, keep the full text (`brief/collect.py` snippets); a spoken
-    readout must use this instead: links, addresses, amounts and numbers of 4+ digits are masked
-    (`tools.spoken`)."""
-    from jarvis.tools.spoken import mask_for_speech
-
-    return mask_for_speech(text)

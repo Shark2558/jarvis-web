@@ -37,6 +37,7 @@ def facts_of(scenario: dict[str, Any]):
                 subject=m["subject"],
                 sent=parsedate_to_datetime(m["date"]),
                 body=m["body"],
+                authenticated=m.get("authenticated", True),
             )
         )
     return out
@@ -151,3 +152,49 @@ def test_a_mail_that_bridges_two_groups_merges_them() -> None:
         m["id"] = "other"
     pkgs = build_packages(facts_of(a) + facts_of(b))
     assert len(pkgs) == 1 and pkgs[0].tracking_number == "TBA123456789012"
+
+
+@pytest.mark.parametrize(
+    ("header", "ok"),
+    [
+        ("mx.google.com; dkim=pass header.i=@amazon.in header.s=s1; spf=pass", True),
+        ("mx.google.com; dkim=pass header.d=mail.amazon.in", True),
+        ("mx.google.com; spf=pass; dmarc=pass (p=REJECT) header.from=amazon.in", True),
+        ("mx.google.com; DKIM=PASS header.i=@amazon.in", True),
+        ("mx.google.com; dkim=fail header.i=@amazon.in; dmarc=fail header.from=amazon.in", False),
+        ("mx.google.com; dkim=none; dmarc=none", False),
+        ("mx.google.com; spf=pass smtp.mailfrom=amazon.in", False),  # SPF alone does not align
+        ("mx.google.com; dkim=pass header.i=@evil.test; dmarc=pass header.from=evil.test", False),
+        ("mx.google.com; dkim=pass header.i=@notamazon.in", False),
+        ("mx.google.com; dkim=pass header.i=@amazon.in.evil.test", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_authentication_results_must_pass_for_the_from_domain(header: str | None, ok: bool) -> None:
+    assert carriers.authenticated(header, "amazon.in") is ok
+
+
+def test_an_unauthenticated_mail_yields_no_known_sender_and_no_number() -> None:
+    f = parse_mail(
+        message_id="m",
+        sender="shipment-tracking@amazon.in",
+        subject="Shipped",
+        sent=datetime(2026, 11, 5, tzinfo=UTC),
+        body="Tracking ID: TBA123456789012",
+        authenticated=False,
+    )
+    assert f.domain is None and f.tracking_number is None and f.merchant is None
+    (p,) = build_packages([f])
+    assert p.known_sender is False
+
+
+def test_parse_mail_fails_closed_when_not_told_about_authentication() -> None:
+    f = parse_mail(
+        message_id="m",
+        sender="shipment-tracking@amazon.in",
+        subject="Shipped",
+        sent=datetime(2026, 11, 5, tzinfo=UTC),
+        body="Tracking ID: TBA123456789012",
+    )
+    assert f.domain is None and f.tracking_number is None

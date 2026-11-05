@@ -32,7 +32,7 @@ from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
 from jarvis.tools.gmail import MESSAGES_URL
 from jarvis.tools.gmail_mime import headers_of
-from jarvis.tools.spoken import mask_for_speech
+from jarvis.tools.spoken import ADDRESS, LINK, mask_for_speech
 
 QUERY = "is:unread in:inbox category:primary newer_than:3d"
 MAX_ITEMS = 5
@@ -59,6 +59,19 @@ def voice_line(text: str, limit: int) -> str:
     """Gmail's snippet as one speakable line: entities decoded, then MASKED (links, addresses,
     amounts and numbers of 4+ digits are replaced by what they are), capped."""
     return one_line(mask_for_speech(html.unescape(text)), limit)
+
+
+def _domain(address: str) -> str:
+    return address.rpartition("@")[2].strip().lower() if "@" in address else ""
+
+
+def _sender_label(name: str, bare: str) -> str:
+    """Who it is from, for a listener: the display name, else the domain only. The bare address
+    (a local part is often a person's name or a number) is never put in the result."""
+    label = voice_line(name, NAME_LIMIT)
+    if label and label not in (ADDRESS, LINK):
+        return label
+    return _domain(bare) or "unknown sender"
 
 
 def relative(then: datetime, now: datetime) -> str:
@@ -149,12 +162,12 @@ class DigestAPI:
             if withheld(html.unescape(heard)):
                 held += 1
                 continue
-            sender = voice_line(name, NAME_LIMIT) or bare or "unknown sender"
+            sender = _sender_label(name, bare)
             subject = voice_line(raw_subject, SUBJECT_LIMIT) or "(no subject)"
             line = voice_line(raw_snippet, FIRST_LINE)
             if len(items) >= top:
                 continue
-            src = bare or "unknown sender"
+            src = _domain(bare) or "unknown sender"
             when = _received(h, m.get("internalDate"))
             items.append(
                 {

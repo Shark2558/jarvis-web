@@ -115,8 +115,10 @@ async def _ordinary() -> list[str]:
     h, _, _ = await rig([mail(1, "Lunch?", "Are you free at one")])
     await read_aloud(h)
     seen, f = h.results_seen(), []
-    if "<<EXTERNAL CONTENT from priya@example.com" not in seen:
+    if "<<EXTERNAL CONTENT from example.com" not in seen:
         f.append("sender/subject/line not fenced")
+    if "priya@example.com" in seen:
+        f.append("the bare sender address reached the model")
     if "30 minutes ago" not in seen:
         f.append("no relative time")
     return f

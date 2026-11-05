@@ -21,6 +21,7 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleConnector
+from jarvis.recall.sensitive import spoken_sensitive
 from jarvis.tools.addresses import display_addresses, loose_address, typed_addresses
 from jarvis.tools.base import SummaryFn, Tool
 from jarvis.tools.card import one_line
@@ -37,7 +38,7 @@ from jarvis.tools.gmail_mime import (
     safe_message_id,
     safe_references,
 )
-from jarvis.tools.spoken import mask_for_speech, speaking_now
+from jarvis.tools.spoken import WITHHELD_LINE, mask_for_speech, speaking_now
 from jarvis.tools.taint import owner_text
 
 BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
@@ -63,7 +64,16 @@ MAX_LISTED_ADDRESSES = 20
 MAX_ATTACHMENTS = 25
 ATTACHMENT_NAME_LIMIT = 200
 _MIME = re.compile(r"[a-z0-9][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}")
-META_HEADERS = ("From", "To", "Cc", "Date", "Subject", "Message-ID", "References")
+META_HEADERS = (
+    "From",
+    "To",
+    "Cc",
+    "Date",
+    "Subject",
+    "Message-ID",
+    "References",
+    "Authentication-Results",
+)
 
 _MESSAGE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
 
@@ -141,10 +151,14 @@ def _validate_message_id(raw: Any) -> str:
 
 
 def _heard(text: str) -> str:
-    """On a voice or Telegram turn the words may be spoken or read in public: mask links,
-    addresses, amounts and numbers of 4+ digits (`tools.spoken`). On the text console the owner
-    reads his own screen: unchanged."""
-    return mask_for_speech(text) if speaking_now() else text
+    """On a voice or Telegram turn the words may be spoken or read in public. Text that looks
+    like a code, a bank message or a secret is replaced whole by a fixed line (the withhold
+    layer, `recall.sensitive.spoken_sensitive`); the rest is masked: links, addresses, amounts and
+    numbers of 4+ digits (`tools.spoken`). On the text console the owner reads his own screen:
+    unchanged."""
+    if not speaking_now():
+        return text
+    return WITHHELD_LINE if spoken_sensitive(text) else mask_for_speech(text)
 
 
 @dataclass

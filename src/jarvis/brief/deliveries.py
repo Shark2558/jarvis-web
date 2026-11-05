@@ -15,6 +15,7 @@ from jarvis.brief.models import DeliveriesSection, DeliveryItem
 from jarvis.packages.parse import Package, carrier_name
 from jarvis.packages.tools import PackageScanner
 from jarvis.tools.card import one_line
+from jarvis.tools.spoken import withhold_if_sensitive
 
 MAX_SHOWN = 5
 SCAN_DAYS = 14
@@ -30,7 +31,8 @@ def relevant(p: Package, day: date, tz: tzinfo) -> bool:
 
 def shape(p: Package) -> DeliveryItem:
     return DeliveryItem(
-        item=one_line(p.item, ITEM_LIMIT) or "(no subject)",
+        # a code or bank message in someone else's subject is never stored in the brief
+        item=withhold_if_sensitive(one_line(p.item, ITEM_LIMIT)) or "(no subject)",
         status=p.status,
         merchant=p.merchant or "",
         carrier=carrier_name(p.carrier) or "",

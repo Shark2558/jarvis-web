@@ -53,6 +53,7 @@ def test_parse_mail_is_cheap_on_a_hostile_body(filler: str) -> None:
             subject="Shipped",
             sent=SENT,
             body=body,
+            authenticated=True,
         )
     )
     assert elapsed < 0.5
@@ -70,6 +71,7 @@ def test_unicode_whitespace_does_not_hide_a_real_number() -> None:
         subject="Shipped",
         sent=SENT,
         body="Your package has shipped. Tracking ID:  TBA123456789012 arriving Monday",
+        authenticated=True,
     )
     assert mail.tracking_number == "TBA123456789012" and mail.status == "shipped"
 
@@ -84,6 +86,7 @@ def test_a_huge_body_is_capped() -> None:
                 subject="s",
                 sent=SENT,
                 body=body,
+                authenticated=True,
             )
         )
         < 0.5

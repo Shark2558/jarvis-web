@@ -177,3 +177,26 @@ def test_relative_times() -> None:
 def test_withheld_leaves_ordinary_mail_alone() -> None:
     assert not withheld("Lunch tomorrow? Priya Are you free at one")
     assert not withheld("Your parcel has shipped, arriving Monday")
+
+
+@pytest.mark.parametrize(
+    ("frm", "name_shown"),
+    [
+        ("Priya <priya@example.com>", "Priya"),
+        ("priya@example.com", None),
+        ("<priya@example.com>", None),
+        ("priya@example.com <priya@example.com>", "unknown sender"),
+    ],
+)
+async def test_the_digest_never_carries_a_bare_sender_address(
+    frm: str, name_shown: str | None
+) -> None:
+    fake = GmailFake([mail(1, "Hello", "see you soon", frm=frm)])
+    res = await digest(await gateway(fake))
+    text = res.for_model()
+    assert "priya@" not in text and "@example.com" not in text
+    (item,) = res.result["unread"]
+    if name_shown:
+        assert name_shown in item["from"]
+    else:
+        assert "example.com" in item["from"]  # the domain only

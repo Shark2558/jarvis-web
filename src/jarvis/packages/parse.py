@@ -16,7 +16,7 @@ Everything here is heuristic and unverified on real mail (see carriers.py); a mi
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
@@ -269,17 +269,23 @@ def parse_mail(
     subject: str,
     sent: datetime,
     body: str,
-    find_number=find_tracking_number,  # noqa: ANN001 -- injectable so the eval can break it
+    authenticated: bool = False,
+    find_number: Callable[
+        [str, Carrier | None], tuple[str, Carrier] | tuple[None, None]
+    ] = find_tracking_number,  # injectable so the eval can break it
 ) -> MailFacts:
-    """`sender` is the bare From address. `body` is the plain text of the message."""
+    """`sender` is the bare From address. `body` is the plain text of the message.
+    `authenticated` is True only when the receiving server vouched for the From domain
+    (`carriers.authenticated`): without it nobody is a known sender, whatever the From line says,
+    and no tracking number is taken (fail closed)."""
     if sent.tzinfo is None:
         sent = sent.replace(tzinfo=UTC)
-    domain = known_domain(sender)
+    domain = known_domain(sender) if authenticated else None
     subject, body = squash(subject, 300), squash(body)
     text = f"{subject}\n{body}"
     named = _carrier_for(domain, text) if domain else None
     number = used = None
-    if domain:  # a stranger's mail never yields a tracking number
+    if domain:  # a stranger's (or unauthenticated) mail never yields a tracking number
         number, used = find_number(text, named or _carrier_for(domain, text, default=True))
     chosen = used or named
     return MailFacts(

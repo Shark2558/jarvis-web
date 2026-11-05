@@ -19,7 +19,7 @@ from jarvis.vitals.service import VitalsService
 log = get_logger(__name__)
 
 JOB_NAME = "vitals_poll"
-BUDGET_S = 45.0
+BUDGET_S = 30.0
 POLL_EVERY_S = 3600
 
 

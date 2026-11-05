@@ -15,7 +15,7 @@ from jarvis.ticks import FAILED_COUNT
 
 log = get_logger(__name__)
 
-TICK_BUDGET_S = 45.0
+TICK_BUDGET_S = 30.0
 TICK_DEADLINE_S = 40.0  # stop waiting before the tick cancels us, so the count is still returned
 MAX_PARALLEL_OWNERS = 8
 OWNERS_COUNT = "owners"

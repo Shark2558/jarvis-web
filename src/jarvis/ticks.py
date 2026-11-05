@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import time
 from collections.abc import Sequence
 from typing import Literal, Protocol, runtime_checkable
 
@@ -22,6 +23,9 @@ from jarvis.logging import get_logger
 log = get_logger(__name__)
 
 MAX_BUDGET_S = 60.0
+# All jobs together stay under the Scheduler's 180 s attempt deadline (R4 I2 F4); jobs the tick
+# does not reach are reported failed (skipped) and logged, never silently dropped.
+TICK_TOTAL_BUDGET_S = 150.0
 # A job keeps one owner's failure from stopping the others and counts it under this key; any
 # such count makes the job "failed" in the tick answer (R2 review M1).
 FAILED_COUNT = "failed"
@@ -43,11 +47,14 @@ def _budget(job: TickJob) -> float | None:
     return min(float(b), MAX_BUDGET_S)
 
 
-async def _run_one(job: TickJob, name: str, owners: Sequence[str]) -> JobResult:
+async def _run_one(
+    job: TickJob, name: str, owners: Sequence[str], remaining_s: float = MAX_BUDGET_S
+) -> JobResult:
     budget = _budget(job)
     if budget is None:
         log.error("tick job has no usable time budget", extra={"job": name})
         return "failed"
+    budget = min(budget, remaining_s)
     try:
         async with asyncio.timeout(budget):
             counts = await job.run(owners)
@@ -70,17 +77,29 @@ async def _run_one(job: TickJob, name: str, owners: Sequence[str]) -> JobResult:
     return "ok"
 
 
-async def run_jobs(jobs: Sequence[TickJob] | None, owners: Sequence[str]) -> dict[str, JobResult]:
-    """name -> "ok" | "failed" for each job, in order. Never raises."""
+async def run_jobs(
+    jobs: Sequence[TickJob] | None,
+    owners: Sequence[str],
+    *,
+    total_budget_s: float = TICK_TOTAL_BUDGET_S,
+) -> dict[str, JobResult]:
+    """name -> "ok" | "failed" for each job, in order. Never raises. Each job gets at most what is
+    left of `total_budget_s`; a job the tick has no time left for is reported failed (skipped)."""
     out: dict[str, JobResult] = {}
+    deadline = time.monotonic() + total_budget_s
     for job in tuple(jobs or ()):
         name = getattr(job, "name", None)
         if not isinstance(name, str) or not name or not hasattr(job, "run"):
             log.error("tick job without a name or run: skipped")
             continue
-        result = await _run_one(job, name, owners)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            log.error("tick job skipped: the tick is out of time", extra={"job": name})
+            result: JobResult = "failed"
+        else:
+            result = await _run_one(job, name, owners, remaining)
         out[name] = "failed" if "failed" in (result, out.get(name)) else "ok"
     return out
 
 
-__all__ = ["FAILED_COUNT", "MAX_BUDGET_S", "JobResult", "TickJob", "run_jobs"]
+__all__ = ["FAILED_COUNT", "MAX_BUDGET_S", "TICK_TOTAL_BUDGET_S", "JobResult", "TickJob", "run_jobs"]

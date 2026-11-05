@@ -289,9 +289,11 @@ class PhotosService:
         """Erasure hook (privacy panel): end the Google session, forget every cluster id."""
         async with self._lock(uid):
             data = await self._state.get(uid)
-            if data.session_id is not None:
-                await self._picker.delete_session(uid, data.session_id)
-            await self._state.delete(uid)
+            try:
+                if data.session_id is not None:
+                    await self._picker.delete_session(uid, data.session_id)
+            finally:  # the state goes even when Google cannot be reached (I2 F3)
+                await self._state.delete(uid)
 
     async def enrol(
         self,

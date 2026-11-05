@@ -206,7 +206,7 @@ class PickerClient:
         """Best effort: Google expires sessions on its own."""
         try:
             await self._g.request(uid, "DELETE", f"{API}/sessions/{self._sid(session_id)}")
-        except (GoogleAPIError, PickerError) as exc:
+        except (GoogleAPIError, GoogleNotConnected, PickerError) as exc:
             log.warning("picker session cleanup failed", extra={"reason": type(exc).__name__})
 
 

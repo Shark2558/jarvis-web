@@ -51,7 +51,7 @@ from jarvis.logging import get_logger
 from jarvis.notify.ports import DirectNotifier, Notifier
 from jarvis.offline.mode import BrainMode
 from jarvis.people.research import PeopleService
-from jarvis.photos.service import PhotosService
+from jarvis.photos.service import PhotosService, PhotosState
 from jarvis.photos.tools import ConnectorDeps
 from jarvis.storage.docs import Docs
 from jarvis.ticks import TickJob
@@ -74,7 +74,9 @@ R4_STATE = (
     "photos",
     "connectors",
     "people",
+    "people_cache",
     "r4_parts",
+    "r4_privacy",
 )
 R4_JOB_NAMES = frozenset({"vitals_poll", "health_check"})
 HEALTH_OFF = "The systems check is not available on this server."
@@ -242,8 +244,6 @@ def wire_photos(app: FastAPI, s: Settings, docs: Docs) -> PhotosService | None:
     from jarvis.contacts.client import ContactsClient
     from jarvis.photos.edge import BridgeHomeEdge
     from jarvis.photos.picker import PickerClient
-    from jarvis.photos.service import PhotosState
-
     return PhotosService(
         PickerClient(google),
         BridgeHomeEdge(home_client),
@@ -256,14 +256,22 @@ def wire_photos(app: FastAPI, s: Settings, docs: Docs) -> PhotosService | None:
 class FacesAndPhotosPrivacy(FacesPrivacy):
     """Faces "Delete all" also ends the Picker session and drops every unnamed cluster id."""
 
-    def __init__(self, service: FacesService | None, photos: PhotosService | None) -> None:
+    def __init__(
+        self,
+        service: FacesService | None,
+        photos: PhotosService | None,
+        *,
+        stale: PhotosState | None = None,
+    ) -> None:
         super().__init__(service)
-        self._photos = photos
+        self._photos, self._stale = photos, stale
 
     async def delete(self, uid: str) -> int:
         n = await super().delete(uid)
         if self._photos is not None:
             await self._photos.purge(uid)
+        elif self._stale is not None:  # Photos is OFF now but may have left state behind
+            await self._stale.delete(uid)
         return n
 
 
@@ -282,15 +290,32 @@ def wire_people(app: FastAPI, s: Settings, docs: Docs, mode: BrainMode) -> Peopl
     from jarvis.people.model import BrainPeopleModel
     from jarvis.people.research import WebSearcher
 
+    cache = DossierCache(docs, prefix=s.firestore_prefix)
+    app.state.people_cache = cache  # the privacy source (wire_r4) reads the same cache
     return PeopleService(
         WebSearcher(web),
         BrainPeopleModel(app.state.brains, app.state.billing),
         mode=mode.load,
-        cache=DossierCache(docs, prefix=s.firestore_prefix),
+        cache=cache,
     )
 
 
 # ---- the whole of R4 ----------------------------------------------------------------------------
+
+
+def r4_privacy_sources(app: FastAPI, s: Settings, docs: Docs) -> tuple[Any, ...]:
+    """The privacy panel's R4 categories: People research, then Faces (+ the Photos state, also
+    when Photos is off now but left state behind), which stays last."""
+    st = app.state
+    out: list[Any] = []
+    cache = getattr(st, "people_cache", None)
+    if st.people is not None and cache is not None:
+        from jarvis.people.privacy import PeoplePrivacy
+
+        out.append(PeoplePrivacy(cache))
+    stale = PhotosState(docs, prefix=s.firestore_prefix)
+    out.append(FacesAndPhotosPrivacy(getattr(st, "faces", None), st.photos, stale=stale))
+    return tuple(out)
 
 
 def _part(what: str, build: Callable[[], Any]) -> Any:
@@ -319,6 +344,7 @@ async def wire_r4(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> N
     st.r4_parts = R4Parts(
         settings=s, vitals=st.vitals, health=st.health, connectors=st.connectors, people=st.people
     )
+    st.r4_privacy = r4_privacy_sources(app, s, docs)
     await load_owner_modes(app, s)  # I2 F1: the persisted no-AI switch, before any tick or call
 
 

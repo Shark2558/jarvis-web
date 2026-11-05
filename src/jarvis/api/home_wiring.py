@@ -349,10 +349,8 @@ def home_privacy_sources(app: FastAPI) -> list[PrivacySource]:
         out.append(notify_source(st.notify_store))
     if getattr(st, "push_store", None) is not None:
         out.append(webpush_source(st.push_store))
-    # R4 I1: Faces "Delete all" also purges the Photos state (C's erasure hook)
-    from jarvis.api.r4_wiring import FacesAndPhotosPrivacy
-
-    out.append(FacesAndPhotosPrivacy(getattr(st, "faces", None), getattr(st, "photos", None)))
+    # R4: People research, then Faces (whose "Delete all" also purges the Photos state) last
+    out.extend(getattr(st, "r4_privacy", None) or ())
     return out
 
 

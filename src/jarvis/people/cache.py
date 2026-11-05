@@ -3,10 +3,12 @@
 
 - LRU with a 1 hour TTL, bounded to `MAX_OWNERS`; `get` refreshes recency.
 - With a Docs store, the entry is also kept in the owner's own document
-  `<prefix>people_last/<uid>` (expires on read after the TTL, deleted by `clear`), so a restart or
-  a second instance still finds it. Without one it is in-process only (single instance).
-- The last target is kept even when the request was refused, so a follow-up ("what about her
-  home?") is checked together with what came before.
+  `<prefix>people_last/<uid>` (carries `expires_at`; deleted on an expired read and by `clear`;
+  deploy sets a Firestore TTL policy on `expires_at`), so a restart or a second instance still
+  finds it. Without one it is in-process only (single instance).
+- The last target is kept IN PROCESS even when the request was refused, so a follow-up ("what
+  about her home?") is checked together with what came before. A refused target is NEVER
+  written to the store: the name of a refused private person is not persisted (I2 F3).
 """
 
 from __future__ import annotations
@@ -57,6 +59,8 @@ class DossierCache:
             e = await self._load(self._docs, uid)
         if e is None or not self._fresh(e):
             self._mem.pop(uid, None)
+            if e is not None:
+                await self.clear(uid)  # expired: the stored copy goes too
             return None
         self._mem[uid] = e
         self._mem.move_to_end(uid)
@@ -82,10 +86,10 @@ class DossierCache:
         self._mem.move_to_end(uid)
         while len(self._mem) > MAX_OWNERS:
             self._mem.popitem(last=False)
-        if self._docs is None:
+        if self._docs is None or dossier is None:  # a refused target stays in memory only
             return
-        doc = {"at": e.at, "name": name, "context": context,
-               "dossier": asdict(dossier) if dossier else None}  # fmt: skip
+        doc = {"at": e.at, "expires_at": e.at + TTL_S, "name": name, "context": context,
+               "dossier": asdict(dossier)}  # fmt: skip
 
         async def work(tx: DocTx) -> None:
             tx.set(self._path(uid), doc)

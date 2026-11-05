@@ -91,10 +91,31 @@
     return s;
   }
 
+  /** R2 "Documents": what is due in the vault (type and time left; never a number or a file). */
+  function documents(v) {
+    const box = obj(v);
+    if (!box) return null;
+    const items = arr(box.items).map(obj).filter(Boolean).slice(0, MAX_ITEMS);
+    if (!items.length) return null;
+    const total = Number.isInteger(box.total) && box.total >= items.length ? box.total : items.length;
+    const s = section('documents', 'Documents', total + ' due');
+    const ul = mk('ul', 'bpark');
+    items.forEach((it) => {
+      const li = mk('li'), n = Number.isInteger(it.days_left) ? it.days_left : null;
+      const when = n === null ? '' : n < 0 ? 'expired ' + (-n) + (n === -1 ? ' day ago' : ' days ago') : n === 0 ? 'expires today' : 'expires in ' + n + (n === 1 ? ' day' : ' days');
+      li.append(mk('b', '', txt(it.type_label, 60) || 'Document'), mk('span', '', when ? ' \u00b7 ' + when : ''));
+      if (it.whose === 'family') li.append(mk('small', '', 'family'));
+      ul.append(li);
+    });
+    s.append(ul);
+    if (total > items.length) s.append(mk('p', 'bfine', '\u2026 and ' + (total - items.length) + ' more.'));
+    return s;
+  }
+
   /** The sections this brief carries, in display order (an absent one is simply left out). */
   function render(data) {
     const d = obj(data) || {};
-    return [deliveries(d.deliveries), family(d.family)].filter(Boolean);
+    return [deliveries(d.deliveries), family(d.family), documents(d.vault)].filter(Boolean);
   }
 
   window.JarvisBriefSections = Object.freeze({ render });

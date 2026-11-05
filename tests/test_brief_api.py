@@ -60,6 +60,7 @@ SETTINGS_KEYS = {
     "ai_todo_consent",
     "deliveries",
     "family",
+    "vault",  # R2 D5: the Documents section switch
 }
 
 
@@ -164,6 +165,7 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "todo",
         "deliveries",  # R1: null until the section is wired and on
         "family",
+        "vault",  # R2: null until wired and something is due
         "sections_status",
     }
     assert set(b["data"]["calendar"]) == {"today", "clashes", "free_blocks", "tomorrow_first"}
@@ -177,6 +179,7 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "todo": "not_granted",
         "deliveries": "ok",
         "family": "ok",
+        "vault": "ok",
     }
     assert {r.method for r in fake.requests} == {"GET"}
     forced = (await gc.post("/v1/brief/generate", json={"force": True}, headers=CSRF)).json()

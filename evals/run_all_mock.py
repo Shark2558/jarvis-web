@@ -34,7 +34,10 @@ telegram, activity, offline, packages, groceries, family and mail-aloud suites, 
 DigiLocker import, things, notes, privacy dashboard and the cross-cutting r2_needles scan (a full
 ID number, file bytes, a place and a note never reach a document (a waiting approval card aside,
 plan D13), log, audit entry, Activity row, alert, training brain or a Telegram turn with the
-switch off). The exit status is the gated
+switch off), and R3's home link, burglar alarm, faces and alert-policy suites with the r3_needles
+scan through the wired app (a snapshot, the Home Assistant token, the link seed and a child's name
+never reach a document, log or audit entry; the snapshot only Telegram's photo, with the opt-in;
+the child's name no alert). The exit status is the gated
 suites: phase0 --mock is a smoke run and never fails CI.
 """
 
@@ -83,6 +86,13 @@ SUITES = [
     ("notes (gated)", [sys.executable, str(HERE / "notes" / "run.py"), "--mock"], True),
     ("privacy (gated)", [sys.executable, str(HERE / "privacy" / "run.py"), "--mock"], True),
     ("r2 needles (gated)", [sys.executable, str(HERE / "r2_needles" / "run.py"), "--mock"], True),
+    # R3: the home link, the burglar alarm, faces with consent, the one alert policy and the
+    # cross-cutting needle scan through the wired app (each with its negative controls)
+    ("home link (gated)", [sys.executable, str(HERE / "home_link" / "run.py"), "--mock"], True),
+    ("home alarm (gated)", [sys.executable, str(HERE / "home_alarm" / "run.py"), "--mock"], True),
+    ("faces (gated)", [sys.executable, str(HERE / "faces" / "run.py"), "--mock"], True),
+    ("notify (gated)", [sys.executable, str(HERE / "notify" / "run.py"), "--mock"], True),
+    ("r3 needles (gated)", [sys.executable, str(HERE / "r3_needles" / "run.py"), "--mock"], True),
 ]
 
 

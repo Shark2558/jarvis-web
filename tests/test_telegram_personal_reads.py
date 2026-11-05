@@ -22,6 +22,7 @@ from jarvis.storage.docs import MemoryDocs
 from jarvis.telegram.models import AlertToggles, TelegramLink
 from jarvis.telegram.rules import (
     BOTH_REFUSAL,
+    HOME_PATTERNS,
     PERSONAL_PATTERNS,
     PERSONAL_REFUSAL,
     PRIVATE_PATTERNS,
@@ -107,7 +108,8 @@ async def test_the_personal_switch_opens_only_the_personal_group() -> None:
 
 async def test_both_switches_on_leave_no_deny_rule() -> None:
     got = await _rules(await _store(private=True, personal=True))
-    assert not any(r.effect is Effect.DENY for r in got)
+    # R3 I0: only the third group (home devices, camera, faces; its own switch) is still refused
+    assert {r.tool_pattern for r in got if r.effect is Effect.DENY} == set(HOME_PATTERNS)
 
 
 @pytest.mark.parametrize(("private", "personal"), [(False, False), (True, False), (False, True)])

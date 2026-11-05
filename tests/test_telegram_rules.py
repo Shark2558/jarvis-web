@@ -12,7 +12,13 @@ from jarvis.core.channel import telegram_turn
 from jarvis.core.guardrails import ActionRisk
 from jarvis.llm.base import ToolCall
 from jarvis.storage.docs import MemoryDocs
-from jarvis.telegram.rules import PERSONAL_PATTERNS, PRIVATE_PATTERNS, REFUSAL, ChannelRules
+from jarvis.telegram.rules import (
+    HOME_PATTERNS,
+    PERSONAL_PATTERNS,
+    PRIVATE_PATTERNS,
+    REFUSAL,
+    ChannelRules,
+)
 from jarvis.telegram.store import TelegramStore
 from jarvis.tools import Effect, PolicyRule
 from jarvis.tools.base import Tool
@@ -80,9 +86,10 @@ async def test_the_owner_can_switch_private_reads_on() -> None:
     with telegram_turn():
         got = await rules.rules_for(UID)
     # R2 D12: only the second group (vault, notes, things; its own switch) is still refused, and
-    # a restore from Recently deleted, which needs both switches (R2 review H1)
+    # a restore from Recently deleted, which needs both switches (R2 review H1); R3 I0: and the
+    # third group (home devices, camera, faces; its own switch)
     denied = {r.tool_pattern for r in got if r.effect is Effect.DENY}
-    assert denied == {*PERSONAL_PATTERNS, "deleted_restore"}
+    assert denied == {*PERSONAL_PATTERNS, *HOME_PATTERNS, "deleted_restore"}
 
 
 async def test_unpaired_or_unreadable_state_fails_closed() -> None:

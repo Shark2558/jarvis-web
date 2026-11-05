@@ -1,0 +1,8 @@
+# Who may do what on the JARVIS home broker (R3). Anonymous clients are refused (mosquitto.conf).
+# Frigate publishes its events and reads its own control topics.
+user frigate
+topic readwrite frigate/#
+
+# The JARVIS bridge only listens to Frigate.
+user bridge
+topic read frigate/#

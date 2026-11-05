@@ -1,0 +1,12 @@
+# Home Assistant for the JARVIS home kit: as small as it can be.
+default_config:
+
+homeassistant:
+  time_zone: Asia/Kolkata
+
+# Host networking would otherwise listen on every address of the WSL VM. Only this laptop
+# (127.0.0.1) and the kit's own Docker network (its gateway, where the bridge looks) may connect.
+http:
+  server_host:
+    - 127.0.0.1
+    - 172.29.80.1

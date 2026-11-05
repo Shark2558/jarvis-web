@@ -285,3 +285,22 @@ async def test_cancelled_check_does_not_resend() -> None:
     clock.t += dt.timedelta(minutes=10)
     await job.check(UID)
     assert len(sink.calls) == 2  # and the day is now done
+
+
+class QueuedSink(Sink):
+    """The alert policy held the reminder (quiet hours): it goes out in the morning summary."""
+
+    async def send(self, uid: str, text: str, *, kind: str) -> AlertResult:
+        self.calls.append((uid, text, kind))
+        return AlertResult(sent=False, reason="held until quiet hours end", queued=True)
+
+
+async def test_a_reminder_held_for_quiet_hours_counts_as_delivered_and_is_not_sent_twice() -> None:
+    """Integrated review M8: a held alert reaches the owner in the held summary, so the vault
+    marks it; the next day's run sends nothing again."""
+    svc, _, sink, job, clock = await rig(sink=QueuedSink())
+    await add(svc, 5)
+    assert (await job.run([UID]))["alerts"] == 1
+    clock.next_day()
+    await job.run([UID])
+    assert len(sink.calls) == 1

@@ -1,13 +1,14 @@
 # src/jarvis/api/scheduler_auth.py
-"""Who may call POST /internal/brief/tick: only Cloud Scheduler, proven by a Google-signed OIDC
-token (cross-cutting security, Layer 1 surface).
+"""Who may call POST /internal/brief/tick (and, R3, POST /internal/home/watchdog): only Cloud
+Scheduler, proven by a Google-signed OIDC token (cross-cutting security, Layer 1 surface).
 
 Checks: RS256 only (the header is checked before any key is touched; `none`/HS256 never reach
 the signature step), signature against Google's JWKS (fetched over HTTPS, cached per its
 Cache-Control; fetched at most once a minute whatever the reason — unknown key id, expired or
-empty cache), `iss` ∈ Google's two spellings, `aud` == {public_base_url}/internal/brief/tick
-exactly, `email` == the configured scheduler service account and `email_verified` is true,
-`exp`/`iat` within 60 s of skew.
+empty cache), `iss` in Google's two spellings, `aud` == {public_base_url} + the path of the route
+being called, exactly (R3 I0: each job in SCHEDULER_PATHS has its own audience, so the brief
+clock's token never opens the watchdog and the other way round), `email` == the configured
+scheduler service account and `email_verified` is true, `exp`/`iat` within 60 s of skew.
 
 The owner's API token and browser cookie are NOT accepted here, and every failure is the same
 bare 401: a caller learns nothing about which check failed. The log names the failed check (a
@@ -36,6 +37,8 @@ from jarvis.tools.gmail_mime import b64url_decode
 log = get_logger(__name__)
 
 TICK_PATH = "/internal/brief/tick"
+WATCHDOG_PATH = "/internal/home/watchdog"  # R3 D9: the home watchdog, every 5 minutes
+SCHEDULER_PATHS = frozenset({TICK_PATH, WATCHDOG_PATH})
 GOOGLE_ISSUERS = frozenset({"https://accounts.google.com", "accounts.google.com"})
 ALGORITHM = "RS256"
 SKEW_S = 60
@@ -73,13 +76,22 @@ class GoogleOIDCVerifier:
     def __init__(
         self,
         *,
-        audience: str,
         email: str,
+        audience: str | None = None,
+        base_url: str | None = None,
         http: httpx.AsyncClient | None = None,
         jwks_url: str = JWKS_URL,
         now: Callable[[], float] = time.time,
     ) -> None:
-        self._audience = audience
+        """`base_url`: one exact audience per route in SCHEDULER_PATHS (base + path). `audience`
+        alone: the tick only (older callers and tests)."""
+        if base_url is not None:
+            base = base_url.rstrip("/")
+            self._audiences = {path: base + path for path in SCHEDULER_PATHS}
+        elif audience is not None:
+            self._audiences = {TICK_PATH: audience}
+        else:
+            raise ValueError("a scheduler verifier needs its audience")
         self._email = email.strip().lower()
         self.http = http or httpx.AsyncClient(timeout=JWKS_TIMEOUT_S)
         self._jwks_url = jwks_url
@@ -93,9 +105,13 @@ class GoogleOIDCVerifier:
     async def aclose(self) -> None:
         await self.http.aclose()
 
-    async def verify(self, token: str) -> bool:
+    async def verify(self, token: str, *, path: str = TICK_PATH) -> bool:
+        """True only for a Google token minted for exactly the route at `path`."""
         if not token or len(token) > MAX_TOKEN_CHARS:
             return False
+        audience = self._audiences.get(path)
+        if audience is None:
+            return self._refuse("path")
         header = _header(token)
         if header is None:
             return self._refuse("header")
@@ -106,7 +122,7 @@ class GoogleOIDCVerifier:
             claims = jwt.decode(token, keys, algorithms=[ALGORITHM]).claims
         except (JoseError, ValueError, TypeError, KeyError):
             return self._refuse("signature")
-        bad = self._failed_claim(claims)
+        bad = self._failed_claim(claims, audience)
         return True if bad is None else self._refuse("claims", claim=bad)
 
     @staticmethod
@@ -117,12 +133,12 @@ class GoogleOIDCVerifier:
         log.warning("scheduler token refused", extra=extra)
         return False
 
-    def _failed_claim(self, c: dict[str, Any]) -> str | None:
+    def _failed_claim(self, c: dict[str, Any], audience: str) -> str | None:
         """The name of the first claim that fails, or None when all pass."""
         now, exp, iat = self._now(), _number(c.get("exp")), _number(c.get("iat"))
         checks = (
             ("iss", c.get("iss") in GOOGLE_ISSUERS),
-            ("aud", isinstance(c.get("aud"), str) and c.get("aud") == self._audience),
+            ("aud", isinstance(c.get("aud"), str) and c.get("aud") == audience),
             ("email", isinstance(c.get("email"), str) and str(c["email"]).lower() == self._email),
             ("email_verified", c.get("email_verified") is True),
             ("exp", exp is not None and now < exp + SKEW_S),
@@ -175,15 +191,19 @@ def bearer_token(request: Request) -> str | None:
 
 
 async def require_scheduler(request: Request) -> None:
-    """FastAPI dependency for the tick route. Cookies and the API token are never consulted."""
+    """FastAPI dependency for the scheduler routes: the token must be minted for the route being
+    called (its exact URL). Cookies and the API token are never consulted."""
     verifier: GoogleOIDCVerifier | None = getattr(request.app.state, "scheduler_verifier", None)
     token = bearer_token(request)
-    if verifier is None or token is None or not await verifier.verify(token):
+    path = request.url.path
+    if verifier is None or token is None or not await verifier.verify(token, path=path):
         raise SchedulerUnauthorized()
 
 
 __all__ = [
+    "SCHEDULER_PATHS",
     "TICK_PATH",
+    "WATCHDOG_PATH",
     "GoogleOIDCVerifier",
     "SchedulerUnauthorized",
     "bearer_token",

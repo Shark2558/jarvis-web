@@ -17,12 +17,13 @@ IMMUTABLE = "public, max-age=31536000, immutable"
 # The console CSP is a security contract: any change here must be deliberate. Slice 9 (D12) added
 # exactly 'wasm-unsafe-eval' for the on-device wake word's WebAssembly (tests/test_wakeword_assets);
 # slice 12 (D4) exactly `frame-src https://www.youtube-nocookie.com` for the Media panel's player
-# (tests/test_media_console.py).
+# (tests/test_media_console.py); R3 I0 (D11) exactly `worker-src 'self'` for the browser
+# notifications' service worker (tests/test_r3_seams.py).
 EXPECTED_CSP = (
     "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
     "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
     "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
-    "frame-src https://www.youtube-nocookie.com"
+    "frame-src https://www.youtube-nocookie.com; worker-src 'self'"
 )
 
 ALLOWED_FONTS = (
@@ -453,12 +454,13 @@ async def test_memory_panel_dock_button_and_dialog_are_wired(client: AsyncClient
 
 
 async def test_phone_dock_has_a_more_sheet_for_the_overflow_tabs(client: AsyncClient) -> None:
-    """Fifteen panels (Voice joined in slice 9, Media in slice 12, Vault, Things, Notes and
-    Privacy in R2): a phone shows at most eight tabs; the rest sit behind "More"."""
+    """Seventeen panels (Voice joined in slice 9, Media in slice 12, Vault, Things, Notes and
+    Privacy in R2, Home and Faces in R3): a phone shows at most eight tabs; the rest sit behind
+    "More"."""
     html = (await client.get("/")).text
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     tabs = re.findall(r'<button class="dk([^"]*)" type="button" data-open="(\w+)"', dock)
-    assert len(tabs) == 15
+    assert len(tabs) == 17
     on_phone = [name for cls, name in tabs if "ovf" not in cls.split()]
     overflow = [name for cls, name in tabs if "ovf" in cls.split()]
     assert len(on_phone) + 1 <= 8 and overflow  # + the More tab itself

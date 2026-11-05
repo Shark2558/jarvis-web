@@ -112,10 +112,30 @@
     return s;
   }
 
+  /** R3 "Home overnight": counts and times with fixed words (never a name or a picture). */
+  function home(h) {
+    const box = obj(h);
+    if (!box) return null;
+    const items = arr(box.items).map(obj).filter(Boolean).slice(0, MAX_ITEMS);
+    if (!items.length) return null;
+    const total = Number.isInteger(box.total) && box.total >= items.length ? box.total : items.length;
+    const s = section('home', 'Home overnight', total + (total === 1 ? ' thing' : ' things'));
+    const ul = mk('ul', 'bpark');
+    items.forEach((it) => {
+      const li = mk('li');
+      li.append(mk('span', 'btime', txt(it.when, 10) || '\u2014'), mk('span', '', ' ' + txt(it.words, 160)));
+      ul.append(li);
+    });
+    s.append(ul);
+    if (Number.isInteger(box.held) && box.held > 0) s.append(mk('p', 'bfine', box.held + (box.held === 1 ? ' alert was' : ' alerts were') + ' held for quiet hours.'));
+    if (total > items.length) s.append(mk('p', 'bfine', '\u2026 and ' + (total - items.length) + ' more.'));
+    return s;
+  }
+
   /** The sections this brief carries, in display order (an absent one is simply left out). */
   function render(data) {
     const d = obj(data) || {};
-    return [deliveries(d.deliveries), family(d.family), documents(d.vault)].filter(Boolean);
+    return [deliveries(d.deliveries), family(d.family), documents(d.vault), home(d.home)].filter(Boolean);
   }
 
   window.JarvisBriefSections = Object.freeze({ render });

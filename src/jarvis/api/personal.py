@@ -11,7 +11,8 @@ short list of named steps.
 - `personal_tick_jobs`: vault reminders, the DigiLocker import and two sweeps, each a `TickJob`
   with a unique name that is none of the tick's own sweeps.
 - `wire_privacy` (after the gateway and the brief): the privacy dashboard's registry in panel
-  order: existing -> R1 -> vault -> DigiLocker folder -> notes -> things -> faces.
+  order: existing -> R1 -> vault -> DigiLocker folder -> notes -> things -> R3 (home, home feed,
+  camera at home, alert choices, browsers; `api/home_wiring.py`) -> faces (R3 C, last).
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 
+from jarvis.api.home_wiring import home_privacy_sources
 from jarvis.api.rows import DRIVE_TOOL
 from jarvis.belongings.privacy import BelongingsPrivacy
 from jarvis.belongings.service import BelongingsService
@@ -39,7 +41,7 @@ from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
 from jarvis.privacy.ports import PrivacyRegistry, PrivacySource
 from jarvis.privacy.service import PrivacyService
-from jarvis.privacy.sources import ExistingParts, existing_sources, faces_source
+from jarvis.privacy.sources import ExistingParts, existing_sources
 from jarvis.privacy.sources_r1 import R1Parts, r1_sources
 from jarvis.storage.docs import Docs
 from jarvis.ticks import TickJob
@@ -272,7 +274,7 @@ def privacy_sources(
         *(x for x in existing if x.id != "faces"),
         *r1,
         *(x for x in r2 if x is not None),
-        faces_source(),
+        *home_privacy_sources(app),  # R3 I1: C's FacesPrivacy replaces the placeholder, last
     ]
 
 

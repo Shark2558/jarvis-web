@@ -292,6 +292,11 @@ class PrivacyService:
             # the proof was checked for the rev he saw; the data may have moved while that ran
             if (await self._describe(uid, source)).rev != view.rev:
                 raise Changed(CHANGED)
+        # R3 S4: a source can ask for more first (the home link while the alarm is armed needs
+        # the Disarm button's proof); it raises its own refusal, and nothing is deleted
+        authorize = getattr(source, "authorize_delete", None)
+        if authorize is not None:
+            await authorize(uid, proof=proof, fresh_left_s=fresh_left_s)
         before = _to_delete(view)
         failure: str | None = None
         count = 0

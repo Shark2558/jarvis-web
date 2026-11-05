@@ -12,6 +12,7 @@ from media_fakes import KEY, FakeGoogleKeyAPIs
 from memory_fakes import rig as memory_rig
 from people_fakes import FakePeople, people_connector
 from pydantic import SecretStr
+from r3_fakes import R3_READS, R3_SAFE, home_parts
 from telegram_fakes import UID, Clock
 from web_fakes import FakeTavily
 
@@ -72,6 +73,9 @@ TELEGRAM_SAFE = frozenset(
         "youtube_playlist",
         "web_read",  # public pages
         "web_search",
+        # R3 D15: armed or not and whether the laptop is online (what the alerts already say);
+        # home_disarm only answers "use the Home panel with your passkey" (it never disarms)
+        *R3_SAFE,
     }
 )
 
@@ -119,6 +123,7 @@ async def linked_gateway(undo: UndoBin | None = None) -> Gateway:
         vault=VaultService(VaultStore(docs, crypto), crypto, undo=undo),
         notes=NotesService(NotesStore(docs, ring), web=web, undo=undo),
         belongings=BelongingsService(BelongingsStore(docs, ring), undo),
+        home=home_parts(docs, ring),  # R3 I1: home, camera and faces tools (the third group)
     )
 
 
@@ -200,6 +205,52 @@ async def test_gate_with_defaults_an_r2_read_is_refused_on_a_telegram_turn(tool:
         out = await gw.execute(ToolCall(id="t1", name=tool, arguments=args), scope=f"{UID}:tg")
     assert out.outcome is GatewayOutcome.DENIED, (tool, out.error)
     assert "Telegram" in (out.error or "")
+
+
+async def test_every_r3_read_is_registered_and_private_on_telegram() -> None:
+    reads = read_tools(await linked_gateway())
+    assert set(R3_READS) | set(R3_SAFE) <= set(reads)
+    assert await denied_on_telegram(list(R3_READS)) == set(R3_READS)
+    assert await denied_on_telegram(list(R3_SAFE)) == set()
+
+
+R3_ARGS: dict[str, dict[str, object]] = {
+    "home_devices": {},
+    "camera_history": {"start": "2026-11-04T00:00:00+05:30", "end": "2026-11-05T00:00:00+05:30"},
+    "faces_list": {},
+}
+
+
+@pytest.mark.parametrize("tool", R3_READS)
+async def test_gate_with_defaults_an_r3_read_is_refused_on_a_telegram_turn(tool: str) -> None:
+    """R3 D15 gate: the third switch is off by default, so home devices, camera history and the
+    people JARVIS recognises are refused on Telegram; the other two switches never open it."""
+    gw = await linked_gateway()
+    store = TelegramStore(MemoryDocs(), prefix="t_", clock=Clock())
+    code, _ = await store.start_pairing(UID)
+    await store.finish_pairing(code, tg_user_id=1, chat_id=2)
+    await store.set_settings(UID, allow_private_reads=True, allow_personal_reads=True)
+    gw.rules = wrap_rules(gw.rules, store)
+    call = ToolCall(id="t1", name=tool, arguments=R3_ARGS[tool])
+    with telegram_turn():
+        out = await gw.execute(call, scope=f"{UID}:tg")
+    assert out.outcome is GatewayOutcome.DENIED, (tool, out.error)
+    assert "home devices" in (out.error or "")
+    await store.set_settings(UID, allow_home_reads=True)
+    with telegram_turn():
+        out = await gw.execute(call, scope=f"{UID}:tg")
+    assert out.outcome is not GatewayOutcome.DENIED, (tool, out.error)
+
+
+async def test_home_disarm_on_telegram_never_disarms_and_points_to_the_console() -> None:
+    gw = await linked_gateway()
+    gw.rules = wrap_rules(gw.rules, TelegramStore(MemoryDocs(), prefix="t_", clock=Clock()))
+    with telegram_turn():
+        out = await gw.execute(
+            ToolCall(id="t1", name="home_disarm", arguments={}), scope=f"{UID}:tg"
+        )
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    assert out.result["status"] == "refused" and "Home panel" in out.result["message"]
 
 
 # ---- Recently deleted on Telegram (R2 integrated review H1 / S1) --------------------------------

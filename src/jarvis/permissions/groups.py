@@ -353,6 +353,53 @@ GROUPS: tuple[PermissionGroup, ...] = (
         R2,
         (_m("belongings_*"),),
     ),
+    # R3 (docs/plans/r3-home-camera.md "New tools"): the home and camera rows (after Things,
+    # before Maps). Disarming and locks, gates, alarms and heaters are irreversible: Ask first or
+    # Never only, and the disarm itself also needs the owner's passkey (purpose home_disarm).
+    PermissionGroup(
+        "home_read",
+        "Home",
+        "See your home's status and devices",
+        "Only while your home laptop is on. Device names come from the devices and are treated "
+        "as information.",
+        R1,
+        (_m("home_*", R1),),
+    ),
+    PermissionGroup(
+        "home_control",
+        "Home",
+        "Switch lights, fans and other everyday devices",
+        "Only devices you exposed and marked Everyday in Integrations -> Home.",
+        R2,
+        (_m("home_control", R2),),
+    ),
+    PermissionGroup(
+        "home_arm",
+        "Home",
+        "Arm the burglar alert",
+        "By voice it arms without a card unless JARVIS just read an email or a page. Disarming "
+        "always asks, in the console.",
+        R2,
+        (_m("home_arm"),),
+    ),
+    PermissionGroup(
+        "home_secure",
+        "Home",
+        "Disarm, and control locks, gates, alarms and heaters",
+        "JARVIS always asks first in the console, with your passkey if you set one up \u2014 or "
+        "never does it.",
+        R3,
+        _r3("home_*"),
+    ),
+    PermissionGroup(
+        "camera",
+        "Camera",
+        "Search camera history and say who it recognised",
+        "Times and places only \u2014 JARVIS never sees pictures. Off on Telegram unless you "
+        "switch it on.",
+        R1,
+        (_m("camera_*"), _m("faces_*")),
+    ),
     PermissionGroup(  # slice 12 D8 (D3)
         "maps",
         "Maps",

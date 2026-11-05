@@ -209,3 +209,38 @@ def test_a_server_without_the_fields_shows_no_switches(make: Callable[..., Conso
     assert c.page.locator("#briefDeliveries").count() == 0
     assert c.page.locator("#briefFamily").count() == 0
     assert c.page.locator("#briefAi").count() == 1
+
+
+def test_home_overnight_renders_as_text_and_is_left_out_when_absent(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    home = {
+        "total": 7,
+        "held": 2,
+        "state": "ok",
+        "items": [
+            {"when": "23:41", "words": HOSTILE},
+            {"when": "02:10", "words": "A parcel came."},
+        ],
+    }
+    FakeBrief(c.page, state_with(home=home))
+    text = str(_view(c).text_content())
+    for words in (
+        "Home overnight",
+        "7 things",
+        "23:41",
+        "A parcel came.",
+        "2 alerts were held",
+        "… and 5 more.",
+    ):
+        assert words in text, words
+    assert HOSTILE in text and c.page.locator("#p-brief img").count() == 0
+    assert c.page.evaluate("window.__pwned") is None
+    assert c.errors == [] and c.csp_violations() == []
+
+
+def test_a_brief_without_home_shows_no_home_section(make: Callable[..., Console]) -> None:
+    c = make()
+    FakeBrief(c.page, today_state())
+    assert "Home overnight" not in str(_view(c).text_content())

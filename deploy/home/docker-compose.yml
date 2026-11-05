@@ -1,0 +1,92 @@
+# JARVIS home kit: Mosquitto, Frigate, Home Assistant and the JARVIS bridge (R3 D2, D3, D7).
+# Runs in Docker Engine inside WSL2 Ubuntu. Start it with:
+#   docker compose --env-file bridge.env --env-file images.env up -d
+# Rules this file keeps (tests/test_deploy_home.py checks them):
+#   - every published port is bound to 127.0.0.1; only the bridge is reachable from the internet,
+#     and only through Tailscale Funnel on this laptop
+#   - images are pinned by version (setup-wsl.sh also records each image's digest in images.env
+#     after the first pull, and the next start uses the digest)
+#   - nothing is `privileged`; the bridge is read-only with every capability dropped
+#   - no password is written here: they come from bridge.env, which stays on this laptop
+name: jarvis-home
+
+services:
+  mosquitto:
+    image: ${MOSQUITTO_IMAGE:-eclipse-mosquitto:2.0.20}
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/passwd:/mosquitto/config/passwd:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro # Frigate's user writes frigate/#, the bridge's only reads
+      - ./mosquitto-data:/mosquitto/data
+    networks: [home]
+
+  frigate:
+    image: ${FRIGATE_IMAGE:-ghcr.io/blakeblackshear/frigate:0.17.2}
+    restart: unless-stopped
+    shm_size: 256mb
+    ports:
+      - "127.0.0.1:8971:8971" # Frigate's own login page; 5000, 8554 and 8555 are not published
+    environment:
+      TZ: Asia/Kolkata
+    # FRIGATE_MQTT_USER, FRIGATE_MQTT_PASSWORD and FRIGATE_GATE_RTSP (the phone's address with its
+    # login): only Frigate gets this file, never the bridge (setup-wsl.sh writes it, mode 600)
+    env_file: frigate.env
+    volumes:
+      - ./frigate/config:/config
+      - ./frigate/media:/media/frigate
+    tmpfs:
+      - /tmp/cache
+    depends_on: [mosquitto]
+    networks: [home]
+
+  homeassistant:
+    image: ${HOMEASSISTANT_IMAGE:-ghcr.io/home-assistant/home-assistant:2026.10.0}
+    restart: unless-stopped
+    network_mode: host # its docs ask for this; configuration.yaml limits it to 127.0.0.1 and 172.29.80.1
+    environment:
+      TZ: Asia/Kolkata
+    volumes:
+      - ./homeassistant:/config
+
+  bridge:
+    build:
+      context: .
+      dockerfile: bridge.Dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-python:3.12-slim} # setup-wsl.sh records its digest in images.env
+    image: jarvis-home-bridge:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8099:8099" # the signed API (Funnel proxies to it)
+      - "127.0.0.1:8098:8098" # the local Faces page (never funnelled)
+    extra_hosts:
+      - "host.docker.internal:172.29.80.1" # Home Assistant listens here and on 127.0.0.1 only
+    env_file: bridge.env
+    environment:
+      # the Faces page listens on the container's own address, or the 127.0.0.1:8098 publish
+      # above reaches nothing; only this laptop can open it, and it checks the Host name too
+      FACES_BIND: "0.0.0.0"
+    volumes:
+      - ./bridge-data:/data
+      # Frigate's face pictures: the Faces plugin deletes a removed person's pictures and sweeps
+      # strangers' face attempts (72 hours) and doorstep pictures (7 days) here
+      - ./frigate/media:/media/frigate
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    user: "10001:10001"
+    mem_limit: 256m
+    depends_on: [mosquitto]
+    networks: [home]
+
+networks:
+  home:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.80.0/24 # fixed, so Home Assistant (host network) can bind to its gateway
+          gateway: 172.29.80.1

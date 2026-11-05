@@ -1,0 +1,17 @@
+/* src/jarvis/api/static/console-faces.css -- the Faces panel (R3 D13). Reuses the deck tokens, .btn /
+   .bact, .bnote, .bdialog and the Things list classes (.tlist .trow .ttxt .tname .tplace .tmeta .tacts).
+   AA text on the ink tokens; touch targets >= 44 px on phones; no horizontal scroll. */
+.faces{display:flex;flex-direction:column;gap:10px;min-width:0}
+.fnote{min-height:1.4em;font-size:13px;color:var(--ink-2)}
+.fnote.bad{color:var(--amber-ink)}
+.fcode{font:12.5px ui-monospace,monospace;overflow-wrap:anywhere}
+.fdue{display:block;color:var(--amber-ink)}
+.fform{display:flex;flex-direction:column;gap:10px;min-width:0}
+.ffield{display:flex;flex-direction:column;gap:4px}
+.faces .tin,.fform .tin{display:block;width:100%;min-width:0;height:36px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--well);color:var(--ink);font:400 13.5px/1 var(--sans, inherit)}
+.fform .tin:focus{outline:2px solid var(--accent);outline-offset:1px}
+.frow{display:flex;align-items:center;gap:8px}
+.fstmt{margin:0;padding:8px 10px;border-left:3px solid var(--line);font-size:13px;color:var(--ink);overflow-wrap:anywhere}
+@media (max-width: 560px){
+  .fform .tin,.faces .btn.bact,.fform input[type=checkbox]{min-height:44px;min-width:44px}
+}

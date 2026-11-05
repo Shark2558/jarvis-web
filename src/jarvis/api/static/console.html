@@ -33,6 +33,10 @@
 <link rel="stylesheet" href="/static/console-things.css">
 <link rel="stylesheet" href="/static/console-notes.css">
 <link rel="stylesheet" href="/static/console-privacy.css">
+<link rel="stylesheet" href="/static/console-home.css">
+<link rel="stylesheet" href="/static/console-home-panel.css">
+<link rel="stylesheet" href="/static/console-faces.css">
+<link rel="stylesheet" href="/static/console-alerts.css">
 </head>
 <body>
 <div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
@@ -426,6 +430,34 @@
     <div class="pbody"></div>
   </section>
 
+  <!-- R3 (docs/plans/r3-home-camera.md "Console"): the Home panel (console-home-panel.js: the alarm,
+       cameras, the feed and history) and Faces (console-faces.js: who JARVIS may recognise, with
+       consent). Integrations -> Home (console-home.js) and -> Alerts (console-alerts.js) are built
+       beside #integrations. Each script fills its .pbody with textContent only. -->
+  <section class="panel card" id="p-home" data-panel="home" aria-labelledby="t-home" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.2 10 3.5l7 5.7"/><path d="M5 8v8.5h10V8"/><path d="M8.5 16.5v-4h3v4"/></svg>
+      <h2 id="t-home">Home</h2><span class="pmeta" id="homeMeta">Alarm and camera</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Home panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Home panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"></div>
+  </section>
+
+  <section class="panel card" id="p-faces" data-panel="faces" aria-labelledby="t-faces" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.2"/><path d="M4 17c.8-3 3.2-4.6 6-4.6s5.2 1.6 6 4.6"/><path d="M2.5 6V3.5H5M15 3.5h2.5V6M2.5 14v2.5M17.5 14v2.5"/></svg>
+      <h2 id="t-faces">Faces</h2><span class="pmeta" id="facesMeta">People JARVIS recognises</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Faces panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Faces panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"></div>
+  </section>
+
   <!-- Voice (slice 9, console-voice.js): the owner's voice, speed and wit (saved on the server) and this
        device's speech settings. Every value the server sends is filled in with textContent. -->
   <section class="panel card" id="p-voice" data-panel="voice" aria-labelledby="t-voice" hidden>
@@ -573,6 +605,8 @@
     <button class="dk ovf" type="button" data-open="things" aria-controls="p-things" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="12.5" r="3.2"/><path d="m9.3 10.2 6.4-6.4M13.6 6.2l2 2M11.8 8l1.6 1.6"/></svg><span>Things</span></button>
     <button class="dk ovf" type="button" data-open="notes" aria-controls="p-notes" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2.5h7.5L16 6v11.5H5z"/><path d="M12.5 2.5V6H16M7.5 10h6M7.5 13h4"/></svg><span>Notes</span></button>
     <button class="dk ovf" type="button" data-open="privacy" aria-controls="p-privacy" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z"/><circle cx="10" cy="10" r="2.2"/></svg><span>Privacy</span></button>
+    <button class="dk ovf" type="button" data-open="home" aria-controls="p-home" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.2 10 3.5l7 5.7"/><path d="M5 8v8.5h10V8"/><path d="M8.5 16.5v-4h3v4"/></svg><span>Home</span></button>
+    <button class="dk ovf" type="button" data-open="faces" aria-controls="p-faces" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.2"/><path d="M4 17c.8-3 3.2-4.6 6-4.6s5.2 1.6 6 4.6"/><path d="M2.5 6V3.5H5M15 3.5h2.5V6M2.5 14v2.5M17.5 14v2.5"/></svg><span>Faces</span></button>
     <button class="dk ovf" type="button" data-open="vitals" aria-controls="p-vitals" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span>Vitals</span></button>
     <button class="dk ovf" type="button" data-open="voice" aria-controls="p-voice" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span>Voice</span></button>
     <button class="dk ovf" type="button" data-open="media" aria-controls="p-media" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg><span>Media</span></button>
@@ -622,6 +656,8 @@
     <button class="sheet-item" type="button" data-sheet-open="things"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="12.5" r="3.2"/><path d="m9.3 10.2 6.4-6.4M13.6 6.2l2 2M11.8 8l1.6 1.6"/></svg><span><b>Things</b><small>Where you keep your passport, keys and papers</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="notes"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2.5h7.5L16 6v11.5H5z"/><path d="M12.5 2.5V6H16M7.5 10h6M7.5 13h4"/></svg><span><b>Notes</b><small>Notes, voice memos and saved links</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="privacy"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z"/><circle cx="10" cy="10" r="2.2"/></svg><span><b>Privacy</b><small>Everything JARVIS keeps about you, with export and delete</small></span></button>
+    <button class="sheet-item" type="button" data-sheet-open="home"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.2 10 3.5l7 5.7"/><path d="M5 8v8.5h10V8"/><path d="M8.5 16.5v-4h3v4"/></svg><span><b>Home</b><small>Arm the burglar alarm, the camera's feed and history</small></span></button>
+    <button class="sheet-item" type="button" data-sheet-open="faces"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.2"/><path d="M4 17c.8-3 3.2-4.6 6-4.6s5.2 1.6 6 4.6"/><path d="M2.5 6V3.5H5M15 3.5h2.5V6M2.5 14v2.5M17.5 14v2.5"/></svg><span><b>Faces</b><small>People JARVIS may recognise at home, with their consent</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="vitals"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span><b>Vitals</b><small>Reply speed, this month's spend and your limit</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="voice"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span><b>Voice</b><small>JARVIS's voice, speed and wit; how this device listens</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="media"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg><span><b>Media</b><small>Play the videos and music JARVIS found for you</small></span></button>
@@ -663,6 +699,10 @@
 <script src="/static/console-notes.js" defer></script>
 <script src="/static/console-notes-memo.js" defer></script>
 <script src="/static/console-privacy.js" defer></script>
+<script src="/static/console-home.js" defer></script>
+<script src="/static/console-home-panel.js" defer></script>
+<script src="/static/console-faces.js" defer></script>
+<script src="/static/console-alerts.js" defer></script>
 <script type="module" src="/static/console-3d.js"></script>
 </body>
 </html>

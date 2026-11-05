@@ -264,7 +264,9 @@ class VaultReminders:
         groups = [due] if len(due) > MAX_ALERTS else [[c] for c in due]
         for text, group in zip(texts, groups, strict=True):
             result = await self._alerts.send(uid, text, kind="vault_expiry")
-            if result.sent:  # a failed send is retried tomorrow
+            # a failed send is retried tomorrow; one held for quiet hours goes out in the morning
+            # summary (queued), so it is marked like a sent one (integrated review M8)
+            if result.sent or getattr(result, "queued", False):
                 delivered += 1
                 marks = {c.item.id: {k: today.isoformat() for k in c.fresh} for c in group}
                 for item_id, keys in marks.items():

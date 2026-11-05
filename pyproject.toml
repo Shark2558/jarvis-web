@@ -20,6 +20,7 @@ dependencies = [
     "httpx>=0.27",
     "google-cloud-firestore>=2.19,<3",
     "cryptography>=42",
+    "joserfc>=1.0",  # BSD-3-Clause: VAPID JWT (R3 D11); already locked via authlib
     "webauthn>=3.0.1,<4",  # py_webauthn (Duo Labs, BSD-3-Clause): passkeys for R3 approvals
     # slice 10 E: text from attached documents (no OCR). pypdf BSD-3-Clause (6.x: decompression
     # and loop limits); python-docx MIT (lxml parser with resolve_entities=False).
@@ -40,6 +41,10 @@ dev = [
     "pyyaml>=6",
     "shellcheck-py>=0.10",
 ]
+# R3: the home bridge on the owner's laptop (deploy/home/bridge.Dockerfile), never the cloud
+# image: Frigate's events over MQTT. aiomqtt BSD-3-Clause (paho-mqtt EPL-2.0 OR BSD-3-Clause).
+# Pinned to the versions hash-locked in deploy/home/bridge-requirements.txt (integrated review C1).
+homebridge = ["aiomqtt==2.5.1", "paho-mqtt==2.1.0"]
 
 [project.scripts]
 jarvis = "jarvis.cli:main"
@@ -62,6 +67,8 @@ where = ["src"]
     "static/wakeword/*.onnx",
     "static/wakeword/*.txt",
 ]
+# R3 C: the laptop Faces page the bridge serves on 127.0.0.1:8098
+"jarvis.homebridge" = ["static/faces.html", "static/faces.js", "static/faces.css"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

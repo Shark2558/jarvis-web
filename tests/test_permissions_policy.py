@@ -84,6 +84,15 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     ("contacts_search", R1, {"contacts"}),
     ("whatsapp_draft", R1, {"whatsapp"}),
     ("whatsapp_draft", R2, {"whatsapp"}),  # a future write in the family is covered too
+    # R3 I0: the home and camera rows (tools under their planned names)
+    ("home_status", R1, {"home_read"}),
+    ("home_devices", R1, {"home_read"}),
+    ("home_control", R2, {"home_control"}),
+    ("home_control", R3, {"home_secure"}),  # a lock, gate, alarm or heater
+    ("home_arm", R2, {"home_arm"}),
+    ("home_disarm", R3, {"home_secure"}),
+    ("camera_history", R1, {"camera"}),
+    ("faces_list", R1, {"camera"}),
     ("memory_search", R1, set()),  # unknown to every group: the risk default applies
     ("brand_new_tool", R3, set()),
 ]
@@ -239,6 +248,11 @@ RISK_OF = {
     "notes_read": [R1],
     "notes_change": [R2],
     "belongings": [R1, R2],
+    "home_read": [R1],  # R3 I0
+    "home_control": [R2],
+    "home_arm": [R2],
+    "home_secure": [R3],
+    "camera": [R1],
 }
 TOOL_OF = {
     "calendar_read": "calendar_list_events",
@@ -269,6 +283,11 @@ TOOL_OF = {
     "notes_read": "kb_search",
     "notes_change": "kb_update",
     "belongings": "belongings_put",
+    "home_read": "home_status",  # R3 I0
+    "home_control": "home_control",
+    "home_arm": "home_arm",
+    "home_secure": "home_disarm",
+    "camera": "camera_history",
 }
 
 

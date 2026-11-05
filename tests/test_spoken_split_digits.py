@@ -114,7 +114,7 @@ def test_amount_in_words_keeps_the_rest_of_the_sentence() -> None:
 )
 def test_street_addresses_are_masked(text: str) -> None:
     out = mask_for_speech(text)
-    assert "a link" in out
+    assert "an address" in out and "a link" not in out
     assert not re.search(r"green park|gandhi|marg|hsr|main road|\b42\b", out, re.I), out
 
 

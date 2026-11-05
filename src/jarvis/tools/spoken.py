@@ -6,7 +6,8 @@ classified: links become "a link", addresses (e-mail, UPI handle) "an address", 
 "an amount", and any number of four or more digits "a number" -- digits in any script, split by
 1-3 non-letter characters (spaces, dots, dashes, pipes, stars ...), with zero-width characters
 inside, fullwidth or not; runs of 3+ spelled-out digits (English, Hindi, Malayalam) are "a number",
-number words beside a currency word are "an amount", street addresses and bare domains "a link".
+number words beside a currency word are "an amount", street addresses "an address", bare
+domains "a link".
 Short numbers and clock times (10:30, 5 Nov) are kept; but when more than eight digits remain in
 the text (a code read in two goes) every number is masked. `recall.sensitive.spoken_sensitive`
 sits on top as a second layer that withholds a whole mail.
@@ -111,7 +112,7 @@ def mask_for_speech(text: object, cap: int = MASK_CAP) -> str:
     t = _URL.sub(f" {LINK} ", t)
     t = _ADDRESS.sub(f" {ADDRESS} ", t)
     t = _DOMAIN.sub(f" {LINK} ", t)
-    t = _STREET.sub(f" {LINK} ", t)
+    t = _STREET.sub(f" {ADDRESS} ", t)
     t = _WORD_AMOUNT.sub(_mask_words, t)
     t = _AMOUNT.sub(f" {AMOUNT} ", t)
     t = _RUN.sub(_mask_run, t)

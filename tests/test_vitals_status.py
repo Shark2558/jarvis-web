@@ -102,3 +102,36 @@ def test_record_rejects_invalid_input(bad: dict) -> None:
 def test_record_collapses_whitespace_in_text() -> None:
     p = Provider(id="x", label="  My   key ", kind="key", note="a\n b")
     assert p.label == "My key" and p.note == "a b"
+
+
+def test_float_boundary_counts_as_amber() -> None:
+    p = key("k", limit=0.3, used=0.1 + 0.2 - 0.06)  # 0.24 vs 0.8 * 0.3 == 0.24000000000000002
+
+    assert st(p) == "amber"
+
+
+def test_zero_limit_with_use_is_red_and_unused_is_ok() -> None:
+    assert st(key("k", limit=0, used=1)) == "red"
+    assert st(key("k", limit=0, used=0)) == "ok"
+
+
+def test_stale_reset_makes_manual_usage_unknown_and_rearms() -> None:
+    from datetime import timedelta
+
+    stale = key("k", limit=10, used=10, reset_at=T0 - timedelta(days=1))
+    fresh = key("k", limit=10, used=10, reset_at=T0 + timedelta(days=1))
+
+    assert st(stale) == "ok"
+    assert st(fresh) == "red"
+
+
+def test_overall_is_unknown_when_every_item_is_unknown() -> None:
+    from jarvis.vitals.models import ProviderView
+    from jarvis.vitals.status import overall
+
+    unknown = ProviderView(provider=key("k"), status="unknown")
+    ok = ProviderView(provider=key("j"), status="ok")
+
+    assert overall([unknown, unknown]) == "unknown"
+    assert overall([unknown, ok]) == "ok"
+    assert overall([]) == "ok"

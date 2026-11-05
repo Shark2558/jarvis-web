@@ -16,7 +16,7 @@ from jarvis.billing.meter import AllowanceUse
 from jarvis.billing.service import rupees
 from jarvis.logging import get_logger
 from jarvis.quota.ledger import PACIFIC, QuotaLedger, Sku
-from jarvis.vitals.models import Provider, Spend
+from jarvis.vitals.models import Kind, Provider, Spend
 
 log = get_logger(__name__)
 
@@ -58,54 +58,70 @@ def spend_text(used: float, limit: int | None) -> str:
     return f"{rupees(used)} of {rupees(limit)} this month"
 
 
+def _auto(
+    pid: str,
+    label: str,
+    kind: Kind,
+    unit: str,
+    *,
+    limit: float | None,
+    used: float | None,
+    reset_at: datetime | None,
+    note: str = "",
+) -> Provider:
+    return Provider(
+        id=pid,
+        label=label,
+        kind=kind,
+        source="auto",
+        limit=limit,
+        used=used,
+        unit=unit,
+        reset_at=reset_at,
+        note=note,
+    )
+
+
 async def spend(
     billing: BillingLike, uid: str, now: datetime, tz: ZoneInfo
 ) -> tuple[Provider, Spend | None]:
-    base = {
-        "id": SPEND_ID,
-        "label": "AI spend this month",
-        "kind": "billing",
-        "source": "auto",
-        "unit": RUPEE,
-        "reset_at": next_month_start(now, tz),
-    }
+    reset = next_month_start(now, tz)
+
+    def make(*, limit: float | None, used: float | None, note: str) -> Provider:
+        return _auto(
+            SPEND_ID, "AI spend this month", "billing", RUPEE,
+            limit=limit, used=used, reset_at=reset, note=note,
+        )  # fmt: skip
+
     try:
         view = await billing.usage(uid)
     except Exception as exc:  # noqa: BLE001 - unreadable meter: "unknown", never a failure
         log.warning("vitals: spend unreadable", extra={"reason": type(exc).__name__})
-        return Provider(**base, note=UNREADABLE), None  # type: ignore[arg-type]
+        return make(limit=None, used=None, note=UNREADABLE), None
     limit = view.limit_inr
-    note = (
-        "The stored limit can't be read; paid replies are paused." if view.limit_unreadable else ""
-    )
-    p = Provider(
-        **base,  # type: ignore[arg-type]
-        used=view.used_inr,
-        limit=None if limit is None else float(limit),
-        note=note,
-    )
+    if view.limit_unreadable:  # the limit is unknown, so the status is too (paid replies pause)
+        note = "The stored limit can't be read; paid replies are paused."
+        return make(limit=None, used=None, note=note), Spend(
+            used_inr=view.used_inr, limit_inr=limit, text=spend_text(view.used_inr, limit)
+        )
+    p = make(limit=None if limit is None else float(limit), used=view.used_inr, note="")
     return p, Spend(used_inr=view.used_inr, limit_inr=limit, text=spend_text(view.used_inr, limit))
 
 
 async def quota(ledger: QuotaLedger, sku: Sku, now: datetime) -> Provider:
     pacific = ZoneInfo(PACIFIC)
     reset = next_month_start(now, pacific) if sku.period == "month" else next_midnight(now, pacific)
-    base = {
-        "id": f"quota_{sku.id}",
-        "label": sku.label,
-        "kind": "quota",
-        "source": "auto",
-        "unit": sku.unit,
-        "limit": float(sku.cap),
-        "reset_at": reset,
-    }
+    pid = f"quota_{sku.id}"
+    cap = float(sku.cap)
     try:
         use = await ledger.use(sku)
     except Exception as exc:  # noqa: BLE001
         log.warning("vitals: quota unreadable", extra={"sku": sku.id, "reason": type(exc).__name__})
-        return Provider(**base, note=UNREADABLE)  # type: ignore[arg-type]
-    used = float(sku.cap) if use.latched else float(use.used)
-    return Provider(**base, used=used)  # type: ignore[arg-type]
+        return _auto(
+            pid, sku.label, "quota", sku.unit, limit=cap, used=None, reset_at=reset, note=UNREADABLE
+        )
+    used = cap if use.latched else float(use.used)
+    return _auto(pid, sku.label, "quota", sku.unit, limit=cap, used=used, reset_at=reset)
 
 
 async def allowances(billing: BillingLike, specs: Sequence[AllowanceSpec]) -> list[Provider]:
@@ -125,19 +141,17 @@ def _allowance(s: AllowanceSpec, got: AllowanceUse | None, reset: datetime | Non
     if got is not None:
         try:
             used = got.used(s.key)
-        except Exception:  # noqa: BLE001 - a bad counter reads as unknown
+        except Exception as exc:  # noqa: BLE001 - a bad counter reads as unknown
+            log.warning(
+                "vitals: allowance counter unreadable",
+                extra={"key": s.key, "reason": type(exc).__name__},
+            )
             used = None
-    return Provider(
-        id=f"allowance_{s.key}",
-        label=s.label,
-        kind="allowance",
-        source="auto",
-        limit=s.free_units,
-        used=used,
-        unit=s.unit,
-        reset_at=reset,
+    return _auto(
+        f"allowance_{s.key}", s.label, "allowance", s.unit,
+        limit=s.free_units, used=used, reset_at=reset,
         note="" if used is not None else UNREADABLE,
-    )
+    )  # fmt: skip
 
 
 __all__ = [

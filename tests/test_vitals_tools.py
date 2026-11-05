@@ -112,15 +112,6 @@ async def test_set_key_adds_then_edits_a_manual_record() -> None:
     assert rec.limit == 3000 and r2.result["saved"] == "brave"
 
 
-async def test_set_key_parses_a_date_as_utc_midnight() -> None:
-    rig = Rig()
-    await call(build(rig), "vitals_set_key", id="k", label="K", kind="key", expires_at="2027-01-15")
-
-    (rec,) = await rig.store.list_manual("u_owner")
-
-    assert rec.expires_at is not None and rec.expires_at.isoformat() == "2027-01-15T00:00:00+00:00"
-
-
 async def test_set_key_rejects_bad_input_with_plain_words() -> None:
     rig = Rig()
     gw = build(rig)
@@ -129,8 +120,9 @@ async def test_set_key_rejects_bad_input_with_plain_words() -> None:
     bad_date = await call(gw, "vitals_set_key", id="k", label="K", kind="key", expires_at="soon")
     reserved = await call(gw, "vitals_set_key", id="ai_spend", label="K", kind="key")
 
-    for r in (bad_kind, bad_date, reserved):
-        assert r.result["status"] == "rejected" and r.result["message"]
+    for r in (bad_kind, bad_date):
+        assert r.outcome is GatewayOutcome.ERROR and r.error
+    assert reserved.result["status"] == "rejected" and reserved.result["message"]
     assert await rig.store.list_manual("u_owner") == []
 
 
@@ -140,8 +132,8 @@ async def test_set_key_refuses_something_that_looks_like_the_key_itself() -> Non
 
     res = await call(build(rig), "vitals_set_key", id="k", label="K", kind="key", note=secret)
 
-    assert res.result["status"] == "rejected" and "never" in res.result["message"].lower()
-    assert secret not in str(res.result)
+    assert res.outcome is GatewayOutcome.ERROR and "never" in (res.error or "").lower()
+    assert secret not in repr(res)
     assert await rig.store.list_manual("u_owner") == []
 
 

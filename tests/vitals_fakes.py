@@ -31,7 +31,7 @@ class Clock:
 
 
 def usage_view(used: float = 100.0, limit: int | None = 500) -> UsageView:
-    pct = None if limit is None else round(used / limit * 100, 2)
+    pct = None if not limit else round(used / limit * 100, 2)
     return UsageView(
         month="2026-11",
         used_inr=used,

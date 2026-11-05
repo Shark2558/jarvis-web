@@ -5,10 +5,21 @@ stale (`jarvis.vitals.status`)."""
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from datetime import datetime, time
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
+
+from jarvis.config import get_settings
+from jarvis.vitals.guard import NEVER_PASTE, label_problem, looks_like_a_key
 
 Kind = Literal["key", "quota", "billing", "storage", "allowance"]
 Source = Literal["auto", "manual"]
@@ -23,8 +34,41 @@ MAX_MANUAL = 50  # manual records per owner
 RANK: dict[str, int] = {"ok": 0, "amber": 1, "red": 2}
 
 
+DEFAULT_TZ = "Asia/Kolkata"
+END_OF_DAY = time(23, 59, 59)
+INVALID = "Those values aren't valid"
+
+
 def _iso(d: datetime | None) -> str | None:
     return d.isoformat() if d else None
+
+
+def owner_tz() -> ZoneInfo:
+    """The owner's timezone (settings `user_timezone`); the default if it can't be read."""
+    try:
+        return ZoneInfo(get_settings().user_timezone)
+    except Exception:  # noqa: BLE001 - a bad zone name must not brick the board
+        return ZoneInfo(DEFAULT_TZ)
+
+
+def aware(d: datetime) -> datetime:
+    """A naive value (or a date-only one) means the END of that day in the owner's zone, never UTC
+    midnight; an aware value is kept."""
+    if d.tzinfo is not None:
+        return d
+    return datetime.combine(d.date(), END_OF_DAY, tzinfo=owner_tz())
+
+
+def describe_error(exc: ValidationError) -> str:
+    """Plain words naming only OUR field names: never the input, never a caller's key name."""
+    errors = exc.errors()
+    if any(NEVER_PASTE in str(e.get("msg", "")) for e in errors):
+        return NEVER_PASTE
+    known = set(Provider.model_fields)
+    names = sorted({str(e["loc"][0]) for e in errors if e["loc"] and e["loc"][0] in known})
+    other = [str(e.get("msg", "")) for e in errors if not e["loc"]]
+    shown = ", ".join(names) or (other[0].removeprefix("Value error, ") if other else "")
+    return f"{INVALID} ({shown or 'unknown field'})."
 
 
 class Provider(BaseModel):
@@ -52,6 +96,24 @@ class Provider(BaseModel):
     @classmethod
     def _tidy(cls, v: Any) -> Any:
         return " ".join(v.split()) if isinstance(v, str) else v
+
+    @field_validator("reset_at", "expires_at")
+    @classmethod
+    def _zoned(cls, v: datetime | None) -> datetime | None:
+        return None if v is None else aware(v)
+
+    @model_validator(mode="after")
+    def _guard(self) -> Provider:
+        """Manual records only (auto ones are built from code): no key value anywhere, and a
+        constrained label. The one guard for every entry path (tool, REST, importer)."""
+        if self.source != "manual":
+            return self
+        if looks_like_a_key([self.id, self.label, self.note, self.unit]):
+            raise ValueError(NEVER_PASTE)
+        problem = label_problem(self.label)
+        if problem:
+            raise ValueError(problem)
+        return self
 
     def fields(self) -> dict[str, Any]:
         return {
@@ -113,15 +175,19 @@ class Board(BaseModel):
         return {
             "overall": self.overall,
             "items": [v.to_json() for v in self.items],
-            "spend": self.spend.model_dump() if self.spend else None,
+            "spend": self.spend.model_dump(mode="json") if self.spend else None,
         }
 
 
 __all__ = [
     "ID_PATTERN",
     "MAX_MANUAL",
+    "NEVER_PASTE",
     "RANK",
     "Board",
+    "aware",
+    "describe_error",
+    "owner_tz",
     "Kind",
     "Provider",
     "ProviderView",

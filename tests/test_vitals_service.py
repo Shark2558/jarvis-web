@@ -51,7 +51,7 @@ async def test_unreadable_billing_is_unknown_not_a_failure() -> None:
     board = await rig.svc.board(UID)
 
     assert by_id(board, "ai_spend").status == "unknown"
-    assert board.spend is None and board.overall == "ok"
+    assert board.spend is None and board.overall == "unknown"
 
 
 async def test_spend_resets_at_the_next_month_in_the_owner_timezone() -> None:

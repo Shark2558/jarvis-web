@@ -16,12 +16,13 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import ValidationError
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
-from jarvis.vitals.models import Provider
+from jarvis.vitals.models import Provider, describe_error
 from jarvis.vitals.service import VitalsService
-from jarvis.vitals.store import VitalsFull, VitalsUnavailable
+from jarvis.vitals.store import BAD_ID, VitalsFull, VitalsUnavailable, valid_id
 
 router = APIRouter(prefix="/v1/vitals", dependencies=[Depends(require_auth)])
 NOT_AVAILABLE = "Vitals is not available on this server."
@@ -46,8 +47,20 @@ async def board(
 
 @router.put("/keys")
 async def put_key(
-    p: Provider, svc: VitalsService = Depends(_svc), uid: str = Depends(current_user)
+    request: Request, svc: VitalsService = Depends(_svc), uid: str = Depends(current_user)
 ) -> dict[str, str]:
+    # The body is read and validated here (not by FastAPI) so a 422 can never echo the input: a
+    # pasted key value must not come back in an error body or a log line.
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(422, "The request body must be a JSON object.") from None
+    if not isinstance(body, dict):
+        raise HTTPException(422, "The request body must be a JSON object.")
+    try:
+        p = Provider.model_validate({**body, "source": "manual"})
+    except ValidationError as exc:
+        raise HTTPException(422, describe_error(exc)) from None
     try:
         await svc.set_key(uid, p)
     except (ValueError, VitalsFull) as exc:
@@ -61,9 +74,13 @@ async def put_key(
 async def delete_key(
     pid: str, svc: VitalsService = Depends(_svc), uid: str = Depends(current_user)
 ) -> dict[str, bool]:
+    if not valid_id(pid):
+        raise HTTPException(422, BAD_ID)
     try:
         removed = await svc.delete_key(uid, pid)
-    except (ValueError, VitalsUnavailable) as exc:
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    except VitalsUnavailable as exc:
         raise HTTPException(503, str(exc)) from None
     if not removed:
         raise HTTPException(404, "No such tracked key.")

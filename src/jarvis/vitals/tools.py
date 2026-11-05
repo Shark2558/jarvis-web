@@ -9,9 +9,7 @@ Registration is the integrator's: `for t in tools(VitalsDeps(service, settings))
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -20,17 +18,16 @@ from jarvis.config import Settings
 from jarvis.core.guardrails import ActionRisk
 from jarvis.tools.base import Tool
 from jarvis.tools.context import require_tool_context
-from jarvis.vitals.models import ID_PATTERN, Kind, Provider
+from jarvis.vitals.models import ID_PATTERN, Kind, Provider, describe_error
 from jarvis.vitals.service import VitalsService
-from jarvis.vitals.store import VitalsFull, VitalsUnavailable
+from jarvis.vitals.store import BAD_ID, VitalsFull, VitalsUnavailable, valid_id
 
 SHOWN = "Checked your Vitals board"
 SAVED = "Updated a tracked key in Vitals"
 REMOVED = "Removed a tracked key from Vitals"
-SECRET_LOOKING = re.compile(r"[A-Za-z0-9_\-]{32,}")
-NEVER_PASTE = "Never paste a key's value here: type only its name, limit and expiry."
 KINDS: tuple[Kind, ...] = ("key", "quota", "billing", "storage", "allowance")
 _DATE = {"type": "string", "description": "ISO 8601 date or time, e.g. 2027-01-15"}
+MASK_AT = 12  # a card shows at most this many characters of a label, then an ellipsis
 
 
 @dataclass(frozen=True)
@@ -39,26 +36,18 @@ class VitalsDeps:
     settings: Settings
 
 
-def _when(v: Any, name: str) -> datetime | None:
+def _date_arg(v: Any, name: str) -> str | None:
+    """The raw date text for `Provider` to parse (a naive or date-only value means the end of that
+    day in the owner's zone, see `jarvis.vitals.models.aware`)."""
     if v is None or v == "":
         return None
     if not isinstance(v, str):
         raise ValueError(f"{name} must be a date like 2027-01-15")
-    try:
-        d = (
-            datetime.combine(date.fromisoformat(v), datetime.min.time())
-            if len(v) == 10
-            else (datetime.fromisoformat(v))
-        )
-    except ValueError:
-        raise ValueError(f"{name} must be a date like 2027-01-15") from None
-    return d if d.tzinfo else d.replace(tzinfo=UTC)
+    return v
 
 
 def _provider(a: dict[str, Any]) -> Provider:
-    for field in ("label", "note", "unit"):
-        if SECRET_LOOKING.search(str(a.get(field) or "")):
-            raise ValueError(NEVER_PASTE)
+    """Build the record; the model's own guard refuses anything that looks like a key value."""
     try:
         return Provider(
             id=a["id"],
@@ -68,13 +57,32 @@ def _provider(a: dict[str, Any]) -> Provider:
             limit=a.get("limit"),
             used=a.get("used"),
             unit=a.get("unit") or "",
-            reset_at=_when(a.get("reset_at"), "reset_at"),
-            expires_at=_when(a.get("expires_at"), "expires_at"),
+            reset_at=_date_arg(a.get("reset_at"), "reset_at"),  # type: ignore[arg-type]
+            expires_at=_date_arg(a.get("expires_at"), "expires_at"),  # type: ignore[arg-type]
             note=a.get("note") or "",
         )
     except ValidationError as exc:
-        fields = ", ".join(sorted({str(e["loc"][0]) for e in exc.errors() if e["loc"]}))
-        raise ValueError(f"Those values aren't valid ({fields}).") from None
+        raise ValueError(describe_error(exc)) from None
+
+
+def check_set_key(a: dict[str, Any]) -> None:
+    """Gateway stage "propose": runs before any approval card or audit text is made."""
+    _provider(a)
+
+
+def check_delete_key(a: dict[str, Any]) -> None:
+    if not isinstance(a.get("id"), str) or not valid_id(a["id"]):
+        raise ValueError(BAD_ID)
+
+
+def summarize_set_key(a: dict[str, Any]) -> str:
+    label = str(a.get("label", "a key"))
+    shown = label if len(label) <= MASK_AT else label[:MASK_AT] + "…"
+    return f"Track {shown} in Vitals"
+
+
+def summarize_delete_key(a: dict[str, Any]) -> str:
+    return f"Stop tracking {str(a.get('id', 'a key'))[:40]} in Vitals"
 
 
 class VitalsAPI:
@@ -159,7 +167,8 @@ def tools(deps: VitalsDeps) -> list[Tool]:
             ActionRisk.REVERSIBLE,
             api.set_key,
             agent="vitals",
-            summarize=lambda a: f"Track {str(a.get('label', 'a key'))[:80]} in Vitals",
+            check=check_set_key,
+            summarize=summarize_set_key,
             activity_words=SAVED,
         ),
         Tool(
@@ -170,7 +179,8 @@ def tools(deps: VitalsDeps) -> list[Tool]:
             ActionRisk.REVERSIBLE,
             api.delete_key,
             agent="vitals",
-            summarize=lambda a: f"Stop tracking {str(a.get('id', 'a key'))[:40]} in Vitals",
+            check=check_delete_key,
+            summarize=summarize_delete_key,
             activity_words=REMOVED,
         ),
     ]

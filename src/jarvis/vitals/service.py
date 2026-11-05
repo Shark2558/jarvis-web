@@ -10,6 +10,7 @@ fails is not recorded, so the next tick tries again.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -21,15 +22,16 @@ from jarvis.notify.ports import Notifier, Signal
 from jarvis.quota.ledger import QuotaLedger
 from jarvis.vitals import auto
 from jarvis.vitals.auto import AllowanceSpec, BillingLike
-from jarvis.vitals.models import RANK, Board, Provider, ProviderView, Spend
+from jarvis.vitals.models import RANK, Board, Provider, ProviderView, Spend, Status
 from jarvis.vitals.status import overall, status_of
-from jarvis.vitals.store import VitalsStore
+from jarvis.vitals.store import BAD_ID, VitalsStore, VitalsUnavailable, valid_id
 
 log = get_logger(__name__)
 
 AUTO_IDS_PREFIXES = ("quota_", "allowance_")
 RESERVED = "That name is used by a built-in item. Pick another id."
 MESSAGE_MAX = 300
+ALERT_PREFIX = "Vitals — "  # fixed lead: a label can never pose as the sender
 
 
 def utcnow() -> datetime:
@@ -46,7 +48,7 @@ def alert_text(v: ProviderView) -> str:
     detail = ""
     if p.unit == auto.RUPEE and p.used is not None and p.limit is not None:
         detail = f" ({rupees(p.used)} of {rupees(p.limit)})"
-    return f"{lead}: {p.label} {v.reason}{detail}."[:MESSAGE_MAX]
+    return f"{ALERT_PREFIX}{lead}: {p.label} {v.reason}{detail}."[:MESSAGE_MAX]
 
 
 class VitalsService:
@@ -66,6 +68,7 @@ class VitalsService:
         self._ledger = ledger
         self._allowances = tuple(allowances)
         self._clock = clock
+        self._locks: dict[str, asyncio.Lock] = {}
 
     async def _auto(self, uid: str, now: datetime) -> tuple[list[Provider], Spend | None]:
         out: list[Provider] = []
@@ -80,8 +83,8 @@ class VitalsService:
                 out.append(await auto.quota(self._ledger, sku, now))
         return out, spend
 
-    async def board(self, uid: str) -> Board:
-        now = self._clock()
+    async def board(self, uid: str, now: datetime | None = None) -> Board:
+        now = now or self._clock()
         autos, spend = await self._auto(uid, now)
         manual = await self._store.list_manual(uid)
         views = tuple(
@@ -96,26 +99,54 @@ class VitalsService:
         await self._store.put(uid, p.model_copy(update={"source": "manual"}))
 
     async def delete_key(self, uid: str, pid: str) -> bool:
+        if not valid_id(pid):
+            raise ValueError(BAD_ID)
         if reserved(pid):
             return False
         return await self._store.delete(uid, pid)
 
     async def check_and_alert(self, uid: str, notifier: Notifier) -> int:
-        """Alert on every upward line-cross; returns how many alerts were sent."""
-        now = self._clock()
+        """Alert on every upward line-cross; returns how many alerts were sent.
+
+        At-least-once: the alert goes out BEFORE the new status is recorded, so if recording
+        fails the next poll sends it again (a repeat is better than a lost warning). One
+        provider's storage trouble is counted and skipped; it never aborts the owner's other
+        providers. Calls for one owner are serialised."""
+        async with self._locks.setdefault(uid, asyncio.Lock()):
+            now = self._clock()
+            items = [v for v in (await self.board(uid, now)).items if v.status != "unknown"]
+            lasts = await asyncio.gather(
+                *(self._store.last_status(uid, v.provider.id) for v in items),
+                return_exceptions=True,
+            )
+            sent = 0
+            for v, last in zip(items, lasts, strict=True):
+                sent += await self._one(uid, notifier, v, last, now)
+            return sent
+
+    async def _one(
+        self,
+        uid: str,
+        notifier: Notifier,
+        v: ProviderView,
+        last: Status | None | BaseException,
+        now: datetime,
+    ) -> int:
+        if isinstance(last, BaseException):
+            log.warning("vitals: status read failed", extra={"error": type(last).__name__})
+            return 0
+        before: Status = last or "ok"
+        if v.status == before:
+            return 0
         sent = 0
-        for v in (await self.board(uid)).items:
-            if v.status == "unknown":
-                continue
-            pid = v.provider.id
-            last = await self._store.last_status(uid, pid) or "ok"
-            if v.status == last:
-                continue
-            if RANK[v.status] > RANK[last]:
-                if not await self._send(uid, notifier, v):
-                    continue
-                sent += 1
-            await self._store.set_status(uid, pid, v.status, now)
+        if RANK[v.status] > RANK[before]:
+            if not await self._send(uid, notifier, v):
+                return 0
+            sent = 1
+        try:
+            await self._store.set_status(uid, v.provider.id, v.status, now)
+        except VitalsUnavailable as exc:
+            log.warning("vitals: status not recorded", extra={"error": type(exc).__name__})
         return sent
 
     @staticmethod

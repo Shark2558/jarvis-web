@@ -2,8 +2,9 @@
 """The hourly Vitals poll as a tick job (R4 D14). No new Cloud Scheduler job: it rides the existing
 tick (`jarvis.ticks`). That tick fires only in the morning window (`0,30 4-11`), NOT every hour
 or minute, so the "hourly" poll really runs then (R4 I2 F5); the job still keeps a last-poll time
-per owner and skips an owner polled less than `POLL_EVERY_S` ago (the meter, FX and ledger reads are not
-free). Alerts still fire only on an upward line-cross (`VitalsService.check_and_alert`). One
+per owner and skips an owner polled less than `POLL_EVERY_S` ago (the meter, FX and
+ledger reads are not free). Alerts still fire only on an upward line-cross
+(`VitalsService.check_and_alert`). One
 owner's trouble never stops the next; counts only. The throttle lives in memory: a restart simply
 polls once early."""
 

@@ -5,7 +5,7 @@ stale (`jarvis.vitals.status`)."""
 from __future__ import annotations
 
 import math
-from datetime import datetime, time
+from datetime import datetime, time, tzinfo
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -18,7 +18,6 @@ from pydantic import (
     model_validator,
 )
 
-from jarvis.config import get_settings
 from jarvis.vitals.guard import NEVER_PASTE, label_problem, looks_like_a_key
 
 Kind = Literal["key", "quota", "billing", "storage", "allowance"]
@@ -43,20 +42,21 @@ def _iso(d: datetime | None) -> str | None:
     return d.isoformat() if d else None
 
 
-def owner_tz() -> ZoneInfo:
-    """The owner's timezone (settings `user_timezone`); the default if it can't be read."""
+def zone_of(name: str) -> ZoneInfo:
+    """The zone named by the service's injected `Settings.user_timezone`; the default if the name
+    can't be read (a bad zone name must not brick the board). No global settings read (I2 F6)."""
     try:
-        return ZoneInfo(get_settings().user_timezone)
+        return ZoneInfo(name)
     except Exception:  # noqa: BLE001 - a bad zone name must not brick the board
         return ZoneInfo(DEFAULT_TZ)
 
 
-def aware(d: datetime) -> datetime:
-    """A naive value (or a date-only one) means the END of that day in the owner's zone, never UTC
-    midnight; an aware value is kept."""
+def aware(d: datetime, tz: tzinfo) -> datetime:
+    """A naive value (or a date-only one) means the END of that day in `tz` (the owner's zone,
+    passed in), never UTC midnight; an aware value is kept."""
     if d.tzinfo is not None:
         return d
-    return datetime.combine(d.date(), END_OF_DAY, tzinfo=owner_tz())
+    return datetime.combine(d.date(), END_OF_DAY, tzinfo=tz)
 
 
 def describe_error(exc: ValidationError) -> str:
@@ -99,8 +99,12 @@ class Provider(BaseModel):
 
     @field_validator("reset_at", "expires_at")
     @classmethod
-    def _zoned(cls, v: datetime | None) -> datetime | None:
-        return None if v is None else aware(v)
+    def _end_of_day(cls, v: datetime | None) -> datetime | None:
+        """Naive / date-only means the end of that day; the zone is applied at use (`aware`),
+        from the service's own settings, so nothing here reads global settings."""
+        if v is None or v.tzinfo is not None:
+            return v
+        return datetime.combine(v.date(), END_OF_DAY)
 
     @model_validator(mode="after")
     def _guard(self) -> Provider:
@@ -187,7 +191,7 @@ __all__ = [
     "Board",
     "aware",
     "describe_error",
-    "owner_tz",
+    "zone_of",
     "Kind",
     "Provider",
     "ProviderView",

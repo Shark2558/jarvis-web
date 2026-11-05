@@ -21,6 +21,7 @@ from jarvis.tools.policy import Policy
 from jarvis.tools.registry import ToolRegistry
 from jarvis.vitals.api import router
 from jarvis.vitals.job import POLL_EVERY_S, VitalsJob
+from jarvis.vitals.models import aware, zone_of
 from jarvis.vitals.store import VitalsStore, VitalsUnavailable
 from jarvis.vitals.tools import VitalsDeps, tools
 
@@ -93,7 +94,8 @@ async def test_set_key_date_only_expiry_is_end_of_day_in_the_owner_zone() -> Non
     (rec,) = await rig.store.list_manual(UID)
 
     assert rec.expires_at is not None
-    assert rec.expires_at.isoformat() == "2027-01-15T23:59:59+05:30"
+    assert rec.expires_at.isoformat() == "2027-01-15T23:59:59"  # the zone is applied at use
+    assert aware(rec.expires_at, zone_of("Asia/Kolkata")).isoformat().endswith("+05:30")
 
 
 # --- REST route: same guard, plain 422, no echo ------------------------------------------

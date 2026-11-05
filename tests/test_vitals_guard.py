@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from jarvis.vitals.models import Provider
+from jarvis.vitals.models import Provider, aware, zone_of
 from jarvis.vitals.status import status_of
 
 MIXED = "Ab3dE6gH9jK2mN5pQ8sT1vX4"  # 24 chars, upper + lower + digit
@@ -114,17 +114,18 @@ def test_a_plain_label_with_allowed_punctuation_passes() -> None:
 def test_date_only_expiry_is_end_of_that_day_in_the_owner_zone() -> None:
     p = make(expires_at="2026-11-05")
 
-    assert p.expires_at is not None and p.expires_at.utcoffset() is not None
-    assert p.expires_at.isoformat().startswith("2026-11-05T23:59:59")
-    assert p.expires_at.isoformat().endswith("+05:30")
+    assert p.expires_at is not None
+    assert p.expires_at.isoformat() == "2026-11-05T23:59:59"  # the zone is applied at use
+    assert aware(p.expires_at, zone_of("Asia/Kolkata")).isoformat().endswith("+05:30")
 
 
 def test_naive_datetime_is_end_of_day_and_aware_is_kept() -> None:
     naive = make(reset_at=datetime(2026, 11, 5, 8, 0))
-    aware = make(reset_at=datetime(2026, 11, 5, 8, 0, tzinfo=UTC))
+    kept = make(reset_at=datetime(2026, 11, 5, 8, 0, tzinfo=UTC))
 
     assert naive.reset_at is not None and naive.reset_at.hour == 23
-    assert aware.reset_at == datetime(2026, 11, 5, 8, 0, tzinfo=UTC)
+    assert aware(naive.reset_at, UTC).tzinfo is UTC  # `aware` takes the zone explicitly
+    assert kept.reset_at == datetime(2026, 11, 5, 8, 0, tzinfo=UTC)
 
 
 def test_an_ist_expiry_is_not_red_at_0530_ist() -> None:
@@ -151,3 +152,17 @@ def test_status_of_never_raises_on_a_naive_value() -> None:
 
     now = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
     assert status_of(p, now, 0.8, 14).status in {"ok", "amber", "red"}
+
+
+def test_the_owner_zone_comes_from_the_argument_not_from_global_settings() -> None:
+    p = make(expires_at="2026-11-05")
+    new_york = zone_of("America/New_York")
+    # 23:59:59 on 5 Nov in New York is 04:59:59 UTC on 6 Nov: still ok at 03:00 UTC on 6 Nov
+    still_ok = datetime(2026, 11, 6, 3, 0, tzinfo=UTC)
+
+    assert status_of(p, still_ok, 0.8, 0, new_york).status == "ok"
+    assert status_of(p, still_ok, 0.8, 0).status == "red"  # the default (IST) zone has passed
+
+
+def test_a_bad_zone_name_falls_back_to_the_default() -> None:
+    assert zone_of("Not/AZone").key == "Asia/Kolkata"

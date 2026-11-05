@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
 
 from jarvis.billing.service import rupees
 from jarvis.config import Settings
@@ -22,7 +21,7 @@ from jarvis.notify.ports import Notifier, Signal
 from jarvis.quota.ledger import QuotaLedger
 from jarvis.vitals import auto
 from jarvis.vitals.auto import AllowanceSpec, BillingLike
-from jarvis.vitals.models import RANK, Board, Provider, ProviderView, Spend, Status
+from jarvis.vitals.models import RANK, Board, Provider, ProviderView, Spend, Status, zone_of
 from jarvis.vitals.status import overall, status_of
 from jarvis.vitals.store import BAD_ID, VitalsStore, VitalsUnavailable, valid_id
 
@@ -74,7 +73,7 @@ class VitalsService:
         out: list[Provider] = []
         spend: Spend | None = None
         if self._billing is not None:
-            tz = ZoneInfo(self._s.user_timezone)
+            tz = zone_of(self._s.user_timezone)
             p, spend = await auto.spend(self._billing, uid, now, tz)
             out.append(p)
             out.extend(await auto.allowances(self._billing, self._allowances))
@@ -88,7 +87,13 @@ class VitalsService:
         autos, spend = await self._auto(uid, now)
         manual = await self._store.list_manual(uid)
         views = tuple(
-            status_of(p, now, self._s.vitals_amber_fraction, self._s.vitals_expiry_amber_days)
+            status_of(
+                p,
+                now,
+                self._s.vitals_amber_fraction,
+                self._s.vitals_expiry_amber_days,
+                zone_of(self._s.user_timezone),
+            )
             for p in [*autos, *manual]
         )
         return Board(items=views, spend=spend, overall=overall(views))

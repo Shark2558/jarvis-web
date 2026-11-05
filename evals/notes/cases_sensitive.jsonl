@@ -1,0 +1,33 @@
+{"id": "s01", "text": "my card number is 4111 1111 1111 1111", "private": true}
+{"id": "s02", "text": "visa 4012888888881881 expires next year", "private": true}
+{"id": "s03", "text": "Aadhaar 2345 6789 0123 for the form", "private": true}
+{"id": "s04", "text": "aadhaar number is 234567890123", "private": true}
+{"id": "s05", "text": "PAN ABCDE1234F for the tax filing", "private": true}
+{"id": "s06", "text": "my PAN is FGHIJ5678K", "private": true}
+{"id": "s07", "text": "the wifi password: hunter2hunter2", "private": true}
+{"id": "s08", "text": "password is Tr0ub4dor&3 for the router", "private": true}
+{"id": "s09", "text": "my netbanking password: blue-horse-battery", "private": true}
+{"id": "s10", "text": "OTP is 482915, do not share", "private": true}
+{"id": "s11", "text": "the one time password 771203 came by sms", "private": true}
+{"id": "s12", "text": "ATM PIN 4827", "private": true}
+{"id": "s13", "text": "my PIN is 1357 for the card", "private": true}
+{"id": "s14", "text": "bank account number 123456789012 at SBI", "private": true}
+{"id": "s15", "text": "account no: 50100123456789 HDFC", "private": true}
+{"id": "s16", "text": "IFSC HDFC0001234 branch Kochi", "private": true}
+{"id": "s17", "text": "CVV 123 on the back of the card", "private": true}
+{"id": "s18", "text": "passport number is K1234567", "private": true}
+{"id": "s19", "text": "driving licence number KL01 20190012345", "private": true}
+{"id": "s20", "text": "api key sk-ant-api03-abcdefghijklmnopqrstuvwx", "private": true}
+{"id": "s21", "text": "secret token ghp_abcdefghijklmnopqrstuvwxyz0123456789", "private": true}
+{"id": "s22", "text": "credit card 5500 0000 0000 0004 limit raised", "private": true}
+{"id": "s23", "text": "my voter id number is ABC1234567", "private": true}
+{"id": "s24", "text": "login password = Summer2026!", "private": true}
+{"id": "s25", "text": "card 3782 822463 10005 amex", "private": true}
+{"id": "o01", "text": "The plumber is Ravi, comes on Tuesdays.", "private": false}
+{"id": "o02", "text": "Gym membership renews in March, ask about the family plan.", "private": false}
+{"id": "o03", "text": "Passport is kept in the blue file on the top shelf.", "private": false}
+{"id": "o04", "text": "Call the bank tomorrow about the statement.", "private": false}
+{"id": "o05", "text": "Wi-Fi name is HomeNet, ask the landlord about the router.", "private": false}
+{"id": "o06", "text": "Birthday gift ideas: a book on Kerala history, a plant, tea.", "private": false}
+{"id": "o07", "text": "Meeting with Priya on 14 December about the registry rollout.", "private": false}
+{"id": "o08", "text": "Buy 2 kg rice, 1 kg dal and 12 eggs.", "private": false}

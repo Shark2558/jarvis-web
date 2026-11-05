@@ -1,0 +1,43 @@
+/* =============================================================================================
+   src/jarvis/api/static/console-notes.css -- the Notes panel (R2 D10). Same visual language as the
+   Memory panel: it reuses .minput / .mta / .mrow / .bnote / .btn.bact / .bdialog from console.css and
+   console-memory.css and adds only what is new. State is always said in words, never colour alone.
+============================================================================================= */
+
+#p-notes.card{background:linear-gradient(90deg,transparent 6%,color-mix(in srgb,var(--accent) 55%,transparent) 50%,transparent 94%) top/100% 1px no-repeat,var(--panel-solid)}
+#notes .bnote.mlive:empty{display:none}
+.ntools{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+.nsearch{margin:0}
+.nchips{display:flex;flex-wrap:wrap;gap:6px}
+.nchip{height:30px;padding:0 12px;border-radius:15px;border:1px solid var(--line);background:transparent;color:var(--ink-2);font:500 12.5px/1 var(--font);cursor:pointer}
+.nchip:hover{border-color:color-mix(in srgb,var(--accent) 50%,var(--line))}
+.nchip.on{color:var(--ink);border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.nchip:focus-visible,.nhead:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.nacts{margin-top:0}
+.nrecord{display:inline-flex}
+.nform,.nmemo{margin:0 0 12px;padding:10px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--well)}
+.nfield{margin-bottom:8px}
+.nfield .bl{display:block;margin-bottom:3px}
+.nlist{list-style:none;margin:0;padding:0}
+.nrow{border-top:1px dashed var(--line-2)}
+.nrow:first-child{border-top:0}
+.nhead{display:grid;grid-template-columns:minmax(0,1fr);width:100%;gap:2px;padding:8px 4px;border:0;background:transparent;color:var(--ink);text-align:left;cursor:pointer;font:inherit}
+.nhead:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.nt{font-size:14px;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
+.nm{font:400 11.5px/1.3 var(--tech);letter-spacing:.06em;color:var(--ink-2)}
+.nsn{font-size:12.5px;line-height:1.4;color:var(--ink-2);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ndetail{padding:2px 6px 10px}
+.ntext{margin:6px 0;font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.nowner{color:var(--ink-2)}
+.nmeta{margin:6px 0;font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+.nwarn{color:var(--amber-ink)}
+.nlink{margin:4px 0;font-size:13px}
+.nanchor{color:var(--accent-ink,var(--accent));text-decoration:underline;overflow-wrap:anywhere}
+.npage{margin:8px 0;padding:8px 10px;border-left:2px solid var(--amber-line,var(--line));background:color-mix(in srgb,var(--amber-tint,transparent) 60%,transparent)}
+.nh{margin:0 0 4px;font:400 11px/1.3 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.nundo{margin:0 0 8px;font-size:13px;color:var(--ink-2)}
+.nfoot{margin-top:14px;font-size:13px}
+.nfoot summary{cursor:pointer;color:var(--ink-2)}
+.nfoot summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.npages{justify-content:center}
+.confirm{display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px 8px;font-size:13px;color:var(--ink)}

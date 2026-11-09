@@ -139,6 +139,12 @@ step_configure() {
     say "Copying Frigate's settings (the camera address stays in frigate.env, not here)"
     cp frigate/config.yml frigate/config/config.yml
   fi
+  # Frigate keeps (and edits) its own copy; an install from before 10 Nov named the gate zone
+  # `gate`, which Frigate 0.17 refuses (same name as the camera). Rename only that zone.
+  if [ -f frigate/config/config.yml ] && grep -q '^      gate:$' frigate/config/config.yml; then
+    say "Renaming the gate zone to gate_zone in Frigate's settings (Frigate 0.17 needs it)"
+    sudo sed -i -e 's/^      gate:$/      gate_zone:/' -e 's/^\( *\)- gate$/\1- gate_zone/' frigate/config/config.yml
+  fi
   echo "Configured."
 }
 
@@ -161,7 +167,7 @@ step_up() {
   say "Starting JARVIS Home"
   "${COMPOSE[@]}" up -d --build || fail "couldn't start. Run  bash setup-wsl.sh status  and tell Claude what it says."
   # Frigate reads its settings only when it starts; `up` leaves a running Frigate alone.
-  local sum; sum="$(sha256sum frigate/config.yml | cut -d' ' -f1)"
+  local sum; sum="$(sha256sum frigate/config/config.yml 2>/dev/null | cut -d' ' -f1 || true)"
   if [ -f .frigate-config.sha ] && [ "$(cat .frigate-config.sha)" != "$sum" ]; then
     say "Restarting Frigate with its new settings"
     "${COMPOSE[@]}" restart frigate >/dev/null || fail "couldn't restart Frigate. Run  bash setup-wsl.sh status  and tell Claude."

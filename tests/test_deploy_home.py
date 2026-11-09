@@ -837,17 +837,40 @@ def test_every_dependency_of_a_bridge_package_is_in_the_bridge_lock() -> None:
 
 
 def test_up_restarts_frigate_only_when_its_settings_changed(tmp_path: Path) -> None:
-    # 9 Nov, on the owner's laptop: a new frigate/config.yml was copied in, but `up -d` left
-    # the running Frigate alone (a bind-mounted file), so it stayed in safe mode.
+    # 10 Nov, on the owner's laptop: Frigate's settings changed, but `up -d` left the running
+    # Frigate alone (a bind-mounted folder), so it stayed in safe mode.
     run_script(tmp_path, "configure")
     run_script(tmp_path, "up")
     restart = "compose --env-file bridge.env --env-file images.env restart frigate"
     _, calls = run_script(tmp_path, "up")
     assert calls.count(restart) == 0  # same settings: no restart (the log keeps every run)
-    cfg = tmp_path / "home" / "jarvis-home" / "frigate" / "config.yml"
+    cfg = tmp_path / "home" / "jarvis-home" / "frigate" / "config" / "config.yml"  # Frigate's own
     cfg.write_text(cfg.read_text() + "\n# changed\n")
     done, calls = run_script(tmp_path, "up")
     assert done.returncode == 0, done.stderr
     assert calls.count(restart) == 1
     _, calls = run_script(tmp_path, "up")
     assert calls.count(restart) == 1
+
+
+def test_configure_renames_the_old_gate_zone_in_frigates_own_settings(tmp_path: Path) -> None:
+    # 10 Nov: the owner's Frigate kept its first copy (frigate/config/config.yml) with the zone
+    # `gate`, so copying a new template changed nothing. configure now renames that zone in
+    # Frigate's own copy (keeping anything he drew), and `up` restarts Frigate once.
+    run_script(tmp_path, "configure")
+    live = tmp_path / "home" / "jarvis-home" / "frigate" / "config" / "config.yml"
+    old = (
+        "go2rtc:\n  streams:\n    gate:\n      - '{FRIGATE_GATE_RTSP}'\n"
+        "cameras:\n  gate:\n    zones:\n      gate:\n        coordinates: 0.1,0.1,0.5,0.1,0.5,0.5\n"
+        "    review:\n      alerts:\n        required_zones:\n          - gate\n"
+        "snapshots:\n  required_zones:\n    - gate\n    - doorstep\n"
+    )
+    live.write_text(old)
+    run_script(tmp_path, "up")
+    run_script(tmp_path, "configure")
+    new = live.read_text()
+    assert "      gate_zone:\n        coordinates: 0.1,0.1,0.5,0.1,0.5,0.5\n" in new
+    assert "          - gate_zone\n" in new and "    - gate_zone\n    - doorstep\n" in new
+    assert "  streams:\n    gate:\n" in new and "cameras:\n  gate:\n" in new  # camera kept
+    _, calls = run_script(tmp_path, "up")
+    assert calls.count("images.env restart frigate") == 1

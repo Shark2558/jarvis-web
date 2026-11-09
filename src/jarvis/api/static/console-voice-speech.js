@@ -16,6 +16,12 @@
 //     and so is a reply whose AudioContext the browser keeps suspended (no tap yet: 'blocked').
 //     The browser voice gets pieces of at most ~180 characters (Chrome's network voices stop after
 //     ~15 s without saying so) and a watchdog per piece that moves on if no end event comes.
+//     R5 (docs/plans/r5-voice.md): setSink(id) → Promise<{ok, reason?}> / sink() / sinkSupported()
+//     route the output with AudioContext.setSinkId (never an <audio> element: the CSP has no media-src);
+//     duck(on) → bool lowers the cloud voice to 20% (60 ms ramp; false and nothing for the browser
+//     voice), volume() the current gain; tone({freq, ms, gain}) → Promise<bool> a generated blip
+//     through the same context; stop() → {rest: string[]}, the text not yet played, the interrupted
+//     chunk first; 'chunk' events carry at: performance.now().
 // Nothing here stores audio; spoken text goes only to the console's own /v1/voice/speak.
 (() => {
   'use strict';
@@ -220,6 +226,7 @@
   const BROWSER_CPS = 13;        // characters a second at rate 1 (slow on purpose: the watchdog never cuts speech)
   const WATCHDOG_SLACK_MS = 2500;
   const RESUME_WAIT_MS = 1500;   // an AudioContext the browser won't start (no tap yet) is given up on
+  const DUCK_GAIN = 0.2, DUCK_RAMP_S = 0.06;
   const settle = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise(r => setTimeout(r, ms))]);
 
   function createSpeaker(opts) {
@@ -227,6 +234,7 @@
     let ac = null, master = null, analyser = null, probe = null, comms = null;
     let finish = o.finish === 'clean' ? 'clean' : 'comms';
     let queue = [], playing = null, ended = false, active = false, seq = 0, useBrowser = false, rate = 1;
+    let sinkId = '', ducked = false;
     const listeners = { state: [], chunk: [], fallback: [] };
     const fire = (k, d) => listeners[k].forEach(fn => { try { fn(d); } catch (_) {} });
 
@@ -235,6 +243,7 @@
       const C = window.AudioContext || window.webkitAudioContext;
       if (!C) return null;
       ac = new C();
+      applySink(ac);
       master = ac.createGain();
       analyser = ac.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.3;
       probe = new Float32Array(analyser.fftSize);
@@ -251,6 +260,52 @@
       dry.connect(master); wet.connect(master);
       comms = hp;
       return ac;
+    }
+    const sinkOk = () => { const C = window.AudioContext || window.webkitAudioContext; return !!(C && C.prototype && typeof C.prototype.setSinkId === 'function'); };
+    function applySink(c) {
+      if (!sinkId || typeof c.setSinkId !== 'function') return;
+      try { Promise.resolve(c.setSinkId(sinkId)).catch(() => {}); } catch (_) {}
+    }
+    function sinkReason(err) {
+      const n = err && err.name;
+      return n === 'NotFoundError' ? 'not_found' : n === 'NotAllowedError' || n === 'SecurityError' ? 'blocked' : 'failed';
+    }
+    /** Send the sound to another output (an id from enumerateDevices; null or '' is the default). */
+    async function setSink(id) {
+      const next = typeof id === 'string' && id !== 'default' ? id : '';
+      if (!sinkOk()) return { ok: false, reason: 'unsupported' };
+      if (!ac) { sinkId = next; return { ok: true }; }
+      try { await ac.setSinkId(next); } catch (err) { return { ok: false, reason: sinkReason(err) }; }
+      sinkId = next;
+      return { ok: true };
+    }
+    function duck(on) {
+      ducked = !!on;
+      if (useBrowser || !master) { ducked = false; return false; }
+      const g = master.gain, t = ac.currentTime;
+      g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
+      g.linearRampToValueAtTime(ducked ? DUCK_GAIN : 1, t + DUCK_RAMP_S);
+      return ducked;
+    }
+    async function tone(o) {
+      const p = o && typeof o === 'object' ? o : {};
+      const clamp = (v, lo, hi, d) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+      const freq = clamp(p.freq, 100, 4000, 880), ms = clamp(p.ms, 20, 1500, 120), gain = clamp(p.gain, 0, 0.5, 0.15);
+      const c = context();
+      if (!c) return false;
+      if (c.state === 'suspended') await settle(c.resume(), RESUME_WAIT_MS);
+      if (c.state === 'suspended') return false;
+      return new Promise(resolve => {
+        const osc = c.createOscillator(), env = c.createGain(), t = c.currentTime, end = t + ms / 1000;
+        osc.frequency.value = freq;
+        env.gain.setValueAtTime(0, t);
+        env.gain.linearRampToValueAtTime(gain, t + Math.min(0.008, ms / 2000));
+        env.gain.setValueAtTime(gain, Math.max(t + 0.009, end - 0.02));
+        env.gain.linearRampToValueAtTime(0, end);
+        osc.connect(env); env.connect(master);
+        osc.onended = () => { try { osc.disconnect(); env.disconnect(); } catch (_) {} resolve(true); };
+        osc.start(t); osc.stop(end + 0.01);
+      });
     }
     function setActive(on, why) {
       if (active === on) return;
@@ -300,7 +355,7 @@
       item.node = src;
       src.onended = () => { if (my !== seq || playing !== item) return; queue.shift(); playing = null; pump(); };
       setActive(true);
-      fire('chunk', { text: item.text, engine: 'cloud' });
+      fire('chunk', { text: item.text, engine: 'cloud', at: performance.now() });
       src.start();
     }
     /** The rest of this reply goes to the browser voice (cloud refused, or audio held back). */
@@ -340,7 +395,7 @@
           try { ss.speak(u); } catch (_) { step(); }
         };
         setActive(true);
-        fire('chunk', { text: item.text, engine: 'browser' });
+        fire('chunk', { text: item.text, engine: 'browser', at: performance.now() });
         next();
       });
     }
@@ -357,14 +412,22 @@
       },
       /** No more chunks for this reply: the speaker goes idle ('done') after the last one. */
       end() { ended = true; if (!playing && !queue.length) { ended = false; setActive(false, 'done'); } },
-      /** Barge-in: stop now, abort pending fetches, forget the queue. */
+      /** Barge-in: stop now, abort pending fetches, forget the queue. Returns the text not yet
+       *  played, the interrupted chunk first (a reply can be picked up again from it). */
       stop() {
+        const rest = queue.map(it => it.text);
         seq++;
         queue.forEach(it => { if (it.ctrl) { try { it.ctrl.abort(); } catch (_) {} } if (it.node) { try { it.node.onended = null; it.node.stop(); } catch (_) {} } });
         queue = []; playing = null; ended = false;
         if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (_) {} }
+        if (ducked) { ducked = false; if (master) { master.gain.cancelScheduledValues(0); master.gain.value = 1; } }
         setActive(false, 'stopped');
+        return { rest };
       },
+      setSink, duck, tone,
+      sink: () => sinkId,
+      sinkSupported: sinkOk,
+      volume: () => (master ? master.gain.value : 1),
       speaking: () => active,
       level() {
         if (!analyser || !active || useBrowser) return 0;

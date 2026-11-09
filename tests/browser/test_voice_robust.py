@@ -89,6 +89,7 @@ def _factory(browser: Any, url: str, token: str, made: list[Console]) -> Callabl
         device: dict[str, Any] | None = None,
         scripts: tuple[str, ...] = (),
         real_wake: bool = False,
+        barge: bool = False,
     ) -> Console:
         c = Console(browser, url, token, DESKTOP)
         if not real_wake:  # the real module is tested on its own; these use FAKE_WAKE or none
@@ -98,9 +99,21 @@ def _factory(browser: Any, url: str, token: str, made: list[Console]) -> Callabl
             )
         c.page.add_init_script(RECORDER)
         c.page.add_init_script(RECORD_MORE)
-        if device is not None:  # this device's voice settings, set before any script runs
+        # R5: the fake microphones talk constantly, so tests that are not about interrupting pin
+        # "Tapping only" (docs/plans/r5-voice.md I0 item 9) unless they ask for barge-in.
+        pinned = dict(device or {})
+        if not barge:
+            pinned.setdefault("interruptBy", "tap")
+        if pinned:  # this device's voice settings, set before any script runs
+            # only the pin alone must not undo what the page saved before a reload
+            keep = (
+                ""
+                if device is not None
+                else "localStorage.getItem('jarvis_voice_device_v1') === null && "
+            )
             c.page.add_init_script(
-                f"localStorage.setItem('jarvis_voice_device_v1', {json.dumps(json.dumps(device))});"
+                f"{keep}localStorage.setItem('jarvis_voice_device_v1', "
+                f"{json.dumps(json.dumps(pinned))});"
             )
         for s in scripts:
             c.page.add_init_script(s)

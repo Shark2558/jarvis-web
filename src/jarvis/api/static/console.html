@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="/static/console-deck.css">
 <link rel="stylesheet" href="/static/console-memory.css">
 <link rel="stylesheet" href="/static/console-voice.css">
+<link rel="stylesheet" href="/static/console-voice-devices.css">
 <link rel="stylesheet" href="/static/console-permissions.css">
 <link rel="stylesheet" href="/static/console-attach.css">
 <link rel="stylesheet" href="/static/console-deleted.css">
@@ -174,6 +175,11 @@
           <button class="mic lift" id="micBtn" type="button" aria-pressed="false" aria-label="Voice input" aria-keyshortcuts="Control+Space" title="Speak (Ctrl + Space)" data-state="idle" hidden>
             <span class="mring" aria-hidden="true"></span>
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg>
+            <svg class="mic-slash" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.4 6V5.2a2.6 2.6 0 0 1 5.2 0v4.6M7.4 9.8a2.6 2.6 0 0 0 4 2.2M5 9.6a5 5 0 0 0 7.6 4.2M15 9.6a5 5 0 0 1-.6 2.4M10 14.6v2.8M7.2 17.4h5.6M3 3l14 14"/></svg>
+          </button>
+          <!-- R5 (console-voice-micoff.js): cuts the microphone completely; shown while the mic is open -->
+          <button class="micoff lift" id="micOffBtn" type="button" aria-label="Switch the microphone off" aria-keyshortcuts="Control+Shift+Space" title="Microphone off (Ctrl + Shift + Space)" hidden>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.4 6V5.2a2.6 2.6 0 0 1 5.2 0v4.6M7.4 9.8a2.6 2.6 0 0 0 4 2.2M5 9.6a5 5 0 0 0 7.6 4.2M15 9.6a5 5 0 0 1-.6 2.4M10 14.6v2.8M7.2 17.4h5.6M3 3l14 14"/></svg>
           </button>
           <button class="send lift" id="send" type="submit" aria-label="Send" disabled>
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 16V4M4.5 9.5 10 4l5.5 5.5"/></svg>
@@ -181,6 +187,7 @@
         </form>
         <p class="vmic-help" id="micHelp" role="status" hidden></p>
         <p class="vline" id="voiceLine" role="status" aria-live="polite"></p>
+        <div class="voffer" id="voiceOffer" role="group" aria-label="Suggestion" hidden></div>
         <span class="sr-only" id="voiceLive" role="status" aria-live="polite"></span>
         <div class="hint">Enter to send, Shift + Enter for a new line. Anything that sends, pays or can't be undone waits for your approval.</div>
       </div>
@@ -729,8 +736,17 @@
 <script src="/static/console-offline.js" defer></script>
 <script src="/static/console-voice-capture.js" defer></script>
 <script src="/static/console-voice-speech.js" defer></script>
+<script src="/static/console-voice-commands.js" defer></script>
 <script src="/static/console-wakeword.js" defer></script>
 <script src="/static/console-voice.js" defer></script>
+<script src="/static/console-voice-devices.js" defer></script>
+<script src="/static/console-voice-devices-panel.js" defer></script>
+<script src="/static/console-voice-pace.js" defer></script>
+<script src="/static/console-voice-phrases.js" defer></script>
+<script src="/static/console-voice-barge.js" defer></script>
+<script src="/static/console-voice-conversation.js" defer></script>
+<script src="/static/console-voice-wake.js" defer></script>
+<script src="/static/console-voice-micoff.js" defer></script>
 <script src="/static/console-voice-mic.js" defer></script>
 <script src="/static/console-vault.js" defer></script>
 <script src="/static/console-vault-add.js" defer></script>

@@ -10,6 +10,17 @@
 //                       Overlapping open() / close() calls are safe: each open() builds its own
 //                       stream and context, and one that close() (or a newer open) made stale stops
 //                       its own tracks and rejects with .code 'closed'; only the newest is shared.
+//                       lock(by) / unlock(by) → bool / locked() / onLock(fn): the hard microphone lock
+//                       (R5 D11, docs/plans/r5-voice.md). While locked open() rejects with .code
+//                       'mic_off' and prime() does nothing. lock() closes the microphone, aborts every
+//                       recogniser made by recognizer() and persists localStorage['jarvis_mic_off_v1'],
+//                       so a reload stays locked and other tabs follow (storage event). unlock() is
+//                       true only inside a real click, tap or key press (user activation) and never
+//                       opens the microphone. Fires jarvis:mic-lock {locked, by}.
+//                       recognizer() is the only place SpeechRecognition is built (throws 'mic_off' or
+//                       'unsupported'). setInput(id | null) / inputId(): the next open() asks for that
+//                       device; if it is gone, one retry on the default input fires jarvis:audio-route
+//                       {input, reason: 'input_missing'}. trackLabel(): the open track's name.
 //                       The wake-word module consumes the same frames:
 //                       JarvisWake.start({subscribe: JarvisAudio.subscribe, sampleRate: 16000}, onWake).
 //   window.JarvisWav    encode(frames | Int16Array, rate = 16000) → ArrayBuffer (RIFF/WAVE PCM16 mono).
@@ -33,7 +44,8 @@
   // progress keeps its pieces in its own object and only becomes `live` if no close() came while it
   // awaited (`gen` counts closes). `primed` is an AudioContext made inside a tap, for the next build.
   let live = null, primed = null, pending = null, gen = 0;
-  const subs = new Set(), endSubs = new Set();
+  const subs = new Set(), endSubs = new Set(), lockSubs = new Set();
+  let inputId = null;                    // the chosen microphone (null: the system default)
 
   function fail(code, cause) {
     const e = new Error(code); e.code = code; e.cause = cause; return e;
@@ -66,15 +78,82 @@
     closeContext(own.ctx);
   }
 
+  // ================================================================================== mic lock (D11)
+  const LOCK_KEY = 'jarvis_mic_off_v1';
+  const LOCK_BY = ['button', 'shortcut', 'voice', 'panel', 'storage', 'boot'];
+  const emit = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
+  function readLock() { try { return localStorage.getItem(LOCK_KEY) === '1'; } catch (_) { return false; } }
+  function writeLock(on) {
+    try { if (on) localStorage.setItem(LOCK_KEY, '1'); else localStorage.removeItem(LOCK_KEY); } catch (_) {}
+  }
+  let locked = readLock();               // read at load: this script is first, so nothing opens before it
+  const recs = new Set();                // recognisers made by recognizer(), aborted on lock
+  const who = (by) => (LOCK_BY.includes(by) ? by : 'button');
+  function announce(by) {
+    const d = { locked, by };
+    lockSubs.forEach(fn => { try { fn(d); } catch (_) {} });
+    emit('jarvis:mic-lock', d);
+  }
+  function applyLock(on, by, persist) {
+    if (locked === on) return;
+    locked = on;
+    if (persist) writeLock(on);
+    if (on) {
+      close();
+      recs.forEach(r => { try { r.abort(); } catch (_) {} });
+      recs.clear();
+    }
+    announce(by);
+  }
+  const lock = (by) => applyLock(true, who(by), true);
+  /** True only for a real gesture; it never opens the microphone. */
+  function unlock(by) {
+    const ua = navigator.userActivation;
+    if (!(ua && ua.isActive)) return false;
+    applyLock(false, who(by), true);
+    return true;
+  }
+  function onLock(fn) {
+    if (typeof fn !== 'function') return () => {};
+    lockSubs.add(fn);
+    return () => { lockSubs.delete(fn); };
+  }
+  /** The only SpeechRecognition constructor in the console. */
+  function recognizer() {
+    if (locked) throw fail('mic_off');
+    const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!R) throw fail('unsupported');
+    const rec = new R();
+    recs.add(rec);
+    if (typeof rec.addEventListener === 'function') rec.addEventListener('end', () => recs.delete(rec));
+    else if (recs.size > 20) recs.delete(recs.values().next().value);
+    return rec;
+  }
+  window.addEventListener('storage', (e) => {
+    if (e.key === LOCK_KEY || e.key === null) applyLock(readLock(), 'storage', false);
+  });
+  if (locked) {
+    const boot = () => announce('boot');
+    if (document.readyState === 'complete') boot(); else document.addEventListener('DOMContentLoaded', boot, { once: true });
+  }
+
+  function requestStream(id) {
+    const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+    if (id) audio.deviceId = { exact: id };
+    return navigator.mediaDevices.getUserMedia({ audio });
+  }
   async function build(c, my) {
     const own = { ctx: c, stream: null, source: null, node: null, analyser: null, probe: null };
     const stale = () => my !== gen;
     try {
       try {
-        own.stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-        });
-      } catch (err) { throw fail(reason(err), err); }
+        own.stream = await requestStream(inputId);
+      } catch (err) {
+        if (inputId && err && err.name === 'OverconstrainedError') {   // the chosen microphone is gone
+          emit('jarvis:audio-route', { input: { id: inputId, label: '' }, reason: 'input_missing' });
+          try { own.stream = await requestStream(null); } catch (err2) { throw fail(reason(err2), err2); }
+        } else throw fail(reason(err), err);
+      }
       if (stale()) throw fail('closed');
       try { await c.audioWorklet.addModule(WORKLET_URL); } catch (err) { throw fail('failed', err); }
       if (stale()) throw fail('closed');
@@ -105,7 +184,7 @@
   /** Make the AudioContext now (inside a tap) without asking for the microphone yet; a context
    *  already made (open, or on its way) is resumed instead, while the tap still counts. */
   function prime() {
-    if (!supported()) return;
+    if (locked || !supported()) return;
     const have = live ? live.ctx : pending && pending.gen === gen ? pending.ctx : primed;
     if (have) { if (have.state === 'suspended') { try { quietly(have.resume()); } catch (_) {} } return; }
     try { primed = new (AC())(); } catch (_) { primed = null; return; }
@@ -114,6 +193,7 @@
   /** Opens the microphone (once; later calls share it). The AudioContext is made before the first
    *  await, so a tap's user activation still counts when the browser asks to start audio. */
   function open() {
+    if (locked) return Promise.reject(fail('mic_off'));
     if (live) return Promise.resolve();
     if (pending && pending.gen === gen) return pending.promise;
     if (!supported()) return Promise.reject(fail('unsupported'));
@@ -167,9 +247,20 @@
   /** A new listening turn starts on a clean frame boundary. */
   function flush() { if (live) { try { live.node.port.postMessage('flush'); } catch (_) {} } }
 
+  function setInput(id) {
+    inputId = typeof id === 'string' && id.length > 0 && id.length <= 400 ? id : null;
+  }
+  function trackLabel() {
+    const t = live && live.stream ? live.stream.getAudioTracks()[0] : null;
+    return t && typeof t.label === 'string' ? t.label : '';
+  }
+
   window.JarvisAudio = Object.freeze({
     SAMPLE_RATE, FRAME,
     supported, prime, open, close, resume, subscribe, level, flush, onEnd,
+    lock, unlock, onLock, recognizer, setInput, trackLabel,
+    locked: () => locked,
+    inputId: () => inputId,
     isOpen: () => !!live,
     suspended: () => !!(live && live.ctx.state === 'suspended'),
   });

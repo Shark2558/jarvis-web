@@ -9,7 +9,9 @@
 //                   states?: ['listening','standby','thinking','speaking']}) -> unregister()
 //     handle(text, ctx)  ctx {source:'voice', state, spoken, peak} -> Promise<{handled, id?, result?}>
 //                        Result = {say?, then?: 'listen'|'idle'|'keyboard'|'off'}
-//     ask(question, {yes, no, timeoutMs = 8000}) -> Promise<'yes'|'no'|'timeout'|'cancelled'>
+//     ask(question, {yes, no, timeoutMs = 8000, strict, hold}) -> Promise<'yes'|'no'|'timeout'|'cancelled'>
+//                        strict: only a plain yes answers it (the check-in: "okay" / "sure" are TV words);
+//                        hold(): while it returns true the timeout waits (an answer is being heard)
 //     pending() -> the question being asked, or null; cancelAsk()
 //     normalise(text), owns(text, state) -> id | null (a dry run), addressed(text) -> bool
 //     exact(id) -> a match function for the PHRASES list of that id
@@ -23,6 +25,9 @@
   'use strict';
   const MAX_WORDS = 8;
   const ASK_MS = 8000;
+  const HOLD_RECHECK_MS = 400;        // a held question looks again this often ...
+  const HOLD_MAX_MS = 60000;          // ... and gives up at last after this long past its time
+  const STRICT_YES = Object.freeze(['yes', 'keep listening', 'carry on', 'continue', 'go on']);   // "yes please" is "yes" once normalised
   const PRIORITY = ['mic.off', 'speech.stop', 'conversation.keyboard'];
   const ID = /^[a-z][a-z0-9._-]{0,63}$/;
   const STATES = ['listening', 'standby', 'thinking', 'speaking'];
@@ -66,7 +71,7 @@
   function words(text) {
     const t = String(text == null ? '' : text).normalize('NFKC').toLowerCase()
       .replace(/[‘’ʼ`]/g, "'")
-      .replace(/[^\p{L}\p{N}'\s]/gu, ' ');
+      .replace(/[^\p{L}\p{M}\p{N}'\s]/gu, ' ');   // combining marks stay with their letters (Indic scripts)
     return t.split(/\s+/).map(x => x.replace(/^'+|'+$/g, '')).filter(Boolean);
   }
   function dropName(w) {
@@ -109,11 +114,22 @@
   function register(id, spec) {
     if (typeof id !== 'string' || !ID.test(id)) throw new Error('bad command id');
     if (!spec || typeof spec.match !== 'function' || typeof spec.run !== 'function') throw new Error('bad command');
-    if (registry.some(r => r.id === id) || id.startsWith('answer.')) throw new Error('duplicate command id');
+    if (id.startsWith('answer.')) throw new Error('duplicate command id');
+    if (registry.some(r => r.id === id)) throw new Error('duplicate command id');   // ids are unique: a built-in cannot be replaced (SM2)
     const entry = { id, spec };
     registry.push(entry);
     return () => { const i = registry.indexOf(entry); if (i >= 0) registry.splice(i, 1); };
   }
+  // ---- the built-in matchers (R5 workstream A) -------------------------------------------------------
+  // They only decide WHAT was said; what to do belongs to the listening loop, which binds its actions
+  // with bindLoop({micOff(ctx), stop(ctx), keyboard(ctx)}) -> Result (once; a duplicate id or a second binding throws).
+  let loop = null;
+  const act = (name) => (_, ctx) => (loop && typeof loop[name] === 'function' ? loop[name](ctx) : {});
+  const BUILTIN = {
+    'mic.off': { states: null, run: act('micOff') },
+    'speech.stop': { states: ['speaking', 'thinking', 'listening', 'standby'], run: act('stop') },
+    'conversation.keyboard': { states: null, run: act('keyboard') },
+  };
   function exact(id) {
     const list = new Set(Array.isArray(PHRASES[id]) ? PHRASES[id] : []);
     return (norm) => (list.has(norm) ? {} : null);
@@ -134,7 +150,7 @@
     if (!w.length || w.length > MAX_WORDS) return null;
     const norm = w.join(' ');
     if (asking) {
-      if (PHRASES['answer.yes'].includes(norm)) return { id: 'answer.yes', args: {} };
+      if ((asking.strict ? STRICT_YES : PHRASES['answer.yes']).includes(norm)) return { id: 'answer.yes', args: {} };
       if (PHRASES['answer.no'].includes(norm)) return { id: 'answer.no', args: {} };
     }
     for (const entry of ordered()) {
@@ -147,12 +163,21 @@
   }
   const owns = (text, state) => { const f = find(text, state); return f ? f.id : null; };
 
+  /** The words are mostly what JARVIS himself just said (ctx.spoken), at a volume no louder than his echo (SM4). */
+  function heardAsEcho(text, ctx) {
+    const B = window.JarvisBarge;
+    if (!B || typeof B.isEcho !== 'function' || typeof ctx.spoken !== 'string' || !ctx.spoken) return false;
+    try { return B.isEcho(text, ctx.spoken, typeof ctx.peak === 'number' ? ctx.peak : 0, typeof B.margin === 'function' ? B.margin() : undefined); } catch (_) { return false; }
+  }
+
   async function handle(text, ctx) {
     const none = { handled: false };
     if (!ctx || typeof ctx !== 'object' || ctx.source !== 'voice' || typeof text !== 'string') return none;
     const state = STATES.includes(ctx.state) ? ctx.state : String(ctx.state || '');
     const f = find(text, state);
     if (!f) return none;
+    if (state === 'speaking' && !(asking && f.id.startsWith('answer.')) && heardAsEcho(text, ctx)) return none;   // his own voice, not the owner's (SM4)
+    if (ctx.clip === true && f.id === 'mic.off' && !addressed(text)) return none;   // a clip heard over his voice needs the name to switch the mic off
     if (!f.entry) {
       const a = asking;
       settleAsk(f.id === 'answer.yes' ? 'yes' : 'no');
@@ -184,14 +209,29 @@
     const ms = typeof o.timeoutMs === 'number' && Number.isFinite(o.timeoutMs) ? Math.min(60000, Math.max(100, o.timeoutMs)) : ASK_MS;
     settleAsk('cancelled');
     return new Promise(resolve => {
-      const a = { question: String(question == null ? '' : question).slice(0, 200), yes: o.yes, no: o.no, settle: resolve, timer: 0 };
-      a.timer = setTimeout(() => { if (asking === a) settleAsk('timeout'); }, ms);
+      const a = { question: String(question == null ? '' : question).slice(0, 200), yes: o.yes, no: o.no, settle: resolve, timer: 0,
+        strict: o.strict === true };
+      const due = Date.now() + ms;
+      const fire = () => {
+        if (asking !== a) return;
+        const held = typeof o.hold === 'function' && Date.now() - due < HOLD_MAX_MS && (() => { try { return !!o.hold(); } catch (_) { return false; } })();
+        if (held) a.timer = setTimeout(fire, HOLD_RECHECK_MS); else settleAsk('timeout');
+      };
+      a.timer = setTimeout(fire, ms);
       asking = a;
     });
   }
 
+  Object.keys(BUILTIN).forEach(id => { register(id, { match: exact(id), run: BUILTIN[id].run, states: BUILTIN[id].states || undefined }); });
+  /** The listening loop binds its actions once; a second binding throws (nothing can take mic.off over, SM2). */
+  function bindLoop(actions) {
+    if (loop) throw new Error('loop already bound');
+    if (!actions || typeof actions !== 'object') throw new Error('bad loop actions');
+    loop = actions;
+  }
+
   window.JarvisVoiceCommands = Object.freeze({
-    register, handle, ask, normalise, owns, addressed, exact, PHRASES,
+    register, handle, bindLoop, ask, normalise, owns, addressed, exact, PHRASES,
     pending: () => (asking ? asking.question : null),
     cancelAsk: () => settleAsk('cancelled'),
   });

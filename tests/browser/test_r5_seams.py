@@ -480,18 +480,36 @@ def test_register_handle_round_trip_and_the_guards(make: Callable[..., Console])
     }
 
 
+# The listening loop binds its actions once, at load. This page keeps that first binding back,
+# so the test can bind the router's actions itself (bindLoop is one-shot), as the I0 test did.
+HOLD_LOOP_BIND = """
+(() => {
+  window.__holdLoop = true;
+  let real = null;
+  Object.defineProperty(window, 'JarvisVoiceCommands', { configurable: true, get() { return real; },
+    set(v) { real = Object.freeze(Object.assign({}, v, {
+      bindLoop: (a) => {
+        if (window.__holdLoop) { window.__held = a; return undefined; }
+        return v.bindLoop(a);
+      } })); } });
+})();
+"""
+
+
 def test_states_priority_and_a_throwing_command(make: Callable[..., Console]) -> None:
-    c = make()
+    c = make(scripts=(HOLD_LOOP_BIND,))
     FakeVoice(c.page)
     c.open()
     ev(
         c,
         """() => {
       const C = JarvisVoiceCommands;
+      window.__holdLoop = false;
+      C.bindLoop({ micOff: () => ({}), keyboard: () => ({}), stop: () => ({ say: 'right' }) });
       const stop = (n) => (n === 'stop' ? {} : null);
       C.register('zzz.first', { match: stop, run: () => ({ say: 'wrong' }) });
-      C.register('speech.stop', { match: stop, run: () => ({ say: 'right' }),
-        states: ['speaking'] });
+      C.register('test.only-speaking', { match: (n) => (n === 'sing' ? {} : null),
+        run: () => ({ say: 'la' }), states: ['speaking'] });
       C.register('test.boom', { match: (n) => (n === 'boom' ? {} : null),
         run: () => { throw new Error('boom'); } });
       C.register('test.async', { match: (n) => (n === 'later' ? {} : null),
@@ -502,10 +520,15 @@ def test_states_priority_and_a_throwing_command(make: Callable[..., Console]) ->
     h = lambda t, s: ev(  # noqa: E731
         c, f"JarvisVoiceCommands.handle({json.dumps(t)}, {{ source: 'voice', state: '{s}' }})"
     )
-    assert h("stop", "speaking")["id"] == "speech.stop"  # fixed priority beats registration order
-    assert h("stop", "listening")["id"] == "zzz.first"  # speech.stop is not for this state
+    first = h("stop", "speaking")
+    assert first["id"] == "speech.stop"  # fixed priority beats registration order
+    assert first["result"] == {"say": "right"}
+    assert h("sing", "listening") == {"handled": False}  # a state filter: only while he speaks
+    assert h("sing", "speaking")["id"] == "test.only-speaking"
     assert ev(c, "JarvisVoiceCommands.owns('stop', 'speaking')") == "speech.stop"
-    assert ev(c, "JarvisVoiceCommands.owns('stop', 'thinking')") == "zzz.first"
+    assert (
+        ev(c, "JarvisVoiceCommands.owns('stop', 'off')") is None
+    )  # nothing is heard while the mic is off
     assert ev(c, "JarvisVoiceCommands.owns('nothing like it', 'speaking')") is None
     assert h("boom", "speaking") == {
         "handled": True,
@@ -514,6 +537,38 @@ def test_states_priority_and_a_throwing_command(make: Callable[..., Console]) ->
     }
     assert h("later", "speaking")["result"] == {"say": "done"}
     assert h("unrelated words", "speaking") == {"handled": False}  # a throwing matcher is no match
+
+
+def test_a_built_in_cannot_be_replaced_and_the_loop_binds_once(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    FakeVoice(c.page)
+    c.open()
+    got = ev(
+        c,
+        """() => {
+      const C = JarvisVoiceCommands, out = {};
+      for (const id of ['mic.off', 'speech.stop', 'conversation.keyboard']) {
+        try {
+          C.register(id, { match: () => ({}), run: () => ({ say: 'hijacked' }) });
+          out[id] = 'registered';
+        }
+        catch (e) { out[id] = 'threw'; }
+      }
+      try {
+        C.bindLoop({ micOff: () => ({ say: 'hijacked' }), stop: () => ({}), keyboard: () => ({}) });
+        out.bind = 'bound';
+      }
+      catch (e) { out.bind = 'threw'; }
+      return out;
+    }""",
+    )
+    assert set(got) == {"mic.off", "speech.stop", "conversation.keyboard", "bind"}
+    assert set(got.values()) == {"threw"}
+    assert ev(c, "JarvisVoiceCommands.owns('mic off', 'listening')") == "mic.off"
+    assert ev(c, "JarvisAudio.locked()") is False  # and nothing ran
+    assert c.errors == []
 
 
 def test_ask_takes_one_yes_or_no_and_times_out(make: Callable[..., Console]) -> None:
@@ -694,7 +749,9 @@ def test_pressing_the_mic_while_locked_listens_to_nothing(make: Callable[..., Co
     c.open()
     ev(c, "JarvisAudio.lock('button')")
     assert _mic_state(c) == "off"
-    c.page.locator("#micBtn").click()
+    # a click with no real user behind it (a script's own, isTrusted false) does nothing, even with
+    # an activation live; a real tap unlocks (test_voice_micoff.py, SM1)
+    ev(c, "document.getElementById('micBtn').click()")
     c.page.wait_for_timeout(500)
     assert _mic_state(c) == "off" and ev(c, "window.__streams.length") == 0
     assert "switched off" in str(c.page.locator("#voiceLine").text_content())

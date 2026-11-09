@@ -349,7 +349,8 @@ def test_a_cue_whose_tone_never_ends_still_settles_false_and_quickly(
     FakeVoice(c.page)
     c.open()
     res = c.page.evaluate(
-        """async () => { const t0 = performance.now(); const ok = await JarvisVoicePace.cue('handover');
+        """async () => { const t0 = performance.now();
+          const ok = await JarvisVoicePace.cue('handover');
           return [ok, performance.now() - t0]; }"""
     )
     assert res[0] is False and res[1] < 1500
@@ -377,7 +378,8 @@ def test_a_suspended_context_costs_one_wait_not_one_per_step(
     c.open()
     _arm(c)
     res = c.page.evaluate(
-        """async () => { const t0 = performance.now(); const ok = await JarvisVoicePace.cue('handover');
+        """async () => { const t0 = performance.now();
+          const ok = await JarvisVoicePace.cue('handover');
           return [ok, performance.now() - t0, window.__tones.length]; }"""
     )
     assert res[0] is False and res[1] < 2500 and res[2] == 1

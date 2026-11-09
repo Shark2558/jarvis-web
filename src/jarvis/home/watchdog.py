@@ -155,6 +155,14 @@ class Watchdog:
         self._codes = _Sweep("home_link_sweep", store.sweep_codes)
         self._extra = tuple(extra)
 
+    def extend(self, job: TickJob) -> None:
+        """Add a job built after the watchdog (R5.1 D4: the shared systems-check job, which
+        `wire_r4` builds after home wiring). A name already in the list is refused."""
+        names = {j.name for j in (self._offline, self._claims, self._codes, *self._extra)}
+        if job.name in names:
+            raise ValueError(f"the watchdog already runs a job named {job.name}")
+        self._extra = (*self._extra, job)
+
     async def run(self) -> dict[str, object]:
         owners = await self._store.linked_uids()
         jobs: list[TickJob] = [self._offline, self._claims, self._codes, *self._extra]

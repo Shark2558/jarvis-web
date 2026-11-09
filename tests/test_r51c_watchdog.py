@@ -21,7 +21,7 @@ from r51c_fakes import (
     home_status,
 )
 
-from jarvis.home.watchdog import OfflineJob
+from jarvis.home.watchdog import OfflineJob, Watchdog
 from jarvis.notify.ports import Delivery
 
 AFTER = 360.0
@@ -167,3 +167,50 @@ def test_an_unknown_setting_is_refused() -> None:
             offline_after_s=AFTER,
             alert_when="sometimes",  # type: ignore[arg-type]
         )
+
+
+# ---- the shared systems-check job joins the watchdog (R5.1 D4) ----------------------------------
+class Linked(HomeStoreFake):
+    async def linked_uids(self) -> list[str]:
+        return [UID]
+
+    async def sweep_claims(self) -> int:
+        return 0
+
+    async def sweep_codes(self) -> int:
+        return 0
+
+
+class Counted:
+    name = "health_check"
+    budget_s = 5.0
+
+    def __init__(self) -> None:
+        self.owners: list[list[str]] = []
+
+    async def run(self, owners: list[str]) -> dict[str, int]:
+        self.owners.append(list(owners))
+        return {"owners": len(owners)}
+
+
+def dog_for(store: Linked) -> Watchdog:
+    return Watchdog(store, job(store, Scripted(RANG)))  # type: ignore[arg-type]
+
+
+async def test_a_job_added_later_runs_with_the_watchdog_over_linked_homes() -> None:
+    dog = dog_for(Linked(home_status()))
+    health = Counted()
+    dog.extend(health)
+    out = await dog.run()
+    assert health.owners == [[UID]]
+    assert out["jobs"]["health_check"] == "ok"  # type: ignore[index]
+
+
+def test_a_job_name_already_there_is_refused() -> None:
+    store = Linked(home_status())
+    dog = dog_for(store)
+    dog.extend(Counted())
+    with pytest.raises(ValueError, match="health_check"):
+        dog.extend(Counted())
+    with pytest.raises(ValueError, match="home_offline"):
+        dog.extend(job(store, Scripted(RANG)))

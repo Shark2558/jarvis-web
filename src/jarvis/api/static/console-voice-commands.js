@@ -223,6 +223,15 @@
   }
 
   Object.keys(BUILTIN).forEach(id => { register(id, { match: exact(id), run: BUILTIN[id].run, states: BUILTIN[id].states || undefined }); });
+  // R5.1 D6: "(Jarvis,) run a systems check" opens the systems-check pop-up (console-systems-modal.js),
+  // local and free, with the AI off too. The pop-up owns the phrases (JarvisSystemsCheck.matches),
+  // looked up when the words arrive, so the scripts may load in any order. Not while JARVIS speaks:
+  // his own closing line names the phrase (the echo guard above covers the rest).
+  register('systems.check', {
+    match: (norm) => { const sc = window.JarvisSystemsCheck; return sc && typeof sc.matches === 'function' && sc.matches(norm) ? {} : null; },
+    run: () => { emit('jarvis:systems-check', { via: 'voice' }); return {}; },
+    states: ['listening', 'standby', 'thinking'],
+  });
   /** The listening loop binds its actions once; a second binding throws (nothing can take mic.off over, SM2). */
   function bindLoop(actions) {
     if (loop) throw new Error('loop already bound');

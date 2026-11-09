@@ -63,7 +63,8 @@ async def test_not_wired_is_a_503(rig_client) -> None:  # type: ignore[no-untype
     assert (await c.get("/v1/vitals")).status_code == 503
 
 
-async def test_storage_trouble_is_a_plain_503(rig_client) -> None:  # type: ignore[no-untyped-def]
+async def test_manual_storage_trouble_still_answers_the_board(rig_client) -> None:  # type: ignore[no-untyped-def]
+    """R5.1 D2 (was a whole-board 503): the automatic items come back with a plain note."""
     rig, c = rig_client
 
     async def boom(*_a, **_k):  # type: ignore[no-untyped-def]
@@ -75,4 +76,6 @@ async def test_storage_trouble_is_a_plain_503(rig_client) -> None:  # type: igno
 
     r = await c.get("/v1/vitals")
 
-    assert r.status_code == 503 and r.json()["detail"] == "try later"
+    body = r.json()
+    assert r.status_code == 200 and body["manual_unavailable"] is True
+    assert [i["id"] for i in body["items"]] == ["ai_spend"] and "try later" not in r.text

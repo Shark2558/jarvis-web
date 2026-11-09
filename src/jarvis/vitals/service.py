@@ -21,9 +21,21 @@ from jarvis.notify.ports import Notifier, Signal
 from jarvis.quota.ledger import QuotaLedger
 from jarvis.vitals import auto
 from jarvis.vitals.auto import AllowanceSpec, BillingLike
-from jarvis.vitals.models import RANK, Board, Provider, ProviderView, Spend, Status, zone_of
+from jarvis.vitals.models import (
+    RANK,
+    Board,
+    Group,
+    Provider,
+    ProviderView,
+    Spend,
+    Status,
+    group_of,
+    zone_of,
+)
+from jarvis.vitals.own import OWN_IDS, QUIET_IDS, Own, OwnSources
 from jarvis.vitals.status import overall, status_of
 from jarvis.vitals.store import BAD_ID, VitalsStore, VitalsUnavailable, valid_id
+from jarvis.vitals.words import words_for
 
 log = get_logger(__name__)
 
@@ -31,6 +43,10 @@ AUTO_IDS_PREFIXES = ("quota_", "allowance_")
 RESERVED = "That name is used by a built-in item. Pick another id."
 MESSAGE_MAX = 300
 ALERT_PREFIX = "Vitals — "  # fixed lead: a label can never pose as the sender
+MANUAL_UNAVAILABLE = (
+    "The items you track yourself can't be read just now; everything JARVIS watches on its own "
+    "is shown. Try again in a minute."
+)
 
 
 def utcnow() -> datetime:
@@ -38,7 +54,7 @@ def utcnow() -> datetime:
 
 
 def reserved(pid: str) -> bool:
-    return pid == auto.SPEND_ID or pid.startswith(AUTO_IDS_PREFIXES)
+    return pid == auto.SPEND_ID or pid in OWN_IDS or pid.startswith(AUTO_IDS_PREFIXES)
 
 
 def alert_text(v: ProviderView) -> str:
@@ -60,6 +76,7 @@ class VitalsService:
         ledger: QuotaLedger | None = None,
         allowances: Sequence[AllowanceSpec] = (),
         clock: Callable[[], datetime] = utcnow,
+        own: OwnSources | None = None,
     ) -> None:
         self._store = store
         self._s = settings
@@ -67,6 +84,7 @@ class VitalsService:
         self._ledger = ledger
         self._allowances = tuple(allowances)
         self._clock = clock
+        self._own = Own(own, settings) if own is not None else None
         self._locks: dict[str, asyncio.Lock] = {}
 
     async def _auto(self, uid: str, now: datetime) -> tuple[list[Provider], Spend | None]:
@@ -82,21 +100,57 @@ class VitalsService:
                 out.append(await auto.quota(self._ledger, sku, now))
         return out, spend
 
+    async def _manual(self, uid: str) -> list[Provider] | None:
+        """The owner's own records, or None when they can't be read (the board still opens)."""
+        try:
+            rows = await self._store.list_manual(uid)
+        except VitalsUnavailable:
+            return None
+        clash = [p.id for p in rows if reserved(p.id)]
+        if clash:  # an old record under a name a built-in item now uses: the built-in wins
+            log.warning(
+                "vitals: manual records shadowed by built-in items", extra={"n": len(clash)}
+            )
+        return [p for p in rows if not reserved(p.id)]
+
+    def _view(
+        self, p: Provider, now: datetime, base: tuple[Status, str] | None = None
+    ) -> ProviderView:
+        v = status_of(
+            p,
+            now,
+            self._s.vitals_amber_fraction,
+            self._s.vitals_expiry_amber_days,
+            zone_of(self._s.user_timezone),
+            base=base,
+        )
+        if p.source == "manual":
+            return v.model_copy(update={"group": group_of(p.kind)})
+        impact, fix = words_for(p.id, p.label)
+        group: Group = "bills" if p.id == auto.SPEND_ID else group_of(p.kind)
+        return v.model_copy(update={"impact": impact, "fix": fix, "group": group})
+
     async def board(self, uid: str, now: datetime | None = None) -> Board:
         now = now or self._clock()
         autos, spend = await self._auto(uid, now)
-        manual = await self._store.list_manual(uid)
-        views = tuple(
-            status_of(
-                p,
-                now,
-                self._s.vitals_amber_fraction,
-                self._s.vitals_expiry_amber_days,
-                zone_of(self._s.user_timezone),
-            )
-            for p in [*autos, *manual]
+        tz = zone_of(self._s.user_timezone)
+        own = await self._own.items(uid, now, tz) if self._own is not None else []
+        manual = await self._manual(uid)
+        views = (
+            *(self._view(p, now) for p in autos),
+            *(
+                self._view(i.provider, now, i.base).model_copy(update={"group": i.group})
+                for i in own
+            ),
+            *(self._view(p, now) for p in manual or []),
         )
-        return Board(items=views, spend=spend, overall=overall(views))
+        return Board(
+            items=views,
+            spend=spend,
+            overall=overall(views),
+            manual_unavailable=manual is None,
+            manual_note=MANUAL_UNAVAILABLE if manual is None else "",
+        )
 
     async def set_key(self, uid: str, p: Provider) -> None:
         if reserved(p.id):
@@ -119,7 +173,11 @@ class VitalsService:
         providers. Calls for one owner are serialised."""
         async with self._locks.setdefault(uid, asyncio.Lock()):
             now = self._clock()
-            items = [v for v in (await self.board(uid, now)).items if v.status != "unknown"]
+            items = [
+                v
+                for v in (await self.board(uid, now)).items
+                if v.status != "unknown" and v.provider.id not in QUIET_IDS  # rung elsewhere
+            ]
             lasts = await asyncio.gather(
                 *(self._store.last_status(uid, v.provider.id) for v in items),
                 return_exceptions=True,

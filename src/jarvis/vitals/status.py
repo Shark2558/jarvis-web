@@ -68,17 +68,30 @@ def status_of(
     amber_fraction: float,
     expiry_days: int,
     tz: tzinfo = DEFAULT_ZONE,
+    *,
+    base: tuple[Status, str] | None = None,
 ) -> ProviderView:
-    """`tz` is the owner's zone (the service passes `Settings.user_timezone`)."""
+    """`tz` is the owner's zone (the service passes `Settings.user_timezone`).
+
+    `base` (R5.1, JARVIS's own keys and connections): the thing's own state and its fixed reason
+    ("was refused"), judged together with any usage and expiry; the worst wins. Such an item has
+    no usage to read, so it is never "unknown" for that alone. An "unknown" base gives way to a
+    known amber or red from usage or expiry."""
     used = _used(p, now, tz)
     pct = _percent(p.limit, used)
     pct = None if pct is None else round(pct, 1)
-    if p.source == "auto" and p.used is None:
+    if base is None and p.source == "auto" and p.used is None:
         return ProviderView(provider=p, status="unknown", percent=None, reason="can't be read now")
-    s1, r1 = _usage(p.limit, used, amber_fraction)
-    s2, r2 = _expiry(p, now, expiry_days, tz)
-    status = _worse(s1, s2)
-    reasons = [r for s, r in ((s1, r1), (s2, r2)) if r and s == status]
+    parts = [_usage(p.limit, used, amber_fraction), _expiry(p, now, expiry_days, tz)]
+    if base is not None and base[0] == "unknown":
+        if all(s == "ok" for s, _ in parts):
+            return ProviderView(provider=p, status="unknown", percent=pct, reason=base[1])
+    elif base is not None:
+        parts.insert(0, base)
+    status: Status = "ok"
+    for s, _ in parts:
+        status = _worse(status, s)
+    reasons = [r for s, r in parts if r and s == status]
     return ProviderView(provider=p, status=status, percent=pct, reason="; ".join(reasons))
 
 

@@ -3,7 +3,7 @@ FRIGATE FOR JARVIS - what to do in Frigate (about 10 minutes)
 Frigate is the program on your laptop that watches the phone camera. Pictures and video stay on your
 laptop. JARVIS only hears "a person came to the gate at 23:41".
 
-1. Open  http://localhost:8971  in the browser on the laptop. The password is the one the setup
+1. Open  https://localhost:8971  in the browser on the laptop. The password is the one the setup
    script printed ("Frigate admin password").
 
 2. Check the picture: Frigate -> Live -> gate. If you see your gate, the camera works. If not, go

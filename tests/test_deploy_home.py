@@ -162,7 +162,7 @@ def test_setup_windows_covers_the_plan_steps() -> None:
         ".wslconfig",
         "powercfg",
         "tailscale funnel --bg --https=8443 http://127.0.0.1:8099",
-        "tailscale serve --bg --https=5443 http://127.0.0.1:8971",
+        "tailscale serve --bg --https=5443 https+insecure://127.0.0.1:8971",
         "Register-ScheduledTask -TaskName 'JARVIS Home'",
         "setup-wsl.sh",
     ):

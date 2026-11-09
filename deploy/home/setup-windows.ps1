@@ -122,7 +122,7 @@ $address = "https://${name}:8443"
 Write-Host "Your laptop's address for JARVIS: $address"
 
 if (Yes 'Optional: also open Frigate privately on your own phone through Tailscale (only your signed-in devices can see it)?') {
-    tailscale serve --bg --https=5443 http://127.0.0.1:8971
+    tailscale serve --bg --https=5443 https+insecure://127.0.0.1:8971
     Write-Host "On your phone (Tailscale installed, same account) open https://${name}:5443"
 }
 
@@ -135,7 +135,7 @@ InWsl "bash ~/jarvis-home/setup-wsl.sh link '$code' '$address'"
 # 9. Passwords and the logon task ---------------------------------------------------------------
 Say 'Write these down'
 wsl -d $Distro -- bash -lc 'bash ~/jarvis-home/setup-wsl.sh passwords'
-Write-Host 'Frigate: open http://localhost:8971 and log in as admin with the password above.'
+Write-Host 'Frigate: open https://localhost:8971 (Chrome warns: Advanced -> Proceed; it is your own laptop) and log in as admin with the password above.'
 
 Say 'Starting JARVIS Home whenever you log in'
 # -ExecutionPolicy Bypass: Windows' default policy would block the script after a restart

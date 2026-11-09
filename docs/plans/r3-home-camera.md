@@ -637,7 +637,7 @@ New separated paragraphs, each pinned by `tests/test_r3_persona.py`:
    browser page that opens.
 10. In JARVIS: Integrations → Home → **Link** → type the code into the script. Wait for "Linked" (it can take 10
     minutes the first time). JARVIS now shows "Online".
-11. Frigate: open `http://localhost:8971` (password from the script). On the camera, draw a zone named `gate` around
+11. Frigate: open `https://localhost:8971` (password from the script). On the camera, draw a zone named `gate` around
     your gate and, for parcels, one named `doorstep`. In JARVIS → Home → Cameras, give them names you like.
 12. Parcels (optional, about 15 minutes over a few days): Frigate → Classification → new state model `doorstep`
     with states `package` and `empty`; draw the box over the doorstep; sort 10–20 example pictures of each.

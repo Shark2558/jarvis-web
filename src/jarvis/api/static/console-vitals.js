@@ -221,7 +221,6 @@
   add.append(dh, dbody);
   root.append(card, add);
   const setOpen = (open) => { dsc.setAttribute('aria-expanded', open ? 'true' : 'false'); dbody.hidden = !open; };
-  dsc.addEventListener('click', () => setOpen(dsc.getAttribute('aria-expanded') !== 'true'));
 
   function control(tag, type, max) {
     const c = mk(tag, 'minput');
@@ -278,7 +277,8 @@
     S.editing = null; form.reset(); ferr.textContent = ''; ftitle.textContent = 'Add something to watch';
     if (collapse) { setOpen(false); dsc.focus(); }
   }
-  dsc.addEventListener('click', () => { if (dsc.getAttribute('aria-expanded') === 'true' && !S.editing) openForm(null); });
+  // Opening always starts a fresh "add"; collapsing ends any edit (Save can never hit a stale item).
+  dsc.addEventListener('click', () => { if (dsc.getAttribute('aria-expanded') === 'true') closeForm(true); else openForm(null); });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const label = F.label.value.trim();

@@ -385,6 +385,25 @@ def test_edit_reuses_the_form_and_keeps_the_id(make: Callable[..., Console]) -> 
     assert fake.puts[0]["body"]["id"] == "insurance"
 
 
+def test_closing_the_form_ends_an_edit(make: Callable[..., Console]) -> None:
+    """Edit, collapse, open again to add: a new item, never the one being edited."""
+    c = make()
+    fake = FakeVitals(c.page, board())
+    root = _open(c)
+    root.locator('.vt-row[data-id="insurance"] button', has_text="Edit").click()
+    root.locator(".vt-form").wait_for()
+
+    root.locator(".vt-add .dsc").click()  # collapse
+    form = _disclose(root)  # and open again
+    name = c.page.locator("#" + str(form.locator("label", has_text="Name").get_attribute("for")))
+    assert name.input_value() == "" and "Add" in str(form.locator(".vt-ftitle").text_content())
+    name.fill("Passport")
+    form.locator("button.primary").click()
+    c.page.locator(BOARD, has_text="Saved.").wait_for()
+
+    assert fake.puts[0]["body"]["id"] == "passport"
+
+
 # ---- layout: overlaps, overflow, touch targets ----
 CONTROLS = """const controls = (sel) =>
   [...document.querySelectorAll(['button', 'input', 'select'].map(t => sel + ' ' + t).join(','))]

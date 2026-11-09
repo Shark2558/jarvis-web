@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from jarvis.billing.meter import UsageMeter
 from jarvis.brief.models import BriefSettings
@@ -37,6 +37,9 @@ from jarvis.tools.audit import AuditTrail
 from jarvis.tools.task_marks import OutsideTasks
 from jarvis.undo.models import DeletedView
 from jarvis.undo.service import PurgeFailed, UndoBin
+
+if TYPE_CHECKING:  # voice/privacy.py builds on this module, so it is imported where it is used
+    from jarvis.voice.settings import VoiceSettingsStore
 
 log = get_logger(__name__)
 
@@ -727,12 +730,15 @@ class ExistingParts:
     permissions: PermissionsService | None = None
     audit: AuditTrail | None = None
     marks: OutsideTasks | None = None
+    voice: VoiceSettingsStore | None = None  # R5 D16: the words to recognise
     today: Callable[[], date] = lambda: datetime.now(UTC).date()  # noqa: E731
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # noqa: E731
 
 
 def existing_sources(p: ExistingParts) -> list[CallbackSource]:
     """The existing categories in the order the panel shows them, then the faces placeholder."""
+    from jarvis.voice.privacy import voice_phrases_source  # here: it imports this module
+
     out: list[CallbackSource | None] = [
         memory_source(p.memory) if p.memory else None,
         conversations_source(p.sessions, p.documents) if p.sessions else None,
@@ -742,6 +748,7 @@ def existing_sources(p: ExistingParts) -> list[CallbackSource]:
         places_source(p.places) if p.places else None,
         briefs_source(p.briefs, p.today) if p.briefs else None,
         settings_source(p.briefs, p.memory) if p.briefs else None,
+        voice_phrases_source(p.voice) if p.voice else None,
         spend_source(p.meter, p.clock) if p.meter else None,
         approvals_source(p.gate) if p.gate else None,
         passkeys_source(p.permissions) if p.permissions else None,

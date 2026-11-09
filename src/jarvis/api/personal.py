@@ -253,6 +253,7 @@ def privacy_sources(
             permissions=st.permissions,
             audit=audit,
             marks=st.outside_tasks,
+            voice=st.voice.store,  # R5 D16: the words to recognise
         )
     )
     r1 = r1_sources(

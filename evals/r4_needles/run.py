@@ -8,7 +8,9 @@ linked home whose laptop is asleep) with the R4 parts on (api/r4_wiring.py).
 
 Flows (cross-part):
   f01  a red vitals line AND a self-health fault during quiet hours BOTH ring on Telegram (urgent
-       kinds are never held; the health fault needs two consecutive checks, D-B2)
+       kinds are never held; the health fault needs two consecutive checks, D-B2). R5.1 D4: the
+       fault is the AI key refused (the router's own record), and the asleep home laptop never
+       rings from the systems check (the 5-minute watchdog owns that alert: no double ring)
   f02  no-AI mode answers vitals / systems / calendar with NO model call and refuses drafting with
        the fixed line
   f03  a bare private name is refused with no links (the web is a fake: no credit, no network)
@@ -196,14 +198,19 @@ async def f01_red_vitals_and_health_fault(w: R3App) -> list[str]:
     if r.status_code != 200:
         f.append(f"vitals write refused: {r.status_code} {r.text}")
     await w.state.tick_jobs[-2].run([UID])  # vitals_poll
-    health = _health_job(w)  # the real job; only its 30-minute due-gate is lifted here
-    await health.run([UID])  # health_check (1st: the home has never reported)
+    router = w.state.brains.router_for(w.state.brains.default.id)
+    router._last = "refused"  # noqa: SLF001 - the last real call was refused (no model call here)
+    health = _health_job(w)  # the real job; only its 15-minute due-gate is lifted here
+    await health.run([UID])  # health_check (1st down; the home has never reported either)
     await health.run([UID])  # 2nd consecutive down -> health_fault
     texts = w.sent_texts()
+    faults = [t for t in texts if t.startswith("Attention")]
     if not any("Vitals" in t and "Brave key" in t for t in texts):
         f.append(f"the red vitals line did not ring through quiet hours: {texts}")
-    if not any("laptop" in t.lower() or "home" in t.lower() for t in texts if "Vitals" not in t):
+    if not any("AI brain" in t for t in faults):
         f.append(f"the health fault did not ring through quiet hours: {texts}")
+    if any("home" in t.lower() or "laptop" in t.lower() for t in faults):
+        f.append(f"the home rang from the systems check too (D4: the watchdog owns it): {faults}")
     names = [j.name for j in w.state.tick_jobs]
     if names[-2:] != ["vitals_poll", "health_check"]:
         f.append(f"tick jobs: {names}")

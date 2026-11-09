@@ -270,7 +270,8 @@ async def test_heartbeat_goes_offline_then_back_with_one_alert(w: World) -> None
     assert w.notes.kinds() == ["home_offline", "home_online"]
 
 
-async def test_disarmed_outage_is_silent_but_state_changes(w: World) -> None:
+async def test_disarmed_outage_is_silent_but_state_changes_when_armed_only(w: World) -> None:
+    w.offline._alert_when = "armed_only"  # noqa: SLF001 - R5.1 D3: the R3 behaviour, by setting
     await post(w, hb("h1"))
     w.clock.t += 800
     await w.watchdog.run()
@@ -279,6 +280,18 @@ async def test_disarmed_outage_is_silent_but_state_changes(w: World) -> None:
     assert status is not None and status.state == "offline"
     await post(w, hb("h2"))
     assert w.notes.sent == []  # no alert had gone out, so no "back"
+
+
+async def test_disarmed_outage_tells_the_owner_once_then_says_back(w: World) -> None:
+    """R5.1 D3 default (`always`): one idle alert per outage, and "back" when it returns."""
+    await post(w, hb("h1"))
+    w.clock.t += 800
+    await w.watchdog.run()
+    w.clock.t += 300
+    await w.watchdog.run()
+    assert w.notes.kinds() == ["home_offline_idle"]
+    await post(w, hb("h2"))
+    assert w.notes.kinds() == ["home_offline_idle", "home_online"]
 
 
 async def test_instance_restart_does_not_fake_an_outage(w: World) -> None:

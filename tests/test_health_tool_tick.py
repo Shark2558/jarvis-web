@@ -48,7 +48,11 @@ async def test_systems_check_runs_the_probes_and_returns_the_fixed_line() -> Non
     out = await gw.execute(ToolCall(id="c", name="systems_check", arguments={}), scope=SCOPE)
     assert out.outcome is GatewayOutcome.EXECUTED
     assert out.result["overall"] == "down"
-    assert out.result["spoken"] == "Attention: the home bridge is not answering."
+    assert out.result["headline"] == "Attention: the home bridge is not answering."
+    # R5.1 D5: the tool (and so the voice and no-AI mode) says the full fixed-template briefing
+    assert out.result["spoken"].startswith("Systems check complete, Sir. I checked 2 systems")
+    assert out.result["spoken"].endswith("Shall I set a reminder to fix this?")
+    assert [c["key"] for c in out.result["concerns"]] == ["b"]
     assert {s["name"]: s["status"] for s in out.result["systems"]} == {
         "Redis": "ok",
         "the home bridge": "down",
@@ -59,7 +63,12 @@ async def test_systems_check_runs_the_probes_and_returns_the_fixed_line() -> Non
 async def test_systems_check_all_ok() -> None:
     gw, _ = gateway(svc(fixed("a", "Redis", "ok")))
     out = await gw.execute(ToolCall(id="c", name="systems_check", arguments={}), scope=SCOPE)
-    assert out.result["spoken"] == "All systems nominal, Sir."
+    assert out.result["headline"] == "All systems nominal, Sir."
+    assert out.result["spoken"] == (
+        "Systems check complete, Sir. I checked 1 system: Redis. It is working. "
+        "All systems nominal, Sir."
+    )
+    assert out.result["concerns"] == []
 
 
 # ---- tick job ----------------------------------------------------------------------------------

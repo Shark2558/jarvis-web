@@ -50,9 +50,10 @@ def fixed(key: str, label: str, status: str, reason: str = "fine") -> Probe:
 
 
 class Flip:
-    """A probe whose answer the test changes between runs."""
+    """A probe whose answer the test changes between runs. Default: Redis, a probe whose faults
+    alert (R5.1 D4: the home bridge's never do; the home watchdog owns that alert)."""
 
-    def __init__(self, key: str = "home", label: str = "the home bridge") -> None:
+    def __init__(self, key: str = "redis", label: str = "Redis") -> None:
         self.status = "ok"
         self.probe = Probe(key=key, label=label, check=self._check)
 

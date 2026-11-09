@@ -47,7 +47,7 @@ The steps
 10. In JARVIS: Integrations -> Home -> Link -> type the code into the script. Wait for "Linked" (it
     can take 10 minutes the first time). JARVIS now shows "Online".
 11. Frigate: open https://localhost:8971 (the password is printed by the script). On the camera, draw
-    a zone named gate around your gate and, for parcels, one named doorstep. In JARVIS -> Home ->
+    a zone named gate_zone around your gate and, for parcels, one named doorstep. In JARVIS -> Home ->
     Cameras, give them names you like. Draw zones only over your own gate and doorstep. Mask the
     road and your neighbours' doors and windows - JARVIS must not watch them.
 12. Parcels (optional, about 15 minutes over a few days): Frigate -> Classification -> new state

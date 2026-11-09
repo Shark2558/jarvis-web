@@ -17,8 +17,8 @@ def test_the_template_is_valid_yaml_with_the_documented_shape() -> None:
     assert DOC["mqtt"]["enabled"] is True and DOC["mqtt"]["host"] == "mosquitto"
     assert DOC["detectors"]["cpu1"]["type"] == "cpu"
     assert (cam["detect"]["width"], cam["detect"]["height"], cam["detect"]["fps"]) == (1280, 720, 5)
-    assert cam["review"]["alerts"]["required_zones"] == ["gate"]
-    assert set(cam["zones"]) == {"gate", "doorstep"}
+    assert cam["review"]["alerts"]["required_zones"] == ["gate_zone"]
+    assert set(cam["zones"]) == {"gate_zone", "doorstep"}
     assert DOC["face_recognition"] == {"enabled": True, "model_size": "small", "save_attempts": 20}
 
 
@@ -57,12 +57,20 @@ def test_the_words_for_the_owner_say_to_keep_public_places_out() -> None:
 
 def test_snapshots_and_review_only_cover_the_owners_own_zones() -> None:
     cam = DOC["cameras"]["gate"]
-    assert cam["review"]["alerts"]["required_zones"] == ["gate"]
-    assert cam["review"]["detections"]["required_zones"] == ["gate", "doorstep"]
-    assert DOC["snapshots"]["required_zones"] == ["gate", "doorstep"]
+    assert cam["review"]["alerts"]["required_zones"] == ["gate_zone"]
+    assert cam["review"]["detections"]["required_zones"] == ["gate_zone", "doorstep"]
+    assert DOC["snapshots"]["required_zones"] == ["gate_zone", "doorstep"]
 
 
 def test_no_model_export_script_ships_and_the_built_in_model_is_used() -> None:
     assert not list(HOME.glob("export-*")) and not list(HOME.rglob("*yolov9*"))
     assert "yolov9" not in CFG.lower() and "built-in model" in CFG
     assert (HOME / "frigate" / "README.txt").read_text().isascii() and CFG.isascii()
+
+
+def test_no_zone_shares_a_name_with_a_camera() -> None:
+    # 9 Nov, on the owner's laptop: Frigate 0.17 went into safe mode with "Zones cannot share
+    # names with cameras" (camera `gate`, zone `gate`), so the camera never started.
+    cameras = set(DOC["cameras"])
+    for cam in DOC["cameras"].values():
+        assert not cameras & set(cam.get("zones", {}))

@@ -7,7 +7,7 @@
 # Nothing secret is written in this file.
 #
 # Frigate must be 0.17.2 or newer. Option names below follow the 0.17 docs; if Frigate refuses a name
-# when it starts, open http://localhost:8971 -> Settings -> Config, or /api/docs, and tell Claude.
+# when it starts, open https://localhost:8971 -> Settings -> Config, or /api/docs, and tell Claude.
 
 mqtt:
   enabled: true
@@ -53,11 +53,12 @@ cameras:
         - dog
         - cat
     # Zones. These two are TINY PLACEHOLDERS in the top-left corner: they cover nothing until you
-    # redraw them (Frigate -> Settings -> Masks and zones). Draw `gate` only over your own gate and
-    # `doorstep` only over your own doorstep. Do NOT cover the road or a neighbour's door or window:
-    # JARVIS must not watch them. Keep the names `gate` and `doorstep`.
+    # redraw them (Frigate -> Settings -> Masks and zones). Draw `gate_zone` only over your own gate
+    # and `doorstep` only over your own doorstep. Do NOT cover the road or a neighbour's door or
+    # window: JARVIS must not watch them. Keep the names `gate_zone` and `doorstep` (Frigate 0.17
+    # refuses a zone with the same name as a camera, so the gate zone is not called `gate`).
     zones:
-      gate:
+      gate_zone:
         coordinates: 0.0,0.0,0.02,0.0,0.02,0.02,0.0,0.02
         objects:
           - person
@@ -71,13 +72,13 @@ cameras:
         labels:
           - person
         required_zones:
-          - gate
+          - gate_zone
       # Other detections are kept only when they happen in one of your own zones too.
       detections:
         labels:
           - person
         required_zones:
-          - gate
+          - gate_zone
           - doorstep
 
 # Recordings are kept only around events; there is no continuous recording.
@@ -101,7 +102,7 @@ snapshots:
   bounding_box: false
   # Pictures are saved only for objects inside your own gate or doorstep zone, never the road.
   required_zones:
-    - gate
+    - gate_zone
     - doorstep
   retain:
     default: 7

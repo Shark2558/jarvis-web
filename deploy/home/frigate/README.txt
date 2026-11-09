@@ -20,7 +20,7 @@ laptop. JARVIS only hears "a person came to the gate at 23:41".
    windows. JARVIS must not watch them. Zones and masks are your choice and can be changed any time.
 
 5. In JARVIS -> Home -> Cameras, give the camera a name you like (for example "Front gate"). The
-   zone names stay `gate` and `doorstep`.
+   zone names stay `gate_zone` and `doorstep` (Alarm zone: gate_zone).
 
 6. Parcels (optional, setup step 12): Frigate -> Classification -> Add -> State. Name it `doorstep`,
    states `package` and `empty`, draw the box over the doorstep, then sort 10-20 example pictures of

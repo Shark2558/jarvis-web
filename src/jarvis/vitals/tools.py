@@ -18,6 +18,7 @@ from jarvis.config import Settings
 from jarvis.core.guardrails import ActionRisk
 from jarvis.tools.base import Tool
 from jarvis.tools.context import require_tool_context
+from jarvis.vitals.brief import spoken_summary
 from jarvis.vitals.models import ID_PATTERN, Kind, Provider, describe_error
 from jarvis.vitals.service import VitalsService
 from jarvis.vitals.store import BAD_ID, VitalsFull, VitalsUnavailable, valid_id
@@ -99,6 +100,7 @@ class VitalsAPI:
         if a.get("attention_only") is True:
             keep = {v.provider.id for v in board.attention()}
             out["items"] = [i for i in out["items"] if i["id"] in keep]
+        out["spoken"] = spoken_summary(board)  # fixed words: what No-AI mode reads out
         return out
 
     async def set_key(self, a: dict[str, Any]) -> Any:

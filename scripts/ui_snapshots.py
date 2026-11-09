@@ -6,9 +6,12 @@ and capture, for DESKTOP 1440x900 and PHONE 390x844 on the night and day surface
 
   * the whole viewport and the top bar (`header.topbar`);
   * every panel (`#p-<id>`), plus extra shots when its body scrolls;
-  * extra states: Vitals with the "Track a key" form open, Vitals answering 503 (night only).
+  * extra states: Vitals with the "Track something JARVIS can't see" form open, the systems-check
+    pop-up (`#sysCheck`, from the Systems card's Run) with every result in, and, night only,
+    Vitals answering 503 and Vitals whose own records can't be read (`manual_unavailable`).
 
-R4 panels get realistic data from `page.route` fulfilments (MOCKS below). Each panel also gets DOM
+R4 panels get realistic data from `page.route` fulfilments (tests/browser/ui_checks.py: built
+with the server's own models, so the shapes match the routes). Each panel also gets DOM
 checks run in the page (overlapping interactive elements, off-theme fonts, browser-default
 controls, run-together text, overflow, contrast, small targets); the findings go to checks.json and
 a summary into index.md beside the PNGs.
@@ -160,7 +163,7 @@ class Console:
         got = self.page.locator("html").get_attribute("data-surface")
         if got != self.surface:
             raise RuntimeError(f"surface is {got!r}, wanted {self.surface!r}")
-        self.wait_for("#brainModeBadge:has-text('Brain:')")
+        self.wait_for("#brainModeBadge")
         self.page.wait_for_timeout(1200)  # deferred scripts + the 3D module settle
 
     def wait_for(self, selector: str) -> bool:
@@ -247,26 +250,54 @@ def shoot_panel(c: Console, panel: str, name: str) -> None:
 
 
 def vitals_form(c: Console) -> None:
-    """Vitals with its add form open ("Track a key")."""
+    """Vitals with its add form open ("Track something JARVIS can't see", R5.1 D2)."""
     c.open_panel("vitals")
-    btn = c.page.locator("#vitals-board .vt-head button", has_text="Track a key")
+    btn = c.page.locator("#vtAddBtn")
     if not btn.count():
-        c.run.failures.append(f"[{c.tag}] Vitals has no 'Track a key' button")
+        c.run.failures.append(f"[{c.tag}] Vitals has no 'Track something JARVIS can't see'")
         return
     btn.click()
-    c.page.locator("#vitals-board .vt-formbox form").wait_for()
-    c.page.locator("#vitals-board .vt-formbox form").evaluate(
-        "f => f.scrollIntoView({block: 'start'})"
-    )
+    form = c.page.locator("#vtAddBody form").first
+    form.wait_for()
+    form.evaluate("f => f.scrollIntoView({block: 'start'})")
     c.page.wait_for_timeout(250)
     name = f"{c.tag}-vitals-form"
     shoot(c, "#p-vitals", name, c.tag)
     check(c, "#p-vitals", name)
-    shoot(c, "#vitals-board .vt-formbox form", f"{name}-only", c.tag)
-    cancel = c.page.locator("#vitals-board .vt-formbox button", has_text="Cancel")
-    if cancel.count():
-        cancel.click()
+    shoot(c, "#vtAddBody form", f"{name}-only", c.tag)
+    btn.click()  # closed again
     c.close_panel("vitals")
+
+
+def systems_popup(c: Console) -> None:
+    """The systems-check pop-up (R5.1 D6) from the Systems card's Run, every result in."""
+    run_btn = c.page.locator("#systemsCard .btn", has_text="Run")
+    if not run_btn.count():
+        c.run.failures.append(f"[{c.tag}] the Systems card has no Run button")
+        return
+    run_btn.first.click()
+    dialog = c.page.locator("#sysCheck")
+    try:
+        dialog.wait_for(state="visible", timeout=WAIT_MS)
+        c.page.locator("#sysCheck .scrow").first.wait_for(timeout=WAIT_MS)
+    except Exception as exc:  # noqa: BLE001 - reported, never fatal
+        c.run.failures.append(f"[{c.tag}] the systems-check pop-up did not open: {exc}")
+        return
+    dialog.click(position={"x": 8, "y": 8})  # a pointer inside keeps it open (no countdown)
+    c.page.wait_for_timeout(900)  # the ticks and the briefing have landed
+    name = f"{c.tag}-syscheck"
+    shoot(c, None, name, c.tag)
+    shoot(c, "#sysCheck", f"{name}-only", c.tag)
+    c.page.evaluate(
+        "() => { const d = document.getElementById('sysCheck'); if (d) d.style.maxHeight = 'none'; }"
+    )
+    check(c, "#sysCheck", name)
+    close = c.page.locator("#sysCheckClose")
+    if close.count() and close.first.is_visible():
+        close.first.click()
+    else:
+        c.page.keyboard.press("Escape")
+    c.page.wait_for_timeout(300)
 
 
 def capture_combo(browser: Browser, url: str, vp: str, surface: str, run: Run) -> None:
@@ -284,11 +315,8 @@ def capture_combo(browser: Browser, url: str, vp: str, surface: str, run: Run) -
             except Exception as exc:  # noqa: BLE001
                 run.failures.append(f"[{c.tag}] open {panel}: {exc}")
                 continue
-            if panel == "integrations":  # exercise POST /v1/health/run (mocked) before the shot
-                run_btn = c.page.locator("#systemsCard .btn", has_text="Run")
-                if run_btn.count():
-                    run_btn.click()
-                    c.page.wait_for_timeout(400)
+            if panel == "integrations":  # Run opens the pop-up (the mocked stream), shot, closed
+                systems_popup(c)
             shoot_panel(c, panel, f"{c.tag}-{panel}")
             c.close_panel(panel)
         vitals_form(c)
@@ -303,7 +331,20 @@ def capture_vitals_503(browser: Browser, url: str, vp: str, run: Run) -> None:
         install_mocks(c.page, vitals_503=True)
         c.open()
         c.open_panel("vitals", ready=False)
-        c.wait_for("#vitals-board .vt-state.vt-err")
+        c.wait_for("#vitals-board .bnote.bad:not(:empty)")
+        shoot_panel(c, "vitals", f"{c.tag}-vitals")
+    finally:
+        c.close()
+
+
+def capture_vitals_manual_unavailable(browser: Browser, url: str, vp: str, run: Run) -> None:
+    """D2: the owner's own records can't be read; JARVIS's own items still show."""
+    c = Console(browser, url, vp, "night", run)
+    c.tag = f"{vp}-night-manual-unavailable"
+    try:
+        install_mocks(c.page, manual_unavailable=True)
+        c.open()
+        c.open_panel("vitals")
         shoot_panel(c, "vitals", f"{c.tag}-vitals")
     finally:
         c.close()
@@ -375,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
                     capture_combo(browser, url, vp, surface, run)
                 if "night" in surfaces:
                     capture_vitals_503(browser, url, vp, run)
+                    capture_vitals_manual_unavailable(browser, url, vp, run)
         finally:
             browser.close()
     write_index(run)

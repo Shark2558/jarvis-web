@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -19,11 +18,6 @@ pytestmark = pytest.mark.browser
 
 FAKE_MEDIA = ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"]
 ROUTE_KEY = "jarvis_audio_route_v1"
-# console-voice-devices-match.js is a new file the integrator adds to console.html (before
-# console-voice-devices.js) and to APP_ASSETS; until then the tests load it ahead of the page scripts.
-MATCH_JS = (
-    Path(__file__).resolve().parents[2] / "src/jarvis/api/static/console-voice-devices-match.js"
-)
 CTX = "{source: 'voice', state: 'idle', spoken: '', peak: 0}"
 
 STUB = """
@@ -101,8 +95,7 @@ def make(browser: Any, server_url: str, token: str) -> Iterator[Callable[..., Co
         for s in scripts:
             if s is ANDROID:
                 c.page.add_init_script(s)
-        c.page.add_init_script(STUB)
-        c.page.add_init_script(path=str(MATCH_JS))
+        c.page.add_init_script(STUB)  # console.html loads the matcher itself (I1)
         for s in scripts:
             if s is not ANDROID:
                 c.page.add_init_script(s)

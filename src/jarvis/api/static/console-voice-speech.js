@@ -17,7 +17,8 @@
 //     The browser voice gets pieces of at most ~180 characters (Chrome's network voices stop after
 //     ~15 s without saying so) and a watchdog per piece that moves on if no end event comes.
 //     R5 (docs/plans/r5-voice.md): setSink(id) → Promise<{ok, reason?}> / sink() / sinkSupported()
-//     route the output with AudioContext.setSinkId (never an <audio> element: the CSP has no media-src);
+//     route the output with AudioContext.setSinkId (never an <audio> element: the CSP has no media-src;
+//     before any sound the context is made for it, so the browser checks every id: I1);
 //     duck(on) → bool lowers the cloud voice to 20% (60 ms ramp; false and nothing for the browser
 //     voice), volume() the current gain; tone({freq, ms, gain}) → Promise<bool> a generated blip
 //     through the same context; stop() → {rest: string[]}, the text not yet played, the interrupted
@@ -271,7 +272,6 @@
       const C = window.AudioContext || window.webkitAudioContext;
       if (!C) return null;
       ac = new C();
-      applySink(ac);
       master = ac.createGain();
       analyser = ac.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.3;
       probe = new Float32Array(analyser.fftSize);
@@ -290,20 +290,18 @@
       return ac;
     }
     const sinkOk = () => { const C = window.AudioContext || window.webkitAudioContext; return !!(C && C.prototype && typeof C.prototype.setSinkId === 'function'); };
-    function applySink(c) {
-      if (!sinkId || typeof c.setSinkId !== 'function') return;
-      try { Promise.resolve(c.setSinkId(sinkId)).catch(() => {}); } catch (_) {}
-    }
     function sinkReason(err) {
       const n = err && err.name;
       return n === 'NotFoundError' ? 'not_found' : n === 'NotAllowedError' || n === 'SecurityError' ? 'blocked' : 'failed';
     }
-    /** Send the sound to another output (an id from enumerateDevices; null or '' is the default). */
+    /** Send the sound to another output (an id from enumerateDevices; null or '' is the default). Before
+     *  any sound the context is made for it (suspended until a tap, as autoplay rules want), so the
+     *  browser checks the id now and a missing device says so here, never later in silence (I1). */
     async function setSink(id) {
       const next = typeof id === 'string' && id !== 'default' ? id : '';
-      if (!sinkOk()) return { ok: false, reason: 'unsupported' };
-      if (!ac) { sinkId = next; return { ok: true }; }
-      try { await ac.setSinkId(next); } catch (err) { return { ok: false, reason: sinkReason(err) }; }
+      const c = sinkOk() ? context() : null;
+      if (!c) return { ok: false, reason: 'unsupported' };
+      try { await c.setSinkId(next); } catch (err) { return { ok: false, reason: sinkReason(err) }; }
       sinkId = next;
       return { ok: true };
     }

@@ -276,6 +276,39 @@ def test_a_missing_input_falls_back_once_and_says_so(make: Callable[..., Console
     routes = events(c, "jarvis:audio-route")
     assert routes and routes[0]["reason"] == "input_missing"
     assert routes[0]["input"]["id"] == "unplugged"
+    ev(c, "JarvisAudio.open()")  # the fallback stands: the next open() asks for nothing again
+    assert ev(c, "window.__cons.length") == 2
+
+
+def test_a_new_input_takes_over_at_the_next_open_and_says_when_it_is_live(
+    make: Callable[..., Console],
+) -> None:
+    # B's review: with the microphone held open through a conversation, chooseInput never took
+    # effect; now the next open() (the next listening turn) reopens on it
+    c = make(scripts=(GUM_SPY, SLOW_GUM))
+    FakeVoice(c.page)
+    c.open()
+    ev(c, "JarvisAudio.open()")
+    assert ev(c, "window.__cons.length") == 1 and "deviceId" not in ev(c, "window.__cons[0].audio")
+    other = ev(  # one of Chrome's fake microphones, now that the permission is granted
+        c,
+        """async () => (await navigator.mediaDevices.enumerateDevices())
+          .filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default')
+          .map(d => d.deviceId)[0]""",
+    )
+    assert isinstance(other, str) and other
+    ev(c, f"JarvisAudio.setInput({json.dumps(other)})")
+    assert ev(c, "JarvisAudio.isOpen()") is True and ev(c, "window.__cons.length") == 1
+    ev(c, "JarvisAudio.open()")
+    assert ev(c, "window.__cons.length") == 2
+    assert ev(c, "window.__cons[1].audio.deviceId") == {"exact": other}
+    assert ev(c, LIVE_TRACKS) == [0, 1]  # the old microphone's tracks were stopped
+    ev(c, "JarvisAudio.open()")  # unchanged since: shared, no new request
+    assert ev(c, "window.__cons.length") == 2
+    live = [r for r in events(c, "jarvis:audio-route") if r["reason"] == "input_live"]
+    assert [r["input"]["id"] for r in live] == [None, other]
+    assert all(r["input"]["label"] == "" for r in live)  # an id only: labels stay with B
+    assert c.errors == []
 
 
 # ====================================================================== the speaker (D13, D15)
@@ -299,9 +332,10 @@ def test_set_sink_routes_this_and_later_contexts(make: Callable[..., Console]) -
     assert ev(c, "JarvisVoice.speaker.sink()") in ("", None)
     assert ev(c, "JarvisVoice.speaker.setSink('buds')") == {"ok": True}
     assert ev(c, "JarvisVoice.speaker.sink()") == "buds"
-    assert ev(c, "window.__sinks") == []  # no context yet: applied when it is made
-    ev(c, "JarvisVoice.speaker.unlock()")
+    # I1: before any sound the context is made for it, so the browser checks the id now
     assert ev(c, "window.__sinks") == ["buds"]
+    ev(c, "JarvisVoice.speaker.unlock()")
+    assert ev(c, "window.__sinks") == ["buds"]  # the same context: nothing is applied twice
     assert ev(c, "JarvisVoice.speaker.setSink('desk')") == {"ok": True}
     assert ev(c, "window.__sinks") == ["buds", "desk"]
     ev(c, "window.__sinkFail = 'NotFoundError'")
@@ -311,6 +345,20 @@ def test_set_sink_routes_this_and_later_contexts(make: Callable[..., Console]) -
     ev(c, "window.__sinkFail = null")
     assert ev(c, "JarvisVoice.speaker.setSink(null)") == {"ok": True}
     assert ev(c, "JarvisVoice.speaker.sink()") in ("", None)
+
+
+def test_set_sink_before_any_sound_is_checked_not_assumed(make: Callable[..., Console]) -> None:
+    # B's review: with no audio context yet, setSink said ok without asking the browser
+    c = make(scripts=(SINK_STUB,))
+    FakeVoice(c.page)
+    c.open()
+    ev(c, "window.__sinkFail = 'NotFoundError'")
+    assert ev(c, "JarvisVoice.speaker.setSink('gone')") == {"ok": False, "reason": "not_found"}
+    assert ev(c, "JarvisVoice.speaker.sink()") in ("", None)  # the default, as it really is
+    assert ev(c, "window.__sinks") == ["gone"]
+    ev(c, "window.__sinkFail = 'NotAllowedError'")
+    assert ev(c, "JarvisVoice.speaker.setSink('x')") == {"ok": False, "reason": "blocked"}
+    assert c.errors == []
 
 
 def test_set_sink_says_unsupported_where_the_browser_cannot(make: Callable[..., Console]) -> None:
@@ -428,6 +476,19 @@ def test_normalise_cases(make: Callable[..., Console]) -> None:
     got = ev(c, f"{json.dumps(list(cases))}.map((t) => JarvisVoiceCommands.normalise(t))")
     assert got == list(cases.values())
     assert ev(c, "JarvisVoiceCommands.normalise(null)") == ""
+
+
+def test_normalise_keeps_combining_marks_so_indic_words_stay_whole(
+    make: Callable[..., Console],
+) -> None:
+    # vowel signs and the virama are combining marks (\p{M}): stripping them split one Malayalam or
+    # Hindi word into several, so a nickname could fail the 8-word cap or never match (B's review)
+    c = make()
+    FakeVoice(c.page)
+    c.open()
+    for text in ("switch to അമ്മയുടെ ഫോൺ", "use मेरा हेडसेट mic", "switch to ക്ലാസ് റൂം"):
+        got = ev(c, f"JarvisVoiceCommands.normalise({json.dumps(text)})")
+        assert got == text and len(got.split()) == len(text.split()), (text, got)
 
 
 def test_register_handle_round_trip_and_the_guards(make: Callable[..., Console]) -> None:

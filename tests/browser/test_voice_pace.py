@@ -408,6 +408,29 @@ def test_returning_to_listening_after_an_empty_transcript_plays_no_second_rise(
     _wait(c, "() => window.__tones.length >= 6")
 
 
+def test_an_interruption_or_speech_heard_while_standing_by_plays_no_rise(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    # I1 (A's review): an interruption's own turn starts at once, with no tone (the loop marks
+    # it barge: true), and standby -> listening is the owner already talking: no rise over him
+    c = make(scripts=(TONES,))
+    FakeVoice(c.page)
+    c.open()
+    _arm(c)
+    fire = "(d) => document.dispatchEvent(new CustomEvent(d[0], { detail: d[1] }))"
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "speaking"}])
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "listening", "barge": True}])
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "standby", "barge": False}])
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "listening", "barge": False}])
+    c.page.wait_for_timeout(400)
+    assert c.page.evaluate("window.__tones") == []
+    # control: a turn that starts from rest still rises
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "idle", "barge": False}])
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "listening", "barge": False}])
+    _wait(c, "() => window.__tones.length >= 2")
+    assert c.errors == []
+
+
 def test_an_unknown_engine_is_reported_as_unknown_and_a_re_mark_clears_the_old_one(
     make: Callable[..., Console],  # noqa: F811
 ) -> None:
@@ -529,6 +552,25 @@ def test_a_spoke_mark_replaces_the_estimate_with_the_real_listening_time(
     t = c.page.evaluate("window.__timing[0]")
     assert 50 <= t["heard"] < 1500 and t["estimated"] is False
     assert "listening ~" not in c.page.locator("#vPaceLine").text_content()
+
+
+def test_a_spoke_mark_given_a_time_measures_listening_from_that_time(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    # the cloud engine marks 'spoke' when the words ENDED (now less the pause it waited for)
+    c = make(scripts=(TIMING,))
+    FakeVoice(c.page)
+    c.open()
+    c.page.evaluate("JarvisVoicePace.mark('spoke', performance.now() - 700)")
+    _turn(c, wait_ms=30)
+    _wait(c, "() => window.__timing.length >= 1")
+    t = c.page.evaluate("window.__timing[0]")
+    assert t["estimated"] is False and 700 <= t["heard"] < 1500
+    c.page.evaluate("window.__timing.length = 0")
+    c.page.evaluate("JarvisVoicePace.mark('spoke', 'soon')")  # not a number: now is used
+    _turn(c, wait_ms=30)
+    _wait(c, "() => window.__timing.length >= 1")
+    assert c.page.evaluate("window.__timing[0].heard") < 700
 
 
 def test_a_typed_message_or_an_unspoken_reply_gives_no_timing(
@@ -764,11 +806,16 @@ def test_the_helper_cleans_like_the_server_and_offers_the_list_only_where_suppor
     assert c.page.evaluate(clean, "തിരു") == "തിരു"
     _voice_panel(c)
     assert c.page.evaluate("JarvisVoicePhrases.apply({})") is False  # no biasing offered: no-op
+    # phrases are only for on-device recognition (processLocally): elsewhere start() fails with
+    # phrases-not-supported, so the list is handed over only when processLocally is true (I1)
     assert c.page.evaluate(
         """() => { window.SpeechRecognitionPhrase = class {
             constructor(p, b) { this.phrase = p; this.boost = b; } };
-          const r = { phrases: [] }; return [JarvisVoicePhrases.apply(r), r.phrases.length]; }"""
-    ) == [True, 1]
+          const on = { phrases: [], processLocally: true },
+            off = { phrases: [], processLocally: false }, unset = { phrases: [] };
+          return [JarvisVoicePhrases.apply(on), on.phrases.length, JarvisVoicePhrases.apply(off),
+            off.phrases.length, JarvisVoicePhrases.apply(unset), unset.phrases.length]; }"""
+    ) == [True, 1, False, 0, False, 0]
 
 
 def test_file_separator_controls_become_spaces_like_the_server(

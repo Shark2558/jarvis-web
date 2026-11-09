@@ -9,7 +9,8 @@
 //   window.JarvisVoicePhrases  clean(raw) -> string | null   the same rules as the server
 //                              list() -> string[]            the saved list as the panel shows it
 //                              apply(recognition) -> bool    hands the list to a browser recogniser that
-//                                  offers contextual biasing (feature-detected; false and nothing otherwise)
+//                                  offers contextual biasing: on-device recognition only (processLocally
+//                                  true) and feature-detected; false and nothing otherwise
 (() => {
   'use strict';
   const DEFAULT_ITEMS = 50, DEFAULT_CHARS = 40;
@@ -87,8 +88,8 @@
     h.id = 'vPhraseT'; h.append(title); sec.append(h);
     sec.append(mk('p', 'bfine vlead',
       'Names and words JARVIS should listen for, such as Thiruvananthapuram, Trivandrum or the names you use. '
-      + 'They help the cloud voice only: the browser\'s own listening ignores them. They are sent to your own '
-      + 'Google speech project when you talk, and are never written to a log.'));
+      + 'They help the cloud voice; the browser\'s own listening uses them only where your browser supports it. '
+      + 'They are sent to your own Google speech project when you talk, and are never written to a log.'));
     const row = mk('div', 'bopt');
     UI.input = mk('input', 'bsel');
     UI.input.type = 'text'; UI.input.id = 'vPhraseIn'; UI.input.autocomplete = 'off'; UI.input.spellcheck = false;
@@ -127,10 +128,13 @@
 
   // ---------------------------------------------------------------------------------- browser engine
   /** Chrome's recogniser can take phrases only where it offers contextual biasing (newer Chrome, on-device
-   *  recognition). Nothing is assumed: if the pieces are not there this does nothing. */
+   *  recognition). The Web Speech spec ties phrases to processLocally: on a recogniser that does not process
+   *  locally, start() fails with 'phrases-not-supported', so the list is handed over only when processLocally is
+   *  true. Nothing is assumed: if the pieces are not there this does nothing. */
   function apply(recognition) {
     const Phrase = window.SpeechRecognitionPhrase, words = list();
-    if (!recognition || typeof Phrase !== 'function' || !('phrases' in recognition) || !words.length) return false;
+    if (!recognition || recognition.processLocally !== true) return false;
+    if (typeof Phrase !== 'function' || !('phrases' in recognition) || !words.length) return false;
     try { recognition.phrases = words.map(w => new Phrase(w, 1.0)); return true; } catch (_) { return false; }
   }
 

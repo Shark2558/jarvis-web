@@ -19,8 +19,11 @@
 //                       opens the microphone. Fires jarvis:mic-lock {locked, by}.
 //                       recognizer() is the only place SpeechRecognition is built (throws 'mic_off' or
 //                       'unsupported'). setInput(id | null) / inputId(): the next open() asks for that
-//                       device; if it is gone, one retry on the default input fires jarvis:audio-route
-//                       {input, reason: 'input_missing'}. trackLabel(): the open track's name.
+//                       device, also when the microphone is already open (a conversation holds it):
+//                       that open() reopens on the new device, subscribers kept. If it is gone, one retry
+//                       on the default input fires jarvis:audio-route {input, reason: 'input_missing'};
+//                       each microphone that goes live fires {input: {id, label: ''}, reason: 'input_live'}
+//                       (an id only, never a label). trackLabel(): the open track's name.
 //                       The wake-word module consumes the same frames:
 //                       JarvisWake.start({subscribe: JarvisAudio.subscribe, sampleRate: 16000}, onWake).
 //   window.JarvisWav    encode(frames | Int16Array, rate = 16000) → ArrayBuffer (RIFF/WAVE PCM16 mono).
@@ -151,16 +154,18 @@
     return navigator.mediaDevices.getUserMedia({ audio });
   }
   async function build(c, my) {
-    const own = { ctx: c, stream: null, source: null, node: null, analyser: null, probe: null };
+    // asked: the input requested; got: the one that opened (null after the missing-device fallback)
+    const own = { ctx: c, stream: null, source: null, node: null, analyser: null, probe: null, asked: inputId, got: inputId };
     const stale = () => my !== gen;
     try {
       try {
-        own.stream = await requestStream(inputId);
+        own.stream = await requestStream(own.asked);
       } catch (err) {
-        if (inputId && err && err.name === 'OverconstrainedError') {   // the chosen microphone is gone
-          emit('jarvis:audio-route', { input: { id: inputId, label: '' }, reason: 'input_missing' });
+        if (own.asked && err && err.name === 'OverconstrainedError') {   // the chosen microphone is gone
+          emit('jarvis:audio-route', { input: { id: own.asked, label: '' }, reason: 'input_missing' });
           if (stale() || locked) throw fail('closed');   // the microphone was switched off meanwhile: no second request
           try { own.stream = await requestStream(null); } catch (err2) { throw fail(reason(err2), err2); }
+          own.got = null;
         } else throw fail(reason(err), err);
       }
       if (stale()) throw fail('closed');
@@ -178,6 +183,7 @@
       own.source.connect(own.node); own.source.connect(own.analyser);
       tracks.forEach(t => t.addEventListener('ended', () => ended(own)));
       live = own;
+      emit('jarvis:audio-route', { input: { id: own.got, label: '' }, reason: 'input_live' });
     } catch (err) {
       release(own);
       throw err;
@@ -199,10 +205,14 @@
     try { primed = new (AC())(); } catch (_) { primed = null; return; }
     try { quietly(primed.resume()); } catch (_) {}
   }
+  /** The open microphone is not the one chosen since (neither what was asked nor what opened). */
+  const switched = () => !!live && inputId !== live.asked && inputId !== live.got;
   /** Opens the microphone (once; later calls share it). The AudioContext is made before the first
-   *  await, so a tap's user activation still counts when the browser asks to start audio. */
+   *  await, so a tap's user activation still counts when the browser asks to start audio. A device
+   *  chosen while it was open takes over here: the next listening turn reopens on it (I1). */
   function open() {
     if (locked) return Promise.reject(fail('mic_off'));
+    if (switched()) close();               // subscribers stay; frames resume from the new device
     if (live) return Promise.resolve();
     if (pending && pending.gen === gen) return pending.promise;
     if (!supported()) return Promise.reject(fail('unsupported'));

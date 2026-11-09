@@ -12,6 +12,7 @@ import pytest
 from test_console import Console
 from test_voice import FakeVoice, _voice_panel
 from test_voice_devices import (
+    ANDROID,
     ROUTE_KEY,
     UNLABELLED,
     add_buds,
@@ -766,3 +767,59 @@ def test_an_utterance_over_the_word_cap_is_never_a_device_command(
     ev(c, "JarvisAudioRoutePrefs.setName('jbl', 'kitchen')")
     assert say(c, "switch to kitchen")["id"] == "device.switch"
     assert say(c, "switch to the kitchen speaker that i bought last year") == {"handled": False}
+
+
+# ====================================================================== I1: cross-module seams
+# Every listed microphone "exists": the fake capture device stands in for whichever id is asked for,
+# and each request is recorded, so a test can see which device a listening turn opened.
+ANY_MIC = """
+(() => {
+  window.__cons = [];
+  const md = navigator.mediaDevices, inner = md.getUserMedia.bind(md);
+  md.getUserMedia = (c) => {
+    window.__cons.push(JSON.parse(JSON.stringify(c)));
+    const audio = Object.assign({}, c.audio); delete audio.deviceId;
+    return inner({ audio });
+  };
+})();
+"""
+NOT_SPOKEN = """localStorage.setItem('jarvis_voice_device_v1',
+  JSON.stringify({ interruptBy: 'tap', speak: 'never', keepListening: false }));"""
+
+
+def test_a_mic_chosen_mid_conversation_takes_over_at_the_next_turn_and_is_no_longer_pending(
+    make: Callable[..., Console],
+) -> None:
+    # the conversation holds the mic open (D3); the choice applies when the next turn opens it
+    c = make((ANY_MIC,))
+    FakeVoice(c.page)
+    c.open()
+    wf(c, "window.__enum >= 1")
+    c.page.locator("#micBtn").click()
+    wf(c, "JarvisAudio.isOpen()")
+    r = say(c, "use the headset mic", state="listening")
+    assert "next time I open the mic" in r["result"]["say"]
+    assert ev(c, "JarvisAudioRoutePrefs.inputPending()") is True
+    n = ev(c, "window.__cons.length")
+    c.page.wait_for_function(f"() => window.__cons.length > {n}", timeout=60000)
+    assert ev(c, "window.__cons[window.__cons.length - 1].audio.deviceId") == {"exact": "buds-mic"}
+    wf(c, "JarvisAudioRoutePrefs.inputPending() === false")
+    assert ev(c, "JarvisAudio.isOpen()") is True and ev(c, "JarvisAudio.inputId()") == "buds-mic"
+    c.page.keyboard.press("Escape")
+    assert c.errors == []
+
+
+def test_a_device_line_with_no_name_in_it_is_shown_even_when_replies_are_not_spoken(
+    make: Callable[..., Console],
+) -> None:
+    # a line from done() (here Android's steps) was only ever spoken: with "Speak replies: Never" the
+    # owner saw nothing at all. Name-free lines are shown as they are said (I1)
+    c = make((ANDROID, NOT_SPOKEN))
+    fake = FakeVoice(c.page)
+    fake.transcript = {**fake.transcript, "text": "switch to my earphones"}
+    c.open()
+    wf(c, "window.__enum >= 1")
+    c.page.locator("#micBtn").click()
+    wf(c, "/open Quick Settings/.test(document.getElementById('voiceLine').textContent)")
+    assert fake.spoken() == []
+    assert c.errors == []

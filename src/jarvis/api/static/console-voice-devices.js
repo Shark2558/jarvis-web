@@ -387,9 +387,13 @@
   const refresh = () => { chain = chain.then(doRefresh, doRefresh).catch(snapshot); return chain; };
   const supported = () => !!(navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function');
 
-  // ---- a chosen microphone that is gone ------------------------------------------------------------
+  // ---- a chosen microphone that is gone, or now live ------------------------------------------------
   function onRoute(e) {
     const d = e && e.detail;
+    if (d && d.reason === 'input_live') {               // capture reopened the mic: a choice made meanwhile is in use
+      if (pendingInput) { pendingInput = false; fire('devices', snapshot()); }
+      return;
+    }
     if (!d || d.reason !== 'input_missing') return;     // our own route events carry an output key
     const A = window.JarvisAudio;
     if (A) A.setInput(null);
@@ -416,15 +420,18 @@
   }
   const find = (name, kind) => resolve(name, kind === 'input' ? 'input' : 'output').dev;
   const resolves = (text, kind) => M.isDeviceWord(text) || !!resolve(text, kind).dev;
-  const done = (say) => {
+  const result = (say) => {
     const loop = window.JarvisVoiceLoop;
     return { say, then: loop && loop.inConversation() ? 'listen' : 'idle' };
   };
+  /** A line with no device name in it: shown as it is said. The loop speaks a device command's line and
+   *  leaves the screen to this module, so without this it was not shown at all with "Speak replies: Never". */
+  const done = (say) => { show(say); return result(say); };
   /** The screen gets the real name; the returned (spoken) sentence stays generic. */
   function withScreen(screenText, spokenText, keep) {
     show(screenText);
     if (keep) setStatus(screenText);
-    return done(spokenText);
+    return result(spokenText);
   }
   const noMatch = (x, mic) => {
     const word = M.isDeviceWord(x) ? x : '';          // only a known device word is repeated, never the owner's own name for it

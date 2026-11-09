@@ -135,11 +135,13 @@
   let loopState = 'idle';
   let accepted = false;       // words were accepted since the loop last started thinking
   document.addEventListener('jarvis:voice-loop', (e) => {
-    const state = e.detail && e.detail.state, prev = loopState;
+    const d = e.detail || {}, state = d.state, prev = loopState;
     loopState = state;
     if (state === 'thinking' && prev !== 'thinking') accepted = false;
     const bounce = prev === 'thinking' && !accepted;   // an empty transcript: no second rise for noise
-    if (state === 'listening' && prev !== 'listening' && !bounce) cue('listen');
+    // no rise for an interruption's own turn (it starts at once, D7) or for speech heard while standing by
+    const quiet = bounce || d.barge === true || prev === 'standby';
+    if (state === 'listening' && prev !== 'listening' && !quiet) cue('listen');
     else if (state === 'thinking' && prev === 'listening') { mark('heard'); cue('heard'); }
     else if (state === 'handover') cue('handover');
   });

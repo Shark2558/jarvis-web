@@ -6,9 +6,20 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from playwright.sync_api import Page, Route
+
+from jarvis.health.briefing import compose_briefing
+from jarvis.health.models import HealthReport, ProbeResult
+from jarvis.health.probes import BRAIN_NO_CREDIT
+from jarvis.health.report import spoken_label, system_row, view
+from jarvis.vitals.auto import SPEND_ID
+from jarvis.vitals.models import Board, Provider, ProviderView, Spend, group_of
+from jarvis.vitals.own import LABELS, OWN_IDS
+from jarvis.vitals.service import MANUAL_UNAVAILABLE as MANUAL_NOTE
+from jarvis.vitals.words import NO_CREDIT, words_for
 
 PANELS = (
     "activity approvals brief chat connectors construct faces history home integrations media "
@@ -26,7 +37,8 @@ NOW = int(time.time())
 # ================================================================================================
 # MOCKS — page.route fulfilments so the R4 panels show realistic states. Shapes follow the server:
 #   /v1/vitals                -> src/jarvis/vitals/api.py + models.py (Board.to_json)
-#   /v1/health, /health/run   -> src/jarvis/health/api.py + tools.view
+#   /v1/health, /health/run   -> src/jarvis/health/api.py (report.view + briefing)
+#   /v1/health/run/stream     -> NDJSON: plan, result per system, done (health/api.py)
 #   /v1/connectors            -> src/jarvis/photos/api.py `_status` (console-connectors.js reads it)
 #   /v1/settings/brain-mode   -> src/jarvis/people/routes.py (MEANING["ai"])
 #   /v1/people/last           -> src/jarvis/people/routes.py `last` ({dossier: _view(d)})
@@ -34,143 +46,214 @@ NOW = int(time.time())
 # ================================================================================================
 
 
-def _vitals_item(**kw: Any) -> dict[str, Any]:
-    base = {
-        "kind": "key",
-        "source": "manual",
-        "limit": None,
-        "used": None,
-        "unit": "",
-        "reset_at": None,
-        "expires_at": None,
-        "note": "",
-        "status": "ok",
-        "percent": None,
-        "reason": "",
-    }
-    return {**base, **kw}
+# The board and the systems check are built with the server's own models and fixed words
+# (vitals.models / vitals.words, health.report.view + health.briefing.compose_briefing), so a
+# screenshot shows exactly what the routes would answer: impact / fix / group per item,
+# manual_unavailable, the R5.1 briefing, and the out-of-credit Claude key (R5.1 I1).
+DAY = 86400
+TZ = timezone(timedelta(hours=5, minutes=30))
 
 
-MOCK_VITALS: dict[str, Any] = {
-    "overall": "red",
-    "items": [
-        _vitals_item(
-            id="anthropic",
-            label="Anthropic API",
+def _at(days: float) -> datetime:
+    return datetime.fromtimestamp(NOW + days * DAY, TZ)
+
+
+def _view(status: str, reason: str = "", percent: float | None = None, **p: Any) -> ProviderView:
+    provider = Provider(**p)
+    impact, fix = (
+        ("", "") if provider.source == "manual" else words_for(provider.id, provider.label, reason)
+    )
+    group = "bills" if provider.id == SPEND_ID else group_of(provider.kind)
+    if provider.id in OWN_IDS:
+        group = "allowances" if provider.kind == "quota" else "keys"
+    return ProviderView(
+        provider=provider,
+        status=status,
+        percent=percent,
+        reason=reason,
+        impact=impact,
+        fix=fix,
+        group=group,
+    )  # type: ignore[arg-type]
+
+
+def _board(*, manual_unavailable: bool = False) -> Board:
+    own = [
+        _view(
+            "red",
+            NO_CREDIT,
+            id="brain_claude",
+            label=LABELS["brain_claude"],
+            kind="key",
+            source="auto",
+        ),
+        _view(
+            "ok",
+            id="brain_gemini",
+            label=LABELS["brain_gemini"],
+            kind="key",
+            source="auto",
+            note="The last AI call worked.",
+        ),
+        _view(
+            "ok",
+            id="google_link",
+            label=LABELS["google_link"],
+            kind="key",
+            source="auto",
+            note="Connected.",
+        ),
+        _view(
+            "ok",
+            id="telegram_bot",
+            label=LABELS["telegram_bot"],
+            kind="key",
+            source="auto",
+            note="Checked 4 minutes ago.",
+        ),
+        _view(
+            "amber",
+            "is at 85% of its limit",
+            85.0,
+            id="web_credits",
+            label=LABELS["web_credits"],
             kind="quota",
             source="auto",
-            limit=500,
-            used=412,
-            unit="₹",
-            percent=82.4,
-            status="amber",
-            reason="is at 82% of its limit",
-            reset_at="2026-12-01T00:00:00+05:30",
+            limit=1000,
+            used=850,
+            unit="searches",
+            reset_at=_at(20),
         ),
-        _vitals_item(
-            id="openai-key",
-            label="OpenAI key",
+        _view(
+            "amber",
+            "expires in 6 days",
+            id="github_token",
+            label=LABELS["github_token"],
             kind="key",
-            status="red",
-            expires_at="2026-11-08T23:59:59+05:30",
-            reason="has expired",
-            note="Rotate it in the OpenAI dashboard, then update the server env.",
+            source="auto",
+            expires_at=_at(6),
+            note="Hourly limit: 4 of 5000 used.",
         ),
-        _vitals_item(
-            id="google-maps",
+        _view(
+            "red",
+            "is offline: no heartbeat for 14 minutes",
+            id="home_link",
+            label=LABELS["home_link"],
+            kind="key",
+            source="auto",
+            note="Last heartbeat 14 minutes ago.",
+        ),
+        _view(
+            "amber",
+            "is at 82% of its limit",
+            82.5,
+            id=SPEND_ID,
+            label="AI spend this month",
+            kind="billing",
+            source="auto",
+            limit=500,
+            used=412.5,
+            unit="₹",
+            reset_at=_at(20),
+        ),
+        _view(
+            "amber",
+            "is at 91% of its limit",
+            91.0,
+            id="allowance_chirp3",
+            label="Voice (Chirp 3 HD)",
+            kind="allowance",
+            source="auto",
+            limit=1_000_000,
+            used=910_000,
+            unit="characters",
+            reset_at=_at(20),
+        ),
+        _view(
+            "ok",
+            "",
+            12.4,
+            id="quota_maps",
             label="Google Maps",
             kind="quota",
             source="auto",
             limit=10000,
             used=1240,
             unit="calls",
-            percent=12.4,
-            status="ok",
-            reset_at="2026-12-01T00:00:00+05:30",
+            reset_at=_at(20),
         ),
-        _vitals_item(
-            id="elevenlabs",
-            label="ElevenLabs characters",
-            kind="allowance",
-            limit=100000,
-            used=91000,
-            unit="chars",
-            percent=91,
-            status="amber",
-            reason="is at 91% of its limit",
-            reset_at="2026-11-30T23:59:59+05:30",
-        ),
-        _vitals_item(
-            id="render-bill",
-            label="Render hosting",
-            kind="billing",
-            limit=1500,
-            used=1500,
-            unit="₹",
-            percent=100,
-            status="red",
-            reason="has reached its limit",
-            note="Billed on the 1st of each month.",
-        ),
-        _vitals_item(
-            id="drive-storage",
-            label="Google Drive storage",
-            kind="storage",
-            source="auto",
-            limit=15,
-            unit="GB",
-            status="unknown",
-            reason="can't be read now",
-        ),
-        _vitals_item(
-            id="github-pat",
-            label="GitHub token",
-            kind="key",
-            status="amber",
-            expires_at="2026-11-20T23:59:59+05:30",
-            reason="expires in 10 days",
-        ),
-    ],
-    "spend": {"used_inr": 412.5, "limit_inr": 500, "text": "₹413 of ₹500 this month"},
-}
+    ]
+    manual = (
+        []
+        if manual_unavailable
+        else [
+            _view(
+                "amber",
+                "expires in 9 days",
+                id="car-insurance",
+                label="Car insurance",
+                kind="billing",
+                expires_at=_at(9),
+                note="Renew with the agent.",
+            ),
+            _view(
+                "ok",
+                id="domain",
+                label="Domain renewal",
+                kind="billing",
+                expires_at=_at(200),
+            ),
+        ]
+    )
+    return Board(
+        items=tuple(own + manual),
+        spend=Spend(used_inr=412.5, limit_inr=500, text="₹413 of ₹500 this month"),
+        overall="red",
+        manual_unavailable=manual_unavailable,
+        manual_note=MANUAL_NOTE if manual_unavailable else "",
+    )
+
+
+BOARD = _board()
+MOCK_VITALS: dict[str, Any] = BOARD.to_json()
 MOCK_VITALS_503 = {"detail": "Vitals is not available on this server."}
 
+
+def _probe(key: str, label: str, status: str, reason: str) -> ProbeResult:
+    return ProbeResult(key=key, label=label, status=status, reason=reason, at=NOW - 90)  # type: ignore[arg-type]
+
+
+REPORT = HealthReport(
+    overall="down",
+    at=NOW - 90,
+    results=(
+        _probe("brain", "the AI brain", "down", BRAIN_NO_CREDIT),
+        _probe("docs", "the document store", "ok", "the document store answers"),
+        _probe("redis", "Redis", "ok", "Redis answers"),
+        _probe("google", "Google", "degraded", "a Google service is switched off"),
+        _probe("telegram", "Telegram", "ok", "Telegram answers"),
+        _probe("home", "the home bridge", "down", "no heartbeat for 14 minutes"),
+        _probe("web", "web search", "ok", "web search answers"),
+    ),
+)
 MOCK_HEALTH: dict[str, Any] = {
-    "overall": "down",
-    "spoken": "Four of five systems are fine. The home bridge is down.",
-    "checked_at": NOW - 90,
-    "systems": [
-        {
-            "key": "brain",
-            "name": "the AI brain",
-            "status": "ok",
-            "reason": "Answered in 820 ms",
-            "at": NOW - 90,
-        },
-        {"key": "redis", "name": "Redis", "status": "ok", "reason": "Ping 3 ms", "at": NOW - 90},
-        {
-            "key": "google",
-            "name": "Google",
-            "status": "degraded",
-            "reason": "Calendar answered slowly (2.4 s)",
-            "at": NOW - 90,
-        },
-        {
-            "key": "home",
-            "name": "the home bridge",
-            "status": "down",
-            "reason": "No heartbeat for 14 minutes",
-            "at": NOW - 90,
-        },
-        {
-            "key": "web",
-            "name": "web search",
-            "status": "ok",
-            "reason": "Search answered in 410 ms",
-            "at": NOW - 90,
-        },
-    ],
+    **view(REPORT),
+    "briefing": compose_briefing(REPORT, BOARD).to_json(),
 }
+
+
+def stream_body() -> str:
+    """POST /v1/health/run/stream: plan, one result per system, then done (health/api.py)."""
+    events: list[dict[str, Any]] = [
+        {
+            "type": "plan",
+            "systems": [{"key": r.key, "name": spoken_label(r)} for r in REPORT.results],
+        }
+    ]
+    events += [{"type": "result", **system_row(r)} for r in REPORT.results]
+    events.append({"type": "done", **MOCK_HEALTH})
+    return "".join(json.dumps(e) + "\n" for e in events)
+
 
 MOCK_CONNECTORS: dict[str, Any] = {
     "github": {"connected": True, "login": "shark2558"},
@@ -259,11 +342,20 @@ def _get_only(status: int, body: Any) -> Callable[[Route], None]:
     return handler
 
 
-def install_mocks(page: Page, *, vitals_503: bool = False) -> None:
+def _ndjson(route: Route) -> None:
+    route.fulfill(status=200, content_type="application/x-ndjson", body=stream_body())
+
+
+def install_mocks(
+    page: Page, *, vitals_503: bool = False, manual_unavailable: bool = False
+) -> None:
     vitals = (503, MOCK_VITALS_503) if vitals_503 else (200, MOCK_VITALS)
+    if manual_unavailable:
+        vitals = (200, _board(manual_unavailable=True).to_json())
     page.route("**/v1/vitals", _get_only(*vitals))
     page.route("**/v1/health", _get_only(200, MOCK_HEALTH))
     page.route("**/v1/health/run", _json(200, MOCK_HEALTH))
+    page.route("**/v1/health/run/stream", _ndjson)
     page.route("**/v1/connectors", _get_only(200, MOCK_CONNECTORS))
     page.route("**/v1/settings/brain-mode", _get_only(200, MOCK_BRAIN_MODE))
     page.route("**/v1/people/last", _get_only(200, MOCK_PEOPLE_LAST))

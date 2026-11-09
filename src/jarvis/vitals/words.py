@@ -57,8 +57,8 @@ WORDS: Mapping[str, tuple[str, str]] = {
 # (item id, its fixed reason) -> (impact, fix) when the cause is known in code (R5.1 I1)
 BY_REASON: Mapping[tuple[str, str], tuple[str, str]] = {
     ("brain_claude", NO_CREDIT): (
-        "Now: paid AI replies pause until the account is topped up; JARVIS answers with the free "
-        "brain where it can.",
+        "Now: paid AI replies are paused until the account is topped up; JARVIS answers with the "
+        "free brain where it can.",
         "Top up at console.anthropic.com → Plans & billing",
     ),
 }

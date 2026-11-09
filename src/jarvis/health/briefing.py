@@ -147,11 +147,24 @@ def _cap(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
+# Vitals writes its impact for the panel ("If this stops: ..."); said after a dash it becomes a
+# clause ("... is at 85% — if it stops, ...") (R5.1 I1).
+_LEADS = (
+    ("If this stops: ", "if it stops, "),
+    ("If this runs out: ", "if it runs out, "),
+    ("Now: ", ""),
+)
+
+
 def _plain(value: object, fallback: str) -> str:
     """A fixed line from Vitals (Part B's attributes), tidied; the fallback when absent."""
     if not isinstance(value, str):
         return fallback
     one = " ".join("".join(c if c >= " " else " " for c in value).split())[:TEXT_MAX]
+    for lead, said in _LEADS:
+        if one.startswith(lead):
+            one = said + one[len(lead) :]
+            break
     return one.rstrip(".") or fallback
 
 

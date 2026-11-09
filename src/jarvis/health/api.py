@@ -9,8 +9,9 @@ GET  /v1/health             last stored result {overall|null, spoken, checked_at
 POST /v1/health/run         run the probes now (no model call; a result under 30 s old is reused),
                             answers the same shape
 POST /v1/health/run/stream  {force?: bool} -> application/x-ndjson: plan, result per probe as it
-                            completes, done (the same shape + briefing); 404 where the service
-                            can't stream (the console then falls back to /run)
+                            completes, done (the same shape + briefing); a run in flight is
+                            joined, not repeated (429 when it has no room for another listener);
+                            404 where the service can't stream (the console falls back to /run)
 POST /v1/health/speak       audio/mpeg of the last result's fixed line; 409 before any check, 503
                             when the voice is unavailable
 POST /v1/health/remind      {key, when: 1h|evening|tomorrow, session_id?} -> {outcome, line}: a
@@ -34,9 +35,9 @@ from pydantic import BaseModel, ConfigDict, StrictBool
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.health.briefing import EMPTY, Briefing, compose_briefing
 from jarvis.health.models import HealthReport
-from jarvis.health.remind import RemindBody, RemindDeps, deps_from_app, set_reminder
+from jarvis.health.remind import RemindBody, RemindDeps, RemindMemo, deps_from_app, set_reminder
 from jarvis.health.report import view
-from jarvis.health.service import STREAM_FAILED
+from jarvis.health.service import STREAM_FAILED, CheckBusy
 from jarvis.logging import get_logger
 from jarvis.voice.ports import VoiceError, VoiceUnavailable
 
@@ -45,6 +46,7 @@ log = get_logger(__name__)
 RUN_PER_MINUTE = 10  # run + stream + speak + remind share one per-owner budget, inside the router
 NDJSON = "application/x-ndjson"
 NO_STREAM = "Streaming isn't available here."
+RUNNING = "A check is already running, Sir. Wait a moment."
 UNKNOWN_CONCERN = "That isn't one of the things the last check found."
 
 
@@ -105,6 +107,7 @@ def health_router(
     from `request.app.state` (`gateway`, `google`, `settings.user_timezone`)."""
     router = APIRouter(prefix="/v1/health", dependencies=list(dependencies))
     limiter = RateLimiter(RUN_PER_MINUTE)
+    memo = RemindMemo()
 
     def limited(uid: str = Depends(user)) -> str:
         allowed, retry_s = limiter.allow(uid)
@@ -129,7 +132,14 @@ def health_router(
         stream = getattr(svc, "check_stream", None)
         if stream is None:
             raise HTTPException(404, {"error": "not_available", "detail": NO_STREAM})
-        events: AsyncIterator[dict[str, Any]] = stream(uid, force=bool(body and body.force))
+        try:
+            events: AsyncIterator[dict[str, Any]] = stream(uid, force=bool(body and body.force))
+        except CheckBusy:
+            raise HTTPException(
+                429,
+                {"error": "check_running", "detail": RUNNING},
+                headers={"Retry-After": "5"},
+            ) from None
 
         async def lines() -> AsyncIterator[str]:
             try:
@@ -180,7 +190,9 @@ def health_router(
         if concern is None:
             raise HTTPException(422, {"error": "unknown_concern", "detail": UNKNOWN_CONCERN})
         deps = remind_deps(request) if remind_deps is not None else deps_from_app(request.app)
-        answer = await set_reminder(deps, uid, concern, body.when, session_id=body.session_id)
+        answer = await set_reminder(
+            deps, uid, concern, body.when, session_id=body.session_id, memo=memo
+        )
         return answer.to_json()
 
     return router

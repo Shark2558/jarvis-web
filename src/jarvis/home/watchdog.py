@@ -18,6 +18,10 @@ from R5.1, the shared systems-check job (`health.tick.HealthTickJob`, D4):
     that summary each run), and so does one the owner switched off or to feed-only; any other
     alert no channel took (a storm gap, nobody reachable) is tried again at the next run.
   - disarmed, `alert_when="armed_only"`: the R3 behaviour; the state changes, nobody is told.
+  - arming during an outage already told as idle: the urgent `home_offline` goes out once, so the
+    owner hears "camera alerts are off" (the armed alert is never blocked by an earlier idle
+    one). The kind told is kept in this process; an instance that never saw the idle alert
+    treats the outage as settled (it will not repeat an alert that may already have gone out).
   The heartbeat handler says "back" (`home_online`) when an outage alert had gone out. `last_seen`
   is read from the stored value and the in-process one (whichever is newer), so an instance
   restart can't fake an outage.
@@ -88,6 +92,7 @@ class OfflineJob:
         self._tz = ZoneInfo(tz)
         self._alert_when: AlertWhen = alert_when
         self.last: dict[str, int] = {}
+        self._told_idle: set[str] = set()  # owners whose current outage was told as idle only
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
         counts = {"homes": 0, "offline": 0, "alerts": 0, FAILED_COUNT: 0}
@@ -107,16 +112,26 @@ class OfflineJob:
         counts["homes"] += 1
         seen = status.last_seen_at
         if seen is None or self._clock() - seen <= self._after:
+            self._told_idle.discard(uid)  # the outage is over
             return
         counts["offline"] += 1
-        if status.state == "offline" and status.outage_alerted:
+        settled = status.state == "offline" and status.outage_alerted
+        if settled and uid not in self._told_idle:
             return  # once per outage
         armed = False
         if self._arm is not None:
             armed = (await self._arm.view(uid)).armed
+        if settled and not armed:
+            return  # told as idle, still disarmed
         told = False
         if self._notifier is not None and (armed or self._alert_when == "always"):
             told = await self._tell(self._notifier, uid, seen, armed=armed, counts=counts)
+        if told and armed:
+            self._told_idle.discard(uid)
+        elif told:
+            self._told_idle.add(uid)
+        if settled:
+            return  # an idle alert had gone out; the armed one now has too (or is retried)
         if status.state != "offline" or told:
             await self._store.mark_offline(uid, alerted=told)
 

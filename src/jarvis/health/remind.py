@@ -6,15 +6,25 @@ Telegram chat won't reach you"), the time is one of three fixed choices in the o
 `reminder_add` runs through `Gateway.execute` like any other call (policy, audit, approval cards
 all apply), owner-trusted: the owner pressed the button, and every word is JARVIS's own.
 
-Scope: `<uid>:<session_id>` when the console sends its open conversation, so a card the owner's
-"Ask first" setting raises can be approved in Approvals; with no conversation the scope is
-`<uid>:console`, where no card could ever be approved, so such a card is withdrawn at once and
-the owner is told to ask in the chat instead. Google not connected -> refused, no call. Gateway
-and tool errors are never repeated: every answer line is fixed text.
+Trust (R5.1 review M2): the words are JARVIS's own only where the code fixed them: the seven probe
+keys, and the automatic Vitals items listed in `VITALS_WORDS` (by id; a quota or allowance by its
+prefix). A Vitals item the owner typed (or a model typed for them) carries a free-text label, so
+its call runs in an UNTRUSTED context and the gateway asks for approval; it is never stored as the
+owner's own words.
+
+Scope: `<uid>:<session_id>` when the console sends a conversation the owner really has (looked up
+in the session store), so a card the owner's "Ask first" setting raises can be approved in
+Approvals; with no conversation, the literal `console`, someone else's id or no way to look it
+up, the scope is `<uid>:console`, where no card could ever be approved, so such a card is
+withdrawn at once and the owner is told to ask in the chat instead. The same reminder (owner, key,
+time choice) asked again inside ten minutes answers "Already set" with no second call. Google not
+connected -> refused, no call. Gateway and tool errors are never repeated: every answer line is
+fixed text.
 """
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -49,6 +59,8 @@ GOOGLE_UNREADABLE = "Google can't be checked just now, Sir. Try again in a momen
 UNAVAILABLE = "Reminders aren't available right now, Sir."
 NEEDS_OK = "Approve it in Approvals, Sir."
 ASK_IN_CHAT = "Reminders ask first in your settings, Sir. Ask me in the chat and I'll set it."
+ALREADY = "Already set, Sir."
+DEDUP_S = 600.0
 DENIED = "That isn't allowed right now, Sir."
 FAILED = "That reminder couldn't be set, Sir."
 
@@ -68,6 +80,12 @@ class GatewayLike(Protocol):
     def gate(self) -> Any: ...  # `.cancel(approval_id)`
 
 
+class SessionLookup(Protocol):
+    """The session store's `get`: the stored conversation (with `.user_id`) or None."""
+
+    async def get(self, session_id: str) -> Any: ...
+
+
 class GoogleStatus(Protocol):
     async def status(self, uid: str) -> Mapping[str, Any]: ...
 
@@ -78,6 +96,7 @@ class RemindDeps:
     google: GoogleStatus | None
     tz: str = DEFAULT_TZ
     now: Callable[[], datetime] | None = field(default=None)
+    sessions: SessionLookup | None = None
 
 
 @dataclass(frozen=True)
@@ -95,7 +114,10 @@ def deps_from_app(app: FastAPI) -> RemindDeps:
     settings = getattr(st, "settings", None)
     tz = getattr(settings, "user_timezone", DEFAULT_TZ) or DEFAULT_TZ
     return RemindDeps(
-        gateway=getattr(st, "gateway", None), google=getattr(st, "google", None), tz=str(tz)
+        gateway=getattr(st, "gateway", None),
+        google=getattr(st, "google", None),
+        tz=str(tz),
+        sessions=getattr(st, "store", None),
     )
 
 
@@ -127,8 +149,77 @@ def when_at(choice: When, now: datetime) -> tuple[datetime, str]:
     return at, f"{day}, {at:%H:%M}"
 
 
+# The automatic Vitals items, by id: (what the reminder calls it, what stops). Code-side words.
+VITALS_WORDS: Mapping[str, tuple[str, str]] = {
+    "brain_claude": ("the paid AI brain", "paid AI replies stop"),
+    "brain_gemini": ("the free AI brain", "the free AI brain stops answering"),
+    "google_link": ("the Google link", "Gmail, Calendar, Drive and Photos stop working"),
+    "telegram_bot": ("the Telegram bot", "alerts and Telegram chat won't reach you"),
+    "web_credits": ("the web search credits", "web search stops until they reset"),
+    "github_token": ("the GitHub token", "JARVIS can't read your GitHub"),
+    "home_link": ("the home link", "the home camera, devices and alarm can't reach JARVIS"),
+    "ai_spend": ("the AI spend limit", "paid replies pause"),
+}
+VITALS_PREFIXES: Mapping[str, tuple[str, str]] = {
+    "quota_": ("a Vitals quota", "that feature stops until it resets"),
+    "allowance_": ("a free allowance", "voice costs rupees once it runs out"),
+}
+VITALS_KEY = "vitals."
+
+
+def _fixed_vitals(pid: str) -> tuple[str, str] | None:
+    if pid in VITALS_WORDS:
+        return VITALS_WORDS[pid]
+    return next((w for p, w in VITALS_PREFIXES.items() if pid.startswith(p)), None)
+
+
 def reminder_text(concern: Concern) -> str:
+    """The reminder's words: fixed ones for an automatic Vitals item (never its label)."""
+    if concern.key.startswith(VITALS_KEY):
+        fixed = _fixed_vitals(concern.key[len(VITALS_KEY) :])
+        if fixed is not None:
+            return f"Fix {fixed[0]}: {fixed[1]}"[:TEXT_MAX]
     return f"Fix {concern.label}: {concern.impact}"[:TEXT_MAX]
+
+
+def is_fixed_words(concern: Concern) -> bool:
+    """True when every word of the reminder is JARVIS's own (a probe, or an automatic item)."""
+    if not concern.key.startswith(VITALS_KEY):
+        return True
+    return _fixed_vitals(concern.key[len(VITALS_KEY) :]) is not None
+
+
+class RemindMemo:
+    """Which (owner, key, time choice) reminders were set in the last ten minutes. In memory:
+    a repeat click or request never makes a second reminder."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._at: dict[tuple[str, str, str], float] = {}
+
+    def claim(self, uid: str, key: str, when: str) -> bool:
+        """True when this is new (now taken); False when claimed under ten minutes ago."""
+        now = self._clock()
+        self._at = {k: t for k, t in self._at.items() if now - t < DEDUP_S}
+        if (uid, key, when) in self._at:
+            return False
+        self._at[(uid, key, when)] = now
+        return True
+
+    def release(self, uid: str, key: str, when: str) -> None:
+        self._at.pop((uid, key, when), None)
+
+
+async def _own_session(deps: RemindDeps, uid: str, session_id: str | None) -> str | None:
+    """The id when it is one of this owner's conversations; else None (no conversation)."""
+    if session_id is None or session_id == CONSOLE_SESSION or deps.sessions is None:
+        return None
+    try:
+        found = await deps.sessions.get(session_id)
+    except Exception as exc:  # noqa: BLE001 - unreadable: treat as no conversation
+        log.warning("health remind: session unreadable", extra={"error": type(exc).__name__})
+        return None
+    return session_id if found is not None and getattr(found, "user_id", None) == uid else None
 
 
 async def _google_ready(google: GoogleStatus | None, uid: str) -> Answer | None:
@@ -148,6 +239,23 @@ def _stopped(result: Any) -> bool:
 
 
 async def set_reminder(
+    deps: RemindDeps,
+    uid: str,
+    concern: Concern,
+    choice: When,
+    *,
+    session_id: str | None,
+    memo: RemindMemo | None = None,
+) -> Answer:
+    if memo is not None and not memo.claim(uid, concern.key, choice):
+        return Answer("executed", ALREADY)
+    answer = await _set(deps, uid, concern, choice, session_id=session_id)
+    if memo is not None and answer.outcome == "refused":
+        memo.release(uid, concern.key, choice)  # nothing was set: it may be tried again
+    return answer
+
+
+async def _set(
     deps: RemindDeps, uid: str, concern: Concern, choice: When, *, session_id: str | None
 ) -> Answer:
     if (refused := await _google_ready(deps.google, uid)) is not None:
@@ -163,10 +271,12 @@ async def set_reminder(
         name=TOOL,
         arguments={"text": reminder_text(concern), "when": at.isoformat()},
     )
-    scope = f"{uid}:{session_id or CONSOLE_SESSION}"
-    with turn_budget(), context_trust(untrusted=False, spoken=False, owner_text=None):
+    session = await _own_session(deps, uid, session_id)
+    scope = f"{uid}:{session or CONSOLE_SESSION}"
+    untrusted = not is_fixed_words(concern)  # free text in the label: the gateway must ask
+    with turn_budget(), context_trust(untrusted=untrusted, spoken=False, owner_text=None):
         res = await gateway.execute(call, scope=scope)
-    return await _answer(gateway, res, said, conversation=session_id is not None)
+    return await _answer(gateway, res, said, conversation=session is not None)
 
 
 async def _answer(
@@ -198,6 +308,7 @@ __all__ = [
     "Answer",
     "RemindBody",
     "RemindDeps",
+    "RemindMemo",
     "deps_from_app",
     "reminder_text",
     "set_reminder",

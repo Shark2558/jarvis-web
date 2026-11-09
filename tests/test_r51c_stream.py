@@ -19,7 +19,13 @@ from jarvis.health.api import RUN_PER_MINUTE, health_router
 from jarvis.health.briefing import VITALS_UNREADABLE
 from jarvis.health.models import ProbeOutcome
 from jarvis.health.probes import Probe
-from jarvis.health.service import CHECK_COOLDOWN_S, HealthService
+from jarvis.health.service import (
+    CHECK_COOLDOWN_S,
+    CHECK_DEADLINE_S,
+    MAX_WATCHERS,
+    CheckBusy,
+    HealthService,
+)
 from jarvis.health.store import HealthStore
 from jarvis.storage.docs import MemoryDocs
 
@@ -53,7 +59,7 @@ async def collect(svc: HealthService, **kw: Any) -> list[dict[str, Any]]:
     return [e async for e in svc.check_stream(UID, **kw)]
 
 
-# ---- the service ---------------------------------------------------------------------------------
+# ---- the service --------------------------------------------------------------------------------
 async def test_events_come_plan_then_each_result_as_it_completes_then_done() -> None:
     svc = service(
         timed("google", "Google", 0.05),
@@ -182,7 +188,7 @@ async def test_a_failure_inside_the_check_ends_the_stream_with_an_error_event() 
     assert "sk-live" not in json.dumps(events)
 
 
-# ---- the routes ----------------------------------------------------------------------------------
+# ---- the routes ---------------------------------------------------------------------------------
 def app(svc: Any, *, deny: bool = False) -> FastAPI:
     def auth() -> None:
         if deny:
@@ -290,3 +296,100 @@ async def test_a_failing_vitals_board_never_fails_the_route(path: str) -> None:
 
 def test_the_cooldown_is_unchanged() -> None:
     assert CHECK_COOLDOWN_S == 30.0
+
+
+# ---- review fixes: hangs, partial failures, coalescing, the deadline ----------------------------
+async def test_a_probe_that_hangs_past_its_timeout_is_down_and_done_still_arrives() -> None:
+    async def hangs(_uid: str) -> ProbeOutcome:
+        await asyncio.sleep(30)
+        return ProbeOutcome("ok", "never")
+
+    svc = service(
+        Probe(key="redis", label="Redis", check=hangs, timeout_s=0.05),
+        timed("google", "Google", 0.0),
+    )
+    events = await collect(svc, force=True)
+    assert [e["type"] for e in events][-1] == "done"
+    redis = next(e for e in events if e["type"] == "result" and e["key"] == "redis")
+    assert redis["status"] == "down" and redis["reason"] == "did not answer in time"
+
+
+async def test_an_error_after_partial_results_ends_with_the_error_event_and_no_done() -> None:
+    svc = service(timed("google", "Google", 0.0), timed("redis", "Redis", 0.0))
+
+    async def broken(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError("alert store exploded sk-live-9")
+
+    svc._deliver = broken  # type: ignore[method-assign]  # noqa: SLF001
+    events = await collect(svc, force=True)
+    assert [e["type"] for e in events] == ["plan", "result", "result", "error"]
+    assert events[-1] == {"type": "error", "detail": "The check did not complete."}
+    assert "sk-live" not in json.dumps(events)
+
+
+async def test_a_forced_stream_while_one_runs_attaches_to_it_instead_of_queueing() -> None:
+    n = {"runs": 0}
+
+    async def counted(_uid: str) -> ProbeOutcome:
+        n["runs"] += 1
+        await asyncio.sleep(0.05)
+        return ProbeOutcome("ok", "fine")
+
+    svc = service(Probe(key="redis", label="Redis", check=counted))
+    first = asyncio.create_task(collect(svc, force=True))
+    await asyncio.sleep(0.02)  # the first run is in flight
+    second = await collect(svc, force=True)  # attaches: replays plan, then the live events
+    one = await first
+    assert n["runs"] == 1
+    assert [e["type"] for e in second] == ["plan", "result", "done"]
+    assert second == one
+    again = await collect(svc, force=True)  # the run is over: a new forced run starts
+    assert n["runs"] == 2 and again[-1]["type"] == "done"
+
+
+async def test_other_owners_are_never_coalesced() -> None:
+    n = {"runs": 0}
+
+    async def counted(_uid: str) -> ProbeOutcome:
+        n["runs"] += 1
+        await asyncio.sleep(0.03)
+        return ProbeOutcome("ok", "fine")
+
+    svc = service(Probe(key="redis", label="Redis", check=counted))
+
+    async def run(uid: str) -> list[dict[str, Any]]:
+        return [e async for e in svc.check_stream(uid, force=True)]
+
+    a, b = await asyncio.gather(run("u_a"), run("u_b"))
+    assert n["runs"] == 2 and a[-1]["type"] == b[-1]["type"] == "done"
+
+
+async def test_too_many_waiting_requests_get_a_busy_answer_and_a_429_on_the_route() -> None:
+    svc = service(timed("redis", "Redis", 0.15))
+    held = [svc.check_stream(UID, force=True) for _ in range(MAX_WATCHERS)]
+    with pytest.raises(CheckBusy):
+        svc.check_stream(UID, force=True)
+    r = await call(app(svc), "POST", "/v1/health/run/stream", {"force": True})
+    assert r.status_code == 429
+    assert r.json()["detail"]["detail"] == "A check is already running, Sir. Wait a moment."
+    for agen in held:
+        assert [e async for e in agen][-1]["type"] == "done"
+
+
+async def test_a_total_deadline_ends_unfinished_probes_as_down_and_done_still_arrives() -> None:
+    svc = service(
+        Probe(key="redis", label="Redis", check=timed("x", "x", 30).check, timeout_s=60.0),
+        timed("google", "Google", 0.0),
+    )
+    svc._deadline_s = 0.1  # noqa: SLF001 - the test does not wait the real 45 s
+    events = await collect(svc, force=True)
+    assert [e["type"] for e in events][-1] == "done"
+    redis = next(e for e in events if e["type"] == "result" and e["key"] == "redis")
+    assert redis["status"] == "down" and redis["reason"] == "did not answer in time"
+    last = await svc.last(UID)
+    assert last is not None and last.overall == "down"  # stored, alerts still go through
+    assert svc._locks[UID].locked() is False  # noqa: SLF001
+
+
+def test_the_total_deadline_is_forty_five_seconds() -> None:
+    assert CHECK_DEADLINE_S == 45.0

@@ -17,6 +17,12 @@ and the report is marked `persisted=False`.
 `view` gives it, plus the briefing). The check runs in a task of its own, so a client that goes
 away mid-stream still gets the result stored and the alerts sent. `briefing` adds Vitals (an
 optional dependency): a board that can't be read in `VITALS_TIMEOUT_S` never fails anything.
+
+Stream runs are coalesced per owner (security review M3): a stream asked for while one is in
+flight attaches to it (the events so far, then the live ones) instead of queueing another full
+check; at most `MAX_WATCHERS` listeners per run, then `CheckBusy` (the route answers 429). A run
+has a total deadline of `CHECK_DEADLINE_S`: a probe still unfinished then ends as `down`, "did
+not answer in time", and `done` still arrives.
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ from typing import Any, Protocol
 from jarvis.health.briefing import EMPTY, Briefing, compose_briefing
 from jarvis.health.changes import Outgoing, Plan, plan
 from jarvis.health.models import LABELS, HealthReport, HealthState, ProbeResult, Status
-from jarvis.health.probes import Probe, crashed_result, run_probe
+from jarvis.health.probes import Probe, crashed_result, run_probe, timed_out_result
 from jarvis.health.report import compose_line, rollup, system_row, view
 from jarvis.health.store import HealthStore
 from jarvis.logging import get_logger
@@ -40,12 +46,48 @@ from jarvis.voice.service import SpeakRequest
 log = get_logger(__name__)
 
 CHECK_COOLDOWN_S = 30.0
+CHECK_DEADLINE_S = 45.0
+MAX_WATCHERS = 4  # one run, this many listeners at most
 VITALS_TIMEOUT_S = 5.0
 SKIPPED = "skipped"
 NOT_SET_UP = "not set up"
 STREAM_FAILED = "The check did not complete."
 Event = dict[str, Any]
 Emit = Callable[[Event], None]
+
+
+class CheckBusy(Exception):  # noqa: N818 - read as a state, not a failure
+    """A check is already running for this owner and no more listeners can join it."""
+
+
+class _Run:
+    """One streamed check in flight: its events so far and every listener's queue."""
+
+    def __init__(self) -> None:
+        self.history: list[Event] = []
+        self.watchers: list[asyncio.Queue[Event | None]] = []
+        self.over = False
+
+    def join(self) -> asyncio.Queue[Event | None]:
+        if len(self.watchers) >= MAX_WATCHERS:
+            raise CheckBusy
+        q: asyncio.Queue[Event | None] = asyncio.Queue()
+        for event in self.history:
+            q.put_nowait(event)
+        if self.over:
+            q.put_nowait(None)
+        self.watchers.append(q)
+        return q
+
+    def put(self, event: Event) -> None:
+        self.history.append(event)
+        for q in self.watchers:
+            q.put_nowait(event)
+
+    def finish(self) -> None:
+        self.over = True
+        for q in self.watchers:
+            q.put_nowait(None)
 
 
 class Speaker(Protocol):
@@ -96,6 +138,8 @@ class HealthService:
         self._voice = voice
         self._vitals = vitals
         self._vitals_timeout_s = VITALS_TIMEOUT_S
+        self._deadline_s = CHECK_DEADLINE_S
+        self._runs: dict[str, _Run] = {}
         self._clock = clock
         self._locks: dict[str, asyncio.Lock] = {}
         self._memory: dict[str, HealthState] = {}
@@ -106,26 +150,39 @@ class HealthService:
         the store; a fresh-enough stored report is returned unless `force`."""
         return await self._checked(uid, force=force, emit=None)
 
-    async def check_stream(self, uid: str, *, force: bool = False) -> AsyncIterator[Event]:
-        """The same check as events (see the module docstring). Never raises: a failure ends the
-        stream with `{"type": "error", "detail": STREAM_FAILED}` (fixed words)."""
-        queue: asyncio.Queue[Event | None] = asyncio.Queue()
-        # its own task: a client that goes away mid-stream never stops the save or the alerts
-        task = asyncio.create_task(self._streamed(uid, force, queue))
-        self._background.add(task)
-        task.add_done_callback(self._background.discard)
+    def check_stream(self, uid: str, *, force: bool = False) -> AsyncIterator[Event]:
+        """The same check as events (see the module docstring). A run already in flight for this
+        owner is joined, not repeated; `CheckBusy` when it has no room for another listener.
+        Never raises otherwise: a failure ends the stream with
+        `{"type": "error", "detail": STREAM_FAILED}` (fixed words)."""
+        run = self._runs.get(uid)
+        if run is None:
+            run = self._runs[uid] = _Run()
+            queue = run.join()
+            # its own task: a client that goes away mid-stream never stops the save or the alerts
+            task = asyncio.create_task(self._streamed(uid, force, run))
+            self._background.add(task)
+            task.add_done_callback(self._background.discard)
+        else:
+            queue = run.join()
+        return self._follow(queue)
+
+    @staticmethod
+    async def _follow(queue: asyncio.Queue[Event | None]) -> AsyncIterator[Event]:
         while (event := await queue.get()) is not None:
             yield event
 
-    async def _streamed(self, uid: str, force: bool, queue: asyncio.Queue[Event | None]) -> None:
+    async def _streamed(self, uid: str, force: bool, run: _Run) -> None:
         try:
-            report = await self._checked(uid, force=force, emit=queue.put_nowait)
-            queue.put_nowait(done_event(report, await self.briefing(uid, report)))
+            report = await self._checked(uid, force=force, emit=run.put)
+            run.put(done_event(report, await self.briefing(uid, report)))
         except Exception as exc:  # noqa: BLE001 - the stream ends in fixed words
             log.error("health stream failed", extra={"error": type(exc).__name__})
-            queue.put_nowait({"type": "error", "detail": STREAM_FAILED})
+            run.put({"type": "error", "detail": STREAM_FAILED})
         finally:
-            queue.put_nowait(None)  # the end of the stream
+            if self._runs.get(uid) is run:
+                del self._runs[uid]
+            run.finish()  # the end of the stream
 
     async def _checked(self, uid: str, *, force: bool, emit: Emit | None) -> HealthReport:
         lock = self._locks.setdefault(uid, asyncio.Lock())
@@ -195,7 +252,17 @@ class HealthService:
                 emit(result_event(probe, out, self._clock()))
             return out
 
-        ran = await asyncio.gather(*(one(p) for p in self._probes))
+        tasks = {asyncio.create_task(one(p)): p for p in self._probes}
+        finished, pending = await asyncio.wait(tasks, timeout=self._deadline_s)
+        late: dict[asyncio.Task[ProbeResult | None], ProbeResult] = {}
+        for task in pending:  # the total deadline: down, in fixed words
+            task.cancel()
+            late[task] = timed_out_result(tasks[task], clock=self._clock)
+            if emit is not None:
+                emit(result_event(tasks[task], late[task], self._clock()))
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        ran = [late[t] if t in late else t.result() for t in tasks]
         done = tuple(r for r in ran if r is not None)
         return HealthReport(overall=rollup(done), results=done, at=self._clock())
 
@@ -248,6 +315,9 @@ class HealthService:
 
 __all__ = [
     "CHECK_COOLDOWN_S",
+    "CHECK_DEADLINE_S",
+    "MAX_WATCHERS",
+    "CheckBusy",
     "STREAM_FAILED",
     "VITALS_TIMEOUT_S",
     "HealthService",

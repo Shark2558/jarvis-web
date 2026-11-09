@@ -246,7 +246,7 @@ def _spoken(parts: Sequence[_Part], close: str) -> str:
 
     def text() -> str:
         more = [f"And {dropped} more on screen."] if dropped else []
-        return " ".join([*(p.text for p in kept), *more, close])
+        return " ".join([*(p.text for p in kept), *more, *([close] if close else [])])
 
     while len(text()) > MAX_SPOKEN:
         droppable = [i for i, p in enumerate(kept) if p.rank > 0]
@@ -284,8 +284,9 @@ def compose_briefing(
     elif vitals_unreadable:
         spend = VITALS_UNREADABLE
         parts.append(_Part(VITALS_UNREADABLE, 0))
-    close = REMIND_CLOSE if concerns else NOMINAL_CLOSE
-    lines = (*(p.text for p in parts), close)
+    # nothing was checked and nothing is wrong: the one line above says it all (no "nominal")
+    close = REMIND_CLOSE if concerns else NOMINAL_CLOSE if results else ""
+    lines = (*(p.text for p in parts), *([close] if close else []))
     return Briefing(
         spoken=_spoken(parts, close), lines=lines, concerns=_ordered(concerns), spend=spend
     )

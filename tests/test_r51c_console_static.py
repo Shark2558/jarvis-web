@@ -10,6 +10,7 @@ import pytest
 
 STATIC = Path(__file__).resolve().parents[1] / "src/jarvis/api/static"
 MODAL, CARD, CSS = "console-systems-modal.js", "console-systems.js", "console-systems.css"
+WORDS = "console-systems-voice.js"
 VOICE = "console-voice-commands.js"
 SINKS = (
     "innerHTML",
@@ -30,22 +31,23 @@ def read(name: str) -> str:
 
 def test_sizes_stay_within_the_plan() -> None:
     assert len(read(MODAL).splitlines()) <= 400
+    assert len(read(WORDS).splitlines()) <= 400
     assert len(read(CSS).splitlines()) <= 300
     assert len(read(CARD).splitlines()) <= 800
     assert len(read(VOICE).splitlines()) <= 800
 
 
-@pytest.mark.parametrize("name", [MODAL, CARD, CSS])
+@pytest.mark.parametrize("name", [MODAL, WORDS, CARD, CSS])
 def test_new_files_are_ascii(name: str) -> None:
     assert read(name).isascii()
 
 
-@pytest.mark.parametrize("name", [MODAL, CARD])
+@pytest.mark.parametrize("name", [MODAL, WORDS, CARD])
 def test_scripts_write_text_never_markup(name: str) -> None:
     js = read(name)
     assert [s for s in SINKS if s in js] == []
     assert not re.search(r"\.(?:href|src|action)\s*=(?!=)", js)
-    assert "textContent" in js
+    assert "textContent" in js or name == WORDS  # the voice file writes nothing to the page
     assert "<script" not in js and "import(" not in js
 
 
@@ -62,9 +64,8 @@ def test_the_pop_up_uses_the_console_transport_and_its_own_routes() -> None:
 
 
 def test_the_pop_up_never_speaks_when_told_never_and_respects_motion() -> None:
-    js = read(MODAL)
-    assert "dev.speak === 'never'" in js
-    assert "prefers-reduced-motion" in js
+    assert "dev.speak === 'never'" in read(WORDS)
+    assert "prefers-reduced-motion" in read(MODAL)
     css = read(CSS)
     assert 'html[data-motion="calm"]' in css and 'html[data-motion="off"]' in css
 
@@ -88,7 +89,8 @@ def test_one_local_voice_command_opens_the_pop_up_and_keeps_the_router_rules() -
     block = block[: block.index("});") + 3]
     assert "jarvis:systems-check" in block and "via: 'voice'" in block
     assert "JarvisSystemsCheck" in block and ".matches(" in block
-    assert "'speaking'" not in block  # not while JARVIS speaks (his closing line names it)
+    assert "'speaking'" not in block  # not while JARVIS speaks
+    assert ".canHear(" in block  # and not while the pop-up speaks, or just after (its own echo)
     assert "source !== 'voice'" in js  # typed text never reaches the router
     for bad in ("innerHTML", "fetch(", "https://", "/approve"):
         assert bad not in js

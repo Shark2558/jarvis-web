@@ -28,6 +28,14 @@ drop, such as a storm gap or nobody reachable, is tried again on the next run. T
 note is the existing `home_online` from the heartbeat handler. It goes out only when an outage
 alert had gone out.
 
+Arming during an outage that was already told as idle (review fix 9): the urgent `home_offline` goes
+out once on the next run, so "camera alerts are off" is never lost behind the earlier idle alert.
+Armed then disarmed sends nothing more. The kind told is remembered inside the `OfflineJob`
+instance (the stored flag is only a boolean and `home/store.py` is not part C's). Known limit: an
+instance that never saw the idle alert (a restart, another Cloud Run instance) treats the outage as
+settled, so it does not repeat an alert that may already have gone out. If that matters, give
+`HomeStore.mark_offline` a `kind` and read it back in `HomeStatus`.
+
 ## 2. D4: one shared systems-check job on the tick AND the 5-minute watchdog
 
 The tick and the watchdog must share the SAME `HealthTickJob` instance: its per-owner 15-minute gate
@@ -119,7 +127,14 @@ dependencies=[Depends(require_auth)])` call:
 - `POST /v1/health/run/stream` takes `{force?: bool}` and answers `application/x-ndjson`: a `plan`
   event, then one `result` event per system as it completes (`status: "skipped"` for a system that is
   not set up), then `done` (the `/run` shape plus `briefing`). If the check fails, the last event is
-  `{"type":"error","detail":"The check did not complete."}`.
+  `{"type":"error","detail":"The check did not complete."}`. Runs are coalesced per owner: a
+  stream asked for while one is in flight attaches to it (the events so far, then the live ones),
+  so a forced pop-up can never queue a second full check. A run takes at most 4 listeners; the
+  next gets 429 `check_running` ("A check is already running, Sir. Wait a moment."). Every run has
+  a 45 s total deadline (`CHECK_DEADLINE_S`): a probe still unfinished ends as down, "did not
+  answer in time", and `done` still arrives. `LiveHealth.check_stream` must stay a plain method that
+  returns the iterator (not an `async def`): `HealthService.check_stream` raises `CheckBusy`
+  synchronously, and the route turns that into the 429.
 - `POST /v1/health/remind` takes `{key, when: "1h"|"evening"|"tomorrow", session_id?}` and answers
   `{outcome: executed|awaiting_confirmation|refused, line}`. It reads `app.state.gateway`,
   `app.state.google` and `app.state.settings.user_timezone` live, so no wiring is needed. A key that
@@ -128,14 +143,22 @@ dependencies=[Depends(require_auth)])` call:
   `require_auth` brings the cookie CSRF header rule (`X-Requested-With: JARVIS`) to every POST.
 
 Scope for the reminder: there is no existing "console scope" in the code. The pop-up sends the
-console's open conversation (`JarvisApprovals.session()`), and the route uses `<uid>:<session_id>`,
-so a card raised by the owner's "Ask first" setting can be approved in Approvals. Without a
-conversation the scope is `<uid>:console`. No card in that scope could ever be approved
+console's open conversation (`JarvisApprovals.session()`), and the route uses `<uid>:<session_id>`
+only when the id is one of the owner's stored conversations (`app.state.store.get(id).user_id ==
+uid`; the literal `console`, another owner's id, an unknown id, or no `app.state.store` all count
+as no conversation), so a card raised by the owner's "Ask first" setting can be approved in
+Approvals. Without a conversation the scope is `<uid>:console`. No card in that scope could ever be approved
 (`Brain.approve` needs the session), so the route withdraws such a card at once
 (`gate.cancel(id)`) and answers "Reminders ask first in your settings, Sir. Ask me in the chat and
-I'll set it." The call runs inside `turn_budget()` and `context_trust(untrusted=False,
-spoken=False, owner_text=None)`. The text is JARVIS's fixed label and consequence, for example
-"Fix Telegram: alerts and Telegram chat won't reach you".
+I'll set it." The call runs inside `turn_budget()` and `context_trust(...)`. The text is JARVIS's
+fixed label and consequence, for example "Fix Telegram: alerts and Telegram chat won't reach you".
+Trust (review fix 2): owner-trusted (`untrusted=False`) only when every word is fixed in code: the
+probe keys, and the automatic Vitals ids in `remind.VITALS_WORDS` (`brain_claude`, `brain_gemini`,
+`google_link`, `telegram_bot`, `web_credits`, `github_token`, `home_link`, `ai_spend`, `quota_*`,
+`allowance_*`). Any other `vitals.<id>` item (owner-typed, label is free text) runs with
+`untrusted=True`, so the gateway asks for approval and the event is never stored as the owner's own
+words. The same reminder (owner, key, time choice) inside 10 minutes answers "Already set, Sir."
+with no second tool call (in-memory, per process; a refused attempt does not count).
 
 ## 7. `spoken` vs the briefing (decision)
 
@@ -150,13 +173,16 @@ spoken=False, owner_text=None)`. The text is JARVIS's fixed label and consequenc
 ## 8. Console (`console.html`, `api/console.py`, `console.js`)
 
 - `api/console.py` `APP_ASSETS`: add
-  `"console-systems-modal.js": _JS,  # R5.1 C: the systems-check pop-up (ticks, briefing, reminder)`
-  and `"console-systems.css": "text/css",  # R5.1 C: Systems card + pop-up`. Also update the
+  `"console-systems-modal.js": _JS,  # R5.1 C: the systems-check pop-up (ticks, briefing, reminder)`,
+  `"console-systems-voice.js": _JS,  # R5.1 C: its phrases, speech and echo guard` and
+  `"console-systems.css": "text/css",  # R5.1 C: Systems card + pop-up`. Also update the
   lists in `tests/test_console_assets.py` if they enumerate assets.
 - `console.html`: add `<link rel="stylesheet" href="/static/console-systems.css">` after the last
   stylesheet link (after Part A's and B's new ones). Add
+  `<script src="/static/console-systems-voice.js" defer></script>` and
   `<script src="/static/console-systems-modal.js" defer></script>` next to
-  `console-systems.js`. The order doesn't matter: both look each other up when they are used.
+  `console-systems.js`. The order doesn't matter: they look each other up when they are used
+  (without the voice file the pop-up still works, silently, and `matches()` never matches).
 - D10: remove `fixed-size` from `<section class="panel card fixed-size" id="p-integrations" ...>` so
   the Integrations panel (with the Systems card) can be resized both ways.
 - The composer hook (typed "run a systems check" opens the pop-up with no AI call). In
@@ -165,18 +191,27 @@ spoken=False, owner_text=None)`. The text is JARVIS's fixed label and consequenc
 
 ```js
     const SC = window.JarvisSystemsCheck; // R5.1 D6: typed or dictated "run a systems check" -> the pop-up, no AI call
-    if (SC && SC.matches(t)) {
+    if (SC && SC.matches(t, { typed: true })) { // typed mode: the WHOLE message must be the phrase
       delete input.dataset.channel; input.value = ''; autosize(); syncSend();
       SC.open({ via: 'typed', opener: $('send') }); return;
     }
 ```
 
-  `matches()` accepts only "run a systems check", "run a system check", "run (a) system(s) check",
-  "systems check", "system check", "system status", "systems status" and "run diagnostics", with an
-  optional "jarvis", "hey jarvis" or "ok jarvis" in front. It does not accept "check my systems
-  design doc".
+  `matches(t, {typed: true})` accepts only a message that is wholly "run a systems check", "run a
+  system check", "run (a) system(s) check", "systems check", "system check", "system status",
+  "systems status" or "run diagnostics", with an optional "jarvis," or "hey jarvis" in front and
+  only ending punctuation (. ! ?) after. It does not accept "check my systems design doc", "system
+  status of the order" or anything with extra words. Do NOT call `matches(t)` without the option on
+  typed text: that is the voice matcher (see below).
 - The voice command is already in `console-voice-commands.js` (`systems.check`, registered after
-  the built-ins; not offered while JARVIS is speaking). Optional: add "run a systems check" and
+  the built-ins; not offered while JARVIS is speaking). Voice keeps the full-utterance matcher, but
+  bare "system status" / "systems status" needs "Jarvis" in front (it is too common in talk). The
+  command is also refused by `JarvisSystemsCheck.canHear()` while the pop-up speaks, for 2 s after
+  any speech of its own ends, and for words that are mostly what it just said (the same
+  `JarvisBarge.isEcho` the mic loop uses). The real speaker fires its `chunk` event for every
+  line the pop-up says, which the mic loop already records as JARVIS's own words, so nothing more
+  is wired. The closing line, "Closing this window, Sir. Whenever you'd like a fresh check, just
+  ask and I'll update the status.", contains no trigger phrase. Optional: add "run a systems check" and
   "system status" to `voice/commands.py` `COMMAND_HINTS` as speech hints. `tests/test_r5_seams.py`
   ties the hints to the PHRASES table, so add them to the table as well, or leave them out.
 - `scripts/ui_snapshots.py`: the card's "Run check" button now opens the pop-up. Before the

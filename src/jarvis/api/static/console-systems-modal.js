@@ -8,31 +8,31 @@
 // 10 s" once results are in and the speech has ended; any pointer, key or focus inside the dialog
 // cancels it ("Kept open"). Falls back to POST /v1/health/run when the stream answers 404 / 405
 // or the browser can't stream. Reminders: POST /v1/health/remind {key, when, session_id?}.
-//   window.JarvisSystemsCheck = { open({via, opener, closeAfterMs}), matches(text) }
+//   window.JarvisSystemsCheck = { open({via, opener, closeAfterMs}), matches(text, {typed, named}), canHear(text) }
+//   (the last two are console-systems-voice.js's: the phrases, and the echo guard for the pop-up's own speech)
 //   listens: document 'jarvis:systems-check' {via}; fires 'jarvis:health' {data} (the done
 //   payload, for the Systems card) and 'jarvis:event' log lines.
 (() => {
   'use strict';
   if (window.JarvisSystemsCheck) return;
   const CLOSE_AFTER_MS = 10000;
-  const SPEAK_MS_PER_CHAR = 75, SPEAK_SLACK_MS = 2500, SPEAK_MAX_MS = 90000;
   const MAX_ROWS = 20, TEXT_MAX = 240;
-  const CLOSING = 'Closing the systems check. Say \'run a systems check\' any time for a fresh status, Sir.';
+  // no trigger phrase in it: the microphone must never hear this line as the command
+  const CLOSING = 'Closing this window, Sir. Whenever you\'d like a fresh check, just ask and I\'ll update the status.';
   const FAILED = 'The check did not complete. Try Run again.';
+  const FAILED_LOG = 'Systems check: the check did not complete';
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
   const BUSY = 'Too many checks just now. Wait a moment, then Run again.';
   const WORDS = Object.freeze({ pending: 'Checking', ok: 'OK', degraded: 'Degraded', down: 'Down', skipped: 'Not set up', unknown: 'Not checked' });
   const SEV = Object.freeze({ down: 'Down', degraded: 'Degraded', red: 'Act now', amber: 'Watch' }); // Vitals' own words
   const NBSP = String.fromCharCode(160); // "10 am" never splits over two lines
   const WHENS = Object.freeze([['1h', 'In 1' + NBSP + 'hour'], ['evening', 'This evening'], ['tomorrow', 'Tomorrow 10' + NBSP + 'am']]);
-  const PHRASES = new Set(['run a systems check', 'run a system check', 'run systems check', 'run system check',
-    'systems check', 'system check', 'system status', 'systems status', 'run diagnostics']);
   const SVG = 'http://www.w3.org/2000/svg';
   const ICONS = Object.freeze({ ok: ['m5 10.4 3.3 3.3L15 7'], degraded: ['M10 5.2v6', 'M10 14.6v.2'],
     down: ['m6.2 6.2 7.6 7.6', 'M13.8 6.2l-7.6 7.6'], skipped: ['M6 10h8'], close: ['m5.5 5.5 9 9', 'M14.5 5.5l-9 9'] });
   const S = { dlg: null, ui: {}, rows: new Map(), data: null, phase: 'idle', opener: null, run: 0, ctrl: null,
-    closeAfterMs: CLOSE_AFTER_MS, deadline: 0, timer: 0, kept: false, speaking: false, speakTimer: 0,
-    afterSpeech: null, voiced: false, hooked: false, reminded: new Set() };
+    closeAfterMs: CLOSE_AFTER_MS, deadline: 0, timer: 0, kept: false,
+    reminded: new Set(), reminding: false, progFocus: false };
 
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
@@ -51,15 +51,6 @@
     s.setAttribute('aria-hidden', 'true');
     (ICONS[name] || []).forEach((d) => { const p = document.createElementNS(SVG, 'path'); p.setAttribute('d', d); s.appendChild(p); });
     return s;
-  }
-
-  /** The words "(hey) jarvis, run a systems check" and its few variants -- nothing else. */
-  function matches(text) {
-    if (typeof text !== 'string') return false;
-    let w = text.normalize('NFKC').toLowerCase().replace(/[^a-z0-9'\s]/g, ' ').split(/\s+/).filter(Boolean);
-    if (w[0] === 'hey' || w[0] === 'ok' || w[0] === 'okay') w = w[1] === 'jarvis' ? w.slice(2) : w;
-    if (w[0] === 'jarvis') w = w.slice(1);
-    return PHRASES.has(w.join(' '));
   }
 
   // ---- the dialog ------------------------------------------------------------------------------
@@ -88,25 +79,31 @@
     WHENS.forEach(([when, words]) => { const b = button('seg-opt', words); b.dataset.when = when; b.addEventListener('click', () => remind(when)); seg.appendChild(b); });
     const remNote = mk('p', 'bnote scremnote'); remNote.setAttribute('role', 'status');
     rem.append(seg, remNote);
-    const count = mk('p', 'sccount'); count.setAttribute('role', 'status');
+    const count = mk('p', 'sccount'); count.setAttribute('aria-hidden', 'true'); // the ticking numbers stay silent
+    const hear = mk('p', 'sr-only'); hear.setAttribute('aria-live', 'polite'); hear.setAttribute('aria-atomic', 'true');
     const acts = mk('div', 'actions'), again = button('btn lift', 'Run again', 'sysCheckAgain');
     const speakB = button('btn lift', 'Speak again', 'sysCheckSpeak'), close = button('btn primary lift', 'Close', 'sysCheckClose');
     acts.append(again, speakB, close);
     const top = mk('div', 'sctop'), foot = mk('div', 'scfoot'); // both stay in view while the middle scrolls
-    top.append(head, status, bar); foot.append(count, acts);
+    top.append(head, status, bar); foot.append(count, hear, acts);
     d.append(top, list, vit, att, rem, said, foot);
     x.addEventListener('click', () => shut('button'));
     close.addEventListener('click', () => shut('button'));
     again.addEventListener('click', () => start(true));
-    speakB.addEventListener('click', () => { if (S.data) { unlock(true); say(S.data.spoken, null, true); } }); // asked for: even with "Never"
+    speakB.addEventListener('click', () => { if (S.data) { SV().unlock(true); say(S.data.spoken, null, true); } }); // asked for: even with "Never"
     d.addEventListener('cancel', (e) => { e.preventDefault(); shut('esc'); });
     d.addEventListener('keydown', onKey);
     ['pointerdown', 'pointermove', 'wheel'].forEach((t) => d.addEventListener(t, onPointer, { passive: true }));
-    d.addEventListener('focusin', () => keep());
+    d.addEventListener('focusin', () => { if (!S.progFocus) keep(); });
     document.body.appendChild(d);
     S.dlg = d;
-    S.ui = { status, bar, fill, list, vit, spend, att, concerns, rem, remHead, seg, remNote, said, saidP, count, again, speakB, close };
+    S.ui = { status, bar, fill, list, vit, spend, att, concerns, rem, remHead, seg, remNote, said, saidP, count, hear, again, speakB, close };
     return d;
+  }
+  /** Our own focus move is not the owner doing something. */
+  function focusClose() {
+    S.progFocus = true;
+    try { S.ui.close.focus({ preventScroll: true }); } finally { S.progFocus = false; }
   }
   function inside(e) {
     const r = S.dlg.getBoundingClientRect();
@@ -164,12 +161,12 @@
 
   // ---- the run -----------------------------------------------------------------------------------
   function reset() {
-    S.rows.clear(); S.data = null; S.reminded.clear();
+    S.rows.clear(); S.data = null; S.reminded.clear(); S.reminding = false;
     const u = S.ui;
     u.list.replaceChildren(); u.concerns.replaceChildren(); u.saidP.textContent = ''; u.spend.textContent = '';
     [u.vit, u.att, u.rem, u.said].forEach((n) => { n.hidden = true; });
     u.remNote.textContent = ''; u.remNote.className = 'bnote scremnote'; u.status.className = 'scstatus';
-    u.fill.style.width = '0%'; u.count.textContent = '';
+    u.fill.style.width = '0%'; u.count.textContent = ''; u.hear.textContent = '';
   }
   async function start(force) {
     stopCountdown(); stopSpeech(); S.kept = false;
@@ -177,7 +174,7 @@
     const run = ++S.run, ctrl = typeof AbortController === 'function' ? new AbortController() : null;
     S.ctrl = ctrl; S.phase = 'checking'; S.dlg.dataset.phase = 'checking';
     reset(); progress();
-    if (document.activeElement === S.ui.again || document.activeElement === S.ui.speakB) S.ui.close.focus({ preventScroll: true });
+    if (document.activeElement === S.ui.again || document.activeElement === S.ui.speakB) focusClose();
     S.ui.again.disabled = true; S.ui.speakB.disabled = true;
     try {
       if (!(await streamed(run, ctrl, force))) await fallback(run);
@@ -221,7 +218,8 @@
     S.ui.status.textContent = words; S.ui.status.className = 'scstatus bad';
     S.ui.again.disabled = false;
     [...S.rows.values()].forEach((r) => { if (r.state === 'pending') setRow(r.li.dataset.key, r.nm.textContent, 'unknown', ''); });
-    afterResults(null);
+    stopCountdown(); S.ui.count.textContent = ''; // a failure stays up until the owner closes it or runs again
+    log('error', FAILED_LOG);
   }
 
   // ---- done: vitals, concerns, the briefing ---------------------------------------------------------
@@ -247,7 +245,7 @@
     S.ui.fill.style.width = '100%';
     paintVitals(d); paintConcerns(d); paintRemind(d);
     S.ui.saidP.textContent = d.said; S.ui.said.hidden = !d.said;
-    S.ui.again.disabled = false; S.ui.speakB.disabled = !d.spoken || !speaker(true);
+    S.ui.again.disabled = false; S.ui.speakB.disabled = !d.spoken || !SV().usable(true);
     emit('jarvis:health', { data: e });
     log(down ? 'error' : 'info', d.concerns.length ? `Systems check: ${d.concerns.length} to look at` : 'Systems check: all systems nominal');
     afterResults(d.spoken);
@@ -271,20 +269,25 @@
     const label = mk('label', 'k', 'Remind me to fix'); label.htmlFor = 'sysRemKey';
     const sel = mk('select', 'bsel'); sel.id = 'sysRemKey';
     d.concerns.forEach((c) => { const o = mk('option', '', cap(c.label)); o.value = c.key; sel.appendChild(o); });
-    sel.addEventListener('change', () => { u.remNote.textContent = ''; u.remNote.className = 'bnote scremnote'; whenButtons(); });
+    sel.addEventListener('change', () => {
+      if (S.reminding) return; // an answer is still on its way: its note stays
+      u.remNote.textContent = ''; u.remNote.className = 'bnote scremnote'; whenButtons();
+    });
     u.remHead.append(label, sel); whenButtons();
   }
-  function whenButtons(busy) {
+  function whenButtons() {
     const sel = document.getElementById('sysRemKey'), done = !!sel && S.reminded.has(sel.value);
-    S.ui.seg.querySelectorAll('button').forEach((b) => { b.disabled = !!busy || done; });
+    S.ui.seg.querySelectorAll('button').forEach((b) => { b.disabled = S.reminding || done; });
+    if (sel) sel.disabled = S.reminding;
   }
   async function remind(when) {
     const sel = document.getElementById('sysRemKey'), JC = window.JarvisConsole;
     if (!sel || !sel.value || !JC || typeof JC.api !== 'function') return;
+    if (S.reminding) return;
     const key = sel.value, body = { key, when }, A = window.JarvisApprovals;
     const sid = A && typeof A.session === 'function' ? A.session() : null;
     if (typeof sid === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(sid)) body.session_id = sid;
-    const note = S.ui.remNote; whenButtons(true);
+    const note = S.ui.remNote; S.reminding = true; whenButtons();
     try {
       const r = obj(await JC.api('/v1/health/remind', { method: 'POST', body })) || {};
       const ok = r.outcome === 'executed', waiting = r.outcome === 'awaiting_confirmation';
@@ -294,77 +297,61 @@
     } catch (e) {
       note.textContent = e && e.name === 'TypeError' ? OFFLINE : 'That reminder couldn\'t be set, Sir.'; note.className = 'bnote scremnote bad';
     }
-    whenButtons();
+    S.reminding = false; whenButtons();
   }
 
   // ---- speech and the countdown -------------------------------------------------------------------
-  /** The shared speaker, or null: no voice here, or (unless `asked`) the owner chose "Speak replies: Never". */
-  function speaker(asked) {
-    const V = window.JarvisVoice, sp = V && V.speaker;
-    if (!sp || typeof sp.say !== 'function') return null;
-    try {
-      const dev = typeof V.device === 'function' ? V.device() : null;
-      if (!asked && dev && dev.speak === 'never') return null;
-      if (typeof V.outputEngine === 'function' && V.outputEngine() === 'none') return null;
-    } catch (_) { return null; }
-    return sp;
-  }
-  function unlock(asked) { const sp = speaker(asked); if (sp && typeof sp.unlock === 'function') { try { sp.unlock(); } catch (_) {} } }
-  /** Say `text`; `then` runs when the speaker says it has finished, or after an estimate of the speech. */
-  function say(text, then, asked) {
-    const sp = speaker(asked);
-    if (!sp || !text) { if (then) then(); return; }
-    if (!S.hooked && typeof sp.on === 'function') { S.hooked = true; sp.on('state', (d) => { if (S.speaking && d && d.speaking === false) speechEnded(); }); }
-    stopSpeech(false);
-    S.speaking = true; S.afterSpeech = then; S.voiced = true;
-    S.speakTimer = setTimeout(speechEnded, Math.min(SPEAK_MAX_MS, text.length * SPEAK_MS_PER_CHAR + SPEAK_SLACK_MS));
-    try { sp.say(text); if (typeof sp.end === 'function') sp.end(); } catch (_) { speechEnded(); }
-  }
-  function speechEnded() {
-    if (!S.speaking) return;
-    S.speaking = false; clearTimeout(S.speakTimer);
-    const then = S.afterSpeech; S.afterSpeech = null;
-    if (then) then();
-  }
-  function stopSpeech(hush) {
-    const was = S.speaking;
-    S.speaking = false; S.afterSpeech = null; clearTimeout(S.speakTimer);
-    if (hush !== false && was) { const sp = speaker(); if (sp && typeof sp.stop === 'function') { try { sp.stop(); } catch (_) {} } }
-  }
+  // ---- speech and the countdown: the words and the speaker are console-systems-voice.js's ---------
+  const NO_VOICE = Object.freeze({ matches: () => false, canHear: () => true, say: (_t, then) => { if (then) then(); },
+    stop() {}, unlock() {}, hook() {}, usable: () => false, speaking: () => false, voiced: () => false, forget() {} });
+  const SV = () => window.JarvisSystemsVoice || NO_VOICE;
+  const say = (t, then, asked) => SV().say(t, then, asked), stopSpeech = (hush) => SV().stop(hush);
   function afterResults(spoken) {
     if (spoken) say(spoken, countdown); else countdown();
   }
+  const inField = () => { const a = document.activeElement; return !!a && !!S.dlg && S.dlg.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName); };
   function countdown() {
     if (!S.dlg || !S.dlg.open || S.kept) return;
+    if (inField()) { keep(); return; } // never closes under someone filling in a control
     stopCountdown();
     S.deadline = Date.now() + S.closeAfterMs;
+    S.ui.hear.textContent = 'Closing in ' + Math.round(S.closeAfterMs / 1000) + ' seconds \u2014 press any key or click to keep it open';
     const step = () => {
       const left = S.deadline - Date.now();
+      if (inField()) { keep(); return; }
       if (left <= 0) { stopCountdown(); shut('timeout'); return; }
       S.ui.count.textContent = `Closing in ${Math.ceil(left / 1000)} s`;
     };
     step(); S.timer = setInterval(step, 250);
   }
   function stopCountdown() { clearInterval(S.timer); S.timer = 0; }
-  /** The owner did something inside the dialog: the countdown stops for good this time. */
+  /** The owner did something inside the dialog, at any point after it opened: no auto-close, for good
+   * (until the next run). The "Kept open" words show only if a countdown was on screen. */
   function keep() {
+    if (!S.dlg || !S.dlg.open || S.phase === 'idle') return;
+    S.kept = true;
     if (!S.timer) return;
-    stopCountdown(); S.kept = true;
+    stopCountdown();
     S.ui.count.textContent = 'Kept open. Close it when you\'re done, Sir.';
+    S.ui.hear.textContent = 'Kept open.';
   }
 
   // ---- open / close ---------------------------------------------------------------------------------
   function shut(why) {
     const d = S.dlg; if (!d || !d.open) return;
-    stopCountdown();
-    if (why === 'timeout') { S.ui.count.textContent = CLOSING; if (S.voiced) say(CLOSING, null); }
-    else stopSpeech();
-    if (S.ctrl) { try { S.ctrl.abort(); } catch (_) {} S.ctrl = null; }
-    S.run++; S.phase = 'idle';
-    log('info', CLOSING);
-    d.close();
-    const o = S.opener; S.opener = null;
-    if (o && document.contains(o) && !o.closest('[hidden]') && typeof o.focus === 'function') o.focus({ preventScroll: true });
+    try {
+      stopCountdown();
+      if (why === 'timeout') { S.ui.count.textContent = CLOSING; if (SV().voiced()) say(CLOSING, null); }
+      else stopSpeech();
+      log('info', CLOSING);
+    } catch (_) { /* whatever went wrong, the window still closes */ } finally {
+      stopCountdown();
+      if (S.ctrl) { try { S.ctrl.abort(); } catch (_) {} S.ctrl = null; }
+      S.run++; S.phase = 'idle';
+      try { d.close(); } catch (_) { d.removeAttribute('open'); }
+      const o = S.opener; S.opener = null;
+      try { if (o && document.contains(o) && !o.closest('[hidden]') && typeof o.focus === 'function') o.focus({ preventScroll: true }); } catch (_) {}
+    }
   }
   function open(opts) {
     const o = obj(opts) || {};
@@ -372,18 +359,18 @@
     if (typeof d.showModal !== 'function') { log('error', 'This browser can\'t show the systems check.'); return false; }
     const ms = Number(o.closeAfterMs);
     S.closeAfterMs = Number.isFinite(ms) && ms >= 500 && ms <= 600000 ? ms : CLOSE_AFTER_MS;
-    S.voiced = false;
+    SV().forget();
     if (!d.open) {
       const el = o.opener instanceof Element ? o.opener : document.activeElement;
       S.opener = el instanceof HTMLElement && el !== document.body ? el : null;
       d.showModal();
-      S.ui.close.focus({ preventScroll: true });
+      focusClose();
     }
-    unlock();
+    SV().hook(); SV().unlock();
     start(true);
     return true;
   }
 
   document.addEventListener('jarvis:systems-check', (e) => { const d = obj(e && e.detail) || {}; open({ via: txt(d.via, 20) }); });
-  window.JarvisSystemsCheck = Object.freeze({ open, matches });
+  window.JarvisSystemsCheck = Object.freeze({ open, matches: (t, o) => SV().matches(t, o), canHear: (t) => SV().canHear(t) });
 })();

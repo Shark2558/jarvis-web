@@ -144,6 +144,87 @@ async def test_armed_keeps_only_a_channel_counting(delivery: Delivery) -> None:
     assert notes.kinds() == ["home_offline", "home_offline"]
 
 
+async def test_arming_mid_outage_after_the_idle_alert_sends_the_urgent_one_once() -> None:
+    store, notes = HomeStoreFake(home_status()), Scripted(RANG)
+    arm = ArmFake(False)
+    j = OfflineJob(
+        store,  # type: ignore[arg-type]
+        notes,
+        arm,
+        clock=Clock(GONE),
+        offline_after_s=AFTER,
+        tz="Asia/Kolkata",
+    )
+    await j.run([UID])
+    assert notes.kinds() == ["home_offline_idle"]
+    arm.armed = True  # the owner arms from the console while the laptop is still off
+    counts = await j.run([UID])
+    await j.run([UID])
+    await j.run([UID])
+    assert notes.kinds() == ["home_offline_idle", "home_offline"]
+    assert notes.sent[1][1].endswith("Camera alerts are off until it's back.")
+    assert counts["alerts"] == 1
+
+
+async def test_a_held_idle_alert_is_upgraded_when_armed_and_retried_if_nobody_took_it() -> None:
+    store, notes = HomeStoreFake(home_status()), Scripted(HELD, UNHEARD, RANG)
+    arm = ArmFake(False)
+    j = OfflineJob(
+        store,  # type: ignore[arg-type]
+        notes,
+        arm,
+        clock=Clock(GONE),
+        offline_after_s=AFTER,
+        tz="Asia/Kolkata",
+    )
+    await j.run([UID])
+    arm.armed = True
+    await j.run([UID])  # armed alert reached nobody: not settled
+    await j.run([UID])
+    await j.run([UID])
+    assert notes.kinds() == ["home_offline_idle", "home_offline", "home_offline"]
+
+
+async def test_disarming_mid_outage_after_the_armed_alert_sends_nothing_more() -> None:
+    store, notes = HomeStoreFake(home_status()), Scripted(RANG)
+    arm = ArmFake(True)
+    j = OfflineJob(
+        store,  # type: ignore[arg-type]
+        notes,
+        arm,
+        clock=Clock(GONE),
+        offline_after_s=AFTER,
+        tz="Asia/Kolkata",
+    )
+    await j.run([UID])
+    arm.armed = False
+    await j.run([UID])
+    await j.run([UID])
+    assert notes.kinds() == ["home_offline"]
+
+
+async def test_a_new_outage_after_the_laptop_returns_may_send_the_idle_alert_again() -> None:
+    store, notes = HomeStoreFake(home_status()), Scripted(RANG)
+    clock = Clock(GONE)
+    arm = ArmFake(False)
+    j = OfflineJob(
+        store,  # type: ignore[arg-type]
+        notes,
+        arm,
+        clock=clock,
+        offline_after_s=AFTER,
+        tz="Asia/Kolkata",
+    )
+    await j.run([UID])
+    clock.now = SEEN + 10  # a heartbeat came back inside the threshold
+    await j.run([UID])
+    store.current = home_status(seen=SEEN + 10, state="online")  # the heartbeat handler's reset
+    clock.now = SEEN + 10 + AFTER + 1
+    arm.armed = True
+    await j.run([UID])
+    assert notes.kinds() == ["home_offline_idle", "home_offline"]
+
+
 async def test_within_the_threshold_nothing_happens() -> None:
     store, notes = HomeStoreFake(home_status()), Scripted(RANG)
     counts = await job(store, notes, now=SEEN + AFTER).run([UID])

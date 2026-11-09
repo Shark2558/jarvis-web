@@ -87,6 +87,11 @@ def crashed_result(probe: Probe, *, clock: Clock) -> ProbeResult:
     return _result(probe, _down(CHECK_FAILED), clock)
 
 
+def timed_out_result(probe: Probe, *, clock: Clock) -> ProbeResult:
+    """A probe still unfinished when the whole check's deadline came: `down`, fixed words."""
+    return _result(probe, _down("did not answer in time"), clock)
+
+
 async def run_probe(probe: Probe, uid: str, *, clock: Clock) -> ProbeResult | None:
     """Run one probe; never raises. A hang, a failure or a malformed answer is `down` with fixed
     words, so one bad probe can never take the whole check with it."""

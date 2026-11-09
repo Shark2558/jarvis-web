@@ -223,6 +223,15 @@ def test_no_systems_still_briefs_vitals() -> None:
     assert "AI spend is ₹10 of ₹500 this month, 2 percent." in b.spoken
 
 
+def test_an_empty_report_says_one_fixed_line_and_never_all_systems_nominal() -> None:
+    for b in (compose_briefing(report(), None), compose_briefing(None, None)):
+        assert b.spoken == "Systems check complete, Sir. There are no systems to check."
+        assert "nominal" not in " ".join(b.lines) and NOMINAL_CLOSE not in b.spoken
+    with_vitals = compose_briefing(report(), board(used=10, limit=500))
+    assert "no systems" in with_vitals.spoken and "nominal" not in with_vitals.spoken
+    assert with_vitals.spoken.endswith("2 percent.")
+
+
 def test_to_json_is_plain_data() -> None:
     r = report(res("telegram", "down"))
     data = compose_briefing(r, None).to_json()

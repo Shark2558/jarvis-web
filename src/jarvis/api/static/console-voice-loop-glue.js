@@ -132,6 +132,7 @@
         const C = h.Cmd();
         if (C && C.pending() && tries < REASK_TRIES) { reask(tries + 1); return; }
         if (S.mode === 'idle' || h.isListening()) checkIn();
+        else if (tries < REASK_TRIES) reask(tries + 1);   // busy with a turn: try again once it is over
       }, REASK_MS);
     }
 

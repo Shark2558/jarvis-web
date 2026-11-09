@@ -942,11 +942,17 @@ def test_a_check_in_cancelled_by_another_question_is_asked_again_afterwards(
     _tv(c, fake)
     question = "Shall I keep listening, Sir?"
     _until(c, f"window.__voice.speech.some(d => d.text === {json.dumps(question)})", 150)
-    # another module asks something; that cancels the check-in's question, which is not an answer
-    c.page.evaluate("void JarvisVoiceCommands.ask('Use the earphones?', { timeoutMs: 1500 })")
+    # the room goes quiet (a word from it would be a "no"); another module asks something, which
+    # cancels the check-in's question; that is not an answer
+    c.page.evaluate("window.__roomQuiet = true; window.__talk(false)")
     _until(
-        c, f"window.__voice.speech.filter(d => d.text === {json.dumps(question)}).length >= 2", 40
-    )
+        c, "JarvisVoiceCommands.pending() !== null", 20
+    )  # the check-in is now listening for its answer
+    c.page.evaluate("void JarvisVoiceCommands.ask('Use the earphones?', { timeoutMs: 1500 })")
+    _until(c, "JarvisVoiceCommands.pending() === 'Use the earphones?'", 5)
+    # once the other question is done the check-in is asked again (a fixed line: its audio is cached,
+    # so the second asking is not a second speech request; the question is pending again instead)
+    _until(c, f"JarvisVoiceCommands.pending() === {json.dumps(question)}", 40)
     assert not c.page.evaluate("window.__loop.some(e => e.state === 'handover')")
     c.page.keyboard.press("Escape")
     assert c.errors == []

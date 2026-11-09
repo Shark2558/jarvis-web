@@ -215,7 +215,7 @@ window.__replyTv = () => {
     if (e.detail.state === 'speaking' || e.detail.state === 'thinking') spoke = true;
     else if (spoke && e.detail.state === 'idle') {
       spoke = false;
-      setTimeout(() => { window.__talk(true); setTimeout(() => window.__talk(false), 900); }, 600);
+      setTimeout(() => { if (window.__roomQuiet) return; window.__talk(true); setTimeout(() => window.__talk(false), 900); }, 600);
     }
   });
 };
@@ -406,7 +406,7 @@ def test_conversation_is_not_capped(make: Callable[..., Console]) -> None:
     # the browser recognition always hears something, at a human pace: 12 turns and still going
     c = make(device={"engine": "browser", "checkIn": False}, scripts=(FAKE_RECOGNITION,))
     FakeVoice(c.page)
-    chats = _chat_counter(c)
+    chats = route_reply(c)  # a fixed reply: his echo guard drops a repeat of the transcript
     c.open()
     c.page.locator("#micBtn").click()
     _wait(c, "() => window.__rec.length >= 12", 120000)

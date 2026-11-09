@@ -63,12 +63,12 @@ from jarvis.permissions.store import PermissionsStore  # noqa: E402
 from jarvis.places.store import MapsPlaces  # noqa: E402
 from jarvis.privacy import CategoryView, PrivacyRegistry  # noqa: E402
 from jarvis.privacy import sources as sources_mod  # noqa: E402
+from jarvis.privacy.existing import ExistingParts, existing_sources  # noqa: E402
 from jarvis.privacy.service import (  # noqa: E402
     Changed,
     NotDeletable,
     PrivacyService,
 )
-from jarvis.privacy.sources import ExistingParts, existing_sources  # noqa: E402
 from jarvis.privacy.sources_r1 import R1Parts, r1_sources  # noqa: E402
 from jarvis.recall.service import MemoryService  # noqa: E402
 from jarvis.recall.store import MemoryStore  # noqa: E402

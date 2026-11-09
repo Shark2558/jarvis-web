@@ -39,9 +39,9 @@ from jarvis.kb.privacy import NotesPrivacy
 from jarvis.kb.service import NOT_CONFIGURED, build_notes_service
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
+from jarvis.privacy.existing import ExistingParts, existing_sources
 from jarvis.privacy.ports import PrivacyRegistry, PrivacySource
 from jarvis.privacy.service import PrivacyService
-from jarvis.privacy.sources import ExistingParts, existing_sources
 from jarvis.privacy.sources_r1 import R1Parts, r1_sources
 from jarvis.storage.docs import Docs
 from jarvis.ticks import TickJob

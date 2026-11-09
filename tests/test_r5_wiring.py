@@ -16,7 +16,7 @@ from jarvis.config import Settings
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.privacy import PrivacyRegistry
-from jarvis.privacy.sources import ExistingParts, existing_sources
+from jarvis.privacy.existing import ExistingParts, existing_sources
 from jarvis.storage.docs import MemoryDocs
 from jarvis.voice.settings import VoiceSettingsPatch, VoiceSettingsStore
 

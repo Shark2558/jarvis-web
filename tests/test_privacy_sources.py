@@ -20,9 +20,9 @@ from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.base import Role
 from jarvis.places.store import MapsPlaces
 from jarvis.privacy import PrivacyRegistry
+from jarvis.privacy.existing import ExistingParts, existing_sources
 from jarvis.privacy.export import scrub
 from jarvis.privacy.sources import (
-    ExistingParts,
     approvals_source,
     audit_source,
     briefs_source,
@@ -30,7 +30,6 @@ from jarvis.privacy.sources import (
     counters_source,
     deleted_source,
     drive_source,
-    existing_sources,
     faces_source,
     google_source,
     marks_source,

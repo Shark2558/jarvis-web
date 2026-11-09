@@ -807,3 +807,30 @@ def test_setup_windows_stops_when_tailscale_is_signed_out() -> None:
     assert "tailscale up" in ps[check:funnel]
     assert re.search(r"IsNullOrWhiteSpace\(\$name\)", ps[funnel : ps.index("Linking to JARVIS")])
     assert ps.isascii()
+
+
+def test_every_dependency_of_a_bridge_package_is_in_the_bridge_lock() -> None:
+    # 9 Nov, on the owner's laptop: the bridge crashed at `import fastapi` because fastapi
+    # 0.162 needs opentelemetry-api, which `pip install --no-deps` never installed. Every
+    # required (non-extra) dependency of a locked bridge package, as its installed metadata
+    # declares it, must be locked too.
+    from importlib import metadata
+
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+
+    text = (HOME / "bridge-requirements.txt").read_text()
+    locked = {canonicalize_name(n) for n in re.findall(r"^([A-Za-z0-9_.-]+)==", text, re.M)}
+    missing: set[str] = set()
+    for name in locked:
+        try:
+            requires = metadata.requires(name) or []
+        except metadata.PackageNotFoundError:
+            continue  # not installed here; nothing to read
+        for raw in requires:
+            req = Requirement(raw)
+            if req.marker is not None and not req.marker.evaluate({"extra": ""}):
+                continue  # an optional extra or another platform
+            if canonicalize_name(req.name) not in locked:
+                missing.add(f"{req.name} (needed by {name})")
+    assert sorted(missing) == []

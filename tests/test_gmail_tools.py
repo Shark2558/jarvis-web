@@ -543,3 +543,68 @@ async def test_threading_headers_from_the_original_are_validated(
     assert msg["Bcc"] is None and body["message"]["threadId"] == "t_m1"
     raw = json.dumps(body)
     assert "attacker" not in str(msg) and "attacker" not in raw
+
+
+# ---- spoken turns: a code never reaches the model (R5 SL4) -----------------------------------
+# The voice channel sets `context_trust(spoken=True)` (core/brain.py `_run_calls`), which is what
+# `speaking_now()` reads; these run the tools under that same mechanism, as a voice turn does.
+
+OTP_SUBJECT = "Your login code"
+OTP_BODY = "Your OTP is 483921. Do not share this code with anyone."
+OTP_CODE = "483921"
+
+
+def _otp_mail_routes(fake_google: FakeGoogle) -> None:
+    fake_google.on("GET", f"{GM}/messages", httpx.Response(200, json={"messages": [{"id": "m9"}]}))
+    fake_google.on(
+        "GET", f"{GM}/messages/m9", httpx.Response(200, json=_msg_meta("m9", OTP_SUBJECT, OTP_BODY))
+    )
+
+
+def _otp_full(fake_google: FakeGoogle) -> None:
+    full = {
+        "id": "m9",
+        "threadId": "t_m9",
+        "payload": {
+            "mimeType": "text/plain",
+            "headers": _hdrs(From="bank@example.com", Subject=OTP_SUBJECT, Date="x"),
+            "body": {"data": _b64(OTP_BODY)},
+        },
+    }
+    fake_google.on("GET", f"{GM}/messages/m9", httpx.Response(200, json=full))
+
+
+@pytest.mark.parametrize("spoken", [True, False])
+async def test_gmail_search_withholds_an_otp_only_on_a_spoken_turn(
+    gw: Gateway, fake_google: FakeGoogle, spoken: bool
+) -> None:
+    from jarvis.tools.spoken import WITHHELD_LINE
+    from jarvis.tools.taint import context_trust
+
+    _otp_mail_routes(fake_google)
+    with context_trust(untrusted=True, spoken=spoken):
+        out = await _run(gw, "gmail_search", {"query": "from:bank"})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    blob = json.dumps(out.result)
+    if spoken:
+        assert OTP_CODE not in blob and WITHHELD_LINE in blob
+    else:
+        assert OTP_CODE in blob  # the owner's own screen is unchanged
+
+
+@pytest.mark.parametrize("spoken", [True, False])
+async def test_gmail_read_withholds_an_otp_only_on_a_spoken_turn(
+    gw: Gateway, fake_google: FakeGoogle, spoken: bool
+) -> None:
+    from jarvis.tools.spoken import WITHHELD_LINE
+    from jarvis.tools.taint import context_trust
+
+    _otp_full(fake_google)
+    with context_trust(untrusted=True, spoken=spoken):
+        out = await _run(gw, "gmail_read", {"message_id": "m9"})
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    blob = json.dumps(out.result)
+    if spoken:
+        assert OTP_CODE not in blob and WITHHELD_LINE in blob
+    else:
+        assert OTP_CODE in blob

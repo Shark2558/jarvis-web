@@ -142,8 +142,9 @@
     const box = $('integrations'); if (!box) return;
     let line = $('waLine');
     if (!line) { line = mk('div', 'integ'); line.id = 'waLine'; }
-    const head = mk('div', 'ihead'); head.append(mk('b', '', 'WhatsApp drafts'), mk('span', 'istate', whatsappWords()));
-    const kids = [head];
+    const head = mk('div', 'ihead'); head.append(mk('b', '', 'WhatsApp drafts'), mk('span', 'istate', wa.off === true ? 'Off' : 'Ready'));
+    const words = mk('div', 'ibody'); words.appendChild(mk('p', '', whatsappWords()));   // the sentence is body text, not a status word
+    const kids = [head, words];
     if (wa.off === true) {
       const open = mk('button', 'btn lift', 'Open'); open.type = 'button'; open.id = 'waOpen';
       open.addEventListener('click', () => {

@@ -55,5 +55,7 @@ def test_script_mirrors_the_servers_exact_host_rule(source: str) -> None:
     assert r"[a-z0-9-]+\.wikipedia\.org$" in source
 
 
-def test_the_badge_says_no_ai_covers_the_brain_only(source: str) -> None:
-    assert "No-AI (brain only)" in source
+def test_the_pill_says_brain_ai_on_or_no_ai(source: str) -> None:
+    # R5.1 D9: ONE pill button; the long "No-AI (brain only)" wording became "Brain: No-AI"
+    assert "'Brain: ' + word" in source and "none: 'No-AI'" in source
+    assert "aria-haspopup" in source and "Paid replies resume" in source

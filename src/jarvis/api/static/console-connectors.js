@@ -19,7 +19,7 @@
   const CHILD = 'a child from your family';
   const MAX_ROWS = 50;
   const WHY = { no_google: 'Sign in with Google first.', not_granted: 'Press Grant for this in Integrations.', unavailable: 'Not available on this server.' };
-  const S = { data: null, unknown: [], busy: false };
+  const S = { data: null, unknown: [], busy: false, confirm: false };
   let el = {};
 
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
@@ -29,15 +29,14 @@
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
   const hasApi = () => !!(window.JarvisConsole && typeof window.JarvisConsole.api === 'function');
   const api = (path, opts) => window.JarvisConsole.api(path, opts);
-  const Deck = window.JarvisDeck || { isOpen: () => false };
+  const Deck = window.JarvisDeck || { isOpen: () => false, open: () => {} };
   function detailOf(e) {
     if (e && e.name === 'TypeError') return OFFLINE;
     const m = e && typeof e.message === 'string' ? strip(e.message).trim() : '';
     return m && m.length <= 300 && !m.startsWith('[object') && !/^[a-z0-9_.-]+$/i.test(m) ? m : '';
   }
   function say(kind, text) { el.note.className = 'bnote hnote' + (kind === 'bad' ? ' bad' : ''); el.note.textContent = text || ''; }
-  const chip = (ok, on, off) => mk('span', 'chip' + (ok ? ' ok' : ''), ok ? on : off);
-
+  
   // ---- normalise what the server sent ------------------------------------------------------
   function statusOf(raw) {
     const r = obj(raw); if (!r) return null;
@@ -55,48 +54,68 @@
     };
   }
 
-  // ---- build / render ----------------------------------------------------------------------
-  function section(title, hint) {
-    const s = mk('section', 'csec'); s.append(mk('h3', 'ctitle', title), mk('p', 'chint', hint)); host.appendChild(s); return s;
+  // ---- build / render: each service is an Integrations-style card (.integ) -----------------
+  const btn = (cls, text, fn) => { const b = mk('button', cls, text); b.type = 'button'; b.addEventListener('click', fn); return b; };
+  function card(name, hint) {
+    const c = mk('section', 'integ cardx'); c.dataset.state = 'unlinked';
+    const head = mk('div', 'ihead'), state = mk('span', 'istate'), body = mk('div', 'ibody');
+    head.append(mk('b', '', name), state); body.append(mk('p', 'fine', hint)); c.append(head, body); host.appendChild(c);
+    return { c, state, body, extra: mk('div', 'cextra'), acts: mk('div', 'actions') };
   }
   function build() {
     host.textContent = '';
     el.note = mk('p', 'bnote hnote'); el.note.setAttribute('role', 'status'); host.appendChild(el.note);
-    const g = section('GitHub', 'Read-only: your profile, repositories and recent activity. Your token is kept encrypted and never shown again.');
-    el.gstate = mk('div', 'crow');
-    el.token = mk('input', 'cinput'); el.token.type = 'password'; el.token.autocomplete = 'off'; el.token.placeholder = 'Paste a GitHub token'; el.token.setAttribute('aria-label', 'GitHub token');
-    el.gconnect = mk('button', 'btn', 'Connect GitHub'); el.gconnect.type = 'button'; el.gconnect.addEventListener('click', connectGithub);
-    el.gdrop = mk('button', 'btn', 'Disconnect'); el.gdrop.type = 'button'; el.gdrop.addEventListener('click', dropGithub);
-    g.append(el.gstate, el.token, el.gconnect, el.gdrop);
-    const y = section('YouTube', 'Your own channel and uploads, read-only, through your Google sign-in.');
-    el.ystate = mk('div', 'crow'); y.appendChild(el.ystate);
-    const p = section('Google Photos', 'Pick-only: Google no longer lets apps read a whole library, so you choose the photos. They go to your home laptop to find faces; JARVIS keeps ids, never pictures.');
-    el.pstate = mk('div', 'crow');
-    el.pstart = mk('button', 'btn', 'Choose photos'); el.pstart.type = 'button'; el.pstart.addEventListener('click', startPick);
-    el.pimport = mk('button', 'btn', 'Import chosen photos'); el.pimport.type = 'button'; el.pimport.addEventListener('click', runImport);
-    el.pout = mk('div', 'cout'); el.enrol = mk('div', 'cenrol');
-    p.append(el.pstate, el.pstart, el.pimport, el.pout, el.enrol);
+    const g = el.g = card('GitHub', 'Read-only: your profile, repositories and recent activity. Your token is kept encrypted and never shown again.');
+    el.who = mk('p', 'who');
+    el.tokenBox = mk('div', 'cfield'); const tl = mk('label', 'k', 'GitHub token'); tl.htmlFor = 'ghToken';
+    el.token = mk('input', 'dinput'); el.token.id = 'ghToken'; el.token.type = 'password'; el.token.autocomplete = 'off'; el.token.placeholder = 'Paste a GitHub token';
+    el.tokenBox.append(tl, el.token);
+    el.gconnect = btn('btn primary lift', 'Connect GitHub', connectGithub);
+    el.gdrop = btn('btn lift', 'Disconnect', () => { S.confirm = true; render(); el.gkeep.focus(); });
+    el.confirm = mk('div', 'confirm'); el.confirm.setAttribute('role', 'group'); el.confirm.setAttribute('aria-label', 'Confirm disconnect');
+    el.gkeep = btn('btn lift', 'Keep', () => { S.confirm = false; render(); el.gdrop.focus(); });
+    el.gyes = btn('btn danger lift', 'Disconnect', dropGithub);
+    el.confirm.append(mk('span', '', 'Disconnect GitHub? JARVIS forgets the token.'), el.gkeep, el.gyes);
+    g.acts.append(el.gconnect, el.gdrop); g.body.append(el.who, el.tokenBox, g.acts, el.confirm);
+    const y = el.y = card('YouTube', 'Your own channel and uploads, read-only, through your Google sign-in.');
+    el.ywhy = mk('p', 'warn'); y.body.append(el.ywhy);
+    const p = el.p = card('Google Photos', 'Pick-only: Google no longer lets apps read a whole library, so you choose the photos. They go to your home laptop to find faces; JARVIS keeps ids, never pictures.');
+    el.pwhy = mk('p', 'warn');
+    el.pstart = btn('btn lift', 'Choose photos', startPick); el.pimport = btn('btn lift', 'Import chosen photos', runImport);
+    el.pinteg = btn('btn lift', 'Open Integrations', () => Deck.open('integrations', { focus: true }));
+    el.pout = mk('p', 'bfine cout'); el.enrol = mk('div', 'cenrol');
+    p.acts.append(el.pstart, el.pimport, el.pinteg); p.body.append(el.pwhy, p.acts, el.pout, el.enrol);
+    [el.who, el.tokenBox, el.g.acts, el.confirm, el.ywhy, el.pwhy, el.pstart, el.pimport, el.pinteg].forEach((n) => { n.hidden = true; });   // until the server has answered
   }
+  function setCard(c, ok, label, warn) { c.c.dataset.state = ok ? 'linked' : warn ? 'reconnect' : 'unlinked'; c.state.textContent = label; }
   function render() {
     const d = S.data; if (!d) return;
-    el.gstate.replaceChildren(chip(d.github.connected, 'Connected' + (d.github.login ? ' as ' + d.github.login : ''), d.github.reconnect ? 'Needs reconnecting: paste a new token' : 'Not connected'));
-    el.token.hidden = el.gconnect.hidden = d.github.connected; el.gdrop.hidden = !d.github.connected;
-    el.ystate.replaceChildren(chip(d.youtube.connected, 'Connected', 'Not connected'), mk('span', 'chint', d.youtube.connected ? '' : WHY[d.youtube.reason] || ''));
-    el.pstate.replaceChildren(chip(d.photos.connected, 'Ready', 'Off'), mk('span', 'chint', d.photos.connected ? '' : WHY[d.photos.reason] || ''));
-    el.pstart.disabled = el.pimport.disabled = !d.photos.connected || S.busy;
+    const gh = d.github;
+    setCard(el.g, gh.connected, gh.connected ? 'Connected' : gh.reconnect ? 'Reconnect' : 'Not connected', gh.reconnect);
+    el.who.hidden = !gh.connected; el.who.replaceChildren('Connected as ', mk('b', '', gh.login || 'GitHub'));
+    el.tokenBox.hidden = el.gconnect.hidden = gh.connected; el.gdrop.hidden = !gh.connected || S.confirm; el.confirm.hidden = !(gh.connected && S.confirm);
+    el.g.acts.hidden = gh.connected && S.confirm;
+    el.gconnect.disabled = el.gdrop.disabled = el.gyes.disabled = S.busy;
+    if (gh.reconnect && !gh.connected) el.who.hidden = false, el.who.replaceChildren('Needs reconnecting: paste a new token.');
+    setCard(el.y, d.youtube.connected, d.youtube.connected ? 'Connected' : 'Not connected', false);
+    el.ywhy.hidden = !!d.youtube.connected || !WHY[d.youtube.reason]; el.ywhy.textContent = WHY[d.youtube.reason] || '';
+    setCard(el.p, d.photos.connected, d.photos.connected ? 'Ready' : 'Off', false);
+    el.pwhy.hidden = !!d.photos.connected || !WHY[d.photos.reason]; el.pwhy.textContent = WHY[d.photos.reason] || '';
+    el.pstart.hidden = el.pimport.hidden = !d.photos.connected; el.pinteg.hidden = !!d.photos.connected;
+    el.pstart.disabled = el.pimport.disabled = S.busy;
     renderEnrol();
   }
   function renderEnrol() {
     el.enrol.replaceChildren();
     S.unknown.forEach((id, i) => {
-      const row = mk('div', 'crow'), name = mk('input', 'cinput'), box = mk('input'), kid = mk('input'), lbl = mk('label', 'chint');
-      name.placeholder = 'Name for face ' + (i + 1); name.maxLength = 40; name.setAttribute('aria-label', name.placeholder);
+      const row = mk('div', 'crow'), name = mk('input', 'dinput'), nl = mk('label', 'k', 'Name for face ' + (i + 1));
+      const box = mk('input'), kid = mk('input'), lbl = mk('label', 'ctick');
+      name.id = 'faceName' + i; nl.htmlFor = name.id; name.maxLength = 40;
       box.type = 'checkbox'; kid.type = 'checkbox';
       lbl.append(box, ' ', (S.data && S.data.adult) || 'They agree to be recognised.');
-      const kl = mk('label', 'chint'); kl.append(kid, ' This is a child (a parent or guardian agrees).');
-      const go = mk('button', 'btn', 'Add'); go.type = 'button';
-      go.addEventListener('click', () => enrol(id, name.value, box.checked, kid.checked));
-      row.append(name, lbl, kl, go); el.enrol.appendChild(row);
+      const kl = mk('label', 'ctick'); kl.append(kid, ' This is a child (a parent or guardian agrees).');
+      const go = btn('btn lift bact', 'Add', () => enrol(id, name.value, box.checked, kid.checked));
+      row.append(nl, name, lbl, kl, go); el.enrol.appendChild(row);
     });
   }
 
@@ -108,9 +127,9 @@
   const connectGithub = () => guard(async () => {
     const token = el.token.value.trim(); if (!token) { say('bad', 'Paste your GitHub token first.'); return; }
     await api('/v1/connectors/github', { method: 'PUT', body: { token } });
-    el.token.value = ''; say('ok', 'GitHub connected.'); await load(true);
+    el.token.value = ''; S.confirm = false; say('ok', 'GitHub connected.'); await load(true);
   }, 'Couldn\'t connect GitHub. Please try again.');
-  const dropGithub = () => guard(async () => { await api('/v1/connectors/github', { method: 'DELETE' }); say('ok', 'GitHub disconnected.'); await load(true); }, 'Couldn\'t disconnect. Please try again.');
+  const dropGithub = () => guard(async () => { S.confirm = false; await api('/v1/connectors/github', { method: 'DELETE' }); say('ok', 'GitHub disconnected.'); await load(true); }, 'Couldn\'t disconnect. Please try again.');
   const startPick = () => guard(async () => {
     const r = obj(await api('/v1/connectors/photos/start', { method: 'POST', body: {} })) || {};
     const uri = txt(r.picker_uri, 500);

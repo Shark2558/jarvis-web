@@ -272,6 +272,24 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
   .instrument{max-width:150px}
 }
 
+/* D9 brain switch: one pill button beside the status pill, with a small menu (R5.1 Part A) */
+.bmslot{position:relative;display:inline-flex;flex:none}
+button.status.brainmode{cursor:pointer;margin:0;box-sizing:border-box;appearance:none;-webkit-appearance:none}
+button.status.brainmode:hover{border-color:color-mix(in srgb,var(--accent) 50%,var(--line))}
+button.status.brainmode:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bm-short{display:none}
+.bmmenu{position:absolute;z-index:80;top:calc(100% + 8px);left:0;width:min(300px,calc(100vw - 24px));padding:10px;border-radius:var(--r-lg);box-shadow:var(--sh-2);animation:menuIn .26s var(--ease) both;white-space:normal}
+.bmmenu[hidden]{display:none}
+.bmopt{display:block;width:100%;min-height:44px;margin:0;padding:8px 10px;border-radius:var(--r-sm);border:1px solid transparent;background:transparent;color:var(--ink);text-align:left;cursor:pointer;font:inherit}
+.bmopt:hover,.bmopt:focus-visible{background:var(--tint);border-color:var(--line);outline:0}
+.bmopt b{display:flex;align-items:center;gap:8px;font:700 13px/1.2 var(--hud);letter-spacing:.1em;text-transform:uppercase}
+.bmopt[aria-checked="true"] b::after{content:"\2713";margin-left:auto;color:var(--ok-ink)}
+.bmopt small{display:block;margin-top:3px;font-size:12.5px;line-height:1.4;color:var(--ink-3)}
+.bmask{margin-top:6px;padding:8px 10px;border-radius:var(--r-sm);background:var(--amber-tint);border:1px solid var(--amber-line)}
+.bmask p{margin:0;font-size:13px;color:var(--ink)}
+.bmask .actions{margin-top:8px}
+.bmask .btn{height:44px}
+
 /* ---- phones: one panel at a time, dock = tab bar, compact Core in the header ------------------ */
 @media (max-width: 899px){
   :root{--top-h:56px;--tab-h:64px}
@@ -282,6 +300,9 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
   .brand{gap:8px}
   .tools{gap:2px}
   .topbar .picker select{max-width:128px;padding-left:10px;padding-right:26px;font-size:12.5px}
+  .bm-long{display:none} .bm-short{display:inline}
+  .brand .status{padding:0 8px;letter-spacing:.08em}
+  .bmmenu{position:fixed;top:calc(var(--top-h) + 6px);left:8px;right:8px;width:auto}
   .topbar .picker svg{right:9px}
   .icon-btn{width:40px;height:40px}
   #who{display:none}

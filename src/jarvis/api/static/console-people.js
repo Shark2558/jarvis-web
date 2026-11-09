@@ -5,7 +5,7 @@
 // else with a plain message, shown as is. Nothing is saved. Brain mode: AI / No-AI switch and a badge; in
 // No-AI mode JARVIS answers from fixed rules and the dossier is links only.
 // Server strings reach the page through textContent only. No build step; CSP script-src 'self'; ASCII source.
-// Mounts into #p-people .pbody (shell in console.html, integrator). Optional #brainModeSlot gets the badge.
+// Mounts into #p-people .pbody (shell in console.html, integrator). Optional #brainModeSlot gets the pill (console-deck.css styles it; console-people.css the panel).
 // API: POST /v1/people/research {name, context?} -> {name, context, profiles:[{platform,url,title}],
 //   findings:[{title,domain,snippet}], summary|null, spoken, ambiguous, no_ai, note}; GET /v1/people/last;
 //   GET|POST /v1/settings/brain-mode {mode: 'ai'|'none'} -> {mode, meaning}.
@@ -23,9 +23,10 @@
   const hostOk = (h) => HOST_OK.some((re) => re.test(h));
   const MAX_PROFILES = 8, MAX_FINDINGS = 4;
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
-  const MODE_TEXT = { ai: 'AI on', none: 'No-AI (brain only)' };
+  const MODE_WORD = { ai: 'AI on', none: 'No-AI' };
+  const MODE_MEANS = { ai: 'JARVIS reasons and writes with the model. Paid replies apply.', none: 'Fixed rules only, no model. Nothing paid is used.' };
   const S = { dossier: null, mode: 'ai', meaning: '', busy: false };
-  let nameEl, ctxEl, goBtn, noteEl, card, openBtn, speakBtn, modeAi, modeNone, meaningEl, badge;
+  let nameEl, ctxEl, goBtn, noteEl, card, openBtn, speakBtn, modeAi, modeNone, meaningEl, pill, pillLabel, menu, asking;
 
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
   const arr = (v) => (Array.isArray(v) ? v : []);
@@ -62,22 +63,26 @@
 
   function render() {
     const d = S.dossier;
-    card.textContent = '';
+    card.textContent = ''; card.className = 'pcard';
     openBtn.hidden = speakBtn.hidden = !d || (!d.profiles.length && !d.spoken);
     openBtn.disabled = !d || !d.profiles.length;
     if (!d) return;
-    card.append(mk('h3', 'ptitle', d.name));
-    if (d.summary) card.append(mk('p', 'pbody', d.summary));
-    else if (d.noAi) card.append(mk('p', 'bfine', 'No summary: showing the public links found.'));
-    if (d.note) card.append(mk('p', 'bfine', d.note));
-    const ul = mk('ul', 'tlist');
-    d.profiles.forEach((p) => {
-      const li = mk('li', 'titem');
-      li.append(mk('span', 'tname', p.platform), mk('span', 'bfine', ' ' + (p.title || p.url)));
-      ul.append(li);
-    });
-    card.append(ul);
-    d.findings.forEach((f) => card.append(mk('p', 'bfine', (f.domain ? f.domain + ': ' : '') + f.snippet)));
+    card.className = 'integ pdoss'; card.dataset.state = d.profiles.length ? 'linked' : 'unlinked';
+    const head = mk('div', 'ihead'); head.append(mk('b', 'pname', d.name), mk('span', 'istate', d.profiles.length ? d.profiles.length + ' profiles' : 'No profiles'));
+    const body = mk('div', 'ibody'); card.append(head, body);
+    if (d.summary) body.append(mk('p', 'psum', d.summary));
+    else if (d.noAi) body.append(mk('p', 'fine', 'No summary: showing the public links found.'));
+    if (d.note) body.append(mk('p', 'fine', d.note));
+    if (d.profiles.length) {
+      const ul = mk('ul', 'tlist plinks');
+      d.profiles.forEach((p) => {
+        const li = mk('li', 'trow'), t = mk('div', 'ttxt'), a = mk('a', 'tname plink', p.platform);
+        a.href = p.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        t.append(a, mk('span', 'tmeta', p.title || p.url)); li.append(t); ul.append(li);
+      });
+      body.append(ul);
+    }
+    d.findings.forEach((f) => body.append(mk('p', 'fine', (f.domain ? f.domain + ': ' : '') + f.snippet)));
   }
 
   async function research() {
@@ -112,11 +117,13 @@
 
   // ---- brain mode ---------------------------------------------------------------------------------
   function showMode() {
-    modeAi.setAttribute('aria-pressed', String(S.mode === 'ai'));
-    modeNone.setAttribute('aria-pressed', String(S.mode === 'none'));
-    meaningEl.textContent = S.meaning;
-    badge.textContent = 'Brain: ' + (MODE_TEXT[S.mode] || S.mode);
-    badge.className = 'bnote brainmode' + (S.mode === 'none' ? ' bad' : '');
+    const none = S.mode === 'none', word = MODE_WORD[S.mode] || S.mode;
+    modeAi.setAttribute('aria-pressed', String(!none)); modeNone.setAttribute('aria-pressed', String(none));
+    meaningEl.textContent = S.meaning || MODE_MEANS[S.mode] || '';
+    pill.className = 'status brainmode' + (none ? ' alert' : '');
+    pill.setAttribute('aria-label', 'Brain: ' + word + '. Change brain mode');
+    pillLabel.replaceChildren(mk('span', 'bm-long', 'Brain: ' + word), mk('span', 'bm-short', word));
+    menu.querySelectorAll('.bmopt').forEach((o) => o.setAttribute('aria-checked', String(o.dataset.mode === S.mode)));
   }
   function setMode(raw) {
     const d = obj(raw);
@@ -129,32 +136,87 @@
     try { setMode(await api('/v1/settings/brain-mode', { method: 'POST', body: { mode } })); }
     catch (e) { say('bad', detailOf(e)); }
   }
+  const opts = () => [...menu.querySelectorAll('.bmopt')];
+  function closeMenu(back) {
+    menu.hidden = true; asking.hidden = true; pill.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', outside, true);
+    if (back) pill.focus();
+  }
+  function outside(e) { if (!menu.contains(e.target) && !pill.contains(e.target)) closeMenu(false); }
+  function openMenu() {
+    menu.hidden = false; asking.hidden = true; pill.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', outside, true);
+    const cur = opts().find((o) => o.dataset.mode === S.mode); (cur || opts()[0]).focus();
+  }
+  function choose(mode) {
+    if (mode === S.mode) { closeMenu(true); return; }
+    if (mode === 'none') { closeMenu(true); switchMode('none'); return; }
+    asking.hidden = false; asking.querySelector('.btn.primary').focus();     // AI back on spends money: ask once
+  }
+  function menuKeys(e) {
+    const list = opts(), at = list.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); return; }
+    if (e.key === 'Tab') { closeMenu(false); return; }
+    if (at < 0 || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const n = e.key === 'Home' ? 0 : e.key === 'End' ? list.length - 1 : (at + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length;
+    list[n].focus();
+  }
+  function buildPill(slot) {
+    slot.className = 'bmslot'; slot.textContent = '';
+    pill = mk('button', 'status brainmode'); pill.type = 'button'; pill.id = 'brainModeBadge';
+    pill.setAttribute('aria-haspopup', 'menu'); pill.setAttribute('aria-expanded', 'false'); pill.setAttribute('aria-controls', 'brainMenu');
+    pillLabel = mk('span', 'bm-label'); pill.append(mk('i'), pillLabel);
+    menu = mk('div', 'card bmmenu'); menu.id = 'brainMenu'; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Brain mode'); menu.hidden = true;
+    ['ai', 'none'].forEach((m) => {
+      const o = mk('button', 'bmopt'); o.type = 'button'; o.dataset.mode = m; o.setAttribute('role', 'menuitemradio');
+      o.append(mk('b', '', m === 'ai' ? 'AI on' : 'No-AI'), mk('small', '', MODE_MEANS[m]));
+      o.addEventListener('click', () => choose(m)); menu.append(o);
+    });
+    asking = mk('div', 'bmask'); asking.hidden = true; asking.setAttribute('role', 'group'); asking.setAttribute('aria-label', 'Confirm AI on');
+    const yes = mk('button', 'btn primary lift', 'Switch on'), no = mk('button', 'btn lift', 'Cancel');
+    yes.type = no.type = 'button';
+    yes.addEventListener('click', () => { closeMenu(true); switchMode('ai'); });
+    no.addEventListener('click', () => { asking.hidden = true; opts()[0].focus(); });
+    const act = mk('div', 'actions'); act.append(no, yes);
+    asking.append(mk('p', '', 'Paid replies resume \u2014 switch AI on?'), act); menu.append(asking);
+    pill.addEventListener('click', () => (menu.hidden ? openMenu() : closeMenu(true)));
+    pill.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' && menu.hidden) { e.preventDefault(); openMenu(); } });
+    menu.addEventListener('keydown', menuKeys);
+    slot.append(pill, menu);
+  }
 
+  function field(id, label, input) {
+    const w = mk('div', 'pfield'), l = mk('label', 'k', label); l.htmlFor = id; input.id = id; w.append(l, input); return w;
+  }
   function build() {
     const root = mk('div', 'people'); root.id = 'people';
     noteEl = mk('div', 'bnote pnote'); noteEl.id = 'peopleNote'; noteEl.setAttribute('role', 'status'); noteEl.setAttribute('aria-live', 'polite');
-    const intro = mk('p', 'bfine', 'Public figures and work contacts, from public sources only. I never gather a private person\'s home, movements or accounts, and never identify anyone from a face.');
-    nameEl = mk('input', 'tinput'); nameEl.id = 'peopleName'; nameEl.maxLength = 80; nameEl.placeholder = 'Name'; nameEl.setAttribute('aria-label', 'Name');
-    ctxEl = mk('input', 'tinput'); ctxEl.id = 'peopleContext'; ctxEl.maxLength = 200; ctxEl.placeholder = 'Role or organisation (optional)'; ctxEl.setAttribute('aria-label', 'Role or organisation');
-    goBtn = mk('button', 'btn lift bact', 'Research'); goBtn.type = 'button'; goBtn.id = 'peopleGo';
+    const intro = mk('p', 'bfine pintro', 'Public figures and work contacts, from public sources only. I never gather a private person\'s home, movements or accounts, and never identify anyone from a face.');
+    nameEl = mk('input', 'minput'); nameEl.maxLength = 80; nameEl.placeholder = 'e.g. Satya Nadella';
+    ctxEl = mk('input', 'minput'); ctxEl.maxLength = 200; ctxEl.placeholder = 'e.g. Microsoft';
+    goBtn = mk('button', 'btn primary lift bact', 'Research'); goBtn.type = 'button'; goBtn.id = 'peopleGo';
     goBtn.addEventListener('click', research);
     [nameEl, ctxEl].forEach((n) => n.addEventListener('keydown', (e) => { if (e.key === 'Enter') research(); }));
+    const form = mk('div', 'pform'); form.append(field('peopleName', 'Name', nameEl), field('peopleContext', 'Role or organisation (optional)', ctxEl));
+    const go = mk('div', 'actions'); go.append(goBtn);
     card = mk('div', 'pcard'); card.id = 'peopleCard';
     openBtn = mk('button', 'btn lift', 'Open all profiles'); openBtn.type = 'button'; openBtn.id = 'peopleOpen'; openBtn.hidden = true;
     openBtn.addEventListener('click', openAll);
-    speakBtn = mk('button', 'btn', 'Speak'); speakBtn.type = 'button'; speakBtn.id = 'peopleSpeak'; speakBtn.hidden = true;
+    speakBtn = mk('button', 'btn lift', 'Speak'); speakBtn.type = 'button'; speakBtn.id = 'peopleSpeak'; speakBtn.hidden = true;
     speakBtn.addEventListener('click', speak);
-    const modeRow = mk('div', 'brow'); modeRow.setAttribute('role', 'group'); modeRow.setAttribute('aria-label', 'Brain mode');
-    modeAi = mk('button', 'btn', 'AI'); modeAi.type = 'button'; modeAi.id = 'modeAi';
-    modeNone = mk('button', 'btn', 'No-AI'); modeNone.type = 'button'; modeNone.id = 'modeNone';
+    const acts = mk('div', 'actions pacts2'); acts.append(openBtn, speakBtn);
+    const modeRow = mk('div', 'bopt pmode'), mt = mk('div', 'btxt');
+    meaningEl = mk('small'); meaningEl.id = 'modeMeaning'; mt.append(mk('span', 'bl', 'Brain mode'), meaningEl);
+    const sw = mk('div', 'atabs'); sw.setAttribute('role', 'group'); sw.setAttribute('aria-label', 'Brain mode');
+    modeAi = mk('button', 'btn bact atab', 'AI'); modeAi.type = 'button'; modeAi.id = 'modeAi';
+    modeNone = mk('button', 'btn bact atab', 'No-AI'); modeNone.type = 'button'; modeNone.id = 'modeNone';
     modeAi.addEventListener('click', () => switchMode('ai'));
     modeNone.addEventListener('click', () => switchMode('none'));
-    modeRow.append(modeAi, modeNone);
-    meaningEl = mk('p', 'bfine'); meaningEl.id = 'modeMeaning';
-    badge = mk('span', 'bnote brainmode'); badge.id = 'brainModeBadge';
+    sw.append(modeAi, modeNone); modeRow.append(mt, sw);
     const slot = document.getElementById('brainModeSlot');
-    (slot || root).append(badge);
-    root.append(noteEl, intro, nameEl, ctxEl, goBtn, card, openBtn, speakBtn, modeRow, meaningEl);
+    buildPill(slot || mk('span'));
+    root.append(noteEl, intro, form, go, card, acts, modeRow);
     host.appendChild(root);
     render(); showMode();
   }

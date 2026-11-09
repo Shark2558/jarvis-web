@@ -76,10 +76,11 @@
     qIn = mk('input', 'tin'); qIn.id = 'thingsSearch'; qIn.type = 'search'; qIn.maxLength = 200; qIn.placeholder = 'passport, spare keys, gold'; qIn.autocomplete = 'off';
     qIn.addEventListener('input', () => { clearTimeout(S.timer); S.timer = setTimeout(() => { S.q = qIn.value.trim(); load(true); }, SEARCH_MS); });
     const form = mk('form', 'tadd'); form.id = 'thingsAdd'; form.setAttribute('aria-label', 'Note where something is kept');
-    nameIn = mk('input', 'tin'); nameIn.id = 'thingsName'; nameIn.maxLength = 60; nameIn.placeholder = 'What (passport)'; nameIn.setAttribute('aria-label', 'What');
-    placeIn = mk('input', 'tin'); placeIn.id = 'thingsPlace'; placeIn.maxLength = 200; placeIn.placeholder = 'Where (blue file, top shelf)'; placeIn.setAttribute('aria-label', 'Where');
+    nameIn = mk('input', 'tin'); nameIn.id = 'thingsName'; nameIn.maxLength = 60; nameIn.placeholder = 'passport'; nameIn.setAttribute('aria-label', 'What');
+    placeIn = mk('input', 'tin'); placeIn.id = 'thingsPlace'; placeIn.maxLength = 200; placeIn.placeholder = 'blue file, top shelf'; placeIn.setAttribute('aria-label', 'Where');
     addBtn = mk('button', 'btn lift bact', 'Save'); addBtn.type = 'submit'; addBtn.id = 'thingsSave';
-    form.append(nameIn, placeIn, addBtn);
+    const fld = (inp, text) => { const w = mk('div', 'tfield'), l = mk('label', 'k', text); l.htmlFor = inp.id; w.append(l, inp); return w; };
+    form.append(fld(nameIn, 'What'), fld(placeIn, 'Where'), addBtn);
     form.addEventListener('submit', (e) => { e.preventDefault(); add(); });
     stateEl = mk('div', 'empty'); stateEl.id = 'thingsState'; stateEl.setAttribute('role', 'status');
     countEl = mk('p', 'bfine tcount'); countEl.id = 'thingsCount';

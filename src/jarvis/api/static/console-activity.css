@@ -25,3 +25,4 @@
   .abtn,.atabs .atab,.alog{min-height:44px}
 }
 html[data-motion="calm"] .arow{transition-duration:.01s}
+#auditOk{white-space:nowrap}  /* R5.1 #19: console.js rewrites the class and drops .nw */

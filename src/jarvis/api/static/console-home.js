@@ -124,7 +124,7 @@
 
   function renderOff(d) {
     card.dataset.state = 'off'; stateEl.textContent = 'Off';
-    bodyEl.appendChild(mk('p', '', 'Home is not available on this server yet.' + (d.reason ? ' ' + d.reason : '')));
+    bodyEl.appendChild(mk('p', '', d.reason || 'Home is not available on this server yet.'));
   }
   function renderUnlinked(d) {
     card.dataset.state = 'unlinked'; stateEl.textContent = STATES.not_linked;

@@ -531,8 +531,13 @@ def test_a_reply_arriving_during_the_handover_line_is_not_said_and_nothing_stick
             " { detail: { channel: 'voice', text: 'A late reply that must not be said.', approvals: 0 } }))"
         )
         _until(c, "document.getElementById('micBtn').dataset.state === 'idle'", 15)
-        assert fake.spoken().count("I'll switch to the keyboard, Sir.") == round_
+        # Count what was played, not speech requests: the handover is a fixed line, so from the
+        # second time on it comes from the speaker's cache and never reaches /v1/voice/speak.
+        played = c.page.evaluate("window.__voice.speech.map(d => d.text)")
+        assert played.count("I'll switch to the keyboard, Sir.") == round_
         c.page.wait_for_timeout(300)
+    played = c.page.evaluate("window.__voice.speech.map(d => d.text)")
+    assert "A late reply that must not be said." not in played
     assert "A late reply that must not be said." not in fake.spoken()
     assert c.page.evaluate("JarvisAudio.isOpen()") is False
     assert c.errors == []

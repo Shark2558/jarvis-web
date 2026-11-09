@@ -466,6 +466,7 @@ DOM_CHECKS_JS = r"""
       const a = kids[i - 1], b = kids[i];
       if (a.nodeType !== 1 || b.nodeType !== 1 || !vis(a) || !vis(b)) continue;
       if (!(a.textContent || '').trim() || !(b.textContent || '').trim()) continue;
+      if (/\s$/.test(a.textContent) || /^\s/.test(b.textContent)) continue; // a rendered space between them
       const ra = rect(a), rb = rect(b);
       const sameLine = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top) > Math.min(ra.height, rb.height) * 0.5;
       const gap = rb.left - ra.right;
@@ -524,14 +525,17 @@ DOM_CHECKS_JS = r"""
   for (const e of inter) {
     if (e.matches('input[type=checkbox], input[type=radio]')) continue;
     const r = rect(e);
-    if ((r.width < min || r.height < min) && out.smallTargets.length < CAP) out.smallTargets.push({ el: path(e), text: words(e), w: Math.round(r.width), h: Math.round(r.height), min });
+    // rounded: a sub-pixel short of the minimum (43.98 px) is the minimum
+    if ((Math.round(r.width) < min || Math.round(r.height) < min) && out.smallTargets.length < CAP) out.smallTargets.push({ el: path(e), text: words(e), w: Math.round(r.width), h: Math.round(r.height), min });
   }
 
   // 8. controls without a programmatic or visible label (placeholder-only counts as unlabelled)
   for (const e of inter.filter((x) => x.matches('input:not([type=hidden]), select, textarea'))) {
     const hasFor = e.id && document.querySelector('label[for="' + CSS.escape(e.id) + '"]');
     const wrap = e.closest('label');
-    const visible = hasFor || (wrap && own(wrap)) || (wrap && [...wrap.children].some((c) => c !== e && (c.textContent || '').trim()));
+    const byIds = (e.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean).map((i) => document.getElementById(i));
+    const labelledBy = byIds.some((n) => n && vis(n) && (n.textContent || '').trim());
+    const visible = hasFor || labelledBy || (wrap && own(wrap)) || (wrap && [...wrap.children].some((c) => c !== e && (c.textContent || '').trim()));
     let order = '';
     if (wrap) {
       const txt = [...wrap.childNodes].findIndex((n) => n !== e && (n.textContent || '').trim());

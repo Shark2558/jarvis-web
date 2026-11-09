@@ -25,5 +25,5 @@
 @media (max-width: 560px){
   .people .minput{height:44px}
   .people .btn,.people .btn.bact,.plink{min-height:44px}
-  .plink{display:inline-flex;align-items:center}
+  .plink{display:inline-flex;align-items:center;min-width:44px}
 }

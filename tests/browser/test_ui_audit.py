@@ -164,7 +164,13 @@ def test_panel_passes_the_visual_gate(rig: Rig, panel: str, vp: str, surface: st
         "page-level horizontal scroll": [res["hscroll"]] if res["hscroll"] else [],
         "text contrast below 4.5:1": res["contrast"],
         "neighbouring texts run together": res["runTogether"],
-        "control unlabelled or labelled after it": res["unlabelled"],
+        # D11: a visible label (not after the control) or an aria-label; placeholder-only fails
+        "control unlabelled or labelled after it": [
+            u
+            for u in res["unlabelled"]
+            if u.get("order") == "label text after the control"
+            or not (u.get("visibleLabel") or u.get("aria"))
+        ],
         "control or heading in the plain body font": res["systemFont"],
         "touch target below 44 px on the phone": res["smallTargets"] if vp == "phone" else [],
     }

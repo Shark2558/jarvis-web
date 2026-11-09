@@ -331,6 +331,14 @@ button.status.brainmode:focus-visible{outline:2px solid var(--accent);outline-of
   .gate-card{padding:34px 22px 26px}
   .gate-card .core{--s:124px}
 }
+/* R5.1 D11 / audit #13: on the phone layout every touch target is at least 44 px (the visual gate,
+   tests/browser/test_ui_audit.py, measures it). Heights only: widths and colours are unchanged. */
+@media (max-width: 899px){
+  .pbtn{width:44px;height:44px}
+  .btn.bact,.btn.sact,.actions .btn,.confirm .btn,.chip,.bsw,#input{min-height:44px}
+  .composer .clip{width:44px;height:44px}
+  .vrate .vrange{height:44px}
+}
 @media (max-width: 380px){
   .status{padding:0 8px;letter-spacing:.08em}
   .topbar .picker select{max-width:108px}

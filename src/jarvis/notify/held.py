@@ -14,6 +14,7 @@ from jarvis.notify.store import NotifyStore
 _WORDS = {
     "home_package": "package",
     "home_offline": "laptop offline",
+    "home_offline_idle": "laptop offline",
     "home_arm_failed": "alarm arming problem",
     "approval_waiting": "waiting for approval",
     "vault_expiry": "document reminder",

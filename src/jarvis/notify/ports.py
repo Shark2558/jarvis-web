@@ -54,6 +54,10 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "approval_waiting": "important",
         "vault_expiry": "important",
         "test": "important",  # D10 rule 1 rings a test whatever its level
+        # R5.1 D3: the laptop stopped answering while disarmed. Held in quiet hours (a laptop
+        # that sleeps at night never rings at 2 am); rings in waking hours even when only urgent
+        # things ring (notify.policy DAYTIME_RING_KINDS), because the owner asked to be told.
+        "home_offline_idle": "important",
         # info: silent or feed only
         "home_greeting": "info",
         "home_online": "info",

@@ -27,7 +27,7 @@ MAX_INTRUDER_PER_HOUR = 20
 MAX_INTRUDER_PER_DAY = 80
 HAZARD_GAP = timedelta(seconds=30)
 FLAP_GAP = timedelta(minutes=10)
-FLAP_KINDS = frozenset({"home_offline", "home_online", "home_arm_failed"})
+FLAP_KINDS = frozenset({"home_offline", "home_offline_idle", "home_online", "home_arm_failed"})
 # Health and vitals rings are "urgent" by default but must never crowd out a burglar ring (I2 F2):
 # one per subject per 30 minutes and 6 an hour in all, counted apart from the burglar window.
 SOFT_URGENT_KINDS = frozenset({"health_fault", "vitals_critical"})

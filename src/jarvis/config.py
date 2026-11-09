@@ -244,10 +244,15 @@ class Settings(BaseSettings):
         default=120, ge=60, le=600, description="Seconds between the bridge's heartbeats"
     )
     home_offline_after_s: int = Field(
-        default=720,
+        default=360,  # R5.1 D3: 3 missed beats (was 720): the owner hears within ~6-11 minutes
         ge=300,
         le=3600,
         description="No heartbeat for this long -> the laptop counts as offline (>= 2 beats)",
+    )
+    home_offline_alert: Literal["always", "armed_only"] = Field(
+        default="always",
+        description="R5.1 D3: tell the owner when the laptop stops answering: always, or only "
+        "while the alarm is armed (the R3 behaviour)",
     )
     home_feed_days: int = Field(
         default=7, ge=1, le=30, description="Days the cloud keeps the home alert feed"

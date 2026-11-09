@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 import sys
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -89,13 +90,22 @@ async def read_aloud(h: Harness, extra: list[dict[str, Any]] | None = None) -> A
     return await h.brain.chat(ChatRequest(message="Read my mail aloud"))
 
 
+# The random 6-hex fence id (`secrets.token_hex(3)` in tools/external.py) can spell a masked
+# number such as "450" (seen ~1 run in 300); leak checks look at the results without it.
+_FENCE_ID = re.compile(r"(?<=\u00b7 )[0-9a-f]{6}(?=>>)|(?<=<<END )[0-9a-f]{6}(?=>>)")
+
+
+def without_fence_ids(seen: str) -> str:
+    return _FENCE_ID.sub("", seen)
+
+
 def sensitive_case(key: str) -> Case:
     subject, snippet, secret = SENSITIVE[key]
 
     async def run() -> list[str]:
         h, _, _ = await rig([mail(1, subject, snippet, BANK), mail(2, "Lunch?", "Free at one?")])
         await read_aloud(h)
-        seen, f = h.results_seen(), []
+        seen, f = without_fence_ids(h.results_seen()), []
         for leaked in (subject, snippet, secret, "alerts@bank.example"):
             if leaked in seen:
                 f.append(f"{leaked!r} reached the model")
@@ -125,7 +135,7 @@ async def _voice_otp() -> list[str]:
     h, _, _ = await rig([mail(1, subject, snippet, BANK), mail(2, "Lunch?", "Free at one?")])
     h.script([[{"name": "gmail_unread_digest", "arguments": {}}]], "One message is withheld, Sir.")
     await h.brain.chat(ChatRequest(message="Read my last email with an OTP", channel="voice"))
-    seen, f = h.results_seen(), []
+    seen, f = without_fence_ids(h.results_seen()), []
     if not h.provider.calls or VOICE_RULE_HEADING not in h.provider.calls[0].system:
         f.append("the spoken-reply rule was not in force (not a voice turn: nothing tested)")
     for leaked in (subject, snippet, secret):
@@ -160,7 +170,7 @@ MASKED = (
 async def _masked() -> list[str]:
     h, _, _ = await rig([mail(1, "Your order", MASKED), mail(2, "Rs 1,00,000 offer", "Hello")])
     await read_aloud(h)
-    seen, f = h.results_seen(), []
+    seen, f = without_fence_ids(h.results_seen()), []
     for leaked in ("98765", "abc123def", "https://", "450", "okaxis", "98450", "1,00,000"):
         if leaked in seen:
             f.append(f"{leaked!r} reached the model")

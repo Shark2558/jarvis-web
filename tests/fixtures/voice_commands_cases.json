@@ -1,0 +1,502 @@
+[
+ {
+  "text": "mic off",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "Mic off please",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "Jarvis, mic off",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "switch off the mic",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "Switch the mic off",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "turn off the microphone",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "mute the mic",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "mute yourself",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "stop listening",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "Stop listening to me",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "don't listen to me",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "Hey Jarvis, switch the mic off sir",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "can you turn the mike off",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "Could you mute the microphone please",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "Jervis mic off",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "switch off mic",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "mic off",
+  "state": "speaking",
+  "id": "mic.off"
+ },
+ {
+  "text": "stop listening to me",
+  "state": "speaking",
+  "id": "mic.off"
+ },
+ {
+  "text": "stop",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "Stop it",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "stop talking",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "stop speaking",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "stop there",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "wait",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "wait a moment",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "hold on",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "hang on",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "one moment",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "quiet",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "be quiet",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "enough",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "that's enough",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "pause",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "shush",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "cancel",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "never mind",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "forget it",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "Jarvis, stop",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "jervis wait",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "Stop please",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "Wait a moment, Sir",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "Hey Jarvis, hold on",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "STOP!",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "that’s enough",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "stop",
+  "state": "listening",
+  "id": "speech.stop"
+ },
+ {
+  "text": "wait",
+  "state": "listening",
+  "id": "speech.stop"
+ },
+ {
+  "text": "stop",
+  "state": "thinking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "hold on",
+  "state": "standby",
+  "id": "speech.stop"
+ },
+ {
+  "text": "keyboard",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "keyboard mode",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "switch to the keyboard",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "switch to keyboard",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "turn to the keyboard",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "I'll type",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "let me type",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "typing mode",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "that's all",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "that'll be all",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "we're done",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "end the conversation",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "end conversation",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "goodbye",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "bye",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "Jarvis, that's all thanks",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "Goodbye, Sir",
+  "state": "listening",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "bye",
+  "state": "speaking",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "switch to the keyboard",
+  "state": "speaking",
+  "id": "conversation.keyboard"
+ },
+ {
+  "text": "remind me to stop at the shop",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "wait for the delivery at five",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "switch to dark mode",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "use the earphones coupon",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "what is the time",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "stop the music in the living room",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "I want to stop listening to podcasts",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "bye bye for now",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "the keyboard is broken",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "please open the keyboard shortcuts",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "mic check one two",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "how do I mute a mic in zoom",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "cancel my subscription to the newsletter",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "hold on to your hat",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "wait until tomorrow",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "enough is enough",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "pause the video",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "never mind the weather",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "forget it all",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "quiet please everyone",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "that's all folks",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "stop everything",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "end of the world",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "goodbye everyone",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "keyboard shortcuts",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "switch off the lights",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "switch the light off",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "turn off the microphone in the meeting",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "I'll type it later",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "mic off",
+  "state": "off",
+  "id": null
+ },
+ {
+  "text": "stop",
+  "state": "off",
+  "id": null
+ },
+ {
+  "text": "",
+  "state": "listening",
+  "id": null
+ },
+ {
+  "text": "one two three four five six seven eight nine mic off",
+  "state": "listening",
+  "id": null
+ }
+]

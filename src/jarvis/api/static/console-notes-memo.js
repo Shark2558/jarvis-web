@@ -19,6 +19,8 @@
   const S = { mode: 'idle', text: '', error: '', unsub: null, frames: [], total: 0, pieces: 0, chain: Promise.resolve(), cloud: true, rec: null, busy: false, sid: 0, pending: 0 };
   let box = null;
 
+  const MIC_OFF = 'The microphone is switched off. Switch it on with the mic button, then record.';
+  const micLocked = () => { const A = window.JarvisAudio; return !!(A && typeof A.locked === 'function' && A.locked()); };
   const say = (kind, text) => { const n = Notes(); if (n) n.flash(kind, text); };
   function fail(text) { S.error = text; draw(); }
 
@@ -53,6 +55,7 @@
   async function start() {
     if (S.mode !== 'idle') return;
     S.sid += 1; S.pending = 0; S.error = ''; S.text = ''; S.frames = []; S.total = 0; S.pieces = 0; S.cloud = true;
+    if (micLocked()) { fail(MIC_OFF); return; }   // R5 D11: no recording, and no fallback, while the mic is off
     const A = window.JarvisAudio;
     if (!A || !A.supported || !A.supported()) { if (Speech) { useBrowser(); return; } fail('This browser can\'t record. Type the note instead.'); return; }
     S.mode = 'recording'; draw();
@@ -65,7 +68,9 @@
     });
     A.onEnd(() => { if (S.mode === 'recording') stop(); });
   }
-  function release() { if (S.unsub) { S.unsub(); S.unsub = null; } try { window.JarvisAudio.close(); } catch (_) {} }
+  // A live voice conversation shares the microphone: the memo lets go of its frames but leaves it open.
+  const conversing = () => { const L = window.JarvisVoiceLoop; return !!(L && typeof L.inConversation === 'function' && L.inConversation()); };
+  function release() { if (S.unsub) { S.unsub(); S.unsub = null; } if (conversing()) return; try { window.JarvisAudio.close(); } catch (_) {} }
   function stop() {
     if (S.mode === 'browser') { try { S.rec.stop(); } catch (_) {} S.mode = 'review'; draw(); return; }
     if (S.mode !== 'recording') return;
@@ -76,6 +81,7 @@
 
   // ---- the browser's own recognition (cloud voice off) -------------------------------------------
   function useBrowser() {
+    if (micLocked()) { S.mode = 'idle'; fail(MIC_OFF); return; }
     release(); S.frames = []; S.mode = 'browser'; S.text = '';
     try {
       const rec = window.JarvisAudio.recognizer(); rec.continuous = true; rec.interimResults = false; rec.lang = navigator.language || 'en-IN';
@@ -145,6 +151,15 @@
     if (anchor) anchor.after(box); else host.append(box);
   }
 
+  // Switching the microphone off ends a recording at once; pieces not yet sent are dropped.
+  if (window.JarvisAudio && typeof window.JarvisAudio.onLock === 'function') {
+    window.JarvisAudio.onLock(({ locked }) => {
+      if (!locked || (S.mode !== 'recording' && S.mode !== 'browser')) return;
+      S.frames = [];
+      stop();
+      fail(MIC_OFF);
+    });
+  }
   window.addEventListener('jarvis:notes-rendered', draw);
   document.addEventListener('jarvis:panel', (e) => { const d = e.detail || {}; if (d.id === 'notes' && !d.open && S.mode !== 'idle') reset(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden && (S.mode === 'recording' || S.mode === 'browser')) stop(); });

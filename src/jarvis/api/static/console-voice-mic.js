@@ -1,28 +1,27 @@
 // src/jarvis/api/static/console-voice-mic.js — talking to JARVIS from the composer (slice 9 §5,
-// docs/plans/phase1-slice9-voice.md). No build step; CSP script-src 'self'.
+// docs/plans/phase1-slice9-voice.md; R5 "Voice that listens", docs/plans/r5-voice.md D2-D12). No build
+// step; CSP script-src 'self'.
 // The mic button: tap = listen; tap again = stop and send; tap while JARVIS speaks = stop him and
-// listen; Esc cancels (listening), stops (speaking) or drops the turn (thinking: the transcript is
-// discarded, or the answer is shown but not spoken); Ctrl+Space toggles. States idle / listening /
-// thinking / speaking: the button's name stays "Voice input"; the state is said by aria-pressed
-// (listening), the top-bar pill and a polite live region.
+// listen; Esc cancels (listening), stops (speaking) or drops the turn (thinking); Ctrl+Space toggles.
+// States idle / listening / standby / thinking / speaking / handover / off. The button's name stays
+// "Voice input"; the state is said by aria-pressed (listening), the top-bar pill and a live region.
 // Engines (§1 D3, per device): the cloud (JarvisAudio frames → energy VAD → WAV → POST
 // /v1/voice/transcribe) or the browser's own recognition (interim words in the composer).
-// Listening has wall-clock limits as well as the VAD's: nothing heard in 6 s (3 s after a reply in
-// conversation mode) ends it; 30 s sends what was heard. Conversation mode ("Keep listening")
-// carries on hands-free for at most 3 turns after a tap or "Hey Jarvis", then waits for a tap.
-// A spoken message goes to the chat with `channel: "voice"`. Replies are spoken per "Speak replies";
-// when a spoken turn leaves an approval waiting, JARVIS says only the fixed line "That one needs your
-// approval on screen, {honorific}." (D11) and nothing is ever approved by voice.
-// "Hey Jarvis" (D12): window.JarvisWake (console-wakeword.js) gets the same 16 kHz frames; it is
-// paused (JarvisWake.pause()) while JARVIS listens, thinks or speaks, and resumed ~0.4 s after the
-// last clip ends. Its state is checked every second: an error switches it off with a plain line.
-// R5 I0 (docs/plans/r5-voice.md): the hard mic lock (JarvisAudio.lock) is honoured here: listen()
-// refuses while locked, the browser recogniser is built through JarvisAudio.recognizer(), a lock
-// cancels the turn and shows the 'off' state, and "Hey Jarvis" waits ('micoff' chip). The minimal
-// window.JarvisVoiceLoop (state, inConversation, say, ask, offer, end) is the seam the devices module
-// and the tests use; workstream A completes the loop behind the same shape.
+// A conversation (tap, Ctrl+Space or "Hey Jarvis" with "Keep listening") has NO turn limit (D4): after
+// a spoken reply the loop listens for `followUpS`, stands by (a stricter start gate) until `longPauseS`,
+// and then tells the owner it is switching to the keyboard (D5). The microphone stays open for the whole
+// conversation on the cloud engine (D3), so the owner can talk over JARVIS (console-voice-barge.js, D7);
+// a stopped reply is picked up again if the interruption turns out to be empty (D9). A room that keeps
+// talking gets a check-in after 8 quick turns (D6, console-voice-conversation.js). Spoken transcripts go
+// through the local command router first (D12): "mic off", "stop", "switch to the keyboard", devices.
+// A spoken message goes to the chat with `channel: "voice"`. When a spoken turn leaves an approval
+// waiting, JARVIS says only the fixed line "That one needs your approval on screen, {honorific}." (D11)
+// and nothing is ever approved by voice. "Hey Jarvis" lives in console-voice-wake.js. The hard mic lock
+// (JarvisAudio.lock) is honoured everywhere: listen() refuses, nothing re-listens, recognisers come from
+// JarvisAudio.recognizer(). window.JarvisVoiceLoop (state, inConversation, say, ask, offer, end) is the
+// seam the devices module and the tests use.
 // Listens: jarvis:turn / jarvis:turn-end / jarvis:answer / jarvis:switch (console.js),
-// jarvis:voice-device (console-voice.js), jarvis:motion. Fires: jarvis:wake {state, note}.
+// jarvis:voice-device (console-voice.js), jarvis:motion. Fires: jarvis:wake, jarvis:voice-loop, jarvis:barge.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -37,21 +36,32 @@
   const honorific = () => (typeof Chat.honorific === 'function' && Chat.honorific()) || 'Sir';
   const JC = window.JarvisConsole;
   const signedIn = () => !!(JC && typeof JC.ready === 'function' && JC.ready());
+  const Cmd = () => window.JarvisVoiceCommands || null;
+  const Pace = () => window.JarvisVoicePace || { cue: () => Promise.resolve(), mark() {} };
+  const CUE_MAX_MS = 800;          // never wait longer than this for a tone: the loop must not hang on a stalled audio context
+  const CUE_GAP_MS = 100;          // the VAD starts this long after a cue ends (the tone must not be heard as speech)
+  const cue = (name) => { try { return Promise.resolve(Pace().cue(name)).catch(() => {}); } catch (_) { return Promise.resolve(); } };
 
   const NO_SPEECH_MS = 6000;       // a tap: nothing heard this long after the mic opened → stop
-  const RELISTEN_START_MS = 3000;  // conversation mode: speech must start this soon after a reply
-  const MAX_LISTEN_MS = 30000;     // one listening turn at most, whatever the frames say
-  const MAX_HANDS_FREE = 3;        // follow-up turns without a tap (or "Hey Jarvis")
+  const MAX_LISTEN_MS = 55000;     // one listening turn at most (STT v1's 60 s synchronous limit)
   const RELISTEN_DELAY_MS = 350;
   const LINE_MS = 8000;
   const MIN_FRAMES = 4;            // under ~0.3 s is not worth a transcription
+  const VAD_LAG_MS = 160;          // two frames of speech before the VAD says "start"
+  const RESUME_MS = 10000;         // an empty interruption: JARVIS picks his reply up again within this
+  const SAID_MS = 4000;            // JARVIS's own words kept this long for the echo guard
+  const WAKE_NAME_MS = 400;        // "Jarvis" inside his own words counts only if the gate was open this recently
+  const BROWSER_RESTART_MS = 4000; // the browser recogniser is restarted quietly at most this often
+  const CHECK_ASK_MS = 8000;
+  const FILLER = new Set(['um', 'uh', 'hmm', 'mm', 'uhm', 'er', 'ah', 'umm', 'uhh', 'hm', 'mhm']);
+  const FIXED = Object.freeze({ fixed: true });   // fixed lines: their audio is cached per page
   const NAME = 'Voice input';
   const TITLES = { idle: 'Speak (Ctrl + Space)', listening: 'Stop and send', thinking: 'JARVIS is answering', speaking: 'Stop JARVIS and speak',
-    standby: 'Speak (Ctrl + Space)', off: 'Microphone off: switch it on in Voice' };
-  const LIVE = { idle: '', listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking', standby: 'Standing by', off: 'Microphone off' };
+    standby: 'Speak (Ctrl + Space)', off: 'Microphone off: tap to switch it on (Ctrl + Shift + Space)' };
+  const LIVE = { idle: '', listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking', standby: 'Standing by', off: 'Microphone off', handover: 'Speaking' };
   const FX_MODE = { listening: 'listening', speaking: 'speaking', standby: 'standby', off: 'micoff' };
   const OFFER_MS = 30000;
-  const LOCKED_LINE = 'The microphone is switched off. Switch it on in the Voice panel.';
+  const LOCKED_LINE = 'The microphone is switched off. Switch it on with the mic button (or Ctrl + Shift + Space).';
   const HELP = {
     blocked: 'The microphone is blocked for JARVIS. Allow it in the site settings (the icon beside the address), then tap the mic again.',
     no_mic: 'No microphone was found. Plug one in or check the sound settings, then tap the mic again.',
@@ -65,22 +75,30 @@
 
   const S = { mode: 'idle', turn: 0, vad: null, unsub: null, rec: null, recText: '', stop: false, cancel: false,
     keep: false, before: '', placeholder: input.getAttribute('placeholder') || '', raf: 0, level: 0, lineTimer: 0,
-    relisten: 0, convTimer: 0, fallbackSaid: false, soft: false, startMs: NO_SPEECH_MS, chain: 0, mute: false,
-    noSpeech: 0, maxTimer: 0, spoken: [] };
+    relisten: 0, fallbackSaid: false, soft: false, startMs: NO_SPEECH_MS, chain: 0, mute: false,
+    noSpeech: 0, maxTimer: 0, spoken: [],
+    conv: false, handsFree: '', holdWait: false, heardMarked: false, seed: null, info: null, recStart: 0,
+    said: [], rest: null, restAt: 0, restKeep: false, silent: false, handing: false, checking: false,
+    barge: null, abort: null, nameOff: false, browserTimer: 0 };
+  let clock = null;                                    // the follow-up / standby / long-pause clock of this reply
+  const runaway = window.JarvisConversation.runaway();
+  const isListening = () => S.mode === 'listening' || S.mode === 'standby';
 
   // ---- state ---------------------------------------------------------------------------------
   function setMode(mode) {
     if (mode === 'idle' && A.locked()) mode = 'off';   // at rest while the microphone is locked
     if (S.mode === mode) return;
     S.mode = mode;
-    btn.dataset.state = mode;
-    if (mode !== 'listening') { btn.classList.remove('nolevel'); clearClocks(); }
+    const shown = mode === 'handover' ? 'speaking' : mode;
+    btn.dataset.state = shown;
+    if (!isListening()) { btn.classList.remove('nolevel'); clearClocks(); }
     btn.setAttribute('aria-pressed', String(mode === 'listening'));
-    btn.title = TITLES[mode];
+    btn.title = TITLES[shown];
     input.setAttribute('placeholder', mode === 'listening' ? 'Listening…' : S.placeholder);
-    if (typeof FX.setVoice === 'function') FX.setVoice(FX_MODE[mode] || null);
+    if (typeof FX.setVoice === 'function') FX.setVoice(FX_MODE[shown] || null);
     if (liveEl) liveEl.textContent = LIVE[mode];
     emit('jarvis:voice-loop', { state: mode, conversation: inConversation(), turns: S.chain });
+    if (mode === 'speaking') armBarge(); else disarmBarge();
     syncWake();
     levels();
   }
@@ -97,17 +115,18 @@
   }
 
   // ---- live level: the mic ring, the Core, real data only ---------------------------------------
+  const lit = () => S.mode === 'listening' || S.mode === 'speaking' || S.mode === 'handover';
   function levels() {
-    const on = (S.mode === 'listening' || S.mode === 'speaking') && FX.motion() !== 'off';
+    const on = lit() && FX.motion() !== 'off';
     if (on && !S.raf) S.raf = requestAnimationFrame(tick);
     if (!on) { cancelAnimationFrame(S.raf); S.raf = 0; S.level = 0; paint(0); }
   }
   function tick() {
     S.raf = 0;
-    const raw = S.mode === 'listening' ? (A.isOpen() ? A.level() : 0) : S.mode === 'speaking' ? V.speaker.level() : 0;
+    const raw = S.mode === 'listening' ? (A.isOpen() ? A.level() : 0) : lit() ? V.speaker.level() : 0;
     S.level = S.level * 0.55 + raw * 0.45;
     paint(Math.min(1, Math.sqrt(S.level) * 1.8));
-    if (S.mode === 'listening' || S.mode === 'speaking') S.raf = requestAnimationFrame(tick);
+    if (lit()) S.raf = requestAnimationFrame(tick);
   }
   let shown = 0;
   function paint(v) {
@@ -116,65 +135,87 @@
     btn.style.setProperty('--lvl', s);
     root.style.setProperty('--vlevel', s);
   }
-  V.setVisual(() => ({ mode: S.mode === 'listening' || S.mode === 'speaking' ? S.mode : null, level: shown }));
+  V.setVisual(() => ({ mode: S.mode === 'listening' ? 'listening' : (S.mode === 'speaking' || S.mode === 'handover') ? 'speaking' : null, level: shown }));
   document.addEventListener('jarvis:motion', levels);
 
   // ---- listening ----------------------------------------------------------------------------
   /** Start a listening turn. opts.soft: started without a tap ("Hey Jarvis"), so quiet when nothing
-   *  is heard; opts.relisten: conversation mode after a spoken reply (speech must start within 3 s,
-   *  and it counts towards the hands-free limit). Anything else (a tap) starts a new conversation. */
+   *  is heard; opts.relisten: the next turn of a conversation (the clock decides when to give up);
+   *  opts.barge (+ seed frames): the owner talked over JARVIS. Anything else starts a conversation. */
   async function listen(opts = {}) {
-    if (S.mode === 'listening') return;
-    if (A.locked()) { say(LOCKED_LINE); return; }     // D11: nothing listens while the microphone is off
-    clearTimeout(S.relisten); clearTimeout(S.convTimer);
-    if (V.speaker.speaking()) V.speaker.stop();
+    if (isListening()) return;
+    if (A.locked()) { say(LOCKED_LINE); return; }
+    clearTimeout(S.relisten); clearTimeout(S.browserTimer);
+    if (V.speaker.speaking()) silence();
     V.speaker.unlock();                     // inside the tap: later replies may start playing
     if (A.supported()) A.prime();           // the same, for the microphone's audio context
     help(null);
     const t = ++S.turn;
-    S.soft = !!(opts.soft || opts.relisten);
-    S.startMs = opts.relisten ? RELISTEN_START_MS : NO_SPEECH_MS;
-    if (!opts.relisten) S.chain = 0;
+    const hands = !!(opts.relisten || opts.barge);
+    S.soft = !!(opts.soft || hands);
+    S.handsFree = opts.barge ? 'barge' : opts.relisten ? 'relisten' : '';
+    S.holdWait = hands; S.heardMarked = false; S.seed = opts.seed || null; S.info = opts.info || null;
+    S.startMs = NO_SPEECH_MS;
+    if (!hands) { S.chain = 0; S.rest = null; S.conv = !!V.device().keepListening; stopClock(); }
     setMode('listening');
+    const cued = opts.barge ? null : cue('listen');      // an interruption starts at once, without a tone
     await V.load(false);
-    if (t !== S.turn || S.mode !== 'listening') return;
+    if (t !== S.turn || !isListening()) return;
     const engine = V.inputEngine();
-    if (engine === 'cloud') listenCloud(t);
+    if (engine === 'cloud') listenCloud(t, cued);
     else if (engine === 'browser') listenBrowser(t);
-    else { setMode('idle'); help(V.device().engine === 'cloud' && A.supported() ? 'cloud_down' : 'unsupported'); releaseMic(); }
+    else { S.conv = false; setMode('idle'); help(V.device().engine === 'cloud' && A.supported() ? 'cloud_down' : 'unsupported'); releaseMic(); }
   }
 
   /** Wall-clock limits, independent of frames (a stalled worklet or a suspended context sends none). */
   function startClocks(t) {
     clearClocks();
-    S.noSpeech = setTimeout(() => { if (t === S.turn && S.mode === 'listening') nothingHeard(); }, S.startMs);
-    S.maxTimer = setTimeout(() => { if (t === S.turn && S.mode === 'listening') stopAndSend(); }, MAX_LISTEN_MS);
+    if (!S.holdWait) S.noSpeech = setTimeout(() => { if (t === S.turn && isListening()) nothingHeard(); }, S.startMs);
+    S.maxTimer = setTimeout(() => { if (t === S.turn && isListening()) stopAndSend(); }, MAX_LISTEN_MS);
   }
   function clearClocks() {
-    clearTimeout(S.noSpeech); clearTimeout(S.maxTimer); clearTimeout(S.convTimer);
-    S.noSpeech = S.maxTimer = S.convTimer = 0;
+    clearTimeout(S.noSpeech); clearTimeout(S.maxTimer);
+    S.noSpeech = S.maxTimer = 0;
   }
   function nothingHeard() {
+    S.conv = false; stopClock();
     if (S.rec) { S.cancel = true; S.quietEnd = true; try { S.rec.abort(); } catch (_) {} return; } // its onend says it
     endCapture();
     setMode('idle');
     if (!S.soft) say('I didn\'t hear anything.');
   }
+  /** The owner began to speak: the waits stop, and the turn counts for the check-in (D6). */
+  function markHeard(lagMs) {
+    if (S.heardMarked) return;
+    S.heardMarked = true;
+    try { Pace().mark('spoke'); } catch (_) {}   // the last quiet moment before speech: the 'listening' timing
+    clock && clock.heard();
+    if (S.mode === 'standby') setMode('listening');
+    if (!S.handsFree) { runaway.touch(); return; }
+    // the gap is measured from when JARVIS finished, minus his own re-listen delay and the VAD's lag
+    runaway.turn(S.handsFree === 'barge' ? 0 : Math.max(0, (clock ? clock.sinceReplyMs() : 0) - lagMs - RELISTEN_DELAY_MS), Date.now());
+  }
 
-  async function listenCloud(t) {
+  async function listenCloud(t, cued) {
     try { await A.open(); } catch (e) {
-      if (t === S.turn) { setMode('idle'); if (!e || e.code !== 'closed') help(e && e.code); releaseMic(); }
+      if (t === S.turn) { S.conv = false; setMode('idle'); if (!e || e.code !== 'closed') help(e && e.code); releaseMic(); }
       return;
     }
-    if (t !== S.turn || S.mode !== 'listening') { if (S.mode !== 'listening') releaseMic(); return; } // a newer turn keeps it
+    if (t !== S.turn || !isListening()) { if (!isListening()) releaseMic(); return; } // a newer turn keeps it
+    if (cued) { await Promise.race([cued, new Promise(r => setTimeout(r, CUE_MAX_MS))]); await new Promise(r => setTimeout(r, CUE_GAP_MS)); if (t !== S.turn || !isListening()) return; }
     A.flush();
-    S.vad = window.JarvisVad.create({ noSpeechMs: S.startMs });
+    const d = V.device(), wait = S.handsFree === 'relisten';
+    S.vad = window.JarvisVad.create({
+      noSpeechMs: wait ? (d.longPauseS + 10) * 1000 : S.startMs, endSilenceMs: d.endSilenceMs, maxMs: MAX_LISTEN_MS, seed: S.seed,
+      strictAfterMs: wait ? Math.max(0, d.followUpS * 1000 - RELISTEN_DELAY_MS) : 0,
+    });
     startClocks(t);
+    if (S.seed) markHeard(0);
     S.unsub = A.subscribe((frame) => {
       if (t !== S.turn || !S.vad) return;
       const ev = S.vad.push(frame);
       if (!ev) return;
-      if (ev.type === 'start') { clearTimeout(S.noSpeech); if (liveEl) liveEl.textContent = 'Hearing you'; return; }
+      if (ev.type === 'start') { clearTimeout(S.noSpeech); markHeard(VAD_LAG_MS); if (liveEl) liveEl.textContent = 'Hearing you'; return; }
       if (ev.type === 'timeout') { nothingHeard(); return; }
       transcribe(t, ev.frames);
     });
@@ -184,19 +225,22 @@
     S.vad = null;
     releaseMic();
   }
-  /** Close the microphone unless "Hey Jarvis" still needs it (the browser's mic light goes off). */
-  function releaseMic() { if (!wake.on && !S.unsub) A.close(); }
+  /** The cloud engine keeps the microphone open for the whole conversation (D3). */
+  const holdMic = () => S.conv && !A.locked() && V.inputEngine() === 'cloud';
+  /** Close the microphone unless "Hey Jarvis" or the conversation still needs it. */
+  function releaseMic() { if (!wake.on && !S.unsub && !holdMic()) A.close(); }
 
   async function transcribe(t, frames) {
     endCapture();
-    if (!frames || frames.length < MIN_FRAMES) { setMode('idle'); if (!S.soft) say('I didn\'t catch that.'); return; }
+    if (!frames || frames.length < MIN_FRAMES) { afterEmpty('I didn\'t catch that.'); return; }
     setMode('thinking');
     if (liveEl) liveEl.textContent = 'Transcribing';
+    const ctrl = S.abort = new AbortController();
     let r;
     try {
-      r = await Chat.raw('/v1/voice/transcribe', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: window.JarvisWav.encode(frames) });
+      r = await Chat.raw('/v1/voice/transcribe', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: window.JarvisWav.encode(frames), signal: ctrl.signal });
     } catch (e) {
-      if (t === S.turn) { setMode('idle'); if (!e || e.status !== 401) say('Couldn\'t reach JARVIS. Check your connection.'); }
+      if (t === S.turn) { S.conv = false; setMode('idle'); releaseMic(); if (!e || (e.status !== 401 && e.name !== 'AbortError')) say('Couldn\'t reach JARVIS. Check your connection.'); }
       return;
     }
     if (t !== S.turn) return;
@@ -205,8 +249,21 @@
     try { j = await r.json(); } catch (_) { j = null; }
     if (t !== S.turn) return;
     const text = j && typeof j.text === 'string' ? clean(j.text) : '';
-    if (!text || (j && j.no_speech === true)) { setMode('idle'); if (!S.soft) say('I didn\'t catch that.'); return; }
-    deliver(text);
+    if (!text || (j && j.no_speech === true) || emptyWords(text) || echoed(text)) { afterEmpty('I didn\'t catch that.'); return; }
+    deliver(text, { state: 'listening' });
+  }
+  const emptyWords = (text) => { const w = text.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean); return !w.length || w.every(x => FILLER.has(x)); };
+  /** An interruption's words that are mostly JARVIS's own coming back through the speakers are dropped (D7). */
+  const echoed = (text) => !!(S.info && window.JarvisBarge.isEcho(text, S.info.said, S.info.peak, S.info.margin));
+  /** Nothing usable was heard. After an interruption JARVIS carries on reading; in a conversation the
+   *  loop keeps listening (the clock decides when to hand over); otherwise it ends quietly. */
+  function afterEmpty(msg) {
+    if (resumeSpeech()) return;
+    if (!S.soft && msg) say(msg);
+    if (S.conv && !A.locked()) { setMode('idle'); resumeListening(); return; }
+    S.conv = false;
+    setMode('idle');
+    releaseMic();
   }
   /** The cloud refused the recording ({error, detail, reason}; Retry-After on 429). 402, 503 and
    *  voice_busy hand listening to this browser's recognition (when the engine is Automatic). */
@@ -218,11 +275,13 @@
     if (what.fallback && what.downMs) {
       V.markDown('stt', what.downMs);
       if (V.inputEngine() === 'browser') {
+        if (A.locked()) { say(LOCKED_LINE); return; }
         say(f.status === 402 ? 'Cloud listening has reached this month\'s limit. Say that again: this browser is listening.'
           : 'Cloud listening isn\'t available. Say that again: this browser is listening.');
         listen();
         return;
       }
+      if (S.conv) { handover('cloud_down'); return; }
       say('Cloud listening isn\'t available right now. You can still type.');
       return;
     }
@@ -234,8 +293,10 @@
     releaseMic(); // the browser records on its own: our primed audio context is not needed
     btn.classList.toggle('nolevel', !A.isOpen()); // no level to show unless "Hey Jarvis" keeps the mic open
     let rec;
-    try { rec = A.recognizer(); } catch (e) { setMode('idle'); help(e && e.code === 'mic_off' ? 'mic_off' : 'unsupported'); return; }
-    S.rec = rec; S.recText = ''; S.stop = false; S.cancel = false; S.quietEnd = false; S.before = input.value;
+    try { rec = A.recognizer(); } catch (e) { S.conv = false; setMode('idle'); help(e && e.code === 'mic_off' ? 'mic_off' : 'unsupported'); return; }
+    const P = window.JarvisVoicePhrases;
+    try { if (P && typeof P.apply === 'function') P.apply(rec); } catch (_) {}   // no-op unless the browser can take hints
+    S.rec = rec; S.recText = ''; S.stop = false; S.cancel = false; S.quietEnd = false; S.before = input.value; S.recStart = performance.now();
     let finalText = '', interim = '', error = '';
     rec.lang = V.language(); rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
     rec.onresult = (e) => {
@@ -246,6 +307,7 @@
         if (res.isFinal) finalText += res[0].transcript; else interim += res[0].transcript;
       }
       clearTimeout(S.noSpeech);
+      markHeard(0);
       S.recText = clean(finalText + ' ' + interim);
       showWords(S.recText);
     };
@@ -260,15 +322,21 @@
         if (S.quietEnd && !S.soft) say('I didn\'t hear anything.');
         return;
       }
-      if (error === 'not-allowed' || error === 'service-not-allowed') { restore(); setMode('idle'); help('blocked'); return; }
-      if (error === 'audio-capture') { restore(); setMode('idle'); help('no_mic'); return; }
+      if (error === 'not-allowed' || error === 'service-not-allowed') { restore(); S.conv = false; setMode('idle'); help('blocked'); return; }
+      if (error === 'audio-capture') { restore(); S.conv = false; setMode('idle'); help('no_mic'); return; }
       const text = clean(finalText || interim);
-      if (!text) { restore(); setMode('idle'); if (!S.soft) say(error === 'network' ? 'The browser\'s speech service couldn\'t be reached.' : 'I didn\'t hear anything.'); return; }
+      if (!text && S.holdWait && S.conv && clock && clock.waiting() && !A.locked()) { restore(); restartBrowser(t); return; }
+      if (!text) { restore(); S.conv = false; setMode('idle'); if (!S.soft) say(error === 'network' ? 'The browser\'s speech service couldn\'t be reached.' : 'I didn\'t hear anything.'); return; }
       restore();
-      deliver(text);
+      deliver(text, { state: 'listening' });
     };
-    try { rec.start(); } catch (_) { S.rec = null; setMode('idle'); help('failed'); return; }
+    try { rec.start(); } catch (_) { S.rec = null; S.conv = false; setMode('idle'); help('failed'); return; }
     startClocks(t);
+  }
+  /** The browser recogniser gives up after a few silent seconds: start it again quietly, not faster than every 4 s. */
+  function restartBrowser(t) {
+    const wait = Math.max(0, BROWSER_RESTART_MS - (performance.now() - S.recStart));
+    S.browserTimer = setTimeout(() => { if (t === S.turn && isListening() && !S.rec && !A.locked()) listenBrowser(t); }, wait);
   }
   function showWords(text) {
     input.classList.add('interim');
@@ -281,11 +349,23 @@
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
-  /** A transcript: send it now (default) or leave it in the message box to check first. */
-  function deliver(text) {
+  /** A transcript: the local command router first (D12), then send it (default) or leave it in the box. */
+  async function deliver(text, o = {}) {
+    const t = S.turn;
+    S.rest = null; S.info = null;
+    if (S.mode !== 'thinking') setMode('thinking');
+    const C = Cmd();
+    if (C && !A.locked()) {
+      let r = { handled: false };
+      try { r = await C.handle(text, { source: 'voice', state: o.state || 'listening', spoken: saidText(), peak: o.peak || 0 }); } catch (_) { r = { handled: false }; }
+      if (t !== S.turn) return;
+      if (r.handled) { settle(r); return; }
+    }
+    if (A.locked()) { setMode('idle'); return; }
+    if (S.checking) { handover('checkin'); return; }   // anything but "yes" answers the check-in: hand over (D6)
     const d = V.device();
     if (d.autoSend && !Chat.busy()) {
-      setMode('thinking');
+      cue('heard');
       Promise.resolve(Chat.send(text, { channel: 'voice' })).then(ok => { if (!ok && S.mode === 'thinking') setMode('idle'); });
       return;
     }
@@ -293,21 +373,41 @@
     input.value = before ? before + ' ' + text : text;
     input.dataset.channel = 'voice'; // console.js sends it as a spoken message when the owner presses Enter
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    setMode('idle');
+    S.conv = false; setMode('idle'); releaseMic();
     input.focus();
     say(Chat.busy() ? 'JARVIS is still answering: your words are in the message box.' : 'Check your words, then press Enter to send.');
   }
+  /** A command ran (from a turn or from a check clip). Say its line, then do what it asked for. */
+  function settle(r) {
+    const res = (r && r.result) || {};
+    const answer = !!(r && typeof r.id === 'string' && r.id.startsWith('answer.'));
+    const next = res.then || (answer ? 'none' : S.conv ? 'listen' : 'idle');
+    const go = () => {
+      if (next === 'listen') resumeListening();
+      else if (next === 'keyboard') handover('keyboard');
+      else if (next === 'none') { setMode('idle'); if (S.conv && !S.checking) setTimeout(() => { if (S.mode === 'idle' && !Chat.busy()) resumeListening(); }, 60); }
+      else if (next !== 'off') { if (!S.conv) releaseMic(); setMode('idle'); }
+    };
+    if (typeof res.say === 'string' && res.say && next !== 'keyboard' && next !== 'off') { setMode('idle'); loopSay(res.say, { speak: true }).then(go); } else go();
+  }
+  /** Keep the conversation going: the waits start again from now. */
+  function resumeListening() {
+    if (A.locked() || !S.conv) { setMode('idle'); return; }
+    startClock();
+    listen({ relisten: true });
+  }
 
-  /** Tap again while listening (or 30 s are up): stop now and send what was heard. */
+  /** Tap again while listening (or 55 s are up): stop now and send what was heard. */
   function stopAndSend() {
     if (S.rec) { S.stop = true; try { S.rec.stop(); } catch (_) {} return; }
     const frames = S.vad ? S.vad.frames() : [];
     if (!frames.length) { cancel(); if (!S.soft) say('I didn\'t hear anything.'); return; }
     transcribe(S.turn, frames);
   }
-  /** Esc while listening: nothing is sent. */
+  /** Esc while listening: nothing is sent, and the conversation is over. */
   function cancel() {
     S.turn++;
+    S.conv = false; stopClock();
     if (S.rec) { S.cancel = true; const r = S.rec; S.rec = null; try { r.abort(); } catch (_) {} restore(); }
     endCapture();
     setMode('idle');
@@ -319,63 +419,146 @@
     S.turn++;
     if (Chat.busy()) S.mute = true;
     clearTimeout(S.relisten);
-    S.keep = false;
+    S.keep = false; S.conv = false; stopClock();
     setMode('idle');
+    releaseMic();
   }
   function stopAll() {
-    clearTimeout(S.relisten); clearTimeout(S.convTimer);
-    S.keep = false;
-    if (S.mode === 'listening') cancel(); else S.turn++; // a transcription still on its way is dropped
-    V.speaker.stop();
+    clearTimeout(S.relisten); clearTimeout(S.browserTimer);
+    S.keep = false; S.rest = null; S.handing = false; S.checking = false;
+    if (isListening()) cancel(); else { S.turn++; S.conv = false; stopClock(); } // a transcription still on its way is dropped
+    silence();
     if (S.mode !== 'idle') setMode('idle');
+    releaseMic();
   }
   function press() {
     if (btn.hidden) return;
-    if (A.locked()) { say(LOCKED_LINE); return; }
-    S.chain = 0;                                                                        // the owner is here
-    if (S.mode === 'listening') { stopAndSend(); return; }
-    if (S.mode === 'speaking') { S.keep = false; V.speaker.stop(); listen(); return; } // barge-in + listen
+    if (A.locked() && !A.unlock('button')) { say(LOCKED_LINE); return; }  // a tap on the locked mic switches it on and listens
+    S.chain = 0; runaway.touch();                                          // the owner is here
+    if (S.mode === 'off') setMode('idle');
+    if (isListening()) { stopAndSend(); return; }
+    if (S.mode === 'speaking' || S.mode === 'handover') {
+      S.keep = false; S.rest = null; S.handing = false; silence();
+      emit('jarvis:barge', { how: 'tap', ms: 0 });
+      listen(); return;
+    }                                                                      // barge-in + listen
     if (S.mode === 'thinking') { say('JARVIS is still answering.'); return; }
     listen();
   }
 
+  // ---- the conversation clock (D4) --------------------------------------------------------------------
+  function startClock() {
+    const d = V.device();
+    stopClock();
+    clock = window.JarvisConversation.create({
+      followUpMs: d.followUpS * 1000, longPauseMs: d.longPauseS * 1000,
+      onStandby: () => { if (S.mode === 'listening' && S.conv && !(S.vad && S.vad.started()) && !S.recText) setMode('standby'); },
+      onLongPause: () => { if (S.conv && !S.checking && (isListening() || S.mode === 'idle')) handover('pause'); },
+    });
+    clock.replyEnded();
+  }
+  function stopClock() { if (clock) { clock.stop(); clock = null; } }
+  /** The runaway check-in (D6): ask, listen for the answer, hand over unless it is "yes". */
+  async function checkIn() {
+    const C = Cmd();
+    S.checking = true;
+    const q = `Shall I keep listening, ${honorific()}?`;
+    await loopSay(q, { speak: true, fixed: true });
+    if (!S.checking || !S.conv) { S.checking = false; return; }
+    startClock();
+    const asked = C ? C.ask(q, { timeoutMs: CHECK_ASK_MS }) : Promise.resolve('timeout');
+    listen({ relisten: true });
+    const answer = await asked;
+    await new Promise(r => setTimeout(r, 60));
+    if (!S.checking) return;
+    S.checking = false;
+    if (answer === 'yes') { runaway.answered(true, Date.now()); if (S.conv) { if (S.mode === 'idle') resumeListening(); } return; }
+    if (answer !== 'cancelled') handover('checkin'); else runaway.answered(false, Date.now());
+  }
+
+  // ---- ending a conversation the owner did not end (D5) -----------------------------------------------
+  function handover(reason) {
+    if (A.locked() || S.handing || S.mode === 'off') return;
+    S.handing = true; S.checking = false;
+    clearTimeout(S.relisten); clearTimeout(S.browserTimer);
+    S.keep = false; S.rest = null;
+    stopClock();
+    if (isListening()) { S.turn++; if (S.rec) { S.cancel = true; const r = S.rec; S.rec = null; try { r.abort(); } catch (_) {} restore(); } endCapture(); }
+    silence();
+    S.conv = false;
+    const h = honorific();
+    const stopped = reason === 'mic_ended' ? `The microphone stopped, ${h}. I'll switch to the keyboard.`
+      : reason === 'cloud_down' ? `Cloud listening isn't available, ${h}. I'll switch to the keyboard.` : '';
+    const spoken = stopped || `I'll switch to the keyboard, ${h}.`;
+    const wakeHint = V.device().wake ? ' (or say "Hey Jarvis")' : '';
+    say(stopped || `Switched to the keyboard. Tap the mic${wakeHint} to talk.`);
+    cue('handover');
+    const d = V.device();
+    if (d.speak === 'never' || V.outputEngine() === 'none') { finishHandover(); return; }
+    speak([spoken], false, 'handover', FIXED);
+  }
+  function finishHandover() {
+    S.handing = false; S.conv = false;
+    setMode('idle');
+    releaseMic();
+    if (!A.locked()) input.focus();
+  }
+
   // ---- speaking -------------------------------------------------------------------------------
   const APPROVAL_LINE = () => `That one needs your approval on screen, ${honorific()}.`;
-  function speak(chunks, keep) {
+  function speak(chunks, keep, mode, meta) {
     const out = V.outputEngine();
     if (out === 'none' || !chunks.length) { if (S.mode === 'thinking') setMode('idle'); return; }
     V.speaker.browser(out !== 'cloud');
     V.speaker.setRate(V.settings().rate);
     S.keep = keep;
-    setMode('speaking');
-    chunks.forEach(c => V.speaker.say(c));
+    setMode(mode || 'speaking');
+    chunks.forEach(c => V.speaker.say(c, meta));
     V.speaker.end();
+  }
+  /** Stop JARVIS now (the state handler stays out of it); returns {rest}. */
+  function silence() {
+    S.silent = true;
+    try { return V.speaker.stop(); } finally { S.silent = false; }
   }
   document.addEventListener('jarvis:answer', (e) => {
     const d = e.detail || {}, dev = V.device();
     const spoken = d.channel === 'voice';
     if (S.mute) { S.mute = false; if (S.mode === 'thinking') setMode('idle'); return; } // Esc'd: shown, not said
-    if (S.mode === 'listening') return; // the owner is already talking again
+    if (isListening()) return; // the owner is already talking again
     if (dev.speak === 'never' || (dev.speak === 'voice' && !spoken) || typeof d.text !== 'string') {
       if (S.mode === 'thinking') setMode('idle');
       return;
     }
     if (spoken && d.approvals > 0) { speak([APPROVAL_LINE()], false); return; } // D11: fixed, wit-free, no re-listen
     const c = window.JarvisSpeechChunker.create({ honorific: honorific() });
-    speak(c.push(d.text).concat(c.end()), spoken && dev.keepListening);
+    speak(c.push(d.text).concat(c.end()), spoken && dev.keepListening && S.conv);
   });
+  V.speaker.on('chunk', (d) => { S.said.push({ text: String(d && d.text || ''), at: performance.now() }); if (S.said.length > 12) S.said.shift(); });
+  /** What JARVIS said in the last few seconds, plus the chunk being spoken (for the echo guard). */
+  function saidText() {
+    const now = performance.now();
+    const cur = S.said.length && V.speaker.speaking() ? [S.said[S.said.length - 1]] : [];
+    return S.said.filter(x => now - x.at <= SAID_MS).concat(cur).map(x => x.text).join(' ');
+  }
   V.speaker.on('state', (d) => {
     syncWake(); // a Preview in the Voice panel speaks too: the wake word must not hear it
     if (!d.speaking) S.spoken.splice(0).forEach(r => r());
-    if (d.speaking || S.mode !== 'speaking') return;
+    if (d.speaking || S.silent) return;
+    if (S.mode === 'handover') { finishHandover(); return; }
+    if (S.mode !== 'speaking') return;
     const wanted = d.reason === 'done' && S.keep;
-    const again = wanted && S.chain < MAX_HANDS_FREE;
     S.keep = false;
     setMode('idle');
-    if (again) {
-      S.chain++;
-      S.relisten = setTimeout(() => { if (S.mode === 'idle' && !Chat.busy()) listen({ relisten: true }); }, RELISTEN_DELAY_MS);
-    } else if (wanted) say('Tap the mic to carry on.');
+    if (!wanted || !S.conv || A.locked()) return;
+    S.chain++;
+    startClock();
+    const dev = V.device();
+    S.relisten = setTimeout(() => {
+      if (S.mode !== 'idle' || Chat.busy() || A.locked()) return;
+      if (dev.checkIn && runaway.due(Date.now())) { checkIn(); return; }
+      listen({ relisten: true });
+    }, RELISTEN_DELAY_MS);
   });
   V.speaker.on('fallback', (d) => {
     const reason = d && d.reason;
@@ -387,48 +570,132 @@
     log('info', 'Browser voice in use');
   });
 
+  // ---- speak to interrupt (D7, D9) --------------------------------------------------------------------
+  function armBarge() {
+    disarmBarge();
+    S.barge = window.JarvisBarge.arm({
+      said: saidText, browserVoice: V.speaker.usingBrowser(),
+      handle: (text, ctx) => (Cmd() ? Cmd().handle(text, ctx) : Promise.resolve({ handled: false })),
+      onBarge: bargeIn,
+    });
+    wake.speaking(true);
+  }
+  function disarmBarge() {
+    if (S.barge) { S.barge.disarm(); S.barge = null; }
+    if (wake) wake.speaking(false);
+  }
+  /** JARVIS is stopped; remember the unplayed words, then listen (seeded with what was just said). */
+  function bargeIn(ev) {
+    if (S.mode !== 'speaking' || A.locked()) return;
+    const was = S.keep, said = saidText();
+    S.keep = false;
+    const r = silence();
+    S.rest = ev.handled || !(r.rest && r.rest.length) ? null : r.rest; S.restAt = performance.now(); S.restKeep = was;
+    emit('jarvis:barge', { how: ev.how, ms: ev.ms || 0 });
+    log('info', `Interrupted (${Math.round(ev.ms || 0)} ms)`);
+    if (ev.handled) { settle({ id: 'barge', result: ev.result }); return; }
+    if (ev.text) {
+      S.rest = null;
+      if (Cmd() && Cmd().normalise(ev.text)) { setMode('thinking'); deliver(ev.text, { state: 'speaking' }); return; }
+    }
+    listen({ barge: true, soft: true, seed: ev.frames,
+      info: ev.how === 'speech' ? { said, peak: ev.peak, margin: window.JarvisBarge.BARGE.SPEAKERS.margin } : null });
+  }
+  /** "Hey Jarvis" over his speech (the wake model runs while he speaks, D8). */
+  function bargeWake() {
+    if (S.mode !== 'speaking') return;
+    const cur = S.said.length ? S.said[S.said.length - 1].text : '';
+    const g = S.barge && S.barge.gate && S.barge.gate();
+    if (/jarvis|jervis/i.test(cur) && !(g && S.barge.recentLoud && S.barge.recentLoud(WAKE_NAME_MS))) return;
+    const was = S.keep;
+    S.keep = false; S.rest = null;
+    silence();
+    S.restKeep = was;
+    emit('jarvis:barge', { how: 'wake', ms: 0 });
+    listen({ barge: true, soft: false });
+  }
+  /** After an empty interruption JARVIS picks up where he was (within 10 s). */
+  function resumeSpeech() {
+    const rest = S.rest;
+    S.rest = null;
+    if (!S.handsFree || S.handsFree !== 'barge' || !rest || !rest.length || A.locked()) return false;
+    if (performance.now() - S.restAt > RESUME_MS) return false;
+    setMode('idle');
+    speak(rest, S.restKeep);
+    return true;
+  }
+  /** The loop's own actions behind the built-in commands (the matchers live in console-voice-commands.js). */
+  function bindCommands() {
+    const C = Cmd();
+    if (!C || typeof C.bindLoop !== 'function') return;
+    C.bindLoop({
+      micOff() {
+        silence(); S.rest = null; S.keep = false;
+        A.lock('voice');                                    // first: nothing hears anything from here on
+        setMode('idle');
+        speak([`Microphone off, ${honorific()}.`], false, 'speaking', FIXED);
+        return { then: 'off' };
+      },
+      stop(ctx) {
+        const st = ctx && ctx.state;
+        if (st === 'speaking') { silence(); S.rest = null; S.keep = false; return { then: 'listen' }; }
+        if (st === 'thinking') { if (Chat.busy()) S.mute = true; return { then: 'listen' }; }
+        return { then: S.conv ? 'listen' : 'idle' };
+      },
+      keyboard() { return { then: 'keyboard' }; },
+    });
+  }
+  bindCommands();
+
   // ---- the console's own turns ------------------------------------------------------------------
   document.addEventListener('jarvis:turn', (e) => {
     const d = e.detail || {}, dev = V.device();
     // inside the owner's Enter / tap: let the reply's audio start later (only if it will be spoken)
     if (d.channel === 'voice' ? dev.speak !== 'never' : dev.speak === 'always') V.speaker.unlock();
-    if (d.channel === 'voice') { clearTimeout(S.relisten); S.mute = false; if (S.mode !== 'thinking') setMode('thinking'); return; }
+    if (d.channel === 'voice') { clearTimeout(S.relisten); S.mute = false; clock && clock.heard(); if (S.mode !== 'thinking') setMode('thinking'); return; }
     S.chain = 0;
     stopAll(); // a typed message is a barge-in too
   });
   document.addEventListener('jarvis:turn-end', (e) => {
     const d = e.detail || {};
     S.mute = false;
-    if (!d.ok && S.mode === 'thinking') setMode('idle');
+    if (!d.ok && S.mode === 'thinking') { setMode('idle'); if (S.conv && !A.locked()) resumeListening(); }
   });
   document.addEventListener('jarvis:switch', stopAll); // new or another conversation: silence
 
   // ---- the microphone stopped by itself (unplugged, switched off) ---------------------------------
   A.onEnd(() => {
-    if (wake.on) wakeFail(wake.UNPLUGGED);
-    if (S.mode === 'listening' && !S.rec) { cancel(); help('ended'); }
+    if (wake.on) wake.fail(wake.UNPLUGGED);
+    if (S.conv) { if (isListening() && !S.rec) help('ended'); handover('mic_ended'); return; }
+    if (isListening() && !S.rec) { cancel(); help('ended'); }
   });
 
   // ---- the hard microphone lock (R5 D11) ------------------------------------------------------------
   A.onLock(({ locked }) => {
     if (!locked) { if (S.mode === 'off') setMode('idle'); bootWake(); return; }
-    clearTimeout(S.relisten); clearTimeout(S.convTimer);
-    S.keep = false;                                    // no re-listen after a reply that is still playing
-    if (S.mode === 'listening') cancel();              // nothing is sent
+    clearTimeout(S.relisten); clearTimeout(S.browserTimer);
+    S.keep = false; S.rest = null; S.checking = false; S.handing = false;  // no re-listen after a reply that is still playing
+    if (isListening()) cancel();                        // nothing is sent
     else if (S.mode === 'thinking' && !Chat.busy()) S.turn++; // a transcription on its way is dropped
+    S.conv = false; stopClock();
+    if (S.abort) { try { S.abort.abort(); } catch (_) {} S.abort = null; }
     if (wake.on) { wakeHalt(); wakeState('micoff'); } else if (V.device().wake) wakeState('micoff');
+    cue('micoff');
     if (S.mode === 'idle' || (S.mode === 'thinking' && !Chat.busy())) setMode('off');
   });
 
   // ---- keys and the button ------------------------------------------------------------------------
   btn.addEventListener('click', press);
+  const here = () => runaway.touch();                   // a tap or a key: the owner is here (D6)
+  document.addEventListener('pointerdown', here, true);
   document.addEventListener('keydown', (e) => {
+    here();
     if (e.isComposing || btn.hidden) return;
     if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && (e.code === 'Space' || e.key === ' ')) { e.preventDefault(); press(); return; }
     if (e.key !== 'Escape' || e.defaultPrevented) return;
     let said = '';
-    if (S.mode === 'listening') { cancel(); said = 'Cancelled'; }
-    else if (S.mode === 'speaking') { stopAll(); said = 'Stopped'; }
+    if (isListening()) { cancel(); said = 'Cancelled'; }
+    else if (S.mode === 'speaking' || S.mode === 'handover') { stopAll(); said = 'Stopped'; }
     else if (S.mode === 'thinking') { abandon(); said = 'Cancelled'; }
     if (!said) return;
     e.preventDefault(); e.stopPropagation();
@@ -436,14 +703,21 @@
   }, true);
   input.addEventListener('input', () => { if (!input.value.trim()) delete input.dataset.channel; });
 
-  // ---- "Hey Jarvis" (D12) lives in console-voice-wake.js ------------------------------------------
-  const wake = window.JarvisWakeCtl.create({ A, V, Chat, emit, log, help, HELP, signedIn,
+  // ---- "Hey Jarvis" (D12, D8) lives in console-voice-wake.js ----------------------------------------
+  const speakWake = () => {
+    if (S.mode !== 'speaking' || S.nameOff || !A.isOpen() || A.locked()) return false;
+    const p = window.JarvisBarge.policy();
+    if (p === 'name') return true;
+    return p === 'speech' && V.speaker.usingBrowser() && window.JarvisBarge.kind() === 'speakers'; // no echo reference: the name is the fallback
+  };
+  const wake = window.JarvisWakeCtl.create({ A, V, Chat, emit, log, help, HELP, signedIn, speakWake,
     busy: () => S.mode !== 'idle' || V.speaker.speaking(),
     listen: (o) => listen(o),
-    micInUse: () => S.mode === 'listening' || !!S.unsub });
+    barge: () => bargeWake(),
+    nameOff: () => { S.nameOff = true; say('Interrupting by name stopped working on this page. Tapping still works.'); },
+    micInUse: () => isListening() || !!S.unsub || holdMic() });
   const syncWake = () => wake.sync(), wakeHalt = () => wake.halt(), wakeState = (s, n) => wake.state(s, n);
-  const wakeStop = () => wake.stop(), wakeFail = (n) => wake.fail(n), bootWake = () => wake.boot();
-
+  const wakeStop = () => wake.stop(), bootWake = () => wake.boot();
 
   // ---- boot ----------------------------------------------------------------------------------
   btn.hidden = !(A.supported() || recognition());
@@ -456,54 +730,36 @@
   document.addEventListener('DOMContentLoaded', bootWake);
   window.addEventListener('load', bootWake);
   // Leaving the page: microphone and wake word off. Back from the back/forward cache: on again if
-  // saved. (A hidden tab keeps listening on purpose: "Hey Jarvis" works from another tab on desktop.)
+  // saved. (A hidden tab keeps listening on purpose on a computer; on a phone the page being hidden
+  // ends the conversation with the spoken line, D5.)
   window.addEventListener('pagehide', () => { stopAll(); if (wake.on) wakeStop(); A.close(); });
   window.addEventListener('pageshow', (e) => { if (e.persisted) bootWake(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && S.conv && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '')) handover('hidden');
+  });
 
-  // ---- window.JarvisVoiceLoop: the seam other modules use (workstream A completes it) ---------------
-  const offerEl = $('voiceOffer');
-  let offerTimer = 0;
-  function inConversation() { return (S.mode !== 'idle' && S.mode !== 'off') || S.chain > 0; }
-  function clearOffer() {
-    clearTimeout(offerTimer); offerTimer = 0;
-    if (offerEl) { offerEl.textContent = ''; offerEl.hidden = true; }
-  }
+  // ---- window.JarvisVoiceLoop: the seam other modules use ---------------------------------------------
+  const offers = window.JarvisConversation.offers($('voiceOffer'), OFFER_MS);
+  function inConversation() { return S.conv && S.mode !== 'off'; }
   /** Show a line and, with {speak: true}, say it out loud (not over a turn in progress). Resolves when said. */
-  function loopSay(text, o) {
+  function loopSay(text, o) {   // o.fixed: a fixed line (cached audio)
     if (typeof text !== 'string' || !text.trim()) return Promise.resolve();
     const t = text.trim().slice(0, 300);
     say(t);
     if (!(o && o.speak === true) || V.device().speak === 'never' || V.outputEngine() === 'none') return Promise.resolve();
     if (S.mode !== 'idle' && S.mode !== 'off') return Promise.resolve();
-    return new Promise(resolve => { S.spoken.push(resolve); speak([t], false); });
+    return new Promise(resolve => { S.spoken.push(resolve); speak([t], false, 'speaking', (o && o.fixed) ? FIXED : undefined); });
   }
   /** Ask a yes / no question: said aloud, then the router waits for the answer ('yes' | 'no' | 'timeout' | 'cancelled'). */
   function loopAsk(question, o) {
-    const C = window.JarvisVoiceCommands;
+    const C = Cmd();
     loopSay(question, { speak: true });
     return C ? C.ask(question, o) : Promise.resolve('timeout');
   }
-  /** A suggestion with buttons under the voice line for 30 s; returns a function that removes it. */
-  function loopOffer(text, actions) {
-    const list = (Array.isArray(actions) ? actions : []).filter(a => a && typeof a.label === 'string' && typeof a.run === 'function').slice(0, 3);
-    if (!offerEl || typeof text !== 'string' || !text.trim() || !list.length) return () => {};
-    clearOffer();
-    const msg = document.createElement('span');
-    msg.textContent = text.trim().slice(0, 200);
-    offerEl.append(msg);
-    list.forEach(a => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'btn lift bact'; b.textContent = a.label.slice(0, 40);
-      b.addEventListener('click', () => { clearOffer(); try { a.run(); } catch (_) {} });
-      offerEl.append(b);
-    });
-    offerEl.hidden = false;
-    const mine = offerTimer = setTimeout(clearOffer, OFFER_MS);
-    return () => { if (offerTimer === mine) clearOffer(); };
-  }
+  const loopOffer = offers.offer;
   /** End the voice conversation: stop listening and speaking; the keyboard gets the focus. */
   function loopEnd(reason) {
-    clearOffer();
+    offers.clear();
     S.chain = 0;
     stopAll();
     if (reason === 'keyboard' || reason === 'pause') input.focus();

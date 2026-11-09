@@ -189,6 +189,17 @@ TONE_MIC = """
   };
 })();
 """
+# A faster room for the check-in tests: talks 0.9 s, pauses 1.05 s, forever (endSilenceMs 800).
+FAST_TV = """
+window.__tvFast = () => {
+  let on = false;
+  const flip = () => {
+    on = !on; window.__talk(on);
+    window.__mic.timer = setTimeout(flip, on ? 900 : 1050);
+  };
+  flip();
+};
+"""
 # Frames from the capture worklet stop reaching the page while window.__stall is true.
 STALL = """
 (() => {
@@ -348,69 +359,93 @@ def test_tap_escape_tap_with_the_first_microphone_answering_last(
 
 
 # ================================================================== 2 · the conversation loop ends
-def test_conversation_mode_stops_after_three_hands_free_turns(
-    make: Callable[..., Console],
-) -> None:
-    # the browser's recognition always hears something (a TV): the tap + 3 follow-ups, then a tap
-    c = make(device={"engine": "browser"}, scripts=(FAKE_RECOGNITION,))
+def test_conversation_is_not_capped(make: Callable[..., Console]) -> None:
+    # the browser recognition always hears something, at a human pace: 12 turns and still going
+    c = make(device={"engine": "browser", "checkIn": False}, scripts=(FAKE_RECOGNITION,))
     FakeVoice(c.page)
     chats = _chat_counter(c)
     c.open()
     c.page.locator("#micBtn").click()
-    _wait(c, "() => window.__rec.length >= 4", 40000)
-    _wait(c, IDLE, 15000)
-    c.page.wait_for_timeout(3000)
-    assert c.page.evaluate("window.__rec.length") == 4
-    assert len(chats) == 4 and _mic_state(c) == "idle"
-    assert "Tap the mic" in _line(c)
+    _wait(c, "() => window.__rec.length >= 12", 120000)
+    assert len(chats) >= 11  # the old cap stopped at 4
+    assert "Tap the mic" not in _line(c)
+    c.page.keyboard.press("Escape")
     assert c.errors == []
 
 
-def test_conversation_mode_with_continuous_room_audio_stops_by_itself(
+def test_a_room_that_never_stops_talking_gets_a_check_in_then_the_keyboard(
     make: Callable[..., Console],
 ) -> None:
-    c = make(scripts=(TONE_MIC,))
+    c = make(device={"speak": "always", "endSilenceMs": 800}, scripts=(TONE_MIC, FAST_TV))
     fake = FakeVoice(c.page)
     c.open()
-    c.page.evaluate("window.__tv()")  # someone talks every 2.6 s, forever
+    c.page.evaluate("window.__tvFast()")  # someone talks every 2.6 s, forever
     c.page.locator("#micBtn").click()
-    _until(c, "window.__voice.speech.length >= 8", 60)  # four answers, two chunks each
-    _wait(c, IDLE, 15000)
-    c.page.wait_for_timeout(7000)  # the room keeps talking; JARVIS no longer listens
-    assert _count(fake, "/v1/voice/transcribe") == 4
-    assert _mic_state(c) == "idle" and c.page.evaluate("window.JarvisAudio.isOpen()") is False
+    question = "Shall I keep listening, Sir?"
+    deadline = time.monotonic() + 150
+    while time.monotonic() < deadline and question not in fake.spoken():
+        c.page.wait_for_timeout(500)
+    assert question in fake.spoken()
+    assert 8 <= _count(fake, "/v1/voice/transcribe") <= 10  # at the 8th reply
+    _until(
+        c,
+        "document.getElementById('micBtn').dataset.state === 'idle'"
+        " && !JarvisVoice.speaker.speaking()",
+        60,
+    )
+    assert "I'll switch to the keyboard, Sir." in fake.spoken()  # the room never says yes
+    assert c.page.evaluate("window.JarvisAudio.isOpen()") is False
     assert c.errors == []
 
 
-def test_relisten_ends_when_speech_does_not_start_within_three_seconds(
+def test_silence_goes_to_standby_at_8_s_and_hands_over_at_20_s(
     make: Callable[..., Console],
 ) -> None:
-    c = make(scripts=(TONE_MIC,))
+    c = make(device={"speak": "always"}, scripts=(TONE_MIC,))
     fake = FakeVoice(c.page)
     c.open()
-    c.page.evaluate("window.__burst(1500)")  # one sentence, then a quiet room
+    c.page.evaluate(
+        "window.__t = []; document.addEventListener('jarvis:voice-loop', (e) =>"
+        " window.__t.push({ s: e.detail.state, at: performance.now() }));"
+    )
+    ended = (
+        "(() => { const i = window.__t.map(x => x.s).lastIndexOf('speaking');"
+        " return i < 0 || !window.__t[i + 1] ? null : window.__t[i + 1].at; })()"
+    )
+    c.page.evaluate("window.__talk(true)")  # one sentence, then a quiet room
     c.page.locator("#micBtn").click()
+    _until(c, "document.getElementById('voiceLive').textContent === 'Hearing you'", 10)
+    c.page.wait_for_timeout(500)
+    c.page.evaluate("window.__talk(false)")
     _wait(c, "() => window.__voice.speech.length >= 2", 20000)
-    _wait(c, LISTENING, 8000)  # conversation mode listens again
-    t0 = time.monotonic()
-    _wait(c, IDLE, 10000)
-    waited = time.monotonic() - t0
-    assert 2.5 < waited < 4.8, waited
-    assert _count(fake, "/v1/voice/transcribe") == 1
-    assert "didn't hear" not in _line(c)  # a hands-free turn ends quietly
+    _wait(c, "() => document.getElementById('micBtn').dataset.state === 'standby'", 14000)
+    end = c.page.evaluate(ended)
+    stand = c.page.evaluate("window.__t.find(x => x.s === 'standby').at")
+    assert 7000 < stand - end < 9800, (end, stand)
+    assert c.page.locator("#statusText").text_content() == "Standing by"
+    _until(c, "window.__t.some(x => x.s === 'handover')", 20)
+    hand = c.page.evaluate("window.__t.find(x => x.s === 'handover').at") - end
+    assert 18000 < hand < 23500, hand
+    assert "I'll switch to the keyboard, Sir." in fake.spoken()
+    _wait(c, IDLE, 15000)
+    assert "Switched to the keyboard" in _line(c)
+    assert c.page.evaluate("window.JarvisAudio.isOpen()") is False
     assert c.errors == []
 
 
-def test_a_wake_word_turn_relistens_under_the_same_cap(make: Callable[..., Console]) -> None:
-    c = make(device={"engine": "browser", "wake": True}, scripts=(FAKE_WAKE, FAKE_RECOGNITION))
+def test_a_wake_word_turn_has_no_turn_limit_either(make: Callable[..., Console]) -> None:
+    c = make(
+        device={"engine": "browser", "wake": True, "checkIn": False},
+        scripts=(FAKE_WAKE, FAKE_RECOGNITION),
+    )
     FakeVoice(c.page)
     c.open()
     _wait(c, "() => window.__wake.started === 1")
     c.page.evaluate("window.__wake.fire({ score: 0.9 })")
-    _wait(c, "() => window.__rec.length >= 4", 40000)
-    _wait(c, IDLE, 15000)
-    c.page.wait_for_timeout(3000)
-    assert c.page.evaluate("window.__rec.length") == 4  # "Hey Jarvis" + 3 follow-ups
+    _wait(
+        c, "() => window.__rec.length >= 6", 60000
+    )  # "Hey Jarvis" + 5 follow-ups, and still going
+    c.page.keyboard.press("Escape")
     assert c.errors == []
 
 
@@ -451,7 +486,9 @@ def test_listening_ends_on_the_clock_when_the_microphone_sends_nothing(
     assert c.errors == []
 
 
-def test_listening_is_capped_at_thirty_seconds_on_the_clock(make: Callable[..., Console]) -> None:
+def test_listening_is_capped_at_fifty_five_seconds_on_the_clock(
+    make: Callable[..., Console],
+) -> None:
     c = make(device={"keepListening": False}, scripts=(STALL, TONE_MIC))
     fake = FakeVoice(c.page)
     fake.hold_transcribe = True
@@ -464,7 +501,7 @@ def test_listening_is_capped_at_thirty_seconds_on_the_clock(make: Callable[..., 
     c.page.evaluate("window.__stall = true")  # mid-sentence the frames stop coming
     c.page.wait_for_timeout(500)
     assert _mic_state(c) == "listening" and fake.held_transcribe == []
-    c.page.clock.fast_forward(31000)
+    c.page.clock.fast_forward(56000)
     _until(c, "document.getElementById('micBtn').dataset.state !== 'listening'", 5)
     for _ in range(30):
         if fake.held_transcribe:
@@ -724,6 +761,32 @@ def test_wake_word_is_paused_while_jarvis_speaks_and_resumes_after_the_echo(
     assert c.errors == []
 
 
+def test_wake_word_runs_while_jarvis_speaks_under_the_name_policy_at_a_stricter_score(
+    make: Callable[..., Console],
+) -> None:
+    c = make(
+        device={"speak": "always", "wake": True, "keepListening": False, "interruptBy": "name"},
+        scripts=(FAKE_WAKE, "window.JarvisWake.threshold = 0.5;"),
+    )
+    fake = FakeVoice(c.page)
+    fake.speak_audio = wav_bytes(seconds=2.5)
+    c.open()
+    _wait(c, "() => window.__wake.started === 1 && window.__wake.frames >= 3")
+    c.send("Read this out.")
+    _wait(c, "() => window.JarvisVoice.speaker.speaking()")
+    _wait(
+        c, "() => window.JarvisWake.state === 'listening'", 3000
+    )  # not paused: it hears "Hey Jarvis" over him
+    assert c.page.evaluate("window.JarvisWake.threshold") == 0.6
+    _wait(c, IDLE, 15000)
+    _wait(
+        c,
+        "() => window.JarvisWake.state === 'listening' && window.JarvisWake.threshold === 0.5",
+        3000,
+    )
+    assert c.errors == []
+
+
 # ================================================================== 10 · bfcache
 def test_pagehide_stops_the_wake_word_and_a_bfcache_return_restarts_it(
     make: Callable[..., Console],
@@ -768,6 +831,15 @@ def test_mic_button_name_is_stable_and_its_state_is_pressed_and_announced(
     _wait(c, "() => document.getElementById('micBtn').dataset.state === 'speaking'")
     assert mic.get_attribute("aria-label") == "Voice input"
     assert mic.get_attribute("aria-pressed") == "false" and live.text_content() == "Speaking"
+    c.page.keyboard.press("Escape")
+    c.page.evaluate(
+        "JarvisAudio.lock('button')"
+    )  # off: still the same name, not pressed, announced
+    assert (
+        mic.get_attribute("aria-label") == "Voice input"
+        and mic.get_attribute("data-state") == "off"
+    )
+    assert mic.get_attribute("aria-pressed") == "false" and live.text_content() == "Microphone off"
     assert c.errors == []
 
 

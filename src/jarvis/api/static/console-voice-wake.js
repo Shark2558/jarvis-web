@@ -11,6 +11,8 @@
   const WAKE_RESUME_MS = 400;      // after the last clip: its echo in the room, the speakers' delay
   const WAKE_POLL_MS = 1000;       // a running wake-word module is checked this often for an error
   const WAKE_LATE_MS = 10000;      // a saved "Hey Jarvis" waits this long for its module to arrive
+  const SPEAK_THRESHOLD = 0.6;     // a stricter score while JARVIS speaks: his own voice must not wake him
+  const IDLE_THRESHOLD = 0.5;
   const WAKE_FAILED = '‘Hey Jarvis’ stopped working on this device, so it was switched off. You can switch it on again here.';
   const WAKE_UNPLUGGED = 'The microphone stopped, so ‘Hey Jarvis’ was switched off. You can switch it on again here.';
 
@@ -18,11 +20,13 @@
     const { A, V, Chat, emit, log } = host;
     // wake.held: the module is paused (and frames are not passed on) while JARVIS listens, thinks or
     // speaks; it resumes WAKE_RESUME_MS after all of that is over.
-    const wake = { on: false, started: false, handle: null, subs: new Set(), armed: false, seq: 0, held: false,
+    const wake = { only: false, on: false, started: false, handle: null, subs: new Set(), armed: false, seq: 0, held: false,
       resumeTimer: 0, poll: 0, waiting: 0 };
     const wakeApi = () => window.JarvisWake || null;
     const wakeSupported = () => { const W = wakeApi(); try { return !!(W && typeof W.supported === 'function' && W.supported()); } catch (_) { return false; } };
-    function wakeState(state, note) { emit('jarvis:wake', { state, note: note || '' }); }
+    function wakeState(state, note) { if (!wake.only) emit('jarvis:wake', { state, note: note || '' }); }
+    const speakWake = () => typeof host.speakWake === 'function' && !!host.speakWake();
+    function setThreshold(v) { const W = wakeApi(); try { if (W && 'threshold' in W) W.threshold = v; } catch (_) {} }
     function hold(on) {
       if (on) { clearTimeout(wake.resumeTimer); wake.resumeTimer = 0; }
       if (wake.held === on) return;
@@ -36,6 +40,8 @@
     function sync() {
       if (!wake.on || !wake.started) return;
       if (A.suspended()) { hold(true); wakeState('resume'); armResume(); return; }
+      if (speakWake()) { setThreshold(SPEAK_THRESHOLD); hold(false); wakeState('on'); return; }  // D8: running while he speaks
+      setThreshold(IDLE_THRESHOLD);
       if (host.busy()) { hold(true); wakeState('paused'); return; }
       if (!wake.held) { wakeState('on'); return; }
       if (wake.resumeTimer) return;
@@ -73,6 +79,7 @@
         log('info', 'Listening for "Hey Jarvis"');
       } catch (e) {
         if (my !== wake.seq) return;
+        if (wake.only) { fail(''); return; }
         if (e && e.code && host.HELP[e.code]) host.help(e.code);
         fail(e && e.code === 'blocked' ? 'The microphone is blocked, so ‘Hey Jarvis’ can\'t listen.' : 'Couldn\'t start ‘Hey Jarvis’ in this browser.');
       }
@@ -90,7 +97,15 @@
     }
     function stop() { halt(); wakeState('off'); }
     /** An error: off, with a plain line (console-voice.js switches this device's setting off). */
-    function fail(note) { halt(); wakeState('error', note); }
+    function fail(note) {
+      if (wake.only) { wake.only = false; halt(); if (typeof host.nameOff === 'function') host.nameOff(); return; } // D8: never flips the owner's setting
+      halt(); wakeState('error', note);
+    }
+    /** D8: with "Hey Jarvis" off the model runs only while JARVIS speaks (when the policy needs it). */
+    function speaking(on) {
+      if (on && !wake.on && speakWake() && wakeSupported() && A.isOpen()) { wake.only = true; start(); }
+      else if (!on && wake.only) { wake.only = false; halt(); }
+    }
     /** The module reports trouble only through JarvisWake.state ('error': too slow, inference failed). */
     function watch(my) {
       clearInterval(wake.poll);
@@ -102,7 +117,9 @@
       }, WAKE_POLL_MS);
     }
     function onWake() {
-      if (!wake.on || host.busy() || Chat.busy()) return;
+      if (!wake.on) return;
+      if (host.busy()) { if (speakWake() && typeof host.barge === 'function') host.barge(); return; }
+      if (Chat.busy()) return;
       log('info', '"Hey Jarvis" heard');
       host.listen({ soft: true });
     }
@@ -136,7 +153,7 @@
         if (wakeApi()) boot();
       }, 250);
     }
-    return { get on() { return wake.on; }, sync, start, halt, stop, fail, boot, state: wakeState, UNPLUGGED: WAKE_UNPLUGGED };
+    return { get on() { return wake.on; }, sync, start, halt, stop, fail, boot, speaking, state: wakeState, UNPLUGGED: WAKE_UNPLUGGED };
   }
   window.JarvisWakeCtl = Object.freeze({ create });
 })();

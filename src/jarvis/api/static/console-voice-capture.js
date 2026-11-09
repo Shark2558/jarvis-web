@@ -27,7 +27,10 @@
 //   window.JarvisVad    create(opts) → {push(frame) → event | null, frames(), ms()}: an energy VAD.
 //                       Events: {type: 'start'} once speech begins; {type: 'end', frames} after
 //                       ~1.2 s of trailing silence; {type: 'timeout'} after 6 s with no speech;
-//                       {type: 'max', frames} at 30 s. `frames` keeps ~320 ms before the speech
+//                       {type: 'max', frames} at 30 s. Options (R5 D4): endSilenceMs, noSpeechMs, maxMs,
+//                       seed (frames that already count as speech: an interruption's first words),
+//                       strictAfterMs / strictRatio / strictFrames (standing by: after that long
+//                       without speech a start needs a firmer, longer sound). `frames` keeps ~320 ms before the speech
 //                       began and ~400 ms after it ended.
 // Audio never leaves this file: frames go to subscribers in this page only, and nothing is stored.
 (() => {
@@ -288,7 +291,8 @@
   // floor adapts while nobody speaks; speech must beat it by ~10 dB (and an absolute floor) for two
   // frames in a row to start, and fall back under a lower threshold for `endSilenceMs` to end.
   const VAD_DEFAULTS = { endSilenceMs: 1200, noSpeechMs: 6000, maxMs: 30000, prerollMs: 320, tailMs: 400,
-    floor: 0.012, ratio: 3.2, endRatio: 2.0, startFrames: 2 };
+    floor: 0.012, ratio: 3.2, endRatio: 2.0, startFrames: 2,
+    strictAfterMs: 0, strictRatio: 4.0, strictFrames: 4, seed: null };
   function rms(frame) {
     let sum = 0;
     for (let i = 0; i < frame.length; i++) { const x = frame[i] / 32768; sum += x * x; }
@@ -300,6 +304,9 @@
     const END = n(o.endSilenceMs), NONE = n(o.noSpeechMs), MAX = n(o.maxMs), PRE = n(o.prerollMs), TAIL = n(o.tailMs);
     let count = 0, noise = null, loud = 0, quiet = 0, started = false, done = false, lastSpeech = -1;
     const pre = [], kept = [];
+    // seed: frames heard before this VAD was made (an interruption): the turn starts with them.
+    const seed = Array.isArray(o.seed) ? o.seed.filter(f => f instanceof Int16Array) : [];
+    if (seed.length) { started = true; kept.push(...seed); lastSpeech = kept.length - 1; }
     function result(type) {
       done = true;
       if (type === 'timeout') return { type };
@@ -311,11 +318,14 @@
       count++;
       const e = rms(frame);
       if (noise === null) noise = Math.min(e, o.floor);
-      const startAt = Math.max(o.floor, noise * o.ratio), endAt = Math.max(o.floor * 0.75, noise * o.endRatio);
+      // strict mode (standing by): after strictAfterMs without speech a turn needs a firmer start
+      const strict = !started && o.strictAfterMs > 0 && count * FRAME_MS >= o.strictAfterMs;
+      const startAt = Math.max(o.floor, noise * (strict ? o.strictRatio : o.ratio)), need = strict ? o.strictFrames : o.startFrames;
+      const endAt = Math.max(o.floor * 0.75, noise * o.endRatio);
       if (!started) {
-        pre.push(frame); if (pre.length > PRE + o.startFrames) pre.shift();
+        pre.push(frame); if (pre.length > PRE + Math.max(o.startFrames, o.strictFrames)) pre.shift();
         if (e >= startAt) loud++; else { loud = 0; noise = noise * 0.9 + Math.min(e, startAt) * 0.1; }
-        if (loud >= o.startFrames) {
+        if (loud >= need) {
           started = true; kept.push(...pre); pre.length = 0; lastSpeech = kept.length - 1; quiet = 0;
           return { type: 'start' };
         }

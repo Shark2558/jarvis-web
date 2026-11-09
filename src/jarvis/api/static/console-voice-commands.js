@@ -109,11 +109,24 @@
   function register(id, spec) {
     if (typeof id !== 'string' || !ID.test(id)) throw new Error('bad command id');
     if (!spec || typeof spec.match !== 'function' || typeof spec.run !== 'function') throw new Error('bad command');
-    if (registry.some(r => r.id === id) || id.startsWith('answer.')) throw new Error('duplicate command id');
+    if (id.startsWith('answer.')) throw new Error('duplicate command id');
+    const old = registry.findIndex(r => r.id === id);
+    if (old >= 0 && !registry[old].builtin) throw new Error('duplicate command id');
+    if (old >= 0) registry.splice(old, 1);          // a built-in matcher may be replaced once (tests do)
     const entry = { id, spec };
     registry.push(entry);
     return () => { const i = registry.indexOf(entry); if (i >= 0) registry.splice(i, 1); };
   }
+  // ---- the built-in matchers (R5 workstream A) -------------------------------------------------------
+  // They only decide WHAT was said; what to do belongs to the listening loop, which binds its actions
+  // with bindLoop({micOff(ctx), stop(ctx), keyboard(ctx)}) -> Result.
+  let loop = null;
+  const act = (name) => (_, ctx) => (loop && typeof loop[name] === 'function' ? loop[name](ctx) : {});
+  const BUILTIN = {
+    'mic.off': { states: null, run: act('micOff') },
+    'speech.stop': { states: ['speaking', 'thinking', 'listening', 'standby'], run: act('stop') },
+    'conversation.keyboard': { states: null, run: act('keyboard') },
+  };
   function exact(id) {
     const list = new Set(Array.isArray(PHRASES[id]) ? PHRASES[id] : []);
     return (norm) => (list.has(norm) ? {} : null);
@@ -190,8 +203,15 @@
     });
   }
 
+  Object.keys(BUILTIN).forEach(id => {
+    const un = register(id, { match: exact(id), run: BUILTIN[id].run, states: BUILTIN[id].states || undefined });
+    registry.find(r => r.id === id).builtin = true;
+    void un;
+  });
+  const bindLoop = (actions) => { loop = actions && typeof actions === 'object' ? actions : null; };
+
   window.JarvisVoiceCommands = Object.freeze({
-    register, handle, ask, normalise, owns, addressed, exact, PHRASES,
+    register, handle, bindLoop, ask, normalise, owns, addressed, exact, PHRASES,
     pending: () => (asking ? asking.question : null),
     cancelAsk: () => settleAsk('cancelled'),
   });

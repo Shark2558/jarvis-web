@@ -24,7 +24,7 @@
   const POLICIES = Object.freeze(['ask', 'auto', 'never']);
   const VIRTUAL = Object.freeze(['default', 'communications']);
   const VIRTUAL_DEVICE_RE = /steam|virtual|voicemeeter|vb-audio|cable|oculus|nvidia|hdmi|display|obs|streaming|remote|rdp|nahimic|sonar|s\/?pdif/i;
-  const ASKABLE = Object.freeze(['listening', 'standby']);
+  const ASKABLE = Object.freeze(['idle']);   // SL1: only a beat where the loop really speaks the question; otherwise the offer is on screen only
   const COUNT_WORDS = Object.freeze(['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']);
   const emitDom = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
 
@@ -495,8 +495,10 @@
     const C = window.JarvisVoiceCommands;
     if (!C) return;
     const add = (id, spec) => { try { C.register(id, spec); } catch (_) {} };
-    add('device.input', { match: slotMatcher('device.input', 'input'), run: runInput });
-    add('device.switch', { match: slotMatcher('device.switch', 'output'), run: runSwitch });
+    // SL2: only the owner's own turn moves audio; words heard while JARVIS speaks or thinks (a mail read aloud) never do
+    const OWNER_TURN = ['listening', 'standby'];
+    add('device.input', { match: slotMatcher('device.input', 'input'), run: runInput, states: OWNER_TURN });
+    add('device.switch', { match: slotMatcher('device.switch', 'output'), run: runSwitch, states: OWNER_TURN });
     add('device.list', { match: C.exact('device.list'), run: runList });
   }
 

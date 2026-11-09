@@ -129,7 +129,7 @@ def ready(c: Console) -> None:
     ev(c, "JarvisAudioRoute.refresh()")
 
 
-def say(c: Console, text: str, state: str = "idle") -> dict[str, Any]:
+def say(c: Console, text: str, state: str = "listening") -> dict[str, Any]:
     ctx = CTX.replace("'idle'", f"'{state}'")
     return ev(c, f"JarvisVoiceCommands.handle({json.dumps(text)}, {ctx})")  # type: ignore[no-any-return]
 
@@ -340,9 +340,10 @@ def test_switch_automatically_and_do_nothing_policies(make: Callable[..., Consol
     assert sink(c) == "" and c.page.locator("#voiceOffer button").count() == 0
 
 
-def test_in_a_conversation_he_also_asks_aloud_and_a_yes_switches(
+def test_while_he_listens_the_offer_is_on_screen_only_and_a_yes_switches_nothing(
     make: Callable[..., Console],
 ) -> None:
+    # SL1: mid-listening the loop cannot speak a question, so none is armed for a loose "yes"
     c = make()
     fv = FakeVoice(c.page)
     fv.hold_transcribe = True
@@ -351,12 +352,13 @@ def test_in_a_conversation_he_also_asks_aloud_and_a_yes_switches(
     c.page.locator("#micBtn").click()
     wf(c, "JarvisVoiceLoop.inConversation()")
     add_buds(c)
-    wf(c, "JarvisVoiceCommands.pending() !== null")
-    asked = ev(c, "JarvisVoiceCommands.pending()")
-    assert asked.startswith("New earphones have connected") and "Pixel" not in asked
+    c.page.locator("#voiceOffer button").first.wait_for()
+    assert ev(c, "JarvisVoiceCommands.pending()") is None
     ev(c, "JarvisVoiceCommands.handle('yes please', {source: 'voice', state: 'listening'})")
+    c.page.wait_for_timeout(300)
+    assert sink(c) in ("", None)
+    c.page.locator("#voiceOffer button", has_text="Use").first.click()  # the tap still works
     wf(c, "JarvisVoice.speaker.sink() === 'pixel'")
-    assert c.page.locator("#voiceOffer button").count() == 0  # the chip is dismissed too
 
 
 def test_losing_the_chosen_output_falls_back_and_says_so(make: Callable[..., Console]) -> None:

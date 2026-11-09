@@ -36,7 +36,7 @@ RECORDER = """
 window.__said = [];
 (() => {
   const real = window.JarvisVoiceLoop;
-  window.__loopState = 'listening';
+  window.__loopState = 'idle';
   window.JarvisVoiceLoop = {
     state: () => window.__loopState, inConversation: () => true,
     say: (t, o) => { window.__said.push({ t, speak: !!(o && o.speak !== false && o.speak === true) }); return real.say(t, { speak: false }); },
@@ -689,23 +689,6 @@ def test_windows_naming_patterns_group_in_the_page(make: Callable[..., Console])
 
 
 # ====================================================================== timers
-def test_a_stray_yes_after_the_question_timed_out_switches_nothing(
-    make: Callable[..., Console],
-) -> None:
-    c = make()
-    FakeVoice(c.page).hold_transcribe = True
-    c.open()
-    wf(c, "window.__enum >= 1")
-    c.page.locator("#micBtn").click()
-    wf(c, "JarvisVoiceLoop.inConversation()")
-    add_buds(c)
-    wf(c, "JarvisVoiceCommands.pending() !== null")
-    wf(c, "JarvisVoiceCommands.pending() === null")  # the 8 s timeout
-    ev(c, "JarvisVoiceCommands.handle('yes please', {source: 'voice', state: 'listening'})")
-    c.page.wait_for_timeout(300)
-    assert sink(c) in ("", None)
-
-
 def test_the_offer_chip_goes_away_after_thirty_seconds(make: Callable[..., Console]) -> None:
     c = make()
     c.page.clock.install()
@@ -890,3 +873,50 @@ def test_the_wake_word_moves_to_a_newly_chosen_mic_without_a_conversation(
         1,
         0,
     ]  # the same run, not a restart
+
+
+def test_device_switch_commands_run_only_in_an_owner_turn_not_while_he_speaks(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    ready(c)
+    for phrase in ("switch to my speaker", "use the headset mic"):
+        for state in ("speaking", "thinking"):
+            assert say(c, phrase, state=state) == {"handled": False}, (phrase, state)
+    assert sink(c) in ("", None)
+    assert say(c, "switch to my speaker", state="listening").get("handled") is True
+    assert say(c, "switch to my speaker", state="standby").get("handled") is True
+
+
+def test_a_loose_yes_cannot_pick_a_device_while_the_question_is_not_heard(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    ready(c)
+    ev(c, RECORDER)
+    # arming is real: the stand-in forwards ask() to the command router, as the loop does
+    ev(
+        c,
+        "void (JarvisVoiceLoop.ask = (q, o) => { window.__said.push({ t: q, speak: true, ask: true });"
+        " return JarvisVoiceCommands.ask(q, o); })",
+    )
+    ev(c, "window.__loopState = 'listening'")  # mid-conversation: the loop would not speak it
+    ev(
+        c,
+        "window.__devs.push({ kind: 'audiooutput', deviceId: 'new-buds', label: 'Headphones (New Buds)' })",
+    )
+    devchange(c)
+    wf(c, "JarvisAudioRoute.refresh().then(() => true)")
+    before = sink(c)
+    r = say(c, "sure", state="listening")
+    assert r == {"handled": False}, r
+    assert not any(x.get("ask") for x in ev(c, "window.__said"))
+    assert sink(c) == before
+    # the offer stays on screen for a tap; spoken only when the loop is idle
+    ev(c, "window.__loopState = 'idle'")
+    ev(
+        c,
+        "window.__devs.push({ kind: 'audiooutput', deviceId: 'more-buds', label: 'Headphones (More Buds)' })",
+    )
+    devchange(c)
+    wf(c, "window.__said.some(x => x.ask)")

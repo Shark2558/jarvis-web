@@ -71,7 +71,7 @@
   function words(text) {
     const t = String(text == null ? '' : text).normalize('NFKC').toLowerCase()
       .replace(/[‘’ʼ`]/g, "'")
-      .replace(/[^\p{L}\p{N}'\s]/gu, ' ');
+      .replace(/[^\p{L}\p{M}\p{N}'\s]/gu, ' ');   // combining marks stay with their letters (Indic scripts)
     return t.split(/\s+/).map(x => x.replace(/^'+|'+$/g, '')).filter(Boolean);
   }
   function dropName(w) {
@@ -165,12 +165,21 @@
   }
   const owns = (text, state) => { const f = find(text, state); return f ? f.id : null; };
 
+  /** The words are mostly what JARVIS himself just said (ctx.spoken), at a volume no louder than his echo (SM4). */
+  function heardAsEcho(text, ctx) {
+    const B = window.JarvisBarge;
+    if (!B || typeof B.isEcho !== 'function' || typeof ctx.spoken !== 'string' || !ctx.spoken) return false;
+    try { return B.isEcho(text, ctx.spoken, typeof ctx.peak === 'number' ? ctx.peak : 0, typeof B.margin === 'function' ? B.margin() : undefined); } catch (_) { return false; }
+  }
+
   async function handle(text, ctx) {
     const none = { handled: false };
     if (!ctx || typeof ctx !== 'object' || ctx.source !== 'voice' || typeof text !== 'string') return none;
     const state = STATES.includes(ctx.state) ? ctx.state : String(ctx.state || '');
     const f = find(text, state);
     if (!f) return none;
+    if (state === 'speaking' && !(asking && f.id.startsWith('answer.')) && heardAsEcho(text, ctx)) return none;   // his own voice, not the owner's (SM4)
+    if (ctx.clip === true && f.id === 'mic.off' && !addressed(text)) return none;   // a clip heard over his voice needs the name to switch the mic off
     if (!f.entry) {
       const a = asking;
       settleAsk(f.id === 'answer.yes' ? 'yes' : 'no');

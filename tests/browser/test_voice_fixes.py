@@ -11,7 +11,15 @@ from typing import Any
 
 import pytest
 from test_console import Console
-from test_voice import FAKE_RECOGNITION, FAKE_WAKE, FakeVoice, _json, _wait
+from test_voice import (
+    FAKE_RECOGNITION,
+    FAKE_WAKE,
+    FakeVoice,
+    _json,
+    _mic_state,
+    _wait,
+    wav_bytes,
+)
 from test_voice_loop import RECORD_LOOP, _say_one_sentence, _tv
 from test_voice_robust import (  # noqa: F401  (fixtures and helpers)
     FAST_TV,
@@ -206,8 +214,11 @@ def _chat_reply(
     }  # fmt: skip
 
 
-def _route_reply(c: Console, reply: dict[str, Any]) -> None:
-    c.page.route("**/v1/chat", lambda r: _json(r, 200, reply))
+def _route_reply(c: Console, reply: dict[str, Any]) -> list[int]:
+    """Answer every chat turn with `reply`; the returned list gets a 1 per message sent."""
+    sent: list[int] = []
+    c.page.route("**/v1/chat", lambda r: (sent.append(1), _json(r, 200, reply)))
+    return sent
 
 
 # ================================================================== H1
@@ -496,3 +507,150 @@ GONE_MIC = """
 def _voice_panel_open(c: Console) -> None:
     c.open_panel("voice")
     c.page.locator("#vVoiceT").wait_for(state="visible")
+
+
+# ================================================================== M1, M2
+def test_an_unplugged_microphone_during_a_spoken_turn_sends_nothing_m1(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"speak": "always", "keepListening": True}, scripts=(SLOW_GUM,))
+    fake = FakeVoice(c.page)
+    fake.hold_transcribe = True
+    chats = _chat_counter(c)
+    c.open()
+    c.page.locator("#micBtn").click()
+    for _ in range(300):
+        if fake.held_transcribe:
+            break
+        c.page.wait_for_timeout(100)
+    assert fake.held_transcribe  # the words are with the cloud, JARVIS is "thinking"
+    assert _mic_state(c) == "thinking"
+    c.page.evaluate("window.__streams[0].getAudioTracks()[0].dispatchEvent(new Event('ended'))")
+    _until(c, "window.__voice.speech.length >= 1", 10)
+    fake.release_transcribe()  # the transcript arrives after "I'll switch to the keyboard"
+    c.page.wait_for_timeout(1200)
+    assert chats == []
+    assert "The microphone stopped, Sir. I'll switch to the keyboard." in fake.spoken()
+    _until(c, "document.getElementById('micBtn').dataset.state === 'idle'", 10)
+    assert c.errors == []
+
+
+def test_a_reply_arriving_during_the_handover_line_is_not_said_and_nothing_sticks_m1(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"speak": "always", "keepListening": True}, scripts=(TONE_MIC,))
+    fake = FakeVoice(c.page)
+    fake.transcript["text"] = "switch to the keyboard"
+    fake.speak_audio = wav_bytes(seconds=2.5)
+    c.open()
+    for round_ in (1, 2):  # twice: a stuck "handing over" would make the second handover silent
+        _say_one_sentence(c)
+        _until(c, "document.getElementById('micBtn').dataset.state === 'speaking'", 30)
+        c.page.evaluate(
+            "document.dispatchEvent(new CustomEvent('jarvis:answer',"
+            " { detail: { channel: 'voice', text: 'A late reply that must not be said.', approvals: 0 } }))"
+        )
+        _until(c, "document.getElementById('micBtn').dataset.state === 'idle'", 15)
+        assert fake.spoken().count("I'll switch to the keyboard, Sir.") == round_
+        c.page.wait_for_timeout(300)
+    assert "A late reply that must not be said." not in fake.spoken()
+    assert c.page.evaluate("JarvisAudio.isOpen()") is False
+    assert c.errors == []
+
+
+def test_a_yes_heard_after_the_ask_would_have_timed_out_still_counts_m2(
+    make: Callable[..., Console],
+) -> None:
+    c = make(
+        device={"speak": "always", "keepListening": True, "endSilenceMs": 800},
+        scripts=(TONE_MIC, FAST_TV, RECORD_LOOP),
+    )
+    fake = FakeVoice(c.page)
+    c.open()
+    _tv(c, fake)
+    question = "Shall I keep listening, Sir?"
+    _until(c, f"window.__voice.speech.some(d => d.text === {json.dumps(question)})", 150)
+    fake.hold_transcribe = True  # the owner's "yes" is on its way to the cloud ...
+    fake.transcript["text"] = "yes please"
+    for _ in range(100):
+        if fake.held_transcribe:
+            break
+        c.page.wait_for_timeout(100)
+    assert fake.held_transcribe
+    c.page.wait_for_timeout(9000)  # ... for longer than the eight seconds the question waits
+    assert not c.page.evaluate("window.__loop.some(e => e.state === 'handover')")
+    fake.hold_transcribe = False
+    before = _count(fake, "/v1/voice/transcribe")
+    fake.release_transcribe()
+    for _ in range(100):
+        if _count(fake, "/v1/voice/transcribe") >= before + 2:
+            break
+        c.page.wait_for_timeout(200)
+    assert _count(fake, "/v1/voice/transcribe") >= before + 2  # it went on listening
+    assert not c.page.evaluate("window.__loop.some(e => e.state === 'handover')")
+    assert fake.spoken().count(question) == 1
+    c.page.keyboard.press("Escape")
+    assert c.errors == []
+
+
+def test_ending_or_cancelling_a_conversation_cancels_a_question_waiting_for_a_yes_m2(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"keepListening": True}, scripts=(TONE_MIC,))
+    FakeVoice(c.page)
+    c.open()
+    ended = c.page.evaluate(
+        """async () => { const p = JarvisVoiceLoop.ask('Use the earphones?', { timeoutMs: 20000 });
+      JarvisVoiceLoop.end('keyboard'); return [await p, JarvisVoiceCommands.pending()]; }"""
+    )
+    assert ended == ["cancelled", None]
+    c.page.locator("#micBtn").click()  # a listening turn
+    _until(c, f"{STATE} === 'listening'", 5)
+    c.page.evaluate(
+        "void (window.__ask = JarvisVoiceLoop.ask('Use the earphones?', { timeoutMs: 20000 }))"
+    )
+    assert c.page.evaluate("JarvisVoiceCommands.pending()") == "Use the earphones?"
+    c.page.keyboard.press("Escape")  # Esc cancels the turn, and with it the question
+    assert c.page.evaluate("JarvisVoiceCommands.pending()") is None
+    assert c.page.evaluate("window.__ask") == "cancelled"
+    assert c.errors == []
+
+
+# ================================================================== SM4
+def test_his_own_closing_words_coming_back_through_the_room_are_not_a_command_sm4(
+    make: Callable[..., Console],
+) -> None:
+    """A reply ending 'say mic off.' must not lock the mic when the room hands it back 400 ms later."""
+    c = make(
+        device={"speak": "always", "keepListening": True, "endSilenceMs": 800},
+        scripts=(TONE_MIC, RECORD_LOOP, COMMAND_COUNT),
+    )
+    fake = FakeVoice(c.page)
+    chats = _route_reply(c, _chat_reply(text="Whenever you like, just say mic off."))
+    c.open()
+    fake.speak_audio = wav_bytes(seconds=0.8)
+    _say_one_sentence(c)  # "Turn on the lights ..." goes to the chat
+    _until(c, "document.getElementById('micBtn').dataset.state === 'speaking'", 30)
+    fake.transcript["text"] = "mic off"  # what the next relisten "hears": the end of his own reply
+    _until(c, "document.getElementById('micBtn').dataset.state !== 'speaking'", 10)
+    before = _count(fake, "/v1/voice/transcribe")
+    c.page.evaluate("window.__talk(true)")
+    c.page.wait_for_timeout(1500)
+    c.page.evaluate("window.__talk(false)")
+    for _ in range(100):  # the reverb turn really was transcribed ...
+        if _count(fake, "/v1/voice/transcribe") > before:
+            break
+        c.page.wait_for_timeout(100)
+    assert _count(fake, "/v1/voice/transcribe") > before
+    c.page.wait_for_timeout(1000)
+    assert c.page.evaluate("JarvisAudio.locked()") is False  # ... and went nowhere
+    assert c.page.evaluate("window.__commands") == 0  # the router never saw it
+    assert len(chats) == 1  # and it was not sent as a message either
+    c.page.keyboard.press("Escape")
+    assert c.errors == []
+
+
+COMMAND_COUNT = """
+window.__commands = 0;
+document.addEventListener('jarvis:voice-command', () => { window.__commands++; });
+"""

@@ -21,6 +21,8 @@
       disarmBarge();
       S.barge = window.JarvisBarge.arm({
         said: h.saidText, browserVoice: V.speaker.usingBrowser(),
+        clips: h.inConversation(),            // check clips only inside a conversation the owner started (D18, SM5)
+        energyOff: S.bargeOff,                // an empty interruption already cost a transcription this reply: tap / name only (SM3)
         handle: (text, ctx) => (h.Cmd() ? h.Cmd().handle(text, ctx) : Promise.resolve({ handled: false })),
         onBarge: bargeIn,
       });
@@ -39,15 +41,17 @@
       const r = h.silence();
       S.rest = ev.handled || !(r.rest && r.rest.length) ? null : r.rest; S.restAt = performance.now(); S.restKeep = was;
       h.emit('jarvis:barge', { how: ev.how, ms: ev.ms || 0 });
-      h.log('info', `Interrupted (${Math.round(ev.ms || 0)} ms)`);
+      h.log('info', `Interrupted (${Math.round(ev.ms || 0)} ms${figures(ev.stats)})`);
       if (ev.handled) { h.settle({ id: 'barge', result: ev.result }); return; }
       if (ev.text) {
         S.rest = null;
         if (h.Cmd() && h.Cmd().normalise(ev.text)) { h.setMode('thinking'); h.deliver(ev.text, { state: 'speaking' }); return; }
       }
       h.listen({ barge: true, soft: true, seed: ev.frames,
-        info: ev.how === 'speech' ? { said, peak: ev.peak, margin: window.JarvisBarge.BARGE.SPEAKERS.margin } : null });
+        info: ev.how === 'speech' ? { said, peak: ev.peak, margin: window.JarvisBarge.margin() } : null });
     }
+    /** The gate's learned numbers for the event log, so the owner check can tune the constants (numbers only, M5). */
+    const figures = (st) => (st ? ['leak', 'peak', 'noise'].filter(k => Number.isFinite(st[k])).map(k => `, ${k} ${st[k].toFixed(3)}`).join('') : '');
     /** "Hey Jarvis" over his speech (the wake model runs while he speaks, D8). */
     function bargeWake() {
       if (S.mode !== 'speaking') return;
@@ -66,7 +70,8 @@
       const rest = S.rest;
       S.rest = null;
       if (!S.handsFree || S.handsFree !== 'barge' || !rest || !rest.length || A.locked()) return false;
-      if (performance.now() - S.restAt > RESUME_MS) return false;
+      if (S.resumed || performance.now() - S.restAt > RESUME_MS) return false;   // at most one resume per reply (SM3)
+      S.resumed = true;
       h.setMode('idle');
       h.speak(rest, S.restKeep);
       return true;
@@ -138,6 +143,11 @@
       S.keep = false; S.rest = null;
       h.stopClock();
       if (h.isListening()) { S.turn++; if (S.rec) { S.cancel = true; const r = S.rec; S.rec = null; try { r.abort(); } catch (_) {} h.restore(); } h.endCapture(); }
+      else if (S.mode === 'thinking') {                       // a transcription in flight must not send after the line (M1)
+        S.turn++;
+        if (Chat.busy()) S.mute = true;                       // a reply already on its way is shown, not said
+        if (S.abort) { try { S.abort.abort(); } catch (_) {} S.abort = null; }
+      }
       h.silence();
       S.conv = false;
       const hon = h.honorific();
@@ -153,6 +163,7 @@
     }
     function finishHandover() {
       S.handing = false; S.conv = false;
+      try { window.JarvisBarge.forget(); } catch (_) {}
       h.setMode('idle');
       h.releaseMic();
       if (!A.locked()) h.input.focus();

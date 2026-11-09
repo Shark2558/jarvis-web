@@ -48,6 +48,7 @@
   const LINE_MS = 8000;
   const MIN_FRAMES = 4;            // under ~0.3 s is not worth a transcription
   const VAD_LAG_MS = 160;          // two frames of speech before the VAD says "start"
+  const ECHO_AFTER_MS = 3000;      // a turn that began this soon after a reply ended may be the room's reverb of it (SM4)
   const SAID_MS = 4000;            // JARVIS's own words kept this long for the echo guard
   const PHRASES_REFUSED = 'phrases-not-supported'; // Web Speech: the browser can't take recognition hints (V1)
   const BROWSER_RESTART_MS = 4000; // the browser recogniser is restarted quietly at most this often
@@ -77,13 +78,13 @@
     noSpeech: 0, maxTimer: 0, spoken: [],
     conv: false, handsFree: '', holdWait: false, heardMarked: false, seed: null, info: null, recStart: 0,
     said: [], rest: null, restAt: 0, restKeep: false, silent: false, handing: false, checking: false,
-    barge: null, abort: null, nameOff: false, browserTimer: 0, noPhrases: false, realAt: 0, empties: 0, closeAfter: false, wakeGate: false };
+    barge: null, abort: null, nameOff: false, browserTimer: 0, noPhrases: false, realAt: 0, empties: 0, closeAfter: false, wakeGate: false, replyEndAt: 0, turnAt: 0, bargeOff: false, resumed: false };
   let clock = null;                                    // the follow-up / standby / long-pause clock of this reply
   const runaway = window.JarvisConversation.runaway();
   const isListening = () => S.mode === 'listening' || S.mode === 'standby';
   // the conversation glue (barge, check-in, handover, built-in command actions): console-voice-loop-glue.js
   const glue = window.JarvisLoopGlue.create({ S, A, V, Chat, emit, log, input, Cmd, runaway, wake: () => wake,
-    saidText: () => saidText(), setMode: (m) => setMode(m), speak: (...a) => speak(...a), silence: () => silence(),
+    saidText: () => saidText(), inConversation: () => inConversation(), setMode: (m) => setMode(m), speak: (...a) => speak(...a), silence: () => silence(),
     listen: (o) => listen(o), deliver: (t, o) => deliver(t, o), settle: (r) => settle(r), say: (t) => say(t),
     cue: (n) => cue(n), honorific, loopSay: (t, o) => loopSay(t, o), startClock: () => startClock(),
     stopClock: () => stopClock(), resumeListening: () => resumeListening(), isListening, restore: () => restore(),
@@ -95,6 +96,7 @@
   function setMode(mode) {
     if (mode === 'idle' && A.locked()) mode = 'off';   // at rest while the microphone is locked
     if (S.mode === mode) return;
+    if (S.mode === 'handover' && mode !== 'handover') S.handing = false;   // never stuck "handing over" (M1)
     S.mode = mode;
     const shown = mode === 'handover' ? 'speaking' : mode;
     btn.dataset.state = shown;
@@ -159,6 +161,7 @@
     help(null);
     const t = ++S.turn;
     const hands = !!(opts.relisten || opts.barge);
+    S.turnAt = performance.now();
     S.soft = !!(opts.soft || hands);
     S.handsFree = opts.barge ? 'barge' : opts.relisten ? 'relisten' : '';
     S.holdWait = hands; S.heardMarked = false; S.seed = opts.seed || null; S.info = opts.info || null;
@@ -265,6 +268,7 @@
   /** Nothing usable was heard. After an interruption JARVIS carries on reading; in a conversation the
    *  loop keeps listening (the clock decides when to hand over); otherwise it ends quietly. */
   function afterEmpty(msg) {
+    if (S.handsFree === 'barge') S.bargeOff = true;       // noise or echo set it off: no more energy interruptions this reply (SM3)
     if (resumeSpeech()) return;
     if (!S.soft && msg) say(msg);
     if (S.conv && !A.locked()) {
@@ -363,6 +367,7 @@
 
   /** A transcript: the local command router first (D12), then send it (default) or leave it in the box. */
   async function deliver(text, o = {}) {
+    if (o.state !== 'speaking' && !S.info && reverb(text, o.peak)) { afterEmpty('I didn\'t catch that.'); return; }   // his own words coming back (SM4)
     const t = S.turn;
     S.rest = null; S.info = null;
     if (S.mode !== 'thinking') setMode('thinking');
@@ -391,6 +396,13 @@
     say(Chat.busy() ? 'JARVIS is still answering: your words are in the message box.' : 'Check your words, then press Enter to send.');
   }
   const cancelAsk = () => { const C = Cmd(); if (C && typeof C.cancelAsk === 'function') C.cancelAsk(); };   // a stale question must not swallow a later yes / no (M2)
+  /** A turn that began within 3 s of a reply ending, whose words are mostly that reply's: the room's reverb, not the owner. */
+  function reverb(text, peak) {
+    if (S.turnAt - S.replyEndAt > ECHO_AFTER_MS) return false;
+    const C = Cmd(), id = C && C.pending() ? C.owns(text, 'listening') : null;
+    if (id && id.startsWith('answer.')) return false;                   // the answer to his own question echoes it by nature
+    return window.JarvisBarge.isEcho(text, saidText(), peak || 0, window.JarvisBarge.margin());
+  }
   /** The owner's words are never lost: what answered the check-in goes back into the message box (M3). */
   function putBack(text) {
     const before = input.value.replace(/\s+$/, '');
@@ -451,6 +463,7 @@
   }
   function stopAll() {
     clearTimeout(S.relisten); clearTimeout(S.browserTimer); cancelAsk();
+    try { window.JarvisBarge.forget(); } catch (_) {}
     S.keep = false; S.rest = null; S.handing = false; S.checking = false;
     if (isListening()) cancel(); else { S.turn++; S.conv = false; stopClock(); } // a transcription still on its way is dropped
     silence();
@@ -512,6 +525,8 @@
   document.addEventListener('jarvis:answer', (e) => {
     const d = e.detail || {}, dev = V.device();
     const spoken = d.channel === 'voice';
+    if (S.mode === 'handover') return;   // the owner is being handed to the keyboard: the reply is on screen, not said (M1)
+    S.bargeOff = false; S.resumed = false;   // a new reply: the interruption budget starts again
     if (S.mute) { S.mute = false; if (S.mode === 'thinking') setMode('idle'); return; } // Esc'd: shown, not said
     if (isListening()) return; // the owner is already talking again
     if (dev.speak === 'never' || (dev.speak === 'voice' && !spoken) || typeof d.text !== 'string') {
@@ -531,7 +546,7 @@
   }
   V.speaker.on('state', (d) => {
     syncWake(); // a Preview in the Voice panel speaks too: the wake word must not hear it
-    if (!d.speaking) S.spoken.splice(0).forEach(r => r());
+    if (!d.speaking) { S.replyEndAt = performance.now(); S.spoken.splice(0).forEach(r => r()); }
     if (d.speaking || S.silent) return;
     if (S.mode === 'handover') { finishHandover(); return; }
     if (S.mode !== 'speaking') return;

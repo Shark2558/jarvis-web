@@ -3,10 +3,13 @@
 
 `board(uid)` merges the owner's manual records with the `auto` ones the meters give and, since
 R5.1 D2, JARVIS's own keys and connections (`jarvis.vitals.own`), and computes each status now.
-Manual records that can't be read never hide the rest (`manual_unavailable`). `check_and_alert` tells the owner ONCE when a provider crosses UP a status line
-(ok -> amber: `vitals_warn`; -> red: `vitals_critical`); the last status is kept per provider in
+Manual records that can't be read never hide the rest (`manual_unavailable`).
+
+`check_and_alert` tells the owner ONCE when a provider crosses UP a status line (ok -> amber:
+`vitals_warn`; -> red: `vitals_critical`); the last status is kept per provider in
 `jarvis_vitals_status`. "unknown" never alerts and never overwrites the last status; a send that
-fails is not recorded, so the next tick tries again.
+fails is not recorded, so the next tick tries again. Items another system already rings for
+(`own.QUIET_IDS`) never alert from here.
 """
 
 from __future__ import annotations

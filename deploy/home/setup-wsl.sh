@@ -160,6 +160,13 @@ step_up() {
   pin_digest HOMEASSISTANT_IMAGE "${HOMEASSISTANT_IMAGE:-ghcr.io/home-assistant/home-assistant:2026.10.0}"
   say "Starting JARVIS Home"
   "${COMPOSE[@]}" up -d --build || fail "couldn't start. Run  bash setup-wsl.sh status  and tell Claude what it says."
+  # Frigate reads its settings only when it starts; `up` leaves a running Frigate alone.
+  local sum; sum="$(sha256sum frigate/config.yml | cut -d' ' -f1)"
+  if [ -f .frigate-config.sha ] && [ "$(cat .frigate-config.sha)" != "$sum" ]; then
+    say "Restarting Frigate with its new settings"
+    "${COMPOSE[@]}" restart frigate >/dev/null || fail "couldn't restart Frigate. Run  bash setup-wsl.sh status  and tell Claude."
+  fi
+  printf '%s\n' "$sum" > .frigate-config.sha
   echo "Started."
   show_faces_code
 }

@@ -834,3 +834,20 @@ def test_every_dependency_of_a_bridge_package_is_in_the_bridge_lock() -> None:
             if canonicalize_name(req.name) not in locked:
                 missing.add(f"{req.name} (needed by {name})")
     assert sorted(missing) == []
+
+
+def test_up_restarts_frigate_only_when_its_settings_changed(tmp_path: Path) -> None:
+    # 9 Nov, on the owner's laptop: a new frigate/config.yml was copied in, but `up -d` left
+    # the running Frigate alone (a bind-mounted file), so it stayed in safe mode.
+    run_script(tmp_path, "configure")
+    run_script(tmp_path, "up")
+    restart = "compose --env-file bridge.env --env-file images.env restart frigate"
+    _, calls = run_script(tmp_path, "up")
+    assert calls.count(restart) == 0  # same settings: no restart (the log keeps every run)
+    cfg = tmp_path / "home" / "jarvis-home" / "frigate" / "config.yml"
+    cfg.write_text(cfg.read_text() + "\n# changed\n")
+    done, calls = run_script(tmp_path, "up")
+    assert done.returncode == 0, done.stderr
+    assert calls.count(restart) == 1
+    _, calls = run_script(tmp_path, "up")
+    assert calls.count(restart) == 1

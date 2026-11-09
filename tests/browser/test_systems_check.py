@@ -388,6 +388,38 @@ def test_the_document_event_and_the_voice_command_open_it(make: Any) -> None:
     assert typed["handled"] is False
 
 
+def test_typing_the_phrase_in_the_composer_opens_it_with_no_ai_call(make: Any) -> None:
+    """R5.1 I1 (console.js): the composer hands the whole phrase to the pop-up, clears the box and
+    sends nothing to /v1/chat; any other message still goes to the chat."""
+    c, _ = make(store=SILENT)
+    chats: list[str] = []
+
+    def chat(route: Any) -> None:
+        chats.append(route.request.post_data or "")
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"session_id": "s1", "reply": "Noted, Sir.", "model": "mock"}),
+        )
+
+    c.page.route("**/v1/chat**", chat)
+    box = c.page.locator("#input")
+    box.fill("Jarvis, run a systems check.")
+    box.press("Enter")
+    c.page.locator("#sysCheck").wait_for(state="visible")
+    assert box.input_value() == ""
+    c.page.keyboard.press("Escape")
+    c.page.locator("#sysCheck").wait_for(state="hidden")
+    c.page.wait_for_timeout(300)
+    assert chats == []  # no AI call for the phrase
+    box.fill("check my systems design doc")
+    box.press("Enter")
+    c.page.wait_for_function("() => document.getElementById('input').value === ''")
+    c.page.wait_for_timeout(500)
+    assert len(chats) >= 1 and "systems design doc" in chats[0]
+    assert not c.page.locator("#sysCheck").is_visible()
+
+
 POSITIVE = [
     "run a systems check", "Run a systems check.", "systems check", "System check",
     "run diagnostics", "Jarvis, run a systems check", "hey jarvis systems check",

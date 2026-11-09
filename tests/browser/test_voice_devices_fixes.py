@@ -823,3 +823,31 @@ def test_a_device_line_with_no_name_in_it_is_shown_even_when_replies_are_not_spo
     wf(c, "/open Quick Settings/.test(document.getElementById('voiceLine').textContent)")
     assert fake.spoken() == []
     assert c.errors == []
+
+
+# ====================================================================== integrated fixes (R5 int)
+def test_a_sink_that_never_settles_does_not_hang_the_devices_chain(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    ready(c)
+    ev(c, "window.__hangSink = true")
+    ev(
+        c,
+        "(() => { const old = AudioContext.prototype.setSinkId;"
+        " AudioContext.prototype.setSinkId = function (id) {"
+        " return window.__hangSink ? new Promise(() => {}) : old.call(this, id); }; })()",
+    )
+    res = ev(
+        c,
+        "Promise.race([JarvisAudioRoute.chooseOutput('buds-stereo'),"
+        " new Promise(r => setTimeout(() => r('HUNG'), 6000))])",
+    )
+    assert res != "HUNG" and res["ok"] is False, res
+    ev(c, "window.__hangSink = false")
+    listing = ev(
+        c,
+        "Promise.race([JarvisAudioRoute.refresh().then(() => 'ok'),"
+        " new Promise(r => setTimeout(() => r('HUNG'), 6000))])",
+    )
+    assert listing == "ok"

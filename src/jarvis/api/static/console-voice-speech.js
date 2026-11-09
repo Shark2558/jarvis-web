@@ -252,6 +252,7 @@
   const BROWSER_MAX = 180;       // characters per utterance for the browser voice
   const BROWSER_CPS = 13;        // characters a second at rate 1 (slow on purpose: the watchdog never cuts speech)
   const WATCHDOG_SLACK_MS = 2500;
+  const SINK_WAIT_MS = 3000;     // an output that never answers (a sleeping Bluetooth speaker) is given up on
   const RESUME_WAIT_MS = 1500;   // an AudioContext the browser won't start (no tap yet) is given up on
   const TONE_SLACK_MS = 300;     // a tone that has not ended this long after its length is given up on
   const DUCK_GAIN = 0.2, DUCK_RAMP_S = 0.06;
@@ -301,7 +302,10 @@
       const next = typeof id === 'string' && id !== 'default' ? id : '';
       const c = sinkOk() ? context() : null;
       if (!c) return { ok: false, reason: 'unsupported' };
-      try { await c.setSinkId(next); } catch (err) { return { ok: false, reason: sinkReason(err) }; }
+      const TIMED_OUT = {};
+      let gave;
+      try { gave = await Promise.race([c.setSinkId(next), new Promise(r => setTimeout(() => r(TIMED_OUT), SINK_WAIT_MS))]); } catch (err) { return { ok: false, reason: sinkReason(err) }; }
+      if (gave === TIMED_OUT) return { ok: false, reason: 'failed' };
       sinkId = next;
       return { ok: true };
     }

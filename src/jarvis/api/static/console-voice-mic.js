@@ -16,6 +16,11 @@
 // "Hey Jarvis" (D12): window.JarvisWake (console-wakeword.js) gets the same 16 kHz frames; it is
 // paused (JarvisWake.pause()) while JARVIS listens, thinks or speaks, and resumed ~0.4 s after the
 // last clip ends. Its state is checked every second: an error switches it off with a plain line.
+// R5 I0 (docs/plans/r5-voice.md): the hard mic lock (JarvisAudio.lock) is honoured here: listen()
+// refuses while locked, the browser recogniser is built through JarvisAudio.recognizer(), a lock
+// cancels the turn and shows the 'off' state, and "Hey Jarvis" waits ('micoff' chip). The minimal
+// window.JarvisVoiceLoop (state, inConversation, say, ask, offer, end) is the seam the devices module
+// and the tests use; workstream A completes the loop behind the same shape.
 // Listens: jarvis:turn / jarvis:turn-end / jarvis:answer / jarvis:switch (console.js),
 // jarvis:voice-device (console-voice.js), jarvis:motion. Fires: jarvis:wake {state, note}.
 (() => {
@@ -44,8 +49,12 @@
   const LINE_MS = 8000;
   const MIN_FRAMES = 4;            // under ~0.3 s is not worth a transcription
   const NAME = 'Voice input';
-  const TITLES = { idle: 'Speak (Ctrl + Space)', listening: 'Stop and send', thinking: 'JARVIS is answering', speaking: 'Stop JARVIS and speak' };
-  const LIVE = { idle: '', listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking' };
+  const TITLES = { idle: 'Speak (Ctrl + Space)', listening: 'Stop and send', thinking: 'JARVIS is answering', speaking: 'Stop JARVIS and speak',
+    standby: 'Speak (Ctrl + Space)', off: 'Microphone off: switch it on in Voice' };
+  const LIVE = { idle: '', listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking', standby: 'Standing by', off: 'Microphone off' };
+  const FX_MODE = { listening: 'listening', speaking: 'speaking', standby: 'standby', off: 'micoff' };
+  const OFFER_MS = 30000;
+  const LOCKED_LINE = 'The microphone is switched off. Switch it on in the Voice panel.';
   const HELP = {
     blocked: 'The microphone is blocked for JARVIS. Allow it in the site settings (the icon beside the address), then tap the mic again.',
     no_mic: 'No microphone was found. Plug one in or check the sound settings, then tap the mic again.',
@@ -53,6 +62,7 @@
     unsupported: 'This browser can\'t record audio here. You can still type.',
     failed: 'The microphone didn\'t start. Please try again.',
     ended: 'The microphone stopped (unplugged or switched off). Check it, then tap the mic again.',
+    mic_off: LOCKED_LINE,
     cloud_down: 'Cloud listening isn\'t available right now. In Voice, set Speech engine to Automatic to use this browser\'s recognition, or type.',
   };
   const WAKE_FAILED = '‘Hey Jarvis’ stopped working on this device, so it was switched off. You can switch it on again here.';
@@ -61,10 +71,11 @@
   const S = { mode: 'idle', turn: 0, vad: null, unsub: null, rec: null, recText: '', stop: false, cancel: false,
     keep: false, before: '', placeholder: input.getAttribute('placeholder') || '', raf: 0, level: 0, lineTimer: 0,
     relisten: 0, convTimer: 0, fallbackSaid: false, soft: false, startMs: NO_SPEECH_MS, chain: 0, mute: false,
-    noSpeech: 0, maxTimer: 0 };
+    noSpeech: 0, maxTimer: 0, spoken: [] };
 
   // ---- state ---------------------------------------------------------------------------------
   function setMode(mode) {
+    if (mode === 'idle' && A.locked()) mode = 'off';   // at rest while the microphone is locked
     if (S.mode === mode) return;
     S.mode = mode;
     btn.dataset.state = mode;
@@ -72,8 +83,9 @@
     btn.setAttribute('aria-pressed', String(mode === 'listening'));
     btn.title = TITLES[mode];
     input.setAttribute('placeholder', mode === 'listening' ? 'Listening…' : S.placeholder);
-    if (typeof FX.setVoice === 'function') FX.setVoice(mode === 'listening' || mode === 'speaking' ? mode : null);
+    if (typeof FX.setVoice === 'function') FX.setVoice(FX_MODE[mode] || null);
     if (liveEl) liveEl.textContent = LIVE[mode];
+    emit('jarvis:voice-loop', { state: mode, conversation: inConversation(), turns: S.chain });
     syncWake();
     levels();
   }
@@ -118,6 +130,7 @@
    *  and it counts towards the hands-free limit). Anything else (a tap) starts a new conversation. */
   async function listen(opts = {}) {
     if (S.mode === 'listening') return;
+    if (A.locked()) { say(LOCKED_LINE); return; }     // D11: nothing listens while the microphone is off
     clearTimeout(S.relisten); clearTimeout(S.convTimer);
     if (V.speaker.speaking()) V.speaker.stop();
     V.speaker.unlock();                     // inside the tap: later replies may start playing
@@ -223,11 +236,10 @@
   const clean = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000);
 
   function listenBrowser(t) {
-    const R = recognition();
     releaseMic(); // the browser records on its own: our primed audio context is not needed
     btn.classList.toggle('nolevel', !A.isOpen()); // no level to show unless "Hey Jarvis" keeps the mic open
     let rec;
-    try { rec = new R(); } catch (_) { setMode('idle'); help('unsupported'); return; }
+    try { rec = A.recognizer(); } catch (e) { setMode('idle'); help(e && e.code === 'mic_off' ? 'mic_off' : 'unsupported'); return; }
     S.rec = rec; S.recText = ''; S.stop = false; S.cancel = false; S.quietEnd = false; S.before = input.value;
     let finalText = '', interim = '', error = '';
     rec.lang = V.language(); rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
@@ -324,6 +336,7 @@
   }
   function press() {
     if (btn.hidden) return;
+    if (A.locked()) { say(LOCKED_LINE); return; }
     S.chain = 0;                                                                        // the owner is here
     if (S.mode === 'listening') { stopAndSend(); return; }
     if (S.mode === 'speaking') { S.keep = false; V.speaker.stop(); listen(); return; } // barge-in + listen
@@ -358,6 +371,7 @@
   });
   V.speaker.on('state', (d) => {
     syncWake(); // a Preview in the Voice panel speaks too: the wake word must not hear it
+    if (!d.speaking) S.spoken.splice(0).forEach(r => r());
     if (d.speaking || S.mode !== 'speaking') return;
     const wanted = d.reason === 'done' && S.keep;
     const again = wanted && S.chain < MAX_HANDS_FREE;
@@ -400,11 +414,22 @@
     if (S.mode === 'listening' && !S.rec) { cancel(); help('ended'); }
   });
 
+  // ---- the hard microphone lock (R5 D11) ------------------------------------------------------------
+  A.onLock(({ locked }) => {
+    if (!locked) { if (S.mode === 'off') setMode('idle'); bootWake(); return; }
+    clearTimeout(S.relisten); clearTimeout(S.convTimer);
+    S.keep = false;                                    // no re-listen after a reply that is still playing
+    if (S.mode === 'listening') cancel();              // nothing is sent
+    else if (S.mode === 'thinking' && !Chat.busy()) S.turn++; // a transcription on its way is dropped
+    if (wake.on) { wakeHalt(); wakeState('micoff'); } else if (V.device().wake) wakeState('micoff');
+    if (S.mode === 'idle' || (S.mode === 'thinking' && !Chat.busy())) setMode('off');
+  });
+
   // ---- keys and the button ------------------------------------------------------------------------
   btn.addEventListener('click', press);
   document.addEventListener('keydown', (e) => {
     if (e.isComposing || btn.hidden) return;
-    if (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'Space' || e.key === ' ')) { e.preventDefault(); press(); return; }
+    if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && (e.code === 'Space' || e.key === ' ')) { e.preventDefault(); press(); return; }
     if (e.key !== 'Escape' || e.defaultPrevented) return;
     let said = '';
     if (S.mode === 'listening') { cancel(); said = 'Cancelled'; }
@@ -456,6 +481,7 @@
     return off;
   }
   async function wakeStart() {
+    if (A.locked()) { wakeState('micoff'); return; }
     const W = wakeApi(), my = ++wake.seq;
     if (!wakeSupported()) { wakeState('off'); return; }
     wake.on = true; wake.started = false; wake.held = false;
@@ -527,6 +553,7 @@
    *  arrives later (a slow or late <script>), it is waited for, briefly. */
   function bootWake() {
     if (!signedIn() || !V.device().wake || wake.on) return;
+    if (A.locked()) { wakeState('micoff'); return; }
     if (wakeApi()) { wakeStart(); return; }
     if (wake.waiting) return;
     const until = Date.now() + WAKE_LATE_MS;
@@ -542,6 +569,7 @@
   btn.dataset.state = 'idle';
   btn.setAttribute('aria-label', NAME);
   btn.title = TITLES.idle;
+  if (A.locked()) setMode('off');
   document.addEventListener('jarvis:ready', bootWake);
   if (JC && typeof JC.ready === 'function' && JC.ready()) bootWake();
   document.addEventListener('DOMContentLoaded', bootWake);
@@ -550,4 +578,61 @@
   // saved. (A hidden tab keeps listening on purpose: "Hey Jarvis" works from another tab on desktop.)
   window.addEventListener('pagehide', () => { stopAll(); if (wake.on) wakeStop(); A.close(); });
   window.addEventListener('pageshow', (e) => { if (e.persisted) bootWake(); });
+
+  // ---- window.JarvisVoiceLoop: the seam other modules use (workstream A completes it) ---------------
+  const offerEl = $('voiceOffer');
+  let offerTimer = 0;
+  function inConversation() { return (S.mode !== 'idle' && S.mode !== 'off') || S.chain > 0; }
+  function clearOffer() {
+    clearTimeout(offerTimer); offerTimer = 0;
+    if (offerEl) { offerEl.textContent = ''; offerEl.hidden = true; }
+  }
+  /** Show a line and, with {speak: true}, say it out loud (not over a turn in progress). Resolves when said. */
+  function loopSay(text, o) {
+    if (typeof text !== 'string' || !text.trim()) return Promise.resolve();
+    const t = text.trim().slice(0, 300);
+    say(t);
+    if (!(o && o.speak === true) || V.device().speak === 'never' || V.outputEngine() === 'none') return Promise.resolve();
+    if (S.mode !== 'idle' && S.mode !== 'off') return Promise.resolve();
+    return new Promise(resolve => { S.spoken.push(resolve); speak([t], false); });
+  }
+  /** Ask a yes / no question: said aloud, then the router waits for the answer ('yes' | 'no' | 'timeout' | 'cancelled'). */
+  function loopAsk(question, o) {
+    const C = window.JarvisVoiceCommands;
+    loopSay(question, { speak: true });
+    return C ? C.ask(question, o) : Promise.resolve('timeout');
+  }
+  /** A suggestion with buttons under the voice line for 30 s; returns a function that removes it. */
+  function loopOffer(text, actions) {
+    const list = (Array.isArray(actions) ? actions : []).filter(a => a && typeof a.label === 'string' && typeof a.run === 'function').slice(0, 3);
+    if (!offerEl || typeof text !== 'string' || !text.trim() || !list.length) return () => {};
+    clearOffer();
+    const msg = document.createElement('span');
+    msg.textContent = text.trim().slice(0, 200);
+    offerEl.append(msg);
+    list.forEach(a => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn lift bact'; b.textContent = a.label.slice(0, 40);
+      b.addEventListener('click', () => { clearOffer(); try { a.run(); } catch (_) {} });
+      offerEl.append(b);
+    });
+    offerEl.hidden = false;
+    const mine = offerTimer = setTimeout(clearOffer, OFFER_MS);
+    return () => { if (offerTimer === mine) clearOffer(); };
+  }
+  /** End the voice conversation: stop listening and speaking; the keyboard gets the focus. */
+  function loopEnd(reason) {
+    clearOffer();
+    S.chain = 0;
+    stopAll();
+    if (reason === 'keyboard' || reason === 'pause') input.focus();
+  }
+  window.JarvisVoiceLoop = Object.freeze({
+    state: () => S.mode,
+    inConversation,
+    say: loopSay,
+    ask: loopAsk,
+    offer: loopOffer,
+    end: loopEnd,
+  });
 })();

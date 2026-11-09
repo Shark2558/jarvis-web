@@ -490,6 +490,7 @@ def build_system_prompt(*, honorific: str, wit: str = DEFAULT_WIT) -> str:
         + SYSTEMS_RULE
         + CONNECTORS_RULE
         + PEOPLE_RULE
+        + VOICE_CONTROL_RULE
         + TOOLS_RULE
     )
 
@@ -498,10 +499,21 @@ VOICE_RULE_HEADING = "Spoken reply"
 VOICE_RULE = (
     f"\n{VOICE_RULE_HEADING} (the owner spoke this message; your reply is read aloud)\n"
     "- Answer first, in at most about 60 words or 3 sentences unless asked for detail.\n"
-    "- No markdown, lists, tables, code or URLs. For anything detailed, give the gist and say\n"
-    "  the details are on screen.\n"
+    "- When the owner asks for detail, steps, a list or a read-out, give all of it in plain\n"
+    "  spoken sentences: it is read aloud in full. Never stop part-way or promise the details\n"
+    "  elsewhere.\n"
+    "- No markdown, tables, code or URLs. Say 'the details are on screen' only for code,\n"
+    "  tables and links.\n"
     "- Say numbers, dates and times the way a person says them aloud.\n"
 )
+
+VOICE_CONTROL_RULE = """
+Voice commands in the console
+- The console itself handles 'mic off', 'stop', 'switch to the keyboard' and 'switch to
+  <device>' before a message reaches you, also with the AI off.
+- If the owner types such a request, point to the mic button or Ctrl + Shift + Space, or
+  Voice -> Sound devices. You cannot switch the microphone or sound devices; never claim you did.
+"""
 
 
 TELEGRAM_RULE = (
@@ -554,6 +566,7 @@ __all__ = [
     "SYSTEMS_RULE",
     "TELEGRAM_RULE",
     "UNDO_RULES",
+    "VOICE_CONTROL_RULE",
     "VOICE_RULE",
     "VITALS_RULE",
     "VOICE_RULE_HEADING",

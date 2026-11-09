@@ -25,6 +25,10 @@ Suites (mock; all gates hard, 100 %):
   wav        transcribe input validation through the API: non-WAV, wrong content type, stereo,
              44.1 / 48 kHz, 8-bit, float, too short, too long, oversize (413 before reading),
              truncated → 0 STT calls.
+  hints      R5 (D16): the owner's words to recognise reach the speech engine after the base hints,
+             de-duplicated and bounded (50 words of 1-40 characters); refused lists give a 422 that
+             never echoes them and nothing reaches the engine. Negative control: with the list
+             validation off the suite MUST fail.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ from typing import Any
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
+from hints import suite_hints  # noqa: E402
 from suites import (  # noqa: E402
     suite_billing,
     suite_errors,
@@ -62,11 +67,16 @@ SUITES: dict[str, Callable[[], Awaitable[dict[str, Any]]]] = {
     "billing": suite_billing,
     "errors": suite_errors,
     "wav": suite_wav,
+    "hints": suite_hints,
 }
 
 
 def _summary(name: str, s: dict[str, Any]) -> str:
     base = f"{s['pass_rate']:.0%} of {s['cases']} cases"
+    if name == "hints":
+        nc = s["negative_control"]
+        verdict = "fails as it must" if nc["suite_failed"] else "DID NOT FAIL: suite is blind"
+        return f"{base}; negative control {verdict} ({nc['failed_cases']} cases)"
     if name == "billing":
         nc = s["negative_control"]
         verdict = "fails as it must" if nc["suite_failed"] else "DID NOT FAIL: suite is blind"

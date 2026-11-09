@@ -98,3 +98,23 @@ html[data-motion="calm"] .mic .mring{transition:none;transform:scale(.9)}
 html[data-motion="calm"] .mic[data-state="listening"] .mring,html[data-motion="calm"] .mic[data-state="speaking"] .mring{opacity:calc(.3 + var(--lvl) * .7)}
 html[data-motion="calm"] .mic[data-state="listening"].nolevel .mring{animation:none;opacity:.9}
 html[data-motion="off"] .mic .mring{transform:scale(.9)}
+
+/* ---- R5: mic off, standing by, the mic-off button and the offer chips ---------------------------- */
+.mic .mic-slash{display:none;position:relative;z-index:1}
+.mic[data-state="off"] svg:not(.mic-slash){display:none}
+.mic[data-state="off"] .mic-slash{display:block;color:var(--bad-ink)}
+.mic[data-state="off"]{border-style:dashed;color:var(--bad-ink)}
+.mic[data-state="standby"]{color:var(--accent-ink);border-style:dotted;background-color:var(--tint)}
+.mic[data-state="standby"] .mring{opacity:.35}
+.micoff{flex:none;width:40px;height:40px;border-radius:var(--r-md);border:1px solid var(--line);cursor:pointer;display:grid;place-items:center;
+  background-color:var(--well-2);color:var(--ink-2)}
+.micoff[hidden]{display:none}
+.micoff svg{width:19px;height:19px}
+.micoff:hover{color:var(--bad-ink);border-color:var(--bad-line)}
+.voffer{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;margin:6px 2px 0;font-size:12.5px;color:var(--ink-2)}
+.voffer[hidden]{display:none}
+.status.standby{color:var(--accent-ink)}
+.status.standby i{opacity:.6}
+.status.micoff{color:var(--bad-ink)}
+.vslot:empty{display:none}
+@media (max-width: 899px){ .micoff{width:44px;height:44px} }

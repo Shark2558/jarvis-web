@@ -18,7 +18,7 @@ def test_voice_mock_evals_pass_their_gates() -> None:
     report = json.loads((ROOT / "evals" / "voice" / "report.json").read_text())
     s = report["suites"]
     assert report["gate"] is True and report["mode"] == "mock"
-    assert set(s) == {"speakable", "persona", "billing", "errors", "wav"}
+    assert set(s) == {"speakable", "persona", "billing", "errors", "wav", "hints"}
     assert all(x["pass_rate"] == 1 for x in s.values())
     assert s["speakable"]["cases"] >= 40
     assert s["persona"]["cases"] >= 20
@@ -31,6 +31,11 @@ def test_voice_mock_evals_pass_their_gates() -> None:
     reasons = {r["id"] for r in s["errors"]["results"]}
     assert len(reasons) >= 15
     assert s["wav"]["cases"] >= 12
+    hints = s["hints"]
+    assert hints["cases"] >= 12 and hints["pass_rate"] == 1
+    # without the list validation an unclean or oversized list reaches the engine
+    assert hints["negative_control"]["suite_failed"] is True
+    assert hints["negative_control"]["failed_cases"] >= 5
 
 
 def test_voice_real_mode_skips_cleanly_without_a_key() -> None:

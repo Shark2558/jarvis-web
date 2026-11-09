@@ -169,17 +169,19 @@
   };
 
   // ---- status ticker + clock -------------------------------------------------------------------
-  const STATUS_WORDS = { ok: 'Online', busy: 'Thinking', alert: 'Needs you', offline: 'Offline', listening: 'Listening', speaking: 'Speaking' };
+  const STATUS_WORDS = { ok: 'Online', busy: 'Thinking', alert: 'Needs you', offline: 'Offline', listening: 'Listening', speaking: 'Speaking',
+    standby: 'Standing by', micoff: 'Mic off' };
   function renderStatus() {
     const el = $('status'); if (!el) return;
     const mode = state.offline ? 'offline' : state.voice ? state.voice : state.busy ? 'busy' : (state.alert ? 'alert' : 'ok');
-    ['busy', 'alert', 'offline', 'listening', 'speaking'].forEach(m => el.classList.toggle(m, mode === m));
+    ['busy', 'alert', 'offline', 'listening', 'speaking', 'standby', 'micoff'].forEach(m => el.classList.toggle(m, mode === m));
     $('statusText').textContent = STATUS_WORDS[mode];
   }
   const publishState = () => emit('jarvis:state', { busy: state.busy, alert: state.alert, offline: state.offline, voice: state.voice });
-  /** Slice 9: 'listening' | 'speaking' | null, from the voice module (real microphone / playback). */
+  /** Slice 9 + R5: 'listening' | 'speaking' | 'standby' | 'micoff' | null, from the voice module. */
+  const VOICE_MODES = ['listening', 'speaking', 'standby', 'micoff'];
   function setVoice(mode) {
-    const next = mode === 'listening' || mode === 'speaking' ? mode : null;
+    const next = VOICE_MODES.includes(mode) ? mode : null;
     if (next === state.voice) return;
     state.voice = next;
     root.dataset.voice = next || '';

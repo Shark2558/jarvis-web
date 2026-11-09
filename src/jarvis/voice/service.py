@@ -15,8 +15,8 @@ A call that fails after the request may have reached Google (sent, then a timeou
 connection; or cancelled while in flight) is metered on its estimate (characters sent / ceil of
 the audio seconds); a clean error answer (4xx / 5xx) is not.
 
-Settings reads (speak, the view, the persona) are bounded to 1 s; a failure gives the defaults
-and is remembered 30 s (no read meanwhile) until a PUT clears it.
+Settings reads (speak, transcribe's hints, the view, the persona) are bounded to 1 s; a failure
+gives the defaults and is remembered 30 s (no read meanwhile) until a PUT clears it.
 
 Availability (D10): Google answering 403 or no credentials marks that API unavailable for 10
 minutes (no calls meanwhile); timeouts and 5xx are reported but not remembered. Privacy (D13): no
@@ -53,11 +53,13 @@ from jarvis.voice.catalogue import (
     Voice,
     find_voice,
 )
+from jarvis.voice.commands import BASE_PHRASES
 from jarvis.voice.ports import (
     NothingToSay,
     Reason,
     STTProvider,
     TokenSource,
+    Transcript,
     TTSProvider,
     VoiceError,
     VoiceRejected,
@@ -65,13 +67,15 @@ from jarvis.voice.ports import (
 )
 from jarvis.voice.settings import (
     CACHE_S,
+    PHRASE_CHARS,
+    PHRASE_ITEMS,
     VoiceSettings,
     VoiceSettingsPatch,
     VoiceSettingsStore,
     rate_ok,
 )
 from jarvis.voice.speakable import speakable
-from jarvis.voice.wav import parse_wav
+from jarvis.voice.wav import Audio, parse_wav
 
 log = get_logger(__name__)
 
@@ -142,9 +146,15 @@ class VoiceMonth(BaseModel):
     voice_inr: float
 
 
+class PhraseLimits(BaseModel):
+    items: int = PHRASE_ITEMS
+    chars: int = PHRASE_CHARS
+
+
 class VoiceView(BaseModel):
     cloud: CloudStatus
     settings: VoiceSettings
+    phrase_limits: PhraseLimits = PhraseLimits()
     voices: list[VoiceOption]
     wit_levels: list[WitOption]
     allowance: Allowance
@@ -219,7 +229,7 @@ class VoiceService:
         self._locks: weakref.WeakValueDictionary[tuple[str, Api], asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
-        self.phrases = tuple(dict.fromkeys(("JARVIS", "Jarvis", honorific)))
+        self.base_phrases = (*BASE_PHRASES, honorific)
 
     # ---- availability ----------------------------------------------------------------------
 
@@ -263,6 +273,15 @@ class VoiceService:
                 extra={"reason": type(exc).__name__},
             )
             return VoiceSettings()
+
+    def hints_for(self, owner_phrases: tuple[str, ...]) -> tuple[str, ...]:
+        """The speech hints for one request: the base list, the honorific, then the owner's words,
+        one spelling each (case-insensitive; the first wins). No `boost` (D16)."""
+        seen: dict[str, str] = {}
+        for w in (*self.base_phrases, *owner_phrases):
+            if w.strip():
+                seen.setdefault(w.casefold(), w)
+        return tuple(seen.values())
 
     async def update_settings(self, uid: str, patch: VoiceSettingsPatch) -> VoiceSettings:
         new = await self.store.update(uid, patch)
@@ -433,27 +452,44 @@ class VoiceService:
         )
         return Speech(audio=audio, chars=chars, cost_inr=charge.inr, voice=voice.id)
 
+    async def _recognise(
+        self,
+        engines: VoiceEngines,
+        uid: str,
+        price: Price,
+        estimate: float,
+        audio: Audio,
+        hints: tuple[str, ...],
+        has_owner_words: bool,
+    ) -> Transcript:
+        """One recognition. If Google refuses the request while it carries the owner's words, try
+        once more with the base hints alone, so one bad word cannot stop every transcription."""
+
+        def call(phrases: tuple[str, ...]) -> Callable[[], Awaitable[Transcript]]:
+            return lambda: engines.stt.recognize(
+                audio.pcm, sample_rate=audio.sample_rate, language=self.language, phrases=phrases
+            )
+
+        try:
+            return await self._engine("stt", uid, price, estimate, call(hints))
+        except VoiceRejected:
+            if not has_owner_words:
+                raise
+        log.warning("voice: owner words were refused; retrying with the base hints only")
+        return await self._engine("stt", uid, price, estimate, call(self.hints_for(())))
+
     async def transcribe(self, uid: str, blob: bytes) -> TranscriptView:
         audio = parse_wav(blob)
         engines = self._require("stt")
+        owner = (await self.settings_of(uid)).phrases  # never raises
+        hints = self.hints_for(owner)
         price = self.prices.stt
         estimate = float(math.ceil(audio.seconds))  # gated on this …
         async with self._lock(uid, "stt"):
             await self.billing.ensure_units_allowed(
                 uid, key=price.key, units=estimate, free_units=price.free_units
             )
-            t = await self._engine(
-                "stt",
-                uid,
-                price,
-                estimate,
-                lambda: engines.stt.recognize(
-                    audio.pcm,
-                    sample_rate=audio.sample_rate,
-                    language=self.language,
-                    phrases=self.phrases,
-                ),
-            )
+            t = await self._recognise(engines, uid, price, estimate, audio, hints, bool(owner))
             # … billed on what Google says it billed (totalBilledTime), when it says
             billed = t.billed_seconds if t.billed_seconds is not None else estimate
             charge = await self._meter(uid, price, billed)
@@ -522,6 +558,7 @@ def build_voice_service(
 __all__ = [
     "MAX_TEXT_IN",
     "Speech",
+    "PhraseLimits",
     "SpeakRequest",
     "TranscriptView",
     "VoiceEngines",

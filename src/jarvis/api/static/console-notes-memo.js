@@ -78,7 +78,7 @@
   function useBrowser() {
     release(); S.frames = []; S.mode = 'browser'; S.text = '';
     try {
-      const rec = new Speech(); rec.continuous = true; rec.interimResults = false; rec.lang = navigator.language || 'en-IN';
+      const rec = window.JarvisAudio.recognizer(); rec.continuous = true; rec.interimResults = false; rec.lang = navigator.language || 'en-IN';
       rec.onresult = (ev) => { for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) S.text = (S.text ? S.text + ' ' : '') + ev.results[i][0].transcript.trim(); draw(); };
       rec.onerror = () => { if (S.mode === 'browser') { S.mode = 'review'; fail('The browser couldn\'t listen. Type the note instead.'); } };
       rec.onend = () => { if (S.mode === 'browser') { S.mode = 'review'; draw(); } };

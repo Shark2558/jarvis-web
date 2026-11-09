@@ -5,7 +5,8 @@
 minute per owner, on top of the /v1 per-client limit. Text, transcripts and audio are never
 logged (lengths only).
 
-GET  /v1/voice             VoiceView {cloud {tts, stt, reason}, settings {voice, rate, wit},
+GET  /v1/voice             VoiceView {cloud {tts, stt, reason}, settings {voice, rate, wit,
+                           phrases}, phrase_limits {items: 50, chars: 40},
                            voices [{id, label, style, type, available}], wit_levels [{id, label,
                            description}], allowance {tts {type, used_chars, free_chars, by_type
                            {chirp3-hd {used, free}, studio {used, free}}}, stt {used_seconds,
@@ -13,7 +14,8 @@ GET  /v1/voice             VoiceView {cloud {tts, stt, reason}, settings {voice,
                            voice_inr}, language}. The allowance is JARVIS's share of Google's
                            free tier (90 % by default) for the whole deployment, Pacific-time
                            months; 503 budget_unavailable when its counter can't be read.
-PUT  /v1/voice/settings    {voice?, rate?, wit?} → settings; 422 input_rejected
+PUT  /v1/voice/settings    {voice?, rate?, wit?, phrases?} → settings; 422 input_rejected (the
+                           words are never echoed; a change to them is audited as a count)
 POST /v1/voice/speak       {text, voice?, rate?} | {preview: true, voice?} → 200 audio/mpeg with
                            X-Jarvis-Chars, X-Jarvis-Cost-Inr; 422 nothing_to_say / input_rejected,
                            402 budget_reached, 503 voice_unavailable {reason}, 429
@@ -37,6 +39,7 @@ from jarvis.api.auth import require_auth
 from jarvis.api.body import read_capped
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
+from jarvis.api.settings_audit import record_change
 from jarvis.voice.ports import (
     AudioTooLarge,
     BadAudio,
@@ -94,7 +97,12 @@ async def put_settings(
     uid: str = Depends(current_user),
 ) -> VoiceSettings:
     _limit(request, "settings", uid)
-    return await svc.update_settings(uid, patch)
+    new = await svc.update_settings(uid, patch)
+    if patch.phrases is not None:  # the words go to Google: record that they changed, never what
+        await record_change(
+            request, agent="owner", tool="voice_phrases_set", args={"count": len(new.phrases)}
+        )
+    return new
 
 
 @router.post("/speak", response_class=Response)

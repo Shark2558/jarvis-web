@@ -49,6 +49,7 @@
   const MIN_FRAMES = 4;            // under ~0.3 s is not worth a transcription
   const VAD_LAG_MS = 160;          // two frames of speech before the VAD says "start"
   const SAID_MS = 4000;            // JARVIS's own words kept this long for the echo guard
+  const PHRASES_REFUSED = 'phrases-not-supported'; // Web Speech: the browser can't take recognition hints (V1)
   const BROWSER_RESTART_MS = 4000; // the browser recogniser is restarted quietly at most this often
   const FILLER = new Set(['um', 'uh', 'hmm', 'mm', 'uhm', 'er', 'ah', 'umm', 'uhh', 'hm', 'mhm']);
   const FIXED = window.JarvisLoopGlue.FIXED;      // fixed lines: their audio is cached per page
@@ -76,7 +77,7 @@
     noSpeech: 0, maxTimer: 0, spoken: [],
     conv: false, handsFree: '', holdWait: false, heardMarked: false, seed: null, info: null, recStart: 0,
     said: [], rest: null, restAt: 0, restKeep: false, silent: false, handing: false, checking: false,
-    barge: null, abort: null, nameOff: false, browserTimer: 0 };
+    barge: null, abort: null, nameOff: false, browserTimer: 0, noPhrases: false };
   let clock = null;                                    // the follow-up / standby / long-pause clock of this reply
   const runaway = window.JarvisConversation.runaway();
   const isListening = () => S.mode === 'listening' || S.mode === 'standby';
@@ -294,13 +295,14 @@
   }
   const clean = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000);
 
-  function listenBrowser(t) {
+  function listenBrowser(t, retried) {
     releaseMic(); // the browser records on its own: our primed audio context is not needed
     btn.classList.toggle('nolevel', !A.isOpen()); // no level to show unless "Hey Jarvis" keeps the mic open
     let rec;
     try { rec = A.recognizer(); } catch (e) { S.conv = false; setMode('idle'); help(e && e.code === 'mic_off' ? 'mic_off' : 'unsupported'); return; }
     const P = window.JarvisVoicePhrases;
-    try { if (P && typeof P.apply === 'function') P.apply(rec); } catch (_) {}   // no-op unless the browser can take hints
+    // no-op unless the browser can take hints; a browser that refuses them (phrases-not-supported) is never offered them again
+    if (!S.noPhrases) { try { if (P && typeof P.apply === 'function') P.apply(rec); } catch (_) {} }
     S.rec = rec; S.recText = ''; S.stop = false; S.cancel = false; S.quietEnd = false; S.before = input.value; S.recStart = performance.now();
     let finalText = '', interim = '', error = '';
     rec.lang = V.language(); rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
@@ -316,12 +318,13 @@
       S.recText = clean(finalText + ' ' + interim);
       showWords(S.recText);
     };
-    rec.onerror = (e) => { error = e && e.error ? String(e.error) : 'error'; };
+    rec.onerror = (e) => { error = e && e.error ? String(e.error) : 'error'; if (error === PHRASES_REFUSED) S.noPhrases = true; };
     rec.onend = () => {
       if (t !== S.turn) return;
       S.rec = null; clearClocks();
       releaseMic(); // in case "Hey Jarvis" was switched off meanwhile
       input.classList.remove('interim');
+      if (error === PHRASES_REFUSED && !retried && !S.cancel && !A.locked()) { restore(); listenBrowser(t, true); return; } // V1: the same turn, at once, without the hints
       if (S.cancel) {
         restore(); setMode('idle');
         if (S.quietEnd && !S.soft) say('I didn\'t hear anything.');

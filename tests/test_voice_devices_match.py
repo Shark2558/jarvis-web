@@ -63,7 +63,9 @@ def pick(devs: list[dict[str, Any]], phrase: str, names: dict[str, str] | None =
     )
 
 
-def best(devs: list[dict[str, Any]], phrase: str, names: dict[str, str] | None = None) -> tuple[str | None, bool]:
+def best(
+    devs: list[dict[str, Any]], phrase: str, names: dict[str, str] | None = None
+) -> tuple[str | None, bool]:
     r = js(
         "(() => { const x = M.rank(args.devs, args.phrase, { nameOf: (d) => args.names[d.id] || '' });"
         " return [x[0] ? x[0].d.label : null, x.length > 1 && x[0].key === x[1].key]; })()",
@@ -112,7 +114,19 @@ def test_realistic_windows_labels_resolve(phrase: str, expect: str) -> None:
     assert got == expect
 
 
-@pytest.mark.parametrize("phrase", ["audio", "digital", "the device", "high definition", "constructor", "toString", "__proto__", "zzzz"])
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "audio",
+        "digital",
+        "the device",
+        "high definition",
+        "constructor",
+        "toString",
+        "__proto__",
+        "zzzz",
+    ],
+)
 def test_generic_or_unknown_phrases_match_nothing(phrase: str) -> None:
     assert pick(WINDOWS, phrase) == []
 
@@ -123,12 +137,20 @@ def test_a_closer_name_ranks_above_a_looser_one() -> None:
 
 
 def test_bluetooth_with_only_a_realtek_and_a_spdif_output_matches_nothing() -> None:
-    devs = describe(["Speakers (Realtek(R) Audio)", "Realtek Digital Output (Realtek(R) Audio)", "LG HDR 4K (NVIDIA High Definition Audio)"])
+    devs = describe(
+        [
+            "Speakers (Realtek(R) Audio)",
+            "Realtek Digital Output (Realtek(R) Audio)",
+            "LG HDR 4K (NVIDIA High Definition Audio)",
+        ]
+    )
     assert pick(devs, "bluetooth") == []
 
 
 def test_two_bluetooth_devices_are_a_tie_so_the_router_can_ask_which() -> None:
-    devs = describe(["Speakers (Realtek(R) Audio)", "Headphones (Pixel Buds Pro)", "Speakers (boAt Stone 352)"])
+    devs = describe(
+        ["Speakers (Realtek(R) Audio)", "Headphones (Pixel Buds Pro)", "Speakers (boAt Stone 352)"]
+    )
     first, tie = best(devs, "bluetooth")
     assert tie is True and first in ("Headphones (Pixel Buds Pro)", "Speakers (boAt Stone 352)")
 
@@ -151,7 +173,13 @@ def test_display_and_hdmi_endpoints_are_not_built_in() -> None:
 
 
 def test_among_built_ins_the_speakers_endpoint_wins() -> None:
-    devs = describe(["Realtek Digital Output (Realtek(R) Audio)", "Microphone Array (Intel Smart Sound)", "Speakers (Realtek(R) Audio)"])
+    devs = describe(
+        [
+            "Realtek Digital Output (Realtek(R) Audio)",
+            "Microphone Array (Intel Smart Sound)",
+            "Speakers (Realtek(R) Audio)",
+        ]
+    )
     got, _ = best(devs, "laptop")
     assert got == "Speakers (Realtek(R) Audio)"
 
@@ -159,13 +187,24 @@ def test_among_built_ins_the_speakers_endpoint_wins() -> None:
 @pytest.mark.parametrize(
     ("labels", "demoted"),
     [
-        (["Headphones (WH-1000XM4 Stereo)", "Headset (WH-1000XM4 Hands-Free AG Audio)"], "Headset (WH-1000XM4 Hands-Free AG Audio)"),
+        (
+            ["Headphones (WH-1000XM4 Stereo)", "Headset (WH-1000XM4 Hands-Free AG Audio)"],
+            "Headset (WH-1000XM4 Hands-Free AG Audio)",
+        ),
         (["Headphones (X)", "Headset (X)"], "Headset (X)"),
-        (["Headphones (Buds (046d:0825))", "Headset (Buds Hands-Free)"], "Headset (Buds Hands-Free)"),
-        (["Headphones (Galaxy Buds2 Pro)", "Headset (Galaxy Buds2 Pro Hands-Free AG Audio)"], "Headset (Galaxy Buds2 Pro Hands-Free AG Audio)"),
+        (
+            ["Headphones (Buds (046d:0825))", "Headset (Buds Hands-Free)"],
+            "Headset (Buds Hands-Free)",
+        ),
+        (
+            ["Headphones (Galaxy Buds2 Pro)", "Headset (Galaxy Buds2 Pro Hands-Free AG Audio)"],
+            "Headset (Galaxy Buds2 Pro Hands-Free AG Audio)",
+        ),
     ],
 )
-def test_call_quality_twins_are_recognised_in_every_naming_pattern(labels: list[str], demoted: str) -> None:
+def test_call_quality_twins_are_recognised_in_every_naming_pattern(
+    labels: list[str], demoted: str
+) -> None:
     devs = describe(labels)
     flagged = [d["label"] for d in devs if d["callQuality"]]
     assert flagged == [M_tidy(demoted)]
@@ -176,7 +215,9 @@ def M_tidy(label: str) -> str:
 
 
 def test_a_lone_headset_is_not_call_quality() -> None:
-    assert [d["callQuality"] for d in describe(["Headset (Solo)", "Speakers (Realtek(R) Audio)"])] == [False, False]
+    assert [
+        d["callQuality"] for d in describe(["Headset (Solo)", "Speakers (Realtek(R) Audio)"])
+    ] == [False, False]
 
 
 def test_a_call_quality_endpoint_is_used_only_when_it_is_all_there_is() -> None:
@@ -227,19 +268,37 @@ def test_labels_and_nicknames_are_clipped() -> None:
 
 
 def test_usb_ids_are_removed_before_labels_are_compared() -> None:
-    assert js("M.tidy(args.l)", l="Speakers (USB Audio Device) (046d:0825)") == "Speakers (USB Audio Device)"
+    assert (
+        js("M.tidy(args.l)", l="Speakers (USB Audio Device) (046d:0825)")
+        == "Speakers (USB Audio Device)"
+    )
 
 
 @pytest.mark.parametrize(
     ("text", "word"),
-    [("earphones", True), ("laptop speakers", True), ("bluetooth speaker", True), ("default", True), ("constructor", False), ("dark mode", False), ("", False)],
+    [
+        ("earphones", True),
+        ("laptop speakers", True),
+        ("bluetooth speaker", True),
+        ("default", True),
+        ("constructor", False),
+        ("dark mode", False),
+        ("", False),
+    ],
 )
 def test_device_words_are_a_closed_vocabulary(text: str, word: bool) -> None:
     assert js("M.isDeviceWord(args.t)", t=text) is word
 
 
 def test_spoken_phrases_use_a_kind_word_and_never_a_label() -> None:
-    devs = describe(["Headphones (Akash's AirPods)", "Speakers (Realtek(R) Audio)", "Speakers (boAt Stone 352)", "Something odd"])
+    devs = describe(
+        [
+            "Headphones (Akash's AirPods)",
+            "Speakers (Realtek(R) Audio)",
+            "Speakers (boAt Stone 352)",
+            "Something odd",
+        ]
+    )
     spoken = js(
         "args.devs.map((d) => [M.outputPhrase(d), M.inputPhrase(d), M.connectPhrases(d).said, M.kindListWord(d)])",
         devs=devs,

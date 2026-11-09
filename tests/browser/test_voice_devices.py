@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,6 +19,11 @@ pytestmark = pytest.mark.browser
 
 FAKE_MEDIA = ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"]
 ROUTE_KEY = "jarvis_audio_route_v1"
+# console-voice-devices-match.js is a new file the integrator adds to console.html (before
+# console-voice-devices.js) and to APP_ASSETS; until then the tests load it ahead of the page scripts.
+MATCH_JS = (
+    Path(__file__).resolve().parents[2] / "src/jarvis/api/static/console-voice-devices-match.js"
+)
 CTX = "{source: 'voice', state: 'idle', spoken: '', peak: 0}"
 
 STUB = """
@@ -37,11 +43,19 @@ STUB = """
       label: 'Headset (Galaxy Buds2 Pro Hands-Free AG Audio)' },
   ];
   const md = navigator.mediaDevices;
-  md.enumerateDevices = () => { window.__enum++; return Promise.resolve(window.__devs.map(d => ({ ...d }))); };
+  md.enumerateDevices = () => {
+    window.__enum++;
+    if (window.__enumHang) return new Promise(() => {});
+    if (window.__enumFail) { window.__enumFail--; return Promise.reject(new Error('boom')); }
+    // before the mic permission Chrome returns empty ids and labels (window.__perm = false)
+    const snap = window.__devs.map(d => (window.__perm === false ? { kind: d.kind, deviceId: '', label: '' } : { ...d }));
+    return window.__enumDelay ? new Promise(r => setTimeout(() => r(snap), window.__enumDelay)) : Promise.resolve(snap);
+  };
   const realGum = md.getUserMedia.bind(md);
   md.getUserMedia = (c) => { window.__gum++; return realGum(c); };
   if (window.__noSink) delete AudioContext.prototype.setSinkId;
   else AudioContext.prototype.setSinkId = function (id) {
+    if (window.__sinkErr) { const e = new Error('sink'); e.name = window.__sinkErr; return Promise.reject(e); }
     window.__sinks.push(id);
     return Promise.resolve();
   };
@@ -88,6 +102,7 @@ def make(browser: Any, server_url: str, token: str) -> Iterator[Callable[..., Co
             if s is ANDROID:
                 c.page.add_init_script(s)
         c.page.add_init_script(STUB)
+        c.page.add_init_script(path=str(MATCH_JS))
         for s in scripts:
             if s is not ANDROID:
                 c.page.add_init_script(s)
@@ -302,8 +317,9 @@ def test_a_new_device_gets_an_offer_that_switches_only_when_accepted(
     assert sink(c) in ("", None)
     offer.locator("button", has_text="Use Headphones (Pixel Buds)").click()
     assert sink(c) == "pixel"
-    assert "Switching to Headphones (Pixel Buds), Sir." in str(
-        c.page.locator("#voiceLine").text_content()
+    wf(
+        c,
+        "document.getElementById('voiceLine').textContent.includes('Switching to Headphones (Pixel Buds), Sir.')",
     )
 
 
@@ -343,7 +359,8 @@ def test_in_a_conversation_he_also_asks_aloud_and_a_yes_switches(
     wf(c, "JarvisVoiceLoop.inConversation()")
     add_buds(c)
     wf(c, "JarvisVoiceCommands.pending() !== null")
-    assert "Pixel Buds) connected" in ev(c, "JarvisVoiceCommands.pending()")
+    asked = ev(c, "JarvisVoiceCommands.pending()")
+    assert asked.startswith("New earphones have connected") and "Pixel" not in asked
     ev(c, "JarvisVoiceCommands.handle('yes please', {source: 'voice', state: 'listening'})")
     wf(c, "JarvisVoice.speaker.sink() === 'pixel'")
     assert c.page.locator("#voiceOffer button").count() == 0  # the chip is dismissed too
@@ -358,14 +375,15 @@ def test_losing_the_chosen_output_falls_back_and_says_so(make: Callable[..., Con
     wf(c, "JarvisVoice.speaker.sink() === ''")
     line = str(c.page.locator("#voiceLine").text_content())
     assert "Headphones (Galaxy Buds2 Pro) disconnected. I'll use" in line and line.endswith("Sir.")
-    # the owner's choice is remembered: it comes back as an offer when the device returns
+    # the owner's panel choice is remembered: it comes back silently when the device returns (L3)
     ev(
         c,
         "window.__devs.push({ kind: 'audiooutput', deviceId: 'buds-stereo',"
         " label: 'Headphones (Galaxy Buds2 Pro)' })",
     )
     devchange(c)
-    c.page.locator("#voiceOffer button", has_text="Use Headphones").wait_for()
+    wf(c, "JarvisVoice.speaker.sink() === 'buds-stereo'")
+    assert c.page.locator("#voiceOffer button").count() == 0
 
 
 def test_losing_some_other_device_changes_nothing(make: Callable[..., Console]) -> None:
@@ -386,7 +404,7 @@ def test_switch_commands_resolve_device_words_and_prefer_the_right_endpoint(
     ready(c)
     r = say(c, "switch to my speaker")
     assert r["id"] == "device.switch" and sink(c) == "jbl"  # external over the built-in
-    assert r["result"]["say"] == "Switching to Speakers (JBL Flip 5), Sir."
+    assert r["result"]["say"] == "Switching to the speaker, Sir."
     say(c, "switch to my earphones")
     assert sink(c) == "buds-stereo"  # stereo, not the call-quality endpoint
     say(c, "Jarvis, please switch to the laptop")
@@ -455,8 +473,12 @@ def test_list_command_names_the_current_and_the_other_outputs(make: Callable[...
         r = say(c, phrase)
         assert r["id"] == "device.list"
         text = r["result"]["say"]
-        assert text.startswith("I'm speaking through Headphones (Galaxy Buds2 Pro)")
-        assert "also connected:" in text and "JBL Flip 5" in text
+        assert text.startswith(
+            "You have three outputs: the laptop speakers, earphones and a speaker"
+        )
+        assert "I'm speaking through your earphones" in text and "names are on screen" in text
+        screen = str(c.page.locator("#voiceLine").text_content())
+        assert "Galaxy Buds2 Pro" in screen and "JBL Flip 5" in screen
 
 
 def test_the_browser_voice_cannot_be_routed_and_he_says_how_to_pick_it(

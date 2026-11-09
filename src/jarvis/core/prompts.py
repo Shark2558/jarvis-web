@@ -29,7 +29,9 @@ from zoneinfo import ZoneInfo
 # p4.9: R4 - the Vitals board, the systems check (works with the AI off), the own-account
 # connectors (GitHub token only in the panel; Photos pick-only; faces need consent), scoped people
 # research (public figures and work due-diligence only; profiles open in the owner's browser).
-PERSONA_VERSION = "p4.9"
+# p5.0: R5 - a spoken reply is read in full when the owner asks for detail (VOICE_RULE), and the
+# console's own voice commands (mic off, stop, keyboard, sound devices) get VOICE_CONTROL_RULE.
+PERSONA_VERSION = "p5.0"
 
 Channel = Literal["text", "voice", "telegram"]
 

@@ -1,4 +1,4 @@
-# tests/test_r3_persona.py -- R3 I1: persona p4.8, now p4.9 (R4 I1 bumped it once; plan "Persona"):
+# tests/test_r3_persona.py -- R3 I1: persona p4.8, now p5.0 (bumped at R4 and R5 I1; "Persona"):
 # the home, camera, faces and alerts paragraphs, each pinned on its own; the Telegram trailer names
 # the third switch and says disarming is only in the console.
 from __future__ import annotations
@@ -12,8 +12,8 @@ def _flat(rule: str) -> str:
     return " ".join(rule.split())
 
 
-def test_persona_is_p4_9() -> None:
-    assert p.PERSONA_VERSION == "p4.9"
+def test_persona_is_p5_0() -> None:
+    assert p.PERSONA_VERSION == "p5.0"
 
 
 @pytest.mark.parametrize("name", ["HOME_RULES", "CAMERA_RULES", "FACES_RULE", "ALERTS_RULE"])
@@ -53,7 +53,7 @@ def test_home_rules_match_the_permission_rows_and_name_no_pronoun() -> None:
     )
     assert "his passkey" not in r and " his " not in f" {r} "
     assert "alarms and heaters always ask" not in r and "Locks, gates, alarms" not in r
-    assert p.PERSONA_VERSION == "p4.9"  # R3 is unreleased: the wording changes in place
+    assert p.PERSONA_VERSION == "p5.0"  # R3 is unreleased: the wording changes in place
 
 
 def test_camera_never_names_or_describes_an_unknown_person() -> None:

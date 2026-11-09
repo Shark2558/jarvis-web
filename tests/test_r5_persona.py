@@ -1,6 +1,6 @@
 # tests/test_r5_persona.py -- R5 D9 / D19 (docs/plans/r5-voice.md): the spoken-reply rule now asks
 # for the whole answer to be spoken, and the console's voice commands get their own paragraph.
-# PERSONA_VERSION is bumped by the integrator at I1, so it is not pinned here.
+# PERSONA_VERSION p5.0 (bumped once for R5 at I1) covers both.
 from __future__ import annotations
 
 import pytest
@@ -10,6 +10,10 @@ from jarvis.core import prompts as p
 
 def _flat(rule: str) -> str:
     return " ".join(rule.split())
+
+
+def test_persona_is_p5_0_bumped_once_for_r5() -> None:
+    assert p.PERSONA_VERSION == "p5.0"
 
 
 def test_voice_rule_keeps_answer_first_and_the_sixty_word_default() -> None:

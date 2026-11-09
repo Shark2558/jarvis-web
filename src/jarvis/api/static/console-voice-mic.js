@@ -77,7 +77,7 @@
     noSpeech: 0, maxTimer: 0, spoken: [],
     conv: false, handsFree: '', holdWait: false, heardMarked: false, seed: null, info: null, recStart: 0,
     said: [], rest: null, restAt: 0, restKeep: false, silent: false, handing: false, checking: false,
-    barge: null, abort: null, nameOff: false, browserTimer: 0, noPhrases: false };
+    barge: null, abort: null, nameOff: false, browserTimer: 0, noPhrases: false, realAt: 0, empties: 0, closeAfter: false };
   let clock = null;                                    // the follow-up / standby / long-pause clock of this reply
   const runaway = window.JarvisConversation.runaway();
   const isListening = () => S.mode === 'listening' || S.mode === 'standby';
@@ -87,7 +87,8 @@
     listen: (o) => listen(o), deliver: (t, o) => deliver(t, o), settle: (r) => settle(r), say: (t) => say(t),
     cue: (n) => cue(n), honorific, loopSay: (t, o) => loopSay(t, o), startClock: () => startClock(),
     stopClock: () => stopClock(), resumeListening: () => resumeListening(), isListening, restore: () => restore(),
-    endCapture: () => endCapture(), releaseMic: () => releaseMic() });
+    endCapture: () => endCapture(), releaseMic: () => releaseMic(),
+    answering: () => S.mode === 'thinking' || !!(S.vad && S.vad.started()) || !!S.recText });
   const { armBarge, disarmBarge, bargeWake, resumeSpeech, bindCommands, speakWake, checkIn, handover, finishHandover } = glue;
 
   // ---- state ---------------------------------------------------------------------------------
@@ -162,7 +163,7 @@
     S.handsFree = opts.barge ? 'barge' : opts.relisten ? 'relisten' : '';
     S.holdWait = hands; S.heardMarked = false; S.seed = opts.seed || null; S.info = opts.info || null;
     S.startMs = NO_SPEECH_MS;
-    if (!hands) { S.chain = 0; S.rest = null; S.conv = !!V.device().keepListening; stopClock(); }
+    if (!hands) { S.chain = 0; S.rest = null; S.conv = !!V.device().keepListening; S.realAt = performance.now(); S.empties = 0; stopClock(); }
     setMode('listening');
     const cued = opts.barge ? null : cue('listen');      // an interruption starts at once, without a tone
     await V.load(false);
@@ -266,7 +267,10 @@
   function afterEmpty(msg) {
     if (resumeSpeech()) return;
     if (!S.soft && msg) say(msg);
-    if (S.conv && !A.locked()) { setMode('idle'); resumeListening(); return; }
+    if (S.conv && !A.locked()) {
+      if (++S.empties >= window.JarvisConversation.RUNAWAY.MAX_EMPTY) { handover('pause'); return; }  // SH1: noise is not a conversation
+      setMode('idle'); resumeListening(true); return;
+    }
     S.conv = false;
     setMode('idle');
     releaseMic();
@@ -370,11 +374,12 @@
       if (r.handled) { settle(r); return; }
     }
     if (A.locked()) { setMode('idle'); return; }
-    if (S.checking) { handover('checkin'); return; }   // anything but "yes" answers the check-in: hand over (D6)
+    if (S.checking) { putBack(text); handover('checkin'); return; }   // anything but "yes" answers the check-in: hand over (D6)
+    S.empties = 0;                                      // a real turn: words are on their way
     const d = V.device();
     if (d.autoSend && !Chat.busy()) {
       cue('heard');
-      Promise.resolve(Chat.send(text, { channel: 'voice' })).then(ok => { if (!ok && S.mode === 'thinking') setMode('idle'); });
+      Promise.resolve(Chat.send(text, { channel: 'voice' })).then(ok => { if (!ok && S.mode === 'thinking') endOrResume(); });
       return;
     }
     const before = input.value.replace(/\s+$/, '');
@@ -384,6 +389,13 @@
     S.conv = false; setMode('idle'); releaseMic();
     input.focus();
     say(Chat.busy() ? 'JARVIS is still answering: your words are in the message box.' : 'Check your words, then press Enter to send.');
+  }
+  const cancelAsk = () => { const C = Cmd(); if (C && typeof C.cancelAsk === 'function') C.cancelAsk(); };   // a stale question must not swallow a later yes / no (M2)
+  /** The owner's words are never lost: what answered the check-in goes back into the message box (M3). */
+  function putBack(text) {
+    const before = input.value.replace(/\s+$/, '');
+    input.value = before ? before + ' ' + text : text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
   }
   /** A command ran (from a turn or from a check clip). Say its line, then do what it asked for. */
   function settle(r) {
@@ -399,10 +411,16 @@
     if (typeof res.say === 'string' && res.say && next !== 'keyboard' && next !== 'off') { setMode('idle'); loopSay(res.say, { speak: true }).then(go); } else go();
   }
   /** Keep the conversation going: the waits start again from now. */
-  function resumeListening() {
+  function resumeListening(empty) {
     if (A.locked() || !S.conv) { setMode('idle'); return; }
-    startClock();
+    startClock(empty ? performance.now() - S.realAt : 0);   // after noise the waits still count from the last real turn (SH1)
+    if (!empty && needsCheck()) { checkIn(); return; }
     listen({ relisten: true });
+  }
+  /** The check-in is due: the room keeps talking (D6, when the owner left it on) or the absolute bound is reached (SH1). */
+  function needsCheck() {
+    const now = Date.now();
+    return !S.checking && ((V.device().checkIn && runaway.due(now)) || runaway.capped(now));
   }
 
   /** Tap again while listening (or 55 s are up): stop now and send what was heard. */
@@ -415,7 +433,7 @@
   /** Esc while listening: nothing is sent, and the conversation is over. */
   function cancel() {
     S.turn++;
-    S.conv = false; stopClock();
+    S.conv = false; stopClock(); cancelAsk();
     if (S.rec) { S.cancel = true; const r = S.rec; S.rec = null; try { r.abort(); } catch (_) {} restore(); }
     endCapture();
     setMode('idle');
@@ -432,7 +450,7 @@
     releaseMic();
   }
   function stopAll() {
-    clearTimeout(S.relisten); clearTimeout(S.browserTimer);
+    clearTimeout(S.relisten); clearTimeout(S.browserTimer); cancelAsk();
     S.keep = false; S.rest = null; S.handing = false; S.checking = false;
     if (isListening()) cancel(); else { S.turn++; S.conv = false; stopClock(); } // a transcription still on its way is dropped
     silence();
@@ -442,7 +460,7 @@
   function press() {
     if (btn.hidden) return;
     if (A.locked() && !A.unlock('button')) { say(LOCKED_LINE); return; }  // a tap on the locked mic switches it on and listens
-    S.chain = 0; runaway.touch();                                          // the owner is here
+    S.chain = 0; S.empties = 0; runaway.touch();                           // the owner is here
     if (S.mode === 'off') setMode('idle');
     if (isListening()) { stopAndSend(); return; }
     if (S.mode === 'speaking' || S.mode === 'handover') {
@@ -455,28 +473,35 @@
   }
 
   // ---- the conversation clock (D4) --------------------------------------------------------------------
-  function startClock() {
+  function startClock(elapsedMs) {
     const d = V.device();
     stopClock();
+    if (!elapsedMs) S.realAt = performance.now();
     clock = window.JarvisConversation.create({
       followUpMs: d.followUpS * 1000, longPauseMs: d.longPauseS * 1000,
       onStandby: () => { if (S.mode === 'listening' && S.conv && !(S.vad && S.vad.started()) && !S.recText) setMode('standby'); },
       onLongPause: () => { if (S.conv && !S.checking && (isListening() || S.mode === 'idle')) handover('pause'); },
     });
-    clock.replyEnded();
+    clock.replyEnded(elapsedMs || 0);
   }
   function stopClock() { if (clock) { clock.stop(); clock = null; } }
   // ---- speaking -------------------------------------------------------------------------------
   const APPROVAL_LINE = () => `That one needs your approval on screen, ${honorific()}.`;
   function speak(chunks, keep, mode, meta) {
     const out = V.outputEngine();
-    if (out === 'none' || !chunks.length) { if (S.mode === 'thinking') setMode('idle'); return; }
+    if (out === 'none' || !chunks.length) { if (S.mode === 'thinking') endOrResume(); return; }
     V.speaker.browser(out !== 'cloud');
     V.speaker.setRate(V.settings().rate);
     S.keep = keep;
     setMode(mode || 'speaking');
     chunks.forEach(c => V.speaker.say(c, meta));
     V.speaker.end();
+  }
+  /** A turn ended with nothing to say (or nothing that can be said): keep listening with the clock restarted,
+   *  or, outside a conversation, close the microphone. Never leave it hot with no clock (H1). */
+  function endOrResume() {
+    if (S.conv && !A.locked()) { setMode('idle'); resumeListening(); return; }
+    S.conv = false; setMode('idle'); releaseMic();
   }
   /** Stop JARVIS now (the state handler stays out of it); returns {rest}. */
   function silence() {
@@ -489,10 +514,10 @@
     if (S.mute) { S.mute = false; if (S.mode === 'thinking') setMode('idle'); return; } // Esc'd: shown, not said
     if (isListening()) return; // the owner is already talking again
     if (dev.speak === 'never' || (dev.speak === 'voice' && !spoken) || typeof d.text !== 'string') {
-      if (S.mode === 'thinking') setMode('idle');
+      if (S.mode === 'thinking') endOrResume();
       return;
     }
-    if (spoken && d.approvals > 0) { speak([APPROVAL_LINE()], false); return; } // D11: fixed, wit-free, no re-listen
+    if (spoken && d.approvals > 0) { S.conv = false; S.closeAfter = true; speak([APPROVAL_LINE()], false); return; } // D11: fixed, wit-free; it ends the conversation
     const c = window.JarvisSpeechChunker.create({ honorific: honorific() });
     speak(c.push(d.text).concat(c.end()), spoken && dev.keepListening && S.conv);
   });
@@ -512,13 +537,14 @@
     const wanted = d.reason === 'done' && S.keep;
     S.keep = false;
     setMode('idle');
+    if (S.closeAfter) { S.closeAfter = false; if (!S.conv) releaseMic(); }
     if (!wanted || !S.conv || A.locked()) return;
     S.chain++;
     startClock();
     const dev = V.device();
     S.relisten = setTimeout(() => {
       if (S.mode !== 'idle' || Chat.busy() || A.locked()) return;
-      if (dev.checkIn && runaway.due(Date.now())) { checkIn(); return; }
+      if (needsCheck()) { checkIn(); return; }
       listen({ relisten: true });
     }, RELISTEN_DELAY_MS);
   });
@@ -573,10 +599,10 @@
 
   // ---- keys and the button ------------------------------------------------------------------------
   btn.addEventListener('click', press);
-  const here = () => runaway.touch();                   // a tap or a key: the owner is here (D6)
+  const here = (e) => { if (e && e.isTrusted) runaway.touch(); };                   // a tap or a key: the owner is here (D6)
   document.addEventListener('pointerdown', here, true);
   document.addEventListener('keydown', (e) => {
-    here();
+    here(e);
     if (e.isComposing || btn.hidden) return;
     if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && (e.code === 'Space' || e.key === ' ')) { e.preventDefault(); press(); return; }
     if (e.key !== 'Escape' || e.defaultPrevented) return;

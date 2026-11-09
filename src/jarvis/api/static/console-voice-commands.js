@@ -9,7 +9,9 @@
 //                   states?: ['listening','standby','thinking','speaking']}) -> unregister()
 //     handle(text, ctx)  ctx {source:'voice', state, spoken, peak} -> Promise<{handled, id?, result?}>
 //                        Result = {say?, then?: 'listen'|'idle'|'keyboard'|'off'}
-//     ask(question, {yes, no, timeoutMs = 8000}) -> Promise<'yes'|'no'|'timeout'|'cancelled'>
+//     ask(question, {yes, no, timeoutMs = 8000, strict, hold}) -> Promise<'yes'|'no'|'timeout'|'cancelled'>
+//                        strict: only a plain yes answers it (the check-in: "okay" / "sure" are TV words);
+//                        hold(): while it returns true the timeout waits (an answer is being heard)
 //     pending() -> the question being asked, or null; cancelAsk()
 //     normalise(text), owns(text, state) -> id | null (a dry run), addressed(text) -> bool
 //     exact(id) -> a match function for the PHRASES list of that id
@@ -23,6 +25,9 @@
   'use strict';
   const MAX_WORDS = 8;
   const ASK_MS = 8000;
+  const HOLD_RECHECK_MS = 400;        // a held question looks again this often ...
+  const HOLD_MAX_MS = 60000;          // ... and gives up at last after this long past its time
+  const STRICT_YES = Object.freeze(['yes', 'keep listening', 'carry on', 'continue', 'go on']);   // "yes please" is "yes" once normalised
   const PRIORITY = ['mic.off', 'speech.stop', 'conversation.keyboard'];
   const ID = /^[a-z][a-z0-9._-]{0,63}$/;
   const STATES = ['listening', 'standby', 'thinking', 'speaking'];
@@ -147,7 +152,7 @@
     if (!w.length || w.length > MAX_WORDS) return null;
     const norm = w.join(' ');
     if (asking) {
-      if (PHRASES['answer.yes'].includes(norm)) return { id: 'answer.yes', args: {} };
+      if ((asking.strict ? STRICT_YES : PHRASES['answer.yes']).includes(norm)) return { id: 'answer.yes', args: {} };
       if (PHRASES['answer.no'].includes(norm)) return { id: 'answer.no', args: {} };
     }
     for (const entry of ordered()) {
@@ -197,8 +202,15 @@
     const ms = typeof o.timeoutMs === 'number' && Number.isFinite(o.timeoutMs) ? Math.min(60000, Math.max(100, o.timeoutMs)) : ASK_MS;
     settleAsk('cancelled');
     return new Promise(resolve => {
-      const a = { question: String(question == null ? '' : question).slice(0, 200), yes: o.yes, no: o.no, settle: resolve, timer: 0 };
-      a.timer = setTimeout(() => { if (asking === a) settleAsk('timeout'); }, ms);
+      const a = { question: String(question == null ? '' : question).slice(0, 200), yes: o.yes, no: o.no, settle: resolve, timer: 0,
+        strict: o.strict === true };
+      const due = Date.now() + ms;
+      const fire = () => {
+        if (asking !== a) return;
+        const held = typeof o.hold === 'function' && Date.now() - due < HOLD_MAX_MS && (() => { try { return !!o.hold(); } catch (_) { return false; } })();
+        if (held) a.timer = setTimeout(fire, HOLD_RECHECK_MS); else settleAsk('timeout');
+      };
+      a.timer = setTimeout(fire, ms);
       asking = a;
     });
   }

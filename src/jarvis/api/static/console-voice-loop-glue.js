@@ -10,6 +10,7 @@
   const RESUME_MS = 10000;         // an empty interruption: JARVIS picks his reply up again within this
   const WAKE_NAME_MS = 400;        // "Jarvis" inside his own words counts only if the gate was open this recently
   const CHECK_ASK_MS = 8000;
+  const REASK_MS = 1000, REASK_TRIES = 10;   // a cancelled check-in is asked again once the other question is done
   const FIXED = Object.freeze({ fixed: true });   // fixed lines: their audio is cached per page
 
   function create(h) {
@@ -107,14 +108,24 @@
       await h.loopSay(q, { speak: true, fixed: true });
       if (!S.checking || !S.conv) { S.checking = false; return; }
       h.startClock();
-      const asked = C ? C.ask(q, { timeoutMs: CHECK_ASK_MS }) : Promise.resolve('timeout');
+      // only a plain yes answers (strict), and the wait does not run out while an answer is being heard (M2)
+      const asked = C ? C.ask(q, { timeoutMs: CHECK_ASK_MS, strict: true, hold: h.answering }) : Promise.resolve('timeout');
       h.listen({ relisten: true });
       const answer = await asked;
       await new Promise(r => setTimeout(r, 60));
       if (!S.checking) return;
       S.checking = false;
       if (answer === 'yes') { h.runaway.answered(true, Date.now()); if (S.conv) { if (S.mode === 'idle') h.resumeListening(); } return; }
-      if (answer !== 'cancelled') handover('checkin'); else h.runaway.answered(false, Date.now());
+      if (answer === 'cancelled') { reask(0); return; }   // another question took its place: the count stays, ask again after it
+      handover('checkin');
+    }
+    function reask(tries) {
+      setTimeout(() => {
+        if (!S.conv || A.locked() || S.checking || S.handing) return;
+        const C = h.Cmd();
+        if (C && C.pending() && tries < REASK_TRIES) { reask(tries + 1); return; }
+        if (S.mode === 'idle' || h.isListening()) checkIn();
+      }, REASK_MS);
     }
 
     // ---- ending a conversation the owner did not end (D5) -----------------------------------------------

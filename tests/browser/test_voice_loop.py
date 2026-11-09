@@ -104,22 +104,60 @@ def test_the_runaway_tracker_counts_only_quick_unbroken_turns_inside_four_minute
       r.turn(300, 1100); out.eight = r.due(2000);
       r = R(); for (let i = 0; i < 7; i++) r.turn(300, 1000 + i);
       r.turn(K.QUICK_MS + 1, 1100); out.slow = r.due(2000);            // a human-paced turn resets the count
+      for (let i = 0; i < 7; i++) r.turn(300, 1200 + i);               // M3: the slow turn is not itself the first quick one
+      out.sevenAfterSlow = r.due(2000);
+      r.turn(300, 1300); out.eightAfterSlow = r.due(2000);
       r = R(); for (let i = 0; i < 7; i++) r.turn(300, 1000 + i);
       r.touch(); r.turn(300, 1100); out.touched = r.due(2000);         // a tap or key resets it too
       r = R(); for (let i = 0; i < 8; i++) r.turn(300, i * 40000);     // 8 turns over 280 s
       out.slowWindow = r.due(8 * 40000);
-      r = R(); for (let i = 0; i < 8; i++) r.turn(300, 1000 + i);
-      r.answered(true, 5000); out.afterYes = r.due(6000);
-      for (let i = 0; i < 8; i++) r.turn(300, 7000 + i);
-      out.quiet = r.due(8000); out.later = r.due(5000 + K.QUIET_MS + 1);
-      r = R(); for (let i = 0; i < 8; i++) r.turn(300, 1000 + i);
-      r.answered(false, 5000); out.afterNo = r.count();
       return out;
     }"""
     )
     assert got == {
-        "seven": False, "eight": True, "slow": False, "touched": False, "slowWindow": False,
-        "afterYes": False, "quiet": False, "later": True, "afterNo": 0,
+        "seven": False, "eight": True, "slow": False, "sevenAfterSlow": False,
+        "eightAfterSlow": True, "touched": False, "slowWindow": False,
+    }  # fmt: skip
+    assert c.errors == []
+
+
+def test_a_conversation_has_an_absolute_bound_whatever_the_pace_sh1(
+    make: Callable[..., Console],
+) -> None:
+    """SH1: 25 hands-free turns, or 30 minutes, since the last human touch force a check-in; a yes buys 8 turns."""
+    c = make()
+    c.open()
+    got = c.page.evaluate(
+        """() => {
+      const R = JarvisConversation.runaway, K = JarvisConversation.RUNAWAY, out = {};
+      let r = R();
+      for (let i = 0; i < 24; i++) r.turn(25000, 1000 + i * 25000);    // a TV that pauses 25 s: never "quick"
+      out.t24 = [r.due(0), r.capped(1000 + 24 * 25000)];
+      r.turn(25000, 1000 + 24 * 25000);
+      out.t25 = [r.due(0), r.capped(1000 + 25 * 25000)];
+      r.touch(5000);                                                    // a tap, click or key press
+      out.touched = r.capped(5000 + 1000);
+      r = R(); r.touch(0); r.turn(40000, 40000);
+      out.early = r.capped(K.MAX_MS - 1);
+      out.thirtyMin = r.capped(K.MAX_MS + 1);                           // 30 minutes since the touch
+      r = R(); r.touch(0);
+      out.noTurnsNoCap = r.capped(K.MAX_MS * 3);                        // nothing hands-free happened: nothing to bound
+      r = R(); r.touch(0);
+      for (let i = 0; i < 25; i++) r.turn(25000, 1000 + i);
+      r.answered(true, 90000);                                          // a "yes"
+      const after = [];
+      for (let i = 0; i < 8; i++) { after.push(r.capped(90000 + i)); r.turn(25000, 90001 + i); }
+      out.yesBuys = after.concat([r.capped(91000)]);
+      r = R(); r.touch(0); for (let i = 0; i < 25; i++) r.turn(25000, i);
+      r.answered(false, 1000); out.noResets = r.total();
+      return out;
+    }"""
+    )
+    assert got == {
+        "t24": [False, False], "t25": [False, True], "touched": False, "early": False,
+        "thirtyMin": True, "noTurnsNoCap": False,
+        "yesBuys": [False, False, False, False, False, False, False, False, True],
+        "noResets": 25,
     }  # fmt: skip
     assert c.errors == []
 

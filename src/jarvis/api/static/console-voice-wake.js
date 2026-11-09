@@ -134,6 +134,12 @@
       };
       document.addEventListener('pointerdown', go, true); document.addEventListener('keydown', go, true);
     }
+    /** CM2: a mic chosen while only "Hey Jarvis" holds the microphone moves it now; inside a listening
+     *  turn the choice waits for the next open (I1). Subscribers stay; capture announces input_live. */
+    document.addEventListener('jarvis:audio-input-chosen', () => {
+      if (!wake.on || !wake.started || host.micInUse() || !A.isOpen() || !A.switched()) return;
+      A.open().catch(() => {});
+    });
     document.addEventListener('jarvis:voice-device', (e) => {
       const d = e.detail || {};
       if (d.wake && wake.only) { wake.only = false; wakeState('on'); }   // switched on while it ran only for his speech: it stays on after (D8)

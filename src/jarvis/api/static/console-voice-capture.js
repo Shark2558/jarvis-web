@@ -267,7 +267,10 @@
   function flush() { if (live) { try { live.node.port.postMessage('flush'); } catch (_) {} } }
 
   function setInput(id) {
-    inputId = typeof id === 'string' && id.length > 0 && id.length <= 400 ? id : null;
+    const next = typeof id === 'string' && id.length > 0 && id.length <= 400 ? id : null;
+    const changed = next !== inputId;
+    inputId = next;
+    if (changed && switched()) emit('jarvis:audio-input-chosen', {});   // lets a wake-only hold move at once (CM2)
   }
   function trackLabel() {
     const t = live && live.stream ? live.stream.getAudioTracks()[0] : null;
@@ -277,7 +280,7 @@
   window.JarvisAudio = Object.freeze({
     SAMPLE_RATE, FRAME,
     supported, prime, open, close, resume, subscribe, level, flush, onEnd,
-    lock, unlock, onLock, recognizer, setInput, trackLabel,
+    lock, unlock, onLock, recognizer, setInput, trackLabel, switched,
     locked: () => locked,
     inputId: () => inputId,
     isOpen: () => !!live,

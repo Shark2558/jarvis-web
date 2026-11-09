@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 from test_console import Console
-from test_voice import FakeVoice, _voice_panel
+from test_voice import FAKE_WAKE, FakeVoice, _voice_panel
 from test_voice_devices import (
     ANDROID,
     ROUTE_KEY,
@@ -851,3 +851,42 @@ def test_a_sink_that_never_settles_does_not_hang_the_devices_chain(
         " new Promise(r => setTimeout(() => r('HUNG'), 6000))])",
     )
     assert listing == "ok"
+
+
+GUM_LOG = """
+(() => { window.__gumIds = []; const md = navigator.mediaDevices, g = md.getUserMedia.bind(md);
+  md.getUserMedia = (c) => { const a = c && c.audio; const d = a && a.deviceId;
+    window.__gumIds.push(d && typeof d === 'object' ? (d.exact || d.ideal || '') : (d || '')); return g(c); }; })();
+"""
+WAKE_ON = "localStorage.setItem('jarvis_voice_device_v1', JSON.stringify({ interruptBy: 'tap', wake: true }));"
+
+
+def test_the_wake_word_moves_to_a_newly_chosen_mic_without_a_conversation(
+    make: Callable[..., Console], token: str
+) -> None:
+    c = make(
+        (
+            GUM_LOG,
+            WAKE_ON,
+            FAKE_WAKE,
+            f"sessionStorage.setItem('jarvis_token', {json.dumps(token)});",
+        )
+    )
+    FakeVoice(c.page)
+    c.page.route(
+        "**/static/console-wakeword.js",
+        lambda r: r.fulfill(status=200, content_type="text/javascript", body=""),
+    )
+    c.open()
+    wf(c, "window.__wake && window.__wake.started === 1 && JarvisAudio.isOpen()")
+    before = ev(c, "window.__gumIds.length")
+    assert ev(c, "JarvisAudioRoute.chooseInput('buds-mic')").get("ok") is True
+    wf(c, f"window.__gumIds.length > {before}")
+    # the fake Chromium has no such device, so the fallback to the default may follow the ask
+    assert "buds-mic" in ev(c, f"window.__gumIds.slice({before})")
+    wf(c, "JarvisAudio.isOpen()")  # reopened on the new choice (the old run's close is synchronous)
+    wf(c, "JarvisAudioRoutePrefs.inputPending() === false")  # input_live cleared Pending
+    assert ev(c, "[window.__wake.started, window.__wake.stopped]") == [
+        1,
+        0,
+    ]  # the same run, not a restart

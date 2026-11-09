@@ -694,7 +694,9 @@ def test_pressing_the_mic_while_locked_listens_to_nothing(make: Callable[..., Co
     c.open()
     ev(c, "JarvisAudio.lock('button')")
     assert _mic_state(c) == "off"
-    c.page.locator("#micBtn").click()
+    # a click with no real user behind it (a script's own, isTrusted false) does nothing, even while an
+    # activation is live; a real tap unlocks and listens (tests/browser/test_voice_micoff.py, SM1)
+    ev(c, "document.getElementById('micBtn').click()")
     c.page.wait_for_timeout(500)
     assert _mic_state(c) == "off" and ev(c, "window.__streams.length") == 0
     assert "switched off" in str(c.page.locator("#voiceLine").text_content())

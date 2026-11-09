@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from test_console import Console
-from test_voice import FAKE_RECOGNITION, FakeVoice, _json, _wait
+from test_voice import FAKE_RECOGNITION, FAKE_WAKE, FakeVoice, _json, _wait
 from test_voice_loop import RECORD_LOOP, _say_one_sentence, _tv
 from test_voice_robust import (  # noqa: F401  (fixtures and helpers)
     FAST_TV,
@@ -327,3 +327,172 @@ def test_an_okay_does_not_answer_the_check_in_and_the_words_go_back_to_the_box_s
     assert c.page.locator("#input").input_value() == "okay"  # M3: nothing the owner said is lost
     assert c.page.evaluate("JarvisAudio.isOpen()") is False
     assert c.errors == []
+
+
+# ================================================================== SM1, SM6 and the lock lows
+STATE = "document.getElementById('micBtn').dataset.state"
+LOCK_KEY = "jarvis_mic_off_v1"
+# a button that calls unlock() from inside a real click (user activation)
+CLICK_UNLOCK = """() => {
+  const b = document.createElement('button');
+  b.id = 'unlockTest'; b.textContent = 'unlock';
+  b.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;width:120px;height:50px';
+  b.onclick = () => { window.__unlocked = window.JarvisAudio.unlock('button'); };
+  document.body.append(b);
+}"""
+# Playwright's evaluate() carries a user activation, so a script's own synthetic event looks "active" here:
+# exactly the case isTrusted exists for.
+SYNTHETIC_KEY = """() => document.dispatchEvent(new KeyboardEvent('keydown',
+  { key: ' ', code: 'Space', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))"""
+
+
+def test_a_synthetic_shortcut_never_unlocks_the_microphone_sm1(
+    make: Callable[..., Console],
+) -> None:
+    c = make(scripts=(SLOW_GUM,))
+    FakeVoice(c.page)
+    c.open()
+    c.page.evaluate("JarvisAudio.lock('button')")
+    c.page.evaluate(SYNTHETIC_KEY)
+    assert c.page.evaluate("JarvisAudio.locked()") is True and c.page.evaluate(STATE) == "off"
+    c.page.keyboard.press("Control+Shift+Space")  # a real key press does
+    assert c.page.evaluate("JarvisAudio.locked()") is False
+    assert c.page.evaluate("window.__streams.length") == 0
+    assert c.errors == []
+
+
+def test_a_script_click_on_the_mic_or_the_panel_switch_never_unlocks_sm1(
+    make: Callable[..., Console],
+) -> None:
+    c = make(scripts=(SLOW_GUM,))
+    fake = FakeVoice(c.page)
+    c.open()
+    _voice_panel_open(c)
+    c.page.evaluate("JarvisAudio.lock('button')")
+    c.page.evaluate("document.getElementById('micBtn').click()")
+    c.page.evaluate("document.getElementById('vMic').click()")
+    c.page.wait_for_timeout(400)
+    assert c.page.evaluate("JarvisAudio.locked()") is True and c.page.evaluate(STATE) == "off"
+    assert c.page.evaluate("window.__streams.length") == 0
+    assert fake.to("POST", "/v1/voice/transcribe") == []
+    assert c.errors == []
+
+
+def test_a_forged_storage_event_never_unlocks_the_microphone_sm1(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"wake": True}, scripts=(SLOW_GUM, FAKE_WAKE))
+    FakeVoice(c.page)
+    c.open()
+    _wait(c, "() => window.__wake.started === 1")
+    c.page.evaluate("JarvisAudio.lock('button')")
+    before = c.page.evaluate("window.__streams.length")
+    c.page.evaluate(
+        f"() => {{ localStorage.removeItem('{LOCK_KEY}');"
+        f" window.dispatchEvent(new StorageEvent('storage', {{ key: '{LOCK_KEY}', storageArea: localStorage }})); }}"
+    )
+    c.page.wait_for_timeout(500)
+    assert c.page.evaluate("JarvisAudio.locked()") is True
+    assert c.page.evaluate("window.__streams.length") == before
+    assert c.page.evaluate("window.__wake.started") == 1
+    assert c.errors == []
+
+
+def test_a_real_unlock_in_another_tab_does_not_open_this_ones_microphone_sm1(
+    make: Callable[..., Console],
+) -> None:
+    a = make(device={"wake": True}, scripts=(SLOW_GUM, FAKE_WAKE))
+    FakeVoice(a.page)
+    a.open()
+    _wait(a, "() => window.__wake.started === 1")
+    a.page.evaluate("JarvisAudio.lock('button')")
+    before = a.page.evaluate("window.__streams.length")
+    b_page = a.ctx.new_page()
+    b_page.goto(a.url + "/")
+    b_page.wait_for_function("() => !!window.JarvisAudio && window.JarvisAudio.locked() === true")
+    b_page.evaluate(CLICK_UNLOCK)
+    b_page.locator("#unlockTest").click()
+    a.page.wait_for_function("() => window.JarvisAudio.locked() === false")
+    a.page.wait_for_timeout(800)
+    assert a.page.evaluate(STATE) == "idle"
+    assert (
+        a.page.evaluate("window.__wake.started") == 1
+    )  # still the first start: "ready", not listening
+    assert a.page.evaluate("window.__streams.length") == before  # nothing was opened here
+    a.page.locator("#welcome").click()  # a gesture in THIS tab
+    _wait(a, "() => window.__wake.started === 2")
+    assert a.errors == []
+    b_page.close()
+
+
+def test_a_throwing_speaker_still_leaves_the_microphone_locked_by_mic_off_sm6(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"speak": "always", "keepListening": True}, scripts=(TONE_MIC, THROWING_STOP))
+    fake = FakeVoice(c.page)
+    fake.transcript["text"] = "Jarvis, mic off"
+    c.open()
+    c.page.evaluate("window.__throwStop = true")
+    _say_one_sentence(c)
+    _until(c, "JarvisAudio.locked()", 20)
+    assert c.page.evaluate("JarvisAudio.isOpen()") is False
+    c.page.evaluate("window.__throwStop = false")
+    assert c.errors == []
+
+
+def test_a_lock_the_browser_cannot_store_says_it_will_not_survive_a_reload(
+    make: Callable[..., Console],
+) -> None:
+    c = make(scripts=(NO_LOCK_STORAGE,))
+    FakeVoice(c.page)
+    c.open()
+    c.page.evaluate("JarvisAudio.lock('button')")
+    assert c.page.evaluate("JarvisAudio.locked()") is True
+    assert "won't stay off after a reload" in _line(c)
+    assert c.errors == []
+
+
+def test_a_microphone_that_is_gone_is_not_retried_after_the_lock(
+    make: Callable[..., Console],
+) -> None:
+    c = make(scripts=(GONE_MIC,))
+    FakeVoice(c.page)
+    c.open()
+    c.page.evaluate("JarvisAudio.setInput('dev-42')")
+    c.page.evaluate("void (window.__open = JarvisAudio.open().then(() => 'opened', (e) => e.code))")
+    c.page.evaluate("JarvisAudio.lock('button')")  # while the first request is still pending
+    c.page.wait_for_timeout(900)
+    assert c.page.evaluate("window.__open") in ("closed", "mic_off")
+    assert c.page.evaluate("window.__cons") == 1  # no second request, with the default microphone
+    assert c.errors == []
+
+
+THROWING_STOP = """
+(() => {
+  window.__throwStop = false;
+  let real = null;
+  Object.defineProperty(window, 'JarvisSpeaker', { configurable: true, get() { return real; },
+    set(v) { real = Object.freeze(Object.assign({}, v, { create: (o) => {
+      const sp = v.create(o), stop = sp.stop;
+      sp.stop = (...a) => { if (window.__throwStop) throw new Error('boom'); return stop.apply(sp, a); };
+      return sp; } })); } });
+})();
+"""
+NO_LOCK_STORAGE = """
+(() => {
+  const set = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (k, v) { if (k === 'jarvis_mic_off_v1') throw new Error('blocked'); return set.call(this, k, v); };
+})();
+"""
+GONE_MIC = """
+(() => {
+  window.__cons = 0;
+  navigator.mediaDevices.getUserMedia = (c) => { window.__cons++;
+    return new Promise((_, rej) => setTimeout(() => rej(new DOMException('gone', 'OverconstrainedError')), 500)); };
+})();
+"""
+
+
+def _voice_panel_open(c: Console) -> None:
+    c.open_panel("voice")
+    c.page.locator("#vVoiceT").wait_for(state="visible")

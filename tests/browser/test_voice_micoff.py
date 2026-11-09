@@ -185,14 +185,25 @@ def test_a_transcription_in_flight_is_dropped_when_the_microphone_is_switched_of
 
 
 def test_nothing_opens_the_microphone_while_it_is_off(make: Callable[..., Console]) -> None:
-    """Negative control: the lock holds across the timers, "Hey Jarvis" boot, pageshow and a recogniser."""
+    """Negative control: the lock holds across the timers, "Hey Jarvis" boot, pageshow and a recogniser.
+
+    The page is locked before any script runs (as after a reload) and its clock is driven by the test:
+    fast_forward(30 s) passes the wake word's 10 s late-module wait (WAKE_LATE_MS) and every other
+    timer in one go, instead of sleeping through them.
+    """
     c = make(
-        device={"wake": True, "engine": "browser"}, scripts=(SLOW_GUM, FAKE_WAKE, FAKE_RECOGNITION)
+        device={"wake": True, "engine": "browser"},
+        scripts=(
+            "localStorage.setItem('jarvis_mic_off_v1', '1');",
+            SLOW_GUM,
+            FAKE_WAKE,
+            FAKE_RECOGNITION,
+        ),
     )
     FakeVoice(c.page)
+    c.page.clock.install()
     c.open()
-    c.page.evaluate("JarvisAudio.lock('button')")
-    base = c.page.evaluate("window.__streams.length")
+    assert c.page.evaluate("JarvisAudio.locked()") is True
     c.page.evaluate(
         """() => {
       document.dispatchEvent(new CustomEvent('jarvis:ready'));
@@ -202,12 +213,8 @@ def test_nothing_opens_the_microphone_while_it_is_off(make: Callable[..., Consol
       JarvisVoice.setDevice({ wake: true });
     }"""
     )
-    c.page.wait_for_timeout(7000)
-    assert c.page.evaluate("window.__streams.length") == base
-    assert (
-        c.page.evaluate(LIVE_TRACKS) == [0] * base
-        or c.page.evaluate("window.__streams.length") == 0
-    )
+    c.page.clock.fast_forward(30000)
+    assert c.page.evaluate("window.__streams.length") == 0  # getUserMedia was never asked
     assert c.page.evaluate("window.__rec.length") == 0  # no recogniser was built
     assert c.page.evaluate("window.__wake.started") == 0
     assert c.page.evaluate("JarvisAudio.open().then(() => 'opened', (e) => e.code)") == "mic_off"

@@ -77,10 +77,12 @@
       if (!C || typeof C.bindLoop !== 'function') return;
       C.bindLoop({
         micOff() {
-          h.silence(); S.rest = null; S.keep = false;
-          A.lock('voice');                                    // first: nothing hears anything from here on
-          h.setMode('idle');
-          h.speak([`Microphone off, ${h.honorific()}.`], false, 'speaking', FIXED);
+          A.lock('voice');                                    // first: nothing hears anything from here on, whatever fails below (SM6)
+          try {
+            h.silence(); S.rest = null; S.keep = false;
+            h.setMode('idle');
+            h.speak([`Microphone off, ${h.honorific()}.`], false, 'speaking', FIXED);
+          } catch (_) { /* the lock holds; the line is a courtesy */ }
           return { then: 'off' };
         },
         stop(ctx) {

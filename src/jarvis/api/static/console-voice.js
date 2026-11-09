@@ -346,7 +346,7 @@
     const track = mk('span', 'track'); track.setAttribute('aria-hidden', 'true'); track.append(mk('i'));
     const st = mk('span', 'st', 'Off'); st.setAttribute('aria-hidden', 'true');
     b.append(track, st);
-    b.addEventListener('click', () => onPress(b.getAttribute('aria-pressed') !== 'true'));
+    b.addEventListener('click', (e) => onPress(b.getAttribute('aria-pressed') !== 'true', e));
     row.append(t, b);
     return { row, button: b, help: d };
   }
@@ -395,7 +395,7 @@
     const keep = toggle('vKeep', 'Keep listening after replies', 'After a spoken reply JARVIS keeps listening. If you say nothing for 20 seconds he tells you and switches to the keyboard.', (on) => setDevice({ keepListening: on }));
     UI.auto = auto.button; UI.keep = keep.button;
     const A = window.JarvisAudio;
-    const mic = toggle('vMic', 'Microphone on this device', 'Off cuts the microphone completely until you switch it on here or with the mic button. It stays off after a reload.', (on) => { if (!A) return; if (on) A.unlock('panel'); else A.lock('panel'); renderValues(); });
+    const mic = toggle('vMic', 'Microphone on this device', 'Off cuts the microphone completely until you switch it on here or with the mic button. It stays off after a reload.', (on, e) => { if (!A) return; if (on) { if (e && e.isTrusted) A.unlock('panel'); } else A.lock('panel'); renderValues(); });
     const intr = select('vInterrupt', 'Interrupt JARVIS by', 'Automatic: speaking over earphones, "Jarvis" or "stop" on speakers. In "Jarvis or stop" mode JARVIS gets quieter when you talk over him and sends a clip of up to 2.5 seconds to Google Cloud speech to check for a command; the words are dropped unless they are one. ' + 'The "Hey Jarvis" model listens only while JARVIS speaks, unless you switch it on below.', INTERRUPTS, (v) => setDevice({ interruptBy: v }));
     const fol = select('vFollow', 'Wait for me to start speaking', 'How long JARVIS listens for your next words after he finishes a reply.', FOLLOWS, (v) => setDevice({ followUpS: Number(v) }));
     const lp = select('vLongPause', 'Switch to the keyboard after', 'If you say nothing for this long, JARVIS tells you and switches to the keyboard.', LONG_PAUSES, (v) => setDevice({ longPauseS: Number(v) }));

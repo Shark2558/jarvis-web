@@ -87,26 +87,28 @@
   const emit = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
   function readLock() { try { return localStorage.getItem(LOCK_KEY) === '1'; } catch (_) { return false; } }
   function writeLock(on) {
-    try { if (on) localStorage.setItem(LOCK_KEY, '1'); else localStorage.removeItem(LOCK_KEY); } catch (_) {}
+    try { if (on) localStorage.setItem(LOCK_KEY, '1'); else localStorage.removeItem(LOCK_KEY); } catch (_) { /* read back below */ }
+    return readLock() === on;               // false: the browser blocked storage, so "off" will not survive a reload
   }
   let locked = readLock();               // read at load: this script is first, so nothing opens before it
   const recs = new Set();                // recognisers made by recognizer(), aborted on lock
   const who = (by) => (LOCK_BY.includes(by) ? by : 'button');
-  function announce(by) {
+  function announce(by, persisted) {
     const d = { locked, by };
+    if (persisted === false) d.persisted = false;   // only when storage failed: the frozen {locked, by} shape stays otherwise
     lockSubs.forEach(fn => { try { fn(d); } catch (_) {} });
     emit('jarvis:mic-lock', d);
   }
   function applyLock(on, by, persist) {
     if (locked === on) return;
     locked = on;
-    if (persist) writeLock(on);
+    const kept = persist ? writeLock(on) : true;
     if (on) {
       close();
       recs.forEach(r => { try { r.abort(); } catch (_) {} });
       recs.clear();
     }
-    announce(by);
+    announce(by, kept);
   }
   const lock = (by) => applyLock(true, who(by), true);
   /** True only for a real gesture; it never opens the microphone. */
@@ -132,7 +134,10 @@
     else if (recs.size > 20) recs.delete(recs.values().next().value);
     return rec;
   }
+  // Another tab's change only counts when the browser itself raised the event for this origin's localStorage:
+  // a script's own StorageEvent (isTrusted false) must never switch the microphone on (SM1).
   window.addEventListener('storage', (e) => {
+    if (!e.isTrusted || e.storageArea !== localStorage) return;
     if (e.key === LOCK_KEY || e.key === null) applyLock(readLock(), 'storage', false);
   });
   if (locked) {
@@ -154,6 +159,7 @@
       } catch (err) {
         if (inputId && err && err.name === 'OverconstrainedError') {   // the chosen microphone is gone
           emit('jarvis:audio-route', { input: { id: inputId, label: '' }, reason: 'input_missing' });
+          if (stale() || locked) throw fail('closed');   // the microphone was switched off meanwhile: no second request
           try { own.stream = await requestStream(null); } catch (err2) { throw fail(reason(err2), err2); }
         } else throw fail(reason(err), err);
       }

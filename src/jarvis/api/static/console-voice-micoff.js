@@ -14,6 +14,8 @@
   const offBtn = $('micOffBtn'), micBtn = $('micBtn'), liveEl = $('voiceLive'), lineEl = $('voiceLine');
   if (!A || !micBtn) return;
   const OFF_LINE = 'Microphone off. Tap the mic (or press Ctrl + Shift + Space) to switch it on.';
+  const honorific = () => { try { return (window.JarvisChat && window.JarvisChat.honorific && window.JarvisChat.honorific()) || 'Sir'; } catch (_) { return 'Sir'; } };
+  const LOST_LINE = () => `The mic is off, but it won't stay off after a reload — your browser blocked storage, ${honorific()}.`;
   const OPEN_STATES = new Set(['on', 'paused', 'resume', 'loading']);
   const S = { conversation: false, wake: false };
   const line = (t) => { if (lineEl) lineEl.textContent = t; };
@@ -25,14 +27,15 @@
   }
   document.addEventListener('jarvis:voice-loop', (e) => { S.conversation = !!(e.detail && e.detail.conversation); paint(); });
   document.addEventListener('jarvis:wake', (e) => { S.wake = !!(e.detail && OPEN_STATES.has(e.detail.state)); paint(); });
-  A.onLock(({ locked, by }) => {
+  A.onLock(({ locked, by, persisted }) => {
     paint();
+    if (locked && persisted === false) { live('Microphone off'); line(LOST_LINE()); return; }
     if (locked) { live('Microphone off'); if (by !== 'voice') line(OFF_LINE); } else { live('Microphone on'); line(''); }
   });
 
   if (offBtn) offBtn.addEventListener('click', () => A.lock('button'));
   document.addEventListener('keydown', (e) => {
-    if (e.isComposing || !e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey) return;
+    if (!e.isTrusted || e.isComposing || !e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey) return;
     if (!(e.code === 'Space' || e.key === ' ')) return;
     e.preventDefault();
     if (e.repeat) return;

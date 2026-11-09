@@ -77,7 +77,7 @@
     noSpeech: 0, maxTimer: 0, spoken: [],
     conv: false, handsFree: '', holdWait: false, heardMarked: false, seed: null, info: null, recStart: 0,
     said: [], rest: null, restAt: 0, restKeep: false, silent: false, handing: false, checking: false,
-    barge: null, abort: null, nameOff: false, browserTimer: 0, noPhrases: false, realAt: 0, empties: 0, closeAfter: false };
+    barge: null, abort: null, nameOff: false, browserTimer: 0, noPhrases: false, realAt: 0, empties: 0, closeAfter: false, wakeGate: false };
   let clock = null;                                    // the follow-up / standby / long-pause clock of this reply
   const runaway = window.JarvisConversation.runaway();
   const isListening = () => S.mode === 'listening' || S.mode === 'standby';
@@ -457,9 +457,10 @@
     if (S.mode !== 'idle') setMode('idle');
     releaseMic();
   }
-  function press() {
+  function press(e) {
     if (btn.hidden) return;
-    if (A.locked() && !A.unlock('button')) { say(LOCKED_LINE); return; }  // a tap on the locked mic switches it on and listens
+    // a tap on the locked mic switches it on and listens; only a real, trusted tap or key counts (SM1)
+    if (A.locked() && !((e && e.isTrusted) && A.unlock('button'))) { say(LOCKED_LINE); return; }
     S.chain = 0; S.empties = 0; runaway.touch();                           // the owner is here
     if (S.mode === 'off') setMode('idle');
     if (isListening()) { stopAndSend(); return; }
@@ -584,8 +585,12 @@
   });
 
   // ---- the hard microphone lock (R5 D11) ------------------------------------------------------------
-  A.onLock(({ locked }) => {
-    if (!locked) { if (S.mode === 'off') setMode('idle'); bootWake(); return; }
+  A.onLock(({ locked, by }) => {
+    if (!locked) {
+      if (S.mode === 'off') setMode('idle');
+      if (by === 'storage') { wakeAfterGesture(); return; }   // another tab switched it on: ready, but only a gesture here opens it (SM1)
+      bootWake(); return;
+    }
     clearTimeout(S.relisten); clearTimeout(S.browserTimer);
     S.keep = false; S.rest = null; S.checking = false; S.handing = false;  // no re-listen after a reply that is still playing
     if (isListening()) cancel();                        // nothing is sent
@@ -597,6 +602,19 @@
     if (S.mode === 'idle' || (S.mode === 'thinking' && !Chat.busy())) setMode('off');
   });
 
+  /** An unlock that came from another tab never starts "Hey Jarvis" by itself: the next real tap or key here does. */
+  function wakeAfterGesture() {
+    if (S.wakeGate) return;
+    S.wakeGate = true;
+    const go = (e) => {
+      if (!e.isTrusted) return;
+      S.wakeGate = false;
+      document.removeEventListener('pointerdown', go, true); document.removeEventListener('keydown', go, true);
+      if (!A.locked()) bootWake();
+    };
+    document.addEventListener('pointerdown', go, true); document.addEventListener('keydown', go, true);
+  }
+
   // ---- keys and the button ------------------------------------------------------------------------
   btn.addEventListener('click', press);
   const here = (e) => { if (e && e.isTrusted) runaway.touch(); };                   // a tap or a key: the owner is here (D6)
@@ -604,7 +622,7 @@
   document.addEventListener('keydown', (e) => {
     here(e);
     if (e.isComposing || btn.hidden) return;
-    if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && (e.code === 'Space' || e.key === ' ')) { e.preventDefault(); press(); return; }
+    if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && (e.code === 'Space' || e.key === ' ')) { e.preventDefault(); press(e); return; }
     if (e.key !== 'Escape' || e.defaultPrevented) return;
     let said = '';
     if (isListening()) { cancel(); said = 'Cancelled'; }

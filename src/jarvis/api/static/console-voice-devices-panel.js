@@ -10,7 +10,6 @@
   const KIND_OPTIONS = Object.freeze({ '': 'Auto-detect', headphones: 'Earphones', speakers: 'A speaker' });
   const POLICY_OPTIONS = Object.freeze({ ask: 'Ask me', auto: 'Switch automatically', never: 'Do nothing' });
   const KIND_WORDS = Object.freeze({ headphones: 'Earphones or headset', speakers: 'Speaker', unknown: 'Kind not known' });
-  const NO_NAMES = 'Device names appear after you allow the microphone once (tap the mic).';
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
   const hon = () => {
     const c = window.JarvisChat;
@@ -37,7 +36,7 @@
     ui.test = mk('button', 'btn lift bact test', 'Test sound'); ui.test.type = 'button';
     ui.test.addEventListener('click', playTest);
     const again = mk('button', 'btn lift bact', 'Look for devices again'); again.type = 'button';
-    again.addEventListener('click', () => { route().refresh(); });
+    again.addEventListener('click', () => { route().refresh().catch(() => {}); });
     const actions = mk('div', 'vdev-actions'); actions.append(ui.test, again);
     sec.append(h, ui.note, ui.outHead, ui.outList, actions, ui.inHead, ui.inList, ui.inNote, ui.policy, ui.browser, ui.status);
     slot.replaceChildren(sec);
@@ -54,10 +53,11 @@
     ui.policySelect = s;
   }
 
-  function say(text) { if (ui) ui.status.textContent = text; }
+  function say(text) { prefs().setStatus(text); }
   async function playTest() {
     const s = window.JarvisVoice && window.JarvisVoice.speaker;
-    const ok = s ? await s.tone(TEST_TONE) : false;
+    let ok = false;
+    try { ok = s ? await s.tone(TEST_TONE) : false; } catch (_) { ok = false; }
     say(ok ? 'Played a short sound on the current output.' : `I couldn't play the test sound, ${hon()}. Tap the page once and try again.`);
   }
   function outcome(r, name, mic) {
@@ -94,6 +94,7 @@
     t.append(mk('span', 'bl', d.name));
     const sub = isDefault ? 'Whatever the system is using' : KIND_WORDS[d.kind] || KIND_WORDS.unknown;
     t.append(mk('small', '', d.callQuality ? sub + ' (lower quality, for calls)' : sub));
+    if (attr === 'in' && pressed && prefs().inputPending()) t.append(mk('small', 'pending', 'Pending: I\'ll use this microphone the next time I open the mic.'));
     if (!isDefault && attr === 'in' && d.kind === 'headphones') {
       t.append(mk('small', 'warn', 'Using this microphone makes Windows play all sound in call quality.'));
     }
@@ -125,27 +126,26 @@
     ui.inNote.textContent = rows.length ? '' : `Android picks the microphone, ${hon()}.`;
   }
   function renderNotes(dev) {
-    const h = hon();
+    const T = prefs().text;
     const android = prefs().onAndroid();
     const can = prefs().canRoute();
-    let note = dev.labelled ? 'Pick where I sound and what I listen through. Pairing a new device is done in your system settings.' : NO_NAMES;
-    if (!can) {
-      note = android
-        ? `On this phone Android chooses where I sound, ${h}: open Quick Settings and pick it under media output (the name varies by phone).`
-        : `This browser can't choose the sound output, ${h}. Use your system's sound settings.`;
-    }
+    let note = dev.labelled ? 'Pick where I sound and what I listen through. Pairing a new device is done in your system settings.' : T.noNames;
+    if (!can) note = T.unsupported();
     ui.note.textContent = note;
-    ui.browser.textContent = android ? '' : `My browser voice follows Windows' sound output, ${h}: press Windows + Ctrl + V to choose it.`;
+    ui.browser.textContent = android ? '' : T.browserVoice();
     ui.test.hidden = !can;
     ui.outHead.hidden = !can;
   }
 
+  const typing = () => !!(slot && document.activeElement && slot.contains(document.activeElement) && document.activeElement.classList.contains('nick'));
   function render() {
     if (!slot || !ui || !route() || !prefs()) return;
     const dev = prefs().devices(), cur = route().current();
-    const sig = JSON.stringify([dev, prefs().prefs(), cur, prefs().canRoute()]);
+    const sig = JSON.stringify([dev, prefs().prefs(), cur, prefs().canRoute(), prefs().status(), prefs().inputPending()]);
     if (sig === lastSig) return;
+    if (typing()) return;                 // not under a nickname being typed: it is drawn again on blur
     lastSig = sig;
+    ui.status.textContent = prefs().status();
     const key = document.activeElement && slot.contains(document.activeElement) ? document.activeElement.dataset.key : null;
     renderNotes(dev); renderOutputs(dev, cur); renderInputs(dev, cur);
     ui.policySelect.value = prefs().prefs().onConnect;
@@ -159,12 +159,13 @@
     if (!s || s === slot || !route() || !prefs()) return;
     slot = s; lastSig = '';
     build(); render();
-    route().refresh();
+    route().refresh().catch(() => {});
   }
   if (route() && prefs()) {
     route().on('devices', render);
     route().on('route', render);
     document.addEventListener('jarvis:voice-panel', mount);
+    document.addEventListener('focusout', () => { setTimeout(render, 0); });
     mount();
   }
 })();

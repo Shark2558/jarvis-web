@@ -11,6 +11,9 @@
 .vdev .vdev-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .vdev .btxt small.warn{color:var(--amber-ink)}
 .vdev .vdev-status:empty{display:none}
+.vdev .btxt{min-width:0}
+.vdev .bl,.vdev .bl+small{overflow-wrap:anywhere;min-width:0}
+.vdev .btxt small.pending{color:var(--amber-ink)}
 @media (max-width:640px){
   .vdev .vdev-ctl{justify-content:flex-start;width:100%}
   .vdev .vdev-ctl .bsel,.vdev .btn.bact.use{height:44px}

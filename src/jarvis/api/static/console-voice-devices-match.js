@@ -11,7 +11,7 @@
   if (window.JarvisAudioMatch) return;
   const LIM = Object.freeze({ id: 400, label: 120, nick: 30, match: 0.6, minSub: 3, nickDice: 0.7 });
   // Control, bidi, zero-width and BOM characters never belong in a device name (they can hide text).
-  const HIDDEN_RE = /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁤⁦-⁩﻿]/g;
+  const HIDDEN_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const USB_ID_RE = /\s*\([0-9a-f]{4}:[0-9a-f]{4}\)/gi;
   const HEADPHONE_RE = /head(phone|set)|ear(phone|bud|pod)|buds|airpods|hands-?free/i;
   const SPEAKER_RE = /speaker|soundbar|built-?in|realtek|high definition/i;

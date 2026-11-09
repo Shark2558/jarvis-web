@@ -761,3 +761,192 @@ def test_a_device_commands_line_is_said_but_does_not_replace_the_one_on_screen_m
     assert fake.spoken() == ["Now speaking through the earphones."]
     assert _line(c) == "Output: Test earphones"  # B's line (the device's name) stays on screen
     assert c.errors == []
+
+
+# ================================================================== the small ones
+VAD_SPY = """
+(() => {
+  window.__vad = [];
+  let real = null;
+  Object.defineProperty(window, 'JarvisVad', { configurable: true, get() { return real; },
+    set(v) { real = Object.freeze(Object.assign({}, v, { create: (o) => { window.__vad.push(Object.assign({}, o)); return v.create(o); } })); } });
+})();
+"""
+IPAD = """
+Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15' });
+Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 5 });
+window.__hidden = false;
+Object.defineProperty(document, 'hidden', { get: () => window.__hidden });
+"""
+
+
+def test_a_waiting_turn_has_no_55_s_limit_so_the_long_pause_hands_over_aloud_d5(
+    make: Callable[..., Console],
+) -> None:
+    c = make(
+        device={"speak": "always", "keepListening": True, "followUpS": 8, "longPauseS": 60},
+        scripts=(TONE_MIC, RECORD_LOOP),
+    )
+    fake = FakeVoice(c.page)
+    route_reply(c)
+    c.page.clock.install()
+    c.open()
+    _say_one_sentence(c)
+    _until(c, "window.__loop.filter(e => e.state === 'listening').length >= 2", 40)
+    c.page.clock.fast_forward(56000)  # past the 55 s a listening turn used to be cut at
+    assert c.page.evaluate(STATE) in ("listening", "standby")  # still waiting, not silently ended
+    assert "I'll switch to the keyboard, Sir." not in fake.spoken()
+    c.page.clock.fast_forward(6000)  # the 60 s long pause: said out loud
+    _until(c, "window.__voice.speech.some(d => d.text.includes('switch to the keyboard'))", 10)
+    assert "Switched to the keyboard" in _line(c)
+    assert c.errors == []
+
+
+def test_the_strict_start_gate_begins_when_standby_does_not_350_ms_after_the_reply_s(
+    make: Callable[..., Console],
+) -> None:
+    c = make(
+        device={"speak": "always", "keepListening": True, "followUpS": 8, "longPauseS": 30},
+        scripts=(TONE_MIC, VAD_SPY, RECORD_LOOP),
+    )
+    FakeVoice(c.page)
+    route_reply(c)
+    c.open()
+    _say_one_sentence(c)
+    _until(c, "window.__vad.some(o => o.strictAfterMs > 0)", 40)
+    strict = c.page.evaluate("window.__vad.filter(o => o.strictAfterMs > 0)[0].strictAfterMs")
+    # standby starts 8 s after the reply ended; this listening turn began after the 350 ms beat and the tone
+    assert 6500 < strict < 7600, strict
+    c.page.keyboard.press("Escape")
+    assert c.errors == []
+
+
+def test_esc_in_the_beat_before_he_listens_again_ends_the_conversation(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"speak": "always", "keepListening": True}, scripts=(TONE_MIC, RECORD_LOOP))
+    FakeVoice(c.page)
+    route_reply(c)
+    c.page.add_init_script(
+        """
+    (() => {
+      let spoke = false;
+      document.addEventListener('jarvis:voice-loop', (e) => {
+        if (e.detail.state === 'speaking') spoke = true;
+        else if (spoke && e.detail.state === 'idle') {
+          spoke = false;
+          setTimeout(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })), 60);
+        }
+      });
+    })();"""
+    )
+    c.open()
+    _say_one_sentence(c)
+    _until(c, "window.__voice.speech.length >= 1", 30)
+    _until(c, "window.__loop.some(e => e.state === 'idle')", 30)
+    c.page.wait_for_timeout(1500)
+    assert c.page.evaluate("JarvisVoiceLoop.inConversation()") is False
+    assert (
+        c.page.evaluate("window.__loop.filter(e => e.state === 'listening').length") == 1
+    )  # no second turn
+    assert c.page.evaluate("JarvisAudio.isOpen()") is False
+    assert c.errors == []
+
+
+def test_a_command_that_asks_for_nothing_more_does_not_end_a_conversation(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"speak": "never", "keepListening": True}, scripts=(TONE_MIC, RECORD_LOOP))
+    fake = FakeVoice(c.page)
+    fake.transcript["text"] = "go quiet for a while"
+    c.open()
+    c.page.evaluate(
+        "JarvisVoiceCommands.register('test.idle', { match: (n) => (n === 'go quiet for a while' ? {} : null),"
+        " run: () => ({ then: 'idle' }) });"
+        " window.__ran = []; document.addEventListener('jarvis:voice-command', (e) => window.__ran.push(e.detail.id))"
+    )
+    _say_one_sentence(c)
+    _until(c, "window.__ran.includes('test.idle')", 20)  # the command was heard and run
+    c.page.wait_for_timeout(1500)
+    assert c.page.evaluate(STATE) in (
+        "listening",
+        "standby",
+    )  # and he is listening again, not at rest
+    assert c.page.evaluate("JarvisVoiceLoop.inConversation()") is True
+    c.page.keyboard.press("Escape")
+    assert c.errors == []
+
+
+def test_an_ipad_that_says_it_is_a_mac_gets_the_spoken_handover_when_hidden(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"speak": "always", "keepListening": True}, scripts=(IPAD, TONE_MIC))
+    fake = FakeVoice(c.page)
+    c.open()
+    c.page.locator("#micBtn").click()
+    _until(c, f"{STATE} === 'listening'", 5)
+    c.page.evaluate("window.__hidden = true; document.dispatchEvent(new Event('visibilitychange'))")
+    _until(c, "window.__voice.speech.length >= 1", 10)
+    assert "I'll switch to the keyboard, Sir." in fake.spoken()
+    assert c.errors == []
+
+
+def test_hey_jarvis_switched_on_while_he_speaks_stays_on_afterwards(
+    make: Callable[..., Console],
+) -> None:
+    c = make(
+        device={"interruptBy": "name", "speak": "always", "keepListening": True, "wake": False},
+        scripts=(TONE_MIC, FAKE_WAKE, RECORD_LOOP),
+        barge=True,
+    )
+    fake = FakeVoice(c.page)
+    route_reply(c)
+    c.open()
+    fake.speak_audio = wav_bytes(seconds=5.0)
+    _say_one_sentence(c)
+    _until(c, f"{STATE} === 'speaking'", 30)
+    _wait(c, "() => window.__wake.started === 1")  # the model runs for his speech only (D8)
+    c.page.evaluate("JarvisVoice.setDevice({ wake: true })")  # the owner switches it on meanwhile
+    _until(c, f"{STATE} !== 'speaking'", 15)
+    c.page.wait_for_timeout(600)
+    assert c.page.evaluate("window.__wake.stopped") == 0  # not halted when the speech ended
+    assert c.page.evaluate("window.JarvisWake.state") in ("listening", "paused")
+    c.page.keyboard.press("Escape")
+    assert c.errors == []
+
+
+def test_the_interrupt_help_says_what_clips_do_and_where_they_do_not_happen(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    FakeVoice(c.page)
+    c.open()
+    c.open_panel("voice")
+    c.page.locator("#vInterrupt").wait_for(state="attached")
+    text = c.page.locator("#p-voice").inner_text()
+    assert "only during a voice conversation you started" in text
+    assert 'begins with "Jarvis" becomes your next turn' in text
+    assert "browser's own listening engine" in text
+    assert c.errors == []
+
+
+def test_a_check_in_cancelled_by_another_question_is_asked_again_afterwards(
+    make: Callable[..., Console],
+) -> None:
+    c = make(
+        device={"speak": "always", "keepListening": True, "endSilenceMs": 800},
+        scripts=(TONE_MIC, REPLY_TV, RECORD_LOOP),
+    )
+    fake = FakeVoice(c.page)
+    c.open()
+    _tv(c, fake)
+    question = "Shall I keep listening, Sir?"
+    _until(c, f"window.__voice.speech.some(d => d.text === {json.dumps(question)})", 150)
+    # another module asks something; that cancels the check-in's question, which is not an answer
+    c.page.evaluate("void JarvisVoiceCommands.ask('Use the earphones?', { timeoutMs: 1500 })")
+    _until(
+        c, f"window.__voice.speech.filter(d => d.text === {json.dumps(question)}).length >= 2", 40
+    )
+    assert not c.page.evaluate("window.__loop.some(e => e.state === 'handover')")
+    c.page.keyboard.press("Escape")
+    assert c.errors == []

@@ -136,7 +136,8 @@
     }
     document.addEventListener('jarvis:voice-device', (e) => {
       const d = e.detail || {};
-      if (d.wake && !wake.on) start();
+      if (d.wake && wake.only) { wake.only = false; wakeState('on'); }   // switched on while it ran only for his speech: it stays on after (D8)
+      else if (d.wake && !wake.on) start();
       else if (!d.wake && wake.on) stop();
     });
     /** Start a saved "Hey Jarvis" once signed in. Its module normally loads before this script; if it

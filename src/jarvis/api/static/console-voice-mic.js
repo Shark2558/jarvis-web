@@ -183,8 +183,10 @@
   function startClocks(t) {
     clearClocks();
     if (!S.holdWait) S.noSpeech = setTimeout(() => { if (t === S.turn && isListening()) nothingHeard(); }, S.startMs);
-    S.maxTimer = setTimeout(() => { if (t === S.turn && isListening()) stopAndSend(); }, MAX_LISTEN_MS);
+    // a waiting turn has no 55 s limit while it waits (the long pause hands over audibly, D5); it starts when words do
+    if (!S.holdWait) armMax(t);
   }
+  function armMax(t) { clearTimeout(S.maxTimer); S.maxTimer = setTimeout(() => { if (t === S.turn && isListening()) stopAndSend(); }, MAX_LISTEN_MS); }
   function clearClocks() {
     clearTimeout(S.noSpeech); clearTimeout(S.maxTimer);
     S.noSpeech = S.maxTimer = 0;
@@ -200,6 +202,7 @@
   function markHeard(lagMs) {
     if (S.heardMarked) return;
     S.heardMarked = true;
+    if (S.holdWait) armMax(S.turn);
     if (S.rec) { try { Pace().mark('spoke'); } catch (_) {} }   // the browser engine: when its first words came (the cloud engine marks at the VAD's end)
     clock && clock.heard();
     if (S.mode === 'standby') setMode('listening');
@@ -220,7 +223,7 @@
     const d = V.device(), wait = S.handsFree === 'relisten';
     S.vad = window.JarvisVad.create({
       noSpeechMs: wait ? (d.longPauseS + 10) * 1000 : S.startMs, endSilenceMs: d.endSilenceMs, maxMs: MAX_LISTEN_MS, seed: S.seed,
-      strictAfterMs: wait ? Math.max(0, d.followUpS * 1000 - RELISTEN_DELAY_MS) : 0,
+      strictAfterMs: wait ? Math.max(0, d.followUpS * 1000 - (clock ? clock.sinceReplyMs() : RELISTEN_DELAY_MS)) : 0,   // standby starts followUpS after the reply ended
     });
     startClocks(t);
     if (S.seed) markHeard(0);
@@ -357,7 +360,8 @@
   function settle(r) {
     const res = (r && r.result) || {};
     const answer = !!(r && typeof r.id === 'string' && r.id.startsWith('answer.'));
-    const next = res.then || (answer ? 'none' : S.conv ? 'listen' : 'idle');
+    let next = res.then || (answer ? 'none' : S.conv ? 'listen' : 'idle');
+    if (next === 'idle' && S.conv) next = 'listen';   // in a conversation a command that asks for nothing more keeps it going
     const go = () => {
       if (next === 'listen') resumeListening();
       else if (next === 'keyboard') handover('keyboard');
@@ -589,6 +593,7 @@
     if (isListening()) { cancel(); said = 'Cancelled'; }
     else if (S.mode === 'speaking' || S.mode === 'handover') { stopAll(); said = 'Stopped'; }
     else if (S.mode === 'thinking') { abandon(); said = 'Cancelled'; }
+    else if (S.conv && S.mode === 'idle') { stopAll(); said = 'Stopped'; }   // Esc in the beat before he listens again ends it too
     if (!said) return;
     e.preventDefault(); e.stopPropagation();
     if (liveEl) liveEl.textContent = said;
@@ -620,8 +625,10 @@
   // ends the conversation with the spoken line, D5.)
   window.addEventListener('pagehide', () => { stopAll(); if (wake.on) wakeStop(); A.close(); });
   window.addEventListener('pageshow', (e) => { if (e.persisted) bootWake(); });
+  // phones and tablets, including an iPad that says it is a Mac
+  const phone = () => /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '') || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent || ''));
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && S.conv && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '')) handover('hidden');
+    if (document.hidden && S.conv && phone()) handover('hidden');
   });
 
   // ---- window.JarvisVoiceLoop: the seam other modules use ---------------------------------------------

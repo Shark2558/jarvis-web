@@ -23,6 +23,7 @@ from test_voice import (  # same directory (pytest prepend import)
     FakeVoice,
     _mic_state,
     _speech,
+    _json,
     _voice_panel,
     _wait,
     speechlike_wav,
@@ -200,6 +201,21 @@ window.__tvFast = () => {
   flip();
 };
 """
+# A room that answers every reply promptly: 0.6 s after JARVIS finishes (speaking, or a command that he
+# answered with nothing to say) someone talks for 0.9 s, whatever he said (the questions too). Unlike FAST_TV the gap to the next turn does not depend on a
+# clock's phase, so "8 quick turns" is exact. window.__replyTv() starts it; the first burst is the test's.
+REPLY_TV = """
+window.__replyTv = () => {
+  let spoke = false;
+  document.addEventListener('jarvis:voice-loop', (e) => {
+    if (e.detail.state === 'speaking' || e.detail.state === 'thinking') spoke = true;
+    else if (spoke && e.detail.state === 'idle') {
+      spoke = false;
+      setTimeout(() => { window.__talk(true); setTimeout(() => window.__talk(false), 900); }, 600);
+    }
+  });
+};
+"""
 # Frames from the capture worklet stop reaching the page while window.__stall is true.
 STALL = """
 (() => {
@@ -269,6 +285,29 @@ def _until(c: Console, js: str, timeout_s: float = 15.0) -> None:
             return
         c.page.wait_for_timeout(100)
     raise AssertionError(f"timed out waiting for {js}")
+
+
+def chat_reply(approvals: int = 0, text: str = "Done, Sir. It is ready to send.") -> dict[str, Any]:
+    """A /v1/chat answer with fixed words (the test server's own reply repeats the transcript, which his
+    echo guard rightly treats as his voice coming back when a loop test says the same thing every turn)."""
+    pending = {
+        "id": "ap1", "tool": "gmail_send", "summary": "Send the email to Priya", "arguments": {},
+        "risk": "R3", "expires_at": "2026-11-01T12:00:00Z", "session_id": "s-voice",
+    }  # fmt: skip
+    return {
+        "session_id": "s-voice", "reply": text, "tool_calls": 0,
+        "pending_approvals": [pending] * approvals, "trace_id": "t1", "model": "mock", "brain": "mock",
+        "usage": {"input_tokens": 1, "output_tokens": 1}, "cost_usd": 0, "cost_inr": 0,
+        "total_cost_usd": 0, "total_cost_inr": 0, "latency_ms": 5, "turn_count": 2, "memory_used": [],
+    }  # fmt: skip
+
+
+def route_reply(c: Console, reply: dict[str, Any] | None = None) -> list[int]:
+    """Answer every chat turn with `reply`; the returned list gets a 1 per message sent."""
+    sent: list[int] = []
+    body = reply if reply is not None else chat_reply(text="Noted, Sir.")
+    c.page.route("**/v1/chat", lambda r: (sent.append(1), _json(r, 200, body)))
+    return sent
 
 
 def _count(fake: FakeVoice, path: str) -> int:
@@ -376,17 +415,23 @@ def test_conversation_is_not_capped(make: Callable[..., Console]) -> None:
 def test_a_room_that_never_stops_talking_gets_a_check_in_then_the_keyboard(
     make: Callable[..., Console],
 ) -> None:
-    c = make(device={"speak": "always", "endSilenceMs": 800}, scripts=(TONE_MIC, FAST_TV))
+    c = make(device={"speak": "always", "endSilenceMs": 800}, scripts=(TONE_MIC, REPLY_TV))
     fake = FakeVoice(c.page)
+    route_reply(c)
     c.open()
-    c.page.evaluate("window.__tvFast()")  # someone talks every 2.6 s, forever
+    c.page.evaluate("window.__replyTv()")  # someone answers every reply, promptly, forever
+    c.page.evaluate("window.__talk(true)")  # the first words, as the tap opens the microphone
     c.page.locator("#micBtn").click()
+    _until(c, "document.getElementById('voiceLive').textContent === 'Hearing you'", 10)
+    c.page.wait_for_timeout(500)
+    c.page.evaluate("window.__talk(false)")
     question = "Shall I keep listening, Sir?"
     deadline = time.monotonic() + 150
     while time.monotonic() < deadline and question not in fake.spoken():
         c.page.wait_for_timeout(500)
     assert question in fake.spoken()
-    assert 8 <= _count(fake, "/v1/voice/transcribe") <= 10  # at the 8th reply
+    # D6: the tap's turn, then 8 quick hands-free turns; he asks at the end of the 8th hands-free reply
+    assert _count(fake, "/v1/voice/transcribe") == 9
     _until(
         c,
         "document.getElementById('micBtn').dataset.state === 'idle'"

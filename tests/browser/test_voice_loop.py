@@ -12,6 +12,7 @@ from test_console import Console
 from test_voice import FAKE_WAKE, FakeVoice, _wait, wav_bytes
 from test_voice_robust import (  # noqa: F401  (fixtures and helpers)
     FAST_TV,
+    REPLY_TV,
     SLOW_GUM,
     STALL,
     TONE_MIC,
@@ -22,6 +23,7 @@ from test_voice_robust import (  # noqa: F401  (fixtures and helpers)
     _until,
     browser,
     make,
+    route_reply,
 )
 
 _pw = pytest.importorskip("playwright.sync_api")
@@ -269,9 +271,11 @@ def test_an_unplugged_microphone_in_a_conversation_is_announced(
 
 # ================================================================== the runaway check-in
 def _tv(c: Console, fake: FakeVoice) -> None:
+    """A room that answers every reply promptly, forever (REPLY_TV), and a chat that never repeats it."""
     fake.speak_audio = wav_bytes(seconds=0.3)
-    c.page.evaluate("window.__tvFast()")  # someone talks every 2.6 s, forever
-    c.page.locator("#micBtn").click()
+    route_reply(c)
+    c.page.evaluate("window.__replyTv()")
+    _say_one_sentence(c)  # the first words, as the tap opens the microphone
 
 
 def test_saying_yes_to_the_check_in_carries_on_and_it_is_not_asked_again(
@@ -279,7 +283,7 @@ def test_saying_yes_to_the_check_in_carries_on_and_it_is_not_asked_again(
 ) -> None:
     c = make(
         device={"speak": "always", "keepListening": True, "endSilenceMs": 800},
-        scripts=(TONE_MIC, FAST_TV, RECORD_LOOP),
+        scripts=(TONE_MIC, REPLY_TV, RECORD_LOOP),
     )
     fake = FakeVoice(c.page)
     c.open()
@@ -305,7 +309,7 @@ def test_saying_yes_to_the_check_in_carries_on_and_it_is_not_asked_again(
 def test_with_the_check_in_off_the_same_room_runs_on(make: Callable[..., Console]) -> None:
     c = make(
         device={"speak": "always", "keepListening": True, "checkIn": False, "endSilenceMs": 800},
-        scripts=(TONE_MIC, FAST_TV, RECORD_LOOP),
+        scripts=(TONE_MIC, REPLY_TV, RECORD_LOOP),
     )
     fake = FakeVoice(c.page)
     c.open()

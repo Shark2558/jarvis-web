@@ -204,8 +204,9 @@
     clock && clock.heard();
     if (S.mode === 'standby') setMode('listening');
     if (!S.handsFree) { runaway.touch(); return; }
-    // the gap is measured from when JARVIS finished, minus his own re-listen delay and the VAD's lag
-    runaway.turn(S.handsFree === 'barge' ? 0 : Math.max(0, (clock ? clock.sinceReplyMs() : 0) - lagMs - RELISTEN_DELAY_MS), Date.now());
+    // the gap is measured from when JARVIS finished, minus the VAD's lag only: the microphone stays open (D3), so his
+    // own re-listen delay is not part of how quickly the owner (or the room) answered
+    runaway.turn(S.handsFree === 'barge' ? 0 : Math.max(0, (clock ? clock.sinceReplyMs() : 0) - lagMs), Date.now());
   }
 
   async function listenCloud(t, cued) {

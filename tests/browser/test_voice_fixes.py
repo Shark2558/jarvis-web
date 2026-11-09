@@ -23,10 +23,13 @@ from test_voice import (
 from test_voice_loop import RECORD_LOOP, _say_one_sentence, _tv
 from test_voice_robust import (  # noqa: F401  (fixtures and helpers)
     FAST_TV,
+    REPLY_TV,
     SLOW_GUM,
     STALL,
     TONE_MIC,
     _chat_counter,
+    chat_reply,
+    route_reply,
     _count,
     _line,
     _mic_file,
@@ -199,35 +202,13 @@ FAIL_SEND = """
 """
 
 
-def _chat_reply(
-    approvals: int = 0, text: str = "Done, Sir. It is ready to send."
-) -> dict[str, Any]:
-    pending = {
-        "id": "ap1", "tool": "gmail_send", "summary": "Send the email to Priya", "arguments": {},
-        "risk": "R3", "expires_at": "2026-11-01T12:00:00Z", "session_id": "s-voice",
-    }  # fmt: skip
-    return {
-        "session_id": "s-voice", "reply": text, "tool_calls": 0,
-        "pending_approvals": [pending] * approvals, "trace_id": "t1", "model": "mock", "brain": "mock",
-        "usage": {"input_tokens": 1, "output_tokens": 1}, "cost_usd": 0, "cost_inr": 0,
-        "total_cost_usd": 0, "total_cost_inr": 0, "latency_ms": 5, "turn_count": 2, "memory_used": [],
-    }  # fmt: skip
-
-
-def _route_reply(c: Console, reply: dict[str, Any]) -> list[int]:
-    """Answer every chat turn with `reply`; the returned list gets a 1 per message sent."""
-    sent: list[int] = []
-    c.page.route("**/v1/chat", lambda r: (sent.append(1), _json(r, 200, reply)))
-    return sent
-
-
 # ================================================================== H1
 def test_an_approval_after_a_spoken_turn_ends_the_conversation_and_closes_the_mic_h1(
     make: Callable[..., Console],
 ) -> None:
     c = make(device={"speak": "always", "keepListening": True}, scripts=(TONE_MIC,))
     fake = FakeVoice(c.page)
-    _route_reply(c, _chat_reply(approvals=1))
+    route_reply(c, chat_reply(approvals=1))
     c.open()
     _say_one_sentence(c)
     _wait(c, "() => window.__voice.speech.length >= 1")
@@ -322,7 +303,7 @@ def test_an_okay_does_not_answer_the_check_in_and_the_words_go_back_to_the_box_s
 ) -> None:
     c = make(
         device={"speak": "always", "keepListening": True, "endSilenceMs": 800},
-        scripts=(TONE_MIC, FAST_TV, RECORD_LOOP),
+        scripts=(TONE_MIC, REPLY_TV, RECORD_LOOP),
     )
     fake = FakeVoice(c.page)
     c.open()
@@ -563,7 +544,7 @@ def test_a_yes_heard_after_the_ask_would_have_timed_out_still_counts_m2(
 ) -> None:
     c = make(
         device={"speak": "always", "keepListening": True, "endSilenceMs": 800},
-        scripts=(TONE_MIC, FAST_TV, RECORD_LOOP),
+        scripts=(TONE_MIC, REPLY_TV, RECORD_LOOP),
     )
     fake = FakeVoice(c.page)
     c.open()
@@ -626,7 +607,7 @@ def test_his_own_closing_words_coming_back_through_the_room_are_not_a_command_sm
         scripts=(TONE_MIC, RECORD_LOOP, COMMAND_COUNT),
     )
     fake = FakeVoice(c.page)
-    chats = _route_reply(c, _chat_reply(text="Whenever you like, just say mic off."))
+    chats = route_reply(c, chat_reply(text="Whenever you like, just say mic off."))
     c.open()
     fake.speak_audio = wav_bytes(seconds=0.8)
     _say_one_sentence(c)  # "Turn on the lights ..." goes to the chat

@@ -7,15 +7,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any
 
 import pytest
 from test_console import Console
+from test_notes import FakeNotes
 from test_voice import (
     FAKE_RECOGNITION,
     FAKE_WAKE,
     FakeVoice,
-    _json,
     _mic_state,
     _wait,
     wav_bytes,
@@ -28,15 +27,15 @@ from test_voice_robust import (  # noqa: F401  (fixtures and helpers)
     STALL,
     TONE_MIC,
     _chat_counter,
-    chat_reply,
-    route_reply,
     _count,
     _line,
     _mic_file,
     _playwright,
     _until,
     browser,
+    chat_reply,
     make,
+    route_reply,
 )
 
 _pw = pytest.importorskip("playwright.sync_api")
@@ -676,3 +675,89 @@ HOLD_LOOP = """
     set(v) { real = Object.freeze(Object.assign({}, v, { bindLoop: () => undefined })); } });
 })();
 """
+
+
+# ================================================================== M7: a memo and a conversation do not share the mic
+def test_starting_a_memo_ends_the_voice_conversation_and_sends_nothing_to_the_chat_m7(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"keepListening": True}, scripts=(TONE_MIC, SLOW_GUM))
+    FakeVoice(c.page)
+    notes = FakeNotes(c.page, [])
+    chats = _chat_counter(c)
+    c.open()
+    c.page.locator("#micBtn").click()
+    _until(c, f"{STATE} === 'listening'", 5)
+    assert c.page.evaluate("JarvisVoiceLoop.inConversation()") is True
+    c.open_panel("notes")
+    c.page.evaluate("window.__talk(true)")
+    c.page.locator("#nRecord").click()
+    _until(c, "!JarvisVoiceLoop.inConversation()", 5)
+    assert c.page.evaluate(STATE) == "idle"
+    _until(c, "JarvisAudio.isOpen()", 5)  # the memo has the microphone, alone
+    c.page.wait_for_timeout(1500)
+    c.page.evaluate("window.__talk(false)")
+    c.page.locator("#nRecord").click()  # Stop
+    _until(c, "!JarvisAudio.isOpen()", 5)  # and gives it back for good, not into a conversation
+    c.page.wait_for_selector("#nMemoText")
+    assert len(notes.to("POST", "/v1/voice/transcribe")) >= 1  # the words went into the memo ...
+    assert chats == []  # ... and nowhere else
+    assert c.errors == []
+
+
+# ================================================================== M4: pace and device integration
+# A stand-in for part C's timing module, installed after the page's scripts: it records mark(stage, at).
+MARKS = """
+window.__marks = [];
+window.addEventListener('load', () => {
+  window.JarvisVoicePace = { cue() {}, mark(stage, at) { window.__marks.push({ stage, at: at ?? null, now: performance.now() }); }, last: () => null };
+});
+"""
+LOOP_TIMES = """
+window.__times = [];
+document.addEventListener('jarvis:voice-loop', (e) => window.__times.push({ state: e.detail.state, barge: e.detail.barge, at: performance.now() }));
+"""
+
+
+def test_spoke_is_marked_when_the_words_ended_not_when_they_began_m4(
+    make: Callable[..., Console],
+) -> None:
+    c = make(
+        device={"keepListening": False, "endSilenceMs": 800, "speak": "never"},
+        scripts=(TONE_MIC, MARKS, LOOP_TIMES),
+    )
+    FakeVoice(c.page)
+    c.open()
+    c.page.evaluate("window.__talk(true)")
+    c.page.locator("#micBtn").click()
+    _until(c, "document.getElementById('voiceLive').textContent === 'Hearing you'", 10)
+    c.page.wait_for_timeout(600)
+    c.page.evaluate("window.__talk(false)")
+    _until(c, "window.__times.some(e => e.state === 'thinking')", 10)
+    marks = [m for m in c.page.evaluate("window.__marks") if m["stage"] == "spoke"]
+    assert len(marks) == 1  # once per turn, from the VAD's end
+    thinking = next(e["at"] for e in c.page.evaluate("window.__times") if e["state"] == "thinking")
+    assert (
+        750 <= thinking - marks[0]["at"] <= 1300
+    )  # the silence that ended it: endSilenceMs, plus a frame or two
+    assert c.errors == []
+
+
+def test_a_device_commands_line_is_said_but_does_not_replace_the_one_on_screen_m4(
+    make: Callable[..., Console],
+) -> None:
+    c = make(device={"speak": "always", "keepListening": False}, scripts=(TONE_MIC,))
+    fake = FakeVoice(c.page)
+    fake.transcript["text"] = "test the device"
+    c.open()
+    c.page.evaluate(
+        """() => JarvisVoiceCommands.register('device.test', {
+      match: (n) => (n === 'test the device' ? {} : null),
+      run: () => { document.getElementById('voiceLine').textContent = 'Output: Test earphones';
+        return { say: 'Now speaking through the earphones.' }; } })"""
+    )
+    _say_one_sentence(c)
+    _until(c, "window.__voice.speech.length >= 1", 30)
+    assert fake.spoken() == ["Now speaking through the earphones."]
+    assert _line(c) == "Output: Test earphones"  # B's line (the device's name) stays on screen
+    assert c.errors == []

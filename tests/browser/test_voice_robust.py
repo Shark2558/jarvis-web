@@ -1,3 +1,7 @@
+# ruff: noqa: E501  (long lines are JS snippets and prose)
+# Size: this file is over the 800-line soft ceiling on purpose. Test files are exempt (docs/plans/r5-voice.md,
+# "Line counts"), and its tests share one set of fixtures (the fake microphones, the tone mic, the TV rooms,
+# the stall and hang scripts) that every R5 voice test file imports; splitting it would copy them.
 # tests/browser/test_voice_robust.py — slice 9 console voice, the review's findings (docs/plans/
 # phase1-slice9-voice.md §9 "Review findings and fixes (console)"): open/close races on the
 # microphone, the conversation loop ending by itself, wake-word failures surfaced, wall-clock
@@ -21,9 +25,9 @@ from test_voice import (  # same directory (pytest prepend import)
     FAKE_WAKE,
     RECORDER,
     FakeVoice,
+    _json,
     _mic_state,
     _speech,
-    _json,
     _voice_panel,
     _wait,
     speechlike_wav,

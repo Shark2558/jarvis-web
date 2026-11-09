@@ -365,3 +365,31 @@ def test_clips_are_capped_at_twelve_an_hour_and_twenty_a_conversation_sm5(
     c.page.evaluate("JarvisBarge.forget()")  # a new conversation starts again
     assert c.page.evaluate("JarvisBarge.clipsLeft().conversation") == 20
     assert c.errors == []
+
+
+def test_an_interruption_turn_says_so_on_the_voice_loop_event_m4(
+    make: Callable[..., Console],
+) -> None:
+    c = make(
+        device={"interruptBy": "speech", "speak": "always", "keepListening": True},
+        scripts=(TONE_MIC, RECORD_BARGE, LOOP_FLAGS),
+        barge=True,
+    )
+    fake = FakeVoice(c.page)
+    _route(c)
+    c.open()
+    _start(c, fake)
+    c.page.evaluate("window.__burst(1500)")
+    _until(c, "window.__loopFlags.some(e => e.state === 'listening' && e.barge === true)", 10)
+    flags = c.page.evaluate("window.__loopFlags")
+    first = next(e for e in flags if e["state"] == "listening")
+    assert (
+        first["barge"] is False
+    )  # the tap's own turn is not an interruption: it still gets its cue
+    assert c.errors == []
+
+
+LOOP_FLAGS = """
+window.__loopFlags = [];
+document.addEventListener('jarvis:voice-loop', (e) => window.__loopFlags.push({ state: e.detail.state, barge: e.detail.barge }));
+"""

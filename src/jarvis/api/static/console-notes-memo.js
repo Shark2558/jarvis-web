@@ -16,7 +16,7 @@
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
   const Notes = () => window.JarvisNotes;
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const S = { mode: 'idle', text: '', error: '', unsub: null, frames: [], total: 0, pieces: 0, chain: Promise.resolve(), cloud: true, rec: null, busy: false, sid: 0, pending: 0 };
+  const S = { mode: 'idle', text: '', error: '', unsub: null, frames: [], total: 0, pieces: 0, chain: Promise.resolve(), cloud: true, rec: null, busy: false, sid: 0, pending: 0, dropped: false };
   let box = null;
 
   const MIC_OFF = 'The microphone is switched off. Switch it on with the mic button, then record.';
@@ -42,8 +42,8 @@
   function queue(frames) {
     const sid = S.sid;
     S.pieces += 1; S.pending += 1;
-    S.chain = S.chain.then(() => (sid === S.sid ? sendPiece(frames) : '')).then((t) => {
-      if (sid === S.sid && t) S.text = (S.text ? S.text + ' ' : '') + t;
+    S.chain = S.chain.then(() => (sid === S.sid && !S.dropped ? sendPiece(frames) : '')).then((t) => {
+      if (sid === S.sid && !S.dropped && t) S.text = (S.text ? S.text + ' ' : '') + t;
     }).catch((e) => {
       if (sid !== S.sid) return;
       if (e && e.cloud === false && Speech && S.mode !== 'browser') { S.cloud = false; useBrowser(); }
@@ -54,7 +54,8 @@
   // ---- recording through JarvisAudio -------------------------------------------------------------
   async function start() {
     if (S.mode !== 'idle') return;
-    S.sid += 1; S.pending = 0; S.error = ''; S.text = ''; S.frames = []; S.total = 0; S.pieces = 0; S.cloud = true;
+    endVoiceLoop();   // a voice conversation and a memo never share the microphone (R5 M7)
+    S.sid += 1; S.pending = 0; S.error = ''; S.text = ''; S.frames = []; S.total = 0; S.pieces = 0; S.cloud = true; S.dropped = false;
     if (micLocked()) { fail(MIC_OFF); return; }   // R5 D11: no recording, and no fallback, while the mic is off
     const A = window.JarvisAudio;
     if (!A || !A.supported || !A.supported()) { if (Speech) { useBrowser(); return; } fail('This browser can\'t record. Type the note instead.'); return; }
@@ -68,9 +69,10 @@
     });
     A.onEnd(() => { if (S.mode === 'recording') stop(); });
   }
-  // A live voice conversation shares the microphone: the memo lets go of its frames but leaves it open.
-  const conversing = () => { const L = window.JarvisVoiceLoop; return !!(L && typeof L.inConversation === 'function' && L.inConversation()); };
-  function release() { if (S.unsub) { S.unsub(); S.unsub = null; } if (conversing()) return; try { window.JarvisAudio.close(); } catch (_) {} }
+  // A voice conversation is ended before a memo records: they would both hear the same speech, and the
+  // words would go to the chat as well as into the memo. The memo owns the microphone while it records.
+  function endVoiceLoop() { const L = window.JarvisVoiceLoop; try { if (L && typeof L.end === 'function') L.end('memo'); } catch (_) {} }
+  function release() { if (S.unsub) { S.unsub(); S.unsub = null; } try { window.JarvisAudio.close(); } catch (_) {} }
   function stop() {
     if (S.mode === 'browser') { try { S.rec.stop(); } catch (_) {} S.mode = 'review'; draw(); return; }
     if (S.mode !== 'recording') return;
@@ -81,6 +83,7 @@
 
   // ---- the browser's own recognition (cloud voice off) -------------------------------------------
   function useBrowser() {
+    endVoiceLoop();
     if (micLocked()) { S.mode = 'idle'; fail(MIC_OFF); return; }
     release(); S.frames = []; S.mode = 'browser'; S.text = '';
     try {
@@ -155,6 +158,7 @@
   if (window.JarvisAudio && typeof window.JarvisAudio.onLock === 'function') {
     window.JarvisAudio.onLock(({ locked }) => {
       if (!locked || (S.mode !== 'recording' && S.mode !== 'browser')) return;
+      S.dropped = true;   // pieces already queued behind the one being sent are not sent either
       S.frames = [];
       stop();
       fail(MIC_OFF);

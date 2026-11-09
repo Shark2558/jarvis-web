@@ -108,7 +108,7 @@
     input.setAttribute('placeholder', mode === 'listening' ? 'Listening…' : S.placeholder);
     if (typeof FX.setVoice === 'function') FX.setVoice(FX_MODE[shown] || null);
     if (liveEl) liveEl.textContent = LIVE[mode];
-    emit('jarvis:voice-loop', { state: mode, conversation: inConversation(), turns: S.chain });
+    emit('jarvis:voice-loop', { state: mode, conversation: inConversation(), turns: S.chain, barge: S.handsFree === 'barge' });   // barge: an interruption's own turn (no cue)
     if (mode === 'speaking') armBarge(); else disarmBarge();
     syncWake();
     levels();
@@ -200,7 +200,7 @@
   function markHeard(lagMs) {
     if (S.heardMarked) return;
     S.heardMarked = true;
-    try { Pace().mark('spoke'); } catch (_) {}   // the last quiet moment before speech: the 'listening' timing
+    if (S.rec) { try { Pace().mark('spoke'); } catch (_) {} }   // the browser engine: when its first words came (the cloud engine marks at the VAD's end)
     clock && clock.heard();
     if (S.mode === 'standby') setMode('listening');
     if (!S.handsFree) { runaway.touch(); return; }
@@ -230,6 +230,8 @@
       if (!ev) return;
       if (ev.type === 'start') { clearTimeout(S.noSpeech); markHeard(VAD_LAG_MS); if (liveEl) liveEl.textContent = 'Hearing you'; return; }
       if (ev.type === 'timeout') { nothingHeard(); return; }
+      // 'spoke' is when the owner's words ENDED: now, less the silence that told the VAD so (the 'listening' timing)
+      try { Pace().mark('spoke', performance.now() - d.endSilenceMs); } catch (_) {}
       transcribe(t, ev.frames);
     });
   }
@@ -362,7 +364,9 @@
       else if (next === 'none') { setMode('idle'); if (S.conv && !S.checking) setTimeout(() => { if (S.mode === 'idle' && !Chat.busy()) resumeListening(); }, 60); }
       else if (next !== 'off') { if (!S.conv) releaseMic(); setMode('idle'); }
     };
-    if (typeof res.say === 'string' && res.say && next !== 'keyboard' && next !== 'off') { setMode('idle'); loopSay(res.say, { speak: true }).then(go); } else go();
+    // a device command's own line (the new output's name) is on screen already: the loop says it, it does not overwrite it
+    const show = !(r && typeof r.id === 'string' && r.id.startsWith('device.'));
+    if (typeof res.say === 'string' && res.say && next !== 'keyboard' && next !== 'off') { setMode('idle'); loopSay(res.say, { speak: true, show }).then(go); } else go();
   }
   /** Keep the conversation going: the waits start again from now. */
   function resumeListening(empty) {
@@ -627,7 +631,7 @@
   function loopSay(text, o) {   // o.fixed: a fixed line (cached audio)
     if (typeof text !== 'string' || !text.trim()) return Promise.resolve();
     const t = text.trim().slice(0, 300);
-    say(t);
+    if (!(o && o.show === false)) say(t);
     if (!(o && o.speak === true) || V.device().speak === 'never' || V.outputEngine() === 'none') return Promise.resolve();
     if (S.mode !== 'idle' && S.mode !== 'off') return Promise.resolve();
     return new Promise(resolve => { S.spoken.push(resolve); speak([t], false, 'speaking', (o && o.fixed) ? FIXED : undefined); });

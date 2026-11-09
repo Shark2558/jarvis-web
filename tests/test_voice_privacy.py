@@ -2,6 +2,8 @@
 # (look / export / delete). The integrator registers `voice_phrases_source` at I1.
 from __future__ import annotations
 
+from billing_fakes import put_raw
+
 from jarvis.storage.docs import MemoryDocs
 from jarvis.voice.privacy import voice_phrases_source
 from jarvis.voice.settings import VoiceSettingsPatch, VoiceSettingsStore
@@ -56,3 +58,28 @@ async def test_delete_clears_only_the_words_and_only_this_owners() -> None:
     assert (await VoiceSettingsStore(docs).get(OTHER)).phrases == ("Keep",)
     assert (await src.describe(UID)).count == 0
     assert await src.delete(UID) == 0
+
+
+async def test_delete_clears_stored_entries_that_reading_hides() -> None:
+    docs = MemoryDocs()
+    store = VoiceSettingsStore(docs)
+    await store.update(UID, VoiceSettingsPatch(wit="extra"))
+    path = store._path(UID)
+    doc = await docs.get(path)
+    assert doc is not None
+    await put_raw(docs, path, {**doc, "phrases": ["<script>", 5, "a" * 41]})
+    assert (await store.get(UID)).phrases == ()  # hidden from every reader
+    src = voice_phrases_source(store)
+    assert (await src.describe(UID)).delete == "simple"
+    assert await src.delete(UID) == 3
+    raw = await docs.get(path)
+    assert raw is not None and raw["phrases"] == [] and raw["wit"] == "extra"
+
+
+async def test_the_fingerprint_changes_when_a_word_is_swapped_for_one_of_the_same_length() -> None:
+    store = VoiceSettingsStore(MemoryDocs())
+    src = voice_phrases_source(store)
+    await store.update(UID, put("Kochi"))
+    a = (await src.describe(UID)).rev
+    await store.update(UID, put("Delhi"))
+    assert (await src.describe(UID)).rev != a

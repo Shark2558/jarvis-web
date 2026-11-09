@@ -59,6 +59,7 @@ from jarvis.voice.ports import (
     Reason,
     STTProvider,
     TokenSource,
+    Transcript,
     TTSProvider,
     VoiceError,
     VoiceRejected,
@@ -74,7 +75,7 @@ from jarvis.voice.settings import (
     rate_ok,
 )
 from jarvis.voice.speakable import speakable
-from jarvis.voice.wav import parse_wav
+from jarvis.voice.wav import Audio, parse_wav
 
 log = get_logger(__name__)
 
@@ -451,28 +452,44 @@ class VoiceService:
         )
         return Speech(audio=audio, chars=chars, cost_inr=charge.inr, voice=voice.id)
 
+    async def _recognise(
+        self,
+        engines: VoiceEngines,
+        uid: str,
+        price: Price,
+        estimate: float,
+        audio: Audio,
+        hints: tuple[str, ...],
+        has_owner_words: bool,
+    ) -> Transcript:
+        """One recognition. If Google refuses the request while it carries the owner's words, try
+        once more with the base hints alone, so one bad word cannot stop every transcription."""
+
+        def call(phrases: tuple[str, ...]) -> Callable[[], Awaitable[Transcript]]:
+            return lambda: engines.stt.recognize(
+                audio.pcm, sample_rate=audio.sample_rate, language=self.language, phrases=phrases
+            )
+
+        try:
+            return await self._engine("stt", uid, price, estimate, call(hints))
+        except VoiceRejected:
+            if not has_owner_words:
+                raise
+        log.warning("voice: owner words were refused; retrying with the base hints only")
+        return await self._engine("stt", uid, price, estimate, call(self.hints_for(())))
+
     async def transcribe(self, uid: str, blob: bytes) -> TranscriptView:
         audio = parse_wav(blob)
         engines = self._require("stt")
-        hints = self.hints_for((await self.settings_of(uid)).phrases)  # never raises
+        owner = (await self.settings_of(uid)).phrases  # never raises
+        hints = self.hints_for(owner)
         price = self.prices.stt
         estimate = float(math.ceil(audio.seconds))  # gated on this …
         async with self._lock(uid, "stt"):
             await self.billing.ensure_units_allowed(
                 uid, key=price.key, units=estimate, free_units=price.free_units
             )
-            t = await self._engine(
-                "stt",
-                uid,
-                price,
-                estimate,
-                lambda: engines.stt.recognize(
-                    audio.pcm,
-                    sample_rate=audio.sample_rate,
-                    language=self.language,
-                    phrases=hints,
-                ),
-            )
+            t = await self._recognise(engines, uid, price, estimate, audio, hints, bool(owner))
             # … billed on what Google says it billed (totalBilledTime), when it says
             billed = t.billed_seconds if t.billed_seconds is not None else estimate
             charge = await self._meter(uid, price, billed)

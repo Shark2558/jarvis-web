@@ -32,6 +32,7 @@ PHRASE_ITEMS = 50
 PHRASE_CHARS = 40
 PHRASE_RAW_CHARS = 400  # longer than this is refused before any cleaning work is done
 PHRASE_PUNCT = frozenset("-'.&")
+MAX_MARK_RUN = 4  # most combining marks in a row (a base letter with stacked accents)
 _LOOKALIKE_APOSTROPHE = "\u2019"
 _REJECT_COUNT = f"Add at most {PHRASE_ITEMS} words or names."
 _REJECT_ITEM = (
@@ -58,7 +59,7 @@ class VoiceSettingsPatch(BaseModel):
     rate: float | None = None
     wit: str | None = Field(default=None, max_length=16)
     # entries are checked one by one by `apply` (plain-words 422 that never echoes them)
-    phrases: list[Any] | None = None
+    phrases: list[Any] | None = Field(default=None, max_length=PHRASE_ITEMS)
 
 
 def rate_ok(v: object) -> bool:
@@ -92,9 +93,13 @@ def clean_phrase(raw: object) -> str | None:
         return None
     if not any(unicodedata.category(c)[0] == "L" for c in text):
         return None
+    run = 0
     for ch in text:
         cat = unicodedata.category(ch)
         if not (cat[0] in "LM" or cat == "Nd" or ch == " " or ch in PHRASE_PUNCT):
+            return None
+        run = run + 1 if cat[0] == "M" else 0
+        if run > MAX_MARK_RUN:  # a stack of accents is noise, not a name
             return None
     return text
 
@@ -102,7 +107,7 @@ def clean_phrase(raw: object) -> str | None:
 def _dedupe(words: list[str]) -> tuple[str, ...]:
     seen: dict[str, str] = {}
     for w in words:
-        seen.setdefault(w.casefold(), w)
+        seen.setdefault(unicodedata.normalize("NFKC", w).casefold(), w)
     return tuple(seen.values())
 
 
@@ -178,6 +183,13 @@ class VoiceSettingsStore:
         settings = decode(await self._d.get(path))
         self._cache[uid] = (self._clock(), settings)
         return settings
+
+    async def stored_phrase_count(self, uid: str) -> int:
+        """How many entries the stored document holds, valid or not (for the privacy delete,
+        which must reach what read-time filtering hides). Bounded; never the words."""
+        doc = await self._d.get(self._path(uid))
+        raw = doc.get("phrases") if isinstance(doc, dict) else None
+        return min(len(raw), PHRASE_ITEMS * 4) if isinstance(raw, list) else 0
 
     async def update(self, uid: str, patch: VoiceSettingsPatch) -> VoiceSettings:
         path = self._path(uid)

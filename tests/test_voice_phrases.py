@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from billing_fakes import NOW, UID, Clock, billing, registry
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 from voice_fakes import FakeSTT, FakeTokens, FakeTTS, wav
 
 from jarvis.api import create_app
@@ -122,7 +123,6 @@ def test_exactly_fifty_phrases_are_accepted() -> None:
 @pytest.mark.parametrize(
     "words",
     [
-        fifty(51),
         ["a" * 41],
         ["fine", "1234"],
         ["fine", ""],
@@ -299,7 +299,7 @@ async def test_put_without_phrases_does_not_touch_them(vc: AsyncClient) -> None:
     assert r.json()["phrases"] == ["Kochi"]
 
 
-@pytest.mark.parametrize("bad", [fifty(51), ["a" * 41], ["1234"], ["ok", 3]])
+@pytest.mark.parametrize("bad", [["a" * 41], ["1234"], ["ok", 3]])
 async def test_put_rejects_bad_lists_with_a_plain_422_and_writes_nothing(
     vc: AsyncClient, bad: list[Any]
 ) -> None:
@@ -347,3 +347,86 @@ async def test_the_words_reach_the_engine_through_the_api(vc: AsyncClient) -> No
     assert r.status_code == 200
     stt = vc.app.state.voice.engines.stt  # type: ignore[attr-defined]
     assert stt.calls[-1]["phrases"][-1] == "Trivandrum"
+
+
+# ---- fixer round: M2 retry with base hints, L1 schema bound, L5 normalisation ----------------
+
+
+class RejectingOnOwnWords(FakeSTT):
+    """Google refuses a request that carries any word outside the base list."""
+
+    def __init__(self, base: tuple[str, ...], *, always: bool = False) -> None:
+        super().__init__()
+        self.base = {w.casefold() for w in base}
+        self.always = always
+
+    async def recognize(  # type: ignore[override]
+        self, pcm: bytes, *, sample_rate: int, language: str, phrases: tuple[str, ...]
+    ) -> Any:
+        if self.always or any(w.casefold() not in self.base for w in phrases):
+            self.calls.append({"phrases": phrases})
+            raise VoiceRejected("Google rejected that voice or text.")
+        return await super().recognize(
+            pcm, sample_rate=sample_rate, language=language, phrases=phrases
+        )
+
+
+def rig_with(stt: FakeSTT) -> Rig:
+    r = Rig()
+    r.stt = stt
+    r.svc = VoiceService(
+        store=r.store,
+        billing=billing(registry(), docs=r.docs, clock=Clock(NOW)),
+        prices=PRICES,
+        engines=VoiceEngines(tts=FakeTTS(), stt=stt, tokens=FakeTokens()),
+        language="en-IN",
+        honorific="Sir",
+    )
+    return r
+
+
+async def test_a_rejected_owner_word_is_retried_once_with_base_hints_and_succeeds(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    r = rig_with(RejectingOnOwnWords(Rig().svc.base_phrases))
+    await r.svc.update_settings(UID, patch(NEEDLE))
+    with caplog.at_level(logging.DEBUG):
+        t = await r.svc.transcribe(UID, wav(1.0))
+    assert t.text
+    calls = r.stt.calls
+    assert len(calls) == 2 and NEEDLE in calls[0]["phrases"] and NEEDLE not in calls[1]["phrases"]
+    assert NEEDLE not in caplog.text and "retry" in caplog.text.lower()
+
+
+async def test_rejected_even_with_base_hints_is_still_a_rejection() -> None:
+    r = rig_with(RejectingOnOwnWords(Rig().svc.base_phrases, always=True))
+    await r.svc.update_settings(UID, patch("Kochi"))
+    with pytest.raises(VoiceRejected):
+        await r.svc.transcribe(UID, wav(1.0))
+    assert len(r.stt.calls) == 2
+
+
+async def test_no_retry_when_the_owner_has_no_words() -> None:
+    r = rig_with(RejectingOnOwnWords(Rig().svc.base_phrases, always=True))
+    with pytest.raises(VoiceRejected):
+        await r.svc.transcribe(UID, wav(1.0))
+    assert len(r.stt.calls) == 1
+
+
+async def test_a_huge_list_is_a_422_at_parse_and_is_not_echoed(vc: AsyncClient) -> None:
+    r = await vc.put("/v1/voice/settings", json={"phrases": fifty(51)})
+    assert r.status_code == 422 and "Wordaa" not in r.text
+
+
+def test_the_schema_refuses_more_than_the_item_limit_before_looking_at_items() -> None:
+    with pytest.raises(ValidationError):
+        VoiceSettingsPatch.model_validate({"phrases": ["a"] * 51})
+
+
+def test_duplicates_are_found_after_compatibility_normalisation() -> None:
+    assert apply(VoiceSettings(), patch("Kochi", "Ｋochi", "KOCHI")).phrases == ("Kochi",)
+
+
+def test_long_runs_of_combining_marks_are_refused() -> None:
+    assert clean_phrase("a" + "́" * 7) is None
+    assert clean_phrase("a" + "́" * 3) is not None

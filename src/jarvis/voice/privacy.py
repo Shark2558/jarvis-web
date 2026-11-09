@@ -25,14 +25,15 @@ def voice_phrases_source(store: VoiceSettingsStore) -> CallbackSource:
 
     async def look(uid: str) -> Look:
         found = await words(uid)
-        # the basis is a count and a length per word, so a change shows without listing the words
-        return Look(len(found), [len(w) for w in found], deletable=bool(found))
+        stored = await store.stored_phrase_count(uid)
+        # the basis is only hashed, never shown: folded words so a swap changes the fingerprint
+        return Look(len(found), [w.casefold() for w in found], deletable=bool(found) or stored > 0)
 
     async def export(uid: str) -> dict[str, Any]:
         return {"phrases": list(await words(uid))}
 
     async def delete(uid: str) -> int:
-        n = len(await words(uid))
+        n = max(len(await words(uid)), await store.stored_phrase_count(uid))
         if n:
             await store.update(uid, VoiceSettingsPatch(phrases=[]))
         return n

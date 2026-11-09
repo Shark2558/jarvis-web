@@ -67,19 +67,17 @@ File: `src/jarvis/api/static/console-vitals.js` (the repo has no top-level `web/
 files live in `api/static/`). In `console.html` add inside the Vitals panel's `.pbody`:
 `<div id="vitals-board"></div>` and `<script src="/static/console-vitals.js" defer></script>`
 (CSP `script-src 'self'`). It listens to `jarvis:ready`, `jarvis:panel` (id `vitals`), `jarvis:reply`.
-Class hooks for the CSS (not written): `vt-head vt-title vt-chip vt-ok|vt-amber|vt-red|vt-unknown vt-row
-vt-use vt-dates vt-reason vt-note vt-actions vt-btn vt-bar vt-barfill vt-spend vt-state vt-err
-vt-field vt-flabel vt-hint vt-empty vt-formbox`. The existing `console-usage.js` (`#spend`) keeps
-working next to it.
+R5.1: its styles are `console-vitals.css` (see `INTEGRATION-r51.md` for the link, the asset entry and
+where the board sits). The existing `console-usage.js` (`#spend`) keeps working next to it.
 
-## 7. Data (Docs port; equality + single order_by only)
+## 7. Data (Docs port; equality queries only -- R5.1 D2)
 
-- `jarvis_vitals_providers/{hash(uid, id)}` -- manual records (queried `where user_id == uid`, `order_by label`)
+- `jarvis_vitals_providers/{hash(uid, id)}` -- manual records (queried `where user_id == uid`, sorted by
+  label in Python; at most 51 rows read)
 - `jarvis_vitals_status/{hash(uid, id)}` -- last status, for cross-line alerts
 
-The first query is equality + `order_by` on a different field: on real Firestore it needs a composite
-index `jarvis_vitals_providers (user_id ASC, label ASC)` in the index file. (`IndexNotReady` surfaces
-as "unavailable" until built.)
+No composite index is needed (R5.1 removed the `order_by`). If the manual records still can't be read,
+`GET /v1/vitals` answers 200 with the automatic items and `manual_unavailable: true`.
 
 ## 8. Persona (p4.8 -> p4.9, D13)
 

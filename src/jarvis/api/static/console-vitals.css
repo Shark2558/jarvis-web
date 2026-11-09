@@ -1,0 +1,82 @@
+/* =============================================================================================
+   src/jarvis/api/static/console-vitals.css — the Vitals board (R5.1 D1, D2; console-vitals.js).
+   Built from the deck's own pieces so it blends with the panel around it: the "This month" card
+   material (#spend), the .rhead / .k / .sstate head, the .mbar usage bar, .bnote notes, .sfine and
+   .lerr text, the .bset / .dsc / .dbody disclosure (Brief, Memory), .minput (console-memory.css),
+   the #limitForm label-above-input pattern with .lrow buttons, and the .confirm row (Integrations).
+   No new colours, fonts, radii or shadows: every value is an existing token. Status always has a
+   WORD on its chip; the colour only repeats it.
+============================================================================================= */
+
+/* ---- the card: the same material as "This month" right above it ------------------------------ */
+.vt-card{margin:0 0 10px;padding:10px 10px 11px;border-radius:var(--r-sm);background:var(--tint);border:1px solid var(--line-2)}
+.vt-card .rhead{margin:0 0 6px}
+.vt-card h3{margin:0}
+/* the overall chip and when JARVIS last looked, then Refresh */
+.vt-sub{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px}
+.vt-sum{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0;margin:0}
+.vt-checked{font-size:12px;line-height:1.4;color:var(--ink-3)}
+.vt-sub .btn.sact{margin-left:auto}
+.vt-sub .btn.sact[aria-disabled="true"]{opacity:.5;cursor:default}
+.vt-state{margin:8px 0 0;font-size:13px;line-height:1.4;color:var(--ink-2)}
+.vt-state:empty{display:none}
+.vt-card .bnote{margin-top:8px}
+
+/* ---- groups: Keys & connections / Allowances & quotas / Bills ---------------------------------- */
+.vt-group{margin-top:10px;padding-top:9px;border-top:1px solid var(--line-2)}
+.vt-group h4{margin:0 0 2px;font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink)}
+
+/* ---- one item: label + chip, a thin bar, the figures, dates; reason / impact / fix when hot ---- */
+.vt-row{padding:9px 0 10px;border-top:1px dashed var(--line-2)}
+.vt-group h4 + .vt-row{border-top:0;padding-top:5px}
+.vt-row[data-status="amber"],.vt-row[data-status="red"]{padding-left:10px;box-shadow:inset 2px 0 0 var(--amber)}
+.vt-row[data-status="red"]{box-shadow:inset 2px 0 0 var(--bad)}
+.vt-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.vt-label{min-width:0;font-size:13.5px;font-weight:600;line-height:1.4;color:var(--ink);overflow-wrap:anywhere}
+.vt-chip{flex:none;margin-top:1px;padding:3px 7px 2px;border-radius:4px;border:1px solid var(--line-2);background:var(--well-2);
+  font:400 11px/1.2 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.vt-chip[data-status="ok"]{color:var(--ok-ink);background:color-mix(in srgb,var(--ok) 12%,transparent);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+.vt-chip[data-status="amber"]{color:var(--amber-ink);background:var(--amber-tint);border-color:var(--amber-line)}
+.vt-chip[data-status="red"]{color:var(--bad-ink);background:var(--bad-tint);border-color:var(--bad-line)}
+.vt-row .mbar{height:4px;margin-top:7px}
+.vt-row[data-status="amber"] .mbar i{background:var(--amber)}
+.vt-row[data-status="red"] .mbar i{background:var(--bad)}
+.vt-use{margin:5px 0 0;font:400 12.5px/1.35 var(--tech);letter-spacing:.03em;color:var(--ink-2);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.vt-pct{white-space:nowrap}
+.vt-meta{margin:3px 0 0;font-size:12px;line-height:1.4;color:var(--ink-3);overflow-wrap:anywhere}
+.vt-note{margin:4px 0 0;font-size:12.5px;line-height:1.4;color:var(--ink-2);overflow-wrap:anywhere}
+.vt-why{margin:6px 0 0;font-size:13px;font-weight:600;line-height:1.4;color:var(--ink-2);overflow-wrap:anywhere}
+.vt-row[data-status="amber"] .vt-why{color:var(--amber-ink)}
+.vt-row[data-status="red"] .vt-why{color:var(--bad-ink)}
+.vt-fine{margin:4px 0 0;font-size:12px;line-height:1.4;color:var(--ink-3);overflow-wrap:anywhere}
+.vt-fine.vt-do{color:var(--ink-2)}
+.vt-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.vt-acts .btn.bact{margin-top:0}
+/* "Stop tracking" asks first: the Integrations .confirm row, wrapped for a narrow panel */
+.vt .confirm{flex-wrap:wrap;margin-top:8px}
+.vt .confirm span{flex:1 1 100%;overflow-wrap:anywhere}
+
+/* ---- "Track something JARVIS can't see": the settings disclosure, closed by default ------------ */
+.vt-add.bset{margin:0 0 10px}
+.vt-add .dbody{padding:10px 12px 12px}
+.vt-ftitle{margin:0;font-size:13.5px;font-weight:600;line-height:1.35;color:var(--ink)}
+.vt-form .sfine{margin-top:4px}
+/* Name, Kind, then Used so far | Limit | Unit side by side, then the date and the note */
+.vt-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:10px 8px;margin-top:10px}
+.vt-field{min-width:0}
+.vt-field.wide{grid-column:1/-1}
+/* labels ABOVE their inputs, exactly like #limitForm */
+.vt-field label{display:block;margin-bottom:6px;font-size:13px;font-weight:600;line-height:1.35;color:var(--ink);cursor:pointer}
+.vt-form select.minput{padding:0 8px;cursor:pointer}
+.vt-form select.minput option{background:var(--well);color:var(--ink)}
+.vt-form .minput[aria-invalid="true"]{border-color:var(--bad-line);box-shadow:inset 0 0 0 1px var(--bad-line)}
+.vt-form .lerr{margin-top:8px}
+.vt-form .lrow{flex-wrap:wrap;gap:8px;margin-top:12px}
+.vt-form .lrow .btn:disabled{opacity:.5;cursor:default}
+
+/* ---- phones: 44 px touch targets (as Memory, Things and Vault do) -------------------------------- */
+@media (max-width: 899px){
+  .vt .btn.sact,.vt .btn.bact,.vt .lrow .btn,.vt .confirm .btn{height:44px}
+  .vt .minput{height:44px}
+}
+html[data-motion="off"] .vt-row .mbar i{transition:none}

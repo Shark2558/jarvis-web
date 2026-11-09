@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Delete, Docs, Query, Set
+from jarvis.storage.docs import Delete, Docs, DocTx, Query, Set
 from jarvis.undo.store import owner_ok
 from jarvis.vitals.models import ID_PATTERN, MAX_MANUAL, RANK, Provider, Status
 
@@ -28,6 +28,7 @@ log = get_logger(__name__)
 
 UNAVAILABLE = "JARVIS couldn't open the Vitals list just now. Try again in a minute."
 FULL = f"You are tracking the most keys allowed ({MAX_MANUAL}). Remove one first."
+TAKEN = "That name is taken."
 BAD_ID = "That isn't a valid key id."
 LIST_LIMIT = MAX_MANUAL + 1
 SEP = "\x1f"  # in neither a valid owner id nor a valid key id
@@ -36,6 +37,10 @@ NAME_LEN = 40
 
 class VitalsUnavailable(RuntimeError):
     """Storage trouble (plain words)."""
+
+
+class VitalsExists(RuntimeError):
+    """A create-only write found the id already taken (plain words)."""
 
 
 class VitalsFull(RuntimeError):
@@ -88,23 +93,46 @@ class VitalsStore:
                 log.warning("vitals record skipped: unreadable")
         return sorted(out, key=lambda p: (p.label.casefold(), p.id))
 
-    async def put(self, uid: str, p: Provider) -> None:
+    async def put(self, uid: str, p: Provider, *, create: bool = False) -> None:
+        """Upsert; with `create` an existing id is refused (`VitalsExists`), never overwritten."""
         if p.source != "manual":
             raise ValueError("only manual records are stored")
         path = f"{self._providers}/{self._name(uid, p.id)}"
         rows = await self._rows(uid)  # raw rows: unreadable ones count toward the cap
         if all(doc.get("id") != p.id for _i, doc in rows) and len(rows) >= MAX_MANUAL:
             raise VitalsFull(FULL)
-        await self._write([Set(path, {**p.fields(), "user_id": uid})])
+        doc = {**p.fields(), "user_id": uid}
+        if not create:
+            await self._write([Set(path, doc)])
+            return
 
-    async def delete(self, uid: str, pid: str) -> bool:
+        async def first(tx: DocTx) -> bool:
+            if await tx.get(path) is not None:
+                return False
+            tx.set(path, doc)
+            return True
+
+        try:
+            made = await self._d.transaction(first)
+        except Exception as exc:
+            self._trouble("vitals write failed", exc)
+            raise VitalsUnavailable(UNAVAILABLE) from exc
+        if not made:
+            raise VitalsExists(TAKEN)
+
+    async def delete(self, uid: str, pid: str, *, status: bool = True) -> bool:
+        """Remove a manual record. `status=False` keeps the shared last-status record (a manual
+        record that shadows a built-in item must not wipe the built-in item's alert state)."""
         path = f"{self._providers}/{self._name(uid, pid)}"
         try:
             existed = await self._d.get(path) is not None
         except Exception as exc:
             self._trouble("vitals unreadable", exc)
             raise VitalsUnavailable(UNAVAILABLE) from exc
-        await self._write([Delete(path), Delete(f"{self._status}/{self._name(uid, pid)}")])
+        ops = [Delete(path)]
+        if status:
+            ops.append(Delete(f"{self._status}/{self._name(uid, pid)}"))
+        await self._write(ops)
         return existed
 
     async def last_status(self, uid: str, pid: str) -> Status | None:
@@ -128,4 +156,4 @@ class VitalsStore:
             raise VitalsUnavailable(UNAVAILABLE) from exc
 
 
-__all__ = ["VitalsFull", "VitalsStore", "VitalsUnavailable", "valid_id"]
+__all__ = ["VitalsExists", "VitalsFull", "VitalsStore", "VitalsUnavailable", "valid_id"]

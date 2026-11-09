@@ -150,7 +150,9 @@
     }
     if (it.manual) {
       const acts = mk('div', 'vt-acts');
-      acts.append(button('Edit', 'btn lift bact', () => openForm(it)), button('Stop tracking', 'btn lift bact', (b) => askStop(r, it, b)));
+      const old = / \(old\)$/.test(it.label); // a stored record under a name a built-in item now uses: removable only
+      if (!old) acts.append(button('Edit', 'btn lift bact', () => openForm(it)));
+      acts.append(button('Stop tracking', 'btn lift bact', (b) => askStop(r, it, b)));
       r.appendChild(acts);
     }
     return r;
@@ -181,7 +183,7 @@
       : S.busy ? 'Checking\u2026' : '';
     refresh.setAttribute('aria-disabled', S.busy ? 'true' : 'false');
     root.setAttribute('aria-busy', S.busy ? 'true' : 'false');
-    errEl.textContent = S.error ? (d ? 'Couldn\'t refresh just now. ' : '') + S.error : '';
+    errEl.textContent = S.error ? (d && !S.stopFailed ? 'Couldn\'t refresh just now. ' : '') + S.error : '';
     noteEl.textContent = d && d.manualUnavailable ? d.manualNote || MANUAL_NOTE : '';
     stateEl.textContent = !d && S.busy ? 'Checking your keys, allowances and bills\u2026'
       : d && !items.length ? 'Nothing to watch yet. JARVIS adds its own keys here as you connect them.' : '';
@@ -285,19 +287,28 @@
     if (!label) { ferr.textContent = 'Type a name first.'; F.label.setAttribute('aria-invalid', 'true'); F.label.focus(); return; }
     const ed = S.editing;
     const body = { id: ed ? ed.id : slug(label), label, kind: F.kind.value, unit: F.unit.value.trim(), note: F.note.value.trim() };
+    if (!ed) body.create = true; // a NEW item never replaces an existing record (409 if the name is taken)
     if (F.limit.value !== '') body.limit = Number(F.limit.value);
     if (F.used.value !== '') body.used = Number(F.used.value);
     if (F.expires.value) body.expires_at = F.expires.value; // a date: the end of that day, owner's zone
     if (ed && ed.resetRaw) body.reset_at = ed.resetRaw;
     submit(body);
   });
-  async function submit(body) {
+  async function submit(body, retried) {
     if (!hasApi() || S.busy) return;
     S.busy = true; ferr.textContent = ''; save.disabled = true;
     try {
       await api('/v1/vitals/keys', { method: 'PUT', body });
       S.busy = false; save.disabled = false; closeForm(true); await load(true); flash('Saved.');
-    } catch (e) { ferr.textContent = detailOf(e); S.busy = false; save.disabled = false; }
+    } catch (e) {
+      S.busy = false; save.disabled = false;
+      if (e && e.status === 409 && body.create && !retried) { // the name is taken: reload, take the next suffix, once
+        await load(true);
+        submit({ ...body, id: slug(body.label) }, true);
+        return;
+      }
+      ferr.textContent = e && e.status === 409 ? 'You already track something with that name. Pick another name.' : detailOf(e);
+    }
   }
   async function remove(it, buttons) {
     if (!hasApi() || S.busy) return;
@@ -305,7 +316,10 @@
     try {
       await api('/v1/vitals/keys/' + encodeURIComponent(it.id), { method: 'DELETE' });
       S.busy = false; await load(true); flash('Stopped tracking ' + it.label + '. You can add it again any time.');
-    } catch (e) { S.busy = false; S.error = detailOf(e); render(); }
+      dsc.focus(); // the stopped row (and its button) is gone: keep keyboard focus on the page
+    } catch (e) {
+      S.busy = false; S.error = 'Couldn\'t stop tracking ' + it.label + '. ' + detailOf(e); S.stopFailed = true; render();
+    }
   }
 
   // ---- loading ------------------------------------------------------------------------------------
@@ -314,6 +328,7 @@
     if (!force && S.data && Date.now() - S.loadedAt < STALE_MS) return;
     S.busy = true; render();
     try {
+      S.stopFailed = false;
       const d = normal(await api('/v1/vitals'));
       if (d) { S.data = d; S.error = ''; S.loadedAt = S.checkedAt = Date.now(); } else S.error = 'Vitals sent something unexpected.';
     } catch (e) { S.error = detailOf(e); }

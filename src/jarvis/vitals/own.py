@@ -39,17 +39,22 @@ LABELS: Mapping[str, str] = {
     "brain_gemini": "Gemini (free AI) key",
     "google_link": "Google sign-in",
     "telegram_bot": "Telegram bot",
-    "web_credits": "Web search credits",
+    "web_credits": "Web search allowance",
     "github_token": "GitHub token",
     "home_link": "Home laptop link",
 }
 OWN_IDS = frozenset(LABELS)
-# Watched and rung by the systems check or the home watchdog already: Vitals never rings for them.
-QUIET_IDS = frozenset({"brain_claude", "brain_gemini", "google_link", "telegram_bot", "home_link"})
+# Rung elsewhere already, so quiet here; the health brain probe reads only the DEFAULT brain.
+QUIET_IDS = frozenset({"google_link", "telegram_bot", "home_link"})
+DEFAULT_BRAIN_ITEM: Mapping[str, str] = {"anthropic": "brain_claude", "gemini": "brain_gemini"}
+TELEGRAM_MAX_AGE_S = 2 * 3600.0  # an older stored systems-check result is not trusted
 UNKNOWN_REASON = "can't be read now"
 RUN_CHECK = "Run a systems check to test it."
 NEXT_USE = "JARVIS sees its limits the next time it reads GitHub."
 NO_EXPIRY = "This token doesn't expire."
+GITHUB_REFUSED = "the token was refused"
+EXPIRY_UNREADABLE = "its expiry date couldn't be read"
+STALE_CHECK = "hasn't been checked lately"
 BRAIN_STATES: Mapping[str, tuple[Status, str]] = {
     "refused": ("red", "was refused"),
     "busy": ("amber", "is busy right now"),
@@ -133,6 +138,12 @@ class TokenMetaLike(Protocol):  # jarvis.integrations.github_meta.TokenMeta
     @property
     def rate_reset(self) -> float | None: ...
 
+    @property
+    def rejected_at(self) -> float | None: ...
+
+    @property
+    def expiry_unreadable(self) -> bool: ...
+
 
 class GithubLike(StatusReader, Protocol):
     async def token_meta(self, uid: str) -> TokenMetaLike | None: ...
@@ -161,6 +172,9 @@ class OwnSources:
     web: UsageReporterLike | None = None
     github: GithubLike | None = None
     home: HomeReader | None = None
+    # The brain the systems check's probe watches ("anthropic" or "gemini", the router's id).
+    # Its item is quiet here; the other brain's key still rings from Vitals. None: both ring.
+    default_brain: str | None = None
 
 
 @dataclass(frozen=True)
@@ -217,6 +231,26 @@ def _when(at: float, tz: ZoneInfo) -> str:
     return f"{d.day} {d:%b}, {d:%H:%M}"
 
 
+def _utc(at: float | None) -> datetime | None:
+    try:
+        return None if at is None else datetime.fromtimestamp(at, UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _rate(meta: TokenMetaLike, ts: float) -> dict[str, Any]:
+    """The hourly-limit part; an odd value drops only this part, never the whole item."""
+    reset = _utc(meta.rate_reset)
+    if not meta.rate_limit or meta.rate_used is None or reset is None or reset.timestamp() <= ts:
+        return {}
+    return {
+        "limit": float(meta.rate_limit),
+        "used": float(meta.rate_used),
+        "unit": "calls this hour",
+        "reset_at": reset,
+    }
+
+
 class Own:
     """Builds the automatic items for one owner; each source on its own deadline."""
 
@@ -225,13 +259,18 @@ class Own:
         self._s = settings
         self._web = CachedUsage(sources.web) if sources.web is not None else None
 
+    def quiet_ids(self) -> frozenset[str]:
+        """Items something else already rings for (never alerted from Vitals)."""
+        brain = DEFAULT_BRAIN_ITEM.get(self._src.default_brain or "")
+        return QUIET_IDS | ({brain} if brain else frozenset())
+
     async def items(self, uid: str, now: datetime, tz: ZoneInfo) -> list[OwnItem]:
         s = self._s
         jobs: list[tuple[str, Callable[[], Awaitable[OwnItem | None]]]] = [
             ("brain_claude", lambda: self._brain("brain_claude", s.anthropic_api_key, False)),
             ("brain_gemini", lambda: self._brain("brain_gemini", s.gemini_api_key, True)),
             ("google_link", lambda: self._google(uid)),
-            ("telegram_bot", lambda: self._telegram(uid, tz)),
+            ("telegram_bot", lambda: self._telegram(uid, tz, now.timestamp())),
             ("web_credits", lambda: self._web_credits(now, tz)),
             ("github_token", lambda: self._github(uid, now)),
             ("home_link", lambda: self._home(uid, now)),
@@ -276,7 +315,7 @@ class Own:
             return None
         return _item("google_link", ("ok", ""), note="Connected.")
 
-    async def _telegram(self, uid: str, tz: ZoneInfo) -> OwnItem | None:
+    async def _telegram(self, uid: str, tz: ZoneInfo, now_s: float) -> OwnItem | None:
         if self._s.telegram_bot_token is None:
             return None
         if self._src.health is None:
@@ -289,6 +328,8 @@ class Own:
             return None
         if found.status not in PROBE_STATES:
             return unknown("telegram_bot", note=RUN_CHECK, reason="hasn't been checked yet")
+        if math.isfinite(found.at) and now_s - found.at > TELEGRAM_MAX_AGE_S:
+            return unknown("telegram_bot", note=RUN_CHECK, reason=STALE_CHECK)
         note = f"Last checked {_when(found.at, tz)}." if math.isfinite(found.at) else ""
         return _item("telegram_bot", PROBE_STATES[found.status], note=note)
 
@@ -299,7 +340,7 @@ class Own:
         used, limit = float(u.used), None if u.limit is None else float(u.limit)
         spent = limit is not None and used >= limit
         base: tuple[Status, str] = (
-            ("red", "are used up") if u.exhausted and not spent else ("ok", "")
+            ("red", "is used up") if u.exhausted and not spent else ("ok", "")
         )
         reset = next_month_start(now, tz)
         return _item("web_credits", base, limit=limit, used=used, unit="credits", reset_at=reset)
@@ -316,17 +357,12 @@ class Own:
         meta = await gh.token_meta(uid)
         if meta is None:
             return unknown("github_token", note=NEXT_USE, reason="hasn't been used yet")
-        ts = now.timestamp()
-        expires = None if meta.expires_at is None else datetime.fromtimestamp(meta.expires_at, UTC)
-        rate: dict[str, Any] = {}
-        reset = meta.rate_reset
-        if meta.rate_limit and meta.rate_used is not None and reset is not None and reset > ts:
-            rate = {
-                "limit": float(meta.rate_limit),
-                "used": float(meta.rate_used),
-                "unit": "calls this hour",
-                "reset_at": datetime.fromtimestamp(reset, UTC),
-            }
+        if meta.rejected_at is not None:  # GitHub answered 401: revoked or deleted
+            return _item("github_token", ("red", GITHUB_REFUSED), note="GitHub refused this token.")
+        if meta.expiry_unreadable:  # the header was there; never claim "doesn't expire"
+            return unknown("github_token", note="", reason=EXPIRY_UNREADABLE)
+        expires = _utc(meta.expires_at)
+        rate = _rate(meta, now.timestamp())
         note = "" if expires is not None else NO_EXPIRY
         return _item("github_token", ("ok", ""), note=note, expires_at=expires, **rate)
 

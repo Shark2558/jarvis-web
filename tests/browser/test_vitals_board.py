@@ -86,7 +86,7 @@ ITEMS = [
     ),
     item(
         "web_credits",
-        "Web search credits",
+        "Web search allowance",
         "amber",
         "allowances",
         kind="quota",
@@ -157,6 +157,7 @@ class FakeVitals:
         self.status = status
         self.puts: list[dict[str, Any]] = []
         self.deletes: list[str] = []
+        self.taken_once = False  # the first create answers 409: the name was taken meanwhile
         page.route("**/v1/vitals", self._get)
         page.route("**/v1/vitals/keys", self._put)
         page.route("**/v1/vitals/keys/*", self._delete)
@@ -171,6 +172,11 @@ class FakeVitals:
         body = json.loads(route.request.post_data or "{}")
         self.puts.append({"body": body, "headers": dict(route.request.headers)})
         assert self.view is not None
+        if self.taken_once and body.get("create"):
+            self.taken_once = False
+            self.view["items"].append(item(body["id"], "Other tab", "ok", "bills", source="manual"))
+            _json(route, 409, {"detail": "That name is taken."})
+            return
         self.view["items"].append(item(body["id"], body["label"], "ok", "bills", source="manual"))
         _json(route, 200, {"saved": body["id"]})
 
@@ -457,6 +463,90 @@ def test_no_overlap_and_no_sideways_scroll(make: Callable[..., Console], viewpor
     if viewport is PHONE:
         assert c.page.evaluate(SMALL_JS, BOARD) == []
     assert c.csp_violations() == [] and _quiet(c) == []
+
+
+def test_a_taken_name_reloads_and_retries_once_with_the_next_suffix(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    fake = FakeVitals(c.page, board())
+    fake.taken_once = True
+    root = _open(c)
+    form = _disclose(root)
+
+    c.page.locator("#" + str(form.locator("label", has_text="Name").get_attribute("for"))).fill(
+        "Passport"
+    )
+    form.locator("button.primary").click()
+    c.page.locator(BOARD, has_text="Saved.").wait_for()
+
+    assert [p["body"]["id"] for p in fake.puts] == ["passport", "passport-2"]
+    assert all(p["body"]["create"] is True for p in fake.puts)
+    # the 409 itself is logged by the browser as a failed resource: that is the expected one
+    assert c.csp_violations() == [] and [e for e in _quiet(c) if "409" not in e] == []
+
+
+def test_edit_does_not_ask_for_create_only(make: Callable[..., Console]) -> None:
+    c = make()
+    fake = FakeVitals(c.page, board())
+    root = _open(c)
+    root.locator('.vt-row[data-id="insurance"] button', has_text="Edit").click()
+    root.locator(".vt-form button.primary").click()
+    c.page.locator(BOARD, has_text="Saved.").wait_for()
+
+    assert "create" not in fake.puts[0]["body"]
+
+
+def test_stopping_moves_focus_to_the_disclosure_and_a_failed_stop_says_so(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    fake = FakeVitals(c.page, board())
+    root = _open(c)
+    row = root.locator('.vt-row[data-id="insurance"]')
+    row.locator("button", has_text="Stop tracking").click()
+    row.locator(".confirm .btn.danger").click()
+    c.page.locator(BOARD, has_text="Stopped tracking Car insurance").wait_for()
+    assert c.page.evaluate("document.activeElement.className") == "dsc"
+    assert fake.deletes == ["insurance"]
+
+    c.page.route("**/v1/vitals/keys/*", lambda r: _json(r, 500, {"detail": "Storage is down."}))
+    fake.view["items"].append(item("passport", "Passport", "ok", "bills", source="manual"))
+    root.locator(".vt-sub button", has_text="Refresh").click()
+    row = root.locator('.vt-row[data-id="passport"]')
+    row.wait_for()
+    row.locator("button", has_text="Stop tracking").click()
+    row.locator(".confirm .btn.danger").click()
+    err = root.locator("p.bnote.bad")
+    err.filter(has_text="Couldn't stop tracking Passport").wait_for()
+    assert "refresh" not in str(err.text_content())
+
+
+def test_an_old_shadowed_record_can_be_stopped_but_not_edited(make: Callable[..., Console]) -> None:
+    c = make()
+    view = board()
+    view["items"].append(item("home_link", "Home thing (old)", "ok", "bills", source="manual"))
+    FakeVitals(c.page, view)
+    root = _open(c)
+    acts = root.locator('.vt-row[data-id="home_link"][data-status] .vt-acts')
+    acts.last.wait_for()
+
+    assert acts.last.locator("button", has_text="Edit").count() == 0
+    assert acts.last.locator("button", has_text="Stop tracking").count() == 1
+
+
+def test_on_a_phone_the_used_and_limit_inputs_are_wide_enough(make: Callable[..., Console]) -> None:
+    c = make(PHONE)
+    FakeVitals(c.page, board())
+    root = _open(c)
+    form = _disclose(root)
+    widths = {}
+    for text in ("Used so far", "Limit", "Unit"):
+        fid = form.locator("label", has_text=text).get_attribute("for")
+        widths[text] = c.page.locator(f"#{fid}").bounding_box()["width"]
+
+    assert widths["Used so far"] >= 120 and widths["Limit"] >= 120, widths
+    assert widths["Unit"] >= widths["Used so far"]
 
 
 # ---- contrast ----

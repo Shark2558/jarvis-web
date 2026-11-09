@@ -78,5 +78,8 @@
 @media (max-width: 899px){
   .vt .btn.sact,.vt .btn.bact,.vt .lrow .btn,.vt .confirm .btn{height:44px}
   .vt .minput{height:44px}
+  /* Used | Limit side by side; the Unit gets its own row (3 columns were ~90 px each) */
+  .vt-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .vt-grid>.vt-field:nth-child(5){grid-column:1/-1}
 }
 html[data-motion="off"] .vt-row .mbar i{transition:none}

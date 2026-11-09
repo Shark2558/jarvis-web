@@ -261,20 +261,31 @@ class GithubClient:
         return mine
 
     def _seen(self, book: MetaBook, uid: str) -> Seen:
-        return lambda status, headers: book.observe(uid, status, headers, self._clock())
+        gen = book.generation(uid)  # a reconnect / disconnect meanwhile drops this read's facts
+        return lambda status, headers: book.observe(uid, status, headers, self._clock(), gen)
 
     async def _call(self, uid: str, token: str, path: str, params: dict[str, Any]) -> Any:
         """A read for the owner; afterwards the token's facts are stored when due (a failure is
         logged by class name only and never raised: the read itself already answered)."""
+        seen = self._seen(self._book, uid)
+        gen = self._book.generation(uid)
         try:
-            return await self._get(token, path, params, seen=self._seen(self._book, uid))
+            return await self._get(token, path, params, seen=seen)
         finally:
-            meta = self._book.due(uid)
-            try:
-                if meta is not None and await self._store.note_meta(uid, meta):
-                    self._book.stored(uid, meta)
-            except Exception as exc:  # noqa: BLE001 - never leak the cause
-                log.warning("github meta not saved", extra={"reason": type(exc).__name__})
+            await self._store_meta(uid, gen)
+
+    async def _store_meta(self, uid: str, gen: int) -> None:
+        now = self._clock()
+        meta = self._book.due(uid, now)
+        if meta is None or gen != self._book.generation(uid):
+            return  # nothing due, or the token changed while the read was in flight
+        try:
+            if await self._store.note_meta(uid, meta):
+                self._book.stored(uid, meta)
+                return
+        except Exception as exc:  # noqa: BLE001 - never leak the cause
+            log.warning("github meta not saved", extra={"reason": type(exc).__name__})
+        self._book.failed(uid, now)  # no record or a failed write: wait before trying again
 
     async def _token(self, uid: str) -> tuple[str, str]:
         found = await self._store.load(uid)

@@ -110,6 +110,8 @@ class Meta:
     rate_limit: int | None = None
     rate_used: int | None = None
     rate_reset: float | None = None
+    rejected_at: float | None = None
+    expiry_unreadable: bool = False
 
 
 class Github:

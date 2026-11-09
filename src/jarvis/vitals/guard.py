@@ -57,12 +57,32 @@ def _edges(text: str) -> tuple[str, str]:
     return (words[-1], words[0]) if words else ("", "")
 
 
-def looks_like_a_key(fields: Sequence[str]) -> bool:
-    """True when a field, or one field's tail glued to a later field's head, looks like a key."""
+def _id_hit(pid: str) -> bool:
+    """An id is a slug of the label ("electricity-bill-payment-reminder"): its dashes are word
+    breaks, so a long slug of ordinary words is not a long run. Credential prefixes, a Telegram
+    token or a real long run (a hex id) are still refused."""
+    if _PREFIXES.search(pid) or _TELEGRAM.search(pid):
+        return True
+    return _text_hit(re.sub(r"[-_]+", " ", pid))
+
+
+def looks_like_a_key(fields: Sequence[str], *, ident: str = "") -> bool:
+    """True when a field, or one field's tail glued to a later field's head, looks like a key.
+
+    `fields[0]` is the label and `ident` the id derived from it. The id is checked on its own
+    (`_id_hit`) and glued to every field EXCEPT the label: it is a slug of the label, so gluing
+    the two double-counts an ordinary long name."""
+    if ident and _id_hit(ident):
+        return True
     if any(_text_hit(f) for f in fields):
         return True
     edges = [_edges(f) for f in fields]
-    for (tail, _), (_, head) in combinations(edges, 2):
+    pairs = list(combinations(range(len(edges)), 2))
+    if ident:
+        edges.append(_edges(ident))
+        pairs += [(len(edges) - 1, k) for k in range(1, len(fields))]  # not the label (index 0)
+    for a, b in pairs:
+        tail, head = edges[a][0], edges[b][1]
         if len(tail) >= HALF_MIN and len(head) >= HALF_MIN and _run_hit(tail + head):
             return True
     return False

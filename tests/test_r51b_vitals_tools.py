@@ -48,7 +48,7 @@ async def test_show_lists_own_items_and_says_them_in_fixed_words() -> None:
     spoken = result["spoken"]
     assert spoken.startswith("Vitals: 2 need attention.")
     assert "Act now: Claude (paid AI) key was refused." in spoken
-    assert "Watch: Web search credits is at 85% of its limit." in spoken
+    assert "Watch: Web search allowance is at 85% of its limit." in spoken
     assert "AI spend: ₹100 of ₹500 this month." in spoken
     assert SECRET not in json.dumps(result)
 

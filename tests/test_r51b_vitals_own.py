@@ -168,7 +168,7 @@ async def test_web_credits_exhausted_is_red_even_without_a_limit() -> None:
 
     v = await view(rig, "web_credits")
 
-    assert (v.status, v.reason) == ("red", "are used up")
+    assert (v.status, v.reason) == ("red", "is used up")
 
 
 async def test_web_usage_is_cached_for_ten_minutes_per_process() -> None:
@@ -353,6 +353,7 @@ async def test_systems_watched_elsewhere_never_ring_from_vitals() -> None:
     epoch = rig.epoch
     own = OwnSources(
         claude=Brain("refused"),
+        default_brain="anthropic",
         google=Google(False, True),
         health=HealthLast(Report((Result("telegram", "down", epoch),))),
         home=Home(HomeSt("offline", epoch - 3600)),
@@ -365,7 +366,7 @@ async def test_systems_watched_elsewhere_never_ring_from_vitals() -> None:
     subjects = [s.subject for _, s, _ in rig.notifier.sent]
     assert "github_token" in subjects
     assert not set(subjects) & QUIET_IDS
-    assert QUIET_IDS == {"brain_claude", "brain_gemini", "google_link", "telegram_bot", "home_link"}
+    assert QUIET_IDS == {"google_link", "telegram_bot", "home_link"}  # + the default brain
 
 
 async def test_no_key_value_ever_reaches_the_board() -> None:

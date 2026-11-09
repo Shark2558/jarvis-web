@@ -120,7 +120,7 @@ class Provider(BaseModel):
         constrained label. The one guard for every entry path (tool, REST, importer)."""
         if self.source != "manual":
             return self
-        if looks_like_a_key([self.id, self.label, self.note, self.unit]):
+        if looks_like_a_key([self.label, self.note, self.unit], ident=self.id):
             raise ValueError(NEVER_PASTE)
         problem = label_problem(self.label)
         if problem:

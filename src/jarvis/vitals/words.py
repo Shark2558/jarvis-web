@@ -41,8 +41,7 @@ WORDS: Mapping[str, tuple[str, str]] = {
     ),
     "github_token": (
         "If this stops: JARVIS can't read your GitHub.",
-        "Make a new token on GitHub (Settings, Developer settings) and connect it again in the "
-        "Connectors panel.",
+        "Paste a new token in Connectors (make one on GitHub: Settings, Developer settings).",
     ),
     "home_link": (
         "If this stops: the home camera, devices and alarm can't reach JARVIS.",

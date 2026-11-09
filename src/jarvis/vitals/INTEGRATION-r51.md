@@ -53,6 +53,7 @@ def vitals_sources(app: FastAPI) -> OwnSources:
         web=usage,  # TavilyProvider.usage(): the vendor's free usage report
         github=getattr(st, "github", None),  # GithubClient.status / .token_meta
         home=getattr(st, "home_store", None),  # HomeStore.status(uid)
+        default_brain=brains.default.id,  # the brain the systems check's probe watches
     )
 
 
@@ -75,14 +76,18 @@ What each item reads and when it shows:
 | `brain_claude` | Claude (paid AI) key | `Settings.anthropic_api_key` is set | `router.health()` state: refused = red; busy / odd / unreachable = amber; else ok |
 | `brain_gemini` | Gemini (free AI) key | `Settings.gemini_api_key` is set | same; busy = "has reached its free limit for now" |
 | `google_link` | Google sign-in | connected, or needs reconnecting | `GoogleConnector.status`: needs_reconnect = red |
-| `telegram_bot` | Telegram bot | `Settings.telegram_bot_token` is set, and the last systems check included `telegram` (left out of it = not set up, D4) | that result (ok / degraded / down); no check stored yet = Unknown "run a systems check" |
-| `web_credits` | Web search credits | a web provider with `usage()` is wired | the vendor's free usage report, cached 10 min per process; exhausted = red; resets next month |
-| `github_token` | GitHub token | connected, or needs reconnecting | the token's expiry and hourly limit from GitHub's own headers (below) |
+| `telegram_bot` | Telegram bot | `Settings.telegram_bot_token` is set, and the last systems check included `telegram` (left out of it = not set up, D4) | that result (ok / degraded / down); no check stored yet, or one older than 2 hours = Unknown "run a systems check" |
+| `web_credits` | Web search allowance | a web provider with `usage()` is wired | the vendor's free usage report, cached 10 min per process; exhausted = red; resets next month |
+| `github_token` | GitHub token | connected, or needs reconnecting | the token's expiry and hourly limit from GitHub's own headers (below); a 401 from GitHub = red "the token was refused" (fix: "Paste a new token in Connectors"); an expiry header that can't be read = Unknown "its expiry date couldn't be read" |
 | `home_link` | Home laptop link | a home is linked | heartbeat age vs `home_offline_after_s`: offline or never reported = red; degraded = amber |
 
 Every item has fixed `impact` / `fix` words (`jarvis/vitals/words.py`), as do `ai_spend`, the voice
-allowances and the Google SKU quotas. `brain_*`, `google_link`, `telegram_bot` and `home_link` NEVER
-ring from Vitals (`own.QUIET_IDS`): the systems check and the home watchdog already ring for them.
+allowances and the Google SKU quotas. `google_link`, `telegram_bot`, `home_link` and the DEFAULT brain's
+key never ring from Vitals (`Own.quiet_ids()`): the systems check and the home watchdog already ring
+for them. The health check's brain probe reads only the default brain, so the OTHER brain's key
+(e.g. Gemini refused while Claude is default) DOES ring from Vitals. Tell Vitals which brain is the
+default with `OwnSources(default_brain=brains.default.id)` ("anthropic" or "gemini"); left None, both
+brains ring (a double ring is better than a lost one).
 `github_token` (expiry, hourly limit) and `web_credits` ring like any other item (amber at 80 %, red
 at the limit / expiry). Each source has a 3 s deadline; a failing or slow one makes only its own item
 "Unknown" (its error text never reaches the board).
@@ -145,3 +150,30 @@ it. Keeping it is harmless (one unused index); removing those lines is the integ
 "JARVIS keeps its own Vitals: every key and connection it uses is tracked automatically (Claude,
 Gemini, Google, Telegram, web search credits, GitHub, the home laptop); the owner never types a key's
 details. For things JARVIS can't see (an insurance renewal), use 'Track something JARVIS can't see'."
+
+
+## 7. R5.1 B review fixes (what changed after review)
+
+- **Create-only add:** `PUT /v1/vitals/keys` with `"create": true` answers 409 "That name is taken." when the id
+  exists (a transaction in `VitalsStore.put(create=True)`); the panel sends it for a NEW item, reloads and
+  retries once with the next suffix. Edit keeps the plain upsert. The `vitals_set_key` tool is unchanged (upsert).
+- **GitHub token facts** (`integrations/github_meta.py`): `meta` gains `rejected_at` (a 401; cleared by the next
+  200 or a reconnect) and `expiry_unreadable` (header present but not readable, or before 1970 / after 2100).
+  An absent header still means "doesn't expire". Integers are ASCII digits only (<= 13 chars); an odd header
+  drops only its own field. A failed meta write backs off 10 minutes; a per-owner generation drops facts from a
+  read begun before a connect / disconnect.
+- **Old manual records under a now-reserved id** are shown as manual with " (old)" appended to the label, can be
+  stopped (their shared alert-status record is left alone), count toward the 50 cap visibly, and never alert.
+- **`GET /v1/vitals`** is rate limited per owner (30 / minute, `app.state.vitals_limiter`, created on first use,
+  so no wiring is needed) and the computed board is cached per owner for 15 s (`VitalsService.board_cached`,
+  also used by the `vitals_show` tool; a save or stop drops the owner's cached board). Alerts always compute fresh.
+- **Guard:** the id derived from the label is checked on its own (dashes read as word breaks) and glued to the
+  note and unit, never to the label. Real key shapes in any field are still refused.
+- **Label rename:** "Web search credits" is now "Web search allowance" (so the spoken line reads "is at 85%").
+
+## 8. Scope of the process-wide items (D2 note)
+
+`brain_claude`, `brain_gemini`, `web_credits` and `telegram_bot` describe the DEPLOYMENT (its keys, its Tavily plan,
+its bot), not one owner, so every signed-in owner sees the same state. That is correct because a JARVIS
+deployment is single-owner (access is gated by `owner_emails`). If a multi-owner deployment is ever added, gate
+these four items on an operator flag first.

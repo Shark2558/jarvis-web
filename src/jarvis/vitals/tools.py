@@ -93,7 +93,7 @@ class VitalsAPI:
     async def show(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
         try:
-            board = await self._svc.board(uid)
+            board = await self._svc.board_cached(uid)
         except VitalsUnavailable as exc:
             return {"status": "unavailable", "message": str(exc)}
         out = board.to_json()

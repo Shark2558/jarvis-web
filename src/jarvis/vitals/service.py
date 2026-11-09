@@ -9,7 +9,7 @@ Manual records that can't be read never hide the rest (`manual_unavailable`).
 `vitals_warn`; -> red: `vitals_critical`); the last status is kept per provider in
 `jarvis_vitals_status`. "unknown" never alerts and never overwrites the last status; a send that
 fails is not recorded, so the next tick tries again. Items another system already rings for
-(`own.QUIET_IDS`) never alert from here.
+(`Own.quiet_ids`: Google, Telegram, home and the DEFAULT brain) never alert from here.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from jarvis.vitals.models import (
     group_of,
     zone_of,
 )
-from jarvis.vitals.own import OWN_IDS, QUIET_IDS, Own, OwnSources
+from jarvis.vitals.own import OWN_IDS, Own, OwnSources
 from jarvis.vitals.status import overall, status_of
 from jarvis.vitals.store import BAD_ID, VitalsStore, VitalsUnavailable, valid_id
 from jarvis.vitals.words import words_for
@@ -47,6 +47,9 @@ AUTO_IDS_PREFIXES = ("quota_", "allowance_")
 RESERVED = "That name is used by a built-in item. Pick another id."
 MESSAGE_MAX = 300
 ALERT_PREFIX = "Vitals — "  # fixed lead: a label can never pose as the sender
+BOARD_CACHE_S = 15.0  # the computed board is reused per owner for this long (GET and the tool)
+CACHE_OWNERS = 64
+OLD_SUFFIX = " (old)"
 MANUAL_UNAVAILABLE = (
     "The items you track yourself can't be read just now; everything JARVIS watches on its own "
     "is shown. Try again in a minute."
@@ -90,6 +93,7 @@ class VitalsService:
         self._clock = clock
         self._own = Own(own, settings) if own is not None else None
         self._locks: dict[str, asyncio.Lock] = {}
+        self._cache: dict[str, tuple[datetime, Board]] = {}
 
     async def _auto(self, uid: str, now: datetime) -> tuple[list[Provider], Spend | None]:
         out: list[Provider] = []
@@ -111,11 +115,12 @@ class VitalsService:
         except VitalsUnavailable:
             return None
         clash = [p.id for p in rows if reserved(p.id)]
-        if clash:  # an old record under a name a built-in item now uses: the built-in wins
-            log.warning(
-                "vitals: manual records shadowed by built-in items", extra={"n": len(clash)}
-            )
-        return [p for p in rows if not reserved(p.id)]
+        if clash:  # an old record under a name a built-in item now uses: shown, marked, removable
+            log.warning("vitals: manual records under built-in names", extra={"n": len(clash)})
+        return [
+            p.model_copy(update={"label": f"{p.label}{OLD_SUFFIX}"}) if reserved(p.id) else p
+            for p in rows
+        ]
 
     def _view(
         self, p: Provider, now: datetime, base: tuple[Status, str] | None = None
@@ -133,6 +138,18 @@ class VitalsService:
         impact, fix = words_for(p.id, p.label)
         group: Group = "bills" if p.id == auto.SPEND_ID else group_of(p.kind)
         return v.model_copy(update={"impact": impact, "fix": fix, "group": group})
+
+    async def board_cached(self, uid: str) -> Board:
+        """The board, reused for `BOARD_CACHE_S` per owner (a write or delete drops it)."""
+        now = self._clock()
+        hit = self._cache.get(uid)
+        if hit is not None and 0 <= (now - hit[0]).total_seconds() < BOARD_CACHE_S:
+            return hit[1]
+        board = await self.board(uid, now)
+        if len(self._cache) >= CACHE_OWNERS:
+            self._cache.clear()
+        self._cache[uid] = (now, board)
+        return board
 
     async def board(self, uid: str, now: datetime | None = None) -> Board:
         now = now or self._clock()
@@ -156,17 +173,20 @@ class VitalsService:
             manual_note=MANUAL_UNAVAILABLE if manual is None else "",
         )
 
-    async def set_key(self, uid: str, p: Provider) -> None:
+    async def set_key(self, uid: str, p: Provider, *, create: bool = False) -> None:
+        """Save a manual record; with `create` an id that is taken raises `VitalsExists`."""
         if reserved(p.id):
             raise ValueError(RESERVED)
-        await self._store.put(uid, p.model_copy(update={"source": "manual"}))
+        self._cache.pop(uid, None)
+        await self._store.put(uid, p.model_copy(update={"source": "manual"}), create=create)
 
     async def delete_key(self, uid: str, pid: str) -> bool:
+        """Remove a manual record. A stored record under a now-reserved id can still go (the
+        built-in item's own alert state is left alone)."""
         if not valid_id(pid):
             raise ValueError(BAD_ID)
-        if reserved(pid):
-            return False
-        return await self._store.delete(uid, pid)
+        self._cache.pop(uid, None)
+        return await self._store.delete(uid, pid, status=not reserved(pid))
 
     async def check_and_alert(self, uid: str, notifier: Notifier) -> int:
         """Alert on every upward line-cross; returns how many alerts were sent.
@@ -177,10 +197,13 @@ class VitalsService:
         providers. Calls for one owner are serialised."""
         async with self._locks.setdefault(uid, asyncio.Lock()):
             now = self._clock()
+            quiet = self._own.quiet_ids() if self._own is not None else frozenset()
             items = [
                 v
                 for v in (await self.board(uid, now)).items
-                if v.status != "unknown" and v.provider.id not in QUIET_IDS  # rung elsewhere
+                if v.status != "unknown"
+                and v.provider.id not in quiet  # rung elsewhere
+                and not (v.provider.source == "manual" and reserved(v.provider.id))
             ]
             lasts = await asyncio.gather(
                 *(self._store.last_status(uid, v.provider.id) for v in items),

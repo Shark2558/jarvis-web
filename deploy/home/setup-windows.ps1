@@ -107,8 +107,17 @@ wsl -d $Distro -- bash -lc 'bash ~/jarvis-home/setup-wsl.sh camera'
 Say 'Making the bridge reachable by JARVIS (Tailscale Funnel, port 8443)'
 $ts = Get-Command tailscale -ErrorAction SilentlyContinue
 if (-not $ts) { throw 'Tailscale is not installed. Install it from tailscale.com/download, sign in, then run this again.' }
+$tsState = (tailscale status --json | ConvertFrom-Json).BackendState
+if ($tsState -ne 'Running') {
+    Write-Host "Tailscale is not signed in on this laptop (it says: $tsState)."
+    Write-Host 'Click the Tailscale icon by the clock -> Log in (or type  tailscale up  in PowerShell), sign in, then run this again.'
+    exit 1
+}
 tailscale funnel --bg --https=8443 http://127.0.0.1:8099
 $name = ((tailscale status --json | ConvertFrom-Json).Self.DNSName).TrimEnd('.')
+if ([string]::IsNullOrWhiteSpace($name)) {
+    throw 'Tailscale gave no name for this laptop. Turn on MagicDNS and HTTPS in the Tailscale admin console, then run this again.'
+}
 $address = "https://${name}:8443"
 Write-Host "Your laptop's address for JARVIS: $address"
 

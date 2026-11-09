@@ -793,3 +793,17 @@ def test_install_adds_the_owner_to_the_docker_group_and_asks_for_a_restart(tmp_p
     done, calls = run_script(tmp_path, "install", PATH_NO_DOCKER="1")
     assert "usermod -aG docker" in calls
     assert "RESTART_WSL" in done.stdout
+
+
+def test_setup_windows_stops_when_tailscale_is_signed_out() -> None:
+    # 9 Nov, on the owner's laptop: Tailscale said "Logged out." and the script went on to
+    # print "https://:8443" and ask for a link code. It must check before Funnel and stop
+    # with plain steps, and never link with an empty laptop name.
+    ps = (HOME / "setup-windows.ps1").read_text()
+    funnel = ps.index("tailscale funnel --bg --https=8443")
+    check = ps.index("BackendState")
+    assert check < funnel
+    assert "'Running'" in ps[check:funnel]
+    assert "tailscale up" in ps[check:funnel]
+    assert re.search(r"IsNullOrWhiteSpace\(\$name\)", ps[funnel : ps.index("Linking to JARVIS")])
+    assert ps.isascii()

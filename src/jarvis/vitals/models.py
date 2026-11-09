@@ -23,6 +23,7 @@ from jarvis.vitals.guard import NEVER_PASTE, label_problem, looks_like_a_key
 Kind = Literal["key", "quota", "billing", "storage", "allowance"]
 Source = Literal["auto", "manual"]
 Status = Literal["ok", "amber", "red", "unknown"]
+Group = Literal["keys", "allowances", "bills"]  # R5.1: the panel's sections
 
 ID_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,39}$"
 LABEL_MAX = 80
@@ -31,6 +32,13 @@ UNIT_MAX = 20
 LIMIT_MAX = 1e12
 MAX_MANUAL = 50  # manual records per owner
 RANK: dict[str, int] = {"ok": 0, "amber": 1, "red": 2}
+KIND_GROUP: dict[str, Group] = {
+    "key": "keys",
+    "quota": "allowances",
+    "allowance": "allowances",
+    "billing": "bills",
+    "storage": "bills",
+}
 
 
 DEFAULT_TZ = "Asia/Kolkata"
@@ -112,7 +120,7 @@ class Provider(BaseModel):
         constrained label. The one guard for every entry path (tool, REST, importer)."""
         if self.source != "manual":
             return self
-        if looks_like_a_key([self.id, self.label, self.note, self.unit]):
+        if looks_like_a_key([self.label, self.note, self.unit], ident=self.id):
             raise ValueError(NEVER_PASTE)
         problem = label_problem(self.label)
         if problem:
@@ -134,8 +142,17 @@ class Provider(BaseModel):
         }
 
 
+def group_of(kind: str) -> Group:
+    """The panel section a record sits in by its kind (manual records; auto ones say their own)."""
+    return KIND_GROUP.get(kind, "keys")
+
+
 class ProviderView(BaseModel):
-    """A provider with its computed status, as the board and the tools show it."""
+    """A provider with its computed status, as the board and the tools show it.
+
+    `impact` ("If this stops: ...") and `fix` (what to do) are FIXED words from
+    `jarvis.vitals.words` (empty for the owner's own records); the systems-check briefing reads
+    them with getattr. `group` is the panel section."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -143,6 +160,9 @@ class ProviderView(BaseModel):
     status: Status
     percent: float | None = None  # of the limit; can pass 100
     reason: str = ""  # one fixed-template line: why this status
+    impact: str = ""
+    fix: str = ""
+    group: Group = "keys"
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -150,6 +170,9 @@ class ProviderView(BaseModel):
             "status": self.status,
             "percent": self.percent,
             "reason": self.reason,
+            "impact": self.impact,
+            "fix": self.fix,
+            "group": self.group,
         }
 
 
@@ -169,6 +192,8 @@ class Board(BaseModel):
     items: tuple[ProviderView, ...]
     spend: Spend | None
     overall: Status
+    manual_unavailable: bool = False  # the owner's own records can't be read; the rest still show
+    manual_note: str = ""  # a fixed plain line when they can't
 
     def attention(self) -> tuple[ProviderView, ...]:
         """Amber and red items, red first."""
@@ -180,6 +205,8 @@ class Board(BaseModel):
             "overall": self.overall,
             "items": [v.to_json() for v in self.items],
             "spend": self.spend.model_dump(mode="json") if self.spend else None,
+            "manual_unavailable": self.manual_unavailable,
+            "manual_note": self.manual_note,
         }
 
 
@@ -189,8 +216,10 @@ __all__ = [
     "NEVER_PASTE",
     "RANK",
     "Board",
+    "Group",
     "aware",
     "describe_error",
+    "group_of",
     "zone_of",
     "Kind",
     "Provider",

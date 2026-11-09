@@ -5,7 +5,8 @@ require_auth).
 
 GET    /v1/vitals              {overall, items: [ProviderView json],
                                 spend: {used_inr, limit_inr, text}|null}
-PUT    /v1/vitals/keys         Provider body (manual) -> {saved}; 422 plain `detail`
+PUT    /v1/vitals/keys         Provider body (manual) -> {saved}; 422 plain `detail`;
+                                with `"create": true` an id that exists answers 409 (never replaced)
 DELETE /v1/vitals/keys/{id}    -> {removed: true}; 404 when no such manual record
 
 The integrator sets `app.state.vitals` (a `VitalsService`, or None -> 503) and `app.include_router`.
@@ -13,6 +14,7 @@ The integrator sets `app.state.vitals` (a `VitalsService`, or None -> 503) and `
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -20,12 +22,33 @@ from pydantic import ValidationError
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
+from jarvis.api.ratelimit import RateLimiter
 from jarvis.vitals.models import Provider, describe_error
 from jarvis.vitals.service import VitalsService
-from jarvis.vitals.store import BAD_ID, VitalsFull, VitalsUnavailable, valid_id
+from jarvis.vitals.store import BAD_ID, VitalsExists, VitalsFull, VitalsUnavailable, valid_id
 
 router = APIRouter(prefix="/v1/vitals", dependencies=[Depends(require_auth)])
 NOT_AVAILABLE = "Vitals is not available on this server."
+
+
+GET_PER_MINUTE = 30
+
+
+def _limited(request: Request, uid: str = Depends(current_user)) -> str:
+    """Per-owner limit on the board read (it fans out to several stores). The limiter lives on
+    the app (`app.state.vitals_limiter`, made on first use), so no wiring is needed."""
+    state = request.app.state
+    limiter = getattr(state, "vitals_limiter", None)
+    if limiter is None:
+        limiter = state.vitals_limiter = RateLimiter(GET_PER_MINUTE)
+    allowed, retry_s = limiter.allow(uid)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "rate_limited", "detail": "Too many requests; wait a moment."},
+            headers={"Retry-After": str(max(1, math.ceil(retry_s)))},
+        )
+    return uid
 
 
 def _svc(request: Request) -> VitalsService:
@@ -36,11 +59,9 @@ def _svc(request: Request) -> VitalsService:
 
 
 @router.get("")
-async def board(
-    svc: VitalsService = Depends(_svc), uid: str = Depends(current_user)
-) -> dict[str, Any]:
+async def board(svc: VitalsService = Depends(_svc), uid: str = Depends(_limited)) -> dict[str, Any]:
     try:
-        return (await svc.board(uid)).to_json()
+        return (await svc.board_cached(uid)).to_json()
     except VitalsUnavailable as exc:
         raise HTTPException(503, str(exc)) from None
 
@@ -57,12 +78,15 @@ async def put_key(
         raise HTTPException(422, "The request body must be a JSON object.") from None
     if not isinstance(body, dict):
         raise HTTPException(422, "The request body must be a JSON object.")
+    create = body.pop("create", False) is True  # a NEW item: never replace an existing one
     try:
         p = Provider.model_validate({**body, "source": "manual"})
     except ValidationError as exc:
         raise HTTPException(422, describe_error(exc)) from None
     try:
-        await svc.set_key(uid, p)
+        await svc.set_key(uid, p, create=create)
+    except VitalsExists as exc:
+        raise HTTPException(409, str(exc)) from None
     except (ValueError, VitalsFull) as exc:
         raise HTTPException(422, str(exc)) from None
     except VitalsUnavailable as exc:

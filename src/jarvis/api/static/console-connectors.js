@@ -68,7 +68,7 @@
     const g = el.g = card('GitHub', 'Read-only: your profile, repositories and recent activity. Your token is kept encrypted and never shown again.');
     el.who = mk('p', 'who');
     el.tokenBox = mk('div', 'cfield'); const tl = mk('label', 'k', 'GitHub token'); tl.htmlFor = 'ghToken';
-    el.token = mk('input', 'dinput'); el.token.id = 'ghToken'; el.token.type = 'password'; el.token.autocomplete = 'off'; el.token.placeholder = 'Paste a GitHub token';
+    el.token = mk('input', 'dinput'); el.token.id = 'ghToken'; el.token.type = 'password'; el.token.autocomplete = 'new-password'; el.token.spellcheck = false; el.token.setAttribute('autocapitalize', 'off'); el.token.placeholder = 'Paste a GitHub token';
     el.tokenBox.append(tl, el.token);
     el.gconnect = btn('btn primary lift', 'Connect GitHub', connectGithub);
     el.gdrop = btn('btn lift', 'Disconnect', () => { S.confirm = true; render(); el.gkeep.focus(); });
@@ -92,6 +92,7 @@
     const d = S.data; if (!d) return;
     const gh = d.github;
     setCard(el.g, gh.connected, gh.connected ? 'Connected' : gh.reconnect ? 'Reconnect' : 'Not connected', gh.reconnect);
+    if (gh.connected) el.token.value = '';   // never keep a pasted token in a hidden field
     el.who.hidden = !gh.connected; el.who.replaceChildren('Connected as ', mk('b', '', gh.login || 'GitHub'));
     el.tokenBox.hidden = el.gconnect.hidden = gh.connected; el.gdrop.hidden = !gh.connected || S.confirm; el.confirm.hidden = !(gh.connected && S.confirm);
     el.g.acts.hidden = gh.connected && S.confirm;
@@ -120,16 +121,20 @@
   }
 
   // ---- actions -----------------------------------------------------------------------------
-  async function guard(fn, fail) {
+  // `after` runs once the card is drawn again: the busy render disables the button that had focus,
+  // so a keyboard user is put back on a control that exists in the new state.
+  async function guard(fn, fail, after) {
     if (S.busy || !hasApi()) return; S.busy = true; render();
-    try { await fn(); } catch (e) { say('bad', detailOf(e) || fail); } finally { S.busy = false; render(); }
+    try { await fn(); } catch (e) { say('bad', detailOf(e) || fail); } finally { S.busy = false; render(); if (after) after(); }
   }
   const connectGithub = () => guard(async () => {
     const token = el.token.value.trim(); if (!token) { say('bad', 'Paste your GitHub token first.'); return; }
+    el.token.value = '';      // the token leaves the field at once: a failed save never leaves it sitting there
     await api('/v1/connectors/github', { method: 'PUT', body: { token } });
-    el.token.value = ''; S.confirm = false; say('ok', 'GitHub connected.'); await load(true);
-  }, 'Couldn\'t connect GitHub. Please try again.');
-  const dropGithub = () => guard(async () => { S.confirm = false; await api('/v1/connectors/github', { method: 'DELETE' }); say('ok', 'GitHub disconnected.'); await load(true); }, 'Couldn\'t disconnect. Please try again.');
+    S.confirm = false; say('ok', 'GitHub connected.'); await load(true);
+  }, 'Couldn\'t connect GitHub. Please try again.', () => { if (!el.gconnect.hidden) el.token.focus(); else el.gdrop.focus(); });
+  const dropGithub = () => guard(async () => { S.confirm = false; await api('/v1/connectors/github', { method: 'DELETE' }); say('ok', 'GitHub disconnected.'); await load(true); },
+    'Couldn\'t disconnect. Please try again.', () => { (el.tokenBox.hidden ? el.gdrop : el.token).focus(); });
   const startPick = () => guard(async () => {
     const r = obj(await api('/v1/connectors/photos/start', { method: 'POST', body: {} })) || {};
     const uri = txt(r.picker_uri, 500);

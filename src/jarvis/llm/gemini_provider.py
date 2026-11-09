@@ -23,6 +23,7 @@ from jarvis.llm.base import (
     Completion,
     Effort,
     LLMAuthError,
+    LLMDeclined,
     LLMError,
     LLMTransientError,
     LLMUnreachable,
@@ -172,7 +173,8 @@ class GeminiProvider:
             reason = (data.get("promptFeedback") or {}).get("blockReason") or cand.get(
                 "finishReason", "empty"
             )
-            raise LLMError(f"Gemini returned no answer (blocked or empty: {reason})")
+            log.warning("gemini returned no answer", extra={"reason": str(reason)[:60]})
+            raise LLMDeclined()
         usage = self._usage(data.get("usageMetadata") or {})
         latency_ms = int((time.perf_counter() - t0) * 1000)
         completion = Completion(

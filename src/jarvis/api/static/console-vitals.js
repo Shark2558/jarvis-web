@@ -240,7 +240,7 @@
   KINDS.forEach((k) => { const o = mk('option', '', KIND_WORDS[k]); o.value = k; F.kind.appendChild(o); });
   function field(key, text, wide) {
     const w = mk('div', 'vt-field' + (wide ? ' wide' : ''));
-    const l = mk('label', '', text);
+    const l = mk('label', 'k', text);   // the themed label, like People / Things
     F[key].id = 'vtF-' + key; l.htmlFor = F[key].id;
     w.append(l, F[key]);
     return w;

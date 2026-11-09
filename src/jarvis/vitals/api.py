@@ -32,6 +32,7 @@ NOT_AVAILABLE = "Vitals is not available on this server."
 
 
 GET_PER_MINUTE = 30
+WRITE_PER_MINUTE = 10  # PUT + DELETE share one per-owner budget (R5.1 int-sec M3)
 
 
 def _limited(request: Request, uid: str = Depends(current_user)) -> str:
@@ -41,6 +42,22 @@ def _limited(request: Request, uid: str = Depends(current_user)) -> str:
     limiter = getattr(state, "vitals_limiter", None)
     if limiter is None:
         limiter = state.vitals_limiter = RateLimiter(GET_PER_MINUTE)
+    allowed, retry_s = limiter.allow(uid)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "rate_limited", "detail": "Too many requests; wait a moment."},
+            headers={"Retry-After": str(max(1, math.ceil(retry_s)))},
+        )
+    return uid
+
+
+def _write_limited(request: Request, uid: str = Depends(current_user)) -> str:
+    """Per-owner limit on the writes (each drops the board cache and touches the store)."""
+    state = request.app.state
+    limiter = getattr(state, "vitals_write_limiter", None)
+    if limiter is None:
+        limiter = state.vitals_write_limiter = RateLimiter(WRITE_PER_MINUTE)
     allowed, retry_s = limiter.allow(uid)
     if not allowed:
         raise HTTPException(
@@ -68,7 +85,7 @@ async def board(svc: VitalsService = Depends(_svc), uid: str = Depends(_limited)
 
 @router.put("/keys")
 async def put_key(
-    request: Request, svc: VitalsService = Depends(_svc), uid: str = Depends(current_user)
+    request: Request, svc: VitalsService = Depends(_svc), uid: str = Depends(_write_limited)
 ) -> dict[str, str]:
     # The body is read and validated here (not by FastAPI) so a 422 can never echo the input: a
     # pasted key value must not come back in an error body or a log line.
@@ -96,7 +113,7 @@ async def put_key(
 
 @router.delete("/keys/{pid}")
 async def delete_key(
-    pid: str, svc: VitalsService = Depends(_svc), uid: str = Depends(current_user)
+    pid: str, svc: VitalsService = Depends(_svc), uid: str = Depends(_write_limited)
 ) -> dict[str, bool]:
     if not valid_id(pid):
         raise HTTPException(422, BAD_ID)

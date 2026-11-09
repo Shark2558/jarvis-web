@@ -23,6 +23,7 @@
     ['home_summary', 'A summary of many alerts at once'],
     ['home_package', 'A package was left'],
     ['home_offline', 'My home laptop stopped answering'],
+    ['home_offline_idle', 'Laptop stopped answering (alarm off)'],
     ['home_arm_failed', 'The alarm could not be armed'],
     ['approval_waiting', 'Something is waiting for my approval'],
     ['vault_expiry', 'A document in my vault is due to expire'],

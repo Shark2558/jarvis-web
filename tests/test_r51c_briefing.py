@@ -103,7 +103,7 @@ def test_the_probe_reason_and_a_forged_label_never_reach_the_spoken_line() -> No
 # ---- vitals --------------------------------------------------------------------------------------
 def test_spend_is_said_in_rupees_with_the_percentage() -> None:
     b = compose_briefing(ALL_OK, board(used=120, limit=500))
-    assert "AI spend is ₹120 of ₹500 this month, 24 percent." in b.spoken
+    assert "AI spend is ₹120 of ₹500 this month (24 percent)." in b.spoken
     assert "$" not in b.spoken and "USD" not in b.spoken and "dollar" not in b.spoken.lower()
     assert b.spoken.endswith(NOMINAL_CLOSE)
 
@@ -115,7 +115,7 @@ def test_spend_without_a_limit_says_so() -> None:
 
 def test_the_spend_sentence_is_kept_apart_for_the_screen() -> None:
     assert compose_briefing(ALL_OK, board(used=120, limit=500)).spend == (
-        "AI spend is ₹120 of ₹500 this month, 24 percent."
+        "AI spend is ₹120 of ₹500 this month (24 percent)."
     )
     unreadable = compose_briefing(ALL_OK, None, vitals_unreadable=True)
     assert unreadable.spend == "Vitals can't be read just now."
@@ -125,10 +125,11 @@ def test_spend_near_the_limit_is_a_concern_once() -> None:
     spend = view("ai_spend", "AI spend this month", "amber", kind="billing", percent=90.0,
                  reason="is at 90% of its limit")  # fmt: skip
     b = compose_briefing(ALL_OK, board(spend, used=450, limit=500))
-    assert (
-        "AI spend is ₹450 of ₹500 this month, 90 percent — paid AI replies stop "
-        "at the limit." in b.spoken
+    assert (  # R5.1 V1: the limit consequence is its own sentence, only at 80 percent or more
+        "AI spend is ₹450 of ₹500 this month (90 percent). At the limit, paid replies pause "
+        "and JARVIS uses the free brain." in b.spoken
     )
+    assert "if it stops" not in b.spoken and "paid AI replies stop" not in b.spoken
     assert b.spoken.count("AI spend") == 1  # not said again as an amber item
     assert [c.key for c in b.concerns] == ["vitals.ai_spend"]
     assert b.concerns[0].severity == "amber"
@@ -220,7 +221,7 @@ def test_the_dropped_count_is_said() -> None:
 def test_no_systems_still_briefs_vitals() -> None:
     b = compose_briefing(report(), board(used=10, limit=500))
     assert b.spoken.startswith("Systems check complete, Sir. There are no systems to check.")
-    assert "AI spend is ₹10 of ₹500 this month, 2 percent." in b.spoken
+    assert "AI spend is ₹10 of ₹500 this month (2 percent)." in b.spoken
 
 
 def test_an_empty_report_says_one_fixed_line_and_never_all_systems_nominal() -> None:
@@ -229,7 +230,7 @@ def test_an_empty_report_says_one_fixed_line_and_never_all_systems_nominal() -> 
         assert "nominal" not in " ".join(b.lines) and NOMINAL_CLOSE not in b.spoken
     with_vitals = compose_briefing(report(), board(used=10, limit=500))
     assert "no systems" in with_vitals.spoken and "nominal" not in with_vitals.spoken
-    assert with_vitals.spoken.endswith("2 percent.")
+    assert with_vitals.spoken.endswith("(2 percent).")
 
 
 def test_to_json_is_plain_data() -> None:
@@ -247,3 +248,25 @@ def test_to_json_is_plain_data() -> None:
         }
     ]
     assert isinstance(data["lines"], list)
+
+
+LIMIT_SENTENCE = "At the limit, paid replies pause and JARVIS uses the free brain."
+
+
+def test_v1_the_spend_sentence_for_82_percent_reads_as_the_owner_asked() -> None:
+    b = compose_briefing(ALL_OK, board(used=412.5, limit=500))
+    expected = f"AI spend is ₹412.50 of ₹500 this month (82 percent). {LIMIT_SENTENCE}"
+    assert expected in b.spoken
+    assert b.spend == expected  # the screen says the same
+
+
+def test_v1_the_limit_sentence_starts_at_exactly_80_percent() -> None:
+    at_80 = compose_briefing(ALL_OK, board(used=400, limit=500))
+    below = compose_briefing(ALL_OK, board(used=399, limit=500))
+    assert LIMIT_SENTENCE in at_80.spoken and "(80 percent)." in at_80.spoken
+    assert LIMIT_SENTENCE not in below.spoken and LIMIT_SENTENCE not in below.spend
+
+
+def test_v1_no_limit_and_zero_limit_never_get_the_limit_sentence() -> None:
+    assert LIMIT_SENTENCE not in compose_briefing(ALL_OK, board(used=900, limit=None)).spoken
+    assert LIMIT_SENTENCE not in compose_briefing(ALL_OK, board(used=5, limit=0)).spoken

@@ -20,7 +20,10 @@ optional dependency): a board that can't be read in `VITALS_TIMEOUT_S` never fai
 
 Stream runs are coalesced per owner (security review M3): a stream asked for while one is in
 flight attaches to it (the events so far, then the live ones) instead of queueing another full
-check; at most `MAX_WATCHERS` listeners per run, then `CheckBusy` (the route answers 429). A run
+check; at most `MAX_WATCHERS` listeners per run, then `CheckBusy` (the route answers 429).
+`force` is ignored when joining: a run in flight is fresh by definition (it started seconds ago
+and its probes are live), so a forced listener gets the live events, not an older stored
+report. A run
 has a total deadline of `CHECK_DEADLINE_S`: a probe still unfinished then ends as `down`, "did
 not answer in time", and `done` still arrives.
 """
@@ -46,7 +49,9 @@ from jarvis.voice.service import SpeakRequest
 log = get_logger(__name__)
 
 CHECK_COOLDOWN_S = 30.0
-CHECK_DEADLINE_S = 45.0
+# R5.1 D4 / int-sec M4: probe 5 s < this < the tick job's 25 s deadline < its 30 s budget, so a slow
+# check always ends in fixed words (down, "did not answer in time") before the tick cancels it.
+CHECK_DEADLINE_S = 20.0
 MAX_WATCHERS = 4  # one run, this many listeners at most
 VITALS_TIMEOUT_S = 5.0
 SKIPPED = "skipped"

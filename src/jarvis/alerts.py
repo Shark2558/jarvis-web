@@ -35,7 +35,7 @@ AlertKind = Literal[
     # R5.1 (docs/plans/r5-1-observations.md D3): the laptop stopped answering while DISARMED
     "home_offline_idle",
     # R4 (docs/plans/r4-vitals-health-people.md D4, D6): vitals + self-health. Levels in
-    # notify.ports.DEFAULT_URGENCY: vitals_critical/health_fault urgent, the rest info.
+    # notify.ports.DEFAULT_URGENCY: vitals_critical/health_fault important (D13), the rest info.
     "vitals_warn",
     "vitals_critical",
     "health_fault",

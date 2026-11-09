@@ -92,7 +92,14 @@ from jarvis.integrations.google import (
     register_tools_oauth,
 )
 from jarvis.integrations.vault import MemoryTokenStore
-from jarvis.llm.base import LLMAuthError, LLMError, LLMOutOfCredit, LLMProvider, LLMTransientError
+from jarvis.llm.base import (
+    LLMAuthError,
+    LLMDeclined,
+    LLMError,
+    LLMOutOfCredit,
+    LLMProvider,
+    LLMTransientError,
+)
 from jarvis.llm.brains import BrainRegistry
 from jarvis.llm.fallback import FallbackFailed
 from jarvis.llm.router import NO_AI_REFUSAL, BrainOff
@@ -245,14 +252,12 @@ def friendly_llm_error(exc: LLMError) -> str:
         return NO_AI_REFUSAL
     if isinstance(exc, FallbackFailed):  # R1 C: the laptop's own plain-words message
         return str(exc)
-    low = str(exc).lower()
-    if isinstance(exc, LLMOutOfCredit) or any(
-        w in low for w in ("credit balance", "billing", "quota")
-    ):
+    # R5.1: typed errors only; the vendor's own words are never read to choose a message
+    if isinstance(exc, LLMOutOfCredit):
         return "The AI provider account has no credit or quota left. Add credit, or switch brain."
     if isinstance(exc, LLMTransientError):
         return "The AI service is busy or rate-limited right now. Please try again in a minute."
-    if "blocked" in low:
+    if isinstance(exc, LLMDeclined):
         return "The AI provider declined to answer that message."
     return "The AI service could not answer. Please try again."
 

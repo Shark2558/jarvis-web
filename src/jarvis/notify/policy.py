@@ -19,7 +19,9 @@ from jarvis.notify.terms import emergency
 
 # R5.1 D3: important kinds that ring in waking hours even with "only urgent things ring" (still
 # held, never rung, in quiet hours).
-DAYTIME_RING_KINDS = frozenset({"home_offline_idle"})
+# R5.1 D13: the systems check runs around the clock, so a health fault / red vitals line must not
+# wake the owner at night: both are "important" and ring only in waking hours.
+DAYTIME_RING_KINDS = frozenset({"home_offline_idle", "health_fault", "vitals_critical"})
 
 
 def urgency_of(kind: str) -> Urgency:

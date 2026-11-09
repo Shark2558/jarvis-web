@@ -27,7 +27,7 @@ SPOKEN = (
     "Systems check complete, Sir. I checked 4 systems: the AI brain, the document store, Google "
     "and Telegram. The AI brain and the document store are working. Telegram is not answering "
     "— alerts and Telegram chat won't reach you. Google is degraded — calendar, email, "
-    "reminders and Drive stop working. AI spend is ₹120 of ₹500 this month, 24 percent. "
+    "reminders and Drive stop working. AI spend is ₹120 of ₹500 this month (24 percent). "
     "GitHub token expires in 3 days — the service using it stops working. Shall I set a "
     "reminder to fix this?"
 )
@@ -61,7 +61,7 @@ DONE: dict[str, Any] = {
         "spoken": SPOKEN,
         "lines": [SPOKEN],
         "concerns": CONCERNS,
-        "spend": "AI spend is ₹120 of ₹500 this month, 24 percent.",
+        "spend": "AI spend is ₹120 of ₹500 this month (24 percent).",
     },
 }
 

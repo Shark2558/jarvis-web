@@ -3,6 +3,10 @@
 
     jarvis_vitals_providers/{name}   the manual record (+ user_id); listed by owner, sorted here
     jarvis_vitals_status/{name}      {user_id, status, at}: last status, for cross-line alerts
+    jarvis_vitals_index/{uid-hash}   {ids: [...]}: the owner's manual record names, so the
+                                     50-record cap is counted INSIDE the write transaction (R5.1
+                                     int-sec M3). A record that pre-dates the index is counted
+                                     from the list.
 
 `name` is a hash of (uid, id) joined by a separator that neither may contain, so two different
 (uid, id) pairs can never share a document. Only `manual` records are stored; `auto` ones are
@@ -20,7 +24,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Delete, Docs, DocTx, Query, Set
+from jarvis.storage.docs import Docs, DocTx, Query, Set
 from jarvis.undo.store import owner_ok
 from jarvis.vitals.models import ID_PATTERN, MAX_MANUAL, RANK, Provider, Status
 
@@ -47,6 +51,11 @@ class VitalsFull(RuntimeError):
     """The per-owner record cap is reached (plain words)."""
 
 
+def _ids(idx: dict[str, Any]) -> set[str]:
+    raw = idx.get("ids")
+    return {i for i in raw if isinstance(i, str)} if isinstance(raw, list) else set()
+
+
 def valid_id(pid: str) -> bool:
     return bool(re.fullmatch(ID_PATTERN, pid))
 
@@ -56,6 +65,7 @@ class VitalsStore:
         self._d = docs
         self._providers = f"{prefix}vitals_providers"
         self._status = f"{prefix}vitals_status"
+        self._index = f"{prefix}vitals_index"
 
     @staticmethod
     def _name(uid: str, pid: str) -> str:
@@ -93,47 +103,69 @@ class VitalsStore:
                 log.warning("vitals record skipped: unreadable")
         return sorted(out, key=lambda p: (p.label.casefold(), p.id))
 
+    def _index_path(self, uid: str) -> str:
+        if not owner_ok(uid):
+            raise ValueError("bad owner id")
+        return f"{self._index}/{hashlib.sha256(uid.encode()).hexdigest()[:NAME_LEN]}"
+
     async def put(self, uid: str, p: Provider, *, create: bool = False) -> None:
-        """Upsert; with `create` an existing id is refused (`VitalsExists`), never overwritten."""
+        """Upsert; with `create` an existing id is refused (`VitalsExists`), never overwritten.
+        The cap is counted in the same transaction as the write, so parallel creates can't pass
+        it together."""
         if p.source != "manual":
             raise ValueError("only manual records are stored")
-        path = f"{self._providers}/{self._name(uid, p.id)}"
-        rows = await self._rows(uid)  # raw rows: unreadable ones count toward the cap
-        if all(doc.get("id") != p.id for _i, doc in rows) and len(rows) >= MAX_MANUAL:
-            raise VitalsFull(FULL)
+        name = self._name(uid, p.id)
+        path = f"{self._providers}/{name}"
+        index = self._index_path(uid)
+        # Seed for an owner with no index yet (records from before it): the raw rows, so the
+        # unreadable ones count toward the cap too.
+        seed = sorted(doc_id for doc_id, _doc in await self._rows(uid))
         doc = {**p.fields(), "user_id": uid}
-        if not create:
-            await self._write([Set(path, doc)])
-            return
 
-        async def first(tx: DocTx) -> bool:
-            if await tx.get(path) is not None:
-                return False
+        async def write(tx: DocTx) -> str:
+            held = await tx.get(path)
+            idx = await tx.get(index)
+            ids = _ids(idx) if idx is not None else set(seed)
+            if held is not None and create:
+                return "exists"
+            if name not in ids and held is None and len(ids) >= MAX_MANUAL:
+                return "full"
             tx.set(path, doc)
-            return True
+            tx.set(index, {"ids": sorted(ids | {name})})
+            return "ok"
 
         try:
-            made = await self._d.transaction(first)
+            outcome = await self._d.transaction(write)
         except Exception as exc:
             self._trouble("vitals write failed", exc)
             raise VitalsUnavailable(UNAVAILABLE) from exc
-        if not made:
+        if outcome == "exists":
             raise VitalsExists(TAKEN)
+        if outcome == "full":
+            raise VitalsFull(FULL)
 
     async def delete(self, uid: str, pid: str, *, status: bool = True) -> bool:
         """Remove a manual record. `status=False` keeps the shared last-status record (a manual
         record that shadows a built-in item must not wipe the built-in item's alert state)."""
-        path = f"{self._providers}/{self._name(uid, pid)}"
+        name = self._name(uid, pid)
+        path = f"{self._providers}/{name}"
+        index = self._index_path(uid)
+
+        async def remove(tx: DocTx) -> bool:
+            existed = await tx.get(path) is not None
+            idx = await tx.get(index)
+            tx.delete(path)
+            if status:
+                tx.delete(f"{self._status}/{self._name(uid, pid)}")
+            if idx is not None:
+                tx.set(index, {"ids": sorted(_ids(idx) - {name})})
+            return existed
+
         try:
-            existed = await self._d.get(path) is not None
+            return await self._d.transaction(remove)
         except Exception as exc:
-            self._trouble("vitals unreadable", exc)
+            self._trouble("vitals write failed", exc)
             raise VitalsUnavailable(UNAVAILABLE) from exc
-        ops = [Delete(path)]
-        if status:
-            ops.append(Delete(f"{self._status}/{self._name(uid, pid)}"))
-        await self._write(ops)
-        return existed
 
     async def last_status(self, uid: str, pid: str) -> Status | None:
         try:

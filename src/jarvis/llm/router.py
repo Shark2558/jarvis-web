@@ -248,6 +248,11 @@ class ModelRouter:
                 current = self._degrade(current, exc, allow_degrade)
             except LLMError as exc:  # auth / other: not retried, but remembered
                 self._note_failure(exc)
+                if isinstance(exc, LLMOutOfCredit) and not tried_laptop:
+                    # R5.1: no paid credit must not block the FREE laptop brain, if it is set up
+                    done = await self._offline_complete(None, **local)
+                    if done is not None:
+                        return done
                 raise
             else:
                 await self._cloud_ok()
@@ -325,6 +330,14 @@ class ModelRouter:
             return
         except LLMError as exc:  # busy / auth / other: propagates, but remembered
             self._note_failure(exc)
+            if isinstance(exc, LLMOutOfCredit) and not started and not tried_laptop:
+                if await self._fallback_ready():  # R5.1: the free laptop brain still answers
+                    try:
+                        async for delta in self._local_stream(local, miss=False):
+                            yield delta
+                    except _LaptopSilent:
+                        raise exc from None
+                    return
             raise
         await self._cloud_ok()
 

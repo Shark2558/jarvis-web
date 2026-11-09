@@ -76,6 +76,8 @@ BY_REASON: Mapping[tuple[str, str], tuple[str, str, str]] = {
 UNKNOWN_IMPACT = "it may not work until it's fixed"
 UNKNOWN_FIX = "Run the check again in a few minutes."
 SPEND_IMPACT = "paid AI replies stop at the limit"
+SPEND_WARN_PERCENT = 80  # R5.1 V1: from here the spend sentence says what the limit does
+SPEND_LIMIT_SENTENCE = "At the limit, paid replies pause and JARVIS uses the free brain."
 SPEND_FIX = "Raise the monthly limit in Vitals, or wait for next month."
 VITALS_IMPACT: Mapping[str, str] = {  # by vitals kind, when Vitals gives none
     "allowance": "its free allowance runs out",
@@ -226,21 +228,23 @@ def _allowance_high(v: ProviderView) -> bool:
 
 
 def _spend_part(board: Board) -> tuple[list[_Part], list[Concern]]:
+    """The spend sentence (R5.1 V1): "AI spend is ₹412.50 of ₹500 this month (82 percent)." and,
+    from `SPEND_WARN_PERCENT` on, its own second sentence about the limit. Said once; a hot spend
+    item still joins the concerns (its impact is for the card, not for this sentence)."""
     spend = board.spend
     if spend is None:
         return [], []
     used, limit = spend.used_inr, spend.limit_inr
-    if limit is None:
-        text = f"AI spend is {rupees(used)} this month, no limit set"
-    elif limit > 0:
-        text = f"AI spend is {rupees(used)} of {rupees(limit)} this month, "
-        text += f"{round(used / limit * 100)} percent"
-    else:
-        text = f"AI spend is {rupees(used)} of {rupees(limit)} this month"
+    text = f"AI spend is {rupees(used)} this month, no limit set."
+    if limit is not None and limit > 0:
+        percent = round(used / limit * 100)
+        text = f"AI spend is {rupees(used)} of {rupees(limit)} this month ({percent} percent)."
+        if used / limit * 100 >= SPEND_WARN_PERCENT:
+            text += f" {SPEND_LIMIT_SENTENCE}"
+    elif limit is not None:
+        text = f"AI spend is {rupees(used)} of {rupees(limit)} this month."
     item = next((v for v in board.items if v.provider.id == SPEND_ID and _hot(v)), None)
-    if item is None:
-        return [_Part(text + ".", 0)], []
-    return [_Part(f"{text} {DASH} {_impact(item)}.", 0)], [_concern(item)]
+    return [_Part(text, 0)], ([_concern(item)] if item is not None else [])
 
 
 def _vitals_parts(board: Board) -> tuple[list[_Part], list[Concern]]:

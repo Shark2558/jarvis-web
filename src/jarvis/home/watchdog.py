@@ -69,6 +69,11 @@ def took(delivery: Delivery, *, idle: bool) -> bool:
     return delivery.action == "drop" and delivery.reason in OWNER_SETTLED
 
 
+# Jobs that ride the watchdog but are not the laptop watchdog: when one fails the Scheduler must
+# not see the 5-minute laptop check as failing (and retry it). They report "degraded" instead.
+ADVISORY_JOBS = frozenset({"health_check"})
+
+
 class OfflineJob:
     name = "home_offline"
     budget_s = 30.0
@@ -128,7 +133,10 @@ class OfflineJob:
             return  # told as idle, still disarmed
         told = False
         if self._notifier is not None and (armed or self._alert_when == "always"):
-            told = await self._tell(self._notifier, uid, seen, armed=armed, counts=counts)
+            sent = await self._claim_and_tell(self._notifier, uid, seen, armed, counts)
+            if sent is None:
+                return  # another instance holds the alert slot (compare-and-set in the store)
+            told = sent
         if told and armed:
             self._told_idle.discard(uid)
         elif told:
@@ -140,6 +148,22 @@ class OfflineJob:
         if status.state != "offline" or told:
             kind: OutageKind | None = ("armed" if armed else "idle") if told else None
             await self._store.mark_offline(uid, alerted=told, kind=kind)
+
+    async def _claim_and_tell(
+        self, notifier: Notifier, uid: str, seen: float, armed: bool, counts: dict[str, int]
+    ) -> bool | None:
+        """Take the alert slot (store compare-and-set), send, and give the slot back when no
+        channel took the alert. None: not ours to send."""
+        if not await self._store.claim_alert(uid, "armed" if armed else "idle"):
+            return None
+        try:
+            told = await self._tell(notifier, uid, seen, armed=armed, counts=counts)
+        except BaseException:
+            await self._store.release_claim(uid)
+            raise
+        if not told:
+            await self._store.release_claim(uid)
+        return told
 
     def _idle_only(self, uid: str, status: HomeStatus) -> bool:
         """Whether this outage was told by the idle alert only: the stored kind (any instance),
@@ -195,7 +219,11 @@ class Watchdog:
     async def run(self) -> dict[str, object]:
         owners = await self._store.linked_uids()
         jobs: list[TickJob] = [self._offline, self._claims, self._codes, *self._extra]
-        results = await run_jobs(jobs, owners)
+        results: dict[str, str] = dict(await run_jobs(jobs, owners))
+        for name in ADVISORY_JOBS & results.keys():  # int-sec M4: never a 503 for these
+            if results[name] == "failed":
+                log.error("an advisory watchdog job did not finish", extra={"job": name})
+                results[name] = "degraded"
         return {
             "homes": self._offline.last.get("homes", 0),
             "offline": self._offline.last.get("offline", 0),
@@ -205,4 +233,12 @@ class Watchdog:
         }
 
 
-__all__ = ["ARMED_TEXT", "IDLE_TEXT", "AlertWhen", "OfflineJob", "Watchdog", "took"]
+__all__ = [
+    "ADVISORY_JOBS",
+    "ARMED_TEXT",
+    "IDLE_TEXT",
+    "AlertWhen",
+    "OfflineJob",
+    "Watchdog",
+    "took",
+]

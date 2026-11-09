@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 from fallback_fakes import KW, TIERS, CloudProvider
-from health_fakes import UID, Clock, Flip, Notes, fixed
+from health_fakes import SPACING, UID, Clock, Flip, Notes, fixed
 from research_fakes import fixed_mode
 
 from jarvis.health import probes as P
@@ -144,6 +144,7 @@ async def test_skipped_probes_are_left_out() -> None:
 async def runs(svc: HealthService, n: int) -> None:
     for _ in range(n):
         await svc.check(UID, force=True)
+        svc._clock.now += SPACING  # type: ignore[attr-defined]  # noqa: SLF001 - R5.1 D14 spacing
 
 
 async def test_a_fault_that_holds_for_two_checks_raises_an_urgent_health_fault() -> None:

@@ -127,7 +127,7 @@ class LiveVitals:
         svc: VitalsService | None = getattr(self._app.state, "vitals", None)
         if svc is None:
             raise LookupError("vitals is not available")
-        return await svc.board(uid)
+        return await svc.board_cached(uid)  # int-sec M2: a 15 s old board is fine for a briefing
 
 
 # ---- the systems check (R4 B; R5.1 C) -----------------------------------------------------------

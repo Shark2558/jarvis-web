@@ -64,10 +64,13 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "offline_on": "info",
         "offline_off": "info",
         "brief_ready": "info",
-        # R4: a red vitals line and a self-health fault ring through quiet hours (never held, like
-        # hazards); an amber warning and a recovery are info (silent / feed only).
-        "vitals_critical": "urgent",
-        "health_fault": "urgent",
+        # R5.1 D13 (was urgent in R4): the systems check runs 24/7, so a red vitals line and a
+        # self-health fault are "important" daytime rings (notify.policy DAYTIME_RING_KINDS):
+        # they ring in waking hours and are held for the morning summary in quiet hours. The
+        # storm's soft caps (storm.SOFT_URGENT_KINDS) still bound them. An amber warning and a
+        # recovery are info (silent / feed only).
+        "vitals_critical": "important",
+        "health_fault": "important",
         "vitals_warn": "info",
         "health_recovered": "info",
         "health_degraded": "info",  # a degraded integration is a note, never a ring

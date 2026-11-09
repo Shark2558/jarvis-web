@@ -31,9 +31,7 @@ class HealthStore:
             results = tuple(ProbeResult.model_validate(v) for v in doc["results"].values())
             report = HealthReport(overall=doc["overall"], results=results, at=doc["at"])
             alerted = {str(k): _status(v) for k, v in doc.get("alerted", {}).items()}
-            streaks = {
-                str(k): (_status(v[0]), int(v[1])) for k, v in doc.get("streaks", {}).items()
-            }
+            streaks = {str(k): _streak(v) for k, v in doc.get("streaks", {}).items()}
         except (KeyError, TypeError, AttributeError, ValueError, IndexError, ValidationError):
             log.warning("a stored health result was unreadable and is ignored")
             return None
@@ -50,9 +48,26 @@ class HealthStore:
             "at": report.at,
             "results": {r.key: r.model_dump(mode="json") for r in report.results},
             "alerted": dict(state.alerted),
-            "streaks": {k: [st, n] for k, (st, n) in state.streaks.items()},
+            "streaks": {
+                k: [st, n, first, last] for k, (st, n, first, last) in state.streaks.items()
+            },
         }
         await self._d.write([Set(self._path(uid), data)])
+
+
+def _time(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("bad time")
+    return float(value)
+
+
+def _streak(v: Any) -> tuple[Status, int, float | None, float | None]:
+    """[status, count] (before R5.1) or [status, count, first_at, last_counted_at]."""
+    first = _time(v[2]) if len(v) > 2 else None
+    last = _time(v[3]) if len(v) > 3 else None
+    return (_status(v[0]), int(v[1]), first, last)
 
 
 def _status(value: object) -> Status:

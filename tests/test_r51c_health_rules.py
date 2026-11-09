@@ -42,7 +42,8 @@ def test_home_and_redis_down_names_only_redis() -> None:
         ProbeResult(key="home", label="the home bridge", status="down", reason="r", at=1.0),
         ProbeResult(key="redis", label="Redis", status="down", reason="r", at=1.0),
     )
-    second = plan(r, {}, plan(r, {}, {}).streaks)
+    later = r.model_copy(update={"at": 301.0})  # R5.1 D14: >= 4 minutes later
+    second = plan(later, {}, plan(r, {}, {}).streaks)
     assert [m.kind for m in second.messages] == ["health_fault"]
     assert second.messages[0].keys == frozenset({"redis"})
     assert "home" not in second.messages[0].text and "Redis" in second.messages[0].text

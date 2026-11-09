@@ -35,11 +35,37 @@ class Brain:
     def __init__(self) -> None:
         self.mode = "ai"
         self.posts: list[dict[str, str]] = []
+        self.fail_get = False  # GET answers 500
+        self.fail_post = False  # POST answers 500 (and changes nothing)
+        self.hold_post = False  # park POSTs until release()
+        self.held: list[Any] = []
+
+    def release(self) -> None:
+        held, self.held = self.held, []
+        for route, body in held:
+            self.mode = body["mode"]
+            self._ok(route)
+
+    def _ok(self, route: Any) -> None:
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"mode": self.mode, "meaning": MEANING[self.mode]}),
+        )
 
     def __call__(self, route: Any) -> None:
+        if route.request.method == "GET" and self.fail_get:
+            route.fulfill(status=500, content_type="application/json", body='{"detail":"x"}')
+            return
         if route.request.method == "POST":
             body = json.loads(route.request.post_data or "{}")
             self.posts.append(body)
+            if self.fail_post:
+                route.fulfill(status=500, content_type="application/json", body='{"detail":"x"}')
+                return
+            if self.hold_post:
+                self.held.append((route, body))
+                return
             self.mode = body["mode"]
         route.fulfill(
             status=200,
@@ -210,7 +236,7 @@ def test_brain_menu_keyboard_escape_and_click_outside(
     c.close()
 
 
-def test_people_buttons_follow_the_pill_and_the_pill_follows_them(
+def test_people_buttons_follow_the_pill_and_the_ai_button_asks_first(
     browser: Any, server_url: str, token: str
 ) -> None:
     c, brain = boot(browser, server_url, token, DESKTOP)
@@ -220,9 +246,186 @@ def test_people_buttons_follow_the_pill_and_the_pill_follows_them(
     c.page.locator("#brainMenu .bmopt[data-mode=none]").click()
     expect(c.page.locator("#modeNone")).to_have_attribute("aria-pressed", "true")
     assert c.page.locator("#modeAi").get_attribute("aria-pressed") == "false"
-    c.page.locator("#modeAi").click()  # the panel button still switches
+    # R5.1 int fix: the panel's AI button asks first, exactly like the pill's menu
+    c.page.locator("#modeAi").click()
+    ask = c.page.locator("#brainMenu .bmask")
+    ask.wait_for()
+    assert brain.posts == [{"mode": "none"}]  # nothing sent by the click alone
+    c.page.get_by_role("button", name="Switch on").click()
     expect(c.page.locator("#brainModeBadge").first).to_contain_text("AI on", ignore_case=True)
     assert brain.posts[-1] == {"mode": "ai"}
+    expect(c.page.locator("#modeAi")).to_have_attribute("aria-pressed", "true")
+    c.close()
+
+
+def test_the_public_setter_cannot_switch_ai_on_without_the_confirm(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, brain = boot(browser, server_url, token, DESKTOP)
+    c.page.evaluate("window.JarvisBrainMode.set('none')")
+    expect(c.page.locator("#brainModeBadge").first).to_contain_text("No-AI", ignore_case=True)
+    c.page.evaluate("window.JarvisBrainMode.set('ai')")
+    c.page.locator("#brainMenu .bmask").wait_for()
+    c.page.wait_for_timeout(200)
+    assert brain.posts == [{"mode": "none"}]
+    assert c.page.evaluate("window.JarvisBrainMode.get()") == "none"
+    c.page.get_by_role("button", name="Cancel").click()
+    assert brain.posts == [{"mode": "none"}]
+    c.close()
+
+
+# ---- the pill never claims a mode the server has not told it --------------------------------------
+def test_the_pill_starts_unknown_and_never_says_ai_on_before_the_server_answers(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c = Console(browser, server_url, token, DESKTOP)
+    install_mocks(c.page)
+    seen: list[str] = []
+    gate: list[Any] = []
+
+    def hold(route: Any) -> None:
+        gate.append(route)
+
+    c.page.route("**/v1/settings/brain-mode", hold)
+    c.open()
+    pill = c.page.locator("#brainModeBadge")
+    pill.wait_for()
+    seen.append(str(pill.inner_text()).lower())
+    assert "ai on" not in seen[0] and "brain:" in seen[0]
+    gate[0].fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({"mode": "none", "meaning": ""}),
+    )
+    expect(pill.first).to_contain_text("No-AI", ignore_case=True)
+    c.close()
+
+
+def test_a_failed_read_shows_unknown_and_pressing_the_pill_retries(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c = Console(browser, server_url, token, DESKTOP)
+    install_mocks(c.page)
+    brain = Brain()
+    brain.fail_get = True
+    c.page.route("**/v1/settings/brain-mode", brain)
+    c.open()
+    pill = c.page.locator("#brainModeBadge")
+    expect(pill.first).to_contain_text("unknown", ignore_case=True)
+    assert "ai on" not in str(pill.inner_text()).lower()
+    expect(c.page.locator(".bmnote")).to_contain_text("could not read")
+    brain.fail_get = False
+    pill.click()
+    expect(pill.first).to_contain_text("AI on", ignore_case=True)
+    c.close()
+
+
+def test_a_failed_switch_says_so_next_to_the_pill_and_keeps_the_true_mode(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, brain = boot(browser, server_url, token, DESKTOP)  # the People panel stays CLOSED
+    brain.fail_post = True
+    c.page.locator("#brainModeBadge").click()
+    c.page.locator("#brainMenu .bmopt[data-mode=none]").click()
+    note = c.page.locator(".bmnote")
+    note.wait_for()
+    assert "did not change" in str(note.inner_text())
+    assert c.page.locator("#p-people").is_hidden()
+    expect(c.page.locator("#brainModeBadge").first).to_contain_text("AI on", ignore_case=True)
+    brain.fail_post = False
+    c.close()
+
+
+def test_a_second_pick_while_a_switch_is_in_flight_is_ignored(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, brain = boot(browser, server_url, token, DESKTOP)
+    brain.hold_post = True
+    c.page.locator("#brainModeBadge").click()
+    c.page.locator("#brainMenu .bmopt[data-mode=none]").click()
+    c.page.wait_for_timeout(150)
+    assert c.page.locator("#brainModeBadge").get_attribute("aria-busy") == "true"
+    c.page.locator("#brainModeBadge").click()
+    for mode in ("ai", "none"):  # aria-disabled options still take clicks: the script ignores them
+        c.page.locator(f"#brainMenu .bmopt[data-mode={mode}]").click(force=True)
+    c.page.evaluate("window.JarvisBrainMode.set('none')")
+    c.page.wait_for_timeout(150)
+    assert brain.posts == [{"mode": "none"}]  # only one POST ever left the page
+    brain.hold_post = False
+    brain.release()
+    expect(c.page.locator("#brainModeBadge").first).to_contain_text("No-AI", ignore_case=True)
+    assert c.page.locator("#brainModeBadge").get_attribute("aria-busy") == "false"
+    c.close()
+
+
+def test_brain_menu_structure_and_default_focus_on_cancel(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, _ = boot(browser, server_url, token, DESKTOP)
+    c.page.locator("#brainModeBadge").click()
+    c.page.locator("#brainMenu .bmopt[data-mode=none]").wait_for()
+    # role=menu holds menu items only; the confirm group sits beside it, outside the menu
+    assert (
+        c.page.locator("#brainMenu [role=menu] .btn, #brainMenu [role=menu] [role=group]").count()
+        == 0
+    )
+    assert c.page.locator("#brainMenu [role=menu] > [role=menuitemradio]").count() == 2
+    assert c.page.locator("#brainMenu > .bmask[role=group]").count() == 1
+    c.page.locator("#brainMenu .bmopt[data-mode=none]").click()  # No-AI: immediate
+    expect(c.page.locator("#brainModeBadge").first).to_contain_text("No-AI", ignore_case=True)
+    c.page.locator("#brainModeBadge").click()
+    c.page.locator("#brainMenu .bmopt[data-mode=ai]").click()
+    c.page.locator("#brainMenu .bmask").wait_for()
+    assert c.page.evaluate("document.activeElement.textContent") == "Cancel"
+    c.page.keyboard.press("Tab")  # Cancel -> Switch on stays inside the menu
+    assert c.page.evaluate("document.activeElement.textContent") == "Switch on"
+    assert c.page.locator("#brainMenu").is_visible()
+    c.close()
+
+
+def test_tab_leaves_and_closes_the_menu_and_a_switch_is_announced(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, _ = boot(browser, server_url, token, DESKTOP)
+    pill = c.page.locator("#brainModeBadge")
+    pill.click()
+    c.page.locator("#brainMenu .bmopt").first.wait_for()
+    c.page.keyboard.press("Tab")
+    assert c.page.locator("#brainMenu").is_hidden()
+    pill.click()
+    c.page.locator("#brainMenu .bmopt[data-mode=none]").click()
+    live = c.page.locator(".bmslot .sr-only[aria-live=polite]")
+    expect(live).to_have_text("Brain: No-AI")
+    c.close()
+
+
+def test_pill_touch_area_is_44px_on_a_phone_and_does_not_reach_the_picker(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, _ = boot(browser, server_url, token, PHONE)
+    pb = c.page.locator("#brainModeBadge").bounding_box()
+    sb = c.page.locator("#brainSel").bounding_box()
+    assert pb is not None and sb is not None
+    assert round(pb["height"]) == 26  # the look is unchanged
+    cx = pb["x"] + pb["width"] / 2
+    # the points 20 px above and below the centre (the pill is 26 px tall) still hit the pill
+    for dy in (-21, 21):
+        hit = c.page.evaluate(
+            "([x, y]) => { const e = document.elementFromPoint(x, y); return e && (e.closest('#brainModeBadge') ? 'pill' : e.id || e.tagName); }",
+            [cx, pb["y"] + pb["height"] / 2 + dy],
+        )
+        assert hit == "pill", (dy, hit)
+    beyond = c.page.evaluate(
+        "([x, y]) => { const e = document.elementFromPoint(x, y); return !!(e && e.closest('#brainModeBadge')); }",
+        [cx, pb["y"] + pb["height"] / 2 + 24],
+    )
+    assert beyond is False  # the band is 44 px, no more
+    area = c.page.evaluate(
+        "(() => { const r = document.querySelector('#brainModeBadge'); const b = getComputedStyle(r, '::before');"
+        " return parseFloat(b.height); })()"
+    )
+    assert area >= 43
+    assert pb["x"] + pb["width"] <= sb["x"] - 2  # beside the picker, never over it
     c.close()
 
 
@@ -311,6 +514,76 @@ def test_github_disconnect_is_a_two_step_confirm(browser: Any, server_url: str, 
     confirm.get_by_role("button", name="Disconnect").click()
     c.page.wait_for_timeout(300)
     assert len(deletes) == 1
+    c.close()
+
+
+def test_github_token_field_is_cleared_after_a_failed_save_too(
+    browser: Any, server_url: str, token: str
+) -> None:
+    off = {**MOCK_CONNECTORS, "github": {"connected": False, "login": ""}}
+    c, _ = boot(browser, server_url, token, DESKTOP, connectors=off)
+    sent: list[str] = []
+
+    def refuse(route: Any) -> None:
+        if route.request.method == "PUT":
+            sent.append(route.request.post_data or "")
+            route.fulfill(status=422, content_type="application/json", body='{"detail":"No."}')
+        else:
+            route.continue_()
+
+    c.page.route("**/v1/connectors/github", refuse)
+    c.open_panel("connectors")
+    field = c.page.locator("#ghToken")
+    field.wait_for()
+    assert field.get_attribute("autocomplete") == "new-password"
+    assert field.get_attribute("spellcheck") == "false"
+    field.fill("ghp_notarealtoken0123456789")
+    c.page.get_by_role("button", name="Connect GitHub").click()
+    c.page.locator("#p-connectors .bnote.bad").wait_for()
+    assert len(sent) == 1
+    assert field.input_value() == ""  # not left sitting in the page after a refusal
+    assert c.page.evaluate("document.activeElement.id") == "ghToken"
+    c.close()
+
+
+def test_github_disconnect_returns_focus_after_success_and_after_failure(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, _ = boot(browser, server_url, token, DESKTOP)
+    mode = {"fail": True}
+
+    def drop(route: Any) -> None:
+        if route.request.method != "DELETE":
+            route.continue_()
+        elif mode["fail"]:
+            route.fulfill(status=500, content_type="application/json", body='{"detail":"No."}')
+        else:
+            route.fulfill(status=200, content_type="application/json", body="{}")
+
+    c.page.route("**/v1/connectors/github", drop)
+    c.open_panel("connectors")
+    c.page.get_by_role("button", name="Disconnect").first.wait_for()
+    c.page.get_by_role("button", name="Disconnect").first.click()
+    c.page.locator("#p-connectors .confirm").get_by_role("button", name="Disconnect").click()
+    c.page.locator("#p-connectors .bnote.bad").wait_for()
+    # failure: the row collapsed; focus is on the Disconnect button, not on the page body
+    assert c.page.evaluate("document.activeElement.textContent") == "Disconnect"
+    assert c.page.evaluate("document.activeElement.tagName") == "BUTTON"
+    mode["fail"] = False
+    off = {**MOCK_CONNECTORS, "github": {"connected": False, "login": ""}}
+    c.page.route(
+        "**/v1/connectors",
+        lambda r: (
+            r.fulfill(status=200, content_type="application/json", body=json.dumps(off))
+            if r.request.method == "GET"
+            else r.continue_()
+        ),
+    )
+    c.page.get_by_role("button", name="Disconnect").first.click()
+    c.page.locator("#p-connectors .confirm").get_by_role("button", name="Disconnect").click()
+    c.page.locator("#ghToken").wait_for(state="visible")
+    c.page.wait_for_timeout(200)
+    assert c.page.evaluate("document.activeElement.id") == "ghToken"  # success: the empty field
     c.close()
 
 

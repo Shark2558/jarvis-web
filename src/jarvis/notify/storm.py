@@ -31,6 +31,7 @@ FLAP_KINDS = frozenset({"home_offline", "home_offline_idle", "home_online", "hom
 # Health and vitals rings are "urgent" by default but must never crowd out a burglar ring (I2 F2):
 # one per subject per 30 minutes and 6 an hour in all, counted apart from the burglar window.
 SOFT_URGENT_KINDS = frozenset({"health_fault", "vitals_critical"})
+MAX_IDLE_PER_HOUR = 3  # R5.1: a laptop that sleeps and wakes all day rings the idle alert 3 an hour
 SOFT_URGENT_GAP = timedelta(minutes=30)
 MAX_SOFT_URGENT_PER_HOUR = 6
 SUMMARY_EVERY = timedelta(minutes=10)
@@ -53,6 +54,7 @@ class Storm:
         self._flap: dict[tuple[str, str], datetime] = {}
         self._soft: dict[tuple[str, str, str], datetime] = {}  # (uid, kind, subject) gap stamps
         self._soft_rings: dict[str, deque[datetime]] = {}  # uid -> health/vitals rings, last hour
+        self._idle: dict[str, deque[datetime]] = {}  # uid -> idle-offline rings, last hour
         self._pending: dict[str, tuple[int, datetime]] = {}  # uid -> (suppressed, first at)
         self._package: dict[str, datetime] = {}
         self._greeting: dict[tuple[str, str], datetime] = {}
@@ -80,6 +82,10 @@ class Storm:
             tag, key, table = "flap", (uid, signal.kind), self._flap
         else:
             return
+        if signal.kind == "home_offline_idle":
+            idle = self._idle.get(uid)
+            if idle is not None and now in idle:
+                idle.remove(now)
         if table.get(key) != now or (tag, *key) not in self._before:
             return
         before = self._before.pop((tag, *key))
@@ -90,6 +96,17 @@ class Storm:
         window = self._urgent.get(uid) if signal.kind == "home_intruder" else None
         if window is not None and now in window:
             window.remove(now)
+
+    def _idle_ok(self, uid: str, now: datetime) -> bool:
+        window = self._idle.setdefault(uid, deque())
+        while window and now - window[0] >= timedelta(hours=1):
+            window.popleft()
+        if len(window) >= MAX_IDLE_PER_HOUR:
+            return False
+        window.append(now)
+        if len(self._idle) > MAX_KEYS:
+            self._idle = {k: v for k, v in self._idle.items() if v}
+        return True
 
     def _rollback_soft(self, uid: str, signal: Signal, now: datetime) -> None:
         key = (uid, signal.kind, signal.subject or "-")
@@ -172,6 +189,8 @@ class Storm:
             flap = (uid, kind)
             last_f = self._flap.get(flap)
             if last_f is not None and now - last_f < FLAP_GAP:
+                return Verdict(False, "flap_gap")
+            if kind == "home_offline_idle" and not self._idle_ok(uid, now):
                 return Verdict(False, "flap_gap")
             self._stamp("flap", self._flap, flap, now)
         if kind == "home_intruder":

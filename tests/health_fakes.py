@@ -20,6 +20,11 @@ class Clock:
         return self.now
 
 
+# R5.1 D14: checks count toward a streak only if >= 4 minutes apart; tests that mean "the next
+# check" step the fake clock by this much between checks.
+SPACING = 300.0
+
+
 class Notes:
     """A Notifier that records what it was asked to send."""
 

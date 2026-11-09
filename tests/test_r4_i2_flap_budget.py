@@ -104,17 +104,18 @@ async def test_health_and_vitals_alerts_do_not_draw_from_the_urgent_budget() -> 
 # ---- changes: recovery needs a clear streak ---------------------------------------------------
 
 
-def report(status: str) -> HealthReport:
-    row = ProbeResult(key="redis", label="Redis", status=status, reason="x", at=1.0)  # type: ignore[arg-type]
-    return HealthReport(overall=status, results=(row,), at=1.0)  # type: ignore[arg-type]
+def report(status: str, at: float = 1.0) -> HealthReport:
+    row = ProbeResult(key="redis", label="Redis", status=status, reason="x", at=at)  # type: ignore[arg-type]
+    return HealthReport(overall=status, results=(row,), at=at)  # type: ignore[arg-type]
 
 
 def test_recovery_needs_three_clear_checks() -> None:
     told = {"redis": "down"}
     streaks: dict = {"redis": ("ok", RECOVERY_CHECKS - 2)}
 
-    early = plan(report("ok"), told, streaks)  # streak is now RECOVERY_CHECKS - 1
-    done = plan(report("ok"), told, early.streaks)
+    # R5.1 D14: the checks are 5 minutes apart (a legacy 2-field streak has no times)
+    early = plan(report("ok", 301.0), told, streaks)  # streak is now RECOVERY_CHECKS - 1
+    done = plan(report("ok", 602.0), told, early.streaks)
 
     assert RECOVERY_CHECKS == 3
     assert early.messages == ()

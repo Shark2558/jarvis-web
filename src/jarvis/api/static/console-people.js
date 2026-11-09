@@ -9,7 +9,7 @@
 // API: POST /v1/people/research {name, context?} -> {name, context, profiles:[{platform,url,title}],
 //   findings:[{title,domain,snippet}], summary|null, spoken, ambiguous, no_ai, note}; GET /v1/people/last;
 //   GET|POST /v1/settings/brain-mode {mode: 'ai'|'none'} -> {mode, meaning}.
-// Events: 'jarvis:brainmode' (detail {mode}); window.JarvisBrainMode = {get, set}.
+// Events: 'jarvis:brainmode' (detail {mode}); window.JarvisBrainMode = {get, set} (set('ai') only asks).
 (() => {
   'use strict';
   const panel = document.getElementById('p-people');
@@ -25,8 +25,8 @@
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
   const MODE_WORD = { ai: 'AI on', none: 'No-AI' };
   const MODE_MEANS = { ai: 'JARVIS reasons and writes with the model. Paid replies apply.', none: 'Fixed rules only, no model. Nothing paid is used.' };
-  const S = { dossier: null, mode: 'ai', meaning: '', busy: false };
-  let nameEl, ctxEl, goBtn, noteEl, card, openBtn, speakBtn, modeAi, modeNone, meaningEl, pill, pillLabel, menu, asking;
+  const S = { dossier: null, mode: null, meaning: '', busy: false, switching: false, failed: false };
+  let nameEl, ctxEl, goBtn, noteEl, card, openBtn, speakBtn, modeAi, modeNone, meaningEl, pill, pillLabel, menu, asking;   // S.mode is null until the server has answered
 
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
   const arr = (v) => (Array.isArray(v) ? v : []);
@@ -116,58 +116,105 @@
   }
 
   // ---- brain mode ---------------------------------------------------------------------------------
+  // The pill never claims a mode the server has not told it: it starts as "Brain: ..." (unknown), shows
+  // "Brain: unknown" (tap to retry) when the read fails, and changes only from a server answer. One switch
+  // at a time (S.switching); a stale read never overwrites a newer answer (seq). AI back on always asks:
+  // the pill menu, the People panel's AI button and JarvisBrainMode.set('ai') all end in the same confirm.
+  let seq = 0, noteTimer = 0, pillNote, announce;
+  const known = () => S.mode === 'ai' || S.mode === 'none';
   function showMode() {
-    const none = S.mode === 'none', word = MODE_WORD[S.mode] || S.mode;
-    modeAi.setAttribute('aria-pressed', String(!none)); modeNone.setAttribute('aria-pressed', String(none));
+    const none = S.mode === 'none', word = known() ? MODE_WORD[S.mode] : S.failed ? 'unknown' : '...';
+    modeAi.setAttribute('aria-pressed', String(known() && !none)); modeNone.setAttribute('aria-pressed', String(none));
+    modeAi.disabled = modeNone.disabled = S.switching;
     meaningEl.textContent = S.meaning || MODE_MEANS[S.mode] || '';
-    pill.className = 'status brainmode' + (none ? ' alert' : '');
-    pill.setAttribute('aria-label', 'Brain: ' + word + '. Change brain mode');
-    pillLabel.replaceChildren(mk('span', 'bm-long', 'Brain: ' + word), mk('span', 'bm-short', word));
-    menu.querySelectorAll('.bmopt').forEach((o) => o.setAttribute('aria-checked', String(o.dataset.mode === S.mode)));
+    pill.className = 'status brainmode' + (none || S.failed ? ' alert' : '');
+    pill.setAttribute('aria-label', known() ? 'Brain: ' + word + '. Change brain mode'
+      : S.failed ? 'Brain: unknown. Press to read it again' : 'Brain: reading the mode');
+    pill.setAttribute('aria-busy', String(S.switching));
+    pillLabel.replaceChildren(mk('span', 'bm-long', 'Brain: ' + word), mk('span', 'bm-short', known() ? word : S.failed ? '?' : '...'));
+    opts().forEach((o) => { o.setAttribute('aria-checked', String(o.dataset.mode === S.mode)); o.setAttribute('aria-disabled', String(S.switching)); });
   }
-  function setMode(raw) {
+  // A short note beside the pill (visible whichever panel is open), also read out by screen readers.
+  function flash(text) {
+    clearTimeout(noteTimer); pillNote.textContent = text || ''; pillNote.hidden = !text;
+    if (text) noteTimer = setTimeout(() => flash(''), 8000);
+  }
+  function applyMode(raw) {
     const d = obj(raw);
-    if (!d || (d.mode !== 'ai' && d.mode !== 'none')) return;
-    S.mode = d.mode; S.meaning = txt(d.meaning, 200); showMode();
-    document.dispatchEvent(new CustomEvent('jarvis:brainmode', { detail: { mode: S.mode } }));
+    if (!d || (d.mode !== 'ai' && d.mode !== 'none')) return false;
+    const changed = d.mode !== S.mode;
+    S.mode = d.mode; S.failed = false; S.meaning = txt(d.meaning, 200); showMode();
+    if (changed) document.dispatchEvent(new CustomEvent('jarvis:brainmode', { detail: { mode: S.mode } }));
+    return true;
+  }
+  async function refresh() {
+    if (!hasApi() || S.switching) return;
+    const mine = ++seq;
+    try { const d = await api('/v1/settings/brain-mode'); if (mine === seq && !S.switching) applyMode(d); }
+    catch (e) {
+      if (mine !== seq || S.switching || known()) return;     // a mode we already know stays until the server says otherwise
+      S.failed = true; showMode(); flash('I could not read the brain mode. Press the pill to try again.');
+    }
   }
   async function switchMode(mode) {
-    if (!hasApi() || mode === S.mode) return;
-    try { setMode(await api('/v1/settings/brain-mode', { method: 'POST', body: { mode } })); }
-    catch (e) { say('bad', detailOf(e)); }
+    if (!hasApi() || S.switching || mode === S.mode) return;
+    S.switching = true; seq += 1; showMode();
+    try {
+      if (!applyMode(await api('/v1/settings/brain-mode', { method: 'POST', body: { mode } }))) throw new Error('');
+      announce.textContent = 'Brain: ' + MODE_WORD[S.mode]; flash('');
+    } catch (e) {
+      const why = detailOf(e); flash('The brain mode did not change. ' + (why === 'That did not work, Sir.' ? '' : why)); say('bad', why);
+      S.switching = false; await refresh();        // show what the server really has
+    }
+    S.switching = false; showMode();
   }
-  const opts = () => [...menu.querySelectorAll('.bmopt')];
+  const opts = () => (menu ? [...menu.querySelectorAll('.bmopt')] : []);
   function closeMenu(back) {
-    menu.hidden = true; asking.hidden = true; pill.setAttribute('aria-expanded', 'false');
+    box.hidden = true; asking.hidden = true; pill.setAttribute('aria-expanded', 'false');
     document.removeEventListener('pointerdown', outside, true);
     if (back) pill.focus();
   }
-  function outside(e) { if (!menu.contains(e.target) && !pill.contains(e.target)) closeMenu(false); }
+  function outside(e) { if (!box.contains(e.target) && !pill.contains(e.target)) closeMenu(false); }
   function openMenu() {
-    menu.hidden = false; asking.hidden = true; pill.setAttribute('aria-expanded', 'true');
+    flash(''); box.hidden = false; asking.hidden = true; pill.setAttribute('aria-expanded', 'true');
     document.addEventListener('pointerdown', outside, true);
     const cur = opts().find((o) => o.dataset.mode === S.mode); (cur || opts()[0]).focus();
+    refresh();                                       // another tab or device may have changed it
+  }
+  // AI back on spends money: ask once, with Cancel focused so a repeated Enter cannot confirm it.
+  function askAi() { asking.hidden = false; asking.querySelector('.btn:not(.primary)').focus(); }
+  function requestAi() {
+    if (S.mode === 'ai' || S.switching) return;
+    if (box.hidden) openMenu();
+    askAi();
   }
   function choose(mode) {
-    if (mode === S.mode) { closeMenu(true); return; }
+    if (S.switching || mode === S.mode) { if (!S.switching) closeMenu(true); return; }
     if (mode === 'none') { closeMenu(true); switchMode('none'); return; }
-    asking.hidden = false; asking.querySelector('.btn.primary').focus();     // AI back on spends money: ask once
+    askAi();
   }
   function menuKeys(e) {
     const list = opts(), at = list.indexOf(document.activeElement);
-    if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); return; }
     if (e.key === 'Tab') { closeMenu(false); return; }
     if (at < 0 || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
     e.preventDefault();
     const n = e.key === 'Home' ? 0 : e.key === 'End' ? list.length - 1 : (at + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length;
     list[n].focus();
   }
+  function boxKeys(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); return; }
+    if (e.key !== 'Tab' || !asking.contains(document.activeElement)) return;
+    const [no, yes] = asking.querySelectorAll('.btn');      // Tab cycles Cancel / Switch on, then leaves
+    if ((!e.shiftKey && document.activeElement === yes) || (e.shiftKey && document.activeElement === no)) closeMenu(false);
+  }
+  let box;
   function buildPill(slot) {
     slot.className = 'bmslot'; slot.textContent = '';
     pill = mk('button', 'status brainmode'); pill.type = 'button'; pill.id = 'brainModeBadge';
     pill.setAttribute('aria-haspopup', 'menu'); pill.setAttribute('aria-expanded', 'false'); pill.setAttribute('aria-controls', 'brainMenu');
     pillLabel = mk('span', 'bm-label'); pill.append(mk('i'), pillLabel);
-    menu = mk('div', 'card bmmenu'); menu.id = 'brainMenu'; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Brain mode'); menu.hidden = true;
+    box = mk('div', 'card bmmenu'); box.id = 'brainMenu'; box.hidden = true;
+    menu = mk('div', 'bmlist'); menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Brain mode');   // menu items only
     ['ai', 'none'].forEach((m) => {
       const o = mk('button', 'bmopt'); o.type = 'button'; o.dataset.mode = m; o.setAttribute('role', 'menuitemradio');
       o.append(mk('b', '', m === 'ai' ? 'AI on' : 'No-AI'), mk('small', '', MODE_MEANS[m]));
@@ -179,11 +226,14 @@
     yes.addEventListener('click', () => { closeMenu(true); switchMode('ai'); });
     no.addEventListener('click', () => { asking.hidden = true; opts()[0].focus(); });
     const act = mk('div', 'actions'); act.append(no, yes);
-    asking.append(mk('p', '', 'Paid replies resume \u2014 switch AI on?'), act); menu.append(asking);
-    pill.addEventListener('click', () => (menu.hidden ? openMenu() : closeMenu(true)));
-    pill.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' && menu.hidden) { e.preventDefault(); openMenu(); } });
-    menu.addEventListener('keydown', menuKeys);
-    slot.append(pill, menu);
+    asking.append(mk('p', '', 'Paid replies resume \u2014 switch AI on?'), act);
+    box.append(menu, asking);
+    pillNote = mk('div', 'bmnote'); pillNote.hidden = true; pillNote.setAttribute('role', 'status');
+    announce = mk('span', 'sr-only'); announce.setAttribute('role', 'status'); announce.setAttribute('aria-live', 'polite');
+    pill.addEventListener('click', () => { if (!known() && !S.switching) { flash(''); refresh(); return; } if (box.hidden) openMenu(); else closeMenu(true); });
+    pill.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' && box.hidden && known()) { e.preventDefault(); openMenu(); } });
+    menu.addEventListener('keydown', menuKeys); box.addEventListener('keydown', boxKeys);
+    slot.append(pill, box, pillNote, announce);
   }
 
   function field(id, label, input) {
@@ -211,7 +261,7 @@
     const sw = mk('div', 'atabs'); sw.setAttribute('role', 'group'); sw.setAttribute('aria-label', 'Brain mode');
     modeAi = mk('button', 'btn bact atab', 'AI'); modeAi.type = 'button'; modeAi.id = 'modeAi';
     modeNone = mk('button', 'btn bact atab', 'No-AI'); modeNone.type = 'button'; modeNone.id = 'modeNone';
-    modeAi.addEventListener('click', () => switchMode('ai'));
+    modeAi.addEventListener('click', requestAi);     // AI back on asks first, here too
     modeNone.addEventListener('click', () => switchMode('none'));
     sw.append(modeAi, modeNone); modeRow.append(mt, sw);
     const slot = document.getElementById('brainModeSlot');
@@ -223,12 +273,13 @@
 
   async function load() {
     if (!hasApi()) return;
-    try { setMode(await api('/v1/settings/brain-mode')); } catch (e) { say('bad', detailOf(e)); }
+    await refresh();
     try { const l = obj(await api('/v1/people/last')); if (l && l.dossier) { S.dossier = normal(l.dossier); render(); } } catch (_) { /* nothing researched yet */ }
   }
 
   build();
-  window.JarvisBrainMode = Object.freeze({ get: () => S.mode, set: switchMode });
+  // set('none') switches at once (the safe direction); set('ai') only opens the same confirm as the pill.
+  window.JarvisBrainMode = Object.freeze({ get: () => S.mode, set: (m) => (m === 'ai' ? requestAi() : m === 'none' ? switchMode('none') : undefined) });
   const JC = window.JarvisConsole;
   if (JC && typeof JC.ready === 'function' && JC.ready()) load();
   document.addEventListener('jarvis:ready', load);

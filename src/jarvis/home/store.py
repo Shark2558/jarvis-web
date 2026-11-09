@@ -44,6 +44,7 @@ log = get_logger(__name__)
 
 VERSION = 1
 SEEN_WRITE_EVERY_S = 300.0
+CLAIM_TTL_S = 120.0  # an alert slot taken by a run that then died is free again after this
 CLAIM_KEEP_S = 48 * 3600.0
 MAX_CODE_TRIES = 5  # wrong tries per client in the window
 MAX_CODE_TRIES_ALL = 50  # and across all clients
@@ -316,11 +317,48 @@ class HomeStore:
                     outage_alerted=False,
                     outage_kind=None,
                 )
+                doc.pop("outage_claim", None)
 
             if not await self._update(uid, change):
                 return None
             self._written[uid] = now
         return Seen(previous=status.state, outage_alerted=status.outage_alerted)
+
+    async def claim_alert(self, uid: str, kind: OutageKind) -> bool:
+        """Take the alert slot for this outage with a compare-and-set (R5.1 int-sec LOW): True only
+        for the one run that may send. False when another run holds a live claim (made less than
+        `CLAIM_TTL_S` ago: a crashed run's claim expires, so the alert is not lost), when this
+        kind was already told, or when the home is gone. `mark_offline` / `release_claim` clear
+        it."""
+        now = self._clock()
+        path = self._path(uid)
+
+        async def take(tx: DocTx) -> bool:
+            doc = await tx.get(path)
+            if doc is None:
+                return False
+            held = doc.get("outage_claim")
+            if isinstance(held, dict) and now - float(held.get("at", 0.0)) < CLAIM_TTL_S:
+                return False
+            if doc.get("outage_alerted") and doc.get("outage_kind") == kind:
+                return False
+            doc["outage_claim"] = {"kind": kind, "at": now}
+            tx.set(path, doc)
+            return True
+
+        try:
+            return await self._d.transaction(take)
+        except Exception as exc:  # noqa: BLE001
+            log.error("home claim failed", extra={"error": type(exc).__name__})
+            raise HomeStoreUnavailable(UNAVAILABLE) from None
+
+    async def release_claim(self, uid: str) -> None:
+        """Give the alert slot back (no channel took the alert): the next run tries again."""
+
+        def change(doc: dict[str, Any]) -> None:
+            doc.pop("outage_claim", None)
+
+        await self._update(uid, change)
 
     async def mark_offline(
         self, uid: str, *, alerted: bool, kind: OutageKind | None = None
@@ -332,6 +370,7 @@ class HomeStore:
             doc.update(
                 state="offline", outage_alerted=alerted, outage_kind=kind if alerted else None
             )
+            doc.pop("outage_claim", None)
 
         await self._update(uid, change)
         self._seen.pop(uid, None)

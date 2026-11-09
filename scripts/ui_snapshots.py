@@ -45,7 +45,13 @@ log = logging.getLogger("ui_snapshots")
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests" / "browser"))
-from ui_checks import DOM_CHECKS_JS, PANELS, READY, install_mocks  # noqa: E402  (shared with test_ui_audit)
+from ui_checks import (  # noqa: E402
+    DOM_CHECKS_JS,
+    FINISH_ANIMATIONS_JS,
+    PANELS,
+    READY,
+    install_mocks,
+)  # noqa: E402  (shared with test_ui_audit)
 
 TOKEN = "ui-snapshots-token-not-a-secret"
 START_TIMEOUT_S = 30
@@ -217,6 +223,7 @@ def shoot(c: Console, selector: str | None, name: str, group: str) -> None:
 
 def check(c: Console, selector: str, name: str) -> None:
     try:
+        c.page.evaluate(FINISH_ANIMATIONS_JS)  # measured at the end state, as the gate does
         c.run.checks[name] = c.page.evaluate(DOM_CHECKS_JS, selector)
     except Exception as exc:  # noqa: BLE001
         c.run.failures.append(f"checks {name}: {exc}")
@@ -269,6 +276,46 @@ def vitals_form(c: Console) -> None:
     c.close_panel("vitals")
 
 
+def brain_menu(c: Console) -> None:
+    """The open brain menu, then its AI-on confirm (a stateful fake: the server's mode is untouched)."""
+    state = {"mode": "ai"}
+
+    def fake(route: Any) -> None:
+        if route.request.method == "POST":
+            state["mode"] = json.loads(route.request.post_data or "{}")["mode"]
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"mode": state["mode"], "meaning": ""}),
+        )
+
+    c.page.route("**/v1/settings/brain-mode", fake)
+    try:
+        pill = c.page.locator("#brainModeBadge")
+        pill.click()
+        c.page.locator("#brainMenu").wait_for(state="visible", timeout=WAIT_MS)
+        c.page.mouse.move(0, 0)
+        c.page.wait_for_timeout(450)
+        shoot(c, None, f"{c.tag}-brain-menu", c.tag)
+        check(c, "#brainMenu", f"{c.tag}-brain-menu")
+        c.page.locator("#brainMenu .bmopt[data-mode=none]").click()
+        c.page.locator("#brainModeBadge", has_text="No-AI").wait_for(timeout=WAIT_MS)
+        pill.click()
+        c.page.locator("#brainMenu .bmopt[data-mode=ai]").click()
+        c.page.locator("#brainMenu .bmask").wait_for(state="visible", timeout=WAIT_MS)
+        c.page.mouse.move(0, 0)
+        c.page.wait_for_timeout(450)
+        shoot(c, None, f"{c.tag}-brain-confirm", c.tag)
+        check(c, "#brainMenu", f"{c.tag}-brain-confirm")
+        c.page.get_by_role("button", name="Switch on").click()
+        c.page.locator("#brainModeBadge", has_text="AI on").wait_for(timeout=WAIT_MS)
+    except Exception as exc:  # noqa: BLE001 - reported, never fatal
+        c.run.failures.append(f"[{c.tag}] brain menu: {exc}")
+        c.page.keyboard.press("Escape")
+    finally:
+        c.page.unroute("**/v1/settings/brain-mode", fake)
+
+
 def systems_popup(c: Console) -> None:
     """The systems-check pop-up (R5.1 D6) from the Systems card's Run, every result in."""
     run_btn = c.page.locator("#systemsCard .btn", has_text="Run")
@@ -288,6 +335,13 @@ def systems_popup(c: Console) -> None:
     name = f"{c.tag}-syscheck"
     shoot(c, None, name, c.tag)
     shoot(c, "#sysCheck", f"{name}-only", c.tag)
+    # the concerns list scrolls inside the pop-up: a second shot at its end shows every item
+    c.page.evaluate(
+        "() => { const l = document.querySelector('#sysCheck .scconcerns li:last-child');"
+        " if (l) l.scrollIntoView({block: 'end'}); }"
+    )
+    c.page.wait_for_timeout(200)
+    shoot(c, "#sysCheck", f"{name}-more", c.tag)
     c.page.evaluate(
         "() => { const d = document.getElementById('sysCheck'); if (d) d.style.maxHeight = 'none'; }"
     )
@@ -310,6 +364,7 @@ def capture_combo(browser: Browser, url: str, vp: str, surface: str, run: Run) -
         shoot(c, None, f"{c.tag}-page", c.tag)
         shoot(c, "header.topbar", f"{c.tag}-topbar", c.tag)
         check(c, "header.topbar", f"{c.tag}-topbar")
+        brain_menu(c)
         for panel in PANELS:
             log.info("%s %s", c.tag, panel)
             try:

@@ -266,6 +266,32 @@ MOCK_CONNECTORS: dict[str, Any] = {
     },
 }
 
+
+def _usage() -> dict[str, Any]:
+    """GET /v1/usage (billing.UsageView): the same month and figures as the board's AI-spend item
+    (₹412.50 of ₹500), so the "This month" block in Vitals agrees with it."""
+    return {
+        "month": datetime.fromtimestamp(NOW, TZ).strftime("%Y-%m"),
+        "used_inr": 412.5,
+        "limit_inr": 500,
+        "remaining_inr": 87.5,
+        "percent": 82.5,
+        "warn": True,
+        "reached": False,
+        "calls": 214,
+        "by_brain": [
+            {"brain": "anthropic", "label": "Claude", "used_inr": 380.25},
+            {"brain": "gemini", "label": "Gemini", "used_inr": 32.25},
+        ],
+        "rate": {
+            "inr_per_usd": 88.4,
+            "as_of": datetime.fromtimestamp(NOW, TZ).strftime("%Y-%m-%d"),
+            "source": "ecb",
+        },
+    }
+
+
+MOCK_USAGE: dict[str, Any] = _usage()
 MOCK_BRAIN_MODE = {"mode": "ai", "meaning": "AI on: JARVIS reasons and writes with the model."}
 
 MOCK_PEOPLE_LAST: dict[str, Any] = {
@@ -352,6 +378,7 @@ def install_mocks(
     vitals = (503, MOCK_VITALS_503) if vitals_503 else (200, MOCK_VITALS)
     if manual_unavailable:
         vitals = (200, _board(manual_unavailable=True).to_json())
+    page.route("**/v1/usage", _get_only(200, MOCK_USAGE))
     page.route("**/v1/vitals", _get_only(*vitals))
     page.route("**/v1/health", _get_only(200, MOCK_HEALTH))
     page.route("**/v1/health/run", _json(200, MOCK_HEALTH))
@@ -361,6 +388,15 @@ def install_mocks(
     page.route("**/v1/people/last", _get_only(200, MOCK_PEOPLE_LAST))
     page.route("**/v1/integrations", _get_only(200, MOCK_INTEGRATIONS))
 
+
+# Finite CSS animations and transitions are run to their end state before anything is measured: the
+# contrast probe multiplies in opacity, and an element caught mid-entry (opacity 0 -> 1) is not a defect.
+# Infinite ones (the status dot's breathing) are left alone.
+FINISH_ANIMATIONS_JS = """() => {
+  for (const a of document.getAnimations()) {
+    try { if (a.effect && a.effect.getComputedTiming().iterations !== Infinity) a.finish(); } catch (_) { /* a cancelled one */ }
+  }
+}"""
 
 # ================================================================================================
 # DOM checks — run in the page against one root element. Pure reads; returns plain JSON.
@@ -413,7 +449,7 @@ DOM_CHECKS_JS = r"""
   const inter = els.filter((e) => e.matches(INTER));
   const texty = els.filter((e) => own(e) || e.matches(INTER));
   const out = { overlaps: [], offTheme: [], systemFont: [], defaults: [], runTogether: [], overflow: [],
-                contrast: [], smallTargets: [], unlabelled: [], hscroll: null };
+                contrast: [], smallTargets: [], unlabelled: [], hitOverlaps: [], hscroll: null };
 
   // 1. interactive elements overlapping other interactive or text elements
   const seen = new Set();
@@ -441,14 +477,17 @@ DOM_CHECKS_JS = r"""
 
   // 3. browser-default looking controls, headings and lists
   const probe = (v) => { const d = document.createElement('i'); d.style.background = v; document.body.appendChild(d); const c = cs(d).backgroundColor; d.remove(); return c; };
-  const tokenBgs = new Set(['var(--well)', 'var(--well-2)', 'var(--tint)', 'var(--panel-solid)', 'var(--accent)', 'transparent', '#B42318'].map(probe));
+  const tokenBgs = new Set(['var(--well)', 'var(--well-2)', 'var(--tint)', 'var(--panel-solid)', 'var(--accent)', 'var(--amber-tint)', 'var(--bad-tint)', 'transparent', '#B42318'].map(probe));
   tokenBgs.add('rgba(0, 0, 0, 0)');
+  const ref = document.querySelector('#status'); if (ref) tokenBgs.add(cs(ref).backgroundColor);   // the status pill the brain pill copies
+  // fully (or all but) transparent, in any colour syntax: a hover fade caught a frame early is not a default look
+  const clear = (c) => { const m = c.match(/\/ ([0-9.e-]+)\)$/) || c.match(/^rgba\(.*, ([0-9.]+)\)$/); return c === 'transparent' || (!!m && parseFloat(m[1]) < 0.02); };
   for (const e of els) {
     const s = cs(e);
     if (e.matches('input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=color]), select, textarea, button')) {
       const bad = [];
       if (s.borderTopStyle === 'inset' || s.borderTopStyle === 'outset') bad.push('border ' + s.borderTopStyle);
-      if (!tokenBgs.has(s.backgroundColor)) bad.push('bg ' + s.backgroundColor);
+      if (!tokenBgs.has(s.backgroundColor) && !clear(s.backgroundColor)) bad.push('bg ' + s.backgroundColor);
       if (parseFloat(s.borderTopLeftRadius) === 0 && s.borderTopStyle !== 'none') bad.push('square corners');
       if (e.tagName === 'BUTTON' && !e.className) bad.push('no class');
       if (bad.length && out.defaults.length < CAP) out.defaults.push({ el: path(e), text: words(e), why: bad.join(', '), h: Math.round(rect(e).height), font: famName(s.fontFamily) + ' ' + s.fontSize });
@@ -494,7 +533,9 @@ DOM_CHECKS_JS = r"""
   if (body.scrollWidth > body.clientWidth + 1) out.overflow.push({ box: desc(body), why: 'horizontal scroll inside the panel', need: body.scrollWidth, have: body.clientWidth });
   out.hscroll = document.documentElement.scrollWidth > window.innerWidth ? [document.documentElement.scrollWidth, window.innerWidth] : null;
 
-  // 6. contrast of own text against the composited background (gradients ignored)
+  // 6. contrast of own text against the composited background (gradients ignored). The text's
+  // alpha is multiplied by the opacity of the element and every ancestor, so dimmed text counts.
+  const effOpacity = (e) => { let o = 1; for (let n = e; n && n.nodeType === 1; n = n.parentElement) o *= parseFloat(cs(n).opacity); return o; };
   const parse = (c) => {
     let m = c.match(/rgba?\(([^)]+)\)/);
     if (m) { const p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number); return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; }
@@ -512,11 +553,13 @@ DOM_CHECKS_JS = r"""
   };
   for (const e of texty) {
     if (!own(e) || e.matches('input, select, textarea')) continue;
-    const s = cs(e), fg0 = parse(s.color); if (!fg0) continue;
+    if (e.closest(':disabled, [aria-disabled="true"]')) continue;   // WCAG 1.4.3: a disabled control is exempt (dimmed on purpose)
+    const s = cs(e), fg1 = parse(s.color); if (!fg1) continue;
+    const fg0 = [fg1[0], fg1[1], fg1[2], fg1[3] * effOpacity(e)];
     const bg = bgOf(e), fg = over(fg0, bg), L1 = lum(fg), L2 = lum(bg);
     const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
     const px = parseFloat(s.fontSize), large = px >= 24 || (px >= 18.66 && parseInt(s.fontWeight, 10) >= 700);
-    const opacity = parseFloat(s.opacity);
+    const opacity = Math.round(effOpacity(e) * 100) / 100;
     if (ratio < (large ? 3 : 4.5) && out.contrast.length < CAP) out.contrast.push({ el: path(e), text: words(e), ratio: Math.round(ratio * 100) / 100, size: s.fontSize, opacity });
   }
 
@@ -525,8 +568,27 @@ DOM_CHECKS_JS = r"""
   for (const e of inter) {
     if (e.matches('input[type=checkbox], input[type=radio]')) continue;
     const r = rect(e);
+    // An invisible hit area (a ::before band that makes a small control tappable) counts: the
+    // gate measures it, and the overlap probe below keeps it off its neighbours.
+    const hit = (() => { const b = getComputedStyle(e, '::before'); return b.content !== 'none' && b.position === 'absolute' ? { w: parseFloat(b.width) || 0, h: parseFloat(b.height) || 0 } : { w: 0, h: 0 }; })();
+    const rw = Math.max(r.width, hit.w), rh = Math.max(r.height, hit.h);
     // rounded: a sub-pixel short of the minimum (43.98 px) is the minimum
-    if ((Math.round(r.width) < min || Math.round(r.height) < min) && out.smallTargets.length < CAP) out.smallTargets.push({ el: path(e), text: words(e), w: Math.round(r.width), h: Math.round(r.height), min });
+    if ((Math.round(rw) < min || Math.round(rh) < min) && out.smallTargets.length < CAP) out.smallTargets.push({ el: path(e), text: words(e), w: Math.round(rw), h: Math.round(rh), min });
+  }
+
+  // 7b. a hit-area band must not reach another control: the expanded box of a control with a
+  // ::before band is compared with every other interactive element
+  out.hitOverlaps = [];
+  for (const a of inter) {
+    const b = getComputedStyle(a, '::before');
+    if (b.content === 'none' || b.position !== 'absolute') continue;
+    const r = rect(a), ex = Math.max(0, (parseFloat(b.height) - r.height) / 2), ey = Math.max(0, (parseFloat(b.width) - r.width) / 2);
+    const box = { l: r.left - ey, r: r.right + ey, t: r.top - ex, b: r.bottom + ex };
+    for (const o of inter) {
+      if (o === a || o.contains(a) || a.contains(o)) continue;
+      const q = rect(o), w = Math.min(box.r, q.right) - Math.max(box.l, q.left), h = Math.min(box.b, q.bottom) - Math.max(box.t, q.top);
+      if (w > 1 && h > 1 && out.hitOverlaps.length < CAP) out.hitOverlaps.push({ a: path(a), b: path(o), w: Math.round(w), h: Math.round(h) });
+    }
   }
 
   // 8. controls without a programmatic or visible label (placeholder-only counts as unlabelled)

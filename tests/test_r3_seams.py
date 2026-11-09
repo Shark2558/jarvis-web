@@ -190,15 +190,15 @@ def test_every_alert_kind_has_a_default_urgency() -> None:
     assert set(DEFAULT_URGENCY) == set(get_args(AlertKind))
     urgent = {k for k, v in DEFAULT_URGENCY.items() if v == "urgent"}
     # integrated review H5: a laptop that stopped answering or an alarm that can't work rings.
-    # R4 D4/D6: a red vitals line and a self-health fault also ring (never held, like hazards).
+    # (R4 made a red vitals line / health fault urgent; R5.1 D13 moved them to important.)
     assert urgent == {
         "home_intruder",
         "home_hazard",
         "home_summary",
         "home_offline",
         "home_arm_failed",
-        "vitals_critical",
-        "health_fault",
+        # R5.1 D13: vitals_critical / health_fault are now "important" daytime rings (see
+        # tests/test_r51_int_notify.py), no longer urgent.
     }
     for kind in ("home_package", "approval_waiting"):
         assert DEFAULT_URGENCY[kind] == "important"

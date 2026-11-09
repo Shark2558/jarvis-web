@@ -59,14 +59,16 @@
 /* ---- "Track something JARVIS can't see": the settings disclosure, closed by default ------------ */
 .vt-add.bset{margin:0 0 10px}
 .vt-add .dbody{padding:10px 12px 12px}
+/* the long label wraps into two even lines at the 340 px default width (never one orphan word) */
+.vt-add .dsc .dl{text-wrap:balance;overflow-wrap:anywhere}
 .vt-ftitle{margin:0;font-size:13.5px;font-weight:600;line-height:1.35;color:var(--ink)}
 .vt-form .sfine{margin-top:4px}
 /* Name, Kind, then Used so far | Limit | Unit side by side, then the date and the note */
 .vt-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:10px 8px;margin-top:10px}
 .vt-field{min-width:0}
 .vt-field.wide{grid-column:1/-1}
-/* labels ABOVE their inputs, exactly like #limitForm */
-.vt-field label{display:block;margin-bottom:6px;font-size:13px;font-weight:600;line-height:1.35;color:var(--ink);cursor:pointer}
+/* labels ABOVE their inputs, in the themed .k label font (People, Things) */
+.vt-field label{display:block;margin-bottom:6px;cursor:pointer}   /* typography: the .k label class */
 .vt-form select.minput{padding:0 8px;cursor:pointer}
 .vt-form select.minput option{background:var(--well);color:var(--ink)}
 .vt-form .minput[aria-invalid="true"]{border-color:var(--bad-line);box-shadow:inset 0 0 0 1px var(--bad-line)}

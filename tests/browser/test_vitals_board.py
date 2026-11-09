@@ -571,3 +571,26 @@ def test_notes_meet_aa_contrast(make: Callable[..., Console], surface: str) -> N
 
     low = [f for f in c.page.evaluate(CONTRAST_JS, BOARD) if f["ratio"] < 4.5]
     assert low == [], low
+
+
+def test_track_label_never_leaves_an_orphan_word_at_the_default_width(
+    make: Callable[..., Console],
+) -> None:
+    c = make()
+    FakeVitals(c.page, board())
+    root = _open(c)
+    # The words of the label, measured line by line: a last line of one short word is an orphan.
+    lines = root.locator(".vt-add .dsc .dl").evaluate(
+        """el => {
+          const r = document.createRange(), t = el.firstChild, rows = {};
+          const words = t.textContent.split(' '); let at = 0;
+          for (const w of words) {
+            r.setStart(t, at); r.setEnd(t, at + w.length); at += w.length + 1;
+            const b = r.getBoundingClientRect(), k = Math.round(b.top);
+            (rows[k] = rows[k] || []).push(w);
+          }
+          return Object.keys(rows).sort((a, b) => a - b).map(k => rows[k]);
+        }"""
+    )
+    assert lines, "label has no text"
+    assert len(lines[-1]) >= 2 or len(lines) == 1, f"orphan word: {lines}"

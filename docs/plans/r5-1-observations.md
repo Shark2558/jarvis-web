@@ -130,3 +130,33 @@ call added anywhere. One PR.
 - Brain pill in the top bar switches to No-AI and back.
 - `test_ui_audit.py` passes for every panel; screenshots inspected by eye before the PR.
 - Unit (3.11 + 3.12), mock evals, browser suite, ruff, mypy baseline 9, size guards.
+
+## D13–D14 (integrated review decisions, 10 Nov 2026)
+
+- **D13 — A health fault or a red vitals line never rings at night.** The systems check now runs 24/7
+  (D4), so `health_fault` and `vitals_critical` move from "urgent" to "important" and join
+  `notify.policy.DAYTIME_RING_KINDS` (with `home_offline_idle`): they ring in waking hours even when only
+  urgent things ring, and are held for the morning summary in quiet hours. The storm's soft caps
+  (`storm.SOFT_URGENT_KINDS`: one per subject per 30 minutes, 6 an hour) are keyed on the KIND, not the
+  urgency, so they still bound these two. Hazards, burglar rings and an armed `home_offline` stay urgent
+  (they ring through the night). R4 pins that asserted "urgent" now carry a comment pointing here
+  (`tests/test_r3_seams.py`, `tests/test_r51_seams.py`, `evals/r4_needles/run.py`: f01 is the waking-hours
+  ring, f01n is the held-at-night check, and the "demote" negative control now removes the faults from the
+  daytime-ring set). Tests: `tests/test_r51_int_notify.py`.
+- **D14 — Time-based debounce.** A fault is confirmed only by two checks at least 4 minutes apart
+  (`changes.DEBOUNCE_GAP_S`); a recovery by three whose first and last are at least 8 minutes apart
+  (`RECOVERY_SPREAD_S`). A check closer than 4 minutes to the last COUNTED one is the same moment and does
+  not count, so a pop-up run right after another (or `/run` plus `/run/stream`) cannot confirm a blip. A
+  streak is stored as `[status, count, first_at, last_counted_at]`; a streak stored before R5.1 (no times)
+  counts as old enough, once. Tests: `tests/test_r51_int_debounce.py`.
+- **Other integrated fixes recorded here:** the systems check can never make the 5-minute laptop watchdog
+  answer 503 (probe 5 s < check 20 s < job deadline 25 s < tick budget 30 s; an unsaved report or a late
+  owner is "degraded", and `Watchdog` reports the health job as `degraded` instead of `failed`); the
+  outage alert slot is taken with a store compare-and-set before sending (`HomeStore.claim_alert`, a lease
+  of 120 s so a crashed run's claim expires); `GET /v1/health` has its own 30/min limit and the briefing
+  reads the 15 s cached board; `PUT`/`DELETE /v1/vitals/keys` are limited to 10/min per owner and the
+  50-record cap is counted inside the write transaction (an index document); stream coalescing ignores
+  `force` on purpose (a run in flight is fresh by definition); the brain pill never claims a mode before
+  the server answers, switches one at a time, and AI back on always asks (menu, People button and
+  `JarvisBrainMode.set('ai')` end in the same confirm); the visual gate also audits the top bar, the open
+  brain menu and its confirm, the systems pop-up with concerns and the open Vitals form.

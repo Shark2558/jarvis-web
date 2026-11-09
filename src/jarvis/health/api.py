@@ -18,7 +18,8 @@ POST /v1/health/remind      {key, when: 1h|evening|tomorrow, session_id?} -> {ou
                             reminder for one of the last check's concerns, through the gateway
                             (`jarvis.health.remind`); 422 for a key that is not a current concern
 run, run/stream, speak and remind share one per-owner budget (10/min, then 429), inside the
-router so wiring can never skip it.
+router so wiring can never skip it. GET has its own (30/min, like GET /v1/vitals) and the
+briefing it builds reads the 15 s cached Vitals board (R5.1 int-sec M2).
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from jarvis.voice.ports import VoiceError, VoiceUnavailable
 log = get_logger(__name__)
 
 RUN_PER_MINUTE = 10  # run + stream + speak + remind share one per-owner budget, inside the router
+GET_PER_MINUTE = 30  # GET /v1/health (it builds the briefing, which reads Vitals): its own budget
 NDJSON = "application/x-ndjson"
 NO_STREAM = "Streaming isn't available here."
 RUNNING = "A check is already running, Sir. Wait a moment."
@@ -107,10 +109,11 @@ def health_router(
     from `request.app.state` (`gateway`, `google`, `settings.user_timezone`)."""
     router = APIRouter(prefix="/v1/health", dependencies=list(dependencies))
     limiter = RateLimiter(RUN_PER_MINUTE)
+    read_limiter = RateLimiter(GET_PER_MINUTE)
     memo = RemindMemo()
 
-    def limited(uid: str = Depends(user)) -> str:
-        allowed, retry_s = limiter.allow(uid)
+    def _allow(rl: RateLimiter, uid: str) -> str:
+        allowed, retry_s = rl.allow(uid)
         if not allowed:
             raise HTTPException(
                 status_code=429,
@@ -119,8 +122,14 @@ def health_router(
             )
         return uid
 
+    def limited(uid: str = Depends(user)) -> str:
+        return _allow(limiter, uid)
+
+    def read_limited(uid: str = Depends(user)) -> str:
+        return _allow(read_limiter, uid)
+
     @router.get("")
-    async def last(uid: str = Depends(user)) -> dict[str, Any]:
+    async def last(uid: str = Depends(read_limited)) -> dict[str, Any]:
         return await _answer(svc, uid, await svc.last(uid))
 
     @router.post("/run")
@@ -198,4 +207,4 @@ def health_router(
     return router
 
 
-__all__ = ["NDJSON", "RUN_PER_MINUTE", "RunBody", "briefing_of", "health_router"]
+__all__ = ["GET_PER_MINUTE", "NDJSON", "RUN_PER_MINUTE", "RunBody", "briefing_of", "health_router"]

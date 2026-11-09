@@ -105,7 +105,9 @@ async def test_stream_and_check_share_the_debounce_and_alert_once() -> None:
     flip.status = "down"
     svc = service(flip.probe, notes=notes)
     await svc.check(UID, force=True)  # first bad check: no alert yet
+    svc._clock.now += 300.0  # noqa: SLF001 - R5.1 D14: the confirming check is >= 4 minutes later
     await collect(svc, force=True)  # second, through the stream: the fault holds -> one alert
+    svc._clock.now += 300.0  # noqa: SLF001
     await collect(svc, force=True)
     assert notes.kinds() == ["health_fault"]
     last = await svc.last(UID)
@@ -146,7 +148,7 @@ async def test_the_briefing_carries_vitals_and_a_vitals_failure_never_fails_the_
     ok = service(fixed("redis", "Redis", "ok"), vitals=VitalsFake(board(hot, used=120, limit=500)))
     done = (await collect(ok, force=True))[-1]
     spoken = done["briefing"]["spoken"]
-    assert "AI spend is ₹120 of ₹500 this month, 24 percent." in spoken
+    assert "AI spend is ₹120 of ₹500 this month (24 percent)." in spoken
     assert [c["key"] for c in done["briefing"]["concerns"]] == ["vitals.github"]
 
     broken = service(fixed("redis", "Redis", "ok"), vitals=VitalsFake(exc=RuntimeError("503")))
@@ -381,7 +383,7 @@ async def test_a_total_deadline_ends_unfinished_probes_as_down_and_done_still_ar
         Probe(key="redis", label="Redis", check=timed("x", "x", 30).check, timeout_s=60.0),
         timed("google", "Google", 0.0),
     )
-    svc._deadline_s = 0.1  # noqa: SLF001 - the test does not wait the real 45 s
+    svc._deadline_s = 0.1  # noqa: SLF001 - the test does not wait the real 20 s
     events = await collect(svc, force=True)
     assert [e["type"] for e in events][-1] == "done"
     redis = next(e for e in events if e["type"] == "result" and e["key"] == "redis")
@@ -391,5 +393,5 @@ async def test_a_total_deadline_ends_unfinished_probes_as_down_and_done_still_ar
     assert svc._locks[UID].locked() is False  # noqa: SLF001
 
 
-def test_the_total_deadline_is_forty_five_seconds() -> None:
-    assert CHECK_DEADLINE_S == 45.0
+def test_the_total_deadline_is_twenty_seconds() -> None:
+    assert CHECK_DEADLINE_S == 20.0  # R5.1 int-sec M4: inside the tick job's 25 s deadline

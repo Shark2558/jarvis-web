@@ -26,8 +26,8 @@ STATIC = Path(__file__).resolve().parents[2] / "src" / "jarvis" / "api" / "stati
 HOSTILE = '<img src=x onerror="window.__pwned=1">Phone'
 KEYS = [
     "home_intruder", "home_hazard", "home_summary", "home_package", "home_offline",
-    "home_arm_failed", "approval_waiting", "vault_expiry", "home_greeting", "home_online",
-    "offline_on", "offline_off", "brief_ready",
+    "home_offline_idle", "home_arm_failed", "approval_waiting", "vault_expiry", "home_greeting",
+    "home_online", "offline_on", "offline_off", "brief_ready",
 ]  # fmt: skip
 FIXED = {"home_intruder", "home_hazard", "home_summary"}
 LEVEL = {"home_intruder": "urgent", "home_hazard": "urgent", "home_summary": "urgent",
@@ -193,6 +193,29 @@ def test_defaults_show_urgent_only_quiet_hours_and_fixed_kinds(
         assert "always on" in str(c.page.locator("#alertsKinds").text_content())
         assert c.page.locator("#alertsKind_home_greeting").input_value() == "feed"
         assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+def test_the_laptop_idle_alert_has_its_own_row_in_plain_words(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R5.1 int-code M1: "laptop stopped answering while the alarm is off" can be switched off."""
+    fake = Fake()
+    c = _open(browser, server_url, token, fake, DESKTOP)
+    try:
+        sel = c.page.locator("#alertsKind_home_offline_idle")
+        assert sel.count() == 1
+        assert sel.get_attribute("aria-label") == "Laptop stopped answering (alarm off)"
+        assert "Laptop stopped answering (alarm off)" in str(
+            c.page.locator("#alertsKinds").text_content()
+        )
+        sel.select_option("off")
+        c.page.wait_for_timeout(300)
+        assert any(
+            (call.get("body") or {}).get("kinds") == {"home_offline_idle": "off"}
+            for call in fake.calls
+        ), fake.calls
     finally:
         c.close()
 

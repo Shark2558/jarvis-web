@@ -61,11 +61,12 @@ class HealthReport(_Frozen):
 @dataclass(frozen=True)
 class HealthState:
     """The stored document: the last report plus what the owner was last TOLD per integration
-    (`alerted`) and how many checks in a row each status has held (`streaks`)."""
+    (`alerted`) and how many counted checks in a row each status has held and when (`streaks`:
+    status, count, first_at, last_counted_at; R5.1 D14)."""
 
     report: HealthReport
     alerted: Mapping[str, Status]
-    streaks: Mapping[str, tuple[Status, int]]
+    streaks: Mapping[str, tuple[Status, int, float | None, float | None]]
 
 
 __all__ = ["LABELS", "HealthReport", "HealthState", "ProbeOutcome", "ProbeResult", "Status"]

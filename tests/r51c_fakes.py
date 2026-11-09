@@ -34,6 +34,12 @@ class HomeStoreFake:
     async def status(self, uid: str) -> HomeStatus | None:
         return self.current
 
+    async def claim_alert(self, uid: str, kind: str) -> bool:
+        return True  # one instance: the compare-and-set always wins (tests/test_r51_int_claim.py)
+
+    async def release_claim(self, uid: str) -> None:
+        return None
+
     async def mark_offline(self, uid: str, *, alerted: bool, kind: str | None = None) -> None:
         self.marks.append(alerted)
         assert self.current is not None

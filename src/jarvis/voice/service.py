@@ -15,8 +15,8 @@ A call that fails after the request may have reached Google (sent, then a timeou
 connection; or cancelled while in flight) is metered on its estimate (characters sent / ceil of
 the audio seconds); a clean error answer (4xx / 5xx) is not.
 
-Settings reads (speak, the view, the persona) are bounded to 1 s; a failure gives the defaults
-and is remembered 30 s (no read meanwhile) until a PUT clears it.
+Settings reads (speak, transcribe's hints, the view, the persona) are bounded to 1 s; a failure
+gives the defaults and is remembered 30 s (no read meanwhile) until a PUT clears it.
 
 Availability (D10): Google answering 403 or no credentials marks that API unavailable for 10
 minutes (no calls meanwhile); timeouts and 5xx are reported but not remembered. Privacy (D13): no
@@ -53,6 +53,7 @@ from jarvis.voice.catalogue import (
     Voice,
     find_voice,
 )
+from jarvis.voice.commands import BASE_PHRASES
 from jarvis.voice.ports import (
     NothingToSay,
     Reason,
@@ -65,6 +66,8 @@ from jarvis.voice.ports import (
 )
 from jarvis.voice.settings import (
     CACHE_S,
+    PHRASE_CHARS,
+    PHRASE_ITEMS,
     VoiceSettings,
     VoiceSettingsPatch,
     VoiceSettingsStore,
@@ -142,9 +145,15 @@ class VoiceMonth(BaseModel):
     voice_inr: float
 
 
+class PhraseLimits(BaseModel):
+    items: int = PHRASE_ITEMS
+    chars: int = PHRASE_CHARS
+
+
 class VoiceView(BaseModel):
     cloud: CloudStatus
     settings: VoiceSettings
+    phrase_limits: PhraseLimits = PhraseLimits()
     voices: list[VoiceOption]
     wit_levels: list[WitOption]
     allowance: Allowance
@@ -219,7 +228,7 @@ class VoiceService:
         self._locks: weakref.WeakValueDictionary[tuple[str, Api], asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
-        self.phrases = tuple(dict.fromkeys(("JARVIS", "Jarvis", honorific)))
+        self.base_phrases = (*BASE_PHRASES, honorific)
 
     # ---- availability ----------------------------------------------------------------------
 
@@ -263,6 +272,15 @@ class VoiceService:
                 extra={"reason": type(exc).__name__},
             )
             return VoiceSettings()
+
+    def hints_for(self, owner_phrases: tuple[str, ...]) -> tuple[str, ...]:
+        """The speech hints for one request: the base list, the honorific, then the owner's words,
+        one spelling each (case-insensitive; the first wins). No `boost` (D16)."""
+        seen: dict[str, str] = {}
+        for w in (*self.base_phrases, *owner_phrases):
+            if w.strip():
+                seen.setdefault(w.casefold(), w)
+        return tuple(seen.values())
 
     async def update_settings(self, uid: str, patch: VoiceSettingsPatch) -> VoiceSettings:
         new = await self.store.update(uid, patch)
@@ -436,6 +454,7 @@ class VoiceService:
     async def transcribe(self, uid: str, blob: bytes) -> TranscriptView:
         audio = parse_wav(blob)
         engines = self._require("stt")
+        hints = self.hints_for((await self.settings_of(uid)).phrases)  # never raises
         price = self.prices.stt
         estimate = float(math.ceil(audio.seconds))  # gated on this …
         async with self._lock(uid, "stt"):
@@ -451,7 +470,7 @@ class VoiceService:
                     audio.pcm,
                     sample_rate=audio.sample_rate,
                     language=self.language,
-                    phrases=self.phrases,
+                    phrases=hints,
                 ),
             )
             # … billed on what Google says it billed (totalBilledTime), when it says
@@ -522,6 +541,7 @@ def build_voice_service(
 __all__ = [
     "MAX_TEXT_IN",
     "Speech",
+    "PhraseLimits",
     "SpeakRequest",
     "TranscriptView",
     "VoiceEngines",

@@ -36,6 +36,8 @@ from jarvis.core.brain import Brain
 from jarvis.core.models import ChatRequest
 from jarvis.core.prompts import (
     HARD_LIMITS,
+    VOICE_CONTROL_RULE,
+    VOICE_RULE,
     VOICE_RULE_HEADING,
     WIT_LEVELS,
     build_system_prompt,
@@ -149,6 +151,23 @@ async def suite_persona() -> dict[str, Any]:
         )
     check("p-distinct", "three distinct variants", len(set(prompts.values())) == 3)
     check("p-default", "default is film", build_system_prompt(honorific="Sir") == prompts["film"])
+    flat_rule = " ".join(VOICE_RULE.split())
+    check(
+        "p-readout",
+        "p5.0: the voice rule asks for the whole answer on request, and only for code, tables "
+        "and links says the details are on screen",
+        "give all of it in plain" in flat_rule and "only for code," in flat_rule,
+    )
+    check(
+        "p-control-all",
+        "p5.0: the voice-control paragraph is in every wit variant (every channel)",
+        all(VOICE_CONTROL_RULE in prompts[w.id] for w in WIT_LEVELS),
+    )
+    check(
+        "p-control-honest",
+        "p5.0: the control rule says JARVIS cannot switch the mic or devices",
+        "never claim you did" in VOICE_CONTROL_RULE,
+    )
     for w in WIT_LEVELS:
         for training in (False, True):
             brain, prov = _brain(w.id, training=training)

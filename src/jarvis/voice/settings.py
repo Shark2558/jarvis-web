@@ -4,15 +4,17 @@
     {prefix}voice_settings/{uid}   user_id, voice, rate, wit, updated_at
 
 Read through an in-process cache (30 s; one instance runs) that a PUT refreshes at once. A stored
-field that is not valid (hand-edited, a voice dropped from the catalogue) reads as its default,
-field by field. Writes are validated first (VoiceRejected → 422 input_rejected, nothing written)
-and applied in a transaction on the stored value, so two tabs can't lose each other's change.
+field that is not valid (hand-edited, a voice dropped from the catalogue, a bad phrase) reads as
+its default, field by field. Writes are validated first (VoiceRejected → 422 input_rejected,
+nothing written) and applied in a transaction on the stored value, so two tabs can't lose each
+other's change. The owner's phrases (R5 D16) are speech hints for the cloud recogniser.
 """
 
 from __future__ import annotations
 
 import math
 import time
+import unicodedata
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -26,6 +28,16 @@ from jarvis.voice.catalogue import DEFAULT_VOICE, RATE_DEFAULT, RATE_MAX, RATE_M
 from jarvis.voice.ports import VoiceRejected
 
 CACHE_S = 30.0
+PHRASE_ITEMS = 50
+PHRASE_CHARS = 40
+PHRASE_RAW_CHARS = 400  # longer than this is refused before any cleaning work is done
+PHRASE_PUNCT = frozenset("-'.&")
+_LOOKALIKE_APOSTROPHE = "\u2019"
+_REJECT_COUNT = f"Add at most {PHRASE_ITEMS} words or names."
+_REJECT_ITEM = (
+    f"Each word or name needs 1 to {PHRASE_CHARS} characters, with at least one letter, and may "
+    "use only letters, numbers, spaces and - ' . &"
+)
 
 
 class VoiceSettings(BaseModel):
@@ -34,6 +46,7 @@ class VoiceSettings(BaseModel):
     voice: str = DEFAULT_VOICE
     rate: float = RATE_DEFAULT
     wit: str = DEFAULT_WIT
+    phrases: tuple[str, ...] = ()
 
 
 class VoiceSettingsPatch(BaseModel):
@@ -44,6 +57,8 @@ class VoiceSettingsPatch(BaseModel):
     voice: str | None = Field(default=None, max_length=64)
     rate: float | None = None
     wit: str | None = Field(default=None, max_length=16)
+    # entries are checked one by one by `apply` (plain-words 422 that never echoes them)
+    phrases: list[Any] | None = None
 
 
 def rate_ok(v: object) -> bool:
@@ -55,6 +70,58 @@ def rate_ok(v: object) -> bool:
     )
 
 
+def clean_phrase(raw: object) -> str | None:
+    """One word or name as it will be stored, or None when it is not acceptable (D16).
+
+    NFC, invisible and control characters dropped, white space collapsed to single spaces; 1 to
+    40 characters; at least one letter; only letters (with their marks), digits, spaces and -'.&.
+    Nothing is trimmed to fit: too long is refused."""
+    if not isinstance(raw, str) or len(raw) > PHRASE_RAW_CHARS:
+        return None
+    kept: list[str] = []
+    for ch in unicodedata.normalize("NFC", raw.replace(_LOOKALIKE_APOSTROPHE, "'")):
+        cat = unicodedata.category(ch)
+        if ch.isspace():
+            kept.append(" ")
+        elif cat[0] == "C":  # control, format (zero-width, bidi), surrogate, private, unassigned
+            continue
+        else:
+            kept.append(ch)
+    text = " ".join("".join(kept).split())
+    if not 1 <= len(text) <= PHRASE_CHARS:
+        return None
+    if not any(unicodedata.category(c)[0] == "L" for c in text):
+        return None
+    for ch in text:
+        cat = unicodedata.category(ch)
+        if not (cat[0] in "LM" or cat == "Nd" or ch == " " or ch in PHRASE_PUNCT):
+            return None
+    return text
+
+
+def _dedupe(words: list[str]) -> tuple[str, ...]:
+    seen: dict[str, str] = {}
+    for w in words:
+        seen.setdefault(w.casefold(), w)
+    return tuple(seen.values())
+
+
+def _phrases_of(raw: list[Any]) -> tuple[str, ...]:
+    if len(raw) > PHRASE_ITEMS:
+        raise VoiceRejected(_REJECT_COUNT)
+    cleaned = [clean_phrase(w) for w in raw]
+    if any(c is None for c in cleaned):
+        raise VoiceRejected(_REJECT_ITEM + ".")
+    return _dedupe([c for c in cleaned if c is not None])
+
+
+def _stored_phrases(raw: Any) -> tuple[str, ...]:
+    if not isinstance(raw, list):
+        return ()
+    good = [c for c in (clean_phrase(w) for w in raw) if c is not None]
+    return _dedupe(good)[:PHRASE_ITEMS]
+
+
 def apply(cur: VoiceSettings, patch: VoiceSettingsPatch) -> VoiceSettings:
     """The settings after `patch`, or VoiceRejected (plain words)."""
     if patch.voice is not None and find_voice(patch.voice) is None:
@@ -63,10 +130,12 @@ def apply(cur: VoiceSettings, patch: VoiceSettingsPatch) -> VoiceSettings:
         raise VoiceRejected("Wit must be one of: " + ", ".join(WIT_IDS) + ".")
     if patch.rate is not None and not rate_ok(patch.rate):
         raise VoiceRejected(f"Speed must be between {RATE_MIN} and {RATE_MAX}.")
+    phrases = _phrases_of(patch.phrases) if patch.phrases is not None else cur.phrases
     return VoiceSettings(
         voice=patch.voice if patch.voice is not None else cur.voice,
         rate=round(patch.rate, 2) if patch.rate is not None else cur.rate,
         wit=patch.wit if patch.wit is not None else cur.wit,
+        phrases=phrases,
     )
 
 
@@ -78,6 +147,7 @@ def decode(doc: Any) -> VoiceSettings:
         voice=voice if isinstance(voice, str) and find_voice(voice) else DEFAULT_VOICE,
         rate=float(rate) if rate_ok(rate) else RATE_DEFAULT,  # type: ignore[arg-type]
         wit=wit if isinstance(wit, str) and wit in WIT_IDS else DEFAULT_WIT,
+        phrases=_stored_phrases(doc.get("phrases")),
     )
 
 
@@ -116,7 +186,8 @@ class VoiceSettingsStore:
 
         async def fn(tx: DocTx) -> VoiceSettings:
             new = apply(decode(await tx.get(path)), patch)
-            tx.set(path, {"user_id": uid, **new.model_dump(), "updated_at": at})
+            body = {**new.model_dump(), "phrases": list(new.phrases)}
+            tx.set(path, {"user_id": uid, **body, "updated_at": at})
             return new
 
         new = await self._d.transaction(fn)
@@ -126,10 +197,13 @@ class VoiceSettingsStore:
 
 __all__ = [
     "CACHE_S",
+    "PHRASE_CHARS",
+    "PHRASE_ITEMS",
     "VoiceSettings",
     "VoiceSettingsPatch",
     "VoiceSettingsStore",
     "apply",
+    "clean_phrase",
     "decode",
     "rate_ok",
 ]

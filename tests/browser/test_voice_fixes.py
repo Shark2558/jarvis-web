@@ -654,3 +654,44 @@ COMMAND_COUNT = """
 window.__commands = 0;
 document.addEventListener('jarvis:voice-command', () => { window.__commands++; });
 """
+
+
+# ================================================================== the router: his own voice, clips, marks
+def test_the_router_ignores_what_he_just_said_while_he_speaks_and_a_clip_needs_the_name_sm4(
+    make: Callable[..., Console],
+) -> None:
+    c = make(scripts=(HOLD_LOOP,))
+    FakeVoice(c.page)
+    c.open()
+    got = c.page.evaluate(
+        """async () => {
+      const C = JarvisVoiceCommands, out = {};
+      const h = async (t, ctx) => { const r = await C.handle(t, Object.assign({ source: 'voice' }, ctx)); return r.handled ? r.id : null; };
+      const said = 'please stop talking about it';
+      out.echo = await h('stop talking', { state: 'speaking', spoken: said });                   // his own words, quiet
+      out.loud = await h('stop talking', { state: 'speaking', spoken: said, peak: 99 });          // far louder than his echo
+      out.later = await h('stop talking', { state: 'listening', spoken: said });                  // he is not speaking now
+      out.clipBare = await h('mic off', { state: 'speaking', clip: true });
+      out.clipNamed = await h('Jarvis, mic off', { state: 'speaking', clip: true });
+      out.turnBare = await h('mic off', { state: 'listening' });
+      const p = C.ask('Shall I keep listening?', { timeoutMs: 2000, strict: true });
+      out.answer = await h('keep listening', { state: 'speaking', spoken: 'Shall I keep listening, Sir?' });
+      await p;
+      return out;
+    }"""
+    )
+    assert got == {
+        "echo": None, "loud": "speech.stop", "later": "speech.stop", "clipBare": None,
+        "clipNamed": "mic.off", "turnBare": "mic.off", "answer": "answer.yes",
+    }  # fmt: skip
+    assert c.errors == []
+
+
+# The loop's own actions held back, so a command that would lock the mic can be asked about harmlessly.
+HOLD_LOOP = """
+(() => {
+  let real = null;
+  Object.defineProperty(window, 'JarvisVoiceCommands', { configurable: true, get() { return real; },
+    set(v) { real = Object.freeze(Object.assign({}, v, { bindLoop: () => undefined })); } });
+})();
+"""

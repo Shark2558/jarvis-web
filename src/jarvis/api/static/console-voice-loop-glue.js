@@ -80,7 +80,7 @@
     function bindCommands() {
       const C = h.Cmd();
       if (!C || typeof C.bindLoop !== 'function') return;
-      C.bindLoop({
+      try { C.bindLoop({
         micOff() {
           A.lock('voice');                                    // first: nothing hears anything from here on, whatever fails below (SM6)
           try {
@@ -97,7 +97,7 @@
           return { then: S.conv ? 'listen' : 'idle' };
         },
         keyboard() { return { then: 'keyboard' }; },
-      });
+      }); } catch (_) { /* already bound: the first binding stands */ }
     }
     const speakWake = () => {
       if (S.mode !== 'speaking' || S.nameOff || !A.isOpen() || A.locked()) return false;

@@ -498,5 +498,86 @@
   "text": "one two three four five six seven eight nine mic off",
   "state": "listening",
   "id": null
+ },
+ {
+  "text": "wait",
+  "state": "speaking",
+  "id": "speech.stop",
+  "note": "bare short word, consumed by design: he stops"
+ },
+ {
+  "text": "bye",
+  "state": "listening",
+  "id": "conversation.keyboard",
+  "note": "bare short word, consumed by design: the conversation ends"
+ },
+ {
+  "text": "cancel",
+  "state": "listening",
+  "id": "speech.stop",
+  "note": "bare short word, consumed by design"
+ },
+ {
+  "text": "pause",
+  "state": "speaking",
+  "id": "speech.stop",
+  "note": "bare short word, consumed by design"
+ },
+ {
+  "text": "enough",
+  "state": "speaking",
+  "id": "speech.stop",
+  "note": "bare short word, consumed by design"
+ },
+ {
+  "text": "stop",
+  "state": "listening",
+  "id": "speech.stop",
+  "note": "consumed by design even as the answer to 'which one?': it stops, it never sends"
+ },
+ {
+  "text": "no wait",
+  "state": "speaking",
+  "id": null,
+  "note": "two words, not in the list: goes on as a normal turn (the owner can say 'wait')"
+ },
+ {
+  "text": "Jarvis, mic off",
+  "state": "speaking",
+  "id": "mic.off"
+ },
+ {
+  "text": "Hey Jarvis mic off please sir",
+  "state": "listening",
+  "id": "mic.off"
+ },
+ {
+  "text": "Jarvis, stop talking",
+  "state": "speaking",
+  "id": "speech.stop"
+ },
+ {
+  "text": "रुको",
+  "state": "speaking",
+  "id": null,
+  "note": "Hindi 'wait': not in the English list"
+ },
+ {
+  "text": "നിർത്തൂ",
+  "state": "speaking",
+  "id": null,
+  "note": "Malayalam 'stop': not in the English list"
+ },
+ {
+  "text": "Jarvis, मौसम कैसा है",
+  "state": "listening",
+  "id": null,
+  "note": "addressed, but a question"
+ },
+ {
+  "text": "café stop",
+  "state": "listening",
+  "id": null,
+  "note": "an accented word before a command word is a sentence"
  }
 ]

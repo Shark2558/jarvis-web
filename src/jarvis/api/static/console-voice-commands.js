@@ -115,16 +115,14 @@
     if (typeof id !== 'string' || !ID.test(id)) throw new Error('bad command id');
     if (!spec || typeof spec.match !== 'function' || typeof spec.run !== 'function') throw new Error('bad command');
     if (id.startsWith('answer.')) throw new Error('duplicate command id');
-    const old = registry.findIndex(r => r.id === id);
-    if (old >= 0 && !registry[old].builtin) throw new Error('duplicate command id');
-    if (old >= 0) registry.splice(old, 1);          // a built-in matcher may be replaced once (tests do)
+    if (registry.some(r => r.id === id)) throw new Error('duplicate command id');   // ids are unique: a built-in cannot be replaced (SM2)
     const entry = { id, spec };
     registry.push(entry);
     return () => { const i = registry.indexOf(entry); if (i >= 0) registry.splice(i, 1); };
   }
   // ---- the built-in matchers (R5 workstream A) -------------------------------------------------------
   // They only decide WHAT was said; what to do belongs to the listening loop, which binds its actions
-  // with bindLoop({micOff(ctx), stop(ctx), keyboard(ctx)}) -> Result.
+  // with bindLoop({micOff(ctx), stop(ctx), keyboard(ctx)}) -> Result (once; a duplicate id or a second binding throws).
   let loop = null;
   const act = (name) => (_, ctx) => (loop && typeof loop[name] === 'function' ? loop[name](ctx) : {});
   const BUILTIN = {
@@ -224,12 +222,13 @@
     });
   }
 
-  Object.keys(BUILTIN).forEach(id => {
-    const un = register(id, { match: exact(id), run: BUILTIN[id].run, states: BUILTIN[id].states || undefined });
-    registry.find(r => r.id === id).builtin = true;
-    void un;
-  });
-  const bindLoop = (actions) => { loop = actions && typeof actions === 'object' ? actions : null; };
+  Object.keys(BUILTIN).forEach(id => { register(id, { match: exact(id), run: BUILTIN[id].run, states: BUILTIN[id].states || undefined }); });
+  /** The listening loop binds its actions once; a second binding throws (nothing can take mic.off over, SM2). */
+  function bindLoop(actions) {
+    if (loop) throw new Error('loop already bound');
+    if (!actions || typeof actions !== 'object') throw new Error('bad loop actions');
+    loop = actions;
+  }
 
   window.JarvisVoiceCommands = Object.freeze({
     register, handle, bindLoop, ask, normalise, owns, addressed, exact, PHRASES,

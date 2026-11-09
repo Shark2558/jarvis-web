@@ -22,12 +22,19 @@
 //     voice), volume() the current gain; tone({freq, ms, gain}) → Promise<bool> a generated blip
 //     through the same context; stop() → {rest: string[]}, the text not yet played, the interrupted
 //     chunk first; 'chunk' events carry at: performance.now().
-// Nothing here stores audio; spoken text goes only to the console's own /v1/voice/speak.
+//     R5 workstream C (D9, D15): a first sentence over 140 characters is cut at its last clause break
+//     before 140 so the first /v1/voice/speak returns sooner; a chunk whose audio can't be decoded is
+//     said by the browser voice (a 422 nothing_to_say is still skipped); say(text, {fixed: true,
+//     voice?}) keeps that line's audio bytes for this page (8 entries, keyed by text + voice + speed;
+//     voice defaults to the saved one) - fixedCached() counts them.
+// Nothing here stores audio on disk; spoken text goes only to the console's own /v1/voice/speak.
 (() => {
   'use strict';
 
   // ================================================================================== chunker
   const FIRST_MAX = 400;
+  const FIRST_CLAUSE_MAX = 140; // R5 D15: a longer first sentence is cut at a clause break before this
+  const FIRST_CLAUSE_MIN = 25;  // ... but never into a tiny first chunk
   const SOFT = 200;          // after the first chunk, send once this much is ready (keeps playback fed)
   const MAX = 400;           // never more than this per chunk (the server caps 600 speakable chars)
   // "Mr. Smith", "e.g. this": a full stop after these is not the end of a sentence
@@ -104,6 +111,18 @@
     return out;
   }
 
+  /** A first sentence over FIRST_CLAUSE_MAX characters, cut at its last clause break (", " "; " " — ")
+   *  that leaves a first piece of at most FIRST_CLAUSE_MAX; [s] when it is short or has no break. */
+  function firstCut(s) {
+    if (s.length <= FIRST_CLAUSE_MAX) return [s];
+    const comma = Math.max(s.lastIndexOf(', ', FIRST_CLAUSE_MAX - 1), s.lastIndexOf('; ', FIRST_CLAUSE_MAX - 1));
+    const dash = s.lastIndexOf(' — ', FIRST_CLAUSE_MAX);
+    const end = Math.max(comma >= 0 ? comma + 1 : -1, dash);
+    if (end < FIRST_CLAUSE_MIN) return [s];
+    const head = s.slice(0, end).trim(), tail = s.slice(end).replace(/^\s*—?\s*/, '');
+    return tail ? [head, tail] : [head];
+  }
+
   function createChunker(opts) {
     const honorific = (opts && typeof opts.honorific === 'string' && opts.honorific.trim()) || 'Sir';
     const NOTICE = `The details are on screen, ${honorific}.`;
@@ -119,7 +138,12 @@
     function emit(text) { const t = tidy(text); if (t && words(t)) { out.push(t); firstOut = true; } }
     function pack(force) {
       while (ready.length) {
-        if (!firstOut) { splitLong(ready.shift()).forEach(emit); continue; }
+        if (!firstOut) {
+          const [head, tail] = firstCut(ready.shift());
+          if (tail) ready.unshift(tail);
+          splitLong(head).forEach(emit);
+          continue;
+        }
         let size = 0, k = 0;
         while (k < ready.length && size + ready[k].length + 1 <= MAX) { size += ready[k].length + 1; k++; }
         if (k === 0) { splitLong(ready.shift()).forEach(emit); continue; }
@@ -227,6 +251,7 @@
   const WATCHDOG_SLACK_MS = 2500;
   const RESUME_WAIT_MS = 1500;   // an AudioContext the browser won't start (no tap yet) is given up on
   const DUCK_GAIN = 0.2, DUCK_RAMP_S = 0.06;
+  const FIXED_CACHE_MAX = 8;     // fixed lines kept per page (R5 D15)
   const settle = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise(r => setTimeout(r, ms))]);
 
   function createSpeaker(opts) {
@@ -313,13 +338,40 @@
       fire('state', { speaking: on, reason: why || null });
     }
 
+    // Fixed lines (handover, mic off, check-in) are asked for once per page: the bytes are kept per
+    // text + voice + speed, newest 8, and only when the caller marks meta.fixed. (R5 D15)
+    const fixedCache = new Map();
+    function fixedKey(item) {
+      if (!item.meta || item.meta.fixed !== true) return null;
+      const V = window.JarvisVoice;
+      let voice = typeof item.meta.voice === 'string' ? item.meta.voice : '';
+      if (!voice && V && typeof V.settings === 'function') { try { voice = V.settings().voice || ''; } catch (_) {} }
+      return `${item.text}\u0001${voice}\u0001${rate}`;
+    }
+    function remember(key, bytes) {
+      fixedCache.delete(key);
+      fixedCache.set(key, bytes);
+      while (fixedCache.size > FIXED_CACHE_MAX) fixedCache.delete(fixedCache.keys().next().value);
+    }
+    /** The audio bytes for an item: from the fixed-line cache, or from synth(). */
+    function bytesFor(item, key) {
+      const hit = key ? fixedCache.get(key) : null;
+      if (hit) { remember(key, hit); return Promise.resolve(hit.slice(0)); }
+      return Promise.resolve().then(() => o.synth(item.text, item.ctrl.signal, item.meta));
+    }
+    async function decoded(item, buf, key) {
+      const c = context();
+      if (!c) throw Object.assign(new Error('no_audio'), { fallback: true });
+      const copy = key ? buf.slice(0) : null; // decodeAudioData takes the original
+      try { const out = await c.decodeAudioData(buf); if (key) remember(key, copy); return out; }
+      catch (err) { throw Object.assign(new Error('undecodable'), { undecodable: true, cause: err }); }
+    }
     function fetchItem(item) {
       if (item.started) return;
       item.started = true;
       item.ctrl = new AbortController();
-      item.audio = Promise.resolve()
-        .then(() => o.synth(item.text, item.ctrl.signal, item.meta))
-        .then(buf => { const c = context(); if (!c) throw Object.assign(new Error('no_audio'), { fallback: true }); return c.decodeAudioData(buf); });
+      const key = fixedKey(item);
+      item.audio = bytesFor(item, key).then(buf => decoded(item, buf, key));
       item.audio.catch(() => {}); // handled where it is awaited
     }
     function fetchAhead() { if (!useBrowser) queue.slice(0, 2).forEach(fetchItem); }
@@ -340,7 +392,8 @@
         if (err && err.name === 'AbortError') return;
         if (err && err.skip) { queue.shift(); playing = null; pump(); return; }
         if (err && err.fallback) { await toBrowser(item, my, err.reason || err.message || 'error'); return; }
-        queue.shift(); playing = null; pump(); return; // undecodable audio: skip this chunk
+        if (err && err.undecodable) { await speakBrowser(item, my); return; } // R5 D9: said, never dropped
+        queue.shift(); playing = null; pump(); return; // any other refusal: skip this chunk
       }
       if (my !== seq) return;
       const c = context();
@@ -425,6 +478,7 @@
         return { rest };
       },
       setSink, duck, tone,
+      fixedCached: () => fixedCache.size,
       sink: () => sinkId,
       sinkSupported: sinkOk,
       volume: () => (master ? master.gain.value : 1),

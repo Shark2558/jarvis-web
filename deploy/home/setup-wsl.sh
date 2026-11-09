@@ -54,6 +54,11 @@ step_install() {
     echo "RESTART_WSL: Ubuntu must restart once so Docker starts by itself (the Windows script does it)."
   fi
   sudo systemctl enable --now docker >/dev/null 2>&1 || echo "Docker will start after the restart."
+  # Docker's package makes a `docker` group but adds nobody; the later steps run docker as you
+  if ! id -nG | tr ' ' '\n' | grep -qx docker; then
+    sudo usermod -aG docker "$(id -un)"
+    echo "RESTART_WSL: Ubuntu must restart once so you can use Docker (the Windows script does it)."
+  fi
 }
 
 # ---- configure ------------------------------------------------------------------------------
@@ -96,7 +101,7 @@ step_configure() {
   cd "$HOME_DIR"
   mkdir -p bridge-data mosquitto-data frigate/config frigate/media homeassistant
   sudo chown 10001:10001 bridge-data
-  chmod 700 bridge-data
+  sudo chmod 700 bridge-data # it is the bridge's now, so only sudo may change it
   if [ ! -f bridge.env ]; then cp bridge.env.example bridge.env; fi
   chmod 600 bridge.env
   if [ -z "$(get_env bridge.env MQTT_USER)" ]; then set_env bridge.env MQTT_USER bridge; fi

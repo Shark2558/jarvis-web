@@ -182,6 +182,7 @@ def make_stubs(bin_dir: Path, log: Path) -> None:
         "apt-get": f"#!/bin/bash\n{tail}",
         "curl": f"#!/bin/bash\n{tail}",
         "systemctl": f"#!/bin/bash\n{tail}",
+        "usermod": f"#!/bin/bash\n{tail}",
         "dpkg": f"#!/bin/bash\n{tail}echo amd64\n",
         "chown": f"#!/bin/bash\n{tail}",
         "chgrp": f"#!/bin/bash\n{tail}",
@@ -764,3 +765,31 @@ def test_the_logon_task_runs_its_script_past_the_execution_policy() -> None:
     ps = (HOME / "setup-windows.ps1").read_text()
     line = next(x for x in ps.splitlines() if "New-ScheduledTaskAction" in x)
     assert "-NoProfile -ExecutionPolicy Bypass" in line and "start-home.ps1" in line
+
+
+def _setup_wsl() -> str:
+    return (HOME / "setup-wsl.sh").read_text("utf-8")
+
+
+def test_a_folder_given_to_another_user_is_only_changed_with_sudo() -> None:
+    # 9 Nov, on the owner's laptop: `sudo chown 10001:10001 bridge-data` then a plain
+    # `chmod 700 bridge-data` failed with "Operation not permitted" (he no longer owns it).
+    text = _setup_wsl()
+    for owned in re.findall(r"sudo chown [0-9:]+ ([\w./-]+)", text):
+        plain = re.compile(rf"^\s*chmod [0-7]+ {re.escape(owned)}\s*$", re.MULTILINE)
+        assert not plain.search(text), owned
+
+
+def test_the_owner_can_use_docker_without_sudo_after_install() -> None:
+    # Docker's package makes a `docker` group but adds nobody to it; every later `docker run`
+    # in the script runs as the owner, so the install step must add him and restart Ubuntu once.
+    text = _setup_wsl()
+    install = text[text.index("step_install() {") : text.index("# ---- configure")]
+    assert 'sudo usermod -aG docker "$(id -un)"' in install
+    assert "RESTART_WSL" in install[install.index("usermod") :]
+
+
+def test_install_adds_the_owner_to_the_docker_group_and_asks_for_a_restart(tmp_path: Path) -> None:
+    done, calls = run_script(tmp_path, "install", PATH_NO_DOCKER="1")
+    assert "usermod -aG docker" in calls
+    assert "RESTART_WSL" in done.stdout

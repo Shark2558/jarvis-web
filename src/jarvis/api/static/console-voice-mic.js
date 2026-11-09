@@ -50,8 +50,6 @@
   const VAD_LAG_MS = 160;          // two frames of speech before the VAD says "start"
   const ECHO_AFTER_MS = 3000;      // a turn that began this soon after a reply ended may be the room's reverb of it (SM4)
   const SAID_MS = 4000;            // JARVIS's own words kept this long for the echo guard
-  const PHRASES_REFUSED = 'phrases-not-supported'; // Web Speech: the browser can't take recognition hints (V1)
-  const BROWSER_RESTART_MS = 4000; // the browser recogniser is restarted quietly at most this often
   const FILLER = new Set(['um', 'uh', 'hmm', 'mm', 'uhm', 'er', 'ah', 'umm', 'uhh', 'hm', 'mhm']);
   const FIXED = window.JarvisLoopGlue.FIXED;      // fixed lines: their audio is cached per page
   const NAME = 'Voice input';
@@ -87,10 +85,14 @@
     saidText: () => saidText(), inConversation: () => inConversation(), setMode: (m) => setMode(m), speak: (...a) => speak(...a), silence: () => silence(),
     listen: (o) => listen(o), deliver: (t, o) => deliver(t, o), settle: (r) => settle(r), say: (t) => say(t),
     cue: (n) => cue(n), honorific, loopSay: (t, o) => loopSay(t, o), startClock: () => startClock(),
-    stopClock: () => stopClock(), resumeListening: () => resumeListening(), isListening, restore: () => restore(),
+    stopClock: () => stopClock(), resumeListening: () => resumeListening(), isListening, restore: () => browserEngine.restore(),
     endCapture: () => endCapture(), releaseMic: () => releaseMic(),
     answering: () => S.mode === 'thinking' || !!(S.vad && S.vad.started()) || !!S.recText });
   const { armBarge, disarmBarge, bargeWake, resumeSpeech, bindCommands, speakWake, checkIn, handover, finishHandover } = glue;
+  // the browser's own recognition (engine 'browser'): console-voice-loop-browser.js
+  const browserEngine = window.JarvisLoopBrowser.create({ S, A, V, btn, input, getClock: () => clock, help, say, setMode,
+    isListening, releaseMic: () => releaseMic(), clearClocks: () => clearClocks(), startClocks: (t) => startClocks(t),
+    markHeard: (n) => markHeard(n), clean: (x) => clean(x), deliver: (t, o) => deliver(t, o) });
 
   // ---- state ---------------------------------------------------------------------------------
   function setMode(mode) {
@@ -173,7 +175,7 @@
     if (t !== S.turn || !isListening()) return;
     const engine = V.inputEngine();
     if (engine === 'cloud') listenCloud(t, cued);
-    else if (engine === 'browser') listenBrowser(t);
+    else if (engine === 'browser') browserEngine.listen(t);
     else { S.conv = false; setMode('idle'); help(V.device().engine === 'cloud' && A.supported() ? 'cloud_down' : 'unsupported'); releaseMic(); }
   }
 
@@ -303,67 +305,6 @@
   }
   const clean = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000);
 
-  function listenBrowser(t, retried) {
-    releaseMic(); // the browser records on its own: our primed audio context is not needed
-    btn.classList.toggle('nolevel', !A.isOpen()); // no level to show unless "Hey Jarvis" keeps the mic open
-    let rec;
-    try { rec = A.recognizer(); } catch (e) { S.conv = false; setMode('idle'); help(e && e.code === 'mic_off' ? 'mic_off' : 'unsupported'); return; }
-    const P = window.JarvisVoicePhrases;
-    // no-op unless the browser can take hints; a browser that refuses them (phrases-not-supported) is never offered them again
-    if (!S.noPhrases) { try { if (P && typeof P.apply === 'function') P.apply(rec); } catch (_) {} }
-    S.rec = rec; S.recText = ''; S.stop = false; S.cancel = false; S.quietEnd = false; S.before = input.value; S.recStart = performance.now();
-    let finalText = '', interim = '', error = '';
-    rec.lang = V.language(); rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
-    rec.onresult = (e) => {
-      if (t !== S.turn) return;
-      interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const res = e.results[i];
-        if (res.isFinal) finalText += res[0].transcript; else interim += res[0].transcript;
-      }
-      clearTimeout(S.noSpeech);
-      markHeard(0);
-      S.recText = clean(finalText + ' ' + interim);
-      showWords(S.recText);
-    };
-    rec.onerror = (e) => { error = e && e.error ? String(e.error) : 'error'; if (error === PHRASES_REFUSED) S.noPhrases = true; };
-    rec.onend = () => {
-      if (t !== S.turn) return;
-      S.rec = null; clearClocks();
-      releaseMic(); // in case "Hey Jarvis" was switched off meanwhile
-      input.classList.remove('interim');
-      if (error === PHRASES_REFUSED && !retried && !S.cancel && !A.locked()) { restore(); listenBrowser(t, true); return; } // V1: the same turn, at once, without the hints
-      if (S.cancel) {
-        restore(); setMode('idle');
-        if (S.quietEnd && !S.soft) say('I didn\'t hear anything.');
-        return;
-      }
-      if (error === 'not-allowed' || error === 'service-not-allowed') { restore(); S.conv = false; setMode('idle'); help('blocked'); return; }
-      if (error === 'audio-capture') { restore(); S.conv = false; setMode('idle'); help('no_mic'); return; }
-      const text = clean(finalText || interim);
-      if (!text && S.holdWait && S.conv && clock && clock.waiting() && !A.locked()) { restore(); restartBrowser(t); return; }
-      if (!text) { restore(); S.conv = false; setMode('idle'); if (!S.soft) say(error === 'network' ? 'The browser\'s speech service couldn\'t be reached.' : 'I didn\'t hear anything.'); return; }
-      restore();
-      deliver(text, { state: 'listening' });
-    };
-    try { rec.start(); } catch (_) { S.rec = null; S.conv = false; setMode('idle'); help('failed'); return; }
-    startClocks(t);
-  }
-  /** The browser recogniser gives up after a few silent seconds: start it again quietly, not faster than every 4 s. */
-  function restartBrowser(t) {
-    const wait = Math.max(0, BROWSER_RESTART_MS - (performance.now() - S.recStart));
-    S.browserTimer = setTimeout(() => { if (t === S.turn && isListening() && !S.rec && !A.locked()) listenBrowser(t); }, wait);
-  }
-  function showWords(text) {
-    input.classList.add('interim');
-    input.value = (S.before ? S.before.replace(/\s+$/, '') + ' ' : '') + text;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-  function restore() {
-    input.classList.remove('interim');
-    input.value = S.before;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  }
 
   /** A transcript: the local command router first (D12), then send it (default) or leave it in the box. */
   async function deliver(text, o = {}) {
@@ -398,7 +339,7 @@
   const cancelAsk = () => { const C = Cmd(); if (C && typeof C.cancelAsk === 'function') C.cancelAsk(); };   // a stale question must not swallow a later yes / no (M2)
   /** A turn that began within 3 s of a reply ending, whose words are mostly that reply's: the room's reverb, not the owner. */
   function reverb(text, peak) {
-    if (S.turnAt - S.replyEndAt > ECHO_AFTER_MS) return false;
+    if (S.handsFree !== 'relisten' || S.turnAt - S.replyEndAt > ECHO_AFTER_MS) return false;   // a tap or "Hey Jarvis" is the owner, by choice
     const C = Cmd(), id = C && C.pending() ? C.owns(text, 'listening') : null;
     if (id && id.startsWith('answer.')) return false;                   // the answer to his own question echoes it by nature
     return window.JarvisBarge.isEcho(text, saidText(), peak || 0, window.JarvisBarge.margin());
@@ -446,7 +387,7 @@
   function cancel() {
     S.turn++;
     S.conv = false; stopClock(); cancelAsk();
-    if (S.rec) { S.cancel = true; const r = S.rec; S.rec = null; try { r.abort(); } catch (_) {} restore(); }
+    if (S.rec) { S.cancel = true; const r = S.rec; S.rec = null; try { r.abort(); } catch (_) {} browserEngine.restore(); }
     endCapture();
     setMode('idle');
     releaseMic();

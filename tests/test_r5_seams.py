@@ -38,6 +38,7 @@ VOICE_ORDER = (
     "console-voice-wake.js",
     "console-voice-micoff.js",
     "console-voice-loop-glue.js",
+    "console-voice-loop-browser.js",
     "console-voice-mic.js",
 )
 NEW_SCRIPTS = tuple(

@@ -7,10 +7,15 @@ behaviour is built and tested in `jarvis.health`, `jarvis.home.watchdog` and the
 ## 1. D3: the laptop going quiet always reaches the owner (`api/home_wiring.py`)
 
 ```python
-    offline = OfflineJob(
-        store, notifier, camera.alarm, clock=clock, offline_after_s=s.home_offline_after_s, tz=tz,
-        alert_when=s.home_offline_alert,  # R5.1 D3: "always" (default) | "armed_only"
-    )
+offline = OfflineJob(
+    store,
+    notifier,
+    camera.alarm,
+    clock=clock,
+    offline_after_s=s.home_offline_after_s,
+    tz=tz,
+    alert_when=s.home_offline_alert,  # R5.1 D3: "always" (default) | "armed_only"
+)
 ```
 
 Behaviour (`home/watchdog.py` docstring): armed is unchanged (`home_offline`, urgent). Disarmed with
@@ -95,8 +100,10 @@ vitals. Add both:
 from collections.abc import AsyncIterator
 from jarvis.health.briefing import Briefing
 
+
 class LiveHealth:
     ...
+
     async def briefing(self, uid: str, report: HealthReport | None) -> Briefing:
         return await self._svc().briefing(uid, report)
 

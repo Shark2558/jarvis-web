@@ -106,12 +106,14 @@ class Briefing:
     spoken: str
     lines: tuple[str, ...]  # every sentence, uncapped (the screen shows everything)
     concerns: tuple[Concern, ...]
+    spend: str = ""  # the vitals sentence on its own (the pop-up's Vitals summary); "" without
 
     def to_json(self) -> dict[str, Any]:
         return {
             "spoken": self.spoken,
             "lines": list(self.lines),
             "concerns": [c.to_json() for c in self.concerns],
+            "spend": self.spend,
         }
 
 
@@ -273,15 +275,20 @@ def compose_briefing(
     `vitals_unreadable`, the board could not be read (one fixed sentence says so)."""
     results = report.results if report is not None else ()
     parts, concerns = _system_parts(results)
+    spend = ""
     if board is not None:
         more, extra = _vitals_parts(board)
+        spend = more[0].text if more and board.spend is not None else ""
         parts += more
         concerns += extra
     elif vitals_unreadable:
+        spend = VITALS_UNREADABLE
         parts.append(_Part(VITALS_UNREADABLE, 0))
     close = REMIND_CLOSE if concerns else NOMINAL_CLOSE
     lines = (*(p.text for p in parts), close)
-    return Briefing(spoken=_spoken(parts, close), lines=lines, concerns=_ordered(concerns))
+    return Briefing(
+        spoken=_spoken(parts, close), lines=lines, concerns=_ordered(concerns), spend=spend
+    )
 
 
 __all__ = [

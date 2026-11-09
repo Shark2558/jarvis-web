@@ -271,7 +271,7 @@ async def test_a_service_without_streaming_answers_404_so_the_console_falls_back
 async def test_get_and_run_carry_the_briefing_and_keep_the_one_liner() -> None:
     a = app(service(fixed("redis", "Redis", "ok"), fixed("telegram", "Telegram", "down")))
     empty = (await call(a, "GET", "/v1/health")).json()
-    assert empty["briefing"] == {"spoken": "", "lines": [], "concerns": []}
+    assert empty["briefing"] == {"spoken": "", "lines": [], "concerns": [], "spend": ""}
     run = (await call(a, "POST", "/v1/health/run")).json()
     got = (await call(a, "GET", "/v1/health")).json()
     assert run == got

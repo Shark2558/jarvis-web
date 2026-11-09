@@ -113,6 +113,14 @@ def test_spend_without_a_limit_says_so() -> None:
     assert "AI spend is ₹1,234.50 this month, no limit set." in b.spoken
 
 
+def test_the_spend_sentence_is_kept_apart_for_the_screen() -> None:
+    assert compose_briefing(ALL_OK, board(used=120, limit=500)).spend == (
+        "AI spend is ₹120 of ₹500 this month, 24 percent."
+    )
+    unreadable = compose_briefing(ALL_OK, None, vitals_unreadable=True)
+    assert unreadable.spend == "Vitals can't be read just now."
+
+
 def test_spend_near_the_limit_is_a_concern_once() -> None:
     spend = view("ai_spend", "AI spend this month", "amber", kind="billing", percent=90.0,
                  reason="is at 90% of its limit")  # fmt: skip
@@ -218,7 +226,8 @@ def test_no_systems_still_briefs_vitals() -> None:
 def test_to_json_is_plain_data() -> None:
     r = report(res("telegram", "down"))
     data = compose_briefing(r, None).to_json()
-    assert set(data) == {"spoken", "lines", "concerns"}
+    assert set(data) == {"spoken", "lines", "concerns", "spend"}
+    assert data["spend"] == ""  # no Vitals here
     assert data["concerns"] == [
         {
             "key": "telegram",

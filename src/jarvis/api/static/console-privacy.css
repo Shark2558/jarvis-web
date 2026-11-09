@@ -21,7 +21,8 @@
 .pv-note{margin:6px 0 0;font-size:12.5px;line-height:1.4;color:var(--ink-3)}
 .pv-note.lerr{color:var(--bad-ink)}
 .pv-acts{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-top:8px}
-.pv-acts .btn{margin-top:0}
+.pv-acts .btn{margin-top:0;flex:none} /* R5.1: Delete... sized like Export, not stretched across the card */
+.pv-acts .btn.bdel{height:32px;padding:0 12px;font-size:12px}
 .pv-card .btn.bdel{background:transparent;color:var(--ink-2)}
 .pv-dlg .btn.bdel.ask{color:var(--bad-ink);border-color:var(--bad-line)}
 .pv-dlg{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;background:color-mix(in srgb,var(--ink) 45%,transparent)}

@@ -292,10 +292,12 @@ def systems_popup(c: Console) -> None:
         "() => { const d = document.getElementById('sysCheck'); if (d) d.style.maxHeight = 'none'; }"
     )
     check(c, "#sysCheck", name)
-    close = c.page.locator("#sysCheckClose")
-    if close.count() and close.first.is_visible():
-        close.first.click()
-    else:
+    c.page.evaluate(
+        "() => { const d = document.getElementById('sysCheck'); if (d) d.style.maxHeight = ''; }"
+    )
+    try:
+        c.page.locator("#sysCheckClose").first.click(timeout=WAIT_MS)
+    except Exception:  # noqa: BLE001 - Esc closes it too
         c.page.keyboard.press("Escape")
     c.page.wait_for_timeout(300)
 

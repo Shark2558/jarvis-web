@@ -135,7 +135,7 @@ class VitalsService:
         )
         if p.source == "manual":
             return v.model_copy(update={"group": group_of(p.kind)})
-        impact, fix = words_for(p.id, p.label)
+        impact, fix = words_for(p.id, p.label, v.reason)
         group: Group = "bills" if p.id == auto.SPEND_ID else group_of(p.kind)
         return v.model_copy(update={"impact": impact, "fix": fix, "group": group})
 

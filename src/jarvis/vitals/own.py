@@ -7,8 +7,7 @@ out when that thing is not set up at all. Reads are cheap and free: in-process s
 router's own record of its last call), stored records, the LAST stored systems-check report, and
 the web vendor's free usage report (cached 10 minutes per process). No model call, no new vendor
 call, no key value. Every reason here is fixed words; a source that fails or is slow makes its
-item "unknown" (its error text never reaches the board). The integrator wires the sources
-(`INTEGRATION-r51.md`) through the small Protocols below.
+item "unknown" (its error text never reaches the board). Wired through the Protocols below.
 """
 
 from __future__ import annotations
@@ -25,14 +24,14 @@ from jarvis.config import Settings
 from jarvis.logging import get_logger
 from jarvis.vitals.auto import UNREADABLE, next_month_start
 from jarvis.vitals.models import Group, Kind, Provider, Status
+from jarvis.vitals.words import NO_CREDIT
 
 log = get_logger(__name__)
 
 SOURCE_TIMEOUT_S = 3.0  # each source's deadline: a slow one is "unknown", never a slow board
 WEB_CACHE_S = 600.0  # the vendor's usage report, at most once per 10 minutes per process
 WEB_RETRY_S = 60.0  # after a failed report, wait this long before asking again
-SECONDS_PER_MINUTE = 60
-MINUTES_PER_HOUR = 60
+SECONDS_PER_MINUTE = MINUTES_PER_HOUR = 60  # the board's age words: minutes, then hours
 
 LABELS: Mapping[str, str] = {
     "brain_claude": "Claude (paid AI) key",
@@ -57,6 +56,7 @@ EXPIRY_UNREADABLE = "its expiry date couldn't be read"
 STALE_CHECK = "hasn't been checked lately"
 BRAIN_STATES: Mapping[str, tuple[Status, str]] = {
     "refused": ("red", "was refused"),
+    "no_credit": ("red", NO_CREDIT),  # R5.1 I1: the vendor's "credit balance is too low"
     "busy": ("amber", "is busy right now"),
     "odd": ("amber", "answered oddly"),
     "unreachable": ("amber", "could not be reached"),

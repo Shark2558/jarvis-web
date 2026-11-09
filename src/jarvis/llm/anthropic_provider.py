@@ -25,6 +25,7 @@ from jarvis.llm.base import (
     Effort,
     LLMAuthError,
     LLMError,
+    LLMOutOfCredit,
     LLMTransientError,
     LLMUnreachable,
     StreamUsage,
@@ -128,9 +129,27 @@ class AnthropicProvider:
         )
 
     @staticmethod
-    def _translate(exc: Exception) -> LLMError:
+    def _out_of_credit(exc: Exception) -> bool:
+        """Anthropic's low-credit answer: HTTP 400, error type `invalid_request_error`, a message
+        about the credit balance (R5.1 I1). Only read here, never passed on."""
+        if not isinstance(exc, anthropic.BadRequestError):
+            return False
+        body = exc.body if isinstance(exc.body, dict) else {}
+        err = body.get("error") if isinstance(body.get("error"), dict) else body
+        message = err.get("message") if isinstance(err, dict) else None
+        return (
+            isinstance(err, dict)
+            and err.get("type") == "invalid_request_error"
+            and isinstance(message, str)
+            and "credit balance" in message.lower()
+        )
+
+    @classmethod
+    def _translate(cls, exc: Exception) -> LLMError:
         if isinstance(exc, anthropic.AuthenticationError | anthropic.PermissionDeniedError):
             return LLMAuthError(str(exc))
+        if cls._out_of_credit(exc):
+            return LLMOutOfCredit()  # fixed words: the vendor's text stays here
         if isinstance(exc, _UNREACHABLE) or (
             isinstance(exc, anthropic.APIStatusError) and exc.status_code >= 500
         ):

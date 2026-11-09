@@ -27,6 +27,7 @@ from jarvis.llm.base import (
     Effort,
     LLMAuthError,
     LLMError,
+    LLMOutOfCredit,
     LLMProvider,
     LLMTransientError,
     LLMUnreachable,
@@ -57,7 +58,8 @@ class ModelTier(StrEnum):
     STRONG = "strong"  # planning, multi-step reasoning — Opus-class
 
 
-BrainState = Literal["unknown", "ok", "busy", "unreachable", "refused", "odd"]
+# no_credit (R5.1 I1): the vendor answered that the account has no credit left to bill
+BrainState = Literal["unknown", "ok", "busy", "unreachable", "refused", "odd", "no_credit"]
 
 
 @dataclass(frozen=True)
@@ -145,6 +147,8 @@ class ModelRouter:
             self._last = "unreachable"
         elif isinstance(exc, LLMAuthError):
             self._last = "refused"
+        elif isinstance(exc, LLMOutOfCredit):
+            self._last = "no_credit"
         elif isinstance(exc, LLMTransientError):
             self._last = "busy"
         else:

@@ -116,8 +116,10 @@ async def run_probe(probe: Probe, uid: str, *, clock: Clock) -> ProbeResult | No
 
 
 # ---- brain (free: reads the router's own record; never a model call) ----------------------------
+BRAIN_NO_CREDIT = "the AI account is out of credit"  # R5.1 I1: fixed (the briefing keys on it)
 _BRAIN_REASONS = {
     "refused": ("down", "the AI key was refused"),
+    "no_credit": ("down", BRAIN_NO_CREDIT),
     "busy": ("degraded", "the AI service is busy"),
     "odd": ("degraded", "the AI service answered oddly"),
     "unknown": ("ok", "no AI call has failed since JARVIS started"),
@@ -253,6 +255,7 @@ def web_probe(reporter: UsageReporter) -> Probe:
 
 
 __all__ = [
+    "BRAIN_NO_CREDIT",
     "GOOGLE_METADATA_URL",
     "PROBE_TIMEOUT_S",
     "Probe",

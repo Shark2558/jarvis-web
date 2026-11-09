@@ -92,7 +92,7 @@ from jarvis.integrations.google import (
     register_tools_oauth,
 )
 from jarvis.integrations.vault import MemoryTokenStore
-from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
+from jarvis.llm.base import LLMAuthError, LLMError, LLMOutOfCredit, LLMProvider, LLMTransientError
 from jarvis.llm.brains import BrainRegistry
 from jarvis.llm.fallback import FallbackFailed
 from jarvis.llm.router import NO_AI_REFUSAL, BrainOff
@@ -246,7 +246,9 @@ def friendly_llm_error(exc: LLMError) -> str:
     if isinstance(exc, FallbackFailed):  # R1 C: the laptop's own plain-words message
         return str(exc)
     low = str(exc).lower()
-    if "credit balance" in low or "billing" in low or "quota" in low:
+    if isinstance(exc, LLMOutOfCredit) or any(
+        w in low for w in ("credit balance", "billing", "quota")
+    ):
         return "The AI provider account has no credit or quota left. Add credit, or switch brain."
     if isinstance(exc, LLMTransientError):
         return "The AI service is busy or rate-limited right now. Please try again in a minute."

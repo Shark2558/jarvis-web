@@ -13,6 +13,7 @@ from jarvis.vitals.auto import SPEND_ID
 
 ALLOWANCE_PREFIX = "allowance_"
 QUOTA_PREFIX = "quota_"
+NO_CREDIT = "is out of credit"  # the Claude key's reason when the account can't be billed
 
 WORDS: Mapping[str, tuple[str, str]] = {
     "brain_claude": (
@@ -53,6 +54,15 @@ WORDS: Mapping[str, tuple[str, str]] = {
     ),
 }
 
+# (item id, its fixed reason) -> (impact, fix) when the cause is known in code (R5.1 I1)
+BY_REASON: Mapping[tuple[str, str], tuple[str, str]] = {
+    ("brain_claude", NO_CREDIT): (
+        "Now: paid AI replies pause until the account is topped up; JARVIS answers with the free "
+        "brain where it can.",
+        "Top up at console.anthropic.com → Plans & billing",
+    ),
+}
+
 ALLOWANCE_WORDS = (
     "If this runs out: voice keeps working but each use costs rupees, counted in this "
     "month's AI spend.",
@@ -61,9 +71,12 @@ ALLOWANCE_WORDS = (
 QUOTA_FIX = "Nothing to do: it resets on its own."
 
 
-def words_for(pid: str, label: str) -> tuple[str, str]:
+def words_for(pid: str, label: str, reason: str = "") -> tuple[str, str]:
     """(impact, fix) for an automatic item; ("", "") when JARVIS has nothing fixed to say.
-    A quota's impact names its own label, which comes from code (the SKU table)."""
+    A quota's impact names its own label, which comes from code (the SKU table). `reason` is the
+    item's own fixed reason: a known cause (`BY_REASON`) has its own words."""
+    if (pid, reason) in BY_REASON:
+        return BY_REASON[(pid, reason)]
     if pid in WORDS:
         return WORDS[pid]
     if pid.startswith(ALLOWANCE_PREFIX):
@@ -73,4 +86,4 @@ def words_for(pid: str, label: str) -> tuple[str, str]:
     return "", ""
 
 
-__all__ = ["WORDS", "words_for"]
+__all__ = ["BY_REASON", "NO_CREDIT", "WORDS", "words_for"]

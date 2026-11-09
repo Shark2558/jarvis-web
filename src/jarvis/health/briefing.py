@@ -11,7 +11,8 @@ anything needs attention, else "All systems nominal, Sir."
 
 Words come from code: the system's label is `models.LABELS` (the stored one only for a key no
 label is known for), the consequence and the fix from the fixed maps below (or the fixed text
-Vitals puts on its items: `impact` / `fix`, R5.1 Part B). A probe's `reason` is never spoken; a
+Vitals puts on its items: `impact` / `fix`, R5.1 Part B). A probe's `reason` is never spoken (it
+is only compared with JARVIS's own fixed reasons, `BY_REASON`, e.g. the brain out of credit); a
 vitals item's `reason` is Vitals' own fixed template ("expires in 3 days"). Rupees only. The
 spoken text is capped at about 60 s of speech (`MAX_SPOKEN`): the lowest-severity vitals lines
 are dropped first and "And N more on screen." is said instead; `lines` keeps every sentence.
@@ -25,6 +26,7 @@ from typing import Any, Literal
 
 from jarvis.billing.service import rupees
 from jarvis.health.models import HealthReport, ProbeResult
+from jarvis.health.probes import BRAIN_NO_CREDIT
 from jarvis.health.report import spoken_label
 from jarvis.vitals.models import Board, ProviderView
 
@@ -61,6 +63,15 @@ FIX: Mapping[str, str] = {
     "home": "Switch the home laptop on and check its network.",
     "redis": "Restart Redis or check its address.",
     "web": "Check the web search credits in Vitals.",
+}
+# (probe key, one of JARVIS's own fixed probe reasons) -> (state words, impact, fix): a fault whose
+# cause is known in code says so instead of "is not answering" (R5.1 I1: the AI out of credit).
+BY_REASON: Mapping[tuple[str, str], tuple[str, str, str]] = {
+    ("brain", BRAIN_NO_CREDIT): (
+        "is out of credit",
+        "paid AI replies pause until the account is topped up",
+        "Top up at console.anthropic.com → Plans & billing.",
+    ),
 }
 UNKNOWN_IMPACT = "it may not work until it's fixed"
 UNKNOWN_FIX = "Run the check again in a few minutes."
@@ -164,10 +175,12 @@ def _system_parts(results: tuple[ProbeResult, ...]) -> tuple[list[_Part], list[C
         label = spoken_label(r)
         impact = IMPACT.get(r.key, UNKNOWN_IMPACT)
         state = "is not answering" if r.status == "down" else "is degraded"
+        fix = FIX.get(r.key, UNKNOWN_FIX)
+        state, impact, fix = BY_REASON.get((r.key, r.reason), (state, impact, fix))
         rank = 1 if r.status == "down" else 2
         parts.append(_Part(f"{_cap(label)} {state} {DASH} {impact}.", rank))
         sev: Severity = "down" if r.status == "down" else "degraded"
-        concerns.append(Concern(r.key, label, sev, impact, FIX.get(r.key, UNKNOWN_FIX)))
+        concerns.append(Concern(r.key, label, sev, impact, fix))
     return parts, concerns
 
 
@@ -293,6 +306,7 @@ def compose_briefing(
 
 
 __all__ = [
+    "BY_REASON",
     "EMPTY",
     "FIX",
     "IMPACT",

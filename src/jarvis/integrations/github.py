@@ -14,16 +14,19 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 from pydantic import SecretStr
 
+from jarvis.integrations.github_meta import MetaBook, TokenMeta
 from jarvis.integrations.vault import VaultError
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Delete, Docs, Set
+from jarvis.storage.docs import Delete, Docs, DocTx, Set
 from jarvis.tools.card import one_line
 from jarvis.undo.store import owner_ok
 
@@ -103,7 +106,8 @@ class Activity:
 
 
 class GithubStore:
-    """`{prefix}connectors_github/{uid}` = {v, kid, blob}; blob = AES-GCM({token, login})."""
+    """`{prefix}connectors_github/{uid}` = {v, kid, blob, meta}; blob = AES-GCM({token, login});
+    `meta` = clear `TokenMeta` fields (expiry and hourly limit from GitHub's headers; no secret)."""
 
     def __init__(self, docs: Docs, keyring: Keyring, *, prefix: str = "jarvis_") -> None:
         self._d = docs
@@ -119,13 +123,16 @@ class GithubStore:
     def _aad(uid: str) -> str:
         return f"github/{uid}/v1"
 
-    async def save(self, uid: str, token: SecretStr, login: str) -> None:
+    async def save(
+        self, uid: str, token: SecretStr, login: str, meta: TokenMeta | None = None
+    ) -> None:
         try:
             plain = json.dumps({"token": token.get_secret_value(), "login": login})
             blob = self._ring.cipher("connectors").encrypt(plain.encode(), aad=self._aad(uid))
-            await self._d.write(
-                [Set(self._path(uid), {"v": 1, "kid": self._ring.kid, "blob": blob})]
-            )
+            doc: dict[str, Any] = {"v": 1, "kid": self._ring.kid, "blob": blob}
+            if meta is not None:
+                doc["meta"] = meta.fields()
+            await self._d.write([Set(self._path(uid), doc)])
         except Exception as exc:  # noqa: BLE001 - never leak the cause (it may hold the token)
             log.warning("github save failed", extra={"reason": type(exc).__name__})
             raise GithubError(UNSAVED) from None
@@ -152,6 +159,25 @@ class GithubStore:
     async def delete(self, uid: str) -> None:
         await self._d.write([Delete(self._path(uid))])
 
+    async def meta(self, uid: str) -> TokenMeta | None:
+        """The clear `meta` fields, read without opening the sealed token."""
+        doc = await self._d.get(self._path(uid))
+        return TokenMeta.read(doc.get("meta")) if doc is not None else None
+
+    async def note_meta(self, uid: str, meta: TokenMeta) -> bool:
+        """Put `meta` on the existing record (in a transaction: a record deleted or replaced
+        meanwhile is never brought back). False when there is no record."""
+        path = self._path(uid)
+
+        async def put(tx: DocTx) -> bool:
+            doc = await tx.get(path)
+            if doc is None:
+                return False
+            tx.set(path, {**doc, "meta": meta.fields()})
+            return True
+
+        return await self._d.transaction(put)
+
 
 def _text(value: Any, limit: int = FIELD_LIMIT) -> str:
     return one_line(value, limit) if isinstance(value, str) else ""
@@ -177,10 +203,21 @@ def _status_error(status: int, headers: httpx.Headers) -> GithubError:
     return GithubError(f"GitHub returned an unexpected status ({status}).")
 
 
+Seen = Callable[[int, httpx.Headers], None]
+
+
 class GithubClient:
-    def __init__(self, store: GithubStore, *, http: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        store: GithubStore,
+        *,
+        http: httpx.AsyncClient | None = None,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
         self._store = store
         self._http = http or httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=False)
+        self._clock = clock
+        self._book = MetaBook()  # R5.1: the token's facts from GitHub's headers, per owner
 
     def __repr__(self) -> str:
         return "GithubClient(<hidden>)"
@@ -201,16 +238,43 @@ class GithubClient:
         raw = token.get_secret_value()
         if not token_ok(raw):
             raise GithubError(BAD_TOKEN)
-        who = await self._get(raw, "/user", {})
+        probe = MetaBook()  # this token's facts, kept only if the connect succeeds
+        who = await self._get(raw, "/user", {}, seen=self._seen(probe, uid))
         login = who.get("login") if isinstance(who, dict) else None
         if not isinstance(login, str) or not _LOGIN.fullmatch(login):
             raise GithubError(UNREADABLE)
-        await self._store.save(uid, token, login)
+        await self._store.save(uid, token, login, probe.get(uid))
+        self._book.saved(uid, probe.get(uid))
         log.info("github connected")
         return login
 
     async def disconnect(self, uid: str) -> None:
         await self._store.delete(uid)
+        self._book.forget(uid)
+
+    async def token_meta(self, uid: str) -> TokenMeta | None:
+        """R5.1 (Vitals): what GitHub's headers last said about the token: this process's latest
+        or the stored copy, whichever is newer. None when nothing is known (or not connected)."""
+        stored, mine = await self._store.meta(uid), self._book.get(uid)
+        if mine is None or (stored is not None and stored.seen_at > mine.seen_at):
+            return stored
+        return mine
+
+    def _seen(self, book: MetaBook, uid: str) -> Seen:
+        return lambda status, headers: book.observe(uid, status, headers, self._clock())
+
+    async def _call(self, uid: str, token: str, path: str, params: dict[str, Any]) -> Any:
+        """A read for the owner; afterwards the token's facts are stored when due (a failure is
+        logged by class name only and never raised: the read itself already answered)."""
+        try:
+            return await self._get(token, path, params, seen=self._seen(self._book, uid))
+        finally:
+            meta = self._book.due(uid)
+            try:
+                if meta is not None and await self._store.note_meta(uid, meta):
+                    self._book.stored(uid, meta)
+            except Exception as exc:  # noqa: BLE001 - never leak the cause
+                log.warning("github meta not saved", extra={"reason": type(exc).__name__})
 
     async def _token(self, uid: str) -> tuple[str, str]:
         found = await self._store.load(uid)
@@ -220,7 +284,7 @@ class GithubClient:
 
     async def profile(self, uid: str) -> Profile:
         token, _ = await self._token(uid)
-        d = await self._get(token, "/user", {})
+        d = await self._call(uid, token, "/user", {})
         if not isinstance(d, dict):
             raise GithubError(UNREADABLE)
         return Profile(
@@ -234,7 +298,7 @@ class GithubClient:
     async def repos(self, uid: str, limit: int = DEFAULT_ITEMS) -> tuple[Repo, ...]:
         token, _ = await self._token(uid)
         n = max(1, min(limit, MAX_ITEMS))
-        d = await self._get(token, "/user/repos", {"sort": "pushed", "per_page": n})
+        d = await self._call(uid, token, "/user/repos", {"sort": "pushed", "per_page": n})
         rows = [r for r in d if isinstance(r, dict)] if isinstance(d, list) else []
         return tuple(
             Repo(
@@ -252,7 +316,7 @@ class GithubClient:
     async def activity(self, uid: str, limit: int = DEFAULT_ITEMS) -> tuple[Activity, ...]:
         token, login = await self._token(uid)
         n = max(1, min(limit, MAX_ITEMS))
-        d = await self._get(token, f"/users/{login}/events", {"per_page": n})
+        d = await self._call(uid, token, f"/users/{login}/events", {"per_page": n})
         rows = [r for r in d if isinstance(r, dict)] if isinstance(d, list) else []
         out = []
         for r in rows[:n]:
@@ -263,7 +327,10 @@ class GithubClient:
             )
         return tuple(out)
 
-    async def _get(self, token: str, path: str, params: dict[str, Any]) -> Any:
+    async def _get(
+        self, token: str, path: str, params: dict[str, Any], *, seen: Seen | None = None
+    ) -> Any:
+        """GET `path`; `seen` gets every answer's status and headers (R5.1: token facts)."""
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
@@ -278,6 +345,8 @@ class GithubClient:
                 timeout=HTTP_TIMEOUT,
                 follow_redirects=False,
             ) as r:
+                if seen is not None:
+                    seen(r.status_code, r.headers)
                 if r.status_code != HTTP_OK:
                     log.warning(
                         "github error", extra={"status": r.status_code, "path": path.split("/")[1]}

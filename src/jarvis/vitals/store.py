@@ -1,7 +1,7 @@
 # src/jarvis/vitals/store.py
-"""Vitals on the `Docs` port (R4 D2, D4; equality + a single order_by only).
+"""Vitals on the `Docs` port (R4 D2, D4; R5.1 D2: equality queries only, so no composite index).
 
-    jarvis_vitals_providers/{name}   the manual record (+ user_id)
+    jarvis_vitals_providers/{name}   the manual record (+ user_id); listed by owner, sorted here
     jarvis_vitals_status/{name}      {user_id, status, at}: last status, for cross-line alerts
 
 `name` is a hash of (uid, id) joined by a separator that neither may contain, so two different
@@ -63,9 +63,9 @@ class VitalsStore:
     async def _rows(self, uid: str) -> list[tuple[str, dict[str, Any]]]:
         if not owner_ok(uid):
             raise ValueError("bad owner id")
-        try:
+        try:  # equality only (R5.1 D2): no composite index; sorted in Python by `list_manual`
             rows = await self._d.query(
-                Query(self._providers, where=("user_id", uid), order_by="label", limit=LIST_LIMIT)
+                Query(self._providers, where=("user_id", uid), limit=LIST_LIMIT)
             )
         except Exception as exc:
             self._trouble("vitals unreadable", exc)
@@ -86,7 +86,7 @@ class VitalsStore:
                 )
             except ValidationError:
                 log.warning("vitals record skipped: unreadable")
-        return out
+        return sorted(out, key=lambda p: (p.label.casefold(), p.id))
 
     async def put(self, uid: str, p: Provider) -> None:
         if p.source != "manual":

@@ -32,6 +32,7 @@ from datetime import datetime
 from typing import Literal, get_args
 from zoneinfo import ZoneInfo
 
+from jarvis.alerts import AlertKind
 from jarvis.home.ports import ArmReader
 from jarvis.home.store import HomeStore
 from jarvis.logging import get_logger
@@ -123,7 +124,7 @@ class OfflineJob:
         self, notifier: Notifier, uid: str, seen: float, *, armed: bool, counts: dict[str, int]
     ) -> bool:
         at = f"{datetime.fromtimestamp(seen, self._tz):%H:%M}"
-        kind = "home_offline" if armed else "home_offline_idle"
+        kind: AlertKind = "home_offline" if armed else "home_offline_idle"
         text = (ARMED_TEXT if armed else IDLE_TEXT).format(at=at)
         got = await notifier.notify(uid, Signal(source="home", kind=kind), text)
         counts["alerts"] += int(bool(got.telegram or got.push))

@@ -456,7 +456,9 @@ async def _exports(w: World) -> list[str]:
             out.append(f"{cid}: needle missing from its export")
     for cid in ("memory", "conversations", "activity", "notes"):
         text = json.dumps((await w.export(cid))["data"])
-        if "theirs" in text or "Other fact" in text or "nx" in text:
+        # The other owner's note is the item "nx": match it as a JSON string. Random memory
+        # ids (e.g. "mxcx37c") can contain the letters "nx"; that flaked ~1 run in 100.
+        if "theirs" in text or "Other fact" in text or '"nx"' in text:
             out.append(f"{cid}: another owner's data in the export")
     return out
 

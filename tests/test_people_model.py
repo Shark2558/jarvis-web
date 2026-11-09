@@ -4,11 +4,12 @@ FAST tier, no tools."""
 
 from __future__ import annotations
 
+from billing_fakes import PAID_TIERS, UID, PricedMock, billing, registry
+
 from jarvis.billing import BudgetPatch
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.router import ModelTier
 from jarvis.people.model import BrainPeopleModel
-from tests.billing_fakes import PAID_TIERS, UID, PricedMock, billing, registry
 
 
 def paid_only() -> BrainRegistry:

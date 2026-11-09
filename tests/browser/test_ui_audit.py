@@ -2,7 +2,10 @@
 # PHONE, on Night and Day, with realistic mocked R4 data (ui_checks.py, shared with
 # scripts/ui_snapshots.py), the in-page DOM checks must find: no overlapping interactive elements, no
 # browser-default controls, theme fonts only, nothing overflowing its panel sideways, every control
-# named, no button text on a third line, no page-level horizontal scroll, contrast >= 4.5:1.
+# named, no button text on a third line, no page-level horizontal scroll, contrast >= 4.5:1, no
+# neighbouring texts run together, no control whose label sits after it, no control or heading left
+# in the plain body font, and (phone only) every touch target at least 44 px. A panel whose data
+# never painted (its READY selector) FAILS: an empty panel proves nothing.
 # One page per viewport and surface (module-scoped); the panels are opened in turn.
 # The release checklist also needs the screenshots to be LOOKED at: scripts/ui_snapshots.py.
 # ruff: noqa: E501 -- the labelling and wrapping probes are JavaScript strings
@@ -14,7 +17,7 @@ from typing import Any
 
 import pytest
 from test_console import DESKTOP, PHONE, Console
-from ui_checks import DOM_CHECKS_JS, PANELS, READY, inject_unlinked_css, install_mocks
+from ui_checks import DOM_CHECKS_JS, PANELS, READY, install_mocks
 
 _pw = pytest.importorskip("playwright.sync_api")
 sync_playwright = _pw.sync_playwright
@@ -68,7 +71,6 @@ class Rig:
             c = Console(self.browser, self.url, self.token, VIEWPORTS[vp])
             install_mocks(c.page)
             c.open()
-            inject_unlinked_css(c.page)
             if surface == "day":
                 c.page.locator("#themeBtn").click()
                 c.page.locator('label[for="jx-s-day"]').click()
@@ -93,7 +95,8 @@ def rig(server_url: str, token: str) -> Iterator[Rig]:
         b.close()
 
 
-def _open(c: Console, panel: str) -> None:
+def _open(c: Console, panel: str) -> str | None:
+    """Open the panel; the READY selector that never appeared, or None."""
     tab = c.page.locator(f'.dk[data-open="{panel}"]')
     if c.page.locator(f"#p-{panel}").is_visible():
         pass  # already open (the Conversation, by default): a tab click would toggle it shut
@@ -103,15 +106,17 @@ def _open(c: Console, panel: str) -> None:
         c.page.locator("#dockMore").click()
         c.page.locator(f'#moreSheet [data-sheet-open="{panel}"]').click()
     c.page.locator(f"#p-{panel}").wait_for(state="visible")
+    missing = None
     if panel in READY:
         try:
             c.page.locator(READY[panel]).first.wait_for(state="attached", timeout=4000)
-        except Exception:  # noqa: BLE001 - a panel without its data is judged as it stands
-            pass
+        except Exception:  # noqa: BLE001 - reported: the panel never painted its data
+            missing = READY[panel]
     c.page.wait_for_timeout(SETTLE_MS)
     body = c.page.locator(f"#p-{panel} .pbody").first
     if body.count():
         body.evaluate("b => { b.scrollTop = 0; }")
+    return missing
 
 
 def _close(c: Console, panel: str, vp: str) -> None:
@@ -130,13 +135,14 @@ def _fmt(items: list[Any]) -> str:
 @pytest.mark.parametrize("panel", PANELS)
 def test_panel_passes_the_visual_gate(rig: Rig, panel: str, vp: str, surface: str) -> None:
     c = rig.get(vp, surface)
-    _open(c, panel)
+    not_ready = _open(c, panel)
     sel = f"#p-{panel}"
     res = c.page.evaluate(DOM_CHECKS_JS, sel)
     nameless = c.page.evaluate(NAMELESS_JS, sel)
     wraps = c.page.evaluate(WRAP_JS, sel)
     _close(c, panel, vp)
     assert not res.get("missing"), f"{sel} is not in the page"
+    assert not_ready is None, f"{panel} {vp} {surface}: its data never painted ({not_ready})"
     # an element escaping its panel sideways, a hard-clipped text or a sideways-scrolling body
     sideways = [
         o
@@ -157,6 +163,10 @@ def test_panel_passes_the_visual_gate(rig: Rig, panel: str, vp: str, surface: st
         "button text on a third line": wraps,
         "page-level horizontal scroll": [res["hscroll"]] if res["hscroll"] else [],
         "text contrast below 4.5:1": res["contrast"],
+        "neighbouring texts run together": res["runTogether"],
+        "control unlabelled or labelled after it": res["unlabelled"],
+        "control or heading in the plain body font": res["systemFont"],
+        "touch target below 44 px on the phone": res["smallTargets"] if vp == "phone" else [],
     }
     failed = {k: v for k, v in problems.items() if v}
     assert not failed, f"{panel} {vp} {surface}:\n" + "\n".join(

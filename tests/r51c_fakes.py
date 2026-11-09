@@ -34,10 +34,15 @@ class HomeStoreFake:
     async def status(self, uid: str) -> HomeStatus | None:
         return self.current
 
-    async def mark_offline(self, uid: str, *, alerted: bool) -> None:
+    async def mark_offline(self, uid: str, *, alerted: bool, kind: str | None = None) -> None:
         self.marks.append(alerted)
         assert self.current is not None
-        self.current = replace(self.current, state="offline", outage_alerted=alerted)
+        self.current = replace(
+            self.current,
+            state="offline",
+            outage_alerted=alerted,
+            outage_kind=kind if alerted else None,  # type: ignore[arg-type]
+        )
 
 
 def home_status(seen: float = SEEN, state: str = "online", alerted: bool = False) -> HomeStatus:

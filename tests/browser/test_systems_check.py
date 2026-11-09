@@ -1,13 +1,12 @@
 # tests/browser/test_systems_check.py -- R5.1 D6 (docs/plans/r5-1-observations.md): the systems
 # check pop-up and the tidied Systems card, in a real browser. The stream is mocked with page.route
-# (an NDJSON body). Until I1 links console-systems-modal.js / console-systems.css in console.html,
-# the test serves both files from this checkout and adds them to the page itself.
+# (an NDJSON body). The pop-up's scripts and stylesheet are the ones console.html links and the
+# /static allow-list serves (I1); nothing is injected.
 from __future__ import annotations
 
 import json
 import time
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -16,7 +15,6 @@ from test_console import DESKTOP, PHONE, Console
 
 pytestmark = pytest.mark.browser
 
-STATIC = Path(__file__).resolve().parents[2] / "src/jarvis/api/static"
 NOW = time.time()
 SYSTEMS = [
     ("brain", "the AI brain", "ok", "the last AI call worked"),
@@ -78,17 +76,6 @@ def stream_body(done: bool = True) -> str:
     return "".join(json.dumps(e) + "\n" for e in events)
 
 
-def _serve(name: str, kind: str) -> Callable[[Any], None]:
-    """This checkout's copy of a new static file (one route argument: Playwright passes the
-    request too to a handler that takes two)."""
-    text = (STATIC / name).read_text(encoding="utf-8")
-
-    def handler(route: Any) -> None:
-        route.fulfill(status=200, body=text, content_type=f"text/{kind}; charset=utf-8")
-
-    return handler
-
-
 class Fake:
     """The health routes, mocked; every request body kept."""
 
@@ -100,12 +87,6 @@ class Fake:
         self.hold_stream = False  # the stream's answer is sent later by the test
         self.held: list[Any] = []
         self.held_streams: list[Any] = []
-        for name, kind in (
-            ("console-systems-modal.js", "javascript"),
-            ("console-systems-voice.js", "javascript"),
-            ("console-systems.css", "css"),
-        ):
-            page.route(f"**/static/{name}", _serve(name, kind))
         page.route("**/v1/health/run/stream", self._stream)
         page.route("**/v1/health/remind", self._remind)
         page.route("**/v1/health/run", self._run)
@@ -150,16 +131,8 @@ class Fake:
         return [b for n, b in self.calls if n == name]
 
 
-INJECT = """async () => {
-  const add = (tag, attrs) => new Promise((ok, bad) => {
-    const el = document.createElement(tag); Object.assign(el, attrs);
-    el.onload = ok; el.onerror = bad; document.head.appendChild(el);
-  });
-  if (!document.querySelector('link[href$="console-systems.css"]'))
-    await add('link', { rel: 'stylesheet', href: '/static/console-systems.css' });
-  if (!window.JarvisSystemsVoice) await add('script', { src: '/static/console-systems-voice.js' });
-  if (!window.JarvisSystemsCheck) await add('script', { src: '/static/console-systems-modal.js' });
-}"""
+LOADED = "() => !!window.JarvisSystemsCheck && !!window.JarvisSystemsVoice"
+
 # the shared speaker, recorded: say() keeps the text, end() finishes "speech" after `ms`
 SPEAKER = """() => {
   const sp = window.JarvisVoice.speaker, fns = [];
@@ -204,7 +177,7 @@ def make(
         c.page.add_init_script(EVENTS)
         f = Fake(c.page, **fake)
         c.open()
-        c.page.evaluate(INJECT)
+        c.page.wait_for_function(LOADED)  # the page's own deferred scripts
         made.append(c)
         return c, f
 

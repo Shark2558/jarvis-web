@@ -67,7 +67,7 @@
     return {
       chat: { x: sR - chatW, y: b.top, w: chatW, h: Math.min(availH, 680), open: true },
       brief: { x: sL, y: b.top, w: 380, h: Math.min(availH, 760), open: false },
-      vitals: { x: sL, y: b.top, w: 300, h: null, open: false },
+      vitals: { x: sL, y: b.top, w: 340, h: null, open: false }, // R5.1 audit #14: room for the board
       activity: { x: sL, y: Math.max(b.top, bottom - 250), w: 300, h: 250, open: false },
       approvals: { x: col2, y: b.top, w: 340, h: null, open: false },
       history: { x: col2, y: b.top + 36, w: 320, h: Math.min(440, availH), open: false },

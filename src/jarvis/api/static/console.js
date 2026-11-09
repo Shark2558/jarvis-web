@@ -566,6 +566,11 @@
   });
   $('form').addEventListener('submit', (ev) => {
     ev.preventDefault(); const t = input.value.trim(); if (!t || state.busy) return;
+    const SC = window.JarvisSystemsCheck; // R5.1 D6: typed or dictated "run a systems check" -> the pop-up, no AI call
+    if (SC && SC.matches(t, { typed: true })) { // typed mode: the WHOLE message must be the phrase
+      delete input.dataset.channel; input.value = ''; autosize(); syncSend();
+      SC.open({ via: 'typed', opener: $('send') }); return;
+    }
     const channel = input.dataset.channel === 'voice' ? 'voice' : 'text'; // dictated, then checked by the owner
     delete input.dataset.channel;
     FX.ripple($('send')); input.value = ''; autosize(); syncSend(); send(t, { channel });

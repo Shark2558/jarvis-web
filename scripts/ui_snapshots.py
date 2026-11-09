@@ -42,7 +42,7 @@ log = logging.getLogger("ui_snapshots")
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests" / "browser"))
-from ui_checks import DOM_CHECKS_JS, PANELS, READY, inject_unlinked_css, install_mocks  # noqa: E402  (shared with test_ui_audit)
+from ui_checks import DOM_CHECKS_JS, PANELS, READY, install_mocks  # noqa: E402  (shared with test_ui_audit)
 
 TOKEN = "ui-snapshots-token-not-a-secret"
 START_TIMEOUT_S = 30
@@ -274,7 +274,6 @@ def capture_combo(browser: Browser, url: str, vp: str, surface: str, run: Run) -
     try:
         install_mocks(c.page)
         c.open()
-        inject_unlinked_css(c.page)  # stylesheets console.html does not link yet
         shoot(c, None, f"{c.tag}-page", c.tag)
         shoot(c, "header.topbar", f"{c.tag}-topbar", c.tag)
         check(c, "header.topbar", f"{c.tag}-topbar")
@@ -303,7 +302,6 @@ def capture_vitals_503(browser: Browser, url: str, vp: str, run: Run) -> None:
     try:
         install_mocks(c.page, vitals_503=True)
         c.open()
-        inject_unlinked_css(c.page)  # stylesheets console.html does not link yet
         c.open_panel("vitals", ready=False)
         c.wait_for("#vitals-board .vt-state.vt-err")
         shoot_panel(c, "vitals", f"{c.tag}-vitals")

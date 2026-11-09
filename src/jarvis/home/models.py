@@ -9,6 +9,9 @@ from typing import Any, Literal
 from jarvis.home.signing import HomeKeys, derive_keys
 
 HomeState = Literal["linked", "online", "offline", "degraded"]
+# R5.1 I1: which alert told the current outage (D3): "idle" (disarmed) or "armed" (urgent)
+OutageKind = Literal["idle", "armed"]
+OUTAGE_KINDS: frozenset[str] = frozenset({"idle", "armed"})
 LABEL_MAX = 40
 BRIDGE_PORT = 8443
 
@@ -40,6 +43,7 @@ class HomeStatus:
     bridge_version: str | None = None
     dropped_disarmed: int = 0
     outage_alerted: bool = False
+    outage_kind: OutageKind | None = None  # None: not told, or told before R5.1 (armed only)
 
 
 @dataclass(frozen=True)
@@ -68,6 +72,8 @@ class Seen:
 
 __all__ = [
     "BRIDGE_PORT",
+    "OUTAGE_KINDS",
+    "OutageKind",
     "LABEL_MAX",
     "DevicesRecord",
     "ExposedEntry",

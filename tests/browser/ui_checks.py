@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from playwright.sync_api import Page, Route
@@ -455,32 +454,3 @@ DOM_CHECKS_JS = r"""
   return out;
 }
 """
-
-
-STATIC = Path(__file__).resolve().parents[2] / "src" / "jarvis" / "api" / "static"
-
-
-def _css_handler(body: str) -> Callable[[Route], None]:
-    def handler(route: Route) -> None:
-        route.fulfill(status=200, content_type="text/css", body=body)
-
-    return handler
-
-
-def unlinked_css() -> list[str]:
-    """Stylesheets in the static folder that console.html does not link yet (the integrator links them)."""
-    html = (STATIC / "console.html").read_text(encoding="utf-8")
-    return sorted(p.name for p in STATIC.glob("console-*.css") if f"/static/{p.name}" not in html)
-
-
-def inject_unlinked_css(page: Page) -> list[str]:
-    """Serve and apply those stylesheets (the /static allow-list in api/console.py is also the integrator's).
-
-    Once console.html links them, nothing is injected and the page is judged exactly as shipped.
-    """
-    names = unlinked_css()
-    for name in names:
-        body = (STATIC / name).read_text(encoding="utf-8")
-        page.route(f"**/static/{name}", _css_handler(body))
-        page.add_style_tag(url=f"/static/{name}")
-    return names

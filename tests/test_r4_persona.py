@@ -1,4 +1,4 @@
-# tests/test_r4_persona.py -- R4 I1: persona p4.9, now p5.0 (plan D13, brief W12): the Vitals
+# tests/test_r4_persona.py -- R4 I1: persona p4.9, now p5.1 (plan D13, brief W12): the Vitals
 # board, the systems check (works with the AI off), the connectors (token only in the panel; Photos
 # pick-only; faces need consent) and scoped people research, each paragraph pinned on its own.
 from __future__ import annotations
@@ -12,8 +12,8 @@ def _flat(rule: str) -> str:
     return " ".join(rule.split())
 
 
-def test_persona_is_p5_0_after_r4() -> None:  # R4 I1: p4.9; R5 I1: p5.0
-    assert p.PERSONA_VERSION == "p5.0"
+def test_persona_is_p5_1_after_r4() -> None:  # R4 I1: p4.9; R5 I1: p5.0; R5.1 I1: p5.1
+    assert p.PERSONA_VERSION == "p5.1"
 
 
 @pytest.mark.parametrize("name", ["VITALS_RULE", "SYSTEMS_RULE", "CONNECTORS_RULE", "PEOPLE_RULE"])
@@ -36,10 +36,10 @@ def test_the_r4_paragraphs_sit_after_r3_and_before_the_tools_rule() -> None:
     )
 
 
-def test_vitals_takes_limits_and_dates_never_the_key() -> None:
+def test_vitals_takes_limits_and_dates_never_the_key() -> None:  # reworded at p5.1 (R5.1 D12)
     r = _flat(p.VITALS_RULE)
-    assert "Vitals board of your keys, quotas and bills" in r
-    assert "tell it a key's limit and expiry (never the key itself)" in r
+    assert "records a label, limit and expiry only" in r
+    assert "the record only, never the key" in r
     assert "vitals_show" in r and "vitals_set_key" in r and "vitals_delete_key" in r
     assert "do not repeat it and do not store it" in r
 

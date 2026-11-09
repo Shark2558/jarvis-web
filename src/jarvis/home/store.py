@@ -2,7 +2,8 @@
 """Where the home link is kept, on the `Docs` port (R3 D4, D5, D9; Layer 7).
 
     {prefix}home/{uid}           {home_id, v, kid, blob, linked_at, state, last_seen_at, parts,
-                                  bridge_version, dropped_disarmed, outage_alerted, rev}
+                                  bridge_version, dropped_disarmed, outage_alerted,
+                                  outage_kind (R5.1: "idle" | "armed" | None), rev}
         blob = AES-GCM(JSON {bridge_url, seed}) under the `home` key, AAD `home/config/{uid}/v1`
     {prefix}home_devices/{uid}   {rev, v, kid, blob}  blob = AES-GCM(JSON [entry...]), AAD
                                   `home/devices/{uid}/v1`  (entity ids and the owner's labels)
@@ -24,11 +25,13 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from jarvis.home.models import (
+    OUTAGE_KINDS,
     DevicesRecord,
     ExposedEntry,
     HomeRecord,
     HomeState,
     HomeStatus,
+    OutageKind,
     Seen,
 )
 from jarvis.home.ports import is_home_id
@@ -154,6 +157,7 @@ class HomeStore:
                 else None,
                 dropped_disarmed=int(doc.get("dropped_disarmed", 0)),
                 outage_alerted=bool(doc.get("outage_alerted", False)),
+                outage_kind=doc["outage_kind"] if doc.get("outage_kind") in OUTAGE_KINDS else None,
             )
         except (KeyError, TypeError, ValueError):
             raise HomeStoreUnavailable(UNAVAILABLE) from None
@@ -224,6 +228,7 @@ class HomeStore:
             "bridge_version": None,
             "dropped_disarmed": keep,
             "outage_alerted": False,
+            "outage_kind": None,
             "rev": int(old.get("rev", 0)) + 1 if isinstance(old, dict) else 1,
         }
         try:
@@ -309,6 +314,7 @@ class HomeStore:
                     parts=parts,
                     bridge_version=bridge_version,
                     outage_alerted=False,
+                    outage_kind=None,
                 )
 
             if not await self._update(uid, change):
@@ -316,9 +322,16 @@ class HomeStore:
             self._written[uid] = now
         return Seen(previous=status.state, outage_alerted=status.outage_alerted)
 
-    async def mark_offline(self, uid: str, *, alerted: bool) -> None:
+    async def mark_offline(
+        self, uid: str, *, alerted: bool, kind: OutageKind | None = None
+    ) -> None:
+        """The outage, and whether (and with which alert, R5.1 I1) the owner was told: stored,
+        so a restart or another instance knows an idle alert went out and an armed one not yet."""
+
         def change(doc: dict[str, Any]) -> None:
-            doc.update(state="offline", outage_alerted=alerted)
+            doc.update(
+                state="offline", outage_alerted=alerted, outage_kind=kind if alerted else None
+            )
 
         await self._update(uid, change)
         self._seen.pop(uid, None)

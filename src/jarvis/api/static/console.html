@@ -38,6 +38,10 @@
 <link rel="stylesheet" href="/static/console-home-panel.css">
 <link rel="stylesheet" href="/static/console-faces.css">
 <link rel="stylesheet" href="/static/console-alerts.css">
+<link rel="stylesheet" href="/static/console-connectors.css">
+<link rel="stylesheet" href="/static/console-people.css">
+<link rel="stylesheet" href="/static/console-vitals.css">
+<link rel="stylesheet" href="/static/console-systems.css">
 </head>
 <body>
 <div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
@@ -51,8 +55,8 @@
       <span class="core" id="orb" aria-hidden="true"></span>
       <b class="wordmark">JARVIS</b>
       <span class="status" id="status"><i aria-hidden="true"></i><span id="statusText">Online</span></span>
-      <!-- R4 D (console-people.js): "Brain: AI on" / "No-AI (brain only)"; speech is metered apart -->
-      <span class="status brainmode" id="brainModeSlot"></span>
+      <!-- R5.1 D9 (console-people.js): ONE pill button, "Brain: AI on" / "Brain: No-AI", with a small menu -->
+      <span class="bmslot" id="brainModeSlot"></span>
     </div>
     <div class="timebox" aria-hidden="true"><time class="clock" id="clock"></time><span class="date" id="clockDate"></span></div>
     <div class="tools">
@@ -211,7 +215,7 @@
     </div>
   </section>
 
-  <section class="panel card fixed-size" id="p-approvals" data-panel="approvals" aria-labelledby="t-approvals" hidden>
+  <section class="panel card" id="p-approvals" data-panel="approvals" aria-labelledby="t-approvals" hidden>
     <header class="ptitle">
       <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5 4 5v4.6c0 3.6 2.5 6.6 6 7.9 3.5-1.3 6-4.3 6-7.9V5z"/><path d="m7.3 10 1.9 1.9 3.6-3.8"/></svg>
       <h2 id="t-approvals">Approvals</h2><span class="pmeta warn" id="approvalCount"></span>
@@ -484,7 +488,7 @@
     </div>
   </section>
 
-  <section class="panel card fixed-size" id="p-integrations" data-panel="integrations" aria-labelledby="t-integrations" hidden>
+  <section class="panel card" id="p-integrations" data-panel="integrations" aria-labelledby="t-integrations" hidden>
     <header class="ptitle">
       <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.2 11.8 11.8 8.2"/><path d="M7 13 5.6 14.4a2.7 2.7 0 0 1-3.8-3.8L5 7.4a2.7 2.7 0 0 1 3.8 0"/><path d="M13 7l1.4-1.4a2.7 2.7 0 0 1 3.8 3.8L15 12.6a2.7 2.7 0 0 1-3.8 0"/></svg>
       <h2 id="t-integrations">Integrations</h2><span class="pmeta" id="integMeta"></span>
@@ -521,7 +525,7 @@
     </div>
   </section>
 
-  <section class="panel card fixed-size" id="p-vitals" data-panel="vitals" aria-labelledby="t-vitals" hidden>
+  <section class="panel card" id="p-vitals" data-panel="vitals" aria-labelledby="t-vitals" hidden>
     <header class="ptitle">
       <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg>
       <h2 id="t-vitals">Vitals</h2><span class="pmeta" id="vitMeta">This session</span>
@@ -564,6 +568,10 @@
         <p class="sfine" id="sRate"></p>
         <p class="sfine">Estimates: Anthropic bills in US dollars and your bank converts. The limit is checked before each paid reply, so one reply can go a little over it.</p>
       </section>
+      <!-- R4 A / R5.1 B (console-vitals.js): JARVIS's own keys and connections first, then
+           allowances and bills (GET /v1/vitals), directly under This month (audit #14). Labels,
+           limits and dates only; a key's value never reaches the server or this page. -->
+      <div id="vitals-board"></div>
       <div class="list">
         <div class="kv"><span>Brain</span><b id="sBrain">—</b></div>
         <div class="kv"><span>Last reply by</span><b id="sModel">—</b></div>
@@ -576,9 +584,6 @@
         <div class="kv"><span>Connection</span><b id="sNet">Online</b></div>
         <p class="sfine"><span id="vOffline" hidden></span></p>
       </div>
-      <!-- R4 A (console-vitals.js): the board of tracked keys, quotas and bills (GET /v1/vitals).
-           Labels, limits and dates only; a key's value never reaches the server or this page. -->
-      <div id="vitals-board"></div>
     </div>
   </section>
 
@@ -601,7 +606,7 @@
   <section class="panel card" id="p-people" data-panel="people" aria-labelledby="t-people" hidden>
     <header class="ptitle">
       <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="4.5"/><path d="m12 12 4.5 4.5"/></svg>
-      <h2 id="t-people">People</h2><span class="pmeta" id="peopleMeta">Public figures and work due-diligence</span>
+      <h2 id="t-people">People</h2><span class="pmeta" id="peopleMeta">Public figures</span>
       <div class="pacts">
         <button class="pbtn grip" type="button" data-grip aria-label="Move People panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
         <button class="pbtn" type="button" data-close aria-label="Close People panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
@@ -763,6 +768,8 @@
 <script src="/static/console-alerts.js" defer></script>
 <script src="/static/console-vitals.js" defer></script>
 <script src="/static/console-systems.js" defer></script>
+<script src="/static/console-systems-voice.js" defer></script>
+<script src="/static/console-systems-modal.js" defer></script>
 <script src="/static/console-connectors.js" defer></script>
 <script src="/static/console-people.js" defer></script>
 <script type="module" src="/static/console-3d.js"></script>

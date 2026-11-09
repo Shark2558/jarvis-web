@@ -20,8 +20,9 @@ from R5.1, the shared systems-check job (`health.tick.HealthTickJob`, D4):
   - disarmed, `alert_when="armed_only"`: the R3 behaviour; the state changes, nobody is told.
   - arming during an outage already told as idle: the urgent `home_offline` goes out once, so the
     owner hears "camera alerts are off" (the armed alert is never blocked by an earlier idle
-    one). The kind told is kept in this process; an instance that never saw the idle alert
-    treats the outage as settled (it will not repeat an alert that may already have gone out).
+    one). The kind told is stored with the outage (`HomeStore.mark_offline(kind=)`, R5.1 I1), so
+    a restart or another instance keeps "idle told, armed not yet"; an outage told before R5.1
+    (no kind stored) was told by the armed alert and stays settled.
   The heartbeat handler says "back" (`home_online`) when an outage alert had gone out. `last_seen`
   is read from the stored value and the in-process one (whichever is newer), so an instance
   restart can't fake an outage.
@@ -37,6 +38,7 @@ from typing import Literal, get_args
 from zoneinfo import ZoneInfo
 
 from jarvis.alerts import AlertKind
+from jarvis.home.models import HomeStatus, OutageKind
 from jarvis.home.ports import ArmReader
 from jarvis.home.store import HomeStore
 from jarvis.logging import get_logger
@@ -92,7 +94,8 @@ class OfflineJob:
         self._tz = ZoneInfo(tz)
         self._alert_when: AlertWhen = alert_when
         self.last: dict[str, int] = {}
-        self._told_idle: set[str] = set()  # owners whose current outage was told as idle only
+        # owners whose current outage was told as idle only (also stored: `outage_kind`)
+        self._told_idle: set[str] = set()
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
         counts = {"homes": 0, "offline": 0, "alerts": 0, FAILED_COUNT: 0}
@@ -116,7 +119,7 @@ class OfflineJob:
             return
         counts["offline"] += 1
         settled = status.state == "offline" and status.outage_alerted
-        if settled and uid not in self._told_idle:
+        if settled and not self._idle_only(uid, status):
             return  # once per outage
         armed = False
         if self._arm is not None:
@@ -130,10 +133,20 @@ class OfflineJob:
             self._told_idle.discard(uid)
         elif told:
             self._told_idle.add(uid)
-        if settled:
-            return  # an idle alert had gone out; the armed one now has too (or is retried)
+        if settled:  # an idle alert had gone out; the armed one now has too (or is retried)
+            if told:
+                await self._store.mark_offline(uid, alerted=True, kind="armed")
+            return
         if status.state != "offline" or told:
-            await self._store.mark_offline(uid, alerted=told)
+            kind: OutageKind | None = ("armed" if armed else "idle") if told else None
+            await self._store.mark_offline(uid, alerted=told, kind=kind)
+
+    def _idle_only(self, uid: str, status: HomeStatus) -> bool:
+        """Whether this outage was told by the idle alert only: the stored kind (any instance),
+        else this process's memory (a record written before the kind was stored)."""
+        if status.outage_kind is not None:
+            return status.outage_kind == "idle"
+        return uid in self._told_idle
 
     async def _tell(
         self, notifier: Notifier, uid: str, seen: float, *, armed: bool, counts: dict[str, int]

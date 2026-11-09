@@ -228,7 +228,7 @@
   // looked up when the words arrive, so the scripts may load in any order. Not while JARVIS speaks
   // (the state list below, and canHear() for the pop-up's own speech).
   register('systems.check', {
-    // matches() sees the words with the name stripped, so `named` says whether "Jarvis" was there; canHear()
+    // matches() sees the words with the name stripped, so the named option says whether "Jarvis" was there; canHear()
     // is the echo guard for the pop-up's own speech (refuses while it speaks and for 2 s after).
     match: (norm, raw) => {
       const sc = window.JarvisSystemsCheck;

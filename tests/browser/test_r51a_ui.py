@@ -1,7 +1,7 @@
 # tests/browser/test_r51a_ui.py -- R5.1 Part A in a real browser: the Privacy panel (#1), the top-bar
 # brain pill (D9), Connectors (#5 #6 #12 #25) and People (#8 #9 #11). The R4 routes are faked with
-# page.route (shared mocks: ui_checks.py). console.html is the integrator's, so the new stylesheets
-# are injected here with add_style_tag until they are linked.
+# page.route (shared mocks: ui_checks.py). The stylesheets are the ones console.html links and the
+# /static allow-list serves (tests/test_r51_console_assets_linked.py), nothing is injected.
 # ruff: noqa: E501 -- long JS strings and selectors
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from test_console import DESKTOP, PHONE, Console
-from ui_checks import MOCK_CONNECTORS, inject_unlinked_css, install_mocks
+from ui_checks import MOCK_CONNECTORS, install_mocks
 
 _pw = pytest.importorskip("playwright.sync_api")
 sync_playwright, expect = _pw.sync_playwright, _pw.expect
@@ -70,7 +70,6 @@ def boot(
             ),
         )
     c.open()
-    inject_unlinked_css(c.page)
     c.page.locator("#brainModeBadge").wait_for()
     expect(c.page.locator("#brainModeBadge").first).to_contain_text("AI", ignore_case=True)
     return c, brain

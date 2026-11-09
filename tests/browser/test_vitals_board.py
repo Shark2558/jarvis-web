@@ -10,7 +10,6 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -22,7 +21,6 @@ sync_playwright = _pw.sync_playwright
 
 pytestmark = pytest.mark.browser
 
-CSS = Path(__file__).resolve().parents[2] / "src/jarvis/api/static/console-vitals.css"
 BOARD = "#vitals-board"
 WORDS = {"ok": "OK", "amber": "Watch", "red": "Act now", "unknown": "Unknown"}
 
@@ -200,11 +198,6 @@ def make(browser: Any, server_url: str, token: str) -> Iterator[Callable[..., Co
     def factory(viewport: dict[str, int] = DESKTOP, surface: str = "night") -> Console:
         c = Console(browser, server_url, token, viewport)
         c.page.add_init_script(f"localStorage.setItem('jarvis_surface', {json.dumps(surface)});")
-        # Until console.html links console-vitals.css (INTEGRATION-r51.md), serve it from disk.
-        c.page.route(
-            "**/static/console-vitals.css",
-            lambda r: r.fulfill(path=str(CSS), content_type="text/css"),
-        )
         made.append(c)
         return c
 
@@ -215,8 +208,6 @@ def make(browser: Any, server_url: str, token: str) -> Iterator[Callable[..., Co
 
 def _open(c: Console) -> Any:
     c.open()
-    if not c.page.locator('link[href$="console-vitals.css"]').count():
-        c.page.add_style_tag(url=c.url + "/static/console-vitals.css")
     c.open_panel("vitals")
     root = c.page.locator(BOARD)
     root.locator(".vt-row, .bnote.bad:not(:empty)").first.wait_for()  # loaded, or refused

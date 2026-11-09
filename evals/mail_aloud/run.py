@@ -115,7 +115,12 @@ for _key in SENSITIVE:
 @case("voice_channel_never_reads_out_an_otp")
 async def _voice_otp() -> list[str]:
     """R5 L7 (C's security review): on the voice channel the reply is read aloud in full (p5.0),
-    so "read my last email with an OTP" must not put the OTP within reach of the spoken reply."""
+    so "read my last email with an OTP" must not put the OTP within reach of the spoken reply.
+
+    Limits: the model is scripted, so this proves the gateway withholds the OTP before the model
+    sees it and that the voice rule is in the prompt. It does NOT prove a real model would never
+    read a code aloud; that needs a live-model run (tools/gmail.py `_heard`, covered per tool in
+    tests/test_gmail_tools.py)."""
     subject, snippet, secret = SENSITIVE["otp"]
     h, _, _ = await rig([mail(1, subject, snippet, BANK), mail(2, "Lunch?", "Free at one?")])
     h.script([[{"name": "gmail_unread_digest", "arguments": {}}]], "One message is withheld, Sir.")

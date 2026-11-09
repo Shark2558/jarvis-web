@@ -412,7 +412,7 @@ Expected per-stage ranges are unmeasured: listening 1.2 s by default, words ~0.6
   - They appear in the Privacy panel through a new `voice/privacy.py::voice_phrases_source` (look / export / delete), wired at I1.
 - **Browser engine.** Chrome's recogniser ignores `SpeechGrammarList`, so it **can't take these hints**.
   - If the build finds a `phrases` contextual-biasing option on `SpeechRecognition` (newer Chrome, on-device recognition), pass the same list after feature-detecting it; otherwise do nothing. Verify at build from primary docs.
-  - **As built (I1):** the Web Speech spec ties `phrases` to on-device recognition: on a recogniser without `processLocally === true`, `start()` fails with `phrases-not-supported`. So `JarvisVoicePhrases.apply()` sets `phrases` only when `processLocally` is true (the console does not set it today, so the browser engine gets no hints yet), and a `phrases-not-supported` error retries the same turn once without them. The editor says "the browser's own listening uses them only where your browser supports it".
+  - **As built (I1):** the Web Speech spec ties `phrases` to on-device recognition: on a recogniser without `processLocally === true`, `start()` fails with `phrases-not-supported`. So `JarvisVoicePhrases.apply()` sets `phrases` only when `processLocally` is true (the console does not set it today, so for now the browser-engine hint code is dead code: no browser listening turn carries a hint until `processLocally` is set; only the cloud-transcription hints are live), and a `phrases-not-supported` error retries the same turn once without them. The editor says "the browser's own listening uses them only where your browser supports it".
   - The router's "jarvis" variants partly make up for it.
 
 ### D17 · Costs

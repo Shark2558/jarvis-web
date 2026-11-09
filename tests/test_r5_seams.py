@@ -273,6 +273,9 @@ def test_barge_pace_and_phrases_export_their_real_frozen_shapes() -> None:
 
 
 def test_the_files_that_were_empty_headers_are_filled_and_render_into_their_slots() -> None:
+    # Greps only. Rendering is proved in a real browser: devices panel -> tests/browser/test_voice_devices.py
+    # (#vSlotDevices cases), phrases editor -> tests/browser/test_voice_pace.py ("Words to recognise"),
+    # pace line -> tests/browser/test_voice_pace.py::test_a_spoken_turn_gives_every_stage_and_the_panel_line.
     assert "panelSlot('devices')" in read("console-voice-devices-panel.js")
     assert "panelSlot('phrases')" in read("console-voice-phrases.js")
     assert "panelSlot('pace')" in read("console-voice-pace.js")

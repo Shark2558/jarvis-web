@@ -936,7 +936,10 @@ def test_the_modules_that_replaced_the_stubs_have_their_frozen_shapes(
     route = ["supported", "refresh", "current", "chooseOutput", "chooseInput", "outputKind"]
     assert keys("JarvisAudioRoute") == sorted([*route, "find", "on"])
     assert ev(c, "JarvisAudioRoute.outputKind()") in ("headphones", "speakers", "unknown")
-    assert ev(c, "typeof JarvisAudioRoute.find('speaker')") == "object"  # a device or null
+    # the listing is seeded first; `find` must answer with a real device, which `null` (the old stub) is not
+    ev(c, "JarvisAudioRoute.refresh()")
+    found = ev(c, "JarvisAudioRoute.find('speaker')")
+    assert isinstance(found, dict) and isinstance(found.get("id"), str) and found["id"], found
     barge = ["policy", "arm", "createGate", "isEcho", "BARGE", "kind", "margin", "forget"]
     assert keys("JarvisBarge") == sorted([*barge, "clipsLeft"])
     assert ev(c, "JarvisBarge.policy()") == "tap"  # the factory pins interruptBy: 'tap'

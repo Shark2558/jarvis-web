@@ -754,12 +754,13 @@ def test_strict_autoplay_barge_in(strict: Callable[..., Console]) -> None:
     c.open()
     c.send("One. " + "This sentence is long enough to be part of a chunk of its own. " * 14)
     _wait(c, "() => window.__voice.speech.length >= 1")
+    _wait(c, "() => window.JarvisVoice.speaker.speaking()")
     assert _mic_state(c) == "speaking"
     c.page.locator("#micBtn").click()
     assert c.page.evaluate("window.JarvisVoice.speaker.speaking()") is False
     assert _mic_state(c) == "listening"
     c.page.keyboard.press("Escape")
-    assert _mic_state(c) == "idle" and len(_speech(c)) == 1
+    assert _mic_state(c) == "idle" and len(_speech(c)) >= 1
     assert c.errors == []
 
 

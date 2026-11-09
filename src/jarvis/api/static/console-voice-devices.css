@@ -1,2 +1,17 @@
-/* src/jarvis/api/static/console-voice-devices.css - R5 I0 seam: an empty file for workstream B.
-   Styles for Voice -> Sound devices (docs/plans/r5-voice.md D13). Reuse the existing classes first. */
+/* src/jarvis/api/static/console-voice-devices.css - R5 workstream B (docs/plans/r5-voice.md D13).
+   Voice -> Sound devices. Reuses .bsec / .bopt / .bsel / .bnote / .btn.bact from console.css and the
+   Voice panel's .vlist; only the layout of a device row is new. Colours come from theme tokens. */
+.vdev .vdev-h{margin:12px 0 4px;color:var(--ink)}
+.vdev .vdev-row{align-items:flex-start;flex-wrap:wrap}
+.vdev .vdev-ctl{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
+.vdev .vdev-ctl .bsel{max-width:150px}
+.vdev .vdev-ctl input.nick{width:130px;cursor:text}
+.vdev .btn.bact.use{min-width:72px;margin-top:0}
+.vdev .btn.bact.use[aria-pressed="true"]{background:var(--tint);border-color:var(--accent);color:var(--accent-ink)}
+.vdev .vdev-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.vdev .btxt small.warn{color:var(--amber-ink)}
+.vdev .vdev-status:empty{display:none}
+@media (max-width:640px){
+  .vdev .vdev-ctl{justify-content:flex-start;width:100%}
+  .vdev .vdev-ctl .bsel,.vdev .btn.bact.use{height:44px}
+}

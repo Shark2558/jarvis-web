@@ -31,11 +31,14 @@
   const SCOPE_WORDS = { 'calendar.readonly': ['Calendar', 'read'], 'calendar.events': ['Calendar', 'edit'],
     'gmail.readonly': ['Gmail', 'read'], 'gmail.compose': ['Gmail', 'draft', 'send'], 'gmail.send': ['Gmail', 'send'],
     'gmail.insert': ['Gmail', 'put the morning brief in your inbox (optional)'], tasks: ['To-do list', 'read & edit'],
-    'contacts.readonly': ['Contacts', 'read'], 'youtube.readonly': ['YouTube', 'read your playlists'] };
+    'contacts.readonly': ['Contacts', 'read'], 'youtube.readonly': ['YouTube', 'read your playlists'],
+    'photospicker.mediaitems.readonly': ['Photos', 'read the photos you pick'] };
   const GRANTS = [ // the optional Grants: [field, ?add= name, button id, row words, what it unlocks, available field]
     ['tasks_granted', 'tasks', 'googleGrantTasks', 'To-do list \u2014 permission needed', 'your to-do list', 'tasks_available'],
     ['contacts_granted', 'contacts', 'googleGrantContacts', 'Contacts \u2014 permission needed', 'your contacts (read only)', 'contacts_available'],
     ['youtube_granted', 'youtube', 'googleGrantYoutube', 'YouTube playlists \u2014 permission needed', 'your YouTube playlists (read only)', 'youtube_available'],
+    // R4 C (W8): Google Photos is pick-only (you choose the photos; JARVIS never reads the library)
+    ['photos_granted', 'photos', 'googleGrantPhotos', 'Google Photos \u2014 permission needed', 'the photos you pick for Faces (pick-only)', 'photos_available'],
   ];
   /** "Calendar: read & edit - Gmail: read, draft, send" from the raw scope list (URLs or short names). */
   function scopeSummary(scopes) {

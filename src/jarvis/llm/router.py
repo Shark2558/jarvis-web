@@ -14,9 +14,10 @@ never mid-stream. After a cloud miss answered by the laptop, the next two minute
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from jarvis.config import LLMBackend, Settings
 from jarvis.llm.anthropic_provider import AnthropicProvider
@@ -39,11 +40,33 @@ from jarvis.logging import get_logger
 
 log = get_logger(__name__)
 
+GUARD_REFRESH_S = 5.0  # how often the router re-reads the persisted no-AI switch
+NO_AI_REFUSAL = "The AI is switched off (no-AI mode): no model was called."
+
+
+class BrainOff(LLMError):
+    """R4 D7: a model call was attempted while `brain_mode == "none"`. Defence in depth: the brain
+    routes around the model in that mode, and this makes a stray call fail loudly instead of
+    spending money. Not transient and not an outage: neither the laptop fallback nor a lower
+    tier is tried."""
+
 
 class ModelTier(StrEnum):
     FAST = "fast"  # classification, routing, extraction — Haiku-class
     BALANCED = "balanced"  # everyday conversation — Sonnet-class
     STRONG = "strong"  # planning, multi-step reasoning — Opus-class
+
+
+BrainState = Literal["unknown", "ok", "busy", "unreachable", "refused", "odd"]
+
+
+@dataclass(frozen=True)
+class BrainHealth:
+    """What the router already knows about the cloud brain: how its last real call ended and
+    whether the laptop is covering for it. Reading it costs nothing (no call, no tokens)."""
+
+    state: BrainState
+    on_laptop: bool
 
 
 _DEGRADE_TO: dict[ModelTier, ModelTier | None] = {
@@ -61,11 +84,48 @@ class ModelRouter:
         fallback: FallbackBrain | None = None,
         *,
         clock: Callable[[], float] = time.monotonic,
+        blocked: Callable[[], bool] | None = None,
     ) -> None:
         self.provider = provider
         self._tiers = tiers
         self.fallback = fallback
         self._breaker = Breaker(clock=clock)
+        self._last: BrainState = "unknown"  # R4 B: how the last real call ended (health())
+        self._blocked: Callable[[], bool] | None = blocked  # R4 D7: the no-AI switch
+        self._refresh: Callable[[], Awaitable[None]] | None = None  # re-reads the switch
+        self._clock = clock
+        self._refreshed_at = float("-inf")
+
+    def bind_blocked(
+        self, blocked: Callable[[], bool], refresh: Callable[[], Awaitable[None]] | None = None
+    ) -> None:
+        """R4 D7: `Brain` hands every router the no-AI switch once, at construction. While it
+        reads True a model call raises `BrainOff`. `refresh` re-reads the persisted switch; the
+        router calls it at most every `GUARD_REFRESH_S` before any provider call (I2 F1)."""
+        self._blocked, self._refresh = blocked, refresh
+
+    def is_blocked(self) -> bool:
+        """True while the AI is switched off: background callers skip instead of calling."""
+        return self._blocked is not None and self._blocked()
+
+    async def _ensure_allowed(self) -> None:
+        """Refresh the switch (at most every `GUARD_REFRESH_S`), then refuse while it is off. A
+        refresh that fails is a refusal: when we cannot tell, no model is called."""
+        if await self.blocked_now():
+            raise BrainOff(NO_AI_REFUSAL)
+
+    async def blocked_now(self) -> bool:
+        """`is_blocked` after a (rate-limited) re-read of the persisted switch: what background
+        callers (brief summary, recall sweep) ask before a call."""
+        now = self._clock()
+        if self._refresh is not None and now - self._refreshed_at >= GUARD_REFRESH_S:
+            try:
+                await self._refresh()
+            except Exception as exc:  # noqa: BLE001 - fail closed
+                log.error("no-AI switch unreadable", extra={"error": type(exc).__name__})
+                return True
+            self._refreshed_at = now
+        return self.is_blocked()
 
     @classmethod
     def from_settings(cls, s: Settings, provider: LLMProvider | None = None) -> ModelRouter:
@@ -75,6 +135,20 @@ class ModelRouter:
 
     def resolve(self, tier: ModelTier) -> str:
         return self._tiers[tier]
+
+    def health(self) -> BrainHealth:
+        """The cloud brain's state from the last real call; never makes a call itself."""
+        return BrainHealth(state=self._last, on_laptop=self._breaker.is_open())
+
+    def _note_failure(self, exc: LLMError) -> None:
+        if isinstance(exc, LLMUnreachable):
+            self._last = "unreachable"
+        elif isinstance(exc, LLMAuthError):
+            self._last = "refused"
+        elif isinstance(exc, LLMTransientError):
+            self._last = "busy"
+        else:
+            self._last = "odd"
 
     async def _fallback_ready(self) -> bool:
         if self.fallback is None:
@@ -86,6 +160,7 @@ class ModelRouter:
             return False
 
     async def _cloud_ok(self) -> None:
+        self._last = "ok"
         self._breaker.reset()
         if self.fallback is None:
             return
@@ -123,6 +198,7 @@ class ModelRouter:
         tools: list[ToolSpec] | None = None,
         allow_degrade: bool = True,
     ) -> Completion:
+        await self._ensure_allowed()
         local = {
             "tier": tier,
             "system": system,
@@ -155,6 +231,7 @@ class ModelRouter:
                     tools=tools,
                 )
             except LLMUnreachable as exc:
+                self._note_failure(exc)
                 # every tier is down: the laptop (if ready), else degrade as before
                 if tried_laptop:
                     raise FallbackFailed() from exc
@@ -163,7 +240,11 @@ class ModelRouter:
                     return done
                 current = self._degrade(current, exc, allow_degrade)
             except LLMTransientError as exc:
+                self._note_failure(exc)
                 current = self._degrade(current, exc, allow_degrade)
+            except LLMError as exc:  # auth / other: not retried, but remembered
+                self._note_failure(exc)
+                raise
             else:
                 await self._cloud_ok()
                 return result
@@ -191,6 +272,7 @@ class ModelRouter:
         effort: Effort | None = None,
         usage: StreamUsage | None = None,
     ) -> AsyncIterator[str]:
+        await self._ensure_allowed()
         # No mid-stream degradation: once tokens are flowing to a TTS engine we cannot restart.
         # The laptop takes over only when the cloud stream failed BEFORE its first text.
         local = {
@@ -226,6 +308,7 @@ class ModelRouter:
                 started = True
                 yield delta
         except LLMUnreachable as exc:
+            self._note_failure(exc)
             if tried_laptop:
                 raise FallbackFailed() from exc
             if started or not await self._fallback_ready():
@@ -236,6 +319,9 @@ class ModelRouter:
             except _LaptopSilent as silent:
                 raise _failed(silent.args[0]) from exc
             return
+        except LLMError as exc:  # busy / auth / other: propagates, but remembered
+            self._note_failure(exc)
+            raise
         await self._cloud_ok()
 
     async def _local_stream(self, kw: dict[str, Any], *, miss: bool) -> AsyncIterator[str]:

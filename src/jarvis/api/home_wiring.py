@@ -39,7 +39,6 @@ from jarvis.camera.service import CameraServices, build_camera
 from jarvis.config import Settings
 from jarvis.faces.directory import Directory
 from jarvis.faces.ports import FaceDirectory, NoFaces
-from jarvis.faces.privacy import FacesPrivacy
 from jarvis.faces.service import FacesService
 from jarvis.faces.store import FacesStore
 from jarvis.home.client import HomeClient
@@ -350,7 +349,8 @@ def home_privacy_sources(app: FastAPI) -> list[PrivacySource]:
         out.append(notify_source(st.notify_store))
     if getattr(st, "push_store", None) is not None:
         out.append(webpush_source(st.push_store))
-    out.append(FacesPrivacy(getattr(st, "faces", None)))
+    # R4: People research, then Faces (whose "Delete all" also purges the Photos state) last
+    out.extend(getattr(st, "r4_privacy", None) or ())
     return out
 
 

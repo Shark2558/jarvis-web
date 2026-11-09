@@ -319,6 +319,17 @@ def _home(data: BriefData) -> list[str]:
     return lines
 
 
+def _vitals(data: BriefData) -> list[str]:
+    """R4 I1: the Vitals board's red / amber lines and the AI spend; labels, never a key."""
+    box = data.vitals
+    if box is None:
+        return []
+    head = "VITALS"
+    if (note := _status_line(box.state, "the Vitals board")) is not None:
+        return [head, note]
+    return [head, *(f"  {line}" for line in box.lines)]
+
+
 def inbox_text(text: str, data: BriefData | None) -> str:
     """The brief as put in the Gmail inbox: the Documents block says only how many need attention
     unless the owner switched on `inbox_copy` (R2 D5)."""
@@ -363,6 +374,7 @@ def render_text(data: BriefData, ai: AIBlock | None = None, ai_note: str | None 
         _family(data),
         _vault(data),
         _home(data),
+        _vitals(data),
         _jarvis(data),
         _ai(ai, ai_note),
     ]

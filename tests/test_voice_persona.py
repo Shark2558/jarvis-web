@@ -77,7 +77,7 @@ def _brain(wit: Wit | None, *, training: bool = False) -> tuple[Brain, MockProvi
 
 
 def test_version_and_levels() -> None:
-    assert PERSONA_VERSION == "p4.8"  # slice 12: p4.4; p4.5 tools rule
+    assert PERSONA_VERSION == "p4.9"  # slice 12: p4.4; p4.5 tools rule
     assert [w.id for w in WIT_LEVELS] == ["measured", "film", "extra"]
     assert DEFAULT_WIT == "film"
     assert all(w.label and w.description for w in WIT_LEVELS)
@@ -232,7 +232,7 @@ async def test_new_sessions_record_the_persona_version() -> None:
     brain, _ = _brain(None)
     res = await brain.chat(ChatRequest(message="hi", user_id="u1"))
     s = await brain.store.get(res.session_id)
-    assert s is not None and s.metadata["persona"] == PERSONA_VERSION == "p4.8"
+    assert s is not None and s.metadata["persona"] == PERSONA_VERSION == "p4.9"
 
 
 # ---- review fixes (slice 9 backend review) -----------------------------------------------------

@@ -132,10 +132,25 @@
     return s;
   }
 
+  /** R4 "Vitals": the board's red / amber lines and the AI spend (labels and limits, never a key). */
+  function vitals(v) {
+    const box = obj(v);
+    if (!box) return null;
+    const lines = arr(box.lines).map((l) => txt(l, 160)).filter(Boolean).slice(0, MAX_ITEMS + 1);
+    const note = stateLine(box.state, 'Vitals board');
+    if (!lines.length && !note) return null;
+    const s = section('vitals', 'Vitals', lines.length ? lines.length + (lines.length === 1 ? ' line' : ' lines') : '');
+    if (note) { s.append(mk('p', 'bfine', note)); return s; }
+    const ul = mk('ul', 'bpark');
+    lines.forEach((line) => ul.append(mk('li', '', line)));
+    s.append(ul);
+    return s;
+  }
+
   /** The sections this brief carries, in display order (an absent one is simply left out). */
   function render(data) {
     const d = obj(data) || {};
-    return [deliveries(d.deliveries), family(d.family), documents(d.vault), home(d.home)].filter(Boolean);
+    return [deliveries(d.deliveries), family(d.family), documents(d.vault), home(d.home), vitals(d.vitals)].filter(Boolean);
   }
 
   window.JarvisBriefSections = Object.freeze({ render });

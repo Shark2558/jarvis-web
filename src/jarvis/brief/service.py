@@ -21,8 +21,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
-from typing import Literal, TypeVar
+from datetime import UTC, date, datetime, timedelta, tzinfo
+from typing import Any, Literal, Protocol, TypeVar
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jarvis.billing import Billing, BudgetError
@@ -49,6 +49,7 @@ from jarvis.brief.models import (
     TodayView,
     Trigger,
     VaultDueSection,
+    VitalsSection,
     parse_brief_time,
 )
 from jarvis.brief.render import render_text
@@ -117,6 +118,12 @@ class SettingsRejected(ValueError):
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+class VitalsSource(Protocol):
+    """R4 I1: the Vitals section's maker (`api/r4_wiring.VitalsBrief`); None = nothing to say."""
+
+    async def section(self, uid: str, tz: tzinfo, day: date) -> VitalsSection | None: ...
 
 
 async def _own_section(work: Awaitable[T], failed: Callable[[SectionState], T]) -> T | None:
@@ -264,6 +271,7 @@ class BriefService:
         family_day: FamilyBrief | None = None,
         vault_due: VaultDueBrief | None = None,
         home_overnight: HomeOvernightBrief | None = None,
+        vitals: VitalsSource | None = None,
     ) -> None:
         self._store = store
         self._google = google
@@ -285,6 +293,7 @@ class BriefService:
         self._family_day = family_day  # R1: Family today section (None: not wired)
         self._vault_due = vault_due  # R2: Documents section (None: not wired)
         self._home = home_overnight  # R3: Home overnight section (None: not wired)
+        self._vitals = vitals  # R4 I1: Vitals section (None: not wired); omitted when empty
 
     # ---- views --------------------------------------------------------------------------------
 
@@ -485,26 +494,28 @@ class BriefService:
             home = await _own_section(
                 self._home.section(uid, tz, day), lambda st: HomeOvernightSection(state=st)
             )
-        if deliveries is None and family is None and vault is None and home is None:
+        extras: dict[str, Any] = {
+            "deliveries": deliveries,
+            "family": family,
+            "vault": vault,
+            "home": home,
+            "vitals": await self._vitals_section(uid, tz, day),
+        }
+        if all(v is None for v in extras.values()):
             return got
         status = got.data.sections_status.model_copy(
-            update={
-                "deliveries": deliveries.state if deliveries is not None else "ok",
-                "family": family.state if family is not None else "ok",
-                "vault": vault.state if vault is not None else "ok",
-                "home": home.state if home is not None else "ok",
-            }
+            update={k: (v.state if v is not None else "ok") for k, v in extras.items()}
         )
-        data = got.data.model_copy(
-            update={
-                "deliveries": deliveries,
-                "family": family,
-                "vault": vault,
-                "home": home,
-                "sections_status": status,
-            }
-        )
+        data = got.data.model_copy(update={**extras, "sections_status": status})
         return Collected(data=data, snippets=got.snippets)
+
+    async def _vitals_section(self, uid: str, tz: ZoneInfo, day: date) -> VitalsSection | None:
+        """R4 I1 (W10): the Vitals board's warnings; no setting, omitted when there is nothing."""
+        if self._vitals is None:
+            return None
+        return await _own_section(
+            self._vitals.section(uid, tz, day), lambda st: VitalsSection(state=st)
+        )
 
     async def _ai(
         self, rec: BriefRecord, s: BriefSettings, got: Collected

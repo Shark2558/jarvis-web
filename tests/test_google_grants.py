@@ -12,6 +12,7 @@ from jarvis.integrations.google import (
     GRANTS,
     INSERT_SCOPE,
     OPTIONAL_SCOPES,
+    PHOTOS_SCOPE,
     REQUIRED_SCOPES,
     TASKS_SCOPE,
     TOOL_SCOPES,
@@ -29,7 +30,12 @@ from jarvis.integrations.google import (
 def test_the_new_scopes_are_the_read_only_ones() -> None:
     assert CONTACTS_SCOPE == "https://www.googleapis.com/auth/contacts.readonly"
     assert YOUTUBE_SCOPE == "https://www.googleapis.com/auth/youtube.readonly"
-    assert GRANTS == {"tasks": TASKS_SCOPE, "contacts": CONTACTS_SCOPE, "youtube": YOUTUBE_SCOPE}
+    assert GRANTS == {
+        "tasks": TASKS_SCOPE,
+        "contacts": CONTACTS_SCOPE,
+        "youtube": YOUTUBE_SCOPE,
+        "photos": PHOTOS_SCOPE,  # R4 I1 (W8): the Picker, pick-only
+    }
 
 
 def test_every_grant_is_optional_and_never_required() -> None:

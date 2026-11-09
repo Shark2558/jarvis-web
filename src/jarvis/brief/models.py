@@ -221,6 +221,15 @@ class HomeOvernightSection(Frozen):
     state: SectionState = "ok"
 
 
+class VitalsSection(Frozen):
+    """R4 I1 (W10): the Vitals board's red / amber lines and this month's AI spend, as
+    `vitals.brief.vitals_lines` words them (labels and limits, never a key). Deterministic, never
+    part of the AI-summary input; absent (None) when the board has nothing to say."""
+
+    lines: tuple[str, ...] = ()
+    state: SectionState = "ok"
+
+
 class SectionsStatus(Frozen):
     calendar: SectionState = "ok"
     inbox: SectionState = "ok"
@@ -231,6 +240,7 @@ class SectionsStatus(Frozen):
     family: SectionState = "ok"
     vault: SectionState = "ok"
     home: SectionState = "ok"
+    vitals: SectionState = "ok"
 
 
 class BriefData(Frozen):
@@ -248,6 +258,8 @@ class BriefData(Frozen):
     vault: VaultDueSection | None = None
     # R3: None = nothing overnight, switched off, not linked, or an older brief
     home: HomeOvernightSection | None = None
+    # R4: None = nothing red or amber and no spend line, Vitals off, or an older brief
+    vitals: VitalsSection | None = None
     sections_status: SectionsStatus = SectionsStatus()
 
 
@@ -411,6 +423,7 @@ __all__ = [
     "TodoState",
     "VaultDueItem",
     "VaultDueSection",
+    "VitalsSection",
     "Trigger",
     "parse_brief_time",
 ]

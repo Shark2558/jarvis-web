@@ -226,7 +226,7 @@ def test_new_settings_bounds(field: str, good: tuple[int, int], bad: tuple[int, 
 
 def test_three_new_rows_follow_the_todo_rows() -> None:
     ids = [g.id for g in GROUPS]
-    assert len(ids) == 33  # 23 on R1 + the five R2 rows + the five R3 rows (Home, Camera)
+    assert len(ids) == 38  # 23 on R1 + 5 R2 + 5 R3 (Home, Camera) + 5 R4 (Vitals..Connectors)
     assert ids.index("groceries") == ids.index("todo_delete") + 1
     assert ids[ids.index("groceries") : ids.index("groceries") + 3] == [
         "groceries",
@@ -286,7 +286,7 @@ def test_telegram_trailer_carries_the_rule_and_others_do_not() -> None:
 
 
 def test_persona_version_is_p4_6() -> None:
-    assert prompts_mod.PERSONA_VERSION == "p4.8"
+    assert prompts_mod.PERSONA_VERSION == "p4.9"
 
 
 # ---- tools/base.py + observers -----------------------------------------------------------

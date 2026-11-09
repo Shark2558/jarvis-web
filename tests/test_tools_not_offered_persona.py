@@ -14,7 +14,7 @@ CASES = Path(__file__).resolve().parents[1] / "evals" / "phase0" / "cases.jsonl"
 
 
 def test_persona_version_is_bumped_for_the_rule() -> None:
-    assert PERSONA_VERSION == "p4.8"
+    assert PERSONA_VERSION == "p4.9"
 
 
 @pytest.mark.parametrize("wit", [w.id for w in WIT_LEVELS])

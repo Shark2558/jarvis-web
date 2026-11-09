@@ -6,8 +6,9 @@ short list of named steps (slice 12 final review): the lifespan wires the core (
 the slice 10–11 features, the slice 12 ones (`_wire_slice12`: Maps + YouTube, Drive), R2's
 personal data (`api/personal.py`: vault, notes, things, DigiLocker inbox), R3's home, camera and
 faces (`api/home_wiring.py`; its one alert policy is wired in the core, before anything takes the
-alert sink), the gateway with the owner's rules and the Brain, then the privacy dashboard and tick
-jobs; then the middleware, the error mapping and the routers.
+alert sink), R4's vitals, self-health, connectors, people research and the one no-AI switch
+(`api/r4_wiring.py`), the gateway with the owner's rules and the Brain, then the privacy dashboard
+and tick jobs; then the middleware, the error mapping and the routers.
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ from jarvis.api.offline import install_offline
 from jarvis.api.permissions import build_permissions, install_permissions
 from jarvis.api.personal import personal_tick_jobs, wire_personal, wire_privacy
 from jarvis.api.privacy import install_privacy
+from jarvis.api.r4_wiring import install_r4_routes, r4_tick_jobs, vitals_brief, wire_r4
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
@@ -93,6 +95,7 @@ from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.base import LLMAuthError, LLMError, LLMProvider, LLMTransientError
 from jarvis.llm.brains import BrainRegistry
 from jarvis.llm.fallback import FallbackFailed
+from jarvis.llm.router import NO_AI_REFUSAL, BrainOff
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
 from jarvis.media.service import build_media
 from jarvis.memory import SessionConflict, SessionNotFound, SessionStore
@@ -180,6 +183,7 @@ def build_brief_service(
         home_overnight=HomeOvernightBrief(cam.feed, cam.config)
         if (cam := getattr(app.state, "camera", None))
         else None,
+        vitals=vitals_brief(app),  # R4 I1 W10: red / amber lines + AI spend; never in the AI input
     )
 
 
@@ -237,6 +241,8 @@ def _mount_scheduler(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
 
 def friendly_llm_error(exc: LLMError) -> str:
     """Owner-facing wording. Raw vendor error bodies never reach the browser."""
+    if isinstance(exc, BrainOff):  # R4 D7: the owner switched the AI off; say exactly that
+        return NO_AI_REFUSAL
     if isinstance(exc, FallbackFailed):  # R1 C: the laptop's own plain-words message
         return str(exc)
     low = str(exc).lower()
@@ -380,6 +386,7 @@ def _build_tool_gateway(
         notes=app.state.notes,
         belongings=app.state.belongings,
         home=app.state.home_parts,  # R3: home, camera and faces tools (only when on)
+        r4=app.state.r4_parts,  # R4: vitals, systems check, connectors, people (each when on)
     )
 
 
@@ -410,7 +417,10 @@ def _wire_brain(app: FastAPI, s: Settings, built: Storage | None, docs: Docs) ->
         memory=app.state.memory,
         wit=app.state.voice,
         documents=app.state.documents,
+        brain_mode=app.state.brain_mode,  # R4 W3: the ONE switch the routes and People share
     )
+    if app.state.brain.mode is not app.state.brain_mode:  # one object, or the HUD could lie
+        raise RuntimeError("the Brain and the app must share one BrainMode")
     if app.state.telegram is not None:
         app.state.telegram.bind(app.state.brain)
     app.state.brief = build_brief_service(app, s, built, docs=docs)
@@ -442,13 +452,21 @@ def _log_up(app: FastAPI, s: Settings) -> None:
             "home": app.state.home_store is not None,
             "faces": app.state.faces is not None,
             "browser_push": app.state.push is not None,
+            # R4: each OFF-until-connected part says so here (and in its own console line)
+            "brain_mode": app.state.brain_mode.state,
+            "vitals": app.state.vitals is not None,
+            "systems_check": app.state.health is not None,
+            "github": app.state.github is not None,
+            "photos": app.state.photos is not None,
+            "people_research": app.state.people is not None,
         },
     )
 
 
 def _tick_jobs(app: FastAPI) -> tuple[Any, ...]:
-    """R2's feature jobs, plus the alert policy's when the home watchdog doesn't run them."""
-    jobs = (*personal_tick_jobs(app), *notify_tick_jobs(app))
+    """R2's feature jobs, the alert policy's when the home watchdog doesn't run them, and R4's
+    vitals poll and health check (D14: on the existing tick, no new Cloud Scheduler job)."""
+    jobs = (*personal_tick_jobs(app), *notify_tick_jobs(app), *r4_tick_jobs(app))
     check_job_names(jobs)
     return jobs
 
@@ -473,6 +491,7 @@ _CLOSABLES: tuple[tuple[str, str], ...] = (
     ("media", "aclose"),
     ("scheduler_verifier", "aclose"),
     ("push", "aclose"),  # R3 D11: Web Push's pinned client
+    ("github", "aclose"),  # R4 C: the GitHub client's one httpx client
 )
 
 
@@ -519,6 +538,8 @@ def _lifespan(
             closers.register_new()
             wire_personal(app, s, docs)  # R2: vault, notes, things, DigiLocker inbox
             wire_home(app, s, docs, audit)  # R3: home link, camera, faces (tools need them)
+            await wire_r4(app, s, docs, audit)  # R4: brain mode (loaded), vitals, health, people
+            closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()
             _wire_brain(app, s, built, docs)
@@ -623,6 +644,10 @@ def _install_core_errors(app: FastAPI) -> None:
         log.error("llm auth error", extra={"detail": str(exc)[:200]})
         return _err(502, {"error": "llm_auth", "detail": "LLM credentials rejected"})
 
+    @app.exception_handler(BrainOff)
+    async def _brain_off(_: Request, exc: BrainOff) -> JSONResponse:
+        return _err(409, {"error": "brain_off", "detail": NO_AI_REFUSAL})
+
     @app.exception_handler(LLMError)
     async def _llm(_: Request, exc: LLMError) -> JSONResponse:
         log.error("llm error", extra={"detail": str(exc)[:500]})  # vendor text stays in logs
@@ -697,6 +722,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_camera(app)  # R3: /v1/home/alarm, arm, disarm, cameras, feed, history
     install_faces(app)
     install_notify(app)  # R3: /v1/notify, /v1/push
+    install_r4_routes(app)  # R4: /v1/vitals, /v1/health, /v1/connectors, /v1/people, brain mode
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

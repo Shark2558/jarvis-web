@@ -13,7 +13,10 @@ YouTube search, plus the owner's playlists when the Google link exists. R2 (each
 with the server's token key): the vault's metadata tools, notes and links (kb_*), and where things
 are kept (belongings_*). R3 (only with the home on, i.e. the token key and JARVIS_HOME_ENABLED):
 home_status / home_devices / home_control, home_arm / home_disarm (which never disarms: it points to
-the Home panel's passkey button), camera_history and, with Faces on, faces_list."""
+the Home panel's passkey button), camera_history and, with Faces on, faces_list. R4 (`r4`,
+`api/r4_wiring.register_r4_tools`): vitals_* and systems_check with the always-on tools (no-AI mode
+routes to them), the own-account connectors and scoped people research, each only when its service
+exists."""
 
 from __future__ import annotations
 
@@ -30,6 +33,7 @@ from jarvis.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from jarvis.activity.store import ActivityStore
+    from jarvis.api.r4_wiring import R4Parts
     from jarvis.belongings.service import BelongingsService
     from jarvis.documents.service import DocumentService
     from jarvis.drive.service import DriveService
@@ -204,6 +208,7 @@ def build_gateway(
     notes: NotesService | None = None,
     belongings: BelongingsService | None = None,
     home: HomeParts | None = None,
+    r4: R4Parts | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
@@ -213,6 +218,10 @@ def build_gateway(
         if google is not None and t.name in FAKE_TWINS:
             continue
         reg.register(t)
+    if r4 is not None:  # R4 W6: vitals_show / systems_check are always-on (no-AI mode needs them)
+        from jarvis.api.r4_wiring import register_r4_tools
+
+        register_r4_tools(reg, r4)
     if google is not None:
         _register_google(reg, s, google, undo=undo, marks=marks, docs=docs)
     _register_people(reg, google)

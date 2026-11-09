@@ -37,8 +37,11 @@ plan D13), log, audit entry, Activity row, alert, training brain or a Telegram t
 switch off), and R3's home link, burglar alarm, faces and alert-policy suites with the r3_needles
 scan through the wired app (a snapshot, the Home Assistant token, the link seed and a child's name
 never reach a document, log or audit entry; the snapshot only Telegram's photo, with the opt-in;
-the child's name no alert). The exit status is the gated
-suites: phase0 --mock is a smoke run and never fails CI.
+the child's name no alert), and R4's r4_needles scan (a red vitals line and a self-health fault
+both ring in quiet hours; no-AI mode answers vitals / systems / calendar with no model call and
+refuses drafting; a bare private name is refused with no links; a pasted key never reaches a
+document, log, audit entry, card or Telegram text; a child is never named; + three negative
+controls). The exit status is the gated suites: phase0 --mock is a smoke run and never fails CI.
 """
 
 from __future__ import annotations
@@ -93,6 +96,10 @@ SUITES = [
     ("faces (gated)", [sys.executable, str(HERE / "faces" / "run.py"), "--mock"], True),
     ("notify (gated)", [sys.executable, str(HERE / "notify" / "run.py"), "--mock"], True),
     ("r3 needles (gated)", [sys.executable, str(HERE / "r3_needles" / "run.py"), "--mock"], True),
+    # R4 I1: the cross-part needle scan through the wired app (a red vitals line and a health fault
+    # both ring in quiet hours; no-AI mode answers the free skills and refuses drafting; a bare
+    # private name gets no links; a pasted key never appears anywhere; a child is never named)
+    ("r4 needles (gated)", [sys.executable, str(HERE / "r4_needles" / "run.py"), "--mock"], True),
 ]
 
 

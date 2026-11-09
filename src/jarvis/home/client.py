@@ -40,7 +40,12 @@ log = get_logger(__name__)
 
 TIMEOUT_S = 8.0
 MAX_REPLY_BYTES = 256 * 1024
-MAX_REQUEST_BYTES = 32 * 1024
+MAX_REQUEST_BYTES = 32 * 1024  # the default for every route
+# R4 C (D-C3): a per-route cap, never a global raise. One base64 JPEG (<= 4,000,000 raw bytes)
+# fits in 6 MB; every other route keeps the 32 KB default.
+MAX_REQUEST_BYTES_BY_ROUTE: dict[tuple[str, str], int] = {
+    ("POST", "/bridge/v1/faces/photos"): 6 * 1024 * 1024,
+}
 BAD_REPLY = "Your home laptop's answer couldn't be trusted, so JARVIS ignored it."
 NOT_LINKED = "Your home laptop isn't linked yet: link it in Integrations -> Home."
 # What a bridge refusal code means, in JARVIS's own words (the bridge's text is never passed on).
@@ -67,6 +72,11 @@ async def check_bridge_url(url: str, *, resolver: Resolver = system_resolver) ->
 
 def request_target(path: str, query: Mapping[str, str] | None) -> str:
     return path if not query else f"{path}?{urlencode(sorted(query.items()))}"
+
+
+def request_limit(method: str, path: str) -> int:
+    """The most bytes JARVIS sends to the laptop on one route (R4 C D-C3)."""
+    return MAX_REQUEST_BYTES_BY_ROUTE.get((method, path), MAX_REQUEST_BYTES)
 
 
 class HomeClient:
@@ -120,7 +130,7 @@ class HomeClient:
         except UrlRejected:
             raise HomeRefused("bad_address", BAD_ADDRESS) from None
         raw = b"" if body is None else json.dumps(body, separators=(",", ":")).encode()
-        if len(raw) > MAX_REQUEST_BYTES:
+        if len(raw) > request_limit(method, path):
             raise HomeRefused("too_large", "That request is too large to send.")
         target = request_target(path, query)
         use = keys or record.keys()
@@ -190,4 +200,12 @@ class HomeClient:
             raise HomeOffline() from None
 
 
-__all__ = ["BAD_REPLY", "HomeClient", "check_bridge_url", "request_target"]
+__all__ = [
+    "BAD_REPLY",
+    "MAX_REQUEST_BYTES",
+    "MAX_REQUEST_BYTES_BY_ROUTE",
+    "HomeClient",
+    "check_bridge_url",
+    "request_limit",
+    "request_target",
+]

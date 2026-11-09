@@ -37,6 +37,7 @@ MAX_DRIVE_CALLS = 6  # slice 12 D1: drive_* calls per owner message
 MAX_MAPS_CALLS = 3
 MAX_YOUTUBE_SEARCHES = 2
 MAX_YOUTUBE_PLAYLISTS = 2  # youtube_playlist pages per owner message (final review)
+MAX_PEOPLE_CALLS = 2  # R4 D-D5: research_person calls per owner message
 
 DELETES_CAPPED = (
     f"More than {MAX_FREE_DELETES} deletes in one request: the first {MAX_FREE_DELETES} ran, and "
@@ -65,6 +66,10 @@ PLAYLIST_LIMIT = (
     f"YouTube playlist limit for this request reached ({MAX_YOUTUBE_PLAYLISTS} playlist pages "
     "per message). Answer with what you have; the owner can ask again in a new message."
 )
+PEOPLE_LIMIT = (
+    f"People research limit for this request reached ({MAX_PEOPLE_CALLS} people per message). "
+    "Answer with what you have; the owner can ask again in a new message."
+)
 
 
 @dataclass
@@ -78,6 +83,7 @@ class TurnBudget:
     maps: int = MAX_MAPS_CALLS
     youtube_searches: int = MAX_YOUTUBE_SEARCHES
     youtube_playlists: int = MAX_YOUTUBE_PLAYLISTS
+    people: int = MAX_PEOPLE_CALLS
 
 
 _current: contextvars.ContextVar[TurnBudget | None] = contextvars.ContextVar(
@@ -157,6 +163,16 @@ def take_youtube_playlist() -> None:
     budget.youtube_playlists -= 1
 
 
+def take_people_call() -> None:
+    """R4 D-D5: count one research_person call; raises (plain words) past the message's 2."""
+    budget = _current.get()
+    if budget is None:
+        return
+    if budget.people <= 0:
+        raise RuntimeError(PEOPLE_LIMIT)
+    budget.people -= 1
+
+
 def take_free_delete() -> bool:
     """Count one undo-able delete that would run without a card. False once the message has used
     its allowance: the caller turns the delete into an approval card. No turn: no cap."""
@@ -179,8 +195,10 @@ __all__ = [
     "MAX_FREE_DELETES",
     "MAX_MAPS_CALLS",
     "MAX_NEW_CARDS",
+    "MAX_PEOPLE_CALLS",
     "MAX_YOUTUBE_PLAYLISTS",
     "MAX_YOUTUBE_SEARCHES",
+    "PEOPLE_LIMIT",
     "PLAYLIST_LIMIT",
     "TOO_MANY_CARDS",
     "YOUTUBE_LIMIT",
@@ -190,6 +208,7 @@ __all__ = [
     "take_drive_call",
     "take_free_delete",
     "take_maps_call",
+    "take_people_call",
     "take_youtube_playlist",
     "take_youtube_search",
     "turn_budget",

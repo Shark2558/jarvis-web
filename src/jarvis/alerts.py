@@ -32,6 +32,13 @@ AlertKind = Literal[
     "home_online",
     "home_arm_failed",
     "home_summary",
+    # R4 (docs/plans/r4-vitals-health-people.md D4, D6): vitals + self-health. Levels in
+    # notify.ports.DEFAULT_URGENCY: vitals_critical/health_fault urgent, the rest info.
+    "vitals_warn",
+    "vitals_critical",
+    "health_fault",
+    "health_recovered",
+    "health_degraded",
 ]
 HOME_ALERT_KINDS: tuple[AlertKind, ...] = (
     "home_intruder",

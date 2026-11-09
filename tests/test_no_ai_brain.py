@@ -21,7 +21,14 @@ from jarvis.people.research import PeopleService
 from jarvis.people.tools import PeopleDeps, people_tools
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.tools.base import Tool
-from tests.conftest import TIERS
+
+# The same tier names as conftest.TIERS; defined here because test modules never import
+# through the `tests` package (CI runs plain `pytest`, so the repo root is not on sys.path).
+TIERS = {
+    ModelTier.FAST: "mock-fast",
+    ModelTier.BALANCED: "mock-balanced",
+    ModelTier.STRONG: "mock-strong",
+}
 
 
 def fake(name: str, result: Any, risk: ActionRisk = ActionRisk.READ_ONLY) -> Tool:

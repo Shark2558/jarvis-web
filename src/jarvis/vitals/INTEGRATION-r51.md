@@ -75,7 +75,7 @@ What each item reads and when it shows:
 | `brain_claude` | Claude (paid AI) key | `Settings.anthropic_api_key` is set | `router.health()` state: refused = red; busy / odd / unreachable = amber; else ok |
 | `brain_gemini` | Gemini (free AI) key | `Settings.gemini_api_key` is set | same; busy = "has reached its free limit for now" |
 | `google_link` | Google sign-in | connected, or needs reconnecting | `GoogleConnector.status`: needs_reconnect = red |
-| `telegram_bot` | Telegram bot | `Settings.telegram_bot_token` is set | the last stored systems-check result for key `telegram` (ok / degraded / down); none yet = Unknown |
+| `telegram_bot` | Telegram bot | `Settings.telegram_bot_token` is set, and the last systems check included `telegram` (left out of it = not set up, D4) | that result (ok / degraded / down); no check stored yet = Unknown "run a systems check" |
 | `web_credits` | Web search credits | a web provider with `usage()` is wired | the vendor's free usage report, cached 10 min per process; exhausted = red; resets next month |
 | `github_token` | GitHub token | connected, or needs reconnecting | the token's expiry and hourly limit from GitHub's own headers (below) |
 | `home_link` | Home laptop link | a home is linked | heartbeat age vs `home_offline_after_s`: offline or never reported = red; degraded = amber |

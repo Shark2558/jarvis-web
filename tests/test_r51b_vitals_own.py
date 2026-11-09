@@ -128,12 +128,19 @@ async def test_telegram_reads_the_last_systems_check(probe: str, status: str) ->
     assert "alerts" in v.impact
 
 
-async def test_telegram_not_in_the_report_is_unknown_and_says_run_a_check() -> None:
-    rig = OwnRig(OwnSources(health=HealthLast(Report())))
+async def test_telegram_before_any_systems_check_is_unknown_and_says_run_one() -> None:
+    rig = OwnRig(OwnSources(health=HealthLast(None)))
 
     v = await view(rig, "telegram_bot")
 
     assert v.status == "unknown" and "systems check" in v.provider.note
+
+
+async def test_telegram_left_out_of_the_last_check_is_not_set_up() -> None:
+    """D4 (Part C): no paired chat means the systems check leaves Telegram out ("not set up")."""
+    rig = OwnRig(OwnSources(health=HealthLast(Report((Result("docs", "ok", 0.0),)))))
+
+    assert await view(rig, "telegram_bot") is None
 
 
 async def test_telegram_without_a_bot_token_is_left_out() -> None:

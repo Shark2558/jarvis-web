@@ -282,8 +282,12 @@ class Own:
         if self._src.health is None:
             return unknown("telegram_bot", note=RUN_CHECK, reason="hasn't been checked yet")
         report = await self._src.health.last(uid)
-        found = next((r for r in report.results if r.key == "telegram"), None) if report else None
-        if found is None or found.status not in PROBE_STATES:
+        if report is None:  # no systems check has run yet
+            return unknown("telegram_bot", note=RUN_CHECK, reason="hasn't been checked yet")
+        found = next((r for r in report.results if r.key == "telegram"), None)
+        if found is None:  # the check left it out: not set up (no paired chat, R5.1 D4)
+            return None
+        if found.status not in PROBE_STATES:
             return unknown("telegram_bot", note=RUN_CHECK, reason="hasn't been checked yet")
         note = f"Last checked {_when(found.at, tz)}." if math.isfinite(found.at) else ""
         return _item("telegram_bot", PROBE_STATES[found.status], note=note)

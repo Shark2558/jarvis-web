@@ -55,6 +55,7 @@ DECK_SCRIPTS = (
     "console-voice-conversation.js",
     "console-voice-wake.js",
     "console-voice-micoff.js",
+    "console-voice-loop-glue.js",
     "console-voice-mic.js",
 )
 MODULE_SCRIPTS = ("console-3d.js",)
@@ -82,6 +83,7 @@ VOICE_SCRIPTS = (
     "console-voice-conversation.js",
     "console-voice-wake.js",
     "console-voice-micoff.js",
+    "console-voice-loop-glue.js",
     "console-voice-mic.js",
     "voice-capture-worklet.js",
 )
@@ -542,6 +544,7 @@ async def test_voice_scripts_load_after_the_console_in_order(client: AsyncClient
         "console-voice-conversation.js",
         "console-voice-wake.js",
         "console-voice-micoff.js",
+        "console-voice-loop-glue.js",
         "console-voice-mic.js",
     )
     order = [html.index(f'src="/static/{n}"') for n in names]

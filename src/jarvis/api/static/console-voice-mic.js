@@ -48,13 +48,10 @@
   const LINE_MS = 8000;
   const MIN_FRAMES = 4;            // under ~0.3 s is not worth a transcription
   const VAD_LAG_MS = 160;          // two frames of speech before the VAD says "start"
-  const RESUME_MS = 10000;         // an empty interruption: JARVIS picks his reply up again within this
   const SAID_MS = 4000;            // JARVIS's own words kept this long for the echo guard
-  const WAKE_NAME_MS = 400;        // "Jarvis" inside his own words counts only if the gate was open this recently
   const BROWSER_RESTART_MS = 4000; // the browser recogniser is restarted quietly at most this often
-  const CHECK_ASK_MS = 8000;
   const FILLER = new Set(['um', 'uh', 'hmm', 'mm', 'uhm', 'er', 'ah', 'umm', 'uhh', 'hm', 'mhm']);
-  const FIXED = Object.freeze({ fixed: true });   // fixed lines: their audio is cached per page
+  const FIXED = window.JarvisLoopGlue.FIXED;      // fixed lines: their audio is cached per page
   const NAME = 'Voice input';
   const TITLES = { idle: 'Speak (Ctrl + Space)', listening: 'Stop and send', thinking: 'JARVIS is answering', speaking: 'Stop JARVIS and speak',
     standby: 'Speak (Ctrl + Space)', off: 'Microphone off: tap to switch it on (Ctrl + Shift + Space)' };
@@ -83,6 +80,14 @@
   let clock = null;                                    // the follow-up / standby / long-pause clock of this reply
   const runaway = window.JarvisConversation.runaway();
   const isListening = () => S.mode === 'listening' || S.mode === 'standby';
+  // the conversation glue (barge, check-in, handover, built-in command actions): console-voice-loop-glue.js
+  const glue = window.JarvisLoopGlue.create({ S, A, V, Chat, emit, log, input, Cmd, runaway, wake: () => wake,
+    saidText: () => saidText(), setMode: (m) => setMode(m), speak: (...a) => speak(...a), silence: () => silence(),
+    listen: (o) => listen(o), deliver: (t, o) => deliver(t, o), settle: (r) => settle(r), say: (t) => say(t),
+    cue: (n) => cue(n), honorific, loopSay: (t, o) => loopSay(t, o), startClock: () => startClock(),
+    stopClock: () => stopClock(), resumeListening: () => resumeListening(), isListening, restore: () => restore(),
+    endCapture: () => endCapture(), releaseMic: () => releaseMic() });
+  const { armBarge, disarmBarge, bargeWake, resumeSpeech, bindCommands, speakWake, checkIn, handover, finishHandover } = glue;
 
   // ---- state ---------------------------------------------------------------------------------
   function setMode(mode) {
@@ -458,52 +463,6 @@
     clock.replyEnded();
   }
   function stopClock() { if (clock) { clock.stop(); clock = null; } }
-  /** The runaway check-in (D6): ask, listen for the answer, hand over unless it is "yes". */
-  async function checkIn() {
-    const C = Cmd();
-    S.checking = true;
-    const q = `Shall I keep listening, ${honorific()}?`;
-    await loopSay(q, { speak: true, fixed: true });
-    if (!S.checking || !S.conv) { S.checking = false; return; }
-    startClock();
-    const asked = C ? C.ask(q, { timeoutMs: CHECK_ASK_MS }) : Promise.resolve('timeout');
-    listen({ relisten: true });
-    const answer = await asked;
-    await new Promise(r => setTimeout(r, 60));
-    if (!S.checking) return;
-    S.checking = false;
-    if (answer === 'yes') { runaway.answered(true, Date.now()); if (S.conv) { if (S.mode === 'idle') resumeListening(); } return; }
-    if (answer !== 'cancelled') handover('checkin'); else runaway.answered(false, Date.now());
-  }
-
-  // ---- ending a conversation the owner did not end (D5) -----------------------------------------------
-  function handover(reason) {
-    if (A.locked() || S.handing || S.mode === 'off') return;
-    S.handing = true; S.checking = false;
-    clearTimeout(S.relisten); clearTimeout(S.browserTimer);
-    S.keep = false; S.rest = null;
-    stopClock();
-    if (isListening()) { S.turn++; if (S.rec) { S.cancel = true; const r = S.rec; S.rec = null; try { r.abort(); } catch (_) {} restore(); } endCapture(); }
-    silence();
-    S.conv = false;
-    const h = honorific();
-    const stopped = reason === 'mic_ended' ? `The microphone stopped, ${h}. I'll switch to the keyboard.`
-      : reason === 'cloud_down' ? `Cloud listening isn't available, ${h}. I'll switch to the keyboard.` : '';
-    const spoken = stopped || `I'll switch to the keyboard, ${h}.`;
-    const wakeHint = V.device().wake ? ' (or say "Hey Jarvis")' : '';
-    say(stopped || `Switched to the keyboard. Tap the mic${wakeHint} to talk.`);
-    cue('handover');
-    const d = V.device();
-    if (d.speak === 'never' || V.outputEngine() === 'none') { finishHandover(); return; }
-    speak([spoken], false, 'handover', FIXED);
-  }
-  function finishHandover() {
-    S.handing = false; S.conv = false;
-    setMode('idle');
-    releaseMic();
-    if (!A.locked()) input.focus();
-  }
-
   // ---- speaking -------------------------------------------------------------------------------
   const APPROVAL_LINE = () => `That one needs your approval on screen, ${honorific()}.`;
   function speak(chunks, keep, mode, meta) {
@@ -570,81 +529,6 @@
     log('info', 'Browser voice in use');
   });
 
-  // ---- speak to interrupt (D7, D9) --------------------------------------------------------------------
-  function armBarge() {
-    disarmBarge();
-    S.barge = window.JarvisBarge.arm({
-      said: saidText, browserVoice: V.speaker.usingBrowser(),
-      handle: (text, ctx) => (Cmd() ? Cmd().handle(text, ctx) : Promise.resolve({ handled: false })),
-      onBarge: bargeIn,
-    });
-    wake.speaking(true);
-  }
-  function disarmBarge() {
-    if (S.barge) { S.barge.disarm(); S.barge = null; }
-    if (wake) wake.speaking(false);
-  }
-  /** JARVIS is stopped; remember the unplayed words, then listen (seeded with what was just said). */
-  function bargeIn(ev) {
-    if (S.mode !== 'speaking' || A.locked()) return;
-    const was = S.keep, said = saidText();
-    S.keep = false;
-    const r = silence();
-    S.rest = ev.handled || !(r.rest && r.rest.length) ? null : r.rest; S.restAt = performance.now(); S.restKeep = was;
-    emit('jarvis:barge', { how: ev.how, ms: ev.ms || 0 });
-    log('info', `Interrupted (${Math.round(ev.ms || 0)} ms)`);
-    if (ev.handled) { settle({ id: 'barge', result: ev.result }); return; }
-    if (ev.text) {
-      S.rest = null;
-      if (Cmd() && Cmd().normalise(ev.text)) { setMode('thinking'); deliver(ev.text, { state: 'speaking' }); return; }
-    }
-    listen({ barge: true, soft: true, seed: ev.frames,
-      info: ev.how === 'speech' ? { said, peak: ev.peak, margin: window.JarvisBarge.BARGE.SPEAKERS.margin } : null });
-  }
-  /** "Hey Jarvis" over his speech (the wake model runs while he speaks, D8). */
-  function bargeWake() {
-    if (S.mode !== 'speaking') return;
-    const cur = S.said.length ? S.said[S.said.length - 1].text : '';
-    const g = S.barge && S.barge.gate && S.barge.gate();
-    if (/jarvis|jervis/i.test(cur) && !(g && S.barge.recentLoud && S.barge.recentLoud(WAKE_NAME_MS))) return;
-    const was = S.keep;
-    S.keep = false; S.rest = null;
-    silence();
-    S.restKeep = was;
-    emit('jarvis:barge', { how: 'wake', ms: 0 });
-    listen({ barge: true, soft: false });
-  }
-  /** After an empty interruption JARVIS picks up where he was (within 10 s). */
-  function resumeSpeech() {
-    const rest = S.rest;
-    S.rest = null;
-    if (!S.handsFree || S.handsFree !== 'barge' || !rest || !rest.length || A.locked()) return false;
-    if (performance.now() - S.restAt > RESUME_MS) return false;
-    setMode('idle');
-    speak(rest, S.restKeep);
-    return true;
-  }
-  /** The loop's own actions behind the built-in commands (the matchers live in console-voice-commands.js). */
-  function bindCommands() {
-    const C = Cmd();
-    if (!C || typeof C.bindLoop !== 'function') return;
-    C.bindLoop({
-      micOff() {
-        silence(); S.rest = null; S.keep = false;
-        A.lock('voice');                                    // first: nothing hears anything from here on
-        setMode('idle');
-        speak([`Microphone off, ${honorific()}.`], false, 'speaking', FIXED);
-        return { then: 'off' };
-      },
-      stop(ctx) {
-        const st = ctx && ctx.state;
-        if (st === 'speaking') { silence(); S.rest = null; S.keep = false; return { then: 'listen' }; }
-        if (st === 'thinking') { if (Chat.busy()) S.mute = true; return { then: 'listen' }; }
-        return { then: S.conv ? 'listen' : 'idle' };
-      },
-      keyboard() { return { then: 'keyboard' }; },
-    });
-  }
   bindCommands();
 
   // ---- the console's own turns ------------------------------------------------------------------
@@ -704,12 +588,6 @@
   input.addEventListener('input', () => { if (!input.value.trim()) delete input.dataset.channel; });
 
   // ---- "Hey Jarvis" (D12, D8) lives in console-voice-wake.js ----------------------------------------
-  const speakWake = () => {
-    if (S.mode !== 'speaking' || S.nameOff || !A.isOpen() || A.locked()) return false;
-    const p = window.JarvisBarge.policy();
-    if (p === 'name') return true;
-    return p === 'speech' && V.speaker.usingBrowser() && window.JarvisBarge.kind() === 'speakers'; // no echo reference: the name is the fallback
-  };
   const wake = window.JarvisWakeCtl.create({ A, V, Chat, emit, log, help, HELP, signedIn, speakWake,
     busy: () => S.mode !== 'idle' || V.speaker.speaking(),
     listen: (o) => listen(o),

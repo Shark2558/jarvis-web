@@ -46,6 +46,7 @@ APP_ASSETS: dict[str, str] = {
     "console-voice-conversation.js": _JS,  # R5 D4: follow-up, standby, long pause, check-in
     "console-voice-wake.js": _JS,  # R5: "Hey Jarvis" controller, moved out of the mic script
     "console-voice-micoff.js": _JS,  # R5 D11: the mic-off button, shortcut and announcements
+    "console-voice-loop-glue.js": _JS,  # R5: barge, check-in and handover glue, moved out of the mic script
     "voice-capture-worklet.js": _JS,  # slice 9: AudioWorkletProcessor (downsample to 16 kHz)
     "console-3d.js": _JS,  # three.js scenes (ES module; loads three lazily, 2D fallback)
     "console-3d-scenes.js": _JS,  # Core / Globe / Construct scene builders (ES module)

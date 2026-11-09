@@ -37,6 +37,7 @@ VOICE_ORDER = (
     "console-voice-conversation.js",
     "console-voice-wake.js",
     "console-voice-micoff.js",
+    "console-voice-loop-glue.js",
     "console-voice-mic.js",
 )
 NEW_SCRIPTS = tuple(
@@ -48,9 +49,6 @@ NEW_SCRIPTS = tuple(
     if n not in ("console-wakeword.js", "console-voice.js", "console-voice-mic.js")
 )
 EMPTY_HEADERS = (
-    "console-voice-wake.js",
-    "console-voice-conversation.js",
-    "console-voice-micoff.js",
     "console-voice-devices-panel.js",
     "console-voice-phrases.js",
     "console-voice-devices.css",
@@ -249,8 +247,9 @@ def test_stubs_define_their_frozen_objects() -> None:
         assert re.search(rf"\b{key}\b", devices), key
     assert "outputKind: () => 'unknown'" in devices and "find: () => null" in devices
     barge = read("console-voice-barge.js")
-    assert "window.JarvisBarge" in barge and "policy: () => 'tap'" in barge
-    assert "arm: () => ({ disarm() {} })" in barge
+    # part A replaced the stub: the frozen surface (policy, arm) stays, with the real gate behind it
+    assert "window.JarvisBarge = Object.freeze({" in barge
+    assert re.search(r"Object\.freeze\(\{[^}]*\bpolicy\b[^}]*\barm\b", barge)
     pace = read("console-voice-pace.js")
     assert "window.JarvisVoicePace" in pace and "last: () => null" in pace
 

@@ -10,13 +10,30 @@
 //                       Overlapping open() / close() calls are safe: each open() builds its own
 //                       stream and context, and one that close() (or a newer open) made stale stops
 //                       its own tracks and rejects with .code 'closed'; only the newest is shared.
+//                       lock(by) / unlock(by) → bool / locked() / onLock(fn): the hard microphone lock
+//                       (R5 D11, docs/plans/r5-voice.md). While locked open() rejects with .code
+//                       'mic_off' and prime() does nothing. lock() closes the microphone, aborts every
+//                       recogniser made by recognizer() and persists localStorage['jarvis_mic_off_v1'],
+//                       so a reload stays locked and other tabs follow (storage event). unlock() is
+//                       true only inside a real click, tap or key press (user activation) and never
+//                       opens the microphone. Fires jarvis:mic-lock {locked, by}.
+//                       recognizer() is the only place SpeechRecognition is built (throws 'mic_off' or
+//                       'unsupported'). setInput(id | null) / inputId(): the next open() asks for that
+//                       device, also when the microphone is already open (a conversation holds it):
+//                       that open() reopens on the new device, subscribers kept. If it is gone, one retry
+//                       on the default input fires jarvis:audio-route {input, reason: 'input_missing'};
+//                       each microphone that goes live fires {input: {id, label: ''}, reason: 'input_live'}
+//                       (an id only, never a label). trackLabel(): the open track's name.
 //                       The wake-word module consumes the same frames:
 //                       JarvisWake.start({subscribe: JarvisAudio.subscribe, sampleRate: 16000}, onWake).
 //   window.JarvisWav    encode(frames | Int16Array, rate = 16000) → ArrayBuffer (RIFF/WAVE PCM16 mono).
 //   window.JarvisVad    create(opts) → {push(frame) → event | null, frames(), ms()}: an energy VAD.
 //                       Events: {type: 'start'} once speech begins; {type: 'end', frames} after
 //                       ~1.2 s of trailing silence; {type: 'timeout'} after 6 s with no speech;
-//                       {type: 'max', frames} at 30 s. `frames` keeps ~320 ms before the speech
+//                       {type: 'max', frames} at 30 s. Options (R5 D4): endSilenceMs, noSpeechMs, maxMs,
+//                       seed (frames that already count as speech: an interruption's first words),
+//                       strictAfterMs / strictRatio / strictFrames (standing by: after that long
+//                       without speech a start needs a firmer, longer sound). `frames` keeps ~320 ms before the speech
 //                       began and ~400 ms after it ended.
 // Audio never leaves this file: frames go to subscribers in this page only, and nothing is stored.
 (() => {
@@ -33,7 +50,8 @@
   // progress keeps its pieces in its own object and only becomes `live` if no close() came while it
   // awaited (`gen` counts closes). `primed` is an AudioContext made inside a tap, for the next build.
   let live = null, primed = null, pending = null, gen = 0;
-  const subs = new Set(), endSubs = new Set();
+  const subs = new Set(), endSubs = new Set(), lockSubs = new Set();
+  let inputId = null;                    // the chosen microphone (null: the system default)
 
   function fail(code, cause) {
     const e = new Error(code); e.code = code; e.cause = cause; return e;
@@ -66,15 +84,90 @@
     closeContext(own.ctx);
   }
 
+  // ================================================================================== mic lock (D11)
+  const LOCK_KEY = 'jarvis_mic_off_v1';
+  const LOCK_BY = ['button', 'shortcut', 'voice', 'panel', 'storage', 'boot'];
+  const emit = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
+  function readLock() { try { return localStorage.getItem(LOCK_KEY) === '1'; } catch (_) { return false; } }
+  function writeLock(on) {
+    try { if (on) localStorage.setItem(LOCK_KEY, '1'); else localStorage.removeItem(LOCK_KEY); } catch (_) { /* read back below */ }
+    return readLock() === on;               // false: the browser blocked storage, so "off" will not survive a reload
+  }
+  let locked = readLock();               // read at load: this script is first, so nothing opens before it
+  const recs = new Set();                // recognisers made by recognizer(), aborted on lock
+  const who = (by) => (LOCK_BY.includes(by) ? by : 'button');
+  function announce(by, persisted) {
+    const d = { locked, by };
+    if (persisted === false) d.persisted = false;   // only when storage failed: the frozen {locked, by} shape stays otherwise
+    lockSubs.forEach(fn => { try { fn(d); } catch (_) {} });
+    emit('jarvis:mic-lock', d);
+  }
+  function applyLock(on, by, persist) {
+    if (locked === on) return;
+    locked = on;
+    const kept = persist ? writeLock(on) : true;
+    if (on) {
+      close();
+      recs.forEach(r => { try { r.abort(); } catch (_) {} });
+      recs.clear();
+    }
+    announce(by, kept);
+  }
+  const lock = (by) => applyLock(true, who(by), true);
+  /** True only for a real gesture; it never opens the microphone. */
+  function unlock(by) {
+    const ua = navigator.userActivation;
+    if (!(ua && ua.isActive)) return false;
+    applyLock(false, who(by), true);
+    return true;
+  }
+  function onLock(fn) {
+    if (typeof fn !== 'function') return () => {};
+    lockSubs.add(fn);
+    return () => { lockSubs.delete(fn); };
+  }
+  /** The only SpeechRecognition constructor in the console. */
+  function recognizer() {
+    if (locked) throw fail('mic_off');
+    const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!R) throw fail('unsupported');
+    const rec = new R();
+    recs.add(rec);
+    if (typeof rec.addEventListener === 'function') rec.addEventListener('end', () => recs.delete(rec));
+    else if (recs.size > 20) recs.delete(recs.values().next().value);
+    return rec;
+  }
+  // Another tab's change only counts when the browser itself raised the event for this origin's localStorage:
+  // a script's own StorageEvent (isTrusted false) must never switch the microphone on (SM1).
+  window.addEventListener('storage', (e) => {
+    if (!e.isTrusted || e.storageArea !== localStorage) return;
+    if (e.key === LOCK_KEY || e.key === null) applyLock(readLock(), 'storage', false);
+  });
+  if (locked) {
+    const boot = () => announce('boot');
+    if (document.readyState === 'complete') boot(); else document.addEventListener('DOMContentLoaded', boot, { once: true });
+  }
+
+  function requestStream(id) {
+    const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+    if (id) audio.deviceId = { exact: id };
+    return navigator.mediaDevices.getUserMedia({ audio });
+  }
   async function build(c, my) {
-    const own = { ctx: c, stream: null, source: null, node: null, analyser: null, probe: null };
+    // asked: the input requested; got: the one that opened (null after the missing-device fallback)
+    const own = { ctx: c, stream: null, source: null, node: null, analyser: null, probe: null, asked: inputId, got: inputId };
     const stale = () => my !== gen;
     try {
       try {
-        own.stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-        });
-      } catch (err) { throw fail(reason(err), err); }
+        own.stream = await requestStream(own.asked);
+      } catch (err) {
+        if (own.asked && err && err.name === 'OverconstrainedError') {   // the chosen microphone is gone
+          emit('jarvis:audio-route', { input: { id: own.asked, label: '' }, reason: 'input_missing' });
+          if (stale() || locked) throw fail('closed');   // the microphone was switched off meanwhile: no second request
+          try { own.stream = await requestStream(null); } catch (err2) { throw fail(reason(err2), err2); }
+          own.got = null;
+        } else throw fail(reason(err), err);
+      }
       if (stale()) throw fail('closed');
       try { await c.audioWorklet.addModule(WORKLET_URL); } catch (err) { throw fail('failed', err); }
       if (stale()) throw fail('closed');
@@ -90,6 +183,7 @@
       own.source.connect(own.node); own.source.connect(own.analyser);
       tracks.forEach(t => t.addEventListener('ended', () => ended(own)));
       live = own;
+      emit('jarvis:audio-route', { input: { id: own.got, label: '' }, reason: 'input_live' });
     } catch (err) {
       release(own);
       throw err;
@@ -105,15 +199,20 @@
   /** Make the AudioContext now (inside a tap) without asking for the microphone yet; a context
    *  already made (open, or on its way) is resumed instead, while the tap still counts. */
   function prime() {
-    if (!supported()) return;
+    if (locked || !supported()) return;
     const have = live ? live.ctx : pending && pending.gen === gen ? pending.ctx : primed;
     if (have) { if (have.state === 'suspended') { try { quietly(have.resume()); } catch (_) {} } return; }
     try { primed = new (AC())(); } catch (_) { primed = null; return; }
     try { quietly(primed.resume()); } catch (_) {}
   }
+  /** The open microphone is not the one chosen since (neither what was asked nor what opened). */
+  const switched = () => !!live && inputId !== live.asked && inputId !== live.got;
   /** Opens the microphone (once; later calls share it). The AudioContext is made before the first
-   *  await, so a tap's user activation still counts when the browser asks to start audio. */
+   *  await, so a tap's user activation still counts when the browser asks to start audio. A device
+   *  chosen while it was open takes over here: the next listening turn reopens on it (I1). */
   function open() {
+    if (locked) return Promise.reject(fail('mic_off'));
+    if (switched()) close();               // subscribers stay; frames resume from the new device
     if (live) return Promise.resolve();
     if (pending && pending.gen === gen) return pending.promise;
     if (!supported()) return Promise.reject(fail('unsupported'));
@@ -167,9 +266,23 @@
   /** A new listening turn starts on a clean frame boundary. */
   function flush() { if (live) { try { live.node.port.postMessage('flush'); } catch (_) {} } }
 
+  function setInput(id) {
+    const next = typeof id === 'string' && id.length > 0 && id.length <= 400 ? id : null;
+    const changed = next !== inputId;
+    inputId = next;
+    if (changed && switched()) emit('jarvis:audio-input-chosen', {});   // lets a wake-only hold move at once (CM2)
+  }
+  function trackLabel() {
+    const t = live && live.stream ? live.stream.getAudioTracks()[0] : null;
+    return t && typeof t.label === 'string' ? t.label : '';
+  }
+
   window.JarvisAudio = Object.freeze({
     SAMPLE_RATE, FRAME,
     supported, prime, open, close, resume, subscribe, level, flush, onEnd,
+    lock, unlock, onLock, recognizer, setInput, trackLabel, switched,
+    locked: () => locked,
+    inputId: () => inputId,
     isOpen: () => !!live,
     suspended: () => !!(live && live.ctx.state === 'suspended'),
   });
@@ -197,7 +310,8 @@
   // floor adapts while nobody speaks; speech must beat it by ~10 dB (and an absolute floor) for two
   // frames in a row to start, and fall back under a lower threshold for `endSilenceMs` to end.
   const VAD_DEFAULTS = { endSilenceMs: 1200, noSpeechMs: 6000, maxMs: 30000, prerollMs: 320, tailMs: 400,
-    floor: 0.012, ratio: 3.2, endRatio: 2.0, startFrames: 2 };
+    floor: 0.012, ratio: 3.2, endRatio: 2.0, startFrames: 2,
+    strictAfterMs: 0, strictRatio: 4.0, strictFrames: 4, seed: null };
   function rms(frame) {
     let sum = 0;
     for (let i = 0; i < frame.length; i++) { const x = frame[i] / 32768; sum += x * x; }
@@ -209,6 +323,9 @@
     const END = n(o.endSilenceMs), NONE = n(o.noSpeechMs), MAX = n(o.maxMs), PRE = n(o.prerollMs), TAIL = n(o.tailMs);
     let count = 0, noise = null, loud = 0, quiet = 0, started = false, done = false, lastSpeech = -1;
     const pre = [], kept = [];
+    // seed: frames heard before this VAD was made (an interruption): the turn starts with them.
+    const seed = Array.isArray(o.seed) ? o.seed.filter(f => f instanceof Int16Array) : [];
+    if (seed.length) { started = true; kept.push(...seed); lastSpeech = kept.length - 1; }
     function result(type) {
       done = true;
       if (type === 'timeout') return { type };
@@ -220,11 +337,14 @@
       count++;
       const e = rms(frame);
       if (noise === null) noise = Math.min(e, o.floor);
-      const startAt = Math.max(o.floor, noise * o.ratio), endAt = Math.max(o.floor * 0.75, noise * o.endRatio);
+      // strict mode (standing by): after strictAfterMs without speech a turn needs a firmer start
+      const strict = !started && o.strictAfterMs > 0 && count * FRAME_MS >= o.strictAfterMs;
+      const startAt = Math.max(o.floor, noise * (strict ? o.strictRatio : o.ratio)), need = strict ? o.strictFrames : o.startFrames;
+      const endAt = Math.max(o.floor * 0.75, noise * o.endRatio);
       if (!started) {
-        pre.push(frame); if (pre.length > PRE + o.startFrames) pre.shift();
+        pre.push(frame); if (pre.length > PRE + Math.max(o.startFrames, o.strictFrames)) pre.shift();
         if (e >= startAt) loud++; else { loud = 0; noise = noise * 0.9 + Math.min(e, startAt) * 0.1; }
-        if (loud >= o.startFrames) {
+        if (loud >= need) {
           started = true; kept.push(...pre); pre.length = 0; lastSpeech = kept.length - 1; quiet = 0;
           return { type: 'start' };
         }

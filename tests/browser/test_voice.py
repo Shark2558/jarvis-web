@@ -382,6 +382,7 @@ def make(browser: Any, server_url: str, token: str) -> Iterator[Callable[..., Co
         device: dict[str, Any] | None = None,
         scripts: tuple[str, ...] = (),
         real_wake: bool = False,
+        barge: bool = False,
     ) -> Console:
         c = Console(browser, server_url, token, viewport)
         if not real_wake:  # the real module is tested on its own; these tests use FAKE_WAKE or none
@@ -390,9 +391,21 @@ def make(browser: Any, server_url: str, token: str) -> Iterator[Callable[..., Co
                 lambda r: r.fulfill(status=200, content_type="text/javascript", body=""),
             )
         c.page.add_init_script(RECORDER)
-        if device is not None:  # this device's voice settings, set before any script runs
+        # R5: the fake microphones talk constantly, so tests that are not about interrupting pin
+        # "Tapping only" (docs/plans/r5-voice.md I0 item 9) unless they ask for barge-in.
+        pinned = dict(device or {})
+        if not barge:
+            pinned.setdefault("interruptBy", "tap")
+        if pinned:  # this device's voice settings, set before any script runs
+            # only the pin alone must not undo what the page saved before a reload
+            keep = (
+                ""
+                if device is not None
+                else "localStorage.getItem('jarvis_voice_device_v1') === null && "
+            )
             c.page.add_init_script(
-                f"localStorage.setItem('jarvis_voice_device_v1', {json.dumps(json.dumps(device))});"
+                f"{keep}localStorage.setItem('jarvis_voice_device_v1', "
+                f"{json.dumps(json.dumps(pinned))});"
             )
         for s in scripts:
             c.page.add_init_script(s)
@@ -1051,6 +1064,12 @@ def test_voice_panel_device_settings_are_kept_on_this_device(make: Callable[...,
         "autoSend": False,
         "keepListening": True,
         "wake": False,
+        "interruptBy": "tap",  # pinned by the factory (R5 I0)
+        "followUpS": 8,
+        "longPauseS": 20,
+        "endSilenceMs": 1200,
+        "checkIn": True,
+        "cues": True,
     }
     c.page.reload()
     c.open()

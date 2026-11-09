@@ -44,7 +44,19 @@ DECK_SCRIPTS = (
     "console-memory.js",
     "console-voice-capture.js",
     "console-voice-speech.js",
+    "console-voice-commands.js",
+    "console-wakeword.js",
     "console-voice.js",
+    "console-voice-devices.js",
+    "console-voice-devices-panel.js",
+    "console-voice-pace.js",
+    "console-voice-phrases.js",
+    "console-voice-barge.js",
+    "console-voice-conversation.js",
+    "console-voice-wake.js",
+    "console-voice-micoff.js",
+    "console-voice-loop-glue.js",
+    "console-voice-loop-browser.js",
     "console-voice-mic.js",
 )
 MODULE_SCRIPTS = ("console-3d.js",)
@@ -52,11 +64,29 @@ MODULE_DEPS = (
     "console-3d-scenes.js",  # imported by console-3d.js, not by the page
     "voice-capture-worklet.js",  # loaded by audioWorklet.addModule (slice 9), not by the page
 )
-STYLES = ("console.css", "console-deck.css", "console-memory.css", "console-voice.css")
+STYLES = (
+    "console.css",
+    "console-deck.css",
+    "console-memory.css",
+    "console-voice.css",
+    "console-voice-devices.css",
+)
 VOICE_SCRIPTS = (
     "console-voice-capture.js",
     "console-voice-speech.js",
+    "console-voice-commands.js",
     "console-voice.js",
+    "console-voice-devices-match.js",
+    "console-voice-devices.js",
+    "console-voice-devices-panel.js",
+    "console-voice-pace.js",
+    "console-voice-phrases.js",
+    "console-voice-barge.js",
+    "console-voice-conversation.js",
+    "console-voice-wake.js",
+    "console-voice-micoff.js",
+    "console-voice-loop-glue.js",
+    "console-voice-loop-browser.js",
     "console-voice-mic.js",
     "voice-capture-worklet.js",
 )
@@ -506,7 +536,20 @@ async def test_voice_scripts_load_after_the_console_in_order(client: AsyncClient
         "console.js",
         "console-voice-capture.js",
         "console-voice-speech.js",
+        "console-voice-commands.js",
+        "console-wakeword.js",
         "console-voice.js",
+        "console-voice-devices-match.js",
+        "console-voice-devices.js",
+        "console-voice-devices-panel.js",
+        "console-voice-pace.js",
+        "console-voice-phrases.js",
+        "console-voice-barge.js",
+        "console-voice-conversation.js",
+        "console-voice-wake.js",
+        "console-voice-micoff.js",
+        "console-voice-loop-glue.js",
+        "console-voice-loop-browser.js",
         "console-voice-mic.js",
     )
     order = [html.index(f'src="/static/{n}"') for n in names]

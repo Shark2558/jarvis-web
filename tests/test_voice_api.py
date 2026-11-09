@@ -29,7 +29,16 @@ from jarvis.voice.service import VoiceEngines
 
 UID = "owner"  # dev / token mode: no owners configured
 WAV = {"Content-Type": "audio/wav"}
-VIEW_KEYS = {"cloud", "settings", "voices", "wit_levels", "allowance", "month", "language"}
+VIEW_KEYS = {
+    "cloud",
+    "settings",
+    "phrase_limits",
+    "voices",
+    "wit_levels",
+    "allowance",
+    "month",
+    "language",
+}
 PATH = f"jarvis_usage/{UID}_"
 # JARVIS's share of Google's free tier by default: 90 % (Google: 1 M chars / 60 min a month)
 FREE_CHARS = 900_000
@@ -101,7 +110,8 @@ async def test_view_shape_and_defaults(vc: AsyncClient) -> None:
     j = r.json()
     assert set(j) == VIEW_KEYS
     assert j["cloud"] == {"tts": "ready", "stt": "ready", "reason": None}
-    assert j["settings"] == {"voice": DEFAULT_VOICE, "rate": 1.0, "wit": "film"}
+    assert j["settings"] == {"voice": DEFAULT_VOICE, "rate": 1.0, "wit": "film", "phrases": []}
+    assert j["phrase_limits"] == {"items": 50, "chars": 40}
     assert [v["id"] for v in j["voices"]][0] == DEFAULT_VOICE and len(j["voices"]) == 6
     assert set(j["voices"][0]) == {"id", "label", "style", "type", "available"}
     assert all(v["available"] for v in j["voices"])
@@ -178,6 +188,7 @@ async def test_put_settings_round_trip(vc: AsyncClient) -> None:
         "voice": DEFAULT_VOICE,
         "rate": 1.2,
         "wit": "extra",
+        "phrases": [],
     }
     r = await vc.put("/v1/voice/settings", json={"voice": "en-GB-Studio-B", "user_id": "x"})
     assert r.json()["voice"] == "en-GB-Studio-B" and r.json()["wit"] == "extra"
@@ -375,7 +386,9 @@ async def test_transcribe_returns_the_contract(vc: AsyncClient, rig: Rig) -> Non
     }
     call = rig.stt.calls[0]
     assert call["rate"] == 16_000 and call["language"] == "en-IN"
-    assert call["phrases"] == ("JARVIS", "Jarvis", "Sir")
+    # the base list (one spelling of the name), the honorific, then the owner's words (none yet)
+    assert call["phrases"][:2] == ("JARVIS", "Hey Jarvis") and "Sir" in call["phrases"]
+    assert "Jarvis" not in call["phrases"] and len(call["phrases"]) == len(set(call["phrases"]))
     j = (await vc.get("/v1/voice")).json()
     assert j["allowance"]["stt"]["used_seconds"] == 2  # ceil(1.2 s) as billed
 

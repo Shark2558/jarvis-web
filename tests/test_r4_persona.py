@@ -1,6 +1,6 @@
-# tests/test_r4_persona.py -- R4 I1: persona p4.9 (plan D13, brief W12): the Vitals board, the
-# systems check (works with the AI off), the connectors (token only in the panel; Photos pick-only;
-# faces need consent) and scoped people research, each paragraph pinned on its own.
+# tests/test_r4_persona.py -- R4 I1: persona p4.9, now p5.0 (plan D13, brief W12): the Vitals
+# board, the systems check (works with the AI off), the connectors (token only in the panel; Photos
+# pick-only; faces need consent) and scoped people research, each paragraph pinned on its own.
 from __future__ import annotations
 
 import pytest
@@ -12,8 +12,8 @@ def _flat(rule: str) -> str:
     return " ".join(rule.split())
 
 
-def test_persona_is_p4_9_bumped_once_for_r4() -> None:
-    assert p.PERSONA_VERSION == "p4.9"
+def test_persona_is_p5_0_after_r4() -> None:  # R4 I1: p4.9; R5 I1: p5.0
+    assert p.PERSONA_VERSION == "p5.0"
 
 
 @pytest.mark.parametrize("name", ["VITALS_RULE", "SYSTEMS_RULE", "CONNECTORS_RULE", "PEOPLE_RULE"])

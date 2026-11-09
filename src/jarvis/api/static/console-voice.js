@@ -13,6 +13,10 @@
 //   setDevice(patch), settings(), inputEngine() / outputEngine() ('cloud' | 'browser' | 'none'),
 //   markDown(kind, ms), refusal() / refused(response) (the {error, detail, reason} contract),
 //   language(), speaker (JarvisSpeaker), visual() / setVisual(fn) for the Core.
+//   R5 (docs/plans/r5-voice.md): panelSlot('devices' | 'phrases' | 'pace') -> the element other
+//   modules render into (null until the panel is built; jarvis:voice-panel {built: true} says when),
+//   updateSettings({voice, rate, wit, phrases}) -> bool (type-checked, then saved like any change).
+//   New device keys: interruptBy, followUpS, longPauseS, endSilenceMs, checkIn, cues.
 // GET /v1/voice is asked at most once a minute when fresh, and backs off after a refusal (429
 // rate_limited: 10 s, doubling to a minute; other errors: 5 s); a 429 on PUT keeps the change and
 // saves it again later. 503 budget_unavailable (the allowance can't be read) keeps the panel usable
@@ -35,7 +39,12 @@
   const ENGINES = { auto: 'Automatic', cloud: 'Google Cloud', browser: 'This browser' };
   const SPEAKS = { voice: 'When I speak', always: 'Always', never: 'Never' };
   const FINISHES = { comms: 'Comms', clean: 'Clean' };
-  const DEVICE_DEFAULTS = Object.freeze({ engine: 'auto', finish: 'comms', speak: 'voice', autoSend: true, keepListening: true, wake: false });
+  const INTERRUPTS = { auto: 'Automatic', speech: 'Speaking', name: 'Saying "Jarvis" or "stop"', tap: 'Tapping only' };
+  const FOLLOWS = { 5: '5 seconds', 8: '8 seconds', 12: '12 seconds', 20: '20 seconds', 30: '30 seconds' };
+  const LONG_PAUSES = { 15: '15 seconds', 20: '20 seconds', 30: '30 seconds', 60: '1 minute', 120: '2 minutes' };
+  const END_SILENCES = { 800: '0.8 seconds', 1000: '1 second', 1200: '1.2 seconds', 1600: '1.6 seconds', 2000: '2 seconds', 2500: '2.5 seconds' };
+  const DEVICE_DEFAULTS = Object.freeze({ engine: 'auto', finish: 'comms', speak: 'voice', autoSend: true, keepListening: true, wake: false,
+    interruptBy: 'auto', followUpS: 8, longPauseS: 20, endSilenceMs: 1200, checkIn: true, cues: true });
   const RATE_MIN = 0.8, RATE_MAX = 1.25, RATE_STEP = 0.05;
   const SAVE_DEBOUNCE_MS = 500, FRESH_MS = 60 * 1000, DOWN_MS = 10 * 60 * 1000, NOTE_MS = 5000;
   const BACKOFF_MIN_MS = 10 * 1000, BACKOFF_MAX_MS = 60 * 1000, ERROR_PAUSE_MS = 5000, PUT_RETRY_MS = 8000;
@@ -64,25 +73,28 @@
   }
 
   // ---- this device's settings ------------------------------------------------------------------
+  const inRange = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+  /** Copy the valid device settings of `src` onto `dst`; a value of the wrong type or range is dropped. */
+  function pickDevice(src, dst) {
+    if (own(ENGINES, src.engine)) dst.engine = src.engine;
+    if (own(FINISHES, src.finish)) dst.finish = src.finish;
+    if (own(SPEAKS, src.speak)) dst.speak = src.speak;
+    if (own(INTERRUPTS, src.interruptBy)) dst.interruptBy = src.interruptBy;
+    if (inRange(src.followUpS, 3, 30)) dst.followUpS = Math.round(src.followUpS);
+    if (inRange(src.longPauseS, 10, 120)) dst.longPauseS = Math.round(src.longPauseS);
+    if (typeof src.endSilenceMs === 'number' && own(END_SILENCES, String(src.endSilenceMs))) dst.endSilenceMs = src.endSilenceMs;
+    ['autoSend', 'keepListening', 'wake', 'checkIn', 'cues'].forEach(k => { if (typeof src[k] === 'boolean') dst[k] = src[k]; });
+    dst.longPauseS = Math.min(120, Math.max(dst.longPauseS, dst.followUpS + 5)); // the handover never comes before the wait ends
+    return dst;
+  }
   function readDevice() {
     let saved = null;
     try { saved = obj(JSON.parse(store.get(DEVICE_KEY) || 'null')); } catch (_) { saved = null; }
-    const s = saved || {}, d = Object.assign({}, DEVICE_DEFAULTS);
-    if (own(ENGINES, s.engine)) d.engine = s.engine;
-    if (own(FINISHES, s.finish)) d.finish = s.finish;
-    if (own(SPEAKS, s.speak)) d.speak = s.speak;
-    ['autoSend', 'keepListening', 'wake'].forEach(k => { if (typeof s[k] === 'boolean') d[k] = s[k]; });
-    return Object.freeze(d);
+    return Object.freeze(pickDevice(saved || {}, Object.assign({}, DEVICE_DEFAULTS)));
   }
   let device = readDevice();
   function setDevice(patch) {
-    const next = Object.assign({}, device);
-    const p = obj(patch) || {};
-    if (own(ENGINES, p.engine)) next.engine = p.engine;
-    if (own(FINISHES, p.finish)) next.finish = p.finish;
-    if (own(SPEAKS, p.speak)) next.speak = p.speak;
-    ['autoSend', 'keepListening', 'wake'].forEach(k => { if (typeof p[k] === 'boolean') next[k] = p[k]; });
-    device = Object.freeze(next);
+    device = Object.freeze(pickDevice(obj(patch) || {}, Object.assign({}, device)));
     store.set(DEVICE_KEY, JSON.stringify(device));
     speaker.setFinish(device.finish);
     emit('jarvis:voice-device', device);
@@ -91,6 +103,7 @@
 
   // ---- what GET /v1/voice sends, checked field by field ------------------------------------------
   const CLOUD_STATES = ['ready', 'off', 'unavailable'];
+  const phraseList = (v) => arr(v).filter(p => typeof p === 'string').map(p => txt(p, 100)).filter(Boolean).slice(0, 100);
   function normal(r) {
     const o = obj(r);
     if (!o) return null;
@@ -114,7 +127,9 @@
         voice: typeof st.voice === 'string' && ID.test(st.voice) ? st.voice : null,
         rate: rate !== null ? clampRate(rate) : 1,
         wit: typeof st.wit === 'string' && ID.test(st.wit) ? st.wit : null,
+        phrases: phraseList(st.phrases),
       },
+      phraseLimits: { items: num(obj(o.phrase_limits) && o.phrase_limits.items) || 50, chars: num(obj(o.phrase_limits) && o.phrase_limits.chars) || 40 },
       voices, wit,
       allowance: {
         chars: num(tts.used_chars), freeChars: num(tts.free_chars),
@@ -173,7 +188,7 @@
 
   /** The owner's settings as this page wants them: saved, then in flight, then not yet sent. */
   function settings() {
-    const base = S.cfg ? S.cfg.settings : { voice: null, rate: 1, wit: null };
+    const base = S.cfg ? S.cfg.settings : { voice: null, rate: 1, wit: null, phrases: [] };
     return Object.freeze(Object.assign({}, base, S.sending || {}, S.local || {}));
   }
   function change(patch) {
@@ -181,6 +196,19 @@
     clearTimeout(S.timer);
     S.timer = setTimeout(save, SAVE_DEBOUNCE_MS);
     renderValues();
+  }
+  /** For other modules (the words editor): only known keys, type-checked, then saved like any change. */
+  function updateSettings(patch) {
+    const p = obj(patch);
+    if (!p) return false;
+    const out = {}, r = num(p.rate);
+    if (typeof p.voice === 'string' && ID.test(p.voice)) out.voice = p.voice;
+    if (r !== null) out.rate = clampRate(r);
+    if (typeof p.wit === 'string' && ID.test(p.wit)) out.wit = p.wit;
+    if (Array.isArray(p.phrases) && p.phrases.length <= 100 && p.phrases.every(x => typeof x === 'string' && x.length <= 200)) out.phrases = p.phrases.slice();
+    if (!Object.keys(out).length) return false;
+    change(out);
+    return true;
   }
   /** One PUT at a time; changes made meanwhile go in the next one. */
   async function save() {
@@ -193,7 +221,8 @@
       ++S.seq; // an older GET still on its way must not overwrite what was just saved
       if (r && S.cfg) {
         const fresh = normal({ settings: r }).settings;
-        S.cfg = Object.assign({}, S.cfg, { settings: { voice: fresh.voice || S.cfg.settings.voice, rate: fresh.rate, wit: fresh.wit || S.cfg.settings.wit } });
+        const phrases = Array.isArray(r.phrases) ? fresh.phrases : Array.isArray(body.phrases) ? phraseList(body.phrases) : S.cfg.settings.phrases;
+        S.cfg = Object.assign({}, S.cfg, { settings: { voice: fresh.voice || S.cfg.settings.voice, rate: fresh.rate, wit: fresh.wit || S.cfg.settings.wit, phrases } });
       }
       flash('ok', 'Saved.');
       log('info', 'Voice settings saved');
@@ -317,7 +346,7 @@
     const track = mk('span', 'track'); track.setAttribute('aria-hidden', 'true'); track.append(mk('i'));
     const st = mk('span', 'st', 'Off'); st.setAttribute('aria-hidden', 'true');
     b.append(track, st);
-    b.addEventListener('click', () => onPress(b.getAttribute('aria-pressed') !== 'true'));
+    b.addEventListener('click', (e) => onPress(b.getAttribute('aria-pressed') !== 'true', e));
     row.append(t, b);
     return { row, button: b, help: d };
   }
@@ -363,9 +392,19 @@
     const sp = select('vSpeak', 'Speak replies', '', SPEAKS, (v) => setDevice({ speak: v }));
     UI.speak = sp.select; UI.speakHelp = sp.help;
     const auto = toggle('vAuto', 'Send what I say straight away', 'Off: your words wait in the message box so you can check them first.', (on) => setDevice({ autoSend: on }));
-    const keep = toggle('vKeep', 'Keep listening after replies', 'After a spoken reply JARVIS listens again if you start speaking within 3 seconds. After 3 replies in a row, tap the mic to carry on.', (on) => setDevice({ keepListening: on }));
+    const keep = toggle('vKeep', 'Keep listening after replies', 'After a spoken reply JARVIS keeps listening. If you say nothing for 20 seconds he tells you and switches to the keyboard.', (on) => setDevice({ keepListening: on }));
     UI.auto = auto.button; UI.keep = keep.button;
-    UI.devSec.append(eng.row, sp.row, auto.row, keep.row, fin.row);
+    const A = window.JarvisAudio;
+    const mic = toggle('vMic', 'Microphone on this device', 'Off cuts the microphone completely until you switch it on here or with the mic button. It stays off after a reload.', (on, e) => { if (!A) return; if (on) { if (e && e.isTrusted) A.unlock('panel'); } else A.lock('panel'); renderValues(); });
+    const intr = select('vInterrupt', 'Interrupt JARVIS by', 'Automatic: speaking over earphones, "Jarvis" or "stop" on speakers. In "Jarvis or stop" mode JARVIS gets quieter when you talk over him and sends a clip of up to 2.5 seconds to Google Cloud speech to check for a command; the words are dropped unless they are one. ' + 'Clips are sent only during a voice conversation you started, never while a typed message is answered aloud. A clip that begins with "Jarvis" becomes your next turn. ' + 'With the browser\'s own listening engine the microphone is closed while JARVIS speaks, so there only tapping, Esc or "Hey Jarvis" stops him. ' + 'The "Hey Jarvis" model listens only while JARVIS speaks, unless you switch it on below.', INTERRUPTS, (v) => setDevice({ interruptBy: v }));
+    const fol = select('vFollow', 'Wait for me to start speaking', 'How long JARVIS listens for your next words after he finishes a reply.', FOLLOWS, (v) => setDevice({ followUpS: Number(v) }));
+    const lp = select('vLongPause', 'Switch to the keyboard after', 'If you say nothing for this long, JARVIS tells you and switches to the keyboard.', LONG_PAUSES, (v) => setDevice({ longPauseS: Number(v) }));
+    const es = select('vEndSilence', 'Pause allowed mid-sentence', 'How long you can pause before JARVIS decides you have finished. Shorter is quicker to answer.', END_SILENCES, (v) => setDevice({ endSilenceMs: Number(v) }));
+    const ci = toggle('vCheckIn', 'Check in when the room keeps talking', 'After 8 replies in a row without a tap, JARVIS asks whether to keep listening, in case a TV is talking to him.', (on) => setDevice({ checkIn: on }));
+    const cu = toggle('vCues', 'Sound cues', 'Short tones when listening starts and when the microphone goes off.', (on) => setDevice({ cues: on }));
+    UI.mic = mic.button; UI.interrupt = intr.select; UI.follow = fol.select; UI.longPause = lp.select; UI.endSilence = es.select;
+    UI.checkIn = ci.button; UI.cues = cu.button;
+    UI.devSec.append(mic.row, eng.row, sp.row, auto.row, keep.row, intr.row, fol.row, lp.row, es.row, ci.row, cu.row, fin.row);
     // "Hey Jarvis": only when the wake-word module is here and works in this browser
     const wake = toggle('vWake', 'Say "Hey Jarvis"', 'This device only, off by default. Listens on this device; no audio leaves it until you say "Hey Jarvis".', (on) => setDevice({ wake: on }));
     UI.wake = wake.button;
@@ -380,8 +419,11 @@
     UI.allow = mk('p', 'vallow'); UI.allow.id = 'vAllow';
     UI.allowFine = mk('p', 'bfine'); UI.allowFine.id = 'vAllowFine';
     UI.useSec.append(UI.allow, UI.allowFine);
-    box.append(UI.state, UI.status, UI.voiceSec, UI.rateSec, UI.witSec, UI.devSec, UI.useSec);
+    UI.slots = {};
+    ['devices', 'phrases', 'pace'].forEach(name => { UI.slots[name] = mk('div', 'vslot'); UI.slots[name].id = 'vSlot' + name[0].toUpperCase() + name.slice(1); });
+    box.append(UI.state, UI.status, UI.voiceSec, UI.rateSec, UI.witSec, UI.devSec, UI.slots.devices, UI.slots.phrases, UI.slots.pace, UI.useSec);
     S.built = true;
+    emit('jarvis:voice-panel', { built: true });
   }
   const rateText = (r) => r.toFixed(2) + '×';
 
@@ -471,7 +513,7 @@
   }
   const WORDS = { cloud: 'Google Cloud', browser: 'this browser', none: 'not available here' };
   const WAKE_WORDS = { loading: 'Loading the wake word…', on: 'Listening for ‘Hey Jarvis’', paused: 'Paused while JARVIS speaks or listens',
-    resume: 'Paused: tap anywhere on the page to resume ‘Hey Jarvis’', error: '' };
+    resume: 'Paused: tap anywhere on the page to resume ‘Hey Jarvis’', micoff: 'Off while the microphone is switched off', error: '' };
 
   function renderValues() {
     if (!S.built) return;
@@ -490,12 +532,22 @@
     UI.engineHelp.textContent = `Now: ${WORDS[inputEngine()]}. Google Cloud keeps your audio in your own project (60 free minutes a month); this browser's recognition is free and shows your words as you speak, but your audio goes to the browser's maker.`;
     UI.speakHelp.textContent = `Out loud with ${WORDS[outputEngine()]}. "When I speak" answers spoken messages aloud; typed ones stay quiet.`;
     setPressed(UI.auto, device.autoSend); setPressed(UI.keep, device.keepListening); setPressed(UI.wake, device.wake);
+    setPressed(UI.mic, !(window.JarvisAudio && window.JarvisAudio.locked()));
+    setPressed(UI.checkIn, device.checkIn); setPressed(UI.cues, device.cues);
+    UI.interrupt.value = device.interruptBy;
+    pick(UI.follow, device.followUpS, ' seconds'); pick(UI.longPause, device.longPauseS, ' seconds'); pick(UI.endSilence, device.endSilenceMs, ' ms');
     const W = window.JarvisWake;
     UI.wakeRow.hidden = !(W && typeof W.supported === 'function' && safe(() => W.supported()));
     const ws = S.wake.state;
     UI.wakeChip.textContent = ws === 'error' ? S.wake.note || 'Couldn\'t start ‘Hey Jarvis’.' : WAKE_WORDS[ws] || '';
     UI.wakeChip.className = 'vchip' + (ws === 'on' ? ' on' : ws === 'error' ? ' bad' : '');
     UI.wakeChip.hidden = !UI.wakeChip.textContent;
+  }
+  /** Show a stored value that is not one of the listed options (the setting accepts a wider range). */
+  function pick(sel, v, unit) {
+    const key = String(v);
+    if (!Array.from(sel.options).some(o => o.value === key)) { const o = mk('option', '', key + unit); o.value = key; sel.append(o); }
+    sel.value = key;
   }
   const safe = (fn) => { try { return !!fn(); } catch (_) { return false; } };
   function render() {
@@ -536,6 +588,7 @@
     if (!UI.wakeLive) return;
     UI.wakeLive.textContent = st === 'error' ? S.wake.note || 'Couldn\'t start ‘Hey Jarvis’.' : st === 'off' ? '' : WAKE_WORDS[st] || '';
   }
+  document.addEventListener('jarvis:mic-lock', renderValues);
   document.addEventListener('jarvis:wake', (e) => {
     const d = e.detail || {};
     S.wake = { state: typeof d.state === 'string' ? d.state : 'off', note: typeof d.note === 'string' ? d.note.slice(0, 200) : '' };
@@ -563,5 +616,7 @@
     speaker,
     visual: () => (visualFn ? visualFn() : null),
     setVisual(fn) { if (!visualFn && typeof fn === 'function') visualFn = fn; },
+    panelSlot: (name) => (S.built && own(UI.slots, name) ? UI.slots[name] : null),
+    updateSettings,
   });
 })();

@@ -37,6 +37,18 @@ APP_ASSETS: dict[str, str] = {
     "console-voice-speech.js": _JS,  # slice 9: reply → speakable chunks, Web Audio playback queue
     "console-voice.js": _JS,  # slice 9: Voice panel, voice settings, engines
     "console-voice-mic.js": _JS,  # slice 9: composer mic, spoken turns, "Hey Jarvis" wiring
+    "console-voice-commands.js": _JS,  # R5 D12: the local voice-command router (core)
+    "console-voice-devices-match.js": _JS,  # R5 D13: device matching and kind words (pure)
+    "console-voice-devices.js": _JS,  # R5 D13: audio route (output / input devices)
+    "console-voice-devices-panel.js": _JS,  # R5 D13: Voice -> Sound devices
+    "console-voice-pace.js": _JS,  # R5 D15: sound cues and the timing line
+    "console-voice-phrases.js": _JS,  # R5 D16: Voice -> Words to recognise
+    "console-voice-barge.js": _JS,  # R5 D7: speak-to-interrupt gate and policy
+    "console-voice-conversation.js": _JS,  # R5 D4: follow-up, standby, long pause, check-in
+    "console-voice-wake.js": _JS,  # R5: "Hey Jarvis" controller, moved out of the mic script
+    "console-voice-micoff.js": _JS,  # R5 D11: the mic-off button, shortcut and announcements
+    "console-voice-loop-glue.js": _JS,  # R5: barge, check-in and handover glue (from mic.js)
+    "console-voice-loop-browser.js": _JS,  # R5: the browser engine's turn (from mic.js)
     "voice-capture-worklet.js": _JS,  # slice 9: AudioWorkletProcessor (downsample to 16 kHz)
     "console-3d.js": _JS,  # three.js scenes (ES module; loads three lazily, 2D fallback)
     "console-3d-scenes.js": _JS,  # Core / Globe / Construct scene builders (ES module)
@@ -93,6 +105,7 @@ APP_ASSETS: dict[str, str] = {
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",
     "console-voice.css": "text/css",
+    "console-voice-devices.css": "text/css",
     "console-permissions.css": "text/css",
 }
 

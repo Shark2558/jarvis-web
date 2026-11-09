@@ -124,7 +124,7 @@ class VitalsFake:
         return self.b
 
 
-# ---- the reminder route ----------------------------------------------------------------------------
+# ---- the reminder route --------------------------------------------------------------------------
 @dataclass
 class GatewayFake:
     result: GatewayResult = field(

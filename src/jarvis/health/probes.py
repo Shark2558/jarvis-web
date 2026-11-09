@@ -30,6 +30,7 @@ from jarvis.integrations.google import (
 from jarvis.llm.router import BrainHealth
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs
+from jarvis.telegram.client import TelegramError
 from jarvis.web.ports import UsageReporter
 
 log = get_logger(__name__)
@@ -44,6 +45,7 @@ Check = Callable[[str], Awaitable[ProbeOutcome | None]]
 BrainReader = Callable[[], BrainHealth]
 Ping = Callable[[], Awaitable[object]]
 Clock = Callable[[], float]
+Configured = Callable[[str], Awaitable[bool]]
 
 
 @dataclass(frozen=True)
@@ -155,13 +157,49 @@ def google_probe(google: GoogleConnector) -> Probe:
     return Probe(key="google", label=LABELS["google"], check=check)
 
 
-# ---- Telegram ----------------------------------------------------------------------------------
-def telegram_probe(client: TelegramLike) -> Probe:
-    async def check(_uid: str) -> ProbeOutcome:
-        await client.call("getMe")  # a failure is classified by run_probe
+# ---- Telegram (R5.1 D4) ------------------------------------------------------------------------
+TOKEN_REFUSED = "the bot token was refused"
+TELEGRAM_UNREACHABLE = "Telegram could not be reached"
+TELEGRAM_REFUSED = "Telegram refused the check"
+_REFUSED_TOKEN_REASONS = frozenset({"HTTP 401", "HTTP 404"})  # Bot API: bad / revoked token
+_UNREACHABLE_REASON = "could not reach Telegram"  # TelegramClient: network or httpx timeout
+TELEGRAM_SLACK_S = 0.5  # the probe's own timeout answers "could not be reached", not run_probe's
+
+
+def _telegram_failure(exc: TelegramError) -> ProbeOutcome:
+    """Our own words from `TelegramError.reason` (itself fixed text from the client)."""
+    if exc.reason in _REFUSED_TOKEN_REASONS:
+        return _down(TOKEN_REFUSED)
+    if exc.reason == _UNREACHABLE_REASON:
+        return _down(TELEGRAM_UNREACHABLE)
+    return _down(TELEGRAM_REFUSED)
+
+
+def telegram_probe(
+    client: TelegramLike,
+    *,
+    configured: Configured | None = None,
+    timeout_s: float = PROBE_TIMEOUT_S,
+) -> Probe:
+    """`configured(uid)`: the owner has a paired Telegram chat (the bot token's presence is the
+    wiring's: no token, no probe). Not paired -> None (left out of the report: "not set up", never
+    "the check itself failed"). None keeps the R4 behaviour (every owner is checked)."""
+    slack = TELEGRAM_SLACK_S if timeout_s > 2 * TELEGRAM_SLACK_S else timeout_s / 2
+    inner_s = timeout_s - slack
+
+    async def check(uid: str) -> ProbeOutcome | None:
+        if configured is not None and not await configured(uid):
+            return None
+        try:
+            async with asyncio.timeout(inner_s):
+                await client.call("getMe")
+        except TimeoutError:
+            return _down(TELEGRAM_UNREACHABLE)
+        except TelegramError as exc:
+            return _telegram_failure(exc)
         return _ok("Telegram answers")
 
-    return Probe(key="telegram", label=LABELS["telegram"], check=check)
+    return Probe(key="telegram", label=LABELS["telegram"], check=check, timeout_s=timeout_s)
 
 
 # ---- home bridge (R3 heartbeat) ----------------------------------------------------------------

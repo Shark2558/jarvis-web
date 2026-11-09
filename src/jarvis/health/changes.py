@@ -1,9 +1,12 @@
 # src/jarvis/health/changes.py
 """What to tell the owner after a check (R4 D6, integrator decisions D-B2 / D-B3). Pure: no I/O.
 
+- A status must hold for `DEBOUNCE_CHECKS` checks in a row before the owner is told (a one-check
   blip never alerts); a recovery needs `RECOVERY_CHECKS` clear checks in a row. Until then the
   owner's last-told status for that integration stands.
-  last-told status for that integration stands.
+- R5.1 D4: integrations in `WATCHED_ELSEWHERE` (the home bridge: the 5-minute watchdog's
+  `home_offline` / `home_offline_idle` alert owns it) never produce a message here and never hold
+  back "all clear"; they still appear in the report and the briefing.
 - Only `down` rings (`health_fault`). `degraded` goes out as a silent info note
   (`health_degraded`). Getting worse (degraded -> down) rings; getting better (down -> degraded)
   is a note. All faults gone -> `health_recovered`.
@@ -22,6 +25,7 @@ from jarvis.health.report import NOMINAL, compose_line
 
 DEBOUNCE_CHECKS = 2
 RECOVERY_CHECKS = 3  # a flapping probe gives one fault, not a fault / recovered loop
+WATCHED_ELSEWHERE = frozenset({"home"})  # R5.1 D4: the home watchdog alerts for it (no double ring)
 Streaks = Mapping[str, tuple[Status, int]]
 
 
@@ -58,6 +62,7 @@ def _confirmed(
     return {
         r.key: r.status if streaks[r.key][1] >= needed(r) else alerted.get(r.key, "ok")
         for r in results
+        if r.key not in WATCHED_ELSEWHERE
     }
 
 
@@ -84,4 +89,12 @@ def plan(report: HealthReport, alerted: Mapping[str, Status], prior: Streaks) ->
     return Plan(streaks=streaks, confirmed=confirmed, messages=tuple(messages))
 
 
-__all__ = ["DEBOUNCE_CHECKS", "RECOVERY_CHECKS", "Outgoing", "Plan", "next_streaks", "plan"]
+__all__ = [
+    "DEBOUNCE_CHECKS",
+    "RECOVERY_CHECKS",
+    "WATCHED_ELSEWHERE",
+    "Outgoing",
+    "Plan",
+    "next_streaks",
+    "plan",
+]

@@ -4,9 +4,13 @@ Scheduler job. Owners are checked in parallel (bounded), each forced fresh. One 
 is counted under `failed` and stops no one; so is an owner still unserved at the job's own
 deadline, or one whose result could not be saved.
 
-Cadence (R4 I2 F5): the tick fires only in the morning window (`0,30 4-11`), so this runs then,
-at most once per `CHECK_EVERY_S` per owner (in memory; a restart simply checks once early).
-An outage outside that window is found on demand (`systems_check`) or at the next window."""
+Cadence (R5.1 D4): ONE instance of this job rides both the morning tick (`0,30 4-11`) and the
+5-minute home watchdog (`Watchdog(..., extra=(..., job))`), so the check runs around the clock
+for every owner with a linked home, and at most once per `CHECK_EVERY_S` (15 minutes) per owner:
+the per-owner gate below is the instance's own, shared by both callers (in memory; a restart
+simply checks once early). The gate is taken before any await, so two callers at the same
+moment check an owner once. Owners without a linked home are checked by the morning tick only
+(the watchdog runs over linked homes) and on demand (`systems_check`, the pop-up)."""
 
 from __future__ import annotations
 
@@ -23,7 +27,7 @@ log = get_logger(__name__)
 TICK_BUDGET_S = 30.0
 TICK_DEADLINE_S = 40.0  # stop waiting before the tick cancels us, so the count is still returned
 MAX_PARALLEL_OWNERS = 8
-CHECK_EVERY_S = 1800.0  # at most one scheduled check per owner per half hour
+CHECK_EVERY_S = 900.0  # R5.1 D4: at most one scheduled check per owner per 15 minutes
 OWNERS_COUNT = "owners"
 FAULTS_COUNT = "faults"
 

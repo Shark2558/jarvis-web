@@ -5,6 +5,7 @@ of the probes; never model text and never a probe's reason (which can carry vend
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import Any
 
 from jarvis.health.models import LABELS, HealthReport, ProbeResult, Status
 
@@ -62,4 +63,34 @@ def compose_line(report: HealthReport, *, only: frozenset[str] | None = None) ->
     return " ".join(parts)
 
 
-__all__ = ["NOMINAL", "NOTHING_WATCHED", "compose_line", "rollup", "spoken_label"]
+def system_row(r: ProbeResult) -> dict[str, Any]:
+    """One integration as plain data (the panel's row, the stream's `result` event)."""
+    return {
+        "key": r.key,
+        "name": spoken_label(r),
+        "status": r.status,
+        "reason": r.reason,
+        "at": r.at,
+    }
+
+
+def view(report: HealthReport) -> dict[str, Any]:
+    """The report as plain data (shared by the tool, the HTTP routes and the stream). `spoken` is
+    the R4 one-line summary; the full briefing is added beside it by the callers (R5.1 D5)."""
+    return {
+        "overall": report.overall,
+        "spoken": compose_line(report),
+        "checked_at": report.at,
+        "systems": [system_row(r) for r in report.results],
+    }
+
+
+__all__ = [
+    "NOMINAL",
+    "NOTHING_WATCHED",
+    "compose_line",
+    "rollup",
+    "spoken_label",
+    "system_row",
+    "view",
+]

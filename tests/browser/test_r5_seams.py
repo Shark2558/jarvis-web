@@ -846,6 +846,23 @@ def test_status_words_for_standby_and_mic_off(make: Callable[..., Console]) -> N
     assert text() == "Listening"
 
 
+def test_the_real_page_defines_the_device_matcher_and_the_route(
+    make: Callable[..., Console],
+) -> None:
+    # B's matcher must load before the devices module in console.html itself (I1): its own tests
+    # add it with add_init_script, which would hide a missing <script> tag
+    c = make()
+    FakeVoice(c.page)
+    c.open()
+    assert ev(c, "typeof window.JarvisAudioMatch") == "object"
+    assert ev(c, "typeof window.JarvisAudioRoute") == "object"
+    assert ev(c, "Object.isFrozen(JarvisAudioMatch) && Object.isFrozen(JarvisAudioRoute)") is True
+    assert ev(c, "typeof window.JarvisAudioRoutePrefs") == "object"
+    # the devices module ran to its end: its voice commands are registered in the real page
+    assert ev(c, "JarvisVoiceCommands.owns('switch to my speaker', 'listening')") == "device.switch"
+    assert c.errors == [] and c.csp_violations() == []
+
+
 def test_the_stubs_have_their_frozen_shapes_and_change_nothing(
     make: Callable[..., Console],
 ) -> None:

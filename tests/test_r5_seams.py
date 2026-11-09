@@ -29,6 +29,7 @@ VOICE_ORDER = (
     "console-voice-commands.js",
     "console-wakeword.js",
     "console-voice.js",
+    "console-voice-devices-match.js",
     "console-voice-devices.js",
     "console-voice-devices-panel.js",
     "console-voice-pace.js",

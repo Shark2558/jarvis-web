@@ -1,0 +1,26 @@
+/* src/jarvis/api/static/console-connectors.css -- the Connectors panel (R5.1 Part A). Each service is an
+   Integrations-style card (.integ / .ihead / .istate / .ibody, console.css) with .actions + .btn.lift, a
+   .k label above a .dinput (console-drive.css) and the two-step .confirm row. Only the gaps between those
+   pieces are here. Touch targets >= 44 px on phones; no horizontal scroll. */
+#p-connectors .pbody{display:flex;flex-direction:column;gap:12px}
+#p-connectors .pbody > *{margin-top:0;margin-bottom:0}
+.cardx .ibody p.fine{margin-top:0}
+.cardx .ibody > * + *{margin-top:10px}
+.cardx .ibody .actions{margin-top:12px;flex-wrap:wrap}
+.cardx .actions .btn{flex:none;padding:0 14px}
+.cardx .cfield .k,.cardx .crow > .k{display:block;margin-bottom:5px}
+.cardx .dinput{display:block;width:100%;box-sizing:border-box}
+.cardx .confirm{margin-top:12px}
+.cardx .confirm[hidden],.cardx .actions[hidden],.cardx p[hidden]{display:none}
+.cenrol{display:grid;gap:12px}
+.cenrol:empty{display:none}
+.cenrol .crow{display:grid;gap:8px;padding:10px 0 0;border-top:1px solid var(--line-2)}
+.ctick{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.4;color:var(--ink-2)}
+.ctick input{flex:none;margin-top:2px}
+.cenrol .btn{justify-self:start;margin-top:0}
+@media (max-width: 560px){
+  .cardx .btn,.cardx .confirm .btn,.cardx .dinput{min-height:44px}
+  .cardx .actions .btn{flex:1 1 auto}
+  .ctick{min-height:44px;align-items:center}
+  .ctick input{width:22px;height:22px}
+}

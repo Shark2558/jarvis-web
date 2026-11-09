@@ -24,9 +24,8 @@
 //     chunk first; 'chunk' events carry at: performance.now().
 //     R5 workstream C (D9, D15): a first sentence over 140 characters is cut at its last clause break
 //     before 140 so the first /v1/voice/speak returns sooner; a chunk whose audio can't be decoded is
-//     said by the browser voice (a 422 nothing_to_say is still skipped); say(text, {fixed: true,
-//     voice?}) keeps that line's audio bytes for this page (8 entries, keyed by text + voice + speed;
-//     voice defaults to the saved one) - fixedCached() counts them.
+//     said by the browser voice (a 422 nothing_to_say is still skipped); say(text, {fixed: true}) keeps that line's audio bytes for this page (8 entries, keyed by text + the saved voice + speed
+//     the request uses; a meta.voice is ignored, as synth ignores it) - fixedCached() counts them.
 // Nothing here stores audio on disk; spoken text goes only to the console's own /v1/voice/speak.
 (() => {
   'use strict';
@@ -35,6 +34,8 @@
   const FIRST_MAX = 400;
   const FIRST_CLAUSE_MAX = 140; // R5 D15: a longer first sentence is cut at a clause break before this
   const FIRST_CLAUSE_MIN = 25;  // ... but never into a tiny first chunk
+  // clause breaks for the short first chunk: ", " "; " ": " and the Arabic / full-width / Devanagari marks
+  const CLAUSE_BREAKS = Object.freeze([', ', '; ', ': ', '،', '，', '।']);
   const SOFT = 200;          // after the first chunk, send once this much is ready (keeps playback fed)
   const MAX = 400;           // never more than this per chunk (the server caps 600 speakable chars)
   // "Mr. Smith", "e.g. this": a full stop after these is not the end of a sentence
@@ -111,11 +112,12 @@
     return out;
   }
 
-  /** A first sentence over FIRST_CLAUSE_MAX characters, cut at its last clause break (", " "; " " — ")
+  /** A first sentence over FIRST_CLAUSE_MAX characters, cut at its last clause break (", " "; " ": " "،" "，" "।" " — ")
    *  that leaves a first piece of at most FIRST_CLAUSE_MAX; [s] when it is short or has no break. */
   function firstCut(s) {
     if (s.length <= FIRST_CLAUSE_MAX) return [s];
-    const comma = Math.max(s.lastIndexOf(', ', FIRST_CLAUSE_MAX - 1), s.lastIndexOf('; ', FIRST_CLAUSE_MAX - 1));
+    const last = FIRST_CLAUSE_MAX - 1;
+    const comma = Math.max(...CLAUSE_BREAKS.map(b => s.lastIndexOf(b, last)));
     const dash = s.lastIndexOf(' — ', FIRST_CLAUSE_MAX);
     const end = Math.max(comma >= 0 ? comma + 1 : -1, dash);
     if (end < FIRST_CLAUSE_MIN) return [s];
@@ -250,6 +252,7 @@
   const BROWSER_CPS = 13;        // characters a second at rate 1 (slow on purpose: the watchdog never cuts speech)
   const WATCHDOG_SLACK_MS = 2500;
   const RESUME_WAIT_MS = 1500;   // an AudioContext the browser won't start (no tap yet) is given up on
+  const TONE_SLACK_MS = 300;     // a tone that has not ended this long after its length is given up on
   const DUCK_GAIN = 0.2, DUCK_RAMP_S = 0.06;
   const FIXED_CACHE_MAX = 8;     // fixed lines kept per page (R5 D15)
   const settle = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise(r => setTimeout(r, ms))]);
@@ -321,6 +324,9 @@
       if (c.state === 'suspended') await settle(c.resume(), RESUME_WAIT_MS);
       if (c.state === 'suspended') return false;
       return new Promise(resolve => {
+        let settled = false, guard = 0;
+        const done = (ok) => { if (settled) return; settled = true; clearTimeout(guard); resolve(ok); };
+        guard = setTimeout(() => done(false), ms + TONE_SLACK_MS);  // a stalled context never fires onended
         const osc = c.createOscillator(), env = c.createGain(), t = c.currentTime, end = t + ms / 1000;
         osc.frequency.value = freq;
         env.gain.setValueAtTime(0, t);
@@ -328,7 +334,7 @@
         env.gain.setValueAtTime(gain, Math.max(t + 0.009, end - 0.02));
         env.gain.linearRampToValueAtTime(0, end);
         osc.connect(env); env.connect(master);
-        osc.onended = () => { try { osc.disconnect(); env.disconnect(); } catch (_) {} resolve(true); };
+        osc.onended = () => { try { osc.disconnect(); env.disconnect(); } catch (_) {} done(true); };
         osc.start(t); osc.stop(end + 0.01);
       });
     }
@@ -343,10 +349,13 @@
     const fixedCache = new Map();
     function fixedKey(item) {
       if (!item.meta || item.meta.fixed !== true) return null;
+      // the voice and speed synth() actually sends (JarvisVoice.settings()), never meta.voice
       const V = window.JarvisVoice;
-      let voice = typeof item.meta.voice === 'string' ? item.meta.voice : '';
-      if (!voice && V && typeof V.settings === 'function') { try { voice = V.settings().voice || ''; } catch (_) {} }
-      return `${item.text}\u0001${voice}\u0001${rate}`;
+      let voice = '', speed = rate;
+      if (V && typeof V.settings === 'function') {
+        try { const st = V.settings(); voice = st.voice || ''; if (typeof st.rate === 'number') speed = st.rate; } catch (_) {}
+      }
+      return `${item.text}\u0001${voice}\u0001${speed}`;
     }
     function remember(key, bytes) {
       fixedCache.delete(key);
@@ -356,7 +365,7 @@
     /** The audio bytes for an item: from the fixed-line cache, or from synth(). */
     function bytesFor(item, key) {
       const hit = key ? fixedCache.get(key) : null;
-      if (hit) { remember(key, hit); return Promise.resolve(hit.slice(0)); }
+      if (hit) return Promise.resolve(hit.slice(0));
       return Promise.resolve().then(() => o.synth(item.text, item.ctrl.signal, item.meta));
     }
     async function decoded(item, buf, key) {
@@ -370,8 +379,8 @@
       if (item.started) return;
       item.started = true;
       item.ctrl = new AbortController();
-      const key = fixedKey(item);
-      item.audio = bytesFor(item, key).then(buf => decoded(item, buf, key));
+      const key = fixedKey(item), hit = !!key && fixedCache.has(key);
+      item.audio = bytesFor(item, key).then(buf => decoded(item, buf, hit ? null : key)); // a hit is not re-kept
       item.audio.catch(() => {}); // handled where it is awaited
     }
     function fetchAhead() { if (!useBrowser) queue.slice(0, 2).forEach(fetchItem); }

@@ -190,29 +190,58 @@ def test_a_line_not_marked_fixed_is_never_cached(make: Callable[..., Console]) -
     assert c.page.evaluate("JarvisVoice.speaker.fixedCached()") == 0
 
 
-def test_the_cache_is_keyed_by_voice_and_speed_and_holds_eight(
+def test_the_cache_is_keyed_by_the_voice_and_speed_the_request_uses_and_holds_eight(
     make: Callable[..., Console],  # noqa: F811
 ) -> None:
     c = make(scripts=(FAKE_SYNTH,))
     fake = FakeVoice(c.page)
     c.open()
     line = "Switching to the keyboard, Sir."
-    c.page.evaluate(SAY_JS, [[line], {"fixed": True, "voice": "en-GB-Studio-B"}])
-    c.page.evaluate(SAY_JS, [[line], {"fixed": True, "voice": "en-GB-Studio-B"}])
-    assert len(fake.spoken()) == 1
-    c.page.evaluate(SAY_JS, [[line], {"fixed": True, "voice": "en-GB-Chirp3-HD-Charon"}])
-    assert len(fake.spoken()) == 2  # another voice: another entry
-    c.page.evaluate("JarvisVoice.speaker.setRate(1.1)")
-    c.page.evaluate(SAY_JS, [[line], {"fixed": True, "voice": "en-GB-Studio-B"}])
-    assert len(fake.spoken()) == 3  # another speed: another entry
+    c.page.evaluate(SAY_JS, [[line], {"fixed": True}])
+    c.page.evaluate(SAY_JS, [[line], {"fixed": True}])
+    assert len(fake.spoken()) == 1  # same voice and speed: a hit
+    c.page.evaluate("JarvisVoice.updateSettings({ voice: 'en-GB-Chirp3-HD-Charon' })")
+    c.page.evaluate(SAY_JS, [[line], {"fixed": True}])
+    assert len(fake.spoken()) == 2  # another voice: fetched again
+    c.page.evaluate("JarvisVoice.updateSettings({ rate: 1.1 })")
+    c.page.evaluate(SAY_JS, [[line], {"fixed": True}])
+    assert len(fake.spoken()) == 3  # another speed: fetched again, even with no setRate call
+    bodies = [p["body"] for p in fake.to("POST", "/v1/voice/speak")]
+    assert bodies[-1]["rate"] == 1.1 and bodies[1]["voice"] == "en-GB-Chirp3-HD-Charon"
+    c.page.evaluate(SAY_JS, [[line], {"fixed": True}])
+    assert len(fake.spoken()) == 3  # and kept under the new key
     for i in range(10):
         c.page.evaluate(SAY_JS, [[f"Fixed line number {i}."], {"fixed": True}])
     assert c.page.evaluate("JarvisVoice.speaker.fixedCached()") == 8
     before = len(fake.spoken())
-    c.page.evaluate(SAY_JS, [[line], {"fixed": True, "voice": "en-GB-Studio-B"}])
+    c.page.evaluate(SAY_JS, [[line], {"fixed": True}])
     assert len(fake.spoken()) == before + 1  # the oldest was pushed out
     c.page.evaluate(SAY_JS, [["Fixed line number 9."], {"fixed": True}])
     assert len(fake.spoken()) == before + 1  # the newest is still there
+
+
+def test_a_meta_voice_that_synth_ignores_does_not_change_the_cache_key(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    c = make(scripts=(FAKE_SYNTH,))
+    fake = FakeVoice(c.page)
+    c.open()
+    line = "Microphone off, Sir."
+    c.page.evaluate(SAY_JS, [[line], {"fixed": True, "voice": "en-GB-Studio-B"}])
+    c.page.evaluate(SAY_JS, [[line], {"fixed": True, "voice": "en-GB-Chirp3-HD-Charon"}])
+    assert len(fake.spoken()) == 1  # the request never carried meta.voice, so one entry
+
+
+def test_a_cache_hit_plays_without_a_second_fetch_or_a_second_remember(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    c = make(scripts=(FAKE_SYNTH,))
+    fake = FakeVoice(c.page)
+    c.open()
+    for _ in range(4):
+        c.page.evaluate(SAY_JS, [["Handing over, Sir."], {"fixed": True}])
+    assert len(fake.spoken()) == 1 and c.page.evaluate("JarvisVoice.speaker.fixedCached()") == 1
+    assert c.errors == []
 
 
 # ============================================================== sound cues (D15)
@@ -294,6 +323,152 @@ def test_the_loop_events_play_the_cues(make: Callable[..., Console]) -> None:  #
     _wait(c, "() => window.__tones.length >= 2")
 
 
+# ---- fixer round: cues that cannot hang, suspended contexts, false triggers --------------------
+STALLED_OSC = """
+(() => {
+  const real = AudioContext.prototype.createOscillator;
+  AudioContext.prototype.createOscillator = function () {
+    const o = real.call(this);
+    o.start = () => {};          // never starts, so onended never fires
+    return o;
+  };
+})();
+"""
+SUSPENDED = """
+(() => {
+  Object.defineProperty(AudioContext.prototype, 'state', { get: () => 'suspended' });
+  AudioContext.prototype.resume = () => new Promise(() => {});   // the browser never lets it start
+})();
+"""
+
+
+def test_a_cue_whose_tone_never_ends_still_settles_false_and_quickly(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    c = make(scripts=(STALLED_OSC,))
+    FakeVoice(c.page)
+    c.open()
+    res = c.page.evaluate(
+        """async () => { const t0 = performance.now(); const ok = await JarvisVoicePace.cue('handover');
+          return [ok, performance.now() - t0]; }"""
+    )
+    assert res[0] is False and res[1] < 1500
+
+
+def test_a_speaker_tone_that_never_settles_cannot_hold_the_cue(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    c = make(scripts=(TONES,))
+    FakeVoice(c.page)
+    c.open()
+    res = c.page.evaluate(
+        """async () => { JarvisVoice.speaker.tone = () => new Promise(() => {});
+          const t0 = performance.now(); const ok = await JarvisVoicePace.cue('listen');
+          return [ok, performance.now() - t0]; }"""
+    )
+    assert res[0] is False and res[1] < 3500
+
+
+def test_a_suspended_context_costs_one_wait_not_one_per_step(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    c = make(scripts=(SUSPENDED, TONES))
+    FakeVoice(c.page)
+    c.open()
+    _arm(c)
+    res = c.page.evaluate(
+        """async () => { const t0 = performance.now(); const ok = await JarvisVoicePace.cue('handover');
+          return [ok, performance.now() - t0, window.__tones.length]; }"""
+    )
+    assert res[0] is False and res[1] < 2500 and res[2] == 1
+
+
+def test_returning_to_listening_after_an_empty_transcript_plays_no_second_rise(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    c = make(scripts=(TONES,))
+    FakeVoice(c.page)
+    c.open()
+    _arm(c)
+    fire = "(d) => document.dispatchEvent(new CustomEvent(d[0], { detail: d[1] }))"
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "listening"}])
+    _wait(c, "() => window.__tones.length >= 2")
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "thinking"}])
+    _wait(c, "() => window.__tones.length >= 3")
+    c.page.wait_for_timeout(600)  # past the de-duplication window
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "listening"}])  # empty transcript
+    c.page.wait_for_timeout(400)
+    assert len(c.page.evaluate("window.__tones")) == 3
+    # a real turn (words accepted) and then listening again does rise
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "thinking"}])  # tick (1 tone)
+    c.page.evaluate(fire, ["jarvis:turn", {"channel": "voice"}])
+    c.page.evaluate(fire, ["jarvis:voice-loop", {"state": "listening"}])  # rise (2 tones)
+    _wait(c, "() => window.__tones.length >= 6")
+
+
+def test_an_unknown_engine_is_reported_as_unknown_and_a_re_mark_clears_the_old_one(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    c = make(scripts=(TIMING,))
+    FakeVoice(c.page)
+    c.open()
+    for stage in ("heard", "words", "answer", "voice"):
+        c.page.evaluate(f"JarvisVoicePace.mark('{stage}')")
+    assert c.page.evaluate("window.__timing[0].engine") == "unknown"
+    _turn(c)
+    _turn(c)
+    assert c.page.evaluate("performance.getEntriesByName('jarvis:heard').length") == 1
+
+
+@pytest.mark.parametrize(
+    ("text", "head_len"),
+    [
+        ("x" * 139 + "," + " " + "tail words follow here to make it long enough", 140),
+        ("ab " * 46 + "end", None),
+    ],
+)
+def test_the_140_boundary_cases(pure: Any, text: str, head_len: int | None) -> None:  # noqa: F811
+    out = pure.evaluate(CHUNK_JS, [text + ".", None])
+    if head_len is None:
+        assert out == [text + "."]  # 141 characters, nowhere to cut
+    else:
+        assert len(out[0]) == head_len and out[0].endswith(",")
+
+
+def test_exactly_140_characters_is_left_whole(pure: Any) -> None:  # noqa: F811
+    text = ("word " * 40)[:139] + "."
+    assert len(text) == 140
+    assert pure.evaluate(CHUNK_JS, [text, None]) == [text]
+
+
+@pytest.mark.parametrize(
+    ("mark", "gap"),
+    [("،", " "), ("，", ""), ("।", " "), (": ", "")],
+)
+def test_arabic_fullwidth_devanagari_commas_and_colons_are_clause_breaks(
+    pure: Any,  # noqa: F811
+    mark: str,
+    gap: str,
+) -> None:
+    body = "hello world " * 7
+    text = body + mark + gap + "and then the rest of the very long line goes on " * 3 + "end."
+    out = pure.evaluate(CHUNK_JS, [text, None])
+    assert len(out) >= 2 and len(out[0]) <= 140 and out[0].rstrip().endswith(mark.strip())
+
+
+def test_a_malayalam_and_a_hindi_sentence_are_cut_at_their_own_breaks(pure: Any) -> None:  # noqa: F811
+    ml = ("ഇന്ന് തിരുവനന്തപുരത്തെ കാലാവസ്ഥ വളരെ നല്ലതാണ്, " * 5) + "നന്ദി."
+    out = pure.evaluate(CHUNK_JS, [ml, None])
+    assert len(out[0]) <= 140 and out[0].endswith(",") and len(out) >= 2
+    hi2 = (
+        "आज का दिन बहुत ही अच्छा है और मौसम भी साफ है । "
+        + "बाकी बातें बाद में बताता हूँ और बहुत कुछ " * 3
+        + "।"
+    )
+    out = pure.evaluate(CHUNK_JS, [hi2, None])
+    assert len(out) >= 2 and len(out[0]) <= 140 and out[0].endswith("।")
+
+
 # ============================================================== the timing line (D15)
 def _turn(c: Console, *, spoke: bool = False, wait_ms: int = 30) -> None:
     fire = "(d) => document.dispatchEvent(new CustomEvent(d[0], { detail: d[1] }))"
@@ -323,13 +498,14 @@ def test_a_spoken_turn_gives_every_stage_and_the_panel_line(
     t = c.page.evaluate("window.__timing[0]")
     assert t["kind"] == "reply" and t["engine"] == "cloud"
     assert t["heard"] == 1600  # no VAD mark given: the pause the owner allowed is the estimate
+    assert t["estimated"] is True
     for k in ("words", "answer", "voice"):
         assert 0 <= t[k] <= 2000, k
     assert t["total"] == t["heard"] + t["words"] + t["answer"] + t["voice"]
     assert c.page.evaluate("JarvisVoicePace.last()") == {k: t[k] for k in t if k != "kind"}
     line = c.page.locator("#vPaceLine").text_content()
     assert re.fullmatch(
-        r"Last reply: \d+\.\d s \(listening 1\.6 · words \d+\.\d · "
+        r"Last reply: \d+\.\d s \(listening ~1\.6 · words \d+\.\d · "
         r"answer \d+\.\d · voice \d+\.\d\)",
         line,
     ), line
@@ -345,10 +521,12 @@ def test_a_spoke_mark_replaces_the_estimate_with_the_real_listening_time(
     c = make(device={"endSilenceMs": 2500}, scripts=(TIMING,))
     FakeVoice(c.page)
     c.open()
+    _voice_panel(c)
     _turn(c, spoke=True, wait_ms=60)
     _wait(c, "() => window.__timing.length >= 1")
     t = c.page.evaluate("window.__timing[0]")
-    assert 50 <= t["heard"] < 1500
+    assert 50 <= t["heard"] < 1500 and t["estimated"] is False
+    assert "listening ~" not in c.page.locator("#vPaceLine").text_content()
 
 
 def test_a_typed_message_or_an_unspoken_reply_gives_no_timing(
@@ -589,3 +767,43 @@ def test_the_helper_cleans_like_the_server_and_offers_the_list_only_where_suppor
             constructor(p, b) { this.phrase = p; this.boost = b; } };
           const r = { phrases: [] }; return [JarvisVoicePhrases.apply(r), r.phrases.length]; }"""
     ) == [True, 1]
+
+
+def test_file_separator_controls_become_spaces_like_the_server(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    c = make()
+    PhrasesVoice(c.page)
+    c.open()
+    clean = "(s) => JarvisVoicePhrases.clean(s)"
+    for code in (0x1C, 0x1D, 0x1E, 0x1F):
+        assert c.page.evaluate(clean, f"Tri{chr(code)}van") == "Tri van"
+    assert c.page.evaluate(clean, "a" + "́" * 7) is None  # a stack of accents, as on the server
+    assert c.page.evaluate(clean, "a" + "́" * 3) is not None
+
+
+def test_a_server_refusal_is_also_shown_in_the_words_note(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    c = make()
+    fake = PhrasesVoice(c.page)
+    fake.put_status, fake.put_code = 422, "input_rejected"
+    c.open()
+    _phrases(c)
+    c.page.locator("#vPhraseIn").fill("Newcomer")
+    c.page.locator("#vPhraseAdd").click()
+    c.page.locator("#vPhraseNote.bad").wait_for()
+    assert str(c.page.locator("#vPhraseNote").text_content()).startswith("Couldn't save")
+
+
+def test_apply_is_safe_when_the_recogniser_has_no_phrase_support(
+    make: Callable[..., Console],  # noqa: F811
+) -> None:
+    c = make()
+    view = voice_view()
+    view["settings"]["phrases"] = ["Kochi"]
+    PhrasesVoice(c.page, view)
+    c.open()
+    assert c.page.evaluate("JarvisVoicePhrases.apply({ grammars: null })") is False
+    assert c.page.evaluate("JarvisVoicePhrases.apply(null)") is False
+    assert c.errors == []

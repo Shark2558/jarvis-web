@@ -13,6 +13,8 @@
 (() => {
   'use strict';
   const DEFAULT_ITEMS = 50, DEFAULT_CHARS = 40;
+  const MAX_MARK_RUN = 4;            // most combining marks in a row (as on the server)
+  const SAVE_WATCH_MS = 8000;        // a refusal this soon after our save is about our words
   const PUNCT = "-'.&";
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const V = () => window.JarvisVoice || null;
@@ -30,21 +32,29 @@
   function clean(raw, maxChars) {
     if (typeof raw !== 'string') return null;
     const max = maxChars || limits().chars;
-    const text = raw.normalize('NFC').replace(/’/g, "'").replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}]/gu, (c) => (/\s/.test(c) ? ' ' : ''))
+    const text = raw.normalize('NFC').replace(/’/g, "'").replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}]/gu, (c) => (/\s|[\x1c-\x1f]/.test(c) ? ' ' : ''))
       .replace(/\s+/g, ' ').trim();
     if (!text || [...text].length > max || !/\p{L}/u.test(text)) return null;
-    for (const ch of text) if (!/[\p{L}\p{M}\p{Nd} ]/u.test(ch) && !PUNCT.includes(ch)) return null;
+    let run = 0;
+    for (const ch of text) {
+      if (!/[\p{L}\p{M}\p{Nd} ]/u.test(ch) && !PUNCT.includes(ch)) return null;
+      run = /\p{M}/u.test(ch) ? run + 1 : 0;
+      if (run > MAX_MARK_RUN) return null;
+    }
     return text;
   }
 
   // ---------------------------------------------------------------------------------- the panel
   const UI = {};
-  const known = (words, w) => words.some(x => x.toLowerCase() === w.toLowerCase());
+  let savedAt = 0;
+  const fold = (w) => w.normalize('NFKC').toLowerCase();
+  const known = (words, w) => words.some(x => fold(x) === fold(w));
 
   function save(next) {
     const v = V();
     if (!v || typeof v.updateSettings !== 'function') return false;
     const ok = v.updateSettings({ phrases: next });
+    savedAt = Date.now();
     render();
     return ok;
   }
@@ -124,10 +134,22 @@
     try { recognition.phrases = words.map(w => new Phrase(w, 1.0)); return true; } catch (_) { return false; }
   }
 
+  /** The panel's own save note says why a save failed; repeat a refusal here, by the words, for a few seconds. */
+  function watchNote() {
+    const src = document.getElementById('voiceNote');
+    if (!src || typeof MutationObserver !== 'function') return;
+    new MutationObserver(() => {
+      const text = src.textContent || '';
+      if (!UI.note || !savedAt || Date.now() - savedAt > SAVE_WATCH_MS) return;
+      if (/\bbad\b/.test(src.className) && text.startsWith("Couldn't save")) say(text, true);
+    }).observe(src, { childList: true, characterData: true, subtree: true, attributes: true });
+  }
+
   document.addEventListener('jarvis:voice-panel', render);
   document.addEventListener('jarvis:voice-config', render);
   document.addEventListener('jarvis:ready', render);
   render();
+  watchNote();
 
   window.JarvisVoicePhrases = Object.freeze({ clean, list, apply });
 })();

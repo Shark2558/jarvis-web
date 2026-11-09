@@ -10,8 +10,9 @@
 //     mark(stage, at?)                'spoke' | 'heard' | 'words' | 'answer' | 'voice': a performance.mark
 //         per stage of one spoken turn. The stages are also taken from the events a turn already fires,
 //         so the loop need not call it. A stage seen again starts the next turn.
-//     last() -> {heard, words, answer, voice, total, engine} (ms) | null
-// Fires: jarvis:voice-timing {kind: 'reply', heard, words, answer, voice, total, engine} once per spoken
+//     last() -> {heard, words, answer, voice, total, engine, estimated} (ms) | null; estimated: the
+//         listening figure is the configured pause, not measured (shown as "~1.2")
+// Fires: jarvis:voice-timing {kind: 'reply', heard, words, answer, voice, total, engine, estimated} once per spoken
 // turn, and {kind: 'barge', how, ms} for each interruption; plus a line in the event log.
 // Listens: jarvis:voice-loop, jarvis:mic-lock, jarvis:turn, jarvis:answer, jarvis:speech, jarvis:barge,
 // jarvis:voice-panel. Shows "Last reply: 3.1 s (listening 1.2 · words 0.6 · answer 0.9 · voice 0.4)" in
@@ -21,6 +22,8 @@
   const CUE_GAP_MS = 100;        // the loop starts its VAD this long after a cue ends (D15)
   const CUE_DEDUPE_MS = 500;
   const CUE_GAIN = 0.12;
+  const CUE_SLACK_MS = 300;      // a cue is given up on this long after its steps should have ended ...
+  const CUE_START_MS = 1500;     // ... plus the one wait a cold or suspended audio context may take to start
   const CUES = Object.freeze({
     listen: [{ freq: 660, ms: 70 }, { freq: 880, ms: 90 }],                       // rising
     heard: [{ freq: 1320, ms: 35, gain: 0.07 }],                                   // a soft tick
@@ -44,10 +47,20 @@
     const v = V(), d = v && typeof v.device === 'function' ? v.device() : null;
     return !d || d.cues !== false;
   }
-  async function play(steps, sp) {
-    let ok = false;
-    for (const s of steps) ok = (await sp.tone({ gain: CUE_GAIN, ...s })) || ok;
-    return ok;
+  /** The steps in order; stops at the first one that did not sound (a suspended context waits once). */
+  async function play(steps, sp, gate) {
+    for (const s of steps) {
+      if (gate.over || !(await sp.tone({ gain: CUE_GAIN, ...s }))) return false;
+    }
+    return true;
+  }
+  /** play() raced against the steps' total length + slack: a stalled audio context cannot hang the loop. */
+  function bounded(steps, sp) {
+    const gate = { over: false };
+    const limit = steps.reduce((sum, x) => sum + x.ms, 0) + CUE_SLACK_MS + CUE_START_MS;
+    let timer = 0;
+    const late = new Promise(resolve => { timer = setTimeout(() => { gate.over = true; resolve(false); }, limit); });
+    return Promise.race([play(steps, sp, gate).catch(() => false), late]).finally(() => clearTimeout(timer));
   }
   function cue(name) {
     const steps = Object.prototype.hasOwnProperty.call(CUES, name) ? CUES[name] : null;
@@ -55,7 +68,7 @@
     if (!steps || !sp || typeof sp.tone !== 'function' || !cuesOn() || sp.speaking()) return Promise.resolve(false);
     const now = performance.now(), prior = recent.get(name);
     if (prior && now - prior.at < CUE_DEDUPE_MS) return prior.p;
-    const p = play(steps, sp).catch(() => false);
+    const p = bounded(steps, sp);
     recent.set(name, { at: now, p });
     return p;
   }
@@ -72,6 +85,7 @@
     const t = num(at) !== null ? at : performance.now();
     if (Object.keys(rec).some(k => order(k) >= i)) rec = {};   // a stage seen again: the next turn
     rec[stage] = t;
+    try { performance.clearMarks('jarvis:' + stage); } catch (_) {}
     try { performance.mark('jarvis:' + stage, { startTime: t }); } catch (_) {}
     if (stage === 'voice') finish();
   }
@@ -82,12 +96,12 @@
   /** The stage lengths (ms) of a finished turn, or null when it was not a spoken-in, spoken-out turn. */
   function lengths(r) {
     if (r.heard === undefined || r.words === undefined || r.answer === undefined || r.voice === undefined) return null;
-    const listening = r.spoke !== undefined ? r.heard - r.spoke : endSilence();
+    const estimated = r.spoke === undefined;
+    const listening = estimated ? endSilence() : r.heard - r.spoke;
     const parts = { heard: listening, words: r.words - r.heard, answer: r.answer - r.words, voice: r.voice - r.answer };
     if (Object.values(parts).some(x => x < 0)) return null;
-    const total = parts.heard + parts.words + parts.answer + parts.voice;
-    return { heard: Math.round(parts.heard), words: Math.round(parts.words), answer: Math.round(parts.answer),
-      voice: Math.round(parts.voice), total: Math.round(total), engine: engine || 'cloud' };
+    const out = { heard: Math.round(parts.heard), words: Math.round(parts.words), answer: Math.round(parts.answer), voice: Math.round(parts.voice) };
+    return { ...out, total: out.heard + out.words + out.answer + out.voice, engine: engine || 'unknown', estimated };  // the total is the sum of what is shown
   }
   function finish() {
     const t = lengths(rec);
@@ -100,7 +114,7 @@
   }
   const secs = (ms) => (ms / MS_PER_S).toFixed(1);
   function line(t) {
-    return `${secs(t.total)} s (listening ${secs(t.heard)} · words ${secs(t.words)} · answer ${secs(t.answer)} · voice ${secs(t.voice)})`;
+    return `${secs(t.total)} s (listening ${t.estimated ? '~' : ''}${secs(t.heard)} · words ${secs(t.words)} · answer ${secs(t.answer)} · voice ${secs(t.voice)})`;
   }
 
   // ---------------------------------------------------------------------------------- panel line
@@ -119,10 +133,13 @@
 
   // ---------------------------------------------------------------------------------- events
   let loopState = 'idle';
+  let accepted = false;       // words were accepted since the loop last started thinking
   document.addEventListener('jarvis:voice-loop', (e) => {
     const state = e.detail && e.detail.state, prev = loopState;
     loopState = state;
-    if (state === 'listening' && prev !== 'listening') cue('listen');
+    if (state === 'thinking' && prev !== 'thinking') accepted = false;
+    const bounce = prev === 'thinking' && !accepted;   // an empty transcript: no second rise for noise
+    if (state === 'listening' && prev !== 'listening' && !bounce) cue('listen');
     else if (state === 'thinking' && prev === 'listening') { mark('heard'); cue('heard'); }
     else if (state === 'handover') cue('handover');
   });
@@ -131,9 +148,11 @@
     if (d.locked && LOCK_CUE_BY.includes(d.by)) cue('micoff');
   });
   document.addEventListener('jarvis:turn', (e) => {
+    if (e.detail && e.detail.channel === 'voice') accepted = true;
     if (e.detail && e.detail.channel === 'voice' && rec.heard !== undefined) mark('words');
   });
   document.addEventListener('jarvis:answer', (e) => {
+    if (e.detail && e.detail.channel === 'voice') accepted = true;
     if (e.detail && e.detail.channel === 'voice' && rec.words !== undefined) mark('answer');
   });
   document.addEventListener('jarvis:speech', (e) => {

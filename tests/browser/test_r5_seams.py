@@ -936,7 +936,13 @@ def test_the_modules_that_replaced_the_stubs_have_their_frozen_shapes(
     route = ["supported", "refresh", "current", "chooseOutput", "chooseInput", "outputKind"]
     assert keys("JarvisAudioRoute") == sorted([*route, "find", "on"])
     assert ev(c, "JarvisAudioRoute.outputKind()") in ("headphones", "speakers", "unknown")
-    # the listing is seeded first; `find` must answer with a real device, which `null` (the old stub) is not
+    # seed a device list first: `find` must answer a real device, which `null` (the old stub) is not
+    ev(
+        c,
+        "void (navigator.mediaDevices.enumerateDevices = () => Promise.resolve(["
+        "{ kind: 'audiooutput', deviceId: 'default', label: 'Default - Speakers (Realtek)' },"
+        "{ kind: 'audiooutput', deviceId: 'spk1', label: 'Speakers (Realtek)' }]))",
+    )
     ev(c, "JarvisAudioRoute.refresh()")
     found = ev(c, "JarvisAudioRoute.find('speaker')")
     assert isinstance(found, dict) and isinstance(found.get("id"), str) and found["id"], found

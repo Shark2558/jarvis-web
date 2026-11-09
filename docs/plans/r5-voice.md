@@ -141,8 +141,9 @@ Transition rules beyond the diagram:
 ### D3 · The microphone stays open for the whole voice conversation
 - From the first listen to the end of the conversation, `JarvisAudio` stays open through thinking and speaking. This lets an interruption be heard, and the next turn starts with no getUserMedia re-open delay.
 - The browser's mic indicator is therefore lit for the whole conversation, which is honest, and the off button sits right beside the mic (D11).
-- With the browser engine, `JarvisAudio` stays open next to SpeechRecognition. The code already does this when "Hey Jarvis" is on (`console-voice-mic.js` l.228).
+- **As built (I1):** this holds for the **cloud engine** only. With the **browser engine** the loop closes `JarvisAudio` between turns, as before R5 (SpeechRecognition records on its own), so there is no energy interruption there: only a tap, Esc or "Hey Jarvis" stops JARVIS. `JarvisAudio` stays open beside the recogniser only while "Hey Jarvis" standby is on. The Interrupt row's help text says so.
 - Android: if the recogniser fails with `audio-capture` while `JarvisAudio` is open, the loop closes `JarvisAudio` during browser listening turns and interruption falls back to tap for that page (D14).
+- A microphone chosen while the conversation holds it open takes over at the next listening turn: that turn's `open()` closes and reopens on the new device (subscribers kept) and capture fires `jarvis:audio-route {reason: 'input_live'}`, which clears the picker's "Pending" note (I1).
 
 ### D4 · No turn limit; follow-up window, standing by and the long pause are separate
 `MAX_HANDS_FREE` and `RELISTEN_START_MS` are removed. After a spoken reply ends (plus 350 ms, as today):
@@ -187,6 +188,7 @@ After the line: the composer gets focus, the microphone closes, and "Hey Jarvis"
   - Anything else, or silence, goes to handover. A TV rarely says "yes" on cue.
 - **Setting.** "Check in when the room keeps talking" (`checkIn`), default **on**. The owner can switch it off to get strictly no checks; that is an open question.
 - There is still no count cap: an owner talking at a normal pace never hits this.
+- **Absolute bound (as built, A's SH1).** Whatever `checkIn` says, 25 hands-free turns or 30 minutes since the last tap or key force the same check-in; a "yes" grants exactly 8 more turns. With `checkIn` off only the quick-turn rule above is off. Three empty turns in a row (noise, not a conversation) hand over.
 
 ### D7 · Speak to interrupt: the policy, and how JARVIS avoids interrupting himself
 Device setting "Interrupt JARVIS by" (`interruptBy`). This extends the two options in the brief:
@@ -299,6 +301,8 @@ CI asserts ≤ 0.6 s for the first row to allow for headless timing jitter. Owne
 
 "Manual" means a click, tap, Ctrl + Space or Ctrl + Shift + Space, all of which carry user activation. No timer, event, voice command, other module or reload can switch the mic on. Voice can't by construction, because nothing is listening.
 
+**Residual risk (accepted, SM1).** A script that can remove `localStorage['jarvis_mic_off_v1']` and then reload the page would come back unlocked. Such a script is same-origin and already owns the page (CSP `script-src 'self'`, no third-party script), so it could do worse; the lock defends against JARVIS's own code paths and other tabs' synthetic events (`storage` events must be trusted), not against code running as the console. When the storage write itself fails, the `jarvis:mic-lock` detail carries `persisted: false` and the owner is told the lock won't survive a reload.
+
 ### D12 · The local voice-command router (`window.JarvisVoiceCommands`)
 - It runs in the console **before** a transcript reaches the chat, inside `deliver()`. That covers listening turns, interruption turns and check clips, and it runs before the auto-send or "leave it in the box" choice.
 - Commands therefore work in No-AI mode and offline from the brain. They cost nothing beyond the transcription the utterance needed anyway.
@@ -333,9 +337,11 @@ JarvisVoiceCommands.PHRASES             // frozen JSON between /*PHRASES-BEGIN*/
 | `mic.off` (A) | mic off; switch off (the) mic; switch (the) mic off; mute (the) mic; mute yourself; stop listening (to me); don't listen (to me) | any state | stops speech, `lock('voice')` **first**, then speaks | "Microphone off, {h}." |
 | `speech.stop` (A) | stop; stop it; stop talking; stop speaking; stop there; wait; wait a moment; hold on; hang on; one moment; quiet; be quiet; enough; that's enough; pause; shush; cancel; never mind; forget it | speaking: stop and listen. Thinking: drop the answer (shown, not spoken) and listen. Listening: ignored | — |
 | `conversation.keyboard` (A) | keyboard; keyboard mode; switch to (the) keyboard; I'll type; let me type; typing mode; that's all; that'll be all; we're done; end (the) conversation; goodbye; bye | any state except off | handover (D5) | "I'll switch to the keyboard, {h}." |
-| `device.switch` (B) | switch to / change to / use / move (the sound) to / play (it) on / speak through + (my/the) X (instead), **only when X resolves** to a connected device, a nickname or a device word | any state except off | `chooseOutput`, or the Android / browser-voice line | "Switching to {name}, {h}." |
-| `device.input` (B) | use (my/the) X mic(rophone); listen through (my/the) X | any state except off | `chooseInput` (takes effect next turn) | "I'll listen through {name}, {h}." |
-| `device.list` (B) | what's connected; which devices are connected; list (my) (sound/audio) devices; which speaker are you using | any state except off | reads `current()` and the device list | "I'm speaking through {name}; also connected: …" |
+| `device.switch` (B) | switch to / change to / use / move (the sound) to / play (it) on / speak through + (my/the) X (instead), **only when X resolves** to a connected device, a nickname or a device word | any state except off | switches the output for **this page only** (a voice choice is not saved; a panel click is), or the Android / browser-voice line | "Switching to {kind}, {h}." (e.g. "your earphones"); name on screen: "Switching to {name}, {h}." |
+| `device.input` (B) | use (my/the) X mic(rophone); listen through (my/the) X | any state except off | switches the input for this page only; with the mic open it takes effect at the next listening turn | "I'll listen through {kind}, {h}." or "I'll use that microphone from the next time I open the mic, {h}."; name on screen |
+| `device.list` (B) | what's connected; which devices are connected; list (my) (sound/audio) devices; which speaker are you using | any state except off | reads `current()` and the device list | "You have {n} outputs: {kind words}. I'm speaking through {kind}; the names are on screen, {h}."; names on screen |
+
+- **Device names are never spoken (I1, binding; B's security review H1).** Spoken text goes to the cloud voice (`POST /v1/voice/speak`), so a device label or nickname ("Akash's AirPods") never appears in it: spoken device lines use kind words only ("your earphones", "the laptop speakers", "that device"). The name is shown on screen only. The loop speaks a `device.*` result's `say` once and leaves `#voiceLine` to the devices module, which shows the named line, or the same name-free line when there is no name (so it is visible with Speak replies: Never).
 
 - During a name-mode check clip, "Jarvis …" interrupts, and the rest (if any) becomes the next turn.
 - A transcript caught by the echo guard (D7) is never handled.
@@ -343,7 +349,7 @@ JarvisVoiceCommands.PHRASES             // frozen JSON between /*PHRASES-BEGIN*/
 
 ### D13 · Audio devices on the laptop (B)
 - **Listing.** `enumerateDevices()` runs at boot and on `devicechange`, debounced by 500 ms because Windows fires bursts. It never calls getUserMedia. Without the mic permission, the picker says "Device names appear after you allow the microphone once (tap the mic)."
-- **Output.** `speaker.setSink(id)` uses `AudioContext.setSinkId` (Chrome 110 and later). It applies to the existing context and to any context created later, and it is glitch-free mid-reply.
+- **Output.** `speaker.setSink(id)` uses `AudioContext.setSinkId` (Chrome 110 and later), glitch-free mid-reply. Before any sound the speaker's context is made for it (suspended until a tap), so the browser checks every id and a missing device fails at once with `{ok: false, reason}` (I1; B's review found the old "ok" before a context existed was never checked).
   - Windows' "Hands-Free AG Audio" outputs are deprioritised and labelled "(call quality)" when the same device has a stereo endpoint.
 - **Input.** `JarvisAudio.setInput(id)` makes the next `open()` ask for `deviceId: {exact}`. An `OverconstrainedError` retries once on the default input and emits `jarvis:audio-route {reason:'input_missing'}` (I0).
   - Default: **keep the laptop mic** when output moves to Bluetooth earphones. Opening a Bluetooth headset mic forces Windows into the hands-free profile, which turns all sound into call quality. The picker warns about this when the headset mic is chosen.
@@ -352,12 +358,13 @@ JarvisVoiceCommands.PHRASES             // frozen JSON between /*PHRASES-BEGIN*/
   - speaker, soundbar, the "Speakers (Realtek / High Definition / Built-in)" style → speakers;
   - anything else → unknown.
   - The owner can mark each device "This is: earphones / a speaker". The barge-in Automatic policy (D7) uses this.
-- **Remembering.** `localStorage['jarvis_audio_route_v1']`, holding ids **and** labels so a changed id can be matched again. At most 20 kind marks and nicknames.
+- **Remembering.** `localStorage['jarvis_audio_route_v1']`, holding ids **and** labels so a changed id can be matched again. At most 20 kind marks and nicknames. Choices made in the panel are saved; choices made by voice last for this page only (B's M1).
 - **Device connected.**
-  - "Ask" (default): an offer chip in `#voiceOffer`: "{name} connected. [Use {name}] [Not now]" for 30 s. In a conversation and not mid-reply, JARVIS also asks the same question aloud.
-  - "Switch automatically": he switches and says so.
+  - "Ask" (default): an offer chip in `#voiceOffer`: "{name} connected. [Use {name}] [Not now]" for 30 s (on screen). In a conversation and not mid-reply, JARVIS also asks aloud, by kind: "New earphones have connected — shall I use them, {h}?"
+  - "Switch automatically": he switches and says so, by kind ("Switching to your earphones, {h}."); the name is on screen.
   - "Do nothing".
-- **Device removed.** If it was the chosen output, sound falls back to the default and he says "{name} disconnected. I'll use {fallback}, {h}."
+- **Device removed.** If it was the chosen output, sound falls back to the default. He says "{Kind} disconnected. I'll use the default output, {h}."; the screen says "{name} disconnected. I'll use {fallback}, {h}."
+- **Spoken lines use kind words only; names are on screen only** (D12, D18).
 - **Browser voice.** `speechSynthesis` always plays on Windows' default output and can't be routed. The picker and the switch command say "My browser voice follows Windows' sound output, {h}: press Windows + Ctrl + V to choose it." That shortcut is Windows 11's quick output picker; confirm at owner check.
 - **Fuzzy matching (`find(name)`).** Normalised tokens. Score = max(nickname exact 1.0, device-word alias 1.0, character-bigram Dice of the joined tokens, token overlap). Threshold 0.6.
   - "Speaker" prefers an external speaker over the built-in one.
@@ -371,6 +378,7 @@ JarvisVoiceCommands.PHRASES             // frozen JSON between /*PHRASES-BEGIN*/
 - Barge-in Automatic treats Android output as unknown, so it behaves as speakers.
 - When the page is hidden on a phone, the conversation ends with the D5 line. The desktop keeps listening in hidden tabs, as today.
 - Recogniser restarts may chime on Android, so the help text recommends the cloud engine there.
+- With the browser engine (any platform) the mic closes between turns (D3 as built), so interrupting JARVIS there is by tap, Esc or "Hey Jarvis" only.
 
 ### D15 · Faster spoken replies: no streaming yet, and why
 **Why not streaming.** Moving spoken turns to `/v1/chat/stream` would silently drop tools, approvals, cards and the session id (code fact 6). Streaming the *tool loop* needs `stream(tools=…)` with tool-call detection in all five providers (base, anthropic, gemini, openai_compat, local, plus mock). That is an `jarvis.llm`-wide change, recorded for **R11 (free hardening: latency and cost)**.
@@ -380,7 +388,7 @@ JarvisVoiceCommands.PHRASES             // frozen JSON between /*PHRASES-BEGIN*/
 2. **No mic re-open between turns** (D3) saves the getUserMedia start on each follow-up.
 3. **"Pause allowed mid-sentence"** is adjustable (D4). Every 100 ms here comes straight off the delay.
 4. **Fixed lines cached.** Handover, mic off and check-in audio is cached per page (8 entries, keyed by text + voice + rate) when the caller marks `meta.fixed`. This saves characters and a round trip.
-5. **Sound cues** (`cues`, default on). Short generated tones, no file, through the speaker's context so they follow the chosen device and the echo canceller. Rising tone when listening starts, a soft tick when JARVIS has heard the owner, falling tone for mic off, a longer fall for handover. The loop starts the VAD 100 ms after a cue ends.
+5. **Sound cues** (`cues`, default on). Short generated tones, no file, through the speaker's context so they follow the chosen device and the echo canceller. Rising tone when listening starts, a soft tick when JARVIS has heard the owner, falling tone for mic off, a longer fall for handover. The loop starts the VAD 100 ms after a cue ends. No rise for an interruption's own turn (`jarvis:voice-loop` carries `barge: true`; it starts at once) or when speech is heard while standing by (the owner is already talking) (I1).
 6. **A timing line.** `performance.mark` at each stage (speech ended → words → answer → first audio, plus each interruption's delay) is emitted as `jarvis:voice-timing` and as an event-log line. The Voice panel shows "Last reply: 3.1 s (listening 1.2 · words 0.6 · answer 0.9 · voice 0.4)".
 
 Expected per-stage ranges are unmeasured: listening 1.2 s by default, words ~0.6–1.2 s, answer ~1–6 s, voice ~0.3–0.9 s. The timing line measures them, and owner check 14 reports the slowest stage.
@@ -404,6 +412,7 @@ Expected per-stage ranges are unmeasured: listening 1.2 s by default, words ~0.6
   - They appear in the Privacy panel through a new `voice/privacy.py::voice_phrases_source` (look / export / delete), wired at I1.
 - **Browser engine.** Chrome's recogniser ignores `SpeechGrammarList`, so it **can't take these hints**.
   - If the build finds a `phrases` contextual-biasing option on `SpeechRecognition` (newer Chrome, on-device recognition), pass the same list after feature-detecting it; otherwise do nothing. Verify at build from primary docs.
+  - **As built (I1):** the Web Speech spec ties `phrases` to on-device recognition: on a recogniser without `processLocally === true`, `start()` fails with `phrases-not-supported`. So `JarvisVoicePhrases.apply()` sets `phrases` only when `processLocally` is true (the console does not set it today, so the browser engine gets no hints yet), and a `phrases-not-supported` error retries the same turn once without them. The editor says "the browser's own listening uses them only where your browser supports it".
   - The router's "jarvis" variants partly make up for it.
 
 ### D17 · Costs
@@ -422,7 +431,7 @@ Expected per-stage ranges are unmeasured: listening 1.2 s by default, words ~0.6
 - No audio is stored, and transcripts are never logged (slice 9 D13 is unchanged).
 - Check clips send up to 2.5 s of room audio to Google Cloud (the owner's project) **only** while JARVIS speaks, in a conversation the owner started, in name mode, on the cloud engine. The Interrupt row says so.
 - The router can never approve, pay, send or delete, and it can never unlock the mic.
-- Device labels stay on the device.
+- Device labels and nicknames never leave the browser, **including spoken text**: the cloud voice posts every spoken line to `/v1/voice/speak`, so spoken device lines use kind words only and names are shown on screen only (I1 binding decision, B's H1; D12, D13). Capture's route events carry device ids, never labels.
 - The unlock check (user activation) protects against JARVIS's own code paths. Same-origin script is already governed by CSP `script-src 'self'`.
 - Run `security-reviewer` on A (mic lock, router, check clips) and C (phrases, PUT, audit, privacy source).
 
@@ -447,7 +456,7 @@ Expected per-stage ranges are unmeasured: listening 1.2 s by default, words ~0.6
 
 **Mic lock:** `localStorage['jarvis_mic_off_v1']` = `'1'` or absent, owned by `console-voice-capture.js`. Shown as the "Microphone on this device" switch at the top of "On this device".
 
-**Audio route:** `localStorage['jarvis_audio_route_v1']` = `{v:1, output:{id,label}|null, input:{id,label}|null, kinds:{id:'headphones'|'speakers'}, names:{id: ≤30 chars}, onConnect:'ask'|'auto'|'never'}`. `onConnect` defaults to `'ask'`; input `null` means the system default (the laptop mic).
+**Audio route:** `localStorage['jarvis_audio_route_v1']` = `{v:2, output:{id,label}|null, input:{id,label}|null, kinds:{id:{value:'headphones'|'speakers', label}}, names:{id:{value: ≤30 chars, label}}, onConnect:'ask'|'auto'|'never'}` (B: marks keep the label so a device whose id changed is found again; a stored v1 migrates). `onConnect` defaults to `'ask'`; input `null` means the system default (the laptop mic). Only panel choices are written here.
 
 **Owner, server** (`{prefix}voice_settings/{uid}`): `phrases: list[str]`, at most 50 entries of 1–40 characters each, default `[]`. The base hints are always added server-side. `GET /v1/voice` returns `settings.phrases` and `phrase_limits {items: 50, chars: 40}`. `PUT /v1/voice/settings {phrases}` replaces the list.
 
@@ -458,11 +467,11 @@ Expected per-stage ranges are unmeasured: listening 1.2 s by default, words ~0.6
 | Event | Detail | Fired by | Read by |
 |---|---|---|---|
 | `jarvis:mic-lock` | `{locked, by: 'button'\|'shortcut'\|'voice'\|'panel'\|'storage'\|'boot'}` | capture | mic, wake, mic-off UI, Voice panel, memo, devices |
-| `jarvis:voice-loop` | `{state, conversation, turns}` | mic | devices (offers), pace (cues), tests |
+| `jarvis:voice-loop` | `{state, conversation, turns, barge}` (`barge`: an interruption's own turn) | mic | devices (offers), pace (cues), mic-off UI, tests |
 | `jarvis:barge` | `{how: 'speech'\|'wake'\|'stop'\|'tap', ms}` | mic / barge | pace (timing), tests |
 | `jarvis:voice-command` | `{id, handled, state}` | commands | event log, tests |
 | `jarvis:audio-devices` | `{outputs:[{id,label,kind}], inputs:[…]}` | devices | devices panel |
-| `jarvis:audio-route` | `{output, input, reason}` | devices | mic (Automatic policy), panel |
+| `jarvis:audio-route` | `{output, input, reason}`; from capture `{input: {id, label: ''}, reason: 'input_missing' \| 'input_live'}` (ids only) | devices, capture | devices (missing input, live input clears "Pending"), panel |
 | `jarvis:voice-timing` | `{heard, words, answer, voice, total, engine}` (ms) | pace | panel line, tests |
 | `jarvis:voice-panel` | `{built: true}` | voice.js | devices panel, phrases, pace (render into slots) |
 
@@ -492,7 +501,7 @@ Expected per-stage ranges are unmeasured: listening 1.2 s by default, words ~0.6
    - `console-voice-pace.js`: `JarvisVoicePace {cue(){}, mark(){}, last: () => null}`;
    - empty headers: `console-voice-wake.js`, `console-voice-conversation.js`, `console-voice-micoff.js`, `console-voice-devices-panel.js`, `console-voice-phrases.js`, `console-voice-devices.css`.
 7. **`console.html`:**
-   - script order: capture → speech → commands → wakeword → voice → devices → devices-panel → pace → phrases → barge → conversation → voice-wake → micoff → voice-mic, and then the existing tags;
+   - script order: capture → speech → commands → wakeword → voice → devices → devices-panel → pace → phrases → barge → conversation → voice-wake → micoff → voice-mic, and then the existing tags. **As built (I1):** capture → speech → commands → wakeword → voice → devices-match → devices → devices-panel → pace → phrases → barge → conversation → voice-wake → micoff → loop-glue → loop-browser → voice-mic;
    - the `console-voice-devices.css` link;
    - `#micOffBtn` (hidden, `aria-keyshortcuts="Control+Shift+Space"`), the struck-mic SVG inside `#micBtn`, and `#voiceOffer` under `#voiceLine`.
    - `api/console.py`: every new file in `APP_ASSETS`.

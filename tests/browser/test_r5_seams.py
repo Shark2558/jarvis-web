@@ -1,7 +1,8 @@
 # tests/browser/test_r5_seams.py — R5 I0 seams in a real browser (docs/plans/r5-voice.md).
 # The mic lock (stop, reload, unlock only by a real gesture, other tabs), the chosen input and its
 # fallback, the output sink, duck / tone / stop().rest, the command router core, the Voice panel
-# slots and device keys, the minimal JarvisVoiceLoop, the status words and the frozen stubs.
+# slots and device keys, the minimal JarvisVoiceLoop, the status words, and (I1) the frozen shapes
+# of the modules that replaced the stubs, with B's matcher loaded by the real page.
 from __future__ import annotations
 
 import json
@@ -863,29 +864,25 @@ def test_the_real_page_defines_the_device_matcher_and_the_route(
     assert c.errors == [] and c.csp_violations() == []
 
 
-def test_the_stubs_have_their_frozen_shapes_and_change_nothing(
+def test_the_modules_that_replaced_the_stubs_have_their_frozen_shapes(
     make: Callable[..., Console],
 ) -> None:
     c = make()
     FakeVoice(c.page)
     c.open()
-    route = ev(c, "Object.keys(JarvisAudioRoute).sort()")
-    assert route == sorted(
-        [
-            "supported",
-            "refresh",
-            "current",
-            "chooseOutput",
-            "chooseInput",
-            "outputKind",
-            "find",
-            "on",
-        ]
-    )
-    assert ev(c, "JarvisAudioRoute.outputKind()") == "unknown"
-    assert ev(c, "JarvisAudioRoute.find('speaker')") is None
-    assert ev(c, "JarvisBarge.policy()") == "tap"
-    assert ev(c, "typeof JarvisBarge.arm().disarm") == "function"
-    assert sorted(ev(c, "Object.keys(JarvisVoicePace)")) == ["cue", "last", "mark"]
-    assert ev(c, "JarvisVoicePace.last()") is None
+    keys = lambda name: ev(c, f"Object.keys(window.{name}).sort()")  # noqa: E731
+    frozen = lambda name: ev(c, f"Object.isFrozen(window.{name})")  # noqa: E731
+    route = ["supported", "refresh", "current", "chooseOutput", "chooseInput", "outputKind"]
+    assert keys("JarvisAudioRoute") == sorted([*route, "find", "on"])
+    assert ev(c, "JarvisAudioRoute.outputKind()") in ("headphones", "speakers", "unknown")
+    assert ev(c, "typeof JarvisAudioRoute.find('speaker')") == "object"  # a device or null
+    barge = ["policy", "arm", "createGate", "isEcho", "BARGE", "kind", "margin", "forget"]
+    assert keys("JarvisBarge") == sorted([*barge, "clipsLeft"])
+    assert ev(c, "JarvisBarge.policy()") == "tap"  # the factory pins interruptBy: 'tap'
+    assert keys("JarvisVoicePace") == ["cue", "last", "mark"]
+    assert ev(c, "JarvisVoicePace.last()") is None  # nothing timed yet on a fresh page
+    assert keys("JarvisVoicePhrases") == ["apply", "clean", "list"]
+    for name in ("JarvisAudioRoute", "JarvisAudioMatch", "JarvisBarge", "JarvisVoicePace",
+                 "JarvisVoicePhrases"):  # fmt: skip
+        assert frozen(name) is True, name
     assert c.errors == [] and c.csp_violations() == []

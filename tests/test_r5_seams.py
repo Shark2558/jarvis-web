@@ -4,7 +4,8 @@
 The browser half is tests/browser/test_r5_seams.py. Here: the new files exist, are served and are
 loaded in the planned order; the microphone is opened and SpeechRecognition built in one file only;
 the command table (PHRASES) parses and its multi-word phrases are speech hints; the device defaults;
-the status words; the stubs keep their frozen shapes; every console script stays within 800 lines.
+the status words; the modules that replaced the I0 stubs keep their frozen shapes; every console
+script stays within 800 lines.
 """
 
 from __future__ import annotations
@@ -49,11 +50,6 @@ NEW_SCRIPTS = tuple(
     n
     for n in NEW_SCRIPTS
     if n not in ("console-wakeword.js", "console-voice.js", "console-voice-mic.js")
-)
-EMPTY_HEADERS = (
-    "console-voice-devices-panel.js",
-    "console-voice-phrases.js",
-    "console-voice-devices.css",
 )
 PHRASE_IDS = {
     "answer.yes",
@@ -232,37 +228,58 @@ def test_fx_status_words_and_voice_modes() -> None:
     assert "standby" in set_voice and "micoff" in set_voice
 
 
-# ---- the stubs keep their frozen shapes ----------------------------------------------------------
-def test_stubs_define_their_frozen_objects() -> None:
+# ---- the modules that replaced the stubs keep their frozen shapes --------------------------------
+def frozen_keys(js: str, name: str) -> list[str]:
+    """The keys of `window.<name> = Object.freeze({ ... });` in source order (shorthand or `k:`)."""
+    m = re.search(rf"window\.{name}\s*=\s*Object\.freeze\(\{{(.*?)\}}\);", js, re.S)
+    assert m, name
+    body = re.sub(r"\([^()]*\)|\{[^{}]*\}|\[[^\[\]]*\]", "", m.group(1))  # drop call/arg bodies
+    return [re.split(r"[:(]", part.strip())[0].strip() for part in body.split(",") if part.strip()]
+
+
+def test_the_audio_route_exports_exactly_its_eight_frozen_keys() -> None:
     devices = read("console-voice-devices.js")
-    assert "window.JarvisAudioRoute" in devices
-    for key in (
-        "supported",
-        "refresh",
-        "current",
-        "chooseOutput",
-        "chooseInput",
-        "outputKind",
-        "find",
-        "on",
-    ):
-        assert re.search(rf"\b{key}\b", devices), key
-    assert "outputKind: () => 'unknown'" in devices and "find: () => null" in devices
+    assert re.search(
+        r"window\.JarvisAudioRoute = Object\.freeze\(\{ supported, refresh, current, chooseOutput, "
+        r"chooseInput, outputKind, find, on \}\);",
+        devices,
+    )
+    route = ["supported", "refresh", "current", "chooseOutput", "chooseInput", "outputKind"]
+    assert frozen_keys(devices, "JarvisAudioRoute") == [*route, "find", "on"]
+    # B replaced the stub: its constant answers are gone
+    assert "outputKind: () => 'unknown'" not in devices and "find: () => null" not in devices
+    match = read("console-voice-devices-match.js")
+    assert "window.JarvisAudioMatch = Object.freeze({" in match
+    assert {"outputPhrase", "inputPhrase", "rank", "classify"} <= set(
+        frozen_keys(match, "JarvisAudioMatch")
+    )
+
+
+def test_barge_pace_and_phrases_export_their_real_frozen_shapes() -> None:
     barge = read("console-voice-barge.js")
-    # part A replaced the stub: the frozen surface (policy, arm) stays, with the real gate behind it
-    assert "window.JarvisBarge = Object.freeze({" in barge
-    assert re.search(r"Object\.freeze\(\{[^}]*\bpolicy\b[^}]*\barm\b", barge)
+    assert frozen_keys(barge, "JarvisBarge") == [
+        "policy", "arm", "createGate", "isEcho", "BARGE", "kind", "margin", "forget", "clipsLeft",
+    ]  # fmt: skip
+    assert "policy: () => 'tap'" not in barge and "arm: () => ({ disarm() {} })" not in barge
     pace = read("console-voice-pace.js")
-    assert "window.JarvisVoicePace" in pace and "last: () => null" in pace
+    assert re.search(r"Object\.freeze\(\{\s*cue,\s*mark,\s*last:", pace)
+    assert frozen_keys(pace, "JarvisVoicePace") == ["cue", "mark", "last"]
+    assert "last: () => null" not in pace  # C replaced the stub: last() reports the last timing
+    phrases_js = read("console-voice-phrases.js")
+    assert re.search(
+        r"window\.JarvisVoicePhrases\s*=\s*Object\.freeze\(\{\s*clean,\s*list,\s*apply\s*\}\)",
+        phrases_js,
+    )
 
 
-@pytest.mark.parametrize("name", EMPTY_HEADERS)
-def test_the_empty_headers_hold_a_comment_and_no_code(name: str) -> None:
-    text = read(name)
-    body = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    body = re.sub(r"(?m)^\s*//.*$", "", body)
-    assert body.strip() == "", name
-    assert text.lstrip().startswith(("//", "/*")) and "r5-voice.md" in text
+def test_the_files_that_were_empty_headers_are_filled_and_render_into_their_slots() -> None:
+    assert "panelSlot('devices')" in read("console-voice-devices-panel.js")
+    assert "panelSlot('phrases')" in read("console-voice-phrases.js")
+    assert "panelSlot('pace')" in read("console-voice-pace.js")
+    css = read("console-voice-devices.css")
+    rules = re.sub(r"/\*.*?\*/", "", css, flags=re.S).strip()
+    assert rules and ".vdev" in rules
+    assert "r5-voice.md" in css  # the header still points at the plan
 
 
 # ---- house rules for every script ---------------------------------------------------------------

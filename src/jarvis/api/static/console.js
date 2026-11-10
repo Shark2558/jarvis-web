@@ -107,7 +107,7 @@
   /** R6 D10: 423 show_locked -- a guest is watching the build book, so this console goes to the show
    *  (it comes back after the owner's passkey lifts the lock there). Throws so no caller goes on. */
   function showLocked() {
-    location.assign('/book/show');
+    location.replace('/book/show'); // SEC-2: no Back entry returns to this console page
     const err = new Error('A build book show is running.'); err.status = 423; err.code = 'show_locked'; throw err;
   }
 
@@ -608,16 +608,37 @@
 
   // R6 D10 (review D-sec M2): a console tab already open when a guest show starts asks the server
   // again whenever it comes back into view (a 423 hops it to the show), and a guest open in
-  // another tab of this browser tells it at once.
-  let lastCheck = 0;
-  function recheck() {
-    if (state.authMode !== 'google' || Date.now() - lastCheck < 1500) return;
-    lastCheck = Date.now(); api('/auth/me').catch(() => {});
+  // another tab of this browser tells it at once. It fails closed (SEC-2): sent to the background
+  // (or told by the channel) the tab is covered by the gate with the app hidden, and it is only
+  // uncovered when /auth/me answers 200; offline, a 503 or an error keep the cover with Try again.
+  const UNSURE = 'Can\u2019t reach JARVIS to check that no guest show holds this console. Check your connection.';
+  let lastCheck = 0, covered = false, live = false;
+  function cover(words, retry) {
+    covered = true; $('app').hidden = true;
+    const box = $('gateBox');
+    box.innerHTML = FX.core('lg') + '<h2 id="gateTitle">JARVIS</h2><p></p>' + (retry ? '<button class="cta lift" id="gRetry">Try again</button>' : '');
+    box.querySelector('p').textContent = words;
+    if (retry) $('gRetry').addEventListener('click', () => recheck(true));
+    $('gate').classList.add('show'); FX.refresh();
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheck(); });
-  window.addEventListener('focus', recheck);
-  window.addEventListener('pageshow', (e) => { if (e.persisted) recheck(); });
-  try { new BroadcastChannel('jarvis-book').onmessage = (e) => { if (e.data && e.data.type === 'guest-show') { lastCheck = 0; recheck(); } }; } catch (_) {}
+  function uncover() { if (!covered) return; covered = false; $('app').hidden = false; hideGate(); }
+  async function recheck(force) {
+    if (state.authMode !== 'google' || !live) return;
+    if (!force && !covered && Date.now() - lastCheck < 1500) return;
+    lastCheck = Date.now();
+    let status = 0;
+    try { status = (await fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' })).status; } catch (_) {}
+    if (status === 200) uncover();
+    else if (status === 423) location.replace('/book/show');
+    else if (status === 401) { covered = false; showGate(); } // signed out: the sign-in gate (the app stays hidden)
+    else cover(UNSURE, true);
+  }
+  function away() { if (state.authMode === 'google' && live) cover('Checking\u2026', false); }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheck(covered); else away(); });
+  window.addEventListener('focus', () => recheck(covered));
+  window.addEventListener('pagehide', away);
+  window.addEventListener('pageshow', (e) => { lastCheck = 0; if (e.persisted) recheck(true); });
+  try { new BroadcastChannel('jarvis-book').onmessage = (e) => { if (e.data && e.data.type === 'guest-show') { away(); recheck(true); } }; } catch (_) {}
 
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {
@@ -647,11 +668,11 @@
     renderBanner(fallbackWarning);
     if (state.authMode === 'google') {
       const r = await fetch('/auth/me', { credentials: 'same-origin' });
-      if (r.status === 423) { location.assign('/book/show'); return; } // R6 D10: a guest show holds it
+      if (r.status === 423) { location.replace('/book/show'); return; } // R6 D10: a guest show holds it
       if (r.status !== 200) { showGate(); return; }
       const me = await r.json();
       const who = $('who'); who.textContent = (me.email || '?').charAt(0).toUpperCase(); who.title = me.email; who.hidden = false;
-      $('logoutBtn').hidden = false;
+      $('logoutBtn').hidden = false; live = true;
     } else if (!state.token) { showGate(); return; }
     boot();
   })();

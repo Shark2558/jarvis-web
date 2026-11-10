@@ -13,6 +13,11 @@ amendment, integrated review SEC-1; docs/plans/r6-build-book.md).
   "First Last" and "Last, First". A local part made only of vocabulary words ("owner", "jarvis",
   "home.vault") is checked as the address alone: it never blocks a release, a guest show or the
   owner's own replies.
+- **More forms of the address** (security re-review #4): Markdown's backslash escapes, short HTML
+  tags and "-at-" / "-dot-" are read through (for the address only, so no two words are joined),
+  and a Gmail address also counts as Gmail's own mailbox (dots and a `+tag` don't count, at
+  gmail.com or googlemail.com). Two or more distinctive tokens also count run together
+  ("akashkumar").
 - **A handle counts as a whole** (security re-review #3): the whole local part (and its mailbox
   without a `+tag`) is a needle too when it has >= 4 characters and is not made only of vocabulary
   words, so "rk1987@" matches "rk1987" (bounded like an address part) while "owner@", "info@" and
@@ -46,6 +51,11 @@ _JSON_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
 _AROUND_SYMBOL = re.compile(r"\s*([@.])\s*")
 _WORD = re.compile(r"[^\W\d_]{3,}")
 _DECODE_ROUNDS = 2  # "&amp;#64;" and "%2540" are undone; deeper nesting is not a form anyone reads
+_ESCAPED = re.compile(r"\\+(?=[@._+\-])")  # Markdown: home\.vault\@gmail\.com
+_TAG = re.compile(r"<[^<>]{0,40}>")  # home.vault<b>@</b>gmail.com
+_DASHED = re.compile(r"\s*-(at|dot)-\s*")  # home.vault -at- gmail.com
+_GMAIL = re.compile(r"([\w.+\-]+)@(?:gmail|googlemail)\.com(?![\w\-])")
+GMAIL_DOMAINS = ("gmail.com", "googlemail.com")
 
 # the book's own fixed text: the generator's templates and the words people wrote for it
 _FIXED_TEXT = (
@@ -78,6 +88,7 @@ class Marks:
     addresses: tuple[str, ...]
     tokens: tuple[str, ...]
     whole: tuple[str, ...] = ()
+    gmail: tuple[str, ...] = ()  # Gmail's own mailbox of each gmail.com / googlemail.com address
 
 
 def _docstrings(tree: ast.Module) -> set[int]:
@@ -132,14 +143,26 @@ def _symbols(folded: str) -> str:
     return _AROUND_SYMBOL.sub(r"\1", spelled(folded))
 
 
+def _plain(folded: str) -> str:
+    """Markdown's backslash escapes, short HTML tags and "-at-" / "-dot-" read through: for the
+    address check only, so no two words are joined into a token."""
+    s = _TAG.sub("", _ESCAPED.sub("", folded))
+    return _DASHED.sub(lambda m: "@" if m.group(1) == "at" else ".", s)
+
+
+def mailbox(local: str) -> str:
+    """Gmail's own mailbox for a local part: its dots and a `+tag` don't count."""
+    return local.partition("+")[0].replace(".", "")
+
+
 def tokens(local: str) -> tuple[str, ...]:
-    """A local part's distinctive tokens, in order, each once."""
+    """A local part's distinctive tokens, in order, each once; two or more also run together."""
     vocab = vocabulary()
     out: list[str] = []
     for part in _SPLIT.split(local):
         if len(part) >= TOKEN_MIN and part not in vocab and part not in out:
             out.append(part)
-    return tuple(out)
+    return (*out, "".join(out)) if len(out) > 1 else tuple(out)
 
 
 def whole(local: str) -> tuple[str, ...]:
@@ -158,6 +181,7 @@ def marks(emails: Iterable[str]) -> Marks:
     addresses: list[str] = []
     found: list[str] = []
     handles: list[str] = []
+    boxes: list[str] = []
     for raw in emails:
         address = fold(raw).strip()
         local, at, domain = address.partition("@")
@@ -166,7 +190,9 @@ def marks(emails: Iterable[str]) -> Marks:
         addresses.append(address)
         found.extend(t for t in tokens(local) if t not in found)
         handles.extend(h for h in whole(local) if h not in handles)
-    return Marks(tuple(addresses), tuple(found), tuple(handles))
+        if domain in GMAIL_DOMAINS and mailbox(local) not in boxes:
+            boxes.append(mailbox(local))
+    return Marks(tuple(addresses), tuple(found), tuple(handles), tuple(boxes))
 
 
 def _word_in(token: str, text: str) -> bool:
@@ -179,11 +205,20 @@ def _whole_in(local: str, text: str) -> bool:
     return re.search(rf"(?<![\w.+\-]){re.escape(local)}(?![\w\-])", text) is not None
 
 
+def _address_in(view: str, m: Marks) -> bool:
+    symbols, plain = _symbols(view), _plain(view)
+    read = symbols if plain == view else _symbols(plain)  # a book seldom needs reading through
+    if any(a in f for f in (view, symbols, read) for a in m.addresses):
+        return True
+    if not m.gmail or not any(f"@{d}" in read for d in GMAIL_DOMAINS):
+        return False
+    return any(mailbox(x) in m.gmail for x in _GMAIL.findall(read))
+
+
 def _hit(views: Sequence[str], m: Marks) -> Hit | None:
     folded = [fold(v) for v in views]
-    for view in folded:
-        if any(a in view or a in _symbols(view) for a in m.addresses):
-            return "address"
+    if any(_address_in(view, m) for view in folded):
+        return "address"
     if any(_word_in(t, view) for view in folded for t in m.tokens):
         return "word"
     if any(_whole_in(h, view) for view in folded for h in m.whole):
@@ -220,8 +255,10 @@ __all__ = [
     "WHOLE_MIN",
     "Hit",
     "Marks",
+    "GMAIL_DOMAINS",
     "fold",
     "in_book",
+    "mailbox",
     "marks",
     "match",
     "tokens",

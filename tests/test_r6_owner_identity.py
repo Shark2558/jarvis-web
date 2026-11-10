@@ -182,7 +182,8 @@ def test_first_last_matches_the_name_in_any_order(text: str, hit: str | None) ->
 def test_tokens_split_on_separators_and_digits() -> None:
     marks = owner_id.marks(["Akash.Kumar+jarvis_99-Home@Example.com", "ab.c@example.com", " "])
     assert marks.addresses == ("akash.kumar+jarvis_99-home@example.com", "ab.c@example.com")
-    assert marks.tokens == ("akash", "kumar")  # "jarvis", "home": vocabulary; "ab", "c": short
+    # "jarvis", "home": vocabulary; "ab", "c": short; two tokens also count run together
+    assert marks.tokens == ("akash", "kumar", "akashkumar")
 
 
 def test_the_vocabulary_is_fixed_text_only() -> None:
@@ -256,3 +257,49 @@ def test_the_whole_local_part_is_a_needle_unless_it_is_only_everyday_words(
     email: str, whole: tuple[str, ...]
 ) -> None:
     assert owner_id.marks([email]).whole == whole
+
+
+# ---- security re-review #4: more address forms, Gmail's own equivalents, run-together names ------
+GMAIL = "home.vault@gmail.com"  # vocabulary words only: the address (and its equivalents) alone
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "home\\.vault\\@gmail\\.com",  # Markdown-escaped, to stop an autolink
+        "home.vault -at- gmail.com",
+        "home.vault -at- gmail -dot- com",
+        "home.vault<b>@</b>gmail.com",
+        "<span>home.vault</span>@<i>gmail.com</i>",
+        "homevault@gmail.com",  # Gmail ignores dots...
+        "h.o.m.e.v.a.u.l.t@gmail.com",
+        "home.vault+jarvis@gmail.com",  # ...and a +tag
+        "Home.Vault@GoogleMail.com",  # and is the same mailbox at googlemail.com
+    ],
+)
+def test_more_forms_of_the_address_count(text: str) -> None:
+    owners = (GMAIL,)
+    assert owner_id.match(text, owners) == "address"
+    assert owner_id.in_book(_book_with(f"Mail {text} for a copy."), owners) == "address"
+    assert _reply(f"Write to {text}.", owners) == "refuse_data"
+
+
+@pytest.mark.parametrize(
+    ("text", "owner"),
+    [
+        ("myhomevault@gmail.com", GMAIL),
+        ("homevault@gmail.co", GMAIL),
+        ("home.vaults@gmail.com", GMAIL),
+        ("homevault@example.com", "home.vault@example.com"),  # dots count outside Gmail
+        ("home.vault+x@example.com", "home.vault@example.com"),
+        ("home <b>vault</b> keeps it", GMAIL),
+    ],
+)
+def test_other_mailboxes_are_not_the_address(text: str, owner: str) -> None:
+    assert owner_id.match(text, (owner,)) is None
+
+
+@pytest.mark.parametrize("text", ["Built by AkashKumar.", "akashkumar@gmail.com wrote it"])
+def test_a_run_together_name_is_a_word(text: str) -> None:
+    assert owner_id.match(text, (NAMED,)) == "word"
+    assert owner_id.in_book(_book_with(text), (NAMED,)) == "word"

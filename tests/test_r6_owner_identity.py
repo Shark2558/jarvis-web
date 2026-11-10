@@ -207,3 +207,52 @@ async def test_a_book_holding_a_name_token_is_refused_with_its_own_words() -> No
     ((_, kind, words),) = notes.sent
     assert kind == "book_seal_failed" and "a word from your e-mail address" in words
     assert "akash" not in words.lower()
+
+
+# ---- security re-review #3: a handle-style local part counts as a whole ------------------------
+HANDLES = ("rk1987", "jk.rk", "ak47", "ab12cd")  # no token of >= 3 letters: once only the address
+
+
+@pytest.mark.parametrize("local", HANDLES)
+async def test_a_short_handle_local_part_counts_as_a_whole(local: str) -> None:
+    owners = (f"{local}@example.com",)
+    text = f"Thanks to {local.upper()} for the review."
+    assert owner_id.match(text, owners) == "word"
+    data = _book_with(text)
+    assert owner_id.in_book(data, owners) == "word"
+    assert holds_owner_email(data, owners) is True
+    assert guard.book_names_owner(data, owners) is True
+    assert release.owner_mentioned(data, owners) is True
+    assert _reply(f"The reviewer was {local}.", owners) == "refuse_data"
+    sealer, notes = _sealer(owners[0], data)
+    assert (await sealer.ensure(UID)).state == "failed"
+    assert "a word from your e-mail address" in notes.sent[0][2]
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["xrk1987 did it", "rk19870 did it", "build rk1987x", "a.rk1987 did it", "rk 1987", "rk-1987"],
+)
+def test_the_whole_local_part_counts_only_as_itself(text: str) -> None:
+    assert owner_id.match(text, ("rk1987@example.com",)) is None
+
+
+@pytest.mark.parametrize(
+    ("email", "whole"),
+    [
+        ("rk1987@example.com", ("rk1987",)),
+        ("RK1987+jarvis@example.com", ("rk1987+jarvis", "rk1987")),  # the mailbox without its tag
+        ("akash.kumar@example.com", ("akash.kumar",)),
+        ("owner2@example.com", ("owner2",)),  # a number makes it a handle
+        ("rk1@example.com", ()),  # < 4 characters: not a name
+        ("owner@example.com", ()),
+        ("home@example.com", ()),
+        ("info@example.com", ()),
+        ("home.vault@example.com", ()),  # only vocabulary words: the address alone (D3 amendment)
+        ("owner+jarvis@example.com", ()),
+    ],
+)
+def test_the_whole_local_part_is_a_needle_unless_it_is_only_everyday_words(
+    email: str, whole: tuple[str, ...]
+) -> None:
+    assert owner_id.marks([email]).whole == whole

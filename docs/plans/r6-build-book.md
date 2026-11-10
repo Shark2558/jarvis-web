@@ -97,7 +97,9 @@ NFC/NFKC, percent-encoding, HTML entities, " at "/" dot " and [at]/(dot) spellin
 stripped); the local part counts only by its tokens (split on `. _ - +` and digit runs) of ≥ 3 letters that are NOT in
 JARVIS's fixed vocabulary (the generator's template words, the words of the book's own fixed text, a short common-word
 list; built from fixed text in the image, never from plans), each as a whole word, so `first.last@` also matches
-"First Last" and "Last, First". A local part made only of vocabulary words is checked as the address alone. The
+"First Last" and "Last, First". A local part made only of vocabulary words is checked as the address alone. Any other
+local part of ≥ 4 characters (and its mailbox without a `+tag`) also counts WHOLE, bounded like a mailbox name, so a
+handle with no 3-letter token (`rk1987@`, `jk.rk@`) still matches "rk1987" (security re-review #3). The
 `book_seal_failed` notice says which matched ("your e-mail address" or "a word from your e-mail address"), never the word.
 
 **D4 · How the book and the release id reach the app.** CI builds into `src/jarvis/buildbook/_book/` (git-ignored;

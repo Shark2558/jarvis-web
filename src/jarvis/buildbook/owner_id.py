@@ -13,6 +13,10 @@ amendment, integrated review SEC-1; docs/plans/r6-build-book.md).
   "First Last" and "Last, First". A local part made only of vocabulary words ("owner", "jarvis",
   "home.vault") is checked as the address alone: it never blocks a release, a guest show or the
   owner's own replies.
+- **A handle counts as a whole** (security re-review #3): the whole local part (and its mailbox
+  without a `+tag`) is a needle too when it has >= 4 characters and is not made only of vocabulary
+  words, so "rk1987@" matches "rk1987" (bounded like an address part) while "owner@", "info@" and
+  "home.vault@" still do not.
 
 `match(text)` and `in_book(book_json)` answer "address", "word" or None. Nothing here logs.
 """
@@ -35,7 +39,9 @@ from jarvis.buildbook.guard_words import LOOKALIKE, spelled, visible
 
 Hit = Literal["address", "word"]
 TOKEN_MIN = 3  # a shorter token is not a name
+WHOLE_MIN = 4  # a shorter whole local part ("rk1") is not a handle
 _SPLIT = re.compile(r"[._+\-]+|\d+")
+_RUNS = re.compile(r"[^\W\d_]+|\d+")  # letter runs and digit runs; a digit run is never vocabulary
 _JSON_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
 _AROUND_SYMBOL = re.compile(r"\s*([@.])\s*")
 _WORD = re.compile(r"[^\W\d_]{3,}")
@@ -66,10 +72,12 @@ COMMON = frozenset(
 
 @dataclass(frozen=True)
 class Marks:
-    """What counts for a set of owner addresses: the folded addresses and the distinctive tokens."""
+    """What counts for a set of owner addresses: the folded addresses, the distinctive tokens and
+    the whole local parts that are handles."""
 
     addresses: tuple[str, ...]
     tokens: tuple[str, ...]
+    whole: tuple[str, ...] = ()
 
 
 def _docstrings(tree: ast.Module) -> set[int]:
@@ -134,9 +142,22 @@ def tokens(local: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+def whole(local: str) -> tuple[str, ...]:
+    """The local part as a whole, and its mailbox without a `+tag`, each when it has >= 4
+    characters and is not made only of vocabulary words (a digit run is never vocabulary)."""
+    vocab = vocabulary()
+    out: list[str] = []
+    for part in (local, local.partition("+")[0]):
+        runs = _RUNS.findall(part)
+        if len(part) >= WHOLE_MIN and not all(r in vocab for r in runs) and part not in out:
+            out.append(part)
+    return tuple(out)
+
+
 def marks(emails: Iterable[str]) -> Marks:
     addresses: list[str] = []
     found: list[str] = []
+    handles: list[str] = []
     for raw in emails:
         address = fold(raw).strip()
         local, at, domain = address.partition("@")
@@ -144,11 +165,18 @@ def marks(emails: Iterable[str]) -> Marks:
             continue
         addresses.append(address)
         found.extend(t for t in tokens(local) if t not in found)
-    return Marks(tuple(addresses), tuple(found))
+        handles.extend(h for h in whole(local) if h not in handles)
+    return Marks(tuple(addresses), tuple(found), tuple(handles))
 
 
 def _word_in(token: str, text: str) -> bool:
     return re.search(rf"(?<![^\W\d_]){re.escape(token)}(?![^\W\d_])", text) is not None
+
+
+def _whole_in(local: str, text: str) -> bool:
+    """The whole local part, bounded as a mailbox name is: no word character, ".", "+" or "-"
+    before it, no word character or "-" after it."""
+    return re.search(rf"(?<![\w.+\-]){re.escape(local)}(?![\w\-])", text) is not None
 
 
 def _hit(views: Sequence[str], m: Marks) -> Hit | None:
@@ -158,12 +186,15 @@ def _hit(views: Sequence[str], m: Marks) -> Hit | None:
             return "address"
     if any(_word_in(t, view) for view in folded for t in m.tokens):
         return "word"
+    if any(_whole_in(h, view) for view in folded for h in m.whole):
+        return "word"
     return None
 
 
 def match(text: str, emails: Iterable[str]) -> Hit | None:
     """Does this text name an owner: his full address in any form ("address"), or a distinctive
-    token of its local part as a whole word ("word")? None otherwise."""
+    token of its local part as a whole word, or the local part itself when it is a handle
+    ("word")? None otherwise."""
     m = marks(emails)
     if not m.addresses:
         return None
@@ -186,6 +217,7 @@ def in_book(book_json: bytes, emails: Iterable[str]) -> Hit | None:
 __all__ = [
     "COMMON",
     "TOKEN_MIN",
+    "WHOLE_MIN",
     "Hit",
     "Marks",
     "fold",
@@ -194,4 +226,5 @@ __all__ = [
     "match",
     "tokens",
     "vocabulary",
+    "whole",
 ]

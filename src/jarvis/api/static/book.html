@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#04070D">
 <title>JARVIS &middot; Build book</title>
 <style>
-/* Self-hosted OFL fonts (static/fonts, licences beside them). Styles: console.css + book.css */
+/* Self-hosted OFL fonts (static/fonts, licences beside them). Styles: console.css + console-deck.css + book.css */
 @font-face{font-family:"Orbitron";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/orbitron-latin-600-normal.woff2?v=1) format("woff2")}
 @font-face{font-family:"Orbitron";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/orbitron-latin-700-normal.woff2?v=1) format("woff2")}
 @font-face{font-family:"Rajdhani";font-style:normal;font-weight:500;font-display:swap;src:url(/static/fonts/rajdhani-latin-500-normal.woff2?v=1) format("woff2")}
@@ -16,20 +16,99 @@
 @font-face{font-family:"Share Tech Mono";font-style:normal;font-weight:400;font-display:swap;src:url(/static/fonts/share-tech-mono-latin-400-normal.woff2?v=1) format("woff2")}
 </style>
 <link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/console-deck.css">
 <link rel="stylesheet" href="/static/book.css">
 </head>
 <body>
 <!-- R6 D15 (docs/plans/r6-build-book.md): the build book show, served at /book/show with the
-     console's CSP. I0 SHELL: builder D fills it. The page holds no data: it asks /v1/book/show/*
-     with the book token (this tab's sessionStorage only). console-fx.js gives the theme and
-     JarvisFX.tokens(); console-permissions.js gives JarvisPasskey (Resume) and nothing else here. -->
-<main class="show" id="show" aria-label="Build book"></main>
+     console's CSP. The page holds no data: it asks /v1/book/show/* with the book token (this tab's
+     sessionStorage only) and clears its DOM, the token and its audio when the session closes.
+     console-fx.js gives the theme and JarvisFX.tokens(); console-permissions.js gives JarvisPasskey
+     (Resume). Every line JARVIS says comes from the server's script, put in place by textContent. -->
+<main class="sh-main" id="show" aria-label="Build book" data-state="loading">
+  <header class="sh-top">
+    <div class="sh-brand"><span class="wordmark">JARVIS</span><span class="k">Build book</span></div>
+    <div class="sh-where"><span class="k" id="shCount"></span><h1 class="sh-title" id="shScene">Build book</h1></div>
+    <div class="sh-meta"><span class="k" id="shRelease"></span><span class="k" id="shUntil"></span></div>
+  </header>
+
+  <div class="sh-stage" id="shStage">
+    <canvas id="showGL" aria-hidden="true"></canvas>
+    <div class="sh-labels" id="shLabels" aria-hidden="true"></div>
+    <div class="sh-2d" id="sh2d" hidden></div>
+  </div>
+
+  <section class="sh-talk card" id="shTalk" aria-labelledby="shTalkTitle" hidden>
+    <header class="sh-thead"><h2 id="shTalkTitle">Questions</h2><span class="k" id="shLeft"></span></header>
+    <div class="sh-thread" id="shThread" aria-live="polite"></div>
+    <div class="composer-wrap">
+      <div class="composer">
+        <label class="sr-only" for="shQ">Your question about how JARVIS is built</label>
+        <textarea id="shQ" rows="1" maxlength="500" placeholder="Ask how JARVIS is built" autocomplete="off"></textarea>
+        <button class="icon-btn sh-mic" id="shMic" type="button" aria-label="Ask by voice" aria-pressed="false" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="7" y="2.5" width="6" height="10" rx="3"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/></svg></button>
+        <button class="send" id="shSend" type="button" aria-label="Ask"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 16V4M4.5 9.5 10 4l5.5 5.5"/></svg></button>
+      </div>
+    </div>
+    <div class="sh-tfoot"><button class="btn lift" id="shFinish" type="button">No more questions</button></div>
+  </section>
+
+  <div class="sh-cap" id="shCap" aria-live="polite"><p id="shCapText"></p></div>
+
+  <nav class="sh-ctl" id="shCtl" aria-label="Show controls">
+    <div class="sh-ctl-main">
+      <button class="icon-btn" id="shPrevScene" type="button" aria-label="Previous scene (Page Up)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4v12M15 4l-7 6 7 6"/></svg></button>
+      <button class="icon-btn" id="shPrev" type="button" aria-label="Previous line (Left arrow)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.5 4-6 6 6 6"/></svg></button>
+      <button class="icon-btn sh-play" id="shPlay" type="button" aria-pressed="false" aria-label="Play (Space)"><svg class="i-play" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M6 4.2v11.6L15.5 10z"/></svg><svg class="i-pause" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1"/><rect x="11.6" y="4" width="3.4" height="12" rx="1"/></svg></button>
+      <button class="icon-btn" id="shNext" type="button" aria-label="Next line (Right arrow)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7.5 4 6 6-6 6"/></svg></button>
+      <button class="icon-btn" id="shNextScene" type="button" aria-label="Next scene (Page Down)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4v12M5 4l7 6-7 6"/></svg></button>
+    </div>
+    <div class="mbar sh-prog" id="shProg" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+    <div class="sh-ctl-side">
+      <button class="btn lift sh-tb" id="shChapters" type="button" aria-haspopup="dialog">Chapters</button>
+      <button class="btn lift sh-tb" id="shCaptions" type="button" aria-pressed="true" aria-label="Captions (C)">CC</button>
+      <button class="btn lift sh-tb" id="shSound" type="button" aria-pressed="true" aria-label="Sound (M)">Sound</button>
+      <button class="btn lift sh-tb" id="shAsk" type="button" aria-label="Ask a question (Q)">Ask</button>
+      <button class="btn lift sh-tb" id="shEnd" type="button" aria-label="End the session (Esc)">End</button>
+    </div>
+  </nav>
+
+  <div class="gate sh-over" id="shStartWrap">
+    <section class="gate-card card sh-card" id="shStart" aria-labelledby="shStartTitle" hidden>
+      <span class="core lg sh-emblem" aria-hidden="true"></span>
+      <h2 id="shStartTitle">Build book</h2>
+      <p class="sh-rel" id="shStartRel"></p>
+      <p id="shStartNote"></p>
+      <button class="cta lift" id="shBegin" type="button">Begin the show</button>
+      <p class="fine">Space plays and pauses &middot; arrows move a line &middot; C captions &middot; M sound &middot; Q ask &middot; Esc ends</p>
+    </section>
+    <section class="gate-card card sh-card" id="shDone" aria-labelledby="shDoneTitle" hidden>
+      <span class="core lg sh-emblem" aria-hidden="true"></span>
+      <h2 id="shDoneTitle">Build book</h2>
+      <p class="sh-line" id="shDoneLine"></p>
+      <p id="shDoneNote"></p>
+      <button class="cta lift" id="shResume" type="button" hidden>Resume with my passkey</button>
+      <button class="cta lift" id="shBack" type="button" hidden>Back to the console</button>
+      <p class="fine" id="shDoneFine" role="status"></p>
+    </section>
+  </div>
+
+  <dialog class="bdialog" id="shConfirm" role="alertdialog" aria-labelledby="shConfirmTitle" aria-describedby="shConfirmText">
+    <h2 id="shConfirmTitle">End the session?</h2>
+    <p id="shConfirmText">Its conversation will be deleted.</p>
+    <div class="actions"><button class="btn lift" id="shKeep" type="button">Keep watching</button><button class="btn primary lift" id="shEndYes" type="button">End the session</button></div>
+  </dialog>
+  <dialog class="bdialog sh-chap" id="shChapterList" aria-labelledby="shChapTitle">
+    <h2 id="shChapTitle">Chapters</h2>
+    <ol class="sh-chapters" id="shChapterItems"></ol>
+    <div class="actions"><button class="btn lift" id="shChapClose" type="button">Close</button></div>
+  </dialog>
+</main>
 <script src="/static/console-fx.js" defer></script>
 <script src="/static/console-permissions.js" defer></script>
+<script src="/static/console-book-show.js" defer></script>
 <script src="/static/console-book-voice.js" defer></script>
 <script src="/static/console-book-2d.js" defer></script>
 <script src="/static/console-book-talk.js" defer></script>
-<script src="/static/console-book-show.js" defer></script>
 <script type="module" src="/static/console-book-3d.js"></script>
 </body>
 </html>

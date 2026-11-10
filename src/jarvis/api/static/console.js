@@ -613,15 +613,32 @@
   // uncovered when /auth/me answers 200; offline, a 503 or an error keep the cover with Try again.
   const UNSURE = 'Can\u2019t reach JARVIS to check that no guest show holds this console. Check your connection.';
   let lastCheck = 0, covered = false, live = false;
+  // Code re-review #3: a modal <dialog> (the Systems check, a confirm) sits in the top layer above the gate and keeps
+  // the page inert even when hidden, and other pop-ups live outside #app. While covered every open dialog is closed
+  // QUIETLY (its own close handlers never hear of it, so nothing settles) and every other body-level layer but the
+  // gate and the aria-hidden decor is hidden; uncover() puts each back as it was, on a 200 only.
+  const QUIET = new WeakSet(), veiled = [];
+  window.addEventListener('close', (e) => { if (QUIET.has(e.target)) { QUIET.delete(e.target); e.stopImmediatePropagation(); } }, true);
+  function veil() {
+    document.querySelectorAll('dialog[open]').forEach((d) => {
+      let modal = true; try { modal = d.matches(':modal'); } catch (_) {}
+      QUIET.add(d); d.close();
+      veiled.push(() => { if (d.isConnected && !d.open) { try { if (modal) d.showModal(); else d.show(); } catch (_) {} } });
+    });
+    for (const el of document.body.children) {
+      if (el.hidden || el.id === 'gate' || el.id === 'app' || /^(script|dialog)$/.test(el.localName) || el.getAttribute('aria-hidden') === 'true') continue;
+      el.hidden = true; veiled.push(() => { el.hidden = false; });
+    }
+  }
   function cover(words, retry) {
-    covered = true; $('app').hidden = true;
+    covered = true; $('app').hidden = true; veil();
     const box = $('gateBox');
     box.innerHTML = FX.core('lg') + '<h2 id="gateTitle">JARVIS</h2><p></p>' + (retry ? '<button class="cta lift" id="gRetry">Try again</button>' : '');
     box.querySelector('p').textContent = words;
     if (retry) $('gRetry').addEventListener('click', () => recheck(true));
     $('gate').classList.add('show'); FX.refresh();
   }
-  function uncover() { if (!covered) return; covered = false; $('app').hidden = false; hideGate(); }
+  function uncover() { if (!covered) return; covered = false; $('app').hidden = false; hideGate(); veiled.splice(0).forEach((back) => back()); }
   async function recheck(force) {
     if (state.authMode !== 'google' || !live) return;
     if (!force && !covered && Date.now() - lastCheck < 1500) return;

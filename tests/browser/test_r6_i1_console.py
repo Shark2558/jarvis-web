@@ -203,3 +203,50 @@ def test_an_unlocked_tab_comes_back_uncovered(browser: Any, server_url: str, tok
         assert not c.page.locator("#gate.show").count()
     finally:
         _close(c)
+
+
+# ---- code re-review #3: the cover hides every pop-up outside #app too, until a 200 ---------------
+POP_UP = (
+    "() => { const d = document.getElementById('sysCheck'); return !!d && d.open"
+    " && d.getBoundingClientRect().width > 0 && getComputedStyle(d).display !== 'none'; }"
+)
+LAYERS = (  # what is drawn at the body's top level besides the gate and the aria-hidden decor
+    "() => [...document.body.children].filter((el) => el.id !== 'gate' && el.localName !== 'script'"
+    " && el.getAttribute('aria-hidden') !== 'true' && el.getBoundingClientRect().width > 0"
+    " && getComputedStyle(el).display !== 'none').map((el) => el.id || el.className)"
+)
+OVERLAY = (  # a confirm backdrop as console-vault.js appends one, outside #app
+    "() => { const b = document.createElement('div'); b.className = 'vd-back'; b.id = 'probeBack';"
+    " b.textContent = 'Delete the vault item?'; document.body.append(b); }"
+)
+
+
+def test_a_covered_tab_hides_its_pop_ups_and_brings_them_back_only_when_unlocked(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, me = _google_console(browser, server_url, token)
+    try:
+        c.page.locator("#welcome h1").wait_for()
+        c.page.evaluate("window.JarvisSystemsCheck.open({closeAfterMs: 600000})")
+        c.page.wait_for_function(POP_UP)
+        c.page.evaluate(OVERLAY)
+        c.page.evaluate(
+            "() => document.getElementById('sysCheck')"
+            ".addEventListener('close', () => { window.__sysClosed = true; })"
+        )
+        me["status"] = 0  # the guest turned the Wi-Fi off and switched to this tab
+        c.page.evaluate(HIDE)
+        assert not c.page.evaluate(POP_UP) and c.page.evaluate(LAYERS) == []
+        c.page.evaluate(SHOW)
+        gate = c.page.locator("#gate.show")
+        gate.get_by_text("Can’t reach JARVIS").wait_for()
+        assert not c.page.evaluate(POP_UP)  # Vitals, spend and the briefing stay out of sight
+        assert c.page.evaluate(LAYERS) == []
+        me["status"] = 200
+        gate.get_by_role("button", name="Try again").click(timeout=5000)  # the gate is not inert
+        c.page.locator("#gate.show").wait_for(state="detached")
+        c.page.wait_for_function(POP_UP)  # back as it was: still open, never closed for its owner
+        assert c.page.evaluate("() => window.__sysClosed === undefined")
+        assert "probeBack" in c.page.evaluate(LAYERS) and c.page.evaluate(SEEN)
+    finally:
+        _close(c)

@@ -33,6 +33,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from jarvis.alerts import AlertSink, NoAlerts
+from jarvis.api.book_lock import push_quiet
 from jarvis.camera.guard import ArmedUnlinkGuard
 from jarvis.camera.privacy import CameraHomePrivacy, HomeFeedPrivacy
 from jarvis.camera.service import CameraServices, build_camera
@@ -140,7 +141,12 @@ def wire_notify(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> Ale
     st.push_store, st.push = pushed if pushed is not None else (None, None)
     st.notify_store = store
     st.notify = NotifyService(
-        store, audit, telegram=telegram, push=st.push, timezone=s.user_timezone
+        store,
+        audit,
+        telegram=telegram,
+        push=st.push,
+        timezone=s.user_timezone,
+        push_quiet=push_quiet(app),  # R6 SEC-5: nothing on the device while a guest show runs
     )
     return PolicyAlerts(st.notify)
 

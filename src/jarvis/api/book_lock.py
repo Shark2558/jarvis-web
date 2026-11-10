@@ -39,6 +39,7 @@ other owner's Google account in the same browser is no way out.
 from __future__ import annotations
 
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import FastAPI
@@ -107,6 +108,25 @@ async def lock_for(
 
 def owner_ids(s: Settings) -> tuple[str, ...]:
     return tuple(dict.fromkeys(user_id_for_email(e) for e in s.owner_emails))
+
+
+def push_quiet(app: FastAPI) -> Callable[[str], Awaitable[bool]]:
+    """SEC-5, for `NotifyService(push_quiet=...)`: does a guest lock (on any owner) hold `uid`'s
+    consoles? Web Push then carries no content. Read per call from `app.state.book_lock`
+    (cached <= 3 s); unreadable counts as held."""
+    owners = owner_ids(app.state.settings)
+
+    async def held(uid: str) -> bool:
+        store: ShowLock | None = getattr(app.state, "book_lock", None)
+        if store is None:
+            return False
+        try:
+            state, _ = await lock_for(store, owners, uid)
+        except LockUnreadable:
+            return True
+        return state is not None
+
+    return held
 
 
 def _json(status: int, body: dict[str, Any]) -> Response:
@@ -230,4 +250,5 @@ __all__ = [
     "install_show_lock_middleware",
     "lock_for",
     "owner_ids",
+    "push_quiet",
 ]

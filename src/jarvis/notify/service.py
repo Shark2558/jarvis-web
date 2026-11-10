@@ -13,12 +13,16 @@ consulted before any hold or ring, so push and the held summary obey them too; n
 an hourly push allowance across instances (urgent kinds, hazards first, never ask for it); held
 alerts are removed only after a channel took the summary; a Telegram cap refusal of a burglar
 alert joins the storm summary.
+
+R6 SEC-5: Web Push lands on the device a guest may be holding during a build book show. While
+`push_quiet(uid)` says a guest lock holds the owner's consoles (or can't tell), push carries only
+`CONTENT_FREE_PUSH`; Telegram is unchanged (D10 leaves it untouched).
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -39,6 +43,7 @@ from jarvis.tools.audit import AuditTrail
 log = get_logger(__name__)
 MAX_TEXT = 300
 PUSH_PER_HOUR = 20  # per owner, all instances; urgent kinds and tests are exempt
+CONTENT_FREE_PUSH = "JARVIS has something for you."  # R6 SEC-5 (the service worker's own default)
 
 
 class PushSender(Protocol):
@@ -67,8 +72,10 @@ class NotifyService:
         storm: Storm | None = None,
         timezone: str = "Asia/Kolkata",
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        push_quiet: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
         self._store = store
+        self._push_quiet = push_quiet
         self._audit = audit
         self._telegram = telegram
         self._push = push
@@ -211,11 +218,25 @@ class NotifyService:
     ) -> int:
         if self._push is None or not await self._push_allowed(uid, signal, decision):
             return 0
+        words = await self.push_words(uid, text)
         try:
-            return await self._push.send(uid, kind=signal.kind, text=text, silent=silent)
+            return await self._push.send(uid, kind=signal.kind, text=words, silent=silent)
         except Exception as exc:  # noqa: BLE001 - contained
             log.warning("notify: push failed", extra={"error": type(exc).__name__})
             return 0
+
+    async def push_words(self, uid: str, text: str) -> str:
+        """What a push to `uid` may say: nothing while a guest lock holds his consoles (SEC-5)."""
+        if self._push_quiet is None:
+            return text
+        try:
+            quiet = await self._push_quiet(uid)
+        except Exception as exc:  # noqa: BLE001 - can't tell: say nothing on the device
+            log.warning(
+                "notify: guest lock unreadable for push", extra={"error": type(exc).__name__}
+            )
+            quiet = True
+        return CONTENT_FREE_PUSH if quiet else text
 
     async def _send_due_summary(self, uid: str, settings: NotifySettings, now: datetime) -> None:
         count = self._storm.due_summary(uid, now)

@@ -1,3 +1,63 @@
 /* src/jarvis/api/static/console-book.css -- R6 D16: the Book panel (#p-book).
-   I0 STUB: builder D fills it. Existing tokens and components only (--hud, --disp, --tech, --well,
-   --line, --ink*, .btn, dialogs as R5.1); no new colours, fonts, radii or shadows; <= 300 lines. */
+   Reuses the console's own pieces only: the Integrations card (.integ / .ihead / .istate / .ibody), the amber
+   option strip (.iopt), the Brief's sections (.bsec h3 + .bcount, .bev / .btime / .bwhat, .blines, .bchips),
+   its settings disclosure (.bset / .dsc / .dbody / .bopt / .bsw / .bsel), .tiles / .tile, .bnote, .bfine, .btn,
+   .actions, .rhead / .k, .dinput, .tag and the confirm dialog (.bdialog). This sheet only lays them out.
+   No new colours, fonts, radii or shadows: tokens only, both surfaces, every theme. Phones: targets >= 44 px. */
+#p-book .pbody{display:flex;flex-direction:column;gap:12px}
+#p-book .pbody > *{margin-top:0;margin-bottom:0}
+#p-book .bnote:empty{display:none}
+
+/* the release card and the open actions */
+.bk-release .ibody .fine{margin-top:6px}
+.bk-opens{display:flex;flex-direction:column;gap:8px}
+.bk-opens .actions{margin-top:0}
+.bk-opens .bfine{margin:0}
+.bk-opens > .btn{flex:none;align-self:flex-start;padding:0 14px}
+.bk-resume,.bk-lock{margin-top:0;color:var(--ink)}
+.bk-resume > span:first-child,.bk-lock > span:first-child{flex:1 1 220px;min-width:0;line-height:1.4}
+.bk-lock .btn{flex:none;padding:0 12px}
+.bk-session{margin-top:0}
+
+/* kept releases: one row each; the owner's open session adds Read and Download code */
+.bk-sealed{list-style:none;margin:0;padding:0}
+.bk-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:8px 0;border-top:1px solid var(--line-2)}
+.bk-row:first-child{border-top:0;padding-top:2px}
+.bk-rtxt{flex:1 1 180px;min-width:0}
+.bk-rtxt b{display:block;font:400 13px/1.35 var(--tech);letter-spacing:.06em;color:var(--ink)}
+.bk-rtxt small{display:block;margin-top:2px;font-size:12px;line-height:1.4;color:var(--ink-2)}
+.bk-racts{display:flex;flex-wrap:wrap;gap:8px}
+.bk-racts .btn{flex:none;height:32px;padding:0 12px;font-size:12px}
+.bk-tiles{margin-bottom:0}
+
+/* the reader: the Brief's disclosures, one per section */
+.bk-reader{display:flex;flex-direction:column;gap:0;padding-top:4px;border-top:1px solid var(--line-2)}
+.bk-rhead{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0 0}
+.bk-rhead .k{flex:1 1 160px}
+.bk-rhead .btn{flex:none;height:32px;padding:0 12px;font-size:12px}
+.bk-sections{display:flex;flex-direction:column}
+.bk-sec{margin-top:10px}
+.bk-sec .dbody{padding-bottom:10px}
+.bk-sec .bsec:first-child{margin-top:4px;padding-top:6px;border-top:0}
+.bk-sec .bevents{list-style:none;margin:0;padding:0}
+.bk-sec .bev{grid-template-columns:96px minmax(0,1fr)}
+.bk-sec .btime{overflow:hidden;text-overflow:ellipsis}
+.bk-sec .bwhat small{overflow-wrap:anywhere}
+.bk-flag{margin-left:2px;vertical-align:1px;white-space:nowrap}
+.bk-sec .bchips{padding-top:2px}
+
+/* Book settings: the Brief's settings rows; the name is label-above-input with its Save button */
+.bk-set .bset{margin-top:0}
+.bk-name{flex-direction:column;align-items:stretch;gap:6px}
+.bk-namerow{display:flex;gap:8px;align-items:center}
+.bk-namerow .dinput{flex:1 1 auto}
+.bk-namerow .btn{flex:none;height:36px;padding:0 12px;font-size:12px}
+.bk-setnote{margin-top:8px}
+
+@media (max-width: 899px){
+  #p-book .btn,.bk-racts .btn,.bk-rhead .btn,.bk-namerow .btn{min-height:44px}
+  #p-book .actions .btn{height:44px}
+  .bk-namerow .dinput,#p-book .bsel{height:44px}
+  #p-book .bsw{min-height:44px}
+  .bk-sec .bev{grid-template-columns:80px minmax(0,1fr)}
+}

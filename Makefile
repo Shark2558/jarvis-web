@@ -31,7 +31,9 @@ browser-test:
 
 # Regenerate the hash-locked dependencies the Docker image installs from: runtime deps from
 # pyproject.toml plus the build toolchain (pip, setuptools, wheel) from requirements-build.in.
-# Run after any change to either (same Python as the image: 3.12).
+# Run after any change to either (same Python as the image: 3.12). Then refresh the build book's
+# licence table (R6 D2) with the lock installed: pip install --require-hashes -r requirements.lock
+# && PYTHONPATH=src python -m jarvis.buildbook.gen --licences
 lock:
 	pip install -q pip-tools
 	pip-compile --generate-hashes --strip-extras --allow-unsafe -o requirements.lock \

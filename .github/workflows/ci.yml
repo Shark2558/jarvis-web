@@ -117,14 +117,12 @@ jobs:
       SERVICE: jarvis
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
-        with:
-          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/jarvis-web
-          service_account: jarvis-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
-      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
       # R6 D4: this release's build book goes into the image (src/jarvis/buildbook/_book, package
       # data). Best effort: a failed build writes release.json with the error and no book, and the
       # deploy goes on (the app then sends book_seal_failed); the PR's --check makes that rare.
+      # Built BEFORE the Google sign-in, so no install-time code runs while credentials exist.
+      # The generator runs from the checkout (PYTHONPATH=src): even if an install failed, it
+      # still writes an error release.json from git alone.
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: "3.12", cache: pip }
       - name: Install the locked packages for the build book
@@ -134,7 +132,12 @@ jobs:
           pip install --no-deps --no-build-isolation .
       - name: Write the build book (best effort)
         continue-on-error: true
-        run: python -m jarvis.buildbook.gen --out src/jarvis/buildbook/_book --best-effort
+        run: PYTHONPATH=src python -m jarvis.buildbook.gen --out src/jarvis/buildbook/_book --best-effort
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/jarvis-web
+          service_account: jarvis-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
       - name: Build and push the image
         run: |
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${SERVICE}:${GITHUB_SHA}"

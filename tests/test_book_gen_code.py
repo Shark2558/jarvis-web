@@ -193,3 +193,21 @@ def test_every_service_in_plain_words_names_prefixes_and_short_words() -> None:
 
 def test_plain_words_cover_every_layer() -> None:
     assert set(plain.LAYER_WORDS) == {lid for lid, _ in LAYERS}
+
+
+# ---- review fix: a tracked module that can't be parsed fails instead of reading as absent ----
+def test_a_tracked_module_that_is_not_python_fails(tmp_path: Path) -> None:
+    (tmp_path / "src" / "jarvis").mkdir(parents=True)
+    (tmp_path / "src" / "jarvis" / "keyring.py").write_text("PURPOSES = (\n", encoding="utf-8")
+    r = Repo.from_dir(tmp_path, sha="d" * 40, committed_at=COMMIT_DATE)
+    with pytest.raises(GenError, match="keyring.py"):
+        code.tree(r, "src/jarvis/keyring.py")
+    assert code.tree(r, "src/jarvis/absent.py") is None and code.tree(r, None) is None
+
+
+def test_key_purposes_that_are_not_a_literal_fail(tmp_path: Path) -> None:
+    (tmp_path / "src" / "jarvis").mkdir(parents=True)
+    (tmp_path / "src" / "jarvis" / "keyring.py").write_text("PURPOSES = load()\n", "utf-8")
+    r = Repo.from_dir(tmp_path, sha="d" * 40, committed_at=COMMIT_DATE)
+    with pytest.raises(GenError, match="PURPOSES"):
+        code.integrations(r, Scrubber(frozenset()))

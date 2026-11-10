@@ -7,13 +7,15 @@ flag is also a Limitation."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import pytest
-from book_gen_fakes import COMMIT_DATE, ROOT, fixture_repo
+from book_gen_fakes import COMMIT_DATE, ROOT, commit_all, fixture_repo
 
-from jarvis.buildbook.gen import libs
-from jarvis.buildbook.gen.repo import Repo
+from jarvis.buildbook.gen import libs, licences
+from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.sections import Library
 
 OSI = "License :: OSI Approved :: "
@@ -52,11 +54,105 @@ def test_the_licence_of_a_dist_follows_the_d2_order(
         ("GPL-2.0 AND MIT", "copyleft"),
         ("CC-BY-NC-SA-4.0", "non_commercial"),
         ("not stated", None),
-        ("MPL-2.0", None),
+        # SPDX AND binds tighter than OR; brackets group; a mandatory copyleft part flags it
+        ("(MIT OR Apache-2.0) AND LGPL-3.0", "copyleft"),
+        ("MIT AND (GPL-2.0 OR GPL-3.0)", "copyleft"),
+        ("(LGPL-3.0 OR MIT) AND BSD-3-Clause", None),
+        ("LGPL-3.0 AND MIT OR Apache-2.0", None),
+        ("Apache-2.0 AND CC-BY-NC-4.0", "non_commercial"),
+        ("CC-BY-NC-SA-4.0 OR MIT", None),
+        # MPL-2.0 is file-level (weak) copyleft, flagged like LGPL
+        ("MPL-2.0", "copyleft"),
+        ("Mozilla Public License 2.0 (MPL 2.0)", "copyleft"),
+        ("MPL-2.0 OR MIT", None),
     ],
 )
 def test_flags(licence: str, flag: str | None) -> None:
     assert libs.flag_of(licence) == flag
+
+
+# ---- the licence table: the book's licences are a function of the commit ---------------------
+def _table(root: Path, dists: dict[str, tuple[str, str]]) -> None:
+    doc = {"v": 1, "dists": {n: {"version": v, "licence": lic} for n, (v, lic) in dists.items()}}
+    (root / licences.TABLE).write_text(json.dumps(doc), encoding="utf-8")
+
+
+FIXTURE_PINS = {"fastapi": "0.115.0", "httpx": "0.27.2", "pydantic": "2.9.2"}
+
+
+def test_licences_come_from_the_committed_table_not_the_environment(tmp_path: Path) -> None:
+    root = fixture_repo(tmp_path)
+    table = {n: (v, f"Licence-{n}") for n, v in FIXTURE_PINS.items()}
+    table["httpx"] = ("0.27.2", "GPL-3.0-only")
+    _table(root, table)
+    commit_all(root, "table")
+    r = Repo.from_git(root)
+    got = {lib.name: lib for lib in libs.libraries(r, licences.table_lookup(r))}
+    assert got["pydantic"].licence == "Licence-pydantic"  # installed pydantic says MIT
+    assert got["httpx"].flag == "copyleft"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"pydantic": ("2.9.3", "MIT")},  # another version than the lock's
+        {"zzz": ("1.0", "MIT")},  # a package the lock doesn't pin
+        {"httpx": None},  # a locked package with no row
+    ],
+)
+def test_a_table_out_of_step_with_the_lock_fails(tmp_path: Path, change: dict[str, Any]) -> None:
+    root = fixture_repo(tmp_path)
+    table: dict[str, tuple[str, str]] = {n: (v, "MIT") for n, v in FIXTURE_PINS.items()}
+    for name, row in change.items():
+        if row is None:
+            table.pop(name)
+        else:
+            table[name] = row
+    _table(root, table)
+    commit_all(root, "table")
+    with pytest.raises(GenError, match="--licences") as err:
+        licences.table_lookup(Repo.from_git(root))
+    assert next(iter(change)) in str(err.value)
+
+
+def test_a_lock_without_a_table_fails_and_no_lock_needs_none(tmp_path: Path) -> None:
+    with pytest.raises(GenError, match=licences.TABLE):
+        licences.table_lookup(Repo.from_git(fixture_repo(tmp_path)))
+    empty = Repo.from_dir(tmp_path / "e", sha="e" * 40, committed_at=COMMIT_DATE)
+    assert licences.table_lookup(empty)("anything") == "not stated"
+
+
+def test_the_table_is_written_from_installed_metadata_only_when_it_matches_the_lock(
+    tmp_path: Path,
+) -> None:
+    r = Repo.from_git(fixture_repo(tmp_path))
+    installed = {n: (v, "MIT") for n, v in FIXTURE_PINS.items()}
+    data = licences.table_bytes(r, installed.__getitem__)
+    doc = json.loads(data)
+    assert doc["dists"]["httpx"] == {"version": "0.27.2", "licence": "MIT"}
+    assert list(doc["dists"]) == sorted(doc["dists"]) and data.endswith(b"\n")
+    installed["httpx"] = ("0.28.0", "MIT")
+    installed["pydantic"] = (None, "not stated")
+    with pytest.raises(GenError) as err:
+        licences.table_bytes(r, installed.__getitem__)
+    assert "httpx 0.28.0" in str(err.value) and "pydantic missing" in str(err.value)
+
+
+def test_the_cli_refreshes_the_table(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from jarvis.buildbook.gen import __main__ as cli
+
+    root = fixture_repo(tmp_path)
+    monkeypatch.setattr(licences, "installed_meta", lambda n: (FIXTURE_PINS[n], "MIT"))
+    assert cli.main(["--repo", str(root), "--licences"]) == 0
+    commit_all(root, "table")
+    assert licences.table_lookup(Repo.from_git(root))("httpx") == "MIT"
+
+
+def test_the_real_table_matches_the_lock_and_states_every_licence() -> None:
+    r = Repo.from_git(ROOT)
+    lookup = licences.table_lookup(r)
+    unstated = [n for n, _ in libs.locked(r) if lookup(n) == libs.NOT_STATED]
+    assert unstated == [], unstated
 
 
 def test_licence_files_are_recognised_by_their_text() -> None:

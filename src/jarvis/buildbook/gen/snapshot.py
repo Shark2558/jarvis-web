@@ -8,9 +8,11 @@ zip is built as home/kit.py builds the kit: names sorted and NFC under `JARVIS-s
 entry at `model.ZIP_STAMP`, mode 0644, Unix — the same commit gives the same bytes (per zlib).
 
 Before zipping, every kept file is scanned for secret shapes (`scrub.SECRET_SHAPES`: private-key
-blocks, `AIza…`, `sk-ant-…`, `ghp_`/`github_pat_`, `AKIA…`, Telegram bot tokens). A hit refuses the
-snapshot unless the hit's SHA-256 is in gen/fake_secrets.txt (the known fakes in tests and
-evals). Over `SNAPSHOT_CAP_BYTES` (15 MB) is refused. Errors name paths and kinds, never a secret.
+and PGP key blocks, `AIza…`, `GOCSPX-…`, `sk-ant-…`, `sk-…`, `sk-or-v1-…`, `gsk_…`, `tvly-…`,
+`ghp_`/`github_pat_`, `AKIA…`, Telegram bot tokens). A hit refuses the snapshot unless its SHA-256
+is listed FOR THAT FILE in gen/fake_secrets.txt (the known fakes in tests and evals; a private key
+is hashed as its whole block, so a listed fake covers that one key and nothing else). Over
+`SNAPSHOT_CAP_BYTES` (15 MB) is refused. Errors name paths and kinds, never a secret.
 """
 
 from __future__ import annotations
@@ -22,6 +24,8 @@ import re
 import unicodedata
 import zipfile
 from dataclasses import dataclass
+from importlib.resources import files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from jarvis.buildbook.gen.libs import licence_from_text
@@ -29,7 +33,8 @@ from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.gen.scrub import SECRET_SHAPES
 from jarvis.buildbook.model import MIB, SNAPSHOT_CAP_BYTES, ZIP_STAMP
 
-FAKES_FILE = Path(__file__).with_name("fake_secrets.txt")
+# package data (pyproject.toml), read through importlib.resources; a missing file stays an error
+FAKES_FILE: Traversable | Path = files("jarvis.buildbook.gen") / "fake_secrets.txt"
 THIRD_PARTY = "THIRD_PARTY.json"
 LARGE_BYTES = MIB  # a file over 1 MB is left out (listed)
 OWN = "JARVIS's own"
@@ -60,14 +65,19 @@ class Snapshot:
     skipped: int  # files left out (listed in THIRD_PARTY.json)
 
 
-def load_fakes(path: Path = FAKES_FILE) -> frozenset[str]:
+Fakes = frozenset[tuple[str, str]]  # (SHA-256 of the matched text, the tracked file it is in)
+
+
+def load_fakes(path: Traversable | Path | None = None) -> Fakes:
+    """The known fakes as (sha256, path): a fake is accepted only in the file it is listed for."""
     out = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
-        word = line.split("#", 1)[0].split()
-        if word:
-            if not re.fullmatch(r"[0-9a-f]{64}", word[0]):
-                raise GenError("gen/fake_secrets.txt: each line is a SHA-256 and a path")
-            out.add(word[0])
+    for line in (path or FAKES_FILE).read_text(encoding="utf-8").splitlines():
+        words = line.split("#", 1)[0].split()
+        if not words:
+            continue
+        if len(words) != 2 or not re.fullmatch(r"[0-9a-f]{64}", words[0]):
+            raise GenError("gen/fake_secrets.txt: each line is a SHA-256 and a path")
+        out.add((words[0], words[1]))
     return frozenset(out)
 
 
@@ -103,14 +113,14 @@ def _licence(repo: Repo, rel: str) -> str:
     return licence_from_text(repo.text(pick) or "") if pick else OWN
 
 
-def secret_hits(repo: Repo, files: tuple[str, ...], fakes: frozenset[str]) -> list[tuple[str, str]]:
-    """(path, kind) of every secret-shaped string whose SHA-256 is not a listed fake."""
+def secret_hits(repo: Repo, files: tuple[str, ...], fakes: Fakes) -> list[tuple[str, str]]:
+    """(path, kind) of every secret-shaped string not listed as a fake for that same file."""
     hits = set()
     for rel in files:
         text = repo.data(rel).decode("utf-8", errors="replace")
         for kind, pattern in SECRET_SHAPES:
             for m in pattern.finditer(text):
-                if hashlib.sha256(m.group(0).encode("utf-8")).hexdigest() not in fakes:
+                if (hashlib.sha256(m.group(0).encode("utf-8")).hexdigest(), rel) not in fakes:
                     hits.add((rel, kind))
     return sorted(hits)
 
@@ -142,7 +152,7 @@ def _zip(root: str, entries: dict[str, bytes]) -> bytes:
     return buf.getvalue()
 
 
-def build(repo: Repo, fakes: frozenset[str], *, cap: int = SNAPSHOT_CAP_BYTES) -> Snapshot:
+def build(repo: Repo, fakes: Fakes, *, cap: int = SNAPSHOT_CAP_BYTES) -> Snapshot:
     kept, skipped = [], []
     for rel in repo.files:
         why = left_out(repo, rel)
@@ -152,7 +162,8 @@ def build(repo: Repo, fakes: frozenset[str], *, cap: int = SNAPSHOT_CAP_BYTES) -
         shown = "; ".join(f"{p} ({k})" for p, k in hits[:10])
         raise SecretFound(
             f"the code snapshot holds {len(hits)} secret-shaped string(s) not listed as fakes: "
-            f"{shown}. Remove them, or list their SHA-256 in buildbook/gen/fake_secrets.txt"
+            f"{shown}. Remove them, or list each fake's SHA-256 and path in "
+            "buildbook/gen/fake_secrets.txt"
         )
     entries = {unicodedata.normalize("NFC", rel): repo.data(rel) for rel in kept}
     if len(entries) != len(kept):
@@ -168,6 +179,7 @@ def build(repo: Repo, fakes: frozenset[str], *, cap: int = SNAPSHOT_CAP_BYTES) -
 
 __all__ = [
     "FAKES_FILE",
+    "Fakes",
     "KIT_SKIP_NAMES",
     "KIT_SKIP_PARTS",
     "KIT_SKIP_SUFFIXES",

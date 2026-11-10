@@ -182,13 +182,14 @@ def test_joined_labels_keep_names_capitalised(label: str, want: str) -> None:
 # ---- the command line ------------------------------------------------------------------------
 def test_the_cli_refuses_and_best_effort_writes_an_error_release(fx: Repo, tmp_path: Path) -> None:
     out = tmp_path / "out"
-    # the real flows name code the fixture doesn't have: a plain failure ...
+    # the fixture has no licence table (and the real flows name code it doesn't have): a plain
+    # failure ...
     assert cli.main(["--repo", str(fx.root), "--out", str(out)]) == 1
     assert not out.exists()
     # ... and with --best-effort the deploy goes on: release.json with the error, no book
     assert cli.main(["--repo", str(fx.root), "--out", str(out), "--best-effort"]) == 0
     rel = Release.model_validate_json((out / "release.json").read_bytes())
-    assert rel.error and "flow" in rel.error and not (out / "book.json").exists()
+    assert rel.error and "licences" in rel.error and not (out / "book.json").exists()
 
 
 def test_the_cli_outside_a_checkout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

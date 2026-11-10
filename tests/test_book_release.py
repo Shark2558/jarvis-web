@@ -121,7 +121,17 @@ def test_hand_deploys_upload_the_git_ignored_book() -> None:
     lines = (ROOT / ".gcloudignore").read_text(encoding="utf-8").splitlines()
     rules = [ln for ln in lines if ln and (not ln.startswith("#") or ln.startswith("#!"))]
     assert rules == [".gcloudignore", ".git", ".gitignore", "#!include:.gitignore",
-                     "!src/jarvis/buildbook/_book/"]  # fmt: skip
+                     "!src/jarvis/buildbook/_book/", "gha-creds-*.json"]  # fmt: skip
     assert "src/jarvis/buildbook/_book/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
     script = (ROOT / "deploy" / "cloudrun.sh").read_text(encoding="utf-8")
     assert script.index("make book ||") < script.index('gcloud run deploy "$SERVICE" --source .')
+
+
+def test_a_hand_deploy_clears_an_earlier_book_before_make_book() -> None:
+    # when make or Python is missing, `make book || echo` carries on: the upload must not then
+    # carry an older _book/ as this release's (only the three named files, never rm -r)
+    script = (ROOT / "deploy" / "cloudrun.sh").read_text(encoding="utf-8")
+    clear = next(ln for ln in script.splitlines() if ln.startswith("rm -f ") and "_book" in ln)
+    for name in ("book.json", "source.zip", "release.json"):
+        assert f"src/jarvis/buildbook/_book/{name}" in clear
+    assert "-r" not in clear.split() and script.index(clear) < script.index("make book ||")

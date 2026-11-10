@@ -71,6 +71,8 @@ where = ["src"]
 "jarvis.homebridge" = ["static/faces.html", "static/faces.js", "static/faces.css"]
 # R6 D4: the build book CI writes before `docker build` (git-ignored; absent in a plain checkout)
 "jarvis.buildbook" = ["_book/*"]
+# R6 D3, D5: the generator's hashed name list and known fakes (the deploy job installs non-editable)
+"jarvis.buildbook.gen" = ["redact.json", "fake_secrets.txt"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

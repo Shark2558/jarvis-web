@@ -10,7 +10,8 @@
     write_error(out, repo, message) -> the best-effort release.json: `error`, no book (D4)
 
 `Options` carries what tests replace: the flows, the layer table, the scrubber (the eval's
-negative control passes `NoScrub`), the known fakes, the snapshot cap and the licence lookup.
+negative control passes `NoScrub`), the known fakes, the snapshot cap and the licence lookup
+(default: the checkout's committed requirements.licences.json, never the environment).
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from jarvis.buildbook.gen import code, costs, flows, libs, plans, snapshot
+from jarvis.buildbook.gen import code, costs, fallback, flows, libs, licences, plans, snapshot
 from jarvis.buildbook.gen.chunks import build_digest
 from jarvis.buildbook.gen.code import clip
 from jarvis.buildbook.gen.layers import LAYER_OF
@@ -51,9 +52,9 @@ class Options:
     flows: tuple[flows.Flow, ...] = flows.FLOWS
     layer_of: Mapping[str, str] = field(default_factory=lambda: LAYER_OF)
     scrubber: Scrubber | None = None  # None: gen/redact.json
-    fakes: frozenset[str] | None = None  # None: gen/fake_secrets.txt
+    fakes: snapshot.Fakes | None = None  # None: gen/fake_secrets.txt
     snapshot_cap: int = SNAPSHOT_CAP_BYTES
-    licence: libs.LicenceLookup = libs.installed_licence
+    licence: libs.LicenceLookup | None = None  # None: requirements.licences.json (the commit's)
 
 
 @dataclass(frozen=True)
@@ -66,7 +67,7 @@ class Built:
 def _parts(repo: Repo, opts: Options, scrub: Scrubber) -> Parts:
     label = plans.release_label(repo)
     read = plans.read_plans(repo, scrub)
-    libraries = libs.libraries(repo, opts.licence)
+    libraries = libs.libraries(repo, opts.licence or licences.table_lookup(repo))
     limits = (*libs.licence_limits(libraries, label), *plans.limitations(read))
     return Parts(
         release=ReleaseRef(id=repo.id, sha=repo.sha, label=label, committed_at=repo.committed_at),
@@ -173,8 +174,7 @@ def write_error(out: Path, repo: Repo, message: str) -> Release:
         error=clip(message, 200) or "the build book failed",
     )
     out.mkdir(parents=True, exist_ok=True)
-    for name in FILES:
-        (out / name).unlink(missing_ok=True)
+    fallback.clear(out)
     _put(out, RELEASE_FILE, release_bytes(release))
     return release
 

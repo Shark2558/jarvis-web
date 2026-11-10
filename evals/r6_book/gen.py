@@ -98,7 +98,8 @@ def _secrets(tmp: Path) -> list[Case]:
         refused = ["the refusal shows the secret"] if key in str(exc) else []
     listed: list[str] = []
     try:
-        snapshot.build(r, fakes | {hashlib.sha256(key.encode()).hexdigest()})
+        fake = (hashlib.sha256(key.encode()).hexdigest(), "src/jarvis/core/keys.py")
+        snapshot.build(r, fakes | {fake})
     except GenError:
         listed.append("a listed fake was refused")
     return [_case("planted_key_refused", refused), _case("listed_fake_passes", listed)]

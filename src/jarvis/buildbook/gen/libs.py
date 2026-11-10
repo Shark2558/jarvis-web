@@ -1,12 +1,14 @@
 # src/jarvis/buildbook/gen/libs.py
 """R6 D2: the Libraries & licences and Stack sections.
 
-Libraries: every pin in `requirements.lock` with the licence of the INSTALLED dist
-(`importlib.metadata`: License-Expression -> License, when it is one short line -> the License
-classifiers -> "not stated"); the vendored three.js, onnxruntime-web and openWakeWord code, the
-wake-word models and the console fonts with the licence their own licence file states. Copyleft
-(GPL / AGPL / LGPL with no permissive choice) and non-commercial (the CC BY-NC-SA wake model)
-licences are flagged, and `licence_limits` turns each flag into a Limitation.
+Libraries: every pin in `requirements.lock` with its licence as `requirements.licences.json`
+records it for that exact version (gen/licences.py; refreshed from the installed dist's metadata:
+License-Expression -> License, when it is one short line -> the License classifiers -> "not
+stated"), so the section never depends on what is installed where it is built; the vendored
+three.js, onnxruntime-web and openWakeWord code, the wake-word models and the console fonts with
+the licence their own licence file states. Copyleft (GPL / AGPL / LGPL, and file-level MPL / EPL /
+EUPL / CDDL, with no permissive choice; SPDX AND binds tighter than OR) and non-commercial (the CC
+BY-NC-SA wake model) licences are flagged, and `licence_limits` turns each flag into a Limitation.
 
 Stack: Python and the build backend (pyproject.toml), the Dockerfile's base images, each direct
 dependency at its locked version, the CI jobs, and the vendored releases named in api/console.py.
@@ -34,7 +36,12 @@ Flag = Literal["copyleft", "non_commercial"]
 
 _PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s\\;]+)")
 _NC = re.compile(r"\bNC\b|NonCommercial|non-commercial", re.IGNORECASE)
-_COPYLEFT = re.compile(r"\b[AL]?GPL|General Public License", re.IGNORECASE)
+# GPL / AGPL / LGPL, and file-level (weak) copyleft: MPL, EPL, EUPL, CDDL, flagged like LGPL
+_COPYLEFT = re.compile(
+    r"\b[AL]?GPL|General Public License|\bMPL\b|Mozilla Public License|\bEPL\b|"
+    r"Eclipse Public License|\bEUPL\b|\bCDDL\b",
+    re.IGNORECASE,
+)
 _TEXT_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("CC-BY-NC-SA-4.0", re.compile(r"NonCommercial-ShareAlike 4\.0|CC BY-NC-SA 4\.0")),
     ("CC-BY-NC", re.compile(r"NonCommercial|\bBY-NC\b")),
@@ -117,11 +124,51 @@ def licence_from_text(text: str) -> str:
     return next((spdx for spdx, rule in _TEXT_RULES if rule.search(text)), NOT_STATED)
 
 
+def _split(expr: str, op: str) -> list[str]:
+    """`expr` split on `op` (AND / OR, any case) outside brackets."""
+    parts, depth, start = [], 0, 0
+    for m in re.finditer(rf"[()]|\s+{op}\s+", expr, flags=re.IGNORECASE):
+        if m.group(0) == "(":
+            depth += 1
+        elif m.group(0) == ")":
+            depth = max(depth - 1, 0)
+        elif depth == 0:
+            parts.append(expr[start : m.start()])
+            start = m.end()
+    return [*parts, expr[start:]]
+
+
+def _unavoidable(expr: str, term: re.Pattern[str]) -> bool:
+    """Does every choice an SPDX expression offers include a licence matching `term`? (OR: each
+    alternative must; AND binds tighter: any part will do; a bracketed group is read inside.)"""
+    alternatives = _split(expr, "OR")
+    if len(alternatives) > 1:
+        return all(_unavoidable(a, term) for a in alternatives)
+    parts = _split(expr, "AND")
+    if len(parts) > 1:
+        return any(_unavoidable(p, term) for p in parts)
+    inner = expr.strip()
+    if _wrapped(inner):
+        return _unavoidable(inner[1:-1], term)
+    return bool(term.search(inner))
+
+
+def _wrapped(expr: str) -> bool:
+    """ "(...)" with the first bracket closed by the last one."""
+    if not (expr.startswith("(") and expr.endswith(")")):
+        return False
+    depth = 0
+    for i, ch in enumerate(expr):
+        depth += {"(": 1, ")": -1}.get(ch, 0)
+        if depth == 0 and i < len(expr) - 1:
+            return False
+    return True
+
+
 def flag_of(licence: str) -> Flag | None:
-    alternatives = re.split(r"\s+OR\s+", licence, flags=re.IGNORECASE)
-    if all(_NC.search(a) for a in alternatives):
+    if _unavoidable(licence, _NC):
         return "non_commercial"
-    if all(_COPYLEFT.search(a) for a in alternatives):
+    if _unavoidable(licence, _COPYLEFT):
         return "copyleft"
     return None
 
@@ -176,7 +223,7 @@ def sort_key(lib: Library) -> tuple[int, str]:
     return (_KIND_ORDER[lib.kind], lib.name.lower())
 
 
-def libraries(repo: Repo, licence: LicenceLookup = installed_licence) -> tuple[Library, ...]:
+def libraries(repo: Repo, licence: LicenceLookup) -> tuple[Library, ...]:
     python = []
     for name, version in locked(repo):
         lic = licence(name)
@@ -300,7 +347,9 @@ def stack(repo: Repo) -> Stack:
 
 
 __all__ = [
+    "LOCK",
     "NOT_STATED",
+    "LicenceLookup",
     "flag_of",
     "installed_licence",
     "libraries",

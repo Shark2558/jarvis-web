@@ -22,6 +22,8 @@ from jarvis.buildbook.gen import snapshot
 from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.model import SNAPSHOT_CAP_BYTES, ZIP_STAMP
 
+FIXTURE_DIR = "tests/fixtures/book/repo"
+
 
 def _fakes() -> frozenset[str]:
     return snapshot.load_fakes()
@@ -113,15 +115,62 @@ def test_a_planted_secret_refuses_the_snapshot_and_names_no_secret(fx: Repo) -> 
         snapshot.build(r, _fakes())
     assert "src/jarvis/core/keys.py" in str(err.value) and "google_api_key" in str(err.value)
     assert key not in str(err.value)
-    listed = _fakes() | {hashlib.sha256(key.encode()).hexdigest()}
-    assert snapshot.build(r, listed).data  # a listed fake passes
+    digest = hashlib.sha256(key.encode()).hexdigest()
+    listed = _fakes() | {(digest, "src/jarvis/core/keys.py")}
+    assert snapshot.build(r, listed).data  # a listed fake passes in its own file
 
 
-@pytest.mark.parametrize("kind", ["anthropic", "github", "aws", "telegram", "pem"])
-def test_every_secret_shape_is_caught(tmp_path: Path, kind: str) -> None:
-    (tmp_path / "a.txt").write_text(f"x {fake_secret(kind)} y\n", encoding="utf-8")
+SHAPES = [
+    "google", "anthropic", "github", "aws", "telegram", "telegram_dash", "telegram_url", "pem",
+    "pem_block", "pgp", "google_oauth", "tavily", "openai", "groq", "openrouter",
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("kind", SHAPES)
+@pytest.mark.parametrize("around", ["x {} y\n", 'T = "{}"\n', "{}"])
+def test_every_secret_shape_is_caught(tmp_path: Path, kind: str, around: str) -> None:
+    (tmp_path / "a.txt").write_text(around.format(fake_secret(kind)), encoding="utf-8")
     r = Repo.from_dir(tmp_path, sha="f" * 40, committed_at=COMMIT_DATE)
-    assert len(snapshot.secret_hits(r, r.files, frozenset())) == 1
+    assert len(snapshot.secret_hits(r, r.files, frozenset())) == 1, kind
+
+
+def _scan(tmp_path: Path, files: dict[str, str], fakes: set[tuple[str, str]]) -> list[str]:
+    root = tmp_path / f"r{len(list(tmp_path.iterdir()))}"  # a fresh checkout per scan
+    for rel, text in files.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text, encoding="utf-8")
+    r = Repo.from_dir(root, sha="f" * 40, committed_at=COMMIT_DATE)
+    return [p for p, _ in snapshot.secret_hits(r, r.files, frozenset(fakes))]
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def test_a_listed_fake_key_covers_its_whole_block_and_nothing_else(tmp_path: Path) -> None:
+    fake, real = fake_secret("pem_block"), fake_secret("pem_block_2")
+    listed = {(_sha(fake), "tests/a.py")}
+    assert _scan(tmp_path, {"tests/a.py": f'K = """{fake}"""\n'}, listed) == []
+    # the same header, another key: in the listed file, in another file, header-only listed
+    assert _scan(tmp_path, {"tests/a.py": f"{fake}\n{real}\n"}, listed) == ["tests/a.py"]
+    header = fake_secret("pem")
+    assert _scan(tmp_path, {"src/b.py": real}, {(_sha(header), "src/b.py")}) == ["src/b.py"]
+
+
+def test_a_listed_fake_passes_only_in_the_file_it_is_listed_for(tmp_path: Path) -> None:
+    key = fake_secret("google")
+    listed = {(_sha(key), "tests/a.py")}
+    assert _scan(tmp_path, {"tests/a.py": key, "deploy/b.env": key}, listed) == ["deploy/b.env"]
+
+
+def test_load_fakes_reads_hash_and_path_pairs(tmp_path: Path) -> None:
+    good = tmp_path / "good.txt"
+    good.write_text(f"# c\n{'a' * 64}  tests/x.py  # aws_key\n", encoding="utf-8")
+    assert snapshot.load_fakes(good) == frozenset({("a" * 64, "tests/x.py")})
+    bad = tmp_path / "bad.txt"
+    bad.write_text(f"{'a' * 64}\n", encoding="utf-8")  # no path: refused
+    with pytest.raises(GenError, match="path"):
+        snapshot.load_fakes(bad)
 
 
 def test_the_fixtures_fake_key_is_listed(fx: Repo) -> None:
@@ -144,8 +193,29 @@ def test_fake_secrets_txt_holds_hashes_and_paths_only() -> None:
     for line in text.splitlines():
         if line.strip() and not line.startswith("#"):
             assert re.fullmatch(r"[0-9a-f]{64}\s+\S+(\s+#\s*[a-z_]+)?", line), line
-    r = Repo.from_dir(snapshot.FAKES_FILE.parent, sha="f" * 40, committed_at=COMMIT_DATE)
+    gen = ROOT / "src" / "jarvis" / "buildbook" / "gen"
+    r = Repo.from_dir(gen, sha="f" * 40, committed_at=COMMIT_DATE)
     assert snapshot.secret_hits(r, ("fake_secrets.txt",), frozenset()) == []
+
+
+def test_every_listed_fake_is_still_in_its_file() -> None:
+    real = Repo.from_git(ROOT)
+    files = tuple(f for f in real.files if snapshot.left_out(real, f) is None)
+    found = {
+        (hashlib.sha256(m.group(0).encode()).hexdigest(), rel)
+        for rel in files
+        for _, pattern in snapshot.SECRET_SHAPES
+        for m in pattern.finditer(real.data(rel).decode("utf-8", errors="replace"))
+    }
+    fixture = Repo.from_dir(ROOT / FIXTURE_DIR, sha="f" * 40, committed_at=COMMIT_DATE)
+    in_fixture = {
+        (hashlib.sha256(m.group(0).encode()).hexdigest(), rel)  # the fixture's own checkout
+        for rel in fixture.files
+        for _, pattern in snapshot.SECRET_SHAPES
+        for m in pattern.finditer(fixture.data(rel).decode("utf-8", errors="replace"))
+    }
+    stale = sorted(path for _, path in _fakes() - found - in_fixture)
+    assert stale == [], f"fake_secrets.txt lists strings no longer in: {stale}"
 
 
 def test_over_the_cap_is_refused(fx: Repo) -> None:

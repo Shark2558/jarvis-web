@@ -9,7 +9,10 @@ DEFAULT_RATE (and its date), read with the rest from the code as ASTs:
     maps    quota/ledger.py _TABLE, Google's global price list (JARVIS stops at the allowance)
     cloud   the free tiers JARVIS runs inside (`FREE_TIER`, as the R6 plan lists them)
 
-A checkout without billing/fx.py (the test fixture) is priced at `FALLBACK_RATE`.
+A checkout without billing/fx.py (the test fixture) is priced at `FALLBACK_RATE`, and a module that
+isn't there gives no items; a module that IS there but can't be read (not Python, a value that
+isn't a literal, a row of the wrong shape) fails the build, so the book never quietly drops or
+misprices what the code says.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ import re
 from typing import Any, Literal
 
 from jarvis.buildbook.gen.code import module_path, settings_defaults, top_expr, top_value, tree
-from jarvis.buildbook.gen.repo import Repo
+from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.sections import CostItem, Costs
 
 FALLBACK_RATE: tuple[float, str] = (95.24, "2026-11-01")  # billing.fx at R6
@@ -33,6 +36,12 @@ FREE_TIER: tuple[tuple[str, str, str, str], ...] = (
 CostKind = Literal["model", "voice", "search", "maps", "cloud", "other"]
 FREE_BRAIN = "free of charge; Google may learn from what it is told"
 _PER = {"month": "a month", "day": "a day"}
+PRICE_FIELDS = ("input_per_mtok", "output_per_mtok")
+VOICE_KEYS = (
+    "voice_price_chirp3_hd_usd_per_m",
+    "voice_price_studio_usd_per_m",
+    "voice_price_stt_usd_per_min",
+)
 
 
 def _id(text: str) -> str:
@@ -51,24 +60,49 @@ def model_label(model: str) -> str:
 
 
 def rate(repo: Repo) -> tuple[float, str]:
-    module = tree(repo, module_path(repo, "billing.fx"))
-    value = top_value(module, "DEFAULT_RATE") if module else None
-    when = top_value(module, "DEFAULT_AS_OF") if module else None
+    rel = module_path(repo, "billing.fx")
+    module = tree(repo, rel)
+    if module is None:
+        return FALLBACK_RATE  # a checkout without billing/fx.py (the fixture)
+    value, when = top_value(module, "DEFAULT_RATE"), top_value(module, "DEFAULT_AS_OF")
     if isinstance(value, (int, float)) and value > 0 and isinstance(when, str):
         return float(value), when
-    return FALLBACK_RATE
+    raise GenError(f"{rel}: DEFAULT_RATE and DEFAULT_AS_OF must be literals (a rate, a date)")
+
+
+def _price(call: ast.expr | None) -> tuple[float, float] | None:
+    """`Price(in, out, ...)` or `Price(input_per_mtok=in, output_per_mtok=out, ...)`."""
+    if not isinstance(call, ast.Call):
+        return None
+    named = {k.arg: k.value for k in call.keywords if k.arg}
+    args = list(call.args[:2])
+    for i, key in enumerate(PRICE_FIELDS):
+        if len(args) <= i and key in named:
+            args.append(named[key])
+    try:
+        values = [ast.literal_eval(a) for a in args]
+    except ValueError:
+        return None
+    if len(values) < 2 or not all(isinstance(v, (int, float)) for v in values):
+        return None
+    return float(values[0]), float(values[1])
 
 
 def model_prices(repo: Repo) -> dict[str, tuple[float, float]]:
     """PRICES = {"model": Price(input, output, ...)} -> {model: (input, output)} US$ per 1M."""
-    module = tree(repo, module_path(repo, "llm.pricing"))
-    node = top_expr(module, "PRICES") if module else None
+    rel = module_path(repo, "llm.pricing")
+    module = tree(repo, rel)
+    if module is None:
+        return {}
+    node = top_expr(module, "PRICES")
+    if not isinstance(node, ast.Dict):
+        raise GenError(f"{rel}: PRICES isn't a literal table")
     out: dict[str, tuple[float, float]] = {}
-    if isinstance(node, ast.Dict):
-        for key, call in zip(node.keys, node.values, strict=True):
-            if isinstance(key, ast.Constant) and isinstance(call, ast.Call) and len(call.args) >= 2:
-                prices = [ast.literal_eval(a) for a in call.args[:2]]
-                out[str(key.value)] = (float(prices[0]), float(prices[1]))
+    for key, call in zip(node.keys, node.values, strict=True):
+        price = _price(call)
+        if not (isinstance(key, ast.Constant) and isinstance(key.value, str)) or price is None:
+            raise GenError(f"{rel}: a PRICES entry isn't a model id and Price(input, output)")
+        out[key.value] = price
     return out
 
 
@@ -104,6 +138,11 @@ def _models(repo: Repo, fx: float) -> list[CostItem]:
 
 def _voice(repo: Repo, fx: float) -> list[CostItem]:
     s: dict[str, Any] = settings_defaults(repo)
+    if not s:
+        return []  # no Settings in this checkout (the fixture)
+    missing = [k for k in VOICE_KEYS if not isinstance(s.get(k), (int, float))]
+    if missing:
+        raise GenError(f"jarvis/config.py: no literal Settings default for {', '.join(missing)}")
     chars, secs = s.get("voice_tts_free_chars"), s.get("voice_stt_free_seconds")
     free_chars = f"{chars:,} characters a month" if isinstance(chars, int) and chars else ""
     free_secs = f"{secs // 60:,} minutes a month" if isinstance(secs, int) and secs else ""
@@ -135,15 +174,17 @@ def _voice(repo: Repo, fx: float) -> list[CostItem]:
             id=cid, label=label, kind="voice", unit=unit, inr=_inr(float(s[key]), fx), free=free
         )
         for cid, label, key, unit, free in table
-        if isinstance(s.get(key), (int, float))
     ]
 
 
 def _search(repo: Repo) -> list[CostItem]:
-    module = tree(repo, module_path(repo, "web.allowance"))
-    credits = top_value(module, "MONTHLY_CREDITS") if module else None
-    if not isinstance(credits, int):
+    rel = module_path(repo, "web.allowance")
+    module = tree(repo, rel)
+    if module is None:
         return []
+    credits = top_value(module, "MONTHLY_CREDITS")
+    if not isinstance(credits, int):
+        raise GenError(f"{rel}: MONTHLY_CREDITS isn't a literal number")
     return [
         CostItem(
             id="web_search",
@@ -157,11 +198,15 @@ def _search(repo: Repo) -> list[CostItem]:
 
 
 def _maps(repo: Repo) -> list[CostItem]:
-    module = tree(repo, module_path(repo, "quota.ledger"))
-    table = top_value(module, "_TABLE") if module else None
+    rel = module_path(repo, "quota.ledger")
+    module = tree(repo, rel)
+    if module is None:
+        return []
+    table = top_value(module, "_TABLE")
+    if not isinstance(table, tuple) or not all(isinstance(r, tuple) and len(r) == 5 for r in table):
+        raise GenError(f"{rel}: _TABLE isn't a literal table of (id, label, unit, per, free)")
     out = []
-    for row in table if isinstance(table, tuple) else ():
-        sid, label, unit, per, free = row
+    for sid, label, unit, per, free in table:
         allowance = free.get("global") if isinstance(free, dict) else None
         if isinstance(allowance, int):
             words = f"{allowance:,} {unit} {_PER.get(per, per)}"

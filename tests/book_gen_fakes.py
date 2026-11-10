@@ -107,7 +107,26 @@ def fake_secret(kind: str) -> str:
         "github": ("gh" + "p_", "Z" * 36),
         "aws": ("AK" + "IA", "Q" * 16),
         "telegram": ("123456789" + ":", "A" * 35),
+        "telegram_dash": ("123456789" + ":", "A" * 34 + "-"),
+        "telegram_url": ("https://api.telegram.org/bot" + "123456789:", "B" * 35 + "/getMe"),
         "pem": ("-----BEGIN RSA " + "PRIVATE", " KEY-----"),
+        "pem_block": (
+            "-----BEGIN RSA " + "PRIVATE KEY-----\n" + "MIIEpA" + "x" * 60 + "\n",
+            "-----END RSA " + "PRIVATE KEY-----",
+        ),
+        "pem_block_2": (
+            "-----BEGIN RSA " + "PRIVATE KEY-----\n" + "MIIEpA" + "y" * 60 + "\n",
+            "-----END RSA " + "PRIVATE KEY-----",
+        ),
+        "pgp": (
+            "-----BEGIN PGP " + "PRIVATE KEY BLOCK-----\n\n" + "lQOY" + "z" * 60 + "\n",
+            "-----END PGP " + "PRIVATE KEY BLOCK-----",
+        ),
+        "google_oauth": ("GOC" + "SPX-", "Q" * 28),
+        "tavily": ("tv" + "ly-", "dev-" + "Q" * 30),
+        "openai": ("s" + "k-proj-", "Q" * 40),
+        "groq": ("gs" + "k_", "Q" * 52),
+        "openrouter": ("sk-" + "or-v1-", "a" * 64),
     }
     head, tail = parts[kind]
     return head + tail

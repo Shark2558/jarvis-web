@@ -17,6 +17,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 from jarvis.buildbook.gen.code import clip
+from jarvis.buildbook.gen.fallback import RELEASE_PLAN as _RELEASE
+from jarvis.buildbook.gen.fallback import label_of
 from jarvis.buildbook.gen.repo import Repo
 from jarvis.buildbook.gen.scrub import Scrubber
 from jarvis.buildbook.model import MAX_LIMITATIONS
@@ -24,7 +26,6 @@ from jarvis.buildbook.sections import FitRow, Limitation, PlanDecisions
 
 PLANS = "docs/plans/"
 TEXT_MAX, TITLE_MAX, DECISION_MAX = 200, 300, 200
-_RELEASE = re.compile(r"^r(\d{1,3})(?:-(\d{1,2}))?-")
 _SLICE = re.compile(r"^phase\d+-slice(\d+)([a-z]?)-")
 _SEP = r"(?:\s*[·—–:-]\s+|\s+)"
 _D_HEADS = (
@@ -55,13 +56,6 @@ class Plan:
     label: str  # "R6", "R5.1" or "" (a phase slice)
     title: str
     lines: tuple[str, ...]  # the plan's text, already scrubbed
-
-
-def label_of(path: str) -> str:
-    m = _RELEASE.match(path.rsplit("/", 1)[-1])
-    if not m:
-        return ""
-    return f"R{int(m.group(1))}" + (f".{int(m.group(2))}" if m.group(2) else "")
 
 
 def _order(path: str) -> tuple[int, int, int, str]:

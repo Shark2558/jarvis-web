@@ -7,3 +7,5 @@
 .gitignore
 #!include:.gitignore
 !src/jarvis/buildbook/_book/
+# GitHub's sign-in file (google-github-actions/auth), as .dockerignore already leaves it out
+gha-creds-*.json

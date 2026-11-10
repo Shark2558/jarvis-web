@@ -18,7 +18,7 @@ from typing import Any
 
 from jarvis.buildbook import plain
 from jarvis.buildbook.gen.layers import layer_for
-from jarvis.buildbook.gen.repo import Repo
+from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.gen.scrub import Scrubber
 from jarvis.buildbook.sections import AlertRow, Integrations, Package, Service
 
@@ -40,13 +40,17 @@ def module_path(repo: Repo, dotted: str) -> str | None:
 
 
 def tree(repo: Repo, rel: str | None) -> ast.Module | None:
-    text = repo.text(rel) if rel else None
-    if text is None:
+    """The module's AST; None only when it isn't in the checkout. A tracked module that can't be
+    read or parsed fails (the book would otherwise quietly drop what it says)."""
+    if rel is None or not repo.has(rel):
         return None
+    text = repo.text(rel)
+    if text is None:
+        raise GenError(f"{rel} can't be read as UTF-8 text")
     try:
         return ast.parse(text)
     except SyntaxError:
-        return None
+        raise GenError(f"{rel} isn't valid Python") from None
 
 
 def _names(node: ast.stmt) -> tuple[str, ...]:
@@ -265,8 +269,11 @@ def _alerts(repo: Repo, scrub: Scrubber) -> tuple[AlertRow, ...]:
 
 
 def integrations(repo: Repo, scrub: Scrubber) -> Integrations:
-    ring = tree(repo, module_path(repo, "keyring"))
-    purposes = (top_value(ring, "PURPOSES") if ring else None) or ()
+    rel = module_path(repo, "keyring")
+    ring = tree(repo, rel)
+    purposes = top_value(ring, "PURPOSES") if ring else ()
+    if not (isinstance(purposes, tuple) and all(isinstance(p, str) for p in purposes)):
+        raise GenError(f"{rel}: PURPOSES isn't a literal tuple of names")
     return Integrations(
         services=_services(repo, scrub),
         key_purposes=tuple(purposes),

@@ -12,7 +12,7 @@ import pytest
 from book_gen_fakes import ROOT, fixture_repo
 
 from jarvis.buildbook.gen import code, costs
-from jarvis.buildbook.gen.repo import Repo
+from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.sections import Costs
 
 
@@ -104,3 +104,68 @@ def test_the_fixture_has_only_the_free_tier_at_the_fallback_rate(tmp_path: Path)
 )
 def test_model_labels(model: str, label: str) -> None:
     assert costs.model_label(model) == label
+
+
+# ---- review fix: a module that is THERE but can't be read fails; only an absent one falls back
+def _repo(tmp_path: Path, files: dict[str, str]) -> Repo:
+    for rel, text in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text, encoding="utf-8")
+    return Repo.from_dir(tmp_path, sha="c" * 40, committed_at="2026-11-10T09:00:00+05:30")
+
+
+FX = "src/jarvis/billing/fx.py"
+PRICING = "src/jarvis/llm/pricing.py"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "DEFAULT_RATE = (\n",  # not Python
+        "DEFAULT_RATE = rate_today()\nDEFAULT_AS_OF = '2026-11-01'\n",  # not a literal
+        "DEFAULT_AS_OF = '2026-11-01'\n",  # no rate
+    ],
+)
+def test_a_rate_module_that_is_there_but_unreadable_fails(tmp_path: Path, text: str) -> None:
+    with pytest.raises(GenError, match="billing/fx.py"):
+        costs.rate(_repo(tmp_path, {FX: text}))
+
+
+def test_prices_written_with_keywords_are_read(tmp_path: Path) -> None:
+    text = (
+        'PRICES = {"m-1": Price(input_per_mtok=1.5, output_per_mtok=7.0),'
+        ' "m-2": Price(2.0, output_per_mtok=8.0)}\n'
+    )
+    assert costs.model_prices(_repo(tmp_path, {PRICING: text})) == {
+        "m-1": (1.5, 7.0),
+        "m-2": (2.0, 8.0),
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'PRICES = {"m-1": price_of("m-1")}\n',
+        'PRICES = {"m-1": Price(1.0)}\n',
+        "PRICES = load()\n",
+    ],
+)
+def test_a_price_table_entry_that_cannot_be_read_fails(tmp_path: Path, text: str) -> None:
+    with pytest.raises(GenError, match="llm/pricing.py"):
+        costs.model_prices(_repo(tmp_path, {PRICING: text}))
+
+
+@pytest.mark.parametrize(
+    ("rel", "text"),
+    [
+        ("src/jarvis/web/allowance.py", "MONTHLY_CREDITS = int('1000')\n"),
+        ("src/jarvis/quota/ledger.py", "_TABLE = build()\n"),
+        ("src/jarvis/quota/ledger.py", "_TABLE = (('maps_search', 'Search'),)\n"),
+        ("src/jarvis/config.py", "class Settings:\n    voice_tts_free_chars: int = 5\n"),
+    ],
+)
+def test_search_maps_and_voice_fail_when_their_module_is_there_but_unreadable(
+    tmp_path: Path, rel: str, text: str
+) -> None:
+    with pytest.raises(GenError, match=rel.removeprefix("src/jarvis/")):
+        costs.costs(_repo(tmp_path, {rel: text}))

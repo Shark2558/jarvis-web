@@ -123,3 +123,118 @@ def test_the_default_scrubber_removes_the_fixture_needles() -> None:
     out = scrub.default_scrubber().clean(f"{name} at {email}, {phone}.")
     for needle in (email, phone, *name.split()):
         assert needle not in out
+
+
+# ---- review fixes: more shapes, phone formats, disguised names, hidden URLs ------------------
+NEW_SHAPES = ("telegram_dash", "google_oauth", "tavily", "openai", "groq", "openrouter")
+
+
+@pytest.mark.parametrize("kind", NEW_SHAPES)
+def test_every_snapshot_secret_shape_is_scrubbed_from_the_book(kind: str) -> None:
+    assert S.clean(f"key {fake_secret(kind)}\nend") == f"key {REMOVED}\nend"
+
+
+@pytest.mark.parametrize("kind", ["pem_block", "pgp"])
+def test_a_private_key_block_is_removed_whole(kind: str) -> None:
+    out = S.clean(f"before\n{fake_secret(kind)}\nafter")
+    assert out == f"before\n{REMOVED}\nafter"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Call 98765 43210 now",
+        "Call 98765-43210 now",
+        "Call +91 98765 43210 now",
+        "Call +91-98765-43210 now",
+        "Call 0 98765 43210 now",
+        "Call 098765 43210 now",
+        "Call 0091 98765 43210 now",
+        "Call 987 654 3210 now",
+        "Call 9876 543 210 now",
+        "Call 98765.43210 now",
+        "Call 98765–43210 now",
+        "Call 0471-2345678 now",
+        "Call 011 2345 6789 now",
+        "Call +44 20 7946 0958 now",
+        "Call +1 415 555 0100 now",
+        "Number 1234 5678 9012 here",
+        "Number 4111 1111 1111 1111 here",
+        "Number 123-456-7890 here",
+    ],
+)
+def test_phone_numbers_with_separators_are_removed(text: str) -> None:
+    out = S.clean(text)
+    assert REMOVED in out and not re.search(r"\d\d", out), out
+    assert S.findings(out) == () and out.split()[0] == text.split()[0]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Release R6 (3f2a1c9) on 2026-11-10, 2026-11-12 and 2026-11-14.",
+        "Dates 2026-11-01 2026-11-10 and 10.11.2026 09:00.",
+        "Versions 3.12.1, 0.115.0, 6.2.0.post1 and 2.9.2; pip 26.2.1; three 0.187.0.",
+        "₹95.24 a dollar; ₹1,234,567.89 a year; 900,000 characters; 1 2 3 4 5 6 7 8 9 10.",
+        "Prices 0.25 0.50 0.75 1.00 and 9.99 8.50 7.25 6.00; 1.234.567.890 in Europe.",
+        "Ports 8080 and 8098; 127.0.0.1 and 192.168.1.10; 512 MiB, 1 GiB, 15 MB.",
+        "A 7-digit id 1234567, a year range 2024-2025 and 54 minutes a month.",
+        "+5 more, -3 fewer, x 2.5, 100-200 requests.",
+    ],
+)
+def test_ordinary_numbers_dates_and_versions_are_kept(text: str) -> None:
+    assert S.clean(text) == text and S.findings(text) == ()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ｚｏｒｂｌａｔ said",  # fullwidth
+        "Zor​blat said",  # a zero-width space inside
+        "Zor­blat said",  # a soft hyphen inside
+        "Zоrblat said",  # a Cyrillic look-alike "o"
+        "Zórblat said",  # an accent
+        "zorblat2558 said",  # digits glued on
+        "2558Zorblat said",
+        "ZorblatSmith said",  # camel case
+        "smithZorblat said",
+    ],
+)
+def test_a_disguised_name_is_still_removed(text: str) -> None:
+    assert S.clean(text) == f"{REMOVED} said"
+    assert S.findings(text) == ("name",)
+
+
+def test_words_that_only_look_near_a_name_are_kept() -> None:
+    text = "zorblats AirPods Zorblatty iPhone R6 OAuth2 HTTPServer"
+    assert S.clean(text) == text
+
+
+@pytest.mark.parametrize(
+    ("text", "needle"),
+    [
+        ("Open HTTPS://private.example.com/x now", "private"),
+        ("Open Http://private.example.com/x now", "private"),
+        ("Open www.private-site.in/x now", "private"),
+        ("Back up to gs://my-proj-123-backups now", "proj"),
+        ("Push asia-south1-docker.pkg.dev/my-proj-123/repo/img now", "proj"),
+        ("Push gcr.io/my-proj-123/img now", "proj"),
+        ("Read storage.googleapis.com/my-bucket-9/f now", "bucket"),
+        ("Open https://docs.python.org/?u=someone%40gmail.com now", "someone"),
+        ("Open https://user:pw@docs.python.org/3/ now", "user"),
+    ],
+)
+def test_hidden_urls_and_project_hosts_are_removed(text: str, needle: str) -> None:
+    out = S.clean(text)
+    assert needle not in out and REMOVED in out and S.findings(out) == (), out
+    assert out.startswith(text.split()[0]) and out.endswith(" now")
+
+
+def test_a_secret_in_an_allowed_url_removes_the_url() -> None:
+    out = S.clean(f"Open https://docs.python.org/bot{fake_secret('telegram')} now")
+    assert out == f"Open {REMOVED} now"
+
+
+def test_allowed_urls_in_any_case_and_www_are_kept() -> None:
+    text = "See HTTPS://Docs.Python.org/3/ and www.w3.org/TR/css and https://www.w3.org/x"
+    assert S.clean(text) == text

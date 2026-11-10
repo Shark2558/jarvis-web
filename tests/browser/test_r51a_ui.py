@@ -97,6 +97,13 @@ def boot(
         )
     c.open()
     c.page.locator("#brainModeBadge").wait_for()
+    # the pill says "Brain: ..." until the server has answered (it never claims a mode before): wait
+    # for that answer, or the "unknown" of a failed read, before a test looks at it (a slow CI runner
+    # reached the assertions first)
+    c.page.wait_for_function(
+        "() => { const b = document.getElementById('brainModeBadge');"
+        " return !!b && (b.getAttribute('aria-label') || '') !== 'Brain: reading the mode'; }"
+    )
     expect(c.page.locator("#brainModeBadge").first).to_contain_text("AI", ignore_case=True)
     return c, brain
 

@@ -321,6 +321,7 @@ def test_the_open_brain_menu_and_its_ai_on_confirm_pass_the_visual_gate(
     brain = FakeBrain()
     c.page.route("**/v1/settings/brain-mode", brain)
     try:
+        c.page.locator("#brainModeBadge", has_text="AI on").wait_for()  # the mode has been read
         c.page.locator("#brainModeBadge").click()
         c.page.locator("#brainMenu").wait_for(state="visible")
         c.page.wait_for_timeout(SETTLE_MS)

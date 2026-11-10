@@ -225,7 +225,8 @@ def test_api_hops_to_the_show_on_a_423() -> None:
     raw = js[js.index("async function raw(path") : js.index("function showLocked()")]
     assert "if (r.status === 423) showLocked();" in raw
     hop = js[js.index("function showLocked()") : js.index("// ---- sign-in gate")]
-    assert "location.assign('/book/show')" in hop and "throw err" in hop
+    # SEC-2: replace, so no Back entry returns to the console page
+    assert "location.replace('/book/show')" in hop and "throw err" in hop
 
 
 def test_the_r6_console_stubs_stay_small_and_textcontent_only() -> None:

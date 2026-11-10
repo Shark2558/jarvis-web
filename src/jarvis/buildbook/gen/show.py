@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import date
 
 from jarvis.buildbook import plain
 from jarvis.buildbook.gen.code import clip
@@ -109,6 +110,19 @@ def flow_facts(flow: Workflow) -> list[Fact]:
 _steps = flow_facts
 
 
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def human_date(iso: str) -> str:
+    """An ISO date as the owner reads it: 2026-11-10 -> 10 Nov 2026 (I1 screenshots, O3). Fixed
+    month words, no locale, so the same commit gives the same bytes; anything else as given."""
+    try:
+        d = date.fromisoformat(iso[:10])
+    except ValueError:
+        return iso
+    return f"{d.day} {_MONTHS[d.month - 1]} {d.year}"
+
+
 def _lower_first(text: str) -> str:
     """Lower-case a label's first letter, unless its first word is a name ("Telegram")."""
     word = text.split(" ", 1)[0]
@@ -134,7 +148,7 @@ def _licence_family(licence: str) -> str:
 def _book(p: Parts) -> Scene:
     pk = p.architecture.packages
     files, lines = sum(x.files for x in pk), sum(x.lines for x in pk)
-    day = p.release.committed_at[:10]
+    day = human_date(p.release.committed_at)
     return _scene(
         1,
         [
@@ -324,7 +338,7 @@ def _costs(p: Parts) -> Scene:
         10,
         [
             f"Everything I cost is shown in rupees, at ₹{c.usd_inr:,.2f} to the dollar "
-            f"on {c.rate_date}.",
+            f"on {human_date(c.rate_date)}.",
             f"The paid brains cost {span} per million input tokens; {len(free_brains)} free brains "
             "cost nothing.",
             "Web search, maps and the cloud itself stay inside their free allowances: ₹0.",

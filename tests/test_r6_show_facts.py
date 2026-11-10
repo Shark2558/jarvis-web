@@ -5,6 +5,8 @@
 # and scene 7 had no laptop at the edge and nothing inside the home.
 from __future__ import annotations
 
+import re
+
 import pytest
 from book_gen_fakes import ROOT
 
@@ -62,3 +64,34 @@ def test_flow_steps_carry_the_accent_hints_d_draws() -> None:
         "passkey",
         "step",
     ]
+
+
+# ---- orchestrator screenshot finding O3: dates read the owner's way ("10 Nov 2026") ------------
+def test_the_narration_and_the_date_fact_read_dates_the_owners_way(
+    scenes: dict[str, Scene],
+) -> None:
+    iso = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+    for sc in scenes.values():
+        for beat in sc.beats:
+            assert not iso.search(beat.text), (sc.id, beat.text)
+    book_facts = {f.label: f.value for f in scenes["book"].facts}
+    assert re.fullmatch(
+        r"\d{1,2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4}", book_facts["Date"]
+    )
+    assert f"from {book_facts['Date']}." in scenes["book"].beats[0].text
+    assert re.search(
+        r"to the dollar on \d{1,2} [A-Z][a-z]{2} \d{4}\.", scenes["costs"].beats[0].text
+    )
+
+
+@pytest.mark.parametrize(
+    ("iso", "said"),
+    [
+        ("2026-11-10T09:00:00+05:30", "10 Nov 2026"),
+        ("2026-01-01", "1 Jan 2026"),
+        ("2027-12-31T23:59:59Z", "31 Dec 2027"),
+        ("not a date", "not a date"),
+    ],
+)
+def test_human_date(iso: str, said: str) -> None:
+    assert show.human_date(iso) == said

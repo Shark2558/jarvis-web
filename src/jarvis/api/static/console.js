@@ -612,7 +612,7 @@
   // (or told by the channel) the tab is covered by the gate with the app hidden, and it is only
   // uncovered when /auth/me answers 200; offline, a 503 or an error keep the cover with Try again.
   const UNSURE = 'Can\u2019t reach JARVIS to check that no guest show holds this console. Check your connection.';
-  let lastCheck = 0, covered = false, live = false;
+  let lastCheck = 0, covered = false, live = false, covers = 0; // covers: security re-review #6 (an older answer decides nothing)
   // Code re-review #3: a modal <dialog> (the Systems check, a confirm) sits in the top layer above the gate and keeps
   // the page inert even when hidden, and other pop-ups live outside #app. While covered every open dialog is closed
   // QUIETLY (its own close handlers never hear of it, so nothing settles) and every other body-level layer but the
@@ -631,7 +631,7 @@
     }
   }
   function cover(words, retry) {
-    covered = true; $('app').hidden = true; veil();
+    covered = true; covers += 1; $('app').hidden = true; veil();
     const box = $('gateBox');
     box.innerHTML = FX.core('lg') + '<h2 id="gateTitle">JARVIS</h2><p></p>' + (retry ? '<button class="cta lift" id="gRetry">Try again</button>' : '');
     box.querySelector('p').textContent = words;
@@ -643,8 +643,10 @@
     if (state.authMode !== 'google' || !live) return;
     if (!force && !covered && Date.now() - lastCheck < 1500) return;
     lastCheck = Date.now();
+    const asked = covers;
     let status = 0;
     try { status = (await fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' })).status; } catch (_) {}
+    if (asked !== covers) return; // sent before the latest cover: that cover's own check decides
     if (status === 200) uncover();
     else if (status === 423) location.replace('/book/show');
     else if (status === 401) { covered = false; showGate(); } // signed out: the sign-in gate (the app stays hidden)
@@ -655,7 +657,9 @@
   window.addEventListener('focus', () => recheck(covered));
   window.addEventListener('pagehide', away);
   window.addEventListener('pageshow', (e) => { lastCheck = 0; if (e.persisted) recheck(true); });
-  try { new BroadcastChannel('jarvis-book').onmessage = (e) => { if (e.data && e.data.type === 'guest-show') { away(); recheck(true); } }; } catch (_) {}
+  // a guest open in another tab of this browser (this origin only): replace this page with the show at once, with no
+  // round trip a raced 200 could win (security re-review #6); a forged message costs only a reload
+  try { new BroadcastChannel('jarvis-book').onmessage = (e) => { if (e.data && e.data.type === 'guest-show' && state.authMode === 'google' && live) { away(); location.replace('/book/show'); } }; } catch (_) {}
 
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {

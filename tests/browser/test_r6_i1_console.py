@@ -33,9 +33,9 @@ def browser() -> Iterator[Any]:
         b.close()
 
 
-def _google_console(browser: Any, server_url: str, token: str) -> tuple[Console, dict[str, int]]:
+def _google_console(browser: Any, server_url: str, token: str) -> tuple[Console, dict[str, Any]]:
     c = Console(browser, server_url, token, DESKTOP)
-    me = {"status": 200}
+    me: dict[str, Any] = {"status": 200, "held": []}
 
     def bearer(route: Any) -> None:
         route.continue_(headers={**route.request.headers, "authorization": f"Bearer {token}"})
@@ -47,6 +47,8 @@ def _google_console(browser: Any, server_url: str, token: str) -> tuple[Console,
     def who(route: Any) -> None:
         if me["status"] == 0:
             route.abort()  # the network is off
+        elif me["status"] == -1:
+            me["held"].append(route)  # still on its way: the test answers it later
         elif me["status"] == 200:
             route.fulfill(status=200, json={"email": "owner@example.com"})
         elif me["status"] == 503:
@@ -248,5 +250,55 @@ def test_a_covered_tab_hides_its_pop_ups_and_brings_them_back_only_when_unlocked
         c.page.wait_for_function(POP_UP)  # back as it was: still open, never closed for its owner
         assert c.page.evaluate("() => window.__sysClosed === undefined")
         assert "probeBack" in c.page.evaluate(LAYERS) and c.page.evaluate(SEEN)
+    finally:
+        _close(c)
+
+
+# ---- security re-review #6: a guest open hops at once; an old answer never lifts a newer cover --
+def test_a_guest_open_in_another_tab_hops_this_tab_at_once(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """The channel's message comes only from this origin after a guest open: the tab replaces
+    itself with the show at once, even while /auth/me would still say 200 (a raced answer)."""
+    c, _ = _google_console(browser, server_url, token)
+    try:
+        c.page.locator("#welcome h1").wait_for()
+        before = c.page.evaluate("() => history.length")
+        other = c.ctx.new_page()
+        other.goto(server_url + "/health")
+        other.evaluate(
+            "() => { const ch = new BroadcastChannel('jarvis-book');"
+            " ch.postMessage({ type: 'guest-show' }); ch.close(); }"
+        )
+        c.page.wait_for_url("**/book/show", timeout=10000)
+        assert c.page.evaluate("() => history.length") == before  # replaced, no Back entry
+    finally:
+        _close(c)
+
+
+def test_an_answer_older_than_the_latest_cover_decides_nothing(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, me = _google_console(browser, server_url, token)
+    try:
+        c.page.locator("#welcome h1").wait_for()
+        me["status"] = -1  # check A goes out and is held on its way
+        c.page.evaluate(HIDE)
+        c.page.evaluate(SHOW)
+        for _ in range(50):  # until check A reaches the route
+            if me["held"]:
+                break
+            c.page.wait_for_timeout(100)
+        assert len(me["held"]) == 1
+        me["status"] = 0  # the guest turns the network off; the tab is covered and asks again
+        c.page.evaluate(HIDE)
+        c.page.evaluate(SHOW)
+        gate = c.page.locator("#gate.show")
+        gate.get_by_text("Can\u2019t reach JARVIS").wait_for()
+        with c.page.expect_response("**/auth/me"):
+            me["held"][0].fulfill(status=200, json={"email": "owner@example.com"})  # A, late
+        c.page.wait_for_timeout(300)
+        assert not c.page.evaluate(SEEN)  # A was sent before the latest cover: it lifts nothing
+        assert gate.get_by_text("Can\u2019t reach JARVIS").is_visible()
     finally:
         _close(c)

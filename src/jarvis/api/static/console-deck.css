@@ -344,7 +344,7 @@ button.status.brainmode[aria-busy="true"]{cursor:progress}
   .composer .clip{width:44px;height:44px}
   .vrate .vrange{height:44px}
   .topbar .picker select{height:44px}   /* top bar: the brain picker and the icon buttons (56 px bar) */
-  .icon-btn{width:44px;height:44px}
+  .icon-btn,.convo .del{width:44px;height:44px}   /* History's delete sets 34 px in console.css */
   /* the brain pill keeps its 26 px look; an invisible 10 px band above and below makes the touch area
      44 px (inside the 56 px top bar, so it never reaches the picker beside it: that is to its side) */
   button.status.brainmode::before{content:"";position:absolute;left:0;right:0;top:-10px;bottom:-10px}

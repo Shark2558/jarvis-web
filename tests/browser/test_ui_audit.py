@@ -58,9 +58,18 @@ WRAP_JS = r"""(sel) => {
   const out = [];
   for (const b of document.querySelectorAll(sel + ' button:not(.dsc):not(.bsw):not(.bmopt), ' + sel + ' .btn')) {
     const r = b.getBoundingClientRect(); if (r.width < 2 || !(b.textContent || '').trim()) continue;
-    const rg = document.createRange(); rg.selectNodeContents(b);
-    const tops = new Set([...rg.getClientRects()].filter((q) => q.width > 1).map((q) => Math.round(q.top / 4)));
-    if (tops.size > 2) out.push((b.textContent || '').trim().slice(0, 30) + ' lines=' + tops.size);
+    // lines as painted: the rects of the TEXT only (an element's own box sits higher than its glyphs
+    // by the half-leading), merged when they share a band, so two blocks are two lines wherever they sit
+    const rs = [], tw = document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+      if (!n.textContent.trim()) continue;
+      const rg = document.createRange(); rg.selectNodeContents(n);
+      for (const q of rg.getClientRects()) if (q.width > 1 && q.height > 1) rs.push(q);
+    }
+    rs.sort((p, q) => p.top - q.top);
+    let lines = 0, bottom = -Infinity;
+    for (const q of rs) { if (q.top >= bottom - 2) { lines += 1; bottom = q.bottom; } else bottom = Math.max(bottom, q.bottom); }
+    if (lines > 2) out.push((b.textContent || '').trim().slice(0, 30) + ' lines=' + lines);
   }
   return out;
 }"""
@@ -93,10 +102,36 @@ class Rig:
             c.close()
 
 
+# Panels whose data comes from the live server (not page.route mocks) get real data first, so the
+# gate measures them full, not empty: an empty History once hid rows whose open button overlapped
+# the delete button (found only when the whole browser suite had left conversations behind).
+SEED_TITLES = (
+    "Please draft a polite follow-up message to the vendor about the delayed October invoice",
+    "Where is my daughter's school?",
+    "what do I drink?",
+    "remember this one",
+    "hello",
+    "first message",
+)
+SEEDED = {"history": "#convos .convo"}
+
+
+def _seed_conversations(browser: Any, url: str, token: str) -> None:
+    c = Console(browser, url, token, DESKTOP)
+    try:
+        c.open()
+        for title in SEED_TITLES:
+            c.page.locator("#newBtn").click()
+            c.send(title)
+    finally:
+        c.close()
+
+
 @pytest.fixture(scope="module")
 def rig(server_url: str, token: str) -> Iterator[Rig]:
     with sync_playwright() as p:
         b = p.chromium.launch()
+        _seed_conversations(b, server_url, token)
         r = Rig(b, server_url, token)
         yield r
         r.close()
@@ -115,11 +150,12 @@ def _open(c: Console, panel: str) -> str | None:
         c.page.locator(f'#moreSheet [data-sheet-open="{panel}"]').click()
     c.page.locator(f"#p-{panel}").wait_for(state="visible")
     missing = None
-    if panel in READY:
+    ready = READY.get(panel) or SEEDED.get(panel)
+    if ready:
         try:
-            c.page.locator(READY[panel]).first.wait_for(state="attached", timeout=4000)
+            c.page.locator(ready).first.wait_for(state="attached", timeout=4000)
         except Exception:  # noqa: BLE001 - reported: the panel never painted its data
-            missing = READY[panel]
+            missing = ready
     elif not _has_content(c, panel):
         missing = f"#p-{panel} shows no text"
     c.page.wait_for_timeout(SETTLE_MS)
@@ -221,6 +257,33 @@ def _audit(c: Console, sel: str, vp: str, what: str) -> None:
     res = c.page.evaluate(DOM_CHECKS_JS, sel)
     assert not res.get("missing"), f"{what}: {sel} is not in the page"
     _assert_clean(res, c.page.evaluate(NAMELESS_JS, sel), c.page.evaluate(WRAP_JS, sel), vp, what)
+
+
+WRAP_FIXTURE = """<style>#t button { font: inherit; }</style><div id="t" style="font:14px/2 sans-serif">
+<button id="two" style="width:240px"><b style="display:block">A title</b><small style="display:block;font-size:12px">07:28 AM &middot; 2 messages</small></button>
+<button id="three" style="width:70px">one two three four five six seven</button>
+</div>"""
+
+
+def test_the_wrap_probe_counts_lines_as_painted_not_text_boxes(rig: Rig) -> None:
+    # A title-and-meta button (two blocks) is two lines however tall its line boxes are; a label that
+    # really wraps onto a third line is still reported.
+    page = rig.get("desktop", "night").page.context.new_page()
+    try:
+        page.set_content(WRAP_FIXTURE)
+        wraps = page.evaluate(WRAP_JS, "#t")
+    finally:
+        page.close()
+    assert len(wraps) == 1, wraps
+    assert wraps[0].startswith("one two three"), wraps
+
+
+def test_history_is_audited_with_conversations_in_it(rig: Rig) -> None:
+    c = rig.get("desktop", "night")
+    assert _open(c, "history") is None
+    rows = c.page.locator("#convos .convo").count()
+    _close(c, "history", "desktop")
+    assert rows >= len(SEED_TITLES), rows
 
 
 # ---- D11 completeness: the surfaces that are not panels -------------------------------------------

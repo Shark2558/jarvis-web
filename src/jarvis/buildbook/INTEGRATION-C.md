@@ -193,6 +193,7 @@ path; HEAD = GET), everything else 423 `show_locked` (`GET /` 302 `/book/show`):
 | Finding | Fix |
 |---|---|
 | SEC-3 = CODE-M1: the lock stopped holding when R6 was off | In Google mode `app.state.book_lock` is always a `DocShowLock(docs, prefix, owners)` (no keyring), also with no `JARVIS_TOKEN_KEY` and when R6's setup fails; Resume then answers 503 `book_off` naming the emergency unlock; a Google app with no lock store fails closed (503). |
+| SEC-6: the emergency unlock asked for the token key and ran unpinned code beside it | `unlock.build_service` builds its lock (with every owner) and its closer (`DocBookSessions(docs, None)`: closes only) with no keyring; the runbook installs `requirements.lock` with `--require-hashes` then `--no-deps -e .`, in a subshell, without `JARVIS_TOKEN_KEY`; a lock on another owner is named and the exit code is 1; the lift records "sessions valid after" (SEC-4). |
 | SEC-4: a cookie taken during a show outlived Resume | (a) At a guest open the presenting browser's session becomes a show-only marker `{book_show: {uid, iat}}` with no owner e-mail (`api/book_show_auth.py`): only the show routes, `/v1/book/close`, `/v1/book/show/lock`, `/v1/book/resume` and a `book_resume` passkey challenge accept it. (b) Resume and the emergency unlock write `sessions_valid_after` into each owner's lock document (read with the lock, cached <= 3 s); the middleware clears every cookie session or marker issued before it; the browser that resumed is re-stamped at that mark. (c) After a lift elsewhere the show tab says "Unlocked on another device" and stays. |
 
 ### Presenting to a guest (owner guidance, SEC-4 d)
@@ -211,28 +212,42 @@ refused after your Resume, but Google itself stays signed in). So:
 
 ## Runbook: the emergency unlock (a passkey lost during a guest show)
 
-Use it only when Resume says "No passkey of yours is in force any more", or the passkey is lost
-and the console is locked. It needs your Google Cloud access (the project's owner): a guest at
-your laptop can't run it. In **Google Cloud Shell** (shell.cloud.google.com, signed in as you,
-your JARVIS project selected), paste:
+Use it only when Resume says "No passkey of yours is in force any more", the passkey is lost
+and the console is locked, or the build book is off on the server while a lock holds (Resume then
+says so). It needs your Google Cloud access (the project's owner): a guest at your laptop can't
+run it. It needs **no** `JARVIS_TOKEN_KEY` (integrated review SEC-6): lifting the lock and
+closing the sessions touch no key. In **Google Cloud Shell** (shell.cloud.google.com, signed in
+as you, your JARVIS project selected), paste the whole block. It runs in a subshell `( ... )`, so
+nothing it exports outlives it, and it installs the exact, hash-checked versions in
+`requirements.lock` (compiled for Python 3.12, as Cloud Shell has) before JARVIS itself:
 
 ```bash
-cd ~/jarvis-web && git pull --ff-only
-python3 -m venv ~/.jarvis-unlock && ~/.jarvis-unlock/bin/pip install -q -e .
-export JARVIS_SESSION_BACKEND=firestore
-export JARVIS_FIRESTORE_PROJECT="$(gcloud config get-value project)"
-export JARVIS_OWNER_EMAILS="you@gmail.com"
-export JARVIS_TOKEN_KEY="$(gcloud secrets versions access latest --secret=jarvis-token-key)"
-export JARVIS_TELEGRAM_BOT_TOKEN="$(gcloud secrets versions access latest --secret=jarvis-telegram-bot-token)"
-export JARVIS_TELEGRAM_WEBHOOK_SECRET="$(gcloud secrets versions access latest --secret=jarvis-telegram-webhook-secret)"
-~/.jarvis-unlock/bin/python -m jarvis.buildbook.unlock --owner you@gmail.com --reason "lost my passkey during a guest show"
+(
+  set -e
+  cd ~/jarvis-web && git pull --ff-only
+  python3 -m venv ~/.jarvis-unlock
+  ~/.jarvis-unlock/bin/pip install -q --require-hashes -r requirements.lock
+  ~/.jarvis-unlock/bin/pip install -q --no-deps -e .
+  export JARVIS_SESSION_BACKEND=firestore
+  export JARVIS_FIRESTORE_PROJECT="$(gcloud config get-value project)"
+  export JARVIS_OWNER_EMAILS="you@gmail.com"
+  export JARVIS_TELEGRAM_BOT_TOKEN="$(gcloud secrets versions access latest --secret=jarvis-telegram-bot-token)"
+  export JARVIS_TELEGRAM_WEBHOOK_SECRET="$(gcloud secrets versions access latest --secret=jarvis-telegram-webhook-secret)"
+  ~/.jarvis-unlock/bin/python -m jarvis.buildbook.unlock --owner you@gmail.com --reason "lost my passkey during a guest show"
+)
 ```
 
-- Put your own address in the two places it says `you@gmail.com`. Leave out the two Telegram
-  lines if you never set up Telegram (you then get no message, only the audit line).
+- Put your own address in the two places it says `you@gmail.com`. If JARVIS has more than one
+  owner, list them all in `JARVIS_OWNER_EMAILS`, comma separated: a guest lock on ANOTHER owner
+  holds your consoles too, and the command then says "A lock on another owner holds these
+  consoles", changes nothing and exits 1 (run it again with `--owner` set to that owner). The
+  owner list here is only a check on what you typed; your Google Cloud access is the control.
+- Leave out the two Telegram lines if you never set up Telegram (you then get no message, only
+  the audit line).
 - It shows what is locked and asks "Type yes to go on". Type `yes`. It then writes the audit line
-  first, lifts the lock, ends every build book session (each with its "session has closed"
-  message) and prints what it did. Exit code 0 = done, 1 = not done, 2 = refused.
+  first, lifts the lock (every JARVIS sign-in of every owner made before now stops counting:
+  sign in again on each device), ends every build book session (each with its "session has
+  closed" message) and prints what it did. Exit code 0 = done, 1 = not done, 2 = refused.
 - If it says it can't find credentials, run `gcloud auth application-default login` once and
-  run the last line again.
+  paste the block again.
 - Afterwards, sign in to the console and set up a new passkey (Approvals -> Permissions).

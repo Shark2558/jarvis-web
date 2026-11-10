@@ -5,13 +5,16 @@
 
 D10 lifts a guest lock with a `book_resume` passkey only; no browser sign-in ever does (a guest
 can make a "fresh" one with a click). This command is the one other way, and it never goes
-through the browser: it runs with the server's OWN Google Cloud credentials (Firestore, the token
-key and the Telegram token from Secret Manager), so only someone holding the owner's Google Cloud
-access can run it. It shows what is locked, asks before changing anything (`--yes` skips the
-question), then: audit line FIRST (no audit, no change) -> lift the lock -> end every build book
-session of the owner (each told with `book_session_closed`) -> a notice even when none was open.
-Exit codes: 0 done (or nothing to do), 1 not done (declined, unreadable, not recorded), 2 refused
-(not an owner, no reason, not the server's Firestore or key). The runbook is in INTEGRATION-C.md.
+through the browser: it runs with the server's OWN Google Cloud credentials (Firestore, and the
+Telegram token from Secret Manager), so only someone holding the owner's Google Cloud access can
+run it. It needs NO token key (integrated review SEC-6): lifting the lock and closing sessions
+touch no key. It shows what is locked, asks before changing anything (`--yes` skips the
+question), then: audit line FIRST (no audit, no change) -> lift the lock, ending every owner's
+cookie sessions from now (SEC-4) -> end every build book session of the owner (each told with
+`book_session_closed`) -> a notice even when none was open. A lock on ANOTHER owner holds these
+consoles too: it is named, nothing changes, and the exit code is 1. Exit codes: 0 done (or
+nothing to do), 1 not done (declined, unreadable, not recorded, another owner's lock), 2 refused
+(not an owner, no reason, not the server's Firestore). The runbook is in INTEGRATION-C.md.
 """
 
 from __future__ import annotations
@@ -33,7 +36,10 @@ NEEDS_FIRESTORE = (
     "This needs the server's Firestore: set JARVIS_SESSION_BACKEND=firestore and "
     "JARVIS_FIRESTORE_PROJECT (see the runbook)."
 )
-NEEDS_KEY = "This needs the server's JARVIS_TOKEN_KEY (from Secret Manager; see the runbook)."
+OTHER_LOCK = (
+    "A lock on another owner holds these consoles. Nothing changed: run this again with "
+    "--owner set to that owner."
+)
 NOT_OWNER = "That isn't one of this JARVIS's owners (JARVIS_OWNER_EMAILS)."
 NO_REASON = "Say why in --reason (a few words; it goes into the audit)."
 ABOUT = "Lift a guest lock without the passkey: the owner only, with the server's own credentials."
@@ -63,15 +69,11 @@ def build_service(s: Settings) -> BookService:
     from jarvis.api.telegram import build_telegram
     from jarvis.buildbook.lock import DocShowLock
     from jarvis.buildbook.sessions import DocBookSessions
-    from jarvis.keyring import Keyring
     from jarvis.notify.ports import DirectNotifier
     from jarvis.storage import build_storage
 
     if s.session_backend is not SessionBackend.FIRESTORE or not s.firestore_project:
         raise UnlockUnavailable(NEEDS_FIRESTORE)
-    ring = Keyring.from_settings(s)
-    if ring is None:
-        raise UnlockUnavailable(NEEDS_KEY)
     built = build_storage(s)
     if built.docs is None:
         raise UnlockUnavailable(NEEDS_FIRESTORE)
@@ -80,7 +82,7 @@ def build_service(s: Settings) -> BookService:
     sink: AlertSink = telegram.alerts if telegram is not None else NoAlerts("no Telegram")
     sessions = DocBookSessions(
         docs,
-        ring,
+        None,  # SEC-6: closing needs no key; the lock and the closer are built without one
         prefix=p,
         session_minutes=s.book_session_minutes,
         idle_minutes=s.book_idle_minutes,
@@ -89,7 +91,7 @@ def build_service(s: Settings) -> BookService:
     return BookService(
         source=_NoBook(),
         sessions=sessions,
-        lock=DocShowLock(docs, prefix=p, cache_s=0),
+        lock=DocShowLock(docs, prefix=p, cache_s=0, owners=owner_uids(s)),
         talk=None,
         audit=built.audit,
         notifier=DirectNotifier(sink),
@@ -98,6 +100,12 @@ def build_service(s: Settings) -> BookService:
         honorific=s.user_honorific,
         timezone=s.user_timezone,
     )
+
+
+def owner_uids(s: Settings) -> tuple[str, ...]:
+    from jarvis.api.identity import user_id_for_email
+
+    return tuple(dict.fromkeys(user_id_for_email(e) for e in s.owner_emails))
 
 
 def owner_uid(s: Settings, owner: str) -> str | None:
@@ -124,6 +132,10 @@ def _done(report: UnlockReport) -> str:
     return f"{lock}; {count(report.closed, 'build book session')} ended. The owner was told."
 
 
+async def _other_lock(svc: BookService, others: Sequence[str]) -> bool:
+    return any([await svc.fresh_lock_state(o) is not None for o in others])
+
+
 async def _unlock(
     svc: BookService,
     uid: str,
@@ -132,9 +144,13 @@ async def _unlock(
     ask: Callable[[str], bool],
     out: Callable[[str], None],
     now: datetime,
+    others: Sequence[str] = (),
 ) -> int:
     try:
         state = await svc.fresh_lock_state(uid)
+        if state is None and await _other_lock(svc, others):
+            out(OTHER_LOCK)  # A's lock holds B's consoles too (book_lock.lock_for): not B's to lift
+            return 1
     except LockUnreadable:
         out("The guest lock can't be read right now. " + KEPT)
         return 1
@@ -147,8 +163,8 @@ async def _unlock(
     if not ask(ASK):
         out(KEPT)
         return 1
-    try:
-        report = await svc.emergency_unlock(uid, reason, now=now)
+    try:  # SEC-4: every owner's cookie session issued before now stops counting
+        report = await svc.emergency_unlock(uid, reason, now=now, signed_out_before=now.timestamp())
     except BookOff as exc:
         out(str(exc))
         return 1
@@ -185,14 +201,24 @@ async def amain(
         out(str(exc))
         return 2
     ask = (lambda _prompt: True) if args.yes else confirm
-    return await _unlock(svc, uid, reason, ask=ask, out=out, now=clock())
+    others = [o for o in owner_uids(s) if o != uid]
+    return await _unlock(svc, uid, reason, ask=ask, out=out, now=clock(), others=others)
 
 
 def main(argv: Sequence[str] | None = None, **kw: object) -> int:
     return asyncio.run(amain(argv, **kw))  # type: ignore[arg-type]
 
 
-__all__ = ["UnlockReport", "UnlockUnavailable", "amain", "build_service", "main", "owner_uid"]
+__all__ = [
+    "OTHER_LOCK",
+    "UnlockReport",
+    "UnlockUnavailable",
+    "amain",
+    "build_service",
+    "main",
+    "owner_uid",
+    "owner_uids",
+]
 
 
 if __name__ == "__main__":

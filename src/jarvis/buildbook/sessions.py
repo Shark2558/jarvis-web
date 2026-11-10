@@ -35,7 +35,7 @@ from jarvis.buildbook.model import (
     OpenedSession,
     SessionView,
 )
-from jarvis.buildbook.ports import SessionGone
+from jarvis.buildbook.ports import BookOff, SessionGone
 from jarvis.integrations.vault import VaultError
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
@@ -48,6 +48,7 @@ TURNS_KEPT = 8  # D11: the talk lane's context is this session's last 8 turns
 TOKEN_BYTES = 32
 _TOKEN = re.compile(r"^[A-Za-z0-9_\-]{43,128}$")
 GONE = "This build book session has ended. Open the book again from the console."
+NO_KEY = "This needs the server's encryption key; without it a book session can only be closed."
 
 
 class SessionEnded(SessionGone):
@@ -74,7 +75,7 @@ class DocBookSessions(ClosingStore):
     def __init__(
         self,
         docs: Docs,
-        keyring: Keyring,
+        keyring: Keyring | None,
         *,
         prefix: str = "jarvis_",
         session_minutes: int = 45,
@@ -90,6 +91,12 @@ class DocBookSessions(ClosingStore):
 
     def _aad(self, uid: str, bk: str) -> str:
         return f"book/session/{uid}/{bk}/v1"
+
+    def _key(self) -> Keyring:
+        """The keyring; a store built without one (the emergency unlock, SEC-6) only closes."""
+        if self._ring is None:
+            raise BookOff(NO_KEY)
+        return self._ring
 
     # ---- views -----------------------------------------------------------------------------------
     def _view(self, bk: str, doc: dict[str, Any]) -> SessionView:
@@ -112,7 +119,7 @@ class DocBookSessions(ClosingStore):
     async def _by_token(self, token: str) -> tuple[str, dict[str, Any]]:
         if not isinstance(token, str) or not _TOKEN.fullmatch(token):
             raise SessionGone(GONE)
-        tag = self._ring.mac(PURPOSE, token)
+        tag = self._key().mac(PURPOSE, token)
         rows = await self._docs.query(Query(self._coll, where=("mac", tag), limit=1))
         if not rows:
             raise SessionGone(GONE)
@@ -149,7 +156,7 @@ class DocBookSessions(ClosingStore):
             "v": 1,
             "uid": uid,
             "audience": audience,
-            "mac": self._ring.mac(PURPOSE, token),
+            "mac": self._key().mac(PURPOSE, token),
             "created_at": now.isoformat(),
             "last_seen": now.isoformat(),
             "until": (now + self._session).isoformat(),
@@ -190,14 +197,14 @@ class DocBookSessions(ClosingStore):
 
     def _seal(self, uid: str, bk: str, turns: list[list[str]]) -> str:
         plain = json.dumps(turns, ensure_ascii=False).encode("utf-8")
-        return self._ring.cipher(PURPOSE).encrypt(plain, aad=self._aad(uid, bk))
+        return self._key().cipher(PURPOSE).encrypt(plain, aad=self._aad(uid, bk))
 
     def _unseal(self, uid: str, bk: str, blob: Any) -> list[list[str]]:
         """The sealed turns, each [question, reply, reply id] (the id "" for an older turn)."""
         if not isinstance(blob, str) or not blob:
             return []
         try:
-            raw = json.loads(self._ring.cipher(PURPOSE).decrypt(blob, aad=self._aad(uid, bk)))
+            raw = json.loads(self._key().cipher(PURPOSE).decrypt(blob, aad=self._aad(uid, bk)))
         except (VaultError, ValueError):
             log.warning("book session turns did not open; starting without them")
             return []

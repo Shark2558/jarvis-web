@@ -13,7 +13,7 @@ from book_rig_fakes import ServiceRig
 
 from jarvis.buildbook import unlock
 from jarvis.buildbook.ports import BookOff
-from jarvis.config import AuthMode, Settings
+from jarvis.config import AuthMode, SessionBackend, Settings
 
 UID = owner_uid()
 
@@ -123,3 +123,75 @@ def test_it_runs_only_with_the_servers_firestore_and_key(settings: Settings) -> 
     s = settings.model_copy(update={"owner_emails": [OWNER]})
     code = unlock.main(["--owner", OWNER, "--reason", "lost it"], settings=s, out=out)
     assert code == 2 and "Firestore" in out.lines[-1]
+
+
+# ---- integrated review SEC-6: no keyring, several owners, sessions valid after ------------------
+OTHER_OWNER = "second.owner@example.com"
+
+
+def test_it_builds_its_lock_and_closer_without_the_token_key(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from jarvis.buildbook.lock import DocShowLock
+    from jarvis.storage.docs import MemoryDocs
+
+    docs = MemoryDocs()
+
+    class Built:
+        def __init__(self) -> None:
+            self.docs, self.audit = docs, None
+
+    monkeypatch.setattr("jarvis.storage.build_storage", lambda _s: Built())
+    s = settings.model_copy(
+        update={
+            "session_backend": SessionBackend.FIRESTORE,
+            "firestore_project": "proj",
+            "owner_emails": [OWNER, OTHER_OWNER],
+            "token_key": None,
+        }
+    )
+    svc = unlock.build_service(s)  # no JARVIS_TOKEN_KEY: it lifts and closes all the same
+    assert isinstance(svc.lock, DocShowLock)
+    assert not hasattr(unlock, "NEEDS_KEY")
+
+
+async def test_a_session_store_without_the_key_still_closes(rig: ServiceRig) -> None:
+    from jarvis.buildbook.sessions import DocBookSessions
+
+    opened = await rig.open(UID)
+    closer = DocBookSessions(rig.docs, None)
+    assert await closer.owned_ids(UID) == [opened.session.session_id]
+    closing = await closer.close_claim(UID, opened.session.session_id, "resume", rig.clock())
+    assert closing is not None and await closer.owned_ids(UID) == []
+    with pytest.raises(BookOff):
+        await closer.resolve(UID, opened.token, now=rig.clock())  # reading a token needs the key
+
+
+async def test_a_lock_on_another_owner_is_named_and_nothing_changes(
+    rig: ServiceRig, s: Settings
+) -> None:
+    both = s.model_copy(update={"owner_emails": [OWNER, OTHER_OWNER]})
+    other = owner_uid(OTHER_OWNER)
+    await rig.open(other)  # the OTHER owner's guest show holds every owner's consoles
+    code, out = await _cli(rig, both, "--owner", OWNER, "--reason", "lost my passkey")
+    assert code == 1 and out.lines[-1] == unlock.OTHER_LOCK
+    assert await rig.lock.get(other) is not None
+
+
+async def test_the_command_ends_every_cookie_session_from_now(rig: ServiceRig, s: Settings) -> None:
+    await rig.open(UID)
+    code, _ = await _cli(rig, s, "--owner", OWNER, "--reason", "lost my passkey")
+    assert code == 0
+    assert await rig.lock.valid_after(UID) == rig.clock().timestamp()
+
+
+def test_the_runbook_installs_hash_locked_in_a_subshell_without_the_key() -> None:
+    from pathlib import Path
+
+    doc = (Path(unlock.__file__).parent / "INTEGRATION-C.md").read_text("utf-8")
+    book = doc[doc.index("## Runbook: the emergency unlock") :]
+    shell = book[book.index("```bash") : book.index("```", book.index("```bash") + 7)]
+    assert "pip install -q --require-hashes -r requirements.lock" in shell
+    assert "pip install -q --no-deps -e ." in shell
+    assert "JARVIS_TOKEN_KEY" not in shell
+    assert shell.split("\n")[1].strip() == "(" and shell.rstrip().endswith(")")

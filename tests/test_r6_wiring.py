@@ -24,6 +24,7 @@ from book_app_fakes import (
     register_passkey,
     sign_in,
 )
+from book_show_fakes import Clock
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
@@ -262,3 +263,16 @@ async def test_a_reply_is_spoken_by_its_id_from_this_session_only(settings: Sett
             h2 = book((await open_book(c, auth, "owner"))["token"])  # a new session
             view2 = await svc.resolve(uid, h2["X-Jarvis-Book"], now=datetime.now(UTC))
             assert await svc.line_text(uid, view2, asked[0]["reply_id"]) is None
+
+
+async def test_b_and_c_read_the_same_clock(settings: Settings) -> None:
+    """A moved clock (`app.state.book_clock`: the tests and evals) is the time for B's routes as
+    for C's, or a session C keeps live is idle to B (and B would close it)."""
+    async for app in book_app(settings):
+        app.state.book_clock = Clock(datetime.now(UTC) - timedelta(days=1))
+        async with sign_in(app) as c:
+            auth = await register_passkey(c)
+            h = book((await open_book(c, auth, "owner"))["token"])
+            assert (await c.get("/v1/book/sections", headers=h)).status_code == 200
+            assert (await c.get("/v1/book")).json()["session"] is not None
+            assert (await c.get("/v1/book/show/script", headers=h)).status_code == 200

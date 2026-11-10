@@ -39,8 +39,11 @@ class BookRefused(Exception):
         self.status, self.code, self.detail = status, code, detail
 
 
-def now() -> dt.datetime:
-    return dt.datetime.now(dt.UTC)
+def now(request: Request | None = None) -> dt.datetime:
+    """The clock: `app.state.book_clock` when set (tests and evals move it; C's routes read the
+    same one, I1), else the wall clock."""
+    clock = getattr(request.app.state, "book_clock", None) if request is not None else None
+    return clock() if callable(clock) else dt.datetime.now(dt.UTC)
 
 
 def need(request: Request, name: str) -> Any:
@@ -80,7 +83,7 @@ async def owner_session(request: Request, uid: str, token: str | None) -> Sessio
     if not token or len(token) > TOKEN_MAX:
         raise BookRefused(401, "session_gone", GONE)
     try:
-        session: SessionView = await resolve(uid, token, now=now())
+        session: SessionView = await resolve(uid, token, now=now(request))
     except SessionGone:
         raise BookRefused(401, "session_gone", GONE) from None
     except Exception as exc:  # noqa: BLE001 - a store outage: fail closed, plain words

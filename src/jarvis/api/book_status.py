@@ -37,8 +37,9 @@ UNBUILT = "This release's build book could not be built at deploy."
 TALK_OFF = "The talk-through isn't available on this server."
 
 
-def _now() -> dt.datetime:
-    return dt.datetime.now(dt.UTC)
+def _now(st: Any) -> dt.datetime:
+    clock = getattr(st, "book_clock", None)  # the tests' and evals' moved clock, as C's routes
+    return clock() if callable(clock) else dt.datetime.now(dt.UTC)
 
 
 async def _sealing(request: Request, uid: str) -> bool:
@@ -79,7 +80,7 @@ async def _session_part(st: Any, uid: str) -> dict[str, Any] | None:
     sessions = getattr(st, "book_sessions", None)
     if sessions is None:
         return None
-    live = await sessions.live(uid, now=_now())
+    live = await sessions.live(uid, now=_now(st))
     return None if live is None else dict(live.model_dump(exclude={"session_id"}))
 
 

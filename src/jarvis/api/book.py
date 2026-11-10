@@ -249,7 +249,7 @@ async def _still_live(request: Request, uid: str, session_id: str | None) -> boo
     if session_id is None:
         return False
     try:
-        live: SessionView | None = await need(request, "book_sessions").live(uid, now=now())
+        live: SessionView | None = await need(request, "book_sessions").live(uid, now=now(request))
     except BookRefused:
         raise
     except Exception as exc:  # noqa: BLE001

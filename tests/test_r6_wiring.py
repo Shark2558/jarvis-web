@@ -95,6 +95,24 @@ async def test_with_the_keyring_every_part_is_wired_and_nothing_is_sealed_at_sta
     assert await _book_rows(keyed_app) == []
 
 
+async def test_a_book_that_fails_to_build_never_stops_jarvis(
+    keyed: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError("a bad setting")
+
+    said: list[tuple[str, Any]] = []
+    monkeypatch.setattr(r6, "DocsBookVault", broken)
+    monkeypatch.setattr(
+        r6.log, "error", lambda msg, *_a, **kw: said.append((msg, kw["extra"]["error"]))
+    )
+    app = create_app(keyed, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):  # JARVIS still starts (as R4's optional parts)
+        assert all(getattr(app.state, name) is None for name in r6.R6_STATE)
+        assert r6.r6_tick_jobs(app) == ()
+    assert said == [("The build book is OFF: its setup failed", "RuntimeError")]
+
+
 async def test_the_jobs_ride_the_tick_and_the_watchdog_and_never_503_it(keyed_app: Any) -> None:
     st = keyed_app.state
     names = [j.name for j in st.tick_jobs]

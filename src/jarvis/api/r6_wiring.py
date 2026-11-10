@@ -134,8 +134,15 @@ def wire_book(
 
 
 async def wire_r6(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> None:
-    """Everything R6 on `app.state` (None when off), after R4 and before the gateway."""
-    wire_book(app, s, docs, audit, source=default_source(), keyring=Keyring.from_settings(s))
+    """Everything R6 on `app.state` (None when off), after R4 and before the gateway. A part that
+    fails to build leaves the whole book off and JARVIS running (as R4's optional parts)."""
+    try:
+        wire_book(app, s, docs, audit, source=default_source(), keyring=Keyring.from_settings(s))
+    except Exception as exc:  # noqa: BLE001 - optional part: never fatal at start
+        log.error("The build book is OFF: its setup failed", extra={"error": type(exc).__name__})
+        for name in R6_STATE:
+            setattr(app.state, name, None)
+        app.state.book_jobs = None
 
 
 def install_r6_routes(app: FastAPI) -> None:

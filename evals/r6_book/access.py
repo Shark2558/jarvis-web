@@ -117,7 +117,9 @@ def _token_case(row: dict[str, str], r: Any) -> Case:
     )
 
 
-async def _b_routes(app: Any, c: AsyncClient, token: str) -> list[Case]:
+async def _b_routes(app: Any, c: AsyncClient, owner: AsyncClient, token: str) -> list[Case]:
+    """`c` presents the show (SEC-4: it holds only a show-only marker); `owner` is a browser the
+    owner signed in to, so a guest token is refused by the token check itself."""
     out: list[Case] = []
     for row in _forbidden_rows():
         if row["kind"] == "lock":
@@ -126,7 +128,7 @@ async def _b_routes(app: Any, c: AsyncClient, token: str) -> list[Case]:
             continue
         locked, app.state.book_lock = app.state.book_lock, _Unlocked()
         try:
-            r = await c.request(row["method"], row["path"], headers=book(token))
+            r = await owner.request(row["method"], row["path"], headers=book(token))
         finally:
             app.state.book_lock = locked
         out.append(_token_case(row, r))
@@ -135,10 +137,10 @@ async def _b_routes(app: Any, c: AsyncClient, token: str) -> list[Case]:
 
 async def _guest_token(app: Any) -> list[Case]:
     out: list[Case] = []
-    async with sign_in(app) as c:
+    async with sign_in(app) as c, sign_in(app, fresh=False) as owner:
         auth = await register_passkey(c)
         token = (await open_book(c, auth, "guest"))["token"]
-        out += await _b_routes(app, c, token)
+        out += await _b_routes(app, c, owner, token)
         s = await c.get("/v1/book/show/script", headers=book(token))
         ok = s.status_code == 200 and "month_inr" not in s.json()["costs"]
         out.append(_case("guest-no-month-spend", ok, "the guest saw the owner's spend"))

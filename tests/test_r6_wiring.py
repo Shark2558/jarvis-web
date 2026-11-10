@@ -208,10 +208,11 @@ async def test_a_guest_token_never_opens_bs_owner_routes(settings: Settings) -> 
             token = (await open_book(c, auth, "guest"))["token"]
             lock = await app.state.book_lock.get(owner_uid())
             assert lock is not None and await app.state.book_lock.lift(owner_uid(), lock.id)
+        async with sign_in(app, fresh=False) as owner:  # SEC-4: the presenting one holds no owner
             for path in ("/v1/book/sections", "/v1/book/releases/4a70683/sections"):
-                r = await c.get(path, headers=book(token))
+                r = await owner.get(path, headers=book(token))
                 assert r.status_code == 403 and r.json()["error"] == "owner_only", path
-            r = await c.post("/v1/book/releases/4a70683/ticket", headers=book(token) | CSRF)
+            r = await owner.post("/v1/book/releases/4a70683/ticket", headers=book(token) | CSRF)
             assert r.status_code == 403 and r.json()["error"] == "owner_only"
 
 

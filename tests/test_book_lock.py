@@ -241,8 +241,9 @@ async def test_the_presenting_browser_is_held_even_through_a_stale_cache(app: An
         state = await real.get(owner_uid())
         await real.lift(owner_uid(), state.id)  # lifted elsewhere: the flag clears itself
         app.state.book_lock = StaleCache(real)
-        assert (await presenting.get("/auth/me")).status_code == 200
-        assert (await presenting.get("/auth/me")).status_code == 200
+        # SEC-4: the presenting browser holds a show-only marker, never the owner's sign-in
+        assert (await presenting.get("/auth/me")).status_code == 401
+        assert (await presenting.get("/auth/me")).status_code == 401
 
 
 async def test_refresh_skips_the_cache(docs: FlakyDocs) -> None:

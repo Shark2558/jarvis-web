@@ -188,6 +188,27 @@ path; HEAD = GET), everything else 423 `show_locked` (`GET /` 302 `/book/show`):
 | PY LOW 9, 10, 11, 12 | Every `/open` refusal audited (console_only, 429, bad body, no_book); every ended session returned/told; wipe eval checks no session keeps sealed turns; the 51-line test split; `json_body` is generic. |
 | SEC 1 "request `auth_time` as essential" | Not done here (orchestrator: `api/auth.py` stays as R3 designed it; raised with the owner). |
 
+## Integrated review fixes (R6 fixer; tests first)
+
+| Finding | Fix |
+|---|---|
+| SEC-3 = CODE-M1: the lock stopped holding when R6 was off | In Google mode `app.state.book_lock` is always a `DocShowLock(docs, prefix, owners)` (no keyring), also with no `JARVIS_TOKEN_KEY` and when R6's setup fails; Resume then answers 503 `book_off` naming the emergency unlock; a Google app with no lock store fails closed (503). |
+| SEC-4: a cookie taken during a show outlived Resume | (a) At a guest open the presenting browser's session becomes a show-only marker `{book_show: {uid, iat}}` with no owner e-mail (`api/book_show_auth.py`): only the show routes, `/v1/book/close`, `/v1/book/show/lock`, `/v1/book/resume` and a `book_resume` passkey challenge accept it. (b) Resume and the emergency unlock write `sessions_valid_after` into each owner's lock document (read with the lock, cached <= 3 s); the middleware clears every cookie session or marker issued before it; the browser that resumed is re-stamped at that mark. (c) After a lift elsewhere the show tab says "Unlocked on another device" and stays. |
+
+### Presenting to a guest (owner guidance, SEC-4 d)
+
+JARVIS ends its own sessions after a show, but the browser's live **Google** sign-in is beyond what
+JARVIS can protect: a guest at your laptop could sign in to Google services in that browser, and
+one click on "Sign in" gives a new JARVIS sign-in (it is held by the lock while the show runs and
+refused after your Resume, but Google itself stays signed in). So:
+- present from a **browser profile you can sign out of Google in** (a separate profile kept for
+  showing JARVIS), and sign that profile out of Google when the guest is done;
+- **Resume on the presenting device** when you take it back: that browser is signed in to JARVIS
+  again at once; every other browser and device of yours (and of any other owner) is signed out of
+  JARVIS by the Resume and asks you to sign in again;
+- if you Resume from your phone instead, the presenting tab says "Unlocked on another device" and
+  never opens the console.
+
 ## Runbook: the emergency unlock (a passkey lost during a guest show)
 
 Use it only when Resume says "No passkey of yours is in force any more", or the passkey is lost

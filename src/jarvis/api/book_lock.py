@@ -23,6 +23,11 @@ A websocket of an owner's cookie session is closed (4423 locked, 4503 unreadable
 is on: never silently exempt. An HTTP or websocket scope with no `session` in Google mode means
 the middleware was installed outside SessionMiddleware: 503 (fail closed, logged), never "pass".
 
+Integrated review SEC-4: the session is an owner's sign-in or the presenting browser's show-only
+marker (`book_show_auth.cookie_owner`); one issued before the owners' "sessions valid after" mark
+(recorded at Resume or the emergency unlock, read with the lock) is cleared here, on every route,
+so a cookie copied during a show or a sign-in made under the lock is refused after Resume.
+
 `GET /` -> 302 /book/show; everything else, `/auth/me` included -> 423 {error: show_locked,
 detail, lock_id?} (`lock_id` only for the owner whose lock it is: the target of his
 `book_resume` passkey check). Unreadable lock -> 503 show_lock_unreadable for everything but the
@@ -41,8 +46,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from jarvis.api.auth import session_email
 from jarvis.api.book_http import NO_STORE
+from jarvis.api.book_show_auth import GUEST_FLAG, cookie_owner
 from jarvis.api.identity import user_id_for_email
 from jarvis.buildbook.lines import LINES
 from jarvis.buildbook.model import ShowLockState
@@ -77,7 +82,6 @@ LOCKED = "A guest is watching the build book. " + LINES["hand_back"]
 UNREADABLE = "JARVIS can't tell whether a guest show is running. Try again in a moment."
 UNWIRED = "The guest lock isn't installed where it can see sign-ins, so JARVIS stays closed."
 WS_LOCKED, WS_UNREADABLE = 4423, 4503
-GUEST_FLAG = "book_guest"  # set in the presenting browser's session at a guest open
 
 
 def allowed(method: str, path: str) -> bool:
@@ -142,22 +146,29 @@ class ShowLockMiddleware:
             body["lock_id"] = state.id
         return _json(423, body)
 
+    def _store(self, scope: Scope) -> ShowLock:
+        """The lock store; a Google app with none fails closed (SEC-3: I1 always builds one)."""
+        store: ShowLock | None = getattr(scope["app"].state, "book_lock", None)
+        if store is None:
+            log.error("the show lock has no lock store to read")
+            raise LockUnreadable(UNREADABLE)
+        return store
+
     async def _held(self, scope: Scope) -> tuple[ShowLockState | None, bool]:
         """(the lock holding this cookie session, whether it is the owner's own); LockUnreadable
-        propagates, and so does a Google app with no lock store to read (SEC-3: I1 always
-        builds one, so a missing store is never read as "unlocked"). Not an owner's session, or
-        no store outside Google mode: (None, False)."""
+        propagates. A session issued before its owner's "valid after" mark is cleared first
+        (SEC-4). Not an owner's session or show marker: (None, False)."""
         view = scope if scope["type"] == "http" else {**scope, "type": "http"}  # same session dict
-        email = session_email(Request(view), self._s)
-        store: ShowLock | None = getattr(scope["app"].state, "book_lock", None)
-        if email is None:
+        who = cookie_owner(Request(view), self._s)
+        if who is None:  # bearer, the Scheduler, no sign-in; never a cookie outside Google mode
             return None, False
-        if store is None:
-            if self._s.auth_mode is AuthMode.GOOGLE:
-                log.error("the show lock has no lock store to read")
-                raise LockUnreadable(UNREADABLE)
+        store, (uid, issued) = self._store(scope), who
+        after = getattr(store, "valid_after", None)
+        mark = await after(uid) if callable(after) else None
+        if mark is not None and issued < mark:
+            scope["session"].clear()  # issued before Resume: nothing of the owner's any more
             return None, False
-        return await self._lock_on(store, user_id_for_email(email), scope["session"])
+        return await self._lock_on(store, uid, scope["session"])
 
     async def _websocket(self, scope: Scope, receive: Receive, send: Send) -> None:
         try:
@@ -186,17 +197,18 @@ class ShowLockMiddleware:
         if scope["type"] == "websocket":
             await self._websocket(scope, receive, send)
             return
-        if allowed(scope["method"], scope["path"]):
-            await self.app(scope, receive, send)
-            return
+        passes = allowed(scope["method"], scope["path"])
         try:
             state, own = await self._held(scope)
         except LockUnreadable:
+            if passes:  # the allowed routes ask for no owner data: they pass unknowing
+                await self.app(scope, receive, send)
+                return
             await _json(503, {"error": "show_lock_unreadable", "detail": UNREADABLE})(
                 scope, receive, send
             )
             return
-        if state is None:
+        if state is None or passes:
             await self.app(scope, receive, send)
             return
         await self._answer(scope, state, own)(scope, receive, send)

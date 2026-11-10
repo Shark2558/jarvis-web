@@ -140,7 +140,10 @@
     try {
       const d = obj(await B().api('/v1/book/show/lock'));
       if (d) return { on: d.on === true, id: LOCK.test(d.id || '') ? d.id : '', line: txt(d.line, 200) };
-    } catch (e) { if (e.status !== 404 && e.status !== 405) return { on: false, unknown: true }; }
+    } catch (e) {
+      if (e.status === 401) return { on: false, gone: true }; // SEC-4: a Resume elsewhere signed this browser out
+      if (e.status !== 404 && e.status !== 405) return { on: false, unknown: true };
+    }
     try { await B().api('/auth/me'); return { on: false }; } catch (e) { return { on: e.status === 423, id: '' }; } // /auth/me is 423 under a lock
   }
   function card(title, line, note) {
@@ -149,12 +152,18 @@
     $('shDoneFine').textContent = ''; $('shRetry').hidden = true;
   }
   function home() { clearInterval(S.poll); window.location.assign('/'); }
+  /** SEC-4 (c): the owner resumed on another device; this tab says so and stays (never the console). */
+  function elsewhere() {
+    clearInterval(S.poll);
+    card('Unlocked', 'Unlocked on another device.', 'This device was signed out of JARVIS. Sign in again when it is back in your hands.');
+    $('shResume').hidden = true; $('shBack').hidden = true;
+  }
   function showLocked(st, line) {
     S.lockId = st.id || S.lockId;
     card('Locked', line || st.line || '', 'A build book show holds this account\u2019s consoles. Your passkey unlocks them on this device or any other.');
     $('shResume').hidden = false; $('shBack').hidden = true; $('shResume').focus();
     clearInterval(S.poll);
-    S.poll = setInterval(async () => { const now = await lockState(); if (!now.on && !now.unknown) home(); }, POLL_MS);
+    S.poll = setInterval(async () => { const now = await lockState(); if (now.gone || (!now.on && !now.unknown)) elsewhere(); }, POLL_MS);
   }
   async function done(opts) {
     const o = obj(opts) || {};

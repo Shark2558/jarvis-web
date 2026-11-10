@@ -2,7 +2,8 @@
 # owner's other consoles see it, and the R5.1 visual gate (D11) on the Book panel and the show page.
 # A second console tab that gets 423 show_locked goes to the show, shows the lock with Resume, and
 # returns to the console once a book_resume passkey (bound to the lock id) lifts it -- also when the
-# lock id has to come from the resume answer, and when the lock is lifted from another device.
+# lock id has to come from the resume answer; a lock lifted from another device is said, and the
+# tab stays (SEC-4 c).
 # The gate: #p-book (status, and the owner's reader open) and /book/show (start, a scene playing,
 # questions, the hand-back) at 1440x900 and 390x844, Night and Day, with the gate's own DOM checks.
 # ruff: noqa: E501 -- JavaScript strings
@@ -130,19 +131,29 @@ def test_the_lock_id_can_come_from_the_resume_answer(
         c.close()
 
 
-def test_a_lock_lifted_elsewhere_sends_this_tab_back_to_the_console(
-    browser: Any, server_url: str, token: str
+@pytest.mark.parametrize("lifted", ["off", "signed_out"])
+def test_a_lock_lifted_elsewhere_says_so_and_stays(
+    browser: Any, server_url: str, token: str, lifted: str
 ) -> None:
+    """SEC-4 (c): the owner resumed on another device. This tab says so and does NOT go to the
+    console (whatever this browser still holds is not the owner's any more)."""
     c, fake = _locked_tab(browser, server_url, token)
     try:
-        c.page.unroute(
-            "**/console/config"
-        )  # back in the console it boots with the test token again
-        fake.lock = {"on": False}  # the owner resumed on his phone
-        c.page.wait_for_url(server_url + "/", timeout=15000)
-        c.page.locator("#welcome").wait_for()
+        if lifted == "off":
+            fake.lock = {"on": False}  # the owner resumed on his phone
+        else:  # this browser's cookie was cleared by the Resume mark: the lock route says 401
+            c.page.route(
+                "**/v1/book/show/lock",
+                lambda r: j(r, 401, {"error": "unauthorized", "detail": "sign in required"}),
+            )
+        done = c.page.locator("#shDone")
+        c.page.locator("#shDoneTitle", has_text="Unlocked").wait_for(timeout=15000)
+        assert "Unlocked on another device" in done.inner_text()
+        c.page.wait_for_timeout(4500)  # one more poll: still here
+        assert c.page.url.endswith("/book/show")
+        assert not done.get_by_role("button", name="Resume with my passkey").is_visible()
         assert fake.to("POST", "/v1/book/resume") == []
-        _clean(c, 423)
+        _clean(c, 401, 423)
     finally:
         c.close()
 

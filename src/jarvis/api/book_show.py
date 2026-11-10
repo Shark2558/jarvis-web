@@ -1,7 +1,9 @@
 # src/jarvis/api/book_show.py
 """The build book's session routes (R6 D8-D14; "Contract"; builder C). Owner-only cookie sessions
-(`require_auth` + `current_user`), every answer `no-store` (api/book_http.py), 503 book_off until
-I1 wires `app.state.book_service` (checked before anything else, the body included).
+(`require_auth` + `current_user`; the show routes, the lock and Resume also take the presenting
+browser's show-only marker, SEC-4: `book_show_auth`), every answer `no-store` (api/book_http.py),
+503 book_off until I1 wires `app.state.book_service` (checked before anything else, the body
+included).
 
 POST /v1/book/open {proof, audience}     {token, session_id, until, idle_until, audience} · 403
                                          console_only / passkey_setup_needed / reauth_required /
@@ -53,6 +55,7 @@ from jarvis.api.book_show_access import (
     resume_flow,
     utcnow,
 )
+from jarvis.api.book_show_auth import require_show_auth, show_user
 from jarvis.api.identity import current_user
 from jarvis.billing.service import BudgetError
 from jarvis.buildbook.lines import LINES
@@ -72,7 +75,9 @@ from jarvis.voice.service import SpeakRequest
 from jarvis.voice.wav import parse_wav
 
 log = get_logger(__name__)
-router = APIRouter(prefix="/v1/book", dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/v1/book")
+OWNER_ONLY = [Depends(require_auth)]  # open: an owner's sign-in, never the show-only marker
+SHOW = [Depends(require_show_auth)]  # SEC-4: an owner's sign-in or the presenting browser's marker
 
 QUESTION_MAX = 500  # D12
 HEAR_MAX_BYTES = 600 * 1024
@@ -133,14 +138,14 @@ def _voice_failure(exc: Exception) -> JSONResponse:
     return r
 
 
-@router.post("/open", response_model=None)
+@router.post("/open", response_model=None, dependencies=OWNER_ONLY)
 async def open_book(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
     svc = _svc(request)
     return book_off() if svc is None else await open_flow(request, svc, uid)
 
 
-@router.get("/show/script", response_model=None)
-async def show_script(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+@router.get("/show/script", response_model=None, dependencies=SHOW)
+async def show_script(request: Request, uid: str = Depends(show_user)) -> JSONResponse:
     svc = _svc(request)
     if svc is None:
         return book_off()
@@ -155,8 +160,8 @@ async def show_script(request: Request, uid: str = Depends(current_user)) -> JSO
         return book_err(404, "no_book", str(exc))
 
 
-@router.post("/show/speak", response_model=None)
-async def show_speak(request: Request, uid: str = Depends(current_user)) -> Response:
+@router.post("/show/speak", response_model=None, dependencies=SHOW)
+async def show_speak(request: Request, uid: str = Depends(show_user)) -> Response:
     svc = _svc(request)
     if svc is None:
         return book_off()
@@ -196,8 +201,8 @@ async def show_speak(request: Request, uid: str = Depends(current_user)) -> Resp
     return Response(content=out.audio, media_type="audio/mpeg", headers=NO_STORE)
 
 
-@router.post("/show/hear", response_model=None)
-async def show_hear(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+@router.post("/show/hear", response_model=None, dependencies=SHOW)
+async def show_hear(request: Request, uid: str = Depends(show_user)) -> JSONResponse:
     svc = _svc(request)
     if svc is None:
         return book_off()
@@ -236,8 +241,8 @@ async def show_hear(request: Request, uid: str = Depends(current_user)) -> JSONR
     return book_json({"text": heard.text})  # handed back, never kept (kept only if asked)
 
 
-@router.post("/show/ask", response_model=None)
-async def show_ask(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+@router.post("/show/ask", response_model=None, dependencies=SHOW)
+async def show_ask(request: Request, uid: str = Depends(show_user)) -> JSONResponse:
     svc = _svc(request)
     if svc is None:
         return book_off()
@@ -263,8 +268,8 @@ async def show_ask(request: Request, uid: str = Depends(current_user)) -> JSONRe
     return book_json(got.model_dump())
 
 
-@router.post("/show/beat", response_model=None)
-async def show_beat(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+@router.post("/show/beat", response_model=None, dependencies=SHOW)
+async def show_beat(request: Request, uid: str = Depends(show_user)) -> JSONResponse:
     svc = _svc(request)
     if svc is None:
         return book_off()
@@ -276,8 +281,8 @@ async def show_beat(request: Request, uid: str = Depends(current_user)) -> JSONR
     return book_json({"until": view.until, "idle_until": view.idle_until})
 
 
-@router.post("/close", response_model=None)
-async def close(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+@router.post("/close", response_model=None, dependencies=SHOW)
+async def close(request: Request, uid: str = Depends(show_user)) -> JSONResponse:
     svc = _svc(request)
     if svc is None:
         return book_off()
@@ -296,16 +301,16 @@ async def close(request: Request, uid: str = Depends(current_user)) -> JSONRespo
     return book_json({"closed": True, "wiped": done.wiped, "notified": done.notified})
 
 
-@router.post("/resume", response_model=None)
-async def resume(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+@router.post("/resume", response_model=None, dependencies=SHOW)
+async def resume(request: Request, uid: str = Depends(show_user)) -> JSONResponse:
     svc = _svc(request)
     if svc is None:  # the lock may still hold (SEC-3): the emergency unlock is the way out
         return book_err(503, "book_off", RESUME_OFF)
     return await resume_flow(request, svc, uid)
 
 
-@router.get("/show/lock", response_model=None)
-async def show_lock(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+@router.get("/show/lock", response_model=None, dependencies=SHOW)
+async def show_lock(request: Request, uid: str = Depends(show_user)) -> JSONResponse:
     """Whether a guest lock holds this owner's consoles (D10), for the show page with no book
     token (another console tab, or the presenting tab after the close)."""
     store = getattr(request.app.state, "book_lock", None)

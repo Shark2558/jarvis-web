@@ -29,9 +29,9 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from jarvis.api.auth import SESSION_AUTH_AT_KEY, fresh_sign_in_left, session_email
+from jarvis.api.auth import cookie_now, fresh_sign_in_left, session_email
 from jarvis.api.book_http import book_err, book_json
-from jarvis.api.book_lock import GUEST_FLAG
+from jarvis.api.book_show_auth import cookie_owner, make_show_only, restamp
 from jarvis.buildbook.model import Audience
 from jarvis.buildbook.ports import BookOff, BookUnavailable, LockUnreadable
 from jarvis.buildbook.service import BookService
@@ -232,8 +232,7 @@ async def _granted(
     except BookUnavailable as exc:  # D3 checked again at the open itself (fail closed)
         return book_err(404, "no_book", str(exc))
     if audience == "guest" and "session" in request.scope:
-        request.session.pop(SESSION_AUTH_AT_KEY, None)  # the guest can't reuse the owner's
-        request.session[GUEST_FLAG] = True  # held at once on every instance (book_lock.py)
+        make_show_only(request.session, uid)  # SEC-4: no owner sign-in left in this browser
     v = opened.session
     return book_json(
         {
@@ -267,7 +266,7 @@ async def _resume_proof(
 
 async def resume_flow(request: Request, svc: BookService, uid: str) -> JSONResponse:
     s = settings(request)
-    if s.auth_mode is not AuthMode.GOOGLE or session_email(request, s) is None:
+    if s.auth_mode is not AuthMode.GOOGLE or cookie_owner(request, s) is None:
         return book_err(403, "console_only", CONSOLE_ONLY)
     if (r := limited(request, "resume", uid)) is not None:
         return r
@@ -286,9 +285,10 @@ async def resume_flow(request: Request, svc: BookService, uid: str) -> JSONRespo
     now = utcnow(request)
     if not await svc.record_resume(uid, granted=True, how=how, now=now):
         return book_err(503, "book_off", "The unlock couldn't be recorded, so it didn't happen.")
-    if not await svc.resume(uid, state.id, now=now):
+    mark = cookie_now()  # SEC-4: every cookie issued before this stops counting...
+    if not await svc.resume(uid, state.id, now=now, signed_out_before=mark):
         return book_err(409, "lock_changed", LOCK_CHANGED)
-    request.session.pop(GUEST_FLAG, None)
+    restamp(request.session, s, uid, mark)  # ...but this browser's, issued again at the mark
     return book_json({"resumed": True})
 
 

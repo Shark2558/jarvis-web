@@ -36,7 +36,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from jarvis.api.book import install_book
-from jarvis.api.book_lock import install_show_lock_middleware
+from jarvis.api.book_lock import install_show_lock_middleware, owner_ids
 from jarvis.api.book_show import install_book_show
 from jarvis.api.book_show_wiring import C_STATE, book_sweep_job, wire_book_c
 from jarvis.api.identity import primary_user_id
@@ -90,8 +90,9 @@ class SettingsPrefs:
 
 
 def lock_store(s: Settings, docs: Docs) -> DocShowLock:
-    """D10's lock store: documents only, no keyring (it must hold while the book is off)."""
-    return DocShowLock(docs, prefix=s.firestore_prefix)
+    """D10's lock store: documents only, no keyring (it must hold while the book is off); it
+    knows every owner, whose cookie sessions a Resume ends too (SEC-4)."""
+    return DocShowLock(docs, prefix=s.firestore_prefix, owners=owner_ids(s))
 
 
 def _book_off(app: FastAPI, s: Settings, lock: DocShowLock, why: str) -> None:

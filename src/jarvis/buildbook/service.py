@@ -104,14 +104,8 @@ class BookService:
     ) -> None:
         self.source, self.sessions, self.lock, self.talk = source, sessions, lock, talk
         self._on_close = on_close
-        self.tell = Telling(
-            audit=audit,
-            notifier=notifier,
-            docs=docs,
-            prefix=prefix,
-            honorific=honorific,
-            timezone=timezone,
-        )
+        self.tell = Telling(audit=audit, notifier=notifier, docs=docs, prefix=prefix,
+                            honorific=honorific, timezone=timezone)  # fmt: skip
         self.show = ShowScript(source, honorific=honorific, prefs=prefs, spend=spend)
         self._owners = tuple(owner_emails)
         self._guest_ok: tuple[str, str | None] | None = None  # (release id, refusal)
@@ -127,8 +121,9 @@ class BookService:
     async def record_resume(self, uid: str, *, granted: bool, how: str, now: datetime) -> bool:
         return await self.tell.record_resume(uid, granted=granted, how=how, now=now)
 
-    async def last_closed(self, uid: str) -> dict[str, Any] | None:
-        """For B's `GET /v1/book` (`last_closed`): {last_closed_at, notified} or None."""
+    async def last_closed(
+        self, uid: str
+    ) -> dict[str, Any] | None:  # B's {last_closed_at, notified}
         return await self.tell.last_closed(uid)
 
     # ---- D3 at a guest's door -------------------------------------------------------------------
@@ -265,10 +260,12 @@ class BookService:
     async def lock_state(self, uid: str) -> ShowLockState | None:
         return None if self.lock is None else await self.lock.get(uid)
 
-    async def resume(self, uid: str, lock_id: str, *, now: datetime) -> bool:
-        """Lift the guest lock (the caller checked the book_resume proof for `lock_id`) and end
-        every session of the owner (D14 trigger "Resume")."""
-        if self.lock is None or not await self.lock.lift(uid, lock_id):
+    async def resume(
+        self, uid: str, lock_id: str, *, now: datetime, signed_out_before: float | None = None
+    ) -> bool:
+        """Lift the guest lock (book_resume proof checked) and end every session of the owner
+        (D14 "Resume"); cookies issued before `signed_out_before` stop counting (SEC-4)."""
+        if not await self._lift(uid, lock_id, signed_out_before):
             return False
         try:
             await self._end_all(uid, "resume", now)
@@ -277,7 +274,7 @@ class BookService:
         return True
 
     async def wipe(self, uid: str, *, now: datetime) -> int:
-        """Privacy -> Delete (D16 `book_sessions_source`): end and wipe EVERY session; how many."""
+        """Privacy -> Delete (D16): end and wipe EVERY session; how many."""
         return len(await self._end_all(uid, "privacy", now))
 
     async def _swept(self, step: Awaitable[Closing | None], now: datetime) -> ClosedSession | None:
@@ -307,10 +304,11 @@ class BookService:
             done += [closed] if closed is not None else []
         return SweepReport(tuple(done), errors)
 
-    async def emergency_unlock(self, uid: str, reason: str, *, now: datetime) -> UnlockReport:
-        """The owner lost his passkey during a guest show (buildbook/unlock.py): audit FIRST,
-        lift the lock, end every session (each with its notice); a notice even when none was
-        open, so the owner always hears of it."""
+    async def emergency_unlock(
+        self, uid: str, reason: str, *, now: datetime, signed_out_before: float | None = None
+    ) -> UnlockReport:
+        """A passkey lost during a guest show (buildbook/unlock.py): audit FIRST, lift the lock,
+        end every session (each told); a notice even when none was open."""
         state = await self.fresh_lock_state(uid)
         detail = (
             f"Emergency unlock at {self.tell.hhmm(now)} from Google Cloud (no passkey): "
@@ -319,7 +317,7 @@ class BookService:
         args = {"result": "granted", "via": "emergency_unlock", "locked": state is not None}
         if not await self.tell.record(uid, "book_resume", "executed", args, detail):
             raise BookOff(UNLOCK_NOT_RECORDED)
-        lifted = state is not None and await self._lift(uid, state.id)
+        lifted = state is not None and await self._lift(uid, state.id, signed_out_before)
         closed = await self._end_all(uid, "resume", now)
         if not closed:
             await self.tell.tell(uid, self.tell.unlock_notice(now, lifted=lifted))
@@ -333,8 +331,8 @@ class BookService:
         state = await refresh(uid) if callable(refresh) else await self.lock.get(uid)
         return state if isinstance(state, ShowLockState) else None
 
-    async def _lift(self, uid: str, lock_id: str) -> bool:
-        return self.lock is not None and await self.lock.lift(uid, lock_id)
+    async def _lift(self, uid: str, lock_id: str, after: float | None = None) -> bool:
+        return self.lock is not None and await self.lock.lift(uid, lock_id, signed_out_before=after)
 
     # ---- the show and the talk-through -----------------------------------------------------------
     async def line_text(self, uid: str, session: SessionView, line_id: str) -> str | None:

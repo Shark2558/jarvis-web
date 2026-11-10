@@ -176,9 +176,10 @@ class ShowLock(Protocol):
         """At a guest open: a new lock id `bl_<12 hex>` (the target of a book_resume proof)."""
         ...
 
-    async def lift(self, uid: str, lock_id: str) -> bool:
+    async def lift(self, uid: str, lock_id: str, *, signed_out_before: float | None = None) -> bool:
         """Only after a `book_resume` passkey check bound to `lock_id`; False when the current
-        lock has another id (nothing changes)."""
+        lock has another id (nothing changes). `signed_out_before` (SEC-4): every owner cookie
+        session issued before it stops counting."""
         ...
 
 

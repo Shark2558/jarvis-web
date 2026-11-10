@@ -172,8 +172,8 @@ def r6_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
     if jobs and getattr(st, "home_watchdog", None) is not None:
         for job in jobs:
             st.home_watchdog.extend(job)  # around the clock, every 5 minutes (R5.1 D4)
-    st.book_jobs = tuple(jobs)
-    return st.book_jobs
+    out = st.book_jobs = tuple(jobs)
+    return out
 
 
 def r6_privacy_sources(app: FastAPI) -> tuple[PrivacySource, ...]:

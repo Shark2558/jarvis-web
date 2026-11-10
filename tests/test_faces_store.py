@@ -15,9 +15,22 @@ async def test_nothing_readable_lands_in_firestore() -> None:
     f = faces()
     await add_adult(f, "Anjali Verma")
     await add_child(f, "Mini")
-    dump = str(f.docs._data).lower()  # type: ignore[attr-defined]
+    data = f.docs._data  # type: ignore[attr-defined]
+    assert data, "the registry must have been written"
+    # Only the envelope's own fields are searched for the needles: the sealed blob is random
+    # text, and a short needle turns up in it by chance (main CI #79 found "fc1"). The blob is
+    # proved sealed by opening it with the faces key and the owner's AAD, so nothing collides.
+    envelope = {path: {k: v for k, v in doc.items() if k != "blob"} for path, doc in data.items()}
+    dump = str(envelope).lower()
     for needle in ("anjali", "verma", "mini", "friend", "parent_guardian", "fc1"):
         assert needle not in dump
+    cipher = Keyring(ROOT).cipher("faces")
+    for path, doc in data.items():
+        assert set(doc) == {"rev", "v", "kid", "blob", "updated_at"}
+        uid = path.split("/", 1)[1]
+        assert " " not in doc["blob"]  # base64 text: the spaced full name can never appear in it
+        plain = cipher.decrypt(doc["blob"], aad=FacesStore._aad(uid)).decode()
+        assert "Anjali Verma" in plain and "Mini" in plain and "fc1" in plain
 
 
 async def test_round_trip_and_rev() -> None:

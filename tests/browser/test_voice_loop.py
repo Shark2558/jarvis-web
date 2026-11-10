@@ -204,6 +204,11 @@ def test_speech_in_standby_still_starts_a_turn(make: Callable[..., Console]) -> 
     _until(c, "document.getElementById('micBtn').dataset.state === 'standby'", 12)
     c.page.evaluate("window.__burst(1500)")  # firmer, longer: passes the stricter gate
     _until(c, "document.querySelectorAll('.row.user').length >= 2", 20)
+    # The /v1/chat counter is a Python route callback; it can run after the browser has already drawn the
+    # second row (main CI #79). Pump Playwright's events until it is counted rather than asserting at once.
+    deadline = time.monotonic() + 5
+    while len(chats) < 2 and time.monotonic() < deadline:
+        c.page.wait_for_timeout(50)
     assert len(chats) >= 2
     c.page.keyboard.press("Escape")
     assert c.errors == []

@@ -1,17 +1,24 @@
 # src/jarvis/buildbook/privacy.py
-"""The build book's two rows in the privacy dashboard (R6 D16; builder B; cross-cutting security).
-I1 registers both in `privacy_sources`.
+"""The build book's rows in the privacy dashboard (R6 D16; builder B; cross-cutting security).
+I1 registers them in `privacy_sources`.
 
 - `BookSealedSource` (`book_sealed`, Documents): the sealed releases, their MB of the limit,
   encrypted by JARVIS. Export: each release's id, label, commit, dates and MB (the code itself
   downloads from Book). Delete needs the passkey (`privacy_delete`; nothing brings them back): the
   current release is held first so the sealer doesn't seal it again at its next run (the next
-  release seals as usual), then every release is crypto-shredded (`BookVault.delete_all`).
+  release seals as usual), then every release is crypto-shredded (`BookVault.delete_all`). An
+  index that fails its check is never read, but it is still shown (count unknown) and deletable,
+  so the owner is never left with code he can't remove.
 - `BookSessionsSource` (`book_sessions`, Activity and messages): the live book session, if any.
   Delete is simple: it ends the session and wipes it through the book service (D14's steps, the
   audit line and the notice; I1 passes C's `BookService` as `end`), or, without one, closes it
   with reason `privacy`. Nothing to export: a session's turns are deleted when it ends.
-Neither row ever shows book text, a question, a key or a token.
+- `BookSettingsSource` (`book_settings`, Settings and safety): the creator name the closing credit
+  names (D13 `{by}`, the owner's own name) and the other Book choices. Export: all of them. Delete
+  is simple and clears the name only: the other choices stay (a privacy click never changes how
+  the talk-through behaves). Not one of D16's two rows: added so the name is exported and
+  deletable like every other personal datum (review, security 7).
+No row ever shows book text, a question, a key, a token or the creator name itself.
 """
 
 from __future__ import annotations
@@ -22,13 +29,18 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from jarvis.buildbook.model import MIB
-from jarvis.buildbook.ports import BookSessions, BookVault
+from jarvis.buildbook.owner import BookSettingsStore
+from jarvis.buildbook.ports import BookSessions, BookVault, VaultTampered
 from jarvis.privacy.ports import CategoryView
 
 # the dashboard's own section names (privacy/sources.py; pinned equal by the tests)
 SEC_DOCUMENTS = "Documents"
 SEC_ACTIVITY = "Activity and messages"
+SEC_SAFETY = "Settings and safety"
 OURS = "Firestore, encrypted by JARVIS"
+SEALED_WHAT = "Each release's build book and that release's source code, sealed in your vault."
+SEALED_KEPT = "The last 3 releases; an older one is deleted when a new release is sealed."
+UNREADABLE = "They can't be read: they failed their integrity check. Delete removes them all."
 
 
 def _now() -> dt.datetime:
@@ -54,17 +66,20 @@ class BookSealedSource:
         self._limit_mb = limit_mb
 
     async def describe(self, uid: str) -> CategoryView:
-        releases = await self._vault.releases(uid)
+        try:
+            releases = await self._vault.releases(uid)
+        except VaultTampered:
+            return self._unreadable()
         size = sum(r.size for r in releases)
         return CategoryView(
             id=self.id,
             section=self.section,
             label=self.label,
-            what="Each release's build book and that release's source code, sealed in your vault.",
+            what=SEALED_WHAT,
             count=len(releases),
             unit="releases",
             size_hint=f"{round(size / MIB, 1)} MB of {self._limit_mb} MB",
-            retention="The last 3 releases; an older one is deleted when a new release is sealed.",
+            retention=SEALED_KEPT,
             where=OURS,
             encrypted_by_jarvis=True,
             export=True,
@@ -72,6 +87,25 @@ class BookSealedSource:
             recoverable=False,
             note="Deleting them also stops this release being sealed again; the next release is.",
             rev=_rev(",".join(r.id for r in releases), size),
+        )
+
+    def _unreadable(self) -> CategoryView:
+        """The index failed its check: nothing is read, but the owner can still delete it all."""
+        return CategoryView(
+            id=self.id,
+            section=self.section,
+            label=self.label,
+            what=SEALED_WHAT,
+            count=None,
+            unit="releases",
+            retention=SEALED_KEPT,
+            where=OURS,
+            encrypted_by_jarvis=True,
+            export=False,
+            delete="passkey",
+            recoverable=False,
+            note=UNREADABLE,
+            rev=_rev("unreadable"),
         )
 
     async def export(self, uid: str) -> dict[str, Any] | None:
@@ -146,4 +180,46 @@ class BookSessionsSource:
         return 1
 
 
-__all__ = ["SEC_ACTIVITY", "SEC_DOCUMENTS", "BookSealedSource", "BookSessionsSource", "Holder"]
+class BookSettingsSource:
+    id = "book_settings"
+    section = SEC_SAFETY
+    label = "Book settings"
+
+    def __init__(self, store: BookSettingsStore) -> None:
+        self._store = store
+
+    async def describe(self, uid: str) -> CategoryView:
+        named = bool((await self._store.get(uid)).creator_name)
+        return CategoryView(
+            id=self.id,
+            section=self.section,
+            label=self.label,
+            what="The creator name the build book's closing credit names, and your other Book "
+            "choices (the show's voice, the talk-through and its brain).",
+            count=1 if named else 0,
+            unit="names",
+            retention="Until you change or delete it.",
+            where="Firestore",
+            export=True,
+            delete="simple" if named else "none",
+            recoverable=True,
+            note="Delete clears the creator name only; your other Book choices stay.",
+            rev=_rev("named" if named else "none"),
+        )
+
+    async def export(self, uid: str) -> dict[str, Any] | None:
+        return (await self._store.get(uid)).model_dump()
+
+    async def delete(self, uid: str) -> int:
+        return int(await self._store.clear_name(uid))
+
+
+__all__ = [
+    "SEC_ACTIVITY",
+    "SEC_DOCUMENTS",
+    "SEC_SAFETY",
+    "BookSealedSource",
+    "BookSessionsSource",
+    "BookSettingsSource",
+    "Holder",
+]

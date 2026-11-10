@@ -5,10 +5,14 @@
 
 `holder`/`until`: the 120-second lease one sealing run takes in a transaction, so two instances
 (or two runs in one) never seal at once; an expired or unreadable lease is free. `told`: the
-release whose `book_sealed` notice went. `failed`: the failure notices already sent (keys such as
-`<release id>`, `<release id>:personal`, `<release id>:read`, `index`; the newest 8). `held`: the
-release Privacy -> Delete asked not to seal again. Ids only: no content, ever. Storage failures are
-a `BookError` with fixed words (logged by class name).
+releases whose `book_sealed` notice went (the newest 8, so a rollback or a traffic split between
+two sealed releases never tells again). `failed`: the failure notices already sent (keys such as
+`<release id>`, `<release id>:personal`, `<release id>:limit`, `<release id>:read`, `index`; the
+newest 32, a handful a release). Both are CLAIMED in a transaction before the notice goes and
+given back when it could not go, so two runs at once tell once. `held`: the release Privacy ->
+Delete asked not to seal again; the vault's seal transactions read it too (`held_of`), so a seal
+already in flight when the owner deletes can't bring it back (`SealHeld`). Ids only: no content,
+ever. Storage failures are a `BookError` with fixed words (logged by class name).
 """
 
 from __future__ import annotations
@@ -27,7 +31,31 @@ T = TypeVar("T")
 Doc = dict[str, Any]
 
 LEASE_S = 120
-FAILED_KEPT = 8
+FAILED_KEPT = 32
+TOLD_KEPT = 8
+LEASE_COLLECTION = "book_lease"
+
+
+class SealHeld(BookError):
+    """Privacy -> Delete held this release: it is not sealed, and nobody is told (no failure)."""
+
+
+def lease_path(prefix: str, uid: str) -> str:
+    return f"{prefix}{LEASE_COLLECTION}/{uid}"
+
+
+def held_of(doc: Doc | None) -> str | None:
+    """The release Privacy held, from the sealer's document as stored."""
+    held = (doc or {}).get("held")
+    return held if isinstance(held, str) else None
+
+
+def ids_in(doc: Doc, field: str) -> list[str]:
+    """`told` / `failed` as a list of ids (an older single id reads as a list of one)."""
+    value = doc.get(field)
+    if isinstance(value, str):
+        return [value]
+    return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
 
 
 def _live(until: object, now: dt.datetime) -> bool:
@@ -42,12 +70,12 @@ def _live(until: object, now: dt.datetime) -> bool:
 class SealState:
     def __init__(self, docs: Docs, *, prefix: str, clock: Callable[[], dt.datetime]) -> None:
         self._d = docs
-        self._col = f"{prefix}book_lease"
+        self._prefix = prefix
         self._clock = clock
         self._me = secrets.token_hex(8)
 
     def _path(self, uid: str) -> str:
-        return f"{self._col}/{uid}"
+        return lease_path(self._prefix, uid)
 
     async def read(self, uid: str) -> Doc:
         try:
@@ -97,23 +125,19 @@ class SealState:
         except BookError:
             log.warning("book lease left to expire")
 
-    async def mark_failed(self, uid: str, key: str) -> None:
-        def mark(st: Doc) -> tuple[Doc, None]:
-            fails = [f for f in st.get("failed", []) if isinstance(f, str) and f != key]
-            return {**st, "failed": [*fails, key][-FAILED_KEPT:]}, None
-
-        await self.update(uid, mark)
-
     async def set(self, uid: str, field: str, value: str) -> None:
         """`held` = a release id."""
         await self.update(uid, lambda st: ({**st, field: value}, None))
 
-    async def claim(self, uid: str, field: str, value: str) -> bool:
-        """Set `field` = `value` unless it already is (True: this caller claimed it). `told` is
-        claimed BEFORE the notice goes, so two runs (a lease that ran out mid-seal) tell once."""
+    async def claim(self, uid: str, field: str, value: str, *, keep: int) -> bool:
+        """Add `value` to the `field` list unless it is there (True: this caller claimed it; the
+        newest `keep` stay). Claimed BEFORE the notice goes, so two runs at once tell once."""
 
         def take(st: Doc) -> tuple[Doc | None, bool]:
-            return (None, False) if st.get(field) == value else ({**st, field: value}, True)
+            have = ids_in(st, field)
+            if value in have:
+                return None, False
+            return {**st, field: [*have, value][-keep:]}, True
 
         return await self.update(uid, take)
 
@@ -121,7 +145,10 @@ class SealState:
         """Give a claim back (the notice could not go: the next run tries again)."""
 
         def give(st: Doc) -> tuple[Doc | None, None]:
-            return (None, None) if st.get(field) != value else ({**st, field: None}, None)
+            have = ids_in(st, field)
+            if value not in have:
+                return None, None
+            return {**st, field: [v for v in have if v != value]}, None
 
         try:
             await self.update(uid, give)
@@ -129,4 +156,14 @@ class SealState:
             log.warning("book notice claim left in place")
 
 
-__all__ = ["FAILED_KEPT", "LEASE_S", "SealState"]
+__all__ = [
+    "FAILED_KEPT",
+    "LEASE_COLLECTION",
+    "LEASE_S",
+    "TOLD_KEPT",
+    "SealHeld",
+    "SealState",
+    "held_of",
+    "ids_in",
+    "lease_path",
+]

@@ -3,36 +3,44 @@
 
 `BookSealer.ensure(uid)` for the primary owner: the current release (`BookSource.current()`) not
 yet in the sealed index -> take the lease `{prefix}book_lease/{uid}` (120 s, a transaction) ->
-look again under the lease -> refuse a book that names an owner e-mail or its local part (D3) ->
-make room under `book_max_total_mb` (the oldest goes first when needed) -> seal -> prune to 3 ->
-audit `book_seal` (ids and MB only) -> ONE `book_sealed` notice. Anything that stops it ->
-`book_seal_failed` once per release and cause, never repeated (not even after a restart); the
-next run simply tries again. It runs from the `book_seal` TickJob and inside `GET /v1/book`
-(`ensure_bounded`: one shared run per owner, a request waits at most 20 s), NEVER at start-up: a
-Cloud Run candidate that fails gets no traffic, so it never seals a release that didn't go live.
+look again under the lease (sealed meanwhile? held by Privacy meanwhile?) -> refuse a book that
+names an owner e-mail or its local part (D3) -> make room under `book_max_total_mb` (the oldest
+goes first, one at a time, the newest always stays; a release that can't fit even so is refused
+and nothing is pruned) -> seal -> prune to 3 -> audit `book_seal` (ids and MB only) -> ONE
+`book_sealed` notice. Anything that stops it, a crash included -> `book_seal_failed` once per
+release and cause, never repeated (not even after a restart); the next run simply tries again. It
+runs from the `book_seal` TickJob and inside `GET /v1/book` (`ensure_bounded`: one shared run per
+owner, a request waits at most 20 s), NEVER at start-up: a Cloud Run candidate that fails gets no
+traffic, so it never seals a release that didn't go live.
 
-The lease document (`seal_state.SealState`) also remembers what was told and what Privacy held.
-No content goes in it, nor in a log or a notice.
+The lease document (`seal_state.SealState`) also remembers what was told (claimed before a notice
+goes) and what Privacy held. No content goes in it, nor in a log or a notice (`seal_words`).
 """
 
 from __future__ import annotations
 
 import asyncio
 import datetime as dt
-import json
-import re
-import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Literal
 
-from jarvis.buildbook.model import KEEP, MIB, FileKind, Release
+from jarvis.buildbook.model import KEEP, MIB, FileKind, Release, SealedRelease
 from jarvis.buildbook.ports import BookError, BookSource, BookUnavailable, BookVault, VaultTampered
-from jarvis.buildbook.seal import KINDS
-from jarvis.buildbook.seal_state import SealState
-from jarvis.core.guardrails import ActionRisk
+from jarvis.buildbook.seal_index import KINDS
+from jarvis.buildbook.seal_notices import Audit, SealNotices
+from jarvis.buildbook.seal_state import SealHeld, SealState, held_of
+from jarvis.buildbook.seal_words import (
+    FAILED,
+    INDEX_TAMPERED,
+    OVER_LIMIT,
+    PERSONAL,
+    READ_TAMPERED,
+    UNBUILT,
+    holds_owner_email,
+)
 from jarvis.logging import get_logger
-from jarvis.notify.ports import Notifier, Signal
+from jarvis.notify.ports import Notifier
 from jarvis.storage.docs import Docs
 from jarvis.ticks import FAILED_COUNT
 
@@ -40,40 +48,11 @@ log = get_logger(__name__)
 
 BOUNDED_S = 20.0  # a request's wait (Cloud Run gives CPU only during a request)
 JOB_BUDGET_S = 45.0
-LOCAL_PART_MIN = 3  # a shorter local part is a common word, not a name
-SEALED = (
-    "{h}, the build book for {label} ({id}) is sealed in your vault with this release's code. "
-    "{kept} kept."
-)
-UNBUILT = "{h}, the build book for {label} ({id}) could not be built at deploy, so it isn't sealed."
-FAILED = "{h}, the build book for {label} ({id}) could not be sealed in your vault; I'll try again."
-PERSONAL = (
-    "{h}, the build book for {label} ({id}) holds your e-mail address, so I refused to seal it."
-)
-INDEX_TAMPERED = "{h}, your sealed build books failed their integrity check, so they stay closed."
-READ_TAMPERED = (
-    "{h}, the sealed build book for {label} ({id}) failed its integrity check, so it stays closed."
-)
 State = Literal["none", "unbuilt", "failed", "held", "busy", "sealing", "kept", "sealed"]
 
 
 def _now() -> dt.datetime:
     return dt.datetime.now(dt.UTC)
-
-
-class Audit(Protocol):
-    """The gateway's audit chain (`tools.audit.AuditTrail`), seen through what this file uses."""
-
-    async def append(
-        self,
-        *,
-        agent: str,
-        tool: str,
-        risk: ActionRisk,
-        outcome: str,
-        args: dict[str, Any],
-        detail: str = "",
-    ) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -82,37 +61,6 @@ class SealOutcome:
     release: str | None = None
     kept: int = 0
     removed: tuple[str, ...] = ()
-
-
-def _marks(emails: Sequence[str]) -> tuple[str, ...]:
-    out: list[str] = []
-    for raw in emails:
-        email = unicodedata.normalize("NFKC", raw).casefold().strip()
-        local, at, _ = email.partition("@")
-        if not at or not local:
-            continue
-        out.append(email)
-        if len(local) >= LOCAL_PART_MIN:
-            out.append(local)
-    return tuple(out)
-
-
-def holds_owner_email(book: bytes, owner_emails: Sequence[str]) -> bool:
-    """D3's last check before sealing: does book.json name a configured owner address or its
-    local part, as a whole word (NFKC, case-folded, JSON escapes undone)?"""
-    marks = _marks(owner_emails)
-    if not marks:
-        return False
-    try:
-        text = json.dumps(json.loads(book), ensure_ascii=False)
-    except ValueError:
-        text = book.decode("utf-8", "replace")
-    text = unicodedata.normalize("NFKC", text).casefold()
-    return any(re.search(rf"(?<![\w.+-]){re.escape(m)}(?![\w-])", text) for m in marks)
-
-
-def _kept_words(n: int) -> str:
-    return f"{n} release" if n == 1 else f"{n} releases"
 
 
 class BookSealer:
@@ -133,78 +81,14 @@ class BookSealer:
     ) -> None:
         self._source = source
         self._vault = vault
-        self._notifier = notifier
-        self._audit = audit
         self._emails = tuple(owner_emails)
-        self._h = honorific
         self._limit = limit_mb * MIB
+        self._limit_mb = limit_mb
         self._st = SealState(docs, prefix=prefix, clock=clock)
+        self._say = SealNotices(self._st, notifier=notifier, audit=audit, honorific=honorific)
         self._clock = clock
         self._keep = keep  # D5: fixed at 3; a parameter only so the seal eval's control can vary it
-        self._told: set[tuple[str, str]] = set()
         self._inflight: dict[str, asyncio.Task[SealOutcome]] = {}
-
-    # ---- notices and the audit -----------------------------------------------------------------
-
-    def _words(self, template: str, release: Release | None = None, **kw: str) -> str:
-        if release is not None:
-            kw = {"label": release.label, "id": release.id, **kw}
-        return template.format(h=self._h, **kw)
-
-    async def _send(
-        self, uid: str, kind: Literal["book_sealed", "book_seal_failed"], text: str
-    ) -> bool:
-        if self._notifier is None:
-            return True  # nobody to tell: count it as told
-        try:
-            await self._notifier.notify(uid, Signal(source="system", kind=kind), text)
-        except Exception as exc:  # noqa: BLE001 - the next run tries again
-            log.error("book notice not sent", extra={"kind": kind, "error": type(exc).__name__})
-            return False
-        return True
-
-    async def _fail_once(self, uid: str, key: str, text: str) -> None:
-        if key in (await self._st.read(uid)).get("failed", []):
-            return
-        if await self._send(uid, "book_seal_failed", text):
-            await self._st.mark_failed(uid, key)
-
-    async def _tell(self, uid: str, release: Release, kept: int) -> None:
-        """ONE `book_sealed` per release: claimed first, given back if it could not go."""
-        try:
-            claimed = await self._st.claim(uid, "told", release.id)
-        except BookError:
-            claimed = True  # can't record it: tell anyway (at least once beats never)
-        if claimed and not await self._send(
-            uid, "book_sealed", self._words(SEALED, release, kept=_kept_words(kept))
-        ):
-            await self._st.unclaim(uid, "told", release.id)
-            return
-        self._told.add((uid, release.id))
-
-    async def _tell_if_untold(self, uid: str, release: Release, kept: int) -> None:
-        if (uid, release.id) in self._told:
-            return
-        if (await self._st.read(uid)).get("told") == release.id:
-            self._told.add((uid, release.id))
-            return
-        await self._tell(uid, release, kept)
-
-    async def _audit_seal(self, release: Release, removed: tuple[str, ...], size: int) -> None:
-        if self._audit is None:
-            return
-        args = {"release": release.id, "label": release.label, "removed": list(removed)}
-        try:
-            await self._audit.append(
-                agent="book",
-                tool="book_seal",
-                risk=ActionRisk.REVERSIBLE,
-                outcome="executed",
-                args={**args, "mb": round(size / MIB, 1)},
-                detail="",
-            )
-        except Exception as exc:  # noqa: BLE001 - it already happened
-            log.error("AUDIT WRITE FAILED for a book seal", extra={"error": type(exc).__name__})
 
     # ---- the run -------------------------------------------------------------------------------
 
@@ -215,22 +99,25 @@ class BookSealer:
             return SealOutcome("none")
         try:
             if not release.ok:
-                await self._fail_once(uid, release.id, self._words(UNBUILT, release))
+                await self._say.fail_once(uid, release.id, self._say.words(UNBUILT, release))
                 return SealOutcome("unbuilt", release.id)
             return await self._ensure_good(uid, release)
+        except SealHeld:
+            return SealOutcome("held", release.id)
         except BookError as exc:
             log.error("book seal check failed", extra={"error": type(exc).__name__})
+            await self._say.fail_quietly(uid, release)
             return SealOutcome("failed", release.id)
 
     async def _ensure_good(self, uid: str, release: Release) -> SealOutcome:
         try:
             sealed = await self._vault.releases(uid)
         except VaultTampered:
-            await self._fail_once(uid, "index", self._words(INDEX_TAMPERED))
+            await self._say.fail_once(uid, "index", self._say.words(INDEX_TAMPERED))
             return SealOutcome("failed", release.id)
         if any(r.id == release.id for r in sealed):
             return await self._kept(uid, release, len(sealed))
-        if (await self._st.read(uid)).get("held") == release.id:
+        if await self._held(uid, release):
             return SealOutcome("held", release.id)
         holder = await self._st.lease(uid)
         if holder is None:
@@ -240,10 +127,13 @@ class BookSealer:
         finally:
             await self._st.unlease(uid, holder)
 
+    async def _held(self, uid: str, release: Release) -> bool:
+        return held_of(await self._st.read(uid)) == release.id
+
     async def _kept(self, uid: str, release: Release, count: int) -> SealOutcome:
         removed = await self._prune(uid)  # also retries chunk deletes that failed before
         kept = count - len(removed)
-        await self._tell_if_untold(uid, release, kept)
+        await self._say.tell_if_untold(uid, release, kept)
         return SealOutcome("kept", release.id, kept=kept, removed=removed)
 
     async def _prune(self, uid: str) -> tuple[str, ...]:
@@ -257,39 +147,62 @@ class BookSealer:
         sealed = await self._vault.releases(uid)  # look again: another run may have sealed it
         if any(r.id == release.id for r in sealed):
             return await self._kept(uid, release, len(sealed))
+        if await self._held(uid, release):  # Privacy deleted while the lease was being taken
+            return SealOutcome("held", release.id)
         try:
             files: dict[FileKind, bytes] = {k: self._source.read(k) for k in KINDS}
         except BookUnavailable:
-            await self._fail_once(uid, release.id, self._words(FAILED, release))
+            await self._say.fail_once(uid, release.id, self._say.words(FAILED, release))
             return SealOutcome("failed", release.id)
         if holds_owner_email(files["book"], self._emails):
             log.error("book seal refused: the book names an owner address")
-            await self._fail_once(uid, f"{release.id}:personal", self._words(PERSONAL, release))
+            words = self._say.words(PERSONAL, release)
+            await self._say.fail_once(uid, f"{release.id}:personal", words)
             return SealOutcome("failed", release.id)
-        removed = await self._store(uid, release, files)
+        removed = await self._store(uid, release, files, sealed)
         if removed is None:
             return SealOutcome("failed", release.id)
         kept = len(sealed) + 1 - len(removed)
-        await self._audit_seal(release, removed, sum(len(b) for b in files.values()))
-        await self._tell(uid, release, kept)
+        await self._say.audit_seal(release, removed, sum(len(b) for b in files.values()))
+        await self._say.tell(uid, release, kept)
         return SealOutcome("sealed", release.id, kept=kept, removed=removed)
 
+    def _room(self, sealed: Sequence[SealedRelease], incoming: int) -> int | None:
+        """How many of the newest sealed releases stay so the new one fits under the limit: all
+        of them when they fit, else fewer (the oldest go first, never the newest); None when
+        even the newest alone leaves no room (nothing is pruned for a seal that can't fit)."""
+        sizes = [r.size for r in sealed]  # newest first
+        if sum(sizes) + incoming <= self._limit:
+            return len(sizes)
+        for stay in range(min(len(sizes), self._keep - 1), 0, -1):
+            if sum(sizes[:stay]) + incoming <= self._limit:
+                return stay
+        return None
+
     async def _store(
-        self, uid: str, release: Release, files: Mapping[FileKind, bytes]
+        self,
+        uid: str,
+        release: Release,
+        files: Mapping[FileKind, bytes],
+        sealed: Sequence[SealedRelease],
     ) -> tuple[str, ...] | None:
         """Make room, seal, prune to 3: the release ids that went, or None when it failed."""
+        stay = self._room(sealed, sum(len(b) for b in files.values()))
+        if stay is None:
+            words = self._say.words(OVER_LIMIT, release, mb=str(self._limit_mb))
+            await self._say.fail_once(uid, f"{release.id}:limit", words)
+            return None
         try:
-            early: tuple[str, ...] = ()
-            incoming = sum(len(b) for b in files.values())
-            if await self._vault.used_bytes(uid) + incoming > self._limit:
-                early = await self._vault.prune(uid, keep=max(1, self._keep - 1))
+            early = await self._vault.prune(uid, keep=stay) if stay < len(sealed) else ()
             await self._vault.seal(uid, release, files, now=self._clock())
+        except SealHeld:
+            raise
         except VaultTampered:
-            await self._fail_once(uid, "index", self._words(INDEX_TAMPERED))
+            await self._say.fail_once(uid, "index", self._say.words(INDEX_TAMPERED))
             return None
         except BookError as exc:
             log.error("book seal failed", extra={"error": type(exc).__name__})
-            await self._fail_once(uid, release.id, self._words(FAILED, release))
+            await self._say.fail_once(uid, release.id, self._say.words(FAILED, release))
             return None
         return early + await self._prune(uid)
 
@@ -298,7 +211,12 @@ class BookSealer:
             return await self.ensure(uid)
         except Exception as exc:  # noqa: BLE001 - a run never takes a request or the tick down
             log.error("book seal run failed", extra={"error": type(exc).__name__})
+        try:
+            release = self._source.current()
+        except Exception:  # noqa: BLE001 - no release to name: logged above
             return SealOutcome("failed")
+        await self._say.fail_quietly(uid, release)
+        return SealOutcome("failed", None if release is None else release.id)
 
     async def ensure_bounded(self, uid: str, *, within_s: float = BOUNDED_S) -> SealOutcome:
         """`ensure` shared by every caller in this process, waited on at most `within_s`; past
@@ -330,9 +248,9 @@ class BookSealer:
 
     async def report_tampered(self, uid: str, rid: str, label: str) -> None:
         """A sealed read failed its check (the routes): `book_seal_failed` once per release."""
-        text = self._words(READ_TAMPERED, label=label, id=rid)
+        text = self._say.words(READ_TAMPERED, label=label, id=rid)
         try:
-            await self._fail_once(uid, f"{rid}:read", text)
+            await self._say.fail_once(uid, f"{rid}:read", text)
         except BookError:
             log.warning("book tamper notice deferred")
 
@@ -357,7 +275,7 @@ class BookSealJob:
         }
 
 
-__all__ = [
+__all__ = [  # Audit and holds_owner_email are re-exported (INTEGRATION-B names them here)
     "BOUNDED_S",
     "JOB_BUDGET_S",
     "Audit",

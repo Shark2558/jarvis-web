@@ -6,17 +6,27 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import os
 import uuid
 from collections.abc import AsyncIterator
 
 import pytest
-from book_seal_fakes import NOW, UID, FakeNotifier, FakeSource, big_zip, make_release, ring
+from book_seal_fakes import (
+    NOW,
+    UID,
+    FakeNotifier,
+    FakeSource,
+    big_zip,
+    make_release,
+    ring,
+    view,
+)
 
 from jarvis.buildbook.owner import BookSettingsPatch, BookSettingsStore, BookTickets
 from jarvis.buildbook.seal import DocsBookVault
 from jarvis.buildbook.sealer import BookSealer
-from jarvis.storage.docs import Docs, MemoryDocs
+from jarvis.storage.docs import Docs, MemoryDocs, Query, Set
 from jarvis.vault.crypto import CHUNK_BYTES
 from jarvis.vault.unlock import TicketGone
 
@@ -88,10 +98,26 @@ async def test_the_sealer_lease_and_notice(docs: Docs, prefix: str) -> None:
 
 async def test_tickets_and_settings(docs: Docs, prefix: str) -> None:
     tickets = BookTickets(docs, ring(), prefix=prefix)
-    t = await tickets.issue(UID, "3f2a1c9")
-    assert (await tickets.take(UID, t.ticket)).item == "3f2a1c9"
+    session = view("owner", at=dt.datetime.now(dt.UTC))
+    t = await tickets.issue(UID, "3f2a1c9", session=session)
+    taken = await tickets.take(UID, t.ticket)
+    assert (taken.item, taken.session) == ("3f2a1c9", session.session_id)
     with pytest.raises(TicketGone):
         await tickets.take(UID, t.ticket)
     store = BookSettingsStore(docs, prefix=prefix)
     saved = await store.update(UID, BookSettingsPatch(creator_name="Akash", talk_on=False))
     assert await BookSettingsStore(docs, prefix=prefix).get(UID) == saved
+
+
+async def test_an_unreadable_index_is_deleted_by_listing_its_chunks(
+    docs: Docs, prefix: str
+) -> None:
+    vault = DocsBookVault(docs, ring(), prefix=prefix)
+    release, files = make_release(1, source=big_zip(1, CHUNK_BYTES * 2))
+    await vault.seal(UID, release, files, now=NOW)
+    index = await docs.get(f"{prefix}book/{UID}")
+    assert index is not None
+    await docs.write([Set(f"{prefix}book/{UID}", {**index, "blob": "not a sealed blob"})])
+    assert await vault.delete_all(UID) >= 1
+    assert await docs.get(f"{prefix}book/{UID}") is None
+    assert await docs.query(Query(f"{prefix}book/{UID}/book_chunks")) == []

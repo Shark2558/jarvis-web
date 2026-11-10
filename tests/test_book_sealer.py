@@ -414,6 +414,6 @@ async def test_two_runs_that_both_seal_still_tell_once() -> None:
     rig = Rig()
     release = rig.deploy(1)
     a, b = rig.new_sealer(), rig.new_sealer()
-    await a._tell(UID, release, 1)
-    await b._tell(UID, release, 1)
+    await a._say.tell(UID, release, 1)
+    await b._say.tell(UID, release, 1)
     assert rig.notes.kinds() == ["book_sealed"]

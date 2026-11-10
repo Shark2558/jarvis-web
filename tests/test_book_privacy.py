@@ -17,7 +17,8 @@ from book_seal_fakes import (
     view,
 )
 
-from jarvis.buildbook.privacy import BookSealedSource, BookSessionsSource
+from jarvis.buildbook.owner import BookSettingsPatch, BookSettingsStore
+from jarvis.buildbook.privacy import BookSealedSource, BookSessionsSource, BookSettingsSource
 from jarvis.buildbook.seal import DocsBookVault
 from jarvis.buildbook.sealer import BookSealer
 from jarvis.privacy.ports import PrivacyRegistry, PrivacySource
@@ -135,3 +136,29 @@ async def test_without_the_service_a_delete_closes_the_session_for_privacy() -> 
     assert await src.delete(UID) == 1
     assert sessions.closed == [("bk_" + "1" * 16, "privacy")]
     assert await src.delete(UID) == 0
+
+
+# ---- the creator's name (Book settings) ------------------------------------------------------
+
+
+async def test_the_creator_name_is_shown_exported_and_cleared_alone() -> None:
+    from jarvis.privacy.sources import SEC_SAFETY
+
+    docs = MemoryDocs()
+    store = BookSettingsStore(docs)
+    src = BookSettingsSource(store)
+    assert isinstance(src, PrivacySource) and (src.id, src.section) == ("book_settings", SEC_SAFETY)
+    empty = await src.describe(UID)
+    assert (empty.count, empty.delete) == (0, "none")
+    await store.update(
+        UID, BookSettingsPatch(creator_name="Akash Das", talk_on=False, show_voice="browser")
+    )
+    got = await src.describe(UID)
+    assert (got.count, got.delete, got.recoverable) == (1, "simple", True)
+    assert "Akash" not in got.model_dump_json()  # the row never shows the name itself
+    out = await src.export(UID)
+    assert out is not None and out["creator_name"] == "Akash Das" and out["talk_on"] is False
+    assert await src.delete(UID) == 1
+    after = await store.get(UID)
+    assert after.creator_name == "" and after.talk_on is False and after.show_voice == "browser"
+    assert (await src.describe(UID)).count == 0 and await src.delete(UID) == 0

@@ -85,7 +85,8 @@ async def _lock_part(st: Any, uid: str) -> dict[str, bool]:
         return {"on": False}
     try:
         return {"on": await lock.get(uid) is not None}
-    except Exception:  # noqa: BLE001 - LockUnreadable or worse: never "unlocked"
+    except Exception as exc:  # noqa: BLE001 - LockUnreadable or worse: never "unlocked"
+        log.warning("book lock unreadable", extra={"error": type(exc).__name__})
         return {"on": True}
 
 
@@ -125,7 +126,8 @@ async def _open_part(request: Request, uid: str) -> dict[str, Any]:
     perms = getattr(request.app.state, "permissions", None)
     try:
         ready = bool(perms is not None and await perms.passkey_required(uid))
-    except Exception:  # noqa: BLE001 - unreadable passkeys: not ready
+    except Exception as exc:  # noqa: BLE001 - unreadable passkeys: not ready
+        log.warning("book passkey state unreadable", extra={"error": type(exc).__name__})
         ready = False
     left = fresh_sign_in_left(request, request.app.state.settings)
     return {"passkey_ready": ready, "fresh_left_s": left}

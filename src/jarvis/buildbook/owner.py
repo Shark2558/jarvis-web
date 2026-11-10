@@ -4,7 +4,7 @@
     {prefix}book_settings/{uid}  creator_name, show_voice, talk_on, allow_training_brain,
                                  updated_at
     {prefix}book_tickets/{uid}   {grants: [], tickets: [{mac, item: <release id>,
-                                 fid: "source", until}]}
+                                 fid: "source", session: <bk id>, until}]}
 
 Book settings (D16): the creator's name for the closing credit (D13 `{by}`; empty = "my owner and
 creator"), the show's voice (cloud | browser), the talk-through on or off, and whether the
@@ -13,35 +13,40 @@ anything is written (`SettingsRejected`, plain words that never echo the input) 
 transaction; a stored field that isn't valid reads as its default, field by field. `get` lets a
 storage failure through (the panel must not show defaults as if they were saved);
 `get_or_default` never raises and falls back to the safe defaults (for the talk lane: no
-training brain).
+training brain). `clear_name` is Privacy -> Delete of the creator name (the other choices stay: a
+privacy click never changes how the talk-through behaves).
 
 Download tickets (D9): the R2 `UnlockStore` (vault/unlock.py) on its own collection. A ticket is 32
-random bytes shown once and stored only as an HMAC (keyring purpose `tickets`); it lives 60 s, is
-bound to the owner (its document) and one release's source snapshot, and is removed the moment it
-is taken. A book ticket is issued only after the route has checked a live OWNER book session, so
-this store holds no unlock grants of its own.
+random bytes shown once and stored only as an HMAC (keyring purpose `tickets`); it is bound to the
+owner (its document), one release's source snapshot and the live OWNER book session that asked
+for it: it lives 60 s and never past that session's absolute or idle end, and the download needs
+that same session still live (D8: no sign-in-only way to the code). It is removed the moment it is
+taken; `clear` drops them all (a session's close). The book session is the unlock, so this store
+holds no unlock grants of its own.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import secrets
-from collections.abc import Callable
-from typing import Any, Literal
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
 
 from jarvis.buildbook.lines import CREATOR_MAX
-from jarvis.buildbook.model import FileKind
+from jarvis.buildbook.model import FileKind, SessionView
 from jarvis.buildbook.ports import BookError
 from jarvis.buildbook.sections import Frozen
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs, DocTx
-from jarvis.vault.unlock import MAX_TICKETS, TICKET_S, Grant, Ticket, UnlockStore
+from jarvis.vault.unlock import MAX_TICKETS, TICKET_S, Grant, Taken, Ticket, TicketGone, UnlockStore
 from jarvis.voice.settings import clean_phrase
 
 log = get_logger(__name__)
+T = TypeVar("T")
 
 ShowVoice = Literal["cloud", "browser"]
 VOICES: tuple[ShowVoice, ...] = ("cloud", "browser")
@@ -111,6 +116,13 @@ def decode(doc: Any) -> BookSettings:
     )
 
 
+@dataclass(frozen=True)
+class BookTaken(Taken):
+    """A taken book ticket: the release (`item`), the file and the book session it was made in."""
+
+    session: str | None = None
+
+
 class BookSettingsStore:
     def __init__(
         self, docs: Docs, *, prefix: str = "jarvis_", clock: Callable[[], dt.datetime] = _utcnow
@@ -149,6 +161,25 @@ class BookSettingsStore:
             tx.set(path, {**new.model_dump(), "updated_at": at})
             return new
 
+        return await self._commit(fn)
+
+    async def clear_name(self, uid: str) -> bool:
+        """Privacy -> Delete: the creator name goes, the other choices stay. True: one went."""
+        path = self._path(uid)
+        at = self._clock().isoformat()
+
+        async def fn(tx: DocTx) -> bool:
+            cur = decode(await tx.get(path))
+            if not cur.creator_name:
+                return False
+            tx.set(
+                path, {**cur.model_copy(update={"creator_name": ""}).model_dump(), "updated_at": at}
+            )
+            return True
+
+        return await self._commit(fn)
+
+    async def _commit(self, fn: Callable[[DocTx], Awaitable[T]]) -> T:
         try:
             return await self._d.transaction(fn)
         except BookError:
@@ -181,16 +212,28 @@ class BookTickets(UnlockStore):
     async def ticket(self, uid: str, token: str, item: str | None, fid: str) -> Ticket:
         raise PermissionError("the build book is unlocked by its own session")
 
-    async def issue(self, uid: str, rid: str, kind: FileKind = "source") -> Ticket:
-        """A 60-second single-use ticket for one sealed release's file. The caller has checked a
-        live owner book session and that the release is sealed."""
+    async def issue(
+        self, uid: str, rid: str, kind: FileKind = "source", *, session: SessionView
+    ) -> Ticket:
+        """A single-use ticket for one sealed release's file, made in the live owner book
+        `session` the caller checked (with the release sealed): it lives 60 s and never past the
+        session's absolute or idle end. PermissionError when that session is already over."""
         now = self._clock()
+        ends = min(
+            now + dt.timedelta(seconds=TICKET_S),
+            dt.datetime.fromisoformat(session.until),
+            dt.datetime.fromisoformat(session.idle_until),
+        )
+        life = int((ends - now).total_seconds())
+        if life < 1:
+            raise PermissionError("the book session is over")
         secret = secrets.token_urlsafe(32)
         row = {
             "mac": self._mac(secret),
             "item": rid,
             "fid": kind,
-            "until": (now + dt.timedelta(seconds=TICKET_S)).isoformat(),
+            "session": session.session_id,
+            "until": ends.isoformat(),
         }
 
         async def fn(tx: DocTx) -> None:
@@ -198,7 +241,32 @@ class BookTickets(UnlockStore):
             tx.set(self._path(uid), {"grants": [], "tickets": [*live, row][-MAX_TICKETS:]})
 
         await self._d.transaction(fn)
-        return Ticket(secret, TICKET_S)
+        return Ticket(secret, life)
+
+    async def take(self, uid: str, ticket: str) -> BookTaken:
+        """Use a ticket (removed in the same transaction): its release, file and session."""
+        if not ticket or len(ticket) > 128:
+            raise TicketGone
+        now = self._clock()
+        mac = self._mac(ticket)
+
+        async def fn(tx: DocTx) -> BookTaken:
+            _, tickets = self._read(await tx.get(self._path(uid)), now)
+            hit = next((t for t in tickets if t["mac"] == mac), None)
+            if hit is None:
+                raise TicketGone
+            tx.set(self._path(uid), {"grants": [], "tickets": [t for t in tickets if t is not hit]})
+            sid = hit.get("session")
+            return BookTaken(
+                hit.get("item"), str(hit["fid"]), sid if isinstance(sid, str) else None
+            )
+
+        taken: BookTaken = await self._d.transaction(fn)
+        return taken
+
+    async def clear(self, uid: str) -> None:
+        """Every ticket of `uid` goes (C's close of a book session calls this)."""
+        await self.lock(uid)
 
 
 __all__ = [
@@ -207,6 +275,7 @@ __all__ = [
     "BookSettings",
     "BookSettingsPatch",
     "BookSettingsStore",
+    "BookTaken",
     "BookTickets",
     "SettingsRejected",
     "ShowVoice",

@@ -2,75 +2,59 @@
 """Sealed build books in the vault family (R6 D6; builder B; Layer 7, cross-cutting security).
 
     {prefix}book/{uid}                          {rev, kid, blob}
-    {prefix}book/{uid}/book_chunks/{fid}_{nn}   {blob, n, of, at}
+    {prefix}book/{uid}/book_chunks/{fid}_{nn}   {blob, n, of, at}   (seal_chunks.BookChunks)
 
 `blob` is the `seal_index.BookIndex` sealed under keyring purpose `book_index`; the chunks use the
 R2 vault's envelope with D6's AADs (`seal_index.BookCrypto`). A seal records its chunk set as
-pending, writes the chunks at most six a commit, then commits the index (the release exists only
-from then on). Prune drops the index entry first (crypto-shred: the wrapped keys go with it) and
-the chunks by path after; a delete that fails stays an orphan for the next run, and a pending set
-older than 15 minutes (a process that died mid-seal) is swept the same way. Every read fails
-closed: an index that won't open, a chunk that's missing or won't open, or bytes that don't match
-their SHA-256 raise `VaultTampered`, and the index is then never overwritten. Nothing here logs a
-key, a blob, book text or a path; errors carry fixed words.
+pending, writes the chunks at most six a commit, then commits the index; both index steps also
+read the sealer's document and stop (`SealHeld`) when Privacy -> Delete held that release, so a
+seal in flight when the owner deletes everything can't bring it back. Prune drops the index entry
+first (crypto-shred) and the chunks by path after; a failed delete stays an orphan for the next
+run, as does a pending set older than 15 minutes (a process that died mid-seal). Every read fails
+closed (`VaultTampered`): an index that won't open is never overwritten, only deleted (its chunks
+then found by listing). Nothing here logs a key, a blob, book text or a path.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import hashlib
-import secrets
 from collections.abc import Callable, Mapping
 from typing import TypeVar
 
 from pydantic import ValidationError
 
-from jarvis.buildbook.model import (
-    BOOK_JSON_CAP_BYTES,
-    KEEP,
-    MIB,
-    SNAPSHOT_CAP_BYTES,
-    FileKind,
-    Release,
-    SealedFile,
-    SealedRelease,
+from jarvis.buildbook.model import KEEP, MIB, FileKind, Release, SealedFile, SealedRelease
+from jarvis.buildbook.ports import BookError, BookOff, VaultTampered
+from jarvis.buildbook.seal_chunks import DELETE_GROUP, WRITE_GROUP, BookChunks
+from jarvis.buildbook.seal_index import (
+    CAPS,
+    KINDS,
+    BookCrypto,
+    BookIndex,
+    Part,
+    age,
+    checked_files,
+    parts_of,
 )
-from jarvis.buildbook.ports import BookError, BookOff, BookUnavailable, VaultTampered
-from jarvis.buildbook.seal_index import BookCrypto, BookIndex, Part, age, parts_of
+from jarvis.buildbook.seal_state import SealHeld, held_of, lease_path
 from jarvis.integrations.vault import VaultError
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Delete, Docs, DocTx, Set
+from jarvis.storage.docs import Docs, DocTx
 
 log = get_logger(__name__)
 T = TypeVar("T")
 
-WRITE_GROUP = 6  # chunks a commit (~4.2 MB, under the 10 MiB request limit), as the R2 vault
-DELETE_GROUP = 200
 PENDING_TTL_S = 15 * 60  # a seal still pending after this died half-way: its chunks are swept
 MAX_INDEX_CHARS = 200_000
-KINDS: tuple[FileKind, ...] = ("book", "source")
-CAPS: Mapping[FileKind, int] = {"book": BOOK_JSON_CAP_BYTES, "source": SNAPSHOT_CAP_BYTES}
 DOWN = "The vault can't be reached right now."
 TAMPERED = "The sealed build books failed their check, so they stay closed."
+HELD = "This release was deleted from your vault; it isn't sealed again."
 
 
 def _now() -> dt.datetime:
     return dt.datetime.now(dt.UTC)
-
-
-def _checked(release: Release, files: Mapping[FileKind, bytes]) -> dict[FileKind, bytes]:
-    if not release.ok:
-        raise BookUnavailable("This release has no build book.")
-    if set(files) != set(KINDS):
-        raise ValueError("a sealed release is its book and its source snapshot")
-    want = {"book": release.book_sha256, "source": release.source_sha256}
-    for kind in KINDS:
-        if len(files[kind]) > CAPS[kind]:
-            raise BookUnavailable("A file of this release is over its size cap.")
-        if hashlib.sha256(files[kind]).hexdigest() != want[kind]:
-            raise BookUnavailable("The files don't match their release.")
-    return {kind: files[kind] for kind in KINDS}
 
 
 class DocsBookVault:
@@ -88,6 +72,8 @@ class DocsBookVault:
         self._d = docs
         self._c = BookCrypto(ring)
         self._col = f"{prefix}book"
+        self._prefix = prefix
+        self._chunks = BookChunks(docs, self._col)
         self._limit = limit_mb * MIB
         self._limit_mb = limit_mb
         self._clock = clock
@@ -98,9 +84,6 @@ class DocsBookVault:
 
     def _path(self, uid: str) -> str:
         return f"{self._col}/{uid}"
-
-    def _chunk_path(self, uid: str, fid: str, n: int) -> str:
-        return f"{self._col}/{uid}/book_chunks/{fid}_{n:02d}"
 
     # ---- the index -----------------------------------------------------------------------------
 
@@ -124,13 +107,19 @@ class DocsBookVault:
             raise BookError(DOWN) from None
         return self._decode(uid, doc)[1]
 
-    async def _change(self, uid: str, fn: Callable[[BookIndex], tuple[BookIndex, T]]) -> T:
+    async def _change(
+        self, uid: str, fn: Callable[[BookIndex], tuple[BookIndex, T]], *, held: str | None = None
+    ) -> T:
         """Read-modify-write in one transaction. `fn` is pure (it may run again) and may raise a
-        BookError to stop; an index that won't open is never replaced; no change, no write."""
-        path = self._path(uid)
+        BookError to stop; an index that won't open is never replaced; no change, no write. With
+        `held` (a release id) it stops with SealHeld when Privacy held that release."""
+        path, lease = self._path(uid), lease_path(self._prefix, uid)
 
         async def run(tx: DocTx) -> T:
-            rev, index = self._decode(uid, await tx.get(path))
+            doc = await tx.get(path)
+            if held is not None and held_of(await tx.get(lease)) == held:
+                raise SealHeld(HELD)
+            rev, index = self._decode(uid, doc)
             new, result = fn(index)
             if new == index:
                 return result
@@ -148,46 +137,37 @@ class DocsBookVault:
             log.error("book index write failed", extra={"error": type(exc).__name__})
             raise BookError(DOWN) from None
 
-    # ---- chunks, by path only ----------------------------------------------------------------
+    async def _drop_index(self, uid: str, *, unreadable: bool) -> None:
+        """Delete the index document in a transaction only while it is still empty (or, with
+        `unreadable`, still won't open), so a seal that lands meanwhile keeps its entry."""
+        path = self._path(uid)
 
-    async def _put(self, uid: str, fid: str, blobs: list[str], at: str) -> None:
-        total = len(blobs)
-        for start in range(0, total, WRITE_GROUP):
-            ops = [
-                Set(
-                    self._chunk_path(uid, fid, n), {"blob": blobs[n], "n": n, "of": total, "at": at}
-                )
-                for n in range(start, min(total, start + WRITE_GROUP))
-            ]
+        async def run(tx: DocTx) -> None:
+            doc = await tx.get(path)
+            if doc is None:
+                return
             try:
-                await self._d.write(ops)
-            except Exception as exc:  # noqa: BLE001
-                log.error("book chunk write failed", extra={"error": type(exc).__name__})
-                raise BookError(DOWN) from None
+                empty = self._decode(uid, doc)[1] == BookIndex()
+            except VaultTampered:
+                drop = unreadable
+            else:
+                drop = empty and not unreadable
+            if drop:
+                tx.delete(path)
 
-    async def _drop(self, uid: str, part: Part) -> None:
-        """Delete one chunk set by path (safe to repeat); raises when storage refuses."""
-        paths = [self._chunk_path(uid, part.fid, n) for n in range(part.count)]
-        for start in range(0, len(paths), DELETE_GROUP):
-            await self._d.write([Delete(p) for p in paths[start : start + DELETE_GROUP]])
-
-    async def _chunk(self, uid: str, fid: str, n: int) -> str:
         try:
-            doc = await self._d.get(self._chunk_path(uid, fid, n))
-        except Exception as exc:  # noqa: BLE001
-            log.error("book chunk unreadable", extra={"error": type(exc).__name__})
-            raise BookError(DOWN) from None
-        blob = (doc or {}).get("blob")
-        if not isinstance(blob, str):
-            raise VaultTampered("A part of a sealed build book is missing.")
-        return blob
+            await self._d.transaction(run)
+        except Exception as exc:  # noqa: BLE001 - an empty index is harmless; an unreadable one
+            log.warning("book index not removed", extra={"error": type(exc).__name__})
+            if unreadable:  # must go: the delete is answered as failed and can be asked again
+                raise BookError(DOWN) from None
 
     async def _sweep(self, uid: str, orphans: tuple[Part, ...]) -> None:
         """Delete orphan chunk sets; the ones whose delete failed stay for the next run."""
         done: set[str] = set()
         for part in orphans:
             try:
-                await self._drop(uid, part)
+                await self._chunks.drop(uid, part)
                 done.add(part.fid)
             except Exception as exc:  # noqa: BLE001 - kept as an orphan; the next run retries
                 log.warning(
@@ -212,7 +192,7 @@ class DocsBookVault:
     async def seal(
         self, uid: str, release: Release, files: Mapping[FileKind, bytes], *, now: dt.datetime
     ) -> SealedRelease:
-        data = _checked(release, files)
+        data = checked_files(release, files)
         index = await self._load(uid)
         found = index.find(release.id)
         if found is not None:
@@ -227,11 +207,13 @@ class DocsBookVault:
         )
         parts = parts_of(entry, now)
         await self._change(
-            uid, lambda ix: (ix.model_copy(update={"pending": (*ix.pending, *parts)}), None)
+            uid,
+            lambda ix: (ix.model_copy(update={"pending": (*ix.pending, *parts)}), None),
+            held=release.id,
         )
         try:
             for f, blobs in sealed:
-                await self._put(uid, f.fid, blobs, now.isoformat())
+                await self._chunks.put(uid, f.fid, blobs, now.isoformat())
             result, raced = await self._commit(uid, entry, parts)
         except Exception:
             await self._abandon(uid, parts)
@@ -243,16 +225,10 @@ class DocsBookVault:
     def _seal_file(
         self, uid: str, rid: str, kind: FileKind, data: bytes
     ) -> tuple[SealedFile, list[str]]:
-        fid = f"bf_{secrets.token_hex(6)}"
         try:
-            wrapped, blobs = self._c.seal(uid, rid, fid, data)
+            return self._c.seal_file(uid, rid, kind, data)
         except VaultError:
             raise BookOff("The build book could not be sealed.") from None
-        digest = hashlib.sha256(data).hexdigest()
-        meta = SealedFile(
-            kind=kind, fid=fid, size=len(data), sha256=digest, count=len(blobs), dek=wrapped
-        )
-        return meta, blobs
 
     async def _commit(
         self, uid: str, entry: SealedRelease, parts: tuple[Part, ...]
@@ -271,14 +247,14 @@ class DocsBookVault:
             new = ix.model_copy(update={"releases": (*ix.releases, entry), "pending": rest})
             return new, (entry, False)
 
-        return await self._change(uid, fn)
+        return await self._change(uid, fn, held=entry.id)
 
     async def _abandon(self, uid: str, parts: tuple[Part, ...]) -> None:
         """A seal failed half-way: its chunks go by path; if even that fails, the TTL sweep will."""
         ours = {p.fid for p in parts}
         try:
             for part in parts:
-                await self._drop(uid, part)
+                await self._chunks.drop(uid, part)
 
             def clear(ix: BookIndex) -> tuple[BookIndex, None]:
                 keep = tuple(p for p in ix.pending if p.fid not in ours)
@@ -328,7 +304,7 @@ class DocsBookVault:
             raise VaultTampered(TAMPERED) from None
         plain: list[bytes] = []
         for n in range(f.count):
-            blob = await self._chunk(uid, f.fid, n)
+            blob = await self._chunks.get(uid, f.fid, n)
             try:
                 plain.append(self._c.open_chunk(dek, uid, rid, f.fid, n, f.count, blob))
             except VaultError:
@@ -342,31 +318,35 @@ class DocsBookVault:
 
     async def delete_all(self, uid: str) -> int:
         """Every sealed release (Privacy -> Delete): the index entries first, then the chunks; the
-        index document goes once nothing is left to retry. Returns how many releases went."""
+        index document goes once nothing is left to retry. Returns how many releases went. An
+        index that won't open is deleted too (`_delete_unreadable`)."""
         now = self._clock()
-        if await self._load(uid) == BookIndex():
-            return 0
+        try:
+            index = await self._load(uid)
+        except VaultTampered:
+            return await self._delete_unreadable(uid)
+        count = 0
+        if index != BookIndex():
 
-        def clear(ix: BookIndex) -> tuple[BookIndex, tuple[int, tuple[Part, ...]]]:
-            parts = tuple(p for r in ix.releases for p in parts_of(r, now))
-            orphans = (*ix.orphans, *parts, *ix.pending)
-            return BookIndex(orphans=orphans), (len(ix.releases), orphans)
+            def clear(ix: BookIndex) -> tuple[BookIndex, tuple[int, tuple[Part, ...]]]:
+                parts = tuple(p for r in ix.releases for p in parts_of(r, now))
+                orphans = (*ix.orphans, *parts, *ix.pending)
+                return BookIndex(orphans=orphans), (len(ix.releases), orphans)
 
-        count, orphans = await self._change(uid, clear)
-        await self._sweep(uid, orphans)
-        if await self._load(uid) == BookIndex():
-            try:
-                await self._d.write([Delete(self._path(uid))])
-            except Exception as exc:  # noqa: BLE001 - an empty index is harmless
-                log.warning("empty book index not removed", extra={"error": type(exc).__name__})
+            count, orphans = await self._change(uid, clear)
+            await self._sweep(uid, orphans)
+        await self._drop_index(uid, unreadable=False)
         return count
 
+    async def _delete_unreadable(self, uid: str) -> int:
+        """An index that won't open (tampered, or a changed token key) is never read, but it can
+        go: every chunk found by listing first (no seal can start against it meanwhile: each one
+        fails closed on it), then the index document, while it still won't open. Returns the
+        releases that went as the chunk sets tell (two a release), at least 1."""
+        fids = await self._chunks.drop_listed(uid)
+        await self._drop_index(uid, unreadable=True)
+        log.warning("an unreadable build book index was deleted")
+        return max(1, (len(fids) + 1) // 2)
 
-__all__ = [
-    "CAPS",
-    "DELETE_GROUP",
-    "KINDS",
-    "PENDING_TTL_S",
-    "WRITE_GROUP",
-    "DocsBookVault",
-]
+
+__all__ = ["CAPS", "DELETE_GROUP", "KINDS", "PENDING_TTL_S", "WRITE_GROUP", "DocsBookVault"]

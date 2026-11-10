@@ -10,21 +10,38 @@ purpose `book_index`. No new crypto here.
 
 `BookIndex` is what the index blob holds: the releases (`model.SealedRelease`), plus, as the R2
 vault index keeps them, the chunk sets of seals still in flight (`pending`) and of releases already
-shredded whose chunk deletes have yet to succeed (`orphans`).
+shredded whose chunk deletes have yet to succeed (`orphans`). `checked_files` is the check a seal
+starts with: exactly the release's two files, each under its cap and matching its SHA-256.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import secrets
+from collections.abc import Mapping
 from typing import Literal
 
 from pydantic import Field
 
-from jarvis.buildbook.model import FILE_ID, Instant, SealedRelease
+from jarvis.buildbook.model import (
+    BOOK_JSON_CAP_BYTES,
+    FILE_ID,
+    SNAPSHOT_CAP_BYTES,
+    FileKind,
+    Instant,
+    Release,
+    SealedFile,
+    SealedRelease,
+)
+from jarvis.buildbook.ports import BookUnavailable
 from jarvis.buildbook.sections import Frozen
 from jarvis.integrations.vault import TokenCipher
 from jarvis.keyring import Keyring
 from jarvis.vault.crypto import CHUNK_BYTES, chunk_count
+
+KINDS: tuple[FileKind, ...] = ("book", "source")
+CAPS: Mapping[FileKind, int] = {"book": BOOK_JSON_CAP_BYTES, "source": SNAPSHOT_CAP_BYTES}
 
 
 def index_aad(uid: str) -> str:
@@ -62,6 +79,18 @@ class BookCrypto:
             for n in range(count)
         ]
         return self._ring.wrap(dek, aad=dek_aad(uid, rid, fid)), blobs
+
+    def seal_file(
+        self, uid: str, rid: str, kind: FileKind, data: bytes
+    ) -> tuple[SealedFile, list[str]]:
+        """One file sealed under a new file id: its index entry and its chunks (VaultError)."""
+        fid = f"bf_{secrets.token_hex(6)}"
+        wrapped, blobs = self.seal(uid, rid, fid, data)
+        digest = hashlib.sha256(data).hexdigest()
+        meta = SealedFile(
+            kind=kind, fid=fid, size=len(data), sha256=digest, count=len(blobs), dek=wrapped
+        )
+        return meta, blobs
 
     def unwrap(self, uid: str, rid: str, fid: str, wrapped: str) -> bytes:
         return self._ring.unwrap(wrapped, aad=dek_aad(uid, rid, fid))
@@ -115,11 +144,28 @@ def age(part: Part, now: dt.datetime) -> float:
     return (now - dt.datetime.fromisoformat(part.since)).total_seconds()
 
 
+def checked_files(release: Release, files: Mapping[FileKind, bytes]) -> dict[FileKind, bytes]:
+    if not release.ok:
+        raise BookUnavailable("This release has no build book.")
+    if set(files) != set(KINDS):
+        raise ValueError("a sealed release is its book and its source snapshot")
+    want = {"book": release.book_sha256, "source": release.source_sha256}
+    for kind in KINDS:
+        if len(files[kind]) > CAPS[kind]:
+            raise BookUnavailable("A file of this release is over its size cap.")
+        if hashlib.sha256(files[kind]).hexdigest() != want[kind]:
+            raise BookUnavailable("The files don't match their release.")
+    return {kind: files[kind] for kind in KINDS}
+
+
 __all__ = [
+    "CAPS",
+    "KINDS",
     "BookCrypto",
     "BookIndex",
     "Part",
     "age",
+    "checked_files",
     "chunk_aad",
     "dek_aad",
     "index_aad",

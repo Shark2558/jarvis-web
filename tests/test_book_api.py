@@ -5,6 +5,8 @@
 # Book settings. Every answer no-store, every failure {error, detail}.
 from __future__ import annotations
 
+import datetime as dt
+import logging
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
@@ -30,7 +32,7 @@ from jarvis.api import create_app
 from jarvis.api.identity import user_id_for_email
 from jarvis.buildbook.model import ShowLockState, TalkState
 from jarvis.buildbook.owner import BookSettingsStore, BookTickets
-from jarvis.buildbook.ports import LockUnreadable
+from jarvis.buildbook.ports import LockUnreadable, SessionGone
 from jarvis.buildbook.seal import DocsBookVault
 from jarvis.buildbook.sealer import BookSealer, SealOutcome
 from jarvis.config import AuthMode, Settings
@@ -129,10 +131,16 @@ def no_store(r: Response) -> None:
     assert r.headers["x-content-type-options"] == "nosniff"
 
 
+def _utcnow() -> dt.datetime:
+    return dt.datetime.now(dt.UTC)
+
+
 async def owner_rig(rig: Rig) -> Rig:
+    """Signed in, with a live OWNER book session (OWNER_TOKEN) and a guest token."""
     await login(rig.c)
     rig.sessions.grant(OWNER_TOKEN, UID, "owner")
     rig.sessions.grant(GUEST_TOKEN, UID, "guest")
+    rig.sessions.live_view = rig.sessions.view_of(OWNER_TOKEN, _utcnow())
     return rig
 
 
@@ -386,7 +394,7 @@ async def test_a_bad_or_foreign_ticket_is_gone(rig: Rig) -> None:
     ticket = (await _ticket(rig, rid)).json()["ticket"]
     for bad in ("short", "x" * 43, ticket + "!"):
         r = await rig.c.get(f"/v1/book/download/{bad}")
-        assert r.status_code in (404, 410), bad
+        assert (r.status_code, r.json()["error"]) == (410, "gone"), bad
     await login(rig.c, OTHER)
     assert (await rig.c.get(f"/v1/book/download/{ticket}")).status_code == 410
 
@@ -482,3 +490,111 @@ async def test_a_ticket_store_outage_is_a_plain_503(rig: Rig) -> None:
     rig.app.state.book_tickets.take = down
     r = await rig.c.get("/v1/book/download/" + "t" * 43)
     assert (r.status_code, r.json()["error"]) == (503, "unavailable")
+
+
+# ---- review fixes: tickets bound to their session, C's close on resolve, plain answers --------
+
+
+async def test_a_ticket_dies_with_the_book_session_that_asked_for_it(rig: Rig) -> None:
+    await owner_rig(rig)
+    await rig.get("/v1/book")
+    rid = rig.source.release.id  # type: ignore[union-attr]
+    ticket = (await _ticket(rig, rid)).json()["ticket"]
+    rig.sessions.live_view = None  # End, expiry, idle or a Privacy close
+    r = await rig.c.get(f"/v1/book/download/{ticket}")
+    assert (r.status_code, r.json()["error"]) == (410, "gone")
+    no_store(r)
+    ticket = (await _ticket(rig, rid)).json()["ticket"]
+    rig.sessions.grant("n" * 43, UID, "owner")  # a newer open ended the one the ticket is for
+    rig.sessions.live_view = rig.sessions.view_of("n" * 43, _utcnow())
+    r = await rig.c.get(f"/v1/book/download/{ticket}")
+    assert (r.status_code, r.json()["error"]) == (410, "gone")
+    assert [row["tool"] for row in rig.audit.rows] == []  # nothing was sent, nothing audited
+
+
+async def test_a_ticket_never_outlives_its_sessions_idle_limit(rig: Rig) -> None:
+    await owner_rig(rig)
+    await rig.get("/v1/book")
+    rig.sessions.idle_s = 10
+    r = await _ticket(rig, rig.source.release.id)  # type: ignore[union-attr]
+    assert r.status_code == 200 and 1 <= r.json()["expires_in_s"] <= 10
+
+
+async def test_the_routes_resolve_through_the_book_service_when_it_is_wired(rig: Rig) -> None:
+    class Service:
+        """C's BookService.resolve: an expired session is finished (audit, notice), then gone."""
+
+        def __init__(self) -> None:
+            self.finished: list[str] = []
+
+        async def resolve(self, uid: str, token: str, *, now: dt.datetime) -> Any:
+            if token == OWNER_TOKEN:
+                self.finished.append(uid)
+                raise SessionGone("ended")
+            return await rig.sessions.resolve(uid, token, now=now)
+
+    await owner_rig(rig)
+    rig.app.state.book_service = Service()
+    for path in ("/v1/book/sections", "/v1/book/releases/0000000/sections"):
+        r = await rig.get(path, OWNER_TOKEN)
+        assert (r.status_code, r.json()["error"]) == (401, "session_gone"), path
+    r = await _ticket(rig, "0000000")
+    assert (r.status_code, r.json()["error"]) == (401, "session_gone")
+    assert rig.app.state.book_service.finished == [UID] * 3
+    assert (await rig.get("/v1/book/sections", GUEST_TOKEN)).status_code == 403
+
+
+async def test_a_session_store_outage_is_a_plain_503(rig: Rig) -> None:
+    await owner_rig(rig)
+
+    async def down(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("firestore down")
+
+    rig.sessions.resolve = down  # type: ignore[method-assign]
+    r = await rig.get("/v1/book/sections", OWNER_TOKEN)
+    assert (r.status_code, r.json()["error"]) == (503, "unavailable")
+    no_store(r)
+
+
+async def test_a_book_source_that_breaks_is_a_plain_503(rig: Rig) -> None:
+    await owner_rig(rig)
+
+    def boom(*_: Any) -> Any:
+        raise RuntimeError("package resource")
+
+    rig.source.current = boom  # type: ignore[method-assign]
+    rig.source.book = boom  # type: ignore[method-assign]
+    for path in ("/v1/book", "/v1/book/sections"):
+        r = await rig.get(path, OWNER_TOKEN)
+        assert (r.status_code, r.json()["error"]) == (503, "unavailable"), path
+        no_store(r)
+
+
+@pytest.mark.parametrize("raw", [b"{not json", b'{"talk_on": tru', b"\xff\xfe", b"9" * 5000])
+async def test_malformed_settings_json_is_input_rejected(rig: Rig, raw: bytes) -> None:
+    await login(rig.c)
+    h = {**CSRF, "Content-Type": "application/json"}
+    r = await rig.c.put("/v1/book/settings", content=raw, headers=h)
+    assert (r.status_code, r.json()["error"]) == (422, "input_rejected")
+    no_store(r)
+    assert "json_invalid" not in r.text
+
+
+async def test_unreadable_lock_and_passkey_stores_leave_a_trace(
+    rig: Rig, caplog: pytest.LogCaptureFixture
+) -> None:
+    class Broken:
+        async def get(self, uid: str) -> Any:
+            raise LockUnreadable("x")
+
+        async def passkey_required(self, uid: str) -> bool:
+            raise RuntimeError("permissions store")
+
+    rig.app.state.book_lock = rig.app.state.permissions = Broken()
+    await login(rig.c)
+    with caplog.at_level(logging.WARNING):
+        body = (await rig.get("/v1/book")).json()
+    assert body["lock"] == {"on": True} and body["open"]["passkey_ready"] is False
+    seen = {(r.getMessage(), getattr(r, "error", None)) for r in caplog.records}
+    assert ("book lock unreadable", "LockUnreadable") in seen
+    assert ("book passkey state unreadable", "RuntimeError") in seen

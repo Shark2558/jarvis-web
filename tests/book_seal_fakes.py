@@ -4,6 +4,7 @@
 # eval imports this file too). Imported bare: `from book_seal_fakes import ...`.
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import hashlib
 import io
@@ -117,6 +118,7 @@ class FakeNotifier:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, str]] = []  # (uid, kind, message)
         self.fail = False
+        self.slow = False  # yield before sending, as a real Telegram send does
 
     async def notify(
         self,
@@ -127,6 +129,8 @@ class FakeNotifier:
         named_message: str | None = None,
         photo: bytes | None = None,
     ) -> Delivery:
+        if self.slow:
+            await asyncio.sleep(0)
         if self.fail:
             raise RuntimeError("telegram down")
         self.sent.append((uid, signal.kind, message))
@@ -150,14 +154,19 @@ class FakeAudit:
         return [str(r["tool"]) for r in self.rows]
 
 
-def view(audience: Audience, sid: str = "bk_" + "1" * 16) -> SessionView:
-    until = (NOW + dt.timedelta(minutes=45)).isoformat()
+def view(
+    audience: Audience,
+    sid: str = "bk_" + "1" * 16,
+    *,
+    at: dt.datetime = NOW,
+    idle_s: int = 600,
+) -> SessionView:
     return SessionView(
         session_id=sid,
         audience=audience,
-        created_at=NOW.isoformat(),
-        until=until,
-        idle_until=(NOW + dt.timedelta(minutes=10)).isoformat(),
+        created_at=at.isoformat(),
+        until=(at + dt.timedelta(minutes=45)).isoformat(),
+        idle_until=(at + dt.timedelta(seconds=idle_s)).isoformat(),
         questions=0,
         questions_left=20,
     )
@@ -165,21 +174,29 @@ def view(audience: Audience, sid: str = "bk_" + "1" * 16) -> SessionView:
 
 class FakeSessions:
     """The slice of ports.BookSessions builder B's routes use: resolve and live. Tokens map to
-    (uid, audience); anything else is SessionGone (C's sessions.py in production)."""
+    (uid, audience, session id); anything else is SessionGone (C's sessions.py in production).
+    `live_view` is what `live` answers (None: no session is open)."""
 
     def __init__(self) -> None:
-        self.tokens: dict[str, tuple[str, Audience]] = {}
+        self.tokens: dict[str, tuple[str, Audience, str]] = {}
         self.live_view: SessionView | None = None
         self.closed: list[tuple[str, str]] = []
+        self.idle_s = 600
 
-    def grant(self, token: str, uid: str, audience: Audience) -> None:
-        self.tokens[token] = (uid, audience)
+    def grant(self, token: str, uid: str, audience: Audience) -> str:
+        sid = f"bk_{len(self.tokens) + 1:016x}"
+        self.tokens[token] = (uid, audience, sid)
+        return sid
+
+    def view_of(self, token: str, now: dt.datetime) -> SessionView:
+        _, audience, sid = self.tokens[token]
+        return view(audience, sid, at=now, idle_s=self.idle_s)
 
     async def resolve(self, uid: str, token: str, *, now: dt.datetime) -> SessionView:
         found = self.tokens.get(token)
         if found is None or found[0] != uid:
             raise SessionGone("Open the build book again.")
-        return view(found[1])
+        return self.view_of(token, now)
 
     async def live(self, uid: str, *, now: dt.datetime) -> SessionView | None:
         return self.live_view

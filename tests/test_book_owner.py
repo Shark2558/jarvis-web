@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
-from book_seal_fakes import NOW, OTHER, UID, ring
+from book_seal_fakes import NOW, OTHER, UID, ring, view
 from pydantic import ValidationError
 
 from jarvis.buildbook.owner import (
@@ -22,6 +22,7 @@ from jarvis.storage.docs import MemoryDocs
 from jarvis.vault.unlock import MAX_TICKETS, TICKET_S, TicketGone, UnlockStore
 
 RID = "3f2a1c9"
+SESSION = view("owner")  # the live owner book session that asks (D9)
 
 
 # ---- settings --------------------------------------------------------------------------------
@@ -115,7 +116,7 @@ def tickets(docs: MemoryDocs, clock: dict[str, dt.datetime]) -> BookTickets:
 async def test_a_ticket_works_once_for_its_owner_and_release() -> None:
     docs, clock = MemoryDocs(), {"now": NOW}
     t = tickets(docs, clock)
-    got = await t.issue(UID, RID)
+    got = await t.issue(UID, RID, session=SESSION)
     assert got.expires_in_s == TICKET_S == 60 and len(got.ticket) >= 40
     with pytest.raises(TicketGone):
         await t.take(OTHER, got.ticket)
@@ -128,7 +129,7 @@ async def test_a_ticket_works_once_for_its_owner_and_release() -> None:
 async def test_a_ticket_expires_after_sixty_seconds() -> None:
     docs, clock = MemoryDocs(), {"now": NOW}
     t = tickets(docs, clock)
-    got = await t.issue(UID, RID)
+    got = await t.issue(UID, RID, session=SESSION)
     clock["now"] = NOW + dt.timedelta(seconds=61)
     with pytest.raises(TicketGone):
         await t.take(UID, got.ticket)
@@ -137,7 +138,7 @@ async def test_a_ticket_expires_after_sixty_seconds() -> None:
 async def test_tickets_live_on_their_own_collection_as_an_hmac_only() -> None:
     docs, clock = MemoryDocs(), {"now": NOW}
     t = tickets(docs, clock)
-    got = await t.issue(UID, RID)
+    got = await t.issue(UID, RID, session=SESSION)
     assert list(docs._data) == [f"jarvis_book_tickets/{UID}"]
     assert got.ticket not in str(docs._data)
     # a vault (R2) ticket is not a book ticket, and the other way round
@@ -153,7 +154,7 @@ async def test_tickets_live_on_their_own_collection_as_an_hmac_only() -> None:
 async def test_at_most_five_live_tickets_the_oldest_go() -> None:
     docs, clock = MemoryDocs(), {"now": NOW}
     t = tickets(docs, clock)
-    issued = [await t.issue(UID, RID) for _ in range(MAX_TICKETS + 1)]
+    issued = [await t.issue(UID, RID, session=SESSION) for _ in range(MAX_TICKETS + 1)]
     with pytest.raises(TicketGone):
         await t.take(UID, issued[0].ticket)
     assert (await t.take(UID, issued[-1].ticket)).item == RID
@@ -165,3 +166,32 @@ async def test_a_book_ticket_store_grants_no_vault_unlock() -> None:
         await t.grant(UID)
     with pytest.raises(PermissionError):
         await t.ticket(UID, "x" * 43, RID, "source")
+
+
+async def test_a_ticket_is_bound_to_its_session_and_never_outlives_it() -> None:
+    docs, clock = MemoryDocs(), {"now": NOW}
+    t = tickets(docs, clock)
+    short = view("owner", "bk_" + "2" * 16, idle_s=10)
+    got = await t.issue(UID, RID, session=short)
+    assert got.expires_in_s == 10
+    taken = await t.take(UID, got.ticket)
+    assert (taken.item, taken.fid, taken.session) == (RID, "source", short.session_id)
+    late = await t.issue(UID, RID, session=short)
+    clock["now"] = NOW + dt.timedelta(seconds=11)
+    with pytest.raises(TicketGone):
+        await t.take(UID, late.ticket)
+
+
+async def test_a_session_already_over_gets_no_ticket() -> None:
+    t = tickets(MemoryDocs(), {"now": NOW + dt.timedelta(minutes=11)})
+    with pytest.raises(PermissionError):
+        await t.issue(UID, RID, session=SESSION)
+
+
+async def test_closing_a_session_clears_its_owners_tickets() -> None:
+    docs, clock = MemoryDocs(), {"now": NOW}
+    t = tickets(docs, clock)
+    got = await t.issue(UID, RID, session=SESSION)
+    await t.clear(UID)
+    with pytest.raises(TicketGone):
+        await t.take(UID, got.ticket)

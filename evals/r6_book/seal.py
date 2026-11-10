@@ -28,6 +28,7 @@ from book_seal_fakes import (
     fixture_book,
     make_release,
     ring,
+    view,
 )
 from r6_common import Case
 
@@ -104,7 +105,10 @@ async def tampered_chunk(w: World) -> list[str]:
     for p in chunk_paths(w.docs):
         w.docs._data[p]["blob"] = w.docs._data[p]["blob"][:-8] + "AAAAAAA="
     bad = []
-    for _ in range(2):  # what GET /v1/book/releases/{rid}/sections does on a failed read
+    # what GET /v1/book/releases/{rid}/sections does on a failed read: this case proves the
+    # once-only rule; that the route itself reports is tests/test_book_api.py's
+    # test_a_tampered_sealed_book_stays_closed_and_the_owner_is_told_once
+    for _ in range(2):
         try:
             await w.vault.read(UID, rid, "source")
             bad.append("a tampered chunk was read")
@@ -171,11 +175,12 @@ async def download(w: World) -> list[str]:
     rid = w.deploy(1)
     await w.sealer.ensure(UID)
     tickets = BookTickets(w.docs, ring(), clock=lambda: w.clock["now"])
-    t = await tickets.issue(UID, rid)
+    session = view("owner", at=w.clock["now"])  # the live owner book session that asks (D9)
+    t = await tickets.issue(UID, rid, session=session)
     taken = await tickets.take(UID, t.ticket)
     data = await w.vault.read(UID, str(taken.item), "source")
     bad = [] if data == w.source.files["source"] else ["the download is not the sealed code"]
-    late = await tickets.issue(UID, rid)
+    late = await tickets.issue(UID, rid, session=session)
     w.clock["now"] += dt.timedelta(seconds=61)
     for used in (t.ticket, late.ticket):
         try:

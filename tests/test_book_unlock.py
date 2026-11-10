@@ -249,13 +249,42 @@ async def test_a_sign_in_minted_while_the_prompt_waits_is_refused_after_the_unlo
                 assert (await later.get("/auth/me")).status_code == 200
 
 
-def test_the_runbook_installs_hash_locked_in_a_subshell_without_the_key() -> None:
+def _runbook_shell() -> str:
     from pathlib import Path
 
     doc = (Path(unlock.__file__).parent / "INTEGRATION-C.md").read_text("utf-8")
     book = doc[doc.index("## Runbook: the emergency unlock") :]
-    shell = book[book.index("```bash") : book.index("```", book.index("```bash") + 7)]
+    return book[book.index("```bash") : book.index("```", book.index("```bash") + 7)]
+
+
+def test_the_runbook_installs_hash_locked_in_a_subshell_without_the_key() -> None:
+    shell = _runbook_shell()
     assert "pip install -q --require-hashes -r requirements.lock" in shell
-    assert "pip install -q --no-deps -e ." in shell
+    assert "pip install -q --no-build-isolation --no-deps -e ." in shell
     assert "JARVIS_TOKEN_KEY" not in shell
     assert shell.split("\n")[1].strip() == "(" and shell.rstrip().endswith(")")
+
+
+def test_the_runbook_fetches_nothing_outside_the_lock() -> None:
+    """Security re-review #2: build isolation would fetch setuptools and wheel from the index,
+    unhashed, beside the owner's gcloud credentials. Every `pip install` in the block either reads
+    the hash-locked file or builds with no isolation, and the build tools pyproject.toml asks for
+    are themselves hash-locked in requirements.lock (pip-compile --generate-hashes)."""
+    import re
+    import tomllib
+    from pathlib import Path
+
+    root = Path(unlock.__file__).parents[3]
+    installs = [ln for ln in _runbook_shell().splitlines() if "pip install" in ln]
+    assert len(installs) == 2
+    for line in installs:
+        assert "--require-hashes -r requirements.lock" in line or (
+            "--no-build-isolation" in line and "--no-deps" in line
+        ), line
+    lock = (root / "requirements.lock").read_text("utf-8")
+    build = tomllib.loads((root / "pyproject.toml").read_text("utf-8"))["build-system"]
+    for req in build["requires"]:
+        name = re.match(r"[A-Za-z0-9_.-]+", req)
+        assert name is not None
+        pinned = re.search(rf"^{re.escape(name.group(0))}==\S+ \\\n    --hash=sha256:", lock, re.M)
+        assert pinned, f"{req} is not hash-locked in requirements.lock"

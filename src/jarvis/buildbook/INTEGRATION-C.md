@@ -193,7 +193,7 @@ path; HEAD = GET), everything else 423 `show_locked` (`GET /` 302 `/book/show`):
 | Finding | Fix |
 |---|---|
 | SEC-3 = CODE-M1: the lock stopped holding when R6 was off | In Google mode `app.state.book_lock` is always a `DocShowLock(docs, prefix, owners)` (no keyring), also with no `JARVIS_TOKEN_KEY` and when R6's setup fails; Resume then answers 503 `book_off` naming the emergency unlock; a Google app with no lock store fails closed (503). |
-| SEC-6: the emergency unlock asked for the token key and ran unpinned code beside it | `unlock.build_service` builds its lock (with every owner) and its closer (`DocBookSessions(docs, None)`: closes only) with no keyring; the runbook installs `requirements.lock` with `--require-hashes` then `--no-deps -e .`, in a subshell, without `JARVIS_TOKEN_KEY`; a lock on another owner is named and the exit code is 1; the lift records "sessions valid after" (SEC-4). |
+| SEC-6: the emergency unlock asked for the token key and ran unpinned code beside it | `unlock.build_service` builds its lock (with every owner) and its closer (`DocBookSessions(docs, None)`: closes only) with no keyring; the runbook installs `requirements.lock` with `--require-hashes` then `--no-build-isolation --no-deps -e .` (R6 fix-of-fixes: no build tool fetched unhashed), in a subshell, without `JARVIS_TOKEN_KEY`; a lock on another owner is named and the exit code is 1; the lift records "sessions valid after" (SEC-4). |
 | SEC-4: a cookie taken during a show outlived Resume | (a) At a guest open the presenting browser's session becomes a show-only marker `{book_show: {uid, iat}}` with no owner e-mail (`api/book_show_auth.py`): only the show routes, `/v1/book/close`, `/v1/book/show/lock`, `/v1/book/resume` and a `book_resume` passkey challenge accept it. (b) Resume and the emergency unlock write `sessions_valid_after` into each owner's lock document (read with the lock, cached <= 3 s); the middleware clears every cookie session or marker issued before it; the browser that resumed is re-stamped at that mark. (c) After a lift elsewhere the show tab says "Unlocked on another device" and stays. |
 
 ### Presenting to a guest (owner guidance, SEC-4 d)
@@ -219,7 +219,10 @@ run it. It needs **no** `JARVIS_TOKEN_KEY` (integrated review SEC-6): lifting th
 closing the sessions touch no key. In **Google Cloud Shell** (shell.cloud.google.com, signed in
 as you, your JARVIS project selected), paste the whole block. It runs in a subshell `( ... )`, so
 nothing it exports outlives it, and it installs the exact, hash-checked versions in
-`requirements.lock` (compiled for Python 3.12, as Cloud Shell has) before JARVIS itself:
+`requirements.lock` (compiled for Python 3.12, as Cloud Shell has) before JARVIS itself. JARVIS
+is then built with `--no-build-isolation` against the build tools that file already installed
+(`setuptools`, `wheel` and `pip` are in it, hash-locked), so nothing is fetched outside the lock,
+as in the Dockerfile:
 
 ```bash
 (
@@ -227,7 +230,7 @@ nothing it exports outlives it, and it installs the exact, hash-checked versions
   cd ~/jarvis-web && git pull --ff-only
   python3 -m venv ~/.jarvis-unlock
   ~/.jarvis-unlock/bin/pip install -q --require-hashes -r requirements.lock
-  ~/.jarvis-unlock/bin/pip install -q --no-deps -e .
+  ~/.jarvis-unlock/bin/pip install -q --no-build-isolation --no-deps -e .
   export JARVIS_SESSION_BACKEND=firestore
   export JARVIS_FIRESTORE_PROJECT="$(gcloud config get-value project)"
   export JARVIS_OWNER_EMAILS="you@gmail.com"

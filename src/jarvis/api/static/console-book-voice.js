@@ -85,10 +85,18 @@
       u.onstart = () => { cur.started = true; };
       u.onboundary = () => { S.pulse = 1; };
       u.onend = () => end(cur, 'ended');
-      u.onerror = () => end(cur, 'ended');
+      u.onerror = () => failed(cur);
       S.cur = cur;
       if (!held(cur)) utter(cur, sp);
     });
+  }
+  /** A voice that fails before it starts (none installed, as headless Chromium): the captions set the
+   *  pace from here on, never an instant end (the show would race to Questions). Once a timer, a late
+   *  error (our own cancel) changes nothing. */
+  function failed(cur) {
+    if (cur.kind !== 'speech') return;
+    if (cur.started || S.cur !== cur) { end(cur, 'ended'); return; }
+    S.mode = 'captions'; toTimer(cur, captionMs(cur.text));
   }
   function utter(cur, sp) {
     const text = cur.text;

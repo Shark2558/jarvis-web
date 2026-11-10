@@ -177,6 +177,44 @@ def test_with_the_sound_off_captions_set_the_pace(
         c.close()
 
 
+# A browser whose speech fails at once ("synthesis-failed"; no voice installed, as headless Chromium).
+FAILING_SPEECH = """
+(() => {
+  const synth = { speaking: false, pending: false, paused: false,
+    speak(u) { setTimeout(() => u.onerror && u.onerror({ error: 'synthesis-failed' }), 5); },
+    cancel() {}, pause() {}, resume() {}, getVoices() { return []; } };
+  try { Object.defineProperty(window, 'speechSynthesis', { value: synth, configurable: true }); } catch (_) {}
+})();
+"""
+
+
+def test_a_browser_voice_that_fails_at_once_leaves_the_pace_to_the_captions(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """I1 (seen on the real server in headless Chromium): an utterance that errors before it
+    starts must not end its line at once, or the show races to Questions in a second."""
+    c, fake = _show(browser, server_url, token, init=())
+    c.page.add_init_script(FAILING_SPEECH)
+    c.page.reload()
+    c.page.locator("#shBegin").wait_for()
+    fake.speak_status = 503  # no cloud voice: the browser's, which fails
+    try:
+        c.page.evaluate(
+            "() => { window.__caps = []; new MutationObserver(() => window.__caps.push([performance.now(),"
+            " document.getElementById('shCapText').textContent])).observe(document.getElementById('shCapText'),"
+            " { childList: true, characterData: true, subtree: true }); }"
+        )
+        _begin(c)
+        first, second = (b["text"] for b in QUICK[0]["beats"][:2])
+        c.page.locator("#shCapText", has_text=second).wait_for(timeout=8000)
+        caps = c.page.evaluate("window.__caps")
+        assert [t for _, t in caps][:2] == [first, second]
+        assert caps[1][0] - caps[0][0] >= 1300, caps  # the captions' pace, not at once
+        _clean(c, 503)
+    finally:
+        c.close()
+
+
 def test_the_browser_voice_takes_over_when_the_cloud_voice_is_unavailable(
     browser: Any, server_url: str, token: str
 ) -> None:

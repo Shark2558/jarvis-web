@@ -623,3 +623,18 @@ def test_the_r6_book_suite_is_gated_in_the_mock_run() -> None:
     src = (ROOT / "evals/run_all_mock.py").read_text(encoding="utf-8")
     line = next(ln for ln in src.splitlines() if '"r6_book (gated)"' in ln)
     assert 'HERE / "r6_book" / "run.py"' in line and line.rstrip().endswith("True),")
+
+
+def test_the_r6_python_modules_keep_the_house_size_limits() -> None:
+    files = [
+        *sorted((ROOT / "src/jarvis/buildbook").rglob("*.py")),
+        *(ROOT / "src/jarvis/api" / n for n in ("book.py", "book_show.py", "book_http.py")),
+        ROOT / "src/jarvis/api/r6_wiring.py",
+        ROOT / "src/jarvis/api/feature_wiring.py",
+    ]
+    for path in files:
+        source = path.read_text(encoding="utf-8")
+        assert len(source.splitlines()) <= 400, path.name
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                assert (node.end_lineno or 0) - node.lineno < 50, (path.name, node.name)

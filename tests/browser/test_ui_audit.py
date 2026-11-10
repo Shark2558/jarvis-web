@@ -10,7 +10,8 @@
 # What "its data painted" means: FOUR panels have a data-specific READY selector (ui_checks.READY:
 # vitals, integrations, connectors, people); a miss fails. Every OTHER panel is only required to show
 # some text inside its body (an empty panel proves nothing), not its mocked data.
-# Beyond the 20 panels the gate also audits (D11 completeness): the top bar, the open brain menu and
+# Beyond the panels (ui_checks.PANELS; R6 I0 added the Book panel's shell) the gate also audits
+# (D11 completeness): the top bar, the open brain menu and
 # its AI-on confirm, the systems-check pop-up in its done state with concerns, and the Vitals
 # "Track something JARVIS can't see" form OPEN. Each is a separate parametrised test below.
 # One page per viewport and surface (module-scoped); the panels are opened in turn.

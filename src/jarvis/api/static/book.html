@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en" data-theme="workshop" data-surface="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#04070D">
+<title>JARVIS &middot; Build book</title>
+<style>
+/* Self-hosted OFL fonts (static/fonts, licences beside them), exactly as console.html declares them */
+@font-face{font-family:"Orbitron";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/orbitron-latin-600-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Orbitron";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/orbitron-latin-700-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:500;font-display:swap;src:url(/static/fonts/rajdhani-latin-500-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/rajdhani-latin-600-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/rajdhani-latin-700-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Share Tech Mono";font-style:normal;font-weight:400;font-display:swap;src:url(/static/fonts/share-tech-mono-latin-400-normal.woff2?v=1) format("woff2")}
+</style>
+<link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/console-deck.css">
+<link rel="stylesheet" href="/static/book.css">
+</head>
+<body>
+<!-- R6 (docs/plans/r6-build-book.md D15, D16): the build book's show, served at /book/show with the
+     console's CSP. R6 I0 shell: part D builds the show here (console-book-*.js, book.css) with the
+     console's tokens and components only. It boots WITHOUT the deck: console-fx.js (theme,
+     surfaces, the background field) and console-permissions.js (window.JarvisPasskey, for Resume);
+     no console.js, no dock. JarvisPasskey.prove calls window.JarvisConsole.api, which this page
+     must provide before Resume (part D: the show's own transport, X-Requested-With: JARVIS). -->
+<div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
+<canvas id="field" aria-hidden="true"></canvas>
+<main class="gate show" id="show">
+  <section class="gate-card card hud" id="showCard" aria-labelledby="showTitle">
+    <h2 id="showTitle">JARVIS</h2>
+    <p id="showText">The build book isn't available on this server yet.</p>
+    <div class="fine" id="showFine">Build book</div>
+  </section>
+</main>
+<script src="/static/console-fx.js" defer></script>
+<script src="/static/console-permissions.js" defer></script>
+<script src="/static/console-book-voice.js" defer></script>
+<script src="/static/console-book-2d.js" defer></script>
+<script src="/static/console-book-show.js" defer></script>
+<script src="/static/console-book-talk.js" defer></script>
+<script type="module" src="/static/console-book-3d.js"></script>
+</body>
+</html>

@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'voice', 'media', 'construct'];
+  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'book', 'voice', 'media', 'construct'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;
@@ -87,6 +87,8 @@
       // R4: Connectors (GitHub, YouTube, Photos) and People (scoped research)
       connectors: { x: col2, y: b.top + 36, w: 400, h: Math.min(availH, 640), open: false },
       people: { x: Math.max(sL, sR - chatW - 14 - 420), y: b.top + 42, w: 420, h: Math.min(availH, 700), open: false },
+      // R6: the Book panel (the build book: status, Open, sections, older releases, settings)
+      book: { x: Math.max(sL, sR - chatW - 14 - 400), y: b.top + 30, w: 400, h: Math.min(availH, 640), open: false },
     };
   }
   /** Stored layout, validated field by field. Anything malformed falls back to the defaults, and a
@@ -142,6 +144,13 @@
   // ---- phones: at most eight tabs; the "ovf" tabs live in the More sheet (native modal dialog:
   // the page behind is inert, Tab stays inside, Esc and the backdrop close it, focus returns) ----
   const moreBtn = $('dockMore'), sheet = $('moreSheet');
+  // R6 I0: on a desktop too narrow for every tab the dock scrolls sideways (console-deck.css); a
+  // plain mouse wheel over it scrolls it too.
+  const dockEl = $('dock');
+  if (dockEl) dockEl.addEventListener('wheel', (e) => {
+    if (isPhone() || dockEl.scrollWidth <= dockEl.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    dockEl.scrollLeft += e.deltaY; e.preventDefault();
+  }, { passive: false });
   const overflow = () => ids.filter(id => panels[id].btn && panels[id].btn.classList.contains('ovf'));
   const titleOf = (id) => { const h = panels[id].el.querySelector('.ptitle h2'); return h ? h.textContent.trim() : id; };
   function syncMore() {
@@ -187,6 +196,7 @@
       ids.forEach(k => setVisible(panels[k], k === id));
     } else {
       layout.p[id].open = true; setVisible(p, true); applyGeom(p); front(p); saveLayout(); layoutCore();
+      if (p.btn) p.btn.scrollIntoView({ block: 'nearest', inline: 'nearest' }); // R6: a dock that scrolls
     }
     syncDock();
     if (opts.focus) focusPanel(p);

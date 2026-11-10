@@ -459,3 +459,136 @@ async def test_wire_r6_leaves_every_r6_part_off_until_i1(client: Any) -> None:
     )  # fmt: skip
     for attr in R6_STATE:
         assert getattr(app.state, attr) is None, attr
+
+
+# ---- 9 the console shell: the Book panel, the 423 hop, /book/show --------------------------------
+# Part D's files, as I0 stubs (empty headers): the panel's two scripts and stylesheet in the
+# console; the show's scripts in book.html in this order, then its 3D entry module (which imports
+# the scene modules itself, as console-3d.js imports console-3d-scenes.js).
+PANEL_SCRIPTS = ("console-book.js", "console-book-reader.js")
+SHOW_SCRIPTS = (
+    "console-fx.js",
+    "console-permissions.js",
+    "console-book-voice.js",
+    "console-book-2d.js",
+    "console-book-show.js",
+    "console-book-talk.js",
+)
+SHOW_MODULE = "console-book-3d.js"
+SCENE_MODULES = (
+    "console-book-scenes.js",
+    "console-book-scenes-flow.js",
+    "console-book-scenes-data.js",
+)
+D_STUBS = (
+    *PANEL_SCRIPTS,
+    "console-book.css",
+    *SHOW_SCRIPTS[2:],
+    SHOW_MODULE,
+    *SCENE_MODULES,
+    "book.css",
+)
+
+
+def _html(name: str) -> str:
+    return (STATIC / name).read_text(encoding="utf-8")
+
+
+def _css_classes() -> set[str]:
+    found: set[str] = set()
+    for path in STATIC.glob("*.css"):
+        css = re.sub(r"/\*.*?\*/", "", path.read_text(encoding="utf-8"), flags=re.S)
+        found |= set(re.findall(r"\.([A-Za-z_][\w-]*)", css))
+    return found
+
+
+@pytest.mark.parametrize("name", D_STUBS)
+def test_each_part_d_file_exists_is_served_and_names_the_plan(name: str) -> None:
+    from jarvis.api.console import APP_ASSETS
+
+    text = _html(name)
+    assert name in APP_ASSETS
+    assert ("css" if name.endswith(".css") else "javascript") in APP_ASSETS[name]
+    assert "r6-build-book.md" in text.splitlines()[0] + text.splitlines()[1]
+    limit = 300 if name.endswith(".css") else 400
+    assert len(text.splitlines()) <= limit and text.isascii()
+
+
+def test_the_book_dock_button_and_more_sheet_item_sit_after_people() -> None:
+    html = _html("console.html")
+    dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
+    tabs = re.findall(r'<button class="dk([^"]*)" type="button" data-open="(\w+)"', dock)
+    names = [n for _, n in tabs]
+    assert names[names.index("people") + 1] == "book"
+    cls = dict((n, c) for c, n in tabs)["book"]
+    assert cls.split() == ["ovf"]  # a phone shows it behind More
+    assert 'data-open="book" aria-controls="p-book" aria-pressed="false"' in dock
+    assert "<span>Book</span>" in dock[dock.index('data-open="book"') :]
+    sheet = re.findall(r'data-sheet-open="(\w+)"', html)
+    assert sheet[sheet.index("people") + 1] == "book"
+
+
+def test_the_book_panel_is_an_empty_shell_in_existing_classes_only() -> None:
+    html = _html("console.html")
+    start = html.index('<section class="panel card" id="p-book"')
+    panel = html[start : html.index("</section>", start)]
+    assert 'data-panel="book" aria-labelledby="t-book" hidden' in panel
+    assert '<h2 id="t-book">Book</h2>' in panel and 'id="bookBody"' in panel
+    used = {c for attr in re.findall(r'class="([^"]+)"', panel) for c in attr.split()}
+    assert used - _css_classes() == set()  # no new class: never change the aesthetics
+    assert "style=" not in panel and "<script" not in panel
+    for needed in ("rhead", "k", "kv", "bnote"):
+        assert needed in used, needed
+
+
+def test_the_console_loads_the_panel_files_after_the_r5_1_ones() -> None:
+    html = _html("console.html")
+    tags = re.findall(r'<script src="/static/([^"]+)" defer></script>', html)
+    at = tags.index("console-people.js")
+    assert tuple(tags[at + 1 : at + 3]) == PANEL_SCRIPTS
+    links = re.findall(r'<link rel="stylesheet" href="/static/([^"]+)">', html)
+    assert links[-1] == "console-book.css" and links[-2] == "console-systems.css"
+
+
+def test_book_is_in_the_deck_order_and_has_a_default_place() -> None:
+    js = _html("console-deck.js")
+    order = re.search(r"const ORDER = \[([^\]]+)\];", js)
+    assert order
+    ids = re.findall(r"'([a-z]+)'", order.group(1))
+    assert ids[ids.index("people") + 1] == "book"
+    assert re.search(r"\bbook: \{ x:", js)
+
+
+def test_a_423_from_the_server_takes_the_console_to_the_show() -> None:
+    js = _html("console.js")
+    assert js.count("r.status === 423") == 3  # api(), raw() and the sign-in check (/auth/me)
+    assert "location.replace(SHOW_PAGE)" in js and "const SHOW_PAGE = '/book/show';" in js
+
+
+async def test_the_show_page_has_the_console_csp_and_loads_the_planned_assets(client: Any) -> None:
+    from jarvis.api.console import CONSOLE_CSP
+
+    r = await client.get("/book/show")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    assert r.headers["content-security-policy"] == CONSOLE_CSP
+    for header, value in (
+        ("cache-control", "no-store"),
+        ("x-content-type-options", "nosniff"),
+        ("x-frame-options", "DENY"),
+        ("referrer-policy", "no-referrer"),
+    ):
+        assert r.headers[header] == value, header
+    html = r.text
+    tags = re.findall(r"<script\b[^>]*>", html)
+    assert all('src="/static/' in t for t in tags)  # no inline script (the CSP forbids it)
+    classic = re.findall(r'<script src="/static/([^"]+)" defer></script>', html)
+    assert tuple(classic) == SHOW_SCRIPTS
+    assert re.findall(r'<script type="module" src="/static/([^"]+)"></script>', html) == [
+        SHOW_MODULE
+    ]
+    assert html.index(f"/static/{SHOW_SCRIPTS[-1]}") < html.index(f"/static/{SHOW_MODULE}")
+    links = re.findall(r'<link rel="stylesheet" href="/static/([^"]+)">', html)
+    assert links == ["console.css", "console-deck.css", "book.css"]
+    assert "https://" not in html and "http://" not in html
+    for deck_only in ('id="dock"', 'id="p-chat"', "/static/console.js", "/static/console-deck.js"):
+        assert deck_only not in html  # it boots without the deck

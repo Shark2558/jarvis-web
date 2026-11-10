@@ -223,6 +223,13 @@ html[data-surface="night"] .dk[aria-pressed="true"] svg{filter:drop-shadow(0 0 5
 /* More (phones only): opens the sheet of panels that don't fit the tab bar. Lit while one of them is
    shown; its accessible name says which. */
 .dk.more{display:none}
+/* R6 I0: the desktop dock stays inside the window. 19 tabs already ran 82 px past each edge of a
+   1440 px screen (Chat and Construct cut off); with Book it scrolls sideways instead, every tab
+   at its usual size (a focused tab scrolls into view; the thin theme scrollbar shows there is more). */
+@media (min-width: 900px){
+  .dock{max-width:calc(100vw - 24px);overflow-x:auto;overscroll-behavior-x:contain}
+  .dk,.dock .sep{flex:none}
+}
 .dk.more.on,.dk.more[aria-expanded="true"]{color:var(--accent-ink);background:var(--tint);border-color:var(--line);box-shadow:inset 0 -2px 0 var(--accent-2),0 6px 16px -10px var(--accent)}
 
 /* ---- the More sheet: a native modal <dialog> pinned to the bottom edge ------------------------ */

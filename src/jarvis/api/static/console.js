@@ -63,6 +63,14 @@
   // Only this server's own paths: one leading "/". "//host" and "/\host" are read by browsers as
   // another host, and a relative path depends on the page address; none of them ever gets the token.
   const OWN_PATH = /^\/(?![/\\])/;
+  // R6 D10: while a guest watches the build book, every console of the owner is held: the server
+  // answers 423 (show_locked) and this console goes to the show, the one page it may open until
+  // the owner's passkey resumes it.
+  const SHOW_PAGE = '/book/show';
+  function toShow() {
+    try { window.location.replace(SHOW_PAGE); } catch (_) {}
+    const err = new Error('JARVIS is showing the build book.'); err.status = 423; err.code = 'show_locked'; return err;
+  }
   async function api(path, opts = {}) {
     if (typeof path !== 'string' || !OWN_PATH.test(path)) throw new Error('Not a JARVIS API path.');
     const headers = Object.assign({ 'X-Requested-With': 'JARVIS' }, opts.headers || {});
@@ -70,6 +78,7 @@
     if (state.authMode === 'token' && state.token) headers['Authorization'] = 'Bearer ' + state.token;
     const r = await fetch(path, { method: opts.method || (opts.body !== undefined ? 'POST' : 'GET'),
       headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined, credentials: 'same-origin' });
+    if (r.status === 423) throw toShow();
     if (r.status === 401) { // every non-2xx error carries .status: callers leave a 401 to the gate
       showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err;
     }
@@ -94,6 +103,7 @@
     const headers = Object.assign({}, opts.headers || {}, { 'X-Requested-With': 'JARVIS' });
     if (state.authMode === 'token' && state.token) headers['Authorization'] = 'Bearer ' + state.token;
     const r = await fetch(path, { method: opts.method || 'GET', headers, body: opts.body, signal: opts.signal, credentials: 'same-origin' });
+    if (r.status === 423) throw toShow();
     if (r.status === 401) { showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err; }
     return r;
   }
@@ -621,6 +631,7 @@
     renderBanner(fallbackWarning);
     if (state.authMode === 'google') {
       const r = await fetch('/auth/me', { credentials: 'same-origin' });
+      if (r.status === 423) { toShow(); return; }
       if (r.status !== 200) { showGate(); return; }
       const me = await r.json();
       const who = $('who'); who.textContent = (me.email || '?').charAt(0).toUpperCase(); who.title = me.email; who.hidden = false;

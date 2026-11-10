@@ -42,6 +42,7 @@
 <link rel="stylesheet" href="/static/console-people.css">
 <link rel="stylesheet" href="/static/console-vitals.css">
 <link rel="stylesheet" href="/static/console-systems.css">
+<link rel="stylesheet" href="/static/console-book.css">
 </head>
 <body>
 <div class="aurora a1" aria-hidden="true"></div><div class="aurora a2" aria-hidden="true"></div>
@@ -615,6 +616,23 @@
     <div class="pbody"></div>
   </section>
 
+  <!-- R6 (docs/plans/r6-build-book.md D8, D16): the Book panel. console-book.js (status, Open, Book settings) and
+       console-book-reader.js (sections, older releases, the code download) fill #bookBody, textContent only. -->
+  <section class="panel card" id="p-book" data-panel="book" aria-labelledby="t-book" hidden>
+    <header class="ptitle">
+      <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5.6C8.4 4.3 6.1 3.7 2.8 3.9v11.2c3.3-.2 5.6.4 7.2 1.7 1.6-1.3 3.9-1.9 7.2-1.7V3.9c-3.3-.2-5.6.4-7.2 1.7z"/><path d="M10 5.6v11.2"/></svg>
+      <h2 id="t-book">Book</h2><span class="pmeta" id="bookMeta">The build book</span>
+      <div class="pacts">
+        <button class="pbtn grip" type="button" data-grip aria-label="Move Book panel with arrow keys"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg></button>
+        <button class="pbtn" type="button" data-close aria-label="Close Book panel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="pbody"><div id="bookBody">
+      <div class="rhead"><span class="k nw">Build book</span><span class="k nw" id="bookState">Off</span></div>
+      <div class="list"><div class="kv"><span>This release</span><b id="bookRelease">&#x2014;</b></div><div class="kv"><span>Sealed in your vault</span><b id="bookKept">&#x2014;</b></div></div>
+      <p class="bnote" id="bookNote">The build book isn't available on this server yet.</p></div></div>
+  </section>
+
   <section class="panel card" id="p-construct" data-panel="construct" aria-labelledby="t-construct" hidden>
     <header class="ptitle">
       <svg class="pico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg>
@@ -657,6 +675,7 @@
     <button class="dk ovf" type="button" data-open="vitals" aria-controls="p-vitals" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span>Vitals</span></button>
     <button class="dk ovf" type="button" data-open="connectors" aria-controls="p-connectors" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="m7 9 6-3M7 11l6 3"/></svg><span>Connectors</span></button>
     <button class="dk ovf" type="button" data-open="people" aria-controls="p-people" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="4.5"/><path d="m12 12 4.5 4.5"/></svg><span>People</span></button>
+    <button class="dk ovf" type="button" data-open="book" aria-controls="p-book" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5.6C8.4 4.3 6.1 3.7 2.8 3.9v11.2c3.3-.2 5.6.4 7.2 1.7 1.6-1.3 3.9-1.9 7.2-1.7V3.9c-3.3-.2-5.6.4-7.2 1.7z"/><path d="M10 5.6v11.2"/></svg><span>Book</span></button>
     <button class="dk ovf" type="button" data-open="voice" aria-controls="p-voice" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span>Voice</span></button>
     <button class="dk ovf" type="button" data-open="media" aria-controls="p-media" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg><span>Media</span></button>
     <button class="dk ovf" type="button" data-open="construct" aria-controls="p-construct" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg><span>Construct</span></button>
@@ -710,6 +729,7 @@
     <button class="sheet-item" type="button" data-sheet-open="vitals"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5h3.2l1.8-4.5 3 9 2.2-6 1.3 1.5h3.5"/></svg><span><b>Vitals</b><small>Reply speed, this month's spend and your limit</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="connectors"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="m7 9 6-3M7 11l6 3"/></svg><span><b>Connectors</b><small>GitHub, your YouTube channel and Google Photos</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="people"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="4.5"/><path d="m12 12 4.5 4.5"/></svg><span><b>People</b><small>Public figures and work due-diligence, profiles open in your browser</small></span></button>
+    <button class="sheet-item" type="button" data-sheet-open="book"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5.6C8.4 4.3 6.1 3.7 2.8 3.9v11.2c3.3-.2 5.6.4 7.2 1.7 1.6-1.3 3.9-1.9 7.2-1.7V3.9c-3.3-.2-5.6.4-7.2 1.7z"/><path d="M10 5.6v11.2"/></svg><span><b>Book</b><small>How JARVIS is built, sealed with each release, and the show</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="voice"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.6a2.6 2.6 0 0 0-2.6 2.6v4.6a2.6 2.6 0 0 0 5.2 0V5.2A2.6 2.6 0 0 0 10 2.6z"/><path d="M5 9.6a5 5 0 0 0 10 0M10 14.6v2.8M7.2 17.4h5.6"/></svg><span><b>Voice</b><small>JARVIS's voice, speed and wit; how this device listens</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="media"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5"/><path d="m8.5 7.6 4 2.4-4 2.4z"/></svg><span><b>Media</b><small>Play the videos and music JARVIS found for you</small></span></button>
     <button class="sheet-item" type="button" data-sheet-open="construct"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.5 6.5 3.8v7.4L10 17.5l-6.5-3.8V6.3z"/><path d="m3.5 6.3 6.5 3.8 6.5-3.8M10 10.1v7.4"/></svg><span><b>Construct</b><small>The rotating hologram</small></span></button>
@@ -772,6 +792,8 @@
 <script src="/static/console-systems-modal.js" defer></script>
 <script src="/static/console-connectors.js" defer></script>
 <script src="/static/console-people.js" defer></script>
+<script src="/static/console-book.js" defer></script>
+<script src="/static/console-book-reader.js" defer></script>
 <script type="module" src="/static/console-3d.js"></script>
 </body>
 </html>

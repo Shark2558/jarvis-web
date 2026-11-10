@@ -22,8 +22,8 @@ from jarvis.vitals.service import MANUAL_UNAVAILABLE as MANUAL_NOTE
 from jarvis.vitals.words import NO_CREDIT, words_for
 
 PANELS = (
-    "activity approvals brief chat connectors construct faces history home integrations media "
-    "memory notes people privacy things vault vitals voice"
+    "activity approvals book brief chat connectors construct faces history home integrations "
+    "media memory notes people privacy things vault vitals voice"  # R6 I0: book (the empty shell)
 ).split()
 # A selector that shows the panel has painted its data (best effort; a miss is never fatal).
 READY: dict[str, str] = {

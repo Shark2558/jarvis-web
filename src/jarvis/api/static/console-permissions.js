@@ -384,6 +384,9 @@
     if (remember) store.set(OPEN_KEY, open ? '1' : '0');
     if (open && stale()) load(); else render();
   }
+  // R6: the build book's show page (book.html) loads this file for window.JarvisPasskey only; it has
+  // no Permissions section, so nothing below runs there.
+  if (!btn || !body) return;
   btn.addEventListener('click', () => expand(body.hidden, true));
   function afterReauth() {
     let q; try { q = new URLSearchParams(window.location.search); } catch (_) { return; }

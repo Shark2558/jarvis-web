@@ -48,8 +48,8 @@ from jarvis.api.book_show_access import (
 )
 from jarvis.api.identity import current_user
 from jarvis.billing.service import BudgetError
-from jarvis.buildbook.model import SessionView
 from jarvis.buildbook.lines import LINES
+from jarvis.buildbook.model import SessionView
 from jarvis.buildbook.ports import BookUnavailable, LockUnreadable, SessionGone
 from jarvis.buildbook.service import BookService
 from jarvis.logging import get_logger

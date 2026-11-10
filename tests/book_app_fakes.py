@@ -25,8 +25,8 @@ from passkey_fakes import SoftAuthenticator
 from pydantic import SecretStr
 
 from jarvis.api import create_app
-from jarvis.api.r6_wiring import wire_book
 from jarvis.api.identity import user_id_for_email
+from jarvis.api.r6_wiring import wire_book
 from jarvis.config import AuthMode, Settings
 from jarvis.core.guardrails import ConfirmationGate
 from jarvis.memory.inmemory import InMemorySessionStore

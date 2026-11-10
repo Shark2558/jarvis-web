@@ -41,7 +41,9 @@ the child's name no alert), and R4's r4_needles scan (a red vitals line and a se
 both ring in quiet hours; no-AI mode answers vitals / systems / calendar with no model call and
 refuses drafting; a bare private name is refused with no links; a pasted key never reaches a
 document, log, audit entry, card or Telegram text; a child is never named; + three negative
-controls). The exit status is the gated suites: phase0 --mock is a smoke run and never fails CI.
+controls), and R6's r6_book (the build book: generator, sealing, access, the guest, the wipe and
+the guest lock, one suite file per part, each with its negative controls). The exit status is the
+gated suites: phase0 --mock is a smoke run and never fails CI.
 """
 
 from __future__ import annotations
@@ -100,6 +102,9 @@ SUITES = [
     # both ring in quiet hours; no-AI mode answers the free skills and refuses drafting; a bare
     # private name gets no links; a pasted key never appears anywhere; a child is never named)
     ("r4 needles (gated)", [sys.executable, str(HERE / "r4_needles" / "run.py"), "--mock"], True),
+    # R6: the build book, one suite file per part (gen A, seal B, access / guest / wipe / lock C);
+    # at I0 none exists yet and the runner passes. I1 adds "--require-all" once A-C are merged.
+    ("r6_book (gated)", [sys.executable, str(HERE / "r6_book" / "run.py"), "--mock"], True),
 ]
 
 

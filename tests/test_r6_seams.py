@@ -592,3 +592,34 @@ async def test_the_show_page_has_the_console_csp_and_loads_the_planned_assets(cl
     assert "https://" not in html and "http://" not in html
     for deck_only in ('id="dock"', 'id="p-chat"', "/static/console.js", "/static/console-deck.js"):
         assert deck_only not in html  # it boots without the deck
+
+
+# ---- 10 the mock eval skeleton -------------------------------------------------------------------
+R6_EVALS = ROOT / "evals/r6_book/run.py"
+PART_SUITES = ("gen", "seal", "access", "guest", "wipe", "lock")
+
+
+def test_the_r6_book_eval_runner_waits_for_the_part_suites() -> None:
+    import sys
+
+    present = [n for n in PART_SUITES if (R6_EVALS.parent / f"{n}.py").is_file()]
+    r = subprocess.run(
+        [sys.executable, str(R6_EVALS), "--mock"], capture_output=True, text=True, check=False
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    for name in PART_SUITES:
+        if name not in present:
+            assert f"{name}: not built yet" in r.stdout
+    strict = subprocess.run(
+        [sys.executable, str(R6_EVALS), "--mock", "--require-all"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert strict.returncode == (0 if len(present) == len(PART_SUITES) else 1), strict.stdout
+
+
+def test_the_r6_book_suite_is_gated_in_the_mock_run() -> None:
+    src = (ROOT / "evals/run_all_mock.py").read_text(encoding="utf-8")
+    line = next(ln for ln in src.splitlines() if '"r6_book (gated)"' in ln)
+    assert 'HERE / "r6_book" / "run.py"' in line and line.rstrip().endswith("True),")

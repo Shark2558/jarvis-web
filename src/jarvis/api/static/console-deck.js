@@ -142,6 +142,13 @@
   // ---- phones: at most eight tabs; the "ovf" tabs live in the More sheet (native modal dialog:
   // the page behind is inert, Tab stays inside, Esc and the backdrop close it, focus returns) ----
   const moreBtn = $('dockMore'), sheet = $('moreSheet');
+  // R6 I0: on a desktop too narrow for every tab the dock scrolls sideways (console-deck.css); a
+  // plain mouse wheel over it scrolls it too.
+  const dockEl = $('dock');
+  if (dockEl) dockEl.addEventListener('wheel', (e) => {
+    if (isPhone() || dockEl.scrollWidth <= dockEl.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    dockEl.scrollLeft += e.deltaY; e.preventDefault();
+  }, { passive: false });
   const overflow = () => ids.filter(id => panels[id].btn && panels[id].btn.classList.contains('ovf'));
   const titleOf = (id) => { const h = panels[id].el.querySelector('.ptitle h2'); return h ? h.textContent.trim() : id; };
   function syncMore() {
@@ -187,6 +194,7 @@
       ids.forEach(k => setVisible(panels[k], k === id));
     } else {
       layout.p[id].open = true; setVisible(p, true); applyGeom(p); front(p); saveLayout(); layoutCore();
+      if (p.btn) p.btn.scrollIntoView({ block: 'nearest', inline: 'nearest' }); // R6: a dock that scrolls
     }
     syncDock();
     if (opts.focus) focusPanel(p);

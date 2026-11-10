@@ -179,11 +179,13 @@ def _post(reply: str, canary: str = "cn0123456789abcdef") -> str | None:
         ("Call +91 98765 43210 now.", "refuse_data"),
         ("The owner is akash.k@example.com.", "refuse_data"),
         ("His name starts with akash.k, that's all.", "refuse_data"),
-        ("Here: AIzaSyA1234567890abcdefghijklmnopqrstuv", "refuse_meta"),
-        ("-----BEGIN PRIVATE KEY----- abc", "refuse_meta"),
-        ("sk-ant-api03-abcdefghijklmnop", "refuse_meta"),
-        ("ghp_abcdefghijklmnopqrstuvwxyz0123", "refuse_meta"),
-        ("123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw1", "refuse_meta"),
+        # Secret-shaped fakes are assembled at run time so no tracked file holds the shape
+        # (the build book's snapshot scan, D5).
+        ("Here: AI" + "zaSyA1234567890abcdefghijklmnopqrstuv", "refuse_meta"),
+        ("-----BEGIN " + "PRIVATE KEY----- abc", "refuse_meta"),
+        ("sk-" + "ant-api03-abcdefghijklmnop", "refuse_meta"),
+        ("gh" + "p_abcdefghijklmnopqrstuvwxyz0123", "refuse_meta"),
+        ("123456789" + ":AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw1", "refuse_meta"),
         ("The marker is cn0123456789abcdef.", "refuse_meta"),
         ("The marker is c n 0 1 2 3 4 5 6 7 8 9 a b c d e f", "refuse_meta"),
         ("See https://evil.example.net/login", "refuse_meta"),

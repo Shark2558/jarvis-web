@@ -754,15 +754,18 @@ def test_an_utterance_over_the_word_cap_is_never_a_device_command(
 
 # ====================================================================== I1: cross-module seams
 # Every listed microphone "exists": the fake capture device stands in for whichever id is asked for,
-# and each request is recorded, so a test can see which device a listening turn opened.
+# and each request is recorded, so a test can see which device a listening turn opened. A chosen
+# microphone answers late, as a Bluetooth headset does, so the reopen gap (old stream closed, new one
+# not yet live) is always there for a test to get wrong, not only on a slow CI runner.
 ANY_MIC = """
 (() => {
   window.__cons = [];
+  const LATE_MS = 1000;
   const md = navigator.mediaDevices, inner = md.getUserMedia.bind(md);
   md.getUserMedia = (c) => {
     window.__cons.push(JSON.parse(JSON.stringify(c)));
-    const audio = Object.assign({}, c.audio); delete audio.deviceId;
-    return inner({ audio });
+    const audio = Object.assign({}, c.audio), chosen = !!audio.deviceId; delete audio.deviceId;
+    return inner({ audio }).then(s => chosen ? new Promise(r => setTimeout(() => r(s), LATE_MS)) : s);
   };
 })();
 """
@@ -786,8 +789,16 @@ def test_a_mic_chosen_mid_conversation_takes_over_at_the_next_turn_and_is_no_lon
     n = ev(c, "window.__cons.length")
     c.page.wait_for_function(f"() => window.__cons.length > {n}", timeout=60000)
     assert ev(c, "window.__cons[window.__cons.length - 1].audio.deviceId") == {"exact": "buds-mic"}
-    wf(c, "JarvisAudioRoutePrefs.inputPending() === false")
-    assert ev(c, "JarvisAudio.isOpen()") is True and ev(c, "JarvisAudio.inputId()") == "buds-mic"
+    # open() closes the old stream before the new one is live, and a closed mic is never pending,
+    # so "not pending" alone proves nothing yet: wait for the reopened stream itself
+    wf(c, "JarvisAudio.isOpen() && JarvisAudio.inputId() === 'buds-mic'")
+    now = ev(
+        c,
+        "({open: JarvisAudio.isOpen(), id: JarvisAudio.inputId(), switched: JarvisAudio.switched(),"
+        " pending: JarvisAudioRoutePrefs.inputPending()})",
+    )
+    # one read of the page: the live stream is the one asked for buds-mic, and nothing is pending
+    assert now == {"open": True, "id": "buds-mic", "switched": False, "pending": False}
     c.page.keyboard.press("Escape")
     assert c.errors == []
 

@@ -33,6 +33,10 @@ NO_KEY = (
     "The build book is off on this server: it has no encryption key, and the book is only ever "
     "kept sealed."
 )
+SETUP_FAILED = (  # integrated review L2: the true reason (the class is in the logs and on Vitals)
+    "The build book could not start on this server (see the server's logs); the rest of JARVIS "
+    "is running."
+)
 UNBUILT = "This release's build book could not be built at deploy."
 TALK_OFF = "The talk-through isn't available on this server."
 
@@ -139,11 +143,12 @@ async def _open_part(request: Request, uid: str) -> dict[str, Any]:
 
 
 def off_body(request: Request) -> dict[str, Any]:
-    """`GET /v1/book` while the book is off here (no keyring, D6): a plain 200 the panel shows,
-    with the Contract's fields at their empty values (I1: never a 503 at console boot)."""
+    """`GET /v1/book` while the book is off here (no keyring, D6, or its setup failed): a plain
+    200 the panel shows, with the Contract's fields at their empty values (I1: never a 503)."""
+    failed = getattr(request.app.state, "book_off", None) == "setup_failed"
     return {
         "available": False,
-        "reason": NO_KEY,
+        "reason": SETUP_FAILED if failed else NO_KEY,
         "release": None,
         "sealed": [],
         "sealed_ok": True,
@@ -172,4 +177,4 @@ async def status_body(
     }
 
 
-__all__ = ["NO_BOOK", "NO_KEY", "TALK_OFF", "UNBUILT", "off_body", "status_body"]
+__all__ = ["NO_BOOK", "NO_KEY", "SETUP_FAILED", "TALK_OFF", "UNBUILT", "off_body", "status_body"]

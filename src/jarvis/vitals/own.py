@@ -24,13 +24,12 @@ from jarvis.config import Settings
 from jarvis.logging import get_logger
 from jarvis.vitals.auto import UNREADABLE, next_month_start
 from jarvis.vitals.models import Group, Kind, Provider, Status
+from jarvis.vitals.own_cache import CachedUsage
 from jarvis.vitals.words import NO_CREDIT
 
 log = get_logger(__name__)
 
 SOURCE_TIMEOUT_S = 3.0  # each source's deadline: a slow one is "unknown", never a slow board
-WEB_CACHE_S = 600.0  # the vendor's usage report, at most once per 10 minutes per process
-WEB_RETRY_S = 60.0  # after a failed report, wait this long before asking again
 SECONDS_PER_MINUTE = MINUTES_PER_HOUR = 60  # the board's age words: minutes, then hours
 
 LABELS: Mapping[str, str] = {
@@ -41,6 +40,7 @@ LABELS: Mapping[str, str] = {
     "web_credits": "Web search allowance",
     "github_token": "GitHub token",
     "home_link": "Home laptop link",
+    "build_book": "Build book",  # R6 review L2: only when it could not start on this server
 }
 OWN_IDS = frozenset(LABELS)
 # Rung elsewhere already, so quiet here; the health brain probe reads only the DEFAULT brain.
@@ -175,6 +175,7 @@ class OwnSources:
     # The brain the systems check's probe watches ("anthropic" or "gemini", the router's id).
     # Its item is quiet here; the other brain's key still rings from Vitals. None: both ring.
     default_brain: str | None = None
+    book: Callable[[], str | None] | None = None  # R6: the build book's setup error class, or None
 
 
 @dataclass(frozen=True)
@@ -182,27 +183,6 @@ class OwnItem:
     provider: Provider
     base: tuple[Status, str]  # the thing's own state + its fixed reason
     group: Group = "keys"
-
-
-class CachedUsage:
-    """The vendor's usage report, kept for `WEB_CACHE_S` (a failure for `WEB_RETRY_S`)."""
-
-    def __init__(self, reporter: UsageReporterLike) -> None:
-        self._reporter = reporter
-        self._lock = asyncio.Lock()
-        self._at = -math.inf
-        self._value: VendorUsageLike | None = None
-
-    async def get(self, now: float) -> VendorUsageLike:
-        async with self._lock:
-            fresh = now - self._at < (WEB_CACHE_S if self._value is not None else WEB_RETRY_S)
-            if not fresh:
-                self._at = now
-                self._value = None
-                self._value = await self._reporter.usage()
-            if self._value is None:
-                raise LookupError("usage report unavailable")
-            return self._value
 
 
 def _item(pid: str, base: tuple[Status, str], *, note: str = "", **kw: Any) -> OwnItem:
@@ -274,6 +254,7 @@ class Own:
             ("web_credits", lambda: self._web_credits(now, tz)),
             ("github_token", lambda: self._github(uid, now)),
             ("home_link", lambda: self._home(uid, now)),
+            ("build_book", self._book),
         ]
         got = await asyncio.gather(*(self._guard(pid, job) for pid, job in jobs))
         return [i for i in got if i is not None]
@@ -381,6 +362,14 @@ class Own:
             ("amber", "reports a problem") if st.state == "degraded" else ("ok", "")
         )
         return _item("home_link", base, note=f"Last heartbeat {_ago(age)}.")
+
+    async def _book(self) -> OwnItem | None:
+        """R6 review L2: shown only when the build book could not start (its error class)."""
+        failed = self._src.book() if self._src.book is not None else None
+        if not failed:
+            return None
+        note = f"It could not start on this server ({failed}); the server's logs say more."
+        return _item("build_book", ("amber", "could not start"), note=note)
 
 
 __all__ = [

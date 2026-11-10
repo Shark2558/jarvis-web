@@ -55,6 +55,7 @@ async def test_real_classes_fill_every_item(connected: GoogleConnector) -> None:
         web=Tavily(),
         github=github,
         home=home,
+        book=lambda: "RuntimeError",  # R6 review L2: the book item shows only when it failed
     )
     rig = OwnRig(own, settings=with_keys())
     rig.clock.now = NOW

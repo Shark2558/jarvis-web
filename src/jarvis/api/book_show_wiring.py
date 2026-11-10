@@ -22,6 +22,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from jarvis.api.book_http import book_now
 from jarvis.api.r4_wiring import _notifier
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.buildbook.lock import DocShowLock
@@ -131,7 +132,7 @@ def wire_book_c(
 def book_sweep_job(app: FastAPI) -> BookSweepJob | None:
     """D14's `book_sweep` TickJob for I1's `r6_tick_jobs` (None while the book is off)."""
     svc: BookService | None = getattr(app.state, "book_service", None)
-    return None if svc is None else BookSweepJob(svc)
+    return None if svc is None else BookSweepJob(svc, clock=lambda: book_now(app))
 
 
 __all__ = ["C_STATE", "LIMITS", "book_sweep_job", "wire_book_c"]

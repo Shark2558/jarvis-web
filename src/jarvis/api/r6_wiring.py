@@ -30,12 +30,13 @@ D (the reader's switches): `SETTINGS_KEYS` (`talk_on`, as the Contract's `talk: 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from fastapi import FastAPI
 
 from jarvis.api.book import install_book
+from jarvis.api.book_http import book_now
 from jarvis.api.book_lock import install_show_lock_middleware, owner_ids
 from jarvis.api.book_show import install_book_show
 from jarvis.api.book_show_wiring import C_STATE, book_sweep_job, wire_book_c
@@ -89,6 +90,11 @@ class SettingsPrefs:
         return got.model_dump(include=set(SETTINGS_KEYS))
 
 
+def book_clock(app: FastAPI) -> Callable[[], datetime]:
+    """`book_now` as a clock for the parts built once (tickets, the privacy row, L3)."""
+    return lambda: book_now(app)
+
+
 def lock_store(s: Settings, docs: Docs) -> DocShowLock:
     """D10's lock store: documents only, no keyring (it must hold while the book is off); it
     knows every owner, whose cookie sessions a Resume ends too (SEC-4)."""
@@ -102,7 +108,7 @@ def _book_off(app: FastAPI, s: Settings, lock: DocShowLock, why: str) -> None:
         setattr(st, name, None)
     st.book_jobs = None
     st.book_lock = lock if s.auth_mode is AuthMode.GOOGLE else None
-    st.book_off = why
+    st.book_off, st.book_off_error = why, None
 
 
 def wire_book(
@@ -140,7 +146,7 @@ def wire_book(
         limit_mb=mb,
         prefix=p,
     )
-    st.book_tickets = BookTickets(docs, keyring, prefix=p)
+    st.book_tickets = BookTickets(docs, keyring, prefix=p, clock=book_clock(app))
     st.book_settings = BookSettingsStore(docs, prefix=p)
     wire_book_c(
         app,
@@ -175,6 +181,7 @@ async def wire_r6(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> N
     except Exception as exc:  # noqa: BLE001 - optional part: never fatal at start
         log.error("The build book is OFF: its setup failed", extra={"error": type(exc).__name__})
         _book_off(app, s, lock, "setup_failed")
+        app.state.book_off_error = type(exc).__name__  # the class only (Vitals, L2): no message
 
 
 def install_r6_routes(app: FastAPI) -> None:
@@ -218,15 +225,18 @@ def r6_privacy_sources(app: FastAPI) -> tuple[PrivacySource, ...]:
     return (
         BookSealedSource(st.book_vault, st.book_sealer, limit_mb=s.book_max_total_mb),
         BookSessionsSource(
-            st.book_sessions, end=_wipe(st.book_service), session_minutes=s.book_session_minutes
+            st.book_sessions,
+            end=_wipe(app, st.book_service),
+            session_minutes=s.book_session_minutes,
+            clock=book_clock(app),
         ),
         BookSettingsSource(st.book_settings),
     )
 
 
-def _wipe(service: BookService) -> Callable[[str], Awaitable[int]]:
+def _wipe(app: FastAPI, service: BookService) -> Callable[[str], Awaitable[int]]:
     async def end(uid: str) -> int:
-        return await service.wipe(uid, now=datetime.now(UTC))
+        return await service.wipe(uid, now=book_now(app))
 
     return end
 
@@ -236,6 +246,8 @@ __all__ = [
     "R6_STATE",
     "SETTINGS_KEYS",
     "SettingsPrefs",
+    "book_clock",
+    "book_now",
     "install_r6_routes",
     "install_show_lock",
     "lock_store",

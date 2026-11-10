@@ -48,6 +48,10 @@ WORDS: Mapping[str, tuple[str, str]] = {
         "If this stops: the home camera, devices and alarm can't reach JARVIS.",
         "Check the home laptop is on, awake and online, then restart the JARVIS bridge on it.",
     ),
+    "build_book": (  # R6 review L2: shown only when the book could not start
+        "If this stops: the build book is off on this server; the rest of JARVIS keeps working.",
+        "Deploy again; if it stays, the server's logs name the error class shown here.",
+    ),
     SPEND_ID: (
         "If this stops: paid replies pause; JARVIS uses the free brain.",
         "Raise the monthly limit with Set limit above, or wait for the new month.",

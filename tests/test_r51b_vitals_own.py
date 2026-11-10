@@ -332,6 +332,7 @@ async def test_every_own_item_has_fixed_words_and_is_reserved() -> None:
         web=Web(),
         github=Github(Meta(epoch)),
         home=Home(HomeSt("online", epoch)),
+        book=lambda: "RuntimeError",  # R6 review L2: shown only when the book could not start
     )
     board = await OwnRig(own, clock=rig.clock).svc.board(UID)
 

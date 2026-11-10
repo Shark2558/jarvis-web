@@ -27,6 +27,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
+from jarvis.api.book_http import setup_failure
 from jarvis.config import Settings
 from jarvis.health import probes as P
 from jarvis.health.briefing import Briefing
@@ -97,6 +98,7 @@ def vitals_sources(app: FastAPI) -> OwnSources:
         github=getattr(st, "github", None),  # GithubClient.status / .token_meta
         home=getattr(st, "home_store", None),  # HomeStore.status(uid)
         default_brain=brains.default.id,  # the brain the systems check's probe watches
+        book=lambda: setup_failure(app),  # R6 review L2: read per board (R6 wires after Vitals)
     )
 
 

@@ -536,6 +536,7 @@ else
     --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${TG_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 fi
+make book || echo "  Note: no build book this time (make book needs Python with JARVIS's packages)."
 gcloud run deploy "$SERVICE" --source . --region "$REGION" \
   --service-account "$RUN_SA" \
   --allow-unauthenticated \

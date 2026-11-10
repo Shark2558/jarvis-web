@@ -1,4 +1,4 @@
-.PHONY: install test lint type eval eval-mock serve chat browser-test lock
+.PHONY: install test lint type eval eval-mock serve chat browser-test lock book
 
 install:
 	pip install -e ".[dev]"
@@ -36,3 +36,9 @@ lock:
 	pip install -q pip-tools
 	pip-compile --generate-hashes --strip-extras --allow-unsafe -o requirements.lock \
 		pyproject.toml requirements-build.in
+
+# R6 D4: write this commit's build book into src/jarvis/buildbook/_book (git-ignored; the image
+# carries it). Best effort: on a failure release.json names the error and there is no book.
+# deploy/cloudrun.sh runs it before a hand deploy; CI's deploy job does the same.
+book:
+	PYTHONPATH=src python -m jarvis.buildbook.gen --out src/jarvis/buildbook/_book --best-effort

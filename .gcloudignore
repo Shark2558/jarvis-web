@@ -1,0 +1,9 @@
+# What `gcloud run deploy --source .` (deploy/cloudrun.sh) uploads. Without this file gcloud makes
+# this same list from .gitignore, which would leave out the build book that `make book` just wrote
+# (R6 D4: src/jarvis/buildbook/_book is git-ignored but must reach the image). Same as gcloud's
+# default, plus that one folder.
+.gcloudignore
+.git
+.gitignore
+#!include:.gitignore
+!src/jarvis/buildbook/_book/

@@ -10,18 +10,20 @@ Telegram token from Secret Manager), so only someone holding the owner's Google 
 run it. It needs NO token key (integrated review SEC-6): lifting the lock and closing sessions
 touch no key. It shows what is locked, asks before changing anything (`--yes` skips the
 question), then: audit line FIRST (no audit, no change) -> lift the lock, ending every owner's
-cookie sessions from now (SEC-4) -> end every build book session of the owner (each told with
-`book_session_closed`) -> a notice even when none was open. A lock on ANOTHER owner holds these
-consoles too: it is named, nothing changes, and the exit code is 1. Exit codes: 0 done (or
-nothing to do), 1 not done (declined, unreadable, not recorded, another owner's lock), 2 refused
-(not an owner, no reason, not the server's Firestore). The runbook is in INTEGRATION-C.md.
+cookie sessions issued before the moment of the lift, even one made while it asked (SEC-4) ->
+end every build book session of the owner (each told with `book_session_closed`) -> a notice
+even when none was open. A lock on ANOTHER owner holds these consoles too: it is named, nothing
+changes, and the exit code is 1. Exit codes: 0 done (or nothing to do), 1 not done (declined,
+unreadable, not recorded, another owner's lock), 2 refused (not an owner, no reason, not the
+server's Firestore). The runbook is in INTEGRATION-C.md.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Callable, Sequence
+import inspect
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 
 from jarvis.buildbook.model import Book, FileKind, Release
@@ -44,6 +46,8 @@ NOT_OWNER = "That isn't one of this JARVIS's owners (JARVIS_OWNER_EMAILS)."
 NO_REASON = "Say why in --reason (a few words; it goes into the audit)."
 ABOUT = "Lift a guest lock without the passkey: the owner only, with the server's own credentials."
 ASK = "Lift the guest lock and end every build book session? Type yes to go on: "
+
+Ask = Callable[[str], bool | Awaitable[bool]]  # input() in a shell; a test may await
 
 
 class UnlockUnavailable(RuntimeError):
@@ -136,14 +140,19 @@ async def _other_lock(svc: BookService, others: Sequence[str]) -> bool:
     return any([await svc.fresh_lock_state(o) is not None for o in others])
 
 
+async def _yes(ask: Ask) -> bool:
+    answer = ask(ASK)
+    return bool(await answer) if inspect.isawaitable(answer) else bool(answer)
+
+
 async def _unlock(
     svc: BookService,
     uid: str,
     reason: str,
     *,
-    ask: Callable[[str], bool],
+    ask: Ask,
     out: Callable[[str], None],
-    now: datetime,
+    clock: Callable[[], datetime],
     others: Sequence[str] = (),
 ) -> int:
     try:
@@ -160,9 +169,10 @@ async def _unlock(
         return 0
     since = f"on since {svc.tell.hhmm(state.since)}" if state is not None else "off"
     out(f"Guest lock: {since}. Build book sessions: {sessions}.")
-    if not ask(ASK):
+    if not await _yes(ask):
         out(KEPT)
         return 1
+    now = clock()  # at the lift, not at the start: a sign-in made while asked stops counting too
     try:  # SEC-4: every owner's cookie session issued before now stops counting
         report = await svc.emergency_unlock(uid, reason, now=now, signed_out_before=now.timestamp())
     except BookOff as exc:
@@ -185,7 +195,7 @@ async def amain(
     *,
     settings: Settings | None = None,
     build: Callable[[Settings], BookService] = build_service,
-    confirm: Callable[[str], bool] = _ask,
+    confirm: Ask = _ask,
     out: Callable[[str], None] = print,
     clock: Callable[[], datetime] = _utcnow,
 ) -> int:
@@ -202,7 +212,7 @@ async def amain(
         return 2
     ask = (lambda _prompt: True) if args.yes else confirm
     others = [o for o in owner_uids(s) if o != uid]
-    return await _unlock(svc, uid, reason, ask=ask, out=out, now=clock(), others=others)
+    return await _unlock(svc, uid, reason, ask=ask, out=out, clock=clock, others=others)
 
 
 def main(argv: Sequence[str] | None = None, **kw: object) -> int:

@@ -5,11 +5,22 @@
 # owner even when no session was open, and asks before it changes anything.
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from contextlib import AsyncExitStack
 from typing import Any
 
 import pytest
-from book_app_fakes import OWNER, owner_uid
+from book_app_fakes import (
+    OWNER,
+    book_app,
+    google_settings,
+    open_book,
+    owner_uid,
+    register_passkey,
+    sign_in,
+)
 from book_rig_fakes import ServiceRig
+from httpx import AsyncClient
 
 from jarvis.buildbook import unlock
 from jarvis.buildbook.ports import BookOff
@@ -76,13 +87,18 @@ class Out:
         self.lines.append(line)
 
 
-async def _cli(rig: ServiceRig, s: Settings, *argv: str, yes: bool = True) -> tuple[int, Out]:
+Confirm = Callable[[str], bool | Awaitable[bool]]
+
+
+async def _cli(
+    rig: ServiceRig, s: Settings, *argv: str, yes: bool = True, confirm: Confirm | None = None
+) -> tuple[int, Out]:
     out = Out()
     code = await unlock.amain(
         list(argv),
         settings=s,
         build=lambda _: rig.svc,
-        confirm=lambda prompt: yes,
+        confirm=confirm or (lambda prompt: yes),
         out=out,
         clock=rig.clock,
     )
@@ -178,11 +194,59 @@ async def test_a_lock_on_another_owner_is_named_and_nothing_changes(
     assert await rig.lock.get(other) is not None
 
 
-async def test_the_command_ends_every_cookie_session_from_now(rig: ServiceRig, s: Settings) -> None:
+async def test_the_command_ends_every_cookie_session_from_the_moment_it_lifts(
+    rig: ServiceRig, s: Settings
+) -> None:
     await rig.open(UID)
-    code, _ = await _cli(rig, s, "--owner", OWNER, "--reason", "lost my passkey")
+    asked: dict[str, float] = {}
+
+    def confirm(prompt: str) -> bool:
+        rig.clock.advance(minutes=3)  # the owner reads the prompt; the lock still holds
+        asked["yes_at"] = rig.clock().timestamp()
+        return True
+
+    code, _ = await _cli(rig, s, "--owner", OWNER, "--reason", "lost my passkey", confirm=confirm)
     assert code == 0
-    assert await rig.lock.valid_after(UID) == rig.clock().timestamp()
+    assert await rig.lock.valid_after(UID) == asked["yes_at"]  # the lift, not the start
+    assert "Emergency unlock at 14:05" in (await rig.tools())[-2][1]
+
+
+class SignInWhileAsked:
+    """`confirm` for the CLI: the guest at the laptop clicks Sign in while the owner reads "Type
+    yes"; the sign-in is minted under the lock (423) and kept open for after the unlock."""
+
+    def __init__(self, app: Any, stack: AsyncExitStack) -> None:
+        self.app, self.stack = app, stack
+        self.minted: list[AsyncClient] = []
+
+    async def __call__(self, prompt: str) -> bool:
+        c = await self.stack.enter_async_context(sign_in(self.app, fresh=False))
+        assert (await c.get("/auth/me")).status_code == 423
+        self.minted.append(c)
+        return True
+
+
+async def _unlock_app(app: Any, s: Settings, confirm: Confirm) -> int:
+    return await unlock.amain(
+        ["--owner", OWNER, "--reason", "lost my passkey"],
+        settings=google_settings(s),
+        build=lambda _: app.state.book_service,
+        confirm=confirm,
+        out=Out(),
+    )
+
+
+async def test_a_sign_in_minted_while_the_prompt_waits_is_refused_after_the_unlock(
+    settings: Settings,
+) -> None:
+    async for app in book_app(settings):
+        async with sign_in(app) as c, AsyncExitStack() as stack:
+            await open_book(c, await register_passkey(c), "guest")
+            guest = SignInWhileAsked(app, stack)
+            assert await _unlock_app(app, settings, guest) == 0 and len(guest.minted) == 1
+            assert (await guest.minted[0].get("/auth/me")).status_code == 401
+            async with sign_in(app, fresh=False) as later:  # a sign-in after the unlock is fine
+                assert (await later.get("/auth/me")).status_code == 200
 
 
 def test_the_runbook_installs_hash_locked_in_a_subshell_without_the_key() -> None:

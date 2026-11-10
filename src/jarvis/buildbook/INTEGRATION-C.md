@@ -245,8 +245,9 @@ nothing it exports outlives it, and it installs the exact, hash-checked versions
 - Leave out the two Telegram lines if you never set up Telegram (you then get no message, only
   the audit line).
 - It shows what is locked and asks "Type yes to go on". Type `yes`. It then writes the audit line
-  first, lifts the lock (every JARVIS sign-in of every owner made before now stops counting:
-  sign in again on each device), ends every build book session (each with its "session has
+  first, lifts the lock (every JARVIS sign-in of every owner made before the moment you typed
+  `yes` stops counting, one made while the question waited included: sign in again on each
+  device), ends every build book session (each with its "session has
   closed" message) and prints what it did. Exit code 0 = done, 1 = not done, 2 = refused.
 - If it says it can't find credentials, run `gcloud auth application-default login` once and
   paste the block again.

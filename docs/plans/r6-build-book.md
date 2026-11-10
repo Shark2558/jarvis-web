@@ -365,3 +365,34 @@ inspected (R5.1 D11) · release plan, go-live guide, architecture note.
 4. **Guest lock scope**: all your JARVIS browsers during a guest show (default) or only the presenting one.
 5. Show voice: JARVIS's cloud voice (default) or the browser voice. 6. Keep 3 releases, 15 MB a snapshot, 60 MB in all?
 7. `AUTODEPLOY=on` in GitHub so every merged release builds its book (hand deploys need `make book` first).
+
+## I1 — what the integration decided (2026-11-10, branch `r6-i1`)
+- **Routes: 16** (the Contract's 15 + `GET /v1/book/show/lock` → `{on, id?, line?}`, cookie only, no ●): D's show learns
+  the lock without a token; `id` (the `book_resume` target) only for the owner whose lock it is. `GET /v1/book` answers
+  200 `{available: false, reason}` when the book is off (no keyring), so the console logs no error at boot.
+- **Lock allow-list (final, D10)**: GET `/book/show`, `/static/…`, `/health`, `/console/config`, `/auth/login`,
+  `/auth/callback`, `/v1/book/show/script`, `/v1/book/show/lock`; POST `/auth/logout`, `/v1/book/show/{speak,hear,ask,beat}`,
+  `/v1/book/close`, `/v1/book/resume`, `/v1/passkeys/challenge`. Every passkey register/reset route, `/auth/me`,
+  `/v1/permissions` and `/v1/book/open` are 423. A passkey lost mid-show: the emergency unlock (`python -m
+  jarvis.buildbook.unlock`, server credentials; runbook in `buildbook/INTEGRATION-C.md`, go-live guide).
+- **One name per Book setting**: `creator_name`, `show_voice`, `talk_on`, `allow_training_brain` (B's store, C's reader
+  through `SettingsPrefs`, D's switches; the plan named none; `talk_on` matches the Contract's `talk: {on}`).
+- **Script** in D's shape: scenes 1–11, `lines {ask, anything_else, ai_off, hand_back (guest)}`, `closing [{id, text}]`,
+  `until`, plus `session`. `speak` takes a reply id `r_…` (stored with its sealed turn; the fixed limit/ai_off replies
+  have derived ids), so a reply's text never goes back to the server. D's close sends its D14 reason.
+- **A session that ended** answers 401 `session_gone` (ports); `console.js` never shows the sign-in gate for that code.
+  An open console tab re-checks `/auth/me` on focus/visibility/pageshow and on a `BroadcastChannel('jarvis-book')`
+  post at a guest open (review D-sec M2).
+- **Jobs**: `book_seal` and `book_sweep` ride the tick and R5.1's 5-minute watchdog (the same instances) and are
+  advisory there (never a 503). **Privacy**: `book_sealed`, `book_sessions` (delete = C's wipe), `book_settings` (the
+  creator name; added to D16's two rows); `{prefix}book_notices/{bk}` is content-free and per session, dropped when its
+  close is told, so it needs no row of its own. **Persona p6.0** (the owner's standard: the persona follows the release).
+- **Accepted deviations**: the owner's reader keeps its book token in the console tab's memory, not the show tab's
+  `sessionStorage` (D9's letter; owner-only, his own unlocked console; review D-sec L5). `console-book-3d.js`
+  `engineOn` is one 106-line factory of ≤ 50-line functions, as `console-3d.js` `createEngine` (review D-code L11).
+  The guest's speech (24,000 characters) and hearing (30 recordings) budgets are per instance; the monthly billing
+  limit is the backstop.
+- **Needs the owner**: the app-wide fresh sign-in treats a missing Google `auth_time` as "now" (R3; R6 no longer relies
+  on it: open = passkey AND sign-in, resume = passkey only); an R7 candidate is to request `auth_time` as essential.
+  D3's guest check refuses a book holding an owner address's local part as a whole word (≥ 3 characters): an address
+  whose local part is a common word of the book ("jarvis", "owner") would block every guest show.

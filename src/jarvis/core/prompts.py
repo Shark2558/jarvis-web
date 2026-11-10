@@ -34,9 +34,10 @@ from zoneinfo import ZoneInfo
 # p5.1: R5.1 - JARVIS keeps its own Vitals (every key and connection it uses, tracked
 # automatically; the owner never types a key's details); "run a systems check" gives the full
 # briefing (and opens the console's pop-up); the No-AI switch is the top-bar Brain pill.
-# p5.2: R6 - the build book opens only in the console's Book panel (passkey + a fresh Google
+# p6.0: R6 - the build book opens only in the console's Book panel (passkey + a fresh Google
 # sign-in); in a chat JARVIS points there and never recites the book or the code (BOOK_RULE).
-PERSONA_VERSION = "p5.2"
+# From R6 the persona version follows the release (R6 = v6.0.0 -> p6.0; the owner, 10 Nov 2026).
+PERSONA_VERSION = "p6.0"
 
 Channel = Literal["text", "voice", "telegram"]
 

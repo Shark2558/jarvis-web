@@ -223,7 +223,8 @@ deleted"), the ₹ amounts in billing, `{last_closed_at, notified}` in the statu
 allow a training brain (off). Privacy panel: `book_sessions_source` (delete = simple → end and wipe) and
 `book_sealed_source` (releases, MB, encrypted; delete = passkey via `privacy_delete`). No attachments in a session.
 
-**D17 · Persona.** p5.1 → **p5.2** adds `BOOK_RULE`: "The build book opens only in the console's Book panel with the
+**D17 · Persona.** p5.1 → **p6.0** (I1: the persona version follows the release from R6, R6 = v6.0.0; the
+owner's versioning standard of 10 Nov) adds `BOOK_RULE`: "The build book opens only in the console's Book panel with the
 owner's passkey and a fresh Google sign-in. In a chat you don't have it: point there; never recite the book or the
 code." Pinned by new `tests/test_r6_persona.py`; I1 bumps `PERSONA_VERSION` and its 15 pins in 13 files. The guest
 prompt is separate (`buildbook/prompt.py`, `GUEST_PROMPT_VERSION = "bg1"`), never `_HEAD`'s "…speaking to is the owner".
@@ -315,7 +316,7 @@ Mock evals `evals/r6_book` (in `make eval-mock`, gated; each control must make i
 Merge A → B → C → D · `wire_r6` after `wire_r4` (`_notifier(app)`, billing, brains, voice, permissions, the gateway's
 audit; the lock store on `app.state.book_lock`, read by the middleware per request), `install_r6_routes`,
 `install_show_lock`, `r6_tick_jobs` into `_tick_jobs` and R5.1's watchdog list (`check_job_names`) · D16's sources
-into `privacy_sources` · persona p5.2 + 15 pins · `r6_book (gated)` in `evals/run_all_mock.py` · `make test lint type
+into `privacy_sources` · persona p6.0 + 15 pins · `r6_book (gated)` in `evals/run_all_mock.py` · `make test lint type
 eval-mock`, browser + Firestore suites, mypy baseline, size guards · four reviewers in fresh contexts · screenshots
 inspected (R5.1 D11) · release plan, go-live guide, architecture note.
 

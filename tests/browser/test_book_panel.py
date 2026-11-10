@@ -61,7 +61,8 @@ def test_status_shows_the_release_the_sealed_books_and_the_two_opens(
         assert rows.count() == 3
         assert "R5.1" in rows.nth(1).inner_text() and "MB" in rows.nth(1).inner_text()
         assert "13.1" in body.inner_text() and "60" in body.inner_text()
-        assert "23 min" in body.locator(".bk-last").inner_text()
+        last = body.locator(".bk-last").inner_text()  # D14: {last_closed_at, notified} only
+        assert "Nov 9" in last and "conversation was deleted" in last and "undefined" not in last
         assert body.get_by_role("button", name="Open for me").is_visible()
         assert body.get_by_role("button", name="Show a guest").is_visible()
         _clean(c)

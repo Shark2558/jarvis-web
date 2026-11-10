@@ -38,11 +38,8 @@ def status(**over: Any) -> dict[str, Any]:
         "limit_mb": 60,
         "session": None,
         "lock": {"on": False},
-        "last_closed": {
-            "at": "2026-11-09T14:25:00+05:30",
-            "minutes": 23,
-            "questions": 4,
-            "audience": "guest",
+        "last_closed": {  # D14 "what stays": the status doc, as C's BookService answers it (I1)
+            "last_closed_at": "2026-11-09T14:25:00+05:30",
             "notified": True,
         },
         "talk": {"on": True},

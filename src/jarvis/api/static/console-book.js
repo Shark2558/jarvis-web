@@ -78,7 +78,7 @@
     return { available: d.available === true, reason: txt(d.reason, 300), sealing: d.reason === 'sealing' || d.sealing === true,
       release: rel(d.release), sealed: arr(d.sealed).map(rel).filter(Boolean).slice(0, 10), kept: num(d.kept),
       used: num(d.used_mb), limit: num(d.limit_mb), lock: !!(obj(d.lock) || {}).on, talk: { on: talk.on === true, why: txt(talk.why, 200) },
-      last: last ? { at: when(last.at), minutes: num(last.minutes), questions: num(last.questions) } : null,
+      last: last && when(last.last_closed_at) ? { at: when(last.last_closed_at), told: last.notified === true } : null, // D14: what stays
       ready: open.passkey_ready === true, fresh: num(open.fresh_left_s) };
   }
   const name = (r) => (r.label ? r.label + ' \u00b7 ' : '') + r.id;
@@ -194,8 +194,8 @@
     host.append(S.token ? sessionBar() : opens(d), noteEl);
     if (S.token) host.append(reader());
     host.append(sealedList(d), tiles(d));
-    if (d.last) host.append(mk('p', 'bnote bk-last', 'Last session closed ' + d.last.at + ': ' + d.last.minutes + ' min, '
-      + d.last.questions + ' question' + (d.last.questions === 1 ? '' : 's') + ', conversation deleted.'));
+    if (d.last) host.append(mk('p', 'bnote bk-last', 'Last session closed ' + d.last.at + '; its conversation was deleted'
+      + (d.last.told ? ' and you were told.' : '.')));
     const R = window.JarvisBookReader;
     if (R && !setBox) setBox = R.settings(mk('div'), { load: () => api('/v1/book/settings'), ask,
       save: (patch) => api('/v1/book/settings', { method: 'PUT', body: patch }).catch((e) => { throw new Error(detailOf(e) || 'Couldn\u2019t save.'); }) });

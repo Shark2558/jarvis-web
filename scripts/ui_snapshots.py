@@ -356,6 +356,30 @@ def systems_popup(c: Console) -> None:
     c.page.wait_for_timeout(300)
 
 
+# History lists the live server's own conversations: give it some (one with a long title), so its
+# rows are captured and checked full, as tests/browser/test_ui_audit.py does.
+SEED_TITLES = (
+    "Please draft a polite follow-up message to the vendor about the delayed October invoice",
+    "Where is my daughter's school?",
+    "what do I drink?",
+    "hello",
+)
+
+
+def seed_conversations(browser: Browser, url: str, run: Run) -> None:
+    c = Console(browser, url, "desktop", "night", run)
+    try:
+        c.open()
+        for title in SEED_TITLES:
+            c.page.locator("#newBtn").click()
+            before = c.page.locator(".row.jarvis .bubble:not(.typing)").count()
+            c.page.locator("#input").fill(title)
+            c.page.locator("#send").click()
+            c.page.locator(".row.jarvis .bubble:not(.typing)").nth(before).wait_for()
+    finally:
+        c.close()
+
+
 def capture_combo(browser: Browser, url: str, vp: str, surface: str, run: Run) -> None:
     c = Console(browser, url, vp, surface, run)
     try:
@@ -468,6 +492,7 @@ def main(argv: list[str] | None = None) -> int:
     with serve() as url, sync_playwright() as p:
         browser = p.chromium.launch()
         try:
+            seed_conversations(browser, url, run)
             for vp in vps:
                 for surface in surfaces:
                     capture_combo(browser, url, vp, surface, run)

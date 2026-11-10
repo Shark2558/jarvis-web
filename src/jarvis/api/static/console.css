@@ -329,9 +329,9 @@ html[data-surface="night"] .welcome h1{font:400 clamp(21px,2.2vw,26px)/1.2 var(-
 .event .what{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
 .event .what small{display:block;color:var(--ink-3);font-size:12px}
 .event time{font:400 12px/1 var(--tech);color:var(--ink-3);font-variant-numeric:tabular-nums}
-.convo{position:relative;display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px;padding:7px 0;border-top:1px solid var(--line-2);animation:rise .35s var(--ease) both}
+.convo{position:relative;display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px;padding:7px 0 7px 8px;margin-left:-8px;border-top:1px solid var(--line-2);animation:rise .35s var(--ease) both}
 .convo:first-child{border-top:0;padding-top:0}
-.convo .open{appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0;padding:5px 8px;margin:-5px -8px;border-radius:var(--r-sm);transition:background-color .2s var(--ease)}
+.convo .open{appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0;padding:5px 4px 5px 8px;margin:-5px -4px -5px -8px;border-radius:var(--r-sm);transition:background-color .2s var(--ease)}
 .convo .open:hover{background-color:var(--tint)}
 .convo .open b{display:block;font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .convo .open small{display:block;font-size:12px;color:var(--ink-3)}

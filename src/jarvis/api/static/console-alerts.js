@@ -32,6 +32,9 @@
     ['offline_on', 'Offline mode switched on'],
     ['offline_off', 'Offline mode switched off'],
     ['brief_ready', 'My morning brief is ready'],
+    ['book_sealed', 'A release\'s build book was sealed in my vault'],
+    ['book_seal_failed', 'A release\'s build book could not be sealed'],
+    ['book_session_closed', 'A build book session closed'],
   ];
   const LEVEL = { urgent: 'Urgent', important: 'Important', info: 'Just so you know' };
   const S = { data: undefined, vip: [], devices: [], error: '', loadedAt: 0, loading: null, busy: false, key: '' };

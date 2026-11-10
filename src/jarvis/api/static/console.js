@@ -73,6 +73,7 @@
     if (r.status === 401) { // every non-2xx error carries .status: callers leave a 401 to the gate
       showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err;
     }
+    if (r.status === 423) showLocked(); // R6 D10: a guest show holds every console of the owner
     if (!r.ok) {
       let detail = r.statusText, code = '';
       try { // the app's shape: {error: code, detail: plain words}; err.code carries the code
@@ -95,7 +96,14 @@
     if (state.authMode === 'token' && state.token) headers['Authorization'] = 'Bearer ' + state.token;
     const r = await fetch(path, { method: opts.method || 'GET', headers, body: opts.body, signal: opts.signal, credentials: 'same-origin' });
     if (r.status === 401) { showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err; }
+    if (r.status === 423) showLocked();
     return r;
+  }
+  /** R6 D10: 423 show_locked -- a guest is watching the build book, so this console goes to the show
+   *  (it comes back after the owner's passkey lifts the lock there). Throws so no caller goes on. */
+  function showLocked() {
+    location.assign('/book/show');
+    const err = new Error('A build book show is running.'); err.status = 423; err.code = 'show_locked'; throw err;
   }
 
   // ---- sign-in gate -------------------------------------------------------------------------

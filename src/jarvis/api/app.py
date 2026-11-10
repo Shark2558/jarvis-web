@@ -3,12 +3,13 @@
 
 Build with `create_app()` so tests can inject a mock provider and an in-memory store. It is a
 short list of named steps (slice 12 final review): the lifespan wires the core (`_wire_core`),
-the slice 10–11 features, the slice 12 ones (`_wire_slice12`: Maps + YouTube, Drive), R2's
-personal data (`api/personal.py`: vault, notes, things, DigiLocker inbox), R3's home, camera and
-faces (`api/home_wiring.py`; its one alert policy is wired in the core, before anything takes the
-alert sink), R4's vitals, self-health, connectors, people research and the one no-AI switch
-(`api/r4_wiring.py`), the gateway with the owner's rules and the Brain, then the privacy dashboard
-and tick jobs; then the middleware, the error mapping and the routers.
+the slice 10–12 features (`api/feature_wiring.py`: web search, attached files, Recently deleted,
+Maps + YouTube, Drive), R2's personal data (`api/personal.py`: vault, notes, things, DigiLocker
+inbox), R3's home, camera and faces (`api/home_wiring.py`; its one alert policy is wired in the
+core, before anything takes the alert sink), R4's vitals, self-health, connectors, people research
+and the one no-AI switch (`api/r4_wiring.py`), R6's build book (`api/r6_wiring.py`), the gateway
+with the owner's rules and the Brain, then the privacy dashboard and tick jobs; then the
+middleware (R6's guest show lock inside the sign-in session), the error mapping and the routers.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ from jarvis.api.documents import ATTACH_BODY_BYTES, ATTACH_PATH, install_documen
 from jarvis.api.drive import install_drive
 from jarvis.api.faces import install_faces
 from jarvis.api.family import install_family
+from jarvis.api.feature_wiring import wire_features, wire_slice12
 from jarvis.api.home import install_home
 from jarvis.api.home_wiring import check_job_names, notify_tick_jobs, wire_home, wire_notify
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
@@ -54,6 +56,7 @@ from jarvis.api.permissions import build_permissions, install_permissions
 from jarvis.api.personal import personal_tick_jobs, wire_personal, wire_privacy
 from jarvis.api.privacy import install_privacy
 from jarvis.api.r4_wiring import install_r4_routes, r4_tick_jobs, vitals_brief, wire_r4
+from jarvis.api.r6_wiring import install_r6_routes, install_show_lock, wire_r6
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
@@ -81,9 +84,7 @@ from jarvis.brief.vault_due import VaultDueBrief
 from jarvis.config import AuthMode, SessionBackend, Settings, get_settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ApprovalStore, InputRejected
-from jarvis.documents.service import DocumentService
-from jarvis.documents.store import AttachmentStore
-from jarvis.drive.service import DriveService, build_drive_service
+from jarvis.drive.service import DriveService
 from jarvis.home.ports import MAX_WEBHOOK_BYTES, WEBHOOK_PATH
 from jarvis.integrations.google import (
     build_google_connector,
@@ -104,7 +105,6 @@ from jarvis.llm.brains import BrainRegistry
 from jarvis.llm.fallback import FallbackFailed
 from jarvis.llm.router import NO_AI_REFUSAL, BrainOff
 from jarvis.logging import configure_logging, get_logger, new_trace_id, set_trace_id
-from jarvis.media.service import build_media
 from jarvis.memory import SessionConflict, SessionNotFound, SessionStore
 from jarvis.offline.rules import wrap_offline
 from jarvis.offline.service import build_local_fallback
@@ -126,11 +126,8 @@ from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.r1_tools import build_family_service
 from jarvis.tools.setup import attach_activity, build_gateway
-from jarvis.tools.task_marks import OutsideTasks
 from jarvis.undo.service import UndoBin
-from jarvis.undo.store import DeletedStore
 from jarvis.voice.service import VoiceEngines, build_voice_service
-from jarvis.web.service import build_web_service
 
 log = get_logger(__name__)
 
@@ -143,15 +140,6 @@ def app_docs(built: Storage | None) -> Docs:
     """The document store the brief and billing share: Firestore when configured, else
     in-process documents (dev, tests)."""
     return built.docs if built is not None and built.docs is not None else MemoryDocs()
-
-
-def build_undo(s: Settings, built: Storage | None, docs: Docs) -> UndoBin | None:
-    """Recently deleted (slice 11) only on persistent storage: a copy kept in process memory
-    would vanish on a restart, so "Undo for 30 days" would not hold. Without it every delete
-    stays R3 (card + passkey) and /v1/deleted says it isn't available."""
-    if built is None or not built.persistent:
-        return None
-    return UndoBin(DeletedStore(docs, prefix=s.firestore_prefix))
 
 
 def build_brief_service(
@@ -314,32 +302,6 @@ def _wire_core(
     # No network at start-up: credentials are looked up on first use.
     app.state.voice = build_voice_service(s, docs, app.state.billing, engines=inj.voice_engines)
     return docs, audit
-
-
-def _wire_features(
-    app: FastAPI, s: Settings, inj: _Injected, built: Storage | None, docs: Docs
-) -> None:
-    """Slices 10–11 on the same documents: web search, attached files, Recently deleted and the
-    to-dos JARVIS wrote from outside content."""
-    app.state.web = build_web_service(s, docs)  # slice 10 B: None without a Tavily key
-    # Attached files (slice 10 E): text and chunks on the same documents, deleted with the
-    # conversation; the doc tools join the gateway's registry.
-    app.state.documents = DocumentService(AttachmentStore(docs, prefix=s.firestore_prefix))
-    # Recently deleted (slice 11): the owner's deletes keep a copy here for 30 days (undo);
-    # only on persistent storage, else None and deletes stay R3
-    app.state.undo = inj.undo or build_undo(s, built, docs)
-    app.state.outside_tasks = OutsideTasks(docs, prefix=s.firestore_prefix)  # D8 (swept)
-
-
-def _wire_slice12(app: FastAPI, s: Settings, docs: Docs, drive: DriveService | None) -> None:
-    """Maps + YouTube (D2–D4) on JARVIS's own Google API key (None without one), and Drive,
-    chosen folders only (D1): None unless JARVIS_DRIVE=on. Drive files go through the documents'
-    ONE extraction slot (never two children at once)."""
-    app.state.media = build_media(s, docs, google=app.state.google)
-    one_slot = app.state.documents.extract
-    app.state.drive = drive or build_drive_service(s, docs, extract=one_slot)
-    if app.state.drive is not None and app.state.drive.extract is None:
-        app.state.drive.extract = one_slot
 
 
 def _wire_gateway(
@@ -539,13 +501,14 @@ def _lifespan(
             built = build_storage(s) if inj.store is None else None
             docs, audit = _wire_core(app, s, inj, built)
             closers.register_new()
-            _wire_features(app, s, inj, built, docs)
+            wire_features(app, s, inj.undo, built, docs)  # slices 10-11
             closers.register_new()
-            _wire_slice12(app, s, docs, inj.drive)
+            wire_slice12(app, s, docs, inj.drive)  # Maps + YouTube, Drive
             closers.register_new()
             wire_personal(app, s, docs)  # R2: vault, notes, things, DigiLocker inbox
             wire_home(app, s, docs, audit)  # R3: home link, camera, faces (tools need them)
             await wire_r4(app, s, docs, audit)  # R4: brain mode (loaded), vitals, health, people
+            await wire_r6(app, s, docs, audit)  # R6: the build book (sealed releases, sessions)
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()
@@ -563,7 +526,8 @@ def _lifespan(
 
 def _install_middleware(app: FastAPI, s: Settings) -> None:
     """In this order (Starlette wraps outward, so the last added runs first): the body cap, the
-    rate limit, the Google sign-in session (with its routes), then the trace id."""
+    rate limit, R6's guest show lock, the Google sign-in session (with its routes), then the trace
+    id. The lock is added just before the session so it runs INSIDE it (it reads the cookie)."""
     # Every body is size-capped before it is parsed or authenticated (innermost of the http
     # middlewares, so the trace id still goes on a 413). Tighter per-route caps apply first.
     # Only the attachment and vault uploads have a larger cap (10 MB each, checked again by the
@@ -581,6 +545,7 @@ def _install_middleware(app: FastAPI, s: Settings) -> None:
     if s.rate_limit_per_minute > 0:
         app.middleware("http")(make_middleware(RateLimiter(s.rate_limit_per_minute)))
     if s.auth_mode is AuthMode.GOOGLE:
+        install_show_lock(app, s)  # R6 D10: every cookie session of the owner (bearer untouched)
         _install_google_sign_in(app, s)
 
     @app.middleware("http")
@@ -730,6 +695,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_faces(app)
     install_notify(app)  # R3: /v1/notify, /v1/push
     install_r4_routes(app)  # R4: /v1/vitals, /v1/health, /v1/connectors, /v1/people, brain mode
+    install_r6_routes(app)  # R6: /v1/book (status, open, sections, show, close, resume, settings)
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

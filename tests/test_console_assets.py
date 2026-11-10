@@ -484,13 +484,13 @@ async def test_memory_panel_dock_button_and_dialog_are_wired(client: AsyncClient
 
 
 async def test_phone_dock_has_a_more_sheet_for_the_overflow_tabs(client: AsyncClient) -> None:
-    """Nineteen panels (Voice joined in slice 9, Media in slice 12, Vault, Things, Notes and
-    Privacy in R2, Home and Faces in R3, Connectors and People in R4): a phone shows at most eight
-    tabs; the rest sit behind "More"."""
+    """Twenty panels (Voice joined in slice 9, Media in slice 12, Vault, Things, Notes and
+    Privacy in R2, Home and Faces in R3, Connectors and People in R4, Book in R6): a phone shows
+    at most eight tabs; the rest sit behind "More"."""
     html = (await client.get("/")).text
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     tabs = re.findall(r'<button class="dk([^"]*)" type="button" data-open="(\w+)"', dock)
-    assert len(tabs) == 19
+    assert len(tabs) == 20
     on_phone = [name for cls, name in tabs if "ovf" not in cls.split()]
     overflow = [name for cls, name in tabs if "ovf" in cls.split()]
     assert len(on_phone) + 1 <= 8 and overflow  # + the More tab itself

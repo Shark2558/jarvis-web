@@ -69,6 +69,8 @@ where = ["src"]
 ]
 # R3 C: the laptop Faces page the bridge serves on 127.0.0.1:8098
 "jarvis.homebridge" = ["static/faces.html", "static/faces.js", "static/faces.css"]
+# R6 D4: the build book CI writes before `docker build` (git-ignored; absent in a plain checkout)
+"jarvis.buildbook" = ["_book/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

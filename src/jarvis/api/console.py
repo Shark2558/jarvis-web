@@ -113,6 +113,21 @@ APP_ASSETS: dict[str, str] = {
     "console-voice.css": "text/css",
     "console-voice-devices.css": "text/css",
     "console-permissions.css": "text/css",
+    # R6 (docs/plans/r6-build-book.md D15, D16; builder D): the Book panel in the deck, then the
+    # show page (/book/show, book.html). The 3D files are ES modules; the scene modules are
+    # imported by console-book-3d.js, never linked.
+    "console-book.js": _JS,  # the Book panel (#p-book): status, open, sections, download
+    "console-book-reader.js": _JS,  # the sections reader
+    "console-book.css": "text/css",
+    "console-book-show.js": _JS,  # the show: timeline, controls, captions
+    "console-book-voice.js": _JS,  # narration: Web Audio queue, browser-voice fallback
+    "console-book-3d.js": _JS,  # the 3D engine and governor (ES module)
+    "console-book-scenes.js": _JS,  # scenes 1, 2, 12, 13 (ES module)
+    "console-book-scenes-flow.js": _JS,  # scenes 3, 5, 6, 8 (ES module)
+    "console-book-scenes-data.js": _JS,  # scenes 4, 7, 9-11 (ES module)
+    "console-book-2d.js": _JS,  # the 2D show (phones, reduced motion, no WebGL2)
+    "console-book-talk.js": _JS,  # questions, the closing, hand-back, Resume
+    "book.css": "text/css",  # the show page
 }
 
 # Self-hosted OFL fonts (licences beside them).
@@ -172,9 +187,9 @@ def _settings(request: Request) -> Settings:
     return request.app.state.settings  # type: ignore[no-any-return]
 
 
-@router.get("/", include_in_schema=False, response_class=HTMLResponse)
-async def console() -> HTMLResponse:
-    html = (_STATIC / "console.html").read_text(encoding="utf-8")
+def _page(name: str) -> HTMLResponse:
+    """A console page: never cached, never framed, no referrer, the ONE console CSP."""
+    html = (_STATIC / name).read_text(encoding="utf-8")
     return HTMLResponse(
         html,
         headers={
@@ -185,6 +200,19 @@ async def console() -> HTMLResponse:
             "Content-Security-Policy": CONSOLE_CSP,
         },
     )
+
+
+@router.get("/", include_in_schema=False, response_class=HTMLResponse)
+async def console() -> HTMLResponse:
+    return _page("console.html")
+
+
+@router.get("/book/show", include_in_schema=False, response_class=HTMLResponse)
+async def book_show() -> HTMLResponse:
+    """R6 D15/D16: the build book show (book.html), with the console's CSP unchanged. The page
+    holds no data; it asks /v1/book/show/* with the book token. Under a guest lock (D10) it is
+    where every console of the owner is sent."""
+    return _page("book.html")
 
 
 def _asset_endpoint(name: str, media_type: str) -> Callable[[], Awaitable[FileResponse]]:

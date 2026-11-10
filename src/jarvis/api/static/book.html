@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-theme="workshop" data-surface="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#04070D">
+<title>JARVIS &middot; Build book</title>
+<style>
+/* Self-hosted OFL fonts (static/fonts, licences beside them). Styles: console.css + book.css */
+@font-face{font-family:"Orbitron";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/orbitron-latin-600-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Orbitron";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/orbitron-latin-700-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:500;font-display:swap;src:url(/static/fonts/rajdhani-latin-500-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/rajdhani-latin-600-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/rajdhani-latin-700-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Share Tech Mono";font-style:normal;font-weight:400;font-display:swap;src:url(/static/fonts/share-tech-mono-latin-400-normal.woff2?v=1) format("woff2")}
+</style>
+<link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/book.css">
+</head>
+<body>
+<!-- R6 D15 (docs/plans/r6-build-book.md): the build book show, served at /book/show with the
+     console's CSP. I0 SHELL: builder D fills it. The page holds no data: it asks /v1/book/show/*
+     with the book token (this tab's sessionStorage only). console-fx.js gives the theme and
+     JarvisFX.tokens(); console-permissions.js gives JarvisPasskey (Resume) and nothing else here. -->
+<main class="show" id="show" aria-label="Build book"></main>
+<script src="/static/console-fx.js" defer></script>
+<script src="/static/console-permissions.js" defer></script>
+<script src="/static/console-book-voice.js" defer></script>
+<script src="/static/console-book-2d.js" defer></script>
+<script src="/static/console-book-talk.js" defer></script>
+<script src="/static/console-book-show.js" defer></script>
+<script type="module" src="/static/console-book-3d.js"></script>
+</body>
+</html>

@@ -74,6 +74,12 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "vitals_warn": "info",
         "health_recovered": "info",
         "health_degraded": "info",  # a degraded integration is a note, never a ring
+        # R6 D7, D14: the build book was sealed / could not be sealed, a book session closed and
+        # its conversation was deleted. "important" daytime rings, like D13's: the owner hears in
+        # waking hours even when only urgent things ring, and never at night (held).
+        "book_sealed": "important",
+        "book_seal_failed": "important",
+        "book_session_closed": "important",
     }
 )
 _FEED: dict[str, FeedDecision] = {

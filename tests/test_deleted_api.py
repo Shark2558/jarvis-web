@@ -225,7 +225,7 @@ async def test_in_process_storage_has_no_bin_so_deletes_stay_irreversible(
 
 
 def test_the_bin_is_wired_only_on_persistent_storage(settings: Settings) -> None:
-    from jarvis.api.app import build_undo
+    from jarvis.api.feature_wiring import build_undo
     from jarvis.core.guardrails import InMemoryApprovalStore
     from jarvis.storage import Storage
 

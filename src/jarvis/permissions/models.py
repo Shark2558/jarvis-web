@@ -73,6 +73,10 @@ Purpose = Literal[
     "privacy_export",
     # R3 D8: switch the burglar alert off, bound to "<home_id>:<arm rev>"
     "home_disarm",
+    # R6 D8, D10: open the build book (bound to the audience) and lift the guest lock (bound to
+    # the lock id)
+    "book_open",
+    "book_resume",
 ]
 # The purposes whose challenge is bound to (owner, purpose, target); checked by `check_purpose`.
 TARGETED_PURPOSES: tuple[str, ...] = (
@@ -80,9 +84,13 @@ TARGETED_PURPOSES: tuple[str, ...] = (
     "privacy_delete",
     "privacy_export",
     "home_disarm",
+    "book_open",
+    "book_resume",
 )
 TARGET_PATTERN = r"^[A-Za-z0-9_.:=-]{1,64}$"
 HOME_DISARM_TARGET = r"^h_[0-9a-f]{8}:[0-9]{1,12}$"
+BOOK_OPEN_TARGET = r"^(owner|guest)$"  # R6 D8: who the session is for
+BOOK_LOCK_TARGET = r"^bl_[0-9a-f]{12}$"  # R6 D10: the guest lock being lifted
 
 
 class ChallengeRequest(_In):
@@ -179,6 +187,8 @@ class PermissionsView(BaseModel):
 
 __all__ = [
     "AssertionCredential",
+    "BOOK_LOCK_TARGET",
+    "BOOK_OPEN_TARGET",
     "CancelResetRequest",
     "ChallengeRequest",
     "ChallengeView",

@@ -19,6 +19,10 @@ _WORDS = {
     "approval_waiting": "waiting for approval",
     "vault_expiry": "document reminder",
     "test": "test",
+    # R6: the build book's notices, named in the morning summary
+    "book_sealed": "build book sealed",
+    "book_seal_failed": "build book not sealed",
+    "book_session_closed": "build book session closed",
 }
 
 

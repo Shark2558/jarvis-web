@@ -7,3 +7,5 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 evals/**/report.json
+# R6 D4: the build book CI generates before `docker build` (python -m jarvis.buildbook.gen)
+src/jarvis/buildbook/_book/

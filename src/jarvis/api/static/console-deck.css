@@ -256,6 +256,12 @@ html[data-motion="calm"] .blink,html[data-motion="calm"] .globe2d .o,html[data-m
 html[data-motion="calm"] .panel{animation-name:fadeIn}
 html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transition:none}
 
+/* ---- R6: twenty dock tabs fit a 1440 px desktop: the narrower-desktop tab size below, closer together */
+@media (max-width: 1720px) and (min-width: 900px){
+  .dock{gap:3px}
+  .dk{width:66px}
+  .dk.wide{width:88px}
+}
 /* ---- narrower desktops: slimmer rails, smaller dock ------------------------------------------- */
 @media (max-width: 1180px) and (min-width: 900px){
   :root{--rail:156px}

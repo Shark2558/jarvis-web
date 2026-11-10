@@ -388,6 +388,20 @@ class Settings(BaseSettings):
     voice_price_stt_usd_per_min: float = Field(
         default=0.024, ge=0, le=100, description="US$ per minute, STT v1 without data logging"
     )
+    # --- R6 the build book (docs/plans/r6-build-book.md D5, D6, D9, D12). Needs `token_key` (the
+    # sealed releases and the book sessions are encrypted by JARVIS); without it the book is OFF.
+    book_session_minutes: int = Field(
+        default=45, ge=15, le=120, description="Minutes a build book session lasts at most (D9)"
+    )
+    book_idle_minutes: int = Field(
+        default=10, ge=5, le=30, description="Minutes without a beat before a book session ends"
+    )
+    book_max_total_mb: int = Field(
+        default=60, ge=20, le=200, description="MB the sealed build books and code may use (D6)"
+    )
+    book_talk_questions: int = Field(
+        default=20, ge=1, le=50, description="Questions one build book session may ask (D12)"
+    )
 
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")
@@ -406,6 +420,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JARVIS_HOME_OFFLINE_AFTER_S must be at least twice JARVIS_HOME_HEARTBEAT_S"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _book_timing(self) -> Settings:
+        """R6 D9: a book session goes idle before it runs out, never after."""
+        if self.book_idle_minutes >= self.book_session_minutes:
+            raise ValueError("JARVIS_BOOK_IDLE_MINUTES must be below JARVIS_BOOK_SESSION_MINUTES")
         return self
 
     def require_prod_invariants(self) -> None:

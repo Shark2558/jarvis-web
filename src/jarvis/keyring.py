@@ -17,6 +17,8 @@ token vault keeps using the raw key, so tokens stored before R2 still decrypt.
   SECRET purpose: `secret("webpush_vapid")` is raw HKDF output (its own domain,
   `jarvis/secret/<purpose>/v1`) that R3 D reduces into a P-256 private key. A secret purpose is
   never a cipher or MAC purpose and the other way round; still no new stored secret (R3 D4).
+- R6: `book_index` (the sealed build-book index) and `book_session` (book sessions; used both as a
+  cipher and as a MAC domain, which `mac` keeps apart by its own HKDF info).
 """
 
 from __future__ import annotations
@@ -49,6 +51,10 @@ PURPOSES: tuple[str, ...] = (
     "webpush",
     "notify",  # R3 I1: the Alerts VIP list (phone / email references), its own key
     "connectors",  # R4 D9: the owner's own GitHub token (own-account read), its own key
+    # R6 D6, D9: the sealed build-book index, and the book sessions (their sealed turns AND, as
+    # a MAC domain, the hash of a session token: `mac("book_session", token)`)
+    "book_index",
+    "book_session",
 )
 SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
 MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64

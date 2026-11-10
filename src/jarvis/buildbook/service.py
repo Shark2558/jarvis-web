@@ -4,27 +4,23 @@
 `BookService` is what the show routes (api/book_show.py) call once the HTTP checks are done
 (console only, a fresh sign-in, the passkey). It never decides who may open; it records and acts:
 
-- `open`: a guest is never shown a book naming an owner's address (D3's check, as the sealer's;
-  fail closed); audit `book_open` FIRST (nothing opens when it can't be written); end EVERY
-  session of the owner (D14 trigger "a new open"); open the new one; for a guest set the lock (no
-  lock -> the guest session is closed again and the open fails: never a guest without its lock).
+- `open`: a guest is never shown a book naming an owner's address (D3; fail closed); audit
+  `book_open` FIRST; end EVERY session of the owner (D14 "a new open"); open the new one; for a
+  guest set the lock (no lock -> the guest session is closed again: never a guest without it).
 - every close (End, the closing, an expired or idle session found by any request, Resume,
-  Privacy -> Delete, the sweep) goes through `closing.ClosingStore.close_claim`: the store marks
-  closing, deletes and reads back (D14 1-2) and says whether THIS caller tells; the caller that
-  does writes ONE content-free `book_close` line (3), sends ONE `book_session_closed` notice (4),
-  keeps `{last_closed_at, notified}` (what stays) and marks the notice told. Resume and Privacy
-  -> Delete end every session of the owner, expired or idle ones included.
-- `sweep` closes and tells session by session (one failure doesn't lose the others' notices) and
-  recovers closes whose closer died before telling.
-- `emergency_unlock`: the owner-only recovery for a passkey lost during a guest show
-  (buildbook/unlock.py, run with the server's own Google Cloud credentials, never a browser).
-- `script` / `line_text` / `ask`: the show's facts come only from book.json; scenes 12 and 13 and
-  every refusal are D13's fixed lines. A guest never gets the owner's month spend (D1).
-Nothing here logs or stores a question, a reply or a token.
+  Privacy -> Delete, the sweep) goes through `closing.ClosingStore.close_claim` (D14 1-2: closing,
+  delete, read back) and says whether THIS caller tells; the caller that does runs `on_close` (I1:
+  B's download tickets go), writes ONE content-free `book_close` line (3), sends ONE
+  `book_session_closed` notice (4), keeps `{last_closed_at, notified}` and marks the notice told.
+- `sweep` closes and tells session by session; `emergency_unlock` (buildbook/unlock.py, the
+  server's own credentials) recovers a passkey lost during a guest show.
+- `script` / `line_text` / `ask`: facts only from book.json, D13's fixed lines, a reply spoken by
+  its id. A guest never gets the owner's spend. Nothing here logs a question, reply or token.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -68,6 +64,7 @@ NO_LOCK = "The guest lock couldn't be set, so the guest session was not opened."
 NO_BOOK = "This server has no build book."
 NAMES_OWNER = "This release's build book names your e-mail address, so a guest can't see it."
 UNLOCK_NOT_RECORDED = "The emergency unlock couldn't be recorded, so nothing was changed."
+REPLY_ID = re.compile(r"r_[0-9a-f]{12}")  # a guarded reply the show speaks by its id (I1)
 
 
 @dataclass(frozen=True)
@@ -103,8 +100,10 @@ class BookService:
         prefs: Prefs | None = None,
         spend: Callable[[str], Awaitable[Mapping[str, Any]]] | None = None,
         owner_emails: Sequence[str] = (),
+        on_close: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self.source, self.sessions, self.lock, self.talk = source, sessions, lock, talk
+        self._on_close = on_close
         self.tell = Telling(
             audit=audit,
             notifier=notifier,
@@ -120,9 +119,6 @@ class BookService:
         self._heard: dict[str, int] = {}
 
     # ---- words, audit, status (buildbook/telling.py) --------------------------------------------
-    def notice(self, closed: ClosedSession) -> str:
-        return self.tell.notice(closed)
-
     async def record_open(
         self, uid: str, audience: str, *, granted: bool, how: str, now: datetime
     ) -> bool:
@@ -196,12 +192,22 @@ class BookService:
             return closed
         if not closing.claimed:
             return closed
+        await self._closed(uid)
         await self.tell.record_close(uid, closed)
         sent = await self.tell.tell(uid, self.tell.notice(closed))
         done = closed.model_copy(update={"notified": sent})
         await self.tell.status(uid, done)
         await self.sessions.told(uid, closed.session_id, wiped=closed.wiped)
         return done
+
+    async def _closed(self, uid: str) -> None:
+        """What else ends with a session (I1: B's download tickets), best effort."""
+        if self._on_close is None:
+            return
+        try:
+            await self._on_close(uid)
+        except Exception as exc:  # noqa: BLE001 - a download checks its session anyway
+            log.warning("book close hook failed", extra={"error": type(exc).__name__})
 
     async def _end_all(self, uid: str, reason: CloseReason, now: datetime) -> list[ClosedSession]:
         """Close EVERY session of the owner (open, expired, idle or still closing), each told."""
@@ -332,8 +338,11 @@ class BookService:
 
     # ---- the show and the talk-through -----------------------------------------------------------
     async def line_text(self, uid: str, session: SessionView, line_id: str) -> str | None:
-        """What `POST /v1/book/show/speak {line_id}` reads: a beat of this book or a D13 line."""
+        """What `POST /v1/book/show/speak {line_id}` reads: a beat, a D13 line or a reply."""
         self._guest_check(session.audience)
+        if REPLY_ID.fullmatch(line_id):
+            said = getattr(self.talk, "said", None)
+            return None if said is None else await said(uid, session.session_id, line_id)
         return await self.show.line_text(uid, line_id)
 
     async def voice(self, uid: str) -> str:

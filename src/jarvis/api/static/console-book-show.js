@@ -219,7 +219,8 @@
     if (S.closing) return;
     S.closing = true; S.run += 1; S.playing = false;
     let res = null;
-    if (ss.get(TOKEN_KEY)) { try { res = obj(await api('/v1/book/close', { method: 'POST' })); } catch (e) { res = { failed: true, status: e.status }; } }
+    const body = { reason: reason === 'closing' ? 'closing' : 'end' }; // D14: the closing ended it, or End
+    if (ss.get(TOKEN_KEY)) { try { res = obj(await api('/v1/book/close', { method: 'POST', body })); } catch (e) { res = { failed: true, status: e.status }; } }
     const hand = S.script && S.script.lines.hand_back ? S.script.lines.hand_back.text : '';
     const audience = S.audience;
     wipe();

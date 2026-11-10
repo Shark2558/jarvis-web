@@ -56,7 +56,7 @@ from jarvis.api.permissions import build_permissions, install_permissions
 from jarvis.api.personal import personal_tick_jobs, wire_personal, wire_privacy
 from jarvis.api.privacy import install_privacy
 from jarvis.api.r4_wiring import install_r4_routes, r4_tick_jobs, vitals_brief, wire_r4
-from jarvis.api.r6_wiring import install_r6_routes, install_show_lock, wire_r6
+from jarvis.api.r6_wiring import install_r6_routes, install_show_lock, r6_tick_jobs, wire_r6
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
@@ -433,9 +433,14 @@ def _log_up(app: FastAPI, s: Settings) -> None:
 
 
 def _tick_jobs(app: FastAPI) -> tuple[Any, ...]:
-    """R2's feature jobs, the alert policy's when the home watchdog doesn't run them, and R4's
-    vitals poll and health check (D14: on the existing tick, no new Cloud Scheduler job)."""
-    jobs = (*personal_tick_jobs(app), *notify_tick_jobs(app), *r4_tick_jobs(app))
+    """R2's feature jobs, the alert policy's when the home watchdog doesn't run them, R4's vitals
+    poll and health check, R6's book seal and sweep (on the existing tick, no new Scheduler job)."""
+    jobs = (
+        *personal_tick_jobs(app),
+        *notify_tick_jobs(app),
+        *r4_tick_jobs(app),
+        *r6_tick_jobs(app),
+    )
     check_job_names(jobs)
     return jobs
 

@@ -1,14 +1,14 @@
-# tests/book_app_fakes.py -- the real app with builder C's parts wired the way I1 will wire them
-# (docs/plans/r6-build-book.md "I1"): Google sign-in through the real /auth routes (Google's half
-# faked), the show lock installed where `install_show_lock` sits (inside the session middleware),
-# C's sessions, lock, talk and service on app.state over their own in-process documents, and a
-# software passkey. Imported bare by tests and evals/r6_book.
+# tests/book_app_fakes.py -- the real app with the build book wired by I1's own `wire_book`
+# (api/r6_wiring.py; docs/plans/r6-build-book.md "I1"): Google sign-in through the real /auth
+# routes (Google's half faked), the real show lock (inside the session middleware), A's source
+# (the fixture), B's vault, sealer, tickets and settings and C's sessions, lock, talk and service
+# on app.state over their own in-process documents, and a software passkey. Imported bare by
+# tests and evals/r6_book.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
-from unittest.mock import patch
 
 from book_show_fakes import (
     OWNER_EMAIL,
@@ -24,10 +24,8 @@ from httpx import ASGITransport, AsyncClient
 from passkey_fakes import SoftAuthenticator
 from pydantic import SecretStr
 
-import jarvis.api.app as app_module
 from jarvis.api import create_app
-from jarvis.api.book_lock import install_show_lock_middleware
-from jarvis.api.book_show_wiring import wire_book_c
+from jarvis.api.r6_wiring import wire_book
 from jarvis.api.identity import user_id_for_email
 from jarvis.config import AuthMode, Settings
 from jarvis.core.guardrails import ConfirmationGate
@@ -77,23 +75,24 @@ async def book_app(
     prefs: Prefs | None = None,
     notifier: RecordingNotifier | None = None,
     google: bool = True,
+    real_prefs: bool = False,
 ) -> AsyncIterator[Any]:
-    """The app, signed-in owners possible, C's parts on app.state (plus `book_docs`,
-    `book_notifier`, `book_provider`, `transport` for the tests)."""
+    """The app, signed-in owners possible, the book on app.state (plus `book_docs`,
+    `book_notifier`, `book_provider`, `transport` for the tests). C reads `prefs` (a fake the tests
+    change) unless `real_prefs`, when it reads B's Book settings store as in production."""
     s = google_settings(settings) if google else settings
     model = provider or WorstCaseProvider()
-    with patch.object(app_module, "install_show_lock", install_show_lock_middleware):
-        app = create_app(s, provider=model, store=InMemorySessionStore(), gateway=gateway())
+    app = create_app(s, provider=model, store=InMemorySessionStore(), gateway=gateway())
     async with app.router.lifespan_context(app):
         docs, sent, settings_doc = FlakyDocs(), notifier or RecordingNotifier(), prefs or Prefs()
-        wire_book_c(
+        wire_book(
             app,
             s,
             docs,
             app.state.gateway.audit,
             source=source or FixtureSource(),
             keyring=keyring(),
-            prefs=settings_doc,
+            prefs=None if real_prefs else settings_doc,
             notifier=sent,
         )
         app.state.book_docs, app.state.book_notifier, app.state.book_provider = docs, sent, model

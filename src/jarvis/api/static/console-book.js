@@ -281,7 +281,9 @@
   function toShow(token, session) {
     ss.set(SHOW_TOKEN, token); ss.set(SHOW_SESSION, JSON.stringify(session || {}));
     S.token = ''; clearInterval(beatTimer); clearTimeout(endTimer);
-    if (session && session.audience === 'guest') window.location.replace('/book/show'); else window.location.assign('/book/show');
+    if (!session || session.audience !== 'guest') { window.location.assign('/book/show'); return; }
+    try { const ch = new BroadcastChannel('jarvis-book'); ch.postMessage({ type: 'guest-show' }); ch.close(); } catch (_) {} // D10: open console tabs hop now
+    window.location.replace('/book/show');
   }
 
   // ---- the owner's open session: reader, older releases, download, beat, end -----------------

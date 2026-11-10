@@ -93,6 +93,7 @@ async def test_an_unreadable_lock_is_never_unlocked(docs: FlakyDocs) -> None:
         ("GET", "/static/../v1/chat", False),
         ("GET", "//static/x.js", False),
         ("GET", "/v1/book/show/script", True),
+        ("GET", "/v1/book/show/lock", True),
         ("POST", "/v1/book/show/ask", True),
         ("POST", "/v1/book/show/x", False),
         ("POST", "/v1/book/show/ask/", False),
@@ -119,7 +120,7 @@ async def test_an_unreadable_lock_is_never_unlocked(docs: FlakyDocs) -> None:
 )
 def test_the_allow_list(method: str, path: str, ok: bool) -> None:
     assert allowed(method, path) is ok
-    assert len(ALLOWED) == 14
+    assert len(ALLOWED) == 15  # I1: + GET /v1/book/show/lock
 
 
 # ---- the middleware on the real app --------------------------------------------------------------

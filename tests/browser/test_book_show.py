@@ -350,7 +350,8 @@ def test_the_guest_closing_comes_in_order_then_the_page_is_wiped_and_handed_back
         done.wait_for(state="visible", timeout=30000)
         ids = _spoken_ids(fake)
         assert ids[-3:] == ["credit", "sealed_guest", "thanks_guest"]
-        assert len(fake.to("POST", "/v1/book/close")) == 1
+        [closed] = fake.to("POST", "/v1/book/close")
+        assert closed["body"] == {"reason": "closing"}  # I1: D14's reason reaches the server
         assert LINES["hand_back"] in done.inner_text()
         assert done.get_by_role("button", name="Resume with my passkey").is_visible()
         assert (
@@ -397,7 +398,8 @@ def test_end_asks_first_then_wipes(browser: Any, server_url: str, token: str) ->
         confirm.wait_for(state="visible")
         confirm.get_by_role("button", name="End the session").click()
         c.page.locator("#shDone").wait_for(state="visible")
-        assert len(fake.to("POST", "/v1/book/close")) == 1
+        [closed] = fake.to("POST", "/v1/book/close")
+        assert closed["body"] == {"reason": "end"}
         assert c.page.evaluate("sessionStorage.getItem('jarvis_book_token')") is None
         assert c.page.locator("#shChapterItems *").count() == 0  # D14: no scene title stays
         _clean(c)

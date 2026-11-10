@@ -223,7 +223,7 @@
         await save({ [key]: on });
       };
       body.append(nameRow(txt(data.creator_name, 40), save), voiceRow(data.show_voice === 'browser' ? 'browser' : 'cloud', save),
-        sw('talk_through', 'Questions after the show', 'JARVIS answers questions about how he is built.', data.talk_through !== false, flip),
+        sw('talk_on', 'Questions after the show', 'JARVIS answers questions about how he is built.', data.talk_on !== false, flip),
         sw('allow_training_brain', 'Allow a brain that may learn', 'Off: questions use a brain that does not train on them.', data.allow_training_brain === true, flip));
     };
     const box = disclosure('Book settings', 'Creator name, voice, questions', (body) => {

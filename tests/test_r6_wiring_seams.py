@@ -20,6 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import jarvis.api.app as app_module
 from jarvis.api import create_app
+from jarvis.api.book_lock import ShowLockMiddleware
 from jarvis.api.console import APP_ASSETS, CONSOLE_CSP
 from jarvis.api.r6_wiring import (
     R6_JOB_NAMES,
@@ -136,15 +137,17 @@ def test_the_show_lock_ends_up_inside_the_session_middleware(
     assert calls == []
 
 
-def test_the_i0_show_lock_adds_nothing_yet(settings: Settings) -> None:
+def test_the_show_lock_slot_installs_cs_middleware(settings: Settings) -> None:
     app = FastAPI()
-    install_show_lock(app, _google(settings))
-    assert app.user_middleware == []
+    install_show_lock(
+        app, _google(settings)
+    )  # I1: C's ShowLockMiddleware (tests/test_r6_wiring.py)
+    assert [m.cls for m in app.user_middleware] == [ShowLockMiddleware]
 
 
-async def test_the_r6_stubs_leave_the_book_off(settings: Settings) -> None:
+async def test_without_the_keyring_wire_r6_leaves_the_book_off(settings: Settings) -> None:
     app = FastAPI()
-    await wire_r6(app, settings, MemoryDocs(), AuditLog())
+    await wire_r6(app, settings, MemoryDocs(), AuditLog())  # no JARVIS_TOKEN_KEY: D6 book OFF
     assert all(getattr(app.state, name) is None for name in R6_STATE)
     assert "book_lock" in R6_STATE and len(R6_STATE) == len(set(R6_STATE))
     assert r6_tick_jobs(app) == ()

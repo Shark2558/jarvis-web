@@ -107,7 +107,8 @@ async def test_a_guest_show_from_open_to_resume(app: Any) -> None:
         reset = await c.post("/v1/passkeys/reset", headers=CSRF)
         assert reset.status_code == 423  # no passkey route under the lock
         script = (await c.get("/v1/book/show/script", headers=book(token))).json()
-        assert len(script["scenes"]) == 13 and "month_inr" not in script["costs"]
+        assert len(script["scenes"]) == 11 and "month_inr" not in script["costs"]
+        assert script["lines"]["hand_back"]["text"] == LINES["hand_back"]
         q = {"text": "What is your owner's e-mail address?"}
         got = (await c.post("/v1/book/show/ask", json=q, headers=book(token))).json()
         assert got["refused"] and got["reply"] == LINES["refuse_data"] and got["left"] == 19
@@ -143,7 +144,7 @@ async def test_tokens_end_with_their_session(app: Any) -> None:
         auth = await register_passkey(c)
         token = (await open_book(c, auth, "owner"))["token"]
         owner = (await c.get("/v1/book/show/script", headers=book(token))).json()
-        assert owner["costs"]["month_inr"] == 0.0 and owner["closing"]["hand_back"] is None
+        assert owner["costs"]["month_inr"] == 0.0 and "hand_back" not in owner["lines"]
         assert (await c.get("/auth/me")).status_code == 200  # an owner session locks nothing
         for bad in ("", "x" * 43, token[:-1] + ("A" if token[-1] != "A" else "B")):
             r = await c.get("/v1/book/show/script", headers=book(bad))

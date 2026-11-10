@@ -17,7 +17,7 @@ and the permissions exist: the open/resume routes read `app.state.permissions` p
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from fastapi import FastAPI
@@ -95,6 +95,7 @@ def wire_book_c(
     keyring: Keyring | None,
     prefs: Prefs | None = None,
     notifier: Notifier | None = None,
+    on_close: Callable[[str], Awaitable[None]] | None = None,
 ) -> BookService | None:
     for name in C_STATE:
         setattr(app.state, name, None)
@@ -116,6 +117,7 @@ def wire_book_c(
         prefs=prefs,
         spend=_spend(app),
         owner_emails=tuple(s.owner_emails),
+        on_close=on_close,
     )
     app.state.book_sessions, app.state.book_lock = sessions, lock
     app.state.book_talk, app.state.book_service = talk, service

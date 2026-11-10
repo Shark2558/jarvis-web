@@ -10,10 +10,9 @@ another owner's cookie can't use the token; a guest can't see the owner's month 
 
 B's routes (cases_access.jsonl): a guest TOKEN on sections, older sections and the code ticket is
 sent with the guest lock NOT engaged for that request (as from a browser the lock doesn't hold),
-so B's own audience check must answer (403 owner_only, never 200 and never the lock's 423). While
-B's routes are still the I0 stub (503 book_off) these rows pass marked `rerun_at_integration`; I1
-re-runs them after the merge, when book_off fails them (B's state must then be wired in the
-fixture). Settings carry no token: under the lock they are 423 for every browser of the owner.
+so B's own audience check must answer (403 owner_only; never 200, the lock's 423 or a 503
+book_off: I1 wires B's real routes into the fixture app). Settings carry no token: under the lock
+they are 423 for every browser of the owner.
 Negative control: the fresh sign-in check skipped (a stale browser then opens the book).
 """
 
@@ -40,7 +39,6 @@ from book_app_fakes import (
 from book_show_fakes import Clock
 from httpx import AsyncClient
 
-import jarvis.api.book as b_routes
 import jarvis.api.book_show_access as access_module
 from jarvis.config import LLMBackend, Settings
 
@@ -112,15 +110,11 @@ class _Unlocked:
         return None
 
 
-def _b_is_stub() -> bool:
-    return "I0 STUB" in (b_routes.__doc__ or "")
-
-
 def _token_case(row: dict[str, str], r: Any) -> Case:
-    err, stub = _err(r), _b_is_stub()
-    ok = err == "owner_only" or (stub and err == "book_off")
-    case = _case(row["id"], ok and r.status_code != 200, f"B answered {r.status_code} {err}")
-    return {**case, "rerun_at_integration": True} if stub else case
+    err = _err(r)
+    return _case(
+        row["id"], r.status_code == 403 and err == "owner_only", f"B answered {r.status_code} {err}"
+    )
 
 
 async def _b_routes(app: Any, c: AsyncClient, token: str) -> list[Case]:

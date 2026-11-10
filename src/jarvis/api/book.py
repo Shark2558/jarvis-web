@@ -43,7 +43,7 @@ from jarvis.api.book_gate import (
     owner_session,
 )
 from jarvis.api.book_http import NO_STORE, TOKEN_HEADER, book_err, book_json
-from jarvis.api.book_status import NO_BOOK, status_body
+from jarvis.api.book_status import NO_BOOK, off_body, status_body
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.api.settings_audit import record_change
@@ -133,7 +133,10 @@ def _sections(book: Book) -> dict[str, Any]:
 
 @router.get("", response_model=None)
 async def status(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
-    source, vault = need(request, "book_source"), need(request, "book_vault")
+    st = request.app.state
+    source, vault = getattr(st, "book_source", None), getattr(st, "book_vault", None)
+    if source is None or vault is None:
+        return book_json(off_body(request))  # the panel says why; no error at console boot
     try:
         body = await status_body(request, uid, source, vault)
     except Exception as exc:  # noqa: BLE001 - each part guards itself; this is what's left

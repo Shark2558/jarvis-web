@@ -271,7 +271,7 @@ def test_the_built_book_is_ignored_by_git_and_shipped_as_package_data() -> None:
     assert cfg["tool"]["setuptools"]["package-data"]["jarvis.buildbook"] == ["_book/*"]
 
 
-def test_the_r6_book_eval_suite_runs_and_each_unbuilt_part_passes() -> None:
+def test_the_r6_book_eval_suite_runs_every_part_built_and_gated() -> None:
     run = ROOT / "evals" / "r6_book" / "run.py"
     r = subprocess.run([sys.executable, str(run), "--mock"], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
@@ -279,5 +279,11 @@ def test_the_r6_book_eval_suite_runs_and_each_unbuilt_part_passes() -> None:
     parts = {c["id"].split(":")[0] for c in report["results"]}
     assert parts == {"gen", "seal", "access", "guest", "wipe", "lock"}
     assert report["pass_rate"] == 1
-    # I1 adds it to run_all_mock; the I0 must not
-    assert "r6_book" not in (ROOT / "evals" / "run_all_mock.py").read_text(encoding="utf-8")
+    nc = report["negative_control"]
+    assert nc["suite_failed"] is True and nc["parts_not_built"] == []  # every control fails
+    # I1: gated in the mock run (make eval-mock, CI)
+    mock = (ROOT / "evals" / "run_all_mock.py").read_text(encoding="utf-8")
+    assert (
+        '("r6_book (gated)", [sys.executable, str(HERE / "r6_book" / "run.py"), "--mock"], True)'
+        in mock
+    )

@@ -216,26 +216,32 @@ async def test_a_notice_that_fails_still_closes(rig: Rig) -> None:
 
 
 async def test_the_script_is_the_book_plus_the_fixed_lines(rig: Rig) -> None:
+    """The shape D's show reads (INTEGRATION-D "Contract", I1): scenes 1-11 from book.show, the
+    fixed lines by name (scene 12's ask, or ai_off), the closing (scene 13) as a list."""
     guest = (await rig.open("guest")).session
     s = await rig.svc.script(UID, guest)
-    assert [x["n"] for x in s["scenes"]] == list(range(1, 14))
-    assert s["scenes"][11]["beats"] == [{"id": "ask", "text": LINES["ask"], "focus": ""}]
-    assert [b["id"] for b in s["scenes"][12]["beats"]] == ["credit", "sealed_guest", "thanks_guest"]
-    assert s["closing"]["lines"][0]["text"] == (
+    assert [x["n"] for x in s["scenes"]] == list(range(1, 12))
+    assert s["lines"]["ask"] == {"id": "ask", "text": LINES["ask"]}
+    assert s["lines"]["ai_off"] == {"id": "ai_off", "text": LINES["ai_off"]}
+    assert s["lines"]["anything_else"]["text"] == LINES["anything_else"]
+    assert s["lines"]["hand_back"] == {"id": "hand_back", "text": LINES["hand_back"]}
+    assert [x["id"] for x in s["closing"]] == ["credit", "sealed_guest", "thanks_guest"]
+    assert s["closing"][0]["text"] == (
         "Everything you've seen was designed and built by my owner and creator. "
         "The credit is all his."
     )
-    assert s["closing"]["hand_back"]["text"] == LINES["hand_back"]
     assert "month_inr" not in s["costs"] and s["audience"] == "guest"
     assert s["release"]["id"] == "4a70683" and s["talk"]["on"] is True and s["voice"] == "cloud"
+    assert s["until"] == guest.until and s["session"]["questions_left"] == guest.questions_left
     rig.prefs.values.update(creator_name="Akash", show_voice="browser")
     owner = (await rig.open("owner")).session
     o = await rig.svc.script(UID, owner)
-    assert o["costs"]["month_inr"] == 312.5 and o["closing"]["hand_back"] is None
-    assert o["closing"]["lines"][1]["text"] == (
-        "The code is sealed in your vault, for the people you allow, Sir."
+    assert o["costs"]["month_inr"] == 312.5 and "hand_back" not in o["lines"]
+    assert (
+        o["closing"][1]["text"]
+        == "The code is sealed in your vault, for the people you allow, Sir."
     )
-    assert "Akash, my owner and creator" in o["closing"]["lines"][0]["text"]
+    assert "Akash, my owner and creator" in o["closing"][0]["text"]
     assert o["voice"] == "browser"
 
 

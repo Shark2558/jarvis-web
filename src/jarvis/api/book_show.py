@@ -19,6 +19,9 @@ POST /v1/book/show/ask {text}            ● {reply_id, reply, refused, follow_u
 POST /v1/book/show/beat                  ● {until, idle_until}
 POST /v1/book/close {reason?}            ● {closed, wiped, notified} (reason closing | end)
 POST /v1/book/resume {proof}             {resumed} · 403 passkey_required {lock_id} / ...
+GET  /v1/book/show/lock                  {on, id?, line?} (cookie only, no ●; I1 for D's show:
+                                         `id` only for the owner whose lock it is; under D10's
+                                         allow-list) · 503 show_lock_unreadable
 
 ● = header X-Jarvis-Book (the token; 401 session_gone when it is unknown, closed, expired or
 idle). The proofs and the guest lock: api/book_show_access.py and api/book_lock.py.
@@ -35,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from jarvis.api.auth import require_auth
 from jarvis.api.body import read_capped
 from jarvis.api.book_http import NO_STORE, TOKEN_HEADER, book_err, book_json, book_off
+from jarvis.api.book_lock import UNREADABLE, lock_for, owner_ids
 from jarvis.api.book_show_access import (
     json_body,
     limited,
@@ -45,7 +49,8 @@ from jarvis.api.book_show_access import (
 from jarvis.api.identity import current_user
 from jarvis.billing.service import BudgetError
 from jarvis.buildbook.model import SessionView
-from jarvis.buildbook.ports import BookUnavailable, SessionGone
+from jarvis.buildbook.lines import LINES
+from jarvis.buildbook.ports import BookUnavailable, LockUnreadable, SessionGone
 from jarvis.buildbook.service import BookService
 from jarvis.logging import get_logger
 from jarvis.voice.ports import (
@@ -288,6 +293,23 @@ async def close(request: Request, uid: str = Depends(current_user)) -> JSONRespo
 async def resume(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
     svc = _svc(request)
     return book_off() if svc is None else await resume_flow(request, svc, uid)
+
+
+@router.get("/show/lock", response_model=None)
+async def show_lock(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+    """Whether a guest lock holds this owner's consoles (D10), for the show page with no book
+    token (another console tab, or the presenting tab after the close)."""
+    store = getattr(request.app.state, "book_lock", None)
+    if store is None:
+        return book_json({"on": False})
+    try:
+        state, own = await lock_for(store, owner_ids(request.app.state.settings), uid)
+    except LockUnreadable:
+        return book_err(503, "show_lock_unreadable", UNREADABLE)
+    if state is None:
+        return book_json({"on": False})
+    body = {"on": True, "line": LINES["hand_back"]}
+    return book_json({**body, "id": state.id} if own else body)
 
 
 def install_book_show(app: FastAPI) -> None:

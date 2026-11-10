@@ -9,7 +9,7 @@ owner's guest lock is on, lets through only:
 
     GET  /book/show, /static/..., /health, /console/config, /auth/login, /auth/callback
     POST /auth/logout
-    GET  /v1/book/show/script · POST /v1/book/show/{speak,hear,ask,beat}
+    GET  /v1/book/show/script, /v1/book/show/lock · POST /v1/book/show/{speak,hear,ask,beat}
     POST /v1/book/close, /v1/book/resume, /v1/passkeys/challenge
 
 Every passkey register / reset / cancel / remove route is locked: a guest can make a "fresh"
@@ -62,6 +62,7 @@ ALLOWED: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/auth/callback"),
         ("POST", "/auth/logout"),
         ("GET", "/v1/book/show/script"),
+        ("GET", "/v1/book/show/lock"),  # I1: the show learns the lock (and its id) without a token
         ("POST", "/v1/book/show/speak"),
         ("POST", "/v1/book/show/hear"),
         ("POST", "/v1/book/show/ask"),
@@ -87,6 +88,23 @@ def allowed(method: str, path: str) -> bool:
     return verb == "GET" and ".." not in path and _STATIC.fullmatch(path) is not None
 
 
+async def lock_for(
+    store: ShowLock, owners: tuple[str, ...], uid: str
+) -> tuple[ShowLockState | None, bool]:
+    """(the lock holding `uid`'s consoles, whether it is his own): a lock on ANY owner holds
+    every owner's sessions; only his own can be lifted by him. LockUnreadable propagates."""
+    if (own := await store.get(uid)) is not None:
+        return own, True
+    for other in owners:
+        if other != uid and (state := await store.get(other)) is not None:
+            return state, False
+    return None, False
+
+
+def owner_ids(s: Settings) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(user_id_for_email(e) for e in s.owner_emails))
+
+
 def _json(status: int, body: dict[str, Any]) -> Response:
     return JSONResponse(status_code=status, content=body, headers=NO_STORE)
 
@@ -97,7 +115,7 @@ class ShowLockMiddleware:
     def __init__(self, app: ASGIApp, settings: Settings) -> None:
         self.app = app
         self._s = settings
-        self._owners = tuple(dict.fromkeys(user_id_for_email(e) for e in settings.owner_emails))
+        self._owners = owner_ids(settings)
 
     async def _lock_on(
         self, store: ShowLock, uid: str, session: dict[str, Any]
@@ -114,10 +132,7 @@ class ShowLockMiddleware:
                 session.pop(GUEST_FLAG, None)
         if own is not None:
             return own, True
-        for other in self._owners:
-            if other != uid and (state := await store.get(other)) is not None:
-                return state, False
-        return None, False
+        return await lock_for(store, self._owners, uid)
 
     def _answer(self, scope: Scope, state: ShowLockState, own: bool) -> Response:
         if scope["path"] == "/" and scope["method"] in ("GET", "HEAD"):
@@ -190,7 +205,10 @@ __all__ = [
     "ALLOWED",
     "GUEST_FLAG",
     "LOCKED",
+    "UNREADABLE",
     "ShowLockMiddleware",
     "allowed",
     "install_show_lock_middleware",
+    "lock_for",
+    "owner_ids",
 ]

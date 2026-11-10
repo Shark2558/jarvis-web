@@ -394,6 +394,8 @@
     const how = q.get('reauth');
     if (how !== 'done' && how !== 'stale') return;
     try { history.replaceState(null, '', window.location.pathname); } catch (_) {}
+    let book = ''; try { book = sessionStorage.getItem('jarvis_book_pending') || ''; } catch (_) {}
+    if (book && how === 'done') return; // R6 D8: the Book panel resumes its own open (console-book.js)
     Deck.open('approvals', { focus: true });
     expand(true, false);
     if (how === 'done') note('ok', 'Signed in again. For the next 5 minutes you can set up your first passkey or start a passkey reset here.');

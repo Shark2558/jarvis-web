@@ -66,13 +66,11 @@ class ShowScript:
     async def voice(self, uid: str) -> str:
         return "browser" if (await self.prefs(uid)).get("show_voice") == "browser" else "cloud"
 
-    def fixed_scenes(self, audience: Audience, words: dict[str, str]) -> list[dict[str, Any]]:
-        ask = {"id": "ask", "text": LINES["ask"], "focus": ""}
-        closing = [{"id": i, "text": render(i, **words), "focus": ""} for i in CLOSING[audience]]
-        return [
-            {"n": 12, "id": "questions", "title": "Questions", "beats": [ask], "facts": []},
-            {"n": 13, "id": "closing", "title": "Closing", "beats": closing, "facts": []},
-        ]
+    def fixed_lines(self, audience: Audience, words: dict[str, str]) -> dict[str, Any]:
+        """Scene 12's line (`ask`, or `ai_off` when questions are off), the follow-up and, for a
+        guest, the hand-back: each {id, text}, the id a `LINES` key the show speaks by."""
+        keys = ("ask", "anything_else", "ai_off", *(("hand_back",) if audience == "guest" else ()))
+        return {k: {"id": k, "text": render(k, **words)} for k in keys}
 
     async def costs(self, uid: str, audience: Audience) -> dict[str, Any]:
         costs: dict[str, Any] = self.source.book().costs.model_dump(mode="json")
@@ -86,24 +84,21 @@ class ShowScript:
         return {**costs, **{k: spent.get(k) for k in ("month_inr", "limit_inr")}}
 
     async def build(self, uid: str, session: SessionView, talk: TalkState) -> dict[str, Any]:
-        """`GET /v1/book/show/script`: {release, audience, scenes (1-13), closing, costs, talk,
-        voice, session}."""
+        """`GET /v1/book/show/script` in the shape D's show reads (INTEGRATION-D, I1): {release,
+        audience, scenes (1-11), lines {ask, anything_else, ai_off, hand_back (guest)}, closing
+        [{id, text}] (scene 13), costs, talk, voice, until, session}."""
         book, audience = self.source.book(), session.audience
         words = await self.words(uid)
-        scenes = [s.model_dump(mode="json") for s in book.show.scenes]
-        fixed = self.fixed_scenes(audience, words)
-        hand_back = {"id": "hand_back", "text": LINES["hand_back"]}
         return {
             "release": book.release.model_dump(mode="json"),
             "audience": audience,
-            "scenes": scenes + fixed,
-            "closing": {
-                "lines": [{"id": b["id"], "text": b["text"]} for b in fixed[1]["beats"]],
-                "hand_back": hand_back if audience == "guest" else None,
-            },
+            "scenes": [s.model_dump(mode="json") for s in book.show.scenes],
+            "lines": self.fixed_lines(audience, words),
+            "closing": [{"id": i, "text": render(i, **words)} for i in CLOSING[audience]],
             "costs": await self.costs(uid, audience),
             "talk": talk.model_dump(),
             "voice": await self.voice(uid),
+            "until": session.until,
             "session": {
                 "until": session.until,
                 "idle_until": session.idle_until,

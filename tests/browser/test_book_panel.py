@@ -162,9 +162,9 @@ def test_the_focus_stays_on_its_control_when_the_panel_redraws(
             " && document.activeElement.closest('li').textContent.includes('9b97eab')"
         )
         c.page.locator("#p-book .bk-set .dsc").click()
-        c.page.locator("#p-book .bsw[data-key=talk_through]").click()
+        c.page.locator("#p-book .bsw[data-key=talk_on]").click()
         c.page.locator("#p-book .bk-setnote", has_text="Saved").wait_for()
-        assert c.page.evaluate("document.activeElement.dataset.key") == "talk_through"
+        assert c.page.evaluate("document.activeElement.dataset.key") == "talk_on"
         _clean(c)
     finally:
         c.close()

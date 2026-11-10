@@ -71,7 +71,9 @@
     const r = await fetch(path, { method: opts.method || (opts.body !== undefined ? 'POST' : 'GET'),
       headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined, credentials: 'same-origin' });
     if (r.status === 401) { // every non-2xx error carries .status: callers leave a 401 to the gate
-      showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err;
+      const gone = await bookGone(r); // R6: a build book session that ended is not a sign-in problem
+      if (!gone) showGate();
+      const err = new Error(gone ? 'The book session ended.' : 'Sign in required.'); err.status = 401; if (gone) err.code = 'session_gone'; throw err;
     }
     if (r.status === 423) showLocked(); // R6 D10: a guest show holds every console of the owner
     if (!r.ok) {
@@ -98,6 +100,9 @@
     if (r.status === 401) { showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err; }
     if (r.status === 423) showLocked();
     return r;
+  }
+  async function bookGone(r) {
+    try { const j = await r.clone().json(); return !!j && j.error === 'session_gone'; } catch (_) { return false; }
   }
   /** R6 D10: 423 show_locked -- a guest is watching the build book, so this console goes to the show
    *  (it comes back after the owner's passkey lifts the lock there). Throws so no caller goes on. */
@@ -601,6 +606,19 @@
     raw,
   });
 
+  // R6 D10 (review D-sec M2): a console tab already open when a guest show starts asks the server
+  // again whenever it comes back into view (a 423 hops it to the show), and a guest open in
+  // another tab of this browser tells it at once.
+  let lastCheck = 0;
+  function recheck() {
+    if (state.authMode !== 'google' || Date.now() - lastCheck < 1500) return;
+    lastCheck = Date.now(); api('/auth/me').catch(() => {});
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheck(); });
+  window.addEventListener('focus', recheck);
+  window.addEventListener('pageshow', (e) => { if (e.persisted) recheck(); });
+  try { new BroadcastChannel('jarvis-book').onmessage = (e) => { if (e.data && e.data.type === 'guest-show') { lastCheck = 0; recheck(); } }; } catch (_) {}
+
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {
     renderWelcome();
@@ -629,6 +647,7 @@
     renderBanner(fallbackWarning);
     if (state.authMode === 'google') {
       const r = await fetch('/auth/me', { credentials: 'same-origin' });
+      if (r.status === 423) { location.assign('/book/show'); return; } // R6 D10: a guest show holds it
       if (r.status !== 200) { showGate(); return; }
       const me = await r.json();
       const who = $('who'); who.textContent = (me.email || '?').charAt(0).toUpperCase(); who.title = me.email; who.hidden = false;

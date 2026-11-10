@@ -44,7 +44,7 @@ def test_builder_c_parts_pass_and_each_control_fails_its_part() -> None:
         "lock:resume-proof-lifts",
     } <= ids
     b_rows = [x for x in report["results"] if x["id"] in ACCESS_B_ROWS]
-    assert len(b_rows) == 3 and all(x.get("rerun_at_integration") for x in b_rows)
+    assert len(b_rows) == 3 and not any(x.get("rerun_at_integration") for x in b_rows)  # I1: real
     nc = report["negative_control"]
     assert nc["suite_failed"] is True and nc["parts_not_built"] == []
     failed = nc["failed_cases"]

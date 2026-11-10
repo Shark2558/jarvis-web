@@ -21,6 +21,7 @@ a reply or book text.
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
@@ -47,6 +48,18 @@ OFF_TRAINING = (
 )
 
 
+UNSTORED = ("limit", "ai_off")  # fixed replies that store no turn: their ids are derived
+
+
+def new_reply_id() -> str:
+    return f"r_{secrets.token_hex(6)}"
+
+
+def fixed_reply_id(session_id: str, key: str) -> str:
+    """The id of a fixed reply no turn holds: the same for the same line in the same session."""
+    return "r_" + hashlib.sha256(f"{session_id}:{key}".encode()).hexdigest()[:12]
+
+
 class Mode(Protocol):
     async def load(self, uid: str) -> str: ...
 
@@ -68,7 +81,11 @@ class Reserving(BookSessions, Protocol):
 
     async def release(self, uid: str, session_id: str) -> None: ...
 
-    async def put_turn(self, uid: str, session_id: str, question: str, reply: str) -> int: ...
+    async def put_turn(
+        self, uid: str, session_id: str, question: str, reply: str, *, reply_id: str = ""
+    ) -> int: ...
+
+    async def reply(self, uid: str, session_id: str, reply_id: str) -> str | None: ...
 
 
 def request_for(
@@ -158,10 +175,10 @@ class BookTalk:
         return self._hosts[1]
 
     @staticmethod
-    def _reply(line_or_text: str, *, refused: bool, left: int) -> TalkReply:
+    def _reply(line_or_text: str, *, refused: bool, left: int, rid: str = "") -> TalkReply:
         follow = LINES["anything_else"] if left > 0 else LINES["limit"]
         return TalkReply(
-            reply_id=f"r_{secrets.token_hex(6)}",
+            reply_id=rid or f"r_{secrets.token_hex(6)}",
             reply=line_or_text,
             refused=refused,
             follow_up=follow,
@@ -194,23 +211,29 @@ class BookTalk:
 
     async def ask(self, uid: str, session: SessionView, text: str, *, now: datetime) -> TalkReply:
         sid = session.session_id
+        limit = self._reply(LINES["limit"], refused=True, left=0, rid=fixed_reply_id(sid, "limit"))
         if session.questions_left <= 0:
-            return self._reply(LINES["limit"], refused=True, left=0)
+            return limit
         spec, _ = await self._ready(uid)
         if spec is None:
-            return self._reply(LINES["ai_off"], refused=True, left=session.questions_left)
+            return self._off(sid, session.questions_left)
         left = await self._sessions.reserve(uid, sid)  # SessionGone: the route answers 401
         if left is None:
-            return self._reply(LINES["limit"], refused=True, left=0)
-        refusal = guard.pre_guard(text)
+            return limit
+        refusal, rid = guard.pre_guard(text), new_reply_id()
         if refusal is not None:
-            left = await self._sessions.put_turn(uid, sid, "", LINES[refusal])
-            return self._reply(LINES[refusal], refused=True, left=left)
+            left = await self._sessions.put_turn(uid, sid, "", LINES[refusal], reply_id=rid)
+            return self._reply(LINES[refusal], refused=True, left=left, rid=rid)
         return await self._answer(uid, spec, sid, text, left)
+
+    def _off(self, sid: str, left: int) -> TalkReply:
+        return self._reply(
+            LINES["ai_off"], refused=True, left=left, rid=fixed_reply_id(sid, "ai_off")
+        )
 
     async def _give_back(self, uid: str, sid: str, left: int) -> TalkReply:
         await self._sessions.release(uid, sid)
-        return self._reply(LINES["ai_off"], refused=True, left=left + 1)
+        return self._off(sid, left + 1)
 
     async def _answer(self, uid: str, spec: BrainSpec, sid: str, text: str, left: int) -> TalkReply:
         try:
@@ -225,8 +248,19 @@ class BookTalk:
             return await self._give_back(uid, sid, left)
         verdict = self._verdict(done, canary, book)
         answer = LINES[verdict] if verdict else guard.cap(done.text) or LINES["refuse_meta"]
-        left = await self._sessions.put_turn(uid, sid, "" if verdict else text, answer)
-        return self._reply(answer, refused=verdict is not None, left=left)
+        rid = new_reply_id()
+        left = await self._sessions.put_turn(
+            uid, sid, "" if verdict else text, answer, reply_id=rid
+        )
+        return self._reply(answer, refused=verdict is not None, left=left, rid=rid)
+
+    async def said(self, uid: str, session_id: str, reply_id: str) -> str | None:
+        """What this session was answered under `reply_id` (a fixed line no turn holds, or a
+        stored guarded reply); None for any other id. D speaks a reply by its id (I1)."""
+        fixed = (k for k in UNSTORED if fixed_reply_id(session_id, k) == reply_id)
+        if (key := next(fixed, None)) is not None:
+            return LINES[key]
+        return await self._sessions.reply(uid, session_id, reply_id)
 
 
-__all__ = ["MAX_TOKENS", "BookTalk", "request_for"]
+__all__ = ["MAX_TOKENS", "BookTalk", "fixed_reply_id", "request_for"]

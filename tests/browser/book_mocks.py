@@ -482,7 +482,7 @@ class FakeBook:
         self.settings = {
             "creator_name": "",
             "show_voice": "cloud",
-            "talk_through": True,
+            "talk_on": True,
             "allow_training_brain": False,
         }
         page.route("**/v1/book", self._status)

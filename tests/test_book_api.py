@@ -91,8 +91,10 @@ def gsettings(settings: Settings) -> Settings:
 
 
 def wire(app: Any, docs: MemoryDocs) -> None:
-    """What I1's wire_r6 puts on app.state for builder B's routes (C's parts are fakes)."""
+    """What I1's wire_r6 puts on app.state for builder B's routes (C's parts are fakes: the real
+    ones I1 wires from the token key are taken off; tests/test_r6_wiring.py covers them)."""
     st = app.state
+    st.book_service = st.book_lock = st.book_talk = st.book_jobs = None
     st.test_notes = FakeNotifier()
     st.book_source = FakeSource(*make_release(1))
     st.book_vault = DocsBookVault(docs, ring(), limit_mb=60)
@@ -205,7 +207,17 @@ async def test_status_while_sealing_takes_longer_than_the_request(rig: Rig) -> N
     assert (await rig.get("/v1/book")).json()["sealing"] is True
 
 
-async def test_status_reads_the_live_parts_and_fails_closed_on_the_lock(rig: Rig) -> None:
+def _past_the_lock_middleware(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With I1's wiring C's ShowLockMiddleware answers a locked or unreadable lock first (423 /
+    503); these tests reach B's own status body, which must ALSO fail closed (D10)."""
+    monkeypatch.setattr("jarvis.api.book_lock.allowed", lambda method, path: True)
+
+
+async def test_status_reads_the_live_parts_and_fails_closed_on_the_lock(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _past_the_lock_middleware(monkeypatch)
+
     class Lock:
         def __init__(self, state: ShowLockState | None | Exception) -> None:
             self.state = state
@@ -255,10 +267,13 @@ async def test_nothing_wired_is_book_off(rig: Rig) -> None:
     for name in ("book_source", "book_vault", "book_sessions", "book_tickets", "book_settings"):
         setattr(rig.app.state, name, None)
     await login(rig.c)
-    for path in ("/v1/book", "/v1/book/sections", "/v1/book/settings"):
+    for path in ("/v1/book/sections", "/v1/book/settings"):
         r = await rig.get(path, OWNER_TOKEN)
         assert r.status_code == 503 and r.json()["error"] == "book_off", path
         no_store(r)
+    r = await rig.get("/v1/book", OWNER_TOKEN)  # I1: the panel says why, no error at boot
+    assert r.status_code == 200 and r.json()["available"] is False and r.json()["reason"]
+    no_store(r)
 
 
 # ---- sections, behind an owner book session -------------------------------------------------
@@ -581,8 +596,10 @@ async def test_malformed_settings_json_is_input_rejected(rig: Rig, raw: bytes) -
 
 
 async def test_unreadable_lock_and_passkey_stores_leave_a_trace(
-    rig: Rig, caplog: pytest.LogCaptureFixture
+    rig: Rig, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _past_the_lock_middleware(monkeypatch)
+
     class Broken:
         async def get(self, uid: str) -> Any:
             raise LockUnreadable("x")

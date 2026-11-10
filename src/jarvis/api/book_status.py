@@ -29,6 +29,10 @@ from jarvis.logging import get_logger
 log = get_logger(__name__)
 
 NO_BOOK = "This server has no build book."
+NO_KEY = (
+    "The build book is off on this server: it has no encryption key, and the book is only ever "
+    "kept sealed."
+)
 UNBUILT = "This release's build book could not be built at deploy."
 TALK_OFF = "The talk-through isn't available on this server."
 
@@ -133,6 +137,27 @@ async def _open_part(request: Request, uid: str) -> dict[str, Any]:
     return {"passkey_ready": ready, "fresh_left_s": left}
 
 
+def off_body(request: Request) -> dict[str, Any]:
+    """`GET /v1/book` while the book is off here (no keyring, D6): a plain 200 the panel shows,
+    with the Contract's fields at their empty values (I1: never a 503 at console boot)."""
+    return {
+        "available": False,
+        "reason": NO_KEY,
+        "release": None,
+        "sealed": [],
+        "sealed_ok": True,
+        "sealing": False,
+        "kept": KEEP,
+        "used_mb": 0.0,
+        "limit_mb": request.app.state.settings.book_max_total_mb,
+        "session": None,
+        "lock": {"on": False},
+        "last_closed": None,
+        "talk": {"on": False, "why": TALK_OFF},
+        "open": {"passkey_ready": False, "fresh_left_s": None},
+    }
+
+
 async def status_body(
     request: Request, uid: str, source: BookSource, vault: BookVault
 ) -> dict[str, Any]:
@@ -146,4 +171,4 @@ async def status_body(
     }
 
 
-__all__ = ["NO_BOOK", "TALK_OFF", "UNBUILT", "status_body"]
+__all__ = ["NO_BOOK", "NO_KEY", "TALK_OFF", "UNBUILT", "off_body", "status_body"]

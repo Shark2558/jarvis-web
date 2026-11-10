@@ -193,6 +193,7 @@ class DocBookSessions(ClosingStore):
         return self._ring.cipher(PURPOSE).encrypt(plain, aad=self._aad(uid, bk))
 
     def _unseal(self, uid: str, bk: str, blob: Any) -> list[list[str]]:
+        """The sealed turns, each [question, reply, reply id] (the id "" for an older turn)."""
         if not isinstance(blob, str) or not blob:
             return []
         try:
@@ -200,14 +201,18 @@ class DocBookSessions(ClosingStore):
         except (VaultError, ValueError):
             log.warning("book session turns did not open; starting without them")
             return []
-        return [[str(q), str(r)] for q, r in raw][-TURNS_KEPT:] if isinstance(raw, list) else []
+        if not isinstance(raw, list):
+            return []
+        return [[str(t[0]), str(t[1]), str(t[2]) if len(t) > 2 else ""] for t in raw][-TURNS_KEPT:]
 
-    async def _turn(self, uid: str, sid: str, question: str, reply: str, *, count: bool) -> int:
+    async def _turn(
+        self, uid: str, sid: str, question: str, reply: str, *, count: bool, reply_id: str = ""
+    ) -> int:
         async def work(tx: DocTx) -> int:
             doc = await tx.get(self._path(sid))
             if doc is None or doc.get("uid") != uid or doc.get("state") != "open":
                 raise SessionGone(GONE)
-            turns = [*self._unseal(uid, sid, doc.get("blob")), [question, reply]]
+            turns = [*self._unseal(uid, sid, doc.get("blob")), [question, reply, reply_id]]
             asked = int(doc.get("questions", 0)) + (1 if count else 0)
             blob = self._seal(uid, sid, turns[-TURNS_KEPT:])
             tx.set(self._path(sid), {**doc, "blob": blob, "questions": asked})
@@ -219,9 +224,11 @@ class DocBookSessions(ClosingStore):
         """ports.BookSessions: store a turn AND count it (the lane reserves first instead)."""
         return await self._turn(uid, session_id, question, reply, count=True)
 
-    async def put_turn(self, uid: str, session_id: str, question: str, reply: str) -> int:
+    async def put_turn(
+        self, uid: str, session_id: str, question: str, reply: str, *, reply_id: str = ""
+    ) -> int:
         """Store the guarded turn of a question already reserved; the questions left."""
-        return await self._turn(uid, session_id, question, reply, count=False)
+        return await self._turn(uid, session_id, question, reply, count=False, reply_id=reply_id)
 
     async def reserve(self, uid: str, session_id: str) -> int | None:
         """Count one question BEFORE the model call, atomically: the questions left after it,
@@ -254,7 +261,15 @@ class DocBookSessions(ClosingStore):
         doc = await self._docs.get(self._path(session_id))
         if doc is None or doc.get("uid") != uid or doc.get("state") != "open":
             return ()
-        return tuple((q, r) for q, r in self._unseal(uid, session_id, doc.get("blob")))
+        return tuple((q, r) for q, r, _ in self._unseal(uid, session_id, doc.get("blob")))
+
+    async def reply(self, uid: str, session_id: str, reply_id: str) -> str | None:
+        """A guarded reply of this open session by its id (the show speaks it by id), or None."""
+        doc = await self._docs.get(self._path(session_id))
+        if not reply_id or doc is None or doc.get("uid") != uid or doc.get("state") != "open":
+            return None
+        turns = self._unseal(uid, session_id, doc.get("blob"))
+        return next((r for _, r, rid in turns if rid == reply_id), None)
 
     # ---- close and sweep (closing.ClosingStore does the work) ---------------------------------
     async def close(

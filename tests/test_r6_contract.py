@@ -1,16 +1,22 @@
-# tests/test_r6_contract.py -- R6 I0 seam 8 (docs/plans/r6-build-book.md "Contract"): every build
-# book route exists from day one and, until builders B and C fill them, answers 503
-# {error: "book_off", detail} with Cache-Control: no-store; nothing else answers under /v1/book.
+# tests/test_r6_contract.py -- R6 "Contract" (docs/plans/r6-build-book.md; I0 seam 8, I1 wired):
+# exactly these build book routes, each behind a signed-in owner and `no-store`. With the book OFF
+# (no keyring) every route answers 503 {error: "book_off", detail} except `GET /v1/book` (200
+# {available: false, reason}: the panel says why, the console logs no error) and `GET
+# /v1/book/show/lock` (200 {on: false}). Wired, a made-up book token gets 401 session_gone and
+# never a 503 book_off. I1 added `GET /v1/book/show/lock` (D's show reads the lock without a token).
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
+import jarvis.api.r6_wiring as r6
 from jarvis.api import create_app
+from jarvis.buildbook.release import ReleaseSource
 from jarvis.config import Settings
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
@@ -34,8 +40,22 @@ ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
     ("POST", "/v1/book/resume", {}),
     ("GET", "/v1/book/settings", None),
     ("PUT", "/v1/book/settings", {}),
+    ("GET", "/v1/book/show/lock", None),  # I1 (INTEGRATION-D "Needed")
 ]
 TOKEN = "contract-token"
+KEY_B64 = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+FIXTURE = Path(__file__).resolve().parent / "fixtures" / "book" / "_book"
+ANSWER_WHEN_OFF = {("GET", "/v1/book"), ("GET", "/v1/book/show/lock")}
+# wired, token-mode dev, a made-up book token: (status, error code or None for a 200 body)
+WIRED: dict[tuple[str, str], tuple[int, str | None]] = {
+    ("GET", "/v1/book"): (200, None),
+    ("POST", "/v1/book/open"): (200, None),  # token-mode dev: the owner, no passkey (D8)
+    ("GET", "/v1/book/download/" + TICKET): (410, "gone"),
+    ("POST", "/v1/book/resume"): (403, "console_only"),
+    ("GET", "/v1/book/settings"): (200, None),
+    ("PUT", "/v1/book/settings"): (200, None),
+    ("GET", "/v1/book/show/lock"): (200, None),
+}
 
 
 @pytest.fixture
@@ -57,14 +77,44 @@ async def _call(c: AsyncClient, method: str, path: str, body: Any, **headers: st
 
 
 @pytest.mark.parametrize(("method", "path", "body"), ROUTES)
-async def test_every_contract_route_answers_book_off_without_caching(
+async def test_with_the_book_off_every_route_answers_book_off_without_caching(
     token_client: AsyncClient, method: str, path: str, body: Any
 ) -> None:
     r = await _call(token_client, method, path, body, Authorization=f"Bearer {TOKEN}")
-    assert r.status_code == 503, (method, path, r.text)
-    got = r.json()
-    assert got["error"] == "book_off" and isinstance(got["detail"], str) and got["detail"]
     assert r.headers["cache-control"] == "no-store"
+    got = r.json()
+    if (method, path) in ANSWER_WHEN_OFF:
+        assert r.status_code == 200 and got.get("available", got.get("on")) is False, got
+        return
+    assert r.status_code == 503, (method, path, r.text)
+    assert got["error"] == "book_off" and isinstance(got["detail"], str) and got["detail"]
+
+
+@pytest.fixture
+async def wired_client(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[AsyncClient]:
+    monkeypatch.setattr(r6, "default_source", lambda: ReleaseSource(FIXTURE))
+    s = settings.model_copy(update={"api_token": SecretStr(TOKEN), "token_key": SecretStr(KEY_B64)})
+    app = create_app(s, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            yield c
+
+
+@pytest.mark.parametrize(("method", "path", "body"), ROUTES)
+async def test_wired_every_route_answers_for_real_without_caching(
+    wired_client: AsyncClient, method: str, path: str, body: Any
+) -> None:
+    r = await _call(wired_client, method, path, body, Authorization=f"Bearer {TOKEN}")
+    want = WIRED.get((method, path), (401, "session_gone"))  # every ● route: no such session
+    assert r.headers["cache-control"] == "no-store"
+    assert r.status_code == want[0], (method, path, r.text)
+    got = r.json()
+    if want[1] is None:
+        assert "error" not in got
+    else:
+        assert got["error"] == want[1] and isinstance(got["detail"], str) and got["detail"]
 
 
 @pytest.mark.parametrize(("method", "path", "body"), ROUTES)

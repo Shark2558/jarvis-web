@@ -286,7 +286,7 @@ def test_telegram_trailer_carries_the_rule_and_others_do_not() -> None:
 
 
 def test_persona_version_is_p4_6() -> None:
-    assert prompts_mod.PERSONA_VERSION == "p5.1"
+    assert prompts_mod.PERSONA_VERSION == "p5.2"
 
 
 # ---- tools/base.py + observers -----------------------------------------------------------

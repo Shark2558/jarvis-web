@@ -1,6 +1,6 @@
 # tests/test_r5_persona.py -- R5 D9 / D19 (docs/plans/r5-voice.md): the spoken-reply rule now asks
 # for the whole answer to be spoken, and the console's voice commands get their own paragraph.
-# PERSONA_VERSION p5.0 (bumped once for R5 at I1) covered both; R5.1 I1 made it p5.1.
+# PERSONA_VERSION p5.0 (bumped once for R5 at I1) covered both; R5.1 I1 made it p5.1, R6 I1 p5.2.
 from __future__ import annotations
 
 import pytest
@@ -12,8 +12,8 @@ def _flat(rule: str) -> str:
     return " ".join(rule.split())
 
 
-def test_persona_is_p5_1_after_r5() -> None:
-    assert p.PERSONA_VERSION == "p5.1"
+def test_persona_is_p5_2_after_r5() -> None:
+    assert p.PERSONA_VERSION == "p5.2"
 
 
 def test_voice_rule_keeps_answer_first_and_the_sixty_word_default() -> None:

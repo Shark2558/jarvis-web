@@ -15,7 +15,6 @@
   'use strict';
   const ID = /^(s\d{2}b\d{2}|[a-z_]{2,20}|r_[0-9a-f]{12})$/;
   const WORD_MS = 330, TAIL_MS = 800, START_MS = 1500, CACHE = 3, MAX_REC_S = 15, RATE = 16000;
-  const WORKLET = '/static/voice-capture-worklet.js';
   const S = { ctx: null, gain: null, an: null, data: null, mode: 'cloud', muted: false, closed: false, seq: 0, cur: null,
     cache: new Map(), pulse: 0, lv: 0, paused: false };
   const captionMs = (text) => (String(text || '').split(/\s+/).filter(Boolean).length * WORD_MS) + TAIL_MS;
@@ -209,60 +208,43 @@
     S.an = null; S.data = null;
   }
 
-  // ---- a spoken question: the console's capture worklet, 16 kHz frames, a WAV for show/hear --------
+  // ---- a spoken question: the console's one capture pipeline (console-voice-capture.js, R5: the only module that opens
+  // the microphone, so the owner's microphone lock holds here too), 16 kHz frames, a WAV for show/hear ------------------
   const rec = (() => {
     let live = null, starting = false, gen = 0; // gen: bumped by cancel() and dispose(); a start that sees it move gives up
-    const supported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && (window.AudioContext || window.webkitAudioContext) && window.AudioWorkletNode);
+    const A = () => window.JarvisAudio || null;
+    const supported = () => { const a = A(); return !!(a && a.supported() && window.JarvisWav); };
     /** true: recording now. false: not started (already busy, closed, or cancelled while it was starting). */
     async function begin() {
-      if (live || starting || S.closed) return false;
+      const a = A();
+      if (!a || live || starting || S.closed) return false;
       const my = gen, stale = () => my !== gen || S.closed;
       starting = true;
-      let stream = null, ctx = null;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-        if (stale()) return false;
-        const AC = window.AudioContext || window.webkitAudioContext;
-        ctx = new AC();
-        await ctx.audioWorklet.addModule(WORKLET);
-        if (stale()) return false;
-        const node = new AudioWorkletNode(ctx, 'jarvis-capture', { channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
-        const frames = [], src = ctx.createMediaStreamSource(stream);
-        live = { stream, ctx, node, frames, src };
-        node.port.onmessage = (e) => { if (e.data instanceof Int16Array && frames.length * e.data.length < MAX_REC_S * RATE) frames.push(e.data); };
-        src.connect(node);
+        try { await a.open(); } catch (e) { if (stale()) return false; throw e; } // .code 'mic_off': the lock is on
+        if (stale()) { a.close(); return false; }
+        const frames = [];
+        const off = a.subscribe((f) => { if (frames.length * f.length < MAX_REC_S * RATE) frames.push(new Int16Array(f)); });
+        live = { frames, off };
         live.timer = setTimeout(() => { if (live && live.onfull) live.onfull(); }, MAX_REC_S * 1000);
         return true;
       } finally {
         starting = false;
-        if (!live || live.stream !== stream) { if (stream) stream.getTracks().forEach((t) => t.stop()); if (ctx) { try { ctx.close(); } catch (_) {} } }
       }
     }
     function release() {
       const l = live; live = null;
       if (!l) return null;
-      clearTimeout(l.timer);
-      try { l.src.disconnect(); l.node.disconnect(); } catch (_) {}
-      l.stream.getTracks().forEach((t) => t.stop());
-      try { l.ctx.close(); } catch (_) {}
+      clearTimeout(l.timer); l.off();
+      const a = A(); if (a) a.close();
       return l.frames;
-    }
-    function wav(frames) {
-      const n = frames.reduce((a, f) => a + f.length, 0), buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
-      const ascii = (at, s) => { for (let i = 0; i < s.length; i += 1) v.setUint8(at + i, s.charCodeAt(i)); };
-      ascii(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); ascii(8, 'WAVE'); ascii(12, 'fmt '); v.setUint32(16, 16, true);
-      v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, RATE, true); v.setUint32(28, RATE * 2, true);
-      v.setUint16(32, 2, true); v.setUint16(34, 16, true); ascii(36, 'data'); v.setUint32(40, n * 2, true);
-      let at = 44;
-      frames.forEach((f) => { for (let i = 0; i < f.length; i += 1, at += 2) v.setInt16(at, f[i], true); });
-      return buf;
     }
     return {
       supported,
       start: begin,
       onFull(fn) { if (live) live.onfull = fn; },
-      stop() { const f = release(); return f && f.length ? wav(f) : null; },
-      cancel() { gen += 1; release(); },
+      stop() { const f = release(); return f && f.length ? window.JarvisWav.encode(f, RATE) : null; },
+      cancel() { gen += 1; const was = starting; release(); const a = A(); if (was && a) a.close(); }, // a pending open stops its tracks
       active: () => !!live,
     };
   })();

@@ -1,0 +1,6 @@
+# tests/fixtures/book/repo/pyproject.toml -- build book generator fixture (the Stack section)
+[project]
+name = "jarvis"
+version = "0.0.1"
+requires-python = ">=3.11"
+dependencies = ["alpha-lib>=1.2", "beta-lib>=4.5", "gamma-lib>=0.9"]

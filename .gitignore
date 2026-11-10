@@ -7,3 +7,6 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 evals/**/report.json
+# R6 D4: the build book the generator writes before docker build (package data, never committed;
+# the fixtures under tests/fixtures/book/_book/ ARE committed, so this names the one path)
+/src/jarvis/buildbook/_book/

@@ -55,6 +55,13 @@ def _google_console(browser: Any, server_url: str, token: str) -> tuple[Console,
     return c, me
 
 
+def _close(c: Console) -> None:
+    """Drop the routes first: a /console/config fetch still in flight when the page hopped must
+    not surface in the next test's browser call ("Response has been disposed")."""
+    c.ctx.unroute_all(behavior="ignoreErrors")
+    c.close()
+
+
 def _on_the_show(c: Console) -> None:
     c.page.wait_for_url("**/book/show", timeout=10000)
     c.page.wait_for_load_state("load")
@@ -77,7 +84,7 @@ def test_an_open_console_tab_goes_to_the_show_when_a_guest_show_starts(
         )
         _on_the_show(c)
     finally:
-        c.close()
+        _close(c)
 
 
 def test_an_open_console_tab_asks_again_when_it_comes_back_into_focus(
@@ -91,7 +98,7 @@ def test_an_open_console_tab_asks_again_when_it_comes_back_into_focus(
         c.page.evaluate("() => window.dispatchEvent(new Event('focus'))")
         _on_the_show(c)
     finally:
-        c.close()
+        _close(c)
 
 
 def test_a_book_session_that_ended_never_shows_the_sign_in_gate(

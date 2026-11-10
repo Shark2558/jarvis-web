@@ -2,16 +2,26 @@
 # {id, bk, since}) is read at most once per 3 s per instance, never reads as "unlocked" when it
 # can't be read (LockUnreadable), and lifts only for the current lock id. The middleware covers
 # every cookie session of the owner (all browsers, sign-ins made later, the other owners too):
-# allowed are the show, its routes, close, resume, the passkey challenge, the passkey reset (so a
-# lost passkey can still be recovered), sign-in/out, /health, /console/config and /static; `GET /`
-# -> 302 /book/show; everything else, /auth/me included -> 423 show_locked. Bearer is untouched.
+# allowed are the show, its routes, close, resume, the passkey challenge, sign-in/out, /health,
+# /console/config and /static; `GET /` -> 302 /book/show; everything else, /auth/me and EVERY
+# passkey register/reset/cancel route included -> 423 show_locked. A sign-in made under the lock
+# is locked too and lifts nothing (D10: only a book_resume passkey). Bearer is untouched.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from book_app_fakes import BEARER, CSRF, OWNER, SECOND_OWNER, book_app, owner_uid, sign_in
+from book_app_fakes import (
+    BEARER,
+    CSRF,
+    OWNER,
+    SECOND_OWNER,
+    book_app,
+    owner_uid,
+    register_passkey,
+    sign_in,
+)
 from book_show_fakes import T0, UID, FlakyDocs
 from httpx import AsyncClient
 
@@ -92,7 +102,8 @@ async def test_an_unreadable_lock_is_never_unlocked(docs: FlakyDocs) -> None:
         ("POST", "/v1/book/open", False),
         ("GET", "/v1/book", False),
         ("POST", "/v1/passkeys/challenge", True),
-        ("POST", "/v1/passkeys/reset", True),
+        ("POST", "/v1/passkeys/reset", False),
+        ("POST", "/v1/passkeys/register", False),
         ("POST", "/v1/passkeys/reset/cancel", False),
         ("POST", "/v1/passkeys/register/options", False),
         ("GET", "/v1/permissions", False),
@@ -108,7 +119,7 @@ async def test_an_unreadable_lock_is_never_unlocked(docs: FlakyDocs) -> None:
 )
 def test_the_allow_list(method: str, path: str, ok: bool) -> None:
     assert allowed(method, path) is ok
-    assert len(ALLOWED) == 15
+    assert len(ALLOWED) == 14
 
 
 # ---- the middleware on the real app --------------------------------------------------------------
@@ -178,15 +189,24 @@ async def test_an_unreadable_lock_closes_everything_but_the_allowed_routes(app: 
         assert (await c.get("/health")).status_code == 200
 
 
-async def test_the_passkey_reset_stays_reachable_and_still_wants_a_fresh_sign_in(
-    app: Any,
-) -> None:
-    async with sign_in(app, fresh=False) as c:
-        await _locked(app)
-        r = await c.post("/v1/passkeys/reset", headers=CSRF)
-        assert r.status_code == 403 and r.json()["reason"] == "reauth"  # reached, refused
-        cancel = await c.post("/v1/passkeys/reset/cancel", json={}, headers=CSRF)
-        assert cancel.status_code == 423  # would show the owner's passkeys without a proof
+async def test_a_sign_in_under_the_lock_is_locked_and_reaches_no_passkey_route(app: Any) -> None:
+    async with sign_in(app) as owner:
+        await register_passkey(owner)
+    lock_id = await _locked(app)
+    async with sign_in(app) as again:  # a guest re-signs in (one click on Google's chooser)
+        assert (await again.get("/auth/me")).status_code == 423
+        for path, body in (
+            ("/v1/passkeys/reset", None),
+            ("/v1/passkeys/reset/cancel", {}),
+            ("/v1/passkeys/register/options", {}),
+            ("/v1/passkeys/register", {}),
+        ):
+            r = await again.post(path, json=body, headers=CSRF)
+            assert r.status_code == 423 and r.json()["error"] == "show_locked", path
+        assert (await again.put("/v1/permissions", json={}, headers=CSRF)).status_code == 423
+        r = await again.post("/v1/book/resume", json={}, headers=CSRF)
+        assert r.status_code == 403 and r.json()["error"] == "passkey_required"
+        assert (await app.state.book_lock.get(owner_uid())).id == lock_id  # nothing lifted
 
 
 def test_the_middleware_is_pure_asgi() -> None:
@@ -207,7 +227,7 @@ class StaleCache:
 
 
 async def test_the_presenting_browser_is_held_even_through_a_stale_cache(app: Any) -> None:
-    from book_app_fakes import open_book, register_passkey
+    from book_app_fakes import open_book
 
     async with sign_in(app) as presenting, sign_in(app, fresh=False) as older:
         auth = await register_passkey(presenting)
@@ -230,3 +250,79 @@ async def test_refresh_skips_the_cache(docs: FlakyDocs) -> None:
     state = await there.set(UID, "bk_0123456789abcdef", now=T0)
     assert await here.get(UID) is None and await here.refresh(UID) == state
     assert await here.get(UID) == state  # and the cache now knows
+
+
+# ---- scopes the lock can't see into fail closed ----------------------------------------------
+class Inner:
+    def __init__(self) -> None:
+        self.called = False
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        self.called = True
+
+
+class OneLock:
+    def __init__(self, state: Any = None, *, broken: bool = False) -> None:
+        self.state, self.broken = state, broken
+
+    async def get(self, uid: str) -> Any:
+        if self.broken:
+            raise LockUnreadable("down")
+        return self.state
+
+
+async def _run(mw: ShowLockMiddleware, scope: dict[str, Any]) -> list[dict[str, Any]]:
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "websocket.connect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    await mw(scope, receive, send)
+    return sent
+
+
+def _scope(kind: str, store: Any, *, session: bool = True) -> dict[str, Any]:
+    from time import time
+    from types import SimpleNamespace
+
+    scope: dict[str, Any] = {
+        "type": kind,
+        "path": "/v1/live",
+        "headers": [],
+        "query_string": b"",
+        "app": SimpleNamespace(state=SimpleNamespace(book_lock=store)),
+    }
+    if kind == "http":
+        scope["method"] = "GET"
+    if session:
+        scope["session"] = {"email": OWNER, "iat": time()}
+    return scope
+
+
+async def test_an_owner_websocket_is_refused_while_a_lock_is_on(settings: Settings) -> None:
+    from book_app_fakes import google_settings
+
+    s = google_settings(settings)
+    state = await DocShowLock(FlakyDocs()).set(UID, "bk_0123456789abcdef", now=T0)
+    for store, code in ((OneLock(state), 4423), (OneLock(broken=True), 4503)):
+        inner = Inner()
+        sent = await _run(ShowLockMiddleware(inner, s), _scope("websocket", store))
+        assert sent == [{"type": "websocket.close", "code": code}] and not inner.called
+    inner = Inner()
+    assert await _run(ShowLockMiddleware(inner, s), _scope("websocket", OneLock())) == []
+    assert inner.called  # no lock: the socket goes on
+
+
+async def test_a_google_scope_without_a_session_fails_closed(settings: Settings) -> None:
+    from book_app_fakes import google_settings
+
+    inner = Inner()
+    mw = ShowLockMiddleware(inner, google_settings(settings))
+    sent = await _run(mw, _scope("http", OneLock(), session=False))
+    assert sent[0]["status"] == 503 and not inner.called  # installed outside SessionMiddleware
+    token_mode = ShowLockMiddleware(Inner(), settings)
+    await _run(token_mode, _scope("http", OneLock(), session=False))
+    assert token_mode.app.called  # type: ignore[attr-defined]

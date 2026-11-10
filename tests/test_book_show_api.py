@@ -2,7 +2,7 @@
 # Google sign-in from the last 5 minutes (console only; no sign-in-only fallback; the proof is
 # bound to its audience), the token opens the show routes, a guest open locks every console and
 # consumes the fresh sign-in, the close wipes and tells, only a book_resume proof lifts the lock
-# (or, when no passkey is in force any more after a completed reset, a fresh sign-in).
+# (D10: with no passkey in force any more, no sign-in lifts it: only the emergency unlock CLI).
 from __future__ import annotations
 
 import io
@@ -77,8 +77,24 @@ async def test_opening_needs_the_console_a_passkey_and_a_fresh_sign_in(app: Any)
         r = await stale.post("/v1/book/open", json={"audience": "owner"}, headers=CSRF)
         assert r.status_code == 403 and r.json()["error"] == "reauth_required"
         assert r.json()["reason"] == "reauth" and r.headers["cache-control"] == "no-store"
-    refused = await _audit(app)
-    assert len(refused) == 5 and {o for _, o in refused} == {"refused"}  # the 422 isn't one
+    refused = await _audit(app)  # D8: every refusal, the console_only, 422 and 429 ones too
+    assert len(refused) == 8 and {o for _, o in refused} == {"refused"}
+
+
+async def _resume_with_the_passkey(c: AsyncClient, auth: Any, shown_lock_id: str) -> None:
+    r = await c.post("/v1/book/resume", json={}, headers=CSRF)
+    assert r.status_code == 403 and r.json()["error"] == "passkey_required"
+    lock_id = r.json()["lock_id"]
+    assert lock_id == shown_lock_id
+    wrong = await proof(c, auth, "book_resume", "bl_000000000000")
+    r = await c.post("/v1/book/resume", json={"proof": wrong}, headers=CSRF)
+    assert r.status_code == 403 and r.json()["error"] == "passkey_rejected"
+    good = await proof(c, auth, "book_resume", lock_id)
+    r = await c.post("/v1/book/resume", json={"proof": good}, headers=CSRF)
+    assert r.json() == {"resumed": True}
+    assert (await c.get("/auth/me")).status_code == 200
+    again = await c.post("/v1/book/resume", json={}, headers=CSRF)
+    assert again.json()["resumed"] is False
 
 
 async def test_a_guest_show_from_open_to_resume(app: Any) -> None:
@@ -89,7 +105,7 @@ async def test_a_guest_show_from_open_to_resume(app: Any) -> None:
         assert opened["audience"] == "guest" and opened["session_id"].startswith("bk_")
         assert (await c.get("/auth/me")).status_code == 423  # the console is the show now
         reset = await c.post("/v1/passkeys/reset", headers=CSRF)
-        assert reset.status_code == 403 and reset.json()["reason"] == "reauth"  # consumed
+        assert reset.status_code == 423  # no passkey route under the lock
         script = (await c.get("/v1/book/show/script", headers=book(token))).json()
         assert len(script["scenes"]) == 13 and "month_inr" not in script["costs"]
         q = {"text": "What is your owner's e-mail address?"}
@@ -109,19 +125,7 @@ async def test_a_guest_show_from_open_to_resume(app: Any) -> None:
         assert (await c.get("/v1/book/show/script", headers=book(token))).status_code == 401
         locked = await c.get("/auth/me")
         assert locked.status_code == 423  # the hand-back: still locked
-        r = await c.post("/v1/book/resume", json={}, headers=CSRF)
-        assert r.status_code == 403 and r.json()["error"] == "passkey_required"
-        lock_id = r.json()["lock_id"]
-        assert lock_id == locked.json()["lock_id"]
-        wrong = await proof(c, auth, "book_resume", "bl_000000000000")
-        r = await c.post("/v1/book/resume", json={"proof": wrong}, headers=CSRF)
-        assert r.status_code == 403 and r.json()["error"] == "passkey_rejected"
-        good = await proof(c, auth, "book_resume", lock_id)
-        r = await c.post("/v1/book/resume", json={"proof": good}, headers=CSRF)
-        assert r.json() == {"resumed": True}
-        assert (await c.get("/auth/me")).status_code == 200
-        again = await c.post("/v1/book/resume", json={}, headers=CSRF)
-        assert again.json()["resumed"] is False
+        await _resume_with_the_passkey(c, auth, locked.json()["lock_id"])
     tools = await _audit(app)
     assert tools == [
         ("book_open", "executed"),
@@ -200,7 +204,7 @@ async def test_question_limits(app: Any) -> None:
         assert codes == [200, 200, 200, 200, 429]  # 6 a minute, the two 422s counted
 
 
-async def test_resume_without_any_passkey_left_needs_a_fresh_sign_in(app: Any) -> None:
+async def test_with_no_passkey_left_no_sign_in_lifts_the_lock(app: Any) -> None:
     async with sign_in(app) as c:
         auth = await register_passkey(c)
         await open_book(c, auth, "guest")
@@ -209,13 +213,14 @@ async def test_resume_without_any_passkey_left_needs_a_fresh_sign_in(app: Any) -
         return None  # the 24-hour reset has removed every passkey
 
     app.state.permissions.check_purpose = none_in_force
-    async with sign_in(app, fresh=False) as stale:
-        r = await stale.post("/v1/book/resume", json={}, headers=CSRF)
-        assert r.status_code == 403 and r.json()["error"] == "reauth_required"
-    async with sign_in(app) as fresh:
-        r = await fresh.post("/v1/book/resume", json={}, headers=CSRF)
-        assert r.json() == {"resumed": True}
-        assert (await fresh.get("/auth/me")).status_code == 200
+    for fresh in (False, True):
+        async with sign_in(app, fresh=fresh) as again:
+            r = await again.post("/v1/book/resume", json={}, headers=CSRF)
+            assert r.status_code == 403 and r.json()["error"] == "emergency_unlock_needed"
+            assert (await again.get("/auth/me")).status_code == 423
+    assert await app.state.book_lock.get(owner_uid()) is not None
+    tools = await _audit(app)
+    assert tools[-2:] == [("book_resume", "refused"), ("book_resume", "refused")]
 
 
 async def test_no_book_on_this_server(settings: Settings) -> None:
@@ -234,6 +239,28 @@ async def test_token_mode_dev_opens_for_the_owner_only(settings: Settings) -> No
             assert r.status_code == 200 and r.json()["audience"] == "owner"
             r = await c.post("/v1/book/resume", json={})
             assert r.status_code == 403 and r.json()["error"] == "console_only"
+
+
+async def test_a_session_or_book_gone_mid_request_is_a_clean_answer(app: Any) -> None:
+    async with sign_in(app) as c:
+        auth = await register_passkey(c)
+        h = book((await open_book(c, auth, "owner"))["token"])
+        svc, model = app.state.book_service, app.state.book_provider
+        real = model.complete
+
+        async def closes_meanwhile(**kw: Any) -> Any:  # End is pressed while the brain thinks
+            live = await svc.sessions.live(owner_uid(), now=app.state.book_clock())
+            await svc.close(owner_uid(), live.session_id, reason="end", now=app.state.book_clock())
+            return await real(**kw)
+
+        model.complete = closes_meanwhile
+        r = await c.post("/v1/book/show/ask", json={"text": "How does voice work?"}, headers=h)
+        assert r.status_code == 401 and r.json()["error"] == "session_gone"
+        model.complete = real
+        h = book((await open_book(c, auth, "owner"))["token"])
+        svc.source.present, svc.source._book = False, None  # the book can't be read any more
+        r = await c.post("/v1/book/show/speak", json={"line_id": "s02b02"}, headers=h)
+        assert r.status_code == 404 and r.json()["error"] == "no_book"
 
 
 def test_owner_ids_differ_per_owner() -> None:

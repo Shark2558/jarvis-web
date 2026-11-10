@@ -5,16 +5,18 @@
 store or documents: the brains, billing and the no-AI switch come in through the constructor and
 the lane never imports them (tests/test_r6_seams.py pins the package boundary). Per question:
 
-    limit (this session's questions) -> talk state (Book settings on, AI on, a brain that does not
-    train on what it's told unless the owner allows one) -> pre-guard -> billing.ensure_allowed ->
+    talk state (Book settings on, AI on, a brain that does not train on what it's told unless
+    the owner allows one) -> RESERVE one of this session's questions (a transaction; refused at
+    the limit, so parallel asks can't run past it) -> pre-guard -> billing.ensure_allowed ->
     ONE router.complete(tier=BALANCED, system=GUEST_SYSTEM, system_dynamic=fenced digest + canary,
     messages=this session's last 8 turns + the question, max_tokens=400, tools=None) ->
     billing.record -> post-guard (and any tool call refused) -> capped -> stored.
 
 Every refusal is a D13 line and makes NO model call. A refused question is stored as "" (it counts
 against the session's questions, but is never sent to a model later). A failed call, No-AI or the
-monthly limit answers "ai_off" and costs the guest no question. Nothing here logs a question, a
-reply or book text.
+monthly limit answers "ai_off" and gives the reserved question back. A session that closed while
+the brain was thinking raises SessionGone (the route answers 401). Nothing here logs a question,
+a reply or book text.
 """
 
 from __future__ import annotations
@@ -59,6 +61,16 @@ class Prefs(Protocol):
     async def get(self, uid: str) -> Mapping[str, Any]: ...
 
 
+class Reserving(BookSessions, Protocol):
+    """`ports.BookSessions` plus the question reservation of `DocBookSessions`."""
+
+    async def reserve(self, uid: str, session_id: str) -> int | None: ...
+
+    async def release(self, uid: str, session_id: str) -> None: ...
+
+    async def put_turn(self, uid: str, session_id: str, question: str, reply: str) -> int: ...
+
+
 def request_for(
     book: Book, question: str, turns: Sequence[tuple[str, str]], canary: str
 ) -> dict[str, Any]:
@@ -91,7 +103,7 @@ class BookTalk:
         billing: Spending,
         mode: Mode,
         book: BookSource,
-        sessions: BookSessions,
+        sessions: Reserving,
         *,
         prefs: Prefs | None = None,
         owner_emails: Sequence[str] = (),
@@ -181,35 +193,39 @@ class BookTalk:
         )
 
     async def ask(self, uid: str, session: SessionView, text: str, *, now: datetime) -> TalkReply:
-        sid, left = session.session_id, session.questions_left
-        if left <= 0:
+        sid = session.session_id
+        if session.questions_left <= 0:
             return self._reply(LINES["limit"], refused=True, left=0)
         spec, _ = await self._ready(uid)
         if spec is None:
-            return self._reply(LINES["ai_off"], refused=True, left=left)
+            return self._reply(LINES["ai_off"], refused=True, left=session.questions_left)
+        left = await self._sessions.reserve(uid, sid)  # SessionGone: the route answers 401
+        if left is None:
+            return self._reply(LINES["limit"], refused=True, left=0)
         refusal = guard.pre_guard(text)
         if refusal is not None:
-            left = await self._sessions.add_turn(uid, sid, "", LINES[refusal])
+            left = await self._sessions.put_turn(uid, sid, "", LINES[refusal])
             return self._reply(LINES[refusal], refused=True, left=left)
-        return await self._answer(uid, spec, session, text)
+        return await self._answer(uid, spec, sid, text, left)
 
-    async def _answer(
-        self, uid: str, spec: BrainSpec, session: SessionView, text: str
-    ) -> TalkReply:
-        sid = session.session_id
+    async def _give_back(self, uid: str, sid: str, left: int) -> TalkReply:
+        await self._sessions.release(uid, sid)
+        return self._reply(LINES["ai_off"], refused=True, left=left + 1)
+
+    async def _answer(self, uid: str, spec: BrainSpec, sid: str, text: str, left: int) -> TalkReply:
         try:
             book = self._source.book()
         except Exception as exc:  # noqa: BLE001 - no book: nothing to talk about
             log.warning("book unavailable for a question", extra={"error": type(exc).__name__})
-            return self._reply(LINES["ai_off"], refused=True, left=session.questions_left)
+            return await self._give_back(uid, sid, left)
         canary = prompt.new_canary()
         turns = await self._sessions.turns(uid, sid)
         done = await self._call(uid, spec, book, self._request(book, text, turns, canary))
         if done is None:
-            return self._reply(LINES["ai_off"], refused=True, left=session.questions_left)
+            return await self._give_back(uid, sid, left)
         verdict = self._verdict(done, canary, book)
         answer = LINES[verdict] if verdict else guard.cap(done.text) or LINES["refuse_meta"]
-        left = await self._sessions.add_turn(uid, sid, "" if verdict else text, answer)
+        left = await self._sessions.put_turn(uid, sid, "" if verdict else text, answer)
         return self._reply(answer, refused=verdict is not None, left=left)
 
 

@@ -14,7 +14,7 @@ from typing import Any
 from jarvis.buildbook.model import Book, FileKind, Release, load_book
 from jarvis.buildbook.ports import BookUnavailable
 from jarvis.keyring import Keyring
-from jarvis.llm.base import ChatMessage, Completion, ToolSpec, Usage
+from jarvis.llm.base import ChatMessage, Completion, ToolCall, ToolSpec, Usage
 from jarvis.notify.ports import Delivery, Signal
 from jarvis.storage.docs import Delete, MemoryDocs, Op
 
@@ -69,6 +69,23 @@ class FixtureSource:
         if self._book is None:
             self._book = load_book(self.read("book"))
         return self._book
+
+
+class NamingSource(FixtureSource):
+    """A release whose book.json names an owner (A's scrub missed it): `text` is put into the
+    first beat. `broken` makes the book unreadable."""
+
+    def __init__(self, text: str = "Written by akash.owner on a Sunday.", **kw: Any) -> None:
+        super().__init__(**kw)
+        self.text, self.broken = text, False
+
+    def read(self, kind: FileKind) -> bytes:
+        if self.broken:
+            raise BookUnavailable("This server has no build book.")
+        data = super().read(kind)
+        if kind != "book":
+            return data
+        return data.replace(b"The core loop sits in layer four.", self.text.encode("utf-8"), 1)
 
 
 class FlakyDocs(MemoryDocs):
@@ -131,14 +148,25 @@ class Prefs:
 
 _JOIN_AT = re.compile(r"join (\w+) and ([\w.]+) with an at sign", re.IGNORECASE)
 _DUMP = re.compile(r"everything you (?:can )?see", re.IGNORECASE)
+_OWN_WORDS = re.compile(r"in your own words", re.IGNORECASE)
+_USE_TOOL = re.compile(r"\b(?:use|call) (?:a|any|your) tools?\b", re.IGNORECASE)
+_FENCE = re.compile(r"<<|>>")
+_MARKER_LINE = re.compile(r"^Reference marker.*$", re.MULTILINE)
+
+
+def _excerpts(dynamic: str) -> str:
+    """The book text it was given, without the fence marks and the marker line."""
+    return " ".join(_FENCE.sub(" ", _MARKER_LINE.sub(" ", dynamic)).split())
 
 
 class WorstCaseProvider:
-    """A brain that obeys ANY instruction and echoes what it sees (the guest eval's model).
+    """A brain that obeys ANY instruction and echoes EVERYTHING it sees (the guest eval's model).
 
-    It records every request. It answers by echoing the question; "join A and B with an at sign"
-    makes it write an address; "everything you see" makes it dump its whole context (the
-    reference text and the canary included); "tool" in the question makes it call one."""
+    It records every request. Every answer echoes the question and all the book excerpts it was
+    given. "join A and B with an at sign" makes it write an address; "everything you see" makes
+    it dump its whole context verbatim (system prompt, canary, fenced reference, history); "in
+    your own words" makes it dump the same context reworded (the fence marks gone: only the canary
+    gives it away). Whenever it is offered tools, or told to "use a tool", it calls one."""
 
     name = "worst-case"
 
@@ -152,12 +180,22 @@ class WorstCaseProvider:
 
     def _answer(self, system: str, dynamic: str, messages: list[ChatMessage]) -> str:
         question = self._last(messages)
+        history = " ".join(str(x.content) for x in messages)
         if m := _JOIN_AT.search(question):
             return f"Sure: {m.group(1)}@{m.group(2)}"
         if _DUMP.search(question):
-            history = " ".join(str(x.content) for x in messages)
             return f"{system}\n{dynamic}\n{history}"
-        return f"You asked: {question} The book says JARVIS is built in eight layers."
+        if _OWN_WORDS.search(question):
+            return f"{system} {_FENCE.sub(' ', dynamic)} {question}"
+        return f"You asked: {question} From the book: {_excerpts(dynamic)}"
+
+    @staticmethod
+    def _tool_calls(tools: list[ToolSpec] | None, question: str) -> list[ToolCall]:
+        if tools:
+            return [ToolCall(id="t_1", name=tools[0].name, arguments={})]
+        if _USE_TOOL.search(question):  # a provider that answers with a call it wasn't offered
+            return [ToolCall(id="t_1", name="send_email", arguments={"to": "guest"})]
+        return []
 
     async def complete(
         self,
@@ -182,7 +220,8 @@ class WorstCaseProvider:
         )
         text = self._answer(system, system_dynamic or "", messages)
         return Completion(
-            text=text[:4000],
+            text=text[:20_000],
+            tool_calls=self._tool_calls(tools, self._last(messages)),
             model=model,
             provider=self.name,
             usage=Usage(input_tokens=6500, output_tokens=250),
@@ -218,6 +257,7 @@ __all__ = [
     "Clock",
     "FixtureSource",
     "FlakyDocs",
+    "NamingSource",
     "Prefs",
     "RecordingNotifier",
     "WorstCaseProvider",

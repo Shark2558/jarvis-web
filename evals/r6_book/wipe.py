@@ -5,7 +5,8 @@ owner is told (D14). Through the real app with the worst-case brain (it echoes t
 Cases: a guest asks a needle question (answered) and a needle owner-data ask (refused), then the
 closing ends the session. Afterwards the needle is in no document (the book's and the app's:
 memory, Activity, billing, permissions), no History session, no log record, no audit entry and
-no notice (Telegram text); the session document reads back absent; exactly ONE content-free
+no notice (Telegram text); the session document reads back absent and no session document left
+holds sealed turns (the needle scan alone can't see inside AES-GCM); exactly ONE content-free
 `book_session_closed` notice; the audit holds exactly `book_open` + `book_close`; an abandoned
 session is swept by the `book_sweep` job ("ended by itself").
 Negative control: the delete skipped (the store says it deleted, but did not).
@@ -26,6 +27,7 @@ from book_show_fakes import Clock
 from jarvis.buildbook.service import BookSweepJob
 from jarvis.buildbook.sessions import DocBookSessions
 from jarvis.config import LLMBackend, Settings
+from jarvis.storage.docs import Query
 
 PART = "wipe"
 BUILT = True
@@ -111,6 +113,9 @@ async def _after_close(app: Any) -> list[Case]:
     out.append(
         _case("session-document-absent", gone is None, "the session document is still there")
     )
+    rows = await app.state.book_docs.query(Query("jarvis_book_sessions"))
+    kept = [bk for bk, d in rows if d.get("blob")]
+    out.append(_case("no-sealed-turns-left", not kept, f"sealed turns kept in {kept}"))
     for place, text in (await _places(app)).items():
         out.append(_case(f"no-needle:{place}", NEEDLE not in text, f"the question is in {place}"))
     sent = app.state.book_notifier.sent

@@ -29,6 +29,9 @@ C_MODULES = [
         "talk",
         "service",
         "show_script",
+        "closing",
+        "telling",
+        "unlock",
     )
 ] + [
     SRC / "api" / f"{n}.py"
@@ -76,7 +79,19 @@ def _imports(path: Path) -> set[str]:
 
 
 @pytest.mark.parametrize(
-    "name", ["talk", "guard", "guard_words", "prompt", "digest", "sessions", "lock", "show_script"]
+    "name",
+    [
+        "talk",
+        "guard",
+        "guard_words",
+        "prompt",
+        "digest",
+        "sessions",
+        "closing",
+        "telling",
+        "lock",
+        "show_script",
+    ],
 )
 def test_the_lane_imports_nothing_that_reaches_the_owner(name: str) -> None:
     mods = _imports(SRC / "buildbook" / f"{name}.py")

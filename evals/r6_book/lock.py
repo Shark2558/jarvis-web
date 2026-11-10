@@ -4,14 +4,13 @@ Through the real app with `ShowLockMiddleware` installed inside the session midd
 I1's `install_show_lock` puts it.
 
 Cases (cases_lock.jsonl x three browsers: the presenting one, an older one and a NEW sign-in made
-after logging out): /auth/me, /v1/chat, /v1/vault, /v1/memory, /v1/permissions, /v1/book/open
-and /v1/passkeys/reset/cancel -> 423; / -> 302 /book/show; the show page, /static, /health and
-/console/config pass; the passkey reset is reachable but refused without a fresh sign-in (the
-guest's browsers have none: the presenting one's was consumed by the guest open), while the owner,
-signing in again with his password, can start it (the recovery for a passkey lost mid-show). The
-show routes pass with the guest token. The other owner's sessions are held too; bearer is untouched.
-Only a `book_resume` passkey check for THIS lock lifts it (a book_open proof, no proof and a proof
-for another lock don't).
+after logging out): /auth/me, /v1/chat, /v1/vault, /v1/memory, /v1/permissions (read and change),
+/v1/book/open and EVERY passkey register / reset / cancel route -> 423; / -> 302 /book/show; the
+show page, /static, /health and /console/config pass. The show routes pass with the guest token.
+The other owner's sessions are held too; bearer is untouched. A guest who signs in again with a
+"fresh" Google sign-in (one click on the chooser) is held, can start no passkey reset and lifts
+nothing. Only a `book_resume` passkey check for THIS lock lifts it (a book_open proof, no proof, a
+proof for another lock and, with no passkey in force any more, a fresh sign-in don't).
 Negative control: `/auth/me` allow-listed (it would hand the guest the owner's e-mail).
 """
 
@@ -78,8 +77,6 @@ async def _held(c: AsyncClient, who: str) -> list[Case]:
         ok = r.status_code == row["want"]
         if row["want"] == 302:
             ok = ok and r.headers.get("location") == "/book/show"
-        if row["id"] == "reset":
-            ok = ok and r.json().get("reason") == "reauth"  # reached, and still refused
         out.append(_case(f"{who}:{row['id']}", ok, f"{r.status_code} != {row['want']}"))
     return out
 
@@ -97,16 +94,7 @@ async def _browsers(app: Any) -> tuple[list[Case], Any, str]:
             await presenting.post("/auth/logout", headers=CSRF)
     async with sign_in(app, fresh=False) as new:  # rides Google's live session: no password
         out += await _held(new, "new-sign-in")
-    async with sign_in(app) as owner:  # the owner signs in again (password + 2-Step)
-        r = await owner.post("/v1/passkeys/reset", headers=CSRF)
-        held = (await owner.get("/auth/me")).status_code == 423
-        out.append(
-            _case(
-                "owner-can-start-passkey-recovery",
-                r.status_code == 200 and held,
-                f"{r.status_code} held={held}",
-            )
-        )
+    out += await _fresh_guest_sign_in(app)
     async with sign_in(app, SECOND_OWNER) as other:
         r = await other.get("/auth/me")
         out.append(_case("other-owner-held", r.status_code == 423, str(r.status_code)))
@@ -114,6 +102,34 @@ async def _browsers(app: Any) -> tuple[list[Case], Any, str]:
         r = await cli.post("/v1/chat", json={"message": "hello"})
         out.append(_case("bearer-untouched", r.status_code == 200, str(r.status_code)))
     return out, auth, token
+
+
+async def _fresh_guest_sign_in(app: Any) -> list[Case]:
+    """The guest signs in again "freshly" (Google asks nothing more with a live session)."""
+    async with sign_in(app) as again:
+        reset = await again.post("/v1/passkeys/reset", headers=CSRF)
+        resume = await again.post("/v1/book/resume", json={}, headers=CSRF)
+        held = (await again.get("/auth/me")).status_code == 423
+    ok = reset.status_code == 423 and resume.status_code == 403 and held
+    return [_case("fresh-guest-sign-in-lifts-nothing", ok, f"{reset.status_code} {resume.text}")]
+
+
+async def _no_passkey_left(app: Any) -> list[Case]:
+    """Every passkey gone (a completed reset): no sign-in, however fresh, lifts the lock."""
+    real = app.state.permissions.check_purpose
+
+    async def none_in_force(*a: Any, **k: Any) -> None:
+        return None
+
+    app.state.permissions.check_purpose = none_in_force
+    try:
+        async with sign_in(app) as again:
+            r = await again.post("/v1/book/resume", json={}, headers=CSRF)
+            held = (await again.get("/auth/me")).status_code == 423
+    finally:
+        app.state.permissions.check_purpose = real
+    ok = r.status_code == 403 and r.json().get("error") == "emergency_unlock_needed" and held
+    return [_case("no-passkey-no-sign-in-lift", ok, r.text)]
 
 
 async def _resume(app: Any, auth: Any) -> list[Case]:
@@ -141,6 +157,7 @@ async def _resume(app: Any, auth: Any) -> list[Case]:
 async def _suite() -> list[Case]:
     async with _app() as app:
         out, auth, _ = await _browsers(app)
+        out += await _no_passkey_left(app)
         out += await _resume(app, auth)
     return out
 

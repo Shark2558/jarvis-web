@@ -139,8 +139,8 @@ async def show_script(request: Request, uid: str = Depends(current_user)) -> JSO
         return view
     try:
         return book_json(await svc.script(uid, view))
-    except BookUnavailable:
-        return book_err(404, "no_book", "This server has no build book.")
+    except BookUnavailable as exc:
+        return book_err(404, "no_book", str(exc))
 
 
 @router.post("/show/speak", response_model=None)
@@ -156,7 +156,10 @@ async def show_speak(request: Request, uid: str = Depends(current_user)) -> Resp
     body = await json_body(request, SpeakBody)
     if isinstance(body, JSONResponse):
         return body
-    text = await svc.line_text(uid, view, body.line_id)
+    try:
+        text = await svc.line_text(uid, view, body.line_id)
+    except BookUnavailable as exc:
+        return book_err(404, "no_book", str(exc))
     if text is None:
         return book_err(404, "unknown_line", "That isn't a line of this show.")
     voice = getattr(request.app.state, "voice", None)
@@ -214,7 +217,8 @@ async def show_hear(request: Request, uid: str = Depends(current_user)) -> JSONR
         )
         if parse_wav(blob).seconds > HEAR_MAX_S:
             return book_err(413, "too_long", "Keep a spoken question under 15 seconds.")
-        heard = await voice.transcribe(uid, blob)
+        # D1: a guest's words are never biased toward the owner's own phrases (names, places)
+        heard = await voice.transcribe(uid, blob, owner_phrases=view.audience == "owner")
     except (VoiceError, BudgetError) as exc:
         return _voice_failure(exc)
     return book_json({"text": heard.text})  # handed back, never kept (kept only if asked)
@@ -238,7 +242,12 @@ async def show_ask(request: Request, uid: str = Depends(current_user)) -> JSONRe
         return book_err(422, "input_rejected", "Ask a question first.")
     if len(text) > QUESTION_MAX:
         return book_err(422, "too_long", TOO_LONG)
-    got = await svc.ask(uid, view, text, now=utcnow(request))
+    try:
+        got = await svc.ask(uid, view, text, now=utcnow(request))
+    except SessionGone:  # it closed while the brain was thinking (End, the sweep, a new open)
+        return _gone()
+    except BookUnavailable as exc:
+        return book_err(404, "no_book", str(exc))
     return book_json(got.model_dump())
 
 

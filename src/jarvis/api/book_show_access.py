@@ -12,18 +12,18 @@ Open (`POST /v1/book/open {proof, audience}`), in this order:
   reset, say) while the owner's back is turned.
 
 Resume (`POST /v1/book/resume {proof}`): a signed-in browser of the owner whose lock it is ->
-`check_purpose(uid, "book_resume", lock_id, proof)` -> audit -> lift + end the live session.
-Without a proof the answer carries `lock_id` (the target the console proves). Only when NO
-passkey is in force any more (the 24-hour passkey reset, the one recovery for a passkey lost
-mid-show, has completed) does a Google sign-in from the last 5 minutes lift it instead: the
-same proof the reset itself needed.
+`check_purpose(uid, "book_resume", lock_id, proof)` -> audit -> lift + end every session.
+Without a proof the answer carries `lock_id` (the target the console proves). D10: the passkey
+is the ONLY way: no Google sign-in ever lifts the lock (a guest can make one with a click). With
+no passkey in force any more the answer is 403 emergency_unlock_needed: the owner runs
+`python -m jarvis.buildbook.unlock` with the server's own Google Cloud credentials.
 """
 
 from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -33,7 +33,7 @@ from jarvis.api.auth import SESSION_AUTH_AT_KEY, fresh_sign_in_left, session_ema
 from jarvis.api.book_http import book_err, book_json
 from jarvis.api.book_lock import GUEST_FLAG
 from jarvis.buildbook.model import Audience
-from jarvis.buildbook.ports import BookOff, LockUnreadable
+from jarvis.buildbook.ports import BookOff, BookUnavailable, LockUnreadable
 from jarvis.buildbook.service import BookService
 from jarvis.config import AuthMode, Settings
 from jarvis.logging import get_logger
@@ -48,13 +48,17 @@ from jarvis.permissions.models import PasskeyProof
 from jarvis.permissions.service import PermissionsService
 
 log = get_logger(__name__)
+M = TypeVar("M", bound=BaseModel)
 
 MAX_JSON_BYTES = 64 * 1024
 CONSOLE_ONLY = "The build book opens only in the JARVIS console, not from a script."
 NO_BOOK = "This server has no build book."
 SETUP = "Set up a passkey in Approvals → Permissions first: the build book opens only with one."
 REAUTH = "Sign in with Google again to open the build book (it counts for 5 minutes)."
-REAUTH_RESUME = "Sign in with Google again to unlock JARVIS (no passkey is set up any more)."
+EMERGENCY = (
+    "No passkey of yours is in force any more, so only the emergency unlock can lift this lock: "
+    "run it from Google Cloud Shell (the runbook has the command)."
+)
 GUEST_GOOGLE = "A guest show needs Google sign-in, so every console of yours can be locked."
 NOTHING_LOCKED = "Nothing is locked."
 LOCK_CHANGED = "That lock has changed. Try Resume again."
@@ -100,7 +104,7 @@ def limited(request: Request, name: str, key: str) -> JSONResponse | None:
     return r
 
 
-async def json_body(request: Request, model: type[BaseModel]) -> Any:
+async def json_body(request: Request, model: type[M]) -> M | JSONResponse:
     """The body as `model`, or a 422 that never echoes what was sent."""
     raw = await request.body()
     if len(raw) > MAX_JSON_BYTES:
@@ -180,18 +184,32 @@ async def _prove_open(
     return str(how)
 
 
-async def open_flow(request: Request, svc: BookService, uid: str) -> JSONResponse:
-    now, s = utcnow(request), settings(request)
+async def _opening(
+    request: Request, svc: BookService, uid: str, now: datetime
+) -> OpenBody | JSONResponse:
+    """The checks before any proof, each refusal audited (D8: refused or granted)."""
     if not console(request):
-        return book_err(403, "console_only", CONSOLE_ONLY)
+        no = book_err(403, "console_only", CONSOLE_ONLY)
+        return await _refuse(svc, uid, "unknown", now, no, "console_only")
     if (r := limited(request, "open", uid)) is not None:
-        return r
+        return await _refuse(svc, uid, "unknown", now, r, "rate_limited")
     body = await json_body(request, OpenBody)
     if isinstance(body, JSONResponse):
-        return body
+        return await _refuse(svc, uid, "unknown", now, body, "input_rejected")
     rel = svc.source.current()
-    if rel is None or not rel.ok:
-        return book_err(404, "no_book", NO_BOOK)
+    why = NO_BOOK if rel is None or not rel.ok else None
+    if why is None and body.audience == "guest":
+        why = svc.guest_refusal()  # D3: a book naming the owner is never a guest's
+    if why is not None:
+        return await _refuse(svc, uid, body.audience, now, book_err(404, "no_book", why), "no_book")
+    return body
+
+
+async def open_flow(request: Request, svc: BookService, uid: str) -> JSONResponse:
+    now, s = utcnow(request), settings(request)
+    body = await _opening(request, svc, uid, now)
+    if isinstance(body, JSONResponse):
+        return body
     if s.auth_mode is AuthMode.GOOGLE:
         how = await _prove_open(request, svc, uid, body, now)
         if isinstance(how, JSONResponse):
@@ -211,6 +229,8 @@ async def _granted(
         opened = await svc.open(uid, audience, how=how, now=now)
     except BookOff as exc:
         return book_err(503, "book_off", str(exc))
+    except BookUnavailable as exc:  # D3 checked again at the open itself (fail closed)
+        return book_err(404, "no_book", str(exc))
     if audience == "guest" and "session" in request.scope:
         request.session.pop(SESSION_AUTH_AT_KEY, None)  # the guest can't reuse the owner's
         request.session[GUEST_FLAG] = True  # held at once on every instance (book_lock.py)
@@ -240,11 +260,9 @@ async def _resume_proof(
         return _proof_failure(exc, lock_id=lock_id)
     if how is not None:
         return str(how)
-    if not fresh_sign_in_left(request, settings(request)):
-        return _with(
-            book_err(403, "reauth_required", REAUTH_RESUME), reason="reauth", lock_id=lock_id
-        )
-    return "a fresh Google sign-in (no passkey in force)"
+    # D10: passkey only. No sign-in fallback, whatever the browser's sign-in says.
+    await svc.record_resume(uid, granted=False, how="no passkey in force", now=now)
+    return book_err(403, "emergency_unlock_needed", EMERGENCY)
 
 
 async def resume_flow(request: Request, svc: BookService, uid: str) -> JSONResponse:

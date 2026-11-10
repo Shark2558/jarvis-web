@@ -10,4 +10,7 @@
 {"id": "static", "method": "GET", "path": "/static/console.css", "want": 200}
 {"id": "health", "method": "GET", "path": "/health", "want": 200}
 {"id": "config", "method": "GET", "path": "/console/config", "want": 200}
-{"id": "reset", "method": "POST", "path": "/v1/passkeys/reset", "want": 403}
+{"id": "reset", "method": "POST", "path": "/v1/passkeys/reset", "want": 423}
+{"id": "register-options", "method": "POST", "path": "/v1/passkeys/register/options", "json": {}, "want": 423}
+{"id": "register", "method": "POST", "path": "/v1/passkeys/register", "json": {}, "want": 423}
+{"id": "permissions-change", "method": "PUT", "path": "/v1/permissions", "json": {}, "want": 423}

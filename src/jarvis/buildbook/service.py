@@ -4,30 +4,36 @@
 `BookService` is what the show routes (api/book_show.py) call once the HTTP checks are done
 (console only, a fresh sign-in, the passkey). It never decides who may open; it records and acts:
 
-- `open`: audit `book_open` FIRST (nothing opens when it can't be written), end the live session
-  (D14 trigger "a new open"), open the new one, and for a guest set the lock (no lock -> the guest
-  session is closed again and the open fails: never a guest session without its lock).
-- `close` (and `resolve`/`beat` finding an expired or idle session, `resume`, `wipe`, the sweep):
-  the store marks closing, deletes and reads back (D14 1-2); then ONE content-free `book_close`
-  audit line (3), ONE `book_session_closed` notice (4) and `{last_closed_at, notified}` in
-  `{prefix}book_closed/{uid}` (what stays). A delete retried by the sweep is not told twice.
-- `script` / `line_text`: the show's facts come only from book.json; scenes 12 and 13 and every
-  refusal are D13's fixed lines. A guest never gets the owner's month spend (D1).
-- `BookSweepJob`: the `book_sweep` TickJob (I1 adds it to the tick and R5.1's watchdog list).
+- `open`: a guest is never shown a book naming an owner's address (D3's check, as the sealer's;
+  fail closed); audit `book_open` FIRST (nothing opens when it can't be written); end EVERY
+  session of the owner (D14 trigger "a new open"); open the new one; for a guest set the lock (no
+  lock -> the guest session is closed again and the open fails: never a guest without its lock).
+- every close (End, the closing, an expired or idle session found by any request, Resume,
+  Privacy -> Delete, the sweep) goes through `closing.ClosingStore.close_claim`: the store marks
+  closing, deletes and reads back (D14 1-2) and says whether THIS caller tells; the caller that
+  does writes ONE content-free `book_close` line (3), sends ONE `book_session_closed` notice (4),
+  keeps `{last_closed_at, notified}` (what stays) and marks the notice told. Resume and Privacy
+  -> Delete end every session of the owner, expired or idle ones included.
+- `sweep` closes and tells session by session (one failure doesn't lose the others' notices) and
+  recovers closes whose closer died before telling.
+- `emergency_unlock`: the owner-only recovery for a passkey lost during a guest show
+  (buildbook/unlock.py, run with the server's own Google Cloud credentials, never a browser).
+- `script` / `line_text` / `ask`: the show's facts come only from book.json; scenes 12 and 13 and
+  every refusal are D13's fixed lines. A guest never gets the owner's month spend (D1).
 Nothing here logs or stores a question, a reply or a token.
 """
 
 from __future__ import annotations
 
-import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol
-from zoneinfo import ZoneInfo
+from typing import Any
 
+from jarvis.buildbook import guard
+from jarvis.buildbook.closing import Closing, Sweeping
 from jarvis.buildbook.lines import LINES
 from jarvis.buildbook.model import (
-    LINE_ID,
     Audience,
     ClosedSession,
     CloseReason,
@@ -37,48 +43,47 @@ from jarvis.buildbook.model import (
     TalkReply,
     TalkState,
 )
-from jarvis.buildbook.ports import BookOff, BookSessions, BookSource, BookTalker, ShowLock
-from jarvis.buildbook.sessions import SessionEnded
+from jarvis.buildbook.ports import (
+    BookOff,
+    BookSource,
+    BookTalker,
+    BookUnavailable,
+    SessionGone,
+    ShowLock,
+)
+from jarvis.buildbook.sessions import GONE, SessionEnded
 from jarvis.buildbook.show_script import Prefs, ShowScript
-from jarvis.core.guardrails import ActionRisk
+from jarvis.buildbook.telling import SELF_ENDED, Auditor, Telling, plain_reason
 from jarvis.logging import get_logger
-from jarvis.notify.ports import Notifier, Signal
-from jarvis.storage.docs import Docs, Set
+from jarvis.notify.ports import Notifier
+from jarvis.storage.docs import Docs
 
 log = get_logger(__name__)
 
-SELF_ENDED: frozenset[str] = frozenset({"expired", "idle"})
 SPEAK_CHARS_PER_SESSION = 24_000  # ~4x the show's ~6,000 narrated characters (D15)
 HEARS_PER_SESSION = 30  # spoken questions: 20 questions and some retries (15 s each)
 _KEEP_COUNTERS = 256
 NOT_RECORDED = "The build book couldn't record this, so nothing was opened."
 NO_LOCK = "The guest lock couldn't be set, so the guest session was not opened."
-_LINE = re.compile(LINE_ID)
+NO_BOOK = "This server has no build book."
+NAMES_OWNER = "This release's build book names your e-mail address, so a guest can't see it."
+UNLOCK_NOT_RECORDED = "The emergency unlock couldn't be recorded, so nothing was changed."
 
 
-class Auditor(Protocol):
-    async def append(
-        self,
-        *,
-        agent: str,
-        tool: str,
-        risk: ActionRisk,
-        outcome: str,
-        args: dict[str, Any],
-        detail: str = "",
-    ) -> Any: ...
+@dataclass(frozen=True)
+class SweepReport:
+    closed: tuple[ClosedSession, ...]
+    errors: int  # sessions that couldn't be closed this time (the next sweep retries)
 
 
-class Sweeping(BookSessions, Protocol):
-    async def sweep_owned(self, *, now: datetime) -> tuple[tuple[str, ClosedSession], ...]: ...
+@dataclass(frozen=True)
+class UnlockReport:
+    lifted: bool  # a guest lock was on and is gone
+    closed: int  # book sessions ended (each told with its own notice)
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
-
-
-def _count(n: int, word: str) -> str:
-    return f"{n} {word}" + ("" if n == 1 else "s")
 
 
 class BookService:
@@ -97,117 +102,66 @@ class BookService:
         timezone: str = "Asia/Kolkata",
         prefs: Prefs | None = None,
         spend: Callable[[str], Awaitable[Mapping[str, Any]]] | None = None,
+        owner_emails: Sequence[str] = (),
     ) -> None:
         self.source, self.sessions, self.lock, self.talk = source, sessions, lock, talk
-        self._audit, self._notifier, self._docs = audit, notifier, docs
-        self._closed_coll = f"{prefix}book_closed"
-        self._h, self._tz = honorific, ZoneInfo(timezone)
+        self.tell = Telling(
+            audit=audit,
+            notifier=notifier,
+            docs=docs,
+            prefix=prefix,
+            honorific=honorific,
+            timezone=timezone,
+        )
         self.show = ShowScript(source, honorific=honorific, prefs=prefs, spend=spend)
+        self._owners = tuple(owner_emails)
+        self._guest_ok: tuple[str, str | None] | None = None  # (release id, refusal)
         self._spoken: dict[str, int] = {}  # per instance: a guest can't spend the voice budget
         self._heard: dict[str, int] = {}
 
-    # ---- words -----------------------------------------------------------------------------------
-    def _hhmm(self, at: str | datetime) -> str:
-        when = datetime.fromisoformat(at) if isinstance(at, str) else at
-        return when.astimezone(self._tz).strftime("%H:%M")
-
+    # ---- words, audit, status (buildbook/telling.py) --------------------------------------------
     def notice(self, closed: ClosedSession) -> str:
-        """D14 (4): content-free, in the owner's time zone."""
-        how = "ended by itself" if closed.reason in SELF_ENDED else "has closed"
-        head = (
-            f"{self._h}, the build book session from {self._hhmm(closed.created_at)} {how} "
-            f"({closed.minutes} min, {_count(closed.questions, 'question')})."
-        )
-        if closed.wiped:
-            return head + " Its conversation was deleted; nothing was learned from it."
-        return head + (
-            " Its conversation couldn't be deleted yet; I'll keep trying. "
-            "Nothing was learned from it."
-        )
-
-    def _close_line(self, closed: ClosedSession) -> str:
-        what = "session ended by itself" if closed.reason in SELF_ENDED else "closed"
-        gone = "conversation deleted" if closed.wiped else "conversation deletion pending"
-        return (
-            f"Build book {what} at {self._hhmm(closed.closed_at)}, {closed.minutes} min, "
-            f"{_count(closed.questions, 'question')}, {gone}"
-        )
-
-    # ---- audit, notice, status -------------------------------------------------------------------
-    async def record(
-        self, uid: str, tool: str, outcome: str, args: dict[str, Any], detail: str
-    ) -> bool:
-        """One content-free audit line; False when it could not be written (the caller acts)."""
-        if self._audit is None:
-            log.error("no audit chain: a build book event is refused", extra={"tool": tool})
-            return False
-        try:
-            await self._audit.append(
-                agent="owner",
-                tool=tool,
-                risk=ActionRisk.READ_ONLY,
-                outcome=outcome,
-                args={"user": uid, **args},
-                detail=detail,
-            )
-        except Exception as exc:  # noqa: BLE001 - reported to the caller as False
-            log.error(
-                "AUDIT WRITE FAILED for the build book",
-                extra={"tool": tool, "error": type(exc).__name__},
-            )
-            return False
-        return True
+        return self.tell.notice(closed)
 
     async def record_open(
         self, uid: str, audience: str, *, granted: bool, how: str, now: datetime
     ) -> bool:
-        at = self._hhmm(now)
-        whom = "for a guest" if audience == "guest" else "for you"
-        if granted:
-            via = "with your passkey" if how.startswith("passkey") else f"({how})"
-            detail = f"Build book opened {via} at {at}, {whom}"
-        else:
-            detail = f"Build book open refused at {at}, {whom}: {how}"
-        result = "granted" if granted else "refused"
-        args = {"audience": audience, "result": result}
-        return await self.record(
-            uid, "book_open", "executed" if granted else "refused", args, detail
-        )
+        return await self.tell.record_open(uid, audience, granted=granted, how=how, now=now)
 
     async def record_resume(self, uid: str, *, granted: bool, how: str, now: datetime) -> bool:
-        at = self._hhmm(now)
-        if granted:
-            via = "your passkey" if how.startswith("passkey") else how
-            detail, outcome = f"Guest lock lifted at {at} with {via}", "executed"
-        else:
-            detail, outcome = f"Guest lock kept at {at}: {how}", "refused"
-        args = {"result": "granted" if granted else "refused"}
-        return await self.record(uid, "book_resume", outcome, args, detail)
-
-    async def _tell(self, uid: str, closed: ClosedSession) -> bool:
-        if self._notifier is None:
-            return False
-        try:
-            signal = Signal(source="system", kind="book_session_closed")
-            await self._notifier.notify(uid, signal, self.notice(closed))
-        except Exception as exc:  # noqa: BLE001 - the close stands; the status says not told
-            log.error("book session notice failed", extra={"error": type(exc).__name__})
-            return False
-        return True
-
-    async def _status(self, uid: str, closed: ClosedSession) -> None:
-        doc = {"last_closed_at": closed.closed_at, "notified": closed.notified}
-        try:
-            await self._docs.write([Set(f"{self._closed_coll}/{uid}", doc)])
-        except Exception as exc:  # noqa: BLE001 - a status line, never worth failing a close
-            log.warning("book close status not written", extra={"error": type(exc).__name__})
+        return await self.tell.record_resume(uid, granted=granted, how=how, now=now)
 
     async def last_closed(self, uid: str) -> dict[str, Any] | None:
         """For B's `GET /v1/book` (`last_closed`): {last_closed_at, notified} or None."""
-        raw = await self._docs.get(f"{self._closed_coll}/{uid}")
-        if raw is None:
-            return None
-        return {"last_closed_at": raw.get("last_closed_at"), "notified": bool(raw.get("notified"))}
+        return await self.tell.last_closed(uid)
+
+    # ---- D3 at a guest's door -------------------------------------------------------------------
+    def guest_refusal(self) -> str | None:
+        """None when a guest may be shown this release's book; else plain words why not. A book
+        naming an owner's address (or its local part) is refused, as the sealer refuses it; a
+        book that can't be read is refused too (and checked again next time)."""
+        rel = self.source.current()
+        if rel is None or not rel.ok:
+            return NO_BOOK
+        if self._guest_ok is not None and self._guest_ok[0] == rel.id:
+            return self._guest_ok[1]
+        try:
+            data = self.source.read("book")
+        except Exception as exc:  # noqa: BLE001 - can't tell: no guest
+            log.warning("build book unreadable for a guest", extra={"error": type(exc).__name__})
+            return NO_BOOK
+        why = NAMES_OWNER if guard.book_names_owner(data, self._owners) else None
+        if why is not None:
+            log.error("the build book names an owner: no guest may open it")
+        self._guest_ok = (rel.id, why)
+        return why
+
+    def guest_book_ok(self) -> bool:
+        return self.guest_refusal() is None
+
+    def _guest_check(self, audience: Audience) -> None:
+        if audience == "guest" and (why := self.guest_refusal()) is not None:
+            raise BookUnavailable(why)
 
     # ---- the voice budget (a guest must not run up the owner's speech bill) -------------------
     @staticmethod
@@ -227,35 +181,44 @@ class BookService:
     def allow_hearing(self, session_id: str) -> bool:
         return self._spend_counter(self._heard, session_id, 1, HEARS_PER_SESSION)
 
-    async def _finish(self, uid: str, closed: ClosedSession) -> ClosedSession:
-        """D14 steps 3-4 after the store's 1-2. A retried delete (`notified` already) only
-        updates nothing: the owner was told the first time."""
+    # ---- closing and telling (exactly once: closing.py) -----------------------------------------
+    async def _finish(self, closing: Closing, now: datetime) -> ClosedSession:
+        """D14 steps 3-4 after the store's 1-2, for the caller holding the claim only."""
+        closed, uid = closing.closed, closing.uid
         self._spoken.pop(closed.session_id, None)
         self._heard.pop(closed.session_id, None)
-        if closed.notified:
+        if closing.late_wipe:  # told before ("couldn't be deleted yet"): one audit line, no notice
+            args = {"wiped": True, "late": True, "audience": closed.audience}
+            await self.tell.record(
+                uid, "book_close", "executed", args, self.tell.late_line(closed, now)
+            )
+            await self.sessions.told(uid, closed.session_id, wiped=True)
             return closed
-        args = {
-            "minutes": closed.minutes,
-            "questions": closed.questions,
-            "wiped": closed.wiped,
-            "audience": closed.audience,
-            "reason": closed.reason,
-        }
-        await self.record(uid, "book_close", "executed", args, self._close_line(closed))
-        done = closed.model_copy(update={"notified": await self._tell(uid, closed)})
-        await self._status(uid, done)
+        if not closing.claimed:
+            return closed
+        await self.tell.record_close(uid, closed)
+        sent = await self.tell.tell(uid, self.tell.notice(closed))
+        done = closed.model_copy(update={"notified": sent})
+        await self.tell.status(uid, done)
+        await self.sessions.told(uid, closed.session_id, wiped=closed.wiped)
+        return done
+
+    async def _end_all(self, uid: str, reason: CloseReason, now: datetime) -> list[ClosedSession]:
+        """Close EVERY session of the owner (open, expired, idle or still closing), each told."""
+        done: list[ClosedSession] = []
+        for bk in await self.sessions.owned_ids(uid):
+            closing = await self.sessions.close_claim(uid, bk, reason, now, by_due=True)
+            if closing is not None:
+                done.append(await self._finish(closing, now))
         return done
 
     # ---- the lifecycle ---------------------------------------------------------------------------
     async def open(self, uid: str, audience: Audience, *, how: str, now: datetime) -> OpenedSession:
+        self._guest_check(audience)
         if not await self.record_open(uid, audience, granted=True, how=how, now=now):
             raise BookOff(NOT_RECORDED)
-        live = await self.sessions.live(uid, now=now)
-        if live is not None:
-            await self.close(uid, live.session_id, reason="new_open", now=now)
-        opened, ended = await self.sessions.open(uid, audience, now=now)
-        if ended is not None:
-            await self._finish(uid, ended)
+        await self._end_all(uid, "new_open", now)
+        opened, _racing = await self.sessions.open(uid, audience, now=now)  # its claim: the sweep
         if audience == "guest":
             await self._lock_guest(uid, opened, now)
         return opened
@@ -271,57 +234,106 @@ class BookService:
             await self.close(uid, sid, reason="end", now=now)
             raise BookOff(NO_LOCK) from None
 
-    async def _ended(self, uid: str, gone: SessionEnded) -> None:
-        await self._finish(uid, gone.closed)
-
     async def resolve(self, uid: str, token: str, *, now: datetime) -> SessionView:
         try:
             return await self.sessions.resolve(uid, token, now=now)
         except SessionEnded as gone:
-            await self._ended(uid, gone)
+            await self._finish(gone.closing, now)
             raise
 
     async def beat(self, uid: str, token: str, *, now: datetime) -> SessionView:
         try:
             return await self.sessions.beat(uid, token, now=now)
         except SessionEnded as gone:
-            await self._ended(uid, gone)
+            await self._finish(gone.closing, now)
             raise
 
     async def close(
         self, uid: str, session_id: str, *, reason: CloseReason, now: datetime
     ) -> ClosedSession:
-        closed = await self.sessions.close(uid, session_id, reason=reason, now=now)
-        return await self._finish(uid, closed)
+        closing = await self.sessions.close_claim(uid, session_id, reason, now)
+        if closing is None:
+            raise SessionGone(GONE)
+        return await self._finish(closing, now)
 
     async def lock_state(self, uid: str) -> ShowLockState | None:
         return None if self.lock is None else await self.lock.get(uid)
 
     async def resume(self, uid: str, lock_id: str, *, now: datetime) -> bool:
         """Lift the guest lock (the caller checked the book_resume proof for `lock_id`) and end
-        whatever session is still live (D14 trigger "Resume")."""
+        every session of the owner (D14 trigger "Resume")."""
         if self.lock is None or not await self.lock.lift(uid, lock_id):
             return False
-        live = await self.sessions.live(uid, now=now)
-        if live is not None:
-            await self.close(uid, live.session_id, reason="resume", now=now)
+        try:
+            await self._end_all(uid, "resume", now)
+        except Exception as exc:  # noqa: BLE001 - the lock is lifted; the sweep ends the rest
+            log.error("book sessions not ended at resume", extra={"error": type(exc).__name__})
         return True
 
     async def wipe(self, uid: str, *, now: datetime) -> int:
-        """Privacy -> Delete (D16 `book_sessions_source`): end and wipe the live session."""
-        live = await self.sessions.live(uid, now=now)
-        if live is None:
-            return 0
-        await self.close(uid, live.session_id, reason="privacy", now=now)
-        return 1
+        """Privacy -> Delete (D16 `book_sessions_source`): end and wipe EVERY session; how many."""
+        return len(await self._end_all(uid, "privacy", now))
 
-    async def sweep(self, *, now: datetime) -> tuple[ClosedSession, ...]:
-        done = [await self._finish(uid, c) for uid, c in await self.sessions.sweep_owned(now=now)]
-        return tuple(done)
+    async def _swept(self, step: Awaitable[Closing | None], now: datetime) -> ClosedSession | None:
+        closing = await step
+        return None if closing is None else await self._finish(closing, now)
+
+    async def sweep(self, *, now: datetime) -> SweepReport:
+        """Close what is over, one session at a time (each told at once), and recover closes
+        whose closer died before telling. A failure is counted and retried next time."""
+        done: list[ClosedSession] = []
+        errors = 0
+        steps = [
+            self.sessions.close_claim(uid, bk, "expired", now, due_only=True)
+            for uid, bk in await self.sessions.sweep_targets(now=now)
+        ]
+        steps += [
+            self.sessions.claim_orphan(uid, bk, now)
+            for uid, bk in await self.sessions.orphans(now=now)
+        ]
+        for step in steps:
+            try:
+                closed = await self._swept(step, now)
+            except Exception as exc:  # noqa: BLE001 - the others still close and tell
+                errors += 1
+                log.warning("a book session didn't close", extra={"error": type(exc).__name__})
+                continue
+            done += [closed] if closed is not None else []
+        return SweepReport(tuple(done), errors)
+
+    async def emergency_unlock(self, uid: str, reason: str, *, now: datetime) -> UnlockReport:
+        """The owner lost his passkey during a guest show (buildbook/unlock.py): audit FIRST,
+        lift the lock, end every session (each with its notice); a notice even when none was
+        open, so the owner always hears of it."""
+        state = await self.fresh_lock_state(uid)
+        detail = (
+            f"Emergency unlock at {self.tell.hhmm(now)} from Google Cloud (no passkey): "
+            f"{plain_reason(reason)}"
+        )
+        args = {"result": "granted", "via": "emergency_unlock", "locked": state is not None}
+        if not await self.tell.record(uid, "book_resume", "executed", args, detail):
+            raise BookOff(UNLOCK_NOT_RECORDED)
+        lifted = state is not None and await self._lift(uid, state.id)
+        closed = await self._end_all(uid, "resume", now)
+        if not closed:
+            await self.tell.tell(uid, self.tell.unlock_notice(now, lifted=lifted))
+        return UnlockReport(lifted=lifted, closed=len(closed))
+
+    async def fresh_lock_state(self, uid: str) -> ShowLockState | None:
+        """The lock read past any cache (the emergency unlock acts on what is there now)."""
+        if self.lock is None:
+            return None
+        refresh = getattr(self.lock, "refresh", None)
+        state = await refresh(uid) if callable(refresh) else await self.lock.get(uid)
+        return state if isinstance(state, ShowLockState) else None
+
+    async def _lift(self, uid: str, lock_id: str) -> bool:
+        return self.lock is not None and await self.lock.lift(uid, lock_id)
 
     # ---- the show and the talk-through -----------------------------------------------------------
     async def line_text(self, uid: str, session: SessionView, line_id: str) -> str | None:
         """What `POST /v1/book/show/speak {line_id}` reads: a beat of this book or a D13 line."""
+        self._guest_check(session.audience)
         return await self.show.line_text(uid, line_id)
 
     async def voice(self, uid: str) -> str:
@@ -333,6 +345,7 @@ class BookService:
         return await self.talk.state(uid)
 
     async def ask(self, uid: str, session: SessionView, text: str, *, now: datetime) -> TalkReply:
+        self._guest_check(session.audience)
         if self.talk is not None:
             return await self.talk.ask(uid, session, text, now=now)
         left = session.questions_left
@@ -347,11 +360,13 @@ class BookService:
 
     async def script(self, uid: str, session: SessionView) -> dict[str, Any]:
         """`GET /v1/book/show/script` (buildbook/show_script.py)."""
+        self._guest_check(session.audience)
         return await self.show.build(uid, session, await self.talk_state(uid))
 
 
 class BookSweepJob:
-    """D14's `book_sweep` TickJob: abandoned sessions end by themselves; failed deletes retry."""
+    """D14's `book_sweep` TickJob: abandoned sessions end by themselves; failed deletes retry;
+    closes whose closer died before telling are told."""
 
     name = "book_sweep"
     budget_s = 30.0
@@ -360,9 +375,15 @@ class BookSweepJob:
         self._svc, self._clock = service, clock
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
-        closed = await self._svc.sweep(now=self._clock())
-        wiped = sum(1 for c in closed if c.wiped)
-        return {"closed": wiped, "failed": len(closed) - wiped}
+        report = await self._svc.sweep(now=self._clock())
+        wiped = sum(1 for c in report.closed if c.wiped)
+        return {"closed": wiped, "failed": len(report.closed) - wiped + report.errors}
 
 
-__all__ = ["SELF_ENDED", "BookService", "BookSweepJob"]
+__all__ = [
+    "SELF_ENDED",
+    "BookService",
+    "BookSweepJob",
+    "SweepReport",
+    "UnlockReport",
+]

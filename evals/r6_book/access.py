@@ -6,8 +6,14 @@ the real /auth routes (Google's half faked), the real permissions service and a 
 Cases: a stale sign-in -> reauth_required; no proof -> passkey_required; no passkey ->
 passkey_setup_needed (never a sign-in-only open); a bearer caller -> console_only; a vault_unlock
 proof and an owner-audience proof can't open a guest session; an expired and an idle token -> 401;
-another owner's cookie can't use the token; a guest token can't read sections, older books,
-download code or settings (cases_access.jsonl; B's routes) nor see the owner's month spend.
+another owner's cookie can't use the token; a guest can't see the owner's month spend.
+
+B's routes (cases_access.jsonl): a guest TOKEN on sections, older sections and the code ticket is
+sent with the guest lock NOT engaged for that request (as from a browser the lock doesn't hold),
+so B's own audience check must answer (403 owner_only, never 200 and never the lock's 423). While
+B's routes are still the I0 stub (503 book_off) these rows pass marked `rerun_at_integration`; I1
+re-runs them after the merge, when book_off fails them (B's state must then be wired in the
+fixture). Settings carry no token: under the lock they are 423 for every browser of the owner.
 Negative control: the fresh sign-in check skipped (a stale browser then opens the book).
 """
 
@@ -34,6 +40,7 @@ from book_app_fakes import (
 from book_show_fakes import Clock
 from httpx import AsyncClient
 
+import jarvis.api.book as b_routes
 import jarvis.api.book_show_access as access_module
 from jarvis.config import LLMBackend, Settings
 
@@ -98,15 +105,46 @@ def _forbidden_rows() -> list[dict[str, str]]:
     return [json.loads(x) for x in text.splitlines() if x.strip()]
 
 
+class _Unlocked:
+    """The lock store as a browser the guest lock doesn't hold would see it (B's check alone)."""
+
+    async def get(self, uid: str) -> None:
+        return None
+
+
+def _b_is_stub() -> bool:
+    return "I0 STUB" in (b_routes.__doc__ or "")
+
+
+def _token_case(row: dict[str, str], r: Any) -> Case:
+    err, stub = _err(r), _b_is_stub()
+    ok = err == "owner_only" or (stub and err == "book_off")
+    case = _case(row["id"], ok and r.status_code != 200, f"B answered {r.status_code} {err}")
+    return {**case, "rerun_at_integration": True} if stub else case
+
+
+async def _b_routes(app: Any, c: AsyncClient, token: str) -> list[Case]:
+    out: list[Case] = []
+    for row in _forbidden_rows():
+        if row["kind"] == "lock":
+            r = await c.request(row["method"], row["path"], headers=book(token))
+            out.append(_case(row["id"], _err(r) == "show_locked", f"{r.status_code} {_err(r)}"))
+            continue
+        locked, app.state.book_lock = app.state.book_lock, _Unlocked()
+        try:
+            r = await c.request(row["method"], row["path"], headers=book(token))
+        finally:
+            app.state.book_lock = locked
+        out.append(_token_case(row, r))
+    return out
+
+
 async def _guest_token(app: Any) -> list[Case]:
     out: list[Case] = []
     async with sign_in(app) as c:
         auth = await register_passkey(c)
         token = (await open_book(c, auth, "guest"))["token"]
-        for row in _forbidden_rows():
-            r = await c.request(row["method"], row["path"], headers=book(token))
-            ok = r.status_code != 200 and "sections" not in r.text
-            out.append(_case(row["id"], ok, f"a guest token read it ({r.status_code})"))
+        out += await _b_routes(app, c, token)
         s = await c.get("/v1/book/show/script", headers=book(token))
         ok = s.status_code == 200 and "month_inr" not in s.json()["costs"]
         out.append(_case("guest-no-month-spend", ok, "the guest saw the owner's spend"))

@@ -11,9 +11,17 @@ owner's guest lock is on, lets through only:
     POST /auth/logout
     GET  /v1/book/show/script · POST /v1/book/show/{speak,hear,ask,beat}
     POST /v1/book/close, /v1/book/resume, /v1/passkeys/challenge
-    POST /v1/passkeys/reset   (plan "Risks": a passkey lost mid-show must stay recoverable; the
-                               route itself still wants a Google sign-in from the last 5 minutes,
-                               which a guest can't make, and a guest open consumes the owner's)
+
+Every passkey register / reset / cancel / remove route is locked: a guest can make a "fresh"
+Google sign-in in this browser with one click (Google returns no `auth_time` unless asked), so
+nothing a sign-in unlocks may be reachable here. A sign-in made under the lock (`/auth/login`,
+`/auth/callback`) gives a session this middleware holds like any other; it lifts nothing. A
+passkey lost mid-show is recovered with the owner-only emergency unlock (`python -m
+jarvis.buildbook.unlock`, server credentials), never through the browser.
+
+A websocket of an owner's cookie session is closed (4423 locked, 4503 unreadable) while a lock
+is on: never silently exempt. An HTTP or websocket scope with no `session` in Google mode means
+the middleware was installed outside SessionMiddleware: 503 (fail closed, logged), never "pass".
 
 `GET /` -> 302 /book/show; everything else, `/auth/me` included -> 423 {error: show_locked,
 detail, lock_id?} (`lock_id` only for the owner whose lock it is: the target of his
@@ -39,7 +47,10 @@ from jarvis.api.identity import user_id_for_email
 from jarvis.buildbook.lines import LINES
 from jarvis.buildbook.model import ShowLockState
 from jarvis.buildbook.ports import LockUnreadable, ShowLock
-from jarvis.config import Settings
+from jarvis.config import AuthMode, Settings
+from jarvis.logging import get_logger
+
+log = get_logger(__name__)
 
 SHOW_PAGE = "/book/show"
 ALLOWED: frozenset[tuple[str, str]] = frozenset(
@@ -58,12 +69,13 @@ ALLOWED: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/v1/book/close"),
         ("POST", "/v1/book/resume"),
         ("POST", "/v1/passkeys/challenge"),
-        ("POST", "/v1/passkeys/reset"),
     }
 )
 _STATIC = re.compile(r"/static/[A-Za-z0-9._\-]+(?:/[A-Za-z0-9._\-]+){0,2}")
 LOCKED = "A guest is watching the build book. " + LINES["hand_back"]
 UNREADABLE = "JARVIS can't tell whether a guest show is running. Try again in a moment."
+UNWIRED = "The guest lock isn't installed where it can see sign-ins, so JARVIS stays closed."
+WS_LOCKED, WS_UNREADABLE = 4423, 4503
 GUEST_FLAG = "book_guest"  # set in the presenting browser's session at a guest open
 
 
@@ -115,20 +127,48 @@ class ShowLockMiddleware:
             body["lock_id"] = state.id
         return _json(423, body)
 
+    async def _held(self, scope: Scope) -> tuple[ShowLockState | None, bool]:
+        """(the lock holding this cookie session, whether it is the owner's own); LockUnreadable
+        propagates. Not an owner's session, or no lock store: (None, False)."""
+        view = scope if scope["type"] == "http" else {**scope, "type": "http"}  # same session dict
+        email = session_email(Request(view), self._s)
+        store: ShowLock | None = getattr(scope["app"].state, "book_lock", None)
+        if email is None or store is None:
+            return None, False
+        return await self._lock_on(store, user_id_for_email(email), scope["session"])
+
+    async def _websocket(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            state, _ = await self._held(scope)
+        except LockUnreadable:
+            await send({"type": "websocket.close", "code": WS_UNREADABLE})
+            return
+        if state is not None:
+            await send({"type": "websocket.close", "code": WS_LOCKED})
+            return
+        await self.app(scope, receive, send)
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or "session" not in scope:
-            await self.app(scope, receive, send)
+        if scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)  # lifespan
+            return
+        if "session" not in scope:
+            if self._s.auth_mode is not AuthMode.GOOGLE:
+                await self.app(scope, receive, send)
+                return
+            log.error("the show lock sees no session: installed outside SessionMiddleware")
+            await _json(503, {"error": "show_lock_unwired", "detail": UNWIRED})(
+                scope, receive, send
+            )
+            return
+        if scope["type"] == "websocket":
+            await self._websocket(scope, receive, send)
             return
         if allowed(scope["method"], scope["path"]):
             await self.app(scope, receive, send)
             return
-        email = session_email(Request(scope), self._s)
-        store: ShowLock | None = getattr(scope["app"].state, "book_lock", None)
-        if email is None or store is None:
-            await self.app(scope, receive, send)
-            return
         try:
-            state, own = await self._lock_on(store, user_id_for_email(email), scope["session"])
+            state, own = await self._held(scope)
         except LockUnreadable:
             await _json(503, {"error": "show_lock_unreadable", "detail": UNREADABLE})(
                 scope, receive, send

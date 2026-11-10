@@ -14,11 +14,16 @@ guest is at the keyboard: these run with NO model call and answer with D13's fix
 - `post_guard(reply, ...)`: an e-mail address, a phone number, an owner e-mail or its local part,
   a secret pattern, the canary, a URL off the book's own list or a raw reference fence -> refused.
 - `cap(reply)`: control characters out, at most `REPLY_MAX` characters, cut at a sentence end.
+- `book_names_owner(book_json, owner_emails)`: D3's refusal at a guest's door (the sealer's check,
+  A's `release.owner_mentioned` / B's `holds_owner_email`, whichever matches more): the address
+  anywhere, or its local part (>= 3 characters) as a whole word, raw and with JSON escapes undone,
+  NFKC and case folded.
 Nothing here logs; the caller never logs the question or the reply either.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from collections.abc import Sequence
@@ -138,15 +143,25 @@ def _off_list_link(text: str, allowed: frozenset[str]) -> bool:
 
 
 def _owner_hit(text: str, owner_emails: Sequence[str]) -> bool:
-    low = text.casefold()
+    low = unicodedata.normalize("NFKC", text).casefold()
     for email in owner_emails:
-        address = email.strip().casefold()
+        address = unicodedata.normalize("NFKC", email).strip().casefold()
         local = address.split("@", 1)[0]
         if address and address in low:
             return True
         if len(local) >= 3 and re.search(rf"(?<![\w.]){re.escape(local)}(?!\w)", low):
             return True
     return False
+
+
+def book_names_owner(book_json: bytes, owner_emails: Sequence[str]) -> bool:
+    """Does this book.json name an owner's address or its local part? (A guest never sees it.)"""
+    raw = book_json.decode("utf-8", "replace")
+    try:
+        unescaped = json.dumps(json.loads(book_json), ensure_ascii=False)
+    except ValueError:
+        unescaped = raw
+    return any(_owner_hit(view, owner_emails) for view in (raw, unescaped))
 
 
 def post_guard(
@@ -161,6 +176,9 @@ def post_guard(
         return "refuse_meta"
     if W.EMAIL.search(nfkc) or W.DIGITS.search(nfkc) or _owner_hit(nfkc, owner_emails):
         return "refuse_data"
+    words_as_symbols = W.spelled(nfkc)  # "x dot y at gmail dot com", "at the rate"
+    if W.SPELLED_EMAIL.search(words_as_symbols) or _owner_hit(words_as_symbols, owner_emails):
+        return "refuse_data"
     return "refuse_meta" if _off_list_link(nfkc, allowed_hosts) else None
 
 
@@ -174,4 +192,13 @@ def cap(reply: str, limit: int = REPLY_MAX) -> str:
     return cut[: end + 1] if end >= limit // 2 else cut
 
 
-__all__ = ["REPLY_MAX", "Refusal", "book_hosts", "cap", "normalise", "post_guard", "pre_guard"]
+__all__ = [
+    "REPLY_MAX",
+    "Refusal",
+    "book_hosts",
+    "book_names_owner",
+    "cap",
+    "normalise",
+    "post_guard",
+    "pre_guard",
+]

@@ -115,6 +115,7 @@ def wire_book_c(
         timezone=s.user_timezone,
         prefs=prefs,
         spend=_spend(app),
+        owner_emails=tuple(s.owner_emails),
     )
     app.state.book_sessions, app.state.book_lock = sessions, lock
     app.state.book_talk, app.state.book_service = talk, service

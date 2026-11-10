@@ -154,8 +154,8 @@ async def test_a_failed_delete_is_told_and_finished_by_the_sweep_once(rig: Rig) 
     assert (await job.run([UID]))["failed"] == 1
     rig.docs.fail_deletes = False
     assert await job.run([UID]) == {"closed": 1, "failed": 0}
-    assert len(rig.sent.sent) == 1  # no second notice for the retry
-    assert [t for t, _, _ in await rig.tools()] == ["book_open", "book_close"]
+    assert len(rig.sent.sent) == 1  # no second notice for the retry, one audit line for it
+    assert [t for t, _, _ in await rig.tools()] == ["book_open", "book_close", "book_close"]
 
 
 async def test_a_new_open_ends_the_old_session_with_its_notice(rig: Rig) -> None:

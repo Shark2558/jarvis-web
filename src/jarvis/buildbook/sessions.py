@@ -10,10 +10,11 @@ owner's or session's document does not open. One live session per owner: `open` 
 one first (reason new_open). 45 minutes absolute, 10 idle (Settings `book_session_minutes`,
 `book_idle_minutes`); the show's beat moves the idle limit, never the absolute one.
 
-Close (D14 steps 1-2): mark `closing` and drop the turns in the same write, delete the document,
-read it back absent -> `wiped`. A failed delete leaves a turn-less `closing` document that no token
-opens and the sweep finishes later; such a retry comes back with `notified=True` ("already told").
-Nothing here logs a token, a question or a reply.
+Close (D14): `closing.ClosingStore` (mixed in): mark `closing` and drop the turns in the same
+transaction that claims the notice, delete, read back. The talk lane RESERVES a question in a
+transaction before its model call (`reserve`; refused at the session's limit, so parallel asks
+can't run past it), gives it back when no call was made (`release`) and stores the guarded turn
+without counting it again (`put_turn`). Nothing here logs a token, a question or a reply.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from jarvis.buildbook.closing import Closing, ClosingStore, at, due
 from jarvis.buildbook.model import (
     Audience,
     ClosedSession,
@@ -37,7 +39,7 @@ from jarvis.buildbook.ports import SessionGone
 from jarvis.integrations.vault import VaultError
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Create, Delete, Docs, DocTx, Query
+from jarvis.storage.docs import Create, Docs, DocTx, Query
 
 log = get_logger(__name__)
 
@@ -49,11 +51,16 @@ GONE = "This build book session has ended. Open the book again from the console.
 
 
 class SessionEnded(SessionGone):
-    """The session was expired or idle and has just been closed (the caller tells the owner)."""
+    """The session was expired or idle and has just been closed. `closing.claimed`: the caller
+    tells the owner (BookService does; a caller that doesn't leaves it to the sweep)."""
 
-    def __init__(self, closed: ClosedSession) -> None:
-        self.closed = closed
+    def __init__(self, closing: Closing) -> None:
+        self.closing = closing
         super().__init__(GONE)
+
+    @property
+    def closed(self) -> ClosedSession:
+        return self.closing.closed
 
 
 def _check_limits(session_minutes: int, idle_minutes: int, questions: int) -> None:
@@ -63,11 +70,7 @@ def _check_limits(session_minutes: int, idle_minutes: int, questions: int) -> No
         raise ValueError("idle must be shorter than the session; 1-50 questions")
 
 
-def _at(text: Any) -> datetime:
-    return datetime.fromisoformat(str(text))
-
-
-class DocBookSessions:
+class DocBookSessions(ClosingStore):
     def __init__(
         self,
         docs: Docs,
@@ -80,12 +83,10 @@ class DocBookSessions:
     ) -> None:
         _check_limits(session_minutes, idle_minutes, questions)
         self._docs, self._ring, self._coll = docs, keyring, f"{prefix}book_sessions"
+        self._notes = f"{prefix}book_notices"
         self._session = timedelta(minutes=session_minutes)
         self._idle = timedelta(minutes=idle_minutes)
         self.questions = questions
-
-    def _path(self, bk: str) -> str:
-        return f"{self._coll}/{bk}"
 
     def _aad(self, uid: str, bk: str) -> str:
         return f"book/session/{uid}/{bk}/v1"
@@ -107,31 +108,6 @@ class DocBookSessions:
         except (KeyError, TypeError, ValueError, ValidationError):
             raise SessionGone(GONE) from None
 
-    @staticmethod
-    def _due(doc: dict[str, Any], now: datetime) -> CloseReason | None:
-        try:
-            if now >= _at(doc["until"]):
-                return "expired"
-            return "idle" if now >= _at(doc["idle_until"]) else None
-        except (KeyError, TypeError, ValueError):
-            return "expired"  # a document we can't read the limits of is over
-
-    def _closed(
-        self, bk: str, doc: dict[str, Any], now: datetime, *, wiped: bool, retry: bool
-    ) -> ClosedSession:
-        created = _at(doc["created_at"])
-        return ClosedSession(
-            session_id=bk,
-            audience=doc["audience"],
-            reason=doc["reason"],
-            created_at=doc["created_at"],
-            closed_at=now.isoformat(),
-            minutes=max(0, int((now - created).total_seconds() // 60)),
-            questions=max(0, int(doc.get("questions", 0))),
-            wiped=wiped,
-            notified=retry,
-        )
-
     # ---- reads -----------------------------------------------------------------------------------
     async def _by_token(self, token: str) -> tuple[str, dict[str, Any]]:
         if not isinstance(token, str) or not _TOKEN.fullmatch(token):
@@ -149,19 +125,18 @@ class DocBookSessions:
         bk, doc = await self._by_token(token)
         if doc.get("uid") != uid or doc.get("state") != "open":
             raise SessionGone(GONE)
-        reason = self._due(doc, now)
-        if reason is not None:
-            closed = await self._close_doc(uid, bk, reason, now)
-            if closed is None:
+        if due(doc, now) is not None:
+            closing = await self.close_claim(uid, bk, "expired", now, by_due=True)
+            if closing is None:
                 raise SessionGone(GONE)
-            raise SessionEnded(closed)
+            raise SessionEnded(closing)
         return self._view(bk, doc)
 
     async def live(self, uid: str, *, now: datetime) -> SessionView | None:
         rows = [
             (bk, d)
             for bk, d in await self._owned(uid)
-            if d.get("state") == "open" and self._due(d, now) is None
+            if d.get("state") == "open" and due(d, now) is None
         ]
         if not rows:
             return None
@@ -188,12 +163,11 @@ class DocBookSessions:
     async def open(
         self, uid: str, audience: Audience, *, now: datetime
     ) -> tuple[OpenedSession, ClosedSession | None]:
-        ended: ClosedSession | None = None
+        ended: ClosedSession | None = None  # BookService ends every session first (and tells)
         for bk, doc in await self._owned(uid):
-            was_open = doc.get("state") == "open"
-            closed = await self._close_doc(uid, bk, "new_open", now)
-            if was_open and ended is None:
-                ended = closed
+            closing = await self.close_claim(uid, bk, "new_open", now, by_due=True)
+            if closing is not None and doc.get("state") == "open" and ended is None:
+                ended = closing.closed
         token = secrets.token_urlsafe(TOKEN_BYTES)
         bk = f"bk_{secrets.token_hex(8)}"
         doc = self._new_doc(uid, audience, token, now)
@@ -207,7 +181,7 @@ class DocBookSessions:
             doc = await tx.get(self._path(bk))
             if doc is None or doc.get("uid") != uid or doc.get("state") != "open":
                 raise SessionGone(GONE)
-            idle = min(now + self._idle, _at(doc["until"]))
+            idle = min(now + self._idle, at(doc["until"]))
             new = {**doc, "last_seen": now.isoformat(), "idle_until": idle.isoformat()}
             tx.set(self._path(bk), new)
             return new
@@ -228,18 +202,53 @@ class DocBookSessions:
             return []
         return [[str(q), str(r)] for q, r in raw][-TURNS_KEPT:] if isinstance(raw, list) else []
 
-    async def add_turn(self, uid: str, session_id: str, question: str, reply: str) -> int:
+    async def _turn(self, uid: str, sid: str, question: str, reply: str, *, count: bool) -> int:
         async def work(tx: DocTx) -> int:
-            doc = await tx.get(self._path(session_id))
+            doc = await tx.get(self._path(sid))
             if doc is None or doc.get("uid") != uid or doc.get("state") != "open":
                 raise SessionGone(GONE)
-            turns = [*self._unseal(uid, session_id, doc.get("blob")), [question, reply]]
-            asked = int(doc.get("questions", 0)) + 1
-            blob = self._seal(uid, session_id, turns[-TURNS_KEPT:])
-            tx.set(self._path(session_id), {**doc, "blob": blob, "questions": asked})
+            turns = [*self._unseal(uid, sid, doc.get("blob")), [question, reply]]
+            asked = int(doc.get("questions", 0)) + (1 if count else 0)
+            blob = self._seal(uid, sid, turns[-TURNS_KEPT:])
+            tx.set(self._path(sid), {**doc, "blob": blob, "questions": asked})
             return asked
 
         return max(0, self.questions - await self._docs.transaction(work))
+
+    async def add_turn(self, uid: str, session_id: str, question: str, reply: str) -> int:
+        """ports.BookSessions: store a turn AND count it (the lane reserves first instead)."""
+        return await self._turn(uid, session_id, question, reply, count=True)
+
+    async def put_turn(self, uid: str, session_id: str, question: str, reply: str) -> int:
+        """Store the guarded turn of a question already reserved; the questions left."""
+        return await self._turn(uid, session_id, question, reply, count=False)
+
+    async def reserve(self, uid: str, session_id: str) -> int | None:
+        """Count one question BEFORE the model call, atomically: the questions left after it,
+        or None at the session's limit (nothing counted). SessionGone when it has closed."""
+
+        async def work(tx: DocTx) -> int | None:
+            doc = await tx.get(self._path(session_id))
+            if doc is None or doc.get("uid") != uid or doc.get("state") != "open":
+                raise SessionGone(GONE)
+            asked = int(doc.get("questions", 0))
+            if asked >= self.questions:
+                return None
+            tx.set(self._path(session_id), {**doc, "questions": asked + 1})
+            return self.questions - asked - 1
+
+        return await self._docs.transaction(work)
+
+    async def release(self, uid: str, session_id: str) -> None:
+        """Give back a reserved question no model answered (No-AI, the limit, a failed call)."""
+
+        async def work(tx: DocTx) -> None:
+            doc = await tx.get(self._path(session_id))
+            if doc is not None and doc.get("uid") == uid and doc.get("state") == "open":
+                asked = max(0, int(doc.get("questions", 0)) - 1)
+                tx.set(self._path(session_id), {**doc, "questions": asked})
+
+        await self._docs.transaction(work)
 
     async def turns(self, uid: str, session_id: str) -> tuple[tuple[str, str], ...]:
         doc = await self._docs.get(self._path(session_id))
@@ -247,64 +256,28 @@ class DocBookSessions:
             return ()
         return tuple((q, r) for q, r in self._unseal(uid, session_id, doc.get("blob")))
 
-    # ---- close and sweep -------------------------------------------------------------------------
-    async def _delete(self, path: str) -> bool:
-        try:
-            await self._docs.write([Delete(path)])
-            return await self._docs.get(path) is None
-        except Exception as exc:  # noqa: BLE001 - the sweep retries; the turns are already gone
-            log.warning("book session delete failed", extra={"error": type(exc).__name__})
-            return False
-
-    async def _close_doc(
-        self, uid: str, bk: str, reason: CloseReason, now: datetime
-    ) -> ClosedSession | None:
-        async def mark(tx: DocTx) -> tuple[dict[str, Any], bool] | None:
-            doc = await tx.get(self._path(bk))
-            if doc is None or doc.get("uid") != uid:
-                return None
-            retry = doc.get("state") == "closing"
-            marked = {**doc, "state": "closing", "reason": doc.get("reason") or reason}
-            tx.set(self._path(bk), {**marked, "blob": None})
-            return marked, retry
-
-        got = await self._docs.transaction(mark)
-        if got is None:
-            return None
-        doc, retry = got
-        wiped = await self._delete(self._path(bk))
-        try:
-            return self._closed(bk, doc, now, wiped=wiped, retry=retry)
-        except (KeyError, TypeError, ValueError, ValidationError):
-            return None  # a malformed document: deleted, nothing to report
-
+    # ---- close and sweep (closing.ClosingStore does the work) ---------------------------------
     async def close(
         self, uid: str, session_id: str, *, reason: CloseReason, now: datetime
     ) -> ClosedSession:
-        closed = await self._close_doc(uid, session_id, reason, now)
-        if closed is None:
+        """ports.BookSessions. `notified` True: someone else tells (BookService uses
+        `close_claim` and tells itself)."""
+        closing = await self.close_claim(uid, session_id, reason, now)
+        if closing is None:
             raise SessionGone(GONE)
-        return closed
-
-    async def sweep_owned(self, *, now: datetime) -> tuple[tuple[str, ClosedSession], ...]:
-        """`sweep` with each closed session's owner (the service tells him)."""
-        out: list[tuple[str, ClosedSession]] = []
-        for bk, doc in await self._docs.query(Query(self._coll)):
-            uid = doc.get("uid")
-            closing = doc.get("state") == "closing"
-            reason = doc.get("reason") if closing else self._due(doc, now)
-            if not isinstance(uid, str):
-                await self._delete(self._path(bk))  # malformed: nobody's session, just remove it
-                continue
-            if reason is None:
-                continue
-            closed = await self._close_doc(uid, bk, reason, now)
-            if closed is not None:
-                out.append((uid, closed))
-        return tuple(out)
+        return closing.closed
 
     async def sweep(self, *, now: datetime) -> tuple[ClosedSession, ...]:
-        return tuple(closed for _, closed in await self.sweep_owned(now=now))
+        """ports.BookSessions: close what is over and recover unfinished closes (nobody tells
+        here; BookService.sweep does the same and tells)."""
+        out: list[ClosedSession] = []
+        for uid, bk in await self.sweep_targets(now=now):
+            closing = await self.close_claim(uid, bk, "expired", now, due_only=True)
+            out += [closing.closed] if closing is not None else []
+        for uid, bk in await self.orphans(now=now):
+            closing = await self.claim_orphan(uid, bk, now)
+            out += [closing.closed] if closing is not None else []
+        return tuple(out)
 
 
 __all__ = ["GONE", "TURNS_KEPT", "DocBookSessions", "SessionEnded"]

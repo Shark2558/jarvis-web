@@ -11,26 +11,25 @@ guest is at the keyboard: these run with NO model call and answer with D13's fix
   the owner's data (his e-mail, inbox, calendar, contacts, phone, address, whereabouts, family,
   passwords, keys, money, vault, memory with a person or request word). Feature questions ("How
   does JARVIS read e-mail?", "How does your memory work?") pass. English, Hindi and Malayalam.
-- `post_guard(reply, ...)`: an e-mail address, a phone number, an owner e-mail or its local part,
-  a secret pattern, the canary, a URL off the book's own list or a raw reference fence -> refused.
+- `post_guard(reply, ...)`: an e-mail address, a phone number, an owner (`owner_id.match`: his
+  address in any form or a distinctive word of it), a secret pattern, the canary, a URL off the
+  book's own list or a raw reference fence -> refused.
 - `cap(reply)`: control characters out, at most `REPLY_MAX` characters, cut at a sentence end.
-- `book_names_owner(book_json, owner_emails)`: D3's refusal at a guest's door (the sealer's check,
-  A's `release.owner_mentioned` / B's `holds_owner_email`, whichever matches more): the address
-  anywhere, or its local part (>= 3 characters) as a whole word, raw and with JSON escapes undone,
-  NFKC and case folded.
+- `book_names_owner(book_json, owner_emails)`: D3's refusal at a guest's door, the sealer's rule
+  exactly (`owner_id.in_book`, D3 amendment): the full address in any form, or a distinctive
+  local-part token (>= 3 letters, not JARVIS's own vocabulary) as a whole word.
 Nothing here logs; the caller never logs the question or the reply either.
 """
 
 from __future__ import annotations
 
-import json
-import re
 import unicodedata
 from collections.abc import Sequence
 from typing import Literal
 from urllib.parse import urlsplit
 
 from jarvis.buildbook import guard_words as W
+from jarvis.buildbook import owner_id
 from jarvis.buildbook.guard_words import normalise
 
 Refusal = Literal["refuse_data", "refuse_action", "refuse_meta"]
@@ -142,26 +141,9 @@ def _off_list_link(text: str, allowed: frozenset[str]) -> bool:
     return any(not _allowed(h, allowed) for h in hosts)
 
 
-def _owner_hit(text: str, owner_emails: Sequence[str]) -> bool:
-    low = unicodedata.normalize("NFKC", text).casefold()
-    for email in owner_emails:
-        address = unicodedata.normalize("NFKC", email).strip().casefold()
-        local = address.split("@", 1)[0]
-        if address and address in low:
-            return True
-        if len(local) >= 3 and re.search(rf"(?<![\w.]){re.escape(local)}(?!\w)", low):
-            return True
-    return False
-
-
 def book_names_owner(book_json: bytes, owner_emails: Sequence[str]) -> bool:
-    """Does this book.json name an owner's address or its local part? (A guest never sees it.)"""
-    raw = book_json.decode("utf-8", "replace")
-    try:
-        unescaped = json.dumps(json.loads(book_json), ensure_ascii=False)
-    except ValueError:
-        unescaped = raw
-    return any(_owner_hit(view, owner_emails) for view in (raw, unescaped))
+    """Does this book.json name an owner (D3 amendment)? A guest is never shown it."""
+    return owner_id.in_book(book_json, owner_emails) is not None
 
 
 def post_guard(
@@ -174,10 +156,9 @@ def post_guard(
         return "refuse_meta"
     if W.SECRETS.search(nfkc) or "<<" in nfkc or ">>" in nfkc:
         return "refuse_meta"
-    if W.EMAIL.search(nfkc) or W.DIGITS.search(nfkc) or _owner_hit(nfkc, owner_emails):
+    if W.EMAIL.search(nfkc) or W.DIGITS.search(nfkc) or owner_id.match(nfkc, owner_emails):
         return "refuse_data"
-    words_as_symbols = W.spelled(nfkc)  # "x dot y at gmail dot com", "at the rate"
-    if W.SPELLED_EMAIL.search(words_as_symbols) or _owner_hit(words_as_symbols, owner_emails):
+    if W.SPELLED_EMAIL.search(W.spelled(nfkc)):  # "x dot y at gmail dot com", "at the rate"
         return "refuse_data"
     return "refuse_meta" if _off_list_link(nfkc, allowed_hosts) else None
 

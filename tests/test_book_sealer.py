@@ -176,14 +176,16 @@ def _book_saying(text: str) -> Any:
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("text", "what"),
     [
-        "Built by AKASH.Owner2558@Example.com.",
-        "Ask akash.owner2558 about it.",
-        "Mail: akash․owner2558@example．com",  # look-alike dots fold under NFKC
+        ("Built by AKASH.Owner2558@Example.com.", "your e-mail address"),
+        ("Ask akash.owner2558 about it.", "a word from your e-mail address"),  # D3 amendment
+        ("Mail: akash․owner2558@example．com", "your e-mail address"),  # look-alike dots: NFKC
     ],
 )
-async def test_a_book_holding_an_owner_address_is_refused_and_told_once(text: str) -> None:
+async def test_a_book_holding_an_owner_address_is_refused_and_told_once(
+    text: str, what: str
+) -> None:
     rig = Rig()
     release = rig.deploy(1, book=_book_saying(text))
     assert (await rig.sealer.ensure(UID)).state == "failed"
@@ -193,8 +195,7 @@ async def test_a_book_holding_an_owner_address_is_refused_and_told_once(text: st
         (
             UID,
             "book_seal_failed",
-            f"Sir, the build book for R6 ({release.id}) holds your e-mail address, "
-            "so I refused to seal it.",
+            f"Sir, the build book for R6 ({release.id}) holds {what}, so I refused to seal it.",
         )
     ]
     assert OWNER_EMAIL not in str(rig.notes.sent) and rig.audit.rows == []
@@ -204,7 +205,9 @@ def test_the_owner_address_check_matches_whole_words_only() -> None:
     emails = (OWNER_EMAIL, "me@example.com")
     assert holds_owner_email(b'{"a":"akash.owner2558"}', emails)
     assert holds_owner_email(b'{"a":"akash.owner2558\\u0040example.com"}', emails)
-    assert not holds_owner_email(b'{"a":"akash.owner25589 xakash.owner2558"}', emails)
+    # D3 amendment: "akash" is the distinctive token ("owner" is JARVIS's own word), whole words
+    assert holds_owner_email(b'{"a":"akash.owner25589"}', emails)
+    assert not holds_owner_email(b'{"a":"xakash.owner2558 akashic owner"}', emails)
     assert not holds_owner_email(b'{"a":"tell me about it"}', emails)  # a 2-letter local part
     assert not holds_owner_email(b'{"a":"akash.owner2558"}', ())
 

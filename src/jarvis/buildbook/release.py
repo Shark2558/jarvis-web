@@ -11,14 +11,13 @@ importlib.resources and checks both SHA-256s ONCE per process:
     read(kind) the verified bytes of book.json or source.zip (re-verified on every read)
     book()     book.json parsed (`model.load_book`), once
 
-`owner_mentioned` is D3's last check before sealing: a book holding a configured owner address
-or its local part must not be sealed. Nothing here logs book text or an address.
+`owner_mentioned` is D3's check (`owner_id`, the D3 amendment): a book naming a configured owner
+must not be sealed. Nothing here logs book text or an address.
 """
 
 from __future__ import annotations
 
 import hashlib
-import re
 from collections.abc import Iterable
 from functools import lru_cache
 from importlib.resources import files
@@ -28,6 +27,7 @@ from threading import Lock
 
 from pydantic import ValidationError
 
+from jarvis.buildbook import owner_id
 from jarvis.buildbook.model import Book, FileKind, Release, load_book
 from jarvis.buildbook.ports import BookUnavailable
 from jarvis.logging import get_logger
@@ -37,7 +37,6 @@ log = get_logger(__name__)
 BOOK_DIR: Traversable | Path = files("jarvis.buildbook") / "_book"
 NO_BOOK = "This server has no build book"
 FILE_OF: dict[FileKind, str] = {"book": "book.json", "source": "source.zip"}
-_LOCAL_MIN = 3  # a shorter local part would match ordinary words
 
 
 def _digest(release: Release, kind: FileKind) -> str | None:
@@ -113,17 +112,10 @@ def current() -> Release | None:
 
 
 def owner_mentioned(data: bytes, emails: Iterable[str]) -> bool:
-    """D3: does the book hold an owner address, or its local part as a whole word?"""
-    text = data.decode("utf-8", errors="replace").lower()
-    for email in (e.strip().lower() for e in emails):
-        if not email:
-            continue
-        if email in text:
-            return True
-        local = email.split("@", 1)[0]
-        if len(local) >= _LOCAL_MIN and re.search(rf"(?<![\w.]){re.escape(local)}(?!\w)", text):
-            return True
-    return False
+    """D3: does the book name an owner? The one rule (`owner_id.in_book`, D3 amendment) the
+    sealer, the guest door and the reply guard use: the full address in any form, or a
+    distinctive word of its local part."""
+    return owner_id.in_book(data, emails) is not None
 
 
 __all__ = ["BOOK_DIR", "NO_BOOK", "ReleaseSource", "current", "default_source", "owner_mentioned"]

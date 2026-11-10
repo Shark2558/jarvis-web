@@ -34,10 +34,11 @@ from jarvis.buildbook.seal_words import (
     FAILED,
     INDEX_TAMPERED,
     OVER_LIMIT,
-    PERSONAL,
     READ_TAMPERED,
     UNBUILT,
     holds_owner_email,
+    owner_hit,
+    personal_words,
 )
 from jarvis.logging import get_logger
 from jarvis.notify.ports import Notifier
@@ -154,9 +155,9 @@ class BookSealer:
         except BookUnavailable:
             await self._say.fail_once(uid, release.id, self._say.words(FAILED, release))
             return SealOutcome("failed", release.id)
-        if holds_owner_email(files["book"], self._emails):
+        if (hit := owner_hit(files["book"], self._emails)) is not None:
             log.error("book seal refused: the book names an owner address")
-            words = self._say.words(PERSONAL, release)
+            words = self._say.words(personal_words(hit), release)
             await self._say.fail_once(uid, f"{release.id}:personal", words)
             return SealOutcome("failed", release.id)
         removed = await self._store(uid, release, files, sealed)

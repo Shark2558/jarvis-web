@@ -134,7 +134,7 @@ class BookService:
     # ---- D3 at a guest's door -------------------------------------------------------------------
     def guest_refusal(self) -> str | None:
         """None when a guest may be shown this release's book; else plain words why not. A book
-        naming an owner's address (or its local part) is refused, as the sealer refuses it; a
+        naming an owner (D3 amendment: `owner_id`) is refused, as the sealer refuses it; a
         book that can't be read is refused too (and checked again next time)."""
         rel = self.source.current()
         if rel is None or not rel.ok:

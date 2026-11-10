@@ -89,6 +89,16 @@ schema `model.Book` v1); same commit → same bytes. `--check` builds twice, com
 list, and any word whose lower-case SHA-256 is in `gen/redact.json` (hashes only, so the list names no one). Text
 from `tests/` and `evals/` enters only the snapshot. Before sealing, the app refuses a `book.json` holding a configured
 `owner_emails` address or its local part (`book_seal_failed`).
+**D3 amendment (integrated review).** "Its local part" proved too blunt joined up: an everyday local part ("owner",
+"jarvis", "home", "info", "mail", "vault") is a word of the book itself, so it refused every release, every guest show
+and the owner's own replies, while "First Last" slipped past a `first.last@` address. One rule now serves the sealer,
+the guest door and the reply guard (`buildbook/owner_id.py`): the FULL address always counts in any form (case,
+NFC/NFKC, percent-encoding, HTML entities, " at "/" dot " and [at]/(dot) spellings, JSON escapes, zero-width characters
+stripped); the local part counts only by its tokens (split on `. _ - +` and digit runs) of ≥ 3 letters that are NOT in
+JARVIS's fixed vocabulary (the generator's template words, the words of the book's own fixed text, a short common-word
+list; built from fixed text in the image, never from plans), each as a whole word, so `first.last@` also matches
+"First Last" and "Last, First". A local part made only of vocabulary words is checked as the address alone. The
+`book_seal_failed` notice says which matched ("your e-mail address" or "a word from your e-mail address"), never the word.
 
 **D4 · How the book and the release id reach the app.** CI builds into `src/jarvis/buildbook/_book/` (git-ignored;
 package-data `"jarvis.buildbook" = ["_book/*"]`) before `docker build`, so the image carries it. New deploy-job
@@ -394,5 +404,4 @@ inspected (R5.1 D11) · release plan, go-live guide, architecture note.
   limit is the backstop.
 - **Needs the owner**: the app-wide fresh sign-in treats a missing Google `auth_time` as "now" (R3; R6 no longer relies
   on it: open = passkey AND sign-in, resume = passkey only); an R7 candidate is to request `auth_time` as essential.
-  D3's guest check refuses a book holding an owner address's local part as a whole word (≥ 3 characters): an address
-  whose local part is a common word of the book ("jarvis", "owner") would block every guest show.
+  D3's local-part check blocking every guest show on an everyday local part: fixed by the D3 amendment (above).

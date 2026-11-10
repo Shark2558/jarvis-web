@@ -6,12 +6,11 @@ an address or a size beyond the configured limit. `{h}` is the owner's honorific
 
 from __future__ import annotations
 
-import json
-import re
-import unicodedata
 from collections.abc import Sequence
 
-LOCAL_PART_MIN = 3  # a shorter local part is a common word, not a name
+from jarvis.buildbook import owner_id
+
+LOCAL_PART_MIN = owner_id.TOKEN_MIN  # a shorter local-part token is not a name
 
 SEALED = (
     "{h}, the build book for {label} ({id}) is sealed in your vault with this release's code. "
@@ -21,6 +20,10 @@ UNBUILT = "{h}, the build book for {label} ({id}) could not be built at deploy, 
 FAILED = "{h}, the build book for {label} ({id}) could not be sealed in your vault; I'll try again."
 PERSONAL = (
     "{h}, the build book for {label} ({id}) holds your e-mail address, so I refused to seal it."
+)
+PERSONAL_WORD = (
+    "{h}, the build book for {label} ({id}) holds a word from your e-mail address, so I refused "
+    "to seal it."
 )
 OVER_LIMIT = (
     "{h}, the build book for {label} ({id}) doesn't fit in the build book's {mb} MB storage "
@@ -37,31 +40,21 @@ def kept_words(n: int) -> str:
     return f"{n} release" if n == 1 else f"{n} releases"
 
 
-def _marks(emails: Sequence[str]) -> tuple[str, ...]:
-    out: list[str] = []
-    for raw in emails:
-        email = unicodedata.normalize("NFKC", raw).casefold().strip()
-        local, at, _ = email.partition("@")
-        if not at or not local:
-            continue
-        out.append(email)
-        if len(local) >= LOCAL_PART_MIN:
-            out.append(local)
-    return tuple(out)
+def personal_words(hit: owner_id.Hit) -> str:
+    """D3's refusal notice, naming what matched (the address, or a word from it) but never the
+    word itself."""
+    return PERSONAL if hit == "address" else PERSONAL_WORD
+
+
+def owner_hit(book: bytes, owner_emails: Sequence[str]) -> owner_id.Hit | None:
+    """D3's last check before sealing (`owner_id.in_book`, the one rule the guest door and the
+    reply guard use too): "address", "word" or None."""
+    return owner_id.in_book(book, owner_emails)
 
 
 def holds_owner_email(book: bytes, owner_emails: Sequence[str]) -> bool:
-    """D3's last check before sealing: does book.json name a configured owner address or its
-    local part, as a whole word (NFKC, case-folded, JSON escapes undone)?"""
-    marks = _marks(owner_emails)
-    if not marks:
-        return False
-    try:
-        text = json.dumps(json.loads(book), ensure_ascii=False)
-    except ValueError:
-        text = book.decode("utf-8", "replace")
-    text = unicodedata.normalize("NFKC", text).casefold()
-    return any(re.search(rf"(?<![\w.+-]){re.escape(m)}(?![\w-])", text) for m in marks)
+    """Does book.json name a configured owner (`owner_hit` is not None)?"""
+    return owner_hit(book, owner_emails) is not None
 
 
 __all__ = [
@@ -70,9 +63,12 @@ __all__ = [
     "LOCAL_PART_MIN",
     "OVER_LIMIT",
     "PERSONAL",
+    "PERSONAL_WORD",
     "READ_TAMPERED",
     "SEALED",
     "UNBUILT",
     "holds_owner_email",
     "kept_words",
+    "owner_hit",
+    "personal_words",
 ]

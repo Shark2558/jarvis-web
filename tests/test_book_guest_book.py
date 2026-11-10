@@ -38,7 +38,8 @@ CLEAN = (BOOK_DIR / "book.json").read_bytes()
         ("Written by akash.owner on a Sunday.", True),
         ("Written by ａｋａｓｈ.ｏｗｎｅｒ.", True),  # full-width letters (NFKC)
         ("akash.owner\\u0040example.com", True),  # a JSON escape
-        ("The akash.owners club", False),  # not the local part as a whole word
+        ("The akash.owners club", True),  # D3 amendment: "akash" is the distinctive token
+        ("The Akashic owners club", False),  # not a whole word; "owner" is JARVIS's own word
         ("The core loop sits in layer four.", False),
     ],
 )

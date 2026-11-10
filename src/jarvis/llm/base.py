@@ -181,6 +181,29 @@ class LLMAuthError(LLMError):
     """Bad or missing credentials — never retry."""
 
 
+OUT_OF_CREDIT = "the AI account is out of credit"
+
+
+class LLMOutOfCredit(LLMError):
+    """The vendor answered, but the account has no credit left to bill (R5.1 I1). Never retried
+    and never degraded to a cheaper tier (the same account pays for every tier). Carries fixed
+    words only: the vendor's own message never leaves the provider module."""
+
+    def __init__(self, message: str = OUT_OF_CREDIT) -> None:
+        super().__init__(message)
+
+
+DECLINED = "the AI provider declined to answer"
+
+
+class LLMDeclined(LLMError):
+    """The vendor answered with nothing (blocked or empty). Fixed words only: the vendor's reason
+    stays in the provider module's log. Not retried, not degraded."""
+
+    def __init__(self, message: str = DECLINED) -> None:
+        super().__init__(message)
+
+
 @runtime_checkable
 class LLMProvider(Protocol):
     """One implementation per vendor. Keep this surface small; add to it deliberately."""

@@ -1,12 +1,17 @@
 # src/jarvis/health/tick.py
 """The scheduled health check as a TickJob (R4 D14). Rides the existing tick: no new Cloud
 Scheduler job. Owners are checked in parallel (bounded), each forced fresh. One owner's failure
-is counted under `failed` and stops no one; so is an owner still unserved at the job's own
-deadline, or one whose result could not be saved.
+is counted under `failed` and stops no one. An owner still unserved at the job's own deadline
+(`late`) and a result that could not be saved (`unsaved`) are DEGRADED, not failed (R5.1
+int-sec M4), and the watchdog (`home.watchdog`) never lets this job turn its answer into a 503.
 
-Cadence (R4 I2 F5): the tick fires only in the morning window (`0,30 4-11`), so this runs then,
-at most once per `CHECK_EVERY_S` per owner (in memory; a restart simply checks once early).
-An outage outside that window is found on demand (`systems_check`) or at the next window."""
+Cadence (R5.1 D4): ONE instance of this job rides both the morning tick (`0,30 4-11`) and the
+5-minute home watchdog (`Watchdog(..., extra=(..., job))`), so the check runs around the clock
+for every owner with a linked home, and at most once per `CHECK_EVERY_S` (15 minutes) per owner:
+the per-owner gate below is the instance's own, shared by both callers (in memory; a restart
+simply checks once early). The gate is taken before any await, so two callers at the same
+moment check an owner once. Owners without a linked home are checked by the morning tick only
+(the watchdog runs over linked homes) and on demand (`systems_check`, the pop-up)."""
 
 from __future__ import annotations
 
@@ -21,11 +26,13 @@ from jarvis.ticks import FAILED_COUNT
 log = get_logger(__name__)
 
 TICK_BUDGET_S = 30.0
-TICK_DEADLINE_S = 40.0  # stop waiting before the tick cancels us, so the count is still returned
+TICK_DEADLINE_S = 25.0  # stop waiting well before the 30 s budget cancels us (5 s margin)
 MAX_PARALLEL_OWNERS = 8
-CHECK_EVERY_S = 1800.0  # at most one scheduled check per owner per half hour
+CHECK_EVERY_S = 900.0  # R5.1 D4: at most one scheduled check per owner per 15 minutes
 OWNERS_COUNT = "owners"
 FAULTS_COUNT = "faults"
+UNSAVED_COUNT = "unsaved"  # a report that could not be stored: degraded, never "failed"
+LATE_COUNT = "late"  # an owner still unserved at the deadline: degraded, never "failed"
 
 
 class HealthTickJob:
@@ -52,15 +59,15 @@ class HealthTickJob:
         self._last.update(dict.fromkeys(due, now))
         return due
 
-    async def _one(self, uid: str, gate: asyncio.Semaphore) -> tuple[bool, bool]:
-        """(failed, faulty) for one owner."""
+    async def _one(self, uid: str, gate: asyncio.Semaphore) -> tuple[bool, bool, bool]:
+        """(failed, faulty, unsaved) for one owner."""
         async with gate:
             try:
                 report = await self._svc.check(uid, force=True)
             except Exception as exc:  # noqa: BLE001 - one owner never stops the others
                 log.error("health check failed for an owner", extra={"error": type(exc).__name__})
-                return True, False
-        return (not report.persisted), report.overall != "ok"
+                return True, False, False
+        return False, report.overall != "ok", not report.persisted
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
         owners = self._due(owners)
@@ -76,13 +83,17 @@ class HealthTickJob:
             raise
         for t in pending:
             t.cancel()
-        counts = {OWNERS_COUNT: len(tasks), FAULTS_COUNT: 0, FAILED_COUNT: len(pending)}
+        counts = {OWNERS_COUNT: len(tasks), FAULTS_COUNT: 0, FAILED_COUNT: 0}
         for t in tasks:
             if t in pending:
                 continue
-            failed, faulty = t.result()
+            failed, faulty, unsaved = t.result()
             counts[FAILED_COUNT] += int(failed)
             counts[FAULTS_COUNT] += int(faulty)
+            if unsaved:  # only present when it happened
+                counts[UNSAVED_COUNT] = counts.get(UNSAVED_COUNT, 0) + 1
+        if pending:
+            counts[LATE_COUNT] = len(pending)
         if pending:
             log.error("health check ran out of time", extra={"unserved": len(pending)})
         return counts
@@ -91,6 +102,8 @@ class HealthTickJob:
 __all__ = [
     "CHECK_EVERY_S",
     "FAULTS_COUNT",
+    "LATE_COUNT",
+    "UNSAVED_COUNT",
     "MAX_PARALLEL_OWNERS",
     "OWNERS_COUNT",
     "TICK_BUDGET_S",

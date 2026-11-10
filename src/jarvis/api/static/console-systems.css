@@ -1,0 +1,111 @@
+/* src/jarvis/api/static/console-systems.css -- R5.1 D6 / D10 (docs/plans/r5-1-observations.md): the
+   Systems card in Integrations and the systems-check pop-up. Reuses the console's own pieces: the
+   Integrations card (.integ / .ihead / .istate / .actions), the Activity row (.event / .dot / .what),
+   the status words (.v.up.ok|warn|bad), .bmade, .bnote, .bfine, the confirm dialog (.bdialog), the
+   section head (.bsec h3 look), .mbar, .k, .bsel and the segmented control (.seg / .seg-opt). No new
+   colours, fonts, radii or shadows: tokens only, both surfaces, every theme. Text on the ink tokens
+   (AA on Night and Day). A status is always a word too, never colour alone. Motion: the pending
+   marker turns only at full motion; calm pulses it, off holds it still. Phones: targets >= 44 px. */
+
+/* ---- the Systems card ------------------------------------------------------------------------ */
+.integ.systems{margin-top:10px}
+.integ.systems[data-state="ok"]{box-shadow:inset 3px 0 0 var(--ok)}
+.integ.systems[data-state="ok"] .istate{color:var(--ok-ink)}
+.integ.systems[data-state="degraded"]{background:var(--amber-tint);border-color:var(--amber-line);box-shadow:inset 3px 0 0 var(--amber)}
+.integ.systems[data-state="degraded"] .istate{color:var(--amber-ink)}
+.integ.systems[data-state="down"]{background:var(--bad-tint);border-color:var(--bad-line);box-shadow:inset 3px 0 0 var(--bad)}
+html[data-surface="night"] .integ.systems[data-state="down"]{background:color-mix(in srgb,#E5484D 12%,var(--panel-solid))}
+html[data-surface="night"] .integ.systems[data-state="degraded"]{background:color-mix(in srgb,#F59E0B 11%,var(--panel-solid))}
+.integ.systems[data-state="down"] .istate{color:var(--bad-ink)}
+.integ.systems .bmade{margin-top:6px}
+.syslist{list-style:none;margin:8px 0 0;padding:0}
+.syslist .event{padding:8px 0}
+.syslist .event:first-child{padding-top:2px}
+.syslist .event .what{white-space:normal;overflow-wrap:anywhere;font-size:13.5px}
+.syslist .event .what small{margin-top:2px;line-height:1.35}
+.syslist .event .v.up{font-size:11px;white-space:nowrap}
+.syslist .empty{padding:4px 0}
+.integ.systems .actions .btn{flex:1}
+.integ.systems .actions .btn.primary{flex:1.5}
+.integ.systems .bnote{margin-top:10px}
+
+/* ---- the pop-up -------------------------------------------------------------------------------
+   The title, status and progress stay at the top and the countdown and actions at the bottom while
+   the middle scrolls (both on the dialog's own solid panel colour, the top one with its accent
+   line), so Close and "Closing in 10 s" are always in view. Paragraph rules carry .syscheck:
+   `.bdialog p` would otherwise set every line to 14 px. */
+.bdialog.syscheck{width:min(500px,calc(100vw - 32px));padding:0 20px}
+.syscheck .sctop{position:sticky;top:0;z-index:1;margin:0 -20px;padding:16px 20px 10px;
+  background:linear-gradient(90deg,transparent 6%,color-mix(in srgb,var(--accent) 55%,transparent) 50%,transparent 94%) top/100% 1px no-repeat,var(--panel-solid)}
+.syscheck .scfoot{position:sticky;bottom:0;z-index:1;margin:12px -20px 0;padding:8px 20px 16px;border-top:1px solid var(--line-2);background:var(--panel-solid)}
+.schead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.schead h2{margin:0}
+.syscheck .scx{flex:none;width:36px;height:36px;margin-right:-8px}
+.syscheck .scstatus{margin:4px 0 0;font-size:14px;line-height:1.45;color:var(--ink-2)}
+.syscheck .scstatus.ok{color:var(--ok-ink)} .syscheck .scstatus.warn{color:var(--amber-ink)} .syscheck .scstatus.bad{color:var(--bad-ink)}
+.syscheck .scbar{margin-top:10px}
+.sclist{list-style:none;margin:4px 0 0;padding:0}
+.scrow{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line-2)}
+.scrow:first-child{border-top:0}
+.scicon{position:relative;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;
+  border:1px solid var(--line);background:var(--well);color:var(--ink-3)}
+.scicon svg{width:14px;height:14px}
+.scbody{min-width:0}
+.scname{display:block;font-size:14px;font-weight:600;line-height:1.3;color:var(--ink);overflow-wrap:anywhere}
+.screason{display:block;margin-top:2px;font-size:12.5px;line-height:1.35;color:var(--ink-3);overflow-wrap:anywhere}
+.scword{font:400 11.5px/1 var(--tech);letter-spacing:.16em;text-transform:uppercase;white-space:nowrap;color:var(--ink-3)}
+.scrow[data-state="ok"] .scicon{color:var(--ok-ink);border-color:color-mix(in srgb,var(--ok) 45%,transparent);background:color-mix(in srgb,var(--ok) 12%,var(--well))}
+.scrow[data-state="degraded"] .scicon{color:var(--amber-ink);border-color:var(--amber-line);background:var(--amber-tint)}
+.scrow[data-state="down"] .scicon{color:var(--bad-ink);border-color:var(--bad-line);background:var(--bad-tint)}
+.scrow[data-state="ok"] .scword{color:var(--ok-ink)}
+.scrow[data-state="degraded"] .scword{color:var(--amber-ink)}
+.scrow[data-state="down"] .scword{color:var(--bad-ink)}
+.scrow[data-state="skipped"] .scname{color:var(--ink-2)}
+/* pending: a quarter ring that turns (full motion), pulses (calm) or holds still (off) */
+.scrow[data-state="pending"] .scicon{border-color:var(--line-2)}
+.scrow[data-state="pending"] .scicon::after{content:"";position:absolute;inset:3px;border-radius:50%;
+  border:2px solid transparent;border-top-color:var(--accent-ink);border-right-color:var(--accent-ink);animation:spin .9s linear infinite}
+.scrow[data-state="pending"] .scword{color:var(--accent-ink)}
+.scrow:not([data-state="pending"]) .scicon{animation:rise .3s var(--ease) both}
+html[data-motion="calm"] .scrow[data-state="pending"] .scicon::after{animation:dots 1.4s ease-in-out infinite}
+html[data-motion="calm"] .scrow .scicon{animation:none}
+html[data-motion="off"] .scrow[data-state="pending"] .scicon::after{animation:none}
+
+/* sections: Vitals, Needs attention, the reminder, what JARVIS said */
+.syscheck section{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-2)}
+.scsec{margin:0 0 8px;font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink)}
+.syscheck .scspend{margin:0;font-size:14px;line-height:1.45;color:var(--ink)}
+.scconcerns{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.scconcern{padding:8px 10px;border-radius:var(--r-sm);background:var(--well-2);border:1px solid var(--line-2)}
+.scconcern[data-sev="down"],.scconcern[data-sev="red"]{background:var(--bad-tint);border-color:var(--bad-line)}
+.scconcern[data-sev="degraded"],.scconcern[data-sev="amber"]{background:var(--amber-tint);border-color:var(--amber-line)}
+.schead2{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.schead2 b{font-size:14px;font-weight:650;color:var(--ink);overflow-wrap:anywhere}
+.schead2 .v.up{flex:none;font-size:11px}
+.syscheck .scimpact{margin:3px 0 0;font-size:13.5px;line-height:1.4;color:var(--ink)}
+.syscheck .scconcern .bfine{margin:2px 0 0;font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+.scremhead{display:flex;flex-direction:column;gap:6px}
+.scremhead .bsel{width:100%;min-height:36px}
+.syscheck .scwhen{margin-top:8px;gap:3px}
+.scwhen .seg-opt{min-height:36px;padding:6px 8px;border:0;background:transparent;font-size:12px;letter-spacing:.1em;line-height:1.15}
+.scwhen .seg-opt:hover:not(:disabled){color:var(--accent-ink);background:var(--well)}
+.scwhen .seg-opt:focus-visible{outline:2px solid var(--accent-ink);outline-offset:1px}
+.scwhen .seg-opt:disabled{cursor:default;opacity:.6}
+.syscheck .scremnote{margin:8px 0 0;font-size:13px}
+.syscheck .scsaid{margin:0;font-size:13px;line-height:1.55;color:var(--ink-2);overflow-wrap:anywhere}
+.syscheck .sccount{margin:0;min-height:1.4em;font:400 11.5px/1.4 var(--tech);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.syscheck .actions{margin-top:8px}
+
+/* ---- phones ----------------------------------------------------------------------------------- */
+@media (max-width: 560px){
+  .bdialog.syscheck{padding:0 14px}
+  .syscheck .sctop{margin:0 -14px;padding:12px 14px 8px}
+  .syscheck .scfoot{margin:10px -14px 0;padding:8px 14px 12px}
+  .syscheck .scx{width:44px;height:44px;margin-right:-10px}
+  .syscheck .actions{flex-wrap:wrap}
+  .syscheck .actions .btn{flex:1 1 40%;min-height:44px}
+  .syscheck .actions .btn.primary{flex-basis:100%}
+  .scwhen .seg-opt{min-height:44px;padding:4px 6px;letter-spacing:.08em}
+  .scremhead .bsel{min-height:44px}
+  .integ.systems .actions .btn{min-height:44px}
+}

@@ -4,7 +4,9 @@
 .things{display:flex;flex-direction:column;gap:10px;min-width:0}
 .things .tin{display:block;width:100%;min-width:0;height:36px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--well);color:var(--ink);font:400 13.5px/1 var(--sans, inherit)}
 .things .tin:focus{outline:2px solid var(--accent);outline-offset:1px}
-.tadd{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;gap:8px;align-items:center}
+.tadd{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;gap:8px;align-items:end}
+.tfield{min-width:0}
+.tfield .k{display:block;margin-bottom:5px}
 .tnote{min-height:1.4em;font-size:13px;color:var(--ink-2)}
 .tnote.bad{color:var(--amber-ink)}
 .tnote .tundo{margin-left:6px}

@@ -54,16 +54,23 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "approval_waiting": "important",
         "vault_expiry": "important",
         "test": "important",  # D10 rule 1 rings a test whatever its level
+        # R5.1 D3: the laptop stopped answering while disarmed. Held in quiet hours (a laptop
+        # that sleeps at night never rings at 2 am); rings in waking hours even when only urgent
+        # things ring (notify.policy DAYTIME_RING_KINDS), because the owner asked to be told.
+        "home_offline_idle": "important",
         # info: silent or feed only
         "home_greeting": "info",
         "home_online": "info",
         "offline_on": "info",
         "offline_off": "info",
         "brief_ready": "info",
-        # R4: a red vitals line and a self-health fault ring through quiet hours (never held, like
-        # hazards); an amber warning and a recovery are info (silent / feed only).
-        "vitals_critical": "urgent",
-        "health_fault": "urgent",
+        # R5.1 D13 (was urgent in R4): the systems check runs 24/7, so a red vitals line and a
+        # self-health fault are "important" daytime rings (notify.policy DAYTIME_RING_KINDS):
+        # they ring in waking hours and are held for the morning summary in quiet hours. The
+        # storm's soft caps (storm.SOFT_URGENT_KINDS) still bound them. An amber warning and a
+        # recovery are info (silent / feed only).
+        "vitals_critical": "important",
+        "health_fault": "important",
         "vitals_warn": "info",
         "health_recovered": "info",
         "health_degraded": "info",  # a degraded integration is a note, never a ring

@@ -1,0 +1,29 @@
+/* src/jarvis/api/static/console-people.css -- the People panel (R5.1 Part A). Reuses the deck's tokens and
+   components: .k labels above .minput inputs (console-memory.css), the Integrations card (.integ / .ihead /
+   .istate / .ibody), .tlist / .trow (console-things.css), .atabs / .atab (console-activity.css), .bopt / .bl.
+   Only what those do not cover is here. Touch targets >= 44 px on phones; no horizontal scroll. */
+.people{display:flex;flex-direction:column;gap:12px;min-width:0}
+.people > *{margin-top:0;margin-bottom:0}
+.pform{display:grid;gap:10px}
+.pfield{min-width:0}
+.pfield .k{display:block;margin-bottom:5px}
+.people .actions{margin-top:0}
+.people .actions .btn{flex:none;padding:0 14px}
+.people .btn.bact{margin-top:0}
+.pcard:empty{display:none}
+.pdoss .pname{overflow-wrap:anywhere;min-width:0}
+.pdoss .ihead{align-items:flex-start}
+.pdoss .psum{color:var(--ink)}
+.plinks{margin-top:8px}
+.plinks .trow{padding:8px 0}
+.plink{color:var(--accent-ink);text-decoration:none;min-height:24px}
+.plink:hover{text-decoration:underline}
+.plink:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-sm)}
+.pmode{padding-top:12px;flex-wrap:wrap}
+.pmode .atabs{margin:0}
+.pmode .atab{flex:none;margin-top:0;min-width:64px}
+@media (max-width: 560px){
+  .people .minput{height:44px}
+  .people .btn,.people .btn.bact,.plink{min-height:44px}
+  .plink{display:inline-flex;align-items:center;min-width:44px}
+}

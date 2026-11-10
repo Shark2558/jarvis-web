@@ -100,7 +100,13 @@ APP_ASSETS: dict[str, str] = {
     "console-vitals.js": _JS,  # R4 A: Vitals -> the board (keys, quotas, bills, expiry; no key)
     "console-systems.js": _JS,  # R4 B: Integrations -> Systems check (Run, per-system rows, Speak)
     "console-connectors.js": _JS,  # R4 C: Connectors (GitHub token in the panel, YouTube, Photos)
-    "console-people.js": _JS,  # R4 D: People research + the Brain: AI on / No-AI badge and switch
+    "console-people.js": _JS,  # R4 D: People research + the top-bar Brain pill (R5.1 D9)
+    "console-systems-modal.js": _JS,  # R5.1 C: the systems-check pop-up (ticks, briefing, reminder)
+    "console-systems-voice.js": _JS,  # R5.1 C: its phrases, speech and echo guard
+    "console-vitals.css": "text/css",  # R5.1 B: the Vitals board (groups, chips, the add form)
+    "console-systems.css": "text/css",  # R5.1 C: Systems card + pop-up
+    "console-connectors.css": "text/css",  # R5.1 A: Connectors as Integrations-style cards
+    "console-people.css": "text/css",  # R5.1 A: People panel + the top-bar Brain pill
     "console.css": "text/css",
     "console-deck.css": "text/css",
     "console-memory.css": "text/css",

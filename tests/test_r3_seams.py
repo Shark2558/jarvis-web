@@ -148,6 +148,7 @@ NEW_KINDS = (
     "home_online",
     "home_arm_failed",
     "home_summary",
+    "home_offline_idle",  # R5.1 D3
 )
 
 
@@ -157,7 +158,8 @@ def test_r3_alert_kinds_join_the_older_ones() -> None:
     for older in ("approval_waiting", "offline_on", "offline_off", "brief_ready", "vault_expiry"):
         assert older in kinds
     # R4 added vitals_warn/vitals_critical/health_fault/health_recovered/health_degraded (14 -> 19)
-    assert "test" in kinds and len(kinds) == len(set(kinds)) == 19
+    # R5.1 added home_offline_idle (19 -> 20)
+    assert "test" in kinds and len(kinds) == len(set(kinds)) == 20
 
 
 async def test_the_sink_takes_silent_and_photo_keywords() -> None:
@@ -188,15 +190,15 @@ def test_every_alert_kind_has_a_default_urgency() -> None:
     assert set(DEFAULT_URGENCY) == set(get_args(AlertKind))
     urgent = {k for k, v in DEFAULT_URGENCY.items() if v == "urgent"}
     # integrated review H5: a laptop that stopped answering or an alarm that can't work rings.
-    # R4 D4/D6: a red vitals line and a self-health fault also ring (never held, like hazards).
+    # (R4 made a red vitals line / health fault urgent; R5.1 D13 moved them to important.)
     assert urgent == {
         "home_intruder",
         "home_hazard",
         "home_summary",
         "home_offline",
         "home_arm_failed",
-        "vitals_critical",
-        "health_fault",
+        # R5.1 D13: vitals_critical / health_fault are now "important" daytime rings (see
+        # tests/test_r51_int_notify.py), no longer urgent.
     }
     for kind in ("home_package", "approval_waiting"):
         assert DEFAULT_URGENCY[kind] == "important"
@@ -1043,7 +1045,7 @@ def test_the_csp_gains_exactly_worker_src_self() -> None:
 def test_r3_settings_defaults_and_bounds() -> None:
     s = Settings(_env_file=None)
     assert (s.home_enabled, s.faces_enabled, s.webpush_enabled) == (True, True, True)
-    assert (s.home_heartbeat_s, s.home_offline_after_s) == (120, 720)
+    assert (s.home_heartbeat_s, s.home_offline_after_s) == (120, 360)  # R5.1 D3 (was 720)
     assert (s.home_feed_days, s.home_webhook_per_min) == (7, 60)
     roomy = {"home_offline_after_s": 3600}  # two beats of the slowest heartbeat fit
     for field, good, bad in (

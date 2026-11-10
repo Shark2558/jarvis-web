@@ -84,7 +84,10 @@ async def test_show_storage_trouble_is_an_answer_not_a_failure() -> None:
 
     res = await call(build(rig), "vitals_show")
 
-    assert res.result == {"status": "unavailable", "message": "plain words"}
+    # R5.1 D2: the automatic items still come back, with the fixed note (never the cause's words)
+    assert res.result["manual_unavailable"] is True
+    assert [i["id"] for i in res.result["items"]] == ["ai_spend"]
+    assert "plain words" not in str(res.result)
 
 
 async def test_set_key_adds_then_edits_a_manual_record() -> None:

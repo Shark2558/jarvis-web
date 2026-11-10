@@ -170,8 +170,9 @@ async def test_blocked_prompt_raises_clear_error() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"promptFeedback": {"blockReason": "SAFETY"}})
 
-    with pytest.raises(LLMError, match="blocked"):
+    with pytest.raises(LLMError, match="declined") as got:  # R5.1: typed LLMDeclined, fixed words
         await _provider(handler).complete(system="s", messages=MSGS, model="m", max_tokens=5)
+    assert "SAFETY" not in str(got.value)
 
 
 async def test_retries_once_without_thinking_config_on_400() -> None:
@@ -276,4 +277,7 @@ async def test_llm_errors_are_friendly_and_do_not_leak_vendor_text(
     r = await client.post("/v1/chat", json={"message": "hi"})
     assert r.status_code == 503
     detail = r.json()["detail"]
-    assert "credit" in detail.lower() and "invalid_request_error" not in detail
+    # R5.1: a plain LLMError is never read for vendor words ("credit balance" etc.); the typed
+    # LLMOutOfCredit has its own test (tests/test_r51_out_of_credit.py)
+    assert detail == "The AI service could not answer. Please try again."
+    assert "invalid_request_error" not in detail

@@ -7,8 +7,11 @@ linked home whose laptop is asleep) with the R4 parts on (api/r4_wiring.py).
     python evals/r4_needles/run.py --mock
 
 Flows (cross-part):
-  f01  a red vitals line AND a self-health fault during quiet hours BOTH ring on Telegram (urgent
-       kinds are never held; the health fault needs two consecutive checks, D-B2)
+  f01  a red vitals line AND a self-health fault in waking hours BOTH ring on Telegram (R5.1 D13:
+       "important" daytime rings; the health fault needs two consecutive checks, D-B2). R5.1 D4: the
+       fault is the AI key refused (the router's own record), and the asleep home laptop never
+       rings from the systems check (the 5-minute watchdog owns that alert: no double ring)
+  f01n the same two faults in QUIET HOURS ring nothing (R5.1 D13: held for the morning summary)
   f02  no-AI mode answers vitals / systems / calendar with NO model call and refuses drafting with
        the fixed line
   f03  a bare private name is refused with no links (the web is a fake: no credit, no network)
@@ -24,7 +27,7 @@ After every flow every Firestore document, log record and audit entry are scanne
 needle and the child's name; every Telegram text for the key and the child's name.
 
 Negative controls (each must make the suite FAIL): a "debug" log line of the vitals write body
-(before the guard); the urgent kinds demoted to "important" (then quiet hours hold them); the
+(before the guard); the daytime-ring set emptied (D13: the faults go silent in the day, f01); the
 people gate removed; the router's no-AI guard unbound (f06); the flap protection removed (f07).
 """
 
@@ -35,6 +38,7 @@ import asyncio
 import json
 import logging
 import sys
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from pathlib import Path
@@ -146,6 +150,16 @@ async def _quiet_all_day(w: R3App) -> None:
     )
 
 
+async def _quiet_off(w: R3App) -> None:
+    store: NotifyStore = w.state.notify_store
+    await store.update(
+        UID,
+        lambda s: NotifySettings.model_validate(
+            s.model_copy(update={"quiet": QuietHours(on=False, start="00:00", end="23:59")})
+        ),
+    )
+
+
 async def _add_child(w: R3App) -> str:
     r = await w.client.post(
         "/v1/faces",
@@ -170,10 +184,39 @@ async def _chat(w: R3App, text: str) -> str:
     return str(r.json()["reply"])
 
 
+class _SteppedClock:
+    """Wall time plus a step the flow adds between checks (R5.1 D14: the two checks that confirm
+    a fault are at least 4 minutes apart; the flow does not wait for real minutes)."""
+
+    def __init__(self) -> None:
+        self.offset = 0.0
+
+    def __call__(self) -> float:
+        return time.time() + self.offset
+
+
 def _health_job(w: R3App) -> Any:
     job = w.state.tick_jobs[-1]
     job._every_s = 0.0  # noqa: SLF001 - the flow checks twice in a row; lift the due-gate
+    clock = _SteppedClock()
+    job._svc._clock = clock  # noqa: SLF001
+    job.clock = clock  # the flows step it with `_later`
     return job
+
+
+def _later(job: Any, seconds: float = 300.0) -> None:
+    job.clock.offset += seconds
+
+
+def _loud_texts(w: R3App) -> list[str]:
+    """Telegram texts that RANG (not sent silently with disable_notification)."""
+    out: list[str] = []
+    for req in w.telegram:
+        if req.url.path.endswith("/sendMessage"):
+            body = json.loads(req.content)
+            if not body.get("disable_notification"):
+                out.append(body["text"])
+    return out
 
 
 def _model_calls(w: R3App) -> int:
@@ -185,9 +228,9 @@ def _model_calls(w: R3App) -> int:
 Flow = Callable[[R3App], Awaitable[list[str]]]
 
 
-async def f01_red_vitals_and_health_fault(w: R3App) -> list[str]:
+async def _red_and_fault(w: R3App, *, night: bool) -> list[str]:
     f: list[str] = []
-    await _quiet_all_day(w)
+    await (_quiet_all_day(w) if night else _quiet_off(w))
     r = await w.client.put(
         "/v1/vitals/keys",
         json={"id": "brave", "label": "Brave key", "kind": "key", "expires_at": "2020-01-01"},
@@ -196,18 +239,36 @@ async def f01_red_vitals_and_health_fault(w: R3App) -> list[str]:
     if r.status_code != 200:
         f.append(f"vitals write refused: {r.status_code} {r.text}")
     await w.state.tick_jobs[-2].run([UID])  # vitals_poll
-    health = _health_job(w)  # the real job; only its 30-minute due-gate is lifted here
-    await health.run([UID])  # health_check (1st: the home has never reported)
+    router = w.state.brains.router_for(w.state.brains.default.id)
+    router._last = "refused"  # noqa: SLF001 - the last real call was refused (no model call here)
+    health = _health_job(w)  # the real job; only its 15-minute due-gate is lifted here
+    await health.run([UID])  # health_check (1st down; the home has never reported either)
+    _later(health)  # D14: the confirming check is 5 minutes later
     await health.run([UID])  # 2nd consecutive down -> health_fault
-    texts = w.sent_texts()
-    if not any("Vitals" in t and "Brave key" in t for t in texts):
-        f.append(f"the red vitals line did not ring through quiet hours: {texts}")
-    if not any("laptop" in t.lower() or "home" in t.lower() for t in texts if "Vitals" not in t):
-        f.append(f"the health fault did not ring through quiet hours: {texts}")
+    texts = w.sent_texts() if night else _loud_texts(w)
+    faults = [t for t in texts if t.startswith("Attention")]
+    red = any("Vitals" in t and "Brave key" in t for t in texts)
+    ai = any("AI brain" in t for t in faults)
+    if night and (red or ai):
+        f.append(f"a fault rang in quiet hours (D13: held for the morning): {texts}")
+    if not night and not red:
+        f.append(f"the red vitals line did not ring in waking hours: {texts}")
+    if not night and not ai:
+        f.append(f"the health fault did not ring in waking hours: {texts}")
+    if any("home" in t.lower() or "laptop" in t.lower() for t in faults):
+        f.append(f"the home rang from the systems check too (D4: the watchdog owns it): {faults}")
     names = [j.name for j in w.state.tick_jobs]
     if names[-2:] != ["vitals_poll", "health_check"]:
         f.append(f"tick jobs: {names}")
     return f
+
+
+async def f01_red_vitals_and_health_fault(w: R3App) -> list[str]:
+    return await _red_and_fault(w, night=False)
+
+
+async def f01n_faults_are_held_in_quiet_hours(w: R3App) -> list[str]:
+    return await _red_and_fault(w, night=True)
 
 
 async def f02_no_ai_mode_free_skills(w: R3App) -> list[str]:
@@ -282,6 +343,7 @@ async def f05_a_child_is_never_named(w: R3App) -> list[str]:
     await _add_child(w)
     health_job = _health_job(w)
     await health_job.run([UID])
+    _later(health_job)
     await health_job.run([UID])
     health = (await w.client.post("/v1/health/run", headers=H)).text
     board = (await w.client.get("/v1/vitals", headers=H)).text
@@ -337,6 +399,7 @@ async def f06_cold_start_makes_no_model_call(w: R3App) -> list[str]:
 
 async def f07_flapping_never_starves_a_burglar(w: R3App) -> list[str]:
     f: list[str] = []
+    await _quiet_off(w)  # the real clock may be at night: held alerts would hide the flapping
     notify = w.state.notify
     for i in range(50):
         kind = "health_fault" if i % 2 == 0 else "vitals_critical"
@@ -355,7 +418,8 @@ async def f07_flapping_never_starves_a_burglar(w: R3App) -> list[str]:
 
 
 FLOWS: list[tuple[str, Flow]] = [
-    ("f01_red_vitals_and_health_fault_ring_in_quiet_hours", f01_red_vitals_and_health_fault),
+    ("f01_red_vitals_and_health_fault_ring_in_waking_hours", f01_red_vitals_and_health_fault),
+    ("f01n_faults_are_held_in_quiet_hours", f01n_faults_are_held_in_quiet_hours),
     ("f02_no_ai_mode_answers_free_skills_refuses_drafting", f02_no_ai_mode_free_skills),
     ("f03_bare_private_name_refused_no_links", f03_a_bare_private_name_is_refused_with_no_links),
     ("f04_pasted_key_never_in_any_output", f04_a_pasted_key_never_appears_in_any_output),
@@ -406,19 +470,14 @@ async def _control_log_the_vitals_write() -> list[str]:
 
 
 async def _control_demote_the_urgent_kinds() -> list[str]:
-    """vitals_critical / health_fault as "important" are held in quiet hours: f01 must fail."""
-    original = policy_mod.urgency_of
-
-    def demoted(kind: str) -> Any:
-        if kind in ("vitals_critical", "health_fault"):
-            return "important"
-        return original(kind)
-
-    policy_mod.urgency_of = demoted  # type: ignore[assignment]
+    """Health / vitals faults dropped from the daytime-ring set go silent when only urgent things
+    ring (the default): f01 must fail. (Before D13 this control demoted them to "important".)"""
+    original = policy_mod.DAYTIME_RING_KINDS
+    policy_mod.DAYTIME_RING_KINDS = frozenset({"home_offline_idle"})  # type: ignore[misc]
     try:
         return [r["id"] for r in await run_all() if not r["passed"]]
     finally:
-        policy_mod.urgency_of = original  # type: ignore[assignment]
+        policy_mod.DAYTIME_RING_KINDS = original  # type: ignore[misc]
 
 
 async def _control_remove_the_people_gate() -> list[str]:

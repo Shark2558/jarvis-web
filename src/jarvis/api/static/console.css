@@ -329,9 +329,9 @@ html[data-surface="night"] .welcome h1{font:400 clamp(21px,2.2vw,26px)/1.2 var(-
 .event .what{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
 .event .what small{display:block;color:var(--ink-3);font-size:12px}
 .event time{font:400 12px/1 var(--tech);color:var(--ink-3);font-variant-numeric:tabular-nums}
-.convo{position:relative;display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px;padding:7px 0;border-top:1px solid var(--line-2);animation:rise .35s var(--ease) both}
+.convo{position:relative;display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px;padding:7px 0 7px 8px;margin-left:-8px;border-top:1px solid var(--line-2);animation:rise .35s var(--ease) both}
 .convo:first-child{border-top:0;padding-top:0}
-.convo .open{appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0;padding:5px 8px;margin:-5px -8px;border-radius:var(--r-sm);transition:background-color .2s var(--ease)}
+.convo .open{appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0;padding:5px 4px 5px 8px;margin:-5px -4px -5px -8px;border-radius:var(--r-sm);transition:background-color .2s var(--ease)}
 .convo .open:hover{background-color:var(--tint)}
 .convo .open b{display:block;font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .convo .open small{display:block;font-size:12px;color:var(--ink-3)}
@@ -480,20 +480,20 @@ html[data-surface="night"] .bdialog h2{font:400 15px/1.35 var(--tech);letter-spa
 .opt-in:checked + .theme-opt{border-color:var(--accent);background-color:var(--tint);box-shadow:0 0 0 1px var(--accent) inset}
 .opt-in:checked + .theme-opt .tick{border-color:var(--accent);background:radial-gradient(circle,var(--accent) 0 4px,transparent 4.5px)}
 .opt-in:focus-visible + .theme-opt,.opt-in:focus-visible + .sw,.opt-in:focus-visible + .seg-opt{outline:2px solid var(--accent-ink);outline-offset:2px}
-.pv{position:relative;width:56px;height:38px;border-radius:var(--r-sm);overflow:hidden;background:var(--pv-bg,#fff);border:1px solid var(--line-2)}
-html[data-surface="night"] .pv{--pv-bg:#060B13}
-.pv i{position:absolute;inset:-50%;display:block}
-.pv b{position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px;border-radius:50%;border:1.5px dashed var(--a);animation:spin 6s linear infinite}
-.pv-workshop{--a:#0A84FF;--b:#00C2E0}
-.pv-workshop i{background:linear-gradient(rgba(10,132,255,.3) 1px,transparent 1px) 0 0/8px 8px,linear-gradient(90deg,rgba(10,132,255,.3) 1px,transparent 1px) 0 0/8px 8px;animation:pvDrift 6s linear infinite}
-.pv-hotrod{--a:#E0243F;--b:#D4A017}
-.pv-hotrod i{background:repeating-linear-gradient(120deg,rgba(212,160,23,.0) 0 10px,rgba(212,160,23,.5) 12px,rgba(200,16,46,.4) 15px,rgba(212,160,23,0) 18px 30px);animation:pvSweep 2.6s linear infinite}
-.pv-nanotech{--a:#8C97A8;--b:#C9A227}
-.pv-nanotech i{background:radial-gradient(circle,rgba(120,132,150,.65) 1.2px,transparent 1.6px) 0 0/7px 6px,radial-gradient(circle,rgba(201,162,39,.75) 1.2px,transparent 1.6px) 3.5px 3px/7px 6px;animation:pvDrift 5s linear infinite}
-.pv-stealth{--a:#7D8EA2;--b:#9AA8B8}
-.pv-stealth i{background:linear-gradient(rgba(110,125,145,.3) 1px,transparent 1px) 0 0/14px 14px,linear-gradient(90deg,rgba(110,125,145,.3) 1px,transparent 1px) 0 0/14px 14px;animation:pvDrift 14s linear infinite}
-.pv-reactor{--a:#3D82FF;--b:#5FD4FF}
-.pv-reactor i{inset:0;background:repeating-radial-gradient(circle at 50% 50%,transparent 0 5px,rgba(61,130,255,.4) 6px,transparent 7px 10px);animation:pvPulse 2.4s ease-out infinite}
+#themeMenu .pv{position:relative;width:56px;height:38px;border-radius:var(--r-sm);overflow:hidden;background:var(--pv-bg,#fff);border:1px solid var(--line-2)}
+html[data-surface="night"] #themeMenu .pv{--pv-bg:#060B13}
+#themeMenu .pv i{position:absolute;inset:-50%;display:block}
+#themeMenu .pv b{position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px;border-radius:50%;border:1.5px dashed var(--a);animation:spin 6s linear infinite}
+#themeMenu .pv-workshop{--a:#0A84FF;--b:#00C2E0}
+#themeMenu .pv-workshop i{background:linear-gradient(rgba(10,132,255,.3) 1px,transparent 1px) 0 0/8px 8px,linear-gradient(90deg,rgba(10,132,255,.3) 1px,transparent 1px) 0 0/8px 8px;animation:pvDrift 6s linear infinite}
+#themeMenu .pv-hotrod{--a:#E0243F;--b:#D4A017}
+#themeMenu .pv-hotrod i{background:repeating-linear-gradient(120deg,rgba(212,160,23,.0) 0 10px,rgba(212,160,23,.5) 12px,rgba(200,16,46,.4) 15px,rgba(212,160,23,0) 18px 30px);animation:pvSweep 2.6s linear infinite}
+#themeMenu .pv-nanotech{--a:#8C97A8;--b:#C9A227}
+#themeMenu .pv-nanotech i{background:radial-gradient(circle,rgba(120,132,150,.65) 1.2px,transparent 1.6px) 0 0/7px 6px,radial-gradient(circle,rgba(201,162,39,.75) 1.2px,transparent 1.6px) 3.5px 3px/7px 6px;animation:pvDrift 5s linear infinite}
+#themeMenu .pv-stealth{--a:#7D8EA2;--b:#9AA8B8}
+#themeMenu .pv-stealth i{background:linear-gradient(rgba(110,125,145,.3) 1px,transparent 1px) 0 0/14px 14px,linear-gradient(90deg,rgba(110,125,145,.3) 1px,transparent 1px) 0 0/14px 14px;animation:pvDrift 14s linear infinite}
+#themeMenu .pv-reactor{--a:#3D82FF;--b:#5FD4FF}
+#themeMenu .pv-reactor i{inset:0;background:repeating-radial-gradient(circle at 50% 50%,transparent 0 5px,rgba(61,130,255,.4) 6px,transparent 7px 10px);animation:pvPulse 2.4s ease-out infinite}
 @keyframes pvDrift{to{transform:translate(8px,8px)}}
 @keyframes pvSweep{to{transform:translateX(30px)}}
 @keyframes pvPulse{from{transform:scale(.7);opacity:1}to{transform:scale(1.25);opacity:.4}}
@@ -555,7 +555,7 @@ html[data-surface="night"] .pv{--pv-bg:#060B13}
    Calm: no ambient loops, rotations, scan line or lifts; keeps fades and colour changes.
    Off: nothing animates at all. Before the script runs, a reduced-motion preference means Calm. */
 html[data-motion="calm"] .scanline,html[data-motion="off"] .scanline{display:none}
-html[data-motion="calm"] .core *,html[data-motion="calm"] .core::after,html[data-motion="calm"] .pv *,html[data-motion="calm"] .status i,
+html[data-motion="calm"] .core *,html[data-motion="calm"] .core::after,html[data-motion="calm"] #themeMenu .pv *,html[data-motion="calm"] .status i,
 html[data-motion="calm"] .composer:focus-within::before,html[data-motion="calm"] .approval::after{animation:none!important}
 html[data-motion="calm"] .approval::after,html[data-motion="calm"] .core.alert::after{opacity:.75}
 html[data-motion="calm"] .welcome > *,html[data-motion="calm"] .row.user,html[data-motion="calm"] .row.jarvis .bubble,

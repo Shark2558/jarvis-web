@@ -314,7 +314,13 @@ def _wire_home(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail | None) 
     jobs = (*camera.jobs, *notify_jobs(notify, lambda: datetime.now(UTC)))
     check_job_names(jobs)
     offline = OfflineJob(
-        store, notifier, camera.alarm, clock=clock, offline_after_s=s.home_offline_after_s, tz=tz
+        store,
+        notifier,
+        camera.alarm,
+        clock=clock,
+        offline_after_s=s.home_offline_after_s,
+        tz=tz,
+        alert_when=s.home_offline_alert,  # R5.1 D3: "always" (default) | "armed_only"
     )
     store.on_unlink(camera.data.wipe)  # B: the arm state's rev never goes back (tombstone)
     st.home_store = store

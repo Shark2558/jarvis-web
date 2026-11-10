@@ -48,7 +48,11 @@ async def test_systems_check_runs_the_probes_and_returns_the_fixed_line() -> Non
     out = await gw.execute(ToolCall(id="c", name="systems_check", arguments={}), scope=SCOPE)
     assert out.outcome is GatewayOutcome.EXECUTED
     assert out.result["overall"] == "down"
-    assert out.result["spoken"] == "Attention: the home bridge is not answering."
+    assert out.result["headline"] == "Attention: the home bridge is not answering."
+    # R5.1 D5: the tool (and so the voice and no-AI mode) says the full fixed-template briefing
+    assert out.result["spoken"].startswith("Systems check complete, Sir. I checked 2 systems")
+    assert out.result["spoken"].endswith("Shall I set a reminder to fix this?")
+    assert [c["key"] for c in out.result["concerns"]] == ["b"]
     assert {s["name"]: s["status"] for s in out.result["systems"]} == {
         "Redis": "ok",
         "the home bridge": "down",
@@ -59,7 +63,12 @@ async def test_systems_check_runs_the_probes_and_returns_the_fixed_line() -> Non
 async def test_systems_check_all_ok() -> None:
     gw, _ = gateway(svc(fixed("a", "Redis", "ok")))
     out = await gw.execute(ToolCall(id="c", name="systems_check", arguments={}), scope=SCOPE)
-    assert out.result["spoken"] == "All systems nominal, Sir."
+    assert out.result["headline"] == "All systems nominal, Sir."
+    assert out.result["spoken"] == (
+        "Systems check complete, Sir. I checked 1 system: Redis. It is working. "
+        "All systems nominal, Sir."
+    )
+    assert out.result["concerns"] == []
 
 
 # ---- tick job ----------------------------------------------------------------------------------
@@ -75,7 +84,9 @@ async def test_tick_runs_the_check_for_each_owner_and_alerts_on_change() -> None
     job = HealthTickJob(s, every_s=0)
     assert await job.run(["u1", "u2"]) == {"owners": 2, "faults": 0, "failed": 0}
     flip.status = "down"
+    s._clock.now += 300.0  # noqa: SLF001 - R5.1 D14: the checks that confirm are >= 4 min apart
     await job.run(["u1", "u2"])
+    s._clock.now += 300.0  # noqa: SLF001
     counts = await job.run(["u1", "u2"])
     assert counts == {"owners": 2, "faults": 2, "failed": 0}
     assert notes.kinds() == ["health_fault", "health_fault"]
@@ -135,17 +146,18 @@ async def test_owners_are_checked_in_parallel_but_bounded() -> None:
     assert 1 < state["peak"] <= MAX_PARALLEL_OWNERS
 
 
-async def test_owners_still_unserved_at_the_deadline_are_counted_failed() -> None:
+async def test_owners_still_unserved_at_the_deadline_are_counted_late_not_failed() -> None:
     async def hang(_uid: str) -> ProbeOutcome:
         await asyncio.sleep(10)
         return ProbeOutcome("ok", "never")
 
     s = svc(Probe(key="redis", label="Redis", check=hang, timeout_s=30))
     counts = await HealthTickJob(s, deadline_s=0.05).run(["u1", "u2", "u3"])
-    assert counts == {"owners": 3, "faults": 0, "failed": 3}
+    # R5.1 int-sec M4: late is degraded, never "failed" (the watchdog must not 503 for it)
+    assert counts == {"owners": 3, "faults": 0, "failed": 0, "late": 3}
 
 
-async def test_an_owner_whose_result_could_not_be_saved_counts_as_failed() -> None:
+async def test_an_owner_whose_result_could_not_be_saved_counts_as_unsaved_not_failed() -> None:
     class DownStore(HealthStore):
         async def state(self, uid: str):  # type: ignore[no-untyped-def]
             raise OSError("down")
@@ -155,7 +167,7 @@ async def test_an_owner_whose_result_could_not_be_saved_counts_as_failed() -> No
 
     s = HealthService([fixed("a", "A", "ok")], DownStore(MemoryDocs()), clock=Clock())
     counts = await HealthTickJob(s).run([UID])
-    assert counts["failed"] == 1
+    assert counts["failed"] == 0 and counts["unsaved"] == 1  # R5.1 int-sec M4
 
 
 def test_the_counter_names_are_constants() -> None:

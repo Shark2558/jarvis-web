@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 from fallback_fakes import KW, TIERS, CloudProvider
-from health_fakes import UID, Clock, Flip, Notes, fixed
+from health_fakes import SPACING, UID, Clock, Flip, Notes, fixed
 from research_fakes import fixed_mode
 
 from jarvis.health import probes as P
@@ -144,6 +144,7 @@ async def test_skipped_probes_are_left_out() -> None:
 async def runs(svc: HealthService, n: int) -> None:
     for _ in range(n):
         await svc.check(UID, force=True)
+        svc._clock.now += SPACING  # type: ignore[attr-defined]  # noqa: SLF001 - R5.1 D14 spacing
 
 
 async def test_a_fault_that_holds_for_two_checks_raises_an_urgent_health_fault() -> None:
@@ -156,7 +157,7 @@ async def test_a_fault_that_holds_for_two_checks_raises_an_urgent_health_fault()
     assert notes.kinds() == ["health_fault"]
     uid, signal, msg = notes.sent[0]
     assert uid == UID and signal.source == "system"
-    assert msg == "Attention: the home bridge is not answering."
+    assert msg == "Attention: Redis is not answering."
 
 
 async def test_a_single_blip_never_alerts() -> None:
@@ -201,14 +202,14 @@ async def test_a_steady_fault_does_not_alert_again() -> None:
 
 
 async def test_a_second_integration_failing_alerts_for_the_new_one_only() -> None:
-    a, b, notes = Flip("redis", "Redis"), Flip("home", "the home bridge"), Notes()
+    a, b, notes = Flip("redis", "Redis"), Flip("web", "web search"), Notes()
     svc = service(a.probe, b.probe, notifier=notes)
     a.status = "down"
     await runs(svc, 2)
     b.status = "down"
     await runs(svc, 2)
     assert notes.kinds() == ["health_fault", "health_fault"]
-    assert notes.sent[1][2] == "Attention: the home bridge is not answering."
+    assert notes.sent[1][2] == "Attention: web search is not answering."
 
 
 async def test_degraded_goes_out_as_a_silent_info_note_never_a_fault() -> None:
@@ -217,7 +218,7 @@ async def test_degraded_goes_out_as_a_silent_info_note_never_a_fault() -> None:
     flip.status = "degraded"
     await runs(svc, 2)
     assert notes.kinds() == ["health_degraded"]
-    assert notes.sent[0][2] == "Attention: the home bridge is degraded."
+    assert notes.sent[0][2] == "Attention: Redis is degraded."
     assert "health_fault" not in notes.kinds()
 
 

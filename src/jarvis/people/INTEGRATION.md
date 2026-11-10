@@ -51,9 +51,13 @@ app.state.brain_mode = brain_mode
 if web_service is not None and s.people_research_enabled:  # None: no Tavily key
     people = PeopleService(
         WebSearcher(web_service),  # public search, uses the monthly web allowance
-        BrainPeopleModel(brains, billing),  # classifier + summary: admitted and metered (None = links only)
+        BrainPeopleModel(
+            brains, billing
+        ),  # classifier + summary: admitted and metered (None = links only)
         mode=lambda: brain_mode.current,
-        cache=DossierCache(docs),  # 1 h per-owner LRU, also in `<prefix>people_last/<uid>`; omit docs = in-process
+        cache=DossierCache(
+            docs
+        ),  # 1 h per-owner LRU, also in `<prefix>people_last/<uid>`; omit docs = in-process
     )
 app.state.people = people  # the routes read this (None -> 503)
 brain = Brain(..., brain_mode=brain_mode)  # the SAME BrainMode object (see 5)

@@ -16,7 +16,9 @@ W1-W16). Kept out of `api/app.py` so that file stays a short list of named steps
   them (W6). A training brain is offered no tools at all (`Brain._tools_on`), so the connector and
   people tools reach it no more than R3's did.
 - `r4_tick_jobs`: `VitalsJob` (`vitals_poll`) and `HealthTickJob` (`health_check`) on the existing
-  tick (D14, W5). No Cloud Scheduler job.
+  tick (D14, W5). No Cloud Scheduler job. R5.1 D4: the health job is the same instance the
+  5-minute home watchdog runs (`selfcheck_wiring.shared_health_job`).
+- Vitals and the systems check themselves are built in `api/selfcheck_wiring.py` (R5.1 I1).
 - `install_r4_routes`: `/v1/vitals`, `/v1/health` (through a proxy that finds the live service, so
   the router can be mounted before the lifespan builds it), `/v1/connectors`, `/v1/people` and
   `/v1/settings/brain-mode` (W7).
@@ -26,24 +28,31 @@ W1-W16). Kept out of `api/app.py` so that file stays a short list of named steps
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, tzinfo
 from typing import Any, TypeVar
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import LEGACY_USER_ID, current_user, user_id_for_email
+from jarvis.api.selfcheck_wiring import (
+    HEALTH_OFF,
+    LiveHealth,
+    LiveVitals,
+    health_probes,
+    shared_health_job,
+    vitals_sources,
+    voice_allowances,
+    wire_health,
+    wire_vitals,
+)
 from jarvis.brief.models import VitalsSection
 from jarvis.config import Settings
 from jarvis.faces.privacy import FacesPrivacy
 from jarvis.faces.service import FacesService
-from jarvis.health import probes as P
-from jarvis.health.models import HealthReport
 from jarvis.health.service import HealthService
-from jarvis.health.store import HealthStore
 from jarvis.integrations.github import GithubClient, GithubStore
 from jarvis.integrations.youtube import YouTubeOwn
 from jarvis.keyring import Keyring
@@ -57,11 +66,8 @@ from jarvis.storage.docs import Docs
 from jarvis.ticks import TickJob
 from jarvis.tools.audit import AuditTrail
 from jarvis.tools.registry import ToolRegistry
-from jarvis.vitals.auto import AllowanceSpec
 from jarvis.vitals.brief import vitals_lines
 from jarvis.vitals.service import VitalsService
-from jarvis.vitals.store import VitalsStore
-from jarvis.voice.catalogue import TYPES, PriceList
 
 log = get_logger(__name__)
 T = TypeVar("T")
@@ -78,11 +84,9 @@ R4_STATE = (
     "people_cache",
     "r4_parts",
     "r4_privacy",
+    "health_job",  # R5.1 D4: the ONE systems-check job (tick + home watchdog)
 )
 R4_JOB_NAMES = frozenset({"vitals_poll", "health_check"})
-HEALTH_OFF = "The systems check is not available on this server."
-VOICE_LABELS = {"chirp3-hd": "Voice (Chirp 3 HD)", "studio": "Voice (Studio)"}
-VOICE_UNIT, STT_UNIT, STT_LABEL = "characters", "seconds", "Speech to text"
 
 
 @dataclass(frozen=True)
@@ -121,96 +125,6 @@ async def load_owner_modes(app: FastAPI, s: Settings) -> None:
     owners = [user_id_for_email(e) for e in s.owner_emails] or [LEGACY_USER_ID]
     for uid in owners:
         await app.state.brain_mode.load(uid)
-
-
-# ---- vitals (A) ---------------------------------------------------------------------------------
-
-
-def voice_allowances(s: Settings) -> tuple[AllowanceSpec, ...]:
-    prices = PriceList.from_settings(s)
-    specs = [
-        AllowanceSpec(prices.tts(t).key, VOICE_LABELS[t], prices.tts(t).free_units, VOICE_UNIT)
-        for t in TYPES
-    ]
-    specs.append(AllowanceSpec(prices.stt.key, STT_LABEL, prices.stt.free_units, STT_UNIT))
-    return tuple(specs)
-
-
-def wire_vitals(app: FastAPI, s: Settings, docs: Docs) -> VitalsService | None:
-    if not s.vitals_enabled:
-        _off("Vitals", "JARVIS_VITALS_ENABLED=false")
-        return None
-    media = getattr(app.state, "media", None)
-    return VitalsService(
-        VitalsStore(docs, prefix=s.firestore_prefix),
-        s,
-        billing=app.state.billing,
-        ledger=media.ledger if media is not None else None,
-        allowances=voice_allowances(s),
-    )
-
-
-# ---- self-health (B) ----------------------------------------------------------------------------
-
-
-def health_probes(app: FastAPI, s: Settings, docs: Docs, mode: BrainMode) -> list[P.Probe]:
-    """Per `health/INTEGRATION.md` §1: the brain's FREE record (never a completion), the document
-    store, then each integration only when it exists (W4)."""
-    st = app.state
-    router = st.brains.router_for(st.brains.default.id)
-    probes = [
-        P.brain_probe(router.health, mode.load),
-        P.docs_probe(docs, prefix=s.firestore_prefix),
-    ]
-    if s.session_backend.value == "redis":
-        from jarvis.health.redis_ping import redis_pinger
-
-        probes.append(P.redis_probe(redis_pinger(s.redis_url)))
-    if getattr(st, "google", None) is not None:
-        probes.append(P.google_probe(st.google))
-    if (tg := getattr(st, "telegram", None)) is not None:
-        probes.append(P.telegram_probe(tg.client))
-    if (home := getattr(st, "home_store", None)) is not None:
-        probes.append(P.home_probe(home, clock=time.time, offline_after_s=s.home_offline_after_s))
-    web = getattr(st, "web", None)
-    if web is not None and hasattr(web.provider, "usage"):
-        probes.append(P.web_probe(web.provider))
-    return probes
-
-
-def wire_health(app: FastAPI, s: Settings, docs: Docs, mode: BrainMode) -> HealthService | None:
-    if not s.health_enabled:
-        _off("The systems check", "JARVIS_HEALTH_ENABLED=false")
-        return None
-    return HealthService(
-        health_probes(app, s, docs, mode),
-        HealthStore(docs, prefix=s.firestore_prefix),
-        notifier=_notifier(app),
-        voice=getattr(app.state, "voice", None),
-    )
-
-
-class LiveHealth:
-    """`health_router` takes a service at mount time, but the service is built in the lifespan:
-    this stands in and answers 503 while it does not exist."""
-
-    def __init__(self, app: FastAPI) -> None:
-        self._app = app
-
-    def _svc(self) -> HealthService:
-        svc: HealthService | None = getattr(self._app.state, "health", None)
-        if svc is None:
-            raise HTTPException(503, {"error": "not_available", "detail": HEALTH_OFF})
-        return svc
-
-    async def last(self, uid: str) -> HealthReport | None:
-        return await self._svc().last(uid)
-
-    async def check(self, uid: str, *, force: bool = False) -> HealthReport:
-        return await self._svc().check(uid, force=force)
-
-    async def speak(self, uid: str) -> Any | None:
-        return await self._svc().speak(uid)
 
 
 # ---- photos + connectors (C) --------------------------------------------------------------------
@@ -336,9 +250,11 @@ async def wire_r4(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> N
     for name in R4_STATE:
         setattr(st, name, None)
     mode = wire_brain_mode(app, s, docs, audit)
-    st.vitals = _part("Vitals", lambda: wire_vitals(app, s, docs))
+    # R5.1 D2: Vitals reads the systems check's last report and the GitHub token's facts, so it
+    # is built after them (the check's briefing finds Vitals live, `LiveVitals`)
     st.health = _part("The systems check", lambda: wire_health(app, s, docs, mode))
     st.github = _part("GitHub", lambda: wire_github(s, docs))
+    st.vitals = _part("Vitals", lambda: wire_vitals(app, s, docs))
     st.youtube_own = _part("The owner's YouTube", lambda: wire_youtube_own(app))
     st.photos = _part("Photos", lambda: wire_photos(app, s, docs))
     st.connectors = ConnectorDeps(github=st.github, youtube=st.youtube_own, photos=st.photos)
@@ -377,17 +293,16 @@ def register_r4_tools(reg: ToolRegistry, parts: R4Parts | None) -> None:
 
 
 def r4_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
-    """D14 / W5: the hourly vitals poll and the scheduled health check ride the existing tick."""
+    """D14 / W5: the hourly vitals poll and the scheduled health check ride the existing tick; the
+    health job is the SAME instance the 5-minute home watchdog runs (R5.1 D4)."""
     st, s = app.state, app.state.settings
     jobs: list[TickJob] = []
     if getattr(st, "vitals", None) is not None:
         from jarvis.vitals.job import VitalsJob
 
         jobs.append(VitalsJob(st.vitals, _notifier(app), settings=s))
-    if getattr(st, "health", None) is not None:
-        from jarvis.health.tick import HealthTickJob
-
-        jobs.append(HealthTickJob(st.health))
+    if (job := shared_health_job(app)) is not None:  # R5.1 D4: shared with the home watchdog
+        jobs.append(job)
     assert {j.name for j in jobs} <= R4_JOB_NAMES  # the names the tick checks know
     return tuple(jobs)
 
@@ -402,7 +317,7 @@ def install_r4_routes(app: FastAPI) -> None:
     app.include_router(vitals_router)
     app.include_router(
         health_router(
-            LiveHealth(app),  # the same three methods, found live
+            LiveHealth(app),  # the service's methods (+ R5.1 stream, briefing), found live
             user=current_user,
             dependencies=[Depends(require_auth)],
         )
@@ -432,10 +347,12 @@ def vitals_brief(app: FastAPI) -> VitalsBrief | None:
 
 
 __all__ = [
+    "HEALTH_OFF",
     "R4_JOB_NAMES",
     "R4_STATE",
     "FacesAndPhotosPrivacy",
     "LiveHealth",
+    "LiveVitals",
     "R4Parts",
     "VitalsBrief",
     "health_probes",
@@ -444,6 +361,9 @@ __all__ = [
     "r4_tick_jobs",
     "register_r4_tools",
     "vitals_brief",
+    "vitals_sources",
     "voice_allowances",
+    "wire_health",
     "wire_r4",
+    "wire_vitals",
 ]

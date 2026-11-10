@@ -66,7 +66,10 @@ class NotifySettings(_Frozen):
         """on | off | feed. Kinds with no switch are always on."""
         if kind in NO_SWITCH:
             return "on"
-        return self.kinds.get(kind) or DEFAULT_SWITCH.get(kind, "on")
+        got = self.kinds.get(kind)
+        if got is None and kind == "home_offline_idle":
+            got = self.kinds.get("home_offline")  # R5.1: never set -> follows the armed alert
+        return got or DEFAULT_SWITCH.get(kind, "on")
 
 
 __all__ = [

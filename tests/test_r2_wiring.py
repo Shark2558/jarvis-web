@@ -7,7 +7,7 @@ from __future__ import annotations
 import base64
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -365,13 +365,13 @@ async def test_activity_shows_fixed_words_never_the_note(on: App) -> None:
     call = ToolCall(id="n1", name="kb_add_note", arguments={"text": SECRET})
     out = await st.gateway.execute(call, scope=f"{UID}:s1")
     assert out.outcome is GatewayOutcome.EXECUTED, out.error
-    rows = await st.activity_store.day(UID, day_key(date.today()))
-    if not rows:  # the recorder's day is the owner's local day
-        rows = [
-            r
-            for d in ("2026-11-04", "2026-11-05", "2026-11-06")
-            for r in await st.activity_store.day(UID, d.replace("-", ""))
-        ]
+    # the recorder's day is the owner's LOCAL day, which can be UTC's tomorrow or yesterday
+    today = date.today()
+    rows = [
+        r
+        for d in (today - timedelta(days=1), today, today + timedelta(days=1))
+        for r in await st.activity_store.day(UID, day_key(d))
+    ]
     assert [r.words for r in rows] == ["Saved a note"]
     assert all(SECRET not in r.model_dump_json() for r in rows)
 

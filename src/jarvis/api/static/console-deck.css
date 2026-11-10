@@ -223,6 +223,13 @@ html[data-surface="night"] .dk[aria-pressed="true"] svg{filter:drop-shadow(0 0 5
 /* More (phones only): opens the sheet of panels that don't fit the tab bar. Lit while one of them is
    shown; its accessible name says which. */
 .dk.more{display:none}
+/* R6 I0: the desktop dock stays inside the window. 19 tabs already ran 82 px past each edge of a
+   1440 px screen (Chat and Construct cut off); with Book it scrolls sideways instead, every tab
+   at its usual size (a focused tab scrolls into view; the thin theme scrollbar shows there is more). */
+@media (min-width: 900px){
+  .dock{max-width:calc(100vw - 24px);overflow-x:auto;overscroll-behavior-x:contain}
+  .dk,.dock .sep{flex:none}
+}
 .dk.more.on,.dk.more[aria-expanded="true"]{color:var(--accent-ink);background:var(--tint);border-color:var(--line);box-shadow:inset 0 -2px 0 var(--accent-2),0 6px 16px -10px var(--accent)}
 
 /* ---- the More sheet: a native modal <dialog> pinned to the bottom edge ------------------------ */
@@ -272,6 +279,29 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
   .instrument{max-width:150px}
 }
 
+/* D9 brain switch: one pill button beside the status pill, with a small menu (R5.1 Part A) */
+.bmslot{position:relative;display:inline-flex;flex:none}
+button.status.brainmode{cursor:pointer;margin:0;box-sizing:border-box;appearance:none;-webkit-appearance:none}
+button.status.brainmode:hover{border-color:color-mix(in srgb,var(--accent) 50%,var(--line))}
+button.status.brainmode:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bm-short{display:none}
+button.status.brainmode{position:relative}
+button.status.brainmode[aria-busy="true"]{cursor:progress}
+.bmopt[aria-disabled="true"]{opacity:.6;cursor:progress}
+.bmnote{position:absolute;z-index:79;top:calc(100% + 8px);left:0;width:min(280px,calc(100vw - 24px));padding:8px 10px;border-radius:var(--r-md);box-shadow:var(--sh-1);font-size:13px;line-height:1.4;white-space:normal;color:var(--amber-ink);background:var(--amber-tint);border:1px solid var(--amber-line)}
+.bmnote[hidden]{display:none}
+.bmmenu{position:absolute;z-index:80;top:calc(100% + 8px);left:0;width:min(300px,calc(100vw - 24px));padding:10px;border-radius:var(--r-lg);box-shadow:var(--sh-2);animation:menuIn .26s var(--ease) both;white-space:normal}
+.bmmenu[hidden]{display:none}
+.bmopt{display:block;width:100%;min-height:44px;margin:0;padding:8px 10px;border-radius:var(--r-sm);border:1px solid transparent;background:transparent;color:var(--ink);text-align:left;cursor:pointer;font:inherit}
+.bmopt:hover,.bmopt:focus-visible{background:var(--tint);border-color:var(--line);outline:0}
+.bmopt b{display:flex;align-items:center;gap:8px;font:700 13px/1.2 var(--hud);letter-spacing:.1em;text-transform:uppercase}
+.bmopt[aria-checked="true"] b::after{content:"\2713";margin-left:auto;color:var(--ok-ink)}
+.bmopt small{display:block;margin-top:3px;font-size:12.5px;line-height:1.4;color:var(--ink-3)}
+.bmask{margin-top:6px;padding:8px 10px;border-radius:var(--r-sm);background:var(--amber-tint);border:1px solid var(--amber-line)}
+.bmask p{margin:0;font-size:13px;color:var(--ink)}
+.bmask .actions{margin-top:8px}
+.bmask .btn{height:44px}
+
 /* ---- phones: one panel at a time, dock = tab bar, compact Core in the header ------------------ */
 @media (max-width: 899px){
   :root{--top-h:56px;--tab-h:64px}
@@ -282,6 +312,9 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
   .brand{gap:8px}
   .tools{gap:2px}
   .topbar .picker select{max-width:128px;padding-left:10px;padding-right:26px;font-size:12.5px}
+  .bm-long{display:none} .bm-short{display:inline}
+  .brand .status{padding:0 8px;letter-spacing:.08em}
+  .bmmenu,.bmnote{position:fixed;top:calc(var(--top-h) + 6px);left:8px;right:8px;width:auto}
   .topbar .picker svg{right:9px}
   .icon-btn{width:40px;height:40px}
   #who{display:none}
@@ -309,6 +342,19 @@ html[data-motion="off"] .ruler .now,html[data-motion="off"] .ri .bar i{transitio
   .sw-row{grid-template-columns:repeat(5,40px);justify-content:space-between;gap:10px}
   .gate-card{padding:34px 22px 26px}
   .gate-card .core{--s:124px}
+}
+/* R5.1 D11 / audit #13: on the phone layout every touch target is at least 44 px (the visual gate,
+   tests/browser/test_ui_audit.py, measures it). Heights only: widths and colours are unchanged. */
+@media (max-width: 899px){
+  .pbtn{width:44px;height:44px}
+  .btn.bact,.btn.sact,.actions .btn,.confirm .btn,.chip,.bsw,#input{min-height:44px}
+  .composer .clip{width:44px;height:44px}
+  .vrate .vrange{height:44px}
+  .topbar .picker select{height:44px}   /* top bar: the brain picker and the icon buttons (56 px bar) */
+  .icon-btn,.convo .del{width:44px;height:44px}   /* History's delete sets 34 px in console.css */
+  /* the brain pill keeps its 26 px look; an invisible 10 px band above and below makes the touch area
+     44 px (inside the 56 px top bar, so it never reaches the picker beside it: that is to its side) */
+  button.status.brainmode::before{content:"";position:absolute;left:0;right:0;top:-10px;bottom:-10px}
 }
 @media (max-width: 380px){
   .status{padding:0 8px;letter-spacing:.08em}

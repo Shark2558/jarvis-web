@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI
 
 from jarvis.api.home_wiring import home_privacy_sources
+from jarvis.api.r6_wiring import r6_privacy_sources
 from jarvis.api.rows import DRIVE_TOOL
 from jarvis.belongings.privacy import BelongingsPrivacy
 from jarvis.belongings.service import BelongingsService
@@ -275,6 +276,7 @@ def privacy_sources(
         *(x for x in existing if x.id != "faces"),
         *r1,
         *(x for x in r2 if x is not None),
+        *r6_privacy_sources(app),  # R6 D16: the sealed book, its sessions, Book settings
         *home_privacy_sources(app),  # R3 I1: C's FacesPrivacy replaces the placeholder, last
     ]
 

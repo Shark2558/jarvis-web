@@ -28,6 +28,7 @@ KEYS = [
     "home_intruder", "home_hazard", "home_summary", "home_package", "home_offline",
     "home_offline_idle", "home_arm_failed", "approval_waiting", "vault_expiry", "home_greeting",
     "home_online", "offline_on", "offline_off", "brief_ready",
+    "book_sealed", "book_seal_failed", "book_session_closed",  # R6
 ]  # fmt: skip
 FIXED = {"home_intruder", "home_hazard", "home_summary"}
 LEVEL = {"home_intruder": "urgent", "home_hazard": "urgent", "home_summary": "urgent",

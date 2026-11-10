@@ -15,7 +15,7 @@ from jarvis.core.prompts import (
 
 
 def test_persona_version_was_bumped_for_slice_12() -> None:
-    assert PERSONA_VERSION == "p5.1"
+    assert PERSONA_VERSION == "p6.0"
 
 
 def test_the_slice_12_paragraphs_are_each_there_once_in_order() -> None:

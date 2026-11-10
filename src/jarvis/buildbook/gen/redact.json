@@ -1,0 +1,10 @@
+{
+  "about": "R6 D3: lower-case SHA-256 of words gen/scrub.py removes from the build book (people's names, a personal account handle and the test fixture's made-up name). Hashes only, so this file names no one. Add one with: printf '%s' word | sha256sum (lower-case word).",
+  "sha256": [
+    "6e4947346abd14af9db128b7648d58f25f5f310e405813a64cf44ca2453e3e68",
+    "950771ddde4e28160f71aa740233109890939894521c83fd50bf21bb66fb0b67",
+    "a6eac1a0ae42d3e466b45dd4610e18decdb339b59bda075853ae0229fd4edc35",
+    "bf56d4dd050c683076cda3d5883708606fee04432c495dd0fdb5ca808b8dab5d"
+  ],
+  "v": 1
+}

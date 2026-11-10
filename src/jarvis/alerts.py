@@ -41,6 +41,11 @@ AlertKind = Literal[
     "health_fault",
     "health_recovered",
     "health_degraded",
+    # R6 (docs/plans/r6-build-book.md D7, D14): the build book. All "important" daytime rings
+    # (notify.policy DAYTIME_RING_KINDS): held in quiet hours, rung in waking hours.
+    "book_sealed",
+    "book_seal_failed",
+    "book_session_closed",
 ]
 HOME_ALERT_KINDS: tuple[AlertKind, ...] = (
     "home_intruder",

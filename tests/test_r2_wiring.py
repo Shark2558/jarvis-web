@@ -240,9 +240,10 @@ async def test_notes_switched_off_say_so(settings: Settings) -> None:
 
 async def test_tick_jobs_have_unique_names_none_of_the_ticks_own(on: App) -> None:
     names = [j.name for j in on.app.state.tick_jobs]
-    # R4 I1 (D14): the vitals poll and the health check ride the same tick
+    # R4 I1 (D14): the vitals poll and the health check ride the same tick; R6 I1: the build
+    # book's seal and sweep too
     r2 = ["vault_reminders", "vault_chunks", "vault_unlocks"]
-    assert names == [*r2, "vitals_poll", "health_check"]
+    assert names == [*r2, "vitals_poll", "health_check", "book_seal", "book_sweep"]
     assert not RESERVED_JOB_NAMES & set(names)
     assert await run_jobs(on.app.state.tick_jobs, [UID]) == dict.fromkeys(names, "ok")
 

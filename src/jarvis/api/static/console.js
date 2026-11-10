@@ -71,8 +71,11 @@
     const r = await fetch(path, { method: opts.method || (opts.body !== undefined ? 'POST' : 'GET'),
       headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined, credentials: 'same-origin' });
     if (r.status === 401) { // every non-2xx error carries .status: callers leave a 401 to the gate
-      showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err;
+      const gone = await bookGone(r); // R6: a build book session that ended is not a sign-in problem
+      if (!gone) showGate();
+      const err = new Error(gone ? 'The book session ended.' : 'Sign in required.'); err.status = 401; if (gone) err.code = 'session_gone'; throw err;
     }
+    if (r.status === 423) showLocked(); // R6 D10: a guest show holds every console of the owner
     if (!r.ok) {
       let detail = r.statusText, code = '';
       try { // the app's shape: {error: code, detail: plain words}; err.code carries the code
@@ -95,7 +98,17 @@
     if (state.authMode === 'token' && state.token) headers['Authorization'] = 'Bearer ' + state.token;
     const r = await fetch(path, { method: opts.method || 'GET', headers, body: opts.body, signal: opts.signal, credentials: 'same-origin' });
     if (r.status === 401) { showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err; }
+    if (r.status === 423) showLocked();
     return r;
+  }
+  async function bookGone(r) {
+    try { const j = await r.clone().json(); return !!j && j.error === 'session_gone'; } catch (_) { return false; }
+  }
+  /** R6 D10: 423 show_locked -- a guest is watching the build book, so this console goes to the show
+   *  (it comes back after the owner's passkey lifts the lock there). Throws so no caller goes on. */
+  function showLocked() {
+    location.replace('/book/show'); // SEC-2: no Back entry returns to this console page
+    const err = new Error('A build book show is running.'); err.status = 423; err.code = 'show_locked'; throw err;
   }
 
   // ---- sign-in gate -------------------------------------------------------------------------
@@ -593,6 +606,61 @@
     raw,
   });
 
+  // R6 D10 (review D-sec M2): a console tab already open when a guest show starts asks the server
+  // again whenever it comes back into view (a 423 hops it to the show), and a guest open in
+  // another tab of this browser tells it at once. It fails closed (SEC-2): sent to the background
+  // (or told by the channel) the tab is covered by the gate with the app hidden, and it is only
+  // uncovered when /auth/me answers 200; offline, a 503 or an error keep the cover with Try again.
+  const UNSURE = 'Can\u2019t reach JARVIS to check that no guest show holds this console. Check your connection.';
+  let lastCheck = 0, covered = false, live = false, covers = 0; // covers: security re-review #6 (an older answer decides nothing)
+  // Code re-review #3: a modal <dialog> (the Systems check, a confirm) sits in the top layer above the gate and keeps
+  // the page inert even when hidden, and other pop-ups live outside #app. While covered every open dialog is closed
+  // QUIETLY (its own close handlers never hear of it, so nothing settles) and every other body-level layer but the
+  // gate and the aria-hidden decor is hidden; uncover() puts each back as it was, on a 200 only.
+  const QUIET = new WeakSet(), veiled = [];
+  window.addEventListener('close', (e) => { if (QUIET.has(e.target)) { QUIET.delete(e.target); e.stopImmediatePropagation(); } }, true);
+  function veil() {
+    document.querySelectorAll('dialog[open]').forEach((d) => {
+      let modal = true; try { modal = d.matches(':modal'); } catch (_) {}
+      QUIET.add(d); d.close();
+      veiled.push(() => { if (d.isConnected && !d.open) { try { if (modal) d.showModal(); else d.show(); } catch (_) {} } });
+    });
+    for (const el of document.body.children) {
+      if (el.hidden || el.id === 'gate' || el.id === 'app' || /^(script|dialog)$/.test(el.localName) || el.getAttribute('aria-hidden') === 'true') continue;
+      el.hidden = true; veiled.push(() => { el.hidden = false; });
+    }
+  }
+  function cover(words, retry) {
+    covered = true; covers += 1; $('app').hidden = true; veil();
+    const box = $('gateBox');
+    box.innerHTML = FX.core('lg') + '<h2 id="gateTitle">JARVIS</h2><p></p>' + (retry ? '<button class="cta lift" id="gRetry">Try again</button>' : '');
+    box.querySelector('p').textContent = words;
+    if (retry) $('gRetry').addEventListener('click', () => recheck(true));
+    $('gate').classList.add('show'); FX.refresh();
+  }
+  function uncover() { if (!covered) return; covered = false; $('app').hidden = false; hideGate(); veiled.splice(0).forEach((back) => back()); }
+  async function recheck(force) {
+    if (state.authMode !== 'google' || !live) return;
+    if (!force && !covered && Date.now() - lastCheck < 1500) return;
+    lastCheck = Date.now();
+    const asked = covers;
+    let status = 0;
+    try { status = (await fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' })).status; } catch (_) {}
+    if (asked !== covers) return; // sent before the latest cover: that cover's own check decides
+    if (status === 200) uncover();
+    else if (status === 423) location.replace('/book/show');
+    else if (status === 401) { covered = false; showGate(); } // signed out: the sign-in gate (the app stays hidden)
+    else cover(UNSURE, true);
+  }
+  function away() { if (state.authMode === 'google' && live) cover('Checking\u2026', false); }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheck(covered); else away(); });
+  window.addEventListener('focus', () => recheck(covered));
+  window.addEventListener('pagehide', away);
+  window.addEventListener('pageshow', (e) => { lastCheck = 0; if (e.persisted) recheck(true); });
+  // a guest open in another tab of this browser (this origin only): replace this page with the show at once, with no
+  // round trip a raced 200 could win (security re-review #6); a forged message costs only a reload
+  try { new BroadcastChannel('jarvis-book').onmessage = (e) => { if (e.data && e.data.type === 'guest-show' && state.authMode === 'google' && live) { away(); location.replace('/book/show'); } }; } catch (_) {}
+
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {
     renderWelcome();
@@ -621,10 +689,11 @@
     renderBanner(fallbackWarning);
     if (state.authMode === 'google') {
       const r = await fetch('/auth/me', { credentials: 'same-origin' });
+      if (r.status === 423) { location.replace('/book/show'); return; } // R6 D10: a guest show holds it
       if (r.status !== 200) { showGate(); return; }
       const me = await r.json();
       const who = $('who'); who.textContent = (me.email || '?').charAt(0).toUpperCase(); who.title = me.email; who.hidden = false;
-      $('logoutBtn').hidden = false;
+      $('logoutBtn').hidden = false; live = true;
     } else if (!state.token) { showGate(); return; }
     boot();
   })();

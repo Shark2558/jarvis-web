@@ -1,0 +1,182 @@
+/* src/jarvis/api/static/book.css -- R6 D15: the show page (/book/show, book.html).
+   Existing tokens and components only (--hud, --disp, --tech, --well, --line, --ink*, .btn, dialogs as R5.1); no new
+   colours, fonts, radii or shadows; <= 300 lines. Reused as they are: the deck's top-bar look and .wordmark / .k, the
+   2D Core (.core), the sign-in gate (.gate / .gate-card / .cta) for the start and end cards, .icon-btn and .btn, the
+   meter bar (.mbar), JARVIS's speech bubble look for the captions, the conversation rows and composer for questions,
+   .tiles / .tag, and the confirm dialog (.bdialog). Night and Day, every theme; phones (< 900 px) get the 2D cards and
+   44 px targets. Motion: the 2D cards move by opacity and transform only; Calm / Off still them. */
+.sh-main{position:relative;z-index:2;height:100vh;height:100dvh;display:grid;grid-template-columns:minmax(0,1fr);
+  grid-template-rows:auto minmax(0,1fr) auto auto;grid-template-areas:"top" "stage" "cap" "ctl"}
+.sh-main.talking{grid-template-columns:minmax(0,1fr) min(420px,36vw);grid-template-areas:"top top" "stage talk" "cap talk" "ctl ctl"}
+
+/* ---- top bar: the deck's look ------------------------------------------------------------------ */
+.sh-top{grid-area:top;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;min-height:58px;padding:0 16px;
+  border-bottom:1px solid var(--line);background:linear-gradient(180deg,color-mix(in srgb,var(--panel-solid) 92%,transparent),color-mix(in srgb,var(--panel-solid) 70%,transparent))}
+html[data-surface="day"] .sh-top{background:color-mix(in srgb,var(--bg) 86%,transparent);box-shadow:var(--sh-1)}
+.sh-brand{display:flex;align-items:center;gap:12px;min-width:0}
+.sh-where{display:flex;align-items:baseline;justify-content:center;gap:12px;min-width:0}
+.sh-title{margin:0;min-width:0;font:400 15px/1.2 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sh-meta{display:flex;justify-content:flex-end;gap:14px;min-width:0}
+.sh-meta .k,.sh-where .k{white-space:nowrap}
+
+/* ---- the stage: the 3D canvas, its labels, or the 2D cards ----------------------------------------- */
+.sh-stage{grid-area:stage;position:relative;min-height:0;overflow:hidden}
+#showGL{position:absolute;inset:0;width:100%;height:100%;display:block}
+html.book-2d #showGL{display:none}
+.sh-labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.sh-lbl{position:absolute;left:0;top:0;max-width:300px;padding:3px 8px 2px;border-radius:4px;border:1px solid var(--line-2);
+  background:var(--panel-solid);font:400 11.5px/1.4 var(--tech);letter-spacing:.06em;color:var(--ink-2);white-space:pre-line;
+  transition:color .3s var(--ease),border-color .3s var(--ease)}
+.sh-lbl.on{color:var(--accent-ink);border-color:var(--accent)}
+.sh-lbl.amber{color:var(--amber-ink);border-color:var(--amber-line)}
+.sh-lbl.dim{color:var(--ink-3);border-style:dashed}
+.sh-lbl.dim.on{color:var(--accent-ink);border-style:solid}
+.sh-lbl.tile{text-align:center;border-color:transparent;background:transparent}
+.sh-lbl.tile.on{border-color:var(--accent);background:var(--panel-solid)}
+
+/* ---- captions: JARVIS's speech-bubble look, live for screen readers -------------------------------- */
+.sh-cap{grid-area:cap;display:flex;justify-content:center;padding:10px 16px 0}
+.sh-cap p{position:relative;width:min(860px,100%);margin:0;min-height:52px;padding:12px 18px 12px 20px;border-radius:var(--r-md);border:1px solid var(--line);
+  background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 40%,transparent),transparent 70%) top/100% 1px no-repeat,var(--well-2);
+  font:500 19px/1.45 var(--hud);color:var(--ink);box-shadow:var(--sh-1)}
+html[data-surface="night"] .sh-cap p{font:400 17px/1.5 var(--tech);letter-spacing:.03em}
+.sh-cap p::before{content:"";position:absolute;left:-1px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:linear-gradient(180deg,var(--accent),var(--accent-2));box-shadow:var(--glow)}
+.sh-cap p:empty{visibility:hidden}
+.sh-cap.off{padding:0}
+.sh-cap.off p{position:absolute;width:1px;height:1px;min-height:0;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---- controls ------------------------------------------------------------------------------------- */
+.sh-ctl{grid-area:ctl;display:flex;align-items:center;flex-wrap:wrap;gap:12px 16px;padding:10px 16px 14px}
+.sh-ctl-main,.sh-ctl-side{display:flex;align-items:center;gap:6px}
+.sh-ctl .icon-btn{width:44px;height:44px;border-color:var(--line-2);background-color:var(--well)}
+.sh-ctl .icon-btn svg{width:20px;height:20px}
+.sh-play{color:var(--accent-ink)}
+.sh-ctl .sh-play{border-color:var(--line)}
+.sh-play .i-pause,.sh-play[aria-pressed="true"] .i-play{display:none}
+.sh-play[aria-pressed="true"] .i-pause{display:block}
+.sh-prog{flex:1 1 160px;margin-top:0}
+.sh-prog i{transition:width .4s var(--ease)}
+.sh-tb{flex:none;height:44px;padding:0 14px}
+.sh-tb[aria-pressed="true"]{color:var(--accent-ink);background-color:var(--tint);border-color:var(--line)}
+
+/* ---- questions: the conversation rows and the composer ------------------------------------------- */
+.sh-talk{grid-area:talk;display:flex;flex-direction:column;min-height:0;margin:12px 16px 0 0;overflow:hidden;
+  background:linear-gradient(90deg,transparent 6%,color-mix(in srgb,var(--accent) 55%,transparent) 50%,transparent 94%) top/100% 1px no-repeat,var(--panel-solid)}
+.sh-thead{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:0 14px;border-bottom:1px solid var(--line-2)}
+.sh-thead h2{margin:0;font:400 12px/1 var(--tech);letter-spacing:.24em;text-transform:uppercase;color:var(--ink)}
+.sh-thread{flex:1;min-height:0;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column}
+.sh-thread .row{max-width:92%}
+.sh-thread .sys.error{margin:10px 0 0}
+.sh-talk .composer-wrap{flex:none;padding:8px 10px}
+.sh-talk .composer{align-items:center}
+.sh-talk .composer textarea{min-height:44px;padding:11px 0}
+.sh-talk .send,.sh-talk .sh-mic{width:44px;height:44px}
+.sh-mic[aria-pressed="true"]{color:var(--accent-ink);background-color:var(--tint);border-color:var(--line)}
+.sh-tfoot{flex:none;display:flex;padding:0 10px 10px}
+.sh-tfoot .btn{height:44px}
+
+/* ---- the start and end cards (the sign-in gate's look); the stage hides behind them ---------------- */
+.sh-card .core{--s:132px}
+.sh-card h2{margin:24px 0 8px}
+.sh-card p{margin:0 auto 14px}
+.sh-card .sh-rel{font:400 13px/1.3 var(--tech);letter-spacing:.18em;text-transform:uppercase;color:var(--accent-ink)}
+.sh-card .sh-line{font:600 18px/1.45 var(--hud);letter-spacing:.02em;color:var(--ink);max-width:30ch}
+.sh-card .sh-line:empty,.sh-card p:empty{display:none}
+.sh-card .cta + .cta{margin-top:10px}
+.sh-card .fine{margin:14px auto 0;max-width:36ch}
+.sh-main:not([data-state="playing"]):not([data-state="questions"]):not([data-state="closing"]) :is(.sh-stage,.sh-cap,.sh-ctl,.sh-talk){visibility:hidden}
+
+/* ---- dialogs: the confirm and the chapter list ------------------------------------------------------ */
+.sh-chap{width:min(460px,calc(100vw - 32px))}
+.sh-chapters{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow:auto}
+.sh-chapters .btn{width:100%;height:44px;padding:0 14px;text-align:left}
+
+/* ---- the 2D show: one card a scene ------------------------------------------------------------------- */
+.sh-2d{position:absolute;inset:0;overflow:auto;padding:20px 16px;display:flex;flex-direction:column;align-items:center}
+.sh2-scene{width:min(980px,100%);margin:auto 0;animation:rise .45s var(--ease) both}
+.sh2-core{position:relative;display:flex;flex-direction:column;align-items:center;gap:20px}
+.sh2-emblem{--s:min(34vh,220px);transition:transform .9s var(--ease),opacity .9s var(--ease)}
+.sh2-tiles{width:100%;max-width:640px;margin:0;padding:0;list-style:none;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+.sh2-tiles .tile{transition:border-color .3s var(--ease),transform .3s var(--ease)}
+.sh2-tiles .tile.on{border-color:var(--accent);transform:translateY(-3px)}
+.sh2-cube{--s:min(34vh,220px);position:absolute;top:0;left:50%;margin-left:calc(min(34vh,220px) / -2);
+  opacity:0;transform:scale(.6);transition:opacity .9s var(--ease),transform .9s var(--ease)}
+.sh2-cube .sh2-shackle{transform:translateY(-6px);transition:transform .9s var(--ease) .4s}
+.sh2-cube .sh2-key{transform-box:view-box;transform-origin:60px 69px;transition:transform .9s var(--ease) .6s}
+.sh2-scene.fold .sh2-emblem{transform:scale(.42)}
+.sh2-scene.fold .sh2-cube{opacity:1;transform:none}
+.sh2-scene.fold .sh2-shackle{transform:none}
+.sh2-scene.fold .sh2-key{transform:rotate(-90deg)}
+.sh2-scene.fade .sh2-core{opacity:.3;transition:opacity 1.2s var(--ease)}
+
+.sh2-plates{list-style:none;margin:0 auto;padding:0;width:min(760px,100%);display:flex;flex-direction:column-reverse;gap:8px}
+.sh2-plate,.sh2-node,.sh2-chip{border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--well-2);
+  transition:border-color .3s var(--ease),background-color .3s var(--ease),transform .35s var(--ease)}
+.sh2-plate{padding:9px 12px}
+.sh2-plate.on,.sh2-node.on,.sh2-chip.on{border-color:var(--accent);background:var(--tint)}
+.sh2-plate.on{transform:translateX(8px)}
+.sh2-ph{display:flex;align-items:baseline;gap:10px;min-width:0}
+.sh2-ph b{flex:1;min-width:0;font:600 15px/1.3 var(--hud);letter-spacing:.03em;color:var(--ink)}
+.sh2-ph .v{font:400 13px/1 var(--tech);color:var(--accent-ink)}
+.sh2-ticks{display:flex;flex-wrap:wrap;gap:3px;margin-top:7px}
+.sh2-ticks i{display:block;width:2px;height:8px;background:var(--line)}
+.sh2-plate.on .sh2-ticks i{background:var(--accent)}
+
+.sh2-flowwrap{position:relative}
+.sh2-flow{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.sh2-node{position:relative;padding:10px 12px}
+.sh2-node .k{display:block;margin-bottom:4px}
+.sh2-node b,.sh2-chip b{display:block;font:600 14px/1.3 var(--hud);letter-spacing:.03em;color:var(--ink);overflow-wrap:anywhere}
+.sh2-node small,.sh2-chip small{display:block;margin-top:3px;font:400 11.5px/1.35 var(--tech);color:var(--ink-2);overflow-wrap:anywhere}
+.sh2-node.on b,.sh2-chip.on b{color:var(--accent-ink)}
+.sh2-node.on{transform:translateY(-3px)}
+.sh2-packet{position:absolute;left:-6px;top:-6px;width:12px;height:12px;border-radius:50%;background:var(--accent-2);box-shadow:var(--glow);
+  opacity:0;pointer-events:none;transition:transform .7s var(--ease),opacity .3s var(--ease)}
+.sh2-packet.on{opacity:1}
+
+.sh2-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.sh2-group h3{margin:0 0 8px}
+.sh2-chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.sh2-chip{padding:7px 10px;max-width:100%}
+.sh2-chip.flagged{border-color:var(--amber-line);background:var(--amber-tint)}
+.sh2-chip .tag{margin-top:5px}
+.sh2-chip.later{border-style:dashed}
+.sh2-chip.later b{color:var(--ink-2)}
+.sh2-chip .sh2-later{display:block;margin-top:4px}
+
+.sh2-bars{list-style:none;margin:0 auto;padding:0;width:min(720px,100%);display:flex;flex-direction:column;gap:12px}
+.sh2-bar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:2px 12px;padding:2px 0}
+.sh2-bar b{font:600 14px/1.3 var(--hud);letter-spacing:.03em;color:var(--ink)}
+.sh2-bar .v{font:400 12.5px/1.3 var(--tech);color:var(--accent-ink);text-align:right}
+.sh2-bar .mbar{grid-column:1/-1;margin-top:2px}
+.sh2-bar .mbar i{transition:none}
+.sh2-bar.free .mbar i{background:var(--line)}
+.sh2-bar.mine .mbar i{background:var(--accent)}
+.sh2-bar.on b{color:var(--accent-ink)}
+
+/* ---- motion: Calm keeps fades; Off (console.css) stops everything; Pause holds the Core (WCAG 2.2.2) ---- */
+.sh-2d.held .core *{animation-play-state:paused}
+html[data-motion="calm"] .sh2-scene{animation-name:fadeIn}
+html[data-motion="calm"] :is(.sh2-plate,.sh2-node,.sh2-chip,.sh2-tiles .tile,.sh2-emblem,.sh2-cube,.sh2-shackle,.sh2-key,.sh2-packet,.sh-prog i){transition-duration:.01s}
+html[data-motion="calm"] :is(.sh2-plate,.sh2-node,.sh2-tiles .tile).on{transform:none}
+
+/* ---- phones: the 2D cards, the questions instead of the stage, two rows of 44 px controls ---------- */
+@media (max-width: 899px){
+  .sh-main.talking{grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "talk" "cap" "ctl"}
+  .sh-main.talking .sh-stage{display:none}
+  .sh-top{grid-template-columns:auto minmax(0,1fr);min-height:52px;padding:env(safe-area-inset-top) 12px 0}
+  .sh-brand .k,.sh-meta{display:none}
+  .sh-top .wordmark{display:inline;letter-spacing:.3em}
+  .sh-where{justify-content:flex-end;gap:8px}
+  .sh-title{font-size:13px;letter-spacing:.14em}
+  .sh-talk{margin:8px 8px 0}
+  .sh-cap{padding:8px 8px 0}
+  .sh-cap p{min-height:44px;padding:10px 12px 10px 16px;font-size:16px}
+  html[data-surface="night"] .sh-cap p{font-size:15px}
+  .sh-ctl{gap:8px;padding:8px 8px calc(10px + env(safe-area-inset-bottom))}
+  .sh-prog{order:-1;flex:1 1 100%}
+  .sh-ctl-main,.sh-ctl-side{flex:1 1 100%;justify-content:space-between}
+  .sh-tb{flex:1 1 0;min-width:0;padding:0 4px;letter-spacing:.06em}
+  .sh-2d{padding:14px 12px}
+  .sh2-flow{grid-template-columns:1fr 1fr}
+}

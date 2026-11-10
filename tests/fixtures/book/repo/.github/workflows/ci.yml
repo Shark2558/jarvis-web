@@ -1,0 +1,12 @@
+name: ci
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: make test
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - run: make deploy

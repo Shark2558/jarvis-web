@@ -1,0 +1,12 @@
+{
+  "id": "4a70683",
+  "sha": "4a7068351dbb76d099f3440b44559e7d739e4e3d",
+  "label": "R2.1",
+  "committed_at": "2026-11-10T09:00:00+05:30",
+  "v": 1,
+  "book_sha256": "263abcef3dc47034da88f8c929635ffdd8f13513ca369803b762c8baa55ed12c",
+  "source_sha256": "3f22a6d8dbd2c91e22326b4353b5faf2bb608203b6d7d23f4a377e9270731455",
+  "source_bytes": 1016,
+  "skipped": 0,
+  "error": null
+}

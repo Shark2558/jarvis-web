@@ -51,6 +51,12 @@ def _now() -> float:
     return time.time()
 
 
+def cookie_now() -> float:
+    """The clock a session cookie's `iat` is stamped with: what a "sessions valid after" mark
+    (R6 SEC-4, recorded at a guest lock's Resume) is compared to."""
+    return _now()
+
+
 # Pinned endpoints (no discovery fetch at startup → boots offline, fails only at sign-in time).
 GOOGLE_ENDPOINTS = {
     "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",

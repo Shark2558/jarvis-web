@@ -55,6 +55,10 @@ IDLE_TEXT = (
 )
 # The owner's own choice for the kind: nothing to retry, the outage is settled as told.
 OWNER_SETTLED = frozenset({"switched_off", "feed_only"})
+# The whole run, under the Scheduler's --attempt-deadline of 60 s (deploy/cloudrun.sh) with room
+# to answer (R6 review L4): a job the run has no time left for is cut ("degraded" when advisory),
+# and the next run in 5 minutes tries again.
+WATCHDOG_BUDGET_S = 50.0
 
 
 def took(delivery: Delivery, *, idle: bool) -> bool:
@@ -71,7 +75,9 @@ def took(delivery: Delivery, *, idle: bool) -> bool:
 
 # Jobs that ride the watchdog but are not the laptop watchdog: when one fails the Scheduler must
 # not see the 5-minute laptop check as failing (and retry it). They report "degraded" instead.
-ADVISORY_JOBS = frozenset({"health_check"})
+# R6: a build book seal over the storage limit fails every run until the owner raises it (he is
+# told once) and a sweep retries its deletes by itself: neither may 503 the watchdog
+ADVISORY_JOBS = frozenset({"health_check", "book_seal", "book_sweep"})
 
 
 class OfflineJob:
@@ -199,10 +205,16 @@ class _Sweep:
 
 class Watchdog:
     def __init__(
-        self, store: HomeStore, offline: OfflineJob, extra: Sequence[TickJob] = ()
+        self,
+        store: HomeStore,
+        offline: OfflineJob,
+        extra: Sequence[TickJob] = (),
+        *,
+        budget_s: float = WATCHDOG_BUDGET_S,
     ) -> None:
         self._store = store
         self._offline = offline
+        self._budget_s = budget_s
         self._claims = _Sweep("home_claims_sweep", store.sweep_claims)
         self._codes = _Sweep("home_link_sweep", store.sweep_codes)
         self._extra = tuple(extra)
@@ -219,7 +231,7 @@ class Watchdog:
     async def run(self) -> dict[str, object]:
         owners = await self._store.linked_uids()
         jobs: list[TickJob] = [self._offline, self._claims, self._codes, *self._extra]
-        results: dict[str, str] = dict(await run_jobs(jobs, owners))
+        results: dict[str, str] = dict(await run_jobs(jobs, owners, total_budget_s=self._budget_s))
         for name in ADVISORY_JOBS & results.keys():  # int-sec M4: never a 503 for these
             if results[name] == "failed":
                 log.error("an advisory watchdog job did not finish", extra={"job": name})
@@ -235,6 +247,7 @@ class Watchdog:
 
 __all__ = [
     "ADVISORY_JOBS",
+    "WATCHDOG_BUDGET_S",
     "ARMED_TEXT",
     "IDLE_TEXT",
     "AlertWhen",

@@ -12,7 +12,8 @@
 // starts the 24-hour reset, which shows as a banner at the top of the Approvals panel until it's over.
 // Exposes window.JarvisPasskey {supported(), approve(approvalId)  -> proof, prove(purpose, target)  -> proof,
 // message(err)}: approve for the approval cards in console.js ("Approve with passkey"); prove (R2) for the
-// vault unlock and the privacy export / delete dialogs, and (R3) the Home panel's Disarm.
+// vault unlock and the privacy export / delete dialogs, (R3) the Home panel's Disarm, and (R6) the build
+// book's open and resume (the show page loads this file for JarvisPasskey alone).
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -125,8 +126,9 @@
     approve: (approvalId) => prove({ purpose: 'approve', approval_id: String(approvalId) }),
     // R2: a passkey check for vault_unlock / privacy_delete / privacy_export, bound to `target` (a category and its rev, a bin id)
     // R3: home_disarm, bound to "<home_id>:<arm rev>" (the Home panel's Disarm)
+    // R6: book_open, bound to the audience ("owner" | "guest"); book_resume, bound to the lock id ("bl_<12 hex>")
     prove: (purpose, target) => {
-      if (!['vault_unlock', 'privacy_delete', 'privacy_export', 'home_disarm'].includes(purpose)) return Promise.reject(plain(FAILED));
+      if (!['vault_unlock', 'privacy_delete', 'privacy_export', 'home_disarm', 'book_open', 'book_resume'].includes(purpose)) return Promise.reject(plain(FAILED));
       return prove(target == null || target === '' ? { purpose } : { purpose, target: String(target) });
     },
     message: (e) => errText(e),
@@ -383,12 +385,17 @@
     if (remember) store.set(OPEN_KEY, open ? '1' : '0');
     if (open && stale()) load(); else render();
   }
+  // R6: the show page (book.html) loads this file for window.JarvisPasskey only: no Permissions
+  // section there, so nothing below runs
+  if (!btn || !body) return;
   btn.addEventListener('click', () => expand(body.hidden, true));
   function afterReauth() {
     let q; try { q = new URLSearchParams(window.location.search); } catch (_) { return; }
     const how = q.get('reauth');
     if (how !== 'done' && how !== 'stale') return;
     try { history.replaceState(null, '', window.location.pathname); } catch (_) {}
+    let book = ''; try { book = sessionStorage.getItem('jarvis_book_pending') || ''; } catch (_) {}
+    if (book && how === 'done') return; // R6 D8: the Book panel resumes its own open (console-book.js)
     Deck.open('approvals', { focus: true });
     expand(true, false);
     if (how === 'done') note('ok', 'Signed in again. For the next 5 minutes you can set up your first passkey or start a passkey reset here.');

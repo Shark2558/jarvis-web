@@ -9,6 +9,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from book_mocks import status as book_status
 from playwright.sync_api import Page, Route
 
 from jarvis.health.briefing import compose_briefing
@@ -22,8 +23,8 @@ from jarvis.vitals.service import MANUAL_UNAVAILABLE as MANUAL_NOTE
 from jarvis.vitals.words import NO_CREDIT, words_for
 
 PANELS = (
-    "activity approvals brief chat connectors construct faces history home integrations media "
-    "memory notes people privacy things vault vitals voice"
+    "activity approvals book brief chat connectors construct faces history home integrations "
+    "media memory notes people privacy things vault vitals voice"
 ).split()
 # A selector that shows the panel has painted its data (best effort; a miss is never fatal).
 READY: dict[str, str] = {
@@ -31,6 +32,7 @@ READY: dict[str, str] = {
     "integrations": "#systemsCard .sysrow, #systemsCard .event",
     "connectors": "#p-connectors .integ .istate",
     "people": "#peopleCard .pname",
+    "book": "#p-book .bk-release",  # R6 I1: the panel with a release and sealed books (book_mocks)
 }
 NOW = int(time.time())
 
@@ -43,6 +45,7 @@ NOW = int(time.time())
 #   /v1/settings/brain-mode   -> src/jarvis/people/routes.py (MEANING["ai"])
 #   /v1/people/last           -> src/jarvis/people/routes.py `last` ({dossier: _view(d)})
 #   /v1/integrations          -> Google linked (the well-styled reference card; test_console LINKED)
+#   /v1/book                  -> R6: a release, three sealed books (tests/browser/book_mocks.py)
 # ================================================================================================
 
 
@@ -387,6 +390,7 @@ def install_mocks(
     page.route("**/v1/settings/brain-mode", _get_only(200, MOCK_BRAIN_MODE))
     page.route("**/v1/people/last", _get_only(200, MOCK_PEOPLE_LAST))
     page.route("**/v1/integrations", _get_only(200, MOCK_INTEGRATIONS))
+    page.route("**/v1/book", _get_only(200, book_status()))  # R6 I1: the Book panel with data
 
 
 # Finite CSS animations and transitions are run to their end state before anything is measured: the

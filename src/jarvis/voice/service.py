@@ -478,10 +478,14 @@ class VoiceService:
         log.warning("voice: owner words were refused; retrying with the base hints only")
         return await self._engine("stt", uid, price, estimate, call(self.hints_for(())))
 
-    async def transcribe(self, uid: str, blob: bytes) -> TranscriptView:
+    async def transcribe(
+        self, uid: str, blob: bytes, *, owner_phrases: bool = True
+    ) -> TranscriptView:
+        """`owner_phrases=False`: the base hints only (R6: a build book guest's question must not
+        be biased toward the owner's own words)."""
         audio = parse_wav(blob)
         engines = self._require("stt")
-        owner = (await self.settings_of(uid)).phrases  # never raises
+        owner = (await self.settings_of(uid)).phrases if owner_phrases else ()  # never raises
         hints = self.hints_for(owner)
         price = self.prices.stt
         estimate = float(math.ceil(audio.seconds))  # gated on this …

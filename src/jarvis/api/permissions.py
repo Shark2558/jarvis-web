@@ -37,10 +37,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from jarvis.api.auth import fresh_sign_in_left, require_auth, session_email
+from jarvis.api.book_show_auth import by_show_marker, require_show_auth, show_user
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.config import AuthMode, Settings
@@ -171,13 +172,20 @@ async def put_permissions(
     return await svc.update(uid, patch, fresh_left_s=_fresh(request))
 
 
-@router.post("/v1/passkeys/challenge", response_model=ChallengeView)
+# R6 SEC-4: the presenting browser of a guest show holds only a show-only marker; it may ask for
+# exactly one ceremony, its book_resume passkey (`book_show_auth`), and nothing else here
+challenge_router = APIRouter(dependencies=[Depends(require_show_auth)])
+
+
+@challenge_router.post("/v1/passkeys/challenge", response_model=ChallengeView)
 async def passkey_challenge(
     req: ChallengeRequest,
     request: Request,
     svc: PermissionsService = Depends(_svc),
-    uid: str = Depends(current_user),
+    uid: str = Depends(show_user),
 ) -> ChallengeView:
+    if req.purpose != "book_resume" and by_show_marker(request):
+        raise HTTPException(401, "sign in required")
     _limit(request, "ceremony", uid)
 
     async def approvals(aid: str) -> Any:
@@ -308,6 +316,7 @@ def install_permissions(app: FastAPI) -> None:
         return _err(429, {"error": "rate_limited", "detail": "too many requests"}, retry)
 
     app.include_router(router)
+    app.include_router(challenge_router)
 
 
 __all__ = [

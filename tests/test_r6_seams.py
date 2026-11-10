@@ -22,7 +22,7 @@ import tomllib
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import get_args
+from typing import Any, get_args
 
 import pytest
 from pydantic import ValidationError
@@ -409,7 +409,7 @@ def test_the_buildbook_imports_no_brain_tool_memory_document_or_google_module() 
     assert bad == {}
 
 
-# ---- 10 packaging: the built book reaches the image, never git -------------------------------------
+# ---- 10 packaging: the built book reaches the image, never git -----------------------------------
 def test_the_built_book_is_git_ignored_but_the_fixtures_are_not() -> None:
     def ignored(rel: str) -> bool:
         r = subprocess.run(["git", "check-ignore", "-q", "--no-index", rel], cwd=ROOT, check=False)
@@ -427,3 +427,35 @@ def test_the_built_book_and_the_generator_lists_are_package_data() -> None:
         assert any(fnmatch.fnmatch(rel, g) for g in globs), rel
     for rel in ("gen/redact.json", "gen/fake_secrets.txt"):  # part A's lists, read when installed
         assert any(fnmatch.fnmatch(rel, g) for g in globs), rel
+
+
+# ---- 5 the app's three slots ---------------------------------------------------------------------
+def test_app_py_has_the_three_r6_slots_in_place_and_stays_within_760_lines() -> None:
+    src = (ROOT / "src/jarvis/api/app.py").read_text(encoding="utf-8")
+    assert len(src.splitlines()) <= 760
+    lines_ = [ln.strip() for ln in src.splitlines()]
+    at = {key: next(i for i, ln in enumerate(lines_) if ln.startswith(key)) for key in (
+        "await wire_r4(", "await wire_r6(", "install_show_lock(app, s)",
+        "_install_google_sign_in(app, s)", "install_r6_routes(app)",
+        "app.include_router(console_router)", "if s.auth_mode is AuthMode.GOOGLE:",
+    )}  # fmt: skip
+    assert at["await wire_r6("] == at["await wire_r4("] + 1
+    assert at["install_show_lock(app, s)"] == at["_install_google_sign_in(app, s)"] - 1
+    assert at["install_show_lock(app, s)"] == at["if s.auth_mode is AuthMode.GOOGLE:"] + 1
+    assert at["install_r6_routes(app)"] == at["app.include_router(console_router)"] - 1
+    # the extraction (item 5): the slice 10-12 wiring lives in api/feature_wiring.py now
+    assert "def _wire_features" not in src and "def _wire_slice12" not in src
+    for pinned, limit in (("tools/gateway.py", 760), ("core/brain.py", 799)):
+        assert len((ROOT / "src/jarvis" / pinned).read_text().splitlines()) <= limit, pinned
+
+
+async def test_wire_r6_leaves_every_r6_part_off_until_i1(client: Any) -> None:
+    from jarvis.api.r6_wiring import R6_STATE
+
+    app = client._transport.app
+    assert R6_STATE == (
+        "book_source", "book_vault", "book_sealer", "book_sessions",
+        "book_lock", "book_talk", "book_service",
+    )  # fmt: skip
+    for attr in R6_STATE:
+        assert getattr(app.state, attr) is None, attr

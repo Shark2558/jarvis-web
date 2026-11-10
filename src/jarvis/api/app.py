@@ -57,6 +57,7 @@ from jarvis.api.permissions import build_permissions, install_permissions
 from jarvis.api.personal import personal_tick_jobs, wire_personal, wire_privacy
 from jarvis.api.privacy import install_privacy
 from jarvis.api.r4_wiring import install_r4_routes, r4_tick_jobs, vitals_brief, wire_r4
+from jarvis.api.r6_wiring import install_r6_routes, install_show_lock, wire_r6
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
@@ -508,6 +509,7 @@ def _lifespan(
             wire_personal(app, s, docs)  # R2: vault, notes, things, DigiLocker inbox
             wire_home(app, s, docs, audit)  # R3: home link, camera, faces (tools need them)
             await wire_r4(app, s, docs, audit)  # R4: brain mode (loaded), vitals, health, people
+            await wire_r6(app, s, docs, audit)  # R6: the build book (api/r6_wiring.py)
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()
@@ -543,6 +545,7 @@ def _install_middleware(app: FastAPI, s: Settings) -> None:
     if s.rate_limit_per_minute > 0:
         app.middleware("http")(make_middleware(RateLimiter(s.rate_limit_per_minute)))
     if s.auth_mode is AuthMode.GOOGLE:
+        install_show_lock(app, s)  # R6 D10: added first, so it runs inside the session
         _install_google_sign_in(app, s)
 
     @app.middleware("http")
@@ -693,6 +696,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_notify(app)  # R3: /v1/notify, /v1/push
     install_r4_routes(app)  # R4: /v1/vitals, /v1/health, /v1/connectors, /v1/people, brain mode
     _mount_scheduler(app, s, verifier)
+    install_r6_routes(app)  # R6: /v1/book (status, sections, open, show, close, resume)
     app.include_router(console_router)
 
 

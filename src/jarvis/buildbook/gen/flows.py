@@ -106,11 +106,13 @@ FLOWS: tuple[Flow, ...] = (
         ("Personal data is scrubbed out", "buildbook.gen.scrub:Scrubber.clean"),
         ("The code snapshot is scanned for secrets", "buildbook.gen.snapshot:secret_hits"),
         ("The release ships with the server", "buildbook.release:ReleaseSource.current"),
-        ("The book and the code are sealed in the vault", "buildbook.ports:BookVault.seal"),
+        ("The book and the code are sealed in the vault", "buildbook.sealer:BookSealer.ensure"),
         ("Opening it takes your passkey",
          "permissions.service:PermissionsService.check_purpose"),
-        ("Questions get a lane with no tools", "buildbook.ports:BookTalker.ask"),
+        ("A guest show locks your consoles", "api.book_lock:ShowLockMiddleware"),
+        ("Questions get a lane with no tools", "buildbook.talk:BookTalk.ask"),
         ("The closing credits you", "buildbook.lines:closing"),
+        ("The session is deleted and you are told", "buildbook.service:BookService.close"),
     )),
 )  # fmt: skip
 

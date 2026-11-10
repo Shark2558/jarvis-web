@@ -9,6 +9,10 @@ so that file stays a short list of named steps, as R4's `api/r4_wiring.py` does.
   `book_talk`, `book_service` and `book_show_limits` (`wire_book_c`). No keyring -> all None and
   every route answers 503 book_off, except `GET /v1/book`, which says why (D6). Building them does
   no I/O: nothing is sealed at start-up (D7: a candidate that never goes live seals nothing).
+  The guest lock is a stored document that outlives a revision and needs no keyring, so in Google
+  mode `book_lock` is ALWAYS a `DocShowLock` (integrated review SEC-3): with no keyring and when
+  R6's setup fails, the lock still holds and Resume answers 503 (the emergency unlock is the way
+  out). `app.state.book_off` says why the book is off: "no_key", "setup_failed" or None (on).
 - `install_r6_routes` (before the console router): /v1/book (api/book.py, B) and the session and
   show routes (api/book_show.py, C). `GET /book/show` is the console's (api/console.py).
 - `install_show_lock(app, s)` (Google sign-in only, called just BEFORE the session middleware is
@@ -37,6 +41,7 @@ from jarvis.api.book_show import install_book_show
 from jarvis.api.book_show_wiring import C_STATE, book_sweep_job, wire_book_c
 from jarvis.api.identity import primary_user_id
 from jarvis.api.r4_wiring import _notifier
+from jarvis.buildbook.lock import DocShowLock
 from jarvis.buildbook.owner import BookSettingsStore, BookTickets
 from jarvis.buildbook.ports import BookSource
 from jarvis.buildbook.privacy import BookSealedSource, BookSessionsSource, BookSettingsSource
@@ -45,7 +50,7 @@ from jarvis.buildbook.seal import DocsBookVault
 from jarvis.buildbook.sealer import BookSealer, BookSealJob
 from jarvis.buildbook.service import BookService
 from jarvis.buildbook.show_script import Prefs
-from jarvis.config import Settings
+from jarvis.config import AuthMode, Settings
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
 from jarvis.notify.ports import Notifier
@@ -84,6 +89,21 @@ class SettingsPrefs:
         return got.model_dump(include=set(SETTINGS_KEYS))
 
 
+def lock_store(s: Settings, docs: Docs) -> DocShowLock:
+    """D10's lock store: documents only, no keyring (it must hold while the book is off)."""
+    return DocShowLock(docs, prefix=s.firestore_prefix)
+
+
+def _book_off(app: FastAPI, s: Settings, lock: DocShowLock, why: str) -> None:
+    """Every R6 part None, except the lock store in Google mode (SEC-3), and the reason."""
+    st = app.state
+    for name in R6_STATE:
+        setattr(st, name, None)
+    st.book_jobs = None
+    st.book_lock = lock if s.auth_mode is AuthMode.GOOGLE else None
+    st.book_off = why
+
+
 def wire_book(
     app: FastAPI,
     s: Settings,
@@ -94,12 +114,13 @@ def wire_book(
     keyring: Keyring | None,
     notifier: Notifier | None = None,
     prefs: Prefs | None = None,
+    lock: DocShowLock | None = None,
 ) -> None:
-    """A's source, B's vault/sealer/tickets/settings and C's parts on `app.state`, or all None."""
+    """A's source, B's vault/sealer/tickets/settings and C's parts on `app.state`, or all None
+    (but the lock store in Google mode)."""
     st = app.state
-    for name in R6_STATE:
-        setattr(st, name, None)
-    st.book_jobs = None
+    lock = lock or lock_store(s, docs)
+    _book_off(app, s, lock, "no_key")
     if keyring is None:
         log.info(BOOK_OFF_NOTE)
         return
@@ -130,19 +151,29 @@ def wire_book(
         prefs=prefs or SettingsPrefs(st.book_settings),
         notifier=tell,
         on_close=st.book_tickets.clear,  # B-sec 4: a closed session's download tickets go too
+        lock=lock,
     )
+    st.book_off = None
 
 
 async def wire_r6(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> None:
     """Everything R6 on `app.state` (None when off), after R4 and before the gateway. A part that
-    fails to build leaves the whole book off and JARVIS running (as R4's optional parts)."""
+    fails to build leaves the whole book off and JARVIS running (as R4's optional parts), with
+    the guest lock still enforced (SEC-3)."""
+    lock = lock_store(s, docs)
     try:
-        wire_book(app, s, docs, audit, source=default_source(), keyring=Keyring.from_settings(s))
+        wire_book(
+            app,
+            s,
+            docs,
+            audit,
+            source=default_source(),
+            keyring=Keyring.from_settings(s),
+            lock=lock,
+        )
     except Exception as exc:  # noqa: BLE001 - optional part: never fatal at start
         log.error("The build book is OFF: its setup failed", extra={"error": type(exc).__name__})
-        for name in R6_STATE:
-            setattr(app.state, name, None)
-        app.state.book_jobs = None
+        _book_off(app, s, lock, "setup_failed")
 
 
 def install_r6_routes(app: FastAPI) -> None:
@@ -206,6 +237,7 @@ __all__ = [
     "SettingsPrefs",
     "install_r6_routes",
     "install_show_lock",
+    "lock_store",
     "r6_privacy_sources",
     "r6_tick_jobs",
     "wire_book",

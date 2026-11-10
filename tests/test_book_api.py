@@ -30,6 +30,7 @@ from pydantic import SecretStr
 
 from jarvis.api import create_app
 from jarvis.api.identity import user_id_for_email
+from jarvis.buildbook.lock import DocShowLock
 from jarvis.buildbook.model import ShowLockState, TalkState
 from jarvis.buildbook.owner import BookSettingsStore, BookTickets
 from jarvis.buildbook.ports import LockUnreadable, SessionGone
@@ -94,7 +95,8 @@ def wire(app: Any, docs: MemoryDocs) -> None:
     """What I1's wire_r6 puts on app.state for builder B's routes (C's parts are fakes: the real
     ones I1 wires from the token key are taken off; tests/test_r6_wiring.py covers them)."""
     st = app.state
-    st.book_service = st.book_lock = st.book_talk = st.book_jobs = None
+    st.book_service = st.book_talk = st.book_jobs = None
+    st.book_lock = DocShowLock(docs, cache_s=0)  # SEC-3: a Google app always has a lock store
     st.test_notes = FakeNotifier()
     st.book_source = FakeSource(*make_release(1))
     st.book_vault = DocsBookVault(docs, ring(), limit_mb=60)

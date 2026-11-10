@@ -144,11 +144,18 @@ class ShowLockMiddleware:
 
     async def _held(self, scope: Scope) -> tuple[ShowLockState | None, bool]:
         """(the lock holding this cookie session, whether it is the owner's own); LockUnreadable
-        propagates. Not an owner's session, or no lock store: (None, False)."""
+        propagates, and so does a Google app with no lock store to read (SEC-3: I1 always
+        builds one, so a missing store is never read as "unlocked"). Not an owner's session, or
+        no store outside Google mode: (None, False)."""
         view = scope if scope["type"] == "http" else {**scope, "type": "http"}  # same session dict
         email = session_email(Request(view), self._s)
         store: ShowLock | None = getattr(scope["app"].state, "book_lock", None)
-        if email is None or store is None:
+        if email is None:
+            return None, False
+        if store is None:
+            if self._s.auth_mode is AuthMode.GOOGLE:
+                log.error("the show lock has no lock store to read")
+                raise LockUnreadable(UNREADABLE)
             return None, False
         return await self._lock_on(store, user_id_for_email(email), scope["session"])
 

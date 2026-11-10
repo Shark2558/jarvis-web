@@ -13,6 +13,10 @@ from fastapi.responses import JSONResponse
 NO_STORE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 TOKEN_HEADER = "X-Jarvis-Book"  # the book session token (D9; sessionStorage of the show tab only)
 BOOK_OFF = "The build book isn't available on this server yet."
+RESUME_OFF = (  # SEC-3: the lock holds while the book is off; this is the owner's way out
+    "The build book is off on this server, so Resume can't check your passkey here. Unlock from "
+    "the server with the emergency unlock: python -m jarvis.buildbook.unlock."
+)
 
 
 def book_json(body: Any, status: int = 200) -> JSONResponse:
@@ -28,4 +32,12 @@ def book_off() -> JSONResponse:
     return book_err(503, "book_off", BOOK_OFF)
 
 
-__all__ = ["BOOK_OFF", "NO_STORE", "TOKEN_HEADER", "book_err", "book_json", "book_off"]
+__all__ = [
+    "BOOK_OFF",
+    "NO_STORE",
+    "RESUME_OFF",
+    "TOKEN_HEADER",
+    "book_err",
+    "book_json",
+    "book_off",
+]

@@ -37,7 +37,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.api.auth import require_auth
 from jarvis.api.body import read_capped
-from jarvis.api.book_http import NO_STORE, TOKEN_HEADER, book_err, book_json, book_off
+from jarvis.api.book_http import (
+    NO_STORE,
+    RESUME_OFF,
+    TOKEN_HEADER,
+    book_err,
+    book_json,
+    book_off,
+)
 from jarvis.api.book_lock import UNREADABLE, lock_for, owner_ids
 from jarvis.api.book_show_access import (
     json_body,
@@ -292,7 +299,9 @@ async def close(request: Request, uid: str = Depends(current_user)) -> JSONRespo
 @router.post("/resume", response_model=None)
 async def resume(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
     svc = _svc(request)
-    return book_off() if svc is None else await resume_flow(request, svc, uid)
+    if svc is None:  # the lock may still hold (SEC-3): the emergency unlock is the way out
+        return book_err(503, "book_off", RESUME_OFF)
+    return await resume_flow(request, svc, uid)
 
 
 @router.get("/show/lock", response_model=None)

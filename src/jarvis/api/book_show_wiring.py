@@ -64,6 +64,7 @@ def _parts(
     keyring: Keyring,
     source: BookSource,
     prefs: Prefs | None,
+    lock: DocShowLock | None,
 ) -> tuple[DocBookSessions, DocShowLock, BookTalk]:
     sessions = DocBookSessions(
         docs,
@@ -82,7 +83,7 @@ def _parts(
         prefs=prefs,
         owner_emails=tuple(s.owner_emails),
     )
-    return sessions, DocShowLock(docs, prefix=s.firestore_prefix), talk
+    return sessions, lock or DocShowLock(docs, prefix=s.firestore_prefix), talk
 
 
 def wire_book_c(
@@ -96,12 +97,14 @@ def wire_book_c(
     prefs: Prefs | None = None,
     notifier: Notifier | None = None,
     on_close: Callable[[str], Awaitable[None]] | None = None,
+    lock: DocShowLock | None = None,
 ) -> BookService | None:
+    """C's parts; `lock` is I1's keyring-free store (`r6_wiring.lock_store`), one per app."""
     for name in C_STATE:
         setattr(app.state, name, None)
     if keyring is None or source is None:
         return None
-    sessions, lock, talk = _parts(app, s, docs, keyring, source, prefs)
+    sessions, lock, talk = _parts(app, s, docs, keyring, source, prefs, lock)
     p = s.firestore_prefix
     service = BookService(
         source=source,

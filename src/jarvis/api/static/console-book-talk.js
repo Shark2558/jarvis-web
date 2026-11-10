@@ -158,12 +158,20 @@
     card('Unlocked', 'Unlocked on another device.', 'This device was signed out of JARVIS. Sign in again when it is back in your hands.');
     $('shResume').hidden = true; $('shBack').hidden = true;
   }
+  /** The lock is off: a Resume in another tab of THIS browser re-stamped its cookie (it still answers) -> the console;
+   *  a session the Resume cut (401) -> say so; anything else -> ask again at the next poll. */
+  async function lifted() {
+    try { await B().api('/auth/me'); home(); } catch (e) { if (e.status === 401) elsewhere(); }
+  }
   function showLocked(st, line) {
     S.lockId = st.id || S.lockId;
     card('Locked', line || st.line || '', 'A build book show holds this account\u2019s consoles. Your passkey unlocks them on this device or any other.');
     $('shResume').hidden = false; $('shBack').hidden = true; $('shResume').focus();
     clearInterval(S.poll);
-    S.poll = setInterval(async () => { const now = await lockState(); if (now.gone || (!now.on && !now.unknown)) elsewhere(); }, POLL_MS);
+    S.poll = setInterval(async () => {
+      const now = await lockState();
+      if (now.gone) elsewhere(); else if (!now.on && !now.unknown) await lifted();
+    }, POLL_MS);
   }
   async function done(opts) {
     const o = obj(opts) || {};

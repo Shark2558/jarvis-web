@@ -2,8 +2,9 @@
 # owner's other consoles see it, and the R5.1 visual gate (D11) on the Book panel and the show page.
 # A second console tab that gets 423 show_locked goes to the show, shows the lock with Resume, and
 # returns to the console once a book_resume passkey (bound to the lock id) lifts it -- also when the
-# lock id has to come from the resume answer; a lock lifted from another device is said, and the
-# tab stays (SEC-4 c).
+# lock id has to come from the resume answer; a lock lifted from another device that cut this
+# browser's session is said, and the tab stays (SEC-4 c); a lock lifted by a Resume in another tab
+# of this same browser (its cookie still answers) returns this tab to the console too.
 # The gate: #p-book (status, and the owner's reader open) and /book/show (start, a scene playing,
 # questions, the hand-back) at 1440x900 and 390x844, Night and Day, with the gate's own DOM checks.
 # ruff: noqa: E501 -- JavaScript strings
@@ -131,21 +132,22 @@ def test_the_lock_id_can_come_from_the_resume_answer(
         c.close()
 
 
-@pytest.mark.parametrize("lifted", ["off", "signed_out"])
+SIGNED_OUT = {"error": "unauthorized", "detail": "sign in required"}
+
+
+@pytest.mark.parametrize("lifted", ["off_and_cut", "signed_out"])
 def test_a_lock_lifted_elsewhere_says_so_and_stays(
     browser: Any, server_url: str, token: str, lifted: str
 ) -> None:
-    """SEC-4 (c): the owner resumed on another device. This tab says so and does NOT go to the
-    console (whatever this browser still holds is not the owner's any more)."""
+    """SEC-4 (c): the owner resumed on another device, and this browser's session was cut by it.
+    This tab says so and does NOT go to the console (nothing here is the owner's any more)."""
     c, fake = _locked_tab(browser, server_url, token)
     try:
-        if lifted == "off":
-            fake.lock = {"on": False}  # the owner resumed on his phone
+        if lifted == "off_and_cut":  # the lock is off and this browser's cookie no longer answers
+            c.page.route("**/auth/me", lambda r: j(r, 401, SIGNED_OUT))
+            fake.lock = {"on": False}
         else:  # this browser's cookie was cleared by the Resume mark: the lock route says 401
-            c.page.route(
-                "**/v1/book/show/lock",
-                lambda r: j(r, 401, {"error": "unauthorized", "detail": "sign in required"}),
-            )
+            c.page.route("**/v1/book/show/lock", lambda r: j(r, 401, SIGNED_OUT))
         done = c.page.locator("#shDone")
         c.page.locator("#shDoneTitle", has_text="Unlocked").wait_for(timeout=15000)
         assert "Unlocked on another device" in done.inner_text()
@@ -154,6 +156,33 @@ def test_a_lock_lifted_elsewhere_says_so_and_stays(
         assert not done.get_by_role("button", name="Resume with my passkey").is_visible()
         assert fake.to("POST", "/v1/book/resume") == []
         _clean(c, 401, 423)
+    finally:
+        c.close()
+
+
+def test_a_second_locked_tab_of_the_browser_that_resumed_returns_to_the_console(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Code re-review #2: the owner pressed Resume in ANOTHER tab of this same browser. The lock is
+    off and this tab's cookie still answers (/auth/me 200): it goes back to the console, and never
+    says "Unlocked on another device ... signed out"."""
+    c, fake = _locked_tab(browser, server_url, token)
+    try:
+        said: list[str] = []
+        c.page.expose_function("__said", lambda title: said.append(title))
+        c.page.evaluate(
+            "() => new MutationObserver(() => window.__said(document.getElementById('shDoneTitle')"
+            ".textContent)).observe(document.getElementById('shDone'), {subtree: true, childList: true,"
+            " characterData: true})"
+        )
+        c.page.unroute("**/console/config")  # back in the console it boots with the test token
+        c.page.route("**/auth/me", lambda r: j(r, 200, {"email": "owner@example.com"}))
+        fake.lock = {"on": False}  # the other tab's Resume lifted it and re-stamped this browser
+        c.page.wait_for_url(server_url + "/", timeout=15000)
+        c.page.locator("#welcome").wait_for()
+        assert "Unlocked" not in said
+        assert fake.to("POST", "/v1/book/resume") == []
+        _clean(c, 423)
     finally:
         c.close()
 

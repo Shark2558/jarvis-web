@@ -1,0 +1,4 @@
+{"id": "guest-sections", "kind": "token", "method": "GET", "path": "/v1/book/sections"}
+{"id": "guest-older-sections", "kind": "token", "method": "GET", "path": "/v1/book/releases/4a70683/sections"}
+{"id": "guest-ticket", "kind": "token", "method": "POST", "path": "/v1/book/releases/4a70683/ticket"}
+{"id": "guest-settings", "kind": "lock", "method": "GET", "path": "/v1/book/settings"}

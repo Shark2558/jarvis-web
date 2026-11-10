@@ -73,10 +73,12 @@ def test_the_unwired_server_says_so_in_words(browser: Any, server_url: str, toke
     c = Console(browser, server_url, token, DESKTOP)
     try:
         c.open()
-        c.open_panel("book")  # the real server: every book route answers 503 book_off (I0 stubs)
-        c.page.locator("#p-book .bk-note", has_text="isn't available").wait_for()
+        # the real server has no encryption key: the book is off, and GET /v1/book says why with a
+        # plain 200 {available: false, reason} (I1), so the console logs nothing at all
+        c.open_panel("book")
+        c.page.locator("#p-book .bk-note", has_text="no encryption key").wait_for()
         assert c.page.locator("#p-book button", has_text="Open for me").count() == 0
-        _clean(c, 503)
+        _clean(c)
     finally:
         c.close()
 

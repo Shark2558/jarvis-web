@@ -32,13 +32,18 @@ _pw = pytest.importorskip("playwright.sync_api")
 pytestmark = pytest.mark.browser
 
 # The cloud voice answers 1.5 s late; every AudioBufferSourceNode.start is recorded.
+# Every spoken line's audio waits until the test lets it through (window.__speakRelease()): a fixed
+# delay raced a slow runner (the line landed before the Pause key, I1).
 SLOW_SPEAK = """
 window.__starts = [];
 (() => {
   const start = AudioBufferSourceNode.prototype.start;
   AudioBufferSourceNode.prototype.start = function (...a) { window.__starts.push(performance.now()); return start.apply(this, a); };
+  let open = null;
+  const gate = new Promise((r) => { open = r; });
+  window.__speakRelease = () => open();
   const f = window.fetch.bind(window);
-  window.fetch = async (u, o) => { if (String(u).includes('/v1/book/show/speak')) await new Promise((r) => setTimeout(r, 1500)); return f(u, o); };
+  window.fetch = async (u, o) => { if (String(u).includes('/v1/book/show/speak')) await gate; return f(u, o); };
 })();
 """
 # A microphone: a real audio track (an oscillator); with __gumHold the permission prompt waits.
@@ -128,7 +133,12 @@ def test_pause_holds_a_line_whose_audio_is_still_coming(
         _begin(c)
         c.page.keyboard.press("Space")  # the first line's audio is still on its way
         c.page.wait_for_function("() => !window.JarvisBookShow.state().playing")
-        c.page.wait_for_timeout(2600)  # it has landed by now
+        c.page.evaluate("window.__speakRelease()")  # now it lands, while paused
+        c.page.wait_for_function(
+            "() => performance.getEntriesByType('resource')"
+            ".filter((e) => e.name.includes('/v1/book/show/speak')).length > 0"
+        )
+        c.page.wait_for_timeout(1500)  # decoded (or the browser voice chosen) by now
         assert c.page.evaluate("window.__starts") == []
         assert c.page.evaluate("window.__spoken") == []
         assert _state(c)["index"] == 0

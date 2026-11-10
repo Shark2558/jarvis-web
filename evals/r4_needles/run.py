@@ -195,8 +195,13 @@ class _SteppedClock:
         return time.time() + self.offset
 
 
+def _job(w: R3App, name: str) -> Any:
+    """A tick job by name (R6 appended its book jobs after R4's)."""
+    return next(j for j in w.state.tick_jobs if j.name == name)
+
+
 def _health_job(w: R3App) -> Any:
-    job = w.state.tick_jobs[-1]
+    job = _job(w, "health_check")
     job._every_s = 0.0  # noqa: SLF001 - the flow checks twice in a row; lift the due-gate
     clock = _SteppedClock()
     job._svc._clock = clock  # noqa: SLF001
@@ -238,7 +243,7 @@ async def _red_and_fault(w: R3App, *, night: bool) -> list[str]:
     )
     if r.status_code != 200:
         f.append(f"vitals write refused: {r.status_code} {r.text}")
-    await w.state.tick_jobs[-2].run([UID])  # vitals_poll
+    await _job(w, "vitals_poll").run([UID])
     router = w.state.brains.router_for(w.state.brains.default.id)
     router._last = "refused"  # noqa: SLF001 - the last real call was refused (no model call here)
     health = _health_job(w)  # the real job; only its 15-minute due-gate is lifted here
@@ -258,7 +263,11 @@ async def _red_and_fault(w: R3App, *, night: bool) -> list[str]:
     if any("home" in t.lower() or "laptop" in t.lower() for t in faults):
         f.append(f"the home rang from the systems check too (D4: the watchdog owns it): {faults}")
     names = [j.name for j in w.state.tick_jobs]
-    if names[-2:] != ["vitals_poll", "health_check"]:
+    r4 = [n for n in names if n in ("vitals_poll", "health_check")]
+    if (
+        r4 != ["vitals_poll", "health_check"]
+        or names.index("health_check") != names.index("vitals_poll") + 1
+    ):
         f.append(f"tick jobs: {names}")
     return f
 

@@ -154,7 +154,8 @@ html[data-surface="night"] .sh-cap p{font:400 17px/1.5 var(--tech);letter-spacin
 .sh2-bar.mine .mbar i{background:var(--accent)}
 .sh2-bar.on b{color:var(--accent-ink)}
 
-/* ---- motion: Calm keeps fades; Off (console.css) stops everything --------------------------------- */
+/* ---- motion: Calm keeps fades; Off (console.css) stops everything; Pause holds the Core (WCAG 2.2.2) ---- */
+.sh-2d.held .core *{animation-play-state:paused}
 html[data-motion="calm"] .sh2-scene{animation-name:fadeIn}
 html[data-motion="calm"] :is(.sh2-plate,.sh2-node,.sh2-chip,.sh2-tiles .tile,.sh2-emblem,.sh2-cube,.sh2-shackle,.sh2-key,.sh2-packet,.sh-prog i){transition-duration:.01s}
 html[data-motion="calm"] :is(.sh2-plate,.sh2-node,.sh2-tiles .tile).on{transform:none}

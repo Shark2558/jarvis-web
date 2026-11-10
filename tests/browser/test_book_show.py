@@ -19,15 +19,20 @@ _pw = pytest.importorskip("playwright.sync_api")
 
 pytestmark = pytest.mark.browser
 
-# Every WebGL context the page asks for (and, with __glFail, a GPU that gives none).
+# Every WebGL context the page asks for (and, with __glFail, a GPU that gives none), every
+# requestAnimationFrame, and every console.warn (a 3D layer that fails says so there).
 GL_SPY = """
-window.__gl = [];
+window.__gl = []; window.__glCtx = []; window.__warns = [];
 (() => {
   const orig = HTMLCanvasElement.prototype.getContext;
   HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
     if (/webgl/.test(String(type))) { window.__gl.push(String(type)); if (window.__glFail) return null; }
-    return orig.call(this, type, ...rest);
+    const ctx = orig.call(this, type, ...rest);
+    if (ctx && /webgl/.test(String(type))) window.__glCtx.push(ctx);
+    return ctx;
   };
+  const warn = console.warn.bind(console);
+  console.warn = (...a) => { window.__warns.push(a.map(String).join(' ')); warn(...a); };
   window.__raf = 0;
   const raf = window.requestAnimationFrame.bind(window);
   window.requestAnimationFrame = (cb) => { window.__raf += 1; return raf(cb); };
@@ -66,8 +71,11 @@ def _show(
     gl_fail: bool = False,
     scenes: list[dict[str, Any]] | None = None,
     google: bool = False,
+    init: tuple[str, ...] = (),
 ) -> tuple[Console, FakeBook]:
     c = Console(browser, url, token, viewport)
+    for script_js in init:
+        c.page.add_init_script(script_js)
     if reduced:
         c.page.emulate_media(reduced_motion="reduce")
     if gl_fail:
@@ -99,10 +107,24 @@ def _to_questions(c: Console) -> None:
     c.page.locator("#shTalk").wait_for(state="visible")
 
 
-def _clean(c: Console, *expected: int) -> None:
-    said = [f"status of {code} " for code in expected]
+def _clean(c: Console, *expected: int | str) -> None:
+    """No JS error, no CSP violation, no 3D layer that failed quietly. `expected`: a status the test
+    asked for (the browser logs it), or a network error text such as "net::ERR_FAILED"."""
+    said = [f"status of {code} " if isinstance(code, int) else code for code in expected]
     errors = [e for e in c.errors if not any(s in e for s in said)]
     assert errors == [] and c.csp_violations() == []
+    warns = c.page.evaluate("window.__warns || []")
+    assert [w for w in warns if "Build book 3D" in w] == []
+
+
+def _need_3d(c: Console) -> None:
+    """The 3D show must be on. Only a Chromium without WebGL2 may skip; a 3D layer that failed to
+    load or to start fails the test (it never hides behind the 2D show)."""
+    if _state(c)["renderer"] == "3d":
+        return
+    st = c.page.evaluate("window.JarvisBook3D ? window.JarvisBook3D.stats() : {state: 'missing'}")
+    assert st["state"] == "no-webgl2", st
+    pytest.skip("this Chromium has no WebGL2: the 2D show is covered elsewhere")
 
 
 def _spoken_ids(fake: FakeBook) -> list[str]:
@@ -178,6 +200,8 @@ def test_the_keys_drive_the_show(browser: Any, server_url: str, token: str) -> N
         c.page.keyboard.press("Space")
         c.page.wait_for_function("() => !window.JarvisBookShow.state().playing")
         assert c.page.locator("#shPlay").get_attribute("aria-pressed") == "false"
+        if _state(c)["renderer"] == "3d":  # Pause holds the 3D still too (WCAG 2.2.2)
+            assert c.page.evaluate("window.JarvisBook3D.stats().running") is False
         before = _state(c)["index"]
         c.page.keyboard.press("ArrowRight")
         c.page.wait_for_function(f"() => window.JarvisBookShow.state().index === {before + 1}")
@@ -266,8 +290,7 @@ def test_the_3d_show_keeps_its_budget_in_every_scene(
     c, fake = _show(browser, server_url, token, scenes=SCENES)
     try:
         _begin(c)
-        if _state(c)["renderer"] != "3d":
-            pytest.skip("this Chromium has no WebGL2: the 2D show is covered above")
+        _need_3d(c)
         c.page.keyboard.press("Space")
         for n in range(1, 14):
             c.page.wait_for_function(f"() => window.JarvisBookShow.state().scene === {n}")
@@ -367,6 +390,8 @@ def test_end_asks_first_then_wipes(browser: Any, server_url: str, token: str) ->
     c, fake = _show(browser, server_url, token, scenes=SCENES)
     try:
         _begin(c)
+        c.page.locator("#shChapters").click()  # the chapter list holds the scene titles
+        c.page.locator("#shChapClose").click()
         c.page.locator("#shEnd").click()
         confirm = c.page.locator("#shConfirm")
         confirm.wait_for(state="visible")
@@ -374,24 +399,56 @@ def test_end_asks_first_then_wipes(browser: Any, server_url: str, token: str) ->
         c.page.locator("#shDone").wait_for(state="visible")
         assert len(fake.to("POST", "/v1/book/close")) == 1
         assert c.page.evaluate("sessionStorage.getItem('jarvis_book_token')") is None
+        assert c.page.locator("#shChapterItems *").count() == 0  # D14: no scene title stays
         _clean(c)
     finally:
         c.close()
 
 
+@pytest.mark.parametrize("status", [401, 403, 404, 410])
 def test_an_expired_session_says_so_and_forgets_the_token(
-    browser: Any, server_url: str, token: str
+    browser: Any, server_url: str, token: str, status: int
 ) -> None:
+    """Only a definitive refusal (the Contract's 401/403/404/410) forgets the token."""
     c = Console(browser, server_url, token, DESKTOP)
     c.page.add_init_script(SEED % (TOKEN, "guest"))
     fake = FakeBook(c.page)
-    fake.script_answer = (401, {"error": "session_gone", "detail": "This session has ended."})
+    fake.script_answer = (status, {"error": "session_gone", "detail": "This session has ended."})
     try:
         c.page.goto(server_url + "/book/show")
         done = c.page.locator("#shDone")
         done.wait_for(state="visible")
         assert "ended" in done.inner_text()
         assert c.page.evaluate("sessionStorage.getItem('jarvis_book_token')") is None
-        _clean(c, 401)
+        _clean(c, status)
+    finally:
+        c.close()
+
+
+def test_a_3d_layer_that_fails_to_load_is_reported_never_silent(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """A broken scene module (or three.js) must fail the 3D tests, not skip them: the page warns,
+    the engine says load-failed, and _need_3d fails instead of skipping."""
+    c = Console(browser, server_url, token, DESKTOP)
+    c.page.route(
+        "**/static/console-book-scenes-data.js",
+        lambda r: r.fulfill(
+            status=200, content_type="text/javascript", body="export const SCENES = ;"
+        ),
+    )
+    c.page.add_init_script(GL_SPY)
+    c.page.add_init_script(SPEECH_STUB)
+    c.page.add_init_script(SEED % (TOKEN, "guest"))
+    fake = FakeBook(c.page)
+    fake.script_answer = (200, script("guest", QUICK))
+    try:
+        c.page.goto(server_url + "/book/show")
+        c.page.locator("#shBegin").wait_for()
+        _begin(c)
+        assert c.page.evaluate("window.JarvisBook3D.stats().state") == "load-failed"
+        assert any("Build book 3D" in w for w in c.page.evaluate("window.__warns"))
+        with pytest.raises(AssertionError):
+            _need_3d(c)
     finally:
         c.close()

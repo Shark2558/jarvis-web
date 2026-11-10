@@ -5,7 +5,9 @@
 // those beats, then the ask line (scene 12), then the closing lines (scene 13). A beat is one line: the next starts when
 // the line's audio ends (console-book-voice.js; captions only: 330 ms a word + 800 ms). The 3D engine (console-book-3d.js)
 // or the 2D cards (console-book-2d.js) draw the beat; questions, the hand-back and Resume are console-book-talk.js.
-// At the close (the closing ends, End, expiry) the page clears its DOM, the token and its audio (D14).
+// At the close (the closing ends, End, expiry) the page clears its DOM, the token and its audio (D14). Only a definitive
+// refusal of the script (401/403/404/410) forgets the token; a blip (the network, a 5xx) is retried, then Try again.
+// Pause holds all motion, 3D or 2D (WCAG 2.2.2); in Questions, Play/Space holds or frees the listening Core.
 // Also gives window.JarvisBook (this page's transport) and a minimal window.JarvisConsole.api for JarvisPasskey.
 // No build step; CSP script-src 'self'; textContent only; ASCII source; <= 400 lines.
 (() => {
@@ -13,6 +15,7 @@
   const $ = (id) => document.getElementById(id);
   const TOKEN_KEY = 'jarvis_book_token', SESSION_KEY = 'jarvis_book_session', HEADER = 'X-Jarvis-Book';
   const BEAT_MS = 60 * 1000, READY_WAIT_MS = 6000, FADE_MS = 1400, WORD_MS = 330, TAIL_MS = 800;
+  const RETRY_MS = [800, 2000], GONE = new Set([401, 403, 404, 410]); // the script: retried after these waits; GONE wipes
   const LINE_ID = /^s\d{2}b\d{2}$/, KEY_ID = /^[a-z_]{2,20}$/, RID = /^[0-9a-f]{7}$/, OWN = /^\/(?![/\\])/;
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const LAST_TITLES = { 12: 'Questions', 13: 'Closing' };
@@ -95,7 +98,7 @@
 
   // ---- state and rendering of one beat --------------------------------------------------------------
   const S = { script: null, beats: [], index: 0, playing: false, run: 0, phase: 'loading', audience: 'guest', captions: true,
-    sound: true, R: null, rname: '', closing: false, beatTimer: 0, waiters: [], loop: 0 };
+    sound: true, R: null, rname: '', closing: false, beatTimer: 0, waiters: [], loop: 0, held: false, still: false };
   const voice = () => window.JarvisBookVoice || null;
   const talk = () => window.JarvisBookTalk || null;
   function sceneData(n) {
@@ -118,8 +121,9 @@
   function sync() {
     const m = $('show');
     m.dataset.state = S.phase;
-    $('shPlay').setAttribute('aria-pressed', String(S.playing));
-    $('shPlay').setAttribute('aria-label', S.playing ? 'Pause (Space)' : 'Play (Space)');
+    const on = S.phase === 'questions' ? !S.held : S.playing; // in Questions the button holds the listening Core
+    $('shPlay').setAttribute('aria-pressed', String(on));
+    $('shPlay').setAttribute('aria-label', on ? 'Pause (Space)' : 'Play (Space)');
     $('shCaptions').setAttribute('aria-pressed', String(S.captions));
     $('shCap').classList.toggle('off', !S.captions);
     $('shSound').setAttribute('aria-pressed', String(S.sound));
@@ -135,7 +139,7 @@
   function resumed() { return new Promise((r) => S.waiters.push(r)); }
   async function play(from) {
     const run = ++S.run;
-    S.playing = true; S.phase = 'playing'; S.loop = run; sync(); hold(false);
+    S.playing = true; S.phase = 'playing'; S.loop = run; S.held = false; sync(); hold(false);
     for (let i = from; i < S.beats.length; i += 1) {
       if (run !== S.run) return;
       present(i);
@@ -152,7 +156,18 @@
     if (!S.playing || S.phase !== 'playing') return;
     S.playing = false; const V = voice(); if (V) V.pause(); sync(); hold(true);
   }
-  function hold(on) { if (S.R && S.R.hold) S.R.hold(on); }
+  function hold(on) { S.still = !!on; if (S.R && S.R.hold) S.R.hold(S.still); }
+  /** Space / Play: pause or play the show; in Questions, hold or free the Core (the only motion left). */
+  function toggle() {
+    if (S.phase === 'questions') { S.held = !S.held; sync(); hold(S.held); return; }
+    if (S.playing) pause(); else resume();
+  }
+  /** A reply spoken mid-show (Q) cuts the current line: the show holds, and Play speaks that line again. */
+  function interrupt() {
+    if (S.phase === 'questions' || S.closing) return;
+    if (S.playing) { S.playing = false; sync(); hold(true); }
+    S.run += 1; const w = S.waiters; S.waiters = []; w.forEach((r) => r());
+  }
   function resume() {
     if (S.phase !== 'playing' && S.phase !== 'paused') return;
     if (S.playing) return;
@@ -171,7 +186,7 @@
     const w = S.waiters; S.waiters = []; w.forEach((r) => r());
     S.phase = 'playing';
     if (S.playing) { play(to); return; }
-    present(to); sync();
+    present(to); sync(); hold(true); // paused: still, also after leaving Questions with the Core moving
     if (S.beats[to].ask && S.script.talk.on) questions();
   }
   const sceneStart = (n) => S.beats.findIndex((b) => b.scene === n);
@@ -180,7 +195,8 @@
     for (let n = cur + dir; n >= 1 && n <= 13; n += dir) { const i = sceneStart(n); if (i >= 0) { jump(i); return; } }
   }
   function questions() {
-    S.phase = 'questions'; S.playing = false; sync(); hold(false); // the Core listens: it keeps moving
+    S.held = !S.playing; // reached by playing: the Core listens and moves; by a jump while paused: it stays still
+    S.phase = 'questions'; S.playing = false; sync(); hold(S.held);
     const T = talk();
     if (!S.script.talk.on) { toClosing(); return; }
     if (T) T.open({ lines: S.script.lines, phase: 'questions' });
@@ -214,7 +230,8 @@
     clearInterval(S.beatTimer); S.beatTimer = 0;
     const V = voice(); if (V) V.dispose();
     if (S.R) { try { S.R.dispose(); } catch (_) { /* best effort */ } S.R = null; }
-    ['shCapText', 'shScene', 'shCount', 'shRelease', 'shUntil', 'shLabels', 'sh2d', 'shStartRel', 'shStartNote'].forEach((id) => { const n = $(id); if (n) n.textContent = ''; });
+    ['shCapText', 'shScene', 'shCount', 'shRelease', 'shUntil', 'shLabels', 'sh2d', 'shStartRel', 'shStartNote', 'shChapterItems'].forEach((id) => { const n = $(id); if (n) n.textContent = ''; });
+    if ($('shChapterList').open) $('shChapterList').close();
     const T = talk(); if (T) T.clear();
     ss.del(TOKEN_KEY); ss.del(SESSION_KEY);
     S.script = null; S.beats = []; S.phase = 'done'; S.playing = false; S.waiters = [];
@@ -256,7 +273,7 @@
   function onKey(e) {
     if (typing(e) || e.altKey || e.ctrlKey || e.metaKey || !S.script || S.phase === 'done') return;
     if (document.querySelector('dialog[open]')) return;
-    const k = e.key, map = { ' ': () => (S.playing ? pause() : resume()), ArrowRight: () => jump(S.index + 1), ArrowLeft: () => jump(S.index - 1),
+    const k = e.key, map = { ' ': toggle, ArrowRight: () => jump(S.index + 1), ArrowLeft: () => jump(S.index - 1),
       PageDown: () => stepScene(1), PageUp: () => stepScene(-1), c: toggleCaptions, C: toggleCaptions, m: toggleSound, M: toggleSound,
       q: ask, Q: ask, Escape: confirmEnd };
     if (S.phase === 'start' && k !== 'm' && k !== 'M' && k !== 'c' && k !== 'C') return;
@@ -265,7 +282,7 @@
     e.preventDefault(); map[k]();
   }
   function wire() {
-    $('shPlay').addEventListener('click', () => (S.playing ? pause() : resume()));
+    $('shPlay').addEventListener('click', toggle);
     $('shPrev').addEventListener('click', () => jump(S.index - 1));
     $('shNext').addEventListener('click', () => jump(S.index + 1));
     $('shPrevScene').addEventListener('click', () => stepScene(-1));
@@ -301,7 +318,7 @@
     if (S.rname !== '3d') return;
     S.R = null; S.rname = '2d'; $('shLabels').textContent = '';
     const B2 = window.JarvisBook2D;
-    if (B2 && S.script) { S.R = B2.mount($('sh2d')); present(S.index); }
+    if (B2 && S.script) { S.R = B2.mount($('sh2d')); present(S.index); hold(S.still); }
     document.documentElement.dataset.bookRenderer = '2d';
   }
   function startCard(sc) {
@@ -312,7 +329,7 @@
     const until = new Date(sc.until);
     if (!isNaN(until) && until.getFullYear() < 2090) $('shUntil').textContent = 'Ends ' + until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     S.phase = 'start'; sync();
-    $('shStartWrap').classList.add('show'); $('shStart').hidden = false; $('shBegin').focus();
+    $('shDone').hidden = true; $('shStartWrap').classList.add('show'); $('shStart').hidden = false; $('shBegin').focus();
   }
   function begin() {
     if (S.phase !== 'start') return;
@@ -331,9 +348,23 @@
     S.audience = audience;
     const T = talk();
     if (!ss.get(TOKEN_KEY)) { S.phase = 'done'; sync(); if (T) T.locked(); return; }
-    let sc = null;
-    try { sc = normalScript(await api('/v1/book/show/script'), audience); }
-    catch (e) { if (e.status === 401 || e.status === 404) { expired(); return; } S.phase = 'done'; wipe(); if (T) T.done({ audience, reason: 'error', detail: e.message }); return; }
+    await load();
+  }
+  /** The script: a definitive refusal ends the session here; a blip is retried, then offered as Try again (token kept). */
+  async function script() {
+    for (let i = 0; ; i += 1) {
+      try { return { sc: normalScript(await api('/v1/book/show/script'), S.audience) }; } catch (e) {
+        if (GONE.has(e.status)) return { gone: true };
+        if (i >= RETRY_MS.length) return { offline: true };
+        await wait(RETRY_MS[i]);
+      }
+    }
+  }
+  async function load() {
+    const T = talk(), audience = S.audience, got = await script();
+    if (got.gone) { expired(); return; }
+    if (got.offline) { S.phase = 'loading'; sync(); if (T) T.offline(load); return; }
+    const sc = got.sc;
     if (!sc) { S.phase = 'done'; wipe(); if (T) T.done({ audience, reason: 'error' }); return; }
     S.script = sc; S.audience = sc.audience; S.beats = timeline(sc);
     S.R = await renderer();
@@ -344,7 +375,7 @@
   window.JarvisBookShow = Object.freeze({
     state: () => ({ phase: S.phase, playing: S.playing, index: S.index, scene: S.beats[S.index] ? S.beats[S.index].scene : 0,
       renderer: S.rname, motion: window.JarvisFX ? window.JarvisFX.motion() : 'full', audio: voice() ? voice().state() : 'none' }),
-    say: (id, text) => (S.closing ? Promise.resolve() : speak({ id, text })),
+    say: (id, text) => { if (S.closing) return Promise.resolve(); interrupt(); return speak({ id, text }); },
     toClosing, expired, resume: () => { if (S.phase === 'questions' || S.closing) return; S.phase = 'playing'; resume(); },
     pause,
   });

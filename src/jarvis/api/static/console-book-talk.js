@@ -7,11 +7,13 @@
 // and -- while a guest lock holds the owner's consoles (D10) -- the hand-back line and Resume, also in any other console
 // tab the lock sent here. The lock id comes from GET /v1/book/show/lock, or from a refused POST /v1/book/resume.
 // No build step; CSP script-src 'self'; textContent only; ASCII source; <= 400 lines.
-// window.JarvisBookTalk = { open({lines, phase}), hide(), clear(), done({audience, line, reason}), locked() }
+// A dropped connection is said calmly ("Can't reach JARVIS..."), never as the browser's raw error.
+// window.JarvisBookTalk = { open({lines, phase}), hide(), clear(), done({audience, line, reason}), locked(), offline(retry) }
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
   const LOCK = /^bl_[0-9a-f]{12}$/, REPLY = /^r_[0-9a-f]{12}$/, MAX_Q = 500, POLL_MS = 4000;
+  const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
   const txt = (v, max = 1200) => (typeof v === 'string' ? v.replace(INVISIBLE, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
@@ -19,7 +21,9 @@
   const B = () => window.JarvisBook;
   const Show = () => window.JarvisBookShow;
   const V = () => window.JarvisBookVoice;
-  const S = { lines: {}, phase: 'show', busy: false, left: null, lockId: '', poll: 0, recording: false, wired: false, gen: 0 };
+  const S = { lines: {}, phase: 'show', busy: false, left: null, lockId: '', poll: 0, recording: false, wired: false, gen: 0, retry: null };
+  /** Plain words for a failure: a dropped connection (fetch's TypeError) gets the calm sentence. */
+  const words = (e, fallback) => (e && e.name === 'TypeError' ? OFFLINE : (e && e.message) || fallback);
 
   // ---- the questions panel -------------------------------------------------------------------------
   function row(who, text, cls) {
@@ -43,7 +47,11 @@
     $('shMic').hidden = !(R && R.supported());
     leftWords(); $('shQ').focus();
   }
-  function hide() { S.gen += 1; $('shTalk').hidden = true; $('show').classList.remove('talking'); stopRec(true); }
+  function hide() {
+    const had = $('shTalk').contains(document.activeElement); // keep the focus in the show (D15)
+    S.gen += 1; $('shTalk').hidden = true; $('show').classList.remove('talking'); stopRec(true);
+    if (had) $('shPlay').focus();
+  }
   function clear() {
     stopRec(true);
     $('shThread').textContent = ''; $('shQ').value = ''; $('shLeft').textContent = '';
@@ -77,7 +85,7 @@
     } catch (e) {
       thinking.remove(); S.busy = false; leftWords();
       if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); return; }
-      sys(e && e.name === 'TypeError' ? 'Can\u2019t reach JARVIS. Check your connection.' : (e && e.message) || 'That question did not go through.');
+      sys(words(e, 'That question did not go through.'));
     }
   }
   // a spoken question: record (tap again to stop, 15 s at most), then the words land in the box
@@ -85,10 +93,13 @@
     const R = V() && V().record;
     if (!R || S.busy) return;
     if (S.recording) { await sendRec(); return; }
+    const gen = S.gen; // the panel closed (a jump, End, the close) while the microphone was starting: it never records
     try {
-      await R.start(); S.recording = true; R.onFull(() => sendRec());
+      if (!(await R.start())) return;
+      if (gen !== S.gen) { R.cancel(); return; }
+      S.recording = true; R.onFull(() => sendRec());
       $('shMic').setAttribute('aria-pressed', 'true'); $('shMic').setAttribute('aria-label', 'Stop and use what I said');
-    } catch (_) { sys('The microphone is not available. Type the question instead.'); }
+    } catch (_) { if (gen === S.gen) sys('The microphone is not available. Type the question instead.'); }
   }
   function stopRec(cancel) {
     const R = V() && V().record;
@@ -106,7 +117,7 @@
       if (!r.ok) throw await B().failure(r);
       const d = obj(await r.json());
       $('shQ').value = txt(d && d.text, MAX_Q);
-    } catch (e) { if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); return; } sys((e && e.message) || 'I didn\u2019t catch that. Type the question instead.'); }
+    } catch (e) { if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); return; } sys(words(e, 'I didn\u2019t catch that. Type the question instead.')); }
     S.busy = false; leftWords(); $('shQ').focus();
   }
   function finish() {
@@ -135,7 +146,7 @@
   function card(title, line, note) {
     $('shStart').hidden = true; $('shDone').hidden = false; $('shStartWrap').classList.add('show');
     $('shDoneTitle').textContent = title; $('shDoneLine').textContent = line || ''; $('shDoneNote').textContent = note || '';
-    $('shDoneFine').textContent = '';
+    $('shDoneFine').textContent = ''; $('shRetry').hidden = true;
   }
   function home() { clearInterval(S.poll); window.location.assign('/'); }
   function showLocked(st, line) {
@@ -170,6 +181,18 @@
     doneWired = true;
     $('shBack').addEventListener('click', home);
     $('shResume').addEventListener('click', resume);
+    $('shRetry').addEventListener('click', () => {
+      if ($('shRetry').disabled || !S.retry) return;
+      $('shRetry').disabled = true; $('shDoneFine').textContent = 'Trying again\u2026'; S.retry();
+    });
+  }
+  /** The show could not be loaded (the network, or the server for a moment): the session and its token stay. */
+  function offline(retry) {
+    wireDone();
+    S.retry = typeof retry === 'function' ? retry : null;
+    card('Build book', '', OFFLINE);
+    $('shResume').hidden = true; $('shBack').hidden = true;
+    const b = $('shRetry'); b.hidden = !S.retry; b.disabled = false; if (S.retry) b.focus();
   }
   /** Resume (D10): a book_resume passkey bound to the lock id lifts the lock for every console. */
   async function resume() {
@@ -191,10 +214,11 @@
       throw new Error('The consoles are still locked. Please try again.');
     } catch (e) {
       const P = window.JarvisPasskey;
-      fine.textContent = (e && e.passkeyMessage) || (e && e.message) || (P && P.message ? P.message(e) : '') || 'That did not work. Please try again.';
+      fine.textContent = (e && e.passkeyMessage) || (e && e.name === 'TypeError' ? OFFLINE : '') || (e && e.message)
+        || (P && P.message ? P.message(e) : '') || 'That did not work. Please try again.';
     }
     btn.disabled = false;
   }
 
-  window.JarvisBookTalk = Object.freeze({ open, hide, clear, done, locked });
+  window.JarvisBookTalk = Object.freeze({ open, hide, clear, done, locked, offline });
 })();

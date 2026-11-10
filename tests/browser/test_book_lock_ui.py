@@ -35,8 +35,8 @@ def browser() -> Iterator[Any]:
         b.close()
 
 
-def _clean(c: Console, *expected: int) -> None:
-    said = [f"status of {code} " for code in expected]
+def _clean(c: Console, *expected: int | str) -> None:
+    said = [f"status of {code} " if isinstance(code, int) else code for code in expected]
     errors = [e for e in c.errors if not any(s in e for s in said)]
     assert errors == [] and c.csp_violations() == []
 
@@ -79,6 +79,23 @@ def test_a_second_console_tab_goes_to_the_show_and_back_after_resume(
             "proof": {"purpose": "book_resume", "target": LOCK_ID, "stub": True}
         }
         _clean(c, 423)
+    finally:
+        c.close()
+
+
+def test_a_dropped_connection_at_resume_is_said_calmly(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, fake = _locked_tab(browser, server_url, token)
+    fake.resume_answers = ["abort"]
+    try:
+        done = c.page.locator("#shDone")
+        c.page.evaluate(PASSKEY_STUB)
+        done.get_by_role("button", name="Resume with my passkey").click()
+        c.page.locator("#shDoneFine", has_text="Can\u2019t reach JARVIS").wait_for()
+        assert "Failed to fetch" not in done.inner_text()
+        assert done.get_by_role("button", name="Resume with my passkey").is_enabled()
+        _clean(c, 423, "net::ERR_FAILED")
     finally:
         c.close()
 

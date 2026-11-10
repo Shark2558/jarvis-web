@@ -129,6 +129,47 @@ def test_the_owner_goes_on_to_the_show_with_the_token_in_this_tab(
         c.close()
 
 
+def test_a_guest_open_replaces_the_console_page_in_this_tab(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """The owner's console is not left as the show tab's Back entry (no back/forward-cache view)."""
+    c, fake = _panel(browser, server_url, token)
+    try:
+        before = c.page.evaluate("history.length")
+        c.page.get_by_role("button", name="Show a guest").click()
+        c.page.wait_for_url("**/book/show")
+        c.page.locator("#shStart").wait_for()
+        assert c.page.evaluate("history.length") == before
+        assert c.page.evaluate("sessionStorage.getItem('jarvis_book_token')") == TOKEN
+        _clean(c)
+    finally:
+        c.close()
+
+
+def test_the_focus_stays_on_its_control_when_the_panel_redraws(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, _ = _panel(browser, server_url, token)
+    try:
+        c.page.get_by_role("button", name="Open for me").click()
+        c.page.locator("#p-book .bk-reader").wait_for()
+        row = c.page.locator("#p-book .bk-sealed li", has_text="9b97eab")
+        with c.page.expect_download():
+            row.get_by_role("button", name="Download code").click()
+        c.page.locator("#p-book .bk-note", has_text="Saved the code").wait_for()
+        assert c.page.evaluate(
+            "document.activeElement.textContent === 'Download code'"
+            " && document.activeElement.closest('li').textContent.includes('9b97eab')"
+        )
+        c.page.locator("#p-book .bk-set .dsc").click()
+        c.page.locator("#p-book .bsw[data-key=talk_through]").click()
+        c.page.locator("#p-book .bk-setnote", has_text="Saved").wait_for()
+        assert c.page.evaluate("document.activeElement.dataset.key") == "talk_through"
+        _clean(c)
+    finally:
+        c.close()
+
+
 def test_a_stale_sign_in_hops_to_google_and_the_guest_open_resumes(
     browser: Any, server_url: str, token: str
 ) -> None:

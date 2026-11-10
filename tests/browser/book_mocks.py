@@ -364,6 +364,7 @@ SCENES = [
         ),
     },
 ]
+HEARD = "How do you keep my data private?"  # what show/hear answers for a spoken question
 LINES = {
     "ask": "Do you have any questions about how I'm built?",
     "anything_else": "Anything else you'd like to know?",
@@ -466,10 +467,18 @@ class FakeBook:
         self.status = status(**status_over)
         self.open_answers: list[tuple[int, Any]] = []  # consumed in order; then a fresh token
         self.script_answer: tuple[int, Any] = (200, script("guest"))
+        self.script_fails: list[
+            Any
+        ] = []  # consumed first: a status code, or "abort" (the network drops)
+        self.hear_answers: list[
+            Any
+        ] = []  # consumed in order ("abort" or (code, body)); then {text}
         self.speak_status = 200
         self.ask_answers: list[dict[str, Any]] = []
         self.lock: dict[str, Any] | None = {"on": False}  # None: a server without the lock route
-        self.resume_answers: list[tuple[int, Any]] = []  # consumed in order; then {resumed: true}
+        self.resume_answers: list[
+            Any
+        ] = []  # consumed in order ("abort" or (code, body)); then resumed
         self.settings = {
             "creator_name": "",
             "show_voice": "cloud",
@@ -482,12 +491,13 @@ class FakeBook:
     def _record(self, route: Any) -> dict[str, Any]:
         req = route.request
         path = "/" + req.url.split("://", 1)[1].split("/", 1)[1].split("?", 1)[0]
-        body = None
-        if req.post_data:
+        body: Any = None
+        raw = req.post_data_buffer  # bytes: a spoken question is a WAV, not text
+        if raw:
             try:
-                body = json.loads(req.post_data)
-            except ValueError:
-                body = req.post_data
+                body = json.loads(raw.decode("utf-8"))
+            except ValueError:  # UnicodeDecodeError is a ValueError too
+                body = raw
         call = {"method": req.method, "path": path, "headers": dict(req.headers), "body": body}
         self.calls.append(call)
         return call
@@ -524,7 +534,12 @@ class FakeBook:
                 self.settings.update(c["body"])
             return j(route, 200, self.settings)
         if p == "/v1/book/show/script":
+            if self.script_fails:
+                return self._fail(route, self.script_fails.pop(0))
             return j(route, *self.script_answer)
+        if p == "/v1/book/show/hear" and m == "POST":
+            got = self.hear_answers.pop(0) if self.hear_answers else (200, {"text": HEARD})
+            return self._fail(route, got) if got == "abort" else j(route, *got)
         if p == "/v1/book/show/speak":
             if self.speak_status != 200:
                 return j(
@@ -542,11 +557,16 @@ class FakeBook:
         if p == "/v1/book/close":
             return j(route, 200, {"closed": True, "wiped": True, "notified": True})
         if p == "/v1/book/resume":
-            code, body = (
-                self.resume_answers.pop(0) if self.resume_answers else (200, {"resumed": True})
-            )
-            return j(route, code, body)
+            got = self.resume_answers.pop(0) if self.resume_answers else (200, {"resumed": True})
+            return self._fail(route, got) if got == "abort" else j(route, *got)
         return j(route, 404, {"error": "not_found", "detail": p})
+
+    @staticmethod
+    def _fail(route: Any, how: Any) -> None:
+        """ "abort": the connection drops (fetch rejects with a TypeError); a number: that status."""
+        if how == "abort":
+            return route.abort("failed")
+        return j(route, int(how), {"error": "unavailable", "detail": "Try again in a moment."})
 
     @staticmethod
     def opened(call: dict[str, Any]) -> dict[str, Any]:

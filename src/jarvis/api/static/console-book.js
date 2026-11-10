@@ -24,7 +24,7 @@
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const Deck = window.JarvisDeck || { open() {}, isOpen: () => false };
   const S = { data: undefined, error: '', busy: false, token: '', session: null, reading: '', resume: null, setup: false,
-    tries: 0, loading: null };
+    tries: 0, loading: null, focus: null };
   let beatTimer = 0, sealTimer = 0, endTimer = 0, noteEl = null, dialog = null, setBox = null, readerBox = null, readerKey = '';
   // ?reauth=done|stale as this page was LOADED: Permissions may already have replaced the address by the time this runs
   const back = (() => {
@@ -162,7 +162,25 @@
     acts.append(button('Start the show', 'primary', () => toShow(S.token, S.session)), button('End session', '', () => end(true)));
     return acts;
   }
+  /** The focused control as text + its place among controls with the same text (a re-render rebuilds them). */
+  function focusKey() {
+    const a = document.activeElement;
+    if (!a || !host.contains(a) || a.tagName !== 'BUTTON') return a === document.body ? S.focus : null;
+    const twins = [...host.querySelectorAll('button')].filter((b) => b.textContent === a.textContent);
+    return { text: a.textContent, n: twins.indexOf(a) };
+  }
+  function refocus(k) {
+    S.focus = null;
+    if (!k) return;
+    const b = [...host.querySelectorAll('button')].filter((x) => x.textContent === k.text)[k.n];
+    if (b && !b.disabled) b.focus(); else if (b) S.focus = k; // disabled while busy: the next render puts it back
+  }
   function render() {
+    const keep = focusKey();
+    paint();
+    refocus(keep);
+  }
+  function paint() {
     host.textContent = '';
     noteEl = noteEl || mk('p', 'bnote bk-note'); noteEl.setAttribute('role', 'status');
     const d = S.data;
@@ -258,11 +276,12 @@
     const left = Date.parse(session.until) - Date.now();
     clearTimeout(endTimer); if (left > 0) endTimer = setTimeout(() => forget('The session reached its time limit and closed.'), left);
   }
-  /** The show runs in this tab: the token moves to this tab's sessionStorage, nowhere else. */
+  /** The show runs in this tab: the token moves to this tab's sessionStorage, nowhere else. A guest's show replaces
+   *  the console page, so it is no Back entry (a back/forward-cache view would skip the lock). */
   function toShow(token, session) {
     ss.set(SHOW_TOKEN, token); ss.set(SHOW_SESSION, JSON.stringify(session || {}));
     S.token = ''; clearInterval(beatTimer); clearTimeout(endTimer);
-    window.location.assign('/book/show');
+    if (session && session.audience === 'guest') window.location.replace('/book/show'); else window.location.assign('/book/show');
   }
 
   // ---- the owner's open session: reader, older releases, download, beat, end -----------------

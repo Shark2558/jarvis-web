@@ -3,9 +3,12 @@
 // say(lineId, text) resolves when the line's audio ends: the cloud voice (the server speaks ITS text for that line id,
 // a beat id, a fixed line's key or a reply id; decoded by Web Audio, so no media element and no CSP change), else the
 // browser's speechSynthesis (from the first 402 / 503 / decode error on, for the rest of the show), else -- sound off,
-// or no voice at all -- captions only: 330 ms a word + 800 ms. Pause, resume and stop work in every mode.
+// or no voice at all -- captions only: 330 ms a word + 800 ms. Pause, resume and stop work in every mode, also while a
+// line's audio is still being fetched: it then waits, paused, and starts on resume (never late, never by itself).
 // record: a spoken question (<= 15 s, 16 kHz PCM16 WAV) through the console's capture worklet, for POST /v1/book/show/hear.
-// Nothing is stored; dispose() stops and closes everything (the page calls it at the close, D14).
+// The microphone opens only from a tap; a cancel or the close while it is still starting (the permission prompt, the
+// worklet) wins: the stream is stopped and nothing is recorded. Nothing is stored; dispose() stops and closes
+// everything (the page calls it at the close, D14).
 // No build step; CSP script-src 'self'; textContent only; ASCII source; <= 400 lines.
 // window.JarvisBookVoice = {start(voice), say, prefetch, pause, resume, stop, mute, level, state, dispose, record}
 (() => {
@@ -14,7 +17,7 @@
   const WORD_MS = 330, TAIL_MS = 800, START_MS = 1500, CACHE = 3, MAX_REC_S = 15, RATE = 16000;
   const WORKLET = '/static/voice-capture-worklet.js';
   const S = { ctx: null, gain: null, an: null, data: null, mode: 'cloud', muted: false, closed: false, seq: 0, cur: null,
-    cache: new Map(), pulse: 0, lv: 0 };
+    cache: new Map(), pulse: 0, lv: 0, paused: false };
   const captionMs = (text) => (String(text || '').split(/\s+/).filter(Boolean).length * WORD_MS) + TAIL_MS;
   const B = () => window.JarvisBook;
   const synth = () => { try { return window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function' ? window.speechSynthesis : null; } catch (_) { return null; } };
@@ -55,13 +58,21 @@
   function playBuffer(buf, my) {
     return new Promise((resolve) => {
       if (my !== S.seq || S.closed) { resolve('stopped'); return; }
-      if (S.ctx.state === 'suspended') S.ctx.resume().catch(() => {}); // a pause, then a jump: the new line plays
       const src = S.ctx.createBufferSource();
       src.buffer = buf; src.connect(S.an);
       const cur = { kind: 'audio', src, resolve, at: performance.now(), ms: buf.duration * 1000 };
       src.onended = () => end(cur, 'ended');
-      S.cur = cur; src.start();
+      S.cur = cur;
+      if (held(cur)) return; // paused while it was fetched: it starts on resume
+      if (S.ctx.state === 'suspended') S.ctx.resume().catch(() => {}); // a pause, then a jump: the new line plays
+      src.start();
     });
+  }
+  /** Pause came while the line was still on its way: it waits, paused, for resume() to start it. */
+  function held(cur) {
+    if (!S.paused) return false;
+    cur.paused = true; cur.waiting = true;
+    return true;
   }
 
   // ---- the browser voice -------------------------------------------------------------------------
@@ -76,11 +87,16 @@
       u.onend = () => end(cur, 'ended');
       u.onerror = () => end(cur, 'ended');
       S.cur = cur;
-      // no voice in this browser (it never starts): captions set the pace from here on
-      cur.watch = setTimeout(() => { if (!cur.started && S.cur === cur) { S.mode = 'captions'; try { sp.cancel(); } catch (_) {} toTimer(cur, captionMs(text)); } }, START_MS);
-      cur.cap = setTimeout(() => end(cur, 'ended'), captionMs(text) * 2 + 4000);
-      try { sp.resume(); sp.speak(u); } catch (_) { toTimer(cur, captionMs(text)); }
+      if (!held(cur)) utter(cur, sp);
     });
+  }
+  function utter(cur, sp) {
+    const text = cur.text;
+    cur.at = performance.now();
+    // no voice in this browser (it never starts): captions set the pace from here on
+    cur.watch = setTimeout(() => { if (!cur.started && S.cur === cur) { S.mode = 'captions'; try { sp.cancel(); } catch (_) {} toTimer(cur, captionMs(text)); } }, START_MS);
+    cur.cap = setTimeout(() => end(cur, 'ended'), captionMs(text) * 2 + 4000);
+    try { sp.resume(); sp.speak(cur.u); } catch (_) { toTimer(cur, captionMs(text)); }
   }
 
   // ---- captions only: a pausable timer -------------------------------------------------------------
@@ -88,14 +104,16 @@
     return new Promise((resolve) => {
       if (my !== S.seq) { resolve('stopped'); return; }
       const cur = { kind: 'timer', resolve, left: ms, at: performance.now() };
-      S.cur = cur; cur.timer = setTimeout(() => end(cur, 'ended'), ms);
+      S.cur = cur;
+      if (S.paused) { cur.paused = true; return; } // resume() starts its timer
+      cur.timer = setTimeout(() => end(cur, 'ended'), ms);
     });
   }
   /** The current line goes on as a timer for its remaining caption time (sound switched off mid-line). */
   function toTimer(cur, ms) {
     clearTimeout(cur.watch); clearTimeout(cur.cap);
-    cur.kind = 'timer'; cur.left = Math.max(300, ms); cur.at = performance.now();
-    cur.timer = setTimeout(() => end(cur, 'ended'), cur.left);
+    cur.kind = 'timer'; cur.left = Math.max(300, ms); cur.at = performance.now(); cur.waiting = false;
+    if (!cur.paused) cur.timer = setTimeout(() => end(cur, 'ended'), cur.left); // paused: resume() starts it
   }
   function end(cur, how) {
     if (cur.done) return;
@@ -107,6 +125,7 @@
   async function say(id, text) {
     stop();
     const my = ++S.seq;
+    S.paused = false; // a new line is meant to be heard; a Pause while its audio loads holds it (held())
     if (S.closed || !text) return 'stopped';
     if (!S.muted && S.mode === 'cloud' && S.ctx && ID.test(id || '')) {
       try {
@@ -132,6 +151,7 @@
     end(cur, 'stopped');
   }
   function pause() {
+    S.paused = true; // also holds a line whose audio is still being fetched
     const cur = S.cur;
     if (!cur || cur.paused) return;
     cur.paused = true;
@@ -140,10 +160,12 @@
     else { clearTimeout(cur.timer); cur.left = Math.max(0, cur.left - (performance.now() - cur.at)); }
   }
   function resume() {
+    S.paused = false;
     if (S.ctx && S.ctx.state === 'suspended' && !S.closed) S.ctx.resume().catch(() => {});
     const cur = S.cur;
     if (!cur || !cur.paused) return;
     cur.paused = false;
+    if (cur.waiting) { cur.waiting = false; if (cur.kind === 'audio') { cur.at = performance.now(); cur.src.start(); } else utter(cur, synth()); return; }
     if (cur.kind === 'speech') { const sp = synth(); try { if (sp) sp.resume(); } catch (_) {} cur.cap = setTimeout(() => end(cur, 'ended'), captionMs(cur.text) + 4000); }
     else if (cur.kind === 'timer') { cur.at = performance.now(); cur.timer = setTimeout(() => end(cur, 'ended'), cur.left); }
   }
@@ -181,14 +203,21 @@
 
   // ---- a spoken question: the console's capture worklet, 16 kHz frames, a WAV for show/hear --------
   const rec = (() => {
-    let live = null;
+    let live = null, starting = false, gen = 0; // gen: bumped by cancel() and dispose(); a start that sees it move gives up
     const supported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && (window.AudioContext || window.webkitAudioContext) && window.AudioWorkletNode);
+    /** true: recording now. false: not started (already busy, closed, or cancelled while it was starting). */
     async function begin() {
-      if (live || S.closed) return false;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-      const AC = window.AudioContext || window.webkitAudioContext, ctx = new AC();
+      if (live || starting || S.closed) return false;
+      const my = gen, stale = () => my !== gen || S.closed;
+      starting = true;
+      let stream = null, ctx = null;
       try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+        if (stale()) return false;
+        const AC = window.AudioContext || window.webkitAudioContext;
+        ctx = new AC();
         await ctx.audioWorklet.addModule(WORKLET);
+        if (stale()) return false;
         const node = new AudioWorkletNode(ctx, 'jarvis-capture', { channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
         const frames = [], src = ctx.createMediaStreamSource(stream);
         live = { stream, ctx, node, frames, src };
@@ -196,7 +225,10 @@
         src.connect(node);
         live.timer = setTimeout(() => { if (live && live.onfull) live.onfull(); }, MAX_REC_S * 1000);
         return true;
-      } catch (e) { stream.getTracks().forEach((t) => t.stop()); try { ctx.close(); } catch (_) {} throw e; }
+      } finally {
+        starting = false;
+        if (!live || live.stream !== stream) { if (stream) stream.getTracks().forEach((t) => t.stop()); if (ctx) { try { ctx.close(); } catch (_) {} } }
+      }
     }
     function release() {
       const l = live; live = null;
@@ -222,7 +254,7 @@
       start: begin,
       onFull(fn) { if (live) live.onfull = fn; },
       stop() { const f = release(); return f && f.length ? wav(f) : null; },
-      cancel() { release(); },
+      cancel() { gen += 1; release(); },
       active: () => !!live,
     };
   })();

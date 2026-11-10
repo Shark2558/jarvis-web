@@ -17,8 +17,9 @@
   const SVG = 'http://www.w3.org/2000/svg';
   const fmt = (n) => { try { return new Intl.NumberFormat('en-IN').format(n); } catch (_) { return String(n); } };
   const inr = (v) => '\u20b9' + (v >= 100 ? fmt(Math.round(v)) : (Math.round(v * 100) / 100).toFixed(2));
-  const LAYER_NAMES = { L1: 'User interaction', L2: 'Input processing', L3: 'Context and orchestration', L4: 'Core reasoning',
-    L5: 'Skills', L6: 'Integration and tools', L7: 'Data and persistence', L8: 'Response and output', X: 'Cross-cutting' };
+  // the architecture's own names, as buildbook/sections.py LAYERS gives them (a static test keeps the two equal)
+  const LAYER_NAMES = { L1: 'User Interaction', L2: 'Input Processing', L3: 'Context & Orchestration', L4: 'Core Reasoning Engine',
+    L5: 'Skills & Capabilities', L6: 'Integration & Tools', L7: 'Data & Persistence', L8: 'Response & Output', X: 'Cross-cutting' };
   const FLAG = { copyleft: 'Copyleft', non_commercial: 'Non-commercial' };
   const KIND = { not_in_plan: 'Not in a plan', risk: 'Risk', needs_owner: 'Needs you', open_question: 'Open question', deferred: 'Deferred', licence: 'Licence' };
   let seq = 0;
@@ -198,7 +199,14 @@
     noteEl.setAttribute('role', 'status');
     let data = null;
     const say = (kind, words) => { noteEl.className = 'bnote bk-setnote' + (kind ? ' ' + kind : ''); noteEl.textContent = words; };
+    const keyOf = (n) => (n && (n.dataset.key || n.id || n.textContent)) || '';
     const paint = (body) => {
+      const a = document.activeElement, was = a && body.contains(a) ? keyOf(a) : ''; // a save repaints: keep the focus
+      draw(body);
+      const back = was && [...body.querySelectorAll('button, input, select')].find((n) => keyOf(n) === was);
+      if (back) back.focus();
+    };
+    const draw = (body) => {
       body.textContent = '';
       if (!data) { body.append(mk('p', 'bempty', 'Reading the settings...')); return; }
       const save = async (patch) => {

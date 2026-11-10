@@ -7,7 +7,8 @@
 // A beat lights what its `focus` names (a fact's label, value or group, or its 1-based place); a flow with no focus
 // walks one step a beat. Also fills every `.sh-emblem` with the console's 2D Core (built node by node, no markup).
 // No build step; CSP script-src 'self'; textContent only; ASCII source; <= 400 lines.
-// window.JarvisBook2D = { mount(host) -> { show(scene, beatIndex, beat, ctx), dispose() }, emblem(el) }
+// hold(true) stills the Core's endless spin and breathing (Pause, WCAG 2.2.2); the cards' one-off entries still finish.
+// window.JarvisBook2D = { mount(host) -> { show(scene, beatIndex, beat, ctx), hold(on), dispose() }, emblem(el) }
 (() => {
   'use strict';
   const SVG = 'http://www.w3.org/2000/svg';
@@ -41,6 +42,10 @@
     }
     const c2 = 2 * Math.PI * 43, c3 = 2 * Math.PI * 31;
     sv('circle', { class: 'arc', cx: 60, cy: 60, r: 43, 'stroke-width': 3, 'stroke-dasharray': r2(c2 * 70 / 360) + ' ' + r2(c2 * 50 / 360) }, g2);
+    [95, 215, 335].forEach((deg) => { // coreSVG's three diamonds on the middle ring
+      const a = (deg - 90) * Math.PI / 180, x = r2(60 + 36.5 * Math.cos(a)), y = r2(60 + 36.5 * Math.sin(a));
+      sv('rect', { class: 'mark', x: r2(x - 2), y: r2(y - 2), width: 4, height: 4, transform: 'rotate(' + (deg + 45) + ' ' + x + ' ' + y + ')' }, g2);
+    });
     sv('circle', { class: 'faint', cx: 60, cy: 60, r: 31, 'stroke-width': 1, 'stroke-dasharray': '1 3' }, g3);
     sv('circle', { class: 'arc2', cx: 60, cy: 60, r: 31, 'stroke-width': 2.2, 'stroke-dasharray': r2(c3 * 40 / 360) + ' ' + r2(c3 * 140 / 360) }, g3);
     sv('circle', { cx: 60, cy: 60, r: 22, fill: 'url(#' + id + ')' }, glow);
@@ -176,8 +181,9 @@
       if (cur.packet) place(cur.packet, cur.items[[...on][0]]);
       if (scene.n === 13) { cur.box.classList.toggle('fold', beatIndex >= 1); cur.box.classList.toggle('fade', beatIndex >= 2); }
     }
-    function dispose() { host.textContent = ''; host.hidden = true; cur = null; document.documentElement.classList.remove('book-2d'); }
-    return { show, dispose };
+    function hold(on) { host.classList.toggle('held', !!on); }
+    function dispose() { host.textContent = ''; host.hidden = true; host.classList.remove('held'); cur = null; document.documentElement.classList.remove('book-2d'); }
+    return { show, hold, dispose };
   }
 
   window.JarvisBook2D = Object.freeze({ mount, emblem });

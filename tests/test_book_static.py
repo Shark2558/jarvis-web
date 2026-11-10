@@ -187,6 +187,21 @@ def test_the_3d_colours_are_the_console_palette() -> None:
             assert hexcol.lower() in allowed, (name, hexcol)
 
 
+def test_the_reader_names_the_layers_as_the_book_does() -> None:
+    """The panel and scene 2 name each layer one way: buildbook.sections.LAYERS."""
+    from jarvis.buildbook.sections import LAYERS
+
+    m = re.search(r"LAYER_NAMES = \{(.*?)\};", _read("console-book-reader.js"), re.S)
+    assert m
+    assert dict(re.findall(r"(\w+): '([^']*)'", m.group(1))) == dict(LAYERS)
+
+
+def test_the_3d_labels_are_text_for_screen_readers() -> None:
+    """WCAG 1.1.1: on a desktop a scene's facts are only in the labels over the canvas."""
+    tag = re.search(r"<div[^>]*id=\"shLabels\"[^>]*>", _read("book.html"))
+    assert tag and "aria-hidden" not in tag.group(0)
+
+
 def test_rupees_only() -> None:
     for name in JS:
         for lit in re.findall(r"'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`", _read(name)):

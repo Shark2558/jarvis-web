@@ -6,23 +6,23 @@ The 13 assets are already in `APP_ASSETS` (I0), and `/book/show` already serves 
 ## Files (all ASCII, no `innerHTML`/`eval`, text set with `textContent` only)
 | File | Lines | What |
 |---|---|---|
-| `console-book.js` | 352 | Book panel: status, Open (passkey + fresh sign-in, `?reauth=done` resume), owner session (reader, older releases, code download, beat, End), settings host |
-| `console-book-reader.js` | 230 | The 8 sections as lazy disclosures; Book settings form |
+| `console-book.js` | 371 | Book panel: status, Open (passkey + fresh sign-in, `?reauth=done` resume), owner session (reader, older releases, code download, beat, End), settings host |
+| `console-book-reader.js` | 238 | The 8 sections as lazy disclosures; Book settings form |
 | `console-book.css` | 63 | Panel layout only (existing components) |
-| `book.html` | 114 | Show markup: top bar, stage (canvas, labels, 2D host), captions, controls, questions, start and end cards, two dialogs |
-| `book.css` | 181 | Show layout: desktop and phone, Night and Day, motion levels |
-| `console-book-show.js` | 353 | Transport (`window.JarvisBook`, minimal `window.JarvisConsole.api` for JarvisPasskey), script checks, timeline, keys, captions, 60 s beat, close and wipe |
-| `console-book-voice.js` | 231 | Cloud voice (Web Audio, one beat prefetched), browser voice, captions-only timing, `level()`, spoken-question recorder |
-| `console-book-talk.js` | 200 | Questions, hand-back, lock screen, Resume |
-| `console-book-2d.js` | 185 | 2D show (< 900 px, no WebGL2, governor retire); the 2D Core built node by node |
-| `console-book-3d.js` | 299 | ES module: WebGL2 probe, three r187, palette kit, labels, governor tiers, teardown |
+| `book.html` | 115 | Show markup: top bar, stage (canvas, labels, 2D host), captions, controls, questions, start and end cards, two dialogs |
+| `book.css` | 182 | Show layout: desktop and phone, Night and Day, motion levels |
+| `console-book-show.js` | 384 | Transport (`window.JarvisBook`, minimal `window.JarvisConsole.api` for JarvisPasskey), script checks, timeline, keys, captions, 60 s beat, close and wipe |
+| `console-book-voice.js` | 263 | Cloud voice (Web Audio, one beat prefetched), browser voice, captions-only timing, `level()`, spoken-question recorder |
+| `console-book-talk.js` | 224 | Questions, hand-back, lock screen, Resume |
+| `console-book-2d.js` | 191 | 2D show (< 900 px, no WebGL2, governor retire); the 2D Core built node by node |
+| `console-book-3d.js` | 301 | ES module: WebGL2 probe, three r187, palette kit, labels, governor tiers, teardown |
 | `console-book-scenes.js` | 138 | Scenes 1, 2, 12, 13 (`createCore` from `console-3d-scenes.js`, unchanged) |
 | `console-book-scenes-flow.js` | 158 | Scenes 3, 5, 6, 8 |
 | `console-book-scenes-data.js` | 181 | Scenes 4, 7, 9, 10, 11 |
 
-Tests: `tests/test_book_static.py` (45), `tests/browser/test_book_panel.py` (9), `test_book_show.py` (13),
-`test_book_lock_ui.py` (12, which includes D's visual gate on `#p-book` and `/book/show`), and `tests/browser/book_mocks.py`
-(the Contract as `page.route` stubs).
+Tests: `tests/test_book_static.py` (47), `tests/browser/test_book_panel.py` (11), `test_book_show.py` (17),
+`test_book_show_hold.py` (14, the review fixes), `test_book_lock_ui.py` (13, which includes D's visual gate on `#p-book`
+and `/book/show`), and `tests/browser/book_mocks.py` (the Contract as `page.route` stubs).
 
 ## Contract D codes against (B and C: please match it, or tell I1 what differs)
 - `GET /v1/book`: the Contract fields. Sealing in progress (D7) is `reason: "sealing"` or `sealing: true`. The panel then
@@ -103,7 +103,7 @@ Tests: `tests/test_book_static.py` (45), `tests/browser/test_book_panel.py` (9),
    list of `test_console.Console`. Either way the test is green again. The show page asks for the lock only in Google
    mode (it reads `/console/config`), so I0's other show seams stay green on a token-mode test server.
 5. Nothing else: no new asset, no CSP change, no new setting. Spoken questions reuse `voice-capture-worklet.js`.
-   Pause also holds the 3D still (WCAG 2.2.2), and the questions scene keeps the Core moving.
+   Pause holds all motion, 3D and 2D (WCAG 2.2.2); in Questions, Play/Space holds or frees the listening Core.
 
 ## Decided differently from the plan (and why)
 - `book.html`'s `<main>` class is now `sh-main`, not `show`. `.show` is the console's "visible" class for `.gate`, so the
@@ -119,3 +119,36 @@ Tests: `tests/test_book_static.py` (45), `tests/browser/test_book_panel.py` (9),
   retire.
 - `engineOn` (the 3D engine's closure, 106 lines) is a factory of small functions, each ≤ 50 lines, in the same
   pattern as `console-3d.js` `createEngine`.
+
+## Fixes (after the fresh-context reviews `review-D-security.md` and `review-D-code.md`)
+Each fix has a test that failed on 4621e27 first. Two guards that already held (3D teardown, Pause holding the 3D loop)
+were checked by breaking the code on purpose: both tests then fail.
+
+| Finding | Fix | Test |
+|---|---|---|
+| Sec M1: mic live after a cancel or the close | `record.start()` keeps a cancel generation (`cancel()`/`dispose()` bump it) and a one-start guard; after each await it gives up, stops the tracks and closes its context. `mic()` records only if `start()` returned true and the panel was not closed meanwhile. | `test_a_mic_still_starting_never_records_after_a_cancel[back,end]` |
+| Code M1: Pause missed a line still being fetched | `S.paused` in the voice: a line that arrives while paused (cloud audio, or the browser voice after a failed fetch, or captions) waits and starts on resume. A new `say()` clears it. | `test_pause_holds_a_line_whose_audio_is_still_coming[cloud,browser]` |
+| Code M2: WCAG 2.2.2, Pause held only 3D, nothing in Questions | 2D `hold(on)` toggles `.held` on `#sh2d` (`.core *{animation-play-state:paused}`, one CSS line, no token). In Questions, Space/Play holds or frees the Core (the button shows Pause while it moves); a jump while paused stays still; a 3D-to-2D fallback keeps the hold. | `test_pause_holds_the_2d_core_on_a_phone`, `test_play_holds_the_core_in_questions_too[3d,2d]`, keys test asserts the 3D loop stops |
+| Code M3: a blip wiped the token, raw "Failed to fetch" | The script is retried after 0.8 s and 2 s; only 401/403/404/410 forget the token. Still down: the done card says "Can't reach JARVIS. Check your connection." with **Try again** (`#shRetry`, an existing `.cta`); nothing is closed. `sendRec` and Resume map a dropped connection to the same sentence. | `test_a_blip_loading_the_show_is_retried_and_keeps_the_session`, `test_a_connection_still_down_keeps_the_session_and_offers_try_again`, expired test over 401/403/404/410, `test_a_spoken_question_lands_in_the_box_and_a_drop_is_said_calmly`, `test_a_dropped_connection_at_resume_is_said_calmly` |
+| Code M4: a broken 3D layer kept CI green | `boot()` and `mount()` warn (`Build book 3D off: ...`) like `fail()`. `_need_3d` skips only on `no-webgl2`; `_clean` fails on that warning. | `test_a_3d_layer_that_fails_to_load_is_reported_never_silent`, `test_the_close_releases_the_3d_engine` (contexts lost, no rAF, listeners removed or aborted, observers disconnected) |
+| Sec L3: guest hand-off by `location.assign` | A guest's show uses `location.replace` (the owner's "Start the show" keeps `assign`). | `test_a_guest_open_replaces_the_console_page_in_this_tab` |
+| Sec L4: chapter list kept after the close | `wipe()` clears `#shChapterItems` and closes the list. | `test_end_asks_first_then_wipes` |
+| Code L5: focus lost | Hiding the questions moves the focus to Play; the panel and the settings put the focus back on the same control after a redraw. | `test_the_focus_stays_in_the_show_when_the_questions_close`, `test_the_focus_stays_on_its_control_when_the_panel_redraws` |
+| Code L6: 3D facts hidden from screen readers | `#shLabels` is no longer `aria-hidden`. | static `test_the_3d_labels_are_text_for_screen_readers` |
+| Code L7: two names for each layer | The reader uses `buildbook/sections.py` `LAYERS` names exactly; a static test keeps them equal. | static `test_the_reader_names_the_layers_as_the_book_does` |
+| Code L8: a reply mid-show cut the line | A reply spoken outside Questions holds the show; Play speaks the cut line again. | `test_a_reply_mid_show_then_play_replays_the_line_it_cut` |
+| Code L10: 2D Core without its diamonds | The three `rect.mark` diamonds, as `coreSVG` draws them. | `test_the_2d_core_is_the_consoles_own` |
+
+Not fixed here:
+- **Sec M2** (open console tabs keep showing during a guest show): `console.js` is a wiring file; I1 adds the
+  `visibilitychange`/`focus`/`pageshow` re-check.
+- **Sec L5** (the owner's token in the console tab's memory for the reader): unchanged; I1 records it as an accepted
+  deviation from D9's letter.
+- **Code L9** (`test_r6_seams.py` red on the 503): I1, as section 4 above says.
+- **Code L11** (`engineOn` is 106 lines): left as is, following `console-3d.js` `createEngine`; its nested functions are
+  each <= 50 lines. Splitting it means threading its closure state through new functions, which risks the teardown
+  this round just pinned. I1: record an exception, or split it when the engine next changes.
+
+Also: `book_mocks.FakeBook` records request bodies from the raw buffer (a WAV is not text), and its script, hear and
+resume routes can answer `"abort"` (a dropped connection) or a status.
+

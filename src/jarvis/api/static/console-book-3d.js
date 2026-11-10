@@ -249,7 +249,7 @@ function engineOn(THREE, builders, createCore, o, renderer) {
     if (!running) still();
   }
   function retire() { dispose(); stats.state = 'retired'; if (typeof o.onRetire === 'function') o.onRetire(); }
-  function fail(err) { retire(); if (window.console && console.warn) console.warn('Build book 3D off:', err && err.message ? err.message : err); }
+  function fail(err) { retire(); warn(err); }
   function dispose() {
     if (disposed) return;
     disposed = true; running = false; stats.running = false;
@@ -282,8 +282,10 @@ async function boot() {
     const [THREE, core, mods] = await Promise.all([import(THREE_URL), import('./console-3d-scenes.js'), loadScenes()]);
     const builders = Object.assign({}, ...mods.map((m) => m.SCENES || {}));
     return { THREE, builders, createCore: core.createCore };
-  } catch (_) { stats.state = 'load-failed'; return null; }
+  } catch (err) { stats.state = 'load-failed'; warn(err); return null; }
 }
+/** A 3D layer that cannot load or start says so in the console (the show goes on as 2D cards). */
+function warn(err) { if (window.console && console.warn) console.warn('Build book 3D off:', err && err.message ? err.message : err); }
 let lib = null, engine = null;
 const ready = boot().then((x) => { lib = x; return !!x; });
 window.JarvisBook3D = Object.freeze({
@@ -292,7 +294,7 @@ window.JarvisBook3D = Object.freeze({
   mount(o) {
     if (engine) return engine;
     if (!lib || !o || !o.canvas || !o.labels || window.innerWidth < MIN_WIDTH) return null;
-    try { engine = createEngine(lib.THREE, lib.builders, lib.createCore, o); } catch (err) { stats.state = 'failed'; engine = null; }
+    try { engine = createEngine(lib.THREE, lib.builders, lib.createCore, o); } catch (err) { stats.state = 'failed'; engine = null; warn(err); }
     return engine;
   },
   stats: () => Object.assign({}, stats),

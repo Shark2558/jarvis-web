@@ -119,6 +119,17 @@ LAYOUT = """() => {
 }"""
 
 
+# the 3D layer is on scene n and has placed every one of its labels: each is pinned (a transform) or
+# hidden (no room, or behind the camera); a label just set and not yet placed has neither
+PLACED = """() => window.JarvisBook3D.stats().scene === %d && [...document.querySelectorAll('#shLabels .sh-lbl')]
+  .every((e) => e.style.visibility === 'hidden' || e.style.transform !== '')"""
+# code re-review #4: count every time a label's words are replaced by the very same words
+REWRITES = """() => { window.__same = 0; new MutationObserver((ms) => ms.forEach((m) => {
+  const was = m.removedNodes[0], now = m.addedNodes[0];
+  if (m.target !== m.currentTarget && was && now && was.data === now.data) window.__same += 1;
+})).observe(document.getElementById('shLabels'), { subtree: true, childList: true }); }"""
+
+
 def _hold(c: Any) -> None:
     """Pause the show, so a scene stays on screen while its labels are measured."""
     c.page.keyboard.press("Space")
@@ -130,7 +141,7 @@ def _goto(c: Any, n: int) -> dict[str, Any]:
     title = next(s["title"] for s in SCENES if s["n"] == n)
     c.page.locator("#shChapterList button", has_text=title).click()
     c.page.wait_for_function(f"() => window.JarvisBookShow.state().scene === {n}")
-    c.page.wait_for_timeout(400)
+    c.page.wait_for_function(PLACED % n)  # a condition, not a time (code re-review #5)
     return dict(c.page.evaluate(LAYOUT))
 
 
@@ -185,6 +196,34 @@ def test_in_motion_the_labels_still_never_overlap(
             got = _goto(c, 9)
             assert got["over"] == [], got["over"]
             c.page.wait_for_timeout(700)
+        _clean(c)
+    finally:
+        c.close()
+
+
+CROWDED = {"width": 900, "height": 560}  # scene 9's stack then leaves labels without room
+
+
+def test_the_more_label_is_written_only_when_its_count_changes(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Code re-review #4: "+N more" was rewritten (and measured after the label writes) on every
+    drawn frame while any label was hidden; now its words change only with the count."""
+    c, _ = _show(browser, server_url, token, CROWDED, scenes=SCENES, reduced=True)
+    try:
+        _begin(c)
+        _need_3d(c)
+        _hold(c)
+        got = _goto(c, 9)
+        assert [t for t in got["shown"] if t.startswith("+") and t.endswith(" more")], got
+        c.page.evaluate(REWRITES)
+        frames = c.page.evaluate("() => window.JarvisBook3D.stats().frames")
+        c.page.evaluate("() => document.activeElement && document.activeElement.blur()")
+        for _ in range(2):  # play, pause: each redraws the still scene (reduced motion)
+            c.page.keyboard.press("Space")
+        c.page.wait_for_function(f"() => window.JarvisBook3D.stats().frames >= {frames + 2}")
+        assert c.page.evaluate("() => window.JarvisBookShow.state().scene") == 9
+        assert c.page.evaluate("() => window.__same") == 0
         _clean(c)
     finally:
         c.close()

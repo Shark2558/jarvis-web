@@ -137,12 +137,15 @@ function labelLayer(THREE, host, canvas, camera) {
     const x = Math.max(EDGE, Math.min(w - lw - EDGE, (v.x + 1) / 2 * w - (l.align === 'left' ? 0 : lw / 2)));
     return { x, y: (1 - v.y) / 2 * h - lh / 2, w: lw, h: lh };
   }
-  function count(n, boxes, w, h) {
+  /** "+N more": its size was read with the other reads (`size`); its words, and so a fresh measure, change only
+   *  with the count (code re-review #4: no forced layout per drawn frame while labels are hidden). */
+  function count(n, boxes, h, size) {
     if (!more) return;
-    more.textContent = n ? '+' + n + ' more' : '';
+    const words = n ? '+' + n + ' more' : '';
+    if (more.textContent !== words) { more.textContent = words; size = n ? { w: more.offsetWidth, h: more.offsetHeight } : size; }
     more.style.visibility = n ? '' : 'hidden';
     if (!n) return;
-    const s = { x: EDGE, y: h - more.offsetHeight - EDGE, w: more.offsetWidth, h: more.offsetHeight };
+    const s = { x: EDGE, y: h - size.h - EDGE, w: size.w, h: size.h };
     const y = settle(s, boxes, h);
     more.style.transform = 'translate(' + EDGE + 'px,' + Math.round(y === null ? s.y : y) + 'px)';
   }
@@ -161,7 +164,7 @@ function labelLayer(THREE, host, canvas, camera) {
     light(lit) { list.forEach((l) => l.el.classList.toggle('on', l.key !== undefined && lit.has(l.key))); },
     place() {
       const w = canvas.clientWidth, h = canvas.clientHeight, boxes = [];
-      const spots = list.map((l) => spot(l, w, h));
+      const spots = list.map((l) => spot(l, w, h)), size = more ? { w: more.offsetWidth, h: more.offsetHeight } : null;
       const order = list.map((l, i) => i).sort((a, b) => rank(list[a]) - rank(list[b]) || a - b);
       let hidden = 0;
       order.forEach((i) => {
@@ -174,7 +177,7 @@ function labelLayer(THREE, host, canvas, camera) {
         if (!off) l.el.style.transform = 'translate(' + Math.round(s.x) + 'px,' + Math.round(s.y) + 'px)';
         l.el.style.visibility = off ? 'hidden' : '';
       });
-      count(hidden, boxes, w, h);
+      count(hidden, boxes, h, size);
     },
     clear() { list = []; more = null; host.textContent = ''; },
   };

@@ -12,6 +12,14 @@ const FLAG = { copyleft: 'Copyleft', non_commercial: 'Non-commercial' };
 const fmt = (n) => { try { return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n); } catch (_) { return String(n); } };
 const cut = (s, max) => (s.length > max ? s.slice(0, max - 1) + '\u2026' : s);
 const text = (f, max) => cut([f.label, f.value].filter(Boolean).join(' \u00b7 '), max);
+const LINE = 60; // a label line's characters; .sh-lbl wraps a long one inside its 300 px (screenshot finding O1)
+/** Two lines, never cut short in practice (O1, O2): the name, then what it is. */
+const lines = (a, b) => [cut(a || '', LINE), cut(b || '', LINE)].filter(Boolean).join('\n');
+/** Scene 10's "Claude Opus 5.5, output" + "\u20b91,904.80" -> "Claude Opus 5.5" / "output \u00b7 \u20b91,904.80" (O2). */
+function priceLines(f) {
+  const m = /^(.*), (input|output)$/.exec(f.label || '');
+  return m ? lines(m[1], m[2] + (f.value ? ' \u00b7 ' + f.value : '')) : lines(f.label, f.value);
+}
 
 function node(k, at, role) {
   const { THREE, K } = k, g = new THREE.Group(), edge = K.line(role || 'line'), fill = K.mesh('bold', 'fill');
@@ -50,7 +58,7 @@ function memory(k) {
     const a = -1.15 + 2.3 * (n > 1 ? j / (n - 1) : 0.5), at = [1.1 + 3.6 * Math.cos(a), 3.0 * Math.sin(a), 0];
     branches.push(1.1, 0, 0, ...at);
     const p = node(k, at); p.key = purposes[j]; root.add(p.g); items.push(p);
-    labels.push({ text: cut(k.facts[purposes[j]].label, 28), obj: p.g, at: new THREE.Vector3(0.42, 0, 0), key: purposes[j], align: 'left' });
+    labels.push({ text: cut(k.facts[purposes[j]].label, LINE), obj: p.g, at: new THREE.Vector3(0.42, 0, 0), key: purposes[j], align: 'left' });
   }
   if (branches.length) root.add(new THREE.LineSegments(K.positions(branches), K.line('soft')));
   return {
@@ -70,7 +78,7 @@ function home(k) {
   k.facts.slice(0, MAX).forEach((f, i) => { const g = (f.group || '').toLowerCase(); (g === 'home' ? inside : g === 'edge' ? edge : out).push(i); });
   const put = (i, at) => {
     const n = node(k, at); n.key = i; root.add(n.g); items.push(n);
-    labels.push({ text: text(k.facts[i], 30), obj: n.g, at: new THREE.Vector3(0, -0.55, 0), key: i });
+    labels.push({ text: lines(k.facts[i].label, k.facts[i].value), obj: n.g, at: new THREE.Vector3(0, -0.55, 0), key: i });
     return at;
   };
   inside.forEach((i, j) => { const a = (j / Math.max(1, inside.length)) * Math.PI * 2 + 0.4, r = inside.length > 1 ? 1.35 : 0; put(i, [cx + r * Math.cos(a), r * Math.sin(a), 0]); });
@@ -80,7 +88,7 @@ function home(k) {
     const lap = new THREE.LineSegments(K.geo(new THREE.EdgesGeometry(K.geo(new THREE.BoxGeometry(0.9, 0.08, 0.6)))), n.edge);
     lap.position.set(...at); lap.rotation.x = 0.5; root.add(lap);
     n.key = i; items.push(n);
-    labels.push({ text: text(k.facts[i], 30), obj: lap, at: new THREE.Vector3(0, 0.55, 0), key: i });
+    labels.push({ text: lines(k.facts[i].label, k.facts[i].value), obj: lap, at: new THREE.Vector3(0, 0.55, 0), key: i });
     return at;
   });
   out.forEach((i, j) => {
@@ -117,7 +125,7 @@ function stack(k) {
   const flagged = (x) => (FLAG[k.facts[x.key].flag] ? 1 : 0);
   tags.slice().sort((a, b) => flagged(b) - flagged(a)).slice(0, MAX).forEach((x) => { // flagged licences first
     const f = k.facts[x.key], flag = FLAG[f.flag];
-    labels.push({ text: cut(f.label, 22) + (f.value ? ' \u00b7 ' + cut(f.value, 20) : '') + (flag ? ' \u00b7 ' + flag : ''), obj: x.spin,
+    labels.push({ text: lines(f.label, [f.value, flag].filter(Boolean).join(' \u00b7 ')), obj: x.spin,
       at: new THREE.Vector3(x.at[0] + 0.24, x.at[1], 0), key: x.key, cls: flag ? 'amber' : '', align: 'left' }); // beside its mark
   });
   return {
@@ -147,7 +155,7 @@ function costs(k) {
     body.scale.y = h; body.position.y = h / 2;
     g.add(body); g.position.set(-5 + (n > 1 ? 10 * i / (n - 1) : 5), -2.4, 0); root.add(g);
     bars.push({ g, edge, fill, key: r.mine ? -1 - i : r.key, base: r.mine ? 'bold' : free ? 'dim' : 'line' });
-    labels.push({ text: cut(r.f.label, 22) + '\n' + cut(r.f.value || '', 26), obj: g, at: new THREE.Vector3(0, h + 0.45, 0), key: r.mine ? undefined : r.key, cls: 'tile' });
+    labels.push({ text: priceLines(r.f), obj: g, at: new THREE.Vector3(0, h + 0.45, 0), key: r.mine ? undefined : r.key, cls: 'tile' });
   });
   root.rotation.x = 0.18;
   return {

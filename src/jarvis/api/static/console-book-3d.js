@@ -111,10 +111,41 @@ function litSet(facts, beat, kind) {
   return on;
 }
 
-/** <= 24 labels over the canvas (textContent), each pinned to a point of its object, projected per drawn frame. */
+/** Screen-space de-collision (screenshot findings O1): labels are placed in priority order (lit, then
+ *  flagged amber, then as the scene lists them); one that would overlap a placed label is nudged up or down
+ *  by its own height, and one with no free spot is hidden and counted in the "+N more" label. */
+const NUDGES = [0, -1, 1, -2, 2, -3, 3], GAP = 3, EDGE = 4;
+const hits = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+function rank(l) { return l.el.classList.contains('on') ? 0 : l.cls === 'amber' ? 1 : 2; }
+function settle(s, boxes, h) {
+  for (const k of NUDGES) {
+    const y = Math.max(EDGE, Math.min(h - s.h - EDGE, s.y + k * (s.h + GAP)));
+    const box = { x: s.x - GAP / 2, y: y - GAP / 2, w: s.w + GAP, h: s.h + GAP };
+    if (!boxes.some((b) => hits(b, box))) { boxes.push(box); return y; }
+  }
+  return null;
+}
+/** <= 24 labels over the canvas (textContent), each pinned to a point of its object, projected per drawn frame,
+ *  then de-collided (`settle`): all reads first, then all writes. */
 function labelLayer(THREE, host, canvas, camera) {
   const v = new THREE.Vector3();
-  let list = [];
+  let list = [], more = null;
+  function spot(l, w, h) {
+    v.copy(l.at); l.obj.localToWorld(v); v.project(camera);
+    if (v.z > 1) return null;
+    const lw = l.el.offsetWidth, lh = l.el.offsetHeight;
+    const x = Math.max(EDGE, Math.min(w - lw - EDGE, (v.x + 1) / 2 * w - (l.align === 'left' ? 0 : lw / 2)));
+    return { x, y: (1 - v.y) / 2 * h - lh / 2, w: lw, h: lh };
+  }
+  function count(n, boxes, w, h) {
+    if (!more) return;
+    more.textContent = n ? '+' + n + ' more' : '';
+    more.style.visibility = n ? '' : 'hidden';
+    if (!n) return;
+    const s = { x: EDGE, y: h - more.offsetHeight - EDGE, w: more.offsetWidth, h: more.offsetHeight };
+    const y = settle(s, boxes, h);
+    more.style.transform = 'translate(' + EDGE + 'px,' + Math.round(y === null ? s.y : y) + 'px)';
+  }
   return {
     set(items) {
       host.textContent = '';
@@ -123,20 +154,29 @@ function labelLayer(THREE, host, canvas, camera) {
         el.className = 'sh-lbl' + (l.cls ? ' ' + l.cls : ''); el.textContent = l.text;
         host.append(el); return Object.assign({ el }, l);
       });
+      more = document.createElement('span'); more.className = 'sh-lbl dim'; more.style.visibility = 'hidden';
+      host.append(more);
       stats.labels = list.length;
     },
     light(lit) { list.forEach((l) => l.el.classList.toggle('on', l.key !== undefined && lit.has(l.key))); },
     place() {
-      const w = canvas.clientWidth, h = canvas.clientHeight;
-      list.forEach((l) => {
-        v.copy(l.at); l.obj.localToWorld(v); v.project(camera);
-        const x = Math.max(4, Math.min(w - l.el.offsetWidth - 4, (v.x + 1) / 2 * w - (l.align === 'left' ? 0 : l.el.offsetWidth / 2)));
-        const y = Math.max(4, Math.min(h - l.el.offsetHeight - 4, (1 - v.y) / 2 * h - l.el.offsetHeight / 2));
-        l.el.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
-        l.el.style.visibility = v.z > 1 ? 'hidden' : '';
+      const w = canvas.clientWidth, h = canvas.clientHeight, boxes = [];
+      const spots = list.map((l) => spot(l, w, h));
+      const order = list.map((l, i) => i).sort((a, b) => rank(list[a]) - rank(list[b]) || a - b);
+      let hidden = 0;
+      order.forEach((i) => {
+        if (!spots[i]) return;
+        spots[i].y = settle(spots[i], boxes, h);
+        if (spots[i].y === null) hidden += 1;
       });
+      list.forEach((l, i) => {
+        const s = spots[i], off = !s || s.y === null;
+        if (!off) l.el.style.transform = 'translate(' + Math.round(s.x) + 'px,' + Math.round(s.y) + 'px)';
+        l.el.style.visibility = off ? 'hidden' : '';
+      });
+      count(hidden, boxes, w, h);
     },
-    clear() { list = []; host.textContent = ''; },
+    clear() { list = []; more = null; host.textContent = ''; },
   };
 }
 /** console-3d.js's governor: two slow windows in a row step down a tier; past the last tier, retire.

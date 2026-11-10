@@ -293,6 +293,20 @@ class Settings(BaseSettings):
         default=True,
         description="Scoped people research: public figures / work due-diligence (D10)",
     )
+    # --- R6 the build book (docs/plans/r6-build-book.md D6, D9, D12). Sealed with keys derived
+    # from `token_key`; without it the book is OFF. No new secret, service or Scheduler job.
+    book_session_minutes: int = Field(
+        default=45, ge=15, le=120, description="Absolute minutes a build book session lasts (D9)"
+    )
+    book_idle_minutes: int = Field(
+        default=10, ge=5, le=30, description="An idle build book session ends after (D9)"
+    )
+    book_max_total_mb: int = Field(
+        default=60, ge=20, le=200, description="MB the sealed books and their code keep (D6)"
+    )
+    book_talk_questions: int = Field(
+        default=20, ge=1, le=50, description="Questions one build book session may ask (D12)"
+    )
     # --- Maps + YouTube (slice 12 D2): JARVIS's own server-side Google API key, restricted to
     # Places (New), Routes and YouTube Data v3. No key: those tools are not registered.
     google_api_key: SecretStr | None = Field(

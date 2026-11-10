@@ -49,6 +49,10 @@ PURPOSES: tuple[str, ...] = (
     "webpush",
     "notify",  # R3 I1: the Alerts VIP list (phone / email references), its own key
     "connectors",  # R4 D9: the owner's own GitHub token (own-account read), its own key
+    # R6 (docs/plans/r6-build-book.md D6, D9): the sealed build books' release list, and the
+    # book sessions (their turns sealed, their token stored only as a MAC in this domain)
+    "book_index",
+    "book_session",
 )
 SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
 MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64

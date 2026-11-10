@@ -41,6 +41,12 @@ AlertKind = Literal[
     "health_fault",
     "health_recovered",
     "health_degraded",
+    # R6 (docs/plans/r6-build-book.md D7, D14): this release's build book is sealed in the vault
+    # (or sealing it failed), and a build book session closed and was wiped. All three are
+    # important daytime rings (notify.policy DAYTIME_RING_KINDS), held in quiet hours.
+    "book_sealed",
+    "book_seal_failed",
+    "book_session_closed",
 ]
 HOME_ALERT_KINDS: tuple[AlertKind, ...] = (
     "home_intruder",

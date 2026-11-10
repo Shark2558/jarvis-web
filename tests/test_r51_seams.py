@@ -26,8 +26,12 @@ def test_home_offline_idle_is_a_known_important_home_kind() -> None:
     assert "home_offline_idle" in get_args(AlertKind)
     assert "home_offline_idle" in HOME_ALERT_KINDS
     assert DEFAULT_URGENCY["home_offline_idle"] == "important"
-    # R5.1 D13 added health_fault and vitals_critical (tests/test_r51_int_notify.py)
-    assert DAYTIME_RING_KINDS == frozenset({"home_offline_idle", "health_fault", "vitals_critical"})
+    # R5.1 D13 added health_fault and vitals_critical (tests/test_r51_int_notify.py); R6 I0 the
+    # build book's three notices (tests/test_r6_seams.py)
+    book = {"book_sealed", "book_seal_failed", "book_session_closed"}
+    assert DAYTIME_RING_KINDS == frozenset(
+        {"home_offline_idle", "health_fault", "vitals_critical", *book}
+    )
 
 
 def test_idle_offline_rings_in_the_day_even_when_only_urgent_things_ring() -> None:

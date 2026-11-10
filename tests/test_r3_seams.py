@@ -159,7 +159,8 @@ def test_r3_alert_kinds_join_the_older_ones() -> None:
         assert older in kinds
     # R4 added vitals_warn/vitals_critical/health_fault/health_recovered/health_degraded (14 -> 19)
     # R5.1 added home_offline_idle (19 -> 20)
-    assert "test" in kinds and len(kinds) == len(set(kinds)) == 20
+    # R6 I0 added book_sealed/book_seal_failed/book_session_closed (20 -> 23; test_r6_seams.py)
+    assert "test" in kinds and len(kinds) == len(set(kinds)) == 23
 
 
 async def test_the_sink_takes_silent_and_photo_keywords() -> None:
@@ -838,6 +839,8 @@ def test_r3_cipher_purposes_are_pinned() -> None:
         "webpush",
         "notify",
         "connectors",  # R4 D9: the owner's own GitHub token
+        "book_index",  # R6 D6: the sealed build books' release list (test_r6_seams.py)
+        "book_session",  # R6 D9: build book sessions (turns sealed, token as a MAC)
     }
     ring = Keyring(KEY)
     for purpose in ("home", "home_feed", "faces", "webpush"):

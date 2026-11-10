@@ -56,6 +56,7 @@ from jarvis.permissions.groups import (
     validate_choices,
 )
 from jarvis.permissions.models import (
+    BOOK_LOCK_TARGET,
     HOME_DISARM_TARGET,
     TARGET_PATTERN,
     TARGETED_PURPOSES,
@@ -139,19 +140,27 @@ def _binding(uid: str, purpose: str, *parts: str) -> str:
 
 _TARGET = re.compile(TARGET_PATTERN)
 _DISARM_TARGET = re.compile(HOME_DISARM_TARGET)
+_BOOK_LOCK = re.compile(BOOK_LOCK_TARGET)
 NEEDS_TARGET = "That passkey check has to name what it is for."
+UNKNOWN_CHECK = "That passkey check isn't one JARVIS knows."
 
 
 def purpose_binding(uid: str, purpose: str, target: str | None) -> str:
     """What an R2 purpose check is bound to: owner, purpose and target (R2 D6, D8, D14).
     Fails closed: another purpose, a delete without a target or an odd target is refused.
-    R3 D8: a disarm is bound to exactly one home and arm rev ("h_<8 hex>:<rev>")."""
+    R3 D8: a disarm is bound to exactly one home and arm rev ("h_<8 hex>:<rev>").
+    R6 D8 / D10: opening the build book names no target; lifting a guest lock is bound to
+    exactly one lock id ("bl_<12 hex>")."""
     text = target or ""
     if purpose not in TARGETED_PURPOSES or (text and not _TARGET.fullmatch(text)):
-        raise PermissionRejected("That passkey check isn't one JARVIS knows.")
+        raise PermissionRejected(UNKNOWN_CHECK)
     if purpose == "privacy_delete" and not text:
         raise PermissionRejected(NEEDS_TARGET)
     if purpose == "home_disarm" and not _DISARM_TARGET.fullmatch(text):
+        raise PermissionRejected(NEEDS_TARGET)
+    if purpose == "book_open" and text:
+        raise PermissionRejected(UNKNOWN_CHECK)
+    if purpose == "book_resume" and not _BOOK_LOCK.fullmatch(text):
         raise PermissionRejected(NEEDS_TARGET)
     return _binding(uid, purpose, text)
 

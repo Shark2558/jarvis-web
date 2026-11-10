@@ -1,0 +1,13 @@
+{"id": "me", "method": "GET", "path": "/auth/me", "want": 423}
+{"id": "chat", "method": "POST", "path": "/v1/chat", "json": {"message": "hi"}, "want": 423}
+{"id": "vault", "method": "GET", "path": "/v1/vault", "want": 423}
+{"id": "memory", "method": "GET", "path": "/v1/memory", "want": 423}
+{"id": "permissions", "method": "GET", "path": "/v1/permissions", "want": 423}
+{"id": "open", "method": "POST", "path": "/v1/book/open", "json": {"audience": "owner"}, "want": 423}
+{"id": "reset-cancel", "method": "POST", "path": "/v1/passkeys/reset/cancel", "json": {}, "want": 423}
+{"id": "home", "method": "GET", "path": "/", "want": 302}
+{"id": "show-page", "method": "GET", "path": "/book/show", "want": 200}
+{"id": "static", "method": "GET", "path": "/static/console.css", "want": 200}
+{"id": "health", "method": "GET", "path": "/health", "want": 200}
+{"id": "config", "method": "GET", "path": "/console/config", "want": 200}
+{"id": "reset", "method": "POST", "path": "/v1/passkeys/reset", "want": 403}

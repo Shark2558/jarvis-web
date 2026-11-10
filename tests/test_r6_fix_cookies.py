@@ -75,7 +75,7 @@ async def test_a_guest_open_leaves_only_a_show_marker_in_the_presenting_browser(
             await app.state.book_lock.lift(owner_uid(), lock_id)
             assert (await c.get(ME)).status_code == 401
             assert (await c.get("/v1/book")).status_code == 401
-            assert (await c.post("/v1/book/close", headers=book(token))).status_code != 401
+            assert (await c.post("/v1/book/close", headers=book(token))).status_code == 200
 
 
 async def test_the_marker_asks_for_no_ceremony_but_its_resume(settings: Settings) -> None:
@@ -172,3 +172,34 @@ async def test_sessions_valid_after_is_read_with_the_lock_and_cached() -> None:
     assert await there.valid_after("u_b") == 1_234.5  # every owner the lock held
     assert await there.get("u_b") == other  # his own lock is kept, read in the same document
     assert docs.reads == reads + 1
+
+
+class Stepped:
+    """A monotonic clock that moves on as it is read: each read takes the next tick (the last one
+    holds)."""
+
+    def __init__(self, *ticks: float) -> None:
+        self.ticks = list(ticks)
+
+    def __call__(self) -> float:
+        return self.ticks.pop(0) if len(self.ticks) > 1 else self.ticks[0]
+
+
+async def test_the_mark_and_the_lock_come_from_one_read(settings: Settings) -> None:
+    """Security re-review #5: the middleware read the mark and the lock as two cache lookups. With
+    the 3 s entry expiring between them, a cookie from before a Resume met a stale "no mark", then a
+    fresh "no lock", and passed as an owner session for that one request."""
+    async for app in book_app(settings):
+        async with sign_in(app) as copied:  # issued before the Resume below
+            uid, docs = owner_uid(), app.state.book_docs
+            here = DocShowLock(
+                docs, owners=(uid, owner_uid(SECOND_OWNER)), clock=Stepped(100.0, 102.9, 103.1)
+            )
+            state = await here.set(
+                uid, "bk_0123456789abcdef", now=datetime.now(UTC)
+            )  # cached at 100
+            there = DocShowLock(docs, owners=(uid, owner_uid(SECOND_OWNER)))
+            assert await there.lift(uid, state.id, signed_out_before=auth.cookie_now())  # elsewhere
+            app.state.book_lock = here  # this instance: its entry is fresh at 102.9, stale at 103.1
+            assert (await copied.get(ME)).status_code in (401, 423)  # never 200
+            assert (await copied.get(ME)).status_code == 401  # and once read again: signed out

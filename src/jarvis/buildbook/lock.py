@@ -12,8 +12,9 @@ Sessions valid after (integrated review SEC-4): a Resume or the emergency unlock
 `signed_out_before=<cookie clock>`; the same document then keeps `{sessions_valid_after}` (for the
 owner AND every other owner, whose consoles the lock held too, beside any lock of theirs), and the
 middleware clears every cookie session issued before it. It is read WITH the lock, in the same
-document and the same <= 3 s cache (`valid_after`). A later `set` starts a fresh document: while
-a lock is on every owner session is held anyway, and its own lift writes a later mark.
+document and the same <= 3 s cache entry (`view`: one lookup for both). A later `set` starts a
+fresh document: while a lock is on every owner session is held anyway, and its own lift writes a
+later mark.
 """
 
 from __future__ import annotations
@@ -98,6 +99,15 @@ class DocShowLock:
 
     async def get(self, uid: str) -> ShowLockState | None:
         return (await self._view(uid))[0]
+
+    async def view(self, uid: str) -> View:
+        """(the lock, sessions valid after) from ONE cache entry or read: the middleware compares
+        the mark from the same view it takes the lock from (security re-review #5)."""
+        return await self._view(uid)
+
+    async def fresh_view(self, uid: str) -> View:
+        """`view` without the cache (the presenting browser's own session says a guest is on)."""
+        return await self._read(uid)
 
     async def valid_after(self, uid: str) -> float | None:
         """When this owner's cookie sessions start counting again (None: no mark)."""

@@ -58,6 +58,8 @@ from jarvis.logging import get_logger
 
 log = get_logger(__name__)
 
+LockView = tuple[ShowLockState | None, float | None]  # (a lock, sessions valid after)
+
 SHOW_PAGE = "/book/show"
 ALLOWED: frozenset[tuple[str, str]] = frozenset(
     {
@@ -106,6 +108,19 @@ async def lock_for(
     return None, False
 
 
+async def _read_view(store: ShowLock, uid: str, *, fresh: bool) -> LockView:
+    """(lock, mark) from one read: the store's `view` / `fresh_view` (`DocShowLock`), else its lock
+    alone (`get` / `refresh`) with no mark, for a store that keeps none."""
+    read = getattr(store, "fresh_view" if fresh else "view", None)
+    if callable(read):
+        own, mark = await read(uid)
+        return own, mark
+    if not fresh:
+        return await store.get(uid), None
+    refresh = getattr(store, "refresh", None)
+    return (await refresh(uid) if callable(refresh) else None), None
+
+
 def owner_ids(s: Settings) -> tuple[str, ...]:
     return tuple(dict.fromkeys(user_id_for_email(e) for e in s.owner_emails))
 
@@ -141,22 +156,18 @@ class ShowLockMiddleware:
         self._s = settings
         self._owners = owner_ids(settings)
 
-    async def _lock_on(
-        self, store: ShowLock, uid: str, session: dict[str, Any]
-    ) -> tuple[ShowLockState | None, bool]:
-        """(a lock that holds this session, whether it is this owner's own). The presenting
-        browser carries GUEST_FLAG: for it an "unlocked" from the <= 3 s cache is read again
-        uncached, so no other instance's stale cache lets it out right after the open; a flag
-        the store no longer confirms (the lock was lifted elsewhere) clears itself."""
-        own = await store.get(uid)
-        refresh = getattr(store, "refresh", None)
-        if own is None and session.get(GUEST_FLAG) and callable(refresh):
-            own = await refresh(uid)
+    async def _own(self, store: ShowLock, uid: str, session: dict[str, Any]) -> LockView:
+        """(this owner's own lock, his "sessions valid after" mark), both from ONE read of his
+        lock document (security re-review #5: two cache lookups could pair a stale "no mark" with
+        a fresh "no lock"). The presenting browser carries GUEST_FLAG: for it an "unlocked" from
+        the <= 3 s cache is read again uncached, so no other instance's stale cache lets it out
+        right after the open; a flag the store no longer confirms (lifted elsewhere) clears."""
+        own, mark = await _read_view(store, uid, fresh=False)
+        if own is None and session.get(GUEST_FLAG):
+            own, mark = await _read_view(store, uid, fresh=True)
             if own is None:
                 session.pop(GUEST_FLAG, None)
-        if own is not None:
-            return own, True
-        return await lock_for(store, self._owners, uid)
+        return own, mark
 
     def _answer(self, scope: Scope, state: ShowLockState, own: bool) -> Response:
         if scope["path"] == "/" and scope["method"] in ("GET", "HEAD"):
@@ -183,12 +194,13 @@ class ShowLockMiddleware:
         if who is None:  # bearer, the Scheduler, no sign-in; never a cookie outside Google mode
             return None, False
         store, (uid, issued) = self._store(scope), who
-        after = getattr(store, "valid_after", None)
-        mark = await after(uid) if callable(after) else None
+        own, mark = await self._own(store, uid, scope["session"])
         if mark is not None and issued < mark:
             scope["session"].clear()  # issued before Resume: nothing of the owner's any more
             return None, False
-        return await self._lock_on(store, uid, scope["session"])
+        if own is not None:
+            return own, True
+        return await lock_for(store, self._owners, uid)
 
     async def _websocket(self, scope: Scope, receive: Receive, send: Send) -> None:
         try:

@@ -84,11 +84,29 @@ def _scene(n: int, lines: Sequence[str | tuple[str, str]], facts: Iterable[Fact]
     return Scene(n=n, id=sid, title=title, beats=tuple(beats), facts=tuple(facts)[:MAX_FACTS])
 
 
-def _steps(flow: Workflow) -> list[Fact]:
+# the accent D's flow scenes draw for a step (I1): a shield, chain links, the passkey ring
+_HINTS = (
+    ("guard", "guard"),
+    ("gateway", "gateway"),
+    ("audit", "audit"),
+    ("permissions", "passkey"),
+)
+
+
+def _hint(symbol: str) -> str:
+    module = symbol.split(":", 1)[0]
+    return next((h for word, h in _HINTS if word in module), "step")
+
+
+def flow_facts(flow: Workflow) -> list[Fact]:
+    """A flow's steps as scene facts, in order, each with D's accent hint (else "step")."""
     return [
-        fact(s.label, s.symbol.removeprefix("jarvis."), i, "step")
+        fact(s.label, s.symbol.removeprefix("jarvis."), i, _hint(s.symbol))
         for i, s in enumerate(flow.steps, 1)
     ]
+
+
+_steps = flow_facts
 
 
 def _lower_first(text: str) -> str:
@@ -153,7 +171,7 @@ def _layers(p: Parts) -> Scene:
                 lid,
             )
         )
-        facts += [fact(name, lid, count, "parts"), fact(name, lid, code, "lines")]
+        facts.append(fact(name, lid, count, "layer"))  # D: one plate a layer, n = its parts
     return _scene(2, lines, facts)
 
 
@@ -186,7 +204,7 @@ def _memory(p: Parts) -> Scene:
             f"Opening the vault: {_joined(p.flow('vault_open'))}",
             f"Learning after a conversation: {_joined(p.flow('learning'))}",
         ],
-        [fact(plain.purpose_words(k), k, group="key") for k in keys],
+        [fact(plain.purpose_words(k), k, group="purpose") for k in keys],
     )
 
 
@@ -219,7 +237,7 @@ def _voice(p: Parts) -> Scene:
             "The wake word runs on your own device, so nothing is sent until you speak to me."
             + allowance,
         ],
-        [*_steps(flow), *(fact(i.label, f"₹{i.inr:,.2f}", i.inr, "voice") for i in voice)],
+        _steps(flow),  # the voice prices are scene 10's
     )
 
 
@@ -231,8 +249,17 @@ def _home(p: Parts) -> Scene:
             "At home, a laptop runs the camera and the devices; recognising faces stays there.",
             f"A home alert: {_joined(flow)}",
         ],
-        _steps(flow),
+        [*HOME_FACTS, *_steps(flow)],
     )
+
+
+# D15 scene 7: inside the home boundary, the one laptop at its edge, the rest outside
+HOME_FACTS = (
+    fact("The camera", "at home", group="home"),
+    fact("Recognising faces", "stays at home", group="home"),
+    fact("The devices", "at home", group="home"),
+    fact("The laptop", "the home bridge", group="edge"),
+)
 
 
 def _own(p: Parts) -> Scene:

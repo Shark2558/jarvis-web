@@ -13,6 +13,8 @@
 # Beyond the 21 panels (R6: Book) the gate also audits (D11 completeness): the top bar, the open brain menu and
 # its AI-on confirm, the systems-check pop-up in its done state with concerns, and the Vitals
 # "Track something JARVIS can't see" form OPEN. Each is a separate parametrised test below.
+# R6.1 D7: the dock and its More sheet are also audited at a narrow laptop (1280 px) and the narrowest
+# phone (320 px), where the dock folds the most tabs (fit at ten widths: test_dock_fit.py).
 # One page per viewport and surface (module-scoped); the panels are opened in turn.
 # The release checklist also needs the screenshots to be LOOKED at: scripts/ui_snapshots.py.
 # ruff: noqa: E501 -- the labelling and wrapping probes are JavaScript strings
@@ -32,6 +34,11 @@ sync_playwright = _pw.sync_playwright
 pytestmark = pytest.mark.browser
 
 VIEWPORTS = {"desktop": DESKTOP, "phone": PHONE}
+# R6.1 D7: the dock-only viewports, each with the rules it is held to ("phone": 44 px targets)
+NARROW = {
+    "laptop-1280": ({"width": 1280, "height": 800}, "desktop"),
+    "phone-320": ({"width": 320, "height": 568}, "phone"),
+}
 SURFACES = ("night", "day")
 SETTLE_MS = 700  # panelIn (.22s) + rise (.4s) animations, then a margin
 
@@ -53,10 +60,11 @@ NAMELESS_JS = r"""(sel) => {
   return bad;
 }"""
 # A button whose text runs onto a third line. Not the switch / disclosure chrome (.dsc, .bsw) nor the
-# brain menu's rows (.bmopt: a title and a one-line meaning, by design two blocks).
+# brain menu's rows (.bmopt: a title and a one-line meaning, by design two blocks), nor the More
+# sheet's rows (.sheet-item: a title and a meaning that wraps on a phone, as since slice 8).
 WRAP_JS = r"""(sel) => {
   const out = [];
-  for (const b of document.querySelectorAll(sel + ' button:not(.dsc):not(.bsw):not(.bmopt), ' + sel + ' .btn')) {
+  for (const b of document.querySelectorAll(sel + ' button:not(.dsc):not(.bsw):not(.bmopt):not(.sheet-item), ' + sel + ' .btn')) {
     const r = b.getBoundingClientRect(); if (r.width < 2 || !(b.textContent || '').trim()) continue;
     // lines as painted: the rects of the TEXT only (an element's own box sits higher than its glyphs
     // by the half-leading), merged when they share a band, so two blocks are two lines wherever they sit
@@ -85,7 +93,8 @@ class Rig:
     def get(self, vp: str, surface: str) -> Console:
         key = (vp, surface)
         if key not in self.pages:
-            c = Console(self.browser, self.url, self.token, VIEWPORTS[vp])
+            size = VIEWPORTS[vp] if vp in VIEWPORTS else NARROW[vp][0]
+            c = Console(self.browser, self.url, self.token, size)
             install_mocks(c.page)
             c.open()
             if surface == "day":
@@ -382,3 +391,24 @@ def test_the_vitals_track_form_open_passes_the_visual_gate(rig: Rig, vp: str, su
     finally:
         toggle.click()  # closed again
         _close(c, "vitals", vp)
+
+
+# ---- R6.1 D7: the dock that fits every screen ---------------------------------------------------
+@pytest.mark.parametrize("surface", SURFACES)
+@pytest.mark.parametrize("vp", list(NARROW))
+def test_the_dock_and_its_more_sheet_pass_the_visual_gate(rig: Rig, vp: str, surface: str) -> None:
+    c, rules = rig.get(vp, surface), NARROW[vp][1]
+    c.page.bring_to_front()  # several rig pages are open: flush this one's style changes first
+    c.page.evaluate("() => getComputedStyle(document.documentElement).color")
+    c.page.wait_for_timeout(SETTLE_MS)
+    _audit(c, "#dock", rules, f"dock {vp} {surface}")
+    more = c.page.locator("#dockMore")
+    assert more.is_visible(), f"{vp}: some tabs should fold behind More"
+    more.click()
+    c.page.locator("#moreSheet").wait_for(state="visible")
+    c.page.wait_for_timeout(SETTLE_MS)
+    try:
+        _audit(c, "#moreSheet", rules, f"More sheet {vp} {surface}")
+    finally:
+        c.page.keyboard.press("Escape")
+        c.page.locator("#moreSheet").wait_for(state="hidden")

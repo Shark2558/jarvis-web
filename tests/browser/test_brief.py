@@ -713,8 +713,9 @@ def test_very_narrow_phone_keeps_every_tab_named(make: Callable[..., Console]) -
              return {w: r.width, name: (b.getAttribute('aria-label') || b.textContent).trim()};
            })"""
     )
-    assert len(names) == 8
-    assert all(n["w"] >= 40 and n["name"] for n in names), names
+    # R6.1 D7: at most eight tabs, each a 44 px touch target (seven fit 340 px: 6 tabs and More)
+    assert 4 <= len(names) <= 8 and names[-1]["name"].startswith("More panels"), names
+    assert all(n["w"] >= 44 and n["name"] for n in names), names
     assert c.errors == []
 
 

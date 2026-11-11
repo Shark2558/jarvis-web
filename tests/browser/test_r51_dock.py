@@ -1,6 +1,8 @@
 # tests/browser/test_r51_dock.py -- R5.1: every dock tab is reachable on a desktop. Nineteen tabs
 # ran 82 px past each edge of a 1440 px window (Chat and Construct cut off, so they could not be
-# clicked); the dock now stays inside the window at its usual size and scrolls sideways.
+# clicked). R6 I0 made the dock scroll sideways; since R6.1 D7 it stays inside the window with every
+# shown tab at its usual size, and the tabs that do not fit fold behind More (console-dock.js; the
+# full width matrix is tests/browser/test_dock_fit.py).
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -16,7 +18,8 @@ pytestmark = pytest.mark.browser
 DOCK_JS = (
     "() => { const r = document.getElementById('dock').getBoundingClientRect();"
     " return [r.left, r.right, innerWidth,"
-    " [...document.querySelectorAll('#dock .dk:not(.more)')].map(b => b.offsetWidth)]; }"
+    " [...document.querySelectorAll('#dock .dk')].filter(b => b.getClientRects().length)"
+    ".map(b => b.offsetWidth)]; }"
 )
 
 
@@ -37,11 +40,10 @@ def test_the_dock_stays_in_the_window_and_every_tab_is_reachable(
         c.open()
         left, right, vw, widths = c.page.evaluate(DOCK_JS)
         assert left >= 0 and right <= vw, (left, right, vw)
-        assert set(widths) == {78, 102}  # every tab keeps its usual size (Integrations is wide)
+        assert set(widths) <= {78, 102}  # every shown tab keeps its usual size (Integrations wide)
         for panel in ("construct", "media", "brief"):
-            c.page.locator(f'.dk[data-open="{panel}"]').click()  # scrolled into view, then opened
-            c.page.locator(f"#p-{panel}").wait_for(state="visible")
-        c.page.locator('.dk[data-open="chat"]').scroll_into_view_if_needed()
+            c.open_panel(panel)  # its tab, or its entry in the More sheet when the tab is folded
+        assert c.page.evaluate("document.getElementById('dock').scrollLeft") == 0
         box = c.page.locator('.dk[data-open="chat"]').bounding_box()
         assert box is not None and box["x"] >= 0, box
         assert c.errors == []

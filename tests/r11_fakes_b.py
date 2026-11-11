@@ -19,7 +19,7 @@ from typing import Any
 from r11_fakes import Clock, FakeNotifier, ctx
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.helpers.house.fetch import Fetched, FetchError
+from jarvis.helpers.house.fetch import Fetched, FetchError, TooLarge
 from jarvis.helpers.ports import HelperContext
 from jarvis.keyring import Keyring
 from jarvis.storage.docs import MemoryDocs
@@ -77,7 +77,7 @@ class FakeFetcher:
         if self.not_modified and h.get("If-None-Match") == self.etag:
             return Fetched(304, b"", self.etag)
         if len(body) > cap:
-            raise FetchError("too large")
+            raise TooLarge("too large")
         return Fetched(200, body, self.etag)
 
     def urls(self) -> list[str]:

@@ -43,6 +43,10 @@ class FetchError(RuntimeError):
     """The outside service couldn't be read (plain words)."""
 
 
+class TooLarge(FetchError):
+    """The answer is over its cap: refused for good (not an outage to try again)."""
+
+
 @dataclass(frozen=True)
 class Fetched:
     status: int  # 200 or 304
@@ -72,13 +76,13 @@ def _check_url(url: str) -> httpx.URL:
 async def _read(r: httpx.Response, cap: int) -> bytes:
     declared = r.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > cap:
-        raise FetchError("The answer was too large to use.")
+        raise TooLarge("The answer was too large to use.")
     chunks: list[bytes] = []
     size = 0
     async for chunk in r.aiter_bytes():
         size += len(chunk)
         if size > cap:
-            raise FetchError("The answer was too large to use.")
+            raise TooLarge("The answer was too large to use.")
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -123,4 +127,4 @@ class HttpFetcher:
         return Fetched(200, await _read(r, cap), etag)
 
 
-__all__ = ["ALLOWED_HOSTS", "FetchError", "Fetched", "Fetcher", "HttpFetcher"]
+__all__ = ["ALLOWED_HOSTS", "FetchError", "Fetched", "Fetcher", "HttpFetcher", "TooLarge"]

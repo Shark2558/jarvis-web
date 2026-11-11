@@ -29,6 +29,7 @@ from jarvis.storage.docs import Delete, Docs, DocTx, Query
 
 log = get_logger(__name__)
 
+Seen = Callable[[str, NudgeSettings], None]
 KEEP_TOLD_DAYS = 3
 KEEP_WELL_DAYS = 30
 MAX_KEYS_A_DAY = 200
@@ -53,9 +54,12 @@ OFF_WORDS = (
 
 
 class NudgeStore:
-    def __init__(self, docs: Docs, *, prefix: str = "jarvis_") -> None:
+    """`seen` hears every settings read and change (the No-AI check-in phrases follow his words)."""
+
+    def __init__(self, docs: Docs, *, prefix: str = "jarvis_", seen: Seen | None = None) -> None:
         self._docs = docs
         self._prefix = prefix
+        self._seen: Seen = seen or (lambda uid, s: None)
 
     def _path(self, uid: str) -> str:
         return f"{self._prefix}nudges/{uid}"
@@ -66,10 +70,12 @@ class NudgeStore:
     async def settings(self, uid: str) -> NudgeSettings:
         try:
             raw = await self._docs.get(self._path(uid))
-            return NudgeSettings.model_validate(raw.get("settings", {})) if raw else NudgeSettings()
+            got = NudgeSettings.model_validate(raw.get("settings", {})) if raw else NudgeSettings()
         except Exception as exc:  # noqa: BLE001 - the clock skips him; the tab says so
             log.warning("nudge settings unreadable", extra={"error": type(exc).__name__})
             raise NudgesUnavailable("Your nudge settings couldn't be read just now.") from exc
+        self._seen(uid, got)
+        return got
 
     async def change(self, uid: str, fn: Callable[[NudgeSettings], NudgeSettings]) -> NudgeSettings:
         path = self._path(uid)
@@ -81,7 +87,9 @@ class NudgeStore:
             tx.set(path, {"uid": uid, "settings": new.model_dump(mode="json")})
             return new
 
-        return await self._docs.transaction(run)
+        changed: NudgeSettings = await self._docs.transaction(run)
+        self._seen(uid, changed)
+        return changed
 
     async def claim(self, uid: str, day: str, key: str) -> bool:
         """True when this run may send `key` (nobody claimed it today); made in a transaction."""
@@ -116,6 +124,7 @@ class NudgeStore:
         paths = [p for p in (self._path(uid), self._told_path(uid)) if await self._docs.get(p)]
         if paths:
             await self._docs.write([Delete(p) for p in paths])
+        self._seen(uid, NudgeSettings())
         return len(paths)
 
 

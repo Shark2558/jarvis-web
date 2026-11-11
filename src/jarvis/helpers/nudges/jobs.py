@@ -27,6 +27,7 @@ from jarvis.ticks import FAILED_COUNT
 log = get_logger(__name__)
 
 JOB_BUDGET_S = 8.0
+SWEEP = "sweep"  # the sealed log's daily sweep claim
 
 
 async def _nudge_plans(svc: NudgeService, uid: str, s: NudgeSettings, now: datetime) -> list[Plan]:
@@ -88,11 +89,18 @@ class ActivityJob(_Job):
         return await super()._owner(uid)
 
     async def _sweep(self, uid: str) -> None:
-        """The sealed log's days past 30, at most once a local day (a claim, like a nudge)."""
+        """The sealed log's days past 30, at most once a local day (a claim, like a nudge). A
+        failed sweep is logged by class name and its claim released: the asks still run, and the
+        next run sweeps again."""
         svc = self._svc
         today = svc.day_of().isoformat()
-        if await svc.store.claim(uid, today, "sweep"):
+        if not await svc.store.claim(uid, today, SWEEP):
+            return
+        try:
             await svc.well.sweep(uid, today)
+        except Exception as exc:  # noqa: BLE001 - old days wait for the next run, the asks go on
+            log.warning("nudges: the sweep failed", extra={"error": type(exc).__name__})
+            await svc.store.release(uid, today, SWEEP)
 
 
 __all__ = ["JOB_BUDGET_S", "ActivityJob", "NudgesJob"]

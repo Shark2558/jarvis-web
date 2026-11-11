@@ -8,7 +8,9 @@ the sealed log), then sends through the part's own sender (`ctx.sender`, the gat
 stop, the night rule), and RELEASES the claim when no channel took the message
 (`SendResult.retry`) or the text couldn't be made yet (`NotNow`), so the next run tries again.
 Anything else keeps the claim: never twice, never early (the planners only offer a nudge whose
-due time has come).
+due time has come). `pending` says when a source failed, so the focus nudge can tell "nothing
+pending" (kept) from "couldn't read" (`NotNow`, retried). `last_sent` reads the gate's send log
+for a bare "snooze". `words` is what the No-AI check-in phrases may name (`phrases.CheckinWords`).
 """
 
 from __future__ import annotations
@@ -20,9 +22,10 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from jarvis.helpers.gate import GateStore, PartSender
-from jarvis.helpers.kinds import NudgeKind
+from jarvis.helpers.kinds import NUDGE_KINDS, NudgeKind
 from jarvis.helpers.nudges.calendar import Agenda, CalEvent, RainSource
 from jarvis.helpers.nudges.models import NudgeSettings
+from jarvis.helpers.nudges.phrases import CheckinWords
 from jarvis.helpers.nudges.schedule import local_day, zone
 from jarvis.helpers.nudges.store import NudgeStore, WellbeingStore
 from jarvis.helpers.ports import PendingItem, PendingSource
@@ -31,6 +34,8 @@ from jarvis.logging import get_logger
 log = get_logger(__name__)
 
 PENDING_TIMEOUT_S = 3.0
+LAST_WITHIN = timedelta(minutes=30)  # a bare "snooze" means a nudge sent this recently
+_DELIVERED = frozenset({"rang", "silent"})  # the gate log's outcomes that reached him
 Compose = Callable[[], Awaitable[str | None]]
 RainLookup = Callable[[], RainSource | None]
 
@@ -47,6 +52,21 @@ class Plan:
     key: str
     due: datetime
     compose: Compose
+
+
+@dataclass(frozen=True)
+class Pending:
+    """Every pending item that came back, and how many sources failed (0: the list is whole)."""
+
+    items: tuple[PendingItem, ...] = ()
+    failed: int = 0
+
+
+def _minute(entry: dict[str, str]) -> datetime | None:
+    try:
+        return datetime.fromisoformat(entry.get("at", ""))
+    except ValueError:
+        return None
 
 
 def fixed(text: str) -> Compose:
@@ -73,6 +93,7 @@ class NudgeService:
         pending: Callable[[], tuple[PendingSource, ...]],
         tz: str,
         now: Callable[[], datetime],
+        words: CheckinWords | None = None,
     ) -> None:
         self.store = store
         self.well = well
@@ -83,6 +104,7 @@ class NudgeService:
         self._pending = pending
         self.tz = tz
         self.now = now
+        self.words = words or CheckinWords(now)
 
     @property
     def zone(self) -> ZoneInfo:
@@ -109,18 +131,36 @@ class NudgeService:
             log.warning("nudges: rain unknown", extra={"error": type(exc).__name__})
             return None
 
-    async def pending(self, uid: str, now: datetime) -> list[PendingItem]:
+    async def pending(self, uid: str, now: datetime) -> Pending:
         """Every part's pending items (Part A's included), each source bounded; a slow or failing
-        source is left out (logged by class name)."""
+        source is left out and counted in `failed` (logged by class name)."""
         out: list[PendingItem] = []
+        failed = 0
         for src in self._pending():
             try:
                 got = await asyncio.wait_for(src.pending(uid, now), PENDING_TIMEOUT_S)
-            except Exception as exc:  # noqa: BLE001 - one source never stops the focus nudge
+            except Exception as exc:  # noqa: BLE001 - one source never stops the others
                 log.warning("nudges: a pending source failed", extra={"error": type(exc).__name__})
+                failed += 1
                 continue
             out.extend(i for i in got if isinstance(i, PendingItem))
-        return out
+        return Pending(tuple(out), failed)
+
+    async def last_sent(self, uid: str) -> str | None:
+        """The nudge kind that last reached him (rang or silent) within `LAST_WITHIN`, or None."""
+        now = self.now()
+        since = (now - LAST_WITHIN).replace(second=0, microsecond=0)  # the log keeps minutes
+        days = sorted({self.day_of(since).isoformat(), self.day_of(now).isoformat()})
+        log_rows = [e for d in days for e in await self.gate.sends(uid, d)]
+        recent = [
+            (at, i, e["k"])
+            for i, e in enumerate(log_rows)
+            if e.get("k") in NUDGE_KINDS
+            and e.get("o") in _DELIVERED
+            and (at := _minute(e)) is not None
+            and since <= at <= now
+        ]
+        return max(recent)[2] if recent else None
 
     async def settings(self, uid: str) -> NudgeSettings:
         return await self.store.settings(uid)
@@ -151,10 +191,12 @@ class NudgeService:
 
 
 __all__ = [
+    "LAST_WITHIN",
     "PENDING_TIMEOUT_S",
     "Compose",
     "NotNow",
     "NudgeService",
+    "Pending",
     "Plan",
     "RainLookup",
     "fixed",

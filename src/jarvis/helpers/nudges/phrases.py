@@ -5,17 +5,29 @@ before every older pattern, so "don't remind me to stand up" stops the nudge and
 reminder, and "remind me to drink water every 45 minutes" changes the water nudge (a one-off
 "remind me to drink water at 5 pm" still falls through to the reminders). Conservative: anything
 else is left for the other routers. Telegram replies ("stop water") reach the same rules.
+
+A check-in ("walk done", "missed my gym") fires only when its word is one of his activity words
+or answers a check-in ask JARVIS sent in the last `ASK_OPEN`; "homework done" or "I missed my
+flight" fall through. The router is synchronous, so `CheckinWords` keeps those words in memory:
+his words from the last read of his settings (every clock run reads them), his default words until
+then. A bare "snooze" means the nudge sent last (`nudge_snooze` with kind `last`).
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
-from datetime import datetime
+from collections.abc import Callable, Collection, Mapping
+from datetime import datetime, timedelta
+from types import MappingProxyType
 
+from jarvis.helpers.nudges.models import DEFAULTS, NudgeSettings
 from jarvis.offline.rules import NoAICall, NoAIRoute
 
 MAX_TEXT = 200
+CHECKIN = "nudge_activity_checkin"
+LAST = "last"  # `nudge_snooze`'s kind for a bare "snooze": the nudge sent most recently
+ASK_OPEN = timedelta(hours=12)  # a check-in ask stays answerable this long
+DEFAULT_WORDS: frozenset[str] = frozenset(DEFAULTS["nudge_activity"].words)
 _LEAD = r"^(?:jarvis[,\s]+)?(?:please\s+)?"
 _END = r"(?:\s+please)?\s*[.!?]*$"
 _KINDS = (
@@ -34,6 +46,31 @@ WORD = r"(?P<w>[a-z][a-z\-]{1,20}(?:\s[a-z][a-z\-]{1,20})?)"
 _NUMBER = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3}
 
 Build = Callable[[re.Match[str]], NoAIRoute]
+Known = Callable[[], Collection[str]]
+Router = Callable[[str, datetime], NoAIRoute | None]
+
+
+class CheckinWords:
+    """The activity words a check-in phrase may name: each owner's words from the last read or
+    change of his settings (`saw`), his default words before any, plus the words of check-in asks
+    sent in the last `ASK_OPEN` (`asked`). Replaced, never changed in place."""
+
+    def __init__(self, now: Callable[[], datetime]) -> None:
+        self._now = now
+        self._his: Mapping[str, frozenset[str]] = MappingProxyType({})
+        self._asked: Mapping[str, datetime] = MappingProxyType({})
+
+    def saw(self, uid: str, settings: NudgeSettings) -> None:
+        words = frozenset(settings.nudge("nudge_activity").words)
+        self._his = MappingProxyType({**self._his, uid: words})
+
+    def asked(self, word: str) -> None:
+        self._asked = MappingProxyType({**self._asked, word: self._now()})
+
+    def __call__(self) -> frozenset[str]:
+        his = frozenset().union(*self._his.values()) if self._his else DEFAULT_WORDS
+        since = self._now() - ASK_OPEN
+        return his | {w for w, at in self._asked.items() if at >= since}
 
 
 def _one(tool: str, **args: str) -> NoAIRoute:
@@ -78,7 +115,8 @@ def _stop(m: re.Match[str]) -> NoAIRoute:
 
 
 def _snooze(m: re.Match[str]) -> NoAIRoute:
-    kind = kind_word(_group(m, "k"))
+    said = _group(m, "k")
+    kind = kind_word(said) if said else ("all" if _group(m, "all") else LAST)
     if _group(m, "tomorrow"):
         return _one("nudge_snooze", kind=kind, until="tomorrow")
     n, u = _group(m, "n"), _group(m, "u")
@@ -117,7 +155,7 @@ def _suggest(m: re.Match[str]) -> NoAIRoute:
 
 
 def _checkin(outcome: str) -> Build:
-    return lambda m: _one("nudge_activity_checkin", word=m["w"].lower(), outcome=outcome)
+    return lambda m: _one(CHECKIN, word=m["w"].lower(), outcome=outcome)
 
 
 _FREE = r"free[\s-]?time"
@@ -144,7 +182,7 @@ _RULES: tuple[tuple[str, Build], ...] = (
     ),
     # snooze and resume
     (
-        rf"snooze(?:\s+(?:the\s+)?(?:{K}|{ALLN}))?(?:\s+for\s+{DUR}|\s+(?:until|till)\s+"
+        rf"snooze(?:\s+(?:the\s+)?(?:{K}|(?P<all>{ALLN})))?(?:\s+for\s+{DUR}|\s+(?:until|till)\s+"
         r"(?P<tomorrow>tomorrow))?",
         _snooze,
     ),
@@ -207,7 +245,7 @@ _RULES: tuple[tuple[str, Build], ...] = (
         rf"(?:i\s+)?did\s+(?P<t>[^\n]{{1,80}}?)\s+from\s+my\s+(?:{_FREE}\s+)?list",
         lambda m: _one("freetime_done", text=m["t"].strip()),
     ),
-    # a planned activity's check-in (item 11): the tool checks the word is one of his
+    # a planned activity's check-in (item 11): only his activity words (`_his`); the tool checks too
     (rf"(?:i\s+)?(?:did|finished|completed|went\s+for|went\s+on)\s+my\s+{WORD}", _checkin("done")),
     (rf"(?:my\s+)?{WORD}\s+(?:is\s+)?(?:done|happened|complete)", _checkin("done")),
     (rf"(?:i\s+)?(?:missed|skipped)\s+my\s+{WORD}(?:\s+today)?", _checkin("missed")),
@@ -218,18 +256,47 @@ _COMPILED = tuple(
 )
 
 
-def route(text: str, now: datetime) -> NoAIRoute | None:
+def _his(got: NoAIRoute, known: Known) -> bool:
+    """A check-in names one of his activity words (or a pending ask's); every other call passes."""
+    call = got.calls[0]
+    return call.tool != CHECKIN or call.arguments["word"] in known()
+
+
+def _defaults() -> frozenset[str]:
+    return DEFAULT_WORDS
+
+
+def route(text: str, now: datetime, known: Known = _defaults) -> NoAIRoute | None:
     """The first matching rule's tool call, or None (left to the other routers)."""
     one = " ".join(text.split())
     if not one or len(one) > MAX_TEXT:
         return None
     for pattern, build in _COMPILED:
         m = pattern.match(one)
-        if m is not None:
-            return build(m)
+        if m is not None and _his(got := build(m), known):
+            return got
     return None
 
 
-PHRASES = (route,)
+def phrasebook(known: Known) -> Router:
+    """The part's router: the check-in phrases follow `known` (his words, kept by the service)."""
 
-__all__ = ["PHRASES", "kind_word", "minutes", "route"]
+    def routed(text: str, now: datetime) -> NoAIRoute | None:
+        return route(text, now, known)
+
+    return routed
+
+
+PHRASES: tuple[Router, ...] = (route,)
+
+__all__ = [
+    "ASK_OPEN",
+    "DEFAULT_WORDS",
+    "LAST",
+    "PHRASES",
+    "CheckinWords",
+    "kind_word",
+    "minutes",
+    "phrasebook",
+    "route",
+]

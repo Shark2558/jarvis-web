@@ -3,7 +3,9 @@
 with the top pending item from every part's pending sources (`ctx.pending_all()`, Part A's among
 them). The ranking is D9's, in code: overdue, then due today, then urgency, then his own pin
 (weight), then the due time. A `PendingItem` label is JARVIS's own words or his own (the port's
-contract); it is cleaned to one short line. Nothing pending: nothing is sent.
+contract); it is cleaned to one short line. Nothing pending: nothing is sent (the slot is kept).
+Nothing came back because a source failed: `NotNow`, so the claim is released and the next clock
+run tries again (inside the slot's 30 minutes).
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from datetime import UTC, datetime
 from jarvis.helpers.kinds import NudgeKind
 from jarvis.helpers.nudges.models import NudgeSettings
 from jarvis.helpers.nudges.schedule import due, slots
-from jarvis.helpers.nudges.service import NudgeService, Plan, minute_key
+from jarvis.helpers.nudges.service import NotNow, NudgeService, Plan, minute_key
 from jarvis.helpers.ports import MAX_LABEL, PendingItem
 
 KIND: NudgeKind = "nudge_focus"
@@ -44,8 +46,13 @@ def plans(svc: NudgeService, uid: str, s: NudgeSettings, now: datetime) -> list[
         return []
 
     async def words() -> str | None:
-        top = rank(await svc.pending(uid, now))
-        return TEXT.format(label=label(top[0])) if top and label(top[0]) else None
+        got = await svc.pending(uid, now)
+        top = rank(list(got.items))
+        if top and label(top[0]):
+            return TEXT.format(label=label(top[0]))
+        if got.failed:
+            raise NotNow("a pending source failed")  # not "nothing pending": retry next run
+        return None
 
     return [Plan(KIND, minute_key(KIND, at), at, words)]
 

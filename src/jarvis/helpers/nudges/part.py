@@ -29,7 +29,7 @@ from jarvis.helpers.nudges.calendar import (
 )
 from jarvis.helpers.nudges.ideas import freetime_tools
 from jarvis.helpers.nudges.jobs import ActivityJob, NudgesJob
-from jarvis.helpers.nudges.phrases import PHRASES
+from jarvis.helpers.nudges.phrases import CheckinWords, phrasebook
 from jarvis.helpers.nudges.privacy import wellbeing_privacy
 from jarvis.helpers.nudges.service import NudgeService
 from jarvis.helpers.nudges.store import NudgeStore, WellbeingStore
@@ -55,8 +55,9 @@ def service(
 ) -> NudgeService:
     source = calendar or (GoogleCalendar(ctx.google) if ctx.google is not None else None)
     agenda = Agenda(source, allowed=row_allows(ctx.permissions), audit=ctx.audit, now=ctx.now)
+    words = CheckinWords(ctx.now)
     return NudgeService(
-        store=NudgeStore(ctx.docs, prefix=ctx.prefix),
+        store=NudgeStore(ctx.docs, prefix=ctx.prefix, seen=words.saw),
         well=WellbeingStore(ctx.docs, ctx.keyring, prefix=ctx.prefix),
         gate=GateStore(ctx.docs, prefix=ctx.prefix),
         sender=ctx.sender,
@@ -65,6 +66,7 @@ def service(
         pending=ctx.pending_all,
         tz=ctx.tz,
         now=ctx.now,
+        words=words,
     )
 
 
@@ -81,7 +83,7 @@ def build(
         clock_jobs=(NudgesJob(svc, ctx.owners), ActivityJob(svc, ctx.owners)),
         privacy=(wellbeing_privacy(svc.store, svc.well),),
         brief=(NudgesBrief(svc),),
-        phrases=PHRASES,
+        phrases=(phrasebook(svc.words),),
         services={"service": svc},
         ready=READY if svc.well.on else READY_UNSEALED,
     )

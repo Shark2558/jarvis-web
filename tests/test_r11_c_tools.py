@@ -4,19 +4,23 @@
 # words, snooze/stop/resume on the gate's own state, the sealed log off without a keyring.
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import UTC, date, datetime
 
 import pytest
 from r11_fakes import UID
-from r11_fakes_c import FakeCalendar, FakeRain, Planned, Rig, at_ist, part, run_tool
+from r11_fakes_c import FakeCalendar, FakeRain, Planned, Rig, at_ist, part, run_phrase, run_tool
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.gate import GateStore
 from jarvis.helpers.kinds import tool_allowed
+from jarvis.helpers.nudges.phrases import route
 from jarvis.helpers.nudges.store import OFF_WORDS
+from jarvis.offline.rules import NoAICall
 from jarvis.tools.taint import context_trust
 
 TUESDAY = date(2026, 11, 10)
+NOW = datetime(2026, 11, 10, 6, 30, tzinfo=UTC)
 READS = {"nudge_status", "freetime_suggest", "freetime_list"}
 
 
@@ -85,6 +89,75 @@ async def test_snooze_stop_and_resume_change_the_gates_own_state() -> None:
     assert state.snoozed == {} and state.stopped == {}
     with pytest.raises(ValueError):
         await run_tool(rig, "nudge_snooze", kind="water", minutes="5")
+
+
+async def nudged(rig: Rig, *kinds_at: tuple[str, str]) -> None:
+    for kind, _ in kinds_at:
+        await run_tool(rig, "nudge_set", kind=kind, on="true")
+    for _, hhmm in kinds_at:
+        rig.clock.at = at_ist(TUESDAY, hhmm)
+        await rig.job("nudges").run(())
+
+
+def hints(spoken: str) -> list[str]:
+    """The phrases a reply tells him to say (after its "Say")."""
+    return re.findall(r"'([^']+)'", spoken.split("Say ", 1)[1])
+
+
+async def test_a_bare_snooze_holds_only_the_nudge_sent_in_the_last_30_minutes() -> None:
+    rig = part()
+    await nudged(rig, ("standup", "10:30"), ("water", "11:00"))
+    assert [c[1] for c in rig.notifier.calls] == ["nudge_standup", "nudge_hydrate"]
+    rig.clock.at = at_ist(TUESDAY, "11:20")
+    assert await run_phrase(rig, "snooze") == ["nudge_snooze"]
+    assert set((await GateStore(rig.docs).state(UID)).snoozed) == {"nudge_hydrate"}
+    out = await run_tool(rig, "nudge_snooze", kind="last", minutes="30")
+    assert out["spoken"] == "Snoozed the drink water nudge for 30 minutes, Sir."
+
+
+async def test_a_bare_snooze_with_no_nudge_in_the_last_30_minutes_asks_which() -> None:
+    rig = part()
+    await nudged(rig, ("water", "11:00"))
+    await run_tool(rig, "nudge_stop", kind="standup")
+    await nudged(rig, ("standup", "11:30"))  # stopped: not sent, so not "the last one"
+    rig.clock.at = at_ist(TUESDAY, "11:45")
+    out = await run_tool(rig, "nudge_snooze", kind="last")
+    assert out["spoken"].startswith("Which nudge should I snooze, Sir?")
+    assert (await GateStore(rig.docs).state(UID)).snoozed == {}
+    for said in hints(out["spoken"]):
+        got = route(said, NOW)
+        assert got is not None and [c.tool for c in got.calls] == ["nudge_snooze"], said
+
+
+@pytest.mark.parametrize("text", ["stop my reminders", "no reminders", "stop all nudges"])
+async def test_stopping_every_nudge_says_what_stopped_and_how_to_have_it_back(text: str) -> None:
+    rig = part(at=at_ist(TUESDAY, "12:00"))
+    await run_tool(rig, "nudge_set", kind="water", on="true")
+    await run_tool(rig, "nudge_set", kind="focus", on="true")
+    got = route(text, NOW)
+    assert got is not None and got.calls == (NoAICall("nudge_stop", {"kind": "all"}),)
+    (call,) = got.calls
+    spoken = (await run_tool(rig, call.tool, **call.arguments))["spoken"]
+    assert spoken.startswith("Stopped every nudge for today, Sir: drink water, your top priority.")
+    assert "Your reminders are not affected." in spoken
+    assert hints(spoken)[0] == "resume nudges"
+    for said in hints(spoken):
+        assert route(said, NOW) is not None, said
+
+
+async def test_every_stop_reply_names_phrases_that_work_with_the_ai_off() -> None:
+    rig = part(at=at_ist(TUESDAY, "12:00"))
+    await run_tool(rig, "nudge_set", kind="water", on="true")
+    for args in (
+        {"kind": "water"},
+        {"kind": "standup"},
+        {"kind": "free_time", "for_good": "true"},
+        {"kind": "all", "for_good": "true"},
+    ):
+        spoken = (await run_tool(rig, "nudge_stop", **args))["spoken"]
+        assert hints(spoken), spoken
+        for said in hints(spoken):
+            assert route(said, NOW) is not None, (args, said)
 
 
 async def test_stop_for_good_switches_it_off_and_resume_says_so() -> None:

@@ -58,6 +58,7 @@ def _ask(svc: NudgeService, uid: str, e: CalEvent, word: str) -> Plan:
             return None
         mark = Checkin(w=word, o="asked", at=_hhmm(svc, e.start))
         await svc.well.change(uid, day, lambda d: d.with_checkin(e.key, mark))
+        svc.words.asked(word)  # "walk done" answers it, even if he changes his words meanwhile
         return TEXT.format(word=word, at=_hhmm(svc, e.start))
 
     return Plan(KIND, f"{KIND}@{e.key}", e.end + GRACE, words)
@@ -75,6 +76,12 @@ async def plans(svc: NudgeService, uid: str, s: NudgeSettings, now: datetime) ->
     return out
 
 
+async def asked_today(svc: NudgeService, uid: str, word: str) -> bool:
+    """An ask about `word` today that he hasn't answered yet (the sealed log)."""
+    logged = await svc.well.day(uid, svc.day_of().isoformat())
+    return any(c.w == word and c.o == "asked" for c in logged.checkins.values())
+
+
 async def check_in(svc: NudgeService, uid: str, word: str, outcome: Outcome) -> CalEvent | None:
     """His answer for today's latest planned `word` (or, with none found, for every one today)."""
     at = svc.now()
@@ -88,4 +95,14 @@ async def check_in(svc: NudgeService, uid: str, word: str, outcome: Outcome) -> 
     return latest
 
 
-__all__ = ["GRACE", "KIND", "LOOKBACK", "TEXT", "answered", "check_in", "plans", "word_in"]
+__all__ = [
+    "GRACE",
+    "KIND",
+    "LOOKBACK",
+    "TEXT",
+    "answered",
+    "asked_today",
+    "check_in",
+    "plans",
+    "word_in",
+]

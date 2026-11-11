@@ -38,18 +38,26 @@ other outcome (rang, silent, held, dropped, stopped, snoozed, capped) keeps the 
   `ctx.owners`, read his settings once a run, read his calendar only when a nudge that needs it is on
   (cached 30 min per owner, a failure remembered 10 min), each read ≤ 8 s, after his `calendar_read`
   row allows it (unreadable rules → no read) and with one audit line (agent `helpers`, tool
-  `calendar_list_events`, outcome only).
+  `calendar_list_events`, outcome only). A pending source that fails at focus time is not "nothing
+  pending": with nothing back, the focus claim is released and the next run retries (inside the
+  slot's 30 minutes). A failed sweep is logged by class name, the asks still go, and its claim is
+  released so the next run sweeps again.
 - **Tools** (all `agent="nudges"`, fixed `activity_words`): `nudge_status` R1, `nudge_set` R2 (a card
   when the round read outside content), `nudge_snooze` / `nudge_stop` / `nudge_resume` R2 (I0's
-  `GateStore`, the same documents the tab's taps change; stop = for today, `for_good` = switched off),
-  `nudge_water_log`, `nudge_standup_log`, `nudge_activity_checkin` R2 (the word must be one of his
-  activity words), `freetime_suggest` R1, `freetime_list` R1, `freetime_add` R2 (a card when tainted),
+  `GateStore`, the same documents the tab's taps change; stop = for today, `for_good` = switched off;
+  snooze kind `last` = the nudge that reached him in the last 30 minutes, none → "Which nudge should I
+  snooze?"; a stop says what it stopped, that his reminders are not affected, and the phrase that
+  brings it back), `nudge_water_log`, `nudge_standup_log`, `nudge_activity_checkin` R2 (the word must
+  be one of his activity words, or answer an ask still open today), `freetime_suggest` R1, `freetime_list` R1, `freetime_add` R2 (a card when tainted),
   `freetime_remove` R2, `freetime_done` R2.
 - **No-AI phrases** (D18; anchored, whole message): every one of the 13 tools is reachable
   (`tests/test_r11_c_phrases.py` pins it). "don't remind me to stand up" → `nudge_stop`, never
   `reminder_add`; "remind me to drink water every 45 minutes" → `nudge_set`; a one-off "remind me to
   drink water at 5 pm" still reaches the reminders. Telegram replies ("stop water") reach the same rules
-  (owner decision 7: no buttons).
+  (owner decision 7: no buttons). A check-in ("walk done", "missed my gym") fires only for one of his
+  activity words or a word JARVIS asked about in the last 12 hours; "homework done", "the report is
+  done" and "I missed my flight" fall through to the other routers. A bare "snooze" snoozes only the
+  nudge sent last (above); "stop my reminders" / "no reminders" still stop every nudge for today.
 - **Data**: `nudges/{uid}` (settings, ≤ 50 ideas; plain, his own words), `nudges/{uid}_told` (claims;
   no new collection), `wellbeing/{uid}_{date}` (sealed, AAD `wellbeing/{uid}/v1`, the date inside the
   seal checked on read, 30 days). No count and no word he typed reaches a log line
@@ -57,6 +65,10 @@ other outcome (rang, silent, held, dropped, stopped, snoozed, capped) keeps the 
 - **Privacy row** `helpers_wellbeing` (section Helpers, passkey delete): lists the sealed days and his
   settings, exports the log opened plus his settings and ideas (never a calendar title or a blob),
   deletes all of it and the claims (every nudge back to OFF).
+- **Counts and the model (by design)**: on a console turn with the AI on, `nudge_status`,
+  `nudge_water_log` and `nudge_standup_log` hand today's water and stand-up counts back to the model as
+  tool output. That is his own data, in a turn he started, through his own provider, so it stays as
+  designed; only a Telegram turn keeps the counts out (owner check 8).
 - **Brief**: "Nudges today: drink water every 90 min, your top priority." and "Yesterday: 4 glasses of
   water, 0 stand-ups." (sealed log, only when something was logged).
 - **Routes** `/v1/helpers/nudges`: `GET` (view, incl. the gate's snoozes/stops), `PUT /{name}`,
@@ -70,7 +82,7 @@ other outcome (rang, silent, held, dropped, stopped, snoozed, capped) keeps the 
 ## How to check it
 
 ```
-/tmp/venv-12/bin/pytest -q -p no:cacheprovider tests/test_r11_c_*.py           # 180 passed
+/tmp/venv-12/bin/pytest -q -p no:cacheprovider tests/test_r11_c_*.py           # 199 passed
 /tmp/venv-12/bin/python evals/r11_helpers/run.py --mock --part nudges           # 7/7, control fails it
 JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q tests/browser/test_r11_c_nudges.py
 ```
@@ -92,12 +104,12 @@ JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q t
 
 | Check | Result |
 |---|---|
-| Part C tests `tests/test_r11_c_*.py` (3.12; 3.11 the same) | 180 passed |
-| Whole unit suite (3.12, under the shared lock) | 10,968 passed, 107 skipped, 3 failed: exactly the three I0 stub assumptions of "Needs I1" 1 |
+| Part C tests `tests/test_r11_c_*.py` (3.12; 3.11 the same), after the review fixes | 199 passed |
+| Whole unit suite (3.12, under the shared lock; at 37b773c, not re-run for the review fixes) | 10,968 passed, 107 skipped, 3 failed: exactly the three I0 stub assumptions of "Needs I1" 1 |
 | Targeted re-run after the last Part C fixes (console assets, arch coverage, permissions, Telegram guard, every R11 test) | 1,075 passed, the same 3 failed |
 | ruff check / ruff format --check (src tests evals scripts) | clean |
 | mypy src | the 9 pre-existing errors only |
-| `evals/r11_helpers/run.py --mock` | 18/18; control `caps_off + claims_off` fails the suite (nudges: 4 cases) |
+| `evals/r11_helpers/run.py --mock` | 18/18; control `caps_off + claims_off` fails the suite (nudges: 4 cases). After the review fixes `--part nudges`: 7/7, its control fails it |
 | `evals/run_all_mock.py` (R11 not in it until I1) | ALL MOCK EVALS: PASS |
 | `scripts/arch_coverage.py`, `scripts/check_doc_versions.py` | OK; all 25 documents versioned |
 | Browser subset `-k "helpers or dock or ui_audit"` (incl. `test_r11_c_nudges.py`) | 156 passed |
@@ -186,6 +198,12 @@ JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q t
    event (never an outdoor one when rain is likely, once I1 joins the weather).
 7. Owner decision 1: if "stand-up" meant your meeting, switch on "Also 10 minutes before my stand-up
    meeting" and set the word your meeting's title contains.
+8. With the AI on, ask in the console "how much water have I had today?": the answer (and so the
+   model, through your own provider) has today's counts. Accept that, or say so; on Telegram the
+   reply only points to the tab.
+9. With the AI off: "homework done" and "I missed my flight" are not taken as check-ins; "walk done"
+   is. Right after a nudge, "snooze" snoozes only that one; with none in the last 30 minutes JARVIS
+   asks which.
 
 ## Known limits
 
@@ -194,6 +212,10 @@ JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q t
   then; the Helpers panel already says the clock is stopped.
 - A planned activity is matched by his words in the event title; an event someone else created (an
   invite) is never treated as his plan.
+- The No-AI check-in phrases know his activity words from memory (the router is synchronous): from
+  the last read or change of his settings, which every clock run makes. Right after a restart they
+  use the default words (walk, gym, yoga, run) until the first run; with several owners, every
+  owner's words (the tool still checks his own).
 - Nudge texts go out in English, fixed; the free-time and focus nudges carry his own words (an idea, a
   pending label), never outside text.
 

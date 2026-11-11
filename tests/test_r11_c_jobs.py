@@ -4,6 +4,7 @@
 # retried next run (`SendResult.retry`), dropped at night by the policy, inside the gate's caps.
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -178,6 +179,41 @@ async def test_nothing_pending_sends_no_focus_nudge_and_a_failing_source_is_skip
     assert sent(rig) == []
 
 
+def logged(caplog: pytest.LogCaptureFixture) -> str:
+    return " ".join(f"{r.getMessage()} {r.__dict__}" for r in caplog.records)
+
+
+async def told(rig: Rig) -> dict[str, list[str]]:
+    told_now: dict[str, list[str]] = await rig.part.services["service"].store.told(UID)
+    return told_now
+
+
+async def test_a_failing_pending_source_is_retried_next_run_not_kept_for_the_day(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING)
+    pend = FakePending([PendingItem("today", "Electricity due", "overdue")], fail=True)
+    rig = part(pending=pend)
+    await switch_on(rig, "nudge_focus")
+    out = await tick(rig, at_ist(TUESDAY, "10:00"))
+    assert sent(rig) == [] and out == {"later": 1}  # an error is not "nothing pending"
+    assert not any(k.startswith("nudge_focus") for k in (await told(rig)).get("2026-11-10", []))
+    pend.fail = False
+    await tick(rig, at_ist(TUESDAY, "10:05"))
+    assert sent(rig) == [("nudge_focus", "Top priority now, Sir: Electricity due.")]
+    assert "RuntimeError" in logged(caplog) and "pending down" not in logged(caplog)
+
+
+async def test_nothing_pending_keeps_the_focus_claim_for_that_slot() -> None:
+    pend = FakePending([])
+    rig = part(pending=pend)
+    await switch_on(rig, "nudge_focus")
+    assert await tick(rig, at_ist(TUESDAY, "10:00")) == {"nothing": 1}
+    pend.items = [PendingItem("today", "Electricity due", "overdue")]
+    await tick(rig, at_ist(TUESDAY, "10:05"))
+    assert sent(rig) == []  # the 10:00 slot was decided: nothing to say then
+
+
 def test_focus_ranking_is_overdue_today_urgency_pin_then_due() -> None:
     t = datetime(2026, 11, 10, 9, 0)
     items = [
@@ -303,6 +339,30 @@ async def test_a_failing_owner_is_counted_and_never_stops_the_job() -> None:
 
     svc.settings = broken  # type: ignore[method-assign]
     assert (await tick(rig, at_ist(TUESDAY, "18:05"), "activity_check"))["failed"] == 1
+
+
+async def test_a_failing_sweep_is_logged_the_ask_still_goes_and_the_next_run_sweeps(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING)
+    rig = await walk_rig()
+    svc = rig.part.services["service"]
+    real, swept = svc.well.sweep, []
+
+    async def flaky(uid: str, today: str) -> int:
+        swept.append(today)
+        if len(swept) == 1:
+            raise OSError("disk full at /private/path")
+        return int(await real(uid, today))
+
+    svc.well.sweep = flaky
+    out = await tick(rig, at_ist(TUESDAY, "18:00"), "activity_check")
+    assert sent(rig) == [("nudge_activity", activity.TEXT.format(word="walk", at="17:00"))]
+    assert "failed" not in out
+    for hhmm in ("18:05", "18:10"):
+        await tick(rig, at_ist(TUESDAY, hhmm), "activity_check")
+    assert swept == ["2026-11-10", "2026-11-10"]  # retried once, then done for the day
+    assert "OSError" in logged(caplog) and "private" not in logged(caplog)
 
 
 # ---- the service's failure paths -----------------------------------------------------------------

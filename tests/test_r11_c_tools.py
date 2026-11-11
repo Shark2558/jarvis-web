@@ -175,3 +175,18 @@ async def test_stop_stand_up_for_good_also_switches_the_meeting_variant_off() ->
     await run_tool(rig, "nudge_stop", kind="standup", for_good="true")
     up = (await rig.part.services["service"].settings(UID)).nudge("nudge_standup")
     assert (up.on, up.meeting) == (False, False)
+
+
+async def test_on_telegram_the_log_counts_never_leave_the_console() -> None:
+    from jarvis.core.channel import telegram_turn
+
+    rig = part(at=at_ist(TUESDAY, "12:00"))
+    with telegram_turn():
+        logged = (await run_tool(rig, "nudge_water_log", glasses="2"))["spoken"]
+        stood = (await run_tool(rig, "nudge_standup_log"))["spoken"]
+        status = (await run_tool(rig, "nudge_status"))["spoken"]
+    assert logged == "Logged 2 glasses of water, Sir." and stood == "Logged a stand-up, Sir."
+    assert "glasses" not in status and "today's log is in JARVIS" in status
+    assert (
+        "Today: 2 glasses of water, 1 stand-ups." in (await run_tool(rig, "nudge_status"))["spoken"]
+    )

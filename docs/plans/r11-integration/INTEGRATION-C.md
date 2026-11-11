@@ -70,7 +70,7 @@ other outcome (rang, silent, held, dropped, stopped, snoozed, capped) keeps the 
 ## How to check it
 
 ```
-/tmp/venv-12/bin/pytest -q -p no:cacheprovider tests/test_r11_c_*.py           # 179 passed
+/tmp/venv-12/bin/pytest -q -p no:cacheprovider tests/test_r11_c_*.py           # 180 passed
 /tmp/venv-12/bin/python evals/r11_helpers/run.py --mock --part nudges           # 7/7, control fails it
 JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q tests/browser/test_r11_c_nudges.py
 ```
@@ -146,7 +146,14 @@ JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q t
 4. **Persona p11.0** (D22, I1's): `HELPERS_RULE` should also say "for 'don't remind me to …' about a
    nudge, use nudge_stop, never a reminder" so the AI-on path matches the No-AI phrase.
 
-5. **Guide / C60**: no new collection (the claims doc lives in `nudges`); the card's module list may add
+5. **Telegram's read-tool guard** (`tests/test_telegram_tool_guard.py`) builds its gateway without
+   the R11 parts, so it never classifies their reads. With `r11=` added there, Part C's three reads
+   are safe to answer on Telegram: add `"nudge_status", "freetime_list", "freetime_suggest"` to its
+   safe list. On a Telegram turn (`core.channel.on_telegram()`) Part C's tools already keep the sealed
+   log's counts out of the reply ("Logged 2 glasses of water, Sir."; the status points to the tab),
+   because a bot chat is a cloud chat (`test_on_telegram_the_log_counts_never_leave_the_console`).
+
+6. **Guide / C60**: no new collection (the claims doc lives in `nudges`); the card's module list may add
    Part C's modules (`helpers/nudges/{calendar,service,schedule,jobs,words,ideas}.py`) if it lists files.
 
 ## Owner checks (live, after I1)

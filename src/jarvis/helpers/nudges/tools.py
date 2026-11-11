@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from jarvis.core.channel import on_telegram
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.gate import ALL
 from jarvis.helpers.nudges import activity, hydrate
@@ -64,7 +65,9 @@ def _status_tool(svc: NudgeService) -> Tool:
         held = [LABEL[k] for k in NUDGE_KINDS if gate.stopped_on(k, day)]
         if held:
             lines.append("Stopped for today: " + ", ".join(held) + ".")
-        if svc.well.on:
+        if svc.well.on and on_telegram():  # a cloud chat: his sealed log stays in the console
+            lines.append("Sir, today's log is in JARVIS (Helpers, Nudges).")
+        elif svc.well.on:
             logged = await svc.well.day(uid, day)
             lines.append(f"Today: {logged.water} glasses of water, {logged.stood} stand-ups.")
         return {"spoken": " ".join(lines), "on": list(s.on_kinds())}
@@ -211,10 +214,14 @@ def _water_tools(svc: NudgeService) -> list[Tool]:
     async def water(a: dict[str, Any]) -> dict[str, Any]:
         glasses = a_number(a.get("glasses", 1), lo=1, hi=10, what="glasses")
         day = await hydrate.log_water(svc, owner_id(), glasses)
+        if on_telegram():  # a cloud chat: no count from his sealed log
+            return {"spoken": f"Logged {glasses} glass{'es' if glasses > 1 else ''} of water, Sir."}
         return {"spoken": f"Logged, Sir: {day.water} glasses of water today."}
 
     async def stood(a: dict[str, Any]) -> dict[str, Any]:
         day = await hydrate.log_stood(svc, owner_id())
+        if on_telegram():
+            return {"spoken": "Logged a stand-up, Sir."}
         return {"spoken": f"Logged, Sir: {day.stood} stand-ups today."}
 
     glasses = {"glasses": {"type": "integer", "minimum": 1, "maximum": 10}}

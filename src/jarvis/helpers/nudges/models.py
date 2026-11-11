@@ -255,8 +255,8 @@ class NudgeSettings(BaseModel):
 
 def _plain(exc: ValidationError) -> str:
     """The first problem in plain words (pydantic's message, without its decoration)."""
-    first = exc.errors()[0] if exc.errors() else {}
-    msg = str(first.get("msg", "That setting isn't allowed."))
+    errors = exc.errors()
+    msg = str(errors[0]["msg"]) if errors else "That setting isn't allowed."
     return msg.removeprefix("Value error, ")
 
 

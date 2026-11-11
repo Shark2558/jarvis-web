@@ -1,0 +1,12 @@
+Authentication-Results: mx.google.com; dkim=pass header.i=@blinkit.com header.s=s1 header.b=abc; spf=pass smtp.mailfrom=blinkit.com; dmarc=pass (p=REJECT) header.from=blinkit.com
+From: Blinkit <noreply@blinkit.com>
+To: owner@example.com
+Subject: Your Blinkit order summary
+Date: Thu, 05 Nov 2026 21:05:00 +0530
+Message-ID: <blk7788@mail.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Order ID: BLK-7788
+Milk 1 L, Curd 400 g, Bread
+Payment: Credit card 4111 1111 1111 1111
+Grand Total: ₹456

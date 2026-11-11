@@ -1,0 +1,10 @@
+Authentication-Results: mx.google.com; dkim=pass header.i=@swiggy.in header.s=s1 header.b=abc; spf=pass smtp.mailfrom=swiggy.in; dmarc=pass (p=REJECT) header.from=swiggy.in
+From: Swiggy <no-reply@swiggy.in>
+To: owner@example.com
+Subject: Your Swiggy food order was delivered
+Date: Fri, 06 Nov 2026 13:10:00 +0530
+Message-ID: <sw9090@mail.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Order SW-9090 from a restaurant was delivered.
+Total paid: ₹520

@@ -660,6 +660,10 @@ def test_nothing_the_app_ships_mentions_markdy() -> None:
     """The console and the build book never load Markdy (esm.sh would break the CSP)."""
     hits = []
     for path in sorted((ROOT / "src").rglob("*")):
+        # `pip install -e .` writes src/*.egg-info (git-ignored build metadata, never in the
+        # image); its SOURCES.txt lists the repo's own Markdy scripts and tests.
+        if any(part.endswith(".egg-info") for part in path.parts):
+            continue
         if path.is_file() and path.suffix in TEXT_SUFFIXES:
             text = path.read_text(encoding="utf-8", errors="replace").lower()
             if "markdy" in text or "esm.sh" in text:

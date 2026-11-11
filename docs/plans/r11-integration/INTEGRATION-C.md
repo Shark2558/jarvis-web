@@ -10,7 +10,7 @@ other part's file was edited.
 
 | Item | What it does | Where |
 |---|---|---|
-| 8 Stand-up | "Time to stand up and move for a few minutes, Sir." every N minutes after his window opens (default every 60, 09:30–18:30, Mon–Sat, OFF): 10:30 … 17:30, eight a day, inside the default cap of 8. The **meeting variant** (owner decision 1, OFF): "Your stand-up starts in 10 minutes, Sir." from a calendar event whose title holds his word ("stand-up", "standup" and "stand up" all match); the title is matched in code, never sent. | `helpers/nudges/standup.py` |
+| 8 Stand-up | "Time to stand up and move for a few minutes, Sir." every N minutes after his window opens (default every 60, 09:30–18:30, Mon–Sat, OFF): 10:30 … 17:30, eight a day, inside the default cap of 8. The **meeting variant** (owner decision 1, OFF): "Your stand-up starts in 10 minutes, Sir." from a calendar event whose title holds his word ("stand-up", "standup" and "stand up" all match); the title is matched in code, never sent. It has its own switch: it works with the move nudge off; "stop … for good" switches both off. | `helpers/nudges/standup.py` |
 | 9 Water | "Time for a glass of water, Sir." every 90 min, same window (11:00, 12:30, 14:00, 15:30, 17:00). His log (glasses, stand-ups) is sealed (`wellbeing`); no keyring → the log says it is off, the reminders still work. | `hydrate.py`, `store.py` |
 | 11 Missed activity | An event only he wrote (`provenance.is_owner_authored_event`) whose title holds one of his activity words (default walk, gym, yoga, run): 15 min after it ends, with no check-in, JARVIS asks **once**: "Your walk at 17:00 has no check-in yet, Sir. Did it happen? Say 'walk done', 'missed my walk' or 'moved my walk'." Check-ins and the ask are sealed, kept by a fingerprint of the event id, never its title. Off without a keyring. | `activity.py` |
 | 12 Free time | Plain code (D1): the gap until his next event (any event; never past the window), an idea from **his** list that fits it, not done in the last 3 days, not outdoor when rain is likely; the day picks among those that qualify. At his times (default 18:00, OFF). No gap / nothing fits / calendar not linked → nothing sent. | `freetime.py`, `ideas.py` |
@@ -70,7 +70,7 @@ other outcome (rang, silent, held, dropped, stopped, snoozed, capped) keeps the 
 ## How to check it
 
 ```
-/tmp/venv-12/bin/pytest -q -p no:cacheprovider tests/test_r11_c_*.py           # 176 passed
+/tmp/venv-12/bin/pytest -q -p no:cacheprovider tests/test_r11_c_*.py           # 179 passed
 /tmp/venv-12/bin/python evals/r11_helpers/run.py --mock --part nudges           # 7/7, control fails it
 JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q tests/browser/test_r11_c_nudges.py
 ```
@@ -111,7 +111,9 @@ JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q t
    +        assert all(r.path.startswith(module.PREFIX) for r in module.router.routes)
    ```
    (imports: `from jarvis.helpers.kinds import CLOCK_JOBS, PARTS`.) The test's name may become
-   `test_the_four_part_routers_live_under_their_own_prefix`.
+   `test_the_four_part_routers_live_under_their_own_prefix`. Checked on a temporary copy of the file
+   on this branch: 12 passed (the copy was removed, the I0 file is untouched). Parts A, B and D trip
+   the same three assertions once built, so the one diff serves all four.
 
 2. **Rain for the free-time pick (D12)**: Part C reads a rain hint late through `ctx.rain` (a callable
    returning an object with `async rain_likely(uid, start, end) -> bool | None`); until I1 joins Part

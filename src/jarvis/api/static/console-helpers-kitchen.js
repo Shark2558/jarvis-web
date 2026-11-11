@@ -100,7 +100,8 @@ if (H) {
       if (Array.isArray(r.nutrition_full) && r.nutrition_full.length) s.append(fullPanel(r));
     });
     const n = v.nutrition || {};
-    s.append(H.mk('p', 'snote', n.installed ? n.attribution : 'Nutrition data isn\u2019t installed yet (USDA FoodData Central).'));
+    if (n.installed) s.append(H.mk('p', 'snote', H.txt(n.label, 200)), H.mk('p', 'snote', H.txt(n.credit, 200)));
+    else s.append(H.mk('p', 'snote', 'Nutrition data isn\u2019t installed yet (USDA FoodData Central).'));
     s.append(H.mk('p', 'snote', 'New ideas use the AI from the chat, metered like a reply; with the AI off you get your saved recipes.'));
     return s;
   }

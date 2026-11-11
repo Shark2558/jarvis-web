@@ -57,7 +57,11 @@ async def test_the_view_is_no_store_and_starts_empty(rig: Any) -> None:
     v = r.json()
     assert v["sealed"] is True and v["pantry"] == [] and v["prefs"]["diet"] == "veg"
     assert v["nutrition"]["installed"] is True and v["spend"]["on"] is False  # I1: USDA installed
-    assert v["nutrition"]["label"].startswith("US reference values (USDA FoodData Central)")
+    assert v["nutrition"]["label"] == (
+        "US reference values (USDA FoodData Central); Indian varieties and home recipes can differ."
+    )
+    assert v["nutrition"]["credit"].startswith("Nutrient values: USDA FoodData Central")
+    assert "attribution" not in v["nutrition"]  # the tab draws label + credit (review L5)
     assert v["calendar"] is True and v["blocks"]["cooking_at"] == "19:00"
 
 

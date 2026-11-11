@@ -20,6 +20,8 @@ file reports per 100 g (`all`; names and units once in `nutrients`) and the six 
   nutrient (on request: "full nutrition for dal"). Until a data file is installed (its
   `installed` flag), every answer is `NOT_INSTALLED`. Names are matched by the groceries key only
   (`groceries.items.norm_key`): "coconut milk" is never read as "milk".
+- **Read-only.** The bundled copy is read once a process and shared, so every mapping in it is a
+  `MappingProxyType` and every list a tuple, made once at load (no per-call copy).
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib.resources import files
 from importlib.resources.abc import Traversable
+from types import MappingProxyType
 from typing import Any
 
 from pydantic import ValidationError
@@ -52,7 +55,8 @@ MAX_FILE_BYTES = 4_000_000
 MAX_VALUE = 100_000.0
 LABEL = "US reference values (USDA FoodData Central); Indian varieties and home recipes can differ."
 SOURCE_LINE = "USDA FoodData Central (public domain), raw ingredients"
-ATTRIBUTION = f"{LABEL} Nutrient values: {SOURCE_LINE}; a rough guide."
+CREDIT = f"Nutrient values: {SOURCE_LINE}; a rough guide."
+ATTRIBUTION = f"{LABEL} {CREDIT}"
 NOT_INSTALLED = "Nutrition data isn't installed yet, Sir (the USDA FoodData Central subset)."
 UNITS = {"G": "g", "MG": "mg", "UG": "µg", "KCAL": "kcal", "KJ": "kJ", "IU": "IU"}
 _UNITS = {"g": 1, "gm": 1, "gms": 1, "gram": 1, "grams": 1, "kg": 1000, "kgs": 1000}
@@ -70,6 +74,9 @@ class Source:
     label: str = LABEL
 
 
+_EMPTY: Mapping[int, float] = MappingProxyType({})
+
+
 @dataclass(frozen=True)
 class Food:
     key: str
@@ -77,7 +84,13 @@ class Food:
     names: tuple[str, ...]
     per100: Mapping[str, float | None]
     source: str = USDA
-    all: Mapping[int, float] = field(default_factory=dict)  # every nutrient, per 100 g
+    all: Mapping[int, float] = _EMPTY  # every nutrient, per 100 g
+
+    def __post_init__(self) -> None:  # read-only views, made once (the copy is shared)
+        for name in ("per100", "all"):
+            value = getattr(self, name)
+            if not isinstance(value, MappingProxyType):
+                object.__setattr__(self, name, MappingProxyType(dict(value)))
 
 
 @dataclass(frozen=True)
@@ -118,9 +131,9 @@ def _food(raw: object, default_source: str) -> Food | None:
         raw["key"],
         fid if isinstance(fid, int) and not isinstance(fid, bool) else 0,
         (raw["key"], *names),
-        values,
+        MappingProxyType(values),
         src if isinstance(src, str) and src else default_source,
-        _all(raw.get("all")),
+        MappingProxyType(_all(raw.get("all"))),
     )
 
 
@@ -153,12 +166,17 @@ class Nutrition:
         nutrients: Mapping[int, tuple[str, str]] | None = None,
     ) -> None:
         self.installed = installed and bool(foods)
-        self.sources: dict[str, Source] = {USDA: Source(USDA), **(sources or {})}
-        self.nutrients: dict[int, tuple[str, str]] = dict(nutrients or {})
-        self._by_name: dict[str, list[Food]] = {}
+        self.sources: Mapping[str, Source] = MappingProxyType(
+            {USDA: Source(USDA), **(sources or {})}
+        )
+        self.nutrients: Mapping[int, tuple[str, str]] = MappingProxyType(dict(nutrients or {}))
+        by_name: dict[str, list[Food]] = {}
         for f in foods:
             for name in dict.fromkeys(norm_key(n) for n in f.names):
-                self._by_name.setdefault(name, []).append(f)
+                by_name.setdefault(name, []).append(f)
+        self._by_name: Mapping[str, tuple[Food, ...]] = MappingProxyType(
+            {k: tuple(v) for k, v in by_name.items()}
+        )
 
     @classmethod
     def load(cls, *paths: Traversable) -> Nutrition:
@@ -194,7 +212,7 @@ class Nutrition:
 
     def find(self, name: str) -> Food | None:
         """The food by one of its names: a source marked "IN" first, then USDA's."""
-        found = self._by_name.get(norm_key(name)) or []
+        found = self._by_name.get(norm_key(name)) or ()
         indian = [f for f in found if self.region_of(f) == "IN"]
         best = indian or found
         return best[0] if best else None
@@ -339,6 +357,7 @@ def parse_ingredients(text: str) -> tuple[Ingredient, ...]:
 
 __all__ = [
     "ATTRIBUTION",
+    "CREDIT",
     "DATA",
     "LABEL",
     "NOT_INSTALLED",

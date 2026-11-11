@@ -2,7 +2,8 @@
 # realistic mocked data (pantry, tastes, saved recipes with nutrition, two months of grocery spend,
 # the block plan) passes the visual gate (ui_checks.DOM_CHECKS_JS and the audit's own probes) at
 # 1440x900 and 390x844, Night and Day, with no JS errors or CSP violations; and the calendar button
-# only ever asks for an approval card (POST /blocks/propose), never writes anything itself.
+# only ever asks for an approval card (POST /blocks/propose), never writes anything itself. The tab
+# shows the view's honest label ("US reference values (USDA FoodData Central); ...").
 from __future__ import annotations
 
 import json
@@ -13,6 +14,8 @@ import pytest
 from test_console import DESKTOP, PHONE, Console
 from test_ui_audit import NAMELESS_JS, WRAP_JS, _assert_clean, _open
 from ui_checks import DOM_CHECKS_JS, FINISH_ANIMATIONS_JS, install_mocks
+
+from jarvis.helpers.kitchen.nutrition import CREDIT, LABEL
 
 _pw = pytest.importorskip("playwright.sync_api")
 sync_playwright = _pw.sync_playwright
@@ -82,8 +85,8 @@ VIEW: dict[str, Any] = {
     },
     "nutrition": {
         "installed": True,
-        "attribution": "Nutrient values: USDA FoodData Central "
-        "(public domain), raw ingredients; a rough guide.",
+        "label": LABEL,
+        "credit": CREDIT,
     },
     "calendar": True,
     "words": {"diets": ["veg", "egg", "nonveg"], "spice": [], "oil": []},
@@ -152,8 +155,8 @@ def test_the_kitchen_tab_passes_the_visual_gate(rig: Rig, vp: str, surface: str)
     c = rig.get(vp, surface)
     _kitchen_tab(c)
     pane = c.page.locator("#hpp-kitchen")
-    for words in ("toor dal", "Dal tadka", "November 2026", "Ask to add to my calendar"):
-        assert words in (pane.text_content() or ""), words
+    for words in ("toor dal", "Dal tadka", "November 2026", "Ask to add to my calendar", LABEL):
+        assert words in (pane.text_content() or ""), words  # review L5: the honest label shows
     sel = "#p-helpers"
     res = c.page.evaluate(DOM_CHECKS_JS, sel)
     _assert_clean(

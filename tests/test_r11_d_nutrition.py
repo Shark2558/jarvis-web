@@ -286,3 +286,20 @@ def test_the_converter_says_so_when_a_csv_cannot_be_read(tmp_path: Path) -> None
         capture_output=True, text=True, timeout=60,
     )  # fmt: skip
     assert r.returncode == 2 and "can't read" in r.stderr and "Traceback" not in r.stderr
+
+
+def test_the_shared_data_is_read_only() -> None:
+    """Integrated review L4 (code): one read-once copy is shared, so nothing in it can change."""
+    from types import MappingProxyType
+
+    n = Nutrition.load()
+    assert Nutrition.load() is n
+    rice = n.find("rice")
+    assert rice is not None
+    for m in (n.sources, n.nutrients, rice.per100, rice.all):
+        assert isinstance(m, MappingProxyType)
+        with pytest.raises(TypeError):
+            m["x"] = 1  # type: ignore[index]
+    with pytest.raises(TypeError):
+        n._by_name["rice"] = ()  # type: ignore[index]  # noqa: SLF001
+    assert isinstance(n._by_name.get("rice"), tuple)  # noqa: SLF001

@@ -27,7 +27,7 @@ from jarvis.helpers.kitchen.models import (
     plain,
 )
 from jarvis.helpers.kitchen.nutrition import (
-    ATTRIBUTION,
+    CREDIT,
     LABEL,
     DishNutrition,
     Nutrition,
@@ -273,11 +273,8 @@ class KitchenService:
                 "last_at": scan.last_at,
                 "months": await self.spend.totals(uid) if scan.on else [],
             },  # fmt: skip
-            "nutrition": {
-                "installed": self.nutrition.installed,
-                "attribution": ATTRIBUTION,
-                "label": LABEL,
-            },
+            # the honest label and the credit, drawn as they are by the Kitchen tab (review L5)
+            "nutrition": {"installed": self.nutrition.installed, "label": LABEL, "credit": CREDIT},
             "calendar": self.calendar,
             "words": {"diets": list(DIETS), "spice": list(SPICE_WORDS), "oil": list(OIL_WORDS)},
         }

@@ -734,9 +734,8 @@ def create_app(
         undo=undo,
         drive=drive,
     )
-    app = FastAPI(
-        title="JARVIS", version=VERSION, lifespan=_lifespan(s, inj), docs_url=None, redoc_url=None
-    )
+    # no /openapi.json (every route, to anyone), so FastAPI serves no /docs or /redoc either
+    app = FastAPI(title="JARVIS", version=VERSION, lifespan=_lifespan(s, inj), openapi_url=None)
     _install_middleware(app, s)
     _install_core_errors(app)
     _install_feature_errors(app)

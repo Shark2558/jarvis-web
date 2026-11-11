@@ -1,3 +1,5 @@
+Version v0.1.0 · 1 Nov 2026 · Release Slice 1 · Status: Superseded by the build log · Owner: 🛠 Mark I
+
 # Phase 2 · Slice 1 — Tool spine: registry, policy gateway, tool-calling loop
 
 Status: DONE · 2026-11-01 · 49 tests · reviewed (8 findings fixed) · follows ECC loop (plan → test → implement → review → verify)
@@ -42,3 +44,9 @@ Brain.chat ─► ToolLoop (≤ N rounds)
 
 ## Exit criteria for this slice
 pytest green, ruff clean, mock eval still passes, 0 R3 executions without a token in tests.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.1.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

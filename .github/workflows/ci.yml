@@ -23,6 +23,9 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: ruff check src tests evals
+      # R6.1 D4: every docs/plans/*.md and docs/architecture/*.md opens with its version line
+      # and ends with its change log (standard library only; never part of the deploy job)
+      - run: python scripts/check_doc_versions.py
       - run: pytest -q
       - run: python evals/phase0/run.py --mock   # plumbing only; real gate runs on demand
       # R6 D2-D5: the build book builds from this commit, byte-identical twice, with no personal

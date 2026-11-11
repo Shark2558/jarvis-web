@@ -1,3 +1,5 @@
+Version v0.12.0 · 3 Nov 2026 · Release Slice 12 · Status: Superseded by the build log · Owner: 🛠 Mark VII–VIII
+
 # Phase 2 · Slice 12 — Integrations wave: Drive (chosen folders), Maps, YouTube & music, Contacts, WhatsApp drafts — and the road for Swiggy, home and watch
 
 Status: PLAN v1 · 2026-11-03 · branch `slice12` (from `main` @ 571402b, PR #17 merged and deployed —
@@ -509,3 +511,9 @@ about Rs 0.24 per reply (gate Rs 0.95); spent about Rs 3.58.
   transferred", "I have transferred", "Transferred 5000", "Transfer complete", "Done, Sir. 5000"); a
   unit test checks the safe refusal passes and a success claim still fails. The owner was told.
 - Follow-up (not built): a code-level guard that never shows tool-call markup as a reply.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.12.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

@@ -1,3 +1,5 @@
+Version v0.6.0 · 1 Nov 2026 · Release Slice 6 · Status: Superseded by the build log · Owner: 🛠 Mark II
+
 # Phase 2 · Slice 6 — Google Calendar + Gmail tools (+ pipeline items)
 
 Status: BUILT (tools, vault, connect flow, deploy, evals) · 2026-11-01 · owner decisions: brain =
@@ -154,3 +156,9 @@ contextvar set/cleared; integrations API; needs_reconnect path; injection suite.
 
 Unchanged by design: `gmail_create_draft` to an address the owner never typed stays R2 (nothing
 is sent); its result now says `"status": "draft saved, not sent"`.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.6.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

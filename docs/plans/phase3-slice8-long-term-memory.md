@@ -1,3 +1,5 @@
+Version v0.8.0 · 1 Nov 2026 · Release Slice 8 · Status: Superseded by the build log · Owner: 🛠 Mark IV
+
 # Phase 3 · Slice 8 — Long-term memory, "About you" profile, collapsible Brief settings
 
 Owner (2026-11-01): "Please start building the next part in the pipeline. Long term memory and other
@@ -252,3 +254,9 @@ a read per conversation with unlearned messages (with learning off: none); small
 about the notes fall back). The eval rig turns the HTTP rate limit off (past ~120 calls it
 measured the limiter, not the filter). Not changed: `Brain._run_loop` (70 lines) and
 `create_app` were over 50 lines before this round and are untouched.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.8.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

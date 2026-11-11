@@ -1,3 +1,5 @@
+Version v0.2.0 · 1 Nov 2026 · Release Slice 2 · Status: Superseded by the build log · Owner: 🛠 Mark I
+
 # Phase 2 · Slice 2 — Web console + owner-only Google sign-in + hosting
 
 Status: DONE (pending owner go-live) · 2026-11-01 · 65 tests · security-reviewed (0 critical/high; 2 medium + 2 low fixed) · follows ECC loop
@@ -50,3 +52,9 @@ RateLimiter middleware: token bucket per client IP (auth: 20/min, api: 120/min)
 
 ## Exit criteria
 pytest green, ruff clean, security review of auth path, owner can sign in on the hosted URL.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.2.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

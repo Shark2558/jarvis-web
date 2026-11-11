@@ -1,3 +1,5 @@
+Version v0.11.0 · 3 Nov 2026 · Release Slice 11 · Status: Superseded by the build log · Owner: 🛠 Mark VI
+
 # Phase 2 · Slice 11 — Full control of calendar, reminders and to-dos (+ Approve all)
 
 Status: PLAN v1 · 2026-11-02 · branch `slice11` (from `main` @ 7f5a437, PR #16 merged) ·
@@ -300,3 +302,9 @@ The fresh-context review found no CRITICAL or HIGH; its 2 MEDIUM + 4 LOW are fix
    worded "(may not have been done)".
 6. **Duplicate card.** `ConfirmationGate.check` merges `reason` with the same `carried_reason`
    rule `_carried` uses (RISK and DRAFT_RECIPIENT win; never relaxed).
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.11.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

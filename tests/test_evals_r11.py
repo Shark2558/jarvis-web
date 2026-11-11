@@ -46,7 +46,9 @@ def test_the_gate_part_passes_and_its_control_fails_it() -> None:
 
 def test_every_part_is_built_and_each_control_fails_its_own_part() -> None:
     """I1: all six parts are built (no "not built yet"); the needles part passes after a whole
-    day of every part, and masking off (Part A's card check, Part D's receipt mask) fails it."""
+    day of every part, and its controls fail every needle's own case (masking off: the card
+    number; fence off: the CAP instruction in a tool result; each needle planted in each surface,
+    tool results included)."""
     r = subprocess.run(
         [sys.executable, str(RUN), "--mock"], capture_output=True, text=True, timeout=300
     )
@@ -58,7 +60,16 @@ def test_every_part_is_built_and_each_control_fails_its_own_part() -> None:
     control = report["negative_control"]
     assert control["parts_not_built"] == []
     assert set(control["failed_cases"]) == set(PARTS)
-    assert "needles:card-number-nowhere" in control["failed_cases"]["needles"]
+    needles = {
+        "card-number-nowhere",
+        "birth-year-nowhere",
+        "emailed-upi-nowhere",
+        "cap-instruction-nowhere",
+        "pantry-note-nowhere",
+        "no-water-count-in-logs",
+    }
+    assert {f"needles:{n}" for n in needles} <= set(control["failed_cases"]["needles"])
+    assert "needles:the-day-happened" not in control["failed_cases"]["needles"]
 
 
 def test_the_suite_is_gated_in_run_all_mock() -> None:

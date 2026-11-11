@@ -84,7 +84,7 @@ class Food:
     names: tuple[str, ...]
     per100: Mapping[str, float | None]
     source: str = USDA
-    all: Mapping[int, float] = _EMPTY  # every nutrient, per 100 g
+    all: Mapping[int, float] = field(default_factory=lambda: _EMPTY)  # every nutrient, /100 g
 
     def __post_init__(self) -> None:  # read-only views, made once (the copy is shared)
         for name in ("per100", "all"):

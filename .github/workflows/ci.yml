@@ -31,6 +31,9 @@ jobs:
       # R6 D2-D5: the build book builds from this commit, byte-identical twice, with no personal
       # data, no unlisted secret-shaped string, every package in a layer and every flow step real
       - run: python -m jarvis.buildbook.gen --check
+      # R6.1 D6: the architecture guide covers every package, console module, Scheduler job,
+      # outside service and Firestore collection; complete cards and rows; R6 secret scan
+      - run: python scripts/arch_coverage.py
 
   # R6.1 D4: a pull request's title reads "v6.1.0 · R6.1 Short name · Mark XIII"
   # (scripts/check_pr_title.py). Pull requests only, Dependabot's exempt, and never a job the

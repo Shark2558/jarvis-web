@@ -5,7 +5,8 @@ in the loop (R11 I1; CLAUDE.md "every tool call passes jarvis.tools.gateway").
 The readers are the R11 helpers' jobs: birthdays (Google Contacts), breach notices (Gmail), the
 missed-activity and free-time calendar read (Google Calendar), the to-dos for "top priority"
 (Google Tasks) and grocery receipts (Gmail). Each asks THE GATEWAY before it reads, by the tool
-whose permission row covers the read, and leaves one kind-only line in the gateway's audit chain:
+whose permission row covers the read, and leaves one kind-only line in the gateway's audit chain
+(`BackgroundReads.of(gateway)`; the helpers' context reads the app's gateway late):
 
 - **The gateway decides.** Its configured policy plus the owner's own rules, read exactly as the
   gateway reads them for a call (`Gateway.rules`, with the Telegram and offline wrappers), for
@@ -78,6 +79,13 @@ class BackgroundReads:
         self._audit = audit
         self._now = now or (lambda: datetime.now(UTC))
         self._told: dict[tuple[str, str, str, str], date] = {}
+
+    @classmethod
+    def of(
+        cls, gateway: GatewayView, *, now: Callable[[], datetime] | None = None
+    ) -> BackgroundReads:
+        """The path over one gateway: its policy and rules decide; its audit chain is written."""
+        return cls(lambda: gateway, audit=gateway.audit, now=now)
 
     async def allowed(self, uid: str, *tools: str, job: str) -> bool:
         """True only when the gateway's policy ALLOWs every tool's row for him (no card, no

@@ -2,7 +2,7 @@
 # passes jarvis.tools.gateway). Every background reader of his own data -- birthdays (A, Google
 # Contacts), to-dos for "top priority" (A, Google Tasks), breach notices (B, Gmail), the missed-
 # activity and free-time calendar read (C, Google Calendar) and grocery receipts (D, Gmail) --
-# takes ONE governed path, `Gateway.background()` (jarvis.tools.background): the gateway's own
+# takes ONE governed path, `BackgroundReads.of(gateway)` (jarvis.tools.background): the gateway's own
 # policy and his rows decide, only ALLOW reads (Ask first, Never, unreadable rules, no gateway, an
 # unknown or non-read tool: no read), and each refusal or read leaves the same kind-only audit
 # line. Each reader is shown here: a denied row means no request at all and that audit line.
@@ -80,7 +80,7 @@ async def test_the_gateways_policy_and_his_rows_decide_and_only_allow_reads() ->
     ]
     for rows, ok, line in cases:
         gw = _gateway(rows, read)
-        reads = gw.background(now=Clock(NOON))
+        reads = BackgroundReads.of(gw, now=Clock(NOON))
         assert await reads.allowed(UID, "contacts_birthdays", job="birthdays") is ok, rows
         got = await _lines(gw.audit)
         want = (
@@ -93,7 +93,7 @@ async def test_the_gateways_policy_and_his_rows_decide_and_only_allow_reads() ->
 
 async def test_an_unknown_tool_a_write_tool_no_owner_or_no_gateway_means_no_read() -> None:
     gw = _gateway(None, _tool("chore_add", ActionRisk.REVERSIBLE))
-    reads = gw.background()
+    reads = BackgroundReads.of(gw)
     assert await reads.allowed(UID, "gmail_search", job="breach_watch") is False
     assert await reads.allowed(UID, "chore_add", job="chores_due") is False
     assert await reads.allowed("", "chore_add", job="chores_due") is False
@@ -113,7 +113,7 @@ async def test_an_unknown_tool_a_write_tool_no_owner_or_no_gateway_means_no_read
 async def test_every_named_tool_must_be_allowed_and_a_refusal_is_audited_once_a_day() -> None:
     gw = _gateway(Rows("spend_*", Effect.DENY), _tool("gmail_search"), _tool("spend_month"))
     clock = Clock(NOON)
-    reads = gw.background(now=clock)
+    reads = BackgroundReads.of(gw, now=clock)
     for _ in range(3):
         assert await reads.allowed(UID, "gmail_search", "spend_month", job="grocery_spend") is False
     assert len(await _lines(gw.audit)) == 1  # a 5-minute job never floods the chain

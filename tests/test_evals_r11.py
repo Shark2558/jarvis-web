@@ -42,3 +42,26 @@ def test_the_gate_part_passes_and_its_control_fails_it() -> None:
     unbuilt = set(control["parts_not_built"])
     for part in unbuilt:
         assert f"{part}:not_built_yet" in ids
+
+
+def test_every_part_is_built_and_each_control_fails_its_own_part() -> None:
+    """I1: all six parts are built (no "not built yet"); the needles part passes after a whole
+    day of every part, and masking off (Part A's card check, Part D's receipt mask) fails it."""
+    r = subprocess.run(
+        [sys.executable, str(RUN), "--mock"], capture_output=True, text=True, timeout=300
+    )
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-4000:]
+    report = json.loads((HERE / "report.json").read_text())
+    ids = {x["id"] for x in report["results"]}
+    assert not any(i.endswith(":not_built_yet") for i in ids)
+    assert {"needles:card-number-nowhere", "needles:the-day-happened"} <= ids
+    control = report["negative_control"]
+    assert control["parts_not_built"] == []
+    assert set(control["failed_cases"]) == set(PARTS)
+    assert "needles:card-number-nowhere" in control["failed_cases"]["needles"]
+
+
+def test_the_suite_is_gated_in_run_all_mock() -> None:
+    text = (ROOT / "evals" / "run_all_mock.py").read_text(encoding="utf-8")
+    line = next(x for x in text.splitlines() if '"r11_helpers (gated)"' in x)
+    assert 'HERE / "r11_helpers" / "run.py"' in line and line.rstrip().endswith("True),")

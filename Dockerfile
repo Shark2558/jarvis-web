@@ -16,7 +16,10 @@ COPY deploy/home ./deploy/home
 # Where kit.build finds deploy/home and src (the installed package sits in site-packages)
 ENV HOME_KIT_ROOT=/app
 # R6.1 D4: the build time the Vitals "About JARVIS" line shows (jarvis.about), stamped HERE at image
-# build (never at request time); package data carries it into the installed package.
+# build (never at request time); package data carries it into the installed package. It is this
+# layer's time: a build that reuses a cached layer (unchanged src, --cache-from) keeps the first
+# build's date. CI's runners start with no layer cache; if a deploy ever reuses one, pass the time
+# in as a build arg instead.
 RUN date -u +%Y-%m-%dT%H:%M:%SZ > src/jarvis/BUILD_DATE
 RUN pip install --no-build-isolation --no-deps .
 USER jarvis

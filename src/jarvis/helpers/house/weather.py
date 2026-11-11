@@ -28,7 +28,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from jarvis.helpers.house import words
-from jarvis.helpers.house.fetch import Fetcher, FetchError
+from jarvis.helpers.house.fetch import Fetcher, FetchError, OutsideSlot
 from jarvis.helpers.house.guard import Counts, allowed
 from jarvis.helpers.house.models import Outside, Thresholds, WeatherState, WeatherSummary
 from jarvis.helpers.house.store import HouseStore, OutsideOff, OutsideStore
@@ -212,12 +212,19 @@ class WeatherJob:
     budget_s = OUTSIDE_TIMEOUT_S + 1.0
 
     def __init__(
-        self, ctx: HelperContext, outside: OutsideStore, store: HouseStore, fetcher: Fetcher
+        self,
+        ctx: HelperContext,
+        outside: OutsideStore,
+        store: HouseStore,
+        fetcher: Fetcher,
+        *,
+        slot: OutsideSlot | None = None,
     ) -> None:
         self._ctx = ctx
         self._outside = outside
         self._store = store
         self._fetcher = fetcher
+        self._slot = slot
         self._every = timedelta(minutes=ctx.settings.weather_poll_minutes)
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
@@ -246,7 +253,8 @@ class WeatherJob:
         if not _due(o.weather, now):
             return
         read = o.sachet.checked_at
-        if read is not None and now - datetime.fromisoformat(read) < SACHET_SAME_RUN:
+        spent = self._slot is not None and self._slot.used_within(SACHET_SAME_RUN.total_seconds())
+        if spent or (read is not None and now - datetime.fromisoformat(read) < SACHET_SAME_RUN):
             n.add("deferred")  # SACHET used this run's outside time; next run
             return
         try:

@@ -15,7 +15,8 @@ Tests use a fake with the same `get` (tests/r11_fakes_b.py).
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -52,6 +53,22 @@ class Fetched:
     status: int  # 200 or 304
     body: bytes
     etag: str | None = None
+
+
+class OutsideSlot:
+    """Within one clock run, the part's outside time is spent once: SACHET (more urgent, first)
+    marks it when it fetched anything; weather then waits for the next run (D3's 20 s budget is
+    shared by all four parts). In process only; a restart simply forgets it."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._at: float | None = None
+
+    def mark(self) -> None:
+        self._at = self._clock()
+
+    def used_within(self, seconds: float) -> bool:
+        return self._at is not None and self._clock() - self._at < seconds
 
 
 class Fetcher(Protocol):
@@ -130,4 +147,12 @@ class HttpFetcher:
         return Fetched(200, await _read(r, cap), etag)
 
 
-__all__ = ["ALLOWED_HOSTS", "FetchError", "Fetched", "Fetcher", "HttpFetcher", "TooLarge"]
+__all__ = [
+    "ALLOWED_HOSTS",
+    "FetchError",
+    "Fetched",
+    "Fetcher",
+    "HttpFetcher",
+    "OutsideSlot",
+    "TooLarge",
+]

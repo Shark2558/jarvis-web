@@ -19,7 +19,7 @@ from __future__ import annotations
 from jarvis.helpers.house.breach import BreachJob
 from jarvis.helpers.house.brief import ChoresBrief, HousePending, OutsideBrief
 from jarvis.helpers.house.chores import ChoresJob
-from jarvis.helpers.house.fetch import Fetcher, HttpFetcher
+from jarvis.helpers.house.fetch import Fetcher, HttpFetcher, OutsideSlot
 from jarvis.helpers.house.phrases import PHRASES
 from jarvis.helpers.house.privacy import house_privacy, place_privacy
 from jarvis.helpers.house.sachet import DisasterJob
@@ -43,11 +43,12 @@ def build(ctx: HelperContext, fetcher: Fetcher | None = None) -> HelperPart:
     outside = OutsideStore(ctx.docs, ctx.keyring, prefix=ctx.prefix)
     svc = HouseService(ctx, store, outside)
     fetch = fetcher or HttpFetcher()
+    slot = OutsideSlot()
     clock: list[TickJob] = [ChoresJob(ctx, store), UpkeepJob(ctx, store)]
     if ctx.settings.disaster_alerts_enabled:
-        clock.append(DisasterJob(ctx, outside, store, fetch))
+        clock.append(DisasterJob(ctx, outside, store, fetch, slot=slot))
     if ctx.settings.weather_enabled:
-        clock.append(WeatherJob(ctx, outside, store, fetch))
+        clock.append(WeatherJob(ctx, outside, store, fetch, slot=slot))
     return HelperPart(
         name="house",
         tools=house_tools(svc),

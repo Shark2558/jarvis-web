@@ -107,3 +107,20 @@ async def test_the_daily_job_sweeps_claims_older_than_30_days() -> None:
     await store.claim(UID, "chore", "new", NOON_IST)
     assert (await job.run(()))["swept"] == 1
     assert len(await store.claims(UID)) == 1
+
+
+async def test_one_unreadable_message_never_hides_the_others() -> None:
+    gmail = gmail_with("b_gmail_hibp.json")
+    gmail.messages = {"broken01": {}, **gmail.messages}
+    real = gmail.request
+
+    async def flaky(user_id: str, method: str, url: str, **kw: object) -> object:
+        if url.endswith("/broken01"):
+            from jarvis.integrations.google import GoogleAPIError
+
+            raise GoogleAPIError("that one is gone")
+        return await real(user_id, method, url, **kw)  # type: ignore[arg-type]
+
+    gmail.request = flaky  # type: ignore[method-assign]
+    _, notifier, _, _, _, _, job, _ = await _setup(gmail)
+    assert (await job.run(()))["sent"] == 1 and len(notifier.calls) == 1

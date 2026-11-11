@@ -34,7 +34,7 @@ from jarvis.alerts import AlertKind
 from jarvis.helpers.house import cap as cap_mod
 from jarvis.helpers.house import words
 from jarvis.helpers.house.cap import Alert, Info, UnsafeXml, parse_xml
-from jarvis.helpers.house.fetch import Fetcher, FetchError, TooLarge
+from jarvis.helpers.house.fetch import Fetcher, FetchError, OutsideSlot, TooLarge
 from jarvis.helpers.house.guard import Counts, allowed
 from jarvis.helpers.house.models import (
     MAX_QUEUE,
@@ -153,12 +153,14 @@ class DisasterJob:
         fetcher: Fetcher,
         *,
         clock: Callable[[], float] = time.monotonic,
+        slot: OutsideSlot | None = None,
     ) -> None:
         self._ctx = ctx
         self._outside = outside
         self._store = store
         self._fetcher = fetcher
         self._clock = clock
+        self._slot = slot
         self._every = timedelta(minutes=ctx.settings.disaster_poll_minutes)
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
@@ -189,6 +191,8 @@ class DisasterJob:
         feed = o.place.feed()
         state = o.sachet if o.sachet.feed == feed else SachetState(feed=feed)
         state = _live(state, now)
+        if self._slot is not None and (_due(state, now) or state.queue):
+            self._slot.mark()  # this run's outside time goes to SACHET; weather waits
         if _due(state, now):
             state = await self._read_feed(state, o.place, now, deadline, n)
         if state.queue:

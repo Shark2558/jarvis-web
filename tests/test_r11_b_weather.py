@@ -158,3 +158,15 @@ async def test_a_district_with_no_known_centre_and_no_coordinates_has_no_weather
     far = Place(district="Example Nagar", state="Odisha")
     await outside.change(UID, lambda o: o.model_copy(update={"place": far}))
     assert (await job.run(()))["no_point"] == 1 and fetcher.calls == []
+
+
+async def test_weather_waits_when_sachet_fetched_cap_messages_this_run() -> None:
+    from jarvis.helpers.house.fetch import OutsideSlot
+
+    hc, _, docs, _, outside, fetcher, _ = await _setup()
+    ticks = iter([100.0, 130.0, 300.0])
+    slot = OutsideSlot(clock=lambda: next(ticks))
+    job = weather.WeatherJob(hc, outside, HouseStore(docs, prefix=hc.prefix), fetcher, slot=slot)
+    slot.mark()  # at 100 s: SACHET fetched in this run
+    assert (await job.run(()))["deferred"] == 1 and fetcher.calls == []  # 130 s: 30 s later
+    assert (await job.run(()))["sent"] == 3  # 300 s: the next run

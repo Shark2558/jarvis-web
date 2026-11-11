@@ -49,6 +49,7 @@ log = get_logger(__name__)
 JOB = "breach_watch"
 DAYS = 2  # the daily job overlaps a day, so a late tick misses nothing
 MAX_SCAN = 20
+READ_PARALLEL = 5
 _ID_OK = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
 SKIP_WORDS = ("verify", "confirm your", "welcome", "unsubscribe")
 
@@ -161,9 +162,18 @@ class BreachJob:
             "format": "metadata",
             "metadataHeaders": ["From", "Subject", "Authentication-Results"],
         }
-        got = await asyncio.gather(
-            *(google.request(uid, "GET", f"{MESSAGES_URL}/{mid}", params=params) for mid in ids)
-        )
+        gate = asyncio.Semaphore(READ_PARALLEL)
+
+        async def one(mid: str) -> Any:
+            async with gate:
+                try:
+                    return await google.request(uid, "GET", f"{MESSAGES_URL}/{mid}", params=params)
+                except GoogleNotConnected:
+                    raise
+                except GoogleAPIError:
+                    return None  # one unreadable mail never hides the others
+
+        got = await asyncio.gather(*(one(mid) for mid in ids))
         return [
             (s, mid)
             for mid, m in zip(ids, got, strict=True)

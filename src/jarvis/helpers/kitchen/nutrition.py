@@ -196,7 +196,8 @@ class Nutrition:
         """The food by one of its names: a source marked "IN" first, then USDA's."""
         found = self._by_name.get(norm_key(name)) or []
         indian = [f for f in found if self.region_of(f) == "IN"]
-        return (indian or found or [None])[0]
+        best = indian or found
+        return best[0] if best else None
 
     def dish(self, ingredients: Sequence[Ingredient]) -> DishNutrition:
         if not self.installed:

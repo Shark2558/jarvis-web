@@ -1,3 +1,5 @@
+Version v6.0.1 · 10 Nov 2026 · Release R6 · Status: Superseded by the build log · Owner: 🛠 Mark XII
+
 # Release R6 — The build book: JARVIS documents himself at every release, seals the book and that release's source code in the vault, and presents himself (an animated 3D show plus a talk-through) behind your passkey and a fresh Google sign-in, with a guest mode that reaches nothing of yours and is wiped when it ends
 
 Status: PLAN v1, accepted 2026-11-10 · read on `r5-1` @ `26704b4`; R5.1 final at `aebff3a` (PR #25). Builders branch from `r6-i0` =
@@ -407,3 +409,9 @@ inspected (R5.1 D11) · release plan, go-live guide, architecture note.
 - **Needs the owner**: the app-wide fresh sign-in treats a missing Google `auth_time` as "now" (R3; R6 no longer relies
   on it: open = passkey AND sign-in, resume = passkey only); an R7 candidate is to request `auth_time` as essential.
   D3's local-part check blocking every guest show on an everyday local part: fixed by the D3 amendment (above).
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v6.0.1 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

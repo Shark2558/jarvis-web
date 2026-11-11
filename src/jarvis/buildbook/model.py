@@ -4,7 +4,9 @@ pydantic models (extra fields refused), no I/O, nothing from the app, so the gen
 sealer (B), the session lane (C) and the show (D) all read the same shapes.
 
 - `Release` = `release.json` (D4). `id` is `sha[:7]`; a good build carries both SHA-256s, a failed
-  one (`error`, best effort at deploy) carries neither and no book. `skipped` counts the tracked
+  one (`error`, best effort at deploy) carries neither and no book. R6.1 decision 3: `version`
+  ("v6.1.0", optional) sits next to the id; books, releases and sealed rows written before R6.1
+  have none, and `RELEASE_ID` is unchanged, so they still open. `skipped` counts the tracked
   files left out of the snapshot (listed in its THIRD_PARTY.json, D5).
 - `Book` v1 = `book.json`: `release` (a `ReleaseRef`), the eight reader sections (`SECTION_IDS`,
   D2's table; their models live in `buildbook/sections.py` and are re-exported here), `show`
@@ -25,7 +27,15 @@ import unicodedata
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    Field,
+    SerializerFunctionWrapHandler,
+    ValidationError,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from jarvis.buildbook.sections import (
     FLOW_IDS,
@@ -61,6 +71,7 @@ MAX_LIMITATIONS = 80  # D2
 ZIP_STAMP = (2026, 1, 1, 0, 0, 0)  # every zip entry's time, as home/kit.py (D5)
 
 RELEASE_ID = r"^[0-9a-f]{7}$"
+VERSION = r"^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$"  # R6.1 decision 3 (jarvis.__version__ with a v)
 GIT_SHA = r"^[0-9a-f]{40}$"
 SHA256 = r"^[0-9a-f]{64}$"
 SESSION_ID = r"^bk_[0-9a-f]{16}$"  # D9
@@ -107,12 +118,22 @@ class ReleaseRef(Frozen):
     sha: str = Field(pattern=GIT_SHA)
     label: str = Field(pattern=RELEASE_LABEL)
     committed_at: Instant
+    version: str | None = Field(default=None, pattern=VERSION)  # R6.1; None before R6.1
 
     @model_validator(mode="after")
     def _id_is_the_sha(self) -> ReleaseRef:
         if self.id != self.sha[:7]:
             raise ValueError("a release id is the first seven characters of its commit")
         return self
+
+    @model_serializer(mode="wrap")
+    def _as_written(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """No version (a release from before R6.1): dumped exactly as R6 wrote it, so a sealed
+        R6 book's canonical bytes and the R6 routes' answers are unchanged."""
+        data: dict[str, Any] = handler(self)
+        if data.get("version") is None:
+            data.pop("version", None)
+        return data
 
 
 class Release(ReleaseRef):
@@ -138,7 +159,11 @@ class Release(ReleaseRef):
 
     def ref(self) -> ReleaseRef:
         return ReleaseRef(
-            id=self.id, sha=self.sha, label=self.label, committed_at=self.committed_at
+            id=self.id,
+            sha=self.sha,
+            label=self.label,
+            committed_at=self.committed_at,
+            version=self.version,
         )
 
 
@@ -266,9 +291,11 @@ class SealedRelease(ReleaseRef):
         return next(f for f in self.files if f.kind == kind)
 
     def view(self) -> dict[str, Any]:
-        """The status route's row: {id, label, sealed_at, mb}."""
-        mb = round(self.size / MIB, 1)
-        return {"id": self.id, "label": self.label, "sealed_at": self.sealed_at, "mb": mb}
+        """The status route's row: {id, label, sealed_at, mb}, plus `version` from R6.1 on."""
+        row = {"id": self.id, "label": self.label, "sealed_at": self.sealed_at}
+        if self.version is not None:
+            row["version"] = self.version
+        return {**row, "mb": round(self.size / MIB, 1)}
 
 
 CloseReason = Literal["closing", "end", "expired", "idle", "new_open", "resume", "privacy"]
@@ -378,6 +405,7 @@ __all__ = [
     "Step",
     "TalkReply",
     "TalkState",
+    "VERSION",
     "Workflow",
     "canonical_bytes",
     "load_book",

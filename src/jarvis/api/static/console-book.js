@@ -18,6 +18,7 @@
   const host = panel && panel.querySelector('.pbody');
   if (!host) return;
   const RID = /^[0-9a-f]{7}$/, LABEL = /^R\d{1,3}(\.\d{1,2})?$/, TICKET = /^[A-Za-z0-9_-]{8,128}$/;
+  const VER = /^v\d{1,3}\.\d{1,3}\.\d{1,4}$/; // R6.1 decision 3: a release's version, shown next to its id
   const PENDING = 'jarvis_book_pending', SHOW_TOKEN = 'jarvis_book_token', SHOW_SESSION = 'jarvis_book_session';
   const HEADER = 'X-Jarvis-Book', PENDING_MS = 10 * 60 * 1000, BEAT_MS = 60 * 1000, SEAL_RETRY_MS = 8000, SEAL_TRIES = 6;
   const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
@@ -69,7 +70,8 @@
   // ---- what GET /v1/book sends, checked field by field ---------------------------------------
   function rel(v) {
     const r = obj(v);
-    return r && RID.test(r.id || '') ? { id: r.id, label: LABEL.test(r.label || '') ? r.label : '', at: txt(r.sealed_at || r.committed_at, 40), mb: num(r.mb) } : null;
+    return r && RID.test(r.id || '') ? { id: r.id, label: LABEL.test(r.label || '') ? r.label : '', version: VER.test(r.version || '') ? r.version : '',
+      at: txt(r.sealed_at || r.committed_at, 40), mb: num(r.mb) } : null;
   }
   function normal(raw) {
     const d = obj(raw);
@@ -81,7 +83,7 @@
       last: last && when(last.last_closed_at) ? { at: when(last.last_closed_at), told: last.notified === true } : null, // D14: what stays
       ready: open.passkey_ready === true, fresh: num(open.fresh_left_s) };
   }
-  const name = (r) => (r.label ? r.label + ' \u00b7 ' : '') + r.id;
+  const name = (r) => (r.label ? r.label + ' \u00b7 ' : '') + (r.version ? r.version + ' \u00b7 ' : '') + r.id; // R6 rows: no version
 
   // ---- a confirm dialog (the console's .bdialog, native modal: Esc and focus handled by the browser)
   function ask(title, lines, buttons) {

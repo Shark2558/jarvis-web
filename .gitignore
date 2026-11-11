@@ -9,3 +9,5 @@ __pycache__/
 evals/**/report.json
 # R6 D4: the build book CI generates before `docker build` (python -m jarvis.buildbook.gen)
 src/jarvis/buildbook/_book/
+# R6.1 D4: the build time the Dockerfile stamps into the image (jarvis.about); never committed
+src/jarvis/BUILD_DATE

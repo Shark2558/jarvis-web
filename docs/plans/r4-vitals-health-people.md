@@ -1,3 +1,5 @@
+Version v4.0.1 · 9 Nov 2026 · Release R4 · Status: Superseded by the build log · Owner: 🛠 Mark X
+
 # Release R4 — Vitals, Self-Health & People: an API-keys/quotas/bills vitals board with expiry + near-limit warnings, a JARVIS self-health check that speaks "all systems" and alerts on fault, Google Photos → faces & contacts, scoped people research that opens profiles, own-account GitHub + YouTube, and a no-AI mode (pass 1)
 
 Status: PLAN v1 · 2026-11-05 · branch `r4-plan` (from `main` @ e16996a = R3 merged, PR #22). Builders start from
@@ -224,3 +226,9 @@ see the tabs open; flip No-AI mode and confirm calendar/reminders/vitals/health 
 - Google Photos Picker API launch + Library API lockdown (developers.googleblog.com; developers.google.com/photos).
 - X/Twitter API pricing 2026, no free tier, pay-per-use (docs.x.com and 2026 pricing write-ups).
 - GitHub REST and YouTube Data API v3 free quotas (vendor docs — confirm exact limits at build via Context7/primary docs).
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v4.0.1 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

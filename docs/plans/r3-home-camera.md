@@ -1,3 +1,5 @@
+Version v3.0.1 · 5 Nov 2026 · Release R3 · Status: Superseded by the build log · Owner: 🛠 Mark IX
+
 # Release R3 — Home bridge and camera security: Home Assistant on the laptop, old-phone camera with burglar alerts, one urgent-only alert policy (Telegram + browser), face greetings with consent, camera history search, package alerts
 
 Status: PLAN v1 · 2026-11-05 · branch `r3-plan` (from `r2-plan` @ 88055a7 = R1 I0 + the R1/R2 plans) · builders start
@@ -1234,3 +1236,9 @@ docs.aiogram.dev/en/latest/api/methods/send_photo.html · dpdpa.com/dpdpa2023/ch
   snapshots and review detections to the gate and doorstep zones.
 - D12: snapshot bytes after the first JPEG end marker are cut.
 - D20: greeting alerts default off. The bridge refuses to connect to MQTT without user and password.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v3.0.1 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

@@ -8,6 +8,8 @@
 // textContent or a control's .value. Rupees only. A key's VALUE is never asked for (the server refuses
 // one). Transport: window.JarvisConsole.api. API (src/jarvis/vitals/api.py): GET /v1/vitals;
 // PUT /v1/vitals/keys; DELETE /v1/vitals/keys/{id}. Listens: jarvis:ready, jarvis:panel, jarvis:reply.
+// R6.1 D4: the same GET carries `version` and `build_date`; they fill the read-only #vAbout line
+// ("About JARVIS \u00b7 v6.1.0 \u00b7 built 11 Nov 2026") at the foot of the panel, in its .sfine text.
 (() => {
   'use strict';
   const root = document.getElementById('vitals-board');
@@ -25,6 +27,8 @@
   const HINT = 'Type a name, a limit and a date. Never paste a key itself: JARVIS refuses it.';
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const NS = (document.querySelector('svg.pico') || {}).namespaceURI; // the SVG namespace, from the page
+  const VER_RE = /^v\d{1,3}\.\d{1,3}\.\d{1,4}$/, DAY_RE = /^\d{1,2} [A-Z][a-z]{2} \d{4}$/;
+  const aboutEl = document.getElementById('vAbout');
 
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
   const arr = (v) => (Array.isArray(v) ? v : []);
@@ -77,10 +81,17 @@
       reset: when(o.reset_at), expires: when(o.expires_at), expiresRaw: txt(o.expires_at, 40), resetRaw: txt(o.reset_at, 40),
     };
   }
+  function aboutLine(o) { // R6.1 D4: never the page's own clock; a date the server doesn't know says so
+    const v = typeof o.version === 'string' && VER_RE.test(o.version) ? o.version : '';
+    if (!v) return '';
+    const built = typeof o.build_date === 'string' && DAY_RE.test(o.build_date) ? 'built ' + o.build_date : 'build date unknown';
+    return 'About JARVIS \u00b7 ' + v + ' \u00b7 ' + built;
+  }
   function normal(r) {
     const o = obj(r);
     if (!o) return null;
     return {
+      about: aboutLine(o),
       overall: own(STATUS_WORDS, o.overall) ? o.overall : 'unknown',
       items: arr(o.items).map(item).filter(Boolean),
       manualUnavailable: o.manual_unavailable === true,
@@ -185,6 +196,7 @@
     root.setAttribute('aria-busy', S.busy ? 'true' : 'false');
     errEl.textContent = S.error ? (d && !S.stopFailed ? 'Couldn\'t refresh just now. ' : '') + S.error : '';
     noteEl.textContent = d && d.manualUnavailable ? d.manualNote || MANUAL_NOTE : '';
+    if (aboutEl && d) aboutEl.textContent = d.about;
     stateEl.textContent = !d && S.busy ? 'Checking your keys, allowances and bills\u2026'
       : d && !items.length ? 'Nothing to watch yet. JARVIS adds its own keys here as you connect them.' : '';
     groupsEl.replaceChildren();

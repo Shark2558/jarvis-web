@@ -12,6 +12,7 @@ from typing import Any
 from book_mocks import status as book_status
 from playwright.sync_api import Page, Route
 
+from jarvis import about
 from jarvis.health.briefing import compose_briefing
 from jarvis.health.models import HealthReport, ProbeResult
 from jarvis.health.probes import BRAIN_NO_CREDIT
@@ -218,7 +219,9 @@ def _board(*, manual_unavailable: bool = False) -> Board:
 
 
 BOARD = _board()
-MOCK_VITALS: dict[str, Any] = BOARD.to_json()
+# R6.1 D4: GET /v1/vitals also carries the "About JARVIS" line's two fields (vitals/api.py)
+ABOUT = {"version": about.version(), "build_date": "11 Nov 2026"}
+MOCK_VITALS: dict[str, Any] = {**BOARD.to_json(), **ABOUT}
 MOCK_VITALS_503 = {"detail": "Vitals is not available on this server."}
 
 
@@ -380,7 +383,7 @@ def install_mocks(
 ) -> None:
     vitals = (503, MOCK_VITALS_503) if vitals_503 else (200, MOCK_VITALS)
     if manual_unavailable:
-        vitals = (200, _board(manual_unavailable=True).to_json())
+        vitals = (200, {**_board(manual_unavailable=True).to_json(), **ABOUT})
     page.route("**/v1/usage", _get_only(200, MOCK_USAGE))
     page.route("**/v1/vitals", _get_only(*vitals))
     page.route("**/v1/health", _get_only(200, MOCK_HEALTH))

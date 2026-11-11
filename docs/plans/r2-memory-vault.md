@@ -1,3 +1,5 @@
+Version v2.0.1 · 5 Nov 2026 · Release R2 · Status: Superseded by the build log · Owner: 🛠 Mark IX
+
 # Release R2 — Memory and personal vault: document vault with expiry reminders, DigiLocker import, notes and links, "Where did I keep it?", privacy dashboard
 
 Status: PLAN v1 · 2026-11-05 · branch `r2-plan` (from `r1` @ d367a5d) · builders start from branch `r2` (cut from
@@ -990,3 +992,9 @@ docs.cloud.google.com/free/docs/free-cloud-features · cloud.google.com/secret-m
 cloud.google.com/kms/pricing · developers.google.com/workspace/drive/api/guides/api-specific-auth ·
 support.google.com/googleone/answer/9312312 · cf-media.api-setu.in/resources/Partners-SOP.pdf ·
 www.uidai.gov.in/283-faqs/aadhaar-online-services/e-aadhaar/1887-what-is-masked-aadhaar.html (search result only)
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v2.0.1 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

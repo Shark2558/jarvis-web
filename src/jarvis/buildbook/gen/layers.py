@@ -64,6 +64,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "activity": "L8",
         # X cross-cutting: configuration, keys, security, cost, health, privacy, the book
         "config": "X",
+        "about": "X",  # R6.1 D4: version + build date
         "logging": "X",
         "keyring": "X",
         "permissions": "X",

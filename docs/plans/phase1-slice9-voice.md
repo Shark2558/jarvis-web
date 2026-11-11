@@ -1,3 +1,5 @@
+Version v0.9.0 · 1 Nov 2026 · Release Slice 9 · Status: Superseded by the build log · Owner: 🛠 Mark V
+
 # Phase 1 · Slice 9 — Voice: speak to JARVIS, JARVIS speaks back, wit dial, "Hey Jarvis"
 
 Owner (2026-11-01 19:38 IST): "proceed further and develop the voice modules. Kindly remember to clone the
@@ -306,3 +308,9 @@ network-voice cut-off (the watchdog is tested with an utterance that never ends)
 round trip (the test dispatches `pagehide` / `pageshow` with `persisted`), Safari/Firefox autoplay
 rules, and the real wake-word module reaching `error` inside the console (its own tests cover
 `too_slow`; the console is tested with a stub that turns `error`).
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.9.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

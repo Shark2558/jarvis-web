@@ -1,3 +1,5 @@
+Version v0.5.1 · 1 Nov 2026 · Release Slice 5b · Status: Superseded by the build log · Owner: 🛠 Mark II
+
 # Phase 2 · Slice 5b — "Holo-Lab" console: white, futuristic, animated, five themes + your colour
 
 Status: IN PROGRESS · 2026-11-01 · ships together with slice 5 (owner merges both)
@@ -76,3 +78,9 @@ Choices (theme, colour, motion) are remembered on this device.
 ## Verification
 Playwright: each theme × desktop 1440 / phone 390, custom colour, Motion Off; zero JS errors;
 automated contrast check of text tokens per theme; existing restore/delete flow still passes.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.5.1 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

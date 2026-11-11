@@ -16,8 +16,9 @@ from pathlib import Path
 import pytest
 from book_gen_fakes import FIXTURE_FLOWS, ROOT, fixture_needles, fixture_repo, plant_personal
 
+import jarvis
 from jarvis.buildbook.gen import __main__ as cli
-from jarvis.buildbook.gen import write
+from jarvis.buildbook.gen import plans, write
 from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.gen.scrub import NoScrub
 from jarvis.buildbook.model import (
@@ -199,9 +200,13 @@ def test_the_cli_outside_a_checkout(tmp_path: Path, capsys: pytest.CaptureFixtur
 
 
 def test_the_real_repo_builds_and_the_show_is_about_six_thousand_characters() -> None:
-    built = write.build(Repo.from_git(ROOT))
+    repo = Repo.from_git(ROOT)
+    built = write.build(repo)
     book = load_book(built.book)
     spoken = sum(len(b.text) for s in book.show.scenes for b in s.beats)
     assert 4_500 <= spoken <= 8_000, spoken
     assert len(built.book) <= 2 * 1024 * 1024 and built.release.skipped > 0
-    assert book.release.label == "R6"
+    # R6.1 D4: the newest plan's label and this checkout's version (pinned in test_book_gen_plans
+    # and test_about, so a version bump is one change)
+    assert book.release.label == plans.release_label(repo)
+    assert book.release.version == f"v{jarvis.__version__}"

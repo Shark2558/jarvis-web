@@ -167,3 +167,11 @@ async def test_suggest_without_a_calendar_asks_for_minutes() -> None:
     assert "isn't linked" in (await run_tool(rig, "freetime_suggest"))["spoken"]
     out = await run_tool(rig, "freetime_suggest", minutes="30")
     assert out["idea"] == "Sketch"
+
+
+async def test_stop_stand_up_for_good_also_switches_the_meeting_variant_off() -> None:
+    rig = part()
+    await run_tool(rig, "nudge_set", kind="standup", on="true", meeting="true")
+    await run_tool(rig, "nudge_stop", kind="standup", for_good="true")
+    up = (await rig.part.services["service"].settings(UID)).nudge("nudge_standup")
+    assert (up.on, up.meeting) == (False, False)

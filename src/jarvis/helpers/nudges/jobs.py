@@ -60,7 +60,7 @@ class _Job:
     async def _owner(self, uid: str) -> list[str]:
         svc = self._svc
         s = await svc.settings(uid)
-        if not s.on_kinds():
+        if not s.active():
             return []
         now = svc.now()
         return [await svc.deliver(uid, p) for p in await self._plans(uid, s, now)]

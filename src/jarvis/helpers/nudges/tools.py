@@ -30,6 +30,7 @@ from jarvis.tools.taint import content_tainted
 
 R1, R2 = ActionRisk.READ_ONLY, ActionRisk.REVERSIBLE
 AGENT = "nudges"
+STANDUP = "nudge_standup"
 KIND_ARG = {
     "type": "string",
     "description": "Which nudge: standup, water, activity, free_time, focus (or all).",
@@ -38,7 +39,7 @@ _OBJ: dict[str, Any] = {"type": "object", "additionalProperties": False}
 Run = Callable[[dict[str, Any]], Awaitable[Any]]
 
 
-def _uid() -> str:
+def owner_id() -> str:
     return require_tool_context().user_id
 
 
@@ -46,7 +47,7 @@ def _name(kind: str) -> str:
     return "every nudge" if kind == ALL else f"the {LABEL[kind].lower()} nudge"
 
 
-def _tool(
+def make_tool(
     name: str, text: str, props: dict[str, Any], risk: ActionRisk, run: Run, **kw: Any
 ) -> Tool:
     schema = {**_OBJ, "properties": props, "required": kw.pop("required", [])}
@@ -56,7 +57,7 @@ def _tool(
 
 def _status_tool(svc: NudgeService) -> Tool:
     async def run(a: dict[str, Any]) -> dict[str, Any]:
-        uid = _uid()
+        uid = owner_id()
         s, gate = await svc.settings(uid), await svc.gate.state(uid)
         day = svc.day_of().isoformat()
         lines = [describe(k, s.nudge(k)) for k in NUDGE_KINDS]
@@ -68,7 +69,7 @@ def _status_tool(svc: NudgeService) -> Tool:
             lines.append(f"Today: {logged.water} glasses of water, {logged.stood} stand-ups.")
         return {"spoken": " ".join(lines), "on": list(s.on_kinds())}
 
-    return _tool(
+    return make_tool(
         "nudge_status",
         "Show which nudges are on, and today's water and stand-ups.",
         {},
@@ -97,10 +98,10 @@ def _set_tool(svc: NudgeService) -> Tool:
         kind, change = a_kind(a.get("kind"), allow_all=False), changes(a)
         if not change:
             raise ValueError("What should change, Sir? On or off, every N minutes, or the times.")
-        new = await svc.store.change(_uid(), lambda s: s.changed(kind, change))
+        new = await svc.store.change(owner_id(), lambda s: s.changed(kind, change))
         return {"spoken": "Done, Sir. " + describe(kind, new.nudge(kind))}
 
-    return _tool(
+    return make_tool(
         "nudge_set",
         "Switch a nudge on or off, or change how often and when it comes.",
         props,
@@ -121,7 +122,7 @@ def _snooze_tool(svc: NudgeService) -> Tool:
     }
 
     async def run(a: dict[str, Any]) -> dict[str, Any]:
-        uid, kind = _uid(), a_kind(a.get("kind") or "all")
+        uid, kind = owner_id(), a_kind(a.get("kind") or "all")
         if str(a.get("until", "")).strip().lower() in ("tomorrow", "until tomorrow"):
             await svc.gate.stop_today(uid, kind, svc.day_of().isoformat())
             return {"spoken": f"Snoozed {_name(kind)} until tomorrow, Sir."}
@@ -129,7 +130,7 @@ def _snooze_tool(svc: NudgeService) -> Tool:
         await svc.gate.snooze(uid, kind, minutes, svc.now())
         return {"spoken": f"Snoozed {_name(kind)} for {minutes} minutes, Sir."}
 
-    return _tool(
+    return make_tool(
         "nudge_snooze",
         "Snooze a nudge (15 minutes to 12 hours, or until tomorrow).",
         props,
@@ -149,13 +150,13 @@ def _stop_tool(svc: NudgeService) -> Tool:
     }
 
     async def run(a: dict[str, Any]) -> dict[str, Any]:
-        uid, kind = _uid(), a_kind(a.get("kind") or "all")
+        uid, kind = owner_id(), a_kind(a.get("kind") or "all")
         if a_bool(a.get("for_good", False)):
             kinds = NUDGE_KINDS if kind == ALL else (kind,)
 
-            def off(s: Any) -> Any:
+            def off(s: Any) -> Any:  # for good: the stand-up meeting variant too
                 for k in kinds:
-                    s = s.changed(k, {"on": False})
+                    s = s.changed(k, {"on": False, **({"meeting": False} if k == STANDUP else {})})
                 return s
 
             await svc.store.change(uid, off)
@@ -166,7 +167,7 @@ def _stop_tool(svc: NudgeService) -> Tool:
             "Say 'turn it off for good' to stop it altogether."
         }
 
-    return _tool(
+    return make_tool(
         "nudge_stop",
         "Stop a nudge for today ('no more nudges today'), or for good. "
         "Use this, never a reminder, for 'don't remind me to stand up'.",
@@ -179,14 +180,14 @@ def _stop_tool(svc: NudgeService) -> Tool:
 
 def _resume_tool(svc: NudgeService) -> Tool:
     async def run(a: dict[str, Any]) -> dict[str, Any]:
-        uid, kind = _uid(), a_kind(a.get("kind") or "all")
+        uid, kind = owner_id(), a_kind(a.get("kind") or "all")
         await svc.gate.resume(uid, kind)
         s = await svc.settings(uid)
         off = [LABEL[k].lower() for k in NUDGE_KINDS if (kind in (ALL, k)) and not s.nudge(k).on]
         tail = f" It's switched off, though: say 'turn on {off[0]}'." if len(off) == 1 else ""
         return {"spoken": f"Resumed {_name(kind)}, Sir.{tail}"}
 
-    return _tool(
+    return make_tool(
         "nudge_resume",
         "Undo a snooze or a stop for today.",
         {"kind": KIND_ARG},
@@ -206,35 +207,19 @@ def _logged(fn: Run) -> Run:
     return run
 
 
-def _log_tools(svc: NudgeService) -> list[Tool]:
+def _water_tools(svc: NudgeService) -> list[Tool]:
     async def water(a: dict[str, Any]) -> dict[str, Any]:
         glasses = a_number(a.get("glasses", 1), lo=1, hi=10, what="glasses")
-        day = await hydrate.log_water(svc, _uid(), glasses)
+        day = await hydrate.log_water(svc, owner_id(), glasses)
         return {"spoken": f"Logged, Sir: {day.water} glasses of water today."}
 
     async def stood(a: dict[str, Any]) -> dict[str, Any]:
-        day = await hydrate.log_stood(svc, _uid())
+        day = await hydrate.log_stood(svc, owner_id())
         return {"spoken": f"Logged, Sir: {day.stood} stand-ups today."}
 
-    async def checkin(a: dict[str, Any]) -> dict[str, Any]:
-        word, outcome = str(a.get("word", "")).strip().lower(), str(a.get("outcome", ""))
-        if outcome not in ("done", "missed", "moved") or not 2 <= len(word) <= 30:
-            raise ValueError("Say which activity and whether it was done, missed or moved.")
-        uid = _uid()
-        words = (await svc.settings(uid)).nudge("nudge_activity").words
-        if word not in words:
-            listed = ", ".join(words) or "none yet"
-            return {"spoken": f"That isn't one of your planned activities, Sir. Yours: {listed}."}
-        await activity.check_in(svc, uid, word, outcome)  # type: ignore[arg-type]
-        return {"spoken": f"Noted, Sir: your {word} is {outcome}."}
-
     glasses = {"glasses": {"type": "integer", "minimum": 1, "maximum": 10}}
-    check = {
-        "word": {"type": "string", "description": "his activity word, e.g. walk"},
-        "outcome": {"type": "string", "enum": ["done", "missed", "moved"]},
-    }
     return [
-        _tool(
+        make_tool(
             "nudge_water_log",
             "Log glasses of water he drank.",
             glasses,
@@ -242,7 +227,7 @@ def _log_tools(svc: NudgeService) -> list[Tool]:
             _logged(water),
             words="Logged water",
         ),
-        _tool(
+        make_tool(
             "nudge_standup_log",
             "Log that he stood up and moved.",
             {},
@@ -250,16 +235,35 @@ def _log_tools(svc: NudgeService) -> list[Tool]:
             _logged(stood),
             words="Logged a stand-up",
         ),
-        _tool(
-            "nudge_activity_checkin",
-            "Check in a planned activity: done, missed or moved.",
-            check,
-            R2,
-            _logged(checkin),
-            required=["word", "outcome"],
-            words="Checked in an activity",
-        ),
     ]
+
+
+def _checkin_tool(svc: NudgeService) -> Tool:
+    async def checkin(a: dict[str, Any]) -> dict[str, Any]:
+        word, outcome = str(a.get("word", "")).strip().lower(), str(a.get("outcome", ""))
+        if outcome not in ("done", "missed", "moved") or not 2 <= len(word) <= 30:
+            raise ValueError("Say which activity and whether it was done, missed or moved.")
+        uid = owner_id()
+        words = (await svc.settings(uid)).nudge("nudge_activity").words
+        if word not in words:
+            listed = ", ".join(words) or "none yet"
+            return {"spoken": f"That isn't one of your planned activities, Sir. Yours: {listed}."}
+        await activity.check_in(svc, uid, word, outcome)  # type: ignore[arg-type]
+        return {"spoken": f"Noted, Sir: your {word} is {outcome}."}
+
+    check = {
+        "word": {"type": "string", "description": "his activity word, e.g. walk"},
+        "outcome": {"type": "string", "enum": ["done", "missed", "moved"]},
+    }
+    return make_tool(
+        "nudge_activity_checkin",
+        "Check in a planned activity: done, missed or moved.",
+        check,
+        R2,
+        _logged(checkin),
+        required=["word", "outcome"],
+        words="Checked in an activity",
+    )
 
 
 def nudge_tools(svc: NudgeService) -> list[Tool]:
@@ -269,8 +273,9 @@ def nudge_tools(svc: NudgeService) -> list[Tool]:
         _snooze_tool(svc),
         _stop_tool(svc),
         _resume_tool(svc),
-        *_log_tools(svc),
+        *_water_tools(svc),
+        _checkin_tool(svc),
     ]
 
 
-__all__ = ["AGENT", "nudge_tools"]
+__all__ = ["AGENT", "R1", "R2", "make_tool", "nudge_tools", "owner_id"]

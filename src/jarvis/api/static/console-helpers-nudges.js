@@ -33,14 +33,18 @@ function hhmm(iso) {
   return at && !isNaN(at) ? at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 }
 
+// [words, which tap undoes it]: a hold made for every nudge ('*') is undone with 'all'
 function held(view, kind) {
   const g = view.gate || {};
   const stopped = g.stopped || {};
+  const snoozed = g.snoozed || {};
   const today = g.today;
-  if (stopped[kind] === today || stopped['*'] === today) return 'Stopped for today.';
-  const until = [(g.snoozed || {})[kind], (g.snoozed || {})['*']].filter(Boolean).sort().pop();
-  if (until && new Date(until) > new Date()) return 'Snoozed until ' + hhmm(until) + '.';
-  return '';
+  if (stopped[kind] === today) return ['Stopped for today.', kind];
+  if (stopped['*'] === today) return ['Stopped for today.', 'all'];
+  const live = (k) => snoozed[k] && new Date(snoozed[k]) > new Date();
+  const by = [kind, '*'].filter(live).sort((a, b) => (snoozed[a] < snoozed[b] ? 1 : -1))[0];
+  if (by) return ['Snoozed until ' + hhmm(snoozed[by]) + '.', by === '*' ? 'all' : kind];
+  return ['', ''];
 }
 
 if (H) {
@@ -61,8 +65,8 @@ if (H) {
 
   function nudgeRow(view, n) {
     const acts = [H.toggle('Switch ' + n.label, !!n.on, (on) => call(BASE + '/' + n.name, { method: 'PUT', body: { on } }))];
-    const state = held(view, n.kind);
-    if (n.on && state) acts.push(button('Resume', 'Resume ' + n.label, () => call(GATE + n.kind + '/resume', { method: 'POST' })));
+    const [state, undo] = held(view, n.kind);
+    if (n.on && state) acts.push(button('Resume', 'Resume ' + n.label, () => call(GATE + undo + '/resume', { method: 'POST' })));
     if (n.on && !state) {
       acts.push(button('Snooze', 'Snooze ' + n.label + ' for 1 hour', () => call(GATE + n.kind + '/snooze', { body: { minutes: SNOOZE_MIN } })));
       acts.push(button('Stop', 'Stop ' + n.label + ' for today', () => call(GATE + n.kind + '/stop', { method: 'POST' })));
@@ -73,7 +77,7 @@ if (H) {
   }
 
   function allRow(view) {
-    const state = held(view, '*');
+    const [state] = held(view, '*');
     const acts = state
       ? [button('Resume all', 'Resume every nudge', () => call(GATE + 'all/resume', { method: 'POST' }))]
       : [button('Snooze all', 'Snooze every nudge for 1 hour', () => call(GATE + 'all/snooze', { body: { minutes: SNOOZE_MIN } })),

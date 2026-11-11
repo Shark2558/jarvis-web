@@ -277,10 +277,6 @@ async def simulate(*, days: int = 14) -> Sim:
     return sim
 
 
-def _slot(day: date, hhmm: str) -> datetime:
-    return at_ist(day, hhmm)
-
-
 def expected(days: int = 14) -> dict[tuple[str, datetime], None]:
     """Every nudge the owner's settings and his words above say goes out, worked out by hand."""
     out: dict[tuple[str, datetime], None] = {}
@@ -290,19 +286,19 @@ def expected(days: int = 14) -> dict[tuple[str, datetime], None]:
         if wd <= 5:
             for h in range(10, 18):
                 if not (d == 3 and h >= 13):  # "don't remind me to stand up" at 13:05
-                    out[("nudge_standup", _slot(day, f"{h}:30"))] = None
+                    out[("nudge_standup", at_ist(day, f"{h}:30"))] = None
             waters = ["11:00", "12:30", "14:00", "15:30", "17:00"]
             if d in (2, 4):
                 waters.remove("12:30")  # snoozed by phrase (day 2) and by a tap (day 4)
             if d == 8:
                 waters = waters[:3]  # his cap of 3 that day
-            out.update({("nudge_hydrate", _slot(day, w)): None for w in waters})
-            out.update({("nudge_focus", _slot(day, t)): None for t in ("10:00", "15:00")})
+            out.update({("nudge_hydrate", at_ist(day, w)): None for w in waters})
+            out.update({("nudge_focus", at_ist(day, t)): None for t in ("10:00", "15:00")})
         if wd <= 4:
-            out[("nudge_standup", _slot(day, "09:35"))] = None  # the meeting variant
-        out[("nudge_free_time", _slot(day, "18:00"))] = None
+            out[("nudge_standup", at_ist(day, "09:35"))] = None  # the meeting variant
+        out[("nudge_free_time", at_ist(day, "18:00"))] = None
         if d % 2 == 1:
-            out[("nudge_activity", _slot(day, "18:00"))] = None  # no check-in on odd days
+            out[("nudge_activity", at_ist(day, "18:00"))] = None  # no check-in on odd days
     return out
 
 
@@ -400,22 +396,3 @@ def _phrases(sim: Sim) -> list[str]:
     if ["nudge_stop"] not in sim.phrases or ["nudge_snooze"] not in sim.phrases:
         fails.append(f"the snooze and stop phrases didn't reach their tools: {sim.phrases}")
     return fails
-
-
-__all__ = [
-    "FAKE_ROOT",
-    "IST",
-    "FakeCalendar",
-    "FakePending",
-    "FakeRain",
-    "Planned",
-    "Rig",
-    "at_ist",
-    "keyring",
-    "part",
-    "expected",
-    "judge",
-    "run_phrase",
-    "run_tool",
-    "simulate",
-]

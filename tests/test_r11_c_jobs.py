@@ -345,3 +345,13 @@ async def test_a_sender_that_raises_releases_the_claim() -> None:
     with pytest.raises(RuntimeError):
         await svc.deliver(UID, Plan("nudge_hydrate", "k2", at_ist(TUESDAY, "11:00"), fixed("x")))
     assert await svc.store.claim(UID, "2026-11-10", "k2")
+
+
+async def test_the_meeting_variant_works_on_its_own_with_the_move_nudge_off() -> None:
+    cal = FakeCalendar(every_day=[Planned("Daily stand-up", "09:45", "10:00", own=False)])
+    rig = part(calendar=cal)
+    svc = rig.part.services["service"]
+    await svc.store.change(UID, lambda s: s.changed("nudge_standup", {"meeting": True}))
+    for hhmm in ("09:35", "10:30"):
+        await tick(rig, at_ist(TUESDAY, hhmm))
+    assert sent(rig) == [("nudge_standup", standup.MEETING_TEXT)]  # no move nudge at 10:30

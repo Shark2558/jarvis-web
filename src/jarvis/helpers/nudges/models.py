@@ -252,6 +252,11 @@ class NudgeSettings(BaseModel):
     def on_kinds(self) -> tuple[str, ...]:
         return tuple(k for k in NUDGE_KINDS if self.nudge(k).on)
 
+    def active(self) -> bool:
+        """Anything to do on the clock: a nudge switched on, or the stand-up meeting variant (its
+        own switch, owner decision 1)."""
+        return bool(self.on_kinds()) or self.nudge("nudge_standup").meeting
+
 
 def _plain(exc: ValidationError) -> str:
     """The first problem in plain words (pydantic's message, without its decoration)."""

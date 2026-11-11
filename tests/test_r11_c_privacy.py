@@ -81,3 +81,11 @@ async def test_no_log_line_carries_a_count_or_his_words(caplog: pytest.LogCaptur
     logged = " ".join(f"{r.getMessage()} {r.__dict__}" for r in caplog.records)
     for needle in ("Sketch", "Secret", "glasses", "walk at"):
         assert needle not in logged
+
+
+async def test_the_brief_mentions_the_stand_up_meeting_variant_on_its_own() -> None:
+    rig = part()
+    await run_tool(rig, "nudge_set", kind="standup", meeting="true")
+    (brief,) = rig.part.brief
+    lines = await brief.lines(UID, UTC, TUESDAY)
+    assert lines == ["You'll be told 10 minutes before your stand-up meeting."]

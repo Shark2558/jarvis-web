@@ -213,6 +213,12 @@ def test_helpers_nudges_snooze_from_the_tab_uses_the_gate_route(
         assert row.get_by_role("button", name="Resume Drink water").is_visible()
         row.get_by_role("button", name="Resume Drink water").click()
         row.get_by_role("button", name="Snooze Drink water for 1 hour").wait_for()
+        pane = c.page.locator("#hpp-nudges")
+        pane.get_by_role("button", name="Stop every nudge for today").click()
+        row.get_by_text("Stopped for today").wait_for()
+        row.get_by_role("button", name="Resume Drink water").click()  # held by "all": resumes all
+        row.get_by_role("button", name="Snooze Drink water for 1 hour").wait_for()
+        assert ("all/resume", None) in fake.posts
         c.page.locator("#hpp-nudges").get_by_role("button", name="Log a glass of water").click()
         c.page.locator("#hpp-nudges").get_by_text("4 glasses today").wait_for()
         assert c.errors == [] and c.csp_violations() == []

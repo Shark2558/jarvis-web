@@ -33,6 +33,9 @@ class NudgesBrief:
                 for k in on
             ]
             out.append("Nudges today: " + ", ".join(bits) + ".")
+        up = s.nudge("nudge_standup")
+        if up.meeting and day.weekday() in up.days:
+            out.append("You'll be told 10 minutes before your stand-up meeting.")
         if self._svc.well.on:
             got = await self._svc.well.day(uid, (day - timedelta(days=1)).isoformat())
             if got.water or got.stood:

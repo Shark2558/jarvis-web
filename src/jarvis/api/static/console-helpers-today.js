@@ -270,7 +270,9 @@ function render() {
 
 if (H) {
   H.register('today', {
-    mount(host) { S.host = host; render(); load(); },
+    // mount runs at page load (before sign-in): it only draws; the data is asked for when the shell has
+    // opened the panel and read /v1/helpers (refresh), so a signed-out page never calls the API
+    mount(host) { S.host = host; render(); },
     refresh() { if (S.host) load(); },
   });
 }

@@ -53,6 +53,9 @@ def test_every_back_filled_title_passes() -> None:
         "v0.12.0 · Slice 12 Drive, Maps · Mark VII–VIII",
         "v10.0.0 · R10 Vision · Mark XL",
         "v5.1.1 · R5.1 hotfix 1 — reliable mic test · Mark XII",
+        "v9.0.0 · R9 Mark II of the deck · Mark IX–XIV",  # "Mark" inside the name is fine
+        "v1.0.0 · R1 Small · Mark I",
+        "v1.0.0 · R1 Large · Mark CCCXCIX",
     ],
 )
 def test_good_titles_pass(good: str) -> None:
@@ -83,12 +86,31 @@ def test_bad_titles_fail(bad: str) -> None:
     assert not cpt.check(bad)
 
 
+@pytest.mark.parametrize(
+    "mark",
+    ["IIII", "VX", "IIV", "IC", "XXXX", "VV", "LL", "CCCC", "VIII–VII", "XIII–XIII", "I–IIII"],
+)
+def test_a_mark_that_is_not_a_roman_numeral_or_runs_backwards_fails(mark: str) -> None:
+    """R6.1 review L4: the rule's pattern takes any run of I V X L C; the check also wants a
+    well-formed numeral, and two Marks in rising order."""
+    title = f"v6.1.0 · R6.1 The Architecture Guide · Mark {mark}"
+    assert cpt.PATTERN.fullmatch(title)  # the rule's own pattern lets it through
+    assert not cpt.check(title)
+
+
+def test_the_roman_numerals_read_as_numbers() -> None:
+    values = {"I": 1, "IV": 4, "IX": 9, "XIII": 13, "XIV": 14, "XL": 40, "XC": 90, "CCCXCIX": 399}
+    assert {m: cpt.roman(m) for m in values} == values
+
+
 def test_the_cli_says_ok_or_what_is_wanted(capsys: pytest.CaptureFixture[str]) -> None:
     assert cpt.main(["v6.1.0 · R6.1 The Architecture Guide & versioning · Mark XIII"]) == 0
     assert "OK" in capsys.readouterr().out
     assert cpt.main(["R6.1 the guide"]) == 1
     out = capsys.readouterr().out
     assert "v6.1.0 · R6.1 Short name · Mark XIII" in out and "::error" in out
+    assert cpt.main(["v6.1.0 · R6.1 The guide · Mark VIII–VII"]) == 1
+    assert "rising order" in capsys.readouterr().out
     assert not any(ln.startswith("::") and "R6.1 the guide" in ln for ln in out.splitlines())
     assert cpt.main([]) == 2 and cpt.main(["a", "b"]) == 2
 

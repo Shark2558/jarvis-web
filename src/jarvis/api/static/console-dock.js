@@ -124,9 +124,18 @@
     const label = open.length ? `More panels, ${open.join(', ')} shown` : 'More panels';
     if (moreBtn.getAttribute('aria-label') !== label) moreBtn.setAttribute('aria-label', label);
   }
-  /** A focused tab that folds hands its focus to More, never to the page. */
+  /** Focus never falls to the page: a tab that folds hands it to More; a More that goes (everything
+   *  fits again) to the last tab; a sheet entry that goes to the first entry left, or to its tab
+   *  once the sheet has closed. */
   function rescueFocus(was) {
-    if (was && was.hidden && tabs.includes(was) && !moreBtn.hidden) moreBtn.focus({ preventScroll: true });
+    if (!was || !was.hidden) return;
+    let target = null;
+    if (tabs.includes(was)) target = moreBtn.hidden ? null : moreBtn;
+    else if (was === moreBtn) target = tabs.filter((t) => !t.hidden).pop() || null;
+    else if (sheet.contains(was)) {
+      target = sheet.open ? [...entries.values()].find((b) => !b.hidden) || null : tabFor(was.dataset.sheetOpen);
+    }
+    if (target) target.focus({ preventScroll: true });
   }
   function closeSheet() { if (sheet.open) sheet.close(); }
   // native modal dialog: the page behind is inert, Tab stays inside, Esc and the backdrop close it

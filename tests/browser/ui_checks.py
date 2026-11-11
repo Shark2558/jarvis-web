@@ -397,8 +397,17 @@ def install_mocks(
 # contrast probe multiplies in opacity, and an element caught mid-entry (opacity 0 -> 1) is not a defect.
 # Infinite ones (the status dot's breathing) are left alone.
 FINISH_ANIMATIONS_JS = """() => {
-  for (const a of document.getAnimations()) {
-    try { if (a.effect && a.effect.getComputedTiming().iterations !== Infinity) a.finish(); } catch (_) { /* a cancelled one */ }
+  // Finishing one transition (a theme token on <html>) sets off others (a tab's own colour
+  // transition) at the next style update: flush the style and repeat, a few rounds at most.
+  for (let round = 0; round < 4; round++) {
+    let finished = 0;
+    for (const a of document.getAnimations()) {
+      try {
+        if (a.playState !== 'finished' && a.effect && a.effect.getComputedTiming().iterations !== Infinity) { a.finish(); finished += 1; }
+      } catch (_) { /* a cancelled one */ }
+    }
+    if (!finished) return;
+    void document.documentElement.getBoundingClientRect();
   }
 }"""
 

@@ -398,10 +398,7 @@ def test_the_vitals_track_form_open_passes_the_visual_gate(rig: Rig, vp: str, su
 @pytest.mark.parametrize("vp", list(NARROW))
 def test_the_dock_and_its_more_sheet_pass_the_visual_gate(rig: Rig, vp: str, surface: str) -> None:
     c, rules = rig.get(vp, surface), NARROW[vp][1]
-    c.page.bring_to_front()  # several rig pages are open: flush this one's style changes first
-    c.page.evaluate("() => getComputedStyle(document.documentElement).color")
-    c.page.wait_for_timeout(SETTLE_MS)
-    _audit(c, "#dock", rules, f"dock {vp} {surface}")
+    _audit(c, "#dock", rules, f"dock {vp} {surface}")  # theme transitions are run to their end
     more = c.page.locator("#dockMore")
     assert more.is_visible(), f"{vp}: some tabs should fold behind More"
     more.click()

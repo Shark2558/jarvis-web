@@ -197,6 +197,8 @@ def test_the_dock_refits_on_resize_without_a_layout_loop(
         page.evaluate(SETTLE_JS)
         s = page.evaluate(STATE_JS)
         assert s["more"] is False and s["visible"] == s["order"], s["visible"]
+        # More went with the focus on it: the last tab takes it
+        assert page.evaluate("document.activeElement.dataset.open") == "construct"
         # settled: nothing in the dock changes on its own any more (no measure loop)
         changes = page.evaluate(
             """() => new Promise((done) => {
@@ -208,6 +210,25 @@ def test_the_dock_refits_on_resize_without_a_layout_loop(
                })"""
         )
         assert changes == 0, changes
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+def test_an_open_sheet_closes_when_everything_fits_and_focus_lands_on_the_tab(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c = _console(browser, server_url, token, 1280)
+    page = c.page
+    try:
+        page.locator("#dockMore").click()
+        page.locator("#moreSheet").wait_for(state="visible")
+        first = page.evaluate("document.activeElement.dataset.sheetOpen")
+        page.set_viewport_size({"width": 1920, "height": 1080})
+        page.locator("#moreSheet").wait_for(state="hidden")
+        page.evaluate(SETTLE_JS)
+        assert page.locator("#dockMore").is_hidden()
+        assert page.evaluate("document.activeElement.dataset.open") == first
         assert c.errors == []
     finally:
         c.close()

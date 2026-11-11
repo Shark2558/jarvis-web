@@ -35,7 +35,7 @@ from jarvis.helpers.nudges import hydrate
 from jarvis.helpers.nudges.models import LABEL, NAME, NUDGE_KINDS, Idea, NudgeSettings, Place
 from jarvis.helpers.nudges.service import NudgeService
 from jarvis.helpers.nudges.store import WellbeingOff
-from jarvis.helpers.nudges.words import describe
+from jarvis.helpers.nudges.words import describe, when
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -99,6 +99,7 @@ def _nudge(kind: str, s: NudgeSettings) -> dict[str, Any]:
         "label": LABEL[kind],
         **n.model_dump(mode="json"),
         "line": describe(kind, n),
+        "when": when(kind, n),
     }
 
 

@@ -45,19 +45,28 @@ def days_text(days: tuple[int, ...]) -> str:
     return ", ".join(DAY_NAMES[d][:3] for d in days)
 
 
-def describe(kind: str, n: Nudge) -> str:
-    """One line in JARVIS's words: "Drink water: on, every 90 minutes, 09:30-18:30, ..."."""
-    parts = [f"{LABEL[kind]}: {'on' if n.on else 'off'}"]
+def _when(kind: str, n: Nudge) -> list[str]:
     if kind in EVERY_KINDS:
-        parts.append(f"every {n.every} minutes, {n.start}-{n.end}")
+        parts = [f"every {n.every} minutes, {n.start}-{n.end}"]
     elif kind in TIMES_KINDS:
-        parts.append("at " + ", ".join(n.times))
+        parts = ["at " + ", ".join(n.times)]
     else:
-        parts.append(f"{n.start}-{n.end}, for " + ", ".join(n.words))
+        parts = [f"{n.start}-{n.end}, for " + ", ".join(n.words)]
     parts.append(days_text(n.days))
     if kind == "nudge_standup" and n.meeting:
         parts.append(f"and 10 minutes before your '{n.word}' meeting")
-    return ", ".join(parts) + "."
+    return parts
+
+
+def when(kind: str, n: Nudge) -> str:
+    """When it comes, for the tab: "Every 90 minutes, 09:30-18:30, Monday to Saturday."."""
+    text = ", ".join(_when(kind, n)) + "."
+    return text[:1].upper() + text[1:]
+
+
+def describe(kind: str, n: Nudge) -> str:
+    """One line in JARVIS's words: "Drink water: on, every 90 minutes, 09:30-18:30, ..."."""
+    return ", ".join([f"{LABEL[kind]}: {'on' if n.on else 'off'}", *_when(kind, n)]) + "."
 
 
 def a_kind(value: Any, *, allow_all: bool = True) -> str:

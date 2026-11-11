@@ -95,6 +95,7 @@ async def test_the_view_lists_every_nudge_off_by_default(settings: Settings) -> 
         assert not any(n["on"] for n in view["nudges"])
         water = view["nudges"][1]
         assert (water["every"], water["start"], water["end"]) == (90, "09:30", "18:30")
+        assert water["when"] == "Every 90 minutes, 09:30-18:30, Monday to Saturday."
         assert view["today"] == {"water": 0, "stood": 0} and view["ideas"] == []
 
 

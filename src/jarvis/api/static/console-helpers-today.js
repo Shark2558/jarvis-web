@@ -49,6 +49,10 @@ function say(kind, text) { if (S.note) H.note(S.note, kind, text); }
 
 async function load() {
   try { S.view = await H.api(BASE); S.err = ''; } catch (e) { S.err = plain(e); }
+  Object.keys(S.waiting).forEach((id) => { // decided elsewhere (Approvals): drop its card here
+    const b = billById(id);
+    if (!b || (S.waiting[id].pay && b.ready)) delete S.waiting[id];
+  });
   render();
 }
 async function change(path, opts, okText) {

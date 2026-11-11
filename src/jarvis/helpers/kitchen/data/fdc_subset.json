@@ -1,0 +1,11 @@
+{
+  "about": "NOT INSTALLED: an empty placeholder. The real subset is built once by scripts/kitchen_fdc_subset.py from the official USDA FoodData Central SR Legacy CSV download (CC0 1.0); see docs/plans/r11-integration/INTEGRATION-D.md. Until then every nutrition answer says the data isn't installed.",
+  "installed": false,
+  "source": {
+    "dataset": "USDA FoodData Central, SR Legacy",
+    "licence": "CC0 1.0 (public domain)",
+    "citation": "U.S. Department of Agriculture, Agricultural Research Service. FoodData Central. fdc.nal.usda.gov.",
+    "sha256": {}
+  },
+  "foods": []
+}

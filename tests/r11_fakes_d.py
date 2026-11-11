@@ -4,7 +4,7 @@
 # - `keyring()`: a Keyring on fixed test bytes (never a real key).
 # - `brains(...)`: a BrainRegistry whose private brain answers from a script (and, optionally, a
 #   default brain that may train on what it is told, which recipes must never use).
-# - `Rules`: an `OwnerRules` with fixed rows (ALLOW / ASK / DENY per tool pattern), or one that fails.
+# - `Rules`: an `OwnerRules` with a fixed row (ALLOW / ASK / DENY for a tool pattern) or a failure.
 # - `MailBox`: a fake Gmail that serves the `.eml` fixtures in tests/fixtures/r11/ with their own
 #   headers (Authentication-Results included), as `format=full` messages.
 # - `kctx(...)`: a kitchen HelperContext with whatever the test needs switched on.

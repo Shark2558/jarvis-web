@@ -3,6 +3,7 @@
 # 12-19-digit run masked before parsing, the order total in paise, a keyed hash for the order.
 from __future__ import annotations
 
+import hashlib
 from datetime import date
 
 import pytest
@@ -15,7 +16,7 @@ TZ = "Asia/Kolkata"
 
 
 def _mac(text: str) -> str:
-    return f"h{abs(hash(text)) % 10**12:012d}"
+    return hashlib.sha256(text.encode()).hexdigest()[:32]
 
 
 def _read(name: str) -> receipts.Receipt | None:
@@ -71,7 +72,8 @@ def test_a_cancelled_order_is_marked_so_its_total_can_be_dropped() -> None:
 
 
 def test_card_numbers_are_masked_before_anything_reads_the_text() -> None:
-    text = f"Card {CARD} or {CARD_DIGITS} or 4111-1111-1111-1111, ending 1111, order 402-1234567-1234567"
+    text = f"Card {CARD} or {CARD_DIGITS} or 4111-1111-1111-1111, ending 1111"
+    text += ", order 402-1234567-1234567"
     out = mask(text)
     assert CARD not in out and CARD_DIGITS not in out and "4111-1111" not in out
     assert "ending 1111" in out and "402-1234567-1234567" in out  # an order id stays

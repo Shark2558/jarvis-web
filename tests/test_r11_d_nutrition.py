@@ -65,7 +65,9 @@ def test_a_dish_is_the_sum_of_grams_times_the_per_100g_values(tmp_path: Path) ->
 
 def test_unknown_ingredients_are_named_not_guessed(tmp_path: Path) -> None:
     n = Nutrition.load(_data(tmp_path, FOODS))
-    d = n.dish((Ingredient(name="basmati rice", grams=100), Ingredient(name="dragonfruit", grams=50)))
+    d = n.dish(
+        (Ingredient(name="basmati rice", grams=100), Ingredient(name="dragonfruit", grams=50))
+    )
     assert d.matched == 1 and d.unmatched == ("dragonfruit",)
     assert "1 of 2 ingredients" in describe(d)
 
@@ -80,7 +82,10 @@ def test_a_broken_or_missing_file_reads_as_not_installed(tmp_path: Path) -> None
 def test_typed_ingredients_are_parsed_with_their_grams() -> None:
     got = parse_ingredients("200 g rice, 50g toor dal; 1 kg potato, onion 80 g")
     assert [(i.name, i.grams) for i in got] == [
-        ("rice", 200), ("toor dal", 50), ("potato", 1000), ("onion", 80)
+        ("rice", 200),
+        ("toor dal", 50),
+        ("potato", 1000),
+        ("onion", 80),
     ]
     with pytest.raises(ValueError):
         parse_ingredients("some rice")

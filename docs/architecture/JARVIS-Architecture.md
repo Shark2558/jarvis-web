@@ -303,10 +303,10 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Scheduler ticks and the home watchdog |
-| What it does | Two Cloud Scheduler jobs wake JARVIS on time. `jarvis-morning-brief` calls `POST /internal/brief/tick` every 30 minutes from 04:00 to 11:30 IST (`0,30 4-11 * * *`): it makes the brief when due and then runs the tick jobs (vault reminders, DigiLocker import, Vitals poll, systems check, book sealing and sweeps). `jarvis-home-watchdog` calls `POST /internal/home/watchdog` every 5 minutes, all day: laptop offline alerts, a pending arm, the held-alerts summary and the shared systems check. |
+| What it does | Two Cloud Scheduler jobs wake JARVIS on time. The morning job calls `POST /internal/brief/tick` every 30 minutes from 04:00 to 11:30 IST (`0,30 4-11 * * *`): it makes the brief when due and then runs the tick jobs (vault reminders, DigiLocker import, Vitals poll, systems check, book sealing and the sweeps of old data). The watchdog job calls `POST /internal/home/watchdog` every 5 minutes, all day, when Home is switched on: laptop offline alerts, a pending arm, the camera feed sweep, the home-claims and link-code sweeps, the alert policy's jobs (the held-alerts summary, storm summaries and the counter sweep), and the systems check, book sealing and the book sweep it shares with the morning tick. With Home off, the alert policy's jobs ride the morning tick instead, and book sealing and the systems check run only there. |
 | Layer | L3 Context & Orchestration |
 | Skill | Automation Engine |
-| Where in the code | `src/jarvis/ticks.py`, `src/jarvis/api/brief.py` (tick route), `src/jarvis/api/scheduler_auth.py`, `src/jarvis/home/watchdog.py`; jobs created by `deploy/cloudrun.sh` step 8 |
+| Where in the code | `src/jarvis/ticks.py`, `src/jarvis/api/brief.py` (tick route), `src/jarvis/api/scheduler_auth.py`, `src/jarvis/home/watchdog.py`; the Cloud Scheduler jobs `jarvis-morning-brief` and `jarvis-home-watchdog`, created by `deploy/cloudrun.sh` step 8 |
 | Depends on | C19 Morning brief, C38 Home link, C55 Vitals, C56 Systems check, C57 Build book |
 | Data it keeps | No collection of its own; each job uses its feature's store. |
 | Outside services | Cloud Scheduler (signed Google OIDC token for its own account with no project roles) |

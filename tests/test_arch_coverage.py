@@ -1,12 +1,14 @@
 # tests/test_arch_coverage.py
 """R6.1 D6: scripts/arch_coverage.py — the guide's component catalogue covers every package,
-console module, Scheduler job, outside service and Firestore collection; every card has its 11
+console module, Scheduler job, outside service and Firestore collection INSIDE its cards' fields;
+every path a card cites and every diagram file the guide links exists; every card has its 11
 fields and every technology row its 8 cells; the version line, change log, diagram captions and
 the R6 secret scan pass. Small fixture repos and guides; one test runs the real guide."""
 
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -71,7 +73,11 @@ def _repo(tmp: Path) -> Path:
         p = tmp / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text, encoding="utf-8")
-    (tmp / "docs/architecture").mkdir(parents=True)
+    drawn = tmp / "docs/architecture/diagrams"
+    drawn.mkdir(parents=True)
+    for name in ac.DIAGRAMS:  # what Part C exports beside each .markdy
+        (drawn / f"{name}.svg").write_text("<svg><text>A picture</text></svg>\n", encoding="utf-8")
+        (drawn / f"{name}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     return tmp
 
 
@@ -302,7 +308,6 @@ def test_the_secret_scan_catches_an_email_and_a_key(repo: Path) -> None:
 
 def test_the_secret_scan_reads_only_the_words_of_an_svg(repo: Path) -> None:
     svg = repo / "docs/architecture/diagrams/01-context.svg"
-    svg.parent.mkdir(parents=True)
     svg.write_text(
         '<svg xmlns="http://www.w3.org/2000/svg">\n'
         '<path d="M 1120 550 L 1138 550 Q 1152 550 1152 564 L 1152 654"/>\n'
@@ -338,6 +343,153 @@ def test_main_exits_two_without_a_guide(repo: Path) -> None:
     assert ac.main(["--repo", str(repo)]) == 2
 
 
-def test_the_real_guide_passes(capsys: pytest.CaptureFixture[str]) -> None:
-    code = ac.main(["--repo", str(ROOT)])
-    assert code == 0, capsys.readouterr().out
+CLOCK_CODE = "| Where in the code | jobs `jarvis-morning-brief` and `jarvis-home-watchdog` |"
+
+
+def test_a_scheduler_job_outside_a_cards_code_field_does_not_count(repo: Path) -> None:
+    text = (
+        guide()
+        .replace(CLOCK_CODE, "| Where in the code | `src/jarvis/ticks.py` |")
+        .replace(
+            "| What it does | Does one thing. |",
+            "| What it does | Runs `jarvis-morning-brief` and `jarvis-home-watchdog`. |",
+        )
+        .replace(
+            "## 4. Diagrams", "### The jobs `jarvis-morning-brief`, `jarvis-home-watchdog`\n\n## 4."
+        )
+    )
+    code, problems = run(repo, text)
+    jobs = [p for p in problems if "Scheduler job" in p]
+    assert code == 1 and len(jobs) == 2, problems
+
+
+def test_a_file_inside_a_package_does_not_cover_the_package(repo: Path) -> None:
+    (repo / "src/jarvis/beta/store.py").write_text("", encoding="utf-8")
+    code, problems = run(
+        repo, guide().replace("`src/jarvis/beta/`, ", "`src/jarvis/beta/store.py`, ")
+    )
+    assert code == 1 and any("package/module" in p and "`src/jarvis/beta`" in p for p in problems)
+
+
+@pytest.mark.parametrize("field", ["Redisplay", "Cloud (Redis later)", "none; see the Redis notes"])
+def test_an_outside_service_counts_only_as_an_item_of_the_field(repo: Path, field: str) -> None:
+    code, problems = run(
+        repo, guide().replace("| Outside services | Redis |", f"| Outside services | {field} |")
+    )
+    assert code == 1 and any("outside service" in p and "`Redis`" in p for p in problems)
+
+
+def test_service_names_split_a_field_into_its_items() -> None:
+    names = ac.service_names(
+        "Tavily; Anthropic (one call, at most), Google Maps Platform (Places API (New), Routes "
+        "API), Google Calendar and Google Tasks (to restore), and each probed service"
+    )
+    assert {
+        "tavily",
+        "anthropic",
+        "google maps platform",
+        "google calendar",
+        "google tasks",
+    } <= names
+    assert not {"places api", "routes api", "redis"} & names
+
+
+def test_a_cited_path_that_does_not_exist_fails(repo: Path) -> None:
+    text = guide().replace(
+        "`src/jarvis/ticks.py`", "`src/jarvis/ticks.py`, `src/jarvis/beta/gone.py`, `deploy/no.sh`"
+    )
+    code, problems = run(repo, text)
+    assert code == 1
+    assert any("`Beta`" in p and "`src/jarvis/beta/gone.py`" in p for p in problems)
+    assert any("`deploy/no.sh`" in p for p in problems)
+
+
+def test_a_bare_file_name_is_found_next_to_the_path_before_it(repo: Path) -> None:
+    (repo / "src/jarvis/beta/store.py").write_text("", encoding="utf-8")
+    good = guide().replace("`src/jarvis/beta/`, ", "`src/jarvis/beta/` (`store.py`), ")
+    assert run(repo, good) == (0, [])
+    bad = guide().replace("`src/jarvis/beta/`, ", "`src/jarvis/beta/` (`stores.py`), ")
+    code, problems = run(repo, bad)
+    assert code == 1 and any("`stores.py`" in p for p in problems)
+
+
+def test_a_cited_console_module_that_does_not_exist_fails(repo: Path) -> None:
+    code, problems = run(
+        repo, guide().replace("`console-foo.js`", "`console-foo.js`, `console-x.js`")
+    )
+    assert code == 1 and any("`console-x.js`" in p for p in problems)
+
+
+def test_a_linked_diagram_file_that_does_not_exist_fails(repo: Path) -> None:
+    (repo / "docs/architecture/diagrams/07-memory.png").unlink()
+    code, problems = run(repo, guide() + "\n![More](diagrams/99-extra.svg)\n")
+    assert code == 1
+    assert any("07-memory.png" in p for p in problems)
+    assert any("99-extra.svg" in p for p in problems)
+
+
+def test_the_diagrams_folder_must_exist(repo: Path) -> None:
+    shutil.rmtree(repo / "docs/architecture/diagrams")
+    assert run(repo, guide()) == (1, [ac.NO_DIAGRAMS])
+
+
+@pytest.mark.parametrize("value", ["TBC", "todo", "...", "…", "None"])
+def test_a_placeholder_counts_as_empty(repo: Path, value: str) -> None:
+    code, problems = run(repo, guide().replace("| Since | R1 |", f"| Since | {value} |", 1))
+    assert code == 1 and any("Alpha" in p and "Since" in p for p in problems)
+
+
+def test_none_is_a_real_answer_where_nothing_is_kept_or_needed(repo: Path) -> None:
+    assert run(repo, guide().replace("| Depends on | nothing |", "| Depends on | None |")) == (
+        0,
+        [],
+    )
+
+
+@pytest.mark.parametrize("line", ["acme_key: str = ''", "acme_token: str | None = None"])
+def test_a_plain_key_or_token_setting_with_no_known_service_fails(repo: Path, line: str) -> None:
+    (repo / "src/jarvis/config.py").write_text(CONFIG + f"    {line}\n", encoding="utf-8")
+    code, problems = run(repo, guide())
+    assert code == 1 and any("acme_" in p for p in problems)
+
+
+def test_a_package_without_an_init_file_is_still_a_package(repo: Path) -> None:
+    (repo / "src/jarvis/gamma").mkdir()
+    (repo / "src/jarvis/gamma/x.py").write_text("", encoding="utf-8")
+    (repo / "src/jarvis/__pycache__").mkdir()
+    code = ac.inventory(repo).code
+    assert "src/jarvis/gamma" in code and "src/jarvis/__pycache__" not in code
+
+
+def test_collections_named_in_a_collection_call_are_found(repo: Path) -> None:
+    (repo / "src/jarvis/beta/fs.py").write_text(
+        "def a(c, prefix):\n"
+        '    return c.collection(f"{prefix}beta_col"), c.collection("beta_plain")\n',
+        encoding="utf-8",
+    )
+    assert {"beta_col", "beta_plain"} <= set(ac.inventory(repo).collections)
+
+
+def test_main_exits_two_when_the_code_cannot_be_read(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / "docs/architecture/JARVIS-Architecture.md").write_text(guide(), encoding="utf-8")
+    (repo / "src/jarvis/config.py").write_text("class Settings(:\n", encoding="utf-8")
+    assert ac.main(["--repo", str(repo)]) == 2
+    assert "ERROR" in capsys.readouterr().out
+
+
+def test_main_exits_two_on_a_file_that_is_not_utf8(repo: Path) -> None:
+    (repo / "docs/architecture/JARVIS-Architecture.md").write_text(guide(), encoding="utf-8")
+    (repo / "docs/architecture/notes.md").write_bytes(b"\xff\xfe not text")
+    assert ac.main(["--repo", str(repo)]) == 2
+
+
+def test_the_real_guide_passes() -> None:
+    guide_path = ROOT / ac.GUIDE
+    problems = ac.check_all(ROOT, guide_path, guide_path.parent)
+    if not (guide_path.parent / "diagrams").is_dir():
+        # Part D's branch alone: Part C's exported diagrams join at integration (INTEGRATION-D)
+        assert problems == [ac.NO_DIAGRAMS], problems
+    else:
+        assert problems == [], problems

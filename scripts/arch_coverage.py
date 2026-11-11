@@ -3,35 +3,40 @@
 
     python scripts/arch_coverage.py [--repo DIR] [--guide FILE] [--scan DIR]
 
-Coverage: the guide's `## ... Component catalogue` must name, in its cards' fields,
-  - "Where in the code": every top-level package and module under `src/jarvis/` and every
-    `src/jarvis/api/static/console*.js` module; the catalogue: every Cloud Scheduler job
-    `deploy/*.sh` creates
-  - "Outside services": every service the settings (`config.py`, `service_fields`; an unknown
-    secret or URL setting fails) and the code's API hosts (`api_hosts`; an unknown `api.*`,
-    `*.googleapis.com` or `*.internal` host fails) name
+Coverage: the guide's `## ... Component catalogue` must name, INSIDE its cards' fields,
+  - "Where in the code": every top-level package (the package itself, not a file in it) and
+    module under `src/jarvis/`, every `src/jarvis/api/static/console*.js` module and every
+    Cloud Scheduler job `deploy/*.sh` creates
+  - "Outside services", as one item of the field's list: every service the settings
+    (`config.py`, `service_fields`; an unknown secret, key, token or URL setting fails) and the
+    code's API hosts (`api_hosts`; an unknown `api.*`, `*.googleapis.com` or `*.internal` host
+    fails) name
   - "Data it keeps", as code spans: every Firestore collection the code names
+The code side is read by `arch_inventory.py`. Reverse (`arch_files.py`): every path a card
+cites and every diagram file the guide links exist.
 Completeness: every `####` card has the 11 `FIELDS` filled; the technology table has the 8
 `TECH_COLUMNS` and 8 filled cells a row; the version line, the change log and the 14 diagram
 links with captions are there. Secret scan: the R6 build book scrubber finds nothing under
 `--scan` (default `docs/architecture/`; file, line and kind only, never the text).
-Exit 0 = pass, 1 = problems (listed), 2 = no guide. Tables: `arch_coverage.json`.
+Exit 0 = pass, 1 = problems (listed), 2 = no guide, or a file that can't be read or parsed.
+Tables: `arch_coverage.json`.
 """
 
 from __future__ import annotations
 
 import argparse
-import ast
-import json
 import re
 import sys
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from arch_files import NO_DIAGRAMS, check_cited, check_diagram_files, scan  # noqa: E402
+from arch_inventory import DIAGRAMS, TABLES_ERROR, Inventory, inventory  # noqa: E402
+
 HERE = Path(__file__).resolve().parents[1]
 GUIDE = Path("docs/architecture/JARVIS-Architecture.md")
-TABLES = json.loads((Path(__file__).with_suffix(".json")).read_text(encoding="utf-8"))
 FIELDS = (
     "Name", "What it does", "Layer", "Skill", "Where in the code", "Depends on",
     "Data it keeps", "Outside services", "Cost (₹ a month)", "When it fails", "Since",
@@ -40,157 +45,19 @@ TECH_COLUMNS = (
     "Area", "Technology", "What it does (plain words)", "Why we chose it",
     "Alternatives we could use", "Why not those (today)", "Cost per month (₹)", "Since",
 )  # fmt: skip
-DIAGRAMS: tuple[str, ...] = tuple(TABLES["diagrams"])
-# Settings -> outside services. A key ending in "_" is a prefix; any other key is a field name.
-SERVICE_FIELDS = tuple((k, tuple(v)) for k, v in TABLES["service_fields"])
-INTERNAL_SECRETS = frozenset(TABLES["internal_secrets"])
-API_HOSTS: dict[str, str] = TABLES["api_hosts"]
-NOT_SERVICES = frozenset(TABLES["not_services"])
-_API_HOST = re.compile(r"^(?:api\.[a-z0-9.-]+|[a-z0-9-]+\.googleapis\.com|[a-z0-9.-]+\.internal)$")
-_HOST_IN = re.compile(r"\bhttps?://([A-Za-z0-9.-]+)")
-_COLLECTION = (
-    re.compile(r"\{(?:self\.)?_?(?:prefix|p)\}([a-z][a-z0-9_]*)"),
-    re.compile(r"_path\(\"([a-z][a-z0-9_]*)\""),
-    re.compile(r"\b[A-Z_]*COLLECTION\s*=\s*\"([a-z][a-z0-9_]*)\""),
-)
-_JOB = re.compile(r"scheduler\s+jobs\s+create\s+\w+\s+(\"[^\"]+\"|\S+)")
 _VERSION = re.compile(
     r"^Version v\d+\.\d+\.\d+ · \d{1,2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2} IST · Release R[\d.]+"
     r" · Status: (?:Draft|Current|Superseded) · Owner: \S.*$"
 )
 CHANGE_LOG_HEAD = "| Version | Date | Release | What changed | By |"
-EMPTY = frozenset({"", "-", "—", "–", "tbd", "?", "n/a"})
-SCAN_SUFFIXES = (".md", ".markdy", ".svg", ".txt", ".json")
-_SHA256 = re.compile(r"\b[0-9a-f]{64}\b")
-_ADD_FIELD = "add it to arch_coverage.json service_fields"
-
-
-@dataclass(frozen=True)
-class Inventory:
-    code: tuple[str, ...]
-    console: tuple[str, ...]
-    jobs: tuple[str, ...]
-    services: tuple[str, ...]
-    collections: tuple[str, ...]
-    problems: tuple[str, ...]  # settings or hosts the tables above don't know
+EMPTY = frozenset({"", "-", "—", "–", "tbd", "tbc", "todo", "?", "n/a", "...", "…"})
+NONE_OK = frozenset({"Depends on", "Data it keeps", "Outside services"})  # "None" is an answer
 
 
 @dataclass(frozen=True)
 class Card:
     name: str
     fields: dict[str, str]
-
-
-def _code_items(repo: Path) -> tuple[str, ...]:
-    root = repo / "src/jarvis"
-    dirs = [f"src/jarvis/{p.name}" for p in root.iterdir() if (p / "__init__.py").is_file()]
-    mods = [f"src/jarvis/{p.name}" for p in root.glob("*.py") if p.name != "__init__.py"]
-    return tuple(sorted(dirs + mods))
-
-
-def _py_files(repo: Path) -> list[Path]:
-    return sorted((repo / "src/jarvis").rglob("*.py"))
-
-
-def _jobs(repo: Path) -> tuple[str, ...]:
-    jobs: set[str] = set()
-    for sh in sorted((repo / "deploy").glob("*.sh")):
-        text = sh.read_text(encoding="utf-8")
-        for m in _JOB.finditer(text):
-            jobs.add(_resolve(m.group(1).strip('"'), text))
-    return tuple(sorted(jobs))
-
-
-def _resolve(arg: str, text: str) -> str:
-    default = re.fullmatch(r"\$\{\w+:-([^}]+)\}", arg)
-    if default:
-        return default.group(1)
-    var = re.fullmatch(r"\$\{?(\w+)\}?", arg)
-    if var:
-        found = re.search(rf"^\s*{var.group(1)}=\"?([^\"\s]+)\"?", text, re.MULTILINE)
-        return found.group(1) if found else f"<unresolved {arg}>"
-    return arg
-
-
-def _settings_fields(repo: Path) -> list[tuple[str, str]]:
-    """(field name, annotation) of `class Settings` in config.py, read as an AST."""
-    tree = ast.parse((repo / "src/jarvis/config.py").read_text(encoding="utf-8"))
-    body = [
-        n for c in tree.body if isinstance(c, ast.ClassDef) and c.name == "Settings" for n in c.body
-    ]
-    fields = (n for n in body if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name))
-    return [(n.target.id, ast.unparse(n.annotation)) for n in fields]  # type: ignore[union-attr]
-
-
-def _services_of(field: str) -> tuple[str, ...] | None:
-    for key, services in SERVICE_FIELDS:
-        if field == key or (key.endswith("_") and field.startswith(key)):
-            return services
-    return None
-
-
-def _settings_services(repo: Path) -> tuple[set[str], list[str]]:
-    services: set[str] = set()
-    problems: list[str] = []
-    for name, annotation in _settings_fields(repo):
-        found = _services_of(name)
-        if found:
-            services.update(found)
-        elif name not in INTERNAL_SECRETS and ("SecretStr" in annotation or name.endswith("_url")):
-            problems.append(f"setting `{name}` names no known outside service: {_ADD_FIELD}")
-    return services, problems
-
-
-def _literals(tree: ast.AST) -> Iterable[str]:
-    """String constants that are not docstrings."""
-    docs = {
-        id(n.body[0].value)
-        for n in ast.walk(tree)
-        if isinstance(n, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
-        and n.body
-        and isinstance(n.body[0], ast.Expr)
-        and isinstance(n.body[0].value, ast.Constant)
-    }
-    for n in ast.walk(tree):
-        if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docs:
-            yield n.value
-
-
-def _host_services(repo: Path) -> tuple[set[str], list[str]]:
-    services: set[str] = set()
-    unknown: set[str] = set()
-    for path in _py_files(repo):
-        for text in _literals(ast.parse(path.read_text(encoding="utf-8"))):
-            for host in (h.lower() for h in _HOST_IN.findall(text)):
-                if host in API_HOSTS:
-                    services.add(API_HOSTS[host])
-                elif host not in NOT_SERVICES and _API_HOST.match(host):
-                    unknown.add(host)
-    what = "in the code names no known service: add it to arch_coverage.json api_hosts"
-    return services, [f"API host `{h}` {what}" for h in sorted(unknown)]
-
-
-def _collections(repo: Path) -> tuple[str, ...]:
-    names: set[str] = set()
-    for path in _py_files(repo):
-        text = path.read_text(encoding="utf-8")
-        for pattern in _COLLECTION:
-            names.update(pattern.findall(text))
-    return tuple(sorted(names))
-
-
-def inventory(repo: Path) -> Inventory:
-    static = repo / "src/jarvis/api/static"
-    settings, p1 = _settings_services(repo)
-    hosts, p2 = _host_services(repo)
-    return Inventory(
-        code=_code_items(repo),
-        console=tuple(sorted(p.name for p in static.glob("console*.js"))),
-        jobs=_jobs(repo),
-        services=tuple(sorted(settings | hosts)),
-        collections=_collections(repo),
-        problems=tuple(p1 + p2),
-    )
 
 
 def _section(text: str, title: str, level: str = "##") -> str:
@@ -240,8 +107,11 @@ def cards(catalogue: str) -> list[Card]:
     return found
 
 
-def _filled(value: str | None) -> bool:
-    return value is not None and value.strip().strip("*_ ").lower() not in EMPTY
+def _filled(value: str | None, field: str = "") -> bool:
+    if value is None:
+        return False
+    v = value.strip().strip("*_ ").lower()
+    return v not in EMPTY and (v != "none" or field in NONE_OK)
 
 
 def check_cards(found: Sequence[Card]) -> list[str]:
@@ -249,7 +119,7 @@ def check_cards(found: Sequence[Card]) -> list[str]:
         return ["catalogue: no component cards (#### headings) found"]
     out = []
     for c in found:
-        missing = [f for f in FIELDS if not _filled(c.fields.get(f))]
+        missing = [f for f in FIELDS if not _filled(c.fields.get(f), f)]
         if missing:
             out.append(f"card `{c.name}`: missing or empty field(s): {', '.join(missing)}")
     return out
@@ -292,6 +162,22 @@ def check_paperwork(text: str) -> list[str]:
     return out
 
 
+def service_names(field: str) -> set[str]:
+    """The items of an "Outside services" field, lower-cased: split at top-level `,`, `;`,
+    " and " and " or ", each item's name up to its first bracket ("Anthropic (fast tier)")."""
+    items, depth, cur = [], 0, ""
+    for ch in field.replace(" and ", ",").replace(" or ", ","):
+        depth += (ch == "(") - (ch == ")")
+        if ch in ",;" and depth == 0:
+            items.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    items.append(cur)
+    heads = (re.sub(r"^(?:and|or)\s+", "", i.split("(")[0].strip(" `*")) for i in items)
+    return {h.lower() for h in heads if h}
+
+
 def _mentions(haystack: str, needle: str) -> bool:
     return re.search(rf"(?<![\w-]){re.escape(needle)}(?![\w-]|\.\w)", haystack) is not None
 
@@ -306,52 +192,26 @@ def _missing(what: str, items: Iterable[str], present: Callable[[str], bool]) ->
     return [f"{what} `{i}` is missing" for i in items if not present(i)]
 
 
-def check_coverage(inv: Inventory, found: Sequence[Card], catalogue: str) -> list[str]:
+def check_coverage(inv: Inventory, found: Sequence[Card]) -> list[str]:
     code = " ".join(c.fields.get("Where in the code", "") for c in found)
-    services = " ".join(c.fields.get("Outside services", "") for c in found).lower()
+    services = set().union(*(service_names(c.fields.get("Outside services", "")) for c in found))
     data = _spans(" ".join(c.fields.get("Data it keeps", "") for c in found))
     in_code = "from every card's Where in the code"
     return [
         *inv.problems,
         *_missing(f"package/module {in_code}:", inv.code, lambda p: _path_in(code, p)),
         *_missing(f"console module {in_code}:", inv.console, lambda m: _mentions(code, m)),
-        *_missing("Scheduler job from the catalogue:", inv.jobs, lambda j: _mentions(catalogue, j)),
-        *_missing("outside service from every card's Outside services:", inv.services,
-                  lambda s: s.lower() in services),
+        *_missing(f"Scheduler job {in_code}:", inv.jobs, lambda j: _mentions(code, j)),
+        *_missing("outside service from every card's Outside services (one item of its list):",
+                  inv.services, lambda s: s.lower() in services),
         *_missing("Firestore collection from every card's Data it keeps (as a code span):",
                   inv.collections, lambda c: c in data),
     ]  # fmt: skip
 
 
 def _path_in(code: str, path: str) -> bool:
-    return re.search(rf"(?<![\w/]){re.escape(path)}(?![\w])", code) is not None
-
-
-def _words(path: Path, raw: str) -> str:
-    """What the personal-data rules read: an SVG's drawn words only (its geometry is runs of
-    digits, never personal), and no SHA-256 hashes; line breaks are kept for line numbers."""
-    text = _SHA256.sub(" ", raw)
-    if path.suffix != ".svg":
-        return text
-    return re.sub(r"<[^>]*>", lambda m: "\n" * m.group(0).count("\n") + " ", text)
-
-
-def scan(folder: Path) -> list[str]:
-    """Secret shapes on every line; the scrubber's personal-data rules on the readable words."""
-    if str(HERE / "src") not in sys.path:
-        sys.path.insert(0, str(HERE / "src"))
-    from jarvis.buildbook.gen.scrub import SECRET_SHAPES, default_scrubber
-
-    scrubber, out = default_scrubber(), []
-    for path in sorted(p for p in folder.rglob("*") if p.suffix in SCAN_SUFFIXES and p.is_file()):
-        raw = path.read_text(encoding="utf-8")
-        pairs = zip(raw.splitlines(), _words(path, raw).splitlines(), strict=False)
-        for n, (line, words) in enumerate(pairs, start=1):
-            kinds = set(scrubber.findings(words))
-            kinds |= {"secret"} if any(p.search(line) for _, p in SECRET_SHAPES) else set()
-            if kinds:
-                out.append(f"secret scan: {path.name}:{n} ({', '.join(sorted(kinds))})")
-    return out
+    """The package or module itself (`src/jarvis/x` or `src/jarvis/x/`), never a file in it."""
+    return re.search(rf"(?<![\w/]){re.escape(path)}/?(?![\w/-]|\.\w)", code) is not None
 
 
 def check_all(repo: Path, guide: Path, scan_dir: Path) -> list[str]:
@@ -359,7 +219,9 @@ def check_all(repo: Path, guide: Path, scan_dir: Path) -> list[str]:
     catalogue = _section(text, "Component catalogue")
     found = cards(catalogue)
     return (
-        check_coverage(inventory(repo), found, catalogue)
+        check_coverage(inventory(repo), found)
+        + check_cited(repo, ((c.name, c.fields) for c in found))
+        + check_diagram_files(text, guide.parent / "diagrams", DIAGRAMS)
         + check_cards(found)
         + check_tech(text)
         + check_paperwork(text)
@@ -377,12 +239,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not guide.is_file():
         sys.stdout.write(f"arch coverage: FAILED - no guide at {guide}\n")
         return 2
-    problems = check_all(args.repo, guide, args.scan or guide.parent)
+    try:
+        if TABLES_ERROR:
+            raise ValueError(TABLES_ERROR)
+        problems = check_all(args.repo, guide, args.scan or guide.parent)
+        inv = inventory(args.repo)
+    except (OSError, UnicodeDecodeError, SyntaxError, ValueError) as exc:
+        sys.stdout.write(f"arch coverage: ERROR - {type(exc).__name__}: {exc}\n")
+        return 2
     if problems:
         sys.stdout.write(f"arch coverage: FAILED - {len(problems)} problem(s):\n")
         sys.stdout.write("".join(f"  - {p}\n" for p in problems))
         return 1
-    inv = inventory(args.repo)
     sys.stdout.write(
         f"arch coverage: OK - {len(inv.code)} packages/modules, {len(inv.console)} console "
         f"modules, {len(inv.jobs)} Scheduler jobs, {len(inv.services)} outside services, "
@@ -390,6 +258,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     return 0
 
+
+__all__ = [
+    "DIAGRAMS", "GUIDE", "NO_DIAGRAMS", "Card", "Inventory", "cards", "check_all", "inventory",
+    "main", "service_names",
+]  # fmt: skip
 
 if __name__ == "__main__":
     sys.exit(main())

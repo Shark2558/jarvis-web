@@ -107,8 +107,10 @@ async def _view(svc: HouseService, uid: str) -> JSONResponse:
 
 def _plain(exc: Exception) -> str:
     if isinstance(exc, ValidationError):
-        first = exc.errors()[0] if exc.errors() else {}
-        return str(first.get("msg", "That isn't valid.")).removeprefix("Value error, ")
+        errors = exc.errors()
+        if not errors:
+            return "That isn't valid."
+        return str(errors[0]["msg"]).removeprefix("Value error, ")
     return str(exc)
 
 

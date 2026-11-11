@@ -49,6 +49,8 @@ def pick(ideas: tuple[Idea, ...], gap: int, rain: bool | None, today: date) -> I
 
 
 def say_gap(minutes: int) -> str:
+    """Spoken to the nearest 5 minutes ("about an hour and 30 minutes")."""
+    minutes = max(5, 5 * round(minutes / 5))
     hours, rest = divmod(minutes, 60)
     if not hours:
         return f"about {minutes} minutes"

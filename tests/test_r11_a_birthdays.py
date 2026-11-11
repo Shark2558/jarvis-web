@@ -10,7 +10,7 @@ import logging
 from datetime import date, timedelta
 
 import pytest
-from r11_fakes import UID, Clock, FakeNotifier, reads_over
+from r11_fakes import NO_ROWS, UID, Clock, FakeNotifier, reads_over
 from r11_fakes_a import (
     BrokenRules,
     DenyRules,
@@ -57,7 +57,8 @@ async def _reader(fake: FakePeople, rules: object | None = None, **kw: object): 
     clock = Clock(at(2026, 11, 12, 8, 30))
     audit = AuditLog()
     google = await connector(fake, **kw)  # type: ignore[arg-type]
-    reads = reads_over(lambda: rules, audit, now=clock)  # type: ignore[arg-type,return-value]
+    rows = rules if rules is not None else NO_ROWS
+    reads = reads_over(lambda: rows, audit, now=clock)  # type: ignore[arg-type,return-value]
     return BirthdayReader(google, reads=reads, now=clock), audit, clock
 
 
@@ -82,6 +83,7 @@ async def test_his_row_never_or_unreadable_means_no_request() -> None:
         reader, _, _ = await _reader(fake, rules)
         got = await reader.on_day(UID, date(2026, 11, 12))
         assert got.state == "denied" and got.people == () and fake.requests == []
+        assert "switched off" not in got.note and got.note.startswith("Birthdays paused: ")
 
 
 async def test_no_grant_or_no_link_is_a_plain_note() -> None:

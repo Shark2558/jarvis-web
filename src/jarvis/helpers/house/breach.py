@@ -19,7 +19,9 @@ read):
   arrived. Open it in Gmail and change that password, Sir." Each message is claimed (a hash of
   its id) before the send and released when no channel took it;
 - the governed path's one kind-only audit line (agent `helpers`, `gmail_search`, "breach_watch")
-  for every Gmail read, and for a refusal once a day.
+  for every Gmail read (a read the job's budget cuts too: "breach_watch; cut"), and for a refusal
+  once a day. A row that stops it says so (`breach_pause`): "Breach watching paused: your Email
+  permission is set to Ask first. ..." in the Home tab, the brief and `breach_status`.
 It also sweeps Part B's claims older than 30 days (every owner, every day).
 The sender addresses are UNVERIFIED until a real notice is seen in his mail (an owner check):
 HIBP's support pages name noreply@haveibeenpwned.com (DKIM-signed); Mozilla Monitor's is a guess
@@ -40,6 +42,7 @@ from jarvis.helpers.house import words
 from jarvis.helpers.house.guard import Counts, tally
 from jarvis.helpers.house.models import Outside
 from jarvis.helpers.house.store import HouseStore, OutsideOff, OutsideStore
+from jarvis.helpers.paused import PauseCheck
 from jarvis.helpers.ports import HelperContext
 from jarvis.integrations.google import GoogleAPIError, GoogleNotConnected
 from jarvis.logging import get_logger
@@ -54,6 +57,7 @@ log = get_logger(__name__)
 
 JOB = "breach_watch"
 ROW_TOOLS = ("gmail_search", "breach_status")  # "Search and read email" and "Weather and alerts"
+WHAT = "Breach watching"  # the "paused" line's words (jarvis.helpers.paused)
 DAYS = 2  # the daily job overlaps a day, so a late tick misses nothing
 MAX_SCAN = 20
 READ_PARALLEL = 5
@@ -155,12 +159,8 @@ class BreachJob:
         if reads is None or not await reads.allowed(uid, *ROW_TOOLS, job=JOB):
             n.add("skipped")
             return
-        try:
+        async with reads.reading(ROW_TOOLS[0], job=JOB):  # a cut read leaves its line too
             found = await self._scan(uid)
-        except Exception:
-            await reads.note(ROW_TOOLS[0], job=JOB, outcome="error", why="failed")
-            raise
-        await reads.note(ROW_TOOLS[0], job=JOB, outcome="executed")
         sent = 0
         for s in SENDERS:
             ids = [mid for who, mid in found if who == s]
@@ -234,4 +234,23 @@ def _checked(cur: Outside, ctx: HelperContext, sent: int) -> Outside:
     return cur.model_copy(update={"breach": b.model_copy(update=update)})
 
 
-__all__ = ["JOB", "SENDERS", "BreachJob", "Sender", "gmail_query", "notice_from"]
+def breach_pause(ctx: HelperContext, outside: OutsideStore) -> PauseCheck:
+    """Breach watching he switched on, with Google linked, paused by his Email or Weather and
+    alerts row (no keyring: it is off, so no line)."""
+
+    async def on(uid: str) -> bool:
+        return ctx.google is not None and (await outside.read(uid)).breach_on
+
+    return PauseCheck(ctx.reads, what=WHAT, tools=ROW_TOOLS, on=on)
+
+
+__all__ = [
+    "JOB",
+    "SENDERS",
+    "WHAT",
+    "BreachJob",
+    "Sender",
+    "breach_pause",
+    "gmail_query",
+    "notice_from",
+]

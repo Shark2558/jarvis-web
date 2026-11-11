@@ -22,6 +22,7 @@ from jarvis.helpers.today.tools import bill_view
 from jarvis.notify.quiet import local
 
 SOON_DAYS = 7
+SEE_ABOVE = "Paused: the line at the top of this tab says why."
 
 
 def _item(item: PendingItem) -> dict[str, Any]:
@@ -56,10 +57,11 @@ async def _birthdays(
         return {**out, "state": "off", "note": "", "today": [], "soon": []}
     today = local(now, tz).date()
     reading, soon = await reader.upcoming(uid, today, SOON_DAYS)
+    paused = reading.state == "denied"  # the frame's line above says which row and why
     return {
         **out,
         "state": reading.state,
-        "note": reading.note,
+        "note": SEE_ABOVE if paused else reading.note,
         "today": [p.name for p in reading.people if p.falls_on(today)],
         "soon": [{"name": p.name, "on": day_text(d)} for d, p in soon],
     }

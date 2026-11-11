@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from r11_fakes import NOON_IST, UID, Clock, reads_over
+from r11_fakes import NO_ROWS, NOON_IST, UID, Clock, reads_over
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.nudges import calendar as cal
@@ -101,14 +101,15 @@ async def test_his_calendar_row_decides_every_background_read() -> None:
     never = PolicyRule(tool_pattern="calendar_*", effect=Effect.DENY, risks=[ActionRisk.READ_ONLY])
     ask = PolicyRule(tool_pattern="calendar_*", effect=Effect.ASK, risks=[ActionRisk.READ_ONLY])
     for rules, ok in (
-        (None, True),  # no permissions service: the gateway's configured policy
+        (None, False),  # no permission service: fail closed (integrated review M2)
+        (NO_ROWS, True),
         (Rules(), True),
         (Rules([never]), False),
         (Rules([ask]), False),  # a background read can't ask
         (Rules(fail=True), False),  # fail closed
     ):
         reads = reads_over(lambda r=rules: r, AuditLog())  # type: ignore[misc]
-        assert await reads.allowed(UID, CALENDAR_TOOL, job="nudges") is ok, rules
+        assert (await reads.allowed(UID, CALENDAR_TOOL, job="nudges")).ok is ok, rules
 
 
 class Source:
@@ -124,7 +125,7 @@ class Source:
 
 async def _agenda(source: Source | None, allowed: bool) -> tuple[Agenda, AuditLog, Clock]:
     never = PolicyRule(tool_pattern="calendar_*", effect=Effect.DENY)
-    rules = None if allowed else Rules([never])
+    rules = NO_ROWS if allowed else Rules([never])
     audit, clock = AuditLog(), Clock(NOON_IST)
     reads = reads_over(lambda: rules, audit, now=clock)  # type: ignore[arg-type,return-value]
     return Agenda(source, reads=reads, now=clock), audit, clock

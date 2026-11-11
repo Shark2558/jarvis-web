@@ -7,6 +7,10 @@ all, each one clean line of at most `MAX_LINE` characters. The lines are the par
 templates (bills due, birthdays, chores, the weather with its attribution, the month's spend),
 never a model's words and never part of the AI summary's input. A contributor that fails or is
 slow is left out (logged by class name); no lines at all means no section (None).
+Integrated review M2: a helper his permission rows pause adds ONE line in all, last, folded
+across parts (`jarvis.helpers.paused.fold`): "Breach watching paused: your Email permission is
+set to Ask first. ..." or "Paused: 2 helpers wait on your permissions (Email, Contacts); see
+Helpers."
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from collections.abc import Callable, Sequence
 from datetime import date, tzinfo
 
 from jarvis.brief.models import HelpersSection
+from jarvis.helpers.paused import PauseSource, collect, fold
 from jarvis.helpers.ports import MAX_BRIEF_LINES, MAX_LINE, BriefContributor
 from jarvis.logging import get_logger
 
@@ -39,9 +44,11 @@ class HelpersBrief:
         contributors: Callable[[], Sequence[BriefContributor]],
         *,
         timeout_s: float = CONTRIBUTOR_TIMEOUT_S,
+        pauses: Callable[[], Sequence[PauseSource]] | None = None,
     ) -> None:
         self._contributors = contributors
         self._timeout_s = timeout_s
+        self._pauses = pauses
 
     async def _one(self, c: BriefContributor, uid: str, tz: tzinfo, day: date) -> list[str]:
         try:
@@ -52,10 +59,17 @@ class HelpersBrief:
         lines = [clean_line(x) for x in (got if isinstance(got, list | tuple) else ())]
         return [x for x in lines if x][:MAX_BRIEF_LINES]
 
+    async def _paused(self, uid: str) -> list[str]:
+        line = fold(await collect(self._pauses(), uid)) if self._pauses is not None else None
+        return [clean_line(line)] if line else []
+
     async def section(self, uid: str, tz: tzinfo, day: date) -> HelpersSection | None:
         everyone = list(self._contributors())
-        found = await asyncio.gather(*(self._one(c, uid, tz, day) for c in everyone))
-        lines = [x for chunk in found for x in chunk][:MAX_SECTION_LINES]
+        found, paused = await asyncio.gather(
+            asyncio.gather(*(self._one(c, uid, tz, day) for c in everyone)), self._paused(uid)
+        )
+        room = MAX_SECTION_LINES - len(paused)
+        lines = [x for chunk in found for x in chunk][:room] + paused
         return HelpersSection(lines=tuple(lines)) if lines else None
 
 

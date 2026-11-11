@@ -10,8 +10,10 @@ free-time pick, whether rain is likely (D12, Part B's weather).
 - `Agenda`: one fetch per owner at most every `REFRESH` (a failure is remembered `RETRY_AFTER`),
   and only when a nudge that needs it is due, so the 5-minute clock stays light. Every fetch takes
   the gateway's governed path first (I1, `ctx.reads`: the gateway's policy and his row for
-  `calendar_list_events` decide, "Allow" only; unreadable rows or no gateway: no fetch) and leaves
-  its one kind-only audit line (agent `helpers`, the tool, the outcome, "nudges"; no words).
+  `calendar_list_events` decide, "Allow" only; unreadable rows or no gateway: no fetch; inside a
+  console call the gateway decided, "Ask first" too) and leaves its one kind-only audit line
+  (agent `helpers`, the tool, the outcome, "nudges"; no words), a read the clock's budget cuts
+  included ("nudges; cut").
 - `RainSource`: `rain_likely(uid, start, end) -> bool | None` (None: unknown). Part C has none of
   its own; I1 joins Part B's weather through `ctx.rain` (`house.services["rain"]`).
 """
@@ -152,17 +154,17 @@ class Agenda:
         if reads is None or not await reads.allowed(uid, CALENDAR_TOOL, job=JOB):
             return None
         try:
-            events = await self._source.events(uid, start, end)
+            async with reads.reading(CALENDAR_TOOL, job=JOB):
+                events = await self._source.events(uid, start, end)
         except Exception as exc:  # noqa: BLE001 - no calendar this run; the class in the log
             log.warning("nudges: calendar not read", extra={"error": type(exc).__name__})
-            await reads.note(CALENDAR_TOOL, job=JOB, outcome="error", why="failed")
             return None
-        await reads.note(CALENDAR_TOOL, job=JOB, outcome="executed")
         return list(events)
 
 
 __all__ = [
     "CALENDAR_TOOL",
+    "JOB",
     "REFRESH",
     "Agenda",
     "CalEvent",

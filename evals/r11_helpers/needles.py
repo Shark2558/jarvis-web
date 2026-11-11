@@ -35,7 +35,7 @@ from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from r11_fakes import UID, Clock, FakeNotifier, settings
+from r11_fakes import NO_ROWS, UID, Clock, FakeNotifier, settings
 from r11_fakes_a import FAKE_UPI, FakePeople, person
 from r11_fakes_a import connector as people_connector
 from r11_fakes_b import PLACE, fixture, gmail_with, sachet_fetcher
@@ -179,6 +179,7 @@ async def _world() -> World:
     for t in (*(t for p in parts.values() for t in p.tools), *_google_rows()):
         reg.register(t)
     gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=audit)
+    gw.rules = NO_ROWS  # his permission service, every row its default (none: no reads at all)
     attach_activity(gw, ActivityStore(docs, prefix=s.firestore_prefix), s)
     holder["gw"] = gw
     return World(clock, docs, audit, notifier, gw, parts, Logs())

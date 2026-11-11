@@ -6,7 +6,8 @@ the app wires for the kitchen (items 13-16), using only what `ctx` hands it:
   row) and, with Google linked, `calendar_kitchen_blocks` (the calendar row, always a card);
 - daily job `grocery_spend` (with a keyring and Google; it obeys his permission rows);
 - privacy rows `helpers_kitchen` and `helpers_spend`; the brief's grocery line on the 1st;
-- the No-AI phrases; the services its routes read (`api/helpers_kitchen.py`).
+- the No-AI phrases; the services its routes read (`api/helpers_kitchen.py`);
+- paused: grocery spend, when his Email or Kitchen row stops the receipts' read.
 Sealed data needs `ctx.keyring` (purposes `kitchen`, `spend`); without it the kitchen says it is
 off and keeps nothing. Recipes use `ctx.brains` by tier and `ctx.billing`; never the alerts (the
 kitchen sends none).
@@ -21,7 +22,7 @@ from jarvis.helpers.kitchen.phrases import PHRASES
 from jarvis.helpers.kitchen.privacy import kitchen_privacy, spend_privacy
 from jarvis.helpers.kitchen.recipes import RecipeService
 from jarvis.helpers.kitchen.service import KitchenService
-from jarvis.helpers.kitchen.spend import GrocerySpendJob, SpendService
+from jarvis.helpers.kitchen.spend import GrocerySpendJob, SpendService, spend_pause
 from jarvis.helpers.kitchen.store import KitchenStore, SpendStore
 from jarvis.helpers.kitchen.tools import kitchen_tools
 from jarvis.helpers.ports import HelperContext, HelperPart
@@ -65,6 +66,7 @@ def build(ctx: HelperContext) -> HelperPart:
         phrases=PHRASES,
         services={SERVICE: svc},
         ready=_ready(ctx, nutrition),
+        paused=(spend_pause(spend, ctx.reads),) if spend.can_scan else (),
     )
 
 

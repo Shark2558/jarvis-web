@@ -17,13 +17,16 @@ hands back everything the app wires for it in the `HelperPart`; it never touches
   the time zone, the collection prefix, a clock, and `pending_all()` (every built part's pending
   sources, read when called, so C can read A's). I1 adds `reads` (the gateway's governed path
   for a background job's read of his data) and `rain` (Part B's rain hint, read late, for C).
+- The integrated review fixes add `HelperPart.paused` (each background reader's "paused" check,
+  `jarvis.helpers.paused`: his Helpers tab, the brief and `breach_status` say when a row stops
+  it) and `rank` (D9's order, one definition for Part A's pending list and Part C's focus nudge).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime, tzinfo
+from datetime import UTC, date, datetime, tzinfo
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from jarvis.offline.rules import NoAIRouter
@@ -33,6 +36,7 @@ if TYPE_CHECKING:
     from jarvis.config import Settings
     from jarvis.helpers.gate import PartSender
     from jarvis.helpers.kinds import PartName
+    from jarvis.helpers.paused import PauseSource
     from jarvis.integrations.google import GoogleConnector
     from jarvis.keyring import Keyring
     from jarvis.llm.brains import BrainRegistry
@@ -49,6 +53,8 @@ Urgency = Literal["overdue", "today", "soon", "later"]
 MAX_LABEL = 80
 MAX_BRIEF_LINES = 3  # a contributor's lines in the brief (the section holds at most 8 in all)
 MAX_LINE = 160
+ORDER: dict[str, int] = {"overdue": 0, "today": 1, "soon": 2, "later": 3}
+_FAR = datetime.max.replace(tzinfo=UTC)
 
 # NoAIRouter: (text, now in the owner's zone) -> the tool calls to run with no model, or None
 
@@ -67,6 +73,18 @@ class PendingItem:
     def __post_init__(self) -> None:
         if not self.label.strip() or len(self.label) > MAX_LABEL:
             raise ValueError("a pending item needs a label of at most 80 characters")
+
+
+def _due_key(item: PendingItem) -> datetime:
+    if item.due is None:
+        return _FAR
+    return item.due if item.due.tzinfo is not None else item.due.replace(tzinfo=UTC)
+
+
+def rank(items: Sequence[PendingItem]) -> list[PendingItem]:
+    """D9's order: overdue, then due today, then urgency (soon, later), then his pin (`weight`),
+    then the due date (none last); equal items keep their order."""
+    return sorted(items, key=lambda i: (ORDER.get(i.urgency, 9), -i.weight, _due_key(i)))
 
 
 @runtime_checkable
@@ -97,6 +115,7 @@ class HelperPart:
     phrases: tuple[NoAIRouter, ...] = ()
     services: Mapping[str, Any] = field(default_factory=dict)
     ready: str = "not built yet"
+    paused: tuple[PauseSource, ...] = ()  # each background reader's "paused" check
 
 
 @dataclass(frozen=True)
@@ -136,6 +155,7 @@ __all__ = [
     "MAX_BRIEF_LINES",
     "MAX_LABEL",
     "MAX_LINE",
+    "ORDER",
     "BriefContributor",
     "HelperContext",
     "HelperPart",
@@ -144,4 +164,5 @@ __all__ = [
     "PendingSource",
     "RainHint",
     "Urgency",
+    "rank",
 ]

@@ -2,7 +2,8 @@
 """The focus nudge of item 10 (D9): at his chosen times (OFF by default), "Top priority now"
 with the top pending item from every part's pending sources (`ctx.pending_all()`, Part A's among
 them). The ranking is D9's, in code: overdue, then due today, then urgency, then his own pin
-(weight), then the due time. A `PendingItem` label is JARVIS's own words or his own (the port's
+(weight), then the due time: `ports.rank`, the one definition Part A's pending list uses too
+(integrated review fixes). A `PendingItem` label is JARVIS's own words or his own (the port's
 contract); it is cleaned to one short line. Nothing pending: nothing is sent (the slot is kept).
 Nothing came back because a source failed: `NotNow`, so the claim is released and the next clock
 run tries again (inside the slot's 30 minutes).
@@ -10,26 +11,16 @@ run tries again (inside the slot's 30 minutes).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from jarvis.helpers.kinds import NudgeKind
 from jarvis.helpers.nudges.models import NudgeSettings
 from jarvis.helpers.nudges.schedule import due, slots
 from jarvis.helpers.nudges.service import NotNow, NudgeService, Plan, minute_key
-from jarvis.helpers.ports import MAX_LABEL, PendingItem
+from jarvis.helpers.ports import MAX_LABEL, PendingItem, rank
 
 KIND: NudgeKind = "nudge_focus"
 TEXT = "Top priority now, Sir: {label}."
-_ORDER = {"overdue": 0, "today": 1, "soon": 2, "later": 3}
-_LAST = datetime.max.replace(tzinfo=UTC)
-
-
-def rank(items: list[PendingItem]) -> list[PendingItem]:
-    def key(i: PendingItem) -> tuple[int, int, datetime]:
-        when = i.due if i.due is None or i.due.tzinfo else i.due.replace(tzinfo=UTC)
-        return (_ORDER.get(i.urgency, 4), -i.weight, when or _LAST)
-
-    return sorted(items, key=key)
 
 
 def label(item: PendingItem) -> str:

@@ -190,11 +190,14 @@ async def test_every_page_is_read_and_only_then_the_last_scan_moves() -> None:  
     assert (await svc.store.scan(UID)).last_at is not None
 
 
+COUNTS = ("mails", "read", "orders", "ignored", "flagged")
+
+
 def _read_log(caplog: pytest.LogCaptureFixture) -> dict[str, Any]:
+    """The scan's one log line: whether it was complete, and no count (integrated review L2)."""
     rec = [r for r in caplog.records if r.getMessage() == "grocery receipts read"][-1]
-    return {
-        k: getattr(rec, k) for k in ("mails", "read", "orders", "ignored", "flagged", "complete")
-    }
+    assert not any(hasattr(rec, k) for k in COUNTS), rec.__dict__
+    return {"complete": rec.complete}
 
 
 async def test_out_of_time_while_listing_keeps_the_last_scan_and_the_next_run_finishes(
@@ -273,4 +276,4 @@ async def test_a_total_too_large_for_groceries_is_flagged_not_added(
     out = await svc.month(UID, "2026-11")
     assert out["total"] == "₹456" and out["flagged"] == 1
     assert "1 receipt over ₹25,000 wasn't counted" in out["message"]
-    assert _read_log(caplog)["flagged"] == 1
+    assert _read_log(caplog)["complete"] is True  # and no order or flagged count in the log

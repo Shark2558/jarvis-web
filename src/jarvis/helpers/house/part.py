@@ -8,6 +8,7 @@ wires for the chores rota, home upkeep, weather, disaster alerts and breach noti
   feed reads first, each in its own slot of Part B's share of the run (`fetch.OutsideClock`)
 - morning tick: `breach_watch` (it also sweeps Part B's old claims)
 - privacy: `helpers_house`, `helpers_place`; brief: "house", "outside"; pending: "house"
+- paused: breach watching, when his Email or Weather and alerts row stops it (`breach_pause`)
 - No-AI: `phrases.PHRASES`; routes read `services["house"]` (`api/helpers_house.py`); Part C's
   free-time pick reads `services["rain"]` (`rain.RainHint`, through `ctx.rain`, I1)
 His place needs the keyring (`alerts_place`); without one, weather, disaster alerts and breach
@@ -17,7 +18,7 @@ he types his district (and breach watching until he says he has subscribed).
 
 from __future__ import annotations
 
-from jarvis.helpers.house.breach import BreachJob
+from jarvis.helpers.house.breach import BreachJob, breach_pause
 from jarvis.helpers.house.brief import ChoresBrief, HousePending, OutsideBrief
 from jarvis.helpers.house.chores import ChoresJob
 from jarvis.helpers.house.fetch import Fetcher, HttpFetcher, OutsideClock
@@ -44,6 +45,7 @@ def build(ctx: HelperContext, fetcher: Fetcher | None = None) -> HelperPart:
     store = HouseStore(ctx.docs, prefix=ctx.prefix)
     outside = OutsideStore(ctx.docs, ctx.keyring, prefix=ctx.prefix)
     svc = HouseService(ctx, store, outside)
+    paused = breach_pause(ctx, outside)
     fetch = fetcher or HttpFetcher()
     slots = OutsideClock()
     clock: list[TickJob] = [ChoresJob(ctx, store), UpkeepJob(ctx, store)]
@@ -53,7 +55,7 @@ def build(ctx: HelperContext, fetcher: Fetcher | None = None) -> HelperPart:
         clock.append(WeatherJob(ctx, outside, store, fetch, clock=slots))
     return HelperPart(
         name="house",
-        tools=house_tools(svc),
+        tools=house_tools(svc, breach=paused),
         clock_jobs=tuple(clock),
         daily_jobs=(BreachJob(ctx, outside, store),),
         privacy=(house_privacy(store), place_privacy(outside, store)),
@@ -62,6 +64,7 @@ def build(ctx: HelperContext, fetcher: Fetcher | None = None) -> HelperPart:
         phrases=PHRASES,
         services={"house": svc, "rain": RainHint(outside, tz=ctx.tz, now=ctx.now)},
         ready=READY_ON if outside.available else READY_NO_KEY,
+        paused=(paused,),
     )
 
 

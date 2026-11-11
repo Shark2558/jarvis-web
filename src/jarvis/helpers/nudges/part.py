@@ -10,7 +10,8 @@ Every nudge goes out through `ctx.sender` (the gate) with a `nudge_*` kind. The 
 taps change (`/v1/helpers/gate/...`). His calendar is the Google connector (`ctx.google`, his
 permission row decides each read); the rain hint for free time is Part B's weather when I1 joins
 it (`ctx.rain`, see INTEGRATION-C.md), none until then. `calendar` / `rain` are for tests and the
-eval (fakes).
+eval (fakes). `paused`: the calendar nudges (the stand-up meeting variant, a missed activity, free
+time) he switched on, when his Calendar row stops their read (`jarvis.helpers.paused`).
 """
 
 from __future__ import annotations
@@ -19,8 +20,10 @@ from collections.abc import Callable
 from typing import Any
 
 from jarvis.helpers.gate import GateStore
+from jarvis.helpers.nudges import activity, freetime, standup
 from jarvis.helpers.nudges.brief import NudgesBrief
 from jarvis.helpers.nudges.calendar import (
+    CALENDAR_TOOL,
     Agenda,
     CalendarSource,
     GoogleCalendar,
@@ -33,10 +36,28 @@ from jarvis.helpers.nudges.privacy import wellbeing_privacy
 from jarvis.helpers.nudges.service import NudgeService
 from jarvis.helpers.nudges.store import NudgeStore, WellbeingStore
 from jarvis.helpers.nudges.tools import nudge_tools
+from jarvis.helpers.paused import PauseCheck
 from jarvis.helpers.ports import HelperContext, HelperPart
 
 READY = "ready"
 READY_UNSEALED = "ready; the water and activity log is off (no token key)"
+WHAT = "Calendar nudges"  # the "paused" line's words
+
+
+def calendar_pause(ctx: HelperContext, svc: NudgeService) -> PauseCheck:
+    """The nudges that read his calendar, once he switched one on: the stand-up meeting variant,
+    a missed planned activity (its words set), or free time (with ideas)."""
+
+    async def on(uid: str) -> bool:
+        if not svc.agenda.linked:
+            return False
+        s = await svc.settings(uid)
+        act, free = s.nudge(activity.KIND), s.nudge(freetime.KIND)
+        return bool(
+            s.nudge(standup.KIND).meeting or (act.on and act.words) or (free.on and s.ideas)
+        )
+
+    return PauseCheck(ctx.reads, what=WHAT, tools=(CALENDAR_TOOL,), on=on)
 
 
 def _rain_from(ctx: HelperContext, rain: RainSource | None) -> Callable[[], RainSource | None]:
@@ -85,7 +106,8 @@ def build(
         phrases=(phrasebook(svc.words),),
         services={"service": svc},
         ready=READY if svc.well.on else READY_UNSEALED,
+        paused=(calendar_pause(ctx, svc),),
     )
 
 
-__all__ = ["READY", "READY_UNSEALED", "build", "service"]
+__all__ = ["READY", "READY_UNSEALED", "WHAT", "build", "calendar_pause", "service"]

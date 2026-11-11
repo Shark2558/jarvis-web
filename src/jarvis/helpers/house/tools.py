@@ -9,6 +9,9 @@ R1 (read): `chore_list`, `maint_list`, `maint_starters`, `weather_now`, `disaste
 does, typed by him). The rota and upkeep answers are his own words (`trusted_output`);
 `disaster_status` carries SACHET's own words fenced as EXTERNAL CONTENT (so the round is outside
 content and later writes ask). The cached weather summary is numbers JARVIS checked.
+On a Telegram turn (a cloud chat) `weather_now` and `disaster_status` leave out his district
+(private by default; integrated review L6); the console keeps it. `breach_status` says when his
+rows pause the morning watch (`paused`: the fixed line of `jarvis.helpers.paused`).
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from jarvis.core.channel import on_telegram
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.house import upkeep as upkeep_mod
 from jarvis.helpers.house import words
@@ -32,6 +36,7 @@ from jarvis.helpers.house.models import (
 )
 from jarvis.helpers.house.service import HouseService, chore_view, upkeep_view, weekday_numbers
 from jarvis.helpers.house.store import OFF_WORDS
+from jarvis.helpers.paused import PauseSource
 from jarvis.helpers.sources import OPEN_METEO_ATTRIBUTION, SACHET_ATTRIBUTION
 from jarvis.tools.base import CheckFn, SummaryFn, Tool, ToolFn
 from jarvis.tools.card import one_line
@@ -101,9 +106,15 @@ def _check_ref(key: str) -> CheckFn:
     return check
 
 
+def _place(district: str) -> dict[str, Any]:
+    """His district for the console; none on a Telegram turn (a cloud chat)."""
+    return {} if on_telegram() else {"district": district}
+
+
 class HouseTools:
-    def __init__(self, svc: HouseService) -> None:
+    def __init__(self, svc: HouseService, breach: PauseSource | None = None) -> None:
         self.svc = svc
+        self.breach = breach
 
     async def chore_list(self, a: dict[str, Any]) -> Any:
         today = self.svc.today()
@@ -163,7 +174,7 @@ class HouseTools:
         w = o.weather
         return {
             **out,
-            "district": o.place.district,
+            **_place(o.place.district),
             "summary": w.summary.model_dump(mode="json") if w.summary else None,
             "checked_at": w.checked_at,
             "unavailable_since": w.fail_since,
@@ -193,18 +204,21 @@ class HouseTools:
         ]
         return {
             **out,
-            "district": o.place.district,
+            **_place(o.place.district),
             "warnings": warnings,
             "checked_at": sa.checked_at,
             "unavailable_since": sa.fail_since or sa.cap_fail_since,
         }
 
     async def breach_status(self, a: dict[str, Any]) -> Any:
-        o = await self.svc.read_outside(_uid())
+        uid = _uid()
+        o = await self.svc.read_outside(uid)
         base = {"how": words.BREACH_HOW, "link": words.HIBP_NOTIFY}
         if o is None:
             return {**base, "on": False, "note": OFF_WORDS}
-        return {**base, "on": o.breach_on, **o.breach.model_dump(mode="json")}
+        out = {**base, "on": o.breach_on, **o.breach.model_dump(mode="json")}
+        paused = await self.breach.pause(uid) if self.breach is not None else None
+        return {**out, "paused": paused.line} if paused is not None else out
 
 
 def _summary(template: str, *keys: str, defaults: dict[str, str] | None = None) -> SummaryFn:
@@ -340,8 +354,8 @@ def _outside_tools(t: HouseTools) -> tuple[Tool, ...]:
     )
 
 
-def house_tools(svc: HouseService) -> tuple[Tool, ...]:
-    t = HouseTools(svc)
+def house_tools(svc: HouseService, *, breach: PauseSource | None = None) -> tuple[Tool, ...]:
+    t = HouseTools(svc, breach)
     return (*_chore_tools(t), *_upkeep_tools(t), *_outside_tools(t))
 
 

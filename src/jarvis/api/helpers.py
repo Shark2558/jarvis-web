@@ -3,7 +3,7 @@
 the nudge limits. Owner-only (`require_auth` + `current_user`; cookie writes need
 `X-Requested-With: JARVIS`), `no-store`, changes rate-limited per owner.
 
-GET  /v1/helpers                      {enabled, off?, parts: [{name, tab, ready}], clock:
+GET  /v1/helpers                      {enabled, off?, parts: [{name, tab, ready, paused}], clock:
                                       {last_run, stale, jobs}, nudges: {kinds, caps, defaults,
                                       max_per_day, max_per_hour, snoozed, stopped, today},
                                       fortnight: {reminders_on_time, reminders_late, ...}}
@@ -12,6 +12,8 @@ POST /v1/helpers/gate/{kind}/snooze   {minutes: 15..720} (kind: a nudge kind or 
 POST /v1/helpers/gate/{kind}/stop     stop it for the rest of today
 POST /v1/helpers/gate/{kind}/resume   undo a snooze or a stop
 
+`parts[].paused`: that part's fixed "paused" lines (`jarvis.helpers.paused`: a helper he switched
+on that his permission rows stop), drawn at the top of its tab; textContent only.
 404 {error: "helpers_off"} when the helpers are off; 422 {error: "invalid", detail} in plain words;
 503 {error: "unavailable"} when the nudge state can't be read or changed. Nothing here sends.
 The parts' own routes live in `api/helpers_<part>.py`.
@@ -31,6 +33,7 @@ from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.helpers.gate import ALL, GateUnavailable, HelperSender, NudgeState, fortnight
 from jarvis.helpers.kinds import DEFAULT_CAPS, NUDGE_KINDS, PARTS, TABS
+from jarvis.helpers.paused import lines as paused_lines
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -117,7 +120,12 @@ async def _view(request: Request, uid: str) -> dict[str, Any]:
     return {
         "enabled": True,
         "parts": [
-            {"name": p, "tab": TABS[p], "ready": parts[p].ready if p in parts else "off"}
+            {
+                "name": p,
+                "tab": TABS[p],
+                "ready": parts[p].ready if p in parts else "off",
+                "paused": await paused_lines(parts[p].paused, uid) if p in parts else [],
+            }
             for p in PARTS
         ],
         "clock": await _clock(request),

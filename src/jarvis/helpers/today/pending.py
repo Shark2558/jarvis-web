@@ -10,7 +10,10 @@ due today, then by urgency (soon, later), then his pinned item (`weight`), then 
 Part A's own sources: `BillsPending` (each bill's current unpaid due date, overdue or within a
 week: "Electricity ₹1,240 due tomorrow") and `TasksPending` (Google Tasks due by today, through
 the existing Tasks client; his To-dos row obeyed, fail closed; a to-do's title is his list's
-words, fenced by the tools before a model sees it).
+words, fenced by the tools before a model sees it). In a console tool call the gateway decided,
+"Ask first" on his To-do list row reads (he is there); the brief and the tab read on "Allow"
+only, and the tab says when the row pauses them (`tasks_pause`). One audit line per read, a cut
+one included (`BackgroundReads.reading`).
 """
 
 from __future__ import annotations
@@ -18,10 +21,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Protocol
 
-from jarvis.helpers.ports import PendingItem, PendingSource, Urgency
+from jarvis.helpers.paused import PauseCheck
+from jarvis.helpers.ports import ORDER, PendingItem, PendingSource, Urgency, rank
 from jarvis.helpers.today.bills import BillsService, amount_words, current_due, when_words
 from jarvis.helpers.today.birthdays import row_allows
 from jarvis.helpers.today.store import BillsOff
@@ -39,20 +43,9 @@ TOP = 10
 SOON_DAYS = 3
 WEEK = 7
 LABEL = 80
-ORDER: dict[str, int] = {"overdue": 0, "today": 1, "soon": 2, "later": 3}
-_FAR = datetime.max.replace(tzinfo=UTC)
 TASKS_TOOL = "tasks_list"
 TASKS_JOB = "pending"  # "top priority" and "what is pending" read his to-dos (and the nudge)
-
-
-def _due_key(item: PendingItem) -> datetime:
-    if item.due is None:
-        return _FAR
-    return item.due if item.due.tzinfo is not None else item.due.replace(tzinfo=UTC)
-
-
-def rank(items: Sequence[PendingItem]) -> list[PendingItem]:
-    return sorted(items, key=lambda i: (ORDER.get(i.urgency, 9), -i.weight, _due_key(i)))
+TASKS_WHAT = "To-dos in your top priority"  # the "paused" line's words (jarvis.helpers.paused)
 
 
 @dataclass(frozen=True)
@@ -173,13 +166,8 @@ class TasksPending:
     async def _due(self, uid: str, today: date) -> list[tuple[str, date]]:
         """His to-dos due by today, through the gateway's governed path (I1); one audit line."""
         assert self._reads is not None
-        try:
-            found = list(await self._tasks.due(uid, today))
-        except Exception:
-            await self._reads.note(TASKS_TOOL, job=TASKS_JOB, outcome="error", why="failed")
-            raise
-        await self._reads.note(TASKS_TOOL, job=TASKS_JOB, outcome="executed")
-        return found
+        async with self._reads.reading(TASKS_TOOL, job=TASKS_JOB):
+            return list(await self._tasks.due(uid, today))
 
     async def pending(self, uid: str, now: datetime) -> Sequence[PendingItem]:
         if not await row_allows(self._reads, uid, TASKS_TOOL, TASKS_JOB):
@@ -197,9 +185,20 @@ class TasksPending:
         return out
 
 
+async def _always(uid: str) -> bool:
+    return True
+
+
+def tasks_pause(reads: BackgroundReads | None) -> PauseCheck:
+    """His to-dos have no switch: "Ask first" (or rows unreadable) pauses them in the brief and
+    the tab; "Never" is his own "don't read my to-dos", so it says nothing."""
+    return PauseCheck(reads, what=TASKS_WHAT, tools=(TASKS_TOOL,), on=_always, never_too=False)
+
+
 __all__ = [
     "ORDER",
     "SOURCE_TIMEOUT_S",
+    "TASKS_TOOL",
     "TOP",
     "BillsPending",
     "Collected",
@@ -207,4 +206,5 @@ __all__ = [
     "PendingService",
     "TasksPending",
     "rank",
+    "tasks_pause",
 ]

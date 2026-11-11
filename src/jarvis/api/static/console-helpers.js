@@ -2,6 +2,8 @@
 // frame. Builds the four sub-tabs inside #p-helpers .pbody (Today = Part A, Home = B, Nudges = C, Kitchen = D),
 // shows the clock line from GET /v1/helpers, loads the stylesheet and the four parts' tab modules, and gives the
 // parts ONE set of builders so every tab looks the same (existing tokens and components only: .btn, .bsw, .sfine).
+// Each tab starts with the frame's own "paused" lines (parts[].paused: fixed templates, e.g. "Breach watching paused:
+// your Email permission is set to Ask first."); the part draws below them, in its own box.
 // Server strings reach the page through textContent only. No build step; CSP script-src 'self'; ASCII source.
 // API for the parts: window.JarvisHelpers = {register(tab, {mount(host, H), refresh?(view)}), api, view, mk, row,
 //   toggle, empty, note, section, txt}. A part never edits this file or another part's tab.
@@ -65,6 +67,8 @@
   tabsEl.setAttribute('role', 'tablist');
   tabsEl.setAttribute('aria-label', 'Helpers');
   const panes = {};
+  const bodies = {};
+  const pauses = {};
   const buttons = {};
   TABS.forEach(([id, label]) => {
     const b = mk('button', 'hp-tab', label);
@@ -81,6 +85,11 @@
     p.setAttribute('aria-labelledby', b.id);
     p.tabIndex = 0;
     p.hidden = true;
+    pauses[id] = mk('div', 'hp-paused');
+    pauses[id].setAttribute('role', 'status');
+    pauses[id].hidden = true;
+    bodies[id] = mk('div', '');
+    p.append(pauses[id], bodies[id]);
     panes[id] = p;
   });
   tabsEl.addEventListener('keydown', (e) => {
@@ -112,7 +121,7 @@
     const part = S.parts[id];
     if (!part || S.mounted[id]) return;
     S.mounted[id] = true;
-    try { part.mount(panes[id], H); } catch (_) { panes[id].append(empty('This tab couldn\u2019t load.')); }
+    try { part.mount(bodies[id], H); } catch (_) { bodies[id].append(empty('This tab couldn\u2019t load.')); }
   }
   function register(id, part) {
     if (!panes[id] || !part || typeof part.mount !== 'function' || S.parts[id]) return;
@@ -120,7 +129,16 @@
     if (id === S.tab) choose(id, false);
   }
 
-  // ---- the clock line and the shared view (GET /v1/helpers) ----------------------------------------------------
+  // ---- the clock line, the paused lines and the shared view (GET /v1/helpers) ---------------------------------
+  function pausedLines(v) {
+    const by = {};
+    ((v && v.enabled !== false && Array.isArray(v.parts)) ? v.parts : []).forEach((p) => { if (p && pauses[p.name]) by[p.name] = p.paused; });
+    TABS.forEach(([id]) => {
+      const lines = (Array.isArray(by[id]) ? by[id] : []).map((x) => txt(x, 240)).filter(Boolean).slice(0, 3);
+      pauses[id].replaceChildren(...lines.map((x) => mk('p', 'sfine', x)));
+      pauses[id].hidden = !lines.length;
+    });
+  }
   function clockLine(v) {
     const meta = document.getElementById('helpersMeta');
     if (!v || v.enabled === false) {
@@ -144,6 +162,7 @@
       try {
         S.view = await api('/v1/helpers');
         clockLine(S.view);
+        pausedLines(S.view);
         const part = S.parts[S.tab];
         if (part && typeof part.refresh === 'function') { try { part.refresh(S.view); } catch (_) {} }
       } catch (e) {
@@ -162,7 +181,7 @@
   css.rel = 'stylesheet';
   css.href = '/static/console-helpers.css';
   document.head.append(css);
-  const failed = (id) => () => { if (!S.parts[id]) panes[id].append(empty('This tab couldn\u2019t load.')); };
+  const failed = (id) => () => { if (!S.parts[id]) bodies[id].append(empty('This tab couldn\u2019t load.')); };
   import('./console-helpers-today.js').catch(failed('today'));
   import('./console-helpers-house.js').catch(failed('house'));
   import('./console-helpers-nudges.js').catch(failed('nudges'));

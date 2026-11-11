@@ -39,5 +39,9 @@ label.hp-field > .snote{display:block;margin:0 0 4px}
 .hp-kitchen .minput{height:44px}
 .hp-full > summary{display:flex;align-items:center;min-height:44px;cursor:pointer}
 .hp-full .hp-row{min-height:0;padding:4px 0}
+/* Integrated review M2: a helper his permission rows pause says so at the top of its tab */
+.hp-paused{margin:0 0 12px;padding:8px 10px;border-radius:var(--r-md);background:var(--well-2);border:1px solid var(--line-2)}
+.hp-paused p{margin:0;color:var(--amber-ink)}
+.hp-paused p + p{margin-top:6px}
 @media (max-width:899px){.hp-tab{font-size:12px;letter-spacing:.08em}}
 @media (max-width:899px){.hp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}

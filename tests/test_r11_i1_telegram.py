@@ -1,7 +1,8 @@
 # tests/test_r11_i1_telegram.py -- R11 I1, the helpers on Telegram (a cloud chat): amounts stay out
 # of a Telegram reply. focus_now and pending_list (safe on Telegram: his own lists) drop a bill's
 # amount there, and keep it in the console; bill_list and spend_month are private reads on
-# Telegram (tests/test_telegram_tool_guard.py).
+# Telegram (tests/test_telegram_tool_guard.py). weather_now and disaster_status leave his district
+# out of a Telegram reply (integrated review L6).
 from __future__ import annotations
 
 import json
@@ -39,3 +40,26 @@ async def test_a_bills_amount_never_reaches_a_telegram_reply_but_stays_in_the_co
         with telegram_turn():
             tg = await _run(tools[name])
         assert "₹" not in tg and "1,240" not in tg and "Electricity" in tg, (name, tg)
+
+
+async def test_his_district_never_reaches_a_telegram_reply_but_stays_in_the_console() -> None:
+    """Integrated review L6 (private by default): weather_now and disaster_status are safe on
+    Telegram, but his home district stays in the console."""
+    from r11_fakes_b import PLACE, house_ctx
+
+    from jarvis.helpers.house import part as house_part
+    from jarvis.helpers.house.models import Place
+
+    hc, _, _, _ = house_ctx()
+    part = house_part.build(hc)
+    await part.services["house"].outside.change(
+        UID, lambda o: o.model_copy(update={"place": Place(**PLACE)})
+    )
+    tools = {t.name: t for t in part.tools}
+    for name in ("weather_now", "disaster_status"):
+        console = await _run(tools[name])
+        assert PLACE["district"] in console, name
+        with telegram_turn():
+            tg = await _run(tools[name])
+        assert PLACE["district"] not in tg and "district" not in json.loads(tg), (name, tg)
+        assert "attribution" in json.loads(tg), name  # the rest of the answer stays

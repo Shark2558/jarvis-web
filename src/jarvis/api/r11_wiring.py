@@ -21,7 +21,8 @@ this file. app.py calls:
   to the home watchdog (every 5 minutes, advisory) when Home is on. With Home off the watchdog
   route runs `app.state.helpers_clock` itself (api/home.py).
 - `r11_privacy_sources(app)`: I0's `helpers_nudge` row and every part's rows (D17), before Faces.
-- `helpers_brief(app)`: the brief's Helpers section over every part's contributors (or None).
+- `helpers_brief(app)`: the brief's Helpers section over every part's contributors (or None),
+  with one folded "paused" line when his rows stop a helper (every part's `paused`).
 """
 
 from __future__ import annotations
@@ -284,11 +285,16 @@ def helpers_brief(app: FastAPI) -> HelpersBrief | None:
     if getattr(st, "helpers_sender", None) is None:
         return None
 
-    def contributors() -> list[Any]:
-        parts: dict[str, HelperPart] = getattr(st, "r11_parts", None) or {}
-        return [c for p in parts.values() for c in p.brief]
+    def parts() -> list[HelperPart]:
+        return list((getattr(st, "r11_parts", None) or {}).values())
 
-    return HelpersBrief(contributors)
+    def contributors() -> list[Any]:
+        return [c for p in parts() for c in p.brief]
+
+    def pauses() -> list[Any]:
+        return [x for p in parts() for x in p.paused]
+
+    return HelpersBrief(contributors, pauses=pauses)
 
 
 __all__ = [

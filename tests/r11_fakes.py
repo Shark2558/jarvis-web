@@ -12,8 +12,9 @@
 # - `ctx(part, ...)`: a HelperContext for one part, everything a part may touch, all fakes.
 # - `reads_over(rules, audit)` (I1): the gateway's governed path for background reads
 #   (`jarvis.tools.background.BackgroundReads`) over a fake gateway view: the default policy plus
-#   the rules `rules()` gives (None: no permission service), every tool a known read-only one.
-#   A part's fakes that swap `permissions` swap `reads` with it.
+#   the rules `rules()` gives (None: no permission service, which fails closed), every tool a
+#   known read-only one. `NO_ROWS` is a permission service with no row set (every row its
+#   default). A part's fakes that swap `permissions` swap `reads` with it.
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -33,7 +34,7 @@ from jarvis.notify.ports import Delivery, Signal
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.background import BackgroundReads
-from jarvis.tools.policy import OwnerRules, Policy
+from jarvis.tools.policy import OwnerRules, Policy, PolicyRule
 
 UID = "u_r11_owner"
 NOON_IST = datetime(2026, 11, 10, 6, 30, tzinfo=UTC)  # 12:00 in Asia/Kolkata
@@ -82,6 +83,16 @@ class FakeNotifier:
         if d.action in ("ring", "silent"):
             return Delivery(action=d.action, reason=d.reason, telegram=True)
         return Delivery(action=d.action, reason=d.reason)
+
+
+class NoRows:
+    """His permission service with no row set: every row reads as its default."""
+
+    async def rules_for(self, user_id: str) -> list[PolicyRule]:
+        return []
+
+
+NO_ROWS = NoRows()
 
 
 class AnyReadRegistry:
@@ -154,18 +165,20 @@ def ctx(
         audit=audit,
         pending_all=lambda: pending,
         permissions=lambda: None,
-        reads=reads_over(lambda: None, audit, now=clock),
+        reads=reads_over(lambda: NO_ROWS, audit, now=clock),
     )
     return c, notifier, docs, clock
 
 
 __all__ = [
     "NOON_IST",
+    "NO_ROWS",
     "TWO_AM_IST",
     "UID",
     "AnyReadRegistry",
     "Clock",
     "FakeNotifier",
+    "NoRows",
     "ctx",
     "reads_over",
     "sender",

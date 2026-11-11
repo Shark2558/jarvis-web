@@ -17,8 +17,9 @@ never hides the others) and keeps, per month, only merchant, day, amount and a k
 listed and every new mail read; out of time (an 11 s budget for the whole run, inside the job's
 15 s), or a mail that failed, leaves it where it was, so the next run looks back as far and
 reads what is left: an older receipt is never lost. The governed path's one kind-only audit line
-per owner (agent `helpers`, `gmail_search`, "grocery_spend"); the counts go to the log only
-(class names and counts, never an amount or a merchant).
+per owner (agent `helpers`, `gmail_search`, "grocery_spend"; "grocery_spend; cut" when the
+morning budget cuts it). The log gets whether a scan was complete and class names only: no
+count, amount or merchant (integrated review L2). A row that stops it says so (`spend_pause`).
 """
 
 from __future__ import annotations
@@ -34,10 +35,11 @@ from jarvis.billing.service import rupees
 from jarvis.helpers.kitchen.models import ScanState, SpendMonth
 from jarvis.helpers.kitchen.receipts import PLAUSIBLE_PAISE, gmail_query, read_receipt
 from jarvis.helpers.kitchen.store import KitchenOff, SpendStore
+from jarvis.helpers.paused import PauseCheck
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector, GoogleNotConnected
 from jarvis.logging import get_logger
 from jarvis.notify.quiet import local
-from jarvis.tools.background import BackgroundReads, Outcome
+from jarvis.tools.background import BackgroundReads
 from jarvis.tools.gmail import MESSAGES_URL
 
 log = get_logger(__name__)
@@ -52,6 +54,8 @@ MAX_PAGES = 10
 MAX_READS = 150
 READ_PARALLEL = 4
 ROW_TOOLS = ("gmail_search", "spend_month")  # "Search and read email" and the Kitchen row
+WHAT = "Grocery spend"  # the "paused" line's words (jarvis.helpers.paused)
+NOT_LINKED: dict[type[BaseException], str] = {GoogleNotConnected: "not linked"}
 OFF_LINE = "Grocery spend is off, Sir: switch on 'Read my grocery receipts' in Helpers, Kitchen."
 _ID_OK = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
 _MONTH = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
@@ -249,28 +253,21 @@ class GrocerySpendJob:
         self._owners = owners
         self._reads = reads  # I1: the gateway's governed path (None: no read at all)
 
-    async def _note(self, outcome: Outcome, why: str = "") -> None:
-        if self._reads is not None:
-            await self._reads.note(ROW_TOOLS[0], job=JOB, outcome=outcome, why=why)
-
     async def scan_one(self, uid: str, deadline: float | None = None) -> str:
         """One owner: "ok", "off" or "skipped" (the governed path refused, or Google not linked).
-        The audit line is kind-only; the counts go to the log (counts only, never an amount)."""
+        The audit line is kind-only (`reading`, a cut read too); the log says only whether the
+        scan was complete."""
         svc, reads = self._svc, self._reads
         if not svc.can_scan or not (await svc.store.scan(uid)).on:
             return "off"
         if reads is None or not await reads.allowed(uid, *ROW_TOOLS, job=JOB):
             return "skipped"
         try:
-            c = await svc.scan_owner(uid, deadline)
+            async with reads.reading(ROW_TOOLS[0], job=JOB, words=NOT_LINKED):
+                c = await svc.scan_owner(uid, deadline)
         except GoogleNotConnected:
-            await self._note("denied", "not linked")
             return "skipped"
-        log.info(
-            "grocery receipts read",
-            extra={k: c[k] for k in ("mails", "read", "orders", "ignored", "flagged", "complete")},
-        )
-        await self._note("executed")
+        log.info("grocery receipts read", extra={"complete": bool(c["complete"])})
         return "ok"
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
@@ -283,9 +280,26 @@ class GrocerySpendJob:
                 counts[await self.scan_one(uid, deadline)] += 1
             except Exception as exc:  # noqa: BLE001 - one owner never stops the others
                 log.warning("grocery receipts not read", extra={"error": type(exc).__name__})
-                await self._note("error", "failed")
-                counts["failed"] += 1
+                counts["failed"] += 1  # a failed read wrote its own line (`reading`)
         return counts
 
 
-__all__ = ["JOB", "OFF_LINE", "GrocerySpendJob", "SpendService", "flagged_line", "month_label"]
+def spend_pause(svc: SpendService, reads: BackgroundReads | None) -> PauseCheck:
+    """Receipts he switched on, paused by his Email or Kitchen row."""
+
+    async def on(uid: str) -> bool:
+        return svc.can_scan and (await svc.store.scan(uid)).on
+
+    return PauseCheck(reads, what=WHAT, tools=ROW_TOOLS, on=on)
+
+
+__all__ = [
+    "JOB",
+    "OFF_LINE",
+    "WHAT",
+    "GrocerySpendJob",
+    "SpendService",
+    "flagged_line",
+    "month_label",
+    "spend_pause",
+]

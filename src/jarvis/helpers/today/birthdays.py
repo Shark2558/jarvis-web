@@ -6,9 +6,12 @@
 `contacts.client.ContactsClient.require` says whether he is linked and granted (the stored link).
 
 - Every read takes the gateway's governed path (I1, `jarvis.tools.background`, `ctx.reads`): the
-  gateway's policy and his Contacts row (`contacts_birthdays` is in it) decide; only "Allow"
-  reads ("Ask first" can't be asked, "Never" is total, unreadable rows or no gateway: no read).
-  A refusal (once a day) and each read of Google leave the one kind-only audit line.
+  gateway's policy and his Contacts row (`contacts_birthdays` is in it) decide. The morning job,
+  the brief and the tab read on "Allow" only; the console's `contacts_birthdays`, a call the
+  gateway decided (its card, then his OK), reads on "Ask first" too. "Never" is total; unreadable
+  rows, no permission service or no gateway: no read. A refused read says why in a fixed line
+  ("Birthdays paused: your Contacts permission is set to Ask first. ..."), and a refusal (once a
+  day) and each read of Google, a cut one included, leave the one kind-only audit line.
 - Only the month and the day are taken: the year (`date.year`) and the free text (`text`, which
   may carry it) are never read, so no year is ever stored, logged, shown or alerted. 29 Feb falls
   on 28 Feb in other years.
@@ -23,7 +26,7 @@ from __future__ import annotations
 import asyncio
 import calendar
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Literal
@@ -34,6 +37,7 @@ from jarvis.contacts.client import (
     ContactsClient,
     ContactsNotGranted,
 )
+from jarvis.helpers.paused import PauseCheck, pause_of
 from jarvis.integrations.google import (
     NOT_CONNECTED_MSG,
     GoogleAPIError,
@@ -42,7 +46,7 @@ from jarvis.integrations.google import (
     GoogleServiceDisabled,
 )
 from jarvis.logging import get_logger
-from jarvis.tools.background import BackgroundReads, Outcome
+from jarvis.tools.background import UNWIRED, BackgroundReads, Verdict
 from jarvis.tools.card import one_line
 
 log = get_logger(__name__)
@@ -57,11 +61,12 @@ NAME_LIMIT = 100
 TOOL = "contacts_birthdays"
 JOB = "birthdays"  # the governed path's job word (the brief and the tools read through it too)
 RESOURCE = re.compile(r"^people/[A-Za-z0-9_-]{1,128}$")
-DENIED_MSG = "Birthdays are switched off in your Contacts permission, Sir."
+WHAT = "Birthdays"  # the "paused" line's words (jarvis.helpers.paused)
 UNAVAILABLE_MSG = "Google Contacts couldn't be read just now; JARVIS will try again."
 NO_GOOGLE_MSG = "Connect Google in Integrations to see birthdays from your contacts."
 
 State = Literal["ok", "not_connected", "not_granted", "denied", "unavailable"]
+OFF_WORDS: dict[type[BaseException], str] = {GoogleServiceDisabled: "service off"}
 
 
 @dataclass(frozen=True)
@@ -123,9 +128,15 @@ def birthday_of(p: Any) -> Birthday | None:
     return Birthday(str(p["resourceName"]), name, found[0], found[1])
 
 
-async def row_allows(reads: BackgroundReads | None, uid: str, tool: str, job: str) -> bool:
-    """The gateway's governed path allows this background read (None: no path, no read)."""
-    return reads is not None and await reads.allowed(uid, tool, job=job)
+async def row_allows(reads: BackgroundReads | None, uid: str, tool: str, job: str) -> Verdict:
+    """The gateway's governed path on this read (None: no path, no read); truthy when allowed."""
+    return await reads.allowed(uid, tool, job=job) if reads is not None else UNWIRED
+
+
+def denied_note(v: Verdict) -> str:
+    """The fixed line for a refused read (never "switched off": it says the row and its choice)."""
+    p = pause_of(WHAT, v)
+    return p.line if p is not None else ""
 
 
 class BirthdayReader:
@@ -144,16 +155,12 @@ class BirthdayReader:
         self._day: dict[str, tuple[date, Reading]] = {}
         self._failed: dict[str, tuple[datetime, Reading]] = {}
 
-    async def _audit_line(self, outcome: Outcome, why: str = "") -> None:
-        if self._reads is not None:
-            await self._reads.note(TOOL, job=JOB, outcome=outcome, why=why)
-
     async def everyone(self, uid: str, day: date) -> Reading:
         """Every contact with a birthday, as of `day` (the governed path is asked every time)."""
         if self._google is None:
             return Reading("not_connected", note=NO_GOOGLE_MSG)
-        if not await row_allows(self._reads, uid, TOOL, JOB):
-            return Reading("denied", note=DENIED_MSG)
+        if not (v := await row_allows(self._reads, uid, TOOL, JOB)):
+            return Reading("denied", note=denied_note(v))
         cached = self._day.get(uid)
         if cached is not None and cached[0] == day:
             return cached[1]
@@ -192,16 +199,15 @@ class BirthdayReader:
             return Reading("not_connected", note=NOT_CONNECTED_MSG)
         except ContactsNotGranted:
             return Reading("not_granted", note=GRANT_MSG)
+        assert self._reads is not None  # `everyone` asked the path first
         try:
-            people = await asyncio.wait_for(self._pages(uid), self._deadline_s)
+            async with self._reads.reading(TOOL, job=JOB, words=OFF_WORDS):
+                people = await asyncio.wait_for(self._pages(uid), self._deadline_s)
         except GoogleServiceDisabled:
-            await self._audit_line("error", "service off")
             return Reading("unavailable", note=PEOPLE_OFF_MSG)
         except (GoogleAPIError, GoogleNotConnected, TimeoutError) as exc:
             log.warning("birthdays not read", extra={"error": type(exc).__name__})
-            await self._audit_line("error", "failed")
             return Reading("unavailable", note=UNAVAILABLE_MSG)
-        await self._audit_line("executed")
         return Reading("ok", people)
 
     async def _pages(self, uid: str) -> tuple[Birthday, ...]:
@@ -222,14 +228,23 @@ class BirthdayReader:
         return tuple(found)
 
 
+def birthdays_pause(
+    reads: BackgroundReads | None, on: Callable[[str], Awaitable[bool]]
+) -> PauseCheck:
+    """Birthday reminders he switched on (`on(uid)`), paused by his Contacts row."""
+    return PauseCheck(reads, what=WHAT, tools=(TOOL,), on=on)
+
+
 __all__ = [
     "CONNECTIONS_URL",
-    "DENIED_MSG",
     "PERSON_FIELDS",
     "TOOL",
+    "WHAT",
     "Birthday",
     "BirthdayReader",
     "Reading",
     "birthday_of",
+    "birthdays_pause",
+    "denied_note",
     "row_allows",
 ]

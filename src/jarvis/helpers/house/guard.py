@@ -5,8 +5,8 @@
   (`Policy(rules).decide(tool, R1, {})`). "Never" on a row stops the job for him; rules that
   can't be read stop it too (fail closed). No permission service at all (a bare test app) means
   the built-in defaults, as the DigiLocker inbox job does.
-- `audit(ctx, job, kind)`: one content-free line in the audit chain (agent `helpers`, the job's
-  name, the alert kind only) when a background job read his own data (Gmail).
+  These jobs read no Google data; the one that does (breach notices) takes the gateway's governed
+  path instead (`jarvis.tools.background`, I1), which writes its audit line.
 - `Counts`: a job's result counts (class names and counts only ever reach the log); `tally`
   counts one send's result and says whether it went (False: no channel took it, try again).
 """
@@ -38,20 +38,6 @@ async def allowed(ctx: HelperContext, uid: str, *tools: str) -> bool:
     return all(policy.decide(t, ActionRisk.READ_ONLY, {}) is not Effect.DENY for t in tools)
 
 
-async def audit(ctx: HelperContext, job: str, kind: str, *, outcome: str = "ok") -> None:
-    try:
-        await ctx.audit.append(
-            agent=AGENT,
-            tool=job,
-            risk=ActionRisk.READ_ONLY,
-            outcome=outcome,
-            args={},
-            detail=kind,
-        )
-    except Exception as exc:  # noqa: BLE001 - bookkeeping; the job's own result stands
-        log.warning("helpers: audit line not written", extra={"error": type(exc).__name__})
-
-
 @dataclass
 class Counts:
     values: dict[str, int] = field(default_factory=dict)
@@ -70,4 +56,4 @@ def tally(got: SendResult, n: Counts) -> bool:
     return not got.retry
 
 
-__all__ = ["AGENT", "Counts", "allowed", "audit", "tally"]
+__all__ = ["AGENT", "Counts", "allowed", "tally"]

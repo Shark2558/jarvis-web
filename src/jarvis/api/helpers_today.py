@@ -42,6 +42,7 @@ from jarvis.helpers.ports import HelperPart
 from jarvis.helpers.today.bills import BillsService
 from jarvis.helpers.today.models import BillRefused
 from jarvis.helpers.today.store import BillsOff
+from jarvis.helpers.today.tools import UNUSABLE
 from jarvis.helpers.today.views import today_view
 from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
@@ -133,6 +134,8 @@ async def _change(request: Request, uid: str, work: Any, status: int = 200) -> J
         return _answer(409, {"error": "bills_off", "detail": str(exc)})
     except BillRefused as exc:
         return _answer(422, {"error": "invalid", "detail": str(exc)})
+    except ValueError:  # a model's own check: never echo what was sent
+        return _answer(422, {"error": "invalid", "detail": UNUSABLE})
     except Exception as exc:  # noqa: BLE001 - the store; plain words, the class in the log
         log.warning("today change failed", extra={"error": type(exc).__name__})
         return _answer(503, {"error": "unavailable", "detail": "Couldn't save that just now."})

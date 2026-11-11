@@ -83,6 +83,8 @@ async def test_the_view_and_his_own_entry() -> None:
             f"{PREFIX}/bills", json={**BILL, "label": "Card 4111111111111111"}
         )
         assert bad.status_code == 422 and "last 4" in bad.json()["detail"]
+        odd = await t.client.post(f"{PREFIX}/bills", json={**BILL, "every_months": 13})
+        assert odd.status_code == 422 and odd.json()["error"] == "invalid"
         sneaky = await t.client.post(f"{PREFIX}/bills", json={**BILL, "upi": FAKE_UPI})
         assert sneaky.status_code == 422  # no UPI field on his entry
 

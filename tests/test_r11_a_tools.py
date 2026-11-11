@@ -132,6 +132,8 @@ async def test_bill_add_never_takes_a_upi_id_and_refuses_numbers() -> None:
     assert sneaky.outcome is GatewayOutcome.ERROR and "unknown arguments" in (sneaky.error or "")
     card = await _run(rig, "bill_add", label="Card 4111 1111 1111 1111", amount="900", day=5)
     assert card.outcome is GatewayOutcome.ERROR and "last 4" in (card.error or "")
+    odd = await _run(rig, "bill_add", label="Gas", amount="900", day=5, every_months=13)
+    assert odd.result.get("refused") is True and "13" not in odd.result["message"]
     ok = await _run(rig, "bill_add", label="Gas", payee="Gas Co", amount="900", day=5)
     assert ok.outcome is GatewayOutcome.EXECUTED
     assert [b.label for b in (await svc.book(UID)).bills] == ["Electricity", "Gas"]

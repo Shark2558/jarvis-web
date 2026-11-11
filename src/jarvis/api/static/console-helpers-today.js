@@ -68,12 +68,20 @@ function focusSection(v) {
   const top = v.top;
   sec.append(top ? H.row(top.label, [H.txt(top.source, 40), whenWords(top)].filter(Boolean).join(' \u00b7 ')) : H.empty('Nothing pending, Sir.'));
   const groups = Array.isArray(v.pending) ? v.pending : [];
-  if (groups.length) {
-    const more = H.section('What is pending');
-    groups.forEach((g) => (Array.isArray(g.items) ? g.items : []).forEach((i) => more.append(H.row(i.label, [H.txt(g.source, 40), whenWords(i)].filter(Boolean).join(' \u00b7 ')))));
-    return [sec, more];
-  }
-  return [sec];
+  const rest = [];
+  groups.forEach((g) => (Array.isArray(g.items) ? g.items : []).forEach((i) => rest.push([g.source, i])));
+  if (top && rest.length && rest[0][1].label === top.label) rest.shift(); // the top one is said above
+  if (!rest.length) return [sec];
+  const more = H.section('Also pending');
+  rest.forEach(([src, i]) => more.append(H.row(i.label, [H.txt(src, 40), whenWords(i)].filter(Boolean).join(' \u00b7 '))));
+  return [sec, more];
+}
+function actLine(buttons) { // a bill's actions on their own line under its words, wrapping on a phone
+  const line = H.mk('div', 'hp-acts');
+  line.style.flexWrap = 'wrap';
+  line.style.padding = '0 0 10px';
+  buttons.forEach((b) => line.append(b));
+  return line;
 }
 
 // ---- bills ------------------------------------------------------------------------------------------------------
@@ -89,8 +97,12 @@ function billRow(b) {
   acts.push(btn('Paid', () => change('/bills/' + encodeURIComponent(b.id) + '/paid', { method: 'POST', body: {} }, 'Marked paid, Sir.')));
   acts.push(btn('Remove', () => { S.removing = S.removing === b.id ? null : b.id; render(); }));
   const wrap = H.mk('div', '');
-  wrap.append(H.row(b.label, billSub(b), acts));
-  if (S.removing === b.id) wrap.append(H.row('Remove the ' + H.txt(b.label, 40) + ' bill?', 'Its reminders stop. JARVIS keeps no copy.', [btn('Remove it', () => removeBill(b), 'danger'), btn('Keep it', () => { S.removing = null; render(); })]));
+  wrap.dataset.bill = String(b.id);
+  wrap.append(H.row(b.label, billSub(b)), actLine(acts));
+  if (S.removing === b.id) {
+    wrap.append(H.row('Remove the ' + H.txt(b.label, 40) + ' bill?', 'Its reminders stop. JARVIS keeps no copy.'));
+    wrap.append(actLine([btn('Remove it', () => removeBill(b), 'danger'), btn('Keep it', () => { S.removing = null; render(); })]));
+  }
   if (S.paying === b.id) wrap.append(amountForm(b));
   if (S.editing === b.id) wrap.append(upiForm(b));
   if (S.waiting[b.id]) wrap.append(waitingCard(b, S.waiting[b.id]));
@@ -142,9 +154,7 @@ function amountForm(b) {
 function waitingCard(b, w) {
   const box = H.mk('div', 'fform');
   box.append(H.mk('p', 'sfine', w.card || 'Waiting for your OK, Sir.'));
-  const acts = H.mk('div', 'hp-acts');
-  acts.append(btn('Approve', () => decide(b, w, 'approve'), 'primary'), btn('Decline', () => decide(b, w, 'decline')));
-  box.append(acts);
+  box.append(actLine([btn('Approve', () => decide(b, w, 'approve'), 'primary'), btn('Decline', () => decide(b, w, 'decline'))]));
   return box;
 }
 async function decide(b, w, action) {
@@ -184,9 +194,7 @@ function paymentBox(b, p) {
   img.width = 180; img.height = 180;
   img.src = p.qr;
   box.append(img);
-  const acts = H.mk('div', 'hp-acts');
-  acts.append(btn('Open in UPI app', () => { window.location.assign(p.link); }, 'primary'), btn('Done', () => { delete S.shown[b.id]; render(); }));
-  box.append(acts);
+  box.append(actLine([btn('Open in UPI app', () => { window.location.assign(p.link); }, 'primary'), btn('Done', () => { delete S.shown[b.id]; render(); })]));
   return box;
 }
 function addForm() {

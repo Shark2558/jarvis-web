@@ -53,6 +53,7 @@ READY = (
     "minutes. You confirm it in your UPI app with your PIN; JARVIS never pays."
 )
 NOT_APPROVED = "That payment wasn't approved on your screen, so nothing was prepared."
+UNUSABLE = "That bill can't be kept as given, Sir: check the day, how often and the reminder days."
 
 _BILL = {"type": "string", "description": "The bill's name (as he saved it) or its id"}
 _AMOUNT = {
@@ -72,6 +73,12 @@ def _uid() -> str:
 
 def _refused(message: str) -> dict[str, Any]:
     return {"refused": True, "message": message}
+
+
+def _plain(exc: ValueError) -> str:
+    """His own words for a refusal: ours as they are; a model's check (which may echo the input)
+    as one fixed line."""
+    return str(exc) if isinstance(exc, BillRefused) else UNUSABLE
 
 
 def _off() -> dict[str, Any]:
@@ -152,8 +159,8 @@ def _add_tool(t: BillTools) -> Tool:
             bill = await t.service.add(_uid(), **a)
         except BillsOff:
             return _off()
-        except BillRefused as exc:
-            return _refused(str(exc))
+        except ValueError as exc:
+            return _refused(_plain(exc))
         return {"bill": bill_view(bill, t.service), "message": f"Kept the {bill.label} bill, Sir."}
 
     props = {
@@ -189,8 +196,8 @@ def _paid_tool(t: BillTools) -> Tool:
             bill, due = await t.service.mark_paid(_uid(), a.get("bill"))
         except BillsOff:
             return _off()
-        except BillRefused as exc:
-            return _refused(str(exc))
+        except ValueError as exc:
+            return _refused(_plain(exc))
         when = due.strftime("%d %b").lstrip("0")
         return {"message": f"Marked {bill.label} paid for {when}, Sir."}
 
@@ -228,8 +235,8 @@ def _payee_tool(t: BillTools) -> Tool:
             )
         except BillsOff:
             return _off()
-        except BillRefused as exc:
-            return _refused(str(exc))
+        except ValueError as exc:
+            return _refused(_plain(exc))
         return {"message": f"The {bill.label} bill now pays {bill.upi}, Sir."}
 
     props = {"bill": _BILL, "upi": {"type": "string"}, "payee": {"type": "string"}}
@@ -261,8 +268,8 @@ def _prepare_tool(t: BillTools) -> Tool:
             await t.service.make_ready(ctx.user_id, prepared)
         except BillsOff:
             return _off()
-        except BillRefused as exc:
-            return _refused(str(exc))
+        except ValueError as exc:
+            return _refused(_plain(exc))
         return {"status": "ready", "message": READY.format(label=prepared.bill.label)}
 
     props = {"bill": _BILL, "amount": _AMOUNT}

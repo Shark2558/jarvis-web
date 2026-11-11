@@ -88,6 +88,21 @@ JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q t
 - Coverage of `helpers/nudges/` + `api/helpers_nudges.py`: 98 % (coverage 7.6.10 from a scratch dir;
   no shared venv was changed).
 
+### Results on this branch (head of `r11-c`)
+
+| Check | Result |
+|---|---|
+| Part C tests `tests/test_r11_c_*.py` (3.12; 3.11 the same) | 180 passed |
+| Whole unit suite (3.12, under the shared lock) | 10,968 passed, 107 skipped, 3 failed: exactly the three I0 stub assumptions of "Needs I1" 1 |
+| Targeted re-run after the last Part C fixes (console assets, arch coverage, permissions, Telegram guard, every R11 test) | 1,075 passed, the same 3 failed |
+| ruff check / ruff format --check (src tests evals scripts) | clean |
+| mypy src | the 9 pre-existing errors only |
+| `evals/r11_helpers/run.py --mock` | 18/18; control `caps_off + claims_off` fails the suite (nudges: 4 cases) |
+| `evals/run_all_mock.py` (R11 not in it until I1) | ALL MOCK EVALS: PASS |
+| `scripts/arch_coverage.py`, `scripts/check_doc_versions.py` | OK; all 25 documents versioned |
+| Browser subset `-k "helpers or dock or ui_audit"` (incl. `test_r11_c_nudges.py`) | 156 passed |
+| Coverage of `helpers/nudges/` + `api/helpers_nudges.py` | 98 % |
+
 ## Needs I1
 
 1. **Three I0 tests assume every part is a stub** and fail once any part is built

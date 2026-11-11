@@ -13,6 +13,7 @@ import pytest
 from book_gen_fakes import FIXTURE_FLOWS, ROOT, commit_all, fixture_repo
 from pydantic import ValidationError
 
+import jarvis
 from jarvis.buildbook.gen import fallback, write
 from jarvis.buildbook.gen.repo import Repo
 from jarvis.buildbook.model import (
@@ -192,5 +193,5 @@ def test_the_fallback_writes_the_same_bytes_with_the_version(tmp_path: Path) -> 
 
 def test_the_real_checkout_carries_this_releases_version() -> None:
     text = (ROOT / fallback.VERSION_FILE).read_text(encoding="utf-8")
-    assert fallback.version_of(text) == "v6.1.0"
+    assert fallback.version_of(text) == f"v{jarvis.__version__}"  # the number: test_about
     assert VERSION == r"^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$"

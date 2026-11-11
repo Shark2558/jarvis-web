@@ -15,14 +15,23 @@ from jarvis import about
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_the_version_lives_in_one_place_and_pyproject_agrees() -> None:
+def test_the_version_lives_in_one_place() -> None:
+    """The one literal of this release's number in the tests; every other test derives it.
+    pyproject.toml has no number of its own: setuptools reads `jarvis.__version__` (review L2)."""
     assert jarvis.__version__ == "6.1.0"
     meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert meta["project"]["version"] == jarvis.__version__
+    assert "version" not in meta["project"] and "version" in meta["project"]["dynamic"]
+    assert meta["tool"]["setuptools"]["dynamic"]["version"] == {"attr": "jarvis.__version__"}
+
+
+def test_setuptools_reads_the_version_from_the_package() -> None:
+    pyprojecttoml = pytest.importorskip("setuptools.config.pyprojecttoml")
+    cfg = pyprojecttoml.read_configuration(ROOT / "pyproject.toml", expand=True)
+    assert cfg["project"]["version"] == jarvis.__version__
 
 
 def test_version_is_shown_with_a_v() -> None:
-    assert about.version() == "v6.1.0"
+    assert about.version() == f"v{jarvis.__version__}"
     assert re.fullmatch(about.VERSION_SHOWN, about.version())
 
 
@@ -169,7 +178,8 @@ def test_fields_are_the_two_the_vitals_payload_carries(monkeypatch: pytest.Monke
     monkeypatch.setenv(about.BUILD_DATE_ENV, "2026-11-11T06:00:00Z")
     about.fields.cache_clear()
     try:
-        assert about.fields("Asia/Kolkata") == {"version": "v6.1.0", "build_date": "11 Nov 2026"}
+        got = about.fields("Asia/Kolkata")
+        assert got == {"version": f"v{jarvis.__version__}", "build_date": "11 Nov 2026"}
     finally:
         about.fields.cache_clear()
 

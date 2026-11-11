@@ -2,8 +2,9 @@
 """R6.1 D4: which JARVIS this is — its version and the day its image was built, for the Vitals
 "About JARVIS · v6.1.0 · built 11 Nov 2026" line (added to GET /v1/vitals, owner-only).
 
-The version has ONE source, `jarvis.__version__` (pyproject.toml carries the same number; a test
-pins that they agree). The build date is a build-time value, never the request time:
+The version has ONE source, `jarvis.__version__` (pyproject.toml reads it through setuptools'
+`dynamic` version: no second number to drift). The build date is a build-time value, never the
+request time:
 
   1. `JARVIS_BUILD_DATE` (ISO 8601) when the environment sets it (another host, a test); else
   2. `BUILD_DATE`, package data the Dockerfile stamps with `date -u` at image build, before

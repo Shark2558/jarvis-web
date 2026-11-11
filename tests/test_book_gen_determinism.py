@@ -18,7 +18,7 @@ from book_gen_fakes import FIXTURE_FLOWS, ROOT, fixture_needles, fixture_repo, p
 
 import jarvis
 from jarvis.buildbook.gen import __main__ as cli
-from jarvis.buildbook.gen import plans, write
+from jarvis.buildbook.gen import write
 from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.gen.scrub import NoScrub
 from jarvis.buildbook.model import (
@@ -206,7 +206,8 @@ def test_the_real_repo_builds_and_the_show_is_about_six_thousand_characters() ->
     spoken = sum(len(b.text) for s in book.show.scenes for b in s.beats)
     assert 4_500 <= spoken <= 8_000, spoken
     assert len(built.book) <= 2 * 1024 * 1024 and built.release.skipped > 0
-    # R6.1 D4: the newest plan's label and this checkout's version (pinned in test_book_gen_plans
-    # and test_about, so a version bump is one change)
-    assert book.release.label == plans.release_label(repo)
+    # The real repo's newest release plan is R6.1 (docs/plans/r6-1-architecture-guide.md): pinned
+    # here, not derived from plans.release_label, which the generator itself calls. The version
+    # comes from this checkout (pinned once in test_about).
+    assert book.release.label == "R6.1"
     assert book.release.version == f"v{jarvis.__version__}"

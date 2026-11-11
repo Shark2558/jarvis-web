@@ -1,10 +1,11 @@
-Version v6.1.1 · 11 Nov 2026, 11:43 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII
+Version v6.1.2 · 11 Nov 2026, 13:30 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII
 
 # JARVIS Architecture & Technology Guide
 
-This guide was checked against JARVIS's real code. It is the first edition of the guide (edition
-v6.1.1). It describes the JARVIS program at version v6.1.0, which is release R6.1. Anything that
-is planned but not built yet is marked PLANNED.
+This guide was checked against JARVIS's real code. This is edition v6.1.2 of the guide (the first
+edition was v6.1.1; the change log at the end lists every edition). It describes the JARVIS
+program at version v6.1.0, which is release R6.1. Anything that is planned but not built yet is
+marked PLANNED.
 
 For engineers: it was written from the code, the deploy script, the CI file, the evals and the
 plans in `docs/plans/`, not from memory. A fact that could not be checked against the code says
@@ -26,15 +27,18 @@ the change log.
   day's rate (₹95.24 to the dollar on 1 Nov 2026 is the stored fallback), so every ₹ figure is an
   **estimate**.
 - The first line of this guide is its version line. "Owner" there means the owner of this
-  document: 🛠 Mark XIII, the build name of this release (every JARVIS release gets a Mark
-  number, as in the films). JARVIS itself belongs to you.
+  document: 🛠 Mark XIII, the build name of the team that wrote it (every JARVIS build team gets
+  a Mark number, as in the films; release R6.1 was built by Marks XIII and XIV). JARVIS itself
+  belongs to you.
 
 ## 1. One-page summary
 
 **What JARVIS is.** JARVIS is your own private assistant. It runs in your own Google Cloud
 account, in Google's Mumbai data centre. You use it from a web page on your laptop or phone (the
 "console"), by voice, or from the Telegram chat app. A small program on your laptop, the "home
-bridge", connects it to your house.
+bridge", connects it to your house. The console's row of panel buttons fits any screen: on a
+smaller screen the buttons that don't fit move behind a **More** button, so nothing scrolls
+sideways.
 
 **What it does today (up to R6.1).**
 
@@ -47,7 +51,7 @@ bridge", connects it to your house.
 | Memory | Remembers facts about you, which you can see and edit ("About you"). Keeps your notes, the text of voice memos and saved links. Remembers where you put things at home ("Where did I keep it?"). |
 | Documents | A locked store for your documents (ID, insurance, certificates) that reminds you before they expire. It takes in documents you share from DigiLocker, the government's document app. |
 | Home | Controls your smart-home devices, runs a burglar alarm on the home cameras and can recognise faces (only of people who agreed). It answers "who came yesterday?", tells you about parcels at the door, and tells you when the laptop stops answering. |
-| Looking after itself | The Vitals panel shows its keys, free allowances, bills and limits. It can check its own systems and read you the result. It counts every cost in rupees. At each release it writes a "build book" that explains how it is built. |
+| Looking after itself | The Vitals panel shows its keys, free allowances, bills and limits, and at its foot an "About JARVIS" line says which version is running and the day it was built. It can check its own systems and read you the result. It counts every cost in rupees. At each release it writes a "build book" that explains how it is built. |
 
 **What it costs a month (estimates).**
 
@@ -200,16 +204,16 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Web console (the "command deck") |
-| What it does | The page you use JARVIS from on a laptop or phone: the chat, the dock of panels (Conversation, Brief, Approvals, Activity, History, Memory, Vault, Things, Notes, Privacy, Home, Faces, Voice, Integrations, Media, Vitals, Connectors, People, Book, Construct), the brain picker and the Night / Day looks. It is written in plain JavaScript files that need no build step, and anything the server sends is shown as plain text, never run as part of the page. |
+| What it does | The page you use JARVIS from on a laptop or phone: the chat, the dock of panels (Conversation, Brief, Approvals, Activity, History, Memory, Vault, Things, Notes, Privacy, Home, Faces, Voice, Integrations, Media, Vitals, Connectors, People, Book, Construct), the brain picker and the Night / Day looks. The dock fits every screen: the buttons keep their order, and the ones that don't fit (the last ones first) move into the **More** sheet, which lists exactly those. More appears only when something is behind it and lights up while one of those panels is open. Chat, Brief and Approvals never move for lack of room; but on a mid-size laptop screen (900 to 1180 pixels wide) the Approvals button is narrower than its name, so it moves behind More too, and More then shows its waiting count. Nothing scrolls sideways. It is written in plain JavaScript files that need no build step, and anything the server sends is shown as plain text, never run as part of the page. |
 | Layer | L1 User Interaction |
 | Skill | Platform (serves every skill) |
-| Where in the code | `src/jarvis/api/console.py` (serves the page and its content security policy), `src/jarvis/api/static/console.html`, `console.js` (chat, brains, approvals, audit, conversations), `console-deck.js` (dock, ruler, radar), `console-fx.js` (surfaces, themes, motion), `console-3d.js` and `console-3d-scenes.js` (optional three.js scenes), `console-text.js` (shared text helpers); vendored three.js 0.187.0 in `static/vendor/` |
+| Where in the code | `src/jarvis/api/console.py` (serves the page and its content security policy), `src/jarvis/api/static/console.html`, `console.css` (base look, with the font faces), `console.js` (chat, brains, approvals, audit, conversations), `console-deck.js` (panels, dock buttons, ruler, radar), `console-dock.js` (fits the dock to the screen: buttons that don't fit move behind More), `console-fx.js` (surfaces, themes, motion), `console-3d.js` and `console-3d-scenes.js` (optional three.js scenes), `console-text.js` (shared text helpers); vendored three.js 0.187.0 in `static/vendor/` |
 | Depends on | C02 HTTP API; every panel's own card |
 | Data it keeps | No Firestore data of its own. The browser keeps small conveniences (the open conversation, look and layout). |
 | Outside services | None directly (fonts and libraries are served by JARVIS itself, not loaded from another website) |
 | Cost (₹ a month) | ₹0 |
-| When it fails | A panel whose data can't be fetched shows a plain message and the rest keeps working. If the browser can't draw 3D (no WebGL2) the 3D scenes are skipped. The browser visual gate (C59) checks every panel at desktop and phone size. |
-| Since | Slice 2 (before v0.5.0); Command Deck look Slice 5c (v0.5.2) |
+| When it fails | A panel whose data can't be fetched shows a plain message and the rest keeps working. If the browser can't draw 3D (no WebGL2) the 3D scenes are skipped. A browser without pop-up sheets shows every dock button, wrapped onto more rows, and no More. The browser visual gate (C59) checks every panel, the dock and the More sheet at desktop and phone size. |
+| Since | Slice 2 (before v0.5.0); Command Deck look Slice 5c (v0.5.2); the dock that fits every screen R6.1 (v6.1.0) |
 
 #### C02 · HTTP API and sign-in
 
@@ -1080,16 +1084,16 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Vitals board |
-| What it does | One board for everything with a limit or a renewal: JARVIS's own keys and connections, free allowances, quotas and bills you add yourself. Amber at 80 % of a limit or 30 days before a renewal; one alert when a line is crossed. A key's value is never stored, only its label and dates. |
+| What it does | One board for everything with a limit or a renewal: JARVIS's own keys and connections, free allowances, quotas and bills you add yourself. Amber at 80 % of a limit or 30 days before a renewal; one alert when a line is crossed. A key's value is never stored, only its label and dates. At the panel's foot a read-only line, "About JARVIS · v6.1.0 · built 11 Nov 2026", says which version is running and the day its image was built (the build time, never the time you look). |
 | Layer | X Cross-cutting |
 | Skill | Finance & Analytics |
-| Where in the code | `src/jarvis/vitals/`, `console-vitals.js` |
+| Where in the code | `src/jarvis/vitals/`, `src/jarvis/about.py` (the version and build date for the "About JARVIS" line; the version itself lives once, in `src/jarvis/__init__.py`), `console-vitals.js` |
 | Depends on | C54 Costs, C44 Allowance ledger, C20 Web search, C46 Alert policy, C11 Ticks |
 | Data it keeps | `vitals_providers/{name}` (each record you track: label, dates, limits; never a key's value), `vitals_status/{name}` (the last status, for one alert per crossing), `vitals_index/{owner hash}` (the names of your records). |
 | Outside services | None of its own (it reads the meters other cards keep) |
 | Cost (₹ a month) | ₹0 (no model call) |
-| When it fails | Records that can't be read never hide the rest of the board ("unavailable"). Until its Firestore index is built (made by the deploy script) your own list shows "unavailable". |
-| Since | R4 (v4.0.0); tracks itself R5.1 (v5.1.0) |
+| When it fails | Records that can't be read never hide the rest of the board ("unavailable"). Until its Firestore index is built (made by the deploy script) your own list shows "unavailable". A build date that can't be read shows "build date unknown" (a copy run on a developer's machine has none); a missing version hides the About line; neither ever stops the board loading. |
+| Since | R4 (v4.0.0); tracks itself R5.1 (v5.1.0); the About JARVIS line R6.1 (v6.1.0) |
 
 #### C56 · Systems check
 
@@ -1128,16 +1132,16 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Delivery: CI, the image and the deploy |
-| What it does | GitHub Actions tests every pull request; merging to main builds the container, rolls it out with no traffic, checks `/health`, then switches traffic. `deploy/cloudrun.sh` sets everything up once from Cloud Shell and is safe to re-run. |
+| What it does | GitHub Actions tests every pull request; merging to main builds the container, rolls it out with no traffic, checks `/health`, then switches traffic. `deploy/cloudrun.sh` sets everything up once from Cloud Shell and is safe to re-run. One version standard: the version number lives in one place, the image stamps its own build day, every plan and this guide open with a version line and end with a change log (checked on every pull request), and every pull request starts from a fill-in template and must be titled like "v6.1.0 · R6.1 The Architecture Guide & versioning · Mark XIII" (two Marks are joined by a dash, "Mark XIII–XIV"). A back-fill script gives the 21 earlier merged pull requests the same titles, labels and a GitHub Release each; by default it only reads and prints what it would change. |
 | Layer | X Cross-cutting |
 | Skill | Code & DevOps |
-| Where in the code | `.github/workflows/ci.yml`, `deploy/cloudrun.sh`, `deploy/run-real-evals.sh`, `Dockerfile`, `requirements.lock`, `Makefile`, `render.yaml` (the old Render blueprint) |
+| Where in the code | `.github/workflows/ci.yml`, `.github/pull_request_template.md`, `scripts/check_pr_title.py` (the title check), `scripts/check_doc_versions.py` (version line and change log), `scripts/github_backfill.sh` with `docs/github-backfill.tsv` (the back-fill and its 21 rows), `deploy/cloudrun.sh`, `deploy/run-real-evals.sh`, `Dockerfile`, `requirements.lock`, `Makefile`, `render.yaml` (the old Render blueprint) |
 | Depends on | C59 Evals, C57 Build book (`--check` in CI) |
 | Data it keeps | Container images in Artifact Registry (10 newest kept; older than 30 days deleted). |
 | Outside services | GitHub Actions, Cloud Build, Artifact Registry, Cloud Run, Secret Manager, Cloud Scheduler, Firestore |
 | Cost (₹ a month) | ₹0 inside the free tiers (GitHub Actions 2,000 minutes a month and Artifact Registry 0.5 GB, as the plans list them) |
-| When it fails | A new version that isn't healthy never gets traffic: the current JARVIS keeps running. A re-run of an old job never rolls main back. |
-| Since | Slice 2 (hosting); Slice 5 (v0.5.0) Firestore; Slice 5c (v0.5.2) deploy on merge |
+| When it fails | A new version that isn't healthy never gets traffic: the current JARVIS keeps running. A re-run of an old job never rolls main back. A wrongly titled pull request fails its title check until it is renamed; that check and the diagram checks never hold up a deploy. The back-fill has only been practised (reads only): it makes its changes with `--apply`, run where GitHub allows writes, and a refused write is reported with what to create by hand on the GitHub website, never retried. |
+| Since | Slice 2 (hosting); Slice 5 (v0.5.0) Firestore; Slice 5c (v0.5.2) deploy on merge; versioning R6.1 (v6.1.0) |
 
 #### C59 · Evals and the visual gate
 
@@ -1287,11 +1291,12 @@ guest show locks your other consoles until your passkey lifts the lock.
 [![Figure 13. How a change reaches the live JARVIS](diagrams/13-release-flow.png)](diagrams/13-release-flow.svg)
 
 *Figure 13. How a change reaches the live JARVIS.* A branch for one part of a release, a pull
-request, the tests (Python 3.11 and 3.12, the Firestore emulator, the browser; diagram checks on
-pull requests), merge to main. On main the real-model eval gate (skipped without a key) runs beside
-the deploy job and does not hold it back; the deploy job waits only for the tests, the emulator
-and the browser. It makes a new version with no traffic, checks its health for up to 2 minutes,
-and only then sends all traffic to it. If it isn't healthy, your current JARVIS keeps running.
+request, the tests (Python 3.11 and 3.12, the Firestore emulator, the browser, this guide's
+coverage check; on pull requests also the title check and the diagram checks), merge to main. On
+main the real-model eval gate (skipped without a key) runs beside the deploy job and does not
+hold it back; the deploy job waits only for the tests, the emulator and the browser. It makes a
+new version with no traffic, checks its health for up to 2 minutes, and only then sends all
+traffic to it. If it isn't healthy, your current JARVIS keeps running.
 
 ### Figure 14 — Where your data lives
 
@@ -1615,16 +1620,27 @@ version gets a no-traffic "candidate" tag and a health check before it receives 
 
 | Job | What it checks | When |
 |---|---|---|
-| `test` | ruff; unit tests on Python 3.11 and 3.12; the Phase 0 eval on the mock brain (`evals/phase0/run.py --mock`); the build book `--check` (byte-identical twice, no personal data, every package in a layer) | Every pull request and every push to main |
+| `test` | ruff; every plan and architecture document has its version line and change log (`scripts/check_doc_versions.py`); unit tests on Python 3.11 and 3.12; the Phase 0 eval on the mock brain (`evals/phase0/run.py --mock`); the build book `--check` (byte-identical twice, no personal data, every package in a layer); this guide's coverage check (`scripts/arch_coverage.py`) | Every pull request and every push to main |
+| `pr-title` | The pull request's title reads "v6.1.0 · R6.1 Short name · Mark XIII" (`scripts/check_pr_title.py`, with a read-only token) | Pull requests only (Dependabot's are exempt) |
+| `docs` | The diagrams: the privacy rule, Markdy's `lint --strict` and `verify --quality showcase` for all 14; when a pull request changes them, the Markdy tool or the export scripts, also that every SVG and PNG matches its source (`scripts/markdy_export.py --check`) | Pull requests only |
 | `firestore` | The store contract tests against the official Firestore emulator | Every pull request and every push to main |
 | `browser` | The console in headless Chromium, including the visual gate | Every pull request and every push to main |
 | `eval-gate` | The real-model eval (skipped with a notice when no key is set) | Main only |
-| `deploy` | Build the image, roll out with no traffic, check `/health`, switch traffic | Main, when `AUTODEPLOY` is on, after `test`, `firestore` and `browser` pass (not after `eval-gate`) |
+| `deploy` | Build the image, roll out with no traffic, check `/health`, switch traffic | Main, when `AUTODEPLOY` is on, after `test`, `firestore` and `browser` pass (not after `eval-gate`, `pr-title` or `docs`) |
 
-The R6.1 plan adds a `docs` job (Markdy lint and verify, Part C) and this guide's coverage check:
-`python scripts/arch_coverage.py` fails a pull request when a package, console module, Scheduler
-job, outside service or Firestore collection is missing from the catalogue, a card or technology
-row is incomplete, or the secret scan finds something in `docs/architecture/`.
+The coverage check fails when a package, console module, Scheduler job, outside service or
+Firestore collection is missing from the catalogue, a card or technology row is incomplete, a
+cited file or diagram doesn't exist, or the secret scan finds something in `docs/architecture/`.
+
+**Versions and pull requests.** The version number lives in one place (`src/jarvis/__init__.py`,
+now `6.1.0`); the Dockerfile writes the build time into the image, and Vitals shows both. Every
+pull request opens with the template's header lines (version, release, Mark, plan, build log,
+your steps) and five sections in plain words: what you get, cost in ₹, checks, reviews, and what
+wasn't verified live. The back-fill (`bash scripts/github_backfill.sh`) brings the 21 merged pull
+requests before R6.1 up to the same standard: it retitles each one, adds the header line, labels
+it (the kind and its Mark) and creates its GitHub Release, which also tags the merge. By default
+it is a practice run that only reads from GitHub and prints each change; `--apply` makes them, is
+safe to re-run (it skips what exists) and has not been run yet.
 
 **First deploy and re-runs.** `bash deploy/cloudrun.sh` in Cloud Shell, eight steps: project check,
 switch on the Google services, your details and secrets, Firestore in asia-south1 (with its
@@ -1730,6 +1746,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Approve all | One tap that clears several waiting low-risk approval cards at once (C18) |
 | Artifact Registry | Google's store for container images |
 | Audit trail (hash chain) | An append-only list of every tool call where each entry includes a fingerprint of the one before, so a change is detectable |
+| Back-fill | Bringing older pull requests up to today's standard afterwards: their titles, labels and GitHub Releases (C58) |
 | Barge-in | Talking over JARVIS to interrupt it |
 | Bearer token | A secret the terminal and the evals send with each request to prove who they are |
 | Billing account | The Google account that pays for a Google Cloud project; its administrators get Google's budget e-mails |
@@ -1740,6 +1757,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Capacitor | A tool that wraps a web page as a phone app (planned for R7) |
 | Card (component card) | One table in section 3 describing one part of JARVIS |
 | CDN | A network of servers that delivers files for other websites (JARVIS uses none) |
+| Change log / version line | The table of editions at the end of a document, and its first line naming its version, date, release, status and owner; every plan and this guide has both |
 | Chirp 3: HD / Studio | Google's two kinds of natural-sounding voices. Chirp 3: HD is the default and the cheaper beyond the free allowance (about ₹2,857 against ₹15,238 per million characters) |
 | CI | Continuous integration: the automatic tests on every change |
 | Claude (Haiku / Sonnet / Opus) | Anthropic's AI models: Haiku is the fast tier, Sonnet the balanced tier and Opus the strong tier (about twice Sonnet's price) |
@@ -1758,7 +1776,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | DEK | Data encryption key: the key of one vault file |
 | Deterministic | Gives the same result every time from the same input (no AI guessing) |
 | DigiLocker | India's government document wallet |
-| Dock, ruler, radar | Parts of the console's Command Deck look: the dock is the row of panel buttons, the ruler the 24-hour time strip and the radar the live activity display |
+| Dock, ruler, radar | Parts of the console's Command Deck look: the dock is the row of panel buttons (the ones that don't fit wait behind More), the ruler the 24-hour time strip and the radar the live activity display |
 | Dossier | A short written profile of a person, from public sources |
 | Emulator | A local stand-in for a cloud service, used in tests (the Firestore emulator) |
 | Envelope encryption | Each file gets its own key, and that key is locked with a master key |
@@ -1772,6 +1790,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Frigate | Open-source camera software that detects people and packages at home |
 | Gateway | The one door every tool call passes through |
 | Gemini | Google's AI models; JARVIS uses the free tier for chat only |
+| GitHub Release / tag / label | On GitHub, a named release page for a version; a tag is the name pinned to the exact code of that version; a label is a coloured word attached to a pull request ("release", "Mark XIII") |
 | GiB | Gibibyte: about 1.07 billion bytes |
 | Grant | An extra Google permission you add from Integrations (Tasks, Contacts, YouTube, Photos) |
 | Groq / OpenRouter | Vendors that serve open AI models in the OpenAI format (usable in the OpenAI-compatible slot) |
@@ -1798,12 +1817,13 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Licences (CC-BY-NC-SA-4.0, MPL-2.0, AGPL, copyleft) | Terms for using other people's software. CC-BY-NC-SA-4.0: personal, non-commercial use only. Copyleft (MPL-2.0 for some files, AGPL for whole programs): changes must be shared under the same terms if the software is handed on; AGPL also counts offering it over the internet |
 | LLM | Large language model: the AI behind a brain |
 | MAC | A tamper check made with a key (HMAC is one kind); "MAC only" means the data is checked, not hidden |
-| Mark (Mark XIII) | The build name each release gets, as in the films; it signs that release's documents |
+| Mark (Mark XIII) | The build name of a JARVIS build team, as in the films. A release is built by one Mark or two (R6.1: Mark XIII–XIV), and they sign its documents and pull requests |
 | Markdy | The text format and tool used to draw this guide's diagrams |
 | Matter | A smart-home device standard (not used) |
 | MCP | Model Context Protocol, a standard for connecting AI to tools (not used as built) |
 | MediaPipe / OpenCV / Tesseract / PaddleOCR / ML Kit / YOLO | Vision libraries that run on the device, planned for R8–R10 (YOLO is ruled out by its AGPL licence) |
 | Mock (brain, eval) | A pretend AI that gives fixed answers, so tests cost nothing |
+| More (button and sheet) | The dock's last button: it opens a sheet listing the panel buttons that didn't fit on this screen, and shows only when something is behind it |
 | Mosquitto | A small message server (MQTT) that Frigate uses at home |
 | MQTT | A light message format used by cameras and sensors |
 | Native mode | Firestore's standard mode (the other is the older Datastore mode) |
@@ -1826,7 +1846,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Postgres | A relational database the old blueprint planned |
 | Prepaid credit | Money paid to Anthropic in advance; Claude stops answering when it runs out |
 | Provenance | Where a piece of text came from (your own words or someone else's) |
-| Pull request / main | A proposed change, and the branch that is deployed |
+| Pull request / main | A proposed change, and the branch that is deployed. Every pull request starts from a template and is titled with its version, release and Mark |
 | Push devices | The browsers you allowed to show JARVIS's notifications (at most 5) |
 | Pydantic | A Python library that checks the shape of data |
 | Quiet hours | The night hours (23:00–06:30 by default) when only urgent alerts ring; the rest wait for a summary |
@@ -1859,6 +1879,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | VAPID | The standard key that signs Web Push messages |
 | Vector database | A database that finds text by meaning using number lists (embeddings); not used |
 | Vendored | A copy of an outside library kept inside JARVIS's own files, so nothing is loaded from elsewhere |
+| Version (v6.1.0) | The number of a JARVIS release: major.minor.patch. It is kept in one place in the code and shown on Vitals' "About JARVIS" line |
 | VIP list | The people (by face, phone number or e-mail) you mark as important for alerts |
 | Visual gate | The browser test that checks every console panel at desktop and phone size, Night and Day |
 | Vitals | The board of keys, quotas, bills and limits |
@@ -1889,9 +1910,15 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 - **Plain-language read.** A fresh reviewer read page 1 as the owner. The gaps found (one monthly
   total, voice costs, who sees your data, no backups, what JARVIS doesn't lock itself, technical
   words) are fixed on page 1 and in the glossary.
+- **Edition v6.1.2.** Written after the four R6.1 parts were merged into one branch: the files they
+  added (`console-dock.js`, `src/jarvis/about.py`, the title, version-line and back-fill scripts)
+  are on their cards (C01, C55, C58), section 8 lists the CI jobs as they now are, and
+  `python scripts/arch_coverage.py`, `scripts/check_doc_versions.py` and
+  `scripts/markdy_export.py --check` pass on that branch. The diagrams are unchanged.
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.1.1 | 11 Nov 2026, 11:43 IST | R6.1 | First edition: summary, layers and departures, 59 component cards, 14 diagram captions, technology table, outside services and free limits, plan vs build, decisions, data and privacy, security, operations, costs, limits, roadmap and glossary, written from the code. Before publishing, corrected after the R6.1 reviews: page 1 rewritten in plain words (one monthly ₹ total with worst cases, no limit until you set one, voice paid after the free minutes, who sees your data, no backups, what JARVIS doesn't lock itself); 11 fact-check fixes and 1 from the writer's own 10 checks; glossary filled; "How this guide was checked" added | 🛠 Mark XIII |
+| v6.1.2 | 11 Nov 2026, 13:30 IST | R6.1 | After the R6.1 parts were merged: the dock that fits every screen (More holds the buttons that don't fit) on page 1 and C01 with `console-dock.js`; the "About JARVIS" version and build-date line on Vitals (C55, `about.py`); the pull request template, title check, version-line check and GitHub back-fill (C58, section 8); the CI table with the `pr-title` and `docs` jobs and the coverage check in `test`; Figure 13's caption names the title and coverage checks; Mark explained for a release built by two Marks; glossary: back-fill, change log and version line, GitHub Release, tag and label, More, version | 🛠 Mark XIV |

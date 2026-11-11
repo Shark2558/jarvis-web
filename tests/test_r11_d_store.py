@@ -139,7 +139,7 @@ async def test_without_a_keyring_spend_is_off() -> None:
 async def test_delete_all_spend_removes_months_and_the_scan_state() -> None:
     docs = MemoryDocs()
     store = _spend(docs)
-    await store.apply(UID, [_r("f6", date(2026, 11, 2), 100), _r("g7", date(2026, 10, 2), 100)])
+    await store.apply(UID, [_r("f6", date(2026, 11, 2), 100), _r("a7", date(2026, 10, 2), 100)])
     await store.set_scan(UID, lambda s: s.model_copy(update={"on": True}))
     assert await store.delete_all(UID) == 3
     assert await store.months(UID) == [] and (await store.scan(UID)).on is False

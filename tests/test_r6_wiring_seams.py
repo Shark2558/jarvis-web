@@ -165,7 +165,10 @@ async def app_client(settings: Settings) -> AsyncIterator[AsyncClient]:
 
 # ---- 9. console files, /book/show and the deck --------------------------------------------------
 def test_every_r6_console_file_is_allow_listed_in_order() -> None:
-    assert list(APP_ASSETS)[-len(R6_ASSETS) :] == R6_ASSETS
+    names = list(APP_ASSETS)
+    at = names.index(R6_ASSETS[0])  # R11's Helpers files follow them (tests/test_r11_wiring.py)
+    assert names[at : at + len(R6_ASSETS)] == R6_ASSETS
+    assert names[at + len(R6_ASSETS)] == "console-helpers.js"
     for name in R6_ASSETS:
         assert (STATIC / name).is_file(), name
         want = "text/css" if name.endswith(".css") else "application/javascript"

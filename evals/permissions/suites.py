@@ -74,6 +74,13 @@ SAMPLES: dict[str, tuple[str, list[ActionRisk]]] = {
     "systems": ("systems_check", [R1]),
     "people": ("research_person", [R1]),
     "connectors": ("connect_github", [R1]),
+    # R11 I0 (D16): the helpers' rows, under the planned tool names
+    "bills": ("bill_add", [R1, R2]),
+    "bill_pay": ("bill_pay_prepare", [R3]),
+    "household": ("chore_done", [R1, R2]),
+    "nudges": ("nudge_snooze", [R1, R2]),
+    "outdoor": ("weather_now", [R1, R2]),
+    "kitchen": ("recipe_suggest", [R1, R2]),
 }
 OUTCOME = {
     Effect.ALLOW: GatewayOutcome.EXECUTED,

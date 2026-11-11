@@ -30,6 +30,9 @@ tool family at any risk, so "Never" switches every tool of it off (a later write
 family is at least as strict as today: an R3 call still always asks). A WhatsApp draft by NAME
 also obeys the Contacts row (the look-up names `contacts_search`, `Preview.also`): Never there
 refuses it, Ask first makes it a card (review S1).
+
+R11 D16: six rows for the helpers (bills, bill_pay, household, nudges, outdoor, kitchen) after the
+R4 block; `bill_pay` is the only irreversible one.
 """
 
 from __future__ import annotations
@@ -448,6 +451,71 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "GitHub token is kept encrypted, never shown. Read only.",
         R1,
         (_m("connect_*"), _m("github_*"), _m("photos_*")),
+    ),
+    # R11 D16 (docs/plans/r11-free-helpers.md): the free proactive helpers, after the R4 block and
+    # before Maps / YouTube. Only `bill_pay` is irreversible: getting a UPI payment ready (and
+    # setting a payee's UPI ID) always asks, in the console, with the passkey when one is in force.
+    # Birthdays are `contacts_birthdays` (the Contacts row); the kitchen's calendar blocks are
+    # `calendar_kitchen_blocks` (the "Add and change your events" row, always a card).
+    PermissionGroup(
+        "bills",
+        "Bills",
+        "See and keep your bills and due dates",
+        "Your bills, amounts, due dates and reminders, kept encrypted. JARVIS never pays: it only "
+        "gets a payment ready for you.",
+        R2,
+        (_m("bill_*", R1, R2),),
+    ),
+    PermissionGroup(
+        "bill_pay",
+        "Bills",
+        "Get a bill payment ready for your UPI PIN",
+        "A UPI link and QR you open in your own UPI app and confirm with your PIN; setting a "
+        "payee's UPI ID too. " + UNDO_HINT,
+        R3,
+        _r3("bill_*"),
+    ),
+    PermissionGroup(
+        "household",
+        "Home helpers",
+        "Chores, home upkeep and your free-time list",
+        "The chores rota, the upkeep schedule and the ideas you keep for free time. Reminders go "
+        "only to you.",
+        R2,
+        (_m("chore_*"), _m("maint_*"), _m("freetime_*")),
+    ),
+    PermissionGroup(
+        "nudges",
+        "Nudges",
+        "Nudges and your top priority",
+        "Stand up, drink water, a planned walk that didn't happen, what is pending and your top "
+        "priority, within the limits you set. Snooze or stop any of them.",
+        R2,
+        (_m("nudge_*"), _m("focus_*"), _m("pending_*")),
+    ),
+    PermissionGroup(
+        "outdoor",
+        "Weather and alerts",
+        "Weather, disaster alerts and breach notices for your area",
+        "Your district goes to the weather service; disaster warnings come from the government's "
+        "SACHET feed; breach notices are read from your own mail.",
+        R2,
+        (_m("weather_*"), _m("disaster_*"), _m("breach_*")),
+    ),
+    PermissionGroup(
+        "kitchen",
+        "Kitchen",
+        "Pantry, recipes, nutrition and grocery spend",
+        "What you have, recipe ideas (from the AI, at the cost of a normal reply), rough "
+        "nutrition and what your grocery receipts add up to.",
+        R2,
+        (
+            _m("pantry_*"),
+            _m("recipe_*"),
+            _m("nutrition_*"),
+            _m("spend_*"),
+            _m("kitchen_*"),
+        ),
     ),
     PermissionGroup(  # slice 12 D8 (D3)
         "maps",

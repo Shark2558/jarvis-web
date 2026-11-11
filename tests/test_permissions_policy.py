@@ -93,6 +93,30 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     ("home_disarm", R3, {"home_secure"}),
     ("camera_history", R1, {"camera"}),
     ("faces_list", R1, {"camera"}),
+    # R11 I0 (D16): the helpers' rows (tools under their planned names)
+    ("bill_list", R1, {"bills"}),
+    ("bill_add", R2, {"bills"}),
+    ("bill_paid", R2, {"bills"}),
+    ("bill_pay_prepare", R3, {"bill_pay"}),
+    ("bill_payee_set", R3, {"bill_pay"}),
+    ("contacts_birthdays", R1, {"contacts"}),
+    ("chore_list", R1, {"household"}),
+    ("chore_done", R2, {"household"}),
+    ("maint_add", R2, {"household"}),
+    ("freetime_add", R2, {"household"}),
+    ("nudge_snooze", R2, {"nudges"}),
+    ("nudge_stop", R2, {"nudges"}),
+    ("focus_now", R1, {"nudges"}),
+    ("pending_list", R1, {"nudges"}),
+    ("weather_now", R1, {"outdoor"}),
+    ("disaster_place_set", R2, {"outdoor"}),
+    ("breach_watch_status", R1, {"outdoor"}),
+    ("pantry_add", R2, {"kitchen"}),
+    ("recipe_suggest", R1, {"kitchen"}),
+    ("nutrition_of", R1, {"kitchen"}),
+    ("spend_month", R1, {"kitchen"}),
+    ("kitchen_settings", R2, {"kitchen"}),
+    ("calendar_kitchen_blocks", R2, {"calendar_change"}),
     ("memory_search", R1, set()),  # unknown to every group: the risk default applies
     ("brand_new_tool", R3, set()),
 ]
@@ -259,6 +283,13 @@ RISK_OF = {
     "systems": [R1],
     "people": [R1],
     "connectors": [R1],
+    # R11 I0 (D16): the helpers' rows, under the planned tool names
+    "bills": [R1, R2],
+    "bill_pay": [R3],
+    "household": [R1, R2],
+    "nudges": [R1, R2],
+    "outdoor": [R1, R2],
+    "kitchen": [R1, R2],
 }
 TOOL_OF = {
     "calendar_read": "calendar_list_events",
@@ -300,6 +331,13 @@ TOOL_OF = {
     "systems": "systems_check",
     "people": "research_person",
     "connectors": "connect_github",
+    # R11 I0 (D16)
+    "bills": "bill_add",
+    "bill_pay": "bill_pay_prepare",
+    "household": "chore_done",
+    "nudges": "nudge_snooze",
+    "outdoor": "weather_now",
+    "kitchen": "recipe_suggest",
 }
 
 

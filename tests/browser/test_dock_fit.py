@@ -269,8 +269,8 @@ def test_the_dock_refits_on_resize_without_a_layout_loop(
         page.evaluate(SETTLE_JS)
         s = page.evaluate(STATE_JS)
         assert s["more"] is False and s["visible"] == s["order"], s["visible"]
-        # More went with the focus on it: the last tab takes it
-        assert page.evaluate("document.activeElement.dataset.open") == "construct"
+        # More went with the focus on it: the last tab (R11: Helpers) takes it
+        assert page.evaluate("document.activeElement.dataset.open") == "helpers"
         # settled: nothing in the dock changes on its own any more (no measure loop)
         changes = page.evaluate(
             """() => new Promise((done) => {
@@ -399,7 +399,7 @@ def test_before_its_script_runs_no_tab_shows_past_the_dock(
         page.evaluate(SETTLE_JS)
         early = page.evaluate(EARLY_JS)
         assert held and early["ready"] == "interactive", early["ready"]  # painted, not yet fitted
-        assert len(early["boxes"]) == 20 and early["rows"] == 1  # every tab, More still hidden
+        assert len(early["boxes"]) == 21 and early["rows"] == 1  # all tabs (R11), More hidden
         assert early["overflowX"] == "clip", early  # what runs past the dock is not painted
         assert early["right"] <= early["vw"] and early["pageScroll"] <= 0, early
 

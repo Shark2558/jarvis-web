@@ -28,6 +28,12 @@ NOT_IN_PAGE = {
         "console-book-3d.js",
         "import('./console-book-scenes-data.js')",
     ),
+    # R11 D19: the Helpers panel's shell loads its stylesheet and the four parts' tab modules
+    "console-helpers.css": ("console-helpers.js", "'/static/console-helpers.css'"),
+    "console-helpers-today.js": ("console-helpers.js", "import('./console-helpers-today.js')"),
+    "console-helpers-house.js": ("console-helpers.js", "import('./console-helpers-house.js')"),
+    "console-helpers-nudges.js": ("console-helpers.js", "import('./console-helpers-nudges.js')"),
+    "console-helpers-kitchen.js": ("console-helpers.js", "import('./console-helpers-kitchen.js')"),
 }
 # R6: linked from the show page (book.html), not the deck
 ON_BOOK_PAGE = {

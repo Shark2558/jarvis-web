@@ -160,7 +160,8 @@ def test_r3_alert_kinds_join_the_older_ones() -> None:
     # R4 added vitals_warn/vitals_critical/health_fault/health_recovered/health_degraded (14 -> 19)
     # R5.1 added home_offline_idle (19 -> 20)
     # R6 added book_sealed/book_seal_failed/book_session_closed (20 -> 23)
-    assert "test" in kinds and len(kinds) == len(set(kinds)) == 23
+    # R11 added the thirteen helper kinds (23 -> 36; tests/test_r11_seams.py)
+    assert "test" in kinds and len(kinds) == len(set(kinds)) == 36
 
 
 async def test_the_sink_takes_silent_and_photo_keywords() -> None:
@@ -200,6 +201,7 @@ def test_every_alert_kind_has_a_default_urgency() -> None:
         "home_arm_failed",
         # R5.1 D13: vitals_critical / health_fault are now "important" daytime rings (see
         # tests/test_r51_int_notify.py), no longer urgent.
+        "disaster_alert",  # R11 D5: a disaster warning near him rings at night (owner's rule)
     }
     for kind in ("home_package", "approval_waiting"):
         assert DEFAULT_URGENCY[kind] == "important"
@@ -841,6 +843,12 @@ def test_r3_cipher_purposes_are_pinned() -> None:
         "connectors",  # R4 D9: the owner's own GitHub token
         "book_index",  # R6 D6: the sealed build-book index
         "book_session",  # R6 D9: book sessions (a cipher and a MAC domain)
+        # R11: the helpers' sealed data (tests/test_r11_seams.py)
+        "bills",
+        "spend",
+        "wellbeing",
+        "alerts_place",
+        "kitchen",
     }
     ring = Keyring(KEY)
     for purpose in ("home", "home_feed", "faces", "webpush"):
@@ -882,7 +890,8 @@ ROWS = {
 
 def test_five_rows_sit_after_things_and_before_maps() -> None:
     ids = [g.id for g in GROUPS]
-    assert len(ids) == 38  # R4 added 5 rows (vitals, vitals_change, systems, people, connectors)
+    # R4 added 5 rows (vitals, vitals_change, systems, people, connectors); R11 added 6 (D16)
+    assert len(ids) == 44
     at = ids.index("belongings")
     assert ids[at + 1 : at + 6] == list(ROWS)  # the five R3 rows still sit right after Things
     # R4's rows sit after the R3 block; Maps and YouTube stay last

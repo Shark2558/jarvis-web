@@ -7,9 +7,10 @@ the slice 10–12 features (`api/feature_wiring.py`: web search, attached files,
 Maps + YouTube, Drive), R2's personal data (`api/personal.py`: vault, notes, things, DigiLocker
 inbox), R3's home, camera and faces (`api/home_wiring.py`; its one alert policy is wired in the
 core, before anything takes the alert sink), R4's vitals, self-health, connectors, people research
-and the one no-AI switch (`api/r4_wiring.py`), R6's build book (`api/r6_wiring.py`), the gateway
-with the owner's rules and the Brain, then the privacy dashboard and tick jobs; then the
-middleware (R6's guest show lock inside the sign-in session), the error mapping and the routers.
+and the one no-AI switch (`api/r4_wiring.py`), R6's build book (`api/r6_wiring.py`), R11's
+helpers (`api/r11_wiring.py`), the gateway with the owner's rules and the Brain, then the privacy
+dashboard and tick jobs; then the middleware (R6's guest show lock inside the sign-in session),
+the error mapping and the routers. The "jarvis up" line is `api/startup_log.py`.
 """
 
 from __future__ import annotations
@@ -57,10 +58,12 @@ from jarvis.api.personal import personal_tick_jobs, wire_personal, wire_privacy
 from jarvis.api.privacy import install_privacy
 from jarvis.api.r4_wiring import install_r4_routes, r4_tick_jobs, vitals_brief, wire_r4
 from jarvis.api.r6_wiring import install_r6_routes, install_show_lock, r6_tick_jobs, wire_r6
+from jarvis.api.r11_wiring import helpers_brief, install_r11_routes, r11_tick_jobs, wire_r11
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
 from jarvis.api.scheduler_auth import GoogleOIDCVerifier, SchedulerUnauthorized
+from jarvis.api.startup_log import log_up
 from jarvis.api.telegram import build_telegram, install_telegram
 from jarvis.api.usage import router as usage_router
 from jarvis.api.vault import VAULT_BODY_BYTES, VAULT_UPLOAD_PATH, install_vault
@@ -179,6 +182,7 @@ def build_brief_service(
         if (cam := getattr(app.state, "camera", None))
         else None,
         vitals=vitals_brief(app),  # R4 I1 W10: red / amber lines + AI spend; never in the AI input
+        helpers=helpers_brief(app),  # R11: the helpers' fixed lines; never in the AI input
     )
 
 
@@ -356,6 +360,7 @@ def _build_tool_gateway(
         belongings=app.state.belongings,
         home=app.state.home_parts,  # R3: home, camera and faces tools (only when on)
         r4=app.state.r4_parts,  # R4: vitals, systems check, connectors, people (each when on)
+        r11=app.state.r11_parts,  # R11: the helpers' tools (each part's own families)
     )
 
 
@@ -401,45 +406,16 @@ def _wire_brain(app: FastAPI, s: Settings, built: Storage | None, docs: Docs) ->
     app.state.brief.ready_hook = brief_ready
 
 
-def _log_up(app: FastAPI, s: Settings) -> None:
-    log.info(
-        "jarvis up",
-        extra={
-            "env": s.env,
-            "llm": app.state.router.provider.name,
-            "brains": [b.id for b in app.state.brains.list()],
-            "session_backend": s.session_backend.value,
-            "google_tools": app.state.google is not None,
-            "brief_scheduler": getattr(app.state, "scheduler_verifier", None) is not None,
-            "voice_cloud": app.state.voice.engines is not None,
-            "web_search": app.state.web is not None,
-            "drive": app.state.drive is not None,
-            "maps_youtube": app.state.media is not None,
-            "vault": app.state.vault is not None,
-            "notes": app.state.notes is not None,
-            "things": app.state.belongings is not None,
-            "home": app.state.home_store is not None,
-            "faces": app.state.faces is not None,
-            "browser_push": app.state.push is not None,
-            # R4: each OFF-until-connected part says so here (and in its own console line)
-            "brain_mode": app.state.brain_mode.state,
-            "vitals": app.state.vitals is not None,
-            "systems_check": app.state.health is not None,
-            "github": app.state.github is not None,
-            "photos": app.state.photos is not None,
-            "people_research": app.state.people is not None,
-        },
-    )
-
-
 def _tick_jobs(app: FastAPI) -> tuple[Any, ...]:
     """R2's feature jobs, the alert policy's when the home watchdog doesn't run them, R4's vitals
-    poll and health check, R6's book seal and sweep (on the existing tick, no new Scheduler job)."""
+    poll and health check, R6's book seal and sweep, R11's helpers clock and daily jobs (on the
+    existing tick, no new Scheduler job)."""
     jobs = (
         *personal_tick_jobs(app),
         *notify_tick_jobs(app),
         *r4_tick_jobs(app),
         *r6_tick_jobs(app),
+        *r11_tick_jobs(app),
     )
     check_job_names(jobs)
     return jobs
@@ -514,6 +490,7 @@ def _lifespan(
             wire_home(app, s, docs, audit)  # R3: home link, camera, faces (tools need them)
             await wire_r4(app, s, docs, audit)  # R4: brain mode (loaded), vitals, health, people
             await wire_r6(app, s, docs, audit)  # R6: the build book (sealed releases, sessions)
+            await wire_r11(app, s, docs, audit)  # R11: the free proactive helpers (A-D)
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()
@@ -523,7 +500,7 @@ def _lifespan(
             app.state.tick_jobs = _tick_jobs(app)  # R2 + R3 H3: run after the tick's sweeps
             stack.push_async_callback(_drain_memory, app)  # runs first on the way out
             await adopt_legacy_sessions(app.state.store, s)
-            _log_up(app, s)
+            log_up(app, s)
             yield
 
     return lifespan
@@ -701,6 +678,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_notify(app)  # R3: /v1/notify, /v1/push
     install_r4_routes(app)  # R4: /v1/vitals, /v1/health, /v1/connectors, /v1/people, brain mode
     install_r6_routes(app)  # R6: /v1/book (status, open, sections, show, close, resume, settings)
+    install_r11_routes(app)  # R11: /v1/helpers (the gate) and the four parts' routes
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

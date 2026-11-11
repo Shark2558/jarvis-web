@@ -129,6 +129,14 @@ APP_ASSETS: dict[str, str] = {
     "console-book-2d.js": _JS,  # the 2D show (phones, reduced motion, no WebGL2)
     "console-book-talk.js": _JS,  # questions, the closing, hand-back, Resume
     "book.css": "text/css",  # the show page
+    # R11 (docs/plans/r11-free-helpers.md D19): the Helpers panel. The shell is linked; it loads
+    # its stylesheet and the four parts' tabs (ES modules, one per builder) itself.
+    "console-helpers.js": _JS,  # I0: the panel's tab strip and shared builders
+    "console-helpers.css": "text/css",  # I0: the tab strip and rows (existing tokens only)
+    "console-helpers-today.js": _JS,  # A: top priority, pending, bills, birthdays
+    "console-helpers-house.js": _JS,  # B: chores, upkeep, weather and alerts, breach notices
+    "console-helpers-nudges.js": _JS,  # C: nudges, caps, snooze / stop, water, free time
+    "console-helpers-kitchen.js": _JS,  # D: pantry, recipes, nutrition, spend, blocks
 }
 
 # Self-hosted OFL fonts (licences beside them).

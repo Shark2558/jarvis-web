@@ -20,6 +20,7 @@ exists."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from jarvis.config import Settings
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
     from jarvis.belongings.service import BelongingsService
     from jarvis.documents.service import DocumentService
     from jarvis.drive.service import DriveService
+    from jarvis.helpers.ports import HelperPart
     from jarvis.home.parts import HomeParts
     from jarvis.kb.service import NotesService
     from jarvis.media.service import MediaServices
@@ -209,6 +211,7 @@ def build_gateway(
     belongings: BelongingsService | None = None,
     home: HomeParts | None = None,
     r4: R4Parts | None = None,
+    r11: Mapping[str, HelperPart] | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
@@ -233,6 +236,10 @@ def build_gateway(
     _register_services(reg, memory, web, documents, drive, media)
     _register_personal(reg, vault, notes, belongings)
     _register_home(reg, home)
+    if r11:  # R11 D2: each helper part's own tools (its `kinds.TOOL_FAMILIES`), checked at wiring
+        from jarvis.api.r11_wiring import register_r11_tools
+
+        register_r11_tools(reg, r11)
     return Gateway(
         registry=reg,
         policy=Policy(),

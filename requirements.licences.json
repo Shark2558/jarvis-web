@@ -196,6 +196,10 @@
    "licence": "Apache-2.0",
    "version": "2.34.2"
   },
+  "segno": {
+   "licence": "BSD License",
+   "version": "1.6.6"
+  },
   "setuptools": {
    "licence": "MIT",
    "version": "84.0.0"

@@ -80,6 +80,23 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "book_sealed": "important",
         "book_seal_failed": "important",
         "book_session_closed": "important",
+        # R11 D5 (docs/plans/r11-free-helpers.md): a disaster near him rings through the night
+        # (the owner's rule); reminders, weather warnings and breach notices are daytime rings,
+        # held in quiet hours; the nudges are daytime rings dropped in quiet hours (policy
+        # EPHEMERAL_KINDS); a minor weather note is feed / silent only.
+        "disaster_alert": "urgent",
+        "bill_due": "important",
+        "birthday": "important",
+        "chore_due": "important",
+        "maintenance_due": "important",
+        "weather_warning": "important",
+        "breach_notice": "important",
+        "nudge_standup": "important",
+        "nudge_hydrate": "important",
+        "nudge_activity": "important",
+        "nudge_free_time": "important",
+        "nudge_focus": "important",
+        "weather_note": "info",
     }
 )
 _FEED: dict[str, FeedDecision] = {

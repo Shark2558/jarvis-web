@@ -6,6 +6,8 @@ words in `text`) -> ring.  4 an urgent kind -> ring.  5 VIP -> ring.  6 quiet ho
 hold, info -> drop (feed_only).  7 otherwise important -> ring (silent when only urgent things
 ring), info -> silent. Recognition only raises a level; it never lowers one.
 R5.1 D3: a kind in DAYTIME_RING_KINDS rings outside quiet hours even when only urgent things ring.
+R11 D5: a kind in EPHEMERAL_KINDS (a nudge) is dropped in quiet hours, never held: a "drink water"
+kept for the morning summary is noise. It is decided before the VIP rule, after the urgent one.
 """
 
 from __future__ import annotations
@@ -30,7 +32,24 @@ DAYTIME_RING_KINDS = frozenset(
         "book_sealed",
         "book_seal_failed",
         "book_session_closed",
+        # R11 D5: the helpers' reminders and weather / breach notices, and the five nudges
+        "bill_due",
+        "birthday",
+        "chore_due",
+        "maintenance_due",
+        "weather_warning",
+        "breach_notice",
+        "nudge_standup",
+        "nudge_hydrate",
+        "nudge_activity",
+        "nudge_free_time",
+        "nudge_focus",
     }
+)
+# R11 D5: nudges are only worth hearing when they are due; in quiet hours they are dropped (feed
+# only), never held for the morning summary.
+EPHEMERAL_KINDS = frozenset(
+    {"nudge_standup", "nudge_hydrate", "nudge_activity", "nudge_free_time", "nudge_focus"}
 )
 
 
@@ -60,9 +79,12 @@ def decide(signal: Signal, settings: NotifySettings, now: datetime) -> Decision:
     if level == "urgent":
         reason = "intruder" if signal.kind == "home_intruder" else "urgent"
         return Decision(action="ring", reason=reason, urgency=level)
+    quiet = in_quiet(now, settings.quiet, settings.tz)
+    if quiet and signal.kind in EPHEMERAL_KINDS:
+        return Decision(action="drop", reason="stale_at_night", urgency=level)
     if _is_vip(signal, settings):
         return Decision(action="ring", reason="vip", urgency="urgent")
-    if in_quiet(now, settings.quiet, settings.tz):
+    if quiet:
         if level == "important":
             return Decision(action="hold", reason="quiet_hours", urgency=level)
         return Decision(action="drop", reason="feed_only", urgency=level)
@@ -80,4 +102,4 @@ class Policy:
         return decide(signal, settings, now)
 
 
-__all__ = ["DAYTIME_RING_KINDS", "Policy", "decide", "urgency_of"]
+__all__ = ["DAYTIME_RING_KINDS", "EPHEMERAL_KINDS", "Policy", "decide", "urgency_of"]

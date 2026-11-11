@@ -169,6 +169,7 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "vault",  # R2: null until wired and something is due
         "home",  # R3: null until wired and something happened overnight
         "vitals",  # R4: null until the board has a red / amber line or a spend line
+        "helpers",  # R11: null until a helper has a line today
         "sections_status",
     }
     assert set(b["data"]["calendar"]) == {"today", "clashes", "free_blocks", "tomorrow_first"}
@@ -185,6 +186,7 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "vault": "ok",
         "home": "ok",
         "vitals": "ok",
+        "helpers": "ok",  # R11
     }
     assert {r.method for r in fake.requests} == {"GET"}
     forced = (await gc.post("/v1/brief/generate", json={"force": True}, headers=CSRF)).json()

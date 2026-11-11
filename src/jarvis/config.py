@@ -402,6 +402,37 @@ class Settings(BaseSettings):
     book_talk_questions: int = Field(
         default=20, ge=1, le=50, description="Questions one build book session may ask (D12)"
     )
+    # --- R11 the free proactive helpers (docs/plans/r11-free-helpers.md D3-D6, D12, D13). Free, no
+    # key: every helper is still OFF for an owner until he sets it up in the Helpers panel.
+    helpers_enabled: bool = Field(
+        default=True,
+        description="R11 helpers: bills, chores, upkeep, nudges, weather and disaster alerts, the "
+        "kitchen (each needs the owner's setup first)",
+    )
+    weather_enabled: bool = Field(
+        default=True, description="Weather from Open-Meteo (free, no key; needs his place) (D12)"
+    )
+    disaster_alerts_enabled: bool = Field(
+        default=True, description="Disaster warnings from NDMA SACHET's CAP feed (free) (D13)"
+    )
+    nudges_max_per_day: int = Field(
+        default=16, ge=1, le=40, description="Nudges a day at most, all kinds together (D6)"
+    )
+    nudges_max_per_hour: int = Field(
+        default=4, ge=1, le=8, description="Nudges an hour at most, all kinds together (D6)"
+    )
+    helpers_clock_budget_s: float = Field(
+        default=20.0,
+        ge=5.0,
+        le=40.0,
+        description="Seconds the helpers may use of each 5-minute run",
+    )
+    weather_poll_minutes: int = Field(
+        default=60, ge=15, le=180, description="Minutes between weather checks for a place (D12)"
+    )
+    disaster_poll_minutes: int = Field(
+        default=10, ge=5, le=60, description="Minutes between SACHET feed checks (D13)"
+    )
 
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")

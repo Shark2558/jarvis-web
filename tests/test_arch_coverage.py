@@ -526,5 +526,5 @@ def test_card_c01_lists_the_panels_in_the_dock_s_order() -> None:
     html = (ROOT / "src/jarvis/api/static/console.html").read_text(encoding="utf-8")
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     labels = re.findall(r'data-open="\w+"[^>]*>.*?<span(?: class="full")?>([^<]+)</span>', dock)
-    assert len(labels) == len(re.findall(r'data-open="\w+"', dock)) == 20
+    assert len(labels) == len(re.findall(r'data-open="\w+"', dock)) == 21  # R11: Helpers
     assert _c01_panels((ROOT / ac.GUIDE).read_text(encoding="utf-8")) == labels

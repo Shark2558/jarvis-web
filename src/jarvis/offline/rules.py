@@ -17,6 +17,7 @@ fixed line `NO_AI_LINE`. `core.brain` runs the calls through the gateway (`offli
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -241,10 +242,27 @@ def _calendar(text: str, now: datetime) -> NoAIRoute | None:
     )
 
 
-def route_no_ai(text: str, now: datetime) -> NoAIRoute:
+NoAIRouter = Callable[[str, datetime], "NoAIRoute | None"]
+
+
+def _extra(routers: Sequence[NoAIRouter], text: str, now: datetime) -> NoAIRoute | None:
+    """R11 D18: the helpers' phrase routers, first match wins; one that fails is skipped."""
+    for router in routers:
+        try:
+            route = router(text, now)
+        except Exception:  # noqa: BLE001 - a broken phrasebook never breaks No-AI mode
+            continue
+        if isinstance(route, NoAIRoute):
+            return route
+    return None
+
+
+def route_no_ai(text: str, now: datetime, extra: Sequence[NoAIRouter] = ()) -> NoAIRoute:
     """The tool calls for `text` with no model, or the fixed line when it needs the AI.
-    `now` is timezone-aware (the owner's zone)."""
+    `now` is timezone-aware (the owner's zone). `extra` (R11 D18) are tried first."""
     text = text.strip()
+    if extra and (route := _extra(extra, text, now)) is not None:
+        return route
     for step in (_notes, lambda t: _timer(t, now), lambda t: _remind(t, now)):
         if (route := step(text)) is not None:
             return route
@@ -273,6 +291,7 @@ __all__ = [
     "OFFLINE_ASK",
     "NoAICall",
     "NoAIRoute",
+    "NoAIRouter",
     "OfflineRules",
     "route_no_ai",
     "wrap_offline",

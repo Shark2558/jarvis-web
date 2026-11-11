@@ -8,7 +8,8 @@ Outside /v1 (like /telegram/webhook), each with its own door:
   POST /home/webhook            HMAC up-key (jarvis.home.webhook), bare 401; 404 when Home is off
   POST /internal/home/watchdog  Cloud Scheduler OIDC, audience = this exact URL ->
                                 `{homes, offline, held_sent, swept, jobs}`; 503 (same body)
-                                when any job failed, so the Scheduler shows it
+                                when any job failed, so the Scheduler shows it. Home off: only
+                                R11's helpers clock runs here (advisory, never a 503)
 
 Owner only (`require_auth` + `current_user`, errors `{error, detail, reason?}`):
   GET    /v1/home               {available, reason?, linked, state, host, last_seen_at, parts,
@@ -46,10 +47,11 @@ from jarvis.home.devices import DeviceRejected, DeviceService
 from jarvis.home.link import LinkRefused, LinkService
 from jarvis.home.ports import HomeUnavailable
 from jarvis.home.store import HomeStore, HomeStoreUnavailable
-from jarvis.home.watchdog import Watchdog
+from jarvis.home.watchdog import WATCHDOG_BUDGET_S, Watchdog
 from jarvis.home.webhook import HomeWebhook
 from jarvis.logging import get_logger
 from jarvis.permissions.models import PasskeyProof
+from jarvis.ticks import run_jobs
 
 log = get_logger(__name__)
 
@@ -146,12 +148,25 @@ async def home_webhook(request: Request) -> Response:
 @internal.post("/watchdog", dependencies=[Depends(require_scheduler)], response_model=None)
 async def home_watchdog(request: Request) -> dict[str, Any] | JSONResponse:
     dog: Watchdog | None = _svc(request, "home_watchdog")
-    if dog is None:
-        return {"homes": 0, "offline": 0, "held_sent": 0, "swept": 0, "jobs": {}}
+    if dog is None:  # R11 D3: with Home off the same Scheduler job is the helpers' 5-minute clock
+        return await _helpers_clock_only(request)
     out = await dog.run()
     jobs = out.get("jobs")
     if isinstance(jobs, dict) and "failed" in jobs.values():
         return JSONResponse(status_code=503, content=out)  # M9: the Scheduler shows the failure
+    return out
+
+
+async def _helpers_clock_only(request: Request) -> dict[str, Any]:
+    """R11 D3: Home is off, so no laptop check runs; the helpers' clock (if any) still does, and
+    is advisory: a job it could not finish is "degraded", never a 503 (the Scheduler would retry
+    a 5-minute job for nothing)."""
+    out: dict[str, Any] = {"homes": 0, "offline": 0, "held_sent": 0, "swept": 0, "jobs": {}}
+    clock = getattr(request.app.state, "helpers_clock", None)
+    if clock is None:
+        return out
+    got = await run_jobs((clock,), (), total_budget_s=WATCHDOG_BUDGET_S)
+    out["jobs"] = {name: "degraded" if res == "failed" else res for name, res in got.items()}
     return out
 
 

@@ -11,14 +11,19 @@ With a store, `current` is FAIL-CLOSED (R4 I2 F1): until an owner has been read 
 the env default, and it is `none` while ANY loaded owner is `none`. The cache is per owner.
 `current` is synchronous because `ModelRouter` asks it on every call; `load` / `load_known`
 refresh it (the router, background jobs and the lifespan all call them).
+
+R11 D18 (docs/plans/r11-free-helpers.md): No-AI mode's extra phrasebook. `phrases` are routers
+`(text, now) -> NoAIRoute | None` the helpers add at wiring (`add_phrases`); `route_no_ai` tries
+them FIRST, so a helper's own words ("don't remind me to stand up") never reach the reminder
+pattern. They only choose tool calls, which still go through the gateway.
 """
 
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from jarvis.config import Settings
 from jarvis.core.guardrails import ActionRisk
@@ -26,9 +31,13 @@ from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs, DocTx
 from jarvis.tools.audit import AuditTrail
 
+if TYPE_CHECKING:
+    from jarvis.offline.rules import NoAIRoute
+
 log = get_logger(__name__)
 
 Mode = Literal["ai", "none"]
+MAX_PHRASES = 64
 CACHE_S = 5.0
 AUDIT_AGENT = "settings"
 AUDIT_TOOL = "brain_mode_set"
@@ -51,6 +60,17 @@ class BrainMode:
         self._prefix = prefix
         self._clock = clock
         self._cache: dict[str, tuple[Mode, float]] = {}  # uid -> (value, read_at)
+        self._phrases: tuple[Callable[[str, datetime], NoAIRoute | None], ...] = ()
+
+    @property
+    def phrases(self) -> tuple[Callable[[str, datetime], NoAIRoute | None], ...]:
+        """R11 D18: the helpers' No-AI routers, tried first, in the order they were added."""
+        return self._phrases
+
+    def add_phrases(self, routers: Sequence[Callable[[str, datetime], NoAIRoute | None]]) -> None:
+        if len(self._phrases) + len(routers) > MAX_PHRASES:
+            raise ValueError("too many No-AI phrase routers")
+        self._phrases = (*self._phrases, *routers)
 
     @property
     def current(self) -> Mode:
@@ -128,4 +148,4 @@ class BrainMode:
         return mode
 
 
-__all__ = ["CACHE_S", "BrainMode", "Mode"]
+__all__ = ["CACHE_S", "MAX_PHRASES", "BrainMode", "Mode"]

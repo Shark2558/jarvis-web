@@ -135,7 +135,8 @@ def test_the_console_passkey_helper_allows_the_book_purposes() -> None:
 # ---- 3. alert kinds ------------------------------------------------------------------------------
 def test_three_book_kinds_make_twenty_three() -> None:
     kinds = get_args(AlertKind)
-    assert set(BOOK_KINDS) <= set(kinds) and len(kinds) == len(set(kinds)) == 23
+    # R11 added thirteen helper kinds after them (tests/test_r11_seams.py): 36 in all
+    assert set(BOOK_KINDS) <= set(kinds) and len(kinds) == len(set(kinds)) == 36
     assert set(DEFAULT_URGENCY) == set(kinds)
 
 
@@ -163,7 +164,8 @@ def test_the_alerts_card_lists_the_book_kinds() -> None:
     js = (STATIC / "console-alerts.js").read_text(encoding="utf-8")
     block = js[js.index("const KINDS = [") : js.index("];", js.index("const KINDS = ["))]
     listed = re.findall(r"\['([a-z_]+)', '", block)
-    assert listed[-3:] == list(BOOK_KINDS)
+    at = listed.index(BOOK_KINDS[0])  # R11's thirteen helper kinds follow them
+    assert listed[at : at + 3] == list(BOOK_KINDS) and listed[at + 3] == "disaster_alert"
 
 
 # ---- 4. settings ---------------------------------------------------------------------------------

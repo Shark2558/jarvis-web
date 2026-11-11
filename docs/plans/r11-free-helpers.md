@@ -1,4 +1,4 @@
-Version v11.0.1 · 11 Nov 2026, 17:05 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
+Version v11.0.2 · 11 Nov 2026, 18:45 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
 
 # Release R11 — Free proactive helpers (+ the kitchen tools that need no camera) (`v11.0.0`)
 
@@ -187,11 +187,13 @@ when names are off) never go in it. No part calls the notifier directly.
 | `weather_note` | info | feed only | silent |
 
 Policy additions (I0): `EPHEMERAL_KINDS` (the five nudges: quiet hours → drop `stale_at_night`, never hold);
-`DAYTIME_RING_KINDS` += the six important reminder kinds and the five nudges. Storm (I0): nudges at most
-`nudges_max_per_hour` (4) an hour per owner and one per kind per 20 minutes, in process; `disaster_alert`
-joins the soft-urgent kinds (one per subject per 30 minutes, 6 an hour) so it never crowds out a burglar
-ring. Every new kind has the Alerts card's on / feed / off switch (none is in `NO_SWITCH`); held-summary
-words for the held ones; Telegram's urgent bucket carries `disaster_alert`.
+`DAYTIME_RING_KINDS` += the six important reminder kinds and the five nudges. Storm (I0, in process): a
+nudge at most once per kind per 20 minutes and at most 8 an hour per owner in all (a hard ceiling equal to
+the highest `nudges_max_per_hour`; the gate holds the configured 4); `disaster_alert` is treated like a
+hazard: never capped, only the same warning (its `subject`) again within 30 minutes is a duplicate. It is
+NOT a soft-urgent kind, because those use Telegram's normal bucket and fail closed; a disaster warning uses
+the urgent bucket (fail open, 30 an hour). Every new kind has the Alerts card's on / feed / off switch (none
+is in `NO_SWITCH`); held-summary words for the held ones.
 
 **D6 · Nudges stay inside his limits.** Per-kind daily caps (defaults standup 8, hydrate 8, activity 3,
 free_time 2, focus 2), never above `nudges_max_per_day` (16) in all and the D5 hourly cap; each nudge is
@@ -199,7 +201,9 @@ off until he switches it on (Nudges tab), plus the Alerts card's switch. **Snooz
 until tomorrow and **stop** (for today, or for good = off) by tap (Helpers → Nudges, the brief's helpers
 section) or by voice, chat or Telegram ("snooze the water reminder for an hour", "stop stand-up nudges",
 "no more nudges today"), which the brain answers with `nudge_snooze` / `nudge_stop` and No-AI with C's
-phrases (D18). I0 implements the state, the gate and the tap routes; C the nudges, the words and the tab.
+phrases (D18). I0 implements the state, the gate and the tap routes (`/v1/helpers/gate/{kind}/snooze`,
+`/stop`, `/resume`, `PUT /v1/helpers/gate`; `kind` a nudge kind or `all`); C the nudges, the words and
+the tab.
 
 **D7 · Bills and the prepared UPI payment (A).** Bills he enters in the Today tab or by chat: label, payee
 name, UPI ID (`^[A-Za-z0-9._-]{2,256}@[A-Za-z][A-Za-z0-9]{1,63}$`), amount in ₹ (or "varies"), due rule
@@ -230,7 +234,9 @@ waiting and the next calendar event; ranked overdue → due today → urgency �
 **D10 · Chores rota (B).** Chores with daily / weekly-days / every-N-days frequency, a time and a rota of
 up to 6 member labels he types (the tab says "adults only: JARVIS keeps no children's data"; no ages are
 asked); the turn rotates on "done" or at the period's end. `chore_due` goes to him only: JARVIS never
-messages other people. **D11 · Home maintenance (B).** Items every N days or months with a lead time;
+messages other people.
+
+**D11 · Home maintenance (B).** Items every N days or months with a lead time;
 `maintenance_due` at 09:00 on the lead day and the due day; a starter list (water-purifier filter 90 days,
 AC service 180 days, fire-extinguisher check 365 days, gas pipe check 365 days) is offered, never added.
 
@@ -398,8 +404,8 @@ templates." I0 leaves the persona as it is.
    `brief.py` (HelpersBrief), `sources.py` (Open-Meteo and SACHET URLs, attribution), `privacy.py`
    (`helpers_nudge`); stub sub-packages `today`, `house`, `nudges`, `kitchen` with `part.build`.
 7. `api/r11_wiring.py` (`wire_r11`, `install_r11_routes`, `r11_tick_jobs`, `r11_privacy_sources`,
-   `helpers_brief`, `register_r11_tools`), `api/helpers.py` (`GET /v1/helpers`, `PUT /v1/helpers/nudges`,
-   `POST /v1/helpers/nudges/{kind}/{snooze|stop|resume}`), stub `api/helpers_{today,house,nudges,kitchen}.py`.
+   `helpers_brief`, `register_r11_tools`), `api/helpers.py` (`GET /v1/helpers`, `PUT /v1/helpers/gate`,
+   `POST /v1/helpers/gate/{kind}/{snooze|stop|resume}`), stub `api/helpers_{today,house,nudges,kitchen}.py`.
    `api/app.py`: `_log_up` moves to `api/startup_log.py` (no behaviour change), then six one-line slots
    (import; `await wire_r11(...)` after `wire_r6`; `*r11_tick_jobs(app)`; `install_r11_routes(app)` after
    `install_r6_routes`; `r11=` to `build_gateway`; `helpers=` to the brief). `tools/setup.py` `r11=`;
@@ -494,8 +500,31 @@ templates." I0 leaves the persona as it is.
 - ***Unverified* until I1 in the cloud**: Cloud Run's egress to `sachet.ndma.gov.in` and
   `api.open-meteo.com`; HIBP's and merchants' sender addresses; Google's page size for connections.
 
+## I0 — what the seams decided (11 Nov 2026, branch `r11-i0`)
+
+- **Routes**: I0's are `GET /v1/helpers` (`{enabled, parts, clock: {last_run, stale, jobs}, nudges,
+  fortnight}`; `{enabled: false, off}` when the helpers are off) and `/v1/helpers/gate…` (not
+  `/v1/helpers/nudges…`, which is Part C's router prefix). The clock is "stale" after 12 minutes.
+- **Composites**: `helpers_clock` rides the watchdog (Home on: added once; Home off: the watchdog route
+  runs it alone, advisory — a job it couldn't finish is "degraded", never a 503) and the morning tick;
+  `helpers_daily` holds the parts' daily jobs and I0's `helpers_sweep` (send-log days past 15).
+- **The contract is checked** (`r11_wiring.check_part`): a part with another part's name, a tool outside
+  its families, an unknown job name or privacy id, or a build that raises is left empty ("setup failed")
+  and the other parts still run.
+- **Storm**: the nudge ceiling is 8 an hour (D5 as amended above); `disaster_alert` is de-duplicated, not
+  soft-urgent.
+- **No-AI**: `route_no_ai(text, now, extra)` tries the helpers' routers first; a router that raises is
+  skipped. Without them "don't remind me to stand up" asks "When should I remind you?" today.
+- **Line budgets after I0**: `api/app.py` 721 (the `_log_up` line moved to `api/startup_log.py`, then the
+  six slots); `console.html` 798; `console-deck.js` 594.
+- **The build book** names release R11 from this plan; `layers.py` maps `helpers` to L5; the guide's
+  edition v11.0.1 adds card C60 (every planned collection listed in advance).
+- **segno 1.6.6** is in `pyproject.toml`, the hash-locked `requirements.lock` and the licence table
+  (classifier "BSD License"; segno's own LICENSE is BSD-3-Clause).
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v11.0.1 | 11 Nov 2026, 17:05 IST | R11 | First edition: goal, the 16 items mapped, findings from the code, external sources with terms and fallbacks, data model, D1–D22, owner decisions with safe defaults, the A–D split, I0 seams, tests and evals, acceptance, cost, risks | 🛠 Mark XIV |
+| v11.0.2 | 11 Nov 2026, 18:45 IST | R11 | After the I0: D5's storm rules (an 8-an-hour nudge ceiling; a disaster warning de-duplicated, never capped, on Telegram's urgent bucket), the gate's tap routes under `/v1/helpers/gate`, D10 and D11 as separate decisions, seam 7's route names, and "I0 — what the seams decided" | 🛠 Mark XIV |

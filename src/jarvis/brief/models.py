@@ -230,6 +230,16 @@ class VitalsSection(Frozen):
     state: SectionState = "ok"
 
 
+class HelpersSection(Frozen):
+    """R11 (docs/plans/r11-free-helpers.md, I0 seam 8): today's helper lines (bills due, birthdays,
+    chores and upkeep, the weather, a nudge's state, the month's grocery spend), each a fixed
+    template from one part's `BriefContributor`. Deterministic, never part of the AI-summary
+    input; absent (None) when no helper has anything to say."""
+
+    lines: tuple[str, ...] = ()
+    state: SectionState = "ok"
+
+
 class SectionsStatus(Frozen):
     calendar: SectionState = "ok"
     inbox: SectionState = "ok"
@@ -241,6 +251,7 @@ class SectionsStatus(Frozen):
     vault: SectionState = "ok"
     home: SectionState = "ok"
     vitals: SectionState = "ok"
+    helpers: SectionState = "ok"  # R11
 
 
 class BriefData(Frozen):
@@ -260,6 +271,8 @@ class BriefData(Frozen):
     home: HomeOvernightSection | None = None
     # R4: None = nothing red or amber and no spend line, Vitals off, or an older brief
     vitals: VitalsSection | None = None
+    # R11: None = no helper has a line today, helpers off, or an older brief
+    helpers: HelpersSection | None = None
     sections_status: SectionsStatus = SectionsStatus()
 
 
@@ -424,6 +437,7 @@ __all__ = [
     "VaultDueItem",
     "VaultDueSection",
     "VitalsSection",
+    "HelpersSection",
     "Trigger",
     "parse_brief_time",
 ]

@@ -10,6 +10,11 @@ package alert per 10 minutes; one greeting per person per 30 minutes; a flapping
 SAFETY: a hazard (smoke, gas, water) or any emergency decision is never counted in or dropped by
 a window. A hazard is only de-duplicated per sensor within 30 s (the same alarm repeating).
 Memory is bounded: old keys are pruned.
+
+R11 D5 (docs/plans/r11-free-helpers.md): a disaster alert is treated like a hazard: never capped,
+only the same subject (one CAP warning) repeated within 30 minutes is a duplicate. The helpers'
+nudges: one per kind per 20 minutes and at most `MAX_NUDGES_PER_HOUR` an hour per owner in all,
+a ceiling over the gate's own configured caps (`helpers.gate`), so a fault can't flood Telegram.
 """
 
 from __future__ import annotations
@@ -34,6 +39,13 @@ SOFT_URGENT_KINDS = frozenset({"health_fault", "vitals_critical"})
 MAX_IDLE_PER_HOUR = 3  # R5.1: a laptop that sleeps and wakes all day rings the idle alert 3 an hour
 SOFT_URGENT_GAP = timedelta(minutes=30)
 MAX_SOFT_URGENT_PER_HOUR = 6
+# R11 D5: the nudge ceiling (the gate keeps the owner's lower caps) and the disaster de-dup
+NUDGE_KINDS = frozenset(
+    {"nudge_standup", "nudge_hydrate", "nudge_activity", "nudge_free_time", "nudge_focus"}
+)
+NUDGE_GAP = timedelta(minutes=20)
+MAX_NUDGES_PER_HOUR = 8
+DISASTER_GAP = timedelta(minutes=30)
 SUMMARY_EVERY = timedelta(minutes=10)
 PACKAGE_GAP = timedelta(minutes=10)
 GREETING_GAP = timedelta(minutes=30)
@@ -58,6 +70,9 @@ class Storm:
         self._pending: dict[str, tuple[int, datetime]] = {}  # uid -> (suppressed, first at)
         self._package: dict[str, datetime] = {}
         self._greeting: dict[tuple[str, str], datetime] = {}
+        self._nudge: dict[tuple[str, str], datetime] = {}  # (uid, kind) -> last nudge (R11)
+        self._nudges: dict[str, deque[datetime]] = {}  # uid -> nudges in the last hour (R11)
+        self._disaster: dict[tuple[str, str], datetime] = {}  # (uid, subject) -> last (R11)
         # what a gap stamp was before the last admission set it (for `rollback`), by table
         self._before: dict[tuple[str, str, str], datetime | None] = {}
 
@@ -75,6 +90,14 @@ class Storm:
         storm or a flap (integrated review S3). A later admission is never undone."""
         if signal.kind in SOFT_URGENT_KINDS:
             self._rollback_soft(uid, signal, now)
+            return
+        if signal.kind in NUDGE_KINDS:
+            self._rollback_nudge(uid, signal, now)
+            return
+        if signal.kind == "disaster_alert":
+            key = (uid, signal.subject or "-")
+            if self._disaster.get(key) == now:
+                del self._disaster[key]
             return
         if signal.kind == "home_intruder":
             tag, key, table = "intruder", (uid, signal.camera or "-"), self._intruder
@@ -107,6 +130,42 @@ class Storm:
         if len(self._idle) > MAX_KEYS:
             self._idle = {k: v for k, v in self._idle.items() if v}
         return True
+
+    def _rollback_nudge(self, uid: str, signal: Signal, now: datetime) -> None:
+        key = (uid, signal.kind)
+        if self._nudge.get(key) == now:
+            del self._nudge[key]
+        window = self._nudges.get(uid)
+        if window is not None and now in window:
+            window.remove(now)
+
+    def _nudge_ok(self, uid: str, signal: Signal, now: datetime) -> Verdict:
+        """R11 D5: one nudge per kind per 20 minutes, `MAX_NUDGES_PER_HOUR` an hour in all."""
+        key = (uid, signal.kind)
+        last = self._nudge.get(key)
+        if last is not None and now - last < NUDGE_GAP:
+            return Verdict(False, "nudge_gap")
+        window = self._nudges.setdefault(uid, deque())
+        while window and now - window[0] >= timedelta(hours=1):
+            window.popleft()
+        if len(window) >= MAX_NUDGES_PER_HOUR:
+            return Verdict(False, "nudge_cap")
+        window.append(now)
+        self._nudge[key] = now
+        self._prune(self._nudge, now, NUDGE_GAP)
+        if len(self._nudges) > MAX_KEYS:
+            self._nudges = {k: v for k, v in self._nudges.items() if v}
+        return Verdict(True)
+
+    def _disaster_ok(self, uid: str, signal: Signal, now: datetime) -> Verdict:
+        """R11 D5: never capped; only the same warning again within 30 minutes is a duplicate."""
+        key = (uid, signal.subject or "-")
+        last = self._disaster.get(key)
+        if signal.subject is not None and last is not None and now - last < DISASTER_GAP:
+            return Verdict(False, "duplicate")
+        self._disaster[key] = now
+        self._prune(self._disaster, now, DISASTER_GAP)
+        return Verdict(True)
 
     def _rollback_soft(self, uid: str, signal: Signal, now: datetime) -> None:
         key = (uid, signal.kind, signal.subject or "-")
@@ -185,6 +244,10 @@ class Storm:
             return Verdict(True)
         if kind in SOFT_URGENT_KINDS:
             return self._soft_ok(uid, signal, now)
+        if kind == "disaster_alert":
+            return self._disaster_ok(uid, signal, now)
+        if kind in NUDGE_KINDS:
+            return self._nudge_ok(uid, signal, now)
         if kind in FLAP_KINDS:
             flap = (uid, kind)
             last_f = self._flap.get(flap)
@@ -236,4 +299,12 @@ def summary_text(count: int) -> str:
     return f"{more} from your cameras in the last 10 minutes - open JARVIS, then Home."
 
 
-__all__ = ["Storm", "Verdict", "summary_text"]
+__all__ = [
+    "DISASTER_GAP",
+    "MAX_NUDGES_PER_HOUR",
+    "NUDGE_GAP",
+    "NUDGE_KINDS",
+    "Storm",
+    "Verdict",
+    "summary_text",
+]

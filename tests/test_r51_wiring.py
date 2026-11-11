@@ -96,7 +96,12 @@ async def test_the_tick_and_the_home_watchdog_share_one_health_job() -> None:
 async def test_without_a_home_the_health_job_rides_the_tick_only(settings: Settings) -> None:
     async with plain(settings) as (app, _):
         assert app.state.home_watchdog is None
-        assert [j.name for j in app.state.tick_jobs] == ["vitals_poll", "health_check"]
+        assert [j.name for j in app.state.tick_jobs] == [
+            "vitals_poll",
+            "health_check",
+            "helpers_clock",  # R11 I0
+            "helpers_daily",
+        ]
         assert app.state.health_job is app.state.tick_jobs[1]
 
 

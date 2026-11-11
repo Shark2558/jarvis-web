@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'voice', 'media', 'construct', 'book'];
+  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'voice', 'media', 'construct', 'book', 'helpers'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;
@@ -89,6 +89,8 @@
       people: { x: Math.max(sL, sR - chatW - 14 - 420), y: b.top + 42, w: 420, h: Math.min(availH, 700), open: false },
       // R6: the build book (status, open, the sections reader)
       book: { x: col2, y: b.top + 30, w: 420, h: Math.min(availH, 700), open: false },
+      // R11: the helpers (Today, Home, Nudges, Kitchen)
+      helpers: { x: col2, y: b.top + 18, w: 420, h: Math.min(availH, 720), open: false },
     };
   }
   /** Stored layout, validated field by field. Anything malformed falls back to the defaults, and a

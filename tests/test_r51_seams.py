@@ -16,6 +16,19 @@ from jarvis.notify.ports import DEFAULT_URGENCY, Signal
 
 NOON_IST = datetime(2026, 11, 10, 6, 30, tzinfo=UTC)  # 12:00 in Asia/Kolkata
 TWO_AM_IST = datetime(2026, 11, 9, 20, 30, tzinfo=UTC)  # 02:00 in Asia/Kolkata
+R11_DAYTIME = (
+    "bill_due",
+    "birthday",
+    "chore_due",
+    "maintenance_due",
+    "weather_warning",
+    "breach_notice",
+    "nudge_standup",
+    "nudge_hydrate",
+    "nudge_activity",
+    "nudge_free_time",
+    "nudge_focus",
+)
 
 
 def _signal(kind: str) -> Signal:
@@ -28,9 +41,11 @@ def test_home_offline_idle_is_a_known_important_home_kind() -> None:
     assert DEFAULT_URGENCY["home_offline_idle"] == "important"
     # R5.1 D13 added health_fault and vitals_critical (tests/test_r51_int_notify.py); R6 the
     # build book's three notices (tests/test_r6_seams.py)
+    # R11 D5: the helpers' reminders, weather / breach notices and nudges (tests/test_r11_seams.py)
     assert DAYTIME_RING_KINDS == frozenset(
         {"home_offline_idle", "health_fault", "vitals_critical"}
         | {"book_sealed", "book_seal_failed", "book_session_closed"}
+        | set(R11_DAYTIME)
     )
 
 

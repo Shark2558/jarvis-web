@@ -1,4 +1,4 @@
-Version v11.0.3 · 11 Nov 2026, 21:44 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
+Version v11.0.4 · 11 Nov 2026, 23:11 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
 
 # Release R11 — Free proactive helpers (+ the kitchen tools that need no camera) (`v11.0.0`)
 
@@ -597,6 +597,13 @@ four parts and finds none of the planted private details anywhere it shouldn't b
 - **The "next calendar event" pending source** (D9) is not built (Part A's note); for R12.
 - **The brief's parcels section** (R1, `brief/deliveries.py`) reads Gmail with no permission-row
   check of its own. It is older than R11 and outside its files; noted for the owner.
+- **Part A's note 3.6** (optional) is not done: the chat's Approvals list is not refreshed when
+  the Today tab makes a card (the tab shows its own waiting card, and the list refreshes on the
+  next reply or decision; a refresh hook is a `console.js` change with nothing depending on it),
+  and the ₹1,00,000 payment cap stays the constant `models.PAY_CAP_PAISE` (a `bill_pay_cap_inr`
+  setting is a `config.py` change that needs the owner's figure first).
+- Part D's Sec L1 (the recipe idea fenced) and Part C's note 3 (one ranker) were left here at
+  first; both are done in "Integrated review fixes" below.
 - Everything *unverified* in the parts' notes stays so until the owner's checks after deploy: a
   real UPI app, Cloud Run's reach to Open-Meteo and SACHET, the breach and merchant senders.
 
@@ -607,6 +614,69 @@ four parts and finds none of the planted private details anywhere it shouldn't b
    stop. Keep it (the default), or say which rows a morning job may read on "Ask first".
 2. The parts' owner checks (INTEGRATION-A §4, B §4, C, D §4) after the deploy.
 
+## Integrated review fixes (11 Nov 2026, branch `r11-i1`)
+
+**In plain words.** Two fresh reviews of the joined branch found no serious problem; these are
+the fixes. A helper his permission settings stop now says so instead of going quiet; when he
+asks in the console himself, "Ask first" asks and then works; a payment that can't be shown is
+never used up; and a bill reminder on Telegram no longer names the bill or the amount.
+
+**Fixed**
+
+1. **"Ask first" in the console** (security M1). `BackgroundReads.allowed()` reads on "Ask first"
+   only inside a tool call the gateway itself decided for that owner (`Gateway._run` sets the
+   call's `ToolContext` with the risk it decided on; nothing a job passes can set it); "Never"
+   still refuses. Jobs, the scheduled brief, the brief and the tabs opened in the console (routes,
+   not gateway calls) read on "Allow" only. Birthdays no longer say "switched off".
+2. **A paused helper says so** (security M2). `allowed()` / `verdict()` return a `Verdict`
+   (allowed, ask first, denied, unreadable; the row's tool; a fixed word). `helpers/paused.py`
+   turns it into one fixed line ("Breach watching paused: your Email permission is set to Ask
+   first. Set it to Allow to let it run by itself."), for a helper he switched on (birthdays,
+   his to-dos, breach watching, the calendar nudges, grocery spend; his to-dos say nothing on
+   "Never", his own "don't read my to-dos"). Shown at the top of that part's Helpers tab
+   (`GET /v1/helpers` `parts[].paused`, drawn by `console-helpers.js`, `.hp-paused` in
+   `console-helpers.css` with existing tokens; `console.html` unchanged), in the brief (one line
+   in all, folded across parts) and in `breach_status`. The audit chain already holds each
+   refusal ("breach_watch; ask first"), once a day.
+3. **A cut read leaves its audit line** (code M1). `BackgroundReads.reading()` writes `executed`,
+   `error` "failed" (or a fixed word) or `error` "cut" when the time budget cancels the read
+   (`CancelledError`), and always re-raises; all five readers use it, the per-part copies gone.
+4. **No permission service means no read** (code M2): `gw.rules` None is "unreadable" (D's old
+   fail-closed test is back, in the one path).
+5. **A UPI card is checked before the grant is spent** (code M3). `payment(check=)` builds and
+   checks the card first and spends the grant only if it is still that grant; otherwise nothing
+   is spent and the reply says "That payment couldn't be shown. Please prepare it again." (never
+   the Today-tab line that ended in a 404). The R3 rules are unchanged.
+6. **The bill reminder on Telegram** (security L1): the alert is a generic fixed text ("A bill is
+   due tomorrow. Open JARVIS to see it."); his label and amount go only in `named=`, used only
+   when "names in alerts" is on (the notifier has no per-channel text, so web push gets the
+   generic text too). The Today tab and the brief keep the full line.
+7. **His district stays off Telegram**: `weather_now` and `disaster_status` drop it on a Telegram
+   turn; the console keeps it.
+8. The grocery scan's log line says only whether the scan was complete (no counts).
+9. A malformed weather summary is "rain unknown", never an error (`house/rain.py`).
+10. The shared nutrition data is read-only (`MappingProxyType`, tuples, made once at load).
+11. The Kitchen tab draws the view's own `label` and `credit` (a browser test checks the label).
+12. `house/guard.py`'s unused `audit()` and its stale lines are gone.
+13. `tests/test_r11_i1_real_reads.py` pins every background reader's tool names against the real
+    gateway's registry.
+14. `r11_needles`: tool results the model saw are scanned (outside a fence); controls "masking
+    off", "fence off" and each needle planted into every surface, each failing its own case.
+15. Part D's recipe idea reaches the chat fenced (`recipes._answer`; `recipe_save` takes a copied
+    fence off); Part C's focus nudge and Part A's pending list share one ranker (`ports.rank`).
+
+**Left**: Part A's note 3.6 (see "Left, and why" in the I1 section).
+
+**Needs the owner**
+
+1. **"Ask first" for a morning job** stays "no read" (now with a "paused" line). Keep it, or say
+   which rows a morning job may read on "Ask first".
+2. **To-dos in the console**: when he asks for his top priority (the Nudges row) with his To-do
+   list row on "Ask first", the to-dos are read without their own card (the gateway asked as the
+   Nudges row says). Keep it, or ask for a To-do card there too.
+3. **The bill reminder's details** reach Telegram (and web push) only when "names in alerts" is
+   on. Keep it, or ask for a per-channel text (a notifier change).
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -614,3 +684,4 @@ four parts and finds none of the planted private details anywhere it shouldn't b
 | v11.0.1 | 11 Nov 2026, 17:00 IST | R11 | First edition: goal, the 16 items mapped, findings from the code, external sources with terms and fallbacks, data model, D1–D22, owner decisions with safe defaults, the A–D split, I0 seams, tests and evals, acceptance, cost, risks | 🛠 Mark XIV |
 | v11.0.2 | 11 Nov 2026, 18:02 IST | R11 | After the I0: D5's storm rules (an 8-an-hour nudge ceiling; a disaster warning de-duplicated, never capped, on Telegram's urgent bucket), the gate's tap routes under `/v1/helpers/gate`, D10 and D11 as separate decisions, seam 7's route names, and "I0 — what the seams decided" | 🛠 Mark XIV |
 | v11.0.3 | 11 Nov 2026, 21:44 IST | R11 | After the I1: the four parts merged; the background reads' governed path; rain for the free-time pick; approvals in pending; the UPI card; Telegram; persona p11.0; `ticks.time_left()`; the helper CSS; D15 amended (the USDA subset installed with every nutrient, pluggable sources, the honest label); `r11_needles`; the earlier rows' times corrected; what is left and what the owner decides ("I1 — what was merged, what was decided, what is left") | 🛠 Mark XIV |
+| v11.0.4 | 11 Nov 2026, 23:11 IST | R11 | After the integrated reviews: "Integrated review fixes" (the console's "Ask first", the paused line in the tab, the brief and breach_status, a cut read audited, no permission service no read, the UPI card checked before the grant is spent, the bill reminder and his district off Telegram, the low findings, the recipe fence and one ranker; what is left and what the owner decides); the I1 "Left" list names Part A's note 3.6 | 🛠 Mark XIV |

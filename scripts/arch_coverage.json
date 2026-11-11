@@ -1,0 +1,58 @@
+{
+  "about": "Tables for scripts/arch_coverage.py (R6.1 D6). A new outside service is one line here and one card field in docs/architecture/JARVIS-Architecture.md.",
+  "diagrams": [
+    "01-context", "02-layers", "03-deployment", "04-chat-turn", "05-approvals-passkeys",
+    "06-voice-loop", "07-memory", "08-vault-digilocker", "09-brief-ticks", "10-home-alarm",
+    "11-systems-vitals", "12-build-book-guest", "13-release-flow", "14-privacy-map"
+  ],
+  "service_fields": [
+    ["anthropic_", ["Anthropic"]],
+    ["model_", ["Anthropic"]],
+    ["gemini_", ["Gemini"]],
+    ["openai_compat_", ["OpenAI-compatible"]],
+    ["google_client_", ["Google sign-in"]],
+    ["google_tools_enabled", ["Google Calendar", "Gmail", "Google Tasks"]],
+    ["google_api_key", ["Google Maps Platform", "YouTube Data API"]],
+    ["maps_pricing", ["Google Maps Platform"]],
+    ["tavily_", ["Tavily"]],
+    ["web_search_", ["Tavily"]],
+    ["people_research_enabled", ["Tavily"]],
+    ["telegram_", ["Telegram"]],
+    ["redis_", ["Redis"]],
+    ["firestore_", ["Firestore"]],
+    ["drive", ["Google Drive"]],
+    ["photos_enabled", ["Google Photos Picker"]],
+    ["voice_cloud", ["Google Cloud Text-to-Speech", "Google Cloud Speech-to-Text"]],
+    ["usd_inr_", ["Frankfurter"]],
+    ["brief_scheduler_sa", ["Cloud Scheduler"]],
+    ["public_base_url", ["Cloud Run"]],
+    ["local_brain_", ["Ollama"]],
+    ["home_enabled", ["Home Assistant", "Frigate", "Mosquitto", "Tailscale"]],
+    ["webpush_", ["Web Push"]]
+  ],
+  "internal_secrets": ["api_token", "session_secret", "token_key"],
+  "api_hosts": {
+    "accounts.google.com": "Google sign-in",
+    "oauth2.googleapis.com": "Google sign-in",
+    "openidconnect.googleapis.com": "Google sign-in",
+    "generativelanguage.googleapis.com": "Gemini",
+    "api.groq.com": "OpenAI-compatible",
+    "api.tavily.com": "Tavily",
+    "api.telegram.org": "Telegram",
+    "api.github.com": "GitHub",
+    "api.frankfurter.dev": "Frankfurter",
+    "gmail.googleapis.com": "Gmail",
+    "tasks.googleapis.com": "Google Tasks",
+    "people.googleapis.com": "Google Contacts",
+    "photospicker.googleapis.com": "Google Photos Picker",
+    "places.googleapis.com": "Google Maps Platform",
+    "routes.googleapis.com": "Google Maps Platform",
+    "speech.googleapis.com": "Google Cloud Speech-to-Text",
+    "texttospeech.googleapis.com": "Google Cloud Text-to-Speech",
+    "metadata.google.internal": "Cloud Run"
+  },
+  "not_services": {
+    "www.googleapis.com": "shared by Calendar, Drive, YouTube and sign-in; each is covered by its setting",
+    "host.docker.internal": "the owner's own laptop (Home Assistant's address inside the home kit)"
+  }
+}

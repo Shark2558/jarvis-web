@@ -19,7 +19,9 @@ Every call goes through the gateway: policy, cards, R3 tokens and the audit.
 - `bill_pay_prepare`'s card is written by code from his saved bill (`bills.card_text`, through
   the read-only `preview`, so the card is re-read at approval and a changed bill re-proposes it).
   Approved, it leaves a 10-minute sealed grant; its result says where to open the payment and
-  carries no link and no QR (the result is kept with the conversation; the payment is not).
+  carries no link and no QR (the result is kept with the conversation; the payment is not). In a
+  console reply the card is made and checked BEFORE the grant is spent (integrated review M3):
+  if it can't be shown, nothing is spent and the reply says `SHOW_FAILED` (no dead route).
 - No result, card or audit line holds a card / account number (refused at entry) or a link.
 - A bill's label and payee's name go to the model fenced as data (`bill_for_model`); JARVIS's own
   sentences (`message`, which No-AI mode shows him) carry a label only in quotes.
@@ -29,10 +31,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.helpers.today.bills import BillsService, amount_words, current_due, when_words
+from jarvis.helpers.today.bills import (
+    BillsService,
+    Payment,
+    amount_words,
+    current_due,
+    when_words,
+)
 from jarvis.helpers.today.models import (
     LABEL_MAX,
     PAYEE_MAX,
@@ -48,6 +56,7 @@ from jarvis.helpers.today.models import (
 )
 from jarvis.helpers.today.store import OFF_NOTE, BillsOff
 from jarvis.helpers.today.upi import amount_text
+from jarvis.logging import get_logger
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import one_line, quoted
 from jarvis.tools.context import require_tool_context
@@ -55,6 +64,8 @@ from jarvis.tools.external import wrap_external
 from jarvis.tools.reply_cards import TEXT_LIMIT, UpiCard, add_card, reply_full, showing_cards
 from jarvis.tools.taint import content_tainted, owner_text
 
+log = get_logger(__name__)
+Shown = Literal["below", "elsewhere", "failed"]
 TAINT_REFUSAL = True  # read at call time; only the eval's negative control switches it off
 TYPE_IT = "Type the UPI ID yourself in the Today tab, Sir: JARVIS never takes one from a message."
 TYPE_IT_HERE = (
@@ -77,6 +88,7 @@ PAY_WORDS = (
     "JARVIS never pays."
 )
 NOT_APPROVED = "That payment wasn't approved on your screen, so nothing was prepared."
+SHOW_FAILED = "That payment couldn't be shown. Please prepare it again."
 UNUSABLE = "That bill can't be kept as given, Sir: check the day, how often and the reminder days."
 
 _BILL = {"type": "string", "description": "The bill's name (as he saved it) or its id"}
@@ -317,22 +329,35 @@ def _payee_tool(t: BillTools) -> Tool:
     )
 
 
-async def _show_below(t: BillTools, uid: str, bill_id: str) -> bool:
-    """I1 (INTEGRATION-A 3.3): inside a console reply (the approval's), spend the one-time grant
-    and show the payment as a `UpiCard` under that reply; elsewhere the Today tab shows it. The
-    tool's result never carries the link or the QR."""
-    if not showing_cards() or reply_full(drafts=False):
-        return False
-    shown = await t.service.payment(uid, bill_id)
-    if shown is None:
-        return False
+def _card(shown: Payment) -> UpiCard:
+    """The reply's card (raises when it can't be one: an odd link, QR or words)."""
+    if reply_full(drafts=False):
+        raise ValueError("this reply has no room for the card")
     words = PAY_WORDS.format(
         amount=shown.amount,
         payee=quoted(shown.payee, 40),
         upi=shown.upi,
         note=quoted(shown.note, 50),
     )
-    return add_card(UpiCard(link=shown.link, qr=shown.qr, words=one_line(words, TEXT_LIMIT)))
+    return UpiCard(link=shown.link, qr=shown.qr, words=one_line(words, TEXT_LIMIT))
+
+
+async def _show_below(t: BillTools, uid: str, bill_id: str) -> Shown:
+    """I1 (INTEGRATION-A 3.3): inside a console reply (the approval's), show the payment as a
+    `UpiCard` under that reply ("below"); with no reply to show it on, the grant waits for the
+    Today tab ("elsewhere"). The card is made and checked before the one-time grant is spent;
+    when it can't be shown nothing is spent ("failed"). The result never carries the link."""
+    if not showing_cards() or reply_full(drafts=False):
+        return "elsewhere"
+    made: list[UpiCard] = []
+    try:
+        shown = await t.service.payment(uid, bill_id, check=lambda p: made.append(_card(p)))
+    except ValueError as exc:  # a pydantic ValidationError is one: nothing was spent
+        log.warning("payment card not shown", extra={"error": type(exc).__name__})
+        return "failed"
+    if shown is None or not made or not add_card(made[0]):
+        return "failed"
+    return "below"
 
 
 def _prepare_tool(t: BillTools) -> Tool:
@@ -352,9 +377,11 @@ def _prepare_tool(t: BillTools) -> Tool:
         except ValueError as exc:
             return _refused(_plain(exc))
         label = said(prepared.bill.label)
-        if await _show_below(t, ctx.user_id, prepared.bill.id):
-            return {"status": "ready", "message": READY_BELOW.format(label=label)}
-        return {"status": "ready", "message": READY.format(label=label)}
+        where = await _show_below(t, ctx.user_id, prepared.bill.id)
+        if where == "failed":
+            return {"status": "not_shown", "message": SHOW_FAILED}
+        words = READY_BELOW if where == "below" else READY
+        return {"status": "ready", "message": words.format(label=label)}
 
     props = {"bill": _BILL, "amount": _AMOUNT}
     return Tool(
@@ -382,6 +409,7 @@ __all__ = [
     "PAY_WORDS",
     "READY",
     "READY_BELOW",
+    "SHOW_FAILED",
     "TAINT_REFUSAL",
     "TYPE_IT",
     "TYPE_IT_HERE",

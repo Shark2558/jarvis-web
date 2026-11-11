@@ -314,19 +314,31 @@ class BillsService:
         grant = Grant(now + READY_FOR, prepared.paise, prepared.due, b.upi, b.pay_name)
         return await self.store.make_ready(uid, b.id, grant, now)
 
-    async def payment(self, uid: str, bill_id: str) -> Payment | None:
-        """The approved payment, once: None when nothing was approved, it expired, or the bill's
-        payee changed since the card he approved (never a payee he didn't see)."""
-        grant = await self.store.take_ready(uid, bill_id, self._now())
-        if grant is None:
+    async def payment(
+        self, uid: str, bill_id: str, *, check: Callable[[Payment], object] | None = None
+    ) -> Payment | None:
+        """The approved payment, once. It is made and checked (`check`, which may raise: then
+        nothing is spent) from the grant BEFORE the grant is spent, and the grant is spent only if
+        it is still that one (integrated review M3). None, with nothing spent, when nothing was
+        approved, it expired, or the bill's payee changed since the card he approved (never a
+        payee he didn't see)."""
+        now = self._now()
+        book = await self.store.book(uid)
+        grant = book.ready.get(bill_id)
+        if grant is None or now > grant.until:
             return None
-        bill = self.find(await self.store.book(uid), bill_id)
+        bill = self.find(book, bill_id)
         if (bill.upi, bill.pay_name) != (grant.upi, grant.payee):
             return None
         note = bill.note(grant.due)
         link = upi_link(pa=grant.upi, pn=grant.payee, paise=grant.paise, tn=note)
+        shown = Payment(link, qr_data_uri(link), grant.upi, grant.payee, inr(grant.paise), note)
+        if check is not None:
+            check(shown)
+        if await self.store.take_ready(uid, bill_id, now, expect=grant) is None:
+            return None
         await self._audit_shown()
-        return Payment(link, qr_data_uri(link), grant.upi, grant.payee, inr(grant.paise), note)
+        return shown
 
     async def _audit_shown(self) -> None:
         """One kind-only line: no amount, no UPI ID, no link (security review LOW-4)."""

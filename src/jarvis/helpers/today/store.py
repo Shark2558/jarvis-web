@@ -210,12 +210,19 @@ class BillStore:
         await self.change(uid, grant)
         return until
 
-    async def take_ready(self, uid: str, bill_id: str, now: datetime) -> Grant | None:
-        """Spend the grant: it is returned once, within READY_FOR of the approval."""
+    async def take_ready(
+        self, uid: str, bill_id: str, now: datetime, *, expect: Grant | None = None
+    ) -> Grant | None:
+        """Spend the grant: it is returned once, within READY_FOR of the approval. `expect`: spend
+        it only if it is still exactly that grant (the one a shown payment was checked from);
+        otherwise nothing changes and None comes back."""
         taken: list[Grant | None] = []
 
         def take(b: Book) -> Book:
             g = b.ready.get(bill_id)
+            if expect is not None and g != expect:
+                taken.append(None)
+                return b
             taken.append(g if g is not None and now <= g.until else None)
             return b.with_ready({k: v for k, v in b.ready.items() if k != bill_id})
 

@@ -137,3 +137,49 @@ async def test_the_approval_answer_is_never_cached(settings, monkeypatch) -> Non
             )
         assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
         assert r.json()["cards"][0]["kind"] == "upi"
+
+
+# ---- integrated review M3: never spend the grant and then show nothing --------------------------
+async def test_a_card_that_fails_its_check_spends_nothing_and_says_prepare_again(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import jarvis.helpers.today.bills as bills_mod
+    from jarvis.tools.reply_cards import UPI_QR_MAX
+
+    caplog.set_level(logging.DEBUG)
+    rig, svc, docs = await _rig()
+    monkeypatch.setattr(bills_mod, "qr_data_uri", lambda link: QR + "x" * UPI_QR_MAX)
+    cards: list[AnyCard] = []
+    done = await _propose_and_approve(rig, cards)
+    assert done.outcome is GatewayOutcome.EXECUTED and cards == []
+    said = json.dumps(done.result, ensure_ascii=False)
+    assert today_tools.SHOW_FAILED in said and "Show payment" not in said and "below" not in said
+    (bill,) = (await svc.book(UID)).bills
+    assert bill.id in (await svc.book(UID)).ready  # nothing was spent
+    assert "upi://" not in every_text(docs) and "upi://" not in caplog.text and "upi://" not in said
+
+
+async def test_nothing_to_show_says_prepare_again_never_points_at_the_today_tab(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rig, svc, _ = await _rig()
+
+    async def nothing(uid: str, bill_id: str, **kw: object) -> None:
+        return None
+
+    monkeypatch.setattr(svc, "payment", nothing)
+    cards: list[AnyCard] = []
+    done = await _propose_and_approve(rig, cards)
+    said = json.dumps(done.result, ensure_ascii=False)
+    assert done.outcome is GatewayOutcome.EXECUTED and cards == []
+    assert today_tools.SHOW_FAILED in said and "Helpers" not in said and "Show payment" not in said
+
+
+async def test_a_payee_changed_after_the_approval_spends_nothing() -> None:
+    rig, svc, _ = await _rig()
+    done = await _propose_and_approve(rig, None)  # no reply: the grant waits
+    assert done.outcome is GatewayOutcome.EXECUTED
+    (bill,) = (await svc.book(UID)).bills
+    await svc.set_payee(UID, bill.id, upi="other@okfake", payee="Someone Else")
+    assert await svc.payment(UID, bill.id) is None
+    assert bill.id in (await svc.book(UID)).ready  # a payee he didn't see is never shown or spent

@@ -224,10 +224,13 @@ class SpendStore:
         return sorted((m for m in found if m.month >= keep), key=lambda m: m.month, reverse=True)
 
     async def apply(self, uid: str, receipts: Sequence[Receipt]) -> int:
-        """Add the receipts (one transaction over every month touched); the orders kept."""
+        """Add the receipts (one transaction over every month touched); the orders kept (0 when
+        there was nothing to do)."""
         self._seal.ring()
         keep = _keep_from(self._now(), self.tz)
         known = {str(d.get("month")) for _, d in await self._rows(uid)}
+        if not receipts and all(m >= keep for m in known):
+            return 0  # nothing new and nothing to sweep: no writes
         fresh = {r.day.isoformat()[:7] for r in receipts}
         paths = {m: self._month_path(uid, m) for m in sorted(known | fresh)}
 

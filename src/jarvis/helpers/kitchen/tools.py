@@ -31,6 +31,27 @@ _INGREDIENTS = {
     "description": "Ingredients with grams, e.g. '200 g rice, 100 g toor dal, 80 g onion'",
 }
 _STEPS = {"type": "string", "maxLength": 4000, "description": "The steps, one a line"}
+_DIET = {"type": "string", "enum": ["veg", "egg", "nonveg"]}
+_PREFS = {
+    "diet": _DIET,
+    "spice": {"type": "integer", "minimum": 0, "maximum": 3},
+    "oil": {"type": "integer", "minimum": 0, "maximum": 2},
+    "cuisines": {"type": "string", "maxLength": 200},
+    "note": {"type": "string", "maxLength": 200},
+}
+_SUGGEST = {
+    "diet": _DIET,
+    "cuisine": {"type": "string", "maxLength": 30},
+    "with": {"type": "string", "maxLength": 200},
+}
+_SAVE = {
+    "title": {"type": "string", "maxLength": 80},
+    "cuisine": {"type": "string", "maxLength": 30},
+    "diet": _DIET,
+    "minutes": {"type": "integer", "minimum": 1, "maximum": 600},
+    "ingredients": _INGREDIENTS,
+    "steps": _STEPS,
+}
 Run = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 
@@ -89,16 +110,14 @@ def _tool(
     )
 
 
-def kitchen_tools(svc: KitchenService) -> list[Tool]:
+def _pantry_tools(svc: KitchenService) -> list[Tool]:
+    """The pantry and his tastes."""
     items = {"items": {**_TEXT, "description": "Comma-separated names, e.g. 'rice, toor dal'"}}
 
     async def settings(uid: str, a: dict[str, Any]) -> Any:
         # their words this round, or a card proposed after reading them (D8 `outside`)
         tainted = content_tainted() or require_tool_context().outside
         return await svc.settings(uid, a, tainted=tainted)
-
-    async def spend(uid: str, a: dict[str, Any]) -> Any:
-        return await svc.spend.month(uid, a.get("month") or None)
 
     return [
         _tool(
@@ -132,28 +151,24 @@ def kitchen_tools(svc: KitchenService) -> list[Tool]:
             "Set the owner's kitchen tastes: diet (veg, egg, nonveg), spice 0-3, oil 0-2, "
             "cuisines (comma-separated), a short note. A diet change is refused after reading "
             "other people's content: he changes it himself.",
-            {
-                "diet": {"type": "string", "enum": ["veg", "egg", "nonveg"]},
-                "spice": {"type": "integer", "minimum": 0, "maximum": 3},
-                "oil": {"type": "integer", "minimum": 0, "maximum": 2},
-                "cuisines": {"type": "string", "maxLength": 200},
-                "note": {"type": "string", "maxLength": 200},
-            },
+            _PREFS,
             R2,
             settings,
             "Kitchen settings changed",
             check=_check_settings,
         ),
+    ]
+
+
+def _recipe_tools(svc: KitchenService) -> list[Tool]:
+    """Recipe ideas, saved recipes and nutrition."""
+    return [
         _tool(
             "recipe_suggest",
             "One recipe idea from what the owner has, for his diet (a code check refuses any "
             "idea that breaks it). Costs like a normal reply; with the AI off it lists his saved "
             "recipes. Optional: diet (only stricter than his), cuisine, with (ingredients to use).",
-            {
-                "diet": {"type": "string", "enum": ["veg", "egg", "nonveg"]},
-                "cuisine": {"type": "string", "maxLength": 30},
-                "with": {"type": "string", "maxLength": 200},
-            },
+            _SUGGEST,
             R1,
             svc.recipes.suggest,
             "Recipe idea",
@@ -163,14 +178,7 @@ def kitchen_tools(svc: KitchenService) -> list[Tool]:
             "recipe_save",
             "Save a recipe in the owner's recipes (title, diet, minutes, ingredients with grams, "
             "steps). One with the same title is replaced.",
-            {
-                "title": {"type": "string", "maxLength": 80},
-                "cuisine": {"type": "string", "maxLength": 30},
-                "diet": {"type": "string", "enum": ["veg", "egg", "nonveg"]},
-                "minutes": {"type": "integer", "minimum": 1, "maximum": 600},
-                "ingredients": _INGREDIENTS,
-                "steps": _STEPS,
-            },
+            _SAVE,
             R2,
             svc.save_recipe,
             "Recipe saved",
@@ -193,6 +201,16 @@ def kitchen_tools(svc: KitchenService) -> list[Tool]:
             svc.nutrition_of,
             "Nutrition looked up",
         ),
+    ]
+
+
+def _spend_tools(svc: KitchenService) -> list[Tool]:
+    """Grocery spend from his receipts."""
+
+    async def spend(uid: str, a: dict[str, Any]) -> Any:
+        return await svc.spend.month(uid, a.get("month") or None)
+
+    return [
         _tool(
             "spend_month",
             "The owner's grocery spend for a month (YYYY-MM; default this month), totalled from "
@@ -204,6 +222,10 @@ def kitchen_tools(svc: KitchenService) -> list[Tool]:
             check=_check_month,
         ),
     ]
+
+
+def kitchen_tools(svc: KitchenService) -> list[Tool]:
+    return [*_pantry_tools(svc), *_recipe_tools(svc), *_spend_tools(svc)]
 
 
 __all__ = ["kitchen_tools"]

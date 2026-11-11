@@ -8,6 +8,9 @@
 tests
 evals
 docs
+# R6.1 D2: the dev-only Markdy diagram tool (Node) never enters the app image
+tools
+**/node_modules
 deploy
 # R3: the home kit that GET /v1/home/kit zips
 !deploy/home

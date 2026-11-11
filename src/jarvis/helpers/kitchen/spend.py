@@ -5,9 +5,9 @@
 owners (`ctx.owners`; the caller's list is ignored), each only when:
   - the keyring is there (receipts are sealed, purpose `spend`): otherwise "off";
   - he switched receipts on in the Kitchen tab (`spend_scan.on`, default off): otherwise "off";
-  - his permission rows ALLOW both "Search and read email" (`gmail_*`, R1) and the Kitchen row
-    (`spend_*`, R1); "Ask first" counts as no (a background reader can't ask), and rows that can't
-    be read, or aren't wired yet, mean no (fail closed): "skipped".
+  - the gateway's governed path (I1, `ctx.reads`) ALLOWs both "Search and read email"
+    (`gmail_*`, R1) and the Kitchen row (`spend_*`, R1); "Ask first" counts as no (a background
+    reader can't ask), and rows that can't be read, or no gateway, mean no (fail closed): "skipped".
 Then it lists his Gmail (the fixed merchants' mail only, since the last complete scan, at most 35
 days), page after page (Gmail's `nextPageToken`, up to 10 pages of 100), skips mails already read
 (keyed hashes in `spend_scan`), reads the rest as the parcels reader does
@@ -16,8 +16,9 @@ never hides the others) and keeps, per month, only merchant, day, amount and a k
 (`receipts.read_receipt`, `store.SpendStore`). The last scan moves only when the whole window was
 listed and every new mail read; out of time (an 11 s budget for the whole run, inside the job's
 15 s), or a mail that failed, leaves it where it was, so the next run looks back as far and
-reads what is left: an older receipt is never lost. One audit line per owner (agent `helpers`,
-the kind and counts only); logs carry class names and counts, never an amount or a merchant.
+reads what is left: an older receipt is never lost. The governed path's one kind-only audit line
+per owner (agent `helpers`, `gmail_search`, "grocery_spend"); the counts go to the log only
+(class names and counts, never an amount or a merchant).
 """
 
 from __future__ import annotations
@@ -30,21 +31,18 @@ from datetime import datetime
 from typing import Any
 
 from jarvis.billing.service import rupees
-from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.kitchen.models import ScanState, SpendMonth
 from jarvis.helpers.kitchen.receipts import PLAUSIBLE_PAISE, gmail_query, read_receipt
 from jarvis.helpers.kitchen.store import KitchenOff, SpendStore
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector, GoogleNotConnected
 from jarvis.logging import get_logger
 from jarvis.notify.quiet import local
-from jarvis.tools.audit import AuditTrail
+from jarvis.tools.background import BackgroundReads, Outcome
 from jarvis.tools.gmail import MESSAGES_URL
-from jarvis.tools.policy import Effect, OwnerRules, Policy
 
 log = get_logger(__name__)
 
 JOB = "grocery_spend"
-AGENT = "helpers"
 JOB_BUDGET_S = 15.0
 SCAN_BUDGET_S = 11.0  # the whole run's listing and reading, leaving the job time to save
 FIRST_DAYS = MAX_DAYS = 35
@@ -245,62 +243,34 @@ class GrocerySpendJob:
     budget_s = JOB_BUDGET_S
 
     def __init__(
-        self,
-        svc: SpendService,
-        *,
-        owners: tuple[str, ...],
-        permissions: Callable[[], OwnerRules | None],
-        audit: AuditTrail,
+        self, svc: SpendService, *, owners: tuple[str, ...], reads: BackgroundReads | None
     ) -> None:
         self._svc = svc
         self._owners = owners
-        self._permissions = permissions
-        self._audit = audit
+        self._reads = reads  # I1: the gateway's governed path (None: no read at all)
 
-    async def _allowed(self, uid: str) -> bool:
-        source = self._permissions()
-        if source is None:
-            return False  # the rows aren't wired: fail closed
-        try:
-            policy = Policy(await source.rules_for(uid))
-        except Exception as exc:  # noqa: BLE001 - fail closed: no read this morning
-            log.warning("permissions unreadable for receipts", extra={"error": type(exc).__name__})
-            return False
-        return all(policy.decide(t, ActionRisk.READ_ONLY, {}) is Effect.ALLOW for t in ROW_TOOLS)
-
-    async def _note(self, outcome: str, detail: str) -> None:
-        try:
-            await self._audit.append(
-                agent=AGENT,
-                tool=JOB,
-                risk=ActionRisk.READ_ONLY,
-                outcome=outcome,
-                args={"kind": JOB},
-                detail=detail,
-            )
-        except Exception as exc:  # noqa: BLE001 - the read already happened; say so loudly
-            log.error(
-                "AUDIT WRITE FAILED for grocery receipts", extra={"error": type(exc).__name__}
-            )
+    async def _note(self, outcome: Outcome, why: str = "") -> None:
+        if self._reads is not None:
+            await self._reads.note(ROW_TOOLS[0], job=JOB, outcome=outcome, why=why)
 
     async def scan_one(self, uid: str, deadline: float | None = None) -> str:
-        """One owner: "ok", "off" or "skipped" (his rows, or Google not linked)."""
-        svc = self._svc
+        """One owner: "ok", "off" or "skipped" (the governed path refused, or Google not linked).
+        The audit line is kind-only; the counts go to the log (counts only, never an amount)."""
+        svc, reads = self._svc, self._reads
         if not svc.can_scan or not (await svc.store.scan(uid)).on:
             return "off"
-        if not await self._allowed(uid):
-            await self._note("skipped", "permissions")
+        if reads is None or not await reads.allowed(uid, *ROW_TOOLS, job=JOB):
             return "skipped"
         try:
             c = await svc.scan_owner(uid, deadline)
         except GoogleNotConnected:
-            await self._note("skipped", "google not linked")
+            await self._note("denied", "not linked")
             return "skipped"
-        detail = (
-            f"mails={c['mails']} read={c['read']} orders={c['orders']} ignored={c['ignored']} "
-            f"flagged={c['flagged']} complete={'yes' if c['complete'] else 'no'}"
+        log.info(
+            "grocery receipts read",
+            extra={k: c[k] for k in ("mails", "read", "orders", "ignored", "flagged", "complete")},
         )
-        await self._note("executed", detail)
+        await self._note("executed")
         return "ok"
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
@@ -313,7 +283,7 @@ class GrocerySpendJob:
                 counts[await self.scan_one(uid, deadline)] += 1
             except Exception as exc:  # noqa: BLE001 - one owner never stops the others
                 log.warning("grocery receipts not read", extra={"error": type(exc).__name__})
-                await self._note("error", type(exc).__name__)
+                await self._note("error", "failed")
                 counts["failed"] += 1
         return counts
 

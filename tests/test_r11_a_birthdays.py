@@ -10,7 +10,7 @@ import logging
 from datetime import date, timedelta
 
 import pytest
-from r11_fakes import UID, Clock, FakeNotifier
+from r11_fakes import UID, Clock, FakeNotifier, reads_over
 from r11_fakes_a import (
     BrokenRules,
     DenyRules,
@@ -57,7 +57,8 @@ async def _reader(fake: FakePeople, rules: object | None = None, **kw: object): 
     clock = Clock(at(2026, 11, 12, 8, 30))
     audit = AuditLog()
     google = await connector(fake, **kw)  # type: ignore[arg-type]
-    return BirthdayReader(google, permissions=lambda: rules, audit=audit, now=clock), audit, clock  # type: ignore[arg-type,return-value]
+    reads = reads_over(lambda: rules, audit, now=clock)  # type: ignore[arg-type,return-value]
+    return BirthdayReader(google, reads=reads, now=clock), audit, clock
 
 
 async def test_the_reader_asks_once_a_day_and_pages() -> None:
@@ -122,7 +123,7 @@ async def _job(
     svc = BillsService(BillStore(docs, c.keyring, prefix=c.prefix), tz=c.tz, now=c.now)
     if on:
         await svc.set_prefs(UID, birthdays_on=True)
-    reader = BirthdayReader(google, permissions=lambda: None, audit=c.audit, now=c.now)
+    reader = BirthdayReader(google, reads=c.reads, now=c.now)
     claims = Claims(docs, "birthdays_told", prefix=c.prefix, keep_days=400)
     job = BirthdaysJob(svc, reader, claims, c.sender, owners=c.owners, tz=c.tz, now=c.now)
     return job, n, docs, c

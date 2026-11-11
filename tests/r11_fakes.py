@@ -10,14 +10,20 @@
 #   02:00" without the whole service.
 # - `sender(...)`: a HelperSender on MemoryDocs with the fake notifier and a clock.
 # - `ctx(part, ...)`: a HelperContext for one part, everything a part may touch, all fakes.
+# - `reads_over(rules, audit)` (I1): the gateway's governed path for background reads
+#   (`jarvis.tools.background.BackgroundReads`) over a fake gateway view: the default policy plus
+#   the rules `rules()` gives (None: no permission service), every tool a known read-only one.
+#   A part's fakes that swap `permissions` swap `reads` with it.
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 from jarvis.config import Settings
+from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.gate import GateStore, HelperSender
 from jarvis.helpers.kinds import PartName
 from jarvis.helpers.ports import HelperContext, PendingSource
@@ -25,7 +31,9 @@ from jarvis.notify.models import NotifySettings
 from jarvis.notify.policy import decide
 from jarvis.notify.ports import Delivery, Signal
 from jarvis.storage.docs import MemoryDocs
-from jarvis.tools.audit import AuditLog
+from jarvis.tools.audit import AuditLog, AuditTrail
+from jarvis.tools.background import BackgroundReads
+from jarvis.tools.policy import OwnerRules, Policy
 
 UID = "u_r11_owner"
 NOON_IST = datetime(2026, 11, 10, 6, 30, tzinfo=UTC)  # 12:00 in Asia/Kolkata
@@ -76,6 +84,36 @@ class FakeNotifier:
         return Delivery(action=d.action, reason=d.reason)
 
 
+class AnyReadRegistry:
+    """A fake gateway registry: every tool name is a known read-only tool (`known` narrows it)."""
+
+    def __init__(
+        self, known: frozenset[str] | None = None, risk: ActionRisk = ActionRisk.READ_ONLY
+    ):
+        self.known, self.risk = known, risk
+
+    def get(self, name: str) -> Any:
+        if self.known is not None and name not in self.known:
+            return None
+        return SimpleNamespace(name=name, risk=self.risk)
+
+
+def reads_over(
+    rules: Callable[[], OwnerRules | None],
+    audit: AuditTrail,
+    *,
+    now: Callable[[], datetime] | None = None,
+    registry: Any = None,
+) -> BackgroundReads:
+    """BackgroundReads over a fake gateway view (the default policy, `rules()` read per call)."""
+    reg = registry if registry is not None else AnyReadRegistry()
+
+    def view() -> Any:
+        return SimpleNamespace(policy=Policy(), rules=rules(), audit=audit, registry=reg)
+
+    return BackgroundReads(view, audit=audit, now=now)
+
+
 def settings(**over: Any) -> Settings:
     return Settings(_env_file=None, **over)  # type: ignore[call-arg]
 
@@ -104,6 +142,7 @@ def ctx(
     one adds it with `dataclasses.replace(ctx, keyring=...)`)."""
     send, notifier, docs, clock = sender(**over)
     s = settings(**over)
+    audit = AuditLog()
     c = HelperContext(
         settings=s,
         docs=docs,
@@ -112,9 +151,10 @@ def ctx(
         tz=s.user_timezone,
         prefix=s.firestore_prefix,
         now=clock,
-        audit=AuditLog(),
+        audit=audit,
         pending_all=lambda: pending,
         permissions=lambda: None,
+        reads=reads_over(lambda: None, audit, now=clock),
     )
     return c, notifier, docs, clock
 
@@ -123,9 +163,11 @@ __all__ = [
     "NOON_IST",
     "TWO_AM_IST",
     "UID",
+    "AnyReadRegistry",
     "Clock",
     "FakeNotifier",
     "ctx",
+    "reads_over",
     "sender",
     "settings",
 ]

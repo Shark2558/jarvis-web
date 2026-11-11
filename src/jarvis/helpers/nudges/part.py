@@ -25,7 +25,6 @@ from jarvis.helpers.nudges.calendar import (
     CalendarSource,
     GoogleCalendar,
     RainSource,
-    row_allows,
 )
 from jarvis.helpers.nudges.ideas import freetime_tools
 from jarvis.helpers.nudges.jobs import ActivityJob, NudgesJob
@@ -54,7 +53,7 @@ def service(
     rain: RainSource | None = None,
 ) -> NudgeService:
     source = calendar or (GoogleCalendar(ctx.google) if ctx.google is not None else None)
-    agenda = Agenda(source, allowed=row_allows(ctx.permissions), audit=ctx.audit, now=ctx.now)
+    agenda = Agenda(source, reads=ctx.reads, now=ctx.now)
     words = CheckinWords(ctx.now)
     return NudgeService(
         store=NudgeStore(ctx.docs, prefix=ctx.prefix, seen=words.saw),

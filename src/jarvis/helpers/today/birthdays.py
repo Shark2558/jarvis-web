@@ -5,9 +5,10 @@
 (`pageSize` ≤ 1,000, at most 2 pages) under the existing `contacts.readonly` Grant — no new Grant;
 `contacts.client.ContactsClient.require` says whether he is linked and granted (the stored link).
 
-- His Contacts permission row is obeyed for every read (`contacts_birthdays` is in the Contacts
-  row): "Never" means no read at all; rows that can't be read mean no read (fail closed). Each read
-  of Google, and a refusal by his row once a day, is audited as a kind-only line (agent `helpers`).
+- Every read takes the gateway's governed path (I1, `jarvis.tools.background`, `ctx.reads`): the
+  gateway's policy and his Contacts row (`contacts_birthdays` is in it) decide; only "Allow"
+  reads ("Ask first" can't be asked, "Never" is total, unreadable rows or no gateway: no read).
+  A refusal (once a day) and each read of Google leave the one kind-only audit line.
 - Only the month and the day are taken: the year (`date.year`) and the free text (`text`, which
   may carry it) are never read, so no year is ever stored, logged, shown or alerted. 29 Feb falls
   on 28 Feb in other years.
@@ -33,7 +34,6 @@ from jarvis.contacts.client import (
     ContactsClient,
     ContactsNotGranted,
 )
-from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import (
     NOT_CONNECTED_MSG,
     GoogleAPIError,
@@ -42,9 +42,8 @@ from jarvis.integrations.google import (
     GoogleServiceDisabled,
 )
 from jarvis.logging import get_logger
-from jarvis.tools.audit import AuditTrail
+from jarvis.tools.background import BackgroundReads, Outcome
 from jarvis.tools.card import one_line
-from jarvis.tools.policy import Effect, OwnerRules, Policy
 
 log = get_logger(__name__)
 
@@ -56,7 +55,7 @@ DEADLINE_S = 8.0
 RETRY_AFTER = timedelta(minutes=30)
 NAME_LIMIT = 100
 TOOL = "contacts_birthdays"
-AGENT = "helpers"
+JOB = "birthdays"  # the governed path's job word (the brief and the tools read through it too)
 RESOURCE = re.compile(r"^people/[A-Za-z0-9_-]{1,128}$")
 DENIED_MSG = "Birthdays are switched off in your Contacts permission, Sir."
 UNAVAILABLE_MSG = "Google Contacts couldn't be read just now; JARVIS will try again."
@@ -124,16 +123,9 @@ def birthday_of(p: Any) -> Birthday | None:
     return Birthday(str(p["resourceName"]), name, found[0], found[1])
 
 
-async def row_allows(rules: OwnerRules | None, uid: str, tool: str) -> bool:
-    """His permission row for `tool` (read-only) is not Never; unreadable rows: False."""
-    if rules is None:
-        return True
-    try:
-        got = await rules.rules_for(uid)
-    except Exception as exc:  # noqa: BLE001 - fail closed: no read this time
-        log.warning("permissions unreadable for a helper", extra={"error": type(exc).__name__})
-        return False
-    return Policy(got).decide(tool, ActionRisk.READ_ONLY, {}) is not Effect.DENY
+async def row_allows(reads: BackgroundReads | None, uid: str, tool: str, job: str) -> bool:
+    """The gateway's governed path allows this background read (None: no path, no read)."""
+    return reads is not None and await reads.allowed(uid, tool, job=job)
 
 
 class BirthdayReader:
@@ -141,37 +133,26 @@ class BirthdayReader:
         self,
         google: GoogleConnector | None,
         *,
-        permissions: Callable[[], OwnerRules | None],
-        audit: AuditTrail,
+        reads: BackgroundReads | None,
         now: Callable[[], datetime],
         deadline_s: float = DEADLINE_S,
     ) -> None:
         self._google = google
-        self._permissions = permissions
-        self._audit = audit
+        self._reads = reads
         self._now = now
         self._deadline_s = deadline_s
         self._day: dict[str, tuple[date, Reading]] = {}
         self._failed: dict[str, tuple[datetime, Reading]] = {}
-        self._denied: set[tuple[str, date]] = set()
 
-    async def _audit_line(self, outcome: str) -> None:
-        try:
-            await self._audit.append(
-                agent=AGENT, tool=TOOL, risk=ActionRisk.READ_ONLY, outcome=outcome,
-                args={"kind": "birthdays"},
-            )  # fmt: skip
-        except Exception as exc:  # noqa: BLE001 - the read is still refused or done
-            log.warning("birthday audit not written", extra={"error": type(exc).__name__})
+    async def _audit_line(self, outcome: Outcome, why: str = "") -> None:
+        if self._reads is not None:
+            await self._reads.note(TOOL, job=JOB, outcome=outcome, why=why)
 
     async def everyone(self, uid: str, day: date) -> Reading:
-        """Every contact with a birthday, as of `day` (his row checked first, every time)."""
+        """Every contact with a birthday, as of `day` (the governed path is asked every time)."""
         if self._google is None:
             return Reading("not_connected", note=NO_GOOGLE_MSG)
-        if not await row_allows(self._permissions(), uid, TOOL):
-            if (uid, day) not in self._denied:
-                self._denied = {k for k in self._denied if k[1] == day} | {(uid, day)}  # today's
-                await self._audit_line("denied")
+        if not await row_allows(self._reads, uid, TOOL, JOB):
             return Reading("denied", note=DENIED_MSG)
         cached = self._day.get(uid)
         if cached is not None and cached[0] == day:
@@ -214,11 +195,11 @@ class BirthdayReader:
         try:
             people = await asyncio.wait_for(self._pages(uid), self._deadline_s)
         except GoogleServiceDisabled:
-            await self._audit_line("error")
+            await self._audit_line("error", "service off")
             return Reading("unavailable", note=PEOPLE_OFF_MSG)
         except (GoogleAPIError, GoogleNotConnected, TimeoutError) as exc:
             log.warning("birthdays not read", extra={"error": type(exc).__name__})
-            await self._audit_line("error")
+            await self._audit_line("error", "failed")
             return Reading("unavailable", note=UNAVAILABLE_MSG)
         await self._audit_line("executed")
         return Reading("ok", people)

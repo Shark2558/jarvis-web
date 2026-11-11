@@ -65,7 +65,7 @@ def _service(docs: Any, c: Any, clock: Ticker) -> tuple[SpendService, GrocerySpe
     """A new service and job over `docs` (as after a restart)."""
     store = SpendStore(docs, c.keyring, now=c.now, tz=c.tz)
     svc = SpendService(store, google=c.google, now=c.now, tz=c.tz, clock=clock)
-    job = GrocerySpendJob(svc, owners=c.owners, permissions=c.permissions, audit=c.audit)
+    job = GrocerySpendJob(svc, owners=c.owners, reads=c.reads)
     return svc, job
 
 
@@ -114,8 +114,8 @@ async def test_the_audit_line_is_kind_only() -> None:
     _, job, _, _, c = await _rig()
     await job.run([])
     entry = (await c.audit.tail(5)).entries[-1]
-    assert (entry.agent, entry.tool, entry.outcome) == ("helpers", "grocery_spend", "executed")
-    assert entry.detail.startswith("mails=") and "₹" not in entry.detail
+    got = (entry.agent, entry.tool, entry.outcome, entry.detail)
+    assert got == ("helpers", "gmail_search", "executed", "grocery_spend")  # I1: kind only
 
 
 @pytest.mark.parametrize(
@@ -134,15 +134,13 @@ async def test_his_permission_rows_stop_the_job_before_any_mail_is_read(rules: R
     assert await svc.totals(UID) == []
 
 
-async def test_without_permission_rows_wired_the_job_fails_closed() -> None:
+async def test_without_the_governed_path_the_job_fails_closed() -> None:
     box = MailBox(ALL)
     conn = await connector(box.client())
     c, _, docs, _ = kctx(google=conn)
     svc = SpendService(SpendStore(docs, c.keyring, now=c.now, tz=c.tz), google=conn, now=c.now)
     await svc.set_on(UID, True)
-    counts = await GrocerySpendJob(
-        svc, owners=c.owners, permissions=c.permissions, audit=c.audit
-    ).run([])
+    counts = await GrocerySpendJob(svc, owners=c.owners, reads=None).run([])
     assert counts["skipped"] == 1 and box.requests == []
 
 
@@ -192,7 +190,17 @@ async def test_every_page_is_read_and_only_then_the_last_scan_moves() -> None:  
     assert (await svc.store.scan(UID)).last_at is not None
 
 
-async def test_out_of_time_while_listing_keeps_the_last_scan_and_the_next_run_finishes() -> None:
+def _read_log(caplog: pytest.LogCaptureFixture) -> dict[str, Any]:
+    rec = [r for r in caplog.records if r.getMessage() == "grocery receipts read"][-1]
+    return {
+        k: getattr(rec, k) for k in ("mails", "read", "orders", "ignored", "flagged", "complete")
+    }
+
+
+async def test_out_of_time_while_listing_keeps_the_last_scan_and_the_next_run_finishes(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
     clock = Ticker()
 
     def slow(request: httpx.Request) -> None:
@@ -204,8 +212,7 @@ async def test_out_of_time_while_listing_keeps_the_last_scan_and_the_next_run_fi
     await job.run([])
     assert box.lists() == 2 and box.reads() == 0  # out of time after the second page
     assert (await svc.store.scan(UID)).last_at is None  # the window wasn't covered
-    entry = (await c.audit.tail(5)).entries[-1]
-    assert "complete=no" in entry.detail
+    assert not _read_log(caplog)["complete"]  # the counts go to the log (I1), not the audit
     box.on_request = None
     await job.run([])
     assert await _months(svc) == WANT and (await svc.store.scan(UID)).last_at is not None
@@ -257,10 +264,13 @@ async def test_a_receipt_just_after_midnight_in_his_zone_counts_in_his_month() -
     assert await _months(svc) == {"2026-11": "₹120"}
 
 
-async def test_a_total_too_large_for_groceries_is_flagged_not_added() -> None:
+async def test_a_total_too_large_for_groceries_is_flagged_not_added(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
     svc, job, _, _, c = await _rig(("d_receipt_bigbasket_bulk.eml", "d_receipt_blinkit_nov.eml"))
     await job.run([])
     out = await svc.month(UID, "2026-11")
     assert out["total"] == "₹456" and out["flagged"] == 1
     assert "1 receipt over ₹25,000 wasn't counted" in out["message"]
-    assert "flagged=1" in (await c.audit.tail(5)).entries[-1].detail
+    assert _read_log(caplog)["flagged"] == 1

@@ -6,7 +6,9 @@ this file. app.py calls:
 
 - `wire_r11` (lifespan, right after `wire_r6`, BEFORE the gateway and the Brain): the one
   `HelperSender` (the gate) over the alert policy, then the parts A, B, C, D in that order, each
-  from a `HelperContext` with its own bound sender; each part's contract is checked
+  from a `HelperContext` with its own bound sender, the gateway's governed path for background
+  reads (`reads`, read late), Part B's rain hint (`rain`, read late) and every part's pending
+  sources plus the approvals waiting (`pending_all`, I1); each part's contract is checked
   (`check_part`: its tool families, job names and privacy ids). A part whose build fails or breaks
   the contract is left empty ("setup failed", logged by class name) and the others still run.
   The two composites (`helpers_clock`, `helpers_daily`) and the parts' No-AI phrases (into the one
@@ -59,7 +61,7 @@ from jarvis.helpers.kinds import (
 )
 from jarvis.helpers.kitchen import part as kitchen_part
 from jarvis.helpers.nudges import part as nudges_part
-from jarvis.helpers.ports import HelperContext, HelperPart, PendingSource
+from jarvis.helpers.ports import HelperContext, HelperPart, PendingItem, PendingSource
 from jarvis.helpers.privacy import nudge_privacy
 from jarvis.helpers.today import part as today_part
 from jarvis.keyring import Keyring
@@ -68,6 +70,7 @@ from jarvis.privacy.ports import PrivacySource
 from jarvis.storage.docs import Docs
 from jarvis.ticks import TickJob
 from jarvis.tools.audit import AuditTrail
+from jarvis.tools.background import BackgroundReads
 from jarvis.tools.registry import ToolRegistry
 
 log = get_logger(__name__)
@@ -119,14 +122,45 @@ def _off(app: FastAPI, why: str | None) -> None:
     st.helpers_off = why
 
 
+class ApprovalsPending:
+    """D9 (Part A's note 3.2): his waiting approval cards as one pending line, read when asked.
+    The gateway is read late (it is built after the parts); no gateway: nothing waiting."""
+
+    name = "approvals"
+
+    def __init__(self, st: Any) -> None:
+        self._st = st
+
+    async def pending(self, uid: str, now: datetime) -> list[PendingItem]:
+        gw = getattr(self._st, "gateway", None)
+        if gw is None:
+            return []
+        mine = [a for a in await gw.pending() if (a.scope or "").startswith(f"{uid}:")]
+        n = len(mine)
+        label = f"{n} approval{'s' if n != 1 else ''} waiting for your OK"
+        return [PendingItem("approvals", label, "today")] if n else []
+
+
+def _rain(st: Any) -> Callable[[], Any]:
+    """Part B's rain hint for Part C (plan D12), read late: house.services["rain"]."""
+
+    def rain() -> Any:
+        parts: dict[str, HelperPart] = getattr(st, "r11_parts", None) or {}
+        house = parts.get("house")
+        return house.services.get("rain") if house is not None else None
+
+    return rain
+
+
 def _context(
     app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail, sender: HelperSender, name: PartName
 ) -> HelperContext:
     st = app.state
+    approvals = ApprovalsPending(st)
 
     def pending_all() -> tuple[PendingSource, ...]:
         parts: dict[str, HelperPart] = getattr(st, "r11_parts", None) or {}
-        return tuple(src for p in parts.values() for src in p.pending)
+        return (*(src for p in parts.values() for src in p.pending), approvals)
 
     return HelperContext(
         settings=s,
@@ -144,6 +178,11 @@ def _context(
         billing=getattr(st, "billing", None),
         brains=getattr(st, "brains", None),
         brain_mode=getattr(st, "brain_mode", None),
+        # CLAUDE.md: a background read takes the gateway's governed path (read late)
+        reads=BackgroundReads(
+            lambda: getattr(st, "gateway", None), audit=audit, now=st.helpers_now
+        ),
+        rain=_rain(st),
     )
 
 
@@ -254,6 +293,7 @@ def helpers_brief(app: FastAPI) -> HelpersBrief | None:
 
 __all__ = [
     "BUILDERS",
+    "ApprovalsPending",
     "R11_STATE",
     "SETUP_FAILED",
     "build_parts",

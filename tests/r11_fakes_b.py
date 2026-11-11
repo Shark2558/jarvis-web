@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from r11_fakes import Clock, FakeNotifier, ctx
+from r11_fakes import Clock, FakeNotifier, ctx, reads_over
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.house.fetch import Fetched, FetchError, TooLarge
@@ -160,6 +160,7 @@ def house_ctx(
         keyring=keyring() if keyring_on else None,
         google=google,
         permissions=(lambda: rules) if rules is not None else c.permissions,
+        reads=reads_over(lambda: rules, c.audit, now=k) if rules is not None else c.reads,
     )
     return c, n, d, k
 

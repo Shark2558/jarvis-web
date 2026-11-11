@@ -4,8 +4,9 @@
 He signs up his own address at Have I Been Pwned's free "Notify me" (and Mozilla Monitor if he
 likes); JARVIS sends his address nowhere. `BreachJob` (`breach_watch`, the morning tick), for
 each configured owner who switched it on ("I've subscribed") and whose Email row ("Search and
-read email", `gmail_*`) and "Weather and alerts" row (`breach_*`) aren't Never (rules that can't
-be read: no read):
+read email", `gmail_*`) and "Weather and alerts" row (`breach_*`) the gateway's governed path
+allows (I1, `ctx.reads`: "Allow" only; "Ask first", "Never", unreadable rows or no gateway: no
+read):
 - one Gmail search restricted to the fixed senders' domains (`SENDERS`, newer than 2 days) and
   each hit's headers only (`format=metadata`: From, Subject, Authentication-Results);
 - a mail counts only when its From address is a fixed sender's (that exact host, no subdomain;
@@ -17,7 +18,8 @@ be read: no read):
 - one `breach_notice` per service with new notices: "A breach notice from Have I Been Pwned
   arrived. Open it in Gmail and change that password, Sir." Each message is claimed (a hash of
   its id) before the send and released when no channel took it;
-- a kind-only audit line (agent `helpers`, `breach_watch`, `breach_notice`) for every Gmail read.
+- the governed path's one kind-only audit line (agent `helpers`, `gmail_search`, "breach_watch")
+  for every Gmail read, and for a refusal once a day.
 It also sweeps Part B's claims older than 30 days (every owner, every day).
 The sender addresses are UNVERIFIED until a real notice is seen in his mail (an owner check):
 HIBP's support pages name noreply@haveibeenpwned.com (DKIM-signed); Mozilla Monitor's is a guess
@@ -35,7 +37,7 @@ from email.utils import parseaddr
 from typing import Any
 
 from jarvis.helpers.house import words
-from jarvis.helpers.house.guard import Counts, allowed, audit, tally
+from jarvis.helpers.house.guard import Counts, tally
 from jarvis.helpers.house.models import Outside
 from jarvis.helpers.house.store import HouseStore, OutsideOff, OutsideStore
 from jarvis.helpers.ports import HelperContext
@@ -51,6 +53,7 @@ from jarvis.tools.gmail_mime import headers_of
 log = get_logger(__name__)
 
 JOB = "breach_watch"
+ROW_TOOLS = ("gmail_search", "breach_status")  # "Search and read email" and "Weather and alerts"
 DAYS = 2  # the daily job overlaps a day, so a late tick misses nothing
 MAX_SCAN = 20
 READ_PARALLEL = 5
@@ -148,11 +151,16 @@ class BreachJob:
         if self._ctx.google is None:
             n.add("not_linked")
             return
-        if not await allowed(self._ctx, uid, "gmail_search", "breach_status"):
+        reads = self._ctx.reads  # I1: the gateway's governed path (None: no read at all)
+        if reads is None or not await reads.allowed(uid, *ROW_TOOLS, job=JOB):
             n.add("skipped")
             return
-        found = await self._scan(uid)
-        await audit(self._ctx, JOB, "breach_notice")
+        try:
+            found = await self._scan(uid)
+        except Exception:
+            await reads.note(ROW_TOOLS[0], job=JOB, outcome="error", why="failed")
+            raise
+        await reads.note(ROW_TOOLS[0], job=JOB, outcome="executed")
         sent = 0
         for s in SENDERS:
             ids = [mid for who, mid in found if who == s]

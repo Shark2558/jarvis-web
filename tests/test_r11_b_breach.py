@@ -47,8 +47,8 @@ async def test_an_aligned_hibp_notice_sends_one_fixed_notice_and_a_kind_only_aud
     assert url.endswith("/messages") and params["q"] == breach.gmail_query(2)
     assert all(c[2].get("format") in (None, "metadata") for c in gmail.calls)
     tail = (await hc.audit.tail(5)).entries
-    assert [(e.agent, e.tool, e.detail) for e in tail] == [
-        ("helpers", "breach_watch", "breach_notice")
+    assert [(e.agent, e.tool, e.outcome, e.detail) for e in tail] == [
+        ("helpers", "gmail_search", "executed", "breach_watch")  # I1: the governed path's line
     ]
     assert "pwned in the Example" not in str(docs._data)  # noqa: SLF001 - no subject kept
     state = (await outside.read(UID)).breach

@@ -48,7 +48,7 @@ def build(ctx: HelperContext) -> HelperPart:
         kstore, brains=ctx.brains, billing=ctx.billing, mode=ctx.brain_mode, nutrition=nutrition
     )
     spend = SpendService(sstore, google=ctx.google, now=ctx.now, tz=ctx.tz)
-    job = GrocerySpendJob(spend, owners=ctx.owners, permissions=ctx.permissions, audit=ctx.audit)
+    job = GrocerySpendJob(spend, owners=ctx.owners, reads=ctx.reads)
     svc = KitchenService(
         kstore, recipes, spend, nutrition, job=job if spend.can_scan else None,
         calendar=ctx.google is not None,

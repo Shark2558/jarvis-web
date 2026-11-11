@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from pydantic import SecretStr
-from r11_fakes import UID, Clock, FakeNotifier, ctx
+from r11_fakes import UID, Clock, FakeNotifier, ctx, reads_over
 
 from jarvis.core.guardrails import ConfirmationGate
 from jarvis.helpers.ports import HelperContext, HelperPart, PendingSource
@@ -137,6 +137,7 @@ def today_ctx(
         keyring=keyring() if keys else None,
         google=google,
         permissions=(lambda: rules),  # type: ignore[arg-type,return-value]
+        reads=reads_over(lambda: rules, c.audit, now=clk),  # type: ignore[arg-type,return-value]
     )
     return c, n, docs, clk
 

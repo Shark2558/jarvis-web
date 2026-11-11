@@ -43,13 +43,13 @@ def _with_own(
 def build(ctx: HelperContext) -> HelperPart:
     store = BillStore(ctx.docs, ctx.keyring, prefix=ctx.prefix)
     bills = BillsService(store, tz=ctx.tz, now=ctx.now, audit=ctx.audit)
-    reader = BirthdayReader(ctx.google, permissions=ctx.permissions, audit=ctx.audit, now=ctx.now)
+    reader = BirthdayReader(ctx.google, reads=ctx.reads, now=ctx.now)
     bills_told = Claims(ctx.docs, BILLS_TOLD, prefix=ctx.prefix, keep_days=BILLS_KEEP_DAYS)
     told = Claims(ctx.docs, BIRTHDAYS_TOLD, prefix=ctx.prefix, keep_days=BIRTHDAYS_KEEP_DAYS)
     own: list[PendingSource] = [BillsPending(bills)]
     if ctx.google is not None:
         tasks = GoogleTasksDue(ctx.google)
-        own.append(TasksPending(tasks, permissions=ctx.permissions, tz=ctx.tz))
+        own.append(TasksPending(tasks, reads=ctx.reads, tz=ctx.tz))
     pending = PendingService(lambda: _with_own(ctx.pending_all(), own))
     reads = ReadDeps(pending=pending, birthdays=reader, tz=ctx.tz, now=ctx.now)
     common = {"owners": ctx.owners, "tz": ctx.tz, "now": ctx.now}

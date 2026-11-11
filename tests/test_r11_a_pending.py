@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
-from r11_fakes import UID, Clock
+from r11_fakes import UID, Clock, reads_over
 from r11_fakes_a import FAKE_UPI, DenyRules, FakePeople, at, connector, keyring
 
 from jarvis.helpers.ports import PendingItem
@@ -24,6 +24,7 @@ from jarvis.helpers.today.pending import (
 )
 from jarvis.helpers.today.store import BillStore
 from jarvis.storage.docs import MemoryDocs
+from jarvis.tools.audit import AuditLog
 
 T0 = datetime(2026, 11, 10, 6, 30, tzinfo=UTC)
 
@@ -136,13 +137,14 @@ async def test_tasks_due_by_today_obey_his_row() -> None:
     tasks = FakeTasks(
         [("File the GST return", date(2026, 11, 9)), ("Call the plumber", date(2026, 11, 10))]
     )
-    src = TasksPending(tasks, permissions=lambda: None, tz="Asia/Kolkata")
+    src = TasksPending(tasks, reads=reads_over(lambda: None, AuditLog()), tz="Asia/Kolkata")
     got = await src.pending(UID, clock.at)
     assert [(i.label, i.urgency, i.source) for i in got] == [
         ("File the GST return", "overdue", "tasks"),
         ("Call the plumber", "today", "tasks"),
     ]
-    denied = TasksPending(tasks, permissions=lambda: DenyRules("tasks_*"), tz="Asia/Kolkata")  # type: ignore[arg-type,return-value]
+    never = reads_over(lambda: DenyRules("tasks_*"), AuditLog())  # type: ignore[arg-type,return-value]
+    denied = TasksPending(tasks, reads=never, tz="Asia/Kolkata")
     calls = tasks.calls
     assert await denied.pending(UID, clock.at) == [] and tasks.calls == calls
 

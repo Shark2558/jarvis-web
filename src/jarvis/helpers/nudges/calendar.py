@@ -8,28 +8,26 @@ free-time pick, whether rain is likely (D12, Part B's weather).
   words in code; it is never put in a message, a log or a stored document (`key` is a fingerprint
   of the event's id).
 - `Agenda`: one fetch per owner at most every `REFRESH` (a failure is remembered `RETRY_AFTER`),
-  and only when a nudge that needs it is due, so the 5-minute clock stays light. Every fetch first
-  asks his permission row (`calendar_list_events`, read-only; a rule that can't be read = no fetch,
-  fail closed) and leaves one audit line (agent `helpers`, the tool name and the outcome, no
-  words).
+  and only when a nudge that needs it is due, so the 5-minute clock stays light. Every fetch takes
+  the gateway's governed path first (I1, `ctx.reads`: the gateway's policy and his row for
+  `calendar_list_events` decide, "Allow" only; unreadable rows or no gateway: no fetch) and leaves
+  its one kind-only audit line (agent `helpers`, the tool, the outcome, "nudges"; no words).
 - `RainSource`: `rain_likely(uid, start, end) -> bool | None` (None: unknown). Part C has none of
-  its own; I1 joins Part B's weather (INTEGRATION-C.md, "Needs I1").
+  its own; I1 joins Part B's weather through `ctx.rain` (`house.services["rain"]`).
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
-from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.sources import OUTSIDE_TIMEOUT_S
 from jarvis.logging import get_logger
-from jarvis.tools.audit import AuditTrail
-from jarvis.tools.policy import Effect, OwnerRules, Policy
+from jarvis.tools.background import BackgroundReads
 from jarvis.tools.provenance import is_owner_authored_event
 
 log = get_logger(__name__)
@@ -39,7 +37,7 @@ CALENDAR_TOOL = "calendar_list_events"  # the row his background reads obey (cal
 MAX_EVENTS = 50
 REFRESH = timedelta(minutes=30)
 RETRY_AFTER = timedelta(minutes=10)
-AUDIT_AGENT = "helpers"
+JOB = "nudges"  # the governed path's job word (the nudges and the missed-activity check)
 
 
 @dataclass(frozen=True)
@@ -105,26 +103,6 @@ class GoogleCalendar:
         return [e for e in found if e is not None]
 
 
-Allowed = Callable[[str], Awaitable[bool]]
-
-
-def row_allows(permissions: Callable[[], OwnerRules | None]) -> Allowed:
-    """His calendar row decides a background read (Never = no read); unreadable = no read."""
-
-    async def allowed(uid: str) -> bool:
-        rules_of = permissions()
-        if rules_of is None:
-            return True
-        try:
-            rules = await rules_of.rules_for(uid)
-        except Exception as exc:  # noqa: BLE001 - fail closed: no read this run
-            log.warning("permissions unreadable for nudges", extra={"error": type(exc).__name__})
-            return False
-        return Policy(rules).decide(CALENDAR_TOOL, ActionRisk.READ_ONLY, {}) is not Effect.DENY
-
-    return allowed
-
-
 @dataclass
 class _Cached:
     at: datetime
@@ -138,13 +116,11 @@ class Agenda:
         self,
         source: CalendarSource | None,
         *,
-        allowed: Allowed,
-        audit: AuditTrail,
+        reads: BackgroundReads | None,
         now: Callable[[], datetime],
     ) -> None:
         self._source = source
-        self._allowed = allowed
-        self._audit = audit
+        self._reads = reads  # I1: the gateway's governed path (None: no read at all)
         self._now = now
         self._cache: dict[tuple[str, str], _Cached] = {}
 
@@ -172,42 +148,27 @@ class Agenda:
 
     async def _fetch(self, uid: str, start: datetime, end: datetime) -> list[CalEvent] | None:
         assert self._source is not None
-        if not await self._allowed(uid):
-            await self._note("denied")
+        reads = self._reads
+        if reads is None or not await reads.allowed(uid, CALENDAR_TOOL, job=JOB):
             return None
         try:
             events = await self._source.events(uid, start, end)
         except Exception as exc:  # noqa: BLE001 - no calendar this run; the class in the log
             log.warning("nudges: calendar not read", extra={"error": type(exc).__name__})
-            await self._note("failed")
+            await reads.note(CALENDAR_TOOL, job=JOB, outcome="error", why="failed")
             return None
-        await self._note("read")
+        await reads.note(CALENDAR_TOOL, job=JOB, outcome="executed")
         return list(events)
-
-    async def _note(self, outcome: str) -> None:
-        try:
-            await self._audit.append(
-                agent=AUDIT_AGENT,
-                tool=CALENDAR_TOOL,
-                risk=ActionRisk.READ_ONLY,
-                outcome=outcome,
-                args={},
-                detail="nudges",
-            )
-        except Exception as exc:  # noqa: BLE001 - the audit is append-only; never fail a nudge
-            log.warning("nudges: audit not written", extra={"error": type(exc).__name__})
 
 
 __all__ = [
     "CALENDAR_TOOL",
     "REFRESH",
     "Agenda",
-    "Allowed",
     "CalEvent",
     "CalendarSource",
     "GoogleCalendar",
     "RainSource",
     "fingerprint",
-    "row_allows",
     "to_event",
 ]

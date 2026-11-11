@@ -15,7 +15,8 @@ hands back everything the app wires for it in the `HelperPart`; it never touches
   tell the owner anything), billing, the brains (tier calls through `jarvis.llm` only), the one
   brain-mode switch, the owner's live permission rules, the audit chain, the configured owners,
   the time zone, the collection prefix, a clock, and `pending_all()` (every built part's pending
-  sources, read when called, so C can read A's).
+  sources, read when called, so C can read A's). I1 adds `reads` (the gateway's governed path
+  for a background job's read of his data) and `rain` (Part B's rain hint, read late, for C).
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from jarvis.storage.docs import Docs
     from jarvis.ticks import TickJob
     from jarvis.tools.audit import AuditTrail
+    from jarvis.tools.background import BackgroundReads
     from jarvis.tools.base import Tool
     from jarvis.tools.policy import OwnerRules
 
@@ -114,6 +116,20 @@ class HelperContext:
     billing: Billing | None = None
     brains: BrainRegistry | None = None
     brain_mode: BrainMode | None = None
+    # I1: the gateway's governed path for a background job's read of his data (Contacts, Gmail,
+    # Calendar, Tasks): the gateway's policy and his rows decide, ALLOW only, one kind-only audit
+    # line (`jarvis.tools.background`). None: no read at all (fail closed).
+    reads: BackgroundReads | None = None
+    # I1: Part B's rain hint for Part C's free-time pick, read late: returns an object with
+    # `async rain_likely(uid, start, end) -> bool | None` (None, or None back: unknown)
+    rain: Callable[[], RainHint | None] | None = None
+
+
+@runtime_checkable
+class RainHint(Protocol):
+    """Is rain likely at his place between `start` and `end`? None: unknown (no place, stale)."""
+
+    async def rain_likely(self, uid: str, start: datetime, end: datetime) -> bool | None: ...
 
 
 __all__ = [
@@ -126,5 +142,6 @@ __all__ = [
     "NoAIRouter",
     "PendingItem",
     "PendingSource",
+    "RainHint",
     "Urgency",
 ]

@@ -9,11 +9,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from r11_fakes import NOON_IST, UID, Clock
+from r11_fakes import NOON_IST, UID, Clock, reads_over
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.nudges import calendar as cal
-from jarvis.helpers.nudges.calendar import Agenda, GoogleCalendar, row_allows, to_event
+from jarvis.helpers.nudges.calendar import CALENDAR_TOOL, Agenda, GoogleCalendar, to_event
 from jarvis.tools.audit import AuditLog
 from jarvis.tools.policy import Effect, PolicyRule
 
@@ -97,11 +97,18 @@ class Rules:
 
 
 async def test_his_calendar_row_decides_every_background_read() -> None:
+    """I1: the governed path (the gateway's policy and his rows; Allow only, fail closed)."""
     never = PolicyRule(tool_pattern="calendar_*", effect=Effect.DENY, risks=[ActionRisk.READ_ONLY])
-    assert await row_allows(lambda: None)(UID) is True  # no permissions service (tests, dev)
-    assert await row_allows(lambda: Rules())(UID) is True
-    assert await row_allows(lambda: Rules([never]))(UID) is False
-    assert await row_allows(lambda: Rules(fail=True))(UID) is False  # fail closed
+    ask = PolicyRule(tool_pattern="calendar_*", effect=Effect.ASK, risks=[ActionRisk.READ_ONLY])
+    for rules, ok in (
+        (None, True),  # no permissions service: the gateway's configured policy
+        (Rules(), True),
+        (Rules([never]), False),
+        (Rules([ask]), False),  # a background read can't ask
+        (Rules(fail=True), False),  # fail closed
+    ):
+        reads = reads_over(lambda r=rules: r, AuditLog())  # type: ignore[misc]
+        assert await reads.allowed(UID, CALENDAR_TOOL, job="nudges") is ok, rules
 
 
 class Source:
@@ -116,11 +123,11 @@ class Source:
 
 
 async def _agenda(source: Source | None, allowed: bool) -> tuple[Agenda, AuditLog, Clock]:
-    async def ok(uid: str) -> bool:
-        return allowed
-
+    never = PolicyRule(tool_pattern="calendar_*", effect=Effect.DENY)
+    rules = None if allowed else Rules([never])
     audit, clock = AuditLog(), Clock(NOON_IST)
-    return Agenda(source, allowed=ok, audit=audit, now=clock), audit, clock
+    reads = reads_over(lambda: rules, audit, now=clock)  # type: ignore[arg-type,return-value]
+    return Agenda(source, reads=reads, now=clock), audit, clock
 
 
 async def test_the_agenda_reads_when_asked_caches_and_audits_without_words() -> None:
@@ -134,8 +141,8 @@ async def test_the_agenda_reads_when_asked_caches_and_audits_without_words() -> 
     await agenda.today(UID, START, START + timedelta(days=1))
     assert src.calls == 2
     entries = (await audit.tail(10)).entries
-    assert [(e.agent, e.tool, e.outcome) for e in entries] == [
-        ("helpers", "calendar_list_events", "read")
+    assert [(e.agent, e.tool, e.outcome, e.detail) for e in entries] == [
+        ("helpers", "calendar_list_events", "executed", "nudges")
     ] * 2
 
 
@@ -145,6 +152,8 @@ async def test_a_denied_or_failed_read_gives_no_events_and_says_so_in_the_audit(
     failed, audit2, _ = await _agenda(Source(fail=True), True)
     assert await failed.today(UID, START, START) is None
     assert [e.outcome for e in (await audit.tail(5)).entries] == ["denied"]
-    assert [e.outcome for e in (await audit2.tail(5)).entries] == ["failed"]
+    assert [(e.outcome, e.detail) for e in (await audit2.tail(5)).entries] == [
+        ("error", "nudges; failed")
+    ]
     unlinked, _, _ = await _agenda(None, True)
     assert unlinked.linked is False and await unlinked.today(UID, START, START) is None

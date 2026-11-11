@@ -77,9 +77,10 @@ from __future__ import annotations
 import contextvars
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -97,6 +98,7 @@ from jarvis.llm.base import ToolCall, ToolResultBlock
 from jarvis.logging import get_logger
 from jarvis.tools import policy as _policy
 from jarvis.tools.audit import AuditEntry, AuditTrail, args_hash
+from jarvis.tools.background import BackgroundReads
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.budget import DELETES_CAPPED, TOO_MANY_CARDS, current_budget, take_free_delete
 from jarvis.tools.context import ToolContext, approval_proof, tool_context
@@ -371,6 +373,11 @@ class Gateway:
 
     async def pending(self) -> list[PendingAction]:
         return await self.gate.pending()
+
+    def background(self, *, now: Callable[[], datetime] | None = None) -> BackgroundReads:
+        """R11 I1: the governed path for a job's read with nobody in the loop (this gateway's
+        policy and rules decide, ALLOW only; one kind-only line in this audit chain)."""
+        return BackgroundReads(lambda: self, audit=self.audit, now=now)
 
     async def execute(
         self,

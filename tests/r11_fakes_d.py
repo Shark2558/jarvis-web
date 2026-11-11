@@ -22,7 +22,7 @@ from typing import Any
 
 import httpx
 from pydantic import SecretStr
-from r11_fakes import UID, Clock, FakeNotifier, ctx
+from r11_fakes import UID, Clock, FakeNotifier, ctx, reads_over
 
 from jarvis.billing import Billing, BudgetStore, FxRates, UsageMeter
 from jarvis.helpers.ports import HelperContext
@@ -222,6 +222,7 @@ def kctx(
         brain_mode=mode,
         google=google,
         permissions=(lambda: rules) if rules is not None else (lambda: None),
+        reads=reads_over(lambda: rules, c.audit, now=clock),
     )
     return c, notifier, docs, clock
 

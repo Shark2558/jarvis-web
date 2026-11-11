@@ -28,8 +28,8 @@ from jarvis.helpers.today.store import BillsOff
 from jarvis.integrations.google import GoogleConnector, GoogleNotConnected
 from jarvis.logging import get_logger
 from jarvis.notify.quiet import local
+from jarvis.tools.background import BackgroundReads
 from jarvis.tools.card import one_line
-from jarvis.tools.policy import OwnerRules
 from jarvis.tools.tasks_api import TasksClient, TasksNotGranted, date_of
 
 log = get_logger(__name__)
@@ -42,6 +42,7 @@ LABEL = 80
 ORDER: dict[str, int] = {"overdue": 0, "today": 1, "soon": 2, "later": 3}
 _FAR = datetime.max.replace(tzinfo=UTC)
 TASKS_TOOL = "tasks_list"
+TASKS_JOB = "pending"  # "top priority" and "what is pending" read his to-dos (and the nudge)
 
 
 def _due_key(item: PendingItem) -> datetime:
@@ -164,24 +165,29 @@ class GoogleTasksDue:
 class TasksPending:
     name = "tasks"
 
-    def __init__(
-        self,
-        tasks: TasksDue,
-        *,
-        permissions: Callable[[], OwnerRules | None],
-        tz: str,
-    ) -> None:
+    def __init__(self, tasks: TasksDue, *, reads: BackgroundReads | None, tz: str) -> None:
         self._tasks = tasks
-        self._permissions = permissions
+        self._reads = reads
         self._tz = tz
 
+    async def _due(self, uid: str, today: date) -> list[tuple[str, date]]:
+        """His to-dos due by today, through the gateway's governed path (I1); one audit line."""
+        assert self._reads is not None
+        try:
+            found = list(await self._tasks.due(uid, today))
+        except Exception:
+            await self._reads.note(TASKS_TOOL, job=TASKS_JOB, outcome="error", why="failed")
+            raise
+        await self._reads.note(TASKS_TOOL, job=TASKS_JOB, outcome="executed")
+        return found
+
     async def pending(self, uid: str, now: datetime) -> Sequence[PendingItem]:
-        if not await row_allows(self._permissions(), uid, TASKS_TOOL):
+        if not await row_allows(self._reads, uid, TASKS_TOOL, TASKS_JOB):
             return []
         today = local(now, self._tz).date()
         zone = local(now, self._tz).tzinfo
         out: list[PendingItem] = []
-        for title, due in await self._tasks.due(uid, today):
+        for title, due in await self._due(uid, today):
             urgency: Urgency = "overdue" if due < today else "today"
             label = one_line(title, LABEL) or "(a to-do with no title)"
             at = datetime(due.year, due.month, due.day, tzinfo=zone) + timedelta(

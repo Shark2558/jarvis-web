@@ -176,7 +176,7 @@ def parse_reply(text: str) -> Recipe | None:
                 "id": uuid.uuid4().hex[:12],
                 "title": _safe(data.get("title"), TITLE_MAX),
                 "cuisine": _safe(data.get("cuisine") or "", CUISINE_MAX),
-                "diet": data.get("diet"),
+                "diet": str(data.get("diet") or "").strip().casefold(),
                 "minutes": data.get("minutes"),
                 "ingredients": tuple(
                     _ingredient(i) for i in list(data["ingredients"])[:MAX_INGREDIENTS]
@@ -184,7 +184,7 @@ def parse_reply(text: str) -> Recipe | None:
                 "steps": tuple(_safe(s, STEP_MAX) for s in list(data["steps"])[:MAX_STEPS]),
             }
         )
-    except (ValidationError, KeyError, TypeError, ValueError):
+    except (ValidationError, KeyError, TypeError, ValueError, RecursionError):
         return None
 
 

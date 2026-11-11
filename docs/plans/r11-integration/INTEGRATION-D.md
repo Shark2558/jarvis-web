@@ -32,6 +32,9 @@ Security choices worth a reviewer's eye (recipes prompt, receipts):
   Order ids such as `OD1234…` and Amazon's `402-1234567-1234567` survive (they key the order); a bare
   12+-digit order id is masked, so that order is keyed by its message (it may count twice if its
   shop sends two mails with totals).
+- Heuristics, *unverified* on real mail: a cancel / refund / return mail drops that order's whole
+  total (a refund for one item understates the month); a reply from the AI with a diet word in
+  another case ("Veg") is read in lower case; promotions are never counted (no strong total label).
 - No kitchen tool vouches for its output (`trusted_output` False): a round that read the pantry or
   a recipe stays "untrusted", so later writes in it are cards. Conservative; I1 may relax
   `pantry_list` / `spend_month` if the owner finds it noisy.

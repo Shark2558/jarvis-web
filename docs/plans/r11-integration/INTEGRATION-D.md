@@ -258,5 +258,5 @@ exist) while the reply says it "couldn't be added".
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v11.0.0 | 11 Nov 2026, 22:30 IST | R11 | First edition: Part D built (items 13–16), how to check it, Needs I1 (package data, three I0 stub assertions, the USDA fetch, C60, persona), owner checks | 🛠 Mark XIV |
+| v11.0.0 | 11 Nov 2026, 18:52 IST | R11 | First edition: Part D built (items 13–16), how to check it, Needs I1 (package data, three I0 stub assertions, the USDA fetch, C60, persona), owner checks | 🛠 Mark XIV |
 | v11.0.1 | 11 Nov 2026 | R11 | Review fixes: diet check (deny stems, look-alikes, allow-list), receipts (masking, total lines, flags, paging), nutrition exact names; Needs I1 §3.6 CSS and §3.7 shared Gmail helper; §7 findings | 🛠 Mark XIV |

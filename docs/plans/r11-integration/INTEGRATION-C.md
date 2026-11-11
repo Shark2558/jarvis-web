@@ -1,4 +1,4 @@
-Version v11.0.1 · 11 Nov 2026, 23:30 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
+Version v11.0.1 · 11 Nov 2026, 19:51 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
 
 # INTEGRATION-C — R11 Part C: Nudges (items 8, 9, 11, 12 and the focus nudge of 10)
 
@@ -223,4 +223,4 @@ JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q t
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v11.0.1 | 11 Nov 2026, 23:30 IST | R11 | Part C built: the nudges, tools, phrases, privacy row, brief, routes, tab, eval; Needs I1 and owner checks | 🛠 Mark XIV |
+| v11.0.1 | 11 Nov 2026, 19:51 IST | R11 | Part C built: the nudges, tools, phrases, privacy row, brief, routes, tab, eval; Needs I1 and owner checks | 🛠 Mark XIV |

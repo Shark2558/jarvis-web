@@ -1,4 +1,4 @@
-Version v11.0.1 · 11 Nov 2026, 18:40 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
+Version v11.0.2 · 11 Nov 2026, 21:44 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
 
 # R11 — the common builder brief (Parts A–D)
 
@@ -138,4 +138,5 @@ the gate's limits; your privacy rows list, export and delete; your tab renders i
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v11.0.1 | 11 Nov 2026, 18:40 IST | R11 | First edition with the R11 I0 seams | 🛠 Mark XIV |
+| v11.0.1 | 11 Nov 2026, 18:02 IST | R11 | First edition with the R11 I0 seams | 🛠 Mark XIV |
+| v11.0.2 | 11 Nov 2026, 21:44 IST | R11 | I1: the first edition's time corrected (it was written by 18:02 IST, the I0 commit, not 18:40) | 🛠 Mark XIV |

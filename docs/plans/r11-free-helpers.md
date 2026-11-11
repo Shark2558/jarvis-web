@@ -1,4 +1,4 @@
-Version v11.0.2 · 11 Nov 2026, 18:45 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
+Version v11.0.3 · 11 Nov 2026, 21:44 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
 
 # Release R11 — Free proactive helpers (+ the kitchen tools that need no camera) (`v11.0.0`)
 
@@ -522,9 +522,95 @@ templates." I0 leaves the persona as it is.
 - **segno 1.6.6** is in `pyproject.toml`, the hash-locked `requirements.lock` and the licence table
   (classifier "BSD License"; segno's own LICENSE is BSD-3-Clause).
 
+## I1 — what was merged, what was decided, what is left (11 Nov 2026, branch `r11-i1`)
+
+**In plain words.** The four parts were joined into one branch and checked together. The helpers
+now read your Google data only after the same check the chat's tools pass, the kitchen has real
+nutrition values (every value, for about 565 foods), and a test lives through a whole day of all
+four parts and finds none of the planted private details anywhere it shouldn't be.
+
+**Merged** (in this order, each with `--no-ff`, no conflicts): Part A `r11-a` @ `b0edc43`, Part B
+`r11-b` @ `4faba31`, Part C `r11-c` @ `ae4736a`, Part D `r11-d` @ `1be86fb`.
+
+**Decisions taken at I1**
+
+1. **One governed path for background reads** (CLAUDE.md: every tool call passes the gateway).
+   `jarvis.tools.background.BackgroundReads.of(gateway)`, reached by the parts as
+   `HelperContext.reads` (read late: the gateway is built after the parts). The gateway's own
+   policy and the owner's rows, as the gateway reads them (Telegram and offline wrappers
+   included), decide the row's tool at R1. **Only "Allow" reads**: "Ask first" now stops a
+   background read (before I1, Parts A, B and C read on "Ask first"; Part D already didn't), as do
+   "Never", rows that can't be read, no gateway, an unknown or non-read tool. One audit line each
+   time (agent `helpers`, the row's tool, no arguments, the job's name and a fixed reason word); a
+   refusal once a day. Readers: birthdays (A), the to-dos behind top priority (A; it had no audit
+   line), breach notices (B), the nudges' calendar read (C), receipts (D; its counts moved from
+   the audit line to the log). Part B's feature jobs (chores, upkeep, weather, SACHET) still ask
+   "not Never" through `house/guard.py`: they read no Google data. It is a function of the
+   gateway, not a `Gateway` method, because `tools/gateway.py` is at its 760-line guard.
+2. **Rain for the free-time pick**: `HelperContext.rain` (read late) gives Part C Part B's
+   `services["rain"]` (`house/rain.py`: the sealed weather summary's "rain likely from HH:MM";
+   unknown without his place, a keyring, or a summary of today under 3 hours old).
+3. **Approvals waiting** are a pending source in `r11_wiring.ApprovalsPending` (D9).
+4. **`UpiCard`** (`tools/reply_cards.py`): approving `bill_pay_prepare` in the console spends the
+   one-time grant and shows the link and QR once under the approval's reply (the chat and the
+   Today tab alike); the tool's result names no link; nothing stores, logs or audits it; Telegram
+   draws no such card; `POST /v1/approvals/{id}/approve` answers `no-store`.
+5. **Telegram**: every helper read is classified. Private (refused unless private reads are on):
+   `bill_list`, `spend_month`, `breach_status` (and `contacts_birthdays`, already). Safe: the
+   rest; `focus_now` and `pending_list` drop a bill's amount on a Telegram turn.
+6. **Persona p11.0**: `HELPERS_RULE` (D22 with Part C's "don't remind me to ..." → `nudge_stop` and
+   Part D's recipe line, plus the nutrition label).
+7. **`ticks.time_left()`** (Part B's note 3.5): a job reads its real remaining time; Part B's
+   outside slots end 0.5 s before it.
+8. **CSS** (`console-helpers.css`): Part A's two rules, Part B's own form grid (`.hp-grid`,
+   `.hp-field`, `.hp-form`, replacing the borrowed `.vt-*`), Part D's `label.hp-field` and 44 px
+   inputs, and the full-nutrition list; existing tokens only. `console.html` is unchanged (798
+   lines); `console.js` gained one line (the UPI card).
+9. **D15 amended: nutrition data installed.** The owner's SR Legacy CSV download
+   (`FoodData_Central_sr_legacy_food_csv_2018-04.zip`, SHA-256 `b8081729…6fd0`; the three CSVs'
+   own SHA-256 recorded too) converted by `scripts/kitchen_fdc_subset.py` into
+   `helpers/kitchen/data/fdc_subset.json`: 565 raw foods of an Indian kitchen (Part D's ~110
+   named foods with Hindi, Malayalam and Odia names, 29 more, then by FDC food category),
+   **every** nutrient the file reports per 100 g (149 nutrients, name and unit once), 748,950
+   bytes as plain JSON (no gzip needed), package data. Answers give the six key values; "full
+   nutrition for dal" (`detail: full`) and the Kitchen tab's expandable list give every value.
+   Every answer says "US reference values (USDA FoodData Central); Indian varieties and home
+   recipes can differ." Each food carries its `source`; a source marked `"region": "IN"` in
+   another `data/nutrition_*.json` wins over USDA (structure only: no Indian data, no import
+   screen). Ten of Part D's descriptions did not match the real file and were fixed (brown rice,
+   whole-wheat flour, oats, split pea, sweet potato, apple, papaya, raisins, chicken breast,
+   chicken thigh); "millet" (proso) no longer answers to ragi or finger millet.
+10. **`r11_needles`** (`evals/r11_helpers/needles.py`, built): a whole day of all four parts in one
+    world on fakes, then every document, log line, audit entry, Activity row, alert and brief line
+    is scanned: no card number (plain, spaced, dotted, Amex), birth year, e-mailed UPI ID, CAP
+    instruction, pantry note, or hydration count in a log. Control "masking off" fails it.
+    `evals/run_all_mock.py` now gates `r11_helpers`.
+11. **Doc times corrected**: this plan's v11.0.1 and v11.0.2 rows (17:00 and 18:02 IST, from git),
+    `BRIEF-COMMON.md` (18:02 IST), `INTEGRATION-C.md` (19:51 IST) and `INTEGRATION-D.md`'s first
+    edition (18:52 IST): each said a later time than it was written.
+
+**Left, and why**
+
+- **The shared Gmail list-and-read helper** (Part D's note 3.7) is not built: it would change the
+  shipped parcels reader and the brief's Deliveries section for no change in behaviour; a
+  separate refactor with its own tests.
+- **The "next calendar event" pending source** (D9) is not built (Part A's note); for R12.
+- **The brief's parcels section** (R1, `brief/deliveries.py`) reads Gmail with no permission-row
+  check of its own. It is older than R11 and outside its files; noted for the owner.
+- Everything *unverified* in the parts' notes stays so until the owner's checks after deploy: a
+  real UPI app, Cloud Run's reach to Open-Meteo and SACHET, the breach and merchant senders.
+
+**Needs the owner**
+
+1. **"Ask first" on a row now means no background read** (decision 1). With your Contacts row on
+   "Ask first", birthday reminders stop; with Email on "Ask first", breach notices and receipts
+   stop. Keep it (the default), or say which rows a morning job may read on "Ask first".
+2. The parts' owner checks (INTEGRATION-A §4, B §4, C, D §4) after the deploy.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v11.0.1 | 11 Nov 2026, 17:05 IST | R11 | First edition: goal, the 16 items mapped, findings from the code, external sources with terms and fallbacks, data model, D1–D22, owner decisions with safe defaults, the A–D split, I0 seams, tests and evals, acceptance, cost, risks | 🛠 Mark XIV |
-| v11.0.2 | 11 Nov 2026, 18:45 IST | R11 | After the I0: D5's storm rules (an 8-an-hour nudge ceiling; a disaster warning de-duplicated, never capped, on Telegram's urgent bucket), the gate's tap routes under `/v1/helpers/gate`, D10 and D11 as separate decisions, seam 7's route names, and "I0 — what the seams decided" | 🛠 Mark XIV |
+| v11.0.1 | 11 Nov 2026, 17:00 IST | R11 | First edition: goal, the 16 items mapped, findings from the code, external sources with terms and fallbacks, data model, D1–D22, owner decisions with safe defaults, the A–D split, I0 seams, tests and evals, acceptance, cost, risks | 🛠 Mark XIV |
+| v11.0.2 | 11 Nov 2026, 18:02 IST | R11 | After the I0: D5's storm rules (an 8-an-hour nudge ceiling; a disaster warning de-duplicated, never capped, on Telegram's urgent bucket), the gate's tap routes under `/v1/helpers/gate`, D10 and D11 as separate decisions, seam 7's route names, and "I0 — what the seams decided" | 🛠 Mark XIV |
+| v11.0.3 | 11 Nov 2026, 21:44 IST | R11 | After the I1: the four parts merged; the background reads' governed path; rain for the free-time pick; approvals in pending; the UPI card; Telegram; persona p11.0; `ticks.time_left()`; the helper CSS; D15 amended (the USDA subset installed with every nutrient, pluggable sources, the honest label); `r11_needles`; the earlier rows' times corrected; what is left and what the owner decides ("I1 — what was merged, what was decided, what is left") | 🛠 Mark XIV |

@@ -184,7 +184,8 @@ class ChatResponse(BaseModel):
         default_factory=list,
         description="Slice 12: place, route and video cards from this reply's Maps / YouTube "
         "results (Google links and attribution) and WhatsApp drafts (kind 'whatsapp': Open in "
-        "WhatsApp; nothing was sent). Never stored; a reopened conversation gets only its "
+        "WhatsApp; nothing was sent) and, R11, an approved UPI payment (kind 'upi': its upi://pay "
+        "link and QR, shown once). Never stored; a reopened conversation gets only its "
         "WhatsApp drafts back (GET /v1/sessions/{id} drafts)",
     )
 

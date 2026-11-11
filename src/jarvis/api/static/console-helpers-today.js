@@ -20,7 +20,6 @@ const S = { host: null, view: null, err: '', note: null, adding: false, waiting:
 function btn(text, onClick, cls) {
   const b = H.mk('button', 'btn bact' + (cls ? ' ' + cls : ''), text);
   b.type = 'button';
-  b.style.marginTop = '0';
   b.addEventListener('click', onClick);
   return b;
 }
@@ -81,9 +80,7 @@ function focusSection(v) {
   return [sec, more];
 }
 function actLine(buttons) { // a bill's actions on their own line under its words, wrapping on a phone
-  const line = H.mk('div', 'hp-acts');
-  line.style.flexWrap = 'wrap';
-  line.style.padding = '0 0 10px';
+  const line = H.mk('div', 'hp-acts hp-wrap'); // console-helpers.css (I1): wraps, no inline styles
   buttons.forEach((b) => line.append(b));
   return line;
 }
@@ -164,17 +161,22 @@ function waitingCard(b, w) {
 async function decide(b, w, action) {
   if (!w.id || !w.sid) { say('bad', 'Approve it in Approvals, Sir.'); return; }
   const url = '/v1/approvals/' + encodeURIComponent(w.id) + '/' + action;
+  let r = null;
   try {
-    try { await H.api(url, { body: { session_id: w.sid } }); }
+    try { r = await H.api(url, { body: { session_id: w.sid } }); }
     catch (e) {
       if (action !== 'approve' || e.status !== 403 || !window.JarvisPasskey) throw e;
       const passkey = await window.JarvisPasskey.approve(w.id); // his passkey rule: checked again by the server
-      await H.api(url, { body: { session_id: w.sid, passkey } });
+      r = await H.api(url, { body: { session_id: w.sid, passkey } });
     }
   } catch (e) { say('bad', window.JarvisPasskey && e.status === 403 ? window.JarvisPasskey.message(e) : plain(e)); return; }
   delete S.waiting[b.id];
+  // I1: the approved run spent the grant and its answer carries the payment card (shown here, once)
+  const card = action === 'approve' && w.pay && window.JarvisUpi ? window.JarvisUpi.card(r && r.cards) : null;
+  if (card) { S.shown[b.id] = card; setTimeout(() => { delete S.shown[b.id]; render(); }, SHOW_MS); }
   await load();
-  if (action === 'approve' && w.pay) { const fresh = billById(b.id); if (fresh) await showPayment(fresh); }
+  if (card) say('ok', 'Your payment is ready below, Sir.');
+  else if (action === 'approve' && w.pay) { const fresh = billById(b.id); if (fresh) await showPayment(fresh); }
   else say('ok', action === 'approve' ? 'Done, Sir.' : 'Nothing was changed, Sir.');
 }
 function billById(id) {
@@ -192,7 +194,7 @@ async function showPayment(b) {
 }
 function paymentBox(b, p) {
   const box = H.mk('div', 'fform');
-  box.append(H.mk('p', 'sfine', p.words + '. Check it in your UPI app and enter your PIN there. JARVIS never pays.'));
+  box.append(H.mk('p', 'sfine', p.full || (p.words + '. Check it in your UPI app and enter your PIN there. JARVIS never pays.')));
   const img = H.mk('img', '');
   img.alt = 'QR code of this UPI payment';
   img.width = 180; img.height = 180;

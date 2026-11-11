@@ -1,7 +1,7 @@
 // src/jarvis/api/static/console-helpers-house.js -- R11 Part B's tab in the Helpers panel
 // (docs/plans/r11-free-helpers.md D10-D14, D19): the chores rota, home upkeep, weather and disaster alerts for
 // your place, breach notices. An ES module loaded by console-helpers.js (never linked). It uses only
-// window.JarvisHelpers' builders, the existing components (.btn.bact, .minput, label.k, .vt-grid / .vt-field,
+// window.JarvisHelpers' builders, the existing components (.btn.bact, .minput, label.k, .hp-grid / .hp-field,
 // .lrow, .lerr, .bsw) and textContent: no new colours, fonts, radii or shadows; no HTML from the server; ASCII.
 // Data: GET /v1/helpers/house (every change answers the whole view again). SACHET's own words are shown only as
 // SACHET's ("From SACHET:"), never as JARVIS's; the official SACHET app, SMS and cell broadcast come first.
@@ -48,7 +48,7 @@ function makeTab(host) {
     return c;
   }
   function field(text, input, wide) {
-    const w = mk('div', 'vt-field' + (wide ? ' wide' : ''));
+    const w = mk('div', 'hp-field' + (wide ? ' wide' : ''));
     const l = mk('label', 'k', text);
     l.htmlFor = input.id;
     w.append(l, input);
@@ -60,9 +60,9 @@ function makeTab(host) {
     return s;
   }
   function form(fields, label, submit) {
-    const f = mk('form', '');
+    const f = mk('form', 'hp-form');
     f.noValidate = true;
-    const grid = mk('div', 'vt-grid');
+    const grid = mk('div', 'hp-grid');
     fields.forEach((x) => grid.append(x));
     const err = mk('p', 'lerr');
     err.setAttribute('role', 'alert');

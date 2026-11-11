@@ -49,9 +49,10 @@ from jarvis.helpers.today.models import (
 from jarvis.helpers.today.store import OFF_NOTE, BillsOff
 from jarvis.helpers.today.upi import amount_text
 from jarvis.tools.base import Preview, Tool
-from jarvis.tools.card import quoted
+from jarvis.tools.card import one_line, quoted
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
+from jarvis.tools.reply_cards import TEXT_LIMIT, UpiCard, add_card, reply_full, showing_cards
 from jarvis.tools.taint import content_tainted, owner_text
 
 TAINT_REFUSAL = True  # read at call time; only the eval's negative control switches it off
@@ -66,6 +67,14 @@ R1, R2, R3 = ActionRisk.READ_ONLY, ActionRisk.REVERSIBLE, ActionRisk.IRREVERSIBL
 READY = (
     "The payment for {label} is ready, Sir: open Helpers → Today and tap Show payment within 10 "
     "minutes. You confirm it in your UPI app with your PIN; JARVIS never pays."
+)
+READY_BELOW = (
+    "The payment for {label} is shown below, Sir, once: open it in your UPI app and confirm it "
+    "with your PIN there. JARVIS never pays."
+)
+PAY_WORDS = (
+    "{amount} to {payee} ({upi}), note {note}. Check it in your UPI app and enter your PIN there. "
+    "JARVIS never pays."
 )
 NOT_APPROVED = "That payment wasn't approved on your screen, so nothing was prepared."
 UNUSABLE = "That bill can't be kept as given, Sir: check the day, how often and the reminder days."
@@ -308,6 +317,24 @@ def _payee_tool(t: BillTools) -> Tool:
     )
 
 
+async def _show_below(t: BillTools, uid: str, bill_id: str) -> bool:
+    """I1 (INTEGRATION-A 3.3): inside a console reply (the approval's), spend the one-time grant
+    and show the payment as a `UpiCard` under that reply; elsewhere the Today tab shows it. The
+    tool's result never carries the link or the QR."""
+    if not showing_cards() or reply_full(drafts=False):
+        return False
+    shown = await t.service.payment(uid, bill_id)
+    if shown is None:
+        return False
+    words = PAY_WORDS.format(
+        amount=shown.amount,
+        payee=quoted(shown.payee, 40),
+        upi=shown.upi,
+        note=quoted(shown.note, 50),
+    )
+    return add_card(UpiCard(link=shown.link, qr=shown.qr, words=one_line(words, TEXT_LIMIT)))
+
+
 def _prepare_tool(t: BillTools) -> Tool:
     async def preview(a: dict[str, Any]) -> Preview:
         prepared = await t.service.prepare(_uid(), a.get("bill"), a.get("amount"))
@@ -324,7 +351,10 @@ def _prepare_tool(t: BillTools) -> Tool:
             return _off()
         except ValueError as exc:
             return _refused(_plain(exc))
-        return {"status": "ready", "message": READY.format(label=said(prepared.bill.label))}
+        label = said(prepared.bill.label)
+        if await _show_below(t, ctx.user_id, prepared.bill.id):
+            return {"status": "ready", "message": READY_BELOW.format(label=label)}
+        return {"status": "ready", "message": READY.format(label=label)}
 
     props = {"bill": _BILL, "amount": _AMOUNT}
     return Tool(
@@ -349,7 +379,9 @@ def bill_tools(service: BillsService) -> list[Tool]:
 
 __all__ = [
     "NOT_APPROVED",
+    "PAY_WORDS",
     "READY",
+    "READY_BELOW",
     "TAINT_REFUSAL",
     "TYPE_IT",
     "TYPE_IT_HERE",

@@ -19,4 +19,23 @@
 .hp-acts{flex:none;display:flex;gap:6px}
 .hp-acts .btn{flex:none;height:36px;min-width:44px;padding:0 12px;font-size:12px}
 .hp-note.bad{color:var(--bad-ink)} .hp-note.ok{color:var(--ok-ink)}
+/* R11 I1, the parts' own rules (their INTEGRATION notes); existing tokens and components only.
+   Part A (Today): a row's action line wraps under its words; its buttons sit flush. */
+.hp-acts .btn.bact{margin-top:0}
+.hp-acts.hp-wrap{flex-wrap:wrap;padding:0 0 10px}
+/* Part B (Home): its forms, labels above inputs, 3 columns (2 on phones); no borrowed .vt-* rules */
+.hp-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:10px 8px;margin-top:10px}
+.hp-field{min-width:0}
+.hp-field.wide{grid-column:1/-1}
+.hp-field label{display:block;margin-bottom:6px;cursor:pointer}
+.hp-form select.minput{padding:0 8px;cursor:pointer}
+.hp-form select.minput option{background:var(--well);color:var(--ink)}
+.hp-form .lerr{margin-top:8px}
+.hp-form .lrow{flex-wrap:wrap;gap:8px;margin-top:12px}
+/* Part D (Kitchen): a field is its label above its input; inputs and selects are 44 px targets at
+   every width (.minput is 36 px on desktop) */
+label.hp-field{display:block;margin:10px 0 0}
+label.hp-field > .snote{display:block;margin:0 0 4px}
+.hp-kitchen .minput{height:44px}
 @media (max-width:899px){.hp-tab{font-size:12px;letter-spacing:.08em}}
+@media (max-width:899px){.hp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}

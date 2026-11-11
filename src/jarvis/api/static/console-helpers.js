@@ -173,3 +173,44 @@
     if (d.id === 'helpers' && d.open) load();
   });
 })();
+
+// R11 I1 (plan D7, INTEGRATION-A 3.3): a UPI payment he approved, ONCE, under the approval's reply (kind 'upi' in
+// ChatResponse.cards: the upi://pay link, its QR, code's own words). Checked field by field; textContent only; the
+// QR is an SVG data URI (CSP img-src data:). Nothing is stored; the box goes away on Done or after 10 minutes.
+// window.JarvisUpi = {card(cards) -> {link, qr, full} | null, render(row, cards)}; console.js calls render.
+(() => {
+  'use strict';
+  const LINK = /^upi:\/\/pay\?[A-Za-z0-9%@._~=&-]{1,1000}$/;
+  const QR = /^data:image\/svg\+xml;charset=utf-8,/;
+  const SHOW_MS = 10 * 60 * 1000;
+  const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
+  const words = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, 300) : '');
+  function card(cards) {
+    const c = (Array.isArray(cards) ? cards : []).find((x) => x && x.kind === 'upi');
+    if (!c || !LINK.test(String(c.link || '')) || !QR.test(String(c.qr || '')) || String(c.qr).length > 20000 || !words(c.words)) return null;
+    return { link: c.link, qr: c.qr, full: words(c.words) };
+  }
+  function button(text, cls, onClick) {
+    const b = mk('button', 'btn bact' + (cls ? ' ' + cls : ''), text);
+    b.type = 'button';
+    b.addEventListener('click', onClick);
+    return b;
+  }
+  function render(row, cards) {
+    const p = card(cards);
+    if (!row || !p) return null;
+    const box = mk('div', 'fform');
+    box.append(mk('p', 'sfine', p.full));
+    const img = mk('img', '');
+    img.alt = 'QR code of this UPI payment';
+    img.width = 180; img.height = 180;
+    img.src = p.qr;
+    const acts = mk('div', 'hp-acts hp-wrap');
+    acts.append(button('Open in UPI app', 'primary', () => { window.location.assign(p.link); }), button('Done', '', () => box.remove()));
+    box.append(img, acts);
+    row.append(box);
+    setTimeout(() => box.remove(), SHOW_MS);
+    return box;
+  }
+  window.JarvisUpi = Object.freeze({ card, render });
+})();

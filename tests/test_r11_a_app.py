@@ -67,11 +67,12 @@ async def test_no_ai_pay_makes_the_card_and_the_payment_shows_once(settings: Set
             f"/v1/approvals/{card['id']}/approve", json={"session_id": sid}, headers=CSRF
         )
         assert ok.status_code == 200, ok.text
-        assert "upi://" not in ok.text
-        shown = await c.post(f"{TODAY}/bills/{bid}/payment", json={}, headers=CSRF)
-        assert shown.status_code == 200 and shown.json()["link"].startswith(
-            "upi://pay?pa=test@okfake"
-        )
+        # I1 (UpiCard): the approval's answer shows the payment once, never cached; the reply's
+        # words name no link, and the Today tab then has nothing left to show
+        assert ok.headers["cache-control"] == "no-store"
+        (upi,) = [x for x in ok.json()["cards"] if x["kind"] == "upi"]
+        assert upi["link"].startswith("upi://pay?pa=test@okfake") and upi["qr"].startswith("data:")
+        assert "upi://" not in ok.json()["reply"]
         again = await c.post(f"{TODAY}/bills/{bid}/payment", json={}, headers=CSRF)
         assert again.status_code == 404
         convo = (await c.get(f"/v1/sessions/{sid}")).text

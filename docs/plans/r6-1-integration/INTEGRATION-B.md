@@ -78,14 +78,15 @@ is written as 🛠 Mark I. Slice 5b (`v0.5.1`, 🛠 Mark II) shipped inside PR #
 
 ## Back-fill practice run (real GitHub, reads only, no `--apply`)
 
-`LC_ALL=C.UTF-8 bash scripts/github_backfill.sh` → exit 0; output saved as `backfill-dry.txt` in the
-orchestrator's scratchpad. All 21 pull requests were read and are merged; **no row was unreadable.**
-21 DRY retitles, 21 DRY Releases (no tag/Release exists yet), 64 DRY POSTs in all. PR #27 already
-has its header line (retitle only, its title already matches). Label `release` exists; `hotfix`,
+`LC_ALL=C.UTF-8 bash scripts/github_backfill.sh` → exit 0; output saved as `backfill-dry.txt` with
+the orchestrator's working files (not committed). All 21 pull requests were read and are merged;
+**no row was unreadable.** 21 DRY retitles, 21 DRY Releases (no tag/Release exists yet), 64 DRY
+POSTs in all. PR #27 already has its header line (retitle only, its title already matches). Label `release` exists; `hotfix`,
 `docs` and every `Mark …` label do not (practice mode prints a create line for a Mark label on each
-row that names it, because nothing is created in practice; `--apply` creates each once). The DRY
-lines include the PRs' original descriptions (that file stays local). `--apply` must run where
-GitHub allows writes (decision 4).
+row that names it, because nothing is created in practice; `--apply` creates each once; since the
+R6.1 fix round the script asks for each label once a run, so practice prints one create line
+each). The DRY lines include the PRs' original descriptions (that file stays local). `--apply` must
+run where GitHub allows writes (decision 4).
 
 ## Tests run (all green)
 

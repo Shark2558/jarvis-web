@@ -19,8 +19,8 @@ Branch `r6-1-c` (from `r6-1-i0`). Plan: `docs/plans/r6-1-architecture-guide.md` 
 ## How it is wired
 
 - Run locally (sandbox): `npm ci --prefix tools/markdy` once, then
-  `/tmp/venv-c/bin/python scripts/markdy_export.py [names]` (exports) or `--check` / `--lint-only`
-  (any Python 3.11+, no browser). The CLI is run as `node tools/markdy/node_modules/@markdy/cli/dist/index.js`
+  `python scripts/markdy_export.py [names]` (exports; a Python with Playwright) or `--check` /
+  `--lint-only` (any Python 3.11+, no browser). The CLI is run as `node tools/markdy/node_modules/@markdy/cli/dist/index.js`
   (its `.bin` link can exit 0 silently). Exit 0 ok, 1 a diagram problem (`<diagram>: <step>: <what>`),
   2 tools missing.
 - Staleness is decided by `docs/architecture/diagrams/exports.json` (Markdy version + SHA-256 of each
@@ -167,7 +167,7 @@ free: no tools, no notes), `voice/*`, `webpush/ece.py`.
 
 ### Checks run in this round
 
-- `tests/test_markdy_export.py`: 67 passed on 3.11 (`/tmp/venv-b`) and 3.12 (`/tmp/venv-12`).
+- `tests/test_markdy_export.py`: 67 passed on Python 3.11 and 3.12.
 - `ruff check` + `ruff format --check` clean on the four touched Python files; `mypy --strict`
   clean on `scripts/markdy_export.py`, `scripts/markdy_render.py`, `tests/markdy_fakes.py`.
 - Real CLI 1.5.7: `lint --strict` and `verify --quality showcase` pass for 09 and 13;

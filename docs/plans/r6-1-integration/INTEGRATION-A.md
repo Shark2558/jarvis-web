@@ -137,20 +137,20 @@ Gate refinements (documented in the files; every other check still runs on the d
   through `Console.open_panel` (tab, else More sheet), which already handles folded tabs.
 
 Commands (only the touched files):
-`JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q -m browser
+`JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src python -m pytest -q -m browser
 tests/browser/test_dock_fit.py tests/browser/test_r51_dock.py tests/browser/test_r6_seams.py
 tests/browser/test_console.py tests/browser/test_brief.py tests/browser/test_memory.py
-tests/browser/test_r51a_ui.py tests/browser/test_ui_audit.py tests/browser/test_book_lock_ui.py`, and `/tmp/venv-b/bin/pytest -q tests/test_console_assets.py
+tests/browser/test_r51a_ui.py tests/browser/test_ui_audit.py tests/browser/test_book_lock_ui.py`
+(Python 3.13 with Playwright), and `pytest -q tests/test_console_assets.py
 tests/test_media_console.py tests/test_r6_wiring_seams.py tests/test_r51_console_assets_linked.py
 tests/test_r6_seams.py`; `ruff check` + `ruff format --check` on every touched Python file.
 
 ## Screenshots (orchestrator review, acceptance check 8)
 
-Directory: `/tmp/claude-0/-home-claude/a2921599-8bfd-5e75-9772-28144202d9c3/scratchpad/dock-shots/`
-(made by a scratchpad Playwright script, not committed; re-taken after the review-A fix round and
-looked at). `dock-<w>-<surface>.png` is the bottom 110 px strip, `full-<w>-<surface>.png` the whole
-window, `sheet-<w>-<surface>.png` the open sheet, `badge-<w>-<surface>.png` the strip with 3
-approvals waiting.
+Kept with the orchestrator's working files, not committed (made by a Playwright script that is not
+in the repository; re-taken after the review-A fix round and looked at). `dock-<w>-<surface>.png`
+is the bottom 110 px strip, `full-<w>-<surface>.png` the whole window, `sheet-<w>-<surface>.png`
+the open sheet, `badge-<w>-<surface>.png` the strip with 3 approvals waiting.
 
 - Dock strips: `dock-1920-night.png`, `dock-1920-day.png`, `dock-1440-night.png`,
   `dock-1440-day.png`, `dock-1280-night.png`, `dock-1280-day.png`, `dock-1024-night.png`,
@@ -165,4 +165,4 @@ approvals waiting.
 - Badge on More (Approvals folded at 1024 px): `badge-1024-night.png`, `badge-1024-day.png`
 - The chat box's hint at 320 px: `full-320-night.png`, `full-320-day.png` ("Message", one line)
 - `probes.json`: per shot, the shown tabs with their widths and label widths, and the hint.
-- Before (R6 I0, for comparison): same names under `.../scratchpad/dock-before/`.
+- Before (R6 I0, for comparison): the same names, in a second folder kept the same way.

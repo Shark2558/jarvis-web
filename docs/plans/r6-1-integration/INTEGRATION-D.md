@@ -178,7 +178,7 @@ Manager price is the R2 plan's 5 Nov 2026 figure.
 
 ## Tests run
 
-- `tests/test_arch_coverage.py`: 48 passed on Python 3.11 (`/tmp/venv-b`) and 3.12 (`/tmp/venv-12`).
+- `tests/test_arch_coverage.py`: 48 passed on Python 3.11 and 3.12.
 - `ruff check` and `ruff format --check` clean on the files I touched; `mypy --strict` clean on
   `scripts/arch_coverage.py`, `arch_files.py`, `arch_inventory.py`.
 - `python scripts/arch_coverage.py`: on `r6-1-d` alone, the one expected problem (no `diagrams/`

@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,6 +25,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
+from jarvis import __version__ as VERSION
 from jarvis.activity.service import ActivityService
 from jarvis.activity.store import ActivityStore
 from jarvis.alerts import AlertSink
@@ -499,7 +499,7 @@ class _Closers:
 def _lifespan(
     s: Settings, inj: _Injected
 ) -> Callable[[FastAPI], contextlib.AbstractAsyncContextManager[None]]:
-    @asynccontextmanager
+    @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with contextlib.AsyncExitStack() as stack:
             closers = _Closers(app, stack)
@@ -735,7 +735,7 @@ def create_app(
         drive=drive,
     )
     app = FastAPI(
-        title="JARVIS", version="0.0.1", lifespan=_lifespan(s, inj), docs_url=None, redoc_url=None
+        title="JARVIS", version=VERSION, lifespan=_lifespan(s, inj), docs_url=None, redoc_url=None
     )
     _install_middleware(app, s)
     _install_core_errors(app)

@@ -11,6 +11,9 @@ import pytest
 
 import jarvis
 from jarvis import about
+from jarvis.api import create_app
+from jarvis.config import Settings
+from jarvis.llm.mock_provider import MockProvider
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,6 +25,14 @@ def test_the_version_lives_in_one_place() -> None:
     meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert "version" not in meta["project"] and "version" in meta["project"]["dynamic"]
     assert meta["tool"]["setuptools"]["dynamic"]["version"] == {"attr": "jarvis.__version__"}
+
+
+def test_the_api_app_carries_the_one_version(settings: Settings, provider: MockProvider) -> None:
+    """R6.1 I1: the FastAPI app's own version (OpenAPI `info.version`) is `jarvis.__version__`,
+    not a number of its own (it said 0.0.1 until R6.1)."""
+    app = create_app(settings, provider=provider)
+    assert app.version == jarvis.__version__
+    assert app.openapi()["info"]["version"] == jarvis.__version__
 
 
 def test_setuptools_reads_the_version_from_the_package() -> None:

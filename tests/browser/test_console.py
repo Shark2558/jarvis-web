@@ -349,7 +349,9 @@ def test_phone_width_has_no_horizontal_scroll(browser: Any, server_url: str, tok
             "[document.documentElement.scrollWidth, document.body.scrollWidth, window.innerWidth]"
         )
         assert widths[0] <= widths[2] and widths[1] <= widths[2], widths
-        assert c.page.locator('.dk[data-open="integrations"]').is_visible()
+        # its tab, or (R6.1: folded where it can't keep 8 px beside its label) More, lit for it
+        tab = c.page.locator('.dk[data-open="integrations"]')
+        assert tab.is_visible() or c.page.locator("#dockMore.on").is_visible()
         assert c.errors == []
     finally:
         c.close()

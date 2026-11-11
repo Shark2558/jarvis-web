@@ -331,6 +331,11 @@ def test_edit_saves_a_change(console: Console) -> None:
     page.locator("#nEdit-n_000000000001").click()
     page.locator("#neText").fill("Changed body")
     page.locator("#neSave").click()
+    # The save is sent after the click returns; poll from Python (the CSP forbids string evals).
+    for _ in range(100):
+        if fake.to("PATCH", "/v1/notes/n_000000000001"):
+            break
+        page.wait_for_timeout(50)
     assert fake.to("PATCH", "/v1/notes/n_000000000001")[0]["body"]["text"] == "Changed body"
     clean(console)
 

@@ -1,3 +1,5 @@
+Version v0.4.0 · 1 Nov 2026 · Release Slice 4 · Status: Superseded by the build log · Owner: 🛠 Mark I
+
 # Phase 2 · Slice 4 — Brain selector (switch Claude / Gemini / OpenAI-compatible from the console) + Gemini latency fix
 
 Status: DONE · 2026-11-01 · 112 tests · ECC loop · fresh-context review: 1 HIGH + 4 MEDIUM found and fixed
@@ -70,3 +72,9 @@ owner switches brain from the dropdown on the live site.
 - MEDIUM fixed: deploy `optional_secret` ran in a subshell (gcloud failure silently dropped a brain); stale custom key could be sent to a different host (host label + refusal); non-JSON 200 crashed instead of `LLMError`; base URL validated (https unless private host).
 - LOW fixed: orphan session on unknown brain id; Gemini flatten no longer reveals tool names; `tiers_for` moved to router.py (no lazy import); default-brain prompt accepts "claude".
 - Open (LOW): `jarvis chat` CLI has no `--brain`; `JARVIS_GEMINI_PAID_TIER` not offered by the script.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.4.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

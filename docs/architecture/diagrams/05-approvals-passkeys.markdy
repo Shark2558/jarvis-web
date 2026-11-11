@@ -1,0 +1,36 @@
+scene "Figure 5 · Confirm before commit: cards and passkeys" theme=paper type=sequence
+layout LR
+
+user You "You"
+browser Console "Console"
+service Brain "Brain"
+gateway Gate "Tool gateway"
+database Cards "Waiting cards"
+auth Passkey "Passkey check"
+cloud Tool "The tool"
+
+beat propose "1. A risky step becomes a card":
+  show $nodes stagger=30ms
+  Brain -> Gate "send this mail"
+  Gate -> Cards "can't be undone: make a card"
+  Console <- Brain "the card"
+
+beat approve "2. You approve":
+  You -> Console "Approve"
+  Console -> You "passkey?"
+  You -> Console "touch"
+  Console -> Brain "approve"
+  Brain -> Cards "is the card unchanged?"
+  Brain <- Cards "same call"
+
+beat run "3. Only then it runs":
+  Brain -> Gate "run the card"
+  Gate -> Passkey "proof for exactly this card?"
+  Gate <- Passkey "yes, used once"
+  Gate -> Tool "run, then audit"
+  Console <- Brain "done, in plain words"
+  glow Passkey color=#22c55e
+
+player:
+  chrome:
+    badge false

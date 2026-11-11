@@ -45,3 +45,16 @@ def test_r51_never_writes_a_style_attribute_from_a_string() -> None:
 def test_uses_text_content_and_the_consoles_api() -> None:
     assert "textContent" in src() and "JarvisConsole" in src()
     assert "/v1/vitals" in src()
+
+
+def test_r61_the_about_line_comes_from_the_board_answer_never_the_clock() -> None:
+    """R6.1 D4: #vAbout is filled from GET /v1/vitals' version + build_date with textContent."""
+    s = src()
+    assert "aboutEl.textContent = d.about" in s
+    assert "o.version" in s and "o.build_date" in s
+    line = s.split("function aboutLine", 1)[1].split("\n  }\n", 1)[0]
+    assert "Date" not in line and "now(" not in line
+    html = JS.with_name("console.html").read_text(encoding="utf-8")
+    assert '<p class="sfine" id="vAbout"></p>' in html
+    panel = html.split('id="p-vitals"', 1)[1].split("</section>\n\n", 1)[0]
+    assert 'id="vAbout"' in panel

@@ -1,3 +1,5 @@
+Version v0.3.0 · 1 Nov 2026 · Release Slice 3 · Status: Superseded by the build log · Owner: 🛠 Mark I
+
 # Phase 2 · Slice 3 — Gemini as a free, swappable brain (chat-only) + friendly LLM errors
 
 Status: DONE · 2026-11-01 · 84 tests · ECC loop · live Gemini API NOT exercised (no key in CI)
@@ -41,3 +43,9 @@ Owner has no Anthropic API credit and wants zero payment. The core is model-agno
 
 ## Exit criteria
 pytest green, ruff clean; deploy script offers Claude/Gemini choice; owner can chat on the free brain.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.3.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

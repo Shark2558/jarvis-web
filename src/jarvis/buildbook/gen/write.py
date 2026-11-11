@@ -64,13 +64,24 @@ class Built:
     source: bytes
 
 
+def release_version(repo: Repo) -> str | None:
+    """R6.1 decision 3: "v6.1.0" from the documented checkout's own src/jarvis/__init__.py."""
+    return fallback.version_of(repo.text(fallback.VERSION_FILE))
+
+
 def _parts(repo: Repo, opts: Options, scrub: Scrubber) -> Parts:
     label = plans.release_label(repo)
     read = plans.read_plans(repo, scrub)
     libraries = libs.libraries(repo, opts.licence or licences.table_lookup(repo))
     limits = (*libs.licence_limits(libraries, label), *plans.limitations(read))
     return Parts(
-        release=ReleaseRef(id=repo.id, sha=repo.sha, label=label, committed_at=repo.committed_at),
+        release=ReleaseRef(
+            id=repo.id,
+            sha=repo.sha,
+            label=label,
+            committed_at=repo.committed_at,
+            version=release_version(repo),
+        ),
         architecture=Architecture(
             packages=code.packages(repo, opts.layer_of, scrub), fit=plans.fit_rows(read)
         ),
@@ -119,6 +130,7 @@ def build(repo: Repo, opts: Options = Options()) -> Built:  # noqa: B008 - froze
         sha=repo.sha,
         label=plans.release_label(repo),
         committed_at=repo.committed_at,
+        version=release_version(repo),
         book_sha256=hashlib.sha256(data).hexdigest(),
         source_sha256=snap.sha256,
         source_bytes=len(snap.data),
@@ -171,6 +183,7 @@ def write_error(out: Path, repo: Repo, message: str) -> Release:
         sha=repo.sha,
         label=label,
         committed_at=repo.committed_at,
+        version=release_version(repo),
         error=clip(message, 200) or "the build book failed",
     )
     out.mkdir(parents=True, exist_ok=True)
@@ -186,6 +199,7 @@ __all__ = [
     "build",
     "check",
     "release_bytes",
+    "release_version",
     "write",
     "write_error",
 ]

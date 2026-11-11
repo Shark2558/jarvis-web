@@ -1,0 +1,38 @@
+scene "Figure 14 · Where your data lives" theme=paper type=architecture
+layout LR
+
+browser Browser "Your browser" sub="wake-word audio stays here"
+desktop Laptop "Your laptop" sub="video, face pictures stay here"
+service Server "JARVIS on Cloud Run" sub="Mumbai; no chats or audio in logs"
+database Plain "Firestore, Google-encrypted" sub="chats, memory, briefs, audit"
+vault Sealed "Firestore, also sealed by JARVIS" sub="vault, notes, things, faces, tokens"
+secret Keys "Secret Manager" sub="the root key and API keys"
+cloud Claude "Claude" sub="the chat, your notes, tool results"
+cloud Gemini "Gemini (free)" sub="may train: no tools, notes or files"
+cloud Speech "Google speech" sub="audio in, voice out; nothing kept"
+cloud Google "Your Google account" sub="only what you allowed"
+app Alerts "Telegram and Web Push" sub="your chats; alerts in fixed words"
+external Web "Tavily web search" sub="search words only"
+
+beat edge "1. What stays with you":
+  show $nodes stagger=30ms
+  Browser -> Server "your requests"
+  Laptop -- Server "home messages, offline chats"
+
+beat cloud "2. What JARVIS keeps in Mumbai":
+  Server -> Plain
+  Server -> Sealed
+  Server -> Keys
+
+beat out "3. What goes out, and only when needed":
+  Server -> Claude
+  Server -> Gemini
+  Server -> Speech
+  Server -> Google
+  Server -> Alerts
+  Server -> Web
+  glow Sealed color=#22c55e
+
+player:
+  chrome:
+    badge false

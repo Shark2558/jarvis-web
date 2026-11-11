@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 896 1120" width="896" height="1120">
+  <defs>
+    <!-- Embedded Typography & Anti-Aliasing -->
+    <style>
+      text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+        text-rendering: geometricPrecision;
+        -webkit-font-smoothing: antialiased;
+      }
+      .markdy-svg-text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+        text-rendering: geometricPrecision;
+        -webkit-font-smoothing: antialiased;
+      }
+      .markdy-svg-mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        text-rendering: geometricPrecision;
+        -webkit-font-smoothing: antialiased;
+      }
+    </style>
+
+    <!-- Drop Shadow Filter -->
+    <filter id="markdy-node-shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#020617" flood-opacity="0.12"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#020617" flood-opacity="0.08"/>
+    </filter>
+
+    <!-- Grid Patterns -->
+    <pattern id="markdy-grid-minor" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="rgba(15, 23, 42, 0.06)" stroke-width="1" stroke-opacity="0.5"/>
+    </pattern>
+    <pattern id="markdy-grid-major" width="160" height="160" patternUnits="userSpaceOnUse">
+      <path d="M 160 0 L 0 0 0 160" fill="none" stroke="rgba(15, 23, 42, 0.10)" stroke-width="1.2" stroke-opacity="0.6"/>
+    </pattern>
+
+    <!-- Arrowhead Markers -->
+    <marker id="arrow-request" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 1.5 1.6 L 9 5 L 1.5 8.4 L 3.4 5 Z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrow-response" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 1.5 1.6 L 9 5 L 1.5 8.4" fill="none" stroke="#a78bfa" stroke-width="1.4"/>
+    </marker>
+    <marker id="arrow-event" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <circle cx="5" cy="5" r="3" fill="#f59e0b"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  
+  <rect width="100%" height="100%" fill="#f6f8fc"/>
+  <rect width="100%" height="100%" fill="url(#markdy-grid-minor)"/>
+  <rect width="100%" height="100%" fill="url(#markdy-grid-major)"/>
+  
+
+  <!-- Diagram Title -->
+  <g class="markdy-title-layer">
+    <text x="48" y="44" class="markdy-svg-text" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif" font-size="22" font-weight="700" fill="#0f1c2e" dominant-baseline="central" letter-spacing="-0.02em">Figure 2 · The eight layers, as built</text>
+  </g>
+  <!-- Main Scene Content -->
+  <g class="markdy-camera-layer">
+  <!-- Edge Connections -->
+  <g class="markdy-edges-layer">
+    <g id="edge-flow_1" class="markdy-edge" >
+      <path d="M 440 192 L 440 208" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+    </g>
+    <g id="edge-flow_2" class="markdy-edge" >
+      <path d="M 440 300 L 440 312" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+    </g>
+    <g id="edge-flow_3" class="markdy-edge" >
+      <path d="M 440 404 L 440 420" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+    </g>
+    <g id="edge-flow_4" class="markdy-edge" >
+      <path d="M 440 512 L 440 524" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+    </g>
+    <g id="edge-flow_5" class="markdy-edge" >
+      <path d="M 440 616 L 440 632" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+    </g>
+    <g id="edge-flow_6" class="markdy-edge" >
+      <path d="M 440 724 L 440 736" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+    </g>
+    <g id="edge-flow_7" class="markdy-edge" >
+      <path d="M 440 828 L 440 844" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+    </g>
+    <g id="edge-flow_8" class="markdy-edge" >
+      <path d="M 440 936 L 440 948" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 4"  />
+    </g>
+  </g>
+  <!-- Node Cards -->
+  <g class="markdy-nodes-layer">
+    <g id="node-L1" transform="translate(48, 100)" >
+      <rect width="800" height="92" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="799" height="91" rx="15.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 33) scale(1.0833333333333333)" fill="none" stroke="#f59e0b" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="5" width="18" height="14" rx="2.5" />
+        <path d="M3 9h18" />
+        <path d="M7 7h.01M10 7h.01" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="39" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">1 · Talking to JARVIS</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="51" width="260" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="59" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">console web page, Telegram, command line</text>
+    </g>
+    <g id="node-L2" transform="translate(48, 208)" >
+      <rect width="800" height="92" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="799" height="91" rx="15.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 33) scale(1.0833333333333333)" fill="none" stroke="#38bdf8" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="4.5" width="16" height="6.5" rx="2" />
+        <rect x="4" y="13" width="16" height="6.5" rx="2" />
+        <path d="M7.5 7.75h.01M7.5 16.25h.01" />
+        <path d="M11 7.75h6M11 16.25h6" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="39" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">2 · Understanding what comes in</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="51" width="328.2" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="59" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">speech to text, attached documents, faces (at home)</text>
+    </g>
+    <g id="node-L3" transform="translate(48, 312)" >
+      <rect width="800" height="92" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="799" height="91" rx="15.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 33) scale(1.0833333333333333)" fill="none" stroke="#38bdf8" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="4.5" width="16" height="6.5" rx="2" />
+        <rect x="4" y="13" width="16" height="6.5" rx="2" />
+        <path d="M7.5 7.75h.01M7.5 16.25h.01" />
+        <path d="M11 7.75h6M11 16.25h6" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="39" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">3 · Context and memory</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="51" width="421.2" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="59" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">conversations, long-term memory, scheduled ticks, Recently deleted</text>
+    </g>
+    <g id="node-L4" transform="translate(48, 420)" >
+      <rect width="800" height="92" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="799" height="91" rx="15.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 33) scale(1.0833333333333333)" fill="none" stroke="#38bdf8" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="4.5" width="16" height="6.5" rx="2" />
+        <rect x="4" y="13" width="16" height="6.5" rx="2" />
+        <path d="M7.5 7.75h.01M7.5 16.25h.01" />
+        <path d="M11 7.75h6M11 16.25h6" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="39" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">4 · The brain</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="51" width="408.8" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="59" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">brain router (Claude, Gemini, laptop), safety checks, No-AI mode</text>
+    </g>
+    <g id="node-L5" transform="translate(48, 524)" >
+      <rect width="800" height="92" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="799" height="91" rx="15.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 33) scale(1.0833333333333333)" fill="none" stroke="#38bdf8" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="4.5" width="16" height="6.5" rx="2" />
+        <rect x="4" y="13" width="16" height="6.5" rx="2" />
+        <path d="M7.5 7.75h.01M7.5 16.25h.01" />
+        <path d="M11 7.75h6M11 16.25h6" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="39" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">5 · Skills</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="51" width="452.2" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="59" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">brief, web, people, notes, things, groceries, family, parcels, WhatsApp</text>
+    </g>
+    <g id="node-L6" transform="translate(48, 632)" >
+      <rect width="800" height="92" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="799" height="91" rx="15.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 33) scale(1.0833333333333333)" fill="none" stroke="#60a5fa" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="5" cy="12" r="2" />
+        <circle cx="19" cy="6" r="2" />
+        <circle cx="19" cy="18" r="2" />
+        <path d="M7 12h4l5.5-5" />
+        <path d="M11 12l5.5 5" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="39" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">6 · Tools and connections</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="51" width="458.40000000000003" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="59" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">tool gateway, Google, Drive, Maps, Photos, YouTube, GitHub, home, camera</text>
+    </g>
+    <g id="node-L7" transform="translate(48, 736)" >
+      <rect width="800" height="92" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="799" height="91" rx="15.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 33) scale(1.0833333333333333)" fill="none" stroke="#22c55e" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5.5" rx="7" ry="3" />
+        <path d="M5 5.5v10c0 1.7 3.1 3 7 3s7-1.3 7-3v-10" />
+        <path d="M5 10.5c0 1.7 3.1 3 7 3s7-1.3 7-3" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="39" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">7 · Data</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="51" width="446" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="59" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">Firestore store, document vault, DigiLocker inbox, free-quota counters</text>
+    </g>
+    <g id="node-L8" transform="translate(48, 844)" >
+      <rect width="800" height="92" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="799" height="91" rx="15.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 33) scale(1.0833333333333333)" fill="none" stroke="#2dd4bf" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3 2 20h20L12 3z" />
+        <path d="M12 9v4M12 17h.01" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="39" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">8 · Replies and alerts</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="51" width="340.6" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="59" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">alert policy, Telegram alerts, Web Push, Activity log</text>
+    </g>
+    <g id="node-X" transform="translate(48, 948)" >
+      <rect width="800" height="92" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="799" height="91" rx="15.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 33) scale(1.0833333333333333)" fill="none" stroke="#fb7185" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3 5 6v5c0 4.5 3 7.7 7 10 4-2.3 7-5.5 7-10V6l-7-3Z" />
+        <path d="M9.5 12.5 11.2 14 15 10" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="39" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Across all layers</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="51" width="514.2" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="59" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">settings, keys, permissions, privacy, costs in rupees, vitals, health, build book</text>
+    </g>
+  </g>
+  </g>
+
+  <!-- Watermark -->
+  <g class="markdy-watermark" transform="translate(776, 1102)">
+    <text class="markdy-svg-text" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="500" fill="#475569" opacity="0.7" dominant-baseline="central">Powered by Markdy</text>
+  </g>
+</svg>

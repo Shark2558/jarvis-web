@@ -1,3 +1,5 @@
+Version v0.5.0 · 1 Nov 2026 · Release Slice 5 · Status: Superseded by the build log · Owner: 🛠 Mark II
+
 # Phase 2 · Slice 5 — Persistence: conversations, approvals and the audit chain survive scale-to-zero
 
 Status: DONE · 2026-11-01 · 165 tests (+27 on the Firestore emulator in CI) · ECC loop · two fresh-context reviews: 2 HIGH + 5 MEDIUM found and fixed (see end)
@@ -115,3 +117,9 @@ is permanent); create the composite index (idempotent, async); grant the service
 | LOW | `limit<=0` → Firestore 500; gRPC channel not closed | clamp ≥1; close transport |
 
 Accepted / deferred: `user_id` is still a request parameter, not derived from the signed-in email (safe with one owner email; fix before adding a second owner). Approve executes the stored arguments; a client-side hash of the displayed arguments is a later hardening.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.5.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

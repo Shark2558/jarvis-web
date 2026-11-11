@@ -111,8 +111,9 @@ def overview(p: Parts) -> str:
     )
     services = ", ".join(s.label for s in p.integrations.services) or "none"
     flows = ", ".join(w.title for w in p.workflows)
+    version = f"version {p.release.version}, " if p.release.version else ""  # R6.1 decision 3
     text = (
-        f"JARVIS build book, release {p.release.label} (commit {p.release.id}, "
+        f"JARVIS build book, release {p.release.label} ({version}commit {p.release.id}, "
         f"{p.release.committed_at[:10]}). {len(p.architecture.packages)} parts in eight layers and "
         f"a cross-cutting band. {layers}. {len(p.libraries)} libraries. Services: {services}. "
         f"Workflows: {flows}. {len(p.limitations)} limitations listed."

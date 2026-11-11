@@ -1,0 +1,39 @@
+scene "Figure 13 · How a change reaches the live JARVIS" theme=paper type=flowchart
+layout TB
+
+branch Branch "A branch" sub="one part of a release"
+repo PR "Pull request" sub="checked on every push to it"
+test Tests "Tests" sub="3.11 and 3.12, Firestore, browser"
+test Coverage "Guide coverage check" sub="every part is in the guide"
+test PrOnly "Title and diagram checks" sub="pull requests only"
+step Merge "Merge to main" sub="when the checks are green"
+test Evals "Real-model eval gate" sub="main only; reports, never blocks"
+deploy Deploy "Deploy job" sub="tests pass again; AUTODEPLOY on"
+step Candidate "New version, no traffic yet" sub="build book, keyless sign-in, image"
+decision Healthy "Healthy within 2 minutes?"
+end Live "All traffic to the new version"
+end Keep "Your current JARVIS keeps running"
+
+beat test "1. Every pull request is checked":
+  show $nodes stagger=30ms
+  Branch -> PR "open"
+  PR -> PrOnly
+  PR -> Coverage
+  PR -> Tests
+  Coverage -> Merge
+  Tests -> Merge
+
+beat ship "2. main deploys itself":
+  Merge -> Deploy
+  Merge -> Evals
+  Deploy -> Candidate "roll out"
+  Candidate -> Healthy "check /health"
+
+beat switch "3. Switch only when healthy":
+  Healthy -> Keep "no"
+  Healthy -> Live "yes"
+  glow Healthy color=#22c55e
+
+player:
+  chrome:
+    badge false

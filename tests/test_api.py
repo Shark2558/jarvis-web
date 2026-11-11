@@ -77,3 +77,19 @@ async def test_bearer_auth_enforced_when_configured(settings: Settings) -> None:
             assert (await c.post("/v1/chat", json=body, headers=bad)).status_code == 401
             good = {"Authorization": "Bearer s3cret"}
             assert (await c.post("/v1/chat", json=body, headers=good)).status_code == 200
+
+
+async def test_the_api_schema_and_its_pages_are_not_served(settings: Settings) -> None:
+    """R6.1 security review L3: /openapi.json listed every route and the version to anyone, signed
+    in or not (the docs pages were already off). All three are 404 now; `app.openapi()` still
+    builds the schema in-process for the tests that read it."""
+    s = settings.model_copy(update={"api_token": SecretStr("s3cret")})
+    app = create_app(s, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            for path in ("/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect"):
+                assert (await c.get(path)).status_code == 404, path
+                signed_in = await c.get(path, headers={"Authorization": "Bearer s3cret"})
+                assert signed_in.status_code == 404, path
+    assert app.openapi_url is None  # FastAPI then mounts no docs pages either
+    assert "/v1/chat" in app.openapi()["paths"]

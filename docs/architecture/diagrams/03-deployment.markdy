@@ -1,0 +1,36 @@
+scene "Figure 3 · Where JARVIS runs" theme=paper type=architecture
+layout LR
+
+repo Code "GitHub repository" sub="the code, pull requests"
+browser Browser "Your browsers" sub="console, push alerts"
+scheduler Clock "Cloud Scheduler" sub="Google Cloud: 2 jobs"
+pipeline Actions "GitHub Actions" sub="tests, then deploy from main"
+registry Images "Artifact Registry" sub="Google Cloud: an image a commit"
+service Run "Cloud Run service" sub="Google Cloud, Mumbai: 1 instance"
+secret Secrets "Secret Manager" sub="Google Cloud: keys and tokens"
+database Store "Firestore" sub="Google Cloud, Mumbai: your data"
+proxy Funnel "Tailscale Funnel" sub="your laptop's only public door"
+service Bridge "Home bridge" sub="laptop: Home Assistant, Frigate"
+service Ollama "Backup brain" sub="laptop: Ollama behind a key gate"
+
+beat ship "1. New code ships":
+  show $nodes stagger=30ms
+  Code -> Actions "push to main"
+  Actions -> Images "build the image"
+  Actions -> Run "deploy, check health, switch"
+
+beat serve "2. JARVIS serves you":
+  Browser -> Run "https"
+  Clock ~> Run "signed ticks"
+  Run -> Secrets "read at start"
+  Run -> Store "read and write"
+
+beat home "3. Home and the backup brain":
+  Run -> Funnel "calls only JARVIS can make"
+  Funnel -> Bridge "home"
+  Funnel -> Ollama "offline mode"
+  glow Run color=#22c55e
+
+player:
+  chrome:
+    badge false

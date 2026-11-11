@@ -1,0 +1,35 @@
+scene "Figure 8 · The document vault and the DigiLocker import" theme=paper type=architecture
+layout LR
+
+external DigiLocker "DigiLocker app" sub="you share a document"
+scheduler Tick "Morning tick" sub="Cloud Scheduler"
+browser Upload "Vault panel" sub="in the console"
+bucket Inbox "Drive inbox folder" sub="shared with JARVIS, read only"
+alert Remind "Expiry reminders" sub="180 days to 1 day before"
+auth Unlock "Passkey unlock" sub="10 minutes, 60-second tickets"
+service Intake "Vault intake" sub="PDF, JPEG or PNG; no duplicates"
+service Fields "Field finder" sub="sealed reader: you confirm"
+vault Seal "Lock and unlock" sub="own key per file, 512 KB pieces"
+database Store "Firestore" sub="locked pieces only"
+
+beat import "1. Documents come in":
+  show $nodes stagger=30ms
+  DigiLocker -> Inbox "share"
+  Tick -> Inbox "check"
+  Inbox -> Intake "up to 3 files a run"
+  Upload -> Intake "add a file"
+
+beat seal "2. JARVIS locks them":
+  Intake -> Fields "suggest dates and numbers"
+  Intake -> Seal "lock"
+  Seal -> Store "keep"
+
+beat use "3. Only you open them; JARVIS reminds you":
+  Upload -> Unlock "open with your passkey"
+  Unlock -> Seal "open one file, once"
+  Tick ~> Remind "expiring soon?"
+  glow Seal color=#22c55e
+
+player:
+  chrome:
+    badge false

@@ -1,3 +1,5 @@
+Version v0.7.1 · 1 Nov 2026 · Release Slice 7b · Status: Superseded by the build log · Owner: 🛠 Mark III
+
 # Slice 7b: Costs in rupees + monthly spend and limit
 
 Owner (2026-11-01, screenshot of Vitals): "the cost this conversation shows in $, Remember to keep all the costs in INR. Also, mention the total cost this month utilized and limit."
@@ -61,3 +63,9 @@ Reviewed `git diff slice7-morning-brief..HEAD` (29b1734) for paid calls past the
 | LOW | When the limit is crossed mid tool loop the 402 leaves the turn without a final reply (the tool exchange is saved; approvals proposed in it appear only in the Approvals panel). Same shape as an `LLMError` mid-loop before this slice. | Not changed; noted. | — |
 
 Checked and fine: every model call in `src` (chat, each tool round and the round-limit summary, approval narration, stream, brief AI lines) passes `ensure_allowed` first and is metered once (no double count of tool rounds, of stream partial + final, or of narration); concurrent requests can each overshoot by one call only; PUT validation is strict (bool/str/float/huge/negative → 422), compares against the stored value inside the transaction, needs the CSRF header for cookie sessions and takes the user id from the server; the fx URL is a constant (no redirects), the value is bounded 50–200, a bad cached value is ignored, failures never reach a request and are tried once a day; month boundary is the owner's zone; `/v1/usage` carries no user id; 402/503 texts are rupees-only; the console uses textContent only, the confirm dialog defaults focus to "Not now", and Save/Remove are guarded against double submits.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.7.1 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

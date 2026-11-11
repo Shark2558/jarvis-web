@@ -492,3 +492,31 @@ def test_a_3d_layer_that_fails_to_load_is_reported_never_silent(
             _need_3d(c)
     finally:
         c.close()
+
+
+def test_the_start_card_names_the_version_next_to_the_commit(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R6.1 decision 3: the show's release line is "R6.1 · v6.1.0 · <id>" (R6 books: "R6 · <id>")."""
+    c = Console(browser, server_url, token, DESKTOP)
+    c.page.add_init_script(GL_SPY)
+    c.page.add_init_script(SPEECH_STUB)
+    c.page.add_init_script(SEED % (TOKEN, "guest"))
+    fake = FakeBook(c.page)
+    body = script("guest", QUICK)
+    body["release"] = {
+        "id": "8308815",
+        "label": "R6.1",
+        "version": "v6.1.0",
+        "committed_at": "2026-11-11T09:00:00+05:30",
+    }
+    fake.script_answer = (200, body)
+    try:
+        c.page.goto(server_url + "/book/show")
+        c.page.locator("#shBegin").wait_for()
+        # both labels are set in capitals by their CSS (the look); their text is this line
+        assert c.page.locator("#shStartRel").text_content() == "R6.1 · v6.1.0 · 8308815"
+        assert c.page.locator("#shRelease").text_content() == "R6.1 · v6.1.0 · 8308815"
+        _clean(c)
+    finally:
+        c.close()

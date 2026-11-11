@@ -15,7 +15,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-from test_console import DESKTOP, LINKED, PHONE, Console  # same directory (pytest prepend import)
+from dock_rule import assert_follows_rule, measure_dock  # same directory (pytest prepend import)
+from test_console import DESKTOP, LINKED, PHONE, Console
 
 _pw = pytest.importorskip("playwright.sync_api")
 sync_playwright, expect = _pw.sync_playwright, _pw.expect
@@ -666,7 +667,9 @@ def test_phone_badges_the_brief_tab_then_shows_one_panel(make: Callable[..., Con
     assert tab.get_attribute("aria-label") == "Brief, new brief ready"
     assert page.locator("#p-chat").is_visible() and page.locator("#p-brief").is_hidden()
     assert fake.to("/v1/brief/seen") == []  # a badge is not "seen"
-    # eight tabs (seven panels + More), all on screen, each a usable touch target with its label
+    # the tabs the bar holds at 390 px, then More: as many as the measured labels allow (each keeps
+    # 8 px of air beside its label, R6.1: six panels here, five on GitHub's Chromium, whose text is
+    # wider), all on screen, each a usable touch target with its label
     tabs = page.evaluate(
         """[...document.querySelectorAll('#dock .dk')].filter(b => b.getClientRects().length)
            .map(b => {
@@ -676,7 +679,9 @@ def test_phone_badges_the_brief_tab_then_shows_one_panel(make: Callable[..., Con
                      right: r.right, fits: !label || label.scrollWidth <= b.clientWidth};
            })"""
     )
-    assert len(tabs) == 8 and tabs[-1]["name"] == "dockMore", tabs
+    names = [t["name"] for t in tabs]
+    assert names[-1] == "dockMore" and "brief" in names, names  # twenty panels never fit a phone
+    assert_follows_rule(measure_dock(page), names[:-1])
     width = page.evaluate("window.innerWidth")
     for t in tabs:
         assert t["w"] >= 44 and t["h"] >= 44, t
@@ -713,8 +718,9 @@ def test_very_narrow_phone_keeps_every_tab_named(make: Callable[..., Console]) -
              return {w: r.width, name: (b.getAttribute('aria-label') || b.textContent).trim()};
            })"""
     )
-    assert len(names) == 8
-    assert all(n["w"] >= 40 and n["name"] for n in names), names
+    # R6.1 D7: at most eight tabs, each a 44 px touch target (seven fit 340 px: 6 tabs and More)
+    assert 4 <= len(names) <= 8 and names[-1]["name"].startswith("More panels"), names
+    assert all(n["w"] >= 44 and n["name"] for n in names), names
     assert c.errors == []
 
 

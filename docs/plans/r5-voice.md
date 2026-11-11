@@ -1,3 +1,5 @@
+Version v5.0.1 · 9 Nov 2026 · Release R5 · Status: Superseded by the build log · Owner: 🛠 Mark X
+
 # Release R5 — Voice that listens: you can talk over JARVIS to stop him, conversations have no turn limit and end with a spoken handover after a long pause, a "mic off" that really stops the microphone, switching between laptop sound devices (Bluetooth earphones, speaker, the laptop itself), faster first words, and recognition tuned to words the owner chooses
 
 Status: PLAN v1 · 2026-11-09 · branch `r5`, which is `r4` @ `acaee95`. `main` is still R3 @ `e16996a` (see G0). Builders branch from `r5-i0`, which is `r5` plus this plan's I0 seams. The plan carries the owner's voice requirement of 9 Nov.
@@ -708,3 +710,9 @@ Server files:
 - Google Speech-to-Text v1 speech adaptation with `latest_short` / `latest_long`, the `speechContexts` limits, and how `totalBilledTime` rounds.
 - Any contextual-biasing (`phrases`) option on the Web Speech API in current Chrome.
 - Windows 11's Win + Ctrl + V quick sound-output picker.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v5.0.1 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

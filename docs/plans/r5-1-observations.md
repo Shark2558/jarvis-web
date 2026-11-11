@@ -1,3 +1,5 @@
+Version v5.1.1 · 10 Nov 2026 · Release R5.1 · Status: Superseded by the build log · Owner: 🛠 Mark XI
+
 # R5.1 — Observations & UI polish (plan)
 
 Owner's observations of 9–10 Nov 2026 (Observations.docx), on the live R4/R5 console. Branch `r5-1` from
@@ -160,3 +162,9 @@ call added anywhere. One PR.
   the server answers, switches one at a time, and AI back on always asks (menu, People button and
   `JarvisBrainMode.set('ai')` end in the same confirm); the visual gate also audits the top bar, the open
   brain menu and its confirm, the systems pop-up with concerns and the open Vitals form.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v5.1.1 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

@@ -1,0 +1,22 @@
+# number	version	title	mark	kind	prerelease
+1	v0.5.0	v0.5.0 · Slice 5 Conversations, approvals and audit · Mark II	II	release	true
+2	v0.5.2	v0.5.2 · Slice 5c 3D Command Deck and deploy on merge · Mark II	II	release	true
+8	v0.6.0	v0.6.0 · Slice 6 Google Calendar and Gmail tools · Mark II	II	release	true
+9	v0.7.0	v0.7.0 · Slice 7 Morning brief · Mark III	III	release	true
+10	v0.7.1	v0.7.1 · Slice 7b Costs in rupees · Mark III	III	release	true
+11	v0.8.0	v0.8.0 · Slice 8 Long-term memory · Mark IV	IV	release	true
+13	v0.9.0	v0.9.0 · Slice 9 Voice · Mark V	V	release	true
+14	v0.9.1	v0.9.1 · Slice 9 hotfix 1 — memory-import test timing · Mark V	V	hotfix	true
+15	v0.9.2	v0.9.2 · Slice 9 hotfix 2 — browser-test rate limit · Mark V	V	hotfix	true
+16	v0.10.0	v0.10.0 · Slice 10 Web search, to-do list, documents and passkeys · Mark VI	VI	release	true
+17	v0.11.0	v0.11.0 · Slice 11 Full control of calendar, reminders and to-dos · Mark VI	VI	release	true
+18	v0.12.0	v0.12.0 · Slice 12 Drive, Maps, YouTube, Contacts and WhatsApp drafts · Mark VII–VIII	VII-VIII	release	true
+19	v0.12.1	v0.12.1 · Slice 12 hotfix 1 — Phase 0 reply fix · Mark VIII	VIII	hotfix	true
+20	v1.0.0	v1.0.0 · R1 Free tools · Mark IX	IX	release	false
+21	v2.0.0	v2.0.0 · R2 Memory and personal vault · Mark IX	IX	release	false
+22	v3.0.0	v3.0.0 · R3 Home bridge and camera security · Mark IX	IX	release	false
+23	v4.0.0	v4.0.0 · R4 Vitals, Self-Health & People · Mark X	X	release	false
+24	v5.0.0	v5.0.0 · R5 Voice that listens · Mark X	X	release	false
+25	v5.1.0	v5.1.0 · R5.1 Your observations, fixed · Mark XI	XI	release	false
+26	v5.1.1	v5.1.1 · R5.1 hotfix 1 — reliable mic test · Mark XII	XII	hotfix	false
+27	v6.0.0	v6.0.0 · R6 The Build Book · Mark XII	XII	release	false

@@ -12,6 +12,7 @@ from typing import Any
 from book_mocks import status as book_status
 from playwright.sync_api import Page, Route
 
+from jarvis import about
 from jarvis.health.briefing import compose_briefing
 from jarvis.health.models import HealthReport, ProbeResult
 from jarvis.health.probes import BRAIN_NO_CREDIT
@@ -218,7 +219,9 @@ def _board(*, manual_unavailable: bool = False) -> Board:
 
 
 BOARD = _board()
-MOCK_VITALS: dict[str, Any] = BOARD.to_json()
+# R6.1 D4: GET /v1/vitals also carries the "About JARVIS" line's two fields (vitals/api.py)
+ABOUT = {"version": about.version(), "build_date": "11 Nov 2026"}
+MOCK_VITALS: dict[str, Any] = {**BOARD.to_json(), **ABOUT}
 MOCK_VITALS_503 = {"detail": "Vitals is not available on this server."}
 
 
@@ -380,7 +383,7 @@ def install_mocks(
 ) -> None:
     vitals = (503, MOCK_VITALS_503) if vitals_503 else (200, MOCK_VITALS)
     if manual_unavailable:
-        vitals = (200, _board(manual_unavailable=True).to_json())
+        vitals = (200, {**_board(manual_unavailable=True).to_json(), **ABOUT})
     page.route("**/v1/usage", _get_only(200, MOCK_USAGE))
     page.route("**/v1/vitals", _get_only(*vitals))
     page.route("**/v1/health", _get_only(200, MOCK_HEALTH))
@@ -397,8 +400,17 @@ def install_mocks(
 # contrast probe multiplies in opacity, and an element caught mid-entry (opacity 0 -> 1) is not a defect.
 # Infinite ones (the status dot's breathing) are left alone.
 FINISH_ANIMATIONS_JS = """() => {
-  for (const a of document.getAnimations()) {
-    try { if (a.effect && a.effect.getComputedTiming().iterations !== Infinity) a.finish(); } catch (_) { /* a cancelled one */ }
+  // Finishing one transition (a theme token on <html>) sets off others (a tab's own colour
+  // transition) at the next style update: flush the style and repeat, a few rounds at most.
+  for (let round = 0; round < 4; round++) {
+    let finished = 0;
+    for (const a of document.getAnimations()) {
+      try {
+        if (a.playState !== 'finished' && a.effect && a.effect.getComputedTiming().iterations !== Infinity) { a.finish(); finished += 1; }
+      } catch (_) { /* a cancelled one */ }
+    }
+    if (!finished) return;
+    void document.documentElement.getBoundingClientRect();
   }
 }"""
 
@@ -429,10 +441,14 @@ DOM_CHECKS_JS = r"""
     return { left: L, top: T, right: R, bottom: B, width: Math.max(0, R - L), height: Math.max(0, B - T) };
   };
   const inClosedDetails = (e) => { const d = e.closest('details:not([open])'); return !!d && !e.closest('summary') && e !== d; };
+  // visually hidden on purpose: the screen-reader clip pattern on a 1 x 1 px box (e.g. the 320 px
+  // dock's icon-only tabs). The same clip on a full-size box is a fault and is still measured.
+  const clipped = (s) => s.position === 'absolute' && s.width === '1px' && s.height === '1px'
+    && (s.clip === 'rect(0px, 0px, 0px, 0px)' || s.clipPath === 'inset(50%)');
   const vis = (e) => {
     if (inClosedDetails(e) || e.closest('.sr-only')) return false;
     const r = rect(e); if (r.width < 1 || r.height < 1) return false;
-    const s = cs(e); return s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity) > 0.05;
+    const s = cs(e); return s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity) > 0.05 && !clipped(s);
   };
   const first = (stack) => (stack || '').split(',')[0].trim().replace(/^["']|["']$/g, '').toLowerCase();
   const rs = cs(document.documentElement);

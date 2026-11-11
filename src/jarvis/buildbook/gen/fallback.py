@@ -9,6 +9,8 @@
                                     app still learns that this release has no book
                                     (`book_seal_failed`) instead of serving nothing silently
     label_of(path)                  "R6" / "R5.1" from a plan's file name (shared with gen.plans)
+    version_of(text)                "v6.1.0" from src/jarvis/__init__.py's text (shared with
+                                    gen.write; R6.1 decision 3), None when it names none
 
 The bytes are the ones `write.release_bytes` writes for the same release (a test pins it).
 """
@@ -27,6 +29,10 @@ PLANS = "docs/plans/"
 ERROR_MAX = 200
 GIT_TIMEOUT_S = 30
 RELEASE_PLAN = re.compile(r"^r(\d{1,3})(?:-(\d{1,2}))?-")
+VERSION_FILE = "src/jarvis/__init__.py"  # the one version source (R6.1 D4)
+_VERSION = re.compile(
+    r"""^__version__\s*=\s*["']([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4})["']\s*$""", re.MULTILINE
+)
 
 
 def clear(out: Path) -> None:
@@ -42,6 +48,19 @@ def label_of(path: str) -> str:
     if not m:
         return ""
     return f"R{int(m.group(1))}" + (f".{int(m.group(2))}" if m.group(2) else "")
+
+
+def version_of(text: str | None) -> str | None:
+    """ "v6.1.0" from `__version__ = "6.1.0"`; None for anything else (no guessing)."""
+    m = _VERSION.search(text or "")
+    return f"v{m.group(1)}" if m else None
+
+
+def _version(top: Path) -> str | None:
+    try:
+        return version_of((top / VERSION_FILE).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def _release_key(path: str) -> tuple[int, int]:
@@ -65,9 +84,12 @@ def _label(top: Path) -> str:
     return label_of(max(plans, key=_release_key)) if plans else "R0"
 
 
-def release_doc(sha: str, label: str, committed_at: str, error: str) -> bytes:
-    """release.json for a failed build, as `write.release_bytes` formats it."""
-    doc = {
+def release_doc(
+    sha: str, label: str, committed_at: str, error: str, version: str | None = None
+) -> bytes:
+    """release.json for a failed build, as `write.release_bytes` formats it (no `version` key
+    when the checkout names none, as `model.ReleaseRef` dumps it)."""
+    doc: dict[str, object] = {
         "book_sha256": None,
         "committed_at": committed_at,
         "error": " ".join(error.split())[:ERROR_MAX] or "the build book failed",
@@ -79,6 +101,8 @@ def release_doc(sha: str, label: str, committed_at: str, error: str) -> bytes:
         "source_sha256": None,
         "v": 1,
     }
+    if version is not None:
+        doc["version"] = version
     return (json.dumps(doc, sort_keys=True, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
@@ -95,9 +119,18 @@ def error_release(start: Path, out: Path | None, error: str) -> Path | None:
     target.mkdir(parents=True, exist_ok=True)
     clear(target)
     tmp = target / f".{RELEASE_FILE}.tmp"
-    tmp.write_bytes(release_doc(sha, _label(Path(top)), when, error))
+    tmp.write_bytes(release_doc(sha, _label(Path(top)), when, error, _version(Path(top))))
     os.replace(tmp, target / RELEASE_FILE)
     return target / RELEASE_FILE
 
 
-__all__ = ["BOOK_FILES", "RELEASE_FILE", "clear", "error_release", "label_of", "release_doc"]
+__all__ = [
+    "BOOK_FILES",
+    "RELEASE_FILE",
+    "VERSION_FILE",
+    "clear",
+    "error_release",
+    "label_of",
+    "release_doc",
+    "version_of",
+]

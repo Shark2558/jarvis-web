@@ -1,3 +1,5 @@
+Version v0.5.2 · 1 Nov 2026 · Release Slice 5c · Status: Superseded by the build log · Owner: 🛠 Mark II
+
 # Phase 2 · Slice 5c — Command Deck (dark 3D HUD), deploy-on-merge, owner identity
 
 Status: DONE · 2026-11-01 · PR #2 (owner merges)
@@ -101,3 +103,9 @@ retires 3D); Google sign-in mode (`/auth/me` path is unchanged code); Safari / F
 
 Behaviour checks (≈ 95 Playwright assertions) live in the build harness, not CI — adding a browser
 test job to CI is a follow-up.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.5.2 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

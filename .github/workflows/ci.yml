@@ -29,6 +29,54 @@ jobs:
       # data, no unlisted secret-shaped string, every package in a layer and every flow step real
       - run: python -m jarvis.buildbook.gen --check
 
+  # R6.1 D4 + D6: the documents, once (Python 3.12) on every pull request and every push to main.
+  # No job waits for this one, the deploy included: a doc slip never holds up a deploy or a hotfix.
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: "3.12", cache: pip }
+      # arch_coverage.py imports jarvis (the build book's scrubber, the settings)
+      - run: pip install -e ".[dev]"
+      # every docs/plans/*.md and docs/architecture/*.md opens with its version line and ends
+      # with its change log (standard library only)
+      - run: python scripts/check_doc_versions.py
+      # the architecture guide covers every package, console module, Scheduler job, outside
+      # service and Firestore collection; complete cards and rows; the R6 secret scan
+      - run: python scripts/arch_coverage.py
+
+  # R6.1 D4: a pull request's title reads "v6.1.0 · R6.1 Short name · Mark XIII"
+  # (scripts/check_pr_title.py). Pull requests only, Dependabot's exempt, and never a job the
+  # deploy waits for. The title is read from GitHub when the job runs (the event's copy if that
+  # read fails), so after a rename "Re-run jobs" checks the new title. Standard library only.
+  pr-title:
+    if: >-
+      github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # The pull request's own script runs here: keep no token in .git/config (GH_TOKEN reaches
+      # `gh api` through env alone) and fetch only the one file the step runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/check_pr_title.py
+          sparse-checkout-cone-mode: false
+      - name: Check the pull request's title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          TITLE="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .title 2>/dev/null)" \
+            || TITLE="$PR_TITLE"
+          python3 scripts/check_pr_title.py "$TITLE"
+
   # Persistence contract tests against the official Firestore emulator (slice 5).
   firestore:
     runs-on: ubuntu-latest
@@ -69,6 +117,43 @@ jobs:
       - run: pip install -e ".[dev]" playwright==1.63.0
       - run: playwright install --with-deps chromium
       - run: pytest -q tests/browser -m browser -rs
+
+  # R6.1 D2: the architecture diagrams (docs/architecture/diagrams/*.markdy). Pull requests only and
+  # never a dependency of deploy. Every PR: the privacy rule, Markdy's `lint --strict` and
+  # `verify --quality showcase` for all diagrams. A PR that touches docs/architecture, the Markdy
+  # tool (tools/markdy) or the export scripts (scripts/markdy_*) also runs `--check`: every
+  # diagram's SVG + PNG must be the export of its current source and the pinned Markdy version
+  # (exports.json; no browser needed). Markdy (@markdy/cli 1.5.7, MIT) is a dev-only tool from
+  # tools/markdy's lock.
+  docs:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # The pull request's own code runs here (npm ci from its lock, the export scripts): keep no
+      # token in .git/config. fetch-depth 0 brings the base branch for the git diff below.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with: { node-version: "22" }
+      - run: npm ci --prefix tools/markdy --ignore-scripts --no-audit --no-fund
+      - name: Does this pull request change the diagrams, the Markdy tool or the export scripts?
+        id: changed
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # an unknown answer (git failed) counts as changed: the stricter check runs.
+          # 'scripts/markdy_*' is quoted so git, not the shell, expands it.
+          if git diff --quiet "origin/${BASE_REF}...HEAD" -- docs/architecture tools/markdy 'scripts/markdy_*'; then
+            echo "diagrams=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "diagrams=yes" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changed.outputs.diagrams == 'yes'
+        run: python scripts/markdy_export.py --check
+      - if: steps.changed.outputs.diagrams != 'yes'
+        run: python scripts/markdy_export.py --lint-only
 
   # Real-model eval gate. Runs on main only; skipped (not failed) when no Anthropic key is set.
   eval-gate:

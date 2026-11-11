@@ -1,3 +1,5 @@
+Version v0.10.0 · 2 Nov 2026 · Release Slice 10 · Status: Superseded by the build log · Owner: 🛠 Mark VI
+
 # Slice 10 — Phase 0 close-out + Phase 2 tools wave
 
 Date: 2026-11-01 · Branch `slice10-phase2-tools` (based on `slice9-voice`, PR #13) · Owner request:
@@ -498,3 +500,9 @@ console HTML/JS, `evals/run_all_mock.py`) carry all four workstreams. Changes ma
 - **Lock**: `make lock` (pip-compile 7.6.2, Python 3.12, existing pins kept) added cbor2,
   lxml, pyopenssl, pypdf 6.21.4, python-docx 1.2.0, webauthn 3.0.1; hashed install verified.
 - **Browser**: the permissions test server (its own process) gets PR #15's raised per-IP limit.
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v0.10.0 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

@@ -594,3 +594,49 @@ def test_track_label_never_leaves_an_orphan_word_at_the_default_width(
     )
     assert lines, "label has no text"
     assert len(lines[-1]) >= 2 or len(lines) == 1, f"orphan word: {lines}"
+
+
+# ---- R6.1 D4: the read-only "About JARVIS" line at the foot of the panel ----
+ABOUT = "#p-vitals #vAbout"
+LINE = "About JARVIS · v6.1.0 · "
+
+
+@pytest.mark.parametrize(
+    ("over", "want"),
+    [
+        ({"version": "v6.1.0", "build_date": "11 Nov 2026"}, LINE + "built 11 Nov 2026"),
+        ({"version": "v6.1.0", "build_date": "unknown"}, LINE + "build date unknown"),
+        ({"version": "v6.1.0", "build_date": "<b>soon</b>"}, LINE + "build date unknown"),
+    ],
+    ids=["dated", "unknown", "hostile-date"],
+)
+def test_the_about_line_shows_the_version_and_the_build_date(
+    make: Callable[..., Console], over: dict[str, str], want: str
+) -> None:
+    c = make()
+    FakeVitals(c.page, board(**over))
+    _open(c)
+
+    line = c.page.locator(ABOUT)
+    assert line.text_content() == want and line.is_visible()
+    assert line.get_attribute("class") == "sfine"  # the panel's own fine print: no new look
+    assert line.locator("*").count() == 0  # text only
+    assert c.csp_violations() == [] and _quiet(c) == []
+
+
+@pytest.mark.parametrize(
+    "over",
+    [{}, {"version": "6.1.0"}, {"version": "<img src=x onerror=alert(1)>"}],
+    ids=["older-server", "no-v", "hostile-version"],
+)
+def test_without_a_good_version_the_about_line_stays_hidden(
+    make: Callable[..., Console], over: dict[str, str]
+) -> None:
+    c = make()
+    FakeVitals(c.page, board(**over))
+    _open(c)
+
+    line = c.page.locator(ABOUT)
+    assert line.text_content() == "" and not line.is_visible()
+    assert c.page.locator("#p-vitals img").count() == 0
+    assert c.csp_violations() == [] and _quiet(c) == []

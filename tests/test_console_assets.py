@@ -38,6 +38,7 @@ THREE_URL = f"/static/vendor/{THREE_RELEASE}/three.module.min.js"
 DECK_SCRIPTS = (
     "console-fx.js",
     "console-deck.js",
+    "console-dock.js",
     "console.js",
     "console-brief.js",
     "console-usage.js",
@@ -132,10 +133,16 @@ async def test_rejects_unknown_font_names_and_traversal(client: AsyncClient, pat
 
 
 async def test_console_page_declares_self_hosted_font_faces(client: AsyncClient) -> None:
+    # R6.1 I1: the @font-face block moved from the page's inline <style> to the base stylesheet
+    # (console.html must stay under 800 lines); the page links that stylesheet first.
     html = (await client.get("/")).text
+    links = re.findall(r'<link rel="stylesheet" href="([^"]+)">', html)
+    assert links[0] == "/static/console.css"
+    css = (await client.get("/static/console.css")).text
     for name in ALLOWED_FONTS:
-        assert f"/static/fonts/{name}" in html
-    assert "font-display:swap" in html.replace(" ", "")
+        assert f"/static/fonts/{name}" in css
+    assert css.replace(" ", "").count("font-display:swap") == len(ALLOWED_FONTS)
+    assert "@font-face" not in html
 
 
 # ---- three.js (vendored, MIT) -----------------------------------------------------------------
@@ -483,23 +490,37 @@ async def test_memory_panel_dock_button_and_dialog_are_wired(client: AsyncClient
     assert re.search(r"\bmemory: \{ x:", deck)
 
 
-async def test_phone_dock_has_a_more_sheet_for_the_overflow_tabs(client: AsyncClient) -> None:
-    """Twenty panels (Voice joined in slice 9, Media in slice 12, Vault, Things, Notes and
-    Privacy in R2, Home and Faces in R3, Connectors and People in R4, Book in R6): a phone shows
-    at most eight tabs; the rest sit behind "More"."""
+async def test_the_dock_folds_into_a_more_sheet_with_an_entry_per_foldable_tab(
+    client: AsyncClient,
+) -> None:
+    """R6.1 D7 (replaces the fixed phone "ovf" split): twenty panels, and console-dock.js measures
+    the dock at every width, folding the tabs that don't fit behind "More", last tabs first. Chat
+    and Brief never fold; Approvals folds only where its label is wider than its tab (900-1180 px,
+    review A), so it has a More-sheet entry too, like every later tab, in dock order; More starts
+    hidden; phones keep at most eight tabs; a tab needs its label plus 8 px of air; nothing scrolls
+    sideways."""
     html = (await client.get("/")).text
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
-    tabs = re.findall(r'<button class="dk([^"]*)" type="button" data-open="(\w+)"', dock)
-    assert len(tabs) == 20
-    on_phone = [name for cls, name in tabs if "ovf" not in cls.split()]
-    overflow = [name for cls, name in tabs if "ovf" in cls.split()]
-    assert len(on_phone) + 1 <= 8 and overflow  # + the More tab itself
+    names = re.findall(r'<button class="dk(?: wide)?" type="button" data-open="(\w+)"', dock)
+    assert len(names) == 20 and names[:3] == ["chat", "brief", "approvals"]
+    assert "ovf" not in dock
     assert 'id="dockMore" type="button" aria-haspopup="dialog" aria-expanded="false"' in dock
-    assert '<dialog class="sheet" id="moreSheet" aria-labelledby="moreTitle">' in html
-    for name in overflow:
-        assert f'data-sheet-open="{name}"' in html, name
+    assert re.search(r'id="dockMore"[^>]* hidden>', dock)  # shown only while a tab is folded
+    sheet = html[html.index('<dialog class="sheet" id="moreSheet" aria-labelledby="moreTitle">') :]
+    sheet = sheet[: sheet.index("</dialog>")]
+    assert re.findall(r'data-sheet-open="(\w+)"', sheet) == names[2:]
+    assert html.index('src="/static/console-deck.js"') < html.index('src="/static/console-dock.js"')
+    js = (await client.get("/static/console-dock.js")).text
+    for const in ("PINNED = 3;", "PHONE_MAX = 8;", "MIN_TOUCH = 44;", "LABEL_CLEAR = 8;"):
+        assert f"const {const}" in js, const
+    triggers = ("new ResizeObserver(", "requestAnimationFrame(", "document.fonts", "'jarvis:theme'")
+    for trigger in triggers:  # re-measured on resize, font load and theme change, once a frame
+        assert trigger in js, trigger
+    assert len(js.splitlines()) <= 400
+    deck = (await client.get("/static/console-deck.js")).text
+    assert "scrollIntoView" not in deck and "'wheel'" not in deck and "ovf" not in deck
     css = (await client.get("/static/console-deck.css")).text
-    assert re.search(r"\.dk\.ovf\s*\{[^}]*display:\s*none", css)  # inside the phone query
+    assert "overflow-x:auto" not in css and ".dk.ovf" not in css
 
 
 async def test_brief_settings_sit_behind_a_remembered_disclosure(client: AsyncClient) -> None:

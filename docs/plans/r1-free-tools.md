@@ -1,3 +1,5 @@
+Version v1.0.1 · 5 Nov 2026 · Release R1 · Status: Superseded by the build log · Owner: 🛠 Mark IX
+
 # Release R1 — Free tools: Telegram front door + alerts, activity log with one-tap Undo, offline mode, package tracking, groceries, family calendar, mail read aloud (+ WhatsApp row fix)
 
 Status: PLAN v1 · 2026-11-04 · branch `r1` (from `main` once PR #19 is merged) · release window 5–13 Nov 2026
@@ -665,3 +667,9 @@ breaker helps; the laptop must be awake; Funnel is still beta.
 
 ## Sources (accessed 2026-11-04)
 docs.aiogram.dev/en/latest/api/methods/set_webhook.html (Bot API setWebhook) · core.telegram.org/bots/faq ·
+
+## Change log
+
+| Version | Date | Release | What changed | By |
+|---|---|---|---|---|
+| v1.0.1 | 11 Nov 2026 | R6.1 | Version line and change log added in R6.1 | 🛠 Mark XIII |

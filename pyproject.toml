@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jarvis"
-version = "0.0.1"
+dynamic = ["version"]  # R6.1 D4: read from src/jarvis/__init__.py (the one version source)
 description = "J.A.R.V.I.S. — personal AI assistant. Phase 0: core reasoning loop with session memory."
 requires-python = ">=3.11"
 readme = "README.md"
@@ -49,10 +49,18 @@ homebridge = ["aiomqtt==2.5.1", "paho-mqtt==2.1.0"]
 [project.scripts]
 jarvis = "jarvis.cli:main"
 
+[tool.setuptools.dynamic]
+# R6.1 D4 (review L2): the number lives only in `jarvis.__version__`; setuptools reads it
+# statically (no import), so a version bump is one line in one file.
+version = { attr = "jarvis.__version__" }
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
+# R6.1 D4: the build time the Dockerfile stamps before `pip install .` (git-ignored; absent in a
+# plain checkout, where the Vitals "About JARVIS" line says "unknown")
+"jarvis" = ["BUILD_DATE"]
 "jarvis.api" = [
     "static/*.html",
     "static/*.js",

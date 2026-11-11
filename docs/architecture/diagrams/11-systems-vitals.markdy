@@ -1,0 +1,31 @@
+scene "Figure 11 · The systems check and the Vitals board" theme=paper type=architecture
+layout TB
+
+scheduler Clocks "Morning tick and watchdog" sub="Cloud Scheduler"
+browser Popup "Systems pop-up" sub="Run now, in the console"
+probe Check "Systems check" sub="AI brain, Google, Telegram, home, data, web"
+service Status "One status" sub="ok, degraded or down; stored"
+service Briefing "Spoken briefing" sub="read aloud; works with AI off"
+service Vitals "Vitals poll" sub="hourly; warns on amber or red"
+dashboard Board "Vitals board" sub="spend in rupees, free quotas, keys"
+policy Policy "Alert policy" sub="down rings; red items in the day"
+
+beat check "1. JARVIS checks its own systems":
+  show $nodes stagger=30ms
+  Clocks -> Check "every 15 min at most"
+  Popup -> Check "on demand"
+  Check -> Status "results, no AI used"
+
+beat vitals "2. JARVIS watches its keys, quotas and bills":
+  Clocks -> Vitals "hourly"
+  Vitals -> Board "meters and records"
+
+beat tell "3. You hear about it":
+  Status -> Briefing "what works, what breaks"
+  Board -> Briefing "spend, red items"
+  Status -> Policy "a change that held twice"
+  glow Status color=#22c55e
+
+player:
+  chrome:
+    badge false

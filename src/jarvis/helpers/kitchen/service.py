@@ -36,7 +36,7 @@ from jarvis.helpers.kitchen.nutrition import (
     key_line,
     parse_ingredients,
 )
-from jarvis.helpers.kitchen.recipes import DIET_SHORT, RecipeService
+from jarvis.helpers.kitchen.recipes import DIET_SHORT, RecipeService, unfenced
 from jarvis.helpers.kitchen.spend import GrocerySpendJob, SpendService
 from jarvis.helpers.kitchen.store import KitchenOff, KitchenStore, KitchenUnavailable
 
@@ -62,9 +62,14 @@ def diet_of(value: object) -> str | None:
 
 def _steps(value: object) -> tuple[str, ...]:
     if isinstance(value, list | tuple):
-        return tuple(str(s) for s in value if str(s).strip())
-    parts = [p.strip() for p in str(value or "").replace("\n", ";").split(";")]
+        return tuple(t for s in value if (t := unfenced(str(s))).strip())
+    parts = [p.strip() for p in unfenced(str(value or "")).replace("\n", ";").split(";")]
     return tuple(p for p in parts if p)
+
+
+def _text(value: object) -> object:
+    """A field the chat may have copied from a fenced idea: its fence comes off."""
+    return unfenced(value) if isinstance(value, str) else value
 
 
 def _ingredients(value: object) -> tuple[Ingredient, ...]:
@@ -95,8 +100,8 @@ def recipe_from(args: Mapping[str, Any], rid: str) -> Recipe:
     """A recipe from tool or route arguments (ValueError in plain words, never the input)."""
     data = {
         "id": rid,
-        "title": args.get("title"),
-        "cuisine": args.get("cuisine") or "",
+        "title": _text(args.get("title")),
+        "cuisine": _text(args.get("cuisine") or ""),
         "diet": diet_of(args.get("diet")) or "veg",
         "minutes": _minutes(args.get("minutes")),
         "ingredients": _ingredients(args.get("ingredients")),

@@ -117,6 +117,7 @@ async def test_suggest_then_save_and_list_a_recipe() -> None:
         steps=r["steps"],
     )
     assert saved.outcome is GatewayOutcome.EXECUTED, saved.error
+    assert "EXTERNAL" not in saved.result["message"]  # a copied fence is taken off when saved
     listed = await _call(gw, "recipe_list")
     assert listed.result["message"] == "Your saved recipes, Sir: Dal tadka (30 min, vegetarian)."
     assert len(private.calls) == 1

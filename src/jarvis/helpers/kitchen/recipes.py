@@ -17,6 +17,9 @@ part of the kitchen that calls a model, and only like this:
   diet, or (veg and egg kitchens) uses anything but his pantry and the fixed staples, is asked for
   once more, then refused; it is never shown. A request can only make the diet stricter.
 - An empty pantry makes no call (nothing to build an idea from): his saved recipes that fit.
+- The idea's own words (title, cuisine, steps) are the AI's, built from his notes: they go back
+  to the chat's model fenced as data (`wrap_external`, integrated review of Part D's Sec L1) and
+  never in `message`; `recipe_save` takes a fence the model copied off again (`unfenced`).
 Nothing about the call is stored (no prompt, no reply); logs carry class names and counts.
 """
 
@@ -63,7 +66,7 @@ from jarvis.llm.router import BrainOff, ModelRouter, ModelTier
 from jarvis.logging import get_logger
 from jarvis.offline.mode import BrainMode
 from jarvis.tools.card import one_line
-from jarvis.tools.external import wrap_external
+from jarvis.tools.external import FENCE_PREFIX, wrap_external
 
 log = get_logger(__name__)
 
@@ -208,6 +211,23 @@ def _pantry_words(recipe: Recipe, pantry: set[str]) -> str:
     return f"{_have(recipe, pantry)} of {len(recipe.ingredients)} in your pantry"
 
 
+IDEA_SOURCE = "the AI's recipe idea"
+_ONE_FENCE = re.compile(
+    rf"^\s*{re.escape(FENCE_PREFIX)}[^<>\n]*· ([0-9a-f]{{6}})>>\n(.*)\n<<END \1>>\s*$", re.S
+)
+
+
+def unfenced(text: str) -> str:
+    """`text` without the one fence around it (a fenced idea's words copied back to a save);
+    anything that isn't exactly one fence is left as it is."""
+    m = _ONE_FENCE.match(text)
+    return m.group(2) if m else text
+
+
+def _fence(text: str, limit: int) -> str:
+    return wrap_external(text, source=IDEA_SOURCE, limit=limit)
+
+
 def shape(recipe: Recipe, pantry: set[str]) -> dict[str, Any]:
     return {
         "id": recipe.id,
@@ -333,11 +353,17 @@ class RecipeService:
         pantry = {norm_key(p) for p in kitchen.pantry}
         have, total = _have(recipe, pantry), len(recipe.ingredients)
         message = (
-            f"Here's an idea, Sir: {recipe.title} ({recipe.minutes} min, "
-            f"{DIET_SHORT[recipe.diet]}). You have {have} of {total} ingredients. "
-            "Say 'save it' to keep it in your recipes."
+            f"Here's an idea, Sir ({recipe.minutes} min, {DIET_SHORT[recipe.diet]}): its title "
+            f"and steps are in `recipe`. You have {have} of {total} ingredients. Say 'save it' "
+            "to keep it in your recipes."
         )
-        out: dict[str, Any] = {"from": "ai", "message": message, "recipe": shape(recipe, pantry)}
+        idea = {
+            **shape(recipe, pantry),
+            "title": _fence(recipe.title, TITLE_MAX),
+            "cuisine": _fence(recipe.cuisine, CUISINE_MAX) if recipe.cuisine else "",
+            "steps": [_fence(step, STEP_MAX) for step in recipe.steps],
+        }
+        out: dict[str, Any] = {"from": "ai", "message": message, "recipe": idea}
         if self.nutrition.installed:
             out["nutrition"] = describe(self.nutrition.dish(recipe.ingredients))
         return out
@@ -360,6 +386,7 @@ class RecipeService:
 
 __all__ = [
     "AI_OFF_LINE",
+    "IDEA_SOURCE",
     "EMPTY_PANTRY_LINE",
     "LIMIT_LINE",
     "MAX_TOKENS",
@@ -370,6 +397,7 @@ __all__ = [
     "RecipeService",
     "build_prompt",
     "parse_reply",
+    "unfenced",
     "parse_request",
     "shape",
 ]

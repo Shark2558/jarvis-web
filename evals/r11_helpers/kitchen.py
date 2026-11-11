@@ -41,7 +41,7 @@ from jarvis.helpers.kitchen import diet
 from jarvis.helpers.kitchen import part as kitchen_part
 from jarvis.helpers.kitchen.models import Ingredient
 from jarvis.helpers.kitchen.nutrition import LABEL, NOT_INSTALLED, Food, Nutrition, describe
-from jarvis.helpers.kitchen.recipes import AI_OFF_LINE, NO_PRIVATE_LINE
+from jarvis.helpers.kitchen.recipes import AI_OFF_LINE, NO_PRIVATE_LINE, unfenced
 from jarvis.helpers.ports import HelperPart
 from jarvis.llm.base import ToolCall
 from jarvis.offline.no_ai import run_no_ai
@@ -142,7 +142,7 @@ async def _veg_outside_pantry_refused() -> list[str]:
 async def _veg_asks_once_more() -> list[str]:
     _, gw, private, _, _, _, _ = await _part(CHICKEN, DAL, pantry=PANTRY)
     out = await _suggest(gw)
-    title = (out.get("recipe") or {}).get("title")
+    title = unfenced(str((out.get("recipe") or {}).get("title")))  # the idea's words are fenced
     return [] if title == "Dal tadka" and len(private.calls) == 2 else [f"got {title!r}"]
 
 

@@ -52,7 +52,7 @@ services, 73 Firestore collections`.
    "Where in the code" in the guide, or the check (and the real-guide test) fails. Any other new
    `console*.js`, package, collection or setting from A–C needs the same one-line update.
 3. **Part B (versioning):** the guide's first line follows the standard (`Version v6.1.1 · 11 Nov
-   2026, 13:30 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII`) and it ends with the
+   2026, 11:43 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII`) and it ends with the
    change log, so B's version-line check should pass on it. The guide says the code is v6.1.0. If
    B's PR-title check lands in CI, Figure 13's caption may gain a line (Part C note 4).
 4. **Part C (diagrams):** links use the fixed names; figure titles match C's `scene` titles at

@@ -1,4 +1,4 @@
-Version v6.1.1 · 11 Nov 2026, 13:30 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII
+Version v6.1.1 · 11 Nov 2026, 11:43 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII
 
 # JARVIS Architecture & Technology Guide
 
@@ -1738,4 +1738,4 @@ Nothing in this section is built. It follows the 11 Nov 2026 release plan v6.1.1
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v6.1.1 | 11 Nov 2026, 13:30 IST | R6.1 | First edition: summary, layers and departures, 59 component cards, 14 diagram captions, technology table, outside services and free limits, plan vs build, decisions, data and privacy, security, operations, costs, limits, roadmap and glossary, written from the code | 🛠 Mark XIII |
+| v6.1.1 | 11 Nov 2026, 11:43 IST | R6.1 | First edition: summary, layers and departures, 59 component cards, 14 diagram captions, technology table, outside services and free limits, plan vs build, decisions, data and privacy, security, operations, costs, limits, roadmap and glossary, written from the code | 🛠 Mark XIII |

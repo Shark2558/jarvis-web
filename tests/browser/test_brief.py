@@ -666,7 +666,8 @@ def test_phone_badges_the_brief_tab_then_shows_one_panel(make: Callable[..., Con
     assert tab.get_attribute("aria-label") == "Brief, new brief ready"
     assert page.locator("#p-chat").is_visible() and page.locator("#p-brief").is_hidden()
     assert fake.to("/v1/brief/seen") == []  # a badge is not "seen"
-    # eight tabs (seven panels + More), all on screen, each a usable touch target with its label
+    # seven tabs at 390 px (six panels + More: each keeps 8 px of air beside its label, R6.1), all
+    # on screen, each a usable touch target with its label
     tabs = page.evaluate(
         """[...document.querySelectorAll('#dock .dk')].filter(b => b.getClientRects().length)
            .map(b => {
@@ -676,7 +677,7 @@ def test_phone_badges_the_brief_tab_then_shows_one_panel(make: Callable[..., Con
                      right: r.right, fits: !label || label.scrollWidth <= b.clientWidth};
            })"""
     )
-    assert len(tabs) == 8 and tabs[-1]["name"] == "dockMore", tabs
+    assert len(tabs) == 7 and tabs[-1]["name"] == "dockMore", tabs
     width = page.evaluate("window.innerWidth")
     for t in tabs:
         assert t["w"] >= 44 and t["h"] >= 44, t

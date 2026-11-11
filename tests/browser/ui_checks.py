@@ -438,8 +438,10 @@ DOM_CHECKS_JS = r"""
     return { left: L, top: T, right: R, bottom: B, width: Math.max(0, R - L), height: Math.max(0, B - T) };
   };
   const inClosedDetails = (e) => { const d = e.closest('details:not([open])'); return !!d && !e.closest('summary') && e !== d; };
-  // visually hidden on purpose (the screen-reader clip pattern, e.g. the 320 px dock's icon-only tabs)
-  const clipped = (s) => s.position === 'absolute' && (s.clip === 'rect(0px, 0px, 0px, 0px)' || s.clipPath === 'inset(50%)');
+  // visually hidden on purpose: the screen-reader clip pattern on a 1 x 1 px box (e.g. the 320 px
+  // dock's icon-only tabs). The same clip on a full-size box is a fault and is still measured.
+  const clipped = (s) => s.position === 'absolute' && s.width === '1px' && s.height === '1px'
+    && (s.clip === 'rect(0px, 0px, 0px, 0px)' || s.clipPath === 'inset(50%)');
   const vis = (e) => {
     if (inClosedDetails(e) || e.closest('.sr-only')) return false;
     const r = rect(e); if (r.width < 1 || r.height < 1) return false;

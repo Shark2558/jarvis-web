@@ -13,8 +13,9 @@
 # Beyond the 21 panels (R6: Book) the gate also audits (D11 completeness): the top bar, the open brain menu and
 # its AI-on confirm, the systems-check pop-up in its done state with concerns, and the Vitals
 # "Track something JARVIS can't see" form OPEN. Each is a separate parametrised test below.
-# R6.1 D7: the dock and its More sheet are also audited at a narrow laptop (1280 px) and the narrowest
-# phone (320 px), where the dock folds the most tabs (fit at ten widths: test_dock_fit.py).
+# R6.1 D7: the dock and its More sheet are also audited at two laptops (1280 px; 1024 px, where the
+# tabs are slimmest) and two phones (360 px with labels; 320 px, icons only), where the dock folds the
+# most tabs (fit and label clearance at ten widths: test_dock_fit.py).
 # One page per viewport and surface (module-scoped); the panels are opened in turn.
 # The release checklist also needs the screenshots to be LOOKED at: scripts/ui_snapshots.py.
 # ruff: noqa: E501 -- the labelling and wrapping probes are JavaScript strings
@@ -37,6 +38,8 @@ VIEWPORTS = {"desktop": DESKTOP, "phone": PHONE}
 # R6.1 D7: the dock-only viewports, each with the rules it is held to ("phone": 44 px targets)
 NARROW = {
     "laptop-1280": ({"width": 1280, "height": 800}, "desktop"),
+    "laptop-1024": ({"width": 1024, "height": 768}, "desktop"),
+    "phone-360": ({"width": 360, "height": 740}, "phone"),
     "phone-320": ({"width": 320, "height": 568}, "phone"),
 }
 SURFACES = ("night", "day")
@@ -60,17 +63,18 @@ NAMELESS_JS = r"""(sel) => {
   return bad;
 }"""
 # A button whose text runs onto a third line. Not the switch / disclosure chrome (.dsc, .bsw) nor the
-# brain menu's rows (.bmopt: a title and a one-line meaning, by design two blocks), nor the More
-# sheet's rows (.sheet-item: a title and a meaning that wraps on a phone, as since slice 8).
+# brain menu's rows (.bmopt: a title and a one-line meaning, by design two blocks). A More-sheet row
+# (.sheet-item, R6.1) is held to it by its title only: the meaning under it (small) may wrap.
 WRAP_JS = r"""(sel) => {
   const out = [];
-  for (const b of document.querySelectorAll(sel + ' button:not(.dsc):not(.bsw):not(.bmopt):not(.sheet-item), ' + sel + ' .btn')) {
+  for (const b of document.querySelectorAll(sel + ' button:not(.dsc):not(.bsw):not(.bmopt), ' + sel + ' .btn')) {
     const r = b.getBoundingClientRect(); if (r.width < 2 || !(b.textContent || '').trim()) continue;
+    const meaning = (n) => { const m = n.parentElement.closest('small'); return !!m && b.contains(m) && b.classList.contains('sheet-item'); };
     // lines as painted: the rects of the TEXT only (an element's own box sits higher than its glyphs
     // by the half-leading), merged when they share a band, so two blocks are two lines wherever they sit
     const rs = [], tw = document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
     for (let n = tw.nextNode(); n; n = tw.nextNode()) {
-      if (!n.textContent.trim()) continue;
+      if (!n.textContent.trim() || meaning(n)) continue;
       const rg = document.createRange(); rg.selectNodeContents(n);
       for (const q of rg.getClientRects()) if (q.width > 1 && q.height > 1) rs.push(q);
     }
@@ -285,6 +289,44 @@ def test_the_wrap_probe_counts_lines_as_painted_not_text_boxes(rig: Rig) -> None
         page.close()
     assert len(wraps) == 1, wraps
     assert wraps[0].startswith("one two three"), wraps
+
+
+SHEET_WRAP_FIXTURE = """<style>#t button { font: inherit; }</style><div id="t" style="font:14px/2 sans-serif">
+<button class="sheet-item" id="meaning" style="width:150px"><b style="display:block">Vault</b><small style="display:block;font-size:12px">Your ID documents and their expiry reminders, kept here for you</small></button>
+<button class="sheet-item" id="title" style="width:70px"><b style="display:block">A title that wraps</b><small style="display:block;font-size:12px">One line</small></button>
+</div>"""
+
+
+def test_a_more_sheet_row_is_held_to_the_third_line_rule_by_its_title(rig: Rig) -> None:
+    # Review A, M2: only the meaning under a More-sheet title may wrap; a title on a third line fails.
+    page = rig.get("desktop", "night").page.context.new_page()
+    try:
+        page.set_content(SHEET_WRAP_FIXTURE)
+        wraps = page.evaluate(WRAP_JS, "#t")
+    finally:
+        page.close()
+    assert len(wraps) == 1, wraps
+    assert wraps[0].startswith("A title that wraps"), wraps
+
+
+CLIP_FIXTURE = """<div id="t" style="position:relative;height:40px;background:#808080;color:#777;font:14px sans-serif">
+<span id="sr" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">Approvals, 3 waiting</span>
+<span id="lost" style="position:absolute;width:160px;height:20px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">A name clipped away by mistake, long enough to run past its box</span>
+</div>"""
+
+
+def test_only_one_pixel_visually_hidden_text_is_exempt_from_the_dom_checks(rig: Rig) -> None:
+    # Review A, M3: the screen-reader clip pattern (1 x 1 px) is not painted, so it is not measured;
+    # the same clip on a full-size box is a fault, and the gate still reports it.
+    page = rig.get("desktop", "night").page.context.new_page()
+    try:
+        page.set_content(CLIP_FIXTURE)
+        res = page.evaluate(DOM_CHECKS_JS, "#t")
+    finally:
+        page.close()
+    found = json.dumps({k: res[k] for k in ("overflow", "contrast")})
+    assert "span#lost" in found and "hard clip" in found, found
+    assert "span#sr" not in found, found
 
 
 def test_history_is_audited_with_conversations_in_it(rig: Rig) -> None:

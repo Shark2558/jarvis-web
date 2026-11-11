@@ -2,8 +2,12 @@
 # A measured "priority plus" dock: at every width the tabs keep their order and the ones that do not
 # fit fold into the More sheet, last tabs first. No sideways scroll anywhere; More shows only when a
 # tab is folded and lights up when an open panel is behind it; the sheet lists exactly the folded
-# tabs in dock order; Chat, Brief and Approvals never fold; phones keep at most eight tabs, each a
-# 44 px touch target. Desktop and phone as the other browser tests emulate them (viewport only).
+# tabs in dock order; Chat, Brief and Approvals never fold for lack of room; phones keep at most
+# eight tabs, each a 44 px touch target. Desktop and phone as the other browser tests emulate them.
+# R6.1 review A (H1/M1): a tab shows only while it holds its label: no label overflows its tab and
+# two neighbouring labels never touch (>= 6 px apart). A desktop tab whose label is wider than the
+# tab (900-1180 px: Approvals, Integrations, ...) moves behind More instead; the approvals badge
+# then rides on More. The chat box's hint stays whole on one line (orchestrator, 320 px).
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -34,7 +38,9 @@ SURFACES = ("night", "day")
 PHONE_BELOW = 900  # console-deck.css: (max-width: 899px) is the phone layout
 PHONE_MAX_TABS = 8  # More included
 MIN_TOUCH = 44
-PINNED = ("chat", "brief", "approvals")
+PINNED = ("chat", "brief", "approvals")  # Approvals folds only where its label overflows its tab
+LABEL_GAP = 6  # px between two neighbouring labels at the least (the dock's 4 px gap + two borders)
+HINT, SHORT_HINT = "Message JARVIS", "Message"
 DESK_SIZES = {78, 102, 66, 88}  # .dk / .dk.wide, and both again on 900-1180 px desktops
 
 # Waits for the fonts and two frames, so a re-measure scheduled by them has run.
@@ -51,6 +57,19 @@ STATE_JS = """() => {
     const b = e.getBoundingClientRect();
     return {l: b.left, r: b.right, w: b.width, h: b.height};
   };
+  // the tab inside its borders, and its visible label as painted (the text's own rect)
+  function labelBox(t) {
+    const b = t.getBoundingClientRect(), c = getComputedStyle(t);
+    const span = [...t.querySelectorAll('span')]
+      .find((x) => shown(x) && getComputedStyle(x).position !== 'absolute');
+    let label = null;
+    if (span) {
+      const rg = document.createRange(); rg.selectNodeContents(span);
+      const q = rg.getBoundingClientRect(); label = {l: q.left, r: q.right};
+    }
+    return {id: t.dataset.open || t.id, l: b.left + parseFloat(c.borderLeftWidth),
+            r: b.right - parseFloat(c.borderRightWidth), label};
+  }
   return {
     scrollW: dock.scrollWidth, clientW: dock.clientWidth,
     overflowX: getComputedStyle(dock).overflowX,
@@ -60,12 +79,31 @@ STATE_JS = """() => {
     order: tabs.map((t) => t.dataset.open),
     visible: tabs.filter(shown).map((t) => t.dataset.open),
     boxes: [...tabs.filter(shown), ...(shown(more) ? [more] : [])].map(box),
+    labels: [...tabs.filter(shown), ...(shown(more) ? [more] : [])].map(labelBox),
+    // desktop: the tabs whose label is wider than the tab (unfolded for the read, then put back)
+    overflowing: innerWidth < 900 ? [] : tabs.filter((t) => {
+      const was = t.hidden; t.hidden = false;
+      const b = labelBox(t); t.hidden = was;
+      return !!b.label && b.label.r - b.label.l > b.r - b.l;
+    }).map((t) => t.dataset.open),
     more: shown(more),
     panels: [...document.querySelectorAll('.panel[data-panel]')].map((p) => p.dataset.panel),
   };
 }"""
 SHEET_JS = """() => [...document.querySelectorAll('#moreSheet [data-sheet-open]')]
   .filter((b) => b.getClientRects().length > 0).map((b) => b.dataset.sheetOpen)"""
+# The chat box's hint as painted: its width in the box's font against the room inside the box, and
+# the empty box's scroll height (a hint that wraps makes it taller than the box).
+HINT_JS = """(full) => {
+  const t = document.getElementById('input');
+  if (!t || !t.getClientRects().length || t.value) return null;
+  const s = getComputedStyle(t), g = document.createElement('canvas').getContext('2d');
+  g.font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
+  const w = (x) => g.measureText(x).width + (parseFloat(s.letterSpacing) || 0) * x.length;
+  return {text: t.placeholder, need: w(t.placeholder), full: w(full),
+          room: t.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight),
+          scrollH: t.scrollHeight, clientH: t.clientHeight};
+}"""
 
 
 @pytest.fixture(scope="module")
@@ -112,6 +150,31 @@ def _assert_fits(s: dict[str, Any], width: int) -> None:
         assert all(b["w"] >= MIN_TOUCH - 0.5 and b["h"] >= MIN_TOUCH for b in s["boxes"]), s
     else:
         assert {round(b["w"]) for b in s["boxes"]} <= DESK_SIZES, s["boxes"]  # usual sizes
+    _assert_labels_clear(s["labels"])
+
+
+def _assert_labels_clear(tabs: list[dict[str, Any]]) -> None:
+    """No visible label overflows its tab (inside its borders), and two neighbouring labels are at
+    least LABEL_GAP apart: they never touch or overlap. Icon-only tabs (< 360 px) have none."""
+    for t in tabs:
+        lab = t["label"]
+        if lab:
+            assert lab["l"] >= t["l"] and lab["r"] <= t["r"], ("label overflows its tab", t)
+    named = [t for t in tabs if t["label"]]
+    for a, b in zip(named, named[1:], strict=False):
+        gap = b["label"]["l"] - a["label"]["r"]
+        assert gap >= LABEL_GAP, (f"labels {gap:.2f} px apart", a, b)
+
+
+def _assert_hint_whole(c: Console, width: int) -> None:
+    """The chat box's hint sits on one line, whole: the full one where it fits, else "Message"."""
+    h = c.page.evaluate(HINT_JS, HINT)
+    if h is None:
+        assert width >= PHONE_BELOW, "the Conversation is a phone's first panel"
+        return
+    assert h["scrollH"] <= h["clientH"] + 1, ("the hint wraps", h)
+    assert h["need"] <= h["room"], ("the hint is cut", h)
+    assert h["text"] == (HINT if h["full"] <= h["room"] else SHORT_HINT), h
 
 
 @pytest.mark.parametrize("surface", SURFACES)
@@ -123,12 +186,20 @@ def test_the_dock_fits_and_every_panel_is_reachable_exactly_once(
     try:
         s = c.page.evaluate(STATE_JS)
         _assert_fits(s, width)
-        order, visible = s["order"], s["visible"]
+        order, visible, over = s["order"], s["visible"], s["overflowing"]
         assert sorted(order) == sorted(s["panels"]) and len(order) == len(set(order))
-        # dock order kept: the last tabs fold first
-        assert visible == order[: len(visible)], visible
-        assert set(PINNED) <= set(visible), visible  # never folded (Approvals keeps its badge)
-        folded = order[len(visible) :]
+        # dock order kept: a tab whose label overflows it folds wherever it sits; of the others
+        # the last ones fold first
+        holding = [t for t in order if t not in over]
+        assert visible == holding[: len(visible)], (visible, over)
+        assert not set(over) & set(visible), over
+        if width >= 1181 or width < PHONE_BELOW:
+            assert over == [], over  # their usual tab sizes hold every label
+        else:  # 900-1180 px: the 66 / 88 px tabs are narrower than these labels (review A, M1)
+            assert {"approvals", "integrations"} <= set(over), over
+        for pinned in PINNED:  # never folded for lack of room; Approvals only where its label
+            assert (pinned in visible) is (pinned not in over), (pinned, visible)  # overflows
+        folded = [t for t in order if t not in visible]
         assert s["more"] is bool(folded), (s["more"], folded)
         sheet = _sheet_entries(c) if folded else []
         assert sheet == folded, (sheet, folded)  # exactly the folded tabs, in dock order
@@ -136,6 +207,7 @@ def test_the_dock_fits_and_every_panel_is_reachable_exactly_once(
         assert sorted(reachable) == sorted(order) and len(reachable) == len(set(reachable))
         if width == 1920:
             assert not folded, folded  # everything fits a full-HD screen: no More
+        _assert_hint_whole(c, width)
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()
@@ -234,19 +306,59 @@ def test_an_open_sheet_closes_when_everything_fits_and_focus_lands_on_the_tab(
         c.close()
 
 
-@pytest.mark.parametrize("width", [1280, 320])
+def test_more_names_every_open_folded_panel_in_dock_order(
+    browser: Any, server_url: str, token: str
+) -> None:
+    # a desktop shows several panels at once: More's name lists each open folded one (review A, L2)
+    c = _console(browser, server_url, token, 1280)
+    page, more = c.page, c.page.locator("#dockMore")
+    try:
+        order, visible = page.evaluate(STATE_JS)["order"], page.evaluate(STATE_JS)["visible"]
+        first, second = [t for t in order if t not in visible][:2]
+        for panel in (second, first):  # opened out of dock order
+            more.click()
+            page.locator(f'#moreSheet [data-sheet-open="{panel}"]').click()
+            page.locator(f"#p-{panel}").wait_for(state="visible")
+        titles = [page.locator(f"#p-{p} .ptitle h2").text_content() for p in (first, second)]
+        expect(more).to_have_attribute("aria-label", f"More panels, {titles[0]}, {titles[1]} shown")
+        page.locator(f"#p-{first} [data-close]").click()
+        expect(more).to_have_attribute("aria-label", f"More panels, {titles[1]} shown")
+        assert c.errors == []
+    finally:
+        c.close()
+
+
+# Sets the waiting count and reads the badge in one go: the page's own approvals poll can change
+# the count between two separate reads. More's name follows in a mutation-observer microtask.
+BADGE_JS = """async (n) => {
+  document.dispatchEvent(new CustomEvent('jarvis:approvals', {detail: {count: n}}));
+  await Promise.resolve();
+  const b = document.getElementById('dockBadge'), holder = b.closest('.dk');
+  const r = holder.getBoundingClientRect();
+  return {shown: !b.hidden && b.getClientRects().length > 0, text: b.textContent,
+          holder: holder.dataset.open || holder.id, l: r.left, r: r.right,
+          tabShown: !document.querySelector('.dk[data-open="approvals"]').hidden,
+          more: document.getElementById('dockMore').getAttribute('aria-label')};
+}"""
+
+
+@pytest.mark.parametrize("width", [1280, 1024, 320])
 def test_the_approvals_badge_stays_on_screen(
     browser: Any, server_url: str, token: str, width: int
 ) -> None:
     c = _console(browser, server_url, token, width)
     try:
-        c.page.evaluate(
-            "document.dispatchEvent(new CustomEvent('jarvis:approvals', {detail: {count: 3}}))"
-        )
-        badge = c.page.locator("#dockBadge")
-        assert badge.is_visible() and badge.text_content() == "3"
-        tab = c.page.locator('.dk[data-open="approvals"]').bounding_box()
-        assert tab is not None and 0 <= tab["x"] and tab["x"] + tab["width"] <= width, tab
+        b = c.page.evaluate(BADGE_JS, 3)
+        assert b["shown"] and b["text"] == "3", b
+        assert 0 <= b["l"] and b["r"] <= width, b
+        # its tab carries it; where the APPROVALS label is wider than the tab (900-1180 px) the
+        # tab is behind More, and More carries the badge and says so in its name
+        assert b["tabShown"] is (width != 1024), b
+        assert b["holder"] == ("dockMore" if width == 1024 else "approvals"), b
+        if width == 1024:
+            assert b["more"] == "More panels, Approvals 3 waiting", b
+            b = c.page.evaluate(BADGE_JS, 0)
+            assert not b["shown"] and b["more"] == "More panels", b
         assert c.errors == []
     finally:
         c.close()

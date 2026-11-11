@@ -488,9 +488,11 @@ async def test_the_dock_folds_into_a_more_sheet_with_an_entry_per_foldable_tab(
     client: AsyncClient,
 ) -> None:
     """R6.1 D7 (replaces the fixed phone "ovf" split): twenty panels, and console-dock.js measures
-    the dock at every width, folding the tabs that don't fit behind "More", last tabs first. Chat,
-    Brief and Approvals never fold; every other tab has a More-sheet entry, in dock order; More
-    starts hidden; phones keep at most eight tabs; nothing scrolls sideways."""
+    the dock at every width, folding the tabs that don't fit behind "More", last tabs first. Chat
+    and Brief never fold; Approvals folds only where its label is wider than its tab (900-1180 px,
+    review A), so it has a More-sheet entry too, like every later tab, in dock order; More starts
+    hidden; phones keep at most eight tabs; a tab needs its label plus 8 px of air; nothing scrolls
+    sideways."""
     html = (await client.get("/")).text
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     names = re.findall(r'<button class="dk(?: wide)?" type="button" data-open="(\w+)"', dock)
@@ -500,10 +502,10 @@ async def test_the_dock_folds_into_a_more_sheet_with_an_entry_per_foldable_tab(
     assert re.search(r'id="dockMore"[^>]* hidden>', dock)  # shown only while a tab is folded
     sheet = html[html.index('<dialog class="sheet" id="moreSheet" aria-labelledby="moreTitle">') :]
     sheet = sheet[: sheet.index("</dialog>")]
-    assert re.findall(r'data-sheet-open="(\w+)"', sheet) == names[3:]
+    assert re.findall(r'data-sheet-open="(\w+)"', sheet) == names[2:]
     assert html.index('src="/static/console-deck.js"') < html.index('src="/static/console-dock.js"')
     js = (await client.get("/static/console-dock.js")).text
-    for const in ("PINNED = 3;", "PHONE_MAX = 8;", "MIN_TOUCH = 44;"):
+    for const in ("PINNED = 3;", "PHONE_MAX = 8;", "MIN_TOUCH = 44;", "LABEL_CLEAR = 8;"):
         assert f"const {const}" in js, const
     triggers = ("new ResizeObserver(", "requestAnimationFrame(", "document.fonts", "'jarvis:theme'")
     for trigger in triggers:  # re-measured on resize, font load and theme change, once a frame

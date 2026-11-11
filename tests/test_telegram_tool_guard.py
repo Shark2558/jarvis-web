@@ -4,7 +4,9 @@
 # safe to answer on Telegram. A new tool therefore fails this test until someone decides.
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from drive_fakes import FakeDrive, StaticTokens
@@ -76,8 +78,29 @@ TELEGRAM_SAFE = frozenset(
         # R3 D15: armed or not and whether the laptop is online (what the alerts already say);
         # home_disarm only answers "use the Home panel with your passkey" (it never disarms)
         *R3_SAFE,
+        # R11 I1: the helpers' reads that are his own lists and public warnings. Amounts stay
+        # off Telegram: bill_list and spend_month are private, and focus_now / pending_list
+        # drop a bill's amount on a Telegram turn; the nudges keep the water / stand-up counts
+        # out of a Telegram reply (Part C); a to-do's title never reaches `message`.
+        "focus_now",
+        "pending_list",
+        "chore_list",
+        "maint_list",
+        "maint_starters",
+        "weather_now",
+        "disaster_status",  # SACHET's public warnings for his district (fenced as outside text)
+        "nudge_status",
+        "freetime_list",
+        "freetime_suggest",
+        "pantry_list",
+        "recipe_list",
+        "recipe_suggest",
+        "nutrition_of",
     }
 )
+# R11 I1: the helpers' reads that stay off Telegram (telegram.rules.PRIVATE_PATTERNS): amounts and
+# UPI IDs, grocery spend, breach notices about his accounts, and his contacts' birthdays
+R11_PRIVATE = ("bill_list", "spend_month", "breach_status", "contacts_birthdays")
 
 
 class DriveTokens(StaticTokens):
@@ -124,7 +147,21 @@ async def linked_gateway(undo: UndoBin | None = None) -> Gateway:
         notes=NotesService(NotesStore(docs, ring), web=web, undo=undo),
         belongings=BelongingsService(BelongingsStore(docs, ring), undo),
         home=home_parts(docs, ring),  # R3 I1: home, camera and faces tools (the third group)
+        r11=r11_parts(google, ring),  # R11 I1: every helper part's tools
     )
+
+
+def r11_parts(google: Any, ring: Keyring) -> dict[str, Any]:
+    """The four R11 parts on fakes, linked and sealed, so every one of their reads is listed."""
+    from r11_fakes import ctx
+
+    from jarvis.api.r11_wiring import BUILDERS
+
+    out = {}
+    for name, build in BUILDERS.items():
+        c, _, _, _ = ctx(name)
+        out[name] = build(replace(c, keyring=ring, google=google))
+    return out
 
 
 def read_tools(gw: Gateway) -> list[str]:
@@ -163,7 +200,15 @@ async def test_the_safe_list_has_no_stale_or_doubly_classified_names() -> None:
 
 
 @pytest.mark.parametrize(
-    "tool", ["family_calendar_events", "deleted_list", "gmail_search", "drive_read", "doc_read"]
+    "tool",
+    [
+        "family_calendar_events",
+        "deleted_list",
+        "gmail_search",
+        "drive_read",
+        "doc_read",
+        *R11_PRIVATE,
+    ],
 )
 async def test_private_titles_are_denied_on_telegram_by_default(tool: str) -> None:
     assert await denied_on_telegram([tool]) == {tool}

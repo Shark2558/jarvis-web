@@ -48,6 +48,10 @@ PRIVATE_PATTERNS: tuple[str, ...] = (
     "contacts_*",
     "family_calendar_events",
     "deleted_list",
+    # R11 I1: bills (amounts and UPI IDs), grocery spend (amounts) and breach notices
+    "bill_list",
+    "spend_month",
+    "breach_status",
 )
 REFUSAL = "Not available from Telegram — your choice in Integrations → Telegram; open the console."
 # R2 D12: the owner's vault list (metadata only, never files), notes, memos, links and things.

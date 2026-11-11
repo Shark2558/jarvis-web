@@ -4,7 +4,8 @@
 - `focus_now` / `pending_list` (row "nudges"): `pending.PendingService` over every part's pending
   sources, ranked by plain code. A to-do's title is his list's words: fenced in `items` before a
   model sees it, and never in `message` (a No-AI reply is stored and a model may read it later).
-  A bill's line holds his label: fenced in `items` too, and quoted in `message`.
+  A bill's line holds his label: fenced in `items` too, and quoted in `message`. On a Telegram
+  turn (a cloud chat) a bill's amount is left out of both (I1).
 - `contacts_birthdays` (the Contacts row): today's and the coming week's birthdays from
   `birthdays.BirthdayReader`; names are other people's words, fenced; `message` counts only. The
   year is never read. Refused on Telegram unless he allowed private reads (the `contacts_*` rule).
@@ -12,11 +13,13 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from jarvis.core.channel import on_telegram
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.ports import PendingItem
 from jarvis.helpers.today.bills import day_text
@@ -44,6 +47,7 @@ FENCED = {"tasks": "Google Tasks", "calendar": "Google Calendar", "today": "his 
 LABEL_MAX = 80
 MAX_DAYS = 30
 NOTHING = "Nothing pending, Sir."
+_AMOUNT = re.compile(r"₹\s?[0-9][0-9,]*(?:\.[0-9]{1,2})?")  # a bill's amount in a pending line
 
 
 @dataclass(frozen=True)
@@ -54,10 +58,17 @@ class ReadDeps:
     now: Callable[[], datetime]
 
 
+def _label(item: PendingItem) -> str:
+    """The item's label; on a Telegram turn (a cloud chat) a bill's amount is left out (I1)."""
+    if not on_telegram():
+        return item.label
+    return " ".join(_AMOUNT.sub(" ", item.label).split()) or item.label
+
+
 def _label_for_model(item: PendingItem) -> str:
     if (source := FENCED.get(item.source)) is not None:
-        return wrap_external(item.label, source=source, limit=LABEL_MAX)
-    return item.label
+        return wrap_external(_label(item), source=source, limit=LABEL_MAX)
+    return _label(item)
 
 
 def item_view(item: PendingItem) -> dict[str, Any]:
@@ -75,7 +86,7 @@ def said(item: PendingItem) -> str:
     if item.source in OUTSIDE:
         when = "overdue" if item.urgency == "overdue" else "due today"
         return f"a to-do {when} in Google Tasks"
-    return quoted(item.label, LABEL_MAX)
+    return quoted(_label(item), LABEL_MAX)
 
 
 def _focus_tool(d: ReadDeps) -> Tool:

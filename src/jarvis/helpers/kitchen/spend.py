@@ -8,18 +8,23 @@ owners (`ctx.owners`; the caller's list is ignored), each only when:
   - his permission rows ALLOW both "Search and read email" (`gmail_*`, R1) and the Kitchen row
     (`spend_*`, R1); "Ask first" counts as no (a background reader can't ask), and rows that can't
     be read, or aren't wired yet, mean no (fail closed): "skipped".
-Then it lists his Gmail (the fixed merchants' domains only, since the last scan, at most 35 days,
-at most 60 messages), skips mails already read (keyed hashes in `spend_scan`), reads the rest as
-the parcels reader does (`GoogleConnector.request`, format=full, a few at a time; one unreadable
-mail never hides the others) and keeps, per month, only merchant, day, amount and a keyed hash
-(`receipts.read_receipt`, `store.SpendStore`). One audit line per owner (agent `helpers`, the
-kind and counts only); logs carry class names and counts, never an amount or a merchant.
+Then it lists his Gmail (the fixed merchants' mail only, since the last complete scan, at most 35
+days), page after page (Gmail's `nextPageToken`, up to 10 pages of 100), skips mails already read
+(keyed hashes in `spend_scan`), reads the rest as the parcels reader does
+(`GoogleConnector.request`, format=full, a few at a time, at most 150 a run; one unreadable mail
+never hides the others) and keeps, per month, only merchant, day, amount and a keyed hash
+(`receipts.read_receipt`, `store.SpendStore`). The last scan moves only when the whole window was
+listed and every new mail read; out of time (an 11 s budget for the whole run, inside the job's
+15 s), or a mail that failed, leaves it where it was, so the next run looks back as far and
+reads what is left: an older receipt is never lost. One audit line per owner (agent `helpers`,
+the kind and counts only); logs carry class names and counts, never an amount or a merchant.
 """
 
 from __future__ import annotations
 
 import asyncio
 import re
+import time
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any
@@ -27,7 +32,7 @@ from typing import Any
 from jarvis.billing.service import rupees
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.kitchen.models import ScanState, SpendMonth
-from jarvis.helpers.kitchen.receipts import gmail_query, read_receipt
+from jarvis.helpers.kitchen.receipts import PLAUSIBLE_PAISE, gmail_query, read_receipt
 from jarvis.helpers.kitchen.store import KitchenOff, SpendStore
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector, GoogleNotConnected
 from jarvis.logging import get_logger
@@ -41,9 +46,12 @@ log = get_logger(__name__)
 JOB = "grocery_spend"
 AGENT = "helpers"
 JOB_BUDGET_S = 15.0
+SCAN_BUDGET_S = 11.0  # the whole run's listing and reading, leaving the job time to save
 FIRST_DAYS = MAX_DAYS = 35
 OVERLAP_DAYS = 2
-MAX_SCAN = 60
+PAGE = 100
+MAX_PAGES = 10
+MAX_READS = 150
 READ_PARALLEL = 4
 ROW_TOOLS = ("gmail_search", "spend_month")  # "Search and read email" and the Kitchen row
 OFF_LINE = "Grocery spend is off, Sir: switch on 'Read my grocery receipts' in Helpers, Kitchen."
@@ -65,8 +73,35 @@ def _view(m: SpendMonth) -> dict[str, Any]:
         "total": rupees(m.total_paise / 100),
         "total_paise": m.total_paise,
         "orders": len(m.orders),
+        "flagged": len(m.flagged),
         "by_merchant": {k: rupees(v / 100) for k, v in m.by_merchant().items()},
     }
+
+
+def flagged_line(n: int) -> str:
+    """A fixed line for receipts whose total was too large to be groceries (never added)."""
+    if not n:
+        return ""
+    many = n != 1
+    return (
+        f" {n} receipt{'s' if many else ''} over {rupees(PLAUSIBLE_PAISE / 100)} "
+        f"{'weren' if many else 'wasn'}'t counted: check {'them' if many else 'it'} in your mail."
+    )
+
+
+def _token(listing: Any) -> tuple[bool, str | None]:
+    """(the listing is over, the next page's token); a token we can't follow ends it unread."""
+    raw = listing.get("nextPageToken") if isinstance(listing, dict) else None
+    if raw is None:
+        return True, None
+    ok = isinstance(raw, str) and 0 < len(raw) <= 512 and set(raw) <= _ID_OK
+    return False, raw if ok else None
+
+
+def _page_ids(listing: Any) -> list[str]:
+    rows = listing.get("messages") if isinstance(listing, dict) else None
+    ids = [str(x.get("id")) for x in rows or [] if isinstance(x, dict) and x.get("id")]
+    return [i for i in ids if set(i) <= _ID_OK]
 
 
 class SpendService:
@@ -77,11 +112,13 @@ class SpendService:
         google: GoogleConnector | None,
         now: Callable[[], datetime],
         tz: str = "Asia/Kolkata",
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.store = store
         self._google = google
         self._now = now
         self._tz = tz
+        self.clock = clock
 
     @property
     def can_scan(self) -> bool:
@@ -108,14 +145,15 @@ class SpendService:
         if not (await self.store.scan(uid)).on:
             return {"message": OFF_LINE, "off": True}
         found = next((m for m in await self.store.months(uid) if m.month == want), None)
+        odd = flagged_line(len(found.flagged) if found else 0)
         if found is None or not found.orders:
-            return {"message": f"No grocery receipts found for {month_label(want)}, Sir."}
+            return {"message": f"No grocery receipts found for {month_label(want)}, Sir.{odd}"}
         v = _view(found)
         n = v["orders"]
         shops = ", ".join(v["by_merchant"])
         v["message"] = (
             f"Groceries in {v['label']}: about {v['total']} from {n} order{'s' if n != 1 else ''} "
-            f"(from your e-mailed receipts: {shops})."
+            f"(from your e-mailed receipts: {shops}).{odd}"
         )
         return v
 
@@ -128,21 +166,35 @@ class SpendService:
             return FIRST_DAYS
         return max(1, min(MAX_DAYS, since + OVERLAP_DAYS))
 
-    async def _ids(self, uid: str, days: int) -> list[str]:
+    async def _ids(self, uid: str, days: int, deadline: float) -> tuple[list[str], bool]:
+        """Every message id in the window, page after page: (ids, the window was covered)."""
         assert self._google is not None
-        listing = await self._google.request(
-            uid, "GET", MESSAGES_URL, params={"q": gmail_query(days), "maxResults": MAX_SCAN}
-        )
-        rows = listing.get("messages") if isinstance(listing, dict) else None
-        ids = [str(x.get("id")) for x in rows or [] if isinstance(x, dict) and x.get("id")]
-        return [i for i in ids if set(i) <= _ID_OK][:MAX_SCAN]
+        ids: list[str] = []
+        token: str | None = None
+        for _ in range(MAX_PAGES):
+            if self.clock() >= deadline:
+                break
+            params: dict[str, Any] = {"q": gmail_query(days), "maxResults": PAGE}
+            if token:
+                params["pageToken"] = token
+            listing = await self._google.request(uid, "GET", MESSAGES_URL, params=params)
+            ids.extend(_page_ids(listing))
+            over, token = _token(listing)
+            if over or token is None:
+                return list(dict.fromkeys(ids)), over
+        return list(dict.fromkeys(ids)), False
 
-    async def _read(self, uid: str, ids: Sequence[str]) -> list[dict[str, Any] | None]:
+    async def _read(
+        self, uid: str, ids: Sequence[str], deadline: float
+    ) -> list[dict[str, Any] | None]:
+        """Each message, or None when it failed or the time ran out (read it next run)."""
         assert self._google is not None
         conn, gate = self._google, asyncio.Semaphore(READ_PARALLEL)
 
         async def one(mid: str) -> dict[str, Any] | None:
             async with gate:
+                if self.clock() >= deadline:
+                    return None
                 try:
                     m = await conn.request(
                         uid, "GET", f"{MESSAGES_URL}/{mid}", params={"format": "full"}
@@ -155,17 +207,18 @@ class SpendService:
 
         return list(await asyncio.gather(*(one(i) for i in ids)))
 
-    async def scan_owner(self, uid: str) -> dict[str, int]:
-        """Read his new receipts and keep their totals; counts only."""
+    async def scan_owner(self, uid: str, deadline: float | None = None) -> dict[str, int]:
+        """Read his new receipts and keep their totals; counts only. The last scan moves only
+        when the window was covered and every new mail was read (`complete`)."""
         if not self.can_scan:
             raise KitchenOff()
+        deadline = self.clock() + SCAN_BUDGET_S if deadline is None else deadline
+        at = self._now().isoformat()
         state = await self.store.scan(uid)
-        seen = set(state.seen)
-        keyed = [
-            (i, self.store.key(uid, f"msg:{i}")) for i in await self._ids(uid, self._days(state))
-        ]
-        fresh = [(i, k) for i, k in keyed if k not in seen]
-        mails = await self._read(uid, [i for i, _ in fresh])
+        ids, covered = await self._ids(uid, self._days(state), deadline)
+        fresh = [(i, k) for i in ids if (k := self.store.key(uid, f"msg:{i}")) not in state.seen]
+        todo = fresh[:MAX_READS]
+        mails = await self._read(uid, [i for i, _ in todo], deadline)
         got = [
             read_receipt(m, mac=lambda t: self.store.key(uid, t), tz=self._tz)
             for m in mails
@@ -173,13 +226,16 @@ class SpendService:
         ]
         receipts = [r for r in got if r is not None]
         await self.store.apply(uid, receipts)
-        read = tuple(k for (_, k), m in zip(fresh, mails, strict=True) if m is not None)
-        at = self._now().isoformat()
+        read = tuple(k for (_, k), m in zip(todo, mails, strict=True) if m is not None)
+        complete = covered and len(read) == len(fresh)
+        moved = {"last_at": at} if complete else {}
         await self.store.set_scan(
-            uid, lambda s: s.model_copy(update={"last_at": at, "seen": (*s.seen, *read)})
+            uid, lambda s: s.model_copy(update={**moved, "seen": (*s.seen, *read)})
         )
-        return {"mails": len(keyed), "read": len(read), "orders": len(receipts),
-                "ignored": len(read) - len(receipts)}  # fmt: skip
+        flagged = sum(1 for r in receipts if r.flagged)
+        return {"mails": len(ids), "read": len(read), "orders": len(receipts) - flagged,
+                "ignored": len(read) - len(receipts), "flagged": flagged,
+                "complete": int(complete)}  # fmt: skip
 
 
 class GrocerySpendJob:
@@ -227,7 +283,7 @@ class GrocerySpendJob:
                 "AUDIT WRITE FAILED for grocery receipts", extra={"error": type(exc).__name__}
             )
 
-    async def scan_one(self, uid: str) -> str:
+    async def scan_one(self, uid: str, deadline: float | None = None) -> str:
         """One owner: "ok", "off" or "skipped" (his rows, or Google not linked)."""
         svc = self._svc
         if not svc.can_scan or not (await svc.store.scan(uid)).on:
@@ -236,20 +292,25 @@ class GrocerySpendJob:
             await self._note("skipped", "permissions")
             return "skipped"
         try:
-            c = await svc.scan_owner(uid)
+            c = await svc.scan_owner(uid, deadline)
         except GoogleNotConnected:
             await self._note("skipped", "google not linked")
             return "skipped"
-        detail = f"mails={c['mails']} read={c['read']} orders={c['orders']} ignored={c['ignored']}"
+        detail = (
+            f"mails={c['mails']} read={c['read']} orders={c['orders']} ignored={c['ignored']} "
+            f"flagged={c['flagged']} complete={'yes' if c['complete'] else 'no'}"
+        )
         await self._note("executed", detail)
         return "ok"
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
-        """`owners` (the caller's list) is ignored: the helpers serve the configured owners."""
+        """`owners` (the caller's list) is ignored: the helpers serve the configured owners,
+        within one time budget for them all."""
         counts = {"owners": len(self._owners), "ok": 0, "off": 0, "skipped": 0, "failed": 0}
+        deadline = self._svc.clock() + SCAN_BUDGET_S
         for uid in self._owners:
             try:
-                counts[await self.scan_one(uid)] += 1
+                counts[await self.scan_one(uid, deadline)] += 1
             except Exception as exc:  # noqa: BLE001 - one owner never stops the others
                 log.warning("grocery receipts not read", extra={"error": type(exc).__name__})
                 await self._note("error", type(exc).__name__)
@@ -257,4 +318,4 @@ class GrocerySpendJob:
         return counts
 
 
-__all__ = ["JOB", "OFF_LINE", "GrocerySpendJob", "SpendService", "month_label"]
+__all__ = ["JOB", "OFF_LINE", "GrocerySpendJob", "SpendService", "flagged_line", "month_label"]

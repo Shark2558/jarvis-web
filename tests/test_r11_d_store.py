@@ -10,7 +10,7 @@ import pytest
 from r11_fakes import UID
 from r11_fakes_d import keyring
 
-from jarvis.helpers.kitchen.models import Kitchen, Prefs
+from jarvis.helpers.kitchen.models import MAX_SEEN, Kitchen, Prefs
 from jarvis.helpers.kitchen.receipts import Receipt
 from jarvis.helpers.kitchen.store import (
     KitchenOff,
@@ -118,14 +118,27 @@ async def test_spend_is_sealed_and_months_past_thirteen_are_swept() -> None:
     assert "BigBasket" not in raw and "paise" not in raw and '"blob"' in raw
 
 
-async def test_the_scan_state_keeps_at_most_500_seen_hashes_and_is_not_sealed() -> None:
+async def test_the_scan_state_keeps_at_most_max_seen_hashes_and_is_not_sealed() -> None:
     docs = MemoryDocs()
     store = _spend(docs)
     assert (await store.scan(UID)).on is False
-    seen = tuple(f"{i:032x}" for i in range(600))
+    seen = tuple(f"{i:032x}" for i in range(MAX_SEEN + 100))
     await store.set_scan(UID, lambda s: s.model_copy(update={"on": True, "seen": seen}))
     got = await store.scan(UID)
-    assert got.on is True and len(got.seen) == 500 and got.seen[-1] == seen[-1]
+    assert got.on is True and len(got.seen) == MAX_SEEN == 2000 and got.seen[-1] == seen[-1]
+
+
+async def test_a_flagged_order_is_kept_apart_and_a_sane_mail_of_it_counts_it() -> None:
+    store = _spend(MemoryDocs())
+    big = Receipt("f6".ljust(32, "0"), "BigBasket", date(2026, 11, 3), 0, flagged=True)
+    await store.apply(UID, [big, _r("a7", date(2026, 11, 4), 4500)])
+    m = (await store.months(UID))[0]
+    assert m.total_paise == 4500 and m.flagged == (big.key,)
+    await store.apply(UID, [big])  # read again: still one flag
+    assert (await store.months(UID))[0].flagged == (big.key,)
+    await store.apply(UID, [_r("f6", date(2026, 11, 5), 2000)])
+    m = (await store.months(UID))[0]
+    assert m.total_paise == 6500 and m.flagged == ()
 
 
 async def test_without_a_keyring_spend_is_off() -> None:

@@ -1,0 +1,11 @@
+Authentication-Results: mx.google.com; dkim=pass header.i=@blinkit.com header.s=s1 header.b=abc; spf=pass smtp.mailfrom=blinkit.com; dmarc=pass (p=REJECT) header.from=blinkit.com
+From: Blinkit <noreply@blinkit.com>
+To: owner@example.com
+Subject: Your Blinkit order summary
+Date: Sat, 31 Oct 2026 20:00:00 +0000
+Message-ID: <blk9901@mail.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Order ID: BLK-9901
+Bananas 1 dozen, Curd 400 g
+Grand Total: ₹120

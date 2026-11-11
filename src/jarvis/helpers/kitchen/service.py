@@ -13,6 +13,8 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
+from pydantic import ValidationError
+
 from jarvis.helpers.kitchen import pantry as ops
 from jarvis.helpers.kitchen.diet import allows
 from jarvis.helpers.kitchen.models import (
@@ -22,6 +24,7 @@ from jarvis.helpers.kitchen.models import (
     Ingredient,
     Kitchen,
     Recipe,
+    plain,
 )
 from jarvis.helpers.kitchen.nutrition import ATTRIBUTION, Nutrition, describe, parse_ingredients
 from jarvis.helpers.kitchen.recipes import DIET_SHORT, RecipeService
@@ -36,6 +39,7 @@ DIET_ALIASES = {
 TAINTED_DIET = "Change your diet yourself in Helpers, Kitchen, Sir: I won't take it from a message."
 EMPTY_PANTRY = "Your pantry is empty, Sir. Say 'add rice and dal to my pantry'."
 NOT_VEG = "That recipe has meat, fish or egg in it, so it can't be saved as {diet}, Sir."
+DEFAULT_MINUTES = 30
 
 
 def diet_of(value: object) -> str | None:
@@ -55,28 +59,44 @@ def _steps(value: object) -> tuple[str, ...]:
 
 
 def _ingredients(value: object) -> tuple[Ingredient, ...]:
-    if isinstance(value, list | tuple):
+    if not isinstance(value, list | tuple):
+        return parse_ingredients(str(value or ""))
+    try:
         return tuple(
             Ingredient.model_validate({"name": i.get("name"), "grams": i.get("grams")})
             for i in value
             if isinstance(i, dict)
         )
-    return parse_ingredients(str(value or ""))
+    except ValidationError as exc:
+        raise plain(exc) from None
+
+
+def _minutes(value: object) -> int:
+    if value is None or value == "":
+        return DEFAULT_MINUTES
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    text = str(value).strip()
+    if isinstance(value, bool) or not (text.isascii() and text.isdigit()):
+        raise ValueError("minutes is a whole number from 1 to 600")
+    return int(text)
 
 
 def recipe_from(args: Mapping[str, Any], rid: str) -> Recipe:
-    """A recipe from tool or route arguments (ValueError in plain words)."""
-    return Recipe.model_validate(
-        {
-            "id": rid,
-            "title": args.get("title"),
-            "cuisine": args.get("cuisine") or "",
-            "diet": diet_of(args.get("diet")) or "veg",
-            "minutes": int(args.get("minutes") or 30),
-            "ingredients": _ingredients(args.get("ingredients")),
-            "steps": _steps(args.get("steps")),
-        }
-    )
+    """A recipe from tool or route arguments (ValueError in plain words, never the input)."""
+    data = {
+        "id": rid,
+        "title": args.get("title"),
+        "cuisine": args.get("cuisine") or "",
+        "diet": diet_of(args.get("diet")) or "veg",
+        "minutes": _minutes(args.get("minutes")),
+        "ingredients": _ingredients(args.get("ingredients")),
+        "steps": _steps(args.get("steps")),
+    }
+    try:
+        return Recipe.model_validate(data)
+    except ValidationError as exc:
+        raise plain(exc) from None
 
 
 def _list(names: list[str]) -> str:
@@ -99,15 +119,7 @@ class KitchenService:
             return {"message": str(exc), "unavailable": True}
 
     async def _change(self, uid: str, fn: Callable[[Kitchen], tuple[Kitchen, T]]) -> T:
-        got: list[T] = []
-
-        def step(k: Kitchen) -> Kitchen:
-            new, extra = fn(k)
-            got[:] = [extra]
-            return new
-
-        await self.store.change(uid, step)
-        return got[0]
+        return await self.store.update(uid, fn)
 
     async def pantry(self, uid: str) -> dict[str, Any]:
         async def work() -> dict[str, Any]:

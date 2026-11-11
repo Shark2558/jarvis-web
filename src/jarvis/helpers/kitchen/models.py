@@ -6,9 +6,10 @@ refused, every text one clean line of bounded length.
   200), his tastes (`Prefs`: diet, spice 0-3, oil 0-2, cuisines, a short note), saved recipes (at
   most 100, ingredients with grams) and the cooking / washing-up block plan.
 - `Order` / `SpendMonth` (sealed in `{prefix}spend/{uid}_{yyyymm}`, purpose `spend`): per order
-  the merchant (from the fixed list), the day, the amount in paise and a keyed hash; nothing else.
+  the merchant (from the fixed list), the day, the amount in paise and a keyed hash; and the keyed
+  hashes of orders whose total looked too large for groceries (flagged, not counted); nothing else.
 - `ScanState` (`{prefix}spend_scan/{uid}`, not sealed): whether he switched receipts on, the last
-  scan, keyed hashes of the mails already read (at most 500).
+  complete scan, keyed hashes of the mails already read (at most 2,000).
 
 No text may hold a run of 12 or more digits (a card or account number never gets in).
 """
@@ -18,7 +19,7 @@ from __future__ import annotations
 import re
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from jarvis.tools.card import one_line
 
@@ -46,8 +47,9 @@ GRAMS_MAX = 5_000
 MINUTES_MAX = 600
 MAX_ORDER_PAISE = 10_000_000  # ₹1,00,000: a grocery order above this is a misread
 MAX_ORDERS_A_MONTH = 400
-MAX_SEEN = 500
+MAX_SEEN = 2_000
 _LONG_NUMBER = re.compile(r"\d{12,}")
+_KEY = r"^[0-9a-f]{16,64}$"
 _HHMM = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 _FROZEN = ConfigDict(extra="forbid", frozen=True)
 
@@ -64,6 +66,18 @@ def clean(value: object, limit: int, *, empty_ok: bool = False) -> str:
     if _LONG_NUMBER.search(text.replace(" ", "").replace("-", "")):
         raise ValueError("must not hold a card or account number")
     return text
+
+
+def plain(exc: ValidationError) -> ValueError:
+    """A pydantic error in our own words: the field and the rule, never the input."""
+    errors = exc.errors(include_url=False, include_input=False, include_context=False)
+    if not errors:
+        return ValueError("Check what you gave and try again.")
+    first = errors[0]
+    where = ".".join(str(x) for x in first.get("loc", ()) if isinstance(x, str)) or "value"
+    return ValueError(
+        f"{where}: {str(first.get('msg', 'is not valid')).removeprefix('Value error, ')}"
+    )
 
 
 def _name(v: str) -> str:
@@ -158,7 +172,7 @@ class Kitchen(BaseModel):
 
 class Order(BaseModel):
     model_config = _FROZEN
-    key: str = Field(pattern=r"^[0-9a-f]{16,64}$")
+    key: str = Field(pattern=_KEY)
     merchant: str = Field(min_length=1, max_length=40)
     day: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     paise: int = Field(ge=1, le=MAX_ORDER_PAISE)
@@ -168,6 +182,9 @@ class SpendMonth(BaseModel):
     model_config = _FROZEN
     month: str = Field(pattern=r"^\d{4}-\d{2}$")
     orders: tuple[Order, ...] = Field(default=(), max_length=MAX_ORDERS_A_MONTH)
+    flagged: tuple[Annotated[str, Field(pattern=_KEY)], ...] = Field(
+        default=(), max_length=MAX_ORDERS_A_MONTH
+    )
 
     @property
     def total_paise(self) -> int:
@@ -208,4 +225,5 @@ __all__ = [
     "ScanState",
     "SpendMonth",
     "clean",
+    "plain",
 ]

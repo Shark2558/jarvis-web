@@ -15,6 +15,7 @@ from jarvis.groceries.items import norm_key, parse_title
 from jarvis.helpers.kitchen.models import (
     MAX_PANTRY,
     MAX_RECIPES,
+    NAME_MAX,
     BlockPlan,
     Kitchen,
     Prefs,
@@ -23,7 +24,6 @@ from jarvis.helpers.kitchen.models import (
 )
 
 MAX_ITEMS_AT_ONCE = 50
-NAME_MAX = 60
 _SPLIT = re.compile(r"\s*(?:[,;\n]|\band\b|&)\s*", re.IGNORECASE)
 
 

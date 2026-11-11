@@ -8,8 +8,10 @@ kcal, protein, fat, carbohydrate, fibre, sodium). A dish is the sum of grams x p
 ingredients found; an ingredient that isn't in the subset is named, never guessed, and a value
 FDC doesn't give counts as nothing. Always said as "about", on a raw-ingredient basis, with the
 attribution. Until the subset is installed (its `installed` flag), every answer is
-`NOT_INSTALLED`. Names are matched by the groceries key (`groceries.items.norm_key`: case,
-plurals, curd = yogurt ...), then by dropping leading words ("basmati rice" -> "rice").
+`NOT_INSTALLED`. Names are matched by the groceries key only (`groceries.items.norm_key`: case,
+plurals, curd = yogurt ...) against each food's own names: "coconut milk" is never read as
+"milk", nor "sweet potato" as "potato". An ingredient not found is listed as "not found" and the
+answer says the total is partial.
 """
 
 from __future__ import annotations
@@ -20,8 +22,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from jarvis.groceries.items import norm_key
-from jarvis.helpers.kitchen.models import GRAMS_MAX, Ingredient
+from jarvis.helpers.kitchen.models import GRAMS_MAX, Ingredient, plain
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -38,6 +42,7 @@ _AMOUNT = r"(\d+(?:\.\d+)?)\s*(kgs?|grams?|gms?|g)\b"
 _LEADING = re.compile(rf"^\s*{_AMOUNT}\s*(?:of\s+)?(.+?)\s*$", re.IGNORECASE)
 _TRAILING = re.compile(rf"^\s*(.+?)\s*[-:,]?\s*{_AMOUNT}\s*$", re.IGNORECASE)
 MAX_TYPED = 30
+MAX_NAMED = 5
 
 
 @dataclass(frozen=True)
@@ -94,12 +99,7 @@ class Nutrition:
         return cls(foods, installed=raw.get("installed") is True)
 
     def find(self, name: str) -> Food | None:
-        words = norm_key(name).split()
-        for i in range(len(words)):
-            hit = self._by_name.get(" ".join(words[i:]))
-            if hit is not None:
-                return hit
-        return None
+        return self._by_name.get(norm_key(name))
 
     def dish(self, ingredients: Sequence[Ingredient]) -> DishNutrition:
         if not self.installed:
@@ -130,9 +130,16 @@ def describe(d: DishNutrition) -> str:
         f"{round(t['fat_g'])} g fat, {round(t['carb_g'])} g carbohydrate, "
         f"{round(t['fibre_g'])} g fibre, {round(t['sodium_mg'])} mg sodium"
     )
+    return f"{line}{_partial(d)}. {ATTRIBUTION}"
+
+
+def _partial(d: DishNutrition) -> str:
+    if not d.unmatched:
+        return ""
     total = d.matched + len(d.unmatched)
-    found = f" ({d.matched} of {total} ingredients found)" if d.unmatched else ""
-    return f"{line}{found}. {ATTRIBUTION}"
+    names = ", ".join(d.unmatched[:MAX_NAMED])
+    more = f" and {len(d.unmatched) - MAX_NAMED} more" if len(d.unmatched) > MAX_NAMED else ""
+    return f". A partial total: {d.matched} of {total} ingredients found; not found: {names}{more}"
 
 
 def _one(part: str) -> Ingredient:
@@ -145,7 +152,10 @@ def _one(part: str) -> Ingredient:
     grams = round(float(qty) * _UNITS.get(unit.lower(), 1))
     if not 1 <= grams <= GRAMS_MAX:
         raise ValueError(f"Each ingredient must be from 1 to {GRAMS_MAX} g.")
-    return Ingredient(name=name, grams=grams)
+    try:
+        return Ingredient(name=name, grams=grams)
+    except ValidationError as exc:
+        raise plain(exc) from None
 
 
 def parse_ingredients(text: str) -> tuple[Ingredient, ...]:

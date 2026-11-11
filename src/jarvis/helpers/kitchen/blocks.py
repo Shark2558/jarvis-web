@@ -27,12 +27,15 @@ from pydantic import ValidationError
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.kitchen.models import DAYS, BlockPlan
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector
+from jarvis.logging import get_logger
 from jarvis.notify.quiet import local
 from jarvis.tools.base import Tool
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.google_calendar import EVENTS_URL, CalendarAPI
 from jarvis.tools.provenance import is_owner_authored_event, mark_outside, vouch
+
+log = get_logger(__name__)
 
 TOOL = "calendar_kitchen_blocks"
 ONLY = ("both", "cooking", "washing_up")
@@ -190,7 +193,9 @@ class BlocksAPI:
         ctx = require_tool_context()
         p = parse_args(a)
         tz = await self._calendar.owner_tz(ctx.user_id)
-        first = _first(p.start or local(self._now(), tz.key).date() + timedelta(1), p.days)
+        today = local(self._now(), tz.key).date()  # the calendar's own zone (check used his)
+        start = max(p.start, today) if p.start is not None else today + timedelta(1)
+        first = _first(start, p.days)
         made: list[dict[str, Any]] = []
         for kind, at, minutes in p.blocks:
             body = _body(kind, at, minutes, first, tz, p.days)
@@ -200,9 +205,13 @@ class BlocksAPI:
                 e = await self._conn.request(
                     ctx.user_id, "POST", EVENTS_URL, params={"sendUpdates": "none"}, json=body
                 )
-            except GoogleAPIError:
+            except GoogleAPIError as exc:
                 if not made:
                     raise
+                log.warning(
+                    "a kitchen block wasn't added",
+                    extra={"error": type(exc).__name__, "added": len(made)},
+                )
                 break
             made.append({"id": one_line(e.get("id"), 1024), "kind": kind, "event": e})
         owned = not ctx.outside and all(is_owner_authored_event(m["event"]) for m in made)

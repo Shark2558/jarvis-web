@@ -10,7 +10,8 @@
 No keyring: `KitchenOff`, and nothing is written (never in clear). A document that can't be read
 or opened raises `KitchenUnavailable` and is never overwritten. Spend keeps 13 months (this one
 and the 12 before); the orders of one key (one order, several mails) count once: the first
-mail's day, the newest mail's amount; a cancelled order is dropped. Logs carry class names only.
+mail's day, the newest mail's amount; a cancelled order is dropped; a key whose total was too
+large is kept as flagged (never added) unless a mail of it had a sane total. Logs: class names.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, TypeVar
 
 from pydantic import ValidationError
 
@@ -39,6 +40,7 @@ from jarvis.storage.sessions import safe_id
 
 log = get_logger(__name__)
 
+T = TypeVar("T")
 KEEP_MONTHS = 13
 VERSION = 1
 KEY_CHARS = 32
@@ -138,17 +140,21 @@ class KitchenStore:
 
     async def change(self, uid: str, fn: Callable[[Kitchen], Kitchen]) -> Kitchen:
         """Read, change and write back in one transaction (`fn` may raise ValueError)."""
+        return await self.update(uid, lambda k: (new := fn(k), new))
+
+    async def update(self, uid: str, fn: Callable[[Kitchen], tuple[Kitchen, T]]) -> T:
+        """As `change`, where `fn` also returns a value for the caller (what was added ...)."""
         self._seal.ring()
         path = self._path(uid)
 
-        async def work(tx: DocTx) -> Kitchen:
+        async def work(tx: DocTx) -> T:
             raw = await tx.get(path)
-            new = fn(self._decode(uid, raw))
+            new, extra = fn(self._decode(uid, raw))
             rev = int(raw.get("rev", 0)) + 1 if raw else 1
             blob = self._seal.seal(f"kitchen/{uid}/v1", new.model_dump(mode="json"))
             at = self._now().isoformat()
             tx.set(path, {"v": VERSION, "kid": KEY_ID, "blob": blob, "rev": rev, "updated_at": at})
-            return new
+            return extra
 
         return await self._docs.transaction(work)
 
@@ -236,11 +242,9 @@ class SpendStore:
 
         async def work(tx: DocTx) -> int:
             docs = {m: await tx.get(p) for m, p in paths.items()}
-            kept = [
-                o for m, d in docs.items() if d and m >= keep for o in self._decode(uid, d).orders
-            ]
-            orders = _merge(kept, [r for r in receipts if r.day.isoformat()[:7] >= keep])
-            self._write(tx, uid, paths, docs, orders, keep)
+            old = [self._decode(uid, d) for m, d in docs.items() if d and m >= keep]
+            orders, flagged = _merge(old, [r for r in receipts if r.day.isoformat()[:7] >= keep])
+            self._write(tx, uid, paths, docs, (orders, flagged), keep)
             return len(orders)
 
         return await self._docs.transaction(work)
@@ -251,20 +255,21 @@ class SpendStore:
         uid: str,
         paths: dict[str, str],
         docs: dict[str, Doc | None],
-        orders: dict[str, Order],
+        merged: tuple[dict[str, Order], dict[str, str]],
         keep: str,
     ) -> None:
+        orders, flagged = merged
         at = self._now().isoformat()
         for month, path in paths.items():
             mine = tuple(sorted((o for o in orders.values() if _month_of(o.day) == month),
                                 key=lambda o: (o.day, o.key)))  # fmt: skip
-            if month < keep or not mine:
+            odd = tuple(sorted(k for k, m in flagged.items() if m == month))
+            if month < keep or not (mine or odd):
                 if docs.get(month) is not None:
                     tx.delete(path)
                 continue
-            blob = self._seal.seal(
-                f"spend/{uid}/v1", SpendMonth(month=month, orders=mine).model_dump(mode="json")
-            )
+            data = SpendMonth(month=month, orders=mine, flagged=odd).model_dump(mode="json")
+            blob = self._seal.seal(f"spend/{uid}/v1", data)
             doc = {"uid": uid, "month": month, "v": VERSION, "kid": KEY_ID, "blob": blob}
             tx.set(path, {**doc, "updated_at": at})
 
@@ -303,17 +308,26 @@ class SpendStore:
         return len(ops)
 
 
-def _merge(existing: Sequence[Order], receipts: Sequence[Receipt]) -> dict[str, Order]:
-    """key -> order: the first mail's day, the newest mail's amount; cancelled keys dropped."""
-    orders = {o.key: o for o in existing}
+def _merge(
+    months: Sequence[SpendMonth], receipts: Sequence[Receipt]
+) -> tuple[dict[str, Order], dict[str, str]]:
+    """(key -> order, flagged key -> month): the first mail's day, the newest mail's amount;
+    cancelled keys dropped; a flagged key stays flagged only while no mail of it was counted."""
+    orders = {o.key: o for m in months for o in m.orders}
+    flagged = {k: m.month for m in months for k in m.flagged}
     for r in sorted(receipts, key=lambda x: (x.day, x.cancelled)):
         if r.cancelled:
             orders.pop(r.key, None)
-            continue
-        old = orders.get(r.key)
-        day = min(old.day, r.day.isoformat()) if old else r.day.isoformat()
-        orders[r.key] = Order(key=r.key, merchant=r.merchant, day=day, paise=r.paise)
-    return orders
+            flagged.pop(r.key, None)
+        elif r.flagged:
+            if r.key not in orders:
+                flagged.setdefault(r.key, r.day.isoformat()[:7])
+        else:
+            old = orders.get(r.key)
+            day = min(old.day, r.day.isoformat()) if old else r.day.isoformat()
+            orders[r.key] = Order(key=r.key, merchant=r.merchant, day=day, paise=r.paise)
+            flagged.pop(r.key, None)
+    return orders, flagged
 
 
 __all__ = ["KEEP_MONTHS", "KitchenOff", "KitchenStore", "KitchenUnavailable", "SpendStore"]

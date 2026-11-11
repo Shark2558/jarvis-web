@@ -3,6 +3,7 @@
 # 12-19-digit run masked before parsing, the order total in paise, a keyed hash for the order.
 from __future__ import annotations
 
+import base64
 import hashlib
 from datetime import date
 
@@ -21,6 +22,13 @@ def _mac(text: str) -> str:
 
 def _read(name: str) -> receipts.Receipt | None:
     return read_receipt(eml(name), mac=_mac, tz=TZ)
+
+
+def _read_text(body: str) -> receipts.Receipt | None:
+    """The BigBasket fixture's headers around `body`."""
+    m = eml("d_receipt_bigbasket_nov.eml")
+    m["payload"]["body"]["data"] = base64.urlsafe_b64encode(body.encode()).decode()
+    return read_receipt(m, mac=_mac, tz=TZ)
 
 
 @pytest.mark.parametrize(
@@ -88,13 +96,85 @@ def test_card_numbers_are_masked_before_anything_reads_the_text() -> None:
         ("Grand Total ₹ 12,345", 1234500),
         ("Bill total Rs 99,999.99", 9999999),
         ("Amount Paid: INR 99.9", 9990),
+        ("Total: ₹300", 30000),  # a bare "Total" counts only as a line of its own
+        ("Order Total: Rs. 1,234/-", 123400),
+        ("| Grand Total | ₹ 1,23,456.00 |", 12345600),
+        ("Order Total: ₹2,00,000", 20000000),  # read, then flagged as too large (not counted)
+        ("Total MRP: ₹1,500\nTotal: ₹1,400\nGrand Total: ₹1,234", 123400),  # the strongest
         ("total savings ₹40, minimum total of ₹999", None),
-        ("Order Total: ₹2,00,000", None),  # above the ₹1,00,000 sanity cap
+        ("Total savings ₹40", None),
+        ("Order Total: 1,234.50", None),  # no currency marker
+        ("Order #AB12345 Order total ₹ 1,234.50", None),  # not a total line of its own
+        ("Order now: order total of ₹999 or more", None),
         ("Order Total: ₹0", None),
     ],
 )
-def test_the_total_needs_a_strong_label_and_a_sane_amount(text: str, paise: int | None) -> None:
+def test_the_total_is_read_only_from_a_labelled_total_line_with_a_currency_marker(
+    text: str, paise: int | None
+) -> None:
     assert find_total(text) == paise
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Order total ₹ 3782 822463 10005",  # Amex 4-6-5
+        "Order total: ₹4111-1111-1111-1111",
+        "Order total: ₹ 4111111111111111",
+        "Order total: ₹ 4111.1111.1111.1111",
+        "Order total: ₹ 4111/1111/1111/1111",
+        "Order total: ₹ 4111 1111 1111 1111 123",
+        "Order total: ₹ 4111 - 1111 - 1111 - 1111",
+        "Order total: ₹ \uff14\uff11\uff11\uff11\uff11\uff11\uff11\uff11\uff11\uff11\uff11\uff11",
+        "Order total: ₹ 3782 822463",  # a card's first groups, the rest on another line
+    ],
+)
+def test_no_digit_group_of_a_card_like_number_becomes_a_total(body: str) -> None:  # M3
+    assert _read_text(body) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "3782 822463 10005", "4111.1111.1111.1111", "4111/1111/1111/1111", "4111-1111-1111-1111",
+        "4111 1111 1111 1111", "4111111111111111", "5105 1051 0510 5100 123", "1234 5678 9012",
+        "\uff14\uff11\uff11\uff11\uff11\uff11\uff11\uff11\uff11\uff11\uff11\uff11\uff11",
+        "4111 - 1111 - 1111 - 1111",
+    ],
+)  # fmt: skip
+def test_card_and_account_numbers_are_masked_whatever_separates_them(text: str) -> None:
+    out = mask(f"Paid with {text} today")
+    assert out == "Paid with [number removed] today", out
+
+
+def test_an_order_id_and_the_last_four_stay() -> None:
+    out = mask("Order 402-1234567-1234567, card ending 1111, OD123456789012345")
+    assert out == "Order 402-1234567-1234567, card ending 1111, OD123456789012345"
+
+
+def test_an_implausible_total_is_flagged_not_counted() -> None:
+    r = _read_text("Order BB-ORDER-7777\nOrder Total: ₹ 50,000")
+    assert r is not None and r.flagged and r.paise == 0
+    ok = _read_text("Order BB-ORDER-7778\nOrder Total: ₹ 24,999")
+    assert ok is not None and not ok.flagged and ok.paise == 2499900
+
+
+def test_a_mail_just_after_midnight_in_his_zone_is_in_his_month() -> None:  # code M5
+    r = _read("d_receipt_blinkit_month_edge.eml")  # 31 Oct 20:00 UTC = 1 Nov 01:30 IST
+    assert r is not None and r.day == date(2026, 11, 1) and r.paise == 12000
+
+
+def test_a_mail_too_big_to_be_a_receipt_is_not_parsed() -> None:  # security L2
+    m = eml("d_receipt_blinkit_nov.eml")
+    m["payload"]["body"]["data"] = "QUFB" * (receipts.MAX_BODY_B64 // 4 + 1)
+    assert read_receipt(m, mac=_mac, tz=TZ) is None
+
+
+def test_shared_domains_are_listed_only_with_their_grocery_service() -> None:  # security L3
+    q = gmail_query(35)
+    assert "(from:swiggy.in instamart)" in q and '(from:amazon.in "amazon fresh")' in q
+    assert '(from:flipkart.com "flipkart minutes")' in q
+    assert "bigbasket.com OR" in q and "from:(swiggy.in" not in q
 
 
 def test_the_gmail_query_names_only_the_fixed_merchants() -> None:

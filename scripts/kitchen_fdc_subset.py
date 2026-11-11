@@ -28,6 +28,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -197,7 +198,7 @@ def read_nutrients(path: Path, ids: set[int]) -> dict[int, dict[str, float]]:
                 fid, amount = int(row.get("fdc_id") or ""), float(row.get("amount") or "")
             except ValueError:
                 continue
-            if fid in out and amount >= 0:
+            if fid in out and math.isfinite(amount) and amount >= 0:
                 out[fid][name] = round(amount, 2)
     return out
 
@@ -242,12 +243,17 @@ def main(argv: list[str] | None = None) -> int:
     if food is None or nutrient is None or not food.is_file() or not nutrient.is_file():
         print("give --dir, or --food and --food-nutrient (the official FDC CSVs)", file=sys.stderr)
         return 2
-    data, missing = build(food, nutrient)
+    try:
+        data, missing = build(food, nutrient)
+    except (csv.Error, UnicodeDecodeError) as exc:
+        print(f"can't read the FDC CSV files ({type(exc).__name__}): {exc}", file=sys.stderr)
+        return 2
     for m in missing:
         print(f"not found in the FDC file: {m}", file=sys.stderr)
     if missing and not a.allow_missing:
         return 1
-    a.out.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    text = json.dumps(data, ensure_ascii=False, indent=1, allow_nan=False)
+    a.out.write_text(text + "\n", encoding="utf-8")
     print(f"wrote {a.out} ({data['source']['found']} foods)")  # type: ignore[index]
     return 0
 

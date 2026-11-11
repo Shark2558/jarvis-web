@@ -13,6 +13,7 @@ if (H) {
   const OIL = ['Very little oil', 'Normal oil', 'Rich'];
   const SHORT = { veg: 'vegetarian', egg: 'with eggs', nonveg: 'non-veg' };
   const UI = { host: null, body: null, note: null, view: null, busy: false };
+  const EVERY_DAY = /^(|daily|every ?day|all|all days)$/;
 
   function btn(label, onClick, cls) {
     const b = H.mk('button', 'btn sact' + (cls ? ' ' + cls : ''), label);
@@ -108,7 +109,8 @@ if (H) {
     s.append(H.row('Read my grocery receipts', sp.can_scan ? 'Each morning, from BigBasket, Blinkit, Zepto, Instamart and similar shops.'
       : 'Needs Google linked in Integrations.', [H.toggle('Read my grocery receipts', !!sp.on, (on) => send('/spend', 'PUT', { on }))]));
     (sp.months || []).forEach((m) => {
-      s.append(H.row(m.label, m.total + ' from ' + m.orders + (m.orders === 1 ? ' order' : ' orders'), []));
+      const odd = m.flagged ? ' \u00b7 ' + m.flagged + ' too large to count' : '';
+      s.append(H.row(m.label, m.total + ' from ' + m.orders + (m.orders === 1 ? ' order' : ' orders') + odd, []));
     });
     if (sp.on && !(sp.months || []).length) s.append(H.empty('No grocery receipts found yet.'));
     if (sp.on && sp.can_scan) s.append(acts(btn('Check now', () => send('/spend/scan', 'POST', undefined, 'Checked.'))));
@@ -126,9 +128,14 @@ if (H) {
     days.placeholder = 'every day, or mon, wed, fri';
     s.append(field('Cooking starts', ca), field('Cooking minutes', cm), field('Washing-up starts', wa),
       field('Washing-up minutes', wm), field('Days (empty: every day)', days));
+    const dayList = () => {
+      const raw = days.value.trim().toLowerCase().replace(/\s+/g, ' ');
+      if (EVERY_DAY.test(raw)) return [];
+      return raw.split(/[\s,]+/).map((x) => x.trim().slice(0, 3)).filter(Boolean);
+    };
     const plan = () => ({
       cooking_at: ca.value, cooking_minutes: Number(cm.value), washing_at: wa.value, washing_minutes: Number(wm.value),
-      days: days.value.split(/[\s,]+/).map((x) => x.trim().toLowerCase().slice(0, 3)).filter(Boolean),
+      days: dayList(),
     });
     const ask = btn('Ask to add to my calendar', async () => {
       if (!(await send('/blocks', 'PUT', plan(), 'Saved.'))) return;

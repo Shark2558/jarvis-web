@@ -8,9 +8,10 @@ import json
 import logging
 from typing import Any
 
+import httpx
 import pytest
 from r11_fakes import UID
-from r11_fakes_d import CARD_DIGITS, MailBox, Rules, connector, kctx
+from r11_fakes_d import CARD_DIGITS, GMAIL, MailBox, Rules, connector, kctx
 
 from jarvis.helpers.kitchen.spend import OFF_LINE, GrocerySpendJob, SpendService
 from jarvis.helpers.kitchen.store import SpendStore
@@ -32,18 +33,47 @@ ALL = (
 )
 
 
+class Ticker:
+    """A monotonic clock the test moves (the job's time budget)."""
+
+    def __init__(self) -> None:
+        self.t = 0.0
+
+    def __call__(self) -> float:
+        return self.t
+
+
 async def _rig(
-    names: tuple[str, ...] = ALL, *, on: bool = True, rules: Rules | None = None, **kw: Any
+    names: tuple[str, ...] = ALL,
+    *,
+    on: bool = True,
+    rules: Rules | None = None,
+    box: MailBox | None = None,
+    clock: Ticker | None = None,
+    **kw: Any,
 ) -> tuple[SpendService, GrocerySpendJob, MailBox, Any, Any]:
-    box = MailBox(names)
+    box = box or MailBox(names)
     conn = await connector(box.client())
     c, _, docs, _ = kctx(google=conn, rules=rules or Rules(effect=None), **kw)
-    store = SpendStore(docs, c.keyring, now=c.now, tz=c.tz)
-    svc = SpendService(store, google=c.google, now=c.now, tz=c.tz)
+    svc, job = _service(docs, c, clock or Ticker())
     if on and c.keyring is not None:
         await svc.set_on(UID, True)
-    job = GrocerySpendJob(svc, owners=c.owners, permissions=c.permissions, audit=c.audit)
     return svc, job, box, docs, c
+
+
+def _service(docs: Any, c: Any, clock: Ticker) -> tuple[SpendService, GrocerySpendJob]:
+    """A new service and job over `docs` (as after a restart)."""
+    store = SpendStore(docs, c.keyring, now=c.now, tz=c.tz)
+    svc = SpendService(store, google=c.google, now=c.now, tz=c.tz, clock=clock)
+    job = GrocerySpendJob(svc, owners=c.owners, permissions=c.permissions, audit=c.audit)
+    return svc, job
+
+
+async def _months(svc: SpendService) -> dict[str, str]:
+    return {m["month"]: m["total"] for m in await svc.totals(UID)}
+
+
+WANT = {"2026-11": "₹2,140.50", "2026-10": "₹789"}
 
 
 async def test_the_job_totals_each_month_from_aligned_grocery_receipts_only() -> None:
@@ -152,3 +182,85 @@ async def test_the_month_answer_is_a_fixed_template() -> None:
     assert empty["message"] == "No grocery receipts found for September 2026, Sir."
     with pytest.raises(ValueError):
         await svc.month(UID, "2026-13")
+
+
+async def test_every_page_is_read_and_only_then_the_last_scan_moves() -> None:  # code M1
+    svc, job, box, _, _ = await _rig(box=MailBox(ALL, page=3))
+    await job.run([])
+    assert box.lists() == 4 and box.reads() == len(ALL)
+    assert await _months(svc) == WANT
+    assert (await svc.store.scan(UID)).last_at is not None
+
+
+async def test_out_of_time_while_listing_keeps_the_last_scan_and_the_next_run_finishes() -> None:
+    clock = Ticker()
+
+    def slow(request: httpx.Request) -> None:
+        if request.url.path == GMAIL and request.url.params.get("pageToken"):
+            clock.t += 60  # the second page arrives after the budget
+
+    box = MailBox(ALL, page=4, on_request=slow)
+    svc, job, _, _, c = await _rig(box=box, clock=clock)
+    await job.run([])
+    assert box.lists() == 2 and box.reads() == 0  # out of time after the second page
+    assert (await svc.store.scan(UID)).last_at is None  # the window wasn't covered
+    entry = (await c.audit.tail(5)).entries[-1]
+    assert "complete=no" in entry.detail
+    box.on_request = None
+    await job.run([])
+    assert await _months(svc) == WANT and (await svc.store.scan(UID)).last_at is not None
+
+
+async def test_out_of_time_while_reading_continues_on_the_next_run_without_counting_twice() -> None:
+    clock = Ticker()
+
+    def slow(request: httpx.Request) -> None:
+        if request.url.path.startswith(GMAIL + "/"):
+            clock.t += 4  # every read takes 4 s of the 11 s budget
+
+    box = MailBox(ALL, on_request=slow)
+    svc, job, _, _, _ = await _rig(box=box, clock=clock)
+    await job.run([])
+    first = box.reads()
+    assert 0 < first < len(ALL) and (await svc.store.scan(UID)).last_at is None
+    box.on_request = None
+    await job.run([])
+    assert box.reads() == len(ALL)  # the rest, once each
+    assert await _months(svc) == WANT and (await svc.store.scan(UID)).last_at is not None
+
+
+async def test_a_mail_that_failed_to_read_is_read_next_time_and_keeps_the_last_scan() -> None:
+    box = MailBox(ALL, fail_read={"d_receipt_blinkit_nov"})
+    svc, job, _, _, _ = await _rig(box=box)
+    await job.run([])
+    assert (await svc.store.scan(UID)).last_at is None
+    assert (await _months(svc))["2026-11"] == "₹1,684.50"  # without Blinkit's ₹456
+    box.fail_read.clear()
+    await job.run([])
+    assert await _months(svc) == WANT and (await svc.store.scan(UID)).last_at is not None
+
+
+async def test_a_restart_counts_nothing_twice() -> None:  # code M5
+    _, job, box, docs, c = await _rig()
+    await job.run([])
+    svc2, job2 = _service(docs, c, Ticker())  # a new process over the same documents
+    await job2.run([])
+    assert await _months(svc2) == WANT
+    await svc2.store.set_scan(UID, lambda s: s.model_copy(update={"seen": ()}))  # lost hashes
+    await job2.run([])
+    assert await _months(svc2) == WANT
+
+
+async def test_a_receipt_just_after_midnight_in_his_zone_counts_in_his_month() -> None:
+    svc, job, _, _, _ = await _rig(("d_receipt_blinkit_month_edge.eml",))
+    await job.run([])
+    assert await _months(svc) == {"2026-11": "₹120"}
+
+
+async def test_a_total_too_large_for_groceries_is_flagged_not_added() -> None:
+    svc, job, _, _, c = await _rig(("d_receipt_bigbasket_bulk.eml", "d_receipt_blinkit_nov.eml"))
+    await job.run([])
+    out = await svc.month(UID, "2026-11")
+    assert out["total"] == "₹456" and out["flagged"] == 1
+    assert "1 receipt over ₹25,000 wasn't counted" in out["message"]
+    assert "flagged=1" in (await c.audit.tail(5)).entries[-1].detail

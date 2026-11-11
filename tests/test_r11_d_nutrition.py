@@ -72,6 +72,19 @@ def test_unknown_ingredients_are_named_not_guessed(tmp_path: Path) -> None:
     assert "1 of 2 ingredients" in describe(d)
 
 
+@pytest.mark.parametrize(("name", "near"), [("coconut milk", "milk"), ("sweet potato", "potato")])
+def test_a_longer_name_is_never_read_as_its_last_word(
+    tmp_path: Path, name: str, near: str
+) -> None:  # code review M3: no "about" a different food
+    food = {"key": near, "fdc_id": 333, "names": [], "per100g": {"kcal": 60}}
+    n = Nutrition.load(_data(tmp_path, [*FOODS, food]))
+    assert n.find(name) is None and n.find(near) is not None
+    d = n.dish((Ingredient(name=name, grams=200), Ingredient(name="rice", grams=100)))
+    assert d.matched == 1 and d.unmatched == (name,) and d.totals["kcal"] == pytest.approx(365)
+    line = describe(d)
+    assert "partial" in line and f"not found: {name}" in line and "1 of 2 ingredients" in line
+
+
 def test_a_broken_or_missing_file_reads_as_not_installed(tmp_path: Path) -> None:
     bad = tmp_path / "bad.json"
     bad.write_text("{not json")
@@ -122,3 +135,43 @@ def test_the_converter_builds_the_subset_from_the_official_csv_shape(tmp_path: P
 def test_the_converter_fails_when_mapped_foods_are_missing_unless_allowed(tmp_path: Path) -> None:
     r = _convert(tmp_path)
     assert r.returncode == 1 and "not found in the FDC file" in r.stderr
+
+
+def _strict(path: Path) -> dict[str, object]:
+    def no_constants(word: str) -> object:
+        raise ValueError(f"not JSON: {word}")
+
+    data: dict[str, object] = json.loads(path.read_text(), parse_constant=no_constants)
+    return data
+
+
+def test_the_converter_never_writes_infinity_or_nan(tmp_path: Path) -> None:  # security L4
+    nutrients = tmp_path / "food_nutrient.csv"
+    rows = (FIXTURES / "d_fdc_food_nutrient.csv").read_text().splitlines()
+    rows = [r for r in rows if not r.startswith('"1",')]  # rice's kcal, replaced below
+    rows += ['"99","900001","1008","inf","","","","","","",""', '"98","900001","1003","nan"']
+    nutrients.write_text("\n".join(rows) + "\n")
+    out = tmp_path / "subset.json"
+    r = subprocess.run(
+        [sys.executable, "-I", str(SCRIPT), "--food", str(FIXTURES / "fdc_sample.csv"),
+         "--food-nutrient", str(nutrients), "--out", str(out), "--allow-missing"],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    assert r.returncode == 0, r.stderr
+    rice = {f["key"]: f for f in _strict(out)["foods"]}["rice"]  # type: ignore[attr-defined]
+    assert rice["per100g"]["kcal"] is None  # inf is not a value
+    assert rice["per100g"]["protein_g"] == 7.13  # a later nan row is skipped
+
+
+def test_the_converter_says_so_when_a_csv_cannot_be_read(tmp_path: Path) -> None:
+    food = tmp_path / "food.csv"
+    food.write_text(
+        '"fdc_id","data_type","description"\n"1","sr_legacy_food","' + "x" * 200_000 + '"\n'
+    )
+    r = subprocess.run(
+        [sys.executable, "-I", str(SCRIPT), "--food", str(food),
+         "--food-nutrient", str(FIXTURES / "d_fdc_food_nutrient.csv"),
+         "--out", str(tmp_path / "o.json")],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    assert r.returncode == 2 and "can't read" in r.stderr and "Traceback" not in r.stderr

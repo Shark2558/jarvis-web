@@ -16,7 +16,7 @@ from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.helpers.kinds import tool_allowed
 from jarvis.helpers.kitchen import part as kitchen_part
 from jarvis.helpers.kitchen.phrases import route
-from jarvis.helpers.kitchen.recipes import AI_OFF_LINE
+from jarvis.helpers.kitchen.recipes import AI_OFF_LINE, EMPTY_PANTRY_LINE
 from jarvis.helpers.kitchen.service import KitchenService
 from jarvis.llm.base import ToolCall
 from jarvis.offline.no_ai import run_no_ai
@@ -235,3 +235,44 @@ async def test_no_ai_mode_answers_every_plain_kitchen_feature_with_no_provider_c
         out = await run_no_ai(gw, text, NOW, scope=SCOPE, extra=built.phrases)
         assert want in out.reply, (text, out.reply)
     assert private.calls == []
+
+
+async def test_an_empty_pantry_says_so_and_makes_no_paid_call() -> None:  # code M5
+    gw, _, private, _ = await _rig(DAL)
+    listed = await _call(gw, "pantry_list")
+    assert listed.result["pantry"] == [] and listed.result["message"].startswith(
+        "Your pantry is empty"
+    )
+    idea = await _call(gw, "recipe_suggest")
+    assert idea.result["message"].startswith(EMPTY_PANTRY_LINE) and private.calls == []
+
+
+async def test_nutrition_of_an_unknown_dish_says_it_is_not_saved() -> None:  # code M5
+    gw, _, _, _ = await _rig()
+    out = await _call(gw, "nutrition_of", recipe="dragon stew")
+    assert out.result["message"].startswith("I can't find that in your saved recipes")
+
+
+DAL_ARGS = {"title": "Dal", "ingredients": "100 g dal", "steps": "Cook."}
+RAW_WORDS = ("invalid literal", "input_value", "validation error", "pydantic", "x" * 61, "y" * 61)
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("recipe_save", {**DAL_ARGS, "minutes": "abc"}),
+        ("recipe_save", {**DAL_ARGS, "minutes": "12.5"}),
+        ("recipe_save", {**DAL_ARGS, "title": "D" * 81}),
+        ("nutrition_of", {"ingredients": "100 g " + "x" * 61}),
+        ("recipe_save", {**DAL_ARGS, "ingredients": [{"name": "y" * 61, "grams": 5}]}),
+    ],
+)
+async def test_bad_arguments_get_plain_words_never_the_raw_parser_error(
+    tool: str, args: dict[str, Any]
+) -> None:  # code L3
+    gw, _, _, _ = await _rig()
+    out = await _call(gw, tool, **args)
+    assert out.outcome is GatewayOutcome.ERROR
+    error = out.error or ""
+    for raw in RAW_WORDS:
+        assert raw not in error, error

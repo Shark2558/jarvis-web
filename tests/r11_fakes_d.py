@@ -16,7 +16,7 @@ import email
 import email.policy
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -132,10 +132,15 @@ def eml(name: str) -> dict[str, Any]:
 
 @dataclasses.dataclass
 class MailBox:
-    """Serves `messages.list` (every mail, newest first) and `messages.get`."""
+    """Serves `messages.list` (every mail, newest first; `page` mails a page with Gmail's
+    `nextPageToken`) and `messages.get` (`fail_read` ids answer 500). `on_request` sees every
+    request first (a test's clock moves there)."""
 
     names: Sequence[str] = ()
     fail_list: int | None = None
+    page: int | None = None
+    fail_read: set[str] = dataclasses.field(default_factory=set)
+    on_request: Callable[[httpx.Request], None] | None = None
     requests: list[httpx.Request] = dataclasses.field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -147,15 +152,31 @@ class MailBox:
     def reads(self) -> int:
         return sum(1 for r in self.requests if r.url.path.startswith(GMAIL + "/"))
 
+    def lists(self) -> int:
+        return sum(1 for r in self.requests if r.url.path == GMAIL)
+
+    def _listing(self, request: httpx.Request) -> httpx.Response:
+        if self.fail_list:
+            return httpx.Response(self.fail_list, json={"error": {"message": "fake"}})
+        start = int(request.url.params.get("pageToken") or 0)
+        size = self.page or len(self.mails) or 1
+        rows = [{"id": m["id"]} for m in self.mails[start : start + size]]
+        body: dict[str, Any] = {"messages": rows}
+        if start + size < len(self.mails):
+            body["nextPageToken"] = str(start + size)
+        return httpx.Response(200, json=body)
+
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
+        if self.on_request is not None:
+            self.on_request(request)
         path = request.url.path
         if request.method != "GET":
             return httpx.Response(599, json={"error": "a read-only fake got a write"})
         if path == GMAIL:
-            if self.fail_list:
-                return httpx.Response(self.fail_list, json={"error": {"message": "fake"}})
-            return httpx.Response(200, json={"messages": [{"id": m["id"]} for m in self.mails]})
+            return self._listing(request)
+        if path.rsplit("/", 1)[-1] in self.fail_read:
+            return httpx.Response(500, json={"error": {"message": "fake"}})
         found = next((m for m in self.mails if path == f"{GMAIL}/{m['id']}"), None)
         if found is None:
             return httpx.Response(404, json={"error": {"message": "no such mail"}})

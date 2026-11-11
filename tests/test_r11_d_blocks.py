@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import json
+import logging
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from google_fakes import FakeGoogle
@@ -140,3 +143,41 @@ def test_the_card_text_is_written_by_code_from_the_arguments() -> None:
         "Add to your calendar, repeating every Sat and Sun from 1 Dec 2026: "
         "Washing-up 20:30-20:45. Only you are on them."
     )
+
+
+async def test_a_second_block_that_fails_is_said_and_logged(caplog: Any) -> None:  # code L1
+    fake = FakeGoogle()
+    tz = httpx.Response(200, json={"timeZone": "Asia/Kolkata"})
+    fake.on("GET", f"{CAL}/users/me/calendarList/primary", tz)
+    fake.on("POST", EVENTS, _made("Cooking"), httpx.Response(500, json={"error": {}}))
+    reg = ToolRegistry()
+    reg.register(
+        blocks_tool(await connector(fake.client()), tz="Asia/Kolkata", now=lambda: NOON_IST)
+    )
+    rules = [PolicyRule(tool_pattern="calendar_*", effect=Effect.ALLOW)]
+    gw = Gateway(registry=reg, policy=Policy(rules), gate=ConfirmationGate(), audit=AuditLog())
+    card = await _run(gw, {})
+    assert card.pending is not None
+    with caplog.at_level(logging.WARNING):
+        done = await _run(gw, {}, confirmation_id=card.pending.id)
+    assert "Washing-up couldn't be added just now" in done.result["message"]
+    got = [r for r in caplog.records if r.getMessage() == "a kitchen block wasn't added"]
+    assert got and getattr(got[0], "error", None) in ("GoogleAPIError", "GoogleUncertain")
+
+
+async def test_a_start_that_is_past_in_the_calendars_zone_moves_to_its_today() -> None:  # L2
+    late = datetime(2026, 11, 10, 23, 0, tzinfo=ZoneInfo("Asia/Kolkata"))  # 11 Nov in Kiritimati
+    fake = FakeGoogle()
+    tz = httpx.Response(200, json={"timeZone": "Pacific/Kiritimati"})
+    fake.on("GET", f"{CAL}/users/me/calendarList/primary", tz)
+    fake.on("POST", EVENTS, _made("Cooking"))
+    reg = ToolRegistry()
+    reg.register(blocks_tool(await connector(fake.client()), tz="Asia/Kolkata", now=lambda: late))
+    rules = [PolicyRule(tool_pattern="calendar_*", effect=Effect.ALLOW)]
+    gw = Gateway(registry=reg, policy=Policy(rules), gate=ConfirmationGate(), audit=AuditLog())
+    args = {"only": "cooking", "start": "2026-11-10"}  # today in his configured zone
+    card = await _run(gw, args)
+    assert card.pending is not None
+    await _run(gw, args, confirmation_id=card.pending.id)
+    (only,) = _posts(fake)
+    assert only["start"]["dateTime"].startswith("2026-11-11T19:00")

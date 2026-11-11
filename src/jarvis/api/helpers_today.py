@@ -28,6 +28,7 @@ Errors: 422 {error: "invalid", detail} in plain words; 503 {error: "unavailable"
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 from typing import Any
@@ -40,7 +41,7 @@ from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
 from jarvis.helpers.ports import HelperPart
 from jarvis.helpers.today.bills import BillsService
-from jarvis.helpers.today.models import BillRefused
+from jarvis.helpers.today.models import Bill, BillRefused
 from jarvis.helpers.today.store import BillsOff
 from jarvis.helpers.today.tools import UNUSABLE
 from jarvis.helpers.today.views import today_view
@@ -211,34 +212,40 @@ async def _own_session(request: Request, uid: str, session_id: str | None) -> bo
     return found is not None and getattr(found, "user_id", None) == uid
 
 
-async def _card(request: Request, uid: str, session_id: str | None, call: ToolCall) -> JSONResponse:
-    """Propose an R3 call through the gateway in his conversation; it waits in Approvals."""
+def _reason(error: str | None) -> str:
+    """The plain words of a refusal: ours (a `BillRefused` the look-up raised) when present."""
+    text = error or "That couldn't be done."
+    found = re.search(r"\(BillRefused: (.+)\)\s*$", text)
+    return (found[1] if found else text.split(" (")[0])[:200]
+
+
+async def _card(
+    request: Request, uid: str, session_id: str | None, call: ToolCall, label: str
+) -> JSONResponse:
+    """Propose an R3 call through the gateway in his conversation; it waits for his OK."""
     gateway = getattr(request.app.state, "gateway", None)
     if gateway is None:
         return _answer(503, {"error": "unavailable", "detail": "Tools are off on this server."})
     if not await _own_session(request, uid, session_id):
-        label = str(call.arguments.get("bill", "")) or "this"
-        return _answer(
-            409, {"error": "no_conversation", "detail": NO_CONVERSATION.format(label=label)}
-        )
+        detail = NO_CONVERSATION.format(label=label)
+        return _answer(409, {"error": "no_conversation", "detail": detail})
     with turn_budget(), context_trust(untrusted=False, spoken=False, owner_text=None):
         res = await gateway.execute(call, scope=f"{uid}:{session_id}")
     if res.outcome is GatewayOutcome.AWAITING_CONFIRMATION and res.pending is not None:
-        return _answer(
-            202, {"status": "awaiting", "approval_id": res.pending.id, "detail": AWAITING}
-        )
+        body = {"status": "awaiting", "approval_id": res.pending.id, "card": res.pending.summary}
+        return _answer(202, {**body, "detail": AWAITING})
     if res.outcome is GatewayOutcome.DENIED:
         return _answer(403, {"error": "denied", "detail": "Switched off in your Permissions, Sir."})
-    detail = (res.error or "That couldn't be done.").split(" (")[0][:200]
-    return _answer(422, {"error": "invalid", "detail": detail})
+    return _answer(422, {"error": "invalid", "detail": _reason(res.error)})
 
 
-async def _bill_ref(request: Request, uid: str, bill_id: str) -> str | None:
+async def _bill(request: Request, uid: str, bill_id: str) -> Bill | None:
     part = _part(request)
     if part is None:
         return None
+    svc: BillsService = part.services["bills"]
     try:
-        return part.services["bills"].find(await part.services["bills"].book(uid), bill_id).id  # type: ignore[no-any-return]
+        return svc.find(await svc.book(uid), bill_id)
     except (BillRefused, BillsOff):
         return None
 
@@ -251,13 +258,13 @@ async def bill_payee(
         return _off(request)
     if (refused := _limited(request, uid)) is not None:
         return refused
-    if await _bill_ref(request, uid, bill_id) is None:
+    if (bill := await _bill(request, uid, bill_id)) is None:
         return _answer(404, {"error": "not_found", "detail": "No bill by that name, Sir."})
-    args: dict[str, Any] = {"bill": bill_id, "upi": body.upi}
+    args: dict[str, Any] = {"bill": bill.id, "upi": body.upi}
     if body.payee is not None:
         args["payee"] = body.payee
     call = ToolCall(id=f"today-{uuid.uuid4().hex[:8]}", name="bill_payee_set", arguments=args)
-    return await _card(request, uid, body.session_id, call)
+    return await _card(request, uid, body.session_id, call, bill.label)
 
 
 @router.post("/bills/{bill_id}/pay", response_model=None)
@@ -268,13 +275,13 @@ async def bill_pay(
         return _off(request)
     if (refused := _limited(request, uid)) is not None:
         return refused
-    if await _bill_ref(request, uid, bill_id) is None:
+    if (bill := await _bill(request, uid, bill_id)) is None:
         return _answer(404, {"error": "not_found", "detail": "No bill by that name, Sir."})
-    args: dict[str, Any] = {"bill": bill_id}
+    args: dict[str, Any] = {"bill": bill.id}
     if body.amount:
         args["amount"] = body.amount
     call = ToolCall(id=f"today-{uuid.uuid4().hex[:8]}", name="bill_pay_prepare", arguments=args)
-    return await _card(request, uid, body.session_id, call)
+    return await _card(request, uid, body.session_id, call, bill.label)
 
 
 @router.post("/bills/{bill_id}/payment", response_model=None)

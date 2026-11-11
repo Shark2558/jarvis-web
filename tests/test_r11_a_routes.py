@@ -94,6 +94,7 @@ async def test_a_upi_id_is_an_r3_card_in_his_conversation() -> None:
         bid = await _add(t)
         none = await t.client.post(f"{PREFIX}/bills/{bid}/payee", json={"upi": FAKE_UPI})
         assert none.status_code == 409 and none.json()["error"] == "no_conversation"
+        assert "pay the Electricity bill" in none.json()["detail"]
         body = {"upi": FAKE_UPI, "session_id": "sess_not_his"}
         assert (await t.client.post(f"{PREFIX}/bills/{bid}/payee", json=body)).status_code == 409
         r = await t.client.post(
@@ -101,6 +102,7 @@ async def test_a_upi_id_is_an_r3_card_in_his_conversation() -> None:
         )
         assert r.status_code == 202 and r.json()["status"] == "awaiting"
         (card,) = await t.rig.gateway.pending()
+        assert r.json()["card"] == card.summary and r.json()["approval_id"] == card.id
         assert card.tool == "bill_payee_set" and FAKE_UPI in card.summary
         assert (await t.client.get(PREFIX)).json()["bills"]["items"][0]["upi"] == ""  # not yet
         bad = {"upi": "not a upi", "session_id": t.session}
@@ -118,6 +120,8 @@ async def _approve(t: Tab) -> None:
 async def test_pay_is_a_card_and_the_payment_is_shown_once() -> None:
     async with tab() as t:
         bid = await _add(t)
+        nope = await t.client.post(f"{PREFIX}/bills/{bid}/pay", json={"session_id": t.session})
+        assert nope.status_code == 422 and "UPI ID" in nope.json()["detail"]  # the look-up's words
         await t.client.post(
             f"{PREFIX}/bills/{bid}/payee", json={"upi": FAKE_UPI, "session_id": t.session}
         )

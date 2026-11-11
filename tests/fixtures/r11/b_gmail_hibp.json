@@ -1,0 +1,30 @@
+{
+ "id": "18f0aa01hibp",
+ "threadId": "18f0aa01hibp",
+ "internalDate": "1762750800000",
+ "payload": {
+  "mimeType": "text/html",
+  "headers": [
+   {
+    "name": "Authentication-Results",
+    "value": "mx.google.com; dkim=pass header.i=@haveibeenpwned.com header.s=s1 header.b=AbCd; spf=pass (google.com: domain of bounce@haveibeenpwned.com designates 192.0.2.10 as permitted sender) smtp.mailfrom=bounce@haveibeenpwned.com; dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=haveibeenpwned.com"
+   },
+   {
+    "name": "From",
+    "value": "Have I Been Pwned <noreply@haveibeenpwned.com>"
+   },
+   {
+    "name": "To",
+    "value": "owner@example.com"
+   },
+   {
+    "name": "Subject",
+    "value": "You've been pwned in the Example data breach"
+   },
+   {
+    "name": "Date",
+    "value": "Tue, 10 Nov 2026 04:00:00 +0000"
+   }
+  ]
+ }
+}

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<cap:alert xmlns:cap="urn:oasis:names:tc:emergency:cap:1.2">
+  <cap:identifier>IN-1794300000000103_1</cap:identifier>
+  <cap:sender>Example-SDMA</cap:sender>
+  <cap:sent>2026-11-10T01:30:00+05:30</cap:sent>
+  <cap:status>Actual</cap:status>
+  <cap:msgType>Alert</cap:msgType>
+  <cap:scope>Public</cap:scope>
+  <cap:restriction></cap:restriction>
+  <cap:addresses></cap:addresses>
+  <cap:note></cap:note>
+  <cap:incidents></cap:incidents>
+  <cap:info>
+    <cap:language>en-IN</cap:language>
+    <cap:category>Geo</cap:category>
+    <cap:event>Landslide</cap:event>
+    <cap:urgency>Immediate</cap:urgency>
+    <cap:severity>Severe</cap:severity>
+    <cap:certainty>Likely</cap:certainty>
+    <cap:audience>1</cap:audience>
+    <cap:effective>2026-11-10T01:30:00+05:30</cap:effective>
+    <cap:onset>2026-11-10T01:30:00+05:30</cap:onset>
+    <cap:expires>2026-11-10T18:00:00+05:30</cap:expires>
+    <cap:headline>Landslide warning for the hilly parts of Kollam district.</cap:headline>
+    <cap:description></cap:description>
+    <cap:instruction>Please follow SDMA guidelines.</cap:instruction>
+    <cap:contact></cap:contact>
+    <cap:parameter>
+      <cap:valueName>Polygon URL</cap:valueName>
+      <cap:value>https://sachet.ndma.gov.in/cap_public_website/FetchPolygonXMLFile?identifier=1794300000000103</cap:value>
+    </cap:parameter>
+    <cap:area>
+      <cap:areaDesc>Kollam district of Kerala</cap:areaDesc>
+      <cap:geocode>
+        <cap:valueName>LGD District Code</cap:valueName>
+        <cap:value>9002</cap:value>
+      </cap:geocode>
+      <cap:altitude>0</cap:altitude>
+      <cap:ceiling>0</cap:ceiling>
+    </cap:area>
+  </cap:info>
+  <cap:info>
+    <cap:language>ML</cap:language>
+    <cap:category>Geo</cap:category>
+    <cap:event>Landslide</cap:event>
+    <cap:urgency>Immediate</cap:urgency>
+    <cap:severity>Severe</cap:severity>
+    <cap:certainty>Likely</cap:certainty>
+    <cap:audience>1</cap:audience>
+    <cap:effective>2026-11-10T01:30:00+05:30</cap:effective>
+    <cap:onset>2026-11-10T01:30:00+05:30</cap:onset>
+    <cap:expires>2026-11-10T18:00:00+05:30</cap:expires>
+    <cap:headline>മുന്നറിയിപ്പ്</cap:headline>
+    <cap:description></cap:description>
+    <cap:instruction>Please follow SDMA guidelines.</cap:instruction>
+    <cap:contact></cap:contact>
+    <cap:parameter>
+      <cap:valueName>Polygon URL</cap:valueName>
+      <cap:value>https://sachet.ndma.gov.in/cap_public_website/FetchPolygonXMLFile?identifier=1794300000000103</cap:value>
+    </cap:parameter>
+    <cap:area>
+      <cap:areaDesc>Kollam district of Kerala</cap:areaDesc>
+      <cap:geocode>
+        <cap:valueName>LGD District Code</cap:valueName>
+        <cap:value>9002</cap:value>
+      </cap:geocode>
+      <cap:altitude>0</cap:altitude>
+      <cap:ceiling>0</cap:ceiling>
+    </cap:area>
+  </cap:info>
+</cap:alert>

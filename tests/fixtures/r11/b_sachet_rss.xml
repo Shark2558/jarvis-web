@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+  <channel>
+    <title>Kerala: CAP Disaster Alert Feeds</title>
+    <link>https://sachet.ndma.gov.in/cap_public_website/rss/rss_kerala.xml</link>
+    <description>CAP Integrated Alert System Warning Updates</description>
+    <language>en</language>
+    <copyright>public domain</copyright>
+    <pubDate>Mon, 09 Nov 2026 20:30:00 GMT</pubDate>
+    <atom:link href="https://sachet.ndma.gov.in/cap_public_website/rss/rss_kerala.xml" rel="self" type="application/rss+xml"/>
+    <item>
+      <title>Thunderstorm with moderate rain likely in Ernakulam district</title>
+      <description></description>
+      <category>Met</category>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1794300000000101</link>
+      <author>controlroom@ndma.gov.in (IMD Example)</author>
+      <guid isPermaLink="false">1794300000000101</guid>
+      <pubDate>Mon, 09 Nov 2026 20:10:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Landslide warning for the hilly parts of Ernakulam district</title>
+      <description></description>
+      <category>Geo</category>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1794300000000102</link>
+      <author>controlroom@ndma.gov.in (IMD Example)</author>
+      <guid isPermaLink="false">1794300000000102</guid>
+      <pubDate>Mon, 09 Nov 2026 20:11:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Landslide warning for the hilly parts of Kollam district</title>
+      <description></description>
+      <category>Geo</category>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1794300000000103</link>
+      <author>controlroom@ndma.gov.in (IMD Example)</author>
+      <guid isPermaLink="false">1794300000000103</guid>
+      <pubDate>Mon, 09 Nov 2026 20:12:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Heavy rain alert</title>
+      <description></description>
+      <category>Met</category>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1794300000000104</link>
+      <author>controlroom@ndma.gov.in (IMD Example)</author>
+      <guid isPermaLink="false">1794300000000104</guid>
+      <pubDate>Mon, 09 Nov 2026 20:13:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Moderate rain likely in Ernakulam district</title>
+      <description></description>
+      <category>Met</category>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1794300000000105</link>
+      <author>controlroom@ndma.gov.in (IMD Example)</author>
+      <guid isPermaLink="false">1794300000000105</guid>
+      <pubDate>Mon, 09 Nov 2026 20:14:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

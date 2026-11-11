@@ -8,7 +8,8 @@ wires for the chores rota, home upkeep, weather, disaster alerts and breach noti
   feed reads first, each in its own slot of Part B's share of the run (`fetch.OutsideClock`)
 - morning tick: `breach_watch` (it also sweeps Part B's old claims)
 - privacy: `helpers_house`, `helpers_place`; brief: "house", "outside"; pending: "house"
-- No-AI: `phrases.PHRASES`; routes read `services["house"]` (`api/helpers_house.py`)
+- No-AI: `phrases.PHRASES`; routes read `services["house"]` (`api/helpers_house.py`); Part C's
+  free-time pick reads `services["rain"]` (`rain.RainHint`, through `ctx.rain`, I1)
 His place needs the keyring (`alerts_place`); without one, weather, disaster alerts and breach
 notices say they are off and chores and upkeep still work. Each outside feed is OFF for him until
 he types his district (and breach watching until he says he has subscribed).
@@ -22,6 +23,7 @@ from jarvis.helpers.house.chores import ChoresJob
 from jarvis.helpers.house.fetch import Fetcher, HttpFetcher, OutsideClock
 from jarvis.helpers.house.phrases import PHRASES
 from jarvis.helpers.house.privacy import house_privacy, place_privacy
+from jarvis.helpers.house.rain import RainHint
 from jarvis.helpers.house.sachet import DisasterJob
 from jarvis.helpers.house.service import HouseService
 from jarvis.helpers.house.store import HouseStore, OutsideStore
@@ -58,7 +60,7 @@ def build(ctx: HelperContext, fetcher: Fetcher | None = None) -> HelperPart:
         brief=(ChoresBrief(svc), OutsideBrief(svc)),
         pending=(HousePending(svc),),
         phrases=PHRASES,
-        services={"house": svc},
+        services={"house": svc, "rain": RainHint(outside, tz=ctx.tz, now=ctx.now)},
         ready=READY_ON if outside.available else READY_NO_KEY,
     )
 

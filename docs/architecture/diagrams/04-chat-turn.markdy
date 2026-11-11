@@ -1,0 +1,35 @@
+scene "Figure 4 · One conversation turn" theme=paper type=sequence
+layout LR
+
+browser Console "Console"
+service Brain "Brain"
+database Memory "Long-term memory"
+policy Budget "Monthly limit"
+cloud Model "AI brain"
+gateway Tools "Tool gateway"
+
+beat ask "1. You ask":
+  show $nodes stagger=30ms
+  Console -> Brain "your message, size checked"
+  Brain -> Memory "recall what matters"
+  Brain <- Memory "up to 12 notes"
+  Brain -> Budget "any rupees left?"
+  Brain <- Budget "yes"
+
+beat think "2. JARVIS thinks and acts":
+  Brain -> Model "think (Claude or Gemini)"
+  Brain <- Model "answer or a tool call"
+  Brain -> Tools "tool call: checked, then audited"
+  Brain <- Tools "result, or a card to approve"
+  Brain -> Model "think again with the result"
+  Brain <- Model "the answer"
+
+beat reply "3. The reply":
+  Brain -> Budget "add the cost in rupees"
+  Console <- Brain "reply"
+  Brain ~> Memory "learn later, in the background"
+  glow Tools color=#22c55e
+
+player:
+  chrome:
+    badge false

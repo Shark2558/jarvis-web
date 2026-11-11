@@ -1,0 +1,35 @@
+scene "Figure 6 · A spoken turn" theme=paper type=sequence
+layout LR
+
+user You "You"
+browser Tab "Console in your browser" sub="wake word, mic, barge-in"
+service Server "JARVIS server"
+cloud Speech "Google speech" sub="or the browser's own"
+service Brain "Brain"
+
+beat listen "1. JARVIS listens":
+  show $nodes stagger=30ms
+  You -> Tab "Hey Jarvis (heard on this device)"
+  You -> Tab "your question"
+  Tab -> Server "the recording"
+  Server -> Speech "speech to text"
+  Server <- Speech "text"
+  Tab <- Server "your words"
+
+beat answer "2. JARVIS answers":
+  Tab -> Server "spoken message"
+  Server -> Brain "answer it like a typed one"
+  Server <- Brain "short, speakable reply"
+  Tab <- Server "reply"
+
+beat speak "3. JARVIS speaks":
+  Tab -> Server "say this"
+  Server -> Speech "text to voice"
+  Server <- Speech "audio"
+  Tab <- Server "JARVIS's voice"
+  You <- Tab "speaks; talk over him to stop"
+  glow Tab color=#22c55e
+
+player:
+  chrome:
+    badge false

@@ -103,6 +103,41 @@ jobs:
       - run: playwright install --with-deps chromium
       - run: pytest -q tests/browser -m browser -rs
 
+  # R6.1 D2: the architecture diagrams (docs/architecture/diagrams/*.markdy). Pull requests only and
+  # never a dependency of deploy. Every PR: the privacy rule, Markdy's `lint --strict` and
+  # `verify --quality showcase` for all diagrams. A PR that touches docs/architecture, the Markdy
+  # tool (tools/markdy) or the export scripts (scripts/markdy_*) also runs `--check`: every
+  # diagram's SVG + PNG must be the export of its current source and the pinned Markdy version
+  # (exports.json; no browser needed). Markdy (@markdy/cli 1.5.7, MIT) is a dev-only tool from
+  # tools/markdy's lock.
+  docs:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with: { node-version: "22" }
+      - run: npm ci --prefix tools/markdy --ignore-scripts --no-audit --no-fund
+      - name: Does this pull request change the diagrams, the Markdy tool or the export scripts?
+        id: changed
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # an unknown answer (git failed) counts as changed: the stricter check runs.
+          # 'scripts/markdy_*' is quoted so git, not the shell, expands it.
+          if git diff --quiet "origin/${BASE_REF}...HEAD" -- docs/architecture tools/markdy 'scripts/markdy_*'; then
+            echo "diagrams=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "diagrams=yes" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changed.outputs.diagrams == 'yes'
+        run: python scripts/markdy_export.py --check
+      - if: steps.changed.outputs.diagrams != 'yes'
+        run: python scripts/markdy_export.py --lint-only
+
   # Real-model eval gate. Runs on main only; skipped (not failed) when no Anthropic key is set.
   eval-gate:
     if: github.ref == 'refs/heads/main'

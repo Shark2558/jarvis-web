@@ -1,0 +1,33 @@
+scene "Figure 10 · The burglar alarm: from the camera to your phone" theme=paper type=architecture
+layout TB
+
+mobile Camera "Old phone as a camera" sub="facing your gate"
+service Frigate "Frigate" sub="spots people, consented faces"
+service HomeAssistant "Home Assistant" sub="your devices, smoke and water"
+broker Mqtt "Mosquitto" sub="messages inside the laptop"
+service Bridge "Home bridge" sub="the laptop's only door"
+gateway Webhook "Home webhook in the cloud" sub="signature, time, no replays"
+service Alarm "Burglar alarm" sub="armed? in a zone? who?"
+policy Policy "Alert policy" sub="burglar and hazard ring, even at night"
+app Channels "Telegram and Web Push" sub="photo only if you opted in"
+
+beat see "1. At home, the laptop sees":
+  show $nodes stagger=30ms
+  Camera -> Frigate "video stays home"
+  Frigate ~> Mqtt "person at the gate"
+  Mqtt ~> Bridge "event"
+  HomeAssistant -> Bridge "sensor alarms"
+
+beat send "2. A short signed message goes out":
+  Bridge -> Webhook "person, Gate, 18:42 (via Tailscale)"
+  Webhook -> Alarm "checked event"
+  Webhook -> Policy "smoke or water: emergency"
+
+beat ring "3. Your phone rings":
+  Alarm -> Policy "burglar alert"
+  Policy -> Channels "ring"
+  glow Alarm color=#ef4444
+
+player:
+  chrome:
+    badge false

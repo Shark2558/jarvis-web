@@ -1,0 +1,33 @@
+scene "Figure 12 · The build book and the guest show" theme=paper type=architecture
+layout TB
+
+pipeline Gen "Book generator" sub="at deploy: reads code and plans, no AI"
+policy Scrub "Privacy scrub" sub="personal data out, secret scan"
+release Release "Ships with the server" sub="the book and that release's code"
+vault Seal "Sealed in the vault" sub="newest 3 kept, 60 MB at most"
+browser Console "Your console" sub="you, or a guest you sit with"
+auth Open "Open the book" sub="from the vault: fresh sign-in, passkey"
+lock Lock "Guest lock" sub="your consoles show only the book"
+service Show "The show" sub="45 min; up to 20 questions, no tools"
+service Close "Closing" sub="session deleted, you are told"
+auth Resume "Resume" sub="only your passkey lifts the lock"
+
+beat build "1. Every release documents itself":
+  show $nodes stagger=30ms
+  Gen -> Scrub "check"
+  Scrub -> Release "ship"
+  Release -> Seal "seal once"
+
+beat open "2. You open it, or show a guest":
+  Console -> Open "book"
+  Open -> Show "start"
+  Open -> Lock "guest: lock on"
+
+beat show "3. The show, then the end":
+  Show -> Close "end or time up"
+  Resume -> Lock "lift"
+  glow Lock color=#f59e0b
+
+player:
+  chrome:
+    badge false

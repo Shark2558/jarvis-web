@@ -1,0 +1,10 @@
+{
+  "name": "jarvis-markdy-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dev-only: the Markdy CLI that checks and exports the architecture diagrams in docs/architecture/diagrams. Never part of the app image, the console or the build book.",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@markdy/cli": "1.5.7"
+  }
+}

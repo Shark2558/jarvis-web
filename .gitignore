@@ -11,3 +11,5 @@ evals/**/report.json
 src/jarvis/buildbook/_book/
 # R6.1 D4: the build time the Dockerfile stamps into the image (jarvis.about); never committed
 src/jarvis/BUILD_DATE
+# R6.1 D2: the dev-only Markdy CLI (npm ci --prefix tools/markdy)
+tools/markdy/node_modules/

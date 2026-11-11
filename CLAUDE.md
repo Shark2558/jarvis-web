@@ -1,7 +1,7 @@
 # JARVIS — guidance for coding agents
 
 Personal AI assistant: private-by-default, model-agnostic core, confirm-before-commit, evals before ship.
-Python 3.11+, FastAPI, Pydantic v2, Postgres + Redis, MCP for tools. See README.md and docs/plans/.
+Python 3.11+, FastAPI, Pydantic v2; data in Firestore (Redis only as an optional local session store); tools via the custom gateway, no MCP. See README.md and docs/plans/.
 
 ## Engineering loop (from ECC, MIT — see .claude/rules/ecc/LICENSE-ECC-MIT)
 plan → test first → implement → review (fresh context) → verify → remember → improve

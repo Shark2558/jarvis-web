@@ -1,0 +1,39 @@
+scene "Figure 1 · JARVIS and everything around it" theme=paper type=architecture
+layout LR
+
+scheduler Clock "Cloud Scheduler" sub="morning tick, 5-minute watchdog"
+user Owner "You"
+browser Console "JARVIS console" sub="your browser, also on the phone"
+app Telegram "Telegram" sub="chat, approvals, alerts"
+service Jarvis "JARVIS server" sub="Google Cloud Run, Mumbai"
+database Data "Your data" sub="Firestore, Mumbai"
+cloud Brains "AI brains" sub="Claude, Gemini (free)"
+cloud Google "Your Google account" sub="Calendar, Gmail, Tasks, Drive, Photos"
+cloud Speech "Google speech and Maps" sub="voice in and out, places, routes"
+external Web "Web search" sub="Tavily"
+external Others "GitHub and rates" sub="your repos, USD to rupee rate"
+desktop Laptop "Your laptop at home" sub="home bridge, camera, backup brain"
+
+beat reach "1. You reach JARVIS":
+  show $nodes stagger=30ms
+  Owner -> Console "type or speak"
+  Owner -> Telegram "message"
+  Console -> Jarvis "requests, replies"
+  Telegram -> Jarvis "messages, alerts"
+
+beat think "2. JARVIS thinks and acts":
+  Jarvis -> Data "remembers"
+  Jarvis -> Brains "asks for an answer"
+  Jarvis -> Google "uses your tools"
+  Jarvis -> Speech "voice, places"
+  Jarvis -> Web "searches"
+  Jarvis -> Others "reads"
+
+beat proactive "3. JARVIS also works on its own":
+  Clock ~> Jarvis "signed wake-up calls"
+  Jarvis -- Laptop "home messages, backup brain"
+  glow Jarvis color=#22c55e
+
+player:
+  chrome:
+    badge false

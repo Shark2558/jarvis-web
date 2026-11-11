@@ -1,0 +1,35 @@
+scene "Figure 9 · The morning tick, the watchdog and alerts" theme=paper type=architecture
+layout LR
+
+scheduler Morning "Morning clock" sub="every 30 min, 04:00 to 11:30 IST"
+scheduler Watch "Watchdog clock" sub="every 5 minutes, all day"
+service Tick "Morning tick" sub="one round, under 3 minutes"
+service Dog "Home watchdog" sub="laptop silent? arming stuck?"
+service BriefSvc "Morning brief" sub="calendar, mail, to-dos, approvals"
+service Sweeps "Housekeeping" sub="learning, old items, counters"
+service Jobs "Tick jobs" sub="vault, DigiLocker, vitals, health, book"
+cloud Inbox "Your Gmail inbox" sub="the brief, if switched on"
+policy Policy "Alert policy" sub="quiet hours, daytime ring, storms"
+app Channels "Telegram and Web Push" sub="your phone and browsers"
+
+beat wake "1. Two clocks wake JARVIS with signed calls":
+  show $nodes stagger=30ms
+  Morning -> Tick "signed call"
+  Watch -> Dog "signed call"
+
+beat work "2. The work of each round":
+  Tick -> BriefSvc "brief due?"
+  Tick -> Sweeps "tidy up"
+  Tick -> Jobs "run in turn"
+  BriefSvc -> Inbox "deliver"
+
+beat tell "3. One policy decides how you are told":
+  BriefSvc -> Policy "brief ready"
+  Jobs -> Policy "reminders, warnings"
+  Dog -> Policy "laptop offline"
+  Policy -> Channels "ring, hold or stay silent"
+  glow Policy color=#22c55e
+
+player:
+  chrome:
+    badge false

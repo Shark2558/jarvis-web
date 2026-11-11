@@ -1,0 +1,28 @@
+scene "Figure 7 · How JARVIS remembers you" theme=paper type=architecture
+layout LR
+
+service Turn "A finished turn" sub="only your own lines count"
+cloud Extract "Private brain" sub="pulls out facts, no tools"
+policy Filter "Sensitive filter" sub="no cards, IDs or passwords"
+database Store "Long-term memory" sub="Firestore, Mumbai"
+app Panel "Memory panel" sub="About you, edit, export, forget"
+service Next "Your next turn"
+service Recall "Recall" sub="up to 12 notes, private brains only"
+
+beat learn "1. After a turn, JARVIS learns":
+  show $nodes stagger=30ms
+  Turn ~> Extract "after the reply; daily sweep"
+  Extract -> Filter "new or changed facts"
+  Filter -> Store "kept, no duplicates"
+
+beat you "2. You stay in charge":
+  Panel -> Filter "your own additions and edits"
+
+beat recall "3. Next time, JARVIS recalls":
+  Next -> Recall "what matters here?"
+  Recall -> Store "read"
+  glow Filter color=#22c55e
+
+player:
+  chrome:
+    badge false

@@ -1,0 +1,27 @@
+scene "Figure 2 · The eight layers, as built" theme=paper type=layers
+layout TB
+
+app L1 "1 · Talking to JARVIS" sub="console web page, Telegram, command line"
+service L2 "2 · Understanding what comes in" sub="speech to text, attached documents, faces (at home)"
+service L3 "3 · Context and memory" sub="conversations, long-term memory, scheduled ticks, Recently deleted"
+service L4 "4 · The brain" sub="brain router (Claude, Gemini, laptop), safety checks, No-AI mode"
+service L5 "5 · Skills" sub="brief, web, people, notes, things, groceries, family, parcels, WhatsApp"
+gateway L6 "6 · Tools and connections" sub="tool gateway, Google, Drive, Maps, Photos, YouTube, GitHub, home, camera"
+database L7 "7 · Data" sub="Firestore store, document vault, DigiLocker inbox, free-quota counters"
+alert L8 "8 · Replies and alerts" sub="alert policy, Telegram alerts, Web Push, Activity log"
+policy X "Across all layers" sub="settings, keys, permissions, privacy, costs in rupees, vitals, health, build book"
+
+beat stack "A request goes down the layers":
+  show $nodes stagger=40ms
+  L1 -> L2
+  L2 -> L3
+  L3 -> L4
+  L4 -> L5
+  L5 -> L6
+  L6 -> L7
+  L7 -> L8
+  L8 -- X
+
+player:
+  chrome:
+    badge false

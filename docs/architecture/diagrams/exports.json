@@ -1,0 +1,75 @@
+{
+ "cli": "1.5.7",
+ "diagrams": {
+  "01-context": {
+   "png": "6efe50dd204388b3e1ef58342650374e2afe38c04ee8ca0b4de43d223b859d2b",
+   "source": "d997383fe5a36f489436d2e2f6efeabbf6c92b94cf54b5172a54e9af34caf249",
+   "svg": "580ad5ee0deb5c38ce49338ba9ea97e4929afdad0b362cc938891fc8e4bcd653"
+  },
+  "02-layers": {
+   "png": "d4dd3b8175ba171c8ff78c4e904fd3cf00d140f57bd1937928b633a90f82b982",
+   "source": "8defe34bdb7d77363310a2b94b6b8a75125c9122f11519cc53cdccddc80fcf03",
+   "svg": "f36b429d8814912f989450213d0c1a2d0af2aba47253aebbff48b05f988220ea"
+  },
+  "03-deployment": {
+   "png": "3fb847ae5dc45d7b5f46b52a168f1a37502080c2e7c3c82342ae69e911e041e5",
+   "source": "a4607397b6e16a0706a21abb8e089375fc3df2dd87a0ec7f7d324231bf203a52",
+   "svg": "3590917955829ad9dcde201def1e33ecaff27499fcbd5b38b2d33c2d40d5d4f2"
+  },
+  "04-chat-turn": {
+   "png": "be2e7de1f1d31fcfb8b7db5bfcebf47aac6ea9424611675627deb84b8fc4bc08",
+   "source": "9a064b8ada5d5732c19f9325ff569053b3a3b1f5716b4c56470dfe7dc2f70e55",
+   "svg": "b001f1ef30a0117d34fffdc1ac14657a64d175ec3a4d607d1bab97bb51b8fe1a"
+  },
+  "05-approvals-passkeys": {
+   "png": "96b38301bddde16816f92a604ee67475a262b9f97371ca1d8481c3169cf8010a",
+   "source": "68b453201630b60a2c008708e94ecea1aed1618694ad61986e19831d4358093c",
+   "svg": "c23aa31bd6df78c7cd685a6c2bae56bb1008b867e96b8d898a5c7a4a354f901b"
+  },
+  "06-voice-loop": {
+   "png": "ede22ffd2ae574a086c7b90c7cae3fd7d8262ba5fc34c6f3dff60a1a4c03e7a3",
+   "source": "4d457db941e80985e46c552a3d7c255ced3e20ddf042e558451ba5b18f616932",
+   "svg": "4ae13a3cb1242d47b9df915ffb448f395eacda9cb4f1a3bab20c5729799326b3"
+  },
+  "07-memory": {
+   "png": "a5ed3cbfcfde3cb8f0eecd6741818fb7ed166f6c7383421e126a08e72131f7ac",
+   "source": "e4ebb0073357b8e395d2024c021424b2fd15f78b4b96d0d770ffa47f7bb51d0b",
+   "svg": "4f9d2d3595b1d318f90e209281c4fc73402e8a1c35cc7d3b874940654e9259ba"
+  },
+  "08-vault-digilocker": {
+   "png": "41280ce7f14f5b205741a796be4e2004eaec176c3a6295d44cfdaaa93ff64736",
+   "source": "dae626fa391a34461790ee7388b93a934c98057ed937905bf628b48b084af2fd",
+   "svg": "bf51fcc4386558aea3b0a0475b8f21e0b0cb5614cf1ed3839fab05135e900d80"
+  },
+  "09-brief-ticks": {
+   "png": "4beee05de254039eef980e862161f32b6bf5bb64c595c6cf4d55c40a3b4826e8",
+   "source": "91547757a7b1b0c20f19e220a145627528f3cc45590e4c5913ddd6b22fef24bb",
+   "svg": "8bbaf4d1fb2e6a5ac207fa395373dbd43d65782cd911a247c13223ba70f9fde9"
+  },
+  "10-home-alarm": {
+   "png": "4083c5e58807c626a823ed11668683f907cacd586b1ec5ffbbe3bc0567bbfc9c",
+   "source": "e61ae4e31d5889a16e30f7343a53186da62e480ddebcc7131b0c53b99b5268dd",
+   "svg": "c0bccbf4e6bf892d80cfb371c45b6c83ef6391857058611058a74f6a4d54b4c0"
+  },
+  "11-systems-vitals": {
+   "png": "7483cf8d1102ae3bc7696d1077d6a59d7707de7e420dd65baef920c8ea426d9a",
+   "source": "5b987a4da06d47f95d51558b026a631cbe6dcdf84085f681dcd879a0e56f55e7",
+   "svg": "0aa36721f3fd2de399e8779f69d602a6158a973836856a5f23e82b4ae32acca1"
+  },
+  "12-build-book-guest": {
+   "png": "8d4373acad8d9e1d97af3ab853d2231cfa512a19dc84074a3142c866627fe5cf",
+   "source": "57fa0cc3137208d0886a76e3bf5a852ec074a548150563c8eba0cd0ab5f03007",
+   "svg": "069e95439bd9c09f7f50df1076688805430c45cb9462d04a69180e334f4130f2"
+  },
+  "13-release-flow": {
+   "png": "9e48137d9c903edb78571cd09b2edbd072536ff2660e41256954f907b1fa624d",
+   "source": "a7e061cf02f6ac2aec4dbf6deb7ad16c11ef772fa95a3781576c69b2a3905e1b",
+   "svg": "e1d73b52fe3dbf7bedc85be042c6cab42fdaa7a06081a35cbb03a68e801b88b6"
+  },
+  "14-privacy-map": {
+   "png": "c59b6465a87188e37179ace04e2de54d4a43ca51cebe3b0684fd271b124f1df0",
+   "source": "07e39bd28366cae93a2b79ba896f53c4c83f612d4c170bff833550438789e0b9",
+   "svg": "22c867bdc18116359e3661157c572bf856f3bedd3545d39830a52596cf24d3b3"
+  }
+ }
+}

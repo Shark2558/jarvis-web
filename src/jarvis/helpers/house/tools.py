@@ -221,79 +221,98 @@ def _r1(name: str, description: str, fn: Any, *, trusted: bool = True) -> Tool:
     return Tool(name, description, _schema({}), R1, fn, agent=AGENT, trusted_output=trusted)
 
 
-def house_tools(svc: HouseService) -> tuple[Tool, ...]:
-    t = HouseTools(svc)
-    chore_props = {
-        "label": _STR,
-        "freq": {"type": "string", "enum": ["daily", "weekly", "every"]},
-        "days": {"type": "array", "items": {"type": "string", "enum": list(WEEKDAYS)}},
-        "every": {"type": "integer", "minimum": 2, "maximum": MAX_EVERY_DAYS},
-        "at": {"type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$"},
-        "members": {"type": "array", "maxItems": MAX_MEMBERS, "items": {"type": "string"}},
-    }
-    upkeep_props = {
-        "label": _STR,
-        "every": {"type": "integer", "minimum": 1},
-        "unit": {"type": "string", "enum": ["days", "months"]},
-        "last_done": {"type": "string", "description": "YYYY-MM-DD"},
-        "lead_days": {"type": "integer", "minimum": 0, "maximum": MAX_LEAD_DAYS},
-    }
+CHORE_PROPS: dict[str, Any] = {
+    "label": _STR,
+    "freq": {"type": "string", "enum": ["daily", "weekly", "every"]},
+    "days": {"type": "array", "items": {"type": "string", "enum": list(WEEKDAYS)}},
+    "every": {"type": "integer", "minimum": 2, "maximum": MAX_EVERY_DAYS},
+    "at": {"type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$"},
+    "members": {"type": "array", "maxItems": MAX_MEMBERS, "items": {"type": "string"}},
+}
+UPKEEP_PROPS: dict[str, Any] = {
+    "label": _STR,
+    "every": {"type": "integer", "minimum": 1},
+    "unit": {"type": "string", "enum": ["days", "months"]},
+    "last_done": {"type": "string", "description": "YYYY-MM-DD"},
+    "lead_days": {"type": "integer", "minimum": 0, "maximum": MAX_LEAD_DAYS},
+}
+
+
+def _r2(name: str, description: str, props: dict[str, Any], required: tuple[str, ...],
+        fn: Any, check: Any, card: Any, activity: str) -> Tool:  # fmt: skip
+    return Tool(
+        name,
+        description,
+        _schema(props, required),
+        R2,
+        fn,
+        agent=AGENT,
+        check=check,
+        summarize=card,
+        activity_words=activity,
+        trusted_output=True,
+    )
+
+
+def _chore_tools(t: HouseTools) -> tuple[Tool, ...]:
     return (
         _r1(
             "chore_list", "The owner's chores rota: each chore, when, and whose turn.", t.chore_list
         ),
-        Tool(
+        _r2(
             "chore_add",
             "Add a chore to the owner's rota (labels he gives; adults only, never children). "
             "freq daily | weekly (days) | every (N days); at HH:MM; up to 6 rota labels.",
-            _schema(chore_props, ("label", "freq")),
-            R2,
+            CHORE_PROPS,
+            ("label", "freq"),
             t.chore_add,
-            agent=AGENT,
-            check=_check_chore,
-            summarize=_summary("Add the chore '{label}' ({freq}, {at})", "label", "freq", "at"),
-            activity_words="Added a chore",
-            trusted_output=True,
+            _check_chore,
+            _summary("Add the chore '{label}' ({freq}, {at})", "label", "freq", "at"),
+            "Added a chore",
         ),
-        Tool(
+        _r2(
             "chore_done",
             "Mark one of the owner's chores done today (by its name); the rota turns.",
-            _schema({"chore": _STR}, ("chore",)),
-            R2,
+            {"chore": _STR},
+            ("chore",),
             t.chore_done,
-            agent=AGENT,
-            check=_check_ref("chore"),
-            summarize=_summary("Mark the chore '{chore}' done", "chore"),
-            activity_words="Marked a chore done",
-            trusted_output=True,
+            _check_ref("chore"),
+            _summary("Mark the chore '{chore}' done", "chore"),
+            "Marked a chore done",
         ),
+    )
+
+
+def _upkeep_tools(t: HouseTools) -> tuple[Tool, ...]:
+    return (
         _r1("maint_list", "The owner's home upkeep list: each item, when due.", t.maint_list),
-        Tool(
+        _r2(
             "maint_add",
             "Add a home upkeep item: every N days or months, last done (YYYY-MM-DD, default "
             "today), reminded lead_days before (default 7) and on the day.",
-            _schema(upkeep_props, ("label", "every")),
-            R2,
+            UPKEEP_PROPS,
+            ("label", "every"),
             t.maint_add,
-            agent=AGENT,
-            check=_check_upkeep,
-            summarize=_summary("Add '{label}' to home upkeep (every {every})", "label", "every"),
-            activity_words="Added a home upkeep item",
-            trusted_output=True,
+            _check_upkeep,
+            _summary("Add '{label}' to home upkeep (every {every})", "label", "every"),
+            "Added a home upkeep item",
         ),
-        Tool(
+        _r2(
             "maint_done",
             "Mark a home upkeep item done (today, or `on` YYYY-MM-DD).",
-            _schema({"item": _STR, "on": {"type": "string"}}, ("item",)),
-            R2,
+            {"item": _STR, "on": {"type": "string"}},
+            ("item",),
             t.maint_done,
-            agent=AGENT,
-            check=_check_ref("item"),
-            summarize=_summary("Mark '{item}' done in home upkeep", "item"),
-            activity_words="Marked home upkeep done",
-            trusted_output=True,
+            _check_ref("item"),
+            _summary("Mark '{item}' done in home upkeep", "item"),
+            "Marked home upkeep done",
         ),
         _r1("maint_starters", "Common upkeep items JARVIS can offer.", t.maint_starters),
+    )
+
+
+def _outside_tools(t: HouseTools) -> tuple[Tool, ...]:
+    return (
         _r1(
             "weather_now",
             "The last weather summary for the owner's district (Open-Meteo, CC BY 4.0).",
@@ -308,6 +327,11 @@ def house_tools(svc: HouseService) -> tuple[Tool, ...]:
         ),
         _r1("breach_status", "Whether breach notices are watched, and the last.", t.breach_status),
     )
+
+
+def house_tools(svc: HouseService) -> tuple[Tool, ...]:
+    t = HouseTools(svc)
+    return (*_chore_tools(t), *_upkeep_tools(t), *_outside_tools(t))
 
 
 __all__ = ["AGENT", "NO_PLACE", "HouseTools", "house_tools"]

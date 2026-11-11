@@ -146,6 +146,20 @@ def test_the_title_reaches_the_script_as_data_never_as_shell_code(ci: dict[str, 
     assert job["permissions"] == {"contents": "read", "pull-requests": "read"}
 
 
+def test_the_title_job_leaves_no_token_on_disk_and_checks_out_only_the_script(
+    ci: dict[str, Any],
+) -> None:
+    """R6.1 security review L1: the job runs the pull request's own script, so the checkout
+    keeps no credentials in .git/config (GH_TOKEN reaches `gh api` through env alone)."""
+    steps = ci["jobs"]["pr-title"]["steps"]
+    checkouts = [s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@")]
+    assert len(checkouts) == 1
+    opts = checkouts[0]["with"]
+    assert opts["persist-credentials"] is False
+    assert opts["sparse-checkout"].split() == ["scripts/check_pr_title.py"]
+    assert opts["sparse-checkout-cone-mode"] is False
+
+
 # ---- the pull request template ------------------------------------------------------------------
 def test_the_template_starts_with_the_header_lines_and_has_the_sections() -> None:
     lines = TEMPLATE.read_text(encoding="utf-8").splitlines()

@@ -45,7 +45,13 @@ jobs:
       contents: read
       pull-requests: read
     steps:
+      # The pull request's own script runs here: keep no token in .git/config (GH_TOKEN reaches
+      # `gh api` through env alone) and fetch only the one file the step runs.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/check_pr_title.py
+          sparse-checkout-cone-mode: false
       - name: Check the pull request's title
         env:
           GH_TOKEN: ${{ github.token }}

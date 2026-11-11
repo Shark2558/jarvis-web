@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
+import pytest
 from r11_fakes import UID
 from r11_fakes_c import FakeCalendar, FakePending, FakeRain, Planned, Rig, at_ist, part, run_tool
 
@@ -302,3 +303,45 @@ async def test_a_failing_owner_is_counted_and_never_stops_the_job() -> None:
 
     svc.settings = broken  # type: ignore[method-assign]
     assert (await tick(rig, at_ist(TUESDAY, "18:05"), "activity_check"))["failed"] == 1
+
+
+# ---- the service's failure paths -----------------------------------------------------------------
+async def test_a_failing_rain_source_means_no_rain_rule() -> None:
+    class Broken:
+        async def rain_likely(self, uid: str, start: datetime, end: datetime) -> bool | None:
+            raise RuntimeError("weather down")
+
+    rig = part(rain=Broken())  # type: ignore[arg-type]
+    svc = rig.part.services["service"]
+    assert await svc.rain_likely(UID, at_ist(TUESDAY, "18:00"), at_ist(TUESDAY, "19:00")) is None
+
+
+async def test_a_compose_that_fails_releases_its_claim() -> None:
+    from jarvis.helpers.nudges.service import Plan
+
+    rig = part()
+    svc = rig.part.services["service"]
+    due = at_ist(TUESDAY, "11:00")
+
+    async def broken() -> str | None:
+        raise RuntimeError("compose failed")
+
+    with pytest.raises(RuntimeError):
+        await svc.deliver(UID, Plan("nudge_hydrate", "k1", due, broken))
+    assert await svc.store.claim(UID, "2026-11-10", "k1")  # released: the next run may try
+
+
+async def test_a_sender_that_raises_releases_the_claim() -> None:
+    from jarvis.helpers.nudges.service import Plan, fixed
+
+    rig = part()
+    svc = rig.part.services["service"]
+
+    class Down:
+        async def send(self, *a: object, **k: object) -> None:
+            raise RuntimeError("gate down")
+
+    svc.sender = Down()
+    with pytest.raises(RuntimeError):
+        await svc.deliver(UID, Plan("nudge_hydrate", "k2", at_ist(TUESDAY, "11:00"), fixed("x")))
+    assert await svc.store.claim(UID, "2026-11-10", "k2")

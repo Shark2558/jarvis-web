@@ -17,6 +17,7 @@
   const BEAT_MS = 60 * 1000, READY_WAIT_MS = 6000, FADE_MS = 1400, WORD_MS = 330, TAIL_MS = 800;
   const RETRY_MS = [800, 2000], GONE = new Set([401, 403, 404, 410]); // the script: retried after these waits; GONE wipes
   const LINE_ID = /^s\d{2}b\d{2}$/, KEY_ID = /^[a-z_]{2,20}$/, RID = /^[0-9a-f]{7}$/, OWN = /^\/(?![/\\])/;
+  const VER = /^v\d{1,3}\.\d{1,3}\.\d{1,4}$/; // R6.1 decision 3: the release's version, next to its id
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const LAST_TITLES = { 12: 'Questions', 13: 'Closing' };
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
@@ -83,7 +84,8 @@
     let closing = d.closing;
     if (obj(closing)) closing = closing[who];
     const rel = obj(d.release) || {}, talk = obj(d.talk) || {}, costs = obj(d.costs) || {};
-    return { release: { id: RID.test(rel.id || '') ? rel.id : '', label: txt(rel.label, 8) }, audience: who, scenes, lines,
+    return { release: { id: RID.test(rel.id || '') ? rel.id : '', label: txt(rel.label, 8), version: VER.test(rel.version || '') ? rel.version : '' },
+      audience: who, scenes, lines,
       closing: arr(closing).map(line).filter(Boolean).slice(0, 6), costs: { month: num(costs.month_inr), limit: num(costs.limit_inr) },
       talk: { on: talk.on !== false, why: txt(talk.why, 200) }, voice: d.voice === 'browser' ? 'browser' : 'cloud', until: txt(d.until, 40) };
   }
@@ -323,7 +325,7 @@
     document.documentElement.dataset.bookRenderer = '2d';
   }
   function startCard(sc) {
-    const rel = (sc.release.label ? sc.release.label + ' \u00b7 ' : '') + sc.release.id;
+    const r = sc.release, rel = (r.label ? r.label + ' \u00b7 ' : '') + (r.version ? r.version + ' \u00b7 ' : '') + r.id;
     $('shRelease').textContent = rel; $('shStartRel').textContent = rel;
     $('shStartNote').textContent = sc.audience === 'guest' ? 'A guest show: nothing of the owner\u2019s is in this session, and it is deleted when it ends.'
       : 'Your show, with this month\u2019s spend. It is deleted when it ends.';

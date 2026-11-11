@@ -165,7 +165,7 @@ async def test_status_seals_the_current_release_at_console_boot_and_says_so(rig:
         "label": "R6",
         "sha": release.sha,
         "committed_at": release.committed_at,
-    }
+    }  # R6.1 decision 3: a release without a version answers exactly as in R6
     assert [s["id"] for s in body["sealed"]] == [release.id]
     assert set(body["sealed"][0]) == {"id", "label", "sealed_at", "mb"}
     assert (body["kept"], body["limit_mb"], body["used_mb"]) == (3, 60, 0.0)

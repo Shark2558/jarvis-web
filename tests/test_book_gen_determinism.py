@@ -204,4 +204,4 @@ def test_the_real_repo_builds_and_the_show_is_about_six_thousand_characters() ->
     spoken = sum(len(b.text) for s in book.show.scenes for b in s.beats)
     assert 4_500 <= spoken <= 8_000, spoken
     assert len(built.book) <= 2 * 1024 * 1024 and built.release.skipped > 0
-    assert book.release.label == "R6"
+    assert book.release.label == "R6.1" and book.release.version == "v6.1.0"  # R6.1 D4

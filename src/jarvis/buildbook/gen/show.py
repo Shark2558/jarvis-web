@@ -145,6 +145,11 @@ def _licence_family(licence: str) -> str:
 
 
 # ---- scenes 1-4 ------------------------------------------------------------------------------
+def _version(p: Parts) -> str:
+    """ "version v6.1.0, " before the commit (R6.1 decision 3); nothing for an older checkout."""
+    return f"version {p.release.version}, " if p.release.version else ""
+
+
 def _book(p: Parts) -> Scene:
     pk = p.architecture.packages
     files, lines = sum(x.files for x in pk), sum(x.lines for x in pk)
@@ -152,8 +157,8 @@ def _book(p: Parts) -> Scene:
     return _scene(
         1,
         [
-            f"This is my build book for release {p.release.label}, commit {p.release.id}, "
-            f"from {day}. "
+            f"This is my build book for release {p.release.label}, {_version(p)}commit "
+            f"{p.release.id}, from {day}. "
             "Fixed code wrote it from my own code and plans; no AI wrote a word of it.",
             f"I am {len(pk)} parts in {files:,} files, about {lines:,} lines of code, "
             "arranged in eight layers with a band that runs through them all.",

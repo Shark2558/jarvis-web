@@ -270,3 +270,44 @@ def test_settings_save_the_creator_name_and_ask_before_a_training_brain(
         _clean(c)
     finally:
         c.close()
+
+
+# ---- R6.1 decision 3: the version sits next to the commit id; sealed R6 rows have none --------
+R61 = {
+    "id": "8308815",
+    "label": "R6.1",
+    "version": "v6.1.0",
+    "sha": "8308815" + "0" * 33,
+    "committed_at": "2026-11-11T09:00:00+05:30",
+}
+R61_ROW = {k: R61[k] for k in ("id", "label", "version")} | {
+    "sealed_at": "2026-11-11T09:12:00+05:30",
+    "mb": 4.7,
+}
+R6_ROW = {"id": "37c3bfd", "label": "R6", "sealed_at": "2026-11-10T19:40:00+05:30", "mb": 4.6}
+
+
+def test_the_release_and_its_sealed_row_show_the_version_next_to_the_id(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, _ = _panel(browser, server_url, token, release=R61, sealed=[R61_ROW, R6_ROW])
+    try:
+        body = c.page.locator("#p-book .pbody")
+        assert body.locator(".bk-release .ihead b").inner_text() == "R6.1 · v6.1.0 · 8308815"
+        names = [t.strip() for t in body.locator(".bk-sealed li .bk-rtxt b").all_inner_texts()]
+        assert names == ["R6.1 · v6.1.0 · 8308815", "R6 · 37c3bfd"]  # an R6 row: as before
+        _clean(c)
+    finally:
+        c.close()
+
+
+def test_a_bad_version_is_never_shown(browser: Any, server_url: str, token: str) -> None:
+    bad = {**R61, "version": "<img src=x onerror=alert(1)>"}
+    c, _ = _panel(browser, server_url, token, release=bad, sealed=[])
+    try:
+        head = c.page.locator("#p-book .bk-release .ihead b")
+        assert head.inner_text() == "R6.1 · 8308815"
+        assert c.page.locator("#p-book img").count() == 0
+        _clean(c)
+    finally:
+        c.close()

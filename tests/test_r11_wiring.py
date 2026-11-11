@@ -1,6 +1,6 @@
 # tests/test_r11_wiring.py -- R11 I0 seams on the app and the console (docs/plans/
-# r11-free-helpers.md "Seams the I0 adds" 7-10): `wire_r11` builds the gate and the four (empty)
-# parts, a part's contract is checked and a failing part leaves the rest running, its tools go
+# r11-free-helpers.md "Seams the I0 adds" 7-10; I1): `wire_r11` builds the gate and the four
+# built parts, a part's contract is checked and a failing part leaves the rest running, its tools go
 # through the gateway and the owner's rows, the two composites ride the tick (and the 5-minute
 # watchdog, which with Home off runs only the helpers' clock), the privacy row, the brief's source,
 # the /v1/helpers routes, the app.py slots and size guard, and the Helpers panel's frame.
@@ -24,7 +24,7 @@ from jarvis.api.scheduler_auth import WATCHDOG_PATH, require_scheduler
 from jarvis.config import Settings
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.clock import Composite
-from jarvis.helpers.kinds import PARTS
+from jarvis.helpers.kinds import CLOCK_JOBS, PARTS
 from jarvis.helpers.ports import HelperContext, HelperPart
 from jarvis.llm.base import ToolCall
 from jarvis.llm.mock_provider import MockProvider
@@ -65,10 +65,17 @@ async def test_the_helpers_start_with_four_empty_parts_and_both_composites(
     async with running(settings) as a:
         st = a.state
         assert list(st.r11_parts) == list(PARTS)
-        assert {p.ready for p in st.r11_parts.values()} == {"not built yet"}
+        # I1: all four parts are built (no stub, no failed setup) and each is contract-clean
+        readies = {p.ready for p in st.r11_parts.values()}
+        assert not readies & {"not built yet", r11.SETUP_FAILED}, readies
+        for name, part in st.r11_parts.items():
+            assert r11.check_part(name, part) is part
+            assert part.tools and part.privacy and part.phrases, name
         assert st.helpers_sender is not None and st.helpers_off is None
-        assert isinstance(st.helpers_clock, Composite) and st.helpers_clock.job_names == ()
-        assert st.helpers_daily.job_names == ("helpers_sweep",)
+        assert isinstance(st.helpers_clock, Composite)
+        jobs = st.helpers_clock.job_names
+        assert sorted(jobs) == sorted(j for p in PARTS for j in CLOCK_JOBS[p]), jobs
+        assert st.helpers_daily.job_names == ("breach_watch", "helpers_sweep")
         names = [j.name for j in st.tick_jobs]
         assert names[-2:] == ["helpers_clock", "helpers_daily"]
         assert st.brief._helpers is not None  # noqa: SLF001 - the brief's Helpers source
@@ -140,7 +147,8 @@ async def test_a_failing_part_is_left_empty_and_the_others_run(
     def house(ctx: HelperContext) -> HelperPart:
         raise RuntimeError("Part B is broken")
 
-    builders = {**r11.BUILDERS, "today": today, "house": house}
+    stubs = {p: (lambda ctx, p=p: HelperPart(name=p)) for p in PARTS}  # the parts not under test
+    builders = {**stubs, "today": today, "house": house}
     monkeypatch.setattr(r11, "BUILDERS", builders)
     async with running(settings) as a:
         st = a.state
@@ -232,13 +240,24 @@ async def test_the_helpers_view_and_the_nudge_controls(settings: Settings) -> No
         assert (await c.get("/v1/helpers")).json()["clock"]["stale"] is False
 
 
-def test_the_four_part_routers_are_stubs_under_their_own_prefix() -> None:
+def test_the_four_part_routers_live_under_their_own_prefix() -> None:
     from jarvis.api import helpers_house, helpers_kitchen, helpers_nudges, helpers_today
 
     for part, module in zip(
         PARTS, (helpers_today, helpers_house, helpers_nudges, helpers_kitchen), strict=True
     ):
-        assert module.PREFIX == f"/v1/helpers/{part}" and module.router.routes == []
+        assert module.PREFIX == f"/v1/helpers/{part}"
+        paths = [r.path for r in module.router.routes]  # type: ignore[attr-defined]
+        assert paths and all(p.startswith(module.PREFIX) for p in paths), part
+
+
+async def test_every_parts_routes_are_mounted_and_answer_off_safely(settings: Settings) -> None:
+    """I1: each part's router is mounted; with no token key each GET answers, never a 500."""
+    async with running(settings) as a:
+        for part in PARTS:
+            r = await a.client.get(f"/v1/helpers/{part}")
+            assert r.status_code < 500 and r.json().get("detail") != "Not Found", (part, r.text)
+            assert r.headers["cache-control"] == "no-store", part
 
 
 # ---- app.py and the other wiring files ----------------------------------------------------------
@@ -322,7 +341,8 @@ async def test_a_parts_phrase_answers_in_no_ai_mode_through_its_tool(
 
     monkeypatch.setattr(r11, "BUILDERS", {**r11.BUILDERS, "nudges": nudges})
     async with running(settings) as a:
-        assert a.state.brain_mode.phrases == (phrase,)
+        phrases = a.state.brain_mode.phrases
+        assert phrase in phrases and len(phrases) > 1  # with the four parts' own phrasebooks
         r = await a.client.post("/v1/settings/brain-mode", json={"mode": "none"}, headers=CSRF)
         assert r.status_code == 200
         r = await a.client.post("/v1/chat", json={"message": "don't remind me to stand up"})

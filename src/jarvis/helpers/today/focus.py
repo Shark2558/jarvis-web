@@ -4,6 +4,7 @@
 - `focus_now` / `pending_list` (row "nudges"): `pending.PendingService` over every part's pending
   sources, ranked by plain code. A to-do's title is his list's words: fenced in `items` before a
   model sees it, and never in `message` (a No-AI reply is stored and a model may read it later).
+  A bill's line holds his label: fenced in `items` too, and quoted in `message`.
 - `contacts_birthdays` (the Contacts row): today's and the coming week's birthdays from
   `birthdays.BirthdayReader`; names are other people's words, fenced; `message` counts only. The
   year is never read. Refused on Telegram unless he allowed private reads (the `contacts_*` rule).
@@ -23,6 +24,7 @@ from jarvis.helpers.today.birthdays import BirthdayReader
 from jarvis.helpers.today.pending import PendingService
 from jarvis.notify.quiet import local
 from jarvis.tools.base import Tool
+from jarvis.tools.card import quoted
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
 
@@ -38,6 +40,8 @@ SOURCE_WORDS = {
     "calendar": "Calendar",
 }
 OUTSIDE = frozenset({"tasks", "calendar"})  # labels that are other people's or his list's words
+FENCED = {"tasks": "Google Tasks", "calendar": "Google Calendar", "today": "his saved bills"}
+LABEL_MAX = 80
 MAX_DAYS = 30
 NOTHING = "Nothing pending, Sir."
 
@@ -51,8 +55,8 @@ class ReadDeps:
 
 
 def _label_for_model(item: PendingItem) -> str:
-    if item.source in OUTSIDE:
-        return wrap_external(item.label, source="Google Tasks", limit=80)
+    if (source := FENCED.get(item.source)) is not None:
+        return wrap_external(item.label, source=source, limit=LABEL_MAX)
     return item.label
 
 
@@ -66,11 +70,12 @@ def item_view(item: PendingItem) -> dict[str, Any]:
 
 
 def said(item: PendingItem) -> str:
-    """The item in JARVIS's own words for `message` (a to-do's title never goes in it)."""
+    """The item in JARVIS's own words for `message`: a to-do's title never goes in it; any other
+    label (a bill's holds his words) only in quotes."""
     if item.source in OUTSIDE:
         when = "overdue" if item.urgency == "overdue" else "due today"
         return f"a to-do {when} in Google Tasks"
-    return item.label
+    return quoted(item.label, LABEL_MAX)
 
 
 def _focus_tool(d: ReadDeps) -> Tool:

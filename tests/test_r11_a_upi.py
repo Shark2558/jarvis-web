@@ -31,11 +31,14 @@ def test_the_link_has_npcis_parameters_in_order_and_encoded() -> None:
     assert "+" not in link
 
 
-def test_names_and_notes_are_cut_and_cleaned() -> None:
-    link = upi_link(pa="test@okfake", pn="N" * 60 + "\n", paise=100, tn="T‮" * 60)
+def test_notes_are_cut_and_cleaned_and_names_pass_the_payee_check() -> None:
+    link = upi_link(pa="test@okfake", pn="N" * 40, paise=100, tn="T‮" * 60)
     got = dict(parse_qsl(urlsplit(link).query))
-    assert len(got["pn"]) <= 40 and len(got["tn"]) <= 50
-    assert "\n" not in unquote(link) and "‮" not in unquote(link)
+    assert len(got["pn"]) == 40 and len(got["tn"]) <= 50
+    assert "‮" not in unquote(link)
+    for bad in ("N" * 41, "Power\nCo‮", "Co (x@okfake)"):
+        with pytest.raises(BillRefused):
+            upi_link(pa="test@okfake", pn=bad, paise=100, tn="x")
 
 
 def test_the_cap_and_a_bad_payee_are_refused() -> None:

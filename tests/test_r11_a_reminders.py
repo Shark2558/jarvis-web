@@ -123,3 +123,25 @@ async def test_nothing_without_bills_or_before_the_time() -> None:
     await _add(svc)
     await job.run(())
     assert notifier.calls == []  # 08:55 < 09:00: never early
+
+
+async def test_a_failed_claim_sweep_is_retried_on_the_next_run() -> None:
+    clock = Clock(at(2026, 11, 10, 9, 0))
+    svc, job, notifier, docs = _rig(clock)
+    await _add(svc)
+    calls: list[int] = []
+    sweep = job._claims.sweep  # noqa: SLF001 - the job's own claims
+
+    async def flaky(uid: str, now):  # type: ignore[no-untyped-def]
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("store down")
+        return await sweep(uid, now)
+
+    job._claims.sweep = flaky  # type: ignore[method-assign]  # noqa: SLF001
+    assert (await job.run(()))["sent"] == 1  # the reminder still went
+    clock.at += timedelta(minutes=5)
+    await job.run(())
+    clock.at += timedelta(minutes=5)
+    await job.run(())
+    assert len(calls) == 2 and len(notifier.calls) == 1

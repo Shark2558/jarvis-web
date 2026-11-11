@@ -60,7 +60,7 @@ async def test_no_ai_pay_makes_the_card_and_the_payment_shows_once(settings: Set
         assert chat.status_code == 200, chat.text
         (card,) = chat.json()["pending_approvals"]
         assert card["summary"].startswith(
-            "Get a UPI payment ready: ₹1,240.00 to Power Co (test@okfake)"
+            "Get a UPI payment ready: ₹1,240.00 to “Power Co” (test@okfake)"
         )
         sid = chat.json()["session_id"]
         ok = await c.post(

@@ -5,7 +5,9 @@ R3 tokens all apply: "pay the electricity bill" makes the same R3 card with the 
 
 Conservative on purpose: the whole message must be the phrase (an optional "Jarvis," and "please",
 end punctuation), so "remind me to pay the electricity bill tomorrow" is never taken here (it is a
-reminder) and nothing about nudges ("don't remind me to stand up") is either (Part C's).
+reminder) and nothing about nudges ("don't remind me to stand up") is either (Part C's). "Pay X"
+and "I paid X" are taken only when X is one of his bills (`knows`, the bill store's hashed names);
+otherwise ("pay rent" with no rent bill, "I paid for lunch") they fall through to the other routers.
 """
 
 from __future__ import annotations
@@ -14,7 +16,9 @@ import re
 from collections.abc import Callable
 from datetime import datetime
 
-from jarvis.offline.rules import NoAICall, NoAIRoute
+from jarvis.offline.rules import NoAICall, NoAIRoute, NoAIRouter
+
+Knows = Callable[[str], bool]  # is this one of his bills' names?
 
 _I = re.IGNORECASE
 _LEAD = r"^(?:(?:hey|ok|okay)\s+)?(?:jarvis[,\s]+)?(?:please\s+)?"
@@ -61,14 +65,20 @@ def _call(tool: str, **args: str) -> NoAIRoute:
     return NoAIRoute((NoAICall(tool, dict(args)),))
 
 
-def _named(patterns: tuple[re.Pattern[str], ...], text: str) -> str | None:
+def no_bills(name: str) -> bool:
+    """A `Knows` with no bills at all."""
+    return False
+
+
+def _named(patterns: tuple[re.Pattern[str], ...], text: str, knows: Knows) -> str | None:
     for pattern in patterns:
-        if (m := pattern.match(text)) is not None:
-            return m["bill"].strip()
+        m = pattern.match(text)
+        if m is not None and knows(name := m["bill"].strip()):
+            return name
     return None
 
 
-def today_phrases(text: str, now: datetime) -> NoAIRoute | None:
+def today_phrases(text: str, now: datetime, knows: Knows = no_bills) -> NoAIRoute | None:
     """The tool calls for one of Part A's phrases, or None (not ours)."""
     t = " ".join(text.split())
     if FOCUS.match(t):
@@ -79,13 +89,20 @@ def today_phrases(text: str, now: datetime) -> NoAIRoute | None:
         return _call("contacts_birthdays")
     if BILLS.match(t):
         return _call("bill_list")
-    if (bill := _named(PAID, t)) is not None:
+    if (bill := _named(PAID, t, knows)) is not None:
         return _call("bill_paid", bill=bill)
-    if (bill := _named(PAY, t)) is not None:
+    if (bill := _named(PAY, t, knows)) is not None:
         return _call("bill_pay_prepare", bill=bill)
     return None
 
 
-PHRASES: tuple[Callable[[str, datetime], NoAIRoute | None], ...] = (today_phrases,)
+def phrases_for(knows: Knows) -> tuple[NoAIRouter, ...]:
+    """Part A's phrasebook, knowing his bills' names through `knows`."""
 
-__all__ = ["PHRASES", "today_phrases"]
+    def route(text: str, now: datetime) -> NoAIRoute | None:
+        return today_phrases(text, now, knows)
+
+    return (route,)
+
+
+__all__ = ["Knows", "no_bills", "phrases_for", "today_phrases"]

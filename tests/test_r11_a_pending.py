@@ -11,11 +11,17 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
 from r11_fakes import UID, Clock
-from r11_fakes_a import FAKE_UPI, DenyRules, at, keyring
+from r11_fakes_a import FAKE_UPI, DenyRules, FakePeople, at, connector, keyring
 
 from jarvis.helpers.ports import PendingItem
 from jarvis.helpers.today.bills import BillsService
-from jarvis.helpers.today.pending import BillsPending, PendingService, TasksPending, rank
+from jarvis.helpers.today.pending import (
+    BillsPending,
+    GoogleTasksDue,
+    PendingService,
+    TasksPending,
+    rank,
+)
 from jarvis.helpers.today.store import BillStore
 from jarvis.storage.docs import MemoryDocs
 
@@ -139,3 +145,10 @@ async def test_tasks_due_by_today_obey_his_row() -> None:
     denied = TasksPending(tasks, permissions=lambda: DenyRules("tasks_*"), tz="Asia/Kolkata")  # type: ignore[arg-type,return-value]
     calls = tasks.calls
     assert await denied.pending(UID, clock.at) == [] and tasks.calls == calls
+
+
+async def test_google_tasks_not_granted_add_nothing() -> None:
+    google = await connector(FakePeople())  # linked, but without the Tasks scope
+    assert await GoogleTasksDue(google).due(UID, date(2026, 11, 10)) == []
+    unlinked = await connector(FakePeople(), linked=False)
+    assert await GoogleTasksDue(unlinked).due(UID, date(2026, 11, 10)) == []

@@ -132,7 +132,7 @@ async def test_pay_is_a_card_and_the_payment_is_shown_once() -> None:
         assert r.status_code == 202
         (card,) = await t.rig.gateway.pending()
         assert card.summary.startswith(
-            "Get a UPI payment ready: ₹1,240.00 to Power Co (test@okfake)"
+            "Get a UPI payment ready: ₹1,240.00 to “Power Co” (test@okfake)"
         )
         await _approve(t)
         assert (await t.client.get(PREFIX)).json()["bills"]["items"][0]["ready"] is True

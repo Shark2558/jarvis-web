@@ -8,13 +8,15 @@ light: one read of each owner's `bills/{uid}` a run, Google only when a birthday
   one is claimed in a transaction (`bills_told`) BEFORE it is sent, so it goes once across
   restarts and a second clock run in the same minute sends nothing; a send that no channel took
   (`SendResult.retry`) releases its claim for the next run. Sent only through the part's own
-  sender, kind `bill_due` (held at night by the one policy). Old claims are swept once a day.
+  sender, kind `bill_due` (held at night by the one policy).
 - `birthdays`: when he switched birthdays on, at his time (default 08:30): today's birthdays from
   `birthdays.BirthdayReader` (his Contacts row obeyed, fail closed); each contact claimed in
   `birthdays_told` (a hash of him, the contact's resource name and the year), then ONE `birthday`
   alert for those not yet told: "A birthday today in your contacts: open JARVIS to see whose." The
   names go only in `named=`, which the notifier uses only when "names in alerts" is on.
-Logs carry class names and counts only.
+Both sweep their old claims once a day (`DailySweep`): a sweep that fails is logged as its class
+and tried again on the next run, and never stops the reminders. Logs carry class names and counts
+only.
 """
 
 from __future__ import annotations
@@ -57,6 +59,26 @@ def _counts() -> dict[str, int]:
     return {"sent": 0, "held": 0, "retry": 0, "other": 0}
 
 
+class DailySweep:
+    """Old claims swept once a day per owner; a failure is logged (its class) and retried on the
+    next run. Bookkeeping only: it never stops a reminder."""
+
+    def __init__(self, what: str) -> None:
+        self._what = what
+        self._done: dict[str, date] = {}
+
+    async def run(self, claims: Claims, uid: str, today: date, now: datetime) -> None:
+        if self._done.get(uid) == today:
+            return
+        try:
+            await claims.sweep(uid, now)
+        except Exception as exc:  # noqa: BLE001 - bookkeeping only; the next run tries again
+            why = {"job": self._what, "error": type(exc).__name__}
+            log.warning("old claims not swept", extra=why)
+            return
+        self._done[uid] = today
+
+
 class BillsDueJob:
     name = BILLS_JOB
     budget_s = JOB_BUDGET_S
@@ -77,7 +99,7 @@ class BillsDueJob:
         self._owners = owners
         self._tz = tz
         self._now = now
-        self._swept: dict[str, date] = {}
+        self._sweep = DailySweep(BILLS_JOB)
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
         counts = _counts()
@@ -95,7 +117,7 @@ class BillsDueJob:
         book = await self._svc.book(uid)
         now = self._now()
         today = local(now, self._tz).date()
-        await self._sweep(uid, today, now)
+        await self._sweep.run(self._claims, uid, today, now)
         due_at = self._svc.at_local(today, book.prefs.bills_at)
         if not book.bills or now < due_at:
             return
@@ -109,15 +131,6 @@ class BillsDueJob:
                 if got.retry:
                     await self._claims.release(uid, key)
                 _tally(counts, got)
-
-    async def _sweep(self, uid: str, today: date, now: datetime) -> None:
-        if self._swept.get(uid) == today:
-            return
-        self._swept[uid] = today
-        try:
-            await self._claims.sweep(uid, now)
-        except Exception as exc:  # noqa: BLE001 - bookkeeping only
-            log.warning("bill claims not swept", extra={"error": type(exc).__name__})
 
 
 def birthday_text(people: Sequence[Birthday]) -> tuple[str, str]:
@@ -153,7 +166,7 @@ class BirthdaysJob:
         self._owners = owners
         self._tz = tz
         self._now = now
-        self._swept: dict[str, date] = {}
+        self._sweep = DailySweep(BIRTHDAYS_JOB)
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
         counts = _counts()
@@ -172,9 +185,7 @@ class BirthdaysJob:
         due_at = self._svc.at_local(today, prefs.birthday_at)
         if not prefs.birthdays_on or now < due_at:
             return
-        if self._swept.get(uid) != today:
-            self._swept[uid] = today
-            await self._claims.sweep(uid, now)
+        await self._sweep.run(self._claims, uid, today, now)
         reading = await self._reader.on_day(uid, today)
         fresh = [
             p
@@ -197,5 +208,6 @@ __all__ = [
     "ONE_BIRTHDAY",
     "BillsDueJob",
     "BirthdaysJob",
+    "DailySweep",
     "birthday_text",
 ]

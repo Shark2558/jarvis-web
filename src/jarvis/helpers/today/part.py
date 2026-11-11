@@ -20,7 +20,7 @@ from jarvis.helpers.today.brief import TodayBrief
 from jarvis.helpers.today.focus import ReadDeps, read_tools
 from jarvis.helpers.today.jobs import BillsDueJob, BirthdaysJob
 from jarvis.helpers.today.pending import BillsPending, GoogleTasksDue, PendingService, TasksPending
-from jarvis.helpers.today.phrases import PHRASES
+from jarvis.helpers.today.phrases import phrases_for
 from jarvis.helpers.today.privacy import bills_privacy, birthdays_privacy
 from jarvis.helpers.today.store import BillStore, Claims
 from jarvis.helpers.today.tools import bill_tools
@@ -42,7 +42,7 @@ def _with_own(
 
 def build(ctx: HelperContext) -> HelperPart:
     store = BillStore(ctx.docs, ctx.keyring, prefix=ctx.prefix)
-    bills = BillsService(store, tz=ctx.tz, now=ctx.now)
+    bills = BillsService(store, tz=ctx.tz, now=ctx.now, audit=ctx.audit)
     reader = BirthdayReader(ctx.google, permissions=ctx.permissions, audit=ctx.audit, now=ctx.now)
     bills_told = Claims(ctx.docs, BILLS_TOLD, prefix=ctx.prefix, keep_days=BILLS_KEEP_DAYS)
     told = Claims(ctx.docs, BIRTHDAYS_TOLD, prefix=ctx.prefix, keep_days=BIRTHDAYS_KEEP_DAYS)
@@ -63,7 +63,7 @@ def build(ctx: HelperContext) -> HelperPart:
         privacy=(bills_privacy(bills, bills_told), birthdays_privacy(told)),
         brief=(TodayBrief(bills, reader, pending),),
         pending=tuple(own),
-        phrases=PHRASES,
+        phrases=phrases_for(store.knows),
         services={"bills": bills, "birthdays": reader, "pending": pending},
         ready=READY if store.available else READY_NO_KEY,
     )

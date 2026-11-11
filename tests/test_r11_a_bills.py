@@ -11,20 +11,23 @@ from r11_fakes import NOON_IST, UID, Clock
 from r11_fakes_a import FAKE_UPI, every_text, keyring
 
 from jarvis.helpers.today.bills import BillsService, current_due, reminders_due
-from jarvis.helpers.today.models import BillRefused, Due
+from jarvis.helpers.today.models import PAY_CAP_PAISE, BillRefused, Due
 from jarvis.helpers.today.store import BillsOff, BillStore
 from jarvis.storage.docs import MemoryDocs
+from jarvis.tools.audit import AuditLog, args_hash
 
 CARD = (
-    "Get a UPI payment ready: ₹1,240.00 to Power Co (test@okfake), note 'Electricity Nov'. You "
+    "Get a UPI payment ready: ₹1,240.00 to “Power Co” (test@okfake), note “Electricity Nov”. You "
     "confirm it and enter your PIN in your UPI app. JARVIS never pays."
 )
 
 
-def _svc(keys: bool = True) -> tuple[BillsService, MemoryDocs, Clock]:
+def _svc(
+    keys: bool = True, audit: AuditLog | None = None
+) -> tuple[BillsService, MemoryDocs, Clock]:
     docs, clock = MemoryDocs(), Clock()
     store = BillStore(docs, keyring() if keys else None, prefix="jarvis_")
-    return BillsService(store, tz="Asia/Kolkata", now=clock), docs, clock
+    return BillsService(store, tz="Asia/Kolkata", now=clock, audit=audit), docs, clock
 
 
 async def _electricity(svc: BillsService, **over: object) -> str:
@@ -46,7 +49,7 @@ async def test_a_bill_is_added_found_by_name_and_listed() -> None:
     book = await svc.book(UID)
     (bill,) = book.bills
     assert bill.id == bid and bill.amount == 124000 and bill.upi == FAKE_UPI
-    assert bill.due == Due(start=date(2026, 11, 13), every_months=1)  # the next 13th
+    assert bill.due == Due(start=date(2026, 11, 13), every_months=1, day=13)  # the next 13th
     assert svc.find(book, "electricity") == bill and svc.find(book, bid) == bill
     with pytest.raises(BillRefused):
         svc.find(book, "water")
@@ -146,3 +149,38 @@ async def test_the_shown_payment_is_exactly_the_approved_one() -> None:
     await svc.make_ready(UID, await svc.prepare(UID, bid))
     shown = await svc.payment(UID, bid)
     assert shown is not None and "pa=mallory@okfake&pn=Someone%20Else" in shown.link
+
+
+async def test_exactly_the_cap_is_allowed_and_a_paisa_more_is_not() -> None:
+    svc, _, _ = _svc()
+    await _electricity(svc, amount="varies")
+    at_cap = await svc.prepare(UID, "Electricity", amount="100000")
+    assert at_cap.paise == PAY_CAP_PAISE and "₹1,00,000.00 to" in at_cap.card
+    assert (await svc.prepare(UID, "Electricity", amount="1,00,000.00")).paise == PAY_CAP_PAISE
+    with pytest.raises(BillRefused, match="1,00,000"):
+        await svc.prepare(UID, "Electricity", amount="100000.01")
+
+
+async def test_a_bill_with_no_payee_is_prepared_and_paid_in_its_own_name() -> None:
+    svc, _, _ = _svc()
+    bid = await _electricity(svc, payee="")
+    prepared = await svc.prepare(UID, bid)
+    assert "to “Electricity” (test@okfake)" in prepared.card
+    await svc.make_ready(UID, prepared)
+    shown = await svc.payment(UID, bid)
+    assert shown is not None and shown.payee == "Electricity"
+    assert "pa=test@okfake&pn=Electricity&am=1240.00" in shown.link
+
+
+async def test_showing_the_payment_leaves_one_kind_only_audit_line() -> None:
+    audit = AuditLog()
+    svc, _, _ = _svc(audit=audit)
+    bid = await _electricity(svc)
+    assert await svc.payment(UID, bid) is None
+    assert (await audit.tail(10)).entries == []  # nothing shown, nothing audited
+    await svc.make_ready(UID, await svc.prepare(UID, bid))
+    assert await svc.payment(UID, bid) is not None
+    (line,) = (await audit.tail(10)).entries
+    assert (line.agent, line.tool, line.outcome) == ("helpers", "bill_payment", "shown")
+    assert line.args_hash == args_hash({"kind": "bill_payment"}) and line.detail == ""
+    assert "1240" not in line.model_dump_json() and FAKE_UPI not in line.model_dump_json()

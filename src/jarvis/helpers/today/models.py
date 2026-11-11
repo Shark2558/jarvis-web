@@ -1,31 +1,43 @@
 # src/jarvis/helpers/today/models.py
 """Part A's records and their checks (docs/plans/r11-free-helpers.md D7, data model). Pure, no I/O.
 
-- `Bill`: his label (≤ 40), the payee's name (≤ 40), the UPI ID (NPCI's shape only; set only by
-  his own entry), the amount in paise (None = "varies"), the due rule, the reminder lead days
-  (default 3, 1 and the day), at most the last 4 digits of an account, and what he has paid (≤ 24).
-- No card, account or consumer number is ever kept: a run of 5 or more digits, or a card-like
-  13-19 digits with single spaces or hyphens, in any text field is refused; a UPI ID with 11 or
-  more digits in a row (more than a mobile number) is refused too.
-- `Due`: once (`every_months` 0) or every N months from `start`, on the start's day of the month,
-  clamped to a short month (31 → 30 Nov, 28 Feb).
-- Money: paise in, `inr()` out with the Indian grouping ("₹1,00,000.00").
+- `Bill`: his label (≤ 40, no `@`), the payee's name (≤ 40, in `text.payee_name`'s safe set),
+  the UPI ID (NPCI's shape only; set only by his own entry), the amount in paise (None =
+  "varies"), the due rule, the reminder lead days (default 3, 1 and the day), at most the last 4
+  digits of an account (`last4`, the one place the plan allows digits of one), and what he has
+  paid (≤ 24). `pay_name` is who the UPI app shows as paid: the payee, or the label's safe name.
+- No card, account or consumer number is ever kept: `text.has_number` (one check for every field,
+  the note and the UPI ID) refuses 13+ digits joined across any separators, or 5 digits in a row
+  (11 in a UPI ID: more than a mobile number).
+- `Due`: once (`every_months` 0) or every N months from `start`, on `day` of the month (the day
+  he asked for), which falls on a short month's last day: a day-31 bill is due 28 Feb (29 in a
+  leap year), 31 Mar, 30 Apr. A document from before `day` was kept reads with the start's day.
+- Money: paise in (ASCII digits only), `inr()` out with the Indian grouping ("₹1,00,000.00").
 """
 
 from __future__ import annotations
 
 import calendar
 import re
+import unicodedata
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from jarvis.helpers.today.text import (
+    NUMBER_REFUSAL,
+    PAYEE_MAX,
+    UPI_PLAIN_MAX,
+    BillRefused,
+    has_number,
+    name_from_label,
+    payee_name,
+)
 from jarvis.tools.card import one_line
 
 LABEL_MAX = 40
-PAYEE_MAX = 40
 NOTE_MAX = 50
 MAX_BILLS = 50
 MAX_PAID = 24
@@ -36,24 +48,11 @@ PAY_CAP_PAISE = 1_00_000 * 100  # owner decision 12: ₹1,00,000 per prepared pa
 MAX_BILL_PAISE = 1_00_00_000 * 100  # what a bill may say it costs (a prepared one: the cap)
 BILL_ID = re.compile(r"^[0-9a-f]{12}$")
 UPI_ID = re.compile(r"^[A-Za-z0-9._-]{2,256}@[A-Za-z][A-Za-z0-9]{1,63}$")
-_LONG_RUN = re.compile(r"\d{5,}")
-_CARD_LIKE = re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)")
-_UPI_DIGITS = re.compile(r"\d{11,}")
-_AMOUNT = re.compile(r"^\d{1,12}(?:\.\d{1,2})?$")
-_HHMM = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+_AMOUNT = re.compile(r"^[0-9]{1,12}(?:\.[0-9]{1,2})?$")
+_LAST4 = re.compile(r"[0-9]{4}")
+_HHMM = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
 VARIES = "varies"
-NUMBER_REFUSAL = (
-    "Keep card, account and consumer numbers out of your bills, Sir: the last 4 digits at most."
-)
-
-
-class BillRefused(ValueError):
-    """A bill value JARVIS won't keep or use; the message is plain words for the owner."""
-
-
-def has_number(text: str) -> bool:
-    """A card, account or consumer number in `text` (a date or a year is fine)."""
-    return bool(_LONG_RUN.search(text) or _CARD_LIKE.search(text))
+AT_REFUSAL = "A bill's name or note can't hold an @, Sir: a UPI ID goes only in its own field."
 
 
 def _text(value: Any, limit: int, what: str, *, empty_ok: bool = False) -> str:
@@ -68,6 +67,8 @@ def _text(value: Any, limit: int, what: str, *, empty_ok: bool = False) -> str:
         raise BillRefused(f"The {what} can be at most {limit} characters.")
     if has_number(flat):
         raise BillRefused(NUMBER_REFUSAL)
+    if "@" in unicodedata.normalize("NFKC", flat):  # a label must not read as a UPI ID
+        raise BillRefused(AT_REFUSAL)
     return flat
 
 
@@ -76,7 +77,8 @@ def clean_label(value: Any) -> str:
 
 
 def clean_payee(value: Any) -> str:
-    return _text(value, PAYEE_MAX, "payee's name", empty_ok=True)
+    """The payee's name in the safe set (`text.payee_name`): it can't imitate a UPI ID."""
+    return payee_name(value)
 
 
 def clean_note(value: Any) -> str:
@@ -88,14 +90,14 @@ def parse_upi(value: Any) -> str:
     raw = value.strip() if isinstance(value, str) else ""
     if not UPI_ID.fullmatch(raw):
         raise BillRefused("That isn't a UPI ID (like name@bank), Sir.")
-    if _UPI_DIGITS.search(raw):
+    if has_number(raw, plain_max=UPI_PLAIN_MAX):
         raise BillRefused(NUMBER_REFUSAL)
     return raw
 
 
 def last_four(value: Any) -> str:
     raw = value.strip() if isinstance(value, str) else ""
-    if raw and not re.fullmatch(r"\d{4}", raw):
+    if raw and not _LAST4.fullmatch(raw):
         raise BillRefused(NUMBER_REFUSAL)
     return raw
 
@@ -146,19 +148,45 @@ def hhmm(value: Any) -> str:
     return value.strip()
 
 
-def add_months(start: date, months: int) -> date:
+def on_day(year: int, month: int, day: int) -> date:
+    """`day` of that month, or its last day when the month is shorter (31 → 30 Apr, 28 Feb)."""
+    return date(year, month, min(day, calendar.monthrange(year, month)[1]))
+
+
+def add_months(start: date, months: int, day: int | None = None) -> date:
+    """`months` after `start`, on `day` of the month (default: the start's day), clamped."""
     y, m = divmod(start.month - 1 + months, 12)
-    year, month = start.year + y, m + 1
-    return date(year, month, min(start.day, calendar.monthrange(year, month)[1]))
+    return on_day(start.year + y, m + 1, start.day if day is None else day)
 
 
 class Due(BaseModel):
-    """Once (`every_months` 0) or every N months from `start` on its day of the month."""
+    """Once (`every_months` 0) or every N months from `start`, on `day` of the month."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     start: date
     every_months: int = Field(default=1, ge=0, le=MAX_EVERY)
+    day: int = Field(ge=1, le=31)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _anchor(cls, data: Any) -> Any:
+        """A document from before `day` was kept: the start's own day of the month."""
+        if isinstance(data, dict) and data.get("day") is None and "start" in data:
+            start = data["start"]
+            start = start if isinstance(start, date) else date.fromisoformat(str(start))
+            return {**data, "day": start.day}
+        return data
+
+    @model_validator(mode="after")
+    def _fits(self) -> Due:
+        if on_day(self.start.year, self.start.month, self.day) != self.start:
+            raise ValueError("the first due date is not on the bill's day of the month")
+        return self
+
+    def nth(self, n: int) -> date:
+        """The n-th due date (0 is `start`)."""
+        return add_months(self.start, n * self.every_months, self.day)
 
     def _index(self, day: date) -> int | None:
         if day < self.start:
@@ -170,7 +198,7 @@ class Due(BaseModel):
 
     def on(self, day: date) -> bool:
         n = self._index(day)
-        return n is not None and add_months(self.start, n * self.every_months) == day
+        return n is not None and self.nth(n) == day
 
     def dates_between(self, first: date, last: date) -> list[date]:
         """Every due date in [first, last], in order (at most a few dozen)."""
@@ -178,7 +206,7 @@ class Due(BaseModel):
             return [self.start] if first <= self.start <= last else []
         out: list[date] = []
         n = 0
-        while (d := add_months(self.start, n * self.every_months)) <= last and n < 400:
+        while (d := self.nth(n)) <= last and n < 400:
             if d >= first:
                 out.append(d)
             n += 1
@@ -227,6 +255,11 @@ class Bill(BaseModel):
             raise BillRefused(f"Reminder days are 0 to {MAX_LEAD} days before, at most 4 of them.")
         return tuple(sorted(set(v), reverse=True))
 
+    @property
+    def pay_name(self) -> str:
+        """Who the UPI app shows as paid (`pn`, and the card): the payee, or the label's name."""
+        return self.payee or name_from_label(self.label)
+
     def paid_for(self, due: date) -> bool:
         return any(p.due == due for p in self.paid)
 
@@ -251,6 +284,7 @@ class Prefs(BaseModel):
 
 
 __all__ = [
+    "AT_REFUSAL",
     "BILL_ID",
     "DEFAULT_LEADS",
     "LABEL_MAX",
@@ -276,6 +310,7 @@ __all__ = [
     "inr",
     "inr_short",
     "last_four",
+    "on_day",
     "parse_amount",
     "parse_upi",
 ]

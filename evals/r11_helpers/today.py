@@ -45,7 +45,7 @@ PART = "today"
 BUILT = True
 Case = Callable[[], Awaitable[list[str]]]
 CARD = (
-    "Get a UPI payment ready: ₹1,240.00 to Power Co (test@okfake), note 'Electricity Nov'. You "
+    "Get a UPI payment ready: ₹1,240.00 to “Power Co” (test@okfake), note “Electricity Nov”. You "
     "confirm it and enter your PIN in your UPI app. JARVIS never pays."
 )
 

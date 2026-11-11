@@ -11,28 +11,37 @@ Every call goes through the gateway: policy, cards, R3 tokens and the audit.
 
 - The payee's UPI ID comes only from his own entry. `bill_add` has no UPI field at all;
   `bill_payee_set` is refused outright while the round has read other people's content
-  (`taint.content_tainted`, checked before any card is made), and refused at run time when its
-  approved card was proposed in such a round (`ToolContext.outside`). `TAINT_REFUSAL` is read at
-  call time so the eval's negative control can switch both off; nothing else may.
+  (`taint.content_tainted`, checked before any card is made); in a chat turn the UPI ID must also
+  be in his own message, as a whole word (`taint.owner_text`; the Today tab's form has no message
+  and its card shows what he typed there); and it is refused at run time when its approved card
+  was proposed in a tainted round (`ToolContext.outside`). `TAINT_REFUSAL` is read at call time so
+  the eval's negative control can switch these off; nothing else may.
 - `bill_pay_prepare`'s card is written by code from his saved bill (`bills.card_text`, through
   the read-only `preview`, so the card is re-read at approval and a changed bill re-proposes it).
   Approved, it leaves a 10-minute sealed grant; its result says where to open the payment and
   carries no link and no QR (the result is kept with the conversation; the payment is not).
 - No result, card or audit line holds a card / account number (refused at entry) or a link.
+- A bill's label and payee's name go to the model fenced as data (`bill_for_model`); JARVIS's own
+  sentences (`message`, which No-AI mode shows him) carry a label only in quotes.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.today.bills import BillsService, amount_words, current_due, when_words
 from jarvis.helpers.today.models import (
+    LABEL_MAX,
+    PAYEE_MAX,
+    VARIES,
     Bill,
     BillRefused,
     clean_label,
     clean_payee,
+    inr_short,
     last_four,
     parse_amount,
     parse_upi,
@@ -42,14 +51,20 @@ from jarvis.helpers.today.upi import amount_text
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.card import quoted
 from jarvis.tools.context import require_tool_context
-from jarvis.tools.taint import content_tainted
+from jarvis.tools.external import wrap_external
+from jarvis.tools.taint import content_tainted, owner_text
 
 TAINT_REFUSAL = True  # read at call time; only the eval's negative control switches it off
 TYPE_IT = "Type the UPI ID yourself in the Today tab, Sir: JARVIS never takes one from a message."
+TYPE_IT_HERE = (
+    "Type the UPI ID itself in your message, Sir (or in Helpers → Today): JARVIS sets only one "
+    "you typed."
+)
+FENCE_SOURCE = "his saved bills"
 AGENT = "helpers"
 R1, R2, R3 = ActionRisk.READ_ONLY, ActionRisk.REVERSIBLE, ActionRisk.IRREVERSIBLE
 READY = (
-    "The {label} payment is ready, Sir: open Helpers → Today and tap Show payment within 10 "
+    "The payment for {label} is ready, Sir: open Helpers → Today and tap Show payment within 10 "
     "minutes. You confirm it in your UPI app with your PIN; JARVIS never pays."
 )
 NOT_APPROVED = "That payment wasn't approved on your screen, so nothing was prepared."
@@ -85,7 +100,13 @@ def _off() -> dict[str, Any]:
     return {"unavailable": True, "message": OFF_NOTE}
 
 
+def said(label: str) -> str:
+    """A bill's label inside JARVIS's own sentence: one line, in quotes."""
+    return quoted(label, LABEL_MAX)
+
+
 def bill_view(bill: Bill, svc: BillsService) -> dict[str, Any]:
+    """A bill as his own screen shows it (the console writes it with textContent)."""
     today = svc.today()
     due = current_due(bill, today)
     return {
@@ -101,6 +122,25 @@ def bill_view(bill: Bill, svc: BillsService) -> dict[str, Any]:
     }
 
 
+def bill_for_model(bill: Bill, svc: BillsService) -> dict[str, Any]:
+    """A bill in a tool result: its label and payee's name fenced as data, not instructions."""
+    row = bill_view(bill, svc)
+    row["label"] = wrap_external(bill.label, source=FENCE_SOURCE, limit=LABEL_MAX)
+    if bill.payee:
+        row["payee"] = wrap_external(bill.payee, source=FENCE_SOURCE, limit=PAYEE_MAX)
+    return row
+
+
+def typed_here(upi: str) -> bool:
+    """Is `upi` in his own message, as a whole word (any case)? True outside a chat turn (the
+    Today tab's form, or an approval being carried out): there is no message to read."""
+    text = owner_text()
+    if text is None:
+        return True
+    edge = r"(?![A-Za-z0-9@]|\.[A-Za-z0-9])"  # "x@bank." ends a sentence; "x@bank.in" is another
+    return re.search(r"(?<![A-Za-z0-9._@-])" + re.escape(upi) + edge, text, re.I) is not None
+
+
 def _check_add(a: dict[str, Any]) -> None:
     clean_label(a.get("label"))
     clean_payee(a.get("payee", ""))
@@ -112,8 +152,10 @@ def _check_add(a: dict[str, Any]) -> None:
 def _check_payee(a: dict[str, Any]) -> None:
     if TAINT_REFUSAL and content_tainted():
         raise ValueError(TYPE_IT)
-    parse_upi(a.get("upi"))
+    upi = parse_upi(a.get("upi"))
     clean_payee(a.get("payee", ""))
+    if TAINT_REFUSAL and not typed_here(upi):
+        raise ValueError(TYPE_IT_HERE)
 
 
 def _check_prepare(a: dict[str, Any]) -> None:
@@ -124,10 +166,21 @@ def _check_prepare(a: dict[str, Any]) -> None:
         amount_text(amount)  # the ₹1,00,000 cap, before any card
 
 
+def _money(amount: Any) -> str:
+    if amount is None or (isinstance(amount, str) and amount.strip().lower() == VARIES):
+        return "amount varies"
+    try:
+        paise = parse_amount(amount)
+    except BillRefused:
+        return quoted(amount, 20)  # never reached: `check` ran first
+    return inr_short(paise) if paise is not None else "amount varies"
+
+
 def _add_text(a: dict[str, Any]) -> str:
-    amount = a.get("amount")
-    money = "amount varies" if amount in (None, "varies") else f"₹{amount}"
-    return f"Keep a bill: {quoted(a.get('label'), 40)}, {money}"
+    """The `bill_add` card: the label, the amount and, when given, the payee's name, quoted."""
+    text = f"Keep a bill: {quoted(a.get('label'), LABEL_MAX)}, {_money(a.get('amount'))}"
+    payee = clean_payee(a.get("payee", ""))
+    return f"{text}, payee {quoted(payee, PAYEE_MAX)}" if payee else text
 
 
 def _list_tool(t: BillTools) -> Tool:
@@ -138,7 +191,7 @@ def _list_tool(t: BillTools) -> Tool:
             return _off()
         if not t.service.store.available:
             return _off()
-        rows = [bill_view(b, t.service) for b in book.bills]
+        rows = [bill_for_model(b, t.service) for b in book.bills]
         n = len(rows)
         message = f"{n} bill{'s' if n != 1 else ''} kept, Sir." if n else "No bills yet, Sir."
         return {"bills": rows, "message": message}
@@ -161,7 +214,8 @@ def _add_tool(t: BillTools) -> Tool:
             return _off()
         except ValueError as exc:
             return _refused(_plain(exc))
-        return {"bill": bill_view(bill, t.service), "message": f"Kept the {bill.label} bill, Sir."}
+        message = f"Kept the bill {said(bill.label)}, Sir."
+        return {"bill": bill_for_model(bill, t.service), "message": message}
 
     props = {
         "label": {"type": "string", "description": "A short name, like Electricity (≤ 40)"},
@@ -199,7 +253,7 @@ def _paid_tool(t: BillTools) -> Tool:
         except ValueError as exc:
             return _refused(_plain(exc))
         when = due.strftime("%d %b").lstrip("0")
-        return {"message": f"Marked {bill.label} paid for {when}, Sir."}
+        return {"message": f"Marked {said(bill.label)} paid for {when}, Sir."}
 
     return Tool(
         "bill_paid",
@@ -208,7 +262,7 @@ def _paid_tool(t: BillTools) -> Tool:
         R2,
         run,
         agent=AGENT,
-        summarize=lambda a: f"Mark the bill {quoted(a.get('bill'), 40)} paid",
+        summarize=lambda a: f"Mark the bill {quoted(a.get('bill'), LABEL_MAX)} paid",
         activity_words="Marked a bill paid",
     )
 
@@ -217,10 +271,10 @@ def _payee_tool(t: BillTools) -> Tool:
     async def preview(a: dict[str, Any]) -> Preview:
         bill = t.service.find(await t.service.book(_uid()), a.get("bill"))
         upi = parse_upi(a.get("upi"))
-        name = clean_payee(a.get("payee", "")) or bill.payee or bill.label
+        name = clean_payee(a.get("payee", "")) or bill.pay_name
         return Preview(
-            f"Set the UPI ID for {quoted(bill.label, 40)} to {upi} ({name}). Payments you get "
-            "ready for this bill will go there."
+            f"Set the UPI ID for {said(bill.label)} to {upi}, payee {quoted(name, PAYEE_MAX)}. "
+            "Payments you get ready for this bill will go there."
         )
 
     async def run(a: dict[str, Any]) -> Any:
@@ -237,7 +291,7 @@ def _payee_tool(t: BillTools) -> Tool:
             return _off()
         except ValueError as exc:
             return _refused(_plain(exc))
-        return {"message": f"The {bill.label} bill now pays {bill.upi}, Sir."}
+        return {"message": f"The bill {said(bill.label)} now pays {bill.upi}, Sir."}
 
     props = {"bill": _BILL, "upi": {"type": "string"}, "payee": {"type": "string"}}
     return Tool(
@@ -270,7 +324,7 @@ def _prepare_tool(t: BillTools) -> Tool:
             return _off()
         except ValueError as exc:
             return _refused(_plain(exc))
-        return {"status": "ready", "message": READY.format(label=prepared.bill.label)}
+        return {"status": "ready", "message": READY.format(label=said(prepared.bill.label))}
 
     props = {"bill": _BILL, "amount": _AMOUNT}
     return Tool(
@@ -293,4 +347,14 @@ def bill_tools(service: BillsService) -> list[Tool]:
     return [_list_tool(t), _add_tool(t), _paid_tool(t), _payee_tool(t), _prepare_tool(t)]
 
 
-__all__ = ["NOT_APPROVED", "READY", "TAINT_REFUSAL", "TYPE_IT", "bill_tools", "bill_view"]
+__all__ = [
+    "NOT_APPROVED",
+    "READY",
+    "TAINT_REFUSAL",
+    "TYPE_IT",
+    "TYPE_IT_HERE",
+    "bill_for_model",
+    "bill_tools",
+    "bill_view",
+    "typed_here",
+]

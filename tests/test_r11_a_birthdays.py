@@ -171,3 +171,39 @@ async def test_a_birthday_no_channel_took_goes_next_run() -> None:
     clock.at += timedelta(minutes=5)
     await job.run(())
     assert len(notifier.calls) == 2
+
+
+class FlakySweep(Claims):
+    """Claims whose old-claim sweep fails `fails` times (the store briefly down)."""
+
+    def __init__(self, *args: object, fails: int = 1, **kw: object) -> None:
+        super().__init__(*args, **kw)  # type: ignore[arg-type]
+        self.fails, self.sweeps = fails, 0
+
+    async def sweep(self, uid: str, now):  # type: ignore[no-untyped-def]
+        self.sweeps += 1
+        if self.fails > 0:
+            self.fails -= 1
+            raise RuntimeError("store down for Asha Example 1988")
+        return await super().sweep(uid, now)
+
+
+async def test_a_failed_claim_sweep_never_stops_the_birthday_and_is_retried(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    clock = Clock(at(2026, 11, 12, 8, 30))
+    job, notifier, docs, c = await _job(clock, FakePeople(PEOPLE))
+    claims = FlakySweep(docs, "birthdays_told", prefix=c.prefix, keep_days=400)
+    job._claims = claims  # noqa: SLF001 - the same job, its claims' sweep failing once
+    got = await job.run(())
+    assert got["sent"] == 1 and len(notifier.calls) == 1  # the birthday still went
+    (warned,) = [r for r in caplog.records if r.getMessage() == "old claims not swept"]
+    assert warned.error == "RuntimeError"  # type: ignore[attr-defined]  # the class only
+    assert "Asha" not in caplog.text and all("Asha" not in repr(r.__dict__) for r in caplog.records)
+    clock.at += timedelta(minutes=5)
+    await job.run(())
+    assert claims.sweeps == 2  # retried on the next run, not tomorrow
+    clock.at += timedelta(minutes=5)
+    await job.run(())
+    assert claims.sweeps == 2 and len(notifier.calls) == 1  # swept once today; nothing twice

@@ -9,22 +9,28 @@
   (default 3, 1, 0) before an unpaid due date, and once "overdue" on the day after (offset -1).
   A due date before the day he added the bill is never "overdue".
 - `prepare`: the payment the R3 card describes, from his saved bill only (amount within the
-  ₹1,00,000 cap; a "varies" bill needs the amount said): `Prepared.card` is the exact card text.
+  ₹1,00,000 cap; a "varies" bill needs the amount said): `Prepared.card` is the exact card text,
+  the payee's name and the note in quotes so neither reads as the card's own words.
 - `make_ready` (after the approval) leaves a 10-minute sealed grant; `payment` spends it once and
-  only then makes the `upi://pay` link and its QR, which go to his screen and nowhere else.
+  only then makes the `upi://pay` link and its QR, which go to his screen and nowhere else; the
+  showing is audited as one kind-only line (no amount, no UPI ID, no link).
+- A day of the month (29, 30, 31) is kept apart from the first due date (`Due.day`), so a
+  month-end bill added in a short month is still due on the 31st where a month has one.
 """
 
 from __future__ import annotations
 
-import calendar
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
+from jarvis.core.guardrails import ActionRisk
 from jarvis.helpers.today.models import (
     DEFAULT_LEADS,
+    NOTE_MAX,
+    PAYEE_MAX,
     Bill,
     BillRefused,
     Due,
@@ -36,19 +42,28 @@ from jarvis.helpers.today.models import (
     inr,
     inr_short,
     last_four,
+    on_day,
     parse_amount,
     parse_upi,
 )
 from jarvis.helpers.today.qr import qr_data_uri
 from jarvis.helpers.today.store import READY_FOR, BillStore, Book, Grant
+from jarvis.helpers.today.text import name_key
 from jarvis.helpers.today.upi import amount_text, upi_link
+from jarvis.logging import get_logger
 from jarvis.notify.quiet import local
+from jarvis.tools.audit import AuditTrail
+from jarvis.tools.card import quoted
+
+log = get_logger(__name__)
 
 OVERDUE = -1
 LOOK_BACK = timedelta(days=40)  # an unpaid due date this old is still "overdue"
 LOOK_AHEAD = timedelta(days=400)
 NO_UPI = "This bill has no UPI ID yet, Sir. Type it yourself in Helpers → Today."
 VARIES_NEEDS = "This bill's amount varies, Sir: say how much to pay."
+AGENT = "helpers"
+SHOWN_TOOL = "bill_payment"  # the audit's name for showing an approved payment once
 
 
 def day_text(d: date) -> str:
@@ -125,34 +140,44 @@ class Payment:
 
 
 def card_text(bill: Bill, paise: int, due: date) -> str:
-    payee = bill.payee or bill.label
+    """The R3 card: the payee's name and the note quoted, the UPI ID in its own brackets."""
+    payee, note = quoted(bill.pay_name, PAYEE_MAX), quoted(bill.note(due), NOTE_MAX)
     return (
-        f"Get a UPI payment ready: {inr(paise)} to {payee} ({bill.upi}), note '{bill.note(due)}'. "
+        f"Get a UPI payment ready: {inr(paise)} to {payee} ({bill.upi}), note {note}. "
         "You confirm it and enter your PIN in your UPI app. JARVIS never pays."
     )
 
 
-def _start(today: date, day: Any, on: Any) -> date:
+def _start(today: date, day: Any, on: Any) -> tuple[date, int]:
+    """The first due date on or after `today`, and the day of the month it repeats on."""
     if on is not None:
         try:
-            return on if isinstance(on, date) else date.fromisoformat(str(on))
+            first = on if isinstance(on, date) else date.fromisoformat(str(on))
         except ValueError:
             raise BillRefused("A due date is YYYY-MM-DD.") from None
+        return first, first.day
     if isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= 31:
         raise BillRefused("Give the day of the month (1 to 31) or a due date.")
     for n in (0, 1):
         month = add_months(today.replace(day=1), n)
-        d = month.replace(day=min(day, calendar.monthrange(month.year, month.month)[1]))
-        if d >= today:
-            return d
+        if (d := on_day(month.year, month.month, day)) >= today:
+            return d, day
     raise BillRefused("Give the day of the month (1 to 31) or a due date.")  # pragma: no cover
 
 
 class BillsService:
-    def __init__(self, store: BillStore, *, tz: str, now: Callable[[], datetime]) -> None:
+    def __init__(
+        self,
+        store: BillStore,
+        *,
+        tz: str,
+        now: Callable[[], datetime],
+        audit: AuditTrail | None = None,
+    ) -> None:
         self.store = store
         self._tz = tz
         self._now = now
+        self._audit = audit
 
     @property
     def tz(self) -> str:
@@ -173,9 +198,9 @@ class BillsService:
     @staticmethod
     def find(book: Book, ref: Any) -> Bill:
         """A bill by its id, or by its name (case-insensitive, exactly one; "the X bill" too)."""
-        key = " ".join(ref.split()).casefold() if isinstance(ref, str) else ""
+        key = name_key(ref) if isinstance(ref, str) else ""
         by_id = [b for b in book.bills if b.id == key]
-        named = [b for b in book.bills if b.label.casefold() in (key, f"{key} bill")]
+        named = [b for b in book.bills if name_key(b.label) in (key, f"{key} bill")]
         found = by_id or named
         if len(found) != 1:
             raise BillRefused("No bill by that name, Sir." if not found else "Two bills share it.")
@@ -197,13 +222,14 @@ class BillsService:
     ) -> Bill:
         today = self.today()
         months = every_months if isinstance(every_months, int) else -1
+        first, day_of_month = _start(today, day, on)
         bill = Bill(
             id=secrets.token_hex(6),
             label=clean_label(label),
             payee=clean_payee(payee),
             upi=parse_upi(upi) if upi else "",
             amount=None if amount is None else parse_amount(amount),
-            due=Due(start=_start(today, day, on), every_months=months),
+            due=Due(start=first, every_months=months, day=day_of_month),
             leads=tuple(leads) if leads else DEFAULT_LEADS,
             last4=last_four(last4),
             added=today,
@@ -285,7 +311,7 @@ class BillsService:
 
     async def make_ready(self, uid: str, prepared: Prepared) -> datetime:
         b, now = prepared.bill, self._now()
-        grant = Grant(now + READY_FOR, prepared.paise, prepared.due, b.upi, b.payee or b.label)
+        grant = Grant(now + READY_FOR, prepared.paise, prepared.due, b.upi, b.pay_name)
         return await self.store.make_ready(uid, b.id, grant, now)
 
     async def payment(self, uid: str, bill_id: str) -> Payment | None:
@@ -295,11 +321,24 @@ class BillsService:
         if grant is None:
             return None
         bill = self.find(await self.store.book(uid), bill_id)
-        if (bill.upi, bill.payee or bill.label) != (grant.upi, grant.payee):
+        if (bill.upi, bill.pay_name) != (grant.upi, grant.payee):
             return None
         note = bill.note(grant.due)
         link = upi_link(pa=grant.upi, pn=grant.payee, paise=grant.paise, tn=note)
+        await self._audit_shown()
         return Payment(link, qr_data_uri(link), grant.upi, grant.payee, inr(grant.paise), note)
+
+    async def _audit_shown(self) -> None:
+        """One kind-only line: no amount, no UPI ID, no link (security review LOW-4)."""
+        if self._audit is None:
+            return
+        try:
+            await self._audit.append(
+                agent=AGENT, tool=SHOWN_TOOL, risk=ActionRisk.READ_ONLY, outcome="shown",
+                args={"kind": SHOWN_TOOL},
+            )  # fmt: skip
+        except Exception as exc:  # noqa: BLE001 - the payment is still shown to him
+            log.warning("payment audit not written", extra={"error": type(exc).__name__})
 
 
 __all__ = [

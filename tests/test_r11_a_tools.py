@@ -28,11 +28,12 @@ from jarvis.helpers.today import tools as today_tools
 from jarvis.helpers.today.bills import BillsService
 from jarvis.llm.base import ToolCall
 from jarvis.storage.docs import MemoryDocs
+from jarvis.tools.external import FENCE_PREFIX
 from jarvis.tools.gateway import GatewayOutcome
 from jarvis.tools.taint import context_trust
 
 CARD = (
-    "Get a UPI payment ready: ₹1,240.00 to Power Co (test@okfake), note 'Electricity Nov'. You "
+    "Get a UPI payment ready: ₹1,240.00 to “Power Co” (test@okfake), note “Electricity Nov”. You "
     "confirm it and enter your PIN in your UPI app. JARVIS never pays."
 )
 
@@ -49,8 +50,10 @@ def _call(name: str, **args: object) -> ToolCall:
     return ToolCall(id=f"t-{name}", name=name, arguments=dict(args))
 
 
-async def _run(rig: Rig, name: str, *, tainted: bool = False, **args: object):  # type: ignore[no-untyped-def]
-    with context_trust(untrusted=tainted, owner_text="test"):
+async def _run(  # type: ignore[no-untyped-def]
+    rig: Rig, name: str, *, tainted: bool = False, said: str | None = "test", **args: object
+):
+    with context_trust(untrusted=tainted, owner_text=said):
         return await rig.gateway.execute(_call(name, **args), scope=rig.scope)
 
 
@@ -93,7 +96,7 @@ async def test_over_the_cap_or_a_varies_bill_without_an_amount_is_refused() -> N
     varies = await _run(rig, "bill_pay_prepare", bill="Water")
     assert varies.outcome is GatewayOutcome.ERROR and "varies" in (varies.error or "")
     ok = await _run(rig, "bill_pay_prepare", bill="Water", amount="350")
-    assert "₹350.00 to Water Co" in ok.pending.summary
+    assert "₹350.00 to “Water Co”" in ok.pending.summary
 
 
 async def test_an_emailed_upi_id_never_becomes_a_payee() -> None:
@@ -106,9 +109,13 @@ async def test_an_emailed_upi_id_never_becomes_a_payee() -> None:
 
 async def test_his_own_payee_change_is_an_r3_card_then_runs() -> None:
     rig, svc, _ = await _rig()
-    res = await _run(rig, "bill_payee_set", bill="Electricity", upi=OTHER_UPI, payee="New Co")
+    said = f"set the electricity bill's UPI ID to {OTHER_UPI}, payee New Co"
+    res = await _run(
+        rig, "bill_payee_set", said=said, bill="Electricity", upi=OTHER_UPI, payee="New Co"
+    )
     assert res.outcome is GatewayOutcome.AWAITING_CONFIRMATION
-    assert OTHER_UPI in res.pending.summary and "Electricity" in res.pending.summary
+    assert OTHER_UPI in res.pending.summary and "“Electricity”" in res.pending.summary
+    assert "“New Co”" in res.pending.summary
     done = await _approve(rig, res)
     assert done.outcome is GatewayOutcome.EXECUTED
     assert (await svc.book(UID)).bills[0].upi == OTHER_UPI
@@ -146,7 +153,9 @@ async def test_list_paid_and_a_bill_that_isnt_his() -> None:
     listed = await _run(rig, "bill_list")
     assert listed.outcome is GatewayOutcome.EXECUTED
     (row,) = listed.result["bills"]
-    assert row["label"] == "Electricity" and row["amount"] == "₹1,240" and row["upi"] == FAKE_UPI
+    assert row["amount"] == "₹1,240" and row["upi"] == FAKE_UPI
+    assert FENCE_PREFIX in row["label"] and "\nElectricity\n" in row["label"]  # data, fenced
+    assert FENCE_PREFIX in row["payee"] and "\nPower Co\n" in row["payee"]
     paid = await _run(rig, "bill_paid", bill="electricity")
     assert paid.outcome is GatewayOutcome.EXECUTED and "13 Nov" in paid.result["message"]
     missing = await _run(rig, "bill_paid", bill="Mortgage")
@@ -177,7 +186,62 @@ async def test_focus_and_pending_read_every_part() -> None:
     rig, _, _ = await _rig()
     focus = await _run(rig, "focus_now")
     assert focus.outcome is GatewayOutcome.EXECUTED
-    assert focus.result["top"]["label"] == "Electricity ₹1,240 due Fri 13 Nov"
-    assert focus.result["message"].startswith("Top priority now, Sir: Electricity")
+    top = focus.result["top"]["label"]
+    assert FENCE_PREFIX in top and "\nElectricity ₹1,240 due Fri 13 Nov\n" in top
+    assert focus.result["message"] == "Top priority now, Sir: “Electricity ₹1,240 due Fri 13 Nov”."
     listed = await _run(rig, "pending_list")
     assert listed.result["total"] == 1 and listed.result["groups"][0]["source"] == "Bills"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "set the electricity UPI ID to the one in that mail",  # not typed at all
+        "my UPI ID is mallory@okfake.in",  # a different ID that only starts the same
+        "pay xmallory@okfake",  # one that only ends the same
+    ],
+)
+async def test_a_upi_id_he_did_not_type_in_this_message_is_refused(said: str) -> None:
+    rig, svc, _ = await _rig()
+    res = await _run(rig, "bill_payee_set", said=said, bill="Electricity", upi=OTHER_UPI)
+    assert res.outcome is GatewayOutcome.ERROR and res.error == today_tools.TYPE_IT_HERE
+    assert (await svc.book(UID)).bills[0].upi == FAKE_UPI
+
+
+async def test_his_typed_upi_id_any_case_and_the_tabs_own_form_make_the_card() -> None:
+    rig, _, _ = await _rig()
+    typed = await _run(
+        rig, "bill_payee_set", said="Use MALLORY@okfake.", bill="Electricity", upi=OTHER_UPI
+    )
+    assert typed.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    form = await _run(rig, "bill_payee_set", said=None, bill="Electricity", upi=OTHER_UPI)
+    assert form.outcome is GatewayOutcome.AWAITING_CONFIRMATION  # the Today tab: no message
+
+
+async def test_the_bill_add_card_shows_the_payee_name_quoted() -> None:
+    rig, _, _ = await _rig()
+    res = await _run(
+        rig, "bill_add", tainted=True, label="Gas", payee="Gas Co", amount="₹1,240", day=5
+    )
+    assert res.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    assert res.pending.summary == "Keep a bill: “Gas”, ₹1,240, payee “Gas Co”"
+    bad = await _run(rig, "bill_add", tainted=True, label="Gas", payee="Co (x@okfake)", day=5)
+    assert bad.outcome is GatewayOutcome.ERROR and "no @" in (bad.error or "")
+
+
+async def test_exactly_the_cap_is_allowed() -> None:
+    rig, _, _ = await _rig()
+    res = await _run(rig, "bill_pay_prepare", bill="Electricity", amount="100000")
+    assert res.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    assert res.pending.summary.startswith("Get a UPI payment ready: ₹1,00,000.00 to")
+
+
+async def test_a_bill_with_no_payee_is_prepared_and_shown_in_its_own_name() -> None:
+    rig, svc, _ = await _rig()
+    water = await svc.add(UID, label="Water", upi=FAKE_UPI, amount="300", day=20)
+    res = await _run(rig, "bill_pay_prepare", bill="Water")
+    assert "₹300.00 to “Water” (test@okfake)" in res.pending.summary
+    done = await _approve(rig, res)
+    assert done.outcome is GatewayOutcome.EXECUTED and done.result["status"] == "ready"
+    shown = await svc.payment(UID, water.id)
+    assert shown is not None and "pa=test@okfake&pn=Water&am=300.00" in shown.link

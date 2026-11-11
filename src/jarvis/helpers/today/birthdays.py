@@ -170,7 +170,7 @@ class BirthdayReader:
             return Reading("not_connected", note=NO_GOOGLE_MSG)
         if not await row_allows(self._permissions(), uid, TOOL):
             if (uid, day) not in self._denied:
-                self._denied.add((uid, day))
+                self._denied = {k for k in self._denied if k[1] == day} | {(uid, day)}  # today's
                 await self._audit_line("denied")
             return Reading("denied", note=DENIED_MSG)
         cached = self._day.get(uid)

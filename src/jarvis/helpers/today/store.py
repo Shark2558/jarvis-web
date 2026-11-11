@@ -8,6 +8,8 @@ birthdays on or off) are plain: no keyring means the bills are OFF (`BillsOff`, 
 clear) while the choices still work. A `Grant` is what an approved `bill_pay_prepare` leaves: the
 bill, the approved amount and due date, and until when it can be shown (10 minutes) — never the
 payment itself (the link and the QR are made when shown, never stored); `take_ready` spends it once.
+Every read or change also notes a hash of each of his bills' names in memory (`knows`), so the
+No-AI phrases take "pay X" only when X is one of his bills (no label is held in clear).
 
 `Claims`: `{prefix}<collection>/{uid}_{hash}`, created in a transaction before a reminder goes, so
 it goes once across restarts; released when no channel took it (`SendResult.retry`). The id is
@@ -25,6 +27,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from jarvis.helpers.today.models import MAX_BILLS, Bill, BillRefused, Prefs
+from jarvis.helpers.today.text import name_key
 from jarvis.keyring import Keyring
 from jarvis.storage.docs import Delete, DocExists, Docs, DocTx, Query
 
@@ -98,6 +101,10 @@ def _iso(at: datetime) -> str:
     return at.isoformat()
 
 
+def _name_hash(name: str) -> str:
+    return hashlib.sha256(name_key(name).encode()).hexdigest()
+
+
 def _parse(value: object) -> datetime | None:
     try:
         return datetime.fromisoformat(value) if isinstance(value, str) else None
@@ -110,10 +117,22 @@ class BillStore:
         self._docs = docs
         self._keyring = keyring
         self._prefix = prefix
+        self._names: dict[str, frozenset[str]] = {}
 
     @property
     def available(self) -> bool:
         return self._keyring is not None
+
+    def _noted(self, uid: str, book: Book) -> Book:
+        self._names[uid] = frozenset(_name_hash(b.label) for b in book.bills)
+        return book
+
+    def knows(self, name: str) -> bool:
+        """Is `name` (or "`name` bill") one of an owner's bills, as last read? The No-AI phrase
+        router has no owner, so it asks across the configured owners; the tool then reads only
+        his own bills."""
+        wanted = {_name_hash(name), _name_hash(f"{name} bill")}
+        return any(wanted & names for names in self._names.values())
 
     def path(self, uid: str) -> str:
         return f"{self._prefix}{BILLS}/{uid}"
@@ -152,7 +171,7 @@ class BillStore:
         )
 
     async def book(self, uid: str) -> Book:
-        return self._book(uid, await self._docs.get(self.path(uid)))
+        return self._noted(uid, self._book(uid, await self._docs.get(self.path(uid))))
 
     def _doc(
         self, uid: str, old: dict[str, Any] | None, book: Book, before: Book
@@ -177,7 +196,7 @@ class BillStore:
             tx.set(path, self._doc(uid, old, after, before))
             return replace(after, rev=before.rev + 1)
 
-        return await self._docs.transaction(run)
+        return self._noted(uid, await self._docs.transaction(run))
 
     async def make_ready(self, uid: str, bill_id: str, grant_: Grant, now: datetime) -> datetime:
         until = grant_.until
@@ -209,6 +228,7 @@ class BillStore:
         return await self._docs.get(self.path(uid)) is not None
 
     async def delete_all(self, uid: str) -> int:
+        self._names.pop(uid, None)
         if await self._docs.get(self.path(uid)) is None:
             return 0
         await self._docs.write([Delete(self.path(uid))])

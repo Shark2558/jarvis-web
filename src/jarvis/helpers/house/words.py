@@ -121,7 +121,12 @@ def brief_weather(t_max: float | None, rain_from: str | None) -> str:
 
 def brief_warning(kind: str, event: str, district: str, ends: str) -> str:
     word = "advisory" if kind == "weather_note" else "warning"
-    return f"{event} {word} for {district} {ends} (SACHET)."
+    urgent = "Urgent: " if kind == "disaster_alert" else ""
+    return f"{urgent}{event} {word} for {district} {ends} (SACHET)."
+
+
+def brief_outage(source: str, since: str) -> str:
+    return f"Can't reach {source} since {since}: the official SACHET app and SMS still warn you."
 
 
 __all__ = [
@@ -132,6 +137,7 @@ __all__ = [
     "OFFICIAL_FIRST",
     "OPEN_METEO_SHORT",
     "breach",
+    "brief_outage",
     "brief_warning",
     "brief_weather",
     "cap",

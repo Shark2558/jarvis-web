@@ -1,8 +1,9 @@
-# tests/test_r11_b_chores.py -- R11 Part B items 2 and 3 (docs/plans/r11-free-helpers.md D10, D11):
-# the chores rota and the home upkeep schedule. Written before helpers/house/{store,chores,upkeep}.py:
-# the rota turns on "done" and at each period's end; a reminder goes once, in the first 5-minute run
-# at or after its time, never twice across a restart, and again next run when no channel took it;
-# names of the rota only in the `named` text; upkeep on its lead day and its due day at 09:00.
+# tests/test_r11_b_chores.py -- R11 Part B items 2 and 3 (docs/plans/r11-free-helpers.md D10,
+# D11): the chores rota and the home upkeep schedule. Written before helpers/house/{store,chores,
+# upkeep}.py: the rota turns on "done" and at each period's end; a reminder goes once, in the
+# first 5-minute run at or after its time, never twice across a restart, and again next run when
+# no channel took it; names of the rota only in the `named` text; upkeep on its lead day and its
+# due day at 09:00.
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -30,7 +31,7 @@ def _chore(**over: object) -> Chore:
     return chores.new_chore(cid="0000000a", today=TODAY, **base)  # type: ignore[arg-type]
 
 
-# ---- the rota --------------------------------------------------------------------------------------
+# ---- the rota -----------------------------------------------------------------------------------
 def test_daily_weekly_and_every_n_days_occur_on_the_right_days() -> None:
     daily = _chore()
     weekly = _chore(freq="weekly", days=(0, 3))  # Monday and Thursday
@@ -70,7 +71,7 @@ def test_a_rota_is_adults_labels_only_and_bounded() -> None:
     assert chores.whose(_chore(members=()), TODAY) is None
 
 
-# ---- the reminder job -------------------------------------------------------------------------------
+# ---- the reminder job ---------------------------------------------------------------------------
 async def _with(c: Chore, **over: object) -> tuple[object, ...]:
     hc, notifier, docs, clock = house_ctx(**over)  # type: ignore[arg-type]
     store = HouseStore(docs, prefix=hc.prefix)
@@ -123,7 +124,7 @@ async def test_the_household_row_set_to_never_stops_chore_reminders() -> None:
     assert notifier.calls == [] and notifier2.calls == []  # fail closed
 
 
-# ---- home upkeep ------------------------------------------------------------------------------------
+# ---- home upkeep --------------------------------------------------------------------------------
 def _item(**over: object) -> Upkeep:
     base: dict[str, object] = {"cid": "0000000b", "label": "AC service", "every": 180}
     base.update(over)

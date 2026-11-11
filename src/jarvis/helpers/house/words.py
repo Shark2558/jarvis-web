@@ -108,7 +108,9 @@ def lifted(event: str, district: str) -> str:
 
 
 def breach(service: str) -> str:
-    return f"A breach notice from {service} arrived. Open it in Gmail and change that password, Sir."
+    return (
+        f"A breach notice from {service} arrived. Open it in Gmail and change that password, Sir."
+    )
 
 
 def brief_weather(t_max: float | None, rain_from: str | None) -> str:

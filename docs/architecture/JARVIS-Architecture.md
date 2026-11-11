@@ -52,17 +52,18 @@ monthly limit in rupees; at the limit JARVIS stops calling paid models and says 
 
 **Safety promises (as built).**
 
-1. **Nothing irreversible without you.** Sending, paying, deleting and inviting always show an
-   approval card first; with a passkey registered they also need your passkey. There is no "don't
-   ask again" for these.
+1. **Nothing irreversible without you.** Sending mail, sending invitations and anything that
+   can't be undone always show an approval card first. Your first passkey switches on "require
+   passkey", and from then on these also need your passkey. There is no "don't ask again".
 2. **Other people's words are never orders.** Text from mail, web pages, documents, contacts or
    the cameras is treated as data. When such text is in the conversation, even small changes ask
    first.
 3. **Only you get in.** Google sign-in for listed owner accounts only; Telegram answers only the
    paired owner; Cloud Scheduler and the home bridge prove who they are with signed tokens.
 4. **Private by default.** Brains that may learn from what they are told (free Gemini, some
-   OpenAI-compatible vendors) never receive tools or your personal data. Face pictures never leave
-   home. The vault, notes, things, the home record, faces and push devices are encrypted by JARVIS
+   OpenAI-compatible vendors) never receive tools or your personal data. Camera pictures and the
+   face library stay on the laptop; no face picture is stored in the cloud (one small burglar-alert
+   snapshot may go to Telegram, only if you opt in). The vault, notes, things, the home record, faces and push devices are encrypted by JARVIS
    with keys only it holds.
 5. **Everything is written down.** Every tool call goes through one gateway and into an
    append-only, hash-chained audit trail; the Activity panel shows the day in plain words.
@@ -236,7 +237,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Attached documents (paperclip and drag-and-drop) |
-| What it does | Lets you attach up to 3 files to a message (PDF, Word and text; 10 MB, 300 pages each). The text is taken out in a separate process that can be killed, split into chunks and searched; the file itself is thrown away. |
+| What it does | Lets you attach up to 3 files to a message (PDF, Word, text, Markdown or CSV; 10 MB and 300 pages each). The text is taken out in a separate process that can be killed, split into chunks and searched; the file itself is thrown away. |
 | Layer | L2 Input Processing |
 | Skill | Research & Intel |
 | Where in the code | `src/jarvis/documents/`, `src/jarvis/api/documents.py`, `console-attach.js` |
@@ -392,7 +393,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | None |
 | Outside services | Anthropic (Claude Haiku 5.5, Sonnet 5.5, Opus 5.5 by tier), Gemini (free tier, chat only), OpenAI-compatible (one slot: Groq, OpenRouter, Ollama and similar) |
 | Cost (₹ a month) | Claude per million tokens: Haiku ₹9.52 in / ₹47.62 out, Sonnet ₹190.48 / ₹952.40, Opus ₹380.96 / ₹1,904.80 (at ₹95.24 to the dollar). Gemini free tier ₹0. |
-| When it fails | 20-second timeout, 2 retries, then a tier down; a 429 or a key error is never retried on another vendor. After a cloud miss the next 2 minutes go to the laptop. A brain that may train on prompts never receives tools. |
+| When it fails | 20-second timeout, 2 retries, then a tier down; only an unreachable cloud (no connection, timeout, server error) goes to the laptop, never a 429 or a key error. After a cloud miss the next 2 minutes go to the laptop. A brain that may train on prompts never receives tools. |
 | Since | Phase 0; Gemini Slice 3; brain selector Slice 4 (both before v0.5.0) |
 
 #### C17 · Brain switch, No-AI and offline mode
@@ -585,7 +586,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Skill | Platform (serves every skill) |
 | Where in the code | `src/jarvis/tools/` (`gateway.py`, `policy.py`, `budget.py`, `registry.py`, `base.py`, `context.py`, `observers.py`, `setup.py`, `builtin.py`, `r1_tools.py`, `reply_cards.py`, `audit.py`), `src/jarvis/storage/audit.py` |
 | Depends on | C52 Permissions (your rules), C15 Guardrails, C18 Approval cards, C41 Document store |
-| Data it keeps | `audit/{seq}` (one entry per tool call, never deleted, each linked to the one before by a hash) and `meta/audit_head` (moved in the same transaction as each entry, so the chain never forks). |
+| Data it keeps | `audit/{seq}` (one entry per tool call: tool, risk, outcome, a hash of the arguments and a short detail; never deleted, each linked to the one before by a hash) and `meta/audit_head` (moved in the same transaction as each entry, so the chain never forks). |
 | Outside services | None (each tool's own card lists its service) |
 | Cost (₹ a month) | ₹0 |
 | When it fails | If your rules can't be read, or the call has no owner, nothing runs. An approved action is audited before it runs; if that record can't be written, nothing happens and you are told. |
@@ -1292,7 +1293,7 @@ counter sees only its own use (the deploy script warns about this).
 | Google Cloud Run | Runs JARVIS | 2 million requests a month | *unverified*: requests beyond are billed | Billed per use; the ₹1 budget alert e-mails at once |
 | Firestore | All stored data | 1 GiB stored; 50,000 reads, 20,000 writes, 20,000 deletes a day; one free database per project | Google bills the excess | Billed per use (*unverified* rates) |
 | Secret Manager | Secrets | 6 secret versions (as the R6 plan lists) | Billed per version | Small (*unverified*) |
-| Cloud Scheduler | The two clocks | 3 jobs per billing account | A 4th job | About US$0.10 a month per extra job (deploy script note) |
+| Cloud Scheduler | The two clocks | 3 jobs per billing account | A 4th job | About ₹10 a month per extra job (the deploy script's dollar price, converted) |
 | Artifact Registry | Container images | 0.5 GB (deploy script note) | Old images are deleted after 30 days to stay near it | Billed per GB (*unverified*) |
 | GitHub Actions | CI and deploy | 2,000 minutes a month (as the plans list them) | Runs wait or need a plan | — |
 | Anthropic | Claude brain | None (prepaid credit) | Your monthly limit in ₹ stops paid calls | Per tokens, see C16 |
@@ -1396,7 +1397,7 @@ its own key (AES-256-GCM) before it reaches Google, so a reader of the database 
 |---|---|---|---|---|
 | `sessions` (and `turns`) | Conversations | No | Until you delete them | C09 |
 | `approvals` | Waiting approval cards | No | Until decided | C18 |
-| `audit` | The hash-chained audit trail: tool, risk, outcome, counts; never message text | No | Always (append-only) | C28 |
+| `audit` | The hash-chained audit trail: tool, risk, outcome, a hash of the arguments and a short detail (never the arguments themselves) | No | Always (append-only) | C28 |
 | `meta` | The audit chain's head; a health ping | No | Always | C41 |
 | `memory`, `memory_shards` | Facts about you (long-term memory) | No (*see 10. Known limits*) | Until you delete them | C10 |
 | `kb`, `kb_shards`, `kb_fetch` | Notes, memo transcripts, saved links | Yes (`notes`) for the notes | Until you delete them | C23 |

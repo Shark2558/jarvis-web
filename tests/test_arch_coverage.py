@@ -300,6 +300,31 @@ def test_the_secret_scan_catches_an_email_and_a_key(repo: Path) -> None:
     assert not any("someone@example.com" in p for p in problems)  # kinds only, never the text
 
 
+def test_the_secret_scan_reads_only_the_words_of_an_svg(repo: Path) -> None:
+    svg = repo / "docs/architecture/diagrams/01-context.svg"
+    svg.parent.mkdir(parents=True)
+    svg.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg">\n'
+        '<path d="M 1120 550 L 1138 550 Q 1152 550 1152 564 L 1152 654"/>\n'
+        '<text x="48" y="44">The console</text>\n'
+        "</svg>\n",
+        encoding="utf-8",
+    )
+    (repo / "docs/architecture/diagrams/exports.json").write_text(
+        '{"svg": "' + "1234567890" * 6 + 'abcd"}\n', encoding="utf-8"
+    )
+    assert run(repo, guide()) == (0, [])  # geometry and SHA-256 hashes are not personal
+    svg.write_text(
+        '<svg>\n<text x="1"\n y="2">mail someone@example.com</text>\n'
+        '<path d="AIza' + "B" * 35 + '"/>\n</svg>\n',
+        encoding="utf-8",
+    )
+    code, problems = run(repo, guide())
+    assert code == 1
+    assert any("01-context.svg:3" in p and "email" in p for p in problems)
+    assert any("01-context.svg:4" in p and "secret" in p for p in problems)
+
+
 def test_main_exits_non_zero_with_a_list(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (repo / "docs/architecture/JARVIS-Architecture.md").write_text(
         guide().replace(", `console-foo.js`", ""), encoding="utf-8"

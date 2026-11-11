@@ -3,23 +3,19 @@
 
     python scripts/arch_coverage.py [--repo DIR] [--guide FILE] [--scan DIR]
 
-Coverage: the guide's "Component catalogue" (its `## ... Component catalogue` section) must name
-  - every top-level package and module under `src/jarvis/` in a card's "Where in the code" field
-  - every `src/jarvis/api/static/console*.js` module in a card's "Where in the code" field
-  - every Cloud Scheduler job `deploy/*.sh` creates (`gcloud scheduler jobs create ...`)
-  - every outside service: from the settings (`src/jarvis/config.py`, `service_fields`; a secret
-    or URL setting with no known service fails) and from the API hosts in code (`api_hosts`;
-    an unknown `api.*` or `*.googleapis.com` host fails), in a card's "Outside services" field
-  - every Firestore collection the code names (`{prefix}name`, `_path("name"`,
-    `*_COLLECTION = "name"`) as a code span in a card's "Data it keeps" field
-Completeness: every card (a `####` heading in the catalogue) has the 11 `FIELDS`, none empty;
-the technology table has exactly the 8 `TECH_COLUMNS` and every row 8 non-empty cells; the
-version line and the change log are there; each of the 14 diagrams is linked with its caption.
-Secret scan: the R6 build book scrubber (`jarvis.buildbook.gen.scrub`) finds no personal data or
-secret-shaped string in any text file under `--scan` (default `docs/architecture/`); it reports
-file, line and kind, never the text. Exit 0 = pass, 1 = problems (listed), 2 = no guide.
-The tables (settings and hosts -> services, the diagram names) are in `arch_coverage.json`.
-Standard library only, plus the scrubber from this checkout's `src/`.
+Coverage: the guide's `## ... Component catalogue` must name, in its cards' fields,
+  - "Where in the code": every top-level package and module under `src/jarvis/` and every
+    `src/jarvis/api/static/console*.js` module; the catalogue: every Cloud Scheduler job
+    `deploy/*.sh` creates
+  - "Outside services": every service the settings (`config.py`, `service_fields`; an unknown
+    secret or URL setting fails) and the code's API hosts (`api_hosts`; an unknown `api.*`,
+    `*.googleapis.com` or `*.internal` host fails) name
+  - "Data it keeps", as code spans: every Firestore collection the code names
+Completeness: every `####` card has the 11 `FIELDS` filled; the technology table has the 8
+`TECH_COLUMNS` and 8 filled cells a row; the version line, the change log and the 14 diagram
+links with captions are there. Secret scan: the R6 build book scrubber finds nothing under
+`--scan` (default `docs/architecture/`; file, line and kind only, never the text).
+Exit 0 = pass, 1 = problems (listed), 2 = no guide. Tables: `arch_coverage.json`.
 """
 
 from __future__ import annotations
@@ -65,6 +61,8 @@ _VERSION = re.compile(
 CHANGE_LOG_HEAD = "| Version | Date | Release | What changed | By |"
 EMPTY = frozenset({"", "-", "—", "–", "tbd", "?", "n/a"})
 SCAN_SUFFIXES = (".md", ".markdy", ".svg", ".txt", ".json")
+_SHA256 = re.compile(r"\b[0-9a-f]{64}\b")
+_ADD_FIELD = "add it to arch_coverage.json service_fields"
 
 
 @dataclass(frozen=True)
@@ -117,14 +115,11 @@ def _resolve(arg: str, text: str) -> str:
 def _settings_fields(repo: Path) -> list[tuple[str, str]]:
     """(field name, annotation) of `class Settings` in config.py, read as an AST."""
     tree = ast.parse((repo / "src/jarvis/config.py").read_text(encoding="utf-8"))
-    cls = next((n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Settings"), None)
-    if cls is None:
-        return []
-    return [
-        (n.target.id, ast.unparse(n.annotation))
-        for n in cls.body
-        if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)
+    body = [
+        n for c in tree.body if isinstance(c, ast.ClassDef) and c.name == "Settings" for n in c.body
     ]
+    fields = (n for n in body if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name))
+    return [(n.target.id, ast.unparse(n.annotation)) for n in fields]  # type: ignore[union-attr]
 
 
 def _services_of(field: str) -> tuple[str, ...] | None:
@@ -142,9 +137,7 @@ def _settings_services(repo: Path) -> tuple[set[str], list[str]]:
         if found:
             services.update(found)
         elif name not in INTERNAL_SECRETS and ("SecretStr" in annotation or name.endswith("_url")):
-            problems.append(
-                f"setting `{name}` names no known outside service: add it to SERVICE_FIELDS"
-            )
+            problems.append(f"setting `{name}` names no known outside service: {_ADD_FIELD}")
     return services, problems
 
 
@@ -173,11 +166,8 @@ def _host_services(repo: Path) -> tuple[set[str], list[str]]:
                     services.add(API_HOSTS[host])
                 elif host not in NOT_SERVICES and _API_HOST.match(host):
                     unknown.add(host)
-    problems = [
-        f"API host `{h}` in the code names no known service: add it to API_HOSTS"
-        for h in sorted(unknown)
-    ]
-    return services, problems
+    what = "in the code names no known service: add it to arch_coverage.json api_hosts"
+    return services, [f"API host `{h}` {what}" for h in sorted(unknown)]
 
 
 def _collections(repo: Path) -> tuple[str, ...]:
@@ -337,17 +327,30 @@ def _path_in(code: str, path: str) -> bool:
     return re.search(rf"(?<![\w/]){re.escape(path)}(?![\w])", code) is not None
 
 
+def _words(path: Path, raw: str) -> str:
+    """What the personal-data rules read: an SVG's drawn words only (its geometry is runs of
+    digits, never personal), and no SHA-256 hashes; line breaks are kept for line numbers."""
+    text = _SHA256.sub(" ", raw)
+    if path.suffix != ".svg":
+        return text
+    return re.sub(r"<[^>]*>", lambda m: "\n" * m.group(0).count("\n") + " ", text)
+
+
 def scan(folder: Path) -> list[str]:
+    """Secret shapes on every line; the scrubber's personal-data rules on the readable words."""
     if str(HERE / "src") not in sys.path:
         sys.path.insert(0, str(HERE / "src"))
-    from jarvis.buildbook.gen.scrub import default_scrubber
+    from jarvis.buildbook.gen.scrub import SECRET_SHAPES, default_scrubber
 
     scrubber, out = default_scrubber(), []
     for path in sorted(p for p in folder.rglob("*") if p.suffix in SCAN_SUFFIXES and p.is_file()):
-        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            kinds = scrubber.findings(line)
+        raw = path.read_text(encoding="utf-8")
+        pairs = zip(raw.splitlines(), _words(path, raw).splitlines(), strict=False)
+        for n, (line, words) in enumerate(pairs, start=1):
+            kinds = set(scrubber.findings(words))
+            kinds |= {"secret"} if any(p.search(line) for _, p in SECRET_SHAPES) else set()
             if kinds:
-                out.append(f"secret scan: {path.name}:{n} ({', '.join(kinds)})")
+                out.append(f"secret scan: {path.name}:{n} ({', '.join(sorted(kinds))})")
     return out
 
 

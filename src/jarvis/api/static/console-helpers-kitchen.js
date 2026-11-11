@@ -20,6 +20,7 @@ if (H) {
     b.addEventListener('click', () => { if (!UI.busy) onClick(b); });
     return b;
   }
+  function named(b, label) { b.setAttribute('aria-label', H.txt(label, 120)); return b; }
   function acts(...els) { const a = H.mk('div', 'sacts'); els.forEach((e) => a.append(e)); return a; }
   function field(label, input) {
     const l = H.mk('label', 'hp-field');
@@ -59,7 +60,7 @@ if (H) {
     const s = H.section('Pantry');
     const items = Array.isArray(v.pantry) ? v.pantry : [];
     if (!items.length) s.append(H.empty('Nothing yet. Add what you have, or tell JARVIS "add rice and dal to my pantry".'));
-    items.forEach((name) => s.append(H.row(name, '', [btn('Remove', () => send('/pantry', 'POST', { remove: [name] }, 'Taken out.'))])));
+    items.forEach((name) => s.append(H.row(name, '', [named(btn('Remove', () => send('/pantry', 'POST', { remove: [name] }, 'Taken out.')), 'Remove ' + name)])));
     const add = input('text', '', 200);
     add.placeholder = 'rice, toor dal, onions';
     s.append(field('Add to your pantry', add), acts(btn('Add', () => {
@@ -93,7 +94,8 @@ if (H) {
     if (!list.length) s.append(H.empty('No saved recipes yet. Ask JARVIS "what can I cook?" and say "save it".'));
     list.forEach((r) => {
       const words = [r.minutes + ' min', SHORT[r.diet] || '', r.nutrition || ''].filter(Boolean).join(' \u00b7 ');
-      s.append(H.row(r.title, words, [btn('Remove', () => send('/recipes/' + encodeURIComponent(r.id), 'DELETE', undefined, 'Removed.'))]));
+      const rm = btn('Remove', () => send('/recipes/' + encodeURIComponent(r.id), 'DELETE', undefined, 'Removed.'));
+      s.append(H.row(r.title, words, [named(rm, 'Remove ' + r.title)]));
     });
     const n = v.nutrition || {};
     s.append(H.mk('p', 'snote', n.installed ? n.attribution : 'Nutrition data isn\u2019t installed yet (USDA FoodData Central).'));

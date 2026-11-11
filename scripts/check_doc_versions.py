@@ -9,7 +9,8 @@ Each `docs/plans/*.md` and `docs/architecture/*.md` (not their sub-folders) must
      (the time is optional: "Version v0.9.0 · 1 Nov 2026 · Release Slice 9 · ...");
   2. end with its change log: the last "## " heading is "## Change log" (a number before it is
      fine), holding the table "| Version | Date | Release | What changed | By |" with one row or
-     more, each row's first cell a version such as v6.1.1.
+     more, each row's first cell a version such as v6.1.1. A line may come before the table;
+     nothing but table rows after it. Lines inside fenced code (``` or ~~~) are never headings.
 
     python3 scripts/check_doc_versions.py [--root DIR]   exit 0 when all pass, 1 with the list
 
@@ -31,6 +32,7 @@ VERSION_LINE = re.compile(
     re.ASCII,
 )
 H2 = re.compile(r"^##\s+\S")
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")  # CommonMark: up to 3 spaces, then 3+ ` or ~
 LOG_HEADING = re.compile(r"^##\s+(?:\d+(?:\.\d+)*\.?\s+)?Change log\s*$", re.IGNORECASE)
 LOG_COLUMNS = ["Version", "Date", "Release", "What changed", "By"]
 ROW_VERSION = re.compile(r"^v\d+\.\d+\.\d+$", re.ASCII)
@@ -50,12 +52,47 @@ def _cells(line: str) -> list[str]:
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
+def _closes(line: str, fence: str) -> bool:
+    """A closing fence: the opening's character, at least as long, nothing after it."""
+    m = FENCE.match(line)
+    return (
+        m is not None
+        and m.group(1)[0] == fence[0]
+        and len(m.group(1)) >= len(fence)
+        and not line[m.end() :].strip()
+    )
+
+
+def _unfenced(lines: list[str]) -> list[int]:
+    """Indices of the lines outside fenced code blocks (a fence left open runs to the end)."""
+    out, fence = [], ""
+    for i, ln in enumerate(lines):
+        if fence:
+            fence = "" if _closes(ln, fence) else fence
+        elif m := FENCE.match(ln):
+            fence = m.group(1)
+        else:
+            out.append(i)
+    return out
+
+
+def _table(body: list[str]) -> list[str] | None:
+    """The change log's table: from its first row to the end, every line a row (trailing blank
+    lines aside), or None when there is no table or something else follows it."""
+    rows = [i for i, ln in enumerate(body) if ln.lstrip().startswith("|")]
+    if not rows:
+        return None
+    end = max(i for i, ln in enumerate(body) if ln.strip()) + 1
+    table = body[rows[0] : end]
+    return table if all(ln.lstrip().startswith("|") for ln in table) else None
+
+
 def _log_ok(lines: list[str]) -> bool:
-    heads = [i for i, ln in enumerate(lines) if H2.match(ln)]
+    heads = [i for i in _unfenced(lines) if H2.match(lines[i])]
     if not heads or not LOG_HEADING.match(lines[heads[-1]]):
         return False  # no change log, or another section after it
-    table = [ln for ln in lines[heads[-1] + 1 :] if ln.lstrip().startswith("|")]
-    if len(table) < 3 or _cells(table[0]) != LOG_COLUMNS:
+    table = _table(lines[heads[-1] + 1 :])
+    if table is None or len(table) < 3 or _cells(table[0]) != LOG_COLUMNS:
         return False
     if not all(SEPARATOR.match(c) for c in _cells(table[1])):
         return False

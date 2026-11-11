@@ -105,6 +105,47 @@ def test_a_missing_or_malformed_change_log_fails(tail: str) -> None:
     assert got and "change log" in got[-1]
 
 
+@pytest.mark.parametrize(
+    "tail",
+    [
+        # a change log only inside a code block (``` or ~~~, longer fences too) is no change log
+        f"## Example\n\n```markdown\n{LOG}```\n",
+        f"## Example\n\n~~~\n{LOG}~~~\n",
+        f"## Example\n\n````md\n```\n{LOG}```\n````\n",
+        # a fence left open swallows everything after it
+        f"## Example\n\n```\nnever closed\n\n{LOG}",
+        # the change log must be the last thing: no prose, code or second table after its table
+        f"{LOG}\nOne more thing.\n",
+        f"{LOG}\n```\n## a shell comment\n```\n",
+        f"{LOG}\n{HEAD}| v1.0.0 | 1 Nov 2026 | R1 | x | y |\n",
+    ],
+    ids=["fenced", "tilde", "long-fence", "unclosed", "prose-after", "code-after", "two-tables"],
+)
+def test_a_change_log_in_a_code_block_or_not_last_fails(tail: str) -> None:
+    """R6.1 review L3: headings inside fenced code are not headings, and the log ends the file."""
+    got = cdv.problems(f"{LINE}\n\n# T\n\nBody.\n\n{tail}")
+    assert got and "change log" in got[-1]
+
+
+@pytest.mark.parametrize(
+    "middle",
+    [
+        "```bash\n## a shell comment, not a heading\necho hi\n```\n\n",
+        "~~~\n## Change log\n| not | the | log |\n~~~\n\n",
+        "  ```\n## indented fence\n  ```\n\n",
+    ],
+    ids=["shell-comment", "fake-log", "indented"],
+)
+def test_headings_inside_code_blocks_before_the_change_log_are_ignored(middle: str) -> None:
+    assert cdv.problems(f"{LINE}\n\n# T\n\n## Steps\n\n{middle}{LOG}") == []
+    assert cdv.problems(f"{LINE}\n\n# T\n\n## Steps\n\n{middle}{LOG}\n\n") == []
+
+
+def test_a_line_before_the_change_log_table_is_fine() -> None:
+    log = LOG.replace("## Change log\n\n", "## Change log\n\nEvery edition of this plan:\n\n")
+    assert cdv.problems(f"{LINE}\n\n# T\n\n{log}") == []
+
+
 def test_a_numbered_change_log_heading_is_fine() -> None:
     assert (
         cdv.problems(f"{LINE}\n\n# T\n\n{LOG.replace('## Change log', '## 14. Change log')}") == []

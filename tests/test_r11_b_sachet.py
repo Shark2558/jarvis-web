@@ -192,3 +192,83 @@ async def test_the_job_stops_fetching_at_its_soft_deadline() -> None:
     await slow._owner(UID, sachet.Counts())  # noqa: SLF001
     assert sum(1 for u in fetcher.urls() if u == SACHET_CAP_URL) == 2
     assert (await outside.read(UID)).sachet.queue  # the rest waits for the next run
+
+
+def _variant(name: str, ident: str, *, msg: str = "Alert", refs: str = "", **swap: str) -> bytes:
+    raw = fixture(name).decode()
+    old = raw.split("<cap:identifier>")[1].split("</cap:identifier>")[0]
+    raw = raw.replace(old, ident).replace(
+        "<cap:msgType>Alert</cap:msgType>", f"<cap:msgType>{msg}</cap:msgType>"
+    )
+    if refs:
+        raw = raw.replace(
+            "<cap:scope>Public</cap:scope>",
+            "<cap:scope>Public</cap:scope>\n  "
+            f"<cap:references>Example-SDMA,{refs},x</cap:references>",
+        )
+    for a, b in swap.items():
+        raw = raw.replace(
+            f"<cap:{a.split('_')[0]}>{a.split('_')[1]}<", f"<cap:{a.split('_')[0]}>{b}<"
+        )
+    return raw.encode()
+
+
+async def _second_round(
+    fetcher: object, clock: object, job: object, *caps: tuple[str, bytes]
+) -> None:
+    feed = fixture("b_sachet_rss.xml")
+    for i, (gid, body) in enumerate(caps):
+        feed = feed.replace(f"179430000000010{i + 1}".encode(), gid.encode())
+        fetcher.caps[gid] = body  # type: ignore[attr-defined]
+    fetcher.answers[KERALA] = feed  # type: ignore[attr-defined]
+    clock.at += timedelta(minutes=10)  # type: ignore[attr-defined]
+    await job.run(())  # type: ignore[attr-defined]
+
+
+async def test_an_update_rings_again_only_when_it_got_worse() -> None:
+    _, notifier, _, clock, outside, fetcher, job, _ = await _setup()
+    await job.run(())
+    before = len(notifier.calls)
+    same = _variant("b_cap_geo_landslide.xml", "IN-1794300000000201_1", msg="Update",
+                    refs="IN-1794300000000102_1")  # fmt: skip
+    worse = _variant("b_cap_met_severe.xml", "IN-1794300000000202_1", msg="Update",
+                     refs="IN-1794300000000101_1", severity_Severe="Extreme")  # fmt: skip
+    await _second_round(
+        fetcher, clock, job, ("1794300000000201", same), ("1794300000000202", worse)
+    )
+    new = _texts(notifier)[before:]
+    assert new == [
+        (
+            "disaster_alert",
+            "Urgent: Thunderstorm warning for Ernakulam until 18:00 (SACHET). Open JARVIS.",
+        )
+    ]
+    kept = (await outside.read(UID)).sachet.warnings
+    assert {w.ident for w in kept} >= {"IN-1794300000000201_1", "IN-1794300000000202_1"}
+
+
+async def test_a_series_of_nowcasts_within_three_hours_is_told_once() -> None:
+    _, notifier, _, clock, _, fetcher, job, _ = await _setup()
+    await job.run(())
+    before = len(notifier.calls)
+    again = _variant("b_cap_met_severe.xml", "IN-1794300000000301_1")
+    await _second_round(fetcher, clock, job, ("1794300000000301", again))
+    assert len(notifier.calls) == before
+    clock.at += timedelta(hours=3)
+    later = _variant("b_cap_met_severe.xml", "IN-1794300000000302_1")
+    await _second_round(fetcher, clock, job, ("1794300000000302", later))
+    assert len(notifier.calls) == before + 1
+
+
+async def test_test_or_private_messages_and_expired_ones_are_not_told() -> None:
+    fetcher = sachet_fetcher()
+    fetcher.caps["1794300000000101"] = _variant(
+        "b_cap_met_severe.xml", "IN-1794300000000101_1"
+    ).replace(b"<cap:status>Actual</cap:status>", b"<cap:status>Test</cap:status>")
+    fetcher.caps["1794300000000102"] = _variant(
+        "b_cap_geo_landslide.xml", "IN-1794300000000102_1"
+    ).replace(b"2026-11-10T18:00:00+05:30", b"2026-11-10T10:00:00+05:30")
+    _, notifier, _, _, _, _, job, _ = await _setup(fetcher=fetcher)
+    got = await job.run(())
+    assert got["ignored"] == 1 and got["expired"] == 1
+    assert not any("Thunderstorm" in t or "Landslide" in t for _, t in _texts(notifier))

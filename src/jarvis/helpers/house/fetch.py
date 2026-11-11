@@ -88,6 +88,9 @@ async def _read(r: httpx.Response, cap: int) -> bytes:
 
 
 class HttpFetcher:
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
+        self._transport = transport  # tests only (httpx.MockTransport); None: the network
+
     async def get(
         self,
         url: str,
@@ -103,7 +106,7 @@ class HttpFetcher:
         try:
             async with asyncio.timeout(limit):
                 async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(limit), follow_redirects=False
+                    timeout=httpx.Timeout(limit), follow_redirects=False, transport=self._transport
                 ) as client:
                     async with client.stream(
                         "GET", target, params=dict(params or {}), headers=sent

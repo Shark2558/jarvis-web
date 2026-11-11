@@ -254,3 +254,31 @@ async def test_the_view_for_the_tab() -> None:
     assert "SACHET app, SMS and cell broadcast" in v["outside"]["official_first"]
     _, svc2, *_ = _built(keyring_on=False)
     assert (await svc2.view(UID))["outside"]["off"].startswith("Weather and alerts are off")
+
+
+async def test_the_brief_says_the_weather_and_an_outage() -> None:
+    from jarvis.helpers.house.models import WeatherSummary
+
+    p, svc, *_ = _built()
+    await svc.set_place(UID, Place(**PLACE))
+    summary = WeatherSummary(day="2026-11-10", t_max=31.0, rain_from="15:00", at="x")
+
+    def down(o: Any) -> Any:
+        return o.model_copy(
+            update={
+                "weather": o.weather.model_copy(update={"summary": summary}),
+                "sachet": o.sachet.model_copy(update={"fail_since": "2026-11-10T06:00:00+00:00"}),
+            }
+        )
+
+    await svc.outside.change(UID, down)
+    tz = __import__("zoneinfo").ZoneInfo("Asia/Kolkata")
+    outside = next(c for c in p.brief if c.name == "outside")
+    lines = await outside.lines(UID, tz, date(2026, 11, 10))
+    assert lines == [
+        "Weather: up to 31 °C, rain likely after 15:00 · "
+        "Weather data by Open-Meteo.com (CC BY 4.0)",
+        "Can't reach SACHET since 11:30: the official SACHET app and SMS still warn you.",
+    ]
+    weather = await _call(p, "weather_now")
+    assert weather["summary"]["rain_from"] == "15:00" and weather["district"] == "Ernakulam"

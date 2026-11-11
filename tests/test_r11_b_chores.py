@@ -12,7 +12,7 @@ import pytest
 from r11_fakes import NOON_IST, UID, Clock
 from r11_fakes_b import Rules, house_ctx
 
-from jarvis.helpers.house import chores, upkeep
+from jarvis.helpers.house import chores, upkeep, words
 from jarvis.helpers.house.models import Chore, Upkeep
 from jarvis.helpers.house.store import HouseStore
 from jarvis.notify.ports import Delivery
@@ -178,5 +178,53 @@ async def test_the_claims_hold_hashes_only() -> None:
     clock.at = NOON_IST
     await chores.ChoresJob(hc, store).run(())
     told = [d for p, d in docs._data.items() if "house_told/" in p]  # noqa: SLF001
-    assert len(told) == 1 and "NEEDLE" not in str(told) and set(told[0]) == {"uid", "tag", "at"}
+    assert len(told) == 1 and "NEEDLE" not in str(told)
+    assert set(told[0]) == {"uid", "tag", "at", "sent"}  # the lease (code review M3)
     assert await store.sweep(UID, NOON_IST + timedelta(days=31)) == 1
+
+
+# ---- code review M1, M2 and L11 ------------------------------------------------------------------
+def test_done_twice_in_one_period_moves_the_turn_once() -> None:
+    c = chores.new_chore(cid="0000000a", label="Dishes", freq="daily", today=TODAY,
+                         members=("A", "B", "C"))  # fmt: skip
+    once = chores.mark_done(c, TODAY)
+    assert chores.mark_done(once, TODAY) == once  # a double tap, or "done" said twice
+    assert chores.whose(chores.mark_done(once, TODAY), TODAY + timedelta(1)) == "B"
+    weekly = chores.new_chore(cid="0000000b", label="Bins", freq="weekly", days=(0,),
+                              today=TODAY, members=("A", "B", "C"))  # fmt: skip
+    monday = date(2026, 11, 16)
+    w1 = chores.mark_done(weekly, monday)
+    assert chores.mark_done(w1, monday + timedelta(1)) == w1  # Tuesday: still Monday's turn
+    assert chores.mark_done(w1, monday + timedelta(7)).turn != w1.turn  # next Monday: new period
+
+
+async def test_a_chore_added_after_its_time_first_reminds_next_period() -> None:
+    from jarvis.helpers.house.brief import HousePending
+    from jarvis.helpers.house.service import HouseService
+    from jarvis.helpers.house.store import OutsideStore
+
+    hc, notifier, docs, clock = house_ctx()  # 12:00 on Tuesday 10 Nov, his time
+    store = HouseStore(docs, prefix=hc.prefix)
+    svc = HouseService(hc, store, OutsideStore(docs, hc.keyring, prefix=hc.prefix))
+    daily = await svc.add_chore(UID, label="Dishes", freq="daily", at="09:00")
+    weekly = await svc.add_chore(UID, label="Bins", freq="weekly", days=["tue", "fri"], at="09:00")
+    every = await svc.add_chore(UID, label="Plants", freq="every", every=3, at="08:00")
+    later = await svc.add_chore(UID, label="Laundry", freq="daily", at="18:00")
+    assert (daily.start, weekly.start, every.start, later.start) == (
+        "2026-11-11", "2026-11-13", "2026-11-13", "2026-11-10",
+    )  # fmt: skip
+    job = chores.ChoresJob(hc, store)
+    await job.run(())
+    assert notifier.calls == []  # nothing "late" for what he has just entered
+    pending = await HousePending(svc).pending(UID, clock.at)
+    assert [i.label for i in pending] == ["Chore: Laundry"]
+    clock.at += timedelta(hours=21)  # 09:00 on Wednesday
+    await job.run(())
+    assert [t for _, _, t, _ in notifier.calls] == [words.chore("Dishes")]
+
+
+def test_upkeep_every_n_months_from_29_february() -> None:
+    leap = upkeep.new_upkeep(cid="0000000c", label="Gas pipe check", every=12, unit="months",
+                             last_done=date(2028, 2, 29))  # fmt: skip
+    assert upkeep.due_date(leap) == date(2029, 2, 28)
+    assert upkeep.add_months(date(2028, 2, 29), 48) == date(2032, 2, 29)

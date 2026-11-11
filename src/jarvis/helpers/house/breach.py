@@ -8,10 +8,12 @@ read email", `gmail_*`) and "Weather and alerts" row (`breach_*`) aren't Never (
 be read: no read):
 - one Gmail search restricted to the fixed senders' domains (`SENDERS`, newer than 2 days) and
   each hit's headers only (`format=metadata`: From, Subject, Authentication-Results);
-- a mail counts only when its From address is a fixed sender's AND Gmail's own top-most
-  Authentication-Results says dkim=pass or dmarc=pass aligned with that domain (the parcels
-  reader's `authenticated`); anyone can write a From line. The subject is used only to tell a
-  notice from a sign-up mail ("verify your address") and is never stored, logged or sent;
+- a mail counts only when its From address is a fixed sender's (that exact host, no subdomain;
+  security review L2) AND the first Authentication-Results header is Gmail's own (authserv-id
+  `mx.google.com`, security review L1) and says dkim=pass or dmarc=pass aligned with that domain
+  (the parcels reader's `authenticated`); anyone can write a From line or a header below Gmail's.
+  The subject is used only to tell a notice from a sign-up mail ("verify your address") and is
+  never stored, logged or sent;
 - one `breach_notice` per service with new notices: "A breach notice from Have I Been Pwned
   arrived. Open it in Gmail and change that password, Sir." Each message is claimed (a hash of
   its id) before the send and released when no channel took it;
@@ -19,19 +21,21 @@ be read: no read):
 It also sweeps Part B's claims older than 30 days (every owner, every day).
 The sender addresses are UNVERIFIED until a real notice is seen in his mail (an owner check):
 HIBP's support pages name noreply@haveibeenpwned.com (DKIM-signed); Mozilla Monitor's is a guess
-limited to its own subdomain, so a wrong guess means "no alert", never a false one.
+limited to the exact host monitor.mozilla.org, so a wrong guess means "no alert", never a false
+one.
 """
 
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from email.utils import parseaddr
 from typing import Any
 
 from jarvis.helpers.house import words
-from jarvis.helpers.house.guard import Counts, allowed, audit
+from jarvis.helpers.house.guard import Counts, allowed, audit, tally
 from jarvis.helpers.house.models import Outside
 from jarvis.helpers.house.store import HouseStore, OutsideOff, OutsideStore
 from jarvis.helpers.ports import HelperContext
@@ -52,6 +56,8 @@ MAX_SCAN = 20
 READ_PARALLEL = 5
 _ID_OK = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
 SKIP_WORDS = ("verify", "confirm your", "welcome", "unsubscribe")
+GMAIL_AUTHSERV = "mx.google.com"  # the authserv-id Gmail stamps on mail it received
+_AUTHSERV = re.compile(r"^\s*([^\s;]+)(?:\s+\d+)?\s*;")
 
 
 @dataclass(frozen=True)
@@ -76,11 +82,15 @@ def gmail_query(days: int) -> str:
 def _sender_of(address: str) -> Sender | None:
     local_part, _, host = address.rpartition("@")
     for s in SENDERS:
-        if (host == s.domain or host.endswith("." + s.domain)) and (
-            not s.locals or local_part in s.locals
-        ):
+        if host == s.domain and (not s.locals or local_part in s.locals):
             return s
     return None
+
+
+def _gmails(results: str | None) -> bool:
+    """The first Authentication-Results is Gmail's own (its authserv-id leads the header)."""
+    m = _AUTHSERV.match(results or "")
+    return m is not None and m.group(1).lower() == GMAIL_AUTHSERV
 
 
 def notice_from(message: dict[str, Any]) -> Sender | None:
@@ -91,7 +101,10 @@ def notice_from(message: dict[str, Any]) -> Sender | None:
     h = headers_of(payload)
     address = loose_address(parseaddr(one_line(h.get("from", ""), 600))[1])
     s = _sender_of(address) if address else None
-    if s is None or not authenticated(h.get("authentication-results"), address.rpartition("@")[2]):
+    results = h.get("authentication-results")  # the first one: Gmail prepends its own
+    if s is None or not _gmails(results):
+        return None
+    if not authenticated(results, address.rpartition("@")[2]):
         return None
     subject = one_line(h.get("subject", ""), 300).lower()
     if any(w in subject for w in SKIP_WORDS) or not any(w in subject for w in s.words):
@@ -182,17 +195,26 @@ class BreachJob:
 
     async def _tell(self, uid: str, s: Sender, ids: list[str], n: Counts) -> int:
         now = self._ctx.now()
-        new = [mid for mid in ids if await self._store.claim(uid, "breach", mid, now)]
+        new = [mid for mid in ids if await self._store.take(uid, "breach", mid, now) == "new"]
         if not new:
             return 0
-        got = await self._ctx.sender.send(uid, "breach_notice", words.breach(s.service), due=now)
-        if got.retry:
-            for mid in new:
+        try:
+            got = await self._ctx.sender.send(
+                uid, "breach_notice", words.breach(s.service), due=now
+            )
+        except BaseException:
+            await asyncio.shield(self._settle(uid, new, went=False))
+            raise
+        went = tally(got, n)
+        await self._settle(uid, new, went=went)
+        return len(new) if went else 0
+
+    async def _settle(self, uid: str, ids: list[str], *, went: bool) -> None:
+        for mid in ids:
+            if went:
+                await self._store.done(uid, "breach", mid)
+            else:
                 await self._store.release(uid, "breach", mid)
-            n.add("retry")
-            return 0
-        n.add("sent" if got.counted else "dropped")
-        return len(new)
 
 
 def _checked(cur: Outside, ctx: HelperContext, sent: int) -> Outside:

@@ -7,7 +7,8 @@
   the built-in defaults, as the DigiLocker inbox job does.
 - `audit(ctx, job, kind)`: one content-free line in the audit chain (agent `helpers`, the job's
   name, the alert kind only) when a background job read his own data (Gmail).
-- `Counts`: a job's result counts (class names and counts only ever reach the log).
+- `Counts`: a job's result counts (class names and counts only ever reach the log); `tally`
+  counts one send's result and says whether it went (False: no channel took it, try again).
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from jarvis.core.guardrails import ActionRisk
+from jarvis.helpers.gate import SendResult
 from jarvis.helpers.ports import HelperContext
 from jarvis.logging import get_logger
 from jarvis.tools.policy import Effect, Policy
@@ -61,4 +63,11 @@ class Counts:
         return {**{k: 0 for k in keys}, **self.values}
 
 
-__all__ = ["AGENT", "Counts", "allowed", "audit"]
+def tally(got: SendResult, n: Counts) -> bool:
+    """Count one send's result; True when it was decided (sent, held or dropped by his rules),
+    False when no channel took it (`retry`: the claim is released and the next run tries)."""
+    n.add("retry" if got.retry else "sent" if got.counted else "dropped")
+    return not got.retry
+
+
+__all__ = ["AGENT", "Counts", "allowed", "audit", "tally"]

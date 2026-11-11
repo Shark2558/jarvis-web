@@ -4,20 +4,21 @@ D9, D12, D13; I0 seam 8). Fixed templates only, at most 3 lines a contributor:
 
 - `ChoresBrief` ("house"): "Chores today: Dishes 21:00, Laundry 18:00." and the upkeep due soon,
   today or overdue ("Home upkeep: AC service due today."). Rota names are left out.
-- `OutsideBrief` ("outside"): the SACHET warnings still active for his district, the gravest
-  first ("Urgent: Landslide warning for Ernakulam until 18:00 (SACHET)."), then today's weather
-  line with Open-Meteo's attribution, or that SACHET can't be reached and since when.
+- `OutsideBrief` ("outside"): the SACHET warnings still in force for his district (`feed.live`:
+  expired ones and ones a day old with no expiry are left out), the gravest first ("Urgent:
+  Landslide warning for Ernakulam until 18:00 (SACHET)."), then today's weather line with
+  Open-Meteo's attribution. An outage (SACHET's feed or its CAP messages; Open-Meteo) always
+  keeps its line, so the warnings take what room is left (code review L7).
 - `HousePending` ("house"): overdue and due upkeep, and today's chores not done yet.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime, tzinfo
-from zoneinfo import ZoneInfo
 
-from jarvis.helpers.house import chores, upkeep, words
-from jarvis.helpers.house.models import Outside
-from jarvis.helpers.house.sachet import RANK
+from jarvis.helpers.house import chores, feed, upkeep, words
+from jarvis.helpers.house.cap import RANK
+from jarvis.helpers.house.models import Outside, zone_of
 from jarvis.helpers.house.service import HouseService
 from jarvis.helpers.ports import MAX_BRIEF_LINES, PendingItem, Urgency
 from jarvis.notify.quiet import local
@@ -60,7 +61,7 @@ class ChoresBrief:
 def _warning_lines(o: Outside, now: datetime, tz: tzinfo) -> list[str]:
     if o.place is None:
         return []
-    ranked = sorted(o.sachet.warnings, key=lambda w: -RANK.get(w.kind, 0))
+    ranked = sorted(feed.live(o.sachet.warnings, now), key=lambda w: -RANK.get(w.kind, 0))
     here = now.astimezone(tz)
     out = []
     for w in ranked:
@@ -81,16 +82,28 @@ class OutsideBrief:
         o = await self._svc.read_outside(uid)
         if o is None or o.place is None:
             return []
-        now = self._svc.ctx.now()
-        last: list[str] = []
+        outages = _outages(o, tz)
+        room = MAX_BRIEF_LINES - len(outages)
+        warnings = _warning_lines(o, self._svc.ctx.now(), tz)[:room]
         s = o.weather.summary
-        if s is not None and s.day == day.isoformat():
-            last.append(words.brief_weather(s.t_max, s.rain_from))
-        if o.sachet.fail_since is not None:
-            since = datetime.fromisoformat(o.sachet.fail_since).astimezone(tz)
-            last.append(words.brief_outage("SACHET", since.strftime("%H:%M")))
-        warnings = _warning_lines(o, now, tz)[: MAX_BRIEF_LINES - min(1, len(last))]
-        return [*warnings, *last][:MAX_BRIEF_LINES]
+        weather = []
+        if s is not None and s.day == day.isoformat() and o.weather.fail_since is None:
+            weather = [words.brief_weather(s.t_max, s.rain_from)][: room - len(warnings)]
+        return [*warnings, *weather, *outages]
+
+
+def _hhmm(iso: str, tz: tzinfo) -> str:
+    return datetime.fromisoformat(iso).astimezone(tz).strftime("%H:%M")
+
+
+def _outages(o: Outside, tz: tzinfo) -> list[str]:
+    out = []
+    sachet = [x for x in (o.sachet.fail_since, o.sachet.cap_fail_since) if x is not None]
+    if sachet:
+        out.append(words.brief_outage("SACHET", _hhmm(min(sachet, key=datetime.fromisoformat), tz)))
+    if o.weather.fail_since is not None:
+        out.append(words.brief_weather_outage(_hhmm(o.weather.fail_since, tz)))
+    return out
 
 
 class HousePending:
@@ -106,7 +119,7 @@ class HousePending:
         for x in await self._svc.store.upkeep(uid):
             urgency = _URGENCY.get(upkeep.state(x, today))
             if urgency is not None:
-                due = datetime.combine(upkeep.due_date(x), upkeep.AT, tzinfo=ZoneInfo(tz))
+                due = datetime.combine(upkeep.due_date(x), upkeep.AT, tzinfo=zone_of(tz))
                 items.append(PendingItem("house", f"Upkeep: {x.label}", urgency, due, ref=x.id))
         for c in await self._svc.store.chores(uid):
             if chores.occurs_on(c, today) and c.last_done != today.isoformat():

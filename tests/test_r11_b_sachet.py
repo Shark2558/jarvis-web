@@ -184,13 +184,22 @@ async def test_off_without_a_place_a_keyring_or_his_row() -> None:
     assert (await job3.run(()))["skipped"] == 1 and fetcher3.calls == []
 
 
-async def test_the_job_stops_fetching_at_its_soft_deadline() -> None:
-    ticks = iter([0.0, 0.0, 1.0, 2.0, 8.5, 9.0])
-    _, notifier, _, _, outside, fetcher, _, store = await _setup()
+async def test_the_job_stops_fetching_at_the_end_of_its_slot() -> None:
+    from jarvis.helpers.house.fetch import OutsideClock
+
+    t = [0.0]
+    _, _, _, _, outside, fetcher, _, store = await _setup()
+    real = fetcher.get
+
+    async def slow(url: str, **kw: object) -> object:
+        t[0] += 2.5  # every read takes 2.5 s of SACHET's 7 s slot
+        return await real(url, **kw)  # type: ignore[arg-type]
+
+    fetcher.get = slow  # type: ignore[method-assign]
     hc = house_ctx()[0]
-    slow = sachet.DisasterJob(hc, outside, store, fetcher, clock=lambda: next(ticks, 99.0))
-    await slow._owner(UID, sachet.Counts())  # noqa: SLF001
-    assert sum(1 for u in fetcher.urls() if u == SACHET_CAP_URL) == 2
+    job = sachet.DisasterJob(hc, outside, store, fetcher, clock=OutsideClock(lambda: t[0]))
+    await job.run(())
+    assert sum(1 for u in fetcher.urls() if u == SACHET_CAP_URL) == 2  # at 2.5 s and 5 s
     assert (await outside.read(UID)).sachet.queue  # the rest waits for the next run
 
 

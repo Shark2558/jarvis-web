@@ -25,6 +25,7 @@ from jarvis.helpers.house.models import (
     MAX_LEAD_DAYS,
     MAX_MEMBERS,
     MAX_UPKEEP_DAYS,
+    MAX_UPKEEP_MONTHS,
     MEMBER_MAX,
     WEEKDAYS,
     clean_label,
@@ -32,7 +33,7 @@ from jarvis.helpers.house.models import (
 from jarvis.helpers.house.service import HouseService, chore_view, upkeep_view, weekday_numbers
 from jarvis.helpers.house.store import OFF_WORDS
 from jarvis.helpers.sources import OPEN_METEO_ATTRIBUTION, SACHET_ATTRIBUTION
-from jarvis.tools.base import Tool
+from jarvis.tools.base import CheckFn, SummaryFn, Tool, ToolFn
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
@@ -86,12 +87,12 @@ def _check_upkeep(a: dict[str, Any]) -> None:
     unit = a.get("unit", "days")
     if unit not in ("days", "months"):
         raise ValueError("unit is days or months.")
-    _int(a, "every", 1, MAX_UPKEEP_DAYS if unit == "days" else 120, default=0)
+    _int(a, "every", 1, MAX_UPKEEP_DAYS if unit == "days" else MAX_UPKEEP_MONTHS, default=0)
     _int(a, "lead_days", 0, MAX_LEAD_DAYS)
     _day(a, "last_done")
 
 
-def _check_ref(key: str) -> Any:
+def _check_ref(key: str) -> CheckFn:
     def check(a: dict[str, Any]) -> None:
         clean_label(a.get(key), limit=LABEL_MAX, what="Which one")
         if key == "item":
@@ -195,7 +196,7 @@ class HouseTools:
             "district": o.place.district,
             "warnings": warnings,
             "checked_at": sa.checked_at,
-            "unavailable_since": sa.fail_since,
+            "unavailable_since": sa.fail_since or sa.cap_fail_since,
         }
 
     async def breach_status(self, a: dict[str, Any]) -> Any:
@@ -206,9 +207,13 @@ class HouseTools:
         return {**base, "on": o.breach_on, **o.breach.model_dump(mode="json")}
 
 
-def _summary(template: str, *keys: str) -> Any:
+def _summary(template: str, *keys: str, defaults: dict[str, str] | None = None) -> SummaryFn:
+    """The card's text; an argument left out shows its default (code review L8: "(daily, )")."""
+    base = defaults or {}
+
     def card(a: dict[str, Any]) -> str:
-        return one_line(template.format(**{k: one_line(a.get(k, ""), 60) for k in keys}), 200)
+        values = {k: one_line(a.get(k) or base.get(k, ""), 60) for k in keys}
+        return one_line(template.format(**values), 200)
 
     return card
 
@@ -217,7 +222,7 @@ def _schema(props: dict[str, Any], required: tuple[str, ...] = ()) -> dict[str, 
     return {"type": "object", "properties": props, "required": list(required)}
 
 
-def _r1(name: str, description: str, fn: Any, *, trusted: bool = True) -> Tool:
+def _r1(name: str, description: str, fn: ToolFn, *, trusted: bool = True) -> Tool:
     return Tool(name, description, _schema({}), R1, fn, agent=AGENT, trusted_output=trusted)
 
 
@@ -239,7 +244,7 @@ UPKEEP_PROPS: dict[str, Any] = {
 
 
 def _r2(name: str, description: str, props: dict[str, Any], required: tuple[str, ...],
-        fn: Any, check: Any, card: Any, activity: str) -> Tool:  # fmt: skip
+        fn: ToolFn, check: CheckFn, card: SummaryFn, activity: str) -> Tool:  # fmt: skip
     return Tool(
         name,
         description,
@@ -267,7 +272,13 @@ def _chore_tools(t: HouseTools) -> tuple[Tool, ...]:
             ("label", "freq"),
             t.chore_add,
             _check_chore,
-            _summary("Add the chore '{label}' ({freq}, {at})", "label", "freq", "at"),
+            _summary(
+                "Add the chore '{label}' ({freq}, {at})",
+                "label",
+                "freq",
+                "at",
+                defaults={"at": "09:00"},
+            ),  # fmt: skip
             "Added a chore",
         ),
         _r2(

@@ -1,14 +1,15 @@
 # src/jarvis/helpers/house/cap.py
 """Reading NDMA SACHET's CAP 1.2 messages safely (docs/plans/r11-free-helpers.md D13, D20).
 
-- `parse_xml(raw, limit=)`: the standard library's ElementTree (expat), only AFTER refusing what
-  it should never see: more than `limit` bytes, anything that isn't UTF-8 (a declared other
-  encoding, UTF-16), and any `<!DOCTYPE` or `<!ENTITY` (no DTD, so no entity expansion and no
-  external entity can exist); a very large tree is refused too. No new dependency.
+- `parse_xml(raw, limit=)` (`xmlsafe`): strict UTF-8 bytes with no DTD, then an expat parser
+  whose every DTD handler raises (two layers, security review M1). No new dependency.
 - `parse_cap`: the CAP 1.2 alert (its namespace required): identifier, status, msgType, scope,
   references and ONE info block (English first: SACHET sends en-IN and the state's language)
-  with its areas (description, polygons, geocodes). Every text is outside data: cleaned, capped,
-  and used only to decide; a headline or instruction is kept only for the panel (fenced there).
+  with its onset and areas (description, polygons, geocodes). Every text is outside data:
+  cleaned, capped, and used only to decide; a headline or instruction is kept only for the panel
+  (fenced there). An area's description is read up to `AREA_TEXT_MAX` (4 KB: IMD lists many
+  districts in one area, code review M4) and is never shown; a polygon over `MAX_POINTS` points
+  is rejected, never cut (security review L3).
 - `kind_for` (D13): any non-Met category, or Met Extreme -> `disaster_alert` (urgent: it rings
   at night); Met Severe -> `weather_warning` (held at night); Met Moderate / Minor ->
   `weather_note`.
@@ -20,7 +21,6 @@
 
 from __future__ import annotations
 
-import codecs
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -28,43 +28,16 @@ from datetime import datetime
 
 from jarvis.alerts import AlertKind
 from jarvis.helpers.house.models import OUTSIDE_TEXT_MAX, STATES, Place, clean_text
+from jarvis.helpers.house.xmlsafe import UnsafeXml, parse_xml
 from jarvis.helpers.sources import MAX_CAP_BYTES
 
 DISTRICT_FILTER = True
 NS = "urn:oasis:names:tc:emergency:cap:1.2"
-MAX_ELEMENTS = 5000
 MAX_INFOS, MAX_AREAS, MAX_POLYGONS, MAX_POINTS = 4, 20, 10, 2000
+AREA_TEXT_MAX = 4096  # an area's description, for matching only (never shown)
+RANK: dict[str, int] = {"weather_note": 0, "weather_warning": 1, "disaster_alert": 2}
 _ID = re.compile(r"^[A-Za-z0-9._:\-]{1,120}$")
-_DECL = re.compile(rb"^\s*<\?xml[^>]*?encoding\s*=\s*[\"']([A-Za-z0-9._\-]+)[\"']", re.I)
-_UTF8 = frozenset({b"utf-8", b"utf8", b"us-ascii", b"ascii"})
 _STATES_NORM = tuple(" ".join(re.sub(r"[^a-z]+", " ", s.lower()).split()) for s in STATES)
-
-
-class UnsafeXml(ValueError):
-    """XML JARVIS will not parse (a DTD, an entity, too large, not UTF-8, or broken)."""
-
-
-def parse_xml(raw: bytes, *, limit: int) -> ET.Element:
-    if not raw or len(raw) > limit:
-        raise UnsafeXml("The XML is empty or too large.")
-    body = raw[len(codecs.BOM_UTF8) :] if raw.startswith(codecs.BOM_UTF8) else raw
-    try:
-        text = body.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise UnsafeXml("The XML isn't UTF-8.") from exc
-    declared = _DECL.match(body)
-    if declared is not None and declared.group(1).lower() not in _UTF8:
-        raise UnsafeXml("The XML declares another encoding.")
-    low = text.lower()
-    if "<!doctype" in low or "<!entity" in low:
-        raise UnsafeXml("The XML has a DOCTYPE or an ENTITY.")
-    try:
-        root = ET.fromstring(body)
-    except ET.ParseError as exc:
-        raise UnsafeXml("The XML is broken.") from exc
-    if sum(1 for _ in root.iter()) > MAX_ELEMENTS:
-        raise UnsafeXml("The XML is too large.")
-    return root
 
 
 @dataclass(frozen=True)
@@ -86,6 +59,7 @@ class Info:
     headline: str
     instruction: str
     areas: tuple[Area, ...]
+    onset: datetime | None = None  # its onset, else its effective time
 
 
 @dataclass(frozen=True)
@@ -118,8 +92,11 @@ def _when(value: str) -> datetime | None:
 
 def parse_polygon(value: str) -> tuple[tuple[float, float], ...]:
     """CAP's "lat,lon lat,lon ..." (WGS 84, closed); () when it isn't one."""
+    pairs = value.split()
+    if len(pairs) > MAX_POINTS:
+        return ()  # never a cut (open, partial) shape
     points: list[tuple[float, float]] = []
-    for pair in value.split()[:MAX_POINTS]:
+    for pair in pairs:
         lat, sep, lon = pair.partition(",")
         try:
             p = (float(lat), float(lon))
@@ -140,7 +117,7 @@ def _area(el: ET.Element) -> Area:
     codes = tuple(
         (_text(g, "valueName", 60), _text(g, "value", 60)) for g in el.findall(_q("geocode"))[:10]
     )
-    return Area(_text(el, "areaDesc", OUTSIDE_TEXT_MAX), polys, codes)
+    return Area(_text(el, "areaDesc", AREA_TEXT_MAX), polys, codes)
 
 
 def _info(el: ET.Element) -> Info:
@@ -155,6 +132,7 @@ def _info(el: ET.Element) -> Info:
         headline=_text(el, "headline", OUTSIDE_TEXT_MAX),
         instruction=_text(el, "instruction", OUTSIDE_TEXT_MAX),
         areas=tuple(_area(a) for a in el.findall(_q("area"))[:MAX_AREAS]),
+        onset=_when(_text(el, "onset", 40)) or _when(_text(el, "effective", 40)),
     )
 
 
@@ -237,8 +215,11 @@ def matches_place(info: Info, place: Place) -> bool:
 
 
 __all__ = [
+    "AREA_TEXT_MAX",
     "DISTRICT_FILTER",
+    "MAX_POINTS",
     "NS",
+    "RANK",
     "Alert",
     "Area",
     "Info",

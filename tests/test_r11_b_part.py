@@ -233,7 +233,7 @@ async def test_the_brief_lines_are_fixed_templates() -> None:
 
 async def test_pending_items_for_top_priority() -> None:
     p, svc, *_ = _built()
-    await svc.add_chore(UID, label="Dishes", freq="daily", at="09:00")
+    await svc.add_chore(UID, label="Dishes", freq="daily", at="21:00")  # later today
     await svc.add_upkeep(UID, label="Gas pipe check", every=365, last_done=date(2025, 11, 1))
     (src,) = p.pending
     items = await src.pending(UID, NOON_IST)
@@ -282,3 +282,10 @@ async def test_the_brief_says_the_weather_and_an_outage() -> None:
     ]
     weather = await _call(p, "weather_now")
     assert weather["summary"]["rain_from"] == "15:00" and weather["district"] == "Ernakulam"
+
+
+def test_a_chore_card_shows_the_default_time_when_none_is_given() -> None:
+    p, *_ = _built()
+    card = _tool(p, "chore_add").summarize
+    assert card({"label": "Dishes", "freq": "daily"}) == "Add the chore 'Dishes' (daily, 09:00)"
+    assert card({"label": "Bins", "freq": "weekly", "at": "07:30"}).endswith("(weekly, 07:30)")

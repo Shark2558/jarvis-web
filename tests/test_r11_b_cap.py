@@ -151,3 +151,40 @@ def test_the_rss_items_and_only_digit_guids() -> None:
     assert "1794300000000101" not in [i.guid for i in sachet.parse_rss(hostile)]
     with pytest.raises(cap.UnsafeXml):
         sachet.parse_rss(b"<!DOCTYPE rss><rss/>")
+
+
+# ---- the reviews: security L3, code M4 -----------------------------------------------------------
+def test_a_polygon_over_2000_points_is_rejected_not_cut() -> None:
+    def ring(n: int) -> str:
+        return " ".join(f"{9 + i * 1e-4:.4f},76.{i % 10}" for i in range(n))
+
+    assert cap.parse_polygon(ring(cap.MAX_POINTS + 1)) == ()
+    assert len(cap.parse_polygon(ring(cap.MAX_POINTS))) == cap.MAX_POINTS
+
+
+LONG_AREAS = (
+    "Kasaragod, Kannur, Wayanad, Kozhikode, Malappuram, Palakkad, Thrissur, Idukki, Kottayam, "
+    "Alappuzha, Pathanamthitta, Kollam, Thiruvananthapuram districts of Kerala and Dakshina "
+    "Kannada, Udupi, Uttara Kannada, Kodagu, Mysuru, Chamarajanagar districts of Karnataka, and "
+    "Ernakulam district of Kerala"
+)
+
+
+def test_a_long_area_list_still_finds_his_district() -> None:
+    raw = fixture("b_cap_geo_landslide.xml").replace(
+        b"<cap:areaDesc>Ernakulam district of Kerala</cap:areaDesc>",
+        f"<cap:areaDesc>{LONG_AREAS}</cap:areaDesc>".encode(),
+    )
+    info = cap.parse_cap(raw).info
+    assert info is not None and len(info.areas[0].desc) > 200 and cap.matches_place(info, HOME)
+    huge = "Idukki " * 700 + "Ernakulam district of Kerala"  # past the 4 KB bound: not read
+    far = raw.replace(LONG_AREAS.encode(), huge.encode())
+    info = cap.parse_cap(far).info
+    assert info is not None and len(info.areas[0].desc) <= cap.AREA_TEXT_MAX
+    assert not cap.matches_place(info, HOME)
+
+
+def test_the_onset_day_and_the_rank_live_in_cap() -> None:
+    info = _info("b_cap_geo_landslide.xml")
+    assert info.onset is not None and info.onset.isoformat() == "2026-11-10T01:30:00+05:30"
+    assert cap.RANK == {"weather_note": 0, "weather_warning": 1, "disaster_alert": 2}

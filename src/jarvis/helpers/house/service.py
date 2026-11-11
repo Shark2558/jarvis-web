@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, time
 from typing import Any
 
 from jarvis.helpers.house import chores, upkeep, words
@@ -73,6 +73,9 @@ class HouseService:
     def today(self) -> date:
         return local(self.ctx.now(), self.ctx.tz).date()
 
+    def now_time(self) -> time:
+        return local(self.ctx.now(), self.ctx.tz).time()
+
     # ---- chores ---------------------------------------------------------------------------------
     async def add_chore(
         self,
@@ -94,6 +97,7 @@ class HouseService:
             days=weekday_numbers(days) if freq == "weekly" else (),
             every=every,
             members=members,
+            now_time=self.now_time(),
         )
         await self.store.change_chores(uid, lambda cs: _no_twin(cs, new))
         return new
@@ -270,6 +274,7 @@ def outside_state(o: Outside) -> dict[str, Any]:
             "checked_at": sa.checked_at,
             "ok_at": sa.ok_at,
             "fail_since": sa.fail_since,
+            "cap_fail_since": sa.cap_fail_since,
             "warnings": [
                 {
                     "kind": x.kind,

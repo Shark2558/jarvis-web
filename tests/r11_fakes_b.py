@@ -2,7 +2,8 @@
 # fakes file per part, unique names). Built on I0's shared `r11_fakes` (imported, never copied).
 #
 # - `FakeFetcher`: the outside GET port; answers fixtures by URL (Open-Meteo, the SACHET feed, one
-#   CAP per identifier), records every call, can fail or answer 304.
+#   CAP per identifier; a missing one answers 404), records every call, can fail (no answer at
+#   all) or answer 304 (with or without an ETag).
 # - `FakeGmail`: the GoogleConnector's `request` for the Gmail list and metadata reads.
 # - `Rules`: an owner's permission rows (the `OwnerRules` port), or one that can't be read.
 # - `house_ctx(...)`: I0's `ctx("house")` with a keyring (sealed place ON) unless `keyring=False`.
@@ -49,6 +50,7 @@ class FakeFetcher:
     caps: dict[str, bytes] = field(default_factory=dict)
     fail: bool = False
     not_modified: bool = False
+    bare_304: bool = False  # a 304 that carries no ETag header
     etag: str | None = '"v1"'
     calls: list[tuple[str, dict[str, str], dict[str, str]]] = field(default_factory=list)
 
@@ -68,14 +70,14 @@ class FakeFetcher:
         if "identifier" in p:
             body = self.caps.get(p["identifier"])
             if body is None:
-                raise FetchError("not found")
+                raise FetchError("not found", status=404)
         else:
             got = self.answers.get(url)
             if got is None:
                 raise FetchError("not found")
             body = got(p) if callable(got) else got
         if self.not_modified and h.get("If-None-Match") == self.etag:
-            return Fetched(304, b"", self.etag)
+            return Fetched(304, b"", None if self.bare_304 else self.etag)
         if len(body) > cap:
             raise TooLarge("too large")
         return Fetched(200, body, self.etag)

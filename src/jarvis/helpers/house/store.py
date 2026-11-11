@@ -4,8 +4,12 @@
 - `chores/{uid}` and `maintenance/{uid}`: his chores and upkeep items, plain (his own labels; no
   place, no outside text). Changed only in a transaction, so a route and a tool never race.
 - `house_told/{uid}_{key}`: a reminder's claim, `key` the SHA-256 of (uid, tag, what, when) and
-  the doc `{uid, tag, at}` only: created in a transaction BEFORE the send, released when no
-  channel took it (`SendResult.retry`), swept after 30 days. Tags: chore, upkeep, wx, cap, breach.
+  the doc `{uid, tag, at, sent}` only: taken in a transaction BEFORE the send (`sent` false),
+  marked `sent` after it, released when no channel took it (`SendResult.retry`) or the send
+  raised or was cancelled, swept after 30 days. A claim has a lease (code review M3): one older
+  than `LEASE` that was never marked sent (a run cut by the shared clock budget, a process that
+  died) is taken again, so a reminder is at least once on a cut run and once otherwise. A claim
+  without `sent` (kept before the lease) counts as sent. Tags: chore, upkeep, wx, cap, breach.
 - `outside/{uid}`: his place and the feeds' bookkeeping, sealed with the keyring purpose
   `alerts_place` (AAD `outside/{uid}/v1`). No keyring: `OutsideOff` (never kept in clear). The
   doc in clear holds only `uid`, `rev` and the blob.
@@ -13,11 +17,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel
 
@@ -27,6 +33,9 @@ from jarvis.storage.docs import Delete, Docs, DocTx, Query
 
 M = TypeVar("M", bound=BaseModel)
 CLAIM_KEEP = timedelta(days=30)
+LEASE = timedelta(minutes=15)
+Taken = Literal["new", "told", "held"]  # this run holds it | sent before | another run's, in lease
+Once = Literal["done", "again", "told", "held"]
 PURPOSE = "alerts_place"
 HOUSE_TAGS = ("chore", "upkeep")
 PLACE_TAGS = ("wx", "cap", "breach")
@@ -46,6 +55,15 @@ class OutsideOff(RuntimeError):
 
 def claim_key(uid: str, tag: str, ident: str) -> str:
     return hashlib.sha256(f"{uid}|{tag}|{ident}".encode()).hexdigest()[:40]
+
+
+def _when(value: object) -> datetime | None:
+    """A claim's aware `at`, or None (unreadable: its lease counts as over)."""
+    try:
+        got = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return got if got.tzinfo is not None else None
 
 
 def _items(raw: dict[str, Any] | None, model: type[M]) -> tuple[M, ...]:
@@ -100,20 +118,60 @@ class HouseStore:
         return await self._change(uid, self._upkeep(uid), Upkeep, MAX_UPKEEP, fn)
 
     # ---- claims ---------------------------------------------------------------------------------
-    async def claim(self, uid: str, tag: str, ident: str, at: datetime) -> bool:
-        """True when this run made the claim (send now); False when one exists (sent before)."""
+    async def take(self, uid: str, tag: str, ident: str, at: datetime) -> Taken:
+        """ "new": this run holds the claim (send now); "told": it was sent before; "held":
+        another run took it less than `LEASE` ago and hasn't finished (try again later)."""
         path = self._told(uid, claim_key(uid, tag, ident))
 
-        async def run(tx: DocTx) -> bool:
-            if await tx.get(path) is not None:
-                return False
-            tx.create(path, {"uid": uid, "tag": tag, "at": at.isoformat()})
-            return True
+        async def run(tx: DocTx) -> Taken:
+            had = await tx.get(path)
+            if had is not None:
+                if had.get("sent", True) is not False:
+                    return "told"
+                taken = _when(had.get("at"))
+                if taken is not None and at - taken < LEASE:
+                    return "held"
+            tx.set(path, {"uid": uid, "tag": tag, "at": at.isoformat(), "sent": False})
+            return "new"
 
         return await self._docs.transaction(run)
 
+    async def claim(self, uid: str, tag: str, ident: str, at: datetime) -> bool:
+        """True when this run took the claim."""
+        return await self.take(uid, tag, ident, at) == "new"
+
+    async def done(self, uid: str, tag: str, ident: str) -> None:
+        path = self._told(uid, claim_key(uid, tag, ident))
+
+        async def run(tx: DocTx) -> None:
+            had = await tx.get(path)
+            if had is not None:
+                tx.set(path, {**had, "sent": True})
+
+        await self._docs.transaction(run)
+
     async def release(self, uid: str, tag: str, ident: str) -> None:
         await self._docs.write([Delete(self._told(uid, claim_key(uid, tag, ident)))])
+
+    async def once(
+        self, uid: str, tag: str, ident: str, at: datetime, work: Callable[[], Awaitable[bool]]
+    ) -> Once:
+        """Take the claim, run `work` (True: it went), then mark it sent ("done") or release it
+        ("again"). A raised or cancelled `work` releases the claim (shielded) and re-raises."""
+        taken = await self.take(uid, tag, ident, at)
+        if taken != "new":
+            return taken
+        try:
+            went = await work()
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await asyncio.shield(self.release(uid, tag, ident))
+            raise
+        if went:
+            await self.done(uid, tag, ident)
+            return "done"
+        await self.release(uid, tag, ident)
+        return "again"
 
     async def claims(self, uid: str) -> list[tuple[str, dict[str, Any]]]:
         return await self._docs.query(Query(f"{self._prefix}house_told", where=("uid", uid)))
@@ -206,12 +264,15 @@ class OutsideStore:
 
 __all__ = [
     "CLAIM_KEEP",
+    "LEASE",
     "HOUSE_TAGS",
     "OFF_WORDS",
     "PLACE_TAGS",
     "PURPOSE",
     "HouseStore",
     "OutsideOff",
+    "Once",
     "OutsideStore",
+    "Taken",
     "claim_key",
 ]

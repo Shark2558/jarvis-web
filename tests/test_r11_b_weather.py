@@ -143,14 +143,14 @@ async def test_off_without_a_place_a_keyring_or_his_row() -> None:
     assert (await job3.run(()))["skipped"] == 1 and fetcher3.calls == []
 
 
-async def test_weather_waits_when_sachet_was_read_in_the_same_run() -> None:
+async def test_weather_no_longer_waits_for_a_sachet_read_in_the_same_run() -> None:
     _, _, _, clock, outside, fetcher, job = await _setup()
     now = clock.at.isoformat()
     await outside.change(
         UID,
         lambda o: o.model_copy(update={"sachet": o.sachet.model_copy(update={"checked_at": now})}),
     )
-    assert (await job.run(()))["deferred"] == 1 and fetcher.calls == []
+    assert (await job.run(()))["sent"] == 3 and len(fetcher.calls) == 1  # code review H1
 
 
 async def test_a_district_with_no_known_centre_and_no_coordinates_has_no_weather() -> None:
@@ -160,13 +160,15 @@ async def test_a_district_with_no_known_centre_and_no_coordinates_has_no_weather
     assert (await job.run(()))["no_point"] == 1 and fetcher.calls == []
 
 
-async def test_weather_waits_when_sachet_fetched_cap_messages_this_run() -> None:
-    from jarvis.helpers.house.fetch import OutsideSlot
+async def test_weather_waits_only_when_its_own_slot_is_spent() -> None:
+    from jarvis.helpers.house.fetch import WEATHER_SLOT_S, OutsideClock
 
     hc, _, docs, _, outside, fetcher, _ = await _setup()
-    ticks = iter([100.0, 130.0, 300.0])
-    slot = OutsideSlot(clock=lambda: next(ticks))
-    job = weather.WeatherJob(hc, outside, HouseStore(docs, prefix=hc.prefix), fetcher, slot=slot)
-    slot.mark()  # at 100 s: SACHET fetched in this run
-    assert (await job.run(()))["deferred"] == 1 and fetcher.calls == []  # 130 s: 30 s later
-    assert (await job.run(()))["sent"] == 3  # 300 s: the next run
+    t = [0.0]
+    slots = OutsideClock(lambda: t[0])
+    job = weather.WeatherJob(hc, outside, HouseStore(docs, prefix=hc.prefix), fetcher, clock=slots)
+    slots.deadline("weather")  # weather's slot began at 0 s in this run
+    t[0] = WEATHER_SLOT_S - 0.5  # half a second of it left: too little to start a fetch
+    assert (await job.run(()))["no_time"] == 1 and fetcher.calls == []
+    t[0] = 300.0  # the next run: a fresh slot
+    assert (await job.run(()))["sent"] == 3

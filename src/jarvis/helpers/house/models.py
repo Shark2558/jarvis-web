@@ -8,16 +8,20 @@
 - `Upkeep` (`maintenance/{uid}`): an item every N days or months, its last-done day and a lead.
 - `Outside` (`outside/{uid}`, sealed with `alerts_place`): his place (district, state, the
   coordinates rounded to 0.01 degrees, about 1 km), his weather thresholds, whether breach
-  notices are watched, and the feeds' bookkeeping (when checked, an outage, the SACHET items
-  seen and the warnings still active, whose outside words are kept only here, sealed).
+  notices are watched, and the feeds' bookkeeping (when checked, an outage of the feed or of its
+  CAP messages, the SACHET items seen, queued and backing off, and the warnings still active,
+  whose outside words are kept only here, sealed).
 """
 
 from __future__ import annotations
 
 import re
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from jarvis.notify.quiet import FALLBACK_TZ
 
 LABEL_MAX = 40
 MEMBER_MAX = 24
@@ -61,6 +65,14 @@ DISTRICT_CENTRES: dict[tuple[str, str], tuple[float, float]] = {
     ("Kerala", "kozhikode"): (11.26, 75.78), ("Kerala", "wayanad"): (11.61, 76.08),
     ("Kerala", "kannur"): (11.87, 75.37), ("Kerala", "kasaragod"): (12.50, 74.99),
 }  # fmt: skip
+
+
+def zone_of(tz: str) -> ZoneInfo:
+    """His time zone; an unknown one falls back as `notify.quiet.local` does (code review L9)."""
+    try:
+        return ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo(FALLBACK_TZ)
 
 
 def clean_text(value: object, limit: int) -> str:
@@ -241,6 +253,17 @@ class Warning(_Model):
     at: str
     headline: str = Field(default="", max_length=OUTSIDE_TEXT_MAX)
     instruction: str = Field(default="", max_length=OUTSIDE_TEXT_MAX)
+    key: str = Field(default="", max_length=120)  # kind|event|onset day: one warning per key
+
+
+class Backoff(_Model):
+    """A queued SACHET item whose CAP couldn't be read: when it first failed, how often its URL
+    refused (non-200), and when to try it again."""
+
+    guid: str = Field(pattern=r"^\d{6,30}$")
+    since: str
+    fails: int = Field(default=0, ge=0)
+    next_at: str
 
 
 class SachetState(FeedState):
@@ -248,6 +271,8 @@ class SachetState(FeedState):
     etag: str | None = Field(default=None, max_length=200)
     seen: tuple[str, ...] = ()
     queue: tuple[str, ...] = ()
+    backoff: tuple[Backoff, ...] = ()
+    cap_fail_since: str | None = None  # the CAP messages couldn't be read since (code M5)
     warnings: tuple[Warning, ...] = ()
 
 
@@ -280,6 +305,7 @@ __all__ = [
     "STATES",
     "STATE_FEEDS",
     "WEEKDAYS",
+    "Backoff",
     "BreachState",
     "Chore",
     "FeedState",
@@ -293,4 +319,5 @@ __all__ = [
     "WeatherSummary",
     "clean_label",
     "clean_text",
+    "zone_of",
 ]

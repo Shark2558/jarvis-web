@@ -82,3 +82,19 @@ async def test_other_hosts_plain_http_timeouts_and_transport_errors_fail() -> No
 
     with pytest.raises(FetchError):
         await _fetcher(slow).get(RSS, cap=10, timeout_s=0.5)
+
+
+# ---- security review M2: a header that can't be sent is a local error, never an outage ---------
+async def test_a_header_that_cant_be_sent_is_a_local_error() -> None:
+    from jarvis.helpers.house.fetch import BadRequest
+
+    ok = _fetcher(lambda r: httpx.Response(200, content=b"<rss/>"))
+    with pytest.raises(BadRequest) as got:
+        await ok.get(RSS, headers={"If-None-Match": 'W/"caf\xe9"'}, cap=100, timeout_s=8)
+    assert isinstance(got.value, FetchError) and got.value.status is None
+
+
+async def test_a_refusing_answer_carries_its_status() -> None:
+    with pytest.raises(FetchError) as got:
+        await _fetcher(lambda r: httpx.Response(404)).get(SACHET_CAP_URL, cap=10, timeout_s=8)
+    assert got.value.status == 404

@@ -124,3 +124,43 @@ async def test_one_unreadable_message_never_hides_the_others() -> None:
     gmail.request = flaky  # type: ignore[method-assign]
     _, notifier, _, _, _, _, job, _ = await _setup(gmail)
     assert (await job.run(()))["sent"] == 1 and len(notifier.calls) == 1
+
+
+# ---- security review L1, L2 ----------------------------------------------------------------------
+HIBP = "Have I Been Pwned <noreply@haveibeenpwned.com>"
+GOOD_AR = (
+    "mx.google.com; dkim=pass header.i=@haveibeenpwned.com header.s=s; spf=pass; "
+    "dmarc=pass (p=REJECT) header.from=haveibeenpwned.com"
+)
+
+
+def _mail(frm: str, *results: str, subject: str = "You've been pwned: breach notice") -> dict:  # type: ignore[type-arg]
+    headers = [{"name": "Authentication-Results", "value": r} for r in results]
+    headers += [{"name": "From", "value": frm}, {"name": "Subject", "value": subject}]
+    return {"payload": {"headers": headers}}
+
+
+def test_only_gmails_own_first_authentication_results_counts() -> None:
+    assert breach.notice_from(_mail(HIBP, GOOD_AR)) is not None
+    assert breach.notice_from(_mail(HIBP, "MX.Google.com; dkim=pass header.d=haveibeenpwned.com"))
+    for forged in (
+        "evil.test; dkim=pass header.d=haveibeenpwned.com",  # another server's verdict
+        "mx.google.com.evil.test; dkim=pass header.d=haveibeenpwned.com",
+        "x mx.google.com; dkim=pass header.d=haveibeenpwned.com",
+    ):
+        assert breach.notice_from(_mail(HIBP, forged)) is None
+    gmail_failed = "mx.google.com; dkim=fail header.d=haveibeenpwned.com"
+    assert breach.notice_from(_mail(HIBP, gmail_failed, GOOD_AR)) is None  # a second one after
+
+
+def test_the_fixed_senders_are_exact_hosts_no_subdomains() -> None:
+    sub_ar = "mx.google.com; dkim=pass header.d=a.monitor.mozilla.org"
+    assert (
+        breach.notice_from(_mail("anyone@a.monitor.mozilla.org", sub_ar, subject="breach")) is None
+    )
+    hibp_sub = "mx.google.com; dkim=pass header.d=x.haveibeenpwned.com"
+    assert breach.notice_from(_mail("noreply@x.haveibeenpwned.com", hibp_sub)) is None
+    assert breach.notice_from(_mail("support@haveibeenpwned.com", GOOD_AR)) is None
+    monitor_ar = "mx.google.com; dkim=pass header.d=monitor.mozilla.org"
+    got = breach.notice_from(_mail("alerts@monitor.mozilla.org", monitor_ar, subject="New breach"))
+    assert got is not None and got.key == "monitor"

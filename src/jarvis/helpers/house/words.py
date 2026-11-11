@@ -107,6 +107,19 @@ def lifted(event: str, district: str) -> str:
     return f"{event} warning for {district} lifted {SACHET_SHORT}."
 
 
+def night_more(district: str) -> str:
+    """At most once an hour at night, once the night's three warnings have rung."""
+    return f"Urgent: more SACHET warnings for {district} tonight. Open the SACHET app."
+
+
+def night_summary(district: str) -> str:
+    """One a night, held for the morning by the alert policy."""
+    return (
+        f"More SACHET warnings for {district} came in overnight. Open JARVIS or the SACHET app "
+        "to see them all."
+    )
+
+
 def breach(service: str) -> str:
     return (
         f"A breach notice from {service} arrived. Open it in Gmail and change that password, Sir."
@@ -129,6 +142,10 @@ def brief_outage(source: str, since: str) -> str:
     return f"Can't reach {source} since {since}: the official SACHET app and SMS still warn you."
 
 
+def brief_weather_outage(since: str) -> str:
+    return f"Can't reach Open-Meteo since {since}: no weather warnings until it answers."
+
+
 __all__ = [
     "ADULTS_ONLY",
     "BREACH_HOW",
@@ -138,6 +155,7 @@ __all__ = [
     "OPEN_METEO_SHORT",
     "breach",
     "brief_outage",
+    "brief_weather_outage",
     "brief_warning",
     "brief_weather",
     "cap",
@@ -145,6 +163,8 @@ __all__ = [
     "chore_named",
     "event_word",
     "lifted",
+    "night_more",
+    "night_summary",
     "until",
     "upkeep_due",
     "upkeep_soon",

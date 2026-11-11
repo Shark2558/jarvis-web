@@ -13,7 +13,7 @@
   <cap:info>
     <cap:language>en-IN</cap:language>
     <cap:category>Geo</cap:category>
-    <cap:event>Landslide</cap:event>
+    <cap:event>Flood</cap:event>
     <cap:urgency>Immediate</cap:urgency>
     <cap:severity>Severe</cap:severity>
     <cap:certainty>Likely</cap:certainty>
@@ -21,7 +21,7 @@
     <cap:effective>2026-11-10T01:30:00+05:30</cap:effective>
     <cap:onset>2026-11-10T01:30:00+05:30</cap:onset>
     <cap:expires>2026-11-10T18:00:00+05:30</cap:expires>
-    <cap:headline>Landslide warning for the hilly parts of Kollam district.</cap:headline>
+    <cap:headline>Flood warning for the low-lying parts of Kollam district.</cap:headline>
     <cap:description></cap:description>
     <cap:instruction>Please follow SDMA guidelines.</cap:instruction>
     <cap:contact></cap:contact>
@@ -42,7 +42,7 @@
   <cap:info>
     <cap:language>ML</cap:language>
     <cap:category>Geo</cap:category>
-    <cap:event>Landslide</cap:event>
+    <cap:event>Flood</cap:event>
     <cap:urgency>Immediate</cap:urgency>
     <cap:severity>Severe</cap:severity>
     <cap:certainty>Likely</cap:certainty>

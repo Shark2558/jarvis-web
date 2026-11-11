@@ -14,11 +14,10 @@ import calendar
 from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
 from typing import Literal
-from zoneinfo import ZoneInfo
 
 from jarvis.helpers.house import words
-from jarvis.helpers.house.guard import Counts, allowed
-from jarvis.helpers.house.models import Unit, Upkeep
+from jarvis.helpers.house.guard import Counts, allowed, tally
+from jarvis.helpers.house.models import Unit, Upkeep, zone_of
 from jarvis.helpers.house.store import HouseStore
 from jarvis.helpers.ports import HelperContext
 from jarvis.logging import get_logger
@@ -76,7 +75,7 @@ def mark_upkeep_done(item: Upkeep, day: date) -> Upkeep:
 
 
 def _at(day: date, tz: str) -> datetime:
-    return datetime.combine(day, AT, tzinfo=ZoneInfo(tz))
+    return datetime.combine(day, AT, tzinfo=zone_of(tz))
 
 
 class UpkeepJob:
@@ -119,15 +118,11 @@ class UpkeepJob:
         self, uid: str, item: Upkeep, which: str, text: str, due: datetime, n: Counts
     ) -> None:
         ident = f"{item.id}|{due_date(item).isoformat()}|{which}"
-        now = self._ctx.now()
-        if not await self._store.claim(uid, "upkeep", ident, now):
-            return
-        got = await self._ctx.sender.send(uid, "maintenance_due", text, due=due)
-        if got.retry:
-            await self._store.release(uid, "upkeep", ident)
-            n.add("retry")
-        else:
-            n.add("sent" if got.counted else "dropped")
+
+        async def send() -> bool:
+            return tally(await self._ctx.sender.send(uid, "maintenance_due", text, due=due), n)
+
+        await self._store.once(uid, "upkeep", ident, self._ctx.now(), send)
 
 
 __all__ = [

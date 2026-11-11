@@ -3,25 +3,27 @@
 
 Pure schedule: `occurs_on` (daily, chosen weekdays, every N days from its start), `due_at` (his
 time on that day, in his zone), `whose` (the turn for an occurrence: the stored turn moved once for
-every occurrence that ended without "done") and `mark_done` (a new Chore: the turn moves once).
+every occurrence that ended without "done") and `mark_done` (a new Chore: the turn moves once per
+occurrence; a second "done" in the same period changes nothing, code review M1). `new_chore`
+added after its time today starts at its next occurrence, so it first reminds next period and is
+never "late" for a time already gone (code review M2).
 
 `ChoresJob` (`chores_due`, the 5-minute clock): for each configured owner whose "Chores, home
 upkeep" row isn't Never, each chore that occurs today, is past its time and wasn't done today is
-claimed (`house_told`, in a transaction) and then sent as `chore_due`: "Chore today: Dishes. Open
-JARVIS to see whose turn it is." (the rota member only in `named`). A send no channel took
-releases the claim, so the next run tries again; a claim that exists means it went already.
+claimed (`house_told`, in a transaction, with a lease) and then sent as `chore_due`: "Chore today:
+Dishes. Open JARVIS to see whose turn it is." (the rota member only in `named`). A send no channel
+took releases the claim, so the next run tries again; a claim marked sent means it went already.
 It goes only to him: JARVIS never messages other people.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
 
 from jarvis.helpers.house import words
-from jarvis.helpers.house.guard import Counts, allowed
-from jarvis.helpers.house.models import Chore, Freq
+from jarvis.helpers.house.guard import Counts, allowed, tally
+from jarvis.helpers.house.models import Chore, Freq, zone_of
 from jarvis.helpers.house.store import HouseStore
 from jarvis.helpers.ports import HelperContext
 from jarvis.logging import get_logger
@@ -65,7 +67,7 @@ def last_on_or_before(c: Chore, day: date) -> date | None:
 
 def due_at(c: Chore, day: date, tz: str) -> datetime:
     hh, mm = (int(x) for x in c.at.split(":"))
-    return datetime.combine(day, time(hh, mm), tzinfo=ZoneInfo(tz))
+    return datetime.combine(day, time(hh, mm), tzinfo=zone_of(tz))
 
 
 def _ended(c: Chore, day: date) -> int:
@@ -93,6 +95,8 @@ def whose(c: Chore, day: date) -> str | None:
 
 def mark_done(c: Chore, today: date) -> Chore:
     occurrence = last_on_or_before(c, today) or today
+    if c.last_done is not None and date.fromisoformat(c.last_done) >= occurrence:
+        return c  # done already in this period (a double tap, "done" said twice)
     turn = (turn_on(c, occurrence) + 1) % len(c.members) if c.members else 0
     nxt = next_on_or_after(c, occurrence + timedelta(days=1))
     return c.model_copy(
@@ -114,7 +118,9 @@ def new_chore(
     days: Sequence[int] = (),
     every: int | None = None,
     members: Sequence[str] = (),
+    now_time: time | None = None,
 ) -> Chore:
+    """`now_time`: his local time now; past the chore's time today, it starts next period."""
     draft = Chore(
         id=cid,
         label=label,
@@ -126,6 +132,10 @@ def new_chore(
         members=tuple(members),
     )
     first = next_on_or_after(draft, today)
+    if first == today and now_time is not None and now_time >= time.fromisoformat(at):
+        first = next_on_or_after(draft, today + timedelta(days=1))
+        if first is not None:
+            draft = draft.model_copy(update={"start": first.isoformat()})
     return draft.model_copy(update={"turn_day": first.isoformat() if first else None})
 
 
@@ -159,18 +169,21 @@ class ChoresJob:
             if not occurs_on(c, today) or now < due or c.last_done == today.isoformat():
                 continue
             ident = f"{c.id}|{today.isoformat()}"
-            if not await self._store.claim(uid, "chore", ident, now):
-                continue
-            member = whose(c, today)
-            named = words.chore_named(c.label, member) if member else None
+            await self._store.once(uid, "chore", ident, now, self._send(uid, c, today, due, n))
+
+    def _send(
+        self, uid: str, c: Chore, today: date, due: datetime, n: Counts
+    ) -> Callable[[], Awaitable[bool]]:
+        member = whose(c, today)
+        named = words.chore_named(c.label, member) if member else None
+
+        async def send() -> bool:
             got = await self._ctx.sender.send(
                 uid, "chore_due", words.chore(c.label), due=due, named=named
             )
-            if got.retry:
-                await self._store.release(uid, "chore", ident)
-                n.add("retry")
-            else:
-                n.add("sent" if got.counted else "dropped")
+            return tally(got, n)
+
+        return send
 
 
 __all__ = [

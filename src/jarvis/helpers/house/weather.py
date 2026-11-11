@@ -10,10 +10,12 @@
   temperature, gusts) and each day of the two with heavy rain in the day.
 - `WeatherJob` (`weather_poll`, the 5-minute clock): for each configured owner with a place,
   whose "Weather and alerts" row isn't Never, only when due (every `weather_poll_minutes`; 15
-  minutes after an outage) and never in a run that already read SACHET: one fetch (8 s at most),
-  then one `weather_warning` per kind per day (a claim each; "Heavy rain likely around 15:00
-  today: about 22 mm in an hour. Weather data by Open-Meteo.com."). The day's summary (the
-  brief's line) and the outage, if any, are kept sealed in `outside/{uid}`.
+  minutes after an outage), inside weather's OWN slot of Part B's share of the run
+  (`fetch.OutsideClock`: a SACHET outage or backlog never stops it, code review H1): one fetch,
+  then one `weather_warning` per kind per day (a leased claim each; "Heavy rain likely around
+  15:00 today: about 22 mm in an hour. Weather data by Open-Meteo.com."). A request JARVIS
+  couldn't build is not an outage. The day's summary (the brief's line) and the outage, if any,
+  are kept sealed in `outside/{uid}`.
 Data CC BY 4.0: the panel and the brief carry "Weather data by Open-Meteo.com (CC BY 4.0)".
 """
 
@@ -21,16 +23,28 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, tzinfo
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from jarvis.helpers.house import words
-from jarvis.helpers.house.fetch import Fetcher, FetchError, OutsideSlot
-from jarvis.helpers.house.guard import Counts, allowed
-from jarvis.helpers.house.models import Outside, Thresholds, WeatherState, WeatherSummary
+from jarvis.helpers.house.fetch import (
+    MIN_LEFT_S,
+    WEATHER_SLOT_S,
+    BadRequest,
+    Fetcher,
+    FetchError,
+    OutsideClock,
+)
+from jarvis.helpers.house.guard import Counts, allowed, tally
+from jarvis.helpers.house.models import (
+    Outside,
+    Thresholds,
+    WeatherState,
+    WeatherSummary,
+    zone_of,
+)
 from jarvis.helpers.house.store import HouseStore, OutsideOff, OutsideStore
 from jarvis.helpers.ports import HelperContext
 from jarvis.helpers.sources import MAX_WEATHER_BYTES, OPEN_METEO_FORECAST_URL, OUTSIDE_TIMEOUT_S
@@ -51,7 +65,6 @@ DAILY = ("temperature_2m_max", "apparent_temperature_max", "precipitation_sum")
 MAX_HOURS = 24 * 3
 WINDOW = timedelta(hours=24)
 RETRY_AFTER = timedelta(minutes=15)
-SACHET_SAME_RUN = timedelta(seconds=90)  # SACHET was read in this clock run: weather waits
 RAIN_LIKELY_MM, RAIN_LIKELY_PCT = 1.0, 50
 BOUNDS = {
     "temperature_2m": (-60.0, 70.0),
@@ -118,7 +131,7 @@ def _num(values: Any, i: int, name: str) -> float | None:
     return float(v) if lo <= v <= hi else None
 
 
-def _times(block: Any, zone: ZoneInfo, *, daily: bool) -> list[datetime]:
+def _times(block: Any, zone: tzinfo, *, daily: bool) -> list[datetime]:
     if not isinstance(block, dict) or not isinstance(block.get("time"), list):
         raise ValueError("Open-Meteo's answer has no times.")
     out = []
@@ -137,7 +150,7 @@ def parse_forecast(raw: bytes, tz: str) -> Forecast:
         raise ValueError("Open-Meteo's answer isn't JSON.") from exc
     if not isinstance(data, dict):
         raise ValueError("Open-Meteo's answer isn't a forecast.")
-    zone = ZoneInfo(tz)
+    zone = zone_of(tz)
     hourly, daily = data.get("hourly"), data.get("daily")
     if not isinstance(hourly, dict):
         raise ValueError("Open-Meteo's answer has no hourly forecast.")
@@ -158,7 +171,9 @@ def parse_forecast(raw: bytes, tz: str) -> Forecast:
     return Forecast(hours, days)
 
 
-def _first(hours: Sequence[Hour], kind: str, value: Any, top: float) -> Hit | None:
+def _first(
+    hours: Sequence[Hour], kind: str, value: Callable[[Hour], float | None], top: float
+) -> Hit | None:
     for h in hours:
         v = value(h)
         if v is not None and v >= top:
@@ -209,7 +224,7 @@ def _due(state: WeatherState, now: datetime) -> bool:
 
 class WeatherJob:
     name = JOB
-    budget_s = OUTSIDE_TIMEOUT_S + 1.0
+    budget_s = WEATHER_SLOT_S + 1.0
 
     def __init__(
         self,
@@ -218,32 +233,33 @@ class WeatherJob:
         store: HouseStore,
         fetcher: Fetcher,
         *,
-        slot: OutsideSlot | None = None,
+        clock: OutsideClock | None = None,
     ) -> None:
         self._ctx = ctx
         self._outside = outside
         self._store = store
         self._fetcher = fetcher
-        self._slot = slot
+        self._clock = clock or OutsideClock()
         self._every = timedelta(minutes=ctx.settings.weather_poll_minutes)
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
         """`owners` is ignored: the helpers serve the configured owners (`ctx.owners`)."""
         n = Counts()
+        deadline = self._clock.deadline("weather")
         for uid in self._ctx.owners:
             try:
                 if not await allowed(self._ctx, uid, "weather_now"):
                     n.add("skipped")
                     continue
-                await self._owner(uid, n)
+                await self._owner(uid, n, deadline)
             except OutsideOff:
                 n.add("off")
             except Exception as exc:  # noqa: BLE001 - one owner never blocks another
                 log.warning("weather job failed for an owner", extra={"error": type(exc).__name__})
                 n.add("failed")
-        return n.done("sent", "retry", "unreachable", "skipped", "failed")
+        return n.done("sent", "retry", "unreachable", "local_error", "skipped", "failed")
 
-    async def _owner(self, uid: str, n: Counts) -> None:
+    async def _owner(self, uid: str, n: Counts, deadline: float) -> None:
         now = self._ctx.now()
         o = await self._outside.read(uid)
         point = o.place.point() if o.place is not None else None
@@ -252,19 +268,21 @@ class WeatherJob:
             return
         if not _due(o.weather, now):
             return
-        read = o.sachet.checked_at
-        spent = self._slot is not None and self._slot.used_within(SACHET_SAME_RUN.total_seconds())
-        if spent or (read is not None and now - datetime.fromisoformat(read) < SACHET_SAME_RUN):
-            n.add("deferred")  # SACHET used this run's outside time; next run
+        left = self._clock.left(deadline)
+        if left < MIN_LEFT_S:
+            n.add("no_time")  # weather's slot went on another owner: the next run
             return
         try:
             got = await self._fetcher.get(
                 OPEN_METEO_FORECAST_URL,
                 params=request_params(point, self._ctx.tz),
                 cap=MAX_WEATHER_BYTES,
-                timeout_s=OUTSIDE_TIMEOUT_S,
+                timeout_s=min(OUTSIDE_TIMEOUT_S, left),
             )
             fc = parse_forecast(got.body, self._ctx.tz)
+        except BadRequest:
+            n.add("local_error")  # JARVIS's own request, not Open-Meteo's outage
+            return
         except (FetchError, ValueError) as exc:
             log.warning("weather unreachable", extra={"error": type(exc).__name__})
             n.add("unreachable")
@@ -277,18 +295,17 @@ class WeatherJob:
 
     async def _warn(self, uid: str, hit: Hit, now: datetime, n: Counts) -> None:
         ident = f"{hit.kind}|{hit.at.date().isoformat()}"
-        if not await self._store.claim(uid, "wx", ident, now):
-            return
         today = local(now, self._ctx.tz).date()
         text = words.weather(hit.kind, hit.at, hit.value, today)
-        got = await self._ctx.sender.send(uid, "weather_warning", text, due=now)
-        if got.retry:
-            await self._store.release(uid, "wx", ident)
-            n.add("retry")
-        else:
-            n.add("sent" if got.counted else "dropped")
 
-    async def _save(self, uid: str, seen: Outside, fn: Any) -> None:
+        async def send() -> bool:
+            return tally(await self._ctx.sender.send(uid, "weather_warning", text, due=now), n)
+
+        await self._store.once(uid, "wx", ident, now, send)
+
+    async def _save(
+        self, uid: str, seen: Outside, fn: Callable[[WeatherState], WeatherState]
+    ) -> None:
         def apply(cur: Outside) -> Outside:
             if cur.place != seen.place:
                 return cur  # his place changed meanwhile: this answer is for the old one

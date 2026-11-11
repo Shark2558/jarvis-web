@@ -30,6 +30,8 @@ function makeTab(host) {
   const lists = {};
   let view = null;
   let busy = false;
+  let placeShown = null; // the saved place the form last showed (JSON)
+  let placeDirty = false; // he has typed in the form since: a repaint keeps his words
 
   function button(label, fn, cls) {
     const b = mk('button', cls || 'btn bact', label);
@@ -157,6 +159,7 @@ function makeTab(host) {
     call(BASE + '/place', { method: 'PUT', body }, err);
   });
   placeForm.querySelector('.lrow').append(clear);
+  placeForm.addEventListener('input', () => { placeDirty = true; });
   const attribution = mk('p', 'sfine', '');
   outside.append(first, offNote, lists.feeds, lists.warnings, placeForm, attribution);
 
@@ -220,16 +223,23 @@ function makeTab(host) {
         pf.state.replaceChildren();
         (o.states || []).forEach((s) => { const op = mk('option', '', s); op.value = s; pf.state.append(op); });
       }
-      if (o.place) {
+      const key = JSON.stringify(o.place || null);
+      if (o.place && (key !== placeShown || !placeDirty)) { // a new saved place, or an untouched form
         pf.district.value = o.place.district || ''; pf.state.value = o.place.state || '';
         pf.lat.value = o.place.lat == null ? '' : String(o.place.lat); pf.lon.value = o.place.lon == null ? '' : String(o.place.lon);
         pf.lgd.value = o.place.lgd || '';
+        placeDirty = false;
+      }
+      placeShown = key;
+      if (o.place) {
         const w = o.weather || {};
         const s = w.summary;
         const sum = s ? (s.t_max != null ? 'up to ' + Math.round(s.t_max) + ' \u00b0C' : 'no temperature') + (s.rain_from ? ', rain likely after ' + s.rain_from : ', no rain expected') : 'no forecast yet';
         if (o.weather_enabled) lists.feeds.append(statusRow(...feedLine('Open-Meteo', w, sum)));
         if (!o.point_known) lists.feeds.append(statusRow('Weather needs your district centre\u2019s latitude and longitude.', 'bad'));
-        if (o.disaster_enabled) lists.feeds.append(statusRow(...feedLine('SACHET', o.sachet, 'warnings for ' + o.place.district)));
+        const sa = o.sachet || {};
+        const down = [sa.fail_since, sa.cap_fail_since].filter((x) => typeof x === 'string' && x).sort()[0] || null;
+        if (o.disaster_enabled) lists.feeds.append(statusRow(...feedLine('SACHET', Object.assign({}, sa, { fail_since: down }), 'warnings for ' + o.place.district)));
       }
       const ws = (o.sachet && Array.isArray(o.sachet.warnings)) ? o.sachet.warnings : [];
       ws.forEach((w) => {

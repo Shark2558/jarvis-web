@@ -30,6 +30,7 @@ APP_ASSETS: dict[str, str] = {
     "console.js": _JS,
     "console-fx.js": _JS,  # theme engine, surfaces, background field, 2D Core, appearance menu
     "console-deck.js": _JS,  # Command Deck: panels, dock, rails, radar, vitals
+    "console-dock.js": _JS,  # R6.1 D7: the dock fits every screen (folds tabs behind More)
     "console-brief.js": _JS,  # morning Brief panel: today's brief, its settings and confirms
     "console-usage.js": _JS,  # Vitals: this month's AI spend in rupees and the owner's limit
     "console-memory.js": _JS,  # Memory panel: About you, facts, learning consent (slice 8)

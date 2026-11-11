@@ -199,8 +199,8 @@ def test_the_3d_module_loads_the_scene_modules_itself() -> None:
 def test_the_deck_has_the_book_dock_button_panel_and_more_sheet_item() -> None:
     html = (STATIC / "console.html").read_text(encoding="utf-8")
     assert len(html.splitlines()) < 800
-    people = re.search(r'<button class="dk ovf" type="button" data-open="people"[^>]*>', html)
-    book = re.search(r'<button class="dk ovf" type="button" data-open="book"[^>]*>', html)
+    people = re.search(r'<button class="dk" type="button" data-open="people"[^>]*>', html)
+    book = re.search(r'<button class="dk" type="button" data-open="book"[^>]*>', html)
     assert people and book
     assert book.group(0) == people.group(0).replace("people", "book")
     assert (

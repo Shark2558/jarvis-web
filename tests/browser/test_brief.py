@@ -666,7 +666,8 @@ def test_phone_badges_the_brief_tab_then_shows_one_panel(make: Callable[..., Con
     assert tab.get_attribute("aria-label") == "Brief, new brief ready"
     assert page.locator("#p-chat").is_visible() and page.locator("#p-brief").is_hidden()
     assert fake.to("/v1/brief/seen") == []  # a badge is not "seen"
-    # eight tabs (seven panels + More), all on screen, each a usable touch target with its label
+    # seven tabs at 390 px (six panels + More: each keeps 8 px of air beside its label, R6.1), all
+    # on screen, each a usable touch target with its label
     tabs = page.evaluate(
         """[...document.querySelectorAll('#dock .dk')].filter(b => b.getClientRects().length)
            .map(b => {
@@ -676,7 +677,7 @@ def test_phone_badges_the_brief_tab_then_shows_one_panel(make: Callable[..., Con
                      right: r.right, fits: !label || label.scrollWidth <= b.clientWidth};
            })"""
     )
-    assert len(tabs) == 8 and tabs[-1]["name"] == "dockMore", tabs
+    assert len(tabs) == 7 and tabs[-1]["name"] == "dockMore", tabs
     width = page.evaluate("window.innerWidth")
     for t in tabs:
         assert t["w"] >= 44 and t["h"] >= 44, t
@@ -713,8 +714,9 @@ def test_very_narrow_phone_keeps_every_tab_named(make: Callable[..., Console]) -
              return {w: r.width, name: (b.getAttribute('aria-label') || b.textContent).trim()};
            })"""
     )
-    assert len(names) == 8
-    assert all(n["w"] >= 40 and n["name"] for n in names), names
+    # R6.1 D7: at most eight tabs, each a 44 px touch target (seven fit 340 px: 6 tabs and More)
+    assert 4 <= len(names) <= 8 and names[-1]["name"].startswith("More panels"), names
+    assert all(n["w"] >= 44 and n["name"] for n in names), names
     assert c.errors == []
 
 

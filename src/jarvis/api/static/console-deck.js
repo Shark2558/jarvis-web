@@ -136,53 +136,16 @@
     zOrder = zOrder.filter(id => id !== p.id).concat(p.id);
     zOrder.forEach((id, i) => { panels[id].el.style.zIndex = String(20 + i); panels[id].el.classList.toggle('front', id === p.id); });
   }
+  // The tabs mark the open panels (aria-pressed). R6.1 D7: which tabs fit the dock, the More tab and
+  // its sheet live in console-dock.js, which follows aria-pressed to light More.
   function syncDock() {
     ids.forEach(id => { const p = panels[id]; if (p.btn) p.btn.setAttribute('aria-pressed', String(isOpen(id))); });
-    syncMore();
   }
-
-  // ---- phones: at most eight tabs; the "ovf" tabs live in the More sheet (native modal dialog:
-  // the page behind is inert, Tab stays inside, Esc and the backdrop close it, focus returns) ----
-  const moreBtn = $('dockMore'), sheet = $('moreSheet');
-  // R6 I0: on a desktop too narrow for every tab the dock scrolls sideways (console-deck.css); a
-  // plain mouse wheel over it scrolls it too.
-  const dockEl = $('dock');
-  if (dockEl) dockEl.addEventListener('wheel', (e) => {
-    if (isPhone() || dockEl.scrollWidth <= dockEl.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    dockEl.scrollLeft += e.deltaY; e.preventDefault();
-  }, { passive: false });
-  const overflow = () => ids.filter(id => panels[id].btn && panels[id].btn.classList.contains('ovf'));
-  const titleOf = (id) => { const h = panels[id].el.querySelector('.ptitle h2'); return h ? h.textContent.trim() : id; };
-  function syncMore() {
-    if (!moreBtn) return;
-    const shown = isPhone() && overflow().includes(phoneTab) ? phoneTab : null;
-    moreBtn.classList.toggle('on', !!shown);
-    moreBtn.setAttribute('aria-label', shown ? `More panels, ${titleOf(shown)} shown` : 'More panels');
-  }
-  function closeSheet() { if (sheet && sheet.open) sheet.close(); }
-  if (moreBtn && sheet && typeof sheet.showModal === 'function') {
-    moreBtn.addEventListener('click', () => {
-      if (sheet.open) { closeSheet(); return; }
-      sheet.querySelectorAll('[data-sheet-open]').forEach(b => {
-        const on = isPhone() && phoneTab === b.dataset.sheetOpen;
-        if (on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
-      });
-      sheet.showModal();
-      moreBtn.setAttribute('aria-expanded', 'true');
-      const first = sheet.querySelector('[data-sheet-open]'); if (first) first.focus();
-    });
-    sheet.addEventListener('close', () => { // a chosen panel takes focus; otherwise it goes back to More
-      moreBtn.setAttribute('aria-expanded', 'false');
-      const a = document.activeElement;
-      if (!a || a === document.body || sheet.contains(a)) moreBtn.focus({ preventScroll: true });
-    });
-    sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); }); // the backdrop
-    sheet.querySelectorAll('[data-sheet-open]').forEach(b => b.addEventListener('click', () => {
-      closeSheet(); open(b.dataset.sheetOpen, { focus: true });
-    }));
-    const done = $('moreClose'); if (done) done.addEventListener('click', closeSheet);
-  } else if (moreBtn) { // no <dialog>: no More tab, and the overflow tabs stay in the bar
-    moreBtn.hidden = true; root.classList.add('no-sheet');
+  /** Focus back to a panel's tab; a tab folded behind More hands it to More (console-dock.js). */
+  function focusTab(p) {
+    const more = $('dockMore');
+    const target = p.btn && p.btn.getClientRects().length ? p.btn : more && more.getClientRects().length ? more : null;
+    if (target) target.focus();
   }
   function focusPanel(p) {
     const target = p.id === 'chat' ? $('input') : p.el.querySelector('.ptitle h2');
@@ -196,7 +159,6 @@
       ids.forEach(k => setVisible(panels[k], k === id));
     } else {
       layout.p[id].open = true; setVisible(p, true); applyGeom(p); front(p); saveLayout(); layoutCore();
-      if (p.btn) p.btn.scrollIntoView({ block: 'nearest', inline: 'nearest' }); // R6: a dock that scrolls
     }
     syncDock();
     if (opts.focus) focusPanel(p);
@@ -206,7 +168,7 @@
     const p = panels[id]; if (!p) return;
     if (isPhone()) { if (id !== 'chat') open('chat', { focus: !!opts.returnFocus }); return; }
     layout.p[id].open = false; setVisible(p, false); saveLayout(); syncDock(); layoutCore();
-    if (opts.returnFocus && p.btn) p.btn.focus();
+    if (opts.returnFocus) focusTab(p);
     document.dispatchEvent(new CustomEvent('jarvis:panel', { detail: { id, open: false } }));
   }
   function toggle(id) {
@@ -342,7 +304,7 @@
   function reflow() { syncMetrics(); if (!isPhone()) ids.filter(isOpen).forEach(id => applyGeom(panels[id])); layoutCore(); drawRuler(); }
   // the privacy banner appears / disappears with the brain: panels move to stay clear of it
   if (window.ResizeObserver && $('banner')) new ResizeObserver(() => reflow()).observe($('banner'));
-  if (phoneQ.addEventListener) phoneQ.addEventListener('change', () => { closeSheet(); syncMetrics(); applyMode(); });
+  if (phoneQ.addEventListener) phoneQ.addEventListener('change', () => { syncMetrics(); applyMode(); }); // console-dock.js closes the More sheet
 
   // ================================================================================== vitals
   // Money is shown in rupees only (slice 7b): the server converts at the day's rate and sends

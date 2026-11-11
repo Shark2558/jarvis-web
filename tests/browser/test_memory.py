@@ -879,7 +879,7 @@ def test_markup_in_memory_text_stays_text(make: Callable[..., Console], h: str) 
     assert c.errors == []
 
 
-# ---- phone: the tab bar keeps eight tabs, the rest sit behind More -------------------------------
+# ---- phone: the tab bar keeps at most eight tabs, the rest sit behind More -----------------------
 def test_phone_tab_bar_has_memory_and_a_more_sheet(make: Callable[..., Console]) -> None:
     c = make(PHONE)
     FakeMemory(c.page, memory_view(facts=copy.deepcopy(FACTS)))
@@ -892,7 +892,8 @@ def test_phone_tab_bar_has_memory_and_a_more_sheet(make: Callable[..., Console])
                                left: r.left, right: r.right}; })"""
     )
     names = [t["name"] for t in tabs]
-    assert len(tabs) == 8 and "memory" in names and names[-1] == "dockMore", names
+    # six panels + More at 390 px (each tab keeps 8 px of air beside its label, R6.1)
+    assert len(tabs) == 7 and "memory" in names and names[-1] == "dockMore", names
     assert "vitals" not in names and "construct" not in names
     for t in tabs:
         assert t["w"] >= 44 and t["h"] >= 44 and t["left"] >= 0 and t["right"] <= 390, t
@@ -900,8 +901,8 @@ def test_phone_tab_bar_has_memory_and_a_more_sheet(make: Callable[..., Console])
     more.click()
     sheet.wait_for(state="visible")
     assert more.get_attribute("aria-expanded") == "true"
-    # focus lands on the first item: Vault since R2 (its four panels lead the sheet, as in the dock)
-    assert page.evaluate("document.activeElement.dataset.sheetOpen") == "vault"
+    # focus lands on the first item: the first folded tab, Integrations since R6.1 (dock order)
+    assert page.evaluate("document.activeElement.dataset.sheetOpen") == "integrations"
     page.keyboard.press("Escape")
     sheet.wait_for(state="hidden")
     expect(more).to_have_attribute("aria-expanded", "false")  # the close event comes a tick later

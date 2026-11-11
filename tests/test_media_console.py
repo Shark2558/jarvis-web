@@ -96,10 +96,9 @@ async def test_media_panel_dock_tab_sits_behind_more_on_a_phone(client: AsyncCli
     html = (await client.get("/")).text
     assert 'data-panel="media"' in html and 'id="t-media"' in html
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
-    tabs = re.findall(r'<button class="dk([^"]*)" type="button" data-open="(\w+)"', dock)
-    on_phone = [n for cls, n in tabs if "ovf" not in cls.split()]
-    assert ("media" in [n for _, n in tabs]) and "media" not in on_phone
-    assert len(on_phone) + 1 <= 8  # + More
+    names = re.findall(r'<button class="dk(?: wide)?" type="button" data-open="(\w+)"', dock)
+    # R6.1 D7: console-dock.js folds the last tabs behind More when they don't fit (a phone's eight)
+    assert "media" in names and names.index("media") >= 7  # past the seven a phone shows
     assert 'data-sheet-open="media"' in html
     # no iframe in the page itself: one exists only after the owner presses Play
     assert "<iframe" not in html

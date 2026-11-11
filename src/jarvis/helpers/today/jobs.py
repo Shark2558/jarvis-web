@@ -8,7 +8,10 @@ light: one read of each owner's `bills/{uid}` a run, Google only when a birthday
   one is claimed in a transaction (`bills_told`) BEFORE it is sent, so it goes once across
   restarts and a second clock run in the same minute sends nothing; a send that no channel took
   (`SendResult.retry`) releases its claim for the next run. Sent only through the part's own
-  sender, kind `bill_due` (held at night by the one policy).
+  sender, kind `bill_due` (held at night by the one policy), as a generic fixed text ("A bill is
+  due tomorrow. Open JARVIS to see it."); his label and amount go only in `named=`, which the
+  notifier uses only when "names in alerts" is on (integrated review L1: Telegram is a cloud
+  chat). The console's Today tab and brief keep the full line.
 - `birthdays`: when he switched birthdays on, at his time (default 08:30): today's birthdays from
   `birthdays.BirthdayReader` (his Contacts row obeyed, fail closed); each contact claimed in
   `birthdays_told` (a hash of him, the contact's resource name and the year), then ONE `birthday`
@@ -25,7 +28,12 @@ from collections.abc import Callable, Sequence
 from datetime import date, datetime
 
 from jarvis.helpers.gate import PartSender, SendResult
-from jarvis.helpers.today.bills import BillsService, reminder_text, reminders_due
+from jarvis.helpers.today.bills import (
+    BillsService,
+    plain_reminder,
+    reminder_text,
+    reminders_due,
+)
 from jarvis.helpers.today.birthdays import Birthday, BirthdayReader
 from jarvis.helpers.today.store import BillsOff, Claims
 from jarvis.logging import get_logger
@@ -126,8 +134,10 @@ class BillsDueJob:
                 key = f"{bill.id}|{due.isoformat()}|{off}"
                 if not await self._claims.claim(uid, key, now):
                     continue
-                text = reminder_text(bill, due, off)
-                got = await self._sender.send(uid, "bill_due", text, due=due_at)
+                named = reminder_text(bill, due, off)
+                got = await self._sender.send(
+                    uid, "bill_due", plain_reminder(off), due=due_at, named=named
+                )
                 if got.retry:
                     await self._claims.release(uid, key)
                 _tally(counts, got)

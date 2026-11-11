@@ -107,8 +107,17 @@ def amount_words(bill: Bill) -> str:
     return inr_short(bill.amount) if bill.amount is not None else "(amount varies)"
 
 
+def plain_reminder(off: int) -> str:
+    """The `bill_due` alert as sent (Telegram is a cloud chat): no label, no amount (review L1)."""
+    if off == OVERDUE:
+        return "A bill was due yesterday and isn't marked paid. Open JARVIS to see it."
+    when = {0: "today", 1: "tomorrow"}.get(off, f"in {off} days")
+    return f"A bill is due {when}. Open JARVIS to see it."
+
+
 def reminder_text(bill: Bill, due: date, off: int) -> str:
-    """The `bill_due` alert: JARVIS's fixed template with his own label and amount (≤ 300)."""
+    """The `bill_due` alert's named variant (`named=`, only when "names in alerts" is on): JARVIS's
+    fixed template with his own label and amount (≤ 300)."""
     what = f"{bill.label} {amount_words(bill)}"
     if off == OVERDUE:
         return f"Bill reminder, Sir: {what} was due yesterday and isn't marked paid. Open JARVIS."
@@ -364,6 +373,7 @@ __all__ = [
     "card_text",
     "current_due",
     "day_text",
+    "plain_reminder",
     "reminder_text",
     "reminders_due",
     "when_words",

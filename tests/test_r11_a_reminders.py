@@ -3,6 +3,9 @@
 # "overdue" the day after if it isn't marked paid; never early, never twice (claims survive a
 # restart), released when no channel took it; held at night by the one policy; only through the
 # part's own sender; the alert text is JARVIS's template with his own label.
+# Integrated review L1: the alert itself (Telegram is a cloud chat) is a generic fixed text ("A bill
+# is due in 3 days. Open JARVIS to see it."); the label and amount go only in `named=` (used only
+# when "names in alerts" is on); the console's Today tab and brief keep the full line.
 from __future__ import annotations
 
 from datetime import timedelta
@@ -49,7 +52,7 @@ async def test_three_one_and_zero_days_before_at_nine_then_overdue_once() -> Non
         before = len(notifier.calls)
         await job.run(())
         if len(notifier.calls) > before:
-            sent.append((clock.at, notifier.calls[-1][2]))
+            sent.append((clock.at, notifier.calls[-1][3] or ""))
         clock.at += timedelta(minutes=5)
     assert [when for when, _ in sent] == [
         at(2026, 11, 10, 9, 0),
@@ -66,6 +69,14 @@ async def test_three_one_and_zero_days_before_at_nine_then_overdue_once() -> Non
     assert "was due yesterday" in texts[3] and "isn't marked paid" in texts[3]
     assert all(k == "bill_due" for _, k, _, _ in notifier.calls)
     assert all(FAKE_UPI not in t for t in texts)
+    plain = [m for _, _, m, _ in notifier.calls]
+    assert plain == [
+        "A bill is due in 3 days. Open JARVIS to see it.",
+        "A bill is due tomorrow. Open JARVIS to see it.",
+        "A bill is due today. Open JARVIS to see it.",
+        "A bill was due yesterday and isn't marked paid. Open JARVIS to see it.",
+    ]
+    assert not any("Electricity" in m or "₹" in m or "1,240" in m for m in plain)
 
 
 async def test_never_twice_across_a_restart() -> None:

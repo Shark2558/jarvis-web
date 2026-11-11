@@ -8,12 +8,25 @@
 # two neighbouring labels never touch (>= 6 px apart). A desktop tab whose label is wider than the
 # tab (900-1180 px: Approvals, Integrations, ...) moves behind More instead; the approvals badge
 # then rides on More. The chat box's hint stays whole on one line (orchestrator, 320 px).
+# R6.1 CI: which tabs fold depends on how wide this renderer draws the labels (GitHub's Chromium 153
+# draws them wider than this machine's: CONNECTORS outgrows its 78 px tab there). So the tests no
+# longer write one machine's counts in: they measure each label and tab themselves and check the
+# dock against the rule (dock_rule.py), and a test-only style imitates a wider-text renderer here.
 from __future__ import annotations
 
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from dock_rule import (
+    MIN_TOUCH,
+    PHONE_MAX_TABS,
+    SHEET_JS,
+    Dock,
+    assert_follows_rule,
+    measure_dock,
+    overflowing,
+)
 from test_console import Console
 
 _pw = pytest.importorskip("playwright.sync_api")
@@ -36,8 +49,7 @@ WIDTHS = {
 }
 SURFACES = ("night", "day")
 PHONE_BELOW = 900  # console-deck.css: (max-width: 899px) is the phone layout
-PHONE_MAX_TABS = 8  # More included
-MIN_TOUCH = 44
+NARROW_DESK = 1180  # console-deck.css: 900-1180 px desktops have the smaller 66 / 88 px tabs
 PINNED = ("chat", "brief", "approvals")  # Approvals folds only where its label overflows its tab
 LABEL_GAP = 6  # px between two neighbouring labels at the least (the dock's 4 px gap + two borders)
 HINT, SHORT_HINT = "Message JARVIS", "Message"
@@ -80,18 +92,16 @@ STATE_JS = """() => {
     visible: tabs.filter(shown).map((t) => t.dataset.open),
     boxes: [...tabs.filter(shown), ...(shown(more) ? [more] : [])].map(box),
     labels: [...tabs.filter(shown), ...(shown(more) ? [more] : [])].map(labelBox),
-    // desktop: the tabs whose label is wider than the tab (unfolded for the read, then put back)
-    overflowing: innerWidth < 900 ? [] : tabs.filter((t) => {
-      const was = t.hidden; t.hidden = false;
-      const b = labelBox(t); t.hidden = was;
-      return !!b.label && b.label.r - b.label.l > b.r - b.l;
-    }).map((t) => t.dataset.open),
     more: shown(more),
     panels: [...document.querySelectorAll('.panel[data-panel]')].map((p) => p.dataset.panel),
   };
 }"""
-SHEET_JS = """() => [...document.querySelectorAll('#moreSheet [data-sheet-open]')]
-  .filter((b) => b.getClientRects().length > 0).map((b) => b.dataset.sheetOpen)"""
+# The letter-spacing of a dock tab's label, in px (the tab's own: .16em on a desktop, 0 on a phone).
+TRACKING_JS = (
+    "() => parseFloat(getComputedStyle(document.querySelector('#dock .dk > span')).letterSpacing)"
+    " || 0"
+)
+WIDER_PX = 0.4  # px more tracking a letter: CONNECTORS (ten letters) 4 px wider, past its tab
 # The chat box's hint as painted: its width in the box's font against the room inside the box, and
 # the empty box's scroll height (a hint that wraps makes it taller than the box).
 HINT_JS = """(full) => {
@@ -121,6 +131,23 @@ def _console(browser: Any, url: str, token: str, width: int, surface: str = "nig
     c.page.evaluate(SETTLE_JS)
     assert c.page.locator("html").get_attribute("data-surface") == surface
     return c
+
+
+def _track_labels(page: Any, tracking: float) -> None:
+    """Test-only: draw every dock label with this letter-spacing (px) and let the dock refit. A
+    style tag on the label in this page only; the product's files and look are not touched."""
+    page.add_style_tag(content=f"#dock .dk > span {{ letter-spacing: {tracking}px }}")
+    size = page.viewport_size  # the dock measures again when the window's width changes
+    for width in (size["width"] - 1, size["width"]):
+        page.set_viewport_size({"width": width, "height": size["height"]})
+        page.evaluate(SETTLE_JS)
+
+
+def _hold_every_label(page: Any) -> None:
+    """Test-only: labels without tracking hold their desktop tabs with room to spare on any
+    renderer (CONNECTORS is then about 57 px in its 76), so a full-HD dock has nothing to fold."""
+    _track_labels(page, 0)
+    assert overflowing(measure_dock(page)) == [], "every label should hold its tab untracked"
 
 
 def _sheet_entries(c: Console) -> list[str]:
@@ -186,31 +213,72 @@ def test_the_dock_fits_and_every_panel_is_reachable_exactly_once(
     try:
         s = c.page.evaluate(STATE_JS)
         _assert_fits(s, width)
-        order, visible, over = s["order"], s["visible"], s["overflowing"]
-        assert sorted(order) == sorted(s["panels"]) and len(order) == len(set(order))
-        # dock order kept: a tab whose label overflows it folds wherever it sits; of the others
-        # the last ones fold first
-        holding = [t for t in order if t not in over]
-        assert visible == holding[: len(visible)], (visible, over)
-        assert not set(over) & set(visible), over
-        if width >= 1181 or width < PHONE_BELOW:
-            assert over == [], over  # their usual tab sizes hold every label
-        else:  # 900-1180 px: the 66 / 88 px tabs are narrower than these labels (review A, M1)
-            assert {"approvals", "integrations"} <= set(over), over
-        for pinned in PINNED:  # never folded for lack of room; Approvals only where its label
-            assert (pinned in visible) is (pinned not in over), (pinned, visible)  # overflows
-        folded = [t for t in order if t not in visible]
-        assert s["more"] is bool(folded), (s["more"], folded)
-        sheet = _sheet_entries(c) if folded else []
-        assert sheet == folded, (sheet, folded)  # exactly the folded tabs, in dock order
-        reachable = visible + sheet
-        assert sorted(reachable) == sorted(order) and len(reachable) == len(set(reachable))
-        if width == 1920:
-            assert not folded, folded  # everything fits a full-HD screen: no More
+        dock = measure_dock(c.page)
+        over = overflowing(dock)
+        folded = _assert_folding(c, s, dock)
+        if PHONE_BELOW <= width <= NARROW_DESK:  # the 66 / 88 px tabs are over 2 px narrower than
+            assert {"approvals", "integrations"} <= set(over), over  # these labels (review A, M1)
+        if width == 1920:  # a full-HD screen has room for every tab: only a tab whose label is
+            assert folded == over, (folded, over)  # wider than it folds (none on this machine)
         _assert_hint_whole(c, width)
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()
+
+
+@pytest.mark.parametrize("width", [1920, 1366, 390])
+def test_a_renderer_with_wider_text_folds_the_labels_that_no_longer_fit(
+    browser: Any, server_url: str, token: str, width: int
+) -> None:
+    # GitHub's Chromium 153 draws the dock labels wider than this machine's: CONNECTORS outgrows
+    # its 78 px tab on every desktop and a 390 px phone holds one tab fewer. Here a test-only style
+    # imitates that renderer, and the dock still follows the measured rule.
+    c = _console(browser, server_url, token, width)
+    page = c.page
+    try:
+        _track_labels(page, page.evaluate(TRACKING_JS) + WIDER_PX)
+        s = page.evaluate(STATE_JS)
+        _assert_fits(s, width)
+        dock = measure_dock(page)
+        over = overflowing(dock)
+        if width >= PHONE_BELOW:  # the path GitHub took: a label too wide for its full-size tab
+            assert over, "the wider text should push a label past its tab"
+        folded = _assert_folding(c, s, dock)
+        assert folded and s["more"], folded
+        if width == 1920:
+            assert folded == over, (folded, over)  # folded for its label, not for lack of room
+        first = folded[0]  # an open folded panel lights More
+        page.locator("#dockMore").click()
+        page.locator(f'#moreSheet [data-sheet-open="{first}"]').click()
+        page.locator(f"#p-{first}").wait_for(state="visible")
+        expect(page.locator("#dockMore")).to_have_class("dk more on")
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+def _assert_folding(c: Console, s: dict[str, Any], dock: Dock) -> list[str]:
+    """The dock shows the tabs the measured rule expects (dock_rule.py) in dock order, More only
+    when a tab is folded, and the sheet lists exactly the folded tabs: every panel is reachable
+    exactly once. Returns the folded tabs, in dock order."""
+    order, visible = s["order"], s["visible"]
+    assert sorted(order) == sorted(s["panels"]) and len(order) == len(set(order))
+    assert [t.id for t in dock.tabs] == order, order
+    assert_follows_rule(dock, visible)
+    # dock order kept: a tab whose label overflows it folds wherever it sits; of the others the
+    # last ones fold first
+    over = overflowing(dock)
+    holding = [t for t in order if t not in over]
+    assert visible == holding[: len(visible)], (visible, over)
+    for pinned in PINNED:  # never folded for lack of room; Approvals only where its label
+        assert (pinned in visible) is (pinned not in over), (pinned, visible)  # overflows
+    folded = [t for t in order if t not in visible]
+    assert s["more"] is bool(folded), (s["more"], folded)
+    sheet = _sheet_entries(c) if folded else []
+    assert sheet == folded, (sheet, folded)  # exactly the folded tabs, in dock order
+    reachable = visible + sheet
+    assert sorted(reachable) == sorted(order) and len(reachable) == len(set(reachable))
+    return folded
 
 
 @pytest.mark.parametrize("width", [1280, 360])
@@ -255,13 +323,18 @@ def test_the_dock_refits_on_resize_without_a_layout_loop(
     c = _console(browser, server_url, token, 1920)
     page = c.page
     try:
-        assert page.evaluate(STATE_JS)["more"] is False
+        # test-only: no label outgrows its tab on any renderer, so the full-HD dock shows every tab
+        # and More can go (GitHub's Chromium folds CONNECTORS there for its label, and More stays)
+        _hold_every_label(page)
+        s = page.evaluate(STATE_JS)
+        assert s["more"] is False and s["visible"] == s["order"], s["visible"]
         page.locator('.dk[data-open="construct"]').focus()
         for width, height in ((1280, 800), (390, 844), (1024, 768), (320, 568)):
             page.set_viewport_size({"width": width, "height": height})
             page.evaluate(SETTLE_JS)
             s = page.evaluate(STATE_JS)
             _assert_fits(s, width)
+            assert_follows_rule(measure_dock(page), s["visible"])
             assert s["more"] is True and "construct" not in s["visible"], (width, s["visible"])
         # a focused tab that folds hands its focus to More, never to the page
         assert page.evaluate("document.activeElement.id") == "dockMore"
@@ -293,6 +366,9 @@ def test_an_open_sheet_closes_when_everything_fits_and_focus_lands_on_the_tab(
     c = _console(browser, server_url, token, 1280)
     page = c.page
     try:
+        # test-only: with every label holding its 78 px tab, everything fits 1920 on any renderer
+        # (desktop tabs are the same size at 1280 and 1920, so the check here holds there too)
+        _hold_every_label(page)
         page.locator("#dockMore").click()
         page.locator("#moreSheet").wait_for(state="visible")
         first = page.evaluate("document.activeElement.dataset.sheetOpen")

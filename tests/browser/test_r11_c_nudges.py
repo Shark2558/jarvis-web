@@ -52,71 +52,78 @@ def _nudge(kind: str, name: str, label: str, line: str, **n: Any) -> dict[str, A
     }
 
 
+def _nudges() -> list[dict[str, Any]]:
+    return [
+        _nudge(
+            "nudge_standup",
+            "standup",
+            "Stand up and move",
+            "Stand up and move: on, every 60 minutes, 09:30-18:30, Monday to Saturday.",
+            on=True,
+            every=60,
+        ),
+        _nudge(
+            "nudge_hydrate",
+            "water",
+            "Drink water",
+            "Drink water: on, every 90 minutes, 09:30-18:30, Monday to Saturday.",
+            on=True,
+            every=90,
+        ),
+        _nudge(
+            "nudge_activity",
+            "activity",
+            "A planned activity that didn't happen",
+            "A planned activity that didn't happen: off, 06:00-22:00, for walk, gym, every day.",
+            start="06:00",
+            end="22:00",
+            words=["walk", "gym"],
+        ),
+        _nudge(
+            "nudge_free_time",
+            "free_time",
+            "Ideas for free time",
+            "Ideas for free time: off, at 18:00, every day.",
+            times=["18:00"],
+        ),
+        _nudge(
+            "nudge_focus",
+            "focus",
+            "Your top priority",
+            "Your top priority: off, at 10:00, 15:00, Monday to Saturday.",
+            times=["10:00", "15:00"],
+        ),
+    ]
+
+
+def _ideas() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "0000000a",
+            "text": "Read a novel",
+            "minutes": 45,
+            "place": "indoor",
+            "last_done": None,
+        },
+        {
+            "id": "0000000b",
+            "text": "Cycle by the lake",
+            "minutes": 60,
+            "place": "outdoor",
+            "last_done": "2026-11-08",
+        },
+    ]
+
+
 def _view() -> dict[str, Any]:
     return {
         "enabled": True,
         "sealed": True,
         "calendar": True,
-        "nudges": [
-            _nudge(
-                "nudge_standup",
-                "standup",
-                "Stand up and move",
-                "Stand up and move: on, every 60 minutes, 09:30-18:30, Monday to Saturday.",
-                on=True,
-                every=60,
-            ),
-            _nudge(
-                "nudge_hydrate",
-                "water",
-                "Drink water",
-                "Drink water: on, every 90 minutes, 09:30-18:30, Monday to Saturday.",
-                on=True,
-                every=90,
-            ),
-            _nudge(
-                "nudge_activity",
-                "activity",
-                "A planned activity that didn't happen",
-                "A planned activity that didn't happen: off, 06:00-22:00, for walk, gym, every "
-                "day.",
-                start="06:00",
-                end="22:00",
-                words=["walk", "gym"],
-            ),
-            _nudge(
-                "nudge_free_time",
-                "free_time",
-                "Ideas for free time",
-                "Ideas for free time: off, at 18:00, every day.",
-                times=["18:00"],
-            ),
-            _nudge(
-                "nudge_focus",
-                "focus",
-                "Your top priority",
-                "Your top priority: off, at 10:00, 15:00, Monday to Saturday.",
-                times=["10:00", "15:00"],
-            ),
-        ],
+        "nudges": _nudges(),
         "gate": {"snoozed": {}, "stopped": {}, "today": TODAY},
         "today": {"water": 3, "stood": 2},
-        "ideas": [
-            {
-                "id": "0000000a",
-                "text": "Read a novel",
-                "minutes": 45,
-                "place": "indoor",
-                "last_done": None,
-            },
-            {
-                "id": "0000000b",
-                "text": "Cycle by the lake",
-                "minutes": 60,
-                "place": "outdoor",
-                "last_done": "2026-11-08",
-            },
-        ],
+        "ideas": _ideas(),
     }
 
 

@@ -24,6 +24,7 @@ file reports per 100 g (`all`; names and units once in `nutrients`) and the six 
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import re
@@ -161,13 +162,18 @@ class Nutrition:
 
     @classmethod
     def load(cls, *paths: Traversable) -> Nutrition:
-        """The data files (default: the USDA subset, then any `nutrition_*.json` beside it); a
-        missing, oversized or broken file is left out, so none at all reads as not installed."""
+        """The data files (default: the USDA subset, then any `nutrition_*.json` beside it, read
+        once a process and shared: nothing changes it); a missing, oversized or broken file is
+        left out, so none at all reads as not installed."""
+        return cls.read(*paths) if paths else _bundled_once()
+
+    @classmethod
+    def read(cls, *paths: Traversable) -> Nutrition:
         foods: list[Food] = []
         sources: dict[str, Source] = {}
         names: dict[int, tuple[str, str]] = {}
         installed = False
-        for path in paths or _bundled():
+        for path in paths:
             raw = _read(path)
             if raw is None or raw.get("installed") is not True:
                 continue
@@ -226,6 +232,11 @@ class Nutrition:
                 name, unit = self.nutrients.get(nid, (f"Nutrient {nid}", ""))
                 out.append((name, f"{_num(d.full[nid])} {unit}".strip()))
         return out
+
+
+@functools.cache
+def _bundled_once() -> Nutrition:
+    return Nutrition.read(*_bundled())
 
 
 def _bundled() -> list[Traversable]:

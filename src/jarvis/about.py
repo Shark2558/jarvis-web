@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, tzinfo
 from functools import lru_cache
 from importlib.resources import files
 from importlib.resources.abc import Traversable
@@ -38,6 +38,7 @@ DEFAULT_ZONE = "Asia/Kolkata"
 VERSION_SHOWN = r"^v[0-9]+\.[0-9]+\.[0-9]+$"
 STAMP_MAX = 64  # an ISO 8601 time is at most ~35 characters; anything longer isn't one
 DATE_ONLY = 10  # "2026-11-11"
+EARLIEST_YEAR = 2000  # a stamp before this is a clock reset to its epoch, not a build day
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 PACKAGED_STAMP: Traversable = files("jarvis") / STAMP_FILE
@@ -48,11 +49,15 @@ def version() -> str:
     return f"v{__version__}"
 
 
-def _zone(name: str) -> ZoneInfo:
-    try:
-        return ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError):
-        return ZoneInfo(DEFAULT_ZONE)
+def _zone(name: str) -> tzinfo:
+    """The owner's zone; India's when the name isn't one; UTC when there's no zone data at all.
+    OSError: a folder of zones ("America") or a name too long for a file."""
+    for candidate in (name, DEFAULT_ZONE):
+        try:
+            return ZoneInfo(candidate)
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            continue
+    return UTC
 
 
 def shown(day: date) -> str:
@@ -60,21 +65,24 @@ def shown(day: date) -> str:
     return f"{day.day} {_MONTHS[day.month - 1]} {day.year}"
 
 
-def parse_stamp(raw: str | None, zone: ZoneInfo) -> str | None:
-    """A stamp as the owner reads it, or None when it isn't an ISO 8601 date or time. A bare date is
-    taken as written; a time without an offset is UTC (the Dockerfile stamps `date -u`)."""
+def parse_stamp(raw: str | None, zone: tzinfo) -> str | None:
+    """A stamp as the owner reads it, or None when it isn't an ISO 8601 date or time of a plausible
+    build (year 2000 on). A bare date is taken as written; a time without an offset is UTC (the
+    Dockerfile stamps `date -u`). Never raises: OverflowError is a time that leaves year 1..9999
+    once moved to the owner's zone ("9999-12-31T23:59:59Z" in India)."""
     text = (raw or "").strip()
     if not text or len(text) > STAMP_MAX:
         return None
     try:
         when = datetime.fromisoformat(text)
-    except ValueError:
+        if len(text) == DATE_ONLY:
+            day = when.date()
+        else:
+            aware = when if when.tzinfo is not None else when.replace(tzinfo=UTC)
+            day = aware.astimezone(zone).date()
+    except (ValueError, OverflowError):
         return None
-    if len(text) == DATE_ONLY:
-        return shown(when.date())
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=UTC)
-    return shown(when.astimezone(zone).date())
+    return shown(day) if day.year >= EARLIEST_YEAR else None
 
 
 def _read(stamp: Traversable | Path | None) -> str | None:
@@ -113,8 +121,13 @@ def build_date(
 
 @lru_cache(maxsize=4)
 def fields(zone: str = DEFAULT_ZONE) -> Mapping[str, str]:
-    """The two fields GET /v1/vitals carries: {version, build_date} (read-only)."""
-    day = build_date(stamp=PACKAGED_STAMP, zone=zone)  # the module's stamp, looked up now
+    """The two fields GET /v1/vitals carries: {version, build_date} (read-only). Never raises, so
+    the About line can't turn the board into a 500; cached, so a bad stamp is logged once."""
+    try:
+        day = build_date(stamp=PACKAGED_STAMP, zone=zone)  # the module's stamp, looked up now
+    except Exception as exc:  # noqa: BLE001 — display only: the board must answer regardless
+        log.warning("build date failed; shown as unknown", extra={"error": type(exc).__name__})
+        day = UNKNOWN
     return MappingProxyType({"version": version(), "build_date": day})
 
 

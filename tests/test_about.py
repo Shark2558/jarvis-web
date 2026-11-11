@@ -2,6 +2,7 @@
 # with (never the request time). `jarvis.about` feeds the Vitals "About JARVIS" line.
 from __future__ import annotations
 
+import logging
 import re
 import tomllib
 from pathlib import Path
@@ -40,11 +41,89 @@ def test_a_build_stamp_reads_as_the_owner_writes_dates(raw: str, shown: str) -> 
     assert about.build_date(environ={about.BUILD_DATE_ENV: raw}, stamp=None) == shown
 
 
-@pytest.mark.parametrize(
-    "raw", ["", "yesterday", "2026-13-01", "11 Nov 2026", "2026-11-11T25:00:00Z", "x" * 500]
-)
+BAD_STAMPS = [
+    "",
+    "yesterday",
+    "2026-13-01",
+    "11 Nov 2026",
+    "2026-11-11T25:00:00Z",
+    "x" * 500,
+    "9" * 64,
+    "\x00",
+    "2026-11-11T05:30:00[Asia/Kolkata]",
+    # R6.1 review M1: a time that leaves year 1..9999 once moved to the owner's zone
+    "9999-12-31T23:59:59Z",
+    "0001-01-01T00:00:00+14:00",
+    "9999-12-31T23:59:59-14:00",
+    # a day no image was built on (a clock reset to its epoch), shown by the console as unknown
+    "0001-01-01",
+    "0001-01-01T00:00:00Z",
+    "1999-12-31T12:00:00Z",
+]
+
+
+@pytest.mark.parametrize("raw", BAD_STAMPS)
 def test_a_bad_stamp_is_unknown_never_an_error(raw: str) -> None:
     assert about.build_date(environ={about.BUILD_DATE_ENV: raw}, stamp=None) == about.UNKNOWN
+
+
+@pytest.mark.parametrize("raw", BAD_STAMPS)
+def test_a_bad_stamp_file_is_unknown_never_an_error(tmp_path: Path, raw: str) -> None:
+    stamp = tmp_path / "BUILD_DATE"
+    stamp.write_text(raw, encoding="utf-8")
+    assert about.build_date(environ={}, stamp=stamp) == about.UNKNOWN
+
+
+@pytest.mark.parametrize("zone", ["America", "a" * 300, "", "../etc", "\x00"])
+def test_a_bad_zone_falls_back_never_an_error(zone: str) -> None:
+    env = {about.BUILD_DATE_ENV: "2026-11-10T20:00:00Z"}
+    assert about.build_date(environ=env, stamp=None, zone=zone) == "11 Nov 2026"
+
+
+def test_without_any_zone_data_the_day_is_utcs(monkeypatch: pytest.MonkeyPatch) -> None:
+    def no_zones(name: str) -> None:
+        raise about.ZoneInfoNotFoundError(name)
+
+    monkeypatch.setattr(about, "ZoneInfo", no_zones)
+    env = {about.BUILD_DATE_ENV: "2026-11-10T20:00:00Z"}
+    assert about.build_date(environ=env, stamp=None) == "10 Nov 2026"
+
+
+def test_fields_never_raise_and_say_unknown(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Whatever goes wrong reading the date, the Vitals answer still carries both fields."""
+
+    def boom(**_: object) -> str:
+        raise RuntimeError("a bug in the date code")
+
+    monkeypatch.setattr(about, "build_date", boom)
+    about.fields.cache_clear()
+    try:
+        with caplog.at_level(logging.WARNING, logger="jarvis.about"):
+            got = about.fields("Asia/Kolkata")
+            again = about.fields("Asia/Kolkata")
+    finally:
+        about.fields.cache_clear()
+    assert got == again == {"version": about.version(), "build_date": about.UNKNOWN}
+    said = [r for r in caplog.records if r.name == "jarvis.about"]
+    assert len(said) == 1 and "a bug in the date code" not in said[0].getMessage()
+
+
+def test_a_bad_stamp_is_logged_once_per_process(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv(about.BUILD_DATE_ENV, "9999-12-31T23:59:59Z")
+    monkeypatch.setattr(about, "PACKAGED_STAMP", None)
+    about.fields.cache_clear()
+    try:
+        with caplog.at_level(logging.WARNING, logger="jarvis.about"):
+            for _ in range(3):
+                assert about.fields("Asia/Kolkata")["build_date"] == about.UNKNOWN
+    finally:
+        about.fields.cache_clear()
+    said = [r for r in caplog.records if r.name == "jarvis.about"]
+    assert len(said) == 1 and "9999" not in said[0].getMessage()
 
 
 def test_without_a_stamp_the_date_is_unknown_never_today() -> None:

@@ -51,7 +51,7 @@ async def test_get_carries_the_version_and_build_date_for_the_about_line(  # typ
     finally:
         about.fields.cache_clear()
 
-    assert body["version"] == "v6.1.0" and body["build_date"] == "11 Nov 2026"
+    assert body["version"] == about.version() and body["build_date"] == "11 Nov 2026"
     assert {"overall", "items", "spend", "manual_unavailable", "manual_note"} <= body.keys()
 
 
@@ -67,7 +67,47 @@ async def test_without_a_build_stamp_the_date_is_unknown(rig_client, monkeypatch
     finally:
         about.fields.cache_clear()
 
-    assert body["build_date"] == "unknown" and body["version"] == "v6.1.0"
+    assert body["build_date"] == "unknown" and body["version"] == about.version()
+
+
+@pytest.mark.parametrize("stamp", ["9999-12-31T23:59:59Z", "0001-01-01T00:00:00+14:00", "x" * 64])
+async def test_a_bad_build_stamp_never_breaks_the_board(  # type: ignore[no-untyped-def]
+    rig_client, monkeypatch, stamp
+) -> None:
+    """R6.1 review M1: a stamp out of range, garbage or huge reads "unknown", never a 500."""
+    from jarvis import about
+
+    _, c = rig_client
+    monkeypatch.setenv(about.BUILD_DATE_ENV, stamp)
+    monkeypatch.setattr(about, "PACKAGED_STAMP", None)
+    about.fields.cache_clear()
+    try:
+        r = await c.get("/v1/vitals")
+    finally:
+        about.fields.cache_clear()
+
+    assert r.status_code == 200 and r.json()["build_date"] == "unknown"
+
+
+async def test_a_crash_in_the_date_code_never_breaks_the_board(  # type: ignore[no-untyped-def]
+    rig_client, monkeypatch
+) -> None:
+    from jarvis import about
+
+    def boom(**_: object) -> str:
+        raise RuntimeError("a bug in the date code")
+
+    _, c = rig_client
+    monkeypatch.setattr(about, "build_date", boom)
+    about.fields.cache_clear()
+    try:
+        r = await c.get("/v1/vitals")
+    finally:
+        about.fields.cache_clear()
+
+    body = r.json()
+    assert r.status_code == 200 and body["build_date"] == "unknown"
+    assert body["version"] == about.version() and "items" in body
 
 
 async def test_put_adds_a_manual_key_and_rejects_bad_ones(rig_client) -> None:  # type: ignore[no-untyped-def]

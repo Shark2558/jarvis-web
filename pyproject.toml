@@ -84,6 +84,8 @@ where = ["src"]
 "jarvis.buildbook" = ["_book/*"]
 # R6 D3, D5: the generator's hashed name list and known fakes (the deploy job installs non-editable)
 "jarvis.buildbook.gen" = ["redact.json", "fake_secrets.txt"]
+# R11 D15 (I1): the kitchen's USDA FoodData Central subset (CC0), built by scripts/kitchen_fdc_subset.py
+"jarvis.helpers.kitchen" = ["data/*.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -2,9 +2,9 @@
 # passes jarvis.tools.gateway). Every background reader of his own data -- birthdays (A, Google
 # Contacts), to-dos for "top priority" (A, Google Tasks), breach notices (B, Gmail), the missed-
 # activity and free-time calendar read (C, Google Calendar) and grocery receipts (D, Gmail) --
-# takes ONE governed path, `BackgroundReads.of(gateway)` (jarvis.tools.background): the gateway's own
-# policy and his rows decide, only ALLOW reads (Ask first, Never, unreadable rules, no gateway, an
-# unknown or non-read tool: no read), and each refusal or read leaves the same kind-only audit
+# takes ONE governed path, `BackgroundReads.of(gateway)` (jarvis.tools.background): the gateway's
+# own policy and his rows decide, only ALLOW reads (Ask first, Never, unreadable rules, no gateway,
+# an unknown or non-read tool: no read), and each refusal or read leaves the same kind-only audit
 # line. Each reader is shown here: a denied row means no request at all and that audit line.
 from __future__ import annotations
 

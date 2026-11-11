@@ -97,11 +97,20 @@ if (H) {
       const words = [r.minutes + ' min', SHORT[r.diet] || '', r.nutrition || ''].filter(Boolean).join(' \u00b7 ');
       const rm = btn('Remove', () => send('/recipes/' + encodeURIComponent(r.id), 'DELETE', undefined, 'Removed.'));
       s.append(H.row(r.title, words, [named(rm, 'Remove ' + r.title)]));
+      if (Array.isArray(r.nutrition_full) && r.nutrition_full.length) s.append(fullPanel(r));
     });
     const n = v.nutrition || {};
     s.append(H.mk('p', 'snote', n.installed ? n.attribution : 'Nutrition data isn\u2019t installed yet (USDA FoodData Central).'));
     s.append(H.mk('p', 'snote', 'New ideas use the AI from the chat, metered like a reply; with the AI off you get your saved recipes.'));
     return s;
+  }
+  function fullPanel(r) { // I1: every nutrient of the dish, folded away until he opens it
+    const d = H.mk('details', 'hp-full');
+    d.append(H.mk('summary', 'snote', 'Full nutrition of ' + H.txt(r.title, 60) + ' (' + r.nutrition_full.length + ' values)'));
+    r.nutrition_full.slice(0, 200).forEach((x) => {
+      if (Array.isArray(x) && x.length === 2) d.append(H.row(H.txt(String(x[0]), 80), H.txt(String(x[1]), 40)));
+    });
+    return d;
   }
   function spend(v) {
     const sp = v.spend || {};

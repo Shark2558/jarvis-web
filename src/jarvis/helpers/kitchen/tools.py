@@ -194,9 +194,15 @@ def _recipe_tools(svc: KitchenService) -> list[Tool]:
         ),
         _tool(
             "nutrition_of",
-            "Rough nutrition of a dish (USDA FoodData Central, raw ingredients): a saved "
-            "recipe's title, or ingredients with grams.",
-            {"recipe": {"type": "string", "maxLength": 80}, "ingredients": _INGREDIENTS},
+            "Rough nutrition of a dish (US reference values from USDA FoodData Central, raw "
+            "ingredients; Indian varieties and home recipes can differ): a saved recipe's title, "
+            "or ingredients with grams. The six key values by default; detail 'full' gives every "
+            "nutrient (when he asks for full nutrition or all the values).",
+            {
+                "recipe": {"type": "string", "maxLength": 80},
+                "ingredients": _INGREDIENTS,
+                "detail": {"type": "string", "enum": ["key", "full"]},
+            },
             R1,
             svc.nutrition_of,
             "Nutrition looked up",

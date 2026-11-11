@@ -56,7 +56,8 @@ async def test_the_view_is_no_store_and_starts_empty(rig: Any) -> None:
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     v = r.json()
     assert v["sealed"] is True and v["pantry"] == [] and v["prefs"]["diet"] == "veg"
-    assert v["nutrition"]["installed"] is False and v["spend"]["on"] is False
+    assert v["nutrition"]["installed"] is True and v["spend"]["on"] is False  # I1: USDA installed
+    assert v["nutrition"]["label"].startswith("US reference values (USDA FoodData Central)")
     assert v["calendar"] is True and v["blocks"]["cooking_at"] == "19:00"
 
 

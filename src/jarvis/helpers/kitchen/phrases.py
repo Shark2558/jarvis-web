@@ -13,6 +13,7 @@ Anything else is left to the other routers (None). Arguments are strings, as `No
     show my (saved) recipes                          recipe_list
     calories in 200 g rice, 100 g dal                nutrition_of(ingredients)
     nutrition of avial                               nutrition_of(recipe)
+    full nutrition for dal                           nutrition_of(recipe, detail=full)
     how much did I spend on groceries (this month | last month | in March)   spend_month(month)
     block (my) cooking (and washing-up) time         calendar_kitchen_blocks(only)
     set my diet to vegetarian / I am eggetarian      kitchen_settings(diet)
@@ -56,7 +57,8 @@ RECIPES = re.compile(
     _LEAD + r"(?:(?:show|list|read)\s+(?:me\s+)?)?my\s+(?:saved\s+)?recipes" + _END, _I
 )
 NUTRITION = re.compile(
-    _LEAD + r"(?:(?:what(?:'s|\s+is)\s+the\s+)?(?:nutrition|calories|kcal)\s+(?:in|of|for)"
+    _LEAD + r"(?:(?:what(?:'s|\s+is)\s+the\s+)?(?P<full>(?:full|complete|all(?:\s+the)?)\s+)?"
+    r"(?:nutrition|nutrients|calories|kcal)\s+(?:in|of|for)"
     r"|how\s+many\s+calories\s+(?:are\s+)?in)\s+(?P<what>.+?)" + _END,
     _I,
 )
@@ -116,7 +118,8 @@ def _nutrition(text: str, now: datetime) -> NoAIRoute | None:
         return None
     what = m.group("what").strip()
     key = "ingredients" if _GRAMS.search(what) else "recipe"
-    return _one("nutrition_of", **{key: what})
+    full = m.group("full") is not None  # I1: "full nutrition for dal", "all nutrients in ..."
+    return _one("nutrition_of", **{key: what, "detail": "full" if full else ""})
 
 
 def _blocks(text: str, now: datetime) -> NoAIRoute | None:

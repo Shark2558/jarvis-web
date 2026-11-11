@@ -26,7 +26,16 @@ from jarvis.helpers.kitchen.models import (
     Recipe,
     plain,
 )
-from jarvis.helpers.kitchen.nutrition import ATTRIBUTION, Nutrition, describe, parse_ingredients
+from jarvis.helpers.kitchen.nutrition import (
+    ATTRIBUTION,
+    LABEL,
+    DishNutrition,
+    Nutrition,
+    describe,
+    describe_full,
+    key_line,
+    parse_ingredients,
+)
 from jarvis.helpers.kitchen.recipes import DIET_SHORT, RecipeService
 from jarvis.helpers.kitchen.spend import GrocerySpendJob, SpendService
 from jarvis.helpers.kitchen.store import KitchenOff, KitchenStore, KitchenUnavailable
@@ -201,17 +210,31 @@ class KitchenService:
     async def forget_recipe(self, uid: str, rid: str) -> bool:
         return await self._change(uid, lambda k: ops.forget_recipe(k, rid))
 
+    def _said(self, d: DishNutrition, detail: object) -> dict[str, Any]:
+        """The six key values by default; every nutrient when he asks ("full nutrition", I1)."""
+        n = self.nutrition
+        if detail != "full":
+            return {"message": describe(d)}
+        values = [{"name": k, "amount": v} for k, v in n.panel(d)] if d.installed else []
+        return {"message": describe_full(d, n), "values": values}
+
     async def nutrition_of(self, uid: str, args: Mapping[str, Any]) -> dict[str, Any]:
+        detail = args.get("detail")
         if args.get("ingredients"):
             items = _ingredients(args.get("ingredients"))
-            return {"message": describe(self.nutrition.dish(items))}
+            return self._said(self.nutrition.dish(items), detail)
 
         async def work() -> dict[str, Any]:
-            found = ops.find_recipe(await self.store.load(uid), str(args.get("recipe") or ""))
+            name = str(args.get("recipe") or "")
+            found = ops.find_recipe(await self.store.load(uid), name)
+            if found is None and (food := self.nutrition.find(name)) is not None:
+                out = self._said(self.nutrition.dish((Ingredient(name=name, grams=100),)), detail)
+                return {**out, "message": f"Per 100 g of raw {food.key}: {out['message']}"}
             if found is None:
                 return {"message": "I can't find that in your saved recipes, Sir. Give the grams, "
                         "such as '200 g rice, 100 g dal'."}  # fmt: skip
-            return {"message": f"{found.title}: {describe(self.nutrition.dish(found.ingredients))}"}
+            out = self._said(self.nutrition.dish(found.ingredients), detail)
+            return {**out, "message": f"{found.title}: {out['message']}"}
 
         return await self._guard(work)
 
@@ -220,6 +243,7 @@ class KitchenService:
 
     def _row(self, r: Recipe) -> dict[str, Any]:
         n = self.nutrition
+        d = n.dish(r.ingredients) if n.installed else None
         return {
             "id": r.id,
             "title": r.title,
@@ -227,7 +251,9 @@ class KitchenService:
             "diet": r.diet,
             "minutes": r.minutes,
             "ingredients": len(r.ingredients),
-            "nutrition": describe(n.dish(r.ingredients)) if n.installed else None,
+            "nutrition": key_line(d) if d is not None and d.matched else None,
+            # I1: every nutrient, for the tab's expandable list ([name, "amount unit"])
+            "nutrition_full": [list(x) for x in n.panel(d)] if d is not None else [],
         }
 
     async def view(self, uid: str) -> dict[str, Any]:
@@ -247,7 +273,11 @@ class KitchenService:
                 "last_at": scan.last_at,
                 "months": await self.spend.totals(uid) if scan.on else [],
             },  # fmt: skip
-            "nutrition": {"installed": self.nutrition.installed, "attribution": ATTRIBUTION},
+            "nutrition": {
+                "installed": self.nutrition.installed,
+                "attribution": ATTRIBUTION,
+                "label": LABEL,
+            },
             "calendar": self.calendar,
             "words": {"diets": list(DIETS), "spice": list(SPICE_WORDS), "oil": list(OIL_WORDS)},
         }

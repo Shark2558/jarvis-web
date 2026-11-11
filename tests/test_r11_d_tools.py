@@ -144,11 +144,20 @@ async def test_a_veg_kitchen_never_sees_chicken_through_the_gateway() -> None:
     assert len(private.calls) == 2
 
 
-async def test_nutrition_of_a_typed_dish_says_not_installed_until_the_subset_is() -> None:
+async def test_nutrition_of_a_typed_dish_uses_the_installed_usda_values() -> None:
+    """I1: the subset is installed: real values, the six by default, every one on request."""
     gw, _, _, _ = await _rig()
     out = await _call(gw, "nutrition_of", ingredients="200 g rice, 100 g toor dal")
     assert out.outcome is GatewayOutcome.EXECUTED
-    assert "isn't installed" in out.result["message"]
+    msg = out.result["message"]
+    assert (
+        msg.startswith("About 1073 kcal") and "US reference values (USDA FoodData Central)" in msg
+    )
+    full = await _call(gw, "nutrition_of", ingredients="200 g rice", detail="full")
+    assert full.result["message"].startswith("Full nutrition, about: Water")
+    assert {"name": "Calcium, Ca", "amount": "56 mg"} in full.result["values"]
+    per100 = await _call(gw, "nutrition_of", recipe="masoor dal", detail="full")
+    assert per100.result["message"].startswith("Per 100 g of raw masoor dal: Full nutrition")
     bad = await _call(gw, "nutrition_of", ingredients="some rice")
     assert bad.outcome is GatewayOutcome.ERROR
 
@@ -228,7 +237,7 @@ async def test_no_ai_mode_answers_every_plain_kitchen_feature_with_no_provider_c
         ("what's in my pantry", "In your pantry, Sir: rice, dal."),
         ("what can I cook", AI_OFF_LINE),
         ("show my saved recipes", "Your saved recipes, Sir: Avial"),
-        ("nutrition of avial", "isn't installed"),
+        ("nutrition of avial", "US reference values (USDA FoodData Central)"),
         ("grocery spend this month", "Grocery spend is off"),
         ("block cooking time", "That needs your OK, Sir."),
     ):

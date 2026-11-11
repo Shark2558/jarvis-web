@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -39,7 +40,7 @@ from jarvis.core.guardrails import ConfirmationGate
 from jarvis.helpers.kitchen import diet
 from jarvis.helpers.kitchen import part as kitchen_part
 from jarvis.helpers.kitchen.models import Ingredient
-from jarvis.helpers.kitchen.nutrition import NOT_INSTALLED, Food, Nutrition, describe
+from jarvis.helpers.kitchen.nutrition import LABEL, NOT_INSTALLED, Food, Nutrition, describe
 from jarvis.helpers.kitchen.recipes import AI_OFF_LINE, NO_PRIVATE_LINE
 from jarvis.helpers.ports import HelperPart
 from jarvis.llm.base import ToolCall
@@ -186,8 +187,15 @@ async def _nutrition_sums() -> list[str]:
     n = Nutrition((Food("rice", 1, ("rice", "chawal"), per),), installed=True)
     d = n.dish((Ingredient(name="chawal", grams=250),))
     fails = [] if round(d.totals["kcal"], 2) == 912.5 else [f"kcal {d.totals['kcal']}"]
+    # I1: the USDA SR Legacy subset is installed: rice is the file's own 365 kcal per 100 g, said
+    # with the honest label (US reference values); a missing file still says "not installed"
     bundled = describe(Nutrition.load().dish((Ingredient(name="rice", grams=100),)))
-    return fails + ([] if bundled == NOT_INSTALLED else ["the empty subset gave numbers"])
+    if not bundled.startswith("About 365 kcal") or LABEL not in bundled:
+        fails.append("the installed subset didn't give rice's USDA values")
+    missing = describe(
+        Nutrition.load(Path("/nonexistent/fdc.json")).dish((Ingredient(name="rice", grams=1),))
+    )
+    return fails + ([] if missing == NOT_INSTALLED else ["a missing file gave numbers"])
 
 
 async def _spend(names: tuple[str, ...]) -> tuple[list[dict[str, Any]], Any, Any]:
@@ -237,7 +245,7 @@ async def _no_ai_phrases() -> list[str]:
         "what's in my pantry": "In your pantry",
         "what can I cook tonight": AI_OFF_LINE,
         "show my saved recipes": "no saved recipes",
-        "calories in 200 g rice": "isn't installed",
+        "calories in 200 g rice": "About 730 kcal",  # I1: the installed USDA values (365 a 100 g)
         "grocery spend this month": "Grocery spend is off",
         "block cooking and washing-up time": "That needs your OK",
         "set my diet to eggetarian": "eggetarian",

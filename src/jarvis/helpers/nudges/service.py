@@ -30,6 +30,7 @@ from jarvis.helpers.nudges.schedule import local_day, zone
 from jarvis.helpers.nudges.store import NudgeStore, WellbeingStore
 from jarvis.helpers.ports import PendingItem, PendingSource
 from jarvis.logging import get_logger
+from jarvis.tools.background import NotRead
 
 log = get_logger(__name__)
 
@@ -139,6 +140,8 @@ class NudgeService:
         for src in self._pending():
             try:
                 got = await asyncio.wait_for(src.pending(uid, now), PENDING_TIMEOUT_S)
+            except NotRead:  # his row didn't let it read: a refusal, not a failure (no retry)
+                continue
             except Exception as exc:  # noqa: BLE001 - one source never stops the others
                 log.warning("nudges: a pending source failed", extra={"error": type(exc).__name__})
                 failed += 1

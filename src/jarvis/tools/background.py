@@ -25,6 +25,9 @@ whose permission row covers the read, and leaves one kind-only line in the gatew
   unreadable, the row's tool that stopped it, a fixed reason word); it is truthy only when
   allowed. `verdict()` is what a job would be told now, with no audit line: the helpers' "paused"
   lines (`jarvis.helpers.paused`) read it.
+- **Decided as a plain read**: each row's tool at READ_ONLY with no arguments, since a job has
+  none. An owner rule with conditions (`when`, `risks`) is judged as it reads for no arguments;
+  inside the gateway's own call for that tool, the gateway already judged his real arguments.
 - **One audit line each time**, the same shape for every reader: agent `helpers`, the row's tool,
   risk R1, outcome `executed` / `denied` / `error`, no arguments, and the detail "<job>" or
   "<job>; <a fixed reason word>": never a name, an address, a subject, a count or an amount.
@@ -69,6 +72,12 @@ FAILED = "failed"
 CUT = "cut"
 ERRORS = frozenset({NO_GATEWAY, NO_RULES, UNREADABLE})  # the path itself failed: outcome "error"
 MAX_REMEMBERED = 512  # refusals remembered for the once-a-day rule
+
+
+class NotRead(Exception):  # noqa: N818 - a refusal, not an error
+    """A source his permission row did not let read just now ("Ask first" with no card for that
+    tool, or rows unreadable). Collectors name the source as not checked (`top priority`) or
+    skip it quietly (a nudge's slot is decided, not retried every run)."""
 
 
 @dataclass(frozen=True)
@@ -259,6 +268,7 @@ __all__ = [
     "UNWIRED",
     "BackgroundReads",
     "GatewayView",
+    "NotRead",
     "Outcome",
     "Reason",
     "Verdict",

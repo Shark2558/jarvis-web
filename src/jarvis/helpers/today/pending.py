@@ -32,7 +32,7 @@ from jarvis.helpers.today.store import BillsOff
 from jarvis.integrations.google import GoogleConnector, GoogleNotConnected
 from jarvis.logging import get_logger
 from jarvis.notify.quiet import local
-from jarvis.tools.background import BackgroundReads
+from jarvis.tools.background import BackgroundReads, NotRead
 from jarvis.tools.card import one_line
 from jarvis.tools.tasks_api import TasksClient, TasksNotGranted, date_of
 
@@ -153,11 +153,6 @@ class GoogleTasksDue:
             (str(t.get("title") or ""), d) for _, t in scan.found if (d := date_of(t.get("due")))
         ]
         return sorted(out, key=lambda row: row[1])
-
-
-class NotRead(Exception):  # noqa: N818 - a refusal, not an error: the collector names the source
-    """His To-dos row did not allow this read (Mark XIV review): `PendingService` leaves the
-    source out and names it in `missing`, so "top priority" says his to-dos weren't checked."""
 
 
 class TasksPending:

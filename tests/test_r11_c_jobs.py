@@ -204,6 +204,21 @@ async def test_a_failing_pending_source_is_retried_next_run_not_kept_for_the_day
     assert "RuntimeError" in logged(caplog) and "pending down" not in logged(caplog)
 
 
+async def test_todos_his_row_did_not_allow_are_skipped_not_retried_every_run() -> None:
+    # Mark XIV security check: his to-dos on "Ask first" raise NotRead; that is a refusal, not a
+    # failure, so the slot is decided ("nothing") instead of retried every 5 minutes.
+    from jarvis.tools.background import NotRead
+
+    class NotAllowed(FakePending):
+        async def pending(self, uid: str, now: datetime) -> list[PendingItem]:
+            raise NotRead
+
+    rig = part(pending=NotAllowed())
+    await switch_on(rig, "nudge_focus")
+    assert await tick(rig, at_ist(TUESDAY, "10:00")) == {"nothing": 1}
+    assert sent(rig) == []
+
+
 async def test_nothing_pending_keeps_the_focus_claim_for_that_slot() -> None:
     pend = FakePending([])
     rig = part(pending=pend)

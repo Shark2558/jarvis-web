@@ -51,7 +51,7 @@ NO_UPI = "This bill has no UPI ID yet, Sir. Type it yourself in Helpers → Toda
 VARIES_NEEDS = "This bill's amount varies, Sir: say how much to pay."
 
 
-def _day_text(d: date) -> str:
+def day_text(d: date) -> str:
     return d.strftime("%a %d %b").replace(" 0", " ")
 
 
@@ -84,8 +84,8 @@ def when_words(due: date, today: date) -> str:
     if gap == 1:
         return "due tomorrow"
     if gap < 0:
-        return f"overdue since {_day_text(due)}"
-    return f"due {_day_text(due)}"
+        return f"overdue since {day_text(due)}"
+    return f"due {day_text(due)}"
 
 
 def amount_words(bill: Bill) -> str:
@@ -99,7 +99,7 @@ def reminder_text(bill: Bill, due: date, off: int) -> str:
         return f"Bill reminder, Sir: {what} was due yesterday and isn't marked paid. Open JARVIS."
     when = {0: "is due today", 1: "is due tomorrow"}.get(off, f"is due in {off} days")
     return (
-        f"Bill reminder, Sir: {what} {when} ({_day_text(due)}). Open JARVIS to get the payment "
+        f"Bill reminder, Sir: {what} {when} ({day_text(due)}). Open JARVIS to get the payment "
         "ready."
     )
 
@@ -154,6 +154,10 @@ class BillsService:
         self._tz = tz
         self._now = now
 
+    @property
+    def tz(self) -> str:
+        return self._tz
+
     def today(self) -> date:
         return local(self._now(), self._tz).date()
 
@@ -168,10 +172,10 @@ class BillsService:
 
     @staticmethod
     def find(book: Book, ref: Any) -> Bill:
-        """A bill by its id, or by its name (case-insensitive, exactly one)."""
-        key = ref.strip() if isinstance(ref, str) else ""
+        """A bill by its id, or by its name (case-insensitive, exactly one; "the X bill" too)."""
+        key = " ".join(ref.split()).casefold() if isinstance(ref, str) else ""
         by_id = [b for b in book.bills if b.id == key]
-        named = [b for b in book.bills if b.label.casefold() == key.casefold()]
+        named = [b for b in book.bills if b.label.casefold() in (key, f"{key} bill")]
         found = by_id or named
         if len(found) != 1:
             raise BillRefused("No bill by that name, Sir." if not found else "Two bills share it.")
@@ -308,6 +312,7 @@ __all__ = [
     "amount_words",
     "card_text",
     "current_due",
+    "day_text",
     "reminder_text",
     "reminders_due",
     "when_words",

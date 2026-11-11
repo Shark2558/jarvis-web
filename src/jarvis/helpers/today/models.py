@@ -125,7 +125,7 @@ def _grouped(rupees: int) -> str:
     if len(s) <= 3:
         return s
     head, tail = s[:-3], s[-3:]
-    pairs = []
+    pairs: list[str] = []
     while len(head) > 2:
         pairs.insert(0, head[-2:])
         head = head[:-2]

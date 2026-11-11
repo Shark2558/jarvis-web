@@ -196,6 +196,9 @@ class BillStore:
         await self.change(uid, take)
         return taken[-1] if taken else None
 
+    async def exists(self, uid: str) -> bool:
+        return await self._docs.get(self.path(uid)) is not None
+
     async def delete_all(self, uid: str) -> int:
         if await self._docs.get(self.path(uid)) is None:
             return 0

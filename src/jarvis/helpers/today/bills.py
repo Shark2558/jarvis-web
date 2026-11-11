@@ -40,7 +40,7 @@ from jarvis.helpers.today.models import (
     parse_upi,
 )
 from jarvis.helpers.today.qr import qr_data_uri
-from jarvis.helpers.today.store import BillStore, Book
+from jarvis.helpers.today.store import READY_FOR, BillStore, Book, Grant
 from jarvis.helpers.today.upi import amount_text, upi_link
 from jarvis.notify.quiet import local
 
@@ -284,22 +284,22 @@ class BillsService:
         return Prepared(bill, paise, due, card_text(bill, paise, due))
 
     async def make_ready(self, uid: str, prepared: Prepared) -> datetime:
-        b = prepared.bill
-        return await self.store.make_ready(
-            uid, b.id, paise=prepared.paise, due=prepared.due, now=self._now()
-        )
+        b, now = prepared.bill, self._now()
+        grant = Grant(now + READY_FOR, prepared.paise, prepared.due, b.upi, b.payee or b.label)
+        return await self.store.make_ready(uid, b.id, grant, now)
 
     async def payment(self, uid: str, bill_id: str) -> Payment | None:
-        """The approved payment, once: None when nothing was approved or it expired."""
+        """The approved payment, once: None when nothing was approved, it expired, or the bill's
+        payee changed since the card he approved (never a payee he didn't see)."""
         grant = await self.store.take_ready(uid, bill_id, self._now())
         if grant is None:
             return None
         bill = self.find(await self.store.book(uid), bill_id)
-        pn = bill.payee or bill.label
-        link = upi_link(pa=bill.upi, pn=pn, paise=grant.paise, tn=bill.note(grant.due))
-        return Payment(
-            link, qr_data_uri(link), bill.upi, pn, inr(grant.paise), bill.note(grant.due)
-        )
+        if (bill.upi, bill.payee or bill.label) != (grant.upi, grant.payee):
+            return None
+        note = bill.note(grant.due)
+        link = upi_link(pa=grant.upi, pn=grant.payee, paise=grant.paise, tn=note)
+        return Payment(link, qr_data_uri(link), grant.upi, grant.payee, inr(grant.paise), note)
 
 
 __all__ = [

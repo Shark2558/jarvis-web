@@ -135,3 +135,14 @@ async def test_remove_and_prefs() -> None:
     assert await svc.remove(UID, bid) and not await svc.remove(UID, bid)
     with pytest.raises(BillRefused):
         await svc.set_prefs(UID, bills_at="25:00")
+
+
+async def test_the_shown_payment_is_exactly_the_approved_one() -> None:
+    svc, _, _ = _svc()
+    bid = await _electricity(svc)
+    await svc.make_ready(UID, await svc.prepare(UID, bid))
+    await svc.set_payee(UID, bid, upi="mallory@okfake", payee="Someone Else")  # changed since
+    assert await svc.payment(UID, bid) is None  # never a payee he didn't approve
+    await svc.make_ready(UID, await svc.prepare(UID, bid))
+    shown = await svc.payment(UID, bid)
+    assert shown is not None and "pa=mallory@okfake&pn=Someone%20Else" in shown.link

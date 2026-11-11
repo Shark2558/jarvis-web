@@ -12,7 +12,7 @@ from r11_fakes import NOON_IST, UID
 from r11_fakes_a import FAKE_UPI, every_text, keyring
 
 from jarvis.helpers.today.models import Bill, Due, Prefs
-from jarvis.helpers.today.store import BillsOff, BillStore, Claims
+from jarvis.helpers.today.store import READY_FOR, BillsOff, BillStore, Claims, Grant
 from jarvis.integrations.vault import VaultError
 from jarvis.storage.docs import MemoryDocs, Set
 
@@ -59,13 +59,13 @@ async def test_a_ready_payment_is_taken_once_and_expires() -> None:
     docs = MemoryDocs()
     store = BillStore(docs, keyring(), prefix="jarvis_")
     await store.change(UID, lambda b: b.with_bills((_bill(),)))
-    grant = {"paise": 89950, "due": date(2026, 11, 13), "now": NOON_IST}
-    await store.make_ready(UID, "a1b2c3d4e5f6", **grant)  # type: ignore[arg-type]
-    assert "89950" not in every_text(docs)  # the grant is sealed with the bills
+    grant = Grant(NOON_IST + READY_FOR, 89950, date(2026, 11, 13), FAKE_UPI, "Power Co")
+    await store.make_ready(UID, "a1b2c3d4e5f6", grant, NOON_IST)
+    assert "89950" not in every_text(docs) and FAKE_UPI not in every_text(docs)  # sealed
     got = await store.take_ready(UID, "a1b2c3d4e5f6", NOON_IST + timedelta(minutes=9))
     assert got is not None and got.paise == 89950 and got.due == date(2026, 11, 13)
     assert await store.take_ready(UID, "a1b2c3d4e5f6", NOON_IST + timedelta(minutes=9)) is None
-    await store.make_ready(UID, "a1b2c3d4e5f6", **grant)  # type: ignore[arg-type]
+    await store.make_ready(UID, "a1b2c3d4e5f6", grant, NOON_IST)
     assert await store.take_ready(UID, "a1b2c3d4e5f6", NOON_IST + timedelta(minutes=11)) is None
 
 

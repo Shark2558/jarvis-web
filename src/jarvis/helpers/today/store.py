@@ -41,14 +41,23 @@ class BillsOff(RuntimeError):
 
 @dataclass(frozen=True)
 class Grant:
-    """An approved payment that may be shown once, until `until`."""
+    """An approved payment that may be shown once, until `until`: exactly what the card said (the
+    amount, the due date, the UPI ID and the payee's name), so a later change shows nothing."""
 
     until: datetime
     paise: int
     due: date
+    upi: str
+    payee: str
 
     def dump(self) -> dict[str, Any]:
-        return {"until": self.until.isoformat(), "paise": self.paise, "due": self.due.isoformat()}
+        return {
+            "until": self.until.isoformat(),
+            "paise": self.paise,
+            "due": self.due.isoformat(),
+            "upi": self.upi,
+            "payee": self.payee,
+        }
 
     @classmethod
     def load(cls, raw: Any) -> Grant | None:
@@ -57,6 +66,8 @@ class Grant:
                 datetime.fromisoformat(raw["until"]),
                 int(raw["paise"]),
                 date.fromisoformat(raw["due"]),
+                str(raw["upi"]),
+                str(raw["payee"]),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -168,14 +179,12 @@ class BillStore:
 
         return await self._docs.transaction(run)
 
-    async def make_ready(
-        self, uid: str, bill_id: str, *, paise: int, due: date, now: datetime
-    ) -> datetime:
-        until = now + READY_FOR
+    async def make_ready(self, uid: str, bill_id: str, grant_: Grant, now: datetime) -> datetime:
+        until = grant_.until
 
         def grant(b: Book) -> Book:
             live = {k: g for k, g in b.ready.items() if g.until > now and k != bill_id}
-            live[bill_id] = Grant(until, paise, due)
+            live[bill_id] = grant_
             newest = sorted(live.items(), key=lambda kv: kv[1].until)[-MAX_READY:]
             return b.with_ready(dict(newest))
 

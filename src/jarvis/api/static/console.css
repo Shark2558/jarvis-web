@@ -6,6 +6,15 @@
    Layout of the Command Deck lives in console-deck.css. Content always wins over decoration.
 ============================================================================================= */
 
+/* Self-hosted OFL fonts (static/fonts, licences beside them; console.py FONT_FILES). Moved here
+   from console.html's inline <style> in R6.1 (I1) to keep the page under 800 lines. */
+@font-face{font-family:"Orbitron";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/orbitron-latin-600-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Orbitron";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/orbitron-latin-700-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:500;font-display:swap;src:url(/static/fonts/rajdhani-latin-500-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/rajdhani-latin-600-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/rajdhani-latin-700-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Share Tech Mono";font-style:normal;font-weight:400;font-display:swap;src:url(/static/fonts/share-tech-mono-latin-400-normal.woff2?v=1) format("woff2")}
+
 /* registered so a theme switch cross-fades instead of snapping */
 @property --accent{syntax:"<color>";inherits:true;initial-value:#0071E3}
 @property --accent-2{syntax:"<color>";inherits:true;initial-value:#00C2E0}

@@ -133,10 +133,16 @@ async def test_rejects_unknown_font_names_and_traversal(client: AsyncClient, pat
 
 
 async def test_console_page_declares_self_hosted_font_faces(client: AsyncClient) -> None:
+    # R6.1 I1: the @font-face block moved from the page's inline <style> to the base stylesheet
+    # (console.html must stay under 800 lines); the page links that stylesheet first.
     html = (await client.get("/")).text
+    links = re.findall(r'<link rel="stylesheet" href="([^"]+)">', html)
+    assert links[0] == "/static/console.css"
+    css = (await client.get("/static/console.css")).text
     for name in ALLOWED_FONTS:
-        assert f"/static/fonts/{name}" in html
-    assert "font-display:swap" in html.replace(" ", "")
+        assert f"/static/fonts/{name}" in css
+    assert css.replace(" ", "").count("font-display:swap") == len(ALLOWED_FONTS)
+    assert "@font-face" not in html
 
 
 # ---- three.js (vendored, MIT) -----------------------------------------------------------------

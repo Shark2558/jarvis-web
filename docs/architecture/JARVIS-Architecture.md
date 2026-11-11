@@ -2,86 +2,147 @@ Version v6.1.1 · 11 Nov 2026, 11:43 IST · Release R6.1 · Status: Current · O
 
 # JARVIS Architecture & Technology Guide
 
-First edition. It describes JARVIS **as built** up to release R6.1 (version v6.1.0 of the code), and
-it marks every **planned** item as PLANNED. It was written from the code, the deploy script, the CI
-file, the evals and the plans in `docs/plans/`, not from memory. Where a fact could not be checked
-against the code it says *unverified*.
+This guide was checked against JARVIS's real code. It is the first edition of the guide (edition
+v6.1.1). It describes the JARVIS program at version v6.1.0, which is release R6.1. Anything that
+is planned but not built yet is marked PLANNED.
+
+For engineers: it was written from the code, the deploy script, the CI file, the evals and the
+plans in `docs/plans/`, not from memory. A fact that could not be checked against the code says
+*unverified*. The checks that were run are listed under "How this guide was checked", just before
+the change log.
 
 ## How to read this guide
 
-- **Page 1 (section 1)** is for the owner: what JARVIS does, what it costs, where the data lives and
-  what it can never do without you. No technical words are needed to read it.
+- **Page 1 (section 1)** is for you, the owner. It says what JARVIS does, what it costs, where your
+  data is, what it can never do without you and what happens when the laptop is off. It needs no
+  technical words; the few names it uses are explained where they first appear.
 - **Sections 2 to 4** show how the parts fit: the eight layers, one card per component, and the 14
   diagrams.
 - **Sections 5 to 11** are for engineers and reviewers: technology choices, outside services and
   their free limits, decisions, data and privacy, security, operations, costs, limits and the
   roadmap.
 - **Section 12** is the glossary. Every technical word used here is explained there once.
-- Releases are written as "R4 (v4.0.0)". Risk levels for actions are written as "R1 read",
-  "R2 reversible" and "R3 irreversible". They are different things that share a letter.
-- Money is in rupees (₹). Google, Anthropic and Tavily bill in US dollars; JARVIS converts at the
-  daily rate (₹95.24 to the dollar on 1 Nov 2026, the stored fallback), so every ₹ figure is an
+- Money is in rupees (₹). Google, Anthropic and Tavily bill in US dollars. JARVIS converts at the
+  day's rate (₹95.24 to the dollar on 1 Nov 2026 is the stored fallback), so every ₹ figure is an
   **estimate**.
+- The first line of this guide is its version line. "Owner" there means the owner of this
+  document: 🛠 Mark XIII, the build name of this release (every JARVIS release gets a Mark
+  number, as in the films). JARVIS itself belongs to you.
 
 ## 1. One-page summary
 
-**What JARVIS is.** A private assistant for one owner. It lives in the owner's own Google Cloud
-project in Mumbai, and the owner reaches it from a web page (the console) on a laptop or phone, by
-voice, or from Telegram. A small "home bridge" on the owner's laptop connects it to the house.
+**What JARVIS is.** JARVIS is your own private assistant. It runs in your own Google Cloud
+account, in Google's Mumbai data centre. You use it from a web page on your laptop or phone (the
+"console"), by voice, or from the Telegram chat app. A small program on your laptop, the "home
+bridge", connects it to your house.
 
 **What it does today (up to R6.1).**
 
 | Area | What JARVIS does for you |
 |---|---|
-| Talk | Chat in the console or on Telegram; speak to it ("Hey Jarvis"), interrupt it, switch the mic off; it answers in a British voice or the browser's own voice. |
-| Day planning | A morning brief (calendar, mail, parcels, family calendars, documents due, home overnight); calendar events, reminders, to-dos and the groceries list on your Google account. |
-| Mail and messages | Reads and summarises Gmail, writes drafts, reads unread mail aloud; writes WhatsApp messages for you to send yourself. |
-| Research | Web search with numbered sources; reads attached files and chosen Google Drive folders; maps, routes and YouTube; public-figure "people research" behind a verification gate. |
-| Memory | Remembers facts about you that you can see and edit ("About you"); notes, voice-memo transcripts and links; "Where did I keep it?" for things at home. |
-| Documents | A locked document vault with expiry reminders, and an import folder for DigiLocker documents. |
-| Home | Home Assistant devices, a burglar alarm on the home cameras, faces it may recognise (only with consent), camera history, package alerts, and a watchdog that tells you when the laptop stops answering. |
-| Looking after itself | Vitals (keys, quotas, bills and limits), a spoken systems check, costs in ₹ with your own monthly limit, and the build book that documents each release. |
+| Talk | Type to it in the console or on Telegram, or say "Hey Jarvis" and speak. You can talk over it to stop it, and switch the microphone off. It answers in a British voice or in the browser's own voice. |
+| Day planning | A morning brief: your calendar, mail, parcels, family calendars, documents that need renewing and what the home cameras saw overnight. It adds events, reminders, to-dos and groceries to your Google account. |
+| Mail and messages | Reads and sums up your Gmail, writes drafts and reads new mail aloud. It writes WhatsApp messages that you send yourself. |
+| Research | Searches the web and shows numbered sources. Reads files you attach and Google Drive folders you choose. Finds places, routes and YouTube videos. Looks up public figures, but only after checking that the person really is public. |
+| Memory | Remembers facts about you, which you can see and edit ("About you"). Keeps your notes, the text of voice memos and saved links. Remembers where you put things at home ("Where did I keep it?"). |
+| Documents | A locked store for your documents (ID, insurance, certificates) that reminds you before they expire. It takes in documents you share from DigiLocker, the government's document app. |
+| Home | Controls your smart-home devices, runs a burglar alarm on the home cameras and can recognise faces (only of people who agreed). It answers "who came yesterday?", tells you about parcels at the door, and tells you when the laptop stops answering. |
+| Looking after itself | The Vitals panel shows its keys, free allowances, bills and limits. It can check its own systems and read you the result. It counts every cost in rupees. At each release it writes a "build book" that explains how it is built. |
 
-**What it costs a month (estimates).** The cloud part runs inside Google's free allowances, so the
-running cost is **₹0**; a ₹1 budget alert e-mails the billing account the moment anything is
-charged. The only paid part is the AI brain when it is Claude: a normal reply cost about ₹0.17 in
-the owner's test run, a reply that used web search ₹0.5–2, so **20 replies a day is roughly ₹100 a
-month**. The optional morning-brief summary adds about ₹3 and background learning about ₹5 (at
-most ₹24). With the free Gemini brain, the laptop brain or No-AI mode the AI cost is ₹0. You set a
-monthly limit in rupees; at the limit JARVIS stops calling paid models and says so. Details: section 9.
+**What it costs a month (estimates).**
+
+- **A typical month: about ₹110.** About ₹100 is for Claude's answers (20 a day at about ₹0.17
+  each). The optional morning summary adds about ₹3 and the optional learning about you about ₹5.
+- **Google Cloud: ₹0 to about ₹30.** The server, the database and the clock stay inside Google's
+  free allowances. Google's locked store for keys holds 6 of them free. With every feature on,
+  JARVIS keeps 11, at about ₹6 a month for each one above 6.
+- **What can make it cost more.** An answer that searches the web costs ₹0.5–2. If all 20 answers
+  a day searched the web, Claude would cost ₹300–1,200 a month. Listening to your voice is free for
+  54 minutes a month (under 2 minutes a day); after that it costs about ₹2.29 a minute, so 10
+  minutes a day adds about ₹560. JARVIS's own spoken voice is free for 900,000 letters a month,
+  then about ₹2.9 per 1,000. The strongest Claude model costs twice the middle one. Learning costs
+  ₹24 at most, and a question to the build book about ₹1.5.
+- **Free choices.** The free Gemini brain, the brain on your laptop and No-AI mode cost ₹0.
+- **Your limit.** A new JARVIS has no monthly limit. Set one in the Vitals panel, from ₹1 to
+  ₹1,00,000. When the month's spend reaches it, JARVIS makes no more paid AI or voice calls, and
+  says so.
+- **Claude is prepaid.** You buy Claude credit from Anthropic in advance. When it runs out, Claude
+  stops answering and Vitals shows the Claude key in red. Add credit on Anthropic's website.
+- **Google's warning e-mail.** If anything at all is charged to your Google Cloud project, Google
+  e-mails the account's billing administrator (you). The alert is set at ₹1. It warns; it doesn't
+  stop anything, and Google may send it some hours after the charge (*unverified*).
+
+Details: section 9.
 
 **Safety promises (as built).**
 
-1. **Nothing irreversible without you.** Sending mail, sending invitations and anything that
-   can't be undone always show an approval card first. Your first passkey switches on "require
-   passkey", and from then on these also need your passkey. There is no "don't ask again".
-2. **Other people's words are never orders.** Text from mail, web pages, documents, contacts or
-   the cameras is treated as data. When such text is in the conversation, even small changes ask
-   first.
-3. **Only you get in.** Google sign-in for listed owner accounts only; Telegram answers only the
-   paired owner; Cloud Scheduler and the home bridge prove who they are with signed tokens.
-4. **Private by default.** Brains that may learn from what they are told (free Gemini, some
-   OpenAI-compatible vendors) never receive tools or your personal data. Camera pictures and the
-   face library stay on the laptop; no face picture is stored in the cloud (one small burglar-alert
-   snapshot may go to Telegram, only if you opt in). The vault, notes, things, the home record, faces and push devices are encrypted by JARVIS
-   with keys only it holds.
-5. **Everything is written down.** Every tool call goes through one gateway and into an
-   append-only, hash-chained audit trail; the Activity panel shows the day in plain words.
+1. **Nothing final without you.** Before JARVIS sends a mail, sends an invitation or does anything
+   that can't be undone, it shows an "approval card". The card says exactly what will happen and
+   waits for your Approve. Once you add a passkey, these final actions also need it. A passkey is a
+   sign-in key kept on your phone or laptop and opened with your fingerprint or PIN. There is no
+   "don't ask again".
+2. **Other people's words are never orders.** Text from mail, web pages, documents, contacts or the
+   cameras is only information to JARVIS. While such text is in the conversation, even small changes
+   ask you first.
+3. **Only you get in.** Only the Google accounts you listed can sign in. On Telegram, JARVIS answers
+   only your paired account. Its clock and the home bridge must prove who they are on every call.
+4. **Private by default.** Free AI brains may learn from what they are told. So they never get your
+   personal data, and they can't act for you. Camera pictures and the faces JARVIS knows stay on the
+   laptop. One small burglar-alert photo may go to Telegram, only if you switch that on.
+5. **No money moves.** JARVIS has no way to pay anyone, buy anything or move money. It spends only
+   on its own AI and voice, inside your limit.
+6. **Everything is written down.** Every action passes one checkpoint and goes into a record that
+   can't be changed without it showing. The Activity panel shows what JARVIS did today, in plain
+   words.
 
-**Where your data lives.** In Firestore (Google's document database) in your own Google Cloud
-project, region Mumbai (asia-south1). Secrets are in Google Secret Manager in the same project.
-Pictures from the home cameras stay on the laptop. Google keeps its own copies of what JARVIS reads
-there (your Calendar, Gmail, Tasks, Drive). Section 6 lists every collection.
+**Where your data is kept.**
+
+- **Your own Google Cloud project, in Mumbai.** Everything JARVIS keeps is in Google's database
+  there. JARVIS's keys and passwords are in Google's locked store in the same project.
+- **What JARVIS locks with its own keys.** JARVIS scrambles these before Google stores them: your
+  document store, notes, things and Google link; your saved Home and Work, home records, faces and
+  VIP list; your browser alerts, GitHub token, the laptop brain's address and the build book.
+- **What only Google's lock protects.** Your conversations, the facts JARVIS remembers about you,
+  the text of files you attach and the record of actions. Google encrypts everything it stores, but
+  JARVIS does not add its own lock to these. Anyone who can open your Google Cloud project could
+  read them.
+- **Your laptop.** Camera pictures and the face library stay there.
+- **No backups.** JARVIS makes no backup copies. When you delete something it is gone for good
+  (after 30 days in "Recently deleted", where that applies).
+- **Your Google account, as always.** Your Calendar, Gmail, Tasks, Contacts, Drive and Photos stay
+  with Google. JARVIS reads them through the link you gave it.
+
+**Who else sees some of your data.**
+
+| Who | What they see |
+|---|---|
+| Anthropic, the company that makes Claude (the paid AI brain) | Your recent conversation, the facts about you that fit the question, and what JARVIS's tools found for that answer |
+| Google's free Gemini brain | The conversation only, nothing else about you |
+| Tavily, the web-search company | Your search words and the pages JARVIS reads (a guard refuses searches that hold your private details) |
+| Google's voice service | What JARVIS says aloud, and the sound of your voice when it listens |
+| Google Maps and YouTube | What you search for there; your Home and Work only when you ask for a route |
+| Telegram | Your Telegram chats with JARVIS and its alerts. Telegram keeps them, and they are not end-to-end encrypted. |
+
+Section 6 lists every kind of stored data, and section 6.5 every outside service.
 
 **What if the laptop is off?** Everything in the cloud keeps working: chat, voice, the brief, mail,
-calendar, the vault and alerts. Only the home parts stop (devices, cameras, alarm, faces) and the
-offline backup brain. The watchdog notices within about 6–11 minutes and tells you, once.
+calendar, the document store and alerts. Only the home parts stop: devices, cameras, the alarm and
+faces. The backup brain on your laptop stops too. That small AI answers only when JARVIS can't
+reach Claude over the internet. Within about 6–11 minutes JARVIS tells you once, on Telegram and
+as a browser notification. If the alarm is off and it is night, the message waits until your
+quiet hours end (23:00–06:30 unless you change them).
 
-**What JARVIS can never do without you.** Send an e-mail or calendar invitations, delete
-anything that can't be brought back, write to a family calendar, disarm the alarm, open a vault
-file, open the build book, or approve an irreversible card from Telegram. Deletes that can be
-undone (your own events and to-dos) go to "Recently deleted" for 30 days, and more than 10 in one
-message ask first.
+**What JARVIS can never do without you.** It always asks you first before it:
+
+- sends an e-mail or a calendar invitation;
+- deletes anything that can't be brought back;
+- adds an event to a family member's calendar;
+- switches the burglar alarm off;
+- opens a file in your document store, or the build book.
+
+You can never approve a final action from Telegram: only in the console, and with your passkey once
+you have one. Deletes that can be undone (your own events, to-dos, notes, things and documents) go
+to "Recently deleted" for 30 days. More than 10 of them in one message ask first.
 
 ## 2. The eight layers, as built
 
@@ -110,19 +171,19 @@ checked against the code, with the plain reason.
 
 | Area | Old blueprint | As built (R6.1) | Why, in plain words |
 |---|---|---|---|
-| Hosting | Docker, then Kubernetes on AWS or GCP, Terraform | One container on Google Cloud Run (asia-south1, Mumbai), at most one copy, scaled to zero when idle; one re-runnable script `deploy/cloudrun.sh`; GitHub Actions deploys on merge | Free for one owner, nothing to run or patch, and no cluster to pay for. The first hosting (slice 2) was Render (`render.yaml` is still in the repo); by slice 4 JARVIS ran on Cloud Run, and from slice 5 beside Firestore in the same project (*unverified*: the plans don't record why it moved). |
-| Database | Postgres plus a vector database (Pinecone or Chroma) | Firestore (Native mode) through a tiny document port; Redis only for local Docker runs | Firestore is free at this size, needs no new account or key, and keeps data in the owner's project. Every store sits behind a port, so Postgres can be added later. |
-| Search in memory | Vector embeddings | Word matching (BM25) over facts and notes | No embedding service to pay for or send private text to; good enough for one person's notes. |
-| Speech | Whisper or Deepgram for listening, ElevenLabs voice clone for speaking | Google Cloud Speech-to-Text v1 and Text-to-Speech (Chirp 3: HD and Studio voices), with Chrome's own speech as the free fallback; "Hey Jarvis" is detected on the device | Inside Google's free monthly allowance and no new account or key. No clone: copying the film actor's voice without consent breaks the voice vendors' terms (slice 9 decision 1). |
-| Front end | Next.js dashboard, React Native app, Electron desktop | One console page served by the API itself: plain JavaScript modules, no build step, a strict content security policy; phones use the same page in the browser | Nothing to build or host separately; the strict policy (`script-src 'self'`) blocks injected scripts. |
-| Brain | Claude Opus as the main model | Claude by tier (fast, balanced, strong), free Gemini (chat only), one OpenAI-compatible slot, the owner's laptop (Ollama) when the cloud can't be reached, and a No-AI mode | Cost control and privacy: the owner picks the brain; a brain that may learn from prompts never gets tools or personal data. |
+| Hosting | Docker, then Kubernetes on AWS or GCP, Terraform | One container on Google Cloud Run (asia-south1, Mumbai), at most one copy, scaled to zero when idle; one re-runnable script `deploy/cloudrun.sh`; GitHub Actions deploys on merge | Free for one owner, with no server to look after, patch or pay for. The first hosting (slice 2) was Render (`render.yaml` is still in the repo); by slice 4 JARVIS ran on Cloud Run, and from slice 5 beside Firestore in the same project (*unverified*: the plans don't record why it moved). |
+| Database | Postgres plus a vector database (Pinecone or Chroma) | Firestore (Native mode) through a tiny document port; Redis only for local Docker runs | Firestore is free at this size, needs no new account or key, and keeps data in your own project. Every part reaches its data through one small adapter (a "port"), so another database can be added later. |
+| Search in memory | Vector embeddings | Word matching (BM25) over facts and notes | No extra AI service to pay for or to send private text to; good enough for one person's notes. |
+| Speech | Whisper or Deepgram for listening, ElevenLabs voice clone for speaking | Google Cloud Speech-to-Text v1 and Text-to-Speech (Chirp 3: HD and Studio voices), with Chrome's own speech as the free fallback; "Hey Jarvis" is detected on the device | Inside Google's free monthly allowance, with no new account or key. No copy of the film voice: copying an actor's voice without consent breaks the voice companies' rules (slice 9, decision 1). |
+| Front end | Next.js dashboard, React Native app, Electron desktop | One console page served by the API itself: plain JavaScript modules, no build step, a strict content security policy; phones use the same page in the browser | Nothing to build or host separately. A strict browser rule lets only JARVIS's own scripts run (`script-src 'self' 'wasm-unsafe-eval'`; the second part only lets the wake word run its model), so a script slipped into a page can't run. |
+| Brain | Claude Opus as the main model | Claude by tier (fast, balanced, strong), free Gemini (chat only), one OpenAI-compatible slot, the owner's laptop (Ollama) when the cloud can't be reached, and a No-AI mode | Cost control and privacy: you pick the brain, and a brain that may learn from what it is told never gets tools or personal data. |
 | Orchestration | LangGraph | A custom brain loop, model router and one tool gateway | Fewer moving parts and one place where every safety rule is enforced. |
-| Tool protocol | MCP (Model Context Protocol) servers | In-process tools that call each service's REST API directly (no vendor SDK outside `jarvis.llm`) | Google's remote MCP servers were a developer preview when the Google tools were built (slice 6); direct calls keep the gateway in charge. |
-| Smart home | Home Assistant and Matter | A home bridge on the owner's laptop running Home Assistant, Frigate (cameras) and Mosquitto (messages), reached through Tailscale Funnel; Matter is not used | Uses what the owner already has; pictures stay at home. |
-| Messaging | Slack, WhatsApp, SMS | Telegram (chat and alerts) and standard Web Push; WhatsApp only as drafts the owner sends himself | Telegram's bot API is free. Meta's terms bar general-purpose AI assistants on the WhatsApp Business API (outside the EEA and Brazil) and it needs a second number; unofficial WhatsApp libraries risk a ban on the owner's own number (slice 12). |
-| Observability | OpenTelemetry and Grafana | Structured JSON logs with a per-request trace id, read in Google Cloud Logging; the Vitals board and the systems check | Free and enough for one owner. OpenTelemetry stays planned for Phase 7 (`src/jarvis/logging.py` is the one file to swap). |
-| Mobile (PLANNED, R7) | React Native app | The console wrapped as an Android app (for example with Capacitor), plus Health Connect | One code base for web and phone. This is a planned departure; nothing is built yet. |
-| Skills (PLANNED, R8–R10) | Ten core skills; vision as an input box | An 11th core skill "Health & Wellbeing" and an on-device vision engine in Layer 2 | Owner decision of 10 Nov 2026 (decision 10 in the release plan, recorded in the R6.1 plan). Not built yet. |
+| Tool protocol | MCP (Model Context Protocol) servers | In-process tools that call each service's REST API directly (no vendor SDK outside `jarvis.llm`) | Google's ready-made AI connectors (MCP servers) were still a test version when the Google tools were built (slice 6). Calling Google directly keeps every call under JARVIS's one checkpoint. |
+| Smart home | Home Assistant and Matter | A home bridge on the owner's laptop running Home Assistant, Frigate (cameras) and Mosquitto (messages), reached through Tailscale Funnel; Matter is not used | Uses the laptop you already have; pictures stay at home. |
+| Messaging | Slack, WhatsApp, SMS | Telegram (chat and alerts) and standard browser notifications (Web Push); WhatsApp only as drafts you send yourself | Telegram is free for bots. WhatsApp's business service does not allow general AI assistants (except in the European Economic Area and Brazil) and needs a second number; unofficial WhatsApp tools risk a ban on your own number (slice 12). |
+| Observability | OpenTelemetry and Grafana | Structured JSON logs with a per-request trace id, read in Google Cloud Logging; the Vitals board and the systems check | Free and enough for one owner. OpenTelemetry stays planned for Phase 7, the quality phase (`src/jarvis/logging.py` is the one file to swap). |
+| Mobile (PLANNED, R7) | React Native app | The console wrapped as an Android app (for example with Capacitor), plus Health Connect | One code base for web and phone. A planned departure added by the R6.1 plan; nothing is built yet. |
+| Skills (PLANNED, R8–R10) | Ten core skills; vision as an input box | An 11th core skill "Health & Wellbeing" and an on-device vision engine in Layer 2 | Owner decision 10 in the 11 Nov 2026 release plan, recorded in the R6.1 plan. Not built yet. |
 
 ## 3. Component catalogue
 
@@ -139,15 +200,15 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Web console (the "command deck") |
-| What it does | The page you use JARVIS from on a laptop or phone: the chat, the dock of panels (Conversation, Brief, Approvals, Activity, History, Memory, Vault, Things, Notes, Privacy, Home, Faces, Voice, Integrations, Media, Vitals, Connectors, People, Book, Construct), the brain picker and the Night / Day looks. Plain JavaScript modules, no build step, every server string shown as text (never as HTML). |
+| What it does | The page you use JARVIS from on a laptop or phone: the chat, the dock of panels (Conversation, Brief, Approvals, Activity, History, Memory, Vault, Things, Notes, Privacy, Home, Faces, Voice, Integrations, Media, Vitals, Connectors, People, Book, Construct), the brain picker and the Night / Day looks. It is written in plain JavaScript files that need no build step, and anything the server sends is shown as plain text, never run as part of the page. |
 | Layer | L1 User Interaction |
 | Skill | Platform (serves every skill) |
 | Where in the code | `src/jarvis/api/console.py` (serves the page and its content security policy), `src/jarvis/api/static/console.html`, `console.js` (chat, brains, approvals, audit, conversations), `console-deck.js` (dock, ruler, radar), `console-fx.js` (surfaces, themes, motion), `console-3d.js` and `console-3d-scenes.js` (optional three.js scenes), `console-text.js` (shared text helpers); vendored three.js 0.187.0 in `static/vendor/` |
 | Depends on | C02 HTTP API; every panel's own card |
 | Data it keeps | No Firestore data of its own. The browser keeps small conveniences (the open conversation, look and layout). |
-| Outside services | None directly (fonts and libraries are served by JARVIS itself; no CDN) |
+| Outside services | None directly (fonts and libraries are served by JARVIS itself, not loaded from another website) |
 | Cost (₹ a month) | ₹0 |
-| When it fails | A panel whose route fails shows a plain message and the rest keeps working. If WebGL2 is missing the 3D scenes are skipped. The browser visual gate (C59) checks every panel at desktop and phone size. |
+| When it fails | A panel whose data can't be fetched shows a plain message and the rest keeps working. If the browser can't draw 3D (no WebGL2) the 3D scenes are skipped. The browser visual gate (C59) checks every panel at desktop and phone size. |
 | Since | Slice 2 (before v0.5.0); Command Deck look Slice 5c (v0.5.2) |
 
 #### C02 · HTTP API and sign-in
@@ -179,7 +240,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | Nothing of its own; in-memory session by default. |
 | Outside services | The configured brain (Anthropic or another, see C16) |
 | Cost (₹ a month) | The brain's own cost (see C54) |
-| When it fails | Prints a plain error and exits; no data is touched. |
+| When it fails | Prints the error (the monthly limit, No-AI mode or the brain's own error) and carries on with the next line; an unknown `--brain` stops it with the list of configured brains. |
 | Since | Phase 0 |
 
 #### C04 · Telegram front door
@@ -258,7 +319,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Skill | Security Advisor |
 | Where in the code | `src/jarvis/faces/`, `src/jarvis/api/faces.py`, `console-faces.js`; at home `src/jarvis/homebridge/faces.py` and the local page on the laptop |
 | Depends on | C38 Home link, C39 Home bridge, C51 Keyring |
-| Data it keeps | `faces/{uid}` (encrypted by JARVIS with the `faces` key). Face attempts are kept 7 days on the laptop only. |
+| Data it keeps | `faces/{uid}` (encrypted by JARVIS with the `faces` key). Face attempts stay on the laptop only: 72 hours for someone JARVIS doesn't know, 7 days for enrolled people and doorstep checks. |
 | Outside services | Frigate (at home, never a cloud vision service) |
 | Cost (₹ a month) | ₹0 |
 | When it fails | With the laptop asleep a removal is delivered with the next heartbeat; the name stops resolving at once. A person not in the registry is "someone JARVIS didn't recognise", never a guess. |
@@ -406,7 +467,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Skill | Platform (serves every skill) |
 | Where in the code | `src/jarvis/offline/`, `src/jarvis/api/offline.py`, `src/jarvis/people/routes.py` (the AI on / off switch route), `console-offline.js`, `deploy/local-brain/` (Caddy key gate and start scripts) |
 | Depends on | C16 Brain router, C28 Tool gateway, C51 Keyring |
-| Data it keeps | `settings/{uid}` (the AI on / No-AI switch, read fail-closed), `local_brain/config` (the laptop brain's address and switch, one per deployment). |
+| Data it keeps | `settings/{uid}` (the AI on / No-AI switch, read fail-closed), `local_brain/config` (the laptop brain's address and key, sealed with the token key; its model and switch; one per deployment). |
 | Outside services | Ollama (on the owner's laptop), Tailscale (Funnel publishes it; TLS ends on the laptop) |
 | Cost (₹ a month) | ₹0 |
 | When it fails | Laptop asleep: "Claude can't be reached and your laptop didn't answer." A switch document that can't be read counts as No-AI (no model is called when JARVIS can't tell). |
@@ -451,14 +512,14 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Web search with numbered sources |
-| What it does | Searches the web and reads pages, and answers with numbered sources you can open. A private-query guard refuses searches that would send your personal details to the search vendor. JARVIS stops at 900 searches a month. |
+| What it does | Searches the web and reads pages, and answers with numbered sources you can open. A private-query guard refuses searches that would send your personal details to the search vendor. JARVIS stops at 900 credits a month (searches and page reads both use credits). |
 | Layer | L5 Skills & Capabilities |
 | Skill | Research & Intel |
 | Where in the code | `src/jarvis/web/`, `src/jarvis/api/web.py`, `console-web.js` |
 | Depends on | C28 Tool gateway, C15 Guardrails (pages are outside content), C55 Vitals |
 | Data it keeps | `web_usage` (this month's count for the deployment), `web_vendor_usage` (Tavily's own count, checked once a day). |
 | Outside services | Tavily |
-| Cost (₹ a month) | ₹0 (stops at 90 % of Tavily's free 1,000 searches a month; pay-as-you-go is never used). A search turn costs more brain tokens: about ₹0.5–2 a reply. |
+| Cost (₹ a month) | ₹0 (stops at 900 of Tavily's free 1,000 credits a month, which searches and page reads both use; pay-as-you-go is never used). A search turn costs more brain tokens: about ₹0.5–2 a reply. |
 | When it fails | No key or switched off: JARVIS says web search is not set up. At the cap it says so and does not search. |
 | Since | Slice 10 (v0.10.0) |
 
@@ -473,8 +534,8 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Where in the code | `src/jarvis/people/`, `console-people.js` |
 | Depends on | C20 Web search, C16 Brain router, C28 Tool gateway |
 | Data it keeps | `people_last/{uid}`: your last research (the dossier and its target). |
-| Outside services | Tavily; Anthropic (one optional fast-tier summary) |
-| Cost (₹ a month) | ₹0 for search inside the free credits; one small summary call when AI is on |
+| Outside services | Tavily; Anthropic (in AI mode, a fast-tier check that can only refuse, and one optional fast-tier summary) |
+| Cost (₹ a month) | ₹0 for search inside the free credits; up to two small fast-tier calls a research when AI is on |
 | When it fails | Not verified: a fixed refusal, at most 1 search credit spent and no links. |
 | Since | R4 (v4.0.0) |
 
@@ -725,7 +786,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Connectors: Google Photos picker and your GitHub |
-| What it does | Photos: you pick a few photos (at most 20) in Google's picker; JARVIS strips their metadata and sends them to the laptop to enrol faces or match contacts, then drops them. GitHub: read-only access to your own account with a token you paste once. |
+| What it does | Photos: you pick a few photos (at most 20) in Google's picker; JARVIS strips their metadata and sends them to the laptop to enrol faces (and can suggest a matching Google Contact by name), then drops them. GitHub: read-only access to your own account with a token you paste once. |
 | Layer | L6 Integration & Tools |
 | Skill | Research & Intel |
 | Where in the code | `src/jarvis/photos/`, `src/jarvis/integrations/github.py`, `src/jarvis/integrations/github_meta.py`, `console-connectors.js` |
@@ -781,7 +842,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | `home_arm/{uid}` (arm state, no personal data), `home_cameras/{uid}` (camera settings, encrypted), `home_feed/{uid}_{day}` (the home feed, encrypted with the `home_feed` key, kept 7 days). |
 | Outside services | Frigate (at home) |
 | Cost (₹ a month) | ₹0 |
-| When it fails | An arm the laptop doesn't confirm within 5 minutes sends "the alarm could not be armed". A disarm is audited first; if the audit is down, nothing is switched off. |
+| When it fails | An arm the laptop doesn't confirm within 5 minutes sends one alert: "JARVIS couldn't arm your home at (time): the laptop didn't answer." A disarm is audited first; if the audit is down, nothing is switched off. |
 | Since | R3 (v3.0.0) |
 
 ### Layer 7 — Data & Persistence
@@ -930,7 +991,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Depends on | None |
 | Data it keeps | None (settings come from the Cloud Run service; secrets from Secret Manager). |
 | Outside services | Secret Manager (supplies the secrets as environment variables at deploy) |
-| Cost (₹ a month) | ₹0 (within Secret Manager's free 6 secret versions, per the R6 plan) |
+| Cost (₹ a month) | About ₹0–30 (estimate). Secret Manager's free tier is 6 active secret versions per billing account (R2 plan). JARVIS keeps 4 secrets always and up to 7 more for the features you switch on; each version beyond 6 costs about ₹5.7 a month (US$0.06). A re-run that saves a new value adds a version, and old versions count until destroyed, even when disabled. |
 | When it fails | A malformed or weak token key is a start-up error; a missing optional key just leaves its feature off. |
 | Since | Phase 0 |
 
@@ -971,7 +1032,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Permissions and passkeys |
-| What it does | Per group of tools you choose Allow, Ask first or Never (an irreversible group can never be Allow). Passkeys (WebAuthn) are registered from a browser signed in with Google in the last 5 minutes; with "require passkey for irreversible actions" on, every irreversible card needs one. |
+| What it does | Per group of tools you choose Allow, Ask first or Never (an irreversible group can never be Allow). Your first passkey (WebAuthn) is registered from a browser signed in with Google in the last 5 minutes; every later change (adding a second, removing one, switching the rule off) needs a passkey. With "require passkey for irreversible actions" on, every irreversible card needs one. |
 | Layer | X Cross-cutting |
 | Skill | Security Advisor |
 | Where in the code | `src/jarvis/permissions/`, `src/jarvis/api/permissions.py`, `src/jarvis/api/rows.py`, `src/jarvis/api/settings_audit.py`, `console-permissions.js` |
@@ -1003,7 +1064,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Costs in rupees and your monthly limit |
-| What it does | Meters every paid model and speech call in rupees (dollars converted at the daily rate), shows "this conversation" and "this month", and enforces the monthly limit you set: at the limit no paid call is made. |
+| What it does | Meters every paid model and speech call in rupees (dollars converted at the daily rate), shows "this conversation" and "this month", and enforces the monthly limit you set (none until you set one, from ₹1 to ₹1,00,000): at the limit no paid call is made. |
 | Layer | X Cross-cutting |
 | Skill | Finance & Analytics |
 | Where in the code | `src/jarvis/billing/`, `src/jarvis/llm/pricing.py`, `src/jarvis/api/usage.py`, `console-usage.js` |
@@ -1091,7 +1152,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | Reports in the CI run only (`evals/phase0/report.json` as a build artefact). |
 | Outside services | Anthropic (the real-model gate and `deploy/run-real-evals.sh`, only with a key) |
 | Cost (₹ a month) | ₹0 for mock evals; a real run shows its ₹ estimate first and needs you to type YES |
-| When it fails | No key: the real gate is skipped with a notice, never failed. A failing gate blocks the merge. |
+| When it fails | No key: the real gate is skipped with a notice, never failed. A failing pull-request check (the tests, the emulator, the browser and visual gate) blocks the merge. The real-model gate runs on main after the merge and only reports: it does not stop a deploy. |
 | Since | Phase 0; visual gate R5.1 (v5.1.0) |
 
 ## 4. Diagrams
@@ -1227,9 +1288,10 @@ guest show locks your other consoles until your passkey lifts the lock.
 
 *Figure 13. How a change reaches the live JARVIS.* A branch for one part of a release, a pull
 request, the tests (Python 3.11 and 3.12, the Firestore emulator, the browser; diagram checks on
-pull requests), merge to main, the real-model eval gate (main only, skipped without a key), then
-the deploy job: a new version with no traffic, a health check for up to 2 minutes, and only then
-all traffic. If it isn't healthy, your current JARVIS keeps running.
+pull requests), merge to main. On main the real-model eval gate (skipped without a key) runs beside
+the deploy job and does not hold it back; the deploy job waits only for the tests, the emulator
+and the browser. It makes a new version with no traffic, checks its health for up to 2 minutes,
+and only then sends all traffic to it. If it isn't healthy, your current JARVIS keeps running.
 
 ### Figure 14 — Where your data lives
 
@@ -1254,7 +1316,7 @@ R6.1. "Cost per month" is what JARVIS pays at the owner's use; every paid figure
 | Hosting | Google Cloud Run (asia-south1), one container, at most one copy, scale to zero | Runs JARVIS on the internet without a server to look after | Free for one owner (2 million requests a month), in Mumbai, next to Firestore | Render, a small VM, Kubernetes | Render was used first; a VM needs patching; Kubernetes costs money and time for one owner | ₹0 | By Slice 4 (*unverified*: the slice 4 plan already reads Cloud Run's logs) |
 | Database | Firestore (Native mode) through the `Docs` port | Keeps conversations, approvals, the audit chain and every feature's data | Free at this size (1 GiB), no new account or key, data stays in the owner's project | Postgres (Neon, Cloud SQL), SQLite on a disk | Cloud SQL has no free tier; Neon is a new vendor and a new secret; Cloud Run has no lasting disk | ₹0 | Slice 5 (v0.5.0) |
 | Local session cache | Redis 7 (docker-compose only) | Keeps conversations when JARVIS runs on a developer's machine | Simple and fast for local runs | Memcached, in-memory only | Memcached keeps no data across restarts; in-memory loses it on every restart | ₹0 | Phase 0 |
-| Secrets | Google Secret Manager | Keeps the API keys, the session secret and the token key | Readable only by JARVIS's own service account, per secret | Environment files, HashiCorp Vault | Files leak; Vault is a server to run | ₹0 | With Cloud Run, by Slice 4 (*unverified*) |
+| Secrets | Google Secret Manager | Keeps the API keys, the session secret and the token key | Readable only by JARVIS's own service account, per secret | Environment files, HashiCorp Vault | Files leak; Vault is a server to run | ₹0–30 (section 5.2) | With Cloud Run, by Slice 4 (*unverified*) |
 | Clock | Google Cloud Scheduler (2 jobs) | Wakes JARVIS for the morning brief and every 5 minutes for the watchdog | 3 jobs free; signs each call with a Google token | Cron on a VM, GitHub Actions schedule | No VM to run cron on; Actions schedules are not reliable to the minute | ₹0 | Slice 7 (v0.7.0) |
 | Build and deploy | GitHub Actions with Workload Identity Federation | Tests every change and deploys main with no stored key | No key exists anywhere; only main of this repository may deploy | Cloud Build triggers, manual deploys | Manual deploys are error-prone; triggers would need a second CI | ₹0 | Slice 5c (v0.5.2) |
 | Container | Docker image from `python:3.12-slim`, hash-locked `requirements.lock` | Packs JARVIS and exactly its locked libraries | A tampered package can't get in: every file's hash is checked | Buildpacks, unlocked `pip install` | Less control over what is installed | ₹0 | Slice 2 |
@@ -1270,10 +1332,10 @@ R6.1. "Cost per month" is what JARVIS pays at the owner's use; every paid figure
 | Sign-in and cookies | Authlib 1.9 and itsdangerous 2.2 | Google sign-in and the signed session cookie | Standard OpenID Connect | Firebase Auth, Auth0 | Another vendor in the sign-in path | ₹0 | Slice 2 |
 | Signed tokens | joserfc 1.7 | Checks Cloud Scheduler's Google token; signs Web Push (VAPID) | Small, standards-only | PyJWT | Already locked through Authlib | ₹0 | Slice 7 (v0.7.0) |
 | Document text | pypdf 6.21 and python-docx 1.2 | Takes the text out of PDFs and Word files | Pure Python, safe parser settings, run in a killable child process | Apache Tika, OCR | Tika is a Java server; OCR is not built | ₹0 | Slice 10 (v0.10.0) |
-| Web search | Tavily | Search results and page text with sources | 1,000 free searches a month, no card; JARVIS can fence and audit the page text | Claude's built-in web search, Brave Search | Claude's search costs about ₹6 a search turn on Opus and its page text bypasses the gateway; Brave needs a card (slice 10 plan) | ₹0 (stops at 900) | Slice 10 (v0.10.0) |
+| Web search | Tavily | Search results and page text with sources | 1,000 free credits a month (searches and page reads), no card; JARVIS can fence and audit the page text | Claude's built-in web search, Brave Search | Claude's search costs about ₹6 a search turn on Opus and its page text bypasses the gateway; Brave needs a card (slice 10 plan) | ₹0 (stops at 900 credits) | Slice 10 (v0.10.0) |
 | Phone chat and alerts | Telegram Bot API | Chat and alerts on the phone | Free, official API | WhatsApp Business API, SMS | WhatsApp's terms bar general AI assistants; SMS costs money | ₹0 | R1 (v1.0.0) |
 | Browser alerts | Web Push (VAPID, RFC 8291 encryption) | Notifications in your browsers | A standard; free; encrypted to each browser | Firebase Cloud Messaging SDK | Another SDK and account for the same result | ₹0 | R3 (v3.0.0) |
-| Smart home | Home Assistant 2026.10 (on the laptop) | Lights, sensors and other devices at home | Works with almost every device; local | SmartThings, Google Home | Cloud-first; less control; more accounts | ₹0 | R3 (v3.0.0) |
+| Smart home | Home Assistant version 2026.10 (on the laptop) | Lights, sensors and other devices at home | Works with almost every device; local | SmartThings, Google Home | Cloud-first; less control; more accounts | ₹0 | R3 (v3.0.0) |
 | Cameras | Frigate 0.17.2 with Mosquitto 2.0.20 (MQTT) | Sees people and packages, keeps the face library at home | Local detection; pictures stay at home | Cloud camera services | Pictures would leave home; monthly fees | ₹0 | R3 (v3.0.0) |
 | Reaching the laptop | Tailscale Funnel | Gives the laptop's bridge one public HTTPS address | No router changes; TLS ends on the laptop | Cloudflare Tunnel, port forwarding | Quick tunnels end TLS at Cloudflare and change address each start; named tunnels need a domain (about ₹995 a year); port forwarding exposes the home router (R1 and R3 plans) | ₹0 (free personal plan, *unverified* limits) | R1 (v1.0.0) offline brain; R3 (v3.0.0) bridge |
 | Maps | Google Places API (New) and Routes API | Place search and routes | Best data for India; one server key | OpenStreetMap services, Mappls | Weaker place data for Indian businesses (*unverified*) | ₹0 (stops at 90 % of the free allowance) | Slice 12 (v0.12.0) |
@@ -1294,7 +1356,7 @@ counter sees only its own use (the deploy script warns about this).
 |---|---|---|---|---|
 | Google Cloud Run | Runs JARVIS | 2 million requests a month | *unverified*: requests beyond are billed | Billed per use; the ₹1 budget alert e-mails at once |
 | Firestore | All stored data | 1 GiB stored; 50,000 reads, 20,000 writes, 20,000 deletes a day; one free database per project | Google bills the excess | Billed per use (*unverified* rates) |
-| Secret Manager | Secrets | 6 secret versions (as the R6 plan lists) | Billed per version | Small (*unverified*) |
+| Secret Manager | Secrets | 6 active secret versions per billing account (R2 plan); JARVIS keeps 4 to 11 secrets | Each version beyond 6 is billed, disabled ones too | About ₹5.7 a version a month (US$0.06, R2 plan): ₹0–30 for JARVIS's 4–11 secrets |
 | Cloud Scheduler | The two clocks | 3 jobs per billing account | A 4th job | About ₹10 a month per extra job (the deploy script's dollar price, converted) |
 | Artifact Registry | Container images | 0.5 GB (deploy script note) | Old images are deleted after 30 days to stay near it | Billed per GB (*unverified*) |
 | GitHub Actions | CI and deploy | 2,000 minutes a month (as the plans list them) | Runs wait or need a plan | — |
@@ -1302,7 +1364,7 @@ counter sees only its own use (the deploy script warns about this).
 | Google Gemini | Free brain | Google's free tier | Google answers "too many requests"; JARVIS says so | — (no paid key used) |
 | Google Cloud Text-to-Speech | JARVIS's voice | 1 million characters per voice type a month; JARVIS uses 900,000 | Counted against your monthly limit | About ₹2,857 (Chirp 3: HD) or ₹15,238 (Studio) per million characters |
 | Google Cloud Speech-to-Text v1 | Listening | 60 minutes a month; JARVIS uses 54 | Counted against your monthly limit | About ₹2.29 a minute |
-| Tavily | Web search, people research | 1,000 searches a month, no card; JARVIS stops at 900 | Web search says it is used up | Never used (no pay-as-you-go) |
+| Tavily | Web search, people research | 1,000 credits a month (searches and page reads), no card; JARVIS stops at 900 credits | Web search says it is used up | Never used (no pay-as-you-go) |
 | Google Places API (New) and Routes API | Maps | Global list: 5,000 searches and 5,000 car routes a month (1,000 two-wheeler, 10,000 walking); India list: 35,000 | JARVIS stops at 90 % | Never used |
 | YouTube Data API | Video search and playlists | 100 searches and 10,000 units a day | JARVIS stops at 90 % | Never used |
 | Google Calendar, Gmail, Tasks, People (Contacts), Drive, Photos Picker APIs | The Google tools | No charge for these APIs; Google's per-day quotas apply (*unverified* exact quotas) | Google answers "quota exceeded"; JARVIS says so | — |
@@ -1356,25 +1418,25 @@ Releases so far (from `docs/github-backfill.tsv`):
 
 | When | Decision | Reason | Alternatives | Where |
 |---|---|---|---|---|
-| Phase 0 | Skills ask for a tier, never a model id; only `jarvis.llm` imports a vendor SDK | Keeps the core model-agnostic and swappable | Hard-coding Claude | `CLAUDE.md`, `src/jarvis/llm/router.py` |
-| Slice 1 | Every tool call passes one gateway; irreversible calls always ask; no "don't ask again" | Confirm before commit, in one place | Per-tool checks | `phase2-slice1-tool-spine.md` |
+| Phase 0 (by 1 Nov 2026) | Skills ask for a tier, never a model id; only `jarvis.llm` imports a vendor SDK | Keeps the core model-agnostic and swappable | Hard-coding Claude | `CLAUDE.md`, `src/jarvis/llm/router.py` |
+| Slice 1 (1 Nov 2026) | Every tool call passes one gateway; irreversible calls always ask; no "don't ask again" | Confirm before commit, in one place | Per-tool checks | `phase2-slice1-tool-spine.md` |
 | Slice 3 (1 Nov 2026) | A brain that may train on prompts gets no tools and no personal data | Private by default | Trust the vendor | `phase2-slice3-gemini-free-brain.md` |
 | Slice 5 (1 Nov 2026) | Firestore instead of Postgres, behind ports | Free, no new account or key, data in the owner's project | Neon Postgres, Cloud SQL | `phase2-slice5-persistence.md` |
-| Slice 5c | Deploy on merge with Workload Identity Federation | No stored deploy key; only main may deploy | A service-account key in GitHub | `phase2-slice5c-command-deck.md` |
-| Slice 6 | Direct REST to Google, no SDK and no MCP server | Google's MCP servers were a developer preview; errors stay in plain words | Google's SDKs, remote MCP | `phase2-slice6-gmail-calendar.md` |
-| Slice 7b | All money in ₹ with the owner's monthly limit enforced before every paid call | The owner thinks in rupees; no surprise bills | Showing dollars; no limit | `phase7-slice7b-inr-costs-budget.md` |
-| Slice 8 | Learning is opt-in with a spend consent; sensitive data is refused by code | Privacy and cost | Always-on learning | `phase3-slice8-long-term-memory.md` |
+| Slice 5c (1 Nov 2026) | Deploy on merge with Workload Identity Federation | No stored deploy key; only main may deploy | A service-account key in GitHub | `phase2-slice5c-command-deck.md` |
+| Slice 6 (1 Nov 2026) | Direct REST to Google, no SDK and no MCP server | Google's MCP servers were a developer preview; errors stay in plain words | Google's SDKs, remote MCP | `phase2-slice6-gmail-calendar.md` |
+| Slice 7b (1 Nov 2026) | All money in ₹ with the owner's monthly limit enforced before every paid call | The owner thinks in rupees; no surprise bills | Showing dollars; no limit | `phase7-slice7b-inr-costs-budget.md` |
+| Slice 8 (1 Nov 2026) | Learning is opt-in with a spend consent; sensitive data is refused by code | Privacy and cost | Always-on learning | `phase3-slice8-long-term-memory.md` |
 | Slice 9 (1 Nov 2026) | No clone of the film voice; a stock British Google voice | Rights and vendor terms | ElevenLabs clone | `phase1-slice9-voice.md` |
 | Slice 11 (2 Nov 2026) | Undo bin for own deletes; trust by provenance | Fewer cards for the owner's own items, still safe | Asking for every delete | `phase2-slice11-full-control.md` |
 | Slice 12 (3 Nov 2026) | Telegram, not WhatsApp, as the phone front door; WhatsApp only as drafts | Meta's terms; ban risk with unofficial libraries | WhatsApp Business API | `phase2-slice12-integrations.md` |
 | R1 (4 Nov 2026) | The laptop as an offline backup brain with at most 12 tools and every write asking | Works when the cloud brain is down; a small model is easier to fool | No fallback | `r1-free-tools.md` |
 | R2 (5 Nov 2026) | One keyring: a key per purpose from the one token key; no new secret | Separation without more secrets to manage | Cloud KMS | `r2-memory-vault.md` |
-| R2 | DigiLocker through a shared Drive folder | DigiLocker's partner APIs are for registered organisations | DigiLocker API | `r2-memory-vault.md` |
+| R2 (5 Nov 2026) | DigiLocker through a shared Drive folder | DigiLocker's partner APIs are for registered organisations | DigiLocker API | `r2-memory-vault.md` |
 | R3 (5 Nov 2026) | Pictures stay at home; only one small opt-in snapshot may leave | Privacy of the household | Cloud vision | `r3-home-camera.md` |
 | R4 (5 Nov 2026) | People research only behind a positive verification gate | No profiling of private people | Open search | `r4-vitals-health-people.md` |
-| R4 | A persisted No-AI mode that fails closed | A guarantee of no model spend | A session-only switch | `r4-vitals-health-people.md` |
+| R4 (5 Nov 2026) | A persisted No-AI mode that fails closed | A guarantee of no model spend | A session-only switch | `r4-vitals-health-people.md` |
 | R6 (10 Nov 2026) | The build book is generated by code (no model), sealed per release, opened with passkey and fresh sign-in | Deterministic, private, free | A model-written summary | `r6-build-book.md` |
-| R6.1 (11 Nov 2026) | Record an 11th core skill "Health & Wellbeing" and a Layer-2 vision engine, and mobile as a wrapped console (Capacitor) rather than React Native, all as PLANNED | Owner decision 10 of the 11 Nov release plan | Keep ten skills; React Native | `r6-1-architecture-guide.md` decision 6 |
+| R6.1 (11 Nov 2026) | Record an 11th core skill "Health & Wellbeing" and a Layer-2 vision engine, and mobile as a wrapped console (Capacitor) rather than React Native, all as PLANNED | Owner decision 10 in the 11 Nov 2026 release plan (the skill and the vision engine); the R6.1 plan adds mobile as a wrapped console | Keep ten skills; React Native | `r6-1-architecture-guide.md` decision 6 |
 
 ## 6. Data and privacy
 
@@ -1384,7 +1446,7 @@ Releases so far (from `docs/github-backfill.tsv`):
 |---|---|---|
 | Firestore, your Google Cloud project, Mumbai (asia-south1) | Everything JARVIS keeps (6.2) | JARVIS's service account `jarvis-run`, and you as the project owner in the Google Cloud console |
 | Secret Manager, same project | The API keys, the session secret, the API token, the token key | `jarvis-run`, one grant per secret |
-| Your laptop (home bridge volume, Frigate, Home Assistant) | Camera recordings and events, the face library, face attempts (7 days), the doorstep log (7 days), Home Assistant's own data | You; only the bridge's signed door is reachable from outside |
+| Your laptop (home bridge volume, Frigate, Home Assistant) | Camera recordings and events, the face library, face attempts (72 hours for unknown people, 7 days for enrolled people), the doorstep log (7 days), Home Assistant's own data | You; only the bridge's signed door is reachable from outside |
 | Your browser | Small conveniences (the open conversation, look and layout, chosen sound devices) | You |
 | Google (your account) | Your Calendar, Gmail, Tasks, Contacts, Drive and Photos, as always | Google and you; JARVIS reads them through your link |
 | Outside services | What each call needs (6.5) | That vendor |
@@ -1428,7 +1490,7 @@ its own key (AES-256-GCM) before it reaches Google, so a reader of the database 
 | `api_quota` | Maps and YouTube counters | No | Per period | C44 |
 | `voice_settings` | Your voice choices and words to recognise | No | Until you change them | C05 |
 | `settings` | The AI on / No-AI switch | No | Until you change it | C17 |
-| `local_brain` | The laptop brain's address and switch | No | Until you change it | C17 |
+| `local_brain` | The laptop brain's address and key, its model and switch | Yes (the token key) for the address and key | Until you change it | C17 |
 | `telegram`, `telegram_users`, `telegram_pairing`, `telegram_pairing_tries`, `telegram_updates`, `telegram_alerts` | Telegram pairing, update claims, counters | No | Updates 48 hours, counters 3 days, codes 10 minutes | C04 |
 | `notify`, `notify_held`, `notify_rate` | Alert settings and VIP list, held alerts, storm counters | Yes (`notify`) for the VIP list | Held until quiet hours end; counters 3 days | C46 |
 | `webpush` | Your browsers' push subscriptions | Yes (`webpush`) | Until removed (at most 5) | C47 |
@@ -1471,7 +1533,8 @@ the systems check pings Redis only when it is configured.
 | `book_session` | Build book sessions (and the hash of a session token) |
 | `webpush_vapid` (raw secret) | The Web Push signing key |
 
-Google tokens and the saved Home and Work use the token key directly (they predate the keyring).
+Google tokens, the saved Home and Work and the laptop brain's address and key use the token key
+directly (they predate the keyring).
 
 ### 6.5 What leaves your project
 
@@ -1495,6 +1558,9 @@ recovery in this setup (Google bills them), so a delete is final once it leaves 
 ## 7. Security model
 
 ### 7.1 Risk levels
+
+Risk levels for actions are written "R1 read", "R2 reversible" and "R3 irreversible"; releases
+are written "R4 (v4.0.0)". They share a letter but are different things.
 
 | Level | Meaning | Examples | Default |
 |---|---|---|---|
@@ -1527,8 +1593,9 @@ most 5 new cards; your rules can't relax a spoken turn or a tainted round.
 
 ### 7.4 Other controls
 
-- The console's content security policy allows scripts only from JARVIS itself (`script-src 'self'`),
-  and every server string is shown as text.
+- The console's content security policy allows scripts only from JARVIS itself
+  (`script-src 'self' 'wasm-unsafe-eval'`: the second part lets the wake word compile its
+  WebAssembly model and allows no `eval`), and every server string is shown as text.
 - Requests are rate-limited per client (120 a minute by default) and body sizes are capped.
 - Outside content (mail, web, documents, contacts, camera labels) is fenced as data; camera history
   answers are rebuilt from fixed words so a planted label has nowhere to go.
@@ -1548,11 +1615,11 @@ version gets a no-traffic "candidate" tag and a health check before it receives 
 
 | Job | What it checks | When |
 |---|---|---|
-| `test` | ruff; unit tests on Python 3.11 and 3.12; the mock eval; the build book `--check` (byte-identical twice, no personal data, every package in a layer) | Every pull request and push |
-| `firestore` | The store contract tests against the official Firestore emulator | Every pull request and push |
-| `browser` | The console in headless Chromium, including the visual gate | Every pull request and push |
+| `test` | ruff; unit tests on Python 3.11 and 3.12; the Phase 0 eval on the mock brain (`evals/phase0/run.py --mock`); the build book `--check` (byte-identical twice, no personal data, every package in a layer) | Every pull request and every push to main |
+| `firestore` | The store contract tests against the official Firestore emulator | Every pull request and every push to main |
+| `browser` | The console in headless Chromium, including the visual gate | Every pull request and every push to main |
 | `eval-gate` | The real-model eval (skipped with a notice when no key is set) | Main only |
-| `deploy` | Build the image, roll out with no traffic, check `/health`, switch traffic | Main, when `AUTODEPLOY` is on |
+| `deploy` | Build the image, roll out with no traffic, check `/health`, switch traffic | Main, when `AUTODEPLOY` is on, after `test`, `firestore` and `browser` pass (not after `eval-gate`) |
 
 The R6.1 plan adds a `docs` job (Markdy lint and verify, Part C) and this guide's coverage check:
 `python scripts/arch_coverage.py` fails a pull request when a package, console module, Scheduler
@@ -1585,7 +1652,8 @@ All figures are **estimates** in ₹ at ₹95.24 to the dollar.
 
 | Item | A typical month | What drives it |
 |---|---|---|
-| Cloud Run, Firestore, Secret Manager, Scheduler, Artifact Registry, Cloud Logging | ₹0 | Inside the free tiers at one owner's use |
+| Cloud Run, Firestore, Scheduler, Artifact Registry, Cloud Logging | ₹0 | Inside the free tiers at one owner's use |
+| Secret Manager | ₹0–30 | 6 secret versions are free; about ₹5.7 a month for each one beyond (with every feature on, JARVIS keeps 11 secrets) |
 | GitHub Actions | ₹0 | Inside the free minutes |
 | Claude replies | About ₹100 at 20 replies a day (₹0.17 a reply in the owner's test run) | Replies a day, the tier (Opus costs twice Sonnet), web search (₹0.5–2 a reply) |
 | Morning brief summary | About ₹3 (optional) | One fast-tier call a morning |
@@ -1595,20 +1663,29 @@ All figures are **estimates** in ₹ at ₹95.24 to the dollar.
 | Web search, Maps, YouTube, Telegram, Web Push, Frankfurter | ₹0 | JARVIS stops before any paid use |
 | Gemini, laptop brain, No-AI mode | ₹0 | Free |
 
+**A typical month** is about ₹110 (Claude replies, the brief summary and learning), plus ₹0–30
+for Secret Manager. The worst cases come from web-search replies (₹300–1,200 a month if all 20 a
+day search), listening beyond 54 minutes (about ₹560 a month at 10 minutes a day) and the strong
+tier.
+
 **The brake.** Your monthly limit in ₹ (Vitals panel) is checked before every paid model or speech
-call; at the limit no paid call is made and the reply says so. The ₹1 budget alert is a second brake
-for anything charged to the Cloud project.
+call; at the limit no paid call is made and the reply says so. A new JARVIS has no limit until you
+set one (₹1 to ₹1,00,000; `src/jarvis/billing/budget.py`), and then Anthropic's prepaid credit is
+the only stop for Claude. The ₹1 budget alert is a warning, not a brake, for anything charged to
+the Cloud project.
 
 ## 10. Known limits
 
 - **One copy only.** Cloud Run is capped at one instance: rate limits, the per-conversation queue
   and the home nonce cache live in one process. More copies need those moved out first.
 - **No data backups.** Deletes are final after the 30-day bin.
-- **Long-term memory is not sealed by JARVIS.** Facts in `memory_shards`, conversations and the
-  audit are protected by Google's encryption at rest only.
-- **The morning window.** Tick jobs that ride the morning clock (the Vitals poll, vault reminders,
-  the DigiLocker import, book sealing) run only between 04:00 and 11:30 IST; the systems check also
-  rides the 5-minute watchdog for a linked home.
+- **Long-term memory is not sealed by JARVIS.** Facts in `memory_shards`, conversations, the text
+  of attached files (`attachments`) and the audit are protected by Google's encryption at rest
+  only; anyone who can open the Cloud project can read them.
+- **The morning window.** Tick jobs that ride only the morning clock (the Vitals poll, vault
+  reminders, the DigiLocker import and the sweeps of old data) run only between 04:00 and 11:30
+  IST. With Home switched on, the systems check and book sealing (with the book sweep) also ride
+  the 5-minute watchdog, all day.
 - **The laptop must be awake** for home devices, cameras, the alarm, faces and the offline brain.
 - **Allowances are per billing account.** If other projects share the billing account, JARVIS's
   free-allowance counters see only JARVIS (the deploy script warns).
@@ -1639,75 +1716,124 @@ Nothing in this section is built. It follows the 11 Nov 2026 release plan v6.1.1
 
 ## 12. Glossary
 
+Library and tool names that appear only in sections 5 to 8 (Uvicorn, httpx, Caddy, pytest,
+Playwright, ruff, mypy and the like) are described in the technology table, section 5.1.
+
 | Term | Meaning |
 |---|---|
 | AAD | Extra data an encryption is bound to (here the document's name), so a blob can't be moved to another document |
 | AES-256-GCM | A standard, strong way to encrypt data that also detects tampering |
 | Allowance (free) | The amount of a service a vendor gives free each month or day |
+| Anthropic | The company that makes Claude, JARVIS's paid AI brain |
 | API | A set of addresses a program calls to use a service |
 | Approval card | The box that shows what an action will do and waits for your Approve |
+| Approve all | One tap that clears several waiting low-risk approval cards at once (C18) |
 | Artifact Registry | Google's store for container images |
 | Audit trail (hash chain) | An append-only list of every tool call where each entry includes a fingerprint of the one before, so a change is detectable |
 | Barge-in | Talking over JARVIS to interrupt it |
+| Bearer token | A secret the terminal and the evals send with each request to prove who they are |
+| Billing account | The Google account that pays for a Google Cloud project; its administrators get Google's budget e-mails |
+| Blob | A block of scrambled (encrypted) data that means nothing without its key |
 | BM25 | A classic way to rank text by matching words |
 | Brain | The AI model JARVIS uses for a reply (Claude, Gemini, the laptop's model) |
 | Build book | JARVIS's own generated description of each release, sealed with its source code |
 | Capacitor | A tool that wraps a web page as a phone app (planned for R7) |
 | Card (component card) | One table in section 3 describing one part of JARVIS |
+| CDN | A network of servers that delivers files for other websites (JARVIS uses none) |
+| Chirp 3: HD / Studio | Google's two kinds of natural-sounding voices. Chirp 3: HD is the default and the cheaper beyond the free allowance (about ₹2,857 against ₹15,238 per million characters) |
 | CI | Continuous integration: the automatic tests on every change |
+| Claude (Haiku / Sonnet / Opus) | Anthropic's AI models: Haiku is the fast tier, Sonnet the balanced tier and Opus the strong tier (about twice Sonnet's price) |
+| CLI | Command-line interface: a program you use by typing in a terminal (`jarvis chat`) |
 | Cloud Run | Google's service that runs a container on demand and scales it to zero |
 | Cloud Scheduler | Google's clock service that calls a web address on a timetable |
+| Cloud Shell | Google's terminal in the browser, where the deploy script is run |
 | Console | The JARVIS web page |
+| Construct | The console panel with the optional 3D "hologram" scene |
 | Container / Docker | A packed, self-contained copy of the program and its libraries |
+| Cookie | A small note the browser keeps and sends back; here, the signed proof that you signed in |
+| Cron | The usual way to write a timetable: `0,30 4-11 * * *` means every 30 minutes from 04:00 to 11:30 |
+| Cross-site request | A request that another website makes your browser send; JARVIS refuses writes without its own header |
 | Crypto-shredding | Deleting data by destroying its key, so the remaining blob is unreadable |
 | CSP | Content security policy: the browser rule that blocks scripts not served by JARVIS |
 | DEK | Data encryption key: the key of one vault file |
+| Deterministic | Gives the same result every time from the same input (no AI guessing) |
 | DigiLocker | India's government document wallet |
+| Dock, ruler, radar | Parts of the console's Command Deck look: the dock is the row of panel buttons, the ruler the 24-hour time strip and the radar the live activity display |
+| Dossier | A short written profile of a person, from public sources |
+| Emulator | A local stand-in for a cloud service, used in tests (the Firestore emulator) |
 | Envelope encryption | Each file gets its own key, and that key is locked with a master key |
 | Eval | A fixed test of the assistant's behaviour, with cases and a pass mark |
+| Face library | The pictures of enrolled people that Frigate keeps on the laptop to recognise them |
+| Fails closed | When in doubt, it stops or refuses instead of going ahead |
 | FastAPI | The Python web framework JARVIS's server is built on |
+| Fenced (as data) | Wrapped and marked as outside text, so the model treats it as information, never as orders |
 | Firestore | Google's document database |
+| Free tier | What a vendor gives free each day or month (not the same as a model tier) |
 | Frigate | Open-source camera software that detects people and packages at home |
 | Gateway | The one door every tool call passes through |
+| Gemini | Google's AI models; JARVIS uses the free tier for chat only |
+| GiB | Gibibyte: about 1.07 billion bytes |
 | Grant | An extra Google permission you add from Integrations (Tasks, Contacts, YouTube, Photos) |
 | Groq / OpenRouter | Vendors that serve open AI models in the OpenAI format (usable in the OpenAI-compatible slot) |
+| Guest show / guest lock | Showing the build book to a guest. While it runs, your other consoles are locked until your passkey lifts the lock |
+| Headless (browser) | A browser that runs without a window, for automatic tests |
 | Health Connect | Android's store for health and fitness data (planned for R7) |
 | Heartbeat | A short "I'm alive" message the laptop sends every 2 minutes |
 | HKDF | A standard way to derive many keys from one |
 | HMAC | A signature made with a shared secret |
 | Home Assistant | Open-source home automation software |
 | Home bridge | JARVIS's small signed service on the laptop |
+| HTML / JavaScript | The text format of web pages / the language web pages run in the browser |
 | HTTPS / TLS | Encrypted web traffic |
 | Index (Firestore) | A sorted list Firestore keeps so a query can be answered quickly |
+| Instance | One running copy of the program |
+| IoT | Internet of Things: devices at home that are connected to the network |
 | IST | India Standard Time |
 | JSON | A plain text format for structured data |
 | Keyring | JARVIS's module that derives one key per kind of data |
 | Kubernetes / Terraform | A system to run many containers / a tool to describe cloud set-ups as code (old blueprint; not used) |
 | LangGraph | A library for building agent workflows as graphs (old blueprint; not used) |
+| Laptop brain (offline backup brain) | The small AI model (Ollama) on your laptop that answers when Claude can't be reached |
 | Layer | One of the eight levels of the architecture (section 2) |
+| Licences (CC-BY-NC-SA-4.0, MPL-2.0, AGPL, copyleft) | Terms for using other people's software. CC-BY-NC-SA-4.0: personal, non-commercial use only. Copyleft (MPL-2.0 for some files, AGPL for whole programs): changes must be shared under the same terms if the software is handed on; AGPL also counts offering it over the internet |
 | LLM | Large language model: the AI behind a brain |
+| MAC | A tamper check made with a key (HMAC is one kind); "MAC only" means the data is checked, not hidden |
+| Mark (Mark XIII) | The build name each release gets, as in the films; it signs that release's documents |
 | Markdy | The text format and tool used to draw this guide's diagrams |
 | Matter | A smart-home device standard (not used) |
 | MCP | Model Context Protocol, a standard for connecting AI to tools (not used as built) |
+| MediaPipe / OpenCV / Tesseract / PaddleOCR / ML Kit / YOLO | Vision libraries that run on the device, planned for R8–R10 (YOLO is ruled out by its AGPL licence) |
+| Mock (brain, eval) | A pretend AI that gives fixed answers, so tests cost nothing |
 | Mosquitto | A small message server (MQTT) that Frigate uses at home |
 | MQTT | A light message format used by cameras and sensors |
+| Native mode | Firestore's standard mode (the other is the older Datastore mode) |
 | Negative control | A deliberately broken run that an eval must catch, proving the eval works |
 | Next.js / React Native / Electron | Web, phone and desktop app frameworks the old blueprint planned (not used) |
 | No-AI mode | A switch that makes JARVIS answer with fixed skills only and no model |
 | Nonce | A number used once, so a recorded message can't be replayed |
 | OAuth | The standard that lets you give JARVIS limited access to your Google account without your password |
+| OCR | Reading text from a picture of a page (not built) |
 | OIDC | OpenID Connect: a signed identity token, used for Google sign-in and Scheduler calls |
 | Ollama | Software that runs small AI models on a laptop |
 | ONNX | A file format for AI models that runs in the browser |
+| OpenAI-compatible | Any AI vendor that accepts the same request format as OpenAI; JARVIS has one slot for such a brain |
 | OpenTelemetry / Grafana | Standards and tools for traces and dashboards (planned) |
+| Pacific time | US Pacific time; Google resets some free allowances (YouTube, speech) on Pacific days and months |
 | Passkey | A sign-in key kept on your device (fingerprint or PIN), resistant to phishing |
+| Phase 0–7 | The project's original build plan in eight steps, from the core loop to launch (section 5.3) |
 | PITR | Point-in-time recovery: restoring a database to an earlier moment (not set up; billed) |
+| Port (in the code) | A small, fixed interface that a part uses to reach something (for example the `Docs` port to the database), so what sits behind it can change |
 | Postgres | A relational database the old blueprint planned |
+| Prepaid credit | Money paid to Anthropic in advance; Claude stops answering when it runs out |
 | Provenance | Where a piece of text came from (your own words or someone else's) |
 | Pull request / main | A proposed change, and the branch that is deployed |
+| Push devices | The browsers you allowed to show JARVIS's notifications (at most 5) |
 | Pydantic | A Python library that checks the shape of data |
+| Quiet hours | The night hours (23:00–06:30 by default) when only urgent alerts ring; the rest wait for a summary |
+| Quota | A limit a vendor sets on how much you may use in a day or a month |
 | R1 / R2 / R3 (risk) | Read / reversible / irreversible actions (section 7.1) |
 | R1 … R6.1 (release) | JARVIS's numbered releases (section 5.3) |
+| Red-teaming | Attacking your own system on purpose to find its weak spots |
 | Redis | A fast in-memory store, used only for local runs |
 | REST | The common way of calling a web API with plain web requests |
 | Revision / candidate | A Cloud Run version; a new one first gets a "candidate" tag and no traffic |
@@ -1716,26 +1842,56 @@ Nothing in this section is built. It follows the 11 Nov 2026 release plan v6.1.1
 | Secret Manager | Google's locked store for keys and passwords |
 | Service account | A Google identity for a program, with only the permissions it needs |
 | Service worker | A small browser script that receives push notifications |
+| Slice | One build step of the early project (slices 1 to 12, before R1); each slice had its own plan |
+| SOS | An emergency call for help (planned for R7) |
+| Storm counters | Counts of alerts per hour, so a burst of alerts becomes one summary instead of many messages |
 | Tailscale Funnel | A service that gives the laptop one public HTTPS address without opening the router |
 | Taint | A mark that other people's text reached the model in this request |
+| Tavily | The web-search company JARVIS uses |
+| Telegram | A free chat app; JARVIS talks to you there through a bot |
 | three.js | A library for 3D drawing in the browser |
 | Tick | A scheduled call that wakes JARVIS to do timed work |
-| Tier | Fast, balanced or strong: the kind of model a task needs |
+| Tier | Fast, balanced or strong: the kind of model a task needs (not the same as a vendor's "free tier") |
+| Token (AI billing) | The unit AI companies count and bill by: a small piece of text, usually part of a word. Not a sign-in token |
+| Token (sign-in) | A signed piece of data that proves who is calling (Google tokens, Cloud Scheduler's token, the API token) |
+| Trace id | A random label put on every log line of one request, so its lines can be found together |
 | TTS / STT | Text-to-speech / speech-to-text |
 | VAPID | The standard key that signs Web Push messages |
 | Vector database | A database that finds text by meaning using number lists (embeddings); not used |
+| Vendored | A copy of an outside library kept inside JARVIS's own files, so nothing is loaded from elsewhere |
+| VIP list | The people (by face, phone number or e-mail) you mark as important for alerts |
+| Visual gate | The browser test that checks every console panel at desktop and phone size, Night and Day |
 | Vitals | The board of keys, quotas, bills and limits |
 | Wake word | "Hey Jarvis", heard on the device before anything is sent |
 | Watchdog | The 5-minute check that the laptop is still answering |
 | Web Push | The browser standard for notifications |
+| WebAssembly | A fast program format that browsers run; the wake word's model uses it |
 | WebAuthn | The browser standard behind passkeys |
-| WebGL | The browser's way to draw 3D graphics |
+| WebGL / WebGL2 | The browser's way to draw 3D graphics (WebGL2 is its newer version) |
 | Webhook | An address a service calls to deliver news (Telegram calls JARVIS's webhook) |
 | Whisper / Deepgram / ElevenLabs | Other speech vendors and models the old blueprint named (not used) |
 | Workload Identity Federation | A way for GitHub to prove who it is to Google without a stored key |
+
+## How this guide was checked
+
+- **Coverage.** `python scripts/arch_coverage.py` passes. Every top-level package and module,
+  console module, Cloud Scheduler job, outside service and Firestore collection in the code is
+  named inside a component card's fields. Every path a card cites, and every diagram file this
+  guide links, exists.
+- **Completeness.** Every card has its 11 fields and every technology row its 8 cells; the version
+  line and the change log follow the workshop rules.
+- **Secret scan.** The build book's scrubber finds no secret, personal e-mail, phone number or chat
+  link in `docs/architecture/` (in a diagram it reads only the drawn words).
+- **20 + 10 claims.** A fresh reviewer checked 20 claims picked at random against the code: one was
+  wrong (the morning window) and is fixed, and the 10 wrong or loose statements found while
+  skimming are fixed too. The writer then checked 10 more claims in sections the sample missed;
+  one quoted the wrong alert text and is fixed.
+- **Plain-language read.** A fresh reviewer read page 1 as the owner. The gaps found (one monthly
+  total, voice costs, who sees your data, no backups, what JARVIS doesn't lock itself, technical
+  words) are fixed on page 1 and in the glossary.
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v6.1.1 | 11 Nov 2026, 11:43 IST | R6.1 | First edition: summary, layers and departures, 59 component cards, 14 diagram captions, technology table, outside services and free limits, plan vs build, decisions, data and privacy, security, operations, costs, limits, roadmap and glossary, written from the code | 🛠 Mark XIII |
+| v6.1.1 | 11 Nov 2026, 11:43 IST | R6.1 | First edition: summary, layers and departures, 59 component cards, 14 diagram captions, technology table, outside services and free limits, plan vs build, decisions, data and privacy, security, operations, costs, limits, roadmap and glossary, written from the code. Before publishing, corrected after the R6.1 reviews: page 1 rewritten in plain words (one monthly ₹ total with worst cases, no limit until you set one, voice paid after the free minutes, who sees your data, no backups, what JARVIS doesn't lock itself); 11 fact-check fixes and 1 from the writer's own 10 checks; glossary filled; "How this guide was checked" added | 🛠 Mark XIII |

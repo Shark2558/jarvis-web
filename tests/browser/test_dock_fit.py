@@ -362,3 +362,56 @@ def test_the_approvals_badge_stays_on_screen(
         assert c.errors == []
     finally:
         c.close()
+
+
+# ---- before console-dock.js has run (code review L5) --------------------------------------------
+# The script is deferred: on a slow network or a cold cache the page can paint while it is still on
+# its way, with every tab showing. Desktop tabs keep their sizes (flex: none), so they used to run
+# hundreds of px past the dock's right edge (264 px at 1440, 424 px at 1280). The guard is CSS
+# only: until the first fit the dock clips them. It keeps the dock's size (console-deck.js, which
+# runs first, sizes the panels from the dock's top) and never matches once the fit has run.
+EARLY_JS = """() => {
+  const d = document.getElementById('dock'), r = d.getBoundingClientRect();
+  const tabs = [...d.querySelectorAll('.dk')].filter((t) => t.getClientRects().length);
+  const box = (e) => {
+    const b = e.getBoundingClientRect();
+    return {l: b.left, r: b.right, t: b.top};
+  };
+  return {ready: document.readyState, vw: innerWidth, left: r.left, right: r.right, top: r.top,
+          bottom: r.bottom, boxes: tabs.map(box), rows: new Set(tabs.map((t) => box(t).t)).size,
+          overflowX: getComputedStyle(d).overflowX,
+          panelMax: getComputedStyle(document.documentElement).getPropertyValue('--panel-max-h'),
+          pageScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth};
+}"""
+
+
+@pytest.mark.parametrize("width", [w for w in WIDTHS if w >= PHONE_BELOW])
+def test_before_its_script_runs_no_tab_shows_past_the_dock(
+    browser: Any, server_url: str, width: int
+) -> None:
+    ctx = browser.new_context(viewport={"width": width, "height": WIDTHS[width]})
+    page = ctx.new_page()
+    try:
+        held: list[Any] = []
+        page.route("**/static/console-dock.js", lambda route: held.append(route))  # on its way
+        page.goto(server_url + "/", wait_until="commit")
+        page.wait_for_function("document.readyState !== 'loading'")
+        page.evaluate(SETTLE_JS)
+        early = page.evaluate(EARLY_JS)
+        assert held and early["ready"] == "interactive", early["ready"]  # painted, not yet fitted
+        assert len(early["boxes"]) == 20 and early["rows"] == 1  # every tab, More still hidden
+        assert early["overflowX"] == "clip", early  # what runs past the dock is not painted
+        assert early["right"] <= early["vw"] and early["pageScroll"] <= 0, early
+
+        for route in held:
+            route.continue_()
+        page.wait_for_load_state("load")
+        page.evaluate(SETTLE_JS)
+        after = page.evaluate(EARLY_JS)
+        assert after["overflowX"] == "visible" and after["rows"] == 1, after  # the guard is off
+        # the dock kept its size, so the panels were sized from the right room
+        assert (after["top"], after["bottom"]) == (early["top"], early["bottom"]), (early, after)
+        assert after["panelMax"] == early["panelMax"]
+    finally:
+        page.unroute_all(behavior="ignoreErrors")  # a failed check leaves the script held
+        ctx.close()

@@ -228,6 +228,10 @@ html[data-surface="night"] .dk[aria-pressed="true"] svg{filter:drop-shadow(0 0 5
 @media (min-width: 900px){
   .dock{max-width:calc(100vw - 24px)}
   .dk,.dock .sep{flex:none}
+  /* console-dock.js is deferred: a frame painted before its first fit (More hidden, no More-sheet
+     entry hidden yet) shows every tab. The dock clips them instead of letting them run past it,
+     keeping its size (console-deck.js measures it first). After the fit this never matches. */
+  body:has(#moreSheet [data-sheet-open]:not([hidden])) .dock:has(> #dockMore[hidden]){overflow-x:clip}
 }
 .no-sheet .dock{flex-wrap:wrap}
 .no-sheet .dk{min-width:44px}

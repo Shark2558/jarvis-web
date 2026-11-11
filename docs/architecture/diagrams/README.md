@@ -1,4 +1,4 @@
-Version v6.1.1 · 11 Nov 2026, 11:45 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII
+Version v6.1.2 · 11 Nov 2026, 12:10 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII
 
 # The JARVIS architecture diagrams
 
@@ -13,10 +13,11 @@ time (a clock, a background job). The PNG picture is the one that was checked by
 scales without blurring but takes your computer's fonts, so its words can sit slightly differently.
 
 **For engineers.** Each `.markdy` file is the source. `python scripts/markdy_export.py` checks every
-diagram (privacy rule, `lint --strict`, `verify --quality showcase`) and writes the `.svg` and `.png`
-beside it, plus `exports.json` (the hashes CI uses to spot an export older than its source). The
-Markdy tool (`@markdy/cli` 1.5.7, MIT) is a developer tool only: it is never part of the JARVIS
-server, the console or the build book. See `scripts/markdy_export.py` for the details.
+diagram (privacy rule, `lint --strict`, `verify --quality showcase`) and writes the `.svg` and
+`.png` beside it, plus `exports.json` (the hashes CI uses to spot an export older than its source;
+CI has no browser, so `--check` trusts that file and does not draw the diagrams again). The Markdy
+tool (`@markdy/cli` 1.5.7, MIT) is a developer tool only: it is never part of the JARVIS server, the
+console or the build book. See `scripts/markdy_export.py` for the details.
 
 ---
 
@@ -162,18 +163,21 @@ Source: [`08-vault-digilocker.markdy`](08-vault-digilocker.markdy) · scalable c
 
 ![Figure 9 — The morning tick, the watchdog and alerts](09-brief-ticks.png)
 
-*Figure 9. The morning tick, the watchdog and alerts.* JARVIS sleeps between requests, so two
-Cloud Scheduler clocks wake it. Each call carries a token signed by Google for that exact address,
-so nobody else can trigger them. The morning clock calls every 30 minutes from 04:00 to 11:30 IST:
-each round makes the morning brief when it is due (your calendar, unread mail, to-dos and waiting
+*Figure 9. The morning tick, the watchdog and alerts.* JARVIS sleeps between requests, so two Cloud
+Scheduler clocks wake it. Each call carries a token signed by Google for that exact address, so
+nobody else can trigger them. The morning clock calls every 30 minutes from 04:00 to 11:30 IST: each
+round makes the morning brief when it is due (your calendar, unread mail, to-dos and waiting
 approvals, with optional AI summary lines inside your rupee limit) and, if you switched it on, puts
 it in your own Gmail inbox. Then it tidies up (learning sweep, expired Recently deleted items, old
 counters) and runs the tick jobs one after another: vault reminders, the DigiLocker import, the
 Vitals poll, the systems check and the build book. The watchdog clock calls every 5 minutes, all
 day: if your laptop has been silent for 6 minutes, or arming the alarm was not confirmed, it tells
-you once. Everything that wants your attention passes one alert policy with no AI in it: quiet
-hours hold or drop lesser alerts, urgent ones (a burglar, smoke, the laptop gone while armed) ring
-through the night, and alerts go out on Telegram and Web Push.
+you once. When Home is set up, the same 5-minute round also runs the systems check (at most once
+every 15 minutes) and the build book's sealing and sweep, so those don't wait for the morning; the
+vault reminders, the DigiLocker import and the Vitals poll run in the morning only. Everything that
+wants your attention passes one alert policy with no AI in it: quiet hours hold or drop lesser
+alerts, urgent ones (a burglar, smoke, the laptop gone while armed) ring through the night, and
+alerts go out on Telegram and Web Push.
 
 Source: [`09-brief-ticks.markdy`](09-brief-ticks.markdy) · scalable copy: [`09-brief-ticks.svg`](09-brief-ticks.svg)
 
@@ -237,16 +241,21 @@ Source: [`12-build-book-guest.markdy`](12-build-book-guest.markdy) · scalable c
 ![Figure 13 — How a change reaches the live JARVIS](13-release-flow.png)
 
 *Figure 13. How a change reaches the live JARVIS.* Each part of a release is built on its own
-branch and arrives as a pull request. On every pull request GitHub Actions runs the tests on Python
-3.11 and 3.12 (with the lint check, the mock evaluations and a check that the build book still
-builds), the Firestore emulator tests and the browser tests; the diagram checks run on pull
-requests only and never hold up a deploy. After the merge to main the same tests run again, and the
-real-model evaluation runs on main (skipped when no Anthropic key is set). The deploy job runs only
-when automatic deploys are on and the tests passed: it writes the build book, signs in to Google
-without a stored key, builds the image and starts the new version with no traffic. It refuses if
-main has moved on, so an old run can never roll JARVIS back. Only when the new version answers its
-health check within about two minutes does all traffic switch to it; otherwise your current JARVIS
-keeps running unchanged.
+branch and arrives as a pull request. On every push to a pull request GitHub Actions runs the tests
+on Python 3.11 and 3.12 (with the lint check, the mock evaluations and a check that the build book
+still builds), the Firestore emulator tests and the browser tests, and the guide coverage check,
+which fails when a part of JARVIS is missing from the architecture guide. Two more checks run on
+pull requests only and never hold up a deploy: the title check (a title reads like
+"v6.1.0 · R6.1 Short name · Mark XIII"; Dependabot's pull requests are exempt) and the diagram
+checks. A pull request is merged when its checks are green. After the merge to main the tests run
+again. The deploy job waits for those tests only (Python, Firestore and browser), never for the
+real-model evaluation: that runs on main beside the deploy, after the merge, is skipped when no
+Anthropic key is set and only reports, so it can block neither a merge nor a deploy. The deploy job
+runs only when automatic deploys are on: it writes the build book, signs in to Google without a
+stored key, builds the image and starts the new version with no traffic. It refuses if main has
+moved on, so an old run can never roll JARVIS back. Only when the new version answers its health
+check within about two minutes does all traffic switch to it; otherwise your current JARVIS keeps
+running unchanged.
 
 Source: [`13-release-flow.markdy`](13-release-flow.markdy) · scalable copy: [`13-release-flow.svg`](13-release-flow.svg)
 
@@ -277,3 +286,4 @@ Source: [`14-privacy-map.markdy`](14-privacy-map.markdy) · scalable copy: [`14-
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.1.1 | 11 Nov 2026, 11:45 IST | R6.1 | First edition: 14 diagrams drawn from the code, with captions, explanations and the export check | 🛠 Mark XIII |
+| v6.1.2 | 11 Nov 2026, 12:10 IST | R6.1 | Figure 13: the pull-request title check, the diagram checks and the guide coverage check; the eval gate runs beside the deploy and only reports; no label under a line. Figure 9: the watchdog also runs the systems check and the book's sealing and sweep. `--check` documented as trusting `exports.json` | 🛠 Mark XIII |

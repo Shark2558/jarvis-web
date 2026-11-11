@@ -9,8 +9,8 @@ Branch `r6-1-c` (from `r6-1-i0`). Plan: `docs/plans/r6-1-architecture-guide.md` 
 |---|---|
 | D1 agent | `.claude/agents/technical-writer.md` — the brief's text; frontmatter like the other agents (`name`, `description`, `tools`, `model: opus`) plus the shared Prompt Defense Baseline; a short "Tools you run" section for the export script |
 | D2 dev-only tool | `tools/markdy/package.json` + `package-lock.json` — `@markdy/cli` 1.5.7 pinned exactly (48 packages, all MIT, `private: true`) |
-| D2 script | `scripts/markdy_export.py` (388 lines) — privacy rule (`player: chrome: badge false`, no `share true`, no web address or e-mail in a source), `lint --strict`, `verify --quality showcase --json`, export, `exports.json` manifest, `--check`, `--lint-only`; `scripts/markdy_render.py` (149 lines) — headless Chromium via Python Playwright, the page and pinned modules served from `tools/markdy/node_modules` by a route, every other request blocked and reported |
-| D2 tests | `tests/test_markdy_export.py` (44 tests) + `tests/markdy_fakes.py` (stub CLI and renderer): discovery, privacy rule, lint/verify reporting, export, idempotence, staleness (missing, source changed, export edited, other Markdy version, unreadable manifest), orphans, exit codes, the pinned version, dev-only boundaries, the CI job |
+| D2 script | `scripts/markdy_export.py` (449 lines) — privacy rule (`player: chrome: badge false`, no share control switched on, no web address or e-mail in a source), `lint --strict`, `verify --quality showcase --json`, export, `exports.json` manifest, `--check`, `--lint-only`; `scripts/markdy_render.py` (181 lines) — headless Chromium via Python Playwright, the page and pinned modules served from `tools/markdy/node_modules` by a route, every other request blocked and reported |
+| D2 tests | `tests/test_markdy_export.py` (67 tests) + `tests/markdy_fakes.py` (stub CLI and renderer): discovery, privacy rule, lint/verify reporting, export, idempotence, staleness (missing, source changed, export edited, other Markdy version, unreadable manifest), orphans, exit codes, the pinned version, dev-only boundaries, the CI job |
 | D2 CI | `.github/workflows/ci.yml` job `docs` (see below) |
 | Docker | `.dockerignore` gains `tools` and `**/node_modules` (the Dockerfile copies only `src`, `deploy/home` and the lock anyway) |
 | git | `.gitignore` gains `tools/markdy/node_modules/` |
@@ -27,9 +27,9 @@ Branch `r6-1-c` (from `r6-1-i0`). Plan: `docs/plans/r6-1-architecture-guide.md` 
   source, SVG and PNG), not file times. Exports are deterministic here (same bytes twice).
 - CI job `docs`: `if: github.event_name == 'pull_request'`, no `needs`, not in deploy's `needs`, default
   read-only token; checkout (fetch-depth 0), setup-python 3.12, `actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0`
-  (Node 22), `npm ci --prefix tools/markdy --ignore-scripts`. A PR that changes `docs/architecture/**`
-  (git diff against `origin/$BASE_REF`; a git failure counts as changed) runs `--check`; any other PR
-  runs `--lint-only`. Both lint + verify all 14 diagrams. No browser in CI: exports are made and looked
+  (Node 22), `npm ci --prefix tools/markdy --ignore-scripts`. A PR that changes `docs/architecture/**`,
+  `tools/markdy/**` or `scripts/markdy_*` (git diff against `origin/$BASE_REF`, git's own glob; a
+  git failure counts as changed) runs `--check`; any other PR runs `--lint-only`. Both lint + verify all 14 diagrams. No browser in CI: exports are made and looked
   at locally, CI only proves they match their sources (the plan's "needs headless Chromium" risk no
   longer applies to CI).
 - Nothing Markdy-related reaches the app: `grep -ri markdy src/` is empty (pinned by
@@ -55,14 +55,22 @@ Branch `r6-1-c` (from `r6-1-i0`). Plan: `docs/plans/r6-1-architecture-guide.md` 
 3. **Linking**: Part D checks for `diagrams/<name>.svg` + `*Figure N.` — fine. The PNG is the rendering
    that was looked at; the SVG uses the reader's system fonts, so text may sit slightly differently.
    The README embeds the PNG and links the SVG; the guide may do the same.
-4. **Figure 13** shows CI as it is on `r6-1-i0` (+ `docs`). When Part B's PR-title check lands, add it
-   to `13-release-flow.markdy` (e.g. `test Title "Title check" sub="version and Mark in the PR title"`
-   and `PR -> Title "every time"`), run `python scripts/markdy_export.py 13-release-flow`, look at the
-   PNG, and update the Figure 13 paragraph in `diagrams/README.md`.
+4. **Figure 13** already shows CI as it will be after integration: `test` (3.11/3.12), `firestore`,
+   `browser`, Part D's guide coverage check (drawn as a PR check that feeds the merge; INTEGRATION-D
+   item 1 puts it in the `test` job, which matches), Part B's `pr-title` and the `docs` job together
+   as "Title and diagram checks · pull requests only" (a leaf: never on the deploy path), and the
+   eval gate beside the deploy that "only reports". If the coverage check ends up PR-only instead,
+   nothing in the figure changes; if any job is renamed or dropped, edit the `.markdy` and the
+   Figure 13 paragraph in `diagrams/README.md`, re-export, look at the PNG.
 5. **Pre-existing failure, not from Part C**: `tests/test_book_gen_determinism.py::test_the_real_repo_builds_and_the_show_is_about_six_thousand_characters`
    asserts the release label `R6`; the real label is now `R6.1` (fails identically on `r6-1-i0`). Part B
    (versioning) or I1 should update it.
-6. Upgrading Markdy: bump `CLI_VERSION` in `scripts/markdy_export.py`, `tools/markdy/package.json` and
+6. **Part D's guide** (not edited here): its Figure 13 walk-through (fact check K5, guide lines
+   ~1229-1231) and C59 must match the new figure: the eval gate runs on main beside the deploy and
+   only reports (it blocks neither a merge nor a deploy); the deploy needs `test`, `firestore` and
+   `browser` only. Its Known-limits line and C11 (S1, K6) must say the systems check and the
+   book's sealing and sweep also ride the 5-minute watchdog when Home is set up, as Figure 9 now does.
+7. Upgrading Markdy: bump `CLI_VERSION` in `scripts/markdy_export.py`, `tools/markdy/package.json` and
    the lock together (a test pins them equal), re-export every diagram and look at every PNG.
 
 ## Grounding (what each figure was drawn from)
@@ -80,7 +88,7 @@ approval + `tools/policy.py` (R1/R2 allow, R3 ask), `tools/gmail.py` (`gmail_sen
 `ticks.py`, `app.py::_tick_jobs`, `home/watchdog.py`, `notify/policy.py`, `notify/ports.py`;
 10 flow home_alert + `homebridge/*`, `home/webhook.py`, `home/signing.py`, `camera/events.py`,
 `camera/alarm.py`, `deploy/home/docker-compose.yml`; 11 flow systems_check + `health/*`, `vitals/*`;
-12 flow build_book + `buildbook/*`, `api/book_*.py`, `config.py` book limits; 13 `.github/workflows/ci.yml`;
+12 flow build_book + `buildbook/*`, `api/book_*.py`, `config.py` book limits; 13 `.github/workflows/ci.yml` (+ r6-1-b's `pr-title` job, r6-1-d's coverage check);
 14 `keyring.py` users (vault, kb, belongings, faces, home, camera, notify, webpush, places, offline,
 integrations, buildbook), `recall/store.py`, `storage/*`, `llm/brains.py` + `recall/gate.py` (Gemini
 free: no tools, no notes), `voice/*`, `webpush/ece.py`.
@@ -113,6 +121,57 @@ free: no tools, no notes), `voice/*`, `webpush/ece.py`.
 - `docs/architecture/diagrams/12-build-book-guest.png`
 - `docs/architecture/diagrams/13-release-flow.png`
 - `docs/architecture/diagrams/14-privacy-map.png`
+
+## Fix round (review-cd-code Part C + fact check K5/S1), README v6.1.2
+
+- **Interrupted export**: `_export_all` rewrites `exports.json` after EACH diagram, and every SVG,
+  PNG and the manifest go through `write_atomic` (temp file + `os.replace`, temp removed on
+  failure). A run killed on diagram N leaves 1..N-1 fresh and N.. honestly stale. A failed write is
+  that diagram's `export` problem; `OSError` reaching `main` exits 2. Entries made by another Markdy
+  version are dropped on export, so a partial re-export after an upgrade can't vouch for the rest.
+- **CI**: the `docs` job's `--check` filter is now `-- docs/architecture tools/markdy
+  'scripts/markdy_*'` (output renamed `diagrams`); a test runs that pathspec through real git.
+- **`--check` limit documented** (module docstring, diagrams README): it proves the files match the
+  hashes in `exports.json`; it does not re-render, so it trusts that file. No `--rerender` mode added.
+- **LOW items**: CLI stdout (the `verify --json` report) is kept apart from stderr (`CliResult.err`,
+  quoted in problems, never parsed); typed `CliAnswer` protocol instead of `Any`; renderer catches
+  Playwright's `Error` and `ValueError` only (full trace at DEBUG on logger `markdy_render`; any
+  other exception propagates); typed route protocol; an empty error message no longer raises
+  `IndexError`; privacy rule catches every form Markdy 1.5.7 reads as "share on" (`share`,
+  `shareLink`, `share_link`, `controls`; bare, `true/on/yes/1`, `:`/`=`, scene-line key=value;
+  checked against `@markdy/core`'s parser) and `markdy.com` without a scheme. New tests: NodeCli
+  timeout (124) and missing node, stderr noise, `_serve` blocking an outside URL / `..` / non-JS,
+  narrowed renderer errors. Out of scope here: the `arch_coverage.py` items (Part D).
+- **Figure 13**: adds the guide coverage check and "Title and diagram checks · pull requests only";
+  merge only "when the checks are green"; the eval gate is "main only; reports, never blocks" and
+  sits beside the deploy (no arrow from it to the deploy); deploy "tests pass again; AUTODEPLOY on".
+  The crossings that ran lines through "check answers", both "every time" labels and "yes"/"no" are
+  gone: fan-out edges carry no labels, and the right-hand child's edge is declared first (Markdy's
+  router assigns lanes in declaration order; declaring left-first crosses them).
+- **Figure 9**: the watchdog now also points at the tick jobs and its line reads "laptop, arming,
+  systems check, book" (`api/selfcheck_wiring.py:180-191`, `api/r6_wiring.py:198-215`,
+  `home/watchdog.py:80`); the README paragraph says vault reminders, DigiLocker and Vitals stay
+  morning-only. The "tidy up" and "deliver" labels (lines ran through them) were dropped; the
+  node names say it.
+- **"Powered by Markdy"**: cannot be turned off in a static export, so it stays on all 14 (MIT
+  tool, plain text, no link and no diagram source). `renderPureVectorSvg` in `@markdy/renderer-dom`
+  1.5.7 appends it unconditionally; `SvgExportOptions`/`PngExportOptions` have no such flag; the
+  CLI's help and the three READMEs document none; `player: chrome: badge false` only removes the
+  live player's link badge. All 14 SVGs checked: no `<a>`, no `href`.
+- `markdy fmt` is not used: it drops `type=flowchart` and unquotes `sub=` values.
+
+### Re-exported in this round (each PNG opened and inspected)
+
+- `docs/architecture/diagrams/09-brief-ticks.png` (+ `.svg`)
+- `docs/architecture/diagrams/13-release-flow.png` (+ `.svg`)
+
+### Checks run in this round
+
+- `tests/test_markdy_export.py`: 67 passed on 3.11 (`/tmp/venv-b`) and 3.12 (`/tmp/venv-12`).
+- `ruff check` + `ruff format --check` clean on the four touched Python files; `mypy --strict`
+  clean on `scripts/markdy_export.py`, `scripts/markdy_render.py`, `tests/markdy_fakes.py`.
+- Real CLI 1.5.7: `lint --strict` and `verify --quality showcase` pass for 09 and 13;
+  `python scripts/markdy_export.py --check`: 14 diagrams, 0 problems.
 
 ## Unverified / known limits
 

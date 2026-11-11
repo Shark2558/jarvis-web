@@ -1098,11 +1098,12 @@ Firestore collection is missing here, or if a card or technology row is incomple
 
 Fourteen diagrams, drawn as Markdy text files under `docs/architecture/diagrams/` and exported to
 SVG and PNG beside them. Each one passes `lint --strict` and `verify --quality showcase` in CI. The
-numbers and names are fixed by the R6.1 plan.
+numbers and names are fixed by the R6.1 plan. Each figure shows the PNG that was checked by eye;
+select it to open the SVG (which uses your system's fonts, so text may sit slightly differently).
 
 ### Figure 1 — JARVIS and everything around it
 
-![Figure 1. JARVIS and everything around it](diagrams/01-context.svg)
+[![Figure 1. JARVIS and everything around it](diagrams/01-context.png)](diagrams/01-context.svg)
 
 *Figure 1. Context: the people, devices and outside services around JARVIS.* The owner reaches
 JARVIS from the console, by voice or on Telegram; JARVIS runs in the owner's Google Cloud project
@@ -1115,14 +1116,14 @@ bridge sign their calls.
 
 ### Figure 2 — The eight layers, as built
 
-![Figure 2. The eight layers, as built](diagrams/02-layers.svg)
+[![Figure 2. The eight layers, as built](diagrams/02-layers.png)](diagrams/02-layers.svg)
 
 *Figure 2. The eight layers and the cards in each.* The same map as the table in section 2,
 with the cross-cutting parts drawn as a band across all layers.
 
 ### Figure 3 — Where JARVIS runs
 
-![Figure 3. Where JARVIS runs](diagrams/03-deployment.svg)
+[![Figure 3. Where JARVIS runs](diagrams/03-deployment.png)](diagrams/03-deployment.svg)
 
 *Figure 3. Deployment: what runs where.* One Cloud Run container (at most one copy, scaled to
 zero) in asia-south1 with Firestore, Secret Manager and Cloud Scheduler in the same project; the
@@ -1135,7 +1136,7 @@ secrets and use Firestore. The laptop is reached only through its `*.ts.net` add
 
 ### Figure 4 — One conversation turn
 
-![Figure 4. One conversation turn](diagrams/04-chat-turn.svg)
+[![Figure 4. One conversation turn](diagrams/04-chat-turn.png)](diagrams/04-chat-turn.svg)
 
 *Figure 4. One chat turn, from your message to the reply.* The input guard checks the message,
 the brain loads the conversation and recalls memory, the monthly limit is checked, the router
@@ -1150,7 +1151,7 @@ Walk-through (the same ten steps the build book checks against the code): `api.r
 
 ### Figure 5 — Confirm before commit: cards and passkeys
 
-![Figure 5. Confirm before commit: cards and passkeys](diagrams/05-approvals-passkeys.svg)
+[![Figure 5. Confirm before commit: cards and passkeys](diagrams/05-approvals-passkeys.png)](diagrams/05-approvals-passkeys.svg)
 
 *Figure 5. Approvals and passkeys: how a risky action waits for you.* A risky tool call becomes a
 card written by code; it waits in the approval store; you approve it in the console (reversible
@@ -1159,7 +1160,7 @@ gateway checks the card is unchanged, audits the intent, then runs it.
 
 ### Figure 6 — A spoken turn
 
-![Figure 6. A spoken turn](diagrams/06-voice-loop.svg)
+[![Figure 6. A spoken turn](diagrams/06-voice-loop.png)](diagrams/06-voice-loop.svg)
 
 *Figure 6. The voice loop: wake word, listening, thinking, speaking, barge-in.* "Hey Jarvis" is
 detected in the browser; speech goes to Google Speech-to-Text (or the browser's own); the reply
@@ -1171,7 +1172,7 @@ asks for becomes a card that you approve on screen (C28).
 
 ### Figure 7 — How JARVIS remembers you
 
-![Figure 7. How JARVIS remembers you](diagrams/07-memory.svg)
+[![Figure 7. How JARVIS remembers you](diagrams/07-memory.png)](diagrams/07-memory.svg)
 
 *Figure 7. Memory: short-term conversation, long-term facts, notes and things.* The conversation
 window goes with every message; up to 12 matching facts from "About you" are added for a private
@@ -1180,7 +1181,7 @@ the reply, only when you switched it on.
 
 ### Figure 8 — The document vault and the DigiLocker import
 
-![Figure 8. The document vault and the DigiLocker import](diagrams/08-vault-digilocker.svg)
+[![Figure 8. The document vault and the DigiLocker import](diagrams/08-vault-digilocker.png)](diagrams/08-vault-digilocker.svg)
 
 *Figure 8. The vault and the DigiLocker import folder.* A file arrives from the Vault panel or the
 Drive import folder, is checked and sealed with its own key, gets proposed fields you confirm,
@@ -1188,7 +1189,7 @@ and is opened only after an unlock; expiry reminders ride the morning tick.
 
 ### Figure 9 — The morning tick, the watchdog and alerts
 
-![Figure 9. The morning tick, the watchdog and alerts](diagrams/09-brief-ticks.svg)
+[![Figure 9. The morning tick, the watchdog and alerts](diagrams/09-brief-ticks.png)](diagrams/09-brief-ticks.svg)
 
 *Figure 9. The morning brief and the scheduler ticks.* Cloud Scheduler's morning job calls
 JARVIS every 30 minutes from 04:00 to 11:30 IST; JARVIS decides whether your brief is due, makes
@@ -1197,7 +1198,7 @@ it from fixed reads, then runs the tick jobs one after another inside a 150-seco
 
 ### Figure 10 — The burglar alarm: from the camera to your phone
 
-![Figure 10. The burglar alarm: from the camera to your phone](diagrams/10-home-alarm.svg)
+[![Figure 10. The burglar alarm: from the camera to your phone](diagrams/10-home-alarm.png)](diagrams/10-home-alarm.svg)
 
 *Figure 10. Home: the signed link, the bridge and the burglar alarm.* Frigate sees a person, the
 bridge filters it at home and sends a signed event; if the alarm is armed the alert policy rings
@@ -1206,7 +1207,7 @@ audited first.
 
 ### Figure 11 — The systems check and the Vitals board
 
-![Figure 11. The systems check and the Vitals board](diagrams/11-systems-vitals.svg)
+[![Figure 11. The systems check and the Vitals board](diagrams/11-systems-vitals.png)](diagrams/11-systems-vitals.svg)
 
 *Figure 11. The systems check and the Vitals board.* One probe per integration, rolled up and
 spoken from fixed templates; Vitals merges meters, allowances and your own records and alerts
@@ -1214,26 +1215,27 @@ once when a line is crossed. No model is called on either path.
 
 ### Figure 12 — The build book and the guest show
 
-![Figure 12. The build book and the guest show](diagrams/12-build-book-guest.svg)
+[![Figure 12. The build book and the guest show](diagrams/12-build-book-guest.png)](diagrams/12-build-book-guest.svg)
 
 *Figure 12. The build book and the guest show.* The generator writes the book at each release,
 the sealer puts it in the vault, you open it with your passkey and a fresh Google sign-in, and a
 guest show locks your other consoles until your passkey lifts the lock.
 
-### Figure 13 — How a change reaches production
+### Figure 13 — How a change reaches the live JARVIS
 
-![Figure 13. How a change reaches production](diagrams/13-release-flow.svg)
+[![Figure 13. How a change reaches the live JARVIS](diagrams/13-release-flow.png)](diagrams/13-release-flow.svg)
 
-*Figure 13. How a change reaches production.* A plan in `docs/plans/`, parts built on their own
-branches, an integration branch, a pull request with CI (unit tests on Python 3.11 and 3.12,
-Firestore emulator, browser tests, the build book check), merge to main, deploy with no traffic,
-health check, then traffic.
+*Figure 13. How a change reaches the live JARVIS.* A branch for one part of a release, a pull
+request, the tests (Python 3.11 and 3.12, the Firestore emulator, the browser; diagram checks on
+pull requests), merge to main, the real-model eval gate (main only, skipped without a key), then
+the deploy job: a new version with no traffic, a health check for up to 2 minutes, and only then
+all traffic. If it isn't healthy, your current JARVIS keeps running.
 
-### Figure 14 — Privacy map: what is kept where
+### Figure 14 — Where your data lives
 
-![Figure 14. Privacy map: what is kept where](diagrams/14-privacy-map.svg)
+[![Figure 14. Where your data lives](diagrams/14-privacy-map.png)](diagrams/14-privacy-map.svg)
 
-*Figure 14. Privacy map: what is kept where, and who can read it.* Firestore in Mumbai (with the
+*Figure 14. Where your data lives, and who can read it.* Firestore in Mumbai (with the
 collections JARVIS encrypts with its own keys marked), Secret Manager, the laptop (pictures and
 face library), the browser, and the outside services that see a part of your data.
 
@@ -1642,6 +1644,7 @@ Nothing in this section is built. It follows the 11 Nov 2026 release plan v6.1.1
 | AAD | Extra data an encryption is bound to (here the document's name), so a blob can't be moved to another document |
 | AES-256-GCM | A standard, strong way to encrypt data that also detects tampering |
 | Allowance (free) | The amount of a service a vendor gives free each month or day |
+| API | A set of addresses a program calls to use a service |
 | Approval card | The box that shows what an action will do and waits for your Approve |
 | Artifact Registry | Google's store for container images |
 | Audit trail (hash chain) | An append-only list of every tool call where each entry includes a fingerprint of the one before, so a change is detectable |
@@ -1649,13 +1652,16 @@ Nothing in this section is built. It follows the 11 Nov 2026 release plan v6.1.1
 | BM25 | A classic way to rank text by matching words |
 | Brain | The AI model JARVIS uses for a reply (Claude, Gemini, the laptop's model) |
 | Build book | JARVIS's own generated description of each release, sealed with its source code |
+| Capacitor | A tool that wraps a web page as a phone app (planned for R7) |
 | Card (component card) | One table in section 3 describing one part of JARVIS |
 | CI | Continuous integration: the automatic tests on every change |
 | Cloud Run | Google's service that runs a container on demand and scales it to zero |
 | Cloud Scheduler | Google's clock service that calls a web address on a timetable |
 | Console | The JARVIS web page |
 | Container / Docker | A packed, self-contained copy of the program and its libraries |
+| Crypto-shredding | Deleting data by destroying its key, so the remaining blob is unreadable |
 | CSP | Content security policy: the browser rule that blocks scripts not served by JARVIS |
+| DEK | Data encryption key: the key of one vault file |
 | DigiLocker | India's government document wallet |
 | Envelope encryption | Each file gets its own key, and that key is locked with a master key |
 | Eval | A fixed test of the assistant's behaviour, with cases and a pass mark |
@@ -1663,41 +1669,69 @@ Nothing in this section is built. It follows the 11 Nov 2026 release plan v6.1.1
 | Firestore | Google's document database |
 | Frigate | Open-source camera software that detects people and packages at home |
 | Gateway | The one door every tool call passes through |
+| Grant | An extra Google permission you add from Integrations (Tasks, Contacts, YouTube, Photos) |
+| Groq / OpenRouter | Vendors that serve open AI models in the OpenAI format (usable in the OpenAI-compatible slot) |
+| Health Connect | Android's store for health and fitness data (planned for R7) |
+| Heartbeat | A short "I'm alive" message the laptop sends every 2 minutes |
 | HKDF | A standard way to derive many keys from one |
 | HMAC | A signature made with a shared secret |
 | Home Assistant | Open-source home automation software |
 | Home bridge | JARVIS's small signed service on the laptop |
+| HTTPS / TLS | Encrypted web traffic |
+| Index (Firestore) | A sorted list Firestore keeps so a query can be answered quickly |
 | IST | India Standard Time |
+| JSON | A plain text format for structured data |
 | Keyring | JARVIS's module that derives one key per kind of data |
+| Kubernetes / Terraform | A system to run many containers / a tool to describe cloud set-ups as code (old blueprint; not used) |
+| LangGraph | A library for building agent workflows as graphs (old blueprint; not used) |
 | Layer | One of the eight levels of the architecture (section 2) |
 | LLM | Large language model: the AI behind a brain |
 | Markdy | The text format and tool used to draw this guide's diagrams |
+| Matter | A smart-home device standard (not used) |
 | MCP | Model Context Protocol, a standard for connecting AI to tools (not used as built) |
 | Mosquitto | A small message server (MQTT) that Frigate uses at home |
+| MQTT | A light message format used by cameras and sensors |
 | Negative control | A deliberately broken run that an eval must catch, proving the eval works |
+| Next.js / React Native / Electron | Web, phone and desktop app frameworks the old blueprint planned (not used) |
 | No-AI mode | A switch that makes JARVIS answer with fixed skills only and no model |
+| Nonce | A number used once, so a recorded message can't be replayed |
+| OAuth | The standard that lets you give JARVIS limited access to your Google account without your password |
 | OIDC | OpenID Connect: a signed identity token, used for Google sign-in and Scheduler calls |
 | Ollama | Software that runs small AI models on a laptop |
+| ONNX | A file format for AI models that runs in the browser |
+| OpenTelemetry / Grafana | Standards and tools for traces and dashboards (planned) |
 | Passkey | A sign-in key kept on your device (fingerprint or PIN), resistant to phishing |
+| PITR | Point-in-time recovery: restoring a database to an earlier moment (not set up; billed) |
+| Postgres | A relational database the old blueprint planned |
 | Provenance | Where a piece of text came from (your own words or someone else's) |
+| Pull request / main | A proposed change, and the branch that is deployed |
+| Pydantic | A Python library that checks the shape of data |
 | R1 / R2 / R3 (risk) | Read / reversible / irreversible actions (section 7.1) |
 | R1 … R6.1 (release) | JARVIS's numbered releases (section 5.3) |
 | Redis | A fast in-memory store, used only for local runs |
+| REST | The common way of calling a web API with plain web requests |
+| Revision / candidate | A Cloud Run version; a new one first gets a "candidate" tag and no traffic |
 | Scale to zero | No copy of JARVIS runs (or costs) while nobody uses it |
+| SDK | A vendor's ready-made library for calling its API (JARVIS avoids them outside `jarvis.llm`) |
 | Secret Manager | Google's locked store for keys and passwords |
 | Service account | A Google identity for a program, with only the permissions it needs |
 | Service worker | A small browser script that receives push notifications |
-| Taint | A mark that other people's text reached the model in this request |
 | Tailscale Funnel | A service that gives the laptop one public HTTPS address without opening the router |
+| Taint | A mark that other people's text reached the model in this request |
+| three.js | A library for 3D drawing in the browser |
 | Tick | A scheduled call that wakes JARVIS to do timed work |
 | Tier | Fast, balanced or strong: the kind of model a task needs |
 | TTS / STT | Text-to-speech / speech-to-text |
 | VAPID | The standard key that signs Web Push messages |
+| Vector database | A database that finds text by meaning using number lists (embeddings); not used |
 | Vitals | The board of keys, quotas, bills and limits |
 | Wake word | "Hey Jarvis", heard on the device before anything is sent |
 | Watchdog | The 5-minute check that the laptop is still answering |
 | Web Push | The browser standard for notifications |
 | WebAuthn | The browser standard behind passkeys |
+| WebGL | The browser's way to draw 3D graphics |
+| Webhook | An address a service calls to deliver news (Telegram calls JARVIS's webhook) |
+| Whisper / Deepgram / ElevenLabs | Other speech vendors and models the old blueprint named (not used) |
 | Workload Identity Federation | A way for GitHub to prove who it is to Google without a stored key |
 
 ## Change log

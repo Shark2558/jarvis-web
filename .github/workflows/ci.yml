@@ -29,6 +29,30 @@ jobs:
       # data, no unlisted secret-shaped string, every package in a layer and every flow step real
       - run: python -m jarvis.buildbook.gen --check
 
+  # R6.1 D4: a pull request's title reads "v6.1.0 · R6.1 Short name · Mark XIII"
+  # (scripts/check_pr_title.py). Pull requests only, Dependabot's exempt, and never a job the
+  # deploy waits for. The title is read from GitHub when the job runs (the event's copy if that
+  # read fails), so after a rename "Re-run jobs" checks the new title. Standard library only.
+  pr-title:
+    if: >-
+      github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check the pull request's title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          TITLE="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .title 2>/dev/null)" \
+            || TITLE="$PR_TITLE"
+          python3 scripts/check_pr_title.py "$TITLE"
+
   # Persistence contract tests against the official Firestore emulator (slice 5).
   firestore:
     runs-on: ubuntu-latest

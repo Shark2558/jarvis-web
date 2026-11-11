@@ -7,7 +7,8 @@ job keeps "rain likely from HH:MM today" from Open-Meteo's hourly forecast) and 
 - True: rain is likely to start before `end` today (the free-time gap);
 - False: today's summary has no rain from now on, or it starts after the gap;
 - None (unknown, so Part C applies no rain rule): no keyring, his place isn't set, no summary
-  yet, a summary older than `STALE_AFTER` or of another day, or a gap on another day.
+  yet, a summary older than `STALE_AFTER` or of another day, a gap on another day, or a
+  malformed summary (a "rain from" that isn't HH:MM, a time with no zone).
 
 Exposed as `services["rain"]`; the wiring hands it to Part C late (`HelperContext.rain`). It
 reads only JARVIS's own sealed summary: no outside call, nothing logged but a class name.
@@ -19,6 +20,7 @@ from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from jarvis.helpers.house.models import WeatherSummary
 from jarvis.helpers.house.store import OutsideOff, OutsideStore
 from jarvis.logging import get_logger
 
@@ -44,10 +46,13 @@ class RainHint:
         s = o.weather.summary
         if o.place is None or s is None:
             return None
-        try:
-            day, at = date.fromisoformat(s.day), datetime.fromisoformat(s.at)
-        except ValueError:
+        try:  # a malformed summary (a bad "rain from", a time with no zone) is unknown
+            return self._likely(s, start, end)
+        except (ValueError, TypeError):
             return None
+
+    def _likely(self, s: WeatherSummary, start: datetime, end: datetime) -> bool | None:
+        day, at = date.fromisoformat(s.day), datetime.fromisoformat(s.at)
         if self._now() - at > STALE_AFTER or start.astimezone(self._zone).date() != day:
             return None
         if s.rain_from is None:

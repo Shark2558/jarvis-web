@@ -110,3 +110,14 @@ async def test_the_wiring_hands_part_bs_rain_to_part_c_late() -> None:
         nudges = parts["nudges"].services["service"]
         assert nudges._rain() is rain  # noqa: SLF001 - C reads B's hint through ctx.rain
         assert await nudges.rain_likely(UID, _ist(14), _ist(16)) is None  # no place set yet
+
+
+async def test_a_malformed_summary_is_unknown_never_an_error() -> None:
+    """Integrated review L3/L4: a bad "rain from" or a time with no zone is None (no rain rule)."""
+    clock = Clock(NOON)
+    for rain_from in ("rain", "25", "15:xx", "15:00:00:00", "99:99"):
+        hint = await _hint(_summary(rain_from), clock)
+        assert await hint.rain_likely(UID, _ist(14), _ist(16)) is None, rain_from
+    naive = _summary("15:00", at=NOON.replace(tzinfo=None))
+    hint = await _hint(naive, clock)
+    assert await hint.rain_likely(UID, _ist(14), _ist(16)) is None

@@ -108,8 +108,9 @@ async def test_a_request_can_only_make_the_diet_stricter() -> None:
     await svc.suggest(UID, {"diet": "nonveg", "cuisine": "Kerala"})
     prompt = private.calls[0].messages[0].text()
     assert "vegetarian (no meat, fish or egg)" in prompt and "Kerala" in prompt
-    svc, private, _, _ = await _service(recipe_json("Egg roast", ("egg", 120), diet="egg"),
-                                        prefs=Prefs(diet="nonveg"))  # fmt: skip
+    svc, private, _, _ = await _service(
+        recipe_json("Egg roast", ("egg", 120), diet="egg"), prefs=Prefs(diet="nonveg")
+    )
     out = await svc.suggest(UID, {"diet": "egg"})
     assert out["recipe"]["diet"] == "egg"
 

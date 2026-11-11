@@ -113,8 +113,13 @@ async def test_chosen_days_repeat_weekly_from_the_first_of_them() -> None:
 
 async def test_bad_arguments_fail_before_any_card() -> None:
     gw, fake = await _gateway()
-    for bad in ({"cooking_at": "25:00"}, {"cooking_minutes": 2}, {"days": "someday"},
-                {"only": "lunch"}, {"start": "2020-01-01"}):  # fmt: skip
+    for bad in (
+        {"cooking_at": "25:00"},
+        {"cooking_minutes": 2},
+        {"days": "someday"},
+        {"only": "lunch"},
+        {"start": "2020-01-01"},
+    ):
         out = await _run(gw, bad)
         assert out.outcome is GatewayOutcome.ERROR, bad
     assert fake.requests == []

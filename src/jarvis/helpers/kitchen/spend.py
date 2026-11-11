@@ -227,7 +227,8 @@ class GrocerySpendJob:
                 "AUDIT WRITE FAILED for grocery receipts", extra={"error": type(exc).__name__}
             )
 
-    async def _one(self, uid: str) -> str:
+    async def scan_one(self, uid: str) -> str:
+        """One owner: "ok", "off" or "skipped" (his rows, or Google not linked)."""
         svc = self._svc
         if not svc.can_scan or not (await svc.store.scan(uid)).on:
             return "off"
@@ -248,7 +249,7 @@ class GrocerySpendJob:
         counts = {"owners": len(self._owners), "ok": 0, "off": 0, "skipped": 0, "failed": 0}
         for uid in self._owners:
             try:
-                counts[await self._one(uid)] += 1
+                counts[await self.scan_one(uid)] += 1
             except Exception as exc:  # noqa: BLE001 - one owner never stops the others
                 log.warning("grocery receipts not read", extra={"error": type(exc).__name__})
                 await self._note("error", type(exc).__name__)

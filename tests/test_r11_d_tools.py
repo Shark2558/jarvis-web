@@ -104,6 +104,7 @@ async def test_a_round_that_read_outside_content_cannot_change_his_diet() -> Non
 
 async def test_suggest_then_save_and_list_a_recipe() -> None:
     gw, svc, private, _ = await _rig(DAL)
+    await svc.add(UID, "toor dal, onion, tomato")
     idea = await _call(gw, "recipe_suggest")
     r = idea.result["recipe"]
     saved = await _call(
@@ -136,9 +137,11 @@ async def test_a_recipe_cannot_be_saved_as_veg_with_meat_in_it() -> None:
 
 
 async def test_a_veg_kitchen_never_sees_chicken_through_the_gateway() -> None:
-    gw, _, _, _ = await _rig(CHICKEN, CHICKEN)
+    gw, svc, private, _ = await _rig(CHICKEN, CHICKEN)
+    await svc.add(UID, "onion, tomato")
     out = await _call(gw, "recipe_suggest")
     assert out.result["refused"] is True and "chicken" not in out.for_model().lower()
+    assert len(private.calls) == 2
 
 
 async def test_nutrition_of_a_typed_dish_says_not_installed_until_the_subset_is() -> None:

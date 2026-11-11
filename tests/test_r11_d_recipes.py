@@ -11,11 +11,13 @@ from r11_fakes import UID
 from r11_fakes_d import CHICKEN, DAL, brains, kctx, recipe_json
 
 from jarvis.billing.budget import BudgetPatch
+from jarvis.billing.service import BudgetError
 from jarvis.helpers.kitchen import diet
 from jarvis.helpers.kitchen.models import Ingredient, Kitchen, Prefs, Recipe
 from jarvis.helpers.kitchen.nutrition import Nutrition
 from jarvis.helpers.kitchen.recipes import (
     AI_OFF_LINE,
+    EMPTY_PANTRY_LINE,
     LIMIT_LINE,
     MAX_TOKENS,
     NO_PRIVATE_LINE,
@@ -36,11 +38,15 @@ SAVED = Recipe(
 SAVED_FISH = SAVED.model_copy(update={"id": "saved0002", "title": "Meen curry", "diet": "nonveg"})
 
 
+PANTRY = ("toor dal", "onion", "tomato", "carrot", "coconut")
+
+
 async def _service(
     *replies: str,
     prefs: Prefs | None = None,
     train_default: bool = False,
     private: bool = True,
+    pantry: tuple[str, ...] = PANTRY,
     **kw: Any,
 ) -> tuple[Any, ...]:
     reg, safe, training = brains(*replies, train_default=train_default, private=private)
@@ -48,7 +54,7 @@ async def _service(
     store = KitchenStore(docs, c.keyring, now=c.now)
     if c.keyring is not None:
         kitchen = Kitchen(
-            pantry=("toor dal", "onion", "tomato", "carrot", "coconut"),
+            pantry=pantry,
             prefs=prefs or Prefs(diet="veg", spice=2, note="NEEDLE-NOTE no mushrooms"),
             recipes=(SAVED, SAVED_FISH),
         )
@@ -109,7 +115,9 @@ async def test_a_request_can_only_make_the_diet_stricter() -> None:
     prompt = private.calls[0].messages[0].text()
     assert "vegetarian (no meat, fish or egg)" in prompt and "Kerala" in prompt
     svc, private, _, _ = await _service(
-        recipe_json("Egg roast", ("egg", 120), diet="egg"), prefs=Prefs(diet="nonveg")
+        recipe_json("Egg roast", ("egg", 120), diet="egg"),
+        prefs=Prefs(diet="nonveg"),
+        pantry=(*PANTRY, "eggs"),
     )
     out = await svc.suggest(UID, {"diet": "egg"})
     assert out["recipe"]["diet"] == "egg"
@@ -169,3 +177,44 @@ async def test_a_suggestion_marks_what_he_has() -> None:
     svc, _, _, _ = await _service(recipe_json("Dal", ("toor dal", 100), ("ghee", 10)))
     got = {i["name"]: i["have"] for i in (await svc.suggest(UID, {}))["recipe"]["ingredients"]}
     assert got == {"toor dal": True, "ghee": False}
+
+
+async def test_an_idea_with_something_not_in_the_pantry_asks_once_more_then_is_refused() -> None:
+    jamon = recipe_json("Tomato toast", ("tomato", 100), ("jamon", 50))
+    svc, private, _, _ = await _service(jamon, jamon)
+    out = await svc.suggest(UID, {})
+    assert out["refused"] is True and "recipe" not in out and len(private.calls) == 2
+    assert "jamon" not in str(out).lower() and "pantry" in out["message"]
+    assert "not in the pantry" in private.calls[1].messages[0].text()
+
+
+async def test_the_prompt_says_only_the_pantry_and_the_staples() -> None:
+    svc, private, _, _ = await _service(DAL)
+    await svc.suggest(UID, {})
+    assert "ONLY the pantry items" in private.calls[0].system and "ghee" in private.calls[0].system
+
+
+async def test_with_an_empty_pantry_no_call_is_made() -> None:  # code M5, L5
+    svc, private, _, _ = await _service(DAL, pantry=())
+    out = await svc.suggest(UID, {"with": "paneer"})
+    assert out["message"].startswith(EMPTY_PANTRY_LINE) and private.calls == []
+    assert [r["title"] for r in out["recipes"]] == ["Avial"]
+
+
+async def test_the_limit_reached_between_the_two_tries_stops_the_second_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # code M5: recipes.py's gate before the retry
+    svc, private, _, c = await _service(CHICKEN, DAL)
+    real = c.billing.ensure_allowed
+    seen: list[int] = []
+
+    async def gate(uid: str, spec: Any) -> None:
+        seen.append(1)
+        if len(seen) > 1:
+            raise BudgetError("this month's limit is used up")
+        await real(uid, spec)
+
+    monkeypatch.setattr(c.billing, "ensure_allowed", gate)
+    out = await svc.suggest(UID, {})
+    assert out["message"] == LIMIT_LINE and out["refused"] is True
+    assert len(private.calls) == 1 and len(seen) == 2 and "chicken" not in str(out).lower()

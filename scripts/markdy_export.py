@@ -11,9 +11,17 @@ current source.
 
 Staleness is decided by `exports.json` beside the diagrams: the pinned Markdy version and the
 SHA-256 of each source and of the SVG and PNG the export wrote. File times are not used (a git
-checkout sets them all to "now"). `--check` and `--lint-only` need Node and the dev-only tool
+checkout sets them all to "now"). The export writes every file through a temporary file and
+`os.replace`, and rewrites the manifest after EACH diagram, so a run cut short (Chromium dies,
+Ctrl-C) leaves hashes that match what is on disk: the finished diagrams pass `--check`, the rest
+are reported stale. `--check` and `--lint-only` need Node and the dev-only tool
 (`npm ci --prefix tools/markdy`) but no browser. Exporting also needs Python Playwright with its
 Chromium (never `playwright install` in the sandbox: it is pre-installed there).
+
+What `--check` proves, and what it does not: that each SVG and PNG is byte for byte the file whose
+hash the export wrote for the current source and Markdy version. It does not render again (CI has
+no browser), so it trusts `exports.json`: hashes typed in by hand would pass. The export is the
+only writer of that file; review a diff to it like code, and re-export + look at the PNG locally.
 
 The Markdy CLI is `@markdy/cli@1.5.7` (MIT), pinned in `tools/markdy/package-lock.json` and used
 only here and in CI's `docs` job: never in the app image, the console or the build book. The
@@ -31,6 +39,7 @@ import hashlib
 import importlib.util
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -59,8 +68,16 @@ _BADGE_OFF = re.compile(
     r"^player:\s*\n(?:[ \t]+.*\n)*?[ \t]+chrome:\s*\n(?:[ \t]{4,}.*\n)*?[ \t]{4,}badge\s+false\s*$",
     re.M,
 )
-_SHARE = re.compile(r"^\s*share\s+true\b", re.M)
-_URL = re.compile(r"\bhttps?://|\bwww\.", re.I)
+# Markdy 1.5.7 (core: CONTROLS, parseBooleanToken) switches the share control on with `share`,
+# `shareLink` or `share_link` alone or set to true/on/yes/1 (after a space, `:` or `=`), and with
+# `controls` alone or switched on (every control); `controls:` alone only opens the group. So any
+# of these keys counts as ON unless it is explicitly off, at the start of a line or as key=value.
+_SHARE_LINE = re.compile(
+    r"^[ \t]*(share|shareLink|share_link|controls)\b(?![ \t]*:[ \t]*$)[ \t]*[:=]?[ \t]*(\S*)", re.M
+)
+_SHARE_PAIR = re.compile(r"\b(share|shareLink|share_link|controls)[ \t]*=[ \t]*(\S*)")
+_OFF = frozenset({"false", "off", "no", "0"})
+_URL = re.compile(r"\bhttps?://|\bwww\.|\bmarkdy\.com\b", re.I)
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 
 
@@ -75,7 +92,8 @@ class ExportError(RuntimeError):
 @dataclass(frozen=True)
 class CliResult:
     code: int
-    out: str
+    out: str  # stdout only: `verify --json` writes its report here
+    err: str = ""  # stderr (Node warnings, errors): quoted in a problem, never parsed
 
 
 @dataclass(frozen=True)
@@ -88,8 +106,17 @@ class Problem:
         return f"{self.diagram}: {self.step}: {self.detail}"
 
 
+class CliAnswer(Protocol):
+    @property
+    def code(self) -> int: ...
+    @property
+    def out(self) -> str: ...
+    @property
+    def err(self) -> str: ...
+
+
 class Cli(Protocol):
-    def __call__(self, args: Sequence[str]) -> Any: ...  # anything with .code and .out
+    def __call__(self, args: Sequence[str]) -> CliAnswer: ...
 
 
 class Renderer(Protocol):
@@ -101,6 +128,17 @@ RendererFactory = AbstractContextManager[Renderer]
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def write_atomic(path: Path, data: bytes) -> None:
+    """Write `data` so a reader sees the old file or the new one, never half of one; a failed write
+    keeps the old file and leaves no temporary file behind."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 # ---- discovery and the privacy rule --------------------------------------------------------------
@@ -119,12 +157,17 @@ def discover(folder: Path, names: Sequence[str] = ()) -> tuple[Path, ...]:
     return tuple(by_stem[w] for w in dict.fromkeys(wanted))
 
 
+def _shares(text: str) -> bool:
+    found = [*_SHARE_LINE.finditer(text), *_SHARE_PAIR.finditer(text)]
+    return any(m.group(2).strip("\"'").lower() not in _OFF for m in found)
+
+
 def privacy_problems(path: Path) -> list[Problem]:
     text = path.read_text(encoding="utf-8")
     text = text if text.endswith("\n") else text + "\n"
     rules = (
         (_BADGE_OFF.search(text) is None, "needs `player: chrome: badge false` (no share link)"),
-        (_SHARE.search(text) is not None, "must not switch the share control on"),
+        (_shares(text), "must not switch the share control on"),
         (_URL.search(text) is not None, "must not hold a web address"),
         (_EMAIL.search(text) is not None, "must not hold an e-mail address"),
     )
@@ -137,13 +180,17 @@ def _tail(out: str) -> str:
     return " | ".join(lines[-CLI_WORDS_KEPT:]) or "no output"
 
 
-def _verify_problem(stem: str, result: Any) -> Problem | None:
+def _said(result: CliAnswer) -> str:
+    return _tail(f"{result.out}\n{result.err}")
+
+
+def _verify_problem(stem: str, result: CliAnswer) -> Problem | None:
     try:
         report = json.loads(result.out)
         passed, warnings = bool(report["passed"]), int(report.get("warningCount", 0))
         checks = report.get("checks", [])
     except (ValueError, KeyError, TypeError):
-        return Problem(stem, "verify", f"the answer is not a report: {_tail(result.out)}")
+        return Problem(stem, "verify", f"the answer is not a report: {_said(result)}")
     failed = [f"{c.get('id')} ({c.get('message')})" for c in checks if c.get("status") != "pass"]
     if passed and not warnings and not failed and result.code == 0:
         return None
@@ -161,7 +208,7 @@ def check_source(path: Path, cli: Cli) -> list[Problem]:
         return problems
     linted = cli(["lint", str(path), "--strict"])
     if linted.code != 0:
-        return [Problem(path.stem, "lint", _tail(linted.out))]
+        return [Problem(path.stem, "lint", _said(linted))]
     verified = _verify_problem(
         path.stem, cli(["verify", str(path), "--quality", QUALITY, "--json"])
     )
@@ -235,31 +282,40 @@ def orphan_problems(folder: Path, manifest: dict[str, Any]) -> list[Problem]:
 # ---- export --------------------------------------------------------------------------------------
 def export_one(path: Path, render: Renderer) -> dict[str, str]:
     """Render, refuse an SVG that carries a share link, write both files, return the entry."""
-    svg, png = render(path.read_text(encoding="utf-8"))
+    source = path.read_bytes()
+    svg, png = render(source.decode("utf-8"))
     if SHARE_HOST in svg:
         raise ExportError(f"the SVG links to {SHARE_HOST} (a share link): not written")
     if not png.startswith(b"\x89PNG"):
         raise ExportError("the PNG export is not a PNG")
     svg_bytes = svg.encode("utf-8")
-    (path.parent / f"{path.stem}.svg").write_bytes(svg_bytes)
-    (path.parent / f"{path.stem}.png").write_bytes(png)
-    return {"source": digest(path.read_bytes()), "svg": digest(svg_bytes), "png": digest(png)}
+    for name, data in ((f"{path.stem}.svg", svg_bytes), (f"{path.stem}.png", png)):
+        try:
+            write_atomic(path.parent / name, data)
+        except OSError as exc:
+            raise ExportError(f"can't write {name}: {exc.strerror or exc}") from exc
+    return {"source": digest(source), "svg": digest(svg_bytes), "png": digest(png)}
 
 
 def _export_all(
     paths: Sequence[Path], renderer: RendererFactory, manifest: dict[str, Any]
 ) -> list[Problem]:
-    entries: dict[str, dict[str, str]] = dict(manifest["diagrams"])
+    """Export each diagram and rewrite the manifest after each one, so a run cut short by an
+    exception (a dead browser, Ctrl-C) never leaves new files listed under old hashes. Entries
+    made by another Markdy version are dropped: those diagrams stay stale until exported again."""
+    same_cli = manifest.get("cli") == CLI_VERSION
+    entries: dict[str, dict[str, str]] = dict(manifest["diagrams"]) if same_cli else {}
+    folder = paths[0].parent
     problems: list[Problem] = []
     with renderer as render:
         for path in paths:
             try:
                 entries[path.stem] = export_one(path, render)
-                log.info("%s: exported %s.svg and %s.png", path.stem, path.stem, path.stem)
             except ExportError as exc:
                 problems.append(Problem(path.stem, "export", str(exc)))
-    folder = paths[0].parent
-    (folder / MANIFEST_NAME).write_bytes(manifest_bytes(entries))
+                continue
+            write_atomic(folder / MANIFEST_NAME, manifest_bytes(entries))
+            log.info("%s: exported %s.svg and %s.png", path.stem, path.stem, path.stem)
     return problems
 
 
@@ -332,8 +388,8 @@ class NodeCli:
         except FileNotFoundError:
             raise SetupError("node is not installed (Markdy needs Node.js)") from None
         except subprocess.TimeoutExpired:
-            return CliResult(124, f"timed out after {CLI_TIMEOUT_S} s")
-        return CliResult(done.returncode, done.stdout + done.stderr)
+            return CliResult(124, "", f"timed out after {CLI_TIMEOUT_S} s")
+        return CliResult(done.returncode, done.stdout, done.stderr)
 
 
 def _chromium(tool_dir: Path) -> RendererFactory:
@@ -360,6 +416,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SetupError as exc:
         log.error("setup: %s", exc)
         return 2
+    except OSError as exc:  # a source or exports.json that can't be read or written
+        log.error("setup: %s", exc)
+        return 2
 
 
 if __name__ == "__main__":
@@ -369,6 +428,7 @@ if __name__ == "__main__":
 __all__ = [
     "CLI_VERSION",
     "MANIFEST_NAME",
+    "CliAnswer",
     "CliResult",
     "ExportError",
     "NodeCli",
@@ -385,4 +445,5 @@ __all__ = [
     "parse_args",
     "privacy_problems",
     "run",
+    "write_atomic",
 ]

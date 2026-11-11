@@ -1,8 +1,9 @@
 # tests/markdy_fakes.py — R6.1 D2: a stand-in Markdy CLI and renderer for scripts/markdy_export.py.
 """`FakeCli` answers `lint` / `verify` the way `@markdy/cli@1.5.7` does (lint: exit code and text;
-verify --json: a report with `passed`, counts and checks), with per-diagram failures set by the
-test. `FakeRenderer` turns a source into deterministic SVG text and PNG bytes and counts its calls,
-so a test can prove the check mode never renders."""
+verify --json: a report with `passed`, counts and checks, on stdout), with per-diagram failures set
+by the test. `FakeRenderer` turns a source into deterministic SVG text and PNG bytes and counts its
+calls, so a test can prove the check mode never renders. `FakeRoute` and `FakeBrowser` stand in for
+Playwright's route and browser in `markdy_render.ChromiumRenderer`'s own tests."""
 
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ GOOD_SOURCE = (
 class Answer:
     code: int
     out: str
+    err: str = ""
 
 
 def verify_report(failed: Sequence[str] = (), warnings: int = 0) -> str:
@@ -96,12 +98,71 @@ class ExplodingRenderer(FakeRenderer):
         raise AssertionError("this mode must not start a browser")
 
 
+@dataclass
+class FakeRequest:
+    url: str
+
+
+@dataclass
+class FakeRoute:
+    """Playwright's `Route` as `ChromiumRenderer._serve` uses it: a request URL, abort, fulfill."""
+
+    url: str
+    aborted: bool = False
+    answer: dict[str, Any] | None = None
+
+    @property
+    def request(self) -> FakeRequest:
+        return FakeRequest(self.url)
+
+    def abort(self) -> None:
+        self.aborted = True
+
+    def fulfill(self, **answer: Any) -> None:
+        self.answer = answer
+
+
+@dataclass
+class FakePage:
+    """A page whose first navigation raises `failure` (a browser that dies or times out)."""
+
+    failure: BaseException
+    closed: bool = False
+
+    def on(self, event: str, handler: Any) -> None:
+        return None
+
+    def route(self, pattern: str, handler: Any) -> None:
+        return None
+
+    def goto(self, url: str) -> None:
+        raise self.failure
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@dataclass
+class FakeBrowser:
+    failure: BaseException
+    pages: list[FakePage] = field(default_factory=list)
+
+    def new_page(self, **options: Any) -> FakePage:
+        page = FakePage(self.failure)
+        self.pages.append(page)
+        return page
+
+
 __all__ = [
     "GOOD_SOURCE",
     "PNG_MAGIC",
     "Answer",
     "ExplodingRenderer",
+    "FakeBrowser",
     "FakeCli",
+    "FakePage",
     "FakeRenderer",
+    "FakeRequest",
+    "FakeRoute",
     "verify_report",
 ]

@@ -6,15 +6,20 @@ any other request is blocked and reported as a problem for that diagram.
 
 Loaded by `markdy_export.main` only when a diagram is exported (`--check` and `--lint-only` never
 start a browser). It imports nothing from the export script: the two error classes to raise come
-in through the constructor.
+in through the constructor. A browser failure (Playwright's Error, a timeout, an undecodable PNG)
+is that diagram's problem, with the first line of the message; the full trace is logged at DEBUG.
+Any other exception is a bug and propagates.
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
+
+log = logging.getLogger("markdy_render")
 
 BASE_URL = "http://markdy-export.localhost/"
 PAGE_NAME = "export.html"
@@ -49,6 +54,28 @@ _PNG_JS = """async (ratio) => {
 }"""
 
 
+class _Request(Protocol):
+    @property
+    def url(self) -> str: ...
+
+
+class _Route(Protocol):
+    """The part of Playwright's `Route` that `_serve` uses."""
+
+    @property
+    def request(self) -> _Request: ...
+
+    def abort(self) -> None: ...
+
+    def fulfill(
+        self, *, status: int, body: str | bytes, content_type: str | None = None
+    ) -> None: ...
+
+
+def _first_line(exc: BaseException) -> str:
+    return (str(exc).strip().splitlines() or [type(exc).__name__])[0]
+
+
 class ChromiumRenderer:
     """Headless Chromium (Python Playwright) rendering the final frame of a diagram with the pinned
     `@markdy/renderer-dom`, served from `tools/markdy/node_modules`. One browser for a whole run;
@@ -65,8 +92,9 @@ class ChromiumRenderer:
         self._modules = (tool_dir / "node_modules").resolve()
         imports = {k: BASE_URL + v for k, v in IMPORTS.items()}
         self._page = _PAGE % {"w": VIEW_WIDTH, "imports": json.dumps({"imports": imports})}
-        self._pw: Any = None
-        self._browser: Any = None
+        self._pw: Any = None  # playwright's Playwright (imported only when entered)
+        self._browser: Any = None  # playwright's Browser
+        self._browser_errors: tuple[type[BaseException], ...] = ()  # (playwright's Error,)
 
     def __enter__(self) -> ChromiumRenderer:
         try:
@@ -76,12 +104,14 @@ class ChromiumRenderer:
             raise self._setup_error(
                 "exporting needs Python Playwright (pip install playwright)"
             ) from None
+        self._browser_errors = (PlaywrightError,)
         try:
             self._pw = sync_playwright().start()
             self._browser = self._pw.chromium.launch()
         except PlaywrightError as exc:
+            log.debug("Chromium can't start", exc_info=True)
             self.__exit__(None, None, None)
-            raise self._setup_error(f"Chromium can't start: {str(exc).splitlines()[0]}") from None
+            raise self._setup_error(f"Chromium can't start: {_first_line(exc)}") from None
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -99,7 +129,7 @@ class ChromiumRenderer:
             return None
         return path.read_bytes()
 
-    def _serve(self, route: Any, blocked: list[str]) -> None:
+    def _serve(self, route: _Route, blocked: list[str]) -> None:
         url = str(route.request.url)
         if not url.startswith(BASE_URL):
             blocked.append(url)
@@ -120,6 +150,7 @@ class ChromiumRenderer:
             raise self._setup_error("the renderer was used outside `with`")
         errors: list[str] = []
         blocked: list[str] = []
+        failures: tuple[type[BaseException], ...] = (*self._browser_errors, ValueError)  # b64
         page = self._browser.new_page(viewport={"width": VIEW_WIDTH + 40, "height": 1000})
         try:
             page.on("pageerror", lambda e: errors.append(str(e)))
@@ -135,8 +166,9 @@ class ChromiumRenderer:
             )
             png = base64.b64decode(page.evaluate(_PNG_JS, PIXEL_RATIO))
             warnings = [str(w) for w in page.evaluate("() => window.__markdy.warnings")]
-        except Exception as exc:  # noqa: BLE001 - any browser failure is this diagram's problem
-            raise self._export_error(f"the browser failed: {str(exc).splitlines()[0]}") from None
+        except failures as exc:
+            log.debug("the browser failed", exc_info=True)
+            raise self._export_error(f"the browser failed: {_first_line(exc)}") from None
         finally:
             page.close()
         trouble = [f"page error: {e}" for e in errors] + [f"blocked request: {u}" for u in blocked]

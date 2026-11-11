@@ -8,29 +8,38 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
+import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 import pytest
-from markdy_fakes import GOOD_SOURCE, ExplodingRenderer, FakeCli, FakeRenderer
+from markdy_fakes import (
+    GOOD_SOURCE,
+    ExplodingRenderer,
+    FakeBrowser,
+    FakeCli,
+    FakeRenderer,
+    FakeRoute,
+    verify_report,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _load() -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "markdy_export", ROOT / "scripts" / "markdy_export.py"
-    )
+def _load(name: str = "markdy_export") -> ModuleType:
+    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / f"{name}.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    sys.modules["markdy_export"] = module
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
 
 mx = _load()
+mr = _load("markdy_render")
 
 
 def _write(folder: Path, stem: str, text: str = GOOD_SOURCE) -> Path:
@@ -102,6 +111,14 @@ def test_a_good_source_passes_the_privacy_rule(tmp_path: Path) -> None:
         (GOOD_SOURCE + "    share true\n", "share"),
         (GOOD_SOURCE.replace('"A"', '"mail owner@example.com"'), "e-mail"),
         (GOOD_SOURCE.replace('"A"', '"see https://example.org/x"'), "web address"),
+        # every form Markdy 1.5.7 reads as "share on" (core: CONTROLS, parseBooleanToken)
+        (GOOD_SOURCE + "  controls:\n    share\n", "share"),
+        (GOOD_SOURCE + "  controls:\n    share: on\n", "share"),
+        (GOOD_SOURCE + "  controls:\n    shareLink yes\n", "share"),
+        (GOOD_SOURCE + "  controls true\n", "share"),
+        (GOOD_SOURCE + "  controls\n", "share"),
+        (GOOD_SOURCE.replace("theme=paper", "theme=paper share_link=1"), "share"),
+        (GOOD_SOURCE.replace('"A"', '"see markdy.com/playground"'), "web address"),
     ],
 )
 def test_the_privacy_rule_names_what_is_wrong(tmp_path: Path, text: str, words: str) -> None:
@@ -109,6 +126,20 @@ def test_the_privacy_rule_names_what_is_wrong(tmp_path: Path, text: str, words: 
 
     assert problems and all(p.diagram == "01-a" and p.step == "privacy" for p in problems)
     assert any(words in p.detail for p in problems)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "  controls:\n    share false\n",
+        "  controls:\n    shareLink off\n    seek: no\n",
+        "  controls false\n",
+    ],
+)
+def test_share_switched_off_and_the_word_share_in_a_label_pass(tmp_path: Path, extra: str) -> None:
+    text = GOOD_SOURCE.replace('"call"', '"share"') + extra
+
+    assert mx.privacy_problems(_write(tmp_path, "01-a", text)) == []
 
 
 # ---- lint and verify -----------------------------------------------------------------------------
@@ -252,6 +283,64 @@ def test_a_render_failure_is_reported_for_that_diagram(
     assert "01-a: export: page error: boom" in caplog.text
 
 
+def test_an_export_cut_short_leaves_a_manifest_that_matches_the_files(tmp_path: Path) -> None:
+    """Chromium dying on the 2nd diagram must not leave the 1st one's new files with old hashes."""
+    _write(tmp_path, "01-a")
+    _write(tmp_path, "02-b")
+    assert _run(tmp_path) == 0
+    _write(tmp_path, "01-a", GOOD_SOURCE.replace('"A"', '"Ay"'))
+    _write(tmp_path, "02-b", GOOD_SOURCE.replace('"B"', '"Bee"'))
+
+    class DiesOnTheSecond(FakeRenderer):
+        def __call__(self, source: str) -> tuple[str, bytes]:
+            if self.calls == 1:
+                raise mx.SetupError("Chromium died")
+            return super().__call__(source)
+
+    with pytest.raises(mx.SetupError):
+        _run(tmp_path, renderer=DiesOnTheSecond())
+
+    assert _run(tmp_path, "--check", "01-a") == 0  # finished: its hashes are on file
+    assert _run(tmp_path, "--check", "02-b") == 1  # not finished: honestly stale
+    assert sorted(p.name for p in tmp_path.iterdir() if "tmp" in p.name) == []
+
+
+def test_a_failed_write_keeps_the_old_file_and_no_temp_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / mx.MANIFEST_NAME
+    target.write_bytes(b"old")
+
+    def refuse(src: object, dst: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(mx.os, "replace", refuse)
+
+    with pytest.raises(OSError, match="disk full"):
+        mx.write_atomic(target, b"new")
+    assert target.read_bytes() == b"old"
+    assert [p.name for p in tmp_path.iterdir()] == [mx.MANIFEST_NAME]
+
+
+def test_an_export_that_cannot_be_written_is_that_diagrams_problem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _write(tmp_path, "01-a")
+    real_replace = mx.os.replace
+
+    def refuse_png(src: Any, dst: Any) -> None:
+        if str(dst).endswith(".png"):
+            raise OSError("read-only file system")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(mx.os, "replace", refuse_png)
+
+    with caplog.at_level(logging.ERROR, logger="markdy_export"):
+        assert _run(tmp_path) == 1
+    assert "01-a: export: can't write 01-a.png: read-only file system" in caplog.text
+    assert not (tmp_path / mx.MANIFEST_NAME).exists()  # nothing finished, nothing on file
+
+
 # ---- --check: missing or stale exports -----------------------------------------------------------
 def test_check_passes_right_after_an_export_and_never_renders(tmp_path: Path) -> None:
     _write(tmp_path, "01-a")
@@ -318,6 +407,23 @@ def test_check_fails_when_exported_with_another_markdy_version(
     with caplog.at_level(logging.ERROR, logger="markdy_export"):
         assert _run(tmp_path, "--check") == 1
     assert "exported with Markdy 1.4.0" in caplog.text
+
+
+def test_exporting_one_diagram_after_a_markdy_upgrade_leaves_the_others_stale(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _write(tmp_path, "01-a")
+    _write(tmp_path, "02-b")
+    assert _run(tmp_path) == 0
+    data = _manifest(tmp_path)
+    data["cli"] = "1.4.0"
+    (tmp_path / mx.MANIFEST_NAME).write_text(json.dumps(data), encoding="utf-8")
+
+    assert _run(tmp_path, "02-b") == 0
+
+    with caplog.at_level(logging.ERROR, logger="markdy_export"):
+        assert _run(tmp_path, "--check") == 1
+    assert "01-a: fresh: never exported" in caplog.text and "02-b: fresh" not in caplog.text
 
 
 def test_an_unreadable_manifest_is_a_problem(
@@ -390,24 +496,151 @@ def test_main_answers_2_when_the_cli_is_not_installed(tmp_path: Path) -> None:
     assert code == 2
 
 
-def test_node_cli_refuses_a_markdy_version_other_than_the_pinned_one(tmp_path: Path) -> None:
-    pkg = tmp_path / "node_modules" / "@markdy" / "cli"
+def _tool_dir(tmp_path: Path, package_json: str | None = None) -> Path:
+    tools = tmp_path / "tools"
+    pkg = tools / "node_modules" / "@markdy" / "cli"
     (pkg / "dist").mkdir(parents=True)
     (pkg / "dist" / "index.js").write_text("", encoding="utf-8")
-    (pkg / "package.json").write_text(json.dumps({"version": "1.4.0"}), encoding="utf-8")
+    text = package_json if package_json is not None else json.dumps({"version": mx.CLI_VERSION})
+    (pkg / "package.json").write_text(text, encoding="utf-8")
+    return tools
 
+
+def test_node_cli_refuses_a_markdy_version_other_than_the_pinned_one(tmp_path: Path) -> None:
     with pytest.raises(mx.SetupError, match="1.4.0.*1.5.7"):
-        mx.NodeCli(tmp_path)
+        mx.NodeCli(_tool_dir(tmp_path, json.dumps({"version": "1.4.0"})))
 
 
 def test_node_cli_refuses_an_unreadable_package_file(tmp_path: Path) -> None:
-    pkg = tmp_path / "node_modules" / "@markdy" / "cli"
-    (pkg / "dist").mkdir(parents=True)
-    (pkg / "dist" / "index.js").write_text("", encoding="utf-8")
-    (pkg / "package.json").write_text("{", encoding="utf-8")
-
     with pytest.raises(mx.SetupError, match="can't be read"):
-        mx.NodeCli(tmp_path)
+        mx.NodeCli(_tool_dir(tmp_path, "{"))
+
+
+def _answering(stdout: str, stderr: str, code: int = 0) -> Any:
+    def fake_run(args: Sequence[str], **options: Any) -> subprocess.CompletedProcess[str]:
+        assert options["timeout"] == mx.CLI_TIMEOUT_S and options["capture_output"] is True
+        out = stdout if args[2] == "verify" else "markdy lint: PASS"
+        return subprocess.CompletedProcess(list(args), code, stdout=out, stderr=stderr)
+
+    return fake_run
+
+
+def test_a_warning_on_stderr_does_not_break_the_verify_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _write(tmp_path, "01-a")
+    cli = mx.NodeCli(_tool_dir(tmp_path))
+    warning = "(node:42) ExperimentalWarning: something"
+    monkeypatch.setattr(mx.subprocess, "run", _answering(verify_report(), warning))
+
+    assert mx.check_source(path, cli) == []
+
+
+def test_a_lint_failure_quotes_what_the_cli_wrote_on_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _write(tmp_path, "01-a")
+    cli = mx.NodeCli(_tool_dir(tmp_path))
+    monkeypatch.setattr(mx.subprocess, "run", _answering("", "ERR line 4: unknown kind", code=1))
+
+    problems = mx.check_source(path, cli)
+
+    assert [p.step for p in problems] == ["lint"]
+    assert "line 4: unknown kind" in problems[0].detail
+
+
+def test_node_cli_answers_124_when_the_cli_times_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cli = mx.NodeCli(_tool_dir(tmp_path))
+
+    def slow(args: Sequence[str], **options: Any) -> None:
+        raise subprocess.TimeoutExpired(list(args), options["timeout"])
+
+    monkeypatch.setattr(mx.subprocess, "run", slow)
+
+    answer = cli(["lint", "x.markdy", "--strict"])
+
+    assert answer.code == 124 and f"timed out after {mx.CLI_TIMEOUT_S} s" in answer.err
+
+
+def test_node_cli_without_node_is_a_setup_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cli = mx.NodeCli(_tool_dir(tmp_path))
+
+    def no_node(args: Sequence[str], **options: Any) -> None:
+        raise FileNotFoundError("node")
+
+    monkeypatch.setattr(mx.subprocess, "run", no_node)
+
+    with pytest.raises(mx.SetupError, match="node is not installed"):
+        cli(["lint", "x.markdy", "--strict"])
+
+
+# ---- the browser side (scripts/markdy_render.py) without a browser -------------------------------
+def test_the_renderer_blocks_every_request_that_is_not_its_own(tmp_path: Path) -> None:
+    renderer = mr.ChromiumRenderer(tmp_path)
+    blocked: list[str] = []
+    outside = FakeRoute("https://esm.sh/@markdy/core@1.5.7")
+
+    renderer._serve(outside, blocked)
+
+    assert outside.aborted and outside.answer is None
+    assert blocked == ["https://esm.sh/@markdy/core@1.5.7"]
+
+
+def test_the_renderer_serves_the_page_and_only_modules_inside_node_modules(tmp_path: Path) -> None:
+    dist = tmp_path / "node_modules" / "@markdy" / "core" / "dist"
+    dist.mkdir(parents=True)
+    (dist / "index.js").write_text("export {};", encoding="utf-8")
+    (tmp_path / "secret.js").write_text("nope", encoding="utf-8")
+    renderer = mr.ChromiumRenderer(tmp_path)
+    page = FakeRoute(mr.BASE_URL + mr.PAGE_NAME)
+    module = FakeRoute(mr.BASE_URL + "node_modules/@markdy/core/dist/index.js?v=1")
+    escape = FakeRoute(mr.BASE_URL + "node_modules/../secret.js")
+    not_js = FakeRoute(mr.BASE_URL + "node_modules/@markdy/core/package.json")
+    blocked: list[str] = []
+
+    for route in (page, module, escape, not_js):
+        renderer._serve(route, blocked)
+
+    assert page.answer and page.answer["status"] == 200 and "importmap" in page.answer["body"]
+    assert module.answer and module.answer["body"] == b"export {};"
+    assert escape.answer and escape.answer["status"] == 404
+    assert not_js.answer and not_js.answer["status"] == 404
+    assert blocked == []
+
+
+class _BrowserDied(Exception):
+    """Stands in for playwright's Error (the renderer catches the class it was given)."""
+
+
+def test_a_browser_failure_is_that_diagrams_problem_and_its_trace_is_logged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    renderer = mr.ChromiumRenderer(tmp_path, export_error=mx.ExportError)
+    browser = FakeBrowser(_BrowserDied("Timeout 30000ms exceeded.\n=== logs ===\nwaiting for page"))
+    renderer._browser, renderer._browser_errors = browser, (_BrowserDied,)
+
+    with caplog.at_level(logging.DEBUG, logger="markdy_render"):
+        with pytest.raises(
+            mx.ExportError, match=r"the browser failed: Timeout 30000ms exceeded\.$"
+        ):
+            renderer(GOOD_SOURCE)
+
+    assert "waiting for page" in caplog.text and "Traceback" in caplog.text
+    assert browser.pages[0].closed
+
+
+def test_a_bug_in_the_renderer_is_not_hidden_as_a_browser_failure(tmp_path: Path) -> None:
+    renderer = mr.ChromiumRenderer(tmp_path, export_error=mx.ExportError)
+    browser = FakeBrowser(KeyError("a bug"))
+    renderer._browser, renderer._browser_errors = browser, (_BrowserDied,)
+
+    with pytest.raises(KeyError):
+        renderer(GOOD_SOURCE)
+    assert browser.pages[0].closed
 
 
 def test_the_pinned_version_matches_the_dev_tool_lock() -> None:
@@ -474,16 +707,40 @@ def test_the_docs_job_runs_on_pull_requests_only_and_never_gates_a_deploy() -> N
     assert "needs" not in docs and "permissions" not in docs  # the read-only default token
 
 
-def test_the_docs_job_lints_always_and_checks_exports_when_architecture_changes() -> None:
+def test_the_docs_job_lints_always_and_checks_exports_when_diagrams_or_tools_change() -> None:
     steps = _ci()["jobs"]["docs"]["steps"]
     runs = [(str(s.get("if", "")), str(s.get("run", ""))) for s in steps]
     changed = next(s for s in steps if s.get("id") == "changed")
 
     assert "npm ci --prefix tools/markdy --ignore-scripts" in " ".join(r for _, r in runs)
-    assert "-- docs/architecture" in changed["run"] and "BASE_REF" in changed["env"]
+    # a Markdy bump or an export-script change re-checks every export, not only a docs edit
+    assert "-- docs/architecture tools/markdy 'scripts/markdy_*'" in changed["run"]
+    assert "BASE_REF" in changed["env"]
     assert "${{" not in changed["run"]  # no expression pasted into the shell
     check = [cond for cond, run in runs if run == "python scripts/markdy_export.py --check"]
     lint = [cond for cond, run in runs if run == "python scripts/markdy_export.py --lint-only"]
-    assert check == ["steps.changed.outputs.architecture == 'yes'"]
-    assert lint == ["steps.changed.outputs.architecture != 'yes'"]
+    assert check == ["steps.changed.outputs.diagrams == 'yes'"]
+    assert lint == ["steps.changed.outputs.diagrams != 'yes'"]
     assert not any("playwright" in run for _, run in runs)  # the check needs no browser
+
+
+def test_the_path_filter_matches_the_export_scripts_in_git(tmp_path: Path) -> None:
+    """The quoted pathspec is git's glob (not the shell's): it must match scripts/markdy_*.py."""
+    steps = _ci()["jobs"]["docs"]["steps"]
+    run = next(s for s in steps if s.get("id") == "changed")["run"]
+    spec = run.split(" -- ", 1)[1].split(";", 1)[0].split()
+    git = ["git", "-C", str(tmp_path)]
+    subprocess.run([*git, "init", "-q"], check=True)
+    for rel in ("scripts/markdy_render.py", "scripts/other.py", "tools/markdy/package.json"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("x", encoding="utf-8")
+    subprocess.run([*git, "add", "-A"], check=True)
+
+    listed = subprocess.run(
+        [*git, "ls-files", "--", *(s.strip("'") for s in spec)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+
+    assert listed == ["scripts/markdy_render.py", "tools/markdy/package.json"]

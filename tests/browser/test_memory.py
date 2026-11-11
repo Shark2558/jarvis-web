@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import pytest
+from dock_rule import SHEET_JS, assert_follows_rule, measure_dock
 from test_brief import CONTRAST_JS, SETTLE_JS  # same directory (pytest prepend import)
 from test_console import DESKTOP, PHONE, Console
 
@@ -880,11 +881,8 @@ def test_markup_in_memory_text_stays_text(make: Callable[..., Console], h: str) 
 
 
 # ---- phone: the tab bar keeps at most eight tabs, the rest sit behind More -----------------------
-def test_phone_tab_bar_has_memory_and_a_more_sheet(make: Callable[..., Console]) -> None:
-    c = make(PHONE)
-    FakeMemory(c.page, memory_view(facts=copy.deepcopy(FACTS)))
-    c.open()
-    page = c.page
+def _phone_bar(page: Any) -> tuple[list[str], list[str]]:
+    """The tabs the 390 px bar shows (More last) and the folded ones, both in dock order."""
     tabs = page.evaluate(
         """[...document.querySelectorAll('#dock .dk')].filter(b => b.getClientRects().length)
            .map(b => { const r = b.getBoundingClientRect();
@@ -892,31 +890,58 @@ def test_phone_tab_bar_has_memory_and_a_more_sheet(make: Callable[..., Console])
                                left: r.left, right: r.right}; })"""
     )
     names = [t["name"] for t in tabs]
-    # six panels + More at 390 px (each tab keeps 8 px of air beside its label, R6.1)
-    assert len(tabs) == 7 and "memory" in names and names[-1] == "dockMore", names
-    assert "vitals" not in names and "construct" not in names
+    # the panels the bar holds at 390 px, then More: as many as the measured labels allow (each
+    # tab keeps 8 px of air beside its label, R6.1). Here Memory has a tab (six panels); GitHub's
+    # Chromium draws the text wider and holds five, so Memory sits behind More there.
+    assert names[-1] == "dockMore", names
+    dock = measure_dock(page)
+    assert_follows_rule(dock, names[:-1])
+    folded = [t.id for t in dock.tabs if t.id not in names]
+    # at most eight in the bar, More included: Vitals (the eighth panel) and Construct never show
+    assert "vitals" in folded and "construct" in folded, folded
     for t in tabs:
         assert t["w"] >= 44 and t["h"] >= 44 and t["left"] >= 0 and t["right"] <= 390, t
+    return names, folded
+
+
+def _check_more_sheet(page: Any, names: list[str], folded: list[str]) -> None:
+    """The sheet lists exactly the folded panels, in dock order, so Memory is reachable once: by
+    its tab or by its entry here. Focus lands on the first entry; Esc gives it back to More."""
     more, sheet = page.locator("#dockMore"), page.locator("#moreSheet")
     more.click()
     sheet.wait_for(state="visible")
     assert more.get_attribute("aria-expanded") == "true"
-    # focus lands on the first item: the first folded tab, Integrations since R6.1 (dock order)
-    assert page.evaluate("document.activeElement.dataset.sheetOpen") == "integrations"
+    entries = page.evaluate(SHEET_JS)
+    assert entries == folded, (entries, folded)
+    assert ("memory" in names) is not ("memory" in entries), (names, entries)
+    assert page.evaluate("document.activeElement.dataset.sheetOpen") == folded[0]
     page.keyboard.press("Escape")
     sheet.wait_for(state="hidden")
     expect(more).to_have_attribute("aria-expanded", "false")  # the close event comes a tick later
     expect(more).to_be_focused()
+
+
+def test_phone_tab_bar_has_memory_and_a_more_sheet(make: Callable[..., Console]) -> None:
+    c = make(PHONE)
+    FakeMemory(c.page, memory_view(facts=copy.deepcopy(FACTS)))
+    c.open()
+    page = c.page
+    names, folded = _phone_bar(page)
+    _check_more_sheet(page, names, folded)
+    more, sheet = page.locator("#dockMore"), page.locator("#moreSheet")
     more.click()
     sheet.get_by_role("button", name=re.compile("Vitals")).click()
     page.locator("#p-vitals").wait_for(state="visible")
     assert sheet.is_hidden() and page.locator("#p-chat").is_hidden()
     assert more.get_attribute("aria-label") == "More panels, Vitals shown"
     assert "on" in str(more.get_attribute("class"))
-    # Memory has its own tab: one panel at a time, nothing wider than the screen
-    page.locator('.dk[data-open="memory"]').click()
+    # Memory by its tab, or from the sheet where it is folded: one panel at a time, nothing wider
+    # than the screen; More is lit only while the open panel is one of its own
+    c.open_panel("memory")
     page.locator("#memMain").wait_for(state="visible")
-    assert more.get_attribute("aria-label") == "More panels"
+    shown = "More panels, Memory shown" if "memory" in folded else "More panels"
+    assert more.get_attribute("aria-label") == shown
+    assert ("on" in str(more.get_attribute("class"))) is ("memory" in folded)
     visible = page.evaluate(
         "[...document.querySelectorAll('.panel[data-panel]')].filter(p => !p.hidden).length"
     )

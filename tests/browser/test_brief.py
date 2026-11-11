@@ -15,7 +15,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-from test_console import DESKTOP, LINKED, PHONE, Console  # same directory (pytest prepend import)
+from dock_rule import assert_follows_rule, measure_dock  # same directory (pytest prepend import)
+from test_console import DESKTOP, LINKED, PHONE, Console
 
 _pw = pytest.importorskip("playwright.sync_api")
 sync_playwright, expect = _pw.sync_playwright, _pw.expect
@@ -666,8 +667,9 @@ def test_phone_badges_the_brief_tab_then_shows_one_panel(make: Callable[..., Con
     assert tab.get_attribute("aria-label") == "Brief, new brief ready"
     assert page.locator("#p-chat").is_visible() and page.locator("#p-brief").is_hidden()
     assert fake.to("/v1/brief/seen") == []  # a badge is not "seen"
-    # seven tabs at 390 px (six panels + More: each keeps 8 px of air beside its label, R6.1), all
-    # on screen, each a usable touch target with its label
+    # the tabs the bar holds at 390 px, then More: as many as the measured labels allow (each keeps
+    # 8 px of air beside its label, R6.1: six panels here, five on GitHub's Chromium, whose text is
+    # wider), all on screen, each a usable touch target with its label
     tabs = page.evaluate(
         """[...document.querySelectorAll('#dock .dk')].filter(b => b.getClientRects().length)
            .map(b => {
@@ -677,7 +679,9 @@ def test_phone_badges_the_brief_tab_then_shows_one_panel(make: Callable[..., Con
                      right: r.right, fits: !label || label.scrollWidth <= b.clientWidth};
            })"""
     )
-    assert len(tabs) == 7 and tabs[-1]["name"] == "dockMore", tabs
+    names = [t["name"] for t in tabs]
+    assert names[-1] == "dockMore" and "brief" in names, names  # twenty panels never fit a phone
+    assert_follows_rule(measure_dock(page), names[:-1])
     width = page.evaluate("window.innerWidth")
     for t in tabs:
         assert t["w"] >= 44 and t["h"] >= 44, t

@@ -1,2 +1,3 @@
 # src/jarvis/__init__.py
-__version__ = "0.0.1"
+# R6.1 D4: the ONE version source (pyproject.toml carries the same number; tests/test_about.py).
+__version__ = "6.1.0"

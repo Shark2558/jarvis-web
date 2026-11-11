@@ -15,6 +15,9 @@ COPY src ./src
 COPY deploy/home ./deploy/home
 # Where kit.build finds deploy/home and src (the installed package sits in site-packages)
 ENV HOME_KIT_ROOT=/app
+# R6.1 D4: the build time the Vitals "About JARVIS" line shows (jarvis.about), stamped HERE at image
+# build (never at request time); package data carries it into the installed package.
+RUN date -u +%Y-%m-%dT%H:%M:%SZ > src/jarvis/BUILD_DATE
 RUN pip install --no-build-isolation --no-deps .
 USER jarvis
 EXPOSE 8000

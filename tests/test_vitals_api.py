@@ -37,6 +37,39 @@ async def test_get_returns_the_board(rig_client) -> None:  # type: ignore[no-unt
     assert body["spend"]["text"].startswith("₹")
 
 
+async def test_get_carries_the_version_and_build_date_for_the_about_line(  # type: ignore[no-untyped-def]
+    rig_client, monkeypatch
+) -> None:
+    """R6.1 D4: the owner-only board answer gains two read-only fields (no new route)."""
+    from jarvis import about
+
+    rig, c = rig_client
+    monkeypatch.setenv(about.BUILD_DATE_ENV, "2026-11-10T20:00:00Z")  # 01:30 on 11 Nov in India
+    about.fields.cache_clear()
+    try:
+        body = (await c.get("/v1/vitals")).json()
+    finally:
+        about.fields.cache_clear()
+
+    assert body["version"] == "v6.1.0" and body["build_date"] == "11 Nov 2026"
+    assert {"overall", "items", "spend", "manual_unavailable", "manual_note"} <= body.keys()
+
+
+async def test_without_a_build_stamp_the_date_is_unknown(rig_client, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from jarvis import about
+
+    _, c = rig_client
+    monkeypatch.delenv(about.BUILD_DATE_ENV, raising=False)
+    monkeypatch.setattr(about, "PACKAGED_STAMP", None)
+    about.fields.cache_clear()
+    try:
+        body = (await c.get("/v1/vitals")).json()
+    finally:
+        about.fields.cache_clear()
+
+    assert body["build_date"] == "unknown" and body["version"] == "v6.1.0"
+
+
 async def test_put_adds_a_manual_key_and_rejects_bad_ones(rig_client) -> None:  # type: ignore[no-untyped-def]
     rig, c = rig_client
 

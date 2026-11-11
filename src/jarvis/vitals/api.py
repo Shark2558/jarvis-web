@@ -4,7 +4,10 @@ never taken from the client; a browser write needs `X-Requested-With: JARVIS`, e
 require_auth).
 
 GET    /v1/vitals              {overall, items: [ProviderView json],
-                                spend: {used_inr, limit_inr, text}|null}
+                                spend: {used_inr, limit_inr, text}|null, manual_unavailable,
+                                manual_note, version, build_date}
+                                (R6.1 D4: `version` "v6.1.0" and `build_date` "11 Nov 2026" or
+                                "unknown" feed the read-only "About JARVIS" line; `jarvis.about`)
 PUT    /v1/vitals/keys         Provider body (manual) -> {saved}; 422 plain `detail`;
                                 with `"create": true` an id that exists answers 409 (never replaced)
 DELETE /v1/vitals/keys/{id}    -> {removed: true}; 404 when no such manual record
@@ -20,6 +23,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import ValidationError
 
+from jarvis import about
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
@@ -75,12 +79,21 @@ def _svc(request: Request) -> VitalsService:
     return svc  # type: ignore[no-any-return]
 
 
+def _zone(request: Request) -> str:
+    settings = getattr(request.app.state, "settings", None)
+    zone = getattr(settings, "user_timezone", None)
+    return zone if isinstance(zone, str) and zone else about.DEFAULT_ZONE
+
+
 @router.get("")
-async def board(svc: VitalsService = Depends(_svc), uid: str = Depends(_limited)) -> dict[str, Any]:
+async def board(
+    request: Request, svc: VitalsService = Depends(_svc), uid: str = Depends(_limited)
+) -> dict[str, Any]:
     try:
-        return (await svc.board_cached(uid)).to_json()
+        out = (await svc.board_cached(uid)).to_json()
     except VitalsUnavailable as exc:
         raise HTTPException(503, str(exc)) from None
+    return {**out, **about.fields(_zone(request))}
 
 
 @router.put("/keys")

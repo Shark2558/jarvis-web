@@ -1140,7 +1140,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | Container images in Artifact Registry (10 newest kept; older than 30 days deleted). |
 | Outside services | GitHub Actions, Cloud Build, Artifact Registry, Cloud Run, Secret Manager, Cloud Scheduler, Firestore |
 | Cost (₹ a month) | ₹0 inside the free tiers (GitHub Actions 2,000 minutes a month and Artifact Registry 0.5 GB, as the plans list them) |
-| When it fails | A new version that isn't healthy never gets traffic: the current JARVIS keeps running. A re-run of an old job never rolls main back. A wrongly titled pull request fails its title check until it is renamed; that check and the diagram checks never hold up a deploy. The back-fill has only been practised (reads only): it makes its changes with `--apply`, run where GitHub allows writes, and a refused write is reported with what to create by hand on the GitHub website, never retried. |
+| When it fails | A new version that isn't healthy never gets traffic: the current JARVIS keeps running. A re-run of an old job never rolls main back. A wrongly titled pull request fails its title check until it is renamed; that check, the diagram checks and the document checks (version lines, this guide's coverage) never hold up a deploy. The back-fill has only been practised (reads only): it makes its changes with `--apply`, run where GitHub allows writes, and a refused write is reported with what to create by hand on the GitHub website, never retried. |
 | Since | Slice 2 (hosting); Slice 5 (v0.5.0) Firestore; Slice 5c (v0.5.2) deploy on merge; versioning R6.1 (v6.1.0) |
 
 #### C59 · Evals and the visual gate
@@ -1291,12 +1291,13 @@ guest show locks your other consoles until your passkey lifts the lock.
 [![Figure 13. How a change reaches the live JARVIS](diagrams/13-release-flow.png)](diagrams/13-release-flow.svg)
 
 *Figure 13. How a change reaches the live JARVIS.* A branch for one part of a release, a pull
-request, the tests (Python 3.11 and 3.12, the Firestore emulator, the browser, this guide's
-coverage check; on pull requests also the title check and the diagram checks), merge to main. On
-main the real-model eval gate (skipped without a key) runs beside the deploy job and does not
-hold it back; the deploy job waits only for the tests, the emulator and the browser. It makes a
-new version with no traffic, checks its health for up to 2 minutes, and only then sends all
-traffic to it. If it isn't healthy, your current JARVIS keeps running.
+request, the checks (the tests on Python 3.11 and 3.12, the Firestore emulator, the browser, the
+document checks with this guide's coverage; on pull requests also the title check and the diagram
+checks), merge to main. On main the real-model eval gate (skipped without a key) runs beside the
+deploy job and does not hold it back; the deploy job waits only for the tests, the emulator and
+the browser, never for the document, title or diagram checks. It makes a new version with no
+traffic, checks its health for up to 2 minutes, and only then sends all traffic to it. If it isn't
+healthy, your current JARVIS keeps running.
 
 ### Figure 14 — Where your data lives
 
@@ -1620,13 +1621,14 @@ version gets a no-traffic "candidate" tag and a health check before it receives 
 
 | Job | What it checks | When |
 |---|---|---|
-| `test` | ruff; every plan and architecture document has its version line and change log (`scripts/check_doc_versions.py`); unit tests on Python 3.11 and 3.12; the Phase 0 eval on the mock brain (`evals/phase0/run.py --mock`); the build book `--check` (byte-identical twice, no personal data, every package in a layer); this guide's coverage check (`scripts/arch_coverage.py`) | Every pull request and every push to main |
+| `test` | ruff; unit tests on Python 3.11 and 3.12; the Phase 0 eval on the mock brain (`evals/phase0/run.py --mock`); the build book `--check` (byte-identical twice, no personal data, every package in a layer) | Every pull request and every push to main |
+| `docs-check` | Once, on Python 3.12: every plan and architecture document has its version line and change log (`scripts/check_doc_versions.py`), and this guide's coverage check (`scripts/arch_coverage.py`) | Every pull request and every push to main; no job waits for it |
 | `pr-title` | The pull request's title reads "v6.1.0 · R6.1 Short name · Mark XIII" (`scripts/check_pr_title.py`, with a read-only token) | Pull requests only (Dependabot's are exempt) |
 | `docs` | The diagrams: the privacy rule, Markdy's `lint --strict` and `verify --quality showcase` for all 14; when a pull request changes them, the Markdy tool or the export scripts, also that every SVG and PNG matches its source (`scripts/markdy_export.py --check`) | Pull requests only |
 | `firestore` | The store contract tests against the official Firestore emulator | Every pull request and every push to main |
 | `browser` | The console in headless Chromium, including the visual gate | Every pull request and every push to main |
 | `eval-gate` | The real-model eval (skipped with a notice when no key is set) | Main only |
-| `deploy` | Build the image, roll out with no traffic, check `/health`, switch traffic | Main, when `AUTODEPLOY` is on, after `test`, `firestore` and `browser` pass (not after `eval-gate`, `pr-title` or `docs`) |
+| `deploy` | Build the image, roll out with no traffic, check `/health`, switch traffic | Main, when `AUTODEPLOY` is on, after `test`, `firestore` and `browser` pass (not after `eval-gate`, `docs-check`, `pr-title` or `docs`) |
 
 The coverage check fails when a package, console module, Scheduler job, outside service or
 Firestore collection is missing from the catalogue, a card or technology row is incomplete, a
@@ -1921,4 +1923,4 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.1.1 | 11 Nov 2026, 11:43 IST | R6.1 | First edition: summary, layers and departures, 59 component cards, 14 diagram captions, technology table, outside services and free limits, plan vs build, decisions, data and privacy, security, operations, costs, limits, roadmap and glossary, written from the code. Before publishing, corrected after the R6.1 reviews: page 1 rewritten in plain words (one monthly ₹ total with worst cases, no limit until you set one, voice paid after the free minutes, who sees your data, no backups, what JARVIS doesn't lock itself); 11 fact-check fixes and 1 from the writer's own 10 checks; glossary filled; "How this guide was checked" added | 🛠 Mark XIII |
-| v6.1.2 | 11 Nov 2026, 13:30 IST | R6.1 | After the R6.1 parts were merged: the dock that fits every screen (More holds the buttons that don't fit) on page 1 and C01 with `console-dock.js`; the "About JARVIS" version and build-date line on Vitals (C55, `about.py`); the pull request template, title check, version-line check and GitHub back-fill (C58, section 8); the CI table with the `pr-title` and `docs` jobs and the coverage check in `test`; Figure 13's caption names the title and coverage checks; Mark explained for a release built by two Marks; glossary: back-fill, change log and version line, GitHub Release, tag and label, More, version | 🛠 Mark XIV |
+| v6.1.2 | 11 Nov 2026, 13:30 IST | R6.1 | After the R6.1 parts were merged: the dock that fits every screen (More holds the buttons that don't fit) on page 1 and C01 with `console-dock.js`; the "About JARVIS" version and build-date line on Vitals (C55, `about.py`); the pull request template, title check, version-line check and GitHub back-fill (C58, section 8); the CI table with the `pr-title` and `docs` jobs and the `docs-check` job (version lines and this guide's coverage, run once, never before a deploy); Figure 13's caption names the title and coverage checks; Mark explained for a release built by two Marks; glossary: back-fill, change log and version line, GitHub Release, tag and label, More, version | 🛠 Mark XIV |

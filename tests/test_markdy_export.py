@@ -707,6 +707,17 @@ def test_the_docs_job_runs_on_pull_requests_only_and_never_gates_a_deploy() -> N
     assert "needs" not in docs and "permissions" not in docs  # the read-only default token
 
 
+def test_the_docs_job_keeps_no_token_on_disk() -> None:
+    """R6.1 security review L1: the job runs the pull request's own code (npm ci from its lock,
+    the export scripts), so the checkout leaves no credentials in .git/config. The full history
+    (fetch-depth 0) still comes with the checkout, so `git diff` against the base needs no fetch."""
+    steps = _ci()["jobs"]["docs"]["steps"]
+    checkouts = [s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@")]
+    assert len(checkouts) == 1
+    assert checkouts[0]["with"] == {"fetch-depth": 0, "persist-credentials": False}
+    assert not any("git fetch" in str(s.get("run", "")) for s in steps)
+
+
 def test_the_docs_job_lints_always_and_checks_exports_when_diagrams_or_tools_change() -> None:
     steps = _ci()["jobs"]["docs"]["steps"]
     runs = [(str(s.get("if", "")), str(s.get("run", ""))) for s in steps]

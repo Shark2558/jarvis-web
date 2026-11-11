@@ -1,6 +1,6 @@
 # tests/test_check_doc_versions.py -- R6.1 D4 (acceptance check 3): every docs/plans/*.md and
 # docs/architecture/*.md opens with its version line and ends with its change log
-# (scripts/check_doc_versions.py, run by CI's test job, never by the deploy job).
+# (scripts/check_doc_versions.py, run once by CI's docs-check job; no deploy waits for it).
 from __future__ import annotations
 
 import importlib.util
@@ -239,11 +239,36 @@ def test_back_filled_plans_carry_their_release_version_and_mark() -> None:
 
 
 # ---- CI -----------------------------------------------------------------------------------------
-def test_ci_runs_it_in_the_test_job_only() -> None:
+def _needed_by_deploy(jobs: dict[str, Any]) -> set[str]:
+    """Every job the deploy waits for, directly or through another job."""
+
+    def needs(name: str) -> set[str]:
+        raw = jobs[name].get("needs", [])
+        return {raw} if isinstance(raw, str) else set(raw)
+
+    seen, todo = set(), ["deploy"]
+    while todo:
+        for dep in needs(todo.pop()) - seen:
+            seen.add(dep)
+            todo.append(dep)
+    return seen
+
+
+def test_ci_runs_it_once_in_the_docs_check_job_which_never_holds_up_a_deploy() -> None:
+    """R6.1 code review M1/M2: a doc slip (a missing change-log row) never blocks a deploy or a
+    hotfix, and the check runs once, not once per Python in the test matrix."""
     ci: dict[str, Any] = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text("utf-8"))
+    jobs = ci["jobs"]
     where = [
         name
-        for name, job in ci["jobs"].items()
+        for name, job in jobs.items()
         if "check_doc_versions.py" in "\n".join(str(s.get("run", "")) for s in job.get("steps", []))
     ]
-    assert where == ["test"]
+    assert where == ["docs-check"]
+    job = jobs["docs-check"]
+    on = ci.get("on", ci.get(True))  # PyYAML reads the bare key `on` as True
+    assert "pull_request" in on and on["push"]["branches"] == ["main"]
+    assert "if" not in job and "strategy" not in job  # every pull request and push, run once
+    assert "docs-check" not in _needed_by_deploy(jobs)
+    runs = [str(s.get("run", "")) for s in job["steps"]]
+    assert runs.count("python scripts/check_doc_versions.py") == 1

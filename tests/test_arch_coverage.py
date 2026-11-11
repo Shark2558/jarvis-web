@@ -489,7 +489,22 @@ def test_the_real_guide_passes() -> None:
     guide_path = ROOT / ac.GUIDE
     problems = ac.check_all(ROOT, guide_path, guide_path.parent)
     if not (guide_path.parent / "diagrams").is_dir():
-        # Part D's branch alone: Part C's exported diagrams join at integration (INTEGRATION-D)
+        # Part D's branch alone: Part C's exported diagrams join at integration
+        # (docs/plans/r6-1-integration/INTEGRATION-D.md)
         assert problems == [ac.NO_DIAGRAMS], problems
     else:
         assert problems == [], problems
+
+
+def test_ci_runs_it_once_in_the_docs_check_job_after_the_install_never_before_a_deploy() -> None:
+    """R6.1 code review M1: a feature not yet in the guide never blocks a deploy or a hotfix. The
+    check imports jarvis (the scrubber, the settings), so its job installs the package first."""
+    import yaml
+
+    jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text("utf-8"))["jobs"]
+    runs = {n: [str(s.get("run", "")) for s in j.get("steps", [])] for n, j in jobs.items()}
+    assert [n for n, r in runs.items() if "python scripts/arch_coverage.py" in r] == ["docs-check"]
+    steps = runs["docs-check"]
+    assert steps.index('pip install -e ".[dev]"') < steps.index("python scripts/arch_coverage.py")
+    assert "docs-check" not in jobs["deploy"]["needs"] and "strategy" not in jobs["docs-check"]
+    assert "docs-check" not in str([j.get("needs", []) for j in jobs.values()])  # nothing waits

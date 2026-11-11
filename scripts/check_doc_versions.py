@@ -14,7 +14,8 @@ Each `docs/plans/*.md` and `docs/architecture/*.md` (not their sub-folders) must
 
     python3 scripts/check_doc_versions.py [--root DIR]   exit 0 when all pass, 1 with the list
 
-CI's test job runs it (never the deploy job). Standard library only.
+CI's docs-check job runs it once on every pull request and every push to main; no job waits for
+that one, so a missing version line never holds up a deploy. Standard library only.
 """
 
 from __future__ import annotations

@@ -23,16 +23,28 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: ruff check src tests evals
-      # R6.1 D4: every docs/plans/*.md and docs/architecture/*.md opens with its version line
-      # and ends with its change log (standard library only; never part of the deploy job)
-      - run: python scripts/check_doc_versions.py
       - run: pytest -q
       - run: python evals/phase0/run.py --mock   # plumbing only; real gate runs on demand
       # R6 D2-D5: the build book builds from this commit, byte-identical twice, with no personal
       # data, no unlisted secret-shaped string, every package in a layer and every flow step real
       - run: python -m jarvis.buildbook.gen --check
-      # R6.1 D6: the architecture guide covers every package, console module, Scheduler job,
-      # outside service and Firestore collection; complete cards and rows; R6 secret scan
+
+  # R6.1 D4 + D6: the documents, once (Python 3.12) on every pull request and every push to main.
+  # No job waits for this one, the deploy included: a doc slip never holds up a deploy or a hotfix.
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: "3.12", cache: pip }
+      # arch_coverage.py imports jarvis (the build book's scrubber, the settings)
+      - run: pip install -e ".[dev]"
+      # every docs/plans/*.md and docs/architecture/*.md opens with its version line and ends
+      # with its change log (standard library only)
+      - run: python scripts/check_doc_versions.py
+      # the architecture guide covers every package, console module, Scheduler job, outside
+      # service and Firestore collection; complete cards and rows; the R6 secret scan
       - run: python scripts/arch_coverage.py
 
   # R6.1 D4: a pull request's title reads "v6.1.0 · R6.1 Short name · Mark XIII"
@@ -117,8 +129,10 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      # The pull request's own code runs here (npm ci from its lock, the export scripts): keep no
+      # token in .git/config. fetch-depth 0 brings the base branch for the git diff below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, persist-credentials: false }
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: "3.12" }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0

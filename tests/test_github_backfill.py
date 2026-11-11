@@ -4,7 +4,9 @@
 # write, skips an unmerged pull request, only retitles one that already has its header line, and
 # reports one it cannot read. The stand-in answers only the three reads the script makes and
 # refuses every other call (any write flag, any other path); git, curl and wget are stand-ins that
-# refuse too. --apply is only run to show it refuses a repository it wasn't confirmed for.
+# refuse too. --apply runs only against that stand-in: to show it refuses a repository it wasn't
+# confirmed for, and that every write GitHub refuses is reported with what to do by hand, tried
+# once, and the run goes on to the end and exits 1 (R6.1 code review M3).
 from __future__ import annotations
 
 import os
@@ -60,8 +62,11 @@ case "$path" in
     body='"The original description."'
     head='"**Version:** v6.0.0 · **Built in:** Mark XII\n\nText"'
     [[ " $STUB_HEADED " == *" $n "* ]] && body="$head"
-    printf '{"number": %s, "merged_at": %s, "merge_commit_sha": "%040d", "body": %s}\n' \
-      "$n" "$merged" "$n" "$body"
+    sha="\"$(printf '%040d' "$n")\""
+    [[ " $STUB_NOSHA " == *" $n "* ]] && sha=null
+    [[ " $STUB_EMPTYSHA " == *" $n "* ]] && sha='""'
+    printf '{"number": %s, "merged_at": %s, "merge_commit_sha": %s, "body": %s}\n' \
+      "$n" "$merged" "$sha" "$body"
     ;;
   *) refuse ODD "$all" 4 ;;
 esac
@@ -254,6 +259,24 @@ def test_a_pull_request_it_cannot_read_is_reported_and_the_rest_go_on(tmp_path: 
     assert not_reads(run) == []
 
 
+@pytest.mark.parametrize("stub", ["nosha", "emptysha"])
+def test_a_pull_request_without_a_merge_commit_is_reported_and_never_released(
+    tmp_path: Path, stub: str
+) -> None:
+    """Security review L4: a null or empty merge_commit_sha never reaches a Release."""
+    run = practice(tmp_path, **{stub: "26"})
+
+    assert run.code == 1
+    assert "PR #26: GitHub gave no merge commit, skipped" in run.err
+    assert "26" not in retitles(run) and len(retitles(run)) == 20
+    joined = "\n".join(run.out)
+    assert "/issues/26/" not in joined and "tag_name=v5.1.1" not in joined
+    releases = [a for a in dry(run) if a[4] == f"repos/{REPO}/releases"]
+    targets = [next(x for x in a if x.startswith("target_commitish=")) for a in releases]
+    assert len(targets) == 20
+    assert all(re.fullmatch(r"target_commitish=[0-9a-f]{40}", t) for t in targets), targets
+
+
 # ---- the stand-in itself refuses every write (R6.1 review M2) ----------------------------------
 PR1 = f"repos/{REPO}/pulls/1"
 WRITE_FORMS = [
@@ -349,8 +372,30 @@ def first_rows(n: int) -> list[str]:
 
 @pytest.mark.parametrize(
     ("column", "value"),
-    [(5, "@/etc/passwd"), (5, "yes"), (0, "1/../../x"), (1, "v1.0.0/../x"), (1, "1.0.0")],
-    ids=["pre-file", "pre-word", "num-path", "ver-path", "ver-no-v"],
+    [
+        (5, "@/etc/passwd"),
+        (5, "yes"),
+        (0, "1/../../x"),
+        (1, "v1.0.0/../x"),
+        (1, "1.0.0"),
+        (3, "XIII;id"),  # security review L4: the Mark and the kind are checked too
+        (3, "x-ray"),
+        (3, "XII--XIII"),
+        (4, "feature"),
+        (4, "docs;x"),
+    ],
+    ids=[
+        "pre-file",
+        "pre-word",
+        "num-path",
+        "ver-path",
+        "ver-no-v",
+        "mark-semicolon",
+        "mark-word",
+        "mark-empty-part",
+        "kind-unknown",
+        "kind-semicolon",
+    ],
 )
 def test_a_malformed_row_is_reported_and_never_used(
     tmp_path: Path, column: int, value: str
@@ -392,3 +437,58 @@ def test_apply_refuses_a_repository_from_the_environment_unless_confirmed(
 
     assert run.code == 2 and run.calls == []  # refused before any call at all
     assert "REPO is someone/else" in run.err and "--apply someone/else" in run.err
+
+
+# ---- --apply where GitHub refuses every write (code review M3) ----------------------------------
+BY_HAND = "by hand on the GitHub website"
+
+
+def test_every_refused_write_is_reported_once_and_the_run_goes_on_to_the_end(
+    tmp_path: Path,
+) -> None:
+    """Under `set -e` a refused label, retitle or label write once ended the run with only gh's
+    own error. Now each one is reported with what to do by hand, never tried twice (a Mark label
+    named on several rows is asked for once), every row is still worked through, and the run
+    exits 1. The stand-in refuses every write (exit 5), so nothing can reach GitHub."""
+    run = practice(tmp_path, "--apply")
+
+    assert run.code == 1, run.err
+    assert run.out[0] == f"Applying to {REPO} from docs/github-backfill.tsv"
+    assert not any(ln.startswith("DRY:") for ln in run.out)
+    assert [ln for ln in run.out if ln.startswith("PR #")] == [
+        f"PR #{r.num} → {r.title}" for r in rows()
+    ]
+    assert [c for c in run.calls if c.startswith(("ODD ", "OTHER "))] == []
+    writes = [c for c in run.calls if c.startswith("WRITE ")]
+    assert len(writes) == len(set(writes))  # each refused write tried once, never again
+    marks = sorted({m for r in rows() for m in r.mark.split("-")})
+    label_posts = [w for w in writes if w.startswith(f"WRITE -X POST repos/{REPO}/labels ")]
+    assert len(label_posts) == 3 + len(marks)  # release, hotfix, docs and each Mark, once
+    assert len(writes) == len(label_posts) + 3 * len(rows())  # title, labels, release per PR
+    reports = [ln for ln in run.err.splitlines() if BY_HAND in ln]
+    assert len(reports) == len(writes)
+    for m in marks:
+        assert (
+            f'Label "Mark {m}": GitHub refused it; create it {BY_HAND} (colour #0C2D66)' in reports
+        )
+    for r in rows():
+        sha = f"{int(r.num):040d}"
+        mine = [ln for ln in reports if ln.startswith(f"PR #{r.num}: ")]
+        assert mine == [
+            f"PR #{r.num}: GitHub refused the title and header line; set them {BY_HAND} "
+            f"(title: {r.title})",
+            f"PR #{r.num}: GitHub refused the labels; add them {BY_HAND}: "
+            + ", ".join([r.kind, *(f"Mark {m}" for m in r.mark.split("-"))]),
+            f"PR #{r.num}: GitHub refused the release {r.version}; create it {BY_HAND} "
+            f"(tag {r.version} on {sha})",
+        ], mine
+
+
+def test_a_refused_retitle_of_a_headed_pull_request_names_the_title_only(tmp_path: Path) -> None:
+    run = practice(tmp_path, "--apply", headed="27")
+
+    assert run.code == 1
+    want = (
+        f"PR #27: GitHub refused the title; set it {BY_HAND}: v6.0.0 · R6 The Build Book · Mark XII"
+    )
+    assert want in run.err.splitlines()

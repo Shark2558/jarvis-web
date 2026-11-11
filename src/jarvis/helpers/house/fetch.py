@@ -33,6 +33,7 @@ from jarvis.helpers.sources import (
     SACHET_RSS_URL,
 )
 from jarvis.logging import get_logger
+from jarvis.ticks import time_left
 
 log = get_logger(__name__)
 
@@ -50,6 +51,7 @@ SACHET_SLOT_S = 7.0
 WEATHER_SLOT_S = 5.0
 MIN_LEFT_S = 1.0  # a fetch is started only with at least this much of its slot left
 RUN_GAP_S = 60.0  # slots asked for further apart than this belong to the next run
+MARGIN_S = 0.5  # a slot ends this long before the tick job's real time does (I1)
 Feed = Literal["sachet", "weather"]
 SLOTS: dict[Feed, float] = {"sachet": SACHET_SLOT_S, "weather": WEATHER_SLOT_S}
 
@@ -84,10 +86,9 @@ class OutsideClock:
     `deadline(feed)` is the monotonic time `feed` must finish by in this run: its own slot,
     counted from when it first asks, and never past the end of Part B's share (`SHARE_S` from the
     run's first ask). SACHET (more urgent) asks first; weather's slot is its own, so a SACHET
-    outage or backlog costs weather nothing. The shared budget's real end is not visible to a
-    job (`ticks.run_jobs` gives each job only what is left): INTEGRATION-B "Needs I1" proposes a
-    way; until then the slots keep Part B inside 12 of the 19 s, and claims have a lease so a cut
-    run loses nothing."""
+    outage or backlog costs weather nothing. Inside a tick job a slot also ends `MARGIN_S` before
+    the job's real time runs out (`ticks.time_left()`, I1), so Part B never starts a fetch it
+    can't finish; claims keep their lease so a cut run still loses nothing."""
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
@@ -102,7 +103,9 @@ class OutsideClock:
         if self._run is None or at - self._run >= RUN_GAP_S:
             self._run, self._starts = at, {}
         start = self._starts.setdefault(feed, at)
-        return min(start + SLOTS[feed], self._run + SHARE_S)
+        end = min(start + SLOTS[feed], self._run + SHARE_S)
+        left = time_left()
+        return end if left is None else min(end, at + left - MARGIN_S)
 
     def left(self, deadline: float) -> float:
         return deadline - self._clock()
@@ -201,6 +204,7 @@ class HttpFetcher:
 
 __all__ = [
     "ALLOWED_HOSTS",
+    "MARGIN_S",
     "MIN_LEFT_S",
     "SACHET_SLOT_S",
     "SHARE_S",

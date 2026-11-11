@@ -155,6 +155,11 @@ class GoogleTasksDue:
         return sorted(out, key=lambda row: row[1])
 
 
+class NotRead(Exception):  # noqa: N818 - a refusal, not an error: the collector names the source
+    """His To-dos row did not allow this read (Mark XIV review): `PendingService` leaves the
+    source out and names it in `missing`, so "top priority" says his to-dos weren't checked."""
+
+
 class TasksPending:
     name = "tasks"
 
@@ -170,8 +175,10 @@ class TasksPending:
             return list(await self._tasks.due(uid, today))
 
     async def pending(self, uid: str, now: datetime) -> Sequence[PendingItem]:
-        if not await row_allows(self._reads, uid, TASKS_TOOL, TASKS_JOB):
-            return []
+        if not (v := await row_allows(self._reads, uid, TASKS_TOOL, TASKS_JOB)):
+            if v.reason == "denied":  # "Never": his own "don't read my to-dos", nothing to say
+                return []
+            raise NotRead  # "Ask first" or unreadable: the answer names his to-dos as not checked
         today = local(now, self._tz).date()
         zone = local(now, self._tz).tzinfo
         out: list[PendingItem] = []
@@ -203,6 +210,7 @@ __all__ = [
     "BillsPending",
     "Collected",
     "GoogleTasksDue",
+    "NotRead",
     "PendingService",
     "TasksPending",
     "rank",

@@ -125,6 +125,7 @@ async def test_tool_sees_user_and_session_from_scope(gw: tuple[Gateway, list[Any
         session_id="sess_1",
         scope="u_abc:sess_1",
         approved_risk=ActionRisk.REVERSIBLE,
+        tool="calendar_create_event",  # R11: the tool the gateway decided (background reads)
     )
     assert seen == [want]
     assert current_tool_context() is None  # reset after the run

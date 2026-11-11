@@ -288,7 +288,8 @@ def _reader_tool(reads: BackgroundReads, name: str, row_tool: str) -> Tool:
 
 
 async def _decided(rows: Rows) -> tuple[str, Gateway]:
-    """`pending_list` (its own row: Allow) reads `tasks_list` inside the gateway's decided call."""
+    """`pending_list` (its own row: Allow) reads `tasks_list` (another row) inside the gateway's
+    decided call: the gateway decided `pending_list`'s row, not the to-dos'."""
     holder: dict[str, Gateway] = {}
     reads = BackgroundReads(lambda: holder["gw"], audit=AuditLog(), now=Clock(NOON))
     gw = _gateway(rows, _reader_tool(reads, "pending_list", "tasks_list"), _tool("tasks_list"))
@@ -299,9 +300,24 @@ async def _decided(rows: Rows) -> tuple[str, Gateway]:
     return str(res.result["reason"]), gw
 
 
-async def test_inside_a_gateway_decided_call_ask_first_reads_and_never_still_refuses() -> None:
-    assert (await _decided(Rows("tasks_*", Effect.ASK)))[0] == "allowed"  # security review M1
+async def test_a_decided_call_on_one_row_never_opens_another_rows_ask_first() -> None:
+    # Mark XIV review of the fixer: no to-do card was shown, so "Ask first" on the to-dos holds
+    assert (await _decided(Rows("tasks_*", Effect.ASK)))[0] == "ask_first"
     assert (await _decided(Rows("tasks_*", Effect.DENY)))[0] == "denied"
+    assert (await _decided(Rows("tasks_*", Effect.ALLOW)))[0] == "allowed"
+
+
+async def test_inside_the_gateways_call_for_that_very_tool_ask_first_reads() -> None:
+    gw = _gateway(Rows("tasks_*", Effect.ASK), _tool("tasks_list"), _tool("pending_list"))
+    reads = BackgroundReads.of(gw, now=Clock(NOON))
+    with tool_context(f"{UID}:s1", approved_risk=ActionRisk.READ_ONLY, tool="tasks_list"):
+        assert (await reads.allowed(UID, "tasks_list", job="pending")).reason == "allowed"
+    with tool_context(f"{UID}:s1", approved_risk=ActionRisk.READ_ONLY, tool="pending_list"):
+        assert (await reads.allowed(UID, "tasks_list", job="pending")).reason == "ask_first"
+    gw_never = _gateway(Rows("tasks_*", Effect.DENY), _tool("tasks_list"))
+    never = BackgroundReads.of(gw_never, now=Clock(NOON))
+    with tool_context(f"{UID}:s1", approved_risk=ActionRisk.READ_ONLY, tool="tasks_list"):
+        assert (await never.allowed(UID, "tasks_list", job="pending")).reason == "denied"
 
 
 async def test_a_job_still_reads_on_allow_only_and_cannot_pass_its_way_in() -> None:
@@ -312,7 +328,7 @@ async def test_a_job_still_reads_on_allow_only_and_cannot_pass_its_way_in() -> N
         assert (await reads.allowed(UID, "tasks_list", job="pending")).reason == "ask_first"
     with tool_context("someone_else:s1", approved_risk=ActionRisk.READ_ONLY):  # another owner
         assert (await reads.allowed(UID, "tasks_list", job="pending")).reason == "ask_first"
-    with tool_context(f"{UID}:s1", approved_risk=ActionRisk.READ_ONLY):  # what _run sets
+    with tool_context(f"{UID}:s1", approved_risk=ActionRisk.READ_ONLY, tool="tasks_list"):
         assert (await reads.verdict(UID, "tasks_list")).reason == "ask_first"  # status: a job's
 
 
@@ -394,7 +410,7 @@ async def test_each_reader_audits_a_read_the_tick_budget_cuts() -> None:
 
 async def test_no_permission_service_wired_means_no_read_for_every_reader() -> None:
     """D's old pin, restored for the one path (code review M2): rules None = unreadable."""
-    from jarvis.helpers.today.pending import TasksPending
+    from jarvis.helpers.today.pending import NotRead, TasksPending
 
     class Tasks:
         calls = 0
@@ -405,7 +421,9 @@ async def test_no_permission_service_wired_means_no_read_for_every_reader() -> N
 
     audit = AuditLog()
     src = TasksPending(Tasks(), reads=reads_over(lambda: None, audit), tz="Asia/Kolkata")
-    assert await src.pending(UID, NOON) == [] and Tasks.calls == 0
+    with pytest.raises(NotRead):  # no read; "top priority" names his to-dos as not checked
+        await src.pending(UID, NOON)
+    assert Tasks.calls == 0
     assert await _lines(audit) == [
         ("helpers", "tasks_list", "error", "pending; no permission service")
     ]

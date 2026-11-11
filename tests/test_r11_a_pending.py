@@ -25,6 +25,7 @@ from jarvis.helpers.today.pending import (
 from jarvis.helpers.today.store import BillStore
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.audit import AuditLog
+from jarvis.tools.policy import Effect, PolicyRule
 
 T0 = datetime(2026, 11, 10, 6, 30, tzinfo=UTC)
 
@@ -147,6 +148,31 @@ async def test_tasks_due_by_today_obey_his_row() -> None:
     denied = TasksPending(tasks, reads=never, tz="Asia/Kolkata")
     calls = tasks.calls
     assert await denied.pending(UID, clock.at) == [] and tasks.calls == calls
+
+
+class AskRules:
+    """The owner's rows: Ask first for tools matching `pattern`."""
+
+    def __init__(self, pattern: str) -> None:
+        self.pattern = pattern
+
+    async def rules_for(self, user_id: str) -> list[PolicyRule]:
+        return [PolicyRule(tool_pattern=self.pattern, effect=Effect.ASK, source="owner:test")]
+
+
+async def test_todos_on_ask_first_are_named_not_checked_never_silently_left_out() -> None:
+    # Mark XIV review: "top priority" is decided on the Nudges row, so no to-do card was shown;
+    # his To-dos row on "Ask first" means no read, and the answer names them as not checked.
+    clock = Clock(at(2026, 11, 10, 12, 0))
+    tasks = FakeTasks([("File the GST return", date(2026, 11, 9))])
+    ask = reads_over(lambda: AskRules("tasks_*"), AuditLog())  # type: ignore[arg-type,return-value]
+    svc = PendingService(lambda: [TasksPending(tasks, reads=ask, tz="Asia/Kolkata")])
+    top, got = await svc.top(UID, clock.at)
+    assert top is None and got.missing == ("tasks",) and tasks.calls == 0
+    never = reads_over(lambda: DenyRules("tasks_*"), AuditLog())  # type: ignore[arg-type,return-value]
+    quiet = PendingService(lambda: [TasksPending(tasks, reads=never, tz="Asia/Kolkata")])
+    _, got = await quiet.top(UID, clock.at)
+    assert got.missing == () and tasks.calls == 0  # "Never" is his own "don't read my to-dos"
 
 
 async def test_google_tasks_not_granted_add_nothing() -> None:

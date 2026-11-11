@@ -14,11 +14,13 @@ whose permission row covers the read, and leaves one kind-only line in the gatew
 - **A job reads on "Allow" only (fail closed).** "Ask first" can't be asked at 05:00 and "Never"
   is total; no permission service, rules that can't be read, no gateway yet, no owner, a tool the
   gateway doesn't know or a tool that isn't read-only all mean no read.
-- **Inside a call the gateway decided, "Ask first" reads** (integrated review M1): the console's
-  `contacts_birthdays`, `focus_now` and `pending_list` serve him while he is there, and the
-  gateway already asked as his row says (the card, then his OK). The signal is the gateway's own:
-  `Gateway._run` sets the call's `ToolContext` with the risk it decided on (`approved_risk`), for
-  this owner. A job has no such context, and nothing it passes makes one. "Never" still refuses.
+- **Inside the gateway's call for that very tool, "Ask first" reads** (integrated review M1): the
+  console's `contacts_birthdays` serves him while he is there, and the gateway already asked as
+  its row says (the card, then his OK). The signal is the gateway's own: `Gateway._run` sets the
+  call's `ToolContext` with the risk (`approved_risk`) and the tool (`tool`) it decided, for this
+  owner. Only a read by THAT tool passes "Ask first": a call decided on another row (`focus_now`,
+  `pending_list` on Nudges) never opens the to-dos' "Ask first", since no to-do card was shown
+  (Mark XIV review). A job has no such context, and nothing it passes makes one. "Never" refuses.
 - **It says why**: `allowed()` and `verdict()` give a `Verdict` (allowed / ask_first / denied /
   unreadable, the row's tool that stopped it, a fixed reason word); it is truthy only when
   allowed. `verdict()` is what a job would be told now, with no audit line: the helpers' "paused"
@@ -95,11 +97,13 @@ def _refused(why: str, tool: str) -> Verdict:
     return Verdict(reason, tool, why)
 
 
-def _decided_for(uid: str) -> bool:
-    """True only inside a tool call the gateway decided for this owner (`Gateway._run` sets the
-    call's context with the risk it decided on; a look-up or a job has none)."""
+def _decided_for(uid: str) -> str:
+    """The tool the gateway decided the call in flight for, for this owner, or "" (`Gateway._run`
+    sets the call's context with the risk and the tool it decided; a look-up or a job has none)."""
     ctx = current_tool_context()
-    return ctx is not None and ctx.approved_risk is not None and ctx.user_id == uid
+    if ctx is None or ctx.approved_risk is None or ctx.user_id != uid:
+        return ""
+    return ctx.tool
 
 
 class _Registry(Protocol):
@@ -141,8 +145,8 @@ class BackgroundReads:
         return cls(lambda: gateway, audit=gateway.audit, now=now)
 
     async def allowed(self, uid: str, *tools: str, job: str) -> Verdict:
-        """Allowed only when the gateway's policy ALLOWs every tool's row for him (inside a call
-        the gateway decided for him, "Ask first" too). A refusal is audited (once a day per
+        """Allowed only when the gateway's policy ALLOWs every tool's row for him (inside the
+        gateway's call for that very tool, "Ask first" too). A refusal is audited (once a day per
         owner, job, tool and reason) and logged; the verdict says why."""
         got = await self._decide(uid, tools, decided=_decided_for(uid))
         if got.ok:
@@ -155,7 +159,7 @@ class BackgroundReads:
 
     async def verdict(self, uid: str, *tools: str) -> Verdict:
         """What a job would be told now ("Allow" only), with no audit line and no log."""
-        return await self._decide(uid, tools, decided=False)
+        return await self._decide(uid, tools, decided="")
 
     async def note(self, tool: str, *, job: str, outcome: Outcome, why: str = "") -> None:
         """The one kind-only audit line of a background read (after it ran, or a refusal)."""
@@ -214,7 +218,7 @@ class BackgroundReads:
             log.warning("helpers: permissions unreadable", extra={"error": type(exc).__name__})
             return _refused(UNREADABLE, "")
 
-    async def _decide(self, uid: str, tools: Sequence[str], *, decided: bool) -> Verdict:
+    async def _decide(self, uid: str, tools: Sequence[str], *, decided: str) -> Verdict:
         first = tools[0] if tools else ""
         gw = self._gateway()
         if gw is None:
@@ -234,8 +238,8 @@ class BackgroundReads:
         never = next((n for n, e in effects if e is Effect.DENY), None)
         if never is not None:
             return _refused(NEVER, never)
-        ask = next((n for n, e in effects if e is Effect.ASK), None)
-        if ask is not None and not decided:
+        ask = next((n for n, e in effects if e is Effect.ASK and n != decided), None)
+        if ask is not None:  # his card was for another tool, or there was none
             return _refused(ASK_FIRST, ask)
         return ALLOWED
 

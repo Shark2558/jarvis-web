@@ -36,15 +36,14 @@ sees it; the stored conversation keeps it. A trusted result does not taint the r
 after looking up the owner's own event runs without a card. Nothing else changes: a spoken turn,
 mail / web / a document / someone else's item in the window, and every R3 call still ask.
 
-Slice 10 integration review L4: one owner message proposes at most 5 NEW cards (`tools.budget`;
-a duplicate of a waiting card is not new); past that a proposal is refused in plain words and
-nothing is stored. The duplicate look-up reads only the conversation's own cards.
+Slice 10 integration review L4: one owner message proposes at most 5 NEW cards (`tools.budget`; a
+duplicate of a waiting card is not new, and the look-up reads only this conversation's cards); past
+that a proposal is refused in plain words and nothing is stored.
 
-Slice 11 D3: an undo-able delete (`Tool.undoable`, kept in Recently deleted) that would run
-without a card counts against the message's 10 free deletes; from the 11th it becomes an R2 card
-(bounded by the 5-card budget above), and the model is told why (`GatewayResult.note`). The tool
-runs knowing whether the owner approved it (`ToolContext.confirmed`) and at what risk the call
-was decided (`ToolContext.approved_risk`): one that can do more at run time refuses.
+Slice 11 D3: an undo-able delete (`Tool.undoable`) run without a card counts against the message's
+10 free deletes; the 11th is an R2 card, and the model is told why (`GatewayResult.note`). A tool
+knows if he approved it (`ToolContext.confirmed`), the risk decided (`.approved_risk`: it refuses
+to do more) and the tool decided (`.tool`, R11: background reads pass "Ask first" for it only).
 
 Approving (`confirmation_id`): the card runs only as the owner saw it. The call is looked at
 again; when it can now do more than its card said (an event gained guests) or its card would read
@@ -53,23 +52,19 @@ approval guard (`approval_guard`, the owner's passkey rule) sees the card about 
 the token is spent; it raises to refuse, and its note (which passkey) goes into the audit.
 
 Slice 11 review: every card says why it asks (`PendingAction.reason`, `_ask_reason`; a re-proposed
-card keeps the stronger of its old and new reasons), which decides what Approve all may run. Cards
-run by Approve all are audited "confirmed; approve-all" (`approved_via`). A tool that raises is
-reported to the owner and the model as a fixed sentence plus the redacted `_safe_detail`, never its
-raw text, and marked `raised` (it was called, so it may have done part of it).
+card keeps the stronger reason), which decides what Approve all may run; those runs are audited
+"confirmed; approve-all" (`approved_via`). A tool that raises is reported as a fixed sentence plus
+the redacted `_safe_detail`, never its raw text, and marked `raised` (it may have done part of it).
 
-Slice 11 D8 / R2 I1: a card records whether its proposing round had read other people's content
-(`PendingAction.outside`) or was spoken (`.spoken`); approved, both go to its `ToolContext`, so what
-it writes is marked as theirs / as voice. A re-proposed card keeps the stricter (`_carried`).
-
-Slice 12 review: a look-up that names another permission row (`Preview.also`: a WhatsApp draft by
-name reads Contacts) gets that row's whole decision — "Never" refuses, "Ask first" makes the call
-a card (S1). `Tool.ask_when` is honoured for a read-only call too, and an approval token is always
-spent: a WhatsApp draft asks on a spoken turn or in a tainted round (its text goes to WhatsApp
-when the owner opens it), as a one-by-one R1 card — no passkey, never in Approve all (S3).
-
-R1 I0: observers (`tools.observers`) hear each call that ended executed / error / awaiting /
-denied / declined, after its audit entry (`_audited`, `observe_declined`); `Tool.spoken_ok`.
+Slice 11 D8 / R2 I1: a card records whether its round read other people's content
+(`PendingAction.outside`) or was spoken (`.spoken`); approved, both reach its `ToolContext`, so
+what it writes is marked as theirs / as voice (a re-proposal keeps the stricter, `_carried`). Slice
+12 review: a look-up naming another permission row (`Preview.also`: a WhatsApp draft by name reads
+Contacts) gets that row's whole decision ("Never" refuses, "Ask first" makes a card, S1);
+`Tool.ask_when` holds for a read too and an approval token is always spent: a WhatsApp draft asks
+on a spoken turn or in a tainted round as a one-by-one R1 card, no passkey, never in Approve all
+(S3). R1 I0: observers (`tools.observers`) hear each executed / error / awaiting / denied /
+declined call after its audit entry (`_audited`, `observe_declined`); `Tool.spoken_ok`.
 """
 
 from __future__ import annotations
@@ -519,7 +514,12 @@ class Gateway:
         (outside, spoken), approved = carried, confirmation_id is not None
         try:
             with tool_context(
-                scope, confirmed=approved, approved_risk=risk, outside=outside, spoken=spoken
+                scope,
+                confirmed=approved,
+                approved_risk=risk,
+                outside=outside,
+                spoken=spoken,
+                tool=tool.name,
             ):
                 out = tool.run(call.arguments)
                 if hasattr(out, "__await__"):

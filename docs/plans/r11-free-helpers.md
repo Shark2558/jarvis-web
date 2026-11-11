@@ -1,4 +1,4 @@
-Version v11.0.4 · 11 Nov 2026, 23:11 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
+Version v11.0.5 · 11 Nov 2026, 23:50 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
 
 # Release R11 — Free proactive helpers (+ the kitchen tools that need no camera) (`v11.0.0`)
 
@@ -624,10 +624,15 @@ never used up; and a bill reminder on Telegram no longer names the bill or the a
 **Fixed**
 
 1. **"Ask first" in the console** (security M1). `BackgroundReads.allowed()` reads on "Ask first"
-   only inside a tool call the gateway itself decided for that owner (`Gateway._run` sets the
-   call's `ToolContext` with the risk it decided on; nothing a job passes can set it); "Never"
-   still refuses. Jobs, the scheduled brief, the brief and the tabs opened in the console (routes,
-   not gateway calls) read on "Allow" only. Birthdays no longer say "switched off".
+   only inside the gateway's own call for THAT tool, for that owner: `Gateway._run` sets the
+   call's `ToolContext` with the risk and the tool it decided (`approved_risk`, `tool`); nothing a
+   job passes can set it. So the birthdays card he approves reads Contacts, but a call decided on
+   another row never opens a row on "Ask first" (Mark XIV's check of the fix: "top priority",
+   decided on Nudges, read his to-dos with no To-do card). His to-dos on "Ask first" are now left
+   out of "top priority" and named as not checked (`pending.NotRead`); on "Never" they are left
+   out quietly. "Never" always refuses. Jobs, the scheduled brief, the brief and the tabs opened
+   in the console (routes, not gateway calls) read on "Allow" only. Birthdays no longer say
+   "switched off". (`gateway.py` stays at its 760-line guard: its module notes were tightened.)
 2. **A paused helper says so** (security M2). `allowed()` / `verdict()` return a `Verdict`
    (allowed, ask first, denied, unreadable; the row's tool; a fixed word). `helpers/paused.py`
    turns it into one fixed line ("Breach watching paused: your Email permission is set to Ask
@@ -671,9 +676,9 @@ never used up; and a bill reminder on Telegram no longer names the bill or the a
 
 1. **"Ask first" for a morning job** stays "no read" (now with a "paused" line). Keep it, or say
    which rows a morning job may read on "Ask first".
-2. **To-dos in the console**: when he asks for his top priority (the Nudges row) with his To-do
-   list row on "Ask first", the to-dos are read without their own card (the gateway asked as the
-   Nudges row says). Keep it, or ask for a To-do card there too.
+2. **To-dos in "top priority"**: with his To-do list row on "Ask first", "top priority" leaves
+   his to-dos out and says they weren't checked (the safe default). Keep it, or ask for a To-do
+   card there (the gateway's `Preview.also` route, as the WhatsApp draft reads Contacts).
 3. **The bill reminder's details** reach Telegram (and web push) only when "names in alerts" is
    on. Keep it, or ask for a per-channel text (a notifier change).
 
@@ -685,3 +690,4 @@ never used up; and a bill reminder on Telegram no longer names the bill or the a
 | v11.0.2 | 11 Nov 2026, 18:02 IST | R11 | After the I0: D5's storm rules (an 8-an-hour nudge ceiling; a disaster warning de-duplicated, never capped, on Telegram's urgent bucket), the gate's tap routes under `/v1/helpers/gate`, D10 and D11 as separate decisions, seam 7's route names, and "I0 — what the seams decided" | 🛠 Mark XIV |
 | v11.0.3 | 11 Nov 2026, 21:44 IST | R11 | After the I1: the four parts merged; the background reads' governed path; rain for the free-time pick; approvals in pending; the UPI card; Telegram; persona p11.0; `ticks.time_left()`; the helper CSS; D15 amended (the USDA subset installed with every nutrient, pluggable sources, the honest label); `r11_needles`; the earlier rows' times corrected; what is left and what the owner decides ("I1 — what was merged, what was decided, what is left") | 🛠 Mark XIV |
 | v11.0.4 | 11 Nov 2026, 23:11 IST | R11 | After the integrated reviews: "Integrated review fixes" (the console's "Ask first", the paused line in the tab, the brief and breach_status, a cut read audited, no permission service no read, the UPI card checked before the grant is spent, the bill reminder and his district off Telegram, the low findings, the recipe fence and one ranker; what is left and what the owner decides); the I1 "Left" list names Part A's note 3.6 | 🛠 Mark XIV |
+| v11.0.5 | 11 Nov 2026, 23:50 IST | R11 | Mark XIV's check of the fixer: "Ask first" opens only inside the gateway's call for that very tool (`ToolContext.tool`), so "top priority" no longer reads to-dos on "Ask first" without a To-do card; it names them as not checked; owner decision 2 reworded | 🛠 Mark XIV |

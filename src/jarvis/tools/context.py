@@ -37,6 +37,9 @@ class ToolContext:
     # R2 I1: this call was made on a spoken turn, or is a card proposed on one and approved later
     # on screen (`PendingAction.spoken`): what it writes is the owner's VOICE, never typed.
     spoken: bool = False
+    # R11 (Mark XIV review): the tool the gateway decided this call for (`Gateway._run`). A
+    # background read inside it may pass "Ask first" only for this very tool, whose card he saw.
+    tool: str = ""
 
     @classmethod
     def from_scope(
@@ -47,6 +50,7 @@ class ToolContext:
         approved_risk: ActionRisk | None = None,
         outside: bool = False,
         spoken: bool = False,
+        tool: str = "",
     ) -> ToolContext:
         user_id, _, session_id = scope.partition(":")
         return cls(
@@ -57,6 +61,7 @@ class ToolContext:
             approved_risk=approved_risk,
             outside=outside,
             spoken=spoken,
+            tool=tool,
         )
 
     def allows(self, live: ActionRisk) -> bool:
@@ -92,11 +97,17 @@ def tool_context(
     approved_risk: ActionRisk | None = None,
     outside: bool = False,
     spoken: bool = False,
+    tool: str = "",
 ) -> Iterator[ToolContext | None]:
     """Set the context for the duration of a tool run; always reset, even on error."""
     ctx = (
         ToolContext.from_scope(
-            scope, confirmed=confirmed, approved_risk=approved_risk, outside=outside, spoken=spoken
+            scope,
+            confirmed=confirmed,
+            approved_risk=approved_risk,
+            outside=outside,
+            spoken=spoken,
+            tool=tool,
         )
         if scope
         else None

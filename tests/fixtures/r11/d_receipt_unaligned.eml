@@ -1,0 +1,10 @@
+Authentication-Results: mx.google.com; dkim=pass header.i=@evil.example header.s=s1; spf=fail smtp.mailfrom=evil.example; dmarc=fail (p=NONE) header.from=bigbasket.com
+From: bigbasket <orders@bigbasket.com>
+To: owner@example.com
+Subject: Your bigbasket order BB-ORDER-6666 is confirmed
+Date: Mon, 09 Nov 2026 10:00:00 +0530
+Message-ID: <bb6666@mail.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Order BB-ORDER-6666
+Order Total: Rs. 50,000.00

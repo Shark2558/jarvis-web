@@ -1,0 +1,10 @@
+Authentication-Results: mx.google.com; dkim=pass header.i=@swiggy.in header.s=s1 header.b=abc; spf=pass smtp.mailfrom=swiggy.in; dmarc=pass (p=REJECT) header.from=swiggy.in
+From: Swiggy Instamart <no-reply@swiggy.in>
+To: owner@example.com
+Subject: Your Instamart order is delivered
+Date: Fri, 06 Nov 2026 19:10:00 +0530
+Message-ID: <im3030@mail.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Instamart order IM-3030 delivered in 9 minutes.
+Total paid: ₹300

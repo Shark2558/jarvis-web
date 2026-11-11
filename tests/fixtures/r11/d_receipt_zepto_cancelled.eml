@@ -1,0 +1,9 @@
+Authentication-Results: mx.google.com; dkim=pass header.i=@zeptonow.com header.s=s1 header.b=abc; spf=pass smtp.mailfrom=zeptonow.com; dmarc=pass (p=REJECT) header.from=zeptonow.com
+From: Zepto <noreply@zeptonow.com>
+To: owner@example.com
+Subject: Your order ZPT-5566 has been cancelled
+Date: Sat, 07 Nov 2026 09:20:00 +0530
+Message-ID: <zpt5566-cancel@mail.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Your order ZPT-5566 has been cancelled. A refund of ₹210.00 has been initiated.

@@ -2,17 +2,35 @@
 # scripts/github_backfill.sh — apply workshop-rules §6.5 to past pull requests:
 # retitle, add the header line, label (kind + Mark), tag the merge commit, create the GitHub Release.
 # Practice run by default; pass --apply to make changes. Safe to re-run (skips what already exists).
+# The first line names the repository. With REPO set to another repository, --apply needs that
+# name repeated (`--apply owner/name`), so a stray REPO in the shell can never write elsewhere.
 # Input: docs/github-backfill.tsv  (number, version, title, mark, kind, prerelease — tab-separated)
 # R6.1 decision 4: the Release is created with target_commitish (which also creates its tag), because
 # some environments refuse POST git/refs; a refused write is reported, never retried in a loop.
 set -euo pipefail
 
-REPO="${REPO:-Shark2558/jarvis-web}"
+HOME_REPO="Shark2558/jarvis-web"
+REPO="${REPO:-$HOME_REPO}"
 MAP="${MAP:-docs/github-backfill.tsv}"
 APPLY="${1:-}"
+CONFIRM="${2:-}"
+
+if [[ "$APPLY" == "--apply" ]]; then
+  if [[ "$REPO" != "$HOME_REPO" && "$CONFIRM" != "$REPO" ]]; then
+    echo "REPO is $REPO, not $HOME_REPO: to write there, run: $0 --apply $REPO" >&2
+    exit 2
+  fi
+  echo "Applying to $REPO from $MAP"
+else
+  echo "Practice run for $REPO from $MAP (nothing changes; --apply makes the changes)"
+fi
 
 run() {
   if [[ "$APPLY" == "--apply" ]]; then "$@" >/dev/null; else printf 'DRY:'; printf ' %q' "$@"; printf '\n'; fi
+}
+
+valid_row() {  # num ver pre: a pull request number, v<major>.<minor>.<patch>, true|false
+  [[ "$1" =~ ^[0-9]+$ && "$2" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && ( "$3" == true || "$3" == false ) ]]
 }
 
 ensure_label() {  # name colour
@@ -27,6 +45,10 @@ for kind in release hotfix docs; do ensure_label "$kind" 1A4C9C; done
 fail=0
 while IFS=$'\t' read -r num ver title mark kind pre <&3; do
   [[ -z "$num" || "$num" == \#* ]] && continue
+  # -F reads a value starting with @ as a file: only true|false ever reaches it
+  if ! valid_row "$num" "$ver" "$pre"; then
+    echo "PR #$num: malformed row, skipped" >&2; fail=1; continue
+  fi
   if ! pr=$(gh api "repos/$REPO/pulls/$num"); then echo "PR #$num: not readable" >&2; fail=1; continue; fi
   if [[ "$(jq -r .merged_at <<<"$pr")" == "null" ]]; then echo "PR #$num: not merged, skipped" >&2; continue; fi
   sha=$(jq -r .merge_commit_sha <<<"$pr")

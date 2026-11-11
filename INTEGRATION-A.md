@@ -83,7 +83,16 @@ Gate refinements (documented in the files; every other check still runs on the d
 
 ## Tests run
 
-See the final report for the counts. Commands (2-CPU sandbox, only the touched files):
+- Browser (Chromium, `/tmp/venv-c`): `test_dock_fit.py` 26 passed; `test_r51_dock.py`,
+  `test_r6_seams.py`, `test_console.py`, `test_brief.py`, `test_memory.py` (+ dock-fit) 122 passed;
+  full visual gate `test_ui_audit.py` (102, incl. the 4 new dock/sheet audits) + `test_book_lock_ui.py`
+  (the other user of `FINISH_ANIMATIONS_JS`) 117 passed.
+- Unit: 475 passed on 3.11 (`test_console_assets`, `test_media_console`, `test_r6_wiring_seams`,
+  `test_r51_console_assets_linked`, `test_r6_seams`); 433 passed on 3.12 (the first two + linked).
+- Not run here (2-CPU sandbox, other builders): the rest of the browser suite. Its tests open panels
+  through `Console.open_panel` (tab, else More sheet), which already handles folded tabs.
+
+Commands (only the touched files):
 `JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q -m browser
 tests/browser/test_dock_fit.py tests/browser/test_r51_dock.py tests/browser/test_r6_seams.py
 tests/browser/test_console.py tests/browser/test_brief.py tests/browser/test_memory.py

@@ -8,6 +8,7 @@ the R6 secret scan pass. Small fixture repos and guides; one test runs the real 
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -508,3 +509,22 @@ def test_ci_runs_it_once_in_the_docs_check_job_after_the_install_never_before_a_
     assert steps.index('pip install -e ".[dev]"') < steps.index("python scripts/arch_coverage.py")
     assert "docs-check" not in jobs["deploy"]["needs"] and "strategy" not in jobs["docs-check"]
     assert "docs-check" not in str([j.get("needs", []) for j in jobs.values()])  # nothing waits
+
+
+def _c01_panels(guide: str) -> list[str]:
+    """The panels card C01 lists, in its order ("the dock of panels (in its order: ...)")."""
+    m = re.search(
+        r"\| What it does \| The page you use JARVIS from[^|]*?the dock of panels \(([^)]*)\)",
+        guide,
+    )
+    assert m, "C01 no longer lists the dock's panels"
+    return [p.strip() for p in m.group(1).removeprefix("in its order:").split(",")]
+
+
+def test_card_c01_lists_the_panels_in_the_dock_s_order() -> None:
+    """R6.1 code review L3: C01 says the buttons keep their order, so its list follows the dock."""
+    html = (ROOT / "src/jarvis/api/static/console.html").read_text(encoding="utf-8")
+    dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
+    labels = re.findall(r'data-open="\w+"[^>]*>.*?<span(?: class="full")?>([^<]+)</span>', dock)
+    assert len(labels) == len(re.findall(r'data-open="\w+"', dock)) == 20
+    assert _c01_panels((ROOT / ac.GUIDE).read_text(encoding="utf-8")) == labels

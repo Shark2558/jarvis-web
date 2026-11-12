@@ -1,4 +1,4 @@
-Version v11.1.2 · 12 Nov 2026, 12:40 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.3 · 12 Nov 2026, 15:30 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 I1 — integration notes (Mark XV)
 
@@ -90,6 +90,22 @@ Every item was written test first (the test seen failing, then the change). Test
    `sessions=`, so the fakes take `**_kw` (no assertion changed).
 5. **`app.py` budget.** I0's seam pinned `app.py ≤ 730` for the builders; I1's two joins made it
    731 (guard 750): the pin now says 735.
+6. **The chat box's hint was cut (B x the R6.1 dock).** Part B's limits (`GET /v1/input`, after
+   sign-in) make `console-attach.js` redraw, and its redraw wrote "Message JARVIS" back over the
+   dock's fitted "Message"; with B's new folder button the box is narrower, so the full hint no
+   longer fitted (`test_dock_fit.py` at 1280, 1024, 900 and 320 px). The dock now refits the hint
+   on every `jarvis:attach` and leaves an attached file's own hint alone.
+7. **Photos off answered `GET /v1/facegroups/import` with 503 (C).** The browser logs any non-2xx
+   load as a console error, so every panel test that opened Connectors failed its no-error check
+   (`test_dock_fit.py` three tests). The read now answers the state (`status: "off"`, 200), as
+   `/groups` does; the step and stop actions still answer 503; the import line stays hidden.
+8. **The "Used N memories" chip was 24 px on a phone (a pre-existing gap Part B's visual gate
+   exposed).** The browser tests share one server; once an earlier test saved a memory, B's real
+   reply carried the chip. The Undo chip beside it is 44 px on phones; the memory chip now is too
+   (`test_r11_1_i1_console.py::test_on_a_phone_the_reply_s_memory_chip_is_a_44_px_target_like_the_undo_chip`).
+   B's phone gate had passed in isolation for exactly that reason.
+9. **A locator.** `test_r51a_ui.py`'s GitHub confirm locator matched C's new "Confirm stopping the
+   import" group too; it now names its own group.
 
 ## 4. Over-caution (orchestrator item 21)
 
@@ -192,7 +208,10 @@ subprocess, which otherwise imports the main checkout's `jarvis` (INTEGRATION-A 
 | `scripts/markdy_export.py --check` | `14 diagram(s) checked, 0 problem(s)` |
 | `scripts/check_pr_title.py "v11.1.0 · R11.1 Your observations, fixed · Mark XV"` | `PR title OK` |
 | `python -m jarvis.buildbook.gen --check` | `two builds are byte-identical` |
-| the browser suite | (section 8 of v11.1.3) |
+| the full browser suite (`JARVIS_BROWSER_TESTS=1 python -m pytest -q tests/browser -m browser`) | `10 failed, 1179 passed in 5007.44s (1:23:27)`: four causes, all joins, all fixed (section 3, items 6 to 9) |
+| the affected browser set after the fixes (memory, attach, console, deleted, dock fit, home link, R5.1 dock and UI, UI audit, voice pace, the five R11.1 files) | `390 passed in 1329.79s (0:22:09)` |
+| `pytest -q -p no:cacheprovider` (Python 3.12), final, on the head | `1 failed, 13386 passed, 118 skipped`: `test_evals_r11.py::test_the_gate_part_passes_and_its_control_fails_it` (R11's helpers eval: all 55 cases pass, one part's control did not fail its part). Re-run: it failed once more in a run of its file, then passed in 8 runs of the file, 6 runs of the test alone and 18 standalone runs of the eval. Open (section 9). |
+| `scripts/ui_snapshots.py --out <a scratch folder>` | `200 shots, 0 page errors, 0 failures` |
 
 Size guards: `core/brain.py` 704 (< 800), `api/app.py` 731 (≤ 750), `tools/gateway.py` 760 (not
 grown), `console.html` 795 (< 800). Every module this release changed is ≤ 800 lines;
@@ -207,6 +226,11 @@ grown), `console.html` 795 (< 800). Every module this release changed is ≤ 800
   INTEGRATION-A 3.4 left it out of the gate, and so did I1.
 - `requirements.lock` hand-extended (section 5), not regenerated.
 - The single-surname and two-word proper-name cases of the over-caution check (section 4).
+- **A flaky R11 eval control** (`evals/r11_helpers`, R11's code, unchanged by R11.1): in 2 of about
+  30 runs under pytest one part's negative control did not make its part fail (every case passed);
+  never in 26 standalone runs. The two single-case controls (`today`: taint check off, `house`:
+  district filter off) are the likely ones; the failing report was not captured. It makes the
+  suite fail, never pass wrongly. For the R11 owner (Mark XIV) or the integrated reviews.
 
 ## Change log
 
@@ -214,3 +238,4 @@ grown), `console.html` 795 (< 800). Every module this release changed is ≤ 800
 |---|---|---|---|---|
 | v11.1.1 | 12 Nov 2026, 11:20 IST | R11.1 | First edition: the five merges | 🛠 Mark XV |
 | v11.1.2 | 12 Nov 2026, 12:40 IST | R11.1 | Every gate and "Needs I1" item with its test, the cross-part defects found at the join, the over-caution numbers, the dependencies and how the lock was extended, the residual, the Cloud Run instance check, what was decided differently | 🛠 Mark XV |
+| v11.1.3 | 12 Nov 2026, 15:30 IST | R11.1 | The full runs: unit 3.12 and 3.11, ruff, mypy, the mock evals, the doc, guide, diagram, title and book checks, the full browser suite and the four joins it found (the chat box's hint, Photos off answering 503, the memory chip on a phone, a locator), the affected set again, the screenshots; the flaky R11 eval control | 🛠 Mark XV |

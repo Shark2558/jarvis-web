@@ -1,4 +1,4 @@
-Version v11.1.4 · 12 Nov 2026, 19:45 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.5 · 12 Nov 2026, 20:40 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 I1 — integration notes (Mark XV)
 
@@ -324,6 +324,20 @@ Size guards: `core/brain.py` 704, `api/app.py` 732 (pin 735), `tools/gateway.py`
 `console.html` 795; no new `innerHTML`, no non-ASCII line added to the console, no CSS or HTML
 change; nothing new is asked of the server before sign-in.
 
+**GitHub CI, run 107 (first run of the release on GitHub, 12 Nov 20:14 IST).** The Python 3.12 job
+failed 8 tests, all the document child reading a workbook (or a zip holding one): the child ended
+with code 1 before reading a byte. Cause: openpyxl imports numpy when it is installed; only the
+3.12 job installs it (the `homebridge` extra); numpy's OpenBLAS reserves address space for each
+CPU, and GitHub's runners for a public repository have 4, so the import alone passed the child's
+200 MiB RLIMIT_AS cap ("OpenBLAS error: Memory allocation still failed", reproduced locally under a
+100 MiB cap). The cloud image has no numpy, so the deployed app was never affected. Fix: the child
+keeps `numpy` and `pandas` out of its imports before anything else (`documents/worker.py`
+`_keep_out_unneeded`), so openpyxl takes its own no-numpy path on every machine; the child now
+needs about 40 MiB for a workbook instead of about 150. Test first: `test_r11_1_i1_worker_modules.py`
+(3 tests: the modules stay out; a workbook reads under a 100 MiB cap through `extract_isolated`
+and through the real child command), red on the old code with OpenBLAS's own message. The home
+kit's picture decoder already sets `OPENBLAS_NUM_THREADS=1` and caps above its own base.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -332,3 +346,4 @@ change; nothing new is asked of the server before sign-in.
 | v11.1.2 | 12 Nov 2026, 12:40 IST | R11.1 | Every gate and "Needs I1" item with its test, the cross-part defects found at the join, the over-caution numbers, the dependencies and how the lock was extended, the residual, the Cloud Run instance check, what was decided differently | 🛠 Mark XV |
 | v11.1.3 | 12 Nov 2026, 15:30 IST | R11.1 | The full runs: unit 3.12 and 3.11, ruff, mypy, the mock evals, the doc, guide, diagram, title and book checks, the full browser suite and the four joins it found (the chat box's hint, Photos off answering 503, the memory chip on a phone, a locator), the affected set again, the screenshots; the flaky R11 eval control | 🛠 Mark XV |
 | v11.1.4 | 12 Nov 2026, 19:45 IST | R11.1 | The integrated reviews and their fixes (section 10): Telegram's home switch over the real photo import, the R11 eval's flake at its cause, the picture turn guard's strict and light modes with YouTube, Maps and a research's context behind it, the brief's deliveries behind the mail row and a paused row said so, one kitchen conversation a day, the lock's via block, the No-AI phrases one by one, the kit's Python for the face engine pins, the long functions, the estimate under a raised cap, three console joins; the measured guard, the eval loop, every check on the head, and the residuals for the release notes | 🛠 Mark XV |
+| v11.1.5 | 12 Nov 2026, 20:40 IST | R11.1 | GitHub CI run 107: the document child kept numpy and pandas out (OpenBLAS on 4-CPU runners passed the memory cap), with its test | 🛠 Mark XV |

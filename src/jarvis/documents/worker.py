@@ -42,6 +42,18 @@ def _limit_self(cpu_s: int, memory_bytes: int) -> None:
             continue
 
 
+# Optional imports of the readers that the child never needs. openpyxl imports numpy when it is
+# installed, and numpy's OpenBLAS reserves address space per CPU: on a 4-CPU machine that alone
+# passed the RLIMIT_AS cap, and the child died before reading (CI run 107). Kept out, a reader's
+# own `try: import numpy` takes its ImportError path, on every machine alike.
+UNNEEDED_MODULES = ("numpy", "pandas")
+
+
+def _keep_out_unneeded() -> None:
+    for name in UNNEEDED_MODULES:
+        sys.modules.setdefault(name, None)  # type: ignore[arg-type]  # None: import fails
+
+
 def _refusal(code: str, detail: str, status: int) -> dict[str, Any]:
     return {"ok": False, "code": code, "detail": detail, "status": status}
 
@@ -49,6 +61,7 @@ def _refusal(code: str, detail: str, status: int) -> dict[str, Any]:
 def main(argv: list[str]) -> int:
     kind, limits_json, cpu_s, memory_bytes = argv[0], argv[1], int(argv[2]), int(argv[3])
     _limit_self(cpu_s, memory_bytes)
+    _keep_out_unneeded()
     from jarvis.documents.extract import Limits, extract, too_complex
     from jarvis.documents.limits import MAX_FILE_BYTES, DocumentRejected
 

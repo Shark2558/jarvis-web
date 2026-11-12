@@ -141,7 +141,7 @@ def raw_words(text: str) -> list[str]:
     and inner apostrophes or hyphens. Marks are a word's own (an Indic vowel sign or virama is not
     a break, so "लेखा" is one word, not "ल" and "ख"); `_`, `/`, `.`, `:` and every other sign end
     a word, so "Lekha_Examplekar" and a URL's path are words like any other (R11.1 I1 security
-    review H1: Python's `\w` has no marks, and it holds `_`). A digit never starts one."""
+    review H1: Python's word class has no marks, and it holds `_`). A digit never starts one."""
     out: list[str] = []
     word: list[str] = []
     for ch in text:

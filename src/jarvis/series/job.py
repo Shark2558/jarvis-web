@@ -6,7 +6,9 @@ For each configured owner: every session that ended at least `ASK_AFTER` (15 min
 most `ASK_WITHIN` ago with no answer is asked about ONCE: a claim document is created in a
 transaction before the alert goes out (`SeriesStore.claim`). The alert is the app's one notifier
 with kind `series_checkin`: it rings by day and is HELD in quiet hours (never dropped); the text
-is a fixed template (number, the plan's own name, time) and never a title. A question that did
+is a fixed template (number, the plan's own name, time) and never a title. Before it is asked
+the session's event is read once (`SeriesService.recheck`): one he deleted by hand is marked
+removed and never asked; one he moved takes the new time and is asked after it. A question that did
 not leave JARVIS is never counted as asked (as `notify.sink.result_of` reads a delivery): sent on
 a channel is "asked", held for the night is "held" (it goes out in the morning); dropped by the
 policy, a ring that reached no channel, a notifier that raised or a send that was cancelled is
@@ -103,6 +105,10 @@ class CheckinJob:
         if notifier is None:
             return ""
         key = told_key(plan, s)
+        if await store.told(uid, key):  # asked already: nothing more is read
+            return ""
+        if await self._svc.recheck(uid, plan, s) in ("removed", "moved"):
+            return ""  # he deleted or moved the event himself: never asked about the old one
         if not await store.claim(uid, key, now):
             return ""
         try:

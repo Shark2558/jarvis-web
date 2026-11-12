@@ -43,9 +43,13 @@ LIST, CHECKIN, RESCHEDULE = "series_list", "series_checkin", "series_reschedule"
 ANSWERS = ("done", "skipped")
 SERIES_MAX = 80
 NO_DATES = "I couldn't propose new dates just now; say 're-plan my sessions' to try again."
-# a look-up the gateway refused ends "(<error class>: <its words>)". Only these two classes carry
-# JARVIS's own sentences (numbers, never a title); anything else is not repeated to him.
-_OWN_REASON = re.compile(r"\((?P<kind>ReplanRefused|GoogleNotConnected): (?P<why>.{1,160})\)$")
+# a look-up the gateway refused is ITS fixed words, then "(<error class>: <its words>)". Only these
+# two classes carry JARVIS's own sentences (numbers, never a title); the whole error must be
+# exactly that shape (`fullmatch`), so a reason quoted inside another error is never repeated.
+LOOKUP_FAILED = "could not look it up first, so nothing was proposed or done"
+_OWN_REASON = re.compile(
+    re.escape(LOOKUP_FAILED) + r" \((?P<kind>ReplanRefused|GoogleNotConnected): (?P<why>.{1,160})\)"
+)
 _SERIES = {"type": "string", "maxLength": SERIES_MAX, "description": "The plan's name or id."}
 _SESSION = {"type": "integer", "minimum": 1, "description": "The session's number in the plan."}
 
@@ -72,7 +76,7 @@ def _series_arg(value: Any) -> str | None:
 
 def own_reason(error: str | None) -> str:
     """Why a re-plan was not proposed, in JARVIS's own words; "" when the reason isn't his."""
-    found = _OWN_REASON.search(error or "")
+    found = _OWN_REASON.fullmatch(error or "")
     if found is None:
         return ""
     return NOT_LINKED if found["kind"] == "GoogleNotConnected" else found["why"]
@@ -171,7 +175,7 @@ class SeriesTools:
         p = await self._svc.proposal(
             uid, _series_arg(a.get("series")), session_arg(a.get("session"))
         )
-        return Preview(cards.replan_card(p.plan, p.session, p.moves, p.tz))
+        return Preview(cards.replan_card(p.plan, p.session, p.moves, p.tz, p.kept))
 
     async def move(self, a: dict[str, Any]) -> Any:
         uid = require_tool_context().user_id
@@ -181,17 +185,17 @@ class SeriesTools:
             )
         except (LookupError, ReplanRefused, PlansUnreadable) as exc:
             return _refused(str(exc))
-        assert done.tz is not None
         return vouch(
             {
                 "moved": done.moved,
                 "kept": done.kept,
                 "missing": done.missing,
                 "failed": done.failed,
+                "unconfirmed": done.unconfirmed,
+                "left": [n for n, _ in done.left],  # numbers only: never a title
+                "recorded": not done.unrecorded,
                 "sessions": done.plan.total,
-                "message": cards.moved_words(
-                    done.plan, asked=done.asked, moved=done.moved, tz=done.tz
-                ),
+                "message": cards.moved_words(done.plan, done),
             },
             True,
         )
@@ -234,23 +238,28 @@ def series_tools(svc: SeriesService, gateway: Callable[[], Any]) -> list[Tool]:
             may_vouch=True,
             activity_words="A plan session marked done or skipped",
         ),
-        Tool(
-            RESCHEDULE,
-            "Move a skipped session of a followed plan, and every later one, to the next free "
-            "slots of the plan's own weekdays and time (always an approval card first, listing "
-            "every old and new date; the number of sessions never changes). Without arguments: "
-            "the session he last skipped.",
-            {"type": "object", "properties": {"series": _SERIES, "session": _SESSION}},
-            ActionRisk.REVERSIBLE,
-            api.move,
-            agent="plans",
-            check=api.check_move,
-            preview=api.preview_move,
-            ask_when=lambda _a: True,
-            may_vouch=True,
-            activity_words="Plan sessions moved to new dates",
-        ),
+        _reschedule(api),
     ]
+
+
+def _reschedule(api: SeriesTools) -> Tool:
+    """`series_reschedule`: always one card (`ask_when`), its text from a read-only look-up."""
+    return Tool(
+        RESCHEDULE,
+        "Move a skipped session of a followed plan, and every later one, to the next free "
+        "slots of the plan's own weekdays and time (always an approval card first, listing "
+        "every old and new date; the number of sessions never changes). Without arguments: "
+        "the session he last skipped.",
+        {"type": "object", "properties": {"series": _SERIES, "session": _SESSION}},
+        ActionRisk.REVERSIBLE,
+        api.move,
+        agent="plans",
+        check=api.check_move,
+        preview=api.preview_move,
+        ask_when=lambda _a: True,
+        may_vouch=True,
+        activity_words="Plan sessions moved to new dates",
+    )
 
 
 __all__ = [

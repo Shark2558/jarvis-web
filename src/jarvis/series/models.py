@@ -8,8 +8,13 @@ calendar already holds it), its times and its state:
 
     planned   in the calendar, not yet answered
     done      he said it happened
-    skipped   he said it did not (a re-plan may be waiting for his approval)
+    skipped   he said it did not (a re-plan may be waiting for his approval; every skipped
+              session that has no new date yet moves with the next re-plan)
     moved     re-planned to a new time; asked about again after that time
+    removed   he deleted its event in Google Calendar: never asked about, never moved
+
+A session also keeps its batch and its number in that batch (`item`), so a list sent again after
+he deleted one event by hand fills the same row with the new event (never a second row).
 
 `outside`: the plan was made from other people's words (a file, a mail). Its name and titles then
 never appear in an alert or in JARVIS's own sentences ("your plan").
@@ -24,7 +29,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-State = Literal["planned", "done", "skipped", "moved"]
+State = Literal["planned", "done", "skipped", "moved", "removed"]
 OPEN_STATES: frozenset[str] = frozenset({"planned", "moved"})  # still to happen, or to answer
 MAX_PLANS = 10
 MAX_SESSIONS = 200
@@ -54,6 +59,7 @@ class PlanSession(_Frozen):
     end: datetime
     state: State = "planned"
     batch: str = ""
+    item: int = Field(default=0, ge=0, le=999)  # its number in `batch` (0: not known)
     answered_at: datetime | None = None
 
 

@@ -6,10 +6,12 @@ file's words, and an alert or a card line never carries those."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime, tzinfo
 
+from jarvis.series import replan
 from jarvis.series.models import Move, Plan, PlanSession
+from jarvis.series.moving import Moved
 
 _DAYS = "Mon Tue Wed Thu Fri Sat Sun".split()
 _MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
@@ -18,6 +20,7 @@ QUESTION = (
     "Say 'session done' or 'session skipped'."
 )
 ARROW = "→"
+SHOW_LEFT = 5  # sessions named one by one; the rest are counted
 
 
 def _count(n: int) -> str:
@@ -72,32 +75,87 @@ def _ends(plan: Plan, moves: Sequence[Move], tz: tzinfo) -> str:
     return day(max(by_n.get(s.n, s.start) for s in plan.sessions), tz)
 
 
-def replan_card(plan: Plan, s: PlanSession, moves: Sequence[Move], tz: tzinfo) -> str:
-    """The ONE approval card of a re-plan: how many move and why, the count before and after,
-    the new last day, then every "old date -> new date" (the console lists these lines)."""
-    k = len(moves)
+def _left(kept: Mapping[int, str]) -> str:
+    """ "session 9 (other people are on it), session 11 (you changed it)" ("" when none)."""
+    named = [f"session {n} ({why})" for n, why in sorted(kept.items())[:SHOW_LEFT]]
+    more = len(kept) - SHOW_LEFT
+    return ", ".join(named) + (f" and {more} more" if more > 0 else "")
+
+
+def replan_card(
+    plan: Plan,
+    s: PlanSession,
+    moves: Sequence[Move],
+    tz: tzinfo,
+    kept: Mapping[int, str] | None = None,
+) -> str:
+    """The ONE approval card of a re-plan: how many move and why (and the earlier skipped ones
+    that move too), the count before and after, the new last day, what stays where it is, then
+    every "old date -> new date" (the console lists these lines). A session that keeps its own
+    time (a gap he left absorbed the shift) is not listed."""
+    changes = replan.real(moves)
+    k = len(changes)
     slots = "its next free slot" if k == 1 else "their next free slots"
+    earlier = sum(1 for m in changes if m.n != s.n and _was_skipped(plan, m.n))
+    also = (
+        f"; {earlier} earlier skipped session{'' if earlier == 1 else 's'} "
+        f"move{'s' if earlier == 1 else ''} too"
+        if earlier
+        else ""
+    )
     lines = [
-        f"Move {_count(k)} of {plan.words} to {slots} (session {s.n} was skipped).",
+        f"Move {_count(k)} of {plan.words} to {slots} (session {s.n} was skipped{also}).",
         f"{_count(plan.total)} before, {plan.total} after: none is dropped. "
         f"The plan now ends on {_ends(plan, moves, tz)}.",
-        *(f"{m.n}. {when(m.was, tz)} {ARROW} {when(m.start, tz)}" for m in moves),
     ]
+    if kept:
+        lines.append(f"Left where they are: {_left(kept)}.")
+    lines += [f"{m.n}. {when(m.was, tz)} {ARROW} {when(m.start, tz)}" for m in changes]
     return "\n".join(lines)
 
 
-def moved_words(plan: Plan, *, asked: int, moved: int, tz: tzinfo) -> str:
-    """What an approved re-plan did, by code."""
-    last = day(max(s.start for s in plan.sessions), tz) if plan.sessions else ""
+def _was_skipped(plan: Plan, n: int) -> bool:
+    found = plan.session(n)
+    return found is not None and found.state == "skipped"
+
+
+def _their(k: int, one: str, many: str) -> str:
+    return one if k == 1 else many
+
+
+def moved_words(plan: Plan, done: Moved) -> str:
+    """What an approved re-plan did, by code: what moved, and every reason something did not."""
+    assert done.tz is not None
+    asked, moved = done.asked, done.moved
+    last = day(max(s.start for s in plan.sessions), done.tz) if plan.sessions else ""
     still = f"It still has {plan.total} and now ends on {last}."
     if moved == asked:
-        return f"Moved {_count(moved)} of {plan.words}, Sir. {still}"
-    if not moved:
-        return f"None of the {_count(asked)} of {plan.words} could be moved, Sir."
-    return (
-        f"Moved {moved} of {_count(asked)} of {plan.words}, Sir; {asked - moved} could not be "
-        f"moved (check your calendar). {still}"
-    )
+        head = f"Moved {_count(moved)} of {plan.words}, Sir. {still}"
+    elif not moved:
+        head = f"None of the {_count(asked)} of {plan.words} could be moved, Sir."
+    else:
+        head = f"Moved {moved} of {_count(asked)} of {plan.words}, Sir. {still}"
+    parts = [head]
+    if done.kept:
+        them = _their(done.kept, "it", "them")
+        parts.append(f"{done.kept} you changed yourself stayed where you put {them}.")
+    if done.missing:
+        parts.append(
+            f"{done.missing} {_their(done.missing, 'is', 'are')} no longer in your calendar."
+        )
+    if done.unconfirmed:
+        parts.append(f"Google didn't confirm {done.unconfirmed}: check your calendar.")
+    if done.failed:
+        parts.append(f"{done.failed} could not be moved (check your calendar).")
+    parts += [f"Session {n} was left where it is ({why})." for n, why in done.left[:SHOW_LEFT]]
+    if len(done.left) > SHOW_LEFT:
+        parts.append(f"{len(done.left) - SHOW_LEFT} more were left where they are.")
+    if done.unrecorded:
+        parts.append(
+            "Your calendar moved, but the plan's record could not be updated, so check-ins may "
+            "ask at the old times."
+        )
+    return " ".join(parts)
 
 
 __all__ = [

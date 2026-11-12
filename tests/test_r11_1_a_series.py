@@ -543,11 +543,11 @@ async def test_the_morning_brief_asks_again_in_one_line_never_with_a_title(rig: 
     assert await line_of.lines(UID, IST, day) == []  # nothing followed: no line
     await followed(rig, 60)
     assert await line_of.lines(UID, IST, day) == []  # nothing has ended yet
-    rig.clock.at = AFTER_7  # seven sessions ended, none answered
+    rig.clock.at = AFTER_7  # seven sessions ended, none answered; 1 and 2 over a week ago
     assert await line_of.lines(UID, IST, day) == [
-        "7 planned sessions have no check-in: say 'session done' or 'session skipped'."
+        "5 planned sessions have no check-in: say 'session done' or 'session skipped'."
     ]
-    for n in range(1, 7):
+    for n in range(3, 7):
         await rig.run("series_checkin", {"answer": "done", "session": n})
     [one] = await line_of.lines(UID, IST, day)
     assert one.startswith("1 planned session has no check-in") and "Topic" not in one
@@ -584,3 +584,258 @@ async def test_old_check_in_records_are_swept_after_sixty_days(rig: PlanRig) -> 
     assert await store.sweep(UID, rig.clock.at + timedelta(days=59)) == 0
     assert await store.sweep(UID, rig.clock.at + timedelta(days=61)) == 1
     assert await store.sweep(UID, rig.clock.at + timedelta(days=61)) == 0
+
+
+# ---- the plan follows what the owner did in Google Calendar (code review M1) --------------------
+def _eid(rig: PlanRig, title: str) -> str:
+    return next(e["id"] for e in rig.fake.live() if e["summary"] == title)
+
+
+async def test_a_session_deleted_by_hand_is_marked_removed_and_never_asked(rig: PlanRig) -> None:
+    await followed(rig, 2)
+    rig.fake.events[_eid(rig, "CCA - Topic 1")]["status"] = "cancelled"  # he deleted it
+    rig.clock.at = datetime(2026, 11, 16, 20, 20, tzinfo=IST)
+    job = rig.part.clock_jobs[0]
+    assert await job.run([UID]) == {"asked": 0, "held": 0, "failed": 0}
+    assert rig.told.sent == [] and (await _plan(rig)).session(1).state == "removed"
+    assert await rig.svc.waiting(UID) == []
+
+
+async def test_a_session_moved_by_hand_takes_its_new_time_and_is_asked_after_it(
+    rig: PlanRig,
+) -> None:
+    await followed(rig, 2)
+    eid = _eid(rig, "CCA - Topic 1")
+    rig.fake.owner_edits(
+        eid,
+        start={"dateTime": "2026-11-17T08:00:00+05:30"},
+        end={"dateTime": "2026-11-17T09:00:00+05:30"},
+    )
+    rig.clock.at = datetime(2026, 11, 16, 20, 20, tzinfo=IST)
+    job = rig.part.clock_jobs[0]
+    assert (await job.run([UID]))["asked"] == 0  # not yet: it happens tomorrow morning
+    assert (await _plan(rig)).session(1).start == datetime(2026, 11, 17, 8, 0, tzinfo=IST)
+    rig.clock.at = datetime(2026, 11, 17, 9, 20, tzinfo=IST)
+    assert (await job.run([UID]))["asked"] == 1
+    assert rig.told.sent[-1][2].startswith("Session 1 of 2 in your CCA plan was at 08:00.")
+
+
+async def test_a_question_already_asked_reads_nothing_more_from_google(rig: PlanRig) -> None:
+    await followed(rig, 2)
+    rig.clock.at = datetime(2026, 11, 16, 20, 20, tzinfo=IST)
+    job = rig.part.clock_jobs[0]
+    assert (await job.run([UID]))["asked"] == 1
+    seen = len(rig.fake.requests)
+    for _ in range(3):  # the next runs of the clock, while he has not answered yet
+        rig.clock.at += timedelta(minutes=5)
+        await job.run([UID])
+    assert len(rig.fake.requests) == seen
+
+
+async def test_a_re_plan_leaves_a_hand_placed_session_where_he_put_it_and_avoids_it(
+    rig: PlanRig,
+) -> None:
+    await followed(rig, 60)
+    rig.fake.owner_edits(  # session 11 put by hand on the evening the shift would give 60
+        _eid(rig, "CCA - Topic 11"),
+        start={"dateTime": "2027-02-08T19:00:00+05:30"},
+        end={"dateTime": "2027-02-08T20:00:00+05:30"},
+    )
+    rig.fake.events["dinner"] = {  # and a dinner on the evening 11 left free
+        "id": "dinner",
+        "status": "confirmed",
+        "summary": "Dinner",
+        "start": {"dateTime": "2026-11-30T19:00:00+05:30"},
+        "end": {"dateTime": "2026-11-30T21:00:00+05:30"},
+    }
+    rig.clock.at = AFTER_7
+    await rig.run("series_checkin", {"answer": "skipped"})
+    [card] = await rig.gw.pending()
+    lines = card.summary.splitlines()
+    assert lines[0].startswith("Move 53 sessions of your CCA plan")
+    assert "session 11 (you changed it)" in card.summary
+    moves = [x for x in lines if "→" in x]
+    assert not any(x.startswith("11. ") for x in moves)
+    assert moves[-1] == "60. Fri 5 Feb 19:00 → Tue 9 Feb 19:00"  # Mon 8 Feb is his session 11
+    out = await rig.approve(card.id)
+    assert out.result["moved"] == 53 and out.result["sessions"] == 60
+    plan = await _plan(rig)
+    assert plan.session(11).start == datetime(2027, 2, 8, 19, 0, tzinfo=IST)
+
+
+async def test_sending_the_list_again_after_a_hand_deletion_adds_no_second_row(
+    rig: PlanRig,
+) -> None:
+    await followed(rig, 5)
+    rig.fake.events[_eid(rig, "CCA - Topic 3")]["status"] = "cancelled"
+    args = {"events": weekday_sessions(5), "title_prefix": "CCA", "series": {"name": "CCA"}}
+    with context_trust(untrusted=False):
+        out = await rig.approved(cb.CREATE, args)
+    assert out.result["created"] == 1 and out.result["already_there"] == 4
+    plan = await _plan(rig)
+    assert plan.total == 5 and [s.n for s in plan.sessions] == [1, 2, 3, 4, 5]
+    assert plan.session(3).event_id == _eid(rig, "CCA - Topic 3")  # the new event
+
+
+# ---- a second skip never strands the first (code review M3) -------------------------------------
+async def test_a_second_skip_moves_the_earlier_skipped_session_too(rig: PlanRig) -> None:
+    await followed(rig, 60)
+    rig.clock.at = datetime(2026, 11, 20, 20, 20, tzinfo=IST)  # Fri: session 5 just ended
+    await rig.run("series_checkin", {"answer": "skipped"})
+    [first] = await rig.gw.pending()
+    await rig.gw.gate.cancel(first.id)  # he let that card go
+    rig.clock.at = AFTER_7
+    await rig.run("series_checkin", {"answer": "skipped", "session": 7})
+    [card] = await rig.gw.pending()
+    lines = card.summary.splitlines()
+    assert lines[0] == (
+        "Move 55 sessions of your CCA plan to their next free slots (session 7 was skipped; "
+        "1 earlier skipped session moves too)."
+    )
+    assert "5. Fri 20 Nov 19:00 → Wed 25 Nov 19:00" in lines
+    assert "7. Tue 24 Nov 19:00 → Thu 26 Nov 19:00" in lines
+    out = await rig.approve(card.id)
+    assert out.result["moved"] == 55 and out.result["sessions"] == 60
+    plan = await _plan(rig)
+    assert plan.total == 60 and plan.session(5).state == "moved"
+    assert not [s for s in plan.sessions if s.state == "skipped"]
+
+
+# ---- moving never surprises guests, and is never reported wrongly ------------------------------
+async def test_a_session_that_now_has_guests_is_left_and_named(rig: PlanRig) -> None:
+    await followed(rig, 60)
+    rig.clock.at = AFTER_7
+    rig.fake.events[_eid(rig, "CCA - Topic 9")]["attendees"] = [
+        {"email": "owner@example.com", "self": True},
+        {"email": "friend@example.com"},
+    ]
+    await rig.run("series_checkin", {"answer": "skipped"})
+    [card] = await rig.gw.pending()
+    assert "session 9 (other people are on it" in card.summary
+    out = await rig.approve(card.id)
+    assert out.result["moved"] == 53 and out.result["left"] == [9]
+    assert "Session 9 was left where it is" in out.result["message"]
+    patched = {p.url.path.rsplit("/", 1)[1] for p in rig.fake.sent("PATCH")}
+    assert _eid(rig, "CCA - Topic 9") not in patched
+
+
+async def test_a_move_whose_answer_was_lost_is_read_again_before_it_is_called_failed(
+    rig: PlanRig,
+) -> None:
+    await followed(rig, 60)
+    rig.clock.at = AFTER_7
+    await rig.run("series_checkin", {"answer": "skipped"})
+    [card] = await rig.gw.pending()
+    rig.fake.lose_patches = {_eid(rig, "CCA - Topic 8")}  # patched, but the answer is lost
+    rig.fake.fail[f"PATCH {cb_events(rig, 'CCA - Topic 9')}"] = 503  # never patched
+    out = await rig.approve(card.id)
+    res = out.result
+    assert (res["moved"], res["unconfirmed"], res["failed"]) == (53, 1, 0)
+    assert "Google didn't confirm 1" in res["message"]
+    plan = await _plan(rig)
+    assert plan.session(8).state == "moved" and plan.session(9).state == "planned"
+
+
+def cb_events(rig: PlanRig, title: str) -> str:
+    from r11_1_fakes_a import EVENTS
+
+    return f"{EVENTS}/{_eid(rig, title)}"
+
+
+async def test_a_plan_record_that_could_not_be_updated_after_a_move_is_said(
+    rig: PlanRig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await followed(rig, 60)
+    rig.clock.at = AFTER_7
+    await rig.run("series_checkin", {"answer": "skipped"})
+    [card] = await rig.gw.pending()
+
+    async def down(uid: str, fn: object) -> object:
+        raise RuntimeError("the store is down")
+
+    monkeypatch.setattr(rig.svc.store, "change", down)
+    out = await rig.approve(card.id)
+    assert out.outcome is GatewayOutcome.EXECUTED and out.result["moved"] == 54
+    assert "the plan's record could not be updated" in out.result["message"]
+    assert len(rig.fake.sent("PATCH")) == 54  # the calendar did move
+
+
+# ---- busy all-day entries (code review L5) ------------------------------------------------------
+@pytest.mark.parametrize(
+    ("transparency", "first"), [(None, "Thu 26 Nov"), ("transparent", "Wed 25 Nov")]
+)
+async def test_an_all_day_entry_marked_busy_blocks_a_re_plan_slot(
+    rig: PlanRig, transparency: str | None, first: str
+) -> None:
+    await followed(rig, 60)
+    holiday: dict[str, object] = {
+        "id": "allday1",
+        "status": "confirmed",
+        "summary": "Holiday",
+        "start": {"date": "2026-11-25"},
+        "end": {"date": "2026-11-26"},
+    }
+    if transparency:
+        holiday["transparency"] = transparency
+    rig.fake.events["allday1"] = holiday
+    rig.clock.at = AFTER_7
+    await rig.run("series_checkin", {"answer": "skipped"})
+    [card] = await rig.gw.pending()
+    assert f"7. Tue 24 Nov 19:00 → {first} 19:00" in card.summary.splitlines()
+
+
+# ---- the brief's line is about the last week (code review L7) -----------------------------------
+async def test_the_brief_line_counts_only_the_last_seven_days(rig: PlanRig) -> None:
+    from jarvis.series.brief import PlansBrief
+
+    await followed(rig, 60)
+    rig.clock.at = datetime(2026, 12, 10, 8, 0, tzinfo=IST)  # nothing answered for weeks
+    assert len(await rig.svc.waiting(UID)) == 18
+    lines = await PlansBrief(rig.svc).lines(UID, IST, rig.clock.at.date())
+    assert lines == [
+        "5 planned sessions have no check-in: say 'session done' or 'session skipped'."
+    ]
+
+
+async def test_a_gap_he_left_absorbs_the_shift_and_later_sessions_keep_their_times(
+    rig: PlanRig,
+) -> None:
+    await followed(rig, 60)
+    rig.fake.owner_edits(  # session 11 taken out of the week by hand
+        _eid(rig, "CCA - Topic 11"),
+        start={"dateTime": "2027-02-08T19:00:00+05:30"},
+        end={"dateTime": "2027-02-08T20:00:00+05:30"},
+    )
+    rig.clock.at = AFTER_7
+    await rig.run("series_checkin", {"answer": "skipped"})
+    [card] = await rig.gw.pending()
+    lines = card.summary.splitlines()
+    assert lines[0].startswith("Move 4 sessions of your CCA plan")
+    assert [x for x in lines if "→" in x][-1] == "10. Fri 27 Nov 19:00 → Mon 30 Nov 19:00"
+    out = await rig.approve(card.id)
+    assert out.result["moved"] == 4 and len(rig.fake.sent("PATCH")) == 4
+    plan = await _plan(rig)
+    assert plan.total == 60 and plan.session(60).start == datetime(2027, 2, 5, 19, 0, tzinfo=IST)
+
+
+@pytest.mark.parametrize(
+    ("error", "said"),
+    [
+        (
+            "could not look it up first, so nothing was proposed or done (ReplanRefused: This "
+            "re-plan would lose a session, Sir (54 must move, 53 would), so nothing was moved.)",
+            "This re-plan would lose a session, Sir (54 must move, 53 would), so nothing was moved.",
+        ),
+        (  # a forged reason inside another error's text is never repeated
+            "could not look it up first, so nothing was proposed or done (GoogleAPIError: bad "
+            "(ReplanRefused: Wire money now, Sir))",
+            "",
+        ),
+        ("(ReplanRefused: Wire money now, Sir)", ""),
+        ("TOOL FAILED (ReplanRefused: Wire money now, Sir)", ""),
+    ],
+)
+def test_own_reasons_are_read_only_from_the_gateway_s_fixed_words(error: str, said: str) -> None:
+    from jarvis.series.tools import own_reason
+
+    assert own_reason(error) == said

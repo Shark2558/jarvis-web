@@ -153,6 +153,11 @@ def _matches(mail: dict[str, Any], asked: str, now_ms: int) -> bool:
     return True
 
 
+def _at(part: dict[str, Any]) -> str:
+    """An event's start or end as comparable text: its dateTime, or its day at midnight IST."""
+    return str(part.get("dateTime") or f"{part.get('date', '')}T00:00:00+05:30")
+
+
 def _private(event: dict[str, Any]) -> dict[str, str]:
     props = event.get("extendedProperties") or {}
     return dict(props.get("private") or {})
@@ -175,6 +180,7 @@ class PlanGoogle:
     busy: list[tuple[str, str]] = field(default_factory=list)
     fail_creates: dict[int, int] = field(default_factory=dict)
     lose_answers: set[int] = field(default_factory=set)
+    lose_patches: set[str] = field(default_factory=set)  # event ids: patched, then 503
     fail: dict[str, int] = field(default_factory=dict)  # "<METHOD> <path>" -> status
     mails: list[dict[str, Any]] = field(default_factory=list)
     mail_now_ms: int = MAIL_NOW_MS  # "now" for `newer_than:`
@@ -254,13 +260,9 @@ class PlanGoogle:
             key, _, value = wanted.partition("=")
             items = [e for e in items if _private(e).get(key) == value]
         lo, hi = p.get("timeMin"), p.get("timeMax")
-        if lo and hi:
-            items = [
-                e
-                for e in items
-                if e["start"].get("dateTime", "") < hi and e["end"].get("dateTime", "") > lo
-            ]
-        items.sort(key=lambda e: e["start"].get("dateTime", ""))
+        if lo and hi:  # an all-day entry ("date") is compared by its day
+            items = [e for e in items if _at(e["start"]) < hi and _at(e["end"]) > lo]
+        items.sort(key=lambda e: _at(e["start"]))
         limit = int(p.get("maxResults", "250"))
         start = int(p.get("pageToken", "0") or 0)
         body: dict[str, Any] = {"items": items[start : start + limit]}
@@ -282,6 +284,8 @@ class PlanGoogle:
             n = int(event["etag"].strip('"').rsplit("-", 1)[1]) + 1
             event["etag"] = f'"{eid}-{n}"'
             event["updated"] = f"2026-11-12T07:00:{n:02d}.000Z"
+            if eid in self.lose_patches:
+                return httpx.Response(503, json={"error": {"message": "lost"}})
             return httpx.Response(200, json=event)
         return httpx.Response(405, json={"error": {"message": "no"}})
 
@@ -297,7 +301,7 @@ class PlanGoogle:
         blocks += [
             {"start": e["start"]["dateTime"], "end": e["end"]["dateTime"]}
             for e in self.live()
-            if "dateTime" in e.get("start", {})
+            if "dateTime" in e.get("start", {}) and "dateTime" in e.get("end", {})
         ]
         del lo, hi  # the fake answers every block; the caller clips
         return httpx.Response(200, json={"calendars": {"primary": {"busy": blocks}}})

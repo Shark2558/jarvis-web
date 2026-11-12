@@ -98,6 +98,10 @@ class SeriesStore:
         except DocExists:  # another instance asked in the same moment
             return False
 
+    async def told(self, uid: str, key: str) -> bool:
+        """Was this question already claimed (asked, or being asked)?"""
+        return await self._docs.get(self._told(uid, key)) is not None
+
     async def release(self, uid: str, key: str) -> None:
         """Give a claim back: the question could not be sent, so a later run may try again."""
         await self._docs.write([Delete(self._told(uid, key))])

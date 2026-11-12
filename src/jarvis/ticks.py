@@ -13,6 +13,7 @@ failure stops no one. A job's counts go to the log.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import math
 import time
 from collections.abc import Sequence
@@ -30,6 +31,18 @@ TICK_TOTAL_BUDGET_S = 150.0
 # such count makes the job "failed" in the tick answer (R2 review M1).
 FAILED_COUNT = "failed"
 JobResult = Literal["ok", "failed"]
+# R11 I1 (INTEGRATION-B 3.5): the monotonic time the running job must finish by (its budget, or
+# what is left of the tick's); None outside `_run_one`. Nested runs (a composite's own jobs) set
+# and reset it in turn, so each job reads its own.
+_DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "tick_deadline", default=None
+)
+
+
+def time_left() -> float | None:
+    """Seconds the running tick job has left, or None when no tick job is running."""
+    at = _DEADLINE.get()
+    return None if at is None else at - time.monotonic()
 
 
 @runtime_checkable
@@ -55,6 +68,7 @@ async def _run_one(
         log.error("tick job has no usable time budget", extra={"job": name})
         return "failed"
     budget = min(budget, remaining_s)
+    token = _DEADLINE.set(time.monotonic() + budget)
     try:
         async with asyncio.timeout(budget):
             counts = await job.run(owners)
@@ -64,6 +78,8 @@ async def _run_one(
     except Exception as exc:  # noqa: BLE001 - a job never fails the tick
         log.error("tick job failed", extra={"job": name, "error": type(exc).__name__})
         return "failed"
+    finally:
+        _DEADLINE.reset(token)
     if not isinstance(counts, dict) or not all(
         isinstance(k, str) and isinstance(v, int) and not isinstance(v, bool)
         for k, v in counts.items()
@@ -109,4 +125,5 @@ __all__ = [
     "JobResult",
     "TickJob",
     "run_jobs",
+    "time_left",
 ]

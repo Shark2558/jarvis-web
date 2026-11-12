@@ -1,11 +1,12 @@
-Version v6.1.2 · 11 Nov 2026, 13:30 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII
+Version v11.0.4 · 11 Nov 2026, 23:52 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
 
 # JARVIS Architecture & Technology Guide
 
-This guide was checked against JARVIS's real code. This is edition v6.1.2 of the guide (the first
+This guide was checked against JARVIS's real code. This is edition v11.0.2 of the guide (the first
 edition was v6.1.1; the change log at the end lists every edition). It describes the JARVIS
-program at version v6.1.0, which is release R6.1. Anything that is planned but not built yet is
-marked PLANNED.
+program at version v11.0.0: release R6.1 as built, plus release R11, the free proactive helpers
+(card C60), built and joined on one branch and not yet deployed. Anything that is planned but not
+built yet is marked PLANNED.
 
 For engineers: it was written from the code, the deploy script, the CI file, the evals and the
 plans in `docs/plans/`, not from memory. A fact that could not be checked against the code says
@@ -27,9 +28,9 @@ the change log.
   day's rate (₹95.24 to the dollar on 1 Nov 2026 is the stored fallback), so every ₹ figure is an
   **estimate**.
 - The first line of this guide is its version line. "Owner" there means the owner of this
-  document: 🛠 Mark XIII, the build name of the team that wrote it (every JARVIS build team gets
-  a Mark number, as in the films; release R6.1 was built by Marks XIII and XIV). JARVIS itself
-  belongs to you.
+  document: 🛠 Mark XIV, the build name of the team that keeps it now (every JARVIS build team gets
+  a Mark number, as in the films; release R6.1 was built by Marks XIII and XIV, release R11 by
+  Mark XIV). JARVIS itself belongs to you.
 
 ## 1. One-page summary
 
@@ -51,6 +52,7 @@ sideways.
 | Memory | Remembers facts about you, which you can see and edit ("About you"). Keeps your notes, the text of voice memos and saved links. Remembers where you put things at home ("Where did I keep it?"). |
 | Documents | A locked store for your documents (ID, insurance, certificates) that reminds you before they expire. It takes in documents you share from DigiLocker, the government's document app. |
 | Home | Controls your smart-home devices, runs a burglar alarm on the home cameras and can recognise faces (only of people who agreed). It answers "who came yesterday?", tells you about parcels at the door, and tells you when the laptop stops answering. |
+| Helpers (R11) | Looks ahead for you, for free, in the Helpers panel: bill reminders, with a UPI payment made ready for your PIN (JARVIS never pays); birthdays from your contacts; your top priority and what is pending; the chores rota and home upkeep; weather and disaster warnings for your district; breach notices from your own mail; nudges to stand up and drink water within the limits you set; a question when a planned walk didn't happen; free-time ideas from your own list; and in the kitchen recipe ideas that keep to your diet, rough nutrition, grocery spend from your e-mailed receipts and cooking times in your calendar. All of it but new recipe ideas works with the AI off. |
 | Looking after itself | The Vitals panel shows its keys, free allowances, bills and limits, and at its foot an "About JARVIS" line says which version is running and the day it was built. It can check its own systems and read you the result. It counts every cost in rupees. At each release it writes a "build book" that explains how it is built. |
 
 **What it costs a month (estimates).**
@@ -126,6 +128,8 @@ Details: section 9.
 | Google's voice service | What JARVIS says aloud, and the sound of your voice when it listens |
 | Google Maps and YouTube | What you search for there; your Home and Work only when you ask for a route |
 | Telegram | Your Telegram chats with JARVIS and its alerts. Telegram keeps them, and they are not end-to-end encrypted. |
+| Open-Meteo, the free weather service | Your place rounded to about 1 km (never your district's name), once an hour, only after you type your district |
+| NDMA SACHET, India's official disaster-warning feed | Nothing about you: JARVIS reads your state's public feed and picks your district itself |
 
 Section 6 lists every kind of stored data, and section 6.5 every outside service.
 
@@ -142,6 +146,8 @@ quiet hours end (23:00–06:30 unless you change them).
 - deletes anything that can't be brought back;
 - adds an event to a family member's calendar;
 - switches the burglar alarm off;
+- gets a bill payment ready (it never pays anyone: you confirm it and enter your PIN in your UPI
+  app, and the UPI ID is only ever the one you typed);
 - opens a file in your document store, or the build book.
 
 You can never approve a final action from Telegram: only in the console, and with your passkey once
@@ -162,7 +168,7 @@ silently go stale. Figure 2 in section 4 draws it.
 | L2 Input Processing | Turns speech, files and camera sightings into text and facts. | C05 Voice service, C06 Voice loop in the console, C07 Attached documents, C08 Faces with consent |
 | L3 Context & Orchestration | Keeps the conversation, long-term memory, the clock that wakes JARVIS, and the undo bin. | C09 Conversations, C10 Long-term memory, C11 Scheduler ticks and watchdog, C12 Recently deleted |
 | L4 Core Reasoning Engine | The brain: one loop that reads context, asks a model, calls tools and checks every step. | C13 Brain core loop, C14 Persona and prompts, C15 Guardrails and trust, C16 Brain router and LLM layer, C17 Brain switch, No-AI and offline mode, C18 Approval cards and Approve all |
-| L5 Skills & Capabilities | The things JARVIS can do for you. | C19 Morning brief, C20 Web search, C21 People research, C22 WhatsApp drafts, C23 Notes, memos and links, C24 Things, C25 Groceries, C26 Family calendars, C27 Parcels |
+| L5 Skills & Capabilities | The things JARVIS can do for you. | C19 Morning brief, C20 Web search, C21 People research, C22 WhatsApp drafts, C23 Notes, memos and links, C24 Things, C25 Groceries, C26 Family calendars, C27 Parcels, C60 Helpers (R11) |
 | L6 Integration & Tools | The doors to outside services and the house, all through one gateway. | C28 Tool gateway and audit, C29 Google account link, C30 Calendar and reminders, C31 Gmail and mail read aloud, C32 To-dos, C33 Contacts, C34 Drive folders, C35 Maps, C36 YouTube and Media, C37 Photos picker and GitHub, C38 Home link, C39 Home bridge, C40 Camera, alarm and history |
 | L7 Data & Persistence | Where things are kept, and how much of each free allowance is used. | C41 Document store, C42 Document vault, C43 DigiLocker import folder, C44 Free allowance ledger |
 | L8 Response & Output | How JARVIS tells you things: alerts, browser notifications, the Activity log. | C45 Alerts port, C46 Alert policy, C47 Web Push, C48 Activity log |
@@ -204,10 +210,10 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Web console (the "command deck") |
-| What it does | The page you use JARVIS from on a laptop or phone: the chat, the dock of panels (in its order: Chat, Brief, Approvals, Activity, History, Memory, Integrations, Vault, Things, Notes, Privacy, Home, Faces, Vitals, Connectors, People, Book, Voice, Media, Construct), the brain picker and the Night / Day looks. The dock fits every screen: the buttons keep their order, and the ones that don't fit (the last ones first) move into the **More** sheet, which lists exactly those. More appears only when something is behind it and lights up while one of those panels is open. Chat, Brief and Approvals never move for lack of room; but on a mid-size laptop screen (900 to 1180 pixels wide) the Approvals button is narrower than its name, so it moves behind More too, and More then shows its waiting count. Nothing scrolls sideways. It is written in plain JavaScript files that need no build step, and anything the server sends is shown as plain text, never run as part of the page. |
+| What it does | The page you use JARVIS from on a laptop or phone: the chat, the dock of panels (in its order: Chat, Brief, Approvals, Activity, History, Memory, Integrations, Vault, Things, Notes, Privacy, Home, Faces, Vitals, Connectors, People, Book, Voice, Media, Construct, Helpers), the brain picker and the Night / Day looks. The dock fits every screen: the buttons keep their order, and the ones that don't fit (the last ones first) move into the **More** sheet, which lists exactly those. More appears only when something is behind it and lights up while one of those panels is open. Chat, Brief and Approvals never move for lack of room; but on a mid-size laptop screen (900 to 1180 pixels wide) the Approvals button is narrower than its name, so it moves behind More too, and More then shows its waiting count. Nothing scrolls sideways. It is written in plain JavaScript files that need no build step, and anything the server sends is shown as plain text, never run as part of the page. |
 | Layer | L1 User Interaction |
 | Skill | Platform (serves every skill) |
-| Where in the code | `src/jarvis/api/console.py` (serves the page and its content security policy), `src/jarvis/api/static/console.html`, `console.css` (base look, with the font faces), `console.js` (chat, brains, approvals, audit, conversations), `console-deck.js` (panels, dock buttons, ruler, radar), `console-dock.js` (fits the dock to the screen: buttons that don't fit move behind More), `console-fx.js` (surfaces, themes, motion), `console-3d.js` and `console-3d-scenes.js` (optional three.js scenes), `console-text.js` (shared text helpers); vendored three.js 0.187.0 in `static/vendor/` |
+| Where in the code | `src/jarvis/api/console.py` (serves the page and its content security policy), `src/jarvis/api/static/console.html`, `console.css` (base look, with the font faces), `console.js` (chat, brains, approvals, audit, conversations), `console-deck.js` (panels, dock buttons, ruler, radar), `console-dock.js` (fits the dock to the screen: buttons that don't fit move behind More), `console-fx.js` (surfaces, themes, motion), `console-3d.js` and `console-3d-scenes.js` (optional three.js scenes), `console-text.js` (shared text helpers), `console-helpers.js` (the Helpers panel's frame and tabs, R11; its four tabs are C60's); vendored three.js 0.187.0 in `static/vendor/` |
 | Depends on | C02 HTTP API; every panel's own card |
 | Data it keeps | No Firestore data of its own. The browser keeps small conveniences (the open conversation, look and layout). |
 | Outside services | None directly (fonts and libraries are served by JARVIS itself, not loaded from another website) |
@@ -223,7 +229,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | What it does | The FastAPI application every client talks to: the `/v1` routes, Google sign-in for the listed owner accounts only, a signed session cookie (12 hours), a bearer token for the terminal and evals, per-client rate limits and body-size limits. |
 | Layer | L1 User Interaction |
 | Skill | Platform (serves every skill) |
-| Where in the code | `src/jarvis/api/` (`app.py` factory, `auth.py`, `identity.py`, `routes.py`, `ratelimit.py`, `body.py`, and the wiring files `feature_wiring.py`, `personal.py`, `home_wiring.py`, `r4_wiring.py`, `selfcheck_wiring.py`, `r6_wiring.py`) |
+| Where in the code | `src/jarvis/api/` (`app.py` factory, `auth.py`, `identity.py`, `routes.py`, `ratelimit.py`, `body.py`, and the wiring files `feature_wiring.py`, `personal.py`, `home_wiring.py`, `r4_wiring.py`, `selfcheck_wiring.py`, `r6_wiring.py`, `r11_wiring.py`, and `startup_log.py`, the one "jarvis up" log line) |
 | Depends on | C49 Configuration, C13 Brain core loop, C41 Document store |
 | Data it keeps | No collection of its own; the user id is always derived on the server from the sign-in, never taken from the client. |
 | Outside services | Google sign-in (OpenID Connect); Cloud Run (hosting) |
@@ -368,11 +374,11 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Scheduler ticks and the home watchdog |
-| What it does | Two Cloud Scheduler jobs wake JARVIS on time. The morning job calls `POST /internal/brief/tick` every 30 minutes from 04:00 to 11:30 IST (`0,30 4-11 * * *`): it makes the brief when due and then runs the tick jobs (vault reminders, DigiLocker import, Vitals poll, systems check, book sealing and the sweeps of old data). The watchdog job calls `POST /internal/home/watchdog` every 5 minutes, all day, when Home is switched on: laptop offline alerts, a pending arm, the camera feed sweep, the home-claims and link-code sweeps, the alert policy's jobs (the held-alerts summary, storm summaries and the counter sweep), and the systems check, book sealing and the book sweep it shares with the morning tick. With Home off, the alert policy's jobs ride the morning tick instead, and book sealing and the systems check run only there. |
+| What it does | Two Cloud Scheduler jobs wake JARVIS on time. The morning job calls `POST /internal/brief/tick` every 30 minutes from 04:00 to 11:30 IST (`0,30 4-11 * * *`): it makes the brief when due and then runs the tick jobs (vault reminders, DigiLocker import, Vitals poll, systems check, book sealing and the sweeps of old data). The watchdog job calls `POST /internal/home/watchdog` every 5 minutes, all day, when Home is switched on: laptop offline alerts, a pending arm, the camera feed sweep, the home-claims and link-code sweeps, the alert policy's jobs (the held-alerts summary, storm summaries and the counter sweep), and the systems check, book sealing and the book sweep it shares with the morning tick. With Home off, the alert policy's jobs ride the morning tick instead, and book sealing and the systems check run only there. From R11 (I0) the helpers' 5-minute clock (`helpers_clock`, at most 20 seconds of each run) rides the watchdog too, and with Home off it is the one thing the watchdog runs, so the same job serves both; the morning tick also runs it and the helpers' daily jobs (`helpers_daily`). |
 | Layer | L3 Context & Orchestration |
 | Skill | Automation Engine |
 | Where in the code | `src/jarvis/ticks.py`, `src/jarvis/api/brief.py` (tick route), `src/jarvis/api/scheduler_auth.py`, `src/jarvis/home/watchdog.py`; the Cloud Scheduler jobs `jarvis-morning-brief` and `jarvis-home-watchdog`, created by `deploy/cloudrun.sh` step 8 |
-| Depends on | C19 Morning brief, C38 Home link, C55 Vitals, C56 Systems check, C57 Build book |
+| Depends on | C19 Morning brief, C38 Home link, C55 Vitals, C56 Systems check, C57 Build book, C60 Helpers |
 | Data it keeps | No collection of its own; each job uses its feature's store. |
 | Outside services | Cloud Scheduler (signed Google OIDC token for its own account with no project roles) |
 | Cost (₹ a month) | ₹0 (3 jobs are free per billing account; JARVIS uses 2) |
@@ -639,6 +645,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | On voice or Telegram the subject is masked or left out. Unknown senders are ignored. |
 | Since | R1 (v1.0.0) |
 
+#### C60 · Helpers (R11)
+
+| Field | Value |
+|---|---|
+| Name | Helpers: bills, home, nudges and the kitchen (R11) |
+| What it does | Free helpers that look ahead for you, in four tabs of the Helpers panel. **Today**: your bills and due dates, reminded at your time (09:00 by default) 3 days, 1 day and on the day, and once overdue; "Pay" gets a UPI payment ready for your PIN after you approve the card in the console (with your passkey when you use one); the link and its QR are shown once and never kept; JARVIS never pays and takes a UPI ID only from what you typed. Birthdays from your Google Contacts (month and day only: a birth year is never read). Your top priority and what is pending, ranked by fixed rules, with the approvals waiting. **Home**: the chores rota (adults' names you type; JARVIS tells only you) and home upkeep; weather from Open-Meteo for your place; disaster and weather warnings for your district from NDMA SACHET; breach notices that Have I Been Pwned or Mozilla Monitor send to your Gmail. **Nudges**: stand up, drink water, a question when your planned walk didn't happen, an idea for free time (never an outdoor one when rain is likely), your top priority; each off until you switch it on, within your caps, snoozed or stopped by a tap or by saying "don't remind me to stand up". **Kitchen**: recipe ideas from your pantry that keep to your diet (a code check has the last word), rough nutrition (six key values, or every value on request), grocery spend a month from your e-mailed receipts, and cooking and washing-up times in your calendar after you approve the card. All of it but new recipe ideas is plain code, so it works with the AI off. **Sources and credits**: Open-Meteo gives the forecast (free for personal use, no key; "Weather data by Open-Meteo.com (CC BY 4.0)" in the panel and the brief); NDMA SACHET gives India's official CAP warnings (public domain; JARVIS is a second channel, the official app, SMS and cell broadcast come first); USDA FoodData Central SR Legacy (CC0 1.0, public domain) is bundled as a 565-food subset with every nutrient and said as "US reference values (USDA FoodData Central); Indian varieties and home recipes can differ". **The night rules**: a disaster warning for your district rings at any hour (at most 3 different ones a night, then one morning summary); bill, birthday, chore, upkeep, weather and breach reminders ring by day and wait for the morning at night (23:00–06:30); nudges ring by day and are dropped at night, never held. |
+| Layer | L5 Skills & Capabilities |
+| Skill | Task & Productivity, Finance & Analytics, Security Advisor, Decision Support, Learning (one per helper; the R11 plan's table) |
+| Where in the code | `src/jarvis/helpers/` (`kinds.py`, `ports.py`, `gate.py`, `clock.py`, `brief.py`, `sources.py`, `privacy.py`); Today `src/jarvis/helpers/today/` (bills, `upi.py` and `qr.py`, birthdays, `pending.py`, `focus.py`, `jobs.py`); Home `src/jarvis/helpers/house/` (`chores.py`, `upkeep.py`, `weather.py`, `rain.py`, `sachet.py`, `cap.py`, `xmlsafe.py`, `breach.py`); Nudges `src/jarvis/helpers/nudges/` (`standup.py`, `hydrate.py`, `activity.py`, `freetime.py`, `focus.py`, `schedule.py`); Kitchen `src/jarvis/helpers/kitchen/` (`recipes.py`, `diet.py`, `nutrition.py`, `receipts.py`, `spend.py`, `blocks.py`), its nutrition data `src/jarvis/helpers/kitchen/data/fdc_subset.json` and `scripts/kitchen_fdc_subset.py`; the background reads' governed path `src/jarvis/tools/background.py` and the "paused" lines `src/jarvis/helpers/paused.py`; `src/jarvis/api/r11_wiring.py`, `src/jarvis/api/helpers.py`, `src/jarvis/api/helpers_today.py`, `helpers_house.py`, `helpers_nudges.py`, `helpers_kitchen.py`; `console-helpers.js` (the frame, and the approved UPI payment under a reply), `console-helpers-today.js`, `console-helpers-house.js`, `console-helpers-nudges.js`, `console-helpers-kitchen.js` (and `console-helpers.css`) |
+| Depends on | C45 Alerts port, C46 Alert policy, C11 Scheduler ticks and watchdog, C19 Morning brief, C28 Tool gateway, C52 Permissions, C53 Privacy dashboard, C17 No-AI mode, C29 Google link, C51 Keyring, C16 Brain router (recipe ideas only) |
+| Data it keeps | `helpers_nudge/{uid}` (nudge caps, snoozes and stops), `helpers_gate/{uid}_{day}` (when each helper message went out: kind and minute only, 15 days), `helpers_clock/status` (the clock's last run); Today: `bills/{uid}` (sealed with `bills`; never a card or account number: the last 4 digits at most), `bills_told/{uid}_{key}` (60 days), `birthdays_told/{uid}_{key}` (hashes only, never a name or a birth year, 400 days); Home: `chores/{uid}`, `maintenance/{uid}`, `house_told/{uid}_{key}` (hashes, 30 days), `outside/{uid}` (your place, thresholds and the warnings' words, sealed with `alerts_place`); Nudges: `nudges/{uid}` (your settings and free-time ideas), `wellbeing/{uid}_{date}` (water, stand-ups and check-ins, sealed with `wellbeing`, 30 days); Kitchen: `kitchen/{uid}` (pantry, tastes, saved recipes, sealed with `kitchen`), `spend/{uid}_{month}` (merchant, day and amount only, sealed with `spend`, 13 months), `spend_scan/{uid}` (the switch, the last scan, keyed hashes). Each has a Privacy row (C53) to list, export and delete it. |
+| Outside services | Open-Meteo, NDMA SACHET, USDA FoodData Central (bundled: no calls), Gmail, Google Contacts, Google Calendar, Google Tasks, Anthropic (recipe ideas only) |
+| Cost (₹ a month) | ₹0 (free sources with no key, inside the Firestore and Cloud Run free tiers); a recipe idea about ₹0.9 on the balanced tier, against your monthly limit |
+| When it fails | The helpers switched off, or a part whose setup fails, leaves that part empty and the rest running. A background read of your Google data takes the gateway's own check first (C28): "Ask first" or "Never" on its permission row, rules that can't be read, or no permission service at all, mean no read; when you ask for birthdays in the console yourself, "Ask first" shows its card and, once you approve, reads. Your top priority never reads your to-dos on "Ask first" (no to-do card was shown): it leaves them out and says they weren't checked. A helper you switched on that a row stops says so in one fixed line, never anyone else's words, at the top of its tab, in the brief (one line in all) and when you ask about breach notices: "Breach watching paused: your Email permission is set to Ask first. Set it to Allow to let it run by itself." A read cut short by the morning's time limit still leaves its audit line. A payment card that can't be shown spends nothing and says "That payment couldn't be shown. Please prepare it again." Nudge settings that can't be read mean no nudge. A message no channel took is tried at the next 5-minute run, and never sent twice. A stale clock shows in the panel ("reminders come only between 04:00 and 11:30"). A feed that is down shows since when (Open-Meteo, SACHET); weather and alerts are off without the token key; nutrition says "not installed" if its data file is missing. |
+| Since | R11 (v11.0.0) |
+
 ### Layer 6 — Integration & Tools
 
 #### C28 · Tool gateway and audit
@@ -646,10 +668,10 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Tool gateway, policy and the audit chain |
-| What it does | The one door every tool call passes through. It checks the arguments, applies the policy (deny, ask or allow; deny always wins; an irreversible call always asks), tightens "allow" to "ask" on a spoken turn or after outside text reached the model, limits a message to 5 new cards and 10 undo-able deletes, and writes every call to an append-only, hash-chained audit trail. |
+| What it does | The one door every tool call passes through. It checks the arguments, applies the policy (deny, ask or allow; deny always wins; an irreversible call always asks), tightens "allow" to "ask" on a spoken turn or after outside text reached the model, limits a message to 5 new cards and 10 undo-able deletes, and writes every call to an append-only, hash-chained audit trail. From R11, a job that reads your Google data with nobody in the loop (birthdays, breach notices, the nudges' calendar, to-dos for top priority, grocery receipts) asks this gateway first (`background.py`): its own policy and your rows decide, only Allow reads (a job can't show a card; no permission service means no read), and each read or refusal leaves one line in the audit chain with the job's name only, a read cut by its time limit too. Inside this gateway's own call for that same tool (its card, then your OK), the read may go ahead on "Ask first"; a call decided on another permission row never opens it, and "Never" still stops it. |
 | Layer | L6 Integration & Tools |
 | Skill | Platform (serves every skill) |
-| Where in the code | `src/jarvis/tools/` (`gateway.py`, `policy.py`, `budget.py`, `registry.py`, `base.py`, `context.py`, `observers.py`, `setup.py`, `builtin.py`, `r1_tools.py`, `reply_cards.py`, `audit.py`), `src/jarvis/storage/audit.py` |
+| Where in the code | `src/jarvis/tools/` (`gateway.py`, `policy.py`, `budget.py`, `registry.py`, `base.py`, `context.py`, `observers.py`, `setup.py`, `builtin.py`, `r1_tools.py`, `reply_cards.py`, `background.py`, `audit.py`), `src/jarvis/storage/audit.py` |
 | Depends on | C52 Permissions (your rules), C15 Guardrails, C18 Approval cards, C41 Document store |
 | Data it keeps | `audit/{seq}` (one entry per tool call: tool, risk, outcome, a hash of the arguments and a short detail; never deleted, each linked to the one before by a hash) and `meta/audit_head` (moved in the same transaction as each entry, so the chain never forks). |
 | Outside services | None (each tool's own card lists its service) |
@@ -938,7 +960,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Alert policy (quiet hours, what rings) |
-| What it does | Decides for every alert: ring, ring silently, hold or drop. Fixed rules, no model: emergencies and urgent kinds always ring; quiet hours (23:00–06:30 by default) hold important alerts for a summary; by default only urgent things ring, but a few important kinds ring in waking hours (laptop offline, a system down, a red Vitals line, build book notices). Emergency words are known in English, Hindi, Malayalam and Odia. |
+| What it does | Decides for every alert: ring, ring silently, hold or drop. Fixed rules, no model: emergencies and urgent kinds always ring; quiet hours (23:00–06:30 by default) hold important alerts for a summary; by default only urgent things ring, but a few important kinds ring in waking hours (laptop offline, a system down, a red Vitals line, build book notices). Emergency words are known in English, Hindi, Malayalam and Odia. From R11 (I0): 13 helper kinds (C60); a disaster warning near you rings at night; bill, birthday, chore, upkeep, weather and breach reminders ring by day and are held at night; nudges ring by day and are dropped at night (never held), at most 8 an hour in any case. |
 | Layer | L8 Response & Output |
 | Skill | Communication |
 | Where in the code | `src/jarvis/notify/`, `src/jarvis/api/notify.py`, `console-alerts.js` |
@@ -1020,7 +1042,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Keyring (one key per purpose) |
-| What it does | Derives a separate key for each kind of data from the one token key in Secret Manager, so a key for notes can never open the vault. Purposes: `vault`, `vault_index`, `notes`, `belongings`, `tickets`, `home`, `home_feed`, `faces`, `webpush`, `notify`, `connectors`, `book_index`, `book_session`, and one raw secret `webpush_vapid`. |
+| What it does | Derives a separate key for each kind of data from the one token key in Secret Manager, so a key for notes can never open the vault. Purposes: `vault`, `vault_index`, `notes`, `belongings`, `tickets`, `home`, `home_feed`, `faces`, `webpush`, `notify`, `connectors`, `book_index`, `book_session`, from R11 `bills`, `spend`, `wellbeing`, `alerts_place` and `kitchen` (C60), and one raw secret `webpush_vapid`. |
 | Layer | X Cross-cutting |
 | Skill | Security Advisor |
 | Where in the code | `src/jarvis/keyring.py`, `src/jarvis/integrations/vault.py` (the AES-256-GCM cipher) |
@@ -1378,6 +1400,9 @@ counter sees only its own use (the deploy script warns about this).
 | Telegram Bot API | Phone chat and alerts | Free | Telegram's own rate limits | — |
 | Web Push services | Browser notifications | Free (run by the browser makers) | — | — |
 | Frankfurter | Exchange rate | Free, no key; JARVIS asks at most once a day | The stored rate is used | — |
+| Open-Meteo | The helpers' weather (C60) | Free for personal, non-commercial use, no key: 600 calls a minute, 10,000 a day; JARVIS asks about 24 times a day. Data CC BY 4.0, credited "Weather data by Open-Meteo.com" | *unverified*: calls are refused; the panel says since when | Never used |
+| NDMA SACHET | Disaster and weather warnings for your district (C60) | Public domain feed, no key, no published limit; JARVIS reads your state's feed every 10 minutes (about 150 a day) | The panel says "can't reach SACHET since ..."; the official app, SMS and cell broadcast stay first | — |
+| USDA FoodData Central | Nutrition values (C60) | CC0 1.0 (public domain); a subset of the SR Legacy download is bundled, so no call is ever made | — | — |
 | GitHub API | Your own GitHub, read-only | Free with your token | GitHub's rate limits; Vitals shows them | — |
 | Tailscale | Reaching the laptop | Free personal plan (*unverified* limits) | — | — |
 | Home Assistant, Frigate, Mosquitto, Ollama | Home and offline brain on your laptop | Free, open source, run by you | — | — |
@@ -1504,6 +1529,11 @@ its own key (AES-256-GCM) before it reaches Google, so a reader of the database 
 | `home_arm`, `home_cameras`, `home_feed` | Alarm state, camera settings, the home feed | Yes (`home`, `home_feed`) except the arm state | Feed 7 days | C40 |
 | `faces` | People JARVIS may recognise and their consent | Yes (`faces`) | Until removed | C08 |
 | `health_last` | The last systems check | No | Replaced each check | C56 |
+| `helpers_nudge`, `helpers_gate`, `helpers_clock` | Nudge caps, snoozes and stops; when each helper message went out (kind and minute); the clock's last run | No | Send log 15 days | C60 |
+| `bills`, `bills_told`, `birthdays_told` | Your bills (never a card number); claims for reminders sent (hashes only, never a birth year) | Yes (`bills`) for the bills | Claims 60 and 400 days | C60 |
+| `chores`, `maintenance`, `house_told`, `outside` | The chores rota and upkeep list; reminder claims; your place and the warnings' words | Yes (`alerts_place`) for `outside` | Claims 30 days | C60 |
+| `nudges`, `wellbeing` | Your nudge settings and free-time ideas; water, stand-ups and check-ins | Yes (`wellbeing`) for the log | The log 30 days | C60 |
+| `kitchen`, `spend`, `spend_scan` | Pantry, tastes and saved recipes; grocery totals a month; the receipts switch and seen hashes | Yes (`kitchen`, `spend`) | Spend 13 months | C60 |
 | `vitals_providers`, `vitals_status`, `vitals_index` | What Vitals tracks and the last status (never a key's value) | No | Until removed | C55 |
 | `book` (and `book_chunks`), `book_lease`, `book_lock`, `book_sessions`, `book_settings`, `book_tickets`, `book_notices`, `book_closed` | Sealed build books, the sealer's lease, the guest lock, book sessions, settings, tickets, content-free notices | Yes (`book_index`, `book_session`) for the books and sessions; tickets hashed (`tickets`) | Books until removed (60 MB cap); sessions 45 minutes | C57 |
 
@@ -1740,6 +1770,9 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | AAD | Extra data an encryption is bound to (here the document's name), so a blob can't be moved to another document |
 | AES-256-GCM | A standard, strong way to encrypt data that also detects tampering |
 | Allowance (free) | The amount of a service a vendor gives free each month or day |
+| Background read | A job that reads your Google data with nobody in the loop (at 05:00, say); it asks the tool gateway first and only goes ahead on "Allow" |
+| CAP | Common Alerting Protocol: the standard format of an official warning (what, where, how severe, until when) |
+| CC0 / CC BY 4.0 | Open licences: CC0 gives data away with no conditions (public domain); CC BY lets anyone use it if they credit the source |
 | Anthropic | The company that makes Claude, JARVIS's paid AI brain |
 | API | A set of addresses a program calls to use a service |
 | Approval card | The box that shows what an action will do and waits for your Approve |
@@ -1781,6 +1814,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Emulator | A local stand-in for a cloud service, used in tests (the Firestore emulator) |
 | Envelope encryption | Each file gets its own key, and that key is locked with a master key |
 | Eval | A fixed test of the assistant's behaviour, with cases and a pass mark |
+| FoodData Central | The US Department of Agriculture's public food-nutrient data; JARVIS bundles part of its "SR Legacy" set |
 | Face library | The pictures of enrolled people that Frigate keeps on the laptop to recognise them |
 | Fails closed | When in doubt, it stops or refuses instead of going ahead |
 | FastAPI | The Python web framework JARVIS's server is built on |
@@ -1830,6 +1864,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Negative control | A deliberately broken run that an eval must catch, proving the eval works |
 | Next.js / React Native / Electron | Web, phone and desktop app frameworks the old blueprint planned (not used) |
 | No-AI mode | A switch that makes JARVIS answer with fixed skills only and no model |
+| Nudge | A short helper reminder (stand up, drink water, your top priority): off until you switch it on, within the caps you set, dropped at night |
 | Nonce | A number used once, so a recorded message can't be replayed |
 | OAuth | The standard that lets you give JARVIS limited access to your Google account without your password |
 | OCR | Reading text from a picture of a page (not built) |
@@ -1860,6 +1895,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Scale to zero | No copy of JARVIS runs (or costs) while nobody uses it |
 | SDK | A vendor's ready-made library for calling its API (JARVIS avoids them outside `jarvis.llm`) |
 | Secret Manager | Google's locked store for keys and passwords |
+| SACHET | India's official disaster-warning feed, run by the National Disaster Management Authority (NDMA) |
 | Service account | A Google identity for a program, with only the permissions it needs |
 | Service worker | A small browser script that receives push notifications |
 | Slice | One build step of the early project (slices 1 to 12, before R1); each slice had its own plan |
@@ -1876,6 +1912,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Token (sign-in) | A signed piece of data that proves who is calling (Google tokens, Cloud Scheduler's token, the API token) |
 | Trace id | A random label put on every log line of one request, so its lines can be found together |
 | TTS / STT | Text-to-speech / speech-to-text |
+| UPI | India's Unified Payments Interface: you pay from your bank app with your PIN; JARVIS only gets a payment ready |
 | VAPID | The standard key that signs Web Push messages |
 | Vector database | A database that finds text by meaning using number lists (embeddings); not used |
 | Vendored | A copy of an outside library kept inside JARVIS's own files, so nothing is loaded from elsewhere |
@@ -1915,6 +1952,12 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
   are on their cards (C01, C55, C58), section 8 lists the CI jobs as they now are, and
   `python scripts/arch_coverage.py`, `scripts/check_doc_versions.py` and
   `scripts/markdy_export.py --check` pass on that branch. The diagrams are unchanged.
+- **Edition v11.0.2.** Written after the four R11 parts were merged into `r11-i1` and joined: card
+  C60 describes what was built (its modules, collections, jobs, alert kinds, sources and night
+  rules), C28 the background reads' governed path, section 5.2 the three new free sources, section
+  6.2 the R11 collections, page 1 the helpers and who sees what; `scripts/arch_coverage.py`,
+  `scripts/check_doc_versions.py` and `scripts/markdy_export.py --check` pass. The diagrams are
+  unchanged.
 
 ## Change log
 
@@ -1922,3 +1965,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 |---|---|---|---|---|
 | v6.1.1 | 11 Nov 2026, 11:43 IST | R6.1 | First edition: summary, layers and departures, 59 component cards, 14 diagram captions, technology table, outside services and free limits, plan vs build, decisions, data and privacy, security, operations, costs, limits, roadmap and glossary, written from the code. Before publishing, corrected after the R6.1 reviews: page 1 rewritten in plain words (one monthly ₹ total with worst cases, no limit until you set one, voice paid after the free minutes, who sees your data, no backups, what JARVIS doesn't lock itself); 11 fact-check fixes and 1 from the writer's own 10 checks; glossary filled; "How this guide was checked" added | 🛠 Mark XIII |
 | v6.1.2 | 11 Nov 2026, 13:30 IST | R6.1 | After the R6.1 parts were merged: the dock that fits every screen (More holds the buttons that don't fit) on page 1 and C01 with `console-dock.js`; the "About JARVIS" version and build-date line on Vitals (C55, `about.py`); the pull request template, title check, version-line check and GitHub back-fill (C58, section 8); the CI table with the `pr-title` and `docs` jobs and the `docs-check` job (version lines and this guide's coverage, run once, never before a deploy); C58: the back-fill reports every write GitHub refuses with what to do by hand, and goes on; C01 lists the panels in the dock's order; Figure 13's caption names the title and coverage checks; Mark explained for a release built by two Marks; glossary: back-fill, change log and version line, GitHub Release, tag and label, More, version; the "documentation drift" known limit removed, since `CLAUDE.md` now matches the code | 🛠 Mark XIV |
+| v11.0.1 | 11 Nov 2026, 18:20 IST | R11 | R11 I0 (the joins for the free proactive helpers): card C60 Helpers (PLANNED, with what I0 built), the Helpers tab on C01 and its frame module, `r11_wiring.py` and `startup_log.py` on C02, the helpers clock on C11 (with Home off the watchdog runs only it), the 13 helper alert kinds on C46, five keyring purposes on C51, the L5 row | 🛠 Mark XIV |
+| v11.0.2 | 11 Nov 2026, 21:43 IST | R11 | R11 I1: card C60 as built (Today, Home, Nudges and Kitchen: what each does, the modules, every collection, the sources with Open-Meteo's CC BY 4.0 credit, NDMA SACHET and USDA FoodData Central CC0, the jobs, kinds and night rules); C28 the background reads' governed path (`background.py`); page 1: the helpers, who sees what (Open-Meteo, SACHET) and that JARVIS never pays; section 5.2 three free sources; section 6.2 the R11 collections; the glossary (background read, CAP, CC0 / CC BY, FoodData Central, nudge, SACHET, UPI); the version line's owner is Mark XIV | 🛠 Mark XIV |
+| v11.0.3 | 11 Nov 2026, 23:10 IST | R11 | R11 integrated review fixes: C60 "When it fails" (a helper a permission row stops says so in one fixed line in its tab, the brief and breach notices; in the console "Ask first" asks and then reads; no permission service means no read; a cut read is still audited; a payment card that can't be shown spends nothing), `helpers/paused.py` in its code; C28 the gateway-decided "Ask first" read and the fail-closed rows. (The version line's owner has been Mark XIV since v11.0.2.) | 🛠 Mark XIV |
+| v11.0.4 | 11 Nov 2026, 23:52 IST | R11 | C60 and C28: "Ask first" opens a read only inside the gateway's call for that same tool, so your top priority leaves your to-dos out on "Ask first" and says they weren't checked | 🛠 Mark XIV |

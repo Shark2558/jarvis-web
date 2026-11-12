@@ -147,10 +147,25 @@
     return s;
   }
 
+  /** R11 "Helpers": today's fixed helper lines (bills, birthdays, chores, the weather, spend). */
+  function helpers(v) {
+    const box = obj(v);
+    if (!box) return null;
+    const lines = arr(box.lines).map((l) => txt(l, 160)).filter(Boolean).slice(0, 8);
+    const note = stateLine(box.state, 'helpers');
+    if (!lines.length && !note) return null;
+    const s = section('helpers', 'Helpers', lines.length ? lines.length + (lines.length === 1 ? ' line' : ' lines') : '');
+    if (note) { s.append(mk('p', 'bfine', note)); return s; }
+    const ul = mk('ul', 'bpark');
+    lines.forEach((line) => ul.append(mk('li', '', line)));
+    s.append(ul);
+    return s;
+  }
+
   /** The sections this brief carries, in display order (an absent one is simply left out). */
   function render(data) {
     const d = obj(data) || {};
-    return [deliveries(d.deliveries), family(d.family), documents(d.vault), home(d.home), vitals(d.vitals)].filter(Boolean);
+    return [deliveries(d.deliveries), family(d.family), documents(d.vault), home(d.home), vitals(d.vitals), helpers(d.helpers)].filter(Boolean);
   }
 
   window.JarvisBriefSections = Object.freeze({ render });

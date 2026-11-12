@@ -177,6 +177,20 @@ ALERT_WORDS: Mapping[str, str] = MappingProxyType(
         "book_sealed": "A release's build book was sealed in my vault",
         "book_seal_failed": "A release's build book could not be sealed",
         "book_session_closed": "A build book session closed",
+        # R11: the helpers (docs/plans/r11-free-helpers.md D5)
+        "disaster_alert": "A disaster warning for my area",
+        "bill_due": "A bill is due",
+        "birthday": "A birthday in my contacts today",
+        "chore_due": "A chore on the rota is due",
+        "maintenance_due": "Home upkeep is due",
+        "weather_warning": "A weather warning for my area",
+        "breach_notice": "A data-breach notice arrived in my mail",
+        "nudge_standup": "A nudge to stand up",
+        "nudge_hydrate": "A nudge to drink water",
+        "nudge_activity": "A planned activity didn't happen",
+        "nudge_free_time": "An idea for free time",
+        "nudge_focus": "My top priority now",
+        "weather_note": "A minor weather note",
     }
 )
 
@@ -195,6 +209,12 @@ PURPOSE_WORDS: Mapping[str, str] = MappingProxyType(
         "connectors": "the owner's own account tokens",
         "book_index": "the sealed build books",
         "book_session": "build book sessions",
+        # R11
+        "bills": "bills and their UPI IDs",
+        "spend": "grocery spend from receipts",
+        "wellbeing": "the water and activity log",
+        "alerts_place": "the place for weather and disaster alerts",
+        "kitchen": "the pantry, diet and saved recipes",
     }
 )
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -24,7 +25,7 @@ from jarvis.llm.brains import BrainSpec
 from jarvis.logging import get_trace_id
 from jarvis.memory.base import SessionStore
 from jarvis.offline.mode import BrainMode
-from jarvis.offline.rules import NoAIRoute, route_no_ai
+from jarvis.offline.rules import NoAIRoute, NoAIRouter, route_no_ai
 from jarvis.people.guard import REFUSAL_LINES
 from jarvis.tools.budget import turn_budget
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
@@ -100,9 +101,11 @@ async def run_no_ai(
     *,
     scope: str,
     spoken: bool = False,
+    extra: Sequence[NoAIRouter] = (),
 ) -> NoAIResult:
-    """Answer `text` with no model: route by pattern, run the calls, join the lines."""
-    route: NoAIRoute = route_no_ai(text, now)
+    """Answer `text` with no model: route by pattern (R11: the helpers' phrases first), run the
+    calls, join the lines."""
+    route: NoAIRoute = route_no_ai(text, now, extra)
     if not route.calls:
         return NoAIResult(route.reply)
     if gateway is None:
@@ -178,6 +181,7 @@ class NoAIRunner:
             _owner_now(self._s),
             scope=f"{req.user_id}:{session.id}",
             spoken=req.channel == "voice",
+            extra=self.mode.phrases,  # R11 D18
         )
         rounds = Rounds(session=session, cards=list(out.cards))
         if self._gw is not None:

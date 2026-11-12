@@ -1,0 +1,10 @@
+Authentication-Results: mx.google.com; dkim=pass header.i=@freshcart.example.com header.s=s1 header.b=abc; spf=pass smtp.mailfrom=freshcart.example.com; dmarc=pass (p=REJECT) header.from=freshcart.example.com
+From: FreshCart <orders@freshcart.example.com>
+To: owner@example.com
+Subject: Your FreshCart order FC-1
+Date: Mon, 02 Nov 2026 10:00:00 +0530
+Message-ID: <fc1@mail.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Order FC-1
+Order Total: ₹999

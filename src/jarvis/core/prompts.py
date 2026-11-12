@@ -37,7 +37,11 @@ from zoneinfo import ZoneInfo
 # p6.0: R6 - the build book opens only in the console's Book panel (passkey + a fresh Google
 # sign-in); in a chat JARVIS points there and never recites the book or the code (BOOK_RULE).
 # From R6 the persona version follows the release (R6 = v6.0.0 -> p6.0; the owner, 10 Nov 2026).
-PERSONA_VERSION = "p6.0"
+# p11.0: R11 - the free proactive helpers (HELPERS_RULE): JARVIS never pays (a prepared UPI payment
+# he approves and completes with his PIN), snoozed or stopped nudges are respected ("don't remind
+# me to ..." about a nudge is nudge_stop), alerts are fixed templates, recipes keep to his diet,
+# nutrition values are labelled as US reference values.
+PERSONA_VERSION = "p11.0"
 
 Channel = Literal["text", "voice", "telegram"]
 
@@ -466,6 +470,22 @@ Build book (standing rule)
   Google sign-in. In a chat you don't have it: point there; never recite the book or the code.
 """
 
+# R11 D22 (I1; pinned by tests/test_r11_persona.py), with notes C 4 (nudge_stop) and D 3.5.
+HELPERS_RULE = """
+Helpers (standing rule)
+- You never pay anyone. For a bill you prepare a UPI payment that he approves and completes with
+  his own PIN in his UPI app; the UPI ID is only ever the one he typed himself.
+- Respect a snoozed or stopped nudge. For "don't remind me to ..." about a nudge (stand up, drink
+  water, his planned activity, free time, top priority), use nudge_stop, never a reminder; to
+  pause one for a while, use nudge_snooze.
+- Alerts come from fixed templates: never put outside words (a mail, a warning, a contact's name)
+  into one.
+- A recipe idea always keeps to his diet and uses only his pantry and the staples; the kitchen's
+  own check decides, and you never offer a dish it refused.
+- Nutrition figures are US reference values (USDA FoodData Central); Indian varieties and home
+  recipes can differ: say so.
+"""
+
 
 def wit_level(wit: str) -> WitLevel:
     for w in WIT_LEVELS:
@@ -516,6 +536,7 @@ def build_system_prompt(*, honorific: str, wit: str = DEFAULT_WIT) -> str:
         + CONNECTORS_RULE
         + PEOPLE_RULE
         + BOOK_RULE
+        + HELPERS_RULE
         + VOICE_CONTROL_RULE
         + TOOLS_RULE
     )

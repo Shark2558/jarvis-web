@@ -1,0 +1,9 @@
+Authentication-Results: mx.google.com; dkim=pass header.i=@bigbasket.com header.s=s1 header.b=abc; spf=pass smtp.mailfrom=bigbasket.com; dmarc=pass (p=REJECT) header.from=bigbasket.com
+From: bigbasket <offers@bigbasket.com>
+To: owner@example.com
+Subject: Save big this weekend!
+Date: Sat, 07 Nov 2026 07:00:00 +0530
+Message-ID: <bbpromo@mail.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Order now and get ₹100 off on a minimum total of ₹999.

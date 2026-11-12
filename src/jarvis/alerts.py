@@ -9,6 +9,7 @@ or unpaired.
 R3 (docs/plans/r3-home-camera.md D10, D12): the home kinds, and two keywords every sink accepts:
 `silent` (deliver without a sound) and `photo` (one small JPEG for a burglar alert the owner opted
 in to; held in memory, never stored, logged or audited). A sink that can't do either ignores it.
+R11 (docs/plans/r11-free-helpers.md D5): thirteen helper kinds; `R11_ALERT_KINDS` lists them.
 """
 
 from __future__ import annotations
@@ -46,6 +47,24 @@ AlertKind = Literal[
     "book_sealed",
     "book_seal_failed",
     "book_session_closed",
+    # R11 (docs/plans/r11-free-helpers.md D5): the free proactive helpers, every one sent through
+    # `helpers.gate.HelperSender`. Levels in notify.ports.DEFAULT_URGENCY: disaster_alert urgent
+    # (rings at night); the reminders, weather_warning and breach_notice "important" daytime rings
+    # (held at night); the five nudges "important" daytime rings that are EPHEMERAL (dropped at
+    # night, never held); weather_note info.
+    "disaster_alert",
+    "bill_due",
+    "birthday",
+    "chore_due",
+    "maintenance_due",
+    "weather_warning",
+    "breach_notice",
+    "nudge_standup",
+    "nudge_hydrate",
+    "nudge_activity",
+    "nudge_free_time",
+    "nudge_focus",
+    "weather_note",
 ]
 HOME_ALERT_KINDS: tuple[AlertKind, ...] = (
     "home_intruder",
@@ -101,4 +120,28 @@ class NoAlerts:
         return AlertResult(sent=False, reason=self.reason)
 
 
-__all__ = ["HOME_ALERT_KINDS", "AlertKind", "AlertResult", "AlertSink", "NoAlerts"]
+R11_ALERT_KINDS: tuple[AlertKind, ...] = (
+    "disaster_alert",
+    "bill_due",
+    "birthday",
+    "chore_due",
+    "maintenance_due",
+    "weather_warning",
+    "breach_notice",
+    "nudge_standup",
+    "nudge_hydrate",
+    "nudge_activity",
+    "nudge_free_time",
+    "nudge_focus",
+    "weather_note",
+)
+
+
+__all__ = [
+    "HOME_ALERT_KINDS",
+    "R11_ALERT_KINDS",
+    "AlertKind",
+    "AlertResult",
+    "AlertSink",
+    "NoAlerts",
+]

@@ -49,7 +49,9 @@
     "routes.googleapis.com": "Google Maps Platform",
     "speech.googleapis.com": "Google Cloud Speech-to-Text",
     "texttospeech.googleapis.com": "Google Cloud Text-to-Speech",
-    "metadata.google.internal": "Cloud Run"
+    "metadata.google.internal": "Cloud Run",
+    "api.open-meteo.com": "Open-Meteo",
+    "sachet.ndma.gov.in": "NDMA SACHET"
   },
   "not_services": {
     "www.googleapis.com": "shared by Calendar, Drive, YouTube and sign-in; each is covered by its setting",

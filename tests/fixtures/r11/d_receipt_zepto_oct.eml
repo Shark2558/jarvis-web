@@ -1,0 +1,10 @@
+Authentication-Results: mx.google.com; dkim=pass header.i=@zeptonow.com header.s=s1 header.b=abc; spf=pass smtp.mailfrom=zeptonow.com; dmarc=pass (p=REJECT) header.from=zeptonow.com
+From: Zepto <noreply@zeptonow.com>
+To: owner@example.com
+Subject: Order ZPT-4455 delivered
+Date: Wed, 28 Oct 2026 08:30:00 +0530
+Message-ID: <zpt4455@mail.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Your order ZPT-4455 is delivered.
+Amount paid: ₹789.00

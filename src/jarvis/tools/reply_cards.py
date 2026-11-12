@@ -1,6 +1,6 @@
 # src/jarvis/tools/reply_cards.py
-"""Console cards a reply carries (slice 12 D3/D4/D6; Layer 6 → 1): places, a route, videos, and
-WhatsApp drafts — one mechanism for every card under a reply.
+"""Console cards a reply carries (slice 12 D3/D4/D6; Layer 6 → 1): places, a route, videos,
+WhatsApp drafts and (R11 I1) an approved UPI payment — one mechanism for every card under a reply.
 
 A tool adds a card for the OWNER's screen with `add_card` while it runs; the card travels beside
 the tool's result, never inside what the model sees (so a link on a card always came from Google's
@@ -48,6 +48,8 @@ MAX_DRAFTS = 5  # WhatsApp draft cards per reply (slice 12 D6), counted apart fr
 MAX_ITEMS = 10
 MAX_URL = 2048  # Google Maps URLs are limited to 2,048 characters
 TEXT_LIMIT = 300
+UPI_LINK_MAX = 1100  # a upi://pay link (R11 I1)
+UPI_QR_MAX = 20_000  # its QR as an SVG data URI
 VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 MAPS_ATTRIBUTION: Final = "Google Maps"
 YOUTUBE_ATTRIBUTION: Final = "YouTube"
@@ -137,7 +139,19 @@ class VideosCard(_Strict):
     items: list[VideoItem] = Field(default_factory=list, max_length=MAX_ITEMS * 2)
 
 
-AnyCard = PlacesCard | RouteCard | VideosCard | WhatsAppCard
+class UpiCard(_Strict):
+    """R11 I1 (plan D7): a UPI payment he approved, shown ONCE under the approval's reply: the
+    NPCI pay link, its QR (segno SVG) and code's own words. Made only by `bill_pay_prepare`'s
+    approved run, from his saved bill; never stored with the conversation, never logged, never
+    drawn on Telegram (R3 is never approvable there)."""
+
+    kind: Literal["upi"] = "upi"
+    link: str = Field(max_length=UPI_LINK_MAX, pattern=r"^upi://pay\?[A-Za-z0-9%@._~=&-]{1,1000}$")
+    qr: str = Field(max_length=UPI_QR_MAX, pattern=r"^data:image/svg\+xml;charset=utf-8,")
+    words: str = Field(min_length=1, max_length=TEXT_LIMIT)
+
+
+AnyCard = PlacesCard | RouteCard | VideosCard | WhatsAppCard | UpiCard
 ReplyCard = Annotated[AnyCard, Field(discriminator="kind")]
 
 CARD_NOT_SHOWN: Final = (
@@ -227,6 +241,7 @@ __all__ = [
     "PlacesCard",
     "ReplyCard",
     "RouteCard",
+    "UpiCard",
     "VideoItem",
     "VideosCard",
     "WhatsAppCard",

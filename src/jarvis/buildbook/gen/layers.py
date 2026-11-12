@@ -41,6 +41,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "groceries": "L5",
         "family": "L5",
         "packages": "L5",
+        "helpers": "L5",  # R11: the free proactive helpers (one package, four parts)
         # L6 Integration & Tools
         "tools": "L6",
         "integrations": "L6",

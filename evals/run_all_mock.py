@@ -105,6 +105,10 @@ SUITES = [
     # passkey + fresh sign-in access, the guest lane against a worst-case model, the wipe's needle
     # scan and the guest lock; each part's negative control must make the suite fail
     ("r6_book (gated)", [sys.executable, str(HERE / "r6_book" / "run.py"), "--mock"], True),
+    # R11 I1: the free proactive helpers -- I0's gate, the four parts (bills and the UPI payment,
+    # home and outside, nudges, the kitchen) and the cross-part needle scan after a whole day;
+    # each built part's negative control must make the suite fail
+    ("r11_helpers (gated)", [sys.executable, str(HERE / "r11_helpers" / "run.py"), "--mock"], True),
 ]
 
 

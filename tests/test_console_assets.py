@@ -493,7 +493,7 @@ async def test_memory_panel_dock_button_and_dialog_are_wired(client: AsyncClient
 async def test_the_dock_folds_into_a_more_sheet_with_an_entry_per_foldable_tab(
     client: AsyncClient,
 ) -> None:
-    """R6.1 D7 (replaces the fixed phone "ovf" split): twenty panels, and console-dock.js measures
+    """R6.1 D7 (replaces the fixed phone "ovf" split): 21 panels (R11), and console-dock.js measures
     the dock at every width, folding the tabs that don't fit behind "More", last tabs first. Chat
     and Brief never fold; Approvals folds only where its label is wider than its tab (900-1180 px,
     review A), so it has a More-sheet entry too, like every later tab, in dock order; More starts
@@ -502,7 +502,9 @@ async def test_the_dock_folds_into_a_more_sheet_with_an_entry_per_foldable_tab(
     html = (await client.get("/")).text
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     names = re.findall(r'<button class="dk(?: wide)?" type="button" data-open="(\w+)"', dock)
-    assert len(names) == 20 and names[:3] == ["chat", "brief", "approvals"]
+    # R11 D19: Helpers is the 21st tab, last (it folds behind More first on a small screen)
+    assert len(names) == 21 and names[:3] == ["chat", "brief", "approvals"]
+    assert names[-1] == "helpers"
     assert "ovf" not in dock
     assert 'id="dockMore" type="button" aria-haspopup="dialog" aria-expanded="false"' in dock
     assert re.search(r'id="dockMore"[^>]* hidden>', dock)  # shown only while a tab is folded

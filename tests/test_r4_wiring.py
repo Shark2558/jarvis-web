@@ -46,6 +46,8 @@ R4_ROUTES = (
     "/v1/settings/brain-mode",
 )
 
+R11_JOBS = ("helpers_clock", "helpers_daily")  # R11 I0: on every tick, no key needed
+
 
 @dataclass
 class App:
@@ -110,7 +112,7 @@ async def test_tick_carries_vitals_poll_and_health_check_with_unique_names(
 ) -> None:
     async with plain_app(settings) as a:
         names = [j.name for j in a.state.tick_jobs]
-        assert names == ["vitals_poll", "health_check"]
+        assert names == ["vitals_poll", "health_check", *R11_JOBS]
         assert not RESERVED_JOB_NAMES & set(names)
         assert await run_jobs(a.state.tick_jobs, [UID]) == dict.fromkeys(names, "ok")
 
@@ -173,7 +175,7 @@ async def test_vitals_switched_off_leaves_no_tool_route_or_job(settings: Setting
     async with plain_app(settings.model_copy(update={"vitals_enabled": False})) as a:
         assert a.state.vitals is None
         assert not {"vitals_show", "vitals_set_key"} & a.tools()
-        assert [j.name for j in a.state.tick_jobs] == ["health_check"]
+        assert [j.name for j in a.state.tick_jobs] == ["health_check", *R11_JOBS]
         assert (await a.client.get("/v1/vitals")).status_code == 503
         assert a.state.brief._vitals is None  # noqa: SLF001
 
@@ -182,7 +184,7 @@ async def test_health_switched_off_leaves_no_tool_route_or_job(settings: Setting
     async with plain_app(settings.model_copy(update={"health_enabled": False})) as a:
         assert a.state.health is None
         assert "systems_check" not in a.tools()
-        assert [j.name for j in a.state.tick_jobs] == ["vitals_poll"]
+        assert [j.name for j in a.state.tick_jobs] == ["vitals_poll", *R11_JOBS]
         r = await a.client.get("/v1/health")
         assert r.status_code == 503 and "not available" in r.text
         assert (await a.client.post("/v1/health/run", headers=H)).status_code == 503

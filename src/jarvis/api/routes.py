@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -255,10 +255,12 @@ async def approve(
     approval_id: str,
     d: Decision,
     request: Request,
+    response: Response,
     brain: Brain = Depends(_brain),
     uid: str = Depends(current_user),
 ) -> ChatResponse:
     # the passkey check is made by the gateway's approval guard, on the card as it is now
+    response.headers["Cache-Control"] = "no-store"  # R11 I1: it may carry a one-time UPI card
     with presenting_proof(d.passkey):
         return await brain.approve(approval_id, session_id=d.session_id, user_id=uid)
 

@@ -29,6 +29,9 @@ dependencies = [
     # slice 12 code review CR-7: IANA zone data for zoneinfo (the quota ledger's Pacific time)
     # even in an image without /usr/share/zoneinfo. Apache-2.0.
     "tzdata>=2024.1",
+    # R11 D7 (docs/plans/r11-free-helpers.md): the prepared UPI payment's QR, drawn as SVG on the
+    # server. segno BSD-3-Clause, pure Python, no dependencies.
+    "segno>=1.6.6,<2",
 ]
 
 [project.optional-dependencies]
@@ -81,6 +84,8 @@ where = ["src"]
 "jarvis.buildbook" = ["_book/*"]
 # R6 D3, D5: the generator's hashed name list and known fakes (the deploy job installs non-editable)
 "jarvis.buildbook.gen" = ["redact.json", "fake_secrets.txt"]
+# R11 D15 (I1): the kitchen's USDA FoodData Central subset (CC0), built by scripts/kitchen_fdc_subset.py
+"jarvis.helpers.kitchen" = ["data/*.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

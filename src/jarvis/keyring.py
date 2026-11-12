@@ -19,6 +19,7 @@ token vault keeps using the raw key, so tokens stored before R2 still decrypt.
   never a cipher or MAC purpose and the other way round; still no new stored secret (R3 D4).
 - R6: `book_index` (the sealed build-book index) and `book_session` (book sessions; used both as a
   cipher and as a MAC domain, which `mac` keeps apart by its own HKDF info).
+- R11: `bills`, `spend`, `wellbeing`, `alerts_place` and `kitchen` (the helpers' sealed data).
 """
 
 from __future__ import annotations
@@ -55,6 +56,15 @@ PURPOSES: tuple[str, ...] = (
     # a MAC domain, the hash of a session token: `mac("book_session", token)`)
     "book_index",
     "book_session",
+    # R11 (docs/plans/r11-free-helpers.md, data model): the helpers' own data, each its own key:
+    # bills and their UPI IDs (A), grocery spend from receipts (D), the water and activity log
+    # (C, health-adjacent), his place for weather and disaster alerts (B), the pantry, diet and
+    # saved recipes (D)
+    "bills",
+    "spend",
+    "wellbeing",
+    "alerts_place",
+    "kitchen",
 )
 SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
 MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64

@@ -29,11 +29,15 @@ KEYS = [
     "home_offline_idle", "home_arm_failed", "approval_waiting", "vault_expiry", "home_greeting",
     "home_online", "offline_on", "offline_off", "brief_ready",
     "book_sealed", "book_seal_failed", "book_session_closed",  # R6
+    "disaster_alert", "bill_due", "birthday", "chore_due", "maintenance_due",  # R11 D5
+    "weather_warning", "breach_notice", "nudge_standup", "nudge_hydrate", "nudge_activity",
+    "nudge_free_time", "nudge_focus", "weather_note",
 ]  # fmt: skip
 FIXED = {"home_intruder", "home_hazard", "home_summary"}
 LEVEL = {"home_intruder": "urgent", "home_hazard": "urgent", "home_summary": "urgent",
          "home_greeting": "info", "home_online": "info", "offline_on": "info",
-         "offline_off": "info", "brief_ready": "info"}  # fmt: skip
+         "offline_off": "info", "brief_ready": "info",
+         "disaster_alert": "urgent", "weather_note": "info"}  # fmt: skip
 VAPID = "B" + "A" * 86
 # a real-looking (but fake) subscription the stubbed push manager returns
 SUB = {

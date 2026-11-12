@@ -23,6 +23,14 @@ _WORDS = {
     "book_sealed": "build book sealed",
     "book_seal_failed": "build book not sealed",
     "book_session_closed": "build book session closed",
+    # R11 D5: the helpers' kinds that can be held (the nudges are dropped at night, never held;
+    # a disaster alert rings)
+    "bill_due": "bill reminder",
+    "birthday": "birthday",
+    "chore_due": "chore",
+    "maintenance_due": "home upkeep",
+    "weather_warning": "weather warning",
+    "breach_notice": "breach notice",
 }
 
 

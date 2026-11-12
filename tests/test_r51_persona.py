@@ -10,8 +10,8 @@ def _flat(rule: str) -> str:
     return " ".join(rule.split())
 
 
-def test_persona_is_p6_0() -> None:  # R6 I1: p6.0 (BOOK_RULE)
-    assert p.PERSONA_VERSION == "p6.0"
+def test_persona_is_p11_0() -> None:  # R6 I1: p6.0 (BOOK_RULE); R11 I1: p11.0 (HELPERS_RULE)
+    assert p.PERSONA_VERSION == "p11.0"
 
 
 def test_vitals_tracks_itself_and_the_owner_never_types_a_key() -> None:

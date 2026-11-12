@@ -205,10 +205,10 @@ def test_planted_personal_data_is_scrubbed_and_leaks_without_the_scrub(tmp_path:
 def test_the_real_plans_parse(tmp_path: Path) -> None:
     r = Repo.from_git(ROOT)
     read = plans.read_plans(r, default_scrubber())
-    # R6.1's plan is the newest since R6.1 I0; R6's own decisions are still read in full
-    assert read[0].path == "docs/plans/r6-1-architecture-guide.md" and read[0].label == "R6.1"
+    # R11's plan is the newest since R11 I0 (R6.1's before it); R6's own decisions are still read
+    assert read[0].path == "docs/plans/r11-free-helpers.md" and read[0].label == "R11"
     r6 = next(d for d in plans.decisions(read) if d.plan == "docs/plans/r6-build-book.md")
     assert len(r6.decisions) == 17 and r6.decisions[0].startswith("D1 · Deterministic")
     assert any(f.release == "R6" for f in plans.fit_rows(read))
     lims = plans.limitations(read)
-    assert lims[0].release == "R6.1" and 0 < len(lims) <= MAX_LIMITATIONS
+    assert lims[0].release == "R11" and 0 < len(lims) <= MAX_LIMITATIONS  # the newest first

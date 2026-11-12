@@ -330,6 +330,17 @@ def _vitals(data: BriefData) -> list[str]:
     return [head, *(f"  {line}" for line in box.lines)]
 
 
+def _helpers(data: BriefData) -> list[str]:
+    """R11: the helpers' own fixed lines (bills, birthdays, chores, weather, nudges, spend)."""
+    box = data.helpers
+    if box is None:
+        return []
+    head = "HELPERS"
+    if (note := _status_line(box.state, "the helpers")) is not None:
+        return [head, note]
+    return [head, *(f"  {line}" for line in box.lines)]
+
+
 def inbox_text(text: str, data: BriefData | None) -> str:
     """The brief as put in the Gmail inbox: the Documents block says only how many need attention
     unless the owner switched on `inbox_copy` (R2 D5)."""
@@ -375,6 +386,7 @@ def render_text(data: BriefData, ai: AIBlock | None = None, ai_note: str | None 
         _vault(data),
         _home(data),
         _vitals(data),
+        _helpers(data),
         _jarvis(data),
         _ai(ai, ai_note),
     ]

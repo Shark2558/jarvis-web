@@ -24,8 +24,8 @@ from jarvis.vitals.service import MANUAL_UNAVAILABLE as MANUAL_NOTE
 from jarvis.vitals.words import NO_CREDIT, words_for
 
 PANELS = (
-    "activity approvals book brief chat connectors construct faces history home integrations "
-    "media memory notes people privacy things vault vitals voice"
+    "activity approvals book brief chat connectors construct faces helpers history home "
+    "integrations media memory notes people privacy things vault vitals voice"
 ).split()
 # A selector that shows the panel has painted its data (best effort; a miss is never fatal).
 READY: dict[str, str] = {
@@ -34,6 +34,7 @@ READY: dict[str, str] = {
     "connectors": "#p-connectors .integ .istate",
     "people": "#peopleCard .pname",
     "book": "#p-book .bk-release",  # R6 I1: the panel with a release and sealed books (book_mocks)
+    "helpers": "#p-helpers .hp-tabs .hp-tab",  # R11 I0: the frame and its four tabs
 }
 NOW = int(time.time())
 

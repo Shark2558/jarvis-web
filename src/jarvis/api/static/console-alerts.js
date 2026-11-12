@@ -35,6 +35,20 @@
     ['book_sealed', 'A release\'s build book was sealed in my vault'],
     ['book_seal_failed', 'A release\'s build book could not be sealed'],
     ['book_session_closed', 'A build book session closed'],
+    // R11 D5: the helpers (each one also has its own switch in the Helpers panel)
+    ['disaster_alert', 'A disaster warning for my area (rings at night)'],
+    ['bill_due', 'A bill is due'],
+    ['birthday', 'A birthday in my contacts today'],
+    ['chore_due', 'A chore on the rota is due'],
+    ['maintenance_due', 'Home upkeep is due'],
+    ['weather_warning', 'A weather warning for my area'],
+    ['breach_notice', 'A data-breach notice arrived in my mail'],
+    ['nudge_standup', 'Nudge: time to stand up'],
+    ['nudge_hydrate', 'Nudge: drink some water'],
+    ['nudge_activity', 'Nudge: a planned activity didn\'t happen'],
+    ['nudge_free_time', 'Nudge: an idea for free time'],
+    ['nudge_focus', 'Nudge: my top priority now'],
+    ['weather_note', 'A minor weather note'],
   ];
   const LEVEL = { urgent: 'Urgent', important: 'Important', info: 'Just so you know' };
   const S = { data: undefined, vip: [], devices: [], error: '', loadedAt: 0, loading: null, busy: false, key: '' };

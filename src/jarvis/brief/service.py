@@ -41,6 +41,7 @@ from jarvis.brief.models import (
     BriefView,
     DeliveriesSection,
     FamilySection,
+    HelpersSection,
     HomeOvernightSection,
     SectionState,
     SettingsPatch,
@@ -124,6 +125,12 @@ class VitalsSource(Protocol):
     """R4 I1: the Vitals section's maker (`api/r4_wiring.VitalsBrief`); None = nothing to say."""
 
     async def section(self, uid: str, tz: tzinfo, day: date) -> VitalsSection | None: ...
+
+
+class HelpersSource(Protocol):
+    """R11: the Helpers section's maker (`helpers.brief.HelpersBrief`); None = nothing to say."""
+
+    async def section(self, uid: str, tz: tzinfo, day: date) -> HelpersSection | None: ...
 
 
 async def _own_section(work: Awaitable[T], failed: Callable[[SectionState], T]) -> T | None:
@@ -272,6 +279,7 @@ class BriefService:
         vault_due: VaultDueBrief | None = None,
         home_overnight: HomeOvernightBrief | None = None,
         vitals: VitalsSource | None = None,
+        helpers: HelpersSource | None = None,
     ) -> None:
         self._store = store
         self._google = google
@@ -294,6 +302,7 @@ class BriefService:
         self._vault_due = vault_due  # R2: Documents section (None: not wired)
         self._home = home_overnight  # R3: Home overnight section (None: not wired)
         self._vitals = vitals  # R4 I1: Vitals section (None: not wired); omitted when empty
+        self._helpers = helpers  # R11: Helpers section (None: not wired); omitted when empty
 
     # ---- views --------------------------------------------------------------------------------
 
@@ -500,6 +509,7 @@ class BriefService:
             "vault": vault,
             "home": home,
             "vitals": await self._vitals_section(uid, tz, day),
+            "helpers": await self._helpers_section(uid, tz, day),
         }
         if all(v is None for v in extras.values()):
             return got
@@ -515,6 +525,15 @@ class BriefService:
             return None
         return await _own_section(
             self._vitals.section(uid, tz, day), lambda st: VitalsSection(state=st)
+        )
+
+    async def _helpers_section(self, uid: str, tz: ZoneInfo, day: date) -> HelpersSection | None:
+        """R11: the helpers' lines; no setting of its own (each helper has its switch), omitted
+        when there is nothing."""
+        if self._helpers is None:
+            return None
+        return await _own_section(
+            self._helpers.section(uid, tz, day), lambda st: HelpersSection(state=st)
         )
 
     async def _ai(

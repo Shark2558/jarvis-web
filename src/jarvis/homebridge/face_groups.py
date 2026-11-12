@@ -260,6 +260,23 @@ class FaceGroupsPlugin:
         )
         return view
 
+    def page_view(self) -> dict[str, Any]:
+        """For the laptop's own page only (never a signed answer): the groups, how many crops
+        each can show, and how the watched folder is doing."""
+        view = self.groups_view()
+        if self.store is not None:
+            for group in view["groups"]:
+                group["crops"] = len(self.store.crops(group["id"]))
+        view.update(waiting=self.folder.waiting, skipped=self.folder.skipped)
+        return view
+
+    def crop(self, group: str, index: int) -> bytes | None:
+        """One face picture of a group, for the laptop's own page. None when there is none."""
+        if self.store is None or not GROUP.fullmatch(group) or index < 0:
+            return None
+        crops = self.store.crops(group)
+        return crops[index] if index < len(crops) else None
+
     async def forget(self, groups: list[str] | None) -> dict[str, int]:
         """Forget these unnamed groups (None: every unnamed group and stray). Counts only."""
         if self.store is None:

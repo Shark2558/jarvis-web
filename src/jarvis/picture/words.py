@@ -96,6 +96,29 @@ NOT_NAME = frozenset(
     inaugurates inaugurated welcome welcomes presents visit visits at as new our your my this that
     """.split()
 )
+# R11.1 I1 (the over-caution check): ordinary search words. Never part of a person's name, so a
+# web query on a picture turn that carries one is not a bare name, and in a run of capitalised
+# words ("Mumbai Weather Today") they are not name parts. Plausible given names or surnames
+# (price, best, gold, rich, rain, storm, may, rose ...) are left out on purpose.
+QUERY_WORDS = frozenset(
+    """
+    weather forecast forecasts rainfall temperature humidity monsoon cyclone flood floods
+    today tomorrow tonight yesterday now week weekend month year latest live update updates news
+    score scores match matches result results schedule fixtures timings timing hours time times
+    date dates calendar holiday holidays season festival
+    rate rates fare fares cost costs deal deals offer offers sale discount cheap cheapest
+    review reviews rating ratings specs specifications comparison compare versus vs alternative
+    alternatives warranty manual size sizes weight height length depth population area
+    how what when where why which
+    near nearby nearest open closed opening closing route routes distance directions map maps
+    traffic status flight flights metro ticket tickets booking bookings online delivery buy
+    recycling rules rule law laws guide guides tips tutorial steps meaning definition history
+    facts list top quality safety safe benefits uses effects dosage symptoms treatment remedy
+    remedies ingredients calories nutrition download install error fix login website app
+    cricket football hockey tennis tournament league stock stocks share shares sensex nifty
+    petrol diesel electricity water air
+    """.split()
+)
 JOINS = frozenset({"of", "the", "and", "de", "da", "al"})  # inside a name: "Gateway of India"
 SENTENCE = re.compile(r"(?<=[.!?])\s+")
 WORD = re.compile(r"[^\W\d_][\w'’\-]*")
@@ -183,6 +206,7 @@ __all__ = [
     "MAX_NAME_WORDS",
     "NOT_NAME",
     "OPENERS",
+    "QUERY_WORDS",
     "SENTENCE",
     "THING_WORDS",
     "WORD",

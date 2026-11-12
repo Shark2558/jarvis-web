@@ -36,9 +36,12 @@ from jarvis.logging import get_logger
 from jarvis.picture.guard import NO_IDENTIFY
 from jarvis.picture.words import (
     NOT_NAME,
+    OPENERS,
+    QUERY_WORDS,
     WORD,
     capitalised,
     contains,
+    is_thing_word,
     name_shaped,
     person_shaped,
     plain,
@@ -124,15 +127,48 @@ def check_name(name: str, typed: str, picture_text: Sequence[str]) -> Allowed | 
     return Refused(NO_IDENTIFY)
 
 
+def _name_part(word: str, first: bool) -> bool:
+    """Could this capitalised word be part of a person's name? Not a small word, not an
+    ordinary search word, and not the query's sentence-case opener ("Weather Mumbai")."""
+    p = plain(word)
+    return p not in NOT_NAME and p not in QUERY_WORDS and not (first and p in OPENERS)
+
+
 def _named_by_capitals(words: list[str], known: frozenset[str]) -> bool:
-    """A capitalised word (ALL CAPS too) he did not type and the picture does not show, unless
-    it is the query's lone opening capital ("Price of ...") or a small word."""
-    for i, word in enumerate(words):
-        if not capitalised(word) or plain(word) in known or plain(word) in NOT_NAME:
+    """A run of two or more capitalised words (ALL CAPS too) that could be a person's name
+    ("Lekha Examplekar", "MEENU EXAMPLEWALA", "R K Examplekar"), one of them neither typed by him
+    nor shown by the picture. A lone capitalised word is a place or a brand as often as a name
+    ("weather in Mumbai"), and is let through like the query's opening capital always was
+    (R11.1 I1, the over-caution check)."""
+    i = 0
+    while i < len(words):
+        if not capitalised(words[i]):
+            i += 1
             continue
-        if i > 0 or (len(words) > 1 and capitalised(words[1])):
+        j = i
+        while j < len(words) and capitalised(words[j]):
+            j += 1
+        run = [plain(w) for k, w in enumerate(words[i:j]) if _name_part(w, i + k == 0)]
+        if len(run) >= 2 and any(w not in known for w in run):
             return True
+        i = j
     return False
+
+
+def _bare_name(query: str, known: frozenset[str]) -> bool:
+    """The query is a person's name and little else, in any letter case ("lekha examplekar",
+    "Kohli", "rajesh examplekar contact number"): once its ordinary search words are set aside,
+    what is left is shaped like a name (two words or more when a search word was there) and he
+    neither typed nor was shown any of it."""
+    words = WORD.findall(query)
+    rest = [w for w in words if plain(w) not in QUERY_WORDS]
+    if not rest or word_set(rest) & known:
+        return False
+    if len(rest) < len(words) and len(rest) < 2:  # "monsoon weather forecast": a topic
+        return False
+    if any(p.endswith("es") and is_thing_word(p[:-2]) for p in map(plain, rest)):
+        return False  # "festival dishes", "match boxes": a thing, its plural in -es
+    return name_shaped(" ".join(rest))
 
 
 def check_query(query: str, typed: str, picture_text: Sequence[str]) -> Allowed | Refused:
@@ -144,7 +180,7 @@ def check_query(query: str, typed: str, picture_text: Sequence[str]) -> Allowed 
         return Refused(WEB_REFUSED)  # "who is the woman in red", "actress with short hair"
     if _named_by_capitals(WORD.findall(query), known):
         return Refused(WEB_REFUSED)  # "Lekha Examplekar minister", "LEKHA EXAMPLEKAR"
-    if name_shaped(query) and not set(folded) & known:
+    if _bare_name(query, known):
         return Refused(WEB_REFUSED)  # a bare name, also in lower case
     return ALLOWED
 

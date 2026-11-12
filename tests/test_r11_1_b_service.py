@@ -191,6 +191,15 @@ async def test_ten_files_go_with_one_message_and_the_owners_own_cap_is_kept(
         await svc.check("u1", ids[:3], PRIVATE)
 
 
+async def test_as_many_files_may_wait_as_one_message_may_carry(docs: MemoryDocs) -> None:
+    svc = DocumentService(AttachmentStore(docs), policy=AttachPolicy(max_files=12))
+    ids = [(await svc.upload("u1", f"{i}.txt", b"x")).id for i in range(12)]
+    assert len(await svc.check("u1", ids, PRIVATE)) == 12
+    with pytest.raises(DocumentRejected) as e:
+        await svc.upload("u1", "one more.txt", b"x")
+    assert e.value.code == "too_many" and "12 files are already waiting" in str(e.value)
+
+
 async def test_the_files_of_one_message_have_a_total_size(svc: DocumentService) -> None:
     ids = [(await svc.upload("u1", f"{i}.txt", b"y" * 600)).id for i in range(3)]
     svc.policy = AttachPolicy(total_bytes=1_500)

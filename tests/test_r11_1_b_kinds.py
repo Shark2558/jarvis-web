@@ -249,3 +249,145 @@ async def test_the_child_refuses_a_300_sheet_workbook_in_plain_words() -> None:
     with pytest.raises(DocumentRejected) as e:
         await extract_isolated(many_sheets_xlsx(300), "xlsx", Limits())
     assert e.value.code == "too_complex" and "300 sheets" in str(e.value)
+
+
+# ---- workbooks: the edges ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "text"),
+    [
+        (None, ""),
+        (True, "TRUE"),
+        (False, "FALSE"),
+        (7, "7"),
+        (2.5, "2.5"),
+        (1250.0, "1250"),
+        (1e20, "1e+20"),
+        (float("nan"), ""),
+        (float("inf"), ""),
+        ("two\nlines   here", "two lines here"),
+        ("x" * 900, "x" * 500),
+    ],
+)
+def test_a_cell_reads_as_plain_words(value: object, text: str) -> None:
+    from jarvis.documents.sheets import cell_text
+
+    assert cell_text(value) == text
+
+
+def test_dates_and_times_in_cells_read_the_way_they_are_said() -> None:
+    import datetime as dt
+
+    from jarvis.documents.sheets import cell_text
+
+    assert cell_text(dt.datetime(2026, 11, 12, 19, 30)) == "2026-11-12 19:30"
+    assert cell_text(dt.datetime(2026, 11, 12)) == "2026-11-12"
+    assert (
+        cell_text(dt.time(7, 5, 9)) == "07:05:09" and cell_text(dt.date(2026, 1, 2)) == "2026-01-02"
+    )
+
+
+class Ticks:
+    """A clock that moves one second every time it is read."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        self.now += 1.0
+        return self.now
+
+
+def test_a_workbook_that_runs_out_of_time_keeps_what_it_read() -> None:
+    out = extract(study_plan_xlsx(60), "xlsx", Limits(budget_s=20.0), clock=Ticks())
+    assert out.truncated and out.rows is not None and 0 < out.rows < 61
+    assert out.text.startswith("Sheet 1 of 2: Plan") and "Sheet 2 of 2" not in out.text
+    e = rejected(extract, study_plan_xlsx(60), "xlsx", Limits(budget_s=0.5), clock=Ticks())
+    assert e.code == "too_slow"
+
+
+def test_a_sheet_that_breaks_part_way_keeps_its_rows_and_says_so() -> None:
+    from jarvis.documents.sheets import _Reader
+
+    def rows():  # type: ignore[no-untyped-def]
+        yield ["a", 1]
+        yield ["b", 2]
+        raise ValueError("damaged XML")
+
+    reader = _Reader(Limits(), deadline=10.0, clock=lambda: 0.0, sheets=1)
+    reader.sheet(1, "Broken", rows())
+    out = reader.done("xlsx")
+    assert out.truncated and out.rows == 2
+    assert (
+        out.text == "Sheet 1 of 1: Broken\na | 1\nb | 2\n(the rest of this sheet could not be read)"
+    )
+
+
+def test_rows_past_the_cap_are_counted_only_for_a_moment() -> None:
+    from jarvis.documents.sheets import _Reader
+
+    reader = _Reader(Limits(max_sheet_rows=1), deadline=1_000.0, clock=Ticks(), sheets=1)
+    reader.sheet(1, "Long", iter([["a"], ["b"], ["c"], ["d"], ["e"], ["f"]]))
+    assert reader.done("xlsx").text.endswith("(more rows were not read)")
+
+
+def test_an_empty_workbook_has_no_text() -> None:
+    assert rejected(extract, make_xlsx({"Empty": []}), "xlsx").code == "no_text"
+
+
+def test_an_xlsx_with_a_damaged_workbook_part_is_unreadable() -> None:
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(study_plan_xlsx(2))) as src, zipfile.ZipFile(buf, "w") as dst:
+        for info in src.infolist():
+            body = (
+                b"<workbook><not closed" if info.filename == "xl/workbook.xml" else src.read(info)
+            )
+            dst.writestr(info.filename, body)
+    assert rejected(extract, buf.getvalue(), "xlsx").code == "unreadable"
+
+
+def test_an_xls_with_too_many_sheets_is_refused_too() -> None:
+    e = rejected(extract, XLS.read_bytes(), "xls", Limits(max_sheets=1))
+    assert e.code == "too_complex" and "2 sheets" in str(e)
+
+
+@pytest.mark.parametrize(
+    ("raised", "code"),
+    [
+        ("Workbook is encrypted", "encrypted"),
+        ("Unsupported format, or corrupt file: Expected BOF record", "unsupported"),
+        ("something else went wrong", "unreadable"),
+    ],
+)
+def test_what_the_old_excel_reader_says_becomes_plain_words(
+    monkeypatch: pytest.MonkeyPatch, raised: str, code: str
+) -> None:
+    import xlrd
+
+    def boom(**_: object) -> None:
+        raise xlrd.XLRDError(raised)
+
+    monkeypatch.setattr(xlrd, "open_workbook", boom)
+    e = rejected(extract, XLS.read_bytes(), "xls")
+    assert e.code == code and "XLRD" not in str(e) and "BOF" not in str(e)
+
+
+def test_old_excel_dates_true_false_and_errors_read_plainly() -> None:
+    import datetime as dt
+
+    from jarvis.documents.sheets import _xls_value, cell_text
+
+    class Book:
+        datemode = 0
+
+    assert _xls_value(Book(), 46338.8125, 3) == dt.datetime(2026, 11, 12, 19, 30)
+    assert _xls_value(Book(), 1e15, 3) == 1e15  # a serial out of range: the number is shown
+    assert cell_text(_xls_value(Book(), 1, 4)) == "TRUE"
+    assert _xls_value(Book(), 7, 5) == "#DIV/0!"
+    assert (
+        cell_text(_xls_value(Book(), 45.0, 2)) == "45" and _xls_value(Book(), "words", 1) == "words"
+    )

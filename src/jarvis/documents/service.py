@@ -181,6 +181,41 @@ class DocumentService:
             max_pictures=p.max_pictures,
         )
 
+    def _header(
+        self,
+        owner: str,
+        name: str,
+        kind: str,
+        size: int,
+        out: Extracted,
+        kept: int,
+        chunk_count: int,
+        cut: bool,
+        pictures: int,
+    ) -> Attachment:
+        """The stored header of a file just read: whose it is, what it holds, how much was kept."""
+        return Attachment(
+            id=new_doc_id(),
+            owner=owner,
+            name=name,
+            kind=kind,
+            size=size,
+            pages=out.pages,
+            pages_total=out.pages_total,
+            words=len(out.text[:kept].split()),
+            chars=kept,
+            chunk_count=chunk_count,
+            truncated=out.truncated or cut,
+            preview=out.text[:PREVIEW_CHARS],
+            created_at=self._now(),
+            sheets=out.sheets,
+            rows=out.rows,
+            slides=out.slides,
+            files=out.files if kind in ARCHIVE_KINDS else None,
+            skipped=out.skipped,
+            pictures=pictures,
+        )
+
     async def upload(
         self, owner: str, name: str, data: bytes, *, folder: bool = False
     ) -> AttachmentRef:
@@ -200,27 +235,7 @@ class DocumentService:
             StoredPicture(name=p.name or clean, media_type=p.media_type, data=p.data)
             for p in out.pictures[: self.policy.max_pictures]
         ]
-        att = Attachment(
-            id=new_doc_id(),
-            owner=owner,
-            name=clean,
-            kind=kind,
-            size=len(data),
-            pages=out.pages,
-            pages_total=out.pages_total,
-            words=len(out.text[:kept].split()),
-            chars=kept,
-            chunk_count=len(chunks),
-            truncated=out.truncated or cut,
-            preview=out.text[:PREVIEW_CHARS],
-            created_at=self._now(),
-            sheets=out.sheets,
-            rows=out.rows,
-            slides=out.slides,
-            files=out.files if kind in ARCHIVE_KINDS else None,
-            skipped=out.skipped,
-            pictures=len(shots),
-        )
+        att = self._header(owner, clean, kind, len(data), out, kept, len(chunks), cut, len(shots))
         await self.store.create(att, chunks, shots)
         log.info(  # never the name or the text: both may be private
             "document stored",
@@ -261,11 +276,13 @@ class DocumentService:
         return True
 
     async def _room_for(self, owner: str) -> None:
-        """Sweep the owner's stale waiting uploads, then refuse past the waiting cap."""
-        if await self._sweep(owner) >= MAX_WAITING:
+        """Sweep the owner's stale waiting uploads, then refuse past the waiting cap (never
+        fewer than one message may carry: R11.1 `attach_max_files`)."""
+        cap = max(MAX_WAITING, self.policy.max_files)
+        if await self._sweep(owner) >= cap:
             raise DocumentRejected(
                 "too_many",
-                f"{MAX_WAITING} files are already waiting to be sent. Send or remove some first.",
+                f"{cap} files are already waiting to be sent. Send or remove some first.",
                 status=409,
             )
 

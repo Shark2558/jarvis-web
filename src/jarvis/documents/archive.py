@@ -95,7 +95,7 @@ def _suffix(name: str) -> str:
 
 def _guard(infos: list[zipfile.ZipInfo], kind: str, limits: Limits) -> None:
     """Every refusal the central directory alone can justify (nothing inflated yet)."""
-    start, inside = _words(kind)
+    inside = _words(kind)[1]
     if any(i.flag_bits & 0x1 for i in infos):
         raise DocumentRejected(
             "encrypted",
@@ -122,7 +122,6 @@ def _guard(infos: list[zipfile.ZipInfo], kind: str, limits: Limits) -> None:
             f"{'a folder' if kind == 'folder' else 'an archive'}: unzip it and attach the files "
             "you need."
         )
-    del start
 
 
 class _Bundle:

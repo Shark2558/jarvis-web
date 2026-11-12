@@ -42,7 +42,9 @@ both ring in quiet hours; no-AI mode answers vitals / systems / calendar with no
 refuses drafting; a bare private name is refused with no links; a pasted key never reaches a
 document, log, audit entry, card or Telegram text; a child is never named; + three negative
 controls), and R6's build book (gen, seal, access, guest, wipe, lock: each part with a control that
-must fail it). The exit status is the gated suites: phase0 --mock is a smoke run and never fails CI.
+must fail it), R11's free helpers, and R11.1's four observation parts (plan, files, photos, look;
+each part's controls must fail it). The exit status is the gated suites: phase0 --mock is a smoke
+run and never fails CI.
 """
 
 from __future__ import annotations
@@ -109,6 +111,12 @@ SUITES = [
     # home and outside, nudges, the kitchen) and the cross-part needle scan after a whole day;
     # each built part's negative control must make the suite fail
     ("r11_helpers (gated)", [sys.executable, str(HERE / "r11_helpers" / "run.py"), "--mock"], True),
+    # R11.1 I1: your observations, fixed -- the four parts (plan: one card for 60 events, the
+    # followed series and the whole inbox; files: heard / understood as and the new kinds; photos:
+    # 2,000 in the background, face groups named with consent, nothing but ids in the cloud; look:
+    # a picture researched and a person never identified, Vitals and GitHub); each part's negative
+    # controls must make the suite fail
+    ("r11_1 (gated)", [sys.executable, str(HERE / "r11_1" / "run.py"), "--mock"], True),
 ]
 
 

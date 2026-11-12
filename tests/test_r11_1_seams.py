@@ -366,7 +366,8 @@ def test_the_guide_has_the_r11_1_card() -> None:
 
 def test_every_part_is_built_and_the_runner_passes_with_every_control_failing() -> None:
     """R11.1 I1 (retires I0's stub-stage test): all four parts are built, every case passes, and
-    each part's own negative control made that part fail (a part that cannot fail proves nothing)."""
+    each part's own negative control made that part fail (a part that cannot fail proves
+    nothing)."""
     run = subprocess.run(
         [sys.executable, str(ROOT / "evals" / "r11_1" / "run.py"), "--mock"],
         capture_output=True,

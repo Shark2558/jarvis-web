@@ -1107,9 +1107,8 @@ check, and the port (D13) already has the place for both.
 | S45 | Not conclusive: Google Fit help, "Sync Fit with Health Connect" (a possible detour for the watch's data) | https://support.google.com/fit/answer/12830119 |
 | S46 | Not conclusive: a third-party guide to DigiLocker's download ("saves to your device"; no folder named) | https://www.cars24.com/article/download-driving-licence-via-digilocker-guide/ |
 | S47 | AndroidX source (the tip of `androidx-main`, not a release): the manifests that WorkManager, AndroidX core and the Health Connect client merge into an app; android-browser-helper's manifest | https://github.com/androidx/androidx/blob/androidx-main/work/work-runtime/src/main/AndroidManifest.xml · https://github.com/androidx/androidx/blob/androidx-main/core/core/src/main/AndroidManifest.xml · https://github.com/androidx/androidx/blob/androidx-main/health/connect/connect-client/src/main/AndroidManifest.xml · https://github.com/GoogleChrome/android-browser-helper/blob/main/androidbrowserhelper/src/main/AndroidManifest.xml |
-
-- [S48] Gadgetbridge, Health Connect integration: https://gadgetbridge.org/basics/integrations/health-connect/ (read 12 Nov 2026)
-- [S49] Gadgetbridge device pages (Moyoung, GloryFit): https://gadgetbridge.org/gadgets/wearables/moyoung/ and https://freeyourgadget.codeberg.page/gadgetbridge_org/gadgets/wearables/gloryfit/ (read 12 Nov 2026)
+| S48 | Gadgetbridge, its Health Connect integration | https://gadgetbridge.org/basics/integrations/health-connect/ |
+| S49 | Gadgetbridge device pages (Moyoung, GloryFit): the owner's watch is not listed | https://gadgetbridge.org/gadgets/wearables/moyoung/ and https://freeyourgadget.codeberg.page/gadgetbridge_org/gadgets/wearables/gloryfit/ |
 
 ## Change log
 

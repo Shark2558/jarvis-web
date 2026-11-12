@@ -4,7 +4,9 @@
 # never shows a face-derived name) and the one call in its run (`TurnGuard.query_stop`, so the
 # vendor never receives one); `web_tools(web, guard)` is how the app builds it. On a picture turn a
 # query naming someone he did not type is refused in fixed words and nothing is searched; a query
-# about a thing goes ahead; a turn without a picture is unchanged. Everybody named is made up.
+# about a thing goes ahead when the picture is known to show nobody, or (strict mode, since the
+# I1 reviews: the picture may show a person) when its words are his; a turn without a picture is
+# unchanged. Everybody named is made up.
 from __future__ import annotations
 
 from dataclasses import replace
@@ -13,6 +15,7 @@ from r11_1_fakes_d import FakeSearchVendor
 
 from jarvis.core.guardrails import ConfirmationGate
 from jarvis.llm.base import ToolCall
+from jarvis.picture.research import Report
 from jarvis.picture.turnguard import WEB_REFUSED, TurnGuard
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.audit import AuditLog
@@ -35,6 +38,12 @@ class Turns:
     async def carried(self, uid: str, session_id: str) -> str:
         return self.answer
 
+    async def message(self, uid: str, session_id: str) -> str | None:
+        return "sess_1:the-picture"  # the key of this message's pictures
+
+
+NOBODY = Report("done", "A packet.", person=False, pictures=1, key="sess_1:the-picture")
+
 
 class Rows:
     def __init__(self, effect: Effect) -> None:
@@ -44,10 +53,13 @@ class Rows:
         return [PolicyRule(tool_pattern="web_*", effect=self.effect, source="owner")]
 
 
-def _rig(picture: bool, rows: Effect | None = None) -> tuple[Gateway, FakeSearchVendor]:
+def _rig(
+    picture: bool, rows: Effect | None = None, report: Report | None = None
+) -> tuple[Gateway, FakeSearchVendor]:
     vendor = FakeSearchVendor()
     web = WebService(vendor, WebAllowance(MemoryDocs()))
-    guard = TurnGuard(Turns("yes" if picture else "no"), lambda uid, sid: None)
+    turns = Turns("yes" if picture else "no")
+    guard = TurnGuard(turns, lambda uid, sid: report, keys=turns)
     registry = ToolRegistry()
     for tool in web_tools(web, guard):  # I1 GATE A: the tool's own look-up and run hook
         registry.register(tool)
@@ -77,11 +89,16 @@ async def test_a_face_derived_name_never_reaches_the_vendor() -> None:
 
 
 async def test_a_query_about_a_thing_goes_ahead_on_a_picture_turn() -> None:
-    gw, vendor = _rig(picture=True)
+    known_nobody, vendor = _rig(picture=True, report=NOBODY)  # its research saw no person
+    maybe, strict_vendor = _rig(picture=True)  # nobody looked: it may show a person
 
-    res = await _search(gw, "biryani recipe", "how do I make this?")
+    res = await _search(known_nobody, "biryani recipe", "how do I make this?")
+    untold = await _search(maybe, "biryani recipe", "how do I make this?")
+    told = await _search(maybe, "biryani recipe", "how do I make biryani?")
 
     assert res.outcome is GatewayOutcome.EXECUTED and vendor.queries == ["biryani recipe"]
+    assert untold.outcome is GatewayOutcome.ERROR and WEB_REFUSED in (untold.error or "")
+    assert told.outcome is GatewayOutcome.EXECUTED and strict_vendor.queries == ["biryani recipe"]
 
 
 async def test_a_name_he_typed_goes_ahead_and_a_turn_without_a_picture_is_unchanged() -> None:
@@ -100,7 +117,7 @@ async def test_with_ask_first_a_refused_query_never_becomes_a_card() -> None:
     gw, vendor = _rig(picture=True, rows=Effect.ASK)
 
     refused = await _search(gw, f"{FACE} actress", "who is this?")
-    carded = await _search(gw, "biryani recipe", "how do I make this?")
+    carded = await _search(gw, "biryani recipe", "how do I make biryani?")
 
     assert refused.outcome is GatewayOutcome.ERROR and refused.pending is None
     assert (

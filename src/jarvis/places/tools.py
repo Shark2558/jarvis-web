@@ -40,6 +40,7 @@ from urllib.parse import quote_plus, urlencode
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google_key import KeyAPIError
+from jarvis.picture.turnguard import FAIL_CLOSED, TurnGuard
 from jarvis.places.google_maps import (
     PLACES_FIELD_MASK,
     ROUTES_FIELD_MASK,
@@ -273,9 +274,20 @@ def directions_link(origin: str, destination: str, mode: Mode) -> str:
 # ---- runs -------------------------------------------------------------------------------------
 
 
+def _search_words(a: dict[str, Any]) -> list[str]:
+    """What maps_search sends out: the query and the area."""
+    return [str(a.get(k) or "").strip() for k in ("query", "near")]
+
+
+def _route_words(a: dict[str, Any]) -> list[str]:
+    """What maps_route sends out: each end, except 'home' / 'work' (his saved places)."""
+    ends = (str(a.get(k) or "").strip() for k in ("from", "to"))
+    return [e for e in ends if alias(e) is None]
+
+
 class _Maps:
-    def __init__(self, service: MapsService) -> None:
-        self.s = service
+    def __init__(self, service: MapsService, pictures: TurnGuard = FAIL_CLOSED) -> None:
+        self.s, self.pictures = service, pictures
 
     async def _admit(self, sku: Sku) -> Reservation:
         """One of the message's Maps calls, within the owner's hour, and `sku` reserved from the
@@ -304,6 +316,8 @@ class _Maps:
         query = str(a["query"]).strip()
         near = str(a["near"]).strip() if a.get("near") else ""
         text = f"{query} near {near}" if near else query
+        if (stop := await self.pictures.texts_stop(_search_words(a))) is not None:
+            return stop  # R11.1 I1 (security M2): a picture turn sends no name from a face
         if reply_full(drafts=False):  # refused before anything is spent (final review)
             return dict(NOT_SHOWN)
         r = await self._admit(MAPS_SEARCH)
@@ -354,6 +368,8 @@ class _Maps:
     async def route(self, a: dict[str, Any]) -> dict[str, Any]:
         mode: Mode = a.get("mode") or "drive"
         depart = _depart(a)
+        if (stop := await self.pictures.texts_stop(_route_words(a))) is not None:
+            return stop  # R11.1 I1: a route's ends are outward words too
         if reply_full(drafts=False):  # refused before Home / Work are read or anything spent
             return dict(NOT_SHOWN)
         origin, origin_label = await self._resolve(str(a["from"]).strip())
@@ -415,8 +431,10 @@ def _place_view(n: int, p: Place) -> dict[str, Any]:
     return out
 
 
-def maps_tools(service: MapsService) -> list[Tool]:
-    m = _Maps(service)
+def maps_tools(service: MapsService, pictures: TurnGuard | None = None) -> list[Tool]:
+    """`pictures`: the app's turn guard (R11.1 I1); unwired it fails closed."""
+    guard = pictures or FAIL_CLOSED
+    m = _Maps(service, guard)
     return [
         Tool(
             "maps_search",
@@ -437,6 +455,7 @@ def maps_tools(service: MapsService) -> list[Tool]:
             agent="maps",
             summarize=_search_card,
             check=_check_search,
+            preview=guard.preview_for(_search_words, _search_card),
         ),
         Tool(
             "maps_route",
@@ -465,6 +484,7 @@ def maps_tools(service: MapsService) -> list[Tool]:
             summarize=_route_card,
             check=_check_route,
             ask_when=_saved_place_in_outside_round,
+            preview=guard.preview_for(_route_words, _route_card),
         ),
     ]
 

@@ -17,6 +17,8 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from media_fakes import KEY, FakeGoogleKeyAPIs
+from pydantic import SecretStr
 from r11_1_fakes_b import make_png
 from r11_1_fakes_d import FakeSearchVendor
 
@@ -30,13 +32,18 @@ from jarvis.core.models import ChatRequest
 from jarvis.documents.pictures import TurnPictures, turn_pictures
 from jarvis.documents.service import DocumentService, policy_from
 from jarvis.documents.store import AttachmentStore
+from jarvis.integrations.google_key import GoogleKeyClient
 from jarvis.llm.base import ToolCall
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelTier
+from jarvis.media.service import MediaServices, YouTubeService
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.picture.guard import NO_IDENTIFY
 from jarvis.picture.turnguard import WEB_REFUSED, DocumentTurns
+from jarvis.places.service import MapsService
+from jarvis.places.store import MapsPlaces
+from jarvis.quota.ledger import QuotaLedger
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools import AuditLog, Gateway, Policy, Tool, ToolRegistry
 from jarvis.tools.context import require_tool_context
@@ -75,6 +82,26 @@ def vendor(monkeypatch: pytest.MonkeyPatch) -> FakeSearchVendor:
         "build_web_service",
         lambda s, docs: WebService(fake, WebAllowance(MemoryDocs())),
     )
+    return fake
+
+
+@pytest.fixture
+def media_vendor(monkeypatch: pytest.MonkeyPatch) -> FakeGoogleKeyAPIs:
+    """The app's Maps and YouTube on a recording Google API: both tools are wired (I1 review,
+    security M2). Every request Google would receive is in `.requests`."""
+    fake = FakeGoogleKeyAPIs()
+
+    def build(s: Settings, docs: Any, *, google: Any = None) -> MediaServices:
+        client = GoogleKeyClient(SecretStr(KEY), http=fake.client())
+        ledger = QuotaLedger(MemoryDocs())
+        return MediaServices(
+            client=client,
+            ledger=ledger,
+            maps=MapsService(client, ledger, MapsPlaces(MemoryDocs())),
+            youtube=YouTubeService(client, ledger),
+        )
+
+    monkeypatch.setattr(feature_wiring, "build_media", build)
     return fake
 
 
@@ -227,27 +254,41 @@ async def test_attach_send_and_research_the_picture_then_again_after_a_restart(
 
 
 # ---- GATES A and B: the main brain's own calls on a picture turn ------------------------------
+# what a brain that named a face might send out through each outward tool (I1 reviews)
+OUTWARD = [
+    ("web_search", {"query": f"{FACE} biography"}),
+    ("web_search", {"query": f"{FACE.lower()} phone number"}),  # lower case beside a thing word
+    ("web_search", {"query": "मीनू एग्झाम्पलवाला"}),  # another script
+    ("web_search", {"query": "https://en.wikipedia.org/wiki/Meenu_Examplewala"}),
+    ("web_search", {"query": "Meenu weather"}),  # a name split across two queries ...
+    ("web_search", {"query": "Examplewala news"}),  # ... and its other half
+    ("youtube_search", {"query": f"{FACE} interview"}),
+    ("maps_search", {"query": f"{FACE} house"}),
+    ("maps_route", {"from": "Kochi", "to": f"{FACE} residence"}),
+]
+
+
 async def test_on_a_picture_turn_the_main_brain_never_researches_or_searches_a_face_s_name(
     settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
     vendor: FakeSearchVendor,
+    media_vendor: FakeGoogleKeyAPIs,
     shared: tuple[MemoryDocs, InMemorySessionStore],
 ) -> None:
     monkeypatch.setattr(MockProvider, "vision", True)
     _, store = shared
     brain = MockProvider()
+    calls = [ToolCall(id=f"o{i}", name=n, arguments=a) for i, (n, a) in enumerate(OUTWARD)]
     async with running(settings, brain, store) as (app, c):
         names = {spec.name for spec in app.state.gateway.registry.specs()}
-        assert {"research_person", "web_search"} <= names
+        assert {"research_person", "web_search", "youtube_search", "maps_search"} <= names
         aid = await _attach(c)
         brain.script_tool_calls(
-            [
-                ToolCall(id="c1", name="research_person", arguments={"name": FACE}),
-                ToolCall(id="c2", name="web_search", arguments={"query": f"{FACE} biography"}),
-            ]
+            [ToolCall(id="c1", name="research_person", arguments={"name": FACE}), *calls[:5]]
         )
         brain.script_tool_calls(  # a second round: the picture is still in the window
-            [ToolCall(id="c3", name="web_search", arguments={"query": f"{FACE} family"})],
+            [ToolCall(id="c3", name="web_search", arguments={"query": f"{FACE} family"})]
+            + calls[5:],
             "I don't identify people from pictures, Sir.",
         )
         chat = await c.post("/v1/chat", json={"message": "Who is this?", "attachments": [aid]})
@@ -261,8 +302,9 @@ async def test_on_a_picture_turn_the_main_brain_never_researches_or_searches_a_f
         words = " ".join(str(b.content) for b in results)
 
     assert vendor.queries == []  # nothing about the person was ever sent to the vendor
-    assert len(results) == 3 and NO_IDENTIFY in words and WEB_REFUSED in words
-    assert FACE not in words
+    assert media_vendor.requests == []  # nor to Google's Maps or YouTube
+    assert len(results) == len(OUTWARD) + 2 and NO_IDENTIFY in words and WEB_REFUSED in words
+    assert FACE not in words and "Examplewala" not in words
 
     async with running(settings, MockProvider(), store) as (app, _):  # after a restart
         with context_trust(untrusted=True, owner_text="Who is this?"):
@@ -270,26 +312,86 @@ async def test_on_a_picture_turn_the_main_brain_never_researches_or_searches_a_f
                 ToolCall(id="c9", name="research_person", arguments={"name": FACE}),
                 scope=f"{UID}:{sid}",
             )
+            again = [await app.state.gateway.execute(call, scope=f"{UID}:{sid}") for call in calls]
     assert NO_IDENTIFY in (res.error or "") and vendor.queries == []
+    assert all(WEB_REFUSED in (r.error or str(r.result)) for r in again), again
+    assert media_vendor.requests == []
+
+
+def _seen(has_person: bool) -> str:
+    look = json.loads(_look())
+    return json.dumps(
+        {**look, "has_person": has_person, "subjects": [] if has_person else look["subjects"]}
+    )
+
+
+@pytest.mark.parametrize("has_person", [False, True])
+async def test_only_a_picture_researched_and_seen_without_a_person_gets_the_light_check(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    vendor: FakeSearchVendor,
+    shared: tuple[MemoryDocs, InMemorySessionStore],
+    has_person: bool,
+) -> None:
+    """The guard's only has_person signal on the main brain's turn: this conversation's picture
+    research of THIS message's only picture. Seen without a person, an untyped place name goes
+    out (light); with one, it waits for his words (strict); after a restart the report is gone
+    (it lives in memory), so it is strict again."""
+    monkeypatch.setattr(MockProvider, "vision", True)
+    _, store = shared
+    first = MockProvider()
+    ordinary = ToolCall(id="w1", name="web_search", arguments={"query": "Kerala monsoon forecast"})
+    async with running(settings, first, store) as (app, c):
+        aid = await _attach(c)
+        first.script("A packet of biscuits, Sir.")
+        chat = await c.post("/v1/chat", json={"message": "What is this?", "attachments": [aid]})
+        sid = chat.json()["session_id"]
+        with context_trust(untrusted=False, owner_text="What is this?"):
+            before = await app.state.gateway.execute(ordinary, scope=f"{UID}:{sid}")
+        first.script(_seen(has_person))
+        r = await c.post("/v1/picture/research", json={"session_id": sid}, headers=CSRF)
+        assert r.status_code == 200 and r.json()["status"] == "done", r.text
+        sent = list(vendor.queries)
+        with context_trust(untrusted=False, owner_text="What is this?"):
+            after = await app.state.gateway.execute(ordinary, scope=f"{UID}:{sid}")
+
+    assert WEB_REFUSED in (before.error or str(before.result))  # nobody had looked: strict
+    went = vendor.queries[len(sent) :]
+    if has_person:
+        assert WEB_REFUSED in (after.error or str(after.result)) and went == []
+    else:
+        assert after.outcome.value == "executed" and went == ["Kerala monsoon forecast"]
+
+    async with running(settings, MockProvider(), store) as (app, _):  # after a restart
+        with context_trust(untrusted=False, owner_text="What is this?"):
+            restarted = await app.state.gateway.execute(ordinary, scope=f"{UID}:{sid}")
+    assert WEB_REFUSED in (restarted.error or str(restarted.result))
 
 
 async def test_without_a_picture_the_same_calls_are_unchanged(
     settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
     vendor: FakeSearchVendor,
+    media_vendor: FakeGoogleKeyAPIs,
     shared: tuple[MemoryDocs, InMemorySessionStore],
 ) -> None:
     _, store = shared
     brain = MockProvider()
     async with running(settings, brain, store) as (_, c):
         brain.script_tool_calls(
-            [ToolCall(id="c1", name="web_search", arguments={"query": f"{FACE} biography"})],
+            [
+                ToolCall(id="c1", name="web_search", arguments={"query": f"{FACE} biography"}),
+                ToolCall(id="c2", name="youtube_search", arguments={"query": f"{FACE} songs"}),
+                ToolCall(id="c3", name="maps_search", arguments={"query": f"{FACE} studio"}),
+            ],
             "Here is what I found, Sir.",
         )
         chat = await c.post("/v1/chat", json={"message": "Search the web for a biography."})
         assert chat.status_code == 200, chat.text
 
     assert vendor.queries == [f"{FACE} biography"]
+    paths = {r.url.path for r in media_vendor.requests}
+    assert "/youtube/v3/search" in paths and any("places" in p for p in paths), paths
 
 
 async def test_pictures_that_could_not_be_read_are_said_not_called_missing(

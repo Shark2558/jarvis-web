@@ -113,7 +113,7 @@ def _register_services(
 ) -> None:
     """Long-term memory, web search (a Tavily key), attached files, Drive (chosen folders,
     read-only) and Maps / YouTube (JARVIS's own Google API key): each only when it exists.
-    `pictures`: the app's turn guard for web_search (R11.1 D21-D)."""
+    `pictures`: the app's turn guard for web_search, Maps and YouTube (R11.1 D21-D, I1)."""
     tools: list[Tool] = []
     if memory is not None:
         from jarvis.recall.tools import memory_tools
@@ -135,7 +135,7 @@ def _register_services(
         from jarvis.media.tools import youtube_tools
         from jarvis.places.tools import maps_tools
 
-        tools += maps_tools(media.maps) + youtube_tools(media.youtube)
+        tools += maps_tools(media.maps, pictures) + youtube_tools(media.youtube, pictures)
     for t in tools:
         reg.register(t)
 

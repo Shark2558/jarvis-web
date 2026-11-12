@@ -119,19 +119,58 @@ QUERY_WORDS = frozenset(
     petrol diesel electricity water air
     """.split()
 )
+# R11.1 I1 review (security M3, code M3): the search words that sit next to a PERSON's name
+# ("Kohli score", "Modi news today", "news Lekha"). With one of them in a query, a single word
+# left over is never let through as "a topic": it is tested as a name.
+PERSON_SEARCH_WORDS = frozenset(
+    """
+    news latest live score scores age born birthday wife husband son daughter father mother
+    brother sister family married marriage girlfriend boyfriend partner biography bio profile
+    profiles instagram insta facebook twitter linkedin youtube wiki wikipedia speech speeches
+    interview interviews quotes net worth salary income caste religion party constituency career
+    stats photos images pics videos movies films songs contact address
+    """.split()
+)
 JOINS = frozenset({"of", "the", "and", "de", "da", "al"})  # inside a name: "Gateway of India"
 SENTENCE = re.compile(r"(?<=[.!?])\s+")
-WORD = re.compile(r"[^\W\d_][\w'’\-]*")
+_INSIDE = "'’-"  # an apostrophe or a hyphen inside a word ("Meenu's", "Coca-Cola")
+
+
+def raw_words(text: str) -> list[str]:
+    """The words of `text` as written (letter case kept): a letter, then letters, marks, digits
+    and inner apostrophes or hyphens. Marks are a word's own (an Indic vowel sign or virama is not
+    a break, so "लेखा" is one word, not "ल" and "ख"); `_`, `/`, `.`, `:` and every other sign end
+    a word, so "Lekha_Examplekar" and a URL's path are words like any other (R11.1 I1 security
+    review H1: Python's `\w` has no marks, and it holds `_`). A digit never starts one."""
+    out: list[str] = []
+    word: list[str] = []
+    for ch in text:
+        kind = unicodedata.category(ch)[0]
+        if kind == "L" or (word and (kind in "MN" or ch in _INSIDE)):
+            word.append(ch)
+            continue
+        if word:
+            out.append("".join(word))
+            word = []
+    if word:
+        out.append("".join(word))
+    return out
 
 
 def plain(word: str) -> str:
     """One word as the guard compares it: folded, without its edge apostrophes and hyphens."""
-    return fold(word).strip("'’-")
+    return fold(word).strip(_INSIDE)
 
 
 def words_of(text: str) -> list[str]:
     """The folded words of `text` (lower case, accents and look-alikes read as plain letters)."""
-    return [w for w in (plain(w) for w in WORD.findall(fold(text))) if w]
+    return [w for w in (plain(w) for w in raw_words(fold(text))) if w]
+
+
+def letter_runs(text: str) -> list[str]:
+    """`words_of`, each also cut at its inner apostrophes and hyphens ("lekha-examplekar" is
+    "lekha" and "examplekar"): the pieces the picture guard's strict check compares."""
+    return [r for w in words_of(text) for r in re.split(r"['’\-]+", w) if r]
 
 
 def word_set(lines: Iterable[str]) -> frozenset[str]:
@@ -206,16 +245,18 @@ __all__ = [
     "MAX_NAME_WORDS",
     "NOT_NAME",
     "OPENERS",
+    "PERSON_SEARCH_WORDS",
     "QUERY_WORDS",
     "SENTENCE",
     "THING_WORDS",
-    "WORD",
     "capitalised",
     "contains",
     "is_thing_word",
+    "letter_runs",
     "name_shaped",
     "person_shaped",
     "plain",
+    "raw_words",
     "run_end",
     "thing_shaped",
     "word_set",

@@ -43,13 +43,13 @@ from jarvis.picture.scene import PERSON_FALLBACK, screen_scene, vet_scene
 from jarvis.picture.words import (
     NOT_NAME,
     THING_WORDS,
-    WORD,
     capitalised,
     contains,
     is_thing_word,
     name_shaped,
     person_shaped,
     plain,
+    raw_words,
     thing_shaped,
     word_set,
     words_of,
@@ -192,7 +192,7 @@ def _printed_or_plain(name: str, printed: frozenset[str]) -> bool:
     """Does `name` name nobody the picture does not print? Every capitalised word printed in the
     picture; or a thing word written in lower case ("Cochin harbour", not "Bill Gates": there the
     only thing word is part of a name) and no two capitalised words in a row ("<Name> statue")."""
-    words = WORD.findall(name)
+    words = raw_words(name)
     if all(plain(w) in printed for w in words if capitalised(w)):
         return True
     if not any(is_thing_word(plain(w)) for w in words if not capitalised(w)):
@@ -206,7 +206,7 @@ def _shown(subject: Subject, person: bool, printed: frozenset[str]) -> bool:
     if thing_shaped(subject.name):
         return True
     # a plain lower-case description ("electricity bill") of a picture without a person
-    return not person and not any(capitalised(w) for w in WORD.findall(subject.name))
+    return not person and not any(capitalised(w) for w in raw_words(subject.name))
 
 
 def _searchable(subject: Subject, named: str, person: bool, printed: frozenset[str]) -> bool:

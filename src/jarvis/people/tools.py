@@ -157,6 +157,9 @@ class PeopleAPI:
             return _stopped(verdict.message, refused=True)
         if isinstance(verdict, Offer):
             return offered(verdict)
+        context = str(a.get("context") or "")  # R11.1 I1: searched with the name, so outward too
+        if context and (stop := await self._guard.query_stop(context)) is not None:
+            return stop
         try:
             d = await self._d.service.research(uid, str(a["name"]), a.get("context"))
         except ScopeRefused as exc:

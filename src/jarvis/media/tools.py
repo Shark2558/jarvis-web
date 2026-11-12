@@ -51,6 +51,7 @@ from jarvis.logging import get_logger
 from jarvis.media import youtube as yt
 from jarvis.media.service import YouTubeService
 from jarvis.media.youtube import iso_duration
+from jarvis.picture.turnguard import FAIL_CLOSED, TurnGuard
 from jarvis.quota.ledger import (
     YOUTUBE_SEARCH,
     YOUTUBE_UNITS,
@@ -224,8 +225,8 @@ def _full(shown: bool) -> bool:
 
 
 class _YouTube:
-    def __init__(self, service: YouTubeService) -> None:
-        self.s = service
+    def __init__(self, service: YouTubeService, pictures: TurnGuard = FAIL_CLOSED) -> None:
+        self.s, self.pictures = service, pictures
 
     async def _reserve(self, sku: Sku, n: int = 1) -> Reservation:
         try:
@@ -267,6 +268,8 @@ class _YouTube:
 
     async def search(self, a: dict[str, Any]) -> dict[str, Any]:
         query = str(a["query"]).strip()
+        if (stop := await self.pictures.query_stop(query)) is not None:  # R11.1 I1: the hook
+            return stop  # a picture turn: no name taken from a face leaves (security M2)
         if reply_full(drafts=False):  # refused before anything is spent (final review)
             return dict(NOT_SHOWN)
         take_youtube_search()
@@ -429,8 +432,14 @@ class _YouTube:
         return likes if isinstance(likes, str) and yt.PLAYLIST_ID.fullmatch(likes) else None
 
 
-def youtube_tools(service: YouTubeService) -> list[Tool]:
-    y = _YouTube(service)
+def _search_words(a: dict[str, Any]) -> list[str]:
+    return [str(a.get("query", "")).strip()]
+
+
+def youtube_tools(service: YouTubeService, pictures: TurnGuard | None = None) -> list[Tool]:
+    """`pictures`: the app's turn guard (R11.1 I1); unwired it fails closed."""
+    guard = pictures or FAIL_CLOSED
+    y = _YouTube(service, guard)
     tools = [
         Tool(
             "youtube_search",
@@ -451,6 +460,7 @@ def youtube_tools(service: YouTubeService) -> list[Tool]:
             agent="youtube",
             summarize=_search_card,
             check=_check_search,
+            preview=guard.preview_for(_search_words, _search_card),
         )
     ]
     if service.google is None:  # no Google link on this server: nothing to read playlists with

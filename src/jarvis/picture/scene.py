@@ -28,10 +28,10 @@ from jarvis.picture.words import (
     INTRODUCES,
     OPENERS,
     SENTENCE,
-    WORD,
     capitalised,
     is_thing_word,
     plain,
+    raw_words,
     run_end,
     words_of,
 )
@@ -56,7 +56,7 @@ def _opener_ok(first: str) -> bool:
 def _vetted(sentence: str, allowed: frozenset[str], banned: frozenset[str]) -> bool:
     if not sentence.isascii() or HINT.search(sentence) or INTRODUCES.search(sentence):
         return False
-    words = WORD.findall(sentence)
+    words = raw_words(sentence)
     if not words or not _opener_ok(words[0]) or banned & set(words_of(sentence)):
         return False
     for i, word in enumerate(words):
@@ -95,7 +95,7 @@ def _capital_runs_ok(words: list[str]) -> bool:
 def _sentence_ok(sentence: str, banned: frozenset[str]) -> bool:
     if not sentence.isascii() or HINT.search(sentence):
         return False  # another script has no capitals to check; a hint is a hint
-    words = WORD.findall(sentence)
+    words = raw_words(sentence)
     if not words:
         return False
     if capitalised(words[0]) and words[0].lower() not in OPENERS:

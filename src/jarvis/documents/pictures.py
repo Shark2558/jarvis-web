@@ -23,6 +23,7 @@ none. Logs carry class names and counts only.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable
 
 from pydantic import ValidationError
@@ -57,6 +58,22 @@ class TurnPictures(list[ImageBlock]):
     def __init__(self, blocks: Iterable[ImageBlock] = (), *, unreadable: bool = False) -> None:
         super().__init__(blocks)
         self.unreadable = unreadable
+
+
+def pictures_unreadable(found: list[ImageBlock]) -> bool:
+    """Part B's `unreadable` mark, read through the type that carries it (I1 code review L6):
+    any other list (a test's plain list) is not marked."""
+    return isinstance(found, TurnPictures) and found.unreadable
+
+
+def message_key(session_id: str, pictures: list[ImageBlock]) -> str:
+    """Which owner message these pictures came with: the same pictures, the same message.
+    Part D's picture research keys its searches and its report with it; the turn guard binds
+    that report to the message it is asked about."""
+    seen = hashlib.sha256()
+    for p in pictures:
+        seen.update(hashlib.sha256(p.data).digest())
+    return f"{session_id}:{seen.hexdigest()[:24]}"
 
 
 def _missing(missing: int, count: int) -> str:
@@ -184,6 +201,8 @@ __all__ = [
     "MAX_PICTURES_PER_TURN",
     "NOT_LOADED",
     "TurnPictures",
+    "message_key",
+    "pictures_unreadable",
     "turn_pictures",
     "with_pictures",
 ]

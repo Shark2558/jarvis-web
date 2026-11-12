@@ -27,13 +27,13 @@ one message keep the message's search cap as `web_search` does.
 
 from __future__ import annotations
 
-import hashlib
 import time
 from collections import OrderedDict, deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
+from jarvis.documents.pictures import message_key, pictures_unreadable
 from jarvis.llm.base import ImageBlock
 from jarvis.logging import get_logger
 from jarvis.picture.eyes import LOOK_ASK, LOOK_SYSTEM, CantLook, Eyes
@@ -104,6 +104,8 @@ class Report:
     pictures: int = 0
     cost_usd: float = 0.0
     caption: str = ""  # the line of the picture's text `named` was read from
+    key: str = ""  # which owner message its pictures came with (`message_key`): the turn guard's
+    # only `has_person` signal is a report of THIS message's only picture (R11.1 I1 reviews)
 
 
 def _plural(n: int) -> str:
@@ -135,14 +137,6 @@ def compose(v: Verdict, findings: tuple[Finding, ...]) -> str:
     if v.named:
         parts.append(OFFER.format(name=v.named, caption=v.caption))
     return " ".join(parts)
-
-
-def message_key(session_id: str, pictures: list[ImageBlock]) -> str:
-    """Which owner message these pictures came with: the same pictures, the same message."""
-    seen = hashlib.sha256()
-    for p in pictures:
-        seen.update(hashlib.sha256(p.data).digest())
-    return f"{session_id}:{seen.hexdigest()[:24]}"
 
 
 class PictureResearch:
@@ -202,7 +196,7 @@ class PictureResearch:
         if not self.enabled:
             return Report("off", OFF)
         found = await self._pictures(uid, session_id) if session_id else []
-        if session_id and not found and getattr(found, "unreadable", False):
+        if session_id and not found and pictures_unreadable(found):
             return Report("unreadable", PICTURES_UNREADABLE)
         if not session_id or not found:
             return Report("no_picture", NO_PICTURE)
@@ -257,6 +251,7 @@ class PictureResearch:
             pictures=count,
             cost_usd=glance.cost_usd,
             caption=verdict.caption,
+            key=message,
         )
 
 

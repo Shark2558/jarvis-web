@@ -208,6 +208,7 @@ async def test_without_a_tool_context_it_fails_closed() -> None:
 async def test_the_refusal_and_the_web_refusal_are_plain_results() -> None:
     with turn("who is this?"):
         stop = await _guard(Turns()).query_stop(NAME)
+    with turn("how do I make biryani?"):  # strict since the I1 reviews: his words go ahead
         go = await _guard(Turns()).query_stop("biryani recipe")
 
     assert stop == {"refused": True, "message": WEB_REFUSED, "spoken": WEB_REFUSED}

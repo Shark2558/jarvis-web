@@ -16,13 +16,20 @@ web query calls, inside the tool call:
     text, the call becomes an OFFER (`Offer`: a "Look up" button he presses, fixed words, with
     the line it was read from): nothing is researched;
   - else it is refused in fixed words (`NO_IDENTIFY`);
-  - a web query may carry no person-shaped phrase whose words he did not type and the picture
-    does not show (`check_query`); else it is refused in fixed words (`WEB_REFUSED`).
+  - an outward query (`web_search`, `youtube_search`, `maps_search`, `maps_route`,
+    `research_person`'s context) is checked by `check_query` (`jarvis.picture.queries`), in
+    STRICT mode unless the picture is KNOWN to show no person: only words he typed, words the
+    picture shows, and free words (small, search and thing words) go out. LIGHT mode (known: no
+    person) keeps D's name shapes. Else it is refused in fixed words (`WEB_REFUSED`).
 
 "Did the latest owner message carry a picture?" is asked through a port (`PictureTurns`), whose
 real adapter (`DocumentTurns`) reads Part B's contract (`documents.pictures.turn_pictures`). Its
 answer is "yes", "no" or "unknown"; unknown, a fault, no port and no tool context all count as a
-picture turn. `app_guard(state)` is the one call the app makes to build it from its own state.
+picture turn. "Known to show no person" is the only `has_person` signal the guard has on the main
+brain's turn: the conversation's last picture research, when it looked at the ONLY picture of
+THIS message (`MessageKeys`: the same key) and saw nobody. No research, an older picture, two
+pictures, a fault: strict (R11.1 I1 reviews, security H1 and M3, code M3). `app_guard(state)` is
+the one call the app makes to build it from its own state.
 """
 
 from __future__ import annotations
@@ -31,24 +38,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from jarvis.documents.pictures import turn_pictures
+from jarvis.documents.pictures import message_key, pictures_unreadable, turn_pictures
 from jarvis.logging import get_logger
 from jarvis.picture.guard import NO_IDENTIFY
-from jarvis.picture.words import (
-    NOT_NAME,
-    OPENERS,
-    QUERY_WORDS,
-    WORD,
-    capitalised,
-    contains,
-    is_thing_word,
-    name_shaped,
-    person_shaped,
-    plain,
-    word_set,
-    words_of,
-)
-from jarvis.tools.base import SUMMARY_FALLBACK_LIMIT, Preview
+from jarvis.picture.queries import light_refuses, untold
+from jarvis.picture.words import contains, name_shaped, word_set, words_of
+from jarvis.tools.base import SUMMARY_FALLBACK_LIMIT, Preview, PreviewFn
 from jarvis.tools.card import one_line
 from jarvis.tools.context import current_tool_context
 from jarvis.tools.taint import owner_text
@@ -59,13 +54,17 @@ if TYPE_CHECKING:  # web.tools imports this module: nothing here may import the 
 log = get_logger(__name__)
 
 Carried = Literal["yes", "no", "unknown"]
+Mode = Literal["light", "strict"]
+LIGHT: Mode = "light"  # the picture is known to show no person
+STRICT: Mode = "strict"  # it may show one: only his words, the picture's and free words
 OFFER_WORDS = (
     "The picture's text names {name}. Press 'Look up' to check them with your people research."
 )
-# fixed words; they reach the model whole through the gateway's 160-character error detail too
+# fixed words, one sentence that says what he can do; they reach the model whole through the
+# gateway's 160-character error detail too
 WEB_REFUSED = (
-    "I don't identify people from pictures, Sir: with a picture I search only words you typed "
-    "or the picture shows."
+    "I don't identify people from pictures, Sir: with a picture I search only your words and the "
+    "picture's, so type the name yourself or ask without the picture."
 )
 WEB_CARD = "Search the web for: {query}"  # web_search's own card words (its summary_template)
 LOOK = "look"  # Part D's part and its service on `app.state.r111_parts` (picture.part)
@@ -78,7 +77,15 @@ class PictureTurns(Protocol):
     async def carried(self, uid: str, session_id: str) -> Carried: ...
 
 
+class MessageKeys(Protocol):
+    """The port: which owner message the latest pictures came with (`message_key`), or None
+    when that can't be told. Binds a picture research report to THIS message."""
+
+    async def message(self, uid: str, session_id: str) -> str | None: ...
+
+
 LastReport = Callable[[str, str], "Report | None"]
+OutwardTexts = Callable[[dict[str, Any]], Sequence[str]]  # the words a tool call sends out
 
 
 @dataclass(frozen=True)
@@ -127,61 +134,17 @@ def check_name(name: str, typed: str, picture_text: Sequence[str]) -> Allowed | 
     return Refused(NO_IDENTIFY)
 
 
-def _name_part(word: str, first: bool) -> bool:
-    """Could this capitalised word be part of a person's name? Not a small word, not an
-    ordinary search word, and not the query's sentence-case opener ("Weather Mumbai")."""
-    p = plain(word)
-    return p not in NOT_NAME and p not in QUERY_WORDS and not (first and p in OPENERS)
-
-
-def _named_by_capitals(words: list[str], known: frozenset[str]) -> bool:
-    """A run of two or more capitalised words (ALL CAPS too) that could be a person's name
-    ("Lekha Examplekar", "MEENU EXAMPLEWALA", "R K Examplekar"), one of them neither typed by him
-    nor shown by the picture. A lone capitalised word is a place or a brand as often as a name
-    ("weather in Mumbai"), and is let through like the query's opening capital always was
-    (R11.1 I1, the over-caution check)."""
-    i = 0
-    while i < len(words):
-        if not capitalised(words[i]):
-            i += 1
-            continue
-        j = i
-        while j < len(words) and capitalised(words[j]):
-            j += 1
-        run = [plain(w) for k, w in enumerate(words[i:j]) if _name_part(w, i + k == 0)]
-        if len(run) >= 2 and any(w not in known for w in run):
-            return True
-        i = j
-    return False
-
-
-def _bare_name(query: str, known: frozenset[str]) -> bool:
-    """The query is a person's name and little else, in any letter case ("lekha examplekar",
-    "Kohli", "rajesh examplekar contact number"): once its ordinary search words are set aside,
-    what is left is shaped like a name (two words or more when a search word was there) and he
-    neither typed nor was shown any of it."""
-    words = WORD.findall(query)
-    rest = [w for w in words if plain(w) not in QUERY_WORDS]
-    if not rest or word_set(rest) & known:
-        return False
-    if len(rest) < len(words) and len(rest) < 2:  # "monsoon weather forecast": a topic
-        return False
-    if any(p.endswith("es") and is_thing_word(p[:-2]) for p in map(plain, rest)):
-        return False  # "festival dishes", "match boxes": a thing, its plural in -es
-    return name_shaped(" ".join(rest))
-
-
-def check_query(query: str, typed: str, picture_text: Sequence[str]) -> Allowed | Refused:
-    """A web query on a picture turn: no person-shaped phrase whose words he did not type or the
-    picture does not show. `picture_text`: the picture's text and its vetted things' names."""
-    known = word_set([typed, *picture_text])
-    folded = words_of(query)
-    if person_shaped(query) and not set(folded) <= known:
-        return Refused(WEB_REFUSED)  # "who is the woman in red", "actress with short hair"
-    if _named_by_capitals(WORD.findall(query), known):
-        return Refused(WEB_REFUSED)  # "Lekha Examplekar minister", "LEKHA EXAMPLEKAR"
-    if _bare_name(query, known):
-        return Refused(WEB_REFUSED)  # a bare name, also in lower case
+def check_query(
+    query: str, typed: str, picture_text: Sequence[str], mode: Mode = LIGHT
+) -> Allowed | Refused:
+    """An outward query on a picture turn. LIGHT: no person-shaped phrase or name whose words he
+    did not type or the picture does not show. STRICT: that, and no word at all beyond his, the
+    picture's and the free words. `picture_text`: the picture's text and its vetted things'
+    names."""
+    if light_refuses(query, word_set([typed, *picture_text])):
+        return Refused(WEB_REFUSED)
+    if mode == STRICT and untold(query, [typed, *picture_text]):
+        return Refused(WEB_REFUSED)  # "narendra modi car", "लेखा", "Lekha weather", a link
     return ALLOWED
 
 
@@ -190,8 +153,13 @@ class TurnGuard:
     """`turns`: the port (None: not wired, so every turn is a picture turn). `last`: the
     conversation's last picture report (None: no picture research here)."""
 
-    def __init__(self, turns: PictureTurns | None = None, last: LastReport | None = None) -> None:
-        self._turns, self._last = turns, last
+    def __init__(
+        self,
+        turns: PictureTurns | None = None,
+        last: LastReport | None = None,
+        keys: MessageKeys | None = None,
+    ) -> None:
+        self._turns, self._last, self._keys = turns, last, keys
 
     async def _picture_turn(self) -> tuple[bool, Report | None]:
         """Is this call on a picture turn (or one JARVIS can't be sure about), and the last
@@ -230,20 +198,37 @@ class TurnGuard:
             return ALLOWED
         return check_name(name, typed, report.text if report is not None else ())
 
+    async def _no_person(self, report: Report | None) -> bool:
+        """Is THIS message's picture known to show nobody? Only when the conversation's last
+        picture research looked at the only picture this message carried (the same message key)
+        and saw no person. Anything else, a fault included, is "maybe": strict."""
+        if report is None or report.person or report.pictures != 1 or not report.key:
+            return False
+        ctx = current_tool_context()
+        if self._keys is None or ctx is None or ctx.session_id is None:
+            return False
+        try:
+            return await self._keys.message(ctx.user_id, ctx.session_id) == report.key
+        except Exception as exc:  # noqa: BLE001 - can't tell: it may show a person
+            log.warning("picture message unknown", extra={"reason": type(exc).__name__})
+            return False
+
     async def query(self, query: str) -> Allowed | Refused:
-        """May `web_search` send this query in the current call?"""
+        """May an outward search (web, YouTube, Maps, people research's context) send this
+        query in the current call?"""
         typed = owner_text()
-        if typed is None or isinstance(check_query(query, typed, ()), Allowed):
+        if typed is None or isinstance(check_query(query, typed, (), STRICT), Allowed):
             return ALLOWED
         picture, report = await self._picture_turn()
         if not picture:
             return ALLOWED
         shown = [*report.text, *(s.name for s in report.subjects)] if report is not None else []
-        return check_query(query, typed, shown)
+        mode = LIGHT if await self._no_person(report) else STRICT
+        return check_query(query, typed, shown, mode)
 
     async def query_stop(self, query: str) -> dict[str, Any] | None:
-        """The one call `web_search`'s run makes: its result when the query is refused, else
-        None (go ahead)."""
+        """The one call an outward search's run makes (`web_search`, `youtube_search`,
+        `maps_search`, `maps_route`): its result when the query is refused, else None."""
         verdict = await self.query(query)
         return verdict.view() if isinstance(verdict, Refused) else None
 
@@ -255,6 +240,27 @@ class TurnGuard:
         if isinstance(verdict, Refused):
             raise PictureQueryRefused(verdict.message)
         return Preview(summary=one_line(WEB_CARD.format(query=query), SUMMARY_FALLBACK_LIMIT))
+
+    async def texts_stop(self, texts: Sequence[str]) -> dict[str, Any] | None:
+        """`query_stop` for a tool with more than one outward text (Maps: the query and the
+        area; a route's two ends): the first refusal's result, else None."""
+        for text in texts:
+            if text and (stop := await self.query_stop(text)) is not None:
+                return stop
+        return None
+
+    def preview_for(self, texts: OutwardTexts, card: Callable[[dict[str, Any]], str]) -> PreviewFn:
+        """A look-up (`Tool.preview`) for an outward search other than the web's (YouTube,
+        Maps): refused texts are never proposed, else the tool's own card words."""
+
+        async def preview(a: dict[str, Any]) -> Preview:
+            for text in texts(a):
+                verdict = await self.query(text)
+                if isinstance(verdict, Refused):
+                    raise PictureQueryRefused(verdict.message)
+            return Preview(summary=card(a))
+
+        return preview
 
 
 FAIL_CLOSED = TurnGuard()  # not wired: every Brain turn counts as a picture turn
@@ -280,9 +286,24 @@ class DocumentTurns:
         except Exception as exc:  # noqa: BLE001 - a storage fault is not "no picture"
             log.warning("turn pictures unreadable", extra={"reason": type(exc).__name__})
             return "unknown"
-        if not isinstance(pictures, list) or getattr(pictures, "unreadable", False):
+        if not isinstance(pictures, list) or pictures_unreadable(pictures):
             return "unknown"
         return "yes" if pictures else "no"
+
+    async def message(self, uid: str, session_id: str) -> str | None:
+        """`MessageKeys`: the key of the latest owner message's pictures, as picture research
+        computes it; None when there are none or they can't be read."""
+        docs = self._docs()
+        if docs is None:
+            return None
+        try:
+            pictures = await turn_pictures(docs, uid, session_id, sessions=self._sessions())
+        except Exception as exc:  # noqa: BLE001 - can't tell which message
+            log.warning("turn pictures unreadable", extra={"reason": type(exc).__name__})
+            return None
+        if not isinstance(pictures, list) or not pictures or pictures_unreadable(pictures):
+            return None
+        return message_key(session_id, pictures)
 
 
 def app_guard(state: Callable[[str], Any]) -> TurnGuard:
@@ -299,18 +320,23 @@ def app_guard(state: Callable[[str], Any]) -> TurnGuard:
         found = read(uid, session_id) if callable(read) else None
         return found if isinstance(found, Report) else None
 
-    return TurnGuard(DocumentTurns(lambda: state("documents"), lambda: state("store")), last)
+    turns = DocumentTurns(lambda: state("documents"), lambda: state("store"))
+    return TurnGuard(turns, last, keys=turns)
 
 
 __all__ = [
     "ALLOWED",
     "FAIL_CLOSED",
+    "LIGHT",
     "OFFER_WORDS",
+    "STRICT",
     "WEB_CARD",
     "WEB_REFUSED",
     "Allowed",
     "Carried",
     "DocumentTurns",
+    "MessageKeys",
+    "Mode",
     "Offer",
     "PictureQueryRefused",
     "PictureTurns",

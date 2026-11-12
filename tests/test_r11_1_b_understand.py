@@ -245,10 +245,19 @@ async def test_a_name_among_the_hints_is_still_a_name_nothing_may_rewrite(rig: R
 
 
 async def test_a_careful_model_answer_is_taken(rig: Rig) -> None:
-    heard = "book the qzx file for 12 Nov at 7:30 pm with Meera"
+    # "csx" is a near spelling of "CSV": a respelling the guard lets stand (code review M1: a
+    # word the file hints alone suggest, like "qzx" -> "CSV", is refused; test_r11_1_b_guard.py)
+    heard = "book the csx file for 12 Nov at 7:30 pm with Meera"
     rig.paid.script(answer("book the CSV file for 12 Nov at 7:30 pm with Meera"))
     out = await rig.svc.understand(UID, heard, files=["sessions.csv"])
     assert out.understood == "book the CSV file for 12 Nov at 7:30 pm with Meera" and out.sure
+
+
+async def test_a_word_only_a_file_name_suggests_is_asked_about(rig: Rig) -> None:
+    heard = "book the qzx file for 12 Nov at 7:30 pm with Meera"
+    rig.paid.script(answer("book the CSV file for 12 Nov at 7:30 pm with Meera"))
+    out = await rig.svc.understand(UID, heard, files=["sessions.csv"])
+    assert (out.understood, out.changed, out.sure) == (heard, False, False) and out.question
 
 
 # ---- the one question ----------------------------------------------------------------------------

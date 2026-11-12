@@ -22,10 +22,33 @@ SURE = 0.90  # a near-match this close, and the only one, is taken
 NEAR = 0.80  # this close is worth asking about
 MIN_FUZZY = 5  # letters a lone word needs before a near-match is tried
 MAX_RUN = 4
+SHORT = 4  # letters up to which a word may differ in one letter and still sound alike
 
 
 def _squash(parts: list[str]) -> str:
     return "".join(ch for p in parts for ch in p.casefold() if ch.isalnum())
+
+
+def _one_edit(a: str, b: str) -> bool:
+    """At most one letter added, dropped or changed."""
+    if abs(len(a) - len(b)) > 1:
+        return False
+    i = 0
+    while i < min(len(a), len(b)) and a[i] == b[i]:
+        i += 1
+    return a[i + 1 :] == b[i + 1 :] or a[i:] == b[i + 1 :] or a[i + 1 :] == b[i:]
+
+
+def sounds_like(heard: str, said: str) -> bool:
+    """Is `said` a near spelling of `heard` (letters and digits only, any case): the same first
+    letter, and as close as a near-match must be (`NEAR`), or a short word one letter off
+    ("csb" / "CSV", "plat" / "plan"). The fast tier's changes must pass this (guard M1)."""
+    a, b = _squash(heard.split()), _squash(said.split())
+    if not a or not b or a[0] != b[0]:
+        return False
+    if a == b or SequenceMatcher(None, a, b).ratio() >= NEAR:
+        return True
+    return max(len(a), len(b)) <= SHORT and _one_edit(a, b)
 
 
 def _hint_runs(hints: tuple[str, ...]) -> dict[int, list[list[str]]]:
@@ -98,4 +121,4 @@ def near_matches(
     return out, near
 
 
-__all__ = ["MAX_RUN", "MIN_FUZZY", "NEAR", "SURE", "near_matches"]
+__all__ = ["MAX_RUN", "MIN_FUZZY", "NEAR", "SHORT", "SURE", "near_matches", "sounds_like"]

@@ -9,7 +9,8 @@ A spoken message goes through this one step before the Brain:
        the one question, at once; the model is not asked to do what the rules may not (D21-B).
     3. unsure (a word that is no word, a near-miss with two candidates, or the recogniser's own
        low confidence) and the AI is on -> ONE fast-tier call (`model.FastCheck`), admitted and
-       metered; its answer is used only if `guard.acceptable` passes it.
+       metered; its answer is used only if `guard.acceptable` passes it (checked against the
+       rules' own reading: no action word changed, every change a respelling).
     4. still unsure -> one short question instead of acting. Low confidence alone never asks:
        with no model to check it, the words go through as heard.
 
@@ -183,7 +184,9 @@ class UnderstandService:
         if (
             answer is not None
             and answer.sure
-            and acceptable(heard, answer.understood, alternatives=others, hints=hints.all)
+            and acceptable(
+                heard, answer.understood, reading=out.text, alternatives=others, hints=hints.all
+            )
         ):
             return Understood(
                 answer.understood, not _same(answer.understood, heard), True, None, "ai"

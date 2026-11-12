@@ -306,7 +306,7 @@ def test_the_readme_says_what_the_laptop_now_does_with_photos() -> None:
         assert needle in text, needle
 
 
-# ---- review C-sec L1, L2, L3 and C-code L1, L2: the scripts' small holes ----------------------------
+# ---- review C-sec L1, L2, L3 and C-code L1, L2: the scripts' small holes -------------------------
 
 
 def test_a_whole_disk_a_system_folder_or_the_kit_itself_is_refused(tmp_path: Path) -> None:

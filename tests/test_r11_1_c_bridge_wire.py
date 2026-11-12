@@ -177,7 +177,7 @@ async def test_the_health_route_says_the_version_so_the_cloud_can_tell_an_old_ki
     await home.aclose()
 
 
-# ---- review C-sec M1 (and L4): the large read is guarded by the signature itself ------------------
+# ---- review C-sec M1 (and L4): the large read is guarded by the signature itself ---------------
 
 
 async def _signed_upload(

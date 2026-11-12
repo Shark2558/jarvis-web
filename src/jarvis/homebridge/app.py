@@ -7,8 +7,9 @@ For a fixed route the order is: a well-formed Content-Length (400) -> body <= 64
 within `BODY_READ_S` (408) -> signature (`BridgeAuth.check`, a bare 401 on any failure) -> JSON
 parse -> the plugin's handler -> a signed answer. On the one large route (a photo, 6 MB) the
 signature over the body hash the cloud declared is checked BEFORE a byte is read (review C-sec
-M1), one upload at a time, and the hash of what was read must be the one declared. A handler runs only after the
-signature, so an unauthenticated caller reaches no plugin code and no Home Assistant call.
+M1), one upload at a time, and the hash of what was read must be the one declared. A handler
+runs only after the signature, so an unauthenticated caller reaches no plugin code and no Home
+Assistant call.
 
 The core plugin (this module) serves health, state, devices and device actions; B's camera plugin
 and C's faces plugin serve events, packages and faces/summary and are listed in

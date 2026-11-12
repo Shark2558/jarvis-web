@@ -381,7 +381,7 @@ THING: dict[str, Any] = {
 }
 PERSON: dict[str, Any] = {
     "status": "done",
-    "message": f"A person in a blue top stands under a banner. I don't identify people from pictures, Sir. I found 1 source for harbour bridge. The picture's text names {NAME}. Shall I look {NAME} up from public sources, Sir?",
+    "message": f"A person in a blue top stands under a banner. I don't identify people from pictures, Sir. I found 1 source for harbour bridge. The picture's text names {NAME}. Caption read: 'MINISTER {NAME.upper()}'. Shall I look {NAME} up from public sources, Sir?",
     "person": True,
     "scene": "A person in a blue top stands under a banner.",
     "text": [f"MINISTER {NAME.upper()}", "OPENS THE HARBOUR BRIDGE"],
@@ -397,7 +397,7 @@ PERSON: dict[str, Any] = {
         }
     ],
     "notes": [],
-    "offer": {"name": NAME},
+    "offer": {"name": NAME, "caption": f"MINISTER {NAME.upper()}"},
     "pictures": 1,
 }
 
@@ -535,8 +535,10 @@ def test_a_person_gets_the_fixed_sentence_and_a_name_only_as_an_offer_he_must_pr
     assert card.locator(".istate").inner_text().strip().lower() == "a person"
     offer = c.page.locator("#lookOffer")
     assert offer.inner_text().strip().lower() == "put this name in the people box"
+    # the offer shows the very line of the picture's text the name was read from (review M2)
+    assert c.page.locator("#lookCaption").inner_text() == f"Caption read: 'MINISTER {NAME.upper()}'"
     offer.click()
-    c.page.wait_for_timeout(200)
+    expect(c.page.locator("#peopleName")).to_have_value(NAME)
 
     assert c.page.locator("#peopleName").input_value() == NAME
     assert c.page.evaluate("document.activeElement.id") == "peopleName"

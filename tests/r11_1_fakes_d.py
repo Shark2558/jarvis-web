@@ -6,10 +6,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import shutil
 import struct
+import subprocess
 import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -47,6 +50,35 @@ BRIDGE_URL = "https://laptop.example.ts.net:8443"
 GITHUB_TOKEN = "made-up-token-for-tests-0001"  # not a real token, and not shaped like one
 GITHUB_LOGIN = "example-dev"
 GITHUB_DOC = f"jarvis_connectors_github/{UID}"
+DOM_JS = Path(__file__).resolve().parent / "fixtures" / "r11_1" / "d_dom.js"
+
+
+# ---- O8 / D21-D: the People script run in Node on a small DOM, its buttons pressed ---------------
+def run_people_dom(
+    source: str, dossier: dict[str, Any] | None, *, presses: int = 0, offer: Any = None
+) -> dict[str, Any]:
+    """Run `source` (console-people.js, or a changed copy) on tests/fixtures/r11_1/d_dom.js with
+    `dossier` as the last research; press "Open next" `presses` times; draw and press `offer` (a
+    reply card) when given. Returns what it shows and what opened (followed links, window.open
+    calls). Raises RuntimeError when Node is not installed."""
+    node = shutil.which("node")
+    if node is None:
+        raise RuntimeError("node is not installed")
+    payload: dict[str, Any] = {"source": source, "dossier": dossier, "presses": presses}
+    if offer is not None:
+        payload["offer"] = offer
+    done = subprocess.run(
+        [node, str(DOM_JS)],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
+    out: dict[str, Any] = json.loads(done.stdout)
+    if "crashed" in out:
+        raise RuntimeError(out["crashed"])
+    return out
 
 
 # ---- O10: a linked home whose laptop reports its parts ------------------------------------------
@@ -490,6 +522,7 @@ class PictureRig:
 
 __all__ = [
     "BRIDGE_URL",
+    "DOM_JS",
     "GITHUB_DOC",
     "GITHUB_LOGIN",
     "GITHUB_TOKEN",
@@ -508,5 +541,6 @@ __all__ = [
     "picture",
     "rate_headers",
     "read_text",
+    "run_people_dom",
     "shows_person",
 ]

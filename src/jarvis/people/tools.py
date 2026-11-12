@@ -13,6 +13,17 @@ people_open_profiles(platforms?)
     own card in the People panel, or from the list in the reply (R11.1 D16: one tab per click;
     nothing opens by itself, and the message no longer says "Opening"). No server-side browser
     control. (Named `people_*` so the `people` permission row covers it.)
+
+R11.1 D21-D (security review H1, M3): no name from a face on the main brain's path. On a turn
+whose latest owner message carried a picture (`jarvis.picture.turnguard`), `research_person`
+researches only a name the owner typed in that message; a name the conversation's last picture
+research read off the picture's own text becomes an offer (`jarvis.people.offer`: fixed words, the
+caption line, a "Look up" card he presses) and nothing is searched; anything else is refused in
+fixed words. The same check runs first as the tool's look-up (`preview`), so a refused name never
+becomes an approval card either: no card can show a name taken from a face. `people_open_profiles`
+takes no name. Outside a Brain turn (the People panel, a card he approved) nothing changes.
+`PeopleDeps.pictures` is the guard (I1 hands over `turnguard.app_guard`); without one, every
+Brain turn counts as a picture turn (fail closed).
 """
 
 from __future__ import annotations
@@ -23,8 +34,11 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.people.models import Dossier
+from jarvis.people.offer import offered
 from jarvis.people.research import PeopleService, RateLimited, ScopeRefused, SearchFailed
-from jarvis.tools.base import Tool
+from jarvis.picture.turnguard import FAIL_CLOSED, Offer, Refused, TurnGuard
+from jarvis.tools.base import Preview, Tool
+from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
 
@@ -41,11 +55,21 @@ NOTHING_YET = "Nothing has been researched yet, Sir. Ask me to research a person
 ONE_LINK = "Here is 1 profile link, Sir. It opens in its own tab."
 LINKS = "Here are {n} profile links, Sir. Each one opens in its own tab."
 NO_LINKS = "No profile link matches that, Sir."
+CARD = "Research {name} from public sources"  # the card, as `summary_template` writes it
+CARD_OFFER = "Look up {name}, whom the picture's text names"
+CARD_LIMIT = 160
+
+
+class PictureNameRefused(ValueError):
+    """A name on a picture turn that the owner did not type and the picture's text does not hold:
+    nothing is proposed or done (the gateway reports the fixed words)."""
 
 
 @dataclass(frozen=True)
 class PeopleDeps:
     service: PeopleService  # awaits the persisted brain mode (BrainMode.load) on every call
+    # R11.1 D21-D: the turn's picture guard; None = not wired, so every Brain turn is a picture's
+    pictures: TurnGuard | None = None
 
 
 def _check_research(service: PeopleService) -> Callable[[dict[str, Any]], None]:
@@ -115,9 +139,25 @@ def _stopped(message: str, *, refused: bool) -> dict[str, Any]:
 class PeopleAPI:
     def __init__(self, deps: PeopleDeps) -> None:
         self._d = deps
+        self._guard = deps.pictures or FAIL_CLOSED
+
+    async def preview(self, a: dict[str, Any]) -> Preview:
+        """The look-up before the gateway decides: a name refused on a picture turn is never
+        proposed (no card shows it); a name the picture's text holds is carded as its words."""
+        name = str(a.get("name", ""))
+        verdict = await self._guard.name(name)
+        if isinstance(verdict, Refused):
+            raise PictureNameRefused(verdict.message)
+        words = CARD_OFFER if isinstance(verdict, Offer) else CARD
+        return Preview(summary=one_line(words.format(name=name), CARD_LIMIT))
 
     async def research(self, a: dict[str, Any]) -> dict[str, Any]:
         uid = require_tool_context().user_id
+        verdict = await self._guard.name(str(a["name"]))
+        if isinstance(verdict, Refused):
+            return _stopped(verdict.message, refused=True)
+        if isinstance(verdict, Offer):
+            return offered(verdict)
         try:
             d = await self._d.service.research(uid, str(a["name"]), a.get("context"))
         except ScopeRefused as exc:
@@ -161,9 +201,10 @@ def people_tools(deps: PeopleDeps) -> list[Tool]:
             ActionRisk.READ_ONLY,
             api.research,
             agent="people",
-            summary_template="Research {name} from public sources",
+            summary_template=CARD,
             check=_check_research(deps.service),
             activity_words="Researched a public figure",
+            preview=api.preview,
         ),
         Tool(
             OPEN_PROFILES,
@@ -187,4 +228,11 @@ def people_tools(deps: PeopleDeps) -> list[Tool]:
     ]
 
 
-__all__ = ["OPEN_PROFILES", "RESEARCH_PERSON", "PeopleAPI", "PeopleDeps", "people_tools"]
+__all__ = [
+    "OPEN_PROFILES",
+    "RESEARCH_PERSON",
+    "PeopleAPI",
+    "PeopleDeps",
+    "PictureNameRefused",
+    "people_tools",
+]

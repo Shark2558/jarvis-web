@@ -61,7 +61,7 @@ def test_the_block_says_what_it_does_not_do_and_only_offers_a_name() -> None:
     js = _src("console-r111-look.js")
     assert "I don\\'t identify people from pictures." in js
     assert "'Put this name in the People box'" in js
-    offer = js.split("function offerRow(name)", 1)[1].split("\nfunction ", 1)[0]
+    offer = js.split("function offerRow(name, caption)", 1)[1].split("\nfunction ", 1)[0]
     assert "F.api(" not in offer  # the offer itself looks nothing up: he presses Research
 
 

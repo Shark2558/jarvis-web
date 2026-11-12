@@ -16,6 +16,10 @@
 //   findings:[{title,domain,snippet}], summary|null, spoken, ambiguous, no_ai, note}; GET /v1/people/last;
 //   GET|POST /v1/settings/brain-mode {mode: 'ai'|'none'} -> {mode, meaning}.
 // Events: 'jarvis:brainmode' (detail {mode}); window.JarvisBrainMode = {get, set} (set('ai') only asks).
+// R11.1 D21-D (security review H1): window.JarvisPeople.offerCard(card) draws the reply card of kind
+// 'people_offer' (jarvis/people/offer.py): a name the picture's own text holds, the caption line it was read
+// from, and ONE button, "Look up". Nothing is looked up until he presses it; then this panel researches the
+// name exactly as when he types it (the server's usual check decides). The reply's card list calls it.
 (() => {
   'use strict';
   const panel = document.getElementById('p-people');
@@ -142,6 +146,25 @@
   function openNext() {
     const next = S.links.find((l) => !S.opened.has(l.url));
     if (next) next.a.click();
+  }
+
+  // R11.1 D21-D: the "Look up" offer under a chat reply. His press opens People and researches the name there.
+  function offerCard(raw) {
+    const c = obj(raw), name = c && c.kind === 'people_offer' && c.button === 'Look up' ? txt(c.name, 80) : '';
+    if (!name) return null;
+    const box = mk('div', 'integ'); box.dataset.kind = 'people_offer';
+    const caption = txt(c.caption, 200), b = mk('button', 'btn primary lift bact', 'Look up');
+    box.append(mk('p', 'psum', txt(c.words, 300)));
+    if (caption) box.append(mk('p', 'fine', 'Caption read: \'' + caption + '\''));
+    b.type = 'button'; b.setAttribute('aria-label', 'Look up ' + name + ' in People');
+    b.addEventListener('click', () => lookUp(name));
+    const act = mk('div', 'actions'); act.append(b); box.append(act);
+    return box;
+  }
+  function lookUp(name) {
+    const D = window.JarvisDeck;
+    if (D && typeof D.open === 'function') D.open('people', { focus: false });
+    nameEl.value = name; ctxEl.value = ''; research();
   }
 
   function speak() {
@@ -316,6 +339,7 @@
   build();
   // set('none') switches at once (the safe direction); set('ai') only opens the same confirm as the pill.
   window.JarvisBrainMode = Object.freeze({ get: () => S.mode, set: (m) => (m === 'ai' ? requestAi() : m === 'none' ? switchMode('none') : undefined) });
+  window.JarvisPeople = Object.freeze({ offerCard });
   const JC = window.JarvisConsole;
   if (JC && typeof JC.ready === 'function' && JC.ready()) load();
   document.addEventListener('jarvis:ready', load);

@@ -4,14 +4,15 @@
 // answer is shown as words and sources. JARVIS researches things, places, labels and logos; it never
 // identifies a person from a picture: a picture with a person shows what is visible and the server's fixed
 // sentence. A name can come only from the picture's own words, and then only as an offer: the button puts
-// the name in the People box above and HE presses Research, so the usual check decides.
+// the name in the People box above and HE presses Research, so the usual check decides. The offer shows the
+// very line of the picture's text the name was read from ("Caption read: '...'"), so he sees where it came from.
 // (Part D's profile cards are in console-people.js, where the dossier is drawn.)
 // Loaded by console-r111.js (an ES module). Built with window.JarvisFixes (mk, api, part) and the console's
 // existing classes; every server string reaches the page through textContent; a source is a link only when
 // it is plain https, and its site is read from the link itself. ASCII source; CSP script-src 'self'.
 // API (src/jarvis/api/fix_look.py): GET /v1/picture -> {part, ready, can, why};
 //   POST /v1/picture/research {session_id, picture} -> {status: 'done', message, person, text[],
-//   sources[{title, url, snippet}], offer: {name}|null} or {status, message} when it did not run.
+//   sources[{title, url, snippet}], offer: {name, caption}|null} or {status, message} when it did not run.
 const F = window.JarvisFixes;
 const INTRO = 'Attach a picture in the chat and send it, then press the button. I research things, places, labels and logos, with sources. I don\'t identify people from pictures.';
 const NEED_PICTURE = 'Attach a picture in the chat and send it first, Sir. Then press the button.';
@@ -60,8 +61,9 @@ function sourceRow(s) {
 }
 // D21-D: a name read from the picture's own words is only OFFERED. The button fills the People box; the
 // look-up happens when he presses Research there, through the same check as a typed name.
-function offerRow(name) {
+function offerRow(name, caption) {
   const row = F.mk('div', 'actions'), b = F.mk('button', 'btn lift bact', 'Put this name in the People box');
+  const line = F.mk('p', 'fine', caption ? 'Caption read: \'' + caption + '\'' : ''); line.id = 'lookCaption';
   b.type = 'button'; b.id = 'lookOffer';
   b.addEventListener('click', () => {
     const box = document.getElementById('peopleName'), ctx = document.getElementById('peopleContext');
@@ -70,7 +72,7 @@ function offerRow(name) {
     box.focus(); say('', OFFERED);
   });
   row.append(b);
-  return row;
+  return [line, row];
 }
 function render(d) {
   cardEl.replaceChildren();
@@ -85,7 +87,7 @@ function render(d) {
   if (person && lines.length) body.append(F.mk('p', 'fine', 'Text in the picture: ' + lines.join('; ')));
   if (sources.length) { const ul = F.mk('ul', 'tlist plinks'); sources.forEach((s) => ul.append(sourceRow(s))); body.append(ul); }
   const offer = obj(d.offer), name = offer ? txt(offer.name, 80) : '';
-  if (name) body.append(offerRow(name));
+  if (name) body.append(...offerRow(name, txt(offer.caption, 200)));
   card.append(head, body); cardEl.append(card);
 }
 

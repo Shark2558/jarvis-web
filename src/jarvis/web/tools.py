@@ -291,6 +291,23 @@ def _fitted(head: dict[str, Any], text: str, domain: str, left: int) -> dict[str
     return out
 
 
+SEARCH_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "maxLength": QUERY_LIMIT},
+        "max_results": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS},
+        "topic": {"type": "string", "enum": list(TOPICS)},
+        "days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": MAX_DAYS,
+            "description": "Only results from about the last N days",
+        },
+    },
+    "required": ["query"],
+}
+
+
 def web_tools(service: WebService, pictures: TurnGuard | None = None) -> list[Tool]:
     """`pictures`: the app's turn guard (R11.1 D21-D, `picture.turnguard.app_guard`); unwired,
     every Brain turn counts as a picture turn (fail closed)."""
@@ -303,21 +320,7 @@ def web_tools(service: WebService, pictures: TurnGuard | None = None) -> list[To
             "message. Never put private details (the owner's contacts, email addresses, phone or "
             "account numbers, anything from their mail, calendar, memory or documents) in the "
             "query unless the owner asked for exactly that search.",
-            {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "maxLength": QUERY_LIMIT},
-                    "max_results": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS},
-                    "topic": {"type": "string", "enum": list(TOPICS)},
-                    "days": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": MAX_DAYS,
-                        "description": "Only results from about the last N days",
-                    },
-                },
-                "required": ["query"],
-            },
+            SEARCH_SCHEMA,
             ActionRisk.READ_ONLY,
             w.search,
             agent="web",

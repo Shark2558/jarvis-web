@@ -431,62 +431,67 @@ def _place_view(n: int, p: Place) -> dict[str, Any]:
     return out
 
 
+def _search_tool(m: _Maps, guard: TurnGuard) -> Tool:
+    return Tool(
+        "maps_search",
+        "Find places on Google Maps (name, address, open/closed). Up to 5; the owner sees "
+        "them on a card with Open in Google Maps links. No ratings, hours or phone numbers. "
+        "near: an area in words (not the owner's home or work). At most 3 Maps look-ups per "
+        "message. Never put private details in the query.",
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "maxLength": QUERY_LIMIT},
+                "near": {"type": "string", "maxLength": PLACE_LIMIT},
+            },
+            "required": ["query"],
+        },
+        ActionRisk.READ_ONLY,
+        stops_answered(m.search),
+        agent="maps",
+        summarize=_search_card,
+        check=_check_search,
+        preview=guard.preview_for(_search_words, _search_card),
+    )
+
+
+def _route_tool(m: _Maps, guard: TurnGuard) -> Tool:
+    return Tool(
+        "maps_route",
+        "Travel time and distance on Google Maps with current traffic (drive, two_wheeler) "
+        "or on foot (walk). from / to: an address or place in words, or 'home' / 'work' for "
+        "the owner's saved places. depart: a future time with its zone, to plan ahead. The "
+        "owner sees a card with an Open in Google Maps link. Counts as one of the message's "
+        "3 Maps look-ups.",
+        {
+            "type": "object",
+            "properties": {
+                "from": {"type": "string", "maxLength": PLACE_LIMIT},
+                "to": {"type": "string", "maxLength": PLACE_LIMIT},
+                "mode": {"type": "string", "enum": list(MODES)},
+                "depart": {
+                    "type": "string",
+                    "maxLength": DEPART_LIMIT,
+                    "description": "e.g. 2026-11-20T08:30:00+05:30",
+                },
+            },
+            "required": ["from", "to"],
+        },
+        ActionRisk.READ_ONLY,
+        stops_answered(m.route),
+        agent="maps",
+        summarize=_route_card,
+        check=_check_route,
+        ask_when=_saved_place_in_outside_round,
+        preview=guard.preview_for(_route_words, _route_card),
+    )
+
+
 def maps_tools(service: MapsService, pictures: TurnGuard | None = None) -> list[Tool]:
     """`pictures`: the app's turn guard (R11.1 I1); unwired it fails closed."""
     guard = pictures or FAIL_CLOSED
     m = _Maps(service, guard)
-    return [
-        Tool(
-            "maps_search",
-            "Find places on Google Maps (name, address, open/closed). Up to 5; the owner sees "
-            "them on a card with Open in Google Maps links. No ratings, hours or phone numbers. "
-            "near: an area in words (not the owner's home or work). At most 3 Maps look-ups per "
-            "message. Never put private details in the query.",
-            {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "maxLength": QUERY_LIMIT},
-                    "near": {"type": "string", "maxLength": PLACE_LIMIT},
-                },
-                "required": ["query"],
-            },
-            ActionRisk.READ_ONLY,
-            stops_answered(m.search),
-            agent="maps",
-            summarize=_search_card,
-            check=_check_search,
-            preview=guard.preview_for(_search_words, _search_card),
-        ),
-        Tool(
-            "maps_route",
-            "Travel time and distance on Google Maps with current traffic (drive, two_wheeler) "
-            "or on foot (walk). from / to: an address or place in words, or 'home' / 'work' for "
-            "the owner's saved places. depart: a future time with its zone, to plan ahead. The "
-            "owner sees a card with an Open in Google Maps link. Counts as one of the message's "
-            "3 Maps look-ups.",
-            {
-                "type": "object",
-                "properties": {
-                    "from": {"type": "string", "maxLength": PLACE_LIMIT},
-                    "to": {"type": "string", "maxLength": PLACE_LIMIT},
-                    "mode": {"type": "string", "enum": list(MODES)},
-                    "depart": {
-                        "type": "string",
-                        "maxLength": DEPART_LIMIT,
-                        "description": "e.g. 2026-11-20T08:30:00+05:30",
-                    },
-                },
-                "required": ["from", "to"],
-            },
-            ActionRisk.READ_ONLY,
-            stops_answered(m.route),
-            agent="maps",
-            summarize=_route_card,
-            check=_check_route,
-            ask_when=_saved_place_in_outside_round,
-            preview=guard.preview_for(_route_words, _route_card),
-        ),
-    ]
+    return [_search_tool(m, guard), _route_tool(m, guard)]
 
 
 __all__ = [

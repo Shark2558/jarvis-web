@@ -195,6 +195,34 @@ def attach_activity(gw: Gateway, store: ActivityStore, s: Settings) -> None:
     gw.observers.append(ActivityRecorder(store, gw.registry, timezone=s.user_timezone))
 
 
+def _builtins(google: GoogleConnector | None) -> ToolRegistry:
+    """The built-in tools; with the Google link, without their in-memory twins."""
+    reg = ToolRegistry()
+    for t in builtin_tools(InMemoryWorld()):
+        if google is None or t.name not in FAKE_TWINS:
+            reg.register(t)
+    return reg
+
+
+def _register_undo(reg: ToolRegistry, undo: UndoBin | None) -> None:
+    if undo is not None:  # R2 review M2: notes and things are undo-able without Google too
+        from jarvis.undo.tools import undo_tools
+
+        for t in undo_tools(undo):
+            reg.register(t)
+
+
+def _register_parts(
+    reg: ToolRegistry, r11: Mapping[str, HelperPart] | None, r111: Sequence[Tool]
+) -> None:
+    if r11:  # R11 D2: each helper part's own tools (its `kinds.TOOL_FAMILIES`), checked at wiring
+        from jarvis.api.r11_wiring import register_r11_tools
+
+        register_r11_tools(reg, r11)
+    for t in r111:  # R11.1: the four parts' tools, checked at wiring (api/r11_1_wiring.py)
+        reg.register(t)
+
+
 def build_gateway(
     s: Settings,
     *,
@@ -221,13 +249,9 @@ def build_gateway(
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
     D1): the chosen-folders Drive tools, only when Drive is configured (`JARVIS_DRIVE=on`).
-    `pictures` (R11.1 D21-D): ONE turn guard for research_person and web_search; without it
-    both fail closed (every Brain turn counts as a picture turn)."""
-    reg = ToolRegistry()
-    for t in builtin_tools(InMemoryWorld()):
-        if google is not None and t.name in FAKE_TWINS:
-            continue
-        reg.register(t)
+    `pictures` (R11.1 D21-D, I1): ONE turn guard for research_person, web_search, YouTube and
+    Maps; without it they fail closed (every Brain turn counts as a picture turn)."""
+    reg = _builtins(google)
     if r4 is not None:  # R4 W6: vitals_show / systems_check are always-on (no-AI mode needs them)
         from jarvis.api.r4_wiring import register_r4_tools
 
@@ -235,20 +259,11 @@ def build_gateway(
     if google is not None:
         _register_google(reg, s, google, undo=undo, marks=marks, docs=docs)
     _register_people(reg, google)
-    if undo is not None:  # R2 review M2: notes and things are undo-able without Google too
-        from jarvis.undo.tools import undo_tools
-
-        for t in undo_tools(undo):
-            reg.register(t)
+    _register_undo(reg, undo)
     _register_services(reg, memory, web, documents, drive, media, pictures)
     _register_personal(reg, vault, notes, belongings)
     _register_home(reg, home)
-    if r11:  # R11 D2: each helper part's own tools (its `kinds.TOOL_FAMILIES`), checked at wiring
-        from jarvis.api.r11_wiring import register_r11_tools
-
-        register_r11_tools(reg, r11)
-    for t in r111:  # R11.1: the four parts' tools, checked at wiring (api/r11_1_wiring.py)
-        reg.register(t)
+    _register_parts(reg, r11, r111)
     return Gateway(
         registry=reg,
         policy=Policy(),

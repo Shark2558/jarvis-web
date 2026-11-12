@@ -295,29 +295,9 @@ class PrivacyService:
     ) -> Deleted:
         source = self._source(category_id)
         view = await self._describe(uid, source)
-        if view.delete == "none":
-            raise NotDeletable("This category can't be deleted here.")
-        if not rev or rev != view.rev:
-            raise Changed(CHANGED)
-        how = ""
-        if view.delete == "passkey":
-            how = await self._prove(
-                uid,
-                "privacy_delete",
-                f"{category_id}:{view.rev}",
-                typed=True,
-                confirm=confirm,
-                proof=proof,
-                fresh_left_s=fresh_left_s,
-            )
-            # the proof was checked for the rev he saw; the data may have moved while that ran
-            if (await self._describe(uid, source)).rev != view.rev:
-                raise Changed(CHANGED)
-        # R3 S4: a source can ask for more first (the home link while the alarm is armed needs
-        # the Disarm button's proof); it raises its own refusal, and nothing is deleted
-        authorize = getattr(source, "authorize_delete", None)
-        if authorize is not None:
-            await authorize(uid, proof=proof, fresh_left_s=fresh_left_s)
+        how = await self._cleared(
+            uid, source, view, rev=rev, confirm=confirm, proof=proof, fresh_left_s=fresh_left_s
+        )
         before = _to_delete(view)
         failure: str | None = None
         count = 0
@@ -336,6 +316,44 @@ class PrivacyService:
         await self._audit("privacy_delete", "executed", category_id, count, suffix)
         pending = _pending(source) if left else ""
         return Deleted(deleted=count, category=category_id, remaining=left, pending=pending)
+
+    async def _cleared(
+        self,
+        uid: str,
+        source: PrivacySource,
+        view: CategoryView,
+        *,
+        rev: str,
+        confirm: str | None,
+        proof: PasskeyProof | None,
+        fresh_left_s: int | None,
+    ) -> str:
+        """May he delete this category now? Each refusal raises; the proof's words ("" when
+        none is needed)."""
+        if view.delete == "none":
+            raise NotDeletable("This category can't be deleted here.")
+        if not rev or rev != view.rev:
+            raise Changed(CHANGED)
+        how = ""
+        if view.delete == "passkey":
+            how = await self._prove(
+                uid,
+                "privacy_delete",
+                f"{view.id}:{view.rev}",
+                typed=True,
+                confirm=confirm,
+                proof=proof,
+                fresh_left_s=fresh_left_s,
+            )
+            # the proof was checked for the rev he saw; the data may have moved while that ran
+            if (await self._describe(uid, source)).rev != view.rev:
+                raise Changed(CHANGED)
+        # R3 S4: a source can ask for more first (the home link while the alarm is armed needs
+        # the Disarm button's proof); it raises its own refusal, and nothing is deleted
+        authorize = getattr(source, "authorize_delete", None)
+        if authorize is not None:
+            await authorize(uid, proof=proof, fresh_left_s=fresh_left_s)
+        return how
 
     async def _left(self, uid: str, source: PrivacySource) -> int | None:
         """What a delete of this category would still remove; None when it can't be read back."""

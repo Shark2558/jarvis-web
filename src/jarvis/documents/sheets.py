@@ -7,19 +7,23 @@ synchronous; in the app it runs only inside the extraction worker (`jarvis.docum
     .xls            xlrd (BSD), on demand, its warnings sent nowhere (the worker's standard
                     output is the answer itself)
 
-Each sheet becomes "Sheet N of M: <name>" and its rows as "a | b | c". Caps: a workbook with more
-than `Limits.max_sheets` sheets is refused, never half-read; at most `Limits.max_sheet_rows` rows a
-sheet (the rest are counted for a moment and said), `MAX_ROW_CELLS` cells a row, `MAX_CELL_CHARS`
-characters a cell, `Limits.max_chars` in all, and the time budget between rows (what was read in
-time is kept, marked truncated). The .xlsx zip is checked before any XML is parsed
-(`extract.office_guard`: not a bomb, no document type definition).
+Only the sheets the owner can see are read (code review M5): a hidden or "very hidden" sheet is
+never sent anywhere, and the text ends with "(2 hidden sheets not read)". Each visible sheet
+becomes "Sheet N of M: <name>" (M: the visible sheets) and its rows as "a | b | c"; `sheets` is
+the number of sheets read. Caps: a workbook with more than `Limits.max_sheets` sheets in all
+(every sheet the workbook lists, hidden ones too: one count, taken once) is refused, never
+half-read; at most `Limits.max_sheet_rows` rows a sheet (the rest are counted for a moment and
+said), `MAX_ROW_CELLS` cells a row, `MAX_CELL_CHARS` characters a cell, `Limits.max_chars` in
+all, and the time budget between rows (what was read in time is kept, marked truncated). The
+.xlsx zip is checked before any XML is parsed (`extract.office_guard`: not a bomb, no document
+type definition in any part).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import io
-import re
 from collections.abc import Iterable, Iterator
 from typing import Any
 
@@ -42,7 +46,6 @@ from jarvis.documents.limits import MAX_CELL_CHARS, MAX_ROW_CELLS, DocumentRejec
 
 TITLE_CHARS = 80
 COUNT_BUDGET_S = 2.0  # how long the rows past a sheet's cap are counted before "more rows"
-_SHEET_PART = re.compile(r"xl/worksheets/[^/]+\.xml", re.IGNORECASE)
 _XL_DATE, _XL_BOOL, _XL_ERROR, _XL_NUMBER = 3, 4, 5, 2
 
 
@@ -56,6 +59,16 @@ def _too_many(count: int, limit: int) -> DocumentRejected:
         f"This workbook has {count:,} sheets; JARVIS reads up to {limit} sheets from one file. "
         "Save the sheets you need as a smaller workbook and attach that.",
     )
+
+
+ALL_HIDDEN = (
+    "Every sheet in this workbook is hidden, and JARVIS reads only the sheets you can see. "
+    "Unhide the ones you need, save it, and attach it again."
+)
+
+
+def _hidden_line(count: int) -> str:
+    return f"({count} hidden sheet{'' if count == 1 else 's'} not read)"
 
 
 def _number(v: float) -> str:
@@ -104,8 +117,11 @@ def _title(name: Any) -> str:
 class _Reader:
     """Collects sheets as text within the caps; `more` says something was left out."""
 
-    def __init__(self, limits: Limits, deadline: float, clock: Clock, sheets: int) -> None:
+    def __init__(
+        self, limits: Limits, deadline: float, clock: Clock, sheets: int, *, hidden: int = 0
+    ) -> None:
         self.limits, self.deadline, self.clock, self.sheets = limits, deadline, clock, sheets
+        self.hidden = hidden  # sheets the owner cannot see: never read, only counted
         self.parts: list[str] = []
         self.used = 0
         self.rows = 0
@@ -159,47 +175,62 @@ class _Reader:
         if not self.rows:
             if self.more:
                 raise too_slow()
+            if self.hidden and not self.sheets:
+                raise DocumentRejected("no_text", ALL_HIDDEN)
             raise _no_text(kind)
-        text, cut = _cap(normalise("\n\n".join(self.parts)), self.limits)
+        note = f"\n\n{_hidden_line(self.hidden)}" if self.hidden else ""
+        room = dataclasses.replace(self.limits, max_chars=self.limits.max_chars - len(note))
+        text, cut = _cap(normalise("\n\n".join(self.parts)), room)
         return Extracted(
-            kind=kind, text=text, truncated=self.more or cut, sheets=self.sheets, rows=self.rows
+            kind=kind,
+            text=text + note,
+            truncated=self.more or cut,
+            sheets=self.sheets,
+            rows=self.rows,
         )
 
 
 # ---- .xlsx / .xlsm ------------------------------------------------------------------------------
 
 
+def _read_book(book: Any, limits: Limits, deadline: float, clock: Clock) -> Extracted:
+    sheets = list(book.worksheets)  # every worksheet listed, in any state: the ONE count
+    if len(sheets) > limits.max_sheets:
+        raise _too_many(len(sheets), limits.max_sheets)
+    shown = [ws for ws in sheets if ws.sheet_state == "visible"]
+    reader = _Reader(limits, deadline, clock, len(shown), hidden=len(sheets) - len(shown))
+    try:
+        for n, ws in enumerate(shown, 1):
+            ws.reset_dimensions()  # never trust the file's own "this sheet is 16,384 wide"
+            rows = (row[:MAX_ROW_CELLS] for row in ws.iter_rows(values_only=True))
+            reader.sheet(n, ws.title, rows)
+    except _Stop:
+        pass
+    return reader.done("xlsx")
+
+
 def _xlsx(data: bytes, limits: Limits, deadline: float, clock: Clock) -> Extracted:
-    infos = office_guard(data, limits, kind="xlsx", folder="xl/")
-    declared = sum(1 for i in infos if _SHEET_PART.fullmatch(i.filename))
-    if declared > limits.max_sheets:
-        raise _too_many(declared, limits.max_sheets)
+    office_guard(data, limits, kind="xlsx", folder="xl/")
     import openpyxl  # MIT
 
     try:
         book = openpyxl.load_workbook(
             io.BytesIO(data), read_only=True, data_only=True, keep_links=False
         )
-        sheets = list(book.worksheets)
-        if len(sheets) > limits.max_sheets:
-            raise _too_many(len(sheets), limits.max_sheets)
-        reader = _Reader(limits, deadline, clock, len(sheets))
-        try:
-            for n, ws in enumerate(sheets, 1):
-                ws.reset_dimensions()  # never trust the file's own "this sheet is 16,384 wide"
-                rows = (row[:MAX_ROW_CELLS] for row in ws.iter_rows(values_only=True))
-                reader.sheet(n, ws.title, rows)
-        except _Stop:
-            pass
-        finally:
-            book.close()
-        return reader.done("xlsx")
-    except DocumentRejected:
-        raise
     except MemoryError:
         raise too_complex() from None
     except Exception as exc:  # noqa: BLE001 — malformed XML, missing parts, a damaged zip
         raise _unreadable() from exc
+    try:
+        return _read_book(book, limits, deadline, clock)
+    except DocumentRejected:
+        raise
+    except MemoryError:
+        raise too_complex() from None
+    except Exception as exc:  # noqa: BLE001
+        raise _unreadable() from exc
+    finally:
+        book.close()
 
 
 # ---- .xls ---------------------------------------------------------------------------------------
@@ -229,6 +260,16 @@ def _xls_rows(book: Any, sheet: Any) -> Iterator[list[Any]]:
         yield [_xls_value(book, v, t) for v, t in zip(values, types, strict=False)]
 
 
+def _xls_visible(book: Any) -> list[bool]:
+    """Which sheets the owner can see, without loading any: xlrd keeps each sheet's BOUNDSHEET
+    flag (0 visible, 1 hidden, 2 very hidden) and has no public reader for it (xlrd 2.0.2, the
+    pinned and final release)."""
+    flags = book._sheet_visibility  # noqa: SLF001
+    if not isinstance(flags, list) or len(flags) != book.nsheets:
+        raise ValueError("unexpected sheet list")
+    return [flag == 0 for flag in flags]
+
+
 def _xls(data: bytes, limits: Limits, deadline: float, clock: Clock) -> Extracted:
     import xlrd  # BSD
 
@@ -248,11 +289,12 @@ def _xls(data: bytes, limits: Limits, deadline: float, clock: Clock) -> Extracte
     try:
         if book.nsheets > limits.max_sheets:
             raise _too_many(book.nsheets, limits.max_sheets)
-        reader = _Reader(limits, deadline, clock, book.nsheets)
+        shown = [i for i, seen in enumerate(_xls_visible(book)) if seen]
+        reader = _Reader(limits, deadline, clock, len(shown), hidden=book.nsheets - len(shown))
         try:
-            for i in range(book.nsheets):
+            for n, i in enumerate(shown, 1):
                 sheet = book.sheet_by_index(i)
-                reader.sheet(i + 1, sheet.name, _xls_rows(book, sheet))
+                reader.sheet(n, sheet.name, _xls_rows(book, sheet))
                 book.unload_sheet(i)
         except _Stop:
             pass

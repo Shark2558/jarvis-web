@@ -5,6 +5,10 @@
 # carries the new counts back to the server.
 from __future__ import annotations
 
+import io
+import zipfile
+from typing import Any
+
 import pytest
 from r11_1_fakes_b import XLS, make_pptx, make_xlsx, make_zip, many_sheets_xlsx, study_plan_xlsx
 
@@ -97,6 +101,63 @@ def test_a_workbook_with_too_many_sheets_is_refused_in_plain_words() -> None:
     e = rejected(extract, many_sheets_xlsx(300), "xlsx")
     assert e.code == "too_complex" and e.status == 422
     assert "300 sheets" in str(e) and f"up to {MAX_SHEETS}" in str(e)
+
+
+def test_hidden_and_very_hidden_sheets_are_not_read_and_are_said() -> None:
+    """Code review M5: a sheet the owner never sees is never sent; the text says how many were
+    left out, and `sheets` counts the sheets read (one meaning)."""
+    book = make_xlsx(
+        {
+            "Plan": [["Session", "Topic"], [1, "Made-up topic"]],
+            "Secret": [["made-up hidden value"]],
+            "Deep": [["made-up very hidden value"]],
+        },
+        states={"Secret": "hidden", "Deep": "veryHidden"},
+    )
+    out = extract(book, "xlsx")
+    assert "hidden value" not in out.text and "Made-up topic" in out.text
+    assert out.text.startswith("Sheet 1 of 1: Plan")
+    assert out.text.endswith("(2 hidden sheets not read)")
+    assert (out.sheets, out.rows) == (1, 2)
+    one = extract(make_xlsx({"A": [["a"]], "B": [["b"]]}, states={"B": "hidden"}), "xlsx")
+    assert one.text.endswith("(1 hidden sheet not read)") and one.sheets == 1
+
+
+def test_a_workbook_with_only_hidden_sheets_says_so() -> None:
+    # Excel will not save one, so the workbook part is edited as a hand-made file would be
+    made = make_xlsx({"A": [["a"]], "B": [["b"]]}, states={"B": "veryHidden"})
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(made)) as src, zipfile.ZipFile(out, "w") as dst:
+        for info in src.infolist():
+            body = src.read(info)
+            if info.filename == "xl/workbook.xml":
+                body = body.replace(b'sheetId="1" state="visible"', b'sheetId="1" state="hidden"')
+            dst.writestr(info, body)
+    e = rejected(extract, out.getvalue(), "xlsx")
+    assert e.code == "no_text" and "hidden" in str(e) and "b" not in str(e).split()
+
+
+def test_the_sheet_cap_counts_every_sheet_once_hidden_ones_too() -> None:
+    sheets = {f"S{i}": [[f"cell {i}"]] for i in range(1, 5)}
+    hidden = {f"S{i}": "hidden" for i in range(2, 5)}
+    e = rejected(extract, make_xlsx(sheets, states=hidden), "xlsx", Limits(max_sheets=3))
+    assert e.code == "too_complex" and "4 sheets" in str(e)
+
+
+def test_a_hidden_xls_sheet_is_not_read_either(monkeypatch: pytest.MonkeyPatch) -> None:
+    import xlrd
+
+    real = xlrd.open_workbook
+
+    def opened(*a: Any, **k: Any) -> Any:
+        book = real(*a, **k)
+        book._sheet_visibility[1] = 1  # noqa: SLF001 - the second sheet hidden, as Excel marks it
+        return book
+
+    monkeypatch.setattr(xlrd, "open_workbook", opened)
+    out = extract(XLS.read_bytes(), "xls")
+    assert out.sheets == 1 and out.text.endswith("(1 hidden sheet not read)")
+    assert "Sheet 2" not in out.text
 
 
 def test_a_long_sheet_is_cut_at_its_row_cap_and_says_so() -> None:

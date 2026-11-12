@@ -18,14 +18,16 @@ MISHEARINGS = FIXTURES / "b_mishearings.json"
 # ---- Excel (.xlsx / .xlsm) ----------------------------------------------------------------------
 
 
-def make_xlsx(sheets: dict[str, list[list[Any]]]) -> bytes:
-    """A workbook with these sheets; a cell that starts with "=" is written as a formula."""
+def make_xlsx(sheets: dict[str, list[list[Any]]], states: dict[str, str] | None = None) -> bytes:
+    """A workbook with these sheets; a cell that starts with "=" is written as a formula.
+    `states`: a sheet's state by title ("hidden" or "veryHidden"; others are visible)."""
     import openpyxl
 
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     for title, rows in sheets.items():
         ws = wb.create_sheet(title)
+        ws.sheet_state = (states or {}).get(title, "visible")
         for row in rows:
             ws.append(row)
     buf = io.BytesIO()

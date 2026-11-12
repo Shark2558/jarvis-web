@@ -200,19 +200,20 @@ What it cannot do, in order of weight (the eval's fake eyes cannot settle these;
 
 ## 7. How to check it
 
-All from this worktree, on head 98dfffe (the code and tests this note describes).
+All from this worktree, in the environments and behind the lock that the brief's section 6 names, on head
+98dfffe (the code and tests this note describes).
 
 | Command | Last line |
 |---|---|
-| `/tmp/venv-b/bin/pytest -q -p no:cacheprovider tests/test_r11_1_*.py` | `276 passed in 18.51s` |
+| `pytest -q -p no:cacheprovider tests/test_r11_1_*.py` | `276 passed in 18.51s` |
 | every existing test file that touches what this part changed, with the part's own (behind the lock): `pytest -q $(grep -lE "jarvis\.vitals\|jarvis\.people\|integrations\.github\|core\.prompts\|jarvis\.picture\|fix_look\|console-people\|console-vitals\|console-r111-look\|vitals_\|research_person\|people_open_profiles\|github_token\|home_link" tests/test_*.py) tests/test_health_*.py tests/test_r11_1_*.py` | `2654 passed in 70.33s (0:01:10)` |
-| `/tmp/venv-b/bin/pytest -q -p no:cacheprovider tests/test_r11_1_seams.py tests/test_r1_seams.py tests/test_r6_wiring_seams.py tests/test_arch_coverage.py tests/test_r51_console_assets_linked.py` | `374 passed in 11.16s` |
-| `/tmp/venv-b/bin/ruff check src tests evals scripts && /tmp/venv-b/bin/ruff format --check src tests evals scripts` | `All checks passed!` and `1384 files already formatted` |
-| `flock /tmp/r111-logs/heavy.lock /tmp/venv-b/bin/mypy src` | `Found 9 errors in 3 files (checked 613 source files)`: the 9 from before this release (`core/window.py`, `llm/anthropic_provider.py`, `memory/redis_store.py`) |
-| `PYTHONPATH=$PWD/src /tmp/venv-b/bin/python evals/r11_1/run.py --mock --part look` | `r11_1: 18/18 passed; negative control failed the suite: True` |
-| `PYTHONPATH=$PWD/src /tmp/venv-b/bin/python scripts/arch_coverage.py` | `arch coverage: OK - 56 packages/modules, 79 console modules, 2 Scheduler jobs, 30 outside services, 86 Firestore collections` |
-| `PYTHONPATH=$PWD/src /tmp/venv-b/bin/python scripts/check_doc_versions.py` | `All 26 documents have their version line and change log.` |
-| `flock /tmp/r111-logs/heavy.lock env JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src /tmp/venv-c/bin/python -m pytest -q tests/browser -m browser -k "r11_1 or ui_audit"` | `142 passed, 995 deselected in 451.81s (0:07:31)` |
+| `pytest -q -p no:cacheprovider tests/test_r11_1_seams.py tests/test_r1_seams.py tests/test_r6_wiring_seams.py tests/test_arch_coverage.py tests/test_r51_console_assets_linked.py` | `374 passed in 11.16s` |
+| `ruff check src tests evals scripts && ruff format --check src tests evals scripts` | `All checks passed!` and `1384 files already formatted` |
+| `mypy src` (behind the lock) | `Found 9 errors in 3 files (checked 613 source files)`: the 9 from before this release (`core/window.py`, `llm/anthropic_provider.py`, `memory/redis_store.py`) |
+| `PYTHONPATH=$PWD/src python evals/r11_1/run.py --mock --part look` | `r11_1: 18/18 passed; negative control failed the suite: True` |
+| `PYTHONPATH=$PWD/src python scripts/arch_coverage.py` | `arch coverage: OK - 56 packages/modules, 79 console modules, 2 Scheduler jobs, 30 outside services, 86 Firestore collections` |
+| `PYTHONPATH=$PWD/src python scripts/check_doc_versions.py` | `All 26 documents have their version line and change log.` |
+| `JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src python -m pytest -q tests/browser -m browser -k "r11_1 or ui_audit"` (behind the lock) | `142 passed, 995 deselected in 451.81s (0:07:31)` |
 | the same with `tests/browser/test_r51a_ui.py tests/browser/test_vitals_board.py tests/browser/test_systems_check.py tests/browser/test_offline.py` (the screens this part's scripts sit in) | `97 passed in 401.84s (0:06:41)` |
 | branch coverage of `src/jarvis/picture/` and `api/fix_look.py` by `tests/test_r11_1_d_*.py` (`coverage` installed outside the shared environments) | `TOTAL 668 1 170 2 99%` |
 

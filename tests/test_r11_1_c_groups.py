@@ -112,7 +112,7 @@ async def test_the_consent_check_runs_once_per_person_not_once_per_group(tmp_pat
     assert again.at_home and again.person.id == named.person.id
     (still,) = await people(c)
     assert still.consent_at == person.consent_at  # one person, one consent, asked once
-    assert c.home.groups.person_pictures() == {named.person.id: 6}
+    assert c.home.groups.store.pictures_of(named.person.id) == 6
     with pytest.raises(PersonRejected):  # a made-up person id is nobody's consent
         await c.groups.name_existing(UID, second, "fp_ffffffffffff")
     await c.home.aclose()
@@ -226,7 +226,7 @@ async def test_a_name_given_while_the_laptop_slept_survives_a_forget_all(tmp_pat
     out = await c.groups.poll(UID)  # the name reaches the laptop BEFORE the forget
     assert (out["named"], out["forgotten"], out["away"]) == (1, 1, 0)
     (person,) = await people(c)
-    assert person.state == "enrolled" and c.home.groups.person_pictures() == {person.id: 3}
+    assert person.state == "enrolled" and c.home.groups.store.pictures_of(person.id) == 3
     assert c.home.groups.groups_view()["groups"] == []
     await c.home.aclose()
 
@@ -242,7 +242,7 @@ async def test_forget_all_first_tells_the_laptop_the_names_that_wait(tmp_path: P
     done = await c.groups.forget_all(UID)
     assert (done.done, done.forgotten, done.left) == (True, 1, 0)
     (person,) = await people(c)
-    assert person.state == "enrolled" and c.home.groups.person_pictures() == {person.id: 3}
+    assert person.state == "enrolled" and c.home.groups.store.pictures_of(person.id) == 3
     await c.home.aclose()
 
 

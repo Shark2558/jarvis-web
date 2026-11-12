@@ -11,9 +11,12 @@
 //     laptop said so; until then the page says it is waiting.
 // Loaded by console-r111.js (an ES module). Built with window.JarvisFixes (mk, api, part) and the console's
 // existing classes; server strings reach the page through textContent only; ASCII source.
+// Nothing asks the server anything before sign-in (review C-code H1): every load waits for
+// JarvisConsole.ready(), including a panel the deck restored as open from the last visit; jarvis:ready
+// starts it once the owner is in.
 // API (src/jarvis/api/fix_photos.py): GET /v1/facegroups/groups -> {available, reason?, laptop, heard_at,
 // groups:[{id, n, photos, first, last}], strays, named, engine_ready, folder, read, keep_days, names_waiting,
-// forgets_waiting, local_url}; POST .../groups/{id}/name {person_id} | {name, relation, child, vip, given_by,
+// forgets_waiting, local_url, skipped, store_ok, names_lost, min_photos}; POST .../groups/{id}/name {person_id} | {name, relation, child, vip, given_by,
 // consent_version, confirm} -> {person_id, at_home, contact_matched}; POST .../groups/{id}/forget -> {done,
 // forgotten, left}; GET /v1/facegroups/import, POST .../import/step, DELETE .../import -> {status, photos,
 // total, faces_found, unknown, skipped, over, line, recognised:[{name, child}]}.
@@ -52,6 +55,7 @@ const day = (d) => d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYea
 const seenOn = (secs) => { const d = new Date(secs * 1000); return secs > 0 && !Number.isNaN(d.getTime()) ? day(d) : ''; };
 const heardAt = (iso) => { const d = new Date(iso); return iso && !Number.isNaN(d.getTime()) ? day(d) + ', ' + two(d.getHours()) + ':' + two(d.getMinutes()) : ''; };
 const isOpen = (panel) => { const D = window.JarvisDeck; return !!(D && typeof D.isOpen === 'function' && D.isOpen(panel)); };
+const signedIn = () => { const C = window.JarvisConsole; return !!(C && typeof C.ready === 'function' && C.ready()); };
 function detailOf(e) {
   if (e && e.name === 'TypeError') return OFFLINE;
   const m = e && typeof e.message === 'string' ? strip(e.message).trim() : '';
@@ -73,7 +77,8 @@ function groupsOf(raw) {
   return { available: true, groups, laptop: d.laptop === 'online' ? 'online' : 'offline', heard: txt(d.heard_at, 40),
     strays: count(d.strays), engine: d.engine_ready === true, folder: ['on', 'unreadable'].includes(d.folder) ? d.folder : 'off',
     read: count(d.read), keep: count(d.keep_days) || 90, names: count(d.names_waiting), forgets: count(d.forgets_waiting),
-    local: txt(d.local_url, 60) || LOCAL };
+    local: txt(d.local_url, 60) || LOCAL, skipped: count(d.skipped), store: d.store_ok !== false, lost: count(d.names_lost),
+    least: count(d.min_photos) || 3 };
 }
 function importOf(raw) {
   const r = obj(raw) || {};
@@ -124,18 +129,23 @@ if (F) {
     el.tally.textContent = d.groups.length ? d.groups.length + ' to name' : '';
     let state = '';
     if (d.laptop !== 'online') state = 'Your home laptop isn\'t reachable' + (heardAt(d.heard) ? ': this is what it last said (' + heardAt(d.heard) + ').' : '.');
+    else if (!d.store) state = 'The face store on your laptop can\'t be opened right now (its disk may be full). Nothing was deleted; restart the home kit if it stays like this.';
     else if (!d.engine) state = 'The face reader on your laptop is off. Update the home kit on the laptop to switch it on.';
-    else if (!d.groups.length) state = 'No groups to name.' + (d.strays ? ' ' + many(d.strays, 'face is', 'faces are') + ' in fewer than 3 photos so far.' : '');
+    else if (!d.groups.length) state = 'No groups to name.' + (d.strays ? ' ' + many(d.strays, 'face is', 'faces are') + ' in fewer than ' + many(d.least, 'photo', 'photos') + ' so far.' : '');
     el.state.textContent = state;
     d.groups.forEach((g) => el.list.appendChild(groupRow(g)));
     const waits = [];
     if (d.names) waits.push(many(d.names, 'name waits', 'names wait') + ' for your laptop to be back');
     if (d.forgets) waits.push(many(d.forgets, 'thing to forget waits', 'things to forget wait') + ' for your laptop: not done until it confirms');
+    if (d.lost) waits.push(many(d.lost, 'name', 'names') + ' could not be given: the group had gone from your laptop. The person is kept in Faces; name another group as them');
     el.waits.textContent = waits.length ? waits.join('. ') + '.' : '';
-    if (d.laptop === 'online') el.folder.textContent = d.folder === 'on' ? 'Watched photo folder: on, ' + many(d.read, 'picture', 'pictures') + ' read so far.' : FOLDER[d.folder];
+    if (d.laptop === 'online') {
+      el.folder.textContent = d.folder === 'on' ? 'Watched photo folder: on, ' + many(d.read, 'picture', 'pictures') + ' read so far.'
+        + (d.skipped ? ' ' + many(d.skipped, 'file', 'files') + ' could not be read and ' + (d.skipped === 1 ? 'was' : 'were') + ' skipped.' : '') : FOLDER[d.folder];
+    }
   }
   async function loadGroups(force) {
-    if (!G.el || (!force && G.data !== undefined && Date.now() - G.loadedAt < STALE_MS)) return;
+    if (!G.el || !signedIn() || (!force && G.data !== undefined && Date.now() - G.loadedAt < STALE_MS)) return;
     try {
       G.data = groupsOf(await api(BASE + '/groups')) || { available: false, reason: 'Not available on this server.', groups: [] };
       G.loadedAt = Date.now();
@@ -198,7 +208,8 @@ if (F) {
     if (d.recognised.length) parts.push('Recognised: ' + d.recognised.join(', ') + '.');
     if (d.over) parts.push(many(d.over, 'picked photo was', 'picked photos were') + ' over your limit and not imported.');
     if (d.unknown && (d.status === 'done' || d.status === 'reading')) {
-      parts.push(many(d.unknown, 'face', 'faces') + ' JARVIS doesn\'t know. A face that is in 3 or more photos appears in Faces, under Unnamed groups, where you can name it.');
+      parts.push(many(d.unknown, 'face', 'faces') + ' JARVIS doesn\'t know. A face that is in ' + many(G.data && G.data.least ? G.data.least : 3, 'photo', 'photos')
+        + ' or more appears in Faces, under Unnamed groups, where you can name it.');
     }
     return parts.filter(Boolean).join(' ');
   }
@@ -220,13 +231,13 @@ if (F) {
   }
   function schedule() {
     clearTimeout(J.timer); J.timer = 0;
-    if (!J.data || !J.auto || J.asking || document.hidden || !isOpen('connectors')) return;
+    if (!J.data || !J.auto || J.asking || document.hidden || !isOpen('connectors') || !signedIn()) return;
     if (J.data.status === 'reading') J.timer = setTimeout(() => stepJob(false), STEP_MS);
     else if (PAUSED.includes(J.data.status)) J.timer = setTimeout(readJob, PAUSED_MS);   // the clock retries; show it
   }
   function showImport(raw) { J.data = importOf(raw); J.auto = true; J.asking = false; J.problem = ''; renderJob(); schedule(); }
   async function call(path, opts, byHand, fail) {
-    if (J.busy || !J.el) return;
+    if (J.busy || !J.el || !signedIn()) return;
     J.busy = true; J.problem = ''; renderJob();
     try { J.data = importOf(await api(BASE + path, opts)); J.auto = true; } catch (e) {
       J.auto = false;   // never loop on an error: the owner presses Continue, or the clock carries on
@@ -244,11 +255,13 @@ if (F) {
     if (groups && !G.el) buildGroups(groups);
     if (job && !J.el) buildJob(job);
     renderGroups(); renderJob();
+    if (!signedIn()) return;   // the deck may have restored these panels as open: wait for jarvis:ready
     if (isOpen('faces')) loadGroups(false);
     if (isOpen('connectors')) readJob();
   }
   document.addEventListener('jarvis:panel', (e) => {
     const d = e.detail || {};
+    if (!signedIn()) return;
     if (d.id === 'faces' && d.open) loadGroups(false);
     if (d.id === 'connectors') { if (d.open) readJob(); else schedule(); }
   });

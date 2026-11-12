@@ -10,10 +10,13 @@ face's size and a small crop. Embeddings and crops go only to `face_store` on th
   `models/`; a file that is missing or is not the pinned one is never loaded (`EngineOff`, in
   plain words: the bridge and the camera keep working, photos and face groups wait).
 - Decoder safety (the laptop is the only decoder): JPEG only; the size is read from the header
-  BEFORE decoding (`jpeg.jpeg_size`); a picture from the cloud must be at most 2048 px a side and
-  4.2 megapixels and is never resized here; the owner's own file from the watched folder may be
-  larger and is then decoded at 1/2, 1/4 or 1/8 size by the JPEG decoder itself, never at full
-  size; the decoded shape is checked again.
+  BEFORE decoding, exactly as libjpeg reads it (`jpeg.jpeg_size`); a picture from the cloud must
+  be at most 2048 px a side and 4.2 megapixels and is never resized here; the owner's own file
+  from the watched folder may be up to 50 megapixels and is then decoded at 1/2, 1/4 or 1/8 size
+  by the JPEG decoder itself, never at full size. The decoder runs in a child process with a
+  memory ceiling and a time limit (`decoder.decode_isolated`; review C-sec H2), and the decoded
+  shape is checked again. Whatever OpenCV raises while finding, aligning or describing a face
+  is a refused picture (`PictureRefused("unreadable")`, review C-code H3), never a crash.
 - Detection runs twice, at <= 1024 px and at <= 384 px on the long side: YuNet finds faces of
   about 10 to 300 px, so the small pass is what finds a close-up. Overlapping finds are one face.
   A face under `MIN_FACE` px or under the detector's `DETECT_SCORE` is left out; at most 20 a
@@ -29,11 +32,13 @@ from __future__ import annotations
 import hashlib
 import importlib
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from jarvis.homebridge.decoder import PIXEL_CAP, decode_isolated
 from jarvis.homebridge.face_store import MAX_FACES_PER_PICTURE
 from jarvis.homebridge.face_types import DIM, SeenFace
 from jarvis.homebridge.jpeg import PictureRefused, jpeg_size
@@ -46,8 +51,9 @@ _ZOO = f"https://media.githubusercontent.com/media/opencv/opencv_zoo/{ZOO_COMMIT
 RUNTIME_PACKAGES = {"cv2": "opencv-python-headless", "numpy": "numpy"}
 MAX_SIDE = 2048
 MAX_PIXELS = 4_200_000
-OWN_MAX_SIDE = 16_384  # the owner's own file: decoded smaller, never refused for being a photo
-OWN_MAX_PIXELS = 150_000_000
+OWN_MAX_SIDE = 16_384  # the owner's own file: decoded smaller (a phone photo is 12 to 50 MP)
+OWN_MAX_PIXELS = PIXEL_CAP  # 50 megapixels (review C-sec H2: was 150)
+RETRY_WHY_S = 60.0  # while the models can't load, look again at most once a minute
 DETECT_SIDES = (1024, 384)
 DETECT_SCORE = 0.8
 MIN_FACE = 40
@@ -142,11 +148,16 @@ class OpenCvEngine:
         detect_score: float = DETECT_SCORE,
         min_face: int = MIN_FACE,
         load: Callable[[str], Any] = importlib.import_module,
+        decode: Callable[..., Any] = decode_isolated,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._dir = models_dir
         self._score = detect_score
         self._min_face = min_face
         self._load = load
+        self._decoder = decode
+        self._clock = clock
+        self._why_at = -RETRY_WHY_S
         self._cv: Any = None
         self._np: Any = None
         self._det: Any = None
@@ -182,7 +193,10 @@ class OpenCvEngine:
         return ""
 
     def status(self) -> str:
-        if self._det is None:
+        """`ready`, or why not. The models' SHA-256 (38 MB) is checked again at most once a
+        minute while they can't be loaded (review C-code L3), not on every call."""
+        if self._det is None and self._clock() - self._why_at >= RETRY_WHY_S:
+            self._why_at = self._clock()
             self._why = self._start()
         return READY if self._det is not None else self._why
 
@@ -197,14 +211,10 @@ class OpenCvEngine:
             4: cv.IMREAD_REDUCED_COLOR_4,
             8: cv.IMREAD_REDUCED_COLOR_8,
         }[scale]
-        try:
-            img = cv.imdecode(np.frombuffer(data, dtype=np.uint8), flag)
-        except Exception:  # noqa: BLE001 - a broken file is a refused picture, never a crash
-            img = None
+        # in a child with a memory ceiling; anything bigger than the header promised is refused
+        img = self._decoder(data, flag, max_side=MAX_SIDE + 8, np=np)
         if img is None or img.ndim != 3 or img.shape[2] != 3:
             raise PictureRefused("unreadable")
-        if max(img.shape[:2]) > MAX_SIDE + 8:  # what was decoded is what the header promised
-            raise PictureRefused("too_large")
         self.last_shape = (int(img.shape[0]), int(img.shape[1]))
         return img
 
@@ -256,6 +266,15 @@ class OpenCvEngine:
         if self.status() != READY:
             raise EngineOff(self._why)
         img = self._decode(jpeg, own_file)
+        try:
+            return self._look(img)
+        except (EngineOff, PictureRefused):
+            raise
+        except Exception as exc:  # noqa: BLE001 - cv2.error and friends: this picture, not the bridge
+            log.info("a picture could not be looked at", extra={"error": type(exc).__name__})
+            raise PictureRefused("unreadable") from None
+
+    def _look(self, img: Any) -> list[SeenFace]:
         out: list[SeenFace] = []
         for row in self._detect(img):
             size = int(min(float(row[2]), float(row[3])))
@@ -276,6 +295,7 @@ __all__ = [
     "MAX_PIXELS",
     "MAX_SIDE",
     "MODELS",
+    "OWN_MAX_PIXELS",
     "READY",
     "RUNTIME_PACKAGES",
     "ZOO_COMMIT",

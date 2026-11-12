@@ -425,7 +425,11 @@ class FacesPlugin:
         except FaceRefused:
             # Frigate silent: this part says only what the groups plugin itself holds
             return HeartbeatParts(faces=extra) if extra else HeartbeatParts()
-        merged = {p: min(n + extra.get(p, 0), MAX_PICTURES) for p, n in counts.items()}
+        # a group copied to the camera is in `counts` already and not in `extra` (review C-code
+        # M8); a named group whose copy still waits for Frigate is in `extra` only
+        merged = {
+            p: min(counts.get(p, 0) + extra.get(p, 0), MAX_PICTURES) for p in {*counts, *extra}
+        }
         return HeartbeatParts(faces=merged)
 
     async def apply_state(self, state: BridgeState) -> None:

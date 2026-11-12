@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -57,7 +57,7 @@ from jarvis.photos.models import (
     PickerSession,
     RecognisedPerson,
 )
-from jarvis.storage.docs import Delete, Docs, Set
+from jarvis.storage.docs import Delete, Docs, DocTx, Set
 from jarvis.undo.store import owner_ok
 
 log = get_logger(__name__)
@@ -92,6 +92,7 @@ class PhotosData:
     clusters: tuple[str, ...] = ()
     expires_at: str = ""
     pending: tuple[tuple[str, str], ...] = ()  # (cluster, person_id): registered, not yet at home
+    lost: int = 0  # pending names the laptop could not take (its group had gone): told, not dropped
 
 
 def _pending(raw: object) -> tuple[tuple[str, str], ...]:
@@ -107,7 +108,8 @@ def _pending(raw: object) -> tuple[tuple[str, str], ...]:
 
 
 class PhotosState:
-    """`{prefix}photos/{uid}` = {session_id, clusters, expires_at, pending}: ids only."""
+    """`{prefix}photos/{uid}` = {session_id, clusters, expires_at, pending, lost}: ids and a
+    count only."""
 
     def __init__(self, docs: Docs, *, prefix: str = "jarvis_") -> None:
         self._d = docs
@@ -129,11 +131,13 @@ class PhotosState:
             if isinstance(raw, list)
             else ()
         )
+        lost = doc.get("lost")
         return PhotosData(
             sid if isinstance(sid, str) else None,
             clusters[:MAX_CLUSTERS],
             exp if isinstance(exp, str) else "",
             _pending(doc.get("pending")),
+            lost if isinstance(lost, int) and not isinstance(lost, bool) and lost > 0 else 0,
         )
 
     async def put(self, uid: str, data: PhotosData) -> None:
@@ -142,8 +146,26 @@ class PhotosState:
             "clusters": list(data.clusters),
             "expires_at": data.expires_at,
             "pending": [{"cluster": c, "person": p} for c, p in data.pending],
+            "lost": data.lost,
         }
         await self._d.write([Set(self._path(uid), body)])
+
+    async def take_lost(self, uid: str) -> int:
+        """How many names were lost since the owner was last told, set back to 0 in the same
+        transaction (so it is told once)."""
+        path = self._path(uid)
+
+        async def tx(t: DocTx) -> int:
+            raw = await t.get(path)
+            if not isinstance(raw, dict):
+                return 0
+            n = raw.get("lost")
+            if not isinstance(n, int) or isinstance(n, bool) or n <= 0:
+                return 0
+            t.set(path, {**raw, "lost": 0})
+            return n
+
+        return await self._d.transaction(tx)
 
     async def delete(self, uid: str) -> None:
         await self._d.write([Delete(self._path(uid))])
@@ -157,11 +179,10 @@ class Enrolled:
 
 
 def _without(data: PhotosData, cluster: str) -> PhotosData:
-    return PhotosData(
-        data.session_id,
-        tuple(c for c in data.clusters if c != cluster),
-        data.expires_at,
-        tuple(p for p in data.pending if p[0] != cluster),
+    return replace(
+        data,
+        clusters=tuple(c for c in data.clusters if c != cluster),
+        pending=tuple(p for p in data.pending if p[0] != cluster),
     )
 
 
@@ -208,7 +229,7 @@ class PhotosService:
             session = await self._picker.create_session(uid, max_items or self.limits.max_picked)
             await self._state.put(
                 uid,
-                PhotosData(session.id, current.clusters, session.expires_at, current.pending),
+                replace(current, session_id=session.id, expires_at=session.expires_at),
             )
             await self._importer.start(uid, session.id)
             return session
@@ -245,16 +266,18 @@ class PhotosService:
         clusters = tuple(dict.fromkeys((*data.clusters, *out.unknown)))[-MAX_CLUSTERS:]
         if doc.state == "done":
             await self._picker.delete_session(uid, data.session_id)
-            await self._state.put(uid, PhotosData(None, clusters, "", data.pending))
+            await self._state.put(
+                uid, replace(data, session_id=None, clusters=clusters, expires_at="")
+            )
         elif doc.state == "expired":
-            await self._state.put(uid, PhotosData(None, clusters, "", data.pending))
+            await self._state.put(
+                uid, replace(data, session_id=None, clusters=clusters, expires_at="")
+            )
             if doc.done == 0:  # nothing was read: simply start again
                 await self.imports.delete(uid)
                 return ImportResult("no_session")
         elif clusters != data.clusters:
-            await self._state.put(
-                uid, PhotosData(data.session_id, clusters, data.expires_at, data.pending)
-            )
+            await self._state.put(uid, replace(data, clusters=clusters))
         return await self._result(uid, doc, self._status(doc), out)
 
     @staticmethod
@@ -304,7 +327,7 @@ class PhotosService:
                 if data.session_id is not None:
                     await self._picker.delete_session(uid, data.session_id)
             finally:
-                await self._state.put(uid, PhotosData(None, data.clusters, "", data.pending))
+                await self._state.put(uid, replace(data, session_id=None, expires_at=""))
                 await self.imports.delete(uid)
 
     # ---- contacts and erasure ------------------------------------------------------------------
@@ -408,7 +431,7 @@ class PhotosService:
         if not CLUSTER_ID.fullmatch(cluster):
             raise PersonRejected("unknown_face", UNKNOWN_FACE, status=404)
         pending = (*data.pending, (cluster, person_id))[-MAX_CLUSTERS:]
-        new = PhotosData(data.session_id, data.clusters, data.expires_at, pending)
+        new = replace(data, pending=pending)
         await self._state.put(uid, new)
         return new
 
@@ -461,9 +484,20 @@ class PhotosService:
                 if sent is False:
                     break  # still away: the rest wait too
                 data = _without(data, cluster)
+                if sent is None:  # the group had gone from the laptop (review C-code M7)
+                    data = replace(data, lost=data.lost + 1)  # the owner is told, never silence
                 await self._state.put(uid, data)
                 done += 1 if sent else 0
         return done
+
+    async def names_lost(self, uid: str) -> int:
+        """Names the laptop could not take since the owner was last told (a count)."""
+        return (await self._state.get(uid)).lost
+
+    async def take_lost(self, uid: str) -> int:
+        """The count of lost names, set back to 0: the caller tells the owner."""
+        async with self._lock(uid):
+            return await self._state.take_lost(uid)
 
 
 __all__ = ["Enrolled", "NoSession", "PhotosData", "PhotosService", "PhotosState"]

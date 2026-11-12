@@ -56,6 +56,7 @@ CODE_WORDS = {
     "bad_action": "That device can't do that.",
     # R11.1 O7: the laptop's face reader (photos and face groups)
     "no_engine": "The face reader on your home laptop isn't ready yet: update the home kit.",
+    "no_store": "The face store on your home laptop can't be opened right now.",
     "bad_image": "Your home laptop couldn't read that picture.",
     "no_consent": "Your home laptop has no consent on record for that person yet.",
     "unknown_group": "Your home laptop no longer has that group of faces.",

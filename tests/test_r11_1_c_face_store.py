@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from jarvis.homebridge.face_db import set_aside_files
 from jarvis.homebridge.face_store import FaceStore
 from jarvis.homebridge.face_types import (
     DIM,
@@ -23,6 +24,11 @@ from jarvis.homebridge.face_types import (
 A = "fp_3a9c12ab34cd"
 B = "fp_000000000001"
 DAY = 86_400.0
+
+
+def YES(person: str) -> bool:  # noqa: N802 - reads as the answer it is
+    """The consent check, as the faces plugin answers it for a person who agreed."""
+    return True
 
 
 class Clock:
@@ -98,7 +104,7 @@ def test_naming_a_group_makes_later_faces_that_person(tmp_path: Path) -> None:
     s = store(tmp_path)
     gid = see(s, 1, 3)
     other = see(s, 2, 3)
-    assert s.name(gid, A) == 3  # three crops are kept for that person
+    assert s.name(gid, A, consented=YES) == 3  # three crops are kept for that person
     (later,) = s.place("pic-new", [face(1, 9)])
     assert later.group == gid and later.person == A and later.cosine >= s.match
     (stranger,) = s.place("pic-new-2", [face(2, 9)])
@@ -111,17 +117,17 @@ def test_naming_a_group_makes_later_faces_that_person(tmp_path: Path) -> None:
 def test_a_group_takes_one_name_only_and_an_unknown_group_none(tmp_path: Path) -> None:
     s = store(tmp_path)
     gid = see(s, 1, 3)
-    s.name(gid, A)
-    assert s.name(gid, A) == 3  # the same name again: nothing changes
+    s.name(gid, A, consented=YES)
+    assert s.name(gid, A, consented=YES) == 3  # the same name again: nothing changes
     with pytest.raises(AlreadyNamed):
-        s.name(gid, B)
+        s.name(gid, B, consented=YES)
     with pytest.raises(UnknownGroup):
-        s.name("c_0123456789ab", A)
+        s.name("c_0123456789ab", A, consented=YES)
     for bad in ("", "c_xyz", "../x", "fp_3a9c12ab34cd"):
         with pytest.raises(UnknownGroup):
-            s.name(bad, A)
+            s.name(bad, A, consented=YES)
     with pytest.raises(ValueError):
-        s.name(see(s, 3, 3), "Anjali")  # a name is never an id
+        s.name(see(s, 3, 3), "Anjali", consented=YES)  # a name is never an id
 
 
 def test_only_the_best_few_crops_are_kept(tmp_path: Path) -> None:
@@ -139,7 +145,7 @@ def test_an_unnamed_group_and_a_stray_expire_and_a_named_group_does_not(tmp_path
     s = store(tmp_path, clock)
     named, unnamed = see(s, 1, 3), see(s, 2, 3)
     see(s, 3, 1)  # a stray: one picture only
-    s.name(named, A)
+    s.name(named, A, consented=YES)
     clock.t += 89 * DAY
     see(s, 2, 1, start=50)  # still being seen: the 90 days run from the FIRST sighting
     assert s.expire(90) == 0
@@ -156,7 +162,7 @@ def test_forget_removes_embeddings_crops_and_picture_rows_of_unnamed_groups_only
 ) -> None:
     s = store(tmp_path)
     named, unnamed = see(s, 1, 3), see(s, 2, 3)
-    s.name(named, A)
+    s.name(named, A, consented=YES)
     assert s.forget([named, unnamed, "c_ffffffffffff", "bad"]) == 1
     assert s.crops(unnamed) == [] and s.known("pic-2-0") is None
     assert s.known("pic-1-0") is not None and len(s.crops(named)) == 3
@@ -173,8 +179,10 @@ def test_forget_removes_embeddings_crops_and_picture_rows_of_unnamed_groups_only
 def test_deleting_a_person_removes_their_groups(tmp_path: Path) -> None:
     s = store(tmp_path)
     g1, g2 = see(s, 1, 3), see(s, 2, 3)
-    s.name(g1, A)
-    s.name(g2, A)  # the same person, grouped twice (another angle): both carry the name
+    s.name(g1, A, consented=YES)
+    s.name(
+        g2, A, consented=YES
+    )  # the same person, grouped twice (another angle): both carry the name
     assert s.person_pictures() == {A: 6}
     assert s.forget_person(A) == 2 and s.person_pictures() == {}
     assert s.crops(g1) == [] and s.crops(g2) == [] and s.forget_person(A) == 0
@@ -198,7 +206,7 @@ def test_a_forgotten_group_comes_back_only_after_a_deliberate_rescan(tmp_path: P
 def test_it_survives_a_restart_and_is_private_on_disk(tmp_path: Path) -> None:
     s = store(tmp_path)
     gid = see(s, 1, 3)
-    s.name(gid, A)
+    s.name(gid, A, consented=YES)
     s.close()
     folder = tmp_path / "facegroups"
     assert stat.S_IMODE(folder.stat().st_mode) == 0o700
@@ -228,22 +236,25 @@ def test_a_bad_vector_is_refused(tmp_path: Path) -> None:
     assert s.known("pic") is None
 
 
-def test_an_unreadable_store_is_removed_and_started_again(tmp_path: Path) -> None:
+def test_an_unreadable_store_is_set_aside_never_deleted_and_started_again(tmp_path: Path) -> None:
+    # review C-code H4: a damaged file may still hold faces: moved aside (timestamped), kept
     folder = tmp_path / "facegroups"
     folder.mkdir()
-    (folder / "groups.db").write_bytes(b"not a database at all" * 50)
+    damaged = b"not a database at all" * 50
+    (folder / "groups.db").write_bytes(damaged)
     s = store(tmp_path)
     assert s.groups() == [] and see(s, 1, 3)
-    assert not any(
-        p.name.startswith("groups.db.bad") for p in folder.iterdir()
-    )  # removed, not kept
+    (aside,) = [p for p in folder.iterdir() if p.name.startswith("groups.db.bad-")]
+    assert aside.read_bytes() == damaged  # never unlinked: the owner decides
+    assert stat.S_IMODE(aside.stat().st_mode) == 0o600
+    assert set_aside_files(folder) == 1
 
 
 def test_named_groups_wait_for_the_camera_copy(tmp_path: Path) -> None:
     s = store(tmp_path)
     gid = see(s, 1, 3)
     assert s.uncopied() == []
-    s.name(gid, A)
+    s.name(gid, A, consented=YES)
     assert s.uncopied() == [(gid, A)]
     s.copied(gid)
     assert s.uncopied() == []

@@ -10,7 +10,7 @@ signed answers carry group ids and counts only: never a picture, a crop or an em
     POST /bridge/v1/faces/enrol          {"cluster", "person"} -> {"pictures", "camera"}
     GET  /bridge/v1/faces/groups         -> {"groups": [{"id", "n", "photos", "first", "last"}],
                                          "more", "strays", "named", "engine", "folder", "read",
-                                         "keep_days"}
+                                         "skipped", "keep_days"}
     POST /bridge/v1/faces/groups/forget  {"groups": [ids]} | {"all": true} -> {"forgotten", "left"}
 
 - `person` is only ever an id the cloud synced as consented (the faces plugin's `FaceLibrary`
@@ -21,8 +21,15 @@ signed answers carry group ids and counts only: never a picture, a crop or an em
   done later (`copy_to_camera`, every minute); photos are recognised by this laptop meanwhile.
 - An unnamed group and a stray face are forgotten `FACE_GROUPS_KEEP_DAYS` (default 90) after they
   were first seen; a deleted person's groups go before the faces plugin acknowledges the delete.
-- A plugin that can't open its store or run its engine answers `no_engine` and never raises at
-  start: a photos fault must not make the camera look broken.
+- A plugin that can't run its engine answers `no_engine`; one whose store can't be opened (a
+  locked, read-only or full disk: review C-code H4) answers `no_store`, says so in the groups
+  view (`engine: "no_store"`) and tries to open it again every minute. Neither raises at start:
+  a photos fault must not make the camera look broken.
+- One bad picture is one refusal (`bad_image`), whatever went wrong with it: never a 500 that
+  the cloud would read as "laptop not reachable" (review C-code H3).
+- Consent is checked twice when a group is named: once when the message arrives and again
+  inside the store's own lock, right before the write (review C-sec M2); and before each crop is
+  copied to the camera.
 """
 
 from __future__ import annotations
@@ -39,6 +46,7 @@ from pathlib import Path
 from typing import Any
 
 from jarvis.home.ports import BridgeState, HeartbeatParts, HomeRefused
+from jarvis.homebridge.face_db import set_aside_files
 from jarvis.homebridge.face_engine import (
     READY,
     EngineOff,
@@ -47,7 +55,7 @@ from jarvis.homebridge.face_engine import (
     reduction,
 )
 from jarvis.homebridge.face_folder import DEFAULT_PER_MINUTE, FolderScanner
-from jarvis.homebridge.face_store import DEFAULT_MATCH, FaceStore
+from jarvis.homebridge.face_store import DEFAULT_MATCH, FaceStore, NoConsent
 from jarvis.homebridge.face_types import GROUP, AlreadyNamed, Placed, UnknownGroup
 from jarvis.homebridge.faces import FaceRefused
 from jarvis.homebridge.jpeg import PictureRefused, jpeg_size
@@ -64,6 +72,7 @@ MAX_FORGET = 100
 SWEEP_S = 3600.0
 COPY_S = 60.0
 NO_ENGINE = "The face reader on this laptop isn't ready."
+NO_STORE = "The face store on this laptop can't be opened right now."
 
 
 def confidence(cosine: float, match: float) -> float:
@@ -99,10 +108,7 @@ class FaceGroupsPlugin:
             Path(env.get("FACE_MODELS_DIR") or DEFAULT_MODELS_DIR)
         )
         self.store: FaceStore | None = None
-        try:
-            self.store = FaceStore(ctx.data_dir / "facegroups", match=self.match, now=ctx.now)
-        except (OSError, sqlite3.Error) as exc:
-            log.error("face groups are OFF: the store can't be opened", exc_info=exc)
+        self._open_store()
         mount = Path(env.get("PHOTOS_MOUNT") or DEFAULT_MOUNT) if env.get("PHOTOS_DIR") else None
         self.folder = FolderScanner(
             mount,
@@ -111,6 +117,30 @@ class FaceGroupsPlugin:
             per_minute=_whole(env.get("PHOTOS_PER_MINUTE"), DEFAULT_PER_MINUTE, 1, 30),
         )
         self._lock = asyncio.Lock()
+
+    def _open_store(self) -> bool:
+        """Open the store if it is not open (at start, then every minute while it can't be)."""
+        if self.store is not None:
+            return True
+        try:
+            self.store = FaceStore(
+                self._ctx.data_dir / "facegroups", match=self.match, now=self._ctx.now
+            )
+        except (OSError, sqlite3.Error) as exc:
+            log.error(
+                "face groups are OFF: the store can't be opened",
+                extra={"error": type(exc).__name__},
+            )
+            return False
+        if getattr(self, "folder", None) is not None:
+            self.folder.attach(self.store)
+        return True
+
+    def _need_store(self) -> FaceStore:
+        if self.store is None and not self._open_store():
+            raise HomeRefused("no_store", NO_STORE)
+        assert self.store is not None
+        return self.store
 
     # ---- consent lives with the faces plugin (read when a message arrives) ---------------------
 
@@ -126,7 +156,7 @@ class FaceGroupsPlugin:
     async def look(self, jpeg: bytes, *, own_file: bool = False) -> tuple[str, list[Placed]]:
         """(the picture's key, where its faces went). One picture at a time, off the event loop."""
         if self.store is None:
-            raise EngineOff(NO_ENGINE)
+            raise EngineOff(NO_STORE)
         reduction(*jpeg_size(jpeg), own_file=own_file)  # the caps, before any engine sees it
         pic = hashlib.sha256(jpeg).hexdigest()[:32]
         async with self._lock:
@@ -174,11 +204,17 @@ class FaceGroupsPlugin:
             jpeg = base64.b64decode(image, validate=True)
         except (binascii.Error, ValueError):
             raise HomeRefused("bad_image", "That isn't a picture.") from None
+        self._need_store()
         try:
             _, placed = await self.look(jpeg)
         except EngineOff:
             raise HomeRefused("no_engine", NO_ENGINE) from None
-        except (PictureRefused, ValueError):
+        except sqlite3.Error as exc:
+            log.error("the face store failed", extra={"error": type(exc).__name__})
+            raise HomeRefused("no_store", NO_STORE) from None
+        except Exception as exc:  # noqa: BLE001 - this one picture, never "laptop not reachable"
+            if not isinstance(exc, PictureRefused | ValueError):
+                log.warning("a picture could not be read", extra={"error": type(exc).__name__})
             raise HomeRefused("bad_image", "That picture can't be read here.") from None
         return {"faces": [self._wire(p) for p in placed]}
 
@@ -187,14 +223,16 @@ class FaceGroupsPlugin:
     ) -> dict[str, Any]:
         data = body or {}
         cluster, person = data.get("cluster"), data.get("person")
-        if self.store is None:
-            raise HomeRefused("no_engine", NO_ENGINE)
+        store = self._need_store()
         if not isinstance(cluster, str) or not GROUP.fullmatch(cluster):
             raise HomeRefused("unknown_group", "There is no such group on this laptop.")
         if not self._consented(person):  # the one door: an id without consent is never named
             raise HomeRefused("no_consent", "That person has no consent recorded.")
+        name = functools.partial(store.name, cluster, str(person), consented=self._consented)
         try:
-            kept = await asyncio.to_thread(self.store.name, cluster, str(person))
+            kept = await asyncio.to_thread(name)  # consent asked again inside the store's lock
+        except NoConsent:
+            raise HomeRefused("no_consent", "That person has no consent recorded.") from None
         except UnknownGroup:
             raise HomeRefused("unknown_group", "There is no such group on this laptop.") from None
         except AlreadyNamed:
@@ -205,6 +243,7 @@ class FaceGroupsPlugin:
     async def _groups(
         self, query: Mapping[str, str], body: Mapping[str, Any] | None
     ) -> dict[str, Any]:
+        self._open_store()
         return await asyncio.to_thread(self.groups_view)
 
     async def _forget(
@@ -214,6 +253,7 @@ class FaceGroupsPlugin:
         ids, everything = data.get("groups"), data.get("all")
         if (ids is None) == (everything is None) or set(data) - {"groups", "all"}:
             raise HomeRefused("bad_request", "Say which groups, or all.")
+        self._need_store()  # "nothing left" is never said for a store that can't be read
         if everything is not None:
             if everything is not True:
                 raise HomeRefused("bad_request", "Say which groups, or all.")
@@ -236,9 +276,11 @@ class FaceGroupsPlugin:
             "engine": "off",
             "folder": self.folder.state,
             "read": 0,
+            "skipped": 0,
             "keep_days": self.keep_days,
         }
         if self.store is None:
+            view["engine"] = "no_store"
             return view
         rows, counts = self.store.groups(), self.store.counts()
         view["groups"] = [
@@ -257,6 +299,7 @@ class FaceGroupsPlugin:
             named=counts.named,
             engine="ready" if self.engine.status() == READY else "off",
             read=self.store.files_read(),
+            skipped=self.store.marks.skipped(),
         )
         return view
 
@@ -267,7 +310,9 @@ class FaceGroupsPlugin:
         if self.store is not None:
             for group in view["groups"]:
                 group["crops"] = len(self.store.crops(group["id"]))
-        view.update(waiting=self.folder.waiting, skipped=self.folder.skipped)
+        view.update(waiting=self.folder.waiting)
+        folder = self.store.folder if self.store is not None else self._ctx.data_dir / "facegroups"
+        view["set_aside"] = set_aside_files(folder)  # damaged files kept for the owner to delete
         return view
 
     def crop(self, group: str, index: int) -> bytes | None:
@@ -303,10 +348,11 @@ class FaceGroupsPlugin:
 
     async def forget_person(self, person: str) -> bool:
         """A person is being deleted: their groups go. True when nothing of them is left here."""
-        if self.store is None:
-            return True
+        if self.store is None and not self._open_store():
+            return False  # the store can't be read: the delete waits, never "done"
+        assert self.store is not None
         await asyncio.to_thread(self.store.forget_person, person)
-        return person not in await asyncio.to_thread(self.store.person_pictures)
+        return not await asyncio.to_thread(self.store.holds, person)
 
     async def _copy_group(self, group: str, person: str) -> bool:
         """The group's crops into the camera's face library, under the person's id."""
@@ -314,6 +360,8 @@ class FaceGroupsPlugin:
         if library is None or self.store is None:
             return False
         for crop in await asyncio.to_thread(self.store.crops, group):
+            if not self._consented(person):
+                return False  # the person's delete began: nothing more is copied (C-sec M2)
             try:
                 await library.enrol(person, crop)
             except FaceRefused as exc:
@@ -325,8 +373,9 @@ class FaceGroupsPlugin:
 
     async def copy_to_camera(self) -> int:
         """Finish copies that waited for Frigate. Returns how many groups were copied."""
-        if self.store is None:
+        if self.store is None and not self._open_store():
             return 0
+        assert self.store is not None
         done = 0
         for group, person in await asyncio.to_thread(self.store.uncopied):
             if self._consented(person) and await self._copy_group(group, person):
@@ -337,7 +386,7 @@ class FaceGroupsPlugin:
 
     def tasks(self) -> Sequence[TaskFactory]:
         loops: list[TaskFactory] = [self._expire_loop, self._copy_loop]
-        if self.folder.root is not None:
+        if self.folder.mount is not None:  # it waits for the store if that can't open yet
             loops.append(self.folder.run)
         return tuple(loops)
 

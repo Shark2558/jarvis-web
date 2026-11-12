@@ -156,7 +156,9 @@ async def test_once_named_a_new_photo_and_the_camera_recognise_them_with_no_furt
     assert other["person"] is None  # a stranger in the same folder stays a stranger
     listed = await rig.call(GROUPS)
     assert listed["groups"] == [] and listed["named"] == 1
-    assert (await rig.faces.heartbeat_part()).faces == {A: 3 + 4}  # camera's 3 + the group's 4
+    # review C-code M8: the group's crops are the camera's 3 pictures: counted once, by Frigate
+    assert rig.groups.store.pictures_of(A) == 4 and rig.groups.store.person_pictures() == {}
+    assert (await rig.faces.heartbeat_part()).faces == {A: 3}
     assert leaks(json.dumps(rig.replies)) == []
 
 
@@ -303,9 +305,9 @@ async def test_deleting_a_person_removes_their_groups_before_the_ack(tmp_path: P
     gid = await rig.seen(1)
     await rig.consent(A)
     await rig.call(ENROL, {"cluster": gid, "person": A})
-    assert rig.groups.person_pictures() == {A: 3}
+    assert rig.groups.store.pictures_of(A) == 3
     await rig.consent(deleting=(A,), rev=2)
-    assert rig.groups.person_pictures() == {} and rig.lib.pictures == {}
+    assert not rig.groups.store.holds(A) and rig.lib.pictures == {}
     assert [e.person for e in rig.events.posted] == [A]  # acked only after everything went
     (face,) = await rig.send(1, n=9)
     assert face["person"] is None and face["cluster"] != gid  # the embeddings are gone too

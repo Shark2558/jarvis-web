@@ -13,7 +13,15 @@ check; here a group only ever carries a person's id (`fp_<12 hex>`), never a nam
         crops      the best few small face pictures of a group (shown only on the laptop's page)
         pics       a picture already looked at (a hash of its bytes), so it counts once
         pic_faces  which groups a picture's faces joined
-        files      a file of the watched folder already read (a hash of path, size and time)
+        files      a file of the watched folder already read, or that could not be read
+        file_tries how often a file of the folder was tried (counted before it is decoded)
+
+Opening the file, telling real corruption from a locked or full disk, and the folder's marks
+live in `face_db`; the centres for the nearest-group search in `face_index` (NumPy when it is
+there). Every write runs in one transaction, and if it fails the index is rebuilt from the
+database, so the two never disagree (review C-code M2). Naming takes the consent check as an
+argument and runs it INSIDE the store's lock and transaction (review C-sec M2), so a person whose
+delete started between the cloud's call and the write is never given a group.
 
 Nothing here leaves the laptop: the bridge's signed answers carry group ids and counts only. An
 unnamed group, and a stray face seen in fewer pictures, is forgotten `keep_days` after it was
@@ -24,15 +32,17 @@ picture rows in one transaction. A forgotten picture is looked at again only aft
 from __future__ import annotations
 
 import logging
-import os
 import secrets
-import sqlite3
 import struct
 import threading
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
+from jarvis.homebridge.face_db import FileMarks, open_db
+from jarvis.homebridge.face_index import CentreIndex, numpy_or_none
 from jarvis.homebridge.face_types import (
     DIM,
     GROUP,
@@ -45,7 +55,6 @@ from jarvis.homebridge.face_types import (
     Placed,
     SeenFace,
     UnknownGroup,
-    dot,
     unit,
 )
 
@@ -58,23 +67,11 @@ MAX_FACES_PER_PICTURE = 20
 MAX_CROP_BYTES = 64 * 1024
 DEFAULT_MATCH = 0.42
 DAY_S = 86_400.0
-DB = "groups.db"
 _PACK = struct.Struct(f"<{DIM}f")
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS groups (
-  id TEXT PRIMARY KEY, n INTEGER, person TEXT, first REAL NOT NULL, last REAL NOT NULL,
-  pics INTEGER NOT NULL, faces INTEGER NOT NULL, samples INTEGER NOT NULL, vec BLOB NOT NULL,
-  copied INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS crops (
-  grp TEXT NOT NULL, slot INTEGER NOT NULL, quality REAL NOT NULL, jpeg BLOB NOT NULL,
-  PRIMARY KEY (grp, slot));
-CREATE TABLE IF NOT EXISTS pics (key TEXT PRIMARY KEY, at REAL NOT NULL, faces INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS pic_faces (
-  pic TEXT NOT NULL, grp TEXT NOT NULL, cosine REAL NOT NULL, PRIMARY KEY (pic, grp));
-CREATE INDEX IF NOT EXISTS pic_faces_grp ON pic_faces (grp);
-CREATE TABLE IF NOT EXISTS files (key TEXT PRIMARY KEY, pic TEXT NOT NULL, at REAL NOT NULL);
-"""
+
+
+class NoConsent(Exception):
+    """The person's consent was not there when the group was to be named."""
 
 
 class FaceStore:
@@ -85,39 +82,35 @@ class FaceStore:
         match: float = DEFAULT_MATCH,
         now: Callable[[], float] = time.time,
         max_unnamed: int = MAX_UNNAMED,
+        np: Any = None,
     ) -> None:
         self.match = match
+        self.folder = folder
         self._now = now
         self._max_unnamed = max_unnamed
         self._lock = threading.RLock()
-        self._path = folder / DB
-        folder.mkdir(parents=True, exist_ok=True)
-        os.chmod(folder, 0o700)
-        self._db = self._open()
-        self._index: dict[str, tuple[list[float], str | None]] = {}
-        for gid, person, vec in self._db.execute("SELECT id, person, vec FROM groups"):
-            self._index[gid] = (unit(_PACK.unpack(vec)), person)
+        self._db = open_db(folder)  # raises sqlite3.Error unless the file is really corrupt
+        self.marks = FileMarks(self._db, self._lock, now)
+        self._index = CentreIndex(np if np is not None else numpy_or_none())
+        self._load_index()
 
     # ---- the file ------------------------------------------------------------------------------
 
-    def _connect(self) -> sqlite3.Connection:
-        if not self._path.exists():
-            os.close(os.open(self._path, os.O_WRONLY | os.O_CREAT, 0o600))
-        db = sqlite3.connect(self._path, check_same_thread=False)
-        db.execute("PRAGMA secure_delete = ON")  # a forgotten face is wiped, not only unlinked
-        db.executescript(SCHEMA)
-        db.execute("SELECT count(*) FROM groups").fetchone()
-        return db
+    def _load_index(self) -> None:
+        rows = self._db.execute("SELECT id, vec, person FROM groups").fetchall()
+        self._index.load((str(g), unit(_PACK.unpack(v)), p) for g, v, p in rows)
 
-    def _open(self) -> sqlite3.Connection:
-        try:
-            return self._connect()
-        except sqlite3.DatabaseError as exc:
-            # unreadable: it may still hold faces, so it is removed (never kept beside the new one)
-            log.warning("the face groups file was unreadable and was started again", exc_info=exc)
-            for extra in ("", "-journal", "-wal", "-shm"):
-                Path(f"{self._path}{extra}").unlink(missing_ok=True)
-            return self._connect()
+    @contextmanager
+    def _write(self) -> Iterator[None]:
+        """One transaction under the lock. If it fails, the index is rebuilt from what the
+        database kept (it rolled back), so no phantom or lost group is left in memory."""
+        with self._lock:
+            try:
+                with self._db:
+                    yield
+            except BaseException:
+                self._load_index()
+                raise
 
     def close(self) -> None:
         with self._lock:
@@ -166,22 +159,36 @@ class FaceStore:
         return [bytes(r[0]) for r in rows]
 
     def person_pictures(self) -> dict[str, int]:
-        """Face pictures kept per named person (counts only; the heartbeat carries them)."""
+        """Face pictures kept per named person in groups NOT yet copied to the camera's library
+        (counts only; the heartbeat adds them to the library's own, so a copied group is never
+        counted twice: review C-code M8)."""
         with self._lock:
             rows = self._db.execute(
                 "SELECT g.person, COUNT(*) FROM crops c JOIN groups g ON g.id = c.grp "
-                "WHERE g.person IS NOT NULL GROUP BY g.person"
+                "WHERE g.person IS NOT NULL AND g.copied = 0 GROUP BY g.person"
             ).fetchall()
         return {str(p): int(n) for p, n in rows}
 
-    def file_seen(self, key: str) -> bool:
+    def pictures_of(self, person: str) -> int:
+        """Face pictures kept here for this person, in every group of theirs (copied or not)."""
         with self._lock:
-            row = self._db.execute("SELECT 1 FROM files WHERE key = ?", (key,)).fetchone()
+            row = self._db.execute(
+                "SELECT COUNT(*) FROM crops c JOIN groups g ON g.id = c.grp WHERE g.person = ?",
+                (person,),
+            ).fetchone()
+        return int(row[0])
+
+    def holds(self, person: str) -> bool:
+        """Whether anything of this person is still here: a group, copied or not."""
+        with self._lock:
+            row = self._db.execute("SELECT 1 FROM groups WHERE person = ?", (person,)).fetchone()
         return row is not None
 
+    def file_seen(self, key: str) -> bool:
+        return self.marks.seen(key)
+
     def files_read(self) -> int:
-        with self._lock:
-            return int(self._db.execute("SELECT COUNT(*) FROM files").fetchone()[0])
+        return self.marks.read()
 
     def uncopied(self) -> list[tuple[str, str]]:
         """Named groups whose crops are not in the camera's face library yet."""
@@ -204,7 +211,7 @@ class FaceStore:
                 return before
             now = float(self._now())
             placed: dict[int, Placed] = {}
-            with self._db:
+            with self._write():
                 taken: set[str] = set()
                 for i in sorted(range(len(faces)), key=lambda k: -faces[k].quality):
                     found = self._settle(pic, faces[i], vectors[i], taken, now)
@@ -236,21 +243,13 @@ class FaceStore:
             self._db.execute("UPDATE groups SET pics = pics + 1 WHERE id = ?", (gid,))
             self._number(gid)
         self._keep_crop(gid, face)
-        return Placed(gid, self._index[gid][1], cosine)
+        return Placed(gid, self._index.person(gid), cosine)
 
     def _best(self, vector: list[float], taken: set[str]) -> tuple[str | None, float]:
-        best, score = None, self.match
-        for gid, (centre, _) in self._index.items():
-            if gid in taken:
-                continue
-            cosine = dot(vector, centre)
-            if cosine >= score:
-                best, score = gid, cosine
-        return best, (min(1.0, score) if best is not None else 0.0)
+        return self._index.best(vector, taken, self.match)
 
     def _start(self, vector: list[float], now: float) -> str | None:
-        unnamed = sum(1 for _, person in self._index.values() if person is None)
-        if unnamed >= self._max_unnamed:
+        if self._index.unnamed() >= self._max_unnamed:
             oldest = self._db.execute(
                 "SELECT id FROM groups WHERE person IS NULL AND pics < ? ORDER BY last, id LIMIT 1",
                 (MIN_GROUP_PICS,),
@@ -264,7 +263,7 @@ class FaceStore:
             "VALUES (?, ?, ?, 0, 1, 1, ?)",
             (gid, now, now, _PACK.pack(*vector)),
         )
-        self._index[gid] = (vector, None)
+        self._index.put(gid, vector, None)
         return gid
 
     def _join(self, gid: str, vector: list[float], now: float) -> None:
@@ -277,7 +276,7 @@ class FaceStore:
                 "UPDATE groups SET samples = samples + 1, vec = ? WHERE id = ?",
                 (_PACK.pack(*total), gid),
             )
-            self._index[gid] = (unit(total), self._index[gid][1])
+            self._index.put(gid, unit(total), self._index.person(gid))
         self._db.execute("UPDATE groups SET faces = faces + 1, last = ? WHERE id = ?", (now, gid))
 
     def _number(self, gid: str) -> None:
@@ -308,13 +307,16 @@ class FaceStore:
             (gid, slot, face.quality, face.crop),
         )
 
-    def name(self, group: str, person: str) -> int:
-        """Give a group a consented person's id. Returns how many face pictures it holds."""
+    def name(self, group: str, person: str, *, consented: Callable[[str], bool]) -> int:
+        """Give a group a consented person's id. Returns how many face pictures it holds.
+        `consented` is asked inside the lock and the transaction, right before the write."""
         if not isinstance(group, str) or not GROUP.fullmatch(group):
             raise UnknownGroup(group)
         if not isinstance(person, str) or not PERSON.fullmatch(person):
             raise ValueError("a person is named by an fp_ id only")
-        with self._lock, self._db:
+        with self._write():
+            if not consented(person):
+                raise NoConsent(person)
             row = self._db.execute("SELECT person FROM groups WHERE id = ?", (group,)).fetchone()
             if row is None:
                 raise UnknownGroup(group)
@@ -324,22 +326,18 @@ class FaceStore:
                 self._db.execute(
                     "UPDATE groups SET person = ?, copied = 0 WHERE id = ?", (person, group)
                 )
-                self._index[group] = (self._index[group][0], person)
+                self._index.name(group, person)
             (kept,) = self._db.execute(
                 "SELECT COUNT(*) FROM crops WHERE grp = ?", (group,)
             ).fetchone()
         return int(kept)
 
     def copied(self, group: str) -> None:
-        with self._lock, self._db:
+        with self._write():
             self._db.execute("UPDATE groups SET copied = 1 WHERE id = ?", (group,))
 
     def mark_file(self, key: str, pic: str) -> None:
-        with self._lock, self._db:
-            self._db.execute(
-                "INSERT OR REPLACE INTO files (key, pic, at) VALUES (?, ?, ?)",
-                (key, pic, float(self._now())),
-            )
+        self.marks.mark(key, pic)
 
     # ---- forgetting ----------------------------------------------------------------------------
 
@@ -354,7 +352,7 @@ class FaceStore:
             self._db.execute("DELETE FROM pic_faces WHERE grp = ?", (gid,))
             self._db.execute("DELETE FROM crops WHERE grp = ?", (gid,))
             gone += self._db.execute("DELETE FROM groups WHERE id = ?", (gid,)).rowcount
-            self._index.pop(gid, None)
+            self._index.drop(gid)
         return gone
 
     def _ids(self, where: str, args: tuple[object, ...] = ()) -> list[str]:
@@ -363,36 +361,36 @@ class FaceStore:
     def forget(self, groups: Sequence[str]) -> int:
         """Forget these UNNAMED groups (a named one goes with its person). Returns how many."""
         wanted = [g for g in groups if isinstance(g, str) and GROUP.fullmatch(g)]
-        with self._lock, self._db:
+        with self._write():
             unnamed = set(self._ids("person IS NULL"))
             return self._drop([g for g in dict.fromkeys(wanted) if g in unnamed])
 
     def forget_all(self) -> int:
         """Every unnamed group and every stray face."""
-        with self._lock, self._db:
+        with self._write():
             return self._drop(self._ids("person IS NULL"))
 
     def forget_person(self, person: str) -> int:
         if not isinstance(person, str) or not PERSON.fullmatch(person):
             return 0
-        with self._lock, self._db:
+        with self._write():
             return self._drop(self._ids("person = ?", (person,)))
 
     def expire(self, keep_days: int) -> int:
         """Unnamed groups and strays FIRST seen more than `keep_days` ago (plan D21-C)."""
         cutoff = float(self._now()) - keep_days * DAY_S
-        with self._lock, self._db:
+        with self._write():
             return self._drop(self._ids("person IS NULL AND first < ?", (cutoff,)))
 
     def rescan(self) -> None:
         """Let the watched folder be read again from the start (a deliberate act on the laptop):
         the "already read" marks go, and so does every picture with a forgotten face."""
-        with self._lock, self._db:
-            self._db.execute("DELETE FROM files")
+        with self._write():
+            self.marks.forget_all()
             self._db.execute(
                 "DELETE FROM pics WHERE faces > "
                 "(SELECT COUNT(*) FROM pic_faces f WHERE f.pic = pics.key)"
             )
 
 
-__all__ = ["DEFAULT_MATCH", "MAX_CROPS", "MAX_FACES_PER_PICTURE", "FaceStore"]
+__all__ = ["DEFAULT_MATCH", "MAX_CROPS", "MAX_FACES_PER_PICTURE", "FaceStore", "NoConsent"]

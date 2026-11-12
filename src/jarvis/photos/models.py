@@ -100,6 +100,8 @@ class GroupsAtHome:
     folder: str = "off"  # off | on | unreadable
     read: int = 0
     keep_days: int = 90
+    skipped: int = 0  # files of the watched folder that could not be read (a count)
+    store_ok: bool = True  # False: the laptop's face store can't be opened right now
 
 
 @dataclass(frozen=True)

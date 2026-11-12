@@ -53,6 +53,10 @@ KIT_OLD = "kit_old"
 OFFLINE = "Your home laptop isn't reachable, so JARVIS can't look at the photos now."
 BAD_REPLY = "Your home laptop's answer couldn't be understood, so JARVIS ignored it."
 NOT_READY = "The face reader on your home laptop isn't ready yet: update the home kit."
+STORE_OFF = (
+    "The face store on your home laptop can't be opened right now (its disk may be full). "
+    "Nothing was deleted; restart the home kit if it stays like this."
+)
 OLD_KIT = (
     "Your home laptop runs an older home kit that can't read photos: download the kit again "
     "in Integrations -> Home and run setup-windows.ps1 -Update."
@@ -133,9 +137,10 @@ class EdgeGroups(_Strict):
     more: int = Field(ge=0, le=MAX_COUNT)
     strays: int = Field(ge=0, le=MAX_COUNT)
     named: int = Field(ge=0, le=MAX_COUNT)
-    engine: Literal["ready", "off"]
+    engine: Literal["ready", "off", "no_store"]
     folder: Literal["off", "on", "unreadable"]
     read: int = Field(ge=0, le=MAX_COUNT)
+    skipped: int = Field(ge=0, le=MAX_COUNT)  # files of the folder that could not be read
     keep_days: int = Field(ge=1, le=3650)
 
 
@@ -204,7 +209,16 @@ class BridgeHomeEdge:
         g = _parse(EdgeGroups, await self._call(uid, "GET", GROUPS_PATH, None))
         rows = tuple(GroupAtHome(r.id, r.n, r.photos, r.first, r.last) for r in g.groups)
         return GroupsAtHome(
-            rows, g.more, g.strays, g.named, g.engine == "ready", g.folder, g.read, g.keep_days
+            rows,
+            g.more,
+            g.strays,
+            g.named,
+            g.engine == "ready",
+            g.folder,
+            g.read,
+            g.keep_days,
+            skipped=g.skipped,
+            store_ok=g.engine != "no_store",
         )
 
     async def forget(self, uid: str, groups: Sequence[str] | None) -> Forgot:
@@ -222,6 +236,8 @@ class BridgeHomeEdge:
         except HomeRefused as exc:
             if exc.code == "no_engine":
                 raise EdgeNotReady() from None
+            if exc.code == "no_store":
+                raise EdgeNotReady(STORE_OFF) from None
             if exc.code in REFUSALS:
                 raise EdgeRefused(exc.code, exc.message) from None
             log.warning("home edge unavailable", extra={"reason": exc.code})

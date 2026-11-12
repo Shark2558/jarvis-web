@@ -12,8 +12,13 @@ name        a group becomes a person. The Faces registry's consent check runs fi
 forget      one group, or all unnamed groups and stray faces. It is DONE only when the laptop
             answers with its own counts; while the laptop is away the ask waits here and the
             5-minute poll retries it.
+Every change to the cloud's copy is a field change made in one transaction on the document as
+it is at that moment (`GroupsStore.update`; review C-code M3): an answer read before the laptop
+was called never overwrites an ask made while it was being called.
 poll        (the helpers' clock) retry what waits, refresh the copy, and say once, with a count
-            only, when new groups are worth naming (alert kind `faces_to_name`).
+            only, when new groups are worth naming (alert kind `faces_to_name`), and when a name
+            given while the laptop slept could not be applied because its group had gone there
+            (review C-code M7: told, never dropped in silence; the person stays in Faces).
 Nothing here is logged or audited beyond counts.
 """
 
@@ -43,6 +48,14 @@ OFF = (
 NO_GROUP = "JARVIS doesn't know that group. Open the Faces panel again to see the current list."
 ALERT_ONE = "1 new group of faces to name, Sir. Open Faces -> Unnamed groups."
 ALERT_MANY = "{n} new groups of faces to name, Sir. Open Faces -> Unnamed groups."
+LOST_ONE = (
+    "1 name you gave could not reach its group of faces, Sir: the group had gone from your "
+    "laptop. The person is kept in Faces; name another group as them."
+)
+LOST_MANY = (
+    "{n} names you gave could not reach their groups of faces, Sir: the groups had gone from "
+    "your laptop. The people are kept in Faces; name other groups as them."
+)
 _AWAY = (EdgeOffline, EdgeBadReply, EdgeNotReady, EdgeRefused)
 
 
@@ -61,6 +74,9 @@ class GroupsView:
     names_waiting: int = 0  # named here, the laptop not told yet
     forgets_waiting: int = 0  # asked to forget, the laptop not yet confirmed
     reason: str = ""
+    skipped: int = 0  # files of the watched folder that could not be read
+    store_ok: bool = True  # False: the laptop's face store can't be opened right now
+    names_lost: int = 0  # names given while the laptop slept whose group had gone there
 
 
 @dataclass(frozen=True)
@@ -90,18 +106,17 @@ class FaceGroupsService:
 
     # ---- the view ------------------------------------------------------------------------------
 
-    async def _refresh(self, uid: str, photos: PhotosService, doc: GroupsDoc) -> GroupsDoc:
+    async def _refresh(self, uid: str, photos: PhotosService) -> GroupsDoc:
         """Ask the laptop and keep its answer. Raises the edge's own error when it can't."""
         home = await photos.edge.groups(uid)
         live = {g.id for g in home.groups}
-        fresh = replace(
-            doc,
-            home=home,
-            heard_at=self._now().isoformat(),
-            told=tuple(t for t in doc.told if t in live),
-        )
-        await self.store.put(uid, fresh)
-        return fresh
+        heard = self._now().isoformat()
+
+        def change(doc: GroupsDoc) -> GroupsDoc:
+            told = tuple(t for t in doc.told if t in live)
+            return replace(doc, home=home, heard_at=heard, told=told)
+
+        return await self.store.update(uid, change)
 
     async def view(self, uid: str, *, ask: bool = True) -> GroupsView:
         photos = self._photos()
@@ -111,7 +126,7 @@ class FaceGroupsService:
         laptop = "offline"
         if ask:
             try:
-                doc = await self._refresh(uid, photos, doc)
+                doc = await self._refresh(uid, photos)
                 laptop = "online"
             except _AWAY as exc:
                 log.info(
@@ -133,17 +148,19 @@ class FaceGroupsService:
             h.keep_days,
             len(named),
             (len(unnamed) + h.strays if doc.forget_all else len(doc.forget)),
+            skipped=h.skipped,
+            store_ok=h.store_ok,
+            names_lost=await photos.names_lost(uid),
         )
 
     async def _known(self, uid: str, photos: PhotosService, group: str) -> tuple[str, ...]:
         """The group ids the laptop listed (asked now; its last answer if it is asleep)."""
         if not isinstance(group, str) or not CLUSTER_ID.fullmatch(group):
             raise PersonRejected("unknown_face", NO_GROUP, status=404)
-        doc = await self.store.get(uid)
         try:
-            doc = await self._refresh(uid, photos, doc)
+            doc = await self._refresh(uid, photos)
         except _AWAY:
-            pass
+            doc = await self.store.get(uid)
         ids = tuple(g.id for g in doc.shown)
         if group not in ids:
             raise PersonRejected("unknown_face", NO_GROUP, status=404)
@@ -179,7 +196,7 @@ class FaceGroupsService:
             photos = self._photos()
             if photos is not None:
                 try:
-                    await self._refresh(uid, photos, await self.store.get(uid))
+                    await self._refresh(uid, photos)
                 except _AWAY:
                     pass
 
@@ -202,32 +219,39 @@ class FaceGroupsService:
         return await self._forget_one(uid, photos, group)
 
     async def _forget_one(self, uid: str, photos: PhotosService, group: str) -> Forgotten:
-        doc = await self.store.get(uid)
         try:
             said = await photos.edge.forget(uid, [group])
         except _AWAY:
-            waiting = tuple(dict.fromkeys((*doc.forget, group)))
-            await self.store.put(uid, replace(doc, forget=waiting))
+            await self.store.update(
+                uid, lambda d: replace(d, forget=tuple(dict.fromkeys((*d.forget, group))))
+            )
             return Forgotten(False)
-        kept = tuple(g for g in doc.home.groups if g.id != group)
-        cleared = tuple(f for f in doc.forget if f != group)
-        await self.store.put(uid, replace(doc, home=replace(doc.home, groups=kept), forget=cleared))
+
+        def gone(d: GroupsDoc) -> GroupsDoc:
+            kept = tuple(g for g in d.home.groups if g.id != group)
+            cleared = tuple(f for f in d.forget if f != group)
+            return replace(d, home=replace(d.home, groups=kept), forget=cleared)
+
+        await self.store.update(uid, gone)
         await self._record(uid, "faces_group_forget", said.forgotten, "confirmed by the laptop")
         return Forgotten(True, said.forgotten, said.left)
 
     async def forget_all(self, uid: str) -> Forgotten:
         photos = self._need()
         names_wait = await self._names_wait(uid, photos)
-        doc = await self.store.get(uid)
         try:
             if names_wait:
                 raise EdgeOffline("a name still waits for the laptop")
             said = await photos.edge.forget(uid, None)
         except _AWAY:
-            await self.store.put(uid, replace(doc, forget_all=True))
-            return Forgotten(False, left=doc.kept)
-        home = replace(doc.home, groups=(), more=0, strays=said.left)
-        await self.store.put(uid, replace(doc, home=home, told=(), forget=(), forget_all=False))
+            asked = await self.store.update(uid, lambda d: replace(d, forget_all=True))
+            return Forgotten(False, left=asked.kept)
+
+        def cleared(d: GroupsDoc) -> GroupsDoc:
+            home = replace(d.home, groups=(), more=0, strays=said.left)
+            return replace(d, home=home, told=(), forget=(), forget_all=False)
+
+        await self.store.update(uid, cleared)
         await self._record(
             uid, "faces_group_forget", said.forgotten, "all; confirmed by the laptop"
         )
@@ -248,17 +272,18 @@ class FaceGroupsService:
     async def poll(self, uid: str) -> dict[str, int]:
         """Retry what waits for the laptop, refresh the copy, announce new groups once."""
         photos = self._photos()
-        out = {"forgotten": 0, "named": 0, "told": 0, "away": 0}
+        out = {"forgotten": 0, "named": 0, "told": 0, "away": 0, "lost": 0}
         if photos is None or not await self._online(uid):
             out["away"] = 1
             return out
         try:
             out["named"] = await photos.retry_pending(uid)  # names first, then what to forget
+            out["lost"] = await self._tell_lost(uid, photos)
             if (await self.store.get(uid)).forget_all:
                 out["forgotten"] += (await self.forget_all(uid)).forgotten
             for group in (await self.store.get(uid)).forget:
                 out["forgotten"] += (await self._forget_one(uid, photos, group)).forgotten
-            doc = await self._refresh(uid, photos, await self.store.get(uid))
+            doc = await self._refresh(uid, photos)
         except _AWAY:
             out["away"] = 1
             return out
@@ -267,6 +292,18 @@ class FaceGroupsService:
             return out
         out["told"] = await self._announce(uid, doc)
         return out
+
+    async def _tell_lost(self, uid: str, photos: PhotosService) -> int:
+        """Names that could not be applied: told once (a count, a fixed sentence). Without a way
+        to tell, the count stays and the Faces panel shows it."""
+        notifier = self._notifier() if self._notifier is not None else None
+        if notifier is None:
+            return 0
+        lost = await photos.take_lost(uid)
+        if lost:
+            text = LOST_ONE if lost == 1 else LOST_MANY.format(n=lost)
+            await notifier.notify(uid, Signal(source="home", kind="faces_to_name"), text)
+        return lost
 
     async def _announce(self, uid: str, doc: GroupsDoc) -> int:
         notifier = self._notifier() if self._notifier is not None else None

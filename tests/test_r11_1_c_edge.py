@@ -31,6 +31,7 @@ GROUPS: dict[str, Any] = {
     "engine": "ready",
     "folder": "on",
     "read": 120,
+    "skipped": 2,
     "keep_days": 90,
 }
 
@@ -57,6 +58,7 @@ async def test_groups_come_back_as_ids_and_counts() -> None:
     assert (g.id, g.n, g.photos, g.first, g.last) == (C1, 4, 23, 1_800_000_000, 1_800_000_500)
     assert (got.strays, got.named, got.engine_ready, got.folder) == (7, 2, True, "on")
     assert (got.read, got.keep_days, got.more) == (120, 90, 0)
+    assert (got.skipped, got.store_ok) == (2, True)
 
 
 @pytest.mark.parametrize(

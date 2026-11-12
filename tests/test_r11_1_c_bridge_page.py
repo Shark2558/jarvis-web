@@ -92,7 +92,7 @@ async def test_a_named_group_is_not_forgotten_from_this_page(tmp_path: Path) -> 
     csrf = await signed_in(c)
     r = await c.post("/faces/api/groups/forget", json={"group": gid}, headers=csrf)
     assert r.status_code == 200 and r.json() == {"forgotten": 0}  # it goes with the person
-    assert rig.groups.person_pictures() == {A: 3}
+    assert rig.groups.store.pictures_of(A) == 3
 
 
 async def test_read_the_folder_again_needs_the_token(tmp_path: Path) -> None:

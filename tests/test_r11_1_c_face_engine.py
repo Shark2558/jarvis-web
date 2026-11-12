@@ -70,8 +70,9 @@ def test_the_owners_own_big_photo_is_decoded_smaller_instead() -> None:
     assert reduction(2000, 1500, own_file=True) == 1
     assert reduction(4000, 3000, own_file=True) == 2
     assert reduction(8000, 6000, own_file=True) == 4
-    assert reduction(12000, 9000, own_file=True) == 8
-    for w, h in ((17000, 100), (16000, 12000)):  # over 16,384 a side, or over 150 megapixels
+    assert reduction(16000, 3000, own_file=True) == 8
+    # over 16,384 a side, or over 50 megapixels (review C-sec H2: the cap was 150)
+    for w, h in ((17000, 100), (16000, 12000), (12000, 9000)):
         with pytest.raises(PictureRefused):
             reduction(w, h, own_file=True)
 

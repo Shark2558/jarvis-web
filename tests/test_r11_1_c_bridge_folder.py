@@ -42,6 +42,7 @@ def plugin(tmp: Path, *, on: bool = True, **env: str) -> tuple[FaceGroupsPlugin,
     ctx = BridgeContext(env=settings, data_dir=tmp / "data", events=Events(), now=lambda: 5.0)
     built = FaceGroupsPlugin(ctx, engine=engine)
     built.folder._sleep = Naps()  # noqa: SLF001 - no real waiting in a test
+    built.folder.settle_s = 0.0  # files made by the test are complete when written
     return built, engine
 
 

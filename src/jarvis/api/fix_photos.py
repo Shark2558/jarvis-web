@@ -9,7 +9,8 @@ GET    /v1/facegroups                      {part, ready}: the part's status
 GET    /v1/facegroups/groups               {available, reason?, laptop: online | offline | off,
                                            heard_at, groups: [{id, n, photos, first, last}],
                                            strays, named, engine_ready, folder, read, keep_days,
-                                           names_waiting, forgets_waiting, local_url}
+                                           names_waiting, forgets_waiting, local_url,
+                                           skipped, store_ok, names_lost, min_photos}
 POST   /v1/facegroups/groups/{id}/name     EITHER {name, relation, child, vip, given_by,
                                            consent_version, confirm: true} (a new person: the
                                            consent check) OR {person_id} (someone already added)
@@ -41,6 +42,7 @@ from jarvis.faces.ports import FAMILY_CHILD
 from jarvis.faces.service import PersonRejected
 from jarvis.faces.store import FacesUnavailable
 from jarvis.fixes.ports import NOT_BUILT, ROUTE_PREFIX, FixPart, PartName
+from jarvis.homebridge.face_types import MIN_GROUP_PICS
 from jarvis.integrations.google import GoogleAPIError, GoogleNotConnected
 from jarvis.photos.errors import PickerError
 from jarvis.photos.models import CLUSTER_ID, ImportResult
@@ -127,6 +129,10 @@ def _view(view: GroupsView) -> dict[str, Any]:
         "names_waiting": view.names_waiting,
         "forgets_waiting": view.forgets_waiting,
         "local_url": LOCAL_URL,
+        "skipped": view.skipped,
+        "store_ok": view.store_ok,
+        "names_lost": view.names_lost,
+        "min_photos": MIN_GROUP_PICS,
     }
 
 

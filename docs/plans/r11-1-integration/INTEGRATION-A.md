@@ -1,4 +1,4 @@
-Version v11.1.1 · 12 Nov 2026, 09:25 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.1 · 12 Nov 2026, 09:15 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 Part A · Brain and calendar — integration note for I1
 
@@ -377,4 +377,4 @@ events" for 4 of 5).
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v11.1.1 | 12 Nov 2026, 09:25 IST | R11.1 | First edition: Part A built (O1, O2, O2b, O12, the console pieces, the eval with four controls), how to check it, Needs I1, owner checks, departures, what is not verified live | 🛠 Mark XV |
+| v11.1.1 | 12 Nov 2026, 09:15 IST | R11.1 | First edition: Part A built (O1, O2, O2b, O12, the console pieces, the eval with four controls), how to check it, Needs I1, owner checks, departures, what is not verified live | 🛠 Mark XV |

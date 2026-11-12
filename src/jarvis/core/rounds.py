@@ -21,11 +21,28 @@ from dataclasses import dataclass, field
 from jarvis.core.guardrails import ActionRisk
 from jarvis.core.models import Session, Turn, UndoRef
 from jarvis.core.saving import not_recorded_note, record_after_action
-from jarvis.llm.base import Completion, ToolCall, Usage
+from jarvis.llm.base import Completion, ContentBlock, Role, TextBlock, ToolCall, Usage
 from jarvis.memory.base import SessionStore
 from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.tools.registry import ToolRegistry
 from jarvis.tools.reply_cards import AnyCard
+
+
+def request_turn(completion: Completion) -> tuple[Turn, list[ContentBlock]]:
+    """The model's tool request as a block turn (its words, then its calls), and those blocks."""
+    text = completion.text
+    blocks: list[ContentBlock] = [TextBlock(text=text)] if text.strip() else []
+    blocks += completion.tool_calls
+    turn = Turn(
+        role=Role.ASSISTANT,
+        content=text,
+        blocks=blocks,
+        model=completion.model,
+        usage=completion.usage,
+        cost_usd=completion.cost_usd,
+        latency_ms=completion.latency_ms,
+    )
+    return turn, blocks
 
 
 def undo_refs(

@@ -49,12 +49,12 @@ from jarvis.core import brain_decisions as decisions
 from jarvis.core import finish
 from jarvis.core.approve_all import ApproveAllResponse
 from jarvis.core.brain_types import _owner_turn, _Prompt, _ReplyMeta
-from jarvis.core.channel import answered_offline, reset_offline
+from jarvis.core.channel import reset_offline
 from jarvis.core.guardrails import guard_input
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
 from jarvis.core.persona import Persona, WitSource
 from jarvis.core.prompts import PERSONA_VERSION, build_trailer
-from jarvis.core.rounds import Rounds
+from jarvis.core.rounds import Rounds, request_turn
 from jarvis.core.saving import not_recorded_note, record_after_action
 from jarvis.core.window import build_window
 from jarvis.documents.pictures import with_pictures
@@ -67,7 +67,6 @@ from jarvis.llm.base import (
     LLMError,
     Role,
     StreamUsage,
-    TextBlock,
     ToolCall,
 )
 from jarvis.llm.brains import BrainRegistry, BrainSpec
@@ -455,18 +454,7 @@ class Brain:
                     break
                 rounds.count += 1
                 # record the assistant's tool request and our results as block turns
-                text = completion.text
-                asst_blocks: list[ContentBlock] = [TextBlock(text=text)] if text.strip() else []
-                asst_blocks += completion.tool_calls
-                asst = Turn(
-                    role=Role.ASSISTANT,
-                    content=text,
-                    blocks=asst_blocks,
-                    model=completion.model,
-                    usage=completion.usage,
-                    cost_usd=completion.cost_usd,
-                    latency_ms=completion.latency_ms,
-                )
+                asst, asst_blocks = request_turn(completion)
                 rounds.session.append(asst)
                 outcomes = await self._run_calls(rounds.session, msgs, completion.tool_calls, req)
                 pending += [
@@ -710,10 +698,7 @@ class Brain:
         meta.memory_used = list(rec.used)
         trailer = self._trailer(session, req) + rec.block
         system = await self.persona.system_for(req.user_id)
-        files = any(t.attachments for t in session.turns)  # R11.1 D1: no tools on a stream
-        cap = finish.output_cap(
-            self.s, working=finish.working_turn(spec, tools=False, attachments=files)
-        )
+        cap = finish.stream_cap(self.s, spec, session)  # R11.1 D1
         chunks: list[str] = []
         model = router.resolve(self._tier(req))
         # The vendor's own counts as they arrive (slice 10 A2); characters/4 only for what it
@@ -748,13 +733,9 @@ class Brain:
         text = "".join(chunks).strip()
         if not text:  # R11.1 D2: a stream with no words is asked once more, then says why
             ask = self._asker(_Prompt(system, trailer), req, spec, with_tools=False)
-            tries = finish.Tries(self.s.empty_reply_retries)
-            again = await finish.retried(finish.silent(model, reported, cap), ask, messages, tries)
-            text, cost = finish.reply_text(again), cost + again.cost_usd
-            usage = finish.plus(usage, again.usage)
+            quiet, retries = finish.silent(model, reported, cap), self.s.empty_reply_retries
+            text, more, used = await finish.after_stream(quiet, ask, messages, retries)
+            cost, usage = cost + more, finish.plus(usage, used)
             yield text
-        reply = Turn(
-            role=Role.ASSISTANT, content=text, trace_id=trace_id, usage=usage,
-            offline=answered_offline(), tool_derived=finish.is_fixed(text),  # D3: never history
-        )  # fmt: skip
+        reply = finish.stream_turn(text, trace_id, usage)
         await self._finish_turn(req.user_id, session, spec, rec, reply, model=model, cost=cost)

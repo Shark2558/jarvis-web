@@ -186,6 +186,33 @@ def silent(model: str, reported: StreamUsage, cap: int) -> Completion:
     )
 
 
+def stream_cap(s: Settings, spec: BrainSpec, session: Session) -> int:
+    """A stream has no tools: it is a working turn only when the conversation carries files."""
+    files = any(t.attachments for t in session.turns)
+    return output_cap(s, working=working_turn(spec, tools=False, attachments=files))
+
+
+async def after_stream(
+    quiet: Completion, call: ModelCall, msgs: list[ChatMessage], retries: int
+) -> tuple[str, float, Usage]:
+    """D2 on the stream: one that ended with no words (`silent`) is asked once more, then says
+    why. The reply, and what the retry cost and used (nothing when it was not made)."""
+    again = await retried(quiet, call, msgs, Tries(retries))
+    return reply_text(again), again.cost_usd, again.usage
+
+
+def stream_turn(text: str, trace_id: str | None, usage: Usage | None) -> Turn:
+    """A streamed reply as stored; one of our own fixed lines is marked (D3: never history)."""
+    return Turn(
+        role=Role.ASSISTANT,
+        content=text,
+        trace_id=trace_id,
+        usage=usage,
+        offline=answered_offline(),
+        tool_derived=is_fixed(text),
+    )
+
+
 # ---- the reply's words (D2.1, D2.3) and their marking (D3) ---------------------------------------
 
 
@@ -315,6 +342,7 @@ __all__ = [
     "RETRY",
     "ModelCall",
     "Tries",
+    "after_stream",
     "asked",
     "chat_response",
     "cut_short",
@@ -327,6 +355,8 @@ __all__ = [
     "retried",
     "said_by_code",
     "silent",
+    "stream_cap",
+    "stream_turn",
     "unfinished",
     "working_turn",
 ]

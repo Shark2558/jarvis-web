@@ -12,7 +12,10 @@ they are only long); the owner chooses, then sends. The estimate is deliberately
 always "about": the files' characters and the message's, divided by 4, plus about 1,500 tokens
 a picture (only for a brain that will be shown it), as input; a quarter of the working answer
 cap (`work_output_tokens`) as output; at `llm/pricing.py` prices and the day's rate
-(`Billing.inr`); "for one reply", since a reply that uses tools reads the files again. Below ₹5
+(`Billing.inr`); "for one reply", since a reply that uses tools reads the files again. When the
+owner raised `work_output_tokens` above its default (up to 32,000), the line also says what one
+reply costs if it writes its whole answer length (I1 security review L1: a quarter of a raised
+cap would understate the worst case; the cap itself is unchanged). Below ₹5
 on the tier the reply would use, nothing is shown. Nothing is shown either for a brain that
 costs nothing or whose price is unknown, in No-AI mode (no reply is paid for), or when a piece
 it needs is not set up here. A fault (storage, the day's rate, the No-AI switch unreadable) is
@@ -29,6 +32,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from jarvis.billing.service import paid_brain, rupees
+from jarvis.config import Settings
 from jarvis.fixes.ports import FixContext
 from jarvis.llm.base import Usage
 from jarvis.llm.pricing import CHARS_PER_TOKEN, cost_usd
@@ -43,6 +47,7 @@ MANY_ROWS = 2_000
 MANY_PICTURES = 2
 PICTURE_TOKENS = 1_500  # about what one picture costs to read (the plan's cost table)
 TYPICAL_OUTPUT_SHARE = 4  # the output cap's typical use: a quarter of it
+DEFAULT_WORK_TOKENS = int(Settings.model_fields["work_output_tokens"].default)  # 8,192
 SHOW_FROM_INR = 5.0
 MAX_IDS = 20
 STRONGER: dict[ModelTier, ModelTier] = {
@@ -141,10 +146,11 @@ class Estimator:
             spec = brains.default
         if not paid_brain(spec):
             return NOTHING
+        cap = int(self._ctx.s.work_output_tokens)
         usage = Usage(
             input_tokens=-(-(chars + len(message)) // CHARS_PER_TOKEN)
             + (pictures * PICTURE_TOKENS if spec.sees_pictures else 0),
-            output_tokens=int(self._ctx.s.work_output_tokens) // TYPICAL_OUTPUT_SHARE,
+            output_tokens=cap // TYPICAL_OUTPUT_SHARE,
         )
         now = self._tier(tier)
         inr = await billing.inr(cost_usd(spec.tiers[now], usage))
@@ -153,6 +159,10 @@ class Estimator:
         if inr < SHOW_FROM_INR:
             return Estimate(show=False, tier=now.value, inr=round(inr, 2))
         line = f"About {_about(inr)} for one reply on the {now.value} tier"
+        if cap > DEFAULT_WORK_TOKENS:  # a raised cap: say the whole-length bound too
+            whole = Usage(input_tokens=usage.input_tokens, output_tokens=cap)
+            top = await billing.inr(cost_usd(spec.tiers[now], whole))
+            line += f" (up to about {_about(top)} if it writes its whole answer length)"
         if up_inr is not None:
             line += f"; about {_about(up_inr)} on the stronger tier"
         hard = _complex(sheets=sheets, rows=rows, pictures=pictures)

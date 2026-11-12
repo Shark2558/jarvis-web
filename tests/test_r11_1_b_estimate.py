@@ -240,3 +240,32 @@ async def test_the_console_takes_what_counts_as_large_from_the_server(client: As
         Path(__file__).resolve().parents[1] / "src/jarvis/api/static/console-r111-files.js"
     ).read_text(encoding="utf-8")
     assert "l.large" in js and "large = Object.freeze" in js
+
+
+# ---- I1 security review L1: a raised answer cap is said with its full-length bound ------------
+def full_inr(settings: Settings, tier: ModelTier, chars: int) -> float:
+    usage = Usage(input_tokens=-(-chars // 4), output_tokens=settings.work_output_tokens)
+    return cost_usd(PAID_TIERS[tier], usage) * RATE
+
+
+async def test_with_the_answer_cap_raised_the_line_also_says_the_full_length_bound(
+    settings: Settings,
+) -> None:
+    raised = settings.model_copy(update={"work_output_tokens": 32_000})
+    rig = Rig(raised)
+    aid = await rig.up("long.txt", words(250_000))
+    e = await rig.est.estimate(UID, attachments=[aid], message="Summarise it")
+    chars = 250_000 + len("Summarise it")
+    top = full_inr(raised, ModelTier.BALANCED, chars)
+    assert e.show and top > e.inr
+    assert e.line == (
+        f"About ₹{round(e.inr)} for one reply on the balanced tier (up to about ₹{round(top)} if "
+        f"it writes its whole answer length); about ₹{round(e.stronger_inr or 0)} on the "
+        "stronger tier."
+    )
+
+
+async def test_at_the_default_cap_the_line_is_as_before(rig: Rig) -> None:
+    aid = await rig.up("long.txt", words(250_000))
+    e = await rig.est.estimate(UID, attachments=[aid], message="Summarise it")
+    assert "up to" not in e.line and e.line.startswith("About ₹")

@@ -81,6 +81,7 @@ from jarvis.offline.no_ai import NoAIRunner
 from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
 from jarvis.tools.budget import turn_budget
+from jarvis.tools.calendar_batch import gathered
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.reply_cards import AnyCard, collecting_cards
 from jarvis.tools.taint import context_trust, untrusted_seen
@@ -513,14 +514,16 @@ class Brain:
         spoken = req.channel == "voice"
         said = req.message
         out: list[GatewayResult] = []
-        for call in calls:
+        # R11.1 O2: more than three single event creates of one round go on ONE batch card
+        run, spread = gathered(calls, self.gateway.registry, self.s.calendar_batch_max)
+        for call in run:
             with (
                 context_trust(untrusted=untrusted, spoken=spoken, owner_text=said),
                 web_conversation(session),
                 conversation_words(session),  # slice 12: where a WhatsApp number came from
             ):
                 out.append(await self.gateway.execute(call, scope=f"{req.user_id}:{session.id}"))
-        return out
+        return spread(out)
 
     # ---- forgetting -----------------------------------------------------------------------
 

@@ -145,4 +145,90 @@ def update_card(event: dict[str, Any], a: dict[str, Any], new_guests: list[str] 
     )
 
 
-__all__ = ["create_card", "delete_card", "others_on", "update_card", "when_arg"]
+# ---- R11.1 D4, D5: many events on one card -------------------------------------------------------
+
+_MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
+OPEN_JARVIS = "Open JARVIS to see the full list."
+
+
+def day_words(value: Any) -> str:
+    """ "16 Nov 2026" from an ISO time or date (shown as given when it can't be read)."""
+    text = one_line(value, TIME_LIMIT)
+    try:
+        d = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text or "?"
+    return f"{d.day} {_MONTHS[d.month - 1]} {d.year}"
+
+
+def _span(starts: list[Any]) -> str:
+    days = sorted(one_line(s, TIME_LIMIT) for s in starts)
+    first, last = day_words(days[0]), day_words(days[-1])
+    return first if first == last else f"{first} to {last}"
+
+
+def _events(n: int) -> str:
+    return f"{n} event{'' if n == 1 else 's'}"
+
+
+def batch_card(
+    events: list[dict[str, Any]], *, prefix: str = "", plan: str = "", there: int = 0
+) -> str:
+    """The one card for a batch of events (no guests): how many, the first and last date, the
+    title prefix and the plan it starts. `there`: how many of the list are already in the
+    calendar (a retry adds only the rest). The console lists every event from the card's own
+    arguments; Telegram shows this text."""
+    n, span = len(events), _span([e.get("start") for e in events])
+    if there >= n:
+        head = f"All {_events(n)} of this list are already in your calendar: nothing will be added."
+    elif there:
+        head = (
+            f"Add the {_events(n - there)} of this list that are not in your calendar yet "
+            f"({there} of {n} are already there): {span}."
+        )
+    else:
+        head = f"Add {_events(n)} to your calendar: {span}."
+    lines = [head]
+    if one_line(prefix, FIELD_LIMIT):
+        lines.append(f"Titles start with “{one_line(prefix, FIELD_LIMIT)} - ”.")
+    if one_line(plan, FIELD_LIMIT):
+        lines.append(
+            f"A plan to follow: {quoted(plan, FIELD_LIMIT)}. JARVIS will ask after each session "
+            "whether it happened."
+        )
+    lines.append("No invitations: only your calendar changes. One Undo removes them all.")
+    lines.append(OPEN_JARVIS)
+    return "\n".join(lines)
+
+
+def undo_card(events: list[dict[str, Any]], *, kept: int = 0) -> str:
+    """The card for removing a batch: how many go, the dates, and how many stay because the
+    owner changed them since."""
+    n = len(events) - kept
+    span = _span([_time_of(e.get("start")) for e in events])
+    if n <= 0:
+        return (
+            f"All {_events(len(events))} of this batch were changed by you since: nothing will "
+            "be removed."
+        )
+    lines = [
+        f"Remove {_events(n)} of one batch from your calendar: {span}.",
+        "Each is kept in Recently deleted for 30 days: you can bring any of them back.",
+    ]
+    if kept:
+        lines.append(f"{kept} that you changed since {'is' if kept == 1 else 'are'} left alone.")
+    return "\n".join(lines)
+
+
+__all__ = [
+    "OPEN_JARVIS",
+    "TITLE_LIMIT",
+    "batch_card",
+    "create_card",
+    "day_words",
+    "delete_card",
+    "others_on",
+    "undo_card",
+    "update_card",
+    "when_arg",
+]

@@ -4,6 +4,7 @@
 # inbox tests. A plain module (not conftest) so tests and evals import it as a top-level module.
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections import deque
@@ -153,9 +154,23 @@ class PlanGoogle:
     unread: int | None = None
     requests: list[httpx.Request] = field(default_factory=list)
     creates: int = 0
+    delay_s: float = 0.0  # every write takes this long, so writes at a time can be counted
+    in_flight: int = 0
+    most_at_once: int = 0
 
     def client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(transport=httpx.MockTransport(self.handler))
+        return httpx.AsyncClient(transport=httpx.MockTransport(self.slow_handler))
+
+    async def slow_handler(self, request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" or not self.delay_s:
+            return self.handler(request)
+        self.in_flight += 1
+        self.most_at_once = max(self.most_at_once, self.in_flight)
+        try:
+            await asyncio.sleep(self.delay_s)
+            return self.handler(request)
+        finally:
+            self.in_flight -= 1
 
     def sent(self, method: str, suffix: str = "") -> list[httpx.Request]:
         return [r for r in self.requests if r.method == method and r.url.path.endswith(suffix)]

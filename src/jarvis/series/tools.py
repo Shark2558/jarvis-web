@@ -21,6 +21,7 @@ series_reschedule  R2  {series?, session?}: move a skipped session and every lat
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -30,7 +31,7 @@ from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
 from jarvis.series import cards
 from jarvis.series.models import OPEN_STATES, Plan, ReplanRefused
-from jarvis.series.service import SeriesService, Waiting
+from jarvis.series.service import NOT_LINKED, SeriesService, Waiting
 from jarvis.series.store import PlansUnreadable
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.context import require_tool_context
@@ -42,6 +43,9 @@ LIST, CHECKIN, RESCHEDULE = "series_list", "series_checkin", "series_reschedule"
 ANSWERS = ("done", "skipped")
 SERIES_MAX = 80
 NO_DATES = "I couldn't propose new dates just now; say 're-plan my sessions' to try again."
+# a look-up the gateway refused ends "(<error class>: <its words>)". Only these two classes carry
+# JARVIS's own sentences (numbers, never a title); anything else is not repeated to him.
+_OWN_REASON = re.compile(r"\((?P<kind>ReplanRefused|GoogleNotConnected): (?P<why>.{1,160})\)$")
 _SERIES = {"type": "string", "maxLength": SERIES_MAX, "description": "The plan's name or id."}
 _SESSION = {"type": "integer", "minimum": 1, "description": "The session's number in the plan."}
 
@@ -64,6 +68,14 @@ def _series_arg(value: Any) -> str | None:
     if not isinstance(value, str) or len(value) > SERIES_MAX:
         raise ValueError("series must be the plan's name")
     return value
+
+
+def own_reason(error: str | None) -> str:
+    """Why a re-plan was not proposed, in JARVIS's own words; "" when the reason isn't his."""
+    found = _OWN_REASON.search(error or "")
+    if found is None:
+        return ""
+    return NOT_LINKED if found["kind"] == "GoogleNotConnected" else found["why"]
 
 
 def _refused(message: str) -> Any:
@@ -144,7 +156,8 @@ class SeriesTools:
             log.warning("re-plan not proposed", extra={"error": type(exc).__name__})
             return f"{words} {NO_DATES}", {}
         if res.pending is None:
-            return f"{words} {NO_DATES}", {"why": res.error or res.outcome.value}
+            why = own_reason(res.error)
+            return f"{words} {why or NO_DATES}", {"why": why or res.outcome.value}
         head = res.pending.summary.splitlines()[0]
         said = f"{words} A new schedule is waiting for your approval. {head}"
         return said, {"approval": {"id": res.pending.id, "will_do": head}}
@@ -240,4 +253,13 @@ def series_tools(svc: SeriesService, gateway: Callable[[], Any]) -> list[Tool]:
     ]
 
 
-__all__ = ["ANSWERS", "CHECKIN", "LIST", "RESCHEDULE", "SeriesTools", "series_tools", "session_arg"]
+__all__ = [
+    "ANSWERS",
+    "CHECKIN",
+    "LIST",
+    "RESCHEDULE",
+    "SeriesTools",
+    "own_reason",
+    "series_tools",
+    "session_arg",
+]

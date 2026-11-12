@@ -266,12 +266,19 @@ class SeriesService:
             raise LookupError(NOTHING_SKIPPED)
         return max(skipped, key=lambda w: w.session.answered_at or w.session.end)
 
+    async def skipped(
+        self, uid: str, series: str | None = None, session: int | None = None
+    ) -> Waiting:
+        """The session a re-plan starts from: the named one, else the last one he skipped.
+        Reads JARVIS's own record only. LookupError (plain words) when there is none."""
+        return self._skipped(await self._store.load(uid), series, session)
+
     async def proposal(
         self, uid: str, series: str | None = None, session: int | None = None
     ) -> Proposal:
         """The re-plan for a skipped session (the named one, else the last one he skipped).
         Read-only. LookupError / ReplanRefused carry plain words."""
-        found = self._skipped(await self._store.load(uid), series, session)
+        found = await self.skipped(uid, series, session)
         conn, now, plan = self._conn(), self._now(), found.plan
         tz = await CalendarAPI(conn, None, self._tz).owner_tz(uid)
         slots = len(replan.rhythm(plan, tz)) or 1

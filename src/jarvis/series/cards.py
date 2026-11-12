@@ -45,6 +45,11 @@ def question(plan: Plan, s: PlanSession, tz: tzinfo) -> str:
     return QUESTION.format(n=s.n, total=plan.total, plan=plan.words, at=clock(s.start, tz))
 
 
+def waiting_words(plan: Plan, s: PlanSession, tz: tzinfo) -> str:
+    """The same question on the console's check-in card (its two buttons answer it)."""
+    return f"Session {s.n} of {plan.total} in {plan.words} ({when(s.start, tz)}): did it happen?"
+
+
 def marked(plan: Plan, s: PlanSession) -> str:
     return f"Session {s.n} of {plan.total} in {plan.words} is marked {s.state}, Sir."
 
@@ -91,5 +96,6 @@ __all__ = [
     "moved_words",
     "question",
     "replan_card",
+    "waiting_words",
     "when",
 ]

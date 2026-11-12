@@ -318,9 +318,43 @@ async def test_a_re_plan_that_would_lose_a_session_is_refused_in_code(
     monkeypatch.setattr(replan, "build", dropping)
     out = await rig.run("series_checkin", {"answer": "skipped"})
     assert await rig.gw.pending() == [] and rig.fake.sent("PATCH") == []
-    assert "couldn't propose new dates" in out.result["message"]
+    assert out.result["message"] == (
+        "Session 7 of 60 in your CCA plan is marked skipped, Sir. This re-plan would lose a "
+        "session, Sir (54 must move, 53 would), so nothing was moved."
+    )
     direct = await rig.run("series_reschedule", {"series": "CCA", "session": 7})
     assert direct.outcome is GatewayOutcome.ERROR and "lose a session" in (direct.error or "")
+
+
+async def test_skipped_with_google_not_linked_is_recorded_and_says_why(rig: PlanRig) -> None:
+    await followed(rig, 10)
+    rig.clock.at = AFTER_7
+    rig.state["google"] = None  # the link was removed after the plan was made
+    out = await rig.run("series_checkin", {"answer": "skipped"})
+    assert out.result["marked"] == "skipped" and await rig.gw.pending() == []
+    assert out.result["message"] == (
+        "Session 7 of 10 in your CCA plan is marked skipped, Sir. Google is not linked, Sir, "
+        "so I can't look at your calendar."
+    )
+
+
+@pytest.mark.parametrize(
+    ("error", "said"),
+    [
+        (
+            "could not look it up first, so nothing was proposed or done "
+            "(GoogleNotConnected: Google is not connected. Connect it in the panel.)",
+            "Google is not linked, Sir, so I can't look at your calendar.",
+        ),
+        ("could not look it up first (GoogleAPIError: 500 Topic: reply to x@example.com)", ""),
+        ("blocked by policy", ""),
+        (None, ""),
+    ],
+)
+def test_only_jarvis_s_own_reasons_are_repeated(error: str | None, said: str) -> None:
+    from jarvis.series.tools import own_reason
+
+    assert own_reason(error) == said
 
 
 async def test_the_model_asking_to_move_sessions_is_always_a_card(rig: PlanRig) -> None:

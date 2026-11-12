@@ -175,7 +175,28 @@ conversation), approvals (`approvals/{id}`, single use).
 
 ## 8. Checks
 
-(Filled in after the full runs: section 8 of v11.1.3.)
+Run from the worktree, one at a time, the heavy ones behind the builders' shared lock. The unit
+suites run with `PYTHONPATH` pointing at the worktree's `src`: a few tests run an eval in a
+subprocess, which otherwise imports the main checkout's `jarvis` (INTEGRATION-A 3.11); CI's plain
+`pytest` has no such second checkout.
+
+| Check | Last line |
+|---|---|
+| `pytest -q -p no:cacheprovider` (Python 3.12), first run | `2 failed, 13385 passed, 118 skipped`: the web eval held five ordinary guard cases (it built `web_search` unwired, so fail-closed) and an R3 seam pinned the `homebridge` extra; both fixed at their cause (the eval wires the app's port; the seam pins the new extra), the affected files then `93 passed` |
+| `pytest -q -p no:cacheprovider` (Python 3.11), after the fix | `13388 passed, 117 skipped in 710.19s` |
+| `ruff check src tests evals scripts` / `ruff format --check …` | `All checks passed!` / `1497 files already formatted` |
+| `mypy src` | `Found 9 errors in 3 files (checked 667 source files)`: the 9 older ones only (`llm/anthropic_provider.py` 7, `core/window.py` 1, `memory/redis_store.py` 1) |
+| `evals/run_all_mock.py` | `ALL MOCK EVALS: PASS` (phase0 smoke `GATE: FAIL` by design, never gated); `r11_1: 73/73 passed; negative control failed the suite: True` |
+| `scripts/arch_coverage.py` | `arch coverage: OK - 56 packages/modules, 79 console modules, 2 Scheduler jobs, 30 outside services, 90 Firestore collections` |
+| `scripts/check_doc_versions.py` | `All 26 documents have their version line and change log.` |
+| `scripts/markdy_export.py --check` | `14 diagram(s) checked, 0 problem(s)` |
+| `scripts/check_pr_title.py "v11.1.0 · R11.1 Your observations, fixed · Mark XV"` | `PR title OK` |
+| `python -m jarvis.buildbook.gen --check` | `two builds are byte-identical` |
+| the browser suite | (section 8 of v11.1.3) |
+
+Size guards: `core/brain.py` 704 (< 800), `api/app.py` 731 (≤ 750), `tools/gateway.py` 760 (not
+grown), `console.html` 795 (< 800). Every module this release changed is ≤ 800 lines;
+`vault/service.py` (876) is R2's and unchanged.
 
 ## 9. Open, or decided differently
 

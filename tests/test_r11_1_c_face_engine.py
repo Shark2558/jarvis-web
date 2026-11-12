@@ -210,6 +210,10 @@ def test_bytes_that_only_look_like_a_jpeg_are_refused_not_crashed_on(tmp_path: P
     no_picture = jpeg_bytes(64, 64).split(b"\xff\xda")[0] + b"\xff\xd9"  # a header, no picture
     with pytest.raises(PictureRefused) as err:
         engine.faces(no_picture)
+    assert err.value.code == "bad_jpeg"  # review C-sec H1: refused before the decoder runs
+    with pytest.raises(PictureRefused) as err:
+        # a whole header whose component names a quantisation table that was never defined
+        engine.faces(jpeg_bytes(64, 64).replace(b"\x01\x11\x00\xff\xda", b"\x01\x11\x03\xff\xda"))
     assert err.value.code == "unreadable"
     with pytest.raises(PictureRefused):
         engine.faces(b"GIF89a" + bytes(100))

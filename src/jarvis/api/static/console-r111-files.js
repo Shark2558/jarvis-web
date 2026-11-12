@@ -55,7 +55,9 @@ function takeLimits(j) {
   const A = window.JarvisAttach;
   if (A && typeof A.configure === 'function') A.configure(limits);
 }
-async function loadLimits() { try { takeLimits(await F.api('/v1/input')); } catch (_) {} }
+// The console's rule (R11.1 I1): nothing is asked before sign-in (a 401 re-shows the sign-in gate).
+const signedIn = () => { const c = window.JarvisConsole; return !!(c && typeof c.ready === 'function' && c.ready()); };
+async function loadLimits() { if (!signedIn()) return; try { takeLimits(await F.api('/v1/input')); } catch (_) {} }
 
 // ---- heard / understood as ------------------------------------------------------------------------------------
 async function ask(o, heard) {
@@ -291,9 +293,10 @@ function folderButton() {
 // console-voice-phrases.js reads hints() when a recogniser starts; nothing is fetched for a browser without hints.
 let hintTimer = 0, turnHints = [];
 function refreshHints() {
-  if (typeof window.SpeechRecognitionPhrase !== 'function') return;
+  if (typeof window.SpeechRecognitionPhrase !== 'function' || !signedIn()) return;
   clearTimeout(hintTimer);
   hintTimer = setTimeout(async () => {
+    if (!signedIn()) return;
     const C = window.JarvisChat, sid = C && typeof C.session === 'function' ? C.session() : null;
     try {
       const r = await F.api('/v1/input/hints' + (sid ? '?session_id=' + encodeURIComponent(sid) : ''));

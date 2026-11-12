@@ -360,9 +360,12 @@ def test_the_guide_has_the_r11_1_card() -> None:
         "`src/jarvis/picture/`",
         "`console-r111.js`",
         "`series/{uid}`",
-        "PLANNED",
+        "Built in R11.1",  # R11.1 I1: as built, no longer PLANNED
+        "`photo_imports/{uid}`",
+        "`face_groups/{uid}`",
     ):
         assert needle in card, needle
+    assert "PLANNED" not in card
 
 
 def test_every_part_is_built_and_the_runner_passes_with_every_control_failing() -> None:

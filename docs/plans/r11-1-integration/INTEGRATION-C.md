@@ -1,4 +1,4 @@
-Version v11.1.1 · 12 Nov 2026, 08:49 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.2 · 12 Nov 2026, 09:43 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 Part C — Photos, faces and the home kit: integration note
 
@@ -389,13 +389,23 @@ Neighbouring suites run in chunks (home, camera, privacy, R3 / R4 / R11 seams an
 permissions, notify, gateway, build-book): the only failures are the seven in 3.2 and the two in
 8. The whole suite was not run (the brief leaves it to I1).
 
-**The browser test and `mypy src` in full** wait behind the builders' shared lock as this edition
-is written. `tests/browser/test_r11_1_c_photos.py` has run once so far: the Faces panel with
-"Unnamed groups" passed the visual gate at 1440x900 on Night, then the run stopped on an
-assertion about the R3 dialog (see 8) that has since been narrowed to the field this part added.
-The other viewports, Day, the Connectors card and the behaviour tests have not finished a run
-yet; the next change-log row records the result. `mypy` over every file this part touched (59
-files) shows only the 9 older errors.
+```
+flock /tmp/r111-logs/heavy.lock /tmp/venv-b/bin/mypy src
+        Found 9 errors in 3 files (checked 620 source files)
+        (core/window.py 1, llm/anthropic_provider.py 7, memory/redis_store.py 1: the older ones)
+flock /tmp/r111-logs/heavy.lock env JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src \
+    /tmp/venv-c/bin/python -m pytest -q tests/browser/test_r11_1_c_photos.py -m browser
+        15 passed in 129.77s
+flock /tmp/r111-logs/heavy.lock env JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src \
+    /tmp/venv-c/bin/python -m pytest -q tests/browser -m browser -k "r11_1 or ui_audit"
+        127 passed, 995 deselected in 400.08s
+```
+
+The browser test needed two corrections of the test itself before it was green, both found by
+running it: the consent case provokes a 422 on purpose, which the browser logs as its one
+console error; and the naming dialog was measured 300 ms after opening, exactly the length of
+its entry animation, so on a busy machine the new field was once caught half-faded on Day. No
+change to the console code came out of either.
 
 ## 10. For the security reviewer: look here first
 
@@ -433,3 +443,4 @@ files) shows only the 9 older errors.
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v11.1.1 | 12 Nov 2026, 08:49 IST | R11.1 | First edition: what Part C built for O5, O6 and O7, the licences read, what I1 must add, the owner's steps for the kit and the photo folder, deviations, and what is not verified live | 🛠 Mark XV |
+| v11.1.2 | 12 Nov 2026, 09:43 IST | R11.1 | The results that were waiting behind the builders' shared lock: `mypy src` in full (the 9 older errors only), this part's browser test (15 passed) and the brief's full browser command (127 passed); the two corrections the browser test needed | 🛠 Mark XV |

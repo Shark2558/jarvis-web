@@ -15,6 +15,9 @@ brain that SEES and never TRAINS on what it is sent.
   the one picture, nothing else of the owner's. Its cost is recorded once (`Billing.record`).
 - When the cloud can't be reached the router may hand a call to the brain on the owner's laptop.
   That brain can't see a picture, so its answer is thrown away: `CantLook("unreachable")`.
+- The look has its own deadline (`LOOK_TIMEOUT_S`): an AI that does not answer in time is
+  `CantLook("unreachable")` too. (A call cut off there may still be billed by the vendor; with no
+  usage to read, nothing is recorded for it.)
 
 `LOOK_SYSTEM` asks for strict JSON and forbids naming anyone from a face. It is the first of the
 guards, not the only one: `jarvis.picture.guard` decides in plain code what may be said or
@@ -23,6 +26,7 @@ searched from the answer, whatever it says.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
@@ -45,6 +49,7 @@ from jarvis.logging import get_logger
 log = get_logger(__name__)
 
 TIER = ModelTier.FAST
+LOOK_TIMEOUT_S = 45.0  # one look at one picture; longer is "unreachable"
 Why = Literal["no_ai", "blind", "limit", "unreachable"]
 NO_AI = (
     "Looking at a picture needs the AI, Sir, and the AI is switched off (Brain: No-AI). "
@@ -74,9 +79,10 @@ LOOK_SYSTEM = (
     'well known they are. No name, no "looks like", no profession, nationality, religion or age '
     "guessed from looks. Describe a person only by what is visible: clothing, pose, what they "
     "are doing, where they are.\n"
-    "- A subject is a thing, never a person. Name it with its kind of thing at the end, for "
-    "example 'Charminar monument', 'Tata Nexon car', 'Parle-G biscuit packet', 'hibiscus "
-    "flower'. At most six subjects, the main ones first.\n"
+    "- A subject is a thing, never a person. Name it with its kind of thing at the end, in "
+    "lower case, for example 'Charminar monument', 'Parle-G biscuit packet', 'hibiscus "
+    "flower', and take its name from the words printed on it where there are any. At most six "
+    "subjects, the main ones first.\n"
     "- named_in_text: copy a person's name exactly, and only when it is printed or written in "
     "the picture itself (a caption, a name board, a jersey, a book cover). Otherwise an empty "
     "string. Never fill it from a face.\n"
@@ -182,14 +188,18 @@ class BrainEyes:
     ) -> Completion:
         message = ChatMessage(role=Role.USER, content=[TextBlock(text=ask), picture])
         try:
-            return await registry.router_for(spec.id).complete(
-                tier=TIER,
-                system=system,
-                messages=[message],
-                max_tokens=max_tokens,
-                tools=None,
-                allow_degrade=False,
-            )
+            async with asyncio.timeout(LOOK_TIMEOUT_S):
+                return await registry.router_for(spec.id).complete(
+                    tier=TIER,
+                    system=system,
+                    messages=[message],
+                    max_tokens=max_tokens,
+                    tools=None,
+                    allow_degrade=False,
+                )
+        except TimeoutError:
+            log.warning("picture look timed out")
+            raise CantLook("unreachable", UNREACHABLE) from None
         except BrainOff:
             raise CantLook("no_ai", NO_AI) from None
         except LLMOutOfCredit:
@@ -203,6 +213,7 @@ __all__ = [
     "BLIND",
     "LOOK_ASK",
     "LOOK_SYSTEM",
+    "LOOK_TIMEOUT_S",
     "NO_AI",
     "TIER",
     "UNREACHABLE",

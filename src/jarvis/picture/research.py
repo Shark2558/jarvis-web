@@ -15,14 +15,21 @@ with the last message, the AI off, no brain that may see a picture, the monthly 
 unreachable, an answer that is not the schema, too many looks in a minute.
 
 Nothing is kept: the picture is handed to the eyes and dropped; the look's raw answer never
-leaves this call; the last `Report` of a conversation (words and links, never a picture) stays in
-memory for `KEEP_S` so the console's route can show the links a model is never shown.
+leaves this call; the last FINISHED `Report` of a conversation (words and links, never a picture)
+stays in memory for `KEEP_S` (at most `MAX_KEPT`, the oldest let go first) so the console's route
+can show the links a model is never shown, and so `jarvis.picture.turnguard` can tell a name the
+picture's text holds from one taken from a face. A look that failed never replaces it.
+
+The searches of a research made outside a conversation (the console's press) are counted against
+the picture's own message (`message_key`: the same pictures are the same message), so presses on
+one message keep the message's search cap as `web_search` does.
 """
 
 from __future__ import annotations
 
+import hashlib
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -53,7 +60,10 @@ NOT_A_THING = (
 )
 READS = "It reads: {text}."
 FOUND = "I found {n} source{s} for {name}."
-OFFER = "The picture's text names {name}. Shall I look {name} up from public sources, Sir?"
+OFFER = (
+    "The picture's text names {name}. Caption read: '{caption}'. Shall I look {name} up from "
+    "public sources, Sir?"
+)
 Status = Literal[
     "done", "off", "no_picture", "busy", "no_ai", "blind", "limit", "unreachable", "unreadable"
 ]
@@ -87,6 +97,7 @@ class Report:
     named: str = ""
     pictures: int = 0
     cost_usd: float = 0.0
+    caption: str = ""  # the line of the picture's text `named` was read from
 
 
 def _plural(n: int) -> str:
@@ -116,8 +127,16 @@ def compose(v: Verdict, findings: tuple[Finding, ...]) -> str:
     if not v.person and not findings:
         parts.append(NOT_A_THING)
     if v.named:
-        parts.append(OFFER.format(name=v.named))
+        parts.append(OFFER.format(name=v.named, caption=v.caption))
     return " ".join(parts)
+
+
+def message_key(session_id: str, pictures: list[ImageBlock]) -> str:
+    """Which owner message these pictures came with: the same pictures, the same message."""
+    seen = hashlib.sha256()
+    for p in pictures:
+        seen.update(hashlib.sha256(p.data).digest())
+    return f"{session_id}:{seen.hexdigest()[:24]}"
 
 
 class PictureResearch:
@@ -137,7 +156,7 @@ class PictureResearch:
         self.eyes, self.enabled, self.clock = eyes, enabled, clock
         self._pictures, self._finder, self._guard = pictures, finder, guard
         self._calls: dict[str, deque[float]] = {}
-        self._last: dict[tuple[str, str], tuple[float, Report]] = {}
+        self._last: OrderedDict[tuple[str, str], tuple[float, Report]] = OrderedDict()
 
     # ---- the last report of a conversation (for the console's route) ----
     def last(self, uid: str, session_id: str) -> Report | None:
@@ -149,9 +168,14 @@ class PictureResearch:
         return kept[1]
 
     def _keep(self, uid: str, session_id: str, report: Report) -> Report:
+        """Keep a finished report as the conversation's last; a failed look keeps the one before.
+        At the cap the oldest goes."""
+        if report.status != "done":
+            return report
         key = (uid, session_id)
-        if len(self._last) >= MAX_KEPT and key not in self._last:
-            self._last.clear()
+        self._last.pop(key, None)
+        while len(self._last) >= MAX_KEPT:
+            self._last.popitem(last=False)
         self._last[key] = (self.clock(), report)
         return report
 
@@ -180,10 +204,13 @@ class PictureResearch:
             return Report("no_picture", words, pictures=n)
         if self._too_many(uid):
             return Report("busy", TOO_MANY)
-        report = await self._look_and_search(uid, found[index - 1], len(found))
+        message = message_key(session_id, found)
+        report = await self._look_and_search(uid, found[index - 1], len(found), message)
         return self._keep(uid, session_id, report)
 
-    async def _look_and_search(self, uid: str, picture: ImageBlock, count: int) -> Report:
+    async def _look_and_search(
+        self, uid: str, picture: ImageBlock, count: int, message: str
+    ) -> Report:
         try:
             glance = await self.eyes.look(
                 uid, LOOK_SYSTEM, LOOK_ASK, picture, max_tokens=LOOK_TOKENS
@@ -196,7 +223,10 @@ class PictureResearch:
             return Report("unreadable", UNREADABLE, pictures=count, cost_usd=glance.cost_usd)
         verdict = judge(seen, enabled=self._guard)
         findings = tuple(
-            [Finding(s, await self._finder.find(uid, s.name)) for s in verdict.queries]
+            [
+                Finding(s, await self._finder.find(uid, s.name, message=message))
+                for s in verdict.queries
+            ]
         )
         log.info(
             "picture researched",
@@ -218,6 +248,7 @@ class PictureResearch:
             named=verdict.named,
             pictures=count,
             cost_usd=glance.cost_usd,
+            caption=verdict.caption,
         )
 
 
@@ -234,4 +265,5 @@ __all__ = [
     "Report",
     "Source",
     "compose",
+    "message_key",
 ]

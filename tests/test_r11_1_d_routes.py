@@ -19,11 +19,11 @@ from r11_1_fakes_d import FakeSearchVendor, TurnPictures, picture, read_text
 
 import jarvis.picture.part as part_mod
 from jarvis.api import create_app
-from jarvis.api.fix_look import FAILED, RESEARCH_PER_MINUTE
+from jarvis.api.fix_look import CANT_TELL, FAILED, RESEARCH_PER_MINUTE
 from jarvis.config import AuthMode, Settings
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
-from jarvis.picture.eyes import BLIND, NO_AI
+from jarvis.picture.eyes import BLIND, NO_AI, BrainEyes
 from jarvis.picture.guard import NO_IDENTIFY
 from jarvis.picture.part import OFF as PART_OFF
 from jarvis.picture.research import NO_PICTURE, OFF, PictureResearch
@@ -103,6 +103,21 @@ async def test_with_a_seeing_private_brain_the_status_says_it_can(
 
     assert r.json() == {"part": "look", "ready": "ready", "can": True, "why": ""}
     assert seeing.calls == []  # asking costs nothing: no model was called
+
+
+async def test_when_the_state_cannot_be_read_the_status_says_so_plainly(
+    settings: Settings, seeing: MockProvider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def broken(self: object, uid: str) -> None:
+        raise RuntimeError("the brain-mode document could not be read: secret detail")
+
+    monkeypatch.setattr(BrainEyes, "state", broken)
+    async with running(settings, seeing) as (_, client):
+        r = await client.get("/v1/picture")
+
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    assert r.json() == {"part": "look", "ready": "ready", "can": False, "why": CANT_TELL}
+    assert "secret" not in r.text
 
 
 async def test_in_no_ai_mode_the_status_says_why(settings: Settings, seeing: MockProvider) -> None:
@@ -213,7 +228,9 @@ async def test_a_name_in_the_pictures_own_text_is_offered(
         r = await client.post("/v1/picture/research", json={"session_id": SID})
 
     out = r.json()
-    assert out["offer"] == {"name": NAME} and out["person"] is True
+    caption = f"MINISTER {NAME.upper()}"  # the very line the name was read from
+    assert out["offer"] == {"name": NAME, "caption": caption} and out["person"] is True
+    assert f"Caption read: '{caption}'." in out["message"]
     assert out["message"].endswith(f"Shall I look {NAME} up from public sources, Sir?")
 
 

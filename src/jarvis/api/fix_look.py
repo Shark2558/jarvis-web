@@ -6,12 +6,14 @@ the sign-in (`current_user`), never from the body.
 
 GET  /v1/picture            {part, ready, can, why}: the part's status, and whether a picture can
                             be looked at right now ("" or the reason in plain words: the AI is
-                            off, no brain here may see a picture). No model call, nothing spent.
+                            off, no brain here may see a picture, or that JARVIS can't tell just
+                            now). No model call, nothing spent.
 POST /v1/picture/research   {session_id, picture?} -> what the console shows for the picture
                             attached to the owner's LAST message of that conversation:
                             {status: "done", message, person, scene, text[], subjects[{kind,
                             name}], sources[{about, n, title, domain, url, snippet}], notes[],
-                            offer: {name} | null, pictures}; or {status, message} in plain words
+                            offer: {name, caption} | null, pictures}; or {status, message} in plain
+                            words
                             when it did not run (no picture, the AI off, the limit, "waiting"
                             for his approval, "denied" by his Permissions row). 422 for a
                             malformed body; 429 past the limit; 503 when the tools are off.
@@ -55,6 +57,7 @@ TOOLS_OFF = "Tools are switched off on this server."
 WAITING = "That needs your OK, Sir: the approval is waiting in Approvals."
 DENIED = "Picture research is set to 'Never' in Permissions, Sir."
 FAILED = "The picture could not be researched just now, Sir. Please try again."
+CANT_TELL = "I can't tell just now whether a picture can be looked at, Sir. Try again in a minute."
 router = APIRouter(prefix=PREFIX, dependencies=[Depends(require_auth)])
 
 
@@ -109,7 +112,7 @@ def _shown(report: Report) -> dict[str, Any]:
             for s in f.sources
         ],
         "notes": [f.found.note for f in report.findings if f.found.note],
-        "offer": {"name": report.named} if report.named else None,
+        "offer": {"name": report.named, "caption": report.caption} if report.named else None,
         "pictures": report.pictures,
     }
 
@@ -121,7 +124,11 @@ async def status(request: Request, uid: str = Depends(current_user)) -> JSONResp
     service = _service(request)
     if service is None:
         return _answer(200, {"part": PART, "ready": ready, "can": False, "why": OFF})
-    cant = await service.eyes.state(uid)
+    try:
+        cant = await service.eyes.state(uid)
+    except Exception as exc:  # noqa: BLE001 - the brain-mode read failed: say so, never its words
+        log.warning("picture status unreadable", extra={"reason": type(exc).__name__})
+        return _answer(200, {"part": PART, "ready": ready, "can": False, "why": CANT_TELL})
     why = str(cant) if cant is not None else ""
     return _answer(200, {"part": PART, "ready": ready, "can": cant is None, "why": why})
 
@@ -160,4 +167,4 @@ async def research(
     return _answer(200, _shown(report))
 
 
-__all__ = ["PREFIX", "RESEARCH_PER_MINUTE", "part_of", "router"]
+__all__ = ["CANT_TELL", "PREFIX", "RESEARCH_PER_MINUTE", "part_of", "router"]

@@ -94,7 +94,8 @@ async def test_a_thing_is_researched_with_sources(
     out = res.result
     assert out["status"] == "done" and out["person"] is False and "say" not in out
     assert rig.vendor.queries == [name]
-    assert [r["about"] for r in out["results"]] == [name, name]
+    assert [r["about"].count(name) for r in out["results"]] == [1, 1]  # fenced (review LOW-1)
+    assert all(r["about"].startswith(FENCE_PREFIX) for r in out["results"])
     assert [r["domain"] for r in out["results"]] == ["example.org", "example.com"]
     assert out["results"][0]["n"] == 1 and "[n]" in out["note"]
     assert len(out["text"]) == len(lines)
@@ -223,9 +224,15 @@ async def test_eyes_that_invent_a_caption_are_caught_by_the_picture_itself() -> 
     assert "offer" not in out and NAME not in _flat(out)
 
 
-async def test_a_landmark_behind_a_person_is_still_researched_but_only_the_landmark() -> None:
+@pytest.mark.parametrize("printed", [True, False])
+async def test_a_landmark_behind_a_person_is_researched_only_by_its_printed_name(
+    printed: bool,
+) -> None:
+    """Security review M1: with a person in the picture a search may carry only thing words and
+    the picture's own words, so a name the look gave the landmark is searched only when the
+    picture prints it (a face-derived name dressed as a landmark never reaches the vendor)."""
     rig = PictureRig()
-    pic = picture(person=True)
+    pic = picture(*(("CHARMINAR",) if printed else ()), person=True)
     rig.eyes.knows(
         pic,
         scene="A person stands in front of a stone monument with four towers.",
@@ -235,8 +242,8 @@ async def test_a_landmark_behind_a_person_is_still_researched_but_only_the_landm
 
     out = (await rig.research()).result
 
-    assert rig.vendor.queries == ["Charminar monument"]
-    assert out["say"] == NO_IDENTIFY and len(out["results"]) == 2
+    assert rig.vendor.queries == (["Charminar monument"] if printed else [])
+    assert out["say"] == NO_IDENTIFY and len(out["results"]) == (2 if printed else 0)
     assert [s["name"].count("Charminar") for s in out["subjects"]] == [1]
 
 
@@ -245,7 +252,7 @@ async def test_results_that_are_about_a_person_are_left_out() -> None:
     never shown by picture research."""
     rig = PictureRig()
     pic = picture(blocks=[RED])
-    rig.eyes.knows(pic, scene="A bronze figure.", subjects=[("landmark", f"{NAME} statue")])
+    rig.eyes.knows(pic, scene="A bronze figure.", subjects=[("landmark", "bronze statue")])
     rig.turn.attach("sess_1", pic)
     rig.vendor.default = [
         SearchHit(f"{NAME} - Wikipedia", "https://en.wikipedia.org/wiki/Lekha_Examplekar",

@@ -309,10 +309,14 @@ def test_the_shape_of_a_name(claimed: str, ok: bool) -> None:
     assert (judge(seen).named == claimed) is ok
 
 
-def test_the_screen_is_used_only_when_a_person_is_in_the_picture() -> None:
+def test_every_picture_is_screened_and_a_person_picture_gets_the_fixed_fallback() -> None:
+    """Security review H2 (was: the screen ran only when the look said `has_person`): a name the
+    picture does not print leaves every description; a person picture keeps the fixed line."""
     scene = f"A statue beside the {NAME} Memorial Hall."
 
-    assert judge(_seen(scene=scene)).scene == scene
+    assert NAME not in judge(_seen(scene=scene)).scene
+    printed = _seen(scene=scene, text=[f"{NAME.upper()} MEMORIAL HALL"])
+    assert judge(printed).scene == scene  # the picture's own words may be said
     assert judge(_seen(scene=f"This is {NAME}.", has_person=True)).scene == PERSON_FALLBACK
 
 

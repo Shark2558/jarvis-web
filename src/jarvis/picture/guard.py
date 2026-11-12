@@ -3,46 +3,60 @@
 
 JARVIS researches a picture of a THING (a product, a place, a landmark, a label, a logo). It never
 identifies a person from a picture, for anyone. The first look at a picture is one vision call
-that answers strict JSON (`parse_seen`); everything after that is this module: plain code, no
-model, no network. It decides what may be said and what may be searched, whatever the look wrote:
+that answers strict JSON (`parse_seen`); everything after that is plain code, no model, no
+network (this module, `jarvis.picture.scene` and `jarvis.picture.words`). It decides what may be
+said and searched, whatever the look wrote:
 
-- **Fail closed.** An answer that is not exactly the schema is thrown away: nothing is described
-  and nothing is searched from it.
-- **A search runs only for a thing.** A subject is searched only when its kind is searchable, its
-  name is not person-shaped (`person_shaped`: "woman in a blue sari", "who is this actor") and its
-  name says what kind of thing it is (`thing_shaped`: a word of `THING_WORDS`). A bare name is
-  never a thing, whatever kind the look claimed for it, so a name the look took from a face can't
-  reach the search vendor. At most `MAX_QUERIES`; one when a person is in the picture.
-- **With a person in the picture the reply is a fixed template**: what is visible, then
-  `NO_IDENTIFY`. The look's own description is screened sentence by sentence (`screen_scene`): a
-  sentence that names, hints ("looks like", "famous") or carries a capitalised word that is not
-  part of a named thing is dropped, and so is anything withheld as a subject.
-- **A name can come only from the picture's own words** (D21-D): `name_from_text` accepts the
-  look's `named_in_text` only when those words are literally in the text it read off the picture
-  and are shaped like a name. It is only ever OFFERED: the look-up is the existing people research
-  behind its unchanged check (`jarvis.people.gate`), and this module never searches it.
+- **Fail closed.** An answer that is not exactly the schema is thrown away.
+- **The look's `has_person` is not trusted alone.** A picture is a person picture when the look
+  says so, OR its description or one of its subjects is about a person ("the minister").
+- **Every description is screened** (`scene.vet_scene`): a capitalised word that is not the
+  sentence's plain opener stays only when the picture prints it or a vetted thing's name holds
+  it; "this is <name>", hints, another script and a lower-case name at the start go. A person
+  picture's description is screened again (`scene.screen_scene`) and gets the fixed sentence.
+- **A subject is shown only when it is a thing** (or a plain lower-case description of one, on a
+  picture without a person) **and names nobody the picture does not print** (`_printed_or_plain`):
+  "Bill Gates" (its only thing word is part of the name) and "<Name> statue" (two capitalised
+  words in a row) are shown and searched only when the picture prints every capitalised word.
+- **A search runs only for a thing**: a searchable kind, thing-shaped, never the offered name;
+  on a person picture only a thing made of thing words and words the picture prints. At most
+  `MAX_QUERIES`; one with a person.
+- **A name can come only from the picture's own words** (D21-D): `caption_of` accepts the look's
+  `named_in_text` only when those very words are on one line of the text it read, and the name
+  is shaped like one. It is only ever OFFERED, with that line (`Verdict.caption`), so the owner
+  sees where it came from; the look-up is the people research behind its unchanged check.
 
 `judge(seen, enabled=False)` exists only so the eval can show its negative control (with the guard
 off a name gets through); it is a parameter, never a setting.
 
-What plain code cannot know: whether the look told the truth about `has_person`, or copied the
-picture's text faithfully. Those rest on the look's own instructions (`jarvis.picture.eyes`) and
-on the persona rule; the eval covers both.
+What plain code cannot know: whether the look copied the picture's text faithfully. A caption the
+look invented is still only an offer, shown with the line it claims, and the check decides.
 """
 
 from __future__ import annotations
 
 import json
 import re
-import unicodedata
-from collections.abc import Sequence
 from dataclasses import dataclass
 
-from jarvis.people.guard import fold, variants
+from jarvis.picture.scene import PERSON_FALLBACK, screen_scene, vet_scene
+from jarvis.picture.words import (
+    NOT_NAME,
+    THING_WORDS,
+    WORD,
+    capitalised,
+    contains,
+    is_thing_word,
+    name_shaped,
+    person_shaped,
+    plain,
+    thing_shaped,
+    word_set,
+    words_of,
+)
 from jarvis.tools.external import clean_text, model_text
 
 NO_IDENTIFY = "I don't identify people from pictures, Sir."
-PERSON_FALLBACK = "There is a person in the picture."
 KINDS: tuple[str, ...] = (
     "product", "place", "landmark", "label", "logo", "artwork", "plant", "animal", "food",
     "document", "other",
@@ -56,84 +70,9 @@ MAX_TEXTS = 12
 TEXT_MAX = 200
 MAX_QUERIES = 2
 MAX_QUERIES_WITH_PERSON = 1
-MAX_NAME_WORDS = 5
 _KEYS = frozenset({"has_person", "subjects", "scene", "text", "named_in_text"})
 _REQUIRED = frozenset({"has_person", "subjects"})
 _FENCED = re.compile(r"\A```(?:json)?\s*\n(.*)\n```\Z", re.DOTALL)
-
-# Words that make a phrase ABOUT A PERSON: who they are, what they look like, how they are named.
-_PERSON = re.compile(
-    r"\b(?:man|men|woman|women|boy|boys|girl|girls|child|children|kid|kids|baby|babies|toddler|"
-    r"teenager|person|persons|people|human|humans|guy|guys|lady|ladies|gentleman|gentlemen|crowd|"
-    r"couple|bride|groom|face|faces|selfie|portrait|headshot|actor|actors|actress|actresses|"
-    r"singer|musician|politician|minister|president|celebrity|celeb|cricketer|footballer|athlete|"
-    r"sportsman|sportswoman|influencer|youtuber|superstar|he|she|him|her|his|hers|himself|"
-    r"herself|who|whose|whom|whos|identity|identify|identified|lookalike|resembles?|resembling|"
-    r"bearded|wearing|dressed|hair|beard|moustache|mustache)\b"
-    r"|\blooks?\s+like\b|\bknown\s+as\b|\bname\s+of\b|\b(?:film|movie|tv|pop|rock)\s+star\b"
-)
-# In a description of a picture WITH a person: a sentence that says or hints who it is.
-_HINT = re.compile(
-    r"\b(?:looks?\s+like|look-?alike|resembl\w*|known\s+as|named|called|identified|famous|"
-    r"celebrit\w*|celeb|well[- ]known|recogni[sz]\w*|probably|possibly|presumably|likely|"
-    r"apparently|actor|actress|singer|politician|minister|president|cricketer|footballer|"
-    r"superstar|film\s+star|movie\s+star|mla|mp)\b",
-    re.IGNORECASE,
-)
-# Nouns that say what KIND OF THING a name is. Generic categories only: no word that is also a
-# common given name (rose, lily, bill), and none that merely carries a person's name (board, sign,
-# poster, card, banner, jersey, caption, photo, fan, house).
-THING_WORDS = frozenset(
-    """
-    phone smartphone laptop computer tablet watch smartwatch camera lens television tv monitor
-    printer router speaker headphone earphone earbud keyboard charger cable battery drone console
-    car suv truck bus van scooter motorcycle motorbike bike bicycle cycle auto rickshaw tractor
-    train locomotive aeroplane airplane aircraft plane helicopter ship boat ferry yacht
-    fridge refrigerator cooker oven stove mixer grinder blender kettle toaster iron heater cooler
-    conditioner purifier washer machine appliance device gadget tool drill
-    bottle packet pack box can jar tin tube carton bag backpack wallet suitcase
-    shoe sneaker sandal boot shirt tshirt jacket coat dress sari saree kurta jeans cap hat helmet
-    book novel magazine newspaper notebook pen pencil toy game puzzle doll
-    medicine tablet capsule syrup ointment cream lotion soap shampoo perfume toothpaste detergent
-    tea coffee biscuit cookie chocolate snack chips drink juice soda beer wine whisky rum sauce
-    pickle rice flour atta dal spice masala oil ghee butter cheese milk curd bread cake sweet
-    dish curry dessert meal recipe fruit vegetable
-    chair table sofa bed desk shelf cupboard lamp bulb clock mirror curtain carpet mattress
-    coin banknote currency stamp
-    temple church mosque masjid mandir gurudwara synagogue cathedral basilica shrine pagoda stupa
-    monastery fort fortress palace mahal minar tower bridge dam lake river beach waterfall falls
-    hill mountain mount peak valley island park garden bagh zoo sanctuary museum gallery memorial
-    monument statue gate gateway dwar ghat station airport terminus port harbour harbor market
-    bazaar mall
-    street road highway square chowk circle building skyscraper hall library university college
-    school hospital hotel resort restaurant cafe shop store showroom stadium arena city town
-    village landmark ruins cave tomb lighthouse canal backwaters fountain pier jetty windmill
-    tree plant flower leaf shrub cactus fern moss mushroom seed
-    bird dog cat fish insect butterfly moth snake lizard spider animal breed cow goat horse
-    elephant tiger lion monkey deer
-    painting artwork sculpture mural drawing logo emblem brand label
-    """.split()
-)
-# The first word of a plain sentence about what is visible (the only capitalised word it needs).
-_OPENERS = frozenset(
-    """
-    a an the this that these those there here in on at behind beside near next inside outside
-    above below under around with it its he she they his her their both many several some one two
-    three four five six people someone everyone nobody no each all another other others most part
-    also nearby further overhead between across along over beyond against among to from standing
-    sitting walking holding seen shown visible
-    """.split()
-)
-# Never part of a person's name (with the thing words and the person words above).
-_NOT_NAME = frozenset(
-    """
-    the a an of and or in on at for with by to from is are was were be been opens opened opening
-    inaugurates inaugurated welcome welcomes presents visit visits at as new our your my this that
-    """.split()
-)
-_JOINS = frozenset({"of", "the", "and", "de", "da", "al"})  # inside a name: "Gateway of India"
-_SENTENCE = re.compile(r"(?<=[.!?])\s+")
-_WORD = re.compile(r"[^\W\d_][\w'’\-]*")
 
 
 @dataclass(frozen=True)
@@ -157,13 +96,14 @@ class Seen:
 class Verdict:
     """What the tool may do with one picture."""
 
-    person: bool
-    scene: str  # what is visible (screened when a person is in the picture)
+    person: bool  # the look said so, or its own words are about a person
+    scene: str  # what is visible, screened
     text: tuple[str, ...]  # the picture's own words, as read
     subjects: tuple[Subject, ...]  # what may be shown
     queries: tuple[Subject, ...]  # what may be searched
     named: str  # a name read from the picture's own text ("" when none): an offer, never a search
     withheld: int  # subjects left out
+    caption: str = ""  # the line of the picture's text the offered name was read from
 
 
 # ---- reading the look's answer ---------------------------------------------------------------
@@ -195,7 +135,7 @@ def _texts(raw: object) -> tuple[str, ...] | None:
 
 def parse_seen(raw: str) -> Seen | None:
     """The look's answer when it is exactly the schema; None for anything else (fail closed)."""
-    if not isinstance(raw, str) or len(raw) > MAX_RAW:
+    if len(raw) > MAX_RAW:
         return None
     body = raw.strip()
     fenced = _FENCED.match(body)
@@ -219,124 +159,67 @@ def parse_seen(raw: str) -> Seen | None:
     return Seen(data["has_person"], tuple(s for s in found if s), scene, text, named)
 
 
-# ---- person or thing -------------------------------------------------------------------------
-def _words(text: str) -> list[str]:
-    """The folded words of `text` (lower case, accents and look-alikes read as plain letters)."""
-    return [w.strip("'’-") for w in _WORD.findall(fold(text)) if w.strip("'’-")]
-
-
-def person_shaped(text: str) -> bool:
-    """Is this about a person: who they are or what they look like? Read through the people
-    pre-filter's folding, so spaced-out letters and look-alike characters hide nothing."""
-    return any(_PERSON.search(form) for form in variants(text))
-
-
-def _is_thing_word(word: str) -> bool:
-    return word in THING_WORDS or (word.endswith("s") and word[:-1] in THING_WORDS)
-
-
-def thing_shaped(name: str) -> bool:
-    """Does `name` say what kind of thing it is, and nothing about a person? A bare name (of a
-    person, or of a brand with no thing named) is not a thing."""
-    words = _words(name)
-    return bool(words) and not person_shaped(name) and any(_is_thing_word(w) for w in words)
-
-
-def _letters(word: str) -> bool:
-    """Letters only (in any script: a vowel sign is a mark, not a digit or a symbol)."""
-    plain = word.replace("'", "").replace("’", "").replace("-", "")
-    return bool(plain) and all(unicodedata.category(ch)[0] in "LM" for ch in plain)
-
-
-def _name_shaped(name: str) -> bool:
-    """One to five words of letters (initials count), none of them a thing, a person word or a
-    small word: "Lekha Examplekar", "K R Examplekar"; never "the woman in blue"."""
-    words = _words(name)
-    if not 1 <= len(words) <= MAX_NAME_WORDS or person_shaped(name):
-        return False
-    if not all(_letters(w) for w in words) or not any(len(w) > 1 for w in words):
-        return False
-    full = [w for w in words if len(w) > 1]  # a single letter is an initial, never "a" the article
-    return not any(w in _NOT_NAME or _is_thing_word(w) for w in full)
-
-
-def _contains(haystack: Sequence[str], needle: Sequence[str]) -> bool:
-    n = len(needle)
-    return n > 0 and any(list(haystack[i : i + n]) == list(needle) for i in range(len(haystack)))
+# ---- a name only from the picture's own words ------------------------------------------------
+def caption_of(seen: Seen) -> tuple[str, str]:
+    """(the name, the line it is written on) when the look's `named_in_text` is literally on one
+    line of the text it read off the picture and is shaped like a name; else ("", "")."""
+    name = seen.named_in_text
+    if not name or not name_shaped(name):
+        return "", ""
+    wanted = words_of(name)
+    line = next((t for t in seen.text if contains(words_of(t), wanted)), "")
+    return (name, line) if line else ("", "")
 
 
 def name_from_text(seen: Seen) -> str:
-    """The name the look says is WRITTEN in the picture, when those very words are in the text it
-    read off the picture and are shaped like a name; else "" (D21-D: never from a face)."""
-    name = seen.named_in_text
-    if not name or not _name_shaped(name):
-        return ""
-    wanted = _words(name)
-    return name if any(_contains(_words(line), wanted) for line in seen.text) else ""
+    """The name the look says is WRITTEN in the picture, or "" (D21-D: never from a face)."""
+    return caption_of(seen)[0]
 
 
-# ---- the description of a picture with a person ----------------------------------------------
-def _run_end(words: list[str], start: int) -> int:
-    """Where the run of capitalised words that begins at `start` ends ("Gateway of India" is one
-    run: a small joining word between two capitalised words belongs to it)."""
-    j = start
-    while j < len(words):
-        if words[j][:1].isupper():
-            j += 1
-        elif words[j] in _JOINS and j + 1 < len(words) and words[j + 1][:1].isupper():
-            j += 2
-        else:
-            break
-    return j
+# ---- which subjects may be shown and searched ------------------------------------------------
+def _two_capitals_in_a_row(words: list[str]) -> bool:
+    """A run of two or more capitalised words with no small word between: shaped like a full
+    name ("Rajesh Examplekar"). "Gateway of India" is not one: "of" parts it."""
+    run = 0
+    for word in words:
+        run = run + 1 if capitalised(word) and plain(word) not in NOT_NAME else 0
+        if run >= 2:
+            return True
+    return False
 
 
-def _capital_runs_ok(words: list[str]) -> bool:
-    """Every capitalised word after the first belongs to a named thing: its run of capitalised
-    words holds a thing word, or the word right after the run is one ("a Samsung phone")."""
-    i = 1
-    while i < len(words):
-        if not words[i][:1].isupper():
-            i += 1
-            continue
-        j = _run_end(words, i)
-        run = [fold(w).strip("'’-") for w in words[i : j + 1]]  # the run and the word after it
-        if not any(_is_thing_word(w) for w in run):
-            return False
-        i = j
-    return True
-
-
-def _sentence_ok(sentence: str, banned: frozenset[str]) -> bool:
-    if not sentence.isascii() or _HINT.search(sentence):
-        return False  # another script has no capitals to check; a hint is a hint
-    words = _WORD.findall(sentence)
-    if not words:
+def _printed_or_plain(name: str, printed: frozenset[str]) -> bool:
+    """Does `name` name nobody the picture does not print? Every capitalised word printed in the
+    picture; or a thing word written in lower case ("Cochin harbour", not "Bill Gates": there the
+    only thing word is part of a name) and no two capitalised words in a row ("<Name> statue")."""
+    words = WORD.findall(name)
+    if all(plain(w) in printed for w in words if capitalised(w)):
+        return True
+    if not any(is_thing_word(plain(w)) for w in words if not capitalised(w)):
         return False
-    if words[0][:1].isupper() and words[0].lower() not in _OPENERS:
-        return False
-    if banned & set(_words(sentence)):
-        return False
-    return _capital_runs_ok(words)
+    return not _two_capitals_in_a_row(words)
 
 
-def screen_scene(scene: str, banned: Sequence[str] = ()) -> str:
-    """What may be said of a picture with a person: the sentences that only describe what is
-    visible. `banned`: names withheld elsewhere (a subject, a claimed caption), in any letter
-    case. Nothing left: `PERSON_FALLBACK`."""
-    stop = frozenset(w for name in banned for w in _words(name) if len(w) > 1) - _OPENERS
-    kept = [s for s in _SENTENCE.split(scene.strip()) if s and _sentence_ok(s, stop)]
-    return " ".join(kept) or PERSON_FALLBACK
+def _shown(subject: Subject, person: bool, printed: frozenset[str]) -> bool:
+    if person_shaped(subject.name) or not _printed_or_plain(subject.name, printed):
+        return False
+    if thing_shaped(subject.name):
+        return True
+    # a plain lower-case description ("electricity bill") of a picture without a person
+    return not person and not any(capitalised(w) for w in WORD.findall(subject.name))
+
+
+def _searchable(subject: Subject, named: str, person: bool, printed: frozenset[str]) -> bool:
+    if subject.kind not in SEARCHABLE or not thing_shaped(subject.name):
+        return False
+    words = words_of(subject.name)
+    if set(words_of(named)) & set(words):
+        return False  # the offered name is never searched
+    # with a person in the picture: only thing words and the picture's own words
+    return not person or all(is_thing_word(w) or w in NOT_NAME or w in printed for w in words)
 
 
 # ---- the verdict -----------------------------------------------------------------------------
-def _searchable(subject: Subject, named: str) -> bool:
-    if subject.kind not in SEARCHABLE or not thing_shaped(subject.name):
-        return False
-    return not (
-        set(_words(named)) & set(_words(subject.name))
-    )  # the offered name is never searched
-
-
 def _unguarded(seen: Seen) -> Verdict:
     """The negative control: what the look wrote, taken at its word."""
     return Verdict(
@@ -347,33 +230,53 @@ def _unguarded(seen: Seen) -> Verdict:
         queries=seen.subjects[:MAX_QUERIES],
         named=seen.named_in_text,
         withheld=0,
+        caption="",
     )
+
+
+def is_person_picture(seen: Seen) -> bool:
+    """The look's flag, or its own words about the picture are about a person."""
+    return (
+        seen.has_person
+        or person_shaped(seen.scene)
+        or any(person_shaped(s.name) for s in seen.subjects)
+    )
+
+
+def _scene(seen: Seen, person: bool, shown: tuple[Subject, ...], banned: list[str]) -> str:
+    allowed = word_set([*seen.text, *(s.name for s in shown if thing_shaped(s.name))])
+    scene = vet_scene(seen.scene, allowed, banned)
+    if not person:
+        return scene
+    return screen_scene(scene, banned) if scene else PERSON_FALLBACK
 
 
 def judge(seen: Seen, *, enabled: bool = True) -> Verdict:
     """What may be said and searched for one picture. `enabled=False` is the eval's control."""
     if not enabled:
         return _unguarded(seen)
-    named = name_from_text(seen)
-    shown = tuple(s for s in seen.subjects if not seen.has_person or thing_shaped(s.name))
-    withheld = tuple(s for s in seen.subjects if s not in shown)
-    limit = MAX_QUERIES_WITH_PERSON if seen.has_person else MAX_QUERIES
+    person = is_person_picture(seen)
+    named, caption = caption_of(seen)
+    printed = word_set(seen.text)
+    shown = tuple(s for s in seen.subjects if _shown(s, person, printed))
+    withheld = [s.name for s in seen.subjects if s not in shown]
+    # a person picture's description never carries a name, not even a printed one (the offer
+    # does); any picture's never carries a claimed caption that is not there
+    banned = withheld + ([seen.named_in_text] if person or not named else [])
     queries: list[Subject] = []
     for subject in shown:
-        if _searchable(subject, named) and subject not in queries:
+        if _searchable(subject, named, person, printed) and subject not in queries:
             queries.append(subject)
-    scene = seen.scene
-    if seen.has_person:
-        banned = [s.name for s in withheld] + [seen.named_in_text]
-        scene = screen_scene(scene, banned)
+    limit = MAX_QUERIES_WITH_PERSON if person else MAX_QUERIES
     return Verdict(
-        person=seen.has_person,
-        scene=scene,
+        person=person,
+        scene=_scene(seen, person, shown, banned),
         text=seen.text,
         subjects=shown,
         queries=tuple(queries[:limit]),
         named=named,
         withheld=len(withheld),
+        caption=caption,
     )
 
 
@@ -388,6 +291,8 @@ __all__ = [
     "Seen",
     "Subject",
     "Verdict",
+    "caption_of",
+    "is_person_picture",
     "judge",
     "name_from_text",
     "parse_seen",

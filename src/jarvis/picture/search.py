@@ -9,7 +9,10 @@
   for the picture, not for a search. It leaves one kind-only audit line, never the query.
 - **Private details never reach the vendor** (`web.guard.query_problem`), and a query is short.
 - **The same caps**: the per-message and hourly search caps and the month's allowance, counted
-  where `web_search` counts them (the conversation's ledger, `WebService`, `WebAllowance`).
+  where `web_search` counts them (the conversation's ledger, `WebService`, `WebAllowance`). A
+  research made outside a conversation (the console's press) counts against the picture's own
+  message (`message`), so presses on one message never search more than one message may.
+- **Its own deadline** (`SEARCH_TIMEOUT_S`): a vendor that hangs ends in plain words.
 - **Results are other people's words.** Only https pages are kept, numbered in the
   conversation's ledger when there is one (so a reply's [n] becomes a source chip exactly as for
   `web_search`). The model is never shown a link; the owner's console is.
@@ -20,7 +23,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
@@ -46,6 +51,8 @@ WEB_TOOL = "web_search"
 MAX_RESULTS = 3
 ASKED_RESULTS = 5  # asked of the vendor: some are dropped (not https, a person's profile)
 QUERY_MAX = 100
+SEARCH_TIMEOUT_S = 15.0
+MAX_MESSAGES = 64  # the messages whose console searches are counted (the oldest let go)
 TITLE_MAX = 160
 SNIPPET_MAX = 500
 WEB_OFF = "Web search isn't set up here, so I have no sources."
@@ -63,6 +70,7 @@ ABOUT_A_PERSON = (
     "People, with its check."
 )
 NOTHING_FOUND = "The search found nothing I could use."
+SEARCH_SLOW = "The web search took too long, so I have no sources. Try again in a minute."
 Status = Literal["found", "none", "off", "not_allowed", "limit", "refused", "failed", "person"]
 _PROFILE_PLATFORMS = frozenset({"linkedin", "x", "instagram", "facebook", "youtube"})
 _BIOGRAPHY = re.compile(
@@ -91,7 +99,7 @@ class Found:
 
 
 class Finder(Protocol):
-    async def find(self, uid: str, query: str) -> Found: ...
+    async def find(self, uid: str, query: str, *, message: str | None = None) -> Found: ...
 
 
 def about_a_person(hit: SearchHit) -> bool:
@@ -115,6 +123,7 @@ class WebFinder:
     ) -> None:
         self._web, self._gateway = web, gateway
         self._reads: tuple[int, BackgroundReads] | None = None
+        self._pressed: OrderedDict[tuple[str, str], int] = OrderedDict()
 
     def _governed(self, gateway: GatewayView) -> BackgroundReads:
         """One `BackgroundReads` per gateway object (it remembers what it already audited)."""
@@ -133,21 +142,35 @@ class WebFinder:
         words = {"ask_first": ASK_FIRST, "denied": NEVER}.get(verdict.reason, ROWS_UNREADABLE)
         return None, WEB_OFF if verdict.why == "unknown tool" else words
 
-    @staticmethod
-    def _capped(web: WebService, uid: str) -> str:
+    def _message_used(self, uid: str, message: str | None) -> int:
+        return self._pressed.get((uid, message), 0) if message is not None else 0
+
+    def _bump_message(self, uid: str, message: str | None) -> None:
+        if message is None:
+            return
+        key = (uid, message)
+        self._pressed[key] = self._pressed.pop(key, 0) + 1
+        while len(self._pressed) > MAX_MESSAGES:
+            self._pressed.popitem(last=False)
+
+    def _capped(self, web: WebService, uid: str, message: str | None) -> str:
         """Count this search against the message's and the hour's caps; the words when one is
-        hit ("" when it may go ahead)."""
+        hit ("" when it may go ahead). In a conversation its ledger counts; outside one (the
+        console's press) the picture's own message does."""
         conv = current_conversation()
-        if conv is not None and conv.used("search") >= MAX_SEARCHES_PER_TURN:
+        used = conv.used("search") if conv is not None else self._message_used(uid, message)
+        if used >= MAX_SEARCHES_PER_TURN:
             return TURN_LIMIT
         if web.searches_last_hour(uid) >= MAX_SEARCHES_PER_HOUR:
             return HOUR_LIMIT
         if conv is not None:
             conv.bump("search")
+        else:
+            self._bump_message(uid, message)
         web.count_search(uid)
         return ""
 
-    async def find(self, uid: str, query: str) -> Found:
+    async def find(self, uid: str, query: str, *, message: str | None = None) -> Found:
         web = self._web()
         if web is None:
             return Found("off", note=WEB_OFF)
@@ -157,13 +180,16 @@ class WebFinder:
         reads, why = await self._allowed(uid)
         if reads is None:
             return Found("off" if why == WEB_OFF else "not_allowed", note=why)
-        if capped := self._capped(web, uid):
+        if capped := self._capped(web, uid, message):
             return Found("limit", note=capped)
         try:
-            async with reads.reading(WEB_TOOL, job=JOB):
+            async with asyncio.timeout(SEARCH_TIMEOUT_S), reads.reading(WEB_TOOL, job=JOB):
                 hits = await WebSearcher(web).search(query, max_results=ASKED_RESULTS)
         except SearchFailed as exc:  # our own plain words (the month is used up, not available)
             return Found("failed", note=str(exc))
+        except TimeoutError:
+            log.warning("picture search timed out")
+            return Found("failed", note=SEARCH_SLOW)
         return _kept(hits)
 
 
@@ -196,6 +222,8 @@ __all__ = [
     "JOB",
     "MAX_RESULTS",
     "NEVER",
+    "SEARCH_SLOW",
+    "SEARCH_TIMEOUT_S",
     "WEB_OFF",
     "Finder",
     "Found",

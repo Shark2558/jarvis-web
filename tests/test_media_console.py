@@ -125,5 +125,6 @@ async def test_media_cards_skip_other_kinds_before_their_cap(client: AsyncClient
     """ChatResponse.cards also carries WhatsApp drafts (console-whatsapp.js): only places / route /
     videos count towards console-media.js's own cap, so drafts first can't crowd out a Maps card."""
     js = (await client.get("/static/console-media.js")).text
-    assert "const MEDIA_KINDS = new Set(['places', 'route', 'videos']);" in js
+    # R11.1 I1: + the "Look up" offer (drawn by console-people.js, shown under the reply here)
+    assert "const MEDIA_KINDS = new Set(['places', 'route', 'videos', 'people_offer']);" in js
     assert "MEDIA_KINDS.has(c.kind)" in js and "mine.slice(0, MAX_CARDS)" in js

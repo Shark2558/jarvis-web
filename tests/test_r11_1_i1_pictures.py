@@ -310,3 +310,32 @@ async def test_pictures_that_could_not_be_read_are_said_not_called_missing(
 
     assert r.json() == {"status": "unreadable", "message": PICTURES_UNREADABLE}
     assert PICTURES_UNREADABLE != NO_PICTURE and seeing.calls == []
+
+
+# ---- INTEGRATION-D 4.D: the "Look up" card is a reply card of its own ------------------------
+def test_the_look_up_card_is_a_reply_card_kind_and_the_console_draws_it() -> None:
+    import typing
+
+    from jarvis.core.models import ChatResponse
+    from jarvis.people.offer import kind_known
+    from jarvis.people.offer_card import PeopleOfferCard
+    from jarvis.tools import reply_cards
+
+    assert PeopleOfferCard in typing.get_args(reply_cards.AnyCard) and kind_known()
+    card = PeopleOfferCard(name="Lekha Examplekar", caption="MINISTER LEKHA", words="Offer.")
+    resp = ChatResponse.model_validate(
+        {
+            "session_id": "s",
+            "reply": "r",
+            "trace_id": "t",
+            "model": "m",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "cost_usd": 0.0,
+            "latency_ms": 1,
+            "turn_count": 1,
+            "cards": [card.model_dump()],
+        }
+    )
+    assert resp.cards == [card]  # the response's discriminated union takes it
+    media = (ROOT / "src/jarvis/api/static/console-media.js").read_text(encoding="utf-8")
+    assert "'people_offer'" in media and "window.JarvisPeople.offerCard(c)" in media

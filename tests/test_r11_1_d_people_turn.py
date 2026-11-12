@@ -8,6 +8,7 @@
 # made up; the public-figure check (people/gate.py) is untouched.
 from __future__ import annotations
 
+import typing
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -136,7 +137,13 @@ async def test_a_name_the_pictures_text_holds_is_only_offered(
     assert card.button == "Look up"
 
 
-async def test_until_the_card_kind_is_registered_the_offer_says_the_button_is_missing() -> None:
+async def test_until_the_card_kind_is_registered_the_offer_says_the_button_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # I1 registered the kind (reply_cards.AnyCard); the path where a reply cannot carry the card
+    # is kept honest by taking it out again here
+    known = tuple(c for c in typing.get_args(reply_cards.AnyCard) if c is not PeopleOfferCard)
+    monkeypatch.setattr(reply_cards, "AnyCard", typing.Union[known])  # noqa: UP007
     gw, searcher = _rig(picture=True, report=_report())
     cards: list[Any] = []
     with typed("who is this?"), collecting_cards(cards):

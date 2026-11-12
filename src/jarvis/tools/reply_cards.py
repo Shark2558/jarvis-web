@@ -42,6 +42,7 @@ from typing import Annotated, Final, Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from jarvis.people.offer_card import PeopleOfferCard
 from jarvis.whatsapp.draft import WhatsAppCard
 
 MAX_CARDS = 8  # Maps / YouTube cards per reply
@@ -184,7 +185,8 @@ class BatchCard(_Strict):
     retry: list[BatchItem] = Field(default_factory=list, max_length=100)
 
 
-AnyCard = PlacesCard | RouteCard | VideosCard | WhatsAppCard | UpiCard | BatchCard
+# R11.1 D21-D: + the "Look up" offer of a name the picture's own text holds (people/offer.py)
+AnyCard = PlacesCard | RouteCard | VideosCard | WhatsAppCard | UpiCard | BatchCard | PeopleOfferCard
 ReplyCard = Annotated[AnyCard, Field(discriminator="kind")]
 
 CARD_NOT_SHOWN: Final = (

@@ -35,7 +35,7 @@
   const MAPS_UNDER = new Set(['www.google.com', 'google.com']);
   const MAX_CARDS = 8, MAX_ITEMS = 20, TEXT_MAX = 300, PLACE_MAX = 200, MAX_URL = 2048;
   const MAPS_ATTR = 'Google Maps', YT_ATTR = 'YouTube';
-  const MEDIA_KINDS = new Set(['places', 'route', 'videos']);
+  const MEDIA_KINDS = new Set(['places', 'route', 'videos', 'people_offer']); // R11.1: + the Look up offer
   const REL = 'noopener noreferrer';
   const MODES = new Map([['drive', 'by car'], ['two_wheeler', 'by two-wheeler'], ['walk', 'on foot']]);
   const DOT = ' \u00b7 ', NONE = '\u2014';
@@ -156,6 +156,7 @@
       if (c.kind === 'places' && c.attribution === MAPS_ATTR) el = placesCard(c);
       else if (c.kind === 'route' && c.attribution === MAPS_ATTR) el = routeCard(c);
       else if (c.kind === 'videos' && c.attribution === YT_ATTR) el = videosCard(c);
+      else if (c.kind === 'people_offer' && window.JarvisPeople) el = window.JarvisPeople.offerCard(c);
       if (el) wrap.appendChild(el);
     });
     if (!wrap.childElementCount) return null;

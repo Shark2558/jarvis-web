@@ -10,8 +10,8 @@ check). The card shows the very caption line the name was read from, so he sees 
 from (a caption the look invented is still only an offer, and the check still decides).
 
 The card (`jarvis.people.offer_card.PeopleOfferCard`) is checked when made and is shown through
-`jarvis.tools.reply_cards.add_card` once that module lists the kind (I1 adds it to `AnyCard`; until
-then `show` says no and the result says the button is missing).
+`jarvis.tools.reply_cards.add_card` (I1 listed the kind in `AnyCard`; `show` still says no when a
+reply cannot carry it, and the result then says the button is missing).
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def kind_known() -> bool:
 def show(card: PeopleOfferCard) -> bool:
     """Show the card under this reply. False outside a reply, when the reply is full, or before
     the card kind is registered."""
-    return kind_known() and reply_cards.add_card(card)  # type: ignore[arg-type]
+    return kind_known() and reply_cards.add_card(card)
 
 
 def offered(offer: Offer) -> dict[str, Any]:

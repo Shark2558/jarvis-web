@@ -34,6 +34,9 @@ function detailOf(e) {
 }
 function say(kind, text) { noteEl.className = 'bnote' + (kind === 'bad' ? ' bad' : ''); noteEl.textContent = text || ''; }
 const paint = () => { goBtn.disabled = S.busy || !S.can; };
+// The console's rule for every panel script: no API call before sign-in. A call made at load is answered
+// 401, and the transport answers a 401 with the sign-in gate, which could land after he has signed in.
+const signedIn = () => { const c = window.JarvisConsole; return !!(c && typeof c.ready === 'function' && c.ready()); };
 
 // A source is shown as a link only when it is plain https with no login in it; its site is the link's own.
 function source(raw) {
@@ -87,7 +90,7 @@ function render(d) {
 }
 
 async function status() {
-  if (!goBtn) return;
+  if (!goBtn || !signedIn()) return;
   let why = '';
   try { const d = obj(await F.api('/v1/picture')); S.can = !d || d.can !== false; why = d && !S.can ? txt(d.why, 400) : ''; }
   catch (_) { S.can = true; }                       // can't tell: let him try, the answer will say why
@@ -120,7 +123,7 @@ function build() {
   box.append(head, intro, acts, noteEl, cardEl);
   const mode = root.querySelector('.pmode');
   if (mode) root.insertBefore(box, mode); else root.append(box);
-  status();
+  if (signedIn()) status();
 }
 
 if (F) {

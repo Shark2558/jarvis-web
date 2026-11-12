@@ -299,6 +299,32 @@ def test_a_token_being_read_says_checking_then_shows_its_figures_by_itself(
     c.close()
 
 
+# ---- the block keeps the console's rule: nothing is asked before sign-in --------------------------
+def test_before_sign_in_the_block_asks_the_server_nothing(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """A call made before sign-in is answered 401, and the console answers a 401 with the sign-in
+    gate: landing late, it would throw an owner who has just signed in back to the gate."""
+    c = Console(browser, server_url, token, DESKTOP)
+    asked: list[str] = []
+    c.page.on("request", lambda r: asked.append(r.url) if "/v1/picture" in r.url else None)
+    c.page.goto(server_url + "/")
+    c.page.locator("#tokIn").wait_for()
+    c.page.wait_for_timeout(1200)  # the R11.1 modules have loaded and built their blocks
+
+    assert c.page.locator("#look").count() == 1 and asked == [] and c.errors == []
+
+    c.page.locator("#tokIn").fill(token)
+    c.page.locator("#tokBtn").click()
+    c.page.locator("#welcome").wait_for()
+    c.page.wait_for_timeout(800)
+
+    assert len(asked) >= 1  # once he is in, the block asks whether a picture can be looked at
+    assert c.page.locator("#welcome").is_visible() and not c.page.locator("#tokIn").is_visible()
+    assert c.errors == [] and c.csp_violations() == []
+    c.close()
+
+
 # ---- O9: "Research the picture" in the People panel ----------------------------------------------
 NAME = "Lekha Examplekar"
 CAN = {"part": "look", "ready": "ready", "can": True, "why": ""}

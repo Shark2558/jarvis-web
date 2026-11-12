@@ -65,6 +65,19 @@ def test_the_block_says_what_it_does_not_do_and_only_offers_a_name() -> None:
     assert "F.api(" not in offer  # the offer itself looks nothing up: he presses Research
 
 
+def test_the_block_asks_the_server_nothing_before_sign_in() -> None:
+    """A call made before sign-in is answered 401, and the console's transport answers a 401 by
+    showing the sign-in gate: fired at load, it can land just after the owner has signed in and
+    throw him back to the gate. So the status is read only once `JarvisConsole.ready()` says he
+    is in, as every other panel script does."""
+    js = _src("console-r111-look.js")
+    assert "const signedIn = () =>" in js and "c.ready()" in js
+    assert "if (!goBtn || !signedIn()) return;" in js  # status() itself refuses, whoever calls it
+    build = js.split("function build()", 1)[1].split("\nif (F) {", 1)[0]
+    assert "status()" not in build.replace("if (signedIn()) status();", "")
+    assert "document.addEventListener('jarvis:ready', status);" in js
+
+
 def test_the_stylesheets_only_place_things() -> None:
     """plan D0: no new colours, fonts, radii or shadows; tokens and existing components only."""
     for name, limit in (("console-r111-look.css", 150), ("console-people.css", 60)):

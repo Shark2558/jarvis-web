@@ -308,6 +308,71 @@ async def test_a_retry_with_a_guest_or_a_bad_batch_is_refused(site: App) -> None
     assert guest.status_code == 422 and await site.gw.pending() == []
 
 
+async def test_without_the_google_link_a_press_says_so(site: App) -> None:
+    made = await site.batch(3, series=False)
+    site.app.state.google = None  # the link was removed
+    event = {**weekday_sessions(1)[0], "n": 1}
+    for path, body in (
+        (f"/v1/series/batches/{made['batch']}/undo", {}),
+        ("/v1/series/batches/retry", {"batch": made["batch"], "events": [event]}),
+    ):
+        r = await site.c.post(path, json=body)
+        assert r.status_code == 409 and r.json()["error"] == "not_linked", r.text
+        assert r.json()["detail"] == (
+            "Google is not linked, Sir. Link it in Integrations, then ask again."
+        )
+    assert await site.gw.pending() == []
+
+
+async def test_a_guard_that_refuses_the_approval_stops_the_press_and_leaves_no_card(
+    site: App,
+) -> None:
+    made = await site.batch(3, series=False)
+
+    class Refuses:  # as the passkey rule would for a card that can't be undone
+        async def check_approval(self, uid: str, action: Any, proof: Any) -> str | None:
+            assert proof is None  # the press presents no proof of its own
+            raise PermissionError("a passkey is needed")
+
+    site.gw.approval_guard = Refuses()
+    r = await site.c.post(f"/v1/series/batches/{made['batch']}/undo", json={})
+    assert r.status_code == 409 and r.json()["error"] == "not_done"
+    assert "passkey" not in r.text  # the guard's words are not the route's to repeat
+    assert len(site.fake.live()) == 3 and await site.gw.pending() == []
+
+
+async def test_ask_first_on_the_plans_row_turns_done_into_a_card_he_can_approve(
+    site: App,
+) -> None:
+    await site.batch(5)
+    site.clock.at = AFTER_1
+    site.gw.policy = Policy([PolicyRule(tool_pattern="series_*", effect=Effect.ASK)])
+    r = await site.c.post("/v1/series/answer", json={"answer": "done"})
+    assert r.status_code == 200 and r.json()["pending"] is True
+    sid = r.json()["session_id"]
+    [card] = await site.gw.pending()  # one card, in a real conversation (not the press's own)
+    assert card.tool == "series_checkin" and card.scope == f"{OWNER}:{sid}"
+    assert (await site.store.get(sid)) is not None
+    assert (await site.c.get("/v1/series")).json()["waiting"] != []  # nothing marked yet
+    ok = await site.c.post(f"/v1/approvals/{card.id}/approve", json={"session_id": sid})
+    assert ok.status_code == 200, ok.text
+    assert (await site.c.get("/v1/series")).json()["waiting"] == []
+
+
+async def test_plans_that_cannot_be_read_say_so_and_are_left_alone(site: App) -> None:
+    await site.batch(3)
+    docs = site.app.state.r111_parts["plan"].services["series"].store._docs  # noqa: SLF001
+    path = next(k for k in docs._data if "series/" in k)  # noqa: SLF001 - the fake's own store
+    broken = {"plans": "not a list"}
+    docs._data[path] = broken  # noqa: SLF001
+    view = await site.c.get("/v1/series")
+    assert view.status_code == 200 and view.json()["plans"] == []
+    assert view.json()["detail"] == "Your plans can't be read just now, Sir."
+    r = await site.c.post("/v1/series/answer", json={"answer": "done"})
+    assert r.status_code == 200 and r.json()["refused"] is True
+    assert docs._data[path] == broken  # noqa: SLF001 - never overwritten
+
+
 # ---- limits and off ----------------------------------------------------------------------------
 async def test_too_many_changes_are_slowed_down(site: App) -> None:
     codes = [

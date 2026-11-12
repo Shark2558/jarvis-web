@@ -442,3 +442,55 @@ async def test_an_answer_works_with_no_model_at_all(rig: PlanRig) -> None:
     skipped = await run_no_ai(rig.gw, "session skipped", AFTER_7, scope=f"{UID}:s", extra=(route,))
     assert "marked skipped" in skipped.reply and "approval" in skipped.reply
     assert len(await rig.gw.pending()) == 1 and rig.fake.sent("PATCH") == []
+
+
+# ---- the brief's line, privacy, housekeeping ----------------------------------------------------
+async def test_the_morning_brief_asks_again_in_one_line_never_with_a_title(rig: PlanRig) -> None:
+    from jarvis.helpers.ports import BriefContributor
+
+    line_of: BriefContributor = rig.part.services["brief"]
+    day = AFTER_7.date()
+    assert await line_of.lines(UID, IST, day) == []  # nothing followed: no line
+    await followed(rig, 60)
+    assert await line_of.lines(UID, IST, day) == []  # nothing has ended yet
+    rig.clock.at = AFTER_7  # seven sessions ended, none answered
+    assert await line_of.lines(UID, IST, day) == [
+        "7 planned sessions have no check-in: say 'session done' or 'session skipped'."
+    ]
+    for n in range(1, 7):
+        await rig.run("series_checkin", {"answer": "done", "session": n})
+    [one] = await line_of.lines(UID, IST, day)
+    assert one.startswith("1 planned session has no check-in") and "Topic" not in one
+    assert line_of.name == "plans"
+
+
+async def test_the_privacy_row_shows_exports_and_deletes_the_plans_only(rig: PlanRig) -> None:
+    [row] = rig.part.privacy
+    empty = await row.describe(UID)
+    assert (empty.id, empty.section, empty.count, empty.delete) == ("series", "Helpers", 0, "none")
+    await followed(rig, 3)
+    rig.clock.at = datetime(2026, 11, 16, 20, 20, tzinfo=IST)
+    await rig.part.clock_jobs[0].run([UID])  # one check-in question went out
+    seen = await row.describe(UID)
+    assert (seen.count, seen.unit, seen.delete, seen.export) == (1, "plans", "confirm", True)
+    assert seen.rev != empty.rev and "stay in your Google Calendar" in seen.note
+    out = await row.export(UID)
+    [plan] = out["plans"]
+    assert plan["name"] == "CCA" and len(plan["sessions"]) == 3
+    assert "Google Calendar" in out["never_kept"]
+    assert await row.delete(UID) == 1
+    assert (await rig.svc.book(UID)).plans == [] and (await row.describe(UID)).count == 0
+    left = [k for k in rig.docs._data if "series" in k]  # noqa: SLF001 - the fake's own store
+    assert left == []  # the plan and the record of what was asked: both gone
+    assert len(rig.fake.live()) == 3  # the calendar is his: untouched
+
+
+async def test_old_check_in_records_are_swept_after_sixty_days(rig: PlanRig) -> None:
+    await followed(rig, 2)
+    rig.clock.at = datetime(2026, 11, 16, 20, 20, tzinfo=IST)
+    job = rig.part.clock_jobs[0]
+    assert (await job.run([UID]))["asked"] == 1
+    store = rig.svc.store
+    assert await store.sweep(UID, rig.clock.at + timedelta(days=59)) == 0
+    assert await store.sweep(UID, rig.clock.at + timedelta(days=61)) == 1
+    assert await store.sweep(UID, rig.clock.at + timedelta(days=61)) == 0

@@ -15,7 +15,8 @@ O2b  "skipped" on session 7 of 60 moves 54, the count stays 60, a busy evening i
      nothing moves before the approval; the check-in is sent once, held at night, and an answer
      works with no model at all.
 O12  unread mail in Updates and Promotions is counted, the count is the INBOX label's, a
-     one-time code is withheld, and "Never" on the mail row means no read.
+     one-time code is withheld, and "Never" on the mail row means no read: for the tool and
+     for the morning brief's own background read.
 
 Controls (each must make its own cases fail, or this part reports that its control is too weak):
   filler      the old line restored: `reply = completion.text or FILLER`, no retry
@@ -29,7 +30,7 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -41,16 +42,19 @@ from r11_1_fakes_a import (
     Said,
     ScriptedBrain,
     call,
+    connector,
     followed,
     letter,
     plan_rig,
     weekday_sessions,
 )
 
+from jarvis.brief.collect import Collector
 from jarvis.config import Settings
 from jarvis.core import brain as brain_module
 from jarvis.core import finish
 from jarvis.core.brain import Brain
+from jarvis.core.guardrails import ConfirmationGate
 from jarvis.core.models import ChatRequest, Session, Turn
 from jarvis.documents.service import DocumentService
 from jarvis.documents.store import AttachmentStore
@@ -63,9 +67,12 @@ from jarvis.series.phrases import route
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools import calendar_batch as cb
 from jarvis.tools import gmail_digest as gd
-from jarvis.tools.gateway import GatewayOutcome
+from jarvis.tools.audit import AuditLog
+from jarvis.tools.background import BackgroundReads
+from jarvis.tools.gateway import Gateway, GatewayOutcome
 from jarvis.tools.google_calendar import calendar_tools
-from jarvis.tools.policy import Effect, PolicyRule
+from jarvis.tools.policy import Effect, Policy, PolicyRule
+from jarvis.tools.registry import ToolRegistry
 from jarvis.tools.taint import context_trust
 
 PART = "plan"
@@ -74,6 +81,7 @@ Case = Callable[[], Awaitable[list[str]]]
 IST = ZoneInfo("Asia/Kolkata")
 T0 = datetime(2026, 11, 12, 9, 0, tzinfo=IST)
 AFTER_7 = datetime(2026, 11, 24, 20, 20, tzinfo=IST)  # twenty minutes after session 7
+DAY = date(2026, 11, 12)
 TIERS = {t: f"mock-{t.value}" for t in ModelTier}
 OLD_FILLER = "I have nothing to add, Sir."
 ASK = "add these to my calendar"
@@ -500,6 +508,40 @@ async def _o12_never_means_no_read() -> list[str]:
     )
 
 
+async def _o12_brief_whole_inbox() -> list[str]:
+    fake = PlanGoogle(mails=_inbox(), unread=132)
+    got = await Collector(await connector(fake), None).collect(UID, IST, DAY)
+    subjects = [i.subject for i in got.data.inbox.items]
+    seen = [*subjects, *got.snippets]
+    return (
+        _check(got.data.inbox.total == 132, f"the brief says {got.data.inbox.total} unread")
+        + _check("Your bill is ready" in subjects, "mail in Updates is not on the brief")
+        + _check("50% off today" not in subjects, "a promotion is listed on the brief")
+        + _check(not any(CODE in x for x in seen), "the code is on the brief")
+    )
+
+
+class _Never:
+    async def rules_for(self, user_id: str) -> list[PolicyRule]:
+        del user_id
+        return [PolicyRule(tool_pattern="gmail_*", effect=Effect.DENY, source="owner")]
+
+
+async def _o12_brief_never() -> list[str]:
+    fake = PlanGoogle(mails=_inbox(), unread=132)
+    conn = await connector(fake)
+    reg = ToolRegistry()
+    for t in gd.inbox_tools(lambda: conn, max_reads=30):
+        reg.register(t)
+    gw = Gateway(
+        registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog(), rules=_Never()
+    )
+    got = await Collector(conn, None, reads=BackgroundReads.of(gw)).collect(UID, IST, DAY)
+    return _check(fake.gmail_reads() == [], "the brief read mail on a Never row") + _check(
+        got.data.sections_status.inbox == "unavailable", "the brief does not say it was not read"
+    )
+
+
 CASES: dict[str, Case] = {
     "o1-empty-answer-is-honest": _o1_empty_answer,
     "o1-cut-off-retried-once-and-paid": _o1_cut_off_then_words,
@@ -523,6 +565,8 @@ CASES: dict[str, Case] = {
     "o12-count-is-the-label": _o12_count_is_the_label,
     "o12-code-withheld": _o12_code_withheld,
     "o12-never-means-no-read": _o12_never_means_no_read,
+    "o12-brief-counts-the-whole-inbox": _o12_brief_whole_inbox,
+    "o12-brief-obeys-the-mail-row": _o12_brief_never,
 }
 
 

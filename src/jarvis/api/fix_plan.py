@@ -29,7 +29,8 @@ POST /v1/series/batches/{id}/undo   The owner's own "Undo all" press (D21-A).
                                     asked to remove the same batch is then withdrawn.
 
 404 {error: "plans_off"} when the part, the gateway or the plans are off; 403 not_allowed (his
-permission row); 409 not_done; 422 invalid; 429 rate_limited. Words in `detail` are JARVIS's own.
+permission row); 409 not_done / not_linked (Google is not linked); 422 invalid; 429 rate_limited.
+Words in `detail` are JARVIS's own.
 `session_id` names the open conversation; one that is gone or not his is never used (a new one
 of his own is made when a card needs it).
 """
@@ -54,6 +55,7 @@ from jarvis.fixes.ports import NOT_BUILT, ROUTE_PREFIX, FixPart, PartName
 from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
 from jarvis.series import cards
+from jarvis.series.batch import NOT_LINKED
 from jarvis.series.part import ENSURE, SERVICE
 from jarvis.series.service import SeriesService
 from jarvis.series.store import PlansUnreadable
@@ -172,10 +174,15 @@ def _no(message: str) -> dict[str, Any]:
 
 
 def _refusal(res: GatewayResult) -> JSONResponse:
+    """A call that did not run, in JARVIS's own words (the gateway's error text is never sent:
+    it may carry a connector's message)."""
     if res.outcome is GatewayOutcome.DENIED:
         return _error(403, "not_allowed", NOT_ALLOWED)
-    if "no events of that batch" in (res.error or ""):
+    why = res.error or ""
+    if "no events of that batch" in why:
         return _error(409, "not_done", GONE)
+    if "Google is not linked" in why or "GoogleNotConnected" in why:
+        return _error(409, "not_linked", NOT_LINKED)
     log.warning("a plan action was not done", extra={"outcome": res.outcome.value})
     return _error(409, "not_done", NOT_DONE)
 

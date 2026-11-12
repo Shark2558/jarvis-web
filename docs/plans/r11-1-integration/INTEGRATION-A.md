@@ -1,4 +1,4 @@
-Version v11.1.1 · 12 Nov 2026, 08:58 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.1 · 12 Nov 2026, 09:25 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 Part A · Brain and calendar — integration note for I1
 
@@ -88,11 +88,12 @@ mypy src                                                                    # th
 python scripts/arch_coverage.py && python scripts/check_doc_versions.py     # OK; all documents versioned
 ```
 
-The whole unit suite was run once on this branch (`pytest tests`): 12,060 passed, 112 skipped, 7
-failed, 5 errors. One failure was Part A's and is fixed (a server without Google still offered the
-batch and inbox tools: `tests/test_web_auth.py`, now 21 passed). Two are R11 wiring assertions that
-the plan's clock job changes by design (§3.1b). The other four failures and the five errors are
-there on `r11-1-i0` already (§3.11; checked on an export of 9250be1).
+The whole unit suite on the final code (`pytest tests`): 12,063 passed, 112 skipped, 6 failed, 5
+errors. Two failures are R11 wiring assertions that the plan's clock job changes by design
+(§3.1b, with the checked diff). The other four failures and the five errors are there on
+`r11-1-i0` already (§3.11; checked on an export of 9250be1). An earlier run of the suite found
+one failure that was Part A's and is fixed: a server without Google still offered the batch and
+inbox tools (`tests/test_web_auth.py`, now 21 passed).
 
 The eval's four controls, each of which must fail a case of its own observation (else the part
 reports "too weak" and the suite does not count as failed):
@@ -376,4 +377,4 @@ events" for 4 of 5).
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v11.1.1 | 12 Nov 2026, 08:58 IST | R11.1 | First edition: Part A built (O1, O2, O2b, O12, the console pieces, the eval with four controls), how to check it, Needs I1, owner checks, departures, what is not verified live | 🛠 Mark XV |
+| v11.1.1 | 12 Nov 2026, 09:25 IST | R11.1 | First edition: Part A built (O1, O2, O2b, O12, the console pieces, the eval with four controls), how to check it, Needs I1, owner checks, departures, what is not verified live | 🛠 Mark XV |

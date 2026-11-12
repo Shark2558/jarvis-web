@@ -78,9 +78,10 @@ ACTION_VERBS: tuple[str, ...] = tuple(
     "check clear close compose confirm connect control copy create decline delete deny deposit "
     "detach dial disable disarm discard disconnect dismiss done download draft edit email empty "
     "enable erase export find forget forward get give grant hide import install invite link "
-    "list lend lock log look mail mark message move mute note notify open order pause pay phone "
-    "ping play post prepare print publish put read record refund reject remind remove rename "
-    "renew reply research reset restore resume return revoke ring run save schedule search sell "
+    "list lend lock log look mail mark message move mute name note notify open order pause pay "
+    "phone ping play post prepare print publish put read record refund reject remind remove "
+    "rename renew reply reschedule research reset restore resume return revoke ring run save "
+    "schedule search sell "
     "send set share show sign snooze start stop submit subscribe suggest switch sync take tell "
     "text track transfer trash turn undo unblock unhide uninstall unlink unlock unmute "
     "unsubscribe update upload wipe withdraw write".split()

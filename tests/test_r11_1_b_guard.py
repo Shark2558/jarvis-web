@@ -74,7 +74,7 @@ async def test_every_gateway_tool_verb_is_an_action_word(settings: Settings) -> 
     assert len(tools) > 20
     unknown = {
         token
-        for name in tools
+        for name in (*tools, *OTHER_PARTS_TOOLS)
         for token in name.split("_")
         if token not in ACTION_WORDS and token not in TOOL_NOUNS
     }
@@ -84,12 +84,19 @@ async def test_every_gateway_tool_verb_is_an_action_word(settings: Settings) -> 
     assert {"sent", "paid", "deleted", "sending", "cancelled"} <= ACTION_WORDS
 
 
+# the R11.1 tools Parts A, C and D register (on their own branches, so not built here yet)
+OTHER_PARTS_TOOLS = (
+    *("calendar_create_events", "calendar_undo_events", "calendar_free_slots", "series_list"),
+    *("series_reschedule", "gmail_inbox_summary", "faces_groups", "faces_group_name"),
+    *("faces_group_forget", "photos_import_status", "picture_research"),
+)
 TOOL_NOUNS = frozenset(
     "activity bill birthdays breach calendar checkin chore contacts disaster doc focus freetime "
     "key kitchen maint memory month now nudge nutrition of pantry payee pending recipe reminder "
     "settings spend standup starters status systems tasks vitals water weather whatsapp event "
     "events gmail inbox summary series picture faces face group groups photos home task deleted "
-    "people profile notes vault things drive maps youtube web news brief camera".split()
+    "people profile notes vault things drive maps youtube web news brief camera free slots "
+    "blocks".split()
 )
 
 

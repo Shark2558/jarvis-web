@@ -7,8 +7,32 @@ import base64
 import math
 import re
 import struct
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
+import home_fakes
+import httpx
+from faces_fakes import FakeAudit
+from fastapi import FastAPI
+
+from jarvis.api.home import install_home
+from jarvis.faces.service import FacesService
+from jarvis.faces.store import FacesStore
+from jarvis.home.client import HomeClient
+from jarvis.home.heartbeat import HeartbeatHandler
+from jarvis.home.link import LinkService
+from jarvis.home.store import HomeStore
+from jarvis.home.webhook import HomeWebhook
+from jarvis.homebridge.app import Bridge, create_bridge
+from jarvis.homebridge.config import BridgeConfig
+from jarvis.homebridge.face_groups import FaceGroupsPlugin
 from jarvis.homebridge.face_types import DIM, SeenFace
+from jarvis.homebridge.faces import FacesPlugin
+from jarvis.homebridge.plugins import BridgeContext
+from jarvis.keyring import Keyring
+from jarvis.storage.docs import MemoryDocs
 
 A = "fp_3a9c12ab34cd"
 B = "fp_000000000001"
@@ -133,3 +157,135 @@ def leaks(blob: bytes | str) -> list[str]:
     if EMBEDDING.search(text):
         found.append("embedding")
     return found
+
+
+# ---- a cloud and a home bridge wired together in process (as tests/home_fakes.py does), with the
+# faces and face-groups plugins, a scripted engine and a tap on everything that crosses ----------
+
+
+class Tap(httpx.AsyncBaseTransport):
+    """Records the bodies that cross a transport: `sent` (requests) and `got` (answers)."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
+        self._inner = inner
+        self.sent: list[bytes] = []
+        self.got: list[bytes] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.sent.append(await request.aread())
+        response = await self._inner.handle_async_request(request)
+        body = await response.aread()
+        self.got.append(body)
+        return httpx.Response(response.status_code, headers=response.headers, content=body)
+
+
+@dataclass
+class Home:
+    """`down` taps cloud -> laptop calls (its `got` is what the laptop ANSWERED); `up` taps the
+    laptop's webhook posts (its `sent` is what the laptop SENT). Together they are everything
+    the cloud receives from the laptop."""
+
+    clock: Any
+    docs: MemoryDocs
+    store: HomeStore
+    notes: Any
+    bridge: Bridge
+    client: HomeClient
+    webhook: HomeWebhook
+    engine: ScriptedEngine
+    lib: FakeLib
+    down: Tap
+    up: Tap
+    link: LinkService
+    cloud_app: FastAPI
+    faces: FacesService  # the cloud's registry: names and consent, never a picture
+    audit: FakeAudit
+    online: bool = True
+
+    @property
+    def groups(self) -> Any:
+        return next(p for p in self.bridge.plugins if p.name == "facegroups")
+
+    @property
+    def faces_plugin(self) -> Any:
+        return next(p for p in self.bridge.plugins if p.name == "faces")
+
+    async def link_up(self) -> str:
+        code = (await self.link.code(home_fakes.UID)).code
+        return str(await self.bridge.link.link(code, home_fakes.URL, bytes(range(40, 72))))
+
+    def received_by_the_cloud(self) -> bytes:
+        return b"\n".join([*self.down.got, *self.up.sent])
+
+    async def beat(self) -> bool:
+        assert self.bridge.heartbeat is not None
+        return bool(await self.bridge.heartbeat.beat())
+
+    async def aclose(self) -> None:
+        await self.bridge.link.aclose()
+        await self.bridge.ha.aclose()
+
+
+class _Sleepy(httpx.AsyncBaseTransport):
+    """The laptop asleep: every call fails to connect while `home.online` is False."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport, home: dict[str, Any]) -> None:
+        self._inner, self._home = inner, home
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if not self._home["h"].online:
+            raise httpx.ConnectError("asleep")
+        return await self._inner.handle_async_request(request)
+
+
+def build_home(tmp: Path, *, env: dict[str, str] | None = None) -> Home:
+    """The cloud's home doors, its Faces registry (acks, heartbeats and the consent state ride
+    the real webhook) and the real bridge app with the faces and face-groups plugins."""
+    clock = home_fakes.Clock()
+    docs = MemoryDocs()
+    ring = Keyring(home_fakes.ROOT)
+    store = HomeStore(docs, ring, clock=clock)
+    notes = home_fakes.Notes()
+    app = FastAPI()
+    install_home(app)
+    up = Tap(httpx.ASGITransport(app=app))
+    cfg = BridgeConfig(jarvis_url="https://cloud.test", data_dir=tmp / "data")
+    engine, lib = ScriptedEngine(), FakeLib()
+    (tmp / "att").mkdir(exist_ok=True)
+
+    def faces_plugin(ctx: BridgeContext) -> FacesPlugin:
+        return FacesPlugin(ctx, lib)
+
+    def face_groups_plugin(ctx: BridgeContext) -> FaceGroupsPlugin:
+        return FaceGroupsPlugin(ctx, engine=engine)
+
+    bridge = create_bridge(
+        cfg,
+        (faces_plugin, face_groups_plugin),
+        clock=clock,
+        http=httpx.AsyncClient(transport=up, base_url="https://cloud.test"),
+        ha_http=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(404))),
+        env={"FACES_ATTEMPTS_DIR": str(tmp / "att"), **(env or {})},
+    )
+    holder: dict[str, Any] = {}
+    down = Tap(_Sleepy(httpx.ASGITransport(app=bridge.app), holder))
+    client = HomeClient(store, clock=clock, resolver=home_fakes.public_resolver, inner=down)
+    link = LinkService(store, client, clock=clock, resolver=home_fakes.public_resolver)
+    audit = FakeAudit()
+    faces = FacesService(
+        FacesStore(docs, ring),
+        client,
+        audit=audit,
+        clock=lambda: datetime.fromtimestamp(clock(), UTC),
+    )
+    handlers = [HeartbeatHandler(store, notes), home_fakes.CameraStandIn(), faces]
+    webhook = HomeWebhook(store, handlers, [faces], clock=clock, per_minute=600)
+    app.state.home_store = store
+    app.state.home_link = link
+    app.state.home_webhook = webhook
+    home = Home(
+        clock, docs, store, notes, bridge, client, webhook, engine, lib, down, up, link, app,
+        faces, audit,
+    )  # fmt: skip
+    holder["h"] = home
+    return home

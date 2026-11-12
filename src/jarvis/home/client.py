@@ -54,6 +54,12 @@ CODE_WORDS = {
     "not_exposed": "That device isn't shared with JARVIS.",
     "class_not_allowed": "That device can't be controlled that way.",
     "bad_action": "That device can't do that.",
+    # R11.1 O7: the laptop's face reader (photos and face groups)
+    "no_engine": "The face reader on your home laptop isn't ready yet: update the home kit.",
+    "bad_image": "Your home laptop couldn't read that picture.",
+    "no_consent": "Your home laptop has no consent on record for that person yet.",
+    "unknown_group": "Your home laptop no longer has that group of faces.",
+    "already_named": "That group of faces already belongs to someone else.",
 }
 BAD_ADDRESS = "The saved laptop address is no longer allowed. Link your laptop again."
 

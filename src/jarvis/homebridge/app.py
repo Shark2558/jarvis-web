@@ -35,7 +35,12 @@ from jarvis.home.ports import (
 )
 from jarvis.homebridge.auth import BridgeAuth
 from jarvis.homebridge.cloud import CloudLink
-from jarvis.homebridge.config import BRIDGE_VERSION, MAX_BODY_BYTES, BridgeConfig
+from jarvis.homebridge.config import (
+    BRIDGE_VERSION,
+    MAX_BODY_BYTES,
+    MAX_BODY_BYTES_BY_ROUTE,
+    BridgeConfig,
+)
 from jarvis.homebridge.devices import DeviceBridge
 from jarvis.homebridge.ha import HAClient
 from jarvis.homebridge.heartbeat import HeartbeatLoop
@@ -205,6 +210,7 @@ class Bridge:
             (r.method, r.path): r for p in self.plugins for r in p.routes()
         }
         self.supervisor = Supervisor()
+        self._large = asyncio.Lock()  # one large upload (a photo) is read at a time
         self.app = self._app()
 
     def _build(self, factories: Sequence[PluginFactory], ctx: BridgeContext) -> list[BridgePlugin]:
@@ -278,7 +284,20 @@ class Bridge:
             return _bare(404)
         raw_query = request.url.query
         target = path + (f"?{raw_query}" if raw_query else "")
-        body = await _read_capped(request)
+        limit = body_limit(method, path)
+        if not _declared_ok(request, limit):
+            return _bare(413)
+        if limit > MAX_BODY_BYTES:
+            # R11.1 O7: megabytes are read only for a caller whose header could be this home's
+            # (the signature itself is checked below, over the body), one upload at a time
+            if not self.auth.plausible(request.headers.get(signing.HEADER)):
+                return _bare(401)
+            if self._large.locked():
+                return _bare(503)
+            async with self._large:
+                body = await _read_capped(request, limit)
+        else:
+            body = await _read_capped(request, limit)
         if body is None:
             return _bare(413)
         try:
@@ -314,15 +333,24 @@ class Bridge:
         )
 
 
-async def _read_capped(request: Request) -> bytes | None:
+def body_limit(method: str, path: str) -> int:
+    """The most bytes the bridge reads on one route: 64 KB, except one photo (R11.1 O7)."""
+    return MAX_BODY_BYTES_BY_ROUTE.get((method, path), MAX_BODY_BYTES)
+
+
+def _declared_ok(request: Request, limit: int) -> bool:
     declared = request.headers.get("content-length")
-    if declared is not None and (not declared.isdigit() or int(declared) > MAX_BODY_BYTES):
+    return declared is None or (declared.isdigit() and int(declared) <= limit)
+
+
+async def _read_capped(request: Request, limit: int = MAX_BODY_BYTES) -> bytes | None:
+    if not _declared_ok(request, limit):
         return None
     chunks: list[bytes] = []
     size = 0
     async for chunk in request.stream():
         size += len(chunk)
-        if size > MAX_BODY_BYTES:
+        if size > limit:
             return None
         chunks.append(chunk)
     return b"".join(chunks)
@@ -332,4 +360,4 @@ def create_bridge(cfg: BridgeConfig, factories: Sequence[PluginFactory] = (), **
     return Bridge(cfg, factories, **kw)
 
 
-__all__ = ["Bridge", "CorePlugin", "Supervisor", "create_bridge"]
+__all__ = ["Bridge", "CorePlugin", "Supervisor", "body_limit", "create_bridge"]

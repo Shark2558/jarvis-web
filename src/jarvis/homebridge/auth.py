@@ -49,6 +49,20 @@ class BridgeAuth:
     def now(self) -> float:
         return self._clock() + self.offset_s
 
+    def plausible(self, header: str | None) -> bool:
+        """Before a LARGE body is read (R11.1 O7: one photo): the header has the right shape,
+        names this home and is fresh. It is not the signature check (that needs the body, and
+        `check` still runs on it); it only keeps a stranger from making the bridge buffer
+        megabytes."""
+        try:
+            signed = signing.parse(header)
+        except signing.SignatureError:
+            return False
+        linked = self._store.linked()
+        if linked is None or signed.home_id != linked.home_id:
+            return False
+        return abs(self.now() - signed.t) <= signing.MAX_SKEW_S and signed.t > self._floor
+
     def check(self, header: str | None, *, method: str, target: str, body: bytes) -> Verified:
         """Passes, or raises SignatureError (the caller answers a bare 401)."""
         signed = signing.parse(header)

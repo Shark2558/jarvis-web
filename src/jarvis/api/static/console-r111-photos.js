@@ -216,7 +216,7 @@ if (F) {
   function renderJob() {
     const d = J.data, el = J.el;
     if (!el) return;
-    const on = !!d && d.status !== 'no_session';
+    const on = !!d && d.status !== 'no_session' && d.status !== 'off'; // off: the Photos card says why
     el.host.hidden = !on;
     if (!on) return;
     const running = d.status === 'reading' || PAUSED.includes(d.status);

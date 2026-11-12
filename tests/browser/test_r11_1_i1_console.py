@@ -113,3 +113,27 @@ def test_the_look_up_card_shows_under_the_reply_and_researches_only_on_his_press
     assert asked == [{"name": NAME}]
     assert c.errors == [] and c.csp_violations() == []
     c.close()
+
+
+# ---- found by the full run: the "Used N memories" chip on a phone -----------------------------
+def test_on_a_phone_the_reply_s_memory_chip_is_a_44_px_target_like_the_undo_chip(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """The browser tests share one server; once an earlier test saved a memory, a real reply in
+    Part B's phone visual gate carried the "Used N memories" chip, 24 px high (the Undo chip in
+    the same row is 44 on a phone). Reproduced here with the reply's own field."""
+    from test_console import PHONE
+    from test_media import _json, _reply
+
+    c = Console(browser, server_url, token, PHONE)
+    reply = _reply("Noted, Sir.", [])
+    reply["memory_used"] = [{"id": "m_1", "text": "Prefers mornings for study"}]
+    _json(c.page, "**/v1/chat", reply)
+    c.open()
+    c.send("when do I like to study?")
+    chip = c.page.locator(".row.jarvis .meta .mchip").last
+    chip.wait_for()
+    box = chip.bounding_box()
+    assert box is not None and round(box["height"]) >= 44, box
+    assert c.errors == []
+    c.close()

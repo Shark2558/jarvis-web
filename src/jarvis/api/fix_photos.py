@@ -226,8 +226,8 @@ async def group_forget(
 @router.get("/import")
 async def import_progress(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
     photos = _photos(request)
-    if photos is None:
-        return _err(503, "unavailable", PHOTOS_OFF)
+    if photos is None:  # R11.1 I1: a read answers the state, as /groups does (no 503 to log)
+        return _reply({"status": "off", "available": False, "reason": PHOTOS_OFF})
     return _reply(_progress(await photos.progress(uid)))
 
 

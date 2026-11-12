@@ -512,7 +512,8 @@ def test_github_disconnect_is_a_two_step_confirm(browser: Any, server_url: str, 
     c.open_panel("connectors")
     c.page.get_by_role("button", name="Disconnect").first.wait_for()
     c.page.get_by_role("button", name="Disconnect").first.click()
-    confirm = c.page.locator("#p-connectors .confirm")
+    # the GitHub row's own confirm (since R11.1 the panel also holds the photo import's)
+    confirm = c.page.locator("#p-connectors .confirm[aria-label='Confirm disconnect']")
     confirm.wait_for()
     assert deletes == []  # the first click only asks
     confirm.get_by_role("button", name="Keep").click()

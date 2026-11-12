@@ -85,7 +85,12 @@ async def test_without_photos_on_this_server_the_part_says_why(
         ] == "off: needs Google sign-in, Faces and the home kit"
         body = (await w.get("/groups")).json()
         assert body["available"] is False and "home kit" in body["reason"] and body["groups"] == []
-        assert (await w.get("/import")).status_code == 503
+        # R11.1 I1: a read answers the state (the browser logs any 503 as a console error)
+        job = await w.get("/import")
+        assert job.status_code == 200 and job.json()["status"] == "off"
+        assert job.json()["available"] is False and "home kit" in job.json()["reason"]
+        r = await w.client.delete(BASE + "/import", headers=CSRF)
+        assert r.status_code == 503  # an action that cannot be done still says so
         r = await w.post("/groups/c_0123456789ab/name", consent())
         assert r.status_code == 503 and r.json()["error"] == "unavailable"
 

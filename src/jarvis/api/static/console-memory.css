@@ -112,5 +112,6 @@ html[data-surface="night"] .mbox.bad{background:color-mix(in srgb,#E5484D 12%,va
   .mrow .btn.bact,.macts .btn.bact,.mfact .confirm .btn{height:44px}
   .madd .bsel,.medit .bsel{height:44px}
   .minput{height:44px}
+  .meta .mchip{min-height:44px} /* R11.1 I1: "Used N memories", as the Undo chip beside it */
 }
 html[data-motion="calm"] .mta,html[data-motion="calm"] .minput,html[data-motion="calm"] .mib{transition-duration:.01s}

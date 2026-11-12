@@ -119,16 +119,26 @@ def fix_phrases(app: FastAPI) -> tuple[Any, ...]:
 
 
 def install_fix_phrases(app: FastAPI) -> None:
-    """Put the parts' phrases into the app's BrainMode once (a phrase already there is left).
-    A full phrasebook is logged and never fatal: the AI still answers those words."""
+    """Put the parts' phrases into the app's BrainMode once (a phrase already there is left),
+    ONE AT A TIME (code review L1): a phrase that does not fit is an error in the log, with its
+    name and how many were left, and never drops the others or stops the start. The AI still
+    answers those words; in No-AI mode that phrase is not understood."""
     mode = getattr(app.state, "brain_mode", None)
     if mode is None:
         return
     new = [r for r in fix_phrases(app) if r not in mode.phrases]
-    try:
-        mode.add_phrases(new)
-    except ValueError:
-        log.warning("the R11.1 phrases did not fit into No-AI mode", extra={"count": len(new)})
+    for n, router in enumerate(new, start=1):
+        try:
+            mode.add_phrases([router])
+        except ValueError as exc:
+            log.error(
+                "an R11.1 phrase did not fit into No-AI mode",
+                extra={
+                    "phrase": getattr(router, "__name__", type(router).__name__),
+                    "left": len(new) - n,
+                    "reason": str(exc),
+                },
+            )
 
 
 def fix_brief(app: FastAPI) -> tuple[Any, ...]:

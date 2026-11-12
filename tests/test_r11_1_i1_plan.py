@@ -49,6 +49,64 @@ async def test_the_plan_phrases_come_after_the_helpers_own(settings: Settings) -
         assert helpers and all(phrases.index(r) < phrases.index(route) for r in helpers)
 
 
+# ---- code review L1: one phrase that will not go in never drops the others ----------------------
+def _phrase(name: str) -> Any:
+    def router(text: str, now: Any) -> None:
+        return None
+
+    router.__name__ = router.__qualname__ = name
+    return router
+
+
+class _Book:
+    """A phrasebook that refuses `bad` (as a full one refuses: ValueError) and takes the rest."""
+
+    def __init__(self, bad: Any) -> None:
+        self.bad, self.phrases = bad, ()
+
+    def add_phrases(self, routers: Any) -> None:
+        if self.bad in routers:
+            raise ValueError("too many No-AI phrase routers")
+        self.phrases = (*self.phrases, *routers)
+
+
+def _app_with(mode: Any, *routers: Any) -> FastAPI:
+    from jarvis.fixes.ports import FixPart
+
+    app = FastAPI()
+    app.state.brain_mode = mode
+    app.state.r111_parts = {"plan": FixPart("plan", services={"phrases": routers}, ready="ready")}
+    return app
+
+
+def test_a_phrase_that_does_not_fit_is_logged_as_an_error_and_the_others_still_go_in(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from jarvis.api.r11_1_wiring import install_fix_phrases
+
+    first, bad, last = _phrase("session_done"), _phrase("session_moved"), _phrase("skipped")
+    book = _Book(bad)
+    caplog.set_level(logging.WARNING)
+    install_fix_phrases(_app_with(book, first, bad, last))
+    assert book.phrases == (first, last)
+    [record] = [r for r in caplog.records if "No-AI" in r.getMessage()]
+    assert record.levelno == logging.ERROR
+    assert getattr(record, "phrase", None) == "session_moved" and getattr(record, "left", 0) == 1
+
+
+def test_a_nearly_full_phrasebook_takes_as_many_as_fit(settings: Settings) -> None:
+    from jarvis.api.r11_1_wiring import install_fix_phrases
+    from jarvis.offline.mode import MAX_PHRASES, BrainMode
+
+    mode = BrainMode(settings)
+    mode.add_phrases([_phrase(f"other_{i}") for i in range(MAX_PHRASES - 1)])
+    one, two = _phrase("session_done"), _phrase("session_skipped")
+    install_fix_phrases(_app_with(mode, one, two))
+    assert mode.phrases[-1] is one and two not in mode.phrases
+
+
 class _Waiting:
     def __init__(self, n: int) -> None:
         self.n = n

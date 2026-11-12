@@ -121,9 +121,20 @@ class InboxItem(Frozen):
     when: str = Field(description="'07:42' or 'yesterday 21:10'")
 
 
+class InboxGroup(Frozen):
+    key: str
+    label: str
+    unread: int = 0
+
+
 class InboxSection(Frozen):
     total: int = 0
     items: tuple[InboxItem, ...] = ()
+    groups: tuple[InboxGroup, ...] = ()  # R11.1 D20: Gmail's own categories, counted
+    withheld: int = 0  # not listed: they look like a code or a bank message
+    exact: bool = True  # False: the INBOX label could not be read; `total` is "about"
+    failed: int = 0  # listed messages that could not be read just now ...
+    listed: int = 0  # ... of these
 
 
 class JarvisSection(Frozen):
@@ -420,6 +431,7 @@ __all__ = [
     "FamilyMemberDay",
     "FamilySection",
     "FreeBlock",
+    "InboxGroup",
     "InboxItem",
     "InboxSection",
     "InboxState",

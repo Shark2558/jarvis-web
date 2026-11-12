@@ -76,6 +76,7 @@ from jarvis.llm.pricing import cost_usd, is_priced
 from jarvis.llm.router import ModelTier
 from jarvis.logging import get_logger
 from jarvis.tools.audit import AuditTrail
+from jarvis.tools.background import BackgroundReads
 
 log = get_logger(__name__)
 T = TypeVar("T")
@@ -280,10 +281,13 @@ class BriefService:
         home_overnight: HomeOvernightBrief | None = None,
         vitals: VitalsSource | None = None,
         helpers: HelpersSource | None = None,
+        reads: BackgroundReads | None = None,
+        mail_max_reads: int = 30,
     ) -> None:
         self._store = store
         self._google = google
-        self._collector = Collector(google, approvals)
+        # R11.1 D20: the inbox read obeys the owner's "Search and read email" row (`reads`)
+        self._collector = Collector(google, approvals, reads=reads, max_reads=mail_max_reads)
         self._summarizer = summarizer or Summarizer(brains)
         self._audit = audit
         self._delivery = InboxDelivery(google, store, audit) if google is not None else None

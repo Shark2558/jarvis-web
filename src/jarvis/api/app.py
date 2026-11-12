@@ -127,6 +127,7 @@ from jarvis.storage.docs import Docs, MemoryDocs
 from jarvis.telegram.alerts import ALERT_TEXT
 from jarvis.telegram.rules import wrap_rules
 from jarvis.tools.audit import AuditLog, AuditTrail
+from jarvis.tools.background import BackgroundReads
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.r1_tools import build_family_service
 from jarvis.tools.setup import attach_activity, build_gateway
@@ -171,6 +172,9 @@ def build_brief_service(
         ai_daily_cap=s.brief_ai_daily_cap,
         retention_days=s.brief_retention_days,
         billing=getattr(app.state, "billing", None),
+        # R11.1 D20: the brief's inbox read obeys the "Search and read email" row
+        reads=BackgroundReads(lambda: getattr(app.state, "gateway", None), audit=audit),
+        mail_max_reads=s.mail_summary_max_reads,
         # R1 D: Deliveries and Family today (only with the Google link they read through)
         deliveries=DeliveriesBrief(PackageScanner(app.state.google))
         if getattr(app.state, "google", None) is not None

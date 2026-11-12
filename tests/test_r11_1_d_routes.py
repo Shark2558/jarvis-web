@@ -19,14 +19,14 @@ from r11_1_fakes_d import FakeSearchVendor, TurnPictures, picture, read_text
 
 import jarvis.picture.part as part_mod
 from jarvis.api import create_app
-from jarvis.api.fix_look import RESEARCH_PER_MINUTE
+from jarvis.api.fix_look import FAILED, RESEARCH_PER_MINUTE
 from jarvis.config import AuthMode, Settings
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.picture.eyes import BLIND, NO_AI
 from jarvis.picture.guard import NO_IDENTIFY
 from jarvis.picture.part import OFF as PART_OFF
-from jarvis.picture.research import NO_PICTURE, OFF
+from jarvis.picture.research import NO_PICTURE, OFF, PictureResearch
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.policy import Effect, Policy, PolicyRule
 from jarvis.web.allowance import WebAllowance
@@ -299,6 +299,33 @@ async def test_with_the_tools_switched_off_it_says_so(
 
     assert r.status_code == 503
     assert r.json() == {"error": "unavailable", "detail": "Tools are switched off on this server."}
+
+
+async def test_a_research_that_breaks_is_said_plainly_without_its_words(
+    settings: Settings, seeing: MockProvider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def broken(docs: object, uid: str, session_id: str) -> list[Any]:
+        raise RuntimeError("store said: internal detail 0xDEAD")
+
+    monkeypatch.setattr(part_mod, "turn_pictures", broken)
+    async with running(settings, seeing) as (_, client):
+        r = await client.post("/v1/picture/research", json={"session_id": SID})
+
+    assert r.status_code == 503 and r.headers["cache-control"] == "no-store"
+    assert r.json() == {"error": "unavailable", "detail": FAILED}
+    assert "0xDEAD" not in r.text and seeing.calls == []
+
+
+async def test_a_report_that_is_no_longer_kept_is_said_plainly(
+    settings: Settings, seeing: MockProvider, turn: TurnPictures, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    turn.attach(SID, picture("PARLE-G"), uid=UID)
+    seeing.script(_look())
+    monkeypatch.setattr(PictureResearch, "last", lambda self, uid, session_id: None)
+    async with running(settings, seeing) as (_, client):
+        r = await client.post("/v1/picture/research", json={"session_id": SID})
+
+    assert r.status_code == 503 and r.json() == {"error": "unavailable", "detail": FAILED}
 
 
 async def test_both_routes_need_the_owners_sign_in(settings: Settings) -> None:

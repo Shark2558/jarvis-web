@@ -115,6 +115,11 @@ New static file `src/jarvis/api/static/console-people.js` (the repo's static dir
 - "Open all profiles" does `window.open(url, '_blank', 'noopener,noreferrer')` once per URL, from the
   click; its host allow-list mirrors the server's exact-host rule. "Speak" uses the existing
   `JarvisVoice.speaker.say(...)` (`/v1/voice/speak`, metered there).
+  **Replaced in R11.1 (plan `docs/plans/r11-1-observations.md` D16):** a browser lets one click open
+  one tab, and `window.open` with `noopener` answers `null`, so "Open all" could neither open them all
+  nor count what it opened. Each profile is now a card with its own real link
+  (`<a target="_blank" rel="noopener noreferrer">`, same host allow-list) and "Open next" presses the
+  next unopened card's link, one tab a click. `window.open` is no longer called.
 - The badge and the switch text say plainly that No-AI covers the BRAIN only; speech is metered
   separately.
 

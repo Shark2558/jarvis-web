@@ -76,7 +76,7 @@ from jarvis.offline.no_ai import NoAIRunner
 from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
 from jarvis.tools.budget import turn_budget
-from jarvis.tools.calendar_batch import gathered
+from jarvis.tools.calendar_gather import gathered
 from jarvis.tools.gateway import Gateway, GatewayResult
 from jarvis.tools.reply_cards import AnyCard, collecting_cards
 from jarvis.tools.taint import context_trust, untrusted_seen

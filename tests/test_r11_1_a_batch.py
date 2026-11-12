@@ -23,6 +23,7 @@ from jarvis.series import batch as sb
 from jarvis.series.batch_tools import batch_tools
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools import calendar_batch as cb
+from jarvis.tools import calendar_gather as cg
 from jarvis.tools.audit import AuditLog
 from jarvis.tools.budget import turn_budget
 from jarvis.tools.calendar_cards import batch_card, undo_card
@@ -408,26 +409,26 @@ def _singles(n: int, **extra: Any) -> list[ToolCall]:
 
 def test_more_than_three_single_creates_become_one_batch_call(rig: Rig) -> None:
     calls = [call("calendar_list_events", 99, start="a", end="b"), *_singles(60)]
-    run, spread = cb.gathered(calls, rig.gw.registry, 100)
+    run, spread = cg.gathered(calls, rig.gw.registry, 100)
     assert [c.name for c in run] == ["calendar_list_events", cb.CREATE]
     assert run[1].id == calls[1].id and len(run[1].arguments["events"]) == 60
     read = GatewayResult(GatewayOutcome.EXECUTED, result={})
     card = GatewayResult(GatewayOutcome.AWAITING_CONFIRMATION)
     back = spread([read, card])
     assert len(back) == 61 and back[0] is read and back[1] is card
-    assert all(r.outcome is GatewayOutcome.DENIED and r.error == cb.MERGED for r in back[2:])
+    assert all(r.outcome is GatewayOutcome.DENIED and r.error == cg.MERGED for r in back[2:])
     assert all(not r.ran for r in back[2:])
 
 
 def test_three_singles_a_guest_or_a_bad_call_are_left_as_they_are(rig: Rig) -> None:
     three = _singles(3)
-    run, spread = cb.gathered(three, rig.gw.registry, 100)
+    run, spread = cg.gathered(three, rig.gw.registry, 100)
     assert run == three and spread([1, 2, 3]) == [1, 2, 3]  # type: ignore[list-item]
     mixed = _singles(4)
     mixed[0] = call(cb.SINGLE, 0, **{**sessions(1)[0], "attendees": ["a@example.com"]})
     mixed[1] = call(cb.SINGLE, 1, summary="no times")
-    assert cb.gathered(mixed, rig.gw.registry, 100)[0] == mixed  # only two could merge
-    many, _ = cb.gathered(_singles(7), rig.gw.registry, 3)  # more than a batch holds: batches
+    assert cg.gathered(mixed, rig.gw.registry, 100)[0] == mixed  # only two could merge
+    many, _ = cg.gathered(_singles(7), rig.gw.registry, 3)  # more than a batch holds: batches
     assert [len(c.arguments["events"]) for c in many] == [3, 3, 1]
 
 
@@ -546,7 +547,7 @@ def test_the_first_and_last_days_are_read_as_times_in_his_zone() -> None:
 def test_a_single_call_too_long_for_the_batch_is_refused_alone_and_the_rest_merge(rig: Rig) -> None:
     calls = _singles(5)
     calls[2] = call(cb.SINGLE, 2, **{**sessions(3)[2], "description": "x" * 3_000})
-    run, spread = cb.gathered(calls, rig.gw.registry, 100)
+    run, spread = cg.gathered(calls, rig.gw.registry, 100)
     assert [c.name for c in run] == [cb.CREATE]
     assert len(run[0].arguments["events"]) == 4  # the four good ones, on one card
     back = spread([GatewayResult(GatewayOutcome.AWAITING_CONFIRMATION)])
@@ -555,11 +556,11 @@ def test_a_single_call_too_long_for_the_batch_is_refused_alone_and_the_rest_merg
         back[2].error or ""
     )
     assert "Do not create it again" not in (back[2].error or "")
-    assert all(back[i].error == cb.MERGED for i in (1, 3, 4))
+    assert all(back[i].error == cg.MERGED for i in (1, 3, 4))
 
 
 def test_calls_gathered_into_a_batch_that_was_not_made_are_not_told_it_is_done(rig: Rig) -> None:
-    run, spread = cb.gathered(_singles(5), rig.gw.registry, 100)
+    run, spread = cg.gathered(_singles(5), rig.gw.registry, 100)
     failed = GatewayResult(GatewayOutcome.ERROR, error="could not look it up first")
     back = spread([failed])
     assert back[0] is failed

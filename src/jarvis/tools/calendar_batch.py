@@ -15,10 +15,8 @@
                      the owner changed since no longer matches it (`changed_by_owner`)
   `batch_id`: the same owner and the same list are the same batch, so a run repeated finds its
   events by the marker and creates nothing twice.
-- `gathered`: more than three single `calendar_create_event` calls (no guests) in one round
-  become ONE batch call before the gateway sees them, so a model that ignores the batch tool
-  still ends in one card that lists everything (O2's root cause: five cards a message, six
-  rounds). The Brain calls it around each round (`core.brain._run_calls`).
+- `item_problem`: why one event can't be an item of a batch (the batch's own limits). Gathering
+  many single calls into one batch is `jarvis.tools.calendar_gather`.
 """
 
 from __future__ import annotations
@@ -32,19 +30,14 @@ from datetime import datetime
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
-from jarvis.llm.base import ToolCall
 from jarvis.logging import get_logger
-from jarvis.tools.base import Tool
 from jarvis.tools.calendar_alerts import alert_minutes
 from jarvis.tools.card import one_line
-from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.tools.google_calendar import parse_window
-from jarvis.tools.registry import ToolRegistry
 
 log = get_logger(__name__)
 
 CREATE, UNDO, SINGLE = "calendar_create_events", "calendar_undo_events", "calendar_create_event"
-MANY = 3  # more single creates than this in one round become one batch card
 MAX_NUMBER = 999
 BATCH_KEY, BATCH_ID_KEY, SIG_KEY = "jarvisBatch", "jarvisBatchId", "jarvisBatchSig"
 PREFIX_MAX, NAME_MAX = 40, 60
@@ -59,16 +52,6 @@ GUESTS = (
     "an event with guests can't go in a batch: create it on its own with calendar_create_event "
     "(the owner approves the invitations)"
 )
-MERGED = (
-    "Not run on its own: more than three events were asked for at once, so this one is on the "
-    "single approval card for all of them (see the first result). Do not create it again. Next "
-    "time put every event into one calendar_create_events call."
-)
-NOT_MADE = (
-    "Not run: it was gathered with other events into one calendar_create_events call, and that "
-    "batch was not made (see the first result). Nothing was created."
-)
-TOO_BIG = "Not run: this event can't go on the batch card ({why}). Fix it and send it again."
 
 
 class PlanBook(Protocol):
@@ -174,6 +157,15 @@ def _item(raw: Any, i: int, prefix: str) -> Wanted:
     ):
         raise ValueError(f"event {i}: n must be a whole number from 1 to {MAX_NUMBER}")
     return Wanted(n, args["summary"], args)
+
+
+def item_problem(raw: Mapping[str, Any]) -> str:
+    """Why one event can't be an item of a batch ("" when it can): the batch's own limits."""
+    try:
+        _item(dict(raw), 1, "")
+    except ValueError as exc:
+        return str(exc).removeprefix("event 1: ")
+    return ""
 
 
 def parse(a: Mapping[str, Any], *, limit: int) -> Batch:
@@ -318,86 +310,12 @@ def numbered(
     return out
 
 
-# ---- many single calls -> one batch (O2) ---------------------------------------------------------
-
-Spread = Callable[[list[GatewayResult]], list[GatewayResult]]
-
-
-def _batch_problem(call: ToolCall) -> str:
-    """Why a valid single create can't be one item of a batch ("" when it can): the batch's
-    own limits (`_item`), stricter than the single tool's."""
-    try:
-        _item(dict(call.arguments), 1, "")
-    except ValueError as exc:
-        return str(exc).removeprefix("event 1: ")
-    return ""
-
-
-def gathered(
-    calls: Sequence[ToolCall], registry: ToolRegistry, limit: int
-) -> tuple[list[ToolCall], Spread]:
-    """One round's calls as the gateway should see them, and how to give every original call its
-    result back. More than `MANY` valid single creates without guests become one batch call per
-    `limit` events, in place of the first of them; the others are answered `MERGED` (or
-    `NOT_MADE` when their batch was not made). A call the batch's own limits refuse is answered
-    alone with its plain reason (`TOO_BIG`); the good ones still go on the one card."""
-    single, batch = registry.get(SINGLE), registry.get(CREATE)
-    mergeable = [i for i, c in enumerate(calls) if _mergeable(c, single)]
-    if single is None or batch is None or len(mergeable) <= MANY:
-        return list(calls), lambda out: out
-    refused = {i: why for i in mergeable if (why := _batch_problem(calls[i]))}
-    good = [i for i in mergeable if i not in refused]
-    heads: dict[int, ToolCall] = {}
-    head_of: dict[int, int] = {}
-    for at in range(0, len(good), limit):
-        part = good[at : at + limit]
-        events = [dict(calls[i].arguments) for i in part]
-        heads[part[0]] = ToolCall(id=calls[part[0]].id, name=CREATE, arguments={"events": events})
-        head_of.update(dict.fromkeys(part, part[0]))
-    merged = set(good) - set(heads)
-    run = [heads.get(i, c) for i, c in enumerate(calls) if i not in merged and i not in refused]
-
-    def spread(out: list[GatewayResult]) -> list[GatewayResult]:
-        results = iter(out)
-        back: dict[int, GatewayResult] = {}
-        for i in range(len(calls)):
-            if i not in merged and i not in refused:
-                back[i] = next(results)
-        made = (GatewayOutcome.AWAITING_CONFIRMATION, GatewayOutcome.EXECUTED)
-        for i in merged:
-            ok = back[head_of[i]].outcome in made
-            back[i] = GatewayResult(GatewayOutcome.DENIED, error=MERGED if ok else NOT_MADE)
-        for i, why in refused.items():
-            back[i] = GatewayResult(GatewayOutcome.DENIED, error=TOO_BIG.format(why=why))
-        return [back[i] for i in range(len(calls))]
-
-    log.info(
-        "single creates gathered into a batch",
-        extra={"events": len(good), "refused": len(refused)},
-    )
-    return run, spread
-
-
-def _mergeable(call: ToolCall, single: Tool | None) -> bool:
-    if single is None or call.name != SINGLE or call.arguments.get("attendees"):
-        return False
-    try:
-        single.validate(call.arguments)
-    except ValueError:
-        return False
-    return True
-
-
 __all__ = [
     "BATCH_ID",
     "BATCH_ID_KEY",
     "BATCH_KEY",
     "CREATE",
     "GUESTS",
-    "MANY",
-    "MERGED",
-    "NOT_MADE",
-    "TOO_BIG",
     "SIG_KEY",
     "SINGLE",
     "UNDO",
@@ -408,7 +326,7 @@ __all__ = [
     "Wanted",
     "batch_id",
     "changed_by_owner",
-    "gathered",
+    "item_problem",
     "number_of",
     "numbered",
     "parse",

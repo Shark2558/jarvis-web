@@ -193,13 +193,20 @@ async def test_with_ask_first_a_typed_name_gets_the_usual_card() -> None:
     assert res.pending.summary == f"Research {NAME} from public sources"
 
 
-async def test_with_ask_first_a_printed_name_is_carded_as_the_pictures_words() -> None:
-    gw, _ = _rig(picture=True, report=_report(), rows=Effect.ASK)
+async def test_with_ask_first_a_printed_name_is_carded_and_his_approval_researches_it() -> None:
+    """The card he approves is his own press, like the offer's button: one approval, then the
+    people research behind the unchanged check (the card's words do not change at approval)."""
+    gw, searcher = _rig(picture=True, report=_report(), rows=Effect.ASK)
     with typed("who is this?"):
         res = await _research(gw, NAME)
+    assert res.pending is not None and searcher.queries == []
+    assert res.pending.summary == f"Research {NAME} from public sources"
 
-    assert res.pending is not None
-    assert res.pending.summary == f"Look up {NAME}, whom the picture's text names"
+    call = ToolCall(id="t1", name=RESEARCH_PERSON, arguments={"name": NAME})
+    done = await gw.execute(call, confirmation_id=res.pending.id, scope=f"{UID}:{SID}")
+
+    assert done.outcome is GatewayOutcome.EXECUTED and done.result["subject"] == "public_figure"
+    assert searcher.queries[:1] == [NAME]
 
 
 # ---- the card itself -----------------------------------------------------------------------------

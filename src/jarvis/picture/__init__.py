@@ -5,6 +5,11 @@ Layer 4 vision input, Layer 5 Research & Intel).
                trains on it; admitted and metered; strict JSON asked for
     guard      plain code, no model: what may be said and searched from that answer (a thing, never
                a person; a name only from the picture's own words, and then only as an offer)
+    scene      the description screens (every picture; again for a picture with a person)
+    words      the word lists and shapes the guards decide with
+    turnguard  the main brain's path: on a turn that carried a picture, a person's name only
+               when the owner typed it (else an offer from the picture's text, or no); a web
+               query with no name he did not type or the picture does not show
     search     the web search for the things, under the owner's "Search the web" row and every cap
     research   PictureResearch: the flow and the fixed-template reply
     tools      picture_research through the gateway (row "Pictures", R1)

@@ -56,7 +56,6 @@ ONE_LINK = "Here is 1 profile link, Sir. It opens in its own tab."
 LINKS = "Here are {n} profile links, Sir. Each one opens in its own tab."
 NO_LINKS = "No profile link matches that, Sir."
 CARD = "Research {name} from public sources"  # the card, as `summary_template` writes it
-CARD_OFFER = "Look up {name}, whom the picture's text names"
 
 
 class PictureNameRefused(ValueError):
@@ -142,13 +141,14 @@ class PeopleAPI:
 
     async def preview(self, a: dict[str, Any]) -> Preview:
         """The look-up before the gateway decides: a name refused on a picture turn is never
-        proposed (no card shows it); a name the picture's text holds is carded as its words."""
+        proposed, so no card shows it. A typed name, or one the picture's text holds, gets the
+        usual card: his approval of it is his own press (an approved card runs outside the turn,
+        where the check is re-read, so the words must not depend on the turn)."""
         name = str(a.get("name", ""))
         verdict = await self._guard.name(name)
         if isinstance(verdict, Refused):
             raise PictureNameRefused(verdict.message)
-        words = CARD_OFFER if isinstance(verdict, Offer) else CARD
-        return Preview(summary=one_line(words.format(name=name), SUMMARY_FALLBACK_LIMIT))
+        return Preview(summary=one_line(CARD.format(name=name), SUMMARY_FALLBACK_LIMIT))
 
     async def research(self, a: dict[str, Any]) -> dict[str, Any]:
         uid = require_tool_context().user_id

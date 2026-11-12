@@ -197,11 +197,11 @@ function render() {
   box.hidden = !box.childElementCount;
 }
 const UNLOADED = 'I couldn\u2019t load your plan check-ins just now, Sir.';
-/** The server's own words when it could not read the plans; a failed request says so too, except
- *  when he is signed out (the sign-in gate shows) or plans are off on this server. */
 /** The console's rule (R11.1 I1): nothing is asked before sign-in, whatever calls load (a 401 would
  *  re-show the sign-in gate, even just after he signed in). */
 const signedIn = () => { const c = window.JarvisConsole; return !!(c && typeof c.ready === 'function' && c.ready()); };
+/** The server's own words when it could not read the plans; a failed request says so too, except
+ *  when he is signed out (the sign-in gate shows) or plans are off on this server. */
 function load() {
   if (!signedIn()) return Promise.resolve();
   if (loading) return loading;

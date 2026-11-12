@@ -66,7 +66,7 @@
     return parts;
   }
   function metaText(it) {
-    if (it.state === 'reading') return it.size ? `${sizeText(it.size)} · Reading…` : 'Reading…';
+    if (it.state === 'reading') return it.size ? `${sizeText(it.size)} \u00b7 Reading\u2026` : 'Reading\u2026';
     const m = it.meta || {};
     const parts = countsText(m);
     parts.push(sizeText(it.size));

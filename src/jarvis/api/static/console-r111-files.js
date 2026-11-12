@@ -75,9 +75,10 @@ async function understand(o) {
   const heard = String((o && o.heard) || '');
   const same = { understood: heard, changed: false, sure: true, question: null };
   if (!understandOn || !heard.trim()) return same;
-  const late = new Promise(resolve => { setTimeout(() => resolve(null), UNDERSTAND_WAIT_MS); });
+  let timer = 0;  // cleared on every path, so a quick answer leaves no timer behind (L3)
+  const late = new Promise(resolve => { timer = setTimeout(() => resolve(null), UNDERSTAND_WAIT_MS); });
   const unchecked = Object.assign({ unchecked: true }, same);
-  try { return (await Promise.race([ask(o || {}, heard), late])) || unchecked; } catch (_) { return unchecked; }
+  try { return (await Promise.race([ask(o || {}, heard), late])) || unchecked; } catch (_) { return unchecked; } finally { clearTimeout(timer); }
 }
 /** The understand step failed or was late: the words went as heard, and the row says so. */
 function unchecked(row) {

@@ -1,4 +1,4 @@
-Version v11.1.8 · 13 Nov 2026, 03:20 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.9 · 13 Nov 2026, 03:55 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 I1 — integration notes (Mark XV)
 
@@ -380,6 +380,16 @@ the browser job failed twice, each time one different test (attempt 1: the voice
 
 `__version__` 11.1.1 (the two tests that pin it updated); persona stays p11.1. Checks in the PR.
 
+**Fresh-context code review of hotfix 1: Approve with fixes (0 critical, 0 high, 2 medium, 3 low).**
+M1: signing in again after a 401 boots again with his conversation still current, and the first
+fix skipped that restore (the log is cleared first): the restore now skips only when the current
+conversation changed during this boot or a reply is in flight (`startSid`); test
+`test_signing_in_again_after_a_401_restores_the_conversation`, red on the first fix. M2: the media
+test's reset-layout check (a `setTimeout 0` stop) read the frame count once: `_stopped` there too.
+L3: the paused voice case now waits for the first save before the second word (no timing guess).
+L5: focus left on the hidden sign-in gate counts as untouched (`$('gate').contains`). L4 (a fixed
+300 ms settle in the boot tests, after the list request in the same task) accepted.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -392,3 +402,4 @@ the browser job failed twice, each time one different test (attempt 1: the voice
 | v11.1.6 | 12 Nov 2026, 21:10 IST | R11.1 | GitHub CI run 108: two face-engine tests no longer need OpenCV installed | 🛠 Mark XV |
 | v11.1.7 | 12 Nov 2026, 22:15 IST | R11.1 | GitHub CI run 109: the browser tests choose the day surface through one sturdier helper | 🛠 Mark XV |
 | v11.1.8 | 13 Nov 2026, 03:20 IST | R11.1 | Hotfix 1 (v11.1.1): main's CI run 111, the console boot race fixed and two tests made sturdy | 🛠 Mark XV |
+| v11.1.9 | 13 Nov 2026, 03:55 IST | R11.1 | Hotfix 1 code review fixes (re-sign-in restore, reset-layout wait, paused save, gate focus) | 🛠 Mark XV |

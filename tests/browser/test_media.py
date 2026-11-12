@@ -653,7 +653,7 @@ def test_on_a_phone_switching_to_chat_stops_the_video(
         c.page.locator(".row.jarvis .mvideos .mplay").first.click()
         c.page.locator("#mediaStage iframe").wait_for(state="attached")
         c.page.evaluate("document.dispatchEvent(new CustomEvent('jarvis:reset-layout', {}))")
-        assert rig.iframes() == 0
+        _stopped(c, rig)  # reset layout stops it on the next task (setTimeout 0)
         assert c.errors == []
     finally:
         c.close()

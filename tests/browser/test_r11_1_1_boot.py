@@ -121,3 +121,53 @@ def test_with_nothing_touched_the_message_box_still_gets_focus(
         assert c.page.evaluate("document.activeElement && document.activeElement.id") == "input"
     finally:
         c.close()
+
+
+def test_signing_in_again_after_a_401_restores_the_conversation(
+    browser: Any,  # noqa: F811 - the fixture imported above
+    server_url: str,
+    token: str,
+) -> None:
+    """Code review M1: a 401 mid-conversation shows the gate; signing in again boots again, with
+    the conversation still current. That boot must restore it (it clears the log first)."""
+    c = Console(browser, server_url, token, DESKTOP)
+    try:
+        answers = [
+            (200, REPLY),
+            (401, {"detail": {"code": "unauthorized", "message": "Sign in required."}}),
+        ]
+        c.page.route(
+            "**/v1/chat",
+            lambda r: (
+                lambda s, b: r.fulfill(
+                    status=s, content_type="application/json", body=json.dumps(b)
+                )
+            )(*answers.pop(0)),
+        )
+        transcript = {
+            "id": REPLY["session_id"],
+            "turns": [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": REPLY["reply"], "model": "default"},
+            ],
+            "metadata": {},
+            "total_cost_inr": 0,
+        }
+        c.page.route(
+            f"**/v1/sessions/{REPLY['session_id']}",
+            lambda r: r.fulfill(
+                status=200, content_type="application/json", body=json.dumps(transcript)
+            ),
+        )
+        c.open()
+        assert c.send("hello") == REPLY["reply"]
+        c.page.locator("#input").fill("and again")
+        c.page.locator("#send").click()
+        c.page.locator("#tokIn").wait_for(state="visible")  # the 401 brought the gate back
+        with c.page.expect_request(f"**/v1/sessions/{REPLY['session_id']}"):
+            c.page.locator("#tokIn").fill(c.token)
+            c.page.locator("#tokBtn").click()
+        c.page.locator("#log .sys", has_text="Earlier conversation restored.").wait_for()
+        assert REPLY["reply"] in c.page.locator("#log").inner_text()
+    finally:
+        c.close()

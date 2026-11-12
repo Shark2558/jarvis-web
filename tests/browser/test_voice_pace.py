@@ -685,6 +685,7 @@ def test_the_editor_adds_and_removes_words_and_saves_them_through_the_voice_sett
     c.page.locator("#vPhraseAdd").click()
     if pause_ms:  # the owner adds the second word after the first save went
         c.page.wait_for_timeout(pause_ms)
+        _settled(c, fake, {"phrases": ["Trivandrum"]})  # that save is out before he goes on
     c.page.locator("#vPhraseIn").fill("Thiruvananthapuram")
     c.page.keyboard.press("Enter")
     assert slot.locator("#vPhraseList .bl").all_text_contents() == [

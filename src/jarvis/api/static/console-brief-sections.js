@@ -179,7 +179,7 @@
     const listed = Number.isInteger(box.listed) && box.listed >= failed ? box.listed : failed;
     if (!kinds.length && !held && !failed && box.exact !== false) return null;
     const s = section('inboxkinds', 'Inbox by kind', box.exact === false ? 'of the newest unread' : '');
-    if (box.exact === false) s.append(mk('p', 'bfine', 'Gmail\u2019s exact count could not be read just now.'));
+    if (box.exact === false) s.append(mk('p', 'bfine', 'Gmail didn\u2019t give its own count just now: the number is an estimate.'));
     if (failed) s.append(mk('p', 'bfine', 'I couldn\u2019t read ' + (failed >= listed ? 'any' : failed) + ' of the ' + listed + ' newest unread messages just now.'));
     if (kinds.length) {
       const ul = mk('ul', 'bpark');

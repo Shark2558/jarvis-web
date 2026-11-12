@@ -159,7 +159,7 @@ def _tomorrow(data: BriefData) -> list[str]:
 
 INBOX_EMPTY = "  No unread mail in your inbox."
 INBOX_ONLY_OTHER = "  None of them is from a person, a bill or an update of the last 7 days."
-INBOX_NOT_EXACT = "  Gmail's exact count could not be read just now."
+INBOX_NOT_EXACT = "  Gmail didn't give its own count just now: the number is an estimate."
 _GROUP_WORDS = {
     "people": ("from people", "from people"),
     "bills": ("bill or order", "bills and orders"),

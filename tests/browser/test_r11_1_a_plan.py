@@ -370,7 +370,7 @@ def test_the_brief_says_what_it_could_not_read(rig: Rig) -> None:
     )
     assert got == [
         "Inbox by kind\u00b7 of the newest unread"
-        "Gmail’s exact count could not be read just now."
+        "Gmail didn’t give its own count just now: the number is an estimate."
         "I couldn’t read 4 of the 12 newest unread messages just now."
     ]
     every = c.page.evaluate(

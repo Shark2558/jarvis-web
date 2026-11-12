@@ -357,16 +357,20 @@ class Widest(InboxSection):  # I1's InboxSection (INTEGRATION-A.md 3.4, a merge 
     listed: int = 0
 
 
-async def test_on_today_s_brief_model_no_message_read_says_the_inbox_could_not_be_read() -> None:
-    """Until I1 widens `InboxSection` (3.4), the brief can't say "couldn't read any of the N": it
-    says the inbox could not be read rather than claim that nothing is from a person."""
+async def test_when_no_message_could_be_read_the_brief_never_says_none_is_from_a_person() -> None:
+    """On today's model (before INTEGRATION-A 3.4) the section says the inbox could not be read;
+    with I1's fields it says "I couldn't read any of the 10". Never "none of them is from a
+    person"."""
     reads_down = PlanGoogle(mails=inbox(), unread=132)
     for m in inbox():
         reads_down.fail[f"GET {GM}/messages/{m['id']}"] = 503
     got = await _collect(reads_down)
-    assert got.data.sections_status.inbox == "unavailable"
     text = render_text(got.data)
-    assert "None of them is from a person" not in text and "could not be read" in text
+    assert "None of them is from a person" not in text
+    if "failed" in InboxSection.model_fields:  # I1 has widened the brief's inbox section
+        assert "I couldn't read any of the 10 newest unread messages just now." in text
+    else:
+        assert got.data.sections_status.inbox == "unavailable" and "could not be read" in text
 
 
 async def test_the_brief_says_about_n_when_gmail_s_count_could_not_be_read(
@@ -379,7 +383,8 @@ async def test_the_brief_says_about_n_when_gmail_s_count_could_not_be_read(
     assert got.data.inbox.exact is False
     text = render_text(got.data)
     assert "INBOX · about 10 unread" in text and "INBOX · 10 unread" not in text
-    assert "Gmail's exact count could not be read just now." in text
+    assert "Gmail didn't give its own count just now: the number is an estimate." in text
+    assert "could not be read" not in text  # that wording is the brief's for a failed section
 
 
 async def test_the_brief_says_how_many_it_could_not_read(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -21,6 +21,7 @@ from r11_1_fakes_c import Cloud, build_cloud, consent, leaks, picture
 from jarvis.api import create_app
 from jarvis.api.identity import current_user
 from jarvis.config import Settings
+from jarvis.integrations.google import GoogleNotConnected
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 
@@ -217,3 +218,20 @@ async def test_nothing_but_ids_and_counts_comes_back(settings: Settings, tmp_pat
         text = "".join(w.bodies)
         assert leaks(text) == [] and "embedding" not in text and "crop" not in text
         assert json.loads(w.bodies[0])["groups"][0].keys() == {"id", "n", "photos", "first", "last"}
+
+
+async def test_google_not_linked_is_said_plainly_and_nothing_breaks(
+    settings: Settings, tmp_path: Path
+) -> None:
+    async with running(settings, tmp_path) as w:
+        await w.cloud.photos.begin(UID)
+
+        async def unlinked(uid: str, sid: str) -> None:
+            raise GoogleNotConnected("Sign in with Google first: Integrations -> Google.")
+
+        w.cloud.picker.get_session = unlinked  # type: ignore[method-assign]
+        r = await w.post("/import/step")
+        assert r.status_code == 409 and r.json()["error"] == "photos_unavailable"
+        assert r.json()["detail"] == "Sign in with Google first: Integrations -> Google."
+        assert (await w.get("/import")).status_code == 200  # the progress is still readable
+        assert (await w.get("/groups")).json()["available"] is True  # and the groups do not care

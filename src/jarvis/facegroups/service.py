@@ -119,6 +119,7 @@ class FaceGroupsService:
                 )
         h = doc.home
         named = {cluster for cluster, _ in await photos.pending(uid)}  # people now, not groups
+        unnamed = [g for g in h.groups if g.id not in named]
         return GroupsView(
             True,
             laptop,
@@ -131,7 +132,7 @@ class FaceGroupsService:
             h.read,
             h.keep_days,
             len(named),
-            (len(h.groups) - len(named) + h.strays if doc.forget_all else len(doc.forget)),
+            (len(unnamed) + h.strays if doc.forget_all else len(doc.forget)),
         )
 
     async def _known(self, uid: str, photos: PhotosService, group: str) -> tuple[str, ...]:

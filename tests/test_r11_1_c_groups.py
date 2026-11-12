@@ -220,6 +220,8 @@ async def test_a_name_given_while_the_laptop_slept_survives_a_forget_all(tmp_pat
     assert [g.id for g in view.groups] == [other]  # named: no longer "to name", though it waits
     assert view.names_waiting == 1
     assert (await c.groups.forget_all(UID)).done is False
+    view = await c.groups.view(UID)
+    assert view.groups == () and (view.names_waiting, view.forgets_waiting) == (1, 1)
     c.home.online = True
     out = await c.groups.poll(UID)  # the name reaches the laptop BEFORE the forget
     assert (out["named"], out["forgotten"], out["away"]) == (1, 1, 0)

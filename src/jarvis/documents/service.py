@@ -10,9 +10,17 @@ upload   name → type (extension + magic bytes) → text from a killable child 
 switched off  Documents on "Never" in Permissions refuses uploads and sending (integration
          review), and an unreadable setting refuses too — no file's start reaches the model.
 attach   on send (inside the Brain's per-conversation lock): refused for a training brain;
-         ≤ 3 per message; each must be the owner's and still waiting; bound atomically to
-         the conversation and the turn; the turn gets a second text block (`render_note`). If
-         the turn then can't be stored, the binding is undone (`save_owner_turn`).
+         within what one message may carry (`AttachPolicy`, R11.1: 10 files, 40 MB together,
+         4 pictures; the owner's settings); each must be the owner's and still waiting; bound
+         atomically to the conversation and the turn; the turn gets a second text block
+         (`render_note`). If the turn then can't be stored, the binding is undone
+         (`save_owner_turn`).
+kinds    R11.1 D10-D11: Excel, PowerPoint, zip, a folder (the console's one bundle; the upload
+         says so) and pictures go through the same child. A picture is kept as cleaned bytes
+         beside the file (`AttachmentStore.pictures`), never in a turn; `pictures_of_turn` hands
+         them to `documents.pictures` for the turn they came with, and to nothing else. Which
+         turn is the latest comes from the STORED conversation (`sessions`), never from this
+         process (code review M3: several instances, restarts).
 read / search (the doc_read / doc_search tools): only the owner's files, only in the
          conversation they were sent in. Text is fenced as external content. Ranking runs off
          the event loop; a search without an id covers the 3 most recent files.
@@ -22,6 +30,7 @@ forget_session  the owner deleted the conversation: its files go too (before the
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -32,15 +41,17 @@ from jarvis.core.saving import save_owner_message
 from jarvis.documents.chunking import excerpt, pages_label, rank, split
 from jarvis.documents.extract import Extracted, Limits, kind_for, sniff
 from jarvis.documents.isolation import Sandbox, extract_isolated
+from jarvis.documents.limits import ARCHIVE_KINDS, FOLDER
 from jarvis.documents.models import (
     CHUNKS_PER_PART,
     MAX_FILE_BYTES,
-    MAX_FILES_PER_MESSAGE,
     MAX_WAITING,
     PREVIEW_CHARS,
     Attachment,
     AttachmentRef,
+    AttachPolicy,
     DocumentRejected,
+    StoredPicture,
     new_doc_id,
 )
 from jarvis.documents.note import clean_name, render_note
@@ -71,6 +82,11 @@ TRAINING_REFUSAL = (
     "Switch to a private brain to use them."
 )
 NOT_HERE = "No attached file with that id in this conversation."
+NO_TEXT_IN_PICTURE = (
+    "That file is a picture: it has no text to read. A brain that can see was shown it with the "
+    "message it came with."
+)
+MB = 1024 * 1024
 SWITCHED_OFF = "Documents are switched off in Permissions."
 UNCHECKED = "JARVIS couldn't check your Permissions just now, so no file was used. Try again."
 DOC_TOOLS = ("doc_read", "doc_search")  # the Documents permission group's tools
@@ -78,6 +94,17 @@ DOC_TOOLS = ("doc_read", "doc_search")  # the Documents permission group's tools
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def policy_from(s: Any) -> AttachPolicy:
+    """What one message may carry, from the owner's settings (`Settings.attach_*`)."""
+    return AttachPolicy(
+        max_files=int(s.attach_max_files),
+        total_bytes=int(s.attach_total_mb) * MB,
+        zip_max_files=int(s.attach_zip_max_files),
+        folder_max_files=int(s.attach_folder_max_files),
+        picture_max_bytes=int(s.attach_picture_max_kb) * 1024,
+    )
 
 
 class DocumentService:
@@ -89,9 +116,17 @@ class DocumentService:
         now: Callable[[], datetime] = _utcnow,
         sandbox: Sandbox | None = None,
         queue_wait_s: float = QUEUE_WAIT_S,
+        policy: AttachPolicy | None = None,
+        sessions: SessionStore | None = None,
     ) -> None:
         self.store = store
         self.limits = limits or Limits()
+        # R11.1: what one message may carry. The defaults are the settings' defaults; the app
+        # gives the owner's own values when it builds the service (`policy_from`; R11.1 I1).
+        self.policy = policy or AttachPolicy()
+        # R11.1 D10: the conversations, read to know a conversation's latest owner turn (the app
+        # passes `app.state.store`; INTEGRATION-B "Needs I1")
+        self._sessions = sessions
         self.sandbox = sandbox or Sandbox()
         self._now = now
         self._queue_wait_s = queue_wait_s
@@ -104,6 +139,11 @@ class DocumentService:
     @property
     def running(self) -> int:
         return 1 if self._slot.locked() else 0
+
+    @property
+    def sessions(self) -> SessionStore | None:
+        """The stored conversations (None: not given, so a turn's pictures cannot be found)."""
+        return self._sessions
 
     # ---- the owner's Documents permission ---------------------------------------------------
 
@@ -126,6 +166,11 @@ class DocumentService:
             log.warning("owner permissions unreadable", extra={"reason": type(exc).__name__})
             return UNCHECKED
 
+    async def files_allowed(self, owner: str) -> bool:
+        """May the owner's files be used at all (Documents not on "Never")? False when the
+        setting cannot be read (fails closed): e.g. no file name becomes a speech hint."""
+        return not await self._off_problem(owner)
+
     async def ensure_on(self, owner: str) -> None:
         """Upload: refused (403) when the owner switched Documents off; 503 when unreadable."""
         problem = await self._off_problem(owner)
@@ -136,36 +181,84 @@ class DocumentService:
 
     # ---- upload ---------------------------------------------------------------------------
 
-    async def upload(self, owner: str, name: str, data: bytes) -> AttachmentRef:
+    def _limits_for(self, kind: str) -> Limits:
+        """The child's limits for one upload, with the owner's caps for archives and pictures."""
+        p = self.policy
+        files = p.folder_max_files if kind == FOLDER else p.zip_max_files
+        return dataclasses.replace(
+            self.limits,
+            archive_max_files=files,
+            archive_max_total=p.total_bytes,
+            picture_max_bytes=p.picture_max_bytes,
+            max_pictures=p.max_pictures,
+        )
+
+    def _header(
+        self,
+        owner: str,
+        name: str,
+        kind: str,
+        size: int,
+        out: Extracted,
+        kept: int,
+        chunk_count: int,
+        cut: bool,
+        pictures: int,
+    ) -> Attachment:
+        """The stored header of a file just read: whose it is, what it holds, how much was kept."""
+        return Attachment(
+            id=new_doc_id(),
+            owner=owner,
+            waiting_owner=owner,
+            name=name,
+            kind=kind,
+            size=size,
+            pages=out.pages,
+            pages_total=out.pages_total,
+            words=len(out.text[:kept].split()),
+            chars=kept,
+            chunk_count=chunk_count,
+            truncated=out.truncated or cut,
+            preview=out.text[:PREVIEW_CHARS],
+            created_at=self._now(),
+            sheets=out.sheets,
+            rows=out.rows,
+            slides=out.slides,
+            files=out.files if kind in ARCHIVE_KINDS else None,
+            skipped=out.skipped,
+            pictures=pictures,
+        )
+
+    async def upload(
+        self, owner: str, name: str, data: bytes, *, folder: bool = False
+    ) -> AttachmentRef:
+        """`folder`: the console packed a folder's readable files into this one bundle (D11);
+        its name is the folder's and has no extension."""
         clean = clean_name(name)
-        kind = kind_for(clean)
+        kind = FOLDER if folder else kind_for(clean)
         await self.ensure_on(owner)
         if len(data) > MAX_FILE_BYTES:
             raise too_large(len(data))
         sniff(data, kind)
         await self._room_for(owner)
-        out = await self.extract(data, kind)
+        out = await self.extract(data, kind, limits=self._limits_for(kind))
         chunks, cut = split(out.text, out.page_starts)
         kept = chunks[-1].start + len(chunks[-1].text) if cut else len(out.text)
-        att = Attachment(
-            id=new_doc_id(),
-            owner=owner,
-            name=clean,
-            kind=kind,
-            size=len(data),
-            pages=out.pages,
-            pages_total=out.pages_total,
-            words=len(out.text[:kept].split()),
-            chars=kept,
-            chunk_count=len(chunks),
-            truncated=out.truncated or cut,
-            preview=out.text[:PREVIEW_CHARS],
-            created_at=self._now(),
-        )
-        await self.store.create(att, chunks)
+        shots = [
+            StoredPicture(name=p.name or clean, media_type=p.media_type, data=p.data)
+            for p in out.pictures[: self.policy.max_pictures]
+        ]
+        att = self._header(owner, clean, kind, len(data), out, kept, len(chunks), cut, len(shots))
+        await self.store.create(att, chunks, shots)
         log.info(  # never the name or the text: both may be private
             "document stored",
-            extra={"kind": kind, "bytes": len(data), "chars": kept, "chunks": len(chunks)},
+            extra={
+                "kind": kind,
+                "bytes": len(data),
+                "chars": kept,
+                "chunks": len(chunks),
+                "pictures": len(shots),
+            },
         )
         return att.ref()
 
@@ -196,15 +289,17 @@ class DocumentService:
         return True
 
     async def _room_for(self, owner: str) -> None:
-        """Sweep the owner's stale waiting uploads, then refuse past the waiting cap."""
-        if await self._sweep(owner) >= MAX_WAITING:
+        """Sweep the owner's stale waiting uploads, then refuse past the waiting cap (never
+        fewer than one message may carry: R11.1 `attach_max_files`)."""
+        cap = max(MAX_WAITING, self.policy.max_files)
+        if await self._sweep(owner) >= cap:
             raise DocumentRejected(
                 "too_many",
-                f"{MAX_WAITING} files are already waiting to be sent. Send or remove some first.",
+                f"{cap} files are already waiting to be sent. Send or remove some first.",
                 status=409,
             )
 
-    async def extract(self, data: bytes, kind: str) -> Extracted:
+    async def extract(self, data: bytes, kind: str, *, limits: Limits | None = None) -> Extracted:
         """The app's ONE extraction door: chat uploads and Drive files (slice 12 D1, injected
         into `DriveService` by the app) share this slot and sandbox, so two children never run
         at once on the 512 MiB instance. One child process at a time; the slot is released on
@@ -217,7 +312,7 @@ class DocumentService:
                 "busy", "JARVIS is still reading other files. Try again in a minute.", status=503
             ) from None
         try:
-            return await extract_isolated(data, kind, self.limits, self.sandbox)
+            return await extract_isolated(data, kind, limits or self.limits, self.sandbox)
         finally:
             self._slot.release()
 
@@ -239,13 +334,26 @@ class DocumentService:
         if not spec.tools_allowed:
             raise InputRejected(TRAINING_REFUSAL)
         unique = list(dict.fromkeys(ids))
-        if len(unique) > MAX_FILES_PER_MESSAGE:
-            raise InputRejected(f"At most {MAX_FILES_PER_MESSAGE} files per message.")
+        if len(unique) > self.policy.max_files:
+            raise InputRejected(f"At most {self.policy.max_files} files per message.")
         found = [await self.store.get(aid) for aid in unique]
         atts = [a for a in found if a is not None and a.owner == owner and a.waiting]
         if len(atts) != len(unique):
             raise InputRejected(GONE)
+        self._within_policy(atts)
         return atts
+
+    def _within_policy(self, atts: Sequence[Attachment]) -> None:
+        """R11.1 D10-D11: the files of one message together, and its pictures."""
+        p = self.policy
+        total = sum(a.size for a in atts)
+        if total > p.total_bytes:
+            raise InputRejected(
+                f"These files are {total / MB:.1f} MB together; the limit is "
+                f"{p.total_bytes / MB:.0f} MB per message. Send some of them in another message."
+            )
+        if sum(a.pictures for a in atts) > p.max_pictures:
+            raise InputRejected(f"At most {p.max_pictures} pictures per message.")
 
     async def attach(
         self, turn: Turn, owner: str, session_id: str, ids: Sequence[str], spec: BrainSpec
@@ -287,6 +395,8 @@ class DocumentService:
         self, owner: str, session_id: str | None, aid: str, part: int
     ) -> dict[str, Any]:
         a = await self._usable(owner, session_id, aid)
+        if a.chunk_count == 0 and a.pictures:
+            raise ValueError(NO_TEXT_IN_PICTURE)
         if not 1 <= part <= a.parts:
             raise ValueError(f"part must be 1-{a.parts} for this file")
         first = (part - 1) * CHUNKS_PER_PART
@@ -352,6 +462,30 @@ class DocumentService:
         )
         return {"query": query, "hits": hits, "note": note}
 
+    # ---- pictures (R11.1 D10): only for the turn they came with -------------------------------
+
+    async def pictures_of_turn(
+        self, owner: str, session_id: str, turn: Turn
+    ) -> list[StoredPicture]:
+        """The cleaned pictures of the files sent with exactly this turn, in the order they were
+        attached; at most `policy.max_pictures`. The turn names its files; each is read again
+        through the document store and must be the owner's, in this conversation, bound to this
+        turn. Storage errors are raised (the caller tells them from "no picture")."""
+        out: list[StoredPicture] = []
+        found = [await self.store.get(ref.id) for ref in turn.attachments if ref.pictures]
+        mine = [
+            a
+            for a in found
+            if a is not None
+            and a.owner == owner
+            and a.session == session_id
+            and a.turn == turn.id
+            and a.pictures
+        ]
+        for a in sorted(mine, key=lambda a: (a.created_at, a.id)):
+            out += await self.store.pictures(a)
+        return out[: self.policy.max_pictures]
+
 
 # ---- the Brain's hooks (one line each there; brain.py stays within its size budget) ------------
 
@@ -411,9 +545,11 @@ def too_large(size: int | None = None) -> DocumentRejected:
 
 
 __all__ = [
+    "NO_TEXT_IN_PICTURE",
     "DocumentService",
     "files_of",
     "forget_files",
+    "policy_from",
     "precheck",
     "save_owner_turn",
     "too_large",

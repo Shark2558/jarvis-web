@@ -58,6 +58,7 @@ from jarvis.api.personal import personal_tick_jobs, wire_personal, wire_privacy
 from jarvis.api.privacy import install_privacy
 from jarvis.api.r4_wiring import install_r4_routes, r4_tick_jobs, vitals_brief, wire_r4
 from jarvis.api.r6_wiring import install_r6_routes, install_show_lock, r6_tick_jobs, wire_r6
+from jarvis.api.r11_1_wiring import fix_tools, install_r11_1_routes, wire_r11_1
 from jarvis.api.r11_wiring import helpers_brief, install_r11_routes, r11_tick_jobs, wire_r11
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
@@ -112,6 +113,7 @@ from jarvis.memory import SessionConflict, SessionNotFound, SessionStore
 from jarvis.offline.rules import wrap_offline
 from jarvis.offline.service import build_local_fallback
 from jarvis.packages.tools import PackageScanner
+from jarvis.picture.turnguard import app_guard
 from jarvis.recall.errors import (
     ConsentRequired,
     ImportTooLarge,
@@ -126,6 +128,7 @@ from jarvis.storage.docs import Docs, MemoryDocs
 from jarvis.telegram.alerts import ALERT_TEXT
 from jarvis.telegram.rules import wrap_rules
 from jarvis.tools.audit import AuditLog, AuditTrail
+from jarvis.tools.background import BackgroundReads
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.r1_tools import build_family_service
 from jarvis.tools.setup import attach_activity, build_gateway
@@ -159,6 +162,7 @@ def build_brief_service(
     else:
         approvals = built.approvals if built is not None else None
         audit = built.audit if built is not None else AuditLog()
+    reads = BackgroundReads(lambda: getattr(app.state, "gateway", None), audit=audit)
     return BriefService(
         store=BriefStore(docs, prefix=s.firestore_prefix),
         google=app.state.google,
@@ -170,8 +174,11 @@ def build_brief_service(
         ai_daily_cap=s.brief_ai_daily_cap,
         retention_days=s.brief_retention_days,
         billing=getattr(app.state, "billing", None),
+        # R11.1 D20 / I1 M1: the inbox and deliveries reads obey the "Search and read email" row
+        reads=reads,
+        mail_max_reads=s.mail_summary_max_reads,
         # R1 D: Deliveries and Family today (only with the Google link they read through)
-        deliveries=DeliveriesBrief(PackageScanner(app.state.google))
+        deliveries=DeliveriesBrief(PackageScanner(app.state.google), reads=reads)
         if getattr(app.state, "google", None) is not None
         else None,
         family_day=FamilyBrief(family) if (family := getattr(app.state, "family", None)) else None,
@@ -361,6 +368,8 @@ def _build_tool_gateway(
         home=app.state.home_parts,  # R3: home, camera and faces tools (only when on)
         r4=app.state.r4_parts,  # R4: vitals, systems check, connectors, people (each when on)
         r11=app.state.r11_parts,  # R11: the helpers' tools (each part's own families)
+        r111=fix_tools(app.state.r111_parts),  # R11.1: the four parts' tools
+        pictures=app_guard(lambda name: getattr(app.state, name, None)),  # R11.1 D21-D
     )
 
 
@@ -490,6 +499,7 @@ def _lifespan(
             wire_home(app, s, docs, audit)  # R3: home link, camera, faces (tools need them)
             await wire_r4(app, s, docs, audit)  # R4: brain mode (loaded), vitals, health, people
             await wire_r6(app, s, docs, audit)  # R6: the build book (sealed releases, sessions)
+            await wire_r11_1(app, s, docs, audit)  # R11.1: before R11 (its jobs ride that clock)
             await wire_r11(app, s, docs, audit)  # R11: the free proactive helpers (A-D)
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
@@ -679,6 +689,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_r4_routes(app)  # R4: /v1/vitals, /v1/health, /v1/connectors, /v1/people, brain mode
     install_r6_routes(app)  # R6: /v1/book (status, open, sections, show, close, resume, settings)
     install_r11_routes(app)  # R11: /v1/helpers (the gate) and the four parts' routes
+    install_r11_1_routes(app)  # R11.1: /v1/series, /v1/input, /v1/facegroups, /v1/picture
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

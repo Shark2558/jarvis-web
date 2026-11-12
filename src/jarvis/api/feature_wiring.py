@@ -15,7 +15,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from jarvis.config import Settings
-from jarvis.documents.service import DocumentService
+from jarvis.documents.service import DocumentService, policy_from
 from jarvis.documents.store import AttachmentStore
 from jarvis.drive.service import DriveService, build_drive_service
 from jarvis.media.service import build_media
@@ -45,7 +45,11 @@ def wire_features(
     app.state.web = build_web_service(s, docs)  # slice 10 B: None without a Tavily key
     # Attached files (slice 10 E): text and chunks on the same documents, deleted with the
     # conversation; the doc tools join the gateway's registry.
-    app.state.documents = DocumentService(AttachmentStore(docs, prefix=s.firestore_prefix))
+    app.state.documents = DocumentService(
+        AttachmentStore(docs, prefix=s.firestore_prefix),
+        policy=policy_from(s),  # R11.1 D11: what one message may carry, his own settings
+        sessions=app.state.store,  # R11.1 D10: a turn's pictures come from the stored turn
+    )
     # Recently deleted (slice 11): the owner's deletes keep a copy here for 30 days (undo);
     # only on persistent storage, else None and deletes stay R3
     app.state.undo = undo or build_undo(s, built, docs)

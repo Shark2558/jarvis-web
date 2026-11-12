@@ -40,6 +40,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field, StringConstraints
 
 from jarvis.core import brain_decisions as decisions
+from jarvis.core.finish import said_by_code
 from jarvis.core.guardrails import PendingAction
 from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn, UndoRef
 from jarvis.core.saving import record_after_action
@@ -125,11 +126,15 @@ class Batch:
     stopped: bool = False
     undo: list[UndoRef] = field(default_factory=list)  # undo-able deletes that ran: Undo chips
     cards: list[AnyCard] = field(default_factory=list)  # slice 12: the reply cards they made
+    # R11.1 D5 (INTEGRATION-A 3.8): a card that ran and whose tool says what it did in its own
+    # fixed sentence ("58 events added, 2 failed, Sir."), by card id: the reply when no model
+    # can narrate, never "Done, Sir: Add 60 events"
+    said: dict[str, str] = field(default_factory=dict)
 
     def outcome(self) -> decisions.Outcome:
         narrated = [r for r in self.results if r.status in _NARRATED]
         return decisions.Outcome(
-            fallback=" ".join(_said(r) for r in narrated) or NOTHING,
+            fallback=" ".join(self.said.get(r.id) or _said(r) for r in narrated) or NOTHING,
             unrecorded=list(self.unrecorded),
             did=self.ran > 0,
             tool_calls=self.ran,
@@ -262,6 +267,8 @@ async def _one(gateway: Gateway, store: SessionStore, batch: Batch, aid: str) ->
         return _card(action, CardStatus.ERROR, COULD_NOT)
     _counted(batch, d)
     await _book(store, batch, d)
+    if (own := said_by_code(action.tool, d.result)) is not None:
+        batch.said[action.id] = own
     return _decided(action, d)
 
 

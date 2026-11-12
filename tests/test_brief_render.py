@@ -81,7 +81,7 @@ def test_full_brief_renders_every_fact() -> None:
         "23:00–01:00 (next day)  “Deploy”",
         "Free: 09:00–10:00",
         "First: 08:30–09:00  “Flight”",
-        "INBOX · 3 unread in the last day (showing 1)",
+        "INBOX · 3 unread (showing 1)",  # R11.1 O12: the whole inbox's count
         "07:42  “Priya Shah” <priya@x.com> — “Budget sign-off”",
         "1 approval waiting for you in the console.",
     ):
@@ -95,7 +95,7 @@ def test_empty_sections_say_so() -> None:
     )
     assert "Nothing on the calendar today." in text
     assert "Nothing yet tomorrow." in text
-    assert "No unread mail in the last day." in text and "No approvals waiting." in text
+    assert "No unread mail in your inbox." in text and "No approvals waiting." in text
 
 
 def test_not_connected_and_unavailable_are_explained() -> None:

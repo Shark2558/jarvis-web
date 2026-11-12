@@ -10,12 +10,15 @@ where `resource` or a limit is unavailable it carries on, and the parent's wall-
 applies. It reads the file from stdin, writes one JSON object to stdout, and imports nothing from
 the app but `jarvis.documents.limits` and `extract` (no settings, no vendor SDKs, no secrets).
 
-    stdout   {"ok": true, "text", "pages", "pages_total", "page_starts", "truncated"}
+    stdout   {"ok": true, "text", "pages", "pages_total", "page_starts", "truncated",
+              "sheets", "rows", "slides", "files", "skipped",        (R11.1: counts, or null)
+              "pictures": [{"name", "media_type", "data": base64}]}  (checked, metadata removed)
              {"ok": false, "code", "detail", "status"}
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import sys
 from typing import Any
@@ -39,6 +42,18 @@ def _limit_self(cpu_s: int, memory_bytes: int) -> None:
             continue
 
 
+# Optional imports of the readers that the child never needs. openpyxl imports numpy when it is
+# installed, and numpy's OpenBLAS reserves address space per CPU: on a 4-CPU machine that alone
+# passed the RLIMIT_AS cap, and the child died before reading (CI run 107). Kept out, a reader's
+# own `try: import numpy` takes its ImportError path, on every machine alike.
+UNNEEDED_MODULES = ("numpy", "pandas")
+
+
+def _keep_out_unneeded() -> None:
+    for name in UNNEEDED_MODULES:
+        sys.modules.setdefault(name, None)  # type: ignore[arg-type]  # None: import fails
+
+
 def _refusal(code: str, detail: str, status: int) -> dict[str, Any]:
     return {"ok": False, "code": code, "detail": detail, "status": status}
 
@@ -46,6 +61,7 @@ def _refusal(code: str, detail: str, status: int) -> dict[str, Any]:
 def main(argv: list[str]) -> int:
     kind, limits_json, cpu_s, memory_bytes = argv[0], argv[1], int(argv[2]), int(argv[3])
     _limit_self(cpu_s, memory_bytes)
+    _keep_out_unneeded()
     from jarvis.documents.extract import Limits, extract, too_complex
     from jarvis.documents.limits import MAX_FILE_BYTES, DocumentRejected
 
@@ -60,6 +76,19 @@ def main(argv: list[str]) -> int:
             "pages_total": out.pages_total,
             "page_starts": list(out.page_starts),
             "truncated": out.truncated,
+            "sheets": out.sheets,
+            "rows": out.rows,
+            "slides": out.slides,
+            "files": out.files,
+            "skipped": out.skipped,
+            "pictures": [
+                {
+                    "name": pic.name,
+                    "media_type": pic.media_type,
+                    "data": base64.b64encode(pic.data).decode("ascii"),
+                }
+                for pic in out.pictures
+            ],
         }
     except DocumentRejected as exc:
         payload = _refusal(exc.code, str(exc), exc.status)

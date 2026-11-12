@@ -1,0 +1,14 @@
+# JARVIS home kit: the two face model files the bridge uses to find and compare faces in
+# still pictures (R11.1). They are NOT in the kit: setup-wsl.sh downloads each one from the
+# address below, keeps it only if its SHA-256 is the one on its line, and the bridge checks
+# the same SHA-256 again before it loads the file (src: jarvis/homebridge/face_engine.py).
+#
+# Source: github.com/opencv/opencv_zoo at commit
+#   48b10fa505aeb51fbd127fc60a5c660040e823b7
+# Licences (read on 12 Nov 2026; the texts are beside this file):
+#   YuNet face detector    MIT          LICENSE-yunet-MIT.txt        (c) 2020 Shiqi Yu
+#   SFace face recogniser  Apache-2.0   LICENSE-sface-Apache-2.0.txt
+#
+# sha256  size-in-bytes  licence  file  address
+ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0  229738  MIT  face_detection_yunet_2026may.onnx  https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet/face_detection_yunet_2026may.onnx
+0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79  38696353  Apache-2.0  face_recognition_sface_2021dec.onnx  https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_recognition_sface/face_recognition_sface_2021dec.onnx

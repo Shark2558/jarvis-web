@@ -1,12 +1,12 @@
-Version v11.0.4 · 11 Nov 2026, 23:52 IST · Release R11 · Status: Current · Owner: 🛠 Mark XIV
+Version v11.1.3 · 12 Nov 2026, 17:23 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # JARVIS Architecture & Technology Guide
 
-This guide was checked against JARVIS's real code. This is edition v11.0.2 of the guide (the first
+This guide was checked against JARVIS's real code. This is edition v11.1.2 of the guide (the first
 edition was v6.1.1; the change log at the end lists every edition). It describes the JARVIS
-program at version v11.0.0: release R6.1 as built, plus release R11, the free proactive helpers
-(card C60), built and joined on one branch and not yet deployed. Anything that is planned but not
-built yet is marked PLANNED.
+program at version v11.1.0: release R6.1 as built, release R11, the free proactive helpers (card
+C60), and release R11.1, your observations fixed (card C61), built and joined on one branch and not
+yet deployed. Anything that is planned but not built yet is marked PLANNED.
 
 For engineers: it was written from the code, the deploy script, the CI file, the evals and the
 plans in `docs/plans/`, not from memory. A fact that could not be checked against the code says
@@ -258,7 +258,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Telegram front door |
-| What it does | Chat with JARVIS from Telegram after a one-time pairing, and receive alerts there. Reversible approval cards get Approve / Decline buttons; irreversible ones are never approvable on Telegram ("waiting in the console for your approval and passkey"). Mail, Drive, documents, contacts and personal data stay off on Telegram unless you switch them on, because bot chats are not end-to-end encrypted. |
+| What it does | Chat with JARVIS from Telegram after a one-time pairing, and receive alerts there. Reversible approval cards get Approve / Decline buttons; irreversible ones are never approvable on Telegram ("waiting in the console for your approval and passkey"). Mail, Drive, documents, contacts and personal data stay off on Telegram unless you switch them on, because bot chats are not end-to-end encrypted; since R11.1 that includes the whole-inbox summary and an attached picture's research (private reads), and the photo import's face counts (the home switch). A calendar batch, its undo and a re-plan card show their first line, written by code (how many, the dates), and "Open JARVIS to see the full list and approve it", never a button. |
 | Layer | L1 User Interaction |
 | Skill | Communication |
 | Where in the code | `src/jarvis/telegram/`, `src/jarvis/api/telegram.py`, `src/jarvis/notify/telegram_out.py`, `console-telegram.js` |
@@ -276,7 +276,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Voice service (speech in and out on the server) |
-| What it does | Turns JARVIS's replies into speech with Google Cloud Text-to-Speech (British voices: Chirp 3: HD and Studio) and your recorded speech into text with Speech-to-Text v1 (language en-IN). Decides what may be read aloud, counts the free allowance and asks the spending gate before any paid call. |
+| What it does | Turns JARVIS's replies into speech with Google Cloud Text-to-Speech (British voices: Chirp 3: HD and Studio) and your recorded speech into text with Speech-to-Text v1 (language en-IN). Decides what may be read aloud, counts the free allowance and asks the spending gate before any paid call. Since R11.1 it asks for three alternatives, and adds this turn's hints (the names of your waiting and attached files as they are said, never with Documents on "Never", and nouns from your own messages) between the base list and your own words; the "Words to recognise" privacy card says what goes to Google as hints; `POST /v1/voice/transcribe` takes an optional `X-Jarvis-Session` header and answers with `alternatives`. What the microphone heard is then checked by C61's "understood as" step. |
 | Layer | L2 Input Processing |
 | Skill | Communication |
 | Where in the code | `src/jarvis/voice/` (`service.py`, `google_cloud.py`, `speakable.py`, `wav.py`, `catalogue.py`, `settings.py`, `commands.py`), `src/jarvis/api/voice.py` |
@@ -308,12 +308,12 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Attached documents (paperclip and drag-and-drop) |
-| What it does | Lets you attach up to 3 files to a message (PDF, Word, text, Markdown or CSV; 10 MB and 300 pages each). The text is taken out in a separate process that can be killed, split into chunks and searched; the file itself is thrown away. |
+| What it does | Lets you attach up to 10 files to a message (your own settings: 10 MB each, 40 MB together, 4 pictures): PDF, Word, text, Markdown, CSV and, since R11.1, Excel (`.xlsx`, `.xlsm`, `.xls`: values only, never formulas or macros; hidden sheets are not read and are said; 50 sheets, 5,000 rows a sheet), PowerPoint (`.pptx`: slides and their notes), pictures (`.png`, `.jpg`, `.jpeg`: structure checked and camera and location data removed without decoding a pixel; at most 2,048 px a side), zip files (each member read as its own kind; a password, a bomb, a path that points outside, an archive inside or too many files is refused from the directory alone) and a whole folder (packed into one zip in your browser). The text is taken out in a separate process that can be killed (CPU, memory and time caps; every member of an Office file is scanned for a DTD first), split into chunks and searched; the file itself is thrown away. A picture is shown only to a brain that can see and never trains, only with the message it came with; a rupee estimate comes before a costly reply on a large file. |
 | Layer | L2 Input Processing |
 | Skill | Research & Intel |
-| Where in the code | `src/jarvis/documents/`, `src/jarvis/api/documents.py`, `console-attach.js` |
+| Where in the code | `src/jarvis/documents/` (R11.1: `sheets.py` with openpyxl and xlrd, `slides.py` with lxml, `archive.py`, `imagecheck.py`, `pictures.py`, `limits.py`), `src/jarvis/api/documents.py`, `console-attach.js` and C61's `console-r111-files.js` |
 | Depends on | C13 Brain core loop, C28 Tool gateway, C52 Permissions |
-| Data it keeps | `attachments/{id}` with its text chunks under it (kept with the conversation). Waiting uploads (at most 10) older than a day are swept. |
+| Data it keeps | `attachments/{id}` with its text chunks under it (kept with the conversation) and, since R11.1, `attachments/{id}/pictures/{01..04}` (a cleaned picture's bytes, at most 900 KB each, deleted with the attachment); the header's `waiting_owner` (the owner while the file waits to be sent, "" once sent). Waiting uploads older than a day are swept. |
 | Outside services | None |
 | Cost (₹ a month) | ₹0 for extraction; reading the text costs the brain's normal tokens |
 | When it fails | A file that is too big, unreadable or of the wrong kind is refused in plain words; a busy extractor queues for up to 50 seconds, then says "busy". Never sent to a brain that may train on content. |
@@ -324,7 +324,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Faces JARVIS may recognise, with consent |
-| What it does | A registry of people JARVIS may greet or name in alerts. Nobody is enrolled by default; adding someone needs a fixed consent statement. Face pictures and face matching stay on the laptop (Frigate's face library); the cloud keeps only names, relation and consent records. |
+| What it does | A registry of people JARVIS may greet or name in alerts. Nobody is enrolled by default; adding someone needs a fixed consent statement. Face pictures and face matching stay on the laptop (Frigate's face library); the cloud keeps only names, relation and consent records. Since R11.1 the laptop also groups unknown faces from your photos (C61, C39) and Faces shows "Unnamed groups": you name a group once (the same consent check; a child needs a parent's or guardian's yes; the laptop also refuses any person not on the consent list it was sent), or forget it; the crops are shown only on the laptop's own page. |
 | Layer | L2 Input Processing |
 | Skill | Security Advisor |
 | Where in the code | `src/jarvis/faces/`, `src/jarvis/api/faces.py`, `console-faces.js`; at home `src/jarvis/homebridge/faces.py` and the local page on the laptop |
@@ -398,7 +398,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | `deleted_items/{uid}/items/{id}`: the item's copy, kept 30 days, then swept by the tick. |
 | Outside services | Google Calendar and Google Tasks (to restore) |
 | Cost (₹ a month) | ₹0 |
-| When it fails | If the copy can't be stored, nothing is deleted. A second restore says "already restored" instead of making two copies. |
+| When it fails | If the copy can't be stored, nothing is deleted. A second restore says "already restored" instead of making two copies. The panel lists the newest 100 (a whole calendar batch's "Undo all", R11.1); what the model's `deleted_list` sees stays the newest 50. |
 | Since | Slice 11 (v0.11.0) |
 
 ### Layer 4 — Core Reasoning Engine
@@ -408,10 +408,10 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Brain core loop |
-| What it does | The heart of JARVIS: for each message it loads the conversation, adds long-term memory, checks your monthly limit, asks the brain, runs at most 6 rounds of tool calls through the gateway, records the cost and saves the turn. One conversation is handled one message at a time. |
+| What it does | The heart of JARVIS: for each message it loads the conversation, adds long-term memory, checks your monthly limit, asks the brain, runs at most 6 rounds of tool calls through the gateway, records the cost and saves the turn. One conversation is handled one message at a time. Since R11.1 (`finish.py`): a turn that works with tools or files may write `work_output_tokens`; an answer the cap cut off is asked for once more (its half-written tool calls never run); one with still no words is a fixed line chosen by code from what happened, stored marked as tool-derived and never shown to a model; many single calendar creates of one round become one batch card; an approved plan card answers with the tool's own sentence when no model can narrate. |
 | Layer | L4 Core Reasoning Engine |
 | Skill | Platform (serves every skill) |
-| Where in the code | `src/jarvis/core/` (`brain.py`, `brain_types.py`, `models.py`, `saving.py`, `rounds.py`, `channel.py`) |
+| Where in the code | `src/jarvis/core/` (`brain.py`, `brain_types.py`, `models.py`, `saving.py`, `rounds.py`, `channel.py`, `window.py`, and R11.1's `finish.py` and `fixed_lines.py`), `src/jarvis/tools/calendar_gather.py` |
 | Depends on | C09 Conversations, C10 Long-term memory, C16 Brain router, C28 Tool gateway, C54 Costs |
 | Data it keeps | Nothing of its own (turns are saved through C09). |
 | Outside services | The selected brain (see C16) |
@@ -496,7 +496,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | `approvals/{id}`: waiting cards, so they survive scale-to-zero; a decided card spends its token and can't run twice. |
 | Outside services | None |
 | Cost (₹ a month) | ₹0 |
-| When it fails | A card whose action changed since it was shown is refused. An irreversible card with passkeys in force needs your passkey. |
+| When it fails | A card whose action changed since it was shown is refused. An irreversible card with passkeys in force needs your passkey. When no model can narrate, Approve all says a plan card's own result ("58 events added, 2 failed, Sir."), never "Done" for something half done (R11.1). A card always waits in a stored conversation, so Approvals can decide it (R11.1 fixed the kitchen's calendar card, which could not be approved). |
 | Since | Slice 1 (before v0.5.0); kept in Firestore Slice 5 (v0.5.0); Approve all Slice 11 (v0.11.0) |
 
 ### Layer 5 — Skills & Capabilities
@@ -514,7 +514,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | `briefs/{uid}_{date}` (kept 7 days), `brief_settings/{uid}`. |
 | Outside services | Google Calendar, Gmail, Anthropic (optional summary, at most 6 calls a day) |
 | Cost (₹ a month) | ₹0 without the summary; about ₹3 a month with it (slice 7 estimate) |
-| When it fails | One failing step marks the brief failed with a friendly reason; at the monthly limit the summary is left out with a note and the facts stay complete. |
+| When it fails | One failing step marks the brief failed with a friendly reason; at the monthly limit the summary is left out with a note and the facts stay complete. Since R11.1 the inbox counts every unread message in the inbox by kind (Gmail's own count; "about N" when it could not be read; at most 30 reads), withholds codes and bank messages in every category, says how many it could not read, and reads only as your "Search and read email" row allows ("Ask first" or "Never": no read, "Your inbox could not be read just now"); the plan check-ins still unanswered are one Helpers line. |
 | Since | Slice 7 (v0.7.0) |
 
 #### C20 · Web search
@@ -538,10 +538,10 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | People research (with a verification gate) |
-| What it does | Short dossiers on public figures, or on a person in a work due-diligence context, from public sources only. A deterministic pre-filter refuses private phrasing, and a verification gate must confirm a public role before any links come out. |
+| What it does | Short dossiers on public figures, or on a person in a work due-diligence context, from public sources only. A deterministic pre-filter refuses private phrasing, and a verification gate must confirm a public role before any links come out. Since R11.1 each profile is a card with its own "Open in browser" link and "Open next" opens one tab a press (no "Open all"). On a turn whose message carried a picture, it researches only a name you typed in that message; a name the picture's own text holds becomes a "Look up" card you press (the caption line shown), and anything else is refused in fixed words: JARVIS never identifies a person from a picture (C61). The verification gate itself is unchanged. |
 | Layer | L5 Skills & Capabilities |
 | Skill | Research & Intel |
-| Where in the code | `src/jarvis/people/`, `console-people.js` |
+| Where in the code | `src/jarvis/people/` (R11.1: `offer.py`, `offer_card.py`), `console-people.js`; the turn guard `src/jarvis/picture/turnguard.py` |
 | Depends on | C20 Web search, C16 Brain router, C28 Tool gateway |
 | Data it keeps | `people_last/{uid}`: your last research (the dossier and its target). |
 | Outside services | Tavily; Anthropic (in AI mode, a fast-tier check that can only refuse, and one optional fast-tier summary) |
@@ -660,6 +660,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Cost (₹ a month) | ₹0 (free sources with no key, inside the Firestore and Cloud Run free tiers); a recipe idea about ₹0.9 on the balanced tier, against your monthly limit |
 | When it fails | The helpers switched off, or a part whose setup fails, leaves that part empty and the rest running. A background read of your Google data takes the gateway's own check first (C28): "Ask first" or "Never" on its permission row, rules that can't be read, or no permission service at all, mean no read; when you ask for birthdays in the console yourself, "Ask first" shows its card and, once you approve, reads. Your top priority never reads your to-dos on "Ask first" (no to-do card was shown): it leaves them out and says they weren't checked. A helper you switched on that a row stops says so in one fixed line, never anyone else's words, at the top of its tab, in the brief (one line in all) and when you ask about breach notices: "Breach watching paused: your Email permission is set to Ask first. Set it to Allow to let it run by itself." A read cut short by the morning's time limit still leaves its audit line. A payment card that can't be shown spends nothing and says "That payment couldn't be shown. Please prepare it again." Nudge settings that can't be read mean no nudge. A message no channel took is tried at the next 5-minute run, and never sent twice. A stale clock shows in the panel ("reminders come only between 04:00 and 11:30"). A feed that is down shows since when (Open-Meteo, SACHET); weather and alerts are off without the token key; nutrition says "not installed" if its data file is missing. |
 | Since | R11 (v11.0.0) |
+
+#### C61 · Observations fixed (R11.1)
+
+| Field | Value |
+|---|---|
+| Name | Observations fixed: answers, calendar batches, voice, files, photos, pictures (R11.1) |
+| What it does | Built in R11.1 (joined on one branch, not yet deployed): fixes what you reported on 12 Nov 2026, in four parts. **A · Brain and calendar**: a reply is never "I have nothing to add, Sir.": a turn that works with tools or attached files may write a longer answer (`work_output_tokens`, 8,192, at most 32,000 because the tool loop does not stream); an answer the cap cut off is asked for once more, metered like any call, and if it still has no words JARVIS says in a fixed line what happened ("I did 2 steps and 1 failed, but ..."). More than three calendar events (up to 100, no guests) go on ONE approval card that lists every event, its description and alerts (`calendar_create_events`); the events are created five at a time with per-event results, a reply card with "Undo all" (two taps) and "Retry the N", and a repeat adds nothing twice; many single creates in one round are gathered into that one card. A plan you follow ("series") is checked in 15 minutes after each session ends, once (held at night), and "session skipped" puts every move ("old date -> new date") on one card that never drops a session (`series_checkin`, `series_reschedule`); the plan follows your calendar (a session you deleted by hand is never asked about; one you moved keeps its new time). "What is in my inbox?" counts every unread message by kind from Gmail's own count (`gmail_inbox_summary`), with codes and bank messages withheld in every category; the morning brief does the same through your "Search and read email" row. **B · Voice and files**: a spoken message shows "Heard / Understood as" when fixed rules (60 real mishearings and near-matches against your attached files' names) or, only when unsure and with the AI on, one fast-tier check changed a word; a number, an amount, a date, a time, a name, a phone number or an e-mail address is never rewritten (JARVIS asks one short question instead), and no action word is ever changed. Excel (`.xlsx`, `.xlsm`, `.xls`; values only, hidden sheets never read), PowerPoint (`.pptx`, slides and notes), pictures (`.png`, `.jpg`; camera and location data removed, at most 2,048 px a side), zip files and whole folders can be attached, 10 files a message; a rupee estimate ("About ₹N for one reply") comes before a costly reply on a large file. **C · Photos, faces and the home kit**: the deploy script switches the Photos Picker API on; up to 2,000 picked Google Photos are read in the background, ten or more at a time, resuming after a restart or while the laptop is away; the home laptop also reads a photo folder you choose (`PHOTOS_DIR`, read-only), groups unknown faces (OpenCV YuNet and SFace, on the laptop only), and you name a group once in Faces -> Unnamed groups, with the consent check (a child needs a parent's or guardian's yes); afterwards that person is recognised with no further step; unnamed groups go after 90 days, and a delete is done only when the laptop confirms it. **D · People, pictures and Vitals**: People shows each profile as a card with its own "Open in browser" link and "Open next" (one tab a press); a picture of a product, place, label or logo is researched with sources (`picture_research`, one fast-tier look by a brain that sees and never trains); JARVIS never identifies a person from a picture: on a turn whose message carried a picture, `research_person` takes only a name you typed, a name printed in the picture is only offered ("Look up" card), and every outward search (`web_search`, `youtube_search`, `maps_search`, `maps_route`, a research's context) carries only words you typed, words the picture shows and plain search words, unless picture research of that very picture saw nobody (then only a name's shapes are refused); Vitals names the failing part of the home laptop (Frigate or the MQTT messenger) with its fix steps, and reads a new GitHub token's limits by itself (at most once every 6 hours). |
+| Layer | L5 Skills & Capabilities |
+| Skill | Task & Productivity, Communication, Research & Intel, Security Advisor (one per fix; the R11.1 plan's table) |
+| Where in the code | `src/jarvis/fixes/` (`ports.py`: the four parts' contract), `src/jarvis/api/r11_1_wiring.py` (the parts, their jobs on the helpers' clock, their No-AI phrases and brief lines), `src/jarvis/api/fix_plan.py` (routes under /v1/series), `fix_files.py` (routes under /v1/input), `fix_photos.py` (routes under /v1/facegroups), `fix_look.py` (routes under /v1/picture); A `src/jarvis/series/` (models, store, service, sync, replan, moving, batch, batch_result, batch_tools, cards, tools, job, phrases, brief, privacy, part), `src/jarvis/core/finish.py` and `fixed_lines.py`, `src/jarvis/tools/calendar_batch.py`, `calendar_gather.py`, `gmail_digest.py`; B `src/jarvis/understand/` (words, rules, context, near, guard, model, hints, estimate, service, part) and `src/jarvis/documents/` (`sheets.py`, `slides.py`, `archive.py`, `imagecheck.py`, `pictures.py`, `limits.py`); C `src/jarvis/facegroups/` (store, service, jobs, tools, privacy, part), `src/jarvis/photos/` (the import's store and steps) and, on the laptop, `src/jarvis/homebridge/` (`face_engine.py`, `decoder.py`, `jpeg.py`, `face_folder.py`, `face_groups.py`, `face_store.py`, `face_db.py`, `face_index.py`); D `src/jarvis/picture/` (eyes, guard, scene, words, search, research, tools, turnguard, part), `src/jarvis/people/offer.py` and `offer_card.py`; the console's loader `console-r111.js` with `console-r111-plan.js`, `console-r111-files.js`, `console-r111-photos.js`, `console-r111-look.js`; evals `evals/r11_1/` |
+| Depends on | C13 Brain core loop, C16 Brain router and LLM layer, C28 Tool gateway and audit, C52 Permissions and passkeys, C45 Alerts port, C46 Alert policy, C60 Helpers (its 5-minute clock), C29 Google account link, C30 Calendar, C31 Gmail, C19 Morning brief, C38 Home link, C39 Home bridge, C07 Attached documents, C05 Voice service, C21 People research, C37 Photos picker and GitHub, C55 Vitals, C17 Brain switch, No-AI and offline mode |
+| Data it keeps | `series/{uid}` (your followed plans, at most 10 of 200 sessions each: calendar event ids, times, done / skipped / moved / removed; a plan's name only when you typed it), `series_told/{uid}_{key}` (a check-in asked once, claimed in a transaction before the alert; 60 days), `photo_imports/{uid}` (an import's progress: counts and Google's item ids until it ends, never a picture or a link), `face_groups/{uid}` (the laptop's unnamed group ids and counts, what waits for it: ids only, never a face). Attached pictures are bytes beside their attachment (C07). On the laptop only: the face groups' SQLite file (embeddings and crops, folder 0700, file 0600). Nothing new is sealed. Each has a Privacy row (C53). |
+| Outside services | Anthropic (a longer working answer, one retry, a picture's look and the "understood as" check only when the rules are unsure), Google Calendar, Gmail, Google Photos Picker, Google Cloud Speech-to-Text (three alternatives and per-turn hints), Tavily (a picture's things only), GitHub (`/rate_limit`, free of the limit) |
+| Cost (₹ a month) | ₹0 fixed: no new paid service, secret or Scheduler job. Model use counts against your monthly limit like any reply: a long working answer at most about ₹8 on the balanced tier (8,192 output tokens), one picture look about ₹0.05, an "understood as" check about ₹0.01 when it runs at all; batches, check-ins, re-plans, the inbox count, face grouping, Vitals and GitHub are plain code (₹0) |
+| When it fails | A part whose setup fails is left out ("setup failed") and the other three still run; with the helpers switched off check-ins and the photo import's background steps do not run (tools and panels still work). An answer that stays empty after its one retry says so in a fixed line and is never stored or shown to a model again. Without Google linked no batch card is made and the inbox says "Google is not linked". A file that is too big, hidden, password-protected, nested or a zip bomb is refused in plain words; a check of the spoken words that fails says "Couldn't check the words; sent as heard."; an estimate that cannot be worked out asks "send anyway?". A picture never reaches a brain that cannot see or may train on it, and a storage fault on the picture counts as a picture turn (the guard stays shut, in its strict mode: a search that would carry a word you did not type is refused with "type the name yourself or ask without the picture"). With the laptop off, the import waits ("paused: laptop not reachable"), a delete waits and says "Pending: it finishes when your home laptop is back on.", and Vitals says the laptop is offline. A slow GitHub shows "Checking…" for at most 45 s, then "press Refresh". |
+| Since | R11.1 (v11.1.0) |
 
 ### Layer 6 — Integration & Tools
 
@@ -812,12 +828,12 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Connectors: Google Photos picker and your GitHub |
-| What it does | Photos: you pick a few photos (at most 20) in Google's picker; JARVIS strips their metadata and sends them to the laptop to enrol faces (and can suggest a matching Google Contact by name), then drops them. GitHub: read-only access to your own account with a token you paste once. |
+| What it does | Photos: you pick photos in Google's picker (up to 2,000 since R11.1, your `photos_max_picked`); JARVIS reads them in the background in steps (at least `photos_import_batch` when the time allows, at most 50), strips their metadata, sends each to the laptop and drops it; the laptop groups the faces (C61) and a pick resumes after a restart or while the laptop is away. The deploy script switches the Photos Picker API on. GitHub: read-only access to your own account with a token you paste once; since R11.1 a token with no stored limits is read once (`GET /rate_limit`, free of the limit) at most every 6 hours, and Vitals shows its calls this hour. |
 | Layer | L6 Integration & Tools |
 | Skill | Research & Intel |
 | Where in the code | `src/jarvis/photos/`, `src/jarvis/integrations/github.py`, `src/jarvis/integrations/github_meta.py`, `console-connectors.js` |
 | Depends on | C08 Faces, C39 Home bridge, C51 Keyring |
-| Data it keeps | `photos/{uid}` (the picker session, ids only), `connectors_github/{uid}` (the token, encrypted with the `connectors` key). |
+| Data it keeps | `photos/{uid}` (the picker session, ids only), `photo_imports/{uid}` (an import's progress, R11.1), `connectors_github/{uid}` (the token, encrypted with the `connectors` key; `facts_checked_at`, when JARVIS last asked GitHub for its limits). |
 | Outside services | Google Photos Picker, GitHub |
 | Cost (₹ a month) | ₹0 |
 | When it fails | No picture or face data is stored in the cloud. A token GitHub refuses shows as such on Vitals. |
@@ -836,7 +852,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | `home/{uid}` (the link record, encrypted with the `home` key), `home_link/{uid}` (one pending code, stored as a hash), `home_claims/{uid}_{h}` (event claims, 48 hours), `home_devices/{uid}` (the allowed device list, encrypted). |
 | Outside services | Tailscale (Funnel), Home Assistant (through the bridge) |
 | Cost (₹ a month) | ₹0 |
-| When it fails | Laptop off: home tools say so, the watchdog tells you once, and "back" when it returns. A replayed or unsigned message is refused. |
+| When it fails | Laptop off: home tools say so, the watchdog tells you once, and "back" when it returns. A replayed or unsigned message is refused. Since R11.1 every call also carries `X-Jarvis-Body-Sha256`, which the signature already covers, so the bridge checks it before reading a large body (the MAC itself is unchanged); a kit older than 0.2.0 shows "Your home kit is older than this JARVIS ... run setup-windows.ps1 -Update". |
 | Since | R3 (v3.0.0) |
 
 #### C39 · Home bridge
@@ -844,12 +860,12 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Home bridge (on the owner's laptop) |
-| What it does | The only thing on the laptop the internet can reach: a small signed API in Docker next to Home Assistant, Frigate (cameras) and Mosquitto (camera messages). Filters camera events at home, keeps the face library at home and serves a local Faces page on the laptop. |
+| What it does | The only thing on the laptop the internet can reach: a small signed API in Docker next to Home Assistant, Frigate (cameras) and Mosquitto (camera messages). Filters camera events at home, keeps the face library at home and serves a local Faces page on the laptop. Since R11.1 (kit 0.2.0, 768 MB): a face engine (OpenCV 5.0 YuNet and SFace, each model kept only if its SHA-256 is the pinned one; downloaded at setup, not shipped) reads picked photos (one route, 6 MB, signature checked before the body) and a folder you choose (`PHOTOS_DIR`, mounted read-only; nothing in it is ever written), decodes each JPEG in a capped child process, and groups unknown faces (three pictures make a group); four routes answer ids, counts and a confidence only (`/bridge/v1/faces/photos`, `enrol`, `groups`, `groups/forget`); the local page shows a group's crops and can forget it. |
 | Layer | L6 Integration & Tools |
 | Skill | Security Advisor |
 | Where in the code | `src/jarvis/homebridge/`, `deploy/home/` (docker-compose, Frigate, Home Assistant and Mosquitto config, Windows and WSL setup scripts) |
 | Depends on | C38 Home link |
-| Data it keeps | On the laptop only: its state and a 7-day doorstep log in the bridge's data volume; Frigate's own recordings and face library. |
+| Data it keeps | On the laptop only: its state and a 7-day doorstep log in the bridge's data volume; Frigate's own recordings and face library; since R11.1 the face groups' SQLite file (embeddings and crops, `secure_delete`, unnamed groups gone after `FACE_GROUPS_KEEP_DAYS`, 90 by default). |
 | Outside services | Home Assistant, Frigate, Mosquitto, Tailscale (Funnel on port 8443) |
 | Cost (₹ a month) | ₹0 in software (the laptop's electricity is the owner's) |
 | When it fails | If a container stops, the heartbeat reports it and the systems check shows it. Only one small burglar-alert snapshot may ever leave home, and only if you opted in. |
@@ -1058,7 +1074,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Permissions and passkeys |
-| What it does | Per group of tools you choose Allow, Ask first or Never (an irreversible group can never be Allow). Your first passkey (WebAuthn) is registered from a browser signed in with Google in the last 5 minutes; every later change (adding a second, removing one, switching the rule off) needs a passkey. With "require passkey for irreversible actions" on, every irreversible card needs one. |
+| What it does | Per group of tools you choose Allow, Ask first or Never (an irreversible group can never be Allow); R11.1 added "Calendar plans" (`series_*`) and "Pictures" (`picture_*`), and a calendar batch, its undo and a re-plan always ask whatever their row says. Your first passkey (WebAuthn) is registered from a browser signed in with Google in the last 5 minutes; every later change (adding a second, removing one, switching the rule off) needs a passkey. With "require passkey for irreversible actions" on, every irreversible card needs one. |
 | Layer | X Cross-cutting |
 | Skill | Security Advisor |
 | Where in the code | `src/jarvis/permissions/`, `src/jarvis/api/permissions.py`, `src/jarvis/api/rows.py`, `src/jarvis/api/settings_audit.py`, `console-permissions.js` |
@@ -1082,7 +1098,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | None of its own; it reads each feature's store through its public methods. |
 | Outside services | None |
 | Cost (₹ a month) | ₹0 |
-| When it fails | A failing category keeps its row and says so; data that changed since you looked is refused (409) and burns no proof. |
+| When it fails | A failing category keeps its row and says so; data that changed since you looked is refused (409) and burns no proof. A delete another device finishes later (the laptop's face groups, R11.1) says so: "Face groups: Pending: it finishes when your home laptop is back on." |
 | Since | R2 (v2.0.0) |
 
 #### C54 · Costs in ₹ and the monthly limit
@@ -1114,7 +1130,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Data it keeps | `vitals_providers/{name}` (each record you track: label, dates, limits; never a key's value), `vitals_status/{name}` (the last status, for one alert per crossing), `vitals_index/{owner hash}` (the names of your records). |
 | Outside services | None of its own (it reads the meters other cards keep) |
 | Cost (₹ a month) | ₹0 (no model call) |
-| When it fails | Records that can't be read never hide the rest of the board ("unavailable"). Until its Firestore index is built (made by the deploy script) your own list shows "unavailable". A build date that can't be read shows "build date unknown" (a copy run on a developer's machine has none); a missing version hides the About line; neither ever stops the board loading. |
+| When it fails | Records that can't be read never hide the rest of the board ("unavailable"). Since R11.1 the home row names the failing part while the laptop reports it ("the camera watcher (Frigate) is not answering", "the camera's messenger (MQTT) is not connected") with two fix steps, and the GitHub row shows "Checking…" while its limits are read for the first time (45 s at most, then "press Refresh"). Until its Firestore index is built (made by the deploy script) your own list shows "unavailable". A build date that can't be read shows "build date unknown" (a copy run on a developer's machine has none); a missing version hides the About line; neither ever stops the board loading. |
 | Since | R4 (v4.0.0); tracks itself R5.1 (v5.1.0); the About JARVIS line R6.1 (v6.1.0) |
 
 #### C56 · Systems check
@@ -1958,6 +1974,14 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
   6.2 the R11 collections, page 1 the helpers and who sees what; `scripts/arch_coverage.py`,
   `scripts/check_doc_versions.py` and `scripts/markdy_export.py --check` pass. The diagrams are
   unchanged.
+- **Edition v11.1.2.** Written after the four R11.1 parts were merged into `r11-1-i1` and joined:
+  card C61 describes what was built (each part's modules, routes, tools, jobs, collections, what
+  it costs and how it fails), and the cards each part changed say so (C04 Telegram, C05 Voice,
+  C07 Attached documents, C08 Faces, C12 Recently deleted, C13 Brain core loop, C18 Approvals,
+  C19 Morning brief, C21 People research, C37 Photos and GitHub, C38 Home link, C39 Home bridge,
+  C52 Permissions, C53 Privacy, C55 Vitals); `scripts/arch_coverage.py`,
+  `scripts/check_doc_versions.py` and `scripts/markdy_export.py --check` pass. The diagrams are
+  unchanged.
 
 ## Change log
 
@@ -1969,3 +1993,6 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | v11.0.2 | 11 Nov 2026, 21:43 IST | R11 | R11 I1: card C60 as built (Today, Home, Nudges and Kitchen: what each does, the modules, every collection, the sources with Open-Meteo's CC BY 4.0 credit, NDMA SACHET and USDA FoodData Central CC0, the jobs, kinds and night rules); C28 the background reads' governed path (`background.py`); page 1: the helpers, who sees what (Open-Meteo, SACHET) and that JARVIS never pays; section 5.2 three free sources; section 6.2 the R11 collections; the glossary (background read, CAP, CC0 / CC BY, FoodData Central, nudge, SACHET, UPI); the version line's owner is Mark XIV | 🛠 Mark XIV |
 | v11.0.3 | 11 Nov 2026, 23:10 IST | R11 | R11 integrated review fixes: C60 "When it fails" (a helper a permission row stops says so in one fixed line in its tab, the brief and breach notices; in the console "Ask first" asks and then reads; no permission service means no read; a cut read is still audited; a payment card that can't be shown spends nothing), `helpers/paused.py` in its code; C28 the gateway-decided "Ask first" read and the fail-closed rows. (The version line's owner has been Mark XIV since v11.0.2.) | 🛠 Mark XIV |
 | v11.0.4 | 11 Nov 2026, 23:52 IST | R11 | C60 and C28: "Ask first" opens a read only inside the gateway's call for that same tool, so your top priority leaves your to-dos out on "Ask first" and says they weren't checked | 🛠 Mark XIV |
+| v11.1.1 | 12 Nov 2026, 05:52 IST | R11.1 | R11.1 I0 (the joins for 'Your observations, fixed'): card C61 (PLANNED, with what I0 built: the four parts' contract, their packages, routes, console loader and planned collections) | 🛠 Mark XV |
+| v11.1.2 | 12 Nov 2026, 12:20 IST | R11.1 | R11.1 I1: card C61 as built (A: no filler reply, one card for many calendar events with Undo all and Retry, a followed plan's check-ins and re-plans, the whole inbox by kind; B: heard / understood as, Excel, PowerPoint, pictures, zip and folders, the rupee estimate; C: 2,000 photos in the background, face groups on the laptop named with consent; D: profile cards, picture research that never identifies a person and the turn guard, Vitals' home parts and the GitHub limits), with its modules, routes, collections, costs and failures; the R11.1 lines on C04, C05, C07, C08, C12, C13, C18, C19, C21, C37, C38, C39, C52, C53 and C55 | 🛠 Mark XV |
+| v11.1.3 | 12 Nov 2026, 17:23 IST | R11.1 | R11.1 I1 after the integrated reviews: C61's picture guard as built (strict unless the picture is known to show nobody; YouTube, Maps and a research's context behind it too) | 🛠 Mark XV |

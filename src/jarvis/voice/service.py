@@ -4,6 +4,8 @@ the engines and the meter.
 
     speak       text (1–1,200) → speakable() (≤ 600) → [gate (only if priced) → TTS → meter]
     transcribe  WAV → strict parse → [gate (only if priced) → STT → meter (Google's billed time)]
+                R11.1 D9: per-turn hints (file names as said, the conversation's nouns) go
+                between the base list and the owner's own words; three alternatives come back
     view        settings, cloud status, voices (validated against Google's list), wit levels,
                 the deployment's allowance use this Pacific month and the owner's voice rupees
     wit_for     the Brain's persona variant (never raises; any failure → "film")
@@ -180,6 +182,8 @@ class TranscriptView(BaseModel):
     cost_inr: float
     language: str
     no_speech: bool
+    # R11.1 D9: the engine's other guesses (at most two), for "heard / understood as"
+    alternatives: list[str] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -274,14 +278,26 @@ class VoiceService:
             )
             return VoiceSettings()
 
-    def hints_for(self, owner_phrases: tuple[str, ...]) -> tuple[str, ...]:
-        """The speech hints for one request: the base list, the honorific, then the owner's words,
-        one spelling each (case-insensitive; the first wins). No `boost` (D16)."""
-        seen: dict[str, str] = {}
-        for w in (*self.base_phrases, *owner_phrases):
+    def hints_for(
+        self, owner_phrases: tuple[str, ...], turn: tuple[str, ...] = ()
+    ) -> tuple[str, ...]:
+        """The speech hints for one request: the base list, the honorific, this turn's hints
+        (R11.1 D9: file names as said, the conversation's nouns), then the owner's words, one
+        spelling each (case-insensitive; the owner's own spelling wins over a turn hint's, the
+        base list's over both). No `boost` (D16)."""
+        base: dict[str, str] = {}
+        for w in self.base_phrases:
             if w.strip():
-                seen.setdefault(w.casefold(), w)
-        return tuple(seen.values())
+                base.setdefault(w.casefold(), w)
+        own: dict[str, str] = {}
+        for w in owner_phrases:
+            if w.strip() and w.casefold() not in base:
+                own.setdefault(w.casefold(), w)
+        extra: dict[str, str] = {}
+        for w in turn:
+            if w.strip() and w.casefold() not in base and w.casefold() not in own:
+                extra.setdefault(w.casefold(), w)
+        return (*base.values(), *extra.values(), *own.values())
 
     async def update_settings(self, uid: str, patch: VoiceSettingsPatch) -> VoiceSettings:
         new = await self.store.update(uid, patch)
@@ -479,21 +495,30 @@ class VoiceService:
         return await self._engine("stt", uid, price, estimate, call(self.hints_for(())))
 
     async def transcribe(
-        self, uid: str, blob: bytes, *, owner_phrases: bool = True
+        self,
+        uid: str,
+        blob: bytes,
+        *,
+        owner_phrases: bool = True,
+        turn_hints: tuple[str, ...] = (),
     ) -> TranscriptView:
         """`owner_phrases=False`: the base hints only (R6: a build book guest's question must not
-        be biased toward the owner's own words)."""
+        be biased toward the owner's own words). `turn_hints` (R11.1 D9): this turn's hints,
+        already cleaned and capped by the caller; they sit between the base list and his words."""
         audio = parse_wav(blob)
         engines = self._require("stt")
         owner = (await self.settings_of(uid)).phrases if owner_phrases else ()  # never raises
-        hints = self.hints_for(owner)
+        turn = turn_hints if owner_phrases else ()
+        hints = self.hints_for(owner, turn)
         price = self.prices.stt
         estimate = float(math.ceil(audio.seconds))  # gated on this …
         async with self._lock(uid, "stt"):
             await self.billing.ensure_units_allowed(
                 uid, key=price.key, units=estimate, free_units=price.free_units
             )
-            t = await self._recognise(engines, uid, price, estimate, audio, hints, bool(owner))
+            t = await self._recognise(
+                engines, uid, price, estimate, audio, hints, bool(owner) or bool(turn)
+            )
             # … billed on what Google says it billed (totalBilledTime), when it says
             billed = t.billed_seconds if t.billed_seconds is not None else estimate
             charge = await self._meter(uid, price, billed)
@@ -514,6 +539,7 @@ class VoiceService:
             cost_inr=round(charge.inr, 4),
             language=self.language,
             no_speech=not text,
+            alternatives=[a for a in (x.strip() for x in t.alternatives) if a and a != text][:2],
         )
 
     async def aclose(self) -> None:

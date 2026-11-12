@@ -62,6 +62,7 @@ from jarvis.offline.mode import BrainMode
 from jarvis.people.research import PeopleService
 from jarvis.photos.service import PhotosService, PhotosState
 from jarvis.photos.tools import ConnectorDeps
+from jarvis.picture.turnguard import TurnGuard
 from jarvis.storage.docs import Docs
 from jarvis.ticks import TickJob
 from jarvis.tools.audit import AuditTrail
@@ -158,6 +159,7 @@ def wire_photos(app: FastAPI, s: Settings, docs: Docs) -> PhotosService | None:
         return None
     from jarvis.contacts.client import ContactsClient
     from jarvis.photos.edge import BridgeHomeEdge
+    from jarvis.photos.models import ImportLimits
     from jarvis.photos.picker import PickerClient
 
     return PhotosService(
@@ -166,6 +168,8 @@ def wire_photos(app: FastAPI, s: Settings, docs: Docs) -> PhotosService | None:
         faces,
         ContactsClient(google),
         PhotosState(docs, prefix=s.firestore_prefix),
+        # R11.1 D14: his own limits from the first call (not only once Part C's part is used)
+        limits=ImportLimits(s.photos_max_picked, s.photos_import_batch),
     )
 
 
@@ -266,8 +270,11 @@ async def wire_r4(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> N
     await load_owner_modes(app, s)  # I2 F1: the persisted no-AI switch, before any tick or call
 
 
-def register_r4_tools(reg: ToolRegistry, parts: R4Parts | None) -> None:
-    """W6: each family through its module's factory, only when its service exists."""
+def register_r4_tools(
+    reg: ToolRegistry, parts: R4Parts | None, pictures: TurnGuard | None = None
+) -> None:
+    """W6: each family through its module's factory, only when its service exists. `pictures`:
+    the app's turn guard for research_person (R11.1 D21-D; None: it fails closed)."""
     if parts is None:
         return
     if parts.vitals is not None:
@@ -288,7 +295,7 @@ def register_r4_tools(reg: ToolRegistry, parts: R4Parts | None) -> None:
     if parts.people is not None:
         from jarvis.people.tools import PeopleDeps, people_tools
 
-        for t in people_tools(PeopleDeps(service=parts.people)):
+        for t in people_tools(PeopleDeps(service=parts.people, pictures=pictures)):
             reg.register(t)
 
 

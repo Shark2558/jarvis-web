@@ -572,7 +572,8 @@ ROWS = {
 
 def test_five_rows_sit_between_drive_and_maps() -> None:
     ids = [g.id for g in GROUPS]
-    assert len(ids) == 44  # R4 I0: + 5 Vitals..Connectors rows; R11 I0: + 6 helper rows (D16)
+    # R4 I0: + 5 Vitals..Connectors rows; R11 I0: + 6 helper rows (D16); R11.1 I0: + 2
+    assert len(ids) == 46
     at = ids.index("drive")
     assert ids[at + 1 : at + 6] == list(ROWS) and ids.index("maps") > at + 5
     assert ids[-1] == "youtube"

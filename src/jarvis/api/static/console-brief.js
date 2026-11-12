@@ -356,13 +356,16 @@
     s.setAttribute('aria-labelledby', h.id); s.append(h);
     return s;
   }
+  /** His mail row is Never or Ask first: said as his choice, never as a fault (brief.render). */
+  const paused = (what) => `Paused by your Permissions: set 'Search and read email' to Allow there to see your ${what} here.`;
   /** One-line replacement for a section Google couldn't fill (not linked, or failing just now). */
   function missing(state, what, id) {
     const wrap = mk('div', 'bstate');
     if (state === 'not_connected') {
       wrap.append(mk('p', 'bempty', `Connect Google to see your ${what} here.`),
         button(id, 'bact', 'Open Integrations', () => Deck.open('integrations', { focus: true })));
-    } else wrap.append(mk('p', 'bmiss warn', `Couldn't read your ${what} just now.`));
+    } else if (state === 'paused') wrap.append(mk('p', 'bempty', paused(what)));  // R11.1 I1 M4
+    else wrap.append(mk('p', 'bmiss warn', `Couldn't read your ${what} just now.`));
     return wrap;
   }
   function briefView(b) {
@@ -442,8 +445,11 @@
     if (state && state !== 'ok') { const s = section('inbox', 'Inbox'); s.append(missing(state, 'mail', 'briefIntegMail')); return s; }
     if (!inbox) { const s = section('inbox', 'Inbox'); s.append(mk('p', 'bempty', 'No mail details in this brief.')); return s; }
     const total = num(inbox.total), msgs = arr(Array.isArray(inbox.items) ? inbox.items : inbox.messages).map(obj).filter(Boolean);
-    const s = section('inbox', 'Inbox', total !== null ? `${total} unread` : '');
-    if (!msgs.length) { s.append(mk('p', 'bempty', 'No unread mail in Primary from the last day.')); return s; }
+    const about = inbox.exact === false ? 'about ' : ''; // R11.1 D20: Gmail's own count was missing
+    const s = section('inbox', 'Inbox', total !== null ? `${about}${total} unread` : '');
+    const none = num(inbox.failed) ? 'I couldn\u2019t read your newest unread mail just now: see Inbox by kind.'
+      : total ? 'None of them is from a person, a bill or an update of the last 7 days.' : 'No unread mail in your inbox.';
+    if (!msgs.length) { s.append(mk('p', 'bempty', none)); return s; }
     const ul = mk('ul', 'binbox');
     msgs.forEach(m => {
       const li = mk('li'), from = txt(m.from_name, 80) || txt(m.from_address, 120) || 'Unknown sender';

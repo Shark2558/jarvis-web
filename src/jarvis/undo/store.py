@@ -32,7 +32,10 @@ log = get_logger(__name__)
 
 _OWNER = re.compile(r"[A-Za-z0-9_.@+-]{1,128}")
 STALE_CLAIM_S = 300  # a restore that crashed half-way may be tried again after 5 minutes
-MAX_LISTED = 50
+MAX_LISTED = 50  # what the model's deleted_list sees (its result stays inside the budget)
+# R11.1 I1: what the Recently deleted panel lists: a whole "Undo all" of a calendar batch (at most
+# calendar_batch_max, 100 events), so none of its events is missing from the list
+PANEL_LISTED = 100
 SWEEP_BATCH = 200
 
 

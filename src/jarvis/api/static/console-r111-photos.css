@@ -1,0 +1,15 @@
+/* src/jarvis/api/static/console-r111-photos.css -- R11.1 Part C (docs/plans/r11-1-observations.md D0): placement
+   only for a Photos import's progress line (Connectors, #photosImport) and the face groups to name (Faces,
+   #facesGroups). Everything shown is an existing piece: .rhead / .k, .bfine, .bnote, .empty, the Things list
+   (.tlist .trow .ttxt .tname .tplace .tmeta .tacts), .btn.bact, .btn.lift, .actions and the two-step .confirm
+   row. Existing tokens only; no new colours, fonts, radii or shadows. Phones keep their 44 px targets through
+   the panels' own rules (.faces .btn.bact, .cardx .btn). */
+.fgroups{display:flex;flex-direction:column;gap:8px;min-width:0;padding-top:12px;border-top:1px solid var(--line-2)}
+.fgroups .rhead,.fgroups .rhead h3{margin:0}
+.fgroups .bfine,.fgroups .bnote,.fgroups .empty{margin:0}
+.fgroups .bfine:empty,.fgroups .empty:empty{display:none}
+.fgroups .btn.bact{margin-top:0}
+.cjob{display:grid;gap:8px;min-width:0}
+.cjob .bfine{margin:0}
+.cjob .bfine:empty{display:none}
+.cjob .actions,.cjob .confirm{margin-top:4px}

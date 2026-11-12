@@ -11,11 +11,14 @@ from urllib.parse import quote
 import pytest
 
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
+PlaywrightTimeout = pytest.importorskip("playwright.sync_api").TimeoutError
 
 pytestmark = pytest.mark.browser
 
 PHONE = {"width": 390, "height": 844}
 DESKTOP = {"width": 1440, "height": 900}
+SURFACE_TRIES = 4  # the Appearance menu opened again at most this often
+SURFACE_WAIT_MS = 5_000  # each try waits this long for the option to take a press
 LINKED = {
     "google": {
         "connected": True,
@@ -80,6 +83,25 @@ class Console:
             gate.fill(self.token)
             self.page.locator("#tokBtn").click()
         self.page.locator("#welcome").wait_for()
+
+    def choose_day(self) -> None:
+        """The day surface from the Appearance menu, as the owner picks it. The menu closes when
+        focus leaves it, and a module finishing its load just after sign-in can move focus, so on
+        a busy machine the option was gone before the press (CI run 109). Open the menu again
+        until the option takes the press, then check the surface really is day."""
+        day = self.page.locator('label[for="jx-s-day"]')
+        html = self.page.locator("html")
+        for _ in range(SURFACE_TRIES):
+            if not day.is_visible():
+                self.page.locator("#themeBtn").click()
+            try:
+                day.click(timeout=SURFACE_WAIT_MS)
+            except PlaywrightTimeout:
+                continue
+            if html.get_attribute("data-surface") == "day":
+                break
+        self.page.keyboard.press("Escape")
+        assert html.get_attribute("data-surface") == "day"
 
     def csp_violations(self) -> list[str]:
         return list(self.page.evaluate("window.__csp"))

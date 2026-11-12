@@ -22,6 +22,8 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "voice": "L2",
         "documents": "L2",
         "faces": "L2",
+        "understand": "L2",  # R11.1 B: what was heard, and what it is understood as
+        "facegroups": "L2",  # R11.1 C: unnamed face groups from the laptop (ids and counts only)
         # L3 Context & Orchestration: sessions, long-term memory, scheduled work, undo
         "memory": "L3",
         "recall": "L3",
@@ -42,6 +44,8 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "family": "L5",
         "packages": "L5",
         "helpers": "L5",  # R11: the free proactive helpers (one package, four parts)
+        "series": "L5",  # R11.1 A: a followed plan of sessions (check-ins, re-planning)
+        "picture": "L5",  # R11.1 D: research a picture of a thing, place, label or logo
         # L6 Integration & Tools
         "tools": "L6",
         "integrations": "L6",
@@ -74,6 +78,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "vitals": "X",
         "health": "X",
         "buildbook": "X",
+        "fixes": "X",  # R11.1: the plug-in contract the four parts of the release share
     }
 )
 

@@ -49,7 +49,7 @@ async def test_selected_photos_go_to_the_edge_and_the_session_is_closed() -> Non
     await r.svc.begin(UID)
     res = await r.svc.collect(UID)
     assert res.status == "done" and res.photos == 2 and res.faces_found == 1
-    assert r.edge.received == [JPEG, JPEG]
+    assert r.edge.received == [JPEG + b"m0", JPEG + b"m1"]  # each picked photo, once
     assert r.picker.deleted == ["sess1"]
     assert (await r.state.get(UID)).session_id is None
 
@@ -330,10 +330,10 @@ async def test_a_stale_list_items_404_self_heals() -> None:
     r = rig()
     await r.svc.begin(UID)
 
-    async def gone(uid: str, sid: str):  # noqa: ANN202
+    async def gone(uid: str, sid: str, token: str = ""):  # noqa: ANN202
         raise GoogleNotFound("gone")
 
-    r.picker.list_items = gone  # type: ignore[method-assign]
+    r.picker.list_page = gone  # type: ignore[method-assign]  # R11.1 O6: the list is paged now
     assert (await r.svc.collect(UID)).status == "no_session"
     assert (await r.state.get(UID)).session_id is None
 

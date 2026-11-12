@@ -108,9 +108,7 @@ def _open(c: Console, surface: str = "night") -> None:
 
 def _surface(c: Console, surface: str) -> None:
     if surface == "day":
-        c.page.locator("#themeBtn").click()
-        c.page.locator('label[for="jx-s-day"]').click()
-        c.page.keyboard.press("Escape")
+        c.choose_day()
     assert c.page.locator("html").get_attribute("data-surface") == surface
 
 

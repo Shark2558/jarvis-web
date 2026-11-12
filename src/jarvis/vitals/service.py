@@ -146,6 +146,8 @@ class VitalsService:
         if hit is not None and 0 <= (now - hit[0]).total_seconds() < BOARD_CACHE_S:
             return hit[1]
         board = await self.board(uid, now)
+        if any(v.checking for v in board.items):
+            return board  # R11.1 D19: an answer is on its way; the next read must see it
         if len(self._cache) >= CACHE_OWNERS:
             self._cache.clear()
         self._cache[uid] = (now, board)
@@ -160,7 +162,9 @@ class VitalsService:
         views = (
             *(self._view(p, now) for p in autos),
             *(
-                self._view(i.provider, now, i.base).model_copy(update={"group": i.group})
+                self._view(i.provider, now, i.base).model_copy(
+                    update={"group": i.group, "checking": i.checking}
+                )
                 for i in own
             ),
             *(self._view(p, now) for p in manual or []),

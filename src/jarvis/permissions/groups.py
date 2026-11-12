@@ -33,6 +33,8 @@ refuses it, Ask first makes it a card (review S1).
 
 R11 D16: six rows for the helpers (bills, bill_pay, household, nudges, outdoor, kitchen) after the
 R4 block; `bill_pay` is the only irreversible one.
+
+R11.1: two rows after them: `plans` (series_*, R2) and `pictures` (picture_*, R1).
 """
 
 from __future__ import annotations
@@ -516,6 +518,28 @@ GROUPS: tuple[PermissionGroup, ...] = (
             _m("spend_*"),
             _m("kitchen_*"),
         ),
+    ),
+    # R11.1 (docs/plans/r11-1-observations.md D7, D17): a study plan or other series of calendar
+    # sessions JARVIS follows up, and research on a picture the owner attaches. The batch of
+    # events itself is `calendar_create_events` (the "Add and change your events" row) and the
+    # inbox summary `gmail_inbox_summary` (the "Search and read email" row).
+    PermissionGroup(
+        "plans",
+        "Calendar plans",
+        "Follow a study plan or other series of sessions",
+        "JARVIS asks whether each session happened and proposes new dates for skipped ones. "
+        "Moving sessions in your calendar still asks first.",
+        R2,
+        (_m("series_*"),),
+    ),
+    PermissionGroup(
+        "pictures",
+        "Pictures",
+        "Research a picture you attach",
+        "Objects, products, places, text and logos, with a web search. JARVIS never identifies "
+        "a person from a picture.",
+        R1,
+        (_m("picture_*"),),
     ),
     PermissionGroup(  # slice 12 D8 (D3)
         "maps",

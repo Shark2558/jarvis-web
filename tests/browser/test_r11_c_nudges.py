@@ -176,9 +176,7 @@ def _open(browser: Any, url: str, token: str, vp: str, surface: str) -> tuple[Co
     c.page.route("**/v1/helpers/gate/**", fake.gate)
     c.open()
     if surface == "day":
-        c.page.locator("#themeBtn").click()
-        c.page.locator('label[for="jx-s-day"]').click()
-        c.page.keyboard.press("Escape")
+        c.choose_day()
     assert c.page.locator("html").get_attribute("data-surface") == surface
     c.open_panel("helpers")
     c.page.locator("#hpt-nudges").click()

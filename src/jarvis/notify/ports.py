@@ -97,6 +97,9 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "nudge_free_time": "important",
         "nudge_focus": "important",
         "weather_note": "info",
+        # R11.1: the study-plan check-in (daytime ring, held at night) and "faces to name"
+        "series_checkin": "important",
+        "faces_to_name": "info",
     }
 )
 _FEED: dict[str, FeedDecision] = {

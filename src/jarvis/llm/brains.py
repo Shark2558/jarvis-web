@@ -38,6 +38,12 @@ class BrainSpec:
         return not self.trains_on_content
 
     @property
+    def sees_pictures(self) -> bool:
+        """R11.1 D10: this brain may be sent an attached picture: its provider can read one AND
+        it never trains on content (a private picture never reaches a training brain)."""
+        return bool(getattr(self.provider, "vision", False)) and not self.trains_on_content
+
+    @property
     def warning(self) -> str:
         return TRAINING_WARNING.format(label=self.label) if self.trains_on_content else ""
 

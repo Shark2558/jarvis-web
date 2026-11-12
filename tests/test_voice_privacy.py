@@ -83,3 +83,13 @@ async def test_the_fingerprint_changes_when_a_word_is_swapped_for_one_of_the_sam
     a = (await src.describe(UID)).rev
     await store.update(UID, put("Delhi"))
     assert (await src.describe(UID)).rev != a
+
+
+async def test_the_card_says_file_names_and_own_words_go_to_google_speech_as_hints() -> None:
+    """R11.1 security review L4: per-turn hints are sent to Google Speech too; the owner is
+    told, and that file names never go with Documents on "Never"."""
+    v = await voice_phrases_source(VoiceSettingsStore(MemoryDocs())).describe(UID)
+    said = f"{v.what} {v.where} {v.note}"
+    assert "Google Speech" in said and "hints" in said
+    assert "names of the files" in said and "your own messages" in said
+    assert "Never" in said

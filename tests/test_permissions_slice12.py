@@ -25,6 +25,7 @@ from jarvis.drive.service import DriveService
 from jarvis.integrations.google_key import GoogleKeyClient
 from jarvis.media.service import MediaServices, YouTubeService
 from jarvis.permissions.groups import GROUPS, group_ids, groups_for, rules_for, validate_choices
+from jarvis.picture.turnguard import TurnGuard
 from jarvis.places.service import MapsService
 from jarvis.places.store import MapsPlaces
 from jarvis.quota.ledger import QuotaLedger
@@ -34,6 +35,15 @@ from jarvis.tools.gateway import Gateway, GatewayOutcome
 from jarvis.tools.policy import Effect, PolicyRule
 from jarvis.tools.setup import build_gateway
 from jarvis.tools.taint import context_trust
+
+
+class NoPictures:
+    """R11.1 I1: the turn guard's port as the app answers it for a turn without a picture
+    (unwired, Maps and YouTube count every Brain turn as a picture turn and fail closed)."""
+
+    async def carried(self, uid: str, session_id: str) -> str:
+        return "no"
+
 
 R1, R2 = ActionRisk.READ_ONLY, ActionRisk.REVERSIBLE
 NEW = ("drive", "maps", "youtube", "contacts", "whatsapp")
@@ -145,7 +155,9 @@ async def _real_gw(choices: dict[str, Effect]) -> Rig:
         maps=MapsService(client, ledger, MapsPlaces(docs)),
         youtube=YouTubeService(client, ledger, google=google),
     )
-    gw = build_gateway(get_settings(), google=google, drive=drive, media=media)
+    gw = build_gateway(
+        get_settings(), google=google, drive=drive, media=media, pictures=TurnGuard(NoPictures())
+    )
     gw.rules = Rules(choices)
     return Rig(gw, people, d, keyed)
 

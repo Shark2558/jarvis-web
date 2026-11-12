@@ -208,6 +208,8 @@
   }
   function fitHint() {
     if (!input || !HINT || !input.getClientRects().length) return; // a closed chat panel: later
+    // R11.1 I1: an attached file's own hint ("Ask about the attached file") is console-attach.js's
+    if (input.placeholder !== HINT && input.placeholder !== SHORT_HINT) return;
     const s = getComputedStyle(input);
     const roomFor = input.clientWidth - px(s.paddingLeft) - px(s.paddingRight);
     const want = textWidth(input, HINT) <= roomFor ? HINT : SHORT_HINT;
@@ -231,5 +233,8 @@
     if (document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', schedule);
   }
   document.addEventListener('jarvis:theme', schedule); // surface and theme (console-fx.js)
+  // R11.1 I1: console-attach.js writes the full hint back whenever it redraws (its limits from the
+  // server, a file removed): fit it again then, as the box may be narrower (the folder button)
+  document.addEventListener('jarvis:attach', fitHint);
   fit();
 })();

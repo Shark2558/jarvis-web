@@ -75,6 +75,10 @@ GONE = "That request was already handled or has expired."
 OTHER_CONVERSATION = "That request belongs to another conversation. Open the console to handle it."
 WAITING = "Waiting in the console for your approval (and passkey): "
 CONSOLE_FIRST = "Approve in the console (too long to show here): "
+# R11.1 D4 (INTEGRATION-A 3.10): cards whose FIRST line code alone writes (how many, the dates;
+# never a title): Telegram shows that line, still with no button, and points to the console
+HEAD_BY_CODE = frozenset({"calendar_create_events", "calendar_undo_events", "series_reschedule"})
+OPEN_TO_APPROVE = "Open JARVIS to see the full list and approve it."
 NOT_READY = (
     "Telegram isn't fully set up on this server, so I can't answer here yet. Use the console."
 )
@@ -93,6 +97,14 @@ def _fits(summary: str) -> bool:
     one-tap Approve. A longer or multi-line card is judged in the console, where all of it shows."""
     text = summary.strip()
     return bool(text) and len(text) <= CARD_CHARS and text == " ".join(text.split())
+
+
+def _long_card(card: PendingApproval, label: str) -> str:
+    """A reversible card too long to judge on a phone: its code-written first line when it has
+    one that fits, else its tool's label; never a button."""
+    lines = card.summary.strip().splitlines()
+    head = lines[0].strip() if lines and card.tool in HEAD_BY_CODE else ""
+    return f"{head} {OPEN_TO_APPROVE}" if _fits(head) else CONSOLE_FIRST + label
 
 
 def _label(tool: str) -> str:
@@ -417,7 +429,7 @@ class TelegramService:
                 )
                 continue
             if card.tool_risk == ActionRisk.REVERSIBLE.value:  # too long to judge on a phone
-                await self._say(link.chat_id, CONSOLE_FIRST + label)
+                await self._say(link.chat_id, _long_card(card, label))
             else:  # R3 or unknown: the console only; a plain label, never the card's words
                 await self._say(link.chat_id, WAITING + label)
             await self.alerts.send(uid, ALERT_TEXT["approval_waiting"], kind="approval_waiting")

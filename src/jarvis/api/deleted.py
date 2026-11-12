@@ -64,6 +64,7 @@ from jarvis.undo.models import (
     RestoreStatus,
 )
 from jarvis.undo.service import MSG_GONE, Gone, PurgeFailed, UndoBin
+from jarvis.undo.store import PANEL_LISTED
 
 router = APIRouter(prefix="/v1/deleted", dependencies=[Depends(require_auth)])
 log = get_logger(__name__)
@@ -114,7 +115,8 @@ async def list_deleted(request: Request, uid: str = Depends(current_user)) -> De
     undo: UndoBin | None = getattr(request.app.state, "undo", None)
     if undo is None:  # no persistent storage: nothing is kept (the console says so, no 404)
         return DeletedList(items=[], available=False)
-    return DeletedList(items=[DeletedView.of(i) for i in await undo.recent(uid)])
+    items = await undo.recent(uid, limit=PANEL_LISTED)  # R11.1: a whole batch's Undo all
+    return DeletedList(items=[DeletedView.of(i) for i in items])
 
 
 async def _restore(

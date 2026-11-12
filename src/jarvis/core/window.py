@@ -4,12 +4,21 @@
 Pure function so it is trivially testable. Budget is in characters (~4 chars/token) —
 good enough for Phase 0; Phase 3 swaps in a real tokenizer count and summarisation of
 evicted turns into long-term memory.
+
+R11.1 D3: a reply that is one of JARVIS's own fixed lines for an answer with no words (or the
+filler earlier releases stored: `core.fixed_lines.is_fixed`, a leaf) is never history. It is left
+out here, for every brain, so no later turn can imitate it, and it uses none of the budget.
 """
 
 from __future__ import annotations
 
+from jarvis.core.fixed_lines import is_fixed
 from jarvis.core.models import Turn
 from jarvis.llm.base import ChatMessage, Role
+
+
+def _filler(t: Turn) -> bool:
+    return t.role is Role.ASSISTANT and not t.blocks and is_fixed(t.content)
 
 
 def build_window(turns: list[Turn], *, max_turns: int, max_chars: int) -> list[ChatMessage]:
@@ -20,7 +29,7 @@ def build_window(turns: list[Turn], *, max_turns: int, max_chars: int) -> list[C
     kept: list[Turn] = []
     used = 0
     for t in reversed(turns):
-        if not t.content.strip() and not t.blocks:
+        if (not t.content.strip() and not t.blocks) or _filler(t):
             continue
         if len(kept) >= max_turns or used + len(t.content) > max_chars:
             break

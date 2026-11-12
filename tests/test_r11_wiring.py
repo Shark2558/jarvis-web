@@ -20,6 +20,7 @@ from httpx import ASGITransport, AsyncClient
 import jarvis.api.r11_wiring as r11
 from jarvis.api import create_app
 from jarvis.api.console import APP_ASSETS
+from jarvis.api.r11_1_wiring import fix_clock_jobs
 from jarvis.api.scheduler_auth import WATCHDOG_PATH, require_scheduler
 from jarvis.config import Settings
 from jarvis.core.guardrails import ActionRisk
@@ -74,7 +75,10 @@ async def test_the_helpers_start_with_four_empty_parts_and_both_composites(
         assert st.helpers_sender is not None and st.helpers_off is None
         assert isinstance(st.helpers_clock, Composite)
         jobs = st.helpers_clock.job_names
-        assert sorted(jobs) == sorted(j for p in PARTS for j in CLOCK_JOBS[p]), jobs
+        fixes = {j.name for j in fix_clock_jobs(a)}  # R11.1: the parts' jobs ride the same clock
+        assert sorted(set(jobs) - fixes) == sorted(j for p in PARTS for j in CLOCK_JOBS[p]), jobs
+        assert fixes == {"series_checkin", "photos_import", "face_groups_poll"}  # R11.1 A, C
+        assert fixes <= set(jobs)
         assert st.helpers_daily.job_names == ("breach_watch", "helpers_sweep")
         names = [j.name for j in st.tick_jobs]
         assert names[-2:] == ["helpers_clock", "helpers_daily"]
@@ -154,7 +158,9 @@ async def test_a_failing_part_is_left_empty_and_the_others_run(
         st = a.state
         assert st.r11_parts["today"].ready == "ok" and st.r11_parts["house"].ready == "setup failed"
         assert st.r11_parts["nudges"].ready == "not built yet"
-        assert st.helpers_clock.job_names == ("bills_due",)
+        r111 = tuple(j.name for j in fix_clock_jobs(a))  # R11.1 A and C: on the same clock
+        assert r111 == ("series_checkin", "photos_import", "face_groups_poll")
+        assert st.helpers_clock.job_names == ("bills_due", *r111)
         gw = st.gateway
         assert {"bill_list", "bill_pay_prepare"} <= {s.name for s in gw.registry.specs()}
         res = await gw.execute(ToolCall(id="t1", name="bill_list", arguments={}), scope="u:s")
@@ -167,7 +173,8 @@ async def test_a_failing_part_is_left_empty_and_the_others_run(
         assert out.status_code == 200 and out.json()["jobs"] == {"helpers_clock": "ok"}
         assert job.seen == [r11.owners_of(settings)]  # the configured owners, never a list passed
         status = await st.helpers_status.read()
-        assert status is not None and status["jobs"] == {"bills_due": "ok"}
+        assert status is not None and status["jobs"]["bills_due"] == "ok"
+        assert set(status["jobs"]) == {"bills_due", *r111}  # every job ran and said how it went
 
 
 async def test_with_home_on_the_clock_is_added_to_the_watchdog_once(settings: Settings) -> None:
@@ -274,7 +281,8 @@ def _at(lines: list[str], needle: str) -> int:
 def test_app_py_has_the_six_r11_slots_and_stays_under_its_guard() -> None:
     lines = _lines()
     assert len(lines) <= 750
-    assert _at(lines, "await wire_r11(app, s, docs, audit)") == _at(lines, "await wire_r6(") + 1
+    # R11.1 is wired between them: its parts' jobs ride the helpers' clock (r11_1_wiring.py)
+    assert _at(lines, "await wire_r11(app, s, docs, audit)") == _at(lines, "await wire_r6(") + 2
     assert _at(lines, "install_r11_routes(app)") == _at(lines, "install_r6_routes(app)") + 1
     assert _at(lines, "*r11_tick_jobs(app),") == _at(lines, "*r6_tick_jobs(app),") + 1
     assert _at(lines, "r11=app.state.r11_parts,") == _at(lines, "r4=app.state.r4_parts,") + 1

@@ -242,7 +242,7 @@ async def test_m4_a_delete_that_left_rows_says_how_many(rig: Any) -> None:
     rev = await _rev(c, "places")
     r = await c.post("/v1/privacy/places/delete", json={"rev": rev}, headers=CSRF)
     assert r.status_code == 200
-    assert r.json() == {"deleted": 0, "category": "places", "remaining": 1}
+    assert r.json() == {"deleted": 0, "category": "places", "remaining": 1, "pending": ""}
 
 
 async def test_m5_the_view_carries_the_delete_count(rig: Any) -> None:
@@ -299,7 +299,7 @@ async def test_a_simple_delete_returns_the_count_and_needs_the_csrf_header(rig: 
     assert r.status_code == 403 and r.json()["error"] == "csrf"
     r = await c.post("/v1/privacy/places/delete", json={"rev": rev}, headers=CSRF)
     assert r.status_code == 200, r.text
-    assert r.json() == {"deleted": 1, "category": "places", "remaining": 0}
+    assert r.json() == {"deleted": 1, "category": "places", "remaining": 0, "pending": ""}
     assert s.places.items[UID] == []
 
 
@@ -369,7 +369,12 @@ async def test_passkey_class_with_a_passkey_in_force(rig: Any) -> None:
     # the right one works once, and never twice
     proof = await _proof(c, auth, purpose="privacy_delete", target=f"notes:{rev}")
     r = await c.post("/v1/privacy/notes/delete", json={"rev": rev, "proof": proof}, headers=CSRF)
-    assert r.status_code == 200 and r.json() == {"deleted": 2, "category": "notes", "remaining": 0}
+    assert r.status_code == 200 and r.json() == {
+        "deleted": 2,
+        "category": "notes",
+        "remaining": 0,
+        "pending": "",
+    }
     s.notes.items[UID] = ["again"]
     rev2 = await _rev(c, "notes")
     r = await c.post("/v1/privacy/notes/delete", json={"rev": rev2, "proof": proof}, headers=CSRF)

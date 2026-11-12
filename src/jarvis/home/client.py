@@ -54,6 +54,13 @@ CODE_WORDS = {
     "not_exposed": "That device isn't shared with JARVIS.",
     "class_not_allowed": "That device can't be controlled that way.",
     "bad_action": "That device can't do that.",
+    # R11.1 O7: the laptop's face reader (photos and face groups)
+    "no_engine": "The face reader on your home laptop isn't ready yet: update the home kit.",
+    "no_store": "The face store on your home laptop can't be opened right now.",
+    "bad_image": "Your home laptop couldn't read that picture.",
+    "no_consent": "Your home laptop has no consent on record for that person yet.",
+    "unknown_group": "Your home laptop no longer has that group of faces.",
+    "already_named": "That group of faces already belongs to someone else.",
 }
 BAD_ADDRESS = "The saved laptop address is no longer allowed. Link your laptop again."
 
@@ -175,7 +182,13 @@ class HomeClient:
         self, origin: str, method: str, target: str, header: str, raw: bytes
     ) -> tuple[int, dict[str, str], bytes]:
         transport = PinnedTransport(self._resolver, inner=self._inner)
-        headers = {signing.HEADER: header, "content-type": "application/json"}
+        headers = {
+            signing.HEADER: header,
+            "content-type": "application/json",
+            # R11.1 review C-sec M1: the hash the signature covers, so the bridge can check the
+            # signature before it reads a large body (bridge 0.2.0 needs it on the photo route)
+            signing.BODY_HASH_HEADER: signing.body_hash(raw),
+        }
         try:
             async with asyncio.timeout(self._timeout):
                 async with httpx.AsyncClient(

@@ -34,6 +34,15 @@ NOT_IN_PAGE = {
     "console-helpers-house.js": ("console-helpers.js", "import('./console-helpers-house.js')"),
     "console-helpers-nudges.js": ("console-helpers.js", "import('./console-helpers-nudges.js')"),
     "console-helpers-kitchen.js": ("console-helpers.js", "import('./console-helpers-kitchen.js')"),
+    # R11.1: one loader in the page brings the four parts' modules and stylesheets
+    "console-r111-plan.js": ("console-r111.js", "import('./console-r111-plan.js')"),
+    "console-r111-files.js": ("console-r111.js", "import('./console-r111-files.js')"),
+    "console-r111-photos.js": ("console-r111.js", "import('./console-r111-photos.js')"),
+    "console-r111-look.js": ("console-r111.js", "import('./console-r111-look.js')"),
+    "console-r111-plan.css": ("console-r111.js", "'/static/console-r111-plan.css'"),
+    "console-r111-files.css": ("console-r111.js", "'/static/console-r111-files.css'"),
+    "console-r111-photos.css": ("console-r111.js", "'/static/console-r111-photos.css'"),
+    "console-r111-look.css": ("console-r111.js", "'/static/console-r111-look.css'"),
 }
 # R6: linked from the show page (book.html), not the deck
 ON_BOOK_PAGE = {

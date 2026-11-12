@@ -423,6 +423,29 @@ def test_lock_pins_every_runtime_dependency_of_pyproject() -> None:
     assert [n for n in names if _norm(n) not in pinned] == []
 
 
+def _via(lock: str, pkg: str) -> list[str]:
+    """The `# via` names of one lock entry, as pip-compile writes them (one line or a block)."""
+    entry = re.search(rf"^{re.escape(pkg)}==.*?(?=^\S|\Z)", lock, re.M | re.S | re.I)
+    assert entry is not None, pkg
+    one = re.search(r"^\s+# via (\S.*)$", entry.group(0), re.M)
+    if one is not None:
+        return [one.group(1).strip()]
+    return [m.strip() for m in re.findall(r"^\s+#   (\S.*)$", entry.group(0), re.M)]
+
+
+def test_every_runtime_dependency_of_pyproject_is_via_the_project_in_the_lock() -> None:
+    """I1 code review M1: a hand-extended lock wrote `# via openpyxl` for et-xmlfile, which
+    pyproject.toml also pins; `make lock` (pip-compile) names the project first. Every direct
+    runtime dependency's `# via` must carry `jarvis (pyproject.toml)`, as a fresh lock does."""
+    deps = (ROOT / "pyproject.toml").read_text(encoding="utf-8").split("dependencies = [", 1)[1]
+    names = re.findall(r'^\s+"([A-Za-z0-9_.-]+)', deps.split("]\n", 1)[0], re.M)
+    lock = LOCK.read_text(encoding="utf-8")
+    pinned = {_norm(p): p for p in re.findall(r"^([A-Za-z0-9_.-]+)==", lock, re.M)}
+    missing = [n for n in names if "jarvis (pyproject.toml)" not in _via(lock, pinned[_norm(n)])]
+    assert missing == []
+    assert _via(lock, "et-xmlfile") == ["jarvis (pyproject.toml)", "openpyxl"]
+
+
 def test_the_image_carries_its_own_time_zone_data() -> None:
     """Code review CR-7: the quota ledger reads Pacific time (ZoneInfo("America/Los_Angeles"));
     an image without the system zone files would fail at start whenever a Google API key is
@@ -608,3 +631,19 @@ def test_cloud_run_stays_on_one_instance_because_the_home_nonce_cache_is_per_pro
     assert "--max-instances 1" in script
     assert "--max-instances 2" not in script
     assert "home nonce" in script.lower()
+
+
+# ---- R11.1 O5 (D13): the Google Photos Picker API is switched on by the script -------------------
+
+
+def test_the_photos_picker_api_is_switched_on_and_a_failure_only_warns(script: str) -> None:
+    """Google Photos answered "that Google service is not switched on" because nothing enabled
+    the Picker API. It sits in its own command, as Drive's and People's do: an organisation
+    policy that blocks it is a note, never a stopped deploy."""
+    required = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
+    assert "photospicker.googleapis.com" not in required
+    photos = _command(script, "gcloud services enable photospicker.googleapis.com")
+    assert photos.startswith("gcloud services enable photospicker.googleapis.com --quiet")
+    assert _top_level_depth_at(script, "gcloud services enable photospicker.googleapis.com") == 0
+    after = script.split("photospicker.googleapis.com --quiet", 1)[1].split("\n", 2)[1]
+    assert after.lstrip().startswith("|| say") and "Google Photos" in after

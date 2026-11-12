@@ -4,7 +4,8 @@
 // `host` is what the loop lends it: its state S, A (JarvisAudio), V (JarvisVoice), the mic button and the
 // composer, and the loop's own functions. The recogniser always comes from JarvisAudio.recognizer() (the mic
 // lock refuses it); interim words appear in the composer; a recogniser that refuses recognition hints
-// (Web Speech "phrases-not-supported") is retried at once without them. No build step; CSP script-src 'self'.
+// (Web Speech "phrases-not-supported") is retried at once without them. R11.1 D9: it is asked for three
+// alternatives; the other two go with the words to "heard / understood as". No build step; CSP script-src 'self'.
 (() => {
   'use strict';
   const PHRASES_REFUSED = 'phrases-not-supported'; // Web Speech: the browser can't take recognition hints (V1)
@@ -22,14 +23,18 @@
     // no-op unless the browser can take hints; a browser that refuses them (phrases-not-supported) is never offered them again
     if (!S.noPhrases) { try { if (P && typeof P.apply === 'function') P.apply(rec); } catch (_) {} }
     S.rec = rec; S.recText = ''; S.stop = false; S.cancel = false; S.quietEnd = false; S.before = input.value; S.recStart = performance.now();
-    let finalText = '', interim = '', error = '';
-    rec.lang = V.language(); rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+    let finalText = '', interim = '', error = '', confidence = null;
+    const others = ['', ''];   // the recogniser's second and third guess for the whole turn (R11.1 D9)
+    rec.lang = V.language(); rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 3;
     rec.onresult = (e) => {
       if (t !== S.turn) return;
       interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i];
-        if (res.isFinal) finalText += res[0].transcript; else interim += res[0].transcript;
+        if (!res.isFinal) { interim += res[0].transcript; continue; }
+        finalText += res[0].transcript;
+        for (let k = 0; k < others.length; k++) others[k] += (res[k + 1] || res[0]).transcript;
+        if (confidence === null && Number.isFinite(res[0].confidence) && res[0].confidence > 0) confidence = res[0].confidence;
       }
       clearTimeout(S.noSpeech);
       h.markHeard(0);
@@ -54,7 +59,8 @@
       if (!text && S.holdWait && S.conv && h.getClock() && h.getClock().waiting() && !A.locked()) { restore(); restart(t); return; }
       if (!text) { restore(); S.conv = false; setMode('idle'); if (!S.soft) say(error === 'network' ? 'The browser\'s speech service couldn\'t be reached.' : 'I didn\'t hear anything.'); return; }
       restore();
-      h.deliver(text, { state: 'listening' });
+      const alternatives = finalText ? others.map(h.clean).filter(a => a && a !== text) : [];
+      h.deliver(text, { state: 'listening', alternatives, confidence });
     };
     try { rec.start(); } catch (_) { S.rec = null; S.conv = false; setMode('idle'); help('failed'); return; }
     h.startClocks(t);

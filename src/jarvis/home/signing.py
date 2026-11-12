@@ -21,6 +21,11 @@ its status:
     "jarvis-home-v1-res\n" + direction + "\n" + home_id + "\n" + t + "\n" + n + "\n"
     + request_nonce + "\n" + status + "\n" + METHOD + "\n" + target + "\n" + hex(sha256(body))
 
+A request may also carry `X-Jarvis-Body-Sha256: hex(sha256(body))` (R11.1 review C-sec M1). The
+MAC already covers that hash, so a receiver can check the signature over the DECLARED hash
+(`verify_declared`) before it reads a large body, then compare the hash of what it read, and only
+then run `verify` (which remembers the nonce). Nothing changes for a request without it.
+
 Checks, in order and before any parsing (D5): the header's shape (`parse`), then (the caller
 looks the home id up) the time window (|now - t| <= 60 s), the nonce not seen in 5 minutes, the
 MAC (`hmac.compare_digest`), and only then the nonce is remembered, so a flood of bad signatures
@@ -45,6 +50,7 @@ Direction = Literal["up", "down"]
 Check = Literal["shape", "time", "nonce", "mac"]
 
 HEADER = "X-Jarvis-Home"
+BODY_HASH_HEADER = "X-Jarvis-Body-Sha256"
 DOMAIN = "jarvis-home-v1"
 RESPONSE_DOMAIN = "jarvis-home-v1-res"
 SEED_BYTES = 32
@@ -59,6 +65,7 @@ _HEADER_RE = re.compile(
 )
 _TARGET_RE = re.compile(r"/[\x21-\x7e]{0,2047}")
 _HOME_RE = re.compile(r"h_[0-9a-f]{8}")
+_DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 
 
 class SignatureError(Exception):
@@ -125,11 +132,23 @@ def _hash(body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
+def body_hash(body: bytes) -> str:
+    """The value of `BODY_HASH_HEADER` for this body."""
+    return _hash(body)
+
+
+def _hashed_message(
+    direction: Direction, home_id: str, t: int, nonce: str, method: str, target: str, digest: str
+) -> bytes:
+    return "\n".join((DOMAIN, direction, home_id, str(t), nonce, method, target, digest)).encode(
+        "ascii"
+    )
+
+
 def request_message(
     direction: Direction, *, home_id: str, t: int, nonce: str, method: str, target: str, body: bytes
 ) -> bytes:
-    lines = (DOMAIN, direction, home_id, str(t), nonce, method, target, _hash(body))
-    return "\n".join(lines).encode("ascii")
+    return _hashed_message(direction, home_id, t, nonce, method, target, _hash(body))
 
 
 def response_message(
@@ -248,6 +267,32 @@ def verify(
     nonces.remember(signed.home_id, signed.nonce, now)
 
 
+def verify_declared(
+    signed: Signed,
+    keys: HomeKeys,
+    direction: Direction,
+    *,
+    method: str,
+    target: str,
+    digest: str | None,
+    now: float,
+    nonces: NonceCache,
+) -> None:
+    """The signature over a DECLARED body hash, before the body is read. Passes, or raises
+    SignatureError. The nonce is NOT remembered here: `verify` does that once the body has
+    been read and its hash compared."""
+    if not _target_ok(method, target) or not isinstance(digest, str):
+        raise SignatureError("shape")
+    if not _DIGEST_RE.fullmatch(digest):
+        raise SignatureError("shape")
+    _fresh(signed.t, now)
+    if nonces.seen(signed.home_id, signed.nonce, now):
+        raise SignatureError("nonce")
+    msg = _hashed_message(direction, signed.home_id, signed.t, signed.nonce, method, target, digest)
+    if not hmac.compare_digest(_mac(keys.key(direction), msg), signed.mac):
+        raise SignatureError("mac")
+
+
 def sign_response(
     keys: HomeKeys,
     direction: Direction,
@@ -311,6 +356,7 @@ def verify_response(
 
 
 __all__ = [
+    "BODY_HASH_HEADER",
     "DOMAIN",
     "HEADER",
     "MAX_SKEW_S",
@@ -322,6 +368,7 @@ __all__ = [
     "NonceCache",
     "SignatureError",
     "Signed",
+    "body_hash",
     "derive_keys",
     "new_nonce",
     "new_seed",
@@ -331,5 +378,6 @@ __all__ = [
     "sign",
     "sign_response",
     "verify",
+    "verify_declared",
     "verify_response",
 ]

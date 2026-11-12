@@ -90,13 +90,59 @@ Safety notes
  - Face recognition: only people you added with their consent (a parent's for a child). Personal use
    in your own home only.
 
-Kit to-do for R4 Photos (not built yet; until then JARVIS says "laptop not reachable" for photos)
-------------------------------------------------------------------------------------------------
- - Serve the two bridge routes JARVIS now allows: POST /bridge/v1/faces/photos (one base64 JPEG
-   in {"image"}; reply {"faces": [{"cluster": "c_<8-16 hex>", "person": "fp_<12 hex>"|null,
-   "score": 0..1}]}, at most 20 faces) and POST /bridge/v1/faces/enrol ({"cluster", "person"};
-   reply {}). The cluster -> embedding map stays on this laptop; the cloud never sees embeddings.
- - Decoder safety (the cloud only checks the JPEG's structure; this laptop is the only decoder):
-   set PIL.Image.MAX_IMAGE_PIXELS (e.g. 4,200,000 = 2048x2048) and treat DecompressionBombWarning
-   as an error; open JPEG only (Image.open(..., formats=["JPEG"])) and re-check width/height
-   <= 2048; cap the body at the route's 6 MB; process one picture per request.
+Updating the kit
+----------------
+JARVIS -> Integrations -> Home says "Your home kit is older than this JARVIS" when a newer kit is
+ready. Your camera, passwords, Home Assistant token and link are kept.
+ 1. In JARVIS: Integrations -> Home -> Download home kit.
+ 2. Right-click the zip -> Extract All -> extract it to C:\ again. When Windows asks, choose
+    "Replace the files in the destination".
+ 3. Start -> type PowerShell -> right-click Windows PowerShell -> Run as administrator. Type:
+        cd C:\JARVIS-Home
+        powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -Update
+    It downloads the two face model files once (about 40 MB) and restarts only the bridge.
+ 4. Wait for "Updated." JARVIS -> Integrations -> Home says Online again within two minutes.
+
+Photos and faces
+----------------
+This laptop can look at still photos and group the faces in them, so you name each person once.
+The photos, the small face pictures it keeps and the numbers it compares faces by never leave
+this laptop. JARVIS only gets a group's code, its number and how many photos it is in.
+ - Photos you pick in JARVIS -> Connectors -> Google Photos are sent here one at a time.
+ - A photo folder (optional, off until you choose one). Put copies of your photos in one folder
+   on this laptop, for example C:\Users\you\Pictures\JARVIS, then in PowerShell as
+   administrator, in C:\JARVIS-Home:
+        powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -PhotosDir "C:\Users\you\Pictures\JARVIS"
+   The bridge gets that folder read-only: it never changes, moves or deletes a photo. It reads a
+   few new photos a minute. Only JPEG photos (.jpg, .jpeg) are read; iPhone HEIC photos are
+   skipped (set the iPhone camera to "Most Compatible", or export as JPEG).
+   To switch it off:
+        powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -PhotosDir off
+ - A face that is in 3 or more photos becomes a group. See WHO a group is on this laptop only:
+   http://localhost:8098/faces -> "Faces from your photos" (the code is printed by the script).
+ - Name a group in JARVIS -> Faces -> Unnamed groups (the person must agree first; a parent or
+   guardian for a child). From then on new photos of that person, and the camera, recognise
+   them with nothing more to do.
+ - A group you do not name is forgotten after 90 days (FACE_GROUPS_KEEP_DAYS in bridge.env), and
+   each group has "Forget this group", here and in JARVIS. Your photos are never touched.
+ - The face reader uses two small open model files from OpenCV (YuNet, MIT licence; SFace,
+   Apache-2.0 licence). The script downloads them and checks them; models\MODELS.txt lists them.
+ - How a picture is kept safe to open: JPEG only; its size is read before it is opened, the
+   same way the picture library reads it; a photo from JARVIS is at most 2048 pixels a side and
+   one photo a request; your own photos may be up to 50 megapixels and are opened at a smaller
+   size. Each picture is opened in a separate small program with a memory limit and a time
+   limit, so a broken or booby-trapped file can't take the bridge (or the camera) down.
+ - A photo that can't be read is tried three times, then skipped: the page above says how many
+   were skipped. A photo still being copied into the folder is read a minute after it stops
+   changing.
+ - The photo folder must be a folder of photos: a whole disk (C:), Windows, Program Files, a
+   whole user folder or the kit's own folder is refused.
+ - The face pictures and face numbers on this laptop are protected by this laptop only: JARVIS
+   does not encrypt them. Turn on Windows device encryption (Settings -> Privacy & security ->
+   Device encryption, or BitLocker on Windows Pro) and use a Windows login password.
+ - If the face-groups file is ever damaged, it is moved aside (groups.db.bad-<date> in the
+   bridge's data folder, facegroups) and a new one is started; the page above says so. It may
+   still hold faces: delete it when you no longer need it.
+ - The picture library (opencv-python-headless) brings its own third-party parts, each under its
+   own licence (its LICENSE-3RD-PARTY.txt), among them FFmpeg (LGPL-2.1) and OpenSSL 1.1.1k. The
+   bridge uses only its JPEG reader and the two face models: no video and no network.

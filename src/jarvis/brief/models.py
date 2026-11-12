@@ -18,7 +18,8 @@ BriefStatus = Literal["generating", "ready", "failed"]
 ViewStatus = Literal["none", "generating", "ready", "failed"]
 Trigger = Literal["scheduled", "manual", "open"]
 InboxStatus = Literal["off", "sending", "delivered", "failed", "unknown"]
-SectionState = Literal["ok", "not_connected", "unavailable"]
+# "paused" (R11.1 I1, code review M4): his Permissions do not let the brief read his mail
+SectionState = Literal["ok", "not_connected", "unavailable", "paused"]
 # The to-do list (slice 10 C) has its own optional scope, hence one more state.
 TodoState = Literal["ok", "not_connected", "not_granted", "unavailable"]
 
@@ -121,9 +122,20 @@ class InboxItem(Frozen):
     when: str = Field(description="'07:42' or 'yesterday 21:10'")
 
 
+class InboxGroup(Frozen):
+    key: str
+    label: str
+    unread: int = 0
+
+
 class InboxSection(Frozen):
     total: int = 0
     items: tuple[InboxItem, ...] = ()
+    groups: tuple[InboxGroup, ...] = ()  # R11.1 D20: Gmail's own categories, counted
+    withheld: int = 0  # not listed: they look like a code or a bank message
+    exact: bool = True  # False: the INBOX label could not be read; `total` is "about"
+    failed: int = 0  # listed messages that could not be read just now ...
+    listed: int = 0  # ... of these
 
 
 class JarvisSection(Frozen):
@@ -420,6 +432,7 @@ __all__ = [
     "FamilyMemberDay",
     "FamilySection",
     "FreeBlock",
+    "InboxGroup",
     "InboxItem",
     "InboxSection",
     "InboxState",

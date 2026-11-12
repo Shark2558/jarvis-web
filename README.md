@@ -384,6 +384,39 @@ GET /v1/push/key | GET /v1/push/devices | POST/DELETE /v1/push/subscribe | POST 
 PUT  /v1/telegram/settings {allow_home_reads?}
 ```
 
+## R11.1 - your observations, fixed
+
+What the owner reported on 12 Nov 2026, fixed in four parts (R4 to R11 are described on the
+architecture guide's cards, `docs/architecture/JARVIS-Architecture.md`; this release is card
+C61). Plan and decisions D0-D21: `docs/plans/r11-1-observations.md`; the integration:
+`docs/plans/r11-1-integration/`. Persona `p11.1`.
+
+```
+jarvis/core/finish.py            A: no "I have nothing to add": a working turn may write longer, a
+                                 cut-off answer is asked for once more, else a fixed line by code
+jarvis/series/                   A: one card for up to 100 calendar events (Undo all, Retry), a
+                                 followed plan's check-ins and its re-plan on one card; the inbox
+                                 counted by kind (gmail_inbox_summary), also in the brief
+jarvis/understand/               B: "Heard / Understood as" (fixed rules first; numbers, dates and
+                                 names are never rewritten), the rupee estimate before a big reply
+jarvis/documents/                B: Excel, PowerPoint, pictures, zip and folders, 10 files a message
+jarvis/facegroups/, homebridge/  C: 2,000 photos in the background; faces grouped on the laptop and
+                                 named once with consent; nothing but ids reaches the cloud
+jarvis/picture/                  D: research on a picture of a thing; never a person identified
+                                 (the turn guard on research_person and web_search)
+jarvis/people/, jarvis/vitals/   D: profile cards one tab a click; Vitals names the failing home
+                                 part; the GitHub token's limits read by itself
+```
+
+```
+GET /v1/series | POST /v1/series/answer | POST /v1/series/replan
+POST /v1/series/batches/retry | POST /v1/series/batches/{id}/undo
+GET /v1/input | POST /v1/input/understand | GET /v1/input/hints | POST /v1/input/estimate
+GET /v1/facegroups | GET /v1/facegroups/groups | POST /v1/facegroups/groups/{g}/name|forget
+GET|DELETE /v1/facegroups/import | POST /v1/facegroups/import/step
+GET /v1/picture | POST /v1/picture/research
+```
+
 ## Quick start
 
 ```bash

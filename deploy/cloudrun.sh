@@ -97,6 +97,9 @@ fi
 # Contacts (slice 12): People API for contacts_search; WhatsApp drafts to typed numbers work without.
 gcloud services enable people.googleapis.com --quiet \
   || say "Note: the People API could not be switched on; contact look-ups stay off."
+# Google Photos (R4 D8, R11.1 O5): the Picker API, so "Choose photos" opens Google's picker.
+gcloud services enable photospicker.googleapis.com --quiet \
+  || say "Note: the Google Photos Picker API could not be switched on; picking photos stays off. Re-run this script to try again."
 
 # Quick (prompt-free) only for a service this script fully set up before: it has the owner set.
 QUICK=no

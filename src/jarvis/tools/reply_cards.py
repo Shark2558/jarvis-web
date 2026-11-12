@@ -1,6 +1,7 @@
 # src/jarvis/tools/reply_cards.py
 """Console cards a reply carries (slice 12 D3/D4/D6; Layer 6 → 1): places, a route, videos,
-WhatsApp drafts and (R11 I1) an approved UPI payment — one mechanism for every card under a reply.
+WhatsApp drafts, (R11 I1) an approved UPI payment and (R11.1 D5) what a calendar batch did, with
+its one "Undo all" — one mechanism for every card under a reply.
 
 A tool adds a card for the OWNER's screen with `add_card` while it runs; the card travels beside
 the tool's result, never inside what the model sees (so a link on a card always came from Google's
@@ -41,6 +42,7 @@ from typing import Annotated, Final, Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from jarvis.people.offer_card import PeopleOfferCard
 from jarvis.whatsapp.draft import WhatsAppCard
 
 MAX_CARDS = 8  # Maps / YouTube cards per reply
@@ -151,7 +153,40 @@ class UpiCard(_Strict):
     words: str = Field(min_length=1, max_length=TEXT_LIMIT)
 
 
-AnyCard = PlacesCard | RouteCard | VideosCard | WhatsAppCard | UpiCard
+class BatchItem(_Strict):
+    """One event of a batch that was not added: what the console shows and what "Retry" sends
+    back through the same card path (the gateway checks every field again)."""
+
+    n: int = Field(ge=1, le=999)
+    summary: str = Field(min_length=1, max_length=500)
+    start: str = Field(min_length=1, max_length=40)
+    end: str = Field(min_length=1, max_length=40)
+    description: str = Field(default="", max_length=2_000)
+    location: str = Field(default="", max_length=300)
+    reminders_minutes: list[int] | None = Field(default=None, max_length=5)
+    why: str = Field(default="", max_length=200)
+
+
+class BatchCard(_Strict):
+    """R11.1 D5: what an approved `calendar_create_events` did, under its reply: code's own
+    words, one "Undo all" (the batch id) and, when something failed, "Retry the N". Made only
+    by the tool's approved run; never stored with the conversation."""
+
+    kind: Literal["batch"] = "batch"
+    batch: str = Field(pattern=r"^b[0-9a-f]{16}$")
+    total: int = Field(ge=0, le=1_000)
+    created: int = Field(ge=0, le=1_000)
+    already: int = Field(default=0, ge=0, le=1_000)
+    failed: int = Field(default=0, ge=0, le=1_000)
+    first: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    last: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    name: str = Field(default="", max_length=60)  # the followed plan, when it is one
+    words: str = Field(min_length=1, max_length=TEXT_LIMIT)
+    retry: list[BatchItem] = Field(default_factory=list, max_length=100)
+
+
+# R11.1 D21-D: + the "Look up" offer of a name the picture's own text holds (people/offer.py)
+AnyCard = PlacesCard | RouteCard | VideosCard | WhatsAppCard | UpiCard | BatchCard | PeopleOfferCard
 ReplyCard = Annotated[AnyCard, Field(discriminator="kind")]
 
 CARD_NOT_SHOWN: Final = (
@@ -237,6 +272,8 @@ __all__ = [
     "VIDEO_ID",
     "YOUTUBE_ATTRIBUTION",
     "AnyCard",
+    "BatchCard",
+    "BatchItem",
     "PlaceItem",
     "PlacesCard",
     "ReplyCard",

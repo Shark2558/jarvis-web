@@ -49,6 +49,8 @@
     ['nudge_free_time', 'Nudge: an idea for free time'],
     ['nudge_focus', 'Nudge: my top priority now'],
     ['weather_note', 'A minor weather note'],
+    ['series_checkin', 'A planned session: did it happen?'],
+    ['faces_to_name', 'New faces to name from my photo folder'],
   ];
   const LEVEL = { urgent: 'Urgent', important: 'Important', info: 'Just so you know' };
   const S = { data: undefined, vip: [], devices: [], error: '', loadedAt: 0, loading: null, busy: false, key: '' };

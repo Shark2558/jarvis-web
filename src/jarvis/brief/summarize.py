@@ -117,7 +117,8 @@ def _mail_block(data: BriefData, snippets: tuple[str, ...]) -> str:
     lines = [_mail_fact(m, s) for m, s in zip(box.items, padded, strict=False)] or ["(none)"]
     body = wrap_external("\n".join(lines), source="the owner's unread mail", limit=MAIL_BUDGET)
     return (
-        f"Unread mail ({box.total} in the last day; all of it written by other people):\n{body}\n"
+        f"Unread mail ({box.total} unread in the inbox; all of it written by other people):"
+        f"\n{body}\n"
     )
 
 

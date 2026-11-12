@@ -1,15 +1,17 @@
 // src/jarvis/api/static/console-connectors.js -- R4 C: the Connectors panel. GitHub (paste a token,
 // it is sent once and never shown again), YouTube (own channel, via the Google link) and Google
-// Photos (pick-only: you choose photos in Google's picker; they go to your home laptop, which finds
-// faces; naming anyone needs their consent). Everything the server sends reaches the page through
+// Photos (pick-only: you choose up to 2,000 photos in Google's picker; they go to your home laptop,
+// which finds faces; naming anyone needs their consent). Everything the server sends reaches the page through
 // textContent, never as markup. No build step; CSP script-src 'self'; ASCII source with backslash-u
 // escapes only; no CDN; amounts, if ever shown, are in rupees only. Transport is the console's api().
 // Mounts into #p-connectors .pbody (the panel shell is in console.html). Listens: jarvis:ready,
 // jarvis:panel (Connectors shown).
 // API: GET /v1/connectors -> {github:{connected,login}, youtube:{connected,reason}, photos:{connected,
 // reason}, statements:{adult,child,version}}; PUT/DELETE /v1/connectors/github; POST
-// /v1/connectors/photos/start -> {picker_uri}; POST .../photos/import -> {status, photos, faces_found,
-// recognised:[{name,child}], unknown:[id], skipped}; POST .../photos/enrol.
+// /v1/connectors/photos/start -> {picker_uri}; POST .../photos/import -> {status, photos, total,
+// faces_found, unknown_faces, skipped, over, line, recognised:[{name,child}]} (one step of the import).
+// R11.1 C: the import runs in the background; #photosImport is the place console-r111-photos.js fills
+// with its progress line. A face JARVIS doesn't know is named in Faces, under Unnamed groups, not here.
 (() => {
   'use strict';
   const panel = document.getElementById('p-connectors');
@@ -19,7 +21,7 @@
   const CHILD = 'a child from your family';
   const MAX_ROWS = 50;
   const WHY = { no_google: 'Sign in with Google first.', not_granted: 'Press Grant for this in Integrations.', unavailable: 'Not available on this server.' };
-  const S = { data: null, unknown: [], busy: false, confirm: false };
+  const S = { data: null, busy: false, confirm: false };
   let el = {};
 
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
@@ -50,7 +52,7 @@
       status: txt(r.status, 20), photos: Number.isInteger(r.photos) ? r.photos : 0, faces: Number.isInteger(r.faces_found) ? r.faces_found : 0,
       skipped: Number.isInteger(r.skipped) ? r.skipped : 0, uri: txt(r.picker_uri, 500),
       recognised: arr(r.recognised).slice(0, MAX_ROWS).map((p) => ({ name: p && p.child === true ? CHILD : txt(p && p.name, 40) })),
-      unknown: arr(r.unknown).filter((x) => typeof x === 'string' && /^c_[0-9a-f]{8,16}$/.test(x)).slice(0, MAX_ROWS),
+      unknown: Number.isInteger(r.unknown_faces) ? r.unknown_faces : arr(r.unknown).length, raw: r,
     };
   }
 
@@ -83,8 +85,8 @@
     el.pwhy = mk('p', 'warn');
     el.pstart = btn('btn lift', 'Choose photos', startPick); el.pimport = btn('btn lift', 'Import chosen photos', runImport);
     el.pinteg = btn('btn lift', 'Open Integrations', () => Deck.open('integrations', { focus: true }));
-    el.pout = mk('p', 'bfine cout'); el.enrol = mk('div', 'cenrol');
-    p.acts.append(el.pstart, el.pimport, el.pinteg); p.body.append(el.pwhy, p.acts, el.pout, el.enrol);
+    el.pjob = mk('div', 'cjob'); el.pjob.id = 'photosImport';
+    p.acts.append(el.pstart, el.pimport, el.pinteg); p.body.append(el.pwhy, p.acts, el.pjob);
     [el.who, el.tokenBox, el.g.acts, el.confirm, el.ywhy, el.pwhy, el.pstart, el.pimport, el.pinteg].forEach((n) => { n.hidden = true; });   // until the server has answered
   }
   function setCard(c, ok, label, warn) { c.c.dataset.state = ok ? 'linked' : warn ? 'reconnect' : 'unlinked'; c.state.textContent = label; }
@@ -104,20 +106,6 @@
     el.pwhy.hidden = !!d.photos.connected || !WHY[d.photos.reason]; el.pwhy.textContent = WHY[d.photos.reason] || '';
     el.pstart.hidden = el.pimport.hidden = !d.photos.connected; el.pinteg.hidden = !!d.photos.connected;
     el.pstart.disabled = el.pimport.disabled = S.busy;
-    renderEnrol();
-  }
-  function renderEnrol() {
-    el.enrol.replaceChildren();
-    S.unknown.forEach((id, i) => {
-      const row = mk('div', 'crow'), name = mk('input', 'dinput'), nl = mk('label', 'k', 'Name for face ' + (i + 1));
-      const box = mk('input'), kid = mk('input'), lbl = mk('label', 'ctick');
-      name.id = 'faceName' + i; nl.htmlFor = name.id; name.maxLength = 40;
-      box.type = 'checkbox'; kid.type = 'checkbox';
-      lbl.append(box, ' ', (S.data && S.data.adult) || 'They agree to be recognised.');
-      const kl = mk('label', 'ctick'); kl.append(kid, ' This is a child (a parent or guardian agrees).');
-      const go = btn('btn lift bact', 'Add', () => enrol(id, name.value, box.checked, kid.checked));
-      row.append(nl, name, lbl, kl, go); el.enrol.appendChild(row);
-    });
   }
 
   // ---- actions -----------------------------------------------------------------------------
@@ -139,24 +127,19 @@
     const r = obj(await api('/v1/connectors/photos/start', { method: 'POST', body: {} })) || {};
     const uri = txt(r.picker_uri, 500);
     if (!uri.startsWith('https://photos.google.com/')) { say('bad', 'Google Photos didn\'t give a picker link.'); return; }
-    window.open(uri, '_blank', 'noopener'); say('ok', 'Choose your photos in the new tab, then press Import.');
+    window.open(uri, '_blank', 'noopener'); say('ok', 'Choose your photos in the new tab (up to 2,000), then press Import.');
   }, 'Couldn\'t open the picker. Please try again.');
   const runImport = () => guard(async () => {
     const r = importOf(await api('/v1/connectors/photos/import', { method: 'POST', body: {} }));
-    S.unknown = r.unknown;
-    const words = { waiting: 'Still waiting for you to choose photos.', no_session: 'Press Choose photos first.', laptop_offline: 'Your home laptop is off or asleep.', edge_error: 'Your home laptop answered in a way JARVIS could not use.', timed_out: 'That took too long. Your picks are kept: press Import again.' };
+    const words = { waiting: 'Still waiting for you to choose photos.', no_session: 'Press Choose photos first.', reading: 'Reading your photos. It carries on by itself from here.',
+      laptop_offline: 'Your home laptop is off or asleep. The import carries on when it is back.', edge_error: 'Your home laptop answered in a way JARVIS could not use. It is tried again.',
+      timed_out: 'That took too long. Your picks are kept: it is tried again.', expired: 'Google\'s picker session ended. Press Choose photos and pick again to continue.',
+      kit_old: 'Your home kit is older than this. Update it on the laptop first.', reader_off: 'The face reader on your laptop is not ready yet.', done: 'Done.' };
     if (r.status === 'waiting' && r.uri.startsWith('https://photos.google.com/')) { window.open(r.uri, '_blank', 'noopener'); }
-    if (r.status !== 'done') { say('ok', words[r.status] || 'Nothing to import yet.'); return; }
-    el.pout.textContent = r.photos + ' photos looked at, ' + r.faces + ' faces found' + (r.recognised.length ? '; recognised: ' + r.recognised.map((p) => p.name).join(', ') : '') + (r.unknown.length ? '; ' + r.unknown.length + ' not recognised (not named).' : '.');
-    say('ok', 'Done.');
+    say('ok', words[r.status] || 'Nothing to import yet.');
+    const P = window.JarvisFixes && window.JarvisFixes.parts && window.JarvisFixes.parts.photos;   // R11.1 C: the progress line
+    if (P && typeof P.showImport === 'function') P.showImport(r.raw);
   }, 'Couldn\'t import. Please try again.');
-  const enrol = (cluster, name, agreed, child) => guard(async () => {
-    const body = { cluster, name: name.trim(), relation: 'friend', child, vip: false, given_by: child ? 'parent_guardian' : 'self', consent_version: (S.data && S.data.version) || 'fc1', confirm: agreed === true };
-    if (!body.name) { say('bad', 'Type a name first.'); return; }
-    const r = obj(await api('/v1/connectors/photos/enrol', { method: 'POST', body })) || {};
-    if (r.at_home !== false) S.unknown = S.unknown.filter((x) => x !== cluster);
-    say('ok', r.at_home === false ? 'Added. Your laptop is off: press Add again on that face when it is on.' : 'Added.');
-  }, 'Couldn\'t add that person. Tick the consent box and try again.');
 
   async function load(force) {
     if (!hasApi() || (!force && S.data)) return;

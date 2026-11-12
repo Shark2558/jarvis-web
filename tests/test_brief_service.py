@@ -72,6 +72,8 @@ async def _rig(
     docs: MemoryDocs | None = None,
     ai_cap: int = 6,
     approvals: InMemoryApprovalStore | None = None,
+    messages: list[dict[str, Any]] | None = None,
+    reads: Any = None,
 ) -> Rig:
     fake = BriefGoogle(
         events=[timed("e1", "Standup", "2027-01-15T09:30", "2027-01-15T10:00")],
@@ -83,7 +85,9 @@ async def _rig(
                 snippet="please sign",
                 internal_ms=ms("2027-01-15T06:40:00+05:30"),
             )
-        ],
+        ]
+        if messages is None
+        else messages,
     )
     conn = await connector(fake, linked=linked, insert=insert) if configured else None
     docs = docs if docs is not None else MemoryDocs()
@@ -99,6 +103,7 @@ async def _rig(
         default_tz="Asia/Kolkata",
         ai_daily_cap=ai_cap,
         clock=clock,
+        reads=reads(conn) if reads is not None else None,
     )
     return Rig(svc, fake, docs, audit, provider, clock, store)
 
@@ -761,3 +766,87 @@ async def test_an_ai_summary_answered_by_the_laptop_is_audited_as_offline() -> N
     assert done[-1].outcome == "executed"
     assert "offline=true" in done[-1].detail and "model=qwen2.5:7b" in done[-1].detail
     assert "unknown" not in done[-1].detail
+
+
+# ---- R11.1 I1 gate (INTEGRATION-A 3.4): the real brief reads the whole inbox, as his row says ---
+def _mail_row(effect: Any) -> Any:
+    """BackgroundReads over a gateway whose only tool is gmail_inbox_summary, with his "Search
+    and read email" row set to `effect` (None: the default)."""
+    from jarvis.core.guardrails import ConfirmationGate
+    from jarvis.tools.background import BackgroundReads
+    from jarvis.tools.gateway import Gateway
+    from jarvis.tools.gmail_digest import inbox_tools
+    from jarvis.tools.policy import Policy, PolicyRule
+    from jarvis.tools.registry import ToolRegistry
+
+    def reads(conn: Any) -> Any:
+        reg = ToolRegistry()
+        for t in inbox_tools(lambda: conn, max_reads=30):
+            reg.register(t)
+        rules = (
+            [PolicyRule(tool_pattern="gmail_*", effect=effect, source="owner")] if effect else []
+        )
+
+        class Rows:
+            async def rules_for(self, user_id: str) -> list[Any]:
+                return rules
+
+        gw = Gateway(
+            registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog(), rules=Rows()
+        )
+        return BackgroundReads.of(gw)
+
+    return reads
+
+
+@pytest.mark.parametrize("effect", ["deny", "ask"])
+async def test_r111_never_or_ask_first_on_the_mail_row_means_the_brief_reads_no_mail(
+    effect: str,
+) -> None:
+    from jarvis.tools.policy import Effect
+
+    r = await _rig(reads=_mail_row(Effect(effect)))
+    view = await r.svc.generate(OWNER_UID, trigger="manual", force=False)
+    b = view.brief
+    assert b is not None and b.data is not None
+    assert [q for q in r.fake.requests if "/gmail/" in q.url.path and q.method == "GET"] == []
+    # I1 code review M4: his row, not a fault: paused by his Permissions
+    assert b.data.sections_status.inbox == "paused" and "Budget" not in b.text
+    assert b.data.calendar.today[0].title == "Standup"  # the other sections are untouched
+
+
+async def test_r111_an_allowed_read_brings_the_groups_withheld_and_about_n_to_the_brief() -> None:
+    from jarvis.tools.policy import Effect
+
+    otp = mail(
+        "m2",
+        "Bank <alerts@bank.example>",
+        "482913 is your one-time password",
+        snippet="Use OTP 482913 to sign in.",
+        internal_ms=ms("2027-01-15T06:50:00+05:30"),
+    )
+    people = mail("m1", "Priya <p@x.com>", "Budget", internal_ms=ms("2027-01-15T06:40:00+05:30"))
+    r = await _rig(messages=[people, otp], reads=_mail_row(Effect.ALLOW))
+    view = await r.svc.generate(OWNER_UID, trigger="manual", force=False)
+    b = view.brief
+    assert b is not None and b.data is not None
+    box = b.data.inbox
+    assert box.exact is False and box.withheld == 1 and box.failed == 0  # no INBOX label here
+    assert [(g.key, g.unread) for g in box.groups if g.unread] == [("people", 1)]
+    assert "INBOX · about 2 unread (showing 1)" in b.text
+    assert "Gmail didn't give its own count just now: the number is an estimate." in b.text
+    assert "1 from people" in b.text and "1 more looks like a code or a bank message" in b.text
+    assert "482913" not in b.text and "one-time password" not in b.text
+
+
+async def test_r111_the_app_s_brief_reads_mail_through_the_governed_path(
+    settings: Any,
+) -> None:
+    from jarvis.api import create_app
+    from jarvis.memory.inmemory import InMemorySessionStore
+
+    app = create_app(settings, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        collector = app.state.brief._collector  # noqa: SLF001 - the wiring itself is the gate
+        assert collector._reads is not None  # noqa: SLF001
+        assert collector._max_reads == settings.mail_summary_max_reads  # noqa: SLF001

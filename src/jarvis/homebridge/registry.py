@@ -8,9 +8,12 @@ finds the faces plugin through `BridgeContext.peers` when a face arrives (consen
 from __future__ import annotations
 
 from jarvis.homebridge.camera import camera_plugin
+from jarvis.homebridge.face_groups import create_plugin as face_groups_plugin
 from jarvis.homebridge.faces import create_plugin as faces_plugin
 from jarvis.homebridge.plugins import PluginFactory
 
-PLUGINS: tuple[PluginFactory, ...] = (camera_plugin, faces_plugin)
+# R11.1 O7: face groups from still pictures (photos JARVIS sends, the watched folder). It reads
+# consent from the faces plugin through `BridgeContext.peers`, as the camera does.
+PLUGINS: tuple[PluginFactory, ...] = (camera_plugin, faces_plugin, face_groups_plugin)
 
 __all__ = ["PLUGINS"]

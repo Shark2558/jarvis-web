@@ -26,7 +26,7 @@ from jarvis.home.ports import (
 )
 from jarvis.homebridge import __main__ as cli
 from jarvis.homebridge.app import Supervisor, create_bridge
-from jarvis.homebridge.config import BridgeConfig, ConfigError, load_config
+from jarvis.homebridge.config import BRIDGE_VERSION, BridgeConfig, ConfigError, load_config
 from jarvis.homebridge.ha import HAClient, HAError
 from jarvis.homebridge.state import BridgeStore
 
@@ -211,7 +211,7 @@ async def test_beat_reaches_the_cloud_and_brings_state_home(w: World) -> None:
     assert await w.bridge.heartbeat.beat() is True  # type: ignore[union-attr]
     status = await w.store.status(UID)
     assert status is not None and status.state == "online" and status.parts["ha"] is True
-    assert status.bridge_version == "0.1.0"
+    assert status.bridge_version == BRIDGE_VERSION  # 0.2.0 from R11.1 (photos, face groups)
     assert w.bridge.store.state.arm is not None and w.bridge.store.state.arm.rev == 7
     assert w.bridge.heartbeat.interval() == 120  # type: ignore[union-attr]
     w.bridge.store.apply(BridgeState(settings=SettingsState(rev=1, heartbeat_s=300)))

@@ -214,6 +214,21 @@ def never_sent(exc: BaseException) -> bool:
 GONE_STATUSES = frozenset({404, 410})
 SERVICE_DISABLED_REASONS = frozenset({"accessNotConfigured", "SERVICE_DISABLED"})
 SERVICE_OFF_MSG = "That Google service is not switched on for your JARVIS project yet."
+# R11.1 O5 (D13): a switched-off service the deploy script switches on is named, with the fix
+PHOTOS_OFF_MSG = (
+    "Google Photos Picker is not switched on for your JARVIS project yet: "
+    "re-run deploy/cloudrun.sh."
+)
+SERVICE_OFF_BY_HOST = {"photospicker.googleapis.com": PHOTOS_OFF_MSG}
+
+
+def service_off_message(url: str) -> str:
+    """The plain sentence for a switched-off Google API, by the exact host that was called."""
+    try:
+        host = httpx.URL(url).host
+    except httpx.InvalidURL:
+        return SERVICE_OFF_MSG
+    return SERVICE_OFF_BY_HOST.get(host, SERVICE_OFF_MSG)
 
 
 _FRIENDLY: dict[int, str] = {
@@ -422,7 +437,7 @@ class GoogleConnector:
                 "google api error", extra={"status": r.status_code, "path": httpx.URL(url).path}
             )
             if r.status_code == 403 and not SERVICE_DISABLED_REASONS.isdisjoint(_reasons(r)):
-                raise GoogleServiceDisabled(SERVICE_OFF_MSG)
+                raise GoogleServiceDisabled(service_off_message(url))
             if r.status_code in (403, 429):  # slice 12: a used-up quota or a short-term limit
                 _raise_quota(url, google_errors.envelope(r.content))
             raise _error_for(r.status_code)

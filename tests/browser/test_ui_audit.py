@@ -102,9 +102,7 @@ class Rig:
             install_mocks(c.page)
             c.open()
             if surface == "day":
-                c.page.locator("#themeBtn").click()
-                c.page.locator('label[for="jx-s-day"]').click()
-                c.page.keyboard.press("Escape")
+                c.choose_day()
             assert c.page.locator("html").get_attribute("data-surface") == surface
             c.page.wait_for_timeout(1200)  # deferred scripts and the 3D module settle
             self.pages[key] = c

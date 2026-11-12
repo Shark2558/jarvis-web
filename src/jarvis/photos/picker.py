@@ -15,7 +15,8 @@ JARVIS only ever sees what the owner selected. Calls ride `GoogleConnector.reque
 refresh, vendor text never leaves). Hosts are checked: the picker link must be on
 photos.google.com and a base URL on googleusercontent.com, both https. A picture is streamed
 and capped at MAX_IMAGE_BYTES before it is buffered, must be `image/jpeg`, and leaves here with
-all metadata (EXIF/GPS) stripped (`photos.imaging`).
+all metadata (EXIF/GPS) stripped (`photos.imaging`). R11.1 O6: a pick may hold up to 2,000 photos
+(`photos_max_picked`); the list is read a page at a time (`list_page`) and no link is ever kept.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ from jarvis.integrations.google import (
 )
 from jarvis.integrations.vault import GoogleTokens
 from jarvis.logging import get_logger
-from jarvis.photos.errors import BAD_ANSWER, BAD_PICTURE, PickerError
+from jarvis.photos.errors import BAD_ANSWER, BAD_PICTURE, PickerError, PickerRetry
 from jarvis.photos.imaging import sanitise_jpeg
 from jarvis.photos.models import PHOTOS_SCOPE, SESSION_ID, PickedItem, PickerSession
 
@@ -45,12 +46,17 @@ API = "https://photospicker.googleapis.com/v1"
 PICKER_HOST = "photos.google.com"
 IMAGE_HOST = re.compile(r"lh[0-9]+\.googleusercontent\.com")
 SIZE_SUFFIX = "=w1024-h1024"
-MAX_PICKED = 20  # photos per import: a small, owner-chosen batch, never a library
+PICKER_MAX = 2000  # Google's own maximum for one pick ("values above 2000 are coerced to 2000")
+PAGE_SIZE = 100  # mediaItems.list: Google's maximum page
+MAX_TOKEN_CHARS = 2000
 MAX_IMAGE_BYTES = 4_000_000
 JPEG_TYPE = "image/jpeg"
 STATUS_UNAUTHORIZED = 401
 DOWNLOAD_TIMEOUT_S = 20.0
 HTTP_OK = 200
+TOO_MANY = 429
+# R11.1 review C-code M1: what means "try again later", not "this photo is bad"
+TRY_LATER = frozenset({TOO_MANY, 500, 502, 503, 504})
 
 GRANT_MSG = (
     "JARVIS has no permission to open the photos you pick yet. Open Integrations and press "
@@ -115,8 +121,9 @@ def _check_headers(r: httpx.Response) -> None:
 
 
 class PickerClient:
-    def __init__(self, google: GoogleConnector) -> None:
+    def __init__(self, google: GoogleConnector, *, max_picked: int = PICKER_MAX) -> None:
         self._g = google
+        self._max = max(1, min(int(max_picked), PICKER_MAX))
 
     async def status(self, uid: str) -> dict[str, Any]:
         st = await self._g.status(uid)
@@ -139,9 +146,12 @@ class PickerClient:
             raise PickerError(BAD_ANSWER)
         return session_id
 
-    async def create_session(self, uid: str) -> PickerSession:
+    async def create_session(self, uid: str, max_items: int | None = None) -> PickerSession:
+        """A new pick of at most `max_items` photos (the owner's `photos_max_picked`; never more
+        than Google's 2,000)."""
         await self._require(uid)
-        body = {"pickingConfig": {"maxItemCount": str(MAX_PICKED)}}  # int64 travels as a string
+        limit = max(1, min(int(max_items or self._max), PICKER_MAX))
+        body = {"pickingConfig": {"maxItemCount": str(limit)}}  # int64 travels as a string
         raw = await self._g.request(uid, "POST", f"{API}/sessions", json=body, send_once=True)
         return _session(raw)
 
@@ -150,15 +160,30 @@ class PickerClient:
         await self._require(uid)
         return _session(await self._g.request(uid, "GET", f"{API}/sessions/{sid}"))
 
-    async def list_items(self, uid: str, session_id: str) -> tuple[PickedItem, ...]:
+    async def list_page(
+        self, uid: str, session_id: str, token: str = ""
+    ) -> tuple[tuple[PickedItem, ...], str]:
+        """One page of what the owner picked (photos only) and the next page's token ("" at the
+        end). The links in it are fresh: Google's expire after about an hour, so an import asks
+        for the page again instead of keeping them (R11.1 O6)."""
         sid = self._sid(session_id)
         await self._require(uid)
-        raw = await self._g.request(
-            uid, "GET", f"{API}/mediaItems", params={"sessionId": sid, "pageSize": MAX_PICKED}
-        )
+        params: dict[str, Any] = {"sessionId": sid, "pageSize": PAGE_SIZE}
+        if token:
+            if not isinstance(token, str) or len(token) > MAX_TOKEN_CHARS:
+                raise PickerError(BAD_ANSWER)
+            params["pageToken"] = token
+        raw = await self._g.request(uid, "GET", f"{API}/mediaItems", params=params)
         rows = raw.get("mediaItems") if isinstance(raw, dict) else None
-        found = (_item(r) for r in rows) if isinstance(rows, list) else ()
-        return tuple(i for i in found if i is not None)[:MAX_PICKED]
+        found = (_item(r) for r in rows[:PAGE_SIZE]) if isinstance(rows, list) else ()
+        nxt = raw.get("nextPageToken") if isinstance(raw, dict) else None
+        ok = isinstance(nxt, str) and 0 < len(nxt) <= MAX_TOKEN_CHARS
+        return tuple(i for i in found if i is not None), (str(nxt) if ok else "")
+
+    async def list_items(self, uid: str, session_id: str) -> tuple[PickedItem, ...]:
+        """The first page only (kept for callers that want a quick look)."""
+        items, _ = await self.list_page(uid, session_id)
+        return items
 
     async def download(self, uid: str, item: PickedItem) -> bytes:
         """One picture, size-capped while streaming, one refresh on 401, metadata stripped."""
@@ -167,8 +192,10 @@ class PickerClient:
         status, data = await self._fetch(url, await self._g.access_token(uid))
         if status == STATUS_UNAUTHORIZED:
             status, data = await self._fetch(url, await self._renew(uid))
+        if status in TRY_LATER or status >= 500:
+            raise PickerRetry(BAD_PICTURE)  # Google's trouble, not the photo's: tried again
         if status != HTTP_OK:
-            raise PickerError(BAD_PICTURE)
+            raise PickerError(BAD_PICTURE)  # 403, 404 and the like: this photo is not readable
         return await asyncio.to_thread(sanitise_jpeg, data)
 
     async def _renew(self, uid: str) -> str:
@@ -198,9 +225,9 @@ class PickerClient:
                     if len(buf) > MAX_IMAGE_BYTES:
                         raise PickerError(BAD_PICTURE)
                 return r.status_code, bytes(buf)
-        except httpx.HTTPError as exc:
+        except httpx.HTTPError as exc:  # a timeout or a dropped connection: try again later
             log.warning("photo download failed", extra={"reason": type(exc).__name__})
-            raise PickerError(BAD_PICTURE) from None
+            raise PickerRetry(BAD_PICTURE) from None
 
     async def delete_session(self, uid: str, session_id: str) -> None:
         """Best effort: Google expires sessions on its own."""
@@ -210,4 +237,4 @@ class PickerClient:
             log.warning("picker session cleanup failed", extra={"reason": type(exc).__name__})
 
 
-__all__ = ["MAX_PICKED", "PhotosNotGranted", "PickerClient", "PickerError"]
+__all__ = ["PAGE_SIZE", "PICKER_MAX", "PhotosNotGranted", "PickerClient", "PickerError"]

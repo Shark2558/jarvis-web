@@ -59,6 +59,14 @@ PLUGIN_ENV_KEYS = frozenset(
         "FACES_CODE",
         "FACES_PORT",
         "FACES_BIND",
+        # R11.1 O7: the watched photo folder (off until PHOTOS_DIR is set), how long an unnamed
+        # face group is kept, where the two model files are, and the laptop's own thresholds
+        "PHOTOS_DIR",
+        "PHOTOS_MOUNT",
+        "PHOTOS_PER_MINUTE",
+        "FACE_GROUPS_KEEP_DAYS",
+        "FACE_MODELS_DIR",
+        "FACE_MATCH_SCORE",
     }
 )
 

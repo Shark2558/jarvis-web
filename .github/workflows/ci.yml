@@ -22,6 +22,10 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - run: pip install -e ".[dev]"
+      # R11.1 C: the home bridge's face engine (OpenCV and NumPy, the homebridge extra), so its
+      # tests run instead of being skipped; NumPy 2.5 needs Python 3.12, the bridge image's own
+      - if: matrix.python == '3.12'
+        run: pip install -e ".[dev,homebridge]"
       - run: ruff check src tests evals
       - run: pytest -q
       - run: python evals/phase0/run.py --mock   # plumbing only; real gate runs on demand

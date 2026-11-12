@@ -77,10 +77,19 @@ never 3 (there is deliberately no up-front reserve of all three).
 
 ```python
 from jarvis.people.tools import PeopleDeps, people_tools
+from jarvis.picture.turnguard import app_guard
 
-for t in people_tools(PeopleDeps(service=people)):  # brain mode is read from the service
+pictures = app_guard(lambda name: getattr(app.state, name, None))  # R11.1: read late
+for t in people_tools(PeopleDeps(service=people, pictures=pictures)):  # brain mode: the service's
     reg.register(t)
 ```
+
+R11.1 D21-D (security review H1): `pictures` is the turn guard. On a Brain turn whose latest owner
+message carried a picture, `research_person` researches only a name the owner typed in that message,
+turns a name the last picture research read off the picture's own text into an offer (a "Look up"
+reply card, `jarvis.people.offer`), and refuses anything else in fixed words; the same check runs
+as its look-up, so no approval card shows a refused name. Without `pictures` every Brain turn counts
+as a picture turn (fail closed). Outside a turn (this panel's route, an approved card) nothing changes.
 
 Registers `research_person` (row `people`/`research_*`) and `people_open_profiles`.
 `research_person` returns a refusal as a normal result `{refused: true, message, spoken}` in fixed

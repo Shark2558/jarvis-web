@@ -19,14 +19,18 @@ def _src(name: str) -> str:
 def test_a_row_that_is_being_read_says_checking_on_its_chip() -> None:
     js = _src("console-vitals.js")
     assert "checking: o.checking === true" in js  # only the server's own flag
-    assert "'Checking\\u2026'" in js and "chip(it.status, it.checking)" in js
+    assert "'Checking\\u2026'" in js and "chip(it.status, it.checking && !slow)" in js
     assert js.isascii() and len(js.splitlines()) <= 400
 
 
-def test_a_checking_board_is_read_again_by_itself_a_few_times_only() -> None:
+def test_a_checking_board_is_read_again_until_it_answers_for_a_bounded_time() -> None:
+    """Code review M4 (was: at most three looks, so a slow read left "Checking..." up for good).
+    The behaviour is in tests/browser/test_r11_1_d_look.py; here the bound and the words."""
     js = _src("console-vitals.js")
-    assert re.search(r"FOLLOW_MAX = [1-5]\b", js) and "FOLLOW_MS = " in js
-    assert "S.follows < FOLLOW_MAX" in js and "clearTimeout(S.followTimer)" in js
+    assert re.search(r"FOLLOW_MS = [1-5]000\b", js) and "FOLLOW_FOR_MS = 45 * 1000" in js
+    assert "now - S.followSince < FOLLOW_FOR_MS" in js and "clearTimeout(S.followTimer)" in js
+    assert "const SLOW = 'GitHub didn\\'t answer; press Refresh.';" in js
+    assert "load(true, true)" in js  # his Refresh follows from the start again
 
 
 # ---- O8: profile cards (the behaviour is in the browser test) ------------------------------------

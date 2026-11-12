@@ -29,12 +29,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from jarvis.documents.pictures import turn_pictures
 from jarvis.logging import get_logger
 from jarvis.picture.guard import NO_IDENTIFY
-from jarvis.picture.research import Report
 from jarvis.picture.words import (
     NOT_NAME,
     WORD,
@@ -48,6 +47,9 @@ from jarvis.picture.words import (
 )
 from jarvis.tools.context import current_tool_context
 from jarvis.tools.taint import owner_text
+
+if TYPE_CHECKING:  # web.tools imports this module: nothing here may import the web search
+    from jarvis.picture.research import Report
 
 log = get_logger(__name__)
 
@@ -69,7 +71,7 @@ class PictureTurns(Protocol):
     async def carried(self, uid: str, session_id: str) -> Carried: ...
 
 
-LastReport = Callable[[str, str], Report | None]
+LastReport = Callable[[str, str], "Report | None"]
 
 
 @dataclass(frozen=True)
@@ -235,7 +237,10 @@ def app_guard(state: Callable[[str], Any]) -> TurnGuard:
         parts = state("r111_parts") or {}
         part = parts.get(LOOK) if isinstance(parts, dict) else None
         service = part.services.get(RESEARCH) if part is not None else None
-        found = service.last(uid, session_id) if hasattr(service, "last") else None
+        from jarvis.picture.research import Report  # late: see the import note above
+
+        read = getattr(service, "last", None)
+        found = read(uid, session_id) if callable(read) else None
         return found if isinstance(found, Report) else None
 
     return TurnGuard(DocumentTurns(lambda: state("documents")), last)

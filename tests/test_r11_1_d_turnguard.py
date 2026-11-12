@@ -263,3 +263,28 @@ async def test_the_app_guard_reads_the_store_and_the_last_report_late(
     state["r111_parts"] = {}  # the part left out: no report, still a picture turn
     with turn("who is this?"):
         assert await guard.name(NAME) == Refused(NO_IDENTIFY)
+
+
+def test_web_search_can_import_the_guard_without_a_cycle() -> None:
+    """I1's gate puts one call into `web_search`'s run, so `jarvis.web.tools` will import this
+    module: it must not import the web search back (picture.search does), at import time."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src"
+    probe = (
+        "import sys, jarvis.picture.turnguard; "
+        "print(sorted(m for m in sys.modules if m in "
+        "('jarvis.web.tools', 'jarvis.picture.research', 'jarvis.picture.search')))"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "PYTHONPATH": str(src)},
+    )
+
+    assert done.stdout.strip() == "[]"

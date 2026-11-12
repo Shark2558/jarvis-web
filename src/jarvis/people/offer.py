@@ -18,7 +18,7 @@ The console draws it with `JarvisPeople.offerCard` (console-people.js), text onl
 from __future__ import annotations
 
 import typing
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -27,8 +27,8 @@ from jarvis.picture.words import name_shaped
 from jarvis.tools import reply_cards
 from jarvis.tools.external import wrap_external
 
-KIND = "people_offer"
-BUTTON = "Look up"
+KIND: Final = "people_offer"
+BUTTON: Final = "Look up"
 CAPTION_MAX = 200
 FROM_TEXT = "text in the picture"
 NOTE = (
@@ -44,11 +44,11 @@ NOT_SHOWN = (
 class PeopleOfferCard(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["people_offer"] = KIND
+    kind: Literal["people_offer"] = "people_offer"
     name: str = Field(min_length=1, max_length=80)
     caption: str = Field(min_length=1, max_length=CAPTION_MAX)
     words: str = Field(min_length=1, max_length=300)
-    button: Literal["Look up"] = BUTTON
+    button: Literal["Look up"] = "Look up"
 
     @field_validator("name")
     @classmethod

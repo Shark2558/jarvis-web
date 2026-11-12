@@ -39,10 +39,10 @@ from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector, GoogleUncertain
 from jarvis.logging import get_logger
 from jarvis.series.batch_result import create_result, undo_result
+from jarvis.series.calendar import batch_events
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.calendar_batch import (
     BATCH_ID,
-    BATCH_ID_KEY,
     CREATE,
     NAME_MAX,
     PREFIX_MAX,
@@ -54,7 +54,6 @@ from jarvis.tools.calendar_batch import (
     Wanted,
     batch_id,
     changed_by_owner,
-    number_of,
     numbered,
     parse,
     stamped,
@@ -110,40 +109,17 @@ class BatchAPI:
         b = parse(a, limit=self._limit)
         return batch_card([w.args for w in b.items], prefix=b.prefix, plan=b.name)
 
-    async def _existing(
-        self, conn: GoogleConnector, uid: str, batch: str
-    ) -> dict[int, dict[str, Any]]:
-        """The batch's events now in the calendar, by item number (listed by the marker)."""
-        found: dict[int, dict[str, Any]] = {}
-        params: dict[str, Any] = {
-            "privateExtendedProperty": f"{BATCH_ID_KEY}={batch}",
-            "maxResults": PAGE,
-            "showDeleted": "false",
-        }
-        for _ in range(MAX_PAGES):
-            got = await conn.request(uid, "GET", EVENTS_URL, params=params)
-            data = got if isinstance(got, dict) else {}
-            for e in data.get("items") or []:
-                n = number_of(e, batch) if isinstance(e, dict) else None
-                if n is not None and e.get("status") != "cancelled":
-                    found.setdefault(n, e)
-            token = data.get("nextPageToken")
-            if not token:
-                break
-            params = {**params, "pageToken": token}
-        return found
-
     async def preview_create(self, a: dict[str, Any]) -> Preview:
         """Before the card: Google must be linked, a followed plan must have room, and the card
         says how many of the list are already there (a retry adds only the rest)."""
         ctx = require_tool_context()
         b = parse(a, limit=self._limit)
         conn = self._conn()
-        if b.name and self._book is not None:
-            await self._book.room(ctx.user_id, b.name, len(b.items))
         bid = b.batch or batch_id(ctx.user_id, b)
-        have = await self._existing(conn, ctx.user_id, bid)
+        have = await batch_events(conn, ctx.user_id, bid)
         there = sum(1 for n, _ in numbered(b.items, have, bool(b.batch)) if n in have)
+        if b.name and self._book is not None:
+            await self._book.room(ctx.user_id, b.name, len(b.items) - there)
         return Preview(
             batch_card([w.args for w in b.items], prefix=b.prefix, plan=b.name, there=there)
         )
@@ -181,7 +157,7 @@ class BatchAPI:
         if not any(o.status == "unconfirmed" for o in done):
             return done
         try:
-            have = await self._existing(conn, uid, bid)
+            have = await batch_events(conn, uid, bid)
         except GoogleAPIError:
             return done  # can't tell: they stay "unconfirmed", in plain words
         return [
@@ -193,17 +169,17 @@ class BatchAPI:
         ctx = require_tool_context()
         uid, b = ctx.user_id, parse(a, limit=self._limit)
         conn = self._conn()
-        if b.name and self._book is not None:
-            try:
-                await self._book.room(uid, b.name, len(b.items))
-            except ValueError as exc:  # checked before the card too; nothing was added
-                return {"created": 0, "refused": True, "message": str(exc)}
         tz = await CalendarAPI(conn, None, self._tz).owner_tz(uid)
         bid = b.batch or batch_id(uid, b)
-        have = await self._existing(conn, uid, bid)
+        have = await batch_events(conn, uid, bid)
         items = numbered(b.items, have, bool(b.batch))
         done = [Outcome(n, "already_there", have[n]) for n, _ in items if n in have]
         todo = [(n, w) for n, w in items if n not in have]
+        if b.name and self._book is not None:
+            try:
+                await self._book.room(uid, b.name, len(todo))
+            except ValueError as exc:  # checked before the card too; nothing was added
+                return {"created": 0, "refused": True, "message": str(exc)}
         for i in range(0, len(todo), PARALLEL):
             chunk = todo[i : i + PARALLEL]
             done += await asyncio.gather(
@@ -242,7 +218,7 @@ class BatchAPI:
 
     async def preview_undo(self, a: dict[str, Any]) -> Preview:
         ctx = require_tool_context()
-        have = await self._existing(self._conn(), ctx.user_id, a["batch"])
+        have = await batch_events(self._conn(), ctx.user_id, a["batch"])
         if not have:
             raise LookupError("no events of that batch are in the calendar (already removed?)")
         events = [have[n] for n in sorted(have)]
@@ -271,7 +247,7 @@ class BatchAPI:
         conn, bin_ = self._conn(), self._undo()
         if bin_ is None:
             return {"batch": a["batch"], "removed": 0, "unavailable": True, "message": NO_BIN}
-        have = await self._existing(conn, ctx.user_id, a["batch"])
+        have = await batch_events(conn, ctx.user_id, a["batch"])
         todo, items = sorted(have.items()), []
         for i in range(0, len(todo), PARALLEL):
             items += await asyncio.gather(

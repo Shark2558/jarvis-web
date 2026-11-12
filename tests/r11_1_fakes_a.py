@@ -8,17 +8,30 @@ import asyncio
 import json
 import re
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
 from pydantic import SecretStr
 
+from jarvis.config import Settings
+from jarvis.core.guardrails import ConfirmationGate
+from jarvis.fixes.ports import FixContext
 from jarvis.integrations.google import GoogleConnector
 from jarvis.integrations.vault import GoogleTokens, MemoryTokenStore
 from jarvis.llm.base import ChatMessage, Completion, Effort, StreamUsage, ToolCall, ToolSpec, Usage
 from jarvis.llm.mock_provider import MockProvider, RecordedCall
+from jarvis.notify.ports import Delivery, Signal
+from jarvis.storage.docs import MemoryDocs
+from jarvis.tools.audit import AuditLog
+from jarvis.tools.gateway import Gateway, GatewayOutcome
+from jarvis.tools.policy import Policy, PolicyRule
+from jarvis.tools.registry import ToolRegistry
+from jarvis.tools.taint import context_trust
+from jarvis.undo.service import UndoBin
+from jarvis.undo.store import DeletedStore
 
 UID = "u_owner"
 CUT = "max_tokens"
@@ -337,15 +350,152 @@ async def connector(fake: PlanGoogle, uid: str = UID) -> GoogleConnector:
     return GoogleConnector(store, client_id="e", client_secret=SecretStr("e"), http=fake.client())
 
 
+# ---- the plan part on fakes ----------------------------------------------------------------------
+
+
+class Clock:
+    """A clock a test moves (`at`), in the owner's zone."""
+
+    def __init__(self, at: datetime) -> None:
+        self.at = at
+
+    def __call__(self) -> datetime:
+        return self.at
+
+
+class Told:
+    """A Notifier that records what it was asked to say and answers as the policy would
+    (`action`: ring by day, hold at night)."""
+
+    def __init__(self, action: str = "ring") -> None:
+        self.action = action
+        self.sent: list[tuple[str, str, str]] = []
+        self.fail = False
+
+    async def notify(
+        self,
+        uid: str,
+        signal: Signal,
+        message: str,
+        *,
+        named_message: str | None = None,
+        photo: bytes | None = None,
+    ) -> Delivery:
+        if self.fail:
+            raise RuntimeError("the notifier is down")
+        self.sent.append((uid, signal.kind, message))
+        return Delivery(action=self.action, reason="test", telegram=self.action == "ring")  # type: ignore[arg-type]
+
+
+class PlanRig:
+    """Part A built by its own `build(ctx)` over fakes: the batch and series tools behind a real
+    Gateway, the check-in job, the store, a clock and a notifier."""
+
+    def __init__(
+        self,
+        fake: PlanGoogle,
+        conn: GoogleConnector | None,
+        *,
+        now: datetime,
+        settings: Settings | None = None,
+        rules: Sequence[PolicyRule] = (),
+    ) -> None:
+        from jarvis.series.part import build
+
+        self.fake, self.clock, self.told = fake, Clock(now), Told()
+        self.docs, self.audit = MemoryDocs(), AuditLog()
+        self.bin = UndoBin(DeletedStore(self.docs))
+        self.state: dict[str, Any] = {
+            "google": conn,
+            "undo": self.bin,
+            "helpers_now": self.clock,
+        }
+        self.s = settings or Settings(_env_file=None, env="dev")
+        self.ctx = FixContext(
+            s=self.s,
+            docs=self.docs,
+            audit=self.audit,
+            state=self.state.get,
+            notifier=lambda: self.told,
+        )
+        self.part = build(self.ctx)
+        reg = ToolRegistry()
+        for t in self.part.tools:
+            reg.register(t)
+        self.gw = Gateway(
+            registry=reg, policy=Policy(list(rules)), gate=ConfirmationGate(), audit=self.audit
+        )
+        self.state["gateway"] = self.gw
+
+    @property
+    def svc(self) -> Any:
+        return self.part.services["series"]
+
+    async def run(self, name: str, args: dict[str, Any], *, scope: str = "", **kw: Any) -> Any:
+        call_ = ToolCall(id="c", name=name, arguments=args)
+        return await self.gw.execute(call_, scope=scope or f"{UID}:sess_1", **kw)
+
+    async def approved(self, name: str, args: dict[str, Any], **kw: Any) -> Any:
+        asked = await self.run(name, args, **kw)
+        assert asked.pending is not None, asked.error
+        return await self.run(name, args, confirmation_id=asked.pending.id, **kw)
+
+    async def approve(self, card_id: str) -> Any:
+        """Approve a card that is already waiting (as the Approvals panel does)."""
+        card = await self.gw.gate.get(card_id)
+        assert card is not None
+        call_ = ToolCall(id="approve", name=card.tool, arguments=card.arguments)
+        return await self.gw.execute(call_, confirmation_id=card.id, scope=card.scope)
+
+
+def weekday_sessions(n: int = 60, *, first: str = "2026-11-16") -> list[dict[str, Any]]:
+    """`n` one-hour sessions, Monday to Friday at 19:00 IST, from Monday 16 Nov 2026."""
+    out: list[dict[str, Any]] = []
+    day = date.fromisoformat(first)
+    while len(out) < n:
+        if day.weekday() < 5:
+            out.append(
+                {
+                    "summary": f"Topic {len(out) + 1}",
+                    "start": f"{day.isoformat()}T19:00:00+05:30",
+                    "end": f"{day.isoformat()}T20:00:00+05:30",
+                }
+            )
+        day += timedelta(days=1)
+    return out
+
+
+async def plan_rig(now: datetime, **kw: Any) -> PlanRig:
+    fake = PlanGoogle()
+    return PlanRig(fake, await connector(fake), now=now, **kw)
+
+
+async def followed(rig: PlanRig, n: int = 60, name: str = "CCA") -> dict[str, Any]:
+    """A followed plan of `n` weekday sessions, made the real way: one approved batch."""
+    args = {"events": weekday_sessions(n), "title_prefix": name, "series": {"name": name}}
+    with context_trust(untrusted=False):  # the owner typed it himself
+        asked = await rig.run("calendar_create_events", args)
+    assert asked.pending is not None, asked.error
+    out = await rig.run("calendar_create_events", args, confirmation_id=asked.pending.id)
+    assert out.outcome is GatewayOutcome.EXECUTED, out.error
+    return dict(out.result)
+
+
 __all__ = [
     "CUT",
     "EVENTS",
     "GM",
     "UID",
+    "Clock",
     "PlanGoogle",
+    "PlanRig",
     "Said",
     "ScriptedBrain",
+    "Told",
     "call",
     "connector",
+    "followed",
     "letter",
+    "plan_rig",
+    "weekday_sessions",
 ]

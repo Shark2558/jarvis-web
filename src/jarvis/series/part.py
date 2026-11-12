@@ -70,6 +70,8 @@ def _clock(ctx: FixContext) -> Callable[[], datetime]:
 def _phrases(ctx: FixContext) -> Callable[[], bool]:
     """Put the plan phrases into the app's BrainMode, once. True when they are in."""
 
+    told: list[object] = []  # the BrainMode already told about a full phrasebook (once)
+
     def ensure() -> bool:
         mode = ctx.state("brain_mode")
         if mode is None:
@@ -78,7 +80,9 @@ def _phrases(ctx: FixContext) -> Callable[[], bool]:
             try:
                 mode.add_phrases([route])
             except ValueError:  # the phrasebook is full: the AI still answers
-                log.warning("the plan phrases did not fit into No-AI mode")
+                if not any(m is mode for m in told):
+                    told.append(mode)
+                    log.warning("the plan phrases did not fit into No-AI mode")
                 return False
         return True
 

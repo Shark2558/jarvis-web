@@ -668,3 +668,22 @@ async def test_a_batch_uses_one_calendar_object_and_no_private_method(
     made.clear()
     await rig.run(cb.CREATE, args, confirmation_id=asked.pending.id)
     assert len(made) == 1
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"colorId": "11"},
+        {"attachments": [{"fileUrl": "https://drive.example/f", "title": "Notes"}]},
+        {"conferenceData": {"conferenceId": "abc-defg-hij"}},
+    ],
+)
+def test_a_colour_link_or_attachment_he_added_counts_as_his_change(change: dict[str, Any]) -> None:
+    body = {
+        "summary": "Topic 1",
+        "start": {"dateTime": "2026-11-16T19:00:00+05:30"},
+        "end": {"dateTime": "2026-11-16T20:00:00+05:30"},
+    }
+    event = cb.stamped(body, "b" + "1" * 16, 1)
+    assert cb.changed_by_owner(event) is False
+    assert cb.changed_by_owner({**event, **change}) is True  # JARVIS never writes these

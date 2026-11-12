@@ -238,8 +238,15 @@ def number_of(event: Mapping[str, Any], batch: str) -> int | None:
     return int(n) if head == batch and n.isdigit() else None
 
 
+# what JARVIS never writes on a batch event: present, the owner added it himself
+OWNER_ONLY = ("colorId", "attachments", "conferenceData", "hangoutLink")
+
+
 def changed_by_owner(event: Mapping[str, Any]) -> bool:
-    """The event no longer reads as JARVIS wrote it (D5: an Undo leaves it alone)."""
+    """The event no longer reads as JARVIS wrote it (D5: an Undo leaves it alone): its title,
+    times, place or notes differ, or he gave it a colour, a video link or an attachment."""
+    if any(event.get(k) for k in OWNER_ONLY):
+        return True
     return _private(event).get(SIG_KEY) != signature(event)
 
 

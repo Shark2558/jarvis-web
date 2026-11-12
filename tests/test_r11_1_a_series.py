@@ -839,3 +839,20 @@ def test_own_reasons_are_read_only_from_the_gateway_s_fixed_words(error: str, sa
     from jarvis.series.tools import own_reason
 
     assert own_reason(error) == said
+
+
+async def test_a_full_phrasebook_is_logged_once_not_every_run(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class Full:
+        phrases: list[object] = []
+
+        def add_phrases(self, routes: object) -> None:
+            raise ValueError("the phrasebook is full")
+
+    rig = await plan_rig(T0)
+    rig.state["brain_mode"] = Full()
+    job = rig.part.clock_jobs[0]
+    for _ in range(3):
+        await job.run([UID])
+    assert sum("did not fit" in r.getMessage() for r in caplog.records) == 1

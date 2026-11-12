@@ -1,4 +1,4 @@
-Version v11.1.7 · 12 Nov 2026, 22:15 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.9 · 13 Nov 2026, 03:55 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 I1 — integration notes (Mark XV)
 
@@ -357,6 +357,39 @@ machines focus moved just after sign-in). Test-only fix: `Console.choose_day()` 
 tries) and asserts the surface is day; the nine files that pressed it by hand use it
 (`test_console.py`'s own menu test keeps pressing it directly, as that is its subject).
 
+## Hotfix 1 (v11.1.1, after the merge)
+
+**main's CI run 111 (PR #30 merged 22:47 IST):** unit, docs, Firestore and the eval gate passed;
+the browser job failed twice, each time one different test (attempt 1: the voice word list's
+"one debounced PUT"; attempt 2: a phone media test, an iframe still there, and under local load a
+404 for `GET /v1/sessions/sess_media`), so nothing deployed. Root causes, each reproduced here:
+1. **The console's boot raced the owner (a real bug, `console.js` `boot()`).** The welcome shows
+   first; then the console loads the brains, restores the saved conversation and puts focus in the
+   message box. Whatever he did in between was undone: a message sent meanwhile made a
+   conversation that the late restore loaded again over its reply, and the Appearance menu opened
+   meanwhile was closed by the late focus move. On a slow link this is the owner's own experience;
+   on GitHub's busy runners it was the flakes of runs 109 and 111. Fix: the restore only runs when
+   no conversation became current and no reply is in flight, and the focus moves only if it is
+   still nowhere. Test first: `tests/browser/test_r11_1_1_boot.py` holds `/v1/brains` to open the
+   window: 2 of its 3 tests red on the old console (the extra GET; the closed menu), green after.
+2. **The voice word-list test assumed both words land within the 500 ms save delay.** Now it
+   waits for the save that carries both, and a second case pauses 900 ms after the first word (red
+   with CI's exact message on the old assertion): two saves, never a list that wasn't on screen.
+3. **The phone media test read the frame count once.** It now waits up to 5 s for the player to go
+   and, if it never does, prints what the deck showed.
+
+`__version__` 11.1.1 (the two tests that pin it updated); persona stays p11.1. Checks in the PR.
+
+**Fresh-context code review of hotfix 1: Approve with fixes (0 critical, 0 high, 2 medium, 3 low).**
+M1: signing in again after a 401 boots again with his conversation still current, and the first
+fix skipped that restore (the log is cleared first): the restore now skips only when the current
+conversation changed during this boot or a reply is in flight (`startSid`); test
+`test_signing_in_again_after_a_401_restores_the_conversation`, red on the first fix. M2: the media
+test's reset-layout check (a `setTimeout 0` stop) read the frame count once: `_stopped` there too.
+L3: the paused voice case now waits for the first save before the second word (no timing guess).
+L5: focus left on the hidden sign-in gate counts as untouched (`$('gate').contains`). L4 (a fixed
+300 ms settle in the boot tests, after the list request in the same task) accepted.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -368,3 +401,5 @@ tries) and asserts the surface is day; the nine files that pressed it by hand us
 | v11.1.5 | 12 Nov 2026, 20:40 IST | R11.1 | GitHub CI run 107: the document child kept numpy and pandas out (OpenBLAS on 4-CPU runners passed the memory cap), with its test | 🛠 Mark XV |
 | v11.1.6 | 12 Nov 2026, 21:10 IST | R11.1 | GitHub CI run 108: two face-engine tests no longer need OpenCV installed | 🛠 Mark XV |
 | v11.1.7 | 12 Nov 2026, 22:15 IST | R11.1 | GitHub CI run 109: the browser tests choose the day surface through one sturdier helper | 🛠 Mark XV |
+| v11.1.8 | 13 Nov 2026, 03:20 IST | R11.1 | Hotfix 1 (v11.1.1): main's CI run 111, the console boot race fixed and two tests made sturdy | 🛠 Mark XV |
+| v11.1.9 | 13 Nov 2026, 03:55 IST | R11.1 | Hotfix 1 code review fixes (re-sign-in restore, reset-layout wait, paused save, gate focus) | 🛠 Mark XV |

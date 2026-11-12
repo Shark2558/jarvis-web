@@ -711,17 +711,22 @@
 
   // ---- boot ---------------------------------------------------------------------------------
   async function boot() {
+    const startSid = state.sessionId;
     renderWelcome();
     const integrations = window.JarvisIntegrations || null; // slice 12 review C5: console-integrations.js
     const backFromGoogle = integrations ? integrations.afterConnectRedirect() : false;
     readyDetail = Object.freeze({ returning: backFromGoogle });
     emit('jarvis:ready', readyDetail);
     await loadBrains();
+    // v11.1.1: what he did while this loaded wins. A message sent meanwhile made its own conversation
+    // (never loaded again over its reply), and focus he moved (a menu) is not taken back.
+    // (Signing in again after a 401 boots again with his conversation still current: that one is restored.)
     const saved = lsGet('jarvis_session');
-    if (saved) { busy(true, false); try { await loadConversation(saved); } finally { busy(false); } }
+    if (saved && state.sessionId === startSid && !state.busy) { busy(true, false); try { await loadConversation(saved); } finally { busy(false); } }
     refreshSide(); refreshConvos();
     const linkCheck = integrations ? integrations.refresh() : Promise.resolve();
-    if (backFromGoogle) linkCheck.then(() => Deck.open('integrations', { focus: true })); else input.focus();
+    const a = document.activeElement, untouched = !a || a === document.body || $('gate').contains(a);
+    if (backFromGoogle) linkCheck.then(() => Deck.open('integrations', { focus: true })); else if (untouched) input.focus();
   }
   // R2: a button with data-goto="<panel>" (Memory -> Privacy, Permissions -> Privacy) opens that panel
   document.addEventListener('click', (e) => {

@@ -96,11 +96,21 @@ TELEGRAM_SAFE = frozenset(
         "recipe_list",
         "recipe_suggest",
         "nutrition_of",
+        # R11.1 I1: his followed plans: counts, numbers, times and his own typed plan name only
+        # (never a title). Not `series_*` as a pattern: that would also refuse the R2 check-in
+        # answer ("session done") on Telegram, where the check-in alert can arrive.
+        "series_list",
     }
 )
 # R11 I1: the helpers' reads that stay off Telegram (telegram.rules.PRIVATE_PATTERNS): amounts and
 # UPI IDs, grocery spend, breach notices about his accounts, and his contacts' birthdays
 R11_PRIVATE = ("bill_list", "spend_month", "breach_status", "contacts_birthdays")
+# R11.1 I1 (GATE INTEGRATION-A 3.12): the observation parts' reads of private data: A the whole
+# inbox (senders, subjects, first lines); D a picture he attached (what it shows, its text)
+R111_PRIVATE = ("gmail_inbox_summary", "picture_research")
+# ... and the two that are the home switch's (the people JARVIS recognises): C's unnamed face
+# groups and the photo import's faces-found / people-recognised counts
+R111_HOME = ("faces_groups", "photos_import_status")
 
 
 class DriveTokens(StaticTokens):
@@ -148,7 +158,22 @@ async def linked_gateway(undo: UndoBin | None = None) -> Gateway:
         belongings=BelongingsService(BelongingsStore(docs, ring), undo),
         home=home_parts(docs, ring),  # R3 I1: home, camera and faces tools (the third group)
         r11=r11_parts(google, ring),  # R11 I1: every helper part's tools
+        r111=r111_tools(google, docs),  # R11.1 I1: every observation part's tools
     )
+
+
+def r111_tools(google: Any, docs: Any) -> tuple[Any, ...]:
+    """The four R11.1 parts built on fakes, as the app builds them, so each of their reads must
+    pick a side here too (security review A HIGH-1: gmail_inbox_summary was not covered)."""
+    from jarvis.api.r11_1_wiring import build_parts, fix_tools
+    from jarvis.fixes.ports import FixContext
+    from jarvis.tools.audit import AuditLog
+
+    state = {"google": google}
+    ctx = FixContext(
+        s=get_settings(), docs=docs, audit=AuditLog(), state=state.get, notifier=lambda: None
+    )
+    return fix_tools(build_parts(ctx))
 
 
 def r11_parts(google: Any, ring: Keyring) -> dict[str, Any]:
@@ -208,6 +233,8 @@ async def test_the_safe_list_has_no_stale_or_doubly_classified_names() -> None:
         "drive_read",
         "doc_read",
         *R11_PRIVATE,
+        *R111_PRIVATE,
+        *R111_HOME,
     ],
 )
 async def test_private_titles_are_denied_on_telegram_by_default(tool: str) -> None:
@@ -382,3 +409,36 @@ async def test_gate_deleted_restore_needs_both_switches_on_telegram(
     assert "Telegram" in (out.error or "") and "both" in (out.error or "")
     item = await undo.get(UID, ids[kind])
     assert item is not None and not item.restored and item.restoring_since is None
+
+
+async def test_every_r111_part_read_is_registered_and_classified() -> None:
+    """R11.1 I1 gate (INTEGRATION-A 3.12): the parts' tools are in the linked gateway, and every
+    read of private data among them is denied on Telegram by default (A: gmail_inbox_summary;
+    D: picture_research; C's face counts under the home switch)."""
+    gw = await linked_gateway()
+    reads = read_tools(gw)
+    r111 = {t.name for t in r111_tools(None, MemoryDocs()) if t.risk is R1}
+    assert r111 == {*R111_PRIVATE, *R111_HOME, "series_list"}, sorted(r111)
+    assert r111 <= set(reads)  # every part is really there, as the app builds it
+    assert await denied_on_telegram(list(R111_PRIVATE)) == set(R111_PRIVATE)
+    assert await denied_on_telegram(list(R111_HOME)) == set(R111_HOME)
+    assert await denied_on_telegram(["series_list", "series_checkin"]) == set()
+
+
+async def test_with_private_reads_on_the_inbox_summary_answers_but_the_home_ones_still_wait() -> (
+    None
+):
+    """The two switches stay separate: private reads open A's and D's reads, never C's."""
+    store = TelegramStore(MemoryDocs(), prefix="t_", clock=Clock())
+    code, _ = await store.start_pairing(UID)
+    await store.finish_pairing(code, tg_user_id=1, chat_id=2)
+    await store.set_settings(UID, allow_private_reads=True)
+    rules = ChannelRules(None, store)
+    with telegram_turn():
+        got = await rules.rules_for(UID)
+    denied = {
+        n
+        for n in (*R111_PRIVATE, *R111_HOME)
+        if any(r.effect is Effect.DENY and r.matches(n, {}, R1) for r in got)
+    }
+    assert denied == set(R111_HOME)

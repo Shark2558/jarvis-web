@@ -42,6 +42,7 @@ PRIVATE_PATTERNS: tuple[str, ...] = (
     "gmail_search",
     "gmail_read",
     "gmail_unread_digest",
+    "gmail_inbox_summary",  # R11.1 D20: the whole inbox (senders, subjects, first lines)
     "drive_*",
     "doc_*",
     "docs_*",
@@ -52,6 +53,8 @@ PRIVATE_PATTERNS: tuple[str, ...] = (
     "bill_list",
     "spend_month",
     "breach_status",
+    # R11.1 I1: a picture he attached (what it shows and the text read off it), like doc_*
+    "picture_*",
 )
 REFUSAL = "Not available from Telegram — your choice in Integrations → Telegram; open the console."
 # R2 D12: the owner's vault list (metadata only, never files), notes, memos, links and things.
@@ -61,7 +64,8 @@ PERSONAL_REFUSAL = (
     "Integrations -> Telegram; open the console."
 )
 # R3 D15: home devices, camera history and faces (its own switch, default off).
-HOME_PATTERNS: tuple[str, ...] = ("home_devices", "camera_*", "faces_*")
+# R11.1 I1: the photo import's faces-found and people-recognised counts are the faces' too.
+HOME_PATTERNS: tuple[str, ...] = ("home_devices", "camera_*", "faces_*", "photos_import_*")
 HOME_REFUSAL = (
     "Your home devices, camera history and the people JARVIS recognises are not available from "
     "Telegram - your choice in Integrations -> Telegram; open the console."

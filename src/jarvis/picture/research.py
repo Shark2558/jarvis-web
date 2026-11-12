@@ -53,6 +53,12 @@ NO_PICTURE = (
     "it, and ask again."
 )
 ONLY_N = "There {are} only {n} picture{s} with your last message, Sir."
+# R11.1 I1: Part B's `turn_pictures` could not read them (a storage fault, a picture that would
+# not load): said as such, never as "there is no picture"
+PICTURES_UNREADABLE = (
+    "I couldn't read the picture with your last message just now, Sir. Please try again in a "
+    "moment."
+)
 UNREADABLE = "I couldn't make sense of that picture just now, Sir. Please try again."
 TOO_MANY = "That is a lot of pictures in a minute, Sir. Give it a moment."
 NOT_A_THING = (
@@ -196,6 +202,8 @@ class PictureResearch:
         if not self.enabled:
             return Report("off", OFF)
         found = await self._pictures(uid, session_id) if session_id else []
+        if session_id and not found and getattr(found, "unreadable", False):
+            return Report("unreadable", PICTURES_UNREADABLE)
         if not session_id or not found:
             return Report("no_picture", NO_PICTURE)
         if index > len(found):
@@ -256,6 +264,7 @@ __all__ = [
     "KEEP_S",
     "NOT_A_THING",
     "NO_PICTURE",
+    "PICTURES_UNREADABLE",
     "OFF",
     "TOO_MANY",
     "UNREADABLE",

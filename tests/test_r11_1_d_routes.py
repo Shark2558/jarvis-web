@@ -49,7 +49,7 @@ def turn(monkeypatch: pytest.MonkeyPatch) -> TurnPictures:
     """What Part B's `turn_pictures` will answer: the part calls it late, by its module name."""
     fake = TurnPictures()
 
-    async def turn_pictures(docs: object, uid: str, session_id: str) -> list[Any]:
+    async def turn_pictures(docs: object, uid: str, session_id: str, **_kw: Any) -> list[Any]:
         return await fake(uid, session_id)
 
     monkeypatch.setattr(part_mod, "turn_pictures", turn_pictures)
@@ -321,7 +321,7 @@ async def test_with_the_tools_switched_off_it_says_so(
 async def test_a_research_that_breaks_is_said_plainly_without_its_words(
     settings: Settings, seeing: MockProvider, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def broken(docs: object, uid: str, session_id: str) -> list[Any]:
+    async def broken(docs: object, uid: str, session_id: str, **_kw: Any) -> list[Any]:
         raise RuntimeError("store said: internal detail 0xDEAD")
 
     monkeypatch.setattr(part_mod, "turn_pictures", broken)

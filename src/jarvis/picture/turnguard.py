@@ -226,23 +226,25 @@ FAIL_CLOSED = TurnGuard()  # not wired: every Brain turn counts as a picture tur
 
 # ---- the port over Part B's contract, and the app's one call -------------------------------------
 class DocumentTurns:
-    """`PictureTurns` over `documents.pictures.turn_pictures` (Part B), the document service read
-    late. No store: no picture can have been attached ("no"). A fault, or an answer that is not
-    a list, is "unknown"."""
+    """`PictureTurns` over `documents.pictures.turn_pictures` (Part B), the document service and
+    the conversations (`sessions`, the app's store) read late. No document service: no picture
+    can have been attached ("no"). A fault, an answer that is not a list, or one Part B marks
+    `unreadable` (a storage fault, a picture that would not load, no conversation store) is
+    "unknown": a picture turn (R11.1 I1, GATE C: fail closed)."""
 
-    def __init__(self, docs: Callable[[], Any]) -> None:
-        self._docs = docs
+    def __init__(self, docs: Callable[[], Any], sessions: Callable[[], Any] = lambda: None) -> None:
+        self._docs, self._sessions = docs, sessions
 
     async def carried(self, uid: str, session_id: str) -> Carried:
         docs = self._docs()
         if docs is None:
             return "no"
         try:
-            pictures = await turn_pictures(docs, uid, session_id)
+            pictures = await turn_pictures(docs, uid, session_id, sessions=self._sessions())
         except Exception as exc:  # noqa: BLE001 - a storage fault is not "no picture"
             log.warning("turn pictures unreadable", extra={"reason": type(exc).__name__})
             return "unknown"
-        if not isinstance(pictures, list):
+        if not isinstance(pictures, list) or getattr(pictures, "unreadable", False):
             return "unknown"
         return "yes" if pictures else "no"
 
@@ -261,7 +263,7 @@ def app_guard(state: Callable[[str], Any]) -> TurnGuard:
         found = read(uid, session_id) if callable(read) else None
         return found if isinstance(found, Report) else None
 
-    return TurnGuard(DocumentTurns(lambda: state("documents")), last)
+    return TurnGuard(DocumentTurns(lambda: state("documents"), lambda: state("store")), last)
 
 
 __all__ = [

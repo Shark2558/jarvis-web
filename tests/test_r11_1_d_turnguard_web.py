@@ -1,14 +1,13 @@
 # tests/test_r11_1_d_turnguard_web.py -- R11.1 Part D, the I1 gate for `web_search` (security
-# review H1), tried on the REAL web_search tool through a real gateway. `web/tools.py` is not this
-# part's file, so the test applies exactly what INTEGRATION-D asks I1 to add: the guard's look-up
-# (`TurnGuard.query_preview`, so an "Ask first" card never shows a face-derived name) and the one
-# call in the run (`TurnGuard.query_stop`, so the vendor never receives one). On a picture turn a
+# review H1), tried on the REAL web_search tool through a real gateway. Since I1 (GATE A) the
+# tool carries the guard itself: its look-up (`TurnGuard.query_preview`, so an "Ask first" card
+# never shows a face-derived name) and the one call in its run (`TurnGuard.query_stop`, so the
+# vendor never receives one); `web_tools(web, guard)` is how the app builds it. On a picture turn a
 # query naming someone he did not type is refused in fixed words and nothing is searched; a query
 # about a thing goes ahead; a turn without a picture is unchanged. Everybody named is made up.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any
 
 from r11_1_fakes_d import FakeSearchVendor
 
@@ -17,7 +16,6 @@ from jarvis.llm.base import ToolCall
 from jarvis.picture.turnguard import WEB_REFUSED, TurnGuard
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.audit import AuditLog
-from jarvis.tools.base import Tool
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.policy import Effect, Policy, PolicyRule
 from jarvis.tools.registry import ToolRegistry
@@ -46,24 +44,13 @@ class Rows:
         return [PolicyRule(tool_pattern="web_*", effect=self.effect, source="owner")]
 
 
-def _gated(tool: Tool, guard: TurnGuard) -> Tool:
-    """web_search as I1 leaves it: the guard's look-up, and its one call first in the run."""
-
-    async def run(a: dict[str, Any]) -> dict[str, Any]:
-        if (stop := await guard.query_stop(str(a["query"]).strip())) is not None:
-            return stop
-        return await tool.run(a)
-
-    return replace(tool, run=run, preview=guard.query_preview)
-
-
 def _rig(picture: bool, rows: Effect | None = None) -> tuple[Gateway, FakeSearchVendor]:
     vendor = FakeSearchVendor()
     web = WebService(vendor, WebAllowance(MemoryDocs()))
     guard = TurnGuard(Turns("yes" if picture else "no"), lambda uid, sid: None)
     registry = ToolRegistry()
-    for tool in web_tools(web):
-        registry.register(_gated(tool, guard) if tool.name == "web_search" else tool)
+    for tool in web_tools(web, guard):  # I1 GATE A: the tool's own look-up and run hook
+        registry.register(tool)
     gw = Gateway(
         registry=registry,
         policy=Policy(),
@@ -127,11 +114,11 @@ async def test_the_run_alone_still_refuses_when_no_look_up_ran() -> None:
     """Defence in depth: the run's own call refuses too (as when the card was approved later)."""
     vendor = FakeSearchVendor()
     web = WebService(vendor, WebAllowance(MemoryDocs()))
-    (search, *_) = web_tools(web)
     guard = TurnGuard(Turns("yes"), lambda uid, sid: None)
-    gated = _gated(search, guard)
+    (search, *_) = web_tools(web, guard)
+    assert search.preview == guard.query_preview  # I1 GATE A: the look-up is wired
     registry = ToolRegistry()
-    registry.register(replace(gated, preview=None))
+    registry.register(replace(search, preview=None))
     gw = Gateway(registry=registry, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
 
     res = await _search(gw, f"{FACE} actress", "who is this?")

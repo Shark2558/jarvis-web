@@ -47,7 +47,7 @@ from jarvis.api.ratelimit import RateLimiter
 from jarvis.documents.extract import kind_for
 from jarvis.documents.models import MAX_FILE_BYTES, AttachmentRef, DocumentRejected
 from jarvis.documents.note import clean_name
-from jarvis.documents.service import DocumentService, policy_from, too_large
+from jarvis.documents.service import DocumentService, too_large
 
 ATTACH_PATH = "/v1/attachments"
 ATTACH_BODY_BYTES = MAX_FILE_BYTES + 64 * 1024  # the app-wide middleware's cap for this path
@@ -71,10 +71,7 @@ def _svc(request: Request) -> DocumentService:
     svc: DocumentService | None = getattr(request.app.state, "documents", None)
     if svc is None:
         raise LookupError("Attached files are not available on this server.")
-    settings = getattr(request.app.state, "settings", None)
-    if settings is not None:  # R11.1: what one message may carry is the owner's own setting
-        svc.policy = policy_from(settings)
-    return svc
+    return svc  # R11.1 I1: the app builds it with his limits (feature_wiring.wire_features)
 
 
 def _limit(request: Request, uid: str) -> None:

@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
+from jarvis.picture.turnguard import FAIL_CLOSED, TurnGuard
 from jarvis.tools.base import Tool
 from jarvis.tools.card import one_line
 from jarvis.tools.context import current_tool_context
@@ -144,8 +145,8 @@ def _read_card(a: dict[str, Any]) -> str:
 
 
 class _Web:
-    def __init__(self, service: WebService) -> None:
-        self.s = service
+    def __init__(self, service: WebService, pictures: TurnGuard = FAIL_CLOSED) -> None:
+        self.s, self.pictures = service, pictures
 
     def _admit(self, conv: Conversation | None, kind: Kind) -> None:
         """The per-message and hourly caps; counts the call once it is admitted."""
@@ -181,6 +182,8 @@ class _Web:
 
     async def search(self, a: dict[str, Any]) -> dict[str, Any]:
         query = str(a["query"]).strip()
+        if (stop := await self.pictures.query_stop(query)) is not None:  # R11.1 D21-D: the hook
+            return stop
         wanted = max(1, min(int(a.get("max_results") or MAX_RESULTS), MAX_RESULTS))
         conv = current_conversation()
         self._admit(conv, "search")
@@ -288,8 +291,10 @@ def _fitted(head: dict[str, Any], text: str, domain: str, left: int) -> dict[str
     return out
 
 
-def web_tools(service: WebService) -> list[Tool]:
-    w = _Web(service)
+def web_tools(service: WebService, pictures: TurnGuard | None = None) -> list[Tool]:
+    """`pictures`: the app's turn guard (R11.1 D21-D, `picture.turnguard.app_guard`); unwired,
+    every Brain turn counts as a picture turn (fail closed)."""
+    w = _Web(service, pictures or FAIL_CLOSED)
     return [
         Tool(
             "web_search",
@@ -318,6 +323,7 @@ def web_tools(service: WebService) -> list[Tool]:
             agent="web",
             summary_template="Search the web for: {query}",
             check=_check_search,
+            preview=w.pictures.query_preview,  # an "Ask first" card never shows a face's name
         ),
         Tool(
             "web_read",

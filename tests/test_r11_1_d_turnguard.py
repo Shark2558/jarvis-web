@@ -224,7 +224,7 @@ async def test_the_document_port_maps_part_bs_answer(
 ) -> None:
     seen: list[tuple[object, str, str]] = []
 
-    async def turn_pictures(docs: object, uid: str, session_id: str) -> Any:
+    async def turn_pictures(docs: object, uid: str, session_id: str, **_kw: Any) -> Any:
         seen.append((docs, uid, session_id))
         if isinstance(answer, Exception):
             raise answer
@@ -246,7 +246,7 @@ async def test_the_app_guard_reads_the_store_and_the_last_report_late(
 ) -> None:
     state: dict[str, Any] = {}
 
-    async def turn_pictures(docs: object, uid: str, session_id: str) -> list[str]:
+    async def turn_pictures(docs: object, uid: str, session_id: str, **_kw: Any) -> list[str]:
         return ["a picture"] if docs == "the store" else []
 
     class Service:

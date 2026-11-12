@@ -122,7 +122,7 @@ class DocumentService:
         self.store = store
         self.limits = limits or Limits()
         # R11.1: what one message may carry. The defaults are the settings' defaults; the app
-        # gives the owner's own values (`policy_from`; the upload and /v1/input routes set it).
+        # gives the owner's own values when it builds the service (`policy_from`; R11.1 I1).
         self.policy = policy or AttachPolicy()
         # R11.1 D10: the conversations, read to know a conversation's latest owner turn (the app
         # passes `app.state.store`; INTEGRATION-B "Needs I1")

@@ -33,7 +33,9 @@ def build(ctx: FixContext) -> FixPart:
         return FixPart("look", ready=OFF)
 
     async def pictures(uid: str, session_id: str) -> list[ImageBlock]:
-        return await turn_pictures(ctx.state("documents"), uid, session_id)
+        return await turn_pictures(
+            ctx.state("documents"), uid, session_id, sessions=ctx.state("store")
+        )
 
     eyes = BrainEyes(
         brains=lambda: ctx.state("brains"),

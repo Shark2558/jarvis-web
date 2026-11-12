@@ -37,6 +37,7 @@ from jarvis.llm.base import (
     MessageBlock,
     Role,
     TextBlock,
+    ToolResultBlock,
     without_pictures,
 )
 from jarvis.llm.brains import BrainSpec
@@ -62,8 +63,17 @@ def _missing(missing: int, count: int) -> str:
     return f"[{missing} of the {count} attached pictures could not be loaded just now]"
 
 
+def _owner_wrote(turn: Turn) -> bool:
+    """A message the owner sent. The Brain stores each round's tool results as a user turn too
+    (blocks only, no words): that is never "his latest message" (R11.1 I1: otherwise a picture
+    turn read as "no picture" from its second tool round on, while the brain still saw it)."""
+    if turn.role is not Role.USER:
+        return False
+    return not (turn.blocks and all(isinstance(b, ToolResultBlock) for b in turn.blocks))
+
+
 def _latest_owner_turn(session: Session) -> Turn | None:
-    return next((t for t in reversed(session.turns) if t.role is Role.USER), None)
+    return next((t for t in reversed(session.turns) if _owner_wrote(t)), None)
 
 
 def _is_turn(message: ChatMessage, turn: Turn) -> bool:

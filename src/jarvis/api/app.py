@@ -113,6 +113,7 @@ from jarvis.memory import SessionConflict, SessionNotFound, SessionStore
 from jarvis.offline.rules import wrap_offline
 from jarvis.offline.service import build_local_fallback
 from jarvis.packages.tools import PackageScanner
+from jarvis.picture.turnguard import app_guard
 from jarvis.recall.errors import (
     ConsentRequired,
     ImportTooLarge,
@@ -367,6 +368,7 @@ def _build_tool_gateway(
         r4=app.state.r4_parts,  # R4: vitals, systems check, connectors, people (each when on)
         r11=app.state.r11_parts,  # R11: the helpers' tools (each part's own families)
         r111=fix_tools(app.state.r111_parts),  # R11.1: the four parts' tools
+        pictures=app_guard(lambda name: getattr(app.state, name, None)),  # R11.1 D21-D
     )
 
 

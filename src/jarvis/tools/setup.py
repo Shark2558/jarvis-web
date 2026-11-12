@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from jarvis.home.parts import HomeParts
     from jarvis.kb.service import NotesService
     from jarvis.media.service import MediaServices
+    from jarvis.picture.turnguard import TurnGuard
     from jarvis.recall.service import MemoryService
     from jarvis.storage.docs import Docs
     from jarvis.tools.base import Tool
@@ -108,9 +109,11 @@ def _register_services(
     documents: DocumentService | None,
     drive: DriveService | None,
     media: MediaServices | None,
+    pictures: TurnGuard | None = None,
 ) -> None:
     """Long-term memory, web search (a Tavily key), attached files, Drive (chosen folders,
-    read-only) and Maps / YouTube (JARVIS's own Google API key): each only when it exists."""
+    read-only) and Maps / YouTube (JARVIS's own Google API key): each only when it exists.
+    `pictures`: the app's turn guard for web_search (R11.1 D21-D)."""
     tools: list[Tool] = []
     if memory is not None:
         from jarvis.recall.tools import memory_tools
@@ -119,7 +122,7 @@ def _register_services(
     if web is not None:  # slice 10 B: only with a Tavily key (jarvis.web.service)
         from jarvis.web.tools import web_tools
 
-        tools += web_tools(web)
+        tools += web_tools(web, pictures)
     if documents is not None:
         from jarvis.documents.tools import document_tools
 
@@ -213,10 +216,13 @@ def build_gateway(
     r4: R4Parts | None = None,
     r11: Mapping[str, HelperPart] | None = None,
     r111: Sequence[Tool] = (),
+    pictures: TurnGuard | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
-    D1): the chosen-folders Drive tools, only when Drive is configured (`JARVIS_DRIVE=on`)."""
+    D1): the chosen-folders Drive tools, only when Drive is configured (`JARVIS_DRIVE=on`).
+    `pictures` (R11.1 D21-D): ONE turn guard for research_person and web_search; without it
+    both fail closed (every Brain turn counts as a picture turn)."""
     reg = ToolRegistry()
     for t in builtin_tools(InMemoryWorld()):
         if google is not None and t.name in FAKE_TWINS:
@@ -225,7 +231,7 @@ def build_gateway(
     if r4 is not None:  # R4 W6: vitals_show / systems_check are always-on (no-AI mode needs them)
         from jarvis.api.r4_wiring import register_r4_tools
 
-        register_r4_tools(reg, r4)
+        register_r4_tools(reg, r4, pictures)
     if google is not None:
         _register_google(reg, s, google, undo=undo, marks=marks, docs=docs)
     _register_people(reg, google)
@@ -234,7 +240,7 @@ def build_gateway(
 
         for t in undo_tools(undo):
             reg.register(t)
-    _register_services(reg, memory, web, documents, drive, media)
+    _register_services(reg, memory, web, documents, drive, media, pictures)
     _register_personal(reg, vault, notes, belongings)
     _register_home(reg, home)
     if r11:  # R11 D2: each helper part's own tools (its `kinds.TOOL_FAMILIES`), checked at wiring

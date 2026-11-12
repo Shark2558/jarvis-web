@@ -1,8 +1,7 @@
 # evals/r11_1/look.py
-"""R11.1 eval, Part D (`look`): People, pictures and Vitals (plan "Tests and evals per part", D17,
-D21-D). Mock only: the real tool, guard, gateway, people research, Vitals board and GitHub client
-run on the fakes of tests/r11_1_fakes_d.py (pictures drawn in code; fake eyes that read their
-pixels; a search vendor that records every query it is SENT; a fake api.github.com).
+"""R11.1 eval, Part D (`look`): People, pictures and Vitals (plan D16 to D19, D21-D). Mock only:
+the real tool, guard, gateway, people research, Vitals board and GitHub client on the fakes of
+tests/r11_1_fakes_d.py (drawn pictures, eyes that read their pixels, a recorded search vendor).
 
     O8   every profile has its own link; "Open next" presses exactly one; no window.open
     O9   a product, a landmark, a label and a logo are researched with sources; a person is
@@ -16,11 +15,11 @@ pixels; a search vendor that records every query it is SENT; a fake api.github.c
     O10  each failing part of the home laptop has its own row text and fix steps; no device name
     O11  a connected token with no stored facts: ONE /rate_limit read in 6 hours, then its limits
 
-Three negative controls; each must fail its own cases (a guard that can be removed without the
-suite noticing proves nothing):
+Four negative controls; each must fail its own cases (a suite that cannot fail proves nothing):
     guard_off        the picture guard disabled   -> a name gets through, a person is searched
     fault_map_empty  vitals.words.HOME_FAULTS {}  -> the home row is vague again
     six_hours_off    FACTS_EVERY_S = 0            -> GitHub is asked on every refresh
+    open_all_back    R4's "Open all" put back     -> window.open again, every link in one click
 """
 
 from __future__ import annotations
@@ -59,7 +58,8 @@ GATE_SHA256 = "b3ff32f47cbdf9827b5e652d6830b17a9642327ec7b93429122855672c945f2d"
 PUBLIC = "Lekha Examplekar"  # a made-up public figure
 PRIVATE = "Meenu Examplewala"  # a made-up private person
 SESSION = "sess_1"
-CONTROLS = ("guard_off", "fault_map_empty", "six_hours_off")
+CONTROLS = ("guard_off", "fault_map_empty", "six_hours_off", "open_all_back")
+OPEN_ALL = "S.links.forEach((l) => window.open(l.url, '_blank', 'noopener,noreferrer'));"  # R4's
 _active: set[str] = set()  # the negative controls applied to this run (none: the real thing)
 Case = Callable[[], Awaitable[list[str]]]
 
@@ -80,6 +80,8 @@ def _said(rig: PictureRig, result: Any) -> str:
 # ---- O8: profile cards -------------------------------------------------------------------------
 async def profile_cards() -> list[str]:
     js = (STATIC / "console-people.js").read_text(encoding="utf-8")
+    if "open_all_back" in _active:
+        js = js.replace("if (next) next.a.click();", OPEN_ALL)
     bad = []
     if "a.href = p.url; a.target = '_blank'; a.rel = 'noopener noreferrer';" not in js:
         bad.append("a profile card has no real link of its own")
@@ -226,8 +228,7 @@ async def caption_private_person() -> list[str]:
 
 # ---- R4: a typed name still meets the unchanged gate -------------------------------------------
 def _fresh(case: GateCase) -> GateCase:
-    """The same row with a model nobody has called yet (the rows are shared with the unit tests,
-    whose own negative control leaves calls on them)."""
+    """The same row with a model nobody has called yet (the unit tests share these rows)."""
     model = None if case.model is None else replace(case.model, calls=[], records=[])
     return replace(case, model=model)
 
@@ -351,11 +352,11 @@ CASES: dict[str, Case] = {
     "github_one_read_in_six_hours": github_read_once,
     "github_refused_token": github_refused,
 }
-# what each control must break (a control that breaks nothing proves nothing)
-EXPECTED = {
+EXPECTED = {  # what each control must break
     "guard_off": {"eyes_that_name_the_face_get_nowhere", "uncaptioned_face_no_name_no_search"},
     "fault_map_empty": {"home_camera_watcher", "home_messenger", "home_both_parts"},
     "six_hours_off": {"github_one_read_in_six_hours"},
+    "open_all_back": {"profile_cards_open_one_tab_a_click"},
 }
 
 
@@ -382,8 +383,7 @@ async def cases() -> list[dict[str, Any]]:
 
 
 async def control() -> dict[str, Any]:
-    """Each control on its own. The suite counts as failed only when EVERY control broke every
-    case it must break; `failed_cases` says what each one broke."""
+    """Each control on its own: the suite fails only when EVERY one broke all it must break."""
     failed: dict[str, list[str]] = {}
     for name in CONTROLS:
         _active.clear()

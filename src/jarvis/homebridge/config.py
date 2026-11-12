@@ -14,10 +14,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-BRIDGE_VERSION = "0.1.0"
+BRIDGE_VERSION = "0.2.0"  # R11.1: photos, face groups and the watched folder
+PHOTOS_SINCE = "0.2.0"  # the first version that serves the photo and face-group routes
 SIGNED_PORT = 8099  # the signed API (Funnel proxies to it)
 LOCAL_PORT = 8098  # the local Faces page (never funnelled)
 MAX_BODY_BYTES = 64 * 1024  # a signed request from the cloud
+# R11.1 O7: one base64 JPEG (the cloud sends at most 4,000,000 raw bytes) on this route only; the
+# same per-route cap as the cloud's client (`home.client.MAX_REQUEST_BYTES_BY_ROUTE`)
+MAX_BODY_BYTES_BY_ROUTE: dict[tuple[str, str], int] = {
+    ("POST", "/bridge/v1/faces/photos"): 6 * 1024 * 1024,
+}
 _HOST = re.compile(r"[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?")
 
 
@@ -89,6 +95,8 @@ __all__ = [
     "BRIDGE_VERSION",
     "LOCAL_PORT",
     "MAX_BODY_BYTES",
+    "MAX_BODY_BYTES_BY_ROUTE",
+    "PHOTOS_SINCE",
     "SIGNED_PORT",
     "BridgeConfig",
     "ConfigError",

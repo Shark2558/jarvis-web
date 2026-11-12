@@ -608,3 +608,19 @@ def test_cloud_run_stays_on_one_instance_because_the_home_nonce_cache_is_per_pro
     assert "--max-instances 1" in script
     assert "--max-instances 2" not in script
     assert "home nonce" in script.lower()
+
+
+# ---- R11.1 O5 (D13): the Google Photos Picker API is switched on by the script -------------------
+
+
+def test_the_photos_picker_api_is_switched_on_and_a_failure_only_warns(script: str) -> None:
+    """Google Photos answered "that Google service is not switched on" because nothing enabled
+    the Picker API. It sits in its own command, as Drive's and People's do: an organisation
+    policy that blocks it is a note, never a stopped deploy."""
+    required = script.split("gcloud services enable", 1)[1].split("--quiet", 1)[0]
+    assert "photospicker.googleapis.com" not in required
+    photos = _command(script, "gcloud services enable photospicker.googleapis.com")
+    assert photos.startswith("gcloud services enable photospicker.googleapis.com --quiet")
+    assert _top_level_depth_at(script, "gcloud services enable photospicker.googleapis.com") == 0
+    after = script.split("photospicker.googleapis.com --quiet", 1)[1].split("\n", 2)[1]
+    assert after.lstrip().startswith("|| say") and "Google Photos" in after

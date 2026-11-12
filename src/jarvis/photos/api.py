@@ -8,8 +8,11 @@ PUT    /v1/connectors/github          {token} -> {connected, login}; the token i
                                        GitHub, stored encrypted, never returned or logged
 DELETE /v1/connectors/github          -> {connected: false}
 POST   /v1/connectors/photos/start    -> {picker_uri}
-POST   /v1/connectors/photos/import   -> {status, photos, faces_found, recognised: [{name, child}],
-                                       unknown: [cluster ids], skipped}
+POST   /v1/connectors/photos/import   ONE step of the import (R11.1 O6: up to 2,000 photos are
+                                       read in the background, ten at a time) -> {status, photos,
+                                       total, faces_found, recognised: [{name, child}], unknown:
+                                       [cluster ids of this step], unknown_faces, skipped, over,
+                                       line}; status reading = more to do
 POST   /v1/connectors/photos/enrol    {cluster, name, relation, child, vip, given_by,
                                        consent_version, confirm: true} -> {person_id, at_home,
                                        contact_matched}; 422 consent_missing / child_needs_guardian
@@ -38,7 +41,7 @@ from jarvis.integrations.github import GithubError, token_ok
 from jarvis.integrations.google import GoogleAPIError, GoogleNotConnected
 from jarvis.integrations.youtube import YouTubeNotGranted
 from jarvis.logging import get_logger
-from jarvis.photos.edge import EdgeBadReply, EdgeOffline
+from jarvis.photos.edge import EdgeBadReply, EdgeNotReady, EdgeOffline
 from jarvis.photos.picker import PhotosNotGranted, PickerError
 from jarvis.photos.service import NoSession
 from jarvis.photos.tools import ConnectorDeps
@@ -73,6 +76,7 @@ _PROBLEMS = (
     NoSession,
     EdgeOffline,
     EdgeBadReply,
+    EdgeNotReady,
 )
 
 
@@ -188,8 +192,10 @@ async def photos_start(
         return _err(503, "unavailable", NOT_BUILT)
     if _limited(request, uid):
         return _err(429, "rate_limited", RATE)
+    settings = getattr(request.app.state, "settings", None)
+    limit = getattr(settings, "photos_max_picked", None)  # R11.1 O6: the owner's limit (2,000)
     try:
-        session = await svc.begin(uid)
+        session = await svc.begin(uid, max_items=limit if isinstance(limit, int) else None)
     except _PROBLEMS as exc:
         return _err(409, "photos_unavailable", str(exc))
     return {"picker_uri": session.picker_uri}
@@ -219,6 +225,11 @@ async def photos_import(
         ],
         "unknown": list(res.unknown_clusters),
         "picker_uri": res.picker_uri,
+        # R11.1 O6: an import is a background job; this call did ONE step of it
+        "total": res.total,
+        "unknown_faces": res.unknown,
+        "over": res.over,
+        "line": res.line,
     }
 
 

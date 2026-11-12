@@ -15,6 +15,8 @@ code{font:14px ui-monospace,monospace;overflow-wrap:anywhere}
 input,button,select{font:inherit;min-height:44px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
 button{cursor:pointer;border-color:var(--accent)}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-#recent li{flex-direction:column;align-items:flex-start}
-#recent img{width:96px;height:96px;object-fit:cover;border-radius:6px;background:var(--line)}
+#recent li,#groups li{flex-direction:column;align-items:flex-start}
+#recent img,#groups img{width:96px;height:96px;object-fit:cover;border-radius:6px;background:var(--line)}
+#groups .crops{display:flex;flex-wrap:wrap;gap:8px}
+#rescan,#logout{margin-top:16px}
 @media (prefers-reduced-motion:no-preference){button{transition:background .15s}}

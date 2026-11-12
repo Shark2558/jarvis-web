@@ -3,8 +3,14 @@
 #   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1
 # Later, once Home Assistant runs and has its accounts (optional):
 #   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HaToken
+# Later, when JARVIS says the home kit is older than JARVIS (download it again, extract it over
+# this folder, then):
+#   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -Update
+# Later, optional: the photo folder the laptop may read to find faces, or switching that off:
+#   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -PhotosDir "C:\Users\you\Pictures\JARVIS"
+#   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -PhotosDir off
 # Safe to run again: every step checks first and skips what is already done.
-param([switch]$HaToken)
+param([switch]$HaToken, [switch]$Update, [string]$PhotosDir)
 $ErrorActionPreference = 'Stop'
 $Kit = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Distro = 'Ubuntu-24.04'
@@ -27,6 +33,8 @@ if (-not $me.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host 'This needs PowerShell as administrator: Start -> type PowerShell -> Run as administrator. Then type:'
     Write-Host "  cd `"$Kit`""
     if ($HaToken) { Write-Host '  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HaToken' }
+    elseif ($Update) { Write-Host '  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -Update' }
+    elseif ($PhotosDir) { Write-Host "  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -PhotosDir `"$PhotosDir`"" }
     else { Write-Host '  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1' }
     exit 1
 }
@@ -40,6 +48,41 @@ if ($HaToken) {
     $env:WSLENV = 'HA_TOKEN'
     try { InWsl 'bash ~/jarvis-home/setup-wsl.sh ha-token' }
     finally { Remove-Item Env:HA_TOKEN -ErrorAction SilentlyContinue }
+    exit 0
+}
+
+# Later: a newer kit was extracted over this folder. Your settings, passwords and link are kept ----
+if ($Update) {
+    Say 'Updating JARVIS Home (your camera, passwords, Home Assistant token and link are kept)'
+    $kitInWsl = WslPath $Kit
+    if ($kitInWsl.Contains("'")) { Write-Host 'The kit folder''s name has a quote mark in it. Extract the kit to C:\ (C:\JARVIS-Home) and run this again.'; exit 1 }
+    $env:KIT_DIR = $kitInWsl
+    $savedWslEnv = $env:WSLENV
+    $env:WSLENV = 'KIT_DIR'
+    try { InWsl 'bash "$KIT_DIR/setup-wsl.sh" update' }
+    finally { $env:WSLENV = $savedWslEnv; Remove-Item Env:KIT_DIR -ErrorAction SilentlyContinue }
+    exit 0
+}
+
+# Later, optional: the photo folder the bridge may READ to find faces (-PhotosDir off stops it) ---
+if ($PhotosDir) {
+    if ($PhotosDir -eq 'off') {
+        InWsl 'bash ~/jarvis-home/setup-wsl.sh photos-dir off'
+        exit 0
+    }
+    if (-not (Test-Path -LiteralPath $PhotosDir -PathType Container)) {
+        Write-Host "There is no folder $PhotosDir"
+        Write-Host 'In File Explorer: hold Shift, right-click the folder, choose "Copy as path", and paste it after -PhotosDir.'
+        exit 1
+    }
+    Say 'The photo folder'
+    Write-Host 'The bridge will only READ the photos in this folder to find faces. It never changes, moves or deletes them, and nothing leaves this laptop.'
+    $env:JARVIS_PHOTOS_DIR = WslPath $PhotosDir
+    $savedWslEnv = $env:WSLENV
+    $env:WSLENV = 'JARVIS_PHOTOS_DIR'
+    try { InWsl 'bash ~/jarvis-home/setup-wsl.sh photos-dir' }
+    finally { $env:WSLENV = $savedWslEnv; Remove-Item Env:JARVIS_PHOTOS_DIR -ErrorAction SilentlyContinue }
+    Write-Host 'To switch it off later:  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -PhotosDir off'
     exit 0
 }
 

@@ -146,7 +146,8 @@ def _limited(request: Request, uid: str) -> bool:
 def _gate(request: Request, uid: str) -> Gateway | JSONResponse:
     """The gateway for a change, or the refusal (part off, or too many changes)."""
     gateway: Gateway | None = getattr(request.app.state, "gateway", None)
-    if part_of(request) is None or gateway is None:
+    part = part_of(request)
+    if part is None or not part.tools or gateway is None:  # off: it offers no tool to call
         return _error(404, "plans_off", OFF)
     if _limited(request, uid):
         return _error(429, "rate_limited", "Too many changes; wait a moment.")

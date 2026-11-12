@@ -169,6 +169,17 @@ async def test_the_job_does_nothing_when_plans_are_switched_off() -> None:
     assert cb.CREATE in names and "series_checkin" not in names  # batches still work
 
 
+async def test_on_a_server_without_google_the_part_offers_no_tool_and_says_why() -> None:
+    from jarvis.config import Settings
+
+    # outside dev, with no Google link set up (no client, or no key to keep its tokens)
+    off = await plan_rig(T0, settings=Settings(_env_file=None, env="prod"))
+    assert off.part.tools == () and off.part.clock_jobs == ()
+    assert off.part.ready == "off: Google is not set up on this server"
+    assert off.part.services["series"] is None and off.part.services["ensure"]() is False
+    assert [p.id for p in off.part.privacy] == ["series"]  # what was kept can be seen and deleted
+
+
 def test_the_question_is_a_fixed_template() -> None:
     assert checkin.ASK_AFTER == timedelta(minutes=15)
     assert "{" not in checkin.QUESTION.format(n=7, total=60, plan="your CCA plan", at="19:00")

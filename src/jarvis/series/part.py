@@ -16,6 +16,11 @@ What `build(ctx)` hands back:
       ensure     puts those routers into the app's BrainMode, once (see below)
 - `ready`: one plain phrase.
 
+On a server where the Google tools are off (outside dev: no Google client, or no key to keep its
+tokens: `integrations.google.google_tools_configured`), the part offers no tool and runs no job,
+as the single-event calendar and mail tools do; only its privacy row stays, so what was kept can
+still be seen and deleted. In dev the tools are always there and say "Google is not linked".
+
 Everything built around this part (Google, Recently deleted, the gateway, the helpers' clock, the
 brain-mode switch) is read through `ctx.state(...)` when a call runs, never here. The No-AI
 phrases are put into the app's one `BrainMode` the first time the part is called (`ensure`),
@@ -29,6 +34,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from jarvis.fixes.ports import FixContext, FixPart
+from jarvis.integrations.google import google_tools_configured
 from jarvis.logging import get_logger
 from jarvis.series.batch import BatchAPI, batch_tools
 from jarvis.series.brief import PlansBrief
@@ -46,6 +52,7 @@ log = get_logger(__name__)
 READY = "ready"
 OFF_SWITCH = "ready: batches and the inbox summary; plans are off (JARVIS_SERIES_ENABLED)"
 OFF_STORE = "ready: batches and the inbox summary; plans are off (no document store)"
+OFF_GOOGLE = "off: Google is not set up on this server"
 SERVICE, BRIEF, PHRASES, ENSURE = "series", "brief", "phrases", "ensure"
 
 
@@ -77,8 +84,21 @@ def _phrases(ctx: FixContext) -> Callable[[], bool]:
     return ensure
 
 
+def _without_google(ctx: FixContext) -> FixPart:
+    """No tool and no job; the privacy row over what an earlier set-up may have kept."""
+    kept = SeriesStore(ctx.docs, prefix=ctx.prefix) if ctx.docs is not None else None
+    return FixPart(
+        "plan",
+        privacy=(series_privacy(kept),) if kept is not None else (),
+        services={SERVICE: None, PHRASES: (), ENSURE: lambda: False},
+        ready=OFF_GOOGLE,
+    )
+
+
 def build(ctx: FixContext) -> FixPart:
     s, now = ctx.s, _clock(ctx)
+    if s.env != "dev" and not google_tools_configured(s):
+        return _without_google(ctx)
 
     def google() -> Any:
         return ctx.state("google")

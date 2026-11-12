@@ -394,6 +394,26 @@ async def test_too_many_changes_are_slowed_down(site: App) -> None:
     assert codes[:30] == [200] * 30 and codes[30] == 429
 
 
+async def test_when_the_part_offers_no_tool_every_press_says_off(site: App) -> None:
+    from jarvis.fixes.ports import FixPart
+
+    made = await site.batch(2, series=False)
+    off = FixPart("plan", ready="off: Google is not set up on this server")
+    site.app.state.r111_parts = {**site.app.state.r111_parts, "plan": off}
+    view = (await site.c.get("/v1/series")).json()
+    assert view["ready"] == off.ready and view["plans"] == [] and view["waiting"] == []
+    event = {**weekday_sessions(1)[0], "n": 1}
+    for path, body in (
+        ("/v1/series/answer", {"answer": "done"}),
+        ("/v1/series/replan", {}),
+        (f"/v1/series/batches/{made['batch']}/undo", {}),
+        ("/v1/series/batches/retry", {"batch": made["batch"], "events": [event]}),
+    ):
+        r = await site.c.post(path, json=body)
+        assert (r.status_code, r.json()["error"]) == (404, "plans_off"), path
+    assert len(site.fake.live()) == 2 and await site.gw.pending() == []
+
+
 async def test_with_plans_off_batches_still_undo_and_answers_say_off(settings: Settings) -> None:
     off = settings.model_copy(update={"series_enabled": False})
     fake = PlanGoogle()

@@ -7,8 +7,11 @@ Asked only when the fixed rules are unsure, and only like this:
   router's own no-AI guard: no call.
 - Only a brain that does NOT learn from what it is told (`brief.summarize.choose_brain`): the
   heard words and file names never reach a training brain. None set up: no call.
-- Admitted first (`Billing.ensure_allowed`: at the monthly limit, no call) and recorded after
-  (`Billing.record`), in the owner's rupees: about ₹0.01 a call at the fast tier.
+- Admitted first (`Billing.ensure_allowed`: at the monthly limit, no call; a limit or a guard
+  that cannot be read is "no call" too, never an error) and recorded after (`Billing.record`),
+  in the owner's rupees: about ₹0.01 a call at the fast tier. A meter that fails after the call
+  is logged loudly by class name (the Brain's own rule, `Billing.record`: "USAGE METER WRITE
+  FAILED") and the answer is still used: the call happened, so losing it would only waste it.
 - One `router.complete(tier=FAST, tools=None, max_tokens=200)` through `jarvis.llm`, never a
   model id, inside `MODEL_TIMEOUT_S` (a spoken turn must not wait on it). The system text is
   fixed; the heard words, the recogniser's alternatives and the hints travel as ONE fenced block
@@ -22,16 +25,17 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from jarvis.billing.service import BudgetError
+from jarvis.billing.service import Billing, BudgetError
 from jarvis.brief.summarize import choose_brain
 from jarvis.fixes.ports import FixContext
 from jarvis.llm.base import ChatMessage, LLMError, Role
+from jarvis.llm.brains import BrainSpec
 from jarvis.llm.pricing import cost_usd, estimate_usage
-from jarvis.llm.router import ModelTier
+from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.logging import get_logger
 from jarvis.tools.external import wrap_external
 
@@ -110,6 +114,35 @@ class FastCheck:
             )
             return True
 
+    async def _admitted(
+        self, uid: str, spec: BrainSpec, router: ModelRouter, billing: Billing
+    ) -> bool:
+        """The router's own no-AI guard and the monthly limit; either unreadable means no call."""
+        try:
+            if await router.blocked_now():
+                return False
+            await billing.ensure_allowed(uid, spec)
+        except BudgetError as exc:
+            log.info("understood-as skipped: monthly limit", extra={"reason": type(exc).__name__})
+            return False
+        except Exception as exc:  # noqa: BLE001 — cannot tell: no call (fail closed)
+            log.warning(
+                "understood-as skipped: limit unreadable", extra={"reason": type(exc).__name__}
+            )
+            return False
+        return True
+
+    @staticmethod
+    async def _meter(billing: Billing, uid: str, brain_id: str, cost: Callable[[], float]) -> None:
+        """Record a call that was made. Never raises: a failure is logged loudly, by class."""
+        try:
+            await billing.record(uid, brain_id, cost())
+        except Exception as exc:  # noqa: BLE001 — the answer matters more than the counter
+            log.error(
+                "USAGE METER WRITE FAILED (understood-as); answer still used",
+                extra={"brain": brain_id, "reason": type(exc).__name__},
+            )
+
     async def ask(
         self,
         uid: str,
@@ -127,12 +160,7 @@ class FastCheck:
         if spec is None or not spec.tools_allowed:
             return None
         router = brains.router_for(spec.id)
-        if await router.blocked_now():
-            return None
-        try:
-            await billing.ensure_allowed(uid, spec)
-        except BudgetError as exc:
-            log.info("understood-as skipped: monthly limit", extra={"reason": type(exc).__name__})
+        if not await self._admitted(uid, spec, router, billing):
             return None
         prompt = _prompt(heard, text, alternatives, hints)
         try:
@@ -150,13 +178,17 @@ class FastCheck:
         except TimeoutError:
             # the vendor may still bill what it read: meter an estimate, never "₹0"
             guess = estimate_usage(len(SYSTEM) + len(prompt), 0)
-            await billing.record(uid, spec.id, cost_usd(router.resolve(ModelTier.FAST), guess))
+            await self._meter(
+                billing, uid, spec.id, lambda: cost_usd(router.resolve(ModelTier.FAST), guess)
+            )
             log.warning("understood-as: the fast tier was too slow")
             return None
         except LLMError as exc:
             log.warning("understood-as: no answer", extra={"error": type(exc).__name__})
             return None
-        await billing.record(uid, spec.id, done.cost_usd or cost_usd(done.model, done.usage))
+        await self._meter(
+            billing, uid, spec.id, lambda: done.cost_usd or cost_usd(done.model, done.usage)
+        )
         return parse(done.text)
 
 

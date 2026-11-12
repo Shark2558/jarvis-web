@@ -185,6 +185,41 @@ async def test_a_model_that_fails_or_rambles_is_not_believed(rig: Rig) -> None:
     assert out.sure is False and out.question  # an outage is a question, never an error
 
 
+async def test_a_meter_that_fails_after_the_call_keeps_the_answer(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Code review M6: the call was made (and paid for); a failing meter is logged loudly by
+    class name, as `Billing.record` does for the Brain, and never loses the answer or raises."""
+
+    async def broken(*_: Any, **__: Any) -> float:
+        raise RuntimeError("meter store down")
+
+    monkeypatch.setattr(rig.billing, "record", broken)
+    rig.paid.script(answer("open the CSV file"))
+    with caplog.at_level("ERROR", logger="jarvis.understand.model"):
+        out = await rig.svc.understand(UID, UNSURE, alternatives=["open the csv file"])
+    assert (out.understood, out.sure, out.via) == ("open the CSV file", True, "ai")
+    (rec,) = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert "USAGE METER WRITE FAILED" in rec.getMessage()
+    assert getattr(rec, "reason", None) == "RuntimeError" and "meter store" not in rec.getMessage()
+
+
+@pytest.mark.parametrize("broken", ["ensure_allowed", "blocked_now"])
+async def test_a_limit_that_cannot_be_checked_means_no_call_and_one_question(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch, broken: str
+) -> None:
+    async def fails(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("cannot tell")
+
+    if broken == "ensure_allowed":
+        monkeypatch.setattr(rig.billing, "ensure_allowed", fails)
+    else:
+        router = rig.brains.router_for(rig.brains.default.id)
+        monkeypatch.setattr(type(router), "blocked_now", fails)
+    out = await rig.svc.understand(UID, UNSURE)
+    assert rig.paid.calls == [] and out.sure is False and out.question and out.via == "none"
+
+
 async def test_the_switch_turns_the_whole_step_off(settings: Settings) -> None:
     rig = Rig(settings.model_copy(update={"voice_understand": False}))
     out = await rig.svc.understand(UID, "D csb file")

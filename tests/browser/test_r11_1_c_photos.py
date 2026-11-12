@@ -218,9 +218,7 @@ def _open(
     fake = Fake(c.page)  # after the shared mocks: the newest route answers first
     c.open()
     if surface == "day":
-        c.page.locator("#themeBtn").click()
-        c.page.locator('label[for="jx-s-day"]').click()
-        c.page.keyboard.press("Escape")
+        c.choose_day()
     assert c.page.locator("html").get_attribute("data-surface") == surface
     c.open_panel(panel)
     ready = "#fgList li.trow" if panel == "faces" else "#photosLine"

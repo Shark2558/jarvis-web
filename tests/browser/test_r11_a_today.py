@@ -145,9 +145,7 @@ def _open_today(
     asked = _today_routes(c.page)
     c.open()
     if surface == "day":
-        c.page.locator("#themeBtn").click()
-        c.page.locator('label[for="jx-s-day"]').click()
-        c.page.keyboard.press("Escape")
+        c.choose_day()
     c.page.wait_for_timeout(800)
     c.open_panel("helpers")
     c.page.locator("#hpt-today").click()

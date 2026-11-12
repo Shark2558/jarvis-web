@@ -1,4 +1,4 @@
-Version v11.1.6 · 12 Nov 2026, 21:10 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.7 · 12 Nov 2026, 22:15 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 I1 — integration notes (Mark XV)
 
@@ -348,6 +348,15 @@ made exact (`NO_MODELS`, `CHANGED_MODEL`); reproduced and proven with OpenCV and
 otherwise passed in full (`13569 passed`), as did run 107's 3.12 job apart from the 8 fixed in
 v11.1.5.
 
+**GitHub CI, run 109.** Unit 3.11 and 3.12, docs, docs-check, Firestore and the PR title passed;
+the browser job had `2 failed, 1188 passed` (run 108's browser job, one test-only commit earlier,
+passed in full). Both failures were the same step: pressing "Day" in the Appearance menu timed out
+because the option was not visible (the menu closes when focus leaves it, and on GitHub's faster
+machines focus moved just after sign-in). Test-only fix: `Console.choose_day()` in
+`tests/browser/test_console.py` opens the menu again until the option takes the press (at most 4
+tries) and asserts the surface is day; the nine files that pressed it by hand use it
+(`test_console.py`'s own menu test keeps pressing it directly, as that is its subject).
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -358,3 +367,4 @@ v11.1.5.
 | v11.1.4 | 12 Nov 2026, 19:45 IST | R11.1 | The integrated reviews and their fixes (section 10): Telegram's home switch over the real photo import, the R11 eval's flake at its cause, the picture turn guard's strict and light modes with YouTube, Maps and a research's context behind it, the brief's deliveries behind the mail row and a paused row said so, one kitchen conversation a day, the lock's via block, the No-AI phrases one by one, the kit's Python for the face engine pins, the long functions, the estimate under a raised cap, three console joins; the measured guard, the eval loop, every check on the head, and the residuals for the release notes | 🛠 Mark XV |
 | v11.1.5 | 12 Nov 2026, 20:40 IST | R11.1 | GitHub CI run 107: the document child kept numpy and pandas out (OpenBLAS on 4-CPU runners passed the memory cap), with its test | 🛠 Mark XV |
 | v11.1.6 | 12 Nov 2026, 21:10 IST | R11.1 | GitHub CI run 108: two face-engine tests no longer need OpenCV installed | 🛠 Mark XV |
+| v11.1.7 | 12 Nov 2026, 22:15 IST | R11.1 | GitHub CI run 109: the browser tests choose the day surface through one sturdier helper | 🛠 Mark XV |

@@ -400,9 +400,7 @@ def test_the_conversation_with_all_of_it_passes_the_visual_gate(
         c.open()
         c.page.wait_for_function("window.JarvisFixes && window.JarvisFixes.parts.files")
         if surface == "day":
-            c.page.locator("#themeBtn").click()
-            c.page.locator('label[for="jx-s-day"]').click()
-            c.page.keyboard.press("Escape")
+            c.choose_day()
         c.page.route(
             "**/v1/input/estimate",
             lambda r: r.fulfill(

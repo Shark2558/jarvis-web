@@ -105,9 +105,7 @@ def boot(
     c.page.add_init_script(COUNT_OPENS)
     c.open()
     if day:
-        c.page.locator("#themeBtn").click()
-        c.page.locator('label[for="jx-s-day"]').click()
-        c.page.keyboard.press("Escape")
+        c.choose_day()
     # the R11.1 modules load last (console-r111.js imports them): their block is there once built
     c.page.locator("#look").wait_for(state="attached")
     return c

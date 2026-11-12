@@ -79,6 +79,7 @@ NOT_ALLOWED = "Your Permissions switch this off, Sir."
 NOT_DONE = "That couldn't be done just now, Sir."
 GONE = "Those events are no longer in your calendar, Sir."
 WAITING = "That needs your OK, Sir: the approval is waiting."
+NO_WORDS = "It ran, Sir, but it gave no words for what it did: Activity shows it."
 router = APIRouter(prefix=PREFIX, dependencies=[Depends(require_auth)])
 
 
@@ -99,7 +100,7 @@ class ReplanBody(_Body):
 
 
 class RetryBody(_Body):
-    batch: str = Field(pattern=BATCH_ID.pattern)
+    batch: str = Field(pattern=rf"^{BATCH_ID.pattern}$")  # the whole id (pydantic searches)
     name: str = Field(default="", max_length=60)
     events: list[BatchItem] = Field(min_length=1, max_length=100)
 
@@ -234,12 +235,16 @@ def _said(res: GatewayResult, sid: str | None) -> JSONResponse:
     if res.outcome is not GatewayOutcome.EXECUTED:
         return _refusal(res)
     result = res.result if isinstance(res.result, dict) else {}
+    message = result.get("message")
+    if not isinstance(message, str) or not message.strip():  # never a "Done" nobody wrote
+        log.warning("a plan action gave no words", extra={"outcome": res.outcome.value})
+        message = NO_WORDS
     return _answer(
         200,
         {
             "pending": "approval" in result,
             "session_id": sid,
-            "message": str(result.get("message") or "Done, Sir."),
+            "message": message,
             "refused": bool(result.get("refused")),
         },
     )
@@ -383,7 +388,7 @@ async def undo(request: Request, batch: str, uid: str = Depends(current_user)) -
     return _answer(
         200,
         {
-            "message": str(result.get("message") or "Done, Sir."),
+            "message": str(result.get("message") or NO_WORDS),
             "removed": int(result.get("removed") or 0),
             "kept": int(result.get("kept") or 0),
             "failed": int(result.get("failed") or 0),

@@ -430,3 +430,102 @@ async def test_with_plans_off_batches_still_undo_and_answers_say_off(settings: S
             made = await site.batch(2, series=False)
             undone = await c.post(f"/v1/series/batches/{made['batch']}/undo", json={})
             assert undone.status_code == 200 and undone.json()["removed"] == 2
+
+
+# ---- owner-only, and a cookie write needs the console's header (security review LOW-6) ---------
+BATCH = "b" + "0" * 16
+WRITES = [
+    ("/v1/series/answer", {"answer": "done"}),
+    ("/v1/series/replan", {}),
+    ("/v1/series/batches/retry", {"batch": BATCH, "events": [{**weekday_sessions(1)[0], "n": 1}]}),
+    (f"/v1/series/batches/{BATCH}/undo", {}),
+]
+
+
+@pytest.fixture
+async def signed_in(settings: Settings) -> AsyncIterator[AsyncClient]:
+    from pydantic import SecretStr
+
+    from jarvis.config import AuthMode
+
+    s = settings.model_copy(
+        update={
+            "auth_mode": AuthMode.GOOGLE,
+            "google_client_id": "cid.apps.googleusercontent.com",
+            "google_client_secret": SecretStr("gsecret"),
+            "owner_emails": ["owner@example.com"],
+            "session_secret": SecretStr("x" * 32),
+            "public_base_url": "http://test",
+            "api_token": SecretStr("cli-token-123456789012345678901234"),
+        }
+    )
+    app = create_app(s, provider=MockProvider(), store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            c.app = app  # type: ignore[attr-defined]
+            yield c
+
+
+async def _login(c: AsyncClient) -> None:
+    async def google_said(request: Any) -> dict[str, Any]:
+        return {"userinfo": {"email": "owner@example.com", "email_verified": True, "sub": "1"}}
+
+    c.app.state.oauth.google.authorize_access_token = google_said  # type: ignore[attr-defined]
+    await c.get("/auth/callback?code=abc&state=whatever")
+
+
+async def test_every_plan_route_refuses_a_caller_who_is_not_signed_in(
+    signed_in: AsyncClient,
+) -> None:
+    csrf = {"X-Requested-With": "JARVIS"}
+    assert (await signed_in.get("/v1/series")).status_code == 401
+    for path, body in WRITES:
+        r = await signed_in.post(path, json=body, headers=csrf)
+        assert r.status_code == 401, path
+
+
+async def test_a_cookie_write_without_the_console_s_header_is_refused(
+    signed_in: AsyncClient,
+) -> None:
+    await _login(signed_in)
+    assert (await signed_in.get("/v1/series")).status_code == 200  # a read needs no header
+    gw = signed_in.app.state.gateway  # type: ignore[attr-defined]
+    before = len((await gw.audit.tail(200)).entries)
+    for path, body in WRITES:
+        r = await signed_in.post(path, json=body)
+        assert r.status_code == 403 and r.json()["error"] == "csrf", path
+    assert len((await gw.audit.tail(200)).entries) == before  # nothing reached the gateway
+    ok = await signed_in.post(
+        f"/v1/series/batches/{BATCH}/undo", json={}, headers={"X-Requested-With": "JARVIS"}
+    )
+    assert ok.status_code not in (401, 403)  # with the header it is his own press
+
+
+# ---- the batch id is checked whole (security review LOW-2) -------------------------------------
+async def test_a_retry_s_batch_id_must_be_exactly_a_batch_id(site: App) -> None:
+    events = [{**weekday_sessions(1)[0], "n": 1}]
+    ok = await site.c.post("/v1/series/batches/retry", json={"batch": BATCH, "events": events})
+    assert ok.status_code == 200  # the whole id: the card is proposed
+    for bad in (f"zz{BATCH}zz", f"{BATCH}x", "b0123"):
+        r = await site.c.post("/v1/series/batches/retry", json={"batch": bad, "events": events})
+        assert r.status_code == 422, bad
+    assert len(await site.gw.pending()) == 1
+
+
+# ---- no "Done" without words (silent-failure review L6) ----------------------------------------
+async def test_a_result_without_words_is_never_reported_as_done(
+    site: App, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from jarvis.tools.gateway import GatewayResult
+
+    async def ran_silently(call: ToolCall, **kw: Any) -> GatewayResult:
+        return GatewayResult(GatewayOutcome.EXECUTED, result={})
+
+    await site.batch(3)
+    site.clock.at = AFTER_1
+    monkeypatch.setattr(site.gw, "execute", ran_silently)
+    r = await site.c.post("/v1/series/answer", json={"answer": "done"})
+    body = r.json()
+    assert r.status_code == 200 and body["message"] != "Done, Sir."
+    assert "Activity" in body["message"]
+    assert any("gave no words" in rec.getMessage() for rec in caplog.records)

@@ -141,6 +141,7 @@ class Rig:
             "part": "plan", "ready": "ready", "plans": [PLAN_ROW], "waiting": [WAITING]
         }  # fmt: skip
         self.approval_reads = 0
+        self.broken = False  # GET /v1/series answers 500
 
     def _approvals(self, route: Any) -> None:
         self.approval_reads += 1
@@ -152,6 +153,9 @@ class Rig:
         body = json.loads(req.post_data) if req.post_data else None
         self.calls.append((req.method, path, body))
         answer: dict[str, Any] = self.view
+        if self.broken and req.method == "GET":
+            route.fulfill(status=500, content_type="application/json", body='{"error":"x"}')
+            return
         if path == "/answer":
             skipped = body["answer"] == "skipped"
             said = (
@@ -444,3 +448,27 @@ def test_a_file_fed_batch_shows_what_each_event_will_write_as_text(rig: Rig, vp:
     assert c.errors == [] and c.csp_violations() == []
     rig.approvals = [BATCH_CARD, MOVE_CARD]
     page.evaluate("() => document.dispatchEvent(new CustomEvent('jarvis:approvals-stale'))")
+
+
+def test_a_plans_view_that_could_not_be_read_says_so(rig: Rig) -> None:
+    c = rig.get("desktop", "day")
+    page = c.page
+    _open(c, "approvals")
+    said = page.locator("#planChecks .plan-said")
+    saved = rig.view
+    rig.view = {**saved, "plans": [], "waiting": [], "detail": "The plans could not be read."}
+    page.evaluate("() => window.JarvisFixes.parts.plan.reload()")
+    said.wait_for(timeout=5000)
+    assert said.text_content() == "The plans could not be read." and "bad" in (
+        said.get_attribute("class") or ""
+    )
+    rig.broken = True
+    page.evaluate("() => window.JarvisFixes.parts.plan.reload()")
+    page.wait_for_function(
+        "() => (document.querySelector('#planChecks .plan-said') || {}).textContent"
+        " === 'I couldn\\u2019t load your plan check-ins just now, Sir.'"
+    )
+    rig.broken, rig.view = False, saved
+    caused = "Failed to load resource: the server responded with a status of 500"
+    assert [e for e in c.errors if caused not in e] == [] and c.csp_violations() == []
+    c.errors[:] = [e for e in c.errors if caused not in e]  # the 500 this test asked for

@@ -196,13 +196,21 @@ function render() {
   if (said.textContent) box.append(said);
   box.hidden = !box.childElementCount;
 }
+const UNLOADED = 'I couldn\u2019t load your plan check-ins just now, Sir.';
+/** The server's own words when it could not read the plans; a failed request says so too, except
+ *  when he is signed out (the sign-in gate shows) or plans are off on this server. */
 function load() {
   if (loading) return loading;
   loading = (async () => {
     try {
       const r = await F.api('/v1/series');
       view = { plans: arr(r && r.plans), waiting: arr(r && r.waiting) };
-    } catch (_) { view = { plans: [], waiting: [] }; } // signed out, or plans are off: nothing to show
+      if (r && typeof r.detail === 'string' && txt(r.detail)) say(r.detail, true);
+    } catch (e) {
+      view = { plans: [], waiting: [] };
+      const quiet = e && (e.status === 401 || e.code === 'plans_off');
+      if (!quiet) say(UNLOADED, true);
+    }
     loadedAt = Date.now(); loading = null;
     render();
   })();

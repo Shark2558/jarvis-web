@@ -6,7 +6,9 @@
 # violation; a group is a number and a photo count, never a picture; Name asks through the Faces
 # panel's consent form and sends it with the CSRF header (someone already added sends their id
 # only); Forget asks first and says "not done yet" until the laptop confirmed; the import line shows
-# the server's words, steps on Continue, and Stop asks first.
+# the server's words, steps on Continue, and Stop asks first. Review C-code H1: before sign-in the block
+# asks the server nothing, even with both panels restored as open from the last visit. Review C-code M9:
+# a Privacy "Face groups" delete while the laptop is away is shown as NOT done.
 # ruff: noqa: E501  (the consent statements and the long page assertions, as tests/browser/test_faces.py)
 from __future__ import annotations
 
@@ -89,6 +91,7 @@ class Fake:
         self.names_waiting = 0
         self.forgets_waiting = 0
         self.forget_done = True
+        self.extra: dict[str, Any] = {}
         self.people = [dict(PERSON)]
         known = [{"name": "Anjali", "child": False}, {"name": "Mini", "child": True}]
         self.job = _progress("reading", 310, "310 of 2,000 read · 41 faces found", recognised=known)
@@ -117,6 +120,7 @@ class Fake:
             "names_waiting": self.names_waiting,
             "forgets_waiting": self.forgets_waiting,
             "local_url": "http://localhost:8098/faces",
+            **self.extra,
         }
 
     def connectors(self, route: Any) -> None:
@@ -467,5 +471,100 @@ def test_while_the_panel_is_open_the_import_steps_by_itself(
         c.page.wait_for_timeout(6000)  # one 5-second turn of the module's own timer
         assert fake.steps >= 1 and "of 2,000 read" in c.page.inner_text("#photosLine")
         assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+# ---- review C-code H1: nothing is asked before sign-in -----------------------------------------------
+
+RESTORE_OPEN = (
+    "try { localStorage.setItem('jarvis_deck_v1', JSON.stringify("
+    + json.dumps({"v": 1, "p": {"faces": {"open": True}, "connectors": {"open": True}}})
+    + ")); } catch (e) {}"
+)
+
+
+def test_before_sign_in_the_block_asks_the_server_nothing(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c = Console(browser, server_url, token, DESKTOP)
+    try:
+        c.page.add_init_script(RESTORE_OPEN)  # last visit left Faces and Connectors open
+        install_mocks(c.page)
+        fake = Fake(c.page)
+        c.page.goto(server_url + "/")
+        c.page.locator("#tokIn").wait_for()  # the sign-in gate is up
+        c.page.wait_for_timeout(1500)
+        asked = [x["path"] for x in fake.calls if x["path"].startswith("/v1/facegroups")]
+        assert asked == [], asked
+        c.page.locator("#tokIn").fill(token)
+        c.page.locator("#tokBtn").click()
+        c.page.locator("#welcome").wait_for()
+        until(
+            c.page,
+            lambda: any(x["path"] == "/v1/facegroups/groups" for x in fake.calls),
+            "the groups to load once signed in",
+        )
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+def test_the_panel_says_what_could_not_be_read_and_which_names_were_lost(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, fake = _open(browser, server_url, token, "faces")
+    try:
+        fake.extra = {"skipped": 2, "names_lost": 1, "min_photos": 3, "store_ok": True}
+        c.page.get_by_role("button", name="Forget group 7").click()  # any change reloads the list
+        c.page.click("#facesDialog button:has-text('Forget')")
+        until(c.page, lambda: "could not be read" in c.page.inner_text("#fgFolder"), "skipped")
+        assert "2 files could not be read and were skipped" in c.page.inner_text("#fgFolder")
+        assert "1 name could not be given: the group had gone" in c.page.inner_text("#fgWaits")
+        fake.extra = {"store_ok": False}
+        fake.forget_done = True
+        c.page.get_by_role("button", name="Forget group 4").click()
+        c.page.click("#facesDialog button:has-text('Forget')")
+        until(c.page, lambda: "face store" in c.page.inner_text("#fgState"), "store state")
+        assert "Nothing was deleted" in c.page.inner_text("#fgState")
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+# ---- review C-code M9: a delete that waits for the laptop is shown as NOT done -------------------------
+
+
+def test_a_privacy_delete_while_the_laptop_is_away_is_shown_as_not_done(
+    browser: Any, server_url: str, token: str
+) -> None:
+    from test_privacy import STUB, Backend, cat
+
+    from jarvis.facegroups.privacy import AS_HEARD, PENDING
+
+    class Away(Backend):
+        def handle(self, route: Any) -> None:
+            if route.request.url.endswith("/delete"):  # the ask is kept; the laptop is away
+                self.cats[0].update(note=PENDING, rev="rev-after")
+            super().handle(route)
+
+    row = cat("face_groups", section="Faces", label="Face groups", delete="confirm", note=AS_HEARD)
+    be = Away([row])
+    be.delete_reply = (200, {"deleted": 0, "category": "face_groups", "remaining": 2})
+    c = Console(browser, server_url, token, DESKTOP)
+    try:
+        c.page.route("**/v1/privacy**", be.handle)
+        c.open()
+        c.page.evaluate(STUB)
+        c.open_panel("privacy")
+        c.page.locator("#pv-face_groups button", has_text="Delete").click()
+        assert "finishes when it is back" in c.page.inner_text(".pv-dlg")  # said before the click
+        c.page.locator("#pvGo").click()
+        c.page.locator(".pv-dlg").wait_for(state="detached")
+        note = c.page.locator("#pvNote")
+        assert "bad" in str(note.get_attribute("class"))  # never the green "Deleted N."
+        assert "2 are still there" in note.inner_text()
+        until(c.page, lambda: "NOT done yet" in c.page.inner_text("#pv-face_groups"), "pending")
+        assert c.errors == []
     finally:
         c.close()

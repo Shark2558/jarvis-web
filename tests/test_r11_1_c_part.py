@@ -332,3 +332,13 @@ def test_the_tools_take_no_arguments(name: str) -> None:
     tools = {t.name: t for t in face_group_tools(None, lambda: None)}  # type: ignore[arg-type]
     assert tools[name].input_schema == {"type": "object", "properties": {}}
     assert tools[name].may_vouch is True
+
+
+async def test_the_retention_is_the_laptops_own_number_of_days(tmp_path: Path) -> None:
+    c = await build_cloud(tmp_path, env={"FACE_GROUPS_KEEP_DAYS": "30"})
+    await c.group_of(1)
+    row, _ = await privacy(c)
+    view = await row.describe(UID)
+    assert "at most 30 days" in view.retention and "90" not in view.retention
+    assert "finishes when it is back" in view.note  # said before the owner presses Delete
+    await c.home.aclose()

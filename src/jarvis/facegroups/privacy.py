@@ -30,7 +30,8 @@ ASK_BUDGET_S = 3.0  # inside the dashboard's 5 s a row: a sleeping laptop never 
 PENDING = "Delete asked. It is NOT done yet: it happens when your home laptop is back on."
 AS_HEARD = (
     "As your laptop last said. Deleting removes the unnamed groups and stray faces from your "
-    "laptop; your photos are never touched."
+    "laptop; your photos are never touched. If the laptop is off, the delete waits and "
+    "finishes when it is back: until then this row says NOT done yet."
 )
 
 
@@ -56,7 +57,7 @@ class FaceGroupsPrivacy:
             "your laptop.",
             "unit": "groups and stray faces",
             "retention": "On your laptop until you name or forget them, at most 90 days unless "
-            "you changed FACE_GROUPS_KEEP_DAYS",
+            "you changed FACE_GROUPS_KEEP_DAYS",  # the laptop's own number replaces it below
             "where": "Your home laptop; ids and counts in Firestore",
         }
         svc = self._svc()
@@ -71,6 +72,12 @@ class FaceGroupsPrivacy:
             return CategoryView(**base, count=0, note=view.reason)
         doc = await svc.store.get(uid)
         count = doc.kept
+        if doc.heard_at:  # the laptop's own setting, as it last said (review C-code M9)
+            days = doc.home.keep_days
+            base["retention"] = (
+                f"On your laptop until you name or forget them, at most {days:,} "
+                f"day{'s' if days != 1 else ''} (FACE_GROUPS_KEEP_DAYS on the laptop)"
+            )
         return CategoryView(
             **base,
             count=count,

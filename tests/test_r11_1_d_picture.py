@@ -118,7 +118,7 @@ async def test_the_owner_sees_the_sources_with_their_links() -> None:
     rig, _ = _product()
 
     await rig.research()
-    report = rig.svc.last(UID)
+    report = rig.svc.last(UID, "sess_1")
 
     assert report is not None and report.status == "done"
     assert [s.url for f in report.findings for s in f.sources] == [
@@ -151,7 +151,7 @@ async def test_a_picture_without_anything_named_as_a_thing_is_described_not_sear
     out = (await rig.research()).result
 
     assert out["status"] == "done" and out["results"] == [] and rig.vendor.queries == []
-    report = rig.svc.last(UID)
+    report = rig.svc.last(UID, "sess_1")
     assert report is not None and "didn't search" in report.message
 
 
@@ -161,7 +161,7 @@ async def test_a_picture_of_a_person_is_described_without_a_name_and_not_searche
 
     res = await rig.research()
 
-    out, report = res.result, rig.svc.last(UID)
+    out, report = res.result, rig.svc.last(UID, "sess_1")
     assert out["person"] is True and out["say"] == NO_IDENTIFY
     assert "offer" not in out and out["results"] == []
     assert rig.vendor.queries == []  # nothing at all was searched
@@ -196,7 +196,7 @@ async def test_eyes_that_name_the_face_get_nowhere() -> None:
 
     res = await rig.research()
 
-    said = _flat(res.result) + _flat(rig.svc.last(UID))
+    said = _flat(res.result) + _flat(rig.svc.last(UID, "sess_1"))
     assert NAME not in said and "Examplekar" not in said and "minister" not in said
     assert rig.vendor.queries == []
     assert res.result["say"] == NO_IDENTIFY and "offer" not in res.result
@@ -256,7 +256,7 @@ async def test_results_that_are_about_a_person_are_left_out() -> None:
 
     out = (await rig.research()).result
 
-    report = rig.svc.last(UID)
+    report = rig.svc.last(UID, "sess_1")
     assert out["results"] == [] and report is not None
     assert "about a person" in report.message and "born 1970" not in _flat(report)
 
@@ -287,7 +287,7 @@ async def test_a_caption_that_names_someone_is_offered_and_never_searched_here()
     assert "only if the owner agrees" in out["offer"]["say"]
     assert out["say"] == NO_IDENTIFY
     assert rig.vendor.queries == ["harbour bridge"]  # the thing; never the name
-    report = rig.svc.last(UID)
+    report = rig.svc.last(UID, "sess_1")
     assert report is not None and report.named == NAME
     assert f"The picture's text names {NAME}." in report.message
     assert report.message.endswith(f"Shall I look {NAME} up from public sources, Sir?")
@@ -352,7 +352,7 @@ async def test_the_look_is_one_call_with_fixed_words_and_only_the_picture(
 
     assert rig.eyes.looks == [(UID, LOOK_SYSTEM, LOOK_ASK, digest(pic))]
     assert rig.turn.asked == [(UID, "sess_1")]
-    everything = _flat(res.result) + _flat(rig.svc.last(UID)) + _flat(rig.docs._data)  # noqa: SLF001
+    everything = _flat(res.result) + _flat(rig.svc.last(UID, "sess_1")) + _flat(rig.docs._data)  # noqa: SLF001
     logged = " ".join(r.getMessage() + _flat(r.__dict__.get("extra", "")) for r in caplog.records)
     for needle in (pic.b64()[:40], "iVBOR", "GLUCOSE"):
         assert needle not in logged
@@ -447,7 +447,7 @@ async def test_without_web_search_the_picture_is_still_described() -> None:
 
     out = (await rig.research()).result
 
-    report = rig.svc.last(UID)
+    report = rig.svc.last(UID, "sess_1")
     assert out["status"] == "done" and out["results"] == [] and report is not None
     assert "Web search isn't set up here" in report.message
 
@@ -465,7 +465,7 @@ async def test_the_owners_web_search_row_is_obeyed(row: str, words: str) -> None
 
     out = (await rig.research()).result
 
-    report = rig.svc.last(UID)
+    report = rig.svc.last(UID, "sess_1")
     assert rig.vendor.queries == [] and out["results"] == []
     assert report is not None and words in report.message
     assert out["status"] == "done"  # the look itself is the Pictures row's, and that is "Allow"
@@ -489,7 +489,7 @@ async def test_a_failing_search_vendor_is_said_plainly_without_its_words() -> No
 
     out = (await rig.research()).result
 
-    report = rig.svc.last(UID)
+    report = rig.svc.last(UID, "sess_1")
     assert out["status"] == "done" and report is not None
     assert "Web search is not available right now" in report.message
     assert "internal error" not in _flat(out) + _flat(report)
@@ -505,7 +505,7 @@ async def test_a_private_detail_read_off_a_picture_is_never_sent_to_the_search_v
 
     await rig.research()
 
-    report = rig.svc.last(UID)
+    report = rig.svc.last(UID, "sess_1")
     assert rig.vendor.queries == [] and report is not None
     assert "private detail" in report.message
 
@@ -533,10 +533,11 @@ def test_the_tool_is_a_read_in_the_pictures_row() -> None:
     assert set(tool.input_schema["properties"]) == {"picture"}
 
 
-async def test_the_last_report_is_one_owners_and_is_forgotten_after_ten_minutes() -> None:
+async def test_the_last_report_is_one_conversations_and_is_forgotten_after_ten_minutes() -> None:
     rig, _ = _product()
     await rig.research()
 
-    assert rig.svc.last("u_other") is None and rig.svc.last(UID) is not None
+    assert rig.svc.last("u_other", "sess_1") is None and rig.svc.last(UID, "sess_2") is None
+    assert rig.svc.last(UID, "sess_1") is not None
     rig.svc.clock = lambda: 10_000.0  # type: ignore[method-assign]
-    assert rig.svc.last(UID) is None
+    assert rig.svc.last(UID, "sess_1") is None

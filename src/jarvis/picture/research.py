@@ -15,8 +15,8 @@ with the last message, the AI off, no brain that may see a picture, the monthly 
 unreachable, an answer that is not the schema, too many looks in a minute.
 
 Nothing is kept: the picture is handed to the eyes and dropped; the look's raw answer never
-leaves this call; the last `Report` per owner (words and links, never a picture) stays in memory
-for `KEEP_S` so the console's route can show the links a model is never shown.
+leaves this call; the last `Report` of a conversation (words and links, never a picture) stays in
+memory for `KEEP_S` so the console's route can show the links a model is never shown.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ LOOK_TOKENS = 700
 RATE_BURST = 4
 RATE_WINDOW_S = 60.0
 KEEP_S = 600.0
-MAX_OWNERS = 64
+MAX_KEPT = 64  # reports kept in memory (one per conversation), for `KEEP_S` at most
 OFF = "Picture research is switched off on this JARVIS, Sir."
 NO_PICTURE = (
     "There is no picture with your last message in this conversation, Sir. Attach one, send "
@@ -137,20 +137,22 @@ class PictureResearch:
         self.eyes, self.enabled, self.clock = eyes, enabled, clock
         self._pictures, self._finder, self._guard = pictures, finder, guard
         self._calls: dict[str, deque[float]] = {}
-        self._last: dict[str, tuple[float, Report]] = {}
+        self._last: dict[tuple[str, str], tuple[float, Report]] = {}
 
-    # ---- the owner's last report (for the console's route) ----
-    def last(self, uid: str) -> Report | None:
-        kept = self._last.get(uid)
+    # ---- the last report of a conversation (for the console's route) ----
+    def last(self, uid: str, session_id: str) -> Report | None:
+        key = (uid, session_id)
+        kept = self._last.get(key)
         if kept is None or not 0 <= self.clock() - kept[0] < KEEP_S:
-            self._last.pop(uid, None)
+            self._last.pop(key, None)
             return None
         return kept[1]
 
-    def _keep(self, uid: str, report: Report) -> Report:
-        if len(self._last) >= MAX_OWNERS and uid not in self._last:
+    def _keep(self, uid: str, session_id: str, report: Report) -> Report:
+        key = (uid, session_id)
+        if len(self._last) >= MAX_KEPT and key not in self._last:
             self._last.clear()
-        self._last[uid] = (self.clock(), report)
+        self._last[key] = (self.clock(), report)
         return report
 
     def _too_many(self, uid: str) -> bool:
@@ -170,15 +172,16 @@ class PictureResearch:
         if not self.enabled:
             return Report("off", OFF)
         found = await self._pictures(uid, session_id) if session_id else []
-        if not found:
-            return self._keep(uid, Report("no_picture", NO_PICTURE))
+        if not session_id or not found:
+            return Report("no_picture", NO_PICTURE)
         if index > len(found):
             n = len(found)
             words = ONLY_N.format(are="is" if n == 1 else "are", n=n, s=_plural(n))
-            return self._keep(uid, Report("no_picture", words, pictures=n))
+            return Report("no_picture", words, pictures=n)
         if self._too_many(uid):
             return Report("busy", TOO_MANY)
-        return self._keep(uid, await self._look_and_search(uid, found[index - 1], len(found)))
+        report = await self._look_and_search(uid, found[index - 1], len(found))
+        return self._keep(uid, session_id, report)
 
     async def _look_and_search(self, uid: str, picture: ImageBlock, count: int) -> Report:
         try:

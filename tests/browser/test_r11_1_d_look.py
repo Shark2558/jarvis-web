@@ -297,3 +297,322 @@ def test_a_token_being_read_says_checking_then_shows_its_figures_by_itself(
     )  # the panel looked again by itself
     assert len(asked) == 2
     c.close()
+
+
+# ---- O9: "Research the picture" in the People panel ----------------------------------------------
+NAME = "Lekha Examplekar"
+CAN = {"part": "look", "ready": "ready", "can": True, "why": ""}
+NO_AI = {
+    "part": "look",
+    "ready": "ready",
+    "can": False,
+    "why": "Looking at a picture needs the AI, Sir, and the AI is switched off (Brain: No-AI). Switch it on with the Brain pill in the top bar and ask again.",
+}
+THING: dict[str, Any] = {
+    "status": "done",
+    "message": "A red packet of biscuits on a table. It reads: PARLE-G; GLUCOSE BISCUITS. I found 2 sources for Parle-G biscuit packet.",
+    "person": False,
+    "scene": "A red packet of biscuits on a table.",
+    "text": ["PARLE-G", "GLUCOSE BISCUITS"],
+    "subjects": [{"kind": "product", "name": "Parle-G biscuit packet"}],
+    "sources": [
+        {
+            "about": "Parle-G biscuit packet",
+            "n": 1,
+            "title": "Parle-G: the story of a biscuit that everyone in the country grew up with",
+            "domain": "example.org",
+            "url": "https://www.example.org/a",
+            "snippet": "A long-running glucose biscuit, sold in a yellow and red packet.",
+        },
+        {
+            "about": "Parle-G biscuit packet",
+            "n": 2,
+            "title": "<img src=x onerror=window.__pwned=1>",
+            "domain": "example.com",
+            "url": "https://example.com/b",
+            "snippet": "More about the packet.",
+        },
+        {
+            "about": "Parle-G biscuit packet",
+            "n": 3,
+            "title": "Not a web page",
+            "domain": "evil.example",
+            "url": "javascript:window.__pwned=1",
+            "snippet": "x",
+        },
+        {
+            "about": "Parle-G biscuit packet",
+            "n": 4,
+            "title": "Plain http",
+            "domain": "insecure.example",
+            "url": "http://insecure.example/x",
+            "snippet": "x",
+        },
+    ],
+    "notes": [],
+    "offer": None,
+    "pictures": 1,
+}
+PERSON: dict[str, Any] = {
+    "status": "done",
+    "message": f"A person in a blue top stands under a banner. I don't identify people from pictures, Sir. I found 1 source for harbour bridge. The picture's text names {NAME}. Shall I look {NAME} up from public sources, Sir?",
+    "person": True,
+    "scene": "A person in a blue top stands under a banner.",
+    "text": [f"MINISTER {NAME.upper()}", "OPENS THE HARBOUR BRIDGE"],
+    "subjects": [{"kind": "landmark", "name": "harbour bridge"}],
+    "sources": [
+        {
+            "about": "harbour bridge",
+            "n": 1,
+            "title": "The harbour bridge",
+            "domain": "ports.example.org",
+            "url": "https://ports.example.org/bridge",
+            "snippet": "Opened in 2026.",
+        }
+    ],
+    "notes": [],
+    "offer": {"name": NAME},
+    "pictures": 1,
+}
+
+
+class Look:
+    """A stateful fake of /v1/picture: the status, and one scripted answer per research."""
+
+    def __init__(self, status: dict[str, Any] | None = None) -> None:
+        self.status = status or CAN
+        self.answer: tuple[int, dict[str, Any]] = (200, THING)
+        self.posts: list[dict[str, Any]] = []
+
+    def routes(self) -> dict[str, Any]:
+        return {"**/v1/picture": self._status, "**/v1/picture/research": self._research}
+
+    def _status(self, route: Any) -> None:
+        _json(route, self.status)
+
+    def _research(self, route: Any) -> None:
+        self.posts.append(json.loads(route.request.post_data or "{}"))
+        _json(route, self.answer[1], self.answer[0])
+
+
+def look_block(c: Console, *, chat: bool = True) -> None:
+    """Open People with the picture block; `chat`: a conversation exists (a message was sent)."""
+    if chat:
+        c.send("what is in this picture?")
+    people(c)
+    c.page.locator("#lookGo").wait_for()
+
+
+def test_the_picture_block_sits_in_people_and_says_what_it_will_not_do(
+    browser: Any, server_url: str, token: str
+) -> None:
+    look = Look()
+    c = boot(browser, server_url, token, DESKTOP, routes=look.routes())
+    look_block(c)
+
+    box = c.page.locator("#p-people #look")
+    assert box.locator("#lookTitle").inner_text().strip().lower() == "research a picture"
+    words = box.locator("#lookIntro").inner_text()
+    assert "things, places, labels and logos" in words
+    assert "I don't identify people from pictures" in words
+    assert c.page.locator("#lookGo").is_enabled()
+    # it comes after the profile cards and before the brain-mode row, and overlaps nothing
+    order = c.page.evaluate(
+        "[...document.querySelector('#people').children].map((e) => e.id || e.className.split(' ')[0])"
+    )
+    assert order.index("look") > order.index("peopleCard") and order[-1].startswith("bopt")
+    gate(c, "#p-people", "desktop", "people with the picture block")
+    c.close()
+
+
+def test_when_no_picture_can_be_looked_at_the_block_says_why(
+    browser: Any, server_url: str, token: str
+) -> None:
+    look = Look(NO_AI)
+    c = boot(browser, server_url, token, DESKTOP, routes=look.routes())
+    look_block(c)
+
+    assert c.page.locator("#lookGo").is_disabled()
+    assert "the AI is switched off (Brain: No-AI)" in c.page.locator("#lookNote").inner_text()
+    assert look.posts == []
+    gate(c, "#p-people", "desktop", "people, picture block, AI off")
+    c.close()
+
+
+def test_without_a_conversation_it_asks_for_a_picture_first(
+    browser: Any, server_url: str, token: str
+) -> None:
+    look = Look()
+    c = boot(browser, server_url, token, DESKTOP, routes=look.routes())
+    look_block(c, chat=False)
+
+    c.page.locator("#lookGo").click()
+
+    assert "Attach a picture in the chat" in c.page.locator("#lookNote").inner_text()
+    assert look.posts == []
+    c.close()
+
+
+def test_a_thing_is_shown_with_its_words_and_its_sources_as_real_links(
+    browser: Any, server_url: str, token: str
+) -> None:
+    look = Look()
+    c = boot(browser, server_url, token, DESKTOP, routes=look.routes())
+    look_block(c)
+
+    c.page.locator("#lookGo").click()
+    card = c.page.locator("#lookCard .integ")
+    card.wait_for()
+
+    (post,) = look.posts
+    session = c.page.evaluate("window.JarvisApprovals.session()")
+    assert post == {"session_id": session, "picture": 1} and session
+    assert THING["message"] in card.inner_text()
+    assert card.locator(".istate").inner_text().strip().lower() == "2 sources"
+    links = card.locator("a.plink")
+    assert links.count() == 2  # the javascript: and the plain-http "sources" are not links
+    assert [links.nth(i).get_attribute("href") for i in range(2)] == [
+        "https://www.example.org/a",
+        "https://example.com/b",
+    ]
+    for i in range(2):
+        assert links.nth(i).get_attribute("target") == "_blank"
+        assert links.nth(i).get_attribute("rel") == "noopener noreferrer"
+    # a title that looks like markup is shown as the text it is
+    assert "<img src=x onerror=window.__pwned=1>" in card.inner_text()
+    assert card.locator("img").count() == 0 and c.page.evaluate("window.__pwned") is None
+    with c.ctx.expect_page() as tab:
+        links.nth(0).click()
+    assert tab.value.url == "https://www.example.org/a" and c.page.evaluate("window.__opens") == 0
+    assert c.errors == [] and c.csp_violations() == []
+    c.close()
+
+
+def test_a_person_gets_the_fixed_sentence_and_a_name_only_as_an_offer_he_must_press(
+    browser: Any, server_url: str, token: str
+) -> None:
+    look = Look()
+    look.answer = (200, PERSON)
+    asked: list[Any] = []
+    routes = {
+        **look.routes(),
+        "**/v1/people/research": lambda r: (asked.append(1), _json(r, DOSSIER["dossier"])),
+    }
+    c = boot(browser, server_url, token, DESKTOP, routes=routes)
+    look_block(c)
+
+    c.page.locator("#lookGo").click()
+    card = c.page.locator("#lookCard .integ")
+    card.wait_for()
+
+    assert "I don't identify people from pictures, Sir." in card.inner_text()
+    assert card.locator(".istate").inner_text().strip().lower() == "a person"
+    offer = c.page.locator("#lookOffer")
+    assert offer.inner_text().strip().lower() == "put this name in the people box"
+    offer.click()
+    c.page.wait_for_timeout(200)
+
+    assert c.page.locator("#peopleName").input_value() == NAME
+    assert c.page.evaluate("document.activeElement.id") == "peopleName"
+    assert (
+        asked == []
+    )  # nothing is looked up until HE presses Research; then the usual check decides
+    assert "Press Research" in c.page.locator("#lookNote").inner_text()
+    c.close()
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "words", "bad"),
+    [
+        (
+            200,
+            {
+                "status": "no_picture",
+                "message": "There is no picture with your last message in this conversation, Sir. Attach one, send it, and ask again.",
+            },
+            "There is no picture with your last message",
+            False,
+        ),
+        (
+            200,
+            {
+                "status": "waiting",
+                "message": "That needs your OK, Sir: the approval is waiting in Approvals.",
+            },
+            "waiting in Approvals",
+            False,
+        ),
+        (
+            200,
+            {
+                "status": "limit",
+                "message": "I can't look at the picture, Sir: This month's limit of ₹500 is used up (₹512.50 spent). Raise it in Vitals.",
+            },
+            "₹500",
+            False,
+        ),
+        (
+            503,
+            {
+                "error": "unavailable",
+                "detail": "The picture could not be researched just now, Sir. Please try again.",
+            },
+            "could not be researched",
+            True,
+        ),
+        (
+            429,
+            {"error": "rate_limited", "detail": "Too many pictures; wait a moment."},
+            "Too many pictures",
+            True,
+        ),
+    ],
+)
+def test_when_it_does_not_run_the_block_says_why_in_the_servers_words(
+    browser: Any,
+    server_url: str,
+    token: str,
+    status: int,
+    body: dict[str, Any],
+    words: str,
+    bad: bool,
+) -> None:
+    look = Look()
+    look.answer = (status, body)
+    c = boot(browser, server_url, token, DESKTOP, routes=look.routes())
+    look_block(c)
+
+    c.page.locator("#lookGo").click()
+    note = c.page.locator("#lookNote")
+    expect(note).to_contain_text(words)
+
+    assert ("bad" in (note.get_attribute("class") or "").split()) is bad
+    assert (
+        c.page.locator("#lookCard .integ").count() == 0 and c.page.locator("#lookGo").is_enabled()
+    )
+    c.close()
+
+
+@pytest.mark.parametrize("surface", ["night", "day"])
+@pytest.mark.parametrize("vp", list(VIEWPORTS))
+@pytest.mark.parametrize("answer", ["thing", "person"])
+def test_the_picture_block_passes_the_visual_gate_with_a_result(
+    browser: Any, server_url: str, token: str, vp: str, surface: str, answer: str
+) -> None:
+    look = Look()
+    look.answer = (200, THING if answer == "thing" else PERSON)
+    c = boot(browser, server_url, token, VIEWPORTS[vp], day=surface == "day", routes=look.routes())
+    look_block(c)
+
+    c.page.locator("#lookGo").click()
+    c.page.locator("#lookCard .integ").wait_for()
+    c.page.wait_for_timeout(500)
+
+    gate(c, "#p-people", vp, f"picture block {answer} {vp} {surface}")
+    heights = c.page.evaluate(
+        "[...document.querySelectorAll('#look a[href], #look button')]"
+        ".filter((e) => e.getBoundingClientRect().width > 0).map((e) => e.getBoundingClientRect().height)"
+    )
+    assert heights and min(heights) >= (43.5 if vp == "phone" else 23.5)
+    assert c.page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    c.close()

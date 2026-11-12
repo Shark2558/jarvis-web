@@ -167,8 +167,8 @@ def _register_personal(
 
 def _register_home(reg: ToolRegistry, home: HomeParts | None) -> None:
     """R3: the home, its alarm, camera history and the people JARVIS recognises. Telegram refuses
-    home_devices, camera_* and faces_* by default (`telegram.rules.HOME_PATTERNS`); home_status
-    and home_arm stay. A training brain is offered no tools at all and offline mode only
+    home_devices, camera_*, faces_* and photos_import_* by default (`telegram.rules.HOME_PATTERNS`);
+    home_status and home_arm stay. A training brain is offered no tools at all and offline mode only
     `llm.fallback.OFFLINE_TOOLS` (none of these), so the private ones reach neither."""
     if home is None:
         return

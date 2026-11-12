@@ -71,3 +71,34 @@ async def test_the_brief_s_helpers_lines_carry_the_plan_s_open_check_ins(
         section = await helpers.section(UID, ZoneInfo("Asia/Kolkata"), date(2027, 1, 15))
     assert section is not None
     assert "2 planned sessions have no check-in." in [line for line in section.lines]
+
+
+# ---- INTEGRATION-A 3.7: an "Undo all" of a full batch is listed whole in Recently deleted ------
+async def test_recently_deleted_lists_a_whole_batch_and_the_model_still_sees_at_most_50() -> None:
+    from jarvis.storage.docs import MemoryDocs
+    from jarvis.undo.service import UndoBin
+    from jarvis.undo.store import MAX_LISTED, PANEL_LISTED, DeletedStore
+
+    assert PANEL_LISTED == 100 and MAX_LISTED == 50  # a batch holds at most 100 events
+    b = UndoBin(DeletedStore(MemoryDocs()))
+    for n in range(60):
+        await b.keep(UID, "event", f"Session {n + 1}", {"summary": f"Session {n + 1}"})
+    assert len(await b.recent(UID, limit=PANEL_LISTED)) == 60  # the panel: every one of the 60
+    assert len(await b.recent(UID)) == 50  # the model's deleted_list: its result stays small
+
+
+async def test_the_recently_deleted_panel_lists_up_to_a_whole_batch(settings: Settings) -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from jarvis.storage.docs import MemoryDocs
+    from jarvis.undo.service import UndoBin
+    from jarvis.undo.store import DeletedStore
+
+    b = UndoBin(DeletedStore(MemoryDocs()))
+    for n in range(60):
+        await b.keep(UID, "event", f"Session {n + 1}", {"summary": f"Session {n + 1}"})
+    app = create_app(settings, provider=MockProvider(), store=InMemorySessionStore(), undo=b)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.get("/v1/deleted")
+    assert r.status_code == 200 and len(r.json()["items"]) == 60

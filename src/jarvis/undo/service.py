@@ -41,7 +41,7 @@ from jarvis.undo.models import (
     RestoreOutcome,
     RestoreStatus,
 )
-from jarvis.undo.store import ClaimResult, DeletedStore, owner_ok
+from jarvis.undo.store import MAX_LISTED, ClaimResult, DeletedStore, owner_ok
 
 log = get_logger(__name__)
 
@@ -200,12 +200,13 @@ class UndoBin:
         except Exception as exc:  # noqa: BLE001
             log.error("undo snapshot not discarded", extra={"error": type(exc).__name__})
 
-    async def recent(self, uid: str) -> list[DeletedItem]:
+    async def recent(self, uid: str, *, limit: int = MAX_LISTED) -> list[DeletedItem]:
         """What can still be restored: not expired, not restored already (newest first)."""
         if not owner_ok(uid):
             return []
         now = self._clock()
-        return [i for i in await self.store.recent(uid) if not i.expired(now) and not i.restored]
+        rows = await self.store.recent(uid, limit=limit)
+        return [i for i in rows if not i.expired(now) and not i.restored]
 
     async def get(self, uid: str, item_id: str) -> DeletedItem | None:
         item = await self.store.get(uid, item_id)

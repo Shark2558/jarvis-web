@@ -783,3 +783,16 @@ def test_the_logon_task_runs_its_script_past_the_execution_policy() -> None:
     ps = (HOME / "setup-windows.ps1").read_text()
     line = next(x for x in ps.splitlines() if "New-ScheduledTaskAction" in x)
     assert "-NoProfile -ExecutionPolicy Bypass" in line and "start-home.ps1" in line
+
+
+def test_the_kit_allows_the_face_engine_s_libraries_and_each_is_hash_locked() -> None:
+    """R11.1 I1 (INTEGRATION-C 3.1): cv2 and numpy pass the kit's import allow-list (the engine
+    may import them plainly), and every name on the allow-list is a hash-locked bridge pin."""
+    from jarvis.home.kit import SAFE_THIRD_PARTY
+
+    assert {"cv2", "numpy"} <= SAFE_THIRD_PARTY
+    pins = _pins()
+    names = {"cv2": "opencv-python-headless", "pydantic_core": "pydantic-core"}
+    for top in SAFE_THIRD_PARTY:
+        dist = names.get(top, DIST.get(top, top)).lower().replace("_", "-")
+        assert dist in pins and pins[dist][1], top

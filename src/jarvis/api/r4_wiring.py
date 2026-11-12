@@ -159,6 +159,7 @@ def wire_photos(app: FastAPI, s: Settings, docs: Docs) -> PhotosService | None:
         return None
     from jarvis.contacts.client import ContactsClient
     from jarvis.photos.edge import BridgeHomeEdge
+    from jarvis.photos.models import ImportLimits
     from jarvis.photos.picker import PickerClient
 
     return PhotosService(
@@ -167,6 +168,8 @@ def wire_photos(app: FastAPI, s: Settings, docs: Docs) -> PhotosService | None:
         faces,
         ContactsClient(google),
         PhotosState(docs, prefix=s.firestore_prefix),
+        # R11.1 D14: his own limits from the first call (not only once Part C's part is used)
+        limits=ImportLimits(s.photos_max_picked, s.photos_import_batch),
     )
 
 

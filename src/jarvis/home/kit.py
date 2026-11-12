@@ -39,6 +39,9 @@ SAFE_THIRD_PARTY = frozenset(
         "httpx",
         "aiomqtt",
         "annotated_types",
+        # R11.1 C (D15): the face engine's picture libraries (hash-locked in the bridge image)
+        "cv2",
+        "numpy",
     }
 )
 SAFE_JARVIS = (

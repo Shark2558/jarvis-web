@@ -1,4 +1,4 @@
-Version v11.1.1 · 12 Nov 2026, 06:17 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.2 · 12 Nov 2026, 06:35 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # Release R11.1 — Your observations, fixed (`v11.1.0`)
 
@@ -254,6 +254,29 @@ orders (Updates with a fixed sender-class check), Updates, Promotions (count onl
 messages are withheld exactly as today (`gmail_digest.withheld`, `mask_for_speech`); the background read for
 the brief goes through `tools/background.py` and obeys the "Search and read email" row.
 
+**D21 · Orchestrator's additions (Mark XV, 12 Nov 2026, binding on the part named).**
+- **A · Undo of a batch is not a new way round the card.** When the *model* asks for `calendar_undo_events`
+  it is a card like any other write (it removes up to 100 events). Only your own press of "Undo all" on the
+  reply card runs it without a second card, through the gateway, in exactly the way today's reply-card and
+  Activity "Undo" presses do (`tools/reply_cards.py`, `undo/`): follow that path, add no new bypass.
+- **B · "Understood as" never rewrites the things that matter most.** Neither the fixed rules nor the fast
+  tier may change a number, an amount, a date, a time, a person's name, a phone number or an e-mail address.
+  If the only possible correction touches one of those, the step asks its one question instead (D8.3).
+- **C · Unnamed face groups do not live for ever.** On the laptop an unnamed group (its crops and
+  embeddings), and any unknown face seen in fewer than 3 pictures, is forgotten after
+  `FACE_GROUPS_KEEP_DAYS` (a `bridge.env` setting, default 90) unless you name it; the pictures in your
+  folder are never touched, so a later scan can group them again. Each group has "Forget this group". The
+  Privacy panel gets a "Face groups" row (count; delete all) through the part's `privacy` source, and a
+  delete is only reported done when the laptop has confirmed it (if the laptop is off it stays pending and
+  is retried, as R3's face delete does). The R3 rule for strangers at the camera (72 hours) is unchanged.
+- **D · A name can come from words in the picture, never from a face.** If a picture carries a name as
+  visible text (a caption, a name board, a jersey, a book cover), JARVIS may say "The caption names X" and
+  offer to look X up; that look-up is the existing people research with its unchanged check
+  (`people/gate.py`), so a public figure passes and a private person is refused exactly as when you type the
+  name. No name, guess or "looks like" is ever produced from a face, for anyone, public or private, you and
+  your family included. The eval covers both: a captioned picture of a made-up public figure (offer made,
+  the gate decides) and an uncaptioned face (no name, no person search).
+
 ## Needs the owner (safe defaults until answered; none blocks the build)
 
 | # | Question | Default built |
@@ -267,6 +290,7 @@ the brief goes through `tools/background.py` and obeys the "Search and read emai
 | 7 | Which folder on the laptop is the watched photo folder? | Off until you set `PHOTOS_DIR` |
 | 8 | To see who a face group is, you look at the laptop's own page. Allow a small face crop to pass through the cloud to your console instead (shown, never stored)? | No: ids and counts only |
 | 9 | Children in the photo folder: group them (naming still needs the guardian's yes), or never group faces that look like children? | Group; naming needs the guardian's yes |
+| 10 | Unnamed face groups are forgotten on the laptop after 90 days unless you name them. A different period? | 90 days |
 
 ## Part split (four builders; worktrees; branches `r11-1-a` … `r11-1-d` from `r11-1-i0`; disjoint files)
 
@@ -413,3 +437,4 @@ Everything above counts against your monthly limit and is refused, in plain word
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v11.1.1 | 12 Nov 2026, 06:17 IST | R11.1 | First edition, with the I0 seams built: the twelve observations and their root causes checked against the code (corrections for O2, O3, O11), D0–D20, owner decisions with safe defaults, the A–D split with each part's files, the I0 seams, what I1 wires, tests and evals, acceptance, cost in ₹, risks and what is not verified live | 🛠 Mark XV |
+| v11.1.2 | 12 Nov 2026, 06:35 IST | R11.1 | D21, the orchestrator's additions after reading the plan: the batch Undo adds no bypass (A); "Understood as" never rewrites numbers, dates, times, names or addresses (B); unnamed face groups expire after 90 days, can be forgotten and appear in Privacy (C); a name may come from words in a picture and then meets the unchanged people check, never from a face (D); owner question 10 | 🛠 Mark XV |

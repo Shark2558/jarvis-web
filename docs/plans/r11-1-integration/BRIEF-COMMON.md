@@ -1,4 +1,4 @@
-Version v11.1.1 · 12 Nov 2026, 06:17 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.2 · 12 Nov 2026, 06:35 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 — the common builder brief (Parts A–D)
 
@@ -145,10 +145,20 @@ every other test does; CI runs plain `pytest`.
     tests/test_r6_wiring_seams.py tests/test_arch_coverage.py tests/test_r51_console_assets_linked.py
 /tmp/venv-b/bin/ruff check src tests evals scripts && /tmp/venv-b/bin/ruff format --check src tests evals scripts
 /tmp/venv-b/bin/mypy src                                  # the 9 pre-existing errors only
-/tmp/venv-b/bin/python evals/r11_1/run.py --mock --part <yours>   # passes; your control fails it
-/tmp/venv-b/bin/python scripts/arch_coverage.py && /tmp/venv-b/bin/python scripts/check_doc_versions.py
-JARVIS_BROWSER_TESTS=1 /tmp/venv-c/bin/pytest -q tests/browser -m browser -k "r11_1 or ui_audit"
+PYTHONPATH=$PWD/src /tmp/venv-b/bin/python evals/r11_1/run.py --mock --part <yours>   # passes; your control fails it
+PYTHONPATH=$PWD/src /tmp/venv-b/bin/python scripts/arch_coverage.py && PYTHONPATH=$PWD/src /tmp/venv-b/bin/python scripts/check_doc_versions.py
+flock /tmp/r111-logs/heavy.lock env JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src \
+    /tmp/venv-c/bin/python -m pytest -q tests/browser -m browser -k "r11_1 or ui_audit"
 ```
+
+Run every command from YOUR worktree. `pytest` there already uses your worktree's `src`; a plain
+`python` does not (the environments were installed from the main checkout), hence `PYTHONPATH=$PWD/src`.
+`/tmp/venv-c` has no `pytest` script: use `python -m pytest`. Any browser run, `mypy src`, and any run
+of more than about 500 tests goes behind `flock /tmp/r111-logs/heavy.lock …` so the four builders take
+turns on the two CPUs. `openpyxl`, `xlrd`, `opencv-python-headless` and `numpy` are already installed in
+all three environments for your tests; I1 adds them to the lock files, you do not. You do not spawn
+other agents and you do not review your own part: the orchestrator runs the fresh-context reviews when
+you report. Read the plan's **D21** as well: it binds your part.
 
 The machine has 2 CPUs and is shared by four builders: run your own tests and the guard tests above,
 not the whole suite (I1 runs it). Wait for an environment's `READY` file (`/tmp/venv-b/READY`,
@@ -170,3 +180,4 @@ lists honestly what you could not verify live.
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v11.1.1 | 12 Nov 2026, 06:17 IST | R11.1 | First edition with the R11.1 I0 seams | 🛠 Mark XV |
+| v11.1.2 | 12 Nov 2026, 06:35 IST | R11.1 | Test commands corrected for worktrees (`PYTHONPATH`, `python -m pytest`, the heavy lock); libraries already installed; builders do not review themselves; pointer to the plan's D21 | 🛠 Mark XV |

@@ -329,11 +329,14 @@ async def test_a_delete_is_not_acked_while_the_groups_cannot_be_removed(tmp_path
     )  # retried later, never "done"
 
 
-def test_the_score_meets_the_clouds_bar_exactly_at_the_laptops_threshold() -> None:
-    assert confidence(0.42, 0.42) == 0.9
+def test_the_score_meets_the_clouds_bar_only_a_margin_above_the_grouping_threshold() -> None:
+    # review C-sec L6: a face alike enough to JOIN a group (0.42) is not yet NAMED; 0.52 is
+    assert confidence(0.42, 0.42) < 0.9 and confidence(0.519, 0.42) < 0.9
+    assert confidence(0.52, 0.42) == 0.9
     assert confidence(1.0, 0.42) == 1.0 and 0.9 < confidence(0.7, 0.42) < 1.0
     assert confidence(0.41, 0.42) < 0.9 and confidence(0.0, 0.42) == 0.0
     assert confidence(-0.3, 0.42) == 0.0 and confidence(2.0, 0.42) == 1.0
+    assert confidence(0.90, 0.80) == 0.9  # the margin holds for every setting of the threshold
 
 
 def test_the_registry_factory_builds_the_real_engine_lazily(tmp_path: Path) -> None:

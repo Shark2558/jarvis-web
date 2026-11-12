@@ -55,7 +55,12 @@ if ($HaToken) {
 if ($Update) {
     Say 'Updating JARVIS Home (your camera, passwords, Home Assistant token and link are kept)'
     $kitInWsl = WslPath $Kit
-    InWsl "KIT_DIR='$kitInWsl' bash '$kitInWsl/setup-wsl.sh' update"
+    if ($kitInWsl.Contains("'")) { Write-Host 'The kit folder''s name has a quote mark in it. Extract the kit to C:\ (C:\JARVIS-Home) and run this again.'; exit 1 }
+    $env:KIT_DIR = $kitInWsl
+    $savedWslEnv = $env:WSLENV
+    $env:WSLENV = 'KIT_DIR'
+    try { InWsl 'bash "$KIT_DIR/setup-wsl.sh" update' }
+    finally { $env:WSLENV = $savedWslEnv; Remove-Item Env:KIT_DIR -ErrorAction SilentlyContinue }
     exit 0
 }
 
@@ -73,9 +78,10 @@ if ($PhotosDir) {
     Say 'The photo folder'
     Write-Host 'The bridge will only READ the photos in this folder to find faces. It never changes, moves or deletes them, and nothing leaves this laptop.'
     $env:JARVIS_PHOTOS_DIR = WslPath $PhotosDir
+    $savedWslEnv = $env:WSLENV
     $env:WSLENV = 'JARVIS_PHOTOS_DIR'
     try { InWsl 'bash ~/jarvis-home/setup-wsl.sh photos-dir' }
-    finally { Remove-Item Env:JARVIS_PHOTOS_DIR -ErrorAction SilentlyContinue }
+    finally { $env:WSLENV = $savedWslEnv; Remove-Item Env:JARVIS_PHOTOS_DIR -ErrorAction SilentlyContinue }
     Write-Host 'To switch it off later:  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -PhotosDir off'
     exit 0
 }

@@ -3,8 +3,11 @@
 
 `create_bridge(cfg, factories)` builds the one web app on 127.0.0.1:8099 (Tailscale Funnel proxies
 port 8443 to it). It serves ONLY `jarvis.home.ports.BRIDGE_ROUTES`; everything else is a bare 404.
-For a fixed route the order is: body <= 64 KB (413) -> signature (`BridgeAuth.check`, a bare 401 on
-any failure) -> JSON parse -> the plugin's handler -> a signed answer. A handler runs only after the
+For a fixed route the order is: a well-formed Content-Length (400) -> body <= 64 KB (413), read
+within `BODY_READ_S` (408) -> signature (`BridgeAuth.check`, a bare 401 on any failure) -> JSON
+parse -> the plugin's handler -> a signed answer. On the one large route (a photo, 6 MB) the
+signature over the body hash the cloud declared is checked BEFORE a byte is read (review C-sec
+M1), one upload at a time, and the hash of what was read must be the one declared. A handler runs only after the
 signature, so an unauthenticated caller reaches no plugin code and no Home Assistant call.
 
 The core plugin (this module) serves health, state, devices and device actions; B's camera plugin
@@ -58,6 +61,7 @@ from jarvis.homebridge.state import BridgeStore
 
 log = logging.getLogger(__name__)
 RESTART_DELAY_S = 5.0
+BODY_READ_S = 30.0  # a body that takes longer to arrive is not waited for (408)
 
 
 class CorePlugin:
@@ -281,18 +285,25 @@ class Bridge:
         """The body within the route's cap, or the status to answer with. Megabytes (R11.1 O7:
         one photo) are read only for a caller whose header could be this home's (the signature
         itself is checked afterwards, over the body), and one upload at a time."""
-        if not _declared_ok(request, limit):
+        declared = _declared(request)
+        if declared == -1:
+            return 400  # a Content-Length that is not a plain number: never a 500
+        if declared is not None and declared > limit:
             return 413
         if limit <= MAX_BODY_BYTES:
-            body = await _read_capped(request, limit)
-        elif not self.auth.plausible(request.headers.get(signing.HEADER)):
+            return await _read_in_time(request, limit)
+        digest = request.headers.get(signing.BODY_HASH_HEADER)
+        target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        header = request.headers.get(signing.HEADER)
+        if not self.auth.precheck(header, method=request.method, target=target, digest=digest):
             return 401
-        elif self._large.locked():
+        if self._large.locked():
             return 503
-        else:
-            async with self._large:
-                body = await _read_capped(request, limit)
-        return 413 if body is None else body
+        async with self._large:
+            body = await _read_in_time(request, limit)
+        if isinstance(body, bytes) and signing.body_hash(body) != digest:
+            return 401  # not the body that was signed
+        return body
 
     async def _serve(self, request: Request) -> Response:
         method, path = request.method, request.url.path
@@ -342,13 +353,31 @@ def body_limit(method: str, path: str) -> int:
     return MAX_BODY_BYTES_BY_ROUTE.get((method, path), MAX_BODY_BYTES)
 
 
-def _declared_ok(request: Request, limit: int) -> bool:
+def _declared(request: Request) -> int | None:
+    """The declared Content-Length; None when there is none; -1 when it is not a plain ASCII
+    number (review C-sec L4: "²".isdigit() is True, int("²") raises)."""
     declared = request.headers.get("content-length")
-    return declared is None or (declared.isdigit() and int(declared) <= limit)
+    if declared is None:
+        return None
+    if not (declared.isascii() and declared.isdigit()) or len(declared) > 12:
+        return -1
+    return int(declared)
+
+
+async def _read_in_time(request: Request, limit: int) -> bytes | int:
+    """The body within its cap (413) and within `BODY_READ_S` (408): a caller that sends one
+    byte a minute holds nothing for long."""
+    try:
+        async with asyncio.timeout(BODY_READ_S):
+            body = await _read_capped(request, limit)
+    except TimeoutError:
+        return 408
+    return 413 if body is None else body
 
 
 async def _read_capped(request: Request, limit: int = MAX_BODY_BYTES) -> bytes | None:
-    if not _declared_ok(request, limit):
+    declared = _declared(request)
+    if declared == -1 or (declared is not None and declared > limit):
         return None
     chunks: list[bytes] = []
     size = 0

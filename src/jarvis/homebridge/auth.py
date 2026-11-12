@@ -49,19 +49,32 @@ class BridgeAuth:
     def now(self) -> float:
         return self._clock() + self.offset_s
 
-    def plausible(self, header: str | None) -> bool:
-        """Before a LARGE body is read (R11.1 O7: one photo): the header has the right shape,
-        names this home and is fresh. It is not the signature check (that needs the body, and
-        `check` still runs on it); it only keeps a stranger from making the bridge buffer
-        megabytes."""
+    def precheck(self, header: str | None, *, method: str, target: str, digest: str | None) -> bool:
+        """Before a LARGE body is read (R11.1 O7: one photo; review C-sec M1): the signature over
+        the body hash the cloud declared (`X-Jarvis-Body-Sha256`), with this home's keys, a fresh
+        time and an unseen nonce. Only the cloud can pass it, so nobody else can make the bridge
+        buffer megabytes or hold its one upload slot. `check` still runs on the body itself."""
         try:
             signed = signing.parse(header)
         except signing.SignatureError:
             return False
         linked = self._store.linked()
-        if linked is None or signed.home_id != linked.home_id:
+        if linked is None or signed.home_id != linked.home_id or signed.t <= self._floor:
             return False
-        return abs(self.now() - signed.t) <= signing.MAX_SKEW_S and signed.t > self._floor
+        try:
+            signing.verify_declared(
+                signed,
+                linked.keys,
+                "down",
+                method=method,
+                target=target,
+                digest=digest,
+                now=self.now(),
+                nonces=self._nonces,
+            )
+        except signing.SignatureError:
+            return False
+        return True
 
     def check(self, header: str | None, *, method: str, target: str, body: bytes) -> Verified:
         """Passes, or raises SignatureError (the caller answers a bare 401)."""

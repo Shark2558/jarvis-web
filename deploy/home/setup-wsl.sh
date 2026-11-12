@@ -185,7 +185,9 @@ fetch_model() { # sha256 file address
     return 0
   fi
   rm -f "$file.part"
-  if ! curl -fsSL --retry 3 --max-time 900 -o "$file.part" "$url"; then
+  # https only, also after a redirect; TLS 1.2 or newer; no file larger than 64 MB is taken
+  if ! curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --max-filesize 67108864 \
+      --retry 3 --max-time 900 -o "$file.part" "$url"; then
     rm -f "$file.part"
     echo "Couldn't download $2. Check the internet and run this again." >&2
     return 1
@@ -203,7 +205,10 @@ step_models() {
   cd "$HOME_DIR"
   mkdir -p models
   local list="${MODELS_FILE:-models/MODELS.txt}" sha file url failed=0
-  [ -f "$list" ] || fail "the list of face model files is missing. Download the home kit again."
+  if [ ! -f "$list" ]; then  # only warns: the camera and the rest go on without the models
+    echo "The list of face model files is missing. Download the home kit again." >&2
+    return 1
+  fi
   say "Getting the two face model files (about 40 MB, once)"
   while read -r sha _ _ file url; do
     case "$sha" in ''|'#'*) continue ;; esac
@@ -233,6 +238,23 @@ restart_bridge() {
   "${COMPOSE[@]}" up -d --force-recreate bridge >/dev/null || fail "couldn't restart the bridge. Run  bash setup-wsl.sh status  and tell Claude what it says."
 }
 
+photos_dir_ok() { # a resolved folder: never a whole disk, a system folder or the kit itself
+  local dir="$1" kit
+  case "$dir" in
+    /|/bin|/boot|/dev|/dev/*|/etc|/etc/*|/home|/lib|/lib32|/lib64|/media|/mnt|/opt|/proc|/proc/*) return 1 ;;
+    /root|/run|/run/*|/sbin|/srv|/sys|/sys/*|/tmp|/usr|/usr/*|/var|/var/*|/snap|/snap/*) return 1 ;;
+    /mnt/[a-z]|/mnt/wsl|/mnt/wsl/*|/mnt/wslg|/mnt/wslg/*|/mnt/[a-z]/Users|/mnt/[a-z]/Windows|/mnt/[a-z]/Windows/*) return 1 ;;
+    /mnt/[a-z]/Program\ Files*|/mnt/[a-z]/ProgramData|/mnt/[a-z]/ProgramData/*) return 1 ;;
+  esac
+  if [[ "$dir" =~ ^/mnt/[a-z]/Users/[^/]+$ ]] || [[ "$dir" =~ ^/home/[^/]+$ ]]; then
+    return 1  # a whole user profile or home folder, not a folder of photos
+  fi
+  kit="$(realpath -m -- "$HOME_DIR")"
+  case "$kit/" in "$dir"/*) return 1 ;; esac  # the kit's folder, or a folder that holds it
+  case "$dir/" in "$kit"/*) return 1 ;; esac  # inside the kit's folder
+  return 0
+}
+
 step_photos_dir() { # a folder on this laptop, or "off" (setup-windows.ps1 -PhotosDir)
   local dir="${1:-${JARVIS_PHOTOS_DIR:-}}"
   [ -n "$dir" ] || fail "usage: bash setup-wsl.sh photos-dir /path/to/your/photo/folder   (or: photos-dir off)"
@@ -247,11 +269,12 @@ step_photos_dir() { # a folder on this laptop, or "off" (setup-windows.ps1 -Phot
     /*) ;;
     *) fail "give the folder's full path (it starts with /). setup-windows.ps1 -PhotosDir does that for you." ;;
   esac
-  dir="${dir%/}"
-  [ -n "$dir" ] || fail "choose a folder of photos, not the whole disk."
   [ -d "$dir" ] || fail "no such folder: $dir. Check the path and try again."
+  # the folder itself, with every "//", "..", link and trailing slash resolved (review C-sec L1)
+  dir="$(realpath -e -- "$dir" 2>/dev/null)" || fail "no such folder. Check the path and try again."
+  photos_dir_ok "$dir" || fail "choose a folder of photos, not a whole disk, a system folder or the home kit's own folder."
   case "$dir" in
-    *[\$\#\"\'\\:]*|*$'\n'*) fail "that folder's name has a character the settings file can't hold (\$ # : \\ or a quote). Rename the folder and try again." ;;
+    *[\$\#\"\'\\:]*|*$'\n'*|*$'\r'*) fail "that folder's name has a character the settings file can't hold (\$ # : \\ or a quote). Rename the folder and try again." ;;
   esac
   put_env bridge.env PHOTOS_DIR "$dir"
   restart_bridge

@@ -15,7 +15,8 @@ signed answers carry group ids and counts only: never a picture, a crop or an em
 
 - `person` is only ever an id the cloud synced as consented (the faces plugin's `FaceLibrary`
   decides; no consent here means nobody is named, whatever the store says). `score` is the
-  laptop's likeness on the wire's scale: 0.9 (the cloud's bar) exactly at this laptop's threshold.
+  laptop's likeness on the wire's scale: 0.9 (the cloud's bar) at this laptop's threshold plus
+  `NAME_MARGIN` (a stricter bar for naming than for grouping).
 - `enrol` names a group for a consented id and copies its best crops into the camera's face
   library under that id, so the camera recognises the person too. If Frigate is down the copy is
   done later (`copy_to_camera`, every minute); photos are recognised by this laptop meanwhile.
@@ -67,6 +68,7 @@ DEFAULT_KEEP_DAYS = 90
 DEFAULT_MODELS_DIR = "/models"
 DEFAULT_MOUNT = "/photos"
 RECOGNISED = 0.9  # the cloud's bar for a name (faces.ports.RECOGNITION_THRESHOLD)
+NAME_MARGIN = 0.10  # how much more alike than the grouping threshold a face must be to be named
 MAX_LISTED = 100
 MAX_FORGET = 100
 SWEEP_S = 3600.0
@@ -76,11 +78,14 @@ NO_STORE = "The face store on this laptop can't be opened right now."
 
 
 def confidence(cosine: float, match: float) -> float:
-    """The laptop's likeness on the wire's 0..1 scale: exactly 0.9 at this laptop's threshold."""
+    """The laptop's likeness on the wire's 0..1 scale. The cloud's bar (0.9) is met only
+    `NAME_MARGIN` above this laptop's grouping threshold (review C-sec L6): a face just alike
+    enough to join a group is grouped, but not reported as the named person."""
     c = max(0.0, min(1.0, float(cosine)))
-    if c >= match:
-        return round(min(1.0, RECOGNISED + (1 - RECOGNISED) * (c - match) / (1 - match)), 4)
-    return round(RECOGNISED * c / match, 4)
+    bar = min(0.95, match + NAME_MARGIN)
+    if c >= bar:
+        return round(min(1.0, RECOGNISED + (1 - RECOGNISED) * (c - bar) / (1 - bar)), 4)
+    return round(RECOGNISED * c / bar, 4)
 
 
 def _whole(text: object, default: int, low: int, high: int) -> int:

@@ -54,7 +54,7 @@ def test_the_picture_libraries_are_hash_locked_for_the_bridge_image() -> None:
 
 def test_the_image_caps_the_decoder_and_has_the_two_mount_points() -> None:
     df = (HOME / "bridge.Dockerfile").read_text()
-    assert "OPENCV_IO_MAX_IMAGE_PIXELS=150000000" in df
+    assert "OPENCV_IO_MAX_IMAGE_PIXELS=50000000" in df  # review C-sec H2: the 50 MP own-file cap
     assert "mkdir /data /models /photos" in df and "USER 10001" in df
     assert "pip install --require-hashes --no-deps -r bridge-requirements.txt" in df
 
@@ -280,7 +280,7 @@ def test_the_windows_script_has_update_and_photo_folder_runs_before_the_first_ru
     first_run = ps.index("# 1. Windows")
     update, photos = ps.index("if ($Update) {"), ps.index("if ($PhotosDir) {")
     assert update < first_run and photos < first_run
-    assert "setup-wsl.sh' update" in ps[update:first_run] and "exit 0" in ps[update:first_run]
+    assert 'setup-wsl.sh" update' in ps[update:first_run] and "exit 0" in ps[update:first_run]
     block = ps[photos:first_run]
     assert "setup-wsl.sh photos-dir" in block and "WslPath $PhotosDir" in block
     assert "Test-Path -LiteralPath $PhotosDir -PathType Container" in block and "exit 0" in block
@@ -304,3 +304,78 @@ def test_the_readme_says_what_the_laptop_now_does_with_photos() -> None:
         "JPEG",
     ):
         assert needle in text, needle
+
+
+# ---- review C-sec L1, L2, L3 and C-code L1, L2: the scripts' small holes ----------------------------
+
+
+def test_a_whole_disk_a_system_folder_or_the_kit_itself_is_refused(tmp_path: Path) -> None:
+    run(tmp_path, "configure")
+    live = tmp_path / "home" / "jarvis-home"
+    before = (live / "bridge.env").read_text()
+    for bad in ("//", "/", "///", "/etc", "/usr/share", "/proc/1", str(tmp_path / "home")):
+        done, calls = run(tmp_path, "photos-dir", bad)
+        assert done.returncode == 1, (bad, done.stdout)
+        assert "force-recreate" not in calls, bad
+    inside = live / "photos-off"
+    inside.mkdir(exist_ok=True)
+    done, _ = run(tmp_path, "photos-dir", str(inside))
+    assert done.returncode == 1 and "home kit" in done.stderr
+    assert (live / "bridge.env").read_text() == before  # nothing was written
+    # "//" was the reviewer's way past the old check: it resolves to the whole disk
+    photos = tmp_path / "Pics"
+    photos.mkdir()
+    done, _ = run(tmp_path, "photos-dir", str(photos) + "//")
+    assert done.returncode == 0 and f"PHOTOS_DIR={photos}\n" in (live / "bridge.env").read_text()
+
+
+@pytest.mark.parametrize(
+    ("path", "ok"),
+    [
+        ("/mnt/c", False),
+        ("/mnt/c/Windows", False),
+        ("/mnt/c/Windows/System32", False),
+        ("/mnt/c/Users", False),
+        ("/mnt/c/Users/someone", False),  # a whole profile
+        ("/mnt/c/Program Files", False),
+        ("/mnt/c/ProgramData/x", False),
+        ("/home/someone", False),
+        ("/mnt/wsl/x", False),
+        ("/mnt/c/Users/someone/Pictures/JARVIS", True),
+        ("/mnt/d/Photos", True),
+        ("/home/someone/photos", True),
+    ],
+)
+def test_the_folder_rule_by_path(path: str, ok: bool) -> None:
+    script = (HOME / "setup-wsl.sh").read_text()
+    start = script.index("photos_dir_ok() {")
+    body = script[start : script.index("\n}\n", start) + 3]
+    done = subprocess.run(
+        ["bash", "-c", body + '\nphotos_dir_ok "$1"', "x", path],
+        env={"HOME_DIR": "/home/someone/jarvis-home", "PATH": "/usr/bin:/bin"},
+        capture_output=True, text=True, timeout=10,
+    )  # fmt: skip
+    assert (done.returncode == 0) is ok, (path, done.stderr)
+
+
+def test_models_are_fetched_over_https_only_and_size_capped() -> None:
+    script = (HOME / "setup-wsl.sh").read_text()
+    fetch = script[script.index("fetch_model() {") : script.index("step_models() {")]
+    for flag in ("--proto '=https'", "--proto-redir '=https'", "--tlsv1.2", "--max-filesize"):
+        assert flag in fetch, flag
+
+
+def test_a_kit_without_its_model_list_only_warns_and_goes_on(tmp_path: Path) -> None:
+    run(tmp_path, "configure")
+    done, calls = run(tmp_path, "up", MODELS_FILE=str(tmp_path / "no-such-list.txt"))
+    assert done.returncode == 0, done.stderr
+    assert "up -d --build" in calls and "model files is missing" in done.stderr
+
+
+def test_the_windows_script_restores_wslenv_and_refuses_a_quote_in_the_kit_folder() -> None:
+    ps = (HOME / "setup-windows.ps1").read_text()
+    update = ps[ps.index("\nif ($Update) {") : ps.index("\nif ($PhotosDir) {")]
+    assert "KIT_DIR='$kitInWsl'" not in update  # no path inside a shell string any more
+    assert '$kitInWsl.Contains("\'")' in update and "$env:WSLENV = $savedWslEnv" in update
+    photos = ps[ps.index("\nif ($PhotosDir) {") :]
+    assert "$savedWslEnv = $env:WSLENV" in photos and "$env:WSLENV = $savedWslEnv" in photos

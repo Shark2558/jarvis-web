@@ -102,3 +102,37 @@ async def test_the_recently_deleted_panel_lists_up_to_a_whole_batch(settings: Se
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             r = await c.get("/v1/deleted")
     assert r.status_code == 200 and len(r.json()["items"]) == 60
+
+
+# ---- INTEGRATION-A 3.8: Approve all says a batch's own count when no model can narrate -------
+async def test_approve_all_without_a_narrator_says_the_batch_s_own_count(
+    brain: Any, provider: MockProvider
+) -> None:
+    from jarvis.core.guardrails import ActionRisk
+    from jarvis.core.models import ChatRequest
+    from jarvis.llm.base import ToolCall
+    from jarvis.tools import Tool
+
+    said = "58 events added, 2 failed, Sir. Retry the 2 from the card under this reply."
+
+    async def batch(_a: dict[str, Any]) -> dict[str, Any]:
+        return {"added": 58, "failed": 2, "message": said}
+
+    brain.gateway.registry.register(
+        Tool(
+            "calendar_create_events",
+            "a batch",
+            {"type": "object", "properties": {"plan": {"type": "string"}}},
+            ActionRisk.REVERSIBLE,
+            batch,
+            summary_template="Add 60 events to your calendar: {plan}",
+        )
+    )
+    call = ToolCall(id="b1", name="calendar_create_events", arguments={"plan": "CCA"})
+    provider.script_tool_calls([call], "Waiting for you, Sir.")
+    resp = await brain.chat(ChatRequest(message="add my plan", channel="voice"))
+    [card] = resp.pending_approvals
+    provider.fail_next = 5  # no model can narrate what happened
+    out = await brain.approve_all([card.id], session_id=resp.session_id)
+    assert said in out.reply
+    assert "Done, Sir: Add 60 events" not in out.reply

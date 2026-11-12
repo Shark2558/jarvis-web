@@ -1,4 +1,4 @@
-Version v7.0.1 · 12 Nov 2026, 07:28 IST · Release R7 · Status: Draft · Owner: 🛠 Mark XV
+Version v7.0.2 · 12 Nov 2026, 08:05 IST · Release R7 · Status: Draft · Owner: 🛠 Mark XV
 
 # Release R7 — Mobile, watch & phone camera (`v7.0.0`)
 
@@ -839,6 +839,27 @@ about every hour (the folder). A live camera look uses the battery like a video 
 17. **Which languages should the camera read?** Default: English only. Hindi, Malayalam and Odia can follow
     (2 to 6 MB each).
 
+## The owner's answers so far (12 Nov 2026)
+
+Only what the build needs is written here (the repository is public).
+
+| Question | Answer | What it changes |
+|---|---|---|
+| 1 · The phone | Android 16, with Chrome as its browser | Inside the supported range (D23: `minSdk` 28). Health Connect is part of Android from 14 on, so nothing extra is installed. The runtime notification permission, the per-app language and predictive-back rules of Android 13 to 16 apply; I0 lists them. |
+| 2 · Android Studio | Rabbit 2, 2026.2.2 Patch 1 (build `AI-262.10968.63`, 5 Nov 2026; its own Java runtime is 25) | The newest Android Gradle plugin today is 9.5.1 (Gradle 9.6.0, JDK 17 as the minimum; read 12 Nov 2026 [S36]). I0 still confirms, on the maker's Studio-to-plugin table, that this Studio opens that plugin, and that Gradle 9.6 runs on the Studio's Java 25; otherwise the wrapper pins the Gradle JDK to 17. |
+| 3 · The watch | A Noise watch that uses the NoiseFit app | See "What the research found" below. D17's reader is built as planned for anything that writes to Health Connect; watch sleep and heart numbers stay "no watch data yet" until the owner's own check shows them arriving. |
+| 9 · DigiLocker | A document has a Share button on his phone | D16's first way (share into JARVIS) works for him; the watched folder stays optional. |
+| 8, 13, 16 and the rest | Not answered | The safe defaults stand. |
+| The shell (D1) | Told on 12 Nov; no objection so far | Proceed with D1 unless he says otherwise before I0. |
+
+**What the research found about the watch (12 Nov 2026).**
+- The maker's own support page says a Noise watch "can sync with Google Fit via NoiseFit app" and names no other app [S22]. Its product page and the app's store listing (updated 7 Sep 2026) do not mention Health Connect.
+- A third-party integration page says of NoiseFit: "On Android the app syncs to Google Fit rather than Health Connect" [S44].
+- Google's Fit app has a switch "Sync Fit with Health Connect" (Profile → Settings) [S45]. Whether Fit passes on what ANOTHER app wrote into it is not stated on Google's pages read today: unverified.
+- Google says "Google Fit APIs will be supported until the end of 2026" [S21]. A route through Fit may therefore stop within weeks unless the maker moves to Health Connect.
+- Gadgetbridge (open source) can write a watch's data to Health Connect [S48], but this watch is not on the device pages read today [S49]: not a route to rely on.
+- **So:** the only known route today is watch → NoiseFit → Google Fit → (the Fit switch) → Health Connect, unverified and possibly short-lived. The owner's two-minute check on his phone decides it (steps given to him in chat; they go into `OWNER-STEPS.md`). The phone's own step count reaches Health Connect regardless of the watch.
+
 ## Cost (₹; no new paid service, secret or Scheduler job)
 
 | What | Cost | When |
@@ -1087,8 +1108,12 @@ check, and the port (D13) already has the place for both.
 | S46 | Not conclusive: a third-party guide to DigiLocker's download ("saves to your device"; no folder named) | https://www.cars24.com/article/download-driving-licence-via-digilocker-guide/ |
 | S47 | AndroidX source (the tip of `androidx-main`, not a release): the manifests that WorkManager, AndroidX core and the Health Connect client merge into an app; android-browser-helper's manifest | https://github.com/androidx/androidx/blob/androidx-main/work/work-runtime/src/main/AndroidManifest.xml · https://github.com/androidx/androidx/blob/androidx-main/core/core/src/main/AndroidManifest.xml · https://github.com/androidx/androidx/blob/androidx-main/health/connect/connect-client/src/main/AndroidManifest.xml · https://github.com/GoogleChrome/android-browser-helper/blob/main/androidbrowserhelper/src/main/AndroidManifest.xml |
 
+- [S48] Gadgetbridge, Health Connect integration: https://gadgetbridge.org/basics/integrations/health-connect/ (read 12 Nov 2026)
+- [S49] Gadgetbridge device pages (Moyoung, GloryFit): https://gadgetbridge.org/gadgets/wearables/moyoung/ and https://freeyourgadget.codeberg.page/gadgetbridge_org/gadgets/wearables/gloryfit/ (read 12 Nov 2026)
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v7.0.1 | 12 Nov 2026, 07:28 IST | R7 | First edition: goal and limits, the eight deliverables mapped, findings from the code with file:line, the decision record for the shell with its evidence table (a Trusted Web Activity inside a small native app, not Capacitor), D0–D26, data model, modules, server changes, the A–E split with each part's files, the I0 seams with every pinned test they touch, tests and evals with negative controls, acceptance, the owner's numbered steps, 17 owner questions with safe defaults, cost in ₹, risks, what is deferred, what is not verified live, Appendix A (52 vision use cases that need no new camera) and the sources | 🛠 Mark XV |
+| v7.0.2 | 12 Nov 2026, 08:05 IST | R7 | The owner's first answers (phone on Android 16 with Chrome; Android Studio Rabbit 2, 2026.2.2 Patch 1; a Noise watch; DigiLocker has Share) and what the research found about the watch and Health Connect (the maker names only Google Fit; Fit's APIs end with 2026; unverified bridge); sources S48, S49 | 🛠 Mark XV |

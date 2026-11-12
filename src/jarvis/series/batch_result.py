@@ -29,11 +29,16 @@ def _count(n: int, word: str = "event") -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 
 
-def create_words(total: int, created: int, there: int, bad: int) -> str:
-    """The one sentence for what a batch did, by code."""
+def create_words(total: int, created: int, there: int, bad: int, unsure: int = 0) -> str:
+    """The one sentence for what a batch did, by code. `bad`: Google refused them; `unsure`:
+    Google did not answer and they could not be found (they may exist: never called failed)."""
+    it = "it" if unsure == 1 else "them"
+    check = f" Google didn't confirm {unsure}: check your calendar before retrying {it}."
+    if not created and not there and unsure:
+        return f"None of the {_count(total)} could be confirmed, Sir.{check}"
     if bad == total:
         return f"None of the {_count(total)} could be added, Sir."
-    if not bad and not there:
+    if not bad and not there and not unsure:
         if total == 1:
             return "The event is in your calendar, Sir."
         return f"All {_count(total)} are in your calendar, Sir."
@@ -42,7 +47,7 @@ def create_words(total: int, created: int, there: int, bad: int) -> str:
         words += f", {there} already there"
     if bad:
         words += f", {bad} failed"
-    return f"{words}, Sir."
+    return f"{words}, Sir." + (check if unsure else "")
 
 
 def _retry_item(o: Outcome, w: Wanted) -> BatchItem:
@@ -60,7 +65,8 @@ def _retry_item(o: Outcome, w: Wanted) -> BatchItem:
 
 
 def _card(bid: str, b: Batch, done: list[Outcome], wanted: Mapping[int, Wanted]) -> BatchCard:
-    bad = [o for o in done if o.event is None]
+    bad = [o for o in done if o.event is None]  # failed, or not confirmed: both can be retried
+    unsure = sum(o.status == "unconfirmed" for o in done)
     created = sum(o.status == "created" for o in done)
     there = sum(o.status == "already_there" for o in done)
     days = sorted(
@@ -75,7 +81,7 @@ def _card(bid: str, b: Batch, done: list[Outcome], wanted: Mapping[int, Wanted])
         first=days[0].isoformat(),
         last=days[-1].isoformat(),
         name=b.name,
-        words=create_words(len(done), created, there, len(bad)),
+        words=create_words(len(done), created, there, len(bad) - unsure, unsure),
         retry=[_retry_item(o, wanted[o.n]) for o in bad],
     )
 
@@ -105,7 +111,15 @@ def create_result(
     }
 
 
-def undo_result(batch: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+NOT_FORGOTTEN = (
+    " Your plan still lists them for now: JARVIS checks your calendar before asking about a "
+    "session, so it won't ask about these."
+)
+
+
+def undo_result(
+    batch: str, items: list[dict[str, Any]], *, plan_updated: bool = True
+) -> dict[str, Any]:
     removed = sum(x["status"] == "removed" for x in items)
     kept = sum(x["status"] == "kept" for x in items)
     failed = sum(x["status"] == "failed" for x in items)
@@ -121,12 +135,15 @@ def undo_result(batch: str, items: list[dict[str, Any]]) -> dict[str, Any]:
             )
         if failed:
             words += f" {failed} could not be removed."
+        if removed and not plan_updated:
+            words += NOT_FORGOTTEN
     return {
         "batch": batch,
         "removed": removed,
         "kept": kept,
         "failed": failed,
         "items": [{k: v for k, v in x.items() if k != "id"} for x in items],
+        "plan_updated": plan_updated,
         "message": words,
     }
 

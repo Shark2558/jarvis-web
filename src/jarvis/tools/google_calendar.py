@@ -303,6 +303,11 @@ class CalendarAPI:
             "slots": [{"start": s.isoformat(), "end": e.isoformat()} for s, e in slots],
         }
 
+    def event_body(self, a: dict[str, Any], tz: ZoneInfo, *, create: bool) -> dict[str, Any]:
+        """The event Google is sent for these arguments (R11.1: each event of a batch is built
+        with the same rules as a single one). ValueError in plain words."""
+        return self._body(a, tz, create=create)
+
     def _body(self, a: dict[str, Any], tz: ZoneInfo, *, create: bool) -> dict[str, Any]:
         body: dict[str, Any] = {}
         if create or "summary" in a:

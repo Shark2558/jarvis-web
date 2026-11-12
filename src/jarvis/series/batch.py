@@ -33,20 +33,16 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Mapping
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector, GoogleUncertain
 from jarvis.logging import get_logger
 from jarvis.series.batch_result import create_result, undo_result
 from jarvis.series.calendar import batch_events
-from jarvis.tools.base import Preview, Tool
+from jarvis.tools.base import Preview
 from jarvis.tools.calendar_batch import (
     BATCH_ID,
-    CREATE,
-    NAME_MAX,
-    PREFIX_MAX,
-    UNDO,
     Batch,
     Made,
     Outcome,
@@ -66,6 +62,7 @@ from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.google_calendar import EVENTS_URL, CalendarAPI, parse_window
 from jarvis.tools.provenance import is_owner_authored_event, mark_outside, unwrap, vouch
+from jarvis.tools.taint import content_tainted
 from jarvis.undo.service import UndoBin
 
 log = get_logger(__name__)
@@ -81,6 +78,7 @@ NO_BIN = (
 CHANGED_WHY = "you changed it"
 UNSURE_WHY = "Google didn't confirm it; check your calendar before retrying"
 FAILED_WHY = "it could not be added"
+FORGET_TRIES = 2
 
 
 class BatchAPI:
@@ -97,6 +95,7 @@ class BatchAPI:
     ) -> None:
         self._google, self._undo = google, undo
         self._limit, self._tz, self._book = limit, tz, book
+        self._zone = _zone(tz)
 
     def _conn(self) -> GoogleConnector:
         conn = self._google()
@@ -107,9 +106,20 @@ class BatchAPI:
     def check(self, a: dict[str, Any]) -> None:
         parse(a, limit=self._limit)
 
+    def _card(self, b: Batch, there: int = 0) -> str:
+        """The card's text; it says when the round read other people's words (MEDIUM-3)."""
+        events = [w.args for w in b.items]
+        return batch_card(
+            events,
+            prefix=b.prefix,
+            plan=b.name,
+            there=there,
+            outside=content_tainted(),
+            tz=self._zone,
+        )
+
     def summarize(self, a: dict[str, Any]) -> str:
-        b = parse(a, limit=self._limit)
-        return batch_card([w.args for w in b.items], prefix=b.prefix, plan=b.name)
+        return self._card(parse(a, limit=self._limit))
 
     async def preview_create(self, a: dict[str, Any]) -> Preview:
         """Before the card: Google must be linked, a followed plan must have room, and the card
@@ -122,13 +132,11 @@ class BatchAPI:
         there = sum(1 for n, _ in await self._numbered(conn, ctx.user_id, b, have) if n in have)
         if b.name and self._book is not None:
             await self._book.room(ctx.user_id, b.name, len(b.items) - there)
-        return Preview(
-            batch_card([w.args for w in b.items], prefix=b.prefix, plan=b.name, there=there)
-        )
+        return Preview(self._card(b, there))
 
     async def _numbered(
         self,
-        conn: GoogleConnector,
+        api: CalendarAPI | GoogleConnector,
         uid: str,
         b: Batch,
         have: Mapping[int, Mapping[str, Any]],
@@ -138,12 +146,13 @@ class BatchAPI:
         is an event already there keeps that event's number (nothing is added twice)."""
         if not b.batch or not have or all(w.n is not None for w in b.items):
             return numbered(b.items, have, bool(b.batch))
-        api = CalendarAPI(conn, None, self._tz)
+        if not isinstance(api, CalendarAPI):  # the preview: made only when it is needed
+            api = CalendarAPI(api, None, self._tz)
         zone = tz or await api.owner_tz(uid)
 
         def sig_of(w: Wanted) -> str:
             try:
-                return signature(api._body(dict(w.args), zone, create=True))  # noqa: SLF001
+                return signature(api.event_body(dict(w.args), zone, create=True))
             except ValueError:
                 return ""
 
@@ -151,7 +160,7 @@ class BatchAPI:
 
     async def _one(
         self,
-        conn: GoogleConnector,
+        api: CalendarAPI,
         uid: str,
         bid: str,
         n: int,
@@ -160,8 +169,9 @@ class BatchAPI:
         outside: bool,
     ) -> Outcome:
         """Create one item; never raises (its outcome says what happened, in plain words)."""
+        conn = api.conn
         try:
-            body = CalendarAPI(conn, None, self._tz)._body(dict(w.args), tz, create=True)  # noqa: SLF001
+            body = api.event_body(dict(w.args), tz, create=True)
             body = stamped(mark_outside(body) if outside else body, bid, n)
             e = await conn.request(
                 uid, "POST", EVENTS_URL, params={"sendUpdates": "none"}, json=body
@@ -194,10 +204,11 @@ class BatchAPI:
         ctx = require_tool_context()
         uid, b = ctx.user_id, parse(a, limit=self._limit)
         conn = self._conn()
-        tz = await CalendarAPI(conn, None, self._tz).owner_tz(uid)
+        api = CalendarAPI(conn, None, self._tz)  # one for the whole batch
+        tz = await api.owner_tz(uid)
         bid = b.batch or batch_id(uid, b)
         have = await batch_events(conn, uid, bid)
-        items = await self._numbered(conn, uid, b, have, tz)
+        items = await self._numbered(api, uid, b, have, tz)
         done = [Outcome(n, "already_there", have[n]) for n, _ in items if n in have]
         todo = [(n, w) for n, w in items if n not in have]
         if b.name and self._book is not None:
@@ -208,21 +219,34 @@ class BatchAPI:
         for i in range(0, len(todo), PARALLEL):
             chunk = todo[i : i + PARALLEL]
             done += await asyncio.gather(
-                *(self._one(conn, uid, bid, n, w, tz, ctx.outside) for n, w in chunk)
+                *(self._one(api, uid, bid, n, w, tz, ctx.outside) for n, w in chunk)
             )
         done = sorted(await self._settle(conn, uid, bid, done), key=lambda o: o.n)
         wanted = dict(items)
         made = [_made(o, wanted[o.n], tz, bid) for o in done if o.event is not None]
-        note = await self._follow(uid, b, made, ctx.outside)
+        unsure = sum(o.status == "unconfirmed" for o in done)
+        note = await self._follow(uid, b, made, ctx.outside, unsure)
         result = create_result(bid, b, done, wanted, note)
         owned = not ctx.outside and all(is_owner_authored_event(o.event) for o in done if o.event)
         return vouch(result, owned)
 
-    async def _follow(self, uid: str, b: Batch, made: list[Made], outside: bool) -> str:
+    async def _follow(
+        self, uid: str, b: Batch, made: list[Made], outside: bool, unsure: int = 0
+    ) -> str:
         """Remember a followed plan's sessions. The events are already in the calendar, so a
-        failure here is reported in the result and never undoes them."""
-        if not b.name or self._book is None or not made:
+        failure here is reported in the result and never undoes them. Events Google did not
+        confirm are not followed until a retry finds them (said, never hidden)."""
+        if not b.name or self._book is None:
             return ""
+        later = (
+            f" {unsure} event{' ' if unsure == 1 else 's '}Google didn't confirm "
+            f"{'is' if unsure == 1 else 'are'} not followed yet: retrying finds and adds "
+            f"{'it' if unsure == 1 else 'them'}."
+            if unsure
+            else ""
+        )
+        if not made:
+            return later.strip()
         try:
             await self._book.remember(
                 uid, name=b.name, prefix=b.prefix, outside=outside, sessions=made
@@ -233,7 +257,7 @@ class BatchAPI:
                 "The events are in the calendar, but the plan could not be remembered, so its "
                 "sessions will not be followed up. Tell the owner."
             )
-        return "The plan is followed: JARVIS asks after each session whether it happened."
+        return "The plan is followed: JARVIS asks after each session whether it happened." + later
 
     # ---- undo -----------------------------------------------------------------------------------
 
@@ -279,14 +303,31 @@ class BatchAPI:
                 *(self._remove(conn, bin_, n, e) for n, e in todo[i : i + PARALLEL])
             )
         gone = [str(x["id"]) for x in items if x["status"] == "removed"]
-        if gone and self._book is not None:
+        updated = await self._forgotten(ctx.user_id, gone)
+        return undo_result(a["batch"], items, plan_updated=updated)
+
+    async def _forgotten(self, uid: str, gone: list[str]) -> bool:
+        """The plan forgets the removed events: tried twice; False (said in the result) when it
+        could not, though check-ins still look before they ask (`SeriesService.recheck`)."""
+        if not gone or self._book is None:
+            return True
+        for attempt in range(FORGET_TRIES):
             try:
-                await self._book.forget(ctx.user_id, gone)
-            except Exception as exc:  # noqa: BLE001 - the events are gone; the plan catches up
+                await self._book.forget(uid, gone)
+                return True
+            except Exception as exc:  # noqa: BLE001 - the events are gone; said, never raised
                 log.error(
-                    "a plan was not updated after an undo", extra={"error": type(exc).__name__}
+                    "a plan was not updated after an undo",
+                    extra={"error": type(exc).__name__, "attempt": attempt + 1},
                 )
-        return undo_result(a["batch"], items)
+        return False
+
+
+def _zone(name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("UTC")
 
 
 def _made(o: Outcome, w: Wanted, tz: ZoneInfo, batch: str) -> Made:
@@ -296,73 +337,4 @@ def _made(o: Outcome, w: Wanted, tz: ZoneInfo, batch: str) -> Made:
     )
 
 
-# ---- tools --------------------------------------------------------------------------------------
-
-_ISO = {"type": "string", "description": "ISO 8601 date-time, e.g. 2027-01-15T19:00:00+05:30"}
-_EVENT = {
-    "type": "object",
-    "properties": {
-        "summary": {"type": "string"},
-        "start": _ISO,
-        "end": _ISO,
-        "description": {"type": "string"},
-        "location": {"type": "string"},
-        "reminders_minutes": {"type": "array", "items": {"type": "integer"}, "maxItems": 5},
-        "n": {"type": "integer", "description": "Its number in the batch; only when retrying."},
-    },
-    "required": ["summary", "start", "end"],
-}
-
-
-def batch_tools(api: BatchAPI, *, limit: int) -> list[Tool]:
-    return [
-        Tool(
-            CREATE,
-            "Add several events to the owner's calendar on ONE approval card that lists them "
-            f"all (1 to {limit} events, no guests). More than three events -> this tool, never "
-            "many calendar_create_event calls. title_prefix puts '<prefix> - ' before every "
-            "title. series {name} makes it a plan JARVIS follows up (it asks after each session "
-            "whether it happened). To retry events that failed, send only those with the batch "
-            "id from the result. Nothing is added until the owner approves.",
-            {
-                "type": "object",
-                "properties": {
-                    "events": {"type": "array", "items": _EVENT, "minItems": 1, "maxItems": limit},
-                    "title_prefix": {"type": "string", "maxLength": PREFIX_MAX},
-                    "series": {
-                        "type": "object",
-                        "properties": {"name": {"type": "string", "maxLength": NAME_MAX}},
-                        "required": ["name"],
-                    },
-                    "batch": {"type": "string", "description": "Only when retrying a batch."},
-                },
-                "required": ["events"],
-            },
-            ActionRisk.REVERSIBLE,
-            api.create,
-            agent="google",
-            check=api.check,
-            summarize=api.summarize,
-            preview=api.preview_create,
-            ask_when=lambda _a: True,
-            may_vouch=True,
-            activity_words="Calendar events added in one batch",
-        ),
-        Tool(
-            UNDO,
-            "Remove every event of one calendar_create_events batch that the owner has not "
-            "changed since (each is kept in Recently deleted for 30 days). The owner approves "
-            "it first; an event he changed is left alone.",
-            {"type": "object", "properties": {"batch": {"type": "string"}}, "required": ["batch"]},
-            ActionRisk.REVERSIBLE,
-            api.undo,
-            agent="google",
-            check=api.check_undo,
-            preview=api.preview_undo,
-            ask_when=lambda _a: True,
-            activity_words="A batch of calendar events removed",
-        ),
-    ]
-
-
-__all__ = ["NOT_LINKED", "NO_BIN", "PARALLEL", "BatchAPI", "batch_tools"]
+__all__ = ["NOT_LINKED", "NO_BIN", "PARALLEL", "BatchAPI"]

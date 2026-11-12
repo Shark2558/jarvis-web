@@ -36,7 +36,8 @@ from typing import Any
 from jarvis.fixes.ports import FixContext, FixPart
 from jarvis.integrations.google import google_tools_configured
 from jarvis.logging import get_logger
-from jarvis.series.batch import BatchAPI, batch_tools
+from jarvis.series.batch import BatchAPI
+from jarvis.series.batch_tools import batch_tools
 from jarvis.series.brief import PlansBrief
 from jarvis.series.job import CheckinJob
 from jarvis.series.phrases import route

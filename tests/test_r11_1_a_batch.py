@@ -20,6 +20,7 @@ from jarvis.llm.base import LLMError, ToolCall
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.series import batch as sb
+from jarvis.series.batch_tools import batch_tools
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools import calendar_batch as cb
 from jarvis.tools.audit import AuditLog
@@ -62,7 +63,7 @@ class Rig:
         self.bin = UndoBin(DeletedStore(MemoryDocs()))
         self.api = sb.BatchAPI(lambda: conn, lambda: self.bin, limit=100, tz="Asia/Kolkata")
         reg = ToolRegistry()
-        for t in calendar_tools(conn, undo=self.bin) + sb.batch_tools(self.api, limit=100):
+        for t in calendar_tools(conn, undo=self.bin) + batch_tools(self.api, limit=100):
             reg.register(t)
         rules = [PolicyRule(tool_pattern="calendar_*", effect=Effect.ALLOW)] if allow else []
         self.gw = Gateway(
@@ -314,7 +315,7 @@ async def test_arguments_outside_the_limits_are_refused(
 async def test_without_google_nothing_is_proposed() -> None:
     api = sb.BatchAPI(lambda: None, lambda: None, limit=100, tz="Asia/Kolkata")
     reg = ToolRegistry()
-    for t in sb.batch_tools(api, limit=100):
+    for t in batch_tools(api, limit=100):
         reg.register(t)
     gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
     out = await gw.execute(
@@ -495,3 +496,175 @@ def test_only_these_tools_sentences_are_taken_as_code_s_own() -> None:
     assert finish.said_by_code(cb.CREATE, failed) is None
     odd = GatewayResult(GatewayOutcome.EXECUTED, result={"message": ["not", "text"]})
     assert finish.said_by_code(cb.CREATE, odd) is None
+
+
+# ---- what the card shows of what it will write (security review MEDIUM-3) ----------------------
+def test_the_card_says_how_many_carry_notes_or_alerts_and_where_they_came_from() -> None:
+    plain = batch_card(sessions(3), prefix="", plan="")
+    assert "description" not in plain and "alerts" not in plain
+    notes = batch_card(sessions(3, description="Call +1 555 0100 now"), prefix="", plan="")
+    assert "3 events carry a description: the list in JARVIS shows each." in notes
+    both = sessions(4)
+    both[0]["description"] = "Read chapter 1"
+    for e in both[:2]:
+        e["reminders_minutes"] = [10]
+    text = batch_card(both, prefix="", plan="", outside=True)
+    assert (
+        "1 event carries a description and 2 events carry alerts, written from an attached "
+        "file or other people's words: the list in JARVIS shows each." in text
+    )
+
+
+async def test_a_card_from_a_round_that_read_a_file_says_so(rig: Rig) -> None:
+    args = {"events": sessions(3, description="Visit https://evil.example/pay")}
+    with context_trust(untrusted=True):
+        out = await rig.run(cb.CREATE, args)
+    assert out.pending is not None
+    assert "written from an attached file or other people's words" in out.pending.summary
+
+
+# ---- duplicates and dates on the card (code review L3, L4) --------------------------------------
+def test_duplicates_in_one_list_are_flagged_on_the_card() -> None:
+    events = [*sessions(3), sessions(1)[0], sessions(1)[0]]
+    text = batch_card(events, prefix="", plan="")
+    assert "2 of these events repeat another in the list (same title and time)." in text
+    assert "repeat another" not in batch_card(sessions(3), prefix="", plan="")
+
+
+def test_the_first_and_last_days_are_read_as_times_in_his_zone() -> None:
+    from zoneinfo import ZoneInfo
+
+    events = [
+        {"summary": "A", "start": "2026-11-15T23:00:00-08:00", "end": "2026-11-15T23:30:00-08:00"},
+        {"summary": "B", "start": "2026-11-16T05:00:00+05:30", "end": "2026-11-16T06:00:00+05:30"},
+    ]
+    head = batch_card(events, prefix="", plan="", tz=ZoneInfo("Asia/Kolkata")).splitlines()[0]
+    assert head == "Add 2 events to your calendar: 16 Nov 2026."  # both are on 16 Nov for him
+
+
+# ---- many single calls: each call meets the batch's own limits (code review M2) ----------------
+def test_a_single_call_too_long_for_the_batch_is_refused_alone_and_the_rest_merge(rig: Rig) -> None:
+    calls = _singles(5)
+    calls[2] = call(cb.SINGLE, 2, **{**sessions(3)[2], "description": "x" * 3_000})
+    run, spread = cb.gathered(calls, rig.gw.registry, 100)
+    assert [c.name for c in run] == [cb.CREATE]
+    assert len(run[0].arguments["events"]) == 4  # the four good ones, on one card
+    back = spread([GatewayResult(GatewayOutcome.AWAITING_CONFIRMATION)])
+    assert back[0].outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    assert back[2].outcome is GatewayOutcome.DENIED and "description is too long" in (
+        back[2].error or ""
+    )
+    assert "Do not create it again" not in (back[2].error or "")
+    assert all(back[i].error == cb.MERGED for i in (1, 3, 4))
+
+
+def test_calls_gathered_into_a_batch_that_was_not_made_are_not_told_it_is_done(rig: Rig) -> None:
+    run, spread = cb.gathered(_singles(5), rig.gw.registry, 100)
+    failed = GatewayResult(GatewayOutcome.ERROR, error="could not look it up first")
+    back = spread([failed])
+    assert back[0] is failed
+    assert all("was not made" in (r.error or "") for r in back[1:])
+    assert all("Do not create it again" not in (r.error or "") for r in back[1:])
+
+
+# ---- words for what Google did not confirm (silent-failure review L4, L5) -----------------------
+def test_events_google_did_not_confirm_are_never_called_failed() -> None:
+    from jarvis.series.batch_result import create_words
+
+    assert create_words(60, 58, 0, 2) == "58 events added, 2 failed, Sir."
+    assert create_words(3, 2, 0, 0, unsure=1) == (
+        "2 events added, Sir. Google didn't confirm 1: check your calendar before retrying it."
+    )
+    assert create_words(2, 0, 0, 0, unsure=2) == (
+        "None of the 2 events could be confirmed, Sir. Google didn't confirm 2: check your "
+        "calendar before retrying them."
+    )
+
+
+async def test_a_followed_event_google_did_not_confirm_is_said_not_followed(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from jarvis.integrations.google import GoogleAPIError
+
+    class Book:
+        remembered: list[Any] = []
+
+        async def room(self, uid: str, name: str, count: int) -> None:
+            return None
+
+        async def remember(self, uid: str, **kw: Any) -> None:
+            self.remembered.extend(kw["sessions"])
+
+        async def forget(self, uid: str, ids: Any) -> None:
+            return None
+
+    rig.api._book = Book()  # noqa: SLF001 - a plan book that records what it was given
+    real = sb.batch_events
+
+    async def listing(*a: Any) -> Any:
+        if rig.fake.creates:  # the look-up after a lost answer fails too
+            raise GoogleAPIError("Google is not answering just now.")
+        return await real(*a)
+
+    monkeypatch.setattr(sb, "batch_events", listing)
+    rig.fake.lose_answers = {2}
+    res = (await rig.approved(cb.CREATE, {"events": sessions(3), "series": {"name": "CCA"}})).result
+    assert res["message"] == (
+        "2 events added, Sir. Google didn't confirm 1: check your calendar before retrying it."
+    )
+    assert "1 event Google didn't confirm is not followed yet" in res["note"]
+    assert len(Book.remembered) == 2
+
+
+# ---- the plan after an undo (silent-failure review M4) -----------------------------------------
+@pytest.mark.parametrize(("fails", "flagged"), [(1, False), (9, True)])
+async def test_a_plan_record_not_updated_after_an_undo_is_retried_then_said(
+    rig: Rig, fails: int, flagged: bool
+) -> None:
+    class Book:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def room(self, uid: str, name: str, count: int) -> None:
+            return None
+
+        async def remember(self, uid: str, **kw: Any) -> None:
+            return None
+
+        async def forget(self, uid: str, ids: Any) -> None:
+            self.calls += 1
+            if self.calls <= fails:
+                raise RuntimeError("the store blinked")
+
+    book = Book()
+    rig.api._book = book  # noqa: SLF001
+    made = (await rig.approved(cb.CREATE, {"events": sessions(3)})).result
+    res = (await rig.approved(cb.UNDO, {"batch": made["batch"]})).result
+    assert res["removed"] == 3 and book.calls == 2
+    said = "Your plan still lists them" in res["message"]
+    assert said is flagged and res["plan_updated"] is (not flagged)
+
+
+# ---- one calendar object a batch, no private calls (code review M5) -----------------------------
+async def test_a_batch_uses_one_calendar_object_and_no_private_method(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import inspect
+
+    from jarvis.tools.google_calendar import CalendarAPI
+
+    assert "._body(" not in inspect.getsource(sb)
+    made: list[int] = []
+
+    class Counting(CalendarAPI):
+        def __init__(self, *a: Any, **kw: Any) -> None:
+            made.append(1)
+            super().__init__(*a, **kw)
+
+    monkeypatch.setattr(sb, "CalendarAPI", Counting)
+    args = {"events": sessions(10)}
+    asked = await rig.run(cb.CREATE, args)
+    assert asked.pending is not None
+    made.clear()
+    await rig.run(cb.CREATE, args, confirmation_id=asked.pending.id)
+    assert len(made) == 1

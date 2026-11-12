@@ -64,6 +64,11 @@ MERGED = (
     "single approval card for all of them (see the first result). Do not create it again. Next "
     "time put every event into one calendar_create_events call."
 )
+NOT_MADE = (
+    "Not run: it was gathered with other events into one calendar_create_events call, and that "
+    "batch was not made (see the first result). Nothing was created."
+)
+TOO_BIG = "Not run: this event can't go on the batch card ({why}). Fix it and send it again."
 
 
 class PlanBook(Protocol):
@@ -311,30 +316,58 @@ def numbered(
 Spread = Callable[[list[GatewayResult]], list[GatewayResult]]
 
 
+def _batch_problem(call: ToolCall) -> str:
+    """Why a valid single create can't be one item of a batch ("" when it can): the batch's
+    own limits (`_item`), stricter than the single tool's."""
+    try:
+        _item(dict(call.arguments), 1, "")
+    except ValueError as exc:
+        return str(exc).removeprefix("event 1: ")
+    return ""
+
+
 def gathered(
     calls: Sequence[ToolCall], registry: ToolRegistry, limit: int
 ) -> tuple[list[ToolCall], Spread]:
     """One round's calls as the gateway should see them, and how to give every original call its
     result back. More than `MANY` valid single creates without guests become one batch call per
-    `limit` events, in place of the first of them; the others are answered `MERGED`."""
+    `limit` events, in place of the first of them; the others are answered `MERGED` (or
+    `NOT_MADE` when their batch was not made). A call the batch's own limits refuse is answered
+    alone with its plain reason (`TOO_BIG`); the good ones still go on the one card."""
     single, batch = registry.get(SINGLE), registry.get(CREATE)
     mergeable = [i for i, c in enumerate(calls) if _mergeable(c, single)]
     if single is None or batch is None or len(mergeable) <= MANY:
         return list(calls), lambda out: out
+    refused = {i: why for i in mergeable if (why := _batch_problem(calls[i]))}
+    good = [i for i in mergeable if i not in refused]
     heads: dict[int, ToolCall] = {}
-    for at in range(0, len(mergeable), limit):
-        part = mergeable[at : at + limit]
+    head_of: dict[int, int] = {}
+    for at in range(0, len(good), limit):
+        part = good[at : at + limit]
         events = [dict(calls[i].arguments) for i in part]
         heads[part[0]] = ToolCall(id=calls[part[0]].id, name=CREATE, arguments={"events": events})
-    merged = set(mergeable) - set(heads)
-    run = [heads.get(i, c) for i, c in enumerate(calls) if i not in merged]
+        head_of.update(dict.fromkeys(part, part[0]))
+    merged = set(good) - set(heads)
+    run = [heads.get(i, c) for i, c in enumerate(calls) if i not in merged and i not in refused]
 
     def spread(out: list[GatewayResult]) -> list[GatewayResult]:
         results = iter(out)
-        note = GatewayResult(GatewayOutcome.DENIED, error=MERGED)
-        return [note if i in merged else next(results) for i in range(len(calls))]
+        back: dict[int, GatewayResult] = {}
+        for i in range(len(calls)):
+            if i not in merged and i not in refused:
+                back[i] = next(results)
+        made = (GatewayOutcome.AWAITING_CONFIRMATION, GatewayOutcome.EXECUTED)
+        for i in merged:
+            ok = back[head_of[i]].outcome in made
+            back[i] = GatewayResult(GatewayOutcome.DENIED, error=MERGED if ok else NOT_MADE)
+        for i, why in refused.items():
+            back[i] = GatewayResult(GatewayOutcome.DENIED, error=TOO_BIG.format(why=why))
+        return [back[i] for i in range(len(calls))]
 
-    log.info("single creates gathered into a batch", extra={"events": len(mergeable)})
+    log.info(
+        "single creates gathered into a batch",
+        extra={"events": len(good), "refused": len(refused)},
+    )
     return run, spread
 
 
@@ -356,6 +389,8 @@ __all__ = [
     "GUESTS",
     "MANY",
     "MERGED",
+    "NOT_MADE",
+    "TOO_BIG",
     "SIG_KEY",
     "SINGLE",
     "UNDO",

@@ -1,8 +1,11 @@
 // src/jarvis/api/static/console-r111-plan.js -- R11.1 Part A (docs/plans/r11-1-observations.md D0,
 // D4-D6, D21-A): what the console shows for a calendar batch and a followed plan.
 //   Approvals   a calendar_create_events card lists every event it will add, in a scrolling list
-//               drawn from the card's own arguments; a series_reschedule card keeps its two head
-//               lines and shows every "old date -> new date" line in the same kind of list.
+//               drawn from the card's own arguments: its day, time, title and place, then what it
+//               will write that the card head only counts: its description (the first 120
+//               characters, "...more" shows the rest; a link is shown as plain text with its host,
+//               never as a link) and its alerts. A series_reschedule card keeps its head lines and
+//               shows every "old date -> new date" line in the same kind of list.
 //               Approve and Decline stay the console's own (console-approvals.js).
 //   Check-ins   above the Approvals list (GET /v1/series): "Session 7 of 60 ... did it happen?"
 //               with Done and Skipped (POST /v1/series/answer), and "Propose new dates" for a plan
@@ -21,7 +24,9 @@ const ISO = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/;
 const MOVE_LINE = /^\d{1,3}\. \S.{0,60} \u2192 \S.{0,60}$/;
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const MAX_EVENTS = 100, MAX_MOVES = 200, MAX_SHOWN = 3;
+const MAX_EVENTS = 100, MAX_MOVES = 200, MAX_SHOWN = 3, NOTE_SHOWN = 120, NOTE_MAX = 2000;
+const URLISH = /(?:\b[a-z][a-z0-9+.-]{1,15}:\/\/|\bwww\.)[^\s<>"']+/gi;
+const HOST = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^\s@/]*@)?([^\s/:?#]+)/i;
 const ARM_MS = 6000, RELOAD_MS = 60000;
 const ITEM_KEYS = ['n', 'summary', 'start', 'end', 'description', 'location', 'reminders_minutes', 'why'];
 const DOT = ' \u00b7 ';
@@ -60,19 +65,64 @@ function stamp(iso) {
   if (!day || !month) return null;
   return { day: `${day} ${+m[3]} ${month} ${m[1]}`, time: m[4] ? `${m[4]}:${m[5]}` : '' };
 }
+/** A link in other people's words as plain text with its host: "[link: evil.example]". */
+function unlinked(v) {
+  return (typeof v === 'string' ? v : '').replace(URLISH, (u) => {
+    const m = HOST.exec(u);
+    return `[link: ${m ? m[1].toLowerCase() : 'unknown'}]`;
+  });
+}
 function eventLine(e) {
   if (!e || typeof e !== 'object') return '(not an event)';
   const title = txt(e.summary, 120) || '(no title)', a = stamp(e.start), b = stamp(e.end);
   if (!a) return title;
   const span = a.time ? `, ${a.time}${b && b.time ? '-' + b.time : ''}` : '';
-  const place = txt(e.location, 60);
+  const place = txt(unlinked(e.location), 60);
   return `${a.day}${span}${DOT}${title}${place ? DOT + place : ''}`;
+}
+function ahead(m) {
+  if (m % 1440 === 0) return `${m / 1440} day${m === 1440 ? '' : 's'}`;
+  if (m % 60 === 0) return `${m / 60} h`;
+  return `${m} min`;
+}
+/** "Alerts: 10 min, 1 day before" ("" when the event sets none). */
+function alertWords(e) {
+  const mins = arr(e && e.reminders_minutes).filter((m) => Number.isInteger(m) && m >= 0).slice(0, 5);
+  return mins.length ? `Alerts: ${mins.map(ahead).join(', ')} before` : '';
+}
+/** One event of a batch card: its line, then its description (clipped; "...more" shows all of it,
+ *  as text) and its alerts, so nothing it will write is hidden behind the card's head. */
+function eventItem(e, i) {
+  const li = F.mk('li', '');
+  li.append(F.mk('span', 'plan-ev', `${i + 1}. ${eventLine(e)}`));
+  const full = txt(unlinked(e && e.description), NOTE_MAX);
+  if (full) {
+    const long = full.length > NOTE_SHOWN, short = `${full.slice(0, NOTE_SHOWN).trimEnd()}\u2026`;
+    const note = F.mk('p', 'plan-note', `Description: ${long ? short : full}`);
+    li.append(note);
+    if (long) {
+      const row = F.mk('div', 'actions plan-more');
+      const more = button('\u2026more', 'btn lift', () => {
+        const open = more.getAttribute('aria-expanded') !== 'true';
+        note.textContent = `Description: ${open ? full : short}`;
+        more.textContent = open ? 'Show less' : '\u2026more';
+        more.setAttribute('aria-expanded', String(open));
+      });
+      more.setAttribute('aria-expanded', 'false');
+      more.setAttribute('aria-label', `Show all of event ${i + 1}'s description`);
+      row.append(more);
+      li.append(row);
+    }
+  }
+  const alerts = alertWords(e);
+  if (alerts) li.append(F.mk('p', 'plan-note', alerts));
+  return li;
 }
 function listBox(lines, label) {
   const ol = F.mk('ol', 'plan-list');
   ol.tabIndex = 0; // a keyboard can scroll it
   ol.setAttribute('aria-label', label);
-  lines.forEach((line) => ol.append(F.mk('li', '', line)));
+  lines.forEach((line) => ol.append(typeof line === 'string' ? F.mk('li', '', line) : line));
   return ol;
 }
 function decorate() {
@@ -86,8 +136,8 @@ function decorate() {
     if (!card || !p || !pre) return;
     if (card.tool === CREATE) {
       const events = arr(card.arguments && card.arguments.events).slice(0, MAX_EVENTS);
-      const lines = events.map((e, i) => `${i + 1}. ${eventLine(e)}`);
-      if (lines.length) pre.before(listBox(lines, `The ${lines.length} events this card adds`));
+      const items = events.map((e, i) => eventItem(e, i));
+      if (items.length) pre.before(listBox(items, `The ${items.length} events this card adds`));
     } else if (card.tool === MOVE) {
       const all = String(card.summary || '').split('\n').map((l) => txt(l, 200)).filter(Boolean);
       const moves = all.filter((l) => MOVE_LINE.test(l)).slice(0, MAX_MOVES);

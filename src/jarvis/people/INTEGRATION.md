@@ -77,10 +77,19 @@ never 3 (there is deliberately no up-front reserve of all three).
 
 ```python
 from jarvis.people.tools import PeopleDeps, people_tools
+from jarvis.picture.turnguard import app_guard
 
-for t in people_tools(PeopleDeps(service=people)):  # brain mode is read from the service
+pictures = app_guard(lambda name: getattr(app.state, name, None))  # R11.1: read late
+for t in people_tools(PeopleDeps(service=people, pictures=pictures)):  # brain mode: the service's
     reg.register(t)
 ```
+
+R11.1 D21-D (security review H1): `pictures` is the turn guard. On a Brain turn whose latest owner
+message carried a picture, `research_person` researches only a name the owner typed in that message,
+turns a name the last picture research read off the picture's own text into an offer (a "Look up"
+reply card, `jarvis.people.offer`), and refuses anything else in fixed words; the same check runs
+as its look-up, so no approval card shows a refused name. Without `pictures` every Brain turn counts
+as a picture turn (fail closed). Outside a turn (this panel's route, an approved card) nothing changes.
 
 Registers `research_person` (row `people`/`research_*`) and `people_open_profiles`.
 `research_person` returns a refusal as a normal result `{refused: true, message, spoken}` in fixed
@@ -115,6 +124,11 @@ New static file `src/jarvis/api/static/console-people.js` (the repo's static dir
 - "Open all profiles" does `window.open(url, '_blank', 'noopener,noreferrer')` once per URL, from the
   click; its host allow-list mirrors the server's exact-host rule. "Speak" uses the existing
   `JarvisVoice.speaker.say(...)` (`/v1/voice/speak`, metered there).
+  **Replaced in R11.1 (plan `docs/plans/r11-1-observations.md` D16):** a browser lets one click open
+  one tab, and `window.open` with `noopener` answers `null`, so "Open all" could neither open them all
+  nor count what it opened. Each profile is now a card with its own real link
+  (`<a target="_blank" rel="noopener noreferrer">`, same host allow-list) and "Open next" presses the
+  next unopened card's link, one tab a click. `window.open` is no longer called.
 - The badge and the switch text say plainly that No-AI covers the BRAIN only; speech is metered
   separately.
 

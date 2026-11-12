@@ -10,6 +10,10 @@
 // PUT /v1/vitals/keys; DELETE /v1/vitals/keys/{id}. Listens: jarvis:ready, jarvis:panel, jarvis:reply.
 // R6.1 D4: the same GET carries `version` and `build_date`; they fill the read-only #vAbout line
 // ("About JARVIS \u00b7 v6.1.0 \u00b7 built 11 Nov 2026") at the foot of the panel, in its .sfine text.
+// R11.1 D19: an item the server is reading right now (`checking`) says "Checking..." on its chip, and
+// the board is read again by itself every few seconds until no item is checking, for at most FOLLOW_FOR_MS
+// (code review M4). Past that the chip gives up "Checking..." and the row says GitHub didn't answer and to
+// press Refresh; a press of Refresh follows from the start again.
 (() => {
   'use strict';
   const root = document.getElementById('vitals-board');
@@ -21,7 +25,8 @@
   const GROUPS = [['keys', 'Keys & connections'], ['allowances', 'Allowances & quotas'], ['bills', 'Bills']];
   const ORDER = { red: 0, amber: 1, unknown: 2, ok: 3 };
   const SPEND_ID = 'ai_spend', ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
-  const STALE_MS = 60 * 1000, NOTE_MS = 5000, TEXT_MAX = 300, SLUG_MAX = 34;
+  const STALE_MS = 60 * 1000, NOTE_MS = 5000, TEXT_MAX = 300, SLUG_MAX = 34, FOLLOW_MS = 3000, FOLLOW_FOR_MS = 45 * 1000;
+  const SLOW = 'GitHub didn\'t answer; press Refresh.';
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
   const MANUAL_NOTE = 'The items you track yourself can\'t be read just now. Try again in a minute.';
   const HINT = 'Type a name, a limit and a date. Never paste a key itself: JARVIS refuses it.';
@@ -74,7 +79,7 @@
     const kind = own(KIND_WORDS, o.kind) ? o.kind : 'key';
     return {
       id, kind, label: txt(o.label, 80) || id, manual: o.source === 'manual',
-      status: own(STATUS_WORDS, o.status) ? o.status : 'unknown',
+      status: own(STATUS_WORDS, o.status) ? o.status : 'unknown', checking: o.checking === true,
       group: GROUPS.some(([g]) => g === o.group) ? o.group : KIND_GROUP[kind],
       limit: num(o.limit), used: num(o.used), unit: txt(o.unit, 20), percent: num(o.percent),
       reason: txt(o.reason, 120), note: txt(o.note, TEXT_MAX), impact: txt(o.impact, TEXT_MAX), fix: txt(o.fix, TEXT_MAX),
@@ -100,7 +105,7 @@
   }
 
   // ---- the board's frame (built once) ------------------------------------------------------------
-  const S = { data: null, busy: false, loadedAt: 0, checkedAt: 0, error: '', noteTimer: 0, editing: null };
+  const S = { data: null, busy: false, loadedAt: 0, checkedAt: 0, error: '', noteTimer: 0, editing: null, followSince: 0, followTimer: 0, slow: false };
   root.classList.add('vt');
   const card = mk('section', 'vt-card');
   card.setAttribute('aria-labelledby', 'vtTitle');
@@ -111,7 +116,7 @@
   const overallEl = mk('span', 'vt-chip vt-overall');
   const checked = mk('span', 'vt-checked');
   const sum = mk('p', 'vt-sum'); sum.append(overallEl, checked);
-  const refresh = button('Refresh', 'btn lift sact', () => load(true));
+  const refresh = button('Refresh', 'btn lift sact', () => load(true, true));
   sub.append(sum, refresh);
   const stateEl = mk('p', 'vt-state'); stateEl.setAttribute('role', 'status');
   const errEl = mk('p', 'bnote bad'); errEl.setAttribute('role', 'alert');
@@ -121,8 +126,8 @@
   card.append(head, sub, stateEl, errEl, noteEl, flashEl, groupsEl);
 
   // ---- one item -----------------------------------------------------------------------------------
-  function chip(status) {
-    const c = mk('span', 'vt-chip', STATUS_WORDS[status]);
+  function chip(status, checking) {
+    const c = mk('span', 'vt-chip', checking && status === 'unknown' ? 'Checking\u2026' : STATUS_WORDS[status]);
     c.dataset.status = status;
     return c;
   }
@@ -139,7 +144,8 @@
     const r = mk('div', 'vt-row');
     r.dataset.id = it.id; r.dataset.status = it.status;
     const top = mk('div', 'vt-top');
-    top.append(mk('b', 'vt-label', it.label), chip(it.status));
+    const slow = it.checking && S.slow; // GitHub kept it waiting past the follow time
+    top.append(mk('b', 'vt-label', it.label), chip(it.status, it.checking && !slow));
     r.appendChild(top);
     if (it.id === SPEND_ID) r.appendChild(mk('p', 'vt-note', 'The figures are under This month, above.'));
     else {
@@ -153,8 +159,8 @@
     }
     const meta = [it.manual ? 'Tracked by you' : '', it.reset ? 'Resets ' + it.reset : '', it.expires ? 'Expires ' + it.expires : ''].filter(Boolean);
     if (meta.length) r.appendChild(mk('p', 'vt-meta', meta.join(' \u00b7 ')));
-    if (it.status !== 'ok' && it.reason) r.appendChild(mk('p', 'vt-why', it.label + ' ' + it.reason + '.'));
-    if (it.note) r.appendChild(mk('p', 'vt-note', it.note));
+    if (it.status !== 'ok' && it.reason && !slow) r.appendChild(mk('p', 'vt-why', it.label + ' ' + it.reason + '.'));
+    if (it.note || slow) r.appendChild(mk('p', 'vt-note', slow ? SLOW : it.note));
     if (it.status === 'amber' || it.status === 'red') {
       if (it.impact) r.appendChild(mk('p', 'vt-fine', it.impact));
       if (it.fix) r.appendChild(mk('p', 'vt-fine vt-do', it.fix));
@@ -335,8 +341,9 @@
   }
 
   // ---- loading ------------------------------------------------------------------------------------
-  async function load(force) {
+  async function load(force, fresh) { // fresh: his own press, so "Checking..." is followed from the start
     if (!hasApi() || S.busy) return;
+    if (fresh) { S.followSince = 0; S.slow = false; }
     if (!force && S.data && Date.now() - S.loadedAt < STALE_MS) return;
     S.busy = true; render();
     try {
@@ -344,7 +351,16 @@
       const d = normal(await api('/v1/vitals'));
       if (d) { S.data = d; S.error = ''; S.loadedAt = S.checkedAt = Date.now(); } else S.error = 'Vitals sent something unexpected.';
     } catch (e) { S.error = detailOf(e); }
-    S.busy = false; render();
+    S.busy = false; render(); follow();
+  }
+  function follow() { // an answer is on its way (R11.1 D19): look again until it is there, FOLLOW_FOR_MS at most
+    clearTimeout(S.followTimer);
+    const waiting = !!S.data && S.data.items.some((it) => it.checking);
+    if (!waiting) { S.followSince = 0; S.slow = false; return; }
+    const now = Date.now();
+    if (!S.followSince) S.followSince = now;
+    if (now - S.followSince < FOLLOW_FOR_MS) { S.followTimer = setTimeout(() => load(true), FOLLOW_MS); return; }
+    if (!S.slow) { S.slow = true; render(); }   // say so plainly instead of "Checking..." for ever
   }
   document.addEventListener('jarvis:panel', (e) => { const d = e.detail || {}; if (d.id === 'vitals' && d.open) load(false); });
   document.addEventListener('jarvis:ready', () => load(false));

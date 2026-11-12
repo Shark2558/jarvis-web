@@ -13,7 +13,8 @@ GET  /v1/settings/brain-mode   {mode: "ai"|"none", meaning}
 POST /v1/settings/brain-mode   {mode} -> same; 422 for anything but ai / none
 
 `install_people(app)` mounts them. The integrator sets `app.state.people` (a `PeopleService`, or
-None). The client opens `profiles[].url` with `window.open(url, '_blank')`, one per URL.
+None). The console shows each `profiles[]` entry as a card with its own link (R11.1 D16: one tab
+per click; it never opens a window itself).
 The brain-mode switch is PERSISTED (`offline.mode.BrainMode`, the document
 `<prefix>settings/<uid>`): `app.state.brain_mode` is the same object `Brain` reads, every flip
 is audited, and only the owner (`current_user`) may flip it. `JARVIS_BRAIN_MODE` is the default

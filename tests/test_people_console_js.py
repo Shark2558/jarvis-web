@@ -1,5 +1,6 @@
 # tests/test_people_console_js.py
-"""Static checks on the People panel script: textContent only, no remote code, one tab per URL."""
+"""Static checks on the People panel script: textContent only, no remote code, one tab per click
+(R11.1 D16: each profile has its own real link; the script never opens a window itself)."""
 
 from __future__ import annotations
 
@@ -36,9 +37,15 @@ def test_script_loads_nothing_remote(source: str) -> None:
     assert "importScripts" not in source and "import(" not in source
 
 
-def test_each_profile_opens_in_its_own_tab_without_opener_access(source: str) -> None:
-    assert "window.open(p.url, '_blank', 'noopener,noreferrer')" in source
-    assert "forEach((p) => { if (window.open" in source
+def test_each_profile_opens_from_its_own_link_without_opener_access(source: str) -> None:
+    # R11.1 D16 (was: one window.open per URL from "Open all profiles", whose result was counted
+    # although `noopener` makes it null, so the panel always said the tabs were blocked)
+    assert "window.open" not in source and "Open all" not in source
+    assert "a.href = p.url; a.target = '_blank'; a.rel = 'noopener noreferrer';" in source
+    assert "'Open in browser'" in source and "'Open next'" in source
+    # "Open next" presses ONE link, the next unopened card's own, straight from the click
+    assert "const next = S.links.find((l) => !S.opened.has(l.url));" in source
+    assert "if (next) next.a.click();" in source and "forEach((l) => l.a.click" not in source
 
 
 def test_script_has_valid_syntax() -> None:

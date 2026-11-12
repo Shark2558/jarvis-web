@@ -1,3 +1,14 @@
 /* src/jarvis/api/static/console-r111-look.css -- R11.1 Part D (docs/plans/r11-1-observations.md D0): placement
-   only for profile cards in People, research on a picture. Existing tokens and classes; no new colours, fonts, radii or shadows.
-   I0 stub: Part D fills it (at most 150 lines). */
+   only for "Research a picture" in the People panel (console-r111-look.js). Everything it shows is an existing
+   component: the .k label in a .rhead, .bfine, .btn.lift, .bnote, the Integrations card (.integ / .ihead /
+   .istate / .ibody) and the People panel's own profile rows (.tlist.plinks / .trow / a.plink,
+   console-people.css). No new colours, fonts, radii or shadows: the one rule line uses an existing token. */
+.look{display:flex;flex-direction:column;gap:10px;min-width:0;padding-top:12px;border-top:1px solid var(--line-2)}
+.look > *{margin-top:0;margin-bottom:0}
+.look .rhead{margin-bottom:0}
+.look h3{margin:0}
+.look .actions{flex-wrap:wrap}
+.look .ibody .actions{margin-top:10px}
+.lookcard:empty{display:none}
+.look .integ .ihead{align-items:flex-start}
+.look .integ .psum{color:var(--ink);overflow-wrap:anywhere}

@@ -46,13 +46,13 @@ class Rig:
         self.s = settings
         self.brains = registry(PricedMock(), default=default)
         self.docs = DocumentService(AttachmentStore(MemoryDocs()))
-        state: dict[str, Any] = {
+        self.state: dict[str, Any] = {
             "brains": self.brains,
             "billing": make_billing(self.brains),
             "brain_mode": BrainMode(settings),
             "documents": self.docs,
         }
-        self.est = Estimator(FixContext(s=settings, docs=None, audit=None, state=state.get))
+        self.est = Estimator(FixContext(s=settings, docs=None, audit=None, state=self.state.get))
 
     async def up(self, name: str, data: bytes) -> str:
         return (await self.docs.upload(UID, name, data)).id
@@ -80,9 +80,9 @@ async def test_a_large_file_shows_both_tiers_in_rupees_with_about(rig: Rig) -> N
     assert e.stronger_inr == pytest.approx(expected_inr(rig.s, ModelTier.STRONG, chars), rel=0.01)
     assert e.inr >= SHOW_FROM_INR and e.stronger_inr is not None and e.stronger_inr > e.inr
     assert e.line == (
-        f"About ₹{round(e.inr)} on the balanced tier; about ₹{round(e.stronger_inr)} on the "
-        "stronger tier."
-    )
+        f"About ₹{round(e.inr)} for one reply on the balanced tier; about "
+        f"₹{round(e.stronger_inr)} on the stronger tier."
+    )  # "for one reply": a reply that uses tools reads the files again (code review L7)
     assert "$" not in e.line and e.suggest == "balanced"  # long, but plain text
 
 
@@ -136,7 +136,7 @@ async def test_the_strongest_tier_has_no_stronger_one(rig: Rig) -> None:
     aid = await rig.up("long.txt", words(250_000))
     e = await rig.est.estimate(UID, attachments=[aid], tier="strong")
     assert e.show and e.tier == "strong" and e.stronger_tier is None and e.stronger_inr is None
-    assert e.line == f"About ₹{round(e.inr)} on the strong tier."
+    assert e.line == f"About ₹{round(e.inr)} for one reply on the strong tier."
     fast = await rig.est.estimate(UID, attachments=[aid], tier="fast")
     assert not fast.show  # 250,000 characters on the fast tier is well under ₹5
     assert (await rig.est.estimate(UID, attachments=[aid], tier="nonsense")).tier == "balanced"
@@ -161,6 +161,37 @@ async def test_a_missing_service_means_no_estimate_never_an_error(settings: Sett
     assert not (await est.estimate(UID, attachments=["doc_" + "0" * 20])).show
 
 
+@pytest.mark.parametrize("broken", ["rate", "store", "brain_mode"])
+async def test_an_estimate_that_cannot_be_worked_out_says_so(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch, broken: str
+) -> None:
+    """Code review M2: a fault never looks like "under ₹5": the answer says it could not
+    estimate, and the console asks the owner before a large message goes."""
+    aid = await rig.up("long.txt", words(250_000))
+
+    async def fails(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("down")
+
+    target = {
+        "rate": (rig.state["billing"], "inr"),
+        "store": (rig.docs.store, "get"),
+        "brain_mode": (rig.state["brain_mode"], "load"),
+    }[broken]
+    monkeypatch.setattr(*target, fails)
+    e = await rig.est.estimate(UID, attachments=[aid], message="Summarise it")
+    assert (e.show, e.unavailable, e.inr, e.line) == (False, True, 0.0, "")
+
+
+async def test_nothing_to_estimate_is_not_a_fault(rig: Rig) -> None:
+    small = await rig.up("note.txt", words(5_000))
+    for e in (
+        await rig.est.estimate(UID, attachments=[small]),
+        await rig.est.estimate(UID, attachments=[]),
+        await rig.est.estimate(UID, attachments=[small], brain="gemini"),
+    ):
+        assert not e.show and not e.unavailable
+
+
 # ---- the route -----------------------------------------------------------------------------------
 
 
@@ -183,6 +214,10 @@ async def test_the_estimate_route_answers_and_is_quiet_on_a_free_brain(client: A
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     body = r.json()
     assert body["show"] is False and body["line"] == ""  # the mock brain costs nothing
-    assert set(body) == {"show", "tier", "inr", "stronger_tier", "stronger_inr", "suggest", "line"}
+    assert set(body) == {
+        *("show", "tier", "inr", "stronger_tier", "stronger_inr", "suggest", "line"),
+        "unavailable",
+    }
+    assert body["unavailable"] is False
     bad = await client.post("/v1/input/estimate", json={"attachments": ["x"] * 30})
     assert bad.status_code == 422

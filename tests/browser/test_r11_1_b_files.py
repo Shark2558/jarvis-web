@@ -149,8 +149,11 @@ def console(browser: Any, server_url: str, token: str) -> Iterator[Page]:
     c.close()
 
 
-def _clean(c: Page) -> None:
-    assert c.errors == [] and c.csp_violations() == []
+def _clean(c: Page, failed: str = "") -> None:
+    """No JS errors or CSP violations; `failed`: the one route a test made fail on purpose, whose
+    "Failed to load resource" line is the browser's own, not the console's."""
+    errors = [e for e in c.errors if not (failed and "Failed to load resource" in e and failed in e)]
+    assert errors == [] and c.csp_violations() == []
 
 
 # ---- the picker and the new kinds ----------------------------------------------------------------
@@ -261,6 +264,20 @@ def test_words_heard_right_show_no_extra_line(console: Page) -> None:
     _clean(console)
 
 
+def test_a_failed_check_says_so_and_sends_the_words_as_heard(console: Page) -> None:
+    # code review M6: any error of the understand step is never silent
+    console.page.route("**/v1/input/understand", lambda r: r.fulfill(status=500, body="{}"))
+    console.speak("Tu D calender")
+    console.reply()
+    row = console.page.locator(".row.user").first
+    assert row.locator(".bubble").text_content() == "Tu D calender"
+    lines = [str(t) for t in row.locator(".r111f-heard .bfine").all_text_contents()]
+    assert lines == ["Couldn't check the words; sent as heard."]
+    (chat,) = console.chats
+    assert chat["message"] == "Tu D calender" and "heard" not in chat
+    _clean(console, failed="/v1/input/understand")
+
+
 def test_an_unsure_spoken_message_gets_one_question_and_is_not_sent(console: Page) -> None:
     console.speak("add it 2 the calendar")
     assert console.reply() == "Did you mean “add it to the calendar”, Sir?"
@@ -323,6 +340,37 @@ def test_cancel_puts_the_words_back_and_sends_nothing(console: Page) -> None:
     assert console.chats == [] and console.page.locator("#r111fCost").count() == 0
     assert console.page.locator("#attachChips .achip").count() == 1  # the file is still waiting
     _clean(console)
+
+
+UNKNOWN = "Couldn't estimate the cost; send anyway?"
+
+
+@pytest.mark.parametrize("fault", ["unavailable", "server error"])
+def test_a_cost_that_could_not_be_estimated_waits_for_the_owner(console: Page, fault: str) -> None:
+    # code review M2: a fault never looks like "under 5 rupees" for large files
+    said = {**ESTIMATE, "show": False, "line": "", "inr": 0.0, "unavailable": True}
+
+    def estimate(route: Any) -> None:
+        if fault == "unavailable":
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(said))
+        else:
+            route.fulfill(status=500, content_type="application/json", body="{}")
+
+    console.page.route("**/v1/input/estimate", estimate)
+    console.pretend_uploads()
+    _long_file(console)
+    console.page.locator("#input").fill("Summarise it")
+    console.page.locator("#send").click()
+    box = console.page.locator("#r111fCost")
+    box.wait_for()
+    assert UNKNOWN in str(box.text_content()) and console.chats == []
+    go = box.get_by_role("button", name="Send anyway")
+    assert console.page.evaluate("document.activeElement.textContent") == "Send anyway"
+    go.click()
+    console.reply()
+    (chat,) = console.chats
+    assert chat["message"] == "Summarise it" and "tier" not in chat
+    _clean(console, failed="/v1/input/estimate")
 
 
 def test_below_five_rupees_nothing_is_shown_and_the_message_just_goes(console: Page) -> None:

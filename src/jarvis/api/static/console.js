@@ -532,9 +532,9 @@
    *  recogniser's own words when they were corrected), or null when JARVIS asked its one question instead. */
   async function understood(text, opts, files) {
     const F = Files();
-    if (!F || typeof F.understand !== 'function' || typeof opts.heard === 'string') return { text, heard: opts.heard || null };
+    if (!F || typeof F.understand !== 'function' || typeof opts.heard === 'string') return { text, heard: opts.heard || null, unchecked: opts.unchecked === true };
     const u = await F.understand({ heard: text, alternatives: opts.alternatives, confidence: opts.confidence, files, session: state.sessionId });
-    if (!u.question) return u.changed ? { text: u.understood, heard: text } : { text, heard: null };
+    if (!u.question) return u.changed ? { text: u.understood, heard: text } : { text, heard: null, unchecked: u.unchecked === true };
     addMsg('user', text, ['Spoken', 'Not sent']); addMsg('jarvis', u.question, ['Asked first']); note('info', 'JARVIS asked first');
     emit('jarvis:answer', { channel: 'voice', text: u.question, approvals: 0 }); // spoken, like any reply
     return null;
@@ -546,7 +546,8 @@
     const c = await F.cost({ text, files, brain: state.brain, send: (o) => send(text, Object.assign({}, opts, o, { costOk: true })),
       cancel: () => { if (!input.value) { input.value = text; if (channel === 'voice') input.dataset.channel = 'voice'; autosize(); } syncSend(); input.focus(); } });
     if (!c || !c.wait) return false;
-    if (channel === 'voice') emit('jarvis:answer', { channel, text: `The cost is on the screen, ${state.honorific}. Choose how to send it.`, approvals: 0 });
+    const said = c.unknown ? `I couldn't estimate the cost, ${state.honorific}. Send it anyway, or cancel.` : `The cost is on the screen, ${state.honorific}. Choose how to send it.`;
+    if (channel === 'voice') emit('jarvis:answer', { channel, text: said, approvals: 0 });
     return true;
   }
   /** One turn. `opts.channel: 'voice'` (slice 9 D7): the words were spoken, so the server shapes a
@@ -556,17 +557,18 @@
     const channel = opts.channel === 'voice' ? 'voice' : 'text';
     const files = Attach() && !Attach().busy() ? Attach().ready() : [];
     busy(true); emit('jarvis:turn', { channel });
-    let ok = false, heard = null, choosing = false; // choosing: the cost line is up and holds the focus
+    let ok = false, heard = null, unchecked = false, choosing = false; // choosing: the cost line is up and holds the focus
     try {
       if (channel === 'voice') {
         const u = await understood(text, opts, files);
         if (!u) { ok = true; return true; }
-        text = u.text; heard = u.heard;
+        text = u.text; heard = u.heard; unchecked = u.unchecked === true;
       }
-      const again = channel === 'voice' ? Object.assign({}, opts, { heard: heard || '' }) : opts; // understood once
+      const again = channel === 'voice' ? Object.assign({}, opts, { heard: heard || '', unchecked }) : opts; // understood once
       if (await costFirst(text, again, files, channel)) { ok = choosing = true; return false; }
       const sent = addMsg('user', text, channel === 'voice' ? ['Spoken'] : null); note('send', channel === 'voice' ? 'Spoken message sent' : 'Message sent');
       showHeard(sent, heard, text);
+      if (unchecked && Files() && typeof Files().unchecked === 'function') Files().unchecked(sent); // R11.1: never silent
       if (files.length) Attach().show(sent, files);
       const t0 = performance.now(); // reply latency as the owner feels it: the whole round trip
       const body = { message: text, session_id: state.sessionId, brain: state.brain };

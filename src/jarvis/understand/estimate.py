@@ -5,18 +5,21 @@ When the files waiting to go with a message are large or complex (`is_large`: mo
 characters in all, a workbook with more than 3 sheets or 2,000 rows, more than 2 pictures) the
 console asks before it sends, and shows above Send:
 
-    About ₹N on the <tier> tier; about ₹M on the stronger tier.
+    About ₹N for one reply on the <tier> tier; about ₹M on the stronger tier.
 
 with the tier it suggests (the stronger one when the files are complex, the current one when
 they are only long); the owner chooses, then sends. The estimate is deliberately simple and is
 always "about": the files' characters and the message's, divided by 4, plus about 1,500 tokens
 a picture (only for a brain that will be shown it), as input; a quarter of the working answer
 cap (`work_output_tokens`) as output; at `llm/pricing.py` prices and the day's rate
-(`Billing.inr`). Below ₹5 on the tier the reply would use, nothing is shown. Nothing is shown
-either for a brain that costs nothing or whose price is unknown, in No-AI mode (no reply is paid
-for), or when anything needed to work it out is missing. It never calls a model and never
-spends: it only reads the owner's own waiting files' counts. A skill still asks for a tier,
-never a model.
+(`Billing.inr`); "for one reply", since a reply that uses tools reads the files again. Below ₹5
+on the tier the reply would use, nothing is shown. Nothing is shown either for a brain that
+costs nothing or whose price is unknown, in No-AI mode (no reply is paid for), or when a piece
+it needs is not set up here. A fault (storage, the day's rate, the No-AI switch unreadable) is
+never "nothing to show": the answer says `unavailable` (code review M2), and the console asks
+"Couldn't estimate the cost; send anyway?" before a large message goes. It never calls a model
+and never spends: it only reads the owner's own waiting files' counts. A skill still asks for a
+tier, never a model.
 """
 
 from __future__ import annotations
@@ -57,9 +60,11 @@ class Estimate:
     stronger_inr: float | None = None
     suggest: str = ""
     line: str = ""
+    unavailable: bool = False  # it could not be worked out (a fault), so the owner is asked
 
 
 NOTHING = Estimate()
+UNAVAILABLE = Estimate(unavailable=True)
 
 
 def is_large(*, chars: int, sheets: int, rows: int, pictures: int) -> bool:
@@ -109,12 +114,13 @@ class Estimator:
         brain: str | None = None,
         tier: str | None = None,
     ) -> Estimate:
-        """What a reply on these waiting files would cost, or `NOTHING` (show False)."""
+        """What a reply on these waiting files would cost; `NOTHING` (show False) when there is
+        nothing to show; `UNAVAILABLE` when it could not be worked out."""
         try:
             return await self._estimate(uid, attachments, message, brain, tier)
-        except Exception as exc:  # noqa: BLE001 — an estimate is a courtesy, never a failure
+        except Exception as exc:  # noqa: BLE001 — never a server error: the owner is asked instead
             log.warning("estimate unavailable", extra={"reason": type(exc).__name__})
-            return NOTHING
+            return UNAVAILABLE
 
     async def _estimate(
         self, uid: str, ids: Sequence[str], message: str, brain: str | None, tier: str | None
@@ -146,7 +152,7 @@ class Estimator:
         up_inr = await billing.inr(cost_usd(spec.tiers[up], usage)) if up is not None else None
         if inr < SHOW_FROM_INR:
             return Estimate(show=False, tier=now.value, inr=round(inr, 2))
-        line = f"About {_about(inr)} on the {now.value} tier"
+        line = f"About {_about(inr)} for one reply on the {now.value} tier"
         if up_inr is not None:
             line += f"; about {_about(up_inr)} on the stronger tier"
         hard = _complex(sheets=sheets, rows=rows, pictures=pictures)
@@ -168,6 +174,7 @@ __all__ = [
     "MANY_SHEETS",
     "PICTURE_TOKENS",
     "SHOW_FROM_INR",
+    "UNAVAILABLE",
     "Estimate",
     "Estimator",
     "is_large",

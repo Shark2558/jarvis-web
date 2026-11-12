@@ -2,11 +2,13 @@
 // what the Conversation panel gains for voice and files. Loaded by console-r111.js (an ES module); built with
 // window.JarvisFixes (mk, api, part) and the console's existing classes (.bfine, .bnote, .btn, .clip);
 // textContent only; ASCII source; its stylesheet only places things (D0).
-//   understand({heard, alternatives, confidence, files, session}) -> {understood, changed, sure, question}
-//       POST /v1/input/understand. Any failure answers "as heard": a spoken turn is never blocked by it.
+//   understand({heard, alternatives, confidence, files, session}) -> {understood, changed, sure, question, unchecked}
+//       POST /v1/input/understand. Any failure answers "as heard" with unchecked: a spoken turn is never blocked
+//       by it, and the owner is told (unchecked(row): "Couldn't check the words; sent as heard.")
 //   heard(row, heard, understood)   the "Heard / Understood as" lines under a spoken message
-//   cost({text, files, brain, send, cancel}) -> {wait}   large or complex files: POST /v1/input/estimate and,
-//       from 5 rupees up, the line above Send with the two tiers; the owner chooses, then it is sent
+//   cost({text, files, brain, send, cancel}) -> {wait, unknown}   large or complex files: POST /v1/input/estimate
+//       and, from 5 rupees up, the line above Send with the two tiers; the owner chooses, then it is sent. An
+//       estimate that failed (unavailable, an error, an odd answer) asks "Couldn't estimate the cost; send anyway?"
 //   shrink(file) -> file   a picture made smaller in the browser before upload (longest side and weight from
 //       GET /v1/input; a canvas re-draw, which also drops camera and location data)
 //   folder(fileList) -> {blob, name, count, left}   a picked folder's readable files as ONE stored zip
@@ -22,6 +24,8 @@ const PICTURE = /\.(png|jpe?g)$/i;
 const JPEG_TRIES = [0.85, 0.7, 0.55, 0.4];
 const LARGE = { chars: 40000, sheets: 3, rows: 2000, pictures: 2 };
 const UNDERSTAND_WAIT_MS = 8000;
+const UNCHECKED = 'Couldn\'t check the words; sent as heard.';
+const UNKNOWN_COST = 'Couldn\'t estimate the cost; send anyway?';
 const NS = 'http://www.w3.org/2000/svg';
 const FOLDER_ICON = 'M2.8 6.2a1.6 1.6 0 0 1 1.6-1.6h3.3l1.7 1.9h6.2a1.6 1.6 0 0 1 1.6 1.6v6.1a1.6 1.6 0 0 1-1.6 1.6H4.4a1.6 1.6 0 0 1-1.6-1.6z';
 let limits = Object.freeze({ accept: ['.pdf', '.docx', '.txt', '.md', '.markdown', '.csv', '.xlsx', '.xlsm', '.xls', '.pptx',
@@ -66,7 +70,16 @@ async function understand(o) {
   const same = { understood: heard, changed: false, sure: true, question: null };
   if (!understandOn || !heard.trim()) return same;
   const late = new Promise(resolve => { setTimeout(() => resolve(null), UNDERSTAND_WAIT_MS); });
-  try { return (await Promise.race([ask(o || {}, heard), late])) || same; } catch (_) { return same; }
+  const unchecked = Object.assign({ unchecked: true }, same);
+  try { return (await Promise.race([ask(o || {}, heard), late])) || unchecked; } catch (_) { return unchecked; }
+}
+/** The understand step failed or was late: the words went as heard, and the row says so. */
+function unchecked(row) {
+  if (!row || row.querySelector('.r111f-heard')) return;
+  const box = F.mk('div', 'r111f-heard');
+  box.setAttribute('role', 'note');
+  box.append(F.mk('p', 'bfine', UNCHECKED));
+  row.appendChild(box);
 }
 function heard(row, said, understood) {
   if (!row || typeof said !== 'string' || !said.trim() || typeof understood !== 'string') return;
@@ -120,6 +133,23 @@ function showCost(e, o) {
   (acts.querySelector('.primary') || first).focus();
   return true;
 }
+/** The estimate could not be worked out: the owner decides, with one click, before a large message goes. */
+function showUnknown(o) {
+  hideCost();
+  const form = $('form');
+  if (!form || !form.parentNode) return false;
+  const box = F.mk('div', 'bnote r111f-cost'); box.id = 'r111fCost';
+  box.setAttribute('role', 'group'); box.setAttribute('aria-label', 'Cost before sending');
+  const line = F.mk('p', 'r111f-line', UNKNOWN_COST); line.id = 'r111fCostLine';
+  const acts = F.mk('div', 'r111f-acts');
+  const go = costButton('Send anyway', true, () => o.send({}));
+  acts.append(go, costButton('Cancel', false, () => { if (typeof o.cancel === 'function') o.cancel(); }));
+  acts.querySelectorAll('button').forEach(b => b.setAttribute('aria-describedby', 'r111fCostLine'));
+  box.append(line, acts);
+  form.parentNode.insertBefore(box, form);
+  go.focus();
+  return true;
+}
 async function cost(o) {
   hideCost();
   if (!o || !Array.isArray(o.files) || !o.files.length || typeof o.send !== 'function' || !isLarge(o.files)) return { wait: false };
@@ -127,10 +157,12 @@ async function cost(o) {
   try {
     e = await F.api('/v1/input/estimate', { body: { attachments: o.files.map(f => f.id), message: String(o.text || '').slice(0, 100000),
       brain: typeof o.brain === 'string' ? o.brain : null } });
-  } catch (_) { return { wait: false }; }
+  } catch (_) { return { wait: showUnknown(o), unknown: true }; }
   const ok = e && e.show === true && typeof e.line === 'string' && e.line.length <= 200 && e.line.includes('\u20b9') &&
     TIERS.includes(e.tier) && (e.stronger_tier === null || TIERS.includes(e.stronger_tier));
-  return { wait: ok ? showCost(e, o) : false };
+  if (ok) return { wait: showCost(e, o) };
+  if (e && e.show === false && e.unavailable !== true) return { wait: false }; // under 5 rupees, a free brain, No-AI
+  return { wait: showUnknown(o), unknown: true };
 }
 
 // ---- pictures: made smaller here, before they leave the browser -----------------------------------------------
@@ -267,7 +299,7 @@ function refreshHints() {
 }
 
 if (F) {
-  F.part('files', { understand, heard, cost, hideCost, shrink, folder, limits: () => limits, isLarge, hints: () => turnHints.slice() });
+  F.part('files', { understand, heard, unchecked, cost, hideCost, shrink, folder, limits: () => limits, isLarge, hints: () => turnHints.slice() });
   folderButton();
   heardRows();
   const start = () => { loadLimits(); refreshHints(); };

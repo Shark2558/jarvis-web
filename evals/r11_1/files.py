@@ -20,13 +20,16 @@ O4  kinds            xlsx, xlsm, xls, pptx, png, jpg, zip and a folder are each 
     killed           the child process that reads too long is killed on time
     pictures         a picture reaches only a seeing, non-training brain, only with its own turn,
                      and is never stored in a turn
-    estimate         the rupee estimate appears from 5 rupees and never below
+    estimate         the rupee estimate appears from 5 rupees and never below; one that cannot be
+                     worked out says so (never "nothing to show", code review M2)
 
 Negative controls (each must make the suite fail, or the suite proves nothing):
     the rules table emptied                              -> mishearings fails
     the zip caps removed                                 -> hostile fails
     sees_pictures forced true for the training brain     -> pictures fails
     the guard switched off (every model answer taken)    -> protected fails
+    the 5-rupee threshold removed                        -> estimate fails
+    an estimate fault reported as "nothing to show"      -> estimate fails
 """
 
 from __future__ import annotations
@@ -59,6 +62,7 @@ from r11_1_fakes_b import (
 
 import jarvis.documents.archive as archive_mod
 import jarvis.documents.isolation as isolation_mod
+import jarvis.understand.estimate as estimate_mod
 import jarvis.understand.rules as rules_mod
 import jarvis.understand.service as service_mod
 from jarvis.config import LLMBackend, SessionBackend, Settings
@@ -92,6 +96,8 @@ CONTROLS = {
     "the zip caps removed": "hostile",
     "sees_pictures forced true for the training brain": "pictures",
     "the guard switched off": "protected",
+    "the 5-rupee threshold removed": "estimate",
+    "an estimate fault reported as nothing to show": "estimate",
 }
 Case = Callable[[], Awaitable[list[str]]]
 
@@ -418,8 +424,17 @@ async def estimate() -> list[str]:
     if under.show or under.line or not 0 < under.inr < SHOW_FROM_INR:
         out.append(f"an estimate under ₹5 was shown: {under}")
     small = await cost(5_000)
-    if small.show:
+    if small.show or small.unavailable:
         out.append("a small file got an estimate")
+    ref = await rig.docs.upload(UID, "long.txt", ("word " * 50_000).encode())
+
+    async def down(*_: Any, **__: Any) -> float:
+        raise RuntimeError("the day's rate is unreadable")
+
+    with patched(rig.billing, "inr", down):
+        broken = await rig.estimate.estimate(UID, attachments=[ref.id])
+    if broken.show or not broken.unavailable:
+        out.append(f"an estimate that failed looked like nothing to show: {broken}")
     return out
 
 
@@ -479,6 +494,10 @@ async def control() -> dict[str, Any]:
             BrainSpec, "sees_pictures", property(_sees_whatever_trains)
         ),
         "the guard switched off": patched(service_mod, "acceptable", _always),
+        "the 5-rupee threshold removed": patched(estimate_mod, "SHOW_FROM_INR", 0.0),
+        "an estimate fault reported as nothing to show": patched(
+            estimate_mod, "UNAVAILABLE", estimate_mod.NOTHING
+        ),
     }
     failed: dict[str, list[str]] = {}
     for name, patch in applied.items():

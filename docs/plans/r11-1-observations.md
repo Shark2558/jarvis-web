@@ -1,4 +1,4 @@
-Version v11.1.2 · 12 Nov 2026, 06:35 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.3 · 12 Nov 2026, 17:23 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # Release R11.1 — Your observations, fixed (`v11.1.0`)
 
@@ -276,6 +276,19 @@ the brief goes through `tools/background.py` and obeys the "Search and read emai
   name. No name, guess or "looks like" is ever produced from a face, for anyone, public or private, you and
   your family included. The eval covers both: a captioned picture of a made-up public figure (offer made,
   the gate decides) and an uncaptioned face (no name, no person search).
+- **D, as built after the integrated reviews (I1, v11.1.4 of the I1 notes).** The main brain's own
+  outward words on a picture turn (`web_search`, `youtube_search`, `maps_search` and `maps_route`,
+  `research_person`'s context) pass `picture.turnguard` in one of two modes. **Strict** whenever the
+  picture MAY show a person (the look said so; nobody researched this message's picture; it carried
+  two; it could not be read; anything failed): a query may carry only words he typed in that
+  message, words the picture shows (its read text and vetted things) and free words (small, search
+  and generic thing words, never part of a name), in any script, inside a link or joined with `_`,
+  and in every query of the turn on its own; else one fixed sentence says he can type the name or
+  ask without the picture. **Light** only when picture research of that message's only picture saw
+  nobody (its report carries the message's key): the name shapes above, with a mark-aware tokeniser,
+  a link's parts tested on their own, and no "one word is a topic" escape beside a person word.
+  The rise in over-caution on person pictures is accepted (30 of 35 ordinary queries wait for his
+  words there; 5 of 35 on a picture known to show nobody, as before).
 
 ## Needs the owner (safe defaults until answered; none blocks the build)
 
@@ -438,3 +451,4 @@ Everything above counts against your monthly limit and is refused, in plain word
 |---|---|---|---|---|
 | v11.1.1 | 12 Nov 2026, 06:17 IST | R11.1 | First edition, with the I0 seams built: the twelve observations and their root causes checked against the code (corrections for O2, O3, O11), D0–D20, owner decisions with safe defaults, the A–D split with each part's files, the I0 seams, what I1 wires, tests and evals, acceptance, cost in ₹, risks and what is not verified live | 🛠 Mark XV |
 | v11.1.2 | 12 Nov 2026, 06:35 IST | R11.1 | D21, the orchestrator's additions after reading the plan: the batch Undo adds no bypass (A); "Understood as" never rewrites numbers, dates, times, names or addresses (B); unnamed face groups expire after 90 days, can be forgotten and appear in Privacy (C); a name may come from words in a picture and then meets the unchanged people check, never from a face (D); owner question 10 | 🛠 Mark XV |
+| v11.1.3 | 12 Nov 2026, 17:23 IST | R11.1 | D21-D as built after the integrated reviews: the turn guard's strict mode (a picture that may show a person: only his words, the picture's and free words go out) and light mode (a picture researched and seen without a person); YouTube, Maps and people research's context behind it | 🛠 Mark XV |

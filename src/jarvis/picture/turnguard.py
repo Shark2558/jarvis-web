@@ -45,6 +45,8 @@ from jarvis.picture.words import (
     word_set,
     words_of,
 )
+from jarvis.tools.base import SUMMARY_FALLBACK_LIMIT, Preview
+from jarvis.tools.card import one_line
 from jarvis.tools.context import current_tool_context
 from jarvis.tools.taint import owner_text
 
@@ -57,10 +59,12 @@ Carried = Literal["yes", "no", "unknown"]
 OFFER_WORDS = (
     "The picture's text names {name}. Press 'Look up' to check them with your people research."
 )
+# fixed words; they reach the model whole through the gateway's 160-character error detail too
 WEB_REFUSED = (
-    "I don't identify people from pictures, Sir, so I didn't search the web for that. On a "
-    "message with a picture I search only for words you typed or words the picture shows."
+    "I don't identify people from pictures, Sir: with a picture I search only words you typed "
+    "or the picture shows."
 )
+WEB_CARD = "Search the web for: {query}"  # web_search's own card words (its summary_template)
 LOOK = "look"  # Part D's part and its service on `app.state.r111_parts` (picture.part)
 RESEARCH = "research"
 
@@ -100,6 +104,11 @@ class Refused:
 
 
 ALLOWED = Allowed()
+
+
+class PictureQueryRefused(ValueError):
+    """A web query refused on a picture turn: nothing is proposed or searched (the gateway
+    reports the fixed words)."""
 
 
 # ---- the pure checks (a picture turn) ----------------------------------------------------------
@@ -202,6 +211,15 @@ class TurnGuard:
         verdict = await self.query(query)
         return verdict.view() if isinstance(verdict, Refused) else None
 
+    async def query_preview(self, a: dict[str, Any]) -> Preview:
+        """`web_search`'s look-up (`Tool.preview`): a query refused on a picture turn is never
+        proposed, so an "Ask first" card never shows a name taken from a face."""
+        query = str(a.get("query", "")).strip()
+        verdict = await self.query(query)
+        if isinstance(verdict, Refused):
+            raise PictureQueryRefused(verdict.message)
+        return Preview(summary=one_line(WEB_CARD.format(query=query), SUMMARY_FALLBACK_LIMIT))
+
 
 FAIL_CLOSED = TurnGuard()  # not wired: every Brain turn counts as a picture turn
 
@@ -250,11 +268,13 @@ __all__ = [
     "ALLOWED",
     "FAIL_CLOSED",
     "OFFER_WORDS",
+    "WEB_CARD",
     "WEB_REFUSED",
     "Allowed",
     "Carried",
     "DocumentTurns",
     "Offer",
+    "PictureQueryRefused",
     "PictureTurns",
     "Refused",
     "TurnGuard",

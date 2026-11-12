@@ -37,7 +37,7 @@ from jarvis.people.models import Dossier
 from jarvis.people.offer import offered
 from jarvis.people.research import PeopleService, RateLimited, ScopeRefused, SearchFailed
 from jarvis.picture.turnguard import FAIL_CLOSED, Offer, Refused, TurnGuard
-from jarvis.tools.base import Preview, Tool
+from jarvis.tools.base import SUMMARY_FALLBACK_LIMIT, Preview, Tool
 from jarvis.tools.card import one_line
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
@@ -57,7 +57,6 @@ LINKS = "Here are {n} profile links, Sir. Each one opens in its own tab."
 NO_LINKS = "No profile link matches that, Sir."
 CARD = "Research {name} from public sources"  # the card, as `summary_template` writes it
 CARD_OFFER = "Look up {name}, whom the picture's text names"
-CARD_LIMIT = 160
 
 
 class PictureNameRefused(ValueError):
@@ -149,7 +148,7 @@ class PeopleAPI:
         if isinstance(verdict, Refused):
             raise PictureNameRefused(verdict.message)
         words = CARD_OFFER if isinstance(verdict, Offer) else CARD
-        return Preview(summary=one_line(words.format(name=name), CARD_LIMIT))
+        return Preview(summary=one_line(words.format(name=name), SUMMARY_FALLBACK_LIMIT))
 
     async def research(self, a: dict[str, Any]) -> dict[str, Any]:
         uid = require_tool_context().user_id

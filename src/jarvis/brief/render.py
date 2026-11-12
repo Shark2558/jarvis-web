@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from datetime import date
+from typing import Any
 
 from jarvis.brief.models import (
     AI_LABEL,
@@ -30,6 +31,7 @@ from jarvis.brief.models import (
 )
 from jarvis.tools.addresses import plain_address
 from jarvis.tools.card import quoted, strip_invisible
+from jarvis.tools.gmail_digest import unread_words
 from jarvis.tools.spoken import withhold_if_sensitive
 
 NOT_CONNECTED = "Google is not connected: connect it in the console (Integrations) to see your {}."
@@ -155,17 +157,73 @@ def _tomorrow(data: BriefData) -> list[str]:
     return ["TOMORROW", f"  First: {event_line(first)}" if first else "  Nothing yet tomorrow."]
 
 
+INBOX_EMPTY = "  No unread mail in your inbox."
+INBOX_ONLY_OTHER = "  None of them is from a person, a bill or an update of the last 7 days."
+INBOX_NOT_EXACT = "  Gmail didn't give its own count just now: the number is an estimate."
+_GROUP_WORDS = {
+    "people": ("from people", "from people"),
+    "bills": ("bill or order", "bills and orders"),
+    "updates": ("update", "updates"),
+    "promotions": ("promotion", "promotions"),
+    "social": ("social", "social"),
+}
+
+
+def _grouped(box: Any) -> list[str]:
+    """R11.1 D20: "2 from people · 3 bills and orders · ..." and the withheld count, when the
+    brief's inbox section carries them (`brief.collect.shape_inbox`; JARVIS's own words)."""
+    parts: list[str] = []
+    for g in getattr(box, "groups", ()) or ():
+        key = g.get("key") if isinstance(g, dict) else getattr(g, "key", None)
+        n = g.get("unread") if isinstance(g, dict) else getattr(g, "unread", 0)
+        if key in _GROUP_WORDS and isinstance(n, int) and n > 0:
+            parts.append(f"{n} {_GROUP_WORDS[key][0 if n == 1 else 1]}")
+    lines = [f"  {' · '.join(parts)}"] if parts else []
+    held = getattr(box, "withheld", 0)
+    if isinstance(held, int) and held > 0:
+        lines.append(
+            "  1 more looks like a code or a bank message: open it in Gmail."
+            if held == 1
+            else f"  {held} more look like codes or bank messages: open them in Gmail."
+        )
+    return lines
+
+
+def _count_of(box: Any) -> str:
+    """ "132 unread", or "about 25 unread" when Gmail's own count could not be read (`exact`)."""
+    about = "about " if getattr(box, "exact", True) is False else ""
+    return f"{about}{box.total} unread"
+
+
+def _unsure(box: Any) -> list[str]:
+    """What the read could not see, in JARVIS's own words (R11.1: never hidden)."""
+    lines = [INBOX_NOT_EXACT] if getattr(box, "exact", True) is False else []
+    failed, listed = getattr(box, "failed", 0), getattr(box, "listed", 0)
+    if isinstance(failed, int) and isinstance(listed, int) and failed > 0:
+        lines.append("  " + unread_words(failed, max(listed, failed)))
+    return lines
+
+
 def _inbox(data: BriefData) -> list[str]:
+    """The whole inbox (R11.1 D20): Gmail's own unread count ("about N" when it could not be
+    read), then the newest mail from people, bills and orders, and updates. Promotions and
+    social are counted, never listed; messages that could not be read are said, and then the
+    brief never claims that none of them is from a person."""
     box = data.inbox
     head = "INBOX"
     if data.sections_status.inbox == "ok" and box.total:
-        head += f" · {box.total} unread in the last day (showing {len(box.items)})"
+        head += f" · {_count_of(box)}"
+        if box.items:
+            head += f" (showing {len(box.items)})"
     if (note := _status_line(data.sections_status.inbox, "inbox")) is not None:
         return [head, note]
-    lines = [head]
+    unsure = _unsure(box)
+    lines = [head, *unsure, *_grouped(box)]
     for m in box.items:
         lines.append(f"  {m.when + '  ' if m.when else ''}{sender(m)} — {theirs(m.subject)}")
-    return lines if box.items else [head, "  No unread mail in the last day."]
+    if not box.items and not getattr(box, "failed", 0):
+        lines.append(INBOX_ONLY_OTHER if box.total else INBOX_EMPTY)
+    return lines
 
 
 def sender(m: InboxItem) -> str:

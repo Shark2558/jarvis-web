@@ -1,3 +1,27 @@
 /* src/jarvis/api/static/console-r111-plan.css -- R11.1 Part A (docs/plans/r11-1-observations.md D0): placement
-   only for the calendar batch list, the study-plan check-in and re-plan cards. Existing tokens and classes; no new colours, fonts, radii or shadows.
-   I0 stub: Part A fills it (at most 150 lines). */
+   only for the calendar batch list, the study-plan check-in and re-plan cards. Existing tokens and classes
+   (.mcard, .actions, .btn, .lift); no new colours, fonts, radii or shadows.
+   .plan-checks  the check-ins above the Approvals list (console-r111-plan.js makes it)
+   .plan-check   one question with its buttons;  .plan-batch  what a batch did, under its reply
+   .plan-q / .plan-said  the question or JARVIS's words / what a press did (role="status")
+   .plan-list    the scrolling list on an approval card: every event a batch adds, or every
+                 "old date -> new date" of a re-plan (the same well an approval's details use) */
+.plan-checks{display:flex;flex-direction:column;gap:8px;margin:0 0 12px}
+.plan-checks[hidden]{display:none}
+/* "Nothing waiting." under a question that waits would contradict it */
+.plan-checks:not([hidden]) ~ #approvals > .empty{display:none}
+.plan-check,.plan-batch{padding:10px 12px}
+.plan-q{margin:0;font-size:13.5px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.plan-check .actions,.plan-batch .actions{margin-top:10px;flex-wrap:wrap}
+.plan-batch .actions .btn{flex:0 1 auto;padding:0 14px}
+.plan-said{margin:8px 0 0;font-size:12.5px;line-height:1.45;color:var(--ink-2);overflow-wrap:anywhere}
+.plan-said:empty{display:none}
+.plan-said.bad{color:var(--bad-ink)}
+.plan-list{list-style:none;margin:9px 0 0;padding:9px 10px;min-height:44px;max-height:220px;overflow:auto;
+  border-radius:var(--r-sm);background:var(--well);border:1px solid var(--line-2);
+  font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.plan-list li{padding:2px 0;overflow-wrap:anywhere}
+/* what an event will write besides its title: its description (clipped) and alerts */
+.plan-note{margin:2px 0 0 1.4em;overflow-wrap:anywhere}
+.plan-more{margin:2px 0 4px 1.4em}
+.plan-list:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

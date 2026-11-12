@@ -82,7 +82,8 @@ async def site(settings: Settings) -> AsyncIterator[App]:
 
 # ---- the view ----------------------------------------------------------------------------------
 async def test_the_view_starts_empty_and_puts_the_phrases_into_no_ai_mode(site: App) -> None:
-    assert route not in site.app.state.brain_mode.phrases
+    # R11.1 I1 (INTEGRATION-A 3.2): the phrases are in from the start, not on the first request
+    assert site.app.state.brain_mode.phrases.count(route) == 1
     r = await site.c.get("/v1/series")
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     assert r.json() == {"part": "plan", "ready": "ready", "plans": [], "waiting": []}

@@ -11,6 +11,11 @@
 - `install_r11_1_routes(app)`: the four parts' routers (`/v1/series`, `/v1/input`,
   `/v1/facegroups`, `/v1/picture`) (each part owns its `api/fix_<part>.py`).
 - `fix_privacy_sources(app)`: the parts' privacy rows, for `api/personal.py`.
+- `fix_phrases(app)` / `install_fix_phrases(app)`: the parts' No-AI phrase routers
+  (`services["phrases"]`), put into `BrainMode` once, after the helpers' own (R11.1 I1,
+  INTEGRATION-A 3.2), whether the helpers are on or off.
+- `fix_brief(app)`: the parts' morning-brief contributors (`services["brief"]`), for the
+  brief's Helpers lines (`r11_wiring.helpers_brief`; INTEGRATION-A 3.3).
 """
 
 from __future__ import annotations
@@ -108,6 +113,30 @@ def fix_privacy_sources(app: FastAPI) -> tuple[PrivacySource, ...]:
     return tuple(src for p in _parts(app).values() for src in p.privacy)
 
 
+def fix_phrases(app: FastAPI) -> tuple[Any, ...]:
+    """The parts' No-AI routers (`BrainMode.add_phrases`)."""
+    return tuple(r for p in _parts(app).values() for r in p.services.get("phrases", ()) or ())
+
+
+def install_fix_phrases(app: FastAPI) -> None:
+    """Put the parts' phrases into the app's BrainMode once (a phrase already there is left).
+    A full phrasebook is logged and never fatal: the AI still answers those words."""
+    mode = getattr(app.state, "brain_mode", None)
+    if mode is None:
+        return
+    new = [r for r in fix_phrases(app) if r not in mode.phrases]
+    try:
+        mode.add_phrases(new)
+    except ValueError:
+        log.warning("the R11.1 phrases did not fit into No-AI mode", extra={"count": len(new)})
+
+
+def fix_brief(app: FastAPI) -> tuple[Any, ...]:
+    """The parts' brief contributors (`helpers.ports.BriefContributor`), read when the brief
+    is made (a part built later, or one that has none, is simply absent)."""
+    return tuple(c for p in _parts(app).values() if (c := p.services.get("brief")) is not None)
+
+
 def install_r11_1_routes(app: FastAPI) -> None:
     for router in (plan_router, files_router, photos_router, look_router):
         app.include_router(router)
@@ -118,10 +147,13 @@ __all__ = [
     "SETUP_FAILED",
     "build_parts",
     "check_part",
+    "fix_brief",
     "fix_clock_jobs",
     "fix_daily_jobs",
+    "fix_phrases",
     "fix_privacy_sources",
     "fix_tools",
+    "install_fix_phrases",
     "install_r11_1_routes",
     "wire_r11_1",
 ]

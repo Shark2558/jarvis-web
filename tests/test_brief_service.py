@@ -810,7 +810,8 @@ async def test_r111_never_or_ask_first_on_the_mail_row_means_the_brief_reads_no_
     b = view.brief
     assert b is not None and b.data is not None
     assert [q for q in r.fake.requests if "/gmail/" in q.url.path and q.method == "GET"] == []
-    assert b.data.sections_status.inbox == "unavailable" and "Budget" not in b.text
+    # I1 code review M4: his row, not a fault: paused by his Permissions
+    assert b.data.sections_status.inbox == "paused" and "Budget" not in b.text
     assert b.data.calendar.today[0].title == "Standup"  # the other sections are untouched
 
 

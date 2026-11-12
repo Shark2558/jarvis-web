@@ -275,7 +275,8 @@ async def test_the_brief_s_background_read_obeys_the_mail_row(effect: Effect) ->
     gw = _gateway(conn, effect)
     got = await Collector(conn, None, reads=BackgroundReads.of(gw)).collect(UID, IST, DAY)
     assert fake.gmail_reads() == []  # nobody is there to ask at 07:00: no read
-    assert got.data.sections_status.inbox == "unavailable" and got.data.inbox.items == ()
+    # I1 code review M4: his row, not a fault: the section is paused by his Permissions
+    assert got.data.sections_status.inbox == "paused" and got.data.inbox.items == ()
     assert got.data.sections_status.calendar == "ok"  # the other sections are untouched
     last = (await gw.audit.tail(5)).entries[-1]
     assert (last.agent, last.tool, last.outcome) == ("helpers", gd.SUMMARY_TOOL, "denied")

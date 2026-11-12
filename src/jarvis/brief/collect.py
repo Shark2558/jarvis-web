@@ -427,6 +427,8 @@ class Collector:
             return "ok", await fn()
         except GoogleNotConnected:
             return "not_connected", None
+        except NotRead:  # R11.1 I1 (code M4): his mail row, not a fault
+            return "paused", None
         except Exception as exc:  # noqa: BLE001 — one section failing never fails the brief
             log.warning("brief section unavailable", extra={"reason": type(exc).__name__})
             return "unavailable", None

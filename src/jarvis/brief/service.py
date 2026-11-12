@@ -76,7 +76,7 @@ from jarvis.llm.pricing import cost_usd, is_priced
 from jarvis.llm.router import ModelTier
 from jarvis.logging import get_logger
 from jarvis.tools.audit import AuditTrail
-from jarvis.tools.background import BackgroundReads
+from jarvis.tools.background import BackgroundReads, NotRead
 
 log = get_logger(__name__)
 T = TypeVar("T")
@@ -135,11 +135,14 @@ class HelpersSource(Protocol):
 
 
 async def _own_section(work: Awaitable[T], failed: Callable[[SectionState], T]) -> T | None:
-    """One R1 section's result; its own `unavailable` / `not_connected` state when it fails."""
+    """One R1 section's result; its own `unavailable` / `not_connected` state when it fails, and
+    `paused` when his Permissions do not let it read (R11.1 I1, code M4)."""
     try:
         return await asyncio.wait_for(work, EXTRA_TIMEOUT_S)
     except GoogleNotConnected:
         return failed("not_connected")
+    except NotRead:
+        return failed("paused")
     except Exception as exc:  # noqa: BLE001 -- one section failing never fails the brief
         log.warning("brief section unavailable", extra={"reason": type(exc).__name__})
         return failed("unavailable")

@@ -356,13 +356,16 @@
     s.setAttribute('aria-labelledby', h.id); s.append(h);
     return s;
   }
+  /** His mail row is Never or Ask first: said as his choice, never as a fault (brief.render). */
+  const paused = (what) => `Paused by your Permissions: set 'Search and read email' to Allow there to see your ${what} here.`;
   /** One-line replacement for a section Google couldn't fill (not linked, or failing just now). */
   function missing(state, what, id) {
     const wrap = mk('div', 'bstate');
     if (state === 'not_connected') {
       wrap.append(mk('p', 'bempty', `Connect Google to see your ${what} here.`),
         button(id, 'bact', 'Open Integrations', () => Deck.open('integrations', { focus: true })));
-    } else wrap.append(mk('p', 'bmiss warn', `Couldn't read your ${what} just now.`));
+    } else if (state === 'paused') wrap.append(mk('p', 'bempty', paused(what)));  // R11.1 I1 M4
+    else wrap.append(mk('p', 'bmiss warn', `Couldn't read your ${what} just now.`));
     return wrap;
   }
   function briefView(b) {

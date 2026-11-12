@@ -36,6 +36,10 @@ from jarvis.tools.spoken import withhold_if_sensitive
 
 NOT_CONNECTED = "Google is not connected: connect it in the console (Integrations) to see your {}."
 UNAVAILABLE = "Your {} could not be read just now."
+# R11.1 I1 (code review M4): his "Search and read email" row is Never or Ask first
+PAUSED = (
+    "Paused by your Permissions: set 'Search and read email' to Allow there to see your {} here."
+)
 PARTIAL = (
     "JARVIS read only part of your to-do list (at most 10 lists and 300 tasks each), so there "
     "may be more."
@@ -106,6 +110,8 @@ def _status_line(state: SectionState, what: str) -> str | None:
         return "  " + NOT_CONNECTED.format(what)
     if state == "unavailable":
         return "  " + UNAVAILABLE.format(what)
+    if state == "paused":
+        return "  " + PAUSED.format(what)
     return None
 
 

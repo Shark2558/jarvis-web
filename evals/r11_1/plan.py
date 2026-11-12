@@ -538,7 +538,9 @@ async def _o12_brief_never() -> list[str]:
     )
     got = await Collector(conn, None, reads=BackgroundReads.of(gw)).collect(UID, IST, DAY)
     return _check(fake.gmail_reads() == [], "the brief read mail on a Never row") + _check(
-        got.data.sections_status.inbox == "unavailable", "the brief does not say it was not read"
+        # I1 code review M4: "paused" by his Permissions, said as his choice, never as a fault
+        got.data.sections_status.inbox == "paused",
+        "the brief does not say his Permissions paused it",
     )
 
 

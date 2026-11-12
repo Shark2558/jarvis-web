@@ -31,6 +31,7 @@
   function stateLine(state, what) {
     if (state === 'not_connected') return 'Connect Google to see your ' + what + ' here.';
     if (state === 'unavailable' || state === 'not_granted') return 'Couldn\'t read your ' + what + ' just now.';
+    if (state === 'paused') return 'Paused by your Permissions: set \'Search and read email\' to Allow there to see your ' + what + ' here.';
     return '';
   }
   /** "Mon 9 Nov" from YYYY-MM-DD, read as a calendar date (never shifted by time zone). */

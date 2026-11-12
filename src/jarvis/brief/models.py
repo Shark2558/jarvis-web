@@ -18,7 +18,8 @@ BriefStatus = Literal["generating", "ready", "failed"]
 ViewStatus = Literal["none", "generating", "ready", "failed"]
 Trigger = Literal["scheduled", "manual", "open"]
 InboxStatus = Literal["off", "sending", "delivered", "failed", "unknown"]
-SectionState = Literal["ok", "not_connected", "unavailable"]
+# "paused" (R11.1 I1, code review M4): his Permissions do not let the brief read his mail
+SectionState = Literal["ok", "not_connected", "unavailable", "paused"]
 # The to-do list (slice 10 C) has its own optional scope, hence one more state.
 TodoState = Literal["ok", "not_connected", "not_granted", "unavailable"]
 

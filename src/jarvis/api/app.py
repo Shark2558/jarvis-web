@@ -162,6 +162,7 @@ def build_brief_service(
     else:
         approvals = built.approvals if built is not None else None
         audit = built.audit if built is not None else AuditLog()
+    reads = BackgroundReads(lambda: getattr(app.state, "gateway", None), audit=audit)
     return BriefService(
         store=BriefStore(docs, prefix=s.firestore_prefix),
         google=app.state.google,
@@ -173,11 +174,11 @@ def build_brief_service(
         ai_daily_cap=s.brief_ai_daily_cap,
         retention_days=s.brief_retention_days,
         billing=getattr(app.state, "billing", None),
-        # R11.1 D20: the brief's inbox read obeys the "Search and read email" row
-        reads=BackgroundReads(lambda: getattr(app.state, "gateway", None), audit=audit),
+        # R11.1 D20 / I1 M1: the inbox and deliveries reads obey the "Search and read email" row
+        reads=reads,
         mail_max_reads=s.mail_summary_max_reads,
         # R1 D: Deliveries and Family today (only with the Google link they read through)
-        deliveries=DeliveriesBrief(PackageScanner(app.state.google))
+        deliveries=DeliveriesBrief(PackageScanner(app.state.google), reads=reads)
         if getattr(app.state, "google", None) is not None
         else None,
         family_day=FamilyBrief(family) if (family := getattr(app.state, "family", None)) else None,

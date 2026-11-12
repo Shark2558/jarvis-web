@@ -1,4 +1,4 @@
-Version v11.1.1 · 12 Nov 2026, 06:40 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.1 · 12 Nov 2026, 06:17 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 — the common builder brief (Parts A–D)
 
@@ -169,4 +169,4 @@ lists honestly what you could not verify live.
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v11.1.1 | 12 Nov 2026, 06:40 IST | R11.1 | First edition with the R11.1 I0 seams | 🛠 Mark XV |
+| v11.1.1 | 12 Nov 2026, 06:17 IST | R11.1 | First edition with the R11.1 I0 seams | 🛠 Mark XV |

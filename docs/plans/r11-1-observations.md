@@ -1,4 +1,4 @@
-Version v11.1.1 · 12 Nov 2026, 06:30 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.1 · 12 Nov 2026, 06:17 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # Release R11.1 — Your observations, fixed (`v11.1.0`)
 
@@ -412,4 +412,4 @@ Everything above counts against your monthly limit and is refused, in plain word
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v11.1.1 | 12 Nov 2026, 06:30 IST | R11.1 | First edition, with the I0 seams built: the twelve observations and their root causes checked against the code (corrections for O2, O3, O11), D0–D20, owner decisions with safe defaults, the A–D split with each part's files, the I0 seams, what I1 wires, tests and evals, acceptance, cost in ₹, risks and what is not verified live | 🛠 Mark XV |
+| v11.1.1 | 12 Nov 2026, 06:17 IST | R11.1 | First edition, with the I0 seams built: the twelve observations and their root causes checked against the code (corrections for O2, O3, O11), D0–D20, owner decisions with safe defaults, the A–D split with each part's files, the I0 seams, what I1 wires, tests and evals, acceptance, cost in ₹, risks and what is not verified live | 🛠 Mark XV |

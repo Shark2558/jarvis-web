@@ -14,23 +14,17 @@ signed answers carry group ids and counts only: never a picture, a crop or an em
     POST /bridge/v1/faces/groups/forget  {"groups": [ids]} | {"all": true} -> {"forgotten", "left"}
 
 - `person` is only ever an id the cloud synced as consented (the faces plugin's `FaceLibrary`
-  decides; no consent here means nobody is named, whatever the store says). `score` is the
-  laptop's likeness on the wire's scale: 0.9 (the cloud's bar) at this laptop's threshold plus
-  `NAME_MARGIN` (a stricter bar for naming than for grouping).
-- `enrol` names a group for a consented id and copies its best crops into the camera's face
-  library under that id, so the camera recognises the person too. If Frigate is down the copy is
-  done later (`copy_to_camera`, every minute); photos are recognised by this laptop meanwhile.
-- An unnamed group and a stray face are forgotten `FACE_GROUPS_KEEP_DAYS` (default 90) after they
-  were first seen; a deleted person's groups go before the faces plugin acknowledges the delete.
-- A plugin that can't run its engine answers `no_engine`; one whose store can't be opened (a
-  locked, read-only or full disk: review C-code H4) answers `no_store`, says so in the groups
-  view (`engine: "no_store"`) and tries to open it again every minute. Neither raises at start:
-  a photos fault must not make the camera look broken.
-- One bad picture is one refusal (`bad_image`), whatever went wrong with it: never a 500 that
-  the cloud would read as "laptop not reachable" (review C-code H3).
-- Consent is checked twice when a group is named: once when the message arrives and again
-  inside the store's own lock, right before the write (review C-sec M2); and before each crop is
-  copied to the camera.
+  decides), checked when the message arrives, again inside the store's lock right before the
+  write and before each crop is copied (review C-sec M2). `score` is the wire's 0..1 scale: 0.9
+  (the cloud's bar) only `NAME_MARGIN` above the grouping threshold (`face_types.confidence`).
+- `enrol` names a group and copies its best crops into the camera's face library under that id;
+  if Frigate is down the copy is done later (`copy_to_camera`, every minute).
+- Unnamed groups and strays go `FACE_GROUPS_KEEP_DAYS` (90) after they were first seen; a
+  deleted person's groups go before the faces plugin acknowledges the delete.
+- No engine: `no_engine`. A store that can't be opened (locked, read-only, full disk: review
+  C-code H4): `no_store`, `engine: "no_store"` in the groups view, opened again every minute.
+  Neither raises at start: a photos fault must not make the camera look broken. One bad picture
+  is one refusal (`bad_image`), never a 500 read as "laptop not reachable" (C-code H3).
 """
 
 from __future__ import annotations
@@ -57,7 +51,15 @@ from jarvis.homebridge.face_engine import (
 )
 from jarvis.homebridge.face_folder import DEFAULT_PER_MINUTE, FolderScanner
 from jarvis.homebridge.face_store import DEFAULT_MATCH, FaceStore, NoConsent
-from jarvis.homebridge.face_types import GROUP, AlreadyNamed, Placed, UnknownGroup
+from jarvis.homebridge.face_types import (
+    GROUP,
+    AlreadyNamed,
+    Placed,
+    UnknownGroup,
+    confidence,
+)
+from jarvis.homebridge.face_types import setting_float as _part
+from jarvis.homebridge.face_types import setting_int as _whole
 from jarvis.homebridge.faces import FaceRefused
 from jarvis.homebridge.jpeg import PictureRefused, jpeg_size
 from jarvis.homebridge.plugins import BridgeContext, BridgeRoute, TaskFactory
@@ -67,38 +69,12 @@ log = logging.getLogger(__name__)
 DEFAULT_KEEP_DAYS = 90
 DEFAULT_MODELS_DIR = "/models"
 DEFAULT_MOUNT = "/photos"
-RECOGNISED = 0.9  # the cloud's bar for a name (faces.ports.RECOGNITION_THRESHOLD)
-NAME_MARGIN = 0.10  # how much more alike than the grouping threshold a face must be to be named
 MAX_LISTED = 100
 MAX_FORGET = 100
 SWEEP_S = 3600.0
 COPY_S = 60.0
 NO_ENGINE = "The face reader on this laptop isn't ready."
 NO_STORE = "The face store on this laptop can't be opened right now."
-
-
-def confidence(cosine: float, match: float) -> float:
-    """The laptop's likeness on the wire's 0..1 scale. The cloud's bar (0.9) is met only
-    `NAME_MARGIN` above this laptop's grouping threshold (review C-sec L6): a face just alike
-    enough to join a group is grouped, but not reported as the named person."""
-    c = max(0.0, min(1.0, float(cosine)))
-    bar = min(0.95, match + NAME_MARGIN)
-    if c >= bar:
-        return round(min(1.0, RECOGNISED + (1 - RECOGNISED) * (c - bar) / (1 - bar)), 4)
-    return round(RECOGNISED * c / bar, 4)
-
-
-def _whole(text: object, default: int, low: int, high: int) -> int:
-    value = str(text or "").strip()
-    return int(value) if value.isdigit() and low <= int(value) <= high else default
-
-
-def _part(text: object, default: float, low: float, high: float) -> float:
-    try:
-        value = float(str(text or ""))
-    except ValueError:
-        return default
-    return value if low <= value <= high else default
 
 
 class FaceGroupsPlugin:

@@ -222,15 +222,9 @@ class Importer:
             want = set(left)
             wanted = [i for i in items if i.id in want]
             if not wanted:
-                if nxt:
-                    doc = replace(doc, cursor=nxt, wrapped=doc.wrapped or not doc.cursor)
-                    continue
-                if not doc.cursor or doc.wrapped:
-                    # a whole pass from the first page found none of what is left: it is gone
-                    doc = replace(doc, skipped=doc.skipped + len(left), cursor="", wrapped=False)
-                    left = []
+                doc, left, ended = self._empty_page(doc, left, nxt)
+                if ended:
                     break
-                doc = replace(doc, cursor="", wrapped=True)
                 continue
             for item in wanted:
                 if not self._room(st, limits):
@@ -262,6 +256,17 @@ class Importer:
         state = "reading" if left else "done"
         done = replace(doc, todo=tuple(left), state=state)
         return StepOut(await self._save(uid, done, st), tuple(dict.fromkeys(unknown)))
+
+    @staticmethod
+    def _empty_page(doc: ImportDoc, left: list[str], nxt: str) -> tuple[ImportDoc, list[str], bool]:
+        """A page with none of what is left: the next page, or a new pass from the first. A
+        whole pass that found none of them means they are gone (counted, the list is ended)."""
+        if nxt:
+            return replace(doc, cursor=nxt, wrapped=doc.wrapped or not doc.cursor), left, False
+        if not doc.cursor or doc.wrapped:
+            gone = replace(doc, skipped=doc.skipped + len(left), cursor="", wrapped=False)
+            return gone, [], True
+        return replace(doc, cursor="", wrapped=True), left, False
 
     def _paced(self, doc: ImportDoc, st: _Step) -> ImportDoc:
         took = self._clock() - st.started

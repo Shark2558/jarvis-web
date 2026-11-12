@@ -179,3 +179,24 @@ def test_a_picture_that_is_not_a_jpeg_inside_is_refused_by_the_child(tmp_path: P
     broken = jpeg_bytes(64, 64).replace(b"\x01\x11\x00\xff\xda", b"\x01\x11\x03\xff\xda")
     with pytest.raises(PictureRefused):
         engine.faces(broken)
+
+
+def test_while_the_models_cannot_load_they_are_checked_again_at_most_once_a_minute(
+    tmp_path: Path,
+) -> None:
+    # review C-code L3: status() is asked on every groups view; the 38 MB hash is not redone
+    starts = {"n": 0}
+    clock = {"t": 100.0}
+
+    class Counting(OpenCvEngine):
+        def _start(self) -> str:
+            starts["n"] += 1
+            return super()._start()
+
+    engine = Counting(tmp_path, clock=lambda: clock["t"])  # no model files here
+    for _ in range(5):
+        assert engine.status() != "ready"
+    assert starts["n"] == 1
+    clock["t"] += 61
+    engine.status()
+    assert starts["n"] == 2

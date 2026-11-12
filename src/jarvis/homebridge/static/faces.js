@@ -64,7 +64,7 @@
     });
   }
   // ---- faces from the owner's photos (R11.1): GET /faces/api/groups -> {available, groups:[{id, n,
-  // photos, crops}], strays, engine, folder, read, waiting, keep_days}; GET /faces/api/groups/<id>/<i>
+  // photos, crops}], strays, engine, folder, read, skipped, waiting, set_aside, keep_days}; GET /faces/api/groups/<id>/<i>
   // (a crop); POST /faces/api/groups/forget {group}; POST /faces/api/groups/rescan. Naming is done in
   // JARVIS (the consent check lives there), never on this page.
   const GROUP = /^c_[0-9a-f]{12}$/;
@@ -79,7 +79,11 @@
     const box = $('groups-box'); box.hidden = d.available !== true; if (box.hidden) return;
     $('keep-days').textContent = String(count(d.keep_days) || 90);
     const engine = d.engine === 'ready' ? '' : ' The face reader is not ready yet: run the home kit update.';
-    $('folder-line').textContent = (FOLDER[d.folder] || ('Photo folder: on. ' + count(d.read) + ' file(s) read, ' + count(d.waiting) + ' waiting.')) + engine;
+    const store = d.engine === 'no_store' ? ' The face store on this laptop cannot be opened right now (is the disk full?). Nothing was deleted.' : '';
+    const skipped = count(d.skipped) ? ' ' + count(d.skipped) + ' file(s) skipped: could not be read.' : '';
+    const aside = count(d.set_aside) ? ' A damaged face-groups file was set aside in the bridge data folder (facegroups); it may still hold faces: delete it when you no longer need it.' : '';
+    $('folder-line').textContent = (FOLDER[d.folder] || ('Photo folder: on. ' + count(d.read) + ' file(s) read, ' + count(d.waiting) + ' waiting.' + skipped))
+      + (store || (d.engine === 'ready' ? '' : engine)) + aside;
     const list = $('groups'); list.textContent = '';
     const rows = Array.isArray(d.groups) ? d.groups.filter((g) => g && GROUP.test(g.id)).slice(0, 100) : [];
     if (!rows.length) list.appendChild(mk('li', 'No groups to name yet. A face becomes a group when it is in 3 photos.'));

@@ -131,3 +131,21 @@ async def test_a_view_never_reaches_the_signed_route(tmp_path: Path) -> None:
     signed: dict[str, Any] = await rig.call(("GET", "/bridge/v1/faces/groups"))
     assert "crops" not in signed["groups"][0] and "waiting" not in signed
     assert "crops" in rig.groups.page_view()["groups"][0]
+
+
+async def test_the_page_says_what_was_skipped_and_what_was_set_aside(tmp_path: Path) -> None:
+    """Reviews C-sec H2 / C-code H4: 'skipped: could not be read' and a damaged groups file that
+    was moved aside (it may still hold faces) are said on the laptop's own page, never lost."""
+    folder = tmp_path / "facegroups"
+    folder.mkdir()
+    (folder / "groups.db").write_bytes(b"not a database at all" * 50)
+    c, rig = await page(tmp_path)
+    assert rig.groups.store is not None
+    rig.groups.store.marks.mark("file-1", "")  # a file of the folder that could not be read
+    await signed_in(c)
+    body = (await c.get("/faces/api/groups")).json()
+    assert body["skipped"] == 1 and body["set_aside"] == 1
+    signed: dict[str, Any] = await rig.call(("GET", "/bridge/v1/faces/groups"))
+    assert signed["skipped"] == 1 and "set_aside" not in signed  # a count for the cloud, no more
+    js = (STATIC / "faces.js").read_text()
+    assert "skipped: could not be read" in js and "set aside" in js

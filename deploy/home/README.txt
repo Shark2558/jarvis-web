@@ -127,6 +127,22 @@ this laptop. JARVIS only gets a group's code, its number and how many photos it 
    each group has "Forget this group", here and in JARVIS. Your photos are never touched.
  - The face reader uses two small open model files from OpenCV (YuNet, MIT licence; SFace,
    Apache-2.0 licence). The script downloads them and checks them; models\MODELS.txt lists them.
- - How a picture is kept safe to open: JPEG only; its size is read before it is opened; a photo
-   from JARVIS is at most 2048 pixels a side and one photo a request; your own larger photos are
-   opened at a smaller size.
+ - How a picture is kept safe to open: JPEG only; its size is read before it is opened, the
+   same way the picture library reads it; a photo from JARVIS is at most 2048 pixels a side and
+   one photo a request; your own photos may be up to 50 megapixels and are opened at a smaller
+   size. Each picture is opened in a separate small program with a memory limit and a time
+   limit, so a broken or booby-trapped file can't take the bridge (or the camera) down.
+ - A photo that can't be read is tried three times, then skipped: the page above says how many
+   were skipped. A photo still being copied into the folder is read a minute after it stops
+   changing.
+ - The photo folder must be a folder of photos: a whole disk (C:), Windows, Program Files, a
+   whole user folder or the kit's own folder is refused.
+ - The face pictures and face numbers on this laptop are protected by this laptop only: JARVIS
+   does not encrypt them. Turn on Windows device encryption (Settings -> Privacy & security ->
+   Device encryption, or BitLocker on Windows Pro) and use a Windows login password.
+ - If the face-groups file is ever damaged, it is moved aside (groups.db.bad-<date> in the
+   bridge's data folder, facegroups) and a new one is started; the page above says so. It may
+   still hold faces: delete it when you no longer need it.
+ - The picture library (opencv-python-headless) brings its own third-party parts, each under its
+   own licence (its LICENSE-3RD-PARTY.txt), among them FFmpeg (LGPL-2.1) and OpenSSL 1.1.1k. The
+   bridge uses only its JPEG reader and the two face models: no video and no network.

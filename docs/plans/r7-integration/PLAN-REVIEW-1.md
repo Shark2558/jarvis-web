@@ -211,3 +211,43 @@ L1053–1057 needs rewriting: all six "Musts" it calls ready (218, 220, 221, 222
 - **Add, with defaults:**
   - a passkey on the phone: yes;
   - the sleep line in the emailed brief and on Telegram: no.
+
+## Addressed in v7.0.3
+
+Written into `docs/plans/r7-mobile.md` v7.0.3 on 12 Nov 2026 by 🛠 Mark XV. "L" numbers are v7.0.3's. Every new
+file:line in the plan was re-read on `r11-1-i1` @ `bbe056d`; where the re-read differed slightly from this
+review, the plan carries the re-read figure.
+
+- [x] **A1** · D17 (L491–530: `aggregate`, one sleep writer per night, the writer named, "resting" dropped);
+  D18 (L531–542); limit 3 (L28–32); fit table (L219); E tests (L994); owner steps A1–A2 (L1029–1034);
+  question 3 (L1105); answers row 3 (L1159); research (L1167–1173); risks (L1192–1201); not verified (L1264);
+  S44, S45 (L1464–1465).
+- [x] **A2** · D17 (L513–522); D22 (L646–671), the allow-list built from CI's first merged manifest.
+- [x] **A3** · D23 pins (L691–707: AGP 9.5.1 everywhere, built-in Kotlin, JDK 25, the daemon-JVM file,
+  `distributionSha256Sum`, CI resolves first); D24 (L709–727: `core` uses only the standard library); question
+  2; answers row 2 (L1158); not verified (L1280); S36 (L1456).
+- [x] **A4** · D21 (L611–634); seam 14 (L930); seam 27 (L982); C tests (L992); questions 10 and 18; owner step
+  C12 (L1066).
+- [x] **A5** · D20 (L585–606); seam 15 (L936); D tests (L993).
+- [x] **A6** · D8 (L333–354); D9 (L355–370); seam 13 (L926); acceptance 3 (L1002); risk (L1216); the old
+  "`do=talk` starts listening" line is removed from "Not verified live".
+- [x] **A7** · D19 (L543–584: own test budget, `NO_SWITCH`, `NO_CAP_KINDS`, the deliberate exception, POST
+  bodies only); D25 (L728–743); seam 5 (L881); D tests (L993); needles (L995).
+- [x] **A8** · "What exists today" item 8 (L109); D12 (L392–412); D15 (L465–479); seam 25 (L975); needles scope.
+- [x] **A9** · question 8 (L1119) and the cost table (L1185): ₹ only.
+- [x] **A10** · seam 16 (L941).
+- [x] **B**, every row · header (L7–11); Gate G0 (L57–69); "What exists today" items 1, 3, 5, 6, 8, 10, 13, 14
+  (L73–140); seams 2, 5, 6, 7, 8, 10 (with note 1), 11, 17 (with note 2), 19; risk "Line budgets" (L1230).
+- [x] **C** · seams 20–26 (L958–981) and seam 2 (L863); CI to Part E (seam 16, D23, Part E's row L839); push
+  targets (item 5, D8, A tests); native screens (D9, D19, D22, D24, E tests); the door's query string (D6, C
+  tests); the vision static test (D13, B tests); Tesseract's data (D14); pose (acceptance 5); owner steps B3,
+  C5, C12, C13, C14; overlaps (D12's one door, D25's `PrivacySource`, Part D's row L838, the tag in
+  `phone-contract.md`: D10 and L846); the split (L824–832).
+- [x] **D** · Appendix A (L1294–1416): the 24 hand-held rows by release, the honest head start, the stand and
+  desk-camera rows waiting for the USB webcam, row 264, "What this tells R7"; deliverable row 8 (L45).
+- [x] **E** · the package `io.github.shark2558.jarvis` (D4, D5, D22, D23, question 15); the version (D26, with
+  this review's evidence); questions 1, 2, 3, 9 answered; 10 and 3 changed; 18 and 19 added.
+
+Left open, on purpose: the version pins stay *unverified* until CI's first run (the makers' pages are refused
+here), and the release plan's decision 9 ("19 rows") is in neither worktree, so only this plan records the
+replacement.

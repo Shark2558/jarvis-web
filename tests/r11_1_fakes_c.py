@@ -7,6 +7,7 @@ import base64
 import math
 import re
 import struct
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,8 +17,11 @@ import home_fakes
 import httpx
 from faces_fakes import FakeAudit
 from fastapi import FastAPI
+from photos_fakes import FakePicker
 
 from jarvis.api.home import install_home
+from jarvis.facegroups.service import FaceGroupsService
+from jarvis.facegroups.store import GroupsStore
 from jarvis.faces.service import FacesService
 from jarvis.faces.store import FacesStore
 from jarvis.home.client import HomeClient
@@ -32,6 +36,8 @@ from jarvis.homebridge.face_types import DIM, SeenFace
 from jarvis.homebridge.faces import FacesPlugin
 from jarvis.homebridge.plugins import BridgeContext
 from jarvis.keyring import Keyring
+from jarvis.photos.edge import BridgeHomeEdge
+from jarvis.photos.service import PhotosService, PhotosState
 from jarvis.storage.docs import MemoryDocs
 
 A = "fp_3a9c12ab34cd"
@@ -146,14 +152,21 @@ def _base64_forms(needle: bytes) -> list[str]:
     return out
 
 
+def holds(blob: bytes | str, needle: bytes) -> bool:
+    """Is `needle` in there, raw or inside base64 text (at any byte alignment)?"""
+    text = blob.decode("latin-1") if isinstance(blob, bytes) else blob
+    return needle.decode() in text or any(form in text for form in _base64_forms(needle))
+
+
 def leaks(blob: bytes | str) -> list[str]:
     """What a cloud-side text must never hold: a picture's or a crop's bytes (raw or base64) or
     anything shaped like an embedding. Returns the kinds found (empty = clean)."""
     text = blob.decode("latin-1") if isinstance(blob, bytes) else blob
-    found = []
-    for kind, needle in (("crop", CROP_NEEDLE), ("picture", PICTURE_NEEDLE)):
-        if needle.decode() in text or any(form in text for form in _base64_forms(needle)):
-            found.append(kind)
+    found = [
+        kind
+        for kind, needle in (("crop", CROP_NEEDLE), ("picture", PICTURE_NEEDLE))
+        if holds(text, needle)
+    ]
     if EMBEDDING.search(text):
         found.append("embedding")
     return found
@@ -170,8 +183,10 @@ class Tap(httpx.AsyncBaseTransport):
         self._inner = inner
         self.sent: list[bytes] = []
         self.got: list[bytes] = []
+        self.calls: list[tuple[str, str]] = []  # (method, path) of every request
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.calls.append((request.method, request.url.path))
         self.sent.append(await request.aread())
         response = await self._inner.handle_async_request(request)
         body = await response.aread()
@@ -289,3 +304,86 @@ def build_home(tmp: Path, *, env: dict[str, str] | None = None) -> Home:
     )  # fmt: skip
     holder["h"] = home
     return home
+
+
+# ---- the cloud's photos and face-groups services over that home --------------------------------
+
+
+class PhotoPicker(FakePicker):
+    """Google's Picker serving the test pictures given (made-up people, see `picture`)."""
+
+    def __init__(self, photos: Sequence[bytes] = (), *, ready: bool = True) -> None:
+        super().__init__(ready=ready, items=len(photos))
+        self.photos = list(photos)
+
+    async def download(self, uid: str, item: Any) -> bytes:
+        self.events.append(f"download {item.id}")
+        return self.photos[int(item.id[1:])]
+
+
+@dataclass
+class Cloud:
+    home: Home
+    picker: PhotoPicker
+    photos: PhotosService
+    groups: FaceGroupsService
+
+    async def at_home(self, *people: int, n: int = 0, needle: bool = False) -> None:
+        """A picture the laptop reads itself (its watched folder): it never passes the cloud."""
+        await self.home.groups.look(picture(*people, n=n, needle=needle), own_file=True)
+
+    async def group_of(self, person: int, pictures: int = 3, *, start: int = 0) -> str:
+        for i in range(pictures):
+            await self.at_home(person, n=start + i)
+        view = await self.groups.view(home_fakes.UID)
+        return view.groups[-1].id if len(view.groups) == 1 else self._newest(view.groups)
+
+    @staticmethod
+    def _newest(groups: Sequence[Any]) -> str:
+        return str(max(groups, key=lambda g: g.n).id)
+
+    async def import_all(self, photos: Sequence[bytes]) -> Any:
+        """Pick these photos and run the import to its end; returns the last step's result."""
+        self.picker.photos = list(photos)
+        self.picker.items = PhotoPicker(photos).items
+        await self.photos.begin(home_fakes.UID)
+        res = await self.photos.collect(home_fakes.UID)
+        while res.status == "reading":
+            res = await self.photos.collect(home_fakes.UID)
+        return res
+
+
+async def build_cloud(tmp: Path, *, env: dict[str, str] | None = None) -> Cloud:
+    home = build_home(tmp, env=env)
+    await home.link_up()
+    picker = PhotoPicker()
+    photos = PhotosService(
+        picker, BridgeHomeEdge(home.client), home.faces, None, PhotosState(home.docs)
+    )
+
+    async def online(uid: str) -> bool:
+        return home.online
+
+    groups = FaceGroupsService(
+        lambda: photos,
+        GroupsStore(home.docs),
+        notifier=lambda: home.notes,
+        audit=home.audit,
+        laptop_online=lambda: online,
+    )
+    return Cloud(home, picker, photos, groups)
+
+
+def consent(**over: Any) -> dict[str, Any]:
+    """The Faces panel's consent fields for an adult who said yes."""
+    args: dict[str, Any] = {
+        "name": "Anjali",
+        "relation": "friend",
+        "child": False,
+        "vip": False,
+        "given_by": "self",
+        "consent_version": "fc1",
+        "confirm": True,
+    }
+    args.update(over)
+    return args

@@ -304,7 +304,9 @@ async def test_session_is_created_with_a_max_item_count() -> None:
     assert body == {"pickingConfig": {"maxItemCount": "2000"}}
 
 
-@pytest.mark.parametrize(("asked", "sent"), [(500, "500"), (1, "1"), (5000, "2000"), (None, "2000")])
+@pytest.mark.parametrize(
+    ("asked", "sent"), [(500, "500"), (1, "1"), (5000, "2000"), (None, "2000")]
+)
 async def test_the_owners_limit_is_what_the_picker_is_told_never_more_than_googles(
     asked: int | None, sent: str
 ) -> None:

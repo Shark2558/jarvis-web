@@ -88,7 +88,12 @@ async def test_forgetting_is_confirmed_by_the_laptops_own_counts() -> None:
     assert (done.forgotten, done.left) == (2, 0)
     await e.forget(UID, [C1])
     assert [c[2] for c in home.calls] == [{"all": True}, {"groups": [C1]}]
-    for bad in ({}, {"forgotten": 1}, {"forgotten": 1, "left": 0, "ok": True}, {"forgotten": "1", "left": 0}):
+    for bad in (
+        {},
+        {"forgotten": 1},
+        {"forgotten": 1, "left": 0, "ok": True},
+        {"forgotten": "1", "left": 0},
+    ):
         with pytest.raises(EdgeBadReply):
             await edge({FORGET_PATH: bad}).forget(UID, None)
 

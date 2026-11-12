@@ -127,8 +127,10 @@ class FakeEdge:
     async def forget(self, uid: str, groups: Sequence[str] | None) -> Forgot:
         self._up()
         self.forgot.append(None if groups is None else tuple(groups))
-        kept = () if groups is None else tuple(
-            g for g in self.home_groups.groups if g.id not in set(groups)
+        kept = (
+            ()
+            if groups is None
+            else tuple(g for g in self.home_groups.groups if g.id not in set(groups))
         )
         gone = len(self.home_groups.groups) - len(kept)
         self.home_groups = GroupsAtHome(kept, 0, 0 if groups is None else self.home_groups.strays)

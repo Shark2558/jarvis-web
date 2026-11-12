@@ -365,6 +365,11 @@ class FacesService:
             return False
         return True
 
+    async def push(self, uid: str) -> bool:
+        """Tell the laptop who has consent now, without waiting for its next check-in (R11.1 O7:
+        a name given while it slept is finished as soon as it is back). False: it didn't hear."""
+        return await self._push(uid)
+
     async def record(self, uid: str, tool: str, count: int, how: str) -> None:
         await self._record(uid, tool, count, how)
 

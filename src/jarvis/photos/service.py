@@ -447,6 +447,9 @@ class PhotosService:
         done = 0
         async with self._lock(uid):
             data = await self._state.get(uid)
+            if not data.pending:
+                return 0
+            await self._faces.push(uid)  # the laptop must know of the consent before the name
             registry = await self._faces.state(uid)
             for cluster, person_id in data.pending:
                 person = registry.find(person_id)

@@ -1,31 +1,195 @@
-Version v11.1.1 · 12 Nov 2026, 11:20 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.2 · 12 Nov 2026, 12:40 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 I1 — integration notes (Mark XV)
 
 Branch `r11-1-i1`, from `r11-1-i0` @ `1d49a1c`. What the integrator joined, every conflict and how it
-was resolved, every cross-part issue, each merge gate and "Needs I1" item with its test, and what is
-left. The parts' own notes are `INTEGRATION-A.md` … `INTEGRATION-D.md` beside this file.
+was resolved, every cross-part issue found, each merge gate and "Needs I1" item with the test that
+proves it, the over-caution numbers, the Cloud Run instance check, and what is left. The parts' own
+notes are `INTEGRATION-A.md` … `INTEGRATION-D.md` beside this file; the plan is
+`docs/plans/r11-1-observations.md`.
 
 ## 1. Merges
 
 | # | Merged | At | Conflicts | Resolution |
 |---|---|---|---|---|
-| 1 | `origin/main` | `665fce0` | none | test-only (`tests/browser/test_dock_fit.py`, Mark XIV's `bf75cf2`) |
+| 1 | `origin/main` | `665fce0` | none | test only (`tests/browser/test_dock_fit.py`, Mark XIV's `bf75cf2`) |
 | 2 | `origin/r11-1-a` | `a5f2020` | none | — |
 | 3 | `origin/r11-1-b` | `06db8c1` | none | — |
 | 4 | `origin/r11-1-c` | `1de44b6` | none | — |
 | 5 | `origin/r11-1-d` | `7bdaf96` | none | — |
 
-No file was changed by more than one part, and none of the parts touched the three files I0 changed
-after the builders forked (`buildbook/gen/layers.py`, the two book tests, `tests/test_trust_flag.py`
-are I0's and merged as they were). The joins are semantic, not textual: section 2.
+No file was changed by more than one part, and no part touched the files I0 changed after the
+builders forked (`buildbook/gen/layers.py`, two book tests, `tests/test_trust_flag.py`). Every join
+was semantic, not textual; the ones that were real defects are in section 3.
 
 ## 2. Gates and "Needs I1" items
 
-(filled in as each lands)
+Every item was written test first (the test seen failing, then the change). Test files added by I1:
+`tests/test_r11_1_i1_bounds.py`, `_pictures.py`, `_persona.py`, `_plan.py`, `_telegram.py`,
+`_photos.py`, `_signing.py`, `_overcaution.py`, and `tests/browser/test_r11_1_i1_console.py`.
+
+| Item | Done | What, and the proving test |
+|---|---|---|
+| **GATE A 3.12** Telegram private reads | done | `gmail_inbox_summary` and `picture_*` join `PRIVATE_PATTERNS`; `photos_import_*` (faces found, people recognised) joins `HOME_PATTERNS` beside `faces_*`. The guard test builds the four R11.1 parts as the app does and classifies every one of their reads (`test_telegram_tool_guard.py::test_every_r111_part_read_is_registered_and_classified`, `…private_reads_on_the_inbox_summary_answers_but_the_home_ones_still_wait`). **Decided differently from the orchestrator's list:** `series_*` is not a pattern: patterns deny every risk, so it would also refuse the R2 check-in answer ("session done") on Telegram, where the check-in alert arrives; `series_list` is counts, times and his own typed plan name (like `calendar_list_events`) and stays in `TELEGRAM_SAFE`. The R3 seam pin of `HOME_PATTERNS` follows. |
+| **GATE A 3.4** the brief's inbox | done | `InboxSection` gains `groups`, `withheld`, `exact`, `failed`, `listed`; `BriefService(reads=BackgroundReads(...), mail_max_reads=...)`, built over the gateway in `api/app.py`. Tests on the REAL `BriefService`: "Never" and "Ask first" on the mail row mean no Gmail GET at all; an allowed read brings the groups, the withheld count and "about 2 unread" to the rendered brief, no code in it; the app's brief reads through the governed path (`test_brief_service.py::test_r111_*`); the brief API's pinned shape (`test_brief_api.py`). `evals/brief` GATE: PASS. |
+| A 3.5 "Primary" / "the last day" | done | the summariser's line and the console's empty / "about N" lines (`brief/summarize.py`, `console-brief.js`). |
+| A 3.1 `finish.EMPTY` vs `FILLER` | done | the alias is gone; the seam test asserts `EMPTY` and no `FILLER` attribute. |
+| A 3.1b / C 3.2 clock-job lists | done | `test_r11_wiring.py` counts the R11.1 jobs on the helpers' clock (`series_checkin`, `photos_import`, `face_groups_poll`) and checks every job ran. |
+| A 3.2 No-AI phrase slot | done | `r11_1_wiring.fix_phrases` / `install_fix_phrases`, called at the end of `wire_r11` whether the helpers are on or off, after the helpers' own phrases (`test_r11_1_i1_plan.py`, both helper settings, order). A's own route test pinned the gap ("not in the phrasebook at start") and now pins it closed. |
+| A 3.3 brief contributor | done | `r11_1_wiring.fix_brief` feeds the parts' `services["brief"]` into `r11_wiring.helpers_brief` (`test_r11_1_i1_plan.py::test_the_brief_s_helpers_lines_carry_the_plan_s_open_check_ins`). |
+| A 3.6 persona sentences / persona `p11.1` | done | ONE version `p11.1` (the 19 pinned assertions follow, D's sed list); `PLANS_RULE` with A's three sentences beside D's `PICTURES_RULE`, in every wit level before the tools rule; change notes updated (`test_r11_1_i1_persona.py`). **Changed wording:** A's `series: {name}` became `series (the plan's name)`: the persona may hold no brace (a placeholder could be injected; `test_voice_persona.py` pins it). |
+| A 3.7 Recently deleted vs a 60-event Undo | done | the panel (`/v1/deleted`) lists up to `PANEL_LISTED` = 100 (a batch's maximum); the model's `deleted_list` stays at `MAX_LISTED` = 50 so its result stays inside the gateway's budget (`test_r11_1_i1_plan.py`, store and route). |
+| A 3.8 Approve all's plain reply | done | Approve all says a plan card's own sentence (`finish.said_by_code`) when no model can narrate, never "Done, Sir: Add 60 events" (`test_r11_1_i1_plan.py::test_approve_all_without_a_narrator_says_the_batch_s_own_count`). |
+| A 3.9 the R11 bug: a card under a non-session scope | done | the only such card was the kitchen's "Ask to add to my calendar" (`<uid>:helpers_kitchen`); it now waits in a new conversation of his own and the answer carries its `session_id`; proposed, then decided through the Brain (`test_r11_1_i1_plan.py::test_the_kitchen_s_calendar_card_waits_in_a_real_conversation_and_can_be_approved`, `test_r11_d_routes.py`). |
+| A 3.10 Telegram's first line | done | the batch, its undo and the re-plan card show their code-written first line and "Open JARVIS to see the full list and approve it.", no button; a first line too long, or another tool, keeps the plain line (`test_r11_1_i1_telegram.py`). |
+| A 3.13 / orchestrator 4 `work_output_tokens` ≤ 32,000 | done | `config.py` and the pinned range (`test_r11_1_i1_bounds.py`, `test_r11_1_seams.py`). |
+| **GATE B 3.2** `feature_wiring` | done | `DocumentService(..., policy=policy_from(s), sessions=app.state.store)`; the per-request assignment in `api/documents.py` is gone (`test_r11_1_i1_pictures.py::test_the_document_service_has_his_limits_and_the_conversations_from_the_start`, `…no_route_sets_the_document_policy_any_more`). |
+| B 3.3 the two attachment bounds | done | `ChatRequest.attachments` and `attach_max_files` both 10 (`test_r11_1_i1_bounds.py`). |
+| B 3.1 dependency pins | done | see section 5. |
+| B 3.5 the tool-word test | done | `test_r11_1_b_guard.py::test_every_gateway_tool_verb_is_an_action_word` builds the merged app and passes: every word of A's, C's and D's tool names was already classified. |
+| **GATE D-A** `web_search` hook | done | `web_tools(web, pictures)`: `query_stop` first in the run, `query_preview` as the look-up; unwired it fails closed. D's web test now uses the real hook; the older web Rig gets a guard whose port says "no picture", as the app's does. |
+| **GATE D-B** one guard for the app | done | `app_guard(...)` built in `_build_tool_gateway`, through `build_gateway(pictures=)` to `register_r4_tools` (`PeopleDeps.pictures`) and `web_tools`. Real-app test: on a picture turn the main brain's `research_person` and `web_search` with a face's name are refused on both tool rounds and again after a restart, and the vendor received nothing; without a picture the same search goes out (`test_r11_1_i1_pictures.py`). |
+| **GATE D-C** the port over B's `turn_pictures` | done | `DocumentTurns` passes the app's conversation store (read late) and maps B's `unreadable` and any fault to "unknown" (a picture turn). Real-app test: attach a PNG -> send -> `POST /v1/picture/research` is "done"; after a restart (a new app on the same stores) `turn_pictures` returns the picture and the research is "done" again. **Found here: section 3.1.** |
+| D 4.D the "Look up" card | done | `PeopleOfferCard` in `reply_cards.AnyCard`, the dispatch line in `console-media.js`, the `type: ignore` gone; D's "until the kind is registered" test now takes the kind out itself. Unit test on the response union, browser test under a real reply (`test_r11_1_i1_console.py::test_the_look_up_card_shows_under_the_reply_and_researches_only_on_his_press`). |
+| D 4.6 `console.html` comment | done | "profile cards, each with its own link"; 795 lines, pinned (`test_r11_1_seams.py`). |
+| D 4.5 the kit's container names | checked | C renamed nothing; `test_r11_1_d_vitals_home.py` passes on the merged tree. |
+| C 3.1 OpenCV / NumPy | done | the `homebridge` extra pins `opencv-python-headless==5.0.0.93` and `numpy==2.5.4` (a test keeps them equal to `deploy/home/bridge-requirements.txt`'s hash-locked pins); CI installs the extra on Python 3.12 (NumPy 2.5 needs 3.12); `home/kit.py` lists `cv2` and `numpy` as safe (tested against the bridge lock). **Decided differently:** they are not in `requirements.licences.json`: that table must match `requirements.lock` exactly (the build book refuses extra rows) and they are not in the cloud image; their licences are in the bridge lock's comments and the kit README's third-party note (C's). |
+| C 3.2 seven outside tests | done | `test_r3_seams.py` (routes, plugins: now also pinned by module), `test_r4_seams.py` (9 -> 11), `test_r3_wiring.py`, `test_home_api.py` (0.2.0), `test_r11_wiring.py` (two). |
+| C 3.3 `ImportLimits` in `wire_photos` | done | `test_r11_1_i1_photos.py::test_the_photos_service_has_his_import_limits_from_the_first_call`. |
+| C 3.3 console-home "-Update" | done | `test_r11_1_i1_photos.py::test_the_old_kit_note_names_the_update_step`. |
+| C 3.4 `photos_import_batch` description | done | "The least a step reads when its time allows (a step reads up to 50)". |
+| C 3.4 Privacy "pending" | done | `privacy.service.Deleted.pending`: a source's own fixed words when a delete left rows ("Pending: it finishes when your home laptop is back on."), "" otherwise or on any fault; the dashboard shows "Face groups: Pending: ..." instead of "Try again in a moment" (`test_r11_1_i1_photos.py`, the API shape, the browser test in `test_r11_1_c_photos.py`). |
+| C 3.4 `home/signing.py` | owned | reviewed: additive (`BODY_HASH_HEADER`, `body_hash`, `verify_declared`), `request_message` builds the same bytes. Golden headers computed with the R3 module come out byte for byte; `verify_declared` refuses a wrong or malformed hash, a stale time, a seen nonce and another target, and never remembers the nonce (`test_r11_1_i1_signing.py`). |
+| Orchestrator 10 / B 3.4 / C / D the eval in the release gate | done | `("r11_1 (gated)", …)` in `evals/run_all_mock.py`; the seam test asserts it. |
+| Orchestrator 6 the stub-stage seam test | done | retired; `test_every_part_is_built_and_the_runner_passes_with_every_control_failing` reads the runner's report: no stub, every case passed, each part's control failed some of its cases. |
+| Orchestrator 11 the console rule | done | Parts A and B asked the server before sign-in (A: the page becoming visible again reloaded with `loadedAt` 0; B: an attach or a conversation switch fetched hints). Both now ask `JarvisConsole.ready()` first; a browser test each, red on the old modules (`test_r11_1_i1_console.py::test_before_sign_in_the_block_asks_the_server_nothing[...]`); C and D have their own. |
+| Orchestrator 21 over-caution | done | section 4. |
+| Orchestrator 22 the reply-text residual | documented | section 6. |
+| The guide | done | `JARVIS-Architecture.md` edition v11.1.2: C61 as built; C04, C05, C07, C08, C12, C13, C18, C19, C21, C37, C38, C39, C52, C53, C55; the intro, the "how checked" bullet, the change log; `arch_coverage.py`, `check_doc_versions.py`, `markdy_export.py --check` pass. README: an R11.1 section (modules and routes). |
+
+## 3. Cross-part issues found and fixed at the join
+
+1. **A picture turn read as "no picture" from its second tool round on (B x D, GATE C).** The
+   Brain stores each round's tool results as a `Role.USER` turn (blocks only, no words), and B's
+   `_latest_owner_turn` took the latest user turn. So on round 2 of a picture turn
+   `turn_pictures` answered "no" (not "unreadable") while the brain still had the picture in its
+   window, the turn guard opened, and after any reply that used a tool `POST /v1/picture/research`
+   said "There is no picture with your last message". Measured before the fix: rounds
+   `[(1 picture), (0, not unreadable)]`. Fix in `documents/pictures.py`: a user turn whose blocks
+   are all tool results is never "his latest message"
+   (`test_r11_1_i1_pictures.py::test_a_picture_turn_stays_a_picture_turn_on_every_tool_round`; the
+   real-app test proves both tool rounds refused).
+2. **Picture research said "no picture" when B said it could not read them.** It now says "I
+   couldn't read the picture with your last message just now, Sir." (`PICTURES_UNREADABLE`,
+   status `unreadable`), as B's contract asks.
+3. **Older web tests and the fail-closed default.** Unwired, `web_search` counts every Brain turn
+   as a picture turn (D's design). Two older tests built `web_tools(web)` inside a Brain turn and
+   searched an untyped capitalised name; they now pass a guard whose port says "no picture", as
+   the app does for a turn without one (D anticipated exactly this).
+4. **D's test fakes of `turn_pictures`** took three positional arguments; the port now passes
+   `sessions=`, so the fakes take `**_kw` (no assertion changed).
+5. **`app.py` budget.** I0's seam pinned `app.py ≤ 730` for the builders; I1's two joins made it
+   731 (guard 750): the pin now says 735.
+
+## 4. Over-caution (orchestrator item 21)
+
+On a picture turn the turn guard refused ordinary web queries. Measured with `check_query` on 35
+ordinary queries and 26 person-name queries (every person made up), the owner having typed only
+"what is this?" and the picture showing nothing relevant:
+
+| | Before | After |
+|---|---|---|
+| Ordinary queries refused | **23 / 35** ("monsoon weather forecast", "weather in Mumbai today", "flights to Delhi tomorrow", "cricket score", "gold rate today", "Onam festival dishes", …) | **5 / 35** ("Taj Mahal opening hours", "Mumbai Pune expressway traffic", "Google Pixel 9 review", "Thrissur Pooram 2026", "Mount Everest height") |
+| Person-name queries let through | **0 / 26** | **0 / 26** |
+
+The tuning (`picture/turnguard.py`, `picture/words.py`): a capitalised word counts as a name only
+inside a run of two or more capitalised words that could be a name (not a small word, not an
+ordinary search word from `QUERY_WORDS`, not the query's sentence-case opener) with a word he did not
+type and the picture does not show; a lone capitalised word ("weather in Mumbai") goes ahead, as
+the opening capital always did. A bare name is what is left once the ordinary search words are set
+aside: two words or more ("rajesh examplekar contact number" is refused, "monsoon weather
+forecast" is a topic), or the whole one-word query ("Kohli"). `QUERY_WORDS` leaves out on purpose
+words that are plausible given names or surnames (price, best, gold, rain, rose, …).
+
+The 5 left are two capitalised words in a row: exactly a name's shape, so plain code cannot tell
+them from "Firstname Lastname"; each goes ahead as soon as the picture shows it or he types it
+(pinned). Known gap kept from D's design: a single capitalised surname ("news about Examplewala")
+goes ahead, as "Examplewala news" already did at the opening. D's tests, its eval (24/24) and its
+five controls are unchanged. Both sets are pinned in `tests/test_r11_1_i1_overcaution.py`.
+
+## 5. Dependencies
+
+- `pyproject.toml`: `openpyxl==3.1.5`, `et-xmlfile==2.0.0`, `xlrd==2.0.2`, `lxml==6.1.3` (exact, as
+  Part B asked: xlrd's visibility list is read directly); the `homebridge` extra adds
+  `opencv-python-headless==5.0.0.93`, `numpy==2.5.4`.
+- `requirements.lock`: pip-tools is not installed in the shared environments and nothing was
+  installed, so the lock was NOT regenerated with `make lock`. It was extended exactly the way R11
+  added `segno` (commit `0e2aec7`): one block per new package in pip-compile's own format and sort
+  order, with the sha256 of every distribution PyPI's JSON API lists for that version (wheel and
+  sdist), and `# via` lines; lxml's block gains `jarvis (pyproject.toml)`. As a check of the method,
+  the 176 hashes PyPI lists for lxml 6.1.3 are exactly the lock's. The installed versions in all
+  three test environments match the pins. A later `make lock` (pip-compile keeps existing pins)
+  should produce the same entries; it was not run.
+- `requirements.licences.json`: three rows (`openpyxl` MIT, `et-xmlfile` MIT, `xlrd` BSD), read
+  from the installed dists' metadata as `--licences` does; written with the table's own JSON
+  format. The build book's `--check` reads it against the lock.
+- CI: `pip install -e ".[dev,homebridge]"` on the 3.12 leg only.
+- Owner decisions recorded by Part C, accepted here: the LGPL-2.1 FFmpeg inside the OpenCV wheel
+  (dynamically loaded, unmodified, on the owner's laptop only, installed by pip); the two model
+  files downloaded at setup and kept only with their pinned SHA-256.
+
+## 6. Residual (for the release notes)
+
+The main brain's REPLY TEXT on a picture turn still rests on the persona rule (`PICTURES_RULE`):
+code stops a name taken from a face reaching `research_person`, `web_search`, a card or picture
+research, but not the words of the answer itself. Only a live check proves it (INTEGRATION-D owner
+check 3). Not guarded by the turn guard either: `youtube_search` and `maps_search` queries (no part
+asked for it; a face's name is far less likely there, and it is the same hook if the reviews want
+it).
+
+## 7. Cloud Run with one instance
+
+Verified: `deploy/cloudrun.sh` deploys with `--min-instances 0 --max-instances 1` (the hand deploy
+and first set-up), and says why ("rate limiting and the per-conversation write queue are per
+process"); the CI deploy (`gcloud run deploy --image … --no-traffic --tag candidate`) sets no
+scaling flag, so each new revision keeps the service's maximum of one. The limit is per revision:
+during a deploy the candidate (reached only by its health check on the tag URL) and the serving
+revision run side by side for a few minutes.
+
+Moot today (one process), and to fix before the limit is raised:
+- the sessions' per-conversation write queue (`Brain._serialised`) and the home `NonceCache`
+  (replay protection) — both named in `cloudrun.sh` already;
+- every rate limiter is in process: the plan routes' 30 a minute, the helpers', the `/v1/input`
+  hints and estimate limits, picture research's 4 looks a minute, `web_search`'s per-message and
+  hourly caps (`WebService._recent`) and picture search's per-message presses;
+- picture research's last report per conversation (in memory, 10 minutes): on another instance
+  the "Look up" offer of a printed name becomes a refusal (the safe direction, but a lost offer);
+- Part C's naming of a face group across instances (`PhotosService` per-owner lock; consent-safe,
+  at worst one person with no pictures; INTEGRATION-C 3.4 proposes a transaction claim, R12);
+- the No-AI phrasebook is per process (installed at start: no race, each instance has its own).
+
+Already safe across instances (no change needed): A's check-in claim in `series_told`
+(transaction before the alert), C's photo import (transaction claim and lease), D's GitHub
+six-hour mark (transaction before the read), B's `turn_pictures` (read from the stored
+conversation), approvals (`approvals/{id}`, single use).
+
+## 8. Checks
+
+(Filled in after the full runs: section 8 of v11.1.3.)
+
+## 9. Open, or decided differently
+
+- `series_*` not a Telegram pattern; OpenCV / NumPy not in the cloud licence table; A's persona
+  sentence without a brace (all in section 2, with the reason).
+- The brief's "Never" on the mail row says "Your inbox could not be read just now"; a "paused by
+  your Permissions" wording needs a section state of its own (`brief/models.SectionState`):
+  INTEGRATION-A 3.4 left it out of the gate, and so did I1.
+- `requirements.lock` hand-extended (section 5), not regenerated.
+- The single-surname and two-word proper-name cases of the over-caution check (section 4).
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v11.1.1 | 12 Nov 2026, 11:20 IST | R11.1 | First edition: the five merges | 🛠 Mark XV |
+| v11.1.2 | 12 Nov 2026, 12:40 IST | R11.1 | Every gate and "Needs I1" item with its test, the cross-part defects found at the join, the over-caution numbers, the dependencies and how the lock was extended, the residual, the Cloud Run instance check, what was decided differently | 🛠 Mark XV |

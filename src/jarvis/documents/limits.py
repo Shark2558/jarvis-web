@@ -89,7 +89,8 @@ MAX_SLIDES = 500
 ZIP_MAX_FILES = 50  # `attach_zip_max_files` / `attach_folder_max_files`: files read from one
 MAX_PICTURES = 4  # pictures that go with one message (D10)
 PICTURE_MAX_BYTES = 900 * 1024  # `attach_picture_max_kb`: one Firestore document, as bytes
-PICTURE_MAX_SIDE = 2_048  # pixels; the console shrinks to 1,568 before it uploads
+PICTURE_MAX_SIDE = 2_048  # pixels; the console shrinks to PICTURE_SHRINK_SIDE before it uploads
+PICTURE_SHRINK_SIDE = 1_568
 PICTURE_TYPES: tuple[str, ...] = ("image/jpeg", "image/png")
 
 SUPPORTED_WORDS = (
@@ -151,6 +152,7 @@ __all__ = [
     "NAME_LIMIT",
     "PICTURE_MAX_BYTES",
     "PICTURE_MAX_SIDE",
+    "PICTURE_SHRINK_SIDE",
     "PICTURE_TYPES",
     "PREVIEW_CHARS",
     "SUPPORTED_WORDS",

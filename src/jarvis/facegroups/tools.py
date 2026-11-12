@@ -12,7 +12,7 @@ Faces-panel actions with the consent statement, never a tool (as R3 D19 decided 
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
@@ -32,15 +32,14 @@ WHO = (
 NO_IMPORT = "No photo import is running. Ask me to import photos to start one."
 PHOTOS_OFF = "Photos are off on this server: they need Google sign-in, Faces and the home kit."
 MAX_LISTED = 20
+Run = Callable[[dict[str, Any]], Awaitable[Any]]
 
 
 def _uid() -> str:
     return require_tool_context().user_id
 
 
-def face_group_tools(
-    groups: FaceGroupsService, photos: Callable[[], PhotosService | None]
-) -> list[Tool]:
+def _list_groups(groups: FaceGroupsService) -> Run:
     async def list_groups(_a: dict[str, Any]) -> Any:
         view = await groups.view(_uid())
         if not view.available:
@@ -56,6 +55,10 @@ def face_group_tools(
             out["stale"] = "Your home laptop isn't reachable: this is what it last said."
         return vouch(out, True)
 
+    return list_groups
+
+
+def _import_status(photos: Callable[[], PhotosService | None]) -> Run:
     async def import_status(_a: dict[str, Any]) -> Any:
         svc = photos()
         if svc is None:
@@ -74,6 +77,12 @@ def face_group_tools(
         }
         return vouch(out, True)
 
+    return import_status
+
+
+def face_group_tools(
+    groups: FaceGroupsService, photos: Callable[[], PhotosService | None]
+) -> list[Tool]:
     return [
         Tool(
             "faces_groups",
@@ -82,7 +91,7 @@ def face_group_tools(
             "anyone is and can't name or forget a group: that is done in the Faces panel.",
             EMPTY_SCHEMA,
             ActionRisk.READ_ONLY,
-            list_groups,
+            _list_groups(groups),
             agent="faces",
             may_vouch=True,
             activity_words="Listed the face groups to name",
@@ -93,7 +102,7 @@ def face_group_tools(
             "paused). Read only: use photos_import to start or continue one.",
             EMPTY_SCHEMA,
             ActionRisk.READ_ONLY,
-            import_status,
+            _import_status(photos),
             agent="connectors",
             may_vouch=True,
             activity_words="Checked the photo import",

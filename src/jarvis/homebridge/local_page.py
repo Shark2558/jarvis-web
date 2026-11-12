@@ -271,6 +271,17 @@ def create_local_app(
             return _plain(422, exc.code, exc.words)
         return _reply(200, {"ok": True})
 
+    _group_routes(app, session, groups)
+    return app
+
+
+def _group_routes(
+    app: FastAPI,
+    session: Callable[..., JSONResponse | None],
+    groups: Callable[[], Any] | None,
+) -> None:
+    """R11.1 O7: the face groups on the laptop's own page, the only place a crop is shown."""
+
     def face_groups() -> Any:
         return groups() if groups is not None else None
 
@@ -313,8 +324,6 @@ def create_local_app(
             return _plain(404, "not_found", "Face groups are not part of this bridge.")
         await part.rescan()
         return _reply(200, {"ok": True})
-
-    return app
 
 
 def bind_host(env: Mapping[str, str]) -> str:

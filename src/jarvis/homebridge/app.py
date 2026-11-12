@@ -277,6 +277,23 @@ class Bridge:
 
         return app
 
+    async def _read(self, request: Request, limit: int) -> bytes | int:
+        """The body within the route's cap, or the status to answer with. Megabytes (R11.1 O7:
+        one photo) are read only for a caller whose header could be this home's (the signature
+        itself is checked afterwards, over the body), and one upload at a time."""
+        if not _declared_ok(request, limit):
+            return 413
+        if limit <= MAX_BODY_BYTES:
+            body = await _read_capped(request, limit)
+        elif not self.auth.plausible(request.headers.get(signing.HEADER)):
+            return 401
+        elif self._large.locked():
+            return 503
+        else:
+            async with self._large:
+                body = await _read_capped(request, limit)
+        return 413 if body is None else body
+
     async def _serve(self, request: Request) -> Response:
         method, path = request.method, request.url.path
         route = self._routes.get((method, path)) if route_allowed(method, path) else None
@@ -284,22 +301,9 @@ class Bridge:
             return _bare(404)
         raw_query = request.url.query
         target = path + (f"?{raw_query}" if raw_query else "")
-        limit = body_limit(method, path)
-        if not _declared_ok(request, limit):
-            return _bare(413)
-        if limit > MAX_BODY_BYTES:
-            # R11.1 O7: megabytes are read only for a caller whose header could be this home's
-            # (the signature itself is checked below, over the body), one upload at a time
-            if not self.auth.plausible(request.headers.get(signing.HEADER)):
-                return _bare(401)
-            if self._large.locked():
-                return _bare(503)
-            async with self._large:
-                body = await _read_capped(request, limit)
-        else:
-            body = await _read_capped(request, limit)
-        if body is None:
-            return _bare(413)
+        body = await self._read(request, body_limit(method, path))
+        if isinstance(body, int):
+            return _bare(body)
         try:
             who = self.auth.check(
                 request.headers.get(signing.HEADER), method=method, target=target, body=body

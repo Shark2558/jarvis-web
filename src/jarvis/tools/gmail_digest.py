@@ -18,7 +18,9 @@ label itself (`messagesUnread`: one call, exact) and reads the most recent unrea
 days across EVERY category, at most `mail_summary_max_reads` messages as metadata, then groups
 them by Gmail's own category labels: People (Primary), Bills and orders (Updates with a fixed
 sender / subject check), Updates, and Promotions and Social as counts only. Codes and bank
-messages are withheld exactly as above; what the tool keeps is masked and fenced the same way.
+messages are withheld exactly as above, in EVERY category (Primary too); what the tool keeps is
+masked and fenced the same way. A message that was listed but could not be read is counted
+(`Inbox.failed`) and said ("couldn't read 3 of the 10 newest"), never taken for a quiet inbox.
 The morning brief reads through the same function (`brief.collect`).
 """
 
@@ -27,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import html
 import re
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parseaddr, parsedate_to_datetime
@@ -35,6 +37,7 @@ from typing import Any
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector, GoogleNotConnected
+from jarvis.logging import get_logger
 from jarvis.recall.sensitive import spoken_sensitive
 from jarvis.tools.addresses import loose_address
 from jarvis.tools.base import Tool
@@ -44,6 +47,8 @@ from jarvis.tools.external import wrap_external
 from jarvis.tools.gmail import BASE, MESSAGES_URL
 from jarvis.tools.gmail_mime import headers_of
 from jarvis.tools.spoken import ADDRESS, LINK, mask_for_speech
+
+log = get_logger(__name__)
 
 QUERY = "is:unread in:inbox category:primary newer_than:3d"
 MAX_ITEMS = 5
@@ -270,43 +275,48 @@ class Letter:
 @dataclass(frozen=True)
 class Inbox:
     """`unread`: the INBOX label's own count (None: it could not be read). `letters`: the most
-    recent unread of the last `WINDOW_DAYS` days, newest first, at most the read limit."""
+    recent unread of the last `WINDOW_DAYS` days, newest first, at most the read limit.
+    `failed`: listed messages that could not be read just now (of `listed`)."""
 
     unread: int | None
     letters: tuple[Letter, ...]
     estimate: int = 0
+    failed: int = 0
+    listed: int = 0
 
-    def _hidden(self, x: Letter, spare: Collection[str]) -> bool:
-        """Withheld from a group that would otherwise list it. `spare`: groups a caller lists
-        whole (the brief has always listed Primary mail on the owner's own screen)."""
-        return x.withheld and x.group not in COUNT_ONLY and x.group not in spare
+    @staticmethod
+    def _hidden(x: Letter) -> bool:
+        """Withheld from a group that would otherwise list it (every listed group)."""
+        return x.withheld and x.group not in COUNT_ONLY
 
-    def shown(self, group: str, spare: Collection[str] = ()) -> list[Letter]:
-        return [x for x in self.letters if x.group == group and not self._hidden(x, spare)]
-
-    def tally(self, spare: Collection[str] = ()) -> dict[str, int]:
-        """Unread per group among the letters read (a withheld one is in none)."""
-        out = dict.fromkeys(GROUP_LABELS, 0)
-        for x in self.letters:
-            if not self._hidden(x, spare):
-                out[x.group] += 1
-        return out
-
-    def held(self, spare: Collection[str] = ()) -> int:
-        return sum(self._hidden(x, spare) for x in self.letters)
+    def shown(self, group: str) -> list[Letter]:
+        return [x for x in self.letters if x.group == group and not self._hidden(x)]
 
     @property
     def counts(self) -> dict[str, int]:
-        return self.tally()
+        """Unread per group among the letters read (a withheld one is in none)."""
+        out = dict.fromkeys(GROUP_LABELS, 0)
+        for x in self.letters:
+            if not self._hidden(x):
+                out[x.group] += 1
+        return out
 
     @property
     def withheld(self) -> int:
-        return self.held()
+        return sum(self._hidden(x) for x in self.letters)
 
     @property
     def total(self) -> int:
         """The unread count to show: Gmail's own, else at least what was listed."""
         return self.unread if self.unread is not None else max(self.estimate, len(self.letters))
+
+
+def unread_words(failed: int, listed: int) -> str:
+    """JARVIS's own sentence for listed messages that could not be read ("" when none)."""
+    if failed <= 0:
+        return ""
+    some = "any" if failed >= listed else str(failed)
+    return f"I couldn't read {some} of the {listed} newest unread messages just now."
 
 
 def group_of(labels: Any, name: str, address: str, subject: str) -> str:
@@ -358,7 +368,10 @@ async def _unread(conn: GoogleConnector, uid: str) -> int | None:
         label = await conn.request(uid, "GET", INBOX_LABEL_URL)
     except GoogleNotConnected:
         raise
-    except GoogleAPIError:
+    except GoogleAPIError as exc:
+        log.warning(
+            "inbox: the unread count could not be read", extra={"error": type(exc).__name__}
+        )
         return None
     n = label.get("messagesUnread") if isinstance(label, dict) else None
     return n if isinstance(n, int) and not isinstance(n, bool) and n >= 0 else None
@@ -367,7 +380,8 @@ async def _unread(conn: GoogleConnector, uid: str) -> int | None:
 async def read_inbox(conn: GoogleConnector, uid: str, *, max_reads: int) -> Inbox:
     """The whole inbox in a fixed number of reads: the label (1), one listing of the most recent
     unread of every category (1), then at most `max_reads` messages as metadata (never a body).
-    A message that can't be read is skipped; a failed listing raises."""
+    A message that can't be read is counted in `failed` and logged (class names only); a failed
+    listing raises."""
     unread = await _unread(conn, uid)
     params = {"q": INBOX_QUERY, "maxResults": max_reads}
     listing = await conn.request(uid, "GET", MESSAGES_URL, params=params)
@@ -377,6 +391,7 @@ async def read_inbox(conn: GoogleConnector, uid: str, *, max_reads: int) -> Inbo
     ][:max_reads]
     gate = asyncio.Semaphore(READ_PARALLEL)
     wanted = {"format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]}
+    errors: list[str] = []
 
     async def one(mid: str) -> dict[str, Any] | None:
         async with gate:
@@ -384,18 +399,27 @@ async def read_inbox(conn: GoogleConnector, uid: str, *, max_reads: int) -> Inbo
                 m = await conn.request(uid, "GET", f"{MESSAGES_URL}/{mid}", params=wanted)
             except GoogleNotConnected:
                 raise
-            except GoogleAPIError:
+            except GoogleAPIError as exc:
+                errors.append(type(exc).__name__)
                 return None
-            return m if isinstance(m, dict) and m else None
+            if not isinstance(m, dict) or not m:
+                errors.append("empty")
+                return None
+            return m
 
     metas = [m for m in await asyncio.gather(*(one(i) for i in ids)) if m]
+    if errors:
+        log.warning(
+            "inbox: some messages could not be read",
+            extra={"failed": len(errors), "of": len(ids), "errors": sorted(set(errors))},
+        )
     estimate = int(listing.get("resultSizeEstimate") or 0) if isinstance(listing, dict) else 0
     letters = sorted(
         (read_letter(m) for m in metas),
         key=lambda x: x.at.timestamp() if x.at else 0.0,
         reverse=True,
     )
-    return Inbox(unread, tuple(letters), max(estimate, len(ids)))
+    return Inbox(unread, tuple(letters), max(estimate, len(ids)), len(errors), len(ids))
 
 
 def _item(x: Letter, now: datetime) -> dict[str, Any]:
@@ -419,14 +443,19 @@ def summary_of(box: Inbox, now: datetime, *, max_reads: int) -> dict[str, Any]:
         if key not in COUNT_ONLY:
             group["items"] = [_item(x, now) for x in box.shown(key)[:MAX_LISTED]]
         groups[key] = group
-    out: dict[str, Any] = {"unread": box.unread, "read": len(box.letters), "groups": groups}
-    notes: list[str] = []
+    out: dict[str, Any] = {
+        "unread": box.unread,
+        "read": len(box.letters),
+        "failed": box.failed,
+        "groups": groups,
+    }
+    notes = [unread_words(box.failed, box.listed)] if box.failed else []
     if box.withheld:
         out["withheld"] = box.withheld
         out["withheld_note"] = (
             WITHHELD_ONE if box.withheld == 1 else WITHHELD_MANY.format(n=box.withheld)
         )
-    if not box.letters and not box.unread:
+    if not box.letters and not box.unread and not box.failed:
         notes.append(NOTHING)
     if box.unread is None:
         notes.append(NO_EXACT)
@@ -488,6 +517,7 @@ __all__ = [
     "read_letter",
     "relative",
     "summary_of",
+    "unread_words",
     "voice_line",
     "withheld",
 ]

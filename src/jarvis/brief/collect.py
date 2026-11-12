@@ -4,8 +4,10 @@
 
 R11.1 O12 (plan D20): the inbox is the WHOLE inbox (`tools.gmail_digest.read_inbox`): the unread
 count is the INBOX label's own, every category is read (people first on the brief; promotions
-and social counted only), codes and bank messages are withheld, and with `reads` the read is a
-governed background read that obeys the owner's mail row.
+and social counted only), codes and bank messages are withheld in every category (never listed,
+their preview never reaches the AI: only their number), messages that could not be read are
+counted and said, and with `reads` the read is a governed background read that obeys the
+owner's mail row.
 
 No model is in the loop, so the tool gateway (which polices model-initiated calls) is not used;
 the service writes the audit entry. Everything other people wrote (titles, locations, names,
@@ -67,7 +69,7 @@ MAX_MAIL = 10  # messages listed on the brief
 MAX_READS = 30  # unread messages read to count and group them (`mail_summary_max_reads`)
 LISTED_GROUPS = ("people", "bills", "updates")  # promotions and social: counted, never listed
 READ_JOB = "brief"  # the background read's name in the audit chain
-AS_BEFORE = ("people",)  # Primary mail: on the owner's own screen since slice 7, unfiltered
+SAYS_UNREAD = "failed"  # the section's field for "couldn't read N of M" (INTEGRATION-A 3.4)
 TITLE_LIMIT = 120
 LOCATION_LIMIT = 80
 NAME_LIMIT = 80
@@ -264,16 +266,30 @@ def shape_message(m: dict[str, Any], tz: ZoneInfo, day: date) -> tuple[InboxItem
     return item, one_line(html.unescape(str(m.get("snippet") or "")), SNIPPET_LIMIT)
 
 
+class InboxUncertain(Exception):
+    """No listed message could be read and the brief's section has no field to say so."""
+
+
+def _say_plainly(box: Inbox) -> None:
+    """Never "none of them is from a person" when the reads failed: an `InboxSection` without
+    the `failed` field (before INTEGRATION-A 3.4) can't say "couldn't read any of the N", so
+    the section is unavailable instead ("Your inbox could not be read just now.")."""
+    if SAYS_UNREAD not in InboxSection.model_fields and box.failed and not box.letters:
+        raise InboxUncertain("no message could be read")
+
+
 def shape_inbox(box: Inbox, tz: ZoneInfo, day: date) -> tuple[InboxSection, tuple[str, ...]]:
     """R11.1 D20: the brief's inbox from the whole-inbox read: Gmail's own unread count, and the
     newest mail from people first, then bills and orders, then other updates (at most
-    `MAX_MAIL`). Primary mail is listed as it always was; in the categories the brief did not
-    show before, a message that looks like a code or a bank message is not listed and its
-    preview never reaches the AI. The per-group counts and the withheld count travel in
-    `groups` / `withheld` / `exact`: an `InboxSection` that has those fields keeps them."""
-    listed = [x for group in LISTED_GROUPS for x in box.shown(group, AS_BEFORE)][:MAX_MAIL]
+    `MAX_MAIL`). In every category a message that looks like a code or a bank message is not
+    listed and its preview never reaches the AI; only their number is kept. The per-group
+    counts, the withheld count, whether the count is Gmail's own and how many messages could
+    not be read travel in `groups` / `withheld` / `exact` / `failed` / `listed`: an
+    `InboxSection` that has those fields keeps them (INTEGRATION-A 3.4)."""
+    _say_plainly(box)
+    listed = [x for group in LISTED_GROUPS for x in box.shown(group)][:MAX_MAIL]
     shaped = [shape_message(dict(x.raw), tz, day) for x in listed]
-    counts = box.tally(AS_BEFORE)
+    counts = box.counts
     section = InboxSection.model_validate(
         {
             "total": box.total,
@@ -281,8 +297,10 @@ def shape_inbox(box: Inbox, tz: ZoneInfo, day: date) -> tuple[InboxSection, tupl
             "groups": tuple(
                 {"key": k, "label": label, "unread": counts[k]} for k, label in GROUP_LABELS.items()
             ),
-            "withheld": box.held(AS_BEFORE),
+            "withheld": box.withheld,
             "exact": box.unread is not None,
+            "failed": box.failed,
+            "listed": box.listed,
         }
     )
     return section, tuple(snippet for _, snippet in shaped)
@@ -463,6 +481,7 @@ __all__ = [
     "MAX_TODO",
     "Collected",
     "Collector",
+    "InboxUncertain",
     "shape_calendar",
     "shape_inbox",
     "shape_message",

@@ -314,3 +314,110 @@ def test_the_brief_text_says_the_whole_count() -> None:
     only_ads = render_text(_brief(40))
     assert "INBOX · 40 unread" in only_ads
     assert "None of them is from a person, a bill or an update of the last 7 days." in only_ads
+
+
+# ---- reads that failed are counted and said (silent-failure review H2) -------------------------
+async def test_messages_that_could_not_be_read_are_counted_and_said(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    rig = await _rig()
+    for mid in ("m01", "m02", "m03"):
+        rig.fake.fail[f"GET {GM}/messages/{mid}"] = 500
+    res = (await rig.summary()).result
+    assert res["read"] == 7 and res["failed"] == 3 and res["unread"] == 132
+    assert "couldn't read 3 of the 10 newest unread messages just now" in res["note"]
+    logged = [r for r in caplog.records if "could not be read" in r.getMessage()]
+    assert logged and "Budget review" not in caplog.text and "priya" not in caplog.text
+
+
+async def test_when_every_read_failed_the_tool_never_says_the_inbox_is_quiet() -> None:
+    rig = await _rig()
+    for m in inbox():
+        rig.fake.fail[f"GET {GM}/messages/{m['id']}"] = 503
+    res = (await rig.summary()).result
+    assert res["read"] == 0 and res["failed"] == 10
+    assert "couldn't read any of the 10 newest unread messages just now" in res["note"]
+    assert "No unread mail" not in res["note"]
+
+
+async def test_an_unread_count_that_could_not_be_read_is_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    rig = await _rig()
+    rig.fake.fail[f"GET {GM}/labels/INBOX"] = 500
+    await rig.summary()
+    assert any("unread count could not be read" in r.getMessage() for r in caplog.records)
+
+
+class Widest(InboxSection):  # I1's InboxSection (INTEGRATION-A.md 3.4, a merge gate)
+    groups: tuple[dict[str, Any], ...] = ()
+    withheld: int = 0
+    exact: bool = True
+    failed: int = 0
+    listed: int = 0
+
+
+async def test_on_today_s_brief_model_no_message_read_says_the_inbox_could_not_be_read() -> None:
+    """Until I1 widens `InboxSection` (3.4), the brief can't say "couldn't read any of the N": it
+    says the inbox could not be read rather than claim that nothing is from a person."""
+    reads_down = PlanGoogle(mails=inbox(), unread=132)
+    for m in inbox():
+        reads_down.fail[f"GET {GM}/messages/{m['id']}"] = 503
+    got = await _collect(reads_down)
+    assert got.data.sections_status.inbox == "unavailable"
+    text = render_text(got.data)
+    assert "None of them is from a person" not in text and "could not be read" in text
+
+
+async def test_the_brief_says_about_n_when_gmail_s_count_could_not_be_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(collect, "InboxSection", Widest)
+    fake = PlanGoogle(mails=inbox(), unread=132)
+    fake.fail[f"GET {GM}/labels/INBOX"] = 500
+    got = await _collect(fake)
+    assert got.data.inbox.exact is False
+    text = render_text(got.data)
+    assert "INBOX · about 10 unread" in text and "INBOX · 10 unread" not in text
+    assert "Gmail's exact count could not be read just now." in text
+
+
+async def test_the_brief_says_how_many_it_could_not_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(collect, "InboxSection", Widest)
+    some = PlanGoogle(mails=inbox(), unread=132)
+    for mid in ("m01", "m02"):
+        some.fail[f"GET {GM}/messages/{mid}"] = 500
+    text = render_text((await _collect(some)).data)
+    assert "INBOX · 132 unread" in text
+    assert "I couldn't read 2 of the 10 newest unread messages just now." in text
+    every = PlanGoogle(mails=inbox(), unread=132)
+    for m in inbox():
+        every.fail[f"GET {GM}/messages/{m['id']}"] = 500
+    text = render_text((await _collect(every)).data)
+    assert "I couldn't read any of the 10 newest unread messages just now." in text
+    assert "None of them is from a person" not in text
+
+
+# ---- codes and bank mail are withheld in every category (security review MEDIUM-2) -------------
+async def test_a_code_in_primary_is_withheld_on_the_brief_and_never_reaches_the_ai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(collect, "InboxSection", Widest)
+    mails = [
+        *inbox(),
+        letter(
+            "m11",
+            "Asha <asha@example.com>",
+            "Your login code",
+            snippet=f"Your code is {CODE}. It expires in 10 minutes.",
+        ),
+    ]
+    got = await _collect(PlanGoogle(mails=mails, unread=133))
+    box = got.data.inbox
+    assert box.withheld == 2  # the code in Primary and the one in Updates: counted
+    assert "Your login code" not in [i.subject for i in box.items]
+    assert not any(CODE in s or "login code" in s for s in got.snippets)
+    assert [g["unread"] for g in box.groups if g["key"] == "people"] == [2]
+    text = render_text(got.data)
+    assert "2 more look like codes or bank messages: open them in Gmail." in text
+    assert CODE not in text

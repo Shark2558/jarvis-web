@@ -5,8 +5,9 @@
 // with backslash-u escapes only. Everything the server sends reaches the page through textContent:
 // parcel subjects and event titles are other people's words, shown as quoted text, never markup or
 // links. A field of the wrong type is dropped. A missing key means "not in this brief": no section.
-// R11.1 D20: "Inbox by kind" from brief.data.inbox.groups / .withheld (the whole inbox, by Gmail's
-// own categories); a brief whose inbox carries neither shows no such section.
+// R11.1 D20: "Inbox by kind" from brief.data.inbox.groups / .withheld / .exact / .failed (the whole
+// inbox, by Gmail's own categories; what could not be read is said); a brief whose inbox carries
+// none of them shows no such section.
 (() => {
   'use strict';
   const MAX_ITEMS = 5;
@@ -174,8 +175,12 @@
       .map((g) => ({ label: txt(g.label, 30), n: Number.isInteger(g.unread) && g.unread > 0 ? g.unread : 0 }))
       .filter((g) => g.label && g.n);
     const held = Number.isInteger(box.withheld) && box.withheld > 0 ? box.withheld : 0;
-    if (!kinds.length && !held) return null;
+    const failed = Number.isInteger(box.failed) && box.failed > 0 ? box.failed : 0;
+    const listed = Number.isInteger(box.listed) && box.listed >= failed ? box.listed : failed;
+    if (!kinds.length && !held && !failed && box.exact !== false) return null;
     const s = section('inboxkinds', 'Inbox by kind', box.exact === false ? 'of the newest unread' : '');
+    if (box.exact === false) s.append(mk('p', 'bfine', 'Gmail\u2019s exact count could not be read just now.'));
+    if (failed) s.append(mk('p', 'bfine', 'I couldn\u2019t read ' + (failed >= listed ? 'any' : failed) + ' of the ' + listed + ' newest unread messages just now.'));
     if (kinds.length) {
       const ul = mk('ul', 'bpark');
       kinds.forEach((g) => { const li = mk('li'); li.append(mk('b', '', g.label), mk('span', '', ' \u00b7 ' + g.n + ' unread')); ul.append(li); });

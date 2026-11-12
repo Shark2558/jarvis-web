@@ -31,6 +31,7 @@ from jarvis.brief.models import (
 )
 from jarvis.tools.addresses import plain_address
 from jarvis.tools.card import quoted, strip_invisible
+from jarvis.tools.gmail_digest import unread_words
 from jarvis.tools.spoken import withhold_if_sensitive
 
 NOT_CONNECTED = "Google is not connected: connect it in the console (Integrations) to see your {}."
@@ -158,6 +159,7 @@ def _tomorrow(data: BriefData) -> list[str]:
 
 INBOX_EMPTY = "  No unread mail in your inbox."
 INBOX_ONLY_OTHER = "  None of them is from a person, a bill or an update of the last 7 days."
+INBOX_NOT_EXACT = "  Gmail's exact count could not be read just now."
 _GROUP_WORDS = {
     "people": ("from people", "from people"),
     "bills": ("bill or order", "bills and orders"),
@@ -187,21 +189,39 @@ def _grouped(box: Any) -> list[str]:
     return lines
 
 
+def _count_of(box: Any) -> str:
+    """ "132 unread", or "about 25 unread" when Gmail's own count could not be read (`exact`)."""
+    about = "about " if getattr(box, "exact", True) is False else ""
+    return f"{about}{box.total} unread"
+
+
+def _unsure(box: Any) -> list[str]:
+    """What the read could not see, in JARVIS's own words (R11.1: never hidden)."""
+    lines = [INBOX_NOT_EXACT] if getattr(box, "exact", True) is False else []
+    failed, listed = getattr(box, "failed", 0), getattr(box, "listed", 0)
+    if isinstance(failed, int) and isinstance(listed, int) and failed > 0:
+        lines.append("  " + unread_words(failed, max(listed, failed)))
+    return lines
+
+
 def _inbox(data: BriefData) -> list[str]:
-    """The whole inbox (R11.1 D20): Gmail's own unread count, then the newest mail from people,
-    bills and orders, and updates. Promotions and social are counted, never listed."""
+    """The whole inbox (R11.1 D20): Gmail's own unread count ("about N" when it could not be
+    read), then the newest mail from people, bills and orders, and updates. Promotions and
+    social are counted, never listed; messages that could not be read are said, and then the
+    brief never claims that none of them is from a person."""
     box = data.inbox
     head = "INBOX"
     if data.sections_status.inbox == "ok" and box.total:
-        head += f" · {box.total} unread"
+        head += f" · {_count_of(box)}"
         if box.items:
             head += f" (showing {len(box.items)})"
     if (note := _status_line(data.sections_status.inbox, "inbox")) is not None:
         return [head, note]
-    lines = [head, *_grouped(box)]
+    unsure = _unsure(box)
+    lines = [head, *unsure, *_grouped(box)]
     for m in box.items:
         lines.append(f"  {m.when + '  ' if m.when else ''}{sender(m)} — {theirs(m.subject)}")
-    if not box.items:
+    if not box.items and not getattr(box, "failed", 0):
         lines.append(INBOX_ONLY_OTHER if box.total else INBOX_EMPTY)
     return lines
 

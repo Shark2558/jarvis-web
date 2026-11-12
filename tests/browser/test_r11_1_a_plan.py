@@ -356,3 +356,22 @@ def test_the_brief_shows_the_inbox_by_kind(rig: Rig) -> None:
     )
     assert none == 0  # a brief without the groups shows no such section
     assert c.errors == [] and c.csp_violations() == []
+
+
+def test_the_brief_says_what_it_could_not_read(rig: Rig) -> None:
+    c = rig.get("desktop", "night")
+    got = c.page.evaluate(
+        """(inbox) => window.JarvisBriefSections.render({ inbox }).map((s) => s.textContent)""",
+        {"total": 25, "items": [], "groups": [], "exact": False, "failed": 4, "listed": 12},
+    )
+    assert got == [
+        "Inbox by kind\u00b7 of the newest unread"
+        "Gmail’s exact count could not be read just now."
+        "I couldn’t read 4 of the 12 newest unread messages just now."
+    ]
+    every = c.page.evaluate(
+        """(inbox) => window.JarvisBriefSections.render({ inbox }).map((s) => s.textContent)""",
+        {"total": 12, "items": [], "groups": [], "exact": True, "failed": 12, "listed": 12},
+    )
+    assert every == ["Inbox by kindI couldn’t read any of the 12 newest unread messages just now."]
+    assert c.errors == [] and c.csp_violations() == []

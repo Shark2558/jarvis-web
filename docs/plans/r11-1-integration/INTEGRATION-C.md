@@ -1,4 +1,4 @@
-Version v11.1.2 · 12 Nov 2026, 09:43 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.3 · 12 Nov 2026, 10:59 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 Part C — Photos, faces and the home kit: integration note
 
@@ -17,11 +17,11 @@ that this is the only request that carries a picture.
 | | State | What | Proof (tests) |
 |---|---|---|---|
 | **O5** deploy script and message | built | `deploy/cloudrun.sh` enables `photospicker.googleapis.com` in its optional block; a failure warns and goes on. The Photos path says "Google Photos Picker is not switched on for your JARVIS project yet: re-run deploy/cloudrun.sh." Every other Google service keeps its own sentence. | `test_deploy_config.py::test_the_photos_picker_api_is_switched_on_and_a_failure_only_warns`, `test_r11_1_c_photos_off.py` (2), eval `o5_deploy_script_switches_photos_on`; shellcheck clean |
-| **O6** 2,000 photos in the background | built | `photos_max_picked` (2,000) replaces the constant 20. An import is a job in `photo_imports/{uid}` (session id, counts, the ids still to do; never a link or a picture). Each step reads at most `photos_import_batch` (10): the laptop is asked first, the page of Google's list is read again (links expire, none is kept), each photo is downloaded, stripped of metadata by the unchanged Picker client, sent to the laptop and dropped. Steps come from the helpers' clock (`photos_import`), from the chat tool `photos_import`, and from the open Connectors panel. Line: "312 of 2,000 read · 41 faces found · paused: laptop not reachable". | `test_r11_1_c_import.py` (17), `test_r11_1_c_part.py` (jobs), `test_photos_picker.py`, `test_photos_service.py`, evals `o6_*` (5) |
+| **O6** 2,000 photos in the background | built | `photos_max_picked` (2,000) replaces the constant 20. An import is a job in `photo_imports/{uid}` (session id, counts, the ids still to do; never a link or a picture). A step first claims the import in a transaction (a holder and a lease; v11.1.3, review C-code H2), then reads as many photos as fit its time (never starting one it does not expect to finish), at least `photos_import_batch` (10) when they fit and at most 50: the laptop is asked first, the page of Google's list is read again (links expire, none is kept), each photo is downloaded, stripped of metadata by the unchanged Picker client, sent to the laptop and dropped. Google's passing failures (5xx, 429, timeouts) are retried, then wait. Steps come from the helpers' clock (`photos_import`, what the clock has left), from the chat tool (25 s) and from the open Connectors panel (20 s a step). Line: "312 of 2,000 read · 41 faces found · about 14 hours left; keep the Connectors panel open to go faster", or "· paused: laptop not reachable". | `test_r11_1_c_import.py` (17), `test_r11_1_c_part.py` (jobs), `test_photos_picker.py`, `test_photos_service.py`, evals `o6_*` (5) |
 | **O7** bridge routes | built | `POST /bridge/v1/faces/photos`, `POST /bridge/v1/faces/enrol`, `GET /bridge/v1/faces/groups` and (added, see 6) `POST /bridge/v1/faces/groups/forget`. Ids, counts and a confidence only. One photo a request, 6 MB on that route alone, read only after the caller's header could be this home's, one upload at a time. | `test_r11_1_c_bridge_groups.py` (19), `test_r11_1_c_bridge_wire.py` (7), `test_r11_1_c_edge.py` (8) |
-| **O7** face engine | built, not run on a real face | OpenCV 5.0 YuNet (detector) and SFace (recogniser) inside the bridge, loaded only if each file's SHA-256 is the pinned one. JPEG only; the size is read from the header before decoding; a cloud photo is at most 2048 px a side and 4.2 MP; your own larger files are decoded smaller. | `test_r11_1_c_face_engine.py` (14; one loads the REAL models when `JARVIS_FACE_MODELS_DIR` is set and finds a face drawn in code) |
-| **O7** watched folder | built | `PHOTOS_DIR` in `bridge.env`, off until set, mounted read-only at `/photos`. `.jpg` / `.jpeg` only, 1 KB to 40 MB, 8 folders deep, no links followed, a few a minute (6; 1 to 30). Nothing in the folder is ever written, moved or deleted. | `test_r11_1_c_bridge_folder.py` (10), `test_r11_1_c_kit.py` (14) |
-| **O7** grouping | built | Unknown faces are grouped on the laptop (SQLite in the bridge's private data folder, `secure_delete` on); 3 or more pictures make a group; the same picture counts once. | `test_r11_1_c_face_store.py` (16), eval `o7_three_pictures_make_a_group` |
+| **O7** face engine | built, not run on a real face | OpenCV 5.0 YuNet (detector) and SFace (recogniser) inside the bridge, loaded only if each file's SHA-256 is the pinned one. JPEG only; the size is read from the header before decoding, exactly as libjpeg reads it (v11.1.3); a cloud photo is at most 2048 px a side and 4.2 MP; your own files up to 50 MP are decoded smaller; every decode runs in a `python -I` child with an address-space ceiling and a time limit (`homebridge/decoder.py`); whatever OpenCV raises is a refused picture. | `test_r11_1_c_face_engine.py` (14; one loads the REAL models when `JARVIS_FACE_MODELS_DIR` is set and finds a face drawn in code) |
+| **O7** watched folder | built | `PHOTOS_DIR` in `bridge.env`, off until set, mounted read-only at `/photos`. `.jpg` / `.jpeg` only, 1 KB to 40 MB, 8 folders deep, no links followed, a few a minute (6; 1 to 30). Nothing in the folder is ever written, moved or deleted. A try is counted on disk before a file is decoded: three tries, then "skipped: could not be read" (counted on the laptop's page and, as a count, in the cloud); a file still being written waits a minute; one file never stops the scan (v11.1.3). | `test_r11_1_c_bridge_folder.py` (10), `test_r11_1_c_kit.py` (14) |
+| **O7** grouping | built | Unknown faces are grouped on the laptop (SQLite in the bridge's private data folder, `secure_delete` on); 3 or more pictures make a group; the same picture counts once. The nearest group is one NumPy matrix product (plain Python without NumPy); a failed write rebuilds the in-memory index from the rolled-back database; only real corruption sets the file aside (never deleted), a locked or full disk is reported (`no_store`) and retried (v11.1.3: `face_db.py`, `face_index.py`). | `test_r11_1_c_face_store.py` (16), eval `o7_three_pictures_make_a_group` |
 | **O7** naming with consent | built | Faces panel, "Unnamed groups": Name runs `PhotosService.enrol` -> `FacesService.add` (the consent check) once per person; a child needs a parent's or guardian's yes; without a yes nothing is created and the bridge is never told. The bridge has its own door too: it names a group only for a person id on the consent list it was sent. Another group of someone already added asks for nothing again. Afterwards a new photo and a camera sighting are recognised with no further step (the bridge copies the group's best crops into Frigate's library under the person's id). | `test_r11_1_c_groups.py` (14), `test_r11_1_c_api.py` (11), evals `o7_consent_check_once_per_person`, `o7_a_child_needs_a_guardians_yes`, `o7_without_a_yes_nothing_is_enrolled`, `o7_recognised_afterwards_with_no_further_step` |
 | **O7** expiry, forget, Privacy row (D21-C) | built | Unnamed groups and stray faces go after `FACE_GROUPS_KEEP_DAYS` (90; 1 to 3650) counted from when first seen; each group has Forget (console and the laptop's page); Privacy has "Face groups" (count; delete all) and "Photos being read". A forget or delete is reported done only when the laptop answered; while it is away the ask waits, the row says "NOT done yet", and the `face_groups_poll` job retries. | `test_r11_1_c_part.py` (17), `test_r11_1_c_groups.py`, eval `o7_groups_expire_and_forget_waits_for_the_laptop` |
 | **Needle test** | built | One journey on the real signed channel and the real bridge app: everything the laptop sent, and everything the cloud stored, logged, audited, told you or showed the model, is searched for a crop, a picture and an embedding (raw and base64). | `test_r11_1_c_needles.py` (7), eval `needles_nothing_but_ids_reaches_the_cloud` |
@@ -161,6 +161,47 @@ fails (see 9 for what was run; the whole suite is I1's to run).
 - `tests/test_r11_1_seams.py::test_the_eval_runner_passes_with_every_part_still_a_stub` needs "not
   built yet" in the runner's output; that stays true only while another part is a stub.
 
+### 3.4 Added by the review fixes (v11.1.3)
+
+- **Privacy "Face groups" delete while the laptop is away.** Today the dashboard shows "Deleted 0
+  from Face groups, but 2 are still there. Try again in a moment." (a red note: NOT done) and the
+  row then says "Delete asked. It is NOT done yet: it happens when your home laptop is back on."
+  (pinned by `tests/browser/test_r11_1_c_photos.py::test_a_privacy_delete_while_the_laptop_is_away_is_shown_as_not_done`;
+  the dialog says it first). "Try again" is the dashboard's generic sentence; the exact words
+  need `privacy/service.py` and `console-privacy.js`, which are not this part's. Proposed diff:
+
+  ```diff
+   # src/jarvis/privacy/service.py
+   class Deleted(BaseModel):
+       deleted: int
+       category: str
+       remaining: int | None = None
+  +    pending: str = ""  # a source that finishes later says so in plain words
+  ...
+  -        return Deleted(deleted=count, category=category_id, remaining=left)
+  +        pending = getattr(source, "pending_note", lambda: "")()
+  +        return Deleted(deleted=count, category=category_id, remaining=left, pending=pending if left else "")
+   # src/jarvis/facegroups/privacy.py (this part, once the above exists)
+  +    def pending_note(self) -> str:
+  +        return "Pending: it finishes when your home laptop is back on."
+   # src/jarvis/api/static/console-privacy.js, doDelete
+  -      if (Number.isInteger(out.remaining) && out.remaining > 0) note('bad', `Deleted ${gone} ...`);
+  +      if (typeof out.pending === 'string' && out.pending) note('bad', `${c.label}: ${out.pending}`);
+  +      else if (Number.isInteger(out.remaining) && out.remaining > 0) note('bad', `Deleted ${gone} ...`);
+  ```
+- **`config.py`**: `photos_import_batch`'s description "Picked photos handled per background step"
+  should read "The least a step reads when its time allows (a step reads up to 50)".
+- **`home/signing.py`** (R3's one HMAC module) gained `BODY_HASH_HEADER`, `body_hash` and
+  `verify_declared`; nothing else in it changed and every R3 signing test still passes. I1 may
+  prefer to own that file: the change is additive and covered by
+  `tests/test_r11_1_c_bridge_wire.py` (four new tests).
+- **Cloud naming race across instances** (review C-sec M2(b)): not changed. Cloud Run runs with
+  `--max-instances 1` (`deploy/cloudrun.sh`) and the per-owner lock serialises naming inside it;
+  two revisions overlap only during a deploy. The outcome is consent-safe (each person was added
+  with their own yes) and at worst leaves one person with no pictures. A transaction claim on the
+  group in `PhotosState` would close it; proposed for R12 with the sessions' cross-process check
+  that `cloudrun.sh` already names as the condition for raising `--max-instances`.
+
 ## 4. Existing tests changed on purpose
 
 Nothing was weakened; each change follows a behaviour the plan changes.
@@ -174,6 +215,11 @@ Nothing was weakened; each change follows a behaviour the plan changes.
 | `tests/test_deploy_home.py` | bridge `mem_limit == "256m"`; `param([switch]$HaToken)` exactly | `768m`; the parameter list now starts with `$HaToken` (`-Update`, `-PhotosDir` follow; pinned whole in `test_r11_1_c_kit.py`) | O7: two models and a picture in memory; the kit's new steps |
 | `tests/test_homebridge_core.py` | `bridge_version == "0.1.0"` | `== BRIDGE_VERSION` (0.2.0) | the kit's version rose so the cloud can tell an old kit |
 | `tests/test_deploy_config.py` | (new test added) | the Picker API line and its warning | O5 |
+| `tests/test_r11_1_c_face_engine.py` (v11.1.3) | own files up to 150 MP; a header-only file "unreadable" | up to 50 MP; a header-only file is refused before the decoder (`bad_jpeg`), a whole header whose table is missing is "unreadable" | review C-sec H1, H2 |
+| `tests/test_r11_1_c_face_store.py` (v11.1.3) | an unreadable file is removed; `name(g, p)` | it is set aside and kept; `name(g, p, consented=...)` | review C-code H4, C-sec M2 |
+| `tests/test_r11_1_c_bridge_groups.py`, `_bridge_page.py`, `_groups.py` (v11.1.3) | heartbeat 3 + 4; `person_pictures()` as "held" | heartbeat 3 (a copied group is Frigate's); `store.pictures_of()` / `holds()`; the score bar 0.1 above the threshold | review C-code M8, C-sec L6 |
+| `tests/test_r11_1_c_import.py`, `_part.py`, `_api.py`, eval O6 (v11.1.3) | steps of exactly `photos_import_batch` | the resume/job tests pin fixed steps with `ImportLimits(most=10)`; the step-size tests pin "as many as fit, at least the setting, at most 50" | review C-code M6 |
+| `tests/test_r11_1_c_kit.py` (v11.1.3) | `OPENCV_IO_MAX_IMAGE_PIXELS=150000000`; `setup-wsl.sh' update` | `50000000`; `setup-wsl.sh" update` (the kit path no longer inside a shell string) | review C-sec H2, L2 |
 
 ## 5. For the owner: updating the kit and the photo folder
 
@@ -221,7 +267,11 @@ Linux with stand-ins.
 5. Only JPEG photos (`.jpg`, `.jpeg`) are read. iPhone HEIC photos are skipped: on the iPhone set
    Settings -> Camera -> Formats -> **Most Compatible**, or export as JPEG.
 6. A folder whose name has `$`, `#` or a quote mark in it is refused with a plain sentence:
-   rename the folder and run the line again.
+   rename the folder and run the line again. So is a whole disk (`C:\`), Windows, Program Files,
+   a whole user folder (`C:\Users\<your name>`) or the kit's own folder: choose the photos
+   folder itself.
+7. The face pictures the laptop keeps are protected by the laptop only. Turn on Windows device
+   encryption: Settings -> Privacy & security -> Device encryption (on Windows Pro: BitLocker).
 
 ### (c) Free ways to get phone photos into that folder
 
@@ -274,11 +324,14 @@ JARVIS does not sync your phone; you bring the photos. All of these are free.
    Faces -> Face groups -> Delete** for all of them. If the laptop is off it says "NOT done yet"
    and finishes when the laptop is back.
 
-How long things take at the default settings (arithmetic, not measured on your laptop): a pick of
-2,000 photos takes about 17 hours in the background (10 photos every 5 minutes); with the
-Connectors panel left open it is stepped continuously and should take about an hour; a folder of
-5,000 photos takes about 14 hours. `photos_import_batch` (up to 50) and `PHOTOS_PER_MINUTE` (up to
-30) raise both.
+How long things take (v11.1.3, corrected after review C-code M6). Measured on the fakes: JARVIS's
+own work is 0.9 ms a photo (2,000 photos in 40 steps, 1.8 s). The rest is Google's download, the
+upload to the laptop and the face reader, which could not be measured here; at 1.5 to 3 s a photo,
+one 5-minute tick of the helpers' clock (about 13.5 s for the import) reads 4 to 9 photos, so a
+pick of **2,000 photos takes about 19 to 42 hours in the background**. With the **Connectors panel
+left open** it is stepped every few seconds (20 s steps) and takes about **1 to 2 hours**. The
+progress line says the pace it measures ("about N hours left; keep the Connectors panel open to go
+faster"). A folder of 5,000 photos takes about 14 hours at `PHOTOS_PER_MINUTE` 6 (up to 30).
 
 ## 6. Deviations from the plan
 
@@ -302,8 +355,9 @@ Connectors panel left open it is stepped continuously and should take about an h
    face you could not see. Naming now happens in one place, Faces -> Unnamed groups, where the
    laptop's page shows who it is. What changes for you: a face needs 3 photos before it can be
    named (it was 1). The route `/v1/connectors/photos/enrol` still exists and is tested.
-6. **`score` on the wire is a mapped confidence**, not SFace's cosine: 0.9 is exactly the
-   laptop's own threshold, so the cloud's existing 0.9 bar means the same thing as before.
+6. **`score` on the wire is a mapped confidence**, not SFace's cosine. Since v11.1.3 (review
+   C-sec L6) 0.9, the cloud's existing bar, is met only 0.1 above the laptop's grouping threshold
+   (0.52 at the default 0.42): a face alike enough to join a group is grouped but not yet named.
 7. **The 2026 YuNet model and the full SFace model**: the quantised SFace fails to load in OpenCV
    5.0 (`setMainGraphInput`), so the 38.7 MB file is used.
 8. **Kit and bridge version 0.2.0; bridge memory 256 MB -> 768 MB.** The version lets the cloud
@@ -315,6 +369,19 @@ Connectors panel left open it is stepped continuously and should take about an h
 11. An import can also be stepped from the panel (`POST /v1/facegroups/import/step`), so an open
     panel is not limited to the clock's pace. A Picker session that expires before anything was
     read still answers `no_session`, as before.
+12. (v11.1.3, review C-code M6) **A step reads as many photos as fit its time**, at least
+    `photos_import_batch` when they fit and at most 50 (`ImportLimits.most`), never starting one
+    it does not expect to finish. The plan's "each step reads at most `photos_import_batch`" is
+    therefore "at least, when there is time"; the eval case `o6_2000_photos_in_steps_of_10` now
+    checks 10 to 50 a step and never the whole pick in one request (its control still fails it).
+13. (v11.1.3, review C-sec M1) **The cloud sends `X-Jarvis-Body-Sha256`** with every call; the
+    bridge (0.2.0, the first kit with the photo route) requires it on the 6 MB route and checks the
+    signature over it before reading. The MAC is unchanged; `home/signing.py` gained
+    `verify_declared` and `body_hash` (additive). The cloud's existing version check (`ready()`:
+    older than 0.2.0 is `kit_old`) is the version check: no released kit or cloud is affected.
+14. (v11.1.3, review C-code H4) **A damaged groups file is moved aside, never deleted**
+    (`groups.db.bad-<UTC time>`, 0600); the laptop's page says so and the README tells the owner
+    it may hold faces. A locked, read-only or full disk is not "damaged": nothing is touched.
 
 ## 7. Not verified live
 
@@ -338,6 +405,14 @@ the engine) on the real model files with a face drawn in code. Not verified:
   serves sideways is read sideways and may miss a face.
 - HEIC photos are skipped, not converted. Syncthing and Takeout were not tried with the kit.
 - The 8-second cloud-to-laptop timeout with a real laptop reading a 2048 px photo.
+- (v11.1.3) The isolated decoder inside the real bridge image: its address-space ceiling is what
+  the child uses once OpenCV is loaded plus 320 MB (measured here: about 275 MB of address space
+  for Python 3.11 + OpenCV 5.0; a 192-byte progressive file that made libjpeg take 510 MB is
+  refused, a 2,000 x 2,000 one is read). On `python:3.12-slim` the base may differ; the ceiling
+  follows it because it is measured in the child. The real models were run through the child
+  decoder here (`JARVIS_FACE_MODELS_DIR`: the drawn-face test passes).
+- (v11.1.3) The import's time per photo against real Google and a real laptop (the estimate in 5
+  is arithmetic over an assumed 1.5 to 3 s; the line shows the pace it measures).
 
 ## 8. Found on the way (not this part's to change)
 
@@ -407,6 +482,32 @@ console error; and the naming dialog was measured 300 ms after opening, exactly 
 its entry animation, so on a busy machine the new field was once caught half-faded on Day. No
 change to the console code came out of either.
 
+### After the review fixes (v11.1.3, head of this note's commit's parent)
+
+```
+flock /tmp/r111-logs/heavy.lock /tmp/venv-b/bin/pytest -q -p no:cacheprovider tests/test_r11_1_*.py \
+    tests/test_photos_*.py tests/test_homebridge_*.py tests/test_deploy_*.py tests/test_faces_*.py \
+    tests/test_connectors_console.py tests/test_r51_console_assets_linked.py tests/test_home_*.py \
+    tests/test_body_limits.py tests/test_r4_i2_erasure.py
+        1 failed, 1306 passed, 2 skipped (the one: test_home_api.py's bridge_version, 3.2)
+/tmp/venv-b/bin/pytest -q -p no:cacheprovider tests/test_r11_1_seams.py tests/test_r1_seams.py \
+    tests/test_r6_wiring_seams.py tests/test_arch_coverage.py tests/test_r51_console_assets_linked.py
+        374 passed
+/tmp/venv-b/bin/ruff check src tests evals scripts             All checks passed!
+/tmp/venv-b/bin/ruff format --check src tests evals scripts    1403 files already formatted
+flock /tmp/r111-logs/heavy.lock /tmp/venv-b/bin/mypy src
+        Found 9 errors in 3 files (checked 624 source files)   (the 9 older ones only)
+PYTHONPATH=$PWD/src /tmp/venv-b/bin/python evals/r11_1/run.py --mock --part photos
+        photos: 14/14 cases passed; negative control failed the suite: True (2 / 8 / 5 cases)
+flock /tmp/r111-logs/heavy.lock env JARVIS_BROWSER_TESTS=1 PYTHONPATH=$PWD/src \
+    /tmp/venv-c/bin/python -m pytest -q tests/browser -m browser -k "r11_1_c or ui_audit"
+        130 passed, 995 deselected in 336.40s
+shellcheck -S warning deploy/home/setup-wsl.sh deploy/cloudrun.sh      clean
+JARVIS_FACE_MODELS_DIR=<the downloaded models> pytest tests/test_r11_1_c_face_engine.py -k real
+        1 passed (the real models, through the child decoder)
+scripts/arch_coverage.py "arch coverage: OK"; scripts/check_doc_versions.py "All 26 documents ..."
+```
+
 ## 10. For the security reviewer: look here first
 
 1. **The consent door, twice.** Cloud: `facegroups/service.py::name` -> `photos/service.py::enrol`
@@ -418,12 +519,14 @@ change to the console code came out of either.
    strict=True`; anything more than ids, counts and a score is refused whole (`EdgeBadReply`) and
    nothing of it is stored or logged. `tests/test_r11_1_c_needles.py`.
 3. **The 6 MB route.** `homebridge/app.py::_read`: megabytes are read only after
-   `auth.plausible(header)` (a cheap check that the header could be this home's; the real
-   signature is verified afterwards over the body), under a one-at-a-time lock, with a declared
-   and a streamed cap. Is `plausible` strong enough against a caller who has seen one old header?
-4. **The decoder.** `homebridge/jpeg.py` and `face_engine.py::reduction`: JPEG only, dimensions
-   read from the header before `cv2.imdecode`, pixel caps, `OPENCV_IO_MAX_IMAGE_PIXELS` in the
-   image. A hostile file in the watched folder is the realistic attack on a native decoder.
+   `auth.precheck` has verified the signature over the declared body hash (v11.1.3; the nonce is
+   remembered only by the full check after the body's hash matched), under a one-at-a-time lock,
+   with a declared and a streamed cap and a 30 s read limit.
+4. **The decoder.** `homebridge/jpeg.py` (the walk libjpeg makes, nothing else accepted),
+   `face_engine.py::reduction` (50 MP for own files) and `homebridge/decoder.py` (the child with
+   RLIMIT_AS / RLIMIT_CPU, no inherited environment, a checked answer), plus
+   `OPENCV_IO_MAX_IMAGE_PIXELS=50000000` in the image. A hostile file in the watched folder is
+   the realistic attack on a native decoder; the folder counts each try before decoding.
 5. **The dynamic import** of `cv2` and `numpy` (`face_engine.py`, `RUNTIME_PACKAGES`): it exists
    to pass the kit's import allow-list, which is not this part's file (3.1).
 6. **The model download.** `deploy/home/setup-wsl.sh::fetch_model`: fixed addresses at a pinned
@@ -438,9 +541,49 @@ change to the console code came out of either.
 10. **Deletion honesty.** `facegroups/service.py::forget` / `forget_all` / `poll`: done only on
     the laptop's answer; names given while the laptop slept are delivered before any forget.
 
+## 11. Review fixes (v11.1.3)
+
+Two fresh-context reviews of 62322d9: security (WARN: 3 HIGH, 2 MEDIUM, 8 LOW) and code (BLOCK:
+4 HIGH, 9 MEDIUM, 4 LOW). Every finding, what was done and the test that proves it (each new
+test was written first and seen failing, several of them also against the code before the fix).
+
+| Review | ID | Done | Proof |
+|---|---|---|---|
+| security | H1 header differential (TEM trick) | fixed: only APPn/COM/DQT/DHT/DRI/DAC before one frame header; TEM, RSTn, a 2nd SOI, a 2nd frame, DNL/EXP/JPG/reserved, non-marker bytes and a frame it can't parse are refused | `test_r11_1_c_jpeg_header.py` (32, incl. the reviewer's PoC in bytes and on an OpenCV-drawn picture) |
+| security | H2 memory bomb, poison file retried for ever | fixed: decode in a `python -I` child (RLIMIT_AS = its own use + 320 MB, RLIMIT_CPU 15 s, 20 s kill); own files ≤ 50 MP; a try counted on disk before decoding, 3 tries then skipped; image cap 50 MP | `test_r11_1_c_decoder.py` (a 192-byte progressive bomb), `test_r11_1_c_bridge_trouble.py::test_a_file_that_took_the_bridge_down_is_not_tried_for_ever` |
+| security | H3 unanchored id patterns | fixed: `^...$` + `max_length` on every strict model; `fullmatch` everywhere | `test_r11_1_c_edge.py` (the 5,096-character probe and 6 cousins) |
+| security | M1 weak pre-read gate, no read timeout | fixed: signature over the declared body hash before a byte is read; 30 s read limit (408); malformed Content-Length 400 | `test_r11_1_c_bridge_wire.py` (4 new) |
+| security | M2 consent check-then-act | fixed (a): consent re-checked inside the store's lock right before the write and before each crop copy. (b) cross-instance naming: I1 / R12, see 3.4 | `test_r11_1_c_face_store_safety.py` (the interleaving), `test_r11_1_c_bridge_trouble.py` (2) |
+| security | L1 `//` and system folders | fixed: `realpath`, refuse disks, system and profile folders and the kit | `test_r11_1_c_kit.py` (2 new, 13 paths) |
+| security | L2 quoting | fixed: CR refused; `-Update` passes the kit path by WSLENV, refuses a quote | `test_r11_1_c_kit.py::test_the_windows_script_restores_wslenv_and_refuses_a_quote_in_the_kit_folder` |
+| security | L3 curl redirects and size | fixed: `--proto '=https' --proto-redir '=https' --tlsv1.2 --max-filesize` | `test_r11_1_c_kit.py::test_models_are_fetched_over_https_only_and_size_capped` |
+| security | L4 `"²".isdigit()` 500 | fixed: ASCII digits only, else 400 | `test_r11_1_c_bridge_wire.py::test_a_malformed_content_length_is_a_plain_400_never_a_500` |
+| security | L5 at rest / unlink | partly: the unlink is gone (H4). **Declined**: encrypting face data on the laptop (a key on the same disk protects nothing a disk thief lacks; Windows device encryption does, and the README now says to turn it on). SQLite's journal pre-images are not wiped; `journal_mode=MEMORY` would wipe them but risks a damaged file on a crash, which is worse for "nothing lost by accident" | README text; `test_r11_1_c_face_store.py::test_an_unreadable_store_is_set_aside_never_deleted_and_started_again` |
+| security | L6 naming bar = grouping bar | fixed: 0.9 only 0.1 above the threshold | `test_r11_1_c_bridge_groups.py::test_the_score_meets_the_clouds_bar_only_a_margin_above_the_grouping_threshold` |
+| security | L7 local page | no finding | - |
+| security | L8 OpenSSL / FFmpeg in the wheel | documented (README third-party note; 2 above); pin a newer wheel when one drops them | - |
+| code | H1 API calls before sign-in | fixed: every load waits for `JarvisConsole.ready()` | browser `test_before_sign_in_the_block_asks_the_server_nothing` (fails on the old module) |
+| code | H2 two instances step one import | fixed: transaction claim + lease, every save checked and renewed, release; a stale writer can't move `done` back or mark it expired | `test_r11_1_c_import_lease.py` (7; the two-instance test fails on the old code) |
+| code | H3 one bad picture stalls the folder / reads as offline | fixed: OpenCV errors are `PictureRefused`; per-file catch; the route answers `bad_image` | `test_r11_1_c_bridge_trouble.py` (4), `test_r11_1_c_decoder.py` (3) |
+| code | H4 transient error deletes the store | fixed: only SQLITE_CORRUPT/NOTADB is corrupt; set aside, never unlinked; operational errors re-raise, `no_store`, reopened later | `test_r11_1_c_face_store_safety.py` (3), `test_r11_1_c_bridge_trouble.py::test_a_store_that_cannot_be_opened_says_so_and_is_opened_later` |
+| code | M1 a failed download loses the photo | fixed: `PickerRetry` (5xx/429/timeouts), in-step backoff, then waits; skipped only after 5 steps | `test_r11_1_c_import_lease.py` (6) |
+| code | M2 index vs rollback | fixed: index rebuilt from the database when a write fails | `test_r11_1_c_face_store_safety.py` (2) |
+| code | M3 stale whole-document writes | fixed: `GroupsStore.update` (read-change-write in one transaction) everywhere | `test_r11_1_c_cloud_races.py` (2; both fail on the old code) |
+| code | M4 half-written / transient files marked read | fixed: settled check (mtime/ctime ≥ 60 s), not marked on OSError (within the 3 tries) | `test_r11_1_c_bridge_trouble.py` (2) |
+| code | M5 pure-Python search | fixed: NumPy matrix product (plain fallback) | `test_r11_1_c_face_store_safety.py` (5,000 groups, 200 searches < 2 s; agrees with the fallback) |
+| code | M6 pace | fixed: as many as fit (≥ the setting when they fit, ≤ 50), never a photo it can't finish; honest "about N hours left; keep the Connectors panel open to go faster"; estimate corrected in 5 | `test_r11_1_c_import.py` (2 new), eval O6 |
+| code | M7 lost pending name | fixed: counted, told once (`faces_to_name`, a fixed sentence, a count) and shown in Faces | `test_r11_1_c_cloud_races.py` (2) |
+| code | M8 heartbeat double count | fixed: copied groups are Frigate's; a waiting copy is still counted | `test_r11_1_c_face_store_safety.py`, `test_r11_1_c_bridge_trouble.py` |
+| code | M9 Privacy delete while away | the row says NOT done and the dialog says so first (in this part); the exact "pending" sentence needs I1 (3.4); retention uses the laptop's days | browser `test_a_privacy_delete_while_the_laptop_is_away_is_shown_as_not_done`, `test_r11_1_c_part.py::test_the_retention_is_the_laptops_own_number_of_days` |
+| code | L1 `fail` inside `|| echo` | fixed: a missing model list only warns | `test_r11_1_c_kit.py::test_a_kit_without_its_model_list_only_warns_and_goes_on` |
+| code | L2 WSLENV overwritten | fixed: saved and restored in `finally` | `test_r11_1_c_kit.py` (text) |
+| code | L3 `status()` re-hashes 38 MB | fixed: at most once a minute | `test_r11_1_c_decoder.py::test_while_the_models_cannot_load_they_are_checked_again_at_most_once_a_minute` |
+| code | L4 "3 photos" hard-coded | fixed: the server sends `min_photos` | console module; browser test reads the strays sentence |
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v11.1.1 | 12 Nov 2026, 08:49 IST | R11.1 | First edition: what Part C built for O5, O6 and O7, the licences read, what I1 must add, the owner's steps for the kit and the photo folder, deviations, and what is not verified live | 🛠 Mark XV |
 | v11.1.2 | 12 Nov 2026, 09:43 IST | R11.1 | The results that were waiting behind the builders' shared lock: `mypy src` in full (the 9 older errors only), this part's browser test (15 passed) and the brief's full browser command (127 passed); the two corrections the browser test needed | 🛠 Mark XV |
+| v11.1.3 | 12 Nov 2026, 10:59 IST | R11.1 | The two reviews' findings fixed (11): the JPEG header read as libjpeg reads it, the isolated decoder and 50 MP, the folder's tries and settling, one bad picture is one refusal, real corruption only (set aside), the index rollback, NumPy search, consent inside the store's lock, the import's claim and lease, Google's passing failures retried, steps that fit their time and an honest pace, lost names told, a copied group counted once, the signature checked before the large read, the scripts' small holes, the stricter naming bar; time estimate corrected (5); Needs I1 3.4 (Privacy pending wording, config text, `home/signing.py`, the cross-instance naming race); L5 at-rest encryption declined with reasons | 🛠 Mark XV |

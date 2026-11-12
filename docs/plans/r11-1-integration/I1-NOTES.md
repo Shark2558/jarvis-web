@@ -1,10 +1,11 @@
-Version v11.1.3 · 12 Nov 2026, 15:30 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.4 · 12 Nov 2026, 19:45 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 I1 — integration notes (Mark XV)
 
 Branch `r11-1-i1`, from `r11-1-i0` @ `1d49a1c`. What the integrator joined, every conflict and how it
 was resolved, every cross-part issue found, each merge gate and "Needs I1" item with the test that
-proves it, the over-caution numbers, the Cloud Run instance check, and what is left. The parts' own
+proves it, the over-caution numbers, the Cloud Run instance check, what is left, and (section 10)
+the integrated reviews with their fixes and the residuals for the release notes. The parts' own
 notes are `INTEGRATION-A.md` … `INTEGRATION-D.md` beside this file; the plan is
 `docs/plans/r11-1-observations.md`.
 
@@ -223,14 +224,105 @@ grown), `console.html` 795 (< 800). Every module this release changed is ≤ 800
   sentence without a brace (all in section 2, with the reason).
 - The brief's "Never" on the mail row says "Your inbox could not be read just now"; a "paused by
   your Permissions" wording needs a section state of its own (`brief/models.SectionState`):
-  INTEGRATION-A 3.4 left it out of the gate, and so did I1.
-- `requirements.lock` hand-extended (section 5), not regenerated.
+  INTEGRATION-A 3.4 left it out of the gate, and so did I1. **Since v11.1.4: done (section 10,
+  code M4).**
+- `requirements.lock` hand-extended (section 5), not regenerated. **Since v11.1.4: checked with
+  the Makefile's pip-compile, byte-identical but for the header (section 10, code M1).**
 - The single-surname and two-word proper-name cases of the over-caution check (section 4).
+  **Since v11.1.4: the guard is strict on a picture that may show a person (section 10).**
 - **A flaky R11 eval control** (`evals/r11_helpers`, R11's code, unchanged by R11.1): in 2 of about
   30 runs under pytest one part's negative control did not make its part fail (every case passed);
   never in 26 standalone runs. The two single-case controls (`today`: taint check off, `house`:
   district filter off) are the likely ones; the failing report was not captured. It makes the
   suite fail, never pass wrongly. For the R11 owner (Mark XIV) or the integrated reviews.
+  **Since v11.1.4: the root cause (needles over clock stamps and ids) is fixed; 30 of 30 runs
+  pass (section 10, code H1).**
+
+## 10. Integrated reviews and fixes (v11.1.4)
+
+The two fresh-context reviews of `bbe056d` (`/tmp/r111-logs/review-i1-security.md`: 0 critical,
+2 HIGH, 3 MEDIUM, 4 LOW; `/tmp/r111-logs/review-i1-code.md`: 0 critical, 1 HIGH, 4 MEDIUM, 7 LOW)
+were accepted by the Workshop and fixed on this branch, each behaviour change test first (the
+test seen red on the old code, then the fix).
+
+| Finding | Fix | Test (red on the old code) | Commit |
+|---|---|---|---|
+| Security H2: `photos_import` (faces found, people recognised by name) open on Telegram with the home switch off | `HOME_PATTERNS` names `photos_import` beside `photos_import_*` | `test_telegram_tool_guard.py`: the linked gateway now carries every R4 family (Photos included); `…every_face_home_or_photo_tool_of_the_built_registry_waits_for_the_home_switch` reads EVERY tool of the built registry, any risk, whose name says face, home, photo or camera (only R3 D8's four stay open); the ten R4 reads, always answered on Telegram, are now classified | `492c5d2` |
+| Code H1: the R11 eval flaked (substring needles over clock stamps, ids, ciphertext, log floats) | `needles.py`: a lookaround year regex and `own_case_only` against the unplanted day's findings; `today.py`: `<svg` / `data:image/svg`, the same regex over message plus extras | `test_evals_r11.py`: `.198810+00:00`, `a1988b`, ciphertext and a log record's own clock injected; the baseline case; 30 loops of the gate test: **30 of 30 passed** | `c3d0804` |
+| Security H1, M2, M3; code M3: the picture turn guard (other scripts, links, `_`, a lone name beside a search word, a lower-case name beside a thing word, a name split across two queries; YouTube and Maps unguarded) | **Strict** mode whenever the picture may show a person (only his words, the picture's words and free words go out); **light** mode only when picture research of this message's only picture saw nobody (the report carries the message key); a mark-aware tokeniser; a link's parts tested on their own; no single-word escape beside a person word; the same guard on `youtube_search`, `maps_search`, `maps_route` and `research_person`'s context (runs and look-ups); one refusal sentence that says what he can do | `test_r11_1_i1_overcaution.py` (the 55 probes of both reports plus other scripts, links and `_`: 120 red on the old guard), `test_r11_1_i1_turnguard.py` (which mode, the port's key, every outward tool, Ask first, the run alone), `test_r11_1_i1_pictures.py` (real app: both tool rounds and a restart, Maps and YouTube on a recording Google; light only after research saw nobody, strict again after a restart) | `c25b9fb`, `c265976` |
+| Security M1: the brief's Deliveries read Gmail on Never / Ask first | `DeliveriesBrief` goes through `BackgroundReads.allowed` and `reading` (as `gmail_track_packages`); the app hands the brief one governed path | `test_r11_1_i1_brief.py`: Never and Ask first, the clock job and Refresh: zero Gmail requests; Allow reads and leaves its audit line; the app wires both sections to the same path | `055c00a` |
+| Code M4: a paused mail row said "could not be read" | `SectionState` `paused` (not retried); the brief and the console say "Paused by your Permissions: set 'Search and read email' to Allow there to see your inbox / deliveries here." | the same file; the earlier gate test and the R11.1 eval case now pin `paused` | `055c00a` |
+| Code M2, security L2: a new conversation per kitchen press, left behind on 409 | one kitchen conversation per owner per local day; the one a press made is deleted when no card could be made | `test_r11_1_i1_plan.py`: approve through the Brain runs the calendar tool through the gateway with the approval's token (audited "confirmed", both events reach Google); a second press reuses the conversation and the card; Never leaves no conversation | `d18b1b8` |
+| Code M1: the lock's `et-xmlfile` via block | `# via` / `jarvis (pyproject.toml)` / `openpyxl`, as pip-compile writes it (checked with pip-tools 7.6.2 in a scratch venv: byte-identical apart from the header's output path) | `test_deploy_config.py::test_every_runtime_dependency_of_pyproject_is_via_the_project_in_the_lock` | `9de523f` |
+| Code L1: one full phrasebook dropped every R11.1 No-AI phrase | installed one at a time; a phrase that does not fit is `log.error`'d with its name, what is left and why | `test_r11_1_i1_plan.py` (one refused phrase keeps the rest; a nearly full book) | `5189a37` |
+| Code L2, L3, L7: the doubled doc comment, the `late` timer, the literal `·` and `…` | each comment above its code; the timer cleared in `finally`; written as the escapes `\u00b7` and `\u2026` (text identical, checked with node) | browser suite only: there is no JS harness for `console-r111-files.js` (the node DOM stub is the People panel's) | `d4cd80b` |
+| Code L4: `numpy==2.5.4` needs Python 3.12, `requires-python` is 3.11 | the home kit runs Python 3.12 (`bridge.Dockerfile`, `docker-compose.yml`: `python:3.12-slim`, which `setup-wsl.sh` pulls); both face engine pins carry `python_version >= "3.12"`: all four pins on the kit's Python, the MQTT pair on 3.11 | `test_deploy_home.py` (the extra still equals the bridge lock; a new test reads the kit's Python and requires-python's floor) | `df9de5f` |
+| Code L5: long functions | `build_gateway`, `web_tools`, `PrivacyService.delete`, and `maps_tools` / `youtube_tools` (which this fix had grown) split under 50 lines; `tools/gateway.py` untouched (760) | the suites | `3af2900` |
+| Code L6: the duck-typed `unreadable` mark | made explicit and small: `documents.pictures.pictures_unreadable` reads it through `TurnPictures` (any other list is not marked, as before) | the existing GATE C tests | `c25b9fb` |
+| Security L1: the rupee estimate under a raised answer cap | above the default cap the line adds "(up to about ₹N if it writes its whole answer length)"; the cap is unchanged | `test_r11_1_b_estimate.py` (raised and default) | `475f296` |
+| Security L3, L4 | residuals, below | — | — |
+
+**The guard, measured** (the owner typed "what is this?", the picture shows nothing relevant):
+
+| | Before (`c3d0804`) | After, strict (may show a person) | After, light (known: nobody) |
+|---|---|---|---|
+| Person-name queries let through (26) | 0 | 0 | 0 |
+| The extended probes let through (55) | 36 | **0** | 4 (named below) |
+| Ordinary queries refused (35) | 5 | **30** (they go ahead in his words or the picture's) | 5 |
+
+The controls still fail: D's eval `turn_guard_off` and `guard_off` break exactly their own cases;
+the R11.1 eval says `r11_1: 73/73 passed; negative control failed the suite: True`.
+
+**Decided differently from the Workshop's design, and why.** The design was followed. Three of
+D's assertions asked an UNTYPED thing query to go ahead on a picture that may show a person
+("biryani recipe" twice, the eval's "paint for a plain wall" on a face): strict mode refuses that by
+design, and no plain-code rule can tell "biryani" or "paint" from "kohli" or "lekha" without a
+dictionary. They now go ahead on a picture known to show nobody, or in his own words, with the
+strict refusal asserted beside them; every other D test and the D eval are unchanged and pass. The
+strict list's free words add D's generic thing words and "price", "best" (each could be a surname
+alone, so the light check leaves them out, but in strict mode a name needs a word that is not free).
+
+**Residuals for the release notes.**
+- A follow-up turn with no picture is unguarded by design: a name a model put in an earlier answer
+  could be searched on the next turn (it would show in the card or the query he sees).
+- The reply TEXT on a picture turn still rests on the persona rule (`PICTURES_RULE`); code guards the
+  tools, cards and picture research, not the words of the answer.
+- The name guard's known limits after this change: in strict mode it can only refuse, never name, and
+  it holds 30 of 35 ordinary queries until he types the words (accepted); light mode (a picture
+  researched and seen without a person, so no face to take a name from) still lets through a
+  lower-case name beside a thing word ("narendra modi car", "lekha examplekar phone (number)") and
+  one name beside an ordinary search word that is not a person's ("Lekha weather", "Kohli
+  weather": the first half of a split); a message with two pictures, or a picture nobody
+  researched, is always strict. Searches in his OWN data (`gmail_search`, `contacts_search`,
+  `drive_search`, the calendar's query) are not outward searches and are not behind the guard.
+- The Telegram re-plan card's first line shows the plan's own words (`series/cards.py` `replan_card`:
+  the model's `series` argument) in the owner's own chat, with no button (security L3).
+- The brief's inbox copy (`inbox_delivery`) is a write he switches on himself, not a read, and is not
+  behind the mail row.
+- The whole-tree `ruff check .` / `ruff format --check .` findings are in `.claude/` (agent tooling)
+  and two integration notes' code blocks, none touched here; the project scope is clean.
+
+**Checks on the head** (`PYTHONPATH` at the worktree's `src`, one at a time):
+
+| Check | Last line |
+|---|---|
+| `pytest -q -p no:cacheprovider` (Python 3.12) | `1 failed, 13585 passed, 118 skipped, 11 warnings in 652.62s (0:10:52)`: `test_notify_hardening.py::test_every_third_party_top_level_import_in_src_is_in_pyproject` read the homebridge extra with a one-line regex that the new markers broke; fixed at its cause (`d5e2da4`, read as TOML); the file and its neighbours then `174 passed` on 3.12 and on 3.11. Re-run on the head: `13586 passed, 118 skipped, 11 warnings in 686.51s (0:11:26)` (on `d5e2da4`; the warnings are `test_real_evals_script.py`'s forkpty notes, as before) |
+| `pytest -q -p no:cacheprovider` (Python 3.11) | `1 failed, 13586 passed, 117 skipped in 672.52s (0:11:12)`: the same test, the same fix. Re-run on the head: `13587 passed, 117 skipped in 670.51s (0:11:10)` (on `d5e2da4`) |
+| the gate test, 30 times in a loop | `passed=30 failed=0` |
+| `ruff check src tests evals scripts` / `ruff format --check src tests evals scripts` | `All checks passed!` / `1500 files already formatted` (the whole tree adds only `.claude/` tooling and two notes' code blocks, untouched here) |
+| `mypy src` | `Found 9 errors in 3 files (checked 668 source files)`: the 9 older ones only |
+| `evals/run_all_mock.py` | `ALL MOCK EVALS: PASS` (phase0 smoke `GATE: FAIL` by design); `r11_helpers: 55/55 passed; negative control failed the suite: True`; `r11_1: 73/73 passed; negative control failed the suite: True`; D's `look: 24 cases` with its five controls |
+| `scripts/check_doc_versions.py` | `All 26 documents have their version line and change log.` |
+| `scripts/arch_coverage.py` | `arch coverage: OK - 56 packages/modules, 79 console modules, 2 Scheduler jobs, 30 outside services, 90 Firestore collections` |
+| `scripts/markdy_export.py --check` | `14 diagram(s) checked, 0 problem(s)` |
+| `python -m jarvis.buildbook.gen --check` | `two builds are byte-identical` |
+| `pip-compile` (the Makefile's command, scratch venv) | the lock byte-identical apart from the header's output path |
+| the full browser suite | `1190 passed in 4905.47s (1:21:45)`, behind the shared lock: nothing failed, nothing to re-run |
+| `scripts/ui_snapshots.py --out /tmp/r111-logs/i1-fix-shots` | `200 shots, 0 page errors, 0 failures`; the DOM checks (`checks.json`, 108 shots) hold exactly I1's findings: none new, none gone |
+
+Size guards: `core/brain.py` 704, `api/app.py` 732 (pin 735), `tools/gateway.py` 760 (unchanged),
+`console.html` 795; no new `innerHTML`, no non-ASCII line added to the console, no CSS or HTML
+change; nothing new is asked of the server before sign-in.
 
 ## Change log
 
@@ -239,3 +331,4 @@ grown), `console.html` 795 (< 800). Every module this release changed is ≤ 800
 | v11.1.1 | 12 Nov 2026, 11:20 IST | R11.1 | First edition: the five merges | 🛠 Mark XV |
 | v11.1.2 | 12 Nov 2026, 12:40 IST | R11.1 | Every gate and "Needs I1" item with its test, the cross-part defects found at the join, the over-caution numbers, the dependencies and how the lock was extended, the residual, the Cloud Run instance check, what was decided differently | 🛠 Mark XV |
 | v11.1.3 | 12 Nov 2026, 15:30 IST | R11.1 | The full runs: unit 3.12 and 3.11, ruff, mypy, the mock evals, the doc, guide, diagram, title and book checks, the full browser suite and the four joins it found (the chat box's hint, Photos off answering 503, the memory chip on a phone, a locator), the affected set again, the screenshots; the flaky R11 eval control | 🛠 Mark XV |
+| v11.1.4 | 12 Nov 2026, 19:45 IST | R11.1 | The integrated reviews and their fixes (section 10): Telegram's home switch over the real photo import, the R11 eval's flake at its cause, the picture turn guard's strict and light modes with YouTube, Maps and a research's context behind it, the brief's deliveries behind the mail row and a paused row said so, one kitchen conversation a day, the lock's via block, the No-AI phrases one by one, the kit's Python for the face engine pins, the long functions, the estimate under a raised cap, three console joins; the measured guard, the eval loop, every check on the head, and the residuals for the release notes | 🛠 Mark XV |

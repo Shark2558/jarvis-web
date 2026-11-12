@@ -14,7 +14,12 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from test_console import DESKTOP, PHONE, Console  # same directory (pytest prepend import)
+from test_console import (
+    DESKTOP,
+    PHONE,
+    Console,
+    PlaywrightTimeout,
+)  # same directory (pytest prepend import)
 
 _pw = pytest.importorskip("playwright.sync_api")
 sync_playwright = _pw.sync_playwright
@@ -609,6 +614,26 @@ def test_keyboard_focus_stays_in_the_maps_section(
 # ---- review FE-4: the video stops whenever the Media panel is no longer shown -------------------
 
 
+STOP_WAIT_MS = 5_000  # the player is gone within this long of the Media panel being hidden
+DECK_STATE = """() => ({
+  media: !!(window.JarvisDeck && window.JarvisDeck.isOpen('media')),
+  chat: !!(window.JarvisDeck && window.JarvisDeck.isOpen('chat')),
+  frames: document.querySelectorAll('iframe').length,
+})"""
+
+
+def _stopped(c: Console, rig: Rig) -> None:
+    """The video is gone once Media is hidden. Waits (CI run 111 read the frame count while it
+    was still 1, on a busy runner) and says what the deck showed if it never goes."""
+    try:
+        c.page.wait_for_function(
+            "() => document.querySelectorAll('iframe').length === 0", timeout=STOP_WAIT_MS
+        )
+    except PlaywrightTimeout:
+        pass
+    assert rig.iframes() == 0, c.page.evaluate(DECK_STATE)
+
+
 def test_on_a_phone_switching_to_chat_stops_the_video(
     browser: Any, server_url: str, token: str
 ) -> None:
@@ -623,7 +648,7 @@ def test_on_a_phone_switching_to_chat_stops_the_video(
         assert rig.iframes() == 1
         c.page.locator('.dk[data-open="chat"]').click()
         c.page.locator("#p-chat").wait_for(state="visible")
-        assert rig.iframes() == 0
+        _stopped(c, rig)
         # reset layout (appearance menu) with the panel shown: stops too
         c.page.locator(".row.jarvis .mvideos .mplay").first.click()
         c.page.locator("#mediaStage iframe").wait_for(state="attached")

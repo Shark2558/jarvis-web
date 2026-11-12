@@ -70,7 +70,7 @@ def _lines(path: Path) -> int:
 
 
 def test_the_version_is_eleven_point_one() -> None:
-    assert jarvis.__version__ == "11.1.0"
+    assert jarvis.__version__ == "11.1.1"  # R11.1 hotfix 1 (was 11.1.0)
 
 
 # ---- settings -----------------------------------------------------------------------------------

@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_the_version_lives_in_one_place() -> None:
     """The one literal of this release's number in the tests; every other test derives it.
     pyproject.toml has no number of its own: setuptools reads `jarvis.__version__` (review L2)."""
-    assert jarvis.__version__ == "11.1.0"  # R11.1 I0 (was 11.0.0 at R11)
+    assert jarvis.__version__ == "11.1.1"  # R11.1 hotfix 1 (was 11.1.0 at R11.1)
     meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert "version" not in meta["project"] and "version" in meta["project"]["dynamic"]
     assert meta["tool"]["setuptools"]["dynamic"]["version"] == {"attr": "jarvis.__version__"}

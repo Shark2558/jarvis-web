@@ -61,19 +61,36 @@ def texts(message: ChatMessage) -> list[str]:
 
 
 @pytest.fixture
-def docs() -> DocumentService:
-    return DocumentService(AttachmentStore(MemoryDocs()))
+def sessions() -> InMemorySessionStore:
+    return InMemorySessionStore()
+
+
+@pytest.fixture
+def docs(sessions: InMemorySessionStore) -> DocumentService:
+    return DocumentService(AttachmentStore(MemoryDocs()), sessions=sessions)
 
 
 async def sent(
     docs: DocumentService, files: dict[str, bytes], sid: str = "s1"
 ) -> tuple[Session, Turn]:
-    """A conversation whose latest owner turn was sent with `files` (bound as the Brain does)."""
+    """A STORED conversation whose latest owner turn was sent with `files` (bound and saved as
+    the Brain does)."""
     ids = [(await docs.upload(UID, name, data)).id for name, data in files.items()]
     turn = await docs.attach(Turn(role=Role.USER, content="What is this?"), UID, sid, ids, SEEING)
     session = Session(id=sid, user_id=UID, turns=[turn])
-    docs.note_turn(UID, sid, turn.id)
+    assert docs.sessions is not None
+    await docs.sessions.save(session)
     return session, turn
+
+
+async def later_turn(docs: DocumentService, session: Session, content: str = "And then?") -> None:
+    """A newer owner turn, with no picture, stored by whichever instance handled it."""
+    assert docs.sessions is not None
+    stored = await docs.sessions.get(session.id)
+    assert stored is not None
+    stored.turns.append(Turn(role=Role.ASSISTANT, content="A board, Sir."))
+    stored.turns.append(Turn(role=Role.USER, content=content))
+    await docs.sessions.save(stored)
 
 
 def window(session: Session) -> list[ChatMessage]:
@@ -152,6 +169,23 @@ async def test_a_picture_that_cannot_be_loaded_never_stops_the_reply(
     assert images(out) == [] and pictures_mod.NOT_LOADED in texts(out[-1])
 
 
+async def test_when_some_pictures_load_the_turn_says_how_many_did_not(
+    docs: DocumentService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Code review L6: never silently fewer pictures."""
+    session, _ = await sent(docs, {"a.png": make_png(8, 6), "b.png": make_png(9, 6)})
+    real = docs.pictures_of_turn
+
+    async def one_bad(*a: Any, **k: Any) -> list[Any]:
+        got = await real(*a, **k)
+        return [got[0], got[1].model_copy(update={"media_type": "image/gif"})]
+
+    monkeypatch.setattr(docs, "pictures_of_turn", one_bad)
+    out = await with_pictures(docs, window(session), session, SEEING)
+    assert len(images(out)) == 1
+    assert "[1 of the 2 attached pictures could not be loaded just now]" in texts(out[-1])
+
+
 # ---- turn_pictures: what Part D's picture research may rely on -----------------------------------
 
 
@@ -172,20 +206,71 @@ async def test_turn_pictures_is_empty_for_anyone_or_anything_else(docs: Document
     assert await turn_pictures(docs, UID, "s1", spec=BLIND) == []  # the caller's brain is checked
     assert await turn_pictures(docs, UID, "s1", spec=TRAINING) == []
     assert len(await turn_pictures(docs, UID, "s1", spec=SEEING)) == 1
-    docs.note_turn(UID, session.id, None)  # a newer owner turn came without a picture
-    assert await turn_pictures(docs, UID, "s1") == []
+    await later_turn(docs, session)  # a newer owner turn came without a picture
+    got = await turn_pictures(docs, UID, "s1")
+    assert got == [] and got.unreadable is False  # no picture: not a fault
 
 
-async def test_turn_pictures_never_raises(
-    docs: DocumentService, monkeypatch: pytest.MonkeyPatch
+async def test_turn_pictures_never_raises_and_says_when_it_could_not_read(
+    docs: DocumentService, sessions: InMemorySessionStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Code review M3: a storage fault is not "no picture", so Part D can say it could not
+    look; and it still never raises."""
     await sent(docs, {"board.jpg": make_jpeg()})
 
-    async def broken(*_: Any, **__: Any) -> list[Any]:
+    async def broken(*_: Any, **__: Any) -> Any:
         raise RuntimeError("storage is down")
 
-    monkeypatch.setattr(docs, "pictures_of_turn", broken)
-    assert await turn_pictures(docs, UID, "s1") == []
+    with monkeypatch.context() as m:
+        m.setattr(docs, "pictures_of_turn", broken)
+        got = await turn_pictures(docs, UID, "s1")
+        assert got == [] and got.unreadable is True
+    with monkeypatch.context() as m:
+        m.setattr(sessions, "get", broken)
+        got = await turn_pictures(docs, UID, "s1")
+        assert got == [] and got.unreadable is True
+    fine = await turn_pictures(docs, UID, "s1")
+    assert len(fine) == 1 and fine.unreadable is False and isinstance(fine, list)
+
+
+async def test_turn_pictures_reads_the_stored_conversation_not_this_process(
+    sessions: InMemorySessionStore,
+) -> None:
+    """Code review M3: two Cloud Run instances on the same storage. Instance A took the turn
+    with the picture; instance B stored a newer turn without one: A must not hand out the old
+    picture as "the latest turn's". And a fresh instance (a restart) still finds the picture
+    while its turn is the latest."""
+    store = AttachmentStore(MemoryDocs())
+    a = DocumentService(store, sessions=sessions)
+    b = DocumentService(store, sessions=sessions)
+    session, _ = await sent(a, {"board.jpg": make_jpeg()})
+    restarted = DocumentService(store, sessions=sessions)
+    assert len(await turn_pictures(restarted, UID, "s1")) == 1
+    await later_turn(b, session)
+    assert await turn_pictures(a, UID, "s1") == []
+    assert await turn_pictures(restarted, UID, "s1") == []
+
+
+async def test_without_a_conversation_store_it_cannot_tell_and_says_so() -> None:
+    docs = DocumentService(AttachmentStore(MemoryDocs()))
+    got = await turn_pictures(docs, UID, "s1")
+    assert got == [] and got.unreadable is True
+    other = InMemorySessionStore()
+    assert (await turn_pictures(docs, UID, "s1", sessions=other)).unreadable is False
+
+
+async def test_a_picture_bound_to_another_turn_is_never_this_turns(
+    docs: DocumentService,
+) -> None:
+    """The stored turn names its attachments; each is checked again (owner, conversation and
+    turn) through the document store before its pictures are read."""
+    session, turn = await sent(docs, {"board.jpg": make_jpeg()})
+    forged = turn.model_copy(update={"id": "t_other"})
+    stored = session.model_copy(update={"turns": [forged]})
+    assert docs.sessions is not None
+    await docs.sessions.save(stored)
+    got = await turn_pictures(docs, UID, "s1")
+    assert got == [] and got.unreadable is True  # the turn says it had one: "could not look"
 
 
 # ---- through the Brain: shown once, never stored -------------------------------------------------
@@ -206,7 +291,8 @@ class Rig:
             ],
             default_id=default,
         )
-        self.docs = DocumentService(AttachmentStore(MemoryDocs()))
+        self.store = InMemorySessionStore()
+        self.docs = DocumentService(AttachmentStore(MemoryDocs()), sessions=self.store)
         self.trust: list[bool] = []
         reg = ToolRegistry()
         reg.register(
@@ -221,7 +307,6 @@ class Rig:
         self.gateway = Gateway(
             registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog()
         )
-        self.store = InMemorySessionStore()
         self.brain = Brain(
             brains=brains,
             store=self.store,

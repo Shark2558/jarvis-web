@@ -18,7 +18,9 @@ attach   on send (inside the Brain's per-conversation lock): refused for a train
 kinds    R11.1 D10-D11: Excel, PowerPoint, zip, a folder (the console's one bundle; the upload
          says so) and pictures go through the same child. A picture is kept as cleaned bytes
          beside the file (`AttachmentStore.pictures`), never in a turn; `pictures_of_turn` hands
-         them to `documents.pictures` for the turn they came with, and to nothing else.
+         them to `documents.pictures` for the turn they came with, and to nothing else. Which
+         turn is the latest comes from the STORED conversation (`sessions`), never from this
+         process (code review M3: several instances, restarts).
 read / search (the doc_read / doc_search tools): only the owner's files, only in the
          conversation they were sent in. Text is fenced as external content. Ranking runs off
          the event loop; a search without an id covers the 3 most recent files.
@@ -29,7 +31,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -86,7 +87,6 @@ NO_TEXT_IN_PICTURE = (
     "message it came with."
 )
 MB = 1024 * 1024
-TURNS_REMEMBERED = 256  # conversations whose latest owner turn's pictures are remembered
 SWITCHED_OFF = "Documents are switched off in Permissions."
 UNCHECKED = "JARVIS couldn't check your Permissions just now, so no file was used. Try again."
 DOC_TOOLS = ("doc_read", "doc_search")  # the Documents permission group's tools
@@ -117,14 +117,16 @@ class DocumentService:
         sandbox: Sandbox | None = None,
         queue_wait_s: float = QUEUE_WAIT_S,
         policy: AttachPolicy | None = None,
+        sessions: SessionStore | None = None,
     ) -> None:
         self.store = store
         self.limits = limits or Limits()
         # R11.1: what one message may carry. The defaults are the settings' defaults; the app
         # gives the owner's own values (`policy_from`; the upload and /v1/input routes set it).
         self.policy = policy or AttachPolicy()
-        # (owner, conversation) -> the latest owner turn, when it came with pictures (D10)
-        self._picture_turns: OrderedDict[tuple[str, str], str] = OrderedDict()
+        # R11.1 D10: the conversations, read to know a conversation's latest owner turn (the app
+        # passes `app.state.store`; INTEGRATION-B "Needs I1")
+        self._sessions = sessions
         self.sandbox = sandbox or Sandbox()
         self._now = now
         self._queue_wait_s = queue_wait_s
@@ -137,6 +139,11 @@ class DocumentService:
     @property
     def running(self) -> int:
         return 1 if self._slot.locked() else 0
+
+    @property
+    def sessions(self) -> SessionStore | None:
+        """The stored conversations (None: not given, so a turn's pictures cannot be found)."""
+        return self._sessions
 
     # ---- the owner's Documents permission ---------------------------------------------------
 
@@ -451,28 +458,24 @@ class DocumentService:
 
     # ---- pictures (R11.1 D10): only for the turn they came with -------------------------------
 
-    def note_turn(self, owner: str, session_id: str, turn_id: str | None) -> None:
-        """Remember the conversation's latest owner turn when it came with pictures (None: it
-        did not). In this process only: after a restart nothing is remembered, so nothing is
-        shown again."""
-        key = (owner, session_id)
-        self._picture_turns.pop(key, None)
-        if turn_id:
-            self._picture_turns[key] = turn_id
-            while len(self._picture_turns) > TURNS_REMEMBERED:
-                self._picture_turns.popitem(last=False)
-
-    def picture_turn(self, owner: str, session_id: str) -> str | None:
-        return self._picture_turns.get((owner, session_id))
-
     async def pictures_of_turn(
-        self, owner: str, session_id: str, turn_id: str
+        self, owner: str, session_id: str, turn: Turn
     ) -> list[StoredPicture]:
-        """The cleaned pictures of the files sent with exactly this turn (the owner's, in this
-        conversation), in the order they were attached; at most `policy.max_pictures`."""
-        here = await self.store.in_session(session_id)
-        mine = [a for a in here if a.owner == owner and a.turn == turn_id and a.pictures]
+        """The cleaned pictures of the files sent with exactly this turn, in the order they were
+        attached; at most `policy.max_pictures`. The turn names its files; each is read again
+        through the document store and must be the owner's, in this conversation, bound to this
+        turn. Storage errors are raised (the caller tells them from "no picture")."""
         out: list[StoredPicture] = []
+        found = [await self.store.get(ref.id) for ref in turn.attachments if ref.pictures]
+        mine = [
+            a
+            for a in found
+            if a is not None
+            and a.owner == owner
+            and a.session == session_id
+            and a.turn == turn.id
+            and a.pictures
+        ]
         for a in sorted(mine, key=lambda a: (a.created_at, a.id)):
             out += await self.store.pictures(a)
         return out[: self.policy.max_pictures]
@@ -508,16 +511,12 @@ async def save_owner_turn(
     if not req.attachments:
         session.append(turn)
         await save_owner_message(store, session)
-        if docs is not None:
-            docs.note_turn(req.user_id, session.id, None)  # a newer turn: no picture is "its"
         return
     svc = files_of(docs)
     noted = await svc.attach(turn, req.user_id, session.id, req.attachments, spec)
     session.append(noted)
     try:
         await save_owner_message(store, session)  # another window first: MessageNotSaved
-        has_pictures = any(a.pictures for a in noted.attachments)
-        svc.note_turn(req.user_id, session.id, noted.id if has_pictures else None)
     except Exception:
         ids = [a.id for a in noted.attachments]
         try:

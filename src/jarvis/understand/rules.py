@@ -26,11 +26,30 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from jarvis.understand.context import (
+    Ctx,
+    When,
+    add_slot,
+    after_file_type,
+    calendar_slot,
+    called,
+    csv_context,
+    determiner_follows,
+    file_next,
+    mail_slot,
+    number_for_to,
+    power_point,
+    reminder_slot,
+    reminders_slot,
+    the_app,
+    thing_follows,
+    to_slot,
+    xl_sheet,
+)
 from jarvis.understand.near import near_matches
 from jarvis.understand.words import (
+    ACTION_WORDS,
     FUNCTION_WORDS,
-    STRONG_CUES,
-    WEAK_CUES,
     Level,
     Word,
     join_words,
@@ -38,58 +57,15 @@ from jarvis.understand.words import (
     split_words,
 )
 
-DETERMINERS: frozenset[str] = frozenset(
-    "the my a an this that these those your our his her their d".split()
-)
-FILE_WORDS: frozenset[str] = frozenset(
-    "file files fail sheet sheets data export attachment document doc".split()
-)
-FILE_TYPES: frozenset[str] = frozenset(
-    "csv pdf excel word powerpoint ppt text zip markdown xl".split()
-)
-COMMON_VERBS: frozenset[str] = frozenset(
-    "add put open read send move copy attach summarise summarize check show find get take use "
-    "see delete save share print upload import schedule book set create update sync load list "
-    "explain analyse analyze review plan compare search mark close edit rename".split()
-)
-MAIL_VERBS: frozenset[str] = frozenset(
-    "send sent check read open write draft forward reply compose get".split()
-)
 NOUN_SLOT: frozenset[str] = frozenset(
     "the a an my this that your our his her their to in from of open read on".split()
 )
 KNOWN_SHORT: frozenset[str] = frozenset(
     "csv pdf ppt pptx xls xlsx html sms upi otp gst pan kyc tv pc hr vs mr mrs dr st rd th nd "
     "km kg cm mm ml gb mb kb pm ok hmm mph kph ltd pvt cc bcc nd by my try why fly cry dry sky "
-    "shy gym".split()
+    "shy gym xl xxl xs".split()
 )
 _VOWELS = frozenset("aeiou")
-
-
-@dataclass(frozen=True)
-class Ctx:
-    """What a rule may look at: the words already written (after earlier rules), the heard
-    words still to come, and the hints."""
-
-    before: tuple[str, ...]  # keys of the output so far
-    after: tuple[Word, ...]  # heard words after the match
-    after_levels: tuple[Level, ...]
-    hints: frozenset[str]  # every hint word, casefolded
-
-    @property
-    def prev(self) -> str:
-        return self.before[-1] if self.before else ""
-
-    @property
-    def prev2(self) -> str:
-        return self.before[-2] if len(self.before) > 1 else ""
-
-    @property
-    def next(self) -> str:
-        return self.after[0].key if self.after else ""
-
-
-When = Callable[[Ctx], bool]
 
 
 @dataclass(frozen=True)
@@ -100,69 +76,6 @@ class Rule:
     caps_ok: bool = False  # may apply to a Capitalised word that might be a name (SOFT)
 
 
-def _file_next(c: Ctx) -> bool:
-    return c.next in FILE_WORDS
-
-
-def _csv_context(c: Ctx) -> bool:
-    return c.next in FILE_WORDS or "csv" in c.hints
-
-
-def _after_file_type(c: Ctx) -> bool:
-    return c.prev in FILE_TYPES
-
-
-def _calendar_slot(c: Ctx) -> bool:
-    return c.prev in {"my", "the", "to", "google", "in", "on"}
-
-
-def _thing_follows(c: Ctx) -> bool:
-    """ "D" is "the": a plain word follows, and what came before is no person."""
-    if not c.after or c.after_levels[0] is Level.HARD:
-        return False
-    nxt = c.after[0]
-    plain = nxt.core.isalpha() and nxt.key not in FUNCTION_WORDS
-    named = len(nxt.core) > 1 and nxt.core[0].isupper() and not nxt.core.isupper()
-    known_before = not c.before or c.prev in FUNCTION_WORDS or c.prev in COMMON_VERBS
-    return plain and not named and known_before
-
-
-def _determiner_follows(c: Ctx) -> bool:
-    return c.next in DETERMINERS
-
-
-def _to_slot(c: Ctx) -> bool:
-    """ "Tu" is "to": a determiner follows and the word before takes no person."""
-    return c.next in DETERMINERS and c.prev not in STRONG_CUES and c.prev not in WEAK_CUES
-
-
-def _number_for_to(c: Ctx) -> bool:
-    return bool(c.before) and c.next in DETERMINERS and c.prev not in {"add", "the", "all"}
-
-
-def _add_slot(c: Ctx) -> bool:
-    opens = not c.before or c.prev in {"please", "jarvis", "and", "then", "also", "sir"}
-    return opens and c.next in {
-        *("this", "that", "these", "those", "it", "the", "a", "an", "my", "d", "them", "all"),
-        "both",
-    }
-
-
-def _reminder_slot(c: Ctx) -> bool:
-    asked = c.prev in {"a", "the", "my", "set", "add", "create", "new", "another", "one", "this"}
-    return asked and c.next not in {"of", "is", "was", "when"}
-
-
-def _reminders_slot(c: Ctx) -> bool:
-    return c.prev in {"my", "the", "all", "any", "set", "show", "list"} and c.next != "of"
-
-
-def _mail_slot(c: Ctx) -> bool:
-    if c.prev in MAIL_VERBS or c.prev == "unread":
-        return True
-    return c.prev in {"a", "an", "the", "my", "new", "this"} and c.prev2 in MAIL_VERBS
-
-
 def _many(forms: str, means: str, **kw: object) -> tuple[Rule, ...]:
     return tuple(Rule(tuple(f.split()), means, **kw) for f in forms.split(","))  # type: ignore[arg-type]
 
@@ -170,37 +83,42 @@ def _many(forms: str, means: str, **kw: object) -> tuple[Rule, ...]:
 # The table. Longest matches win; a rule with `when` needs that context to hold.
 RULES: tuple[Rule, ...] = (
     # ---- files
-    *_many("c s v,c s b,cs v,see s v,sea s v", "CSV"),
-    *_many("csb", "CSV", when=_csv_context),
-    *_many("csp", "CSV", when=_file_next),
+    *_many("c s v,cs v,see s v,sea s v", "CSV"),
+    *_many("c s b,csb", "CSV", when=csv_context),
+    *_many("csp", "CSV", when=file_next),
     *_many("p d f", "PDF"),
     *_many("p p t", "PPT"),
-    *_many("power point", "PowerPoint"),
-    *_many("xl sheet,axel sheet,accel sheet", "Excel sheet"),
-    *_many("xl sheets,axel sheets", "Excel sheets"),
+    *_many("power point", "PowerPoint", when=power_point),
+    *_many("xl sheet,axel sheet,accel sheet", "Excel sheet", when=xl_sheet),
+    *_many("xl sheets,axel sheets", "Excel sheets", when=xl_sheet),
     *_many("xl file,axel file,accel file", "Excel file"),
     *_many("xl files,axel files", "Excel files"),
-    *_many("fail", "file", when=_after_file_type),
+    *_many("fail", "file", when=after_file_type),
     # ---- the calendar
     *_many("calender,calander,calandar,calendor,kalender", "calendar"),
     *_many("calenders,calanders", "calendars"),
-    *_many("colander", "calendar", when=_calendar_slot),
+    *_many("colander", "calendar", when=calendar_slot),
     # ---- small words the recogniser writes as letters
-    *_many("d", "the", when=_thing_follows, caps_ok=True),
-    *_many("tu", "to", when=_to_slot, caps_ok=True),
-    *_many("too", "to", when=_determiner_follows),
-    *_many("2,two", "to", when=_number_for_to),  # a number: never applied, only offered
-    *_many("ad", "add", when=_add_slot, caps_ok=True),
+    *_many("d", "the", when=thing_follows, caps_ok=True),
+    *_many("tu", "to", when=to_slot, caps_ok=True),
+    *_many("too", "to", when=determiner_follows),
+    *_many("2,two", "to", when=number_for_to),  # a number: never applied, only offered
+    *_many("ad", "add", when=add_slot, caps_ok=True),
     # ---- its own name
-    *_many("jar vis,jarviz,jarvice,jarwis,jarvish,garvis,charvis,jarvas,javis,jarves", "JARVIS"),
+    *_many(
+        "jar vis,jarviz,jarvice,jarwis,jarvish,garvis,charvis,jarvas,javis,jarves",
+        "JARVIS",
+        when=called,
+    ),
     # ---- reminders, mail, messages, the brief
-    *_many("remainder", "reminder", when=_reminder_slot),
-    *_many("remainders", "reminders", when=_reminders_slot),
+    *_many("remainder", "reminder", when=reminder_slot),
+    *_many("remainders", "reminders", when=reminders_slot),
     *_many("g mail,gee mail,g male", "Gmail"),
     *_many("e mail,e male", "email"),
-    *_many("male", "mail", when=_mail_slot),
-    *_many("males", "mails", when=_mail_slot),
-    *_many("whats app,what's app,watsapp,whatsap,what sap", "WhatsApp"),
+    *_many("male", "mail", when=mail_slot),
+    *_many("males", "mails", when=mail_slot),
+    *_many("whats app,watsapp,whatsap", "WhatsApp"),
+    *_many("what's app,what sap", "WhatsApp", when=the_app),
     *_many("mourning brief", "morning brief"),
 )
 
@@ -253,6 +171,7 @@ def _table(
                 after=tuple(words[at + n :]),
                 after_levels=tuple(marks[at + n :]),
                 hints=hints,
+                tail=words[at + n - 1].tail,
             )
 
         rule = _match(words, i, ctx_of)
@@ -319,7 +238,10 @@ def apply(heard: str, hints: tuple[str, ...] = ()) -> Outcome:
             candidate=join_words(_capitals(offered, words)),
         )
     after = levels(sure, hints)
-    free = [lv is Level.NONE and not w for lv, w in zip(after, wrote, strict=True)]
+    free = [
+        lv is Level.NONE and not w and word.key not in ACTION_WORDS
+        for lv, w, word in zip(after, wrote, sure, strict=True)
+    ]
     fixed, near = near_matches(sure, free, hints)
     still_free = [f and a.core == b.core for f, a, b in zip(free, fixed, sure, strict=True)]
     unknown = _unknown(fixed, still_free, hint_words)

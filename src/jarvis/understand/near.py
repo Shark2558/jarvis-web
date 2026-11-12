@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 
-from jarvis.understand.words import FUNCTION_WORDS, Word
+from jarvis.understand.words import ACTION_WORDS, FUNCTION_WORDS, Word
 
 SURE = 0.90  # a near-match this close, and the only one, is taken
 NEAR = 0.80  # this close is worth asking about
@@ -35,7 +35,13 @@ def _hint_runs(hints: tuple[str, ...]) -> dict[int, list[list[str]]]:
 
     def keep(parts: list[str]) -> None:
         key = tuple(p.casefold() for p in parts)
-        if key and key not in seen and not any(ch.isdigit() for p in parts for ch in p):
+        acts = any(k in ACTION_WORDS for k in key)
+        if (
+            key
+            and key not in seen
+            and not acts
+            and not any(ch.isdigit() for p in parts for ch in p)
+        ):
             seen.add(key)
             runs.setdefault(len(parts), []).append(parts)
 

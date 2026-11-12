@@ -68,6 +68,61 @@ KNOWN_CAPITALS: frozenset[str] = frozenset(
     "i jarvis sir madam google gmail calendar drive excel word powerpoint whatsapp telegram "
     "youtube maps photos india kerala english hindi malayalam odia".split()
 )
+# What a request DOES (code review M1). Derived from the gateway's tool verbs (the second word
+# of `calendar_create_event`, `gmail_send`, `task_delete`, `memory_forget`, `bill_pay_prepare`,
+# `nudge_snooze`, `deleted_restore`, `home_arm`, ...: `tests/test_r11_1_b_guard.py` checks every
+# registered tool's verb is here) plus the ways a spoken request names an action. No correction,
+# by a rule's near-match or by the fast tier, may change, add or drop one of these.
+ACTION_VERBS: tuple[str, ...] = tuple(
+    "add append approve archive arm ask attach block book borrow buy call cancel change charge "
+    "check clear close compose confirm connect control copy create decline delete deny deposit "
+    "detach dial disable disarm discard disconnect dismiss done download draft edit email empty "
+    "enable erase export find forget forward get give grant hide import install invite link "
+    "list lend lock log look mail mark message move mute note notify open order pause pay phone "
+    "ping play post prepare print publish put read record refund reject remind remove rename "
+    "renew reply research reset restore resume return revoke ring run save schedule search sell "
+    "send set share show sign snooze start stop submit subscribe suggest switch sync take tell "
+    "text track transfer trash turn undo unblock unhide uninstall unlink unlock unmute "
+    "unsubscribe update upload wipe withdraw write".split()
+)
+_IRREGULAR: dict[str, tuple[str, ...]] = {
+    "buy": ("bought",),
+    "borrow": ("borrowed",),
+    "find": ("found",),
+    "forget": ("forgot", "forgotten"),
+    "get": ("got", "gotten"),
+    "give": ("gave", "given"),
+    "hide": ("hid", "hidden"),
+    "lend": ("lent",),
+    "pay": ("paid",),
+    "read": ("read",),
+    "ring": ("rang", "rung"),
+    "run": ("ran",),
+    "sell": ("sold",),
+    "send": ("sent",),
+    "set": ("set",),
+    "take": ("took", "taken"),
+    "tell": ("told",),
+    "undo": ("undid", "undone"),
+    "withdraw": ("withdrew", "withdrawn"),
+    "write": ("wrote", "written"),
+}
+_DOUBLED = frozenset("cancel ship stop swap plan".split())  # cancelled, stopped, ...
+
+
+def _forms(verb: str) -> set[str]:
+    """A verb and its plain forms: adds, added, adding (irregular pasts from `_IRREGULAR`)."""
+    stem = verb[:-1] if verb.endswith("e") and not verb.endswith("ee") else verb
+    last = verb[-1]
+    doubled = verb + last if verb in _DOUBLED else verb
+    third = verb + ("es" if verb.endswith(("s", "x", "ch", "sh")) else "s")
+    past = verb + "d" if verb.endswith("e") else doubled + "ed"
+    if verb.endswith("y") and verb[-2:-1] not in "aeiou":
+        third, past = verb[:-1] + "ies", verb[:-1] + "ied"
+    return {verb, third, past, stem + "ing", doubled + "ing", *_IRREGULAR.get(verb, ())}
+
+
+ACTION_WORDS: frozenset[str] = frozenset(f for v in ACTION_VERBS for f in _forms(v))
 
 
 class Level(IntEnum):
@@ -137,12 +192,7 @@ def _starts_sentence(words: list[Word], i: int) -> bool:
 
 def _by_itself(word: Word) -> Level:
     """What the word is on its own: a number, money, a time, a date, an e-mail address."""
-    key = word.key
-    if any(ch.isdigit() for ch in key) or _EMAIL.fullmatch(word.core):
-        return Level.HARD
-    if key in NUMBER_WORDS or key in MONEY_WORDS or key in TIME_WORDS or key in DATE_WORDS:
-        return Level.HARD
-    return Level.NONE
+    return Level.HARD if fixed_key(word.key) or _EMAIL.fullmatch(word.core) else Level.NONE
 
 
 def _may_be_name(word: Word) -> bool:
@@ -188,6 +238,14 @@ def protected_words(text: str, hints: tuple[str, ...] = ()) -> list[str]:
     return [w.core for w, lv in zip(words, levels(words, hints), strict=True) if lv is Level.HARD]
 
 
+def fixed_key(key: str) -> bool:
+    """Is this (casefolded) word protected by itself: a digit in it, or a number, money, time or
+    date word? (What `fixed_words` keeps, for a rule that only sees keys.)"""
+    return any(ch.isdigit() for ch in key) or (
+        key in NUMBER_WORDS or key in MONEY_WORDS or key in TIME_WORDS or key in DATE_WORDS
+    )
+
+
 def fixed_words(text: str) -> list[str]:
     """The words protected whatever stands beside them: numbers and anything with a digit,
     number / money / time / date words, e-mail addresses."""
@@ -201,6 +259,8 @@ def guarded_words(text: str, hints: tuple[str, ...] = ()) -> list[str]:
 
 
 __all__ = [
+    "ACTION_VERBS",
+    "ACTION_WORDS",
     "DATE_WORDS",
     "FUNCTION_WORDS",
     "KNOWN_CAPITALS",
@@ -209,6 +269,7 @@ __all__ = [
     "WEAK_CUES",
     "Level",
     "Word",
+    "fixed_key",
     "fixed_words",
     "guarded_words",
     "join_words",

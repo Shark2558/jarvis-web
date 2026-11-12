@@ -172,3 +172,116 @@ def test_turn_hints_are_files_then_nouns_within_the_cap() -> None:
     assert turn_hints(files, [], limit=0) == ()
     few = turn_hints(["study-plan.csv"], ["Plan the Kerala review", "Kerala again"], limit=40)
     assert few == ("study plan", "CSV", "Kerala")
+
+
+# ---- H1 (code review): no rule turns one real word into another that changes the request --------
+# Every rule in the table was audited for that danger (INTEGRATION-B section 5a). Each rule that
+# was tightened has its "still fires" and "leaves it alone" cases here; the money cases for
+# "remainder" are in the fixture's `untouched`, so the eval checks them too.
+
+
+@pytest.mark.parametrize(
+    ("heard", "expect"),
+    [
+        ("set a remainder for 7 pm", "set a reminder for 7 pm"),
+        ("add a remainder to call the bank tomorrow", "add a reminder to call the bank tomorrow"),
+        ("create remainder", "create reminder"),
+        ("new remainder for tomorrow", "new reminder for tomorrow"),
+        ("remainder at 5 pm to stretch", "reminder at 5 pm to stretch"),
+        ("remainder to call Meera", "reminder to call Meera"),
+        ("set a remainder to pay the bill", "set a reminder to pay the bill"),
+        ("show my remainders", "show my reminders"),
+        ("any remainders today", "any reminders today"),
+    ],
+)
+def test_remainder_becomes_reminder_only_with_a_real_reminder_cue(heard: str, expect: str) -> None:
+    out = apply(heard, ())
+    assert (out.text, out.changed, out.sure) == (expect, True, True)
+
+
+@pytest.mark.parametrize(
+    "heard",
+    [
+        "pay the remainder",
+        "transfer the remainder to savings",
+        "send me the remainder",
+        "what is the remainder",
+        "pay my remainder",
+        "the remainder is mine",
+        "pay the remainder for 7 days",
+        "move the remainder to the joint account",
+        "remind me to pay the remainder",
+        "show the remainders of the loan",
+        "transfer all remainders to savings",
+    ],
+)
+def test_remainder_in_money_talk_is_left_as_heard(heard: str) -> None:
+    out = apply(heard, ())
+    assert (out.text, out.changed) == (heard, False)
+
+
+@pytest.mark.parametrize(
+    ("heard", "hints", "expect"),
+    [
+        # c s b / csb -> CSV: a file word after it, or a CSV waiting and no money talk
+        ("open the c s b file", (), "open the CSV file"),
+        ("summarise the csb", ("CSV",), "summarise the CSV"),
+        ("pay the csb", ("CSV",), "pay the csb"),
+        ("transfer it to the csb", ("CSV",), "transfer it to the csb"),
+        # power point -> PowerPoint, never a wall socket
+        ("what is in the power point", (), "what is in the PowerPoint"),
+        ("turn on the power point in the hall", (), "turn on the power point in the hall"),
+        # xl sheet -> Excel sheet, never a bed sheet's size
+        ("open the XL sheet", (), "open the Excel sheet"),
+        ("order a king size xl sheet", (), "order a king size xl sheet"),
+        # fail -> file after a file type, never the verb
+        ("read the csb fail", (), "read the CSV file"),
+        ("will the pdf fail to upload", (), "will the pdf fail to upload"),
+        # colander -> calendar, never in the kitchen
+        ("add it to the colander for 5 pm", (), "add it to the calendar for 5 pm"),
+        ("wash my colander", (), "wash my colander"),
+        ("rinse the colander", (), "rinse the colander"),
+        # D -> the, never a letter that labels a thing
+        ("Put D c s v file in my calender", (), "Put the CSV file in my calendar"),
+        ("open D drive", (), "open D drive"),
+        ("add D column to the sheet", (), "add D column to the sheet"),
+        ("take vitamin D tablets", (), "take vitamin D tablets"),
+        # ad -> add, only where a request starts
+        ("ad this to my calander", (), "add this to my calendar"),
+        ("please ad it to the list", (), "please add it to the list"),
+        ("the banner and ad the client liked", (), "the banner and ad the client liked"),
+        # JARVIS, only when spoken to
+        ("hey jarviz what is on my calender", (), "hey JARVIS what is on my calendar"),
+        ("thank you javis", (), "thank you JARVIS"),
+        ("forward it to jarvice", (), "forward it to jarvice"),
+        ("meet charvis for lunch", (), "meet charvis for lunch"),
+        # male -> mail, only as the thing sent or read
+        ("send a male to the office", (), "send a mail to the office"),
+        ("check my male", (), "check my mail"),
+        ("get a male doctor", (), "get a male doctor"),
+        ("check the male ward", (), "check the male ward"),
+        # what's app / what sap -> WhatsApp, only as the app
+        ("send it on what's app", (), "send it on WhatsApp"),
+        ("draft a what sap message", (), "draft a WhatsApp message"),
+        ("what sap is this", (), "what sap is this"),
+    ],
+)
+def test_each_tightened_rule_fires_only_where_it_cannot_change_the_request(
+    heard: str, hints: tuple[str, ...], expect: str
+) -> None:
+    assert apply(heard, hints).text == expect
+
+
+@pytest.mark.parametrize(
+    ("heard", "hints"),
+    [
+        ("remove the old file", ("Removed items",)),
+        ("cancel the booking", ("Cancer report",)),
+        ("deplete the stock list", ("Delete list",)),
+    ],
+)
+def test_a_near_match_never_touches_or_makes_an_action_word(
+    heard: str, hints: tuple[str, ...]
+) -> None:
+    out = apply(heard, hints)
+    assert (out.text, out.changed, out.sure) == (heard, False, True)

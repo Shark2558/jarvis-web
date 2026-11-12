@@ -24,7 +24,9 @@
     {"heard": "hey jarviz what is on my calender", "expect": "hey JARVIS what is on my calendar"},
     {"heard": "read my mourning brief", "expect": "read my morning brief"},
     {"heard": "Tu D calender, please.", "expect": "To the calendar, please."},
-    {"heard": "add 60 sessions from D csb file Tu D calender at 7:30 pm", "expect": "add 60 sessions from the CSV file to the calendar at 7:30 pm"}
+    {"heard": "add 60 sessions from D csb file Tu D calender at 7:30 pm", "expect": "add 60 sessions from the CSV file to the calendar at 7:30 pm"},
+    {"heard": "show my remainders", "expect": "show my reminders"},
+    {"heard": "check my google colander", "expect": "check my google calendar"}
   ],
   "with_files": [
     {"heard": "open the study plant", "files": ["study-plan.csv"], "expect": "open the study plan"},
@@ -43,12 +45,30 @@
     {"heard": "Ring 98450 00000 at 4:15", "why": "a phone number and a time"},
     {"heard": "Move it to 12 Nov and pay 2,500 rupees", "why": "a date and an amount"},
     {"heard": "The male nurse will call back", "why": "'male' is right here"},
-    {"heard": "add two sessions on Monday", "why": "a number word and a weekday"}
+    {"heard": "add two sessions on Monday", "why": "a number word and a weekday"},
+    {"heard": "pay the remainder", "why": "remainder: the amount left, with money talk (rule: remainder)"},
+    {"heard": "transfer the remainder to savings", "why": "remainder: an amount being moved (rule: remainder)"},
+    {"heard": "send me the remainder", "why": "remainder: what is owed (rule: remainder)"},
+    {"heard": "what is the remainder", "why": "remainder: arithmetic, no reminder cue (rule: remainder)"},
+    {"heard": "pay the remainder tomorrow", "why": "a time does not make it a reminder when money is talked about (rule: remainder)"},
+    {"heard": "remind me to pay the remainder", "why": "'remind' with money talk (rule: remainder)"},
+    {"heard": "transfer all remainders to savings", "why": "remainders: amounts (rule: remainders)"},
+    {"heard": "switch off the power point", "why": "a wall socket, not a deck (rule: power point)"},
+    {"heard": "buy an xl sheet for the bed", "why": "a bed sheet's size, not Excel (rule: xl sheet)"},
+    {"heard": "why did the csv fail", "why": "'fail' is the verb here (rule: fail)"},
+    {"heard": "put the pasta in the colander", "why": "a kitchen colander (rule: colander)"},
+    {"heard": "save it in D drive", "why": "a drive letter, not 'the' (rule: D)"},
+    {"heard": "book a room in the D block", "why": "a block's letter, not 'the' (rule: D)"},
+    {"heard": "show me the poster and ad the client sent", "why": "'ad' is a noun after 'and' (rule: ad)"},
+    {"heard": "send it to javis", "why": "a person called Javis, not JARVIS (rule: JARVIS)"},
+    {"heard": "send a male nurse to the ward", "why": "'male' describes the nurse (rule: male)"},
+    {"heard": "what's app is this", "why": "'what's app' is a question here (rule: WhatsApp)"}
   ],
   "asks": [
     {"heard": "add it 2 the calendar", "question_has": "to the calendar", "why": "the only fix would change a number"},
     {"heard": "add this two my calendar", "question_has": "to my calendar", "why": "the only fix would change a number word"},
     {"heard": "open the qzx file", "question_has": "qzx", "why": "a word that is no word, where a name of a thing belongs"},
-    {"heard": "send D csb file to Meera", "question_has": "send the CSV file to Meera", "why": "'D' after 'send' may be a person: ask, never rewrite a name"}
+    {"heard": "send D csb file to Meera", "question_has": "send the CSV file to Meera", "why": "'D' after 'send' may be a person: ask, never rewrite a name"},
+    {"heard": "pay the c s b bank", "question_has": "c s b", "why": "spelled letters before 'bank' may be a bank's name: never CSV (rule: c s b)"}
   ]
 }

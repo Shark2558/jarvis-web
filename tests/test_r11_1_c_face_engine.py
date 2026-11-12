@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -90,9 +91,15 @@ def test_the_two_models_are_pinned_by_hash_size_licence_and_source() -> None:
     assert RUNTIME_PACKAGES == {"cv2": "opencv-python-headless", "numpy": "numpy"}
 
 
+def _any_library(name: str) -> Any:
+    """A stand-in for cv2 and numpy: these tests are about the model files, so they must not
+    depend on OpenCV being installed (CI's Python 3.11 job has no homebridge extra; run 108)."""
+    return SimpleNamespace(__name__=name)
+
+
 def test_no_models_means_plain_words_and_no_crash(tmp_path: Path) -> None:
-    engine = OpenCvEngine(tmp_path)
-    assert "model" in engine.status() and engine.status() != "ready"
+    engine = OpenCvEngine(tmp_path, load=_any_library)
+    assert engine.status() == face_engine.NO_MODELS
     with pytest.raises(EngineOff):
         engine.faces(jpeg_bytes())
 
@@ -100,8 +107,8 @@ def test_no_models_means_plain_words_and_no_crash(tmp_path: Path) -> None:
 def test_a_model_file_that_is_not_the_pinned_one_is_never_loaded(tmp_path: Path) -> None:
     for m in MODELS:
         (tmp_path / m.name).write_bytes(b"not the reviewed model")
-    engine = OpenCvEngine(tmp_path)
-    assert "changed" in engine.status() or "model" in engine.status()
+    engine = OpenCvEngine(tmp_path, load=_any_library)
+    assert engine.status() == face_engine.CHANGED_MODEL
     with pytest.raises(EngineOff):
         engine.faces(jpeg_bytes())
 

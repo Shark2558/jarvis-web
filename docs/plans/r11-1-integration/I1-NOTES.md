@@ -1,4 +1,4 @@
-Version v11.1.5 · 12 Nov 2026, 20:40 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v11.1.6 · 12 Nov 2026, 21:10 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
 
 # R11.1 I1 — integration notes (Mark XV)
 
@@ -338,6 +338,16 @@ needs about 40 MiB for a workbook instead of about 150. Test first: `test_r11_1_
 and through the real child command), red on the old code with OpenBLAS's own message. The home
 kit's picture decoder already sets `OPENBLAS_NUM_THREADS=1` and caps above its own base.
 
+**GitHub CI, run 108.** The Python 3.11 job failed 2 tests in `test_r11_1_c_face_engine.py`
+(no models; a changed model): they are about the model files but silently needed OpenCV
+installed, which only the 3.12 job has (the `homebridge` extra; on 3.11 its face pins are skipped
+by their Python marker). Without OpenCV the engine rightly answers "the picture library is
+missing" first. Fixed in the tests (a stand-in library through the engine's own `load=` seam) and
+made exact (`NO_MODELS`, `CHANGED_MODEL`); reproduced and proven with OpenCV and NumPy hidden:
+`17 passed, 6 skipped`; with them: `22 passed, 1 skipped` on 3.11 and 3.12. Run 108's 3.11 job
+otherwise passed in full (`13569 passed`), as did run 107's 3.12 job apart from the 8 fixed in
+v11.1.5.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -347,3 +357,4 @@ kit's picture decoder already sets `OPENBLAS_NUM_THREADS=1` and caps above its o
 | v11.1.3 | 12 Nov 2026, 15:30 IST | R11.1 | The full runs: unit 3.12 and 3.11, ruff, mypy, the mock evals, the doc, guide, diagram, title and book checks, the full browser suite and the four joins it found (the chat box's hint, Photos off answering 503, the memory chip on a phone, a locator), the affected set again, the screenshots; the flaky R11 eval control | 🛠 Mark XV |
 | v11.1.4 | 12 Nov 2026, 19:45 IST | R11.1 | The integrated reviews and their fixes (section 10): Telegram's home switch over the real photo import, the R11 eval's flake at its cause, the picture turn guard's strict and light modes with YouTube, Maps and a research's context behind it, the brief's deliveries behind the mail row and a paused row said so, one kitchen conversation a day, the lock's via block, the No-AI phrases one by one, the kit's Python for the face engine pins, the long functions, the estimate under a raised cap, three console joins; the measured guard, the eval loop, every check on the head, and the residuals for the release notes | 🛠 Mark XV |
 | v11.1.5 | 12 Nov 2026, 20:40 IST | R11.1 | GitHub CI run 107: the document child kept numpy and pandas out (OpenBLAS on 4-CPU runners passed the memory cap), with its test | 🛠 Mark XV |
+| v11.1.6 | 12 Nov 2026, 21:10 IST | R11.1 | GitHub CI run 108: two face-engine tests no longer need OpenCV installed | 🛠 Mark XV |

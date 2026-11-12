@@ -152,7 +152,8 @@ class ProviderView(BaseModel):
 
     `impact` ("If this stops: ...") and `fix` (what to do) are FIXED words from
     `jarvis.vitals.words` (empty for the owner's own records); the systems-check briefing reads
-    them with getattr. `group` is the panel section."""
+    them with getattr. `group` is the panel section. `checking` (R11.1 D19): JARVIS is reading
+    this item's facts right now, so the panel says "Checking..." instead of "Unknown"."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -163,6 +164,7 @@ class ProviderView(BaseModel):
     impact: str = ""
     fix: str = ""
     group: Group = "keys"
+    checking: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -173,6 +175,7 @@ class ProviderView(BaseModel):
             "impact": self.impact,
             "fix": self.fix,
             "group": self.group,
+            "checking": self.checking,
         }
 
 

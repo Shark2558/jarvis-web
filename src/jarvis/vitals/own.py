@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from jarvis.config import Settings
 from jarvis.logging import get_logger
+from jarvis.vitals import words
 from jarvis.vitals.auto import UNREADABLE, next_month_start
 from jarvis.vitals.models import Group, Kind, Provider, Status
 from jarvis.vitals.own_cache import CachedUsage
@@ -50,10 +51,16 @@ TELEGRAM_MAX_AGE_S = 2 * 3600.0  # an older stored systems-check result is not t
 UNKNOWN_REASON = "can't be read now"
 RUN_CHECK = "Run a systems check to test it."
 NEXT_USE = "JARVIS sees its limits the next time it reads GitHub."
+# R11.1 D19: a connected token whose facts are missing is read by the refresh itself
+CHECKING_REASON = "is being checked"
+CHECKING_NOTE = "Checking… JARVIS is asking GitHub for its limits; they show on the next refresh."
+UNREAD_REASON = "couldn't be read from GitHub"
+UNREAD_NOTE = "JARVIS asks GitHub again within 6 hours; its limits show here once GitHub answers."
 NO_EXPIRY = "This token doesn't expire."
 GITHUB_REFUSED = "the token was refused"
 EXPIRY_UNREADABLE = "its expiry date couldn't be read"
 STALE_CHECK = "hasn't been checked lately"
+HOME_PROBLEM = "reports a problem"  # a problem the laptop reported without a part JARVIS knows
 BRAIN_STATES: Mapping[str, tuple[Status, str]] = {
     "refused": ("red", "was refused"),
     "no_credit": ("red", NO_CREDIT),  # R5.1 I1: the vendor's "credit balance is too low"
@@ -146,10 +153,17 @@ class TokenMetaLike(Protocol):  # jarvis.integrations.github_meta.TokenMeta
 
 
 class GithubLike(StatusReader, Protocol):
+    """`GithubClient`. Its `learn_token_facts(uid)` (R11.1 D19: one read of missing facts, at most
+    every 6 hours; answers "known" | "checking" | "waiting") is looked up with getattr: a reader
+    without it keeps the R5.1 words."""
+
     async def token_meta(self, uid: str) -> TokenMetaLike | None: ...
 
 
 class HomeStatusLike(Protocol):
+    """`HomeStatus`. Its `parts` (what the laptop's last heartbeat said of each part; R11.1 D18)
+    are read with getattr: a status without them is a problem with no part named."""
+
     @property
     def state(self) -> str: ...
 
@@ -183,12 +197,15 @@ class OwnItem:
     provider: Provider
     base: tuple[Status, str]  # the thing's own state + its fixed reason
     group: Group = "keys"
+    checking: bool = False  # R11.1 D19: its facts are being read right now
 
 
-def _item(pid: str, base: tuple[Status, str], *, note: str = "", **kw: Any) -> OwnItem:
+def _item(
+    pid: str, base: tuple[Status, str], *, note: str = "", checking: bool = False, **kw: Any
+) -> OwnItem:
     kind: Kind = "quota" if pid == "web_credits" else "key"
     p = Provider(id=pid, label=LABELS[pid], kind=kind, source="auto", note=note, **kw)
-    return OwnItem(p, base, "allowances" if kind == "quota" else "keys")
+    return OwnItem(p, base, "allowances" if kind == "quota" else "keys", checking)
 
 
 def unknown(pid: str, note: str = UNREADABLE, reason: str = UNKNOWN_REASON) -> OwnItem:
@@ -229,6 +246,17 @@ def _rate(meta: TokenMetaLike, ts: float) -> dict[str, Any]:
         "unit": "calls this hour",
         "reset_at": reset,
     }
+
+
+def _github_unread(state: str | None) -> OwnItem:
+    """A connected token with no facts yet: being read now, read without an answer this period,
+    or (a reader that can't ask GitHub) waiting for its next use."""
+    if state is None:
+        return unknown("github_token", note=NEXT_USE, reason="hasn't been used yet")
+    if state == "checking":
+        base: tuple[Status, str] = ("unknown", CHECKING_REASON)
+        return _item("github_token", base, note=CHECKING_NOTE, checking=True)
+    return unknown("github_token", note=UNREAD_NOTE, reason=UNREAD_REASON)
 
 
 class Own:
@@ -336,8 +364,12 @@ class Own:
         if st.get("connected") is not True:
             return None
         meta = await gh.token_meta(uid)
-        if meta is None:
-            return unknown("github_token", note=NEXT_USE, reason="hasn't been used yet")
+        if meta is None:  # R11.1 D19: ask GitHub itself (one read, at most every 6 hours)
+            learn = getattr(gh, "learn_token_facts", None)
+            state = await learn(uid) if learn is not None else None
+            meta = await gh.token_meta(uid) if state == "known" else None
+            if meta is None:
+                return _github_unread(state)
         if meta.rejected_at is not None:  # GitHub answered 401: revoked or deleted
             return _item("github_token", ("red", GITHUB_REFUSED), note="GitHub refused this token.")
         if meta.expiry_unreadable:  # the header was there; never claim "doesn't expire"
@@ -358,9 +390,10 @@ class Own:
         age = max(0.0, now.timestamp() - st.last_seen_at)
         if st.state == "offline" or age > self._s.home_offline_after_s:
             return _item("home_link", ("red", f"is offline: no heartbeat for {_span(age)}"))
-        base: tuple[Status, str] = (
-            ("amber", "reports a problem") if st.state == "degraded" else ("ok", "")
-        )
+        base: tuple[Status, str] = ("ok", "")
+        if st.state == "degraded":  # R11.1 D18: name the part that failed, in fixed words
+            fault = words.home_fault(getattr(st, "parts", None))
+            base = ("amber", fault.reason if fault is not None else HOME_PROBLEM)
         return _item("home_link", base, note=f"Last heartbeat {_ago(age)}.")
 
     async def _book(self) -> OwnItem | None:

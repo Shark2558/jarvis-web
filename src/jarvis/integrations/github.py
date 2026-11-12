@@ -8,16 +8,22 @@ is called, over https, with GET only, redirects off, a deadline and a size cap. 
 own plain words (GitHub's text and the token never appear in them). Whatever GitHub holds about
 a repo (names, descriptions) is other people's words: fields are one clean line each and the
 tools fence them.
+
+R11.1 D19: a connected token whose facts were never stored (connected before R5.1, or the record
+could not be saved) is asked about by `learn_token_facts`: one `GET /rate_limit`, at most every
+`FACTS_EVERY_S` per owner. The mark that counts the period is written to the stored record in a
+transaction BEFORE the read, so neither a restart nor a second instance reads again.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from pydantic import SecretStr
@@ -44,6 +50,13 @@ STATUS_FORBIDDEN = 403
 STATUS_UNAUTHORIZED = 401
 STATUS_TOO_MANY = 429
 STATUS_SERVER_ERROR = 500
+FACTS_EVERY_S = 6 * 3600.0  # R11.1 D19: a token with no stored facts is read at most this often
+FACTS_WAIT_S = 2.0  # how long a caller waits for that read before it is told "checking"
+FACTS_PATH = "/rate_limit"  # GitHub does not count this call against the hourly limit
+FACTS_MARK = "facts_checked_at"  # the stored record's clear field: when the period's read began
+# what `learn_token_facts` answers: the facts are there now / a read is in flight / a read was
+# made this period and learned nothing (nothing more is tried until the period ends)
+FactsState = Literal["known", "checking", "waiting"]
 _TOKEN = re.compile(r"[A-Za-z0-9_\-]{1,255}")
 _LOGIN = re.compile(r"[A-Za-z0-9-]{1,39}")
 _OWN_URL = re.compile(r"https://github\.com/[A-Za-z0-9._/-]{1,200}")
@@ -105,9 +118,20 @@ class Activity:
     at: str
 
 
+@dataclass(frozen=True)
+class FactsClaim:
+    """The answer to "may this caller read the token's facts from GitHub now?" (R11.1 D19).
+    `state`: "take" (yes: the period's one read is now this caller's), "recent" (a read was
+    claimed at `since`, inside the period), "known" (the facts are stored) or "gone" (no record)."""
+
+    state: Literal["take", "recent", "known", "gone"]
+    since: float | None = None
+
+
 class GithubStore:
-    """`{prefix}connectors_github/{uid}` = {v, kid, blob, meta}; blob = AES-GCM({token, login});
-    `meta` = clear `TokenMeta` fields (expiry and hourly limit from GitHub's headers; no secret)."""
+    """`{prefix}connectors_github/{uid}` = {v, kid, blob, meta, facts_checked_at}; blob =
+    AES-GCM({token, login}); `meta` = clear `TokenMeta` fields (expiry and hourly limit from
+    GitHub's headers; no secret); `facts_checked_at` = when a read of missing facts last began."""
 
     def __init__(self, docs: Docs, keyring: Keyring, *, prefix: str = "jarvis_") -> None:
         self._d = docs
@@ -164,6 +188,27 @@ class GithubStore:
         doc = await self._d.get(self._path(uid))
         return TokenMeta.read(doc.get("meta")) if doc is not None else None
 
+    async def claim_facts_read(self, uid: str, now: float, every_s: float) -> FactsClaim:
+        """Take the one read of a token's missing facts for this period (R11.1 D19). The mark is
+        written in the same transaction that grants it, so two instances never both read, and a
+        restart finds it. A record with readable facts, or none at all, grants nothing."""
+        path = self._path(uid)
+
+        async def take(tx: DocTx) -> FactsClaim:
+            doc = await tx.get(path)
+            if doc is None:
+                return FactsClaim("gone")
+            if TokenMeta.read(doc.get("meta")) is not None:
+                return FactsClaim("known")
+            last = doc.get(FACTS_MARK)
+            if isinstance(last, int | float) and not isinstance(last, bool):
+                if 0 <= now - last < every_s:
+                    return FactsClaim("recent", float(last))
+            tx.set(path, {**doc, FACTS_MARK: now})
+            return FactsClaim("take", now)
+
+        return await self._d.transaction(take)
+
     async def note_meta(self, uid: str, meta: TokenMeta) -> bool:
         """Put `meta` on the existing record (in a transaction: a record deleted or replaced
         meanwhile is never brought back). False when there is no record."""
@@ -218,13 +263,26 @@ class GithubClient:
         self._http = http or httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=False)
         self._clock = clock
         self._book = MetaBook()  # R5.1: the token's facts from GitHub's headers, per owner
+        # R11.1 D19: a read of missing facts in flight, and when this period's read was claimed
+        self._facts: dict[str, asyncio.Task[None]] = {}
+        self._facts_since: dict[str, float] = {}
+        self._facts_lock = asyncio.Lock()
 
     def __repr__(self) -> str:
         return "GithubClient(<hidden>)"
 
     async def aclose(self) -> None:
         """Close the HTTP client (call from the app's lifespan shutdown)."""
+        for task in self._facts.values():
+            task.cancel()
+        await self.settled()
         await self._http.aclose()
+
+    async def settled(self) -> None:
+        """Wait until no read of missing facts is in flight (shutdown, tests)."""
+        running = [t for t in self._facts.values() if not t.done()]
+        if running:
+            await asyncio.gather(*running, return_exceptions=True)
 
     async def status(self, uid: str) -> dict[str, Any]:
         try:
@@ -245,12 +303,14 @@ class GithubClient:
             raise GithubError(UNREADABLE)
         await self._store.save(uid, token, login, probe.get(uid))
         self._book.saved(uid, probe.get(uid))
+        self._facts_since.pop(uid, None)  # a new record: its own six hours
         log.info("github connected")
         return login
 
     async def disconnect(self, uid: str) -> None:
         await self._store.delete(uid)
         self._book.forget(uid)
+        self._facts_since.pop(uid, None)
 
     async def token_meta(self, uid: str) -> TokenMeta | None:
         """R5.1 (Vitals): what GitHub's headers last said about the token: this process's latest
@@ -259,6 +319,62 @@ class GithubClient:
         if mine is None or (stored is not None and stored.seen_at > mine.seen_at):
             return stored
         return mine
+
+    async def learn_token_facts(self, uid: str) -> FactsState:
+        """R11.1 D19 (Vitals): for a connected token whose facts are missing, read them from
+        GitHub: ONE `GET /rate_limit`, at most every `FACTS_EVERY_S` per owner (counted in the
+        stored record, so also across restarts and instances). Waits up to `FACTS_WAIT_S` for the
+        answer; a slower GitHub is "checking" and the read goes on by itself. Never raises: a
+        store that can't take the mark means no read (a read JARVIS can't count is not made)."""
+        if self._book.get(uid) is not None:
+            return "known"
+        async with self._facts_lock:  # one starter at a time: a second caller joins the read
+            task = self._facts.get(uid)
+            started: asyncio.Task[None] | FactsState = (
+                task if task is not None and not task.done() else await self._begin_facts_read(uid)
+            )
+        if not isinstance(started, asyncio.Task):
+            return started
+        try:
+            await asyncio.wait_for(asyncio.shield(started), FACTS_WAIT_S)
+        except TimeoutError:
+            return "checking"
+        return "known" if self._book.get(uid) is not None else "waiting"
+
+    async def _begin_facts_read(self, uid: str) -> asyncio.Task[None] | FactsState:
+        """The period's read, started; or why there is none: the facts are stored ("known"), or
+        this period's read was already made ("waiting")."""
+        now = self._clock()
+        since = self._facts_since.get(uid)
+        if since is not None and 0 <= now - since < FACTS_EVERY_S:
+            return "waiting"  # this process already knows of a read in this period
+        try:
+            found = await self._store.load(uid)
+            if found is None:
+                return "waiting"
+            claim = await self._store.claim_facts_read(uid, now, FACTS_EVERY_S)
+        except Exception as exc:  # noqa: BLE001 - never the cause: it may hold the token
+            log.warning("github facts read not started", extra={"reason": type(exc).__name__})
+            return "waiting"
+        if claim.since is not None:
+            self._facts_since[uid] = claim.since
+        if claim.state == "known":
+            return "known"
+        if claim.state != "take":
+            return "waiting"
+        task = asyncio.ensure_future(self._read_facts(uid, found[0].get_secret_value()))
+        self._facts[uid] = task
+        return task
+
+    async def _read_facts(self, uid: str, token: str) -> None:
+        """The one `GET /rate_limit`. Its headers go through the same book as every other answer
+        (`_call`) and are stored at once; a 401 is a fact too ("refused"). Nothing is raised."""
+        try:
+            await self._call(uid, token, FACTS_PATH, {})
+        except GithubError:
+            pass  # `_get` logged the status; the row says the facts could not be read
+        except Exception as exc:  # noqa: BLE001 - a background read never raises
+            log.warning("github facts read failed", extra={"reason": type(exc).__name__})
 
     def _seen(self, book: MetaBook, uid: str) -> Seen:
         gen = book.generation(uid)  # a reconnect / disconnect meanwhile drops this read's facts
@@ -387,7 +503,11 @@ async def _capped(r: httpx.Response) -> bytes:
 
 
 __all__ = [
+    "FACTS_EVERY_S",
+    "FACTS_WAIT_S",
     "Activity",
+    "FactsClaim",
+    "FactsState",
     "GithubClient",
     "GithubError",
     "GithubNeedsReconnect",

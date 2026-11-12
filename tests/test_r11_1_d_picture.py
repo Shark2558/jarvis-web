@@ -29,7 +29,7 @@ from jarvis.people.tools import RESEARCH_PERSON
 from jarvis.permissions.groups import groups_for
 from jarvis.picture.eyes import LOOK_ASK, LOOK_SYSTEM, NO_AI, CantLook
 from jarvis.picture.guard import NO_IDENTIFY
-from jarvis.picture.research import NO_PICTURE, OFF, TOO_MANY, UNREADABLE
+from jarvis.picture.research import KEEP_S, NO_PICTURE, OFF, TOO_MANY, UNREADABLE
 from jarvis.picture.search import MAX_RESULTS
 from jarvis.picture.tools import PICTURE_RESEARCH
 from jarvis.tools.external import FENCE_PREFIX
@@ -535,9 +535,12 @@ def test_the_tool_is_a_read_in_the_pictures_row() -> None:
 
 async def test_the_last_report_is_one_conversations_and_is_forgotten_after_ten_minutes() -> None:
     rig, _ = _product()
+    now = [1_000.0]  # the service's own clock, so the test never depends on the machine's uptime
+    rig.svc.clock = lambda: now[0]  # type: ignore[method-assign]
     await rig.research()
 
     assert rig.svc.last("u_other", "sess_1") is None and rig.svc.last(UID, "sess_2") is None
+    now[0] += KEEP_S - 1
     assert rig.svc.last(UID, "sess_1") is not None
-    rig.svc.clock = lambda: 10_000.0  # type: ignore[method-assign]
+    now[0] += 1
     assert rig.svc.last(UID, "sess_1") is None

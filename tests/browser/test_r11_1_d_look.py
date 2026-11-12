@@ -85,10 +85,14 @@ def boot(
     *,
     day: bool = False,
     routes: dict[str, Any] | None = None,
+    clock: bool = False,
 ) -> Console:
     """A signed-in console with the shared mocks; `routes` (pattern -> handler) are set before the
-    page loads, so the very first read of a panel already gets them."""
+    page loads, so the very first read of a panel already gets them. `clock`: the page's timers
+    and Date are Playwright's, so a test can jump them forward (time still flows on its own)."""
     c = Console(browser, url, token, vp)
+    if clock:
+        c.page.clock.install()
     install_mocks(c.page)
     c.page.route("**/v1/people/last", lambda r: _json(r, DOSSIER))
     for pattern, handler in (routes or {}).items():
@@ -104,7 +108,8 @@ def boot(
         c.page.locator("#themeBtn").click()
         c.page.locator('label[for="jx-s-day"]').click()
         c.page.keyboard.press("Escape")
-    c.page.wait_for_timeout(900)  # deferred scripts and the R11.1 modules settle
+    # the R11.1 modules load last (console-r111.js imports them): their block is there once built
+    c.page.locator("#look").wait_for(state="attached")
     return c
 
 
@@ -296,6 +301,70 @@ def test_a_token_being_read_says_checking_then_shows_its_figures_by_itself(
         "OK", ignore_case=True, timeout=8000
     )  # the panel looked again by itself
     assert len(asked) == 2
+    c.close()
+
+
+def _row_chip(c: Console) -> tuple[Any, Any]:
+    row = c.page.locator('#vitals-board .vt-row[data-id="github_token"]')
+    row.wait_for()
+    return row, row.locator(".vt-chip")
+
+
+def test_the_panel_follows_a_slow_github_until_it_answers_however_many_looks_it_takes(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Code review M4: it reads again until no row is checking (more than the old three looks),
+    each look a few seconds after the last. The page's clock is jumped; it also runs on its own,
+    so each step waits for the look it causes rather than counting on the jump alone."""
+    asked: list[int] = []
+
+    def answer(route: Any) -> None:
+        asked.append(1)
+        _json(route, _vitals(checking=len(asked) <= 4))
+
+    c = boot(browser, server_url, token, DESKTOP, routes={"**/v1/vitals": answer}, clock=True)
+    c.open_panel("vitals")
+    _, chip = _row_chip(c)
+    expect(chip).to_have_text("Checking\u2026")
+    for _ in range(8):  # bounded: the old code stopped after four reads in all
+        if len(asked) >= 5:
+            break
+        with c.page.expect_response("**/v1/vitals"):
+            c.page.clock.fast_forward(3_100)
+
+    expect(chip).to_have_text("OK", ignore_case=True)
+    assert len(asked) == 5 and c.errors == []  # and it stopped once the row was no longer checking
+    c.close()
+
+
+def test_a_github_that_never_answers_ends_in_plain_words_and_refresh_starts_again(
+    browser: Any, server_url: str, token: str
+) -> None:
+    asked: list[int] = []
+
+    def answer(route: Any) -> None:
+        asked.append(1)
+        _json(route, _vitals(checking=True))
+
+    c = boot(browser, server_url, token, PHONE, routes={"**/v1/vitals": answer}, clock=True)
+    c.open_panel("vitals")
+    row, chip = _row_chip(c)
+    expect(chip).to_have_text("Checking\u2026")
+    c.page.clock.fast_forward(50_000)  # far past the follow time: the next look gives up
+
+    expect(chip).to_have_text("Unknown", timeout=10_000)
+    expect(row.locator(".vt-note")).to_have_text("GitHub didn't answer; press Refresh.")
+    before = len(asked)
+    c.page.clock.fast_forward(10_000)
+    assert len(asked) == before  # it stopped asking
+    gate(c, "#p-vitals", "phone", "vitals: GitHub did not answer")
+
+    with c.page.expect_response("**/v1/vitals"):
+        c.page.locator("#vitals-board .vt-sub .btn").click()  # his press: follow from the start
+    expect(chip).to_have_text("Checking\u2026")
+    with c.page.expect_response("**/v1/vitals"):
+        c.page.clock.fast_forward(3_100)
+    assert len(asked) >= before + 2 and c.errors == []
     c.close()
 
 

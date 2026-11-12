@@ -40,7 +40,7 @@ def test_words_are_the_reply_and_the_old_filler_is_gone() -> None:
     assert finish.reply_text(done("  Done, Sir. ")) == "Done, Sir."
     assert finish.OLD_FILLER == OLD
     assert OLD not in finish.reply_text(done(""))
-    assert finish.FILLER == finish.EMPTY and "nothing to add" not in finish.EMPTY
+    assert "nothing to add" not in finish.EMPTY and not hasattr(finish, "FILLER")  # I1: alias gone
 
 
 @pytest.mark.parametrize(

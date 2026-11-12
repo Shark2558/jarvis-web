@@ -29,7 +29,6 @@ What the Brain does with a model's answer lives here, outside `brain.py` (near i
   batch that added 58 of 60 is never reported as "Done, Sir: Add 60 events".
 - `chat_response`, `log_turn`: the response and the turn's log line.
 
-`FILLER` is I0's name for "what an answer with no words becomes": it is now `EMPTY`.
 """
 
 from __future__ import annotations
@@ -53,7 +52,6 @@ from jarvis.web.ledger import cited_sources
 
 log = get_logger("jarvis.core.brain")  # the Brain's own log name: dashboards filter on it
 
-FILLER = EMPTY
 RETRY = (
     "Answer in words now. If the work needs many tool calls, use the batch tool or say what "
     "remains."
@@ -350,7 +348,6 @@ __all__ = [
     "COMPLETE",
     "CUT_OFF",
     "EMPTY",
-    "FILLER",
     "OLD_FILLER",
     "RETRY",
     "ModelCall",

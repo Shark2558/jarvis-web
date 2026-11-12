@@ -116,7 +116,7 @@ class ChatRequest(BaseModel):
     attachments: list[str] = Field(
         default_factory=list,
         max_length=10,
-        description="Ids from POST /v1/attachments sent with this message (at most 3; slice 10)",
+        description="Ids from POST /v1/attachments sent with this message (at most 10; R11.1 D11)",
     )
     heard: str | None = Field(
         default=None,

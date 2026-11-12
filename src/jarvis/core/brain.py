@@ -29,6 +29,8 @@ Approve all (slice 11): `jarvis.core.approve_all`, narrated once like a single d
 Attached files (slice 10): `jarvis.documents.service` hooks. Tool rounds (slice 10 integration):
 once a write has run, the message's saves are conflict-safe (`jarvis.core.rounds`), and one
 message has a budget of new approval cards and document calls (`jarvis.tools.budget`).
+R11.1 (`jarvis.core.finish`): a working turn's output cap, the one retry of a cut-off answer, and
+the fixed line an answer with no words becomes (never a filler, never part of a later window).
 """
 
 from __future__ import annotations
@@ -82,7 +84,7 @@ from jarvis.tools.budget import turn_budget
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
 from jarvis.tools.reply_cards import AnyCard, collecting_cards
 from jarvis.tools.taint import context_trust, untrusted_seen
-from jarvis.web.ledger import cited_sources, web_conversation
+from jarvis.web.ledger import web_conversation
 from jarvis.whatsapp.provenance import conversation_words
 
 log = get_logger(__name__)
@@ -371,20 +373,11 @@ class Brain:
             raise
 
         session = rounds.session
-        reply = finish.reply_text(completion)  # R11.1: jarvis.core.finish (Part A: no filler)
+        # R11.1 D2 (jarvis.core.finish): the words, or a fixed line for what happened; no filler
+        reply = finish.reply_text(completion, cards=len(pending), steps=rounds.ran)
+        tooled = rounds.count > 0  # written from tool results: never to a training brain
         session.append(
-            Turn(
-                role=Role.ASSISTANT,
-                content=reply,
-                trace_id=trace_id,
-                model=completion.model,
-                usage=completion.usage,
-                cost_usd=completion.cost_usd,
-                latency_ms=completion.latency_ms,
-                tool_derived=rounds.count > 0,  # written from tool results: never to training
-                offline=completion.offline or answered_offline(),
-                sources=cited_sources(reply, session, enabled=spec.tools_allowed),
-            )
+            finish.reply_turn(session, spec, reply, completion, trace_id, after_tools=tooled)
         )
         stored = await rounds.store(self.store, session.turns[-1:])  # after a write: never 409
         session = rounds.session
@@ -395,7 +388,8 @@ class Brain:
             trace_id, total_ms, rounds.count, pending, list(rec.used), rounds.undo, rounds.cards
         )
         reply += rounds.reply_note(stored)  # the record is incomplete: say so, plainly
-        return await self._chat_response(session, spec, reply, completion, reply_meta)
+        inr = await self._rupees(completion.cost_usd, session.total_cost_usd)
+        return finish.chat_response(session, spec.id, reply, completion, reply_meta, inr)
 
     def _trailer(self, session: Session, req: ChatRequest) -> str:
         return build_trailer(
@@ -403,37 +397,6 @@ class Brain:
             session_id=session.id,
             turn_index=len(session.turns),
             channel=req.channel,
-        )
-
-    async def _chat_response(
-        self,
-        session: Session,
-        spec: BrainSpec,
-        reply: str,
-        completion: Completion,
-        meta: _ReplyMeta,
-    ) -> ChatResponse:
-        cost_inr, total_inr = await self._rupees(completion.cost_usd, session.total_cost_usd)
-        return ChatResponse(
-            session_id=session.id,
-            reply=reply,
-            trace_id=meta.trace_id,
-            model=completion.model,
-            brain=spec.id,
-            usage=completion.usage,
-            cost_usd=completion.cost_usd,
-            cost_inr=cost_inr,
-            total_cost_usd=session.total_cost_usd,
-            total_cost_inr=total_inr,
-            latency_ms=meta.total_ms,
-            turn_count=len(session.turns),
-            tool_calls=meta.rounds,
-            pending_approvals=meta.pending,
-            memory_used=meta.memory_used,
-            offline=session.turns[-1].offline,
-            sources=session.turns[-1].sources,  # the reply just stored: what it cited
-            undo=meta.undo,
-            cards=meta.cards,
         )
 
     # ---- tool loop ----------------------------------------------------------------------
@@ -446,8 +409,10 @@ class Brain:
         spec: BrainSpec,
         *,
         with_tools: bool,
+        working: bool = False,
     ) -> Completion:
-        """One model call: admitted by the monthly limit first, metered after."""
+        """One model call: admitted by the monthly limit first, metered after. `working`: it may
+        use the working turn's output cap (R11.1 D1, `finish.output_cap`)."""
         give_tools = with_tools and self.gateway is not None and spec.tools_allowed
         await self._admit(req.user_id, spec)
         completion = await self.brains.router_for(spec.id).complete(
@@ -455,7 +420,7 @@ class Brain:
             system=prompt.system,
             system_dynamic=prompt.trailer,
             messages=messages,
-            max_tokens=self.s.max_output_tokens,
+            max_tokens=finish.output_cap(self.s, working=working),
             effort=self._effort(),
             tools=self.gateway.registry.specs() if (give_tools and self.gateway) else None,
         )
@@ -474,13 +439,17 @@ class Brain:
         is stored as it ends (`jarvis.core.rounds`: conflict-safe once a write has run), inside
         this owner message's budget of new approval cards and document calls."""
         pending: list[PendingApproval] = []
-        if not self._tools_on(spec):
-            return await self._complete(messages, prompt, req, spec, with_tools=False), pending
+        tools, files = self._tools_on(spec), any(t.attachments for t in rounds.session.turns)
+        working = finish.working_turn(spec, tools=tools, attachments=files)  # R11.1 D1
+        tries = finish.Tries(self.s.empty_reply_retries)  # D2: one retry per owner message
+        if not tools:
+            ask = self._asker(prompt, req, spec, with_tools=False)
+            return await finish.asked(ask, messages, tries, working=working), pending
         assert self.gateway is not None
-        msgs = list(messages)
+        msgs, ask = list(messages), self._asker(prompt, req, spec, with_tools=True)
         with turn_budget(), collecting_cards(rounds.cards):  # slice 12: the reply's cards
             while True:
-                completion = await self._complete(msgs, prompt, req, spec, with_tools=True)
+                completion = await finish.asked(ask, msgs, tries, working=working)
                 if not completion.tool_calls:
                     break
                 rounds.count += 1
@@ -520,9 +489,18 @@ class Brain:
                 if rounds.count >= self.s.tool_max_rounds:
                     log.warning("tool round limit reached", extra={"session_id": rounds.session.id})
                     msgs = msgs + [ChatMessage(role=Role.USER, content=ROUND_LIMIT)]
-                    completion = await self._complete(msgs, prompt, req, spec, with_tools=False)
+                    ask = self._asker(prompt, req, spec, with_tools=False)
+                    completion = await finish.asked(ask, msgs, tries, working=working)
                     break
         return completion, pending
+
+    def _asker(
+        self, prompt: _Prompt, req: ChatRequest, spec: BrainSpec, *, with_tools: bool
+    ) -> finish.ModelCall:
+        """`finish.asked`'s model call (admitted, metered) at the cap it is asked to use."""
+        return lambda m, working: self._complete(
+            m, prompt, req, spec, with_tools=with_tools, working=working
+        )
 
     async def _run_calls(
         self, session: Session, msgs: list[ChatMessage], calls: list[ToolCall], req: ChatRequest
@@ -727,6 +705,10 @@ class Brain:
         meta.memory_used = list(rec.used)
         trailer = self._trailer(session, req) + rec.block
         system = await self.persona.system_for(req.user_id)
+        files = any(t.attachments for t in session.turns)  # R11.1 D1: no tools on a stream
+        cap = finish.output_cap(
+            self.s, working=finish.working_turn(spec, tools=False, attachments=files)
+        )
         chunks: list[str] = []
         model = router.resolve(self._tier(req))
         # The vendor's own counts as they arrive (slice 10 A2); characters/4 only for what it
@@ -742,7 +724,7 @@ class Brain:
                 system=system,
                 system_dynamic=trailer,
                 messages=messages,
-                max_tokens=self.s.max_output_tokens,
+                max_tokens=cap,
                 effort=self._effort(),
                 usage=reported,
             ):
@@ -758,8 +740,16 @@ class Brain:
                 cost = priced_cost(model, usage)
                 await self.billing.record(req.user_id, spec.id, cost)
 
+        text = "".join(chunks).strip()
+        if not text:  # R11.1 D2: a stream with no words is asked once more, then says why
+            ask = self._asker(_Prompt(system, trailer), req, spec, with_tools=False)
+            tries = finish.Tries(self.s.empty_reply_retries)
+            again = await finish.retried(finish.silent(model, reported, cap), ask, messages, tries)
+            text, cost = finish.reply_text(again), cost + again.cost_usd
+            usage = finish.plus(usage, again.usage)
+            yield text
         reply = Turn(
-            role=Role.ASSISTANT, content="".join(chunks).strip(), trace_id=trace_id, usage=usage,
-            offline=answered_offline(),
+            role=Role.ASSISTANT, content=text, trace_id=trace_id, usage=usage,
+            offline=answered_offline(), tool_derived=finish.is_fixed(text),  # D3: never history
         )  # fmt: skip
         await self._finish_turn(req.user_id, session, spec, rec, reply, model=model, cost=cost)

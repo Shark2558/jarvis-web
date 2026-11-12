@@ -49,11 +49,13 @@ MAY_NOT_BE_DONE = "(may not have been done)"
 @dataclass
 class Rounds:
     """One owner message's tool rounds: the session to continue with (a reload replaces it), how
-    many rounds ran, what changed something (card-style summaries), the undo-able deletes among
-    them, and turns not yet stored."""
+    many rounds ran, how many calls ran in them (`ran`: R11.1 D2's "I did N steps"), what changed
+    something (card-style summaries), the undo-able deletes among them, and turns not yet
+    stored."""
 
     session: Session
     count: int = 0
+    ran: int = 0
     done: list[str] = field(default_factory=list)
     unrecorded: list[Turn] = field(default_factory=list)
     undo: list[UndoRef] = field(default_factory=list)
@@ -74,6 +76,7 @@ class Rounds:
         for call, gr in zip(calls, results, strict=True):
             if not gr.ran:
                 continue
+            self.ran += 1
             tool = registry.get(call.name)
             if tool is not None and tool.effective_risk(call.arguments) is not ActionRisk.READ_ONLY:
                 said = tool.summary(call.arguments)

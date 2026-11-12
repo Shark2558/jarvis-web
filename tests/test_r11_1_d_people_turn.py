@@ -18,7 +18,8 @@ from research_fakes import FakeModel, FakeSearcher, fixed_mode, hit
 import jarvis.people.offer as offer_mod
 from jarvis.core.guardrails import ConfirmationGate
 from jarvis.llm.base import ToolCall
-from jarvis.people.offer import NOT_SHOWN, PeopleOfferCard, show
+from jarvis.people.offer import NOT_SHOWN, show
+from jarvis.people.offer_card import PeopleOfferCard
 from jarvis.people.research import PeopleService
 from jarvis.people.tools import RESEARCH_PERSON, PeopleDeps, people_tools
 from jarvis.picture.guard import NO_IDENTIFY
@@ -224,3 +225,28 @@ def test_outside_a_reply_the_card_is_not_shown(monkeypatch: pytest.MonkeyPatch) 
     card = PeopleOfferCard(name=NAME, caption=CAPTION, words=OFFER_WORDS.format(name=NAME))
 
     assert show(card) is False and offer_mod.kind_known() is True
+
+
+def test_the_card_can_be_listed_by_reply_cards_without_an_import_cycle() -> None:
+    """I1 adds `PeopleOfferCard` to `reply_cards.AnyCard`, so `jarvis.tools.reply_cards` will
+    import its module: that module must not import reply_cards (or the offer) back."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src"
+    probe = (
+        "import sys, jarvis.people.offer_card; "
+        "print(sorted(m for m in sys.modules if m in "
+        "('jarvis.tools.reply_cards', 'jarvis.people.offer', 'jarvis.people.tools')))"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "PYTHONPATH": str(src)},
+    )
+
+    assert done.stdout.strip() == "[]"

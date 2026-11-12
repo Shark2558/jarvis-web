@@ -540,7 +540,7 @@ def test_a_privacy_delete_while_the_laptop_is_away_is_shown_as_not_done(
 ) -> None:
     from test_privacy import STUB, Backend, cat
 
-    from jarvis.facegroups.privacy import AS_HEARD, PENDING
+    from jarvis.facegroups.privacy import AS_HEARD, PENDING, PENDING_NOTE
 
     class Away(Backend):
         def handle(self, route: Any) -> None:
@@ -550,7 +550,9 @@ def test_a_privacy_delete_while_the_laptop_is_away_is_shown_as_not_done(
 
     row = cat("face_groups", section="Faces", label="Face groups", delete="confirm", note=AS_HEARD)
     be = Away([row])
-    be.delete_reply = (200, {"deleted": 0, "category": "face_groups", "remaining": 2})
+    # R11.1 I1: the server says why rows are left (privacy.service.Deleted.pending)
+    reply = {"deleted": 0, "category": "face_groups", "remaining": 2, "pending": PENDING_NOTE}
+    be.delete_reply = (200, reply)
     c = Console(browser, server_url, token, DESKTOP)
     try:
         c.page.route("**/v1/privacy**", be.handle)
@@ -563,7 +565,7 @@ def test_a_privacy_delete_while_the_laptop_is_away_is_shown_as_not_done(
         c.page.locator(".pv-dlg").wait_for(state="detached")
         note = c.page.locator("#pvNote")
         assert "bad" in str(note.get_attribute("class"))  # never the green "Deleted N."
-        assert "2 are still there" in note.inner_text()
+        assert note.inner_text() == f"Face groups: {PENDING_NOTE}"  # not "Try again"
         until(c.page, lambda: "NOT done yet" in c.page.inner_text("#pv-face_groups"), "pending")
         assert c.errors == []
     finally:

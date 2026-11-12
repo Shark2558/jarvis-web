@@ -28,6 +28,9 @@ GROUPS_ID = "face_groups"
 IMPORT_ID = "photo_imports"
 ASK_BUDGET_S = 3.0  # inside the dashboard's 5 s a row: a sleeping laptop never hides the row
 PENDING = "Delete asked. It is NOT done yet: it happens when your home laptop is back on."
+# R11.1 I1 (INTEGRATION-C 3.4): what the dashboard says right after a delete the laptop has not
+# confirmed yet (`pending_note`), instead of its generic "Try again in a moment"
+PENDING_NOTE = "Pending: it finishes when your home laptop is back on."
 AS_HEARD = (
     "As your laptop last said. Deleting removes the unnamed groups and stray faces from your "
     "laptop; your photos are never touched. If the laptop is off, the delete waits and "
@@ -104,6 +107,10 @@ class FaceGroupsPrivacy:
             "heard_at": doc.heard_at,
             "faces": "only on your laptop",
         }
+
+    def pending_note(self) -> str:
+        """The dashboard's words when a delete left rows: the laptop finishes it later."""
+        return PENDING_NOTE
 
     async def delete(self, uid: str) -> int:
         """How many the LAPTOP confirmed it forgot (0 while it is away: the ask then waits)."""

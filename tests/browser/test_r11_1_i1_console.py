@@ -8,6 +8,7 @@
 # cannot happen before sign-in, so jarvis:reply is not fired.)
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Any
 
@@ -64,5 +65,51 @@ def test_before_sign_in_the_block_asks_the_server_nothing(
 
     assert len(asked) >= 1  # once he is in, the block asks the server
     assert c.page.locator("#welcome").is_visible() and not c.page.locator("#tokIn").is_visible()
+    assert c.errors == [] and c.csp_violations() == []
+    c.close()
+
+
+# ---- INTEGRATION-D 4.D: the "Look up" card under a real reply ---------------------------------
+NAME = "Lekha Examplekar"  # a made-up public figure
+CAPTION = "MINISTER LEKHA EXAMPLEKAR OPENS THE HARBOUR BRIDGE"
+OFFER = {
+    "kind": "people_offer",
+    "name": NAME,
+    "caption": CAPTION,
+    "words": f"The picture's text names {NAME}. Press 'Look up' to check them with your people "
+    "research.",
+    "button": "Look up",
+}
+
+
+def test_the_look_up_card_shows_under_the_reply_and_researches_only_on_his_press(
+    browser: Any, server_url: str, token: str
+) -> None:
+    from test_media import _json, _reply
+
+    c = Console(browser, server_url, token, DESKTOP)
+    asked: list[Any] = []
+
+    def research(route: Any) -> None:
+        asked.append(json.loads(route.request.post_data or "{}"))
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"refused": True, "message": "Not a public figure I can verify."}),
+        )
+
+    c.page.route("**/v1/people/research", research)
+    _json(c.page, "**/v1/chat", _reply("The picture's text names someone, Sir.", [OFFER]))
+    c.open()
+    c.send("who is on this poster?")
+    card = c.page.locator(".row.jarvis [data-kind='people_offer']")
+    card.wait_for()
+    assert OFFER["words"] in card.inner_text() and f"Caption read: '{CAPTION}'" in card.inner_text()
+    assert asked == []  # nothing is researched until he presses it
+    card.locator("button", has_text="Look up").click()
+    c.page.wait_for_function("() => document.getElementById('peopleName').value !== ''")
+    assert c.page.input_value("#peopleName") == NAME
+    c.page.wait_for_timeout(300)
+    assert asked == [{"name": NAME}]
     assert c.errors == [] and c.csp_violations() == []
     c.close()

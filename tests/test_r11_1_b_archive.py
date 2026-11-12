@@ -294,3 +294,33 @@ async def test_a_picture_the_child_made_up_is_not_believed() -> None:
     five = b'{"ok": true, "text": "", "truncated": false, "pictures": [1, 2, 3, 4, 5]}'
     with pytest.raises(DocumentRejected):
         isolation.parse_output(five, 0, kind="zip", limits=limits)
+
+
+def _answer(media: str, data: bytes) -> bytes:
+    import base64
+    import json
+
+    picture = {"name": "x", "media_type": media, "data": base64.b64encode(data).decode()}
+    return json.dumps({"ok": True, "text": "", "truncated": False, "pictures": [picture]}).encode()
+
+
+def test_the_parent_cleans_each_picture_again_and_refuses_one_that_changes() -> None:
+    """Security review L1: a subverted child could hand back a JPEG-magic blob that still
+    carries camera data, or junk; the parent runs the same cleaning and refuses any change."""
+    from jarvis.documents.imagecheck import clean_picture
+
+    limits = Limits()
+    for media, raw in (("image/jpeg", make_jpeg(exif=GPS)), ("image/png", make_png(text=GPS))):
+        clean = clean_picture(raw, limits).data
+        assert clean_picture(clean, limits).data == clean  # cleaning twice changes nothing
+        out = isolation.parse_output(_answer(media, clean), 0, kind="image", limits=limits)
+        assert out.pictures[0].data == clean
+        with pytest.raises(DocumentRejected) as e:
+            isolation.parse_output(_answer(media, raw), 0, kind="image", limits=limits)
+        assert e.value.code == "unreadable"  # it still carried its GPS line
+    junk = b"\xff\xd8\xff" + b"junk" * 20
+    with pytest.raises(DocumentRejected):
+        isolation.parse_output(_answer("image/jpeg", junk), 0, kind="image", limits=limits)
+    png_as_jpeg = clean_picture(make_png(), limits).data
+    with pytest.raises(DocumentRejected):
+        isolation.parse_output(_answer("image/jpeg", png_as_jpeg), 0, kind="image", limits=limits)

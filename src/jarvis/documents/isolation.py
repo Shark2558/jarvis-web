@@ -14,7 +14,10 @@ instance (512 MiB) down with every chat in flight. So every upload's bytes go to
   - the answer is one JSON object, size-capped and validated: anything odd is "unreadable";
     a child that died (CPU limit, out of memory) is "too slow" / "too complex". R11.1: a
     picture in the answer must be a JPEG or PNG by its first bytes, within the size cap, and
-    there are at most `Limits.max_pictures` of them.
+    there are at most `Limits.max_pictures` of them; and the parent runs the same cleaning
+    again (`imagecheck.clean_picture`: structure checked, metadata removed, no pixel decoded)
+    and refuses a picture that cleaning would change (security review L1): a subverted child
+    cannot pass on camera data or junk behind the right first bytes.
 
 The service runs at most one child at a time (`DocumentService`).
 """
@@ -35,6 +38,7 @@ from typing import Any
 
 import jarvis
 from jarvis.documents.extract import Extracted, Limits, Picture, too_complex, too_slow
+from jarvis.documents.imagecheck import clean_picture
 from jarvis.documents.limits import NAME_LIMIT, PICTURE_TYPES, DocumentRejected
 from jarvis.logging import get_logger
 
@@ -96,7 +100,8 @@ def _int_or_none(v: Any) -> int | None:
 
 
 def _picture(raw: Any, limits: Limits) -> Picture:
-    """One picture from the child's answer, checked again: its type, its first bytes, its size."""
+    """One picture from the child's answer, checked again: its type, its first bytes, its size,
+    and that cleaning it once more changes nothing."""
     if not isinstance(raw, dict):
         raise ValueError("bad picture")
     name, media, data = raw.get("name"), raw.get("media_type"), raw.get("data")
@@ -107,6 +112,12 @@ def _picture(raw: Any, limits: Limits) -> Picture:
     except (binascii.Error, ValueError):
         raise ValueError("bad picture") from None
     if not blob.startswith(_MAGIC[media]) or len(blob) > limits.picture_max_bytes:
+        raise ValueError("bad picture")
+    try:
+        again = clean_picture(blob, limits)
+    except DocumentRejected:
+        raise ValueError("bad picture") from None
+    if again.media_type != media or again.data != blob:
         raise ValueError("bad picture")
     return Picture(name=name[:NAME_LIMIT], media_type=media, data=blob)
 

@@ -239,7 +239,8 @@ def _new_field_is_clean(c: Console, vp: str) -> None:
     INTEGRATION-C.md, "Found on the way")."""
     who = c.page.locator("#facesWho")
     who.wait_for()
-    c.page.wait_for_timeout(300)
+    c.page.wait_for_timeout(SETTLE_MS)  # the dialog's own entry, then every finite animation
+    c.page.evaluate(FINISH_ANIMATIONS_JS)
     res = c.page.evaluate(DOM_CHECKS_JS, "#facesDialog")
     found = [
         (kind, item)
@@ -354,7 +355,9 @@ def test_naming_a_new_person_goes_through_the_consent_statement(
         }
         assert "now recognise this person" in page.inner_text("#fgNote")
         until(page, lambda: "Ravi" in page.inner_text("#facesList"), "the new person in Faces")
-        assert c.errors == [] and c.csp_violations() == []
+        # the browser logs the refused request (the 422 this test asked for) and nothing else
+        assert [e for e in c.errors if "422" not in e or "/name" not in e] == []
+        assert c.csp_violations() == []
     finally:
         c.close()
 

@@ -364,11 +364,12 @@ def _declared() -> set[str]:
 
 
 def _bridge_extra() -> set[str]:
-    """I1: the home bridge's own extra (its image, never the cloud's): aiomqtt."""
-    text = (ROOT / "pyproject.toml").read_text()
-    line = re.search(r"^homebridge = \[(.*)\]$", text, re.M)
-    assert line is not None
-    return _names(re.findall(r'"([^"]+)"', line.group(1)))
+    """I1: the home bridge's own extra (its image, never the cloud's): aiomqtt; since R11.1 I1
+    also OpenCV and NumPy, each with its Python marker, so the list is read as TOML."""
+    import tomllib
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    return _names(list(project["optional-dependencies"]["homebridge"]))
 
 
 def test_every_third_party_top_level_import_in_src_is_in_pyproject() -> None:

@@ -29,7 +29,14 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from jarvis.home.ports import MAX_EPOCH, PERSON_ID, HomeCaller, HomeRefused, HomeUnavailable
 from jarvis.homebridge.config import PHOTOS_SINCE
 from jarvis.logging import get_logger
-from jarvis.photos.models import CLUSTER_ID, FaceHit, Forgot, GroupAtHome, GroupsAtHome
+from jarvis.photos.models import (
+    CLUSTER_ID,
+    CLUSTER_ID_MAX,
+    FaceHit,
+    Forgot,
+    GroupAtHome,
+    GroupsAtHome,
+)
 
 log = get_logger(__name__)
 
@@ -99,9 +106,13 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
 
+PERSON_ID_MAX = len("fp_") + 12
+
+
 class EdgeFace(_Strict):
-    cluster: str = Field(pattern=CLUSTER_ID.pattern)
-    person: str | None = Field(pattern=PERSON_ID)
+    # anchored patterns and a length cap: an id is the whole value (review C-sec H3)
+    cluster: str = Field(pattern=CLUSTER_ID.pattern, max_length=CLUSTER_ID_MAX)
+    person: str | None = Field(pattern=PERSON_ID, max_length=PERSON_ID_MAX)
     score: float = Field(ge=0, le=1, allow_inf_nan=False)
 
 
@@ -110,7 +121,7 @@ class EdgeReply(_Strict):
 
 
 class EdgeGroup(_Strict):
-    id: str = Field(pattern=CLUSTER_ID.pattern)
+    id: str = Field(pattern=CLUSTER_ID.pattern, max_length=CLUSTER_ID_MAX)
     n: int = Field(ge=0, le=MAX_COUNT)
     photos: int = Field(ge=0, le=MAX_COUNT)
     first: int = Field(ge=0, le=int(MAX_EPOCH))

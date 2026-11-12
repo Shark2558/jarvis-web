@@ -8,7 +8,10 @@ import re
 from dataclasses import dataclass
 
 PHOTOS_SCOPE = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
-CLUSTER_ID = re.compile(r"c_[0-9a-f]{8,16}")
+# Review C-sec H3: anchored, so a pydantic `pattern` (a search) can only take a WHOLE id, and
+# bounded (`CLUSTER_ID_MAX`); every Python use is `fullmatch` as well.
+CLUSTER_ID = re.compile(r"^c_[0-9a-f]{8,16}$")
+CLUSTER_ID_MAX = len("c_") + 16
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,200}")
 
 
@@ -107,6 +110,7 @@ class Forgot:
 
 __all__ = [
     "CLUSTER_ID",
+    "CLUSTER_ID_MAX",
     "PHOTOS_SCOPE",
     "SESSION_ID",
     "FaceHit",

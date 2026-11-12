@@ -15,8 +15,8 @@ from dataclasses import dataclass
 
 DIM = 128  # SFace's embedding size
 MIN_GROUP_PICS = 3
-GROUP = re.compile(r"c_[0-9a-f]{12}")
-PERSON = re.compile(r"fp_[0-9a-f]{12}")
+GROUP = re.compile(r"^c_[0-9a-f]{12}$")  # always used with fullmatch as well
+PERSON = re.compile(r"^fp_[0-9a-f]{12}$")
 JPEG = b"\xff\xd8\xff"
 
 

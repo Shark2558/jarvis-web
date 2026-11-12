@@ -235,3 +235,93 @@ def test_the_owner_may_say_the_same_words_and_a_dropped_line_costs_no_budget() -
     ]
     win = build_window(turns, max_turns=3, max_chars=10_000)
     assert [m.content for m in win] == ["u0", "a0", OLD]
+
+
+# ---- steps that failed are never reported as done (silent-failure review M5) -------------------
+@pytest.mark.parametrize(
+    ("steps", "failed", "want"),
+    [
+        (
+            2,
+            1,
+            "I did 2 steps and 1 failed, but the AI gave me no words to report them. "
+            "Activity shows what ran.",
+        ),
+        (0, 1, "1 step failed and the AI gave me no words to report it. Activity shows what ran."),
+        (
+            0,
+            3,
+            "3 steps failed and the AI gave me no words to report them. Activity shows what ran.",
+        ),
+    ],
+)
+def test_steps_that_failed_are_counted_apart(steps: int, failed: int, want: str) -> None:
+    said = finish.reply_text(done(""), steps=steps, failed=failed)
+    assert said == want and finish.is_fixed(said)
+    both = finish.reply_text(done("", stop=CUT), cards=1, steps=steps, failed=failed)
+    assert want in both and finish.is_fixed(both)
+
+
+# ---- fail safe: a stop reason that is not a known finish is a cut-off (security LOW-3) ----------
+@pytest.mark.parametrize(
+    "stop",
+    [
+        "max_tokens",
+        "length",
+        "model_context_window_exceeded",
+        "refusal",
+        "content_filter",
+        "SAFETY",
+    ],
+)
+def test_any_stop_that_is_not_a_known_finish_is_cut_off(stop: str) -> None:
+    one = call("calendar_create_event", summary="x")
+    assert finish.cut_short(done("", stop=stop)) is True
+    assert finish.unfinished(done("", stop=stop, calls=(one,))) is True  # its calls never run
+
+
+@pytest.mark.parametrize("stop", ["end_turn", "tool_use", "stop", "stop_sequence", None])
+def test_a_known_finish_is_not_cut_off(stop: str | None) -> None:
+    c = done("").model_copy(update={"stop_reason": stop})
+    assert finish.cut_short(c) is False
+
+
+# ---- the retry keeps a training brain's own cap (code review L1) -------------------------------
+async def test_the_retry_of_a_training_brain_keeps_its_plain_cap() -> None:
+    ask = Calls(done("", stop=CUT), done("Here, Sir."))
+    out = await finish.asked(ask, MSGS, finish.Tries(1, boost=False), working=False)
+    assert out.text == "Here, Sir." and [w for _, w in ask.seen] == [False, False]
+    ask = Calls(done("", stop=CUT), done("Here, Sir."))
+    await finish.asked(ask, MSGS, finish.Tries(1), working=False)
+    assert [w for _, w in ask.seen] == [False, True]  # a private brain may write more
+
+
+# ---- the fixed lines are a leaf (code review M8) ------------------------------------------------
+def test_the_fixed_lines_are_a_leaf_and_the_window_no_longer_pulls_in_finish() -> None:
+    import ast
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src"
+    leaf = ast.parse((src / "jarvis" / "core" / "fixed_lines.py").read_text(encoding="utf-8"))
+    imported = {
+        n.module if isinstance(n, ast.ImportFrom) else a.name
+        for n in ast.walk(leaf)
+        if isinstance(n, ast.Import | ast.ImportFrom)
+        for a in n.names
+    }
+    assert imported == {"__future__", "re"}  # nothing of JARVIS
+    probe = (
+        "import sys, jarvis.core.window, jarvis.core.fixed_lines as f;"
+        "heavy = [m for m in ('jarvis.core.finish', 'jarvis.billing', 'jarvis.web.ledger')"
+        " if m in sys.modules];"
+        "print(heavy, f.is_fixed(f.EMPTY))"
+    )
+    env = {**os.environ, "PYTHONPATH": str(src)}
+    out = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, timeout=60, env=env
+    )
+    assert out.stdout.strip() == "[] True", out.stderr
+    assert finish.is_fixed is __import__("jarvis.core.fixed_lines", fromlist=["x"]).is_fixed

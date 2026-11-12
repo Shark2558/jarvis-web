@@ -6,13 +6,13 @@ good enough for Phase 0; Phase 3 swaps in a real tokenizer count and summarisati
 evicted turns into long-term memory.
 
 R11.1 D3: a reply that is one of JARVIS's own fixed lines for an answer with no words (or the
-filler earlier releases stored: `core.finish.is_fixed`) is never history. It is left out here, for
-every brain, so no later turn can imitate it, and it uses none of the budget.
+filler earlier releases stored: `core.fixed_lines.is_fixed`, a leaf) is never history. It is left
+out here, for every brain, so no later turn can imitate it, and it uses none of the budget.
 """
 
 from __future__ import annotations
 
-from jarvis.core.finish import is_fixed
+from jarvis.core.fixed_lines import is_fixed
 from jarvis.core.models import Turn
 from jarvis.llm.base import ChatMessage, Role
 

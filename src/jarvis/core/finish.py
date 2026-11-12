@@ -11,12 +11,19 @@ What the Brain does with a model's answer lives here, outside `brain.py` (near i
   call with the working cap and one fixed instruction (`RETRY`), admitted and metered like any
   call. A cut-off answer's tool calls never run and it is never stored. Still unfinished, or the
   retry could not be made: an answer with no words and no calls.
+- `cut_short` (fail safe): any stop reason that is not a known finish (`COMPLETE`) counts as cut
+  off, so a half-written tool call never runs whatever the vendor calls the stop. An answer that
+  reports no stop reason at all (a test double, some local servers) is judged by its words.
 - `reply_text` (D2.1, D2.3): the reply's words, or one fixed, honest line chosen by CODE from what
-  happened (approvals waiting, steps that ran, cut off, simply empty). Never the old filler.
+  happened (approvals waiting, steps that ran, steps that failed, cut off, simply empty). Never
+  the old filler. The lines themselves are `core.fixed_lines` (a leaf).
 - `is_fixed` (D3): those lines, and the filler R11 and earlier stored (`OLD_FILLER`), are known
   by their words. `reply_turn` stores one marked tool-derived (never to a training brain) and
   `core.window` leaves it out of every model's window, so no later turn can imitate it; stored
   conversations recover without a migration.
+- `StreamMeter`, `stream_end` (D2 on the stream): what a stream wrote and cost, metered once;
+  a stream the cap cut off before it said anything is asked once more, one that simply ended
+  with no words says so at once (D2: only a cut-off answer is retried).
 - `said_by_code` (D5): what an approved card did, in the tool's own fixed sentence, for when no
   model may report it (No-AI mode, the monthly limit, an outage, a brain that may train): a
   batch that added 58 of 60 is never reported as "Done, Sir: Add 60 events".
@@ -27,51 +34,39 @@ What the Brain does with a model's answer lives here, outside `brain.py` (near i
 
 from __future__ import annotations
 
-import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from jarvis.billing import BudgetError
 from jarvis.config import Settings
 from jarvis.core.brain_types import _ReplyMeta
 from jarvis.core.channel import answered_offline
+from jarvis.core.fixed_lines import CUT_OFF, EMPTY, OLD_FILLER, is_fixed, no_words
 from jarvis.core.models import ChatResponse, Session, Turn
 from jarvis.llm.base import ChatMessage, Completion, LLMError, Role, StreamUsage, Usage
 from jarvis.llm.brains import BrainSpec
+from jarvis.llm.pricing import cost_usd as priced_cost
+from jarvis.llm.pricing import stream_usage
 from jarvis.logging import get_logger
 from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.web.ledger import cited_sources
 
 log = get_logger("jarvis.core.brain")  # the Brain's own log name: dashboards filter on it
 
-# What R11 and earlier said (and stored) for an answer with no words. Only ever matched now.
-OLD_FILLER = "I have nothing to add, Sir."
-CUT_TAIL = "Ask me for a smaller piece, or raise the answer length in Settings."
-CUT_OFF = f"My answer was cut off before I could finish, Sir. {CUT_TAIL}"
-CUT_ALSO = "My answer was cut off before I could finish."  # after another sentence's "Sir"
-EMPTY = (
-    "The AI returned an empty answer, Sir. Please ask again; if it repeats, switch brain in the "
-    "top bar."
-)
 FILLER = EMPTY
 RETRY = (
     "Answer in words now. If the work needs many tool calls, use the batch tool or say what "
     "remains."
 )
-CUT_REASONS = frozenset({"max_tokens", "length"})
+# The stop reasons of an answer that finished (the providers normalise to the first two; the
+# others are vendor words for the same). Anything else, known or not, is treated as cut off.
+COMPLETE = frozenset({"end_turn", "tool_use", "stop", "stop_sequence"})
 # Tools whose result's `message` is ONE sentence written by code alone: counts and JARVIS's own
 # words, never a title or anything a file or a mail said (`series.batch_result`, `series.cards`).
 SAID_BY_CODE = frozenset(
     {"calendar_create_events", "calendar_undo_events", "series_checkin", "series_reschedule"}
 )
 SAID_MAX = 400
-_CARDS = r"I've prepared \d+ approvals? for you, Sir\."
-_STEPS = (
-    r"I did \d+ steps? but the AI gave me no words to report (?:it|them)\. "
-    r"Activity shows what ran\."
-)
-_CUT = rf"My answer was cut off before I could finish(?:, Sir)?\. {re.escape(CUT_TAIL)}"
-_FIXED = re.compile(rf"(?:{_CARDS})?(?: ?{_STEPS})?(?: ?{_CUT})?")
 
 # One model call of a turn: (the messages, whether it gets the working cap) -> its answer.
 ModelCall = Callable[[list[ChatMessage], bool], Awaitable[Completion]]
@@ -80,9 +75,11 @@ ModelCall = Callable[[list[ChatMessage], bool], Awaitable[Completion]]
 @dataclass
 class Tries:
     """Retries one owner message may still spend (`empty_reply_retries`). Mutable on purpose:
-    every model call of the message shares it."""
+    every model call of the message shares it. `boost`: the retry may use the working cap (D2.2);
+    False for a brain that may train on content, which keeps its own cap (D1)."""
 
     left: int
+    boost: bool = True
 
 
 # ---- the output cap (D1) ------------------------------------------------------------------------
@@ -103,8 +100,10 @@ def working_turn(spec: BrainSpec, *, tools: bool, attachments: bool) -> bool:
 
 
 def cut_short(completion: Completion) -> bool:
-    """The vendor stopped because the output cap was reached, not because it had finished."""
-    return completion.stop_reason in CUT_REASONS
+    """The answer did not finish: the vendor stopped for any reason other than a known finish
+    (the output cap, the context window, a filter, a reason we have never seen). Fail safe."""
+    stop = completion.stop_reason
+    return stop is not None and stop not in COMPLETE
 
 
 def unfinished(completion: Completion) -> bool:
@@ -134,7 +133,8 @@ async def retried(
     first: Completion, call: ModelCall, msgs: list[ChatMessage], tries: Tries
 ) -> Completion:
     """`first` when it is usable. Cut off with nothing usable: the call once more (if this owner
-    message still has a retry), with `RETRY` after `msgs` and the working cap. The answer that
+    message still has a retry), with `RETRY` after `msgs` and the working cap (a training brain
+    keeps its own: `Tries.boost`). The answer that
     comes back carries both calls' cost; when it is unfinished too, or the retry could not be
     made (the monthly limit, the provider), it has no words and no calls."""
     if not unfinished(first):
@@ -147,7 +147,7 @@ async def retried(
         extra={"had_calls": len(first.tool_calls), "out_tok": first.usage.output_tokens},
     )
     try:
-        again = await call([*msgs, ChatMessage(role=Role.USER, content=RETRY)], True)
+        again = await call([*msgs, ChatMessage(role=Role.USER, content=RETRY)], tries.boost)
     except (LLMError, BudgetError) as exc:  # the first call stands: say "cut off", never fail
         log.warning("brain: the retry could not be made", extra={"error": type(exc).__name__})
         return _nothing(first)
@@ -192,13 +192,46 @@ def stream_cap(s: Settings, spec: BrainSpec, session: Session) -> int:
     return output_cap(s, working=working_turn(spec, tools=False, attachments=files))
 
 
-async def after_stream(
-    quiet: Completion, call: ModelCall, msgs: list[ChatMessage], retries: int
-) -> tuple[str, float, Usage]:
-    """D2 on the stream: one that ended with no words (`silent`) is asked once more, then says
-    why. The reply, and what the retry cost and used (nothing when it was not made)."""
-    again = await retried(quiet, call, msgs, Tries(retries))
-    return reply_text(again), again.cost_usd, again.usage
+@dataclass
+class StreamMeter:
+    """What one stream wrote and what it cost. The vendor's own counts as they arrive (slice 10
+    A2: `reported`); characters/4 only for what it did not report, flagged `estimated`, so a
+    paid streamed reply never meters "₹0". `sent`: the prompt's characters."""
+
+    model: str
+    cap: int
+    sent: int
+    reported: StreamUsage = field(default_factory=StreamUsage)
+    chunks: list[str] = field(default_factory=list)
+    finished: bool = False
+    cost: float = 0.0
+    usage: Usage | None = None
+
+    def close(self) -> bool:
+        """Price what the stream read and wrote; True when there is something to record (a
+        finished stream, and one cut short after the vendor read the prompt)."""
+        if not (self.finished or self.chunks or self.reported.reported):
+            return False
+        out = sum(map(len, self.chunks))
+        self.usage = stream_usage(self.reported, input_chars=self.sent, output_chars=out)
+        self.cost = priced_cost(self.model, self.usage)
+        return True
+
+
+async def stream_end(
+    meter: StreamMeter, call: ModelCall, msgs: list[ChatMessage], tries: Tries
+) -> tuple[str, bool]:
+    """D2 on the stream: (the reply, whether it still has to be shown). A stream with words is
+    the reply. One with none (`silent`) that the cap cut off is asked once more; one that simply
+    ended with no words is not (D2 retries only a cut-off answer) and says so. The retry's cost
+    and counts are added to the meter (it is metered by its own call)."""
+    text = "".join(meter.chunks).strip()
+    if text:
+        return text, False
+    again = await retried(silent(meter.model, meter.reported, meter.cap), call, msgs, tries)
+    meter.cost += again.cost_usd
+    meter.usage = plus(meter.usage, again.usage)
+    return reply_text(again), True
 
 
 def stream_turn(text: str, trace_id: str | None, usage: Usage | None) -> Turn:
@@ -216,36 +249,16 @@ def stream_turn(text: str, trace_id: str | None, usage: Usage | None) -> Turn:
 # ---- the reply's words (D2.1, D2.3) and their marking (D3) ---------------------------------------
 
 
-def _count(n: int, word: str) -> str:
-    return f"{n} {word}{'' if n == 1 else 's'}"
-
-
-def reply_text(completion: Completion, *, cards: int = 0, steps: int = 0) -> str:
+def reply_text(completion: Completion, *, cards: int = 0, steps: int = 0, failed: int = 0) -> str:
     """The reply's words. With none: one fixed line chosen from what happened, never from the
-    model: the approvals now waiting (`cards`), the tool calls that ran (`steps`), a cut-off
-    answer; an answer that is simply empty says so and what to do."""
+    model (`core.fixed_lines.no_words`): the approvals now waiting (`cards`), the tool calls that
+    ran (`steps`) and those that failed (`failed`), a cut-off answer; an answer that is simply
+    empty says so and what to do."""
     words = completion.text.strip()
     if words:
         return words
-    parts: list[str] = []
-    if cards > 0:
-        parts.append(f"I've prepared {_count(cards, 'approval')} for you, Sir.")
-    if steps > 0:
-        them = "it" if steps == 1 else "them"
-        parts.append(
-            f"I did {_count(steps, 'step')} but the AI gave me no words to report {them}. "
-            "Activity shows what ran."
-        )
-    if cut_short(completion):
-        parts.append(f"{CUT_ALSO} {CUT_TAIL}" if parts else CUT_OFF)
-    return " ".join(parts) or EMPTY
-
-
-def is_fixed(text: str) -> bool:
-    """`text` is one of JARVIS's own fixed lines for an answer with no words (or the old filler):
-    never history for a model (`core.window`), stored marked tool-derived (`reply_turn`)."""
-    t = text.strip()
-    return bool(t) and (t in (EMPTY, OLD_FILLER) or _FIXED.fullmatch(t) is not None)
+    cut = cut_short(completion)
+    return no_words(cards=cards, steps=steps, failed=failed, cut=cut) or EMPTY
 
 
 def reply_turn(
@@ -334,15 +347,15 @@ def said_by_code(tool: str, result: GatewayResult) -> str | None:
 
 
 __all__ = [
+    "COMPLETE",
     "CUT_OFF",
-    "CUT_REASONS",
     "EMPTY",
     "FILLER",
     "OLD_FILLER",
     "RETRY",
     "ModelCall",
+    "StreamMeter",
     "Tries",
-    "after_stream",
     "asked",
     "chat_response",
     "cut_short",
@@ -356,6 +369,7 @@ __all__ = [
     "said_by_code",
     "silent",
     "stream_cap",
+    "stream_end",
     "stream_turn",
     "unfinished",
     "working_turn",

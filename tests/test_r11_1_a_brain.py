@@ -250,3 +250,52 @@ async def test_a_cut_off_silent_stream_is_asked_once_more_and_metered(
     assert (await brain.billing.month(BILL_UID)).usd_total == pytest.approx(0.01)
     mind.say(Said("", stop=CUT), Said("", stop=CUT))
     assert await _stream(brain, "again", user_id=BILL_UID) == finish.CUT_OFF
+
+
+async def test_steps_that_failed_are_said_apart_from_steps_that_ran(
+    brain: Brain, mind: ScriptedBrain, world: InMemoryWorld, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Broken(dict):  # type: ignore[type-arg]
+        def get(self, *_: object) -> object:
+            raise RuntimeError("the calendar fell over")
+
+    monkeypatch.setattr(world, "calendar", Broken())
+    mind.say(
+        Said(
+            calls=(
+                call("list_tasks", 0),
+                call("get_calendar", 1, day="today"),  # raises while it runs
+                call("create_reminder", 2),  # its arguments are refused
+            )
+        ),
+        Said(""),
+    )
+    resp = await brain.chat(ChatRequest(message="what is on today?"))
+    assert resp.reply == (
+        "I did 1 step and 2 failed, but the AI gave me no words to report them. "
+        "Activity shows what ran."
+    )
+
+
+async def test_a_simply_empty_stream_is_not_asked_again(brain: Brain, mind: ScriptedBrain) -> None:
+    """D2 retries only an answer the cap cut off; a stream that ended with no words and was not
+    cut off says so at once (`finish.after_stream`)."""
+    mind.say(Said(""), Said("never asked"))
+    assert await _stream(brain, "hello") == finish.EMPTY and len(mind.calls) == 1
+
+
+def test_the_brain_s_long_functions_are_split() -> None:
+    import ast
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src" / "jarvis" / "core" / "brain.py"
+    tree = ast.parse(src.read_text(encoding="utf-8"))
+    long = {
+        f.name: (f.end_lineno or 0) - f.lineno + 1
+        for f in ast.walk(tree)
+        if isinstance(f, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    assert {k: v for k, v in long.items() if k in {"_chat", "_run_loop", "_chat_stream"}} == {
+        k: min(v, 50) for k, v in long.items() if k in {"_chat", "_run_loop", "_chat_stream"}
+    }
+    assert len(src.read_text(encoding="utf-8").splitlines()) <= 741  # brain.py does not grow

@@ -105,10 +105,11 @@ def _numbered(old: Sequence[PlanSession], new: Sequence[Made]) -> list[PlanSessi
     heard stay, and new sessions follow them."""
     fresh = sorted(new, key=lambda m: (m.start, m.title))
     if all(s.state == "planned" for s in old):
-        both = sorted(
-            [*((s.start, s.title, s) for s in old), *((m.start, m.title, m) for m in fresh)],
-            key=lambda row: row[:2],
-        )
+        rows: list[tuple[datetime, str, PlanSession | Made]] = [
+            *((s.start, s.title, s) for s in old),
+            *((m.start, m.title, m) for m in fresh),
+        ]
+        both = sorted(rows, key=lambda row: row[:2])
         return [
             x.model_copy(update={"n": i}) if isinstance(x, PlanSession) else _session(x, i)
             for i, (_, _, x) in enumerate(both, 1)

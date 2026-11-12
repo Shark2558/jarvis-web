@@ -104,6 +104,18 @@ async def test_the_view_lists_plans_and_the_check_ins_that_wait(site: App) -> No
     assert plan["replan"] == ""  # nothing skipped: no new dates to ask for
 
 
+async def test_a_plan_named_by_a_file_is_listed_without_that_name(site: App) -> None:
+    args = {"events": weekday_sessions(2), "series": {"name": "Ring 98765"}}
+    call = ToolCall(id="c", name=cb.CREATE, arguments=args)
+    with context_trust(untrusted=True):  # the round had read a file
+        asked = await site.gw.execute(call, scope=f"{OWNER}:setup")
+    await site.gw.execute(call, confirmation_id=asked.pending.id, scope=f"{OWNER}:setup")
+    site.clock.at = AFTER_1
+    body = (await site.c.get("/v1/series")).json()
+    assert body["plans"][0]["name"] == "" and "98765" not in str(body)
+    assert body["waiting"][0]["text"].startswith("Session 1 of 2 in your plan (")
+
+
 async def test_a_skipped_session_without_a_card_can_ask_for_new_dates_again(site: App) -> None:
     await site.batch(60)
     site.clock.at = AFTER_1

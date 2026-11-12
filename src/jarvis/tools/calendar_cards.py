@@ -9,6 +9,7 @@ old → new, and the other people Google will email. Every value goes through
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -172,7 +173,7 @@ def _events(n: int) -> str:
 
 
 def batch_card(
-    events: list[dict[str, Any]], *, prefix: str = "", plan: str = "", there: int = 0
+    events: Sequence[Mapping[str, Any]], *, prefix: str = "", plan: str = "", there: int = 0
 ) -> str:
     """The one card for a batch of events (no guests): how many, the first and last date, the
     title prefix and the plan it starts. `there`: how many of the list are already in the
@@ -201,7 +202,7 @@ def batch_card(
     return "\n".join(lines)
 
 
-def undo_card(events: list[dict[str, Any]], *, kept: int = 0) -> str:
+def undo_card(events: Sequence[Mapping[str, Any]], *, kept: int = 0) -> str:
     """The card for removing a batch: how many go, the dates, and how many stay because the
     owner changed them since."""
     n = len(events) - kept

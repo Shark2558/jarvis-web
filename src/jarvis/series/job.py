@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta, tzinfo
+from typing import Final
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jarvis.logging import get_logger
@@ -27,7 +28,7 @@ from jarvis.series.words import told_key
 
 log = get_logger(__name__)
 
-NAME = "series_checkin"
+NAME: Final = "series_checkin"
 ASK_WITHIN = timedelta(hours=24)
 MAX_PER_RUN = 3  # questions per owner in one run (the clock gives all helpers 20 s together)
 SWEEP_EVERY = timedelta(hours=24)

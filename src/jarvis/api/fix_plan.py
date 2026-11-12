@@ -267,7 +267,7 @@ async def status(request: Request, uid: str = Depends(current_user)) -> JSONResp
     body["plans"] = [
         {
             "id": p.id,
-            "name": p.name,
+            "name": "" if p.outside else p.name,  # a name a file gave is not repeated
             "sessions": p.total,
             "done": sum(s.state == "done" for s in p.sessions),
             "skipped": sum(s.state == "skipped" for s in p.sessions),

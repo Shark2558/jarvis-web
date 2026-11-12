@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # JARVIS home kit, the Ubuntu (WSL2) half of the setup. setup-windows.ps1 runs this for you; you
-# can also run it by hand:  bash setup-wsl.sh install | configure | up | link CODE ADDRESS | status | camera | passwords | ha-token | faces-code
+# can also run it by hand:  bash setup-wsl.sh install | configure | up | update | models | photos-dir FOLDER | link CODE ADDRESS | status | camera | passwords | ha-token | faces-code
 # Re-runnable: every step checks first and skips what is already done.
 #
 #   install    Docker Engine (from Docker's apt repository) and systemd for Ubuntu
@@ -8,8 +8,15 @@
 #              here, kept here; the camera address only in frigate.env), the Mosquitto users
 #              (frigate writes, bridge only reads; the file is the broker's own), Frigate's
 #              settings, and lets the bridge clean up Frigate's face pictures
-#   up         pulls the images, records each image's digest in images.env, starts everything,
-#              prints the laptop Faces page's code
+#   up         pulls the images, records each image's digest in images.env, gets the two face
+#              model files, starts everything, prints the laptop Faces page's code
+#   update     a newer kit was extracted over the old one: copies it in (this laptop's own
+#              bridge.env, frigate.env and images.env are kept), gets the face model files and
+#              rebuilds and restarts only the bridge (setup-windows.ps1 -Update)
+#   models     downloads the two face model files listed in models/MODELS.txt and keeps each
+#              only if its SHA-256 is the listed one
+#   photos-dir FOLDER   the photo folder the bridge may READ to find faces (never changed);
+#              photos-dir off switches it off (setup-windows.ps1 -PhotosDir)
 #   link       links the bridge to JARVIS with the code from Integrations -> Home -> Link
 #   status     says in plain words what is running
 #   camera     says "Camera works" once Frigate is receiving the phone's picture
@@ -22,6 +29,8 @@
 #   HOME_DIR       where the running copy lives (default: ~/jarvis-home)
 #   CAMERA_URL     the phone camera's RTSP address, with its login (kept only in frigate.env)
 #   HA_TOKEN       the Home Assistant token for the "JARVIS bridge" user (ha-token, later)
+#   JARVIS_PHOTOS_DIR  the photo folder for photos-dir, when it is not given as an argument
+#   MODELS_FILE    another list of model files (tests)
 set -euo pipefail
 
 KIT_DIR="${KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
@@ -71,6 +80,28 @@ set_env() { # file key value : replaces KEY=... or appends it, without printing 
 
 get_env() { grep -s "^$2=" "$1" | head -n1 | cut -d= -f2- || true; }
 
+put_env() { # file key value : like set_env, for a value that may hold any character sed would read
+  local file="$1" key="$2" value="$3" tmp
+  tmp="$(mktemp "${file}.XXXXXX")"
+  grep -v "^${key}=" "$file" > "$tmp" || true
+  printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$file"
+}
+
+# The kit's files into the running copy. This laptop's own private files (the Home Assistant
+# token, the passwords, the photo folder, the pinned images) are never replaced by the kit's
+# blank ones, so a newer kit can be extracted and set up again without losing them.
+copy_kit() {
+  mkdir -p "$HOME_DIR"
+  if [ "$(cd "$KIT_DIR" && pwd -P)" = "$(cd "$HOME_DIR" && pwd -P)" ]; then return 0; fi
+  local skip=() name
+  for name in bridge.env frigate.env images.env; do
+    if [ -f "$HOME_DIR/$name" ]; then skip+=("--exclude=./$name"); fi
+  done
+  (cd "$KIT_DIR" && tar -cf - ${skip[@]+"${skip[@]}"} .) | (cd "$HOME_DIR" && tar -xf -)
+}
+
 # Frigate (root in its container) writes face and doorstep pictures; the bridge (uid and gid 10001)
 # must be able to delete them (a removed person's pictures, strangers' after 72 hours). Deleting a
 # file needs write access to its folder: the folders belong to group 10001, new files and folders
@@ -91,10 +122,9 @@ share_face_folders() {
 
 step_configure() {
   say "Preparing the home folder $HOME_DIR"
-  mkdir -p "$HOME_DIR"
-  cp -a "$KIT_DIR"/. "$HOME_DIR"/
+  copy_kit
   cd "$HOME_DIR"
-  mkdir -p bridge-data mosquitto-data frigate/config frigate/media homeassistant
+  mkdir -p bridge-data mosquitto-data frigate/config frigate/media homeassistant models photos-off
   sudo chown 10001:10001 bridge-data
   chmod 700 bridge-data
   if [ ! -f bridge.env ]; then cp bridge.env.example bridge.env; fi
@@ -144,6 +174,92 @@ pin_digest() { # VARIABLE image : records image@sha256 in images.env after a pul
   if [ -n "$digest" ]; then set_env images.env "$var" "$digest"; fi
 }
 
+# ---- the two face model files (R11.1) ---------------------------------------------------------
+# models/MODELS.txt lists each one: sha256, size, licence, file name, address. A file is kept
+# only when its SHA-256 is the listed one; the bridge checks it again before it loads it.
+MODELS_LATER="Photos and face groups wait for the face model files. Later run:  bash ~/jarvis-home/setup-wsl.sh models"
+
+fetch_model() { # sha256 file address
+  local sha="$1" file="models/$2" url="$3"
+  if [ -f "$file" ] && printf '%s  %s\n' "$sha" "$file" | sha256sum -c --status 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$file.part"
+  if ! curl -fsSL --retry 3 --max-time 900 -o "$file.part" "$url"; then
+    rm -f "$file.part"
+    echo "Couldn't download $2. Check the internet and run this again." >&2
+    return 1
+  fi
+  if ! printf '%s  %s\n' "$sha" "$file.part" | sha256sum -c --status 2>/dev/null; then
+    rm -f "$file.part"
+    echo "$2 is not the reviewed file (its checksum is different), so it was thrown away." >&2
+    return 1
+  fi
+  mv "$file.part" "$file"
+  chmod 644 "$file"
+}
+
+step_models() {
+  cd "$HOME_DIR"
+  mkdir -p models
+  local list="${MODELS_FILE:-models/MODELS.txt}" sha file url failed=0
+  [ -f "$list" ] || fail "the list of face model files is missing. Download the home kit again."
+  say "Getting the two face model files (about 40 MB, once)"
+  while read -r sha _ _ file url; do
+    case "$sha" in ''|'#'*) continue ;; esac
+    fetch_model "$sha" "$file" "$url" || failed=1
+  done < "$list"
+  if [ "$failed" -ne 0 ]; then return 1; fi
+  echo "The face model files are ready."
+}
+
+# ---- update: a newer kit, the same laptop -------------------------------------------------------
+step_update() {
+  [ -f "$HOME_DIR/bridge.env" ] || fail "JARVIS Home is not set up on this laptop yet. Run setup-windows.ps1 without -Update first."
+  say "Updating JARVIS Home (your camera, passwords, Home Assistant token and link are kept)"
+  copy_kit
+  cd "$HOME_DIR"
+  mkdir -p models photos-off
+  chmod 600 bridge.env
+  touch images.env
+  step_models || echo "$MODELS_LATER"
+  "${COMPOSE[@]}" up -d --build bridge || fail "couldn't restart the bridge. Run  bash setup-wsl.sh status  and tell Claude what it says."
+  echo "Updated. JARVIS -> Integrations -> Home should say Online within two minutes."
+  show_faces_code
+}
+
+# ---- the photo folder the bridge may read ------------------------------------------------------
+restart_bridge() {
+  "${COMPOSE[@]}" up -d --force-recreate bridge >/dev/null || fail "couldn't restart the bridge. Run  bash setup-wsl.sh status  and tell Claude what it says."
+}
+
+step_photos_dir() { # a folder on this laptop, or "off" (setup-windows.ps1 -PhotosDir)
+  local dir="${1:-${JARVIS_PHOTOS_DIR:-}}"
+  [ -n "$dir" ] || fail "usage: bash setup-wsl.sh photos-dir /path/to/your/photo/folder   (or: photos-dir off)"
+  cd "$HOME_DIR"
+  if [ "$dir" = "off" ]; then
+    put_env bridge.env PHOTOS_DIR ""
+    restart_bridge
+    echo "The photo folder is off. Nothing in it was changed."
+    return 0
+  fi
+  case "$dir" in
+    /*) ;;
+    *) fail "give the folder's full path (it starts with /). setup-windows.ps1 -PhotosDir does that for you." ;;
+  esac
+  dir="${dir%/}"
+  [ -n "$dir" ] || fail "choose a folder of photos, not the whole disk."
+  [ -d "$dir" ] || fail "no such folder: $dir. Check the path and try again."
+  case "$dir" in
+    *[\$\#\"\'\\:]*|*$'\n'*) fail "that folder's name has a character the settings file can't hold (\$ # : \\ or a quote). Rename the folder and try again." ;;
+  esac
+  put_env bridge.env PHOTOS_DIR "$dir"
+  restart_bridge
+  echo "The bridge now reads photos from that folder. It is read-only: nothing in it is changed, moved or deleted."
+  echo "See the groups of faces on this laptop at http://localhost:8098/faces"
+  echo "To switch it off:  bash ~/jarvis-home/setup-wsl.sh photos-dir off"
+}
+
 step_up() {
   cd "$HOME_DIR"
   say "Downloading the programs (a few minutes the first time)"
@@ -153,6 +269,7 @@ step_up() {
   pin_digest MOSQUITTO_IMAGE "${MOSQUITTO_IMAGE:-eclipse-mosquitto:2.0.20}"
   pin_digest FRIGATE_IMAGE "${FRIGATE_IMAGE:-ghcr.io/blakeblackshear/frigate:0.17.2}"
   pin_digest HOMEASSISTANT_IMAGE "${HOMEASSISTANT_IMAGE:-ghcr.io/home-assistant/home-assistant:2026.10.0}"
+  step_models || echo "$MODELS_LATER"
   say "Starting JARVIS Home"
   "${COMPOSE[@]}" up -d --build || fail "couldn't start. Run  bash setup-wsl.sh status  and tell Claude what it says."
   echo "Started."
@@ -231,11 +348,14 @@ case "${1:-}" in
   install) step_install ;;
   configure) step_configure ;;
   up) step_up ;;
+  update) step_update ;;
+  models) step_models ;;
+  photos-dir) shift; step_photos_dir "$@" ;;
   link) shift; step_link "$@" ;;
   status) step_status ;;
   camera) step_camera ;;
   passwords) step_passwords ;;
   ha-token) step_ha_token ;;
   faces-code) cd "$HOME_DIR"; show_faces_code ;;
-  *) echo "Usage: bash setup-wsl.sh install | configure | up | link CODE ADDRESS | status | camera | passwords | ha-token | faces-code" >&2; exit 2 ;;
+  *) echo "Usage: bash setup-wsl.sh install | configure | up | update | models | photos-dir FOLDER | link CODE ADDRESS | status | camera | passwords | ha-token | faces-code" >&2; exit 2 ;;
 esac

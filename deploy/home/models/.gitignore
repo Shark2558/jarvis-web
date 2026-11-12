@@ -1,0 +1,3 @@
+# the model files are downloaded on the laptop, never committed
+*.onnx
+*.part

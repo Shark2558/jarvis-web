@@ -44,7 +44,8 @@ def test_services_and_hardening(compose: dict) -> None:
         assert not s.get("privileged"), name
     b = svc["bridge"]
     assert b["read_only"] is True and b["cap_drop"] == ["ALL"] and b["user"] == "10001:10001"
-    assert "no-new-privileges:true" in b["security_opt"] and b["mem_limit"] == "256m"
+    # R11.1 O7: 256m -> 768m, for the face reader's two models and one picture at a time
+    assert "no-new-privileges:true" in b["security_opt"] and b["mem_limit"] == "768m"
     assert "host.docker.internal:172.29.80.1" in b["extra_hosts"]  # review M4
     assert b["env_file"] == "bridge.env" and "./bridge-data:/data" in b["volumes"]
     assert svc["homeassistant"]["network_mode"] == "host"
@@ -736,7 +737,8 @@ def test_extracting_the_kit_gives_the_folder_the_steps_use(zipped: bytes) -> Non
 
 def test_the_home_assistant_token_is_a_later_step_once_it_is_running() -> None:
     ps = (HOME / "setup-windows.ps1").read_text()
-    assert re.search(r"param\(\s*\[switch\]\$HaToken\s*\)", ps)
+    # R11.1: -Update and -PhotosDir joined it (tests/test_r11_1_c_kit.py pins the whole list)
+    assert re.search(r"param\(\s*\[switch\]\$HaToken\b", ps)
     # the token is asked for once, only in the -HaToken run, which ends before the first-run steps
     asks = [m.start() for m in re.finditer(r"\$env:HA_TOKEN = AskSecret", ps)]
     branch, first_run = ps.index("if ($HaToken) {"), ps.index("# 1. Windows")

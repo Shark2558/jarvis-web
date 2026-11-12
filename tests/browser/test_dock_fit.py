@@ -472,6 +472,12 @@ def test_before_its_script_runs_no_tab_shows_past_the_dock(
         page.route("**/static/console-dock.js", lambda route: held.append(route))  # on its way
         page.goto(server_url + "/", wait_until="commit")
         page.wait_for_function("document.readyState !== 'loading'")
+        # console-deck.js (deferred, before the held dock script) sizes the panels; on a busy
+        # machine "interactive" can come before it runs, so wait for its measurement first
+        page.wait_for_function(
+            "() => getComputedStyle(document.documentElement).getPropertyValue('--panel-max-h')"
+            " !== ''"
+        )
         page.evaluate(SETTLE_JS)
         early = page.evaluate(EARLY_JS)
         assert held and early["ready"] == "interactive", early["ready"]  # painted, not yet fitted

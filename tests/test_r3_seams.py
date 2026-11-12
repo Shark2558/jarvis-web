@@ -1143,8 +1143,14 @@ HOME_READS = ["home_devices", "camera_history", "faces_list"]
 
 
 async def test_the_home_group_needs_its_own_switch_on_telegram() -> None:
-    # R11.1 I1: the photo import's faces-found / people-recognised counts joined the home group
-    assert HOME_PATTERNS == ("home_devices", "camera_*", "faces_*", "photos_import_*")
+    # R11.1 I1: the photo import (faces found, people recognised) and its status joined the group
+    assert HOME_PATTERNS == (
+        "home_devices",
+        "camera_*",
+        "faces_*",
+        "photos_import",
+        "photos_import_*",
+    )
     assert "Telegram" in HOME_REFUSAL and HOME_REFUSAL.isascii()
     assert await _denied(None, HOME_READS) == set(HOME_READS)
     for kw in (

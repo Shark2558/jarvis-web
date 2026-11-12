@@ -8,16 +8,21 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 import pytest
 from drive_fakes import FakeDrive, StaticTokens
 from media_fakes import KEY, FakeGoogleKeyAPIs
 from memory_fakes import rig as memory_rig
 from people_fakes import FakePeople, people_connector
+from photos_fakes import rig as photos_rig
 from pydantic import SecretStr
 from r3_fakes import R3_READS, R3_SAFE, home_parts
+from research_fakes import FakeModel, FakeSearcher, fixed_mode
 from telegram_fakes import UID, Clock
+from vitals_fakes import Rig as VitalsRig
 from web_fakes import FakeTavily
 
+from jarvis.api.r4_wiring import R4Parts
 from jarvis.belongings.service import BelongingsService
 from jarvis.belongings.store import BelongingsStore
 from jarvis.config import get_settings
@@ -28,17 +33,23 @@ from jarvis.documents.store import AttachmentStore
 from jarvis.drive.client import DriveClient
 from jarvis.drive.roots import RootsStore
 from jarvis.drive.service import DriveService
+from jarvis.health.service import HealthService
+from jarvis.health.store import HealthStore
+from jarvis.integrations.github import GithubClient, GithubStore
 from jarvis.integrations.google_key import GoogleKeyClient
+from jarvis.integrations.youtube import YouTubeOwn
 from jarvis.kb.service import NotesService
 from jarvis.kb.store import NotesStore
 from jarvis.keyring import Keyring
 from jarvis.llm.base import ToolCall
 from jarvis.media.service import MediaServices, YouTubeService
+from jarvis.people.research import PeopleService
+from jarvis.photos.tools import ConnectorDeps
 from jarvis.places.service import MapsService
 from jarvis.places.store import MapsPlaces
 from jarvis.quota.ledger import QuotaLedger
 from jarvis.storage.docs import MemoryDocs
-from jarvis.telegram.rules import PRIVATE_PATTERNS, ChannelRules, wrap_rules
+from jarvis.telegram.rules import HOME_PATTERNS, PRIVATE_PATTERNS, ChannelRules, wrap_rules
 from jarvis.telegram.store import TelegramStore
 from jarvis.tools.gateway import Gateway, GatewayOutcome
 from jarvis.tools.policy import Effect
@@ -100,6 +111,19 @@ TELEGRAM_SAFE = frozenset(
         # (never a title). Not `series_*` as a pattern: that would also refuse the R2 check-in
         # answer ("session done") on Telegram, where the check-in alert can arrive.
         "series_list",
+        # R4, listed since R11.1 I1 built the R4 families into this registry too (they were
+        # always answered on Telegram; nothing changes): his own system's health and keys, his
+        # own GitHub and YouTube, and public-figure research behind its unchanged gate
+        "vitals_show",
+        "systems_check",
+        "connect_github",
+        "github_profile",
+        "github_repos",
+        "github_activity",
+        "connect_youtube",
+        "youtube_own_channel",
+        "research_person",
+        "people_open_profiles",
     }
 )
 # R11 I1: the helpers' reads that stay off Telegram (telegram.rules.PRIVATE_PATTERNS): amounts and
@@ -108,9 +132,14 @@ R11_PRIVATE = ("bill_list", "spend_month", "breach_status", "contacts_birthdays"
 # R11.1 I1 (GATE INTEGRATION-A 3.12): the observation parts' reads of private data: A the whole
 # inbox (senders, subjects, first lines); D a picture he attached (what it shows, its text)
 R111_PRIVATE = ("gmail_inbox_summary", "picture_research")
-# ... and the two that are the home switch's (the people JARVIS recognises): C's unnamed face
-# groups and the photo import's faces-found / people-recognised counts
-R111_HOME = ("faces_groups", "photos_import_status")
+# The home switch's tools are NOT a hand list any more (I1 security review H2: the hand list named
+# `photos_import_status` while the real `photos_import` stayed open). They are read off the built
+# registry below: every tool, of any risk, whose name says face, home, photo or camera.
+HOME_WORDS = ("face", "home", "photo", "camera")
+# The only home tools Telegram keeps without the home switch, each decided in R3 D8 / D15: armed or
+# not and the laptop online (what the alerts already say), arming, an Everyday device, and the
+# disarm answer that only points to the console (it never disarms). Every R3 call waits there.
+HOME_KEPT_ON_TELEGRAM = frozenset({"home_status", "home_arm", "home_control", "home_disarm"})
 
 
 class DriveTokens(StaticTokens):
@@ -157,8 +186,24 @@ async def linked_gateway(undo: UndoBin | None = None) -> Gateway:
         notes=NotesService(NotesStore(docs, ring), web=web, undo=undo),
         belongings=BelongingsService(BelongingsStore(docs, ring), undo),
         home=home_parts(docs, ring),  # R3 I1: home, camera and faces tools (the third group)
+        r4=r4_parts(google, docs, ring),  # R4: vitals, systems check, connectors (Photos), people
         r11=r11_parts(google, ring),  # R11 I1: every helper part's tools
         r111=r111_tools(google, docs),  # R11.1 I1: every observation part's tools
+    )
+
+
+def r4_parts(google: Any, docs: Any, ring: Keyring) -> R4Parts:
+    """Every R4 family on, as the app wires it with the Google link, Faces and the home kit: so
+    `photos_import` (the import that answers faces found and the people recognised) is listed."""
+    github = GithubClient(GithubStore(docs, ring), http=httpx.AsyncClient())
+    return R4Parts(
+        settings=get_settings(),
+        vitals=VitalsRig().svc,
+        health=HealthService([], HealthStore(MemoryDocs(), prefix="jarvis_")),
+        connectors=ConnectorDeps(
+            github=github, youtube=YouTubeOwn(google, QuotaLedger(docs)), photos=photos_rig().svc
+        ),
+        people=PeopleService(FakeSearcher([]), FakeModel(), mode=fixed_mode("ai")),
     )
 
 
@@ -198,12 +243,36 @@ def read_tools(gw: Gateway) -> list[str]:
     return sorted(out)
 
 
-async def denied_on_telegram(names: list[str]) -> set[str]:
+async def denied_on_telegram(
+    names: list[str], risks: dict[str, ActionRisk] | None = None
+) -> set[str]:
     store = TelegramStore(MemoryDocs(), prefix="t_", clock=Clock())
     rules = ChannelRules(None, store)  # nothing paired: private reads are off
     with telegram_turn():
         got = await rules.rules_for(UID)
-    return {n for n in names if any(r.effect is Effect.DENY and r.matches(n, {}, R1) for r in got)}
+    return _denied(names, got, risks or {})
+
+
+def _denied(names: list[str], got: list[Any], risks: dict[str, ActionRisk]) -> set[str]:
+    return {
+        n
+        for n in names
+        if any(r.effect is Effect.DENY and r.matches(n, {}, risks.get(n, R1)) for r in got)
+    }
+
+
+def every_tool(gw: Gateway) -> dict[str, ActionRisk]:
+    """Every tool of the built registry, of any risk (not a hand list)."""
+    out: dict[str, ActionRisk] = {}
+    for spec in gw.registry.specs():
+        tool = gw.registry.get(spec.name)
+        if tool is not None:
+            out[spec.name] = tool.risk
+    return out
+
+
+def home_tools(gw: Gateway) -> dict[str, ActionRisk]:
+    return {n: r for n, r in every_tool(gw).items() if any(w in n for w in HOME_WORDS)}
 
 
 async def test_every_read_tool_is_either_private_or_named_safe_for_telegram() -> None:
@@ -234,7 +303,6 @@ async def test_the_safe_list_has_no_stale_or_doubly_classified_names() -> None:
         "doc_read",
         *R11_PRIVATE,
         *R111_PRIVATE,
-        *R111_HOME,
     ],
 )
 async def test_private_titles_are_denied_on_telegram_by_default(tool: str) -> None:
@@ -414,15 +482,51 @@ async def test_gate_deleted_restore_needs_both_switches_on_telegram(
 async def test_every_r111_part_read_is_registered_and_classified() -> None:
     """R11.1 I1 gate (INTEGRATION-A 3.12): the parts' tools are in the linked gateway, and every
     read of private data among them is denied on Telegram by default (A: gmail_inbox_summary;
-    D: picture_research; C's face counts under the home switch)."""
+    D: picture_research; C's face counts under the home switch, read off the registry)."""
     gw = await linked_gateway()
     reads = read_tools(gw)
     r111 = {t.name for t in r111_tools(None, MemoryDocs()) if t.risk is R1}
-    assert r111 == {*R111_PRIVATE, *R111_HOME, "series_list"}, sorted(r111)
+    homes = set(home_tools(gw))
+    assert r111 - homes == {*R111_PRIVATE, "series_list"}, sorted(r111)
     assert r111 <= set(reads)  # every part is really there, as the app builds it
     assert await denied_on_telegram(list(R111_PRIVATE)) == set(R111_PRIVATE)
-    assert await denied_on_telegram(list(R111_HOME)) == set(R111_HOME)
+    assert await denied_on_telegram(sorted(r111 & homes)) == r111 & homes
     assert await denied_on_telegram(["series_list", "series_checkin"]) == set()
+
+
+async def test_every_face_home_or_photo_tool_of_the_built_registry_waits_for_the_home_switch() -> (
+    None
+):
+    """I1 security review H2: the list comes from the BUILT registry, every risk, not a hand
+    list. With the home switch off (the other two on), every tool whose name says face, home,
+    photo or camera is refused on Telegram except R3 D8's four; with it on, none is. A new tool
+    with a name the patterns miss (`photos_import` beside `photos_import_*`) fails here."""
+    gw = await linked_gateway()
+    homes = home_tools(gw)
+    assert {"photos_import", "photos_import_status", "faces_groups", "faces_list"} <= set(homes)
+    assert HOME_KEPT_ON_TELEGRAM <= set(homes), sorted(HOME_KEPT_ON_TELEGRAM - set(homes))
+    store = TelegramStore(MemoryDocs(), prefix="t_", clock=Clock())
+    code, _ = await store.start_pairing(UID)
+    await store.finish_pairing(code, tg_user_id=1, chat_id=2)
+    await store.set_settings(UID, allow_private_reads=True, allow_personal_reads=True)
+    rules = ChannelRules(None, store)
+    with telegram_turn():
+        off = _denied(sorted(homes), await rules.rules_for(UID), homes)
+    assert off == set(homes) - HOME_KEPT_ON_TELEGRAM, sorted(set(homes) - off)
+    await store.set_settings(UID, allow_home_reads=True)
+    with telegram_turn():
+        on = _denied(sorted(homes), await rules.rules_for(UID), homes)
+    assert on == set(), sorted(on)
+
+
+async def test_the_home_patterns_name_the_real_photo_import_tool() -> None:
+    """`photos_import` itself (R2: it answers faces found and the people recognised by name), not
+    only `photos_import_*`; checked on the registry's own risk for it."""
+    gw = await linked_gateway()
+    risks = every_tool(gw)
+    assert risks["photos_import"] is ActionRisk.REVERSIBLE
+    assert await denied_on_telegram(["photos_import"], risks) == {"photos_import"}
+    assert any(p == "photos_import" for p in HOME_PATTERNS)
 
 
 async def test_with_private_reads_on_the_inbox_summary_answers_but_the_home_ones_still_wait() -> (
@@ -436,9 +540,7 @@ async def test_with_private_reads_on_the_inbox_summary_answers_but_the_home_ones
     rules = ChannelRules(None, store)
     with telegram_turn():
         got = await rules.rules_for(UID)
-    denied = {
-        n
-        for n in (*R111_PRIVATE, *R111_HOME)
-        if any(r.effect is Effect.DENY and r.matches(n, {}, R1) for r in got)
-    }
-    assert denied == set(R111_HOME)
+    homes = home_tools(await linked_gateway())
+    r111_home = sorted(n for n in homes if n.startswith(("faces_groups", "photos_import")))
+    denied = _denied([*R111_PRIVATE, *r111_home], got, homes)
+    assert denied == set(r111_home)

@@ -64,8 +64,15 @@ PERSONAL_REFUSAL = (
     "Integrations -> Telegram; open the console."
 )
 # R3 D15: home devices, camera history and faces (its own switch, default off).
-# R11.1 I1: the photo import's faces-found and people-recognised counts are the faces' too.
-HOME_PATTERNS: tuple[str, ...] = ("home_devices", "camera_*", "faces_*", "photos_import_*")
+# R11.1 I1: the photo import (it answers faces found and the people recognised, by name) and its
+# status are the faces' too: `photos_import` itself, not only `photos_import_*` (review H2).
+HOME_PATTERNS: tuple[str, ...] = (
+    "home_devices",
+    "camera_*",
+    "faces_*",
+    "photos_import",
+    "photos_import_*",
+)
 HOME_REFUSAL = (
     "Your home devices, camera history and the people JARVIS recognises are not available from "
     "Telegram - your choice in Integrations -> Telegram; open the console."

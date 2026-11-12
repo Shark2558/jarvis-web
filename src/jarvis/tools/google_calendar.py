@@ -551,7 +551,8 @@ def calendar_tools(conn: GoogleConnector, *, undo: UndoBin | None = None) -> lis
         Tool(
             "calendar_create_event",
             "Create an event on the owner's primary calendar. With attendees it sends invitations, "
-            "so the owner must confirm. reminders_minutes sets its pop-up alerts.",
+            "so the owner must confirm. reminders_minutes sets its pop-up alerts. For more than "
+            "three events without guests use calendar_create_events: one approval card for all.",
             {
                 "type": "object",
                 "properties": {

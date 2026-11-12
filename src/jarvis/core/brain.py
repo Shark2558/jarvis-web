@@ -40,7 +40,7 @@ import contextlib
 import time
 import weakref
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
@@ -592,6 +592,8 @@ class Brain:
         exchange = decisions.record_exchange(session, d, trace_id)
         session, recorded = await record_after_action(self.store, session, exchange)
         out = decisions.single(d, approved=approved, unrecorded=[] if recorded else exchange)
+        if approved and (said := finish.said_by_code(call.name, d.result)):
+            out = replace(out, fallback=said)  # R11.1 D5: its own count, not "Done: <card>"
         return await self._narrated(session, req, out, trace_id)
 
     async def approve_all(

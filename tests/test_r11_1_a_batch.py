@@ -16,7 +16,7 @@ from jarvis.config import Settings
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ActionRisk, ConfirmationGate
 from jarvis.core.models import ChatRequest
-from jarvis.llm.base import ToolCall
+from jarvis.llm.base import LLMError, ToolCall
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.series import batch as sb
@@ -453,3 +453,45 @@ async def test_a_brain_that_makes_sixty_single_calls_still_ends_in_one_card(
     assert (
         "awaiting_owner_approval" in told[0].content and "single approval card" in told[1].content
     )
+
+
+class Down(ScriptedBrain):
+    """A brain that answers what it was scripted to say, then is unreachable."""
+
+    async def complete(self, **kw: Any) -> Any:
+        if not self.said:
+            raise LLMError("the provider is down")
+        return await super().complete(**kw)
+
+
+async def test_an_approved_batch_says_its_own_count_when_no_model_can_report_it(
+    rig: Rig, settings: Settings
+) -> None:
+    mind = Down()
+    brain = Brain(
+        router=ModelRouter(mind, TIERS),
+        store=InMemorySessionStore(),
+        settings=settings,
+        gateway=rig.gw,
+    )
+    rig.fake.fail_creates = {2: 400}
+    mind.say(Said(calls=(call(cb.CREATE, 0, events=sessions(5)),)), Said("One card, Sir."))
+    asked = await brain.chat(ChatRequest(message="add these five", user_id=UID))
+    [card] = asked.pending_approvals
+    done = await brain.approve(card.id, session_id=asked.session_id, user_id=UID)
+    # No-AI mode, the monthly limit or an outage: code's own sentence, never "Done: <the card>"
+    assert done.reply == "4 events added, 1 failed, Sir."
+    assert [c.kind for c in done.cards] == ["batch"] and done.tool_calls == 1
+
+
+def test_only_these_tools_sentences_are_taken_as_code_s_own() -> None:
+    from jarvis.core import finish
+
+    ran = GatewayResult(GatewayOutcome.EXECUTED, result={"message": "4 events added, Sir."})
+    assert finish.said_by_code(cb.CREATE, ran) == "4 events added, Sir."
+    assert finish.said_by_code("series_reschedule", ran) == "4 events added, Sir."
+    assert finish.said_by_code("gmail_search", ran) is None  # another tool's words may be mail
+    failed = GatewayResult(GatewayOutcome.ERROR, error="no")
+    assert finish.said_by_code(cb.CREATE, failed) is None
+    odd = GatewayResult(GatewayOutcome.EXECUTED, result={"message": ["not", "text"]})
+    assert finish.said_by_code(cb.CREATE, odd) is None

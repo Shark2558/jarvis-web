@@ -17,6 +17,9 @@ What the Brain does with a model's answer lives here, outside `brain.py` (near i
   by their words. `reply_turn` stores one marked tool-derived (never to a training brain) and
   `core.window` leaves it out of every model's window, so no later turn can imitate it; stored
   conversations recover without a migration.
+- `said_by_code` (D5): what an approved card did, in the tool's own fixed sentence, for when no
+  model may report it (No-AI mode, the monthly limit, an outage, a brain that may train): a
+  batch that added 58 of 60 is never reported as "Done, Sir: Add 60 events".
 - `chat_response`, `log_turn`: the response and the turn's log line.
 
 `FILLER` is I0's name for "what an answer with no words becomes": it is now `EMPTY`.
@@ -36,6 +39,7 @@ from jarvis.core.models import ChatResponse, Session, Turn
 from jarvis.llm.base import ChatMessage, Completion, LLMError, Role, StreamUsage, Usage
 from jarvis.llm.brains import BrainSpec
 from jarvis.logging import get_logger
+from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.web.ledger import cited_sources
 
 log = get_logger("jarvis.core.brain")  # the Brain's own log name: dashboards filter on it
@@ -55,6 +59,12 @@ RETRY = (
     "remains."
 )
 CUT_REASONS = frozenset({"max_tokens", "length"})
+# Tools whose result's `message` is ONE sentence written by code alone: counts and JARVIS's own
+# words, never a title or anything a file or a mail said (`series.batch_result`, `series.cards`).
+SAID_BY_CODE = frozenset(
+    {"calendar_create_events", "calendar_undo_events", "series_checkin", "series_reschedule"}
+)
+SAID_MAX = 400
 _CARDS = r"I've prepared \d+ approvals? for you, Sir\."
 _STEPS = (
     r"I did \d+ steps? but the AI gave me no words to report (?:it|them)\. "
@@ -287,6 +297,15 @@ def log_turn(
     )
 
 
+def said_by_code(tool: str, result: GatewayResult) -> str | None:
+    """The tool's own fixed sentence for a call that ran, or None (any other tool, a call that
+    did not run, or no such sentence)."""
+    if tool not in SAID_BY_CODE or result.outcome is not GatewayOutcome.EXECUTED:
+        return None
+    said = result.result.get("message") if isinstance(result.result, dict) else None
+    return said if isinstance(said, str) and 0 < len(said) <= SAID_MAX else None
+
+
 __all__ = [
     "CUT_OFF",
     "CUT_REASONS",
@@ -306,6 +325,7 @@ __all__ = [
     "reply_text",
     "reply_turn",
     "retried",
+    "said_by_code",
     "silent",
     "unfinished",
     "working_turn",

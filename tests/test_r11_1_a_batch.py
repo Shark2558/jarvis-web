@@ -197,6 +197,29 @@ async def test_only_the_failed_items_can_be_retried_with_the_batch_id(rig: Rig) 
     assert marks == {f"{first['batch']}:{i}" for i in range(1, 6)}
 
 
+async def test_the_whole_list_sent_again_with_the_batch_id_adds_nothing_twice(rig: Rig) -> None:
+    rig.fake.fail_creates = {2: 400}
+    events = [*sessions(5), sessions(1)[0]]  # the first event is in the list twice, on purpose
+    first = (await rig.approved(cb.CREATE, {"events": events, "title_prefix": "CCA"})).result
+    assert (first["created"], first["failed"]) == (5, 1)
+    rig.fake.fail_creates = {}
+    # a model that ignores "only those events": every event again, unnumbered, with the batch id
+    again = {"events": events, "title_prefix": "CCA", "batch": first["batch"]}
+    asked = await rig.run(cb.CREATE, again)
+    assert asked.pending is not None and "5 of 6 are already there" in asked.pending.summary
+    done = (await rig.run(cb.CREATE, again, confirmation_id=asked.pending.id)).result
+    assert (done["created"], done["already_there"], done["failed"]) == (1, 5, 0)
+    assert len(rig.fake.live()) == 6
+    marks = sorted(cb.number_of(e, first["batch"]) for e in rig.fake.live())
+    assert marks == [1, 2, 3, 4, 5, 6]  # the retried one took its own number back
+    third = (await rig.approved(cb.CREATE, again)).result
+    assert (third["created"], third["already_there"]) == (0, 6) and len(rig.fake.live()) == 6
+    # a new event sent with the batch id is still added, after the others
+    more = {"events": [sessions(8)[7]], "title_prefix": "CCA", "batch": first["batch"]}
+    added = (await rig.approved(cb.CREATE, more)).result
+    assert added["created"] == 1 and added["items"][0]["n"] == 7
+
+
 async def test_a_create_whose_answer_was_lost_is_found_by_its_marker(rig: Rig) -> None:
     rig.fake.lose_answers = {2}
     res = (await rig.approved(cb.CREATE, {"events": sessions(3)})).result

@@ -31,7 +31,7 @@ and the gathering of single calls are `jarvis.tools.calendar_batch` (pure).
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -56,6 +56,8 @@ from jarvis.tools.calendar_batch import (
     changed_by_owner,
     numbered,
     parse,
+    same_events,
+    signature,
     stamped,
 )
 from jarvis.tools.calendar_cards import TITLE_LIMIT, batch_card, undo_card
@@ -117,12 +119,35 @@ class BatchAPI:
         conn = self._conn()
         bid = b.batch or batch_id(ctx.user_id, b)
         have = await batch_events(conn, ctx.user_id, bid)
-        there = sum(1 for n, _ in numbered(b.items, have, bool(b.batch)) if n in have)
+        there = sum(1 for n, _ in await self._numbered(conn, ctx.user_id, b, have) if n in have)
         if b.name and self._book is not None:
             await self._book.room(ctx.user_id, b.name, len(b.items) - there)
         return Preview(
             batch_card([w.args for w in b.items], prefix=b.prefix, plan=b.name, there=there)
         )
+
+    async def _numbered(
+        self,
+        conn: GoogleConnector,
+        uid: str,
+        b: Batch,
+        have: Mapping[int, Mapping[str, Any]],
+        tz: ZoneInfo | None = None,
+    ) -> list[tuple[int, Wanted]]:
+        """The list's numbers in its batch. With an earlier batch's id, an unnumbered item that
+        is an event already there keeps that event's number (nothing is added twice)."""
+        if not b.batch or not have or all(w.n is not None for w in b.items):
+            return numbered(b.items, have, bool(b.batch))
+        api = CalendarAPI(conn, None, self._tz)
+        zone = tz or await api.owner_tz(uid)
+
+        def sig_of(w: Wanted) -> str:
+            try:
+                return signature(api._body(dict(w.args), zone, create=True))  # noqa: SLF001
+            except ValueError:
+                return ""
+
+        return numbered(b.items, have, True, same_events(b.items, have, sig_of))
 
     async def _one(
         self,
@@ -172,7 +197,7 @@ class BatchAPI:
         tz = await CalendarAPI(conn, None, self._tz).owner_tz(uid)
         bid = b.batch or batch_id(uid, b)
         have = await batch_events(conn, uid, bid)
-        items = numbered(b.items, have, bool(b.batch))
+        items = await self._numbered(conn, uid, b, have, tz)
         done = [Outcome(n, "already_there", have[n]) for n, _ in items if n in have]
         todo = [(n, w) for n, w in items if n not in have]
         if b.name and self._book is not None:

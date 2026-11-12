@@ -34,6 +34,7 @@ from jarvis.undo.service import UndoBin
 from jarvis.undo.store import DeletedStore
 
 UID = "u_owner"
+MAIL_NOW_MS = 1_794_303_600_000  # an hour after `letter`'s default time
 CUT = "max_tokens"
 CAL = "/calendar/v3"
 EVENTS = f"{CAL}/calendars/primary/events"
@@ -141,6 +142,17 @@ def call(name: str, i: int = 0, **arguments: Any) -> ToolCall:
 # ---- Google ------------------------------------------------------------------------------------
 
 
+def _matches(mail: dict[str, Any], asked: str, now_ms: int) -> bool:
+    """What Gmail's search does with the two operators the tools use."""
+    if m := re.search(r"category:(\w+)", asked):
+        want = "PERSONAL" if m.group(1) == "primary" else m.group(1).upper()
+        if f"CATEGORY_{want}" not in mail.get("labelIds", []):
+            return False
+    if m := re.search(r"newer_than:(\d+)d", asked):
+        return int(mail.get("internalDate", "0")) >= now_ms - int(m.group(1)) * 86_400_000
+    return True
+
+
 def _private(event: dict[str, Any]) -> dict[str, str]:
     props = event.get("extendedProperties") or {}
     return dict(props.get("private") or {})
@@ -154,8 +166,9 @@ class PlanGoogle:
     1-based, with that status; `lose_answers` creates it but answers 503), `GET events` lists them
     (by `privateExtendedProperty=key=value` when given, else by time window), `GET / PATCH /
     DELETE events/<id>`, and `POST freeBusy` answers from `busy` (ISO pairs) plus every event.
-    Gmail: `labels/INBOX` (`unread`: messagesUnread), `messages` (ids of `mails`, newest first,
-    at most maxResults) and `messages/<id>` (metadata with `labelIds`)."""
+    Gmail: `labels/INBOX` (`unread`: messagesUnread), `messages` (ids of the `mails` the query
+    matches, as Gmail reads `category:` and `newer_than:Nd`; at most maxResults) and
+    `messages/<id>` (metadata with `labelIds`)."""
 
     tz: str = "Asia/Kolkata"
     events: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -164,6 +177,7 @@ class PlanGoogle:
     lose_answers: set[int] = field(default_factory=set)
     fail: dict[str, int] = field(default_factory=dict)  # "<METHOD> <path>" -> status
     mails: list[dict[str, Any]] = field(default_factory=list)
+    mail_now_ms: int = MAIL_NOW_MS  # "now" for `newer_than:`
     unread: int | None = None
     requests: list[httpx.Request] = field(default_factory=list)
     creates: int = 0
@@ -298,7 +312,9 @@ class PlanGoogle:
             return httpx.Response(200, json={"id": "INBOX", "messagesUnread": n})
         if path == f"{GM}/messages":
             limit = int(request.url.params.get("maxResults", "100"))
-            ids = [{"id": m["id"]} for m in self.mails][:limit]
+            asked = request.url.params.get("q", "")
+            ids = [{"id": m["id"]} for m in self.mails if _matches(m, asked, self.mail_now_ms)]
+            ids = ids[:limit]
             return httpx.Response(200, json={"messages": ids, "resultSizeEstimate": len(ids)})
         if m := re.fullmatch(rf"{GM}/messages/([A-Za-z0-9_-]+)", path):
             found = next((x for x in self.mails if x["id"] == m.group(1)), None)

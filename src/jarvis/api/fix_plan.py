@@ -5,9 +5,11 @@ Owner-only (`require_auth` + `current_user`; a cookie write needs `X-Requested-W
 `app.state.r111_parts["plan"].services` per request, and every action is a tool call through
 `app.state.gateway` (its policy, the owner's rows, the audit): nothing here writes to Google.
 
-GET  /v1/series                     {part, ready, plans: [...], waiting: [{plan, session, of,
-                                    text}]}: the part's status, his plans (numbers and times
-                                    only) and the check-ins that wait for an answer.
+GET  /v1/series                     {part, ready, plans: [{id, name, sessions, done, skipped,
+                                    replan}], waiting: [{plan, session, of, start, text}]}: the
+                                    part's status, his plans (numbers and times only; `replan`:
+                                    the sentence for skipped sessions that have no new date) and
+                                    the check-ins that wait for an answer.
 POST /v1/series/answer              {answer: done | skipped, series?, session?, session_id?}:
                                     `series_checkin`. "skipped" leaves the re-plan card in
                                     Approvals (in that conversation; a new one when none is open).
@@ -28,6 +30,8 @@ POST /v1/series/batches/{id}/undo   The owner's own "Undo all" press (D21-A).
 
 404 {error: "plans_off"} when the part, the gateway or the plans are off; 403 not_allowed (his
 permission row); 409 not_done; 422 invalid; 429 rate_limited. Words in `detail` are JARVIS's own.
+`session_id` names the open conversation; one that is gone or not his is never used (a new one
+of his own is made when a card needs it).
 """
 
 from __future__ import annotations
@@ -148,16 +152,16 @@ def _gate(request: Request, uid: str) -> Gateway | JSONResponse:
 
 
 async def _conversation(request: Request, uid: str, session_id: str | None) -> str | JSONResponse:
-    """The conversation a card will wait in: the open one when it is his, else a new one (an
-    approval is decided inside a conversation, so it must exist)."""
+    """The conversation a card will wait in (an approval is decided inside one, so it must
+    exist): the open one when it is his, else a new one of his own. One that is gone, or not
+    his, is never used and never loses the press."""
     store = getattr(request.app.state, "store", None)
     if store is None:
         return _error(503, "unavailable", NOT_DONE)
     if session_id:
         found = await store.get(session_id)
-        if found is None or found.user_id != uid:
-            return _error(404, "not_found", "That conversation no longer exists.")
-        return session_id
+        if found is not None and found.user_id == uid:
+            return session_id
     made = Session(user_id=uid, metadata={"persona": PERSONA_VERSION})
     await store.save(made)
     return made.id
@@ -193,7 +197,7 @@ async def _run(
     if isinstance(gateway, JSONResponse):
         return gateway
     sid: str | None = None
-    if session_id or card:
+    if card:
         found = await _conversation(request, uid, session_id)
         if isinstance(found, JSONResponse):
             return found
@@ -207,7 +211,7 @@ async def _run(
     res = await execute(sid or PLAIN_SCOPE)
     if res.pending is not None and sid is None:
         await gateway.gate.cancel(res.pending.id)
-        made = await _conversation(request, uid, None)
+        made = await _conversation(request, uid, session_id)
         if isinstance(made, JSONResponse):
             return made
         sid = made
@@ -260,6 +264,7 @@ async def status(request: Request, uid: str = Depends(current_user)) -> JSONResp
             "sessions": p.total,
             "done": sum(s.state == "done" for s in p.sessions),
             "skipped": sum(s.state == "skipped" for s in p.sessions),
+            "replan": cards.skipped_words(p),
         }
         for p in book.plans
     ]

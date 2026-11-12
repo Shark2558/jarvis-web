@@ -101,6 +101,21 @@ async def test_the_view_lists_plans_and_the_check_ins_that_wait(site: App) -> No
     assert (waiting["session"], waiting["of"], waiting["plan"]) == (1, 60, plan["id"])
     assert waiting["text"] == "Session 1 of 60 in your CCA plan (Mon 16 Nov 19:00): did it happen?"
     assert "Topic" not in str(body)  # titles stay in the calendar
+    assert plan["replan"] == ""  # nothing skipped: no new dates to ask for
+
+
+async def test_a_skipped_session_without_a_card_can_ask_for_new_dates_again(site: App) -> None:
+    await site.batch(60)
+    site.clock.at = AFTER_1
+    r = await site.c.post("/v1/series/answer", json={"answer": "skipped"})
+    [card] = await site.gw.pending()
+    [plan] = (await site.c.get("/v1/series")).json()["plans"]
+    assert plan["replan"] == "1 skipped session of your CCA plan has no new date yet."
+    await site.gw.gate.cancel(card.id)  # he declined it, or it ran out after ten minutes
+    again = await site.c.post(
+        "/v1/series/replan", json={"series": plan["id"], "session_id": r.json()["session_id"]}
+    )
+    assert again.json()["pending"] is True and len(await site.gw.pending()) == 1
 
 
 # ---- the two buttons ---------------------------------------------------------------------------
@@ -140,11 +155,29 @@ async def test_a_card_goes_into_the_open_conversation_when_there_is_one(site: Ap
     sid = (await site.c.post("/v1/chat", json={"message": "hello"})).json()["session_id"]
     r = await site.c.post("/v1/series/answer", json={"answer": "skipped", "session_id": sid})
     assert r.json()["session_id"] == sid and len(await site.store.list_for_user(OWNER)) == 1
-    gone = await site.c.post("/v1/series/replan", json={"session_id": "sess_nope"})
-    assert gone.status_code == 404
     again = await site.c.post("/v1/series/replan", json={"session_id": sid})
     assert again.status_code == 200 and again.json()["pending"] is True
     assert len((await site.c.get("/v1/approvals")).json()) == 1  # the same card, not a second
+
+
+async def test_a_conversation_that_is_gone_or_not_his_never_loses_the_press(site: App) -> None:
+    from jarvis.core.models import Session
+
+    await site.batch(10)
+    site.clock.at = AFTER_1
+    theirs = Session(user_id="someone-else")
+    await site.store.save(theirs)
+    for given in ("sess_nope", theirs.id):
+        r = await site.c.post("/v1/series/replan", json={"session": 1, "session_id": given})
+        assert r.status_code == 200 and r.json()["pending"] is True
+        assert r.json()["session_id"] not in ("sess_nope", theirs.id)  # a new one of his own
+    scopes = {c.scope for c in await site.gw.pending()}
+    assert all(s.startswith(f"{OWNER}:sess_") for s in scopes) and len(scopes) == 2
+    done = await site.c.post(
+        "/v1/series/answer", json={"answer": "done", "session": 2, "session_id": "sess_nope"}
+    )
+    assert done.status_code == 200 and "There is no" not in done.json()["message"]
+    assert len(await site.store.list_for_user(OWNER)) == 2  # "done" needed no conversation
 
 
 async def test_an_answer_with_nothing_waiting_says_so(site: App) -> None:

@@ -255,17 +255,45 @@ def stamped(
     return {**body, "extendedProperties": {**props, "private": private}}
 
 
+def same_events(
+    items: Sequence[Wanted],
+    have: Mapping[int, Mapping[str, Any]],
+    sig_of: Callable[[Wanted], str],
+) -> dict[int, int]:
+    """Continuing a batch: an item without `n` that is an event the batch already holds (the
+    title, times, place and notes JARVIS wrote: `signature`) keeps that event's number, so a
+    whole list sent again adds nothing twice. Position in `items` -> number."""
+    taken = {w.n for w in items if w.n is not None}
+    waiting: dict[str, list[int]] = {}
+    for n in sorted(have):
+        sig = str(_private(have[n]).get(SIG_KEY) or "")
+        if sig and n not in taken:
+            waiting.setdefault(sig, []).append(n)
+    out: dict[int, int] = {}
+    for i, w in enumerate(items):
+        if w.n is None and (free := waiting.get(sig_of(w))):
+            out[i] = free.pop(0)
+    return out
+
+
 def numbered(
-    items: Sequence[Wanted], have: Collection[int], continuing: bool
+    items: Sequence[Wanted],
+    have: Collection[int],
+    continuing: bool,
+    same: Mapping[int, int] | None = None,
 ) -> list[tuple[int, Wanted]]:
-    """Each item's number in the batch: its own `n`; else its position, or (continuing an
-    earlier batch) the next free number, so a retried item never takes another's place."""
+    """Each item's number in the batch: its own `n`; the number of the event it already is
+    (`same`, from `same_events`); else its position, or (continuing an earlier batch) the next
+    free number, so a retried item never takes another's place."""
     out: list[tuple[int, Wanted]] = []
-    used = {w.n for w in items if w.n is not None} | (set(have) if continuing else set())
+    known = dict(same or {})
+    used = {w.n for w in items if w.n is not None} | set(known.values())
+    used |= set(have) if continuing else set()
     free = 1
     for i, w in enumerate(items, 1):
-        if w.n is not None:
-            out.append((w.n, w))
+        own = w.n if w.n is not None else known.get(i - 1)
+        if own is not None:
+            out.append((own, w))
             continue
         if not continuing and i not in used:
             n = i
@@ -342,6 +370,7 @@ __all__ = [
     "number_of",
     "numbered",
     "parse",
+    "same_events",
     "signature",
     "stamped",
     "title_of",

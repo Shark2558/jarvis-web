@@ -50,6 +50,19 @@ def waiting_words(plan: Plan, s: PlanSession, tz: tzinfo) -> str:
     return f"Session {s.n} of {plan.total} in {plan.words} ({when(s.start, tz)}): did it happen?"
 
 
+def skipped_words(plan: Plan) -> str:
+    """Skipped sessions that still sit at their old time ("" when there is none): the console
+    offers "Propose new dates" beside it."""
+    k = sum(s.state == "skipped" for s in plan.sessions)
+    if not k:
+        return ""
+    return f"{k} skipped session{'' if k == 1 else 's'} of {plan.words} {_has(k)} no new date yet."
+
+
+def _has(k: int) -> str:
+    return "has" if k == 1 else "have"
+
+
 def marked(plan: Plan, s: PlanSession) -> str:
     return f"Session {s.n} of {plan.total} in {plan.words} is marked {s.state}, Sir."
 
@@ -96,6 +109,7 @@ __all__ = [
     "moved_words",
     "question",
     "replan_card",
+    "skipped_words",
     "waiting_words",
     "when",
 ]

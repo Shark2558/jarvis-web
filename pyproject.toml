@@ -57,7 +57,14 @@ dev = [
 # Pinned to the versions hash-locked in deploy/home/bridge-requirements.txt (integrated review C1).
 # R11.1 C (D15): the face engine on the laptop, OpenCV (Apache-2.0; its wheel bundles LGPL-2.1
 # FFmpeg, dynamically loaded, unmodified) and NumPy (BSD-3-Clause); NumPy 2.5 needs Python 3.12.
-homebridge = ["aiomqtt==2.5.1", "paho-mqtt==2.1.0", "opencv-python-headless==5.0.0.93", "numpy==2.5.4"]
+# I1 code review L4: both only for the kit's Python (python:3.12-slim); on 3.11 the extra takes
+# the MQTT pair and the face engine's tests are skipped, instead of failing to install.
+homebridge = [
+    "aiomqtt==2.5.1",
+    "paho-mqtt==2.1.0",
+    'opencv-python-headless==5.0.0.93; python_version >= "3.12"',
+    'numpy==2.5.4; python_version >= "3.12"',
+]
 
 [project.scripts]
 jarvis = "jarvis.cli:main"

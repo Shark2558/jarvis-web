@@ -1101,9 +1101,10 @@ def test_the_bridge_extra_is_optional_and_the_cloud_image_unchanged() -> None:
     assert cfg["project"]["optional-dependencies"]["homebridge"] == [
         "aiomqtt==2.5.1",
         "paho-mqtt==2.1.0",
-        # R11.1 I1: the face engine's picture libraries, also only in the bridge image
-        "opencv-python-headless==5.0.0.93",
-        "numpy==2.5.4",
+        # R11.1 I1: the face engine's picture libraries, also only in the bridge image, and
+        # only for the kit's Python (I1 code review L4: NumPy 2.5 needs 3.12)
+        'opencv-python-headless==5.0.0.93; python_version >= "3.12"',
+        'numpy==2.5.4; python_version >= "3.12"',
     ]
     bridge_only = ("aiomqtt", "paho", "opencv", "numpy")
     assert not any(d.startswith(bridge_only) for d in cfg["project"]["dependencies"])

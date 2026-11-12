@@ -9,6 +9,7 @@ import stat
 import subprocess
 import zipfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -608,24 +609,55 @@ def test_the_mqtt_packages_are_the_reviewed_versions_with_wheel_and_sdist_hashes
     text = (HOME / "bridge-requirements.txt").read_text()
     assert "is added with its hashes by the camera part" not in text  # the old promise is kept
     pyproject = (ROOT / "pyproject.toml").read_text()
-    # R11.1 I1: + the face engine's two libraries (INTEGRATION-C 3.1)
-    assert (
-        'homebridge = ["aiomqtt==2.5.1", "paho-mqtt==2.1.0", "opencv-python-headless==5.0.0.93", '
-        '"numpy==2.5.4"]'
-    ) in pyproject
+    # R11.1 I1: + the face engine's two libraries (INTEGRATION-C 3.1), for the kit's Python
+    assert {str(r) for r in _homebridge_extra()} == {
+        "aiomqtt==2.5.1",
+        "paho-mqtt==2.1.0",
+        'opencv-python-headless==5.0.0.93; python_version >= "3.12"',
+        'numpy==2.5.4; python_version >= "3.12"',
+    }
+    assert "homebridge = [" in pyproject
+
+
+def _homebridge_extra() -> list[Any]:
+    import tomllib
+
+    from packaging.requirements import Requirement
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    return [Requirement(r) for r in project["optional-dependencies"]["homebridge"]]
 
 
 def test_every_homebridge_extra_pin_is_the_bridge_image_s_hash_locked_version() -> None:
     """R11.1 I1: the extra CI installs and the image's lock name the same versions."""
+    pins = _pins()
+    for req in _homebridge_extra():
+        (spec,) = req.specifier
+        assert spec.operator == "==", req
+        assert pins[req.name][0] == spec.version and pins[req.name][1], str(req)
+
+
+def test_the_face_engine_pins_are_for_the_kit_s_python_and_skipped_below_it() -> None:
+    """I1 code review L4: NumPy 2.5.4 needs Python 3.12 (PyPI: requires_python >= 3.12), the
+    bridge image's own (python:3.12-slim), while the project allows 3.11. The face engine's two
+    libraries carry a marker for the kit's Python: installing the extra on 3.11 takes the MQTT
+    pair only, instead of failing; on the kit's Python it takes all four, as locked."""
     import tomllib
 
-    extra = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"][
-        "optional-dependencies"
-    ]["homebridge"]
-    pins = _pins()
-    for spec in extra:
-        name, version = spec.split("==")
-        assert pins[name][0] == version and pins[name][1], spec
+    from packaging.specifiers import SpecifierSet
+
+    kit = re.search(r"python:(3\.[0-9]+)-slim", (HOME / "bridge.Dockerfile").read_text())
+    assert kit is not None and kit.group(1) == "3.12"
+    floor = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["requires-python"]
+    oldest = min(v for v in ("3.11", "3.12", "3.13") if v in SpecifierSet(floor))
+    assert oldest == "3.11"
+    taken = {
+        py: {r.name for r in _homebridge_extra() if r.marker is None or r.marker.evaluate(
+            {"python_version": py, "python_full_version": f"{py}.0"})}
+        for py in (oldest, kit.group(1))
+    }  # fmt: skip
+    assert taken[kit.group(1)] == {"aiomqtt", "paho-mqtt", "opencv-python-headless", "numpy"}
+    assert taken[oldest] == {"aiomqtt", "paho-mqtt"}
 
 
 def test_the_bridge_image_installs_only_the_locked_files_and_no_dependencies_of_its_own() -> None:

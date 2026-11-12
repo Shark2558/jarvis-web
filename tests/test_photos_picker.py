@@ -15,7 +15,8 @@ from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.photos.models import PHOTOS_SCOPE
 from jarvis.photos.picker import (
     MAX_IMAGE_BYTES,
-    MAX_PICKED,
+    PAGE_SIZE,
+    PICKER_MAX,
     PhotosNotGranted,
     PickerClient,
     PickerError,
@@ -128,12 +129,40 @@ async def test_session_id_is_validated_before_it_reaches_a_url() -> None:
 
 
 async def test_only_photos_are_listed_and_capped() -> None:
+    # R11.1 O6: the cap was 20 photos an import; it is now one page of Google's list (100), and
+    # an import walks the pages (test_the_list_is_read_a_page_at_a_time below)
     picker, fake = await build()
-    items = [item(i) for i in range(MAX_PICKED + 10)] + [item(99, type="VIDEO")]
+    items = [item(i) for i in range(PAGE_SIZE + 10)] + [item(999, type="VIDEO")]
     fake.on("GET", f"{API}/mediaItems", httpx.Response(200, json={"mediaItems": items}))
     got = await picker.list_items(GOOGLE_UID, "sess-abc_123")
-    assert len(got) == MAX_PICKED and all(g.mime_type == "image/jpeg" for g in got)
+    assert len(got) == PAGE_SIZE == 100 and all(g.mime_type == "image/jpeg" for g in got)
     assert fake.requests[0].url.params["sessionId"] == "sess-abc_123"
+    assert fake.requests[0].url.params["pageSize"] == "100"
+
+
+async def test_the_list_is_read_a_page_at_a_time() -> None:
+    picker, fake = await build()
+    page = {"mediaItems": [item(1), item(2, type="VIDEO")], "nextPageToken": "tok-2"}
+    last = {"mediaItems": [item(3)]}
+    url = f"{API}/mediaItems"
+    fake.on("GET", url, httpx.Response(200, json=page), httpx.Response(200, json=last))
+    got, nxt = await picker.list_page(GOOGLE_UID, "sess-abc_123")
+    assert [g.id for g in got] == ["m1"] and nxt == "tok-2"
+    assert "pageToken" not in fake.requests[0].url.params
+    got, nxt = await picker.list_page(GOOGLE_UID, "sess-abc_123", "tok-2")
+    assert [g.id for g in got] == ["m3"] and nxt == ""  # the end of the list
+    assert fake.requests[1].url.params["pageToken"] == "tok-2"
+
+
+@pytest.mark.parametrize("bad", [7, "", None, "x" * 2001, ["tok"]])
+async def test_a_next_page_token_that_is_not_a_short_string_ends_the_list(bad: object) -> None:
+    picker, fake = await build()
+    page = {"mediaItems": [item(1)], "nextPageToken": bad}
+    fake.on("GET", f"{API}/mediaItems", httpx.Response(200, json=page))
+    _, nxt = await picker.list_page(GOOGLE_UID, "sess-abc_123")
+    assert nxt == ""
+    with pytest.raises(PickerError):
+        await picker.list_page(GOOGLE_UID, "sess-abc_123", "y" * 2001)
 
 
 async def test_items_with_a_foreign_base_url_are_dropped() -> None:
@@ -270,7 +299,22 @@ async def test_session_is_created_with_a_max_item_count() -> None:
     import json as _json
 
     body = _json.loads(fake.requests[0].content)
-    assert body == {"pickingConfig": {"maxItemCount": str(MAX_PICKED)}}
+    # R11.1 O6: 20 -> Google's own maximum of 2,000 (the owner's `photos_max_picked`)
+    assert PICKER_MAX == 2000
+    assert body == {"pickingConfig": {"maxItemCount": "2000"}}
+
+
+@pytest.mark.parametrize(("asked", "sent"), [(500, "500"), (1, "1"), (5000, "2000"), (None, "2000")])
+async def test_the_owners_limit_is_what_the_picker_is_told_never_more_than_googles(
+    asked: int | None, sent: str
+) -> None:
+    import json as _json
+
+    picker, fake = await build()
+    fake.on("POST", f"{API}/sessions", httpx.Response(200, json=SESSION))
+    await picker.create_session(GOOGLE_UID, asked)
+    body = _json.loads(fake.requests[0].content)
+    assert body == {"pickingConfig": {"maxItemCount": sent}}
 
 
 async def test_the_token_and_base_url_never_reach_the_logs(

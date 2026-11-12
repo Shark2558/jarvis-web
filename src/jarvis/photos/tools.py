@@ -7,7 +7,8 @@ integrator (INTEGRATION.md); a connector that is not built gets no tools.
 - No tool ever takes a token: GitHub's is pasted in the Connectors panel (HTTP), never in chat.
 - GitHub and YouTube words are other people's: fenced with `wrap_external`, never vouched.
 - `photos_import` is two-step with no arguments: the first call opens Google's Picker (the owner
-  chooses photos there); the next sends the chosen ones to the home laptop. It reports ids and
+  chooses photos there); the next starts sending the chosen ones to the home laptop, ONE step of
+  ten photos a call (R11.1 O6: the helpers' clock does the rest in the background). It reports
   counts, and names only consented, enrolled adults; a child is always "a child from your family".
   Enrolling an unnamed face is a panel action with consent, never a tool (as for Faces, D19).
 """
@@ -30,7 +31,7 @@ from jarvis.integrations.github import (
 )
 from jarvis.integrations.google import GoogleAPIError, GoogleNotConnected
 from jarvis.integrations.youtube import YouTubeNotGranted, YouTubeOwn
-from jarvis.photos.edge import EdgeBadReply, EdgeOffline
+from jarvis.photos.edge import OLD_KIT, EdgeBadReply, EdgeNotReady, EdgeOffline
 from jarvis.photos.picker import PhotosNotGranted, PickerError
 from jarvis.photos.service import NoSession, PhotosService
 from jarvis.quota.ledger import QuotaReached, QuotaUnreadable
@@ -67,7 +68,18 @@ WAIT = {
     "laptop_offline": "Your home laptop isn't reachable; try again when it's on.",
     "edge_error": "Your home laptop's answer couldn't be understood, so JARVIS ignored it.",
     "timed_out": "That took too long; the photos you picked are kept, ask me again.",
+    # R11.1 O6, O7: an import runs in the background, ten photos a step
+    "reading": "Reading the photos you picked, in the background. It goes on by itself; ask me "
+    "for the photo import's progress any time.",
+    "expired": "The Google Photos session ended before every photo was read. What was read is "
+    "kept: choose the rest again to continue.",
+    "kit_old": OLD_KIT,
+    "reader_off": "The face reader on your home laptop isn't ready yet: update the home kit.",
 }
+GROUPS_NOTE = (
+    "Faces JARVIS didn't recognise may form groups on your home laptop. Name a group in the "
+    "Faces panel under Unnamed groups: they (or a parent for a child) must agree first."
+)
 _PROBLEMS = (
     GithubError,
     GoogleAPIError,
@@ -78,6 +90,7 @@ _PROBLEMS = (
     NoSession,
     EdgeOffline,
     EdgeBadReply,
+    EdgeNotReady,
     QuotaReached,
     QuotaUnreadable,
 )
@@ -274,6 +287,8 @@ def _photos_tool(svc: PhotosService) -> Tool:
             reply: dict[str, Any] = {"status": res.status, "message": WAIT[res.status]}
             if res.picker_uri:
                 reply["picker_uri"] = res.picker_uri
+            if res.line:
+                reply["progress"] = res.line
             return reply
         return {
             "status": "done",
@@ -281,15 +296,15 @@ def _photos_tool(svc: PhotosService) -> Tool:
             "skipped": res.skipped,
             "faces_found": res.faces_found,
             "recognised": [{"name": _person(p.name, p.child)} for p in res.recognised],
-            "unknown_faces": len(res.unknown_clusters),
-            "note": IMPORT_NOTE,
+            "unknown_faces": res.unknown,
+            "note": GROUPS_NOTE if res.unknown else IMPORT_NOTE,
         }
 
     return Tool(
         "photos_import",
-        "Pick-only Google Photos import: the first call opens Google's picker, "
-        "the next sends the photos you chose to your home laptop to find faces. Never reads the "
-        "whole library.",
+        "Pick-only Google Photos import (up to 2,000 photos): the first call opens Google's "
+        "picker, the next starts sending the photos you chose to your home laptop to find "
+        "faces, ten at a time in the background. Never reads the whole library.",
         EMPTY_SCHEMA,
         ActionRisk.REVERSIBLE,
         _guarded(run),

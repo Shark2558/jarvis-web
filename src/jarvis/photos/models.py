@@ -48,13 +48,61 @@ class RecognisedPerson:
 
 @dataclass(frozen=True)
 class ImportResult:
-    status: str  # done | waiting | no_session | laptop_offline | edge_error | timed_out
+    """One step of an import, or where it stands (R11.1 O6: an import is a background job).
+
+    status: done | reading (more to do) | waiting (still picking) | no_session | expired (the
+    Google session ended part-way: pick again) | laptop_offline | kit_old | reader_off |
+    edge_error | timed_out. `photos`, `faces_found`, `skipped` and `recognised` cover the whole
+    import so far; `unknown_clusters` are the unnamed ids seen in this step."""
+
+    status: str
     photos: int = 0
     faces_found: int = 0
     recognised: tuple[RecognisedPerson, ...] = ()
     unknown_clusters: tuple[str, ...] = ()
     skipped: int = 0
     picker_uri: str = ""  # on `waiting`: the link again, in case the first was lost
+    total: int = 0  # photos picked (0 until Google's list has been read)
+    unknown: int = 0  # faces not recognised so far (they may form groups on the laptop)
+    over: int = 0  # picked beyond the owner's limit, not imported
+    line: str = ""  # the progress in plain words, for the panel and the chat
+
+
+@dataclass(frozen=True)
+class ImportLimits:
+    """`photos_max_picked` and `photos_import_batch` (config.py), as the import uses them."""
+
+    max_picked: int = 2000
+    batch: int = 10
+
+
+@dataclass(frozen=True)
+class GroupAtHome:
+    """An unnamed group of faces on the laptop: its id, short number and counts. Never a face."""
+
+    id: str
+    n: int
+    photos: int
+    first: int
+    last: int
+
+
+@dataclass(frozen=True)
+class GroupsAtHome:
+    groups: tuple[GroupAtHome, ...] = ()
+    more: int = 0
+    strays: int = 0
+    named: int = 0
+    engine_ready: bool = False
+    folder: str = "off"  # off | on | unreadable
+    read: int = 0
+    keep_days: int = 90
+
+
+@dataclass(frozen=True)
+class Forgot:
+    forgotten: int
+    left: int  # unnamed groups and stray faces still on the laptop
 
 
 __all__ = [
@@ -62,6 +110,10 @@ __all__ = [
     "PHOTOS_SCOPE",
     "SESSION_ID",
     "FaceHit",
+    "Forgot",
+    "GroupAtHome",
+    "GroupsAtHome",
+    "ImportLimits",
     "ImportResult",
     "PickedItem",
     "PickerSession",

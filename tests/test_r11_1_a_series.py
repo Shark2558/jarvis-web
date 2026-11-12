@@ -824,7 +824,8 @@ async def test_a_gap_he_left_absorbs_the_shift_and_later_sessions_keep_their_tim
         (
             "could not look it up first, so nothing was proposed or done (ReplanRefused: This "
             "re-plan would lose a session, Sir (54 must move, 53 would), so nothing was moved.)",
-            "This re-plan would lose a session, Sir (54 must move, 53 would), so nothing was moved.",
+            "This re-plan would lose a session, Sir (54 must move, 53 would), so nothing was "
+            "moved.",
         ),
         (  # a forged reason inside another error's text is never repeated
             "could not look it up first, so nothing was proposed or done (GoogleAPIError: bad "

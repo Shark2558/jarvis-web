@@ -33,6 +33,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
+from jarvis.core.models import Session
+from jarvis.core.prompts import PERSONA_VERSION
 from jarvis.helpers.kitchen.blocks import TOOL as BLOCKS_TOOL
 from jarvis.helpers.kitchen.models import Diet
 from jarvis.helpers.kitchen.part import SERVICE
@@ -223,6 +225,18 @@ async def kitchen_blocks(
     return await _change(request, uid, work)
 
 
+async def _conversation(request: Request, uid: str) -> str | None:
+    """A new conversation of his own for the card (R11.1 I1, INTEGRATION-A 3.9): an approval is
+    decided inside a stored conversation, so a card proposed under "<uid>:helpers_kitchen" could
+    never be approved (`Brain.approve` found no such conversation). None: no store."""
+    store = getattr(request.app.state, "store", None)
+    if store is None:
+        return None
+    made = Session(user_id=uid, metadata={"persona": PERSONA_VERSION})
+    await store.save(made)
+    return made.id
+
+
 @router.post("/blocks/propose", response_model=None)
 async def kitchen_propose(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
     gateway: Gateway | None = getattr(request.app.state, "gateway", None)
@@ -238,12 +252,15 @@ async def kitchen_propose(request: Request, uid: str = Depends(current_user)) ->
             "washing_minutes": plan.washing_minutes,
             "days": ",".join(plan.days) or "daily",
         }
+        sid = await _conversation(request, uid)
+        if sid is None:
+            return _answer(503, {"error": "unavailable", "detail": "Couldn't save that just now."})
         call = ToolCall(id=f"kitchen-{uuid.uuid4().hex[:8]}", name=BLOCKS_TOOL, arguments=args)
         with context_trust(untrusted=False):  # the owner's own button and his own saved plan
-            res = await gateway.execute(call, scope=f"{uid}:helpers_kitchen")
+            res = await gateway.execute(call, scope=f"{uid}:{sid}")
         if res.outcome is not GatewayOutcome.AWAITING_CONFIRMATION or res.pending is None:
             return _answer(409, {"error": "not_proposed", "detail": "The card couldn't be made."})
-        return _answer(200, {"pending": True, "message": res.pending.summary})
+        return _answer(200, {"pending": True, "session_id": sid, "message": res.pending.summary})
 
     return await _change(request, uid, work)
 

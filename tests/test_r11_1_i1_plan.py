@@ -136,3 +136,56 @@ async def test_approve_all_without_a_narrator_says_the_batch_s_own_count(
     out = await brain.approve_all([card.id], session_id=resp.session_id)
     assert said in out.reply
     assert "Done, Sir: Add 60 events" not in out.reply
+
+
+# ---- INTEGRATION-A 3.9 (an R11 bug): a card proposed outside a conversation can be approved ---
+async def test_the_kitchen_s_calendar_card_waits_in_a_real_conversation_and_can_be_approved(
+    settings: Settings,
+) -> None:
+    from fastapi import FastAPI
+    from google_fakes import FakeGoogle
+    from httpx import ASGITransport, AsyncClient
+    from r11_fakes import UID as KUID
+    from r11_fakes_d import Rules, connector, kctx
+
+    from jarvis.api.auth import require_auth
+    from jarvis.api.helpers import change_limiter
+    from jarvis.api.helpers_kitchen import PREFIX, router
+    from jarvis.api.identity import current_user
+    from jarvis.core.brain import Brain
+    from jarvis.core.guardrails import ConfirmationGate
+    from jarvis.helpers.kitchen import part as kitchen_part
+    from jarvis.llm.router import ModelRouter, ModelTier
+    from jarvis.tools.audit import AuditLog
+    from jarvis.tools.gateway import Gateway
+    from jarvis.tools.policy import Policy
+    from jarvis.tools.registry import ToolRegistry
+
+    fake = FakeGoogle()
+    c, _, _, _ = kctx(google=await connector(fake.client()), rules=Rules())
+    built = kitchen_part.build(c)
+    reg = ToolRegistry()
+    for t in built.tools:
+        reg.register(t)
+    gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
+    store = InMemorySessionStore()
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[require_auth] = lambda: None
+    app.dependency_overrides[current_user] = lambda: KUID
+    app.state.r11_parts, app.state.helpers_limit = {"kitchen": built}, change_limiter()
+    app.state.gateway, app.state.store = gw, store
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(f"{PREFIX}/blocks/propose")
+    assert r.status_code == 200 and r.json()["pending"] is True, r.text
+    sid = r.json()["session_id"]
+    [card] = await gw.pending()
+    session = await store.get(sid)
+    assert session is not None and session.user_id == KUID and card.scope == f"{KUID}:{sid}"
+
+    provider = MockProvider()
+    tiers = {t: "m" for t in ModelTier}
+    brain = Brain(router=ModelRouter(provider, tiers), store=store, settings=settings, gateway=gw)
+    provider.script("Added, Sir.")
+    out = await brain.decline(card.id, session_id=sid, user_id=KUID)  # decided in Approvals
+    assert out.session_id == sid and await gw.pending() == []

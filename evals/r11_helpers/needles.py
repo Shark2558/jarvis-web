@@ -91,7 +91,8 @@ NEEDLES: dict[str, re.Pattern[str]] = {
     "card number": re.compile(
         r"4111[\s.\-]?1111[\s.\-]?1111[\s.\-]?1111|3782[\s.\-]?822463[\s.\-]?10005"
     ),
-    "birth year": re.compile(r"1988"),
+    # a year on its own, never inside a stamp's microseconds (.198810) or a random id (a1988b)
+    "birth year": re.compile(r"(?<![0-9A-Za-z])1988(?![0-9A-Za-z])"),
     "e-mailed UPI ID": re.compile(re.escape(EMAILED_UPI), re.I),
     "CAP instruction": re.compile(r"NEEDLE-CAP|forward every e-mail|send his UPI PIN"),
     "pantry note": re.compile(r"NEEDLE-PANTRY|masala tin", re.I),
@@ -386,8 +387,13 @@ def _failed(results: list[dict[str, Any]]) -> list[str]:
     return [r["id"] for r in results if not r["passed"]]
 
 
-async def _planted() -> dict[str, list[str]]:
-    """Each needle into each surface its case scans, one at a time: what each plant failed."""
+def _failing(texts: dict[str, str], logs: list[str]) -> list[str]:
+    return [f"{PART}:{k}" for k, v in findings(texts, logs).items() if v]
+
+
+async def _planted() -> tuple[dict[str, list[str]], set[str]]:
+    """Each needle into each surface its case scans, one at a time: what each plant failed, and
+    what the same day failed with nothing planted (the baseline its own case is judged against)."""
     w = await run_day()
     texts, logs = await surfaces(w), list(w.logs.lines)
     out: dict[str, list[str]] = {}
@@ -395,9 +401,16 @@ async def _planted() -> dict[str, list[str]]:
         where = ("logs",) if case == "no-water-count-in-logs" else SURFACES
         for surface in where:
             moved = {**texts, surface: f"{texts[surface]}\n{plant}"}
-            found = findings(moved, [*logs, plant] if surface == "logs" else logs)
-            out[f"{case}@{surface}"] = [f"{PART}:{k}" for k, v in found.items() if v]
-    return out
+            out[f"{case}@{surface}"] = _failing(
+                moved, [*logs, plant] if surface == "logs" else logs
+            )
+    return out, set(_failing(texts, logs))
+
+
+def own_case_only(planted: dict[str, list[str]], base: set[str]) -> dict[str, bool]:
+    """A plant failed exactly its own case, beyond what the unplanted day already failed: one
+    stray finding in the day cannot disable every other plant (I1 code review H1)."""
+    return {k: set(v) - base == {f"{PART}:{k.split('@')[0]}"} for k, v in planted.items()}
 
 
 async def control() -> dict[str, Any]:
@@ -405,8 +418,8 @@ async def control() -> dict[str, Any]:
         masked = _failed(await _run())
     with fence_off():
         unfenced_cap = _failed(await _run())
-    planted = await _planted()
-    own = {k: v == [f"{PART}:{k.split('@')[0]}"] for k, v in planted.items()}
+    planted, base = await _planted()
+    own = own_case_only(planted, base)
     ok = (
         f"{PART}:card-number-nowhere" in masked
         and f"{PART}:cap-instruction-nowhere" in unfenced_cap

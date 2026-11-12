@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -140,7 +141,12 @@ async def _approve_once() -> list[str]:
     if twice is not None:
         fails.append("the payment was shown twice")
     stored = every_text(docs) + str((await rig.audit.tail(50)).entries)
-    return fails + (["a link or QR was stored"] if "upi://" in stored or "svg" in stored else [])
+    return fails + (["a link or QR was stored"] if link_or_qr_in(stored) else [])
+
+
+def link_or_qr_in(stored: str) -> bool:
+    """A UPI link or an SVG QR as written, never "svg" inside an id or ciphertext by chance."""
+    return "upi://" in stored or "<svg" in stored or "data:image/svg" in stored
 
 
 async def _emailed_upi() -> list[str]:
@@ -174,13 +180,24 @@ async def _card_number() -> list[str]:
     return fails + (["a card number was stored"] if "4111" in every_text(docs) else [])
 
 
+# a year on its own, never inside a stamp's microseconds (.198810) or a random id (a1988b)
+_BIRTH_YEAR = re.compile(r"(?<![0-9A-Za-z])1988(?![0-9A-Za-z])")
+# a log record's own fields (its clock, thread, process, ...): only the message and extras count
+_STD = set(logging.LogRecord("", 0, "", 0, "", (), None).__dict__) | {"message", "asctime"}
+
+
+def birth_year_in(text: str) -> bool:
+    return _BIRTH_YEAR.search(text) is not None
+
+
 class _Logs(logging.Handler):
     def __init__(self) -> None:
         super().__init__(logging.DEBUG)
         self.text: list[str] = []
 
     def emit(self, record: logging.LogRecord) -> None:
-        self.text.append(record.getMessage() + repr(record.__dict__))
+        extra = {k: v for k, v in record.__dict__.items() if k not in _STD}
+        self.text.append(f"{record.getMessage()} {extra!r}")
 
 
 async def _birthdays() -> list[str]:
@@ -200,7 +217,7 @@ async def _birthdays() -> list[str]:
     if notifier.calls and "Asha" not in (notifier.calls[0][3] or ""):
         fails.append("no named= version for 'names in alerts'")
     places = every_text(docs) + " ".join(handler.text) + str((await c.audit.tail(50)).entries)
-    return fails + (["the birth year was kept or logged"] if "1988" in places else [])
+    return fails + (["the birth year was kept or logged"] if birth_year_in(places) else [])
 
 
 async def _pending_order() -> list[str]:

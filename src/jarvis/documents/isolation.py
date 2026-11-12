@@ -12,7 +12,9 @@ instance (512 MiB) down with every chat in flight. So every upload's bytes go to
   - the parent kills it at the wall-clock timeout, and whenever the upload is cancelled (the
     owner closed the tab): `finally` always kills and reaps;
   - the answer is one JSON object, size-capped and validated: anything odd is "unreadable";
-    a child that died (CPU limit, out of memory) is "too slow" / "too complex".
+    a child that died (CPU limit, out of memory) is "too slow" / "too complex". R11.1: a
+    picture in the answer must be a JPEG or PNG by its first bytes, within the size cap, and
+    there are at most `Limits.max_pictures` of them.
 
 The service runs at most one child at a time (`DocumentService`).
 """
@@ -20,6 +22,8 @@ The service runs at most one child at a time (`DocumentService`).
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import contextlib
 import json
 import os
@@ -30,8 +34,8 @@ from pathlib import Path
 from typing import Any
 
 import jarvis
-from jarvis.documents.extract import Extracted, Limits, too_complex, too_slow
-from jarvis.documents.limits import DocumentRejected
+from jarvis.documents.extract import Extracted, Limits, Picture, too_complex, too_slow
+from jarvis.documents.limits import NAME_LIMIT, PICTURE_TYPES, DocumentRejected
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -42,8 +46,20 @@ WALL_TIMEOUT_S = 45.0
 MAX_OUTPUT_BYTES = 8 * 1024 * 1024
 KILL_WAIT_S = 5.0
 CODES = frozenset(
-    {"unsupported", "empty", "encrypted", "no_text", "unreadable", "too_complex", "too_slow"}
+    {
+        "unsupported",
+        "empty",
+        "encrypted",
+        "no_text",
+        "unreadable",
+        "too_complex",
+        "too_slow",
+        "too_large",  # R11.1: a picture over its size cap
+        "bad_picture",
+        "unsafe_archive",  # a nested archive, a path outside the zip, a password
+    }
 )
+_MAGIC = {"image/jpeg": b"\xff\xd8\xff", "image/png": b"\x89PNG\r\n\x1a\n"}
 STATUSES = frozenset({413, 415, 422})
 _KILLED = frozenset(-s for s in (getattr(signal, "SIGKILL", 9), getattr(signal, "SIGXCPU", 24)))
 _BOOT = (
@@ -79,10 +95,29 @@ def _int_or_none(v: Any) -> int | None:
     return v
 
 
+def _picture(raw: Any, limits: Limits) -> Picture:
+    """One picture from the child's answer, checked again: its type, its first bytes, its size."""
+    if not isinstance(raw, dict):
+        raise ValueError("bad picture")
+    name, media, data = raw.get("name"), raw.get("media_type"), raw.get("data")
+    if not isinstance(name, str) or media not in PICTURE_TYPES or not isinstance(data, str):
+        raise ValueError("bad picture")
+    try:
+        blob = base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("bad picture") from None
+    if not blob.startswith(_MAGIC[media]) or len(blob) > limits.picture_max_bytes:
+        raise ValueError("bad picture")
+    return Picture(name=name[:NAME_LIMIT], media_type=media, data=blob)
+
+
 def _extracted(p: dict[str, Any], kind: str, limits: Limits) -> Extracted:
     text, starts, truncated = p.get("text"), p.get("page_starts", []), p.get("truncated")
     if not isinstance(text, str) or not isinstance(truncated, bool) or not isinstance(starts, list):
         raise ValueError("bad shape")
+    pictures = p.get("pictures") or []
+    if not isinstance(pictures, list) or len(pictures) > limits.max_pictures:
+        raise ValueError("bad pictures")
     page_starts = tuple(_int_or_none(s) or 0 for s in starts)
     return Extracted(
         kind=kind,
@@ -91,6 +126,12 @@ def _extracted(p: dict[str, Any], kind: str, limits: Limits) -> Extracted:
         pages_total=_int_or_none(p.get("pages_total")),
         page_starts=page_starts,
         truncated=truncated or len(text) > limits.max_chars,
+        sheets=_int_or_none(p.get("sheets")),
+        rows=_int_or_none(p.get("rows")),
+        slides=_int_or_none(p.get("slides")),
+        files=_int_or_none(p.get("files")),
+        skipped=_int_or_none(p.get("skipped")) or 0,
+        pictures=tuple(_picture(x, limits) for x in pictures),
     )
 
 

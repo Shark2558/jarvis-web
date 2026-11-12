@@ -4,11 +4,14 @@
 Layout:  {prefix}attachments/{id}                   header (`Attachment`): owner, session, turn,
                                                     name, kind, counts, preview (≤ 2,000 chars)
          {prefix}attachments/{id}/chunks/{000001}   text (≈ 4,000 chars), start, page, page_end
+         {prefix}attachments/{id}/pictures/{01}     R11.1 D10: name, media_type, data (the
+                                                    cleaned bytes, ≤ 900 KB; at most 4)
 
-Every document stays far under Firestore's 1 MiB limit. An upload is one commit (≤ 480 chunks +
-the header, header LAST and create-only). Binding uploads to the conversation they were sent in
-is one transaction over all of them: owner-checked, only while still waiting, all or nothing;
-`unbind` undoes it when the turn could not be stored.
+Every document stays under Firestore's 1 MiB limit (a picture is capped at 900 KB for that). An
+upload is one commit (≤ 480 chunks + ≤ 4 pictures + the header, header LAST and create-only).
+Binding uploads to the conversation they were sent in is one transaction over all of them:
+owner-checked, only while still waiting, all or nothing; `unbind` undoes it when the turn could
+not be stored.
 Chunk texts of the few most recent documents are kept in-process (doc_search reads them all);
 a doc_read part reads only its own chunks (integration review M2). The cache holds as many
 documents as one owner message may call document tools (`tools.budget.MAX_DOC_CALLS`), so one
@@ -25,7 +28,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from jarvis.documents.chunking import Chunk
-from jarvis.documents.models import DOC_ID, Attachment
+from jarvis.documents.models import DOC_ID, Attachment, StoredPicture
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Create, Delete, Doc, Docs, DocTx, Op, Query, Set
 from jarvis.tools.budget import MAX_DOC_CALLS
@@ -69,13 +72,35 @@ class AttachmentStore:
     def _chunks_col(self, aid: str) -> str:
         return f"{self._col}/{aid}/chunks"
 
-    async def create(self, att: Attachment, chunks: Sequence[Chunk]) -> None:
+    def _pictures_col(self, aid: str) -> str:
+        return f"{self._col}/{aid}/pictures"
+
+    async def create(
+        self, att: Attachment, chunks: Sequence[Chunk], pictures: Sequence[StoredPicture] = ()
+    ) -> None:
         ops: list[Op] = [
             Set(f"{self._chunks_col(att.id)}/{i + 1:06d}", _chunk_doc(c))
             for i, c in enumerate(chunks)
         ]
+        ops += [
+            Set(f"{self._pictures_col(att.id)}/{i + 1:02d}", p.model_dump())
+            for i, p in enumerate(pictures)
+        ]
         ops.append(Create(self._head(att.id), att.model_dump()))  # last: makes the rest visible
         await self._d.write(ops)
+
+    async def pictures(self, att: Attachment) -> list[StoredPicture]:
+        """The cleaned pictures kept with `att`, in the order they were found (R11.1 D10)."""
+        if att.pictures <= 0:
+            return []
+        rows = await self._d.query(Query(self._pictures_col(att.id), limit=att.pictures))
+        out: list[StoredPicture] = []
+        for _, raw in sorted(rows, key=lambda row: row[0]):
+            try:
+                out.append(StoredPicture.model_validate(raw))
+            except ValidationError:
+                log.error("unreadable stored picture", extra={"attachment": att.id})
+        return out
 
     async def get(self, aid: str) -> Attachment | None:
         if not DOC_ID.fullmatch(aid):
@@ -149,10 +174,13 @@ class AttachmentStore:
         await self._d.transaction(run)
 
     async def delete(self, aid: str) -> None:
-        """Chunks first, header LAST: an interrupted delete is found and finished next time."""
+        """Chunks and pictures first, header LAST: an interrupted delete is found and finished
+        next time."""
         self._cache.pop(aid, None)
         rows = await self._d.query(Query(self._chunks_col(aid)))
         ops: list[Op] = [Delete(f"{self._chunks_col(aid)}/{cid}") for cid, _ in rows]
+        shots = await self._d.query(Query(self._pictures_col(aid)))
+        ops += [Delete(f"{self._pictures_col(aid)}/{pid}") for pid, _ in shots]
         ops.append(Delete(self._head(aid)))
         await self._d.write(ops)
 

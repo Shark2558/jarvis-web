@@ -290,6 +290,9 @@ RISK_OF = {
     "nudges": [R1, R2],
     "outdoor": [R1, R2],
     "kitchen": [R1, R2],
+    # R11.1 I0
+    "plans": [R1, R2],
+    "pictures": [R1],
 }
 TOOL_OF = {
     "calendar_read": "calendar_list_events",
@@ -338,6 +341,9 @@ TOOL_OF = {
     "nudges": "nudge_snooze",
     "outdoor": "weather_now",
     "kitchen": "recipe_suggest",
+    # R11.1 I0
+    "plans": "series_list",
+    "pictures": "picture_research",
 }
 
 

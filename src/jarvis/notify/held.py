@@ -31,6 +31,9 @@ _WORDS = {
     "maintenance_due": "home upkeep",
     "weather_warning": "weather warning",
     "breach_notice": "breach notice",
+    # R11.1: the study-plan check-in is held at night; new faces to name are feed only
+    "series_checkin": "study session check-in",
+    "faces_to_name": "faces to name",
 }
 
 

@@ -274,7 +274,8 @@ def _at(lines: list[str], needle: str) -> int:
 def test_app_py_has_the_six_r11_slots_and_stays_under_its_guard() -> None:
     lines = _lines()
     assert len(lines) <= 750
-    assert _at(lines, "await wire_r11(app, s, docs, audit)") == _at(lines, "await wire_r6(") + 1
+    # R11.1 is wired between them: its parts' jobs ride the helpers' clock (r11_1_wiring.py)
+    assert _at(lines, "await wire_r11(app, s, docs, audit)") == _at(lines, "await wire_r6(") + 2
     assert _at(lines, "install_r11_routes(app)") == _at(lines, "install_r6_routes(app)") + 1
     assert _at(lines, "*r11_tick_jobs(app),") == _at(lines, "*r6_tick_jobs(app),") + 1
     assert _at(lines, "r11=app.state.r11_parts,") == _at(lines, "r4=app.state.r4_parts,") + 1

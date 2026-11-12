@@ -58,6 +58,7 @@ from jarvis.api.personal import personal_tick_jobs, wire_personal, wire_privacy
 from jarvis.api.privacy import install_privacy
 from jarvis.api.r4_wiring import install_r4_routes, r4_tick_jobs, vitals_brief, wire_r4
 from jarvis.api.r6_wiring import install_r6_routes, install_show_lock, r6_tick_jobs, wire_r6
+from jarvis.api.r11_1_wiring import fix_tools, install_r11_1_routes, wire_r11_1
 from jarvis.api.r11_wiring import helpers_brief, install_r11_routes, r11_tick_jobs, wire_r11
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
@@ -361,6 +362,7 @@ def _build_tool_gateway(
         home=app.state.home_parts,  # R3: home, camera and faces tools (only when on)
         r4=app.state.r4_parts,  # R4: vitals, systems check, connectors, people (each when on)
         r11=app.state.r11_parts,  # R11: the helpers' tools (each part's own families)
+        r111=fix_tools(app.state.r111_parts),  # R11.1: the four parts' tools
     )
 
 
@@ -490,6 +492,7 @@ def _lifespan(
             wire_home(app, s, docs, audit)  # R3: home link, camera, faces (tools need them)
             await wire_r4(app, s, docs, audit)  # R4: brain mode (loaded), vitals, health, people
             await wire_r6(app, s, docs, audit)  # R6: the build book (sealed releases, sessions)
+            await wire_r11_1(app, s, docs, audit)  # R11.1: before R11 (its jobs ride that clock)
             await wire_r11(app, s, docs, audit)  # R11: the free proactive helpers (A-D)
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
@@ -679,6 +682,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_r4_routes(app)  # R4: /v1/vitals, /v1/health, /v1/connectors, /v1/people, brain mode
     install_r6_routes(app)  # R6: /v1/book (status, open, sections, show, close, resume, settings)
     install_r11_routes(app)  # R11: /v1/helpers (the gate) and the four parts' routes
+    install_r11_1_routes(app)  # R11.1: /v1/series, /v1/input, /v1/facegroups, /v1/picture
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

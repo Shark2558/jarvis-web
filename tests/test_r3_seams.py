@@ -160,8 +160,9 @@ def test_r3_alert_kinds_join_the_older_ones() -> None:
     # R4 added vitals_warn/vitals_critical/health_fault/health_recovered/health_degraded (14 -> 19)
     # R5.1 added home_offline_idle (19 -> 20)
     # R6 added book_sealed/book_seal_failed/book_session_closed (20 -> 23)
-    # R11 added the thirteen helper kinds (23 -> 36; tests/test_r11_seams.py)
-    assert "test" in kinds and len(kinds) == len(set(kinds)) == 36
+    # R11 added the thirteen helper kinds (23 -> 36; tests/test_r11_seams.py) and R11.1 two more
+    # (36 -> 38; tests/test_r11_1_seams.py)
+    assert "test" in kinds and len(kinds) == len(set(kinds)) == 38
 
 
 async def test_the_sink_takes_silent_and_photo_keywords() -> None:
@@ -890,8 +891,9 @@ ROWS = {
 
 def test_five_rows_sit_after_things_and_before_maps() -> None:
     ids = [g.id for g in GROUPS]
-    # R4 added 5 rows (vitals, vitals_change, systems, people, connectors); R11 added 6 (D16)
-    assert len(ids) == 44
+    # R4 added 5 rows (vitals, vitals_change, systems, people, connectors); R11 added 6 (D16);
+    # R11.1 added 2 (plans, pictures)
+    assert len(ids) == 46
     at = ids.index("belongings")
     assert ids[at + 1 : at + 6] == list(ROWS)  # the five R3 rows still sit right after Things
     # R4's rows sit after the R3 block; Maps and YouTube stay last

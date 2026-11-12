@@ -46,6 +46,7 @@ def test_home_offline_idle_is_a_known_important_home_kind() -> None:
         {"home_offline_idle", "health_fault", "vitals_critical"}
         | {"book_sealed", "book_seal_failed", "book_session_closed"}
         | set(R11_DAYTIME)
+        | {"series_checkin"}  # R11.1 D6 (tests/test_r11_1_seams.py)
     )
 
 

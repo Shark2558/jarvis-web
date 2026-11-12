@@ -81,6 +81,9 @@ SAMPLES: dict[str, tuple[str, list[ActionRisk]]] = {
     "nudges": ("nudge_snooze", [R1, R2]),
     "outdoor": ("weather_now", [R1, R2]),
     "kitchen": ("recipe_suggest", [R1, R2]),
+    # R11.1 I0: the study-plan and picture-research rows
+    "plans": ("series_list", [R1, R2]),
+    "pictures": ("picture_research", [R1]),
 }
 OUTCOME = {
     Effect.ALLOW: GatewayOutcome.EXECUTED,

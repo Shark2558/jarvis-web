@@ -55,14 +55,14 @@ KEY = bytes(range(1, 33))
 
 
 def test_the_version_is_eleven() -> None:
-    assert jarvis.__version__ == "11.0.0"
+    assert jarvis.__version__.startswith("11.")  # the exact number: tests/test_about.py
 
 
 # ---- alert kinds (D5) ---------------------------------------------------------------------------
 def test_thirteen_helper_kinds_make_thirty_six_and_each_belongs_to_one_part() -> None:
     every = get_args(AlertKind)
     assert len(R11_ALERT_KINDS) == 13 and set(R11_ALERT_KINDS) <= set(every)
-    assert len(every) == len(set(every)) == 36 and set(DEFAULT_URGENCY) == set(every)
+    assert len(every) == len(set(every)) == 38 and set(DEFAULT_URGENCY) == set(every)  # R11.1: +2
     assert kinds.part_kinds() == frozenset(R11_ALERT_KINDS)
     owners = [p for k in R11_ALERT_KINDS for p in kinds.PARTS if k in kinds.KINDS_OF[p]]
     assert len(owners) == 13  # exactly one part each
@@ -121,7 +121,8 @@ def test_the_alerts_card_lists_the_helper_kinds_in_order() -> None:
     js = (STATIC / "console-alerts.js").read_text(encoding="utf-8")
     block = js[js.index("const KINDS = [") : js.index("];", js.index("const KINDS = ["))]
     listed = re.findall(r"\['([a-z_]+)', '", block)
-    assert listed[-13:] == list(R11_ALERT_KINDS) and len(listed) == len(set(listed))
+    # R11.1 added its two kinds after them (tests/test_r11_1_seams.py)
+    assert listed[-15:-2] == list(R11_ALERT_KINDS) and len(listed) == len(set(listed))
 
 
 # ---- storm control (D5) -------------------------------------------------------------------------

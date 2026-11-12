@@ -680,8 +680,7 @@
 
 <!-- Vitals: raising or removing the monthly limit lets JARVIS spend more, so it asks here first -->
 <dialog class="bdialog" id="limitDialog" role="alertdialog" aria-labelledby="limitDialogTitle" aria-describedby="limitDialogText">
-  <h2 id="limitDialogTitle"></h2>
-  <div id="limitDialogText"></div>
+  <h2 id="limitDialogTitle"></h2><div id="limitDialogText"></div>
   <div class="actions"><button class="btn lift" id="limitDialogNo" type="button">Not now</button><button class="btn primary lift" id="limitDialogYes" type="button">Raise</button></div>
 </dialog>
 
@@ -689,22 +688,19 @@
 
 <!-- Brief: switching on something that spends money or writes to Gmail asks here first -->
 <dialog class="bdialog" id="briefDialog" role="alertdialog" aria-labelledby="briefDialogTitle" aria-describedby="briefDialogText">
-  <h2 id="briefDialogTitle"></h2>
-  <div id="briefDialogText"></div>
+  <h2 id="briefDialogTitle"></h2><div id="briefDialogText"></div>
   <div class="actions"><button class="btn lift" id="briefDialogNo" type="button">Not now</button><button class="btn primary lift" id="briefDialogYes" type="button">Switch on</button></div>
 </dialog>
 
 <!-- Memory: learning from the owner's messages spends money and sends their words to Claude, so it asks first -->
 <dialog class="bdialog" id="memoryDialog" role="alertdialog" aria-labelledby="memoryDialogTitle" aria-describedby="memoryDialogText">
-  <h2 id="memoryDialogTitle"></h2>
-  <div id="memoryDialogText"></div>
+  <h2 id="memoryDialogTitle"></h2><div id="memoryDialogText"></div>
   <div class="actions"><button class="btn lift" id="memoryDialogNo" type="button">Not now</button><button class="btn primary lift" id="memoryDialogYes" type="button">Switch on</button></div>
 </dialog>
 
 <!-- Drive (slice 12 FE-1, console-drive.js): switching a folder on lets JARVIS read it and send what it reads to Claude, so it asks first -->
 <dialog class="bdialog" id="driveDialog" role="alertdialog" aria-labelledby="driveDialogTitle" aria-describedby="driveDialogText">
-  <h2 id="driveDialogTitle"></h2>
-  <div id="driveDialogText"></div>
+  <h2 id="driveDialogTitle"></h2><div id="driveDialogText"></div>
   <div class="actions"><button class="btn lift" id="driveDialogNo" type="button">Not now</button><button class="btn primary lift" id="driveDialogYes" type="button">Switch on</button></div>
 </dialog>
 
@@ -793,6 +789,7 @@
 <script src="/static/console-book-reader.js" defer></script>
 <script src="/static/console-book.js" defer></script>
 <script src="/static/console-helpers.js" defer></script>
+<script type="module" src="/static/console-r111.js"></script>
 <script type="module" src="/static/console-3d.js"></script>
 </body>
 </html>

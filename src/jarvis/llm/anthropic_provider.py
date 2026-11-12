@@ -23,6 +23,7 @@ from jarvis.llm.base import (
     ChatMessage,
     Completion,
     Effort,
+    ImageBlock,
     LLMAuthError,
     LLMError,
     LLMOutOfCredit,
@@ -61,6 +62,7 @@ _UNREACHABLE = (
 
 class AnthropicProvider:
     name = "anthropic"
+    vision = True  # R11.1 D10: Claude reads JPEG and PNG message blocks
 
     def __init__(self, api_key: str, *, timeout_s: float = 60.0, max_retries: int = 2) -> None:
         # The SDK retries transient errors with exponential backoff itself; we set the budget.
@@ -81,6 +83,9 @@ class AnthropicProvider:
             for b in m.content:
                 if isinstance(b, TextBlock):
                     blocks.append({"type": "text", "text": b.text})
+                elif isinstance(b, ImageBlock):  # R11.1 D10: the owner's own attached picture
+                    source = {"type": "base64", "media_type": b.media_type, "data": b.b64()}
+                    blocks.append({"type": "image", "source": source})
                 elif isinstance(b, ToolCall):
                     blocks.append(
                         {"type": "tool_use", "id": b.id, "name": b.name, "input": b.arguments}

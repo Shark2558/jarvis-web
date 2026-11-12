@@ -44,6 +44,7 @@ from jarvis.billing import Billing, BudgetError
 from jarvis.config import Settings
 from jarvis.core import approve_all as approve_many
 from jarvis.core import brain_decisions as decisions
+from jarvis.core import finish
 from jarvis.core.approve_all import ApproveAllResponse
 from jarvis.core.brain_types import _owner_turn, _Prompt, _ReplyMeta
 from jarvis.core.channel import answered_offline, reset_offline
@@ -54,6 +55,7 @@ from jarvis.core.prompts import PERSONA_VERSION, build_trailer
 from jarvis.core.rounds import Rounds
 from jarvis.core.saving import not_recorded_note, record_after_action
 from jarvis.core.window import build_window
+from jarvis.documents.pictures import with_pictures
 from jarvis.documents.service import DocumentService, forget_files, precheck, save_owner_turn
 from jarvis.llm.base import (
     ChatMessage,
@@ -355,6 +357,7 @@ class Brain:
         await save_owner_turn(self.documents, self.store, session, turn, req, spec)
 
         messages = self._window_for(session, spec)
+        messages = await with_pictures(self.documents, messages, session, spec)  # R11.1 D10
         rec = await self._recall(req.user_id, spec, text)
         self._sweep(req.user_id, rec, session.id)
         prompt = _Prompt(
@@ -368,7 +371,7 @@ class Brain:
             raise
 
         session = rounds.session
-        reply = completion.text.strip() or "I have nothing to add, Sir."
+        reply = finish.reply_text(completion)  # R11.1: jarvis.core.finish (Part A: no filler)
         session.append(
             Turn(
                 role=Role.ASSISTANT,
@@ -387,7 +390,7 @@ class Brain:
         session = rounds.session
         self._after_turn(req.user_id, session, spec, rec)
         total_ms = int((time.perf_counter() - t0) * 1000)
-        self._log_turn(session, len(messages), spec, completion, total_ms)
+        finish.log_turn(session, len(messages), spec, completion, total_ms)
         reply_meta = _ReplyMeta(
             trace_id, total_ms, rounds.count, pending, list(rec.used), rounds.undo, rounds.cards
         )
@@ -400,24 +403,6 @@ class Brain:
             session_id=session.id,
             turn_index=len(session.turns),
             channel=req.channel,
-        )
-
-    @staticmethod
-    def _log_turn(
-        session: Session, window: int, spec: BrainSpec, completion: Completion, total_ms: int
-    ) -> None:
-        log.info(
-            "brain: turn complete",
-            extra={
-                "session_id": session.id,
-                "turns": len(session.turns),
-                "window": window,
-                "brain": spec.id,
-                "model": completion.model,
-                "cost_usd": completion.cost_usd,
-                "llm_ms": completion.latency_ms,
-                "total_ms": total_ms,
-            },
         )
 
     async def _chat_response(
@@ -529,8 +514,8 @@ class Brain:
                 if not await rounds.store(self.store, [asst, done]):
                     return rounds.stopped(completion), pending  # ran, not recorded: no more tools
                 msgs = msgs + [
-                    ChatMessage(role=Role.ASSISTANT, content=asst_blocks),
-                    ChatMessage(role=Role.USER, content=results),
+                    ChatMessage(role=Role.ASSISTANT, content=[*asst_blocks]),
+                    ChatMessage(role=Role.USER, content=[*results]),
                 ]
                 if rounds.count >= self.s.tool_max_rounds:
                     log.warning("tool round limit reached", extra={"session_id": rounds.session.id})
@@ -736,6 +721,7 @@ class Brain:
         await save_owner_turn(self.documents, self.store, session, turn, req, spec)
 
         messages = self._window_for(session, spec)
+        messages = await with_pictures(self.documents, messages, session, spec)  # R11.1 D10
         rec = await self._recall(req.user_id, spec, text)
         self._sweep(req.user_id, rec, session.id)
         meta.memory_used = list(rec.used)

@@ -11,6 +11,7 @@ import asyncio
 from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from jarvis.llm.base import (
     ChatMessage,
@@ -41,6 +42,7 @@ class MockProvider:
     calls: list[RecordedCall] = field(default_factory=list)
     fail_next: int = 0
     latency_ms: int = 0
+    vision: ClassVar[bool] = False  # R11.1 D10: a test that needs a seeing brain sets it
 
     def script(self, *replies: str) -> None:
         self.scripted.extend(replies)

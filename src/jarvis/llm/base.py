@@ -7,6 +7,7 @@ Skills and the Brain talk to `LLMProvider` + `ModelRouter`, never to Anthropic/O
 
 from __future__ import annotations
 
+import base64
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import StrEnum
@@ -70,15 +71,51 @@ class TextBlock(BaseModel):
 
 ContentBlock = TextBlock | ToolCall | ToolResultBlock
 
+# R11.1 (docs/plans/r11-1-observations.md D10): a picture the owner attached, for a brain that can
+# see. It is a MESSAGE block only: `ContentBlock` (what a stored turn holds) does not include it,
+# so a picture is never written into a conversation. Whoever builds the window adds it for the
+# turn it came with (`jarvis.documents.pictures.with_pictures`) and only for a brain whose
+# `BrainSpec.sees_pictures` is true; every other brain gets `without_pictures(...)`.
+PICTURE_TYPES: tuple[str, ...] = ("image/jpeg", "image/png")
+PICTURE_MAX_BYTES = 4_000_000
+PICTURE_WITHHELD = "[a picture was attached; this brain was not shown it]"
+
+
+class ImageBlock(BaseModel):
+    type: Literal["image"] = "image"
+    media_type: Literal["image/jpeg", "image/png"]
+    data: bytes = Field(min_length=1, max_length=PICTURE_MAX_BYTES, repr=False)
+
+    def b64(self) -> str:
+        return base64.b64encode(self.data).decode("ascii")
+
+
+MessageBlock = TextBlock | ToolCall | ToolResultBlock | ImageBlock
+
 
 class ChatMessage(BaseModel):
     role: Role
-    content: str | list[ContentBlock]
+    content: str | list[MessageBlock]
 
     def text(self) -> str:
         if isinstance(self.content, str):
             return self.content
         return "\n".join(b.text for b in self.content if isinstance(b, TextBlock))
+
+
+def without_pictures(messages: list[ChatMessage]) -> list[ChatMessage]:
+    """The same messages with each picture replaced by one fixed line (new objects; a message
+    without a picture is passed through as it is)."""
+    out: list[ChatMessage] = []
+    for m in messages:
+        if isinstance(m.content, str) or not any(isinstance(b, ImageBlock) for b in m.content):
+            out.append(m)
+            continue
+        blocks: list[MessageBlock] = [
+            TextBlock(text=PICTURE_WITHHELD) if isinstance(b, ImageBlock) else b for b in m.content
+        ]
+        out.append(ChatMessage(role=m.role, content=blocks))
+    return out
 
 
 class Usage(BaseModel):

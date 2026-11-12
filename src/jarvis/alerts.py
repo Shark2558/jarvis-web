@@ -10,6 +10,7 @@ R3 (docs/plans/r3-home-camera.md D10, D12): the home kinds, and two keywords eve
 `silent` (deliver without a sound) and `photo` (one small JPEG for a burglar alert the owner opted
 in to; held in memory, never stored, logged or audited). A sink that can't do either ignores it.
 R11 (docs/plans/r11-free-helpers.md D5): thirteen helper kinds; `R11_ALERT_KINDS` lists them.
+R11.1 (docs/plans/r11-1-observations.md): two more; `R11_1_ALERT_KINDS` lists them.
 """
 
 from __future__ import annotations
@@ -65,6 +66,11 @@ AlertKind = Literal[
     "nudge_free_time",
     "nudge_focus",
     "weather_note",
+    # R11.1 (docs/plans/r11-1-observations.md D6, D14): "did this study session happen?" is asked
+    # every time, so it is an "important" daytime ring that is HELD at night (never dropped like a
+    # nudge); "new faces to name" from the home laptop's photo folder is info (feed only).
+    "series_checkin",
+    "faces_to_name",
 ]
 HOME_ALERT_KINDS: tuple[AlertKind, ...] = (
     "home_intruder",
@@ -135,10 +141,12 @@ R11_ALERT_KINDS: tuple[AlertKind, ...] = (
     "nudge_focus",
     "weather_note",
 )
+R11_1_ALERT_KINDS: tuple[AlertKind, ...] = ("series_checkin", "faces_to_name")
 
 
 __all__ = [
     "HOME_ALERT_KINDS",
+    "R11_1_ALERT_KINDS",
     "R11_ALERT_KINDS",
     "AlertKind",
     "AlertResult",

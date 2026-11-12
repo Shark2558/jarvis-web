@@ -434,6 +434,64 @@ class Settings(BaseSettings):
         default=10, ge=5, le=60, description="Minutes between SACHET feed checks (D13)"
     )
 
+    # --- R11.1 "Your observations, fixed" (docs/plans/r11-1-observations.md). No new paid
+    # service and no new secret; every model call these allow is metered like any reply. ---
+    work_output_tokens: int = Field(
+        default=8192,
+        ge=1024,
+        le=64_000,
+        description="Output cap for a turn that works with tools or attached files (D1); a "
+        "plain chat reply keeps max_output_tokens",
+    )
+    empty_reply_retries: int = Field(
+        default=1, ge=0, le=2, description="Retries when the model answers with no words (D2)"
+    )
+    calendar_batch_max: int = Field(
+        default=100, ge=1, le=100, description="Events one calendar_create_events card may hold"
+    )
+    series_enabled: bool = Field(
+        default=True, description="Follow a series of calendar sessions: check-ins, re-planning"
+    )
+    voice_understand: bool = Field(
+        default=True,
+        description="Spoken turns get a 'heard / understood as' correction step (D8): fixed "
+        "rules first, the fast tier only when unsure, never in No-AI mode",
+    )
+    voice_hint_words: int = Field(
+        default=40, ge=0, le=200, description="Per-turn recognition hints from file names and chat"
+    )
+    attach_max_files: int = Field(
+        default=10, ge=1, le=20, description="Files one message may carry (3 before R11.1)"
+    )
+    attach_folder_max_files: int = Field(
+        default=50, ge=1, le=200, description="Files read from one uploaded folder"
+    )
+    attach_zip_max_files: int = Field(
+        default=50, ge=1, le=200, description="Files read from one .zip (never nested archives)"
+    )
+    attach_total_mb: int = Field(
+        default=40, ge=10, le=200, description="All files of one message together, in MB"
+    )
+    attach_picture_max_kb: int = Field(
+        default=900,
+        ge=100,
+        le=900,
+        description="One attached picture after the browser shrinks it (one Firestore document)",
+    )
+    photos_max_picked: int = Field(
+        default=2000, ge=1, le=2000, description="Photos per Google Photos pick (Picker maximum)"
+    )
+    photos_import_batch: int = Field(
+        default=10, ge=1, le=50, description="Picked photos handled per background step"
+    )
+    picture_research_enabled: bool = Field(
+        default=True,
+        description="Research an attached picture: things, places, text, logos; never a person",
+    )
+    mail_summary_max_reads: int = Field(
+        default=30, ge=5, le=100, description="Unread messages the inbox summary reads at most"
+    )
+
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")
     user_timezone: str = "Asia/Kolkata"

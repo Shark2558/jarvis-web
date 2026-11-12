@@ -1,0 +1,20 @@
+# evals/r11_1/look.py
+"""R11.1 eval, Part D (`look`): see evals/r11_1/run.py for the cases this file must hold.
+I0 stub: Part D writes the cases and the negative control, then sets BUILT = True (only
+when the control really makes the cases fail)."""
+
+from __future__ import annotations
+
+from typing import Any
+
+PART = "look"
+BUILT = False
+
+
+async def cases() -> list[dict[str, Any]]:
+    print(f"{PART}: not built yet")
+    return [{"id": f"{PART}:not_built_yet", "passed": True, "failures": []}]
+
+
+async def control() -> dict[str, Any]:
+    return {"name": f"{PART}: no control yet", "suite_failed": False, "failed_cases": []}

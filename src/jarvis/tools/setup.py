@@ -20,7 +20,7 @@ exists."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from jarvis.config import Settings
@@ -212,6 +212,7 @@ def build_gateway(
     home: HomeParts | None = None,
     r4: R4Parts | None = None,
     r11: Mapping[str, HelperPart] | None = None,
+    r111: Sequence[Tool] = (),
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
@@ -240,6 +241,8 @@ def build_gateway(
         from jarvis.api.r11_wiring import register_r11_tools
 
         register_r11_tools(reg, r11)
+    for t in r111:  # R11.1: the four parts' tools, checked at wiring (api/r11_1_wiring.py)
+        reg.register(t)
     return Gateway(
         registry=reg,
         policy=Policy(),

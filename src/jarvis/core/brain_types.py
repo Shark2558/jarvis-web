@@ -13,7 +13,8 @@ from jarvis.tools.reply_cards import AnyCard
 
 def _owner_turn(text: str, req: ChatRequest, trace_id: str | None) -> Turn:
     """The owner's message, marked with how it arrived (a spoken one is never learned from)."""
-    return Turn(role=Role.USER, content=text, trace_id=trace_id, channel=req.channel)
+    heard = req.heard if req.channel == "voice" else None  # R11.1 D8: display only
+    return Turn(role=Role.USER, content=text, trace_id=trace_id, channel=req.channel, heard=heard)
 
 
 @dataclass(frozen=True)

@@ -137,6 +137,16 @@ APP_ASSETS: dict[str, str] = {
     "console-helpers-house.js": _JS,  # B: chores, upkeep, weather and alerts, breach notices
     "console-helpers-nudges.js": _JS,  # C: nudges, caps, snooze / stop, water, free time
     "console-helpers-kitchen.js": _JS,  # D: pantry, recipes, nutrition, spend, blocks
+    # R11.1 (docs/plans/r11-1-observations.md): one loader in the page; it brings the four parts
+    "console-r111.js": _JS,  # I0: loads the four part modules and their stylesheets
+    "console-r111-plan.js": _JS,  # A: the calendar batch list, study-plan check-in and re-plan
+    "console-r111-plan.css": "text/css",
+    "console-r111-files.js": _JS,  # B: heard / understood as, folder and zip attach, cost line
+    "console-r111-files.css": "text/css",
+    "console-r111-photos.js": _JS,  # C: a Photos import's progress, the face groups to name
+    "console-r111-photos.css": "text/css",
+    "console-r111-look.js": _JS,  # D: profile cards in People, research on a picture
+    "console-r111-look.css": "text/css",
 }
 
 # Self-hosted OFL fonts (licences beside them).

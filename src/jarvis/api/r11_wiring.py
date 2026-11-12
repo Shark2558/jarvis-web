@@ -41,6 +41,7 @@ from jarvis.api.helpers_nudges import router as nudges_router
 from jarvis.api.helpers_today import router as today_router
 from jarvis.api.identity import LEGACY_USER_ID, user_id_for_email
 from jarvis.api.r4_wiring import _notifier
+from jarvis.api.r11_1_wiring import fix_clock_jobs, fix_daily_jobs
 from jarvis.config import Settings
 from jarvis.helpers.brief import HelpersBrief
 from jarvis.helpers.clock import (
@@ -213,13 +214,13 @@ def _wire(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> None:
     owners = owners_of(s)
     st.helpers_sender, st.helpers_status = sender, status
     st.helpers_clock = clock_composite(
-        [j for p in parts.values() for j in p.clock_jobs],
+        [*(j for p in parts.values() for j in p.clock_jobs), *fix_clock_jobs(app)],  # + R11.1
         owners,
         budget_s=s.helpers_clock_budget_s,
         now=st.helpers_now,
         status=status,
     )
-    daily = [j for p in parts.values() for j in p.daily_jobs]
+    daily = [*(j for p in parts.values() for j in p.daily_jobs), *fix_daily_jobs(app)]
     sweep = SweepJob(store, tz=s.user_timezone, now=st.helpers_now)
     st.helpers_daily = daily_composite([*daily, sweep], owners, now=st.helpers_now)
     mode = getattr(st, "brain_mode", None)

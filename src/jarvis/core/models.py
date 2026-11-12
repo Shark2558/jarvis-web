@@ -22,6 +22,8 @@ from jarvis.tools.reply_cards import ReplyCard, WhatsAppCard
 from jarvis.undo.models import UndoRef as UndoRef  # re-exported: replies carry it (slice 11)
 from jarvis.web.sources import Source as Source  # re-exported: replies and turns carry it
 
+HEARD_LIMIT = 2_000  # R11.1 D8: the heard words of one spoken message
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -57,6 +59,10 @@ class Turn(BaseModel):
     # files sent with an owner message (slice 10 E): names and counts only. Their start travels
     # as a second, fenced text block; a turn with blocks never reaches a training brain.
     attachments: list[AttachmentRef] = Field(default_factory=list)
+    # R11.1 D8: what the microphone heard, when JARVIS understood a spoken message as something
+    # else (`content` is what it understood and acted on). Shown as "heard / understood as"; it is
+    # never sent to a model and never learned from. None: nothing was corrected.
+    heard: str | None = Field(default=None, max_length=HEARD_LIMIT)
 
 
 class Session(BaseModel):
@@ -111,6 +117,12 @@ class ChatRequest(BaseModel):
         default_factory=list,
         max_length=10,
         description="Ids from POST /v1/attachments sent with this message (at most 3; slice 10)",
+    )
+    heard: str | None = Field(
+        default=None,
+        max_length=HEARD_LIMIT,
+        description="R11.1 D8: the recogniser's own words, when `message` is the corrected "
+        "reading of a spoken message; kept with the turn for display only",
     )
 
 

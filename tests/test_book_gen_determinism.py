@@ -206,8 +206,8 @@ def test_the_real_repo_builds_and_the_show_is_about_six_thousand_characters() ->
     spoken = sum(len(b.text) for s in book.show.scenes for b in s.beats)
     assert 4_500 <= spoken <= 8_000, spoken
     assert len(built.book) <= 2 * 1024 * 1024 and built.release.skipped > 0
-    # The real repo's newest release plan is R11 (docs/plans/r11-free-helpers.md): pinned here,
+    # The real repo's newest release plan is R11.1 (docs/plans/r11-1-observations.md): pinned here,
     # not derived from plans.release_label, which the generator itself calls. The version comes
     # from this checkout (pinned once in test_about).
-    assert book.release.label == "R11"
+    assert book.release.label == "R11.1"
     assert book.release.version == f"v{jarvis.__version__}"

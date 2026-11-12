@@ -373,3 +373,14 @@ def test_the_eval_runner_passes_with_every_part_still_a_stub() -> None:
     assert "not built yet" in run.stdout
     for part in ("plan", "files", "photos", "look"):
         assert part in run.stdout
+
+
+def test_the_build_book_knows_the_layer_of_every_r11_1_package() -> None:
+    """A package missing from the layer map fails the book's `--check` (and so the deploy)."""
+    from jarvis.buildbook.gen.layers import LAYER_OF
+
+    assert LAYER_OF["understand"] == "L2"
+    assert LAYER_OF["facegroups"] == "L2"
+    assert LAYER_OF["series"] == "L5"
+    assert LAYER_OF["picture"] == "L5"
+    assert LAYER_OF["fixes"] == "X"

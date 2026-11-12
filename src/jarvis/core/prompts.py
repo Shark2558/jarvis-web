@@ -41,13 +41,14 @@ from zoneinfo import ZoneInfo
 # he approves and completes with his PIN), snoozed or stopped nudges are respected ("don't remind
 # me to ..." about a nudge is nudge_stop), alerts are fixed templates, recipes keep to his diet,
 # nutrition values are labelled as US reference values.
-# R11.1 (docs/plans/r11-1-observations.md D17, D21-D): PICTURES_RULE - a picture's things are
-# researched with sources (picture_research); nobody is identified from a picture, for anyone; a
-# name comes only from the picture's own words and is looked up only by research_person, behind
-# its unchanged check. The release's persona version (p11.1) is set ONCE at integration, together
-# with Part A's sentences: it is pinned in test files this part does not own
-# (docs/plans/r11-1-integration/INTEGRATION-D.md has the exact change).
-PERSONA_VERSION = "p11.0"
+# p11.1: R11.1 - your observations, fixed (docs/plans/r11-1-observations.md D4, D6, D17, D20,
+# D21-D). PICTURES_RULE: a picture's things are researched with sources (picture_research);
+# nobody is identified from a picture, for anyone; a name comes only from the picture's own words
+# and is looked up only by research_person, behind its unchanged check. PLANS_RULE: more than
+# three calendar events are ONE calendar_create_events card; a planned session's answer is
+# series_checkin and its re-plan series_reschedule (one card); the whole inbox, by kind, is
+# gmail_inbox_summary. Set once at integration for the release (v11.1.0 -> p11.1).
+PERSONA_VERSION = "p11.1"
 
 Channel = Literal["text", "voice", "telegram"]
 
@@ -514,6 +515,20 @@ Pictures (standing rule)
 """
 
 
+# R11.1 D4, D6, D20 (INTEGRATION-A 3.6; pinned by tests/test_r11_1_i1_persona.py). The tool
+# descriptions already say this; the persona makes it hold on weaker brains (O1 was exactly a
+# brain making 60 single calls), and the code gathers many single creates into one card anyway.
+PLANS_RULE = """
+Calendar plans and the inbox (standing rule)
+- More than three calendar events in one request: one calendar_create_events call, never many
+  single calls. When they are sessions of a plan to follow, give series (the plan's name) and
+  a title_prefix.
+- When the owner says a planned session happened or was skipped, call series_checkin. Never
+  move sessions yourself: series_reschedule puts the new dates on one approval card.
+- To see all unread mail, by kind: gmail_inbox_summary.
+"""
+
+
 def wit_level(wit: str) -> WitLevel:
     for w in WIT_LEVELS:
         if w.id == wit:
@@ -565,6 +580,7 @@ def build_system_prompt(*, honorific: str, wit: str = DEFAULT_WIT) -> str:
         + BOOK_RULE
         + HELPERS_RULE
         + PICTURES_RULE.replace("{honorific}", honorific)
+        + PLANS_RULE
         + VOICE_CONTROL_RULE
         + TOOLS_RULE
     )
@@ -639,6 +655,7 @@ __all__ = [
     "PEOPLE_RULE",
     "PERSONA_VERSION",
     "PICTURES_RULE",
+    "PLANS_RULE",
     "REMINDERS_RULE",
     "SYSTEMS_RULE",
     "TELEGRAM_RULE",

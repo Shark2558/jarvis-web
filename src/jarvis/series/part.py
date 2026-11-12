@@ -39,6 +39,7 @@ from jarvis.series.service import SeriesService
 from jarvis.series.store import SeriesStore
 from jarvis.series.tools import series_tools
 from jarvis.tools.base import Tool
+from jarvis.tools.gmail_digest import inbox_tools
 
 log = get_logger(__name__)
 
@@ -94,6 +95,7 @@ def build(ctx: FixContext) -> FixPart:
         book=svc,
     )
     tools: list[Tool] = batch_tools(api, limit=s.calendar_batch_max)
+    tools += inbox_tools(google, max_reads=s.mail_summary_max_reads)
     ensure = _phrases(ctx)
     services: dict[str, Any] = {SERVICE: svc, PHRASES: (route,), ENSURE: ensure}
     if svc is None:

@@ -2,6 +2,11 @@
 """Collect today's facts for the brief (Layer 6 → 7): fixed, read-only GETs through
 `GoogleConnector.request` plus a count of the owner's waiting approvals.
 
+R11.1 O12 (plan D20): the inbox is the WHOLE inbox (`tools.gmail_digest.read_inbox`): the unread
+count is the INBOX label's own, every category is read (people first on the brief; promotions
+and social counted only), codes and bank messages are withheld, and with `reads` the read is a
+governed background read that obeys the owner's mail row.
+
 No model is in the loop, so the tool gateway (which polices model-initiated calls) is not used;
 the service writes the audit entry. Everything other people wrote (titles, locations, names,
 subjects) is flattened to one capped line by `one_line`; mail snippets are returned separately
@@ -15,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import html
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
@@ -41,9 +45,16 @@ from jarvis.core.guardrails import ApprovalStore
 from jarvis.integrations.google import GoogleAPIError, GoogleConnector, GoogleNotConnected
 from jarvis.logging import get_logger
 from jarvis.tools.addresses import loose_address
+from jarvis.tools.background import BackgroundReads, NotRead
 from jarvis.tools.calendar_alerts import is_reminder, reminder_text
 from jarvis.tools.card import one_line
-from jarvis.tools.gmail import MESSAGES_URL
+from jarvis.tools.gmail_digest import (
+    GROUP_LABELS,
+    INBOX_QUERY,
+    SUMMARY_TOOL,
+    Inbox,
+    read_inbox,
+)
 from jarvis.tools.gmail_mime import headers_of
 from jarvis.tools.google_calendar import EVENTS_URL, TZ_URL, compute_free_slots
 from jarvis.tools.tasks_api import TaskList, TasksClient, TasksNotGranted, date_of
@@ -51,9 +62,12 @@ from jarvis.tools.tasks_api import TaskList, TasksClient, TasksNotGranted, date_
 log = get_logger(__name__)
 T = TypeVar("T")
 
-INBOX_QUERY = "is:unread in:inbox category:primary newer_than:1d"
 MAX_EVENTS = 50
-MAX_MAIL = 10
+MAX_MAIL = 10  # messages listed on the brief
+MAX_READS = 30  # unread messages read to count and group them (`mail_summary_max_reads`)
+LISTED_GROUPS = ("people", "bills", "updates")  # promotions and social: counted, never listed
+READ_JOB = "brief"  # the background read's name in the audit chain
+AS_BEFORE = ("people",)  # Primary mail: on the owner's own screen since slice 7, unfiltered
 TITLE_LIMIT = 120
 LOCATION_LIMIT = 80
 NAME_LIMIT = 80
@@ -64,8 +78,6 @@ TODO_TIMEOUT_S = 20.0  # all to-do reads together (each call already has its own
 TODO_LIST_LIMIT = 60
 FREE_MIN = timedelta(minutes=30)
 WORK_FROM, WORK_TO = time(9, 0), time(18, 0)
-META_HEADERS = ("From", "Subject", "Date")
-_MESSAGE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
 
 @dataclass(frozen=True)
@@ -252,6 +264,30 @@ def shape_message(m: dict[str, Any], tz: ZoneInfo, day: date) -> tuple[InboxItem
     return item, one_line(html.unescape(str(m.get("snippet") or "")), SNIPPET_LIMIT)
 
 
+def shape_inbox(box: Inbox, tz: ZoneInfo, day: date) -> tuple[InboxSection, tuple[str, ...]]:
+    """R11.1 D20: the brief's inbox from the whole-inbox read: Gmail's own unread count, and the
+    newest mail from people first, then bills and orders, then other updates (at most
+    `MAX_MAIL`). Primary mail is listed as it always was; in the categories the brief did not
+    show before, a message that looks like a code or a bank message is not listed and its
+    preview never reaches the AI. The per-group counts and the withheld count travel in
+    `groups` / `withheld` / `exact`: an `InboxSection` that has those fields keeps them."""
+    listed = [x for group in LISTED_GROUPS for x in box.shown(group, AS_BEFORE)][:MAX_MAIL]
+    shaped = [shape_message(dict(x.raw), tz, day) for x in listed]
+    counts = box.tally(AS_BEFORE)
+    section = InboxSection.model_validate(
+        {
+            "total": box.total,
+            "items": tuple(i for i, _ in shaped),
+            "groups": tuple(
+                {"key": k, "label": label, "unread": counts[k]} for k, label in GROUP_LABELS.items()
+            ),
+            "withheld": box.held(AS_BEFORE),
+            "exact": box.unread is not None,
+        }
+    )
+    return section, tuple(snippet for _, snippet in shaped)
+
+
 # ---- to-do (pure) ----------------------------------------------------------------------------
 
 
@@ -291,9 +327,24 @@ def _zone(name: str) -> ZoneInfo | None:
 
 
 class Collector:
-    def __init__(self, google: GoogleConnector | None, approvals: ApprovalStore | None) -> None:
+    """`reads` (R11.1 D20): the gateway's governed path for a background read
+    (`jarvis.tools.background`). With it, the inbox is read only when the owner's "Search and
+    read email" row allows it for `gmail_inbox_summary` ("Ask first" can't be asked at 07:00 and
+    "Never" is total), and each read or refusal leaves one kind-only audit line. Without it the
+    inbox is read as the brief always has."""
+
+    def __init__(
+        self,
+        google: GoogleConnector | None,
+        approvals: ApprovalStore | None,
+        *,
+        reads: BackgroundReads | None = None,
+        max_reads: int = MAX_READS,
+    ) -> None:
         self._google = google
         self._approvals = approvals
+        self._reads = reads
+        self._max_reads = max_reads
 
     async def time_zone(self, uid: str, fallback: str) -> ZoneInfo:
         """The primary calendar's zone when Google is linked, else `fallback` (else UTC)."""
@@ -378,25 +429,20 @@ class Collector:
     async def _inbox(
         self, uid: str, tz: ZoneInfo, day: date
     ) -> tuple[InboxSection, tuple[str, ...]]:
+        """R11.1 D20: the whole inbox (`gmail_digest.read_inbox`): every category, a fixed
+        number of reads, the exact count from the INBOX label."""
         assert self._google is not None
-        params = {"q": INBOX_QUERY, "maxResults": MAX_MAIL}
-        listing = await self._google.request(uid, "GET", MESSAGES_URL, params=params)
-        ids = [
-            str(m["id"])
-            for m in listing.get("messages") or []
-            if isinstance(m, dict) and _MESSAGE_ID.fullmatch(str(m.get("id") or ""))
-        ][:MAX_MAIL]
-        metas = await asyncio.gather(*(self._meta(uid, i) for i in ids), return_exceptions=True)
-        shaped = [shape_message(m, tz, day) for m in metas if isinstance(m, dict) and m]
-        total = max(int(listing.get("resultSizeEstimate") or 0), len(ids))
-        section = InboxSection(total=total, items=tuple(i for i, _ in shaped))
-        return section, tuple(s for _, s in shaped)
+        if self._reads is None:
+            return shape_inbox(await self._read(uid), tz, day)
+        if not await self._reads.allowed(uid, SUMMARY_TOOL, job=READ_JOB):
+            raise NotRead("the mail row does not allow a background read")
+        async with self._reads.reading(SUMMARY_TOOL, job=READ_JOB):
+            box = await self._read(uid)
+        return shape_inbox(box, tz, day)
 
-    async def _meta(self, uid: str, mid: str) -> dict[str, Any]:
+    async def _read(self, uid: str) -> Inbox:
         assert self._google is not None
-        params = {"format": "metadata", "metadataHeaders": list(META_HEADERS)}
-        data = await self._google.request(uid, "GET", f"{MESSAGES_URL}/{mid}", params=params)
-        return dict(data) if isinstance(data, dict) else {}
+        return await read_inbox(self._google, uid, max_reads=self._max_reads)
 
     async def _jarvis(self, uid: str) -> tuple[SectionState, int]:
         if self._approvals is None:
@@ -412,10 +458,13 @@ class Collector:
 
 __all__ = [
     "INBOX_QUERY",
+    "MAX_MAIL",
+    "MAX_READS",
     "MAX_TODO",
     "Collected",
     "Collector",
     "shape_calendar",
+    "shape_inbox",
     "shape_message",
     "shape_todo",
 ]

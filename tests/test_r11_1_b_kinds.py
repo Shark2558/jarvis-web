@@ -10,7 +10,17 @@ import zipfile
 from typing import Any
 
 import pytest
-from r11_1_fakes_b import XLS, make_pptx, make_xlsx, make_zip, many_sheets_xlsx, study_plan_xlsx
+from r11_1_fakes_b import (
+    XLS,
+    make_png,
+    make_pptx,
+    make_xlsx,
+    make_zip,
+    many_sheets_xlsx,
+    renamed_sheet_xlsx,
+    sheet_xml,
+    study_plan_xlsx,
+)
 
 from jarvis.documents.extract import Limits, extract, kind_for, sniff
 from jarvis.documents.isolation import extract_isolated
@@ -199,6 +209,59 @@ def test_an_office_file_with_a_dtd_is_refused_before_any_parser_sees_it() -> Non
             dst.writestr(info.filename, body)
     e = rejected(extract, buf.getvalue(), "xlsx")
     assert e.code == "too_complex" and "unusual" in str(e)
+
+
+XXE = b'<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/hostname">]>'
+LAUGHS = b'<!DOCTYPE l [<!ENTITY a "aaaa"><!ENTITY b "&a;&a;&a;&a;">]>'
+
+
+@pytest.mark.parametrize("part", ["xl/worksheets/sheet1.txt", "xl/worksheets/sheet1.dat", "x/s"])
+@pytest.mark.parametrize("doctype", [XXE, LAUGHS], ids=["external", "laughs"])
+def test_a_dtd_in_a_part_with_any_name_is_refused(part: str, doctype: bytes) -> None:
+    """Security review M1 (its proof of concept): openpyxl follows the relationships to a part
+    of any name, so every member is scanned by its content, not its extension."""
+    book = renamed_sheet_xlsx(part, sheet_xml("&e;", doctype=doctype))
+    e = rejected(extract, book, "xlsx")
+    assert e.code == "too_complex" and "unusual" in str(e)
+
+
+async def test_the_child_refuses_the_renamed_dtd_part_too() -> None:
+    book = renamed_sheet_xlsx("xl/worksheets/sheet1.txt", sheet_xml("&e;", doctype=XXE))
+    with pytest.raises(DocumentRejected) as e:
+        await extract_isolated(book, "xlsx", Limits())
+    assert e.value.code == "too_complex"
+
+
+def test_a_part_in_another_encoding_is_refused_whatever_its_name() -> None:
+    utf16 = sheet_xml("plain").decode().replace('encoding="UTF-8"', 'encoding="UTF-16"')
+    for body in (utf16.encode("utf-16"), utf16.encode("utf-16-le")):
+        e = rejected(extract, renamed_sheet_xlsx("xl/worksheets/sheet1.txt", body), "xlsx")
+        assert e.code == "too_complex"
+
+
+def test_a_plain_renamed_part_and_a_picture_member_are_still_read() -> None:
+    png = make_png(16, 16)  # binary, with zero bytes: never mistaken for odd XML
+    book = renamed_sheet_xlsx(
+        "xl/worksheets/sheet1.txt", sheet_xml("plain words"), {"xl/media/image1.png": png}
+    )
+    assert "plain words" in extract(book, "xlsx").text
+
+
+def test_the_xml_cap_counts_a_part_by_its_content_not_its_name() -> None:
+    big = sheet_xml("w " * 3_000)
+    book = renamed_sheet_xlsx("xl/worksheets/sheet1.txt", big)
+    with zipfile.ZipFile(io.BytesIO(book)) as zf:
+        named = sum(i.file_size for i in zf.infolist() if i.filename.endswith((".xml", ".rels")))
+    cap = named + len(big) // 2  # over what the names say, under what the content is
+    e = rejected(extract, book, "xlsx", Limits(zip_max_xml=cap))
+    assert e.code == "too_complex"
+    assert "w w" in extract(book, "xlsx", Limits(zip_max_xml=named + len(big))).text
+
+
+def test_a_pptx_slide_with_any_name_is_scanned_too() -> None:
+    dtd = b'<?xml version="1.0"?>' + LAUGHS + b"<p:sld/>"
+    e = rejected(extract, make_pptx(DECK, extra={"ppt/media/notes.bin": dtd}), "pptx")
+    assert e.code == "too_complex"
 
 
 def test_an_old_xls_is_read_with_its_sheets() -> None:

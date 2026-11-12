@@ -74,6 +74,9 @@ _JPEG = b"\xff\xd8\xff"
 _ZIPPED: frozenset[str] = frozenset({"docx", "xlsx", "pptx", "zip", "folder"})
 _XML_PARTS = (".xml", ".rels", ".vml")
 _DTD = (b"<!DOCTYPE", b"<!ENTITY")
+_SCAN_CHUNK = 1024 * 1024  # an Office member is scanned in pieces this big (never whole)
+_HEAD = 200  # the first bytes that say how a part is written
+_WIDE = (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE, codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)
 _BINARY: tuple[bytes, ...] = (
     b"%PDF-",
     _ZIP,
@@ -378,32 +381,65 @@ def _zip_guard(
 
 
 def office_guard(data: bytes, limits: Limits, *, kind: str, folder: str) -> list[zipfile.ZipInfo]:
-    """`_zip_guard` plus (R11.1): no XML part may carry a document type definition or be in
-    anything but UTF-8. Office never writes either; an entity bomb needs both. Every XML part is
-    inflated once here (≤ `zip_max_xml` in all), before a parser sees any of them."""
+    """`_zip_guard` plus (R11.1): no part may carry a document type definition, and no part
+    written as XML may be in anything but UTF-8. Office never writes either; an entity bomb
+    needs one. EVERY member is scanned, by its content and not its name (security review M1: a
+    reader follows the relationships to a part of any name), streamed in pieces, inside the
+    zip caps already checked; the parts that are XML by their content count toward
+    `zip_max_xml` too. All before a parser sees any part."""
     infos = _zip_guard(data, limits, kind=kind, folder=folder)
+    xml = 0
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             for info in infos:
-                if info.filename.lower().endswith(_XML_PARTS) and _unsafe_xml(zf.read(info)):
+                unsafe, written_as_xml = _scan_member(zf, info)
+                if unsafe:
                     raise DocumentRejected("too_complex", UNSAFE_XML)
+                xml += info.file_size if written_as_xml else 0
     except DocumentRejected:
         raise
     except MemoryError:
         raise too_complex() from None
     except Exception as exc:  # noqa: BLE001 — a bad CRC, an unknown compression method
         raise _unreadable() from exc
+    if xml > limits.zip_max_xml:
+        raise _zip_too_big(_OFFICE_LABEL[kind])
     return infos
 
 
-def _unsafe_xml(part: bytes) -> bool:
-    head = part[:200]
-    if b"\x00" in head or head.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
-        return True  # UTF-16 / UTF-32: a DTD would hide from the byte search below
-    declared = _XML_ENCODING.search(head)
-    if declared is not None and declared.group(1).lower() not in (b"utf-8", b"utf8"):
+def _looks_xml(head: bytes) -> bool:
+    """Is this part written as XML, whatever its name: "<" first (after a UTF-8 BOM and
+    blanks), a UTF-16 / UTF-32 byte-order mark, or "<" with zero bytes beside it."""
+    if head.startswith(_WIDE) or head[:2] in (b"<\x00", b"\x00<"):
         return True
-    return any(mark in part for mark in _DTD)
+    return head.removeprefix(codecs.BOM_UTF8).lstrip().startswith(b"<")
+
+
+def _scan_member(zf: zipfile.ZipFile, info: zipfile.ZipInfo) -> tuple[bool, bool]:
+    """(unsafe, written as XML) for one member: read in pieces (each at most `_SCAN_CHUNK`,
+    never past its declared size), searched for a DTD across the joins."""
+    overlap = max(len(mark) for mark in _DTD) - 1
+    with zf.open(info) as part:
+        head = part.read(_HEAD)
+        as_xml = _looks_xml(head) or info.filename.lower().endswith(_XML_PARTS)
+        if as_xml and _wide_or_foreign(head):
+            return True, as_xml
+        tail, piece = b"", head
+        while piece:
+            window = tail + piece
+            if any(mark in window for mark in _DTD):
+                return True, as_xml
+            tail, piece = window[-overlap:], part.read(_SCAN_CHUNK)
+    return False, as_xml
+
+
+def _wide_or_foreign(head: bytes) -> bool:
+    """UTF-16 / UTF-32 (a DTD would hide from a byte search), or a declared encoding other
+    than UTF-8."""
+    if b"\x00" in head or head.startswith(_WIDE):
+        return True
+    declared = _XML_ENCODING.search(head)
+    return declared is not None and declared.group(1).lower() not in (b"utf-8", b"utf8")
 
 
 class _OutOfTime(Exception):

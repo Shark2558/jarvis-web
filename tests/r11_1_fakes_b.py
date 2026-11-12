@@ -49,6 +49,39 @@ def many_sheets_xlsx(count: int) -> bytes:
     return make_xlsx({f"S{i}": [[f"cell {i}"]] for i in range(1, count + 1)})
 
 
+SHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+
+
+def sheet_xml(text: str, *, doctype: bytes = b"") -> bytes:
+    """One worksheet part with one inline-string cell (`doctype`: put before the root)."""
+    root = (
+        f'<worksheet xmlns="{SHEET_NS}"><sheetData><row r="1"><c r="A1" t="inlineStr">'
+        f"<is><t>{text}</t></is></c></row></sheetData></worksheet>"
+    )
+    return b'<?xml version="1.0" encoding="UTF-8"?>' + doctype + root.encode()
+
+
+def renamed_sheet_xlsx(part: str, body: bytes, extra: dict[str, bytes] | None = None) -> bytes:
+    """A one-sheet workbook whose sheet part is stored as `part` (any name: openpyxl follows the
+    workbook's relationships), holding `body` (the security review's M1 proof of concept)."""
+    made = make_xlsx({"Plan": [["hello"]]})
+    leaf = part.rsplit("/", 1)[-1].encode()
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(made)) as src, zipfile.ZipFile(out, "w") as dst:
+        for info in src.infolist():
+            name, data = info.filename, src.read(info)
+            if name == "xl/worksheets/sheet1.xml":
+                name, data = part, body
+            elif name == "xl/_rels/workbook.xml.rels":
+                data = data.replace(b"worksheets/sheet1.xml", b"worksheets/" + leaf)
+            elif name == "[Content_Types].xml":
+                data = data.replace(b"/xl/worksheets/sheet1.xml", b"/" + part.encode())
+            dst.writestr(name, data, zipfile.ZIP_DEFLATED)
+        for name, data in (extra or {}).items():
+            dst.writestr(name, data)
+    return out.getvalue()
+
+
 # ---- PowerPoint (.pptx) -------------------------------------------------------------------------
 
 _A = "http://schemas.openxmlformats.org/drawingml/2006/main"

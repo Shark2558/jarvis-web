@@ -16,7 +16,7 @@ from billing_fakes import billing as make_billing
 from httpx import ASGITransport, AsyncClient
 from r11_1_fakes_b import MISHEARINGS
 
-from jarvis.api import create_app
+from jarvis.api import create_app, fix_files
 from jarvis.billing import Billing
 from jarvis.billing.budget import BudgetPatch
 from jarvis.config import Settings
@@ -30,9 +30,9 @@ from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.offline.mode import BrainMode
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.external import FENCE_PREFIX
-from jarvis.understand import service as service_mod
 from jarvis.understand.part import build
 from jarvis.understand.service import UnderstandService
+from jarvis.understand.words import guarded_words, protected_words
 
 UID = "u_owner"
 CASES: dict[str, list[dict[str, Any]]] = json.loads(MISHEARINGS.read_text(encoding="utf-8"))
@@ -233,6 +233,17 @@ async def test_a_model_answer_that_touches_a_protected_word_is_thrown_away(
     assert (out.understood, out.changed, out.sure) == (heard, False, False) and out.question
 
 
+async def test_a_name_among_the_hints_is_still_a_name_nothing_may_rewrite(rig: Rig) -> None:
+    """A file called "Riya notes.txt" (or the owner's own word list) makes "Riya" a hint; that
+    must never let the model turn the heard "Priya" into it."""
+    heard = "show Priya the qzx file"
+    rig.paid.script(answer("show Riya the CSV file"))
+    out = await rig.svc.understand(UID, heard, files=["Riya notes.txt", "Priya plan.csv"])
+    assert (out.understood, out.changed, out.sure) == (heard, False, False) and out.question
+    assert protected_words("tell Priya now", ("Priya", "Riya")) == ["Priya"]
+    assert guarded_words("the plan Priya made", ("Priya",)) == ["Priya"]
+
+
 async def test_a_careful_model_answer_is_taken(rig: Rig) -> None:
     heard = "book the qzx file for 12 Nov at 7:30 pm with Meera"
     rig.paid.script(answer("book the CSV file for 12 Nov at 7:30 pm with Meera"))
@@ -349,14 +360,14 @@ async def test_the_understand_route_refuses_a_malformed_body(
 async def test_the_understand_route_is_rate_limited_per_owner(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(service_mod, "UNDERSTAND_PER_MINUTE", 2)
-    app = client.app  # type: ignore[attr-defined]
-    app.state.r111_parts["files"].services["understand"].reset_limits()
+    monkeypatch.setattr(fix_files, "UNDERSTAND_PER_MINUTE", 2)
     codes = [
         (await client.post("/v1/input/understand", json={"heard": "hello"})).status_code
         for _ in range(4)
     ]
     assert codes == [200, 200, 429, 429]
+    limited = await client.post("/v1/input/understand", json={"heard": "hello"})
+    assert limited.json()["error"] == "rate_limited" and int(limited.headers["retry-after"]) >= 1
 
 
 async def test_the_heard_words_are_kept_for_display_and_never_reach_a_model(

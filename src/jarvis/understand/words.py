@@ -145,19 +145,19 @@ def _by_itself(word: Word) -> Level:
     return Level.NONE
 
 
-def _may_be_name(word: Word, known: frozenset[str]) -> bool:
+def _may_be_name(word: Word) -> bool:
     return (
         _capitalised(word.core)
         and word.key not in FUNCTION_WORDS
         and word.key not in KNOWN_CAPITALS
-        and word.key not in known
     )
 
 
 def levels(words: list[Word], hints: tuple[str, ...] = ()) -> list[Level]:
-    """How protected each word is (see the module docstring). `hints` are words known not to be
-    people (file names, the conversation's own nouns)."""
-    known = frozenset(part.casefold() for hint in hints for part in hint.split())
+    """How protected each word is (see the module docstring). `hints` change nothing here on
+    purpose: a name that is also a hint (a file called "Riya notes", a name in the owner's own
+    word list) is still a name nothing may rewrite."""
+    del hints
     out = [_by_itself(w) for w in words]
     for i, word in enumerate(words):
         if out[i] is Level.HARD:
@@ -166,16 +166,16 @@ def levels(words: list[Word], hints: tuple[str, ...] = ()) -> list[Level]:
         plain = word.key in FUNCTION_WORDS or word.key in PLAIN_NOUNS
         if prev in STRONG_CUES and not plain and not words[i - 1].ends_sentence:
             out[i] = Level.HARD
-        elif prev in WEAK_CUES and _may_be_name(word, known):
+        elif prev in WEAK_CUES and _may_be_name(word):
             out[i] = Level.HARD
-        elif _may_be_name(word, known) and not _starts_sentence(words, i):
+        elif _may_be_name(word) and not _starts_sentence(words, i):
             out[i] = Level.SOFT
     for i, word in enumerate(words):  # an initial beside a name: "D Raja", "Meera D"
         if not _initial(word.core):
             continue
         after = words[i + 1] if i + 1 < len(words) else None
         named_before = i > 0 and out[i - 1] is Level.HARD and _capitalised(words[i - 1].core)
-        if after is not None and _may_be_name(after, known):
+        if after is not None and _may_be_name(after):
             out[i] = out[i + 1] = Level.HARD
         elif named_before and not words[i - 1].ends_sentence:
             out[i] = Level.HARD

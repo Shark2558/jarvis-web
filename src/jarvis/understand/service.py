@@ -29,7 +29,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from jarvis.api.ratelimit import RateLimiter
 from jarvis.documents.note import clean_name
 from jarvis.fixes.ports import FixContext
 from jarvis.llm.base import Role
@@ -46,7 +45,6 @@ HEARD_LIMIT = 2_000
 MAX_ALTERNATIVES = 3
 MAX_FILES = 20
 LOW_CONFIDENCE = 0.6  # the recogniser's own doubt, when it says
-UNDERSTAND_PER_MINUTE = 60
 QUOTE_CHARS = 160
 
 
@@ -74,17 +72,10 @@ class UnderstandService:
     def __init__(self, ctx: FixContext, *, model: FastCheck | None = None) -> None:
         self._ctx = ctx
         self._model = model or FastCheck(ctx)
-        self._limiter = RateLimiter(UNDERSTAND_PER_MINUTE)
 
     @property
     def enabled(self) -> bool:
         return bool(self._ctx.s.voice_understand)
-
-    def reset_limits(self) -> None:
-        self._limiter = RateLimiter(UNDERSTAND_PER_MINUTE)
-
-    def allow(self, uid: str) -> tuple[bool, float]:
-        return self._limiter.allow(uid)
 
     # ---- hints (D9) --------------------------------------------------------------------------
 
@@ -206,7 +197,6 @@ class UnderstandService:
 __all__ = [
     "HEARD_LIMIT",
     "LOW_CONFIDENCE",
-    "UNDERSTAND_PER_MINUTE",
     "TurnHints",
     "Understood",
     "UnderstandService",

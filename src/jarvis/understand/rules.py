@@ -10,10 +10,10 @@ processing). Free: plain code, no model, no network.
      and the words around them that make it safe (`when`). It never applies to a protected word
      (`words.levels`): then the sentence is left as it was heard and the corrected reading is
      only offered (`Outcome.candidate`), for the one question (D21-B).
-  2. near-matches against the hints (file names waiting on the composer or attached in this
-     conversation, the conversation's own nouns, the owner's "Words to recognise"): a word run
-     is replaced only when exactly one hint fits and fits closely (`SURE`); a looser or a double
-     fit is "unsure" (`Outcome.near`).
+  2. near-matches against the hints (`near.near_matches`: file names waiting on the composer or
+     attached in this conversation, the conversation's own nouns, the owner's "Words to
+     recognise"): a word run is replaced only when exactly one hint fits and fits closely; a
+     looser or a double fit is "unsure" (`Outcome.near`).
   3. a word that is no word where the name of a thing belongs ("open the qzx file") is "unsure".
 
 The result is sure, or it says why not; `jarvis.understand.service` then asks the fast tier
@@ -25,8 +25,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 
+from jarvis.understand.near import near_matches
 from jarvis.understand.words import (
     FUNCTION_WORDS,
     STRONG_CUES,
@@ -37,11 +37,6 @@ from jarvis.understand.words import (
     levels,
     split_words,
 )
-
-SURE = 0.90  # a near-match this close, and the only one, is taken
-NEAR = 0.80  # this close is worth asking about
-MIN_FUZZY = 5  # letters a lone word needs before a near-match is tried
-MAX_RUN = 4
 
 DETERMINERS: frozenset[str] = frozenset(
     "the my a an this that these those your our his her their d".split()
@@ -282,74 +277,6 @@ def _table(
     return sure, offered, wrote, stopped
 
 
-def _squash(parts: list[str]) -> str:
-    return "".join(ch for p in parts for ch in p.casefold() if ch.isalnum())
-
-
-def _hint_runs(hints: tuple[str, ...]) -> dict[int, list[list[str]]]:
-    """Hints as word lists by length; the long words of a many-word hint also stand alone."""
-    runs: dict[int, list[list[str]]] = {}
-    seen: set[tuple[str, ...]] = set()
-
-    def keep(parts: list[str]) -> None:
-        key = tuple(p.casefold() for p in parts)
-        if key and key not in seen and not any(ch.isdigit() for p in parts for ch in p):
-            seen.add(key)
-            runs.setdefault(len(parts), []).append(parts)
-
-    for hint in hints:
-        parts = hint.split()
-        if 1 <= len(parts) <= MAX_RUN:
-            keep(parts)
-        for part in parts if len(parts) > 1 else ():
-            if len(part) >= MIN_FUZZY and part.isalpha() and part.casefold() not in FUNCTION_WORDS:
-                keep([part])
-    return runs
-
-
-def _as_heard(hint_word: str, heard: Word) -> str:
-    """A hint's word in the heard word's case, unless the hint is an acronym or a mixed name."""
-    if hint_word.isupper() or any(ch.isupper() for ch in hint_word[1:]):
-        return hint_word
-    return hint_word.lower() if heard.core.islower() else hint_word
-
-
-def _fuzzy(
-    words: list[Word], free: list[bool], hints: tuple[str, ...]
-) -> tuple[list[Word], set[str]]:
-    """Near-matches against the hints: the words with sure ones replaced, and the hints that
-    only nearly fit (unsure)."""
-    runs = _hint_runs(hints)
-    out = list(words)
-    near: set[str] = set()
-    taken = [not ok for ok in free]
-    for n in sorted(runs, reverse=True):
-        for i in range(len(out) - n + 1):
-            span = out[i : i + n]
-            if any(taken[i : i + n]) or any(w.ends_sentence for w in span[:-1]):
-                continue
-            if n == 1 and (len(span[0].core) < MIN_FUZZY or span[0].key in FUNCTION_WORDS):
-                continue
-            heard = _squash([w.core for w in span])
-            if any(_squash(parts) == heard for parts in runs[n]):
-                taken[i : i + n] = [True] * n  # already a hint, word for word
-                continue
-            fits = [
-                (SequenceMatcher(None, heard, _squash(parts)).ratio(), parts)
-                for parts in runs[n]
-                if _squash(parts)[:1] == heard[:1]
-            ]
-            fits = [f for f in fits if f[0] >= NEAR]
-            if len(fits) == 1 and fits[0][0] >= SURE:
-                parts = fits[0][1]
-                for k, part in enumerate(parts):
-                    out[i + k] = span[k].with_core(_as_heard(part, span[k]))
-                taken[i : i + n] = [True] * n
-            elif fits:
-                near.update(" ".join(parts) for _, parts in fits)
-    return out, near
-
-
 def _unknown(words: list[Word], free: list[bool], hints: frozenset[str]) -> str | None:
     """A lowercase word with no vowel (or a stray letter) where a thing's name belongs."""
     for i, word in enumerate(words):
@@ -393,7 +320,7 @@ def apply(heard: str, hints: tuple[str, ...] = ()) -> Outcome:
         )
     after = levels(sure, hints)
     free = [lv is Level.NONE and not w for lv, w in zip(after, wrote, strict=True)]
-    fixed, near = _fuzzy(sure, free, hints)
+    fixed, near = near_matches(sure, free, hints)
     still_free = [f and a.core == b.core for f, a, b in zip(free, fixed, sure, strict=True)]
     unknown = _unknown(fixed, still_free, hint_words)
     text = join_words(_capitals(fixed, words))
@@ -406,4 +333,4 @@ def apply(heard: str, hints: tuple[str, ...] = ()) -> Outcome:
     )
 
 
-__all__ = ["NEAR", "RULES", "SURE", "Outcome", "Rule", "apply"]
+__all__ = ["RULES", "Outcome", "Rule", "apply"]

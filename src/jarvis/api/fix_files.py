@@ -35,6 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
+from jarvis.api.ratelimit import RateLimiter
 from jarvis.documents.limits import (
     ACCEPT,
     MAX_FILE_BYTES,
@@ -49,6 +50,7 @@ PART: PartName = "files"
 PREFIX = ROUTE_PREFIX[PART]
 NO_STORE = {"Cache-Control": "no-store"}
 NAME_CHARS = 300
+UNDERSTAND_PER_MINUTE = 60  # per owner, on top of the /v1 per-client limit
 router = APIRouter(prefix=PREFIX, dependencies=[Depends(require_auth)])
 
 Heard = Annotated[str, Field(max_length=HEARD_LIMIT)]
@@ -97,6 +99,16 @@ def _service(request: Request, name: str) -> Any:
     return part.services.get(name) if part is not None else None
 
 
+def _allow(request: Request, uid: str) -> tuple[bool, float]:
+    """The per-owner limit of the understand route (one limiter per app, made on first use)."""
+    state = request.app.state
+    limiter: RateLimiter | None = getattr(state, "input_understand_limit", None)
+    if limiter is None or limiter.capacity != float(UNDERSTAND_PER_MINUTE):
+        limiter = RateLimiter(UNDERSTAND_PER_MINUTE)
+        state.input_understand_limit = limiter
+    return limiter.allow(uid)
+
+
 def _limits(request: Request) -> dict[str, Any]:
     p = policy_from(request.app.state.settings)
     return {
@@ -133,7 +145,7 @@ async def understand(
     svc: UnderstandService | None = _service(request, "understand")
     if svc is None:
         return _off()
-    allowed, wait = svc.allow(uid)
+    allowed, wait = _allow(request, uid)
     if not allowed:
         return _json(
             {"error": "rate_limited", "detail": "Too many requests; wait a moment."},

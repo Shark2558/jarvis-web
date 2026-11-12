@@ -20,7 +20,8 @@ it (display only: `Turn.heard` is never in a model's window and never learned fr
 `voice_understand` off the step answers "as heard" (`via: off`).
 
 Hints (D9) come from here too, for the cloud recogniser and the browser's: the names of the
-owner's files waiting to be sent and attached in this conversation, and his own turns' nouns.
+owner's files waiting to be sent and attached in this conversation (never with Documents on
+"Never" in Permissions), and his own turns' nouns.
 Logs carry class names and counts only: never a heard word, a file name or a question.
 """
 
@@ -83,12 +84,15 @@ class UnderstandService:
     async def _file_names(
         self, uid: str, given: Sequence[str], session_id: str | None
     ) -> list[str]:
-        names = [clean_name(n) for n in list(given)[:MAX_FILES] if isinstance(n, str)]
+        """The owner's file names as hints: those on the composer, waiting and attached here.
+        None at all when Documents is on "Never" in Permissions, when that cannot be read, or
+        when documents are not set up (a name may itself be private: security review L4)."""
         docs = self._ctx.state("documents")
-        if docs is None:
-            return [n for n in names if n]
+        if docs is None or not await docs.files_allowed(uid):
+            return []
+        names = [clean_name(n) for n in list(given)[:MAX_FILES] if isinstance(n, str)]
         try:
-            waiting = [a for a in await docs.store.waiting() if a.owner == uid]
+            waiting = await docs.store.waiting_of(uid)
             here = await docs.store.in_session(session_id) if session_id else []
             mine = [*waiting, *(a for a in here if a.owner == uid)]
             names += [a.name for a in sorted(mine, key=lambda a: a.created_at, reverse=True)]

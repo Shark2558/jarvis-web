@@ -148,7 +148,8 @@ class AttachmentStore:
                 a = _parse(aid, raw)
                 if a is None or a.owner != owner or not a.waiting:
                     raise NotAvailable(aid)
-                bound.append(a.model_copy(update={"session": session_id, "turn": turn_id}))
+                sent = {"session": session_id, "turn": turn_id, "waiting_owner": ""}
+                bound.append(a.model_copy(update=sent))
             for a in bound:
                 tx.set(self._head(a.id), a.model_dump())
             return bound
@@ -166,10 +167,8 @@ class AttachmentStore:
             for aid, raw in heads:
                 a = _parse(aid, raw)
                 if a is not None and a.owner == owner and a.turn == turn_id:
-                    tx.set(
-                        self._head(aid),
-                        a.model_copy(update={"session": "", "turn": ""}).model_dump(),
-                    )
+                    back = {"session": "", "turn": "", "waiting_owner": owner}
+                    tx.set(self._head(aid), a.model_copy(update=back).model_dump())
 
         await self._d.transaction(run)
 
@@ -192,7 +191,13 @@ class AttachmentStore:
         return await self._where("session", session_id)
 
     async def waiting(self) -> list[Attachment]:
+        """Every owner's waiting uploads (the sweep)."""
         return await self._where("session", "")
+
+    async def waiting_of(self, owner: str) -> list[Attachment]:
+        """ONE owner's waiting uploads, by query (never every owner's rows)."""
+        found = await self._where("waiting_owner", owner)
+        return [a for a in found if a.owner == owner and a.waiting]
 
 
 __all__ = ["AttachmentStore", "NotAvailable"]

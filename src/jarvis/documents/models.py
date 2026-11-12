@@ -75,6 +75,9 @@ class Attachment(BaseModel):
     owner: str
     session: str = ""  # "" while waiting to be sent
     turn: str = ""  # the owner turn it was sent with
+    # the owner while waiting, "" once sent: one equality query finds ONE owner's waiting files
+    # (R11.1 security review L3; headers stored before R11.1 lack it and are swept within a day)
+    waiting_owner: str = ""
     name: str
     kind: str
     size: int

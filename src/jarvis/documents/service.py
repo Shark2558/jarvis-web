@@ -166,6 +166,11 @@ class DocumentService:
             log.warning("owner permissions unreadable", extra={"reason": type(exc).__name__})
             return UNCHECKED
 
+    async def files_allowed(self, owner: str) -> bool:
+        """May the owner's files be used at all (Documents not on "Never")? False when the
+        setting cannot be read (fails closed): e.g. no file name becomes a speech hint."""
+        return not await self._off_problem(owner)
+
     async def ensure_on(self, owner: str) -> None:
         """Upload: refused (403) when the owner switched Documents off; 503 when unreadable."""
         problem = await self._off_problem(owner)
@@ -204,6 +209,7 @@ class DocumentService:
         return Attachment(
             id=new_doc_id(),
             owner=owner,
+            waiting_owner=owner,
             name=name,
             kind=kind,
             size=size,

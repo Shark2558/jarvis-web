@@ -20,9 +20,11 @@ from jarvis.api import create_app, fix_files
 from jarvis.billing import Billing
 from jarvis.billing.budget import BudgetPatch
 from jarvis.config import Settings
+from jarvis.core.models import Turn
 from jarvis.documents.service import DocumentService
 from jarvis.documents.store import AttachmentStore
 from jarvis.fixes.ports import FixContext
+from jarvis.llm.base import Role
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelTier
@@ -30,6 +32,7 @@ from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.offline.mode import BrainMode
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.external import FENCE_PREFIX
+from jarvis.tools.policy import Effect, PolicyRule
 from jarvis.understand.part import build
 from jarvis.understand.service import UnderstandService
 from jarvis.understand.words import guarded_words, protected_words
@@ -412,6 +415,90 @@ async def test_the_understand_route_is_rate_limited_per_owner(
     assert codes == [200, 200, 429, 429]
     limited = await client.post("/v1/input/understand", json={"heard": "hello"})
     assert limited.json()["error"] == "rate_limited" and int(limited.headers["retry-after"]) >= 1
+
+
+@pytest.mark.parametrize(
+    ("path", "constant", "how"),
+    [
+        ("/v1/input/hints", "HINTS_PER_MINUTE", "get"),
+        ("/v1/input/estimate", "ESTIMATE_PER_MINUTE", "post"),
+    ],
+)
+async def test_the_hints_and_estimate_routes_are_rate_limited_per_owner_too(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, path: str, constant: str, how: str
+) -> None:
+    """Security review L3: the same per-owner limit style as /understand."""
+    monkeypatch.setattr(fix_files, constant, 2)
+
+    async def call() -> int:
+        if how == "get":
+            return (await client.get(path)).status_code
+        return (await client.post(path, json={"attachments": []})).status_code
+
+    codes = [await call() for _ in range(4)]
+    assert codes == [200, 200, 429, 429]
+
+
+# ---- what the hints read, and what goes to Google (security review L3, L4) -----------------------
+
+
+class Spying(MemoryDocs):
+    def __init__(self) -> None:
+        super().__init__()
+        self.queries: list[Any] = []
+
+    async def query(self, q: Any) -> Any:
+        self.queries.append(q)
+        return await super().query(q)
+
+
+async def test_the_hints_read_only_this_owners_waiting_files_by_query(settings: Settings) -> None:
+    spy = Spying()
+    rig = Rig(settings)
+    rig.docs = DocumentService(AttachmentStore(spy))
+    rig.state["documents"] = rig.docs
+    await rig.docs.upload(UID, "study-plan.csv", b"Session,Topic\n1,Made-up\n")
+    await rig.docs.upload("someone-else", "zyxw-secret.csv", b"a,b\n1,2\n")
+    spy.queries.clear()
+    hints = await rig.svc.hints(UID)
+    assert "study plan" in hints.turn and "zyxw secret" not in hints.turn
+    wheres = [q.where for q in spy.queries if q.collection.endswith("attachments")]
+    assert wheres == [("waiting_owner", UID)]  # never every owner's waiting rows
+
+
+async def test_a_file_sent_with_a_message_is_no_longer_a_waiting_hint(rig: Rig) -> None:
+    ref = await rig.docs.upload(UID, "study-plan.csv", b"Session,Topic\n1,Made-up\n")
+    assert "study plan" in (await rig.svc.hints(UID)).turn
+    private = BrainSpec("p", "P", MockProvider(), PAID_TIERS)
+    await rig.docs.attach(Turn(role=Role.USER, content="x"), UID, "s1", [ref.id], private)
+    assert "study plan" not in (await rig.svc.hints(UID)).turn
+    await rig.docs.store.unbind([ref.id], owner=UID, turn_id="nope")  # not that turn: stays sent
+    assert "study plan" not in (await rig.svc.hints(UID)).turn
+
+
+class Never:
+    """The owner's Permissions with Documents on "Never" (or unreadable)."""
+
+    def __init__(self, *, broken: bool = False) -> None:
+        self.broken = broken
+
+    async def rules_for(self, user_id: str) -> list[PolicyRule]:
+        if self.broken:
+            raise RuntimeError("permissions store down")
+        return [PolicyRule(tool_pattern="doc_*", effect=Effect.DENY)]
+
+
+@pytest.mark.parametrize("broken", [False, True], ids=["never", "unreadable"])
+async def test_no_file_name_is_a_hint_when_documents_are_switched_off(
+    rig: Rig, broken: bool
+) -> None:
+    """Security review L4: a file's name may itself be private; with Documents on "Never" (or
+    the setting unreadable) no file name goes to Google Speech, nor to the fast tier."""
+    await rig.docs.upload(UID, "medical-report.csv", b"a,b\n1,2\n")
+    rig.docs.rules = Never(broken=broken)
+    hints = await rig.svc.hints(UID, files=["payslip-march.pdf"])
+    said = " ".join(hints.all).casefold()
+    assert "medical" not in said and "payslip" not in said and hints.files == {}
 
 
 async def test_the_heard_words_are_kept_for_display_and_never_reach_a_model(

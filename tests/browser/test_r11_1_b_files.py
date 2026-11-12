@@ -152,7 +152,8 @@ def console(browser: Any, server_url: str, token: str) -> Iterator[Page]:
 def _clean(c: Page, failed: str = "") -> None:
     """No JS errors or CSP violations; `failed`: the one route a test made fail on purpose, whose
     "Failed to load resource" line is the browser's own, not the console's."""
-    errors = [e for e in c.errors if not (failed and "Failed to load resource" in e and failed in e)]
+    expected = "Failed to load resource"
+    errors = [e for e in c.errors if not (failed and expected in e and failed in e)]
     assert errors == [] and c.csp_violations() == []
 
 

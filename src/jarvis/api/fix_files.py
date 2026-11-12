@@ -15,10 +15,12 @@ POST /v1/input/understand   {heard (1-2,000), alternatives? (<= 3), files? (<= 2
                             No-AI mode; else one short question. <= 60 a minute per owner (429).
 GET  /v1/input/hints        ?session_id= -> {hints [...]}: the per-turn recognition hints (file
                             names as said, the conversation's nouns) for the browser recogniser.
+                            <= 60 a minute per owner.
 POST /v1/input/estimate     {attachments [ids], message?, brain?, tier?} -> {show, tier, inr,
-                            stronger_tier, stronger_inr, suggest, line}: the rupee estimate
-                            before a costly reply. `show` is false below ₹5, for a free brain,
-                            in No-AI mode and for small files. It never calls a model.
+                            stronger_tier, stronger_inr, suggest, line, unavailable}: the rupee
+                            estimate before a costly reply. `show` is false below ₹5, for a free
+                            brain, in No-AI mode and for small files; `unavailable` when it could
+                            not be worked out. It never calls a model. <= 30 a minute per owner.
 
 Errors use the app's shape {"error": code, "detail": plain words}; a body that does not fit is
 FastAPI's 422. Heard words, file names and questions are never logged.
@@ -51,6 +53,8 @@ PREFIX = ROUTE_PREFIX[PART]
 NO_STORE = {"Cache-Control": "no-store"}
 NAME_CHARS = 300
 UNDERSTAND_PER_MINUTE = 60  # per owner, on top of the /v1 per-client limit
+HINTS_PER_MINUTE = 60
+ESTIMATE_PER_MINUTE = 30
 router = APIRouter(prefix=PREFIX, dependencies=[Depends(require_auth)])
 
 Heard = Annotated[str, Field(max_length=HEARD_LIMIT)]
@@ -99,14 +103,33 @@ def _service(request: Request, name: str) -> Any:
     return part.services.get(name) if part is not None else None
 
 
-def _allow(request: Request, uid: str) -> tuple[bool, float]:
-    """The per-owner limit of the understand route (one limiter per app, made on first use)."""
+def _per_minute() -> dict[str, int]:
+    """Each route's per-owner limit (read when called, so a test can lower one)."""
+    return {
+        "understand": UNDERSTAND_PER_MINUTE,
+        "hints": HINTS_PER_MINUTE,
+        "estimate": ESTIMATE_PER_MINUTE,
+    }
+
+
+def _limited(request: Request, uid: str, route: str) -> JSONResponse | None:
+    """None when `uid` may call `route` now, else the 429 (one limiter per route and app, made
+    on first use)."""
     state = request.app.state
-    limiter: RateLimiter | None = getattr(state, "input_understand_limit", None)
-    if limiter is None or limiter.capacity != float(UNDERSTAND_PER_MINUTE):
-        limiter = RateLimiter(UNDERSTAND_PER_MINUTE)
-        state.input_understand_limit = limiter
-    return limiter.allow(uid)
+    limiters: dict[str, RateLimiter] = getattr(state, "input_limits", None) or {}
+    per_minute = _per_minute()[route]
+    limiter = limiters.get(route)
+    if limiter is None or limiter.capacity != float(per_minute):
+        limiter = RateLimiter(per_minute)
+        state.input_limits = {**limiters, route: limiter}
+    allowed, wait = limiter.allow(uid)
+    if allowed:
+        return None
+    return _json(
+        {"error": "rate_limited", "detail": "Too many requests; wait a moment."},
+        status=429,
+        **{"Retry-After": str(max(1, int(wait + 0.999)))},
+    )
 
 
 def _limits(request: Request) -> dict[str, Any]:
@@ -145,13 +168,8 @@ async def understand(
     svc: UnderstandService | None = _service(request, "understand")
     if svc is None:
         return _off()
-    allowed, wait = _allow(request, uid)
-    if not allowed:
-        return _json(
-            {"error": "rate_limited", "detail": "Too many requests; wait a moment."},
-            status=429,
-            **{"Retry-After": str(max(1, int(wait + 0.999)))},
-        )
+    if (refused := _limited(request, uid, "understand")) is not None:
+        return refused
     out = await svc.understand(
         uid,
         body.heard,
@@ -170,6 +188,8 @@ async def hints(
     svc: UnderstandService | None = _service(request, "understand")
     if svc is None:
         return _off()
+    if (refused := _limited(request, uid, "hints")) is not None:
+        return refused
     sid = session_id if session_id and len(session_id) <= 64 else None
     return _json({"hints": list((await svc.hints(uid, session_id=sid)).turn)})
 
@@ -181,6 +201,8 @@ async def estimate(
     est: Estimator | None = _service(request, "estimate")
     if est is None:
         return _off()
+    if (refused := _limited(request, uid, "estimate")) is not None:
+        return refused
     out = await est.estimate(
         uid, attachments=body.attachments, message=body.message, brain=body.brain, tier=body.tier
     )

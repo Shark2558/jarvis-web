@@ -37,6 +37,7 @@ import httpx
 
 from jarvis.home.ports import (
     MAX_PEOPLE,
+    MAX_PICTURES,
     PERSON_ID,
     Ack,
     BridgeState,
@@ -148,12 +149,16 @@ class FaceLibrary:
         *,
         post_ack: Callable[[Ack], Any] | None = None,
         now: Callable[[], float] = time.time,
+        also_delete: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
         self._lib = library
         self._path = data_dir / "faces.json"
         self._retention = retention
         self._post_ack = post_ack
         self._now = now
+        # R11.1 O7: whatever else on this laptop holds this person's face (their named face
+        # groups) goes too; False means "something is left", so the delete is not acknowledged
+        self._also_delete = also_delete
         self.rev = 0
         self.people: frozenset[str] = frozenset()
         self.deleting: frozenset[str] = frozenset()
@@ -293,7 +298,9 @@ class FaceLibrary:
         if failed or not self._retention.ready:
             return False  # crops could remain where nothing is swept: never "done"
         left = await asyncio.to_thread(self._retention.remaining_for, person)
-        return left == 0
+        if left != 0:
+            return False
+        return self._also_delete is None or await self._also_delete(person)
 
     async def finish_deletes(self) -> list[str]:
         """Delete every person the cloud asked to delete and ack each. Safe to repeat: the cloud
@@ -346,7 +353,12 @@ class FacesPlugin:
         lib = library or HttpFrigateFaces(env.get("FRIGATE_URL", "http://frigate:5000"))
         self._lib = lib
         self.library = FaceLibrary(
-            lib, ctx.data_dir, self.retention, post_ack=ctx.events.post_event, now=ctx.now
+            lib,
+            ctx.data_dir,
+            self.retention,
+            post_ack=ctx.events.post_event,
+            now=ctx.now,
+            also_delete=self._forget_groups,
         )
         self._ctx = ctx
         self._serve = serve
@@ -380,11 +392,41 @@ class FacesPlugin:
             await asyncio.to_thread(self.retention.sweep)
             await asyncio.sleep(SWEEP_S)
 
-    async def heartbeat_part(self) -> HeartbeatParts:
+    def _groups(self) -> Any:
+        """The face-groups plugin (R11.1 O7), found when a message arrives; None without it."""
+        return self._ctx.peers.get("facegroups")
+
+    async def _forget_groups(self, person: str) -> bool:
+        groups = self._groups()
+        if groups is None:
+            return True
         try:
-            return HeartbeatParts(faces=await self.library.summary())
+            return bool(await groups.forget_person(person))
+        except Exception as exc:  # noqa: BLE001 - not removed: the delete waits, never "done"
+            log.warning("a person's face groups were not removed", exc_info=exc)
+            return False
+
+    def _group_pictures(self) -> dict[str, int]:
+        """Face pictures the groups plugin keeps for consented people (counts only)."""
+        groups = self._groups()
+        if groups is None:
+            return {}
+        try:
+            held = dict(groups.person_pictures())
+        except Exception as exc:  # noqa: BLE001 - a count only: the heartbeat goes without it
+            log.warning("face group counts unreadable", exc_info=exc)
+            return {}
+        return {p: min(int(n), MAX_PICTURES) for p, n in held.items() if self.library.consented(p)}
+
+    async def heartbeat_part(self) -> HeartbeatParts:
+        extra = self._group_pictures()
+        try:
+            counts = await self.library.summary()
         except FaceRefused:
-            return HeartbeatParts()  # Frigate silent: this part says nothing
+            # Frigate silent: this part says only what the groups plugin itself holds
+            return HeartbeatParts(faces=extra) if extra else HeartbeatParts()
+        merged = {p: min(n + extra.get(p, 0), MAX_PICTURES) for p, n in counts.items()}
+        return HeartbeatParts(faces=merged)
 
     async def apply_state(self, state: BridgeState) -> None:
         if state.faces is None:

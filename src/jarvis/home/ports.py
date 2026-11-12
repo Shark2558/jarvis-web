@@ -78,9 +78,13 @@ BRIDGE_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/bridge/v1/packages"),
         ("GET", "/bridge/v1/faces/summary"),
         # R4 C (D-C3): one picked photo for recognition; enrol a cluster to a consented person.
-        # Until the kit serves them it answers 404 and photos say "laptop not reachable".
+        # Served by the kit from bridge version 0.2.0 (R11.1); an older kit answers 404.
         ("POST", "/bridge/v1/faces/photos"),
         ("POST", "/bridge/v1/faces/enrol"),
+        # R11.1 O7 (D15, D21-C): the laptop's unnamed face groups, as ids and counts; forgetting
+        # one, or all of them (the answer is the laptop's own confirmation).
+        ("GET", "/bridge/v1/faces/groups"),
+        ("POST", "/bridge/v1/faces/groups/forget"),
     }
 )
 

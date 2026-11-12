@@ -10,12 +10,15 @@ where `resource` or a limit is unavailable it carries on, and the parent's wall-
 applies. It reads the file from stdin, writes one JSON object to stdout, and imports nothing from
 the app but `jarvis.documents.limits` and `extract` (no settings, no vendor SDKs, no secrets).
 
-    stdout   {"ok": true, "text", "pages", "pages_total", "page_starts", "truncated"}
+    stdout   {"ok": true, "text", "pages", "pages_total", "page_starts", "truncated",
+              "sheets", "rows", "slides", "files", "skipped",        (R11.1: counts, or null)
+              "pictures": [{"name", "media_type", "data": base64}]}  (checked, metadata removed)
              {"ok": false, "code", "detail", "status"}
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import sys
 from typing import Any
@@ -60,6 +63,19 @@ def main(argv: list[str]) -> int:
             "pages_total": out.pages_total,
             "page_starts": list(out.page_starts),
             "truncated": out.truncated,
+            "sheets": out.sheets,
+            "rows": out.rows,
+            "slides": out.slides,
+            "files": out.files,
+            "skipped": out.skipped,
+            "pictures": [
+                {
+                    "name": pic.name,
+                    "media_type": pic.media_type,
+                    "data": base64.b64encode(pic.data).decode("ascii"),
+                }
+                for pic in out.pictures
+            ],
         }
     except DocumentRejected as exc:
         payload = _refusal(exc.code, str(exc), exc.status)

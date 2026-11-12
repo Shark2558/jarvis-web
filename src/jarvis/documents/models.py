@@ -6,6 +6,11 @@ library only, for the extraction worker) and are re-exported here.
 The raw file is never stored: only its extracted text (in ~4,000-character chunks) and this
 header. An attachment belongs to one owner from upload, and to one conversation (and the turn it
 was sent with) from the moment it is sent; until then it is "waiting" (`session == ""`).
+
+R11.1 (D10-D11): a workbook's sheets and rows, a deck's slides and a zip's or folder's files are
+counted in the header. A picture (a lone one, or one found in a zip or folder) is kept beside the
+header as cleaned bytes (`StoredPicture`, `{id}/pictures/{n}`), never in a turn: `pictures` is
+only how many. They are deleted with the attachment.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from jarvis.documents.limits import (
     NAME_LIMIT,
     PREVIEW_CHARS,
     SUPPORTED_WORDS,
+    AttachPolicy,
     DocumentRejected,
     Kind,
     new_doc_id,
@@ -46,6 +52,20 @@ class AttachmentRef(BaseModel):
     words: int
     chars: int = Field(description="Characters of text kept")
     truncated: bool = Field(default=False, description="Only the start of the file was kept")
+    sheets: int | None = Field(default=None, description="A workbook's sheets")
+    rows: int | None = Field(default=None, description="A workbook's rows read")
+    slides: int | None = Field(default=None, description="A deck's slides")
+    files: int | None = Field(default=None, description="A zip's or folder's files read")
+    skipped: int = Field(default=0, description="A zip's or folder's files not read")
+    pictures: int = Field(default=0, description="Pictures kept with it (never in the turn)")
+
+
+class StoredPicture(BaseModel):
+    """One cleaned picture kept beside its attachment: `{prefix}attachments/{id}/pictures/{n}`."""
+
+    name: str
+    media_type: str  # image/jpeg | image/png
+    data: bytes = Field(repr=False)
 
 
 class Attachment(BaseModel):
@@ -55,6 +75,9 @@ class Attachment(BaseModel):
     owner: str
     session: str = ""  # "" while waiting to be sent
     turn: str = ""  # the owner turn it was sent with
+    # the owner while waiting, "" once sent: one equality query finds ONE owner's waiting files
+    # (R11.1 security review L3; headers stored before R11.1 lack it and are swept within a day)
+    waiting_owner: str = ""
     name: str
     kind: str
     size: int
@@ -66,6 +89,12 @@ class Attachment(BaseModel):
     truncated: bool = False
     preview: str = ""  # the first ≤ PREVIEW_CHARS characters (what the turn note shows)
     created_at: datetime
+    sheets: int | None = None
+    rows: int | None = None
+    slides: int | None = None
+    files: int | None = None
+    skipped: int = 0
+    pictures: int = 0
 
     @property
     def waiting(self) -> bool:
@@ -85,6 +114,12 @@ class Attachment(BaseModel):
             words=self.words,
             chars=self.chars,
             truncated=self.truncated,
+            sheets=self.sheets,
+            rows=self.rows,
+            slides=self.slides,
+            files=self.files,
+            skipped=self.skipped,
+            pictures=self.pictures,
         )
 
 
@@ -103,9 +138,11 @@ __all__ = [
     "NAME_LIMIT",
     "PREVIEW_CHARS",
     "SUPPORTED_WORDS",
+    "AttachPolicy",
     "Attachment",
     "AttachmentRef",
     "DocumentRejected",
     "Kind",
+    "StoredPicture",
     "new_doc_id",
 ]

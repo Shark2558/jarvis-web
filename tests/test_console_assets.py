@@ -594,7 +594,11 @@ async def test_voice_contract_paths_headers_and_channel(client: AsyncClient) -> 
     mic = (await client.get("/static/console-voice-mic.js")).text
     assert "'/v1/voice/transcribe'" in mic
     assert "'Content-Type': 'audio/wav'" in mic
-    assert "Chat.send(text, { channel: 'voice' })" in mic
+    # R11.1 D9: the recogniser's other guesses and its confidence go along, for "understood as"
+    assert (
+        "Chat.send(text, { channel: 'voice', alternatives: o.alternatives, "
+        "confidence: o.confidence })" in mic
+    )
     # D11: the fixed, wit-free approval line, and nothing in the voice code ever approves
     assert "That one needs your approval on screen, ${honorific()}." in mic
     for name in VOICE_SCRIPTS:

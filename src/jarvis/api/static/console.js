@@ -384,6 +384,15 @@
   }
   /** Final review: the WhatsApp drafts GET /v1/sessions/{id} rebuilt, by the reply (turn index)
    *  they belong under. console-whatsapp.js checks every field again; Maps / YouTube never come back. */
+  const Files = () => (window.JarvisFixes && window.JarvisFixes.parts && window.JarvisFixes.parts.files) || null; // console-r111-files.js
+  /** R11.1 D8: "Heard / Understood as" under a spoken message. The row is marked, so the files module (it
+   *  loads after this file) can add the lines to a transcript restored before it arrived. */
+  function showHeard(row, heard, understood) {
+    if (!row || !heard) return;
+    row.dataset.heard = heard;
+    const F = Files();
+    if (F && typeof F.heard === 'function') F.heard(row, heard, understood);
+  }
   function draftsByTurn(sess) {
     const by = new Map();
     (Array.isArray(sess.drafts) ? sess.drafts : []).forEach(d => {
@@ -399,7 +408,10 @@
     const drafts = draftsByTurn(sess);
     sess.turns.forEach((t, i) => {
       if (!t.content || !t.content.trim()) return; // tool exchanges have no text of their own
-      if (t.role === 'user') { const row = addMsg('user', t.content); if (Attach()) Attach().show(row, t.attachments); }
+      if (t.role === 'user') {
+        const row = addMsg('user', t.content); if (Attach()) Attach().show(row, t.attachments);
+        if (typeof t.heard === 'string') showHeard(row, t.heard, t.content); // R11.1 D8: display only
+      }
       else {
         const row = addMsg('jarvis', t.content, [t.model]); if (window.JarvisSources) window.JarvisSources.render(row, t.sources); last = t;
         if (window.JarvisWhatsApp && drafts.has(i)) window.JarvisWhatsApp.render(row, drafts.get(i));
@@ -515,20 +527,54 @@
     if (r.tool_calls || (r.pending_approvals || []).length || r.decided) refreshSide();
     if (fresh) refreshConvos(); else bumpCurrentConvo(r.turn_count);
   }
+  const TIERS = ['fast', 'balanced', 'strong'];
+  /** R11.1 D8: a spoken message is understood before it is sent. -> {text, heard} to send (heard: the
+   *  recogniser's own words when they were corrected), or null when JARVIS asked its one question instead. */
+  async function understood(text, opts, files) {
+    const F = Files();
+    if (!F || typeof F.understand !== 'function' || typeof opts.heard === 'string') return { text, heard: opts.heard || null, unchecked: opts.unchecked === true };
+    const u = await F.understand({ heard: text, alternatives: opts.alternatives, confidence: opts.confidence, files, session: state.sessionId });
+    if (!u.question) return u.changed ? { text: u.understood, heard: text } : { text, heard: null, unchecked: u.unchecked === true };
+    addMsg('user', text, ['Spoken', 'Not sent']); addMsg('jarvis', u.question, ['Asked first']); note('info', 'JARVIS asked first');
+    emit('jarvis:answer', { channel: 'voice', text: u.question, approvals: 0 }); // spoken, like any reply
+    return null;
+  }
+  /** R11.1 D12: large or complex files show their cost in rupees first; the owner's choice then sends. */
+  async function costFirst(text, opts, files, channel) {
+    const F = Files();
+    if (!files.length || opts.costOk || !F || typeof F.cost !== 'function') return false;
+    const c = await F.cost({ text, files, brain: state.brain, send: (o) => send(text, Object.assign({}, opts, o, { costOk: true })),
+      cancel: () => { if (!input.value) { input.value = text; if (channel === 'voice') input.dataset.channel = 'voice'; autosize(); } syncSend(); input.focus(); } });
+    if (!c || !c.wait) return false;
+    const said = c.unknown ? `I couldn't estimate the cost, ${state.honorific}. Send it anyway, or cancel.` : `The cost is on the screen, ${state.honorific}. Choose how to send it.`;
+    if (channel === 'voice') emit('jarvis:answer', { channel, text: said, approvals: 0 });
+    return true;
+  }
   /** One turn. `opts.channel: 'voice'` (slice 9 D7): the words were spoken, so the server shapes a
    *  reply for the ear; jarvis:turn / jarvis:turn-end tell the voice module (barge-in, states). */
   async function send(text, opts = {}) {
     if (state.busy) return false;
     const channel = opts.channel === 'voice' ? 'voice' : 'text';
     const files = Attach() && !Attach().busy() ? Attach().ready() : [];
-    const sent = addMsg('user', text, channel === 'voice' ? ['Spoken'] : null); busy(true); note('send', channel === 'voice' ? 'Spoken message sent' : 'Message sent');
-    if (files.length) Attach().show(sent, files);
-    emit('jarvis:turn', { channel });
-    let ok = false;
+    busy(true); emit('jarvis:turn', { channel });
+    let ok = false, heard = null, unchecked = false, choosing = false; // choosing: the cost line is up and holds the focus
     try {
+      if (channel === 'voice') {
+        const u = await understood(text, opts, files);
+        if (!u) { ok = true; return true; }
+        text = u.text; heard = u.heard; unchecked = u.unchecked === true;
+      }
+      const again = channel === 'voice' ? Object.assign({}, opts, { heard: heard || '', unchecked }) : opts; // understood once
+      if (await costFirst(text, again, files, channel)) { ok = choosing = true; return false; }
+      const sent = addMsg('user', text, channel === 'voice' ? ['Spoken'] : null); note('send', channel === 'voice' ? 'Spoken message sent' : 'Message sent');
+      showHeard(sent, heard, text);
+      if (unchecked && Files() && typeof Files().unchecked === 'function') Files().unchecked(sent); // R11.1: never silent
+      if (files.length) Attach().show(sent, files);
       const t0 = performance.now(); // reply latency as the owner feels it: the whole round trip
       const body = { message: text, session_id: state.sessionId, brain: state.brain };
       if (channel === 'voice') body.channel = 'voice';
+      if (heard) body.heard = heard;
+      if (TIERS.includes(opts.tier)) body.tier = opts.tier; // R11.1 D12: the tier chosen on the cost line
       if (files.length) body.attachments = files.map(f => f.id);
       const r = await api('/v1/chat', { body });
       if (files.length) Attach().clear();
@@ -543,7 +589,7 @@
       else if (isConflict(e)) await conflictReload(e);
       else { addMsg('error', 'JARVIS couldn\'t answer. ' + e.message); note('error', 'Reply failed'); }
     }
-    finally { busy(false); refocus(); emit('jarvis:turn-end', { channel, ok }); }
+    finally { busy(false); if (!choosing) refocus(); emit('jarvis:turn-end', { channel, ok }); }
     return ok;
   }
   /** 409 session_conflict (slice 10): another window saved this conversation first. Show what the
@@ -603,6 +649,7 @@
   window.JarvisChat = Object.freeze({
     send: (text, opts) => (typeof text === 'string' && text.trim() && !state.busy ? send(text.trim(), opts || {}) : Promise.resolve(false)),
     busy: () => state.busy,
+    session: () => state.sessionId, // R11.1 D9: the open conversation, for this turn's recognition hints
     honorific: () => state.honorific,
     raw,
   });

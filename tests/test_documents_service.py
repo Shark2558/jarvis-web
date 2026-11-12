@@ -12,7 +12,13 @@ from doc_fakes import make_docx, make_pdf
 from jarvis.core.guardrails import InputRejected
 from jarvis.core.models import Turn
 from jarvis.documents.isolation import Sandbox
-from jarvis.documents.models import CHUNKS_PER_PART, MAX_FILE_BYTES, MAX_WAITING, DocumentRejected
+from jarvis.documents.models import (
+    CHUNKS_PER_PART,
+    MAX_FILE_BYTES,
+    MAX_WAITING,
+    AttachPolicy,
+    DocumentRejected,
+)
 from jarvis.documents.note import clean_name, render_note
 from jarvis.documents.service import DocumentService
 from jarvis.documents.store import AttachmentStore
@@ -194,6 +200,7 @@ async def test_attach_refusals_are_plain(svc: DocumentService) -> None:
     with pytest.raises(InputRejected, match="no longer available"):
         await svc.check("u1", [theirs.id], PRIVATE)
     many = [(await svc.upload("u1", f"{i}.txt", b"x")).id for i in range(4)]
+    svc.policy = AttachPolicy(max_files=3)  # R11.1 D11: the owner's setting (10 by default)
     with pytest.raises(InputRejected, match="3 files"):
         await svc.check("u1", many, PRIVATE)
     await svc.attach(owner_turn(), "u1", "s1", [mine.id], PRIVATE)

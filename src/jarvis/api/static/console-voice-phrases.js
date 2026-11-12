@@ -132,10 +132,19 @@
    *  locally, start() fails with 'phrases-not-supported', so the list is handed over only when processLocally is
    *  true. Nothing is assumed: if the pieces are not there this does nothing. */
   function apply(recognition) {
-    const Phrase = window.SpeechRecognitionPhrase, words = list();
+    const Phrase = window.SpeechRecognitionPhrase, seen = new Set();
+    // R11.1 D9: this turn's hints (file names as said, the conversation's nouns) first, then his own words
+    const words = turnHints().concat(list()).filter(w => { const k = w.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
     if (!recognition || recognition.processLocally !== true) return false;
     if (typeof Phrase !== 'function' || !('phrases' in recognition) || !words.length) return false;
     try { recognition.phrases = words.map(w => new Phrase(w, 1.0)); return true; } catch (_) { return false; }
+  }
+  /** R11.1 D9: console-r111-files.js keeps GET /v1/input/hints fresh; each hint is cleaned like an owner word. */
+  function turnHints() {
+    const F = window.JarvisFixes && window.JarvisFixes.parts && window.JarvisFixes.parts.files;
+    let hints = [];
+    try { hints = F && typeof F.hints === 'function' ? F.hints() : []; } catch (_) { hints = []; }
+    return (Array.isArray(hints) ? hints : []).map(w => clean(w)).filter(Boolean).slice(0, 60);
   }
 
   /** The panel's own save note says why a save failed; repeat a refusal here, by the words, for a few seconds. */

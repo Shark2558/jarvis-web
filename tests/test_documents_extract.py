@@ -49,7 +49,7 @@ def test_kind_comes_from_a_known_extension(name: str, kind: str) -> None:
     assert kind_for(name) == kind
 
 
-@pytest.mark.parametrize("name", ["report", "old.doc", "sheet.xlsx", "run.exe", "pic.png", ".pdf"])
+@pytest.mark.parametrize("name", ["report", "old.doc", "sheet.ods", "run.exe", "pic.gif", ".pdf"])
 def test_other_extensions_are_unsupported_with_a_plain_message(name: str) -> None:
     e = rejected(kind_for, name)
     assert e.code == "unsupported" and e.status == 415

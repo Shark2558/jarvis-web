@@ -797,6 +797,14 @@ def test_the_helper_cleans_like_the_server_and_offers_the_list_only_where_suppor
     view = voice_view()
     view["settings"]["phrases"] = ["Kochi"]
     PhrasesVoice(c.page, view)
+    # R11.1 D9 adds this turn's hints to the list (tests/browser/test_r11_1_b_files.py); none here,
+    # so the count below is still his own one word
+    c.page.route(
+        "**/v1/input/hints*",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"hints": []}'
+        ),
+    )
     c.open()
     clean = "(s) => JarvisVoicePhrases.clean(s)"
     assert c.page.evaluate(clean, "  Tri​van   drum ") == "Trivan drum"

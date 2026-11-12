@@ -1,3 +1,23 @@
 /* src/jarvis/api/static/console-r111-files.css -- R11.1 Part B (docs/plans/r11-1-observations.md D0): placement
-   only for heard / understood as, folder and zip attach, the cost line. Existing tokens and classes; no new colours, fonts, radii or shadows.
-   I0 stub: Part B fills it (at most 150 lines). */
+   only for "heard / understood as", the folder button and the cost line. Every colour, font, radius and shadow
+   comes from the classes these elements already carry (.bfine, .bnote, .btn, .clip): nothing new is drawn. */
+
+/* ---- "Heard / Understood as": two fine lines under the spoken message, on its side of the thread ---------- */
+.row.user .r111f-heard{display:grid;gap:2px;max-width:min(100%,56ch);margin:2px 4px 0;text-align:right}
+.row.user .r111f-heard .bfine{margin:0}
+
+/* ---- the cost line: above the composer, with its two or three choices ------------------------------------ */
+.r111f-cost{display:grid;gap:8px;margin:0 2px 8px}
+.r111f-cost .r111f-line{margin:0}
+.r111f-cost .r111f-acts{display:flex;flex-wrap:wrap;gap:8px}
+.r111f-cost .r111f-acts .btn{flex:0 1 auto;margin-top:0}
+
+/* ---- the folder button: the paperclip's twin; a phone-width composer has no room for it ------------------ */
+@media (max-width:520px){
+  .composer .r111f-folder{display:none}
+}
+
+/* ---- phone-width targets: 44 px tall ----------------------------------------------------------------------- */
+@media (max-width:899px){
+  .r111f-cost .r111f-acts .btn{min-height:44px}
+}

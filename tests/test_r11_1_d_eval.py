@@ -26,6 +26,13 @@ PLAN_CASES = (  # plan "Tests and evals per part", row D, and D21-D
     "home_camera_watcher",
     "home_messenger",
     "github_one_read_in_six_hours",
+    # the security review's (H1, H2, M1, M2): the cases the fix added
+    "flag_false_but_the_description_names_someone",
+    "lower_and_all_caps_names_stay_out",
+    "a_name_holding_a_thing_word_is_neither_shown_nor_searched",
+    "invented_caption_is_only_an_offer_with_its_line",
+    "main_brain_research_person_on_a_picture_turn",
+    "main_brain_web_query_on_a_picture_turn",
 )
 
 
@@ -44,6 +51,7 @@ def test_the_part_is_built_and_holds_every_case_the_plan_lists(look: ModuleType)
     assert (look.PART, look.BUILT) == ("look", True)
     assert set(PLAN_CASES) <= set(look.CASES)
     assert set(look.EXPECTED) == set(look.CONTROLS) >= {"guard_off", "fault_map_empty"}
+    assert "turn_guard_off" in look.CONTROLS
     assert all(look.EXPECTED[name] <= set(look.CASES) for name in look.CONTROLS)
 
 
@@ -78,6 +86,48 @@ async def test_with_the_guard_removed_the_eval_catches_a_name(look: ModuleType) 
     assert any(f.startswith("a web search carried the person") for f in named)
     offered = failures["look:uncaptioned_face_no_name_no_search"]
     assert "a name was offered although the picture has no text" in offered
+
+
+async def _failures_with(look: ModuleType, control: str) -> dict[str, list[str]]:
+    look._active.add(control)
+    try:
+        return {r["id"]: r["failures"] for r in await look._run()}
+    finally:
+        look._active.clear()
+
+
+async def test_open_all_put_back_fails_by_what_one_press_does(look: ModuleType) -> None:
+    """Code review M3: the O8 case presses "Open next" on a real run of the script; the control
+    fails because one press opens every profile through window.open, not by a string match."""
+    failures = (await _failures_with(look, "open_all_back"))[
+        "look:profile_cards_open_one_tab_a_click"
+    ]
+
+    n = len(look.LINKS)
+    assert f"window.open was called {n * n} times" in failures  # each press opened all of them
+    assert any(f.startswith('"Open next" does not open exactly one card a press') for f in failures)
+
+
+async def test_with_the_turn_guard_off_the_eval_catches_a_face_name_researched(
+    look: ModuleType,
+) -> None:
+    failures = await _failures_with(look, "turn_guard_off")
+
+    brain = failures["look:main_brain_research_person_on_a_picture_turn"]
+    assert any(f.startswith("a name from a face was researched") for f in brain)
+    web = failures["look:main_brain_web_query_on_a_picture_turn"]
+    assert any(f.startswith("a query carrying a person went out") for f in web)
+
+
+async def test_with_the_picture_guard_off_a_flag_that_lies_is_caught(look: ModuleType) -> None:
+    failures = await _failures_with(look, "guard_off")
+
+    lied = failures["look:flag_false_but_the_description_names_someone"]
+    assert any(f.startswith("the name got through") for f in lied)
+    caps = failures["look:lower_and_all_caps_names_stay_out"]
+    assert len(caps) == 2  # the lower-case one and the ALL CAPS one
+    things = failures["look:a_name_holding_a_thing_word_is_neither_shown_nor_searched"]
+    assert things and all(f.startswith("shown") for f in things)
 
 
 async def test_a_control_that_breaks_nothing_does_not_count(

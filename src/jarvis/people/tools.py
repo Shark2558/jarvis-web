@@ -9,9 +9,10 @@ research_person(name, context?)
     brain off there is no summary and no model call: just the links. Every word from the web is
     fenced as untrusted, and nothing is saved to memory (a 1 hour per-owner cache).
 people_open_profiles(platforms?)
-    The resolved profile URLs of the owner's last research, for the CLIENT to open, one browser
-    window per URL. No server-side browser control. (Named `people_*` so the `people` permission
-    row covers it.)
+    The resolved profile URLs of the owner's last research, for the owner to open: each from its
+    own card in the People panel, or from the list in the reply (R11.1 D16: one tab per click;
+    nothing opens by itself, and the message no longer says "Opening"). No server-side browser
+    control. (Named `people_*` so the `people` permission row covers it.)
 """
 
 from __future__ import annotations
@@ -37,6 +38,9 @@ PLATFORMS = (
 TEXT_LIMIT = 80  # name / context echoed to a model are capped
 SOURCE = "public web search"
 NOTHING_YET = "Nothing has been researched yet, Sir. Ask me to research a person first."
+ONE_LINK = "Here is 1 profile link, Sir. It opens in its own tab."
+LINKS = "Here are {n} profile links, Sir. Each one opens in its own tab."
+NO_LINKS = "No profile link matches that, Sir."
 
 
 @dataclass(frozen=True)
@@ -129,7 +133,10 @@ class PeopleAPI:
             return {"open": [], "message": NOTHING_YET}
         wanted = a.get("platforms")
         urls = [p.url for p in d.profiles if wanted is None or p.platform in wanted]
-        return {"open": urls, "name": d.name, "message": f"Opening {len(urls)} profile(s), Sir."}
+        message = (
+            NO_LINKS if not urls else ONE_LINK if len(urls) == 1 else LINKS.format(n=len(urls))
+        )
+        return {"open": urls, "name": d.name, "message": message}
 
 
 def people_tools(deps: PeopleDeps) -> list[Tool]:
@@ -160,8 +167,8 @@ def people_tools(deps: PeopleDeps) -> list[Tool]:
         ),
         Tool(
             OPEN_PROFILES,
-            "Return the public profile links found by the last research_person, for the "
-            "owner's browser to open, one window each. Optional platforms filter.",
+            "Return the public profile links found by the last research_person. Nothing opens "
+            "by itself: the owner opens each link in its own tab. Optional platforms filter.",
             {
                 "type": "object",
                 "properties": {

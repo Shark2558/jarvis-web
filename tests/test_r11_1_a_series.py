@@ -160,6 +160,85 @@ async def test_a_notifier_that_fails_is_counted_and_the_question_goes_out_later_
     assert (await job.run([UID]))["asked"] == 0 and len(rig.told.sent) == 1
 
 
+@pytest.mark.parametrize("how", ["no_channel", "drop"])
+async def test_a_check_in_that_reached_nobody_is_a_failure_and_is_asked_again(
+    rig: PlanRig, how: str
+) -> None:
+    await followed(rig, 2)
+    rig.clock.at = datetime(2026, 11, 16, 20, 20, tzinfo=IST)
+    if how == "no_channel":
+        rig.told.reached = False  # a ring, but Telegram and push both failed
+    else:
+        rig.told.action = "drop"  # the policy dropped it
+    job = rig.part.clock_jobs[0]
+    assert await job.run([UID]) == {"asked": 0, "held": 0, "failed": 1}
+    rig.told.reached, rig.told.action = True, "ring"  # the claim was given back
+    assert await job.run([UID]) == {"asked": 1, "held": 0, "failed": 0}
+    assert await job.run([UID]) == {"asked": 0, "held": 0, "failed": 0}  # and only once
+    assert len(rig.told.sent) == 2
+
+
+async def test_a_cancelled_send_gives_the_claim_back(rig: PlanRig) -> None:
+    import asyncio
+
+    await followed(rig, 2)
+    rig.clock.at = datetime(2026, 11, 16, 20, 20, tzinfo=IST)
+    rig.told.cancel = True  # the clock's time budget ran out while it was being sent
+    job = rig.part.clock_jobs[0]
+    with pytest.raises(asyncio.CancelledError):
+        await job.run([UID])
+    rig.told.cancel = False
+    assert (await job.run([UID]))["asked"] == 1
+
+
+async def test_one_broken_session_or_set_up_never_stops_the_others(
+    rig: PlanRig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    day = [
+        {
+            "summary": f"T{h}",
+            "start": f"2026-11-16T{h}:00:00+05:30",
+            "end": f"2026-11-16T{h}:45:00+05:30",
+        }
+        for h in ("09", "11", "14")
+    ]
+    await rig.approved(cb.CREATE, {"events": day, "series": {"name": "CCA"}})
+    rig.clock.at = datetime(2026, 11, 16, 20, 20, tzinfo=IST)  # all three sessions are due
+    job = rig.part.clock_jobs[0]
+    real = rig.svc.store.claim
+    calls = {"n": 0}
+
+    async def flaky(uid: str, key: str, at: datetime) -> bool:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("the store blinked")
+        return await real(uid, key, at)
+
+    monkeypatch.setattr(rig.svc.store, "claim", flaky)
+
+    def broken() -> object:
+        raise RuntimeError("the phrasebook is broken")
+
+    monkeypatch.setattr(job, "_on_run", broken)
+    assert await job.run([UID]) == {"asked": 2, "held": 0, "failed": 1}
+
+
+async def test_a_claim_that_cannot_be_given_back_is_logged_not_raised(
+    rig: PlanRig, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    await followed(rig, 1)
+    rig.clock.at = datetime(2026, 11, 16, 20, 20, tzinfo=IST)
+    rig.told.fail = True
+
+    async def down(uid: str, key: str) -> None:
+        raise RuntimeError("the store is down")
+
+    monkeypatch.setattr(rig.svc.store, "release", down)
+    job = rig.part.clock_jobs[0]
+    assert await job.run([UID]) == {"asked": 0, "held": 0, "failed": 1}
+    assert any("not given back" in r.getMessage() for r in caplog.records)
+
+
 async def test_the_job_does_nothing_when_plans_are_switched_off() -> None:
     from jarvis.config import Settings
 

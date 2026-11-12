@@ -6,20 +6,26 @@ For each configured owner: every session that ended at least `ASK_AFTER` (15 min
 most `ASK_WITHIN` ago with no answer is asked about ONCE: a claim document is created in a
 transaction before the alert goes out (`SeriesStore.claim`). The alert is the app's one notifier
 with kind `series_checkin`: it rings by day and is HELD in quiet hours (never dropped); the text
-is a fixed template (number, the plan's own name, time) and never a title. If the notifier fails,
-the claim is given back so a later run asks; older unanswered sessions are not chased: they show
-in the console and in the brief's line. Once a day the owner's old claims are swept.
+is a fixed template (number, the plan's own name, time) and never a title. A question that did
+not leave JARVIS is never counted as asked (as `notify.sink.result_of` reads a delivery): sent on
+a channel is "asked", held for the night is "held" (it goes out in the morning); dropped by the
+policy, a ring that reached no channel, a notifier that raised or a send that was cancelled is
+"failed", and its claim is given back so a later run asks again. Older unanswered sessions are
+not chased: they show in the console and in the brief's line. One session, one owner or the
+part's set-up failing never stops the rest. Once a day the owner's old claims are swept.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta, tzinfo
 from typing import Final
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jarvis.logging import get_logger
-from jarvis.notify.ports import Notifier, Signal
+from jarvis.notify.ports import Delivery, Notifier, Signal
+from jarvis.notify.sink import result_of
 from jarvis.series.cards import QUESTION, question
 from jarvis.series.models import Plan, PlanSession
 from jarvis.series.service import ASK_AFTER, SeriesService
@@ -62,7 +68,10 @@ class CheckinJob:
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
         counts = {"asked": 0, "held": 0, "failed": 0}
         if self._on_run is not None:
-            self._on_run()
+            try:
+                self._on_run()
+            except Exception as exc:  # noqa: BLE001 - the set-up never stops the check-ins
+                log.warning("plan set-up failed", extra={"error": type(exc).__name__})
         for uid in owners:
             try:
                 await self._owner(uid, counts)
@@ -75,7 +84,11 @@ class CheckinJob:
         now, store = self._now(), self._svc.store
         due = [w for w in await self._svc.waiting(uid) if now - w.session.end <= ASK_WITHIN]
         for w in due[:MAX_PER_RUN]:
-            how = await self._ask(store, uid, w.plan, w.session, now)
+            try:
+                how = await self._ask(store, uid, w.plan, w.session, now)
+            except Exception as exc:  # noqa: BLE001 - one session never stops the others
+                log.warning("a check-in failed", extra={"error": type(exc).__name__})
+                how = "failed"
             if how:
                 counts[how] += 1
         if now - self._swept.get(uid, datetime.min.replace(tzinfo=now.tzinfo)) >= SWEEP_EVERY:
@@ -96,11 +109,39 @@ class CheckinJob:
             delivery = await notifier.notify(
                 uid, Signal(source="nudge", kind=NAME), question(plan, s, self._tz)
             )
-        except Exception as exc:  # noqa: BLE001 - not sent: give the claim back, try later
+        except BaseException as exc:  # not sent (or cancelled): give the claim back first
+            await _give_back(store, uid, key)
+            if not isinstance(exc, Exception):
+                raise
             log.warning("check-in not sent", extra={"error": type(exc).__name__})
-            await store.release(uid, key)
             return "failed"
-        return "held" if delivery.action == "hold" else "asked"
+        how = _counted(delivery)
+        if how == "failed":
+            log.warning(
+                "check-in reached nobody; it will be asked again",
+                extra={"action": delivery.action, "reason": delivery.reason},
+            )
+            await _give_back(store, uid, key)
+        return how
+
+
+def _counted(delivery: Delivery) -> str:
+    """How a delivery counts, as `notify.sink.result_of` reads it: sent, held, or not sent."""
+    out = result_of(delivery)
+    if out.sent:
+        return "asked"
+    return "held" if out.queued else "failed"
+
+
+async def _give_back(store: SeriesStore, uid: str, key: str) -> None:
+    """Release a claim so a later run asks; shielded from a cancellation, never raises."""
+    try:
+        await asyncio.shield(store.release(uid, key))
+    except Exception as exc:  # noqa: BLE001 - logged: that session is then not asked again
+        log.error(
+            "a check-in claim was not given back; that session will not be asked again",
+            extra={"error": type(exc).__name__},
+        )
 
 
 __all__ = ["ASK_AFTER", "ASK_WITHIN", "MAX_PER_RUN", "NAME", "QUESTION", "CheckinJob"]

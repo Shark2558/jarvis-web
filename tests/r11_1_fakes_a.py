@@ -381,12 +381,16 @@ class Clock:
 
 class Told:
     """A Notifier that records what it was asked to say and answers as the policy would
-    (`action`: ring by day, hold at night)."""
+    (`action`: ring by day, hold at night, drop when the kind is switched off). `reached`:
+    whether a ring reached a channel (False: Telegram and push both failed). `cancel`: the send
+    is cancelled while it is in flight (the clock's time budget ran out)."""
 
     def __init__(self, action: str = "ring") -> None:
         self.action = action
         self.sent: list[tuple[str, str, str]] = []
         self.fail = False
+        self.reached = True
+        self.cancel = False
 
     async def notify(
         self,
@@ -399,8 +403,11 @@ class Told:
     ) -> Delivery:
         if self.fail:
             raise RuntimeError("the notifier is down")
+        if self.cancel:
+            raise asyncio.CancelledError()
         self.sent.append((uid, signal.kind, message))
-        return Delivery(action=self.action, reason="test", telegram=self.action == "ring")  # type: ignore[arg-type]
+        rang = self.action == "ring" and self.reached
+        return Delivery(action=self.action, reason="test", telegram=rang)  # type: ignore[arg-type]
 
 
 class PlanRig:

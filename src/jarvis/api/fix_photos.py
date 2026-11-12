@@ -54,6 +54,7 @@ PREFIX = ROUTE_PREFIX[PART]
 NO_STORE = {"Cache-Control": "no-store"}
 LOCAL_URL = "http://localhost:8098/faces"
 RATE = "Too many changes; wait a moment."
+PANEL_STEP_S = 20.0
 NO_GROUP = "There is no such group."
 _PROBLEMS = (GoogleAPIError, GoogleNotConnected, PhotosNotGranted, PickerError, NoSession)
 router = APIRouter(prefix=PREFIX, dependencies=[Depends(require_auth)])
@@ -238,7 +239,8 @@ async def import_step(request: Request, uid: str = Depends(current_user)) -> JSO
     if _limited(request, uid):
         return _err(429, "rate_limited", RATE)
     try:
-        return _reply(_progress(await photos.collect(uid)))
+        # a short step, so the open panel's line moves; the panel asks again 5 s later
+        return _reply(_progress(await photos.collect(uid, budget_s=PANEL_STEP_S)))
     except _PROBLEMS as exc:
         return _err(409, "photos_unavailable", str(exc))
 

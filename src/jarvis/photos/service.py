@@ -63,7 +63,8 @@ from jarvis.undo.store import owner_ok
 log = get_logger(__name__)
 
 MAX_CLUSTERS = 200
-COLLECT_BUDGET_S = 120.0  # one step: every download and home-edge call together
+COLLECT_BUDGET_S = 25.0  # one step (a panel, a chat tool): every download and laptop call together
+STOP_EARLY_S = 1.0  # a step stops starting photos this long before its hard time limit
 UNKNOWN_FACE = "JARVIS hasn't seen that face."
 UNAVAILABLE = "Faces aren't set up on this server, so photos can't be looked at."
 NO_PERSON = "There is no such person. Add them first, with their consent."
@@ -236,11 +237,12 @@ class PhotosService:
 
     async def collect(self, uid: str, *, budget_s: float | None = None) -> ImportResult:
         """One step of the import. `budget_s`: the helpers' clock gives what it has left."""
+        budget = budget_s or COLLECT_BUDGET_S
         async with self._lock(uid):
             before = (await self.imports.get(uid)).done
             try:
-                async with asyncio.timeout(budget_s or COLLECT_BUDGET_S):
-                    return await self._collect(uid)
+                async with asyncio.timeout(budget):
+                    return await self._collect(uid, max(0.5, budget - STOP_EARLY_S))
             except TimeoutError:
                 log.warning("photo import step ran out of time")
                 doc = await self.imports.get(uid)
@@ -254,14 +256,14 @@ class PhotosService:
             return False  # unknown expiry: Google's own 404 will say so
         return when.tzinfo is not None and when <= self._now()
 
-    async def _collect(self, uid: str) -> ImportResult:
+    async def _collect(self, uid: str, budget_s: float) -> ImportResult:
         data = await self._state.get(uid)
         if data.session_id is None or self._faces is None or self._importer is None:
             return ImportResult("no_session")
         if self._expired(data):
             out = StepOut(await self._importer.expire(uid, data.session_id))
         else:
-            out = await self._importer.step(uid, data.session_id, self.limits)
+            out = await self._importer.step(uid, data.session_id, self.limits, budget_s=budget_s)
         doc = out.doc
         clusters = tuple(dict.fromkeys((*data.clusters, *out.unknown)))[-MAX_CLUSTERS:]
         if doc.state == "done":

@@ -140,40 +140,55 @@ async def o5_the_deploy_script_switches_photos_on() -> list[str]:
 
 # ---- O6 -----------------------------------------------------------------------------------------
 
+STEPS_OF_TEN = ImportLimits(batch=10, most=10)  # fixed steps where a case is about resuming
+
 
 async def o6_two_thousand_photos_in_steps_of_ten() -> list[str]:
+    """2,000 photos in steps, never in one request: a step reads as many as fit its time, at
+    least the setting (10) when they fit and at most 50 (review C-code M6)."""
     out: list[str] = []
     r = rig(items=2000)
     await r.svc.begin(UID)
     want(out, r.picker.max_items == [2000], f"the pick allows {r.picker.max_items}, not 2,000")
-    steps, most, status = 0, 0, "reading"
+    steps, most, least, status = 0, 0, 10**6, "reading"
     while status == "reading" and steps < 500:
         before = len(r.edge.received)
         status = (await r.svc.collect(UID)).status
         steps += 1
         most = max(most, len(r.edge.received) - before)
+        least = min(least, len(r.edge.received) - before)
     done = await r.svc.progress(UID)
-    want(out, most == 10, f"one request read {most} photos (the step is 10)")
-    want(out, steps == 200, f"2,000 photos took {steps} requests, not 200")
+    want(out, 10 <= most <= 50, f"one request read {most} photos (a step is 10 to 50)")
+    want(out, steps >= 40, f"2,000 photos took {steps} requests: a step read too much")
     want(out, (done.status, done.photos, done.total) == ("done", 2000, 2000), f"ended {done}")
     sent = [image.removeprefix(JPEG).decode() for image in r.edge.received]
     want(out, sent == [f"m{i}" for i in range(2000)], "not every photo exactly once, in order")
     want(out, "2,000 of 2,000 read" in done.line, f"the line says: {done.line}")
     small = rig(items=37)
-    small.svc.limits = ImportLimits(max_picked=2000, batch=4)  # `photos_import_batch`
+    small.svc.limits = ImportLimits(max_picked=2000, batch=4, most=4)  # a step's ceiling
     await small.svc.begin(UID)
     await small.svc.collect(UID)
-    want(out, len(small.edge.received) == 4, "the batch setting is not the step")
+    want(out, len(small.edge.received) == 4, "the step's ceiling is not kept")
+    slow = rig(items=40)
+    slow.picker.slow = 0.2  # each photo 0.2 s; the step has about 1 s
+    await slow.svc.begin(UID)
+    res = await slow.svc.collect(UID, budget_s=2.0)
+    fit = len(slow.edge.received)
+    want(out, res.status == "reading" and 2 <= fit <= 5, f"a 1 s step read {fit} ({res.status})")
+    want(out, "keep the Connectors panel open to go faster" in res.line, "no honest pace shown")
     return out
 
 
 async def o6_resumes_after_a_restart() -> list[str]:
     out: list[str] = []
     r = rig(items=35)
+    r.svc.limits = STEPS_OF_TEN
     await r.svc.begin(UID)
     for _ in range(2):
         await r.svc.collect(UID)
-    again = PhotosService(r.picker, r.edge, r.f.svc, r.contacts, PhotosState(r.f.docs))  # type: ignore[arg-type]
+    again = PhotosService(
+        r.picker, r.edge, r.f.svc, r.contacts, PhotosState(r.f.docs), limits=STEPS_OF_TEN
+    )  # type: ignore[arg-type]
     statuses = [(await again.collect(UID)).status for _ in range(2)]
     want(out, statuses == ["reading", "done"], f"after the restart: {statuses}")
     sent = [image.removeprefix(JPEG).decode() for image in r.edge.received]
@@ -184,6 +199,7 @@ async def o6_resumes_after_a_restart() -> list[str]:
 async def o6_resumes_after_laptop_off() -> list[str]:
     out: list[str] = []
     r = rig(items=25)
+    r.svc.limits = STEPS_OF_TEN
     await r.svc.begin(UID)
     await r.svc.collect(UID)
     r.edge.online = False
@@ -244,7 +260,9 @@ async def o6_metadata_is_stripped_from_every_photo() -> list[str]:
         fake.on("GET", url, picture_)
     r = rig()
     edge = FakeEdge()
-    svc = PhotosService(PickerClient(conn), edge, r.f.svc, r.contacts, PhotosState(r.f.docs))  # type: ignore[arg-type]
+    svc = PhotosService(
+        PickerClient(conn), edge, r.f.svc, r.contacts, PhotosState(r.f.docs), limits=STEPS_OF_TEN
+    )  # type: ignore[arg-type]
     await svc.begin(GOOGLE_UID)
     statuses = [(await svc.collect(GOOGLE_UID)).status for _ in range(3)]
     want(out, statuses == ["reading", "reading", "done"], f"23 photos: {statuses}")
@@ -259,6 +277,7 @@ async def o6_metadata_is_stripped_from_every_photo() -> list[str]:
 async def o6_stops_cleanly_when_the_session_expires() -> list[str]:
     out: list[str] = []
     r = rig(items=30)
+    r.svc.limits = STEPS_OF_TEN
     await r.svc.begin(UID)
     await r.svc.collect(UID)
     r.picker.gone = True  # Google ended the Picker session
@@ -289,7 +308,8 @@ async def o7_the_three_routes_answer_ids_only() -> list[str]:
             want(out, set(reply) == {"faces"}, f"photos answers {sorted(reply)}")
             for face in reply.get("faces", []):
                 want(out, set(face) == {"cluster", "person", "score"}, f"a face has {sorted(face)}")
-        fields = {"groups", "more", "strays", "named", "engine", "folder", "read", "keep_days"}
+        fields = {"groups", "more", "strays", "named", "engine", "folder", "read", "skipped"}
+        fields |= {"keep_days"}
         for reply in groups:
             want(out, set(reply) == fields, f"groups answers {sorted(reply)}")
             for g in reply.get("groups", []):

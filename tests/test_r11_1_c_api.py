@@ -172,15 +172,17 @@ async def test_the_import_routes_step_report_and_stop(settings: Settings, tmp_pa
     s = settings.model_copy(update={"photos_import_batch": 2})
     async with running(s, tmp_path) as w:
         assert (await w.get("/import")).json()["status"] == "no_session"
-        w.cloud.picker.photos = [picture(1, n=i, needle=True) for i in range(5)]
+        w.cloud.picker.photos = [picture(1, n=i, needle=True) for i in range(60)]
         w.cloud.picker.items = type(w.cloud.picker)(w.cloud.picker.photos).items
         await w.cloud.photos.begin(UID)
         r = await w.post("/import/step")
         body = r.json()
         assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
-        assert (body["status"], body["photos"], body["total"]) == ("reading", 2, 5)  # the setting
-        assert body["line"] == "2 of 5 read · 2 faces found"
-        assert (await w.get("/import")).json()["photos"] == 2
+        # review C-code M6: as many as fit the panel's short step (here all 50 a step may read),
+        # never fewer than the setting (2), never the whole pick in one request
+        assert (body["status"], body["photos"], body["total"]) == ("reading", 50, 60)
+        assert body["line"].startswith("50 of 60 read · 50 faces found")
+        assert (await w.get("/import")).json()["photos"] == 50
         r = await w.client.delete(BASE + "/import", headers=CSRF)
         assert r.status_code == 200 and r.json()["status"] == "no_session"
         assert (await w.post("/import/step")).json()["status"] == "no_session"

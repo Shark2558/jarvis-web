@@ -36,7 +36,7 @@ from jarvis.integrations.google import (
 )
 from jarvis.integrations.vault import GoogleTokens
 from jarvis.logging import get_logger
-from jarvis.photos.errors import BAD_ANSWER, BAD_PICTURE, PickerError
+from jarvis.photos.errors import BAD_ANSWER, BAD_PICTURE, PickerError, PickerRetry
 from jarvis.photos.imaging import sanitise_jpeg
 from jarvis.photos.models import PHOTOS_SCOPE, SESSION_ID, PickedItem, PickerSession
 
@@ -54,6 +54,9 @@ JPEG_TYPE = "image/jpeg"
 STATUS_UNAUTHORIZED = 401
 DOWNLOAD_TIMEOUT_S = 20.0
 HTTP_OK = 200
+TOO_MANY = 429
+# R11.1 review C-code M1: what means "try again later", not "this photo is bad"
+TRY_LATER = frozenset({TOO_MANY, 500, 502, 503, 504})
 
 GRANT_MSG = (
     "JARVIS has no permission to open the photos you pick yet. Open Integrations and press "
@@ -189,8 +192,10 @@ class PickerClient:
         status, data = await self._fetch(url, await self._g.access_token(uid))
         if status == STATUS_UNAUTHORIZED:
             status, data = await self._fetch(url, await self._renew(uid))
+        if status in TRY_LATER or status >= 500:
+            raise PickerRetry(BAD_PICTURE)  # Google's trouble, not the photo's: tried again
         if status != HTTP_OK:
-            raise PickerError(BAD_PICTURE)
+            raise PickerError(BAD_PICTURE)  # 403, 404 and the like: this photo is not readable
         return await asyncio.to_thread(sanitise_jpeg, data)
 
     async def _renew(self, uid: str) -> str:
@@ -220,9 +225,9 @@ class PickerClient:
                     if len(buf) > MAX_IMAGE_BYTES:
                         raise PickerError(BAD_PICTURE)
                 return r.status_code, bytes(buf)
-        except httpx.HTTPError as exc:
+        except httpx.HTTPError as exc:  # a timeout or a dropped connection: try again later
             log.warning("photo download failed", extra={"reason": type(exc).__name__})
-            raise PickerError(BAD_PICTURE) from None
+            raise PickerRetry(BAD_PICTURE) from None
 
     async def delete_session(self, uid: str, session_id: str) -> None:
         """Best effort: Google expires sessions on its own."""

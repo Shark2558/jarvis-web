@@ -68,7 +68,7 @@ def test_the_part_names_only_its_two_collections() -> None:
         source += inspect.getsource(__import__(f"jarvis.facegroups.{module}", fromlist=["x"]))
     assert COLLECTIONS["photos"] == ("photo_imports", "face_groups")
     assert 'f"{prefix}face_groups"' in source and package.__doc__
-    import jarvis.photos.imports as imports
+    import jarvis.photos.import_store as imports
 
     assert 'f"{prefix}photo_imports"' in inspect.getsource(imports)
 
@@ -174,8 +174,12 @@ async def test_a_sleeping_laptop_never_hides_the_row(tmp_path: Path) -> None:
     await c.home.aclose()
 
 
+STEPS_OF_TEN = ImportLimits(batch=10, most=10)  # fixed steps: these tests are about the rows/jobs
+
+
 async def test_photos_being_read_row_and_its_delete_stop_the_import() -> None:
     r = rig(items=30)
+    r.svc.limits = STEPS_OF_TEN
     row = PhotoImportPrivacy(lambda: r.svc)
     idle = await row.describe(UID)
     assert (idle.count, idle.delete, idle.note) == (0, "none", "No import is running.")
@@ -202,6 +206,7 @@ async def test_photos_being_read_row_and_its_delete_stop_the_import() -> None:
 
 async def test_the_import_job_does_one_step_a_tick_for_each_owner_with_an_import() -> None:
     r = rig(items=25)
+    r.svc.limits = STEPS_OF_TEN
     job = PhotosImportJob(lambda: r.svc)
     assert await job.run([UID]) == {"steps": 0, "photos": 0, "paused": 0, "failed": 0}
     assert r.picker.pages == 0  # nothing running: one document read, nobody is called
@@ -215,6 +220,7 @@ async def test_the_import_job_does_one_step_a_tick_for_each_owner_with_an_import
 
 async def test_a_laptop_known_to_be_asleep_costs_nothing_and_is_a_pause_not_a_failure() -> None:
     r = rig(items=25)
+    r.svc.limits = STEPS_OF_TEN
     asleep = {"on": False}
 
     async def online(uid: str) -> bool:

@@ -73,10 +73,14 @@ class ImportResult:
 
 @dataclass(frozen=True)
 class ImportLimits:
-    """`photos_max_picked` and `photos_import_batch` (config.py), as the import uses them."""
+    """`photos_max_picked` and `photos_import_batch` (config.py), as the import uses them.
+    R11.1 review C-code M6: a step reads as many photos as fit its time, never fewer than
+    `batch` when they fit and never more than `max(batch, most)`; `most` is the step's ceiling
+    (50: `photos_import_batch`'s own maximum)."""
 
     max_picked: int = 2000
     batch: int = 10
+    most: int = 50
 
 
 @dataclass(frozen=True)

@@ -14,9 +14,12 @@ from jarvis.photos.imports import ImportStore, describe
 from jarvis.photos.models import FaceHit, ImportLimits
 from jarvis.photos.service import PhotosService, PhotosState
 
+STEPS_OF_TEN = ImportLimits(batch=10, most=10)  # a step's ceiling at the setting (fixed steps)
+
 
 async def picked(items: int, **kw: object):  # noqa: ANN202
     r = rig(items=items, **kw)  # type: ignore[arg-type]
+    r.svc.limits = STEPS_OF_TEN  # these tests are about resuming, not how much a step reads
     await r.svc.begin(UID)
     return r
 
@@ -51,7 +54,9 @@ async def test_it_resumes_after_a_restart_and_sends_nothing_twice() -> None:
     for _ in range(2):
         await r.svc.collect(UID)
     # the cloud instance restarts: a new service over the same documents
-    again = PhotosService(r.picker, r.edge, r.f.svc, r.contacts, PhotosState(r.f.docs))  # type: ignore[arg-type]
+    again = PhotosService(
+        r.picker, r.edge, r.f.svc, r.contacts, PhotosState(r.f.docs), limits=STEPS_OF_TEN
+    )  # type: ignore[arg-type]
     statuses = [(await again.collect(UID)).status for _ in range(2)]
     assert statuses == ["reading", "done"]
     sent = [image.removeprefix(JPEG).decode() for image in r.edge.received]
@@ -113,7 +118,7 @@ async def test_googles_links_are_asked_for_again_and_never_kept() -> None:
 
 async def test_the_owners_limit_is_the_cap_and_the_rest_is_said() -> None:
     r = rig(items=40)
-    r.svc.limits = ImportLimits(max_picked=25, batch=10)
+    r.svc.limits = ImportLimits(max_picked=25, batch=10, most=10)
     await r.svc.begin(UID)
     assert r.picker.max_items == [25]
     statuses = [(await r.svc.collect(UID)).status for _ in range(3)]
@@ -123,15 +128,28 @@ async def test_the_owners_limit_is_the_cap_and_the_rest_is_said() -> None:
     assert "15 more were picked than your limit of 25" in res.line
 
 
-async def test_the_batch_size_is_the_setting() -> None:
-    r = rig(items=12)
-    r.svc.limits = ImportLimits(max_picked=2000, batch=5)
+async def test_a_step_reads_as_many_as_fit_its_time_at_least_the_setting() -> None:
+    # review C-code M6: the setting is not a ceiling while the time allows more (up to 50)
+    r = rig(items=120)
+    r.svc.limits = ImportLimits(max_picked=2000, batch=5)  # as the part sets it: most = 50
     await r.svc.begin(UID)
-    assert [(await r.svc.collect(UID)).photos for _ in range(3)] == [5, 10, 12]
+    assert [(await r.svc.collect(UID)).photos for _ in range(3)] == [50, 100, 120]
+
+
+async def test_a_step_never_starts_a_photo_it_cannot_finish_in_its_time() -> None:
+    r = rig(items=40)
+    r.picker.slow = 0.2  # each photo takes 0.2 s; the step has about 1 s
+    await r.svc.begin(UID)
+    res = await r.svc.collect(UID, budget_s=2.0)
+    assert res.status == "reading" and 2 <= res.photos <= 5  # time decided, not the setting
+    downloads = [e for e in r.picker.events if e.startswith("download")]
+    assert len(downloads) == len(r.edge.received) == res.photos  # nothing begun and dropped
+    assert "left; keep the Connectors panel open to go faster" in res.line  # the honest pace
 
 
 async def test_faces_and_known_people_add_up_across_steps() -> None:
     r = rig(items=20)
+    r.svc.limits = STEPS_OF_TEN
     p = await add_adult(r.f)
     await enrol(r.f, p)
     hits = [(FaceHit(C1, p.id, 0.95),), (FaceHit(C2, None, 0.0),), ()] * 7

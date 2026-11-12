@@ -346,19 +346,23 @@ async def killed() -> list[str]:
         return procs[-1]
 
     slow = slow_xlsx(9)
+    box = Sandbox(timeout_s=0.4)
     started = time.monotonic()
     with patched(isolation_mod.asyncio, "create_subprocess_exec", spy):
         try:
-            await extract_isolated(slow, "xlsx", Limits(budget_s=60), Sandbox(timeout_s=0.4))
+            await extract_isolated(slow, "xlsx", Limits(budget_s=60), box)
             return ["a file that takes seconds to read was read past its time limit"]
         except DocumentRejected as exc:
             code = exc.code
     took = time.monotonic() - started
     out = [] if code == "too_slow" else [f"expected too_slow, got {code}"]
-    if took > 3.0:
+    # proven by the kill (a signal, not a normal end), within the contract's own bound
+    if took > box.timeout_s + isolation_mod.KILL_WAIT_S:
         out.append(f"the kill took {took:.1f} s")
     if len(procs) != 1 or alive(procs[0].pid):
         out.append("the child process outlived its upload")
+    elif procs[0].returncode is None or procs[0].returncode >= 0:
+        out.append(f"the child was not killed (it ended with {procs[0].returncode})")
     return out
 
 

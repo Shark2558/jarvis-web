@@ -22,7 +22,7 @@ const TIERS = ['fast', 'balanced', 'strong'];
 const ARCHIVES = ['.zip', '.7z', '.rar', '.tar', '.gz', '.tgz', '.bz2', '.xz', '.jar', '.iso'];
 const PICTURE = /\.(png|jpe?g)$/i;
 const JPEG_TRIES = [0.85, 0.7, 0.55, 0.4];
-const LARGE = { chars: 40000, sheets: 3, rows: 2000, pictures: 2 };
+let large = Object.freeze({ chars: 40000, sheets: 3, rows: 2000, pictures: 2 }); // GET /v1/input says (estimate.py)
 const UNDERSTAND_WAIT_MS = 8000;
 const UNCHECKED = 'Couldn\'t check the words; sent as heard.';
 const UNKNOWN_COST = 'Couldn\'t estimate the cost; send anyway?';
@@ -47,6 +47,10 @@ function takeLimits(j) {
   ['max_files', 'file_mb', 'total_mb', 'folder_max_files', 'zip_max_files', 'picture_max_kb', 'picture_side', 'max_pictures']
     .forEach(k => { next[k] = Number.isInteger(l[k]) && l[k] > 0 ? l[k] : limits[k]; });
   limits = Object.freeze(next);
+  const big = l.large && typeof l.large === 'object' ? l.large : {};
+  const seen = {};
+  ['chars', 'sheets', 'rows', 'pictures'].forEach(k => { seen[k] = Number.isInteger(big[k]) && big[k] >= 0 ? big[k] : large[k]; });
+  large = Object.freeze(seen);
   understandOn = j.understand !== false;
   const A = window.JarvisAttach;
   if (A && typeof A.configure === 'function') A.configure(limits);
@@ -104,9 +108,9 @@ function isLarge(files) {
   files.forEach(f => {
     const m = (f && f.meta) || {};
     chars += num(m.chars); pictures += num(m.pictures);
-    if (num(m.sheets) > LARGE.sheets || num(m.rows) > LARGE.rows) complex = true;
+    if (num(m.sheets) > large.sheets || num(m.rows) > large.rows) complex = true;
   });
-  return complex || chars > LARGE.chars || pictures > LARGE.pictures;
+  return complex || chars > large.chars || pictures > large.pictures;
 }
 function hideCost() { const old = $('r111fCost'); if (old) old.remove(); }
 function costButton(label, primary, run) {

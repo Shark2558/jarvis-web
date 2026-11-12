@@ -3,7 +3,9 @@
 Pure and synchronous; in the app it runs only inside the extraction worker.
 
     JPEG   `jarvis.photos.imaging.sanitise_jpeg` (R4; dependency-free): only the segments a
-           decoder needs are kept, so EXIF (camera, GPS), XMP, ICC and comments are gone
+           decoder needs are kept, so EXIF (camera, GPS), XMP, ICC and comments are gone. It
+           alone decides whether a JPEG is too wide (its `MAX_IMAGE_SIDE`); when it refuses
+           one, the frame's size is read here only to say why in words (code review L1)
     PNG    the same idea here: the header, palette, transparency and pixel chunks are kept, each
            with its checksum verified; text, EXIF, time and every other extra chunk is dropped,
            and so is anything after the end marker
@@ -45,10 +47,10 @@ def _bad() -> DocumentRejected:
     )
 
 
-def _too_wide(width: int, height: int) -> DocumentRejected:
+def _too_wide(width: int, height: int, limit: int = PICTURE_MAX_SIDE) -> DocumentRejected:
     return DocumentRejected(
         "too_large",
-        f"This picture is {width:,} by {height:,} pixels; the limit is {PICTURE_MAX_SIDE:,} "
+        f"This picture is {width:,} by {height:,} pixels; the limit is {limit:,} "
         f"pixels on its longer side. {SMALLER}",
         status=413,
     )
@@ -74,7 +76,8 @@ def _check_side(width: int, height: int) -> None:
 
 
 def _jpeg_size(data: bytes) -> tuple[int, int] | None:
-    """(width, height) from the first frame header, or None when the file is not walkable."""
+    """(width, height) from the first frame header, or None when the file is not walkable. For
+    the words of a refusal only: the check itself is `sanitise_jpeg`'s."""
     pos, n = 2, len(data)
     while pos + 4 <= n and data[pos] == 0xFF:
         marker = data[pos + 1]
@@ -99,14 +102,15 @@ def _jpeg_size(data: bytes) -> tuple[int, int] | None:
 
 
 def _clean_jpeg(data: bytes) -> bytes:
-    from jarvis.photos.imaging import sanitise_jpeg  # standard library only (R4 D-C1)
+    from jarvis.photos import imaging  # standard library only (R4 D-C1)
 
-    size = _jpeg_size(data)
-    if size is not None:
-        _check_side(*size)
     try:
-        return sanitise_jpeg(data)
+        return imaging.sanitise_jpeg(data)
     except Exception:  # noqa: BLE001 — PickerError, or anything a hostile file triggers
+        size = _jpeg_size(data)
+        limit = imaging.MAX_IMAGE_SIDE
+        if size is not None and min(size) > 0 and max(size) > limit:
+            raise _too_wide(*size, limit) from None
         raise _bad() from None
 
 

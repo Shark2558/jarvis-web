@@ -46,6 +46,7 @@ _ROW, _CELL = _A + "tr", _A + "tc"
 _SLIDE = re.compile(r"ppt/slides/slide(\d{1,6})\.xml")
 _NOTES = re.compile(r"ppt/notesSlides/[^/]{1,80}\.xml")
 BAD_SLIDE = "(this slide could not be read)"
+BAD_NOTES = "(notes could not be read)"
 NO_WORDS = "(no words on this slide)"
 
 
@@ -155,8 +156,9 @@ def _slide(zf: zipfile.ZipFile, part: str, names: set[str]) -> list[str]:
             said = _lines(_parse(zf.read(notes)), fields=False)
         except MemoryError:
             raise
-        except Exception:  # noqa: BLE001
-            said = []
+        except Exception:  # noqa: BLE001 — a damaged notes page is said, like a damaged slide
+            lines.append(BAD_NOTES)
+            return lines
         if said:
             lines.append("Notes: " + "\n".join(said))
     return lines
@@ -177,7 +179,7 @@ def read_deck(data: bytes, limits: Limits, deadline: float, clock: Clock) -> Ext
                     more = True
                     break
                 lines = _slide(zf, part, names)
-                words += sum(1 for line in lines if line != BAD_SLIDE)
+                words += sum(1 for line in lines if line not in (BAD_SLIDE, BAD_NOTES))
                 body = "\n".join(lines) if lines else NO_WORDS
                 parts.append(f"Slide {n} of {len(slides)}\n{body}")
                 used += len(parts[-1]) + 2

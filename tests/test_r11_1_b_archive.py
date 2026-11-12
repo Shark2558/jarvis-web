@@ -265,12 +265,17 @@ async def test_a_child_that_reads_too_long_is_killed_on_time(monkeypatch) -> Non
 
     monkeypatch.setattr(isolation.asyncio, "create_subprocess_exec", spy)
     slow = slow_xlsx(9)
+    box = Sandbox(timeout_s=0.4)
     started = time.monotonic()
     with pytest.raises(DocumentRejected) as e:
-        await extract_isolated(slow, "xlsx", Limits(budget_s=60), Sandbox(timeout_s=0.4))
+        await extract_isolated(slow, "xlsx", Limits(budget_s=60), box)
     took = time.monotonic() - started
-    assert e.value.code == "too_slow" and took < 3.0
-    assert len(procs) == 1 and not alive(procs[0].pid)
+    # code review L8: proven by the kill, not the clock: it was stopped by a signal (a child
+    # that finished on its own ends with 0) and is gone; the time is only the contract's bound
+    # (the timeout, then at most the reap's own wait), never a guess about the shared machine
+    assert e.value.code == "too_slow"
+    assert len(procs) == 1 and procs[0].returncode is not None and procs[0].returncode < 0
+    assert not alive(procs[0].pid) and took < box.timeout_s + isolation.KILL_WAIT_S
 
 
 async def test_a_child_over_its_cpu_seconds_is_stopped_too() -> None:
@@ -324,3 +329,16 @@ def test_the_parent_cleans_each_picture_again_and_refuses_one_that_changes() -> 
     png_as_jpeg = clean_picture(make_png(), limits).data
     with pytest.raises(DocumentRejected):
         isolation.parse_output(_answer("image/jpeg", png_as_jpeg), 0, kind="image", limits=limits)
+
+
+def test_the_jpeg_side_cap_has_one_source_the_sanitiser(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Code review L1: `photos.imaging.sanitise_jpeg` alone decides a JPEG's size (its
+    `MAX_IMAGE_SIDE`); the local walker only finds the words for the refusal."""
+    import jarvis.photos.imaging as imaging
+
+    assert imaging.MAX_IMAGE_SIDE == PICTURE_MAX_SIDE  # the PNG check uses the same number
+    monkeypatch.setattr(imaging, "MAX_IMAGE_SIDE", 32)
+    e = rejected(extract, make_jpeg(64, 48), "image")
+    assert e.code == "too_large" and "64 by 48 pixels" in str(e) and "the limit is 32" in str(e)
+    lossless = make_jpeg(16, 16).replace(b"\xff\xc0", b"\xff\xc3")  # a frame it does not keep
+    assert rejected(extract, lossless, "image").code == "bad_picture"

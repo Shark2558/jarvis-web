@@ -515,3 +515,14 @@ def test_old_excel_dates_true_false_and_errors_read_plainly() -> None:
     assert (
         cell_text(_xls_value(Book(), 45.0, 2)) == "45" and _xls_value(Book(), "words", 1) == "words"
     )
+
+
+def test_a_notes_page_that_cannot_be_read_is_said() -> None:
+    """Code review L2: like a bad slide, a bad notes page is marked, never silently dropped."""
+    deck = make_pptx(
+        [(["Made-up opening"], ["Say hello"]), (["Made-up close"], [])],
+        extra={"ppt/notesSlides/notesSlide2.xml": b"<p:notes><broken"},
+    )
+    out = extract(deck, "pptx")
+    assert "Slide 1 of 2\nMade-up opening\n(notes could not be read)" in out.text
+    assert "Say hello" not in out.text and "Made-up close" in out.text

@@ -221,3 +221,22 @@ async def test_the_estimate_route_answers_and_is_quiet_on_a_free_brain(client: A
     assert body["unavailable"] is False
     bad = await client.post("/v1/input/estimate", json={"attachments": ["x"] * 30})
     assert bad.status_code == 422
+
+
+async def test_the_console_takes_what_counts_as_large_from_the_server(client: AsyncClient) -> None:
+    """Code review L3: one source for the thresholds (`understand/estimate.py`)."""
+    from pathlib import Path
+
+    from jarvis.understand.estimate import MANY_PICTURES, MANY_ROWS, MANY_SHEETS
+
+    large = (await client.get("/v1/input")).json()["limits"]["large"]
+    assert large == {
+        "chars": LARGE_CHARS,
+        "sheets": MANY_SHEETS,
+        "rows": MANY_ROWS,
+        "pictures": MANY_PICTURES,
+    }
+    js = (
+        Path(__file__).resolve().parents[1] / "src/jarvis/api/static/console-r111-files.js"
+    ).read_text(encoding="utf-8")
+    assert "l.large" in js and "large = Object.freeze" in js

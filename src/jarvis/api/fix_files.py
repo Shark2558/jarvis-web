@@ -6,8 +6,10 @@ request. No route here acts on anything: none writes, sends or deletes, so none 
 
 GET  /v1/input              {part, ready, understand, limits {accept [".pdf", ...], max_files,
                             file_mb, total_mb, folder_max_files, zip_max_files, picture_max_kb,
-                            picture_side, max_pictures}}: the part's status and what the console's
-                            file picker may offer (its accept list comes from here, not the page).
+                            picture_side, max_pictures, large {chars, sheets, rows, pictures}}}:
+                            the part's status and what the console's file picker may offer (its
+                            accept list comes from here, not the page), and what counts as large
+                            enough to ask for an estimate first (D12; one source, estimate.py).
 POST /v1/input/understand   {heard (1-2,000), alternatives? (<= 3), files? (<= 20 names),
                             session_id?, confidence? (0-1)} -> {understood, changed, sure,
                             question, via: rules | ai | none | off}. The fixed rules first and
@@ -45,7 +47,14 @@ from jarvis.documents.limits import (
 )
 from jarvis.documents.service import MB, policy_from
 from jarvis.fixes.ports import NOT_BUILT, ROUTE_PREFIX, FixPart, PartName
-from jarvis.understand.estimate import MAX_IDS, Estimator
+from jarvis.understand.estimate import (
+    LARGE_CHARS,
+    MANY_PICTURES,
+    MANY_ROWS,
+    MANY_SHEETS,
+    MAX_IDS,
+    Estimator,
+)
 from jarvis.understand.service import HEARD_LIMIT, MAX_ALTERNATIVES, MAX_FILES, UnderstandService
 
 PART: PartName = "files"
@@ -144,6 +153,12 @@ def _limits(request: Request) -> dict[str, Any]:
         "picture_max_kb": p.picture_max_bytes // 1024,
         "picture_side": PICTURE_SHRINK_SIDE,
         "max_pictures": p.max_pictures,
+        "large": {
+            "chars": LARGE_CHARS,
+            "sheets": MANY_SHEETS,
+            "rows": MANY_ROWS,
+            "pictures": MANY_PICTURES,
+        },
     }
 
 

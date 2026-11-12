@@ -20,9 +20,13 @@ POST /v1/voice/speak       {text, voice?, rate?} | {preview: true, voice?} → 2
                            X-Jarvis-Chars, X-Jarvis-Cost-Inr; 422 nothing_to_say / input_rejected,
                            402 budget_reached, 503 voice_unavailable {reason}, 429
 POST /v1/voice/transcribe  body audio/wav (16 kHz mono PCM16, 0.3–60 s, ≤ 2,000,000 bytes) →
-                           {text, confidence, seconds, cost_inr, language, no_speech}; 413
-                           too_large (Content-Length checked before reading), 422 bad_audio,
-                           402, 503, 429
+                           {text, confidence, seconds, cost_inr, language, no_speech,
+                           alternatives}; 413 too_large (Content-Length checked before reading),
+                           422 bad_audio, 402, 503, 429. R11.1 D9: `alternatives` are the
+                           engine's other guesses (at most two); optional header
+                           X-Jarvis-Session: <conversation id> adds that conversation's attached
+                           file names and the owner's own nouns to this turn's recognition hints
+                           (his waiting files' names are always added). A bad id is ignored.
 
 Errors use the app's shape {"error": code, "detail": plain words}; 503 voice_unavailable adds
 "reason" (api_disabled | not_configured | upstream_error | timeout); 429 adds Retry-After.
@@ -30,6 +34,8 @@ Errors use the app's shape {"error": code, "detail": plain words}; 503 voice_una
 
 from __future__ import annotations
 
+import asyncio
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
@@ -40,6 +46,7 @@ from jarvis.api.body import read_capped
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.api.settings_audit import record_change
+from jarvis.logging import get_logger
 from jarvis.voice.ports import (
     AudioTooLarge,
     BadAudio,
@@ -51,6 +58,7 @@ from jarvis.voice.ports import (
 from jarvis.voice.service import SpeakRequest, TranscriptView, VoiceService, VoiceView
 from jarvis.voice.settings import VoiceSettings, VoiceSettingsPatch
 
+log = get_logger(__name__)
 router = APIRouter(prefix="/v1/voice", dependencies=[Depends(require_auth)])
 
 SPEAK_PER_MINUTE = 60
@@ -59,6 +67,9 @@ VIEW_PER_MINUTE = 60
 SETTINGS_PER_MINUTE = 60
 MAX_AUDIO_BYTES = 2_000_000
 WAV_TYPES = frozenset({"audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"})
+SESSION_HEADER = "x-jarvis-session"  # R11.1 D9: the open conversation, for this turn's hints
+HINTS_WAIT_S = 0.8  # the hints are a help: a slow read never delays what was said
+_SESSION_ID = re.compile(r"[A-Za-z0-9_\-]{1,64}")
 
 
 class VoiceRateLimited(Exception):
@@ -79,6 +90,25 @@ def _limit(request: Request, name: str, uid: str) -> None:
     allowed, wait = limiter.allow(uid)
     if not allowed:
         raise VoiceRateLimited(wait)
+
+
+async def turn_hints(request: Request, uid: str) -> tuple[str, ...]:
+    """This turn's recognition hints (R11.1 D9), from the files part: the owner's waiting and
+    attached files' names as they are said, and his own turns' nouns. Never raises and never
+    takes long: without the part, on any failure or past `HINTS_WAIT_S` there are none."""
+    parts: dict[str, Any] = getattr(request.app.state, "r111_parts", None) or {}
+    part = parts.get("files")
+    svc = part.services.get("understand") if part is not None else None
+    if svc is None:
+        return ()
+    raw = request.headers.get(SESSION_HEADER, "")
+    sid = raw if _SESSION_ID.fullmatch(raw) else None
+    try:
+        found = await asyncio.wait_for(svc.hints(uid, session_id=sid), HINTS_WAIT_S)
+    except Exception as exc:  # noqa: BLE001 — never a reason to refuse a recording
+        log.warning("turn hints unavailable", extra={"reason": type(exc).__name__})
+        return ()
+    return tuple(found.turn)
 
 
 @router.get("", response_model=VoiceView)
@@ -136,7 +166,7 @@ async def transcribe(
     blob = await read_capped(
         request, MAX_AUDIO_BYTES, too_large=lambda: AudioTooLarge(MAX_AUDIO_BYTES)
     )
-    return await svc.transcribe(uid, blob)
+    return await svc.transcribe(uid, blob, turn_hints=await turn_hints(request, uid))
 
 
 def _err(status: int, body: dict[str, Any], headers: dict[str, str] | None = None) -> JSONResponse:

@@ -22,9 +22,12 @@ POST   /v1/helpers/kitchen/blocks/propose    the plan as an approval card throug
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -48,6 +51,7 @@ from jarvis.tools.taint import context_trust
 log = get_logger(__name__)
 
 PREFIX = "/v1/helpers/kitchen"
+KIND = "helpers_kitchen"  # his kitchen conversation's kind (one a day: the card waits there)
 NO_STORE = {"Cache-Control": "no-store"}
 router = APIRouter(prefix=PREFIX, dependencies=[Depends(require_auth)])
 
@@ -225,16 +229,41 @@ async def kitchen_blocks(
     return await _change(request, uid, work)
 
 
-async def _conversation(request: Request, uid: str) -> str | None:
-    """A new conversation of his own for the card (R11.1 I1, INTEGRATION-A 3.9): an approval is
-    decided inside a stored conversation, so a card proposed under "<uid>:helpers_kitchen" could
-    never be approved (`Brain.approve` found no such conversation). None: no store."""
+def _day_session_id(uid: str, request: Request) -> str:
+    """The id of his kitchen conversation for today (his time zone): the same every press of the
+    day, shaped like any session id (`sess_` and 20 hex)."""
+    s = getattr(request.app.state, "settings", None)
+    try:
+        tz = ZoneInfo(getattr(s, "user_timezone", "") or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        tz = ZoneInfo("UTC")
+    day = datetime.now(tz).date().isoformat()
+    return "sess_" + hashlib.sha256(f"{KIND}|{uid}|{day}".encode()).hexdigest()[:20]
+
+
+async def _conversation(request: Request, uid: str) -> tuple[str, bool] | None:
+    """His conversation for the card (R11.1 I1, INTEGRATION-A 3.9): an approval is decided inside
+    a stored conversation, so a card proposed under "<uid>:helpers_kitchen" could never be
+    approved (`Brain.approve` found no such conversation). ONE a day, however often he presses
+    (code review M2): (its id, whether this press made it). None: no store."""
     store = getattr(request.app.state, "store", None)
     if store is None:
         return None
-    made = Session(user_id=uid, metadata={"persona": PERSONA_VERSION})
+    sid = _day_session_id(uid, request)
+    found = await store.get(sid)
+    if found is not None and found.user_id == uid:
+        return sid, False
+    made = Session(id=sid, user_id=uid, metadata={"persona": PERSONA_VERSION, "kind": KIND})
     await store.save(made)
-    return made.id
+    return sid, True
+
+
+async def _forget(request: Request, sid: str) -> None:
+    """The conversation this press made, when no card waits in it (security review L2)."""
+    try:
+        await request.app.state.store.delete(sid)
+    except Exception as exc:  # noqa: BLE001 - an empty conversation left over, said in the log
+        log.warning("kitchen conversation not removed", extra={"error": type(exc).__name__})
 
 
 @router.post("/blocks/propose", response_model=None)
@@ -252,13 +281,16 @@ async def kitchen_propose(request: Request, uid: str = Depends(current_user)) ->
             "washing_minutes": plan.washing_minutes,
             "days": ",".join(plan.days) or "daily",
         }
-        sid = await _conversation(request, uid)
-        if sid is None:
+        held = await _conversation(request, uid)
+        if held is None:
             return _answer(503, {"error": "unavailable", "detail": "Couldn't save that just now."})
+        sid, made = held
         call = ToolCall(id=f"kitchen-{uuid.uuid4().hex[:8]}", name=BLOCKS_TOOL, arguments=args)
         with context_trust(untrusted=False):  # the owner's own button and his own saved plan
             res = await gateway.execute(call, scope=f"{uid}:{sid}")
         if res.outcome is not GatewayOutcome.AWAITING_CONFIRMATION or res.pending is None:
+            if made:
+                await _forget(request, sid)
             return _answer(409, {"error": "not_proposed", "detail": "The card couldn't be made."})
         return _answer(200, {"pending": True, "session_id": sid, "message": res.pending.summary})
 

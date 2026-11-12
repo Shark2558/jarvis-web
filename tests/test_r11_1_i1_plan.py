@@ -139,53 +139,134 @@ async def test_approve_all_without_a_narrator_says_the_batch_s_own_count(
 
 
 # ---- INTEGRATION-A 3.9 (an R11 bug): a card proposed outside a conversation can be approved ---
-async def test_the_kitchen_s_calendar_card_waits_in_a_real_conversation_and_can_be_approved(
-    settings: Settings,
-) -> None:
+CAL = "https://www.googleapis.com/calendar/v3"
+
+
+def _kitchen_app(settings: Settings, rules: Any = None) -> Any:
+    """The kitchen part on the fake Google, its routes on a small app with a real gateway and a
+    conversation store, as the app wires them; `rules`: his rows (None: none, a card is made)."""
+    import httpx
     from fastapi import FastAPI
     from google_fakes import FakeGoogle
-    from httpx import ASGITransport, AsyncClient
-    from r11_fakes import UID as KUID
     from r11_fakes_d import Rules, connector, kctx
 
     from jarvis.api.auth import require_auth
     from jarvis.api.helpers import change_limiter
-    from jarvis.api.helpers_kitchen import PREFIX, router
+    from jarvis.api.helpers_kitchen import router
     from jarvis.api.identity import current_user
-    from jarvis.core.brain import Brain
     from jarvis.core.guardrails import ConfirmationGate
     from jarvis.helpers.kitchen import part as kitchen_part
-    from jarvis.llm.router import ModelRouter, ModelTier
     from jarvis.tools.audit import AuditLog
     from jarvis.tools.gateway import Gateway
     from jarvis.tools.policy import Policy
     from jarvis.tools.registry import ToolRegistry
 
-    fake = FakeGoogle()
-    c, _, _, _ = kctx(google=await connector(fake.client()), rules=Rules())
-    built = kitchen_part.build(c)
-    reg = ToolRegistry()
-    for t in built.tools:
-        reg.register(t)
-    gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
-    store = InMemorySessionStore()
-    app = FastAPI()
-    app.include_router(router)
-    app.dependency_overrides[require_auth] = lambda: None
-    app.dependency_overrides[current_user] = lambda: KUID
-    app.state.r11_parts, app.state.helpers_limit = {"kitchen": built}, change_limiter()
-    app.state.gateway, app.state.store = gw, store
+    async def build() -> tuple[FastAPI, Any, Any]:
+        from r11_fakes import UID as KUID
+
+        fake = FakeGoogle()
+        fake.on(
+            "GET",
+            f"{CAL}/users/me/calendarList/primary",
+            httpx.Response(200, json={"timeZone": "Asia/Kolkata"}),
+        )
+        me = {"email": "owner@example.com", "self": True}
+        made = {"start": {"dateTime": "2026-11-11T19:00:00+05:30"}, "organizer": me}
+        fake.on(
+            "POST",
+            f"{CAL}/calendars/primary/events",
+            httpx.Response(200, json={"id": "evcooking", "summary": "Cooking", **made}),
+            httpx.Response(200, json={"id": "evwashing", "summary": "Washing-up", **made}),
+        )
+        c, _, _, _ = kctx(google=await connector(fake.client()), rules=Rules())
+        built = kitchen_part.build(c)
+        reg = ToolRegistry()
+        for t in built.tools:
+            reg.register(t)
+        gw = Gateway(
+            registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog(), rules=rules
+        )
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[require_auth] = lambda: None
+        app.dependency_overrides[current_user] = lambda: KUID
+        app.state.r11_parts, app.state.helpers_limit = {"kitchen": built}, change_limiter()
+        app.state.gateway, app.state.store = gw, InMemorySessionStore()
+        app.state.settings = settings
+        return app, gw, fake
+
+    return build()
+
+
+async def _press(app: Any) -> Any:
+    from httpx import ASGITransport, AsyncClient
+
+    from jarvis.api.helpers_kitchen import PREFIX
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.post(f"{PREFIX}/blocks/propose")
+        return await client.post(f"{PREFIX}/blocks/propose")
+
+
+async def test_the_kitchen_s_calendar_card_waits_in_a_real_conversation_and_can_be_approved(
+    settings: Settings,
+) -> None:
+    """INTEGRATION-A 3.9 and code review M2: the card waits in a stored conversation of his
+    own, ONE a day however often he presses, and approving it runs the calendar tool through
+    the gateway with the confirmation token (the events reach Google); a second card there can
+    still be declined."""
+    from r11_fakes import UID as KUID
+
+    from jarvis.core.brain import Brain
+    from jarvis.llm.router import ModelRouter, ModelTier
+
+    app, gw, fake = await _kitchen_app(settings)
+    store = app.state.store
+    r = await _press(app)
     assert r.status_code == 200 and r.json()["pending"] is True, r.text
     sid = r.json()["session_id"]
     [card] = await gw.pending()
     session = await store.get(sid)
     assert session is not None and session.user_id == KUID and card.scope == f"{KUID}:{sid}"
+    again = await _press(app)  # the same card again: the same conversation, the same card
+    assert again.status_code == 200 and again.json()["session_id"] == sid  # the day's one
+    assert [x.id for x in await store.list_for_user(KUID)] == [sid]
+    assert [c.id for c in await gw.pending()] == [card.id]
 
     provider = MockProvider()
     tiers = {t: "m" for t in ModelTier}
     brain = Brain(router=ModelRouter(provider, tiers), store=store, settings=settings, gateway=gw)
     provider.script("Added, Sir.")
-    out = await brain.decline(card.id, session_id=sid, user_id=KUID)  # decided in Approvals
+    out = await brain.approve(card.id, session_id=sid, user_id=KUID)  # decided in Approvals
+    posted = fake.sent("POST", "/calendars/primary/events")
+    assert out.session_id == sid and len(posted) == 2, [r.url for r in fake.requests]
+    ran = [e for e in gw.audit._entries if e.tool == "calendar_kitchen_blocks"]  # noqa: SLF001
+    # run with the approval's one-use confirmation token, audited as confirmed
+    assert ran and ran[-1].outcome == "executed" and ran[-1].detail.startswith("confirmed")
+    assert await gw.pending() == []
+    later = await _press(app)  # a new card after the approval: still the day's conversation
+    assert later.status_code == 200 and later.json()["session_id"] == sid
+    [second] = await gw.pending()
+    provider.script("Left it, Sir.")
+    out = await brain.decline(second.id, session_id=sid, user_id=KUID)
     assert out.session_id == sid and await gw.pending() == []
+    assert len(fake.sent("POST", "/calendars/primary/events")) == 2  # nothing more was added
+
+
+async def test_a_kitchen_card_that_could_not_be_made_leaves_no_conversation_behind(
+    settings: Settings,
+) -> None:
+    """Code review M2 / security L2: a refused press (his Calendar row on Never) answers 409
+    and deletes the conversation it made; nothing reached Google."""
+    from r11_fakes import UID as KUID
+
+    from jarvis.tools.policy import Effect, PolicyRule
+
+    class Never:
+        async def rules_for(self, user_id: str) -> list[PolicyRule]:
+            return [PolicyRule(tool_pattern="calendar_*", effect=Effect.DENY, source="owner")]
+
+    app, gw, fake = await _kitchen_app(settings, rules=Never())
+    r = await _press(app)
+    assert r.status_code == 409 and r.json()["error"] == "not_proposed", r.text
+    assert await app.state.store.list_for_user(KUID) == [] and await gw.pending() == []
+    assert fake.sent("POST", "/calendars/primary/events") == []

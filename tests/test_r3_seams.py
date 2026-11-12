@@ -1101,10 +1101,15 @@ def test_the_bridge_extra_is_optional_and_the_cloud_image_unchanged() -> None:
     assert cfg["project"]["optional-dependencies"]["homebridge"] == [
         "aiomqtt==2.5.1",
         "paho-mqtt==2.1.0",
+        # R11.1 I1: the face engine's picture libraries, also only in the bridge image
+        "opencv-python-headless==5.0.0.93",
+        "numpy==2.5.4",
     ]
-    assert not any(d.startswith(("aiomqtt", "paho")) for d in cfg["project"]["dependencies"])
+    bridge_only = ("aiomqtt", "paho", "opencv", "numpy")
+    assert not any(d.startswith(bridge_only) for d in cfg["project"]["dependencies"])
     lock = (ROOT / "requirements.lock").read_text(encoding="utf-8")
-    assert "aiomqtt" not in lock and "paho-mqtt" not in lock
+    for name in ("aiomqtt", "paho-mqtt", "opencv-python-headless", "numpy=="):
+        assert name not in lock, name
 
 
 # ---- Telegram: the home group ----------------------------------------------------------------

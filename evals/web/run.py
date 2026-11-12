@@ -50,6 +50,7 @@ from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelTier
 from jarvis.logging import configure_logging, new_trace_id
 from jarvis.memory.inmemory import InMemorySessionStore
+from jarvis.picture.turnguard import DocumentTurns, TurnGuard
 from jarvis.recall.service import MemoryService
 from jarvis.recall.store import MemoryStore
 from jarvis.recall.tools import memory_tools
@@ -169,7 +170,10 @@ def build(mock: bool) -> Rig:
         TavilyProvider(SecretStr("tvly-eval"), http=fake.client()), WebAllowance(MemoryDocs())
     )
     reg = ToolRegistry()
-    for t in builtin_tools(world) + memory_tools(memory) + web_tools(web):
+    # R11.1 I1: web_search carries the picture turn guard; this rig attaches no files, so its
+    # port (the app's, over no document service) answers "no picture" and nothing changes here
+    pictures = TurnGuard(DocumentTurns(lambda: None))
+    for t in builtin_tools(world) + memory_tools(memory) + web_tools(web, pictures):
         reg.register(t)
     gateway = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=audit)
     brain = Brain(brains=brains, store=InMemorySessionStore(), settings=s, gateway=gateway)

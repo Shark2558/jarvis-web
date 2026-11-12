@@ -608,7 +608,24 @@ def test_the_mqtt_packages_are_the_reviewed_versions_with_wheel_and_sdist_hashes
     text = (HOME / "bridge-requirements.txt").read_text()
     assert "is added with its hashes by the camera part" not in text  # the old promise is kept
     pyproject = (ROOT / "pyproject.toml").read_text()
-    assert 'homebridge = ["aiomqtt==2.5.1", "paho-mqtt==2.1.0"]' in pyproject
+    # R11.1 I1: + the face engine's two libraries (INTEGRATION-C 3.1)
+    assert (
+        'homebridge = ["aiomqtt==2.5.1", "paho-mqtt==2.1.0", "opencv-python-headless==5.0.0.93", '
+        '"numpy==2.5.4"]'
+    ) in pyproject
+
+
+def test_every_homebridge_extra_pin_is_the_bridge_image_s_hash_locked_version() -> None:
+    """R11.1 I1: the extra CI installs and the image's lock name the same versions."""
+    import tomllib
+
+    extra = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"][
+        "optional-dependencies"
+    ]["homebridge"]
+    pins = _pins()
+    for spec in extra:
+        name, version = spec.split("==")
+        assert pins[name][0] == version and pins[name][1], spec
 
 
 def test_the_bridge_image_installs_only_the_locked_files_and_no_dependencies_of_its_own() -> None:

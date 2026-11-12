@@ -4,11 +4,22 @@
 // Loaded BEFORE console.js, which calls window.JarvisDecisions.make({...}) once with its own pieces
 // (transport, busy state, the conversation view): they are never global. Nothing here writes HTML;
 // every server string reaches the page through the console's addMsg or textContent.
+// R11.1 A: a module whose press left a card (a plan's "Skipped", a batch's "Retry") says so with the
+// event jarvis:approvals-stale; the console then reloads its Approvals list. Every event is
+// answered, at most one reload each STALE_MS (one that comes sooner waits for the rest of it); the
+// event carries no data, so a forged one costs a reload and nothing else.
 (() => {
   'use strict';
   /** k: console.js's own {api, isBusy, busy, session, addMsg, note, Deck, loadConversation,
    *  showTyping, handleResponse, limitReached, refreshSide}. */
+  const STALE_MS = 1500;
   function make(k) {
+    let reloaded = 0, waiting = 0;
+    document.addEventListener('jarvis:approvals-stale', () => {
+      if (waiting) return; // a reload is already on its way
+      waiting = setTimeout(() => { waiting = 0; reloaded = Date.now(); k.refreshSide(); },
+        Math.max(0, STALE_MS - (Date.now() - reloaded)));
+    });
     async function decide(id, action, card, sid, tool, passkey) {
       if (k.isBusy()) return; // one action at a time: a reply may still be arriving
       const target = sid || k.session();

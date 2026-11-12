@@ -5,6 +5,8 @@
 // with backslash-u escapes only. Everything the server sends reaches the page through textContent:
 // parcel subjects and event titles are other people's words, shown as quoted text, never markup or
 // links. A field of the wrong type is dropped. A missing key means "not in this brief": no section.
+// R11.1 D20: "Inbox by kind" from brief.data.inbox.groups / .withheld (the whole inbox, by Gmail's
+// own categories); a brief whose inbox carries neither shows no such section.
 (() => {
   'use strict';
   const MAX_ITEMS = 5;
@@ -162,10 +164,31 @@
     return s;
   }
 
+  /** R11.1 D20 "Inbox by kind": Gmail's own categories counted (labels are JARVIS's own words), and
+   *  how many messages are not listed because they look like a code or a bank message. Drawn only
+   *  when the brief's inbox carries `groups` / `withheld`. */
+  function inboxKinds(v) {
+    const box = obj(v);
+    if (!box) return null;
+    const kinds = arr(box.groups).map(obj).filter(Boolean).slice(0, 6)
+      .map((g) => ({ label: txt(g.label, 30), n: Number.isInteger(g.unread) && g.unread > 0 ? g.unread : 0 }))
+      .filter((g) => g.label && g.n);
+    const held = Number.isInteger(box.withheld) && box.withheld > 0 ? box.withheld : 0;
+    if (!kinds.length && !held) return null;
+    const s = section('inboxkinds', 'Inbox by kind', box.exact === false ? 'of the newest unread' : '');
+    if (kinds.length) {
+      const ul = mk('ul', 'bpark');
+      kinds.forEach((g) => { const li = mk('li'); li.append(mk('b', '', g.label), mk('span', '', ' \u00b7 ' + g.n + ' unread')); ul.append(li); });
+      s.append(ul);
+    }
+    if (held) s.append(mk('p', 'bfine', held === 1 ? '1 more looks like a code or a bank message: open it in Gmail.' : held + ' more look like codes or bank messages: open them in Gmail.'));
+    return s;
+  }
+
   /** The sections this brief carries, in display order (an absent one is simply left out). */
   function render(data) {
     const d = obj(data) || {};
-    return [deliveries(d.deliveries), family(d.family), documents(d.vault), home(d.home), vitals(d.vitals), helpers(d.helpers)].filter(Boolean);
+    return [inboxKinds(d.inbox), deliveries(d.deliveries), family(d.family), documents(d.vault), home(d.home), vitals(d.vitals), helpers(d.helpers)].filter(Boolean);
   }
 
   window.JarvisBriefSections = Object.freeze({ render });

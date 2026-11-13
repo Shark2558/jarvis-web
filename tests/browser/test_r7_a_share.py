@@ -369,7 +369,8 @@ def test_no_request_leaves_the_browser_until_a_button_is_pressed(
         t.page.locator(".r7s-item", has_text="garden.jpg").get_by_role(
             "button", name="Attach to my message"
         ).click()
-        t.page.locator("#attachChips .achip").first.wait_for()
+        # the chip shows at once; the upload follows once the picture is redrawn (I1: every picture)
+        t.page.locator('#attachChips .achip[data-state="ready"]').first.wait_for()
         assert [m for m, _ in t.sent(before)] == ["POST"]  # exactly the one the button says
         assert len(t.uploads) == 1 and t.uploads[0]["url"].endswith("/v1/attachments")
         assert t.tray()["items"][0]["name"] == "receipt.png"  # the other one still waits
@@ -388,7 +389,7 @@ def test_a_webp_is_redrawn_as_a_jpeg_of_at_most_1568_px_before_it_is_sent(
             t, {"files": [{"name": "beach.webp", "type": "image/webp", "draw": [3000, 2000]}]}
         )
         t.page.get_by_role("button", name="Attach to my message").click()
-        t.page.locator("#attachChips .achip").first.wait_for()
+        t.page.locator('#attachChips .achip[data-state="ready"]').first.wait_for()
         (up,) = t.uploads
         assert up["body"][:3] == b"\xff\xd8\xff"  # a JPEG, never the WebP as it was
         w, h = _jpeg_size(up["body"])

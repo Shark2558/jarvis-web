@@ -86,6 +86,7 @@ def manifest_problems(text: str) -> list[str]:  # noqa: C901 -- one list of rule
         ("usesCleartextTraffic", "false"),
         ("dataExtractionRules", "@xml/data_extraction_rules"),
         ("networkSecurityConfig", "@xml/network_security_config"),
+        ("fullBackupContent", "@xml/backup_rules"),
     ):
         if app.get(A + key) != want:
             out.append(f"application {key} is not {want}")
@@ -198,6 +199,13 @@ def test_backups_and_device_transfer_exclude_everything() -> None:
         assert section.find("include") is None, part
         excluded = {e.get("domain") for e in section.iter("exclude") if e.get("path") == "."}
         assert {"root", "file", "database", "sharedpref", "external"} <= excluded, part
+
+
+def test_android_9_to_11_backup_rules_exclude_everything_too() -> None:
+    rules = ElementTree.parse(RES / "xml" / "backup_rules.xml").getroot()
+    assert rules.tag == "full-backup-content" and rules.find("include") is None
+    excluded = {e.get("domain") for e in rules.iter("exclude") if e.get("path") == "."}
+    assert {"root", "file", "database", "sharedpref", "external"} <= excluded
 
 
 def test_no_plain_http_and_system_certificates_only() -> None:

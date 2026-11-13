@@ -57,7 +57,6 @@
     <string name="row_tile_why">Talk to JARVIS, and SOS, from the pull-down shade.</string>
 
     <string name="action_allow">Allow</string>
-    <string name="action_choose">Choose</string>
     <string name="action_pick">Pick a folder</string>
     <string name="action_add_talk">Add Talk</string>
     <string name="action_add_sos">Add SOS</string>
@@ -71,13 +70,13 @@
     <string name="state_folder_on">One folder is watched</string>
     <string name="state_tile_added">Added</string>
     <string name="state_tile_how">Pull down the shade, tap the pencil and drag the JARVIS tiles in.</string>
-    <string name="state_blocked">Switched off in Android\'s settings. Tap to open them.</string>
 
     <string name="sync_never">Last synced: not yet</string>
     <string name="sync_at">Last synced: %1$s</string>
     <string name="sync_now">Sync now</string>
     <string name="sync_running">Reading Health Connect…</string>
     <string name="sync_sent">Sent to JARVIS.</string>
+    <string name="sync_outcome" translatable="false">%1$s\n%2$s</string>
     <string name="sync_nothing">Nothing to send yet.</string>
     <string name="sync_no_permission">Please allow Watch data first, Sir.</string>
     <string name="sync_failed">JARVIS could not be reached. It will try again later.</string>
@@ -96,13 +95,23 @@
     <!-- SOS (D19) -->
     <string name="sos_title">Emergency SOS</string>
     <string name="sos_title_test">Test SOS</string>
-    <string name="sos_counting">Sending to your family in %1$d seconds. Tap Cancel to stop.</string>
-    <string name="sos_counting_test">Sending a TEST to your family in %1$d seconds. Tap Cancel to stop.</string>
+    <plurals name="sos_counting">
+        <item quantity="one">Sending to your family in %1$d second. Tap Cancel to stop.</item>
+        <item quantity="other">Sending to your family in %1$d seconds. Tap Cancel to stop.</item>
+    </plurals>
+    <plurals name="sos_counting_test">
+        <item quantity="one">Sending a TEST to your family in %1$d second. Tap Cancel to stop.</item>
+        <item quantity="other">Sending a TEST to your family in %1$d seconds. Tap Cancel to stop.</item>
+    </plurals>
+    <string name="sos_count" translatable="false">%1$d</string>
     <string name="sos_cancel">Cancel</string>
     <string name="sos_close">Close</string>
     <string name="sos_cancelled">Cancelled. Nothing was sent.</string>
     <string name="sos_sending">Sending…</string>
-    <string name="sos_sent">Sent to %1$d people on Telegram.</string>
+    <plurals name="sos_sent">
+        <item quantity="one">Sent to %1$d person on Telegram.</item>
+        <item quantity="other">Sent to %1$d people on Telegram.</item>
+    </plurals>
     <string name="sos_sent_plain">Sent on Telegram.</string>
     <string name="sos_failed">The Telegram message could not be sent. Please text your family or call 112.</string>
     <string name="sos_not_linked">This phone is not linked to JARVIS, so no Telegram message can go. Please text your family or call 112.</string>

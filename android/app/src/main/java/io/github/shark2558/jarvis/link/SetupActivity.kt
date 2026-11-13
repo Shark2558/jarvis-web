@@ -253,7 +253,7 @@ class SetupActivity : ComponentActivity() {
             } catch (e: Exception) {
                 HealthSync.Outcome.FAILED
             }
-            runOnUiThread { syncLine.text = getString(wordsFor(outcome)) + "\n" + syncText() }
+            runOnUiThread { syncLine.text = getString(R.string.sync_outcome, getString(wordsFor(outcome)), syncText()) }
         }
     }
 

@@ -5,7 +5,6 @@
     android:id="@+id/privacy_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/jarvis_bg"
     android:fillViewport="true"
     android:padding="@dimen/screen_padding">
 

@@ -85,7 +85,10 @@ android {
     lint {
         abortOnError = true
         checkReleaseBuilds = true
-        textReport = true
+        // On purpose, not by accident: the app uses androidx.core without its KTX extensions (the
+        // plan's library list), and the SDK and library pins are the plan's (D23), moved only by a
+        // decision; CI's information step prints the newest versions on every run.
+        disable += listOf("UseKtx", "OldTargetApi", "GradleDependency")
     }
 }
 

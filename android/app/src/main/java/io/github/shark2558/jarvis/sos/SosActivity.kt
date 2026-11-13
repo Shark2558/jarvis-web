@@ -186,9 +186,9 @@ class SosActivity : Activity() {
         when (val s = machine.state) {
             is SosState.Counting -> {
                 val left = machine.remainingSeconds(now)
-                count.text = left.toString()
-                val words = if (kind == SosKind.TEST) R.string.sos_counting_test else R.string.sos_counting
-                status.text = getString(words, left.toInt())
+                count.text = getString(R.string.sos_count, left.toInt())
+                val words = if (kind == SosKind.TEST) R.plurals.sos_counting_test else R.plurals.sos_counting
+                status.text = resources.getQuantityString(words, left.toInt(), left.toInt())
                 beep(left)
             }
             is SosState.Sending -> {
@@ -197,7 +197,11 @@ class SosActivity : Activity() {
                 showAfter()
             }
             is SosState.Sent -> {
-                status.text = if (s.reached >= 0) getString(R.string.sos_sent, s.reached) else getString(R.string.sos_sent_plain)
+                status.text = if (s.reached >= 0) {
+                    resources.getQuantityString(R.plurals.sos_sent, s.reached, s.reached)
+                } else {
+                    getString(R.string.sos_sent_plain)
+                }
                 showAfter()
             }
             is SosState.Failed -> {
@@ -226,6 +230,8 @@ class SosActivity : Activity() {
     private fun showAfter() {
         after.visibility = View.VISIBLE
         cancelButton.setText(R.string.sos_close)
+        // a test never offers the real SOS text message, so no test can reach the family by SMS
+        if (kind == SosKind.TEST) findViewById<View>(R.id.sos_text).visibility = View.GONE
     }
 
     private fun openText() {

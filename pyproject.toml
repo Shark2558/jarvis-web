@@ -92,6 +92,8 @@ where = ["src"]
     "static/vendor/ort/*.mjs",
     "static/vendor/ort/*.wasm",
     "static/vendor/ort/*.txt",
+    "static/vendor/vision/*.txt",
+    "static/vendor/vision/*/*",
     "static/wakeword/*.onnx",
     "static/wakeword/*.txt",
 ]

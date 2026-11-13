@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from collections.abc import Awaitable, Callable, Mapping
-from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -330,11 +330,45 @@ _VISION_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 VISION_TYPES = frozenset({_JS, "application/wasm", "application/octet-stream", "application/json"})
 
 
-@lru_cache(maxsize=8)
-def vision_files(release: str) -> Mapping[str, str]:
+_Stamp = tuple[tuple[str, int, int], ...]
+_VISION_KEEP = 8  # releases remembered at once
+
+
+def _vision_stamp(folder: Path) -> _Stamp:
+    """Every entry of the folder as (name, mtime_ns, size): any change (a model pinned, a file
+    swapped) makes a new stamp, so the folder is checked again (I1; INTEGRATION-B 12)."""
+    try:
+        with os.scandir(folder) as found:
+            return tuple(sorted((e.name, e.stat().st_mtime_ns, e.stat().st_size) for e in found))
+    except OSError:
+        return ()
+
+
+class _VisionFiles:
+    """`vision_files(release)`: checked once per change of the release folder, not per process."""
+
+    def __init__(self) -> None:
+        self._seen: dict[str, tuple[_Stamp, Mapping[str, str]]] = {}
+
+    def __call__(self, release: str) -> Mapping[str, str]:
+        stamp = _vision_stamp(_VISION / release)
+        kept = self._seen.get(release)
+        if kept is not None and kept[0] == stamp:
+            return kept[1]
+        good = _check_vision(_VISION / release, release)
+        self._seen.pop(release, None)
+        while len(self._seen) >= _VISION_KEEP:
+            self._seen.pop(next(iter(self._seen)))
+        self._seen[release] = (stamp, good)
+        return good
+
+    def cache_clear(self) -> None:
+        self._seen.clear()
+
+
+def _check_vision(folder: Path, release: str) -> Mapping[str, str]:
     """{name: media type} of the release's files that match their recorded SHA-256 ({} when the
-    release, its manifest or a field is missing or wrong). Read once per release."""
-    folder = _VISION / release
+    release, its manifest or a field is missing or wrong)."""
     try:
         listed = json.loads((folder / "MANIFEST.json").read_text(encoding="utf-8"))["files"]
     except (OSError, ValueError, KeyError, TypeError):
@@ -356,6 +390,9 @@ def vision_files(release: str) -> Mapping[str, str]:
             continue
         good[name] = kind
     return good
+
+
+vision_files = _VisionFiles()
 
 
 @router.get("/static/vendor/vision/{release}/{name}", include_in_schema=False)

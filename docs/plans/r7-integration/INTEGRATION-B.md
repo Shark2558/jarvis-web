@@ -165,7 +165,7 @@ storage.googleapis.com is refused here, so `pose` and `objects` say "not install
 |---|---|
 | Part B's unit tests (`tests/test_r7_b_*.py`: assets, store, part, api, console, dom, package) | 243 passed |
 | Guard tests (R7 seams, R7 Telegram hook, R11.1 seams, arch coverage, Telegram tool guard, console assets linked) | 481 pass; the one I0 stub pin fails by design (Needs I1, item 1) |
-| Coverage of `jarvis.vision` and `jarvis.api.vision` | 94 % |
+| Coverage of `jarvis.vision` and `jarvis.api.vision` | 94 % at v7.0.1; not re-measured (no coverage plug-in in this venv); the new store paths each have a test |
 | `evals/r7/run.py --mock --part vision` | 12/12; each of seven controls fails exactly its case (`upload_in_look` → `no_picture_leaves`, `lock_check_removed` → `locked_means_off`, `schema_checks_off` → `schema_drops`, `cap_off` → `day_limits`, `sweep_off` → `sweep_keeps_days`, `tool_unfenced` → `tool_fences`, `seal_off` → `kept_sealed`) |
 | `evals/r7/run.py --mock` (all parts) | not re-run at v7.0.2 (I1 runs it); the vision part alone is 12/12 |
 | Browser: `tests/browser/test_r7_b_camera.py` (fake camera) | 13 passed (adds a tap elsewhere refused, and a live run contacting this origin only) (text reads "125" and "500" off a drawn label; code reads a drawn QR; visual gate 1440×900 and 390×844, Night and Day, on four states) |

@@ -18,7 +18,7 @@ import pytest
 from httpx import AsyncClient
 
 from jarvis.api.console import APP_ASSETS
-from jarvis.voice.commands import BASE_PHRASES, COMMAND_HINTS
+from jarvis.voice.commands import BASE_PHRASES, COMMAND_HINTS, R7_PHRASES
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src/jarvis/api/static"
@@ -112,8 +112,9 @@ async def test_the_page_has_the_mic_off_button_the_struck_mic_and_the_offer_slot
 
 # ---- one place opens the microphone; one place builds a recogniser ---------------------------
 def test_get_user_media_is_only_called_in_the_capture_module() -> None:
+    # R7 D11 (I0 seam 13): the camera's one door is the second and only other place
     for path in sorted(STATIC.glob("*.js")):
-        if path.name == "console-voice-capture.js":
+        if path.name in ("console-voice-capture.js", "console-camera.js"):
             continue
         assert "getUserMedia(" not in path.read_text(encoding="utf-8"), path.name
 
@@ -173,6 +174,9 @@ def test_every_multi_word_phrase_is_a_speech_hint() -> None:
         for p in items:
             if " " in p and "{" not in p and not key.startswith("answer."):
                 assert p in hints, (key, p)
+    for key, items in R7_PHRASES.items():  # R7 I0: registered by Parts B and D at run time
+        for p in items:
+            assert p in hints, (key, p)
     assert all(" " in h for h in COMMAND_HINTS)  # single words are never hints (D16)
 
 

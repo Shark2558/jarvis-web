@@ -5,15 +5,22 @@ the same /v1 contract."""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import hashlib
+import json
+import re
+from collections.abc import Awaitable, Callable, Mapping
+from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 from jarvis.api.auth import session_email
 from jarvis.config import Settings
+from jarvis.logging import get_logger
 
+log = get_logger(__name__)
 router = APIRouter()
 _STATIC = Path(__file__).parent / "static"
 _FONTS = _STATIC / "fonts"
@@ -147,6 +154,22 @@ APP_ASSETS: dict[str, str] = {
     "console-r111-photos.css": "text/css",
     "console-r111-look.js": _JS,  # D: profile cards in People, research on a picture
     "console-r111-look.css": "text/css",
+    # R7 (docs/plans/r7-mobile.md "Modules"): one loader in the page; it brings the parts' modules
+    "console-r7.js": _JS,  # I0: loads the parts' modules and stylesheets
+    "console-r7-send.js": _JS,  # I0: the one door that sends a picture (Ask, Vault, Attach)
+    "console-vision.js": _JS,  # I0 core, B tasks: the vision engine's one port (D13)
+    "console-r7-links.js": _JS,  # A: launch addresses (?do=, ?open=) that open a screen, never act
+    "console-r7-share.js": _JS,  # A: the share tray
+    "console-r7-share.css": "text/css",
+    "console-camera.js": _JS,  # B: the camera's one door and its hard off switch (D11)
+    "console-camera-panel.js": _JS,  # B: the Camera panel (Look, Results, Cameras)
+    "console-camera.css": "text/css",
+    "console-r7-phone.js": _JS,  # C: Integrations -> Phone app (link, unlink, sign out everywhere)
+    "console-r7-lock.js": _JS,  # C: the app lock's unlock cover
+    "console-r7-phone.css": "text/css",
+    "console-r7-sos.js": _JS,  # D: the SOS sheet and Integrations -> Emergency SOS
+    "console-r7-sos.css": "text/css",
+    "console-helpers-watch.js": _JS,  # D: Helpers -> Watch (loaded by console-helpers.js)
 }
 
 # Self-hosted OFL fonts (licences beside them).
@@ -195,8 +218,10 @@ CONSOLE_CSP = (
     "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
     "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
     "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
-    "frame-src https://www.youtube-nocookie.com; worker-src 'self'"
+    "frame-src https://www.youtube-nocookie.com; worker-src 'self'; manifest-src 'self'"
 )
+# R7 D3: the console becomes installable: its web app manifest comes from the server itself
+# (`manifest-src 'self'`); nothing else is loosened.
 # The console page sends no referrer anywhere. Slice 12 D4: YouTube's player needs the embedding
 # ORIGIN (error 153 without one), so only the player's own iframe carries
 # referrerpolicy="strict-origin-when-cross-origin" (console-media.js) — never a path or query.
@@ -221,8 +246,17 @@ def _page(name: str) -> HTMLResponse:
     )
 
 
+# R7 D8: a launch address may carry `do=` and `open=`. A visit another site sent loses both (it can
+# only ever open a screen anyway); every other word stays, so Google's `?reauth=` still returns.
+LAUNCH_KEYS = frozenset({"do", "open"})
+
+
 @router.get("/", include_in_schema=False, response_class=HTMLResponse)
-async def console() -> HTMLResponse:
+async def console(request: Request) -> Response:
+    query = request.query_params
+    if request.headers.get("sec-fetch-site") == "cross-site" and LAUNCH_KEYS & set(query):
+        kept = [(k, v) for k, v in query.multi_items() if k not in LAUNCH_KEYS]
+        return RedirectResponse("/" + (f"?{urlencode(kept)}" if kept else ""), status_code=302)
     return _page("console.html")
 
 
@@ -284,6 +318,57 @@ async def console_vendor(release: str, name: str) -> FileResponse:
     if release == ORT_RELEASE and name in ORT_FILES:
         return _immutable(_ORT / name, ORT_FILES[name])
     raise HTTPException(404, "not found")
+
+
+# R7 D14 (I0 seam 11): the vision files Part B vendors, one folder per release under
+# static/vendor/vision/, each with a MANIFEST.json {"files": {name: {sha256, type}}}. Only a listed
+# file whose bytes match its recorded sum is served (a year-long cache: the release is in the URL);
+# JavaScript (the engine's workers too) carries the console's CSP header.
+_VISION = _VENDOR / "vision"
+_VISION_RELEASE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,40}$")
+_VISION_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
+VISION_TYPES = frozenset({_JS, "application/wasm", "application/octet-stream", "application/json"})
+
+
+@lru_cache(maxsize=8)
+def vision_files(release: str) -> Mapping[str, str]:
+    """{name: media type} of the release's files that match their recorded SHA-256 ({} when the
+    release, its manifest or a field is missing or wrong). Read once per release."""
+    folder = _VISION / release
+    try:
+        listed = json.loads((folder / "MANIFEST.json").read_text(encoding="utf-8"))["files"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    good: dict[str, str] = {}
+    for name, entry in listed.items() if isinstance(listed, dict) else ():
+        entry = entry if isinstance(entry, dict) else {}
+        kind, want = entry.get("type"), entry.get("sha256")
+        if not (isinstance(name, str) and _VISION_NAME.fullmatch(name) and name != "MANIFEST.json"):
+            continue
+        if kind not in VISION_TYPES or not isinstance(want, str):
+            continue
+        try:
+            got = hashlib.sha256((folder / name).read_bytes()).hexdigest()
+        except OSError:
+            continue
+        if got != want:
+            log.warning("a vision file does not match its sum", extra={"release": release})
+            continue
+        good[name] = kind
+    return good
+
+
+@router.get("/static/vendor/vision/{release}/{name}", include_in_schema=False)
+async def console_vision(release: str, name: str) -> FileResponse:
+    if not (_VISION_RELEASE.fullmatch(release) and _VISION_NAME.fullmatch(name)):
+        raise HTTPException(404, "not found")
+    kind = vision_files(release).get(name)
+    if kind is None:
+        raise HTTPException(404, "not found")
+    reply = _immutable(_VISION / release / name, kind)
+    if kind == _JS:
+        reply.headers["Content-Security-Policy"] = CONSOLE_CSP
+    return reply
 
 
 @router.get("/static/wakeword/{release}/{name}", include_in_schema=False)

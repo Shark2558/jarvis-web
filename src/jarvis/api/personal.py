@@ -27,6 +27,7 @@ from fastapi import FastAPI
 
 from jarvis.api.home_wiring import home_privacy_sources
 from jarvis.api.r6_wiring import r6_privacy_sources
+from jarvis.api.r7_wiring import mobile_privacy_sources
 from jarvis.api.r11_1_wiring import fix_privacy_sources
 from jarvis.api.r11_wiring import r11_privacy_sources
 from jarvis.api.rows import DRIVE_TOOL
@@ -281,6 +282,7 @@ def privacy_sources(
         *r6_privacy_sources(app),  # R6 D16: the sealed book, its sessions, Book settings
         *r11_privacy_sources(app),  # R11 D17: the helpers' rows (I0's nudge row, then A-D)
         *fix_privacy_sources(app),  # R11.1: the four parts' rows (series, photo imports, ...)
+        *mobile_privacy_sources(app),  # R7: linked phones, watch days, SOS, camera results
         *home_privacy_sources(app),  # R3 I1: C's FacesPrivacy replaces the placeholder, last
     ]
 

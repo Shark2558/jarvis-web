@@ -100,6 +100,12 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         # R11.1: the study-plan check-in (daytime ring, held at night) and "faces to name"
         "series_checkin": "important",
         "faces_to_name": "info",
+        # R7 D25: an SOS and a new phone ring at night; a contact who left rings by day
+        "sos_sent": "urgent",
+        "phone_linked": "urgent",
+        "sos_contact_left": "important",
+        "phone_unlinked": "info",
+        "watch_stale": "info",
     }
 )
 _FEED: dict[str, FeedDecision] = {

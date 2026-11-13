@@ -1,12 +1,14 @@
-Version v11.1.3 · 12 Nov 2026, 17:23 IST · Release R11.1 · Status: Current · Owner: 🛠 Mark XV
+Version v7.0.1 · 13 Nov 2026, 16:05 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVI
 
 # JARVIS Architecture & Technology Guide
 
 This guide was checked against JARVIS's real code. This is edition v11.1.2 of the guide (the first
 edition was v6.1.1; the change log at the end lists every edition). It describes the JARVIS
 program at version v11.1.0: release R6.1 as built, release R11, the free proactive helpers (card
-C60), and release R11.1, your observations fixed (card C61), built and joined on one branch and not
-yet deployed. Anything that is planned but not built yet is marked PLANNED.
+C60), and release R11.1, your observations fixed (card C61), now live. Release R7 (the phone app,
+the watch, SOS and the phone camera; cards C62 to C65) is PLANNED: only its joins are built (R7's
+I0, program version v7.0.0; the version number goes down from 11.1 on purpose, as nothing compares
+it). Anything that is planned but not built yet is marked PLANNED.
 
 For engineers: it was written from the code, the deploy script, the CI file, the evals and the
 plans in `docs/plans/`, not from memory. A fact that could not be checked against the code says
@@ -192,7 +194,7 @@ checked against the code, with the plain reason.
 | Smart home | Home Assistant and Matter | A home bridge on the owner's laptop running Home Assistant, Frigate (cameras) and Mosquitto (messages), reached through Tailscale Funnel; Matter is not used | Uses the laptop you already have; pictures stay at home. |
 | Messaging | Slack, WhatsApp, SMS | Telegram (chat and alerts) and standard browser notifications (Web Push); WhatsApp only as drafts you send yourself | Telegram is free for bots. WhatsApp's business service does not allow general AI assistants (except in the European Economic Area and Brazil) and needs a second number; unofficial WhatsApp tools risk a ban on your own number (slice 12). |
 | Observability | OpenTelemetry and Grafana | Structured JSON logs with a per-request trace id, read in Google Cloud Logging; the Vitals board and the systems check | Free and enough for one owner. OpenTelemetry stays planned for Phase 7, the quality phase (`src/jarvis/logging.py` is the one file to swap). |
-| Mobile (PLANNED, R7) | React Native app | The console wrapped as an Android app (for example with Capacitor), plus Health Connect | One code base for web and phone. A planned departure added by the R6.1 plan; nothing is built yet. |
+| Mobile (PLANNED, R7) | React Native app | A small Android app whose main screen is the console drawn by Chrome full screen (a Trusted Web Activity), plus a few native parts (the Talk tile, alerts, Health Connect, SOS, a DigiLocker folder); the console itself becomes installable | One code base for web and phone, and Google sign-in, passkeys and Web Push keep working as they are because Chrome draws the page. The R7 plan chose this instead of Capacitor (in its WebView Google refuses the sign-in and Web Push does not exist). Only R7's joins are built (C62). |
 | Skills (PLANNED, R8–R10) | Ten core skills; vision as an input box | An 11th core skill "Health & Wellbeing" and an on-device vision engine in Layer 2 | Owner decision 10 in the 11 Nov 2026 release plan, recorded in the R6.1 plan. Not built yet. |
 
 ## 3. Component catalogue
@@ -210,10 +212,10 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Web console (the "command deck") |
-| What it does | The page you use JARVIS from on a laptop or phone: the chat, the dock of panels (in its order: Chat, Brief, Approvals, Activity, History, Memory, Integrations, Vault, Things, Notes, Privacy, Home, Faces, Vitals, Connectors, People, Book, Voice, Media, Construct, Helpers), the brain picker and the Night / Day looks. The dock fits every screen: the buttons keep their order, and the ones that don't fit (the last ones first) move into the **More** sheet, which lists exactly those. More appears only when something is behind it and lights up while one of those panels is open. Chat, Brief and Approvals never move for lack of room; but on a mid-size laptop screen (900 to 1180 pixels wide) the Approvals button is narrower than its name, so it moves behind More too, and More then shows its waiting count. Nothing scrolls sideways. It is written in plain JavaScript files that need no build step, and anything the server sends is shown as plain text, never run as part of the page. |
+| What it does | The page you use JARVIS from on a laptop or phone: the chat, the dock of panels (in its order: Chat, Brief, Approvals, Activity, History, Memory, Integrations, Vault, Things, Notes, Privacy, Home, Faces, Vitals, Connectors, People, Book, Voice, Media, Construct, Helpers, Camera), the brain picker and the Night / Day looks. The dock fits every screen: the buttons keep their order, and the ones that don't fit (the last ones first) move into the **More** sheet, which lists exactly those. More appears only when something is behind it and lights up while one of those panels is open. Chat, Brief and Approvals never move for lack of room; but on a mid-size laptop screen (900 to 1180 pixels wide) the Approvals button is narrower than its name, so it moves behind More too, and More then shows its waiting count. Nothing scrolls sideways. It is written in plain JavaScript files that need no build step, and anything the server sends is shown as plain text, never run as part of the page. |
 | Layer | L1 User Interaction |
 | Skill | Platform (serves every skill) |
-| Where in the code | `src/jarvis/api/console.py` (serves the page and its content security policy), `src/jarvis/api/static/console.html`, `console.css` (base look, with the font faces), `console.js` (chat, brains, approvals, audit, conversations), `console-deck.js` (panels, dock buttons, ruler, radar), `console-dock.js` (fits the dock to the screen: buttons that don't fit move behind More), `console-fx.js` (surfaces, themes, motion), `console-3d.js` and `console-3d-scenes.js` (optional three.js scenes), `console-text.js` (shared text helpers), `console-helpers.js` (the Helpers panel's frame and tabs, R11; its four tabs are C60's); vendored three.js 0.187.0 in `static/vendor/` |
+| Where in the code | `src/jarvis/api/console.py` (serves the page and its content security policy), `src/jarvis/api/static/console.html`, `console.css` (base look, with the font faces), `console.js` (chat, brains, approvals, audit, conversations), `console-deck.js` (panels, dock buttons, ruler, radar), `console-dock.js` (fits the dock to the screen: buttons that don't fit move behind More, whose entries it builds from the dock since R7 I0), `console-fx.js` (surfaces, themes, motion), `console-3d.js` and `console-3d-scenes.js` (optional three.js scenes), `console-text.js` (shared text helpers), `console-helpers.js` (the Helpers panel's frame and tabs, R11; its four tabs are C60's); vendored three.js 0.187.0 in `static/vendor/` |
 | Depends on | C02 HTTP API; every panel's own card |
 | Data it keeps | No Firestore data of its own. The browser keeps small conveniences (the open conversation, look and layout). |
 | Outside services | None directly (fonts and libraries are served by JARVIS itself, not loaded from another website) |
@@ -268,6 +270,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Cost (₹ a month) | ₹0 (Telegram's bot API is free); each chat turn costs a normal reply |
 | When it fails | Anyone but the paired owner gets no reply and is audited. If Telegram is down, alerts still go to Web Push (C47). Off or unpaired: the console says how to switch it on. |
 | Since | R1 (v1.0.0) |
+
+#### C62 · Phone app and the phone's door (R7)
+
+| Field | Value |
+|---|---|
+| Name | Phone app and the phone's door (R7) |
+| What it does | PLANNED (R7; I0 built only the joins). A small Android app whose main screen is this console drawn by Chrome full screen with no browser bar (a Trusted Web Activity), plus a few native parts: the "Talk to JARVIS" tile and shortcuts, alerts sorted into Urgent, Alerts and Nudges, Health Connect (C64), SOS (C65) and one DigiLocker folder you pick. The console becomes installable (a web app manifest) and JARVIS joins Android's share sheet; a shared item waits on the phone until you press a button. A phone is linked once with an 8-character code and a key that never leaves the phone's secure hardware; afterwards it reaches JARVIS only through four signed routes (hello, health, inbox, sos) that can never read a conversation, the vault or mail, approve anything or call a tool. A launch address only opens a screen: the microphone and the camera always wait for your tap. An app lock asks for your passkey after 5 minutes away (on once a passkey was added from the phone); "Sign out everywhere" ends every session. Built at I0: the parts' contract, the phone's signed request with its shared test vectors, the stub parts and status routes, the app lock's slot (a pass-through until Part C's check), the body caps, `manifest-src 'self'`, launch words dropped on a cross-site visit, the Android project's first files and its CI. |
+| Layer | L1 User Interaction (and cross-cutting security) |
+| Skill | Platform; Security Advisor (the door, the app lock) |
+| Where in the code | `src/jarvis/mobile/` (`ports.py`: the four server parts' contract, the door's routes, D21's never-locked list; `contract.py`: the phone's signed request and its one JSON form), `src/jarvis/phone/` (Part C), `src/jarvis/api/r7_wiring.py` (the parts, their tools, jobs, phrases, brief lines and privacy rows, the door's handler registry, the app lock's slot, the body caps), `src/jarvis/api/mobile_status.py`, `src/jarvis/api/app_shell.py` (Part A: the manifest, the share target), `src/jarvis/api/phone.py` (Part C); the console's loader `console-r7.js` and `console-r7-links.js`, `console-r7-share.js`, `console-r7-phone.js`, `console-r7-lock.js`; `android/` (the Gradle project, Part E), `.github/workflows/android.yml`; the shared vectors `tests/fixtures/r7/phone_vectors.json` and `docs/plans/r7-integration/phone-contract.md`; evals `evals/r7/` |
+| Depends on | C01 Web console; C02 HTTP API and sign-in; C47 Web Push; C52 Permissions and passkeys (the purposes `phone_link` and `device_unlock`); C64 and C65 (the door's health and sos routes) |
+| Data it keeps | PLANNED: `phone_link/{uid}` (one pending link code: its hash, expiry and tries; 10 minutes), `phone_devices/{uid}` (at most 3 phones: id, model word, public key, package, signing fingerprint, linked and last seen, app version; until unlinked). The phone keeps its key in its secure hardware; Chrome keeps the session cookie and passkeys; the share tray and the camera-off flag live only in that browser. |
+| Outside services | None |
+| Cost (₹ a month) | ₹0 (the Android CI is free for a public repository) |
+| When it fails | A part whose setup fails is left out ("setup failed") and the others still run. Every failed check on a signed request is a bare 401, logged by the check's name and never audited, so a flood cannot fill the audit. If Chrome's check of the site and the app fails, its address bar shows and everything else works. An app-lock check that fails answers 503 and never opens. |
+| Since | R7 I0 (v7.0.0): the joins only; PLANNED until R7's I1 |
 
 ### Layer 2 — Input Processing
 
@@ -334,6 +352,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Cost (₹ a month) | ₹0 |
 | When it fails | With the laptop asleep a removal is delivered with the next heartbeat; the name stops resolving at once. A person not in the registry is "someone JARVIS didn't recognise", never a guess. |
 | Since | R3 (v3.0.0) |
+
+#### C63 · Camera and vision engine (R7)
+
+| Field | Value |
+|---|---|
+| Name | Camera and vision engine (R7) |
+| What it does | PLANNED (R7). The Camera panel looks at a photo or the live picture on the device itself: a frame is never stored and never leaves the device. One vision engine (I0 built its port) runs tasks that see pixels (`text`, `code`, `objects`, `pose`, `quality`); the use cases of R8 to R10 receive results only (numbers, labels from fixed lists, read text). A picture reaches the server only when you press Ask the AI about this photo (about ₹0.30, offered only when the brain answering sees pictures), Add to my vault or Attach, all through one door that redraws it on the device as a JPEG of at most 1,568 px and counts "Pictures sent from this device today". "Jarvis, cameras off" locks this device's camera (never the home burglar camera). The vision tools are Apache or MIT, served by JARVIS itself and pinned by hash: not ML Kit (its terms send usage to Google), no AGPL YOLO, no cloud vision. `pose` and `objects` say "not installed" until their two model files arrive. |
+| Layer | L2 Input Processing |
+| Skill | Research & Intel; Health & Wellbeing (PLANNED 11th skill) |
+| Where in the code | `src/jarvis/vision/` (`results.py`: the Result contract the browser and a home camera share; `part.py`: Part B), `src/jarvis/api/vision.py`, the vision files' route in `src/jarvis/api/console.py` (one folder per release under static/vendor/vision, only what its MANIFEST.json lists with a matching SHA-256); the console's `console-vision.js` (the engine's one port), `console-r7-send.js` (the one door a picture takes), `console-camera.js`, `console-camera-panel.js` |
+| Depends on | C01 Web console; C07 Attached documents (R11.1's picture path); C42 Document vault; C05 Voice service ("cameras off") |
+| Data it keeps | PLANNED: `vision_results/{uid}_{date}` (results you pressed Keep on: task, time, device, numbers and labels, read text only if kept; sealed with `vision`; 90 days). Never a frame. |
+| Outside services | None |
+| Cost (₹ a month) | ₹0; Ask the AI about this photo about ₹0.30 a picture, only when you press it |
+| When it fails | A result outside its task's schema is dropped. A vendored file whose bytes do not match its recorded sum is never served. The camera stops when the page is hidden, the screen locks or nothing used a frame for 10 minutes. Without the model files `pose` and `objects` say "not installed" while `text`, `code` and `quality` work. |
+| Since | R7 I0 (v7.0.0): the joins only; PLANNED until R7's I1 |
 
 ### Layer 3 — Context & Orchestration
 
@@ -676,6 +710,38 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Cost (₹ a month) | ₹0 fixed: no new paid service, secret or Scheduler job. Model use counts against your monthly limit like any reply: a long working answer at most about ₹8 on the balanced tier (8,192 output tokens), one picture look about ₹0.05, an "understood as" check about ₹0.01 when it runs at all; batches, check-ins, re-plans, the inbox count, face grouping, Vitals and GitHub are plain code (₹0) |
 | When it fails | A part whose setup fails is left out ("setup failed") and the other three still run; with the helpers switched off check-ins and the photo import's background steps do not run (tools and panels still work). An answer that stays empty after its one retry says so in a fixed line and is never stored or shown to a model again. Without Google linked no batch card is made and the inbox says "Google is not linked". A file that is too big, hidden, password-protected, nested or a zip bomb is refused in plain words; a check of the spoken words that fails says "Couldn't check the words; sent as heard."; an estimate that cannot be worked out asks "send anyway?". A picture never reaches a brain that cannot see or may train on it, and a storage fault on the picture counts as a picture turn (the guard stays shut, in its strict mode: a search that would carry a word you did not type is refused with "type the name yourself or ask without the picture"). With the laptop off, the import waits ("paused: laptop not reachable"), a delete waits and says "Pending: it finishes when your home laptop is back on.", and Vitals says the laptop is offline. A slow GitHub shows "Checking…" for at most 45 s, then "press Refresh". |
 | Since | R11.1 (v11.1.0) |
+
+#### C64 · Watch and sleep (R7)
+
+| Field | Value |
+|---|---|
+| Name | Watch and sleep (R7) |
+| What it does | PLANNED (R7). The phone app reads steps, heart rate and sleep from Health Connect, from any app that writes there (on the owner's phone NoiseFit writes steps and calories; its sleep and heart rate are still to be seen), and sends one summary a day. Steps and heart rate are read with Health Connect's own de-duplication by your App priority list, and one sleep writer is kept per night (the watch before the phone), so nothing is counted twice. Last night's sleep is one fixed line in the console's brief (never in the e-mailed copy or on Telegram) and answers "how did I sleep?" by voice and chat, with the AI off too; a typed "I slept 11:30 to 6" works without a watch. The numbers are the watch's or the phone's estimates, never a diagnosis. The first built part of the PLANNED 11th skill, Health & Wellbeing. |
+| Layer | L5 Skills & Capabilities (L6 for the phone's reader, L7 sealed) |
+| Skill | Health & Wellbeing (PLANNED 11th skill) |
+| Where in the code | `src/jarvis/watch/` (Part D), `src/jarvis/api/watch.py`, `src/jarvis/brief/models.py` (the brief's pinned sleep line), the console's `console-helpers-watch.js` (Helpers → Watch, the fifth sub-tab) |
+| Depends on | C62 (the phone's door); C19 Morning brief; C17 No-AI mode (the phrases) |
+| Data it keeps | PLANNED: `watch_days/{uid}_{date}` (steps, heart rate lowest, average and highest, each night's sleep with minutes per stage, and the app that wrote each; sealed with `watch`; 400 days), `watch_state/{uid}` (last sync, which kinds arrive, a typed sleep time). No raw heart samples. |
+| Outside services | None |
+| Cost (₹ a month) | ₹0; a question about your sleep is a normal reply (about ₹0.17), ₹0 with the AI off |
+| When it fails | Without Health Connect or its permission the Watch tab says so and a typed sleep time still works. Without the background permission the phone syncs when the app opens ("Last synced"). A watch that stops syncing sends `watch_stale` (info). The reads are private on Telegram and never given to a brain that learns. |
+| Since | R7 I0 (v7.0.0): the joins only; PLANNED until R7's I1 |
+
+#### C65 · Emergency SOS (R7)
+
+| Field | Value |
+|---|---|
+| Name | Emergency SOS (R7) |
+| What it does | PLANNED (R7). A held button in JARVIS (2 seconds, then a 5-second countdown) or the tile (a 10-second countdown) sends a fixed message with your location to up to 5 emergency contacts on Telegram, opens the phone's SMS app filled in for you to press Send, tells you on every channel and offers the dialler for your first contact and 112. It is not an emergency service. Contacts join by pressing Start on a link you send them (`/stop` leaves). SOS is never a tool and never passes the gateway: your hold and the countdown are the confirmation, a deliberate and narrow exception to "sending needs your approval" (no "don't ask again", the brain cannot reach it, every SOS is audited without coordinates). Coordinates are never stored, logged or put in an address. Built at I0: the Telegram front door's one hook, so a contact's join word (prefix `sos-`) never touches your own pairing and a contact's `/stop` is heard. |
+| Layer | L5 Skills & Capabilities (L8 for the notices) |
+| Skill | Security Advisor |
+| Where in the code | `src/jarvis/sos/` (`hook.py`: the Telegram hook's contract; Part D's code), `src/jarvis/api/sos.py`, `src/jarvis/telegram/service.py` (the one hook), the console's `console-r7-sos.js` |
+| Depends on | C62 (the phone's door); C04 Telegram front door; C46 Alert policy (`sos_sent` and `phone_linked` have no off switch; no Telegram cap drops `sos_sent`) |
+| Data it keeps | PLANNED: `sos/{uid}` (at most 5 contacts: label, Telegram ids, a phone number for the SMS screen; your label and settings; sealed with `sos`), `sos_join/{hash}` (pending join words, 24 hours), `sos_log/{uid}_{id}` (each SOS: time, kind, how many were reached, location yes or no; 400 days). Never the coordinates. |
+| Outside services | Telegram (the contacts' messages and a map pin) |
+| Cost (₹ a month) | ₹0; the SMS at your plan's charge, only if you press Send |
+| When it fails | A refused or failed send still opens the SMS screen and the 112 button. With no contact SOS stays off. A real SOS has its own budget (3 an hour, 10 a day), separate from tests and "I'm safe", so tests never block it. |
+| Since | R7 I0 (v7.0.0): the joins only; PLANNED until R7's I1 |
 
 ### Layer 6 — Integration & Tools
 
@@ -1388,6 +1454,10 @@ R6.1. "Cost per month" is what JARVIS pays at the owner's use; every paid figure
 | Tests | pytest, pytest-asyncio, Playwright 1.63 with Chromium, the Firestore emulator | Unit, store and browser tests on every change | Standard; the emulator tests the real Firestore behaviour | unittest, Selenium | Less expressive; Selenium is slower | ₹0 | Phase 0; browser Slice 6; emulator Slice 5 |
 | Code checks | ruff and mypy (strict) | Style, mistakes and types | Fast; one tool for lint and format | flake8 with black, pyright | More tools to keep in step | ₹0 | Phase 0 |
 | Diagrams | Markdy CLI 1.5.7 (dev only, never in the console) | Draws this guide's diagrams from text | Diagrams live as text next to the code and are checked in CI | Mermaid, draw.io | Mermaid can't do the scene types this guide uses; draw.io files are not reviewable as text | ₹0 | R6.1 (v6.1.0) |
+| Phone app | A Trusted Web Activity through Google's android-browser-helper 2.7.4 (Apache-2.0), Kotlin, Views | The JARVIS app on Android: the console drawn by Chrome full screen, plus a tile, alerts, Health Connect and SOS | Sign-in, passkeys, cookies and Web Push keep working unchanged because Chrome draws the page; chosen instead of Capacitor | An installed web app only, React Native | An installed web app cannot read Health Connect or offer the tile; React Native would be a second copy of the console | ₹0 | R7 (PLANNED) |
+| Android build | Android Gradle plugin 9.5.1, Gradle 9.6.0, Kotlin 2.4.10 (the `core` module), JDK 17 in CI | Builds and tests the app: CI proves it, the owner's laptop builds the one he installs | The pins Google's pages give for Android Studio Rabbit 2 (13 Nov 2026) | Older plugin lines | The phone's Health Connect client needs `compileSdk` 36 | ₹0 (GitHub Actions is free for a public repository) | R7 I0 (CI's first version) |
+| Vision on the device | MediaPipe Tasks Vision, tesseract.js with English data, zxing-wasm (Apache-2.0 and MIT), served by JARVIS and pinned by hash | Reads printed text, codes and labels and finds 80 everyday things and a body's 33 points in the browser, so no frame leaves the device | Open licences, no outside host, runs on the phone and the laptop alike; not ML Kit | ML Kit, Ultralytics YOLO, a cloud vision service | ML Kit's terms (not open source; it reports usage to Google), YOLO's AGPL licence, and a cloud service would see the frames | ₹0 | R7 (PLANNED) |
+| Watch data | Android Health Connect (read on the phone) | Steps, heart rate and sleep from any app that writes there | Part of Android since 14; one source for every watch app | Google Fit's APIs, a watch maker's own cloud | Google ends the Fit APIs with 2026; a maker's cloud needs another account and sends health data away | ₹0 | R7 (PLANNED) |
 | Time zones | tzdata | Correct local and Pacific time for allowances | Works even in an image without system zone files | System zone files only | The slim image may lack them | ₹0 | Slice 12 (v0.12.0) |
 
 ### 5.2 Outside services and free limits
@@ -1435,7 +1505,7 @@ The project's build phases, and what was actually delivered in which release:
 | 3 Long-term memory | Memory, profile, personalisation | Done: About you, notes, things, the vault (no vector database) | Slice 8 (v0.8.0), R2 (v2.0.0) |
 | 4 Proactive agents | Scheduled reasoners that nudge | Done in part: the morning brief, expiry reminders, Vitals and health alerts, all from fixed rules (no free-running agent) | Slice 7, R2, R4 (v4.0.0) |
 | 5 Smart home and devices | IoT and multi-device sync | Done in part: the home bridge, cameras, alarm and faces; no Matter; no multi-device sync beyond the browser | R3 (v3.0.0) |
-| 6 Mobile, wearable, always-on | Apps and a watch | PLANNED: R7 (an Android app wrapping the console, Health Connect) | — |
+| 6 Mobile, wearable, always-on | Apps and a watch | PLANNED: R7 (a Trusted Web Activity app around the console, Health Connect, SOS, the phone camera; its joins are built at R7 I0) | R7 I0 (v7.0.0, joins only) |
 | 7 Evals, red-teaming, cost, launch | Quality and launch | Ongoing: evals with negative controls in every slice, costs in ₹, the build book, this guide. A public launch is not planned (one owner). | Slice 7b, R5.1, R6, R6.1 |
 
 Releases so far (from `docs/github-backfill.tsv`):
@@ -1483,7 +1553,8 @@ Releases so far (from `docs/github-backfill.tsv`):
 | R4 (5 Nov 2026) | People research only behind a positive verification gate | No profiling of private people | Open search | `r4-vitals-health-people.md` |
 | R4 (5 Nov 2026) | A persisted No-AI mode that fails closed | A guarantee of no model spend | A session-only switch | `r4-vitals-health-people.md` |
 | R6 (10 Nov 2026) | The build book is generated by code (no model), sealed per release, opened with passkey and fresh sign-in | Deterministic, private, free | A model-written summary | `r6-build-book.md` |
-| R6.1 (11 Nov 2026) | Record an 11th core skill "Health & Wellbeing" and a Layer-2 vision engine, and mobile as a wrapped console (Capacitor) rather than React Native, all as PLANNED | Owner decision 10 in the 11 Nov 2026 release plan (the skill and the vision engine); the R6.1 plan adds mobile as a wrapped console | Keep ten skills; React Native | `r6-1-architecture-guide.md` decision 6 |
+| R6.1 (11 Nov 2026) | Record an 11th core skill "Health & Wellbeing" and a Layer-2 vision engine, and mobile as a wrapped console rather than React Native, all as PLANNED (R7 later chose a Trusted Web Activity instead of Capacitor: next row) | Owner decision 10 in the 11 Nov 2026 release plan (the skill and the vision engine); the R6.1 plan adds mobile as a wrapped console | Keep ten skills; React Native | `r6-1-architecture-guide.md` decision 6 |
+| R7 (12–13 Nov 2026) | The phone app is a Trusted Web Activity (Chrome draws the console) with a few native parts, not Capacitor and not React Native; the vision engine runs in the browser, not ML Kit; SOS is never a tool | Google refuses its sign-in inside an app's WebView and a WebView has no Web Push; the same web engine serves the phone and the laptop; asking for a passkey in an emergency defeats the purpose | Capacitor, React Native, ML Kit | `r7-mobile.md` (decision record, D1, D14, D19) |
 
 ## 6. Data and privacy
 
@@ -1550,6 +1621,10 @@ its own key (AES-256-GCM) before it reaches Google, so a reader of the database 
 | `chores`, `maintenance`, `house_told`, `outside` | The chores rota and upkeep list; reminder claims; your place and the warnings' words | Yes (`alerts_place`) for `outside` | Claims 30 days | C60 |
 | `nudges`, `wellbeing` | Your nudge settings and free-time ideas; water, stand-ups and check-ins | Yes (`wellbeing`) for the log | The log 30 days | C60 |
 | `kitchen`, `spend`, `spend_scan` | Pantry, tastes and saved recipes; grocery totals a month; the receipts switch and seen hashes | Yes (`kitchen`, `spend`) | Spend 13 months | C60 |
+| `phone_link`, `phone_devices` (PLANNED, R7) | A pending phone link code (its hash only); the linked phones' public keys and signing fingerprints | No | 10 minutes; until unlinked | C62 |
+| `watch_days`, `watch_state` (PLANNED, R7) | Daily steps, heart rate and sleep; the last sync and a typed sleep time | Yes (`watch`) for the days | 400 days | C64 |
+| `sos`, `sos_join`, `sos_log` (PLANNED, R7) | Emergency contacts; pending join words; each SOS without coordinates | Yes (`sos`) for the contacts | Join words 24 hours, the log 400 days | C65 |
+| `vision_results` (PLANNED, R7) | Camera results you kept (never a frame) | Yes (`vision`) | 90 days | C63 |
 | `vitals_providers`, `vitals_status`, `vitals_index` | What Vitals tracks and the last status (never a key's value) | No | Until removed | C55 |
 | `book` (and `book_chunks`), `book_lease`, `book_lock`, `book_sessions`, `book_settings`, `book_tickets`, `book_notices`, `book_closed` | Sealed build books, the sealer's lease, the guest lock, book sessions, settings, tickets, content-free notices | Yes (`book_index`, `book_session`) for the books and sessions; tickets hashed (`tickets`) | Books until removed (60 MB cap); sessions 45 minutes | C57 |
 
@@ -1583,6 +1658,9 @@ the systems check pings Redis only when it is configured.
 | `connectors` | Your GitHub token |
 | `book_index` | The sealed build-book index |
 | `book_session` | Build book sessions (and the hash of a session token) |
+| `watch` (R7, PLANNED) | Watch days: steps, heart rate and sleep |
+| `sos` (R7, PLANNED) | Emergency contacts (and the hash of a join word) |
+| `vision` (R7, PLANNED) | Camera results you kept |
 | `webpush_vapid` (raw secret) | The Web Push signing key |
 
 Google tokens, the saved Home and Work and the laptop brain's address and key use the token key
@@ -1763,12 +1841,12 @@ the Cloud project.
 
 ## 11. Roadmap (PLANNED)
 
-Nothing in this section is built. It follows the 11 Nov 2026 release plan v6.1.1.
+Nothing in this section is built. It follows the 11 Nov 2026 release plan v6.1.1, with R7's row from the R7 plan (`docs/plans/r7-mobile.md`).
 
 | Release | PLANNED content |
 |---|---|
-| R7 Mobile, watch and phone camera | An Android app that wraps the console (for example with Capacitor, a planned departure from React Native), Health Connect, an SOS flow, groundwork for on-device vision |
-| R8 Vision core and fitness coach | The Layer-2 vision engine on the device (MediaPipe, OpenCV, Tesseract or PaddleOCR, ML Kit; no AGPL YOLO) |
+| R7 Mobile, watch and phone camera | A small Android app around the console (a Trusted Web Activity, not Capacitor and not React Native), Health Connect, SOS, the phone camera and the vision engine's port in the browser (cards C62 to C65; its joins are built) |
+| R8 Vision core and fitness coach | The fitness coach on R7's vision engine (MediaPipe, Tesseract; no ML Kit and no AGPL YOLO); the phone on a stand or a USB webcam |
 | R9 Kitchen and nutrition vision | Kitchen and food use cases on the same engine |
 | R10 Care and health assist | Care and health use cases |
 | R8–R10 together | 66 home vision use cases, on-device only, each starting after the owner confirms its cameras |
@@ -1803,7 +1881,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | BM25 | A classic way to rank text by matching words |
 | Brain | The AI model JARVIS uses for a reply (Claude, Gemini, the laptop's model) |
 | Build book | JARVIS's own generated description of each release, sealed with its source code |
-| Capacitor | A tool that wraps a web page as a phone app (planned for R7) |
+| Capacitor | A tool that wraps a web page as a phone app inside a WebView; R7 uses a Trusted Web Activity instead of Capacitor |
 | Card (component card) | One table in section 3 describing one part of JARVIS |
 | CDN | A network of servers that delivers files for other websites (JARVIS uses none) |
 | Change log / version line | The table of editions at the end of a document, and its first line naming its version, date, release, status and owner; every plan and this guide has both |
@@ -1846,7 +1924,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Groq / OpenRouter | Vendors that serve open AI models in the OpenAI format (usable in the OpenAI-compatible slot) |
 | Guest show / guest lock | Showing the build book to a guest. While it runs, your other consoles are locked until your passkey lifts the lock |
 | Headless (browser) | A browser that runs without a window, for automatic tests |
-| Health Connect | Android's store for health and fitness data (planned for R7) |
+| Health Connect | Android's store for health and fitness data; the phone app reads steps, heart rate and sleep from it (planned for R7, C64) |
 | Heartbeat | A short "I'm alive" message the laptop sends every 2 minutes |
 | HKDF | A standard way to derive many keys from one |
 | HMAC | A signature made with a shared secret |
@@ -1871,7 +1949,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Markdy | The text format and tool used to draw this guide's diagrams |
 | Matter | A smart-home device standard (not used) |
 | MCP | Model Context Protocol, a standard for connecting AI to tools (not used as built) |
-| MediaPipe / OpenCV / Tesseract / PaddleOCR / ML Kit / YOLO | Vision libraries that run on the device, planned for R8–R10 (YOLO is ruled out by its AGPL licence) |
+| MediaPipe / OpenCV / Tesseract / PaddleOCR / YOLO | Vision libraries that run on the device; R7's engine uses MediaPipe and Tesseract in the browser (C63), not ML Kit (Google's terms), and YOLO is ruled out by its AGPL licence |
 | Mock (brain, eval) | A pretend AI that gives fixed answers, so tests cost nothing |
 | More (button and sheet) | The dock's last button: it opens a sheet listing the panel buttons that didn't fit on this screen, and shows only when something is behind it |
 | Mosquitto | A small message server (MQTT) that Frigate uses at home |
@@ -1915,7 +1993,8 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Service account | A Google identity for a program, with only the permissions it needs |
 | Service worker | A small browser script that receives push notifications |
 | Slice | One build step of the early project (slices 1 to 12, before R1); each slice had its own plan |
-| SOS | An emergency call for help (planned for R7) |
+| SOS | An emergency call for help: in R7 a held button that tells your emergency contacts where you are (planned, C65); not an emergency service |
+| Trusted Web Activity | Android's way for a small app to show a website full screen in Chrome itself, with the browser's own sign-in, passkeys and notifications (the R7 phone app, C62) |
 | Storm counters | Counts of alerts per hour, so a burst of alerts becomes one summary instead of many messages |
 | Tailscale Funnel | A service that gives the laptop one public HTTPS address without opening the router |
 | Taint | A mark that other people's text reached the model in this request |
@@ -1982,6 +2061,13 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
   C52 Permissions, C53 Privacy, C55 Vitals); `scripts/arch_coverage.py`,
   `scripts/check_doc_versions.py` and `scripts/markdy_export.py --check` pass. The diagrams are
   unchanged.
+- **Edition v7.0.1.** Written at R7's I0 on `r7-i0` (main at v11.1.1 merged in): cards C62 to
+  C65 are PLANNED with what I0 built (the parts' contract, the phone's signed request and its
+  vectors, the stub parts and routes, the app lock's slot, the picture door, the vision port, the
+  Telegram hook, the Android project's first files and CI); the Mobile departure, the roadmap, the
+  decisions log and the glossary now say a Trusted Web Activity (not Capacitor) and open vision
+  tools (not ML Kit); C01 lists the Camera tab. `scripts/arch_coverage.py`, `scripts/check_doc_versions.py` and
+  `scripts/markdy_export.py --check` pass. The diagrams are unchanged.
 
 ## Change log
 
@@ -1996,3 +2082,4 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | v11.1.1 | 12 Nov 2026, 05:52 IST | R11.1 | R11.1 I0 (the joins for 'Your observations, fixed'): card C61 (PLANNED, with what I0 built: the four parts' contract, their packages, routes, console loader and planned collections) | 🛠 Mark XV |
 | v11.1.2 | 12 Nov 2026, 12:20 IST | R11.1 | R11.1 I1: card C61 as built (A: no filler reply, one card for many calendar events with Undo all and Retry, a followed plan's check-ins and re-plans, the whole inbox by kind; B: heard / understood as, Excel, PowerPoint, pictures, zip and folders, the rupee estimate; C: 2,000 photos in the background, face groups on the laptop named with consent; D: profile cards, picture research that never identifies a person and the turn guard, Vitals' home parts and the GitHub limits), with its modules, routes, collections, costs and failures; the R11.1 lines on C04, C05, C07, C08, C12, C13, C18, C19, C21, C37, C38, C39, C52, C53 and C55 | 🛠 Mark XV |
 | v11.1.3 | 12 Nov 2026, 17:23 IST | R11.1 | R11.1 I1 after the integrated reviews: C61's picture guard as built (strict unless the picture is known to show nobody; YouTube, Maps and a research's context behind it too) | 🛠 Mark XV |
+| v7.0.1 | 13 Nov 2026, 16:05 IST | R7 | R7 I0 (the joins for 'Mobile, watch and phone camera'): cards C62 Phone app and the phone's door, C63 Camera and vision engine, C64 Watch and sleep, C65 Emergency SOS (PLANNED, with what I0 built); the Mobile departure as a Trusted Web Activity; four technology rows (phone app, Android build pins, vision on the device, Health Connect); the R7 collections and key purposes; the roadmap, decisions log and glossary corrected; C01's Camera tab; the program version v7.0.0 (the number goes down on purpose) | 🛠 Mark XVI |

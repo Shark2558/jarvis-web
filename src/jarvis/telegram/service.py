@@ -7,6 +7,9 @@
   is private and the sender is not a bot. Anyone else never reaches the brain, gets no reply and is
   audited as `telegram_rejected` (args hash only; at most 20 an hour, then log only);
 * pairing: `/start <code>` from a private, non-bot sender; `/unpair` and `/new` from the owner;
+* R7 D20: ONE hook for emergency contacts (`jarvis.sos.hook`, Part D's code behind it): a
+  `/start sos-<word>` goes to the hook and never to pairing; a known contact's `/stop` reaches the
+  hook before the turn-away; nothing else a contact writes ever reaches the brain;
 * a chat turn is an ordinary `Brain.chat` with `channel="telegram"` inside `telegram_turn()`;
 * R2 cards proposed in the conversation get Approve / Decline buttons (from.id, the card's scope and
   `tool_risk == reversible` are all checked); R3 is NEVER approvable here: "Waiting in the console
@@ -30,6 +33,7 @@ from jarvis.llm.base import LLMError
 from jarvis.llm.router import NO_AI_REFUSAL, BrainOff
 from jarvis.logging import get_logger
 from jarvis.memory.base import SessionNotFound
+from jarvis.sos.hook import SOS_WORD_PREFIX, SosHook, is_sos_word
 from jarvis.telegram.alerts import ALERT_TEXT, TelegramAlerts
 from jarvis.telegram.client import TelegramClient, TelegramError
 from jarvis.telegram.format import reply_messages
@@ -134,6 +138,7 @@ class TelegramService:
         if store.on_cooldown is None:
             store.on_cooldown = self._cooldown_started
         self._rejected = (-1, 0)  # (hour bucket, audited so far)
+        self.sos: SosHook | None = None  # R7 D20: set by api/r7_wiring.py once Part D builds it
 
     def bind(self, brain: Brain) -> None:
         """Late wiring: the Brain is built after this service."""
@@ -153,6 +158,8 @@ class TelegramService:
             log.warning("telegram sender throttled")
             return
         owner = await self._owner(sender, chat)
+        if owner is None and await self._contact_stop(update):
+            return  # R7 D20: a known emergency contact's /stop, before the turn-away
         if owner is None and not self._is_pairing_attempt(update):
             await self._reject(sender, chat, "not the paired owner")
             return
@@ -174,6 +181,36 @@ class TelegramService:
         if cq is not None:
             return cq.sender, cq.message.chat if cq.message else None
         return None, None
+
+    async def _contact_stop(self, update: Update) -> bool:
+        """R7 D20: `/stop` typed in a private chat by a sender Part D's hook knows as a contact:
+        handed to the hook (claimed once, like any update). False for everyone else."""
+        msg, hook = update.message, self.sos
+        if hook is None or msg is None or msg.outside_content or not msg.text:
+            return False
+        if msg.text.strip().split()[0].split("@")[0].lower() != "/stop":
+            return False
+        if not self._eligible(msg.sender, msg.chat) or msg.sender is None:
+            return False
+        if not await hook.is_contact(msg.sender.id):
+            return False
+        if await self.store.claim_update(update.update_id):
+            reply = await hook.stop(tg_user_id=msg.sender.id, chat_id=msg.chat.id)
+            if reply:
+                await self._say(msg.chat.id, reply)
+        return True
+
+    async def _sos_join(self, sender: User, chat: Chat, word: str) -> None:
+        """R7 D20: a start word with the `sos-` prefix is never a pairing code: it goes to the
+        hook (its own wrong-word counter) or, with no hook or no fit, is turned away."""
+        hook = self.sos
+        reply = None
+        if hook is not None and is_sos_word(word):
+            reply = await hook.join(word, tg_user_id=sender.id, chat_id=chat.id)
+        if reply:
+            await self._say(chat.id, reply)
+            return
+        await self._reject(sender, chat, "not the paired owner")
 
     def _is_pairing_attempt(self, update: Update) -> bool:
         """A `/start ...` typed by an eligible sender (never a forwarded one)."""
@@ -313,6 +350,9 @@ class TelegramService:
         if command == "/start" and text and self._eligible(sender, chat):
             assert sender is not None
             parts = text.split(maxsplit=1)
+            if len(parts) == 2 and parts[1].startswith(SOS_WORD_PREFIX):
+                await self._sos_join(sender, chat, parts[1])  # R7 D20: before finish_pairing
+                return
             uid = (
                 await self.store.finish_pairing(parts[1], tg_user_id=sender.id, chat_id=chat.id)
                 if len(parts) == 2

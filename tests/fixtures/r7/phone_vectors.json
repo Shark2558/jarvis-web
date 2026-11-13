@@ -1,0 +1,219 @@
+{
+  "v": 1,
+  "about": "R7 D6/D24 shared vectors (docs/plans/r7-integration/phone-contract.md). Public key only: the private keys that made these signatures were never written down.",
+  "scheme": "jarvis-phone-v1",
+  "header": "X-Jarvis-Phone",
+  "package": "io.github.shark2558.jarvis",
+  "device_id": "ph_3f9a2c7e1b04",
+  "public_key_spki_der_hex": "3059301306072a8648ce3d020106082a8648ce3d03010703420004a3392278722b045c16f95cacf0f0ca28e887d5665edbb636c593efac7191a10e629d9be025e48953acb4fc6e0de4d1aa40e969ce3e15d252984d499a57e83159",
+  "public_key_x962_hex": "04a3392278722b045c16f95cacf0f0ca28e887d5665edbb636c593efac7191a10e629d9be025e48953acb4fc6e0de4d1aa40e969ce3e15d252984d499a57e83159",
+  "signature": "ECDSA P-256 SHA-256, DER, base64url without padding",
+  "signing_fingerprint_hex": "8c90472edc53d89695593b5cbb88e2a62d9a8802c6cbee6aaeaf6987cd685142",
+  "server_time_for_cases": 1794565800,
+  "refused_paths": [
+    "/phone/v1/sos?x=1",
+    "/phone/v1/hello?",
+    "/phone/v1/vault",
+    "/phone/v1/../v1/chat",
+    "/phone/v2/hello"
+  ],
+  "cases": [
+    {
+      "name": "hello",
+      "method": "POST",
+      "path": "/phone/v1/hello",
+      "t": 1794565800,
+      "nonce": "f9b67865bc80bff794bce76aedda1236",
+      "body": "{\"v\":1,\"app_version\":\"7.0.0\",\"version_code\":1,\"model\":\"phone\",\"android\":36,\"can\":{\"notifications\":true,\"health_read\":true,\"health_background\":false,\"location\":true,\"folder\":false,\"tile\":true}}",
+      "body_sha256_hex": "586d072b9bdb1ce45efeaba47fdf6df9d015c7cf25139ecdc26ad4f76f29036b",
+      "string": "jarvis-phone-v1\nph_3f9a2c7e1b04\n1794565800\nf9b67865bc80bff794bce76aedda1236\nPOST\n/phone/v1/hello\n586d072b9bdb1ce45efeaba47fdf6df9d015c7cf25139ecdc26ad4f76f29036b",
+      "header": "v1;d=ph_3f9a2c7e1b04;t=1794565800;n=f9b67865bc80bff794bce76aedda1236;s=MEYCIQCC4Hf7vq0qFl0aauE1THPKvt_uk2rmlJcnUGRikO9GHgIhAMO9rhsYb9_afzNrvoc5lCex2tkBItOQdR5a-YkksLna",
+      "verifies": true,
+      "door": "accept",
+      "payload": {
+        "v": 1,
+        "app_version": "7.0.0",
+        "version_code": 1,
+        "model": "phone",
+        "android": 36,
+        "can": {
+          "notifications": true,
+          "health_read": true,
+          "health_background": false,
+          "location": true,
+          "folder": false,
+          "tile": true
+        }
+      }
+    },
+    {
+      "name": "health",
+      "method": "POST",
+      "path": "/phone/v1/health",
+      "t": 1794565800,
+      "nonce": "83f7b3e1391467d57fee4ce1395fb3c6",
+      "body": "{\"v\":1,\"days\":[{\"date\":\"2026-11-12\",\"steps\":{\"count\":8123,\"writer\":\"com.noisefit\"},\"heart\":{\"min\":58,\"avg\":74,\"max\":131,\"writer\":\"com.noisefit\"},\"sleep\":[{\"start\":\"2026-11-11T23:50:00+05:30\",\"end\":\"2026-11-12T06:30:00+05:30\",\"writer\":\"com.noisefit\",\"stages\":{\"awake\":12,\"light\":210,\"deep\":80,\"rem\":98}}]},{\"date\":\"2026-11-13\",\"steps\":{\"count\":412,\"writer\":\"android\"},\"heart\":null,\"sleep\":[]}]}",
+      "body_sha256_hex": "611978342b19fb5f0d5dfd513f3772cb01fc302da8a1ada5f2f4b2901af61ae5",
+      "string": "jarvis-phone-v1\nph_3f9a2c7e1b04\n1794565800\n83f7b3e1391467d57fee4ce1395fb3c6\nPOST\n/phone/v1/health\n611978342b19fb5f0d5dfd513f3772cb01fc302da8a1ada5f2f4b2901af61ae5",
+      "header": "v1;d=ph_3f9a2c7e1b04;t=1794565800;n=83f7b3e1391467d57fee4ce1395fb3c6;s=MEUCIFzjMZT4w0tZLGMZHKkQ29-PVWtopV0iT1KNMQZneadOAiEAzKsZzR0RZoFLcecq-gMNJbmjTxZdTs4dK2goSBFvuIU",
+      "verifies": true,
+      "door": "accept",
+      "payload": {
+        "v": 1,
+        "days": [
+          {
+            "date": "2026-11-12",
+            "steps": {
+              "count": 8123,
+              "writer": "com.noisefit"
+            },
+            "heart": {
+              "min": 58,
+              "avg": 74,
+              "max": 131,
+              "writer": "com.noisefit"
+            },
+            "sleep": [
+              {
+                "start": "2026-11-11T23:50:00+05:30",
+                "end": "2026-11-12T06:30:00+05:30",
+                "writer": "com.noisefit",
+                "stages": {
+                  "awake": 12,
+                  "light": 210,
+                  "deep": 80,
+                  "rem": 98
+                }
+              }
+            ]
+          },
+          {
+            "date": "2026-11-13",
+            "steps": {
+              "count": 412,
+              "writer": "android"
+            },
+            "heart": null,
+            "sleep": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "sos",
+      "method": "POST",
+      "path": "/phone/v1/sos",
+      "t": 1794565800,
+      "nonce": "3ca9aab964852d7417e94b1ab62fc84c",
+      "body": "{\"v\":1,\"kind\":\"test\",\"at\":1794565800,\"location\":{\"lat_e6\":12971599,\"lon_e6\":77594566,\"accuracy_m\":20,\"age_s\":8}}",
+      "body_sha256_hex": "c034c693894f84539d9e45b2ac9c74043714b72fa0d3a4e7e3b200476a42375e",
+      "string": "jarvis-phone-v1\nph_3f9a2c7e1b04\n1794565800\n3ca9aab964852d7417e94b1ab62fc84c\nPOST\n/phone/v1/sos\nc034c693894f84539d9e45b2ac9c74043714b72fa0d3a4e7e3b200476a42375e",
+      "header": "v1;d=ph_3f9a2c7e1b04;t=1794565800;n=3ca9aab964852d7417e94b1ab62fc84c;s=MEUCIQDMXEXTmIwGCsjn5hrMQnBpMv2fhOpnH-Fx98sukfLqXQIgXjKbH-uymA2CbsfGmtaywVNrDTslNAbjlNjBmQM3R1c",
+      "verifies": true,
+      "door": "accept",
+      "payload": {
+        "v": 1,
+        "kind": "test",
+        "at": 1794565800,
+        "location": {
+          "lat_e6": 12971599,
+          "lon_e6": 77594566,
+          "accuracy_m": 20,
+          "age_s": 8
+        }
+      }
+    },
+    {
+      "name": "sos_no_location",
+      "method": "POST",
+      "path": "/phone/v1/sos",
+      "t": 1794565800,
+      "nonce": "4fe583db97e5c88555cd469151c6ec73",
+      "body": "{\"v\":1,\"kind\":\"real\",\"at\":1794565800,\"location\":null}",
+      "body_sha256_hex": "c994cde87ef7d9ef05b2c62afb072a86253dc776b099b410d5fc5395c4f26f8c",
+      "string": "jarvis-phone-v1\nph_3f9a2c7e1b04\n1794565800\n4fe583db97e5c88555cd469151c6ec73\nPOST\n/phone/v1/sos\nc994cde87ef7d9ef05b2c62afb072a86253dc776b099b410d5fc5395c4f26f8c",
+      "header": "v1;d=ph_3f9a2c7e1b04;t=1794565800;n=4fe583db97e5c88555cd469151c6ec73;s=MEQCIEHVM-wQRVgSCqiR50DRTaztmu9PGr8qb4yJyw2uI2U3AiBKcNo5vbcgq_KFxQ3Jr7ztbLtI2uNTVihXoJxjlJ4xXg",
+      "verifies": true,
+      "door": "accept",
+      "payload": {
+        "v": 1,
+        "kind": "real",
+        "at": 1794565800,
+        "location": null
+      }
+    },
+    {
+      "name": "inbox",
+      "method": "POST",
+      "path": "/phone/v1/inbox",
+      "t": 1794565800,
+      "nonce": "a2b8ea928fc94c3a2f2cb95bba49d748",
+      "body": "{\"v\":1,\"name\":\"licence.pdf\",\"mime\":\"application/pdf\",\"sha256\":\"5d6d71908da9b968472d4acfd00873aa4ba5e2edf2552ca8a008ee3bccb1ab13\",\"bytes\":50}\n%PDF-1.4\n% a tiny test file, not a document\n%%EOF\n",
+      "body_sha256_hex": "ce6669b0f1213c7a9a196428bbc6e50fe3f019fe44c1677ab1611062599117cd",
+      "string": "jarvis-phone-v1\nph_3f9a2c7e1b04\n1794565800\na2b8ea928fc94c3a2f2cb95bba49d748\nPOST\n/phone/v1/inbox\nce6669b0f1213c7a9a196428bbc6e50fe3f019fe44c1677ab1611062599117cd",
+      "header": "v1;d=ph_3f9a2c7e1b04;t=1794565800;n=a2b8ea928fc94c3a2f2cb95bba49d748;s=MEYCIQDnElLgyZipsZuh9Az1Qbjq2JxKlildzxfvtQFSGciXsQIhAM1iXowT8t-6AUyYdWBIxZ1pBbl9kYGD8W71a0GSJNNf",
+      "verifies": true,
+      "door": "accept",
+      "note": "the first line is the file's canonical JSON, then one newline, then the file's bytes",
+      "first_line": {
+        "v": 1,
+        "name": "licence.pdf",
+        "mime": "application/pdf",
+        "sha256": "5d6d71908da9b968472d4acfd00873aa4ba5e2edf2552ca8a008ee3bccb1ab13",
+        "bytes": 50
+      }
+    },
+    {
+      "name": "changed_body",
+      "method": "POST",
+      "path": "/phone/v1/hello",
+      "t": 1794565800,
+      "nonce": "71b419ae5c7628b7e6a83aab77c9039e",
+      "body": "{\"v\":1,\"app_version\":\"7.0.0\",\"version_code\":1,\"model\":\"phone\",\"android\":36,\"can\":{\"notifications\":true,\"health_read\":true,\"health_background\":false,\"location\":true,\"folder\":false,\"tile\":false}}",
+      "body_sha256_hex": "91ddd91d5c7a57dbb7a7cdd8ea1c2edc18fd5d900e3ccb3dccc6b4bef9e2e2e6",
+      "string": "jarvis-phone-v1\nph_3f9a2c7e1b04\n1794565800\n71b419ae5c7628b7e6a83aab77c9039e\nPOST\n/phone/v1/hello\n91ddd91d5c7a57dbb7a7cdd8ea1c2edc18fd5d900e3ccb3dccc6b4bef9e2e2e6",
+      "header": "v1;d=ph_3f9a2c7e1b04;t=1794565800;n=71b419ae5c7628b7e6a83aab77c9039e;s=MEYCIQDMA6tsC4jKml74bOA0B2lzEo3ay7-6ymVto9LAawerHwIhANk2wEABptjM7Tg_hvfACSNnLDqaUwW67h_s5ZcdrY-b",
+      "verifies": false,
+      "door": "401 signature"
+    },
+    {
+      "name": "other_key",
+      "method": "POST",
+      "path": "/phone/v1/hello",
+      "t": 1794565800,
+      "nonce": "25010d0389280e7744107a119c31f441",
+      "body": "{\"v\":1,\"app_version\":\"7.0.0\",\"version_code\":1,\"model\":\"phone\",\"android\":36,\"can\":{\"notifications\":true,\"health_read\":true,\"health_background\":false,\"location\":true,\"folder\":false,\"tile\":true}}",
+      "body_sha256_hex": "586d072b9bdb1ce45efeaba47fdf6df9d015c7cf25139ecdc26ad4f76f29036b",
+      "string": "jarvis-phone-v1\nph_3f9a2c7e1b04\n1794565800\n25010d0389280e7744107a119c31f441\nPOST\n/phone/v1/hello\n586d072b9bdb1ce45efeaba47fdf6df9d015c7cf25139ecdc26ad4f76f29036b",
+      "header": "v1;d=ph_3f9a2c7e1b04;t=1794565800;n=25010d0389280e7744107a119c31f441;s=MEYCIQDoQECxP8DJPHjn5A27Phwri7qJm1paBiYV6PdUkQYvBAIhAOvjAKoNaMu-KKJOHc7WVKpTIEHxlf52w16O6Kmo1DO7",
+      "verifies": false,
+      "door": "401 signature"
+    },
+    {
+      "name": "changed_path",
+      "method": "POST",
+      "path": "/phone/v1/sos",
+      "t": 1794565800,
+      "nonce": "a924fba05ce0cd9383ef79dec60d712d",
+      "body": "{\"v\":1,\"kind\":\"real\",\"at\":1794565800,\"location\":null}",
+      "body_sha256_hex": "c994cde87ef7d9ef05b2c62afb072a86253dc776b099b410d5fc5395c4f26f8c",
+      "string": "jarvis-phone-v1\nph_3f9a2c7e1b04\n1794565800\na924fba05ce0cd9383ef79dec60d712d\nPOST\n/phone/v1/sos\nc994cde87ef7d9ef05b2c62afb072a86253dc776b099b410d5fc5395c4f26f8c",
+      "header": "v1;d=ph_3f9a2c7e1b04;t=1794565800;n=a924fba05ce0cd9383ef79dec60d712d;s=MEUCIH5TvRp6rYKAeoZL5KLNPMKom7cQVCUK46naBL9gXAuBAiEAn9yKwJUMWXn8bvpzaejArYk5d63fnEw8kKsz6t3_4s4",
+      "verifies": false,
+      "door": "401 signature"
+    },
+    {
+      "name": "stale_time_shape",
+      "method": "POST",
+      "path": "/phone/v1/hello",
+      "t": 1794565679,
+      "nonce": "a34e832b88ed866e1ed8321fda6c0457",
+      "body": "{\"v\":1,\"app_version\":\"7.0.0\",\"version_code\":1,\"model\":\"phone\",\"android\":36,\"can\":{\"notifications\":true,\"health_read\":true,\"health_background\":false,\"location\":true,\"folder\":false,\"tile\":true}}",
+      "body_sha256_hex": "586d072b9bdb1ce45efeaba47fdf6df9d015c7cf25139ecdc26ad4f76f29036b",
+      "string": "jarvis-phone-v1\nph_3f9a2c7e1b04\n1794565679\na34e832b88ed866e1ed8321fda6c0457\nPOST\n/phone/v1/hello\n586d072b9bdb1ce45efeaba47fdf6df9d015c7cf25139ecdc26ad4f76f29036b",
+      "header": "v1;d=ph_3f9a2c7e1b04;t=1794565679;n=a34e832b88ed866e1ed8321fda6c0457;s=MEYCIQCPkKr1BI3GhvrF6Ne_FgUIMVDVF3vo5xYRwQHXpgpCDAIhAOTE5To8xNqx1JVrgFyn_cLvrPvTG6B0270ZNJsf5q9j",
+      "verifies": true,
+      "door": "401 time (more than phone_clock_skew_s from the server's clock at the case's t + 121)"
+    }
+  ]
+}

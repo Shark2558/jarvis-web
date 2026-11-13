@@ -40,6 +40,8 @@ LARGE_BYTES = MIB  # a file over 1 MB is left out (listed)
 OWN = "JARVIS's own"
 VENDORED_DIRS = ("src/jarvis/api/static/vendor/", "src/jarvis/api/static/wakeword/")
 BINARY_SUFFIXES = (".onnx", ".wasm", ".wav", ".woff2", ".png", ".jpg", ".pdf", ".zip")
+BINARY_SUFFIXES += (".jar", ".ttf", ".task", ".tflite", ".gz", ".webp")  # R7: Android and vision
+ANDROID_BUILD = re.compile(r"^android/(?:.+/)?build/")  # R7: an Android build output is never read
 # the home kit's skip rules (home/kit.py), copied so the generator imports nothing from the app;
 # tests/test_book_gen_snapshot.py keeps them equal
 KIT_SKIP_NAMES = frozenset(
@@ -86,6 +88,8 @@ def left_out(repo: Repo, rel: str) -> str | None:
     name, parts = rel.rsplit("/", 1)[-1], rel.split("/")
     if rel.startswith(VENDORED_DIRS):
         return "vendored"
+    if ANDROID_BUILD.match(rel):
+        return "build output"
     if any(p in KIT_SKIP_PARTS for p in parts) or name in KIT_SKIP_NAMES:
         return "home kit skip rule"
     if name.endswith(KIT_SKIP_SUFFIXES):
@@ -180,6 +184,7 @@ def build(repo: Repo, fakes: Fakes, *, cap: int = SNAPSHOT_CAP_BYTES) -> Snapsho
 __all__ = [
     "FAKES_FILE",
     "Fakes",
+    "ANDROID_BUILD",
     "KIT_SKIP_NAMES",
     "KIT_SKIP_PARTS",
     "KIT_SKIP_SUFFIXES",

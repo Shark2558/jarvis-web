@@ -1,0 +1,74 @@
+# .github/workflows/android.yml -- R7 D23 (I0 seam 16, its first version; Part E owns it from here on and
+# changes it during the blind CI rounds). CI PROVES the Android app; the app the owner installs is built
+# on his laptop. No secret is used, so it is safe for any pull request. Every run signs with a throwaway
+# key and builds against the placeholder address jarvis.invalid: the result is kept 7 days, named "not for
+# installing" (it could never update his app and his site does not vouch for it).
+# Order: validate the wrapper; resolve EVERY dependency first (android-browser-helper and AndroidX live on
+# Google's Maven, and a GitHub tag does not prove an artifact exists there); then, once Part E's modules
+# exist: lint, the JVM tests, the `personal` build and scripts/apk_check.py. JDK 17 runs Gradle (AGP 9.5's
+# minimum and default; the image also carries 21). The `wrapper-pin` job fails until gradle-wrapper.properties
+# carries the official distributionSha256Sum, which it prints (the workspace that wrote this could not
+# reach services.gradle.org).
+name: android
+on:
+  push:
+    paths: ["android/**", ".github/workflows/android.yml", "scripts/apk_check.py"]
+  pull_request:
+    paths: ["android/**", ".github/workflows/android.yml", "scripts/apk_check.py"]
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  wrapper-pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The wrapper's distribution is pinned by its SHA-256
+        working-directory: android
+        run: |
+          url=$(sed -n 's/^distributionUrl=//p' gradle/wrapper/gradle-wrapper.properties | sed 's/\\:/:/g')
+          official=$(curl -fsSL "${url}.sha256")
+          pinned=$(sed -n 's/^distributionSha256Sum=//p' gradle/wrapper/gradle-wrapper.properties)
+          echo "official sum for ${url##*/}: ${official}"
+          if [ -z "${pinned}" ]; then
+            echo "::error::add distributionSha256Sum=${official} to android/gradle/wrapper/gradle-wrapper.properties"
+            exit 1
+          fi
+          [ "${pinned}" = "${official}" ] || { echo "::error::distributionSha256Sum is not the official sum"; exit 1; }
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      JARVIS_HOST: jarvis.invalid # the placeholder address; never a real host in CI
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: Resolve every dependency first (all of them on Google's Maven or Maven Central)
+        working-directory: android
+        run: ./gradlew --no-daemon --no-configuration-cache resolveDependencies
+      - name: Lint and the JVM tests (once Part E's modules exist)
+        if: hashFiles('android/app/build.gradle.kts') != ''
+        working-directory: android
+        run: ./gradlew --no-daemon lint :core:test testDebugUnitTest -Pjarvis.host=jarvis.invalid
+      - name: Build `personal` against the placeholder address (CI's debug key is a throwaway)
+        if: hashFiles('android/app/build.gradle.kts') != ''
+        working-directory: android
+        run: ./gradlew --no-daemon :app:assemblePersonal -Pjarvis.host=jarvis.invalid
+      - name: Check the built app (permissions, exported parts, package, no host or secret)
+        if: hashFiles('android/app/build.gradle.kts') != '' && hashFiles('scripts/apk_check.py') != ''
+        run: python3 scripts/apk_check.py android/app/build/outputs/apk/personal
+      - name: Keep the result for 7 days, not for installing
+        if: hashFiles('android/app/build.gradle.kts') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jarvis-android-ci-not-for-installing
+          path: android/app/build/outputs/apk/personal/
+          retention-days: 7
+          if-no-files-found: error

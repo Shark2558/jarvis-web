@@ -189,10 +189,11 @@ async def test_csp_adds_only_wasm_unsafe_eval_to_script_src(client: AsyncClient)
     added = "script-src 'self' 'wasm-unsafe-eval';"
     media = "; frame-src https://www.youtube-nocookie.com"  # slice 12 D4 (test_media_console.py)
     worker = "; worker-src 'self'"  # R3 I0 D11: the notifications' service worker (r3 seams)
-    assert csp == PREVIOUS_CSP.replace("script-src 'self';", added) + media + worker
+    manifest = "; manifest-src 'self'"  # R7 I0 D3: the installable console's manifest
+    assert csp == PREVIOUS_CSP.replace("script-src 'self';", added) + media + worker + manifest
     # nothing else: no unsafe-eval, no blob: workers, no other hosts
     assert "'unsafe-eval'" not in csp and "blob:" not in csp and csp.count("worker-src") == 1
-    assert "http" not in csp.removesuffix(media + worker)
+    assert "http" not in csp.removesuffix(media + worker + manifest)
 
 
 # ---- packaging ---------------------------------------------------------------------------------

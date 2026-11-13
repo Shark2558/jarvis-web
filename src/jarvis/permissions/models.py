@@ -77,6 +77,10 @@ Purpose = Literal[
     # the lock id)
     "book_open",
     "book_resume",
+    # R7 D5, D21: show a phone link code (bound to the code's id) and unlock the phone app
+    # (bound to the session being unlocked)
+    "phone_link",
+    "device_unlock",
 ]
 # The purposes whose challenge is bound to (owner, purpose, target); checked by `check_purpose`.
 TARGETED_PURPOSES: tuple[str, ...] = (
@@ -86,11 +90,15 @@ TARGETED_PURPOSES: tuple[str, ...] = (
     "home_disarm",
     "book_open",
     "book_resume",
+    "phone_link",
+    "device_unlock",
 )
 TARGET_PATTERN = r"^[A-Za-z0-9_.:=-]{1,64}$"
 HOME_DISARM_TARGET = r"^h_[0-9a-f]{8}:[0-9]{1,12}$"
 BOOK_OPEN_TARGET = r"^(owner|guest)$"  # R6 D8: who the session is for
 BOOK_LOCK_TARGET = r"^bl_[0-9a-f]{12}$"  # R6 D10: the guest lock being lifted
+PHONE_LINK_TARGET = r"^pl_[0-9a-f]{12}$"  # R7 D5: the link code being shown (never the code)
+DEVICE_UNLOCK_TARGET = r"^ss_[A-Za-z0-9_-]{24}$"  # R7 D21: the session being unlocked
 
 
 class ChallengeRequest(_In):
@@ -121,7 +129,8 @@ class CancelResetRequest(_In):
 
 
 class PermissionsPatch(_In):
-    groups: dict[str, str] | None = Field(default=None, max_length=48)  # R3: 33 rows
+    # every row at once, two to spare (R3: 33 rows; R11.1: 46, cap 48; R7: 49, cap 51)
+    groups: dict[str, str] | None = Field(default=None, max_length=51)
     require_passkey: bool | None = None
     proof: PasskeyProof | None = None
 

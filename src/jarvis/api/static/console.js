@@ -50,7 +50,7 @@
     brains: [], brain: null, busy: false, seenApprovals: null, seenAudit: new Set() };
   let readyDetail = null; // the last jarvis:ready detail (frozen); null while signed out
   let lastCards = []; // the approval cards last rendered
-  let brainDetail = null; // the brain answering now (frozen): {id, label, trains, tools}; null until known
+  let brainDetail = null; // the brain answering now (frozen): {id, label, trains, tools, sees}; null until known
 
   const SUGGESTIONS = [
     'What can you help me with?',
@@ -75,7 +75,7 @@
       if (!gone) showGate();
       const err = new Error(gone ? 'The book session ended.' : 'Sign in required.'); err.status = 401; if (gone) err.code = 'session_gone'; throw err;
     }
-    if (r.status === 423) showLocked(); // R6 D10: a guest show holds every console of the owner
+    if (r.status === 423) await lockedBy(r); // R6 D10 show_locked: the show; R7 D21 device_locked: the unlock cover
     if (!r.ok) {
       let detail = r.statusText, code = '';
       try { // the app's shape: {error: code, detail: plain words}; err.code carries the code
@@ -98,7 +98,7 @@
     if (state.authMode === 'token' && state.token) headers['Authorization'] = 'Bearer ' + state.token;
     const r = await fetch(path, { method: opts.method || 'GET', headers, body: opts.body, signal: opts.signal, credentials: 'same-origin' });
     if (r.status === 401) { showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err; }
-    if (r.status === 423) showLocked();
+    if (r.status === 423) await lockedBy(r);
     return r;
   }
   async function bookGone(r) {
@@ -110,6 +110,14 @@
     location.replace('/book/show'); // SEC-2: no Back entry returns to this console page
     const err = new Error('A build book show is running.'); err.status = 423; err.code = 'show_locked'; throw err;
   }
+  /** R7 D21 (I0 seam 14): every 423 is read by its `error` code. device_locked is the app lock (this device was
+   *  away too long): the unlock cover (console-r7-lock.js, on jarvis:device-locked); anything else is R6's show. */
+  async function code423(r) { try { const j = await r.clone().json(); return j && typeof j.error === 'string' ? j.error : ''; } catch (_) { return ''; } }
+  function deviceLocked() {
+    document.documentElement.dataset.locked = 'device'; emit('jarvis:device-locked', {});
+    const err = new Error('JARVIS is locked on this device.'); err.status = 423; err.code = 'device_locked'; throw err;
+  }
+  async function lockedBy(r) { if ((await code423(r)) === 'device_locked') deviceLocked(); showLocked(); }
 
   // ---- sign-in gate -------------------------------------------------------------------------
   const LOCK = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="9" width="12" height="8" rx="2.2"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/></svg>';
@@ -456,8 +464,8 @@
     $('brainSel').classList.toggle('training', !!(b && b.trains_on_content));
     // the Memory panel says when memory is kept away from this brain (slice 8 D6)
     const next = b ? Object.freeze({ id: String(b.id), label: String(b.label || b.id),
-      trains: b.trains_on_content === true, tools: b.tools_allowed !== false }) : null;
-    const same = (x, y) => (x && y ? x.id === y.id && x.trains === y.trains && x.tools === y.tools : x === y);
+      trains: b.trains_on_content === true, tools: b.tools_allowed !== false, sees: b.sees_pictures === true }) : null; // R7 D12
+    const same = (x, y) => (x && y ? x.id === y.id && x.trains === y.trains && x.tools === y.tools && x.sees === y.sees : x === y);
     if (!same(next, brainDetail)) { brainDetail = next; emit('jarvis:brain', brainDetail); }
   }
   function renderBrains() {
@@ -692,11 +700,11 @@
     if (!force && !covered && Date.now() - lastCheck < 1500) return;
     lastCheck = Date.now();
     const asked = covers;
-    let status = 0;
-    try { status = (await fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' })).status; } catch (_) {}
+    let status = 0, res = null;
+    try { res = await fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' }); status = res.status; } catch (_) {}
     if (asked !== covers) return; // sent before the latest cover: that cover's own check decides
     if (status === 200) uncover();
-    else if (status === 423) location.replace('/book/show');
+    else if (status === 423) { try { await lockedBy(res); } catch (_) {} } // the show, or R7's unlock cover
     else if (status === 401) { covered = false; showGate(); } // signed out: the sign-in gate (the app stays hidden)
     else cover(UNSURE, true);
   }
@@ -742,7 +750,7 @@
     renderBanner(fallbackWarning);
     if (state.authMode === 'google') {
       const r = await fetch('/auth/me', { credentials: 'same-origin' });
-      if (r.status === 423) { location.replace('/book/show'); return; } // R6 D10: a guest show holds it
+      if (r.status === 423) { try { await lockedBy(r); } catch (_) {} return; } // R6 D10 the show; R7 D21 the cover
       if (r.status !== 200) { showGate(); return; }
       const me = await r.json();
       const who = $('who'); who.textContent = (me.email || '?').charAt(0).toUpperCase(); who.title = me.email; who.hidden = false;

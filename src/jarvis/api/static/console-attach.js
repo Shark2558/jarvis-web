@@ -10,8 +10,8 @@
 // has it: configure()). Excel, PowerPoint, pictures and zip files are taken; a picture is made smaller in
 // the browser first (JarvisFixes.parts.files.shrink); a picked folder goes up as ONE bundle with
 // X-Jarvis-Folder: 1 (addFolder). At most 10 files, 40 MB together and 4 pictures a message.
-// window.JarvisAttach {ready(), busy(), clear(), show(row, refs), configure(limits), addFolder(files)}
-// for console.js and console-r111-files.js; it fires jarvis:attach {count, busy} whenever the set of
+// window.JarvisAttach {ready(), busy(), clear(), show(row, refs), configure(limits), addFolder(files), add(files)}
+// for console.js, console-r111-files.js and R7's one picture door (console-r7-send.js: add, I0 seam 25); it fires jarvis:attach {count, busy} whenever the set of
 // files or their state changes.
 (() => {
   'use strict';
@@ -248,6 +248,7 @@
     /** The message went out with them (or they are gone): forget the chips, delete nothing. */
     clear: () => { items.slice().forEach(i => remove(i, false)); say(''); },
     show, configure, addFolder,
+    add, // R7 I0 seam 25: the share tray and the Camera panel attach through console-r7-send.js
   });
   apply();
 })();

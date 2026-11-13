@@ -13,3 +13,16 @@ src/jarvis/buildbook/_book/
 src/jarvis/BUILD_DATE
 # R6.1 D2: the dev-only Markdy CLI (npm ci --prefix tools/markdy)
 tools/markdy/node_modules/
+# R7 D21, D23 (I0 seam 16): the Android project's machine-local and secret files and its builds.
+# The server address lives only in android/local.properties; a keystore never leaves the laptop.
+android/local.properties
+*.jks
+*.keystore
+android/**/build/
+.gradle/
+android/.idea/
+android/.kotlin/
+*.iml
+*.apk
+*.aab
+captures/

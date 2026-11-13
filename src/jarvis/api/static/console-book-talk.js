@@ -144,7 +144,7 @@
       if (e.status === 401) return { on: false, gone: true }; // SEC-4: a Resume elsewhere signed this browser out
       if (e.status !== 404 && e.status !== 405) return { on: false, unknown: true };
     }
-    try { await B().api('/auth/me'); return { on: false }; } catch (e) { return { on: e.status === 423, id: '' }; } // /auth/me is 423 under a lock
+    try { await B().api('/auth/me'); return { on: false }; } catch (e) { return { on: e.status === 423 && e.code !== 'device_locked', id: '' }; } // /auth/me is 423 under a lock (R7: not the app lock)
   }
   function card(title, line, note) {
     $('shStart').hidden = true; $('shDone').hidden = false; $('shStartWrap').classList.add('show');

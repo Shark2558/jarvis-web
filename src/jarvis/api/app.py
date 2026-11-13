@@ -7,10 +7,11 @@ the slice 10–12 features (`api/feature_wiring.py`: web search, attached files,
 Maps + YouTube, Drive), R2's personal data (`api/personal.py`: vault, notes, things, DigiLocker
 inbox), R3's home, camera and faces (`api/home_wiring.py`; its one alert policy is wired in the
 core, before anything takes the alert sink), R4's vitals, self-health, connectors, people research
-and the one no-AI switch (`api/r4_wiring.py`), R6's build book (`api/r6_wiring.py`), R11's
-helpers (`api/r11_wiring.py`), the gateway with the owner's rules and the Brain, then the privacy
-dashboard and tick jobs; then the middleware (R6's guest show lock inside the sign-in session),
-the error mapping and the routers. The "jarvis up" line is `api/startup_log.py`.
+and the one no-AI switch (`api/r4_wiring.py`), R6's build book (`api/r6_wiring.py`), R11.1's
+and R7's parts (`api/r11_1_wiring.py`, `api/r7_wiring.py`), R11's helpers (`api/r11_wiring.py`),
+the gateway with the owner's rules and the Brain, then the privacy dashboard and tick jobs; then
+the middleware (R7's app lock inside R6's guest show lock, both inside the sign-in session), the
+error mapping and the routers. The "jarvis up" line is `api/startup_log.py`.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
+import jarvis.api.r7_wiring as r7
 from jarvis import __version__ as VERSION
 from jarvis.activity.service import ActivityService
 from jarvis.activity.store import ActivityStore
@@ -309,8 +311,7 @@ def _wire_core(
         s, docs, app.state.brains, http=app.state.fx_http
     )
     app.state.memory = build_app_memory(s, docs, app.state.brains, app.state.billing, audit)
-    # Voice (slice 9): settings + wit level always; Google speech only when switched on.
-    # No network at start-up: credentials are looked up on first use.
+    # Voice (slice 9): settings + wit always; Google speech only when on; credentials at first use
     app.state.voice = build_voice_service(s, docs, app.state.billing, engines=inj.voice_engines)
     return docs, audit
 
@@ -369,6 +370,7 @@ def _build_tool_gateway(
         r4=app.state.r4_parts,  # R4: vitals, systems check, connectors, people (each when on)
         r11=app.state.r11_parts,  # R11: the helpers' tools (each part's own families)
         r111=fix_tools(app.state.r111_parts),  # R11.1: the four parts' tools
+        r7=r7.mobile_tools(app.state.r7_parts),  # R7: the mobile parts' tools
         pictures=app_guard(lambda name: getattr(app.state, name, None)),  # R11.1 D21-D
     )
 
@@ -500,6 +502,7 @@ def _lifespan(
             await wire_r4(app, s, docs, audit)  # R4: brain mode (loaded), vitals, health, people
             await wire_r6(app, s, docs, audit)  # R6: the build book (sealed releases, sessions)
             await wire_r11_1(app, s, docs, audit)  # R11.1: before R11 (its jobs ride that clock)
+            await r7.wire_r7(app, s, docs, audit)  # R7: the same, for the four mobile parts
             await wire_r11(app, s, docs, audit)  # R11: the free proactive helpers (A-D)
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
@@ -518,12 +521,10 @@ def _lifespan(
 
 def _install_middleware(app: FastAPI, s: Settings) -> None:
     """In this order (Starlette wraps outward, so the last added runs first): the body cap, the
-    rate limit, R6's guest show lock, the Google sign-in session (with its routes), then the trace
-    id. The lock is added just before the session so it runs INSIDE it (it reads the cookie)."""
-    # Every body is size-capped before it is parsed or authenticated (innermost of the http
-    # middlewares, so the trace id still goes on a 413). Tighter per-route caps apply first.
-    # Only the attachment and vault uploads have a larger cap (10 MB each, checked again by the
-    # route).
+    rate limit, R7's app lock, R6's guest show lock, the Google sign-in session (with its routes),
+    then the trace id. The locks are added just before the session so they run INSIDE it."""
+    # Every body is size-capped before it is parsed or authenticated (innermost, so a 413 still
+    # gets the trace id); tighter per-route caps first; the 10 MB uploads are checked again.
     app.add_middleware(
         BodySizeLimit,
         max_bytes=MAX_BODY_BYTES,
@@ -532,11 +533,13 @@ def _install_middleware(app: FastAPI, s: Settings) -> None:
             VAULT_UPLOAD_PATH: VAULT_BODY_BYTES,
             WEBHOOK_PATH: MAX_WEBHOOK_BYTES,  # R3: the bridge's signed events (128 KB)
             HOME_LINK_PATH: HOME_LINK_BYTES,  # R3: a link request is a few hundred bytes
+            **r7.BODY_CAPS,  # R7: the phone's inbox (10 MB) and the share target's fallback
         },
     )
     if s.rate_limit_per_minute > 0:
         app.middleware("http")(make_middleware(RateLimiter(s.rate_limit_per_minute)))
     if s.auth_mode is AuthMode.GOOGLE:
+        r7.install_app_lock(app)  # R7 D21: inside the show lock (a slot until Part C's check)
         install_show_lock(app, s)  # R6 D10: every cookie session of the owner (bearer untouched)
         _install_google_sign_in(app, s)
 
@@ -579,9 +582,8 @@ def _install_core_errors(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
-        # FastAPI's default echoes each bad `input` back: a NaN / Infinity in the JSON body
-        # (Python's reader accepts them) then can't be rendered and became a 500. Same shape,
-        # without echoing what was sent.
+        # FastAPI's default echoes each bad `input` back: a NaN / Infinity in the JSON body (Python
+        # reads them) then couldn't be rendered (a 500). Same shape, without echoing what was sent.
         errors = [{k: e[k] for k in ("type", "loc", "msg") if k in e} for e in exc.errors()]
         return _err(422, {"detail": errors})
 
@@ -690,6 +692,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_r6_routes(app)  # R6: /v1/book (status, open, sections, show, close, resume, settings)
     install_r11_routes(app)  # R11: /v1/helpers (the gate) and the four parts' routes
     install_r11_1_routes(app)  # R11.1: /v1/series, /v1/input, /v1/facegroups, /v1/picture
+    r7.install_r7_routes(app)  # R7: /app, /v1/vision, /v1/phone, /v1/watch, /v1/sos
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

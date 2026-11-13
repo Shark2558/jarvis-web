@@ -42,7 +42,7 @@ log = get_logger(__name__)
 URGENT_PER_HOUR = 30
 URGENT_PER_DAY = 100
 LIMIT_REASON = "alert limit reached for now"
-NO_CAP_KINDS = frozenset({"home_hazard"})
+NO_CAP_KINDS = frozenset({"home_hazard", "sos_sent"})  # R7 D19: no cap may drop an SOS notice
 SWITCHED_OFF = "switched off for this kind of alert"
 # kinds that still have an R1 Telegram switch (field name on AlertToggles)
 R1_TOGGLE = {

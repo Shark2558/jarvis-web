@@ -74,7 +74,7 @@ async def test_every_gateway_tool_verb_is_an_action_word(settings: Settings) -> 
     assert len(tools) > 20
     unknown = {
         token
-        for name in (*tools, *OTHER_PARTS_TOOLS)
+        for name in (*tools, *OTHER_PARTS_TOOLS, *R7_PARTS_TOOLS)
         for token in name.split("_")
         if token not in ACTION_WORDS and token not in TOOL_NOUNS
     }
@@ -90,13 +90,20 @@ OTHER_PARTS_TOOLS = (
     *("series_reschedule", "gmail_inbox_summary", "faces_groups", "faces_group_name"),
     *("faces_group_forget", "photos_import_status", "picture_research"),
 )
+# R7 I0 seam 22 (docs/plans/r7-mobile.md D18, D19, D12): the tools Parts B and D will register
+R7_PARTS_TOOLS = (
+    *("sleep_last_night", "sleep_week", "watch_today", "sleep_note", "sos_status"),
+    "vision_results",
+)
 TOOL_NOUNS = frozenset(
     "activity bill birthdays breach calendar checkin chore contacts disaster doc focus freetime "
     "key kitchen maint memory month now nudge nutrition of pantry payee pending recipe reminder "
     "settings spend standup starters status systems tasks vitals water weather whatsapp event "
     "events gmail inbox summary series picture faces face group groups photos home task deleted "
     "people profile notes vault things drive maps youtube web news brief camera free slots "
-    "blocks".split()
+    "blocks "
+    # R7 I0: the watch, sleep, SOS and camera-results tools' nouns
+    "sleep last night week watch today sos vision results".split()
 )
 
 

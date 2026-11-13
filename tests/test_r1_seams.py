@@ -227,7 +227,8 @@ def test_new_settings_bounds(field: str, good: tuple[int, int], bad: tuple[int, 
 def test_three_new_rows_follow_the_todo_rows() -> None:
     ids = [g.id for g in GROUPS]
     # 23 on R1 + 5 R2 + 5 R3 (Home, Camera) + 5 R4 + 6 R11 (D16) + 2 R11.1 (plans, pictures)
-    assert len(ids) == 46
+    # + 3 R7 (vision, watch, sos)
+    assert len(ids) == 49
     assert ids.index("groceries") == ids.index("todo_delete") + 1
     assert ids[ids.index("groceries") : ids.index("groceries") + 3] == [
         "groceries",

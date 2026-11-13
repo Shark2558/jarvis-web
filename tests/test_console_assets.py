@@ -18,13 +18,21 @@ IMMUTABLE = "public, max-age=31536000, immutable"
 # exactly 'wasm-unsafe-eval' for the on-device wake word's WebAssembly (tests/test_wakeword_assets);
 # slice 12 (D4) exactly `frame-src https://www.youtube-nocookie.com` for the Media panel's player
 # (tests/test_media_console.py); R3 I0 (D11) exactly `worker-src 'self'` for the browser
-# notifications' service worker (tests/test_r3_seams.py).
+# notifications' service worker (tests/test_r3_seams.py); R7 I0 (D3) exactly `manifest-src 'self'`
+# for the installable console's manifest (tests/test_r7_seams.py).
 EXPECTED_CSP = (
     "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
     "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
     "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
-    "frame-src https://www.youtube-nocookie.com; worker-src 'self'"
+    "frame-src https://www.youtube-nocookie.com; worker-src 'self'; manifest-src 'self'"
 )
+
+
+def sheet_entries(dock_js: str) -> list[str]:
+    """R7 I0 seam 10: the More sheet's entries, as console-dock.js builds them (its DESCRIBE)."""
+    start = dock_js.index("const DESCRIBE = {")
+    return re.findall(r"^\s+(\w+): '", dock_js[start : dock_js.index("};", start)], re.M)
+
 
 ALLOWED_FONTS = (
     "orbitron-latin-600-normal.woff2",
@@ -502,17 +510,18 @@ async def test_the_dock_folds_into_a_more_sheet_with_an_entry_per_foldable_tab(
     html = (await client.get("/")).text
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     names = re.findall(r'<button class="dk(?: wide)?" type="button" data-open="(\w+)"', dock)
-    # R11 D19: Helpers is the 21st tab, last (it folds behind More first on a small screen)
-    assert len(names) == 21 and names[:3] == ["chat", "brief", "approvals"]
-    assert names[-1] == "helpers"
+    # R11 D19: Helpers is the 21st tab; R7 I0: Camera the 22nd, last (it folds behind More first)
+    assert len(names) == 22 and names[:3] == ["chat", "brief", "approvals"]
+    assert names[-2:] == ["helpers", "camera"]
     assert "ovf" not in dock
     assert 'id="dockMore" type="button" aria-haspopup="dialog" aria-expanded="false"' in dock
     assert re.search(r'id="dockMore"[^>]* hidden>', dock)  # shown only while a tab is folded
     sheet = html[html.index('<dialog class="sheet" id="moreSheet" aria-labelledby="moreTitle">') :]
     sheet = sheet[: sheet.index("</dialog>")]
-    assert re.findall(r'data-sheet-open="(\w+)"', sheet) == names[2:]
+    assert "data-sheet-open" not in sheet  # R7 I0 seam 10: console-dock.js builds the entries
     assert html.index('src="/static/console-deck.js"') < html.index('src="/static/console-dock.js"')
     js = (await client.get("/static/console-dock.js")).text
+    assert sheet_entries(js) == names[2:]  # every tab after Chat and Brief, in dock order
     for const in ("PINNED = 3;", "PHONE_MAX = 8;", "MIN_TOUCH = 44;", "LABEL_CLEAR = 8;"):
         assert f"const {const}" in js, const
     triggers = ("new ResizeObserver(", "requestAnimationFrame(", "document.fonts", "'jarvis:theme'")
@@ -631,7 +640,7 @@ async def test_voice_panel_dock_tab_and_more_sheet_are_wired(client: AsyncClient
     html = (await client.get("/")).text
     assert 'id="p-voice" data-panel="voice" aria-labelledby="t-voice"' in html
     assert 'data-open="voice" aria-controls="p-voice" aria-pressed="false"' in html
-    assert 'data-sheet-open="voice"' in html
+    assert "voice" in sheet_entries((await client.get("/static/console-dock.js")).text)
     assert 'id="voiceNote" role="status" aria-live="polite"' in html
     assert 'id="micBtn" type="button" aria-pressed="false"' in html
     assert 'aria-keyshortcuts="Control+Space"' in html

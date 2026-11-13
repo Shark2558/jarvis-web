@@ -20,7 +20,7 @@ const F = window.JarvisFixes;
 const $ = (id) => document.getElementById(id);
 const TIERS = ['fast', 'balanced', 'strong'];
 const ARCHIVES = ['.zip', '.7z', '.rar', '.tar', '.gz', '.tgz', '.bz2', '.xz', '.jar', '.iso'];
-const PICTURE = /\.(png|jpe?g)$/i;
+const PICTURE = /\.(png|jpe?g|webp)$/i; // R7 I0 seam 25: a shared WebP is redrawn as a JPEG
 const JPEG_TRIES = [0.85, 0.7, 0.55, 0.4];
 let large = Object.freeze({ chars: 40000, sheets: 3, rows: 2000, pictures: 2 }); // GET /v1/input says (estimate.py)
 const UNDERSTAND_WAIT_MS = 8000;
@@ -187,7 +187,7 @@ async function shrink(file) {
   try { bmp = await createImageBitmap(file); } catch (_) { return file; } // not a picture this browser can read: the server says so
   const side = limits.picture_side, most = limits.picture_max_kb * 1024;
   const scale = Math.min(1, side / Math.max(bmp.width, bmp.height, 1));
-  if (scale === 1 && file.size <= most) { if (bmp.close) bmp.close(); return file; } // small enough already
+  if (scale === 1 && file.size <= most && !/\.webp$/i.test(file.name)) { if (bmp.close) bmp.close(); return file; } // small enough already
   const c = drawn(bmp, Math.max(1, Math.round(bmp.width * scale)), Math.max(1, Math.round(bmp.height * scale)));
   if (bmp.close) bmp.close();
   if (!c) return file;

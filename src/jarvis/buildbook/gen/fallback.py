@@ -11,6 +11,10 @@
     label_of(path)                  "R6" / "R5.1" from a plan's file name (shared with gen.plans)
     version_of(text)                "v6.1.0" from src/jarvis/__init__.py's text (shared with
                                     gen.write; R6.1 decision 3), None when it names none
+    label_from_version(version)     "R7" / "R11.1" from "v7.0.0" / "v11.1.1" (R7 I0 seam 2: the
+                                    release is named from the repository's own version, read
+                                    from the checkout's file, never from the running interpreter;
+                                    the highest plan only when that file names none)
 
 The bytes are the ones `write.release_bytes` writes for the same release (a test pins it).
 """
@@ -56,6 +60,15 @@ def version_of(text: str | None) -> str | None:
     return f"v{m.group(1)}" if m else None
 
 
+def label_from_version(version: str | None) -> str | None:
+    """ "R7" from "v7.0.0", "R11.1" from "v11.1.1" (the major, and the minor when it is not 0)."""
+    m = re.fullmatch(r"v([0-9]{1,3})\.([0-9]{1,3})\.[0-9]{1,4}", version or "")
+    if not m:
+        return None
+    major, minor = int(m.group(1)), int(m.group(2))
+    return f"R{major}" + (f".{minor}" if minor else "")
+
+
 def _version(top: Path) -> str | None:
     try:
         return version_of((top / VERSION_FILE).read_text(encoding="utf-8"))
@@ -79,6 +92,9 @@ def _git(root: Path, *args: str) -> str | None:
 
 
 def _label(top: Path) -> str:
+    named = label_from_version(_version(top))
+    if named is not None:
+        return named
     listed = (_git(top, "ls-files", "-z", "--", PLANS) or "").split("\0")
     plans = [p for p in listed if p.endswith(".md") and p.count("/") == 2 and label_of(p)]
     return label_of(max(plans, key=_release_key)) if plans else "R0"

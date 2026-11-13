@@ -34,6 +34,8 @@ _WORDS = {
     # R11.1: the study-plan check-in is held at night; new faces to name are feed only
     "series_checkin": "study session check-in",
     "faces_to_name": "faces to name",
+    # R7: an emergency contact who left is held at night (an SOS and a new phone ring)
+    "sos_contact_left": "emergency contact left",
 }
 
 

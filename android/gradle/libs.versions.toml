@@ -1,0 +1,13 @@
+# android/gradle/libs.versions.toml -- R7 D23: every Android build pin, once. Confirmed 13 Nov 2026 on Google's
+# pages: Android Studio Rabbit 2 | 2026.2.2 opens AGP 7.1-9.5; AGP 9.5.1 needs Gradle 9.6.0 and JDK 17, and
+# builds up to API 37. AGP 9 compiles Kotlin itself (built-in Kotlin, KGP >= 2.2.10): `app` applies no
+# org.jetbrains.kotlin.android plugin and has no kotlinOptions {} block. The plain-Kotlin `core` module uses the
+# Kotlin JVM plugin below, the version Google's AGP page uses in its own example; on the classpath it also lifts
+# AGP's built-in Kotlin. Part E adds the libraries (android-browser-helper, AndroidX, Health Connect) here.
+[versions]
+agp = "9.5.1"
+kotlin = "2.4.10"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

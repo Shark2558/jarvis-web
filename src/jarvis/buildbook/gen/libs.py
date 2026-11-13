@@ -66,6 +66,24 @@ VENDORED: dict[str, tuple[str, str, str, str]] = {
         "vendored",
         "voice",
     ),
+    # R7 D14, I0 seam 24: the vision files Part B vendors under vendor/vision/<release>/ (each
+    # licence beside the release folders); a version comes from Part B's MANIFEST.json
+    "vendor/vision/LICENSE-mediapipe-tasks-vision.txt": (
+        "MediaPipe Tasks Vision",
+        "",
+        "vendored",
+        "vision",
+    ),
+    "vendor/vision/LICENSE-mediapipe-models.txt": (
+        "MediaPipe pose and object models",
+        "",
+        "model",
+        "vision",
+    ),
+    "vendor/vision/LICENSE-tesseract.js.txt": ("tesseract.js", "", "vendored", "vision"),
+    "vendor/vision/LICENSE-tesseract.js-core.txt": ("tesseract.js-core", "", "vendored", "vision"),
+    "vendor/vision/LICENSE-tessdata-eng.txt": ("Tesseract English data", "", "model", "vision"),
+    "vendor/vision/LICENSE-zxing-wasm.txt": ("zxing-wasm", "", "vendored", "vision"),
 }
 RELEASE_NAMES = {"three": "three.js", "ort": "onnxruntime-web", "oww": "openWakeWord models"}
 ROLES: dict[str, tuple[str, ...]] = {

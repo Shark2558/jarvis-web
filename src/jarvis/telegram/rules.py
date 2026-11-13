@@ -55,6 +55,11 @@ PRIVATE_PATTERNS: tuple[str, ...] = (
     "breach_status",
     # R11.1 I1: a picture he attached (what it shows and the text read off it), like doc_*
     "picture_*",
+    # R7 D18, I0 seam 21: his watch, heart rate and sleep (health numbers), and the camera
+    # results he kept (what his camera read). `sos_status` stays answerable: it names no one.
+    "watch_*",
+    "sleep_*",
+    "vision_*",
 )
 REFUSAL = "Not available from Telegram — your choice in Integrations → Telegram; open the console."
 # R2 D12: the owner's vault list (metadata only, never files), notes, memos, links and things.

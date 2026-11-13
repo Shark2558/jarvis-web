@@ -55,14 +55,15 @@ KEY = bytes(range(1, 33))
 
 
 def test_the_version_is_eleven() -> None:
-    assert jarvis.__version__.startswith("11.")  # the exact number: tests/test_about.py
+    # 11.x at R11; R7 I0 made it 7.0.0 (nothing compares it, D26); the exact number: test_about.py
+    assert jarvis.__version__.startswith("7.")
 
 
 # ---- alert kinds (D5) ---------------------------------------------------------------------------
 def test_thirteen_helper_kinds_make_thirty_six_and_each_belongs_to_one_part() -> None:
     every = get_args(AlertKind)
     assert len(R11_ALERT_KINDS) == 13 and set(R11_ALERT_KINDS) <= set(every)
-    assert len(every) == len(set(every)) == 38 and set(DEFAULT_URGENCY) == set(every)  # R11.1: +2
+    assert len(every) == len(set(every)) == 43 and set(DEFAULT_URGENCY) == set(every)  # +2, +5 (R7)
     assert kinds.part_kinds() == frozenset(R11_ALERT_KINDS)
     owners = [p for k in R11_ALERT_KINDS for p in kinds.PARTS if k in kinds.KINDS_OF[p]]
     assert len(owners) == 13  # exactly one part each
@@ -121,8 +122,8 @@ def test_the_alerts_card_lists_the_helper_kinds_in_order() -> None:
     js = (STATIC / "console-alerts.js").read_text(encoding="utf-8")
     block = js[js.index("const KINDS = [") : js.index("];", js.index("const KINDS = ["))]
     listed = re.findall(r"\['([a-z_]+)', '", block)
-    # R11.1 added its two kinds after them (tests/test_r11_1_seams.py)
-    assert listed[-15:-2] == list(R11_ALERT_KINDS) and len(listed) == len(set(listed))
+    # R11.1 added its two kinds after them (tests/test_r11_1_seams.py), R7 five more
+    assert listed[-20:-7] == list(R11_ALERT_KINDS) and len(listed) == len(set(listed))
 
 
 # ---- storm control (D5) -------------------------------------------------------------------------
@@ -159,7 +160,7 @@ def test_a_disaster_warning_is_never_capped_only_de_duplicated() -> None:
 # ---- keyring, rows, settings --------------------------------------------------------------------
 def test_five_keyring_purposes_each_with_its_own_key() -> None:
     new = ("bills", "spend", "wellbeing", "alerts_place", "kitchen")
-    assert set(new) <= set(PURPOSES) and len(PURPOSES) == len(set(PURPOSES)) == 18
+    assert set(new) <= set(PURPOSES) and len(PURPOSES) == len(set(PURPOSES)) == 21  # R7: + 3
     ring = Keyring(KEY)
     for purpose in new:
         blob = ring.cipher(purpose).encrypt(b"x", aad=f"{purpose}/u/v1")
@@ -255,7 +256,8 @@ def test_privacy_ids_collections_and_tabs_are_unique_and_complete() -> None:
     assert len(ids) == len(set(ids)) == 8 and all(i.startswith("helpers_") for i in ids)
     cols = [c for v in kinds.COLLECTIONS.values() for c in v]
     assert len(cols) == len(set(cols)) == 15
-    assert list(kinds.TABS) == list(kinds.PARTS) == ["today", "house", "nudges", "kitchen"]
+    assert list(kinds.PARTS) == ["today", "house", "nudges", "kitchen"]
+    assert list(kinds.TABS) == [*kinds.PARTS, "watch"]  # R7 I0 seam 12: Watch is not an R11 part
     assert kinds.tool_allowed("today", "bill_pay_prepare")
     assert not kinds.tool_allowed("today", "chore_done") and not kinds.tool_allowed(
         "kitchen", "bill_x"
@@ -266,7 +268,8 @@ def test_privacy_ids_collections_and_tabs_are_unique_and_complete() -> None:
 
 def test_the_guide_card_names_every_collection_and_both_outside_services() -> None:
     guide = GUIDE.read_text(encoding="utf-8")
-    card = guide[guide.index("#### C60 · Helpers (R11)") : guide.index("### Layer 6")]
+    start = guide.index("#### C60 · Helpers (R11)")  # R11.1's C61 and R7's C64, C65 follow it
+    card = guide[start : guide.index("\n#### ", start + 1)]
     data = re.search(r"\| Data it keeps \| (.*) \|", card)
     assert data is not None
     spans = {s.split("/")[0] for s in re.findall(r"`([^`]+)`", data.group(1))}

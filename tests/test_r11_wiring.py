@@ -281,8 +281,8 @@ def _at(lines: list[str], needle: str) -> int:
 def test_app_py_has_the_six_r11_slots_and_stays_under_its_guard() -> None:
     lines = _lines()
     assert len(lines) <= 750
-    # R11.1 is wired between them: its parts' jobs ride the helpers' clock (r11_1_wiring.py)
-    assert _at(lines, "await wire_r11(app, s, docs, audit)") == _at(lines, "await wire_r6(") + 2
+    # R11.1 and R7 are wired between them: their parts' jobs ride the helpers' clock
+    assert _at(lines, "await wire_r11(app, s, docs, audit)") == _at(lines, "await wire_r6(") + 3
     assert _at(lines, "install_r11_routes(app)") == _at(lines, "install_r6_routes(app)") + 1
     assert _at(lines, "*r11_tick_jobs(app),") == _at(lines, "*r6_tick_jobs(app),") + 1
     assert _at(lines, "r11=app.state.r11_parts,") == _at(lines, "r4=app.state.r4_parts,") + 1
@@ -299,16 +299,17 @@ def test_the_console_has_the_helpers_tab_last_its_panel_and_its_frame() -> None:
     html = (STATIC / "console.html").read_text(encoding="utf-8")
     assert len(html.splitlines()) < 800
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
-    assert re.findall(r'data-open="(\w+)"', dock)[-1] == "helpers"
-    sheet = html[html.index('id="moreSheet"') :]
-    assert re.findall(r'data-sheet-open="(\w+)"', sheet)[-1] == "helpers"
+    # R7 I0: Camera is the last tab now, Helpers the one before it; the sheet is console-dock.js's
+    assert re.findall(r'data-open="(\w+)"', dock)[-2:] == ["helpers", "camera"]
+    dock_js = (STATIC / "console-dock.js").read_text(encoding="utf-8")
+    assert "    helpers: '" in dock_js and "    camera: '" in dock_js
     assert 'id="p-helpers" data-panel="helpers" aria-labelledby="t-helpers" hidden' in html
     assert 'data-grip aria-label="Move Helpers panel' in html and "Close Helpers panel" in html
     assert html.index('src="/static/console-book.js"') < html.index(
         'src="/static/console-helpers.js"'
     )
     deck = (STATIC / "console-deck.js").read_text(encoding="utf-8")
-    assert "'book', 'helpers']" in deck and "helpers: { x: col2" in deck
+    assert "'book', 'helpers', 'camera']" in deck and "helpers: { x: col2" in deck  # R7: + Camera
     shell = (STATIC / "console-helpers.js").read_text(encoding="utf-8")
     for name in PART_MODULES:
         assert name in APP_ASSETS and f"import('./{name}')" in shell

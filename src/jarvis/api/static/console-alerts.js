@@ -51,6 +51,11 @@
     ['weather_note', 'A minor weather note'],
     ['series_checkin', 'A planned session: did it happen?'],
     ['faces_to_name', 'New faces to name from my photo folder'],
+    ['sos_sent', 'An SOS was sent'],
+    ['phone_linked', 'A phone was linked to JARVIS'],
+    ['sos_contact_left', 'An emergency contact left'],
+    ['phone_unlinked', 'A phone was unlinked'],
+    ['watch_stale', 'The watch has not synced for a day'],
   ];
   const LEVEL = { urgent: 'Urgent', important: 'Important', info: 'Just so you know' };
   const S = { data: undefined, vip: [], devices: [], error: '', loadedAt: 0, loading: null, busy: false, key: '' };

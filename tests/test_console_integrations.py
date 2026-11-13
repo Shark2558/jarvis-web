@@ -72,7 +72,7 @@ SLICE12_FILES = (  # review FE-10: every slice 12 console file is plain ASCII, l
 # the slice 12 lines of console.html (the rest of the page predates the rule)
 SLICE12_HTML_MARKS = (
     'id="integrations"', "integMaps", "console-media.js", 'id="sMaps"', 'id="sYouTube"',
-    'data-open="media"', 'data-sheet-open="media"', "/static/console-drive.",
+    'data-open="media"', "/static/console-drive.",  # R7 I0: the sheet entry is console-dock.js's
     "/static/console-media.", "/static/console-whatsapp.", "/static/console-integrations.",
     "driveDialog",
 )  # fmt: skip

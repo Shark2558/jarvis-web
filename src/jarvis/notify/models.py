@@ -16,8 +16,11 @@ HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
 MAX_VIPS = 20
 KindSwitch = Literal["on", "off", "feed"]
 # Burglar and hazard alerts (and the storm summary that follows them) have no switch:
-# disarming is the switch (D10 rule 2).
-NO_SWITCH: frozenset[str] = frozenset({"home_intruder", "home_hazard", "home_summary", "test"})
+# disarming is the switch (D10 rule 2). R7 D19, D25: nor do "an SOS was sent" (also how a mis-sent
+# SOS shows) and "a phone was linked" (whoever links one can send an SOS in his name).
+NO_SWITCH: frozenset[str] = frozenset(
+    {"home_intruder", "home_hazard", "home_summary", "test", "sos_sent", "phone_linked"}
+)
 DEFAULT_SWITCH: dict[str, KindSwitch] = {"home_greeting": "feed"}
 
 

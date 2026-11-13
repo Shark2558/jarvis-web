@@ -161,8 +161,8 @@ def test_r3_alert_kinds_join_the_older_ones() -> None:
     # R5.1 added home_offline_idle (19 -> 20)
     # R6 added book_sealed/book_seal_failed/book_session_closed (20 -> 23)
     # R11 added the thirteen helper kinds (23 -> 36; tests/test_r11_seams.py) and R11.1 two more
-    # (36 -> 38; tests/test_r11_1_seams.py)
-    assert "test" in kinds and len(kinds) == len(set(kinds)) == 38
+    # (36 -> 38; tests/test_r11_1_seams.py), R7 five (38 -> 43; tests/test_r7_seams.py)
+    assert "test" in kinds and len(kinds) == len(set(kinds)) == 43
 
 
 async def test_the_sink_takes_silent_and_photo_keywords() -> None:
@@ -203,6 +203,8 @@ def test_every_alert_kind_has_a_default_urgency() -> None:
         # R5.1 D13: vitals_critical / health_fault are now "important" daytime rings (see
         # tests/test_r51_int_notify.py), no longer urgent.
         "disaster_alert",  # R11 D5: a disaster warning near him rings at night (owner's rule)
+        "sos_sent",  # R7 D19: an SOS was sent (also how a mis-sent SOS shows)
+        "phone_linked",  # R7 D5: whoever links a phone can send an SOS in his name
     }
     for kind in ("home_package", "approval_waiting"):
         assert DEFAULT_URGENCY[kind] == "important"
@@ -859,6 +861,10 @@ def test_r3_cipher_purposes_are_pinned() -> None:
         "wellbeing",
         "alerts_place",
         "kitchen",
+        # R7: watch days, SOS contacts, kept camera results (tests/test_r7_seams.py)
+        "watch",
+        "sos",
+        "vision",
     }
     ring = Keyring(KEY)
     for purpose in ("home", "home_feed", "faces", "webpush"):
@@ -901,8 +907,8 @@ ROWS = {
 def test_five_rows_sit_after_things_and_before_maps() -> None:
     ids = [g.id for g in GROUPS]
     # R4 added 5 rows (vitals, vitals_change, systems, people, connectors); R11 added 6 (D16);
-    # R11.1 added 2 (plans, pictures)
-    assert len(ids) == 46
+    # R11.1 added 2 (plans, pictures); R7 3 (vision, watch, sos) after Camera
+    assert len(ids) == 49
     at = ids.index("belongings")
     assert ids[at + 1 : at + 6] == list(ROWS)  # the five R3 rows still sit right after Things
     # R4's rows sit after the R3 block; Maps and YouTube stay last
@@ -940,9 +946,9 @@ def test_home_secure_never_offers_allow_and_a_patch_can_name_every_row() -> None
     assert validate_choices({"home_secure": "deny", "camera": "ask"})["camera"] is Effect.ASK
     every = {gid: "ask" for gid in group_ids()}
     assert PermissionsPatch(groups=every).groups == every
-    PermissionsPatch(groups={f"g{i}": "ask" for i in range(48)})
+    PermissionsPatch(groups={f"g{i}": "ask" for i in range(51)})  # R7: 49 rows, two to spare
     with pytest.raises(ValidationError):
-        PermissionsPatch(groups={f"g{i}": "ask" for i in range(49)})
+        PermissionsPatch(groups={f"g{i}": "ask" for i in range(52)})
 
 
 def test_home_disarm_is_a_targeted_purpose() -> None:
@@ -1056,7 +1062,9 @@ def test_the_app_builds_one_verifier_for_both_routes() -> None:
 
 
 def test_the_csp_gains_exactly_worker_src_self() -> None:
-    assert CONSOLE_CSP.endswith("; worker-src 'self'") and CONSOLE_CSP.count("worker-src") == 1
+    # R7 I0 (D3) adds `manifest-src 'self'` after it
+    assert CONSOLE_CSP.endswith("; worker-src 'self'; manifest-src 'self'")
+    assert CONSOLE_CSP.count("worker-src") == 1
     assert "blob:" not in CONSOLE_CSP and "child-src" not in CONSOLE_CSP
     src = (SRC / "api" / "console.py").read_text()
     assert "service worker" in src and "/static/push/" in src

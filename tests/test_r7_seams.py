@@ -669,6 +669,8 @@ async def test_a_cross_site_visit_loses_do_and_open_and_keeps_reauth(settings: S
             assert r.status_code == 200, site
         r = await client.get("/?reauth=1", headers={"Sec-Fetch-Site": "cross-site"})
         assert r.status_code == 200  # Google's return keeps working
+        r = await client.get("/?source=app&reauth=1", headers={"Sec-Fetch-Site": "cross-site"})
+        assert r.status_code == 302 and r.headers["location"] == "/?reauth=1"  # I1 fixer: source too
 
 
 async def test_the_vision_route_serves_only_what_a_manifest_lists(

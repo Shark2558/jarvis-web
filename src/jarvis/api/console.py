@@ -247,8 +247,9 @@ def _page(name: str) -> HTMLResponse:
 
 
 # R7 D8: a launch address may carry `do=` and `open=`. A visit another site sent loses both (it can
-# only ever open a screen anyway); every other word stays, so Google's `?reauth=` still returns.
-LAUNCH_KEYS = frozenset({"do", "open"})
+# only ever open a screen anyway), and `source=` too (I1 fixer, security L3: a link from any site must not
+# mark this browser as the phone's app); every other word stays, so Google's `?reauth=` still returns.
+LAUNCH_KEYS = frozenset({"do", "open", "source"})
 
 
 @router.get("/", include_in_schema=False, response_class=HTMLResponse)

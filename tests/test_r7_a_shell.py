@@ -289,12 +289,13 @@ def test_every_route_of_the_part_is_one_router(path: str) -> None:
 @pytest.mark.parametrize(
     ("query", "location"),
     [
-        ("?source=app&do=talk&open=home&reauth=1", "/?source=app&reauth=1"),
+        ("?source=app&do=talk&open=home&reauth=1", "/?reauth=1"),
+        ("?source=app", "/"),
         ("?do=look", "/"),
         ("?open=vault&do=sos&keep=a%26b", "/?keep=a%26b"),
     ],
 )
-async def test_a_cross_site_visit_loses_do_and_open_and_keeps_every_other_word(
+async def test_a_cross_site_visit_loses_do_open_and_source_and_keeps_every_other_word(
     settings: Settings, query: str, location: str
 ) -> None:
     async with running(settings) as (_, c):

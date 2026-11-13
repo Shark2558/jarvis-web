@@ -6,6 +6,7 @@
                                       blob moved to another day does not open); updated_at
     {prefix}watch_state/{uid}         last_sync, kinds {steps, heart, sleep}: which arrive (yes /
                                       no, never a value), stale_told: when he was told it stopped
+                                      (a sync clears it)
 
 No keyring: `WatchOff`, nothing is written (never in clear). A document that cannot be read or
 opened raises `WatchUnavailable` and is never overwritten by a guess. Logs carry class names and
@@ -186,12 +187,11 @@ class WatchStore:
     async def _state_doc(self, uid: str, seen: Mapping[str, bool]) -> Doc:
         old = await self.state(uid)
         kinds = {k: bool(old.kinds.get(k)) or bool(seen.get(k)) for k in KINDS}
-        told = old.stale_told.isoformat() if old.stale_told else None
         return {
             "uid": uid,
             "last_sync": self._now().isoformat(),
             "kinds": kinds,
-            "stale_told": told,
+            "stale_told": None,  # a sync ends the silence: the next one is told again
         }
 
     async def state(self, uid: str) -> WatchState:

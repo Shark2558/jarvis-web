@@ -39,6 +39,7 @@ PURPOSE = "sos"
 VERSION = 1
 JOIN_S = 24 * 3600
 DAY_S = 24 * 3600
+WRONG_ID = "wrong"  # the wrong-word counter's document in sos_join
 WRONG_PER_HOUR = 30  # wrong join words an hour, from anyone, before every join waits for the hour
 SWEEP_MAX = 500
 Pool = Literal["real", "test"]
@@ -110,6 +111,17 @@ def _uid(uid: str) -> str:
     if not isinstance(uid, str) or not safe_id(uid):
         raise ValueError("invalid user id")
     return uid
+
+
+def _at(doc_id: str, doc: Doc) -> str:
+    """When a log document's entry happened ("" when it can't tell)."""
+    entry = doc.get("entry") if doc_id.endswith("_last") else doc
+    at = entry.get("at") if isinstance(entry, dict) else None
+    return at if isinstance(at, str) else ""
+
+
+def _special(doc_id: str) -> bool:
+    return doc_id.endswith(tuple(f"_{s}" for s in _SPECIAL))
 
 
 class SosStore:
@@ -240,7 +252,7 @@ class SosStore:
 
     async def wrong_blocked(self, now: float) -> bool:
         try:
-            doc = await self._docs.get(self._join_path("wrong"))
+            doc = await self._docs.get(self._join_path(WRONG_ID))
         except Exception as exc:  # noqa: BLE001 - fail closed: no join while it can't be read
             log.warning("SOS wrong-word counter unreadable", extra={"error": type(exc).__name__})
             return True
@@ -248,7 +260,7 @@ class SosStore:
         return bool(doc) and doc.get("hour") == hour and int(doc.get("count", 0)) >= WRONG_PER_HOUR
 
     async def count_wrong(self, now: float) -> None:
-        path, hour = self._join_path("wrong"), int(now // 3600)
+        path, hour = self._join_path(WRONG_ID), int(now // 3600)
 
         async def fn(tx: DocTx) -> None:
             doc = await tx.get(path) or {}
@@ -321,11 +333,11 @@ class SosStore:
 
     async def log_count(self, uid: str) -> int:
         rows = await self._rows("sos_log", uid)
-        return sum(1 for i, _ in rows if not i.endswith(tuple(f"_{s}" for s in _SPECIAL)))
+        return sum(1 for i, _ in rows if not _special(i))
 
     async def logs(self, uid: str) -> list[Doc]:
         rows = await self._rows("sos_log", uid)
-        out = [d for i, d in rows if not i.endswith(tuple(f"_{s}" for s in _SPECIAL))]
+        out = [d for i, d in rows if not _special(i)]
         return sorted(out, key=lambda d: str(d.get("at", "")))
 
     async def sweep(self, uid: str, *, keep_from: datetime, now: float) -> int:
@@ -334,7 +346,7 @@ class SosStore:
         logs = [
             f"{self._prefix}sos_log/{i}"
             for i, d in await self._rows("sos_log", uid)
-            if not i.endswith(tuple(f"_{s}" for s in _SPECIAL)) and str(d.get("at", "")) < cut
+            if not i.endswith("_budget") and _at(i, d) < cut
         ]
         joins = [
             f"{self._prefix}sos_join/{i}"
@@ -347,11 +359,14 @@ class SosStore:
         return len(gone)
 
     async def delete_all(self, uid: str) -> int:
-        logs = [f"{self._prefix}sos_log/{i}" for i, _ in await self._rows("sos_log", uid)]
+        """Everything of his: the book, join words, the log, the limits' times. Returns how many
+        contacts and log entries went (the count the dashboard showed)."""
+        rows = await self._rows("sos_log", uid)
+        logs = [f"{self._prefix}sos_log/{i}" for i, _ in rows]
         joins = [f"{self._prefix}sos_join/{i}" for i, _ in await self._rows("sos_join", uid)]
         book = await self.book(uid) if self.sealed else Book()
         await self._write([Delete(p) for p in [*logs, *joins, self._book_path(uid)]])
-        return len(book.contacts) + len(logs)
+        return len(book.contacts) + sum(1 for i, _ in rows if not _special(i))
 
 
 __all__ = [

@@ -127,3 +127,69 @@ def test_the_one_doors_vault_path_sends_the_redrawn_bytes(console: Page) -> None
     )
     (body,) = sent
     assert body.startswith(b"\xff\xd8\xff") and b"Exif" not in body and MARK not in body
+
+
+# ---- Workshop decision (I1 fixer, security M1): a picture that cannot be redrawn is never sent ----------------
+UNPREPARED = "That picture could not be prepared on this device, so it was not sent, Sir."
+# A JPEG the canvas cannot decode, with a GPS APP1 in front: the original bytes must never leave.
+BAD_JPEG = """(b64) => {
+  const app1 = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+  const junk = new Uint8Array(200).fill(7);
+  const out = new Uint8Array(2 + app1.length + junk.length);
+  out.set([0xff, 0xd8]); out.set(app1, 2); out.set(junk, 2 + app1.length);
+  window.__badJpeg = new File([out], 'IMG_0002.jpg', { type: 'image/jpeg' });
+  return true;
+}"""
+
+
+def _bad_jpeg(c: Page) -> None:
+    c.page.evaluate(BAD_JPEG, base64.b64encode(gps_app1()).decode())
+
+
+def test_shrink_signals_failure_for_a_picture_the_canvas_cannot_decode(console: Page) -> None:
+    _bad_jpeg(console)
+    got = console.page.evaluate(
+        "async () => { const out = await window.JarvisFixes.parts.files.shrink(window.__badJpeg);"
+        " return { isNull: out === null, same: out === window.__badJpeg }; }"
+    )
+    assert got == {"isNull": True, "same": False}
+
+
+def test_the_one_door_refuses_an_undecodable_picture_and_nothing_is_posted(console: Page) -> None:
+    _bad_jpeg(console)
+    posted: list[str] = []
+    console.page.route("**/v1/vault/upload", lambda r: (posted.append(r.request.url), r.abort()))
+    console.page.route("**/v1/attachments", lambda r: (posted.append(r.request.url), r.abort()))
+    got = console.page.evaluate(
+        "async () => { const r = {};"
+        " for (const k of ['vault', 'attach']) {"
+        "   try { await JarvisMobile.parts.send[k](k === 'attach' ? [window.__badJpeg] : window.__badJpeg); r[k] = 'sent'; }"
+        "   catch (e) { r[k] = e.message; } }"
+        " return r; }"
+    )
+    assert got == {"vault": UNPREPARED, "attach": UNPREPARED}
+    assert posted == []
+
+
+def test_the_composer_clip_refuses_an_undecodable_picture_in_plain_words(console: Page) -> None:
+    _bad_jpeg(console)
+    posted: list[str] = []
+    console.page.route("**/v1/attachments", lambda r: (posted.append(r.request.url), r.abort()))
+    console.page.evaluate("() => window.JarvisAttach.add([window.__badJpeg])")
+    console.page.locator("#attachErr").filter(has_text=UNPREPARED).wait_for()
+    console.page.wait_for_timeout(300)
+    assert posted == [] and console.page.locator("#attachChips .achip").count() == 0
+
+
+def test_a_folder_leaves_out_a_picture_it_cannot_redraw(console: Page) -> None:
+    _bad_jpeg(console)
+    got = console.page.evaluate(
+        "async () => { const f = window.__badJpeg; Object.defineProperty(f, 'webkitRelativePath', { value: 'trip/IMG_0002.jpg' });"
+        " const t = new File(['hello'], 'note.txt', { type: 'text/plain' });"
+        " Object.defineProperty(t, 'webkitRelativePath', { value: 'trip/note.txt' });"
+        " const r = await window.JarvisFixes.parts.files.folder([f, t]);"
+        " const s = new TextDecoder('latin1').decode(new Uint8Array(await r.blob.arrayBuffer()));"
+        " return { count: r.count, left: r.left, hasJpg: s.includes('IMG_0002'), hasGps: s.includes('GPS-LAT') }; }"
+    )
+    assert got["count"] == 1 and not got["hasJpg"] and not got["hasGps"]
+    assert any("IMG_0002.jpg" in x for x in got["left"])

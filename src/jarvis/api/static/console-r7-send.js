@@ -15,6 +15,7 @@ const M = window.JarvisMobile;
 const KEY = 'jarvis_r7_sent_v1';
 const CANT_SEE = 'The brain answering now can’t see pictures.';
 const UNREADABLE = 'This picture can’t be read here. Try a JPEG or PNG.';
+const UNPREPARED = 'That picture could not be prepared on this device, so it was not sent, Sir.';
 const NOT_READY = 'JARVIS is still starting. Try again in a moment.';
 const PICTURE_TYPES = ['image/jpeg', 'image/png'];
 const WAIT_MS = 60000;
@@ -39,8 +40,10 @@ async function prepared(file) {
   if (!isPicture(file)) return file;
   const F = window.JarvisFixes && window.JarvisFixes.parts && window.JarvisFixes.parts.files;
   if (!F || typeof F.shrink !== 'function') throw new Error(NOT_READY);
-  const small = await F.shrink(file);
-  if (!small || !PICTURE_TYPES.includes(small.type) || !/\.(png|jpe?g)$/i.test(small.name || '')) throw new Error(UNREADABLE);
+  let small = null;
+  try { small = await F.shrink(file); } catch (_) { small = null; }
+  if (!small || small === file) throw new Error(UNPREPARED); // not redrawn (null, or the very same file): never sent as it is
+  if (!PICTURE_TYPES.includes(small.type) || !/\.(png|jpe?g)$/i.test(small.name || '')) throw new Error(UNREADABLE);
   return small;
 }
 

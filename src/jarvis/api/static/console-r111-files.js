@@ -10,7 +10,7 @@
 //       and, from 5 rupees up, the line above Send with the two tiers; the owner chooses, then it is sent. An
 //       estimate that failed (unavailable, an error, an odd answer) asks "Couldn't estimate the cost; send anyway?"
 //   shrink(file) -> file   a picture made smaller in the browser before upload (longest side and weight from
-//       GET /v1/input; a canvas re-draw, which also drops camera and location data; R7 I1: EVERY picture is redrawn)
+//       GET /v1/input; a canvas re-draw, which also drops camera and location data; R7 I1: every picture sent to the brain, attached or shared in is redrawn; one that cannot be is refused)
 //   folder(fileList) -> {blob, name, count, left}   a picked folder's readable files as ONE stored zip
 //   limits() -> what GET /v1/input said (accept list, files a message, megabytes); console-attach.js is told
 //   hints() -> this turn's recognition hints, for console-voice-phrases.js
@@ -182,12 +182,14 @@ function drawn(bmp, w, h, white = true) {
   return c;
 }
 const blobOf = (c, type, q) => new Promise(resolve => c.toBlob(resolve, type, q));
-/** R7 I1 (EXIF): EVERY picture is redrawn here before it leaves, so no camera or location data travels with it: a PNG
- *  small enough stays a lossless PNG (its chunks dropped), anything else becomes a JPEG (never the original). */
+/** R7 I1 (EXIF): every picture sent to the brain, attached to a message or shared into JARVIS is redrawn here before it leaves, so no camera or location data travels with it: a PNG
+ *  small enough stays a lossless PNG (its chunks dropped), anything else becomes a JPEG (never the original). A picture
+ *  that cannot be redrawn returns null (it must NOT go as it is); a file that is not a picture comes back unchanged. */
 async function shrink(file) {
-  if (!file || !PICTURE.test(file.name || '') || typeof createImageBitmap !== 'function') return file;
+  if (!file || !PICTURE.test(file.name || '')) return file;
+  if (typeof createImageBitmap !== 'function') return null;
   let bmp = null;
-  try { bmp = await createImageBitmap(file); } catch (_) { return file; } // not a picture this browser can read: the server says so
+  try { bmp = await createImageBitmap(file); } catch (_) { return null; }
   const side = limits.picture_side, most = limits.picture_max_kb * 1024;
   const scale = Math.min(1, side / Math.max(bmp.width, bmp.height, 1));
   const w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
@@ -197,13 +199,13 @@ async function shrink(file) {
   }
   const c = drawn(bmp, w, h);
   if (bmp.close) bmp.close();
-  if (!c) return file;
+  if (!c) return null;
   let last = null;
   for (const q of JPEG_TRIES) {
     last = await blobOf(c, 'image/jpeg', q);
     if (last && last.size <= most) break;
   }
-  return last ? new File([last], String(file.name).replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }) : file; // too big still: the server says so
+  return last ? new File([last], String(file.name).replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }) : null; // too big still: the server says so
 }
 
 // ---- a folder: its readable files as one stored (uncompressed) zip ----------------------------------------------
@@ -263,11 +265,13 @@ async function folder(list) {
   if (!keep.length) throw new Error('Nothing in this folder is a kind JARVIS reads.');
   if (keep.length > limits.folder_max_files) throw new Error(`This folder has ${keep.length} files JARVIS could read; it reads up to ${limits.folder_max_files} from one folder.`);
   let total = 0;
-  for (const e of keep) {
+  for (const e of keep.slice()) {
     const small = await shrink(e.file);
+    if (!small) { keep.splice(keep.indexOf(e), 1); left.push(`${e.file.name} (could not be prepared on this device, so it was left out)`); continue; }
     if (small !== e.file) { e.path = e.path.replace(/\.[^./]+$/, '') + '.jpg'; e.file = small; }
     total += e.file.size;
   }
+  if (!keep.length) throw new Error('Nothing in this folder could be prepared on this device.');
   if (total > limits.file_mb * 1024 * 1024) throw new Error(`This folder's readable files are ${sizeText(total)} together; one folder may be ${limits.file_mb} MB. Attach fewer files.`);
   return { blob: await pack(keep), name, count: keep.length, left };
 }

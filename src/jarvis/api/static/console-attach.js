@@ -21,6 +21,7 @@
   let EXTENSIONS = ['.pdf', '.docx', '.txt', '.md', '.markdown', '.csv', '.xlsx', '.xlsm', '.xls', '.pptx', '.png', '.jpg', '.jpeg', '.zip'];
   const SUPPORTED = 'JARVIS can read PDF, Word (.docx), Excel (.xlsx, .xls), PowerPoint (.pptx), text (.txt), Markdown (.md) and CSV files, pictures (.png, .jpg), zip files and folders.';
   const PICTURE = /\.(png|jpe?g)$/i;
+  const UNPREPARED = 'That picture could not be prepared on this device, so it was not sent, Sir.';
   const NS = 'http://www.w3.org/2000/svg';
   const CLIP = 'M14.5 9.5 9 15a3 3 0 0 1-4.2-4.2l6.4-6.4a2 2 0 0 1 2.8 2.8l-6.3 6.3a1 1 0 0 1-1.4-1.4l5.6-5.6';
   const CROSS = 'm5.5 5.5 9 9M14.5 5.5l-9 9';
@@ -135,11 +136,11 @@
   /** A picture is made smaller in the browser before it leaves (D10); anything else goes as it is. */
   async function prepare(it) {
     const F = files();
-    if (it.picture && F && typeof F.shrink === 'function') {
-      try {
-        const small = await F.shrink(it.file);
-        if (small && small !== it.file) { it.file = small; it.size = small.size; it.name = String(small.name || it.name); if (!it.removed) render(it); }
-      } catch (_) {}
+    if (it.picture) {
+      let small = null;
+      try { small = F && typeof F.shrink === 'function' ? await F.shrink(it.file) : null; } catch (_) { small = null; }
+      if (!small || small === it.file) { if (!it.removed) failed(it, UNPREPARED); return; } // never uploaded as it is: it may carry a location
+      it.file = small; it.size = small.size; it.name = String(small.name || it.name); if (!it.removed) render(it);
     }
     if (it.removed) return;
     if (it.file.size > MAX_BYTES) { failed(it, `it is ${sizeText(it.file.size)}; the limit is ${Math.round(MAX_BYTES / MB)} MB per file.`); return; }

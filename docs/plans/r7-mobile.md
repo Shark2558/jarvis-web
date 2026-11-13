@@ -1300,7 +1300,7 @@ What I1 changed (each behaviour change test first):
    `do=sos` opens Part D's real sheet; the tray's "Look at it here" reaches Part B's `panel.look(file)`.
 6. **The app lock's background writes**: five more console POSTs sent on a timer, on viewing or by a show
    ending itself never count as the owner being there.
-7. **EXIF**: every picture is redrawn before it leaves the browser (a small PNG stays a lossless PNG).
+7. **EXIF**: every picture sent to the brain, attached to a message or shared into JARVIS is redrawn before it leaves the browser (a small PNG stays a lossless PNG); a picture that cannot be redrawn is refused ("That picture could not be prepared on this device, so it was not sent, Sir."), never sent as it is. The Vault panel's own "Add a document" form is the exception, on purpose: the vault is the owner's encrypted, owner-only store, nothing there is sent to a model, and a redraw would lower a scanned document's quality.
 8. **The vision files** are checked again whenever their folder changes on disk (no restart for models).
 9. **The build book** names zxing-cpp and the vision libraries' versions and licences from their
    `MANIFEST.json`.

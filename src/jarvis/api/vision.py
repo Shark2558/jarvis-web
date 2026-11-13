@@ -6,7 +6,9 @@ changes rate-limited per owner. A picture never comes here: only results, at mos
 GET    /v1/vision                  {part, ready, release, sealed, keep_days, tasks: {name:
                                    {installed, why}}}: `pose` and `objects` say "not installed"
                                    until their model files are served (`jarvis.vision.assets`)
-GET    /v1/vision/results?days=7   {sealed, keep_days, results: [...]} newest first (1-365 days)
+GET    /v1/vision/results?days=7&limit=200&offset=0
+                                   {sealed, keep_days, results: [...], total, more, unreadable}
+                                   newest first (1-365 days); `unreadable`: days that did not open
 POST   /v1/vision/results          one Result he pressed Keep on -> 201 {kept}
 DELETE /v1/vision/results/{id}     one kept result -> {deleted: true}
 
@@ -47,6 +49,7 @@ log = get_logger(__name__)
 
 PART: PartName = "vision"
 RESULT_BODY_MAX = 64 * 1024
+PAGE_MAX = 200  # results in one answer (a long keep would otherwise send thousands)
 OFF = {"error": "vision_off", "detail": "Kept camera results are off on this server."}
 LIMITED = {"error": "rate_limited", "detail": "Too many changes; wait a moment."}
 UNAVAILABLE = "Your kept camera results couldn't be read just now, Sir."
@@ -89,6 +92,8 @@ async def vision_status(request: Request) -> JSONResponse:
 async def vision_results(
     request: Request,
     days: int = Query(default=7, ge=1, le=365),
+    limit: int = Query(default=PAGE_MAX, ge=1, le=PAGE_MAX),
+    offset: int = Query(default=0, ge=0, le=100_000),
     uid: str = Depends(current_user),
 ) -> JSONResponse:
     svc = _service(request)
@@ -97,7 +102,10 @@ async def vision_results(
     store = svc.store
     base = {"sealed": store.sealed, "keep_days": store.keep_days}
     try:
-        return _answer(200, {**base, "results": await store.list(uid, days=days)})
+        page = await store.page(uid, days=days, limit=limit, offset=offset)
+        more = offset + len(page.items) < page.total
+        body = {**base, "results": page.items, "total": page.total, "more": more}
+        return _answer(200, {**body, "unreadable": page.unreadable})
     except VisionOff as exc:
         return _answer(200, {**base, "results": [], "detail": str(exc)})
     except VisionUnavailable as exc:

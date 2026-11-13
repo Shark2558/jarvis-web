@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
@@ -23,6 +24,7 @@ from jarvis.config import Settings
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.vision import assets
+from jarvis.vision.store import DayFull, VisionStore
 
 CSRF = {"X-Requested-With": "JARVIS"}
 BASE = "/v1/vision/results"
@@ -160,3 +162,38 @@ async def test_a_bad_id_or_days_is_refused(settings: Settings) -> None:
         assert (await client.delete(f"{BASE}/vr_ZZ", headers=CSRF)).status_code == 404
         assert (await client.get(BASE, params={"days": 0})).status_code == 422
         assert (await client.get(BASE, params={"days": 366})).status_code == 422
+
+
+async def test_the_results_list_paginates(settings: Settings) -> None:
+    async with running(sealed(settings)) as (_, client):
+        for _ in range(5):
+            assert (await client.post(BASE, json=quality_result(), headers=CSRF)).status_code == 201
+        first = (await client.get(BASE, params={"days": 7, "limit": 2})).json()
+        assert len(first["results"]) == 2 and first["total"] == 5 and first["more"] is True
+        rest = (await client.get(BASE, params={"days": 7, "limit": 2, "offset": 4})).json()
+        assert len(rest["results"]) == 1 and rest["more"] is False
+        default = (await client.get(BASE)).json()
+        assert len(default["results"]) == 5 and default["unreadable"] == 0
+        bad = await client.get(BASE, params={"limit": 0})
+        assert bad.status_code == 422
+
+
+async def test_a_result_too_big_to_keep_and_a_full_day_say_so(settings: Settings) -> None:
+    codes = [{"format": "qr_code", "value": chr(97 + i) * 1900} for i in range(20)]
+    async with running(sealed(settings)) as (_, client):
+        r = await client.post(BASE, json=result("code", {"codes": codes}), headers=CSRF)
+        assert r.status_code == 422 and "too big" in r.json()["detail"]
+        assert (await client.get(BASE)).json()["results"] == []
+
+
+async def test_a_full_day_is_a_409_in_plain_words(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def full(self: object, uid: str, raw: object) -> dict[str, Any]:
+        raise DayFull()
+
+    monkeypatch.setattr(VisionStore, "keep", full)
+    async with running(sealed(settings)) as (_, client):
+        r = await client.post(BASE, json=quality_result(), headers=CSRF)
+        assert r.status_code == 409 and r.json()["error"] == "day_full"
+        assert r.json()["detail"].startswith("That day's results are full, Sir")

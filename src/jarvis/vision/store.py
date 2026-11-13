@@ -13,6 +13,10 @@ listed and the daily sweep deletes them. The day inside the blob must equal the 
 moved document is refused). No keyring: `VisionOff` and nothing is kept (never in clear). A
 document that does not open raises `VisionUnavailable` and is never overwritten. Logs carry class
 names and counts only.
+
+Size (Firestore keeps a document under 1 MiB): one result is at most `ITEM_MAX` characters of JSON
+(`TooBig`), and a day's sealed blob at most `BLOB_MAX` (`DayFull`, the same plain sentence as the
+100-a-day cap). One day that does not open never hides, blocks or deletes the others.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ import json
 import re
 import secrets
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -40,6 +45,8 @@ VERSION = 1
 PER_DAY_MAX = 100
 KEEP_DAYS = 90
 RESULT_ID = re.compile(r"^vr_[0-9a-f]{12}$")
+ITEM_MAX = 20_000  # characters of JSON in one kept result (20 codes of 2,000 are refused)
+BLOB_MAX = 900_000  # characters of one day's sealed blob: under Firestore's 1 MiB document
 
 
 class VisionOff(RuntimeError):
@@ -59,9 +66,23 @@ class Dropped(ValueError):
         super().__init__("That result doesn't fit its task, so it was dropped.")
 
 
+class TooBig(Dropped):
+    def __init__(self) -> None:
+        ValueError.__init__(self, "That result is too big to keep, Sir.")
+
+
 class DayFull(ValueError):
     def __init__(self) -> None:
-        super().__init__(f"Today already holds {PER_DAY_MAX} kept results, Sir. Delete some first.")
+        super().__init__("That day's results are full, Sir. Delete some first.")
+
+
+@dataclass(frozen=True)
+class Page:
+    """A slice of the kept results, newest first: `total` readable results, `unreadable` days."""
+
+    items: list[dict[str, Any]]
+    total: int
+    unreadable: int
 
 
 def _uid(uid: str) -> str:
@@ -73,7 +94,10 @@ def _uid(uid: str) -> str:
 def item_of(result: Result, rid: str, kept_at: str) -> dict[str, Any]:
     """The stored form: the Result with its data re-written by its task's schema."""
     data = DATA[result.task].model_validate(result.data).model_dump(mode="json")
-    return {"id": rid, "kept_at": kept_at, **result.model_dump(mode="json"), "data": data}
+    item = {"id": rid, "kept_at": kept_at, **result.model_dump(mode="json"), "data": data}
+    if len(json.dumps(item, ensure_ascii=False, separators=(",", ":"))) > ITEM_MAX:
+        raise TooBig()
+    return item
 
 
 class VisionStore:
@@ -173,25 +197,49 @@ class VisionStore:
             items = self._open(uid, old) if old else []
             if len(items) >= PER_DAY_MAX:
                 raise DayFull()
-            tx.set(path, self._doc(uid, day, [*items, item]))
+            doc = self._doc(uid, day, [*items, item])
+            if len(str(doc["blob"])) > BLOB_MAX:
+                raise DayFull()
+            tx.set(path, doc)
             return item
 
         return await self._docs.transaction(work)
 
-    async def list(self, uid: str, *, days: int = 7) -> list[dict[str, Any]]:
-        """His kept results of the last `days` days (at most the keep), newest first."""
+    async def _readable(self, uid: str, days: int) -> tuple[list[dict[str, Any]], int]:
+        """Newest-first results of the last `days` days, and how many days did not open."""
         self._cipher_ring()
         span = max(1, min(int(days), self.keep_days))
         first = (self._today() - timedelta(days=span - 1)).isoformat()
-        found = [
-            (str(item.get("kept_at", "")), day, n, item)
-            for _, doc in await self._rows(uid)
-            if (day := str(doc.get("day", ""))) >= first
-            for n, item in enumerate(self._open(uid, doc))
-        ]
-        return [item for *_, item in sorted(found, key=lambda f: f[:3], reverse=True)]
+        found: list[tuple[str, str, int, dict[str, Any]]] = []
+        unreadable = 0
+        for _, doc in await self._rows(uid):
+            day = str(doc.get("day", ""))
+            if day < first:
+                continue
+            try:
+                items = self._open(uid, doc)
+            except VisionUnavailable:
+                unreadable += 1
+                continue
+            found.extend((str(i.get("kept_at", "")), day, n, i) for n, i in enumerate(items))
+        if unreadable and not found:
+            raise VisionUnavailable()  # nothing opened at all: a wrong key, not one bad day
+        found.sort(key=lambda f: f[:3], reverse=True)
+        return [item for *_, item in found], unreadable
+
+    async def list(self, uid: str, *, days: int = 7) -> list[dict[str, Any]]:
+        """His kept results of the last `days` days (at most the keep), newest first. A day that
+        does not open is left out (and logged), never the others."""
+        return (await self._readable(uid, days))[0]
+
+    async def page(self, uid: str, *, days: int = 7, limit: int = 50, offset: int = 0) -> Page:
+        """One page of `list`, with the total and how many days could not be opened."""
+        items, unreadable = await self._readable(uid, days)
+        start = max(0, int(offset))
+        return Page(items[start : start + max(1, int(limit))], len(items), unreadable)
 
     async def count(self, uid: str) -> int:
+        """How many results are kept inside the keep (0 without a key)."""
         if not self.sealed:
             return 0
         first = self._first_kept_day()
@@ -205,7 +253,11 @@ class VisionStore:
             return False
         for _, doc in await self._rows(uid):
             day = str(doc.get("day", ""))
-            if any(i.get("id") == rid for i in self._open(uid, doc)):
+            try:
+                found = any(i.get("id") == rid for i in self._open(uid, doc))
+            except VisionUnavailable:
+                continue  # that day stays as it is; the others can still be deleted from
+            if found:
                 return await self._drop(uid, day, rid)
         return False
 
@@ -242,6 +294,7 @@ class VisionStore:
         return len(old)
 
     async def export(self, uid: str) -> dict[str, Any]:
+        """Every kept result of the keep, unsealed for his own export (readable days only)."""
         if not self.sealed:
             return {"results": []}
         return {"results": await self.list(uid, days=self.keep_days)}
@@ -253,7 +306,11 @@ __all__ = [
     "PER_DAY_MAX",
     "PURPOSE",
     "RESULT_ID",
+    "BLOB_MAX",
+    "ITEM_MAX",
     "DayFull",
+    "Page",
+    "TooBig",
     "Dropped",
     "VisionOff",
     "VisionStore",

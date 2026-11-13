@@ -80,6 +80,7 @@ def shown(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def message(count: int, days: int, honorific: str) -> str:
+    """The plain sentence the tool answers with (counts only; never a kept value)."""
     span = "today" if days == 1 else f"in the last {days} days"
     if count == 0:
         return f"You haven't kept any camera results {span}, {honorific}."

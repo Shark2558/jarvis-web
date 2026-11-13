@@ -41,6 +41,10 @@ SENDS = ("/v1/attachments", "/v1/vault/upload", "/v1/chat", "/v1/input/estimate"
 # Runs the share worker's fetch handler in the page (same origin, the page's real Cache Storage)
 # with files drawn in the page: {name, type, draw: [w, h]} (a picture) or {name, type, size}.
 HARNESS = """async ([src, spec]) => {
+  const MAGIC = { 'image/jpeg': [0xff, 0xd8, 0xff],
+    'image/png': [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+    'image/webp': [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50],
+    'application/pdf': [0x25, 0x50, 0x44, 0x46, 0x2d] };
   const handlers = {};
   const fake = { addEventListener: (n, f) => { handlers[n] = f; }, skipWaiting() {},
     location: new URL(location.origin + '/app/share/sw.js'), crypto: self.crypto };
@@ -55,11 +59,24 @@ HARNESS = """async ([src, spec]) => {
       g.fillStyle = '#3a6ea5'; g.fillRect(0, 0, w, h);
       g.fillStyle = '#f2c14e'; g.fillRect(w / 4, h / 4, w / 2, h / 2);
       blob = await c.convertToBlob({ type: f.type });
-    } else blob = new Blob([new Uint8Array(f.size)], { type: f.type });
+    } else {
+      const bytes = new Uint8Array(f.size || 0);
+      const head = f.bytes || MAGIC[f.type] || [];
+      bytes.set(head.slice(0, bytes.length));
+      blob = new Blob([f.bytes && !f.size ? new Uint8Array(f.bytes) : bytes], { type: f.type });
+    }
     form.append('files', new File([blob], f.name, { type: f.type }));
   }
-  const request = new Request(location.origin + '/app/share/in', { method: spec.method || 'POST',
+  let request = new Request(location.origin + '/app/share/in', { method: spec.method || 'POST',
     body: spec.method === 'GET' ? undefined : form });
+  // Headers a page may not set (Origin, Sec-Fetch-Site, Content-Length): a stand-in reports them.
+  window.__formRead = false;
+  if (spec.headers) {
+    const real = request;
+    request = { method: real.method, url: real.url, clone: () => real.clone(),
+      headers: { get: (k) => (k in spec.headers ? spec.headers[k] : null) },
+      formData: () => { window.__formRead = true; return real.formData(); } };
+  }
   let answer = null;
   handlers.fetch({ request, respondWith: (p) => { answer = p; } });
   const res = answer ? await answer : null;

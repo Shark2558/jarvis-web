@@ -17,6 +17,9 @@ const MAX_ITEMS = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
 const KEEP_MS = 24 * 60 * 60 * 1000;
 const TEXT_MAX = 2000;
+const MAX_BODY = 60 * 1024 * 1024; // the whole post: five files of 10 MB, their text and the form's own bytes
+const MAX_FILES = 10;
+const HOME = '/';
 const TYPES = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'application/pdf': '.pdf' };
 const BY_EXT = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.pdf': 'application/pdf' };
 const WHY = {
@@ -26,9 +29,25 @@ const WHY = {
   full: 'The tray holds 5 items at most. Discard one there, then share this again.',
   long: 'The text is longer than 2,000 characters.',
   unread: 'That share could not be read. Please try again.',
+  room: 'No room left on this phone for that item, Sir.',
+  mismatch: 'The file is not what its name says it is.',
+  body: 'That share is too big for JARVIS to take.',
+  many: 'Too many files at once. JARVIS takes 5 at most.',
+  origin: 'That did not come from your phone\u2019s share sheet, so JARVIS kept nothing.',
+};
+// What each kind starts with (the sender's word for its type is only a claim).
+const SNIFF = {
+  'image/jpeg': (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  'image/png': (b) => [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((v, i) => b[i] === v),
+  'image/webp': (b) => [0x52, 0x49, 0x46, 0x46].every((v, i) => b[i] === v) && [0x57, 0x45, 0x42, 0x50].every((v, i) => b[8 + i] === v),
+  'application/pdf': (b) => [0x25, 0x50, 0x44, 0x46, 0x2d].every((v, i) => b[i] === v),
 };
 
 self.addEventListener('install', () => { self.skipWaiting(); });
+// A new worker also clears what is past 24 hours (a local cache job; nothing is asked of any server).
+self.addEventListener('activate', (event) => {
+  event.waitUntil(caches.open(CACHE).then(sweep).catch(() => {}));
+});
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
@@ -37,6 +56,31 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'POST' || url.origin !== self.location.origin || url.pathname !== '/app/share/in') return;
   event.respondWith(take(req));
 });
+
+/** A post another site (or another origin) sent: a real share-sheet launch is 'none' (or absent), a page of ours 'same-origin'. */
+function foreign(req) {
+  const site = req.headers.get('Sec-Fetch-Site'), origin = req.headers.get('Origin');
+  if (site === 'cross-site' || site === 'same-site') return true;
+  return !!origin && origin !== 'null' && origin !== self.location.origin;
+}
+
+/** True when the post is over the whole-body cap: by its length, or (no length given) by counting it, stopping at the cap. */
+async function overCap(req) {
+  const len = req.headers.get('Content-Length');
+  if (len !== null && len !== '') { const n = Number(len); return !Number.isFinite(n) || n > MAX_BODY; }
+  try {
+    const body = req.clone().body;
+    if (!body) return false;
+    const reader = body.getReader();
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return false;
+      total += value.length;
+      if (total > MAX_BODY) { reader.cancel().catch(() => {}); return true; }
+    }
+  } catch (_) { return true; }
+}
 
 /** A shared file's name, shown as text only: no folders, no control characters, at most 120 characters. */
 function cleanName(raw) {
@@ -70,12 +114,14 @@ function meta(kind, name, type, size) {
   };
 }
 
-function fileItem(f, refused) {
+async function fileItem(f, refused) {
   const name = cleanName(f.name);
   const kind = kindOf(f.type, name);
   if (!kind) { refused.push({ name, why: WHY.kind }); return null; }
   if (f.size > MAX_BYTES) { refused.push({ name, why: WHY.big }); return null; }
   if (!f.size) { refused.push({ name, why: WHY.empty }); return null; }
+  const head = new Uint8Array(await f.slice(0, 12).arrayBuffer());
+  if (!SNIFF[kind](head)) { refused.push({ name, why: WHY.mismatch }); return null; }
   const shown = named(name, kind);
   return { name: shown, response: new Response(f, { headers: meta('file', shown, kind, f.size) }) };
 }
@@ -94,7 +140,7 @@ function textItem(form, withFiles, refused) {
 const isItem = (req) => new URL(req.url).pathname.startsWith(ITEM);
 const newId = () => (self.crypto && self.crypto.randomUUID ? self.crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
 
-/** Drops the items past 24 hours; how many are left. */
+/** The items past 24 hours are dropped; how many are left. */
 async function sweep(cache) {
   let left = 0;
   for (const req of (await cache.keys()).filter(isItem)) {
@@ -106,25 +152,48 @@ async function sweep(cache) {
   return left;
 }
 
+/** The files and the text line of a form, as items (the files beyond MAX_FILES are one refusal). */
+async function itemsOf(form, refused) {
+  const all = form.getAll('files').filter((f) => f && typeof f === 'object' && typeof f.size === 'number');
+  if (all.length > MAX_FILES) refused.push({ name: '', why: WHY.many });
+  const out = [];
+  for (const f of all.slice(0, MAX_FILES)) out.push(await fileItem(f, refused));
+  out.push(textItem(form, all.length > 0, refused));
+  return out.filter(Boolean);
+}
+
+/** Puts what fits; every Cache Storage call may fail (no room): then that item is refused, never the answer. */
+async function keepAll(cache, incoming, refused) {
+  for (const it of incoming) {
+    let held = 0;
+    try { held = await sweep(cache); } catch (_) { held = 0; }
+    if (held >= MAX_ITEMS) { refused.push({ name: it.name, why: WHY.full }); continue; }
+    try { await cache.put(new Request(ITEM + newId()), it.response); } catch (_) { refused.push({ name: it.name, why: WHY.room }); }
+  }
+}
+
+async function finish(refused, to) {
+  try {
+    const cache = await caches.open(CACHE);
+    const note = JSON.stringify({ at: Date.now(), refused: refused.slice(0, 10) });
+    await cache.put(new Request(NOTICE), new Response(note, { headers: { 'Content-Type': 'application/json' } }));
+  } catch (_) { /* no room for the notice either: the redirect still happens */ }
+  return Response.redirect(new URL(to, self.location.origin).href, 303);
+}
+
 async function take(req) {
+  if (foreign(req)) return finish([{ name: '', why: WHY.origin }], HOME);
   const refused = [];
   let form = null;
-  try { form = await req.formData(); } catch (_) { refused.push({ name: '', why: WHY.unread }); }
-  const cache = await caches.open(CACHE);
-  let held = await sweep(cache);
-  const incoming = [];
-  if (form) {
-    const files = form.getAll('files').filter((f) => f && typeof f === 'object' && typeof f.size === 'number');
-    files.forEach((f) => incoming.push(fileItem(f, refused)));
-    incoming.push(textItem(form, files.length > 0, refused));
+  if (await overCap(req)) refused.push({ name: '', why: WHY.body });
+  else {
+    try { form = await req.formData(); } catch (_) { refused.push({ name: '', why: WHY.unread }); }
   }
-  for (const it of incoming) {
-    if (!it) continue;
-    if (held >= MAX_ITEMS) { refused.push({ name: it.name, why: WHY.full }); continue; }
-    await cache.put(new Request(ITEM + newId()), it.response);
-    held += 1;
-  }
-  const note = JSON.stringify({ at: Date.now(), refused: refused.slice(0, 10) });
-  await cache.put(new Request(NOTICE), new Response(note, { headers: { 'Content-Type': 'application/json' } }));
-  return Response.redirect(new URL(LANDING, self.location.origin).href, 303);
+  let incoming = [];
+  if (form) incoming = await itemsOf(form, refused);
+  let cache = null;
+  try { cache = await caches.open(CACHE); } catch (_) { cache = null; }
+  if (cache) await keepAll(cache, incoming, refused);
+  else incoming.forEach((it) => refused.push({ name: it.name, why: WHY.room }));
+  return finish(refused, LANDING);
 }

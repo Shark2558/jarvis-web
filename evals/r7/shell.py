@@ -22,6 +22,12 @@ brain) or reads the real console sources:
                  the push worker keeps that target, tags by kind, offers Talk and hands the target
                  to the open window over BroadcastChannel, never navigating
 
+NOTE: the cases that read sources (talk, share_worker, share_door, push) are tripwires: they look
+for the literal tokens (`fetch(`, `.click(`, `navigate(`), so a renamed
+call could slip past them. The
+behavioural guards are the browser tests (tests/browser/test_r7_a_*.py), among them the posts from
+another site that must store nothing (test_r7_a_share_review.py).
+
 Negative control (the plan's four, each applied ON ITS OWN to the sources in memory): the
 allow-list switched off, the share worker made to upload at once, do=talk made to call press() (a
 click on the mic button), the click handler's navigate() path put back. Each must fail the case it
@@ -86,9 +92,9 @@ CONTROLS: tuple[tuple[str, str, str, str, str], ...] = (
     (
         "share worker uploads at once",
         "app-share-sw.js",
-        "  let held = await sweep(cache);",
-        "  let held = await sweep(cache);\n"
-        "  await fetch('/v1/attachments', { method: 'POST', body: form });",
+        "  if (foreign(req)) return finish([{ name: '', why: WHY.origin }], HOME);",
+        "  if (foreign(req)) return finish([{ name: '', why: WHY.origin }], HOME);\n"
+        "  await fetch('/v1/attachments', { method: 'POST', body: req });",
         "shell:share_worker",
     ),
     (
@@ -110,7 +116,7 @@ CONTROLS: tuple[tuple[str, str, str, str, str], ...] = (
 
 def _settings(**over: Any) -> Settings:
     return Settings(
-        _env_file=None,
+        _env_file=None,  # type: ignore[call-arg]
         env="dev",
         llm_backend=LLMBackend.MOCK,
         session_backend=SessionBackend.MEMORY,
@@ -149,10 +155,7 @@ async def manifest(_: Src) -> list[str]:
             claims += [(i["src"], i["sizes"], "any") for s in m["shortcuts"] for i in s["icons"]]
             for src, sizes, _purpose in claims:
                 got = await c.get(src)
-                if (
-                    got.status_code != 200
-                    or f"{'x'.join(map(str, png_size(got.content)))}" != sizes
-                ):
+                if got.status_code != 200 or "x".join(map(str, png_size(got.content))) != sizes:
                     bad.append(f"{src} is not a {sizes} PNG")
             purposes = {(s, p) for _, s, p in claims}
             if not {("192x192", "any"), ("512x512", "any"), ("512x512", "maskable")} <= purposes:
@@ -226,6 +229,9 @@ async def share_worker(src: Src) -> list[str]:
         "const MAX_ITEMS = 5;",
         "const MAX_BYTES = 10 * 1024 * 1024;",
         "const KEEP_MS = 24 * 60 * 60 * 1000;",
+        "function foreign(req)",
+        "const MAX_BODY = 60 * 1024 * 1024;",
+        "const SNIFF = {",
     ):
         if need not in code:
             bad.append(f"the worker lacks {need}")

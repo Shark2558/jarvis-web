@@ -53,11 +53,20 @@ const signedIn = () => { const c = window.JarvisConsole; return !!(c && typeof c
 function keep(l) {
   try { sessionStorage.setItem(KEEP, JSON.stringify({ do: l.do, open: l.open, at: Date.now() })); } catch (_) {}
 }
+let lastKept = NONE;
+/** The kept launch, read and left in place (the share tray asks whether a launch is on its way). */
+function peekKept() {
+  try {
+    const o = JSON.parse(sessionStorage.getItem(KEEP) || 'null');
+    return o && typeof o === 'object' && Date.now() - o.at >= 0 && Date.now() - o.at < KEEP_MS ? launch(o.do, o.open) : NONE;
+  } catch (_) { return NONE; }
+}
 function kept() {
   let o = null;
   try { o = JSON.parse(sessionStorage.getItem(KEEP) || 'null'); sessionStorage.removeItem(KEEP); } catch (_) { return NONE; }
   if (!o || typeof o !== 'object' || !(Date.now() - o.at >= 0 && Date.now() - o.at < KEEP_MS)) return NONE;
-  return launch(o.do, o.open);
+  lastKept = launch(o.do, o.open);
+  return lastKept;
 }
 
 // ---- the screens (each only opens something) --------------------------------------------------------------------
@@ -121,4 +130,6 @@ if (!empty(first)) whenIn(first);
 else if (signedIn()) { const l = kept(); if (!empty(l)) act(l); }
 try { new BroadcastChannel('jarvis-launch').onmessage = (e) => fromAlert(e.data); } catch (_) {}
 
-if (M) M.part('links', Object.freeze({ read, words: () => WORDS, panels: () => PANELS }));
+/** True when this page was launched with a screen to open (now, or kept across sign-in). */
+const asked = () => !empty(first) || !empty(lastKept) || !empty(peekKept());
+if (M) M.part('links', Object.freeze({ read, asked, words: () => WORDS, panels: () => PANELS }));

@@ -13,7 +13,9 @@
 // take) are shown once, in plain words. Items older than 24 hours are dropped.
 // Signed out it asks the server NOTHING and keeps every item: the tray opens, and the worker is registered
 // (GET /app/status, then /app/share/sw.js), only after jarvis:ready. It opens by itself when items are waiting,
-// and on ?do=shared (console-r7-links.js calls open()). Loaded by console-r7.js (an ES module); built with
+// and on ?do=shared (console-r7-links.js calls open()). By itself it opens only for something NEW (an item or a refusal
+// notice since it was last shown) and never over a launch (do=talk and every other launch word leave it closed).
+// Signing out clears the tray; the 24-hour sweep also runs on every read, signed in or not (a local job). Loaded by console-r7.js (an ES module); built with
 // window.JarvisMobile and the console's existing classes (.sheet, .integ, .btn, .bnote, .bfine); textContent only;
 // ASCII source.
 const M = window.JarvisMobile;
@@ -22,6 +24,7 @@ const ITEM = '/app/share/item/';
 const NOTICE = '/app/share/notice';
 const SCOPE = '/app/share/';
 const KEEP_MS = 24 * 60 * 60 * 1000;
+const SEEN = 'jarvis_share_seen_v1'; // when the tray was last shown (this browser only)
 const ASK_TEXT = 'What can you tell me about this picture?';
 const WORDS = {
   title: 'Shared with JARVIS',
@@ -34,6 +37,7 @@ const WORDS = {
   notSent: 'It wasn\u2019t sent. Try again in a moment.',
   held: 'It wasn\u2019t sent yet. If it is attached to your message, finish there.',
   gone: 'That item is no longer on this phone.',
+  busy: 'Another window is already on that item.',
 };
 const KIND_WORD = { 'image/jpeg': 'Photo', 'image/png': 'Photo', 'image/webp': 'Photo', 'application/pdf': 'PDF' };
 
@@ -41,7 +45,9 @@ const mk = (tag, cls, text) => M.mk(tag, cls, text);
 const $ = (id) => document.getElementById(id);
 const signedIn = () => { const c = window.JarvisConsole; return !!(c && typeof c.ready === 'function' && c.ready()); };
 const door = () => (M && M.parts && M.parts.send && typeof M.parts.send.attach === 'function' ? M.parts.send : null);
-const say = (e, fallback) => (e && typeof e.message === 'string' && e.message.length <= 300 ? e.message : fallback);
+// A message reaches the owner only when it is a plain `Error` (ours, or the one picture door's own plain words);
+// a TypeError ("Failed to fetch"), a DOMException or anything else gets our fallback line instead.
+const say = (e, fallback) => (e && e.name === 'Error' && typeof e.message === 'string' && e.message.length <= 300 ? e.message : fallback);
 function sizeText(bytes) {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
@@ -50,7 +56,7 @@ function decodeName(raw) { try { return decodeURIComponent(raw || '').slice(0, 1
 // ---- this browser's tray (never the server) ----------------------------------------------------------------------
 async function tray() { return 'caches' in window ? caches.open(CACHE) : null; }
 
-/** The items waiting, oldest first; past 24 hours they are dropped. */
+/** The items waiting, oldest first; past 24 hours they are dropped (on every read, signed in or not). */
 async function items() {
   const cache = await tray();
   if (!cache) return [];
@@ -67,6 +73,11 @@ async function items() {
   }
   return out.sort((a, b) => a.at - b.at);
 }
+/** True when the worker left a notice the tray has not shown yet (it is left in place). */
+async function hasNotice() {
+  const cache = await tray();
+  return !!(cache && (await cache.match(NOTICE)));
+}
 /** What the worker refused at the last share, shown once. */
 async function takeNotice() {
   const cache = await tray();
@@ -82,6 +93,13 @@ async function fileOf(it) {
   if (!res) throw new Error(WORDS.gone);
   const blob = await res.blob();
   return new File([blob], it.name, { type: it.type });
+}
+const seenAt = () => { try { return Number(localStorage.getItem(SEEN)) || 0; } catch (_) { return 0; } };
+const markSeen = () => { try { localStorage.setItem(SEEN, String(Date.now())); } catch (_) {} };
+/** Clears everything waiting (sign-out: a phone that is handed on keeps nothing of what was shared). */
+async function clearAll() {
+  try { await caches.delete(CACHE); } catch (_) {}
+  try { localStorage.removeItem(SEEN); } catch (_) {}
 }
 async function drop(it) { const cache = await tray(); if (cache) await cache.delete(it.req); }
 
@@ -118,17 +136,30 @@ function button(label, run, why) {
   if (why) { b.disabled = true; b.title = why; } else b.addEventListener('click', run);
   return b;
 }
+/** One window at a time per item (Web Locks): a second window's press on the same item finds it taken. */
+async function withLock(id, job) {
+  const L = navigator.locks;
+  if (!L || typeof L.request !== 'function' || !id) return job();
+  let ran = false;
+  await L.request('jarvis-share-' + id, { ifAvailable: true }, async (lock) => {
+    if (!lock) return;
+    ran = true;
+    await job();
+  });
+  if (!ran) throw new Error(WORDS.busy);
+}
 /** One press at a time per item: its buttons wait while it runs; whatever it says goes in the note. */
 function pressing(card, job) {
   return async () => {
     const all = [...card.querySelectorAll('button')];
     all.forEach((b) => { b.disabled = true; });
-    try { await job(); } catch (e) { tell([say(e, WORDS.notSent)], true); all.forEach((b) => { if (!b.title) b.disabled = false; }); }
+    try { await withLock(card.dataset.lock, job); } catch (e) { tell([say(e, WORDS.notSent)], true); all.forEach((b) => { if (!b.title) b.disabled = false; }); }
   };
 }
 function card(it) {
   const c = mk('div', 'integ r7s-item');
   c.setAttribute('role', 'listitem');
+  c.dataset.lock = new URL(it.req.url).pathname.slice(ITEM.length);
   const head = mk('div', 'ihead');
   head.append(mk('b', 'r7s-name', it.name), mk('span', 'istate', `${it.text ? 'Text' : KIND_WORD[it.type] || 'File'} \u00b7 ${sizeText(it.size)}`));
   const acts = mk('div', 'actions r7s-acts');
@@ -162,7 +193,12 @@ async function look(it) {
   const file = await fileOf(it);
   sheet.close();
   if (D) D.open('camera', { focus: true });
-  await P.look(file); // on this device: the vision engine sees it, the server never does
+  try {
+    await P.look(file); // on this device: the vision engine sees it, the server never does
+  } catch (e) {
+    if (!sheet.open) sheet.showModal(); // the owner must see why: the sheet comes back with the message
+    throw e;
+  }
 }
 async function ask(it) {
   const d = need(), file = await fileOf(it);
@@ -205,7 +241,10 @@ async function show() {
   build();
   const refused = await takeNotice();
   const n = await render();
-  tell(refused.map((r) => (r.name ? `Not kept: ${r.name}. ${r.why}` : String(r.why || ''))), refused.length > 0);
+  if (refused.length || !sheet.open) { // a second run while open must not wipe what the first said
+    tell(refused.map((r) => (r.name ? `Not kept: ${r.name}. ${r.why}` : String(r.why || ''))), refused.length > 0);
+  }
+  markSeen();
   if (!sheet.open) sheet.showModal();
   const first = list.querySelector('button:not(:disabled)') || $('shareTrayClose');
   if (first) first.focus();
@@ -221,15 +260,29 @@ async function worker() {
     if (reg && new URL(reg.scope).pathname === SCOPE) await reg.unregister();
   } catch (_) {}
 }
+/** Did the address (or a kept launch) ask for any screen? Then that screen is what opens, never the tray over it. */
+function launched() {
+  const L = M && M.parts ? M.parts.links : null;
+  return !!(L && typeof L.asked === 'function' && L.asked());
+}
+/** Something new since the tray was last shown: an item newer than that, or a notice the worker left. */
+async function fresh() {
+  const since = seenAt();
+  return (await hasNotice()) || (await items()).some((it) => it.at > since);
+}
 async function ready() {
   worker();
-  const waiting = (await items()).length;
-  if (wanted || waiting) open();
+  if (wanted) { open(); return; }
+  if (launched()) return; // do=shared opens it through links; do=talk and the rest are left alone
+  if (await fresh()) open();
 }
 
 document.addEventListener('jarvis:ready', () => { ready(); });
 document.addEventListener('jarvis:pictures-sent', countLine);
 document.addEventListener('jarvis:brain', () => { if (sheet && sheet.open) render(); }); // can it see pictures now?
+const out = $('logoutBtn');
+if (out) out.addEventListener('click', () => { clearAll(); }); // the console reloads after its own sign-out call
+items().catch(() => {}); // the 24-hour sweep, a local cache job: it asks no server, signed in or not
 if (signedIn()) ready();
 
 if (M) M.part('share', Object.freeze({ open, items: async () => (await items()).map(({ name, type, size, text }) => ({ name, type, size, text })) }));

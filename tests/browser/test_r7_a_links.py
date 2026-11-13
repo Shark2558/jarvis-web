@@ -216,18 +216,28 @@ def test_anything_else_is_ignored_and_still_taken_out_of_the_address(
         c.close()
 
 
+def _until(c: Any, expression: str, seconds: float = 10.0) -> None:
+    """Polls with evaluate: wait_for_function evaluates its string with eval, which the console's
+    CSP refuses whenever the first look finds the condition not yet true."""
+    for _ in range(int(seconds * 10)):
+        if c.page.evaluate(expression):
+            return
+        c.page.wait_for_timeout(100)
+    raise AssertionError(f"never true: {expression}")
+
+
 def test_do_sos_asks_the_sos_part_to_open_its_sheet_and_nothing_else(
     browser: Any, server_url: str, token: str
 ) -> None:
     c = Launch(browser, server_url, token, PHONE)
     try:
         c.page.goto(server_url + "/?source=app&do=sos")
-        c.page.wait_for_function("window.JarvisMobile && window.JarvisMobile.parts.sos")
+        _until(c, "!!(window.JarvisMobile && window.JarvisMobile.parts.sos)")
         # Part D's sheet is not in this branch: a stand-in records the call
         c.page.evaluate("window.JarvisMobile.parts.sos.open = (o) => { window.__sos = o; }")
         c.page.locator("#tokIn").fill(c.token)
         c.page.locator("#tokBtn").click()
-        c.page.wait_for_function("window.__sos !== undefined", timeout=10_000)
+        _until(c, "window.__sos !== undefined")
         assert c.page.evaluate("window.__sos") == {"via": "launch"}
         assert c.mic() == {"gum": 0, "rec": 0}
     finally:

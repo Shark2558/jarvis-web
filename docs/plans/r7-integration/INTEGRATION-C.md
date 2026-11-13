@@ -137,31 +137,20 @@ These are additions to `phone-contract.md` (a contract file: I1 writes them in; 
 
 ## 7. Needs I1
 
-1. `tests/test_r7_seams.py::test_the_app_starts_with_four_stub_parts_and_their_status_routes` pins
-   `wiring.door_handlers(app) == {}` ("no part has built its handlers yet"): with Part C it is
-   `{"hello", "inbox"}` (and D's two). Move the pin.
-2. `tests/test_r7_seams.py::test_the_r7_runner_passes_with_its_contract_built_and_the_rest_stubs`
-   expects `phone:not_built_yet` and `phone` in `parts_not_built`: Part C's eval is BUILT. Move it.
-3. Part A's `console-r7-links.js` must leave `source=app` in the address (it drops only `do` and
-   `open`), or read it first and hand it on: `console-r7-lock.js` reads it at module load, and the
-   two modules load side by side.
-4. Part D: for the app's SMS screen, offer `services["sos_contacts"]` on the body part, an
-   `async (uid) -> {label: <the owner's name as family sees it>, contacts: [{label, phone}]}` (a bare
-   list of contacts is read too). Without it the hello carries `label: ""` and `contacts: []`, and
-   the app says no numbers are saved (Part E's Needs I1 item 2).
-5. `phone-contract.md`: add the answers of section 2 (link, hello, inbox, the bare door failures);
-   Part E's app reads them.
-6. The guide: card C62 from PLANNED to built with Part C's facts; its data line gains
-   `phone_devices/{uid}.lock {on, keys}` (the switch and the references of passkeys registered from
-   the app).
-7. If another console module sends a POST on a timer or on viewing, add its path to
-   `applock.BACKGROUND_WRITES` (found: `/v1/book/show/beat`, `/v1/brief/seen`).
-8. `OWNER-STEPS.md` (Part E's) step C12: say that the lock turns on by itself once the passkey is
-   added from the app, and Privacy → This device then reads "On".
-9. Starlette's `SessionMiddleware` re-sends a cookie a request brought: the door refuses such a
-   request (401 `cookie`), but that 401 still carries the refreshed cookie. Optional: keep `/phone/`
-   out of the session middleware.
-10. The whole unit suite and the whole browser suite (not run here, by the Workshop's rule).
+1. `test_r7_seams.py::test_the_app_starts_with_four_stub_parts_and_their_status_routes` pins
+   `door_handlers(app) == {}`; Part C now offers `hello` and `inbox`. Move the pin.
+2. `test_r7_seams.py::test_the_r7_runner_passes_with_its_contract_built_and_the_rest_stubs` expects
+   `phone:not_built_yet`; Part C's eval is BUILT. Move the pin.
+3. Part A's `console-r7-links.js` must leave `source=app` in the address (`console-r7-lock.js` reads
+   it at module load; the two load side by side).
+4. Part D: offer `services["sos_contacts"]`, an `async (uid) -> {label, contacts: [{label, phone}]}`;
+   without it the hello's SOS part is empty (Part E's item 2).
+5. `phone-contract.md`: add section 2's answers (link, hello, inbox, bare door failures).
+6. The guide: card C62 to built; `phone_devices/{uid}` gains `lock {on, keys}`.
+7. Any other console POST sent on a timer or on viewing joins `applock.BACKGROUND_WRITES`.
+8. `OWNER-STEPS.md` step C12: the lock turns on by itself once the passkey is added from the app.
+9. Optional: keep `/phone/` out of `SessionMiddleware` (it re-sends a cookie a door request brought).
+10. The whole unit and browser suites.
 
 ## Change log
 

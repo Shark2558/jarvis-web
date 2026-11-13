@@ -148,6 +148,19 @@ and retries a 429, so the door's new bare 429 needs no change there.
 | Code L7: `watch_tools` 88 lines; module load errors swallowed | Fixed in `4b534b4` (split, none over 50 lines) and `49e2a34` (a console line and a card or note, "... could not load, Sir. Reload the page to try again.") |
 | Code L8: listings per uid | Declined: reviewer says acceptable at this size; all queries are `uid ==` only |
 
+Checks after the fixes (at `42a9547`, logs `/tmp/r7-logs/fix-*.log`): unit suite Python 3.12 14,711
+passed, 133 skipped (13 min 34 s); Python 3.11 14,712 passed, 132 skipped (13 min 33 s); `ruff check`
+and `ruff format --check` clean (1,623 files); `mypy src` the 9 old errors only (716 files); mock evals
+ALL PASS, `r7` 68/68 with its negative control failing; `arch_coverage` OK; `check_doc_versions` 27
+documents; `markdy_export --check` 14 diagrams; the book check R7, two builds byte-identical; PR title
+OK. The whole browser suite: 1,361 passed, 4 failed (1 h 35 min). Three were real: the SOS error
+tests, which met the new rule that only the server's own words reach the owner (a failed press must
+still carry the 112 line, and a late answer keeps its own words), fixed in `42a9547` and green; one
+(`test_notes`) is a load flake and passed on re-run. No Android change, so no new Android run (last:
+`43461173298`). Screenshots: `/tmp/r7-logs/fix-shots` (260 shots, 0 page errors, 0 failures); look at
+`*-r7-sos-failed.png`, `*-r7-helpers-watch.png` and `*-r7-sos-card.png`. Guarded sizes: `app.py` 735,
+`gateway.py` 760, `console.html` 782, every `console*.js` at most 764, no stylesheet touched.
+
 Deviation: the tick endpoint in tests needs the Firestore session backend, so the jobs test calls
 `run_jobs` on `app.state.tick_jobs` directly.
 

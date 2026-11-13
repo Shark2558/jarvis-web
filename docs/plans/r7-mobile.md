@@ -1,4 +1,4 @@
-Version v7.0.5 · 13 Nov 2026, 23:20 IST · Release R7 · Status: Ready · Owner: 🛠 Mark XVII
+Version v7.0.6 · 14 Nov 2026, 14:30 IST · Release R7 · Status: Ready · Owner: 🛠 Mark XVII
 
 # Release R7 — Mobile, watch & phone camera (`v7.0.0`)
 
@@ -1333,6 +1333,11 @@ f. `render.yaml`'s old host (lines 5 and 19) is left as it is until the owner sa
 Versions stay: `src/jarvis/__init__.py` 7.0.0; `android/version.properties` versionCode 1, versionName
 7.0.0 (the first install).
 
+**After the integrated reviews (v7.0.6).** Three decisions moved: the door answers a flood or a limit with a
+bare 429 (401 stays for authentication; the app retries a 429); a failed SOS press is not remembered, so a
+retry sends, and the owner reads only the server's own words; R7's clock and daily jobs run on their own two
+tick jobs, not behind R11's helpers. Every finding and its commit: I1-NOTES section 7.
+
 ## Not verified live (no Android device, no Google or Telegram reach from this workspace)
 
 Each line ends with the exact check you do.
@@ -1570,3 +1575,4 @@ the place for both.
 | v7.0.3 | 12 Nov 2026, 16:15 IST | R7 | Review 1 written in (A1–A10, every B line re-read on `r11-1-i1` @ `bbe056d`, the C seams 20–27, gaps, owner steps and split, D's 24 hand-held vision rows, E's answers): Health Connect read without double-counting and NoiseFit's own connection, the app lock's five 423 readers and its default, SOS's own test budget and its recorded exception, launch addresses that never start the mic, the package `io.github.shark2558.jarvis`, one AGP pin, ₹ only, G0 on `main` | 🛠 Mark XV |
 | v7.0.4 | 13 Nov 2026, 16:40 IST | R7 | Ready for the parts: G0 met (`main` @ `5519e2d`, v11.1.1, merged into `r7-i0`); every file:line re-read on `5519e2d` (the moved lines corrected: `app.py:558–569`, `pictures.py:50`, `console-r111-files.js:184`/`:310`, `console.js:745`, `r11_1_wiring.py:100–148`, `brief/service.py:691–697`; sizes; `test_r11_1_seams.py:73` also pins the version; the guide's L1874); D23's pins confirmed on Google's pages (Rabbit 2 → AGP 7.1–9.5; AGP 9.5.1, Gradle 9.6.0, JDK 17, API 37; Kotlin 2.4.10 for `core`; JDK 25 not stated, so CI on 17 and Studio's Gradle JDK as the fallback; `distributionSha256Sum` pinned from CI's first run, which also resolved both plugins on JDK 17), sources S36 and S50; Health Connect: NoiseFit writes steps and calories (13 Nov 15:19 IST), sleep and heart rate still to be seen; the workspace re-measured; Appendix A's 24 hand-held rows settled; the owner's defaults (package, version) stand; the I0 seams built (I0-NOTES.md) | 🛠 Mark XVI |
 | v7.0.5 | 13 Nov 2026, 23:20 IST | R7 | I1: a new section "I1 · what the integrator changed" (the merges, the fourteen kinds of change with the defects found at the join, the contract changes: `register` sealed, `stream` onError, `press_id`, `SleepLine.source` "app", `sos_contacts`, `linked_since`, a hello without `sos`; the Workshop's owner decisions a–f with their safe defaults; the versions that stay); the owner is now 🛠 Mark XVII | 🛠 Mark XVII |
+| v7.0.6 | 14 Nov 2026, 14:30 IST | R7 | The integrated reviews: the door's bare 429, the SOS retry, R7's own tick jobs, the refused picture; see I1-NOTES section 7 | 🛠 Mark XVII |

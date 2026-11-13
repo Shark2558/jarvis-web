@@ -1,9 +1,9 @@
-Version v7.0.1 · 14 Nov 2026, 01:45 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
+Version v7.0.2 · 14 Nov 2026, 14:30 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
 
 # R7 — I1 notes (the five parts joined: "Mobile, watch and phone camera")
 
 Written by the R7 I1 integrator in the Workshop (🛠 Mark XVII) on `r7-i1`, cut from `r7-i0` @
-`9d96320`. The plan is `docs/plans/r7-mobile.md` (v7.0.5, with its new section "I1 · what the
+`9d96320`. The plan is `docs/plans/r7-mobile.md` (v7.0.6, with its new section "I1 · what the
 integrator changed"); the contract is `phone-contract.md` (v7.0.2). Every commit carries
 `JARVIS-Version: v7.0.0` and `JARVIS-Mark: XVII`; nothing was rebased, stashed or force-pushed, and
 every commit was pushed on its own.
@@ -114,8 +114,49 @@ flood limit's client address behind Cloud Run, `--max-instances 1` and the trail
 item 6); a test SOS reaching a contact's phone and the map pin; the app keeping its SMS list when a
 hello leaves `sos` out (Kotlin built in CI, not run on a phone).
 
+## 7. Integrated reviews and the fixer (v7.0.2)
+
+Two reviews read `r7-i1` at `c0e3a33` (security: 0 critical, 0 high, 1 medium, 8 low, 2 info; code: 5
+medium, 8 low). The fixer took each finding test-first, on its own commit, pushed after each. Nothing
+was rebased, stashed or force-pushed. `android/**` is unchanged: the app counts only a 401 as a strike
+and retries a 429, so the door's new bare 429 needs no change there.
+
+| Finding | Result |
+|---|---|
+| Security M1: a picture that cannot be redrawn left as the original | Fixed in `db56d46`: `shrink` returns nothing, the picture is left out or refused ("That picture could not be prepared on this device, so it was not sent, Sir."); a folder with none left says so |
+| Security L1: the Vault's own "Add a document" form uploads the original | Declined, on purpose and written down (plan, D-list item 7): the vault is the owner's encrypted, owner-only store, nothing there reaches a model, and a redraw would lower a scan's quality. The "every picture" wording now names the exception (`db56d46`) |
+| Security L2: the share tray opens over the unlock cover | Fixed in `96764d9`: the tray and the launch links do nothing while locked; a `do=shared` launch waits for unlock |
+| Security L3: any site can link to `/?source=app` | Fixed in `20d7ec1`: `mark_app` honours the pin only for a visit that is not cross-site (`Sec-Fetch-Site`) |
+| Security L4: a flood 401 counts as a strike | Fixed in `19cb0ef` (+ `589d41f`): the door answers a flood or a limit with a bare 429; 401 stays for authentication; contract v7.0.3 matches the door |
+| Security L5: needles eval gaps | Fixed in `cf83465`: bodies and the final notice are scanned, contact names, national and spaced numbers and any heart-rate key are needles, with negative controls |
+| Security L6: a failed press is cached for an hour | Fixed in `94d1f90`: a press that reached nobody is not kept, so a retry sends |
+| Security L7: the wake word counts as presence | Fixed in `1024a19`: the mic's transcribe post and the vault's lock-on-hide are background writes |
+| Security L8: the vision cache stamp | Fixed in `fee4a43`: the stamp adds inode and ctime |
+| Security I1 (public assetlinks.json) | Declined: by design (D4) |
+| Security I2 (render.yaml's old host, the package name) | Declined: pre-existing and the owner's; the package name is the owner's public handle, by design |
+| Code M1: dates in the browser's locale | Fixed in `193f9df`: one helper, `JarvisMobile.when`, "12 Nov, 14:05", even in a US locale; a source pin forbids another formatter |
+| Code M2: a raw reason on a failed SOS | Fixed in `94d1f90`: only the server's own words reach the owner; the screenshot fake now fails realistically |
+| Code M3: `watch_stale` after unlinking | Fixed in `a550a7d` |
+| Code M4: `sos/service.py` at 881 lines | Fixed in `94d1f90`: `limits.py` and `after.py` split out; `service.py` is 716 lines |
+| Code M5: R7's jobs depend on R11 helpers | Fixed in `5f9391b`: `mobile_tick_jobs` (clock and daily) run on their own, after R11's; `mobile_clock` is an advisory job in the watchdog |
+| Code L1: junk release names evict the cache | Fixed in `fee4a43`: a name that is not a release is answered without hashing or caching |
+| Code L2: contract drift in section 3 | Fixed in `19cb0ef` (contract v7.0.3) |
+| Code L3: releases sorted as text | Fixed in `fee4a43`: sorted by number |
+| Code L4: `shrink` returns the original | Same fix as security M1 (`db56d46`) |
+| Code L5: `DELETE /v1/vault/unlock` counts as presence | Fixed in `1024a19` |
+| Code L6: `HOURLY_CAP` global off switch | Fixed in `94d1f90`: the limits are injected (`hourly_cap`, `own_test_budget`), no module switch |
+| Code L7: `watch_tools` 88 lines; module load errors swallowed | Fixed in `4b534b4` (split, none over 50 lines) and `49e2a34` (a console line and a card or note, "... could not load, Sir. Reload the page to try again.") |
+| Code L8: listings per uid | Declined: reviewer says acceptable at this size; all queries are `uid ==` only |
+
+Deviation: the tick endpoint in tests needs the Firestore session backend, so the jobs test calls
+`run_jobs` on `app.state.tick_jobs` directly.
+
+Not verified live, added: the TWA's first launch still marks the app (the `Sec-Fetch-Site` gate lets
+a visit with no site header or `none` through; Chrome's first TWA launch is not run here).
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v7.0.1 | 14 Nov 2026, 01:30 IST | R7 | First edition: the merges, every "Needs I1" item and its commit, the defects found at the join, the checks so far, the guarded sizes, what is not verified live | 🛠 Mark XVII |
+| v7.0.2 | 14 Nov 2026, 14:30 IST | R7 | Integrated reviews and the fixer: each finding of the security and code reviews with its commit or why it was declined; the checks after the fixes | 🛠 Mark XVII |

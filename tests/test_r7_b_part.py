@@ -160,3 +160,31 @@ async def test_the_privacy_rows_count_export_and_delete_with_a_passkey(settings:
 
 def test_the_keyring_has_the_vision_purpose() -> None:
     assert Keyring(bytes(range(32))).cipher("vision") is not None
+
+
+async def test_the_tool_is_private_on_telegram_through_the_built_registry(
+    settings: Settings,
+) -> None:
+    from telegram_fakes import UID as TG_UID
+    from telegram_fakes import Clock as TgClock
+
+    from jarvis.core.channel import telegram_turn
+    from jarvis.telegram.rules import ChannelRules
+    from jarvis.telegram.store import TelegramStore
+    from jarvis.tools.policy import Effect
+
+    gateway = _gateway(vision_part.build(_ctx(settings)))
+    names = [spec.name for spec in gateway.registry.specs()]
+    assert names == ["vision_results"]
+    rules = ChannelRules(None, TelegramStore(MemoryDocs(), prefix="t_", clock=TgClock()))
+
+    def denied(got: list[Any]) -> set[str]:
+        return {
+            n
+            for n in names
+            if any(r.effect is Effect.DENY and r.matches(n, {}, ActionRisk.READ_ONLY) for r in got)
+        }
+
+    with telegram_turn():
+        assert denied(await rules.rules_for(TG_UID)) == {"vision_results"}  # nothing paired
+    assert denied(await rules.rules_for(TG_UID)) == set()  # on the console it is allowed

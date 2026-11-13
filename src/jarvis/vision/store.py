@@ -316,4 +316,5 @@ __all__ = [
     "VisionStore",
     "VisionUnavailable",
     "item_of",
+    "parse_result",
 ]

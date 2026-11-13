@@ -16,6 +16,12 @@ from test_console import Console
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 pytestmark = pytest.mark.browser
 BEFORE = Path(__file__).resolve().parents[1] / "fixtures" / "r7" / "more_sheet_before.html"
+# a template in the test's own page context: the fixture is the page's old markup, never run
+BEFORE_JS = """(html) => {
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  return [...t.content.querySelectorAll('.sheet-item')].map((b) => b.outerHTML);
+}"""
 ENTRIES_JS = (
     "() => [...document.querySelectorAll('#moreSheet .sheet-item')].map((b) => b.outerHTML)"
 )
@@ -37,22 +43,20 @@ def _plain(html: str) -> str:
 def test_the_built_sheet_equals_the_page_it_replaced(
     browser: Any, server_url: str, token: str
 ) -> None:
-    before = BEFORE.read_text(encoding="utf-8").splitlines()
-    assert len(before) == 19
+    before = BEFORE.read_text(encoding="utf-8")
+    assert len(before.splitlines()) == 19
     c = Console(browser, server_url, token, {"width": 1440, "height": 900})
     try:
         c.open()
         built = [_plain(h) for h in c.page.evaluate(ENTRIES_JS)]
-        assert len(built) == 20
-        assert built[:19] == before  # same order, same words, same markup
+        # the old markup, read by the same browser (an SVG <path/> serialises as <path></path>)
+        old = c.page.evaluate(BEFORE_JS, before)
+        assert len(old) == 19 and len(built) == 20
+        assert built[:19] == old  # same order, same words, same markup
         camera = built[19]
-        assert camera.startswith(
-            '<button class="sheet-item" type="button" data-sheet-open="camera">'
-        )
-        assert (
-            "<b>Camera</b><small>Look at a photo or the live picture, on this device</small>"
-            in camera
-        )
+        head = '<button class="sheet-item" type="button" data-sheet-open="camera">'
+        words = "<b>Camera</b><small>Look at a photo or the live picture, on this device</small>"
+        assert camera.startswith(head) and words in camera
         icon = c.page.evaluate(
             "() => document.querySelector('#dock [data-open=\"camera\"] svg').outerHTML"
         )

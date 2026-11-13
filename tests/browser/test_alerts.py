@@ -33,13 +33,16 @@ KEYS = [
     "weather_warning", "breach_notice", "nudge_standup", "nudge_hydrate", "nudge_activity",
     "nudge_free_time", "nudge_focus", "weather_note",
     "series_checkin", "faces_to_name",  # R11.1 I0
+    "sos_sent", "phone_linked", "sos_contact_left", "phone_unlinked", "watch_stale",  # R7 I0
 ]  # fmt: skip
-FIXED = {"home_intruder", "home_hazard", "home_summary"}
+# no switch (notify.models.NO_SWITCH): R7 I0 added an SOS sent and a phone linked
+FIXED = {"home_intruder", "home_hazard", "home_summary", "sos_sent", "phone_linked"}
 LEVEL = {"home_intruder": "urgent", "home_hazard": "urgent", "home_summary": "urgent",
          "home_greeting": "info", "home_online": "info", "offline_on": "info",
          "offline_off": "info", "brief_ready": "info",
          "disaster_alert": "urgent", "weather_note": "info",
-         "faces_to_name": "info"}  # fmt: skip
+         "faces_to_name": "info", "sos_sent": "urgent", "phone_linked": "urgent",
+         "phone_unlinked": "info", "watch_stale": "info"}  # fmt: skip
 VAPID = "B" + "A" * 86
 # a real-looking (but fake) subscription the stubbed push manager returns
 SUB = {

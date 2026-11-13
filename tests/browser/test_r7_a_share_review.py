@@ -401,12 +401,13 @@ def test_a_failed_look_brings_the_sheet_back_with_the_reason(
         t.share({"files": [_two_pictures()["files"][0]]})
         t.open()
         t.page.locator("#shareTray[open]").wait_for(timeout=15_000)
+        # I1: Part B's real panel is frozen; make its own look fail (this browser can't decode it)
         t.page.evaluate(
-            "() => { JarvisMobile.parts.panel.look = async () => {"
-            " throw new Error('The camera is busy.'); }; }"
+            "() => { window.createImageBitmap = async () => { throw new Error('decode'); }; }"
         )
         t.page.get_by_role("button", name="Look at it here").click()
-        t.page.locator("#shareTrayNote").filter(has_text="The camera is busy.").wait_for()
+        reason = "This picture can\u2019t be read here. Try a JPEG or PNG."
+        t.page.locator("#shareTrayNote").filter(has_text=reason).wait_for()
         assert t.page.locator("#shareTray[open]").count() == 1
     finally:
         t.close()

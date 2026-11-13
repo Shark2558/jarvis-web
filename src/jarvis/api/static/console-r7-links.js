@@ -81,19 +81,21 @@ function talk() {
   const input = document.getElementById('input'); // this browser can't listen: the keyboard is ready instead
   if (input) input.focus();
 }
-async function partOpen(name) {
+/** Calls a part's method once the part has registered (it may load a moment after this file). */
+async function partCall(name, method, arg) {
   const until = Date.now() + PART_WAIT_MS;
   for (;;) {
     const p = M && M.parts ? M.parts[name] : null;
-    if (p && typeof p.open === 'function') { p.open({ via: 'launch' }); return true; }
+    if (p && typeof p[method] === 'function') { p[method](arg); return true; }
     if (Date.now() > until) return false;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }
+const partOpen = (name) => partCall(name, 'open', { via: 'launch' });
 function act(l) {
   const D = window.JarvisDeck;
   if (l.do === 'talk') talk();
-  else if (l.do === 'look') { if (D) D.open('camera', { focus: true }); }
+  else if (l.do === 'look') { if (D) D.open('camera', { focus: true }); partCall('panel', 'choose', 'look'); } // never a camera
   else if (l.do === 'sos') partOpen('sos');
   else if (l.do === 'shared') partOpen('share');
   else if (l.open && D) D.open(l.open, { focus: true });

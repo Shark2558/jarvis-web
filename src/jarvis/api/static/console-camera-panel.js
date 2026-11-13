@@ -10,7 +10,8 @@
 //   Cameras  this device's camera switch (Switch off / Allow: only a tap allows), front or back, the home camera's place
 // The camera starts only from a tap (console-camera.js) and stops when this panel closes or is hidden. Asks the server
 // NOTHING before sign-in (jarvis:ready). Text a camera read is other people's words: shown with textContent, never obeyed.
-// The Camera dock tab (and A's launch word do=look) opens this panel; neither starts the camera. ASCII source.
+// The Camera dock tab (and A's launch word do=look, which also chooses Look) opens this panel; neither starts the
+// camera. A's share tray hands a picture to look(file) (I1): looked at on this device, never sent. ASCII source.
 const M = window.JarvisMobile;
 const panel = document.getElementById('p-camera');
 const host = document.getElementById('cameraBody');
@@ -230,6 +231,8 @@ function clear() {
   stage.replaceChildren();
   paintActs();
 }
+const NOT_PICTURE = 'That is not a picture. Choose a JPEG or PNG photo.';
+const CANT_READ = 'This picture can\u2019t be read here. Try a JPEG or PNG.';
 async function choosePhoto() {
   const c = Cam();
   if (!c) return;
@@ -237,9 +240,22 @@ async function choosePhoto() {
   let file = null;
   try { file = await c.photo(); } catch (e) { say(stateEl, failed(e), 'bad'); return; }
   if (!file) return;
-  if (!/^image\//.test(file.type || '')) { say(stateEl, 'That is not a picture. Choose a JPEG or PNG photo.', 'bad'); return; }
+  const why = await lookFile(file);
+  if (why) say(stateEl, why, 'bad');
+}
+/** A picture from elsewhere on this device (A's share tray: "Look at it here"): the Look tab looks at it HERE; the
+ *  server never sees it. Throws plain words when it is not a picture this browser can read. */
+async function look(file) {
+  if (!(file instanceof Blob)) throw new Error(NOT_PICTURE);
+  choose('look');
+  stopLive();
+  const why = await lookFile(file);
+  if (why) throw new Error(why);
+}
+async function lookFile(file) { // '' when it is shown and being looked at; otherwise the reason, in plain words
+  if (!/^image\//.test(file.type || '')) return NOT_PICTURE;
   let bmp = null;
-  try { bmp = await createImageBitmap(file); } catch (_) { say(stateEl, 'This picture can\u2019t be read here. Try a JPEG or PNG.', 'bad'); return; }
+  try { bmp = await createImageBitmap(file); } catch (_) { return CANT_READ; }
   const k = Math.min(1, PHOTO_SIDE / Math.max(bmp.width, bmp.height));
   const cv = mk('canvas', 'cam-view');
   cv.width = Math.max(1, Math.round(bmp.width * k));
@@ -247,6 +263,7 @@ async function choosePhoto() {
   cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
   bmp.close();
   showPhoto(cv);
+  return '';
 }
 function showPhoto(cv) {
   if (S.photo && S.photo !== cv) { S.photo.width = 0; S.photo.height = 0; }
@@ -447,5 +464,5 @@ document.addEventListener('jarvis:brainmode', () => { if (!outBox.hidden) paintS
 choose('look');
 paintTask();
 if (signedIn() && !hidden()) loadStatus();
-const api = Object.freeze({ choose, tab: () => S.tab, result: () => S.result });
+const api = Object.freeze({ choose, look, tab: () => S.tab, result: () => S.result });
 if (M) M.part('panel', api);
